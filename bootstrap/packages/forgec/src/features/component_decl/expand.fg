@@ -435,7 +435,7 @@ export fn splice_component_def(name: string, params: ParamList, config: CompConf
     let name_init = FieldInitList.Node("name", sexpr(Expr.Ident("name"), 0, 0), config_to_factory_inits(config))
     let struct_lit = Expr.StructLit(type_name, name_init)
     let factory_body = StmtList.Node(sstmt(Stmt.Return(struct_lit), 0, 0), StmtList.End)
-    let factory = Stmt.Function("${name}_new", TypeParamList.End, name_param, ValueType.Struct(type_name), factory_body)
+    let factory = Stmt.Function("${name}_new", TypeParamList.End, name_param, ValueType.Struct(type_name, 0), factory_body)
 
     let methods = extract_methods(body, name)
 

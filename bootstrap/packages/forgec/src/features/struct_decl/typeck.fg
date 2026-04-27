@@ -18,7 +18,7 @@ export fn check_field_access(tc: TC, obj: Expr, field: string) -> ExprResult {
     }
     // Struct field
     let struct_name = match o.ty {
-        .Struct(n) -> n
+        .Struct(n, _) -> n
         _ -> ""
     }
     if struct_name.length > 0 {

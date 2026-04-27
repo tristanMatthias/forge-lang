@@ -1,5 +1,5 @@
-; seed built from commit da1b13e6 at 2026-04-27T22:59:22Z
-; source hash: d1675107ef7f7dc50d4be9ea7e6aba8b37c09661c7e2ae21eb70b028cde42bc4
+; seed built from commit 0550615d at 2026-04-27T23:56:52Z
+; source hash: bc1e1ea99b275908b12bb33f46327d1b4ccffecefba1e37c2f8a583ecef8fcff
 ; ModuleID = 'bootstrap'
 source_filename = "bootstrap"
 
@@ -315,17 +315,17 @@ source_filename = "bootstrap"
 %"core::ast::TypeExpr__FnType" = type { ptr, ptr }
 %"core::ast::TypeExpr__ListType" = type { ptr }
 %"core::ast::TypeExpr__Generic" = type { ptr, ptr }
-%"core::ast::ValueType__Struct" = type { ptr }
-%"core::ast::ValueType__Enum" = type { ptr, ptr }
+%"core::ast::ValueType__Struct" = type { ptr, i64 }
+%"core::ast::ValueType__Enum" = type { ptr, ptr, i64 }
 %"core::ast::ValueType__Tuple" = type { ptr }
 %"core::ast::ValueType__List" = type { ptr }
 %"core::ast::ValueType__Fn" = type { ptr }
 %"core::ast::ValueType__Closure" = type { i64, ptr }
 %"core::ast::ValueType__FnTyped" = type { ptr, ptr }
-%"core::ast::ValueType__Trait" = type { ptr }
+%"core::ast::ValueType__Trait" = type { ptr, i64 }
 %"core::ast::ValueType__Union" = type { ptr }
-%"core::ast::ValueType__Newtype" = type { ptr, ptr }
-%"core::ast::ValueType__NarrowedEnum" = type { ptr, ptr }
+%"core::ast::ValueType__Newtype" = type { ptr, ptr, i64 }
+%"core::ast::ValueType__NarrowedEnum" = type { ptr, ptr, i64 }
 %"core::ast::ValueType__Task" = type { ptr }
 %"core::ast::TypeList__Node" = type { ptr, ptr }
 %"core::ast::TypeNameList__Node" = type { ptr, ptr }
@@ -22954,8 +22954,8 @@ if_else13:                                        ; preds = %ifcont
 
 pmatch_end:                                       ; preds = %parm_body134, %parm_body120, %parm_body113, %parm_body99, %parm_body92, %parm_body85, %parm_body78, %parm_body71, %parm_body64, %parm_body57, %parm_body50, %parm_body43, %parm_body
   %pmatch_val = load i64, ptr %pmatch_result, align 8
-  %cast143 = inttoptr i64 %pmatch_val to ptr
-  ret ptr %cast143
+  %cast146 = inttoptr i64 %pmatch_val to ptr
+  ret ptr %cast146
 
 parm_body:                                        ; preds = %ifcont10
   %19 = call ptr @forge_rc_alloc(i64 16)
@@ -23175,15 +23175,19 @@ parm_body134:                                     ; preds = %parm_next121
   %tag_ptr136 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %46, i32 0, i32 0
   store i64 6952779173258, ptr %tag_ptr136, align 8
   %pay_ptr137 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %46, i32 0, i32 1
-  %47 = call ptr @forge_rc_alloc(i64 8)
+  %47 = call ptr @forge_rc_alloc(i64 16)
   store ptr %47, ptr %pay_ptr137, align 8
   %name138 = load ptr, ptr %name, align 8
   %slot_base139 = ptrtoint ptr %47 to i64
   %slot_addr140 = add i64 %slot_base139, 0
   %slot141 = inttoptr i64 %slot_addr140 to ptr
   store ptr %name138, ptr %slot141, align 8
-  %cast142 = ptrtoint ptr %46 to i64
-  store i64 %cast142, ptr %pmatch_result, align 8
+  %slot_base142 = ptrtoint ptr %47 to i64
+  %slot_addr143 = add i64 %slot_base142, 8
+  %slot144 = inttoptr i64 %slot_addr143 to ptr
+  store i64 0, ptr %slot144, align 8
+  %cast145 = ptrtoint ptr %46 to i64
+  store i64 %cast145, ptr %pmatch_result, align 8
   br label %pmatch_end
 
 parm_next135:                                     ; No predecessors!
@@ -23219,9 +23223,9 @@ entry:
   br i1 %tag_eq, label %march_arm, label %march_next
 
 match_end:                                        ; preds = %pmatch_end, %march_arm53, %march_arm33, %march_arm25, %march_arm9, %march_arm4, %march_arm
-  %match_val128 = load i64, ptr %match_result, align 8
-  %cast129 = inttoptr i64 %match_val128 to ptr
-  ret ptr %cast129
+  %match_val131 = load i64, ptr %match_result, align 8
+  %cast132 = inttoptr i64 %match_val131 to ptr
+  ret ptr %cast132
 
 march_arm:                                        ; preds = %entry
   %pay_slot = getelementptr inbounds nuw %"core::ast::TypeExpr", ptr %te1, i32 0, i32 1
@@ -23515,7 +23519,7 @@ parm_body115:                                     ; preds = %parm_next105
   %tag_ptr117 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %25, i32 0, i32 0
   store i64 6384044314, ptr %tag_ptr117, align 8
   %pay_ptr118 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %25, i32 0, i32 1
-  %26 = call ptr @forge_rc_alloc(i64 16)
+  %26 = call ptr @forge_rc_alloc(i64 24)
   store ptr %26, ptr %pay_ptr118, align 8
   %base119 = load ptr, ptr %base71, align 8
   %slot_base120 = ptrtoint ptr %26 to i64
@@ -23528,8 +23532,12 @@ parm_body115:                                     ; preds = %parm_next105
   %slot_addr125 = add i64 %slot_base124, 8
   %slot126 = inttoptr i64 %slot_addr125 to ptr
   store ptr %27, ptr %slot126, align 8
-  %cast127 = ptrtoint ptr %25 to i64
-  store i64 %cast127, ptr %pmatch_result, align 8
+  %slot_base127 = ptrtoint ptr %26 to i64
+  %slot_addr128 = add i64 %slot_base127, 16
+  %slot129 = inttoptr i64 %slot_addr128 to ptr
+  store i64 0, ptr %slot129, align 8
+  %cast130 = ptrtoint ptr %25 to i64
+  store i64 %cast130, ptr %pmatch_result, align 8
   br label %pmatch_end
 
 parm_next116:                                     ; No predecessors!
@@ -84114,7 +84122,7 @@ march_next5:                                      ; No predecessors!
 
 define ptr @"features::if_stmt::codegen::narrow_env_for_is"(ptr %0, ptr %1, ptr %2) {
 entry:
-  %en68 = alloca ptr, align 8
+  %en71 = alloca ptr, align 8
   %g = alloca ptr, align 8
   %en = alloca ptr, align 8
   %lu = alloca ptr, align 8
@@ -84179,23 +84187,23 @@ if_else12:                                        ; preds = %ifcont
   br label %ifcont9
 
 ifcont17:                                         ; preds = %if_else20
-  %ctx47 = load ptr, ptr %ctx, align 8
-  %cast48 = ptrtoint ptr %ctx47 to i64
-  %null_chk49 = icmp eq i64 %cast48, 0
-  %null_ext50 = zext i1 %null_chk49 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6353, i64 15, ptr @sty_name.6354, i64 19, i64 %null_ext50, ptr @src_file.6355, i64 104, i64 46)
-  %var_name51 = load ptr, ptr %var_name, align 8
-  %8 = call ptr @"codegen::types::Ctx__lookup_toplevel"(ptr %ctx47, ptr %var_name51)
+  %ctx50 = load ptr, ptr %ctx, align 8
+  %cast51 = ptrtoint ptr %ctx50 to i64
+  %null_chk52 = icmp eq i64 %cast51, 0
+  %null_ext53 = zext i1 %null_chk52 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.6353, i64 15, ptr @sty_name.6354, i64 19, i64 %null_ext53, ptr @src_file.6355, i64 104, i64 46)
+  %var_name54 = load ptr, ptr %var_name, align 8
+  %8 = call ptr @"codegen::types::Ctx__lookup_toplevel"(ptr %ctx50, ptr %var_name54)
   store ptr %8, ptr %g, align 8
-  %g52 = load ptr, ptr %g, align 8
-  %cast53 = ptrtoint ptr %g52 to i64
-  %null_chk54 = icmp eq i64 %cast53, 0
-  %null_ext55 = zext i1 %null_chk54 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6356, i64 5, ptr @sty_name.6357, i64 30, i64 %null_ext55, ptr @src_file.6358, i64 104, i64 47)
-  %found_ptr56 = getelementptr inbounds nuw %"codegen::types::TopLevelLookup", ptr %g52, i32 0, i32 0
-  %found57 = load i64, ptr %found_ptr56, align 8
-  %if_cond59 = icmp ne i64 %found57, 0
-  br i1 %if_cond59, label %if_then60, label %if_else61
+  %g55 = load ptr, ptr %g, align 8
+  %cast56 = ptrtoint ptr %g55 to i64
+  %null_chk57 = icmp eq i64 %cast56, 0
+  %null_ext58 = zext i1 %null_chk57 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.6356, i64 5, ptr @sty_name.6357, i64 30, i64 %null_ext58, ptr @src_file.6358, i64 104, i64 47)
+  %found_ptr59 = getelementptr inbounds nuw %"codegen::types::TopLevelLookup", ptr %g55, i32 0, i32 0
+  %found60 = load i64, ptr %found_ptr59, align 8
+  %if_cond62 = icmp ne i64 %found60, 0
+  br i1 %if_cond62, label %if_then63, label %if_else64
 
 if_then19:                                        ; preds = %ifcont9
   %lu21 = load ptr, ptr %lu, align 8
@@ -84219,8 +84227,8 @@ if_else20:                                        ; preds = %ifcont9
   br label %ifcont17
 
 ifcont29:                                         ; preds = %if_else32
-  %env46 = load ptr, ptr %env, align 8
-  ret ptr %env46
+  %env49 = load ptr, ptr %env, align 8
+  ret ptr %env49
 
 if_then31:                                        ; preds = %if_then19
   %env33 = load ptr, ptr %env, align 8
@@ -84236,7 +84244,7 @@ if_then31:                                        ; preds = %if_then19
   %tag_ptr = getelementptr inbounds nuw %"core::ast::ValueType", ptr %11, i32 0, i32 0
   store i64 -4554580336688187492, ptr %tag_ptr, align 8
   %pay_ptr = getelementptr inbounds nuw %"core::ast::ValueType", ptr %11, i32 0, i32 1
-  %12 = call ptr @forge_rc_alloc(i64 16)
+  %12 = call ptr @forge_rc_alloc(i64 24)
   store ptr %12, ptr %pay_ptr, align 8
   %en39 = load ptr, ptr %en, align 8
   %slot_base = ptrtoint ptr %12 to i64
@@ -84248,75 +84256,83 @@ if_then31:                                        ; preds = %if_then19
   %slot_addr42 = add i64 %slot_base41, 8
   %slot43 = inttoptr i64 %slot_addr42 to ptr
   store ptr %vname40, ptr %slot43, align 8
-  %cast44 = ptrtoint ptr %11 to i64
-  %cast45 = inttoptr i64 %cast44 to ptr
-  %13 = call ptr @"core::ast::env_extend"(ptr %env33, ptr %var_name34, ptr %alloca, ptr %cast45)
+  %slot_base44 = ptrtoint ptr %12 to i64
+  %slot_addr45 = add i64 %slot_base44, 16
+  %slot46 = inttoptr i64 %slot_addr45 to ptr
+  store i64 0, ptr %slot46, align 8
+  %cast47 = ptrtoint ptr %11 to i64
+  %cast48 = inttoptr i64 %cast47 to ptr
+  %13 = call ptr @"core::ast::env_extend"(ptr %env33, ptr %var_name34, ptr %alloca, ptr %cast48)
   ret ptr %13
 
 if_else32:                                        ; preds = %if_then19
   br label %ifcont29
 
-ifcont58:                                         ; preds = %if_else61, %ifcont73
-  %env95 = load ptr, ptr %env, align 8
-  ret ptr %env95
+ifcont61:                                         ; preds = %if_else64, %ifcont76
+  %env101 = load ptr, ptr %env, align 8
+  ret ptr %env101
 
-if_then60:                                        ; preds = %ifcont17
-  %g62 = load ptr, ptr %g, align 8
-  %cast63 = ptrtoint ptr %g62 to i64
-  %null_chk64 = icmp eq i64 %cast63, 0
-  %null_ext65 = zext i1 %null_chk64 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6359, i64 2, ptr @sty_name.6360, i64 30, i64 %null_ext65, ptr @src_file.6361, i64 104, i64 48)
-  %ty_ptr66 = getelementptr inbounds nuw %"codegen::types::TopLevelLookup", ptr %g62, i32 0, i32 2
-  %ty67 = load ptr, ptr %ty_ptr66, align 8
-  %14 = call ptr @"core::ast::vtype_enum_name"(ptr %ty67)
-  store ptr %14, ptr %en68, align 8
-  %en69 = load ptr, ptr %en68, align 8
-  %15 = call i32 @strcmp(ptr %en69, ptr @.str.6362)
-  %widen70 = sext i32 %15 to i64
-  %streq_cmp71 = icmp ne i64 %widen70, 0
-  %streq_ext72 = zext i1 %streq_cmp71 to i64
-  %if_cond74 = icmp ne i64 %streq_ext72, 0
-  br i1 %if_cond74, label %if_then75, label %if_else76
+if_then63:                                        ; preds = %ifcont17
+  %g65 = load ptr, ptr %g, align 8
+  %cast66 = ptrtoint ptr %g65 to i64
+  %null_chk67 = icmp eq i64 %cast66, 0
+  %null_ext68 = zext i1 %null_chk67 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.6359, i64 2, ptr @sty_name.6360, i64 30, i64 %null_ext68, ptr @src_file.6361, i64 104, i64 48)
+  %ty_ptr69 = getelementptr inbounds nuw %"codegen::types::TopLevelLookup", ptr %g65, i32 0, i32 2
+  %ty70 = load ptr, ptr %ty_ptr69, align 8
+  %14 = call ptr @"core::ast::vtype_enum_name"(ptr %ty70)
+  store ptr %14, ptr %en71, align 8
+  %en72 = load ptr, ptr %en71, align 8
+  %15 = call i32 @strcmp(ptr %en72, ptr @.str.6362)
+  %widen73 = sext i32 %15 to i64
+  %streq_cmp74 = icmp ne i64 %widen73, 0
+  %streq_ext75 = zext i1 %streq_cmp74 to i64
+  %if_cond77 = icmp ne i64 %streq_ext75, 0
+  br i1 %if_cond77, label %if_then78, label %if_else79
 
-if_else61:                                        ; preds = %ifcont17
-  br label %ifcont58
+if_else64:                                        ; preds = %ifcont17
+  br label %ifcont61
 
-ifcont73:                                         ; preds = %if_else76
-  br label %ifcont58
+ifcont76:                                         ; preds = %if_else79
+  br label %ifcont61
 
-if_then75:                                        ; preds = %if_then60
-  %env77 = load ptr, ptr %env, align 8
-  %var_name78 = load ptr, ptr %var_name, align 8
-  %g79 = load ptr, ptr %g, align 8
-  %cast80 = ptrtoint ptr %g79 to i64
-  %null_chk81 = icmp eq i64 %cast80, 0
-  %null_ext82 = zext i1 %null_chk81 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6363, i64 11, ptr @sty_name.6364, i64 30, i64 %null_ext82, ptr @src_file.6365, i64 104, i64 50)
-  %llvm_global_ptr = getelementptr inbounds nuw %"codegen::types::TopLevelLookup", ptr %g79, i32 0, i32 1
+if_then78:                                        ; preds = %if_then63
+  %env80 = load ptr, ptr %env, align 8
+  %var_name81 = load ptr, ptr %var_name, align 8
+  %g82 = load ptr, ptr %g, align 8
+  %cast83 = ptrtoint ptr %g82 to i64
+  %null_chk84 = icmp eq i64 %cast83, 0
+  %null_ext85 = zext i1 %null_chk84 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.6363, i64 11, ptr @sty_name.6364, i64 30, i64 %null_ext85, ptr @src_file.6365, i64 104, i64 50)
+  %llvm_global_ptr = getelementptr inbounds nuw %"codegen::types::TopLevelLookup", ptr %g82, i32 0, i32 1
   %llvm_global = load ptr, ptr %llvm_global_ptr, align 8
   %16 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr83 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %16, i32 0, i32 0
-  store i64 -4554580336688187492, ptr %tag_ptr83, align 8
-  %pay_ptr84 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %16, i32 0, i32 1
-  %17 = call ptr @forge_rc_alloc(i64 16)
-  store ptr %17, ptr %pay_ptr84, align 8
-  %en85 = load ptr, ptr %en68, align 8
-  %slot_base86 = ptrtoint ptr %17 to i64
-  %slot_addr87 = add i64 %slot_base86, 0
-  %slot88 = inttoptr i64 %slot_addr87 to ptr
-  store ptr %en85, ptr %slot88, align 8
-  %vname89 = load ptr, ptr %vname, align 8
-  %slot_base90 = ptrtoint ptr %17 to i64
-  %slot_addr91 = add i64 %slot_base90, 8
-  %slot92 = inttoptr i64 %slot_addr91 to ptr
-  store ptr %vname89, ptr %slot92, align 8
-  %cast93 = ptrtoint ptr %16 to i64
-  %cast94 = inttoptr i64 %cast93 to ptr
-  %18 = call ptr @"core::ast::env_extend"(ptr %env77, ptr %var_name78, ptr %llvm_global, ptr %cast94)
+  %tag_ptr86 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %16, i32 0, i32 0
+  store i64 -4554580336688187492, ptr %tag_ptr86, align 8
+  %pay_ptr87 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %16, i32 0, i32 1
+  %17 = call ptr @forge_rc_alloc(i64 24)
+  store ptr %17, ptr %pay_ptr87, align 8
+  %en88 = load ptr, ptr %en71, align 8
+  %slot_base89 = ptrtoint ptr %17 to i64
+  %slot_addr90 = add i64 %slot_base89, 0
+  %slot91 = inttoptr i64 %slot_addr90 to ptr
+  store ptr %en88, ptr %slot91, align 8
+  %vname92 = load ptr, ptr %vname, align 8
+  %slot_base93 = ptrtoint ptr %17 to i64
+  %slot_addr94 = add i64 %slot_base93, 8
+  %slot95 = inttoptr i64 %slot_addr94 to ptr
+  store ptr %vname92, ptr %slot95, align 8
+  %slot_base96 = ptrtoint ptr %17 to i64
+  %slot_addr97 = add i64 %slot_base96, 16
+  %slot98 = inttoptr i64 %slot_addr97 to ptr
+  store i64 0, ptr %slot98, align 8
+  %cast99 = ptrtoint ptr %16 to i64
+  %cast100 = inttoptr i64 %cast99 to ptr
+  %18 = call ptr @"core::ast::env_extend"(ptr %env80, ptr %var_name81, ptr %llvm_global, ptr %cast100)
   ret ptr %18
 
-if_else76:                                        ; preds = %if_then60
-  br label %ifcont73
+if_else79:                                        ; preds = %if_then63
+  br label %ifcont76
 }
 
 define ptr @"features::if_stmt::codegen::emit_if"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4) {
@@ -91720,20 +91736,20 @@ if_else:                                          ; preds = %entry
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
-  %cast19 = inttoptr i64 %ife_val to ptr
-  store ptr %cast19, ptr %var_ty, align 8
-  %var_ty20 = load ptr, ptr %var_ty, align 8
-  %ctx21 = load ptr, ptr %ctx, align 8
-  %cast22 = ptrtoint ptr %ctx21 to i64
-  %null_chk23 = icmp eq i64 %cast22, 0
-  %null_ext24 = zext i1 %null_chk23 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7240, i64 10, ptr @sty_name.7241, i64 19, i64 %null_ext24, ptr @src_file.7242, i64 104, i64 100)
-  %copy_types_ptr = getelementptr inbounds nuw %"codegen::types::Ctx", ptr %ctx21, i32 0, i32 22
+  %cast22 = inttoptr i64 %ife_val to ptr
+  store ptr %cast22, ptr %var_ty, align 8
+  %var_ty23 = load ptr, ptr %var_ty, align 8
+  %ctx24 = load ptr, ptr %ctx, align 8
+  %cast25 = ptrtoint ptr %ctx24 to i64
+  %null_chk26 = icmp eq i64 %cast25, 0
+  %null_ext27 = zext i1 %null_chk26 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.7240, i64 10, ptr @sty_name.7241, i64 19, i64 %null_ext27, ptr @src_file.7242, i64 104, i64 100)
+  %copy_types_ptr = getelementptr inbounds nuw %"codegen::types::Ctx", ptr %ctx24, i32 0, i32 22
   %copy_types = load ptr, ptr %copy_types_ptr, align 8
-  %12 = call i1 @"codegen::types::vtype_is_copy"(ptr %var_ty20, ptr %copy_types)
-  %widen25 = zext i1 %12 to i64
-  %if_cond27 = icmp ne i64 %widen25, 0
-  br i1 %if_cond27, label %if_then28, label %if_else29
+  %12 = call i1 @"codegen::types::vtype_is_copy"(ptr %var_ty23, ptr %copy_types)
+  %widen28 = zext i1 %12 to i64
+  %if_cond30 = icmp ne i64 %widen28, 0
+  br i1 %if_cond30, label %if_then31, label %if_else32
 
 ife_then:                                         ; preds = %ifcont
   %ctx11 = load ptr, ptr %ctx, align 8
@@ -91752,82 +91768,86 @@ ife_else:                                         ; preds = %ifcont
   %tag_ptr = getelementptr inbounds nuw %"core::ast::ValueType", ptr %14, i32 0, i32 0
   store i64 6952779173258, ptr %tag_ptr, align 8
   %pay_ptr = getelementptr inbounds nuw %"core::ast::ValueType", ptr %14, i32 0, i32 1
-  %15 = call ptr @forge_rc_alloc(i64 8)
+  %15 = call ptr @forge_rc_alloc(i64 16)
   store ptr %15, ptr %pay_ptr, align 8
   %sname17 = load ptr, ptr %sname, align 8
   %slot_base = ptrtoint ptr %15 to i64
   %slot_addr = add i64 %slot_base, 0
   %slot = inttoptr i64 %slot_addr to ptr
   store ptr %sname17, ptr %slot, align 8
-  %cast18 = ptrtoint ptr %14 to i64
-  store i64 %cast18, ptr %ife_result, align 8
+  %slot_base18 = ptrtoint ptr %15 to i64
+  %slot_addr19 = add i64 %slot_base18, 8
+  %slot20 = inttoptr i64 %slot_addr19 to ptr
+  store i64 0, ptr %slot20, align 8
+  %cast21 = ptrtoint ptr %14 to i64
+  store i64 %cast21, ptr %ife_result, align 8
   br label %ife_end
 
-ifcont26:                                         ; preds = %if_else29, %ifcont38
+ifcont29:                                         ; preds = %if_else32, %ifcont41
   %16 = call ptr @forge_rc_alloc(i64 16)
-  %fld_ptr59 = getelementptr inbounds nuw %"features::let_stmt::codegen::CopyTarget", ptr %16, i32 0, i32 0
-  store i1 false, ptr %fld_ptr59, align 8
-  %n60 = load ptr, ptr %n, align 8
-  %fld_ptr61 = getelementptr inbounds nuw %"features::let_stmt::codegen::CopyTarget", ptr %16, i32 0, i32 1
-  store ptr %n60, ptr %fld_ptr61, align 8
-  %cast62 = ptrtoint ptr %16 to i64
-  %cast63 = inttoptr i64 %cast62 to ptr
-  ret ptr %cast63
+  %fld_ptr62 = getelementptr inbounds nuw %"features::let_stmt::codegen::CopyTarget", ptr %16, i32 0, i32 0
+  store i1 false, ptr %fld_ptr62, align 8
+  %n63 = load ptr, ptr %n, align 8
+  %fld_ptr64 = getelementptr inbounds nuw %"features::let_stmt::codegen::CopyTarget", ptr %16, i32 0, i32 1
+  store ptr %n63, ptr %fld_ptr64, align 8
+  %cast65 = ptrtoint ptr %16 to i64
+  %cast66 = inttoptr i64 %cast65 to ptr
+  ret ptr %cast66
 
-if_then28:                                        ; preds = %ife_end
-  %ctx30 = load ptr, ptr %ctx, align 8
-  %cast31 = ptrtoint ptr %ctx30 to i64
-  %null_chk32 = icmp eq i64 %cast31, 0
-  %null_ext33 = zext i1 %null_chk32 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7243, i64 8, ptr @sty_name.7244, i64 19, i64 %null_ext33, ptr @src_file.7245, i64 104, i64 101)
-  %sname34 = load ptr, ptr %sname, align 8
-  %17 = call ptr @"codegen::types::Ctx__get_type"(ptr %ctx30, ptr %sname34)
+if_then31:                                        ; preds = %ife_end
+  %ctx33 = load ptr, ptr %ctx, align 8
+  %cast34 = ptrtoint ptr %ctx33 to i64
+  %null_chk35 = icmp eq i64 %cast34, 0
+  %null_ext36 = zext i1 %null_chk35 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.7243, i64 8, ptr @sty_name.7244, i64 19, i64 %null_ext36, ptr @src_file.7245, i64 104, i64 101)
+  %sname37 = load ptr, ptr %sname, align 8
+  %17 = call ptr @"codegen::types::Ctx__get_type"(ptr %ctx33, ptr %sname37)
   store ptr %17, ptr %st_ty, align 8
-  %st_ty35 = load ptr, ptr %st_ty, align 8
-  %ne36 = icmp ne ptr %st_ty35, null
-  %ne_ext37 = zext i1 %ne36 to i64
-  %if_cond39 = icmp ne i64 %ne_ext37, 0
-  br i1 %if_cond39, label %if_then40, label %if_else41
+  %st_ty38 = load ptr, ptr %st_ty, align 8
+  %ne39 = icmp ne ptr %st_ty38, null
+  %ne_ext40 = zext i1 %ne39 to i64
+  %if_cond42 = icmp ne i64 %ne_ext40, 0
+  br i1 %if_cond42, label %if_then43, label %if_else44
 
-if_else29:                                        ; preds = %ife_end
-  br label %ifcont26
+if_else32:                                        ; preds = %ife_end
+  br label %ifcont29
 
-ifcont38:                                         ; preds = %if_else41
-  br label %ifcont26
+ifcont41:                                         ; preds = %if_else44
+  br label %ifcont29
 
-if_then40:                                        ; preds = %if_then28
-  %ctx42 = load ptr, ptr %ctx, align 8
-  %cast43 = ptrtoint ptr %ctx42 to i64
-  %null_chk44 = icmp eq i64 %cast43, 0
-  %null_ext45 = zext i1 %null_chk44 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7246, i64 6, ptr @sty_name.7247, i64 19, i64 %null_ext45, ptr @src_file.7248, i64 104, i64 103)
-  %st_ty46 = load ptr, ptr %st_ty, align 8
-  %name47 = load ptr, ptr %name, align 8
-  %18 = call i64 @strlen(ptr %name47)
+if_then43:                                        ; preds = %if_then31
+  %ctx45 = load ptr, ptr %ctx, align 8
+  %cast46 = ptrtoint ptr %ctx45 to i64
+  %null_chk47 = icmp eq i64 %cast46, 0
+  %null_ext48 = zext i1 %null_chk47 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.7246, i64 6, ptr @sty_name.7247, i64 19, i64 %null_ext48, ptr @src_file.7248, i64 104, i64 103)
+  %st_ty49 = load ptr, ptr %st_ty, align 8
+  %name50 = load ptr, ptr %name, align 8
+  %18 = call i64 @strlen(ptr %name50)
   %19 = call i64 @strlen(ptr @.str.7249)
-  %concat_total48 = add i64 %18, %19
-  %concat_size49 = add i64 %concat_total48, 1
-  %20 = call ptr @forge_rc_alloc(i64 %concat_size49)
-  %21 = call ptr @memcpy(ptr %20, ptr %name47, i64 %18)
-  %cast50 = ptrtoint ptr %20 to i64
-  %dst2_int51 = add i64 %cast50, %18
-  %cast52 = inttoptr i64 %dst2_int51 to ptr
-  %rhs_len_p153 = add i64 %19, 1
-  %22 = call ptr @memcpy(ptr %cast52, ptr @.str.7249, i64 %rhs_len_p153)
-  %23 = call ptr @"codegen::types::Ctx__alloca"(ptr %ctx42, ptr %st_ty46, ptr %20)
+  %concat_total51 = add i64 %18, %19
+  %concat_size52 = add i64 %concat_total51, 1
+  %20 = call ptr @forge_rc_alloc(i64 %concat_size52)
+  %21 = call ptr @memcpy(ptr %20, ptr %name50, i64 %18)
+  %cast53 = ptrtoint ptr %20 to i64
+  %dst2_int54 = add i64 %cast53, %18
+  %cast55 = inttoptr i64 %dst2_int54 to ptr
+  %rhs_len_p156 = add i64 %19, 1
+  %22 = call ptr @memcpy(ptr %cast55, ptr @.str.7249, i64 %rhs_len_p156)
+  %23 = call ptr @"codegen::types::Ctx__alloca"(ptr %ctx45, ptr %st_ty49, ptr %20)
   store ptr %23, ptr %buf, align 8
   %24 = call ptr @forge_rc_alloc(i64 16)
-  %fld_ptr54 = getelementptr inbounds nuw %"features::let_stmt::codegen::CopyTarget", ptr %24, i32 0, i32 0
-  store i1 true, ptr %fld_ptr54, align 8
-  %buf55 = load ptr, ptr %buf, align 8
-  %fld_ptr56 = getelementptr inbounds nuw %"features::let_stmt::codegen::CopyTarget", ptr %24, i32 0, i32 1
-  store ptr %buf55, ptr %fld_ptr56, align 8
-  %cast57 = ptrtoint ptr %24 to i64
-  %cast58 = inttoptr i64 %cast57 to ptr
-  ret ptr %cast58
+  %fld_ptr57 = getelementptr inbounds nuw %"features::let_stmt::codegen::CopyTarget", ptr %24, i32 0, i32 0
+  store i1 true, ptr %fld_ptr57, align 8
+  %buf58 = load ptr, ptr %buf, align 8
+  %fld_ptr59 = getelementptr inbounds nuw %"features::let_stmt::codegen::CopyTarget", ptr %24, i32 0, i32 1
+  store ptr %buf58, ptr %fld_ptr59, align 8
+  %cast60 = ptrtoint ptr %24 to i64
+  %cast61 = inttoptr i64 %cast60 to ptr
+  ret ptr %cast61
 
-if_else41:                                        ; preds = %if_then28
-  br label %ifcont38
+if_else44:                                        ; preds = %if_then31
+  br label %ifcont41
 }
 
 define ptr @"features::let_stmt::codegen::resolve_concrete_name"(ptr %0) {
@@ -99323,8 +99343,8 @@ entry:
 
 match_end:                                        ; preds = %try_ok, %march_arm
   %match_val = load i64, ptr %match_result, align 8
-  %cast39 = inttoptr i64 %match_val to ptr
-  %ret_tag_ptr = getelementptr inbounds nuw %Result__EmitValue__string, ptr %cast39, i32 0, i32 0
+  %cast42 = inttoptr i64 %match_val to ptr
+  %ret_tag_ptr = getelementptr inbounds nuw %Result__EmitValue__string, ptr %cast42, i32 0, i32 0
   %ret_tag = load i64, ptr %ret_tag_ptr, align 8
   %is_err_ret = icmp eq i64 %ret_tag, 193456014
   br i1 %is_err_ret, label %errdefer_path, label %defer_path
@@ -99418,7 +99438,7 @@ try_ok:                                           ; preds = %march_arm5
   %tag_ptr30 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %13, i32 0, i32 0
   store i64 229434674264369, ptr %tag_ptr30, align 8
   %pay_ptr = getelementptr inbounds nuw %"core::ast::ValueType", ptr %13, i32 0, i32 1
-  %14 = call ptr @forge_rc_alloc(i64 16)
+  %14 = call ptr @forge_rc_alloc(i64 24)
   store ptr %14, ptr %pay_ptr, align 8
   %name31 = load ptr, ptr %name, align 8
   %slot_base = ptrtoint ptr %14 to i64
@@ -99430,11 +99450,15 @@ try_ok:                                           ; preds = %march_arm5
   %slot_addr34 = add i64 %slot_base33, 8
   %slot35 = inttoptr i64 %slot_addr34 to ptr
   store ptr %inner_ty32, ptr %slot35, align 8
-  %cast36 = ptrtoint ptr %13 to i64
-  %cast37 = inttoptr i64 %cast36 to ptr
-  %15 = call ptr @"codegen::types::ok_emit_typed"(ptr %value, ptr %cast37)
-  %cast38 = ptrtoint ptr %15 to i64
-  store i64 %cast38, ptr %match_result, align 8
+  %slot_base36 = ptrtoint ptr %14 to i64
+  %slot_addr37 = add i64 %slot_base36, 16
+  %slot38 = inttoptr i64 %slot_addr37 to ptr
+  store i64 0, ptr %slot38, align 8
+  %cast39 = ptrtoint ptr %13 to i64
+  %cast40 = inttoptr i64 %cast39 to ptr
+  %15 = call ptr @"codegen::types::ok_emit_typed"(ptr %value, ptr %cast40)
+  %cast41 = ptrtoint ptr %15 to i64
+  store i64 %cast41, ptr %match_result, align 8
   br label %match_end
 
 try_err:                                          ; preds = %march_arm5
@@ -99447,8 +99471,8 @@ defer_path:                                       ; preds = %match_end
   br label %defer_done
 
 defer_done:                                       ; preds = %defer_path, %errdefer_path
-  %cast40 = inttoptr i64 %match_val to ptr
-  ret ptr %cast40
+  %cast43 = inttoptr i64 %match_val to ptr
+  ret ptr %cast43
 }
 
 define ptr @"features::fn_decl::fn_decl_feature"() {
@@ -101060,16 +101084,20 @@ try_ok:                                           ; preds = %ifcont22
   %tag_ptr = getelementptr inbounds nuw %"core::ast::ValueType", ptr %31, i32 0, i32 0
   store i64 6952779173258, ptr %tag_ptr, align 8
   %pay_ptr = getelementptr inbounds nuw %"core::ast::ValueType", ptr %31, i32 0, i32 1
-  %32 = call ptr @forge_rc_alloc(i64 8)
+  %32 = call ptr @forge_rc_alloc(i64 16)
   store ptr %32, ptr %pay_ptr, align 8
   %name63 = load ptr, ptr %name, align 8
   %slot_base = ptrtoint ptr %32 to i64
   %slot_addr = add i64 %slot_base, 0
   %slot = inttoptr i64 %slot_addr to ptr
   store ptr %name63, ptr %slot, align 8
-  %cast64 = ptrtoint ptr %31 to i64
-  %cast65 = inttoptr i64 %cast64 to ptr
-  %33 = call ptr @"codegen::types::ok_emit_typed"(ptr %as_i6462, ptr %cast65)
+  %slot_base64 = ptrtoint ptr %32 to i64
+  %slot_addr65 = add i64 %slot_base64, 8
+  %slot66 = inttoptr i64 %slot_addr65 to ptr
+  store i64 0, ptr %slot66, align 8
+  %cast67 = ptrtoint ptr %31 to i64
+  %cast68 = inttoptr i64 %cast67 to ptr
+  %33 = call ptr @"codegen::types::ok_emit_typed"(ptr %as_i6462, ptr %cast68)
   %ret_tag_ptr = getelementptr inbounds nuw %Result__EmitValue__string, ptr %33, i32 0, i32 0
   %ret_tag = load i64, ptr %ret_tag_ptr, align 8
   %is_err_ret = icmp eq i64 %ret_tag, 193456014
@@ -104309,10 +104337,10 @@ entry:
   %tag_eq = icmp eq i64 %tag, 249862025149459091
   br i1 %tag_eq, label %march_arm, label %march_next
 
-match_end:                                        ; preds = %march_arm13, %march_arm
+match_end:                                        ; preds = %march_arm16, %march_arm
   %match_val = load i64, ptr %match_result, align 8
-  %cast21 = inttoptr i64 %match_val to ptr
-  ret ptr %cast21
+  %cast24 = inttoptr i64 %match_val to ptr
+  ret ptr %cast24
 
 march_arm:                                        ; preds = %entry
   %pay_slot = getelementptr inbounds nuw %"core::ast::Expr", ptr %expr1, i32 0, i32 1
@@ -104340,38 +104368,42 @@ march_arm:                                        ; preds = %entry
   %tag_ptr9 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %3, i32 0, i32 0
   store i64 6952779173258, ptr %tag_ptr9, align 8
   %pay_ptr = getelementptr inbounds nuw %"core::ast::ValueType", ptr %3, i32 0, i32 1
-  %4 = call ptr @forge_rc_alloc(i64 8)
+  %4 = call ptr @forge_rc_alloc(i64 16)
   store ptr %4, ptr %pay_ptr, align 8
   %name10 = load ptr, ptr %name2, align 8
   %slot_base = ptrtoint ptr %4 to i64
   %slot_addr = add i64 %slot_base, 0
   %slot = inttoptr i64 %slot_addr to ptr
   store ptr %name10, ptr %slot, align 8
+  %slot_base11 = ptrtoint ptr %4 to i64
+  %slot_addr12 = add i64 %slot_base11, 8
+  %slot13 = inttoptr i64 %slot_addr12 to ptr
+  store i64 0, ptr %slot13, align 8
   %cast = ptrtoint ptr %3 to i64
-  %cast11 = inttoptr i64 %cast to ptr
-  %5 = call ptr @"typeck::tc_er"(ptr %checked8, ptr %cast11)
-  %cast12 = ptrtoint ptr %5 to i64
-  store i64 %cast12, ptr %match_result, align 8
+  %cast14 = inttoptr i64 %cast to ptr
+  %5 = call ptr @"typeck::tc_er"(ptr %checked8, ptr %cast14)
+  %cast15 = ptrtoint ptr %5 to i64
+  store i64 %cast15, ptr %match_result, align 8
   br label %match_end
 
 march_next:                                       ; preds = %entry
-  br label %march_arm13
+  br label %march_arm16
 
-march_arm13:                                      ; preds = %march_next
-  %tc15 = load ptr, ptr %tc, align 8
+march_arm16:                                      ; preds = %march_next
+  %tc18 = load ptr, ptr %tc, align 8
   %6 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr16 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %6, i32 0, i32 0
-  store i64 229444052301365, ptr %tag_ptr16, align 8
-  %pay_ptr17 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %6, i32 0, i32 1
-  store ptr null, ptr %pay_ptr17, align 8
-  %cast18 = ptrtoint ptr %6 to i64
-  %cast19 = inttoptr i64 %cast18 to ptr
-  %7 = call ptr @"typeck::tc_er"(ptr %tc15, ptr %cast19)
-  %cast20 = ptrtoint ptr %7 to i64
-  store i64 %cast20, ptr %match_result, align 8
+  %tag_ptr19 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %6, i32 0, i32 0
+  store i64 229444052301365, ptr %tag_ptr19, align 8
+  %pay_ptr20 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %6, i32 0, i32 1
+  store ptr null, ptr %pay_ptr20, align 8
+  %cast21 = ptrtoint ptr %6 to i64
+  %cast22 = inttoptr i64 %cast21 to ptr
+  %7 = call ptr @"typeck::tc_er"(ptr %tc18, ptr %cast22)
+  %cast23 = ptrtoint ptr %7 to i64
+  store i64 %cast23, ptr %match_result, align 8
   br label %match_end
 
-march_next14:                                     ; No predecessors!
+march_next17:                                     ; No predecessors!
   call void @forge_match_unreachable(ptr @.match_fn.9005, i64 %tag, ptr @mu_file.9006, i64 79)
   unreachable
 }
@@ -104778,10 +104810,10 @@ entry:
   %tag_eq = icmp eq i64 %tag, 7570972219441074
   br i1 %tag_eq, label %march_arm, label %march_next
 
-match_end:                                        ; preds = %march_arm31, %ife_end
+match_end:                                        ; preds = %march_arm34, %ife_end
   %match_val = load i64, ptr %match_result, align 8
-  %cast39 = inttoptr i64 %match_val to ptr
-  ret ptr %cast39
+  %cast42 = inttoptr i64 %match_val to ptr
+  ret ptr %cast42
 
 march_arm:                                        ; preds = %entry
   %pay_slot = getelementptr inbounds nuw %"core::ast::Expr", ptr %expr1, i32 0, i32 1
@@ -104821,7 +104853,7 @@ march_arm:                                        ; preds = %entry
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next:                                       ; preds = %entry
-  br label %march_arm31
+  br label %march_arm34
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -104832,7 +104864,7 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %tag_ptr19 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %4, i32 0, i32 0
   store i64 6384044314, ptr %tag_ptr19, align 8
   %pay_ptr = getelementptr inbounds nuw %"core::ast::ValueType", ptr %4, i32 0, i32 1
-  %5 = call ptr @forge_rc_alloc(i64 16)
+  %5 = call ptr @forge_rc_alloc(i64 24)
   store ptr %5, ptr %pay_ptr, align 8
   %resolved_name20 = load ptr, ptr %resolved_name, align 8
   %slot_base = ptrtoint ptr %5 to i64
@@ -104850,11 +104882,15 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %slot26 = inttoptr i64 %slot_addr25 to ptr
   %cast27 = inttoptr i64 %cast23 to ptr
   store ptr %cast27, ptr %slot26, align 8
-  %cast28 = ptrtoint ptr %4 to i64
-  %cast29 = inttoptr i64 %cast28 to ptr
-  %7 = call ptr @"typeck::tc_er"(ptr %checked18, ptr %cast29)
-  %cast30 = ptrtoint ptr %7 to i64
-  store i64 %cast30, ptr %match_result, align 8
+  %slot_base28 = ptrtoint ptr %5 to i64
+  %slot_addr29 = add i64 %slot_base28, 16
+  %slot30 = inttoptr i64 %slot_addr29 to ptr
+  store i64 0, ptr %slot30, align 8
+  %cast31 = ptrtoint ptr %4 to i64
+  %cast32 = inttoptr i64 %cast31 to ptr
+  %7 = call ptr @"typeck::tc_er"(ptr %checked18, ptr %cast32)
+  %cast33 = ptrtoint ptr %7 to i64
+  store i64 %cast33, ptr %match_result, align 8
   br label %match_end
 
 ife_then:                                         ; preds = %march_arm
@@ -104877,21 +104913,21 @@ ife_else:                                         ; preds = %march_arm
   store i64 %cast16, ptr %ife_result, align 8
   br label %ife_end
 
-march_arm31:                                      ; preds = %march_next
-  %tc33 = load ptr, ptr %tc, align 8
+march_arm34:                                      ; preds = %march_next
+  %tc36 = load ptr, ptr %tc, align 8
   %9 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr34 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %9, i32 0, i32 0
-  store i64 229444052301365, ptr %tag_ptr34, align 8
-  %pay_ptr35 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %9, i32 0, i32 1
-  store ptr null, ptr %pay_ptr35, align 8
-  %cast36 = ptrtoint ptr %9 to i64
-  %cast37 = inttoptr i64 %cast36 to ptr
-  %10 = call ptr @"typeck::tc_er"(ptr %tc33, ptr %cast37)
-  %cast38 = ptrtoint ptr %10 to i64
-  store i64 %cast38, ptr %match_result, align 8
+  %tag_ptr37 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %9, i32 0, i32 0
+  store i64 229444052301365, ptr %tag_ptr37, align 8
+  %pay_ptr38 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %9, i32 0, i32 1
+  store ptr null, ptr %pay_ptr38, align 8
+  %cast39 = ptrtoint ptr %9 to i64
+  %cast40 = inttoptr i64 %cast39 to ptr
+  %10 = call ptr @"typeck::tc_er"(ptr %tc36, ptr %cast40)
+  %cast41 = ptrtoint ptr %10 to i64
+  store i64 %cast41, ptr %match_result, align 8
   br label %match_end
 
-march_next32:                                     ; No predecessors!
+march_next35:                                     ; No predecessors!
   call void @forge_match_unreachable(ptr @.match_fn.9025, i64 %tag, ptr @mu_file.9026, i64 137)
   unreachable
 }
@@ -106194,7 +106230,7 @@ ifcont170:                                        ; preds = %try_ok, %if_then172
   %tag_ptr223 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %76, i32 0, i32 0
   store i64 6384044314, ptr %tag_ptr223, align 8
   %pay_ptr224 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %76, i32 0, i32 1
-  %77 = call ptr @forge_rc_alloc(i64 16)
+  %77 = call ptr @forge_rc_alloc(i64 24)
   store ptr %77, ptr %pay_ptr224, align 8
   %resolved_name225 = load ptr, ptr %resolved_name, align 8
   %slot_base = ptrtoint ptr %77 to i64
@@ -106212,9 +106248,13 @@ ifcont170:                                        ; preds = %try_ok, %if_then172
   %slot231 = inttoptr i64 %slot_addr230 to ptr
   %cast232 = inttoptr i64 %cast228 to ptr
   store ptr %cast232, ptr %slot231, align 8
-  %cast233 = ptrtoint ptr %76 to i64
-  %cast234 = inttoptr i64 %cast233 to ptr
-  %79 = call ptr @"codegen::types::ok_emit_typed"(ptr %as_i64222, ptr %cast234)
+  %slot_base233 = ptrtoint ptr %77 to i64
+  %slot_addr234 = add i64 %slot_base233, 16
+  %slot235 = inttoptr i64 %slot_addr234 to ptr
+  store i64 0, ptr %slot235, align 8
+  %cast236 = ptrtoint ptr %76 to i64
+  %cast237 = inttoptr i64 %cast236 to ptr
+  %79 = call ptr @"codegen::types::ok_emit_typed"(ptr %as_i64222, ptr %cast237)
   %ret_tag_ptr = getelementptr inbounds nuw %Result__EmitValue__string, ptr %79, i32 0, i32 0
   %ret_tag = load i64, ptr %ret_tag_ptr, align 8
   %is_err_ret = icmp eq i64 %ret_tag, 193456014
@@ -109296,9 +109336,9 @@ if_else:                                          ; preds = %march_arm11
 
 define ptr @"features::generics::mono::type_arg_lookup"(ptr %0, ptr %1) {
 entry:
-  %next20 = alloca ptr, align 8
-  %ct10 = alloca ptr, align 8
-  %pn7 = alloca ptr, align 8
+  %next23 = alloca ptr, align 8
+  %ct13 = alloca ptr, align 8
+  %pn10 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %name = alloca ptr, align 8
   %args = alloca ptr, align 8
@@ -109311,32 +109351,36 @@ entry:
   %tag_eq = icmp eq i64 %tag, 193455868
   br i1 %tag_eq, label %march_arm, label %march_next
 
-match_end:                                        ; preds = %march_arm15, %guard_pass, %march_arm
+match_end:                                        ; preds = %march_arm18, %guard_pass, %march_arm
   %match_val = load i64, ptr %match_result, align 8
-  %cast24 = inttoptr i64 %match_val to ptr
-  ret ptr %cast24
+  %cast27 = inttoptr i64 %match_val to ptr
+  ret ptr %cast27
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @forge_rc_alloc(i64 16)
   %tag_ptr2 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %2, i32 0, i32 0
   store i64 6952779173258, ptr %tag_ptr2, align 8
   %pay_ptr = getelementptr inbounds nuw %"core::ast::ValueType", ptr %2, i32 0, i32 1
-  %3 = call ptr @forge_rc_alloc(i64 8)
+  %3 = call ptr @forge_rc_alloc(i64 16)
   store ptr %3, ptr %pay_ptr, align 8
   %name3 = load ptr, ptr %name, align 8
   %slot_base = ptrtoint ptr %3 to i64
   %slot_addr = add i64 %slot_base, 0
   %slot = inttoptr i64 %slot_addr to ptr
   store ptr %name3, ptr %slot, align 8
+  %slot_base4 = ptrtoint ptr %3 to i64
+  %slot_addr5 = add i64 %slot_base4, 8
+  %slot6 = inttoptr i64 %slot_addr5 to ptr
+  store i64 0, ptr %slot6, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
   br label %match_end
 
 march_next:                                       ; preds = %entry
-  %tag_eq6 = icmp eq i64 %tag, 6384368267
-  br i1 %tag_eq6, label %march_arm4, label %march_next5
+  %tag_eq9 = icmp eq i64 %tag, 6384368267
+  br i1 %tag_eq9, label %march_arm7, label %march_next8
 
-march_arm4:                                       ; preds = %march_next
+march_arm7:                                       ; preds = %march_next
   %pay_slot = getelementptr inbounds nuw %"features::generics::mono::TypeArgList", ptr %args1, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %pn_slot_base = ptrtoint ptr %payload to i64
@@ -109344,51 +109388,51 @@ march_arm4:                                       ; preds = %march_next
   %pn_slot = inttoptr i64 %pn_slot_addr to ptr
   %pn = load ptr, ptr %pn_slot, align 8
   call void @forge_rc_retain(ptr %pn)
-  store ptr %pn, ptr %pn7, align 8
-  %pay_slot8 = getelementptr inbounds nuw %"features::generics::mono::TypeArgList", ptr %args1, i32 0, i32 1
-  %payload9 = load ptr, ptr %pay_slot8, align 8
-  %ct_slot_base = ptrtoint ptr %payload9 to i64
+  store ptr %pn, ptr %pn10, align 8
+  %pay_slot11 = getelementptr inbounds nuw %"features::generics::mono::TypeArgList", ptr %args1, i32 0, i32 1
+  %payload12 = load ptr, ptr %pay_slot11, align 8
+  %ct_slot_base = ptrtoint ptr %payload12 to i64
   %ct_slot_addr = add i64 %ct_slot_base, 8
   %ct_slot = inttoptr i64 %ct_slot_addr to ptr
   %ct = load ptr, ptr %ct_slot, align 8
   call void @forge_rc_retain(ptr %ct)
-  store ptr %ct, ptr %ct10, align 8
-  %pn11 = load ptr, ptr %pn7, align 8
-  %name12 = load ptr, ptr %name, align 8
-  %4 = call i32 @strcmp(ptr %pn11, ptr %name12)
+  store ptr %ct, ptr %ct13, align 8
+  %pn14 = load ptr, ptr %pn10, align 8
+  %name15 = load ptr, ptr %name, align 8
+  %4 = call i32 @strcmp(ptr %pn14, ptr %name15)
   %widen = sext i32 %4 to i64
   %streq_cmp = icmp eq i64 %widen, 0
   %streq_ext = zext i1 %streq_cmp to i64
   %guard = icmp ne i64 %streq_ext, 0
-  br i1 %guard, label %guard_pass, label %march_next5
+  br i1 %guard, label %guard_pass, label %march_next8
 
-march_next5:                                      ; preds = %march_arm4, %march_next
-  %tag_eq17 = icmp eq i64 %tag, 6384368267
-  br i1 %tag_eq17, label %march_arm15, label %march_next16
+march_next8:                                      ; preds = %march_arm7, %march_next
+  %tag_eq20 = icmp eq i64 %tag, 6384368267
+  br i1 %tag_eq20, label %march_arm18, label %march_next19
 
-guard_pass:                                       ; preds = %march_arm4
-  %ct13 = load ptr, ptr %ct10, align 8
-  %cast14 = ptrtoint ptr %ct13 to i64
-  store i64 %cast14, ptr %match_result, align 8
+guard_pass:                                       ; preds = %march_arm7
+  %ct16 = load ptr, ptr %ct13, align 8
+  %cast17 = ptrtoint ptr %ct16 to i64
+  store i64 %cast17, ptr %match_result, align 8
   br label %match_end
 
-march_arm15:                                      ; preds = %march_next5
-  %pay_slot18 = getelementptr inbounds nuw %"features::generics::mono::TypeArgList", ptr %args1, i32 0, i32 1
-  %payload19 = load ptr, ptr %pay_slot18, align 8
-  %next_slot_base = ptrtoint ptr %payload19 to i64
+march_arm18:                                      ; preds = %march_next8
+  %pay_slot21 = getelementptr inbounds nuw %"features::generics::mono::TypeArgList", ptr %args1, i32 0, i32 1
+  %payload22 = load ptr, ptr %pay_slot21, align 8
+  %next_slot_base = ptrtoint ptr %payload22 to i64
   %next_slot_addr = add i64 %next_slot_base, 16
   %next_slot = inttoptr i64 %next_slot_addr to ptr
   %next = load ptr, ptr %next_slot, align 8
   call void @forge_rc_retain(ptr %next)
-  store ptr %next, ptr %next20, align 8
-  %next21 = load ptr, ptr %next20, align 8
-  %name22 = load ptr, ptr %name, align 8
-  %5 = call ptr @"features::generics::mono::type_arg_lookup"(ptr %next21, ptr %name22)
-  %cast23 = ptrtoint ptr %5 to i64
-  store i64 %cast23, ptr %match_result, align 8
+  store ptr %next, ptr %next23, align 8
+  %next24 = load ptr, ptr %next23, align 8
+  %name25 = load ptr, ptr %name, align 8
+  %5 = call ptr @"features::generics::mono::type_arg_lookup"(ptr %next24, ptr %name25)
+  %cast26 = ptrtoint ptr %5 to i64
+  store i64 %cast26, ptr %match_result, align 8
   br label %match_end
 
-march_next16:                                     ; preds = %march_next5
+march_next19:                                     ; preds = %march_next8
   call void @forge_match_unreachable(ptr @.match_fn.9615, i64 %tag, ptr @mu_file.9616, i64 63)
   unreachable
 }
@@ -110310,8 +110354,8 @@ entry:
 
 match_end:                                        ; preds = %ifcont, %march_arm
   %match_val = load i64, ptr %match_result, align 8
-  %cast17 = trunc i64 %match_val to i1
-  ret i1 %cast17
+  %cast20 = trunc i64 %match_val to i1
+  ret i1 %cast20
 
 march_arm:                                        ; preds = %entry
   store i64 0, ptr %match_result, align 8
@@ -110345,16 +110389,20 @@ march_arm2:                                       ; preds = %march_next
   %tag_ptr11 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %3, i32 0, i32 0
   store i64 6952779173258, ptr %tag_ptr11, align 8
   %pay_ptr = getelementptr inbounds nuw %"core::ast::ValueType", ptr %3, i32 0, i32 1
-  %4 = call ptr @forge_rc_alloc(i64 8)
+  %4 = call ptr @forge_rc_alloc(i64 16)
   store ptr %4, ptr %pay_ptr, align 8
   %name12 = load ptr, ptr %name5, align 8
   %slot_base = ptrtoint ptr %4 to i64
   %slot_addr = add i64 %slot_base, 0
   %slot = inttoptr i64 %slot_addr to ptr
   store ptr %name12, ptr %slot, align 8
+  %slot_base13 = ptrtoint ptr %4 to i64
+  %slot_addr14 = add i64 %slot_base13, 8
+  %slot15 = inttoptr i64 %slot_addr14 to ptr
+  store i64 0, ptr %slot15, align 8
   %cast = ptrtoint ptr %3 to i64
-  %cast13 = inttoptr i64 %cast to ptr
-  %5 = call i1 @"core::ast::vtype_eq"(ptr %2, ptr %cast13)
+  %cast16 = inttoptr i64 %cast to ptr
+  %5 = call i1 @"core::ast::vtype_eq"(ptr %2, ptr %cast16)
   %widen = zext i1 %5 to i64
   %if_cond = icmp ne i64 %widen, 0
   br i1 %if_cond, label %if_then, label %if_else
@@ -110364,11 +110412,11 @@ march_next3:                                      ; preds = %march_next
   unreachable
 
 ifcont:                                           ; preds = %if_else
-  %existing14 = load ptr, ptr %existing, align 8
-  %next15 = load ptr, ptr %next8, align 8
-  %6 = call i1 @"features::generics::mono::adds_new_info"(ptr %existing14, ptr %next15)
-  %widen16 = zext i1 %6 to i64
-  store i64 %widen16, ptr %match_result, align 8
+  %existing17 = load ptr, ptr %existing, align 8
+  %next18 = load ptr, ptr %next8, align 8
+  %6 = call i1 @"features::generics::mono::adds_new_info"(ptr %existing17, ptr %next18)
+  %widen19 = zext i1 %6 to i64
+  store i64 %widen19, ptr %match_result, align 8
   br label %match_end
 
 if_then:                                          ; preds = %march_arm2
@@ -110398,8 +110446,8 @@ entry:
 
 match_end:                                        ; preds = %ifcont, %march_arm
   %match_val = load i64, ptr %match_result, align 8
-  %cast26 = trunc i64 %match_val to i1
-  ret i1 %cast26
+  %cast29 = trunc i64 %match_val to i1
+  ret i1 %cast29
 
 march_arm:                                        ; preds = %entry
   store i64 1, ptr %match_result, align 8
@@ -110443,16 +110491,20 @@ march_arm2:                                       ; preds = %march_next
   %tag_ptr15 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %3, i32 0, i32 0
   store i64 6952779173258, ptr %tag_ptr15, align 8
   %pay_ptr = getelementptr inbounds nuw %"core::ast::ValueType", ptr %3, i32 0, i32 1
-  %4 = call ptr @forge_rc_alloc(i64 8)
+  %4 = call ptr @forge_rc_alloc(i64 16)
   store ptr %4, ptr %pay_ptr, align 8
   %name16 = load ptr, ptr %name5, align 8
   %slot_base = ptrtoint ptr %4 to i64
   %slot_addr = add i64 %slot_base, 0
   %slot = inttoptr i64 %slot_addr to ptr
   store ptr %name16, ptr %slot, align 8
+  %slot_base17 = ptrtoint ptr %4 to i64
+  %slot_addr18 = add i64 %slot_base17, 8
+  %slot19 = inttoptr i64 %slot_addr18 to ptr
+  store i64 0, ptr %slot19, align 8
   %cast = ptrtoint ptr %3 to i64
-  %cast17 = inttoptr i64 %cast to ptr
-  %5 = call i1 @"core::ast::vtype_eq"(ptr %a_ty14, ptr %cast17)
+  %cast20 = inttoptr i64 %cast to ptr
+  %5 = call i1 @"core::ast::vtype_eq"(ptr %a_ty14, ptr %cast20)
   %widen = zext i1 %5 to i64
   %not_cmp = icmp eq i64 %widen, 0
   %not_cmp_ext = zext i1 %not_cmp to i64
@@ -110464,13 +110516,13 @@ march_next3:                                      ; preds = %march_next
   unreachable
 
 sc_rhs:                                           ; preds = %march_arm2
-  %a_ty18 = load ptr, ptr %a_ty, align 8
-  %ty19 = load ptr, ptr %ty8, align 8
-  %6 = call i1 @"core::ast::vtype_eq"(ptr %a_ty18, ptr %ty19)
-  %widen20 = zext i1 %6 to i64
-  %not_cmp21 = icmp eq i64 %widen20, 0
-  %not_cmp_ext22 = zext i1 %not_cmp21 to i64
-  %r_bool = icmp ne i64 %not_cmp_ext22, 0
+  %a_ty21 = load ptr, ptr %a_ty, align 8
+  %ty22 = load ptr, ptr %ty8, align 8
+  %6 = call i1 @"core::ast::vtype_eq"(ptr %a_ty21, ptr %ty22)
+  %widen23 = zext i1 %6 to i64
+  %not_cmp24 = icmp eq i64 %widen23, 0
+  %not_cmp_ext25 = zext i1 %not_cmp24 to i64
+  %r_bool = icmp ne i64 %not_cmp_ext25, 0
   br i1 %r_bool, label %sc_r_true, label %sc_r_false
 
 sc_short:                                         ; preds = %march_arm2
@@ -110492,11 +110544,11 @@ sc_r_merge:                                       ; preds = %sc_r_false, %sc_r_t
   br label %sc_merge
 
 ifcont:                                           ; preds = %if_else
-  %a23 = load ptr, ptr %a, align 8
-  %next24 = load ptr, ptr %next11, align 8
-  %7 = call i1 @"features::generics::mono::type_args_compatible"(ptr %a23, ptr %next24)
-  %widen25 = zext i1 %7 to i64
-  store i64 %widen25, ptr %match_result, align 8
+  %a26 = load ptr, ptr %a, align 8
+  %next27 = load ptr, ptr %next11, align 8
+  %7 = call i1 @"features::generics::mono::type_args_compatible"(ptr %a26, ptr %next27)
+  %widen28 = zext i1 %7 to i64
+  store i64 %widen28, ptr %match_result, align 8
   br label %match_end
 
 if_then:                                          ; preds = %sc_merge
@@ -110527,8 +110579,8 @@ entry:
 
 match_end:                                        ; preds = %ife_end, %march_arm
   %match_val = load i64, ptr %match_result, align 8
-  %cast40 = inttoptr i64 %match_val to ptr
-  ret ptr %cast40
+  %cast43 = inttoptr i64 %match_val to ptr
+  ret ptr %cast43
 
 march_arm:                                        ; preds = %entry
   %a2 = load ptr, ptr %a, align 8
@@ -110572,16 +110624,20 @@ march_arm3:                                       ; preds = %march_next
   %tag_ptr15 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %3, i32 0, i32 0
   store i64 6952779173258, ptr %tag_ptr15, align 8
   %pay_ptr = getelementptr inbounds nuw %"core::ast::ValueType", ptr %3, i32 0, i32 1
-  %4 = call ptr @forge_rc_alloc(i64 8)
+  %4 = call ptr @forge_rc_alloc(i64 16)
   store ptr %4, ptr %pay_ptr, align 8
   %name16 = load ptr, ptr %name6, align 8
   %slot_base = ptrtoint ptr %4 to i64
   %slot_addr = add i64 %slot_base, 0
   %slot = inttoptr i64 %slot_addr to ptr
   store ptr %name16, ptr %slot, align 8
-  %cast17 = ptrtoint ptr %3 to i64
-  %cast18 = inttoptr i64 %cast17 to ptr
-  %5 = call i1 @"core::ast::vtype_eq"(ptr %2, ptr %cast18)
+  %slot_base17 = ptrtoint ptr %4 to i64
+  %slot_addr18 = add i64 %slot_base17, 8
+  %slot19 = inttoptr i64 %slot_addr18 to ptr
+  store i64 0, ptr %slot19, align 8
+  %cast20 = ptrtoint ptr %3 to i64
+  %cast21 = inttoptr i64 %cast20 to ptr
+  %5 = call i1 @"core::ast::vtype_eq"(ptr %2, ptr %cast21)
   %widen = zext i1 %5 to i64
   %ife_cond = icmp ne i64 %widen, 0
   br i1 %ife_cond, label %ife_then, label %ife_else
@@ -110592,45 +110648,45 @@ march_next4:                                      ; preds = %march_next
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
-  %cast36 = inttoptr i64 %ife_val to ptr
-  store ptr %cast36, ptr %merged, align 8
-  %merged37 = load ptr, ptr %merged, align 8
-  %next38 = load ptr, ptr %next12, align 8
-  %6 = call ptr @"features::generics::mono::merge_type_args"(ptr %merged37, ptr %next38)
-  %cast39 = ptrtoint ptr %6 to i64
-  store i64 %cast39, ptr %match_result, align 8
+  %cast39 = inttoptr i64 %ife_val to ptr
+  store ptr %cast39, ptr %merged, align 8
+  %merged40 = load ptr, ptr %merged, align 8
+  %next41 = load ptr, ptr %next12, align 8
+  %6 = call ptr @"features::generics::mono::merge_type_args"(ptr %merged40, ptr %next41)
+  %cast42 = ptrtoint ptr %6 to i64
+  store i64 %cast42, ptr %match_result, align 8
   br label %match_end
 
 ife_then:                                         ; preds = %march_arm3
   %7 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr19 = getelementptr inbounds nuw %"features::generics::mono::TypeArgList", ptr %7, i32 0, i32 0
-  store i64 6384368267, ptr %tag_ptr19, align 8
-  %pay_ptr20 = getelementptr inbounds nuw %"features::generics::mono::TypeArgList", ptr %7, i32 0, i32 1
+  %tag_ptr22 = getelementptr inbounds nuw %"features::generics::mono::TypeArgList", ptr %7, i32 0, i32 0
+  store i64 6384368267, ptr %tag_ptr22, align 8
+  %pay_ptr23 = getelementptr inbounds nuw %"features::generics::mono::TypeArgList", ptr %7, i32 0, i32 1
   %8 = call ptr @forge_rc_alloc(i64 24)
-  store ptr %8, ptr %pay_ptr20, align 8
-  %name21 = load ptr, ptr %name6, align 8
-  %slot_base22 = ptrtoint ptr %8 to i64
-  %slot_addr23 = add i64 %slot_base22, 0
-  %slot24 = inttoptr i64 %slot_addr23 to ptr
-  store ptr %name21, ptr %slot24, align 8
-  %ty25 = load ptr, ptr %ty9, align 8
-  %slot_base26 = ptrtoint ptr %8 to i64
-  %slot_addr27 = add i64 %slot_base26, 8
-  %slot28 = inttoptr i64 %slot_addr27 to ptr
-  store ptr %ty25, ptr %slot28, align 8
-  %a29 = load ptr, ptr %a, align 8
-  %slot_base30 = ptrtoint ptr %8 to i64
-  %slot_addr31 = add i64 %slot_base30, 16
-  %slot32 = inttoptr i64 %slot_addr31 to ptr
-  store ptr %a29, ptr %slot32, align 8
-  %cast33 = ptrtoint ptr %7 to i64
-  store i64 %cast33, ptr %ife_result, align 8
+  store ptr %8, ptr %pay_ptr23, align 8
+  %name24 = load ptr, ptr %name6, align 8
+  %slot_base25 = ptrtoint ptr %8 to i64
+  %slot_addr26 = add i64 %slot_base25, 0
+  %slot27 = inttoptr i64 %slot_addr26 to ptr
+  store ptr %name24, ptr %slot27, align 8
+  %ty28 = load ptr, ptr %ty9, align 8
+  %slot_base29 = ptrtoint ptr %8 to i64
+  %slot_addr30 = add i64 %slot_base29, 8
+  %slot31 = inttoptr i64 %slot_addr30 to ptr
+  store ptr %ty28, ptr %slot31, align 8
+  %a32 = load ptr, ptr %a, align 8
+  %slot_base33 = ptrtoint ptr %8 to i64
+  %slot_addr34 = add i64 %slot_base33, 16
+  %slot35 = inttoptr i64 %slot_addr34 to ptr
+  store ptr %a32, ptr %slot35, align 8
+  %cast36 = ptrtoint ptr %7 to i64
+  store i64 %cast36, ptr %ife_result, align 8
   br label %ife_end
 
 ife_else:                                         ; preds = %march_arm3
-  %a34 = load ptr, ptr %a, align 8
-  %cast35 = ptrtoint ptr %a34 to i64
-  store i64 %cast35, ptr %ife_result, align 8
+  %a37 = load ptr, ptr %a, align 8
+  %cast38 = ptrtoint ptr %a37 to i64
+  store i64 %cast38, ptr %ife_result, align 8
   br label %ife_end
 }
 
@@ -111882,7 +111938,7 @@ march_next13:                                     ; preds = %march_next3
 define ptr @"features::generics::mono::check_resolved"(ptr %0, ptr %1, ptr %2, i64 %3, i64 %4, ptr %5, ptr %6) {
 entry:
   %updated = alloca ptr, align 8
-  %ife_result53 = alloca i64, align 8
+  %ife_result56 = alloca i64, align 8
   %ife_result = alloca i64, align 8
   %concrete_str = alloca ptr, align 8
   %concrete = alloca ptr, align 8
@@ -111913,8 +111969,8 @@ entry:
 
 match_end:                                        ; preds = %ife_end, %march_arm
   %match_val = load i64, ptr %match_result, align 8
-  %cast79 = inttoptr i64 %match_val to ptr
-  ret ptr %cast79
+  %cast82 = inttoptr i64 %match_val to ptr
+  ret ptr %cast82
 
 march_arm:                                        ; preds = %entry
   %bag2 = load ptr, ptr %bag, align 8
@@ -111963,16 +112019,20 @@ march_arm3:                                       ; preds = %march_next
   %tag_ptr17 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %9, i32 0, i32 0
   store i64 6952779173258, ptr %tag_ptr17, align 8
   %pay_ptr = getelementptr inbounds nuw %"core::ast::ValueType", ptr %9, i32 0, i32 1
-  %10 = call ptr @forge_rc_alloc(i64 8)
+  %10 = call ptr @forge_rc_alloc(i64 16)
   store ptr %10, ptr %pay_ptr, align 8
   %pname18 = load ptr, ptr %pname6, align 8
   %slot_base = ptrtoint ptr %10 to i64
   %slot_addr = add i64 %slot_base, 0
   %slot = inttoptr i64 %slot_addr to ptr
   store ptr %pname18, ptr %slot, align 8
-  %cast19 = ptrtoint ptr %9 to i64
-  %cast20 = inttoptr i64 %cast19 to ptr
-  %11 = call i1 @"core::ast::vtype_eq"(ptr %concrete16, ptr %cast20)
+  %slot_base19 = ptrtoint ptr %10 to i64
+  %slot_addr20 = add i64 %slot_base19, 8
+  %slot21 = inttoptr i64 %slot_addr20 to ptr
+  store i64 0, ptr %slot21, align 8
+  %cast22 = ptrtoint ptr %9 to i64
+  %cast23 = inttoptr i64 %cast22 to ptr
+  %11 = call i1 @"core::ast::vtype_eq"(ptr %concrete16, ptr %cast23)
   %widen = zext i1 %11 to i64
   %ife_cond = icmp ne i64 %widen, 0
   br i1 %ife_cond, label %ife_then, label %ife_else
@@ -111981,119 +112041,119 @@ march_next4:                                      ; preds = %march_next
   call void @forge_match_unreachable(ptr @.match_fn.9701, i64 %tag, ptr @mu_file.9702, i64 307)
   unreachable
 
-ife_end:                                          ; preds = %ife_end54, %ife_then
-  %ife_val69 = load i64, ptr %ife_result, align 8
-  %cast70 = inttoptr i64 %ife_val69 to ptr
-  store ptr %cast70, ptr %updated, align 8
-  %next71 = load ptr, ptr %next12, align 8
-  %ta72 = load ptr, ptr %ta, align 8
-  %name73 = load ptr, ptr %name, align 8
-  %line74 = load i64, ptr %line, align 8
-  %col75 = load i64, ptr %col, align 8
-  %updated76 = load ptr, ptr %updated, align 8
-  %ti77 = load ptr, ptr %ti, align 8
-  %12 = call ptr @"features::generics::mono::check_resolved"(ptr %next71, ptr %ta72, ptr %name73, i64 %line74, i64 %col75, ptr %updated76, ptr %ti77)
-  %cast78 = ptrtoint ptr %12 to i64
-  store i64 %cast78, ptr %match_result, align 8
+ife_end:                                          ; preds = %ife_end57, %ife_then
+  %ife_val72 = load i64, ptr %ife_result, align 8
+  %cast73 = inttoptr i64 %ife_val72 to ptr
+  store ptr %cast73, ptr %updated, align 8
+  %next74 = load ptr, ptr %next12, align 8
+  %ta75 = load ptr, ptr %ta, align 8
+  %name76 = load ptr, ptr %name, align 8
+  %line77 = load i64, ptr %line, align 8
+  %col78 = load i64, ptr %col, align 8
+  %updated79 = load ptr, ptr %updated, align 8
+  %ti80 = load ptr, ptr %ti, align 8
+  %12 = call ptr @"features::generics::mono::check_resolved"(ptr %next74, ptr %ta75, ptr %name76, i64 %line77, i64 %col78, ptr %updated79, ptr %ti80)
+  %cast81 = ptrtoint ptr %12 to i64
+  store i64 %cast81, ptr %match_result, align 8
   br label %match_end
 
 ife_then:                                         ; preds = %march_arm3
-  %bag21 = load ptr, ptr %bag, align 8
+  %bag24 = load ptr, ptr %bag, align 8
   %13 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr22 = getelementptr inbounds nuw %"diagnostics::DiagCode", ptr %13, i32 0, i32 0
-  store i64 -9209943051938217969, ptr %tag_ptr22, align 8
-  %pay_ptr23 = getelementptr inbounds nuw %"diagnostics::DiagCode", ptr %13, i32 0, i32 1
-  store ptr null, ptr %pay_ptr23, align 8
-  %cast24 = ptrtoint ptr %13 to i64
-  %pname25 = load ptr, ptr %pname6, align 8
+  %tag_ptr25 = getelementptr inbounds nuw %"diagnostics::DiagCode", ptr %13, i32 0, i32 0
+  store i64 -9209943051938217969, ptr %tag_ptr25, align 8
+  %pay_ptr26 = getelementptr inbounds nuw %"diagnostics::DiagCode", ptr %13, i32 0, i32 1
+  store ptr null, ptr %pay_ptr26, align 8
+  %cast27 = ptrtoint ptr %13 to i64
+  %pname28 = load ptr, ptr %pname6, align 8
   %14 = call i64 @strlen(ptr @.str.9697)
-  %15 = call i64 @strlen(ptr %pname25)
+  %15 = call i64 @strlen(ptr %pname28)
   %concat_total = add i64 %14, %15
   %concat_size = add i64 %concat_total, 1
   %16 = call ptr @forge_rc_alloc(i64 %concat_size)
   %17 = call ptr @memcpy(ptr %16, ptr @.str.9697, i64 %14)
-  %cast26 = ptrtoint ptr %16 to i64
-  %dst2_int = add i64 %cast26, %14
-  %cast27 = inttoptr i64 %dst2_int to ptr
+  %cast29 = ptrtoint ptr %16 to i64
+  %dst2_int = add i64 %cast29, %14
+  %cast30 = inttoptr i64 %dst2_int to ptr
   %rhs_len_p1 = add i64 %15, 1
-  %18 = call ptr @memcpy(ptr %cast27, ptr %pname25, i64 %rhs_len_p1)
+  %18 = call ptr @memcpy(ptr %cast30, ptr %pname28, i64 %rhs_len_p1)
   %19 = call i64 @strlen(ptr %16)
   %20 = call i64 @strlen(ptr @.str.9698)
-  %concat_total28 = add i64 %19, %20
-  %concat_size29 = add i64 %concat_total28, 1
-  %21 = call ptr @forge_rc_alloc(i64 %concat_size29)
+  %concat_total31 = add i64 %19, %20
+  %concat_size32 = add i64 %concat_total31, 1
+  %21 = call ptr @forge_rc_alloc(i64 %concat_size32)
   %22 = call ptr @memcpy(ptr %21, ptr %16, i64 %19)
-  %cast30 = ptrtoint ptr %21 to i64
-  %dst2_int31 = add i64 %cast30, %19
-  %cast32 = inttoptr i64 %dst2_int31 to ptr
-  %rhs_len_p133 = add i64 %20, 1
-  %23 = call ptr @memcpy(ptr %cast32, ptr @.str.9698, i64 %rhs_len_p133)
-  %name34 = load ptr, ptr %name, align 8
+  %cast33 = ptrtoint ptr %21 to i64
+  %dst2_int34 = add i64 %cast33, %19
+  %cast35 = inttoptr i64 %dst2_int34 to ptr
+  %rhs_len_p136 = add i64 %20, 1
+  %23 = call ptr @memcpy(ptr %cast35, ptr @.str.9698, i64 %rhs_len_p136)
+  %name37 = load ptr, ptr %name, align 8
   %24 = call i64 @strlen(ptr %21)
-  %25 = call i64 @strlen(ptr %name34)
-  %concat_total35 = add i64 %24, %25
-  %concat_size36 = add i64 %concat_total35, 1
-  %26 = call ptr @forge_rc_alloc(i64 %concat_size36)
+  %25 = call i64 @strlen(ptr %name37)
+  %concat_total38 = add i64 %24, %25
+  %concat_size39 = add i64 %concat_total38, 1
+  %26 = call ptr @forge_rc_alloc(i64 %concat_size39)
   %27 = call ptr @memcpy(ptr %26, ptr %21, i64 %24)
-  %cast37 = ptrtoint ptr %26 to i64
-  %dst2_int38 = add i64 %cast37, %24
-  %cast39 = inttoptr i64 %dst2_int38 to ptr
-  %rhs_len_p140 = add i64 %25, 1
-  %28 = call ptr @memcpy(ptr %cast39, ptr %name34, i64 %rhs_len_p140)
+  %cast40 = ptrtoint ptr %26 to i64
+  %dst2_int41 = add i64 %cast40, %24
+  %cast42 = inttoptr i64 %dst2_int41 to ptr
+  %rhs_len_p143 = add i64 %25, 1
+  %28 = call ptr @memcpy(ptr %cast42, ptr %name37, i64 %rhs_len_p143)
   %29 = call i64 @strlen(ptr %26)
   %30 = call i64 @strlen(ptr @.str.9699)
-  %concat_total41 = add i64 %29, %30
-  %concat_size42 = add i64 %concat_total41, 1
-  %31 = call ptr @forge_rc_alloc(i64 %concat_size42)
+  %concat_total44 = add i64 %29, %30
+  %concat_size45 = add i64 %concat_total44, 1
+  %31 = call ptr @forge_rc_alloc(i64 %concat_size45)
   %32 = call ptr @memcpy(ptr %31, ptr %26, i64 %29)
-  %cast43 = ptrtoint ptr %31 to i64
-  %dst2_int44 = add i64 %cast43, %29
-  %cast45 = inttoptr i64 %dst2_int44 to ptr
-  %rhs_len_p146 = add i64 %30, 1
-  %33 = call ptr @memcpy(ptr %cast45, ptr @.str.9699, i64 %rhs_len_p146)
-  %line47 = load i64, ptr %line, align 8
-  %col48 = load i64, ptr %col, align 8
-  %34 = call ptr @"diagnostics::span_new"(i64 0, i64 0, i64 %line47, i64 %col48)
-  %cast49 = inttoptr i64 %cast24 to ptr
-  %35 = call ptr @"diagnostics::diag_error"(ptr %cast49, ptr %31, ptr %34)
-  %36 = call ptr @"diagnostics::bag_report"(ptr %bag21, ptr %35)
-  %cast50 = ptrtoint ptr %36 to i64
-  store i64 %cast50, ptr %ife_result, align 8
+  %cast46 = ptrtoint ptr %31 to i64
+  %dst2_int47 = add i64 %cast46, %29
+  %cast48 = inttoptr i64 %dst2_int47 to ptr
+  %rhs_len_p149 = add i64 %30, 1
+  %33 = call ptr @memcpy(ptr %cast48, ptr @.str.9699, i64 %rhs_len_p149)
+  %line50 = load i64, ptr %line, align 8
+  %col51 = load i64, ptr %col, align 8
+  %34 = call ptr @"diagnostics::span_new"(i64 0, i64 0, i64 %line50, i64 %col51)
+  %cast52 = inttoptr i64 %cast27 to ptr
+  %35 = call ptr @"diagnostics::diag_error"(ptr %cast52, ptr %31, ptr %34)
+  %36 = call ptr @"diagnostics::bag_report"(ptr %bag24, ptr %35)
+  %cast53 = ptrtoint ptr %36 to i64
+  store i64 %cast53, ptr %ife_result, align 8
   br label %ife_end
 
 ife_else:                                         ; preds = %march_arm3
-  %bounds51 = load ptr, ptr %bounds9, align 8
-  %37 = call i32 @strcmp(ptr %bounds51, ptr @.str.9700)
-  %widen52 = sext i32 %37 to i64
-  %streq_cmp = icmp ne i64 %widen52, 0
+  %bounds54 = load ptr, ptr %bounds9, align 8
+  %37 = call i32 @strcmp(ptr %bounds54, ptr @.str.9700)
+  %widen55 = sext i32 %37 to i64
+  %streq_cmp = icmp ne i64 %widen55, 0
   %streq_ext = zext i1 %streq_cmp to i64
-  %ife_cond55 = icmp ne i64 %streq_ext, 0
-  br i1 %ife_cond55, label %ife_then56, label %ife_else57
+  %ife_cond58 = icmp ne i64 %streq_ext, 0
+  br i1 %ife_cond58, label %ife_then59, label %ife_else60
 
-ife_end54:                                        ; preds = %ife_else57, %ife_then56
-  %ife_val = load i64, ptr %ife_result53, align 8
+ife_end57:                                        ; preds = %ife_else60, %ife_then59
+  %ife_val = load i64, ptr %ife_result56, align 8
   store i64 %ife_val, ptr %ife_result, align 8
   br label %ife_end
 
-ife_then56:                                       ; preds = %ife_else
-  %concrete_str58 = load ptr, ptr %concrete_str, align 8
-  %bounds59 = load ptr, ptr %bounds9, align 8
-  %name60 = load ptr, ptr %name, align 8
-  %pname61 = load ptr, ptr %pname6, align 8
-  %line62 = load i64, ptr %line, align 8
-  %col63 = load i64, ptr %col, align 8
-  %bag64 = load ptr, ptr %bag, align 8
-  %ti65 = load ptr, ptr %ti, align 8
-  %38 = call ptr @"features::generics::mono::check_type_bounds"(ptr %concrete_str58, ptr %bounds59, ptr %name60, ptr %pname61, i64 %line62, i64 %col63, ptr %bag64, ptr %ti65)
-  %cast66 = ptrtoint ptr %38 to i64
-  store i64 %cast66, ptr %ife_result53, align 8
-  br label %ife_end54
-
-ife_else57:                                       ; preds = %ife_else
+ife_then59:                                       ; preds = %ife_else
+  %concrete_str61 = load ptr, ptr %concrete_str, align 8
+  %bounds62 = load ptr, ptr %bounds9, align 8
+  %name63 = load ptr, ptr %name, align 8
+  %pname64 = load ptr, ptr %pname6, align 8
+  %line65 = load i64, ptr %line, align 8
+  %col66 = load i64, ptr %col, align 8
   %bag67 = load ptr, ptr %bag, align 8
-  %cast68 = ptrtoint ptr %bag67 to i64
-  store i64 %cast68, ptr %ife_result53, align 8
-  br label %ife_end54
+  %ti68 = load ptr, ptr %ti, align 8
+  %38 = call ptr @"features::generics::mono::check_type_bounds"(ptr %concrete_str61, ptr %bounds62, ptr %name63, ptr %pname64, i64 %line65, i64 %col66, ptr %bag67, ptr %ti68)
+  %cast69 = ptrtoint ptr %38 to i64
+  store i64 %cast69, ptr %ife_result56, align 8
+  br label %ife_end57
+
+ife_else60:                                       ; preds = %ife_else
+  %bag70 = load ptr, ptr %bag, align 8
+  %cast71 = ptrtoint ptr %bag70 to i64
+  store i64 %cast71, ptr %ife_result56, align 8
+  br label %ife_end57
 }
 
 define ptr @"features::generics::mono::check_type_bounds"(ptr %0, ptr %1, ptr %2, ptr %3, i64 %4, i64 %5, ptr %6, ptr %7) {
@@ -113069,8 +113129,8 @@ entry:
 
 match_end:                                        ; preds = %ifcont, %march_arm
   %match_val = load i64, ptr %match_result, align 8
-  %cast17 = trunc i64 %match_val to i1
-  ret i1 %cast17
+  %cast20 = trunc i64 %match_val to i1
+  ret i1 %cast20
 
 march_arm:                                        ; preds = %entry
   store i64 1, ptr %match_result, align 8
@@ -113104,16 +113164,20 @@ march_arm2:                                       ; preds = %march_next
   %tag_ptr11 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %3, i32 0, i32 0
   store i64 6952779173258, ptr %tag_ptr11, align 8
   %pay_ptr = getelementptr inbounds nuw %"core::ast::ValueType", ptr %3, i32 0, i32 1
-  %4 = call ptr @forge_rc_alloc(i64 8)
+  %4 = call ptr @forge_rc_alloc(i64 16)
   store ptr %4, ptr %pay_ptr, align 8
   %pname12 = load ptr, ptr %pname5, align 8
   %slot_base = ptrtoint ptr %4 to i64
   %slot_addr = add i64 %slot_base, 0
   %slot = inttoptr i64 %slot_addr to ptr
   store ptr %pname12, ptr %slot, align 8
+  %slot_base13 = ptrtoint ptr %4 to i64
+  %slot_addr14 = add i64 %slot_base13, 8
+  %slot15 = inttoptr i64 %slot_addr14 to ptr
+  store i64 0, ptr %slot15, align 8
   %cast = ptrtoint ptr %3 to i64
-  %cast13 = inttoptr i64 %cast to ptr
-  %5 = call i1 @"core::ast::vtype_eq"(ptr %2, ptr %cast13)
+  %cast16 = inttoptr i64 %cast to ptr
+  %5 = call i1 @"core::ast::vtype_eq"(ptr %2, ptr %cast16)
   %widen = zext i1 %5 to i64
   %if_cond = icmp ne i64 %widen, 0
   br i1 %if_cond, label %if_then, label %if_else
@@ -113123,11 +113187,11 @@ march_next3:                                      ; preds = %march_next
   unreachable
 
 ifcont:                                           ; preds = %if_else
-  %next14 = load ptr, ptr %next8, align 8
-  %ta15 = load ptr, ptr %ta, align 8
-  %6 = call i1 @"features::generics::mono::all_resolved"(ptr %next14, ptr %ta15)
-  %widen16 = zext i1 %6 to i64
-  store i64 %widen16, ptr %match_result, align 8
+  %next17 = load ptr, ptr %next8, align 8
+  %ta18 = load ptr, ptr %ta, align 8
+  %6 = call i1 @"features::generics::mono::all_resolved"(ptr %next17, ptr %ta18)
+  %widen19 = zext i1 %6 to i64
+  store i64 %widen19, ptr %match_result, align 8
   br label %match_end
 
 if_then:                                          ; preds = %march_arm2
@@ -117667,12 +117731,12 @@ march_next112:                                    ; preds = %march_next93
 
 define ptr @"features::generics::mono::substitute_vtype"(ptr %0, ptr %1) {
 entry:
-  %ret150 = alloca ptr, align 8
-  %n143 = alloca i64, align 8
-  %ret129 = alloca ptr, align 8
-  %elems111 = alloca ptr, align 8
-  %args93 = alloca ptr, align 8
-  %name90 = alloca ptr, align 8
+  %ret156 = alloca ptr, align 8
+  %n149 = alloca i64, align 8
+  %ret135 = alloca ptr, align 8
+  %elems117 = alloca ptr, align 8
+  %args96 = alloca ptr, align 8
+  %name93 = alloca ptr, align 8
   %inner68 = alloca ptr, align 8
   %name65 = alloca ptr, align 8
   %ret42 = alloca ptr, align 8
@@ -117694,10 +117758,10 @@ entry:
   %tag_eq = icmp eq i64 %tag, 6952779173258
   br i1 %tag_eq, label %march_arm, label %march_next
 
-match_end:                                        ; preds = %march_arm163, %march_arm138, %march_arm120, %march_arm106, %march_arm81, %march_arm56, %march_arm34, %march_arm20, %march_arm10, %sif_end
+match_end:                                        ; preds = %march_arm169, %march_arm144, %march_arm126, %march_arm112, %march_arm84, %march_arm56, %march_arm34, %march_arm20, %march_arm10, %sif_end
   %match_val = load i64, ptr %match_result, align 8
-  %cast167 = inttoptr i64 %match_val to ptr
-  ret ptr %cast167
+  %cast173 = inttoptr i64 %match_val to ptr
+  ret ptr %cast173
 
 march_arm:                                        ; preds = %entry
   %pay_slot = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
@@ -117869,7 +117933,7 @@ march_arm56:                                      ; preds = %march_next35
   %tag_ptr69 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %14, i32 0, i32 0
   store i64 229434674264369, ptr %tag_ptr69, align 8
   %pay_ptr70 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %14, i32 0, i32 1
-  %15 = call ptr @forge_rc_alloc(i64 16)
+  %15 = call ptr @forge_rc_alloc(i64 24)
   store ptr %15, ptr %pay_ptr70, align 8
   %name71 = load ptr, ptr %name65, align 8
   %slot_base72 = ptrtoint ptr %15 to i64
@@ -117883,165 +117947,173 @@ march_arm56:                                      ; preds = %march_next35
   %slot_addr78 = add i64 %slot_base77, 8
   %slot79 = inttoptr i64 %slot_addr78 to ptr
   store ptr %16, ptr %slot79, align 8
-  %cast80 = ptrtoint ptr %14 to i64
-  store i64 %cast80, ptr %match_result, align 8
+  %slot_base80 = ptrtoint ptr %15 to i64
+  %slot_addr81 = add i64 %slot_base80, 16
+  %slot82 = inttoptr i64 %slot_addr81 to ptr
+  store i64 0, ptr %slot82, align 8
+  %cast83 = ptrtoint ptr %14 to i64
+  store i64 %cast83, ptr %match_result, align 8
   br label %match_end
 
 march_next57:                                     ; preds = %march_next35
-  %tag_eq83 = icmp eq i64 %tag, 6384044314
-  br i1 %tag_eq83, label %march_arm81, label %march_next82
+  %tag_eq86 = icmp eq i64 %tag, 6384044314
+  br i1 %tag_eq86, label %march_arm84, label %march_next85
 
-march_arm81:                                      ; preds = %march_next57
-  %pay_slot84 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
-  %payload85 = load ptr, ptr %pay_slot84, align 8
-  %name_slot_base86 = ptrtoint ptr %payload85 to i64
-  %name_slot_addr87 = add i64 %name_slot_base86, 0
-  %name_slot88 = inttoptr i64 %name_slot_addr87 to ptr
-  %name89 = load ptr, ptr %name_slot88, align 8
-  call void @forge_rc_retain(ptr %name89)
-  store ptr %name89, ptr %name90, align 8
-  %pay_slot91 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
-  %payload92 = load ptr, ptr %pay_slot91, align 8
-  %args_slot_base = ptrtoint ptr %payload92 to i64
+march_arm84:                                      ; preds = %march_next57
+  %pay_slot87 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
+  %payload88 = load ptr, ptr %pay_slot87, align 8
+  %name_slot_base89 = ptrtoint ptr %payload88 to i64
+  %name_slot_addr90 = add i64 %name_slot_base89, 0
+  %name_slot91 = inttoptr i64 %name_slot_addr90 to ptr
+  %name92 = load ptr, ptr %name_slot91, align 8
+  call void @forge_rc_retain(ptr %name92)
+  store ptr %name92, ptr %name93, align 8
+  %pay_slot94 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
+  %payload95 = load ptr, ptr %pay_slot94, align 8
+  %args_slot_base = ptrtoint ptr %payload95 to i64
   %args_slot_addr = add i64 %args_slot_base, 8
   %args_slot = inttoptr i64 %args_slot_addr to ptr
   %args = load ptr, ptr %args_slot, align 8
   call void @forge_rc_retain(ptr %args)
-  store ptr %args, ptr %args93, align 8
+  store ptr %args, ptr %args96, align 8
   %17 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr94 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %17, i32 0, i32 0
-  store i64 6384044314, ptr %tag_ptr94, align 8
-  %pay_ptr95 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %17, i32 0, i32 1
-  %18 = call ptr @forge_rc_alloc(i64 16)
-  store ptr %18, ptr %pay_ptr95, align 8
-  %name96 = load ptr, ptr %name90, align 8
-  %slot_base97 = ptrtoint ptr %18 to i64
-  %slot_addr98 = add i64 %slot_base97, 0
-  %slot99 = inttoptr i64 %slot_addr98 to ptr
-  store ptr %name96, ptr %slot99, align 8
-  %args100 = load ptr, ptr %args93, align 8
-  %ta101 = load ptr, ptr %ta, align 8
-  %19 = call ptr @"features::generics::mono::substitute_vtype_list"(ptr %args100, ptr %ta101)
-  %slot_base102 = ptrtoint ptr %18 to i64
-  %slot_addr103 = add i64 %slot_base102, 8
-  %slot104 = inttoptr i64 %slot_addr103 to ptr
-  store ptr %19, ptr %slot104, align 8
-  %cast105 = ptrtoint ptr %17 to i64
-  store i64 %cast105, ptr %match_result, align 8
+  %tag_ptr97 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %17, i32 0, i32 0
+  store i64 6384044314, ptr %tag_ptr97, align 8
+  %pay_ptr98 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %17, i32 0, i32 1
+  %18 = call ptr @forge_rc_alloc(i64 24)
+  store ptr %18, ptr %pay_ptr98, align 8
+  %name99 = load ptr, ptr %name93, align 8
+  %slot_base100 = ptrtoint ptr %18 to i64
+  %slot_addr101 = add i64 %slot_base100, 0
+  %slot102 = inttoptr i64 %slot_addr101 to ptr
+  store ptr %name99, ptr %slot102, align 8
+  %args103 = load ptr, ptr %args96, align 8
+  %ta104 = load ptr, ptr %ta, align 8
+  %19 = call ptr @"features::generics::mono::substitute_vtype_list"(ptr %args103, ptr %ta104)
+  %slot_base105 = ptrtoint ptr %18 to i64
+  %slot_addr106 = add i64 %slot_base105, 8
+  %slot107 = inttoptr i64 %slot_addr106 to ptr
+  store ptr %19, ptr %slot107, align 8
+  %slot_base108 = ptrtoint ptr %18 to i64
+  %slot_addr109 = add i64 %slot_base108, 16
+  %slot110 = inttoptr i64 %slot_addr109 to ptr
+  store i64 0, ptr %slot110, align 8
+  %cast111 = ptrtoint ptr %17 to i64
+  store i64 %cast111, ptr %match_result, align 8
   br label %match_end
 
-march_next82:                                     ; preds = %march_next57
-  %tag_eq108 = icmp eq i64 %tag, 210691497359
-  br i1 %tag_eq108, label %march_arm106, label %march_next107
+march_next85:                                     ; preds = %march_next57
+  %tag_eq114 = icmp eq i64 %tag, 210691497359
+  br i1 %tag_eq114, label %march_arm112, label %march_next113
 
-march_arm106:                                     ; preds = %march_next82
-  %pay_slot109 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
-  %payload110 = load ptr, ptr %pay_slot109, align 8
-  %elems_slot_base = ptrtoint ptr %payload110 to i64
+march_arm112:                                     ; preds = %march_next85
+  %pay_slot115 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
+  %payload116 = load ptr, ptr %pay_slot115, align 8
+  %elems_slot_base = ptrtoint ptr %payload116 to i64
   %elems_slot_addr = add i64 %elems_slot_base, 0
   %elems_slot = inttoptr i64 %elems_slot_addr to ptr
   %elems = load ptr, ptr %elems_slot, align 8
   call void @forge_rc_retain(ptr %elems)
-  store ptr %elems, ptr %elems111, align 8
+  store ptr %elems, ptr %elems117, align 8
   %20 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr112 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %20, i32 0, i32 0
-  store i64 210691497359, ptr %tag_ptr112, align 8
-  %pay_ptr113 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %20, i32 0, i32 1
+  %tag_ptr118 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %20, i32 0, i32 0
+  store i64 210691497359, ptr %tag_ptr118, align 8
+  %pay_ptr119 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %20, i32 0, i32 1
   %21 = call ptr @forge_rc_alloc(i64 8)
-  store ptr %21, ptr %pay_ptr113, align 8
-  %elems114 = load ptr, ptr %elems111, align 8
-  %ta115 = load ptr, ptr %ta, align 8
-  %22 = call ptr @"features::generics::mono::substitute_vtype_list"(ptr %elems114, ptr %ta115)
-  %slot_base116 = ptrtoint ptr %21 to i64
-  %slot_addr117 = add i64 %slot_base116, 0
-  %slot118 = inttoptr i64 %slot_addr117 to ptr
-  store ptr %22, ptr %slot118, align 8
-  %cast119 = ptrtoint ptr %20 to i64
-  store i64 %cast119, ptr %match_result, align 8
+  store ptr %21, ptr %pay_ptr119, align 8
+  %elems120 = load ptr, ptr %elems117, align 8
+  %ta121 = load ptr, ptr %ta, align 8
+  %22 = call ptr @"features::generics::mono::substitute_vtype_list"(ptr %elems120, ptr %ta121)
+  %slot_base122 = ptrtoint ptr %21 to i64
+  %slot_addr123 = add i64 %slot_base122, 0
+  %slot124 = inttoptr i64 %slot_addr123 to ptr
+  store ptr %22, ptr %slot124, align 8
+  %cast125 = ptrtoint ptr %20 to i64
+  store i64 %cast125, ptr %match_result, align 8
   br label %match_end
 
-march_next107:                                    ; preds = %march_next82
-  %tag_eq122 = icmp eq i64 %tag, 5862329
-  br i1 %tag_eq122, label %march_arm120, label %march_next121
+march_next113:                                    ; preds = %march_next85
+  %tag_eq128 = icmp eq i64 %tag, 5862329
+  br i1 %tag_eq128, label %march_arm126, label %march_next127
 
-march_arm120:                                     ; preds = %march_next107
-  %pay_slot123 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
-  %payload124 = load ptr, ptr %pay_slot123, align 8
-  %ret_slot_base125 = ptrtoint ptr %payload124 to i64
-  %ret_slot_addr126 = add i64 %ret_slot_base125, 0
-  %ret_slot127 = inttoptr i64 %ret_slot_addr126 to ptr
-  %ret128 = load ptr, ptr %ret_slot127, align 8
-  call void @forge_rc_retain(ptr %ret128)
-  store ptr %ret128, ptr %ret129, align 8
+march_arm126:                                     ; preds = %march_next113
+  %pay_slot129 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
+  %payload130 = load ptr, ptr %pay_slot129, align 8
+  %ret_slot_base131 = ptrtoint ptr %payload130 to i64
+  %ret_slot_addr132 = add i64 %ret_slot_base131, 0
+  %ret_slot133 = inttoptr i64 %ret_slot_addr132 to ptr
+  %ret134 = load ptr, ptr %ret_slot133, align 8
+  call void @forge_rc_retain(ptr %ret134)
+  store ptr %ret134, ptr %ret135, align 8
   %23 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr130 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %23, i32 0, i32 0
-  store i64 5862329, ptr %tag_ptr130, align 8
-  %pay_ptr131 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %23, i32 0, i32 1
+  %tag_ptr136 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %23, i32 0, i32 0
+  store i64 5862329, ptr %tag_ptr136, align 8
+  %pay_ptr137 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %23, i32 0, i32 1
   %24 = call ptr @forge_rc_alloc(i64 8)
-  store ptr %24, ptr %pay_ptr131, align 8
-  %ret132 = load ptr, ptr %ret129, align 8
-  %ta133 = load ptr, ptr %ta, align 8
-  %25 = call ptr @"features::generics::mono::substitute_vtype"(ptr %ret132, ptr %ta133)
-  %slot_base134 = ptrtoint ptr %24 to i64
-  %slot_addr135 = add i64 %slot_base134, 0
-  %slot136 = inttoptr i64 %slot_addr135 to ptr
-  store ptr %25, ptr %slot136, align 8
-  %cast137 = ptrtoint ptr %23 to i64
-  store i64 %cast137, ptr %match_result, align 8
+  store ptr %24, ptr %pay_ptr137, align 8
+  %ret138 = load ptr, ptr %ret135, align 8
+  %ta139 = load ptr, ptr %ta, align 8
+  %25 = call ptr @"features::generics::mono::substitute_vtype"(ptr %ret138, ptr %ta139)
+  %slot_base140 = ptrtoint ptr %24 to i64
+  %slot_addr141 = add i64 %slot_base140, 0
+  %slot142 = inttoptr i64 %slot_addr141 to ptr
+  store ptr %25, ptr %slot142, align 8
+  %cast143 = ptrtoint ptr %23 to i64
+  store i64 %cast143, ptr %match_result, align 8
   br label %match_end
 
-march_next121:                                    ; preds = %march_next107
-  %tag_eq140 = icmp eq i64 %tag, 229420732536866
-  br i1 %tag_eq140, label %march_arm138, label %march_next139
+march_next127:                                    ; preds = %march_next113
+  %tag_eq146 = icmp eq i64 %tag, 229420732536866
+  br i1 %tag_eq146, label %march_arm144, label %march_next145
 
-march_arm138:                                     ; preds = %march_next121
-  %pay_slot141 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
-  %payload142 = load ptr, ptr %pay_slot141, align 8
-  %n_slot_base = ptrtoint ptr %payload142 to i64
+march_arm144:                                     ; preds = %march_next127
+  %pay_slot147 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
+  %payload148 = load ptr, ptr %pay_slot147, align 8
+  %n_slot_base = ptrtoint ptr %payload148 to i64
   %n_slot_addr = add i64 %n_slot_base, 0
   %n_slot = inttoptr i64 %n_slot_addr to ptr
   %n = load i64, ptr %n_slot, align 8
-  store i64 %n, ptr %n143, align 8
-  %pay_slot144 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
-  %payload145 = load ptr, ptr %pay_slot144, align 8
-  %ret_slot_base146 = ptrtoint ptr %payload145 to i64
-  %ret_slot_addr147 = add i64 %ret_slot_base146, 8
-  %ret_slot148 = inttoptr i64 %ret_slot_addr147 to ptr
-  %ret149 = load ptr, ptr %ret_slot148, align 8
-  call void @forge_rc_retain(ptr %ret149)
-  store ptr %ret149, ptr %ret150, align 8
+  store i64 %n, ptr %n149, align 8
+  %pay_slot150 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
+  %payload151 = load ptr, ptr %pay_slot150, align 8
+  %ret_slot_base152 = ptrtoint ptr %payload151 to i64
+  %ret_slot_addr153 = add i64 %ret_slot_base152, 8
+  %ret_slot154 = inttoptr i64 %ret_slot_addr153 to ptr
+  %ret155 = load ptr, ptr %ret_slot154, align 8
+  call void @forge_rc_retain(ptr %ret155)
+  store ptr %ret155, ptr %ret156, align 8
   %26 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr151 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %26, i32 0, i32 0
-  store i64 229420732536866, ptr %tag_ptr151, align 8
-  %pay_ptr152 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %26, i32 0, i32 1
+  %tag_ptr157 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %26, i32 0, i32 0
+  store i64 229420732536866, ptr %tag_ptr157, align 8
+  %pay_ptr158 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %26, i32 0, i32 1
   %27 = call ptr @forge_rc_alloc(i64 16)
-  store ptr %27, ptr %pay_ptr152, align 8
-  %n153 = load i64, ptr %n143, align 8
-  %slot_base154 = ptrtoint ptr %27 to i64
-  %slot_addr155 = add i64 %slot_base154, 0
-  %slot156 = inttoptr i64 %slot_addr155 to ptr
-  store i64 %n153, ptr %slot156, align 8
-  %ret157 = load ptr, ptr %ret150, align 8
-  %ta158 = load ptr, ptr %ta, align 8
-  %28 = call ptr @"features::generics::mono::substitute_vtype"(ptr %ret157, ptr %ta158)
-  %slot_base159 = ptrtoint ptr %27 to i64
-  %slot_addr160 = add i64 %slot_base159, 8
-  %slot161 = inttoptr i64 %slot_addr160 to ptr
-  store ptr %28, ptr %slot161, align 8
-  %cast162 = ptrtoint ptr %26 to i64
-  store i64 %cast162, ptr %match_result, align 8
+  store ptr %27, ptr %pay_ptr158, align 8
+  %n159 = load i64, ptr %n149, align 8
+  %slot_base160 = ptrtoint ptr %27 to i64
+  %slot_addr161 = add i64 %slot_base160, 0
+  %slot162 = inttoptr i64 %slot_addr161 to ptr
+  store i64 %n159, ptr %slot162, align 8
+  %ret163 = load ptr, ptr %ret156, align 8
+  %ta164 = load ptr, ptr %ta, align 8
+  %28 = call ptr @"features::generics::mono::substitute_vtype"(ptr %ret163, ptr %ta164)
+  %slot_base165 = ptrtoint ptr %27 to i64
+  %slot_addr166 = add i64 %slot_base165, 8
+  %slot167 = inttoptr i64 %slot_addr166 to ptr
+  store ptr %28, ptr %slot167, align 8
+  %cast168 = ptrtoint ptr %26 to i64
+  store i64 %cast168, ptr %match_result, align 8
   br label %match_end
 
-march_next139:                                    ; preds = %march_next121
-  br label %march_arm163
+march_next145:                                    ; preds = %march_next127
+  br label %march_arm169
 
-march_arm163:                                     ; preds = %march_next139
-  %vt165 = load ptr, ptr %vt, align 8
-  %cast166 = ptrtoint ptr %vt165 to i64
-  store i64 %cast166, ptr %match_result, align 8
+march_arm169:                                     ; preds = %march_next145
+  %vt171 = load ptr, ptr %vt, align 8
+  %cast172 = ptrtoint ptr %vt171 to i64
+  store i64 %cast172, ptr %match_result, align 8
   br label %match_end
 
-march_next164:                                    ; No predecessors!
+march_next170:                                    ; No predecessors!
   call void @forge_match_unreachable(ptr @.match_fn.9948, i64 %tag, ptr @mu_file.9949, i64 727)
   unreachable
 }
@@ -120926,7 +120998,7 @@ entry:
   %right = alloca ptr, align 8
   %left = alloca ptr, align 8
   %pipe = alloca i64, align 8
-  %args55 = alloca ptr, align 8
+  %args58 = alloca ptr, align 8
   %dunder = alloca i64, align 8
   %args = alloca ptr, align 8
   %args_str = alloca ptr, align 8
@@ -120998,14 +121070,14 @@ if_else:                                          ; preds = %sc_merge
   br label %ifcont
 
 ifcont10:                                         ; preds = %if_else13
-  %ty44 = load ptr, ptr %ty, align 8
-  %8 = call i64 @"features::generics::mono::find_dunder"(ptr %ty44)
+  %ty47 = load ptr, ptr %ty, align 8
+  %8 = call i64 @"features::generics::mono::find_dunder"(ptr %ty47)
   store i64 %8, ptr %dunder, align 8
-  %dunder45 = load i64, ptr %dunder, align 8
-  %sge46 = icmp sge i64 %dunder45, 0
-  %sge_ext47 = zext i1 %sge46 to i64
-  %if_cond49 = icmp ne i64 %sge_ext47, 0
-  br i1 %if_cond49, label %if_then50, label %if_else51
+  %dunder48 = load i64, ptr %dunder, align 8
+  %sge49 = icmp sge i64 %dunder48, 0
+  %sge_ext50 = zext i1 %sge49 to i64
+  %if_cond52 = icmp ne i64 %sge_ext50, 0
+  br i1 %if_cond52, label %if_then53, label %if_else54
 
 if_then12:                                        ; preds = %ifcont
   %ty14 = load ptr, ptr %ty, align 8
@@ -121047,7 +121119,7 @@ if_then12:                                        ; preds = %ifcont
   %tag_ptr = getelementptr inbounds nuw %"core::ast::ValueType", ptr %15, i32 0, i32 0
   store i64 6384044314, ptr %tag_ptr, align 8
   %pay_ptr = getelementptr inbounds nuw %"core::ast::ValueType", ptr %15, i32 0, i32 1
-  %16 = call ptr @forge_rc_alloc(i64 16)
+  %16 = call ptr @forge_rc_alloc(i64 24)
   store ptr %16, ptr %pay_ptr, align 8
   %base37 = load ptr, ptr %base, align 8
   %slot_base = ptrtoint ptr %16 to i64
@@ -121059,112 +121131,120 @@ if_then12:                                        ; preds = %ifcont
   %slot_addr40 = add i64 %slot_base39, 8
   %slot41 = inttoptr i64 %slot_addr40 to ptr
   store ptr %args38, ptr %slot41, align 8
-  %cast42 = ptrtoint ptr %15 to i64
-  %cast43 = inttoptr i64 %cast42 to ptr
-  ret ptr %cast43
+  %slot_base42 = ptrtoint ptr %16 to i64
+  %slot_addr43 = add i64 %slot_base42, 16
+  %slot44 = inttoptr i64 %slot_addr43 to ptr
+  store i64 0, ptr %slot44, align 8
+  %cast45 = ptrtoint ptr %15 to i64
+  %cast46 = inttoptr i64 %cast45 to ptr
+  ret ptr %cast46
 
 if_else13:                                        ; preds = %ifcont
   br label %ifcont10
 
-ifcont48:                                         ; preds = %if_else51
-  %ty68 = load ptr, ptr %ty, align 8
-  %17 = call i64 @"core::ast::find_type_pipe"(ptr %ty68)
+ifcont51:                                         ; preds = %if_else54
+  %ty74 = load ptr, ptr %ty, align 8
+  %17 = call i64 @"core::ast::find_type_pipe"(ptr %ty74)
   store i64 %17, ptr %pipe, align 8
-  %pipe69 = load i64, ptr %pipe, align 8
-  %sge70 = icmp sge i64 %pipe69, 0
-  %sge_ext71 = zext i1 %sge70 to i64
-  %if_cond73 = icmp ne i64 %sge_ext71, 0
-  br i1 %if_cond73, label %if_then74, label %if_else75
+  %pipe75 = load i64, ptr %pipe, align 8
+  %sge76 = icmp sge i64 %pipe75, 0
+  %sge_ext77 = zext i1 %sge76 to i64
+  %if_cond79 = icmp ne i64 %sge_ext77, 0
+  br i1 %if_cond79, label %if_then80, label %if_else81
 
-if_then50:                                        ; preds = %ifcont10
-  %ty52 = load ptr, ptr %ty, align 8
-  %dunder53 = load i64, ptr %dunder, align 8
-  %add54 = add i64 %dunder53, 2
-  %18 = call ptr @"features::generics::mono::parse_dunder_args"(ptr %ty52, i64 %add54)
-  store ptr %18, ptr %args55, align 8
+if_then53:                                        ; preds = %ifcont10
+  %ty55 = load ptr, ptr %ty, align 8
+  %dunder56 = load i64, ptr %dunder, align 8
+  %add57 = add i64 %dunder56, 2
+  %18 = call ptr @"features::generics::mono::parse_dunder_args"(ptr %ty55, i64 %add57)
+  store ptr %18, ptr %args58, align 8
   %19 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr56 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %19, i32 0, i32 0
-  store i64 6384044314, ptr %tag_ptr56, align 8
-  %pay_ptr57 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %19, i32 0, i32 1
-  %20 = call ptr @forge_rc_alloc(i64 16)
-  store ptr %20, ptr %pay_ptr57, align 8
-  %ty58 = load ptr, ptr %ty, align 8
-  %slot_base59 = ptrtoint ptr %20 to i64
-  %slot_addr60 = add i64 %slot_base59, 0
-  %slot61 = inttoptr i64 %slot_addr60 to ptr
-  store ptr %ty58, ptr %slot61, align 8
-  %args62 = load ptr, ptr %args55, align 8
-  %slot_base63 = ptrtoint ptr %20 to i64
-  %slot_addr64 = add i64 %slot_base63, 8
-  %slot65 = inttoptr i64 %slot_addr64 to ptr
-  store ptr %args62, ptr %slot65, align 8
-  %cast66 = ptrtoint ptr %19 to i64
-  %cast67 = inttoptr i64 %cast66 to ptr
-  ret ptr %cast67
+  %tag_ptr59 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %19, i32 0, i32 0
+  store i64 6384044314, ptr %tag_ptr59, align 8
+  %pay_ptr60 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %19, i32 0, i32 1
+  %20 = call ptr @forge_rc_alloc(i64 24)
+  store ptr %20, ptr %pay_ptr60, align 8
+  %ty61 = load ptr, ptr %ty, align 8
+  %slot_base62 = ptrtoint ptr %20 to i64
+  %slot_addr63 = add i64 %slot_base62, 0
+  %slot64 = inttoptr i64 %slot_addr63 to ptr
+  store ptr %ty61, ptr %slot64, align 8
+  %args65 = load ptr, ptr %args58, align 8
+  %slot_base66 = ptrtoint ptr %20 to i64
+  %slot_addr67 = add i64 %slot_base66, 8
+  %slot68 = inttoptr i64 %slot_addr67 to ptr
+  store ptr %args65, ptr %slot68, align 8
+  %slot_base69 = ptrtoint ptr %20 to i64
+  %slot_addr70 = add i64 %slot_base69, 16
+  %slot71 = inttoptr i64 %slot_addr70 to ptr
+  store i64 0, ptr %slot71, align 8
+  %cast72 = ptrtoint ptr %19 to i64
+  %cast73 = inttoptr i64 %cast72 to ptr
+  ret ptr %cast73
 
-if_else51:                                        ; preds = %ifcont10
-  br label %ifcont48
+if_else54:                                        ; preds = %ifcont10
+  br label %ifcont51
 
-ifcont72:                                         ; preds = %if_else75
-  %ty107 = load ptr, ptr %ty, align 8
-  %21 = call ptr @"core::ast::vtype_from_name"(ptr %ty107)
+ifcont78:                                         ; preds = %if_else81
+  %ty113 = load ptr, ptr %ty, align 8
+  %21 = call ptr @"core::ast::vtype_from_name"(ptr %ty113)
   ret ptr %21
 
-if_then74:                                        ; preds = %ifcont48
-  %ty76 = load ptr, ptr %ty, align 8
-  %pipe77 = load i64, ptr %pipe, align 8
-  %sub_len78 = sub i64 %pipe77, 0
-  %sub_alloc79 = add i64 %sub_len78, 1
-  %22 = call ptr @forge_rc_alloc(i64 %sub_alloc79)
-  %cast80 = ptrtoint ptr %ty76 to i64
-  %sub_off_int81 = add i64 %cast80, 0
-  %cast82 = inttoptr i64 %sub_off_int81 to ptr
-  %23 = call ptr @memcpy(ptr %22, ptr %cast82, i64 %sub_len78)
-  %cast83 = ptrtoint ptr %22 to i64
-  %sub_nul_int84 = add i64 %cast83, %sub_len78
-  %cast85 = inttoptr i64 %sub_nul_int84 to ptr
-  store i8 0, ptr %cast85, align 8
+if_then80:                                        ; preds = %ifcont51
+  %ty82 = load ptr, ptr %ty, align 8
+  %pipe83 = load i64, ptr %pipe, align 8
+  %sub_len84 = sub i64 %pipe83, 0
+  %sub_alloc85 = add i64 %sub_len84, 1
+  %22 = call ptr @forge_rc_alloc(i64 %sub_alloc85)
+  %cast86 = ptrtoint ptr %ty82 to i64
+  %sub_off_int87 = add i64 %cast86, 0
+  %cast88 = inttoptr i64 %sub_off_int87 to ptr
+  %23 = call ptr @memcpy(ptr %22, ptr %cast88, i64 %sub_len84)
+  %cast89 = ptrtoint ptr %22 to i64
+  %sub_nul_int90 = add i64 %cast89, %sub_len84
+  %cast91 = inttoptr i64 %sub_nul_int90 to ptr
+  store i8 0, ptr %cast91, align 8
   %24 = call ptr @forge_str_trim(ptr %22)
   %25 = call ptr @"features::generics::mono::vtype_from_type_string"(ptr %24)
   store ptr %25, ptr %left, align 8
-  %ty86 = load ptr, ptr %ty, align 8
-  %pipe87 = load i64, ptr %pipe, align 8
-  %add88 = add i64 %pipe87, 1
-  %ty89 = load ptr, ptr %ty, align 8
-  %26 = call i64 @strlen(ptr %ty89)
-  %sub_len90 = sub i64 %26, %add88
-  %sub_alloc91 = add i64 %sub_len90, 1
-  %27 = call ptr @forge_rc_alloc(i64 %sub_alloc91)
-  %cast92 = ptrtoint ptr %ty86 to i64
-  %sub_off_int93 = add i64 %cast92, %add88
-  %cast94 = inttoptr i64 %sub_off_int93 to ptr
-  %28 = call ptr @memcpy(ptr %27, ptr %cast94, i64 %sub_len90)
-  %cast95 = ptrtoint ptr %27 to i64
-  %sub_nul_int96 = add i64 %cast95, %sub_len90
-  %cast97 = inttoptr i64 %sub_nul_int96 to ptr
-  store i8 0, ptr %cast97, align 8
+  %ty92 = load ptr, ptr %ty, align 8
+  %pipe93 = load i64, ptr %pipe, align 8
+  %add94 = add i64 %pipe93, 1
+  %ty95 = load ptr, ptr %ty, align 8
+  %26 = call i64 @strlen(ptr %ty95)
+  %sub_len96 = sub i64 %26, %add94
+  %sub_alloc97 = add i64 %sub_len96, 1
+  %27 = call ptr @forge_rc_alloc(i64 %sub_alloc97)
+  %cast98 = ptrtoint ptr %ty92 to i64
+  %sub_off_int99 = add i64 %cast98, %add94
+  %cast100 = inttoptr i64 %sub_off_int99 to ptr
+  %28 = call ptr @memcpy(ptr %27, ptr %cast100, i64 %sub_len96)
+  %cast101 = ptrtoint ptr %27 to i64
+  %sub_nul_int102 = add i64 %cast101, %sub_len96
+  %cast103 = inttoptr i64 %sub_nul_int102 to ptr
+  store i8 0, ptr %cast103, align 8
   %29 = call ptr @forge_str_trim(ptr %27)
   %30 = call ptr @"features::generics::mono::vtype_from_type_string"(ptr %29)
   store ptr %30, ptr %right, align 8
   %31 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr98 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %31, i32 0, i32 0
-  store i64 210692424206, ptr %tag_ptr98, align 8
-  %pay_ptr99 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %31, i32 0, i32 1
+  %tag_ptr104 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %31, i32 0, i32 0
+  store i64 210692424206, ptr %tag_ptr104, align 8
+  %pay_ptr105 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %31, i32 0, i32 1
   %32 = call ptr @forge_rc_alloc(i64 8)
-  store ptr %32, ptr %pay_ptr99, align 8
-  %left100 = load ptr, ptr %left, align 8
-  %right101 = load ptr, ptr %right, align 8
-  %33 = call ptr @"core::ast::union_type_list_merge"(ptr %left100, ptr %right101)
-  %slot_base102 = ptrtoint ptr %32 to i64
-  %slot_addr103 = add i64 %slot_base102, 0
-  %slot104 = inttoptr i64 %slot_addr103 to ptr
-  store ptr %33, ptr %slot104, align 8
-  %cast105 = ptrtoint ptr %31 to i64
-  %cast106 = inttoptr i64 %cast105 to ptr
-  ret ptr %cast106
+  store ptr %32, ptr %pay_ptr105, align 8
+  %left106 = load ptr, ptr %left, align 8
+  %right107 = load ptr, ptr %right, align 8
+  %33 = call ptr @"core::ast::union_type_list_merge"(ptr %left106, ptr %right107)
+  %slot_base108 = ptrtoint ptr %32 to i64
+  %slot_addr109 = add i64 %slot_base108, 0
+  %slot110 = inttoptr i64 %slot_addr109 to ptr
+  store ptr %33, ptr %slot110, align 8
+  %cast111 = ptrtoint ptr %31 to i64
+  %cast112 = inttoptr i64 %cast111 to ptr
+  ret ptr %cast112
 
-if_else75:                                        ; preds = %ifcont48
-  br label %ifcont72
+if_else81:                                        ; preds = %ifcont51
+  br label %ifcont78
 }
 
 define i64 @"features::generics::mono::find_dunder"(ptr %0) {
@@ -177365,7 +177445,7 @@ march_next4:                                      ; preds = %march_next
 
 define ptr @"features::component_decl::expand::splice_component_def"(ptr %0, ptr %1, ptr %2, ptr %3, i64 %4, i64 %5, ptr %6) {
 entry:
-  %methods152 = alloca ptr, align 8
+  %methods155 = alloca ptr, align 8
   %factory = alloca ptr, align 8
   %factory_body = alloca ptr, align 8
   %struct_lit = alloca ptr, align 8
@@ -177629,75 +177709,79 @@ ifcont:                                           ; preds = %if_else
   %tag_ptr133 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %42, i32 0, i32 0
   store i64 6952779173258, ptr %tag_ptr133, align 8
   %pay_ptr134 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %42, i32 0, i32 1
-  %43 = call ptr @forge_rc_alloc(i64 8)
+  %43 = call ptr @forge_rc_alloc(i64 16)
   store ptr %43, ptr %pay_ptr134, align 8
   %type_name135 = load ptr, ptr %type_name, align 8
   %slot_base136 = ptrtoint ptr %43 to i64
   %slot_addr137 = add i64 %slot_base136, 0
   %slot138 = inttoptr i64 %slot_addr137 to ptr
   store ptr %type_name135, ptr %slot138, align 8
-  %cast139 = ptrtoint ptr %42 to i64
-  %slot_base140 = ptrtoint ptr %35 to i64
-  %slot_addr141 = add i64 %slot_base140, 24
-  %slot142 = inttoptr i64 %slot_addr141 to ptr
-  %cast143 = inttoptr i64 %cast139 to ptr
-  store ptr %cast143, ptr %slot142, align 8
-  %factory_body144 = load ptr, ptr %factory_body, align 8
-  %slot_base145 = ptrtoint ptr %35 to i64
-  %slot_addr146 = add i64 %slot_base145, 32
-  %slot147 = inttoptr i64 %slot_addr146 to ptr
-  store ptr %factory_body144, ptr %slot147, align 8
-  %cast148 = ptrtoint ptr %34 to i64
-  %cast149 = inttoptr i64 %cast148 to ptr
-  store ptr %cast149, ptr %factory, align 8
-  %body150 = load ptr, ptr %body, align 8
-  %name151 = load ptr, ptr %name, align 8
-  %44 = call ptr @"features::component_decl::expand::extract_methods"(ptr %body150, ptr %name151)
-  store ptr %44, ptr %methods152, align 8
+  %slot_base139 = ptrtoint ptr %43 to i64
+  %slot_addr140 = add i64 %slot_base139, 8
+  %slot141 = inttoptr i64 %slot_addr140 to ptr
+  store i64 0, ptr %slot141, align 8
+  %cast142 = ptrtoint ptr %42 to i64
+  %slot_base143 = ptrtoint ptr %35 to i64
+  %slot_addr144 = add i64 %slot_base143, 24
+  %slot145 = inttoptr i64 %slot_addr144 to ptr
+  %cast146 = inttoptr i64 %cast142 to ptr
+  store ptr %cast146, ptr %slot145, align 8
+  %factory_body147 = load ptr, ptr %factory_body, align 8
+  %slot_base148 = ptrtoint ptr %35 to i64
+  %slot_addr149 = add i64 %slot_base148, 32
+  %slot150 = inttoptr i64 %slot_addr149 to ptr
+  store ptr %factory_body147, ptr %slot150, align 8
+  %cast151 = ptrtoint ptr %34 to i64
+  %cast152 = inttoptr i64 %cast151 to ptr
+  store ptr %cast152, ptr %factory, align 8
+  %body153 = load ptr, ptr %body, align 8
+  %name154 = load ptr, ptr %name, align 8
+  %44 = call ptr @"features::component_decl::expand::extract_methods"(ptr %body153, ptr %name154)
+  store ptr %44, ptr %methods155, align 8
   %45 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr153 = getelementptr inbounds nuw %"core::ast::StmtList", ptr %45, i32 0, i32 0
-  store i64 6384368267, ptr %tag_ptr153, align 8
-  %pay_ptr154 = getelementptr inbounds nuw %"core::ast::StmtList", ptr %45, i32 0, i32 1
+  %tag_ptr156 = getelementptr inbounds nuw %"core::ast::StmtList", ptr %45, i32 0, i32 0
+  store i64 6384368267, ptr %tag_ptr156, align 8
+  %pay_ptr157 = getelementptr inbounds nuw %"core::ast::StmtList", ptr %45, i32 0, i32 1
   %46 = call ptr @forge_rc_alloc(i64 16)
-  store ptr %46, ptr %pay_ptr154, align 8
-  %type_decl155 = load ptr, ptr %type_decl, align 8
-  %line156 = load i64, ptr %line, align 8
-  %col157 = load i64, ptr %col, align 8
-  %47 = call ptr @"core::ast::sstmt"(ptr %type_decl155, i64 %line156, i64 %col157)
-  %slot_base158 = ptrtoint ptr %46 to i64
-  %slot_addr159 = add i64 %slot_base158, 0
-  %slot160 = inttoptr i64 %slot_addr159 to ptr
-  store ptr %47, ptr %slot160, align 8
+  store ptr %46, ptr %pay_ptr157, align 8
+  %type_decl158 = load ptr, ptr %type_decl, align 8
+  %line159 = load i64, ptr %line, align 8
+  %col160 = load i64, ptr %col, align 8
+  %47 = call ptr @"core::ast::sstmt"(ptr %type_decl158, i64 %line159, i64 %col160)
+  %slot_base161 = ptrtoint ptr %46 to i64
+  %slot_addr162 = add i64 %slot_base161, 0
+  %slot163 = inttoptr i64 %slot_addr162 to ptr
+  store ptr %47, ptr %slot163, align 8
   %48 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr161 = getelementptr inbounds nuw %"core::ast::StmtList", ptr %48, i32 0, i32 0
-  store i64 6384368267, ptr %tag_ptr161, align 8
-  %pay_ptr162 = getelementptr inbounds nuw %"core::ast::StmtList", ptr %48, i32 0, i32 1
+  %tag_ptr164 = getelementptr inbounds nuw %"core::ast::StmtList", ptr %48, i32 0, i32 0
+  store i64 6384368267, ptr %tag_ptr164, align 8
+  %pay_ptr165 = getelementptr inbounds nuw %"core::ast::StmtList", ptr %48, i32 0, i32 1
   %49 = call ptr @forge_rc_alloc(i64 16)
-  store ptr %49, ptr %pay_ptr162, align 8
-  %factory163 = load ptr, ptr %factory, align 8
-  %line164 = load i64, ptr %line, align 8
-  %col165 = load i64, ptr %col, align 8
-  %50 = call ptr @"core::ast::sstmt"(ptr %factory163, i64 %line164, i64 %col165)
-  %slot_base166 = ptrtoint ptr %49 to i64
-  %slot_addr167 = add i64 %slot_base166, 0
-  %slot168 = inttoptr i64 %slot_addr167 to ptr
-  store ptr %50, ptr %slot168, align 8
-  %methods169 = load ptr, ptr %methods152, align 8
-  %rest170 = load ptr, ptr %rest, align 8
-  %51 = call ptr @"features::component_decl::expand::append_stmt_lists"(ptr %methods169, ptr %rest170)
-  %slot_base171 = ptrtoint ptr %49 to i64
-  %slot_addr172 = add i64 %slot_base171, 8
-  %slot173 = inttoptr i64 %slot_addr172 to ptr
-  store ptr %51, ptr %slot173, align 8
-  %cast174 = ptrtoint ptr %48 to i64
-  %slot_base175 = ptrtoint ptr %46 to i64
-  %slot_addr176 = add i64 %slot_base175, 8
-  %slot177 = inttoptr i64 %slot_addr176 to ptr
-  %cast178 = inttoptr i64 %cast174 to ptr
-  store ptr %cast178, ptr %slot177, align 8
-  %cast179 = ptrtoint ptr %45 to i64
-  %cast180 = inttoptr i64 %cast179 to ptr
-  ret ptr %cast180
+  store ptr %49, ptr %pay_ptr165, align 8
+  %factory166 = load ptr, ptr %factory, align 8
+  %line167 = load i64, ptr %line, align 8
+  %col168 = load i64, ptr %col, align 8
+  %50 = call ptr @"core::ast::sstmt"(ptr %factory166, i64 %line167, i64 %col168)
+  %slot_base169 = ptrtoint ptr %49 to i64
+  %slot_addr170 = add i64 %slot_base169, 0
+  %slot171 = inttoptr i64 %slot_addr170 to ptr
+  store ptr %50, ptr %slot171, align 8
+  %methods172 = load ptr, ptr %methods155, align 8
+  %rest173 = load ptr, ptr %rest, align 8
+  %51 = call ptr @"features::component_decl::expand::append_stmt_lists"(ptr %methods172, ptr %rest173)
+  %slot_base174 = ptrtoint ptr %49 to i64
+  %slot_addr175 = add i64 %slot_base174, 8
+  %slot176 = inttoptr i64 %slot_addr175 to ptr
+  store ptr %51, ptr %slot176, align 8
+  %cast177 = ptrtoint ptr %48 to i64
+  %slot_base178 = ptrtoint ptr %46 to i64
+  %slot_addr179 = add i64 %slot_base178, 8
+  %slot180 = inttoptr i64 %slot_addr179 to ptr
+  %cast181 = inttoptr i64 %cast177 to ptr
+  store ptr %cast181, ptr %slot180, align 8
+  %cast182 = ptrtoint ptr %45 to i64
+  %cast183 = inttoptr i64 %cast182 to ptr
+  ret ptr %cast183
 
 if_then:                                          ; preds = %entry
   %body2 = load ptr, ptr %body, align 8
@@ -182918,15 +183002,15 @@ entry:
 
 define ptr @"typeck::resolve_vtype"(ptr %0, ptr %1) {
 entry:
-  %ret231 = alloca ptr, align 8
-  %params228 = alloca ptr, align 8
-  %types214 = alloca ptr, align 8
-  %elem200 = alloca ptr, align 8
+  %ret252 = alloca ptr, align 8
+  %params249 = alloca ptr, align 8
+  %types235 = alloca ptr, align 8
+  %elem221 = alloca ptr, align 8
   %sc2 = alloca ptr, align 8
   %ec2 = alloca ptr, align 8
   %resolved_args = alloca ptr, align 8
-  %args131 = alloca ptr, align 8
-  %name128 = alloca ptr, align 8
+  %args143 = alloca ptr, align 8
+  %name140 = alloca ptr, align 8
   %sc = alloca ptr, align 8
   %nt_vt = alloca ptr, align 8
   %ua_vt = alloca ptr, align 8
@@ -182947,10 +183031,10 @@ entry:
   %tag_eq = icmp eq i64 %tag, 6952779173258
   br i1 %tag_eq, label %march_arm, label %march_next
 
-match_end:                                        ; preds = %march_arm245, %march_arm223, %march_arm209, %march_arm195, %ifcont172, %ifcont105
+match_end:                                        ; preds = %march_arm266, %march_arm244, %march_arm230, %march_arm216, %ifcont187, %ifcont114
   %match_val = load i64, ptr %match_result, align 8
-  %cast249 = inttoptr i64 %match_val to ptr
-  ret ptr %cast249
+  %cast270 = inttoptr i64 %match_val to ptr
+  ret ptr %cast270
 
 march_arm:                                        ; preds = %entry
   %pay_slot = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
@@ -182971,8 +183055,8 @@ march_arm:                                        ; preds = %entry
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next:                                       ; preds = %entry
-  %tag_eq121 = icmp eq i64 %tag, 6384044314
-  br i1 %tag_eq121, label %march_arm119, label %march_next120
+  %tag_eq133 = icmp eq i64 %tag, 6384044314
+  br i1 %tag_eq133, label %march_arm131, label %march_next132
 
 ifcont:                                           ; preds = %if_else, %ifcont9
   %tc15 = load ptr, ptr %tc, align 8
@@ -183030,30 +183114,30 @@ if_else12:                                        ; preds = %if_then
   br label %ifcont9
 
 ifcont22:                                         ; preds = %if_else25
-  %tc37 = load ptr, ptr %tc, align 8
-  %cast38 = ptrtoint ptr %tc37 to i64
-  %null_chk39 = icmp eq i64 %cast38, 0
-  %null_ext40 = zext i1 %null_chk39 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15342, i64 13, ptr @sty_name.15343, i64 10, i64 %null_ext40, ptr @src_file.15344, i64 104, i64 432)
-  %union_aliases_ptr = getelementptr inbounds nuw %"typeck::TC", ptr %tc37, i32 0, i32 6
+  %tc40 = load ptr, ptr %tc, align 8
+  %cast41 = ptrtoint ptr %tc40 to i64
+  %null_chk42 = icmp eq i64 %cast41, 0
+  %null_ext43 = zext i1 %null_chk42 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.15342, i64 13, ptr @sty_name.15343, i64 10, i64 %null_ext43, ptr @src_file.15344, i64 104, i64 432)
+  %union_aliases_ptr = getelementptr inbounds nuw %"typeck::TC", ptr %tc40, i32 0, i32 6
   %union_aliases = load ptr, ptr %union_aliases_ptr, align 8
-  %name41 = load ptr, ptr %name2, align 8
-  %8 = call ptr @"typeck::union_alias_vtype_lookup"(ptr %union_aliases, ptr %name41)
+  %name44 = load ptr, ptr %name2, align 8
+  %8 = call ptr @"typeck::union_alias_vtype_lookup"(ptr %union_aliases, ptr %name44)
   store ptr %8, ptr %ua_vt, align 8
-  %ua_vt42 = load ptr, ptr %ua_vt, align 8
-  %9 = call i1 @"core::ast::vtype_is_unknown"(ptr %ua_vt42)
-  %widen43 = zext i1 %9 to i64
-  %not_cmp44 = icmp eq i64 %widen43, 0
-  %not_cmp_ext45 = zext i1 %not_cmp44 to i64
-  %if_cond47 = icmp ne i64 %not_cmp_ext45, 0
-  br i1 %if_cond47, label %if_then48, label %if_else49
+  %ua_vt45 = load ptr, ptr %ua_vt, align 8
+  %9 = call i1 @"core::ast::vtype_is_unknown"(ptr %ua_vt45)
+  %widen46 = zext i1 %9 to i64
+  %not_cmp47 = icmp eq i64 %widen46, 0
+  %not_cmp_ext48 = zext i1 %not_cmp47 to i64
+  %if_cond50 = icmp ne i64 %not_cmp_ext48, 0
+  br i1 %if_cond50, label %if_then51, label %if_else52
 
 if_then24:                                        ; preds = %ifcont
   %10 = call ptr @forge_rc_alloc(i64 16)
   %tag_ptr26 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %10, i32 0, i32 0
   store i64 6384044314, ptr %tag_ptr26, align 8
   %pay_ptr = getelementptr inbounds nuw %"core::ast::ValueType", ptr %10, i32 0, i32 1
-  %11 = call ptr @forge_rc_alloc(i64 16)
+  %11 = call ptr @forge_rc_alloc(i64 24)
   store ptr %11, ptr %pay_ptr, align 8
   %ec27 = load ptr, ptr %ec, align 8
   %slot_base = ptrtoint ptr %11 to i64
@@ -183071,381 +183155,409 @@ if_then24:                                        ; preds = %ifcont
   %slot33 = inttoptr i64 %slot_addr32 to ptr
   %cast34 = inttoptr i64 %cast30 to ptr
   store ptr %cast34, ptr %slot33, align 8
-  %cast35 = ptrtoint ptr %10 to i64
-  %cast36 = inttoptr i64 %cast35 to ptr
-  ret ptr %cast36
+  %slot_base35 = ptrtoint ptr %11 to i64
+  %slot_addr36 = add i64 %slot_base35, 16
+  %slot37 = inttoptr i64 %slot_addr36 to ptr
+  store i64 0, ptr %slot37, align 8
+  %cast38 = ptrtoint ptr %10 to i64
+  %cast39 = inttoptr i64 %cast38 to ptr
+  ret ptr %cast39
 
 if_else25:                                        ; preds = %ifcont
   br label %ifcont22
 
-ifcont46:                                         ; preds = %if_else49
-  %tc52 = load ptr, ptr %tc, align 8
-  %cast53 = ptrtoint ptr %tc52 to i64
-  %null_chk54 = icmp eq i64 %cast53, 0
-  %null_ext55 = zext i1 %null_chk54 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15345, i64 8, ptr @sty_name.15346, i64 10, i64 %null_ext55, ptr @src_file.15347, i64 104, i64 434)
-  %newtypes_ptr = getelementptr inbounds nuw %"typeck::TC", ptr %tc52, i32 0, i32 5
+ifcont49:                                         ; preds = %if_else52
+  %tc55 = load ptr, ptr %tc, align 8
+  %cast56 = ptrtoint ptr %tc55 to i64
+  %null_chk57 = icmp eq i64 %cast56, 0
+  %null_ext58 = zext i1 %null_chk57 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.15345, i64 8, ptr @sty_name.15346, i64 10, i64 %null_ext58, ptr @src_file.15347, i64 104, i64 434)
+  %newtypes_ptr = getelementptr inbounds nuw %"typeck::TC", ptr %tc55, i32 0, i32 5
   %newtypes = load ptr, ptr %newtypes_ptr, align 8
-  %name56 = load ptr, ptr %name2, align 8
-  %13 = call ptr @"typeck::newtype_vtype_lookup"(ptr %newtypes, ptr %name56)
+  %name59 = load ptr, ptr %name2, align 8
+  %13 = call ptr @"typeck::newtype_vtype_lookup"(ptr %newtypes, ptr %name59)
   store ptr %13, ptr %nt_vt, align 8
-  %nt_vt57 = load ptr, ptr %nt_vt, align 8
-  %14 = call i1 @"core::ast::vtype_is_unknown"(ptr %nt_vt57)
-  %widen58 = zext i1 %14 to i64
-  %not_cmp59 = icmp eq i64 %widen58, 0
-  %not_cmp_ext60 = zext i1 %not_cmp59 to i64
-  %if_cond62 = icmp ne i64 %not_cmp_ext60, 0
-  br i1 %if_cond62, label %if_then63, label %if_else64
+  %nt_vt60 = load ptr, ptr %nt_vt, align 8
+  %14 = call i1 @"core::ast::vtype_is_unknown"(ptr %nt_vt60)
+  %widen61 = zext i1 %14 to i64
+  %not_cmp62 = icmp eq i64 %widen61, 0
+  %not_cmp_ext63 = zext i1 %not_cmp62 to i64
+  %if_cond65 = icmp ne i64 %not_cmp_ext63, 0
+  br i1 %if_cond65, label %if_then66, label %if_else67
 
-if_then48:                                        ; preds = %ifcont22
-  %tc50 = load ptr, ptr %tc, align 8
-  %ua_vt51 = load ptr, ptr %ua_vt, align 8
-  %15 = call ptr @"typeck::resolve_vtype"(ptr %tc50, ptr %ua_vt51)
+if_then51:                                        ; preds = %ifcont22
+  %tc53 = load ptr, ptr %tc, align 8
+  %ua_vt54 = load ptr, ptr %ua_vt, align 8
+  %15 = call ptr @"typeck::resolve_vtype"(ptr %tc53, ptr %ua_vt54)
   ret ptr %15
 
-if_else49:                                        ; preds = %ifcont22
-  br label %ifcont46
+if_else52:                                        ; preds = %ifcont22
+  br label %ifcont49
 
-ifcont61:                                         ; preds = %if_else64
-  %tc78 = load ptr, ptr %tc, align 8
-  %cast79 = ptrtoint ptr %tc78 to i64
-  %null_chk80 = icmp eq i64 %cast79, 0
-  %null_ext81 = zext i1 %null_chk80 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15348, i64 7, ptr @sty_name.15349, i64 10, i64 %null_ext81, ptr @src_file.15350, i64 104, i64 436)
-  %structs_ptr = getelementptr inbounds nuw %"typeck::TC", ptr %tc78, i32 0, i32 2
+ifcont64:                                         ; preds = %if_else67
+  %tc84 = load ptr, ptr %tc, align 8
+  %cast85 = ptrtoint ptr %tc84 to i64
+  %null_chk86 = icmp eq i64 %cast85, 0
+  %null_ext87 = zext i1 %null_chk86 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.15348, i64 7, ptr @sty_name.15349, i64 10, i64 %null_ext87, ptr @src_file.15350, i64 104, i64 436)
+  %structs_ptr = getelementptr inbounds nuw %"typeck::TC", ptr %tc84, i32 0, i32 2
   %structs = load ptr, ptr %structs_ptr, align 8
-  %name82 = load ptr, ptr %name2, align 8
-  %16 = call ptr @"typeck::struct_type_canonical"(ptr %structs, ptr %name82)
+  %name88 = load ptr, ptr %name2, align 8
+  %16 = call ptr @"typeck::struct_type_canonical"(ptr %structs, ptr %name88)
   store ptr %16, ptr %sc, align 8
-  %sc83 = load ptr, ptr %sc, align 8
-  %17 = call i32 @strcmp(ptr %sc83, ptr @.str.15351)
-  %widen84 = sext i32 %17 to i64
-  %streq_cmp85 = icmp ne i64 %widen84, 0
-  %streq_ext86 = zext i1 %streq_cmp85 to i64
-  %if_cond88 = icmp ne i64 %streq_ext86, 0
-  br i1 %if_cond88, label %if_then89, label %if_else90
+  %sc89 = load ptr, ptr %sc, align 8
+  %17 = call i32 @strcmp(ptr %sc89, ptr @.str.15351)
+  %widen90 = sext i32 %17 to i64
+  %streq_cmp91 = icmp ne i64 %widen90, 0
+  %streq_ext92 = zext i1 %streq_cmp91 to i64
+  %if_cond94 = icmp ne i64 %streq_ext92, 0
+  br i1 %if_cond94, label %if_then95, label %if_else96
 
-if_then63:                                        ; preds = %ifcont46
+if_then66:                                        ; preds = %ifcont49
   %18 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr65 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %18, i32 0, i32 0
-  store i64 229434674264369, ptr %tag_ptr65, align 8
-  %pay_ptr66 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %18, i32 0, i32 1
-  %19 = call ptr @forge_rc_alloc(i64 16)
-  store ptr %19, ptr %pay_ptr66, align 8
-  %name67 = load ptr, ptr %name2, align 8
-  %slot_base68 = ptrtoint ptr %19 to i64
-  %slot_addr69 = add i64 %slot_base68, 0
-  %slot70 = inttoptr i64 %slot_addr69 to ptr
-  store ptr %name67, ptr %slot70, align 8
-  %tc71 = load ptr, ptr %tc, align 8
-  %nt_vt72 = load ptr, ptr %nt_vt, align 8
-  %20 = call ptr @"typeck::resolve_vtype"(ptr %tc71, ptr %nt_vt72)
-  %slot_base73 = ptrtoint ptr %19 to i64
-  %slot_addr74 = add i64 %slot_base73, 8
-  %slot75 = inttoptr i64 %slot_addr74 to ptr
-  store ptr %20, ptr %slot75, align 8
-  %cast76 = ptrtoint ptr %18 to i64
-  %cast77 = inttoptr i64 %cast76 to ptr
-  ret ptr %cast77
+  %tag_ptr68 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %18, i32 0, i32 0
+  store i64 229434674264369, ptr %tag_ptr68, align 8
+  %pay_ptr69 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %18, i32 0, i32 1
+  %19 = call ptr @forge_rc_alloc(i64 24)
+  store ptr %19, ptr %pay_ptr69, align 8
+  %name70 = load ptr, ptr %name2, align 8
+  %slot_base71 = ptrtoint ptr %19 to i64
+  %slot_addr72 = add i64 %slot_base71, 0
+  %slot73 = inttoptr i64 %slot_addr72 to ptr
+  store ptr %name70, ptr %slot73, align 8
+  %tc74 = load ptr, ptr %tc, align 8
+  %nt_vt75 = load ptr, ptr %nt_vt, align 8
+  %20 = call ptr @"typeck::resolve_vtype"(ptr %tc74, ptr %nt_vt75)
+  %slot_base76 = ptrtoint ptr %19 to i64
+  %slot_addr77 = add i64 %slot_base76, 8
+  %slot78 = inttoptr i64 %slot_addr77 to ptr
+  store ptr %20, ptr %slot78, align 8
+  %slot_base79 = ptrtoint ptr %19 to i64
+  %slot_addr80 = add i64 %slot_base79, 16
+  %slot81 = inttoptr i64 %slot_addr80 to ptr
+  store i64 0, ptr %slot81, align 8
+  %cast82 = ptrtoint ptr %18 to i64
+  %cast83 = inttoptr i64 %cast82 to ptr
+  ret ptr %cast83
 
-if_else64:                                        ; preds = %ifcont46
-  br label %ifcont61
+if_else67:                                        ; preds = %ifcont49
+  br label %ifcont64
 
-ifcont87:                                         ; preds = %if_else90
-  %tc99 = load ptr, ptr %tc, align 8
-  %cast100 = ptrtoint ptr %tc99 to i64
-  %null_chk101 = icmp eq i64 %cast100, 0
-  %null_ext102 = zext i1 %null_chk101 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15352, i64 6, ptr @sty_name.15353, i64 10, i64 %null_ext102, ptr @src_file.15354, i64 104, i64 438)
-  %traits_ptr = getelementptr inbounds nuw %"typeck::TC", ptr %tc99, i32 0, i32 12
+ifcont93:                                         ; preds = %if_else96
+  %tc108 = load ptr, ptr %tc, align 8
+  %cast109 = ptrtoint ptr %tc108 to i64
+  %null_chk110 = icmp eq i64 %cast109, 0
+  %null_ext111 = zext i1 %null_chk110 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.15352, i64 6, ptr @sty_name.15353, i64 10, i64 %null_ext111, ptr @src_file.15354, i64 104, i64 438)
+  %traits_ptr = getelementptr inbounds nuw %"typeck::TC", ptr %tc108, i32 0, i32 12
   %traits = load ptr, ptr %traits_ptr, align 8
-  %name103 = load ptr, ptr %name2, align 8
-  %21 = call i1 @"typeck::trait_has"(ptr %traits, ptr %name103)
-  %widen104 = zext i1 %21 to i64
-  %if_cond106 = icmp ne i64 %widen104, 0
-  br i1 %if_cond106, label %if_then107, label %if_else108
+  %name112 = load ptr, ptr %name2, align 8
+  %21 = call i1 @"typeck::trait_has"(ptr %traits, ptr %name112)
+  %widen113 = zext i1 %21 to i64
+  %if_cond115 = icmp ne i64 %widen113, 0
+  br i1 %if_cond115, label %if_then116, label %if_else117
 
-if_then89:                                        ; preds = %ifcont61
+if_then95:                                        ; preds = %ifcont64
   %22 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr91 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %22, i32 0, i32 0
-  store i64 6952779173258, ptr %tag_ptr91, align 8
-  %pay_ptr92 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %22, i32 0, i32 1
-  %23 = call ptr @forge_rc_alloc(i64 8)
-  store ptr %23, ptr %pay_ptr92, align 8
-  %sc93 = load ptr, ptr %sc, align 8
-  %slot_base94 = ptrtoint ptr %23 to i64
-  %slot_addr95 = add i64 %slot_base94, 0
-  %slot96 = inttoptr i64 %slot_addr95 to ptr
-  store ptr %sc93, ptr %slot96, align 8
-  %cast97 = ptrtoint ptr %22 to i64
-  %cast98 = inttoptr i64 %cast97 to ptr
-  ret ptr %cast98
+  %tag_ptr97 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %22, i32 0, i32 0
+  store i64 6952779173258, ptr %tag_ptr97, align 8
+  %pay_ptr98 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %22, i32 0, i32 1
+  %23 = call ptr @forge_rc_alloc(i64 16)
+  store ptr %23, ptr %pay_ptr98, align 8
+  %sc99 = load ptr, ptr %sc, align 8
+  %slot_base100 = ptrtoint ptr %23 to i64
+  %slot_addr101 = add i64 %slot_base100, 0
+  %slot102 = inttoptr i64 %slot_addr101 to ptr
+  store ptr %sc99, ptr %slot102, align 8
+  %slot_base103 = ptrtoint ptr %23 to i64
+  %slot_addr104 = add i64 %slot_base103, 8
+  %slot105 = inttoptr i64 %slot_addr104 to ptr
+  store i64 0, ptr %slot105, align 8
+  %cast106 = ptrtoint ptr %22 to i64
+  %cast107 = inttoptr i64 %cast106 to ptr
+  ret ptr %cast107
 
-if_else90:                                        ; preds = %ifcont61
-  br label %ifcont87
+if_else96:                                        ; preds = %ifcont64
+  br label %ifcont93
 
-ifcont105:                                        ; preds = %if_else108
-  %vt117 = load ptr, ptr %vt, align 8
-  %cast118 = ptrtoint ptr %vt117 to i64
-  store i64 %cast118, ptr %match_result, align 8
+ifcont114:                                        ; preds = %if_else117
+  %vt129 = load ptr, ptr %vt, align 8
+  %cast130 = ptrtoint ptr %vt129 to i64
+  store i64 %cast130, ptr %match_result, align 8
   br label %match_end
 
-if_then107:                                       ; preds = %ifcont87
+if_then116:                                       ; preds = %ifcont93
   %24 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr109 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %24, i32 0, i32 0
-  store i64 210691373129, ptr %tag_ptr109, align 8
-  %pay_ptr110 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %24, i32 0, i32 1
-  %25 = call ptr @forge_rc_alloc(i64 8)
-  store ptr %25, ptr %pay_ptr110, align 8
-  %name111 = load ptr, ptr %name2, align 8
-  %slot_base112 = ptrtoint ptr %25 to i64
-  %slot_addr113 = add i64 %slot_base112, 0
-  %slot114 = inttoptr i64 %slot_addr113 to ptr
-  store ptr %name111, ptr %slot114, align 8
-  %cast115 = ptrtoint ptr %24 to i64
-  %cast116 = inttoptr i64 %cast115 to ptr
-  ret ptr %cast116
+  %tag_ptr118 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %24, i32 0, i32 0
+  store i64 210691373129, ptr %tag_ptr118, align 8
+  %pay_ptr119 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %24, i32 0, i32 1
+  %25 = call ptr @forge_rc_alloc(i64 16)
+  store ptr %25, ptr %pay_ptr119, align 8
+  %name120 = load ptr, ptr %name2, align 8
+  %slot_base121 = ptrtoint ptr %25 to i64
+  %slot_addr122 = add i64 %slot_base121, 0
+  %slot123 = inttoptr i64 %slot_addr122 to ptr
+  store ptr %name120, ptr %slot123, align 8
+  %slot_base124 = ptrtoint ptr %25 to i64
+  %slot_addr125 = add i64 %slot_base124, 8
+  %slot126 = inttoptr i64 %slot_addr125 to ptr
+  store i64 0, ptr %slot126, align 8
+  %cast127 = ptrtoint ptr %24 to i64
+  %cast128 = inttoptr i64 %cast127 to ptr
+  ret ptr %cast128
 
-if_else108:                                       ; preds = %ifcont87
-  br label %ifcont105
+if_else117:                                       ; preds = %ifcont93
+  br label %ifcont114
 
-march_arm119:                                     ; preds = %march_next
-  %pay_slot122 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
-  %payload123 = load ptr, ptr %pay_slot122, align 8
-  %name_slot_base124 = ptrtoint ptr %payload123 to i64
-  %name_slot_addr125 = add i64 %name_slot_base124, 0
-  %name_slot126 = inttoptr i64 %name_slot_addr125 to ptr
-  %name127 = load ptr, ptr %name_slot126, align 8
-  call void @forge_rc_retain(ptr %name127)
-  store ptr %name127, ptr %name128, align 8
-  %pay_slot129 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
-  %payload130 = load ptr, ptr %pay_slot129, align 8
-  %args_slot_base = ptrtoint ptr %payload130 to i64
+march_arm131:                                     ; preds = %march_next
+  %pay_slot134 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
+  %payload135 = load ptr, ptr %pay_slot134, align 8
+  %name_slot_base136 = ptrtoint ptr %payload135 to i64
+  %name_slot_addr137 = add i64 %name_slot_base136, 0
+  %name_slot138 = inttoptr i64 %name_slot_addr137 to ptr
+  %name139 = load ptr, ptr %name_slot138, align 8
+  call void @forge_rc_retain(ptr %name139)
+  store ptr %name139, ptr %name140, align 8
+  %pay_slot141 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
+  %payload142 = load ptr, ptr %pay_slot141, align 8
+  %args_slot_base = ptrtoint ptr %payload142 to i64
   %args_slot_addr = add i64 %args_slot_base, 8
   %args_slot = inttoptr i64 %args_slot_addr to ptr
   %args = load ptr, ptr %args_slot, align 8
   call void @forge_rc_retain(ptr %args)
-  store ptr %args, ptr %args131, align 8
-  %tc132 = load ptr, ptr %tc, align 8
-  %args133 = load ptr, ptr %args131, align 8
-  %26 = call ptr @"typeck::resolve_vtype_list"(ptr %tc132, ptr %args133)
+  store ptr %args, ptr %args143, align 8
+  %tc144 = load ptr, ptr %tc, align 8
+  %args145 = load ptr, ptr %args143, align 8
+  %26 = call ptr @"typeck::resolve_vtype_list"(ptr %tc144, ptr %args145)
   store ptr %26, ptr %resolved_args, align 8
-  %tc134 = load ptr, ptr %tc, align 8
-  %cast135 = ptrtoint ptr %tc134 to i64
-  %null_chk136 = icmp eq i64 %cast135, 0
-  %null_ext137 = zext i1 %null_chk136 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15355, i64 5, ptr @sty_name.15356, i64 10, i64 %null_ext137, ptr @src_file.15357, i64 104, i64 448)
-  %enums_ptr138 = getelementptr inbounds nuw %"typeck::TC", ptr %tc134, i32 0, i32 4
-  %enums139 = load ptr, ptr %enums_ptr138, align 8
-  %name140 = load ptr, ptr %name128, align 8
-  %27 = call ptr @"typeck::enum_type_canonical"(ptr %enums139, ptr %name140)
+  %tc146 = load ptr, ptr %tc, align 8
+  %cast147 = ptrtoint ptr %tc146 to i64
+  %null_chk148 = icmp eq i64 %cast147, 0
+  %null_ext149 = zext i1 %null_chk148 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.15355, i64 5, ptr @sty_name.15356, i64 10, i64 %null_ext149, ptr @src_file.15357, i64 104, i64 448)
+  %enums_ptr150 = getelementptr inbounds nuw %"typeck::TC", ptr %tc146, i32 0, i32 4
+  %enums151 = load ptr, ptr %enums_ptr150, align 8
+  %name152 = load ptr, ptr %name140, align 8
+  %27 = call ptr @"typeck::enum_type_canonical"(ptr %enums151, ptr %name152)
   store ptr %27, ptr %ec2, align 8
-  %ec2141 = load ptr, ptr %ec2, align 8
-  %28 = call i32 @strcmp(ptr %ec2141, ptr @.str.15358)
-  %widen142 = sext i32 %28 to i64
-  %streq_cmp143 = icmp ne i64 %widen142, 0
-  %streq_ext144 = zext i1 %streq_cmp143 to i64
-  %if_cond146 = icmp ne i64 %streq_ext144, 0
-  br i1 %if_cond146, label %if_then147, label %if_else148
+  %ec2153 = load ptr, ptr %ec2, align 8
+  %28 = call i32 @strcmp(ptr %ec2153, ptr @.str.15358)
+  %widen154 = sext i32 %28 to i64
+  %streq_cmp155 = icmp ne i64 %widen154, 0
+  %streq_ext156 = zext i1 %streq_cmp155 to i64
+  %if_cond158 = icmp ne i64 %streq_ext156, 0
+  br i1 %if_cond158, label %if_then159, label %if_else160
 
-march_next120:                                    ; preds = %march_next
-  %tag_eq197 = icmp eq i64 %tag, 6384290369
-  br i1 %tag_eq197, label %march_arm195, label %march_next196
+march_next132:                                    ; preds = %march_next
+  %tag_eq218 = icmp eq i64 %tag, 6384290369
+  br i1 %tag_eq218, label %march_arm216, label %march_next217
 
-ifcont145:                                        ; preds = %if_else148
-  %tc161 = load ptr, ptr %tc, align 8
-  %cast162 = ptrtoint ptr %tc161 to i64
-  %null_chk163 = icmp eq i64 %cast162, 0
-  %null_ext164 = zext i1 %null_chk163 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15359, i64 7, ptr @sty_name.15360, i64 10, i64 %null_ext164, ptr @src_file.15361, i64 104, i64 450)
-  %structs_ptr165 = getelementptr inbounds nuw %"typeck::TC", ptr %tc161, i32 0, i32 2
-  %structs166 = load ptr, ptr %structs_ptr165, align 8
-  %name167 = load ptr, ptr %name128, align 8
-  %29 = call ptr @"typeck::struct_type_canonical"(ptr %structs166, ptr %name167)
+ifcont157:                                        ; preds = %if_else160
+  %tc176 = load ptr, ptr %tc, align 8
+  %cast177 = ptrtoint ptr %tc176 to i64
+  %null_chk178 = icmp eq i64 %cast177, 0
+  %null_ext179 = zext i1 %null_chk178 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.15359, i64 7, ptr @sty_name.15360, i64 10, i64 %null_ext179, ptr @src_file.15361, i64 104, i64 450)
+  %structs_ptr180 = getelementptr inbounds nuw %"typeck::TC", ptr %tc176, i32 0, i32 2
+  %structs181 = load ptr, ptr %structs_ptr180, align 8
+  %name182 = load ptr, ptr %name140, align 8
+  %29 = call ptr @"typeck::struct_type_canonical"(ptr %structs181, ptr %name182)
   store ptr %29, ptr %sc2, align 8
-  %sc2168 = load ptr, ptr %sc2, align 8
-  %30 = call i32 @strcmp(ptr %sc2168, ptr @.str.15362)
-  %widen169 = sext i32 %30 to i64
-  %streq_cmp170 = icmp ne i64 %widen169, 0
-  %streq_ext171 = zext i1 %streq_cmp170 to i64
-  %if_cond173 = icmp ne i64 %streq_ext171, 0
-  br i1 %if_cond173, label %if_then174, label %if_else175
+  %sc2183 = load ptr, ptr %sc2, align 8
+  %30 = call i32 @strcmp(ptr %sc2183, ptr @.str.15362)
+  %widen184 = sext i32 %30 to i64
+  %streq_cmp185 = icmp ne i64 %widen184, 0
+  %streq_ext186 = zext i1 %streq_cmp185 to i64
+  %if_cond188 = icmp ne i64 %streq_ext186, 0
+  br i1 %if_cond188, label %if_then189, label %if_else190
 
-if_then147:                                       ; preds = %march_arm119
+if_then159:                                       ; preds = %march_arm131
   %31 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr149 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %31, i32 0, i32 0
-  store i64 6384044314, ptr %tag_ptr149, align 8
-  %pay_ptr150 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %31, i32 0, i32 1
-  %32 = call ptr @forge_rc_alloc(i64 16)
-  store ptr %32, ptr %pay_ptr150, align 8
-  %ec2151 = load ptr, ptr %ec2, align 8
-  %slot_base152 = ptrtoint ptr %32 to i64
-  %slot_addr153 = add i64 %slot_base152, 0
-  %slot154 = inttoptr i64 %slot_addr153 to ptr
-  store ptr %ec2151, ptr %slot154, align 8
-  %resolved_args155 = load ptr, ptr %resolved_args, align 8
-  %slot_base156 = ptrtoint ptr %32 to i64
-  %slot_addr157 = add i64 %slot_base156, 8
-  %slot158 = inttoptr i64 %slot_addr157 to ptr
-  store ptr %resolved_args155, ptr %slot158, align 8
-  %cast159 = ptrtoint ptr %31 to i64
-  %cast160 = inttoptr i64 %cast159 to ptr
-  ret ptr %cast160
+  %tag_ptr161 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %31, i32 0, i32 0
+  store i64 6384044314, ptr %tag_ptr161, align 8
+  %pay_ptr162 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %31, i32 0, i32 1
+  %32 = call ptr @forge_rc_alloc(i64 24)
+  store ptr %32, ptr %pay_ptr162, align 8
+  %ec2163 = load ptr, ptr %ec2, align 8
+  %slot_base164 = ptrtoint ptr %32 to i64
+  %slot_addr165 = add i64 %slot_base164, 0
+  %slot166 = inttoptr i64 %slot_addr165 to ptr
+  store ptr %ec2163, ptr %slot166, align 8
+  %resolved_args167 = load ptr, ptr %resolved_args, align 8
+  %slot_base168 = ptrtoint ptr %32 to i64
+  %slot_addr169 = add i64 %slot_base168, 8
+  %slot170 = inttoptr i64 %slot_addr169 to ptr
+  store ptr %resolved_args167, ptr %slot170, align 8
+  %slot_base171 = ptrtoint ptr %32 to i64
+  %slot_addr172 = add i64 %slot_base171, 16
+  %slot173 = inttoptr i64 %slot_addr172 to ptr
+  store i64 0, ptr %slot173, align 8
+  %cast174 = ptrtoint ptr %31 to i64
+  %cast175 = inttoptr i64 %cast174 to ptr
+  ret ptr %cast175
 
-if_else148:                                       ; preds = %march_arm119
-  br label %ifcont145
+if_else160:                                       ; preds = %march_arm131
+  br label %ifcont157
 
-ifcont172:                                        ; preds = %if_else175
+ifcont187:                                        ; preds = %if_else190
   %33 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr184 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %33, i32 0, i32 0
-  store i64 6384044314, ptr %tag_ptr184, align 8
-  %pay_ptr185 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %33, i32 0, i32 1
-  %34 = call ptr @forge_rc_alloc(i64 16)
-  store ptr %34, ptr %pay_ptr185, align 8
-  %name186 = load ptr, ptr %name128, align 8
-  %slot_base187 = ptrtoint ptr %34 to i64
-  %slot_addr188 = add i64 %slot_base187, 0
-  %slot189 = inttoptr i64 %slot_addr188 to ptr
-  store ptr %name186, ptr %slot189, align 8
-  %resolved_args190 = load ptr, ptr %resolved_args, align 8
-  %slot_base191 = ptrtoint ptr %34 to i64
-  %slot_addr192 = add i64 %slot_base191, 8
-  %slot193 = inttoptr i64 %slot_addr192 to ptr
-  store ptr %resolved_args190, ptr %slot193, align 8
-  %cast194 = ptrtoint ptr %33 to i64
-  store i64 %cast194, ptr %match_result, align 8
+  %tag_ptr202 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %33, i32 0, i32 0
+  store i64 6384044314, ptr %tag_ptr202, align 8
+  %pay_ptr203 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %33, i32 0, i32 1
+  %34 = call ptr @forge_rc_alloc(i64 24)
+  store ptr %34, ptr %pay_ptr203, align 8
+  %name204 = load ptr, ptr %name140, align 8
+  %slot_base205 = ptrtoint ptr %34 to i64
+  %slot_addr206 = add i64 %slot_base205, 0
+  %slot207 = inttoptr i64 %slot_addr206 to ptr
+  store ptr %name204, ptr %slot207, align 8
+  %resolved_args208 = load ptr, ptr %resolved_args, align 8
+  %slot_base209 = ptrtoint ptr %34 to i64
+  %slot_addr210 = add i64 %slot_base209, 8
+  %slot211 = inttoptr i64 %slot_addr210 to ptr
+  store ptr %resolved_args208, ptr %slot211, align 8
+  %slot_base212 = ptrtoint ptr %34 to i64
+  %slot_addr213 = add i64 %slot_base212, 16
+  %slot214 = inttoptr i64 %slot_addr213 to ptr
+  store i64 0, ptr %slot214, align 8
+  %cast215 = ptrtoint ptr %33 to i64
+  store i64 %cast215, ptr %match_result, align 8
   br label %match_end
 
-if_then174:                                       ; preds = %ifcont145
+if_then189:                                       ; preds = %ifcont157
   %35 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr176 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %35, i32 0, i32 0
-  store i64 6952779173258, ptr %tag_ptr176, align 8
-  %pay_ptr177 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %35, i32 0, i32 1
-  %36 = call ptr @forge_rc_alloc(i64 8)
-  store ptr %36, ptr %pay_ptr177, align 8
-  %sc2178 = load ptr, ptr %sc2, align 8
-  %slot_base179 = ptrtoint ptr %36 to i64
-  %slot_addr180 = add i64 %slot_base179, 0
-  %slot181 = inttoptr i64 %slot_addr180 to ptr
-  store ptr %sc2178, ptr %slot181, align 8
-  %cast182 = ptrtoint ptr %35 to i64
-  %cast183 = inttoptr i64 %cast182 to ptr
-  ret ptr %cast183
+  %tag_ptr191 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %35, i32 0, i32 0
+  store i64 6952779173258, ptr %tag_ptr191, align 8
+  %pay_ptr192 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %35, i32 0, i32 1
+  %36 = call ptr @forge_rc_alloc(i64 16)
+  store ptr %36, ptr %pay_ptr192, align 8
+  %sc2193 = load ptr, ptr %sc2, align 8
+  %slot_base194 = ptrtoint ptr %36 to i64
+  %slot_addr195 = add i64 %slot_base194, 0
+  %slot196 = inttoptr i64 %slot_addr195 to ptr
+  store ptr %sc2193, ptr %slot196, align 8
+  %slot_base197 = ptrtoint ptr %36 to i64
+  %slot_addr198 = add i64 %slot_base197, 8
+  %slot199 = inttoptr i64 %slot_addr198 to ptr
+  store i64 0, ptr %slot199, align 8
+  %cast200 = ptrtoint ptr %35 to i64
+  %cast201 = inttoptr i64 %cast200 to ptr
+  ret ptr %cast201
 
-if_else175:                                       ; preds = %ifcont145
-  br label %ifcont172
+if_else190:                                       ; preds = %ifcont157
+  br label %ifcont187
 
-march_arm195:                                     ; preds = %march_next120
-  %pay_slot198 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
-  %payload199 = load ptr, ptr %pay_slot198, align 8
-  %elem_slot_base = ptrtoint ptr %payload199 to i64
+march_arm216:                                     ; preds = %march_next132
+  %pay_slot219 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
+  %payload220 = load ptr, ptr %pay_slot219, align 8
+  %elem_slot_base = ptrtoint ptr %payload220 to i64
   %elem_slot_addr = add i64 %elem_slot_base, 0
   %elem_slot = inttoptr i64 %elem_slot_addr to ptr
   %elem = load ptr, ptr %elem_slot, align 8
   call void @forge_rc_retain(ptr %elem)
-  store ptr %elem, ptr %elem200, align 8
+  store ptr %elem, ptr %elem221, align 8
   %37 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr201 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %37, i32 0, i32 0
-  store i64 6384290369, ptr %tag_ptr201, align 8
-  %pay_ptr202 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %37, i32 0, i32 1
+  %tag_ptr222 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %37, i32 0, i32 0
+  store i64 6384290369, ptr %tag_ptr222, align 8
+  %pay_ptr223 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %37, i32 0, i32 1
   %38 = call ptr @forge_rc_alloc(i64 8)
-  store ptr %38, ptr %pay_ptr202, align 8
-  %tc203 = load ptr, ptr %tc, align 8
-  %elem204 = load ptr, ptr %elem200, align 8
-  %39 = call ptr @"typeck::resolve_vtype"(ptr %tc203, ptr %elem204)
-  %slot_base205 = ptrtoint ptr %38 to i64
-  %slot_addr206 = add i64 %slot_base205, 0
-  %slot207 = inttoptr i64 %slot_addr206 to ptr
-  store ptr %39, ptr %slot207, align 8
-  %cast208 = ptrtoint ptr %37 to i64
-  store i64 %cast208, ptr %match_result, align 8
+  store ptr %38, ptr %pay_ptr223, align 8
+  %tc224 = load ptr, ptr %tc, align 8
+  %elem225 = load ptr, ptr %elem221, align 8
+  %39 = call ptr @"typeck::resolve_vtype"(ptr %tc224, ptr %elem225)
+  %slot_base226 = ptrtoint ptr %38 to i64
+  %slot_addr227 = add i64 %slot_base226, 0
+  %slot228 = inttoptr i64 %slot_addr227 to ptr
+  store ptr %39, ptr %slot228, align 8
+  %cast229 = ptrtoint ptr %37 to i64
+  store i64 %cast229, ptr %match_result, align 8
   br label %match_end
 
-march_next196:                                    ; preds = %march_next120
-  %tag_eq211 = icmp eq i64 %tag, 210692424206
-  br i1 %tag_eq211, label %march_arm209, label %march_next210
+march_next217:                                    ; preds = %march_next132
+  %tag_eq232 = icmp eq i64 %tag, 210692424206
+  br i1 %tag_eq232, label %march_arm230, label %march_next231
 
-march_arm209:                                     ; preds = %march_next196
-  %pay_slot212 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
-  %payload213 = load ptr, ptr %pay_slot212, align 8
-  %types_slot_base = ptrtoint ptr %payload213 to i64
+march_arm230:                                     ; preds = %march_next217
+  %pay_slot233 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
+  %payload234 = load ptr, ptr %pay_slot233, align 8
+  %types_slot_base = ptrtoint ptr %payload234 to i64
   %types_slot_addr = add i64 %types_slot_base, 0
   %types_slot = inttoptr i64 %types_slot_addr to ptr
   %types = load ptr, ptr %types_slot, align 8
   call void @forge_rc_retain(ptr %types)
-  store ptr %types, ptr %types214, align 8
+  store ptr %types, ptr %types235, align 8
   %40 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr215 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %40, i32 0, i32 0
-  store i64 210692424206, ptr %tag_ptr215, align 8
-  %pay_ptr216 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %40, i32 0, i32 1
+  %tag_ptr236 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %40, i32 0, i32 0
+  store i64 210692424206, ptr %tag_ptr236, align 8
+  %pay_ptr237 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %40, i32 0, i32 1
   %41 = call ptr @forge_rc_alloc(i64 8)
-  store ptr %41, ptr %pay_ptr216, align 8
-  %tc217 = load ptr, ptr %tc, align 8
-  %types218 = load ptr, ptr %types214, align 8
-  %42 = call ptr @"typeck::resolve_vtype_list"(ptr %tc217, ptr %types218)
-  %slot_base219 = ptrtoint ptr %41 to i64
-  %slot_addr220 = add i64 %slot_base219, 0
-  %slot221 = inttoptr i64 %slot_addr220 to ptr
-  store ptr %42, ptr %slot221, align 8
-  %cast222 = ptrtoint ptr %40 to i64
-  store i64 %cast222, ptr %match_result, align 8
+  store ptr %41, ptr %pay_ptr237, align 8
+  %tc238 = load ptr, ptr %tc, align 8
+  %types239 = load ptr, ptr %types235, align 8
+  %42 = call ptr @"typeck::resolve_vtype_list"(ptr %tc238, ptr %types239)
+  %slot_base240 = ptrtoint ptr %41 to i64
+  %slot_addr241 = add i64 %slot_base240, 0
+  %slot242 = inttoptr i64 %slot_addr241 to ptr
+  store ptr %42, ptr %slot242, align 8
+  %cast243 = ptrtoint ptr %40 to i64
+  store i64 %cast243, ptr %match_result, align 8
   br label %match_end
 
-march_next210:                                    ; preds = %march_next196
-  %tag_eq225 = icmp eq i64 %tag, 229424653401439
-  br i1 %tag_eq225, label %march_arm223, label %march_next224
+march_next231:                                    ; preds = %march_next217
+  %tag_eq246 = icmp eq i64 %tag, 229424653401439
+  br i1 %tag_eq246, label %march_arm244, label %march_next245
 
-march_arm223:                                     ; preds = %march_next210
-  %pay_slot226 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
-  %payload227 = load ptr, ptr %pay_slot226, align 8
-  %params_slot_base = ptrtoint ptr %payload227 to i64
+march_arm244:                                     ; preds = %march_next231
+  %pay_slot247 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
+  %payload248 = load ptr, ptr %pay_slot247, align 8
+  %params_slot_base = ptrtoint ptr %payload248 to i64
   %params_slot_addr = add i64 %params_slot_base, 0
   %params_slot = inttoptr i64 %params_slot_addr to ptr
   %params = load ptr, ptr %params_slot, align 8
   call void @forge_rc_retain(ptr %params)
-  store ptr %params, ptr %params228, align 8
-  %pay_slot229 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
-  %payload230 = load ptr, ptr %pay_slot229, align 8
-  %ret_slot_base = ptrtoint ptr %payload230 to i64
+  store ptr %params, ptr %params249, align 8
+  %pay_slot250 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
+  %payload251 = load ptr, ptr %pay_slot250, align 8
+  %ret_slot_base = ptrtoint ptr %payload251 to i64
   %ret_slot_addr = add i64 %ret_slot_base, 8
   %ret_slot = inttoptr i64 %ret_slot_addr to ptr
   %ret = load ptr, ptr %ret_slot, align 8
   call void @forge_rc_retain(ptr %ret)
-  store ptr %ret, ptr %ret231, align 8
+  store ptr %ret, ptr %ret252, align 8
   %43 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr232 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %43, i32 0, i32 0
-  store i64 229424653401439, ptr %tag_ptr232, align 8
-  %pay_ptr233 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %43, i32 0, i32 1
+  %tag_ptr253 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %43, i32 0, i32 0
+  store i64 229424653401439, ptr %tag_ptr253, align 8
+  %pay_ptr254 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %43, i32 0, i32 1
   %44 = call ptr @forge_rc_alloc(i64 16)
-  store ptr %44, ptr %pay_ptr233, align 8
-  %tc234 = load ptr, ptr %tc, align 8
-  %params235 = load ptr, ptr %params228, align 8
-  %45 = call ptr @"typeck::resolve_vtype_list"(ptr %tc234, ptr %params235)
-  %slot_base236 = ptrtoint ptr %44 to i64
-  %slot_addr237 = add i64 %slot_base236, 0
-  %slot238 = inttoptr i64 %slot_addr237 to ptr
-  store ptr %45, ptr %slot238, align 8
-  %tc239 = load ptr, ptr %tc, align 8
-  %ret240 = load ptr, ptr %ret231, align 8
-  %46 = call ptr @"typeck::resolve_vtype"(ptr %tc239, ptr %ret240)
-  %slot_base241 = ptrtoint ptr %44 to i64
-  %slot_addr242 = add i64 %slot_base241, 8
-  %slot243 = inttoptr i64 %slot_addr242 to ptr
-  store ptr %46, ptr %slot243, align 8
-  %cast244 = ptrtoint ptr %43 to i64
-  store i64 %cast244, ptr %match_result, align 8
+  store ptr %44, ptr %pay_ptr254, align 8
+  %tc255 = load ptr, ptr %tc, align 8
+  %params256 = load ptr, ptr %params249, align 8
+  %45 = call ptr @"typeck::resolve_vtype_list"(ptr %tc255, ptr %params256)
+  %slot_base257 = ptrtoint ptr %44 to i64
+  %slot_addr258 = add i64 %slot_base257, 0
+  %slot259 = inttoptr i64 %slot_addr258 to ptr
+  store ptr %45, ptr %slot259, align 8
+  %tc260 = load ptr, ptr %tc, align 8
+  %ret261 = load ptr, ptr %ret252, align 8
+  %46 = call ptr @"typeck::resolve_vtype"(ptr %tc260, ptr %ret261)
+  %slot_base262 = ptrtoint ptr %44 to i64
+  %slot_addr263 = add i64 %slot_base262, 8
+  %slot264 = inttoptr i64 %slot_addr263 to ptr
+  store ptr %46, ptr %slot264, align 8
+  %cast265 = ptrtoint ptr %43 to i64
+  store i64 %cast265, ptr %match_result, align 8
   br label %match_end
 
-march_next224:                                    ; preds = %march_next210
-  br label %march_arm245
+march_next245:                                    ; preds = %march_next231
+  br label %march_arm266
 
-march_arm245:                                     ; preds = %march_next224
-  %vt247 = load ptr, ptr %vt, align 8
-  %cast248 = ptrtoint ptr %vt247 to i64
-  store i64 %cast248, ptr %match_result, align 8
+march_arm266:                                     ; preds = %march_next245
+  %vt268 = load ptr, ptr %vt, align 8
+  %cast269 = ptrtoint ptr %vt268 to i64
+  store i64 %cast269, ptr %match_result, align 8
   br label %match_end
 
-march_next246:                                    ; No predecessors!
+march_next267:                                    ; No predecessors!
   call void @forge_match_unreachable(ptr @.match_fn.15363, i64 %tag, ptr @mu_file.15364, i64 417)
   unreachable
 }
@@ -183764,33 +183876,33 @@ march_next49:                                     ; No predecessors!
 define ptr @"typeck::collect_decls"(ptr %0, ptr %1) {
 entry:
   %updated = alloca ptr, align 8
-  %methods857 = alloca ptr, align 8
-  %name850 = alloca ptr, align 8
-  %body837 = alloca ptr, align 8
+  %methods860 = alloca ptr, align 8
+  %name853 = alloca ptr, align 8
+  %body840 = alloca ptr, align 8
   %with_impl = alloca ptr, align 8
   %with_trait = alloca ptr, align 8
   %type_name = alloca ptr, align 8
   %trait_name = alloca ptr, align 8
-  %ife_result729 = alloca i64, align 8
+  %ife_result732 = alloca i64, align 8
   %colon_idx = alloca i64, align 8
-  %methods726 = alloca ptr, align 8
-  %impl_name723 = alloca ptr, align 8
-  %final_ret641 = alloca ptr, align 8
-  %ife_result629 = alloca i64, align 8
-  %ret_vt622 = alloca ptr, align 8
-  %params615 = alloca ptr, align 8
-  %name608 = alloca ptr, align 8
+  %methods729 = alloca ptr, align 8
+  %impl_name726 = alloca ptr, align 8
+  %final_ret644 = alloca ptr, align 8
+  %ife_result632 = alloca i64, align 8
+  %ret_vt625 = alloca ptr, align 8
+  %params618 = alloca ptr, align 8
+  %name611 = alloca ptr, align 8
   %final_ret = alloca ptr, align 8
   %ife_result = alloca i64, align 8
-  %ret_vt511 = alloca ptr, align 8
-  %params508 = alloca ptr, align 8
-  %name505 = alloca ptr, align 8
-  %variants426 = alloca ptr, align 8
-  %name423 = alloca ptr, align 8
-  %fields327 = alloca ptr, align 8
-  %name320 = alloca ptr, align 8
-  %type_vt241 = alloca ptr, align 8
-  %name238 = alloca ptr, align 8
+  %ret_vt514 = alloca ptr, align 8
+  %params511 = alloca ptr, align 8
+  %name508 = alloca ptr, align 8
+  %variants429 = alloca ptr, align 8
+  %name426 = alloca ptr, align 8
+  %fields330 = alloca ptr, align 8
+  %name323 = alloca ptr, align 8
+  %type_vt244 = alloca ptr, align 8
+  %name241 = alloca ptr, align 8
   %ctor_params = alloca ptr, align 8
   %inner_ty = alloca ptr, align 8
   %inner_vt105 = alloca ptr, align 8
@@ -183814,9 +183926,9 @@ entry:
   br i1 %tag_eq, label %march_arm, label %march_next
 
 match_end:                                        ; preds = %match_end15, %march_arm
-  %match_val939 = load i64, ptr %match_result, align 8
-  %cast940 = inttoptr i64 %match_val939 to ptr
-  ret ptr %cast940
+  %match_val942 = load i64, ptr %match_result, align 8
+  %cast943 = inttoptr i64 %match_val942 to ptr
+  ret ptr %cast943
 
 march_arm:                                        ; preds = %entry
   %tc2 = load ptr, ptr %tc, align 8
@@ -183863,15 +183975,15 @@ march_next4:                                      ; preds = %march_next
   call void @forge_match_unreachable(ptr @.match_fn.15425, i64 %tag, ptr @mu_file.15426, i64 520)
   unreachable
 
-match_end15:                                      ; preds = %march_arm931, %march_arm841, %march_arm832, %ife_end730, %ife_end630, %ife_end, %march_arm414, %march_arm311, %march_arm229, %march_arm93, %march_arm16
+match_end15:                                      ; preds = %march_arm934, %march_arm844, %march_arm835, %ife_end733, %ife_end633, %ife_end, %march_arm417, %march_arm314, %march_arm232, %march_arm93, %march_arm16
   %match_val = load i64, ptr %match_result14, align 8
-  %cast935 = inttoptr i64 %match_val to ptr
-  store ptr %cast935, ptr %updated, align 8
-  %updated936 = load ptr, ptr %updated, align 8
-  %next937 = load ptr, ptr %next9, align 8
-  %3 = call ptr @"typeck::collect_decls"(ptr %updated936, ptr %next937)
-  %cast938 = ptrtoint ptr %3 to i64
-  store i64 %cast938, ptr %match_result, align 8
+  %cast938 = inttoptr i64 %match_val to ptr
+  store ptr %cast938, ptr %updated, align 8
+  %updated939 = load ptr, ptr %updated, align 8
+  %next940 = load ptr, ptr %next9, align 8
+  %3 = call ptr @"typeck::collect_decls"(ptr %updated939, ptr %next940)
+  %cast941 = ptrtoint ptr %3 to i64
+  store i64 %cast941, ptr %match_result, align 8
   br label %match_end
 
 march_arm16:                                      ; preds = %march_arm3
@@ -184171,7 +184283,7 @@ march_arm93:                                      ; preds = %march_next17
   %tag_ptr204 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %17, i32 0, i32 0
   store i64 229434674264369, ptr %tag_ptr204, align 8
   %pay_ptr205 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %17, i32 0, i32 1
-  %18 = call ptr @forge_rc_alloc(i64 16)
+  %18 = call ptr @forge_rc_alloc(i64 24)
   store ptr %18, ptr %pay_ptr205, align 8
   %name206 = load ptr, ptr %name102, align 8
   %slot_base207 = ptrtoint ptr %18 to i64
@@ -184183,1100 +184295,1104 @@ march_arm93:                                      ; preds = %march_next17
   %slot_addr212 = add i64 %slot_base211, 8
   %slot213 = inttoptr i64 %slot_addr212 to ptr
   store ptr %inner_ty210, ptr %slot213, align 8
-  %cast214 = ptrtoint ptr %17 to i64
-  %slot_base215 = ptrtoint ptr %16 to i64
-  %slot_addr216 = add i64 %slot_base215, 16
-  %slot217 = inttoptr i64 %slot_addr216 to ptr
-  %cast218 = inttoptr i64 %cast214 to ptr
-  store ptr %cast218, ptr %slot217, align 8
-  %tc219 = load ptr, ptr %tc, align 8
-  %cast220 = ptrtoint ptr %tc219 to i64
-  %null_chk221 = icmp eq i64 %cast220, 0
-  %null_ext222 = zext i1 %null_chk221 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15396, i64 3, ptr @sty_name.15397, i64 10, i64 %null_ext222, ptr @src_file.15398, i64 104, i64 534)
-  %fns_ptr = getelementptr inbounds nuw %"typeck::TC", ptr %tc219, i32 0, i32 1
+  %slot_base214 = ptrtoint ptr %18 to i64
+  %slot_addr215 = add i64 %slot_base214, 16
+  %slot216 = inttoptr i64 %slot_addr215 to ptr
+  store i64 0, ptr %slot216, align 8
+  %cast217 = ptrtoint ptr %17 to i64
+  %slot_base218 = ptrtoint ptr %16 to i64
+  %slot_addr219 = add i64 %slot_base218, 16
+  %slot220 = inttoptr i64 %slot_addr219 to ptr
+  %cast221 = inttoptr i64 %cast217 to ptr
+  store ptr %cast221, ptr %slot220, align 8
+  %tc222 = load ptr, ptr %tc, align 8
+  %cast223 = ptrtoint ptr %tc222 to i64
+  %null_chk224 = icmp eq i64 %cast223, 0
+  %null_ext225 = zext i1 %null_chk224 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.15396, i64 3, ptr @sty_name.15397, i64 10, i64 %null_ext225, ptr @src_file.15398, i64 104, i64 534)
+  %fns_ptr = getelementptr inbounds nuw %"typeck::TC", ptr %tc222, i32 0, i32 1
   %fns = load ptr, ptr %fns_ptr, align 8
-  %slot_base223 = ptrtoint ptr %16 to i64
-  %slot_addr224 = add i64 %slot_base223, 24
-  %slot225 = inttoptr i64 %slot_addr224 to ptr
-  store ptr %fns, ptr %slot225, align 8
-  %cast226 = ptrtoint ptr %15 to i64
-  %with_ovr227 = getelementptr inbounds nuw %"typeck::TC", ptr %12, i32 0, i32 1
-  store i64 %cast226, ptr %with_ovr227, align 8
-  %cast228 = ptrtoint ptr %12 to i64
-  store i64 %cast228, ptr %match_result14, align 8
+  %slot_base226 = ptrtoint ptr %16 to i64
+  %slot_addr227 = add i64 %slot_base226, 24
+  %slot228 = inttoptr i64 %slot_addr227 to ptr
+  store ptr %fns, ptr %slot228, align 8
+  %cast229 = ptrtoint ptr %15 to i64
+  %with_ovr230 = getelementptr inbounds nuw %"typeck::TC", ptr %12, i32 0, i32 1
+  store i64 %cast229, ptr %with_ovr230, align 8
+  %cast231 = ptrtoint ptr %12 to i64
+  store i64 %cast231, ptr %match_result14, align 8
   br label %match_end15
 
 march_next94:                                     ; preds = %march_next17
-  %tag_eq231 = icmp eq i64 %tag13, 2913245454108674224
-  br i1 %tag_eq231, label %march_arm229, label %march_next230
+  %tag_eq234 = icmp eq i64 %tag13, 2913245454108674224
+  br i1 %tag_eq234, label %march_arm232, label %march_next233
 
-march_arm229:                                     ; preds = %march_next94
-  %pay_slot232 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %2, i32 0, i32 1
-  %payload233 = load ptr, ptr %pay_slot232, align 8
-  %name_slot_base234 = ptrtoint ptr %payload233 to i64
-  %name_slot_addr235 = add i64 %name_slot_base234, 0
-  %name_slot236 = inttoptr i64 %name_slot_addr235 to ptr
-  %name237 = load ptr, ptr %name_slot236, align 8
-  call void @forge_rc_retain(ptr %name237)
-  store ptr %name237, ptr %name238, align 8
-  %pay_slot239 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %2, i32 0, i32 1
-  %payload240 = load ptr, ptr %pay_slot239, align 8
-  %type_vt_slot_base = ptrtoint ptr %payload240 to i64
+march_arm232:                                     ; preds = %march_next94
+  %pay_slot235 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %2, i32 0, i32 1
+  %payload236 = load ptr, ptr %pay_slot235, align 8
+  %name_slot_base237 = ptrtoint ptr %payload236 to i64
+  %name_slot_addr238 = add i64 %name_slot_base237, 0
+  %name_slot239 = inttoptr i64 %name_slot_addr238 to ptr
+  %name240 = load ptr, ptr %name_slot239, align 8
+  call void @forge_rc_retain(ptr %name240)
+  store ptr %name240, ptr %name241, align 8
+  %pay_slot242 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %2, i32 0, i32 1
+  %payload243 = load ptr, ptr %pay_slot242, align 8
+  %type_vt_slot_base = ptrtoint ptr %payload243 to i64
   %type_vt_slot_addr = add i64 %type_vt_slot_base, 8
   %type_vt_slot = inttoptr i64 %type_vt_slot_addr to ptr
   %type_vt = load ptr, ptr %type_vt_slot, align 8
   call void @forge_rc_retain(ptr %type_vt)
-  store ptr %type_vt, ptr %type_vt241, align 8
-  %tc242 = load ptr, ptr %tc, align 8
+  store ptr %type_vt, ptr %type_vt244, align 8
+  %tc245 = load ptr, ptr %tc, align 8
   %19 = call ptr @forge_rc_alloc(i64 128)
-  %with_cp_src243 = getelementptr inbounds nuw %"typeck::TC", ptr %tc242, i32 0, i32 0
-  %with_cp_val244 = load ptr, ptr %with_cp_src243, align 8
-  %with_cp_dst245 = getelementptr inbounds nuw %"typeck::TC", ptr %19, i32 0, i32 0
-  store ptr %with_cp_val244, ptr %with_cp_dst245, align 8
-  %with_cp_src246 = getelementptr inbounds nuw %"typeck::TC", ptr %tc242, i32 0, i32 1
+  %with_cp_src246 = getelementptr inbounds nuw %"typeck::TC", ptr %tc245, i32 0, i32 0
   %with_cp_val247 = load ptr, ptr %with_cp_src246, align 8
-  %with_cp_dst248 = getelementptr inbounds nuw %"typeck::TC", ptr %19, i32 0, i32 1
+  %with_cp_dst248 = getelementptr inbounds nuw %"typeck::TC", ptr %19, i32 0, i32 0
   store ptr %with_cp_val247, ptr %with_cp_dst248, align 8
-  %with_cp_src249 = getelementptr inbounds nuw %"typeck::TC", ptr %tc242, i32 0, i32 2
+  %with_cp_src249 = getelementptr inbounds nuw %"typeck::TC", ptr %tc245, i32 0, i32 1
   %with_cp_val250 = load ptr, ptr %with_cp_src249, align 8
-  %with_cp_dst251 = getelementptr inbounds nuw %"typeck::TC", ptr %19, i32 0, i32 2
+  %with_cp_dst251 = getelementptr inbounds nuw %"typeck::TC", ptr %19, i32 0, i32 1
   store ptr %with_cp_val250, ptr %with_cp_dst251, align 8
-  %with_cp_src252 = getelementptr inbounds nuw %"typeck::TC", ptr %tc242, i32 0, i32 3
+  %with_cp_src252 = getelementptr inbounds nuw %"typeck::TC", ptr %tc245, i32 0, i32 2
   %with_cp_val253 = load ptr, ptr %with_cp_src252, align 8
-  %with_cp_dst254 = getelementptr inbounds nuw %"typeck::TC", ptr %19, i32 0, i32 3
+  %with_cp_dst254 = getelementptr inbounds nuw %"typeck::TC", ptr %19, i32 0, i32 2
   store ptr %with_cp_val253, ptr %with_cp_dst254, align 8
-  %with_cp_src255 = getelementptr inbounds nuw %"typeck::TC", ptr %tc242, i32 0, i32 4
+  %with_cp_src255 = getelementptr inbounds nuw %"typeck::TC", ptr %tc245, i32 0, i32 3
   %with_cp_val256 = load ptr, ptr %with_cp_src255, align 8
-  %with_cp_dst257 = getelementptr inbounds nuw %"typeck::TC", ptr %19, i32 0, i32 4
+  %with_cp_dst257 = getelementptr inbounds nuw %"typeck::TC", ptr %19, i32 0, i32 3
   store ptr %with_cp_val256, ptr %with_cp_dst257, align 8
-  %with_cp_src258 = getelementptr inbounds nuw %"typeck::TC", ptr %tc242, i32 0, i32 5
+  %with_cp_src258 = getelementptr inbounds nuw %"typeck::TC", ptr %tc245, i32 0, i32 4
   %with_cp_val259 = load ptr, ptr %with_cp_src258, align 8
-  %with_cp_dst260 = getelementptr inbounds nuw %"typeck::TC", ptr %19, i32 0, i32 5
+  %with_cp_dst260 = getelementptr inbounds nuw %"typeck::TC", ptr %19, i32 0, i32 4
   store ptr %with_cp_val259, ptr %with_cp_dst260, align 8
-  %with_cp_src261 = getelementptr inbounds nuw %"typeck::TC", ptr %tc242, i32 0, i32 6
+  %with_cp_src261 = getelementptr inbounds nuw %"typeck::TC", ptr %tc245, i32 0, i32 5
   %with_cp_val262 = load ptr, ptr %with_cp_src261, align 8
-  %with_cp_dst263 = getelementptr inbounds nuw %"typeck::TC", ptr %19, i32 0, i32 6
+  %with_cp_dst263 = getelementptr inbounds nuw %"typeck::TC", ptr %19, i32 0, i32 5
   store ptr %with_cp_val262, ptr %with_cp_dst263, align 8
-  %with_cp_src264 = getelementptr inbounds nuw %"typeck::TC", ptr %tc242, i32 0, i32 7
-  %with_cp_val265 = load i64, ptr %with_cp_src264, align 8
-  %with_cp_dst266 = getelementptr inbounds nuw %"typeck::TC", ptr %19, i32 0, i32 7
-  store i64 %with_cp_val265, ptr %with_cp_dst266, align 8
-  %with_cp_src267 = getelementptr inbounds nuw %"typeck::TC", ptr %tc242, i32 0, i32 8
-  %with_cp_val268 = load ptr, ptr %with_cp_src267, align 8
-  %with_cp_dst269 = getelementptr inbounds nuw %"typeck::TC", ptr %19, i32 0, i32 8
-  store ptr %with_cp_val268, ptr %with_cp_dst269, align 8
-  %with_cp_src270 = getelementptr inbounds nuw %"typeck::TC", ptr %tc242, i32 0, i32 9
+  %with_cp_src264 = getelementptr inbounds nuw %"typeck::TC", ptr %tc245, i32 0, i32 6
+  %with_cp_val265 = load ptr, ptr %with_cp_src264, align 8
+  %with_cp_dst266 = getelementptr inbounds nuw %"typeck::TC", ptr %19, i32 0, i32 6
+  store ptr %with_cp_val265, ptr %with_cp_dst266, align 8
+  %with_cp_src267 = getelementptr inbounds nuw %"typeck::TC", ptr %tc245, i32 0, i32 7
+  %with_cp_val268 = load i64, ptr %with_cp_src267, align 8
+  %with_cp_dst269 = getelementptr inbounds nuw %"typeck::TC", ptr %19, i32 0, i32 7
+  store i64 %with_cp_val268, ptr %with_cp_dst269, align 8
+  %with_cp_src270 = getelementptr inbounds nuw %"typeck::TC", ptr %tc245, i32 0, i32 8
   %with_cp_val271 = load ptr, ptr %with_cp_src270, align 8
-  %with_cp_dst272 = getelementptr inbounds nuw %"typeck::TC", ptr %19, i32 0, i32 9
+  %with_cp_dst272 = getelementptr inbounds nuw %"typeck::TC", ptr %19, i32 0, i32 8
   store ptr %with_cp_val271, ptr %with_cp_dst272, align 8
-  %with_cp_src273 = getelementptr inbounds nuw %"typeck::TC", ptr %tc242, i32 0, i32 10
-  %with_cp_val274 = load i64, ptr %with_cp_src273, align 8
-  %with_cp_dst275 = getelementptr inbounds nuw %"typeck::TC", ptr %19, i32 0, i32 10
-  store i64 %with_cp_val274, ptr %with_cp_dst275, align 8
-  %with_cp_src276 = getelementptr inbounds nuw %"typeck::TC", ptr %tc242, i32 0, i32 11
+  %with_cp_src273 = getelementptr inbounds nuw %"typeck::TC", ptr %tc245, i32 0, i32 9
+  %with_cp_val274 = load ptr, ptr %with_cp_src273, align 8
+  %with_cp_dst275 = getelementptr inbounds nuw %"typeck::TC", ptr %19, i32 0, i32 9
+  store ptr %with_cp_val274, ptr %with_cp_dst275, align 8
+  %with_cp_src276 = getelementptr inbounds nuw %"typeck::TC", ptr %tc245, i32 0, i32 10
   %with_cp_val277 = load i64, ptr %with_cp_src276, align 8
-  %with_cp_dst278 = getelementptr inbounds nuw %"typeck::TC", ptr %19, i32 0, i32 11
+  %with_cp_dst278 = getelementptr inbounds nuw %"typeck::TC", ptr %19, i32 0, i32 10
   store i64 %with_cp_val277, ptr %with_cp_dst278, align 8
-  %with_cp_src279 = getelementptr inbounds nuw %"typeck::TC", ptr %tc242, i32 0, i32 12
-  %with_cp_val280 = load ptr, ptr %with_cp_src279, align 8
-  %with_cp_dst281 = getelementptr inbounds nuw %"typeck::TC", ptr %19, i32 0, i32 12
-  store ptr %with_cp_val280, ptr %with_cp_dst281, align 8
-  %with_cp_src282 = getelementptr inbounds nuw %"typeck::TC", ptr %tc242, i32 0, i32 13
+  %with_cp_src279 = getelementptr inbounds nuw %"typeck::TC", ptr %tc245, i32 0, i32 11
+  %with_cp_val280 = load i64, ptr %with_cp_src279, align 8
+  %with_cp_dst281 = getelementptr inbounds nuw %"typeck::TC", ptr %19, i32 0, i32 11
+  store i64 %with_cp_val280, ptr %with_cp_dst281, align 8
+  %with_cp_src282 = getelementptr inbounds nuw %"typeck::TC", ptr %tc245, i32 0, i32 12
   %with_cp_val283 = load ptr, ptr %with_cp_src282, align 8
-  %with_cp_dst284 = getelementptr inbounds nuw %"typeck::TC", ptr %19, i32 0, i32 13
+  %with_cp_dst284 = getelementptr inbounds nuw %"typeck::TC", ptr %19, i32 0, i32 12
   store ptr %with_cp_val283, ptr %with_cp_dst284, align 8
-  %with_cp_src285 = getelementptr inbounds nuw %"typeck::TC", ptr %tc242, i32 0, i32 14
+  %with_cp_src285 = getelementptr inbounds nuw %"typeck::TC", ptr %tc245, i32 0, i32 13
   %with_cp_val286 = load ptr, ptr %with_cp_src285, align 8
-  %with_cp_dst287 = getelementptr inbounds nuw %"typeck::TC", ptr %19, i32 0, i32 14
+  %with_cp_dst287 = getelementptr inbounds nuw %"typeck::TC", ptr %19, i32 0, i32 13
   store ptr %with_cp_val286, ptr %with_cp_dst287, align 8
-  %with_cp_src288 = getelementptr inbounds nuw %"typeck::TC", ptr %tc242, i32 0, i32 15
+  %with_cp_src288 = getelementptr inbounds nuw %"typeck::TC", ptr %tc245, i32 0, i32 14
   %with_cp_val289 = load ptr, ptr %with_cp_src288, align 8
-  %with_cp_dst290 = getelementptr inbounds nuw %"typeck::TC", ptr %19, i32 0, i32 15
+  %with_cp_dst290 = getelementptr inbounds nuw %"typeck::TC", ptr %19, i32 0, i32 14
   store ptr %with_cp_val289, ptr %with_cp_dst290, align 8
+  %with_cp_src291 = getelementptr inbounds nuw %"typeck::TC", ptr %tc245, i32 0, i32 15
+  %with_cp_val292 = load ptr, ptr %with_cp_src291, align 8
+  %with_cp_dst293 = getelementptr inbounds nuw %"typeck::TC", ptr %19, i32 0, i32 15
+  store ptr %with_cp_val292, ptr %with_cp_dst293, align 8
   %20 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr291 = getelementptr inbounds nuw %"typeck::UnionAliasReg", ptr %20, i32 0, i32 0
-  store i64 6384368267, ptr %tag_ptr291, align 8
-  %pay_ptr292 = getelementptr inbounds nuw %"typeck::UnionAliasReg", ptr %20, i32 0, i32 1
+  %tag_ptr294 = getelementptr inbounds nuw %"typeck::UnionAliasReg", ptr %20, i32 0, i32 0
+  store i64 6384368267, ptr %tag_ptr294, align 8
+  %pay_ptr295 = getelementptr inbounds nuw %"typeck::UnionAliasReg", ptr %20, i32 0, i32 1
   %21 = call ptr @forge_rc_alloc(i64 24)
-  store ptr %21, ptr %pay_ptr292, align 8
-  %name293 = load ptr, ptr %name238, align 8
-  %slot_base294 = ptrtoint ptr %21 to i64
-  %slot_addr295 = add i64 %slot_base294, 0
-  %slot296 = inttoptr i64 %slot_addr295 to ptr
-  store ptr %name293, ptr %slot296, align 8
-  %type_vt297 = load ptr, ptr %type_vt241, align 8
-  %slot_base298 = ptrtoint ptr %21 to i64
-  %slot_addr299 = add i64 %slot_base298, 8
-  %slot300 = inttoptr i64 %slot_addr299 to ptr
-  store ptr %type_vt297, ptr %slot300, align 8
-  %tc301 = load ptr, ptr %tc, align 8
-  %cast302 = ptrtoint ptr %tc301 to i64
-  %null_chk303 = icmp eq i64 %cast302, 0
-  %null_ext304 = zext i1 %null_chk303 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15399, i64 13, ptr @sty_name.15400, i64 10, i64 %null_ext304, ptr @src_file.15401, i64 104, i64 541)
-  %union_aliases_ptr = getelementptr inbounds nuw %"typeck::TC", ptr %tc301, i32 0, i32 6
+  store ptr %21, ptr %pay_ptr295, align 8
+  %name296 = load ptr, ptr %name241, align 8
+  %slot_base297 = ptrtoint ptr %21 to i64
+  %slot_addr298 = add i64 %slot_base297, 0
+  %slot299 = inttoptr i64 %slot_addr298 to ptr
+  store ptr %name296, ptr %slot299, align 8
+  %type_vt300 = load ptr, ptr %type_vt244, align 8
+  %slot_base301 = ptrtoint ptr %21 to i64
+  %slot_addr302 = add i64 %slot_base301, 8
+  %slot303 = inttoptr i64 %slot_addr302 to ptr
+  store ptr %type_vt300, ptr %slot303, align 8
+  %tc304 = load ptr, ptr %tc, align 8
+  %cast305 = ptrtoint ptr %tc304 to i64
+  %null_chk306 = icmp eq i64 %cast305, 0
+  %null_ext307 = zext i1 %null_chk306 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.15399, i64 13, ptr @sty_name.15400, i64 10, i64 %null_ext307, ptr @src_file.15401, i64 104, i64 541)
+  %union_aliases_ptr = getelementptr inbounds nuw %"typeck::TC", ptr %tc304, i32 0, i32 6
   %union_aliases = load ptr, ptr %union_aliases_ptr, align 8
-  %slot_base305 = ptrtoint ptr %21 to i64
-  %slot_addr306 = add i64 %slot_base305, 16
-  %slot307 = inttoptr i64 %slot_addr306 to ptr
-  store ptr %union_aliases, ptr %slot307, align 8
-  %cast308 = ptrtoint ptr %20 to i64
-  %with_ovr309 = getelementptr inbounds nuw %"typeck::TC", ptr %19, i32 0, i32 6
-  store i64 %cast308, ptr %with_ovr309, align 8
-  %cast310 = ptrtoint ptr %19 to i64
-  store i64 %cast310, ptr %match_result14, align 8
+  %slot_base308 = ptrtoint ptr %21 to i64
+  %slot_addr309 = add i64 %slot_base308, 16
+  %slot310 = inttoptr i64 %slot_addr309 to ptr
+  store ptr %union_aliases, ptr %slot310, align 8
+  %cast311 = ptrtoint ptr %20 to i64
+  %with_ovr312 = getelementptr inbounds nuw %"typeck::TC", ptr %19, i32 0, i32 6
+  store i64 %cast311, ptr %with_ovr312, align 8
+  %cast313 = ptrtoint ptr %19 to i64
+  store i64 %cast313, ptr %match_result14, align 8
   br label %match_end15
 
-march_next230:                                    ; preds = %march_next94
-  %tag_eq313 = icmp eq i64 %tag13, 249861491578184814
-  br i1 %tag_eq313, label %march_arm311, label %march_next312
+march_next233:                                    ; preds = %march_next94
+  %tag_eq316 = icmp eq i64 %tag13, 249861491578184814
+  br i1 %tag_eq316, label %march_arm314, label %march_next315
 
-march_arm311:                                     ; preds = %march_next230
-  %pay_slot314 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %2, i32 0, i32 1
-  %payload315 = load ptr, ptr %pay_slot314, align 8
-  %name_slot_base316 = ptrtoint ptr %payload315 to i64
-  %name_slot_addr317 = add i64 %name_slot_base316, 0
-  %name_slot318 = inttoptr i64 %name_slot_addr317 to ptr
-  %name319 = load ptr, ptr %name_slot318, align 8
-  call void @forge_rc_retain(ptr %name319)
-  store ptr %name319, ptr %name320, align 8
-  %pay_slot321 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %2, i32 0, i32 1
-  %payload322 = load ptr, ptr %pay_slot321, align 8
-  %fields_slot_base323 = ptrtoint ptr %payload322 to i64
-  %fields_slot_addr324 = add i64 %fields_slot_base323, 8
-  %fields_slot325 = inttoptr i64 %fields_slot_addr324 to ptr
-  %fields326 = load ptr, ptr %fields_slot325, align 8
-  call void @forge_rc_retain(ptr %fields326)
-  store ptr %fields326, ptr %fields327, align 8
-  %tc328 = load ptr, ptr %tc, align 8
+march_arm314:                                     ; preds = %march_next233
+  %pay_slot317 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %2, i32 0, i32 1
+  %payload318 = load ptr, ptr %pay_slot317, align 8
+  %name_slot_base319 = ptrtoint ptr %payload318 to i64
+  %name_slot_addr320 = add i64 %name_slot_base319, 0
+  %name_slot321 = inttoptr i64 %name_slot_addr320 to ptr
+  %name322 = load ptr, ptr %name_slot321, align 8
+  call void @forge_rc_retain(ptr %name322)
+  store ptr %name322, ptr %name323, align 8
+  %pay_slot324 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %2, i32 0, i32 1
+  %payload325 = load ptr, ptr %pay_slot324, align 8
+  %fields_slot_base326 = ptrtoint ptr %payload325 to i64
+  %fields_slot_addr327 = add i64 %fields_slot_base326, 8
+  %fields_slot328 = inttoptr i64 %fields_slot_addr327 to ptr
+  %fields329 = load ptr, ptr %fields_slot328, align 8
+  call void @forge_rc_retain(ptr %fields329)
+  store ptr %fields329, ptr %fields330, align 8
+  %tc331 = load ptr, ptr %tc, align 8
   %22 = call ptr @forge_rc_alloc(i64 128)
-  %with_cp_src329 = getelementptr inbounds nuw %"typeck::TC", ptr %tc328, i32 0, i32 0
-  %with_cp_val330 = load ptr, ptr %with_cp_src329, align 8
-  %with_cp_dst331 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 0
-  store ptr %with_cp_val330, ptr %with_cp_dst331, align 8
-  %with_cp_src332 = getelementptr inbounds nuw %"typeck::TC", ptr %tc328, i32 0, i32 1
+  %with_cp_src332 = getelementptr inbounds nuw %"typeck::TC", ptr %tc331, i32 0, i32 0
   %with_cp_val333 = load ptr, ptr %with_cp_src332, align 8
-  %with_cp_dst334 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 1
+  %with_cp_dst334 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 0
   store ptr %with_cp_val333, ptr %with_cp_dst334, align 8
-  %with_cp_src335 = getelementptr inbounds nuw %"typeck::TC", ptr %tc328, i32 0, i32 2
+  %with_cp_src335 = getelementptr inbounds nuw %"typeck::TC", ptr %tc331, i32 0, i32 1
   %with_cp_val336 = load ptr, ptr %with_cp_src335, align 8
-  %with_cp_dst337 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 2
+  %with_cp_dst337 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 1
   store ptr %with_cp_val336, ptr %with_cp_dst337, align 8
-  %with_cp_src338 = getelementptr inbounds nuw %"typeck::TC", ptr %tc328, i32 0, i32 3
+  %with_cp_src338 = getelementptr inbounds nuw %"typeck::TC", ptr %tc331, i32 0, i32 2
   %with_cp_val339 = load ptr, ptr %with_cp_src338, align 8
-  %with_cp_dst340 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 3
+  %with_cp_dst340 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 2
   store ptr %with_cp_val339, ptr %with_cp_dst340, align 8
-  %with_cp_src341 = getelementptr inbounds nuw %"typeck::TC", ptr %tc328, i32 0, i32 4
+  %with_cp_src341 = getelementptr inbounds nuw %"typeck::TC", ptr %tc331, i32 0, i32 3
   %with_cp_val342 = load ptr, ptr %with_cp_src341, align 8
-  %with_cp_dst343 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 4
+  %with_cp_dst343 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 3
   store ptr %with_cp_val342, ptr %with_cp_dst343, align 8
-  %with_cp_src344 = getelementptr inbounds nuw %"typeck::TC", ptr %tc328, i32 0, i32 5
+  %with_cp_src344 = getelementptr inbounds nuw %"typeck::TC", ptr %tc331, i32 0, i32 4
   %with_cp_val345 = load ptr, ptr %with_cp_src344, align 8
-  %with_cp_dst346 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 5
+  %with_cp_dst346 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 4
   store ptr %with_cp_val345, ptr %with_cp_dst346, align 8
-  %with_cp_src347 = getelementptr inbounds nuw %"typeck::TC", ptr %tc328, i32 0, i32 6
+  %with_cp_src347 = getelementptr inbounds nuw %"typeck::TC", ptr %tc331, i32 0, i32 5
   %with_cp_val348 = load ptr, ptr %with_cp_src347, align 8
-  %with_cp_dst349 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 6
+  %with_cp_dst349 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 5
   store ptr %with_cp_val348, ptr %with_cp_dst349, align 8
-  %with_cp_src350 = getelementptr inbounds nuw %"typeck::TC", ptr %tc328, i32 0, i32 7
-  %with_cp_val351 = load i64, ptr %with_cp_src350, align 8
-  %with_cp_dst352 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 7
-  store i64 %with_cp_val351, ptr %with_cp_dst352, align 8
-  %with_cp_src353 = getelementptr inbounds nuw %"typeck::TC", ptr %tc328, i32 0, i32 8
-  %with_cp_val354 = load ptr, ptr %with_cp_src353, align 8
-  %with_cp_dst355 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 8
-  store ptr %with_cp_val354, ptr %with_cp_dst355, align 8
-  %with_cp_src356 = getelementptr inbounds nuw %"typeck::TC", ptr %tc328, i32 0, i32 9
+  %with_cp_src350 = getelementptr inbounds nuw %"typeck::TC", ptr %tc331, i32 0, i32 6
+  %with_cp_val351 = load ptr, ptr %with_cp_src350, align 8
+  %with_cp_dst352 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 6
+  store ptr %with_cp_val351, ptr %with_cp_dst352, align 8
+  %with_cp_src353 = getelementptr inbounds nuw %"typeck::TC", ptr %tc331, i32 0, i32 7
+  %with_cp_val354 = load i64, ptr %with_cp_src353, align 8
+  %with_cp_dst355 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 7
+  store i64 %with_cp_val354, ptr %with_cp_dst355, align 8
+  %with_cp_src356 = getelementptr inbounds nuw %"typeck::TC", ptr %tc331, i32 0, i32 8
   %with_cp_val357 = load ptr, ptr %with_cp_src356, align 8
-  %with_cp_dst358 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 9
+  %with_cp_dst358 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 8
   store ptr %with_cp_val357, ptr %with_cp_dst358, align 8
-  %with_cp_src359 = getelementptr inbounds nuw %"typeck::TC", ptr %tc328, i32 0, i32 10
-  %with_cp_val360 = load i64, ptr %with_cp_src359, align 8
-  %with_cp_dst361 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 10
-  store i64 %with_cp_val360, ptr %with_cp_dst361, align 8
-  %with_cp_src362 = getelementptr inbounds nuw %"typeck::TC", ptr %tc328, i32 0, i32 11
+  %with_cp_src359 = getelementptr inbounds nuw %"typeck::TC", ptr %tc331, i32 0, i32 9
+  %with_cp_val360 = load ptr, ptr %with_cp_src359, align 8
+  %with_cp_dst361 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 9
+  store ptr %with_cp_val360, ptr %with_cp_dst361, align 8
+  %with_cp_src362 = getelementptr inbounds nuw %"typeck::TC", ptr %tc331, i32 0, i32 10
   %with_cp_val363 = load i64, ptr %with_cp_src362, align 8
-  %with_cp_dst364 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 11
+  %with_cp_dst364 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 10
   store i64 %with_cp_val363, ptr %with_cp_dst364, align 8
-  %with_cp_src365 = getelementptr inbounds nuw %"typeck::TC", ptr %tc328, i32 0, i32 12
-  %with_cp_val366 = load ptr, ptr %with_cp_src365, align 8
-  %with_cp_dst367 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 12
-  store ptr %with_cp_val366, ptr %with_cp_dst367, align 8
-  %with_cp_src368 = getelementptr inbounds nuw %"typeck::TC", ptr %tc328, i32 0, i32 13
+  %with_cp_src365 = getelementptr inbounds nuw %"typeck::TC", ptr %tc331, i32 0, i32 11
+  %with_cp_val366 = load i64, ptr %with_cp_src365, align 8
+  %with_cp_dst367 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 11
+  store i64 %with_cp_val366, ptr %with_cp_dst367, align 8
+  %with_cp_src368 = getelementptr inbounds nuw %"typeck::TC", ptr %tc331, i32 0, i32 12
   %with_cp_val369 = load ptr, ptr %with_cp_src368, align 8
-  %with_cp_dst370 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 13
+  %with_cp_dst370 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 12
   store ptr %with_cp_val369, ptr %with_cp_dst370, align 8
-  %with_cp_src371 = getelementptr inbounds nuw %"typeck::TC", ptr %tc328, i32 0, i32 14
+  %with_cp_src371 = getelementptr inbounds nuw %"typeck::TC", ptr %tc331, i32 0, i32 13
   %with_cp_val372 = load ptr, ptr %with_cp_src371, align 8
-  %with_cp_dst373 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 14
+  %with_cp_dst373 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 13
   store ptr %with_cp_val372, ptr %with_cp_dst373, align 8
-  %with_cp_src374 = getelementptr inbounds nuw %"typeck::TC", ptr %tc328, i32 0, i32 15
+  %with_cp_src374 = getelementptr inbounds nuw %"typeck::TC", ptr %tc331, i32 0, i32 14
   %with_cp_val375 = load ptr, ptr %with_cp_src374, align 8
-  %with_cp_dst376 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 15
+  %with_cp_dst376 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 14
   store ptr %with_cp_val375, ptr %with_cp_dst376, align 8
+  %with_cp_src377 = getelementptr inbounds nuw %"typeck::TC", ptr %tc331, i32 0, i32 15
+  %with_cp_val378 = load ptr, ptr %with_cp_src377, align 8
+  %with_cp_dst379 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 15
+  store ptr %with_cp_val378, ptr %with_cp_dst379, align 8
   %23 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr377 = getelementptr inbounds nuw %"typeck::StructTypeReg", ptr %23, i32 0, i32 0
-  store i64 6384368267, ptr %tag_ptr377, align 8
-  %pay_ptr378 = getelementptr inbounds nuw %"typeck::StructTypeReg", ptr %23, i32 0, i32 1
+  %tag_ptr380 = getelementptr inbounds nuw %"typeck::StructTypeReg", ptr %23, i32 0, i32 0
+  store i64 6384368267, ptr %tag_ptr380, align 8
+  %pay_ptr381 = getelementptr inbounds nuw %"typeck::StructTypeReg", ptr %23, i32 0, i32 1
   %24 = call ptr @forge_rc_alloc(i64 24)
-  store ptr %24, ptr %pay_ptr378, align 8
-  %name379 = load ptr, ptr %name320, align 8
-  %slot_base380 = ptrtoint ptr %24 to i64
-  %slot_addr381 = add i64 %slot_base380, 0
-  %slot382 = inttoptr i64 %slot_addr381 to ptr
-  store ptr %name379, ptr %slot382, align 8
-  %fields383 = load ptr, ptr %fields327, align 8
-  %slot_base384 = ptrtoint ptr %24 to i64
-  %slot_addr385 = add i64 %slot_base384, 8
-  %slot386 = inttoptr i64 %slot_addr385 to ptr
-  store ptr %fields383, ptr %slot386, align 8
-  %tc387 = load ptr, ptr %tc, align 8
-  %cast388 = ptrtoint ptr %tc387 to i64
-  %null_chk389 = icmp eq i64 %cast388, 0
-  %null_ext390 = zext i1 %null_chk389 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15402, i64 7, ptr @sty_name.15403, i64 10, i64 %null_ext390, ptr @src_file.15404, i64 104, i64 524)
-  %structs_ptr391 = getelementptr inbounds nuw %"typeck::TC", ptr %tc387, i32 0, i32 2
-  %structs392 = load ptr, ptr %structs_ptr391, align 8
-  %slot_base393 = ptrtoint ptr %24 to i64
-  %slot_addr394 = add i64 %slot_base393, 16
-  %slot395 = inttoptr i64 %slot_addr394 to ptr
-  store ptr %structs392, ptr %slot395, align 8
-  %cast396 = ptrtoint ptr %23 to i64
-  %with_ovr397 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 2
-  store i64 %cast396, ptr %with_ovr397, align 8
+  store ptr %24, ptr %pay_ptr381, align 8
+  %name382 = load ptr, ptr %name323, align 8
+  %slot_base383 = ptrtoint ptr %24 to i64
+  %slot_addr384 = add i64 %slot_base383, 0
+  %slot385 = inttoptr i64 %slot_addr384 to ptr
+  store ptr %name382, ptr %slot385, align 8
+  %fields386 = load ptr, ptr %fields330, align 8
+  %slot_base387 = ptrtoint ptr %24 to i64
+  %slot_addr388 = add i64 %slot_base387, 8
+  %slot389 = inttoptr i64 %slot_addr388 to ptr
+  store ptr %fields386, ptr %slot389, align 8
+  %tc390 = load ptr, ptr %tc, align 8
+  %cast391 = ptrtoint ptr %tc390 to i64
+  %null_chk392 = icmp eq i64 %cast391, 0
+  %null_ext393 = zext i1 %null_chk392 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.15402, i64 7, ptr @sty_name.15403, i64 10, i64 %null_ext393, ptr @src_file.15404, i64 104, i64 524)
+  %structs_ptr394 = getelementptr inbounds nuw %"typeck::TC", ptr %tc390, i32 0, i32 2
+  %structs395 = load ptr, ptr %structs_ptr394, align 8
+  %slot_base396 = ptrtoint ptr %24 to i64
+  %slot_addr397 = add i64 %slot_base396, 16
+  %slot398 = inttoptr i64 %slot_addr397 to ptr
+  store ptr %structs395, ptr %slot398, align 8
+  %cast399 = ptrtoint ptr %23 to i64
+  %with_ovr400 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 2
+  store i64 %cast399, ptr %with_ovr400, align 8
   %25 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr398 = getelementptr inbounds nuw %"typeck::ShapeSet", ptr %25, i32 0, i32 0
-  store i64 6384368267, ptr %tag_ptr398, align 8
-  %pay_ptr399 = getelementptr inbounds nuw %"typeck::ShapeSet", ptr %25, i32 0, i32 1
+  %tag_ptr401 = getelementptr inbounds nuw %"typeck::ShapeSet", ptr %25, i32 0, i32 0
+  store i64 6384368267, ptr %tag_ptr401, align 8
+  %pay_ptr402 = getelementptr inbounds nuw %"typeck::ShapeSet", ptr %25, i32 0, i32 1
   %26 = call ptr @forge_rc_alloc(i64 16)
-  store ptr %26, ptr %pay_ptr399, align 8
-  %name400 = load ptr, ptr %name320, align 8
-  %slot_base401 = ptrtoint ptr %26 to i64
-  %slot_addr402 = add i64 %slot_base401, 0
-  %slot403 = inttoptr i64 %slot_addr402 to ptr
-  store ptr %name400, ptr %slot403, align 8
-  %tc404 = load ptr, ptr %tc, align 8
-  %cast405 = ptrtoint ptr %tc404 to i64
-  %null_chk406 = icmp eq i64 %cast405, 0
-  %null_ext407 = zext i1 %null_chk406 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15405, i64 6, ptr @sty_name.15406, i64 10, i64 %null_ext407, ptr @src_file.15407, i64 104, i64 524)
-  %shapes_ptr = getelementptr inbounds nuw %"typeck::TC", ptr %tc404, i32 0, i32 3
+  store ptr %26, ptr %pay_ptr402, align 8
+  %name403 = load ptr, ptr %name323, align 8
+  %slot_base404 = ptrtoint ptr %26 to i64
+  %slot_addr405 = add i64 %slot_base404, 0
+  %slot406 = inttoptr i64 %slot_addr405 to ptr
+  store ptr %name403, ptr %slot406, align 8
+  %tc407 = load ptr, ptr %tc, align 8
+  %cast408 = ptrtoint ptr %tc407 to i64
+  %null_chk409 = icmp eq i64 %cast408, 0
+  %null_ext410 = zext i1 %null_chk409 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.15405, i64 6, ptr @sty_name.15406, i64 10, i64 %null_ext410, ptr @src_file.15407, i64 104, i64 524)
+  %shapes_ptr = getelementptr inbounds nuw %"typeck::TC", ptr %tc407, i32 0, i32 3
   %shapes = load ptr, ptr %shapes_ptr, align 8
-  %slot_base408 = ptrtoint ptr %26 to i64
-  %slot_addr409 = add i64 %slot_base408, 8
-  %slot410 = inttoptr i64 %slot_addr409 to ptr
-  store ptr %shapes, ptr %slot410, align 8
-  %cast411 = ptrtoint ptr %25 to i64
-  %with_ovr412 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 3
-  store i64 %cast411, ptr %with_ovr412, align 8
-  %cast413 = ptrtoint ptr %22 to i64
-  store i64 %cast413, ptr %match_result14, align 8
+  %slot_base411 = ptrtoint ptr %26 to i64
+  %slot_addr412 = add i64 %slot_base411, 8
+  %slot413 = inttoptr i64 %slot_addr412 to ptr
+  store ptr %shapes, ptr %slot413, align 8
+  %cast414 = ptrtoint ptr %25 to i64
+  %with_ovr415 = getelementptr inbounds nuw %"typeck::TC", ptr %22, i32 0, i32 3
+  store i64 %cast414, ptr %with_ovr415, align 8
+  %cast416 = ptrtoint ptr %22 to i64
+  store i64 %cast416, ptr %match_result14, align 8
   br label %match_end15
 
-march_next312:                                    ; preds = %march_next230
-  %tag_eq416 = icmp eq i64 %tag13, 7570972219460274
-  br i1 %tag_eq416, label %march_arm414, label %march_next415
+march_next315:                                    ; preds = %march_next233
+  %tag_eq419 = icmp eq i64 %tag13, 7570972219460274
+  br i1 %tag_eq419, label %march_arm417, label %march_next418
 
-march_arm414:                                     ; preds = %march_next312
-  %pay_slot417 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %2, i32 0, i32 1
-  %payload418 = load ptr, ptr %pay_slot417, align 8
-  %name_slot_base419 = ptrtoint ptr %payload418 to i64
-  %name_slot_addr420 = add i64 %name_slot_base419, 0
-  %name_slot421 = inttoptr i64 %name_slot_addr420 to ptr
-  %name422 = load ptr, ptr %name_slot421, align 8
-  call void @forge_rc_retain(ptr %name422)
-  store ptr %name422, ptr %name423, align 8
-  %pay_slot424 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %2, i32 0, i32 1
-  %payload425 = load ptr, ptr %pay_slot424, align 8
-  %variants_slot_base = ptrtoint ptr %payload425 to i64
+march_arm417:                                     ; preds = %march_next315
+  %pay_slot420 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %2, i32 0, i32 1
+  %payload421 = load ptr, ptr %pay_slot420, align 8
+  %name_slot_base422 = ptrtoint ptr %payload421 to i64
+  %name_slot_addr423 = add i64 %name_slot_base422, 0
+  %name_slot424 = inttoptr i64 %name_slot_addr423 to ptr
+  %name425 = load ptr, ptr %name_slot424, align 8
+  call void @forge_rc_retain(ptr %name425)
+  store ptr %name425, ptr %name426, align 8
+  %pay_slot427 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %2, i32 0, i32 1
+  %payload428 = load ptr, ptr %pay_slot427, align 8
+  %variants_slot_base = ptrtoint ptr %payload428 to i64
   %variants_slot_addr = add i64 %variants_slot_base, 16
   %variants_slot = inttoptr i64 %variants_slot_addr to ptr
   %variants = load ptr, ptr %variants_slot, align 8
   call void @forge_rc_retain(ptr %variants)
-  store ptr %variants, ptr %variants426, align 8
-  %tc427 = load ptr, ptr %tc, align 8
+  store ptr %variants, ptr %variants429, align 8
+  %tc430 = load ptr, ptr %tc, align 8
   %27 = call ptr @forge_rc_alloc(i64 128)
-  %with_cp_src428 = getelementptr inbounds nuw %"typeck::TC", ptr %tc427, i32 0, i32 0
-  %with_cp_val429 = load ptr, ptr %with_cp_src428, align 8
-  %with_cp_dst430 = getelementptr inbounds nuw %"typeck::TC", ptr %27, i32 0, i32 0
-  store ptr %with_cp_val429, ptr %with_cp_dst430, align 8
-  %with_cp_src431 = getelementptr inbounds nuw %"typeck::TC", ptr %tc427, i32 0, i32 1
+  %with_cp_src431 = getelementptr inbounds nuw %"typeck::TC", ptr %tc430, i32 0, i32 0
   %with_cp_val432 = load ptr, ptr %with_cp_src431, align 8
-  %with_cp_dst433 = getelementptr inbounds nuw %"typeck::TC", ptr %27, i32 0, i32 1
+  %with_cp_dst433 = getelementptr inbounds nuw %"typeck::TC", ptr %27, i32 0, i32 0
   store ptr %with_cp_val432, ptr %with_cp_dst433, align 8
-  %with_cp_src434 = getelementptr inbounds nuw %"typeck::TC", ptr %tc427, i32 0, i32 2
+  %with_cp_src434 = getelementptr inbounds nuw %"typeck::TC", ptr %tc430, i32 0, i32 1
   %with_cp_val435 = load ptr, ptr %with_cp_src434, align 8
-  %with_cp_dst436 = getelementptr inbounds nuw %"typeck::TC", ptr %27, i32 0, i32 2
+  %with_cp_dst436 = getelementptr inbounds nuw %"typeck::TC", ptr %27, i32 0, i32 1
   store ptr %with_cp_val435, ptr %with_cp_dst436, align 8
-  %with_cp_src437 = getelementptr inbounds nuw %"typeck::TC", ptr %tc427, i32 0, i32 3
+  %with_cp_src437 = getelementptr inbounds nuw %"typeck::TC", ptr %tc430, i32 0, i32 2
   %with_cp_val438 = load ptr, ptr %with_cp_src437, align 8
-  %with_cp_dst439 = getelementptr inbounds nuw %"typeck::TC", ptr %27, i32 0, i32 3
+  %with_cp_dst439 = getelementptr inbounds nuw %"typeck::TC", ptr %27, i32 0, i32 2
   store ptr %with_cp_val438, ptr %with_cp_dst439, align 8
-  %with_cp_src440 = getelementptr inbounds nuw %"typeck::TC", ptr %tc427, i32 0, i32 4
+  %with_cp_src440 = getelementptr inbounds nuw %"typeck::TC", ptr %tc430, i32 0, i32 3
   %with_cp_val441 = load ptr, ptr %with_cp_src440, align 8
-  %with_cp_dst442 = getelementptr inbounds nuw %"typeck::TC", ptr %27, i32 0, i32 4
+  %with_cp_dst442 = getelementptr inbounds nuw %"typeck::TC", ptr %27, i32 0, i32 3
   store ptr %with_cp_val441, ptr %with_cp_dst442, align 8
-  %with_cp_src443 = getelementptr inbounds nuw %"typeck::TC", ptr %tc427, i32 0, i32 5
+  %with_cp_src443 = getelementptr inbounds nuw %"typeck::TC", ptr %tc430, i32 0, i32 4
   %with_cp_val444 = load ptr, ptr %with_cp_src443, align 8
-  %with_cp_dst445 = getelementptr inbounds nuw %"typeck::TC", ptr %27, i32 0, i32 5
+  %with_cp_dst445 = getelementptr inbounds nuw %"typeck::TC", ptr %27, i32 0, i32 4
   store ptr %with_cp_val444, ptr %with_cp_dst445, align 8
-  %with_cp_src446 = getelementptr inbounds nuw %"typeck::TC", ptr %tc427, i32 0, i32 6
+  %with_cp_src446 = getelementptr inbounds nuw %"typeck::TC", ptr %tc430, i32 0, i32 5
   %with_cp_val447 = load ptr, ptr %with_cp_src446, align 8
-  %with_cp_dst448 = getelementptr inbounds nuw %"typeck::TC", ptr %27, i32 0, i32 6
+  %with_cp_dst448 = getelementptr inbounds nuw %"typeck::TC", ptr %27, i32 0, i32 5
   store ptr %with_cp_val447, ptr %with_cp_dst448, align 8
-  %with_cp_src449 = getelementptr inbounds nuw %"typeck::TC", ptr %tc427, i32 0, i32 7
-  %with_cp_val450 = load i64, ptr %with_cp_src449, align 8
-  %with_cp_dst451 = getelementptr inbounds nuw %"typeck::TC", ptr %27, i32 0, i32 7
-  store i64 %with_cp_val450, ptr %with_cp_dst451, align 8
-  %with_cp_src452 = getelementptr inbounds nuw %"typeck::TC", ptr %tc427, i32 0, i32 8
-  %with_cp_val453 = load ptr, ptr %with_cp_src452, align 8
-  %with_cp_dst454 = getelementptr inbounds nuw %"typeck::TC", ptr %27, i32 0, i32 8
-  store ptr %with_cp_val453, ptr %with_cp_dst454, align 8
-  %with_cp_src455 = getelementptr inbounds nuw %"typeck::TC", ptr %tc427, i32 0, i32 9
+  %with_cp_src449 = getelementptr inbounds nuw %"typeck::TC", ptr %tc430, i32 0, i32 6
+  %with_cp_val450 = load ptr, ptr %with_cp_src449, align 8
+  %with_cp_dst451 = getelementptr inbounds nuw %"typeck::TC", ptr %27, i32 0, i32 6
+  store ptr %with_cp_val450, ptr %with_cp_dst451, align 8
+  %with_cp_src452 = getelementptr inbounds nuw %"typeck::TC", ptr %tc430, i32 0, i32 7
+  %with_cp_val453 = load i64, ptr %with_cp_src452, align 8
+  %with_cp_dst454 = getelementptr inbounds nuw %"typeck::TC", ptr %27, i32 0, i32 7
+  store i64 %with_cp_val453, ptr %with_cp_dst454, align 8
+  %with_cp_src455 = getelementptr inbounds nuw %"typeck::TC", ptr %tc430, i32 0, i32 8
   %with_cp_val456 = load ptr, ptr %with_cp_src455, align 8
-  %with_cp_dst457 = getelementptr inbounds nuw %"typeck::TC", ptr %27, i32 0, i32 9
+  %with_cp_dst457 = getelementptr inbounds nuw %"typeck::TC", ptr %27, i32 0, i32 8
   store ptr %with_cp_val456, ptr %with_cp_dst457, align 8
-  %with_cp_src458 = getelementptr inbounds nuw %"typeck::TC", ptr %tc427, i32 0, i32 10
-  %with_cp_val459 = load i64, ptr %with_cp_src458, align 8
-  %with_cp_dst460 = getelementptr inbounds nuw %"typeck::TC", ptr %27, i32 0, i32 10
-  store i64 %with_cp_val459, ptr %with_cp_dst460, align 8
-  %with_cp_src461 = getelementptr inbounds nuw %"typeck::TC", ptr %tc427, i32 0, i32 11
+  %with_cp_src458 = getelementptr inbounds nuw %"typeck::TC", ptr %tc430, i32 0, i32 9
+  %with_cp_val459 = load ptr, ptr %with_cp_src458, align 8
+  %with_cp_dst460 = getelementptr inbounds nuw %"typeck::TC", ptr %27, i32 0, i32 9
+  store ptr %with_cp_val459, ptr %with_cp_dst460, align 8
+  %with_cp_src461 = getelementptr inbounds nuw %"typeck::TC", ptr %tc430, i32 0, i32 10
   %with_cp_val462 = load i64, ptr %with_cp_src461, align 8
-  %with_cp_dst463 = getelementptr inbounds nuw %"typeck::TC", ptr %27, i32 0, i32 11
+  %with_cp_dst463 = getelementptr inbounds nuw %"typeck::TC", ptr %27, i32 0, i32 10
   store i64 %with_cp_val462, ptr %with_cp_dst463, align 8
-  %with_cp_src464 = getelementptr inbounds nuw %"typeck::TC", ptr %tc427, i32 0, i32 12
-  %with_cp_val465 = load ptr, ptr %with_cp_src464, align 8
-  %with_cp_dst466 = getelementptr inbounds nuw %"typeck::TC", ptr %27, i32 0, i32 12
-  store ptr %with_cp_val465, ptr %with_cp_dst466, align 8
-  %with_cp_src467 = getelementptr inbounds nuw %"typeck::TC", ptr %tc427, i32 0, i32 13
+  %with_cp_src464 = getelementptr inbounds nuw %"typeck::TC", ptr %tc430, i32 0, i32 11
+  %with_cp_val465 = load i64, ptr %with_cp_src464, align 8
+  %with_cp_dst466 = getelementptr inbounds nuw %"typeck::TC", ptr %27, i32 0, i32 11
+  store i64 %with_cp_val465, ptr %with_cp_dst466, align 8
+  %with_cp_src467 = getelementptr inbounds nuw %"typeck::TC", ptr %tc430, i32 0, i32 12
   %with_cp_val468 = load ptr, ptr %with_cp_src467, align 8
-  %with_cp_dst469 = getelementptr inbounds nuw %"typeck::TC", ptr %27, i32 0, i32 13
+  %with_cp_dst469 = getelementptr inbounds nuw %"typeck::TC", ptr %27, i32 0, i32 12
   store ptr %with_cp_val468, ptr %with_cp_dst469, align 8
-  %with_cp_src470 = getelementptr inbounds nuw %"typeck::TC", ptr %tc427, i32 0, i32 14
+  %with_cp_src470 = getelementptr inbounds nuw %"typeck::TC", ptr %tc430, i32 0, i32 13
   %with_cp_val471 = load ptr, ptr %with_cp_src470, align 8
-  %with_cp_dst472 = getelementptr inbounds nuw %"typeck::TC", ptr %27, i32 0, i32 14
+  %with_cp_dst472 = getelementptr inbounds nuw %"typeck::TC", ptr %27, i32 0, i32 13
   store ptr %with_cp_val471, ptr %with_cp_dst472, align 8
-  %with_cp_src473 = getelementptr inbounds nuw %"typeck::TC", ptr %tc427, i32 0, i32 15
+  %with_cp_src473 = getelementptr inbounds nuw %"typeck::TC", ptr %tc430, i32 0, i32 14
   %with_cp_val474 = load ptr, ptr %with_cp_src473, align 8
-  %with_cp_dst475 = getelementptr inbounds nuw %"typeck::TC", ptr %27, i32 0, i32 15
+  %with_cp_dst475 = getelementptr inbounds nuw %"typeck::TC", ptr %27, i32 0, i32 14
   store ptr %with_cp_val474, ptr %with_cp_dst475, align 8
+  %with_cp_src476 = getelementptr inbounds nuw %"typeck::TC", ptr %tc430, i32 0, i32 15
+  %with_cp_val477 = load ptr, ptr %with_cp_src476, align 8
+  %with_cp_dst478 = getelementptr inbounds nuw %"typeck::TC", ptr %27, i32 0, i32 15
+  store ptr %with_cp_val477, ptr %with_cp_dst478, align 8
   %28 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr476 = getelementptr inbounds nuw %"typeck::EnumTypeReg", ptr %28, i32 0, i32 0
-  store i64 6384368267, ptr %tag_ptr476, align 8
-  %pay_ptr477 = getelementptr inbounds nuw %"typeck::EnumTypeReg", ptr %28, i32 0, i32 1
+  %tag_ptr479 = getelementptr inbounds nuw %"typeck::EnumTypeReg", ptr %28, i32 0, i32 0
+  store i64 6384368267, ptr %tag_ptr479, align 8
+  %pay_ptr480 = getelementptr inbounds nuw %"typeck::EnumTypeReg", ptr %28, i32 0, i32 1
   %29 = call ptr @forge_rc_alloc(i64 24)
-  store ptr %29, ptr %pay_ptr477, align 8
-  %name478 = load ptr, ptr %name423, align 8
-  %slot_base479 = ptrtoint ptr %29 to i64
-  %slot_addr480 = add i64 %slot_base479, 0
-  %slot481 = inttoptr i64 %slot_addr480 to ptr
-  store ptr %name478, ptr %slot481, align 8
-  %variants482 = load ptr, ptr %variants426, align 8
-  %slot_base483 = ptrtoint ptr %29 to i64
-  %slot_addr484 = add i64 %slot_base483, 8
-  %slot485 = inttoptr i64 %slot_addr484 to ptr
-  store ptr %variants482, ptr %slot485, align 8
-  %tc486 = load ptr, ptr %tc, align 8
-  %cast487 = ptrtoint ptr %tc486 to i64
-  %null_chk488 = icmp eq i64 %cast487, 0
-  %null_ext489 = zext i1 %null_chk488 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15408, i64 5, ptr @sty_name.15409, i64 10, i64 %null_ext489, ptr @src_file.15410, i64 104, i64 524)
-  %enums_ptr = getelementptr inbounds nuw %"typeck::TC", ptr %tc486, i32 0, i32 4
+  store ptr %29, ptr %pay_ptr480, align 8
+  %name481 = load ptr, ptr %name426, align 8
+  %slot_base482 = ptrtoint ptr %29 to i64
+  %slot_addr483 = add i64 %slot_base482, 0
+  %slot484 = inttoptr i64 %slot_addr483 to ptr
+  store ptr %name481, ptr %slot484, align 8
+  %variants485 = load ptr, ptr %variants429, align 8
+  %slot_base486 = ptrtoint ptr %29 to i64
+  %slot_addr487 = add i64 %slot_base486, 8
+  %slot488 = inttoptr i64 %slot_addr487 to ptr
+  store ptr %variants485, ptr %slot488, align 8
+  %tc489 = load ptr, ptr %tc, align 8
+  %cast490 = ptrtoint ptr %tc489 to i64
+  %null_chk491 = icmp eq i64 %cast490, 0
+  %null_ext492 = zext i1 %null_chk491 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.15408, i64 5, ptr @sty_name.15409, i64 10, i64 %null_ext492, ptr @src_file.15410, i64 104, i64 524)
+  %enums_ptr = getelementptr inbounds nuw %"typeck::TC", ptr %tc489, i32 0, i32 4
   %enums = load ptr, ptr %enums_ptr, align 8
-  %slot_base490 = ptrtoint ptr %29 to i64
-  %slot_addr491 = add i64 %slot_base490, 16
-  %slot492 = inttoptr i64 %slot_addr491 to ptr
-  store ptr %enums, ptr %slot492, align 8
-  %cast493 = ptrtoint ptr %28 to i64
-  %with_ovr494 = getelementptr inbounds nuw %"typeck::TC", ptr %27, i32 0, i32 4
-  store i64 %cast493, ptr %with_ovr494, align 8
-  %cast495 = ptrtoint ptr %27 to i64
-  store i64 %cast495, ptr %match_result14, align 8
+  %slot_base493 = ptrtoint ptr %29 to i64
+  %slot_addr494 = add i64 %slot_base493, 16
+  %slot495 = inttoptr i64 %slot_addr494 to ptr
+  store ptr %enums, ptr %slot495, align 8
+  %cast496 = ptrtoint ptr %28 to i64
+  %with_ovr497 = getelementptr inbounds nuw %"typeck::TC", ptr %27, i32 0, i32 4
+  store i64 %cast496, ptr %with_ovr497, align 8
+  %cast498 = ptrtoint ptr %27 to i64
+  store i64 %cast498, ptr %match_result14, align 8
   br label %match_end15
 
-march_next415:                                    ; preds = %march_next312
-  %tag_eq498 = icmp eq i64 %tag13, 7571023594101803
-  br i1 %tag_eq498, label %march_arm496, label %march_next497
+march_next418:                                    ; preds = %march_next315
+  %tag_eq501 = icmp eq i64 %tag13, 7571023594101803
+  br i1 %tag_eq501, label %march_arm499, label %march_next500
 
-march_arm496:                                     ; preds = %march_next415
-  %pay_slot499 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %2, i32 0, i32 1
-  %payload500 = load ptr, ptr %pay_slot499, align 8
-  %name_slot_base501 = ptrtoint ptr %payload500 to i64
-  %name_slot_addr502 = add i64 %name_slot_base501, 0
-  %name_slot503 = inttoptr i64 %name_slot_addr502 to ptr
-  %name504 = load ptr, ptr %name_slot503, align 8
-  call void @forge_rc_retain(ptr %name504)
-  store ptr %name504, ptr %name505, align 8
-  %pay_slot506 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %2, i32 0, i32 1
-  %payload507 = load ptr, ptr %pay_slot506, align 8
-  %params_slot_base = ptrtoint ptr %payload507 to i64
+march_arm499:                                     ; preds = %march_next418
+  %pay_slot502 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %2, i32 0, i32 1
+  %payload503 = load ptr, ptr %pay_slot502, align 8
+  %name_slot_base504 = ptrtoint ptr %payload503 to i64
+  %name_slot_addr505 = add i64 %name_slot_base504, 0
+  %name_slot506 = inttoptr i64 %name_slot_addr505 to ptr
+  %name507 = load ptr, ptr %name_slot506, align 8
+  call void @forge_rc_retain(ptr %name507)
+  store ptr %name507, ptr %name508, align 8
+  %pay_slot509 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %2, i32 0, i32 1
+  %payload510 = load ptr, ptr %pay_slot509, align 8
+  %params_slot_base = ptrtoint ptr %payload510 to i64
   %params_slot_addr = add i64 %params_slot_base, 16
   %params_slot = inttoptr i64 %params_slot_addr to ptr
   %params = load ptr, ptr %params_slot, align 8
   call void @forge_rc_retain(ptr %params)
-  store ptr %params, ptr %params508, align 8
-  %pay_slot509 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %2, i32 0, i32 1
-  %payload510 = load ptr, ptr %pay_slot509, align 8
-  %ret_vt_slot_base = ptrtoint ptr %payload510 to i64
+  store ptr %params, ptr %params511, align 8
+  %pay_slot512 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %2, i32 0, i32 1
+  %payload513 = load ptr, ptr %pay_slot512, align 8
+  %ret_vt_slot_base = ptrtoint ptr %payload513 to i64
   %ret_vt_slot_addr = add i64 %ret_vt_slot_base, 24
   %ret_vt_slot = inttoptr i64 %ret_vt_slot_addr to ptr
   %ret_vt = load ptr, ptr %ret_vt_slot, align 8
   call void @forge_rc_retain(ptr %ret_vt)
-  store ptr %ret_vt, ptr %ret_vt511, align 8
-  %ret_vt512 = load ptr, ptr %ret_vt511, align 8
+  store ptr %ret_vt, ptr %ret_vt514, align 8
+  %ret_vt515 = load ptr, ptr %ret_vt514, align 8
   %30 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr513 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %30, i32 0, i32 0
-  store i64 6384655927, ptr %tag_ptr513, align 8
-  %pay_ptr514 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %30, i32 0, i32 1
-  store ptr null, ptr %pay_ptr514, align 8
-  %cast515 = ptrtoint ptr %30 to i64
-  %cast516 = inttoptr i64 %cast515 to ptr
-  %31 = call i1 @"core::ast::vtype_eq"(ptr %ret_vt512, ptr %cast516)
+  %tag_ptr516 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %30, i32 0, i32 0
+  store i64 6384655927, ptr %tag_ptr516, align 8
+  %pay_ptr517 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %30, i32 0, i32 1
+  store ptr null, ptr %pay_ptr517, align 8
+  %cast518 = ptrtoint ptr %30 to i64
+  %cast519 = inttoptr i64 %cast518 to ptr
+  %31 = call i1 @"core::ast::vtype_eq"(ptr %ret_vt515, ptr %cast519)
   %widen = zext i1 %31 to i64
   %ife_cond = icmp ne i64 %widen, 0
   br i1 %ife_cond, label %ife_then, label %ife_else
 
-march_next497:                                    ; preds = %march_next415
-  %tag_eq601 = icmp eq i64 %tag13, 7570985087179151
-  br i1 %tag_eq601, label %march_arm599, label %march_next600
+march_next500:                                    ; preds = %march_next418
+  %tag_eq604 = icmp eq i64 %tag13, 7570985087179151
+  br i1 %tag_eq604, label %march_arm602, label %march_next603
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
-  %cast523 = inttoptr i64 %ife_val to ptr
-  store ptr %cast523, ptr %final_ret, align 8
-  %tc524 = load ptr, ptr %tc, align 8
+  %cast526 = inttoptr i64 %ife_val to ptr
+  store ptr %cast526, ptr %final_ret, align 8
+  %tc527 = load ptr, ptr %tc, align 8
   %32 = call ptr @forge_rc_alloc(i64 128)
-  %with_cp_src525 = getelementptr inbounds nuw %"typeck::TC", ptr %tc524, i32 0, i32 0
-  %with_cp_val526 = load ptr, ptr %with_cp_src525, align 8
-  %with_cp_dst527 = getelementptr inbounds nuw %"typeck::TC", ptr %32, i32 0, i32 0
-  store ptr %with_cp_val526, ptr %with_cp_dst527, align 8
-  %with_cp_src528 = getelementptr inbounds nuw %"typeck::TC", ptr %tc524, i32 0, i32 1
+  %with_cp_src528 = getelementptr inbounds nuw %"typeck::TC", ptr %tc527, i32 0, i32 0
   %with_cp_val529 = load ptr, ptr %with_cp_src528, align 8
-  %with_cp_dst530 = getelementptr inbounds nuw %"typeck::TC", ptr %32, i32 0, i32 1
+  %with_cp_dst530 = getelementptr inbounds nuw %"typeck::TC", ptr %32, i32 0, i32 0
   store ptr %with_cp_val529, ptr %with_cp_dst530, align 8
-  %with_cp_src531 = getelementptr inbounds nuw %"typeck::TC", ptr %tc524, i32 0, i32 2
+  %with_cp_src531 = getelementptr inbounds nuw %"typeck::TC", ptr %tc527, i32 0, i32 1
   %with_cp_val532 = load ptr, ptr %with_cp_src531, align 8
-  %with_cp_dst533 = getelementptr inbounds nuw %"typeck::TC", ptr %32, i32 0, i32 2
+  %with_cp_dst533 = getelementptr inbounds nuw %"typeck::TC", ptr %32, i32 0, i32 1
   store ptr %with_cp_val532, ptr %with_cp_dst533, align 8
-  %with_cp_src534 = getelementptr inbounds nuw %"typeck::TC", ptr %tc524, i32 0, i32 3
+  %with_cp_src534 = getelementptr inbounds nuw %"typeck::TC", ptr %tc527, i32 0, i32 2
   %with_cp_val535 = load ptr, ptr %with_cp_src534, align 8
-  %with_cp_dst536 = getelementptr inbounds nuw %"typeck::TC", ptr %32, i32 0, i32 3
+  %with_cp_dst536 = getelementptr inbounds nuw %"typeck::TC", ptr %32, i32 0, i32 2
   store ptr %with_cp_val535, ptr %with_cp_dst536, align 8
-  %with_cp_src537 = getelementptr inbounds nuw %"typeck::TC", ptr %tc524, i32 0, i32 4
+  %with_cp_src537 = getelementptr inbounds nuw %"typeck::TC", ptr %tc527, i32 0, i32 3
   %with_cp_val538 = load ptr, ptr %with_cp_src537, align 8
-  %with_cp_dst539 = getelementptr inbounds nuw %"typeck::TC", ptr %32, i32 0, i32 4
+  %with_cp_dst539 = getelementptr inbounds nuw %"typeck::TC", ptr %32, i32 0, i32 3
   store ptr %with_cp_val538, ptr %with_cp_dst539, align 8
-  %with_cp_src540 = getelementptr inbounds nuw %"typeck::TC", ptr %tc524, i32 0, i32 5
+  %with_cp_src540 = getelementptr inbounds nuw %"typeck::TC", ptr %tc527, i32 0, i32 4
   %with_cp_val541 = load ptr, ptr %with_cp_src540, align 8
-  %with_cp_dst542 = getelementptr inbounds nuw %"typeck::TC", ptr %32, i32 0, i32 5
+  %with_cp_dst542 = getelementptr inbounds nuw %"typeck::TC", ptr %32, i32 0, i32 4
   store ptr %with_cp_val541, ptr %with_cp_dst542, align 8
-  %with_cp_src543 = getelementptr inbounds nuw %"typeck::TC", ptr %tc524, i32 0, i32 6
+  %with_cp_src543 = getelementptr inbounds nuw %"typeck::TC", ptr %tc527, i32 0, i32 5
   %with_cp_val544 = load ptr, ptr %with_cp_src543, align 8
-  %with_cp_dst545 = getelementptr inbounds nuw %"typeck::TC", ptr %32, i32 0, i32 6
+  %with_cp_dst545 = getelementptr inbounds nuw %"typeck::TC", ptr %32, i32 0, i32 5
   store ptr %with_cp_val544, ptr %with_cp_dst545, align 8
-  %with_cp_src546 = getelementptr inbounds nuw %"typeck::TC", ptr %tc524, i32 0, i32 7
-  %with_cp_val547 = load i64, ptr %with_cp_src546, align 8
-  %with_cp_dst548 = getelementptr inbounds nuw %"typeck::TC", ptr %32, i32 0, i32 7
-  store i64 %with_cp_val547, ptr %with_cp_dst548, align 8
-  %with_cp_src549 = getelementptr inbounds nuw %"typeck::TC", ptr %tc524, i32 0, i32 8
-  %with_cp_val550 = load ptr, ptr %with_cp_src549, align 8
-  %with_cp_dst551 = getelementptr inbounds nuw %"typeck::TC", ptr %32, i32 0, i32 8
-  store ptr %with_cp_val550, ptr %with_cp_dst551, align 8
-  %with_cp_src552 = getelementptr inbounds nuw %"typeck::TC", ptr %tc524, i32 0, i32 9
+  %with_cp_src546 = getelementptr inbounds nuw %"typeck::TC", ptr %tc527, i32 0, i32 6
+  %with_cp_val547 = load ptr, ptr %with_cp_src546, align 8
+  %with_cp_dst548 = getelementptr inbounds nuw %"typeck::TC", ptr %32, i32 0, i32 6
+  store ptr %with_cp_val547, ptr %with_cp_dst548, align 8
+  %with_cp_src549 = getelementptr inbounds nuw %"typeck::TC", ptr %tc527, i32 0, i32 7
+  %with_cp_val550 = load i64, ptr %with_cp_src549, align 8
+  %with_cp_dst551 = getelementptr inbounds nuw %"typeck::TC", ptr %32, i32 0, i32 7
+  store i64 %with_cp_val550, ptr %with_cp_dst551, align 8
+  %with_cp_src552 = getelementptr inbounds nuw %"typeck::TC", ptr %tc527, i32 0, i32 8
   %with_cp_val553 = load ptr, ptr %with_cp_src552, align 8
-  %with_cp_dst554 = getelementptr inbounds nuw %"typeck::TC", ptr %32, i32 0, i32 9
+  %with_cp_dst554 = getelementptr inbounds nuw %"typeck::TC", ptr %32, i32 0, i32 8
   store ptr %with_cp_val553, ptr %with_cp_dst554, align 8
-  %with_cp_src555 = getelementptr inbounds nuw %"typeck::TC", ptr %tc524, i32 0, i32 10
-  %with_cp_val556 = load i64, ptr %with_cp_src555, align 8
-  %with_cp_dst557 = getelementptr inbounds nuw %"typeck::TC", ptr %32, i32 0, i32 10
-  store i64 %with_cp_val556, ptr %with_cp_dst557, align 8
-  %with_cp_src558 = getelementptr inbounds nuw %"typeck::TC", ptr %tc524, i32 0, i32 11
+  %with_cp_src555 = getelementptr inbounds nuw %"typeck::TC", ptr %tc527, i32 0, i32 9
+  %with_cp_val556 = load ptr, ptr %with_cp_src555, align 8
+  %with_cp_dst557 = getelementptr inbounds nuw %"typeck::TC", ptr %32, i32 0, i32 9
+  store ptr %with_cp_val556, ptr %with_cp_dst557, align 8
+  %with_cp_src558 = getelementptr inbounds nuw %"typeck::TC", ptr %tc527, i32 0, i32 10
   %with_cp_val559 = load i64, ptr %with_cp_src558, align 8
-  %with_cp_dst560 = getelementptr inbounds nuw %"typeck::TC", ptr %32, i32 0, i32 11
+  %with_cp_dst560 = getelementptr inbounds nuw %"typeck::TC", ptr %32, i32 0, i32 10
   store i64 %with_cp_val559, ptr %with_cp_dst560, align 8
-  %with_cp_src561 = getelementptr inbounds nuw %"typeck::TC", ptr %tc524, i32 0, i32 12
-  %with_cp_val562 = load ptr, ptr %with_cp_src561, align 8
-  %with_cp_dst563 = getelementptr inbounds nuw %"typeck::TC", ptr %32, i32 0, i32 12
-  store ptr %with_cp_val562, ptr %with_cp_dst563, align 8
-  %with_cp_src564 = getelementptr inbounds nuw %"typeck::TC", ptr %tc524, i32 0, i32 13
+  %with_cp_src561 = getelementptr inbounds nuw %"typeck::TC", ptr %tc527, i32 0, i32 11
+  %with_cp_val562 = load i64, ptr %with_cp_src561, align 8
+  %with_cp_dst563 = getelementptr inbounds nuw %"typeck::TC", ptr %32, i32 0, i32 11
+  store i64 %with_cp_val562, ptr %with_cp_dst563, align 8
+  %with_cp_src564 = getelementptr inbounds nuw %"typeck::TC", ptr %tc527, i32 0, i32 12
   %with_cp_val565 = load ptr, ptr %with_cp_src564, align 8
-  %with_cp_dst566 = getelementptr inbounds nuw %"typeck::TC", ptr %32, i32 0, i32 13
+  %with_cp_dst566 = getelementptr inbounds nuw %"typeck::TC", ptr %32, i32 0, i32 12
   store ptr %with_cp_val565, ptr %with_cp_dst566, align 8
-  %with_cp_src567 = getelementptr inbounds nuw %"typeck::TC", ptr %tc524, i32 0, i32 14
+  %with_cp_src567 = getelementptr inbounds nuw %"typeck::TC", ptr %tc527, i32 0, i32 13
   %with_cp_val568 = load ptr, ptr %with_cp_src567, align 8
-  %with_cp_dst569 = getelementptr inbounds nuw %"typeck::TC", ptr %32, i32 0, i32 14
+  %with_cp_dst569 = getelementptr inbounds nuw %"typeck::TC", ptr %32, i32 0, i32 13
   store ptr %with_cp_val568, ptr %with_cp_dst569, align 8
-  %with_cp_src570 = getelementptr inbounds nuw %"typeck::TC", ptr %tc524, i32 0, i32 15
+  %with_cp_src570 = getelementptr inbounds nuw %"typeck::TC", ptr %tc527, i32 0, i32 14
   %with_cp_val571 = load ptr, ptr %with_cp_src570, align 8
-  %with_cp_dst572 = getelementptr inbounds nuw %"typeck::TC", ptr %32, i32 0, i32 15
+  %with_cp_dst572 = getelementptr inbounds nuw %"typeck::TC", ptr %32, i32 0, i32 14
   store ptr %with_cp_val571, ptr %with_cp_dst572, align 8
+  %with_cp_src573 = getelementptr inbounds nuw %"typeck::TC", ptr %tc527, i32 0, i32 15
+  %with_cp_val574 = load ptr, ptr %with_cp_src573, align 8
+  %with_cp_dst575 = getelementptr inbounds nuw %"typeck::TC", ptr %32, i32 0, i32 15
+  store ptr %with_cp_val574, ptr %with_cp_dst575, align 8
   %33 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr573 = getelementptr inbounds nuw %"typeck::FnTypeEntry", ptr %33, i32 0, i32 0
-  store i64 6384368267, ptr %tag_ptr573, align 8
-  %pay_ptr574 = getelementptr inbounds nuw %"typeck::FnTypeEntry", ptr %33, i32 0, i32 1
+  %tag_ptr576 = getelementptr inbounds nuw %"typeck::FnTypeEntry", ptr %33, i32 0, i32 0
+  store i64 6384368267, ptr %tag_ptr576, align 8
+  %pay_ptr577 = getelementptr inbounds nuw %"typeck::FnTypeEntry", ptr %33, i32 0, i32 1
   %34 = call ptr @forge_rc_alloc(i64 32)
-  store ptr %34, ptr %pay_ptr574, align 8
-  %name575 = load ptr, ptr %name505, align 8
-  %slot_base576 = ptrtoint ptr %34 to i64
-  %slot_addr577 = add i64 %slot_base576, 0
-  %slot578 = inttoptr i64 %slot_addr577 to ptr
-  store ptr %name575, ptr %slot578, align 8
-  %params579 = load ptr, ptr %params508, align 8
-  %slot_base580 = ptrtoint ptr %34 to i64
-  %slot_addr581 = add i64 %slot_base580, 8
-  %slot582 = inttoptr i64 %slot_addr581 to ptr
-  store ptr %params579, ptr %slot582, align 8
-  %final_ret583 = load ptr, ptr %final_ret, align 8
-  %slot_base584 = ptrtoint ptr %34 to i64
-  %slot_addr585 = add i64 %slot_base584, 16
-  %slot586 = inttoptr i64 %slot_addr585 to ptr
-  store ptr %final_ret583, ptr %slot586, align 8
-  %tc587 = load ptr, ptr %tc, align 8
-  %cast588 = ptrtoint ptr %tc587 to i64
-  %null_chk589 = icmp eq i64 %cast588, 0
-  %null_ext590 = zext i1 %null_chk589 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15411, i64 3, ptr @sty_name.15412, i64 10, i64 %null_ext590, ptr @src_file.15413, i64 104, i64 553)
-  %fns_ptr591 = getelementptr inbounds nuw %"typeck::TC", ptr %tc587, i32 0, i32 1
-  %fns592 = load ptr, ptr %fns_ptr591, align 8
-  %slot_base593 = ptrtoint ptr %34 to i64
-  %slot_addr594 = add i64 %slot_base593, 24
-  %slot595 = inttoptr i64 %slot_addr594 to ptr
-  store ptr %fns592, ptr %slot595, align 8
-  %cast596 = ptrtoint ptr %33 to i64
-  %with_ovr597 = getelementptr inbounds nuw %"typeck::TC", ptr %32, i32 0, i32 1
-  store i64 %cast596, ptr %with_ovr597, align 8
-  %cast598 = ptrtoint ptr %32 to i64
-  store i64 %cast598, ptr %match_result14, align 8
+  store ptr %34, ptr %pay_ptr577, align 8
+  %name578 = load ptr, ptr %name508, align 8
+  %slot_base579 = ptrtoint ptr %34 to i64
+  %slot_addr580 = add i64 %slot_base579, 0
+  %slot581 = inttoptr i64 %slot_addr580 to ptr
+  store ptr %name578, ptr %slot581, align 8
+  %params582 = load ptr, ptr %params511, align 8
+  %slot_base583 = ptrtoint ptr %34 to i64
+  %slot_addr584 = add i64 %slot_base583, 8
+  %slot585 = inttoptr i64 %slot_addr584 to ptr
+  store ptr %params582, ptr %slot585, align 8
+  %final_ret586 = load ptr, ptr %final_ret, align 8
+  %slot_base587 = ptrtoint ptr %34 to i64
+  %slot_addr588 = add i64 %slot_base587, 16
+  %slot589 = inttoptr i64 %slot_addr588 to ptr
+  store ptr %final_ret586, ptr %slot589, align 8
+  %tc590 = load ptr, ptr %tc, align 8
+  %cast591 = ptrtoint ptr %tc590 to i64
+  %null_chk592 = icmp eq i64 %cast591, 0
+  %null_ext593 = zext i1 %null_chk592 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.15411, i64 3, ptr @sty_name.15412, i64 10, i64 %null_ext593, ptr @src_file.15413, i64 104, i64 553)
+  %fns_ptr594 = getelementptr inbounds nuw %"typeck::TC", ptr %tc590, i32 0, i32 1
+  %fns595 = load ptr, ptr %fns_ptr594, align 8
+  %slot_base596 = ptrtoint ptr %34 to i64
+  %slot_addr597 = add i64 %slot_base596, 24
+  %slot598 = inttoptr i64 %slot_addr597 to ptr
+  store ptr %fns595, ptr %slot598, align 8
+  %cast599 = ptrtoint ptr %33 to i64
+  %with_ovr600 = getelementptr inbounds nuw %"typeck::TC", ptr %32, i32 0, i32 1
+  store i64 %cast599, ptr %with_ovr600, align 8
+  %cast601 = ptrtoint ptr %32 to i64
+  store i64 %cast601, ptr %match_result14, align 8
   br label %match_end15
 
-ife_then:                                         ; preds = %march_arm496
+ife_then:                                         ; preds = %march_arm499
   %35 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr517 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %35, i32 0, i32 0
-  store i64 6384655927, ptr %tag_ptr517, align 8
-  %pay_ptr518 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %35, i32 0, i32 1
-  store ptr null, ptr %pay_ptr518, align 8
-  %cast519 = ptrtoint ptr %35 to i64
-  store i64 %cast519, ptr %ife_result, align 8
-  br label %ife_end
-
-ife_else:                                         ; preds = %march_arm496
-  %tc520 = load ptr, ptr %tc, align 8
-  %ret_vt521 = load ptr, ptr %ret_vt511, align 8
-  %36 = call ptr @"typeck::resolve_vtype"(ptr %tc520, ptr %ret_vt521)
-  %cast522 = ptrtoint ptr %36 to i64
+  %tag_ptr520 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %35, i32 0, i32 0
+  store i64 6384655927, ptr %tag_ptr520, align 8
+  %pay_ptr521 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %35, i32 0, i32 1
+  store ptr null, ptr %pay_ptr521, align 8
+  %cast522 = ptrtoint ptr %35 to i64
   store i64 %cast522, ptr %ife_result, align 8
   br label %ife_end
 
-march_arm599:                                     ; preds = %march_next497
-  %pay_slot602 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %2, i32 0, i32 1
-  %payload603 = load ptr, ptr %pay_slot602, align 8
-  %name_slot_base604 = ptrtoint ptr %payload603 to i64
-  %name_slot_addr605 = add i64 %name_slot_base604, 0
-  %name_slot606 = inttoptr i64 %name_slot_addr605 to ptr
-  %name607 = load ptr, ptr %name_slot606, align 8
-  call void @forge_rc_retain(ptr %name607)
-  store ptr %name607, ptr %name608, align 8
-  %pay_slot609 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %2, i32 0, i32 1
-  %payload610 = load ptr, ptr %pay_slot609, align 8
-  %params_slot_base611 = ptrtoint ptr %payload610 to i64
-  %params_slot_addr612 = add i64 %params_slot_base611, 8
-  %params_slot613 = inttoptr i64 %params_slot_addr612 to ptr
-  %params614 = load ptr, ptr %params_slot613, align 8
-  call void @forge_rc_retain(ptr %params614)
-  store ptr %params614, ptr %params615, align 8
-  %pay_slot616 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %2, i32 0, i32 1
-  %payload617 = load ptr, ptr %pay_slot616, align 8
-  %ret_vt_slot_base618 = ptrtoint ptr %payload617 to i64
-  %ret_vt_slot_addr619 = add i64 %ret_vt_slot_base618, 16
-  %ret_vt_slot620 = inttoptr i64 %ret_vt_slot_addr619 to ptr
-  %ret_vt621 = load ptr, ptr %ret_vt_slot620, align 8
-  call void @forge_rc_retain(ptr %ret_vt621)
-  store ptr %ret_vt621, ptr %ret_vt622, align 8
-  %ret_vt623 = load ptr, ptr %ret_vt622, align 8
+ife_else:                                         ; preds = %march_arm499
+  %tc523 = load ptr, ptr %tc, align 8
+  %ret_vt524 = load ptr, ptr %ret_vt514, align 8
+  %36 = call ptr @"typeck::resolve_vtype"(ptr %tc523, ptr %ret_vt524)
+  %cast525 = ptrtoint ptr %36 to i64
+  store i64 %cast525, ptr %ife_result, align 8
+  br label %ife_end
+
+march_arm602:                                     ; preds = %march_next500
+  %pay_slot605 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %2, i32 0, i32 1
+  %payload606 = load ptr, ptr %pay_slot605, align 8
+  %name_slot_base607 = ptrtoint ptr %payload606 to i64
+  %name_slot_addr608 = add i64 %name_slot_base607, 0
+  %name_slot609 = inttoptr i64 %name_slot_addr608 to ptr
+  %name610 = load ptr, ptr %name_slot609, align 8
+  call void @forge_rc_retain(ptr %name610)
+  store ptr %name610, ptr %name611, align 8
+  %pay_slot612 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %2, i32 0, i32 1
+  %payload613 = load ptr, ptr %pay_slot612, align 8
+  %params_slot_base614 = ptrtoint ptr %payload613 to i64
+  %params_slot_addr615 = add i64 %params_slot_base614, 8
+  %params_slot616 = inttoptr i64 %params_slot_addr615 to ptr
+  %params617 = load ptr, ptr %params_slot616, align 8
+  call void @forge_rc_retain(ptr %params617)
+  store ptr %params617, ptr %params618, align 8
+  %pay_slot619 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %2, i32 0, i32 1
+  %payload620 = load ptr, ptr %pay_slot619, align 8
+  %ret_vt_slot_base621 = ptrtoint ptr %payload620 to i64
+  %ret_vt_slot_addr622 = add i64 %ret_vt_slot_base621, 16
+  %ret_vt_slot623 = inttoptr i64 %ret_vt_slot_addr622 to ptr
+  %ret_vt624 = load ptr, ptr %ret_vt_slot623, align 8
+  call void @forge_rc_retain(ptr %ret_vt624)
+  store ptr %ret_vt624, ptr %ret_vt625, align 8
+  %ret_vt626 = load ptr, ptr %ret_vt625, align 8
   %37 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr624 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %37, i32 0, i32 0
-  store i64 6384655927, ptr %tag_ptr624, align 8
-  %pay_ptr625 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %37, i32 0, i32 1
-  store ptr null, ptr %pay_ptr625, align 8
-  %cast626 = ptrtoint ptr %37 to i64
-  %cast627 = inttoptr i64 %cast626 to ptr
-  %38 = call i1 @"core::ast::vtype_eq"(ptr %ret_vt623, ptr %cast627)
-  %widen628 = zext i1 %38 to i64
-  %ife_cond631 = icmp ne i64 %widen628, 0
-  br i1 %ife_cond631, label %ife_then632, label %ife_else633
+  %tag_ptr627 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %37, i32 0, i32 0
+  store i64 6384655927, ptr %tag_ptr627, align 8
+  %pay_ptr628 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %37, i32 0, i32 1
+  store ptr null, ptr %pay_ptr628, align 8
+  %cast629 = ptrtoint ptr %37 to i64
+  %cast630 = inttoptr i64 %cast629 to ptr
+  %38 = call i1 @"core::ast::vtype_eq"(ptr %ret_vt626, ptr %cast630)
+  %widen631 = zext i1 %38 to i64
+  %ife_cond634 = icmp ne i64 %widen631, 0
+  br i1 %ife_cond634, label %ife_then635, label %ife_else636
 
-march_next600:                                    ; preds = %march_next497
-  %tag_eq720 = icmp eq i64 %tag13, 6384186807
-  br i1 %tag_eq720, label %march_arm718, label %march_next719
+march_next603:                                    ; preds = %march_next500
+  %tag_eq723 = icmp eq i64 %tag13, 6384186807
+  br i1 %tag_eq723, label %march_arm721, label %march_next722
 
-ife_end630:                                       ; preds = %ife_else633, %ife_then632
-  %ife_val640 = load i64, ptr %ife_result629, align 8
-  %cast642 = inttoptr i64 %ife_val640 to ptr
-  store ptr %cast642, ptr %final_ret641, align 8
-  %tc643 = load ptr, ptr %tc, align 8
+ife_end633:                                       ; preds = %ife_else636, %ife_then635
+  %ife_val643 = load i64, ptr %ife_result632, align 8
+  %cast645 = inttoptr i64 %ife_val643 to ptr
+  store ptr %cast645, ptr %final_ret644, align 8
+  %tc646 = load ptr, ptr %tc, align 8
   %39 = call ptr @forge_rc_alloc(i64 128)
-  %with_cp_src644 = getelementptr inbounds nuw %"typeck::TC", ptr %tc643, i32 0, i32 0
-  %with_cp_val645 = load ptr, ptr %with_cp_src644, align 8
-  %with_cp_dst646 = getelementptr inbounds nuw %"typeck::TC", ptr %39, i32 0, i32 0
-  store ptr %with_cp_val645, ptr %with_cp_dst646, align 8
-  %with_cp_src647 = getelementptr inbounds nuw %"typeck::TC", ptr %tc643, i32 0, i32 1
+  %with_cp_src647 = getelementptr inbounds nuw %"typeck::TC", ptr %tc646, i32 0, i32 0
   %with_cp_val648 = load ptr, ptr %with_cp_src647, align 8
-  %with_cp_dst649 = getelementptr inbounds nuw %"typeck::TC", ptr %39, i32 0, i32 1
+  %with_cp_dst649 = getelementptr inbounds nuw %"typeck::TC", ptr %39, i32 0, i32 0
   store ptr %with_cp_val648, ptr %with_cp_dst649, align 8
-  %with_cp_src650 = getelementptr inbounds nuw %"typeck::TC", ptr %tc643, i32 0, i32 2
+  %with_cp_src650 = getelementptr inbounds nuw %"typeck::TC", ptr %tc646, i32 0, i32 1
   %with_cp_val651 = load ptr, ptr %with_cp_src650, align 8
-  %with_cp_dst652 = getelementptr inbounds nuw %"typeck::TC", ptr %39, i32 0, i32 2
+  %with_cp_dst652 = getelementptr inbounds nuw %"typeck::TC", ptr %39, i32 0, i32 1
   store ptr %with_cp_val651, ptr %with_cp_dst652, align 8
-  %with_cp_src653 = getelementptr inbounds nuw %"typeck::TC", ptr %tc643, i32 0, i32 3
+  %with_cp_src653 = getelementptr inbounds nuw %"typeck::TC", ptr %tc646, i32 0, i32 2
   %with_cp_val654 = load ptr, ptr %with_cp_src653, align 8
-  %with_cp_dst655 = getelementptr inbounds nuw %"typeck::TC", ptr %39, i32 0, i32 3
+  %with_cp_dst655 = getelementptr inbounds nuw %"typeck::TC", ptr %39, i32 0, i32 2
   store ptr %with_cp_val654, ptr %with_cp_dst655, align 8
-  %with_cp_src656 = getelementptr inbounds nuw %"typeck::TC", ptr %tc643, i32 0, i32 4
+  %with_cp_src656 = getelementptr inbounds nuw %"typeck::TC", ptr %tc646, i32 0, i32 3
   %with_cp_val657 = load ptr, ptr %with_cp_src656, align 8
-  %with_cp_dst658 = getelementptr inbounds nuw %"typeck::TC", ptr %39, i32 0, i32 4
+  %with_cp_dst658 = getelementptr inbounds nuw %"typeck::TC", ptr %39, i32 0, i32 3
   store ptr %with_cp_val657, ptr %with_cp_dst658, align 8
-  %with_cp_src659 = getelementptr inbounds nuw %"typeck::TC", ptr %tc643, i32 0, i32 5
+  %with_cp_src659 = getelementptr inbounds nuw %"typeck::TC", ptr %tc646, i32 0, i32 4
   %with_cp_val660 = load ptr, ptr %with_cp_src659, align 8
-  %with_cp_dst661 = getelementptr inbounds nuw %"typeck::TC", ptr %39, i32 0, i32 5
+  %with_cp_dst661 = getelementptr inbounds nuw %"typeck::TC", ptr %39, i32 0, i32 4
   store ptr %with_cp_val660, ptr %with_cp_dst661, align 8
-  %with_cp_src662 = getelementptr inbounds nuw %"typeck::TC", ptr %tc643, i32 0, i32 6
+  %with_cp_src662 = getelementptr inbounds nuw %"typeck::TC", ptr %tc646, i32 0, i32 5
   %with_cp_val663 = load ptr, ptr %with_cp_src662, align 8
-  %with_cp_dst664 = getelementptr inbounds nuw %"typeck::TC", ptr %39, i32 0, i32 6
+  %with_cp_dst664 = getelementptr inbounds nuw %"typeck::TC", ptr %39, i32 0, i32 5
   store ptr %with_cp_val663, ptr %with_cp_dst664, align 8
-  %with_cp_src665 = getelementptr inbounds nuw %"typeck::TC", ptr %tc643, i32 0, i32 7
-  %with_cp_val666 = load i64, ptr %with_cp_src665, align 8
-  %with_cp_dst667 = getelementptr inbounds nuw %"typeck::TC", ptr %39, i32 0, i32 7
-  store i64 %with_cp_val666, ptr %with_cp_dst667, align 8
-  %with_cp_src668 = getelementptr inbounds nuw %"typeck::TC", ptr %tc643, i32 0, i32 8
-  %with_cp_val669 = load ptr, ptr %with_cp_src668, align 8
-  %with_cp_dst670 = getelementptr inbounds nuw %"typeck::TC", ptr %39, i32 0, i32 8
-  store ptr %with_cp_val669, ptr %with_cp_dst670, align 8
-  %with_cp_src671 = getelementptr inbounds nuw %"typeck::TC", ptr %tc643, i32 0, i32 9
+  %with_cp_src665 = getelementptr inbounds nuw %"typeck::TC", ptr %tc646, i32 0, i32 6
+  %with_cp_val666 = load ptr, ptr %with_cp_src665, align 8
+  %with_cp_dst667 = getelementptr inbounds nuw %"typeck::TC", ptr %39, i32 0, i32 6
+  store ptr %with_cp_val666, ptr %with_cp_dst667, align 8
+  %with_cp_src668 = getelementptr inbounds nuw %"typeck::TC", ptr %tc646, i32 0, i32 7
+  %with_cp_val669 = load i64, ptr %with_cp_src668, align 8
+  %with_cp_dst670 = getelementptr inbounds nuw %"typeck::TC", ptr %39, i32 0, i32 7
+  store i64 %with_cp_val669, ptr %with_cp_dst670, align 8
+  %with_cp_src671 = getelementptr inbounds nuw %"typeck::TC", ptr %tc646, i32 0, i32 8
   %with_cp_val672 = load ptr, ptr %with_cp_src671, align 8
-  %with_cp_dst673 = getelementptr inbounds nuw %"typeck::TC", ptr %39, i32 0, i32 9
+  %with_cp_dst673 = getelementptr inbounds nuw %"typeck::TC", ptr %39, i32 0, i32 8
   store ptr %with_cp_val672, ptr %with_cp_dst673, align 8
-  %with_cp_src674 = getelementptr inbounds nuw %"typeck::TC", ptr %tc643, i32 0, i32 10
-  %with_cp_val675 = load i64, ptr %with_cp_src674, align 8
-  %with_cp_dst676 = getelementptr inbounds nuw %"typeck::TC", ptr %39, i32 0, i32 10
-  store i64 %with_cp_val675, ptr %with_cp_dst676, align 8
-  %with_cp_src677 = getelementptr inbounds nuw %"typeck::TC", ptr %tc643, i32 0, i32 11
+  %with_cp_src674 = getelementptr inbounds nuw %"typeck::TC", ptr %tc646, i32 0, i32 9
+  %with_cp_val675 = load ptr, ptr %with_cp_src674, align 8
+  %with_cp_dst676 = getelementptr inbounds nuw %"typeck::TC", ptr %39, i32 0, i32 9
+  store ptr %with_cp_val675, ptr %with_cp_dst676, align 8
+  %with_cp_src677 = getelementptr inbounds nuw %"typeck::TC", ptr %tc646, i32 0, i32 10
   %with_cp_val678 = load i64, ptr %with_cp_src677, align 8
-  %with_cp_dst679 = getelementptr inbounds nuw %"typeck::TC", ptr %39, i32 0, i32 11
+  %with_cp_dst679 = getelementptr inbounds nuw %"typeck::TC", ptr %39, i32 0, i32 10
   store i64 %with_cp_val678, ptr %with_cp_dst679, align 8
-  %with_cp_src680 = getelementptr inbounds nuw %"typeck::TC", ptr %tc643, i32 0, i32 12
-  %with_cp_val681 = load ptr, ptr %with_cp_src680, align 8
-  %with_cp_dst682 = getelementptr inbounds nuw %"typeck::TC", ptr %39, i32 0, i32 12
-  store ptr %with_cp_val681, ptr %with_cp_dst682, align 8
-  %with_cp_src683 = getelementptr inbounds nuw %"typeck::TC", ptr %tc643, i32 0, i32 13
+  %with_cp_src680 = getelementptr inbounds nuw %"typeck::TC", ptr %tc646, i32 0, i32 11
+  %with_cp_val681 = load i64, ptr %with_cp_src680, align 8
+  %with_cp_dst682 = getelementptr inbounds nuw %"typeck::TC", ptr %39, i32 0, i32 11
+  store i64 %with_cp_val681, ptr %with_cp_dst682, align 8
+  %with_cp_src683 = getelementptr inbounds nuw %"typeck::TC", ptr %tc646, i32 0, i32 12
   %with_cp_val684 = load ptr, ptr %with_cp_src683, align 8
-  %with_cp_dst685 = getelementptr inbounds nuw %"typeck::TC", ptr %39, i32 0, i32 13
+  %with_cp_dst685 = getelementptr inbounds nuw %"typeck::TC", ptr %39, i32 0, i32 12
   store ptr %with_cp_val684, ptr %with_cp_dst685, align 8
-  %with_cp_src686 = getelementptr inbounds nuw %"typeck::TC", ptr %tc643, i32 0, i32 14
+  %with_cp_src686 = getelementptr inbounds nuw %"typeck::TC", ptr %tc646, i32 0, i32 13
   %with_cp_val687 = load ptr, ptr %with_cp_src686, align 8
-  %with_cp_dst688 = getelementptr inbounds nuw %"typeck::TC", ptr %39, i32 0, i32 14
+  %with_cp_dst688 = getelementptr inbounds nuw %"typeck::TC", ptr %39, i32 0, i32 13
   store ptr %with_cp_val687, ptr %with_cp_dst688, align 8
-  %with_cp_src689 = getelementptr inbounds nuw %"typeck::TC", ptr %tc643, i32 0, i32 15
+  %with_cp_src689 = getelementptr inbounds nuw %"typeck::TC", ptr %tc646, i32 0, i32 14
   %with_cp_val690 = load ptr, ptr %with_cp_src689, align 8
-  %with_cp_dst691 = getelementptr inbounds nuw %"typeck::TC", ptr %39, i32 0, i32 15
+  %with_cp_dst691 = getelementptr inbounds nuw %"typeck::TC", ptr %39, i32 0, i32 14
   store ptr %with_cp_val690, ptr %with_cp_dst691, align 8
+  %with_cp_src692 = getelementptr inbounds nuw %"typeck::TC", ptr %tc646, i32 0, i32 15
+  %with_cp_val693 = load ptr, ptr %with_cp_src692, align 8
+  %with_cp_dst694 = getelementptr inbounds nuw %"typeck::TC", ptr %39, i32 0, i32 15
+  store ptr %with_cp_val693, ptr %with_cp_dst694, align 8
   %40 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr692 = getelementptr inbounds nuw %"typeck::FnTypeEntry", ptr %40, i32 0, i32 0
-  store i64 6384368267, ptr %tag_ptr692, align 8
-  %pay_ptr693 = getelementptr inbounds nuw %"typeck::FnTypeEntry", ptr %40, i32 0, i32 1
+  %tag_ptr695 = getelementptr inbounds nuw %"typeck::FnTypeEntry", ptr %40, i32 0, i32 0
+  store i64 6384368267, ptr %tag_ptr695, align 8
+  %pay_ptr696 = getelementptr inbounds nuw %"typeck::FnTypeEntry", ptr %40, i32 0, i32 1
   %41 = call ptr @forge_rc_alloc(i64 32)
-  store ptr %41, ptr %pay_ptr693, align 8
-  %name694 = load ptr, ptr %name608, align 8
-  %slot_base695 = ptrtoint ptr %41 to i64
-  %slot_addr696 = add i64 %slot_base695, 0
-  %slot697 = inttoptr i64 %slot_addr696 to ptr
-  store ptr %name694, ptr %slot697, align 8
-  %params698 = load ptr, ptr %params615, align 8
-  %slot_base699 = ptrtoint ptr %41 to i64
-  %slot_addr700 = add i64 %slot_base699, 8
-  %slot701 = inttoptr i64 %slot_addr700 to ptr
-  store ptr %params698, ptr %slot701, align 8
-  %final_ret702 = load ptr, ptr %final_ret641, align 8
-  %slot_base703 = ptrtoint ptr %41 to i64
-  %slot_addr704 = add i64 %slot_base703, 16
-  %slot705 = inttoptr i64 %slot_addr704 to ptr
-  store ptr %final_ret702, ptr %slot705, align 8
-  %tc706 = load ptr, ptr %tc, align 8
-  %cast707 = ptrtoint ptr %tc706 to i64
-  %null_chk708 = icmp eq i64 %cast707, 0
-  %null_ext709 = zext i1 %null_chk708 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15414, i64 3, ptr @sty_name.15415, i64 10, i64 %null_ext709, ptr @src_file.15416, i64 104, i64 560)
-  %fns_ptr710 = getelementptr inbounds nuw %"typeck::TC", ptr %tc706, i32 0, i32 1
-  %fns711 = load ptr, ptr %fns_ptr710, align 8
-  %slot_base712 = ptrtoint ptr %41 to i64
-  %slot_addr713 = add i64 %slot_base712, 24
-  %slot714 = inttoptr i64 %slot_addr713 to ptr
-  store ptr %fns711, ptr %slot714, align 8
-  %cast715 = ptrtoint ptr %40 to i64
-  %with_ovr716 = getelementptr inbounds nuw %"typeck::TC", ptr %39, i32 0, i32 1
-  store i64 %cast715, ptr %with_ovr716, align 8
-  %cast717 = ptrtoint ptr %39 to i64
-  store i64 %cast717, ptr %match_result14, align 8
+  store ptr %41, ptr %pay_ptr696, align 8
+  %name697 = load ptr, ptr %name611, align 8
+  %slot_base698 = ptrtoint ptr %41 to i64
+  %slot_addr699 = add i64 %slot_base698, 0
+  %slot700 = inttoptr i64 %slot_addr699 to ptr
+  store ptr %name697, ptr %slot700, align 8
+  %params701 = load ptr, ptr %params618, align 8
+  %slot_base702 = ptrtoint ptr %41 to i64
+  %slot_addr703 = add i64 %slot_base702, 8
+  %slot704 = inttoptr i64 %slot_addr703 to ptr
+  store ptr %params701, ptr %slot704, align 8
+  %final_ret705 = load ptr, ptr %final_ret644, align 8
+  %slot_base706 = ptrtoint ptr %41 to i64
+  %slot_addr707 = add i64 %slot_base706, 16
+  %slot708 = inttoptr i64 %slot_addr707 to ptr
+  store ptr %final_ret705, ptr %slot708, align 8
+  %tc709 = load ptr, ptr %tc, align 8
+  %cast710 = ptrtoint ptr %tc709 to i64
+  %null_chk711 = icmp eq i64 %cast710, 0
+  %null_ext712 = zext i1 %null_chk711 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.15414, i64 3, ptr @sty_name.15415, i64 10, i64 %null_ext712, ptr @src_file.15416, i64 104, i64 560)
+  %fns_ptr713 = getelementptr inbounds nuw %"typeck::TC", ptr %tc709, i32 0, i32 1
+  %fns714 = load ptr, ptr %fns_ptr713, align 8
+  %slot_base715 = ptrtoint ptr %41 to i64
+  %slot_addr716 = add i64 %slot_base715, 24
+  %slot717 = inttoptr i64 %slot_addr716 to ptr
+  store ptr %fns714, ptr %slot717, align 8
+  %cast718 = ptrtoint ptr %40 to i64
+  %with_ovr719 = getelementptr inbounds nuw %"typeck::TC", ptr %39, i32 0, i32 1
+  store i64 %cast718, ptr %with_ovr719, align 8
+  %cast720 = ptrtoint ptr %39 to i64
+  store i64 %cast720, ptr %match_result14, align 8
   br label %match_end15
 
-ife_then632:                                      ; preds = %march_arm599
+ife_then635:                                      ; preds = %march_arm602
   %42 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr634 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %42, i32 0, i32 0
-  store i64 6384655927, ptr %tag_ptr634, align 8
-  %pay_ptr635 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %42, i32 0, i32 1
-  store ptr null, ptr %pay_ptr635, align 8
-  %cast636 = ptrtoint ptr %42 to i64
-  store i64 %cast636, ptr %ife_result629, align 8
-  br label %ife_end630
+  %tag_ptr637 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %42, i32 0, i32 0
+  store i64 6384655927, ptr %tag_ptr637, align 8
+  %pay_ptr638 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %42, i32 0, i32 1
+  store ptr null, ptr %pay_ptr638, align 8
+  %cast639 = ptrtoint ptr %42 to i64
+  store i64 %cast639, ptr %ife_result632, align 8
+  br label %ife_end633
 
-ife_else633:                                      ; preds = %march_arm599
-  %tc637 = load ptr, ptr %tc, align 8
-  %ret_vt638 = load ptr, ptr %ret_vt622, align 8
-  %43 = call ptr @"typeck::resolve_vtype"(ptr %tc637, ptr %ret_vt638)
-  %cast639 = ptrtoint ptr %43 to i64
-  store i64 %cast639, ptr %ife_result629, align 8
-  br label %ife_end630
+ife_else636:                                      ; preds = %march_arm602
+  %tc640 = load ptr, ptr %tc, align 8
+  %ret_vt641 = load ptr, ptr %ret_vt625, align 8
+  %43 = call ptr @"typeck::resolve_vtype"(ptr %tc640, ptr %ret_vt641)
+  %cast642 = ptrtoint ptr %43 to i64
+  store i64 %cast642, ptr %ife_result632, align 8
+  br label %ife_end633
 
-march_arm718:                                     ; preds = %march_next600
-  %pay_slot721 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %2, i32 0, i32 1
-  %payload722 = load ptr, ptr %pay_slot721, align 8
-  %impl_name_slot_base = ptrtoint ptr %payload722 to i64
+march_arm721:                                     ; preds = %march_next603
+  %pay_slot724 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %2, i32 0, i32 1
+  %payload725 = load ptr, ptr %pay_slot724, align 8
+  %impl_name_slot_base = ptrtoint ptr %payload725 to i64
   %impl_name_slot_addr = add i64 %impl_name_slot_base, 0
   %impl_name_slot = inttoptr i64 %impl_name_slot_addr to ptr
   %impl_name = load ptr, ptr %impl_name_slot, align 8
   call void @forge_rc_retain(ptr %impl_name)
-  store ptr %impl_name, ptr %impl_name723, align 8
-  %pay_slot724 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %2, i32 0, i32 1
-  %payload725 = load ptr, ptr %pay_slot724, align 8
-  %methods_slot_base = ptrtoint ptr %payload725 to i64
+  store ptr %impl_name, ptr %impl_name726, align 8
+  %pay_slot727 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %2, i32 0, i32 1
+  %payload728 = load ptr, ptr %pay_slot727, align 8
+  %methods_slot_base = ptrtoint ptr %payload728 to i64
   %methods_slot_addr = add i64 %methods_slot_base, 8
   %methods_slot = inttoptr i64 %methods_slot_addr to ptr
   %methods = load ptr, ptr %methods_slot, align 8
   call void @forge_rc_retain(ptr %methods)
-  store ptr %methods, ptr %methods726, align 8
-  %impl_name727 = load ptr, ptr %impl_name723, align 8
-  %44 = call i64 @"features::trait_decl::typeck::find_trait_separator"(ptr %impl_name727)
+  store ptr %methods, ptr %methods729, align 8
+  %impl_name730 = load ptr, ptr %impl_name726, align 8
+  %44 = call i64 @"features::trait_decl::typeck::find_trait_separator"(ptr %impl_name730)
   store i64 %44, ptr %colon_idx, align 8
-  %colon_idx728 = load i64, ptr %colon_idx, align 8
-  %sge = icmp sge i64 %colon_idx728, 0
+  %colon_idx731 = load i64, ptr %colon_idx, align 8
+  %sge = icmp sge i64 %colon_idx731, 0
   %sge_ext = zext i1 %sge to i64
-  %ife_cond731 = icmp ne i64 %sge_ext, 0
-  br i1 %ife_cond731, label %ife_then732, label %ife_else733
+  %ife_cond734 = icmp ne i64 %sge_ext, 0
+  br i1 %ife_cond734, label %ife_then735, label %ife_else736
 
-march_next719:                                    ; preds = %march_next600
-  %tag_eq834 = icmp eq i64 %tag13, 6952537928459
-  br i1 %tag_eq834, label %march_arm832, label %march_next833
+march_next722:                                    ; preds = %march_next603
+  %tag_eq837 = icmp eq i64 %tag13, 6952537928459
+  br i1 %tag_eq837, label %march_arm835, label %march_next836
 
-ife_end730:                                       ; preds = %ife_else733, %ife_then732
-  %ife_val827 = load i64, ptr %ife_result729, align 8
-  %cast828 = inttoptr i64 %ife_val827 to ptr
-  store ptr %cast828, ptr %with_impl, align 8
-  %with_impl829 = load ptr, ptr %with_impl, align 8
-  %methods830 = load ptr, ptr %methods726, align 8
-  %45 = call ptr @"typeck::collect_decls"(ptr %with_impl829, ptr %methods830)
-  %cast831 = ptrtoint ptr %45 to i64
-  store i64 %cast831, ptr %match_result14, align 8
+ife_end733:                                       ; preds = %ife_else736, %ife_then735
+  %ife_val830 = load i64, ptr %ife_result732, align 8
+  %cast831 = inttoptr i64 %ife_val830 to ptr
+  store ptr %cast831, ptr %with_impl, align 8
+  %with_impl832 = load ptr, ptr %with_impl, align 8
+  %methods833 = load ptr, ptr %methods729, align 8
+  %45 = call ptr @"typeck::collect_decls"(ptr %with_impl832, ptr %methods833)
+  %cast834 = ptrtoint ptr %45 to i64
+  store i64 %cast834, ptr %match_result14, align 8
   br label %match_end15
 
-ife_then732:                                      ; preds = %march_arm718
-  %impl_name734 = load ptr, ptr %impl_name723, align 8
-  %colon_idx735 = load i64, ptr %colon_idx, align 8
-  %sub_len = sub i64 %colon_idx735, 0
+ife_then735:                                      ; preds = %march_arm721
+  %impl_name737 = load ptr, ptr %impl_name726, align 8
+  %colon_idx738 = load i64, ptr %colon_idx, align 8
+  %sub_len = sub i64 %colon_idx738, 0
   %sub_alloc = add i64 %sub_len, 1
   %46 = call ptr @forge_rc_alloc(i64 %sub_alloc)
-  %cast736 = ptrtoint ptr %impl_name734 to i64
-  %sub_off_int = add i64 %cast736, 0
-  %cast737 = inttoptr i64 %sub_off_int to ptr
-  %47 = call ptr @memcpy(ptr %46, ptr %cast737, i64 %sub_len)
-  %cast738 = ptrtoint ptr %46 to i64
-  %sub_nul_int = add i64 %cast738, %sub_len
-  %cast739 = inttoptr i64 %sub_nul_int to ptr
-  store i8 0, ptr %cast739, align 8
+  %cast739 = ptrtoint ptr %impl_name737 to i64
+  %sub_off_int = add i64 %cast739, 0
+  %cast740 = inttoptr i64 %sub_off_int to ptr
+  %47 = call ptr @memcpy(ptr %46, ptr %cast740, i64 %sub_len)
+  %cast741 = ptrtoint ptr %46 to i64
+  %sub_nul_int = add i64 %cast741, %sub_len
+  %cast742 = inttoptr i64 %sub_nul_int to ptr
+  store i8 0, ptr %cast742, align 8
   store ptr %46, ptr %trait_name, align 8
-  %impl_name740 = load ptr, ptr %impl_name723, align 8
-  %colon_idx741 = load i64, ptr %colon_idx, align 8
-  %add = add i64 %colon_idx741, 1
-  %impl_name742 = load ptr, ptr %impl_name723, align 8
-  %48 = call i64 @strlen(ptr %impl_name742)
-  %sub_len743 = sub i64 %48, %add
-  %sub_alloc744 = add i64 %sub_len743, 1
-  %49 = call ptr @forge_rc_alloc(i64 %sub_alloc744)
-  %cast745 = ptrtoint ptr %impl_name740 to i64
-  %sub_off_int746 = add i64 %cast745, %add
-  %cast747 = inttoptr i64 %sub_off_int746 to ptr
-  %50 = call ptr @memcpy(ptr %49, ptr %cast747, i64 %sub_len743)
-  %cast748 = ptrtoint ptr %49 to i64
-  %sub_nul_int749 = add i64 %cast748, %sub_len743
-  %cast750 = inttoptr i64 %sub_nul_int749 to ptr
-  store i8 0, ptr %cast750, align 8
+  %impl_name743 = load ptr, ptr %impl_name726, align 8
+  %colon_idx744 = load i64, ptr %colon_idx, align 8
+  %add = add i64 %colon_idx744, 1
+  %impl_name745 = load ptr, ptr %impl_name726, align 8
+  %48 = call i64 @strlen(ptr %impl_name745)
+  %sub_len746 = sub i64 %48, %add
+  %sub_alloc747 = add i64 %sub_len746, 1
+  %49 = call ptr @forge_rc_alloc(i64 %sub_alloc747)
+  %cast748 = ptrtoint ptr %impl_name743 to i64
+  %sub_off_int749 = add i64 %cast748, %add
+  %cast750 = inttoptr i64 %sub_off_int749 to ptr
+  %50 = call ptr @memcpy(ptr %49, ptr %cast750, i64 %sub_len746)
+  %cast751 = ptrtoint ptr %49 to i64
+  %sub_nul_int752 = add i64 %cast751, %sub_len746
+  %cast753 = inttoptr i64 %sub_nul_int752 to ptr
+  store i8 0, ptr %cast753, align 8
   store ptr %49, ptr %type_name, align 8
-  %tc751 = load ptr, ptr %tc, align 8
+  %tc754 = load ptr, ptr %tc, align 8
   %51 = call ptr @forge_rc_alloc(i64 128)
-  %with_cp_src752 = getelementptr inbounds nuw %"typeck::TC", ptr %tc751, i32 0, i32 0
-  %with_cp_val753 = load ptr, ptr %with_cp_src752, align 8
-  %with_cp_dst754 = getelementptr inbounds nuw %"typeck::TC", ptr %51, i32 0, i32 0
-  store ptr %with_cp_val753, ptr %with_cp_dst754, align 8
-  %with_cp_src755 = getelementptr inbounds nuw %"typeck::TC", ptr %tc751, i32 0, i32 1
+  %with_cp_src755 = getelementptr inbounds nuw %"typeck::TC", ptr %tc754, i32 0, i32 0
   %with_cp_val756 = load ptr, ptr %with_cp_src755, align 8
-  %with_cp_dst757 = getelementptr inbounds nuw %"typeck::TC", ptr %51, i32 0, i32 1
+  %with_cp_dst757 = getelementptr inbounds nuw %"typeck::TC", ptr %51, i32 0, i32 0
   store ptr %with_cp_val756, ptr %with_cp_dst757, align 8
-  %with_cp_src758 = getelementptr inbounds nuw %"typeck::TC", ptr %tc751, i32 0, i32 2
+  %with_cp_src758 = getelementptr inbounds nuw %"typeck::TC", ptr %tc754, i32 0, i32 1
   %with_cp_val759 = load ptr, ptr %with_cp_src758, align 8
-  %with_cp_dst760 = getelementptr inbounds nuw %"typeck::TC", ptr %51, i32 0, i32 2
+  %with_cp_dst760 = getelementptr inbounds nuw %"typeck::TC", ptr %51, i32 0, i32 1
   store ptr %with_cp_val759, ptr %with_cp_dst760, align 8
-  %with_cp_src761 = getelementptr inbounds nuw %"typeck::TC", ptr %tc751, i32 0, i32 3
+  %with_cp_src761 = getelementptr inbounds nuw %"typeck::TC", ptr %tc754, i32 0, i32 2
   %with_cp_val762 = load ptr, ptr %with_cp_src761, align 8
-  %with_cp_dst763 = getelementptr inbounds nuw %"typeck::TC", ptr %51, i32 0, i32 3
+  %with_cp_dst763 = getelementptr inbounds nuw %"typeck::TC", ptr %51, i32 0, i32 2
   store ptr %with_cp_val762, ptr %with_cp_dst763, align 8
-  %with_cp_src764 = getelementptr inbounds nuw %"typeck::TC", ptr %tc751, i32 0, i32 4
+  %with_cp_src764 = getelementptr inbounds nuw %"typeck::TC", ptr %tc754, i32 0, i32 3
   %with_cp_val765 = load ptr, ptr %with_cp_src764, align 8
-  %with_cp_dst766 = getelementptr inbounds nuw %"typeck::TC", ptr %51, i32 0, i32 4
+  %with_cp_dst766 = getelementptr inbounds nuw %"typeck::TC", ptr %51, i32 0, i32 3
   store ptr %with_cp_val765, ptr %with_cp_dst766, align 8
-  %with_cp_src767 = getelementptr inbounds nuw %"typeck::TC", ptr %tc751, i32 0, i32 5
+  %with_cp_src767 = getelementptr inbounds nuw %"typeck::TC", ptr %tc754, i32 0, i32 4
   %with_cp_val768 = load ptr, ptr %with_cp_src767, align 8
-  %with_cp_dst769 = getelementptr inbounds nuw %"typeck::TC", ptr %51, i32 0, i32 5
+  %with_cp_dst769 = getelementptr inbounds nuw %"typeck::TC", ptr %51, i32 0, i32 4
   store ptr %with_cp_val768, ptr %with_cp_dst769, align 8
-  %with_cp_src770 = getelementptr inbounds nuw %"typeck::TC", ptr %tc751, i32 0, i32 6
+  %with_cp_src770 = getelementptr inbounds nuw %"typeck::TC", ptr %tc754, i32 0, i32 5
   %with_cp_val771 = load ptr, ptr %with_cp_src770, align 8
-  %with_cp_dst772 = getelementptr inbounds nuw %"typeck::TC", ptr %51, i32 0, i32 6
+  %with_cp_dst772 = getelementptr inbounds nuw %"typeck::TC", ptr %51, i32 0, i32 5
   store ptr %with_cp_val771, ptr %with_cp_dst772, align 8
-  %with_cp_src773 = getelementptr inbounds nuw %"typeck::TC", ptr %tc751, i32 0, i32 7
-  %with_cp_val774 = load i64, ptr %with_cp_src773, align 8
-  %with_cp_dst775 = getelementptr inbounds nuw %"typeck::TC", ptr %51, i32 0, i32 7
-  store i64 %with_cp_val774, ptr %with_cp_dst775, align 8
-  %with_cp_src776 = getelementptr inbounds nuw %"typeck::TC", ptr %tc751, i32 0, i32 8
-  %with_cp_val777 = load ptr, ptr %with_cp_src776, align 8
-  %with_cp_dst778 = getelementptr inbounds nuw %"typeck::TC", ptr %51, i32 0, i32 8
-  store ptr %with_cp_val777, ptr %with_cp_dst778, align 8
-  %with_cp_src779 = getelementptr inbounds nuw %"typeck::TC", ptr %tc751, i32 0, i32 9
+  %with_cp_src773 = getelementptr inbounds nuw %"typeck::TC", ptr %tc754, i32 0, i32 6
+  %with_cp_val774 = load ptr, ptr %with_cp_src773, align 8
+  %with_cp_dst775 = getelementptr inbounds nuw %"typeck::TC", ptr %51, i32 0, i32 6
+  store ptr %with_cp_val774, ptr %with_cp_dst775, align 8
+  %with_cp_src776 = getelementptr inbounds nuw %"typeck::TC", ptr %tc754, i32 0, i32 7
+  %with_cp_val777 = load i64, ptr %with_cp_src776, align 8
+  %with_cp_dst778 = getelementptr inbounds nuw %"typeck::TC", ptr %51, i32 0, i32 7
+  store i64 %with_cp_val777, ptr %with_cp_dst778, align 8
+  %with_cp_src779 = getelementptr inbounds nuw %"typeck::TC", ptr %tc754, i32 0, i32 8
   %with_cp_val780 = load ptr, ptr %with_cp_src779, align 8
-  %with_cp_dst781 = getelementptr inbounds nuw %"typeck::TC", ptr %51, i32 0, i32 9
+  %with_cp_dst781 = getelementptr inbounds nuw %"typeck::TC", ptr %51, i32 0, i32 8
   store ptr %with_cp_val780, ptr %with_cp_dst781, align 8
-  %with_cp_src782 = getelementptr inbounds nuw %"typeck::TC", ptr %tc751, i32 0, i32 10
-  %with_cp_val783 = load i64, ptr %with_cp_src782, align 8
-  %with_cp_dst784 = getelementptr inbounds nuw %"typeck::TC", ptr %51, i32 0, i32 10
-  store i64 %with_cp_val783, ptr %with_cp_dst784, align 8
-  %with_cp_src785 = getelementptr inbounds nuw %"typeck::TC", ptr %tc751, i32 0, i32 11
+  %with_cp_src782 = getelementptr inbounds nuw %"typeck::TC", ptr %tc754, i32 0, i32 9
+  %with_cp_val783 = load ptr, ptr %with_cp_src782, align 8
+  %with_cp_dst784 = getelementptr inbounds nuw %"typeck::TC", ptr %51, i32 0, i32 9
+  store ptr %with_cp_val783, ptr %with_cp_dst784, align 8
+  %with_cp_src785 = getelementptr inbounds nuw %"typeck::TC", ptr %tc754, i32 0, i32 10
   %with_cp_val786 = load i64, ptr %with_cp_src785, align 8
-  %with_cp_dst787 = getelementptr inbounds nuw %"typeck::TC", ptr %51, i32 0, i32 11
+  %with_cp_dst787 = getelementptr inbounds nuw %"typeck::TC", ptr %51, i32 0, i32 10
   store i64 %with_cp_val786, ptr %with_cp_dst787, align 8
-  %with_cp_src788 = getelementptr inbounds nuw %"typeck::TC", ptr %tc751, i32 0, i32 12
-  %with_cp_val789 = load ptr, ptr %with_cp_src788, align 8
-  %with_cp_dst790 = getelementptr inbounds nuw %"typeck::TC", ptr %51, i32 0, i32 12
-  store ptr %with_cp_val789, ptr %with_cp_dst790, align 8
-  %with_cp_src791 = getelementptr inbounds nuw %"typeck::TC", ptr %tc751, i32 0, i32 13
+  %with_cp_src788 = getelementptr inbounds nuw %"typeck::TC", ptr %tc754, i32 0, i32 11
+  %with_cp_val789 = load i64, ptr %with_cp_src788, align 8
+  %with_cp_dst790 = getelementptr inbounds nuw %"typeck::TC", ptr %51, i32 0, i32 11
+  store i64 %with_cp_val789, ptr %with_cp_dst790, align 8
+  %with_cp_src791 = getelementptr inbounds nuw %"typeck::TC", ptr %tc754, i32 0, i32 12
   %with_cp_val792 = load ptr, ptr %with_cp_src791, align 8
-  %with_cp_dst793 = getelementptr inbounds nuw %"typeck::TC", ptr %51, i32 0, i32 13
+  %with_cp_dst793 = getelementptr inbounds nuw %"typeck::TC", ptr %51, i32 0, i32 12
   store ptr %with_cp_val792, ptr %with_cp_dst793, align 8
-  %with_cp_src794 = getelementptr inbounds nuw %"typeck::TC", ptr %tc751, i32 0, i32 14
+  %with_cp_src794 = getelementptr inbounds nuw %"typeck::TC", ptr %tc754, i32 0, i32 13
   %with_cp_val795 = load ptr, ptr %with_cp_src794, align 8
-  %with_cp_dst796 = getelementptr inbounds nuw %"typeck::TC", ptr %51, i32 0, i32 14
+  %with_cp_dst796 = getelementptr inbounds nuw %"typeck::TC", ptr %51, i32 0, i32 13
   store ptr %with_cp_val795, ptr %with_cp_dst796, align 8
-  %with_cp_src797 = getelementptr inbounds nuw %"typeck::TC", ptr %tc751, i32 0, i32 15
+  %with_cp_src797 = getelementptr inbounds nuw %"typeck::TC", ptr %tc754, i32 0, i32 14
   %with_cp_val798 = load ptr, ptr %with_cp_src797, align 8
-  %with_cp_dst799 = getelementptr inbounds nuw %"typeck::TC", ptr %51, i32 0, i32 15
+  %with_cp_dst799 = getelementptr inbounds nuw %"typeck::TC", ptr %51, i32 0, i32 14
   store ptr %with_cp_val798, ptr %with_cp_dst799, align 8
+  %with_cp_src800 = getelementptr inbounds nuw %"typeck::TC", ptr %tc754, i32 0, i32 15
+  %with_cp_val801 = load ptr, ptr %with_cp_src800, align 8
+  %with_cp_dst802 = getelementptr inbounds nuw %"typeck::TC", ptr %51, i32 0, i32 15
+  store ptr %with_cp_val801, ptr %with_cp_dst802, align 8
   %52 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr800 = getelementptr inbounds nuw %"typeck::TraitImplReg", ptr %52, i32 0, i32 0
-  store i64 6384368267, ptr %tag_ptr800, align 8
-  %pay_ptr801 = getelementptr inbounds nuw %"typeck::TraitImplReg", ptr %52, i32 0, i32 1
+  %tag_ptr803 = getelementptr inbounds nuw %"typeck::TraitImplReg", ptr %52, i32 0, i32 0
+  store i64 6384368267, ptr %tag_ptr803, align 8
+  %pay_ptr804 = getelementptr inbounds nuw %"typeck::TraitImplReg", ptr %52, i32 0, i32 1
   %53 = call ptr @forge_rc_alloc(i64 24)
-  store ptr %53, ptr %pay_ptr801, align 8
-  %trait_name802 = load ptr, ptr %trait_name, align 8
-  %slot_base803 = ptrtoint ptr %53 to i64
-  %slot_addr804 = add i64 %slot_base803, 0
-  %slot805 = inttoptr i64 %slot_addr804 to ptr
-  store ptr %trait_name802, ptr %slot805, align 8
-  %type_name806 = load ptr, ptr %type_name, align 8
-  %slot_base807 = ptrtoint ptr %53 to i64
-  %slot_addr808 = add i64 %slot_base807, 8
-  %slot809 = inttoptr i64 %slot_addr808 to ptr
-  store ptr %type_name806, ptr %slot809, align 8
-  %tc810 = load ptr, ptr %tc, align 8
-  %cast811 = ptrtoint ptr %tc810 to i64
-  %null_chk812 = icmp eq i64 %cast811, 0
-  %null_ext813 = zext i1 %null_chk812 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15417, i64 11, ptr @sty_name.15418, i64 10, i64 %null_ext813, ptr @src_file.15419, i64 104, i64 570)
-  %trait_impls_ptr = getelementptr inbounds nuw %"typeck::TC", ptr %tc810, i32 0, i32 13
+  store ptr %53, ptr %pay_ptr804, align 8
+  %trait_name805 = load ptr, ptr %trait_name, align 8
+  %slot_base806 = ptrtoint ptr %53 to i64
+  %slot_addr807 = add i64 %slot_base806, 0
+  %slot808 = inttoptr i64 %slot_addr807 to ptr
+  store ptr %trait_name805, ptr %slot808, align 8
+  %type_name809 = load ptr, ptr %type_name, align 8
+  %slot_base810 = ptrtoint ptr %53 to i64
+  %slot_addr811 = add i64 %slot_base810, 8
+  %slot812 = inttoptr i64 %slot_addr811 to ptr
+  store ptr %type_name809, ptr %slot812, align 8
+  %tc813 = load ptr, ptr %tc, align 8
+  %cast814 = ptrtoint ptr %tc813 to i64
+  %null_chk815 = icmp eq i64 %cast814, 0
+  %null_ext816 = zext i1 %null_chk815 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.15417, i64 11, ptr @sty_name.15418, i64 10, i64 %null_ext816, ptr @src_file.15419, i64 104, i64 570)
+  %trait_impls_ptr = getelementptr inbounds nuw %"typeck::TC", ptr %tc813, i32 0, i32 13
   %trait_impls = load ptr, ptr %trait_impls_ptr, align 8
-  %slot_base814 = ptrtoint ptr %53 to i64
-  %slot_addr815 = add i64 %slot_base814, 16
-  %slot816 = inttoptr i64 %slot_addr815 to ptr
-  store ptr %trait_impls, ptr %slot816, align 8
-  %cast817 = ptrtoint ptr %52 to i64
-  %with_ovr818 = getelementptr inbounds nuw %"typeck::TC", ptr %51, i32 0, i32 13
-  store i64 %cast817, ptr %with_ovr818, align 8
-  %cast819 = ptrtoint ptr %51 to i64
-  %cast820 = inttoptr i64 %cast819 to ptr
-  store ptr %cast820, ptr %with_trait, align 8
-  %with_trait821 = load ptr, ptr %with_trait, align 8
-  %type_name822 = load ptr, ptr %type_name, align 8
-  %methods823 = load ptr, ptr %methods726, align 8
-  %54 = call ptr @"typeck::collect_impl_assoc_types"(ptr %with_trait821, ptr %type_name822, ptr %methods823)
-  %cast824 = ptrtoint ptr %54 to i64
-  store i64 %cast824, ptr %ife_result729, align 8
-  br label %ife_end730
+  %slot_base817 = ptrtoint ptr %53 to i64
+  %slot_addr818 = add i64 %slot_base817, 16
+  %slot819 = inttoptr i64 %slot_addr818 to ptr
+  store ptr %trait_impls, ptr %slot819, align 8
+  %cast820 = ptrtoint ptr %52 to i64
+  %with_ovr821 = getelementptr inbounds nuw %"typeck::TC", ptr %51, i32 0, i32 13
+  store i64 %cast820, ptr %with_ovr821, align 8
+  %cast822 = ptrtoint ptr %51 to i64
+  %cast823 = inttoptr i64 %cast822 to ptr
+  store ptr %cast823, ptr %with_trait, align 8
+  %with_trait824 = load ptr, ptr %with_trait, align 8
+  %type_name825 = load ptr, ptr %type_name, align 8
+  %methods826 = load ptr, ptr %methods729, align 8
+  %54 = call ptr @"typeck::collect_impl_assoc_types"(ptr %with_trait824, ptr %type_name825, ptr %methods826)
+  %cast827 = ptrtoint ptr %54 to i64
+  store i64 %cast827, ptr %ife_result732, align 8
+  br label %ife_end733
 
-ife_else733:                                      ; preds = %march_arm718
-  %tc825 = load ptr, ptr %tc, align 8
-  %cast826 = ptrtoint ptr %tc825 to i64
-  store i64 %cast826, ptr %ife_result729, align 8
-  br label %ife_end730
+ife_else736:                                      ; preds = %march_arm721
+  %tc828 = load ptr, ptr %tc, align 8
+  %cast829 = ptrtoint ptr %tc828 to i64
+  store i64 %cast829, ptr %ife_result732, align 8
+  br label %ife_end733
 
-march_arm832:                                     ; preds = %march_next719
-  %pay_slot835 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %2, i32 0, i32 1
-  %payload836 = load ptr, ptr %pay_slot835, align 8
-  %body_slot_base = ptrtoint ptr %payload836 to i64
+march_arm835:                                     ; preds = %march_next722
+  %pay_slot838 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %2, i32 0, i32 1
+  %payload839 = load ptr, ptr %pay_slot838, align 8
+  %body_slot_base = ptrtoint ptr %payload839 to i64
   %body_slot_addr = add i64 %body_slot_base, 8
   %body_slot = inttoptr i64 %body_slot_addr to ptr
   %body = load ptr, ptr %body_slot, align 8
   call void @forge_rc_retain(ptr %body)
-  store ptr %body, ptr %body837, align 8
-  %tc838 = load ptr, ptr %tc, align 8
-  %body839 = load ptr, ptr %body837, align 8
-  %55 = call ptr @"typeck::collect_decls"(ptr %tc838, ptr %body839)
-  %cast840 = ptrtoint ptr %55 to i64
-  store i64 %cast840, ptr %match_result14, align 8
+  store ptr %body, ptr %body840, align 8
+  %tc841 = load ptr, ptr %tc, align 8
+  %body842 = load ptr, ptr %body840, align 8
+  %55 = call ptr @"typeck::collect_decls"(ptr %tc841, ptr %body842)
+  %cast843 = ptrtoint ptr %55 to i64
+  store i64 %cast843, ptr %match_result14, align 8
   br label %match_end15
 
-march_next833:                                    ; preds = %march_next719
-  %tag_eq843 = icmp eq i64 %tag13, 249863323915073889
-  br i1 %tag_eq843, label %march_arm841, label %march_next842
+march_next836:                                    ; preds = %march_next722
+  %tag_eq846 = icmp eq i64 %tag13, 249863323915073889
+  br i1 %tag_eq846, label %march_arm844, label %march_next845
 
-march_arm841:                                     ; preds = %march_next833
-  %pay_slot844 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %2, i32 0, i32 1
-  %payload845 = load ptr, ptr %pay_slot844, align 8
-  %name_slot_base846 = ptrtoint ptr %payload845 to i64
-  %name_slot_addr847 = add i64 %name_slot_base846, 0
-  %name_slot848 = inttoptr i64 %name_slot_addr847 to ptr
-  %name849 = load ptr, ptr %name_slot848, align 8
-  call void @forge_rc_retain(ptr %name849)
-  store ptr %name849, ptr %name850, align 8
-  %pay_slot851 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %2, i32 0, i32 1
-  %payload852 = load ptr, ptr %pay_slot851, align 8
-  %methods_slot_base853 = ptrtoint ptr %payload852 to i64
-  %methods_slot_addr854 = add i64 %methods_slot_base853, 8
-  %methods_slot855 = inttoptr i64 %methods_slot_addr854 to ptr
-  %methods856 = load ptr, ptr %methods_slot855, align 8
-  call void @forge_rc_retain(ptr %methods856)
-  store ptr %methods856, ptr %methods857, align 8
-  %tc858 = load ptr, ptr %tc, align 8
+march_arm844:                                     ; preds = %march_next836
+  %pay_slot847 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %2, i32 0, i32 1
+  %payload848 = load ptr, ptr %pay_slot847, align 8
+  %name_slot_base849 = ptrtoint ptr %payload848 to i64
+  %name_slot_addr850 = add i64 %name_slot_base849, 0
+  %name_slot851 = inttoptr i64 %name_slot_addr850 to ptr
+  %name852 = load ptr, ptr %name_slot851, align 8
+  call void @forge_rc_retain(ptr %name852)
+  store ptr %name852, ptr %name853, align 8
+  %pay_slot854 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %2, i32 0, i32 1
+  %payload855 = load ptr, ptr %pay_slot854, align 8
+  %methods_slot_base856 = ptrtoint ptr %payload855 to i64
+  %methods_slot_addr857 = add i64 %methods_slot_base856, 8
+  %methods_slot858 = inttoptr i64 %methods_slot_addr857 to ptr
+  %methods859 = load ptr, ptr %methods_slot858, align 8
+  call void @forge_rc_retain(ptr %methods859)
+  store ptr %methods859, ptr %methods860, align 8
+  %tc861 = load ptr, ptr %tc, align 8
   %56 = call ptr @forge_rc_alloc(i64 128)
-  %with_cp_src859 = getelementptr inbounds nuw %"typeck::TC", ptr %tc858, i32 0, i32 0
-  %with_cp_val860 = load ptr, ptr %with_cp_src859, align 8
-  %with_cp_dst861 = getelementptr inbounds nuw %"typeck::TC", ptr %56, i32 0, i32 0
-  store ptr %with_cp_val860, ptr %with_cp_dst861, align 8
-  %with_cp_src862 = getelementptr inbounds nuw %"typeck::TC", ptr %tc858, i32 0, i32 1
+  %with_cp_src862 = getelementptr inbounds nuw %"typeck::TC", ptr %tc861, i32 0, i32 0
   %with_cp_val863 = load ptr, ptr %with_cp_src862, align 8
-  %with_cp_dst864 = getelementptr inbounds nuw %"typeck::TC", ptr %56, i32 0, i32 1
+  %with_cp_dst864 = getelementptr inbounds nuw %"typeck::TC", ptr %56, i32 0, i32 0
   store ptr %with_cp_val863, ptr %with_cp_dst864, align 8
-  %with_cp_src865 = getelementptr inbounds nuw %"typeck::TC", ptr %tc858, i32 0, i32 2
+  %with_cp_src865 = getelementptr inbounds nuw %"typeck::TC", ptr %tc861, i32 0, i32 1
   %with_cp_val866 = load ptr, ptr %with_cp_src865, align 8
-  %with_cp_dst867 = getelementptr inbounds nuw %"typeck::TC", ptr %56, i32 0, i32 2
+  %with_cp_dst867 = getelementptr inbounds nuw %"typeck::TC", ptr %56, i32 0, i32 1
   store ptr %with_cp_val866, ptr %with_cp_dst867, align 8
-  %with_cp_src868 = getelementptr inbounds nuw %"typeck::TC", ptr %tc858, i32 0, i32 3
+  %with_cp_src868 = getelementptr inbounds nuw %"typeck::TC", ptr %tc861, i32 0, i32 2
   %with_cp_val869 = load ptr, ptr %with_cp_src868, align 8
-  %with_cp_dst870 = getelementptr inbounds nuw %"typeck::TC", ptr %56, i32 0, i32 3
+  %with_cp_dst870 = getelementptr inbounds nuw %"typeck::TC", ptr %56, i32 0, i32 2
   store ptr %with_cp_val869, ptr %with_cp_dst870, align 8
-  %with_cp_src871 = getelementptr inbounds nuw %"typeck::TC", ptr %tc858, i32 0, i32 4
+  %with_cp_src871 = getelementptr inbounds nuw %"typeck::TC", ptr %tc861, i32 0, i32 3
   %with_cp_val872 = load ptr, ptr %with_cp_src871, align 8
-  %with_cp_dst873 = getelementptr inbounds nuw %"typeck::TC", ptr %56, i32 0, i32 4
+  %with_cp_dst873 = getelementptr inbounds nuw %"typeck::TC", ptr %56, i32 0, i32 3
   store ptr %with_cp_val872, ptr %with_cp_dst873, align 8
-  %with_cp_src874 = getelementptr inbounds nuw %"typeck::TC", ptr %tc858, i32 0, i32 5
+  %with_cp_src874 = getelementptr inbounds nuw %"typeck::TC", ptr %tc861, i32 0, i32 4
   %with_cp_val875 = load ptr, ptr %with_cp_src874, align 8
-  %with_cp_dst876 = getelementptr inbounds nuw %"typeck::TC", ptr %56, i32 0, i32 5
+  %with_cp_dst876 = getelementptr inbounds nuw %"typeck::TC", ptr %56, i32 0, i32 4
   store ptr %with_cp_val875, ptr %with_cp_dst876, align 8
-  %with_cp_src877 = getelementptr inbounds nuw %"typeck::TC", ptr %tc858, i32 0, i32 6
+  %with_cp_src877 = getelementptr inbounds nuw %"typeck::TC", ptr %tc861, i32 0, i32 5
   %with_cp_val878 = load ptr, ptr %with_cp_src877, align 8
-  %with_cp_dst879 = getelementptr inbounds nuw %"typeck::TC", ptr %56, i32 0, i32 6
+  %with_cp_dst879 = getelementptr inbounds nuw %"typeck::TC", ptr %56, i32 0, i32 5
   store ptr %with_cp_val878, ptr %with_cp_dst879, align 8
-  %with_cp_src880 = getelementptr inbounds nuw %"typeck::TC", ptr %tc858, i32 0, i32 7
-  %with_cp_val881 = load i64, ptr %with_cp_src880, align 8
-  %with_cp_dst882 = getelementptr inbounds nuw %"typeck::TC", ptr %56, i32 0, i32 7
-  store i64 %with_cp_val881, ptr %with_cp_dst882, align 8
-  %with_cp_src883 = getelementptr inbounds nuw %"typeck::TC", ptr %tc858, i32 0, i32 8
-  %with_cp_val884 = load ptr, ptr %with_cp_src883, align 8
-  %with_cp_dst885 = getelementptr inbounds nuw %"typeck::TC", ptr %56, i32 0, i32 8
-  store ptr %with_cp_val884, ptr %with_cp_dst885, align 8
-  %with_cp_src886 = getelementptr inbounds nuw %"typeck::TC", ptr %tc858, i32 0, i32 9
+  %with_cp_src880 = getelementptr inbounds nuw %"typeck::TC", ptr %tc861, i32 0, i32 6
+  %with_cp_val881 = load ptr, ptr %with_cp_src880, align 8
+  %with_cp_dst882 = getelementptr inbounds nuw %"typeck::TC", ptr %56, i32 0, i32 6
+  store ptr %with_cp_val881, ptr %with_cp_dst882, align 8
+  %with_cp_src883 = getelementptr inbounds nuw %"typeck::TC", ptr %tc861, i32 0, i32 7
+  %with_cp_val884 = load i64, ptr %with_cp_src883, align 8
+  %with_cp_dst885 = getelementptr inbounds nuw %"typeck::TC", ptr %56, i32 0, i32 7
+  store i64 %with_cp_val884, ptr %with_cp_dst885, align 8
+  %with_cp_src886 = getelementptr inbounds nuw %"typeck::TC", ptr %tc861, i32 0, i32 8
   %with_cp_val887 = load ptr, ptr %with_cp_src886, align 8
-  %with_cp_dst888 = getelementptr inbounds nuw %"typeck::TC", ptr %56, i32 0, i32 9
+  %with_cp_dst888 = getelementptr inbounds nuw %"typeck::TC", ptr %56, i32 0, i32 8
   store ptr %with_cp_val887, ptr %with_cp_dst888, align 8
-  %with_cp_src889 = getelementptr inbounds nuw %"typeck::TC", ptr %tc858, i32 0, i32 10
-  %with_cp_val890 = load i64, ptr %with_cp_src889, align 8
-  %with_cp_dst891 = getelementptr inbounds nuw %"typeck::TC", ptr %56, i32 0, i32 10
-  store i64 %with_cp_val890, ptr %with_cp_dst891, align 8
-  %with_cp_src892 = getelementptr inbounds nuw %"typeck::TC", ptr %tc858, i32 0, i32 11
+  %with_cp_src889 = getelementptr inbounds nuw %"typeck::TC", ptr %tc861, i32 0, i32 9
+  %with_cp_val890 = load ptr, ptr %with_cp_src889, align 8
+  %with_cp_dst891 = getelementptr inbounds nuw %"typeck::TC", ptr %56, i32 0, i32 9
+  store ptr %with_cp_val890, ptr %with_cp_dst891, align 8
+  %with_cp_src892 = getelementptr inbounds nuw %"typeck::TC", ptr %tc861, i32 0, i32 10
   %with_cp_val893 = load i64, ptr %with_cp_src892, align 8
-  %with_cp_dst894 = getelementptr inbounds nuw %"typeck::TC", ptr %56, i32 0, i32 11
+  %with_cp_dst894 = getelementptr inbounds nuw %"typeck::TC", ptr %56, i32 0, i32 10
   store i64 %with_cp_val893, ptr %with_cp_dst894, align 8
-  %with_cp_src895 = getelementptr inbounds nuw %"typeck::TC", ptr %tc858, i32 0, i32 12
-  %with_cp_val896 = load ptr, ptr %with_cp_src895, align 8
-  %with_cp_dst897 = getelementptr inbounds nuw %"typeck::TC", ptr %56, i32 0, i32 12
-  store ptr %with_cp_val896, ptr %with_cp_dst897, align 8
-  %with_cp_src898 = getelementptr inbounds nuw %"typeck::TC", ptr %tc858, i32 0, i32 13
+  %with_cp_src895 = getelementptr inbounds nuw %"typeck::TC", ptr %tc861, i32 0, i32 11
+  %with_cp_val896 = load i64, ptr %with_cp_src895, align 8
+  %with_cp_dst897 = getelementptr inbounds nuw %"typeck::TC", ptr %56, i32 0, i32 11
+  store i64 %with_cp_val896, ptr %with_cp_dst897, align 8
+  %with_cp_src898 = getelementptr inbounds nuw %"typeck::TC", ptr %tc861, i32 0, i32 12
   %with_cp_val899 = load ptr, ptr %with_cp_src898, align 8
-  %with_cp_dst900 = getelementptr inbounds nuw %"typeck::TC", ptr %56, i32 0, i32 13
+  %with_cp_dst900 = getelementptr inbounds nuw %"typeck::TC", ptr %56, i32 0, i32 12
   store ptr %with_cp_val899, ptr %with_cp_dst900, align 8
-  %with_cp_src901 = getelementptr inbounds nuw %"typeck::TC", ptr %tc858, i32 0, i32 14
+  %with_cp_src901 = getelementptr inbounds nuw %"typeck::TC", ptr %tc861, i32 0, i32 13
   %with_cp_val902 = load ptr, ptr %with_cp_src901, align 8
-  %with_cp_dst903 = getelementptr inbounds nuw %"typeck::TC", ptr %56, i32 0, i32 14
+  %with_cp_dst903 = getelementptr inbounds nuw %"typeck::TC", ptr %56, i32 0, i32 13
   store ptr %with_cp_val902, ptr %with_cp_dst903, align 8
-  %with_cp_src904 = getelementptr inbounds nuw %"typeck::TC", ptr %tc858, i32 0, i32 15
+  %with_cp_src904 = getelementptr inbounds nuw %"typeck::TC", ptr %tc861, i32 0, i32 14
   %with_cp_val905 = load ptr, ptr %with_cp_src904, align 8
-  %with_cp_dst906 = getelementptr inbounds nuw %"typeck::TC", ptr %56, i32 0, i32 15
+  %with_cp_dst906 = getelementptr inbounds nuw %"typeck::TC", ptr %56, i32 0, i32 14
   store ptr %with_cp_val905, ptr %with_cp_dst906, align 8
+  %with_cp_src907 = getelementptr inbounds nuw %"typeck::TC", ptr %tc861, i32 0, i32 15
+  %with_cp_val908 = load ptr, ptr %with_cp_src907, align 8
+  %with_cp_dst909 = getelementptr inbounds nuw %"typeck::TC", ptr %56, i32 0, i32 15
+  store ptr %with_cp_val908, ptr %with_cp_dst909, align 8
   %57 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr907 = getelementptr inbounds nuw %"typeck::TraitRegistry", ptr %57, i32 0, i32 0
-  store i64 6384368267, ptr %tag_ptr907, align 8
-  %pay_ptr908 = getelementptr inbounds nuw %"typeck::TraitRegistry", ptr %57, i32 0, i32 1
+  %tag_ptr910 = getelementptr inbounds nuw %"typeck::TraitRegistry", ptr %57, i32 0, i32 0
+  store i64 6384368267, ptr %tag_ptr910, align 8
+  %pay_ptr911 = getelementptr inbounds nuw %"typeck::TraitRegistry", ptr %57, i32 0, i32 1
   %58 = call ptr @forge_rc_alloc(i64 32)
-  store ptr %58, ptr %pay_ptr908, align 8
-  %name909 = load ptr, ptr %name850, align 8
-  %slot_base910 = ptrtoint ptr %58 to i64
-  %slot_addr911 = add i64 %slot_base910, 0
-  %slot912 = inttoptr i64 %slot_addr911 to ptr
-  store ptr %name909, ptr %slot912, align 8
-  %methods913 = load ptr, ptr %methods857, align 8
-  %59 = call ptr @"features::trait_decl::typeck::collect_method_names_from_stmts"(ptr %methods913)
-  %slot_base914 = ptrtoint ptr %58 to i64
-  %slot_addr915 = add i64 %slot_base914, 8
-  %slot916 = inttoptr i64 %slot_addr915 to ptr
-  store ptr %59, ptr %slot916, align 8
-  %methods917 = load ptr, ptr %methods857, align 8
-  %60 = call ptr @"features::trait_decl::typeck::collect_assoc_types_from_stmts"(ptr %methods917)
-  %slot_base918 = ptrtoint ptr %58 to i64
-  %slot_addr919 = add i64 %slot_base918, 16
-  %slot920 = inttoptr i64 %slot_addr919 to ptr
-  store ptr %60, ptr %slot920, align 8
-  %tc921 = load ptr, ptr %tc, align 8
-  %cast922 = ptrtoint ptr %tc921 to i64
-  %null_chk923 = icmp eq i64 %cast922, 0
-  %null_ext924 = zext i1 %null_chk923 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15420, i64 6, ptr @sty_name.15421, i64 10, i64 %null_ext924, ptr @src_file.15422, i64 104, i64 524)
-  %traits_ptr = getelementptr inbounds nuw %"typeck::TC", ptr %tc921, i32 0, i32 12
+  store ptr %58, ptr %pay_ptr911, align 8
+  %name912 = load ptr, ptr %name853, align 8
+  %slot_base913 = ptrtoint ptr %58 to i64
+  %slot_addr914 = add i64 %slot_base913, 0
+  %slot915 = inttoptr i64 %slot_addr914 to ptr
+  store ptr %name912, ptr %slot915, align 8
+  %methods916 = load ptr, ptr %methods860, align 8
+  %59 = call ptr @"features::trait_decl::typeck::collect_method_names_from_stmts"(ptr %methods916)
+  %slot_base917 = ptrtoint ptr %58 to i64
+  %slot_addr918 = add i64 %slot_base917, 8
+  %slot919 = inttoptr i64 %slot_addr918 to ptr
+  store ptr %59, ptr %slot919, align 8
+  %methods920 = load ptr, ptr %methods860, align 8
+  %60 = call ptr @"features::trait_decl::typeck::collect_assoc_types_from_stmts"(ptr %methods920)
+  %slot_base921 = ptrtoint ptr %58 to i64
+  %slot_addr922 = add i64 %slot_base921, 16
+  %slot923 = inttoptr i64 %slot_addr922 to ptr
+  store ptr %60, ptr %slot923, align 8
+  %tc924 = load ptr, ptr %tc, align 8
+  %cast925 = ptrtoint ptr %tc924 to i64
+  %null_chk926 = icmp eq i64 %cast925, 0
+  %null_ext927 = zext i1 %null_chk926 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.15420, i64 6, ptr @sty_name.15421, i64 10, i64 %null_ext927, ptr @src_file.15422, i64 104, i64 524)
+  %traits_ptr = getelementptr inbounds nuw %"typeck::TC", ptr %tc924, i32 0, i32 12
   %traits = load ptr, ptr %traits_ptr, align 8
-  %slot_base925 = ptrtoint ptr %58 to i64
-  %slot_addr926 = add i64 %slot_base925, 24
-  %slot927 = inttoptr i64 %slot_addr926 to ptr
-  store ptr %traits, ptr %slot927, align 8
-  %cast928 = ptrtoint ptr %57 to i64
-  %with_ovr929 = getelementptr inbounds nuw %"typeck::TC", ptr %56, i32 0, i32 12
-  store i64 %cast928, ptr %with_ovr929, align 8
-  %cast930 = ptrtoint ptr %56 to i64
-  store i64 %cast930, ptr %match_result14, align 8
+  %slot_base928 = ptrtoint ptr %58 to i64
+  %slot_addr929 = add i64 %slot_base928, 24
+  %slot930 = inttoptr i64 %slot_addr929 to ptr
+  store ptr %traits, ptr %slot930, align 8
+  %cast931 = ptrtoint ptr %57 to i64
+  %with_ovr932 = getelementptr inbounds nuw %"typeck::TC", ptr %56, i32 0, i32 12
+  store i64 %cast931, ptr %with_ovr932, align 8
+  %cast933 = ptrtoint ptr %56 to i64
+  store i64 %cast933, ptr %match_result14, align 8
   br label %match_end15
 
-march_next842:                                    ; preds = %march_next833
-  br label %march_arm931
+march_next845:                                    ; preds = %march_next836
+  br label %march_arm934
 
-march_arm931:                                     ; preds = %march_next842
-  %tc933 = load ptr, ptr %tc, align 8
-  %cast934 = ptrtoint ptr %tc933 to i64
-  store i64 %cast934, ptr %match_result14, align 8
+march_arm934:                                     ; preds = %march_next845
+  %tc936 = load ptr, ptr %tc, align 8
+  %cast937 = ptrtoint ptr %tc936 to i64
+  store i64 %cast937, ptr %match_result14, align 8
   br label %match_end15
 
-march_next932:                                    ; No predecessors!
+march_next935:                                    ; No predecessors!
   call void @forge_match_unreachable(ptr @.match_fn.15423, i64 %tag13, ptr @mu_file.15424, i64 524)
   unreachable
 }
@@ -195490,9 +195606,9 @@ march_next834:                                    ; No predecessors!
 
 define ptr @"typeck::annotate_sexpr"(ptr %0, ptr %1) {
 entry:
-  %ty276 = alloca ptr, align 8
+  %ty282 = alloca ptr, align 8
   %sif_result = alloca i64, align 8
-  %name186 = alloca ptr, align 8
+  %name189 = alloca ptr, align 8
   %name172 = alloca ptr, align 8
   %name143 = alloca ptr, align 8
   %match_result132 = alloca i64, align 8
@@ -195522,27 +195638,27 @@ entry:
   %tag_eq = icmp eq i64 %tag, 6952584481902
   br i1 %tag_eq, label %march_arm, label %march_next
 
-match_end:                                        ; preds = %march_arm260, %march_arm247, %march_arm234, %march_arm228, %march_arm215, %sif_end, %march_arm163, %match_end133, %march_arm117, %guard_pass, %march_arm30, %march_arm24, %march_arm18, %march_arm12, %march_arm6, %march_arm
-  %match_val275 = load i64, ptr %match_result, align 8
-  %cast277 = inttoptr i64 %match_val275 to ptr
-  store ptr %cast277, ptr %ty276, align 8
-  %annotated_node278 = load ptr, ptr %annotated_node, align 8
-  %se279 = load ptr, ptr %se, align 8
-  %cast280 = ptrtoint ptr %se279 to i64
-  %null_chk281 = icmp eq i64 %cast280, 0
-  %null_ext282 = zext i1 %null_chk281 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15968, i64 4, ptr @sty_name.15969, i64 16, i64 %null_ext282, ptr @src_file.15970, i64 104, i64 1406)
-  %line_ptr = getelementptr inbounds nuw %"core::ast::SExpr", ptr %se279, i32 0, i32 1
+match_end:                                        ; preds = %march_arm266, %march_arm253, %march_arm240, %march_arm234, %march_arm221, %sif_end, %march_arm163, %match_end133, %march_arm117, %guard_pass, %march_arm30, %march_arm24, %march_arm18, %march_arm12, %march_arm6, %march_arm
+  %match_val281 = load i64, ptr %match_result, align 8
+  %cast283 = inttoptr i64 %match_val281 to ptr
+  store ptr %cast283, ptr %ty282, align 8
+  %annotated_node284 = load ptr, ptr %annotated_node, align 8
+  %se285 = load ptr, ptr %se, align 8
+  %cast286 = ptrtoint ptr %se285 to i64
+  %null_chk287 = icmp eq i64 %cast286, 0
+  %null_ext288 = zext i1 %null_chk287 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.15968, i64 4, ptr @sty_name.15969, i64 16, i64 %null_ext288, ptr @src_file.15970, i64 104, i64 1406)
+  %line_ptr = getelementptr inbounds nuw %"core::ast::SExpr", ptr %se285, i32 0, i32 1
   %line = load i64, ptr %line_ptr, align 8
-  %se283 = load ptr, ptr %se, align 8
-  %cast284 = ptrtoint ptr %se283 to i64
-  %null_chk285 = icmp eq i64 %cast284, 0
-  %null_ext286 = zext i1 %null_chk285 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15971, i64 3, ptr @sty_name.15972, i64 16, i64 %null_ext286, ptr @src_file.15973, i64 104, i64 1406)
-  %col_ptr = getelementptr inbounds nuw %"core::ast::SExpr", ptr %se283, i32 0, i32 2
+  %se289 = load ptr, ptr %se, align 8
+  %cast290 = ptrtoint ptr %se289 to i64
+  %null_chk291 = icmp eq i64 %cast290, 0
+  %null_ext292 = zext i1 %null_chk291 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.15971, i64 3, ptr @sty_name.15972, i64 16, i64 %null_ext292, ptr @src_file.15973, i64 104, i64 1406)
+  %col_ptr = getelementptr inbounds nuw %"core::ast::SExpr", ptr %se289, i32 0, i32 2
   %col = load i64, ptr %col_ptr, align 8
-  %ty287 = load ptr, ptr %ty276, align 8
-  %3 = call ptr @"core::ast::sexpr_typed"(ptr %annotated_node278, i64 %line, i64 %col, ptr %ty287)
+  %ty293 = load ptr, ptr %ty282, align 8
+  %3 = call ptr @"core::ast::sexpr_typed"(ptr %annotated_node284, i64 %line, i64 %col, ptr %ty293)
   ret ptr %3
 
 march_arm:                                        ; preds = %entry
@@ -195908,32 +196024,36 @@ march_arm163:                                     ; preds = %march_next124
   %tag_ptr173 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %14, i32 0, i32 0
   store i64 6952779173258, ptr %tag_ptr173, align 8
   %pay_ptr174 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %14, i32 0, i32 1
-  %15 = call ptr @forge_rc_alloc(i64 8)
+  %15 = call ptr @forge_rc_alloc(i64 16)
   store ptr %15, ptr %pay_ptr174, align 8
   %name175 = load ptr, ptr %name172, align 8
   %slot_base = ptrtoint ptr %15 to i64
   %slot_addr = add i64 %slot_base, 0
   %slot = inttoptr i64 %slot_addr to ptr
   store ptr %name175, ptr %slot, align 8
-  %cast176 = ptrtoint ptr %14 to i64
-  store i64 %cast176, ptr %match_result, align 8
+  %slot_base176 = ptrtoint ptr %15 to i64
+  %slot_addr177 = add i64 %slot_base176, 8
+  %slot178 = inttoptr i64 %slot_addr177 to ptr
+  store i64 0, ptr %slot178, align 8
+  %cast179 = ptrtoint ptr %14 to i64
+  store i64 %cast179, ptr %match_result, align 8
   br label %match_end
 
 march_next164:                                    ; preds = %march_next124
-  %tag_eq179 = icmp eq i64 %tag, 7570972219441074
-  br i1 %tag_eq179, label %march_arm177, label %march_next178
+  %tag_eq182 = icmp eq i64 %tag, 7570972219441074
+  br i1 %tag_eq182, label %march_arm180, label %march_next181
 
-march_arm177:                                     ; preds = %march_next164
-  %pay_slot180 = getelementptr inbounds nuw %"core::ast::Expr", ptr %annotated_node3, i32 0, i32 1
-  %payload181 = load ptr, ptr %pay_slot180, align 8
-  %name_slot_base182 = ptrtoint ptr %payload181 to i64
-  %name_slot_addr183 = add i64 %name_slot_base182, 0
-  %name_slot184 = inttoptr i64 %name_slot_addr183 to ptr
-  %name185 = load ptr, ptr %name_slot184, align 8
-  call void @forge_rc_retain(ptr %name185)
-  store ptr %name185, ptr %name186, align 8
-  %name187 = load ptr, ptr %name186, align 8
-  %16 = call i32 @strcmp(ptr %name187, ptr @.str.15953)
+march_arm180:                                     ; preds = %march_next164
+  %pay_slot183 = getelementptr inbounds nuw %"core::ast::Expr", ptr %annotated_node3, i32 0, i32 1
+  %payload184 = load ptr, ptr %pay_slot183, align 8
+  %name_slot_base185 = ptrtoint ptr %payload184 to i64
+  %name_slot_addr186 = add i64 %name_slot_base185, 0
+  %name_slot187 = inttoptr i64 %name_slot_addr186 to ptr
+  %name188 = load ptr, ptr %name_slot187, align 8
+  call void @forge_rc_retain(ptr %name188)
+  store ptr %name188, ptr %name189, align 8
+  %name190 = load ptr, ptr %name189, align 8
+  %16 = call i32 @strcmp(ptr %name190, ptr @.str.15953)
   %widen = sext i32 %16 to i64
   %streq_cmp = icmp ne i64 %widen, 0
   %streq_ext = zext i1 %streq_cmp to i64
@@ -195941,55 +196061,59 @@ march_arm177:                                     ; preds = %march_next164
   store i64 0, ptr %sif_result, align 8
   br i1 %sif_cond, label %sif_then, label %sif_else
 
-march_next178:                                    ; preds = %march_next164
-  %tag_eq217 = icmp eq i64 %tag, 229432243077098
-  br i1 %tag_eq217, label %march_arm215, label %march_next216
+march_next181:                                    ; preds = %march_next164
+  %tag_eq223 = icmp eq i64 %tag, 229432243077098
+  br i1 %tag_eq223, label %march_arm221, label %march_next222
 
-sif_then:                                         ; preds = %march_arm177
+sif_then:                                         ; preds = %march_arm180
   %17 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr188 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %17, i32 0, i32 0
-  store i64 6384044314, ptr %tag_ptr188, align 8
-  %pay_ptr189 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %17, i32 0, i32 1
-  %18 = call ptr @forge_rc_alloc(i64 16)
-  store ptr %18, ptr %pay_ptr189, align 8
-  %name190 = load ptr, ptr %name186, align 8
-  %slot_base191 = ptrtoint ptr %18 to i64
-  %slot_addr192 = add i64 %slot_base191, 0
-  %slot193 = inttoptr i64 %slot_addr192 to ptr
-  store ptr %name190, ptr %slot193, align 8
+  %tag_ptr191 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %17, i32 0, i32 0
+  store i64 6384044314, ptr %tag_ptr191, align 8
+  %pay_ptr192 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %17, i32 0, i32 1
+  %18 = call ptr @forge_rc_alloc(i64 24)
+  store ptr %18, ptr %pay_ptr192, align 8
+  %name193 = load ptr, ptr %name189, align 8
+  %slot_base194 = ptrtoint ptr %18 to i64
+  %slot_addr195 = add i64 %slot_base194, 0
+  %slot196 = inttoptr i64 %slot_addr195 to ptr
+  store ptr %name193, ptr %slot196, align 8
   %19 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr194 = getelementptr inbounds nuw %"core::ast::TypeList", ptr %19, i32 0, i32 0
-  store i64 193455868, ptr %tag_ptr194, align 8
-  %pay_ptr195 = getelementptr inbounds nuw %"core::ast::TypeList", ptr %19, i32 0, i32 1
-  store ptr null, ptr %pay_ptr195, align 8
-  %cast196 = ptrtoint ptr %19 to i64
-  %slot_base197 = ptrtoint ptr %18 to i64
-  %slot_addr198 = add i64 %slot_base197, 8
-  %slot199 = inttoptr i64 %slot_addr198 to ptr
-  %cast200 = inttoptr i64 %cast196 to ptr
-  store ptr %cast200, ptr %slot199, align 8
-  %cast201 = ptrtoint ptr %17 to i64
-  store i64 %cast201, ptr %sif_result, align 8
+  %tag_ptr197 = getelementptr inbounds nuw %"core::ast::TypeList", ptr %19, i32 0, i32 0
+  store i64 193455868, ptr %tag_ptr197, align 8
+  %pay_ptr198 = getelementptr inbounds nuw %"core::ast::TypeList", ptr %19, i32 0, i32 1
+  store ptr null, ptr %pay_ptr198, align 8
+  %cast199 = ptrtoint ptr %19 to i64
+  %slot_base200 = ptrtoint ptr %18 to i64
+  %slot_addr201 = add i64 %slot_base200, 8
+  %slot202 = inttoptr i64 %slot_addr201 to ptr
+  %cast203 = inttoptr i64 %cast199 to ptr
+  store ptr %cast203, ptr %slot202, align 8
+  %slot_base204 = ptrtoint ptr %18 to i64
+  %slot_addr205 = add i64 %slot_base204, 16
+  %slot206 = inttoptr i64 %slot_addr205 to ptr
+  store i64 0, ptr %slot206, align 8
+  %cast207 = ptrtoint ptr %17 to i64
+  store i64 %cast207, ptr %sif_result, align 8
   br label %sif_end
 
-sif_else:                                         ; preds = %march_arm177
-  %tc202 = load ptr, ptr %tc, align 8
-  %se203 = load ptr, ptr %se, align 8
-  %cast204 = ptrtoint ptr %se203 to i64
-  %null_chk205 = icmp eq i64 %cast204, 0
-  %null_ext206 = zext i1 %null_chk205 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15954, i64 4, ptr @sty_name.15955, i64 16, i64 %null_ext206, ptr @src_file.15956, i64 104, i64 1397)
-  %node_ptr207 = getelementptr inbounds nuw %"core::ast::SExpr", ptr %se203, i32 0, i32 0
-  %node208 = load ptr, ptr %node_ptr207, align 8
-  %20 = call ptr @"typeck::check_expr"(ptr %tc202, ptr %node208)
-  %cast209 = ptrtoint ptr %20 to i64
-  %null_chk210 = icmp eq i64 %cast209, 0
-  %null_ext211 = zext i1 %null_chk210 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15957, i64 2, ptr @sty_name.15958, i64 18, i64 %null_ext211, ptr @src_file.15959, i64 104, i64 1397)
-  %ty_ptr212 = getelementptr inbounds nuw %"typeck::ExprResult", ptr %20, i32 0, i32 1
-  %ty213 = load ptr, ptr %ty_ptr212, align 8
-  %cast214 = ptrtoint ptr %ty213 to i64
-  store i64 %cast214, ptr %sif_result, align 8
+sif_else:                                         ; preds = %march_arm180
+  %tc208 = load ptr, ptr %tc, align 8
+  %se209 = load ptr, ptr %se, align 8
+  %cast210 = ptrtoint ptr %se209 to i64
+  %null_chk211 = icmp eq i64 %cast210, 0
+  %null_ext212 = zext i1 %null_chk211 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.15954, i64 4, ptr @sty_name.15955, i64 16, i64 %null_ext212, ptr @src_file.15956, i64 104, i64 1397)
+  %node_ptr213 = getelementptr inbounds nuw %"core::ast::SExpr", ptr %se209, i32 0, i32 0
+  %node214 = load ptr, ptr %node_ptr213, align 8
+  %20 = call ptr @"typeck::check_expr"(ptr %tc208, ptr %node214)
+  %cast215 = ptrtoint ptr %20 to i64
+  %null_chk216 = icmp eq i64 %cast215, 0
+  %null_ext217 = zext i1 %null_chk216 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.15957, i64 2, ptr @sty_name.15958, i64 18, i64 %null_ext217, ptr @src_file.15959, i64 104, i64 1397)
+  %ty_ptr218 = getelementptr inbounds nuw %"typeck::ExprResult", ptr %20, i32 0, i32 1
+  %ty219 = load ptr, ptr %ty_ptr218, align 8
+  %cast220 = ptrtoint ptr %ty219 to i64
+  store i64 %cast220, ptr %sif_result, align 8
   br label %sif_end
 
 sif_end:                                          ; preds = %sif_else, %sif_then
@@ -195997,118 +196121,118 @@ sif_end:                                          ; preds = %sif_else, %sif_then
   store i64 %sif_val, ptr %match_result, align 8
   br label %match_end
 
-march_arm215:                                     ; preds = %march_next178
+march_arm221:                                     ; preds = %march_next181
   %21 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr218 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %21, i32 0, i32 0
-  store i64 6384290369, ptr %tag_ptr218, align 8
-  %pay_ptr219 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %21, i32 0, i32 1
+  %tag_ptr224 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %21, i32 0, i32 0
+  store i64 6384290369, ptr %tag_ptr224, align 8
+  %pay_ptr225 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %21, i32 0, i32 1
   %22 = call ptr @forge_rc_alloc(i64 8)
-  store ptr %22, ptr %pay_ptr219, align 8
+  store ptr %22, ptr %pay_ptr225, align 8
   %23 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr220 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %23, i32 0, i32 0
-  store i64 229444052301365, ptr %tag_ptr220, align 8
-  %pay_ptr221 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %23, i32 0, i32 1
-  store ptr null, ptr %pay_ptr221, align 8
-  %cast222 = ptrtoint ptr %23 to i64
-  %slot_base223 = ptrtoint ptr %22 to i64
-  %slot_addr224 = add i64 %slot_base223, 0
-  %slot225 = inttoptr i64 %slot_addr224 to ptr
-  %cast226 = inttoptr i64 %cast222 to ptr
-  store ptr %cast226, ptr %slot225, align 8
-  %cast227 = ptrtoint ptr %21 to i64
-  store i64 %cast227, ptr %match_result, align 8
-  br label %match_end
-
-march_next216:                                    ; preds = %march_next178
-  %tag_eq230 = icmp eq i64 %tag, 6952521712076
-  br i1 %tag_eq230, label %march_arm228, label %march_next229
-
-march_arm228:                                     ; preds = %march_next216
-  %24 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr231 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %24, i32 0, i32 0
-  store i64 193464163, ptr %tag_ptr231, align 8
-  %pay_ptr232 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %24, i32 0, i32 1
-  store ptr null, ptr %pay_ptr232, align 8
-  %cast233 = ptrtoint ptr %24 to i64
+  %tag_ptr226 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %23, i32 0, i32 0
+  store i64 229444052301365, ptr %tag_ptr226, align 8
+  %pay_ptr227 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %23, i32 0, i32 1
+  store ptr null, ptr %pay_ptr227, align 8
+  %cast228 = ptrtoint ptr %23 to i64
+  %slot_base229 = ptrtoint ptr %22 to i64
+  %slot_addr230 = add i64 %slot_base229, 0
+  %slot231 = inttoptr i64 %slot_addr230 to ptr
+  %cast232 = inttoptr i64 %cast228 to ptr
+  store ptr %cast232, ptr %slot231, align 8
+  %cast233 = ptrtoint ptr %21 to i64
   store i64 %cast233, ptr %match_result, align 8
   br label %match_end
 
-march_next229:                                    ; preds = %march_next216
-  %tag_eq236 = icmp eq i64 %tag, 210691497359
+march_next222:                                    ; preds = %march_next181
+  %tag_eq236 = icmp eq i64 %tag, 6952521712076
   br i1 %tag_eq236, label %march_arm234, label %march_next235
 
-march_arm234:                                     ; preds = %march_next229
+march_arm234:                                     ; preds = %march_next222
+  %24 = call ptr @forge_rc_alloc(i64 16)
+  %tag_ptr237 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %24, i32 0, i32 0
+  store i64 193464163, ptr %tag_ptr237, align 8
+  %pay_ptr238 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %24, i32 0, i32 1
+  store ptr null, ptr %pay_ptr238, align 8
+  %cast239 = ptrtoint ptr %24 to i64
+  store i64 %cast239, ptr %match_result, align 8
+  br label %match_end
+
+march_next235:                                    ; preds = %march_next222
+  %tag_eq242 = icmp eq i64 %tag, 210691497359
+  br i1 %tag_eq242, label %march_arm240, label %march_next241
+
+march_arm240:                                     ; preds = %march_next235
   %25 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr237 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %25, i32 0, i32 0
-  store i64 210691497359, ptr %tag_ptr237, align 8
-  %pay_ptr238 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %25, i32 0, i32 1
+  %tag_ptr243 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %25, i32 0, i32 0
+  store i64 210691497359, ptr %tag_ptr243, align 8
+  %pay_ptr244 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %25, i32 0, i32 1
   %26 = call ptr @forge_rc_alloc(i64 8)
-  store ptr %26, ptr %pay_ptr238, align 8
+  store ptr %26, ptr %pay_ptr244, align 8
   %27 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr239 = getelementptr inbounds nuw %"core::ast::TypeList", ptr %27, i32 0, i32 0
-  store i64 193455868, ptr %tag_ptr239, align 8
-  %pay_ptr240 = getelementptr inbounds nuw %"core::ast::TypeList", ptr %27, i32 0, i32 1
-  store ptr null, ptr %pay_ptr240, align 8
-  %cast241 = ptrtoint ptr %27 to i64
-  %slot_base242 = ptrtoint ptr %26 to i64
-  %slot_addr243 = add i64 %slot_base242, 0
-  %slot244 = inttoptr i64 %slot_addr243 to ptr
-  %cast245 = inttoptr i64 %cast241 to ptr
-  store ptr %cast245, ptr %slot244, align 8
-  %cast246 = ptrtoint ptr %25 to i64
-  store i64 %cast246, ptr %match_result, align 8
+  %tag_ptr245 = getelementptr inbounds nuw %"core::ast::TypeList", ptr %27, i32 0, i32 0
+  store i64 193455868, ptr %tag_ptr245, align 8
+  %pay_ptr246 = getelementptr inbounds nuw %"core::ast::TypeList", ptr %27, i32 0, i32 1
+  store ptr null, ptr %pay_ptr246, align 8
+  %cast247 = ptrtoint ptr %27 to i64
+  %slot_base248 = ptrtoint ptr %26 to i64
+  %slot_addr249 = add i64 %slot_base248, 0
+  %slot250 = inttoptr i64 %slot_addr249 to ptr
+  %cast251 = inttoptr i64 %cast247 to ptr
+  store ptr %cast251, ptr %slot250, align 8
+  %cast252 = ptrtoint ptr %25 to i64
+  store i64 %cast252, ptr %match_result, align 8
   br label %match_end
 
-march_next235:                                    ; preds = %march_next229
-  %tag_eq249 = icmp eq i64 %tag, 6952482492646
-  br i1 %tag_eq249, label %march_arm247, label %march_next248
+march_next241:                                    ; preds = %march_next235
+  %tag_eq255 = icmp eq i64 %tag, 6952482492646
+  br i1 %tag_eq255, label %march_arm253, label %march_next254
 
-march_arm247:                                     ; preds = %march_next235
+march_arm253:                                     ; preds = %march_next241
   %28 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr250 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %28, i32 0, i32 0
-  store i64 5862329, ptr %tag_ptr250, align 8
-  %pay_ptr251 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %28, i32 0, i32 1
+  %tag_ptr256 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %28, i32 0, i32 0
+  store i64 5862329, ptr %tag_ptr256, align 8
+  %pay_ptr257 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %28, i32 0, i32 1
   %29 = call ptr @forge_rc_alloc(i64 8)
-  store ptr %29, ptr %pay_ptr251, align 8
+  store ptr %29, ptr %pay_ptr257, align 8
   %30 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr252 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %30, i32 0, i32 0
-  store i64 229444052301365, ptr %tag_ptr252, align 8
-  %pay_ptr253 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %30, i32 0, i32 1
-  store ptr null, ptr %pay_ptr253, align 8
-  %cast254 = ptrtoint ptr %30 to i64
-  %slot_base255 = ptrtoint ptr %29 to i64
-  %slot_addr256 = add i64 %slot_base255, 0
-  %slot257 = inttoptr i64 %slot_addr256 to ptr
-  %cast258 = inttoptr i64 %cast254 to ptr
-  store ptr %cast258, ptr %slot257, align 8
-  %cast259 = ptrtoint ptr %28 to i64
-  store i64 %cast259, ptr %match_result, align 8
+  %tag_ptr258 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %30, i32 0, i32 0
+  store i64 229444052301365, ptr %tag_ptr258, align 8
+  %pay_ptr259 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %30, i32 0, i32 1
+  store ptr null, ptr %pay_ptr259, align 8
+  %cast260 = ptrtoint ptr %30 to i64
+  %slot_base261 = ptrtoint ptr %29 to i64
+  %slot_addr262 = add i64 %slot_base261, 0
+  %slot263 = inttoptr i64 %slot_addr262 to ptr
+  %cast264 = inttoptr i64 %cast260 to ptr
+  store ptr %cast264, ptr %slot263, align 8
+  %cast265 = ptrtoint ptr %28 to i64
+  store i64 %cast265, ptr %match_result, align 8
   br label %match_end
 
-march_next248:                                    ; preds = %march_next235
-  br label %march_arm260
+march_next254:                                    ; preds = %march_next241
+  br label %march_arm266
 
-march_arm260:                                     ; preds = %march_next248
-  %tc262 = load ptr, ptr %tc, align 8
-  %se263 = load ptr, ptr %se, align 8
-  %cast264 = ptrtoint ptr %se263 to i64
-  %null_chk265 = icmp eq i64 %cast264, 0
-  %null_ext266 = zext i1 %null_chk265 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15960, i64 4, ptr @sty_name.15961, i64 16, i64 %null_ext266, ptr @src_file.15962, i64 104, i64 1376)
-  %node_ptr267 = getelementptr inbounds nuw %"core::ast::SExpr", ptr %se263, i32 0, i32 0
-  %node268 = load ptr, ptr %node_ptr267, align 8
-  %31 = call ptr @"typeck::check_expr"(ptr %tc262, ptr %node268)
-  %cast269 = ptrtoint ptr %31 to i64
-  %null_chk270 = icmp eq i64 %cast269, 0
-  %null_ext271 = zext i1 %null_chk270 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15963, i64 2, ptr @sty_name.15964, i64 18, i64 %null_ext271, ptr @src_file.15965, i64 104, i64 1376)
-  %ty_ptr272 = getelementptr inbounds nuw %"typeck::ExprResult", ptr %31, i32 0, i32 1
-  %ty273 = load ptr, ptr %ty_ptr272, align 8
-  %cast274 = ptrtoint ptr %ty273 to i64
-  store i64 %cast274, ptr %match_result, align 8
+march_arm266:                                     ; preds = %march_next254
+  %tc268 = load ptr, ptr %tc, align 8
+  %se269 = load ptr, ptr %se, align 8
+  %cast270 = ptrtoint ptr %se269 to i64
+  %null_chk271 = icmp eq i64 %cast270, 0
+  %null_ext272 = zext i1 %null_chk271 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.15960, i64 4, ptr @sty_name.15961, i64 16, i64 %null_ext272, ptr @src_file.15962, i64 104, i64 1376)
+  %node_ptr273 = getelementptr inbounds nuw %"core::ast::SExpr", ptr %se269, i32 0, i32 0
+  %node274 = load ptr, ptr %node_ptr273, align 8
+  %31 = call ptr @"typeck::check_expr"(ptr %tc268, ptr %node274)
+  %cast275 = ptrtoint ptr %31 to i64
+  %null_chk276 = icmp eq i64 %cast275, 0
+  %null_ext277 = zext i1 %null_chk276 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.15963, i64 2, ptr @sty_name.15964, i64 18, i64 %null_ext277, ptr @src_file.15965, i64 104, i64 1376)
+  %ty_ptr278 = getelementptr inbounds nuw %"typeck::ExprResult", ptr %31, i32 0, i32 1
+  %ty279 = load ptr, ptr %ty_ptr278, align 8
+  %cast280 = ptrtoint ptr %ty279 to i64
+  store i64 %cast280, ptr %match_result, align 8
   br label %match_end
 
-march_next261:                                    ; No predecessors!
+march_next267:                                    ; No predecessors!
   call void @forge_match_unreachable(ptr @.match_fn.15966, i64 %tag, ptr @mu_file.15967, i64 1376)
   unreachable
 }
@@ -203570,7 +203694,7 @@ guard_pass:                                       ; preds = %march_arm
   %tag_ptr4 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %3, i32 0, i32 0
   store i64 6952779173258, ptr %tag_ptr4, align 8
   %pay_ptr = getelementptr inbounds nuw %"core::ast::ValueType", ptr %3, i32 0, i32 1
-  %4 = call ptr @forge_rc_alloc(i64 8)
+  %4 = call ptr @forge_rc_alloc(i64 16)
   store ptr %4, ptr %pay_ptr, align 8
   %ctx5 = load ptr, ptr %ctx, align 8
   %name6 = load ptr, ptr %name2, align 8
@@ -203617,7 +203741,7 @@ guard_pass25:                                     ; preds = %march_arm7
   %tag_ptr26 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %7, i32 0, i32 0
   store i64 6384044314, ptr %tag_ptr26, align 8
   %pay_ptr27 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %7, i32 0, i32 1
-  %8 = call ptr @forge_rc_alloc(i64 16)
+  %8 = call ptr @forge_rc_alloc(i64 24)
   store ptr %8, ptr %pay_ptr27, align 8
   %ctx28 = load ptr, ptr %ctx, align 8
   %name29 = load ptr, ptr %name16, align 8
@@ -203663,7 +203787,7 @@ guard_pass54:                                     ; preds = %march_arm39
   %tag_ptr55 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %12, i32 0, i32 0
   store i64 210691373129, ptr %tag_ptr55, align 8
   %pay_ptr56 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %12, i32 0, i32 1
-  %13 = call ptr @forge_rc_alloc(i64 8)
+  %13 = call ptr @forge_rc_alloc(i64 16)
   store ptr %13, ptr %pay_ptr56, align 8
   %ctx57 = load ptr, ptr %ctx, align 8
   %name58 = load ptr, ptr %name48, align 8
@@ -203710,7 +203834,7 @@ guard_pass81:                                     ; preds = %march_arm63
   %tag_ptr82 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %16, i32 0, i32 0
   store i64 229434674264369, ptr %tag_ptr82, align 8
   %pay_ptr83 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %16, i32 0, i32 1
-  %17 = call ptr @forge_rc_alloc(i64 16)
+  %17 = call ptr @forge_rc_alloc(i64 24)
   store ptr %17, ptr %pay_ptr83, align 8
   %ctx84 = load ptr, ptr %ctx, align 8
   %name85 = load ptr, ptr %name72, align 8
@@ -203764,7 +203888,7 @@ guard_pass109:                                    ; preds = %march_arm95
   %tag_ptr110 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %21, i32 0, i32 0
   store i64 -4554580336688187492, ptr %tag_ptr110, align 8
   %pay_ptr111 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %21, i32 0, i32 1
-  %22 = call ptr @forge_rc_alloc(i64 16)
+  %22 = call ptr @forge_rc_alloc(i64 24)
   store ptr %22, ptr %pay_ptr111, align 8
   %ctx112 = load ptr, ptr %ctx, align 8
   %en113 = load ptr, ptr %en100, align 8
@@ -204195,8 +204319,8 @@ entry:
 
 match_end:                                        ; preds = %sif_end, %march_arm
   %match_val = load i64, ptr %match_result, align 8
-  %cast48 = inttoptr i64 %match_val to ptr
-  ret ptr %cast48
+  %cast51 = inttoptr i64 %match_val to ptr
+  ret ptr %cast51
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @forge_rc_alloc(i64 16)
@@ -204265,54 +204389,58 @@ sif_then:                                         ; preds = %march_arm3
   %tag_ptr16 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %6, i32 0, i32 0
   store i64 6952779173258, ptr %tag_ptr16, align 8
   %pay_ptr17 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %6, i32 0, i32 1
-  %7 = call ptr @forge_rc_alloc(i64 8)
+  %7 = call ptr @forge_rc_alloc(i64 16)
   store ptr %7, ptr %pay_ptr17, align 8
   %qualified_type18 = load ptr, ptr %qualified_type, align 8
   %slot_base19 = ptrtoint ptr %7 to i64
   %slot_addr20 = add i64 %slot_base19, 0
   %slot21 = inttoptr i64 %slot_addr20 to ptr
   store ptr %qualified_type18, ptr %slot21, align 8
-  %cast22 = ptrtoint ptr %6 to i64
-  %slot_base23 = ptrtoint ptr %5 to i64
-  %slot_addr24 = add i64 %slot_base23, 8
-  %slot25 = inttoptr i64 %slot_addr24 to ptr
-  %cast26 = inttoptr i64 %cast22 to ptr
-  store ptr %cast26, ptr %slot25, align 8
-  %next27 = load ptr, ptr %next12, align 8
-  %slot_base28 = ptrtoint ptr %5 to i64
-  %slot_addr29 = add i64 %slot_base28, 16
-  %slot30 = inttoptr i64 %slot_addr29 to ptr
-  store ptr %next27, ptr %slot30, align 8
-  %cast31 = ptrtoint ptr %4 to i64
-  store i64 %cast31, ptr %sif_result, align 8
+  %slot_base22 = ptrtoint ptr %7 to i64
+  %slot_addr23 = add i64 %slot_base22, 8
+  %slot24 = inttoptr i64 %slot_addr23 to ptr
+  store i64 0, ptr %slot24, align 8
+  %cast25 = ptrtoint ptr %6 to i64
+  %slot_base26 = ptrtoint ptr %5 to i64
+  %slot_addr27 = add i64 %slot_base26, 8
+  %slot28 = inttoptr i64 %slot_addr27 to ptr
+  %cast29 = inttoptr i64 %cast25 to ptr
+  store ptr %cast29, ptr %slot28, align 8
+  %next30 = load ptr, ptr %next12, align 8
+  %slot_base31 = ptrtoint ptr %5 to i64
+  %slot_addr32 = add i64 %slot_base31, 16
+  %slot33 = inttoptr i64 %slot_addr32 to ptr
+  store ptr %next30, ptr %slot33, align 8
+  %cast34 = ptrtoint ptr %4 to i64
+  store i64 %cast34, ptr %sif_result, align 8
   br label %sif_end
 
 sif_else:                                         ; preds = %march_arm3
   %8 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr32 = getelementptr inbounds nuw %"core::ast::ParamList", ptr %8, i32 0, i32 0
-  store i64 6384368267, ptr %tag_ptr32, align 8
-  %pay_ptr33 = getelementptr inbounds nuw %"core::ast::ParamList", ptr %8, i32 0, i32 1
+  %tag_ptr35 = getelementptr inbounds nuw %"core::ast::ParamList", ptr %8, i32 0, i32 0
+  store i64 6384368267, ptr %tag_ptr35, align 8
+  %pay_ptr36 = getelementptr inbounds nuw %"core::ast::ParamList", ptr %8, i32 0, i32 1
   %9 = call ptr @forge_rc_alloc(i64 24)
-  store ptr %9, ptr %pay_ptr33, align 8
-  %name34 = load ptr, ptr %name6, align 8
-  %slot_base35 = ptrtoint ptr %9 to i64
-  %slot_addr36 = add i64 %slot_base35, 0
-  %slot37 = inttoptr i64 %slot_addr36 to ptr
-  store ptr %name34, ptr %slot37, align 8
-  %vt38 = load ptr, ptr %vt9, align 8
-  %slot_base39 = ptrtoint ptr %9 to i64
-  %slot_addr40 = add i64 %slot_base39, 8
-  %slot41 = inttoptr i64 %slot_addr40 to ptr
-  store ptr %vt38, ptr %slot41, align 8
-  %next42 = load ptr, ptr %next12, align 8
-  %qualified_type43 = load ptr, ptr %qualified_type, align 8
-  %10 = call ptr @"resolve::names::qualify_self_param"(ptr %next42, ptr %qualified_type43)
-  %slot_base44 = ptrtoint ptr %9 to i64
-  %slot_addr45 = add i64 %slot_base44, 16
-  %slot46 = inttoptr i64 %slot_addr45 to ptr
-  store ptr %10, ptr %slot46, align 8
-  %cast47 = ptrtoint ptr %8 to i64
-  store i64 %cast47, ptr %sif_result, align 8
+  store ptr %9, ptr %pay_ptr36, align 8
+  %name37 = load ptr, ptr %name6, align 8
+  %slot_base38 = ptrtoint ptr %9 to i64
+  %slot_addr39 = add i64 %slot_base38, 0
+  %slot40 = inttoptr i64 %slot_addr39 to ptr
+  store ptr %name37, ptr %slot40, align 8
+  %vt41 = load ptr, ptr %vt9, align 8
+  %slot_base42 = ptrtoint ptr %9 to i64
+  %slot_addr43 = add i64 %slot_base42, 8
+  %slot44 = inttoptr i64 %slot_addr43 to ptr
+  store ptr %vt41, ptr %slot44, align 8
+  %next45 = load ptr, ptr %next12, align 8
+  %qualified_type46 = load ptr, ptr %qualified_type, align 8
+  %10 = call ptr @"resolve::names::qualify_self_param"(ptr %next45, ptr %qualified_type46)
+  %slot_base47 = ptrtoint ptr %9 to i64
+  %slot_addr48 = add i64 %slot_base47, 16
+  %slot49 = inttoptr i64 %slot_addr48 to ptr
+  store ptr %10, ptr %slot49, align 8
+  %cast50 = ptrtoint ptr %8 to i64
+  store i64 %cast50, ptr %sif_result, align 8
   br label %sif_end
 
 sif_end:                                          ; preds = %sif_else, %sif_then
@@ -219910,12 +220038,12 @@ march_next4:                                      ; preds = %march_next
 
 define ptr @"codegen::types::Ctx__resolve_codegen_vtype"(ptr %0, ptr %1) {
 entry:
-  %ret177 = alloca ptr, align 8
-  %params174 = alloca ptr, align 8
-  %types157 = alloca ptr, align 8
-  %elem140 = alloca ptr, align 8
-  %args119 = alloca ptr, align 8
-  %name116 = alloca ptr, align 8
+  %ret186 = alloca ptr, align 8
+  %params183 = alloca ptr, align 8
+  %types166 = alloca ptr, align 8
+  %elem149 = alloca ptr, align 8
+  %args128 = alloca ptr, align 8
+  %name125 = alloca ptr, align 8
   %ua_vt = alloca ptr, align 8
   %nt_vt = alloca ptr, align 8
   %s = alloca ptr, align 8
@@ -219933,10 +220061,10 @@ entry:
   %tag_eq = icmp eq i64 %tag, 6952779173258
   br i1 %tag_eq, label %march_arm, label %march_next
 
-match_end:                                        ; preds = %march_arm197, %march_arm169, %march_arm152, %march_arm135, %march_arm107, %ifcont96
+match_end:                                        ; preds = %march_arm206, %march_arm178, %march_arm161, %march_arm144, %march_arm116, %ifcont105
   %match_val = load i64, ptr %match_result, align 8
-  %cast201 = inttoptr i64 %match_val to ptr
-  ret ptr %cast201
+  %cast210 = inttoptr i64 %match_val to ptr
+  ret ptr %cast210
 
 march_arm:                                        ; preds = %entry
   %pay_slot = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
@@ -219968,36 +220096,36 @@ march_arm:                                        ; preds = %entry
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next:                                       ; preds = %entry
-  %tag_eq109 = icmp eq i64 %tag, 6384044314
-  br i1 %tag_eq109, label %march_arm107, label %march_next108
+  %tag_eq118 = icmp eq i64 %tag, 6384044314
+  br i1 %tag_eq118, label %march_arm116, label %march_next117
 
 ifcont:                                           ; preds = %if_else
-  %self20 = load ptr, ptr %self, align 8
-  %cast21 = ptrtoint ptr %self20 to i64
-  %null_chk22 = icmp eq i64 %cast21, 0
-  %null_ext23 = zext i1 %null_chk22 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.17421, i64 7, ptr @sty_name.17422, i64 19, i64 %null_ext23, ptr @src_file.17423, i64 104, i64 1019)
-  %structs_ptr = getelementptr inbounds nuw %"codegen::types::Ctx", ptr %self20, i32 0, i32 9
+  %self23 = load ptr, ptr %self, align 8
+  %cast24 = ptrtoint ptr %self23 to i64
+  %null_chk25 = icmp eq i64 %cast24, 0
+  %null_ext26 = zext i1 %null_chk25 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.17421, i64 7, ptr @sty_name.17422, i64 19, i64 %null_ext26, ptr @src_file.17423, i64 104, i64 1019)
+  %structs_ptr = getelementptr inbounds nuw %"codegen::types::Ctx", ptr %self23, i32 0, i32 9
   %structs = load ptr, ptr %structs_ptr, align 8
-  %name24 = load ptr, ptr %name2, align 8
-  %3 = call ptr @"codegen::types::struct_reg_lookup"(ptr %structs, ptr %name24)
+  %name27 = load ptr, ptr %name2, align 8
+  %3 = call ptr @"codegen::types::struct_reg_lookup"(ptr %structs, ptr %name27)
   store ptr %3, ptr %s, align 8
-  %s25 = load ptr, ptr %s, align 8
-  %cast26 = ptrtoint ptr %s25 to i64
-  %null_chk27 = icmp eq i64 %cast26, 0
-  %null_ext28 = zext i1 %null_chk27 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.17424, i64 5, ptr @sty_name.17425, i64 28, i64 %null_ext28, ptr @src_file.17426, i64 104, i64 1020)
-  %found_ptr29 = getelementptr inbounds nuw %"codegen::types::StructLookup", ptr %s25, i32 0, i32 0
-  %found30 = load i64, ptr %found_ptr29, align 8
-  %if_cond32 = icmp ne i64 %found30, 0
-  br i1 %if_cond32, label %if_then33, label %if_else34
+  %s28 = load ptr, ptr %s, align 8
+  %cast29 = ptrtoint ptr %s28 to i64
+  %null_chk30 = icmp eq i64 %cast29, 0
+  %null_ext31 = zext i1 %null_chk30 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.17424, i64 5, ptr @sty_name.17425, i64 28, i64 %null_ext31, ptr @src_file.17426, i64 104, i64 1020)
+  %found_ptr32 = getelementptr inbounds nuw %"codegen::types::StructLookup", ptr %s28, i32 0, i32 0
+  %found33 = load i64, ptr %found_ptr32, align 8
+  %if_cond35 = icmp ne i64 %found33, 0
+  br i1 %if_cond35, label %if_then36, label %if_else37
 
 if_then:                                          ; preds = %march_arm
   %4 = call ptr @forge_rc_alloc(i64 16)
   %tag_ptr9 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %4, i32 0, i32 0
   store i64 6384044314, ptr %tag_ptr9, align 8
   %pay_ptr = getelementptr inbounds nuw %"core::ast::ValueType", ptr %4, i32 0, i32 1
-  %5 = call ptr @forge_rc_alloc(i64 16)
+  %5 = call ptr @forge_rc_alloc(i64 24)
   store ptr %5, ptr %pay_ptr, align 8
   %name10 = load ptr, ptr %name2, align 8
   %slot_base = ptrtoint ptr %5 to i64
@@ -220015,326 +220143,338 @@ if_then:                                          ; preds = %march_arm
   %slot16 = inttoptr i64 %slot_addr15 to ptr
   %cast17 = inttoptr i64 %cast13 to ptr
   store ptr %cast17, ptr %slot16, align 8
-  %cast18 = ptrtoint ptr %4 to i64
-  %cast19 = inttoptr i64 %cast18 to ptr
-  ret ptr %cast19
+  %slot_base18 = ptrtoint ptr %5 to i64
+  %slot_addr19 = add i64 %slot_base18, 16
+  %slot20 = inttoptr i64 %slot_addr19 to ptr
+  store i64 0, ptr %slot20, align 8
+  %cast21 = ptrtoint ptr %4 to i64
+  %cast22 = inttoptr i64 %cast21 to ptr
+  ret ptr %cast22
 
 if_else:                                          ; preds = %march_arm
   br label %ifcont
 
-ifcont31:                                         ; preds = %if_else34
-  %self43 = load ptr, ptr %self, align 8
-  %cast44 = ptrtoint ptr %self43 to i64
-  %null_chk45 = icmp eq i64 %cast44, 0
-  %null_ext46 = zext i1 %null_chk45 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.17427, i64 11, ptr @sty_name.17428, i64 19, i64 %null_ext46, ptr @src_file.17429, i64 104, i64 1021)
-  %trait_decls_ptr = getelementptr inbounds nuw %"codegen::types::Ctx", ptr %self43, i32 0, i32 19
+ifcont34:                                         ; preds = %if_else37
+  %self49 = load ptr, ptr %self, align 8
+  %cast50 = ptrtoint ptr %self49 to i64
+  %null_chk51 = icmp eq i64 %cast50, 0
+  %null_ext52 = zext i1 %null_chk51 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.17427, i64 11, ptr @sty_name.17428, i64 19, i64 %null_ext52, ptr @src_file.17429, i64 104, i64 1021)
+  %trait_decls_ptr = getelementptr inbounds nuw %"codegen::types::Ctx", ptr %self49, i32 0, i32 19
   %trait_decls = load ptr, ptr %trait_decls_ptr, align 8
-  %name47 = load ptr, ptr %name2, align 8
-  %7 = call i1 @"codegen::types::trait_decl_has"(ptr %trait_decls, ptr %name47)
+  %name53 = load ptr, ptr %name2, align 8
+  %7 = call i1 @"codegen::types::trait_decl_has"(ptr %trait_decls, ptr %name53)
   %widen = zext i1 %7 to i64
-  %if_cond49 = icmp ne i64 %widen, 0
-  br i1 %if_cond49, label %if_then50, label %if_else51
+  %if_cond55 = icmp ne i64 %widen, 0
+  br i1 %if_cond55, label %if_then56, label %if_else57
 
-if_then33:                                        ; preds = %ifcont
+if_then36:                                        ; preds = %ifcont
   %8 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr35 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %8, i32 0, i32 0
-  store i64 6952779173258, ptr %tag_ptr35, align 8
-  %pay_ptr36 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %8, i32 0, i32 1
-  %9 = call ptr @forge_rc_alloc(i64 8)
-  store ptr %9, ptr %pay_ptr36, align 8
-  %name37 = load ptr, ptr %name2, align 8
-  %slot_base38 = ptrtoint ptr %9 to i64
-  %slot_addr39 = add i64 %slot_base38, 0
-  %slot40 = inttoptr i64 %slot_addr39 to ptr
-  store ptr %name37, ptr %slot40, align 8
-  %cast41 = ptrtoint ptr %8 to i64
-  %cast42 = inttoptr i64 %cast41 to ptr
-  ret ptr %cast42
+  %tag_ptr38 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %8, i32 0, i32 0
+  store i64 6952779173258, ptr %tag_ptr38, align 8
+  %pay_ptr39 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %8, i32 0, i32 1
+  %9 = call ptr @forge_rc_alloc(i64 16)
+  store ptr %9, ptr %pay_ptr39, align 8
+  %name40 = load ptr, ptr %name2, align 8
+  %slot_base41 = ptrtoint ptr %9 to i64
+  %slot_addr42 = add i64 %slot_base41, 0
+  %slot43 = inttoptr i64 %slot_addr42 to ptr
+  store ptr %name40, ptr %slot43, align 8
+  %slot_base44 = ptrtoint ptr %9 to i64
+  %slot_addr45 = add i64 %slot_base44, 8
+  %slot46 = inttoptr i64 %slot_addr45 to ptr
+  store i64 0, ptr %slot46, align 8
+  %cast47 = ptrtoint ptr %8 to i64
+  %cast48 = inttoptr i64 %cast47 to ptr
+  ret ptr %cast48
 
-if_else34:                                        ; preds = %ifcont
-  br label %ifcont31
+if_else37:                                        ; preds = %ifcont
+  br label %ifcont34
 
-ifcont48:                                         ; preds = %if_else51
-  %self60 = load ptr, ptr %self, align 8
-  %cast61 = ptrtoint ptr %self60 to i64
-  %null_chk62 = icmp eq i64 %cast61, 0
-  %null_ext63 = zext i1 %null_chk62 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.17430, i64 8, ptr @sty_name.17431, i64 19, i64 %null_ext63, ptr @src_file.17432, i64 104, i64 1023)
-  %newtypes_ptr = getelementptr inbounds nuw %"codegen::types::Ctx", ptr %self60, i32 0, i32 20
+ifcont54:                                         ; preds = %if_else57
+  %self69 = load ptr, ptr %self, align 8
+  %cast70 = ptrtoint ptr %self69 to i64
+  %null_chk71 = icmp eq i64 %cast70, 0
+  %null_ext72 = zext i1 %null_chk71 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.17430, i64 8, ptr @sty_name.17431, i64 19, i64 %null_ext72, ptr @src_file.17432, i64 104, i64 1023)
+  %newtypes_ptr = getelementptr inbounds nuw %"codegen::types::Ctx", ptr %self69, i32 0, i32 20
   %newtypes = load ptr, ptr %newtypes_ptr, align 8
-  %name64 = load ptr, ptr %name2, align 8
-  %10 = call ptr @"codegen::types::cg_newtype_vtype_lookup"(ptr %newtypes, ptr %name64)
-  store ptr %10, ptr %nt_vt, align 8
-  %nt_vt65 = load ptr, ptr %nt_vt, align 8
-  %11 = call i1 @"core::ast::vtype_is_unknown"(ptr %nt_vt65)
-  %widen66 = zext i1 %11 to i64
-  %not_cmp = icmp eq i64 %widen66, 0
-  %not_cmp_ext = zext i1 %not_cmp to i64
-  %if_cond68 = icmp ne i64 %not_cmp_ext, 0
-  br i1 %if_cond68, label %if_then69, label %if_else70
-
-if_then50:                                        ; preds = %ifcont31
-  %12 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr52 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %12, i32 0, i32 0
-  store i64 210691373129, ptr %tag_ptr52, align 8
-  %pay_ptr53 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %12, i32 0, i32 1
-  %13 = call ptr @forge_rc_alloc(i64 8)
-  store ptr %13, ptr %pay_ptr53, align 8
-  %name54 = load ptr, ptr %name2, align 8
-  %slot_base55 = ptrtoint ptr %13 to i64
-  %slot_addr56 = add i64 %slot_base55, 0
-  %slot57 = inttoptr i64 %slot_addr56 to ptr
-  store ptr %name54, ptr %slot57, align 8
-  %cast58 = ptrtoint ptr %12 to i64
-  %cast59 = inttoptr i64 %cast58 to ptr
-  ret ptr %cast59
-
-if_else51:                                        ; preds = %ifcont31
-  br label %ifcont48
-
-ifcont67:                                         ; preds = %if_else70
-  %self87 = load ptr, ptr %self, align 8
-  %cast88 = ptrtoint ptr %self87 to i64
-  %null_chk89 = icmp eq i64 %cast88, 0
-  %null_ext90 = zext i1 %null_chk89 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.17436, i64 13, ptr @sty_name.17437, i64 19, i64 %null_ext90, ptr @src_file.17438, i64 104, i64 1025)
-  %union_aliases_ptr = getelementptr inbounds nuw %"codegen::types::Ctx", ptr %self87, i32 0, i32 21
-  %union_aliases = load ptr, ptr %union_aliases_ptr, align 8
-  %name91 = load ptr, ptr %name2, align 8
-  %14 = call ptr @"codegen::types::cg_union_alias_vtype_lookup"(ptr %union_aliases, ptr %name91)
-  store ptr %14, ptr %ua_vt, align 8
-  %ua_vt92 = load ptr, ptr %ua_vt, align 8
-  %15 = call i1 @"core::ast::vtype_is_unknown"(ptr %ua_vt92)
-  %widen93 = zext i1 %15 to i64
-  %not_cmp94 = icmp eq i64 %widen93, 0
-  %not_cmp_ext95 = zext i1 %not_cmp94 to i64
-  %if_cond97 = icmp ne i64 %not_cmp_ext95, 0
-  br i1 %if_cond97, label %if_then98, label %if_else99
-
-if_then69:                                        ; preds = %ifcont48
-  %16 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr71 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %16, i32 0, i32 0
-  store i64 229434674264369, ptr %tag_ptr71, align 8
-  %pay_ptr72 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %16, i32 0, i32 1
-  %17 = call ptr @forge_rc_alloc(i64 16)
-  store ptr %17, ptr %pay_ptr72, align 8
   %name73 = load ptr, ptr %name2, align 8
-  %slot_base74 = ptrtoint ptr %17 to i64
-  %slot_addr75 = add i64 %slot_base74, 0
-  %slot76 = inttoptr i64 %slot_addr75 to ptr
-  store ptr %name73, ptr %slot76, align 8
-  %self77 = load ptr, ptr %self, align 8
-  %cast78 = ptrtoint ptr %self77 to i64
-  %null_chk79 = icmp eq i64 %cast78, 0
-  %null_ext80 = zext i1 %null_chk79 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.17433, i64 21, ptr @sty_name.17434, i64 19, i64 %null_ext80, ptr @src_file.17435, i64 104, i64 1024)
-  %nt_vt81 = load ptr, ptr %nt_vt, align 8
-  %18 = call ptr @"codegen::types::Ctx__resolve_codegen_vtype"(ptr %self77, ptr %nt_vt81)
-  %slot_base82 = ptrtoint ptr %17 to i64
-  %slot_addr83 = add i64 %slot_base82, 8
-  %slot84 = inttoptr i64 %slot_addr83 to ptr
-  store ptr %18, ptr %slot84, align 8
-  %cast85 = ptrtoint ptr %16 to i64
-  %cast86 = inttoptr i64 %cast85 to ptr
-  ret ptr %cast86
+  %10 = call ptr @"codegen::types::cg_newtype_vtype_lookup"(ptr %newtypes, ptr %name73)
+  store ptr %10, ptr %nt_vt, align 8
+  %nt_vt74 = load ptr, ptr %nt_vt, align 8
+  %11 = call i1 @"core::ast::vtype_is_unknown"(ptr %nt_vt74)
+  %widen75 = zext i1 %11 to i64
+  %not_cmp = icmp eq i64 %widen75, 0
+  %not_cmp_ext = zext i1 %not_cmp to i64
+  %if_cond77 = icmp ne i64 %not_cmp_ext, 0
+  br i1 %if_cond77, label %if_then78, label %if_else79
 
-if_else70:                                        ; preds = %ifcont48
-  br label %ifcont67
+if_then56:                                        ; preds = %ifcont34
+  %12 = call ptr @forge_rc_alloc(i64 16)
+  %tag_ptr58 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %12, i32 0, i32 0
+  store i64 210691373129, ptr %tag_ptr58, align 8
+  %pay_ptr59 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %12, i32 0, i32 1
+  %13 = call ptr @forge_rc_alloc(i64 16)
+  store ptr %13, ptr %pay_ptr59, align 8
+  %name60 = load ptr, ptr %name2, align 8
+  %slot_base61 = ptrtoint ptr %13 to i64
+  %slot_addr62 = add i64 %slot_base61, 0
+  %slot63 = inttoptr i64 %slot_addr62 to ptr
+  store ptr %name60, ptr %slot63, align 8
+  %slot_base64 = ptrtoint ptr %13 to i64
+  %slot_addr65 = add i64 %slot_base64, 8
+  %slot66 = inttoptr i64 %slot_addr65 to ptr
+  store i64 0, ptr %slot66, align 8
+  %cast67 = ptrtoint ptr %12 to i64
+  %cast68 = inttoptr i64 %cast67 to ptr
+  ret ptr %cast68
 
-ifcont96:                                         ; preds = %if_else99
-  %vt105 = load ptr, ptr %vt, align 8
-  %cast106 = ptrtoint ptr %vt105 to i64
-  store i64 %cast106, ptr %match_result, align 8
+if_else57:                                        ; preds = %ifcont34
+  br label %ifcont54
+
+ifcont76:                                         ; preds = %if_else79
+  %self96 = load ptr, ptr %self, align 8
+  %cast97 = ptrtoint ptr %self96 to i64
+  %null_chk98 = icmp eq i64 %cast97, 0
+  %null_ext99 = zext i1 %null_chk98 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.17436, i64 13, ptr @sty_name.17437, i64 19, i64 %null_ext99, ptr @src_file.17438, i64 104, i64 1025)
+  %union_aliases_ptr = getelementptr inbounds nuw %"codegen::types::Ctx", ptr %self96, i32 0, i32 21
+  %union_aliases = load ptr, ptr %union_aliases_ptr, align 8
+  %name100 = load ptr, ptr %name2, align 8
+  %14 = call ptr @"codegen::types::cg_union_alias_vtype_lookup"(ptr %union_aliases, ptr %name100)
+  store ptr %14, ptr %ua_vt, align 8
+  %ua_vt101 = load ptr, ptr %ua_vt, align 8
+  %15 = call i1 @"core::ast::vtype_is_unknown"(ptr %ua_vt101)
+  %widen102 = zext i1 %15 to i64
+  %not_cmp103 = icmp eq i64 %widen102, 0
+  %not_cmp_ext104 = zext i1 %not_cmp103 to i64
+  %if_cond106 = icmp ne i64 %not_cmp_ext104, 0
+  br i1 %if_cond106, label %if_then107, label %if_else108
+
+if_then78:                                        ; preds = %ifcont54
+  %16 = call ptr @forge_rc_alloc(i64 16)
+  %tag_ptr80 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %16, i32 0, i32 0
+  store i64 229434674264369, ptr %tag_ptr80, align 8
+  %pay_ptr81 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %16, i32 0, i32 1
+  %17 = call ptr @forge_rc_alloc(i64 24)
+  store ptr %17, ptr %pay_ptr81, align 8
+  %name82 = load ptr, ptr %name2, align 8
+  %slot_base83 = ptrtoint ptr %17 to i64
+  %slot_addr84 = add i64 %slot_base83, 0
+  %slot85 = inttoptr i64 %slot_addr84 to ptr
+  store ptr %name82, ptr %slot85, align 8
+  %self86 = load ptr, ptr %self, align 8
+  %cast87 = ptrtoint ptr %self86 to i64
+  %null_chk88 = icmp eq i64 %cast87, 0
+  %null_ext89 = zext i1 %null_chk88 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.17433, i64 21, ptr @sty_name.17434, i64 19, i64 %null_ext89, ptr @src_file.17435, i64 104, i64 1024)
+  %nt_vt90 = load ptr, ptr %nt_vt, align 8
+  %18 = call ptr @"codegen::types::Ctx__resolve_codegen_vtype"(ptr %self86, ptr %nt_vt90, i64 0)
+  %slot_base91 = ptrtoint ptr %17 to i64
+  %slot_addr92 = add i64 %slot_base91, 8
+  %slot93 = inttoptr i64 %slot_addr92 to ptr
+  store ptr %18, ptr %slot93, align 8
+  %cast94 = ptrtoint ptr %16 to i64
+  %cast95 = inttoptr i64 %cast94 to ptr
+  ret ptr %cast95
+
+if_else79:                                        ; preds = %ifcont54
+  br label %ifcont76
+
+ifcont105:                                        ; preds = %if_else108
+  %vt114 = load ptr, ptr %vt, align 8
+  %cast115 = ptrtoint ptr %vt114 to i64
+  store i64 %cast115, ptr %match_result, align 8
   br label %match_end
 
-if_then98:                                        ; preds = %ifcont67
-  %self100 = load ptr, ptr %self, align 8
-  %cast101 = ptrtoint ptr %self100 to i64
-  %null_chk102 = icmp eq i64 %cast101, 0
-  %null_ext103 = zext i1 %null_chk102 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.17439, i64 21, ptr @sty_name.17440, i64 19, i64 %null_ext103, ptr @src_file.17441, i64 104, i64 1026)
-  %ua_vt104 = load ptr, ptr %ua_vt, align 8
-  %19 = call ptr @"codegen::types::Ctx__resolve_codegen_vtype"(ptr %self100, ptr %ua_vt104)
+if_then107:                                       ; preds = %ifcont76
+  %self109 = load ptr, ptr %self, align 8
+  %cast110 = ptrtoint ptr %self109 to i64
+  %null_chk111 = icmp eq i64 %cast110, 0
+  %null_ext112 = zext i1 %null_chk111 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.17439, i64 21, ptr @sty_name.17440, i64 19, i64 %null_ext112, ptr @src_file.17441, i64 104, i64 1026)
+  %ua_vt113 = load ptr, ptr %ua_vt, align 8
+  %19 = call ptr @"codegen::types::Ctx__resolve_codegen_vtype"(ptr %self109, ptr %ua_vt113)
   ret ptr %19
 
-if_else99:                                        ; preds = %ifcont67
-  br label %ifcont96
+if_else108:                                       ; preds = %ifcont76
+  br label %ifcont105
 
-march_arm107:                                     ; preds = %march_next
-  %pay_slot110 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
-  %payload111 = load ptr, ptr %pay_slot110, align 8
-  %name_slot_base112 = ptrtoint ptr %payload111 to i64
-  %name_slot_addr113 = add i64 %name_slot_base112, 0
-  %name_slot114 = inttoptr i64 %name_slot_addr113 to ptr
-  %name115 = load ptr, ptr %name_slot114, align 8
-  call void @forge_rc_retain(ptr %name115)
-  store ptr %name115, ptr %name116, align 8
-  %pay_slot117 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
-  %payload118 = load ptr, ptr %pay_slot117, align 8
-  %args_slot_base = ptrtoint ptr %payload118 to i64
+march_arm116:                                     ; preds = %march_next
+  %pay_slot119 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
+  %payload120 = load ptr, ptr %pay_slot119, align 8
+  %name_slot_base121 = ptrtoint ptr %payload120 to i64
+  %name_slot_addr122 = add i64 %name_slot_base121, 0
+  %name_slot123 = inttoptr i64 %name_slot_addr122 to ptr
+  %name124 = load ptr, ptr %name_slot123, align 8
+  call void @forge_rc_retain(ptr %name124)
+  store ptr %name124, ptr %name125, align 8
+  %pay_slot126 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
+  %payload127 = load ptr, ptr %pay_slot126, align 8
+  %args_slot_base = ptrtoint ptr %payload127 to i64
   %args_slot_addr = add i64 %args_slot_base, 8
   %args_slot = inttoptr i64 %args_slot_addr to ptr
   %args = load ptr, ptr %args_slot, align 8
   call void @forge_rc_retain(ptr %args)
-  store ptr %args, ptr %args119, align 8
+  store ptr %args, ptr %args128, align 8
   %20 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr120 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %20, i32 0, i32 0
-  store i64 6384044314, ptr %tag_ptr120, align 8
-  %pay_ptr121 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %20, i32 0, i32 1
-  %21 = call ptr @forge_rc_alloc(i64 16)
-  store ptr %21, ptr %pay_ptr121, align 8
-  %name122 = load ptr, ptr %name116, align 8
-  %slot_base123 = ptrtoint ptr %21 to i64
-  %slot_addr124 = add i64 %slot_base123, 0
-  %slot125 = inttoptr i64 %slot_addr124 to ptr
-  store ptr %name122, ptr %slot125, align 8
-  %self126 = load ptr, ptr %self, align 8
-  %cast127 = ptrtoint ptr %self126 to i64
-  %null_chk128 = icmp eq i64 %cast127, 0
-  %null_ext129 = zext i1 %null_chk128 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.17442, i64 26, ptr @sty_name.17443, i64 19, i64 %null_ext129, ptr @src_file.17444, i64 104, i64 1014)
-  %args130 = load ptr, ptr %args119, align 8
-  %22 = call ptr @"codegen::types::Ctx__resolve_codegen_vtype_list"(ptr %self126, ptr %args130)
-  %slot_base131 = ptrtoint ptr %21 to i64
-  %slot_addr132 = add i64 %slot_base131, 8
-  %slot133 = inttoptr i64 %slot_addr132 to ptr
-  store ptr %22, ptr %slot133, align 8
-  %cast134 = ptrtoint ptr %20 to i64
-  store i64 %cast134, ptr %match_result, align 8
+  %tag_ptr129 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %20, i32 0, i32 0
+  store i64 6384044314, ptr %tag_ptr129, align 8
+  %pay_ptr130 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %20, i32 0, i32 1
+  %21 = call ptr @forge_rc_alloc(i64 24)
+  store ptr %21, ptr %pay_ptr130, align 8
+  %name131 = load ptr, ptr %name125, align 8
+  %slot_base132 = ptrtoint ptr %21 to i64
+  %slot_addr133 = add i64 %slot_base132, 0
+  %slot134 = inttoptr i64 %slot_addr133 to ptr
+  store ptr %name131, ptr %slot134, align 8
+  %self135 = load ptr, ptr %self, align 8
+  %cast136 = ptrtoint ptr %self135 to i64
+  %null_chk137 = icmp eq i64 %cast136, 0
+  %null_ext138 = zext i1 %null_chk137 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.17442, i64 26, ptr @sty_name.17443, i64 19, i64 %null_ext138, ptr @src_file.17444, i64 104, i64 1014)
+  %args139 = load ptr, ptr %args128, align 8
+  %22 = call ptr @"codegen::types::Ctx__resolve_codegen_vtype_list"(ptr %self135, ptr %args139, i64 0)
+  %slot_base140 = ptrtoint ptr %21 to i64
+  %slot_addr141 = add i64 %slot_base140, 8
+  %slot142 = inttoptr i64 %slot_addr141 to ptr
+  store ptr %22, ptr %slot142, align 8
+  %cast143 = ptrtoint ptr %20 to i64
+  store i64 %cast143, ptr %match_result, align 8
   br label %match_end
 
-march_next108:                                    ; preds = %march_next
-  %tag_eq137 = icmp eq i64 %tag, 6384290369
-  br i1 %tag_eq137, label %march_arm135, label %march_next136
+march_next117:                                    ; preds = %march_next
+  %tag_eq146 = icmp eq i64 %tag, 6384290369
+  br i1 %tag_eq146, label %march_arm144, label %march_next145
 
-march_arm135:                                     ; preds = %march_next108
-  %pay_slot138 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
-  %payload139 = load ptr, ptr %pay_slot138, align 8
-  %elem_slot_base = ptrtoint ptr %payload139 to i64
+march_arm144:                                     ; preds = %march_next117
+  %pay_slot147 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
+  %payload148 = load ptr, ptr %pay_slot147, align 8
+  %elem_slot_base = ptrtoint ptr %payload148 to i64
   %elem_slot_addr = add i64 %elem_slot_base, 0
   %elem_slot = inttoptr i64 %elem_slot_addr to ptr
   %elem = load ptr, ptr %elem_slot, align 8
   call void @forge_rc_retain(ptr %elem)
-  store ptr %elem, ptr %elem140, align 8
+  store ptr %elem, ptr %elem149, align 8
   %23 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr141 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %23, i32 0, i32 0
-  store i64 6384290369, ptr %tag_ptr141, align 8
-  %pay_ptr142 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %23, i32 0, i32 1
+  %tag_ptr150 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %23, i32 0, i32 0
+  store i64 6384290369, ptr %tag_ptr150, align 8
+  %pay_ptr151 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %23, i32 0, i32 1
   %24 = call ptr @forge_rc_alloc(i64 8)
-  store ptr %24, ptr %pay_ptr142, align 8
-  %self143 = load ptr, ptr %self, align 8
-  %cast144 = ptrtoint ptr %self143 to i64
-  %null_chk145 = icmp eq i64 %cast144, 0
-  %null_ext146 = zext i1 %null_chk145 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.17445, i64 21, ptr @sty_name.17446, i64 19, i64 %null_ext146, ptr @src_file.17447, i64 104, i64 1014)
-  %elem147 = load ptr, ptr %elem140, align 8
-  %25 = call ptr @"codegen::types::Ctx__resolve_codegen_vtype"(ptr %self143, ptr %elem147)
-  %slot_base148 = ptrtoint ptr %24 to i64
-  %slot_addr149 = add i64 %slot_base148, 0
-  %slot150 = inttoptr i64 %slot_addr149 to ptr
-  store ptr %25, ptr %slot150, align 8
-  %cast151 = ptrtoint ptr %23 to i64
-  store i64 %cast151, ptr %match_result, align 8
+  store ptr %24, ptr %pay_ptr151, align 8
+  %self152 = load ptr, ptr %self, align 8
+  %cast153 = ptrtoint ptr %self152 to i64
+  %null_chk154 = icmp eq i64 %cast153, 0
+  %null_ext155 = zext i1 %null_chk154 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.17445, i64 21, ptr @sty_name.17446, i64 19, i64 %null_ext155, ptr @src_file.17447, i64 104, i64 1014)
+  %elem156 = load ptr, ptr %elem149, align 8
+  %25 = call ptr @"codegen::types::Ctx__resolve_codegen_vtype"(ptr %self152, ptr %elem156)
+  %slot_base157 = ptrtoint ptr %24 to i64
+  %slot_addr158 = add i64 %slot_base157, 0
+  %slot159 = inttoptr i64 %slot_addr158 to ptr
+  store ptr %25, ptr %slot159, align 8
+  %cast160 = ptrtoint ptr %23 to i64
+  store i64 %cast160, ptr %match_result, align 8
   br label %match_end
 
-march_next136:                                    ; preds = %march_next108
-  %tag_eq154 = icmp eq i64 %tag, 210692424206
-  br i1 %tag_eq154, label %march_arm152, label %march_next153
+march_next145:                                    ; preds = %march_next117
+  %tag_eq163 = icmp eq i64 %tag, 210692424206
+  br i1 %tag_eq163, label %march_arm161, label %march_next162
 
-march_arm152:                                     ; preds = %march_next136
-  %pay_slot155 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
-  %payload156 = load ptr, ptr %pay_slot155, align 8
-  %types_slot_base = ptrtoint ptr %payload156 to i64
+march_arm161:                                     ; preds = %march_next145
+  %pay_slot164 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
+  %payload165 = load ptr, ptr %pay_slot164, align 8
+  %types_slot_base = ptrtoint ptr %payload165 to i64
   %types_slot_addr = add i64 %types_slot_base, 0
   %types_slot = inttoptr i64 %types_slot_addr to ptr
   %types = load ptr, ptr %types_slot, align 8
   call void @forge_rc_retain(ptr %types)
-  store ptr %types, ptr %types157, align 8
+  store ptr %types, ptr %types166, align 8
   %26 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr158 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %26, i32 0, i32 0
-  store i64 210692424206, ptr %tag_ptr158, align 8
-  %pay_ptr159 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %26, i32 0, i32 1
+  %tag_ptr167 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %26, i32 0, i32 0
+  store i64 210692424206, ptr %tag_ptr167, align 8
+  %pay_ptr168 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %26, i32 0, i32 1
   %27 = call ptr @forge_rc_alloc(i64 8)
-  store ptr %27, ptr %pay_ptr159, align 8
-  %self160 = load ptr, ptr %self, align 8
-  %cast161 = ptrtoint ptr %self160 to i64
-  %null_chk162 = icmp eq i64 %cast161, 0
-  %null_ext163 = zext i1 %null_chk162 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.17448, i64 26, ptr @sty_name.17449, i64 19, i64 %null_ext163, ptr @src_file.17450, i64 104, i64 1014)
-  %types164 = load ptr, ptr %types157, align 8
-  %28 = call ptr @"codegen::types::Ctx__resolve_codegen_vtype_list"(ptr %self160, ptr %types164)
-  %slot_base165 = ptrtoint ptr %27 to i64
-  %slot_addr166 = add i64 %slot_base165, 0
-  %slot167 = inttoptr i64 %slot_addr166 to ptr
-  store ptr %28, ptr %slot167, align 8
-  %cast168 = ptrtoint ptr %26 to i64
-  store i64 %cast168, ptr %match_result, align 8
+  store ptr %27, ptr %pay_ptr168, align 8
+  %self169 = load ptr, ptr %self, align 8
+  %cast170 = ptrtoint ptr %self169 to i64
+  %null_chk171 = icmp eq i64 %cast170, 0
+  %null_ext172 = zext i1 %null_chk171 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.17448, i64 26, ptr @sty_name.17449, i64 19, i64 %null_ext172, ptr @src_file.17450, i64 104, i64 1014)
+  %types173 = load ptr, ptr %types166, align 8
+  %28 = call ptr @"codegen::types::Ctx__resolve_codegen_vtype_list"(ptr %self169, ptr %types173)
+  %slot_base174 = ptrtoint ptr %27 to i64
+  %slot_addr175 = add i64 %slot_base174, 0
+  %slot176 = inttoptr i64 %slot_addr175 to ptr
+  store ptr %28, ptr %slot176, align 8
+  %cast177 = ptrtoint ptr %26 to i64
+  store i64 %cast177, ptr %match_result, align 8
   br label %match_end
 
-march_next153:                                    ; preds = %march_next136
-  %tag_eq171 = icmp eq i64 %tag, 229424653401439
-  br i1 %tag_eq171, label %march_arm169, label %march_next170
+march_next162:                                    ; preds = %march_next145
+  %tag_eq180 = icmp eq i64 %tag, 229424653401439
+  br i1 %tag_eq180, label %march_arm178, label %march_next179
 
-march_arm169:                                     ; preds = %march_next153
-  %pay_slot172 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
-  %payload173 = load ptr, ptr %pay_slot172, align 8
-  %params_slot_base = ptrtoint ptr %payload173 to i64
+march_arm178:                                     ; preds = %march_next162
+  %pay_slot181 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
+  %payload182 = load ptr, ptr %pay_slot181, align 8
+  %params_slot_base = ptrtoint ptr %payload182 to i64
   %params_slot_addr = add i64 %params_slot_base, 0
   %params_slot = inttoptr i64 %params_slot_addr to ptr
   %params = load ptr, ptr %params_slot, align 8
   call void @forge_rc_retain(ptr %params)
-  store ptr %params, ptr %params174, align 8
-  %pay_slot175 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
-  %payload176 = load ptr, ptr %pay_slot175, align 8
-  %ret_slot_base = ptrtoint ptr %payload176 to i64
+  store ptr %params, ptr %params183, align 8
+  %pay_slot184 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
+  %payload185 = load ptr, ptr %pay_slot184, align 8
+  %ret_slot_base = ptrtoint ptr %payload185 to i64
   %ret_slot_addr = add i64 %ret_slot_base, 8
   %ret_slot = inttoptr i64 %ret_slot_addr to ptr
   %ret = load ptr, ptr %ret_slot, align 8
   call void @forge_rc_retain(ptr %ret)
-  store ptr %ret, ptr %ret177, align 8
+  store ptr %ret, ptr %ret186, align 8
   %29 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr178 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %29, i32 0, i32 0
-  store i64 229424653401439, ptr %tag_ptr178, align 8
-  %pay_ptr179 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %29, i32 0, i32 1
+  %tag_ptr187 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %29, i32 0, i32 0
+  store i64 229424653401439, ptr %tag_ptr187, align 8
+  %pay_ptr188 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %29, i32 0, i32 1
   %30 = call ptr @forge_rc_alloc(i64 16)
-  store ptr %30, ptr %pay_ptr179, align 8
-  %self180 = load ptr, ptr %self, align 8
-  %cast181 = ptrtoint ptr %self180 to i64
-  %null_chk182 = icmp eq i64 %cast181, 0
-  %null_ext183 = zext i1 %null_chk182 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.17451, i64 26, ptr @sty_name.17452, i64 19, i64 %null_ext183, ptr @src_file.17453, i64 104, i64 1014)
-  %params184 = load ptr, ptr %params174, align 8
-  %31 = call ptr @"codegen::types::Ctx__resolve_codegen_vtype_list"(ptr %self180, ptr %params184)
-  %slot_base185 = ptrtoint ptr %30 to i64
-  %slot_addr186 = add i64 %slot_base185, 0
-  %slot187 = inttoptr i64 %slot_addr186 to ptr
-  store ptr %31, ptr %slot187, align 8
-  %self188 = load ptr, ptr %self, align 8
-  %cast189 = ptrtoint ptr %self188 to i64
-  %null_chk190 = icmp eq i64 %cast189, 0
-  %null_ext191 = zext i1 %null_chk190 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.17454, i64 21, ptr @sty_name.17455, i64 19, i64 %null_ext191, ptr @src_file.17456, i64 104, i64 1014)
-  %ret192 = load ptr, ptr %ret177, align 8
-  %32 = call ptr @"codegen::types::Ctx__resolve_codegen_vtype"(ptr %self188, ptr %ret192)
-  %slot_base193 = ptrtoint ptr %30 to i64
-  %slot_addr194 = add i64 %slot_base193, 8
-  %slot195 = inttoptr i64 %slot_addr194 to ptr
-  store ptr %32, ptr %slot195, align 8
-  %cast196 = ptrtoint ptr %29 to i64
-  store i64 %cast196, ptr %match_result, align 8
+  store ptr %30, ptr %pay_ptr188, align 8
+  %self189 = load ptr, ptr %self, align 8
+  %cast190 = ptrtoint ptr %self189 to i64
+  %null_chk191 = icmp eq i64 %cast190, 0
+  %null_ext192 = zext i1 %null_chk191 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.17451, i64 26, ptr @sty_name.17452, i64 19, i64 %null_ext192, ptr @src_file.17453, i64 104, i64 1014)
+  %params193 = load ptr, ptr %params183, align 8
+  %31 = call ptr @"codegen::types::Ctx__resolve_codegen_vtype_list"(ptr %self189, ptr %params193)
+  %slot_base194 = ptrtoint ptr %30 to i64
+  %slot_addr195 = add i64 %slot_base194, 0
+  %slot196 = inttoptr i64 %slot_addr195 to ptr
+  store ptr %31, ptr %slot196, align 8
+  %self197 = load ptr, ptr %self, align 8
+  %cast198 = ptrtoint ptr %self197 to i64
+  %null_chk199 = icmp eq i64 %cast198, 0
+  %null_ext200 = zext i1 %null_chk199 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.17454, i64 21, ptr @sty_name.17455, i64 19, i64 %null_ext200, ptr @src_file.17456, i64 104, i64 1014)
+  %ret201 = load ptr, ptr %ret186, align 8
+  %32 = call ptr @"codegen::types::Ctx__resolve_codegen_vtype"(ptr %self197, ptr %ret201)
+  %slot_base202 = ptrtoint ptr %30 to i64
+  %slot_addr203 = add i64 %slot_base202, 8
+  %slot204 = inttoptr i64 %slot_addr203 to ptr
+  store ptr %32, ptr %slot204, align 8
+  %cast205 = ptrtoint ptr %29 to i64
+  store i64 %cast205, ptr %match_result, align 8
   br label %match_end
 
-march_next170:                                    ; preds = %march_next153
-  br label %march_arm197
+march_next179:                                    ; preds = %march_next162
+  br label %march_arm206
 
-march_arm197:                                     ; preds = %march_next170
-  %vt199 = load ptr, ptr %vt, align 8
-  %cast200 = ptrtoint ptr %vt199 to i64
-  store i64 %cast200, ptr %match_result, align 8
+march_arm206:                                     ; preds = %march_next179
+  %vt208 = load ptr, ptr %vt, align 8
+  %cast209 = ptrtoint ptr %vt208 to i64
+  store i64 %cast209, ptr %match_result, align 8
   br label %match_end
 
-march_next198:                                    ; No predecessors!
+march_next207:                                    ; No predecessors!
   call void @forge_match_unreachable(ptr @.match_fn.17457, i64 %tag, ptr @mu_file.17458, i64 1014)
   unreachable
 }
@@ -225060,12 +225200,12 @@ if_else11:                                        ; preds = %if_then
 
 define ptr @"codegen::setup::resolve_setup_vt"(ptr %0, ptr %1) {
 entry:
-  %ret107 = alloca ptr, align 8
-  %params104 = alloca ptr, align 8
-  %args86 = alloca ptr, align 8
-  %name83 = alloca ptr, align 8
-  %types65 = alloca ptr, align 8
-  %elem51 = alloca ptr, align 8
+  %ret113 = alloca ptr, align 8
+  %params110 = alloca ptr, align 8
+  %args92 = alloca ptr, align 8
+  %name89 = alloca ptr, align 8
+  %types71 = alloca ptr, align 8
+  %elem57 = alloca ptr, align 8
   %s = alloca ptr, align 8
   %e = alloca ptr, align 8
   %name2 = alloca ptr, align 8
@@ -225081,10 +225221,10 @@ entry:
   %tag_eq = icmp eq i64 %tag, 6952779173258
   br i1 %tag_eq, label %march_arm, label %march_next
 
-match_end:                                        ; preds = %march_arm121, %march_arm99, %march_arm74, %march_arm60, %march_arm46, %ifcont31
+match_end:                                        ; preds = %march_arm127, %march_arm105, %march_arm80, %march_arm66, %march_arm52, %ifcont34
   %match_val = load i64, ptr %match_result, align 8
-  %cast125 = inttoptr i64 %match_val to ptr
-  ret ptr %cast125
+  %cast131 = inttoptr i64 %match_val to ptr
+  ret ptr %cast131
 
 march_arm:                                        ; preds = %entry
   %pay_slot = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
@@ -225116,36 +225256,36 @@ march_arm:                                        ; preds = %entry
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next:                                       ; preds = %entry
-  %tag_eq48 = icmp eq i64 %tag, 6384290369
-  br i1 %tag_eq48, label %march_arm46, label %march_next47
+  %tag_eq54 = icmp eq i64 %tag, 6384290369
+  br i1 %tag_eq54, label %march_arm52, label %march_next53
 
 ifcont:                                           ; preds = %if_else
-  %regs20 = load ptr, ptr %regs, align 8
-  %cast21 = ptrtoint ptr %regs20 to i64
-  %null_chk22 = icmp eq i64 %cast21, 0
-  %null_ext23 = zext i1 %null_chk22 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.17930, i64 7, ptr @sty_name.17931, i64 24, i64 %null_ext23, ptr @src_file.17932, i64 104, i64 478)
-  %structs_ptr = getelementptr inbounds nuw %"codegen::types::TypeRegs", ptr %regs20, i32 0, i32 0
+  %regs23 = load ptr, ptr %regs, align 8
+  %cast24 = ptrtoint ptr %regs23 to i64
+  %null_chk25 = icmp eq i64 %cast24, 0
+  %null_ext26 = zext i1 %null_chk25 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.17930, i64 7, ptr @sty_name.17931, i64 24, i64 %null_ext26, ptr @src_file.17932, i64 104, i64 478)
+  %structs_ptr = getelementptr inbounds nuw %"codegen::types::TypeRegs", ptr %regs23, i32 0, i32 0
   %structs = load ptr, ptr %structs_ptr, align 8
-  %name24 = load ptr, ptr %name2, align 8
-  %3 = call ptr @"codegen::types::struct_reg_lookup"(ptr %structs, ptr %name24)
+  %name27 = load ptr, ptr %name2, align 8
+  %3 = call ptr @"codegen::types::struct_reg_lookup"(ptr %structs, ptr %name27)
   store ptr %3, ptr %s, align 8
-  %s25 = load ptr, ptr %s, align 8
-  %cast26 = ptrtoint ptr %s25 to i64
-  %null_chk27 = icmp eq i64 %cast26, 0
-  %null_ext28 = zext i1 %null_chk27 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.17933, i64 5, ptr @sty_name.17934, i64 28, i64 %null_ext28, ptr @src_file.17935, i64 104, i64 479)
-  %found_ptr29 = getelementptr inbounds nuw %"codegen::types::StructLookup", ptr %s25, i32 0, i32 0
-  %found30 = load i64, ptr %found_ptr29, align 8
-  %if_cond32 = icmp ne i64 %found30, 0
-  br i1 %if_cond32, label %if_then33, label %if_else34
+  %s28 = load ptr, ptr %s, align 8
+  %cast29 = ptrtoint ptr %s28 to i64
+  %null_chk30 = icmp eq i64 %cast29, 0
+  %null_ext31 = zext i1 %null_chk30 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.17933, i64 5, ptr @sty_name.17934, i64 28, i64 %null_ext31, ptr @src_file.17935, i64 104, i64 479)
+  %found_ptr32 = getelementptr inbounds nuw %"codegen::types::StructLookup", ptr %s28, i32 0, i32 0
+  %found33 = load i64, ptr %found_ptr32, align 8
+  %if_cond35 = icmp ne i64 %found33, 0
+  br i1 %if_cond35, label %if_then36, label %if_else37
 
 if_then:                                          ; preds = %march_arm
   %4 = call ptr @forge_rc_alloc(i64 16)
   %tag_ptr9 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %4, i32 0, i32 0
   store i64 6384044314, ptr %tag_ptr9, align 8
   %pay_ptr = getelementptr inbounds nuw %"core::ast::ValueType", ptr %4, i32 0, i32 1
-  %5 = call ptr @forge_rc_alloc(i64 16)
+  %5 = call ptr @forge_rc_alloc(i64 24)
   store ptr %5, ptr %pay_ptr, align 8
   %name10 = load ptr, ptr %name2, align 8
   %slot_base = ptrtoint ptr %5 to i64
@@ -225163,196 +225303,204 @@ if_then:                                          ; preds = %march_arm
   %slot16 = inttoptr i64 %slot_addr15 to ptr
   %cast17 = inttoptr i64 %cast13 to ptr
   store ptr %cast17, ptr %slot16, align 8
-  %cast18 = ptrtoint ptr %4 to i64
-  %cast19 = inttoptr i64 %cast18 to ptr
-  ret ptr %cast19
+  %slot_base18 = ptrtoint ptr %5 to i64
+  %slot_addr19 = add i64 %slot_base18, 16
+  %slot20 = inttoptr i64 %slot_addr19 to ptr
+  store i64 0, ptr %slot20, align 8
+  %cast21 = ptrtoint ptr %4 to i64
+  %cast22 = inttoptr i64 %cast21 to ptr
+  ret ptr %cast22
 
 if_else:                                          ; preds = %march_arm
   br label %ifcont
 
-ifcont31:                                         ; preds = %if_else34
+ifcont34:                                         ; preds = %if_else37
   %7 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr43 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %7, i32 0, i32 0
-  store i64 229444052301365, ptr %tag_ptr43, align 8
-  %pay_ptr44 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %7, i32 0, i32 1
-  store ptr null, ptr %pay_ptr44, align 8
-  %cast45 = ptrtoint ptr %7 to i64
-  store i64 %cast45, ptr %match_result, align 8
+  %tag_ptr49 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %7, i32 0, i32 0
+  store i64 229444052301365, ptr %tag_ptr49, align 8
+  %pay_ptr50 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %7, i32 0, i32 1
+  store ptr null, ptr %pay_ptr50, align 8
+  %cast51 = ptrtoint ptr %7 to i64
+  store i64 %cast51, ptr %match_result, align 8
   br label %match_end
 
-if_then33:                                        ; preds = %ifcont
+if_then36:                                        ; preds = %ifcont
   %8 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr35 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %8, i32 0, i32 0
-  store i64 6952779173258, ptr %tag_ptr35, align 8
-  %pay_ptr36 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %8, i32 0, i32 1
-  %9 = call ptr @forge_rc_alloc(i64 8)
-  store ptr %9, ptr %pay_ptr36, align 8
-  %name37 = load ptr, ptr %name2, align 8
-  %slot_base38 = ptrtoint ptr %9 to i64
-  %slot_addr39 = add i64 %slot_base38, 0
-  %slot40 = inttoptr i64 %slot_addr39 to ptr
-  store ptr %name37, ptr %slot40, align 8
-  %cast41 = ptrtoint ptr %8 to i64
-  %cast42 = inttoptr i64 %cast41 to ptr
-  ret ptr %cast42
+  %tag_ptr38 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %8, i32 0, i32 0
+  store i64 6952779173258, ptr %tag_ptr38, align 8
+  %pay_ptr39 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %8, i32 0, i32 1
+  %9 = call ptr @forge_rc_alloc(i64 16)
+  store ptr %9, ptr %pay_ptr39, align 8
+  %name40 = load ptr, ptr %name2, align 8
+  %slot_base41 = ptrtoint ptr %9 to i64
+  %slot_addr42 = add i64 %slot_base41, 0
+  %slot43 = inttoptr i64 %slot_addr42 to ptr
+  store ptr %name40, ptr %slot43, align 8
+  %slot_base44 = ptrtoint ptr %9 to i64
+  %slot_addr45 = add i64 %slot_base44, 8
+  %slot46 = inttoptr i64 %slot_addr45 to ptr
+  store i64 0, ptr %slot46, align 8
+  %cast47 = ptrtoint ptr %8 to i64
+  %cast48 = inttoptr i64 %cast47 to ptr
+  ret ptr %cast48
 
-if_else34:                                        ; preds = %ifcont
-  br label %ifcont31
+if_else37:                                        ; preds = %ifcont
+  br label %ifcont34
 
-march_arm46:                                      ; preds = %march_next
-  %pay_slot49 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
-  %payload50 = load ptr, ptr %pay_slot49, align 8
-  %elem_slot_base = ptrtoint ptr %payload50 to i64
+march_arm52:                                      ; preds = %march_next
+  %pay_slot55 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
+  %payload56 = load ptr, ptr %pay_slot55, align 8
+  %elem_slot_base = ptrtoint ptr %payload56 to i64
   %elem_slot_addr = add i64 %elem_slot_base, 0
   %elem_slot = inttoptr i64 %elem_slot_addr to ptr
   %elem = load ptr, ptr %elem_slot, align 8
   call void @forge_rc_retain(ptr %elem)
-  store ptr %elem, ptr %elem51, align 8
+  store ptr %elem, ptr %elem57, align 8
   %10 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr52 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %10, i32 0, i32 0
-  store i64 6384290369, ptr %tag_ptr52, align 8
-  %pay_ptr53 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %10, i32 0, i32 1
+  %tag_ptr58 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %10, i32 0, i32 0
+  store i64 6384290369, ptr %tag_ptr58, align 8
+  %pay_ptr59 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %10, i32 0, i32 1
   %11 = call ptr @forge_rc_alloc(i64 8)
-  store ptr %11, ptr %pay_ptr53, align 8
-  %regs54 = load ptr, ptr %regs, align 8
-  %elem55 = load ptr, ptr %elem51, align 8
-  %12 = call ptr @"codegen::setup::resolve_setup_vt"(ptr %regs54, ptr %elem55)
-  %slot_base56 = ptrtoint ptr %11 to i64
-  %slot_addr57 = add i64 %slot_base56, 0
-  %slot58 = inttoptr i64 %slot_addr57 to ptr
-  store ptr %12, ptr %slot58, align 8
-  %cast59 = ptrtoint ptr %10 to i64
-  store i64 %cast59, ptr %match_result, align 8
+  store ptr %11, ptr %pay_ptr59, align 8
+  %regs60 = load ptr, ptr %regs, align 8
+  %elem61 = load ptr, ptr %elem57, align 8
+  %12 = call ptr @"codegen::setup::resolve_setup_vt"(ptr %regs60, ptr %elem61)
+  %slot_base62 = ptrtoint ptr %11 to i64
+  %slot_addr63 = add i64 %slot_base62, 0
+  %slot64 = inttoptr i64 %slot_addr63 to ptr
+  store ptr %12, ptr %slot64, align 8
+  %cast65 = ptrtoint ptr %10 to i64
+  store i64 %cast65, ptr %match_result, align 8
   br label %match_end
 
-march_next47:                                     ; preds = %march_next
-  %tag_eq62 = icmp eq i64 %tag, 210692424206
-  br i1 %tag_eq62, label %march_arm60, label %march_next61
+march_next53:                                     ; preds = %march_next
+  %tag_eq68 = icmp eq i64 %tag, 210692424206
+  br i1 %tag_eq68, label %march_arm66, label %march_next67
 
-march_arm60:                                      ; preds = %march_next47
-  %pay_slot63 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
-  %payload64 = load ptr, ptr %pay_slot63, align 8
-  %types_slot_base = ptrtoint ptr %payload64 to i64
+march_arm66:                                      ; preds = %march_next53
+  %pay_slot69 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
+  %payload70 = load ptr, ptr %pay_slot69, align 8
+  %types_slot_base = ptrtoint ptr %payload70 to i64
   %types_slot_addr = add i64 %types_slot_base, 0
   %types_slot = inttoptr i64 %types_slot_addr to ptr
   %types = load ptr, ptr %types_slot, align 8
   call void @forge_rc_retain(ptr %types)
-  store ptr %types, ptr %types65, align 8
+  store ptr %types, ptr %types71, align 8
   %13 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr66 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %13, i32 0, i32 0
-  store i64 210692424206, ptr %tag_ptr66, align 8
-  %pay_ptr67 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %13, i32 0, i32 1
+  %tag_ptr72 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %13, i32 0, i32 0
+  store i64 210692424206, ptr %tag_ptr72, align 8
+  %pay_ptr73 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %13, i32 0, i32 1
   %14 = call ptr @forge_rc_alloc(i64 8)
-  store ptr %14, ptr %pay_ptr67, align 8
-  %regs68 = load ptr, ptr %regs, align 8
-  %types69 = load ptr, ptr %types65, align 8
-  %15 = call ptr @"codegen::setup::resolve_setup_vt_list"(ptr %regs68, ptr %types69)
-  %slot_base70 = ptrtoint ptr %14 to i64
-  %slot_addr71 = add i64 %slot_base70, 0
-  %slot72 = inttoptr i64 %slot_addr71 to ptr
-  store ptr %15, ptr %slot72, align 8
-  %cast73 = ptrtoint ptr %13 to i64
-  store i64 %cast73, ptr %match_result, align 8
+  store ptr %14, ptr %pay_ptr73, align 8
+  %regs74 = load ptr, ptr %regs, align 8
+  %types75 = load ptr, ptr %types71, align 8
+  %15 = call ptr @"codegen::setup::resolve_setup_vt_list"(ptr %regs74, ptr %types75)
+  %slot_base76 = ptrtoint ptr %14 to i64
+  %slot_addr77 = add i64 %slot_base76, 0
+  %slot78 = inttoptr i64 %slot_addr77 to ptr
+  store ptr %15, ptr %slot78, align 8
+  %cast79 = ptrtoint ptr %13 to i64
+  store i64 %cast79, ptr %match_result, align 8
   br label %match_end
 
-march_next61:                                     ; preds = %march_next47
-  %tag_eq76 = icmp eq i64 %tag, 6384044314
-  br i1 %tag_eq76, label %march_arm74, label %march_next75
+march_next67:                                     ; preds = %march_next53
+  %tag_eq82 = icmp eq i64 %tag, 6384044314
+  br i1 %tag_eq82, label %march_arm80, label %march_next81
 
-march_arm74:                                      ; preds = %march_next61
-  %pay_slot77 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
-  %payload78 = load ptr, ptr %pay_slot77, align 8
-  %name_slot_base79 = ptrtoint ptr %payload78 to i64
-  %name_slot_addr80 = add i64 %name_slot_base79, 0
-  %name_slot81 = inttoptr i64 %name_slot_addr80 to ptr
-  %name82 = load ptr, ptr %name_slot81, align 8
-  call void @forge_rc_retain(ptr %name82)
-  store ptr %name82, ptr %name83, align 8
-  %pay_slot84 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
-  %payload85 = load ptr, ptr %pay_slot84, align 8
-  %args_slot_base = ptrtoint ptr %payload85 to i64
+march_arm80:                                      ; preds = %march_next67
+  %pay_slot83 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
+  %payload84 = load ptr, ptr %pay_slot83, align 8
+  %name_slot_base85 = ptrtoint ptr %payload84 to i64
+  %name_slot_addr86 = add i64 %name_slot_base85, 0
+  %name_slot87 = inttoptr i64 %name_slot_addr86 to ptr
+  %name88 = load ptr, ptr %name_slot87, align 8
+  call void @forge_rc_retain(ptr %name88)
+  store ptr %name88, ptr %name89, align 8
+  %pay_slot90 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
+  %payload91 = load ptr, ptr %pay_slot90, align 8
+  %args_slot_base = ptrtoint ptr %payload91 to i64
   %args_slot_addr = add i64 %args_slot_base, 8
   %args_slot = inttoptr i64 %args_slot_addr to ptr
   %args = load ptr, ptr %args_slot, align 8
   call void @forge_rc_retain(ptr %args)
-  store ptr %args, ptr %args86, align 8
+  store ptr %args, ptr %args92, align 8
   %16 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr87 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %16, i32 0, i32 0
-  store i64 6384044314, ptr %tag_ptr87, align 8
-  %pay_ptr88 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %16, i32 0, i32 1
-  %17 = call ptr @forge_rc_alloc(i64 16)
-  store ptr %17, ptr %pay_ptr88, align 8
-  %name89 = load ptr, ptr %name83, align 8
-  %slot_base90 = ptrtoint ptr %17 to i64
-  %slot_addr91 = add i64 %slot_base90, 0
-  %slot92 = inttoptr i64 %slot_addr91 to ptr
-  store ptr %name89, ptr %slot92, align 8
-  %regs93 = load ptr, ptr %regs, align 8
-  %args94 = load ptr, ptr %args86, align 8
-  %18 = call ptr @"codegen::setup::resolve_setup_vt_list"(ptr %regs93, ptr %args94)
-  %slot_base95 = ptrtoint ptr %17 to i64
-  %slot_addr96 = add i64 %slot_base95, 8
-  %slot97 = inttoptr i64 %slot_addr96 to ptr
-  store ptr %18, ptr %slot97, align 8
-  %cast98 = ptrtoint ptr %16 to i64
-  store i64 %cast98, ptr %match_result, align 8
+  %tag_ptr93 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %16, i32 0, i32 0
+  store i64 6384044314, ptr %tag_ptr93, align 8
+  %pay_ptr94 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %16, i32 0, i32 1
+  %17 = call ptr @forge_rc_alloc(i64 24)
+  store ptr %17, ptr %pay_ptr94, align 8
+  %name95 = load ptr, ptr %name89, align 8
+  %slot_base96 = ptrtoint ptr %17 to i64
+  %slot_addr97 = add i64 %slot_base96, 0
+  %slot98 = inttoptr i64 %slot_addr97 to ptr
+  store ptr %name95, ptr %slot98, align 8
+  %regs99 = load ptr, ptr %regs, align 8
+  %args100 = load ptr, ptr %args92, align 8
+  %18 = call ptr @"codegen::setup::resolve_setup_vt_list"(ptr %regs99, ptr %args100, i64 0)
+  %slot_base101 = ptrtoint ptr %17 to i64
+  %slot_addr102 = add i64 %slot_base101, 8
+  %slot103 = inttoptr i64 %slot_addr102 to ptr
+  store ptr %18, ptr %slot103, align 8
+  %cast104 = ptrtoint ptr %16 to i64
+  store i64 %cast104, ptr %match_result, align 8
   br label %match_end
 
-march_next75:                                     ; preds = %march_next61
-  %tag_eq101 = icmp eq i64 %tag, 229424653401439
-  br i1 %tag_eq101, label %march_arm99, label %march_next100
+march_next81:                                     ; preds = %march_next67
+  %tag_eq107 = icmp eq i64 %tag, 229424653401439
+  br i1 %tag_eq107, label %march_arm105, label %march_next106
 
-march_arm99:                                      ; preds = %march_next75
-  %pay_slot102 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
-  %payload103 = load ptr, ptr %pay_slot102, align 8
-  %params_slot_base = ptrtoint ptr %payload103 to i64
+march_arm105:                                     ; preds = %march_next81
+  %pay_slot108 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
+  %payload109 = load ptr, ptr %pay_slot108, align 8
+  %params_slot_base = ptrtoint ptr %payload109 to i64
   %params_slot_addr = add i64 %params_slot_base, 0
   %params_slot = inttoptr i64 %params_slot_addr to ptr
   %params = load ptr, ptr %params_slot, align 8
   call void @forge_rc_retain(ptr %params)
-  store ptr %params, ptr %params104, align 8
-  %pay_slot105 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
-  %payload106 = load ptr, ptr %pay_slot105, align 8
-  %ret_slot_base = ptrtoint ptr %payload106 to i64
+  store ptr %params, ptr %params110, align 8
+  %pay_slot111 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %vt1, i32 0, i32 1
+  %payload112 = load ptr, ptr %pay_slot111, align 8
+  %ret_slot_base = ptrtoint ptr %payload112 to i64
   %ret_slot_addr = add i64 %ret_slot_base, 8
   %ret_slot = inttoptr i64 %ret_slot_addr to ptr
   %ret = load ptr, ptr %ret_slot, align 8
   call void @forge_rc_retain(ptr %ret)
-  store ptr %ret, ptr %ret107, align 8
+  store ptr %ret, ptr %ret113, align 8
   %19 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr108 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %19, i32 0, i32 0
-  store i64 229424653401439, ptr %tag_ptr108, align 8
-  %pay_ptr109 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %19, i32 0, i32 1
+  %tag_ptr114 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %19, i32 0, i32 0
+  store i64 229424653401439, ptr %tag_ptr114, align 8
+  %pay_ptr115 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %19, i32 0, i32 1
   %20 = call ptr @forge_rc_alloc(i64 16)
-  store ptr %20, ptr %pay_ptr109, align 8
-  %regs110 = load ptr, ptr %regs, align 8
-  %params111 = load ptr, ptr %params104, align 8
-  %21 = call ptr @"codegen::setup::resolve_setup_vt_list"(ptr %regs110, ptr %params111)
-  %slot_base112 = ptrtoint ptr %20 to i64
-  %slot_addr113 = add i64 %slot_base112, 0
-  %slot114 = inttoptr i64 %slot_addr113 to ptr
-  store ptr %21, ptr %slot114, align 8
-  %regs115 = load ptr, ptr %regs, align 8
-  %ret116 = load ptr, ptr %ret107, align 8
-  %22 = call ptr @"codegen::setup::resolve_setup_vt"(ptr %regs115, ptr %ret116)
-  %slot_base117 = ptrtoint ptr %20 to i64
-  %slot_addr118 = add i64 %slot_base117, 8
-  %slot119 = inttoptr i64 %slot_addr118 to ptr
-  store ptr %22, ptr %slot119, align 8
-  %cast120 = ptrtoint ptr %19 to i64
-  store i64 %cast120, ptr %match_result, align 8
+  store ptr %20, ptr %pay_ptr115, align 8
+  %regs116 = load ptr, ptr %regs, align 8
+  %params117 = load ptr, ptr %params110, align 8
+  %21 = call ptr @"codegen::setup::resolve_setup_vt_list"(ptr %regs116, ptr %params117)
+  %slot_base118 = ptrtoint ptr %20 to i64
+  %slot_addr119 = add i64 %slot_base118, 0
+  %slot120 = inttoptr i64 %slot_addr119 to ptr
+  store ptr %21, ptr %slot120, align 8
+  %regs121 = load ptr, ptr %regs, align 8
+  %ret122 = load ptr, ptr %ret113, align 8
+  %22 = call ptr @"codegen::setup::resolve_setup_vt"(ptr %regs121, ptr %ret122)
+  %slot_base123 = ptrtoint ptr %20 to i64
+  %slot_addr124 = add i64 %slot_base123, 8
+  %slot125 = inttoptr i64 %slot_addr124 to ptr
+  store ptr %22, ptr %slot125, align 8
+  %cast126 = ptrtoint ptr %19 to i64
+  store i64 %cast126, ptr %match_result, align 8
   br label %match_end
 
-march_next100:                                    ; preds = %march_next75
-  br label %march_arm121
+march_next106:                                    ; preds = %march_next81
+  br label %march_arm127
 
-march_arm121:                                     ; preds = %march_next100
-  %vt123 = load ptr, ptr %vt, align 8
-  %cast124 = ptrtoint ptr %vt123 to i64
-  store i64 %cast124, ptr %match_result, align 8
+march_arm127:                                     ; preds = %march_next106
+  %vt129 = load ptr, ptr %vt, align 8
+  %cast130 = ptrtoint ptr %vt129 to i64
+  store i64 %cast130, ptr %match_result, align 8
   br label %match_end
 
-march_next122:                                    ; No predecessors!
+march_next128:                                    ; No predecessors!
   call void @forge_match_unreachable(ptr @.match_fn.17936, i64 %tag, ptr @mu_file.17937, i64 473)
   unreachable
 }
@@ -230547,13 +230695,13 @@ march_next3:                                      ; preds = %march_next
 
 define ptr @"codegen::setup::resolve_fn_ret"(ptr %0, ptr %1, ptr %2, ptr %3) {
 entry:
-  %match_result87 = alloca i64, align 8
+  %match_result93 = alloca i64, align 8
   %last = alloca ptr, align 8
   %sn = alloca ptr, align 8
-  %n62 = alloca ptr, align 8
-  %match_result51 = alloca i64, align 8
-  %n43 = alloca ptr, align 8
-  %match_result36 = alloca i64, align 8
+  %n65 = alloca ptr, align 8
+  %match_result54 = alloca i64, align 8
+  %n46 = alloca ptr, align 8
+  %match_result39 = alloca i64, align 8
   %base = alloca ptr, align 8
   %sif_result = alloca i64, align 8
   %found = alloca ptr, align 8
@@ -230577,14 +230725,14 @@ entry:
 
 ife_end:                                          ; preds = %match_end, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
-  %cast32 = inttoptr i64 %ife_val to ptr
-  store ptr %cast32, ptr %base, align 8
-  %base33 = load ptr, ptr %base, align 8
-  %tag_ptr34 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %base33, i32 0, i32 0
-  %tag35 = load i64, ptr %tag_ptr34, align 8
-  store i64 0, ptr %match_result36, align 8
-  %tag_eq40 = icmp eq i64 %tag35, 6952779173258
-  br i1 %tag_eq40, label %march_arm38, label %march_next39
+  %cast35 = inttoptr i64 %ife_val to ptr
+  store ptr %cast35, ptr %base, align 8
+  %base36 = load ptr, ptr %base, align 8
+  %tag_ptr37 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %base36, i32 0, i32 0
+  %tag38 = load i64, ptr %tag_ptr37, align 8
+  store i64 0, ptr %match_result39, align 8
+  %tag_eq43 = icmp eq i64 %tag38, 6952779173258
+  br i1 %tag_eq43, label %march_arm41, label %march_next42
 
 ife_then:                                         ; preds = %entry
   %5 = call ptr @forge_rc_alloc(i64 16)
@@ -230608,7 +230756,7 @@ ife_else:                                         ; preds = %entry
   %tag_eq = icmp eq i64 %tag, 6384044314
   br i1 %tag_eq, label %march_arm, label %march_next
 
-match_end:                                        ; preds = %march_arm28, %sif_end
+match_end:                                        ; preds = %march_arm31, %sif_end
   %match_val = load i64, ptr %match_result, align 8
   store i64 %match_val, ptr %ife_result, align 8
   br label %ife_end
@@ -230644,14 +230792,14 @@ march_arm:                                        ; preds = %ife_else
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next:                                       ; preds = %ife_else
-  br label %march_arm28
+  br label %march_arm31
 
 sif_then:                                         ; preds = %march_arm
   %8 = call ptr @forge_rc_alloc(i64 16)
   %tag_ptr15 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %8, i32 0, i32 0
   store i64 6384044314, ptr %tag_ptr15, align 8
   %pay_ptr16 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %8, i32 0, i32 1
-  %9 = call ptr @forge_rc_alloc(i64 16)
+  %9 = call ptr @forge_rc_alloc(i64 24)
   store ptr %9, ptr %pay_ptr16, align 8
   %name17 = load ptr, ptr %name6, align 8
   %slot_base = ptrtoint ptr %9 to i64
@@ -230669,14 +230817,18 @@ sif_then:                                         ; preds = %march_arm
   %slot23 = inttoptr i64 %slot_addr22 to ptr
   %cast24 = inttoptr i64 %cast20 to ptr
   store ptr %cast24, ptr %slot23, align 8
-  %cast25 = ptrtoint ptr %8 to i64
-  store i64 %cast25, ptr %sif_result, align 8
+  %slot_base25 = ptrtoint ptr %9 to i64
+  %slot_addr26 = add i64 %slot_base25, 16
+  %slot27 = inttoptr i64 %slot_addr26 to ptr
+  store i64 0, ptr %slot27, align 8
+  %cast28 = ptrtoint ptr %8 to i64
+  store i64 %cast28, ptr %sif_result, align 8
   br label %sif_end
 
 sif_else:                                         ; preds = %march_arm
-  %resolved26 = load ptr, ptr %resolved, align 8
-  %cast27 = ptrtoint ptr %resolved26 to i64
-  store i64 %cast27, ptr %sif_result, align 8
+  %resolved29 = load ptr, ptr %resolved, align 8
+  %cast30 = ptrtoint ptr %resolved29 to i64
+  store i64 %cast30, ptr %sif_result, align 8
   br label %sif_end
 
 sif_end:                                          ; preds = %sif_else, %sif_then
@@ -230684,96 +230836,96 @@ sif_end:                                          ; preds = %sif_else, %sif_then
   store i64 %sif_val, ptr %match_result, align 8
   br label %match_end
 
-march_arm28:                                      ; preds = %march_next
-  %resolved30 = load ptr, ptr %resolved, align 8
-  %cast31 = ptrtoint ptr %resolved30 to i64
-  store i64 %cast31, ptr %match_result, align 8
+march_arm31:                                      ; preds = %march_next
+  %resolved33 = load ptr, ptr %resolved, align 8
+  %cast34 = ptrtoint ptr %resolved33 to i64
+  store i64 %cast34, ptr %match_result, align 8
   br label %match_end
 
-march_next29:                                     ; No predecessors!
+march_next32:                                     ; No predecessors!
   call void @forge_match_unreachable(ptr @.match_fn.18493, i64 %tag, ptr @mu_file.18494, i64 1057)
   unreachable
 
-match_end37:                                      ; preds = %match_end52, %march_arm38
-  %match_val68 = load i64, ptr %match_result36, align 8
-  %cast69 = inttoptr i64 %match_val68 to ptr
-  store ptr %cast69, ptr %sn, align 8
-  %sn70 = load ptr, ptr %sn, align 8
-  %11 = call i32 @strcmp(ptr %sn70, ptr @.str.18500)
-  %widen71 = sext i32 %11 to i64
-  %streq_cmp = icmp ne i64 %widen71, 0
+match_end40:                                      ; preds = %match_end55, %march_arm41
+  %match_val71 = load i64, ptr %match_result39, align 8
+  %cast72 = inttoptr i64 %match_val71 to ptr
+  store ptr %cast72, ptr %sn, align 8
+  %sn73 = load ptr, ptr %sn, align 8
+  %11 = call i32 @strcmp(ptr %sn73, ptr @.str.18500)
+  %widen74 = sext i32 %11 to i64
+  %streq_cmp = icmp ne i64 %widen74, 0
   %streq_ext = zext i1 %streq_cmp to i64
   %l_bool = icmp ne i64 %streq_ext, 0
   br i1 %l_bool, label %sc_rhs, label %sc_short
 
-march_arm38:                                      ; preds = %ife_end
-  %pay_slot41 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %base33, i32 0, i32 1
-  %payload42 = load ptr, ptr %pay_slot41, align 8
-  %n_slot_base = ptrtoint ptr %payload42 to i64
+march_arm41:                                      ; preds = %ife_end
+  %pay_slot44 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %base36, i32 0, i32 1
+  %payload45 = load ptr, ptr %pay_slot44, align 8
+  %n_slot_base = ptrtoint ptr %payload45 to i64
   %n_slot_addr = add i64 %n_slot_base, 0
   %n_slot = inttoptr i64 %n_slot_addr to ptr
   %n = load ptr, ptr %n_slot, align 8
   call void @forge_rc_retain(ptr %n)
-  store ptr %n, ptr %n43, align 8
-  %n44 = load ptr, ptr %n43, align 8
-  %cast45 = ptrtoint ptr %n44 to i64
-  store i64 %cast45, ptr %match_result36, align 8
-  br label %match_end37
+  store ptr %n, ptr %n46, align 8
+  %n47 = load ptr, ptr %n46, align 8
+  %cast48 = ptrtoint ptr %n47 to i64
+  store i64 %cast48, ptr %match_result39, align 8
+  br label %match_end40
 
-march_next39:                                     ; preds = %ife_end
-  br label %march_arm46
+march_next42:                                     ; preds = %ife_end
+  br label %march_arm49
 
-march_arm46:                                      ; preds = %march_next39
-  %rvt48 = load ptr, ptr %rvt, align 8
-  %tag_ptr49 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %rvt48, i32 0, i32 0
-  %tag50 = load i64, ptr %tag_ptr49, align 8
-  store i64 0, ptr %match_result51, align 8
-  %tag_eq55 = icmp eq i64 %tag50, 6952779173258
-  br i1 %tag_eq55, label %march_arm53, label %march_next54
+march_arm49:                                      ; preds = %march_next42
+  %rvt51 = load ptr, ptr %rvt, align 8
+  %tag_ptr52 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %rvt51, i32 0, i32 0
+  %tag53 = load i64, ptr %tag_ptr52, align 8
+  store i64 0, ptr %match_result54, align 8
+  %tag_eq58 = icmp eq i64 %tag53, 6952779173258
+  br i1 %tag_eq58, label %march_arm56, label %march_next57
 
-march_next47:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.18498, i64 %tag35, ptr @mu_file.18499, i64 1067)
+march_next50:                                     ; No predecessors!
+  call void @forge_match_unreachable(ptr @.match_fn.18498, i64 %tag38, ptr @mu_file.18499, i64 1067)
   unreachable
 
-match_end52:                                      ; preds = %march_arm65, %march_arm53
-  %match_val67 = load i64, ptr %match_result51, align 8
-  store i64 %match_val67, ptr %match_result36, align 8
-  br label %match_end37
+match_end55:                                      ; preds = %march_arm68, %march_arm56
+  %match_val70 = load i64, ptr %match_result54, align 8
+  store i64 %match_val70, ptr %match_result39, align 8
+  br label %match_end40
 
-march_arm53:                                      ; preds = %march_arm46
-  %pay_slot56 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %rvt48, i32 0, i32 1
-  %payload57 = load ptr, ptr %pay_slot56, align 8
-  %n_slot_base58 = ptrtoint ptr %payload57 to i64
-  %n_slot_addr59 = add i64 %n_slot_base58, 0
-  %n_slot60 = inttoptr i64 %n_slot_addr59 to ptr
-  %n61 = load ptr, ptr %n_slot60, align 8
-  call void @forge_rc_retain(ptr %n61)
-  store ptr %n61, ptr %n62, align 8
-  %n63 = load ptr, ptr %n62, align 8
-  %cast64 = ptrtoint ptr %n63 to i64
-  store i64 %cast64, ptr %match_result51, align 8
-  br label %match_end52
+march_arm56:                                      ; preds = %march_arm49
+  %pay_slot59 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %rvt51, i32 0, i32 1
+  %payload60 = load ptr, ptr %pay_slot59, align 8
+  %n_slot_base61 = ptrtoint ptr %payload60 to i64
+  %n_slot_addr62 = add i64 %n_slot_base61, 0
+  %n_slot63 = inttoptr i64 %n_slot_addr62 to ptr
+  %n64 = load ptr, ptr %n_slot63, align 8
+  call void @forge_rc_retain(ptr %n64)
+  store ptr %n64, ptr %n65, align 8
+  %n66 = load ptr, ptr %n65, align 8
+  %cast67 = ptrtoint ptr %n66 to i64
+  store i64 %cast67, ptr %match_result54, align 8
+  br label %match_end55
 
-march_next54:                                     ; preds = %march_arm46
-  br label %march_arm65
+march_next57:                                     ; preds = %march_arm49
+  br label %march_arm68
 
-march_arm65:                                      ; preds = %march_next54
-  store i64 ptrtoint (ptr @.str.18495 to i64), ptr %match_result51, align 8
-  br label %match_end52
+march_arm68:                                      ; preds = %march_next57
+  store i64 ptrtoint (ptr @.str.18495 to i64), ptr %match_result54, align 8
+  br label %match_end55
 
-march_next66:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.18496, i64 %tag50, ptr @mu_file.18497, i64 1067)
+march_next69:                                     ; No predecessors!
+  call void @forge_match_unreachable(ptr @.match_fn.18496, i64 %tag53, ptr @mu_file.18497, i64 1067)
   unreachable
 
-sc_rhs:                                           ; preds = %match_end37
-  %traits72 = load ptr, ptr %traits, align 8
-  %sn73 = load ptr, ptr %sn, align 8
-  %12 = call i1 @"codegen::types::trait_decl_has"(ptr %traits72, ptr %sn73)
-  %widen74 = zext i1 %12 to i64
-  %r_bool = icmp ne i64 %widen74, 0
+sc_rhs:                                           ; preds = %match_end40
+  %traits75 = load ptr, ptr %traits, align 8
+  %sn76 = load ptr, ptr %sn, align 8
+  %12 = call i1 @"codegen::types::trait_decl_has"(ptr %traits75, ptr %sn76)
+  %widen77 = zext i1 %12 to i64
+  %r_bool = icmp ne i64 %widen77, 0
   br i1 %r_bool, label %sc_r_true, label %sc_r_false
 
-sc_short:                                         ; preds = %match_end37
+sc_short:                                         ; preds = %match_end40
   br label %sc_merge
 
 sc_merge:                                         ; preds = %sc_r_merge, %sc_short
@@ -230792,73 +230944,77 @@ sc_r_merge:                                       ; preds = %sc_r_false, %sc_r_t
   br label %sc_merge
 
 ifcont:                                           ; preds = %if_else, %if_then
-  %body83 = load ptr, ptr %body, align 8
-  %13 = call ptr @"codegen::helpers::stmts_last_expr"(ptr %body83)
+  %body89 = load ptr, ptr %body, align 8
+  %13 = call ptr @"codegen::helpers::stmts_last_expr"(ptr %body89)
   store ptr %13, ptr %last, align 8
-  %last84 = load ptr, ptr %last, align 8
-  %tag_ptr85 = getelementptr inbounds nuw %"core::ast::Expr", ptr %last84, i32 0, i32 0
-  %tag86 = load i64, ptr %tag_ptr85, align 8
-  store i64 0, ptr %match_result87, align 8
-  %tag_eq91 = icmp eq i64 %tag86, 6952482492646
-  br i1 %tag_eq91, label %march_arm89, label %march_next90
+  %last90 = load ptr, ptr %last, align 8
+  %tag_ptr91 = getelementptr inbounds nuw %"core::ast::Expr", ptr %last90, i32 0, i32 0
+  %tag92 = load i64, ptr %tag_ptr91, align 8
+  store i64 0, ptr %match_result93, align 8
+  %tag_eq97 = icmp eq i64 %tag92, 6952482492646
+  br i1 %tag_eq97, label %march_arm95, label %march_next96
 
 if_then:                                          ; preds = %sc_merge
   %14 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr75 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %14, i32 0, i32 0
-  store i64 210691373129, ptr %tag_ptr75, align 8
-  %pay_ptr76 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %14, i32 0, i32 1
-  %15 = call ptr @forge_rc_alloc(i64 8)
-  store ptr %15, ptr %pay_ptr76, align 8
-  %sn77 = load ptr, ptr %sn, align 8
-  %slot_base78 = ptrtoint ptr %15 to i64
-  %slot_addr79 = add i64 %slot_base78, 0
-  %slot80 = inttoptr i64 %slot_addr79 to ptr
-  store ptr %sn77, ptr %slot80, align 8
-  %cast81 = ptrtoint ptr %14 to i64
-  %cast82 = inttoptr i64 %cast81 to ptr
-  store ptr %cast82, ptr %base, align 8
+  %tag_ptr78 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %14, i32 0, i32 0
+  store i64 210691373129, ptr %tag_ptr78, align 8
+  %pay_ptr79 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %14, i32 0, i32 1
+  %15 = call ptr @forge_rc_alloc(i64 16)
+  store ptr %15, ptr %pay_ptr79, align 8
+  %sn80 = load ptr, ptr %sn, align 8
+  %slot_base81 = ptrtoint ptr %15 to i64
+  %slot_addr82 = add i64 %slot_base81, 0
+  %slot83 = inttoptr i64 %slot_addr82 to ptr
+  store ptr %sn80, ptr %slot83, align 8
+  %slot_base84 = ptrtoint ptr %15 to i64
+  %slot_addr85 = add i64 %slot_base84, 8
+  %slot86 = inttoptr i64 %slot_addr85 to ptr
+  store i64 0, ptr %slot86, align 8
+  %cast87 = ptrtoint ptr %14 to i64
+  %cast88 = inttoptr i64 %cast87 to ptr
+  store ptr %cast88, ptr %base, align 8
   br label %ifcont
 
 if_else:                                          ; preds = %sc_merge
   br label %ifcont
 
-match_end88:                                      ; preds = %march_arm102, %march_arm89
-  %match_val106 = load i64, ptr %match_result87, align 8
-  %cast107 = inttoptr i64 %match_val106 to ptr
-  ret ptr %cast107
+match_end94:                                      ; preds = %march_arm108, %march_arm95
+  %match_val112 = load i64, ptr %match_result93, align 8
+  %cast113 = inttoptr i64 %match_val112 to ptr
+  ret ptr %cast113
 
-march_arm89:                                      ; preds = %ifcont
+march_arm95:                                      ; preds = %ifcont
   %16 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr92 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %16, i32 0, i32 0
-  store i64 229420732536866, ptr %tag_ptr92, align 8
-  %pay_ptr93 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %16, i32 0, i32 1
+  %tag_ptr98 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %16, i32 0, i32 0
+  store i64 229420732536866, ptr %tag_ptr98, align 8
+  %pay_ptr99 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %16, i32 0, i32 1
   %17 = call ptr @forge_rc_alloc(i64 16)
-  store ptr %17, ptr %pay_ptr93, align 8
-  %slot_base94 = ptrtoint ptr %17 to i64
-  %slot_addr95 = add i64 %slot_base94, 0
-  %slot96 = inttoptr i64 %slot_addr95 to ptr
-  store i64 -1, ptr %slot96, align 8
-  %base97 = load ptr, ptr %base, align 8
-  %18 = call ptr @"core::ast::vtype_fn_ret"(ptr %base97)
-  %slot_base98 = ptrtoint ptr %17 to i64
-  %slot_addr99 = add i64 %slot_base98, 8
-  %slot100 = inttoptr i64 %slot_addr99 to ptr
-  store ptr %18, ptr %slot100, align 8
-  %cast101 = ptrtoint ptr %16 to i64
-  store i64 %cast101, ptr %match_result87, align 8
-  br label %match_end88
+  store ptr %17, ptr %pay_ptr99, align 8
+  %slot_base100 = ptrtoint ptr %17 to i64
+  %slot_addr101 = add i64 %slot_base100, 0
+  %slot102 = inttoptr i64 %slot_addr101 to ptr
+  store i64 -1, ptr %slot102, align 8
+  %base103 = load ptr, ptr %base, align 8
+  %18 = call ptr @"core::ast::vtype_fn_ret"(ptr %base103)
+  %slot_base104 = ptrtoint ptr %17 to i64
+  %slot_addr105 = add i64 %slot_base104, 8
+  %slot106 = inttoptr i64 %slot_addr105 to ptr
+  store ptr %18, ptr %slot106, align 8
+  %cast107 = ptrtoint ptr %16 to i64
+  store i64 %cast107, ptr %match_result93, align 8
+  br label %match_end94
 
-march_next90:                                     ; preds = %ifcont
-  br label %march_arm102
+march_next96:                                     ; preds = %ifcont
+  br label %march_arm108
 
-march_arm102:                                     ; preds = %march_next90
-  %base104 = load ptr, ptr %base, align 8
-  %cast105 = ptrtoint ptr %base104 to i64
-  store i64 %cast105, ptr %match_result87, align 8
-  br label %match_end88
+march_arm108:                                     ; preds = %march_next96
+  %base110 = load ptr, ptr %base, align 8
+  %cast111 = ptrtoint ptr %base110 to i64
+  store i64 %cast111, ptr %match_result93, align 8
+  br label %match_end94
 
-march_next103:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.18501, i64 %tag86, ptr @mu_file.18502, i64 1070)
+march_next109:                                    ; No predecessors!
+  call void @forge_match_unreachable(ptr @.match_fn.18501, i64 %tag92, ptr @mu_file.18502, i64 1070)
   unreachable
 }
 

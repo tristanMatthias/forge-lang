@@ -17,7 +17,7 @@ export fn emit_struct_lit(ctx: Ctx, env: VarEnv, name: string, inits: FieldInitL
     let buf = malloc_struct_bytes(ctx, name, lookup.fields)
     let fill = fill_struct_fields(ctx, env, st_ty, buf, inits, lookup.fields)?
     let as_i64 = ctx.to_i64(buf, "struct_i64")
-    ok_emit_typed(as_i64, .Struct(name))
+    ok_emit_typed(as_i64, .Struct(name, 0))
 }
 
 fn malloc_struct_bytes(ctx: Ctx, name: string, fields: FieldList) -> ptr {

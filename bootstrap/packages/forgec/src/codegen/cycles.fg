@@ -68,7 +68,7 @@ fn variants_reach_target(variants: VariantList, target: string, visited: CycleVi
 
 fn type_reaches_target(ty: ValueType, target: string, visited: CycleVisited, structs: StructReg, enums: EnumReg) -> bool {
     match ty {
-        .Struct(name) -> {
+        .Struct(name, _) -> {
             if name == target { return true }
             if visited_has(visited, name) { return false }
             let vs2 = CycleVisited.Node(name, visited)
@@ -79,7 +79,7 @@ fn type_reaches_target(ty: ValueType, target: string, visited: CycleVisited, str
                 false
             }
         }
-        .Enum(name, _) -> {
+        .Enum(name, _, _) -> {
             if name == target { return true }
             if visited_has(visited, name) { return false }
             let vs2 = CycleVisited.Node(name, visited)
@@ -91,7 +91,7 @@ fn type_reaches_target(ty: ValueType, target: string, visited: CycleVisited, str
             }
         }
         .List(el) -> type_reaches_target(el, target, visited, structs, enums)
-        .Newtype(_, nt_inner) -> type_reaches_target(nt_inner, target, visited, structs, enums)
+        .Newtype(_, nt_inner, _) -> type_reaches_target(nt_inner, target, visited, structs, enums)
         // Leaf types cannot form cycles
         _ -> false
     }

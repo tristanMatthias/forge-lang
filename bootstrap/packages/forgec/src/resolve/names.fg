@@ -543,11 +543,11 @@ fn resolve_type_in_ctx(ctx: NameCtx, type_name: string) -> string {
 
 fn rewrite_vtype(ctx: NameCtx, vt: ValueType) -> ValueType {
     match vt {
-        .Struct(name) if name != "" -> .Struct(resolve_type_in_ctx(ctx, name))
-        .Enum(name, args) if name != "" -> .Enum(resolve_type_in_ctx(ctx, name), rewrite_vtype_list(ctx, args))
-        .Trait(name) if name != "" -> .Trait(resolve_type_in_ctx(ctx, name))
-        .Newtype(name, inner) if name != "" -> .Newtype(resolve_type_in_ctx(ctx, name), rewrite_vtype(ctx, inner))
-        .NarrowedEnum(en, v) if en != "" -> .NarrowedEnum(resolve_type_in_ctx(ctx, en), v)
+        .Struct(name, _) if name != "" -> .Struct(resolve_type_in_ctx(ctx, name))
+        .Enum(name, args, _) if name != "" -> .Enum(resolve_type_in_ctx(ctx, name), rewrite_vtype_list(ctx, args))
+        .Trait(name, _) if name != "" -> .Trait(resolve_type_in_ctx(ctx, name))
+        .Newtype(name, inner, _) if name != "" -> .Newtype(resolve_type_in_ctx(ctx, name), rewrite_vtype(ctx, inner))
+        .NarrowedEnum(en, v, _) if en != "" -> .NarrowedEnum(resolve_type_in_ctx(ctx, en), v)
         .List(elem) -> .List(rewrite_vtype(ctx, elem))
         .Fn(ret) -> .Fn(rewrite_vtype(ctx, ret))
         .FnTyped(params, ret) -> .FnTyped(rewrite_vtype_list(ctx, params), rewrite_vtype(ctx, ret))
@@ -577,7 +577,7 @@ fn qualify_self_param(params: ParamList, qualified_type: string) -> ParamList {
         .End -> .End
         .Node(name, vt, next) -> {
             if name == "self" {
-                ParamList.Node("self", ValueType.Struct(qualified_type), next)
+                ParamList.Node("self", ValueType.Struct(qualified_type, 0), next)
             } else {
                 ParamList.Node(name, vt, qualify_self_param(next, qualified_type))
             }

@@ -113,7 +113,7 @@ export fn tc_catch_ok_type(tc: TC, inner: Expr) -> ValueType? {
     let ret_ty = fn_type_lookup(tc.fns, fn_name)
     // Check if it's Result (Enum with type_args)
     match ret_ty {
-        .Enum(name, args) -> {
+        .Enum(name, args, _) -> {
             if name != "Result" && !name.starts_with("Result__") { return null }
             // First type arg is the Ok type
             match args {
@@ -407,7 +407,7 @@ export fn tc_er(tc: TC, ty: ValueType) -> ExprResult { ExprResult { tc, ty } }
 // Parse a union alias string "A | B | C" into ValueType.Union.
 export fn resolve_vtype(tc: TC, vt: ValueType) -> ValueType {
     match vt {
-        .Struct(name) -> {
+        .Struct(name, _) -> {
             // Associated type: "TypeName.AssocType" → resolve to concrete type
             let dot = name.index_of(".")
             if dot >= 0 {
@@ -418,25 +418,25 @@ export fn resolve_vtype(tc: TC, vt: ValueType) -> ValueType {
                 }
             }
             let ec = enum_type_canonical(tc.enums, name)
-            if ec != "" { return ValueType.Enum(ec, TypeList.End) }
+            if ec != "" { return ValueType.Enum(ec, TypeList.End, 0) }
             let ua_vt = union_alias_vtype_lookup(tc.union_aliases, name)
             if !vtype_is_unknown(ua_vt) { return resolve_vtype(tc, ua_vt) }
             let nt_vt = newtype_vtype_lookup(tc.newtypes, name)
-            if !vtype_is_unknown(nt_vt) { return ValueType.Newtype(name, resolve_vtype(tc, nt_vt)) }
+            if !vtype_is_unknown(nt_vt) { return ValueType.Newtype(name, resolve_vtype(tc, nt_vt), 0) }
             let sc = struct_type_canonical(tc.structs, name)
-            if sc != "" { return ValueType.Struct(sc) }
-            if trait_has(tc.traits, name) { return ValueType.Trait(name) }
+            if sc != "" { return ValueType.Struct(sc, 0) }
+            if trait_has(tc.traits, name) { return ValueType.Trait(name, 0) }
             vt  // keep Struct(name) — might be from another module or generic
         }
-        .Enum(name, args) -> {
+        .Enum(name, args, _) -> {
             // Parser produced Enum(name, args) from Generic(name, args).
             // Resolve the type args and verify it's an enum.
             let resolved_args = resolve_vtype_list(tc, args)
             let ec2 = enum_type_canonical(tc.enums, name)
-            if ec2 != "" { return ValueType.Enum(ec2, resolved_args) }
+            if ec2 != "" { return ValueType.Enum(ec2, resolved_args, 0) }
             let sc2 = struct_type_canonical(tc.structs, name)
-            if sc2 != "" { return ValueType.Struct(sc2) }
-            ValueType.Enum(name, resolved_args)
+            if sc2 != "" { return ValueType.Struct(sc2, 0) }
+            ValueType.Enum(name, resolved_args, 0)
         }
         .List(elem) -> ValueType.List(resolve_vtype(tc, elem))
         .Union(types) -> ValueType.Union(resolve_vtype_list(tc, types))
@@ -515,7 +515,7 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
                     let ctor_params = ParamList.Node("value", inner_ty, ParamList.End)
                     tc with {
                         newtypes: NewtypeReg.Node(name, inner_vt, tc.newtypes),
-                        fns: FnTypeEntry.Node(name, ctor_params, ValueType.Newtype(name, inner_ty), tc.fns),
+                        fns: FnTypeEntry.Node(name, ctor_params, ValueType.Newtype(name, inner_ty, 0), tc.fns),
                     }
                 }
                 .UnionAliasDecl(name, type_vt) -> {
@@ -948,7 +948,7 @@ fn tc_first_arg_type(tc: TC, args: ExprList) -> ValueType {
 // Check newtype constructor argument matches the inner type
 fn tc_check_newtype_ctor(tc: TC, name: string, ret_ty: ValueType, arg_ty: ValueType) -> TC {
     match ret_ty {
-        .Newtype(_, inner_ty) -> {
+        .Newtype(_, inner_ty, _) -> {
             if !vtype_eq(arg_ty, inner_ty) && !vtype_assignable(arg_ty, inner_ty) && !(arg_ty is .Unknown || inner_ty is .Unknown) {
                 let msg = "`${name}()` expects `${vtype_display(inner_ty)}`, got `${vtype_display(arg_ty)}`"
                 return tc_report(tc, DiagCode.TypeMismatch, msg)
@@ -966,7 +966,7 @@ fn tc_check_shape_compat(tc: TC, param_ty_str: string, arg_ty: ValueType) -> TC 
     let shape_fields = struct_type_lookup(tc.structs, param_ty_str)
     // Get the argument's actual fields
     let arg_name = match arg_ty {
-        .Struct(n) -> n
+        .Struct(n, _) -> n
         _ -> ""
     }
     if arg_name == "" { return tc }
@@ -1109,10 +1109,10 @@ fn check_method_call(tc: TC, obj: Expr, method: string, args: ExprList) -> ExprR
     // Method lookup — look up in fn registry as TypeName__method.
     // Works for structs, enums, newtypes, and trait types.
     let type_name = match o.ty {
-        .Struct(n) -> n
-        .Enum(n, _) -> n
-        .Newtype(n, _) -> n
-        .Trait(n) -> n
+        .Struct(n, _) -> n
+        .Enum(n, _, _) -> n
+        .Newtype(n, _, _) -> n
+        .Trait(n, _) -> n
         _ -> ""
     }
     if type_name.length > 0 {
@@ -1316,9 +1316,9 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
             _ -> check_expr(tc, se.node).ty
         }
         // Struct/Enum constructors
-        .StructLit(name, _) -> ValueType.Struct(name)
+        .StructLit(name, _) -> ValueType.Struct(name, 0)
         .EnumCtor(name, _, _) -> {
-            if name != "" { ValueType.Enum(name, TypeList.End) } else { check_expr(tc, se.node).ty }
+            if name != "" { ValueType.Enum(name, TypeList.End, 0) } else { check_expr(tc, se.node).ty }
         }
         .ListLit(_) -> ValueType.List(ValueType.Unknown)
         .MapLit(_) -> ValueType.Map

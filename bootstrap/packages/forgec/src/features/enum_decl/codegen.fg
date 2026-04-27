@@ -54,7 +54,7 @@ export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: stri
         let fill = fill_enum_payload(ctx, env, pay_buf, resolved_fields, args, 0)?
     }
     let as_i64 = ctx.to_i64(buf, "enum_i64")
-    ok_emit_typed(as_i64, .Enum(resolved_name, TypeList.End))
+    ok_emit_typed(as_i64, .Enum(resolved_name, TypeList.End, 0))
 }
 
 export fn malloc_enum_bytes(ctx: Ctx, variants: VariantList) -> ptr {

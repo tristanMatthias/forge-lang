@@ -1,0 +1,124 @@
+// WHY: Central type identity system — ONE place to register, ONE place to look up.
+// Every type gets a unique integer TypeId. All registries use O(1) intmap lookups.
+// String names are kept only for diagnostics and LLVM type name generation.
+
+use core.ast.{FieldList, VariantList, ValueType, TypeList}
+
+extern fn forge_intmap_new() -> ptr
+extern fn forge_intmap_set(map: ptr, key: int, val: int)
+extern fn forge_intmap_get(map: ptr, key: int) -> int
+extern fn forge_intmap_has(map: ptr, key: int) -> int
+extern fn forge_map_new_cstr() -> ptr
+extern fn forge_map_set_cstr(map: ptr, key: string, val: int)
+extern fn forge_map_get_cstr(map: ptr, key: string) -> int
+extern fn forge_map_has_cstr(map: ptr, key: string) -> int
+
+// ── TypeKind ──
+
+export enum TypeKind {
+    StructKind,
+    EnumKind,
+    TraitKind,
+    NewtypeKind,
+    UnionAliasKind,
+    ShapeKind,
+}
+
+// ── TypeInfo ──
+// All information about a registered type, keyed by TypeId.
+
+export type TypeInfo = {
+    id: int,
+    name: string,
+    kind: TypeKind,
+    fields: FieldList,
+    variants: VariantList,
+    inner_vt: ValueType,
+}
+
+// ── TypeRegistry ──
+// The single source of truth for type identity.
+
+export type TypeRegistry = {
+    next_id: int,
+    info_map: ptr,
+    name_to_id: ptr,
+}
+
+export fn type_registry_new() -> TypeRegistry {
+    TypeRegistry {
+        next_id: 1,
+        info_map: forge_intmap_new(),
+        name_to_id: forge_map_new_cstr(),
+    }
+}
+
+// Register a new type. Returns the assigned TypeId.
+export fn type_registry_register(reg: TypeRegistry, name: string, kind: TypeKind, fields: FieldList, variants: VariantList, inner_vt: ValueType) -> int {
+    // If already registered, return existing id
+    if forge_map_has_cstr(reg.name_to_id, name) == 1 {
+        return forge_map_get_cstr(reg.name_to_id, name)
+    }
+    let id = reg.next_id
+    let info = TypeInfo {
+        id,
+        name,
+        kind,
+        fields,
+        variants,
+        inner_vt,
+    }
+    forge_intmap_set(reg.info_map, id, info)
+    forge_map_set_cstr(reg.name_to_id, name, id)
+    // Mutate next_id — TypeRegistry is passed by pointer (struct semantics)
+    reg.next_id = id + 1
+    id
+}
+
+// Look up a type by id. Returns null if not found.
+export fn type_registry_lookup(reg: TypeRegistry, id: int) -> TypeInfo? {
+    if id == 0 { return null }
+    if forge_intmap_has(reg.info_map, id) == 0 { return null }
+    let ptr_val = forge_intmap_get(reg.info_map, id)
+    ptr_val
+}
+
+// Look up a type id by name. Returns 0 if not found.
+export fn type_registry_id_for(reg: TypeRegistry, name: string) -> int {
+    if forge_map_has_cstr(reg.name_to_id, name) == 0 { return 0 }
+    forge_map_get_cstr(reg.name_to_id, name)
+}
+
+// Check if a type id is registered.
+export fn type_registry_has(reg: TypeRegistry, id: int) -> bool {
+    id > 0 && forge_intmap_has(reg.info_map, id) == 1
+}
+
+// Check if a name is registered.
+export fn type_registry_has_name(reg: TypeRegistry, name: string) -> bool {
+    forge_map_has_cstr(reg.name_to_id, name) == 1
+}
+
+// ── Centralized name generation ──
+// The ONLY functions that produce :: or __ in type/method names.
+// If the naming convention ever changes, there's exactly one place to update.
+
+// Module-qualified type name: "codegen::types::Ctx"
+export fn type_qualified_name(module: string, name: string) -> string {
+    if module == "" { name } else { "${module}::${name}" }
+}
+
+// Method mangling: "Point__distance"
+export fn method_mangled_name(type_name: string, method: string) -> string {
+    "${type_name}__${method}"
+}
+
+// Variant payload struct name: "Option__Some"
+export fn variant_payload_name(enum_name: string, variant: string) -> string {
+    "${enum_name}__${variant}"
+}
+
+// Trait impl key: "Printable:Cat"
+export fn trait_impl_name(trait_name: string, type_name: string) -> string {
+    "${trait_name}:${type_name}"
+}

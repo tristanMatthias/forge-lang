@@ -57,7 +57,7 @@ fn generic_struct_lookup(reg: GenericStructReg, name: string) -> GenericStructRe
 enum TypeArgList { End, Node(param_name: string, concrete_vt: ValueType, next: TypeArgList) }
 
 fn type_arg_lookup(args: TypeArgList, name: string) -> ValueType {
-    match args { .End -> ValueType.Struct(name), .Node(pn, ct, _) if pn == name -> ct, .Node(_, _, next) -> type_arg_lookup(next, name) }
+    match args { .End -> ValueType.Struct(name, 0), .Node(pn, ct, _) if pn == name -> ct, .Node(_, _, next) -> type_arg_lookup(next, name) }
 }
 
 enum InstList { End, Node(orig_name: string, mangled: string, type_args: TypeArgList, next: InstList) }
@@ -137,7 +137,7 @@ fn adds_new_info(existing: TypeArgList, partial: TypeArgList) -> bool {
     match partial {
         .End -> false
         .Node(name, _, next) -> {
-            if vtype_eq(type_arg_lookup(existing, name), ValueType.Struct(name)) { return true }
+            if vtype_eq(type_arg_lookup(existing, name), ValueType.Struct(name, 0)) { return true }
             adds_new_info(existing, next)
         }
     }
@@ -148,7 +148,7 @@ fn type_args_compatible(a: TypeArgList, b: TypeArgList) -> bool {
         .End -> true
         .Node(name, ty, next) -> {
             let a_ty = type_arg_lookup(a, name)
-            if !vtype_eq(a_ty, ValueType.Struct(name)) && !vtype_eq(a_ty, ty) { return false }
+            if !vtype_eq(a_ty, ValueType.Struct(name, 0)) && !vtype_eq(a_ty, ty) { return false }
             type_args_compatible(a, next)
         }
     }
@@ -158,7 +158,7 @@ fn merge_type_args(a: TypeArgList, b: TypeArgList) -> TypeArgList {
     match b {
         .End -> a
         .Node(name, ty, next) -> {
-            let merged = if vtype_eq(type_arg_lookup(a, name), ValueType.Struct(name)) {
+            let merged = if vtype_eq(type_arg_lookup(a, name), ValueType.Struct(name, 0)) {
                 TypeArgList.Node(name, ty, a)
             } else { a }
             merge_type_args(merged, next)
@@ -296,7 +296,7 @@ fn check_resolved(tp: TypeParamList, ta: TypeArgList, name: string, line: int, c
         .Node(pname, bounds, next) -> {
             let concrete = type_arg_lookup(ta, pname)
             let concrete_str = vtype_render_full(concrete)
-            let updated = if vtype_eq(concrete, ValueType.Struct(pname)) {
+            let updated = if vtype_eq(concrete, ValueType.Struct(pname, 0)) {
                 bag_report(bag, diag_error(DiagCode.CannotInferTypeParam, "cannot infer type parameter `${pname}` in `${name}<...>`", span_new(0, 0, line, col)))
             } else if bounds != "" {
                 // Check trait bounds: "T: Display + Debug" → check each bound
@@ -360,7 +360,7 @@ fn all_resolved(tp: TypeParamList, ta: TypeArgList) -> bool {
     match tp {
         .End -> true
         .Node(pname, _, next) -> {
-            if vtype_eq(type_arg_lookup(ta, pname), ValueType.Struct(pname)) { return false }
+            if vtype_eq(type_arg_lookup(ta, pname), ValueType.Struct(pname, 0)) { return false }
             all_resolved(next, ta)
         }
     }
@@ -701,15 +701,15 @@ fn generate_specializations(insts: InstList, regs: GenRegs) -> StmtList {
 // Substitute type params in a ValueType (for monomorphization).
 fn substitute_vtype(vt: ValueType, ta: TypeArgList) -> ValueType {
     match vt {
-        .Struct(name) -> {
+        .Struct(name, _) -> {
             let concrete = type_arg_lookup(ta, name)
             if !vtype_eq(concrete, vt) { concrete } else { vt }
         }
         .List(elem) -> ValueType.List(substitute_vtype(elem, ta))
         .Union(types) -> ValueType.Union(substitute_vtype_list(types, ta))
         .FnTyped(params, ret) -> ValueType.FnTyped(substitute_vtype_list(params, ta), substitute_vtype(ret, ta))
-        .Newtype(name, inner) -> ValueType.Newtype(name, substitute_vtype(inner, ta))
-        .Enum(name, args) -> ValueType.Enum(name, substitute_vtype_list(args, ta))
+        .Newtype(name, inner, _) -> ValueType.Newtype(name, substitute_vtype(inner, ta), 0)
+        .Enum(name, args, _) -> ValueType.Enum(name, substitute_vtype_list(args, ta), 0)
         .Tuple(elems) -> ValueType.Tuple(substitute_vtype_list(elems, ta))
         .Fn(ret) -> ValueType.Fn(substitute_vtype(ret, ta))
         .Closure(n, ret) -> ValueType.Closure(n, substitute_vtype(ret, ta))
@@ -852,14 +852,14 @@ fn vtype_from_type_string(ty: string) -> ValueType {
         let base = ty.substring(0, angle)
         let args_str = ty.substring(angle + 1, ty.length - 1)
         let args = parse_type_args_to_list(args_str)
-        return ValueType.Enum(base, args)
+        return ValueType.Enum(base, args, 0)
     }
     // Handle mangled names like "Result__int__string" BEFORE union check —
     // mangled names like "Result__X__A|B" contain | but are NOT unions.
     let dunder = find_dunder(ty)
     if dunder >= 0 {
         let args = parse_dunder_args(ty, dunder + 2)
-        return ValueType.Enum(ty, args)
+        return ValueType.Enum(ty, args, 0)
     }
     // Handle union types "A | B" — checked AFTER mangled names
     // so "Result__X__A|B" is treated as a mangled name, not a union

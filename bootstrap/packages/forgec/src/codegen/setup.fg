@@ -465,17 +465,17 @@ fn resolve_field_vt(regs: TypeRegs, pv: ValueType) -> ValueType {
 // Ensures Struct("EnumName") → Enum("EnumName", ...) consistency.
 fn resolve_setup_vt(regs: TypeRegs, vt: ValueType) -> ValueType {
     match vt {
-        .Struct(name) -> {
+        .Struct(name, _) -> {
             let e = enum_reg_lookup(regs.enums, name)
-            if e.found { return ValueType.Enum(name, TypeList.End) }
+            if e.found { return ValueType.Enum(name, TypeList.End, 0) }
             let s = struct_reg_lookup(regs.structs, name)
-            if s.found { return ValueType.Struct(name) }
+            if s.found { return ValueType.Struct(name, 0) }
             // Not in any registry — return Unknown (consistent with resolve_type)
             ValueType.Unknown
         }
         .List(elem) -> ValueType.List(resolve_setup_vt(regs, elem))
         .Union(types) -> ValueType.Union(resolve_setup_vt_list(regs, types))
-        .Enum(name, args) -> ValueType.Enum(name, resolve_setup_vt_list(regs, args))
+        .Enum(name, args, _) -> ValueType.Enum(name, resolve_setup_vt_list(regs, args, 0))
         .FnTyped(params, ret) -> ValueType.FnTyped(resolve_setup_vt_list(regs, params), resolve_setup_vt(regs, ret))
         _ -> vt
     }
@@ -710,7 +710,7 @@ fn declare_release_fns_enums(m: ptr, i64t: ptr, pt: ptr, reg: EnumReg) {
 // For other ptr types: calls forge_rc_release.
 fn emit_field_release(ctx: Ctx, val: ptr, ty: ValueType) {
     match ty {
-        .Struct(sn) -> {
+        .Struct(sn, _) -> {
             let rfn = ctx.get_fn("__release_${sn}")
             if rfn != null {
                 ctx.call("__release_${sn}", [val])
@@ -718,7 +718,7 @@ fn emit_field_release(ctx: Ctx, val: ptr, ty: ValueType) {
                 ctx.call("forge_rc_release", [val])
             }
         }
-        .Enum(en, _) -> {
+        .Enum(en, _, _) -> {
             let rfn = ctx.get_fn("__release_${en}")
             if rfn != null {
                 ctx.call("__release_${en}", [val])
@@ -1018,16 +1018,16 @@ fn resolve_fn_ret(regs: TypeRegs, traits: TraitDeclReg, rvt: ValueType, body: St
     } else {
         let resolved = resolve_setup_vt(regs, rvt)
         match resolved {
-            .Enum(name, _) -> {
+            .Enum(name, _, _) -> {
                 let found = enum_reg_lookup(regs.enums, name)
-                if found.found { ValueType.Enum(name, TypeList.End) } else { resolved }
+                if found.found { ValueType.Enum(name, TypeList.End, 0) } else { resolved }
             }
             _ -> resolved
         }
     }
     // Check if it's a trait name (use original rvt in case resolution lost the name)
-    let sn = match base { .Struct(n) -> n, _ -> match rvt { .Struct(n) -> n, _ -> "" } }
-    if sn != "" && trait_decl_has(traits, sn) { base = ValueType.Trait(sn) }
+    let sn = match base { .Struct(n, _) -> n, _ -> match rvt { .Struct(n, _) -> n, _ -> "" } }
+    if sn != "" && trait_decl_has(traits, sn) { base = ValueType.Trait(sn, 0) }
     let last = stmts_last_expr(body)
     match last {
         .Lambda(_, _) -> ValueType.Closure(-1, vtype_fn_ret(base))

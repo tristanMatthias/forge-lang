@@ -32,7 +32,7 @@ export fn check_try(tc: TC, expr: Expr) -> ExprResult {
             // - Result<T, E> / any Result-like enum — unwraps to T, propagates E
             // - T? (nullable) — unwraps to T, propagates null
             // For Result, extract the Ok type if possible.
-            let inner_name = match r.ty { .Enum(n, _) -> n, _ -> "" }
+            let inner_name = match r.ty { .Enum(n, _, _) -> n, _ -> "" }
             if inner_name == "Result" {
                 let maybe_ok = tc_catch_ok_type(r.tc, inner)
                 if maybe_ok != null {

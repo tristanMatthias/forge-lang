@@ -171,10 +171,18 @@ LLVMValueRef forge_llvm_get_param(LLVMValueRef f, int index) {
 }
 
 int64_t forge_llvm_count_params(LLVMValueRef f) {
+    if (!f) {
+        fprintf(stderr, "[CRASH] forge_llvm_count_params: fn is NULL\n");
+        abort();
+    }
     return (int64_t)LLVMCountParams(f);
 }
 
 LLVMTypeRef forge_llvm_fn_type_of(LLVMValueRef fn_val) {
+    if (!fn_val) {
+        fprintf(stderr, "[CRASH] forge_llvm_fn_type_of: fn_val is NULL\n");
+        abort();
+    }
     return LLVMGlobalGetValueType(fn_val);
 }
 

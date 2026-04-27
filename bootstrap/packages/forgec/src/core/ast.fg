@@ -123,8 +123,8 @@ export enum ValueType {
     Str,
     Bool,
     Ptr,
-    Struct(name: string),
-    Enum(name: string, type_args: TypeList),
+    Struct(name: string, id: int),
+    Enum(name: string, type_args: TypeList, id: int),
     Tuple(elements: TypeList),
     List(elem: ValueType),
     Map,
@@ -133,10 +133,10 @@ export enum ValueType {
     Void,
     Float,
     FnTyped(params: TypeList, ret: ValueType),
-    Trait(name: string),
+    Trait(name: string, id: int),
     Union(types: TypeList),
-    Newtype(name: string, inner: ValueType),
-    NarrowedEnum(enum_name: string, variant_name: string),
+    Newtype(name: string, inner: ValueType, id: int),
+    NarrowedEnum(enum_name: string, variant_name: string, id: int),
     Unknown,
     Task(result_ty: ValueType),
 }
@@ -161,7 +161,7 @@ export enum TypeExprList {
 // Convert a structured TypeExpr to a ValueType without string round-tripping.
 // This is a parser-time conversion — it only knows primitive names and structural
 // types. Named types that require registry lookups (structs, enums, traits) are
-// left as ValueType.Struct(name) and resolved later by typeck/codegen.
+// left as ValueType.Struct(name, 0) and resolved later by typeck/codegen.
 // Convert a TypeExpr to a ValueType at parse time. Only resolves primitives
 // and structural types (List, Union, Fn, Map). Named types that require
 // registry lookups (structs, enums, traits, newtypes) resolve to Int —
@@ -193,7 +193,7 @@ export fn vtype_from_name(name: string) -> ValueType {
         "List" -> ValueType.List(ValueType.Unknown)
         "void" -> ValueType.Void
         "fn" -> ValueType.Fn(ValueType.Unknown)
-        _ -> ValueType.Struct(name)
+        _ -> ValueType.Struct(name, 0)
     }
 }
 
@@ -218,7 +218,7 @@ export fn type_expr_to_vtype(te: TypeExpr) -> ValueType {
                     ValueType.List(elem)
                 }
                 "__tuple" -> ValueType.Tuple(tel_to_type_list(args))
-                _ -> ValueType.Enum(base, tel_to_type_list(args))
+                _ -> ValueType.Enum(base, tel_to_type_list(args), 0)
             }
         }
     }
@@ -258,20 +258,20 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
         .List -> b is .List
         .Fn -> b is .Fn
         .Void -> b is .Void
-        .Struct(n1) -> match b { .Struct(n2) -> names_match(n1, n2), _ -> false }
-        .Enum(n1, _) -> match b { .Enum(n2, _) -> names_match(n1, n2), _ -> false }
+        .Struct(n1, _) -> match b { .Struct(n2, _) -> names_match(n1, n2), _ -> false }
+        .Enum(n1, _, _) -> match b { .Enum(n2, _, _) -> names_match(n1, n2), _ -> false }
         .Float -> b is .Float
         .Map -> b is .Map
         .FnTyped(_, _) -> match b { .FnTyped(_, _) -> true, .Fn(_) -> true, _ -> false }
-        .Trait(n1) -> match b { .Trait(n2) -> n1 == n2, _ -> false }
+        .Trait(n1, _) -> match b { .Trait(n2, _) -> n1 == n2, _ -> false }
         .Tuple(_) -> match b { .Tuple(_) -> true, _ -> false }
         .Closure(_, _) -> match b { .Closure(_, _) -> true, _ -> false }
         .Union(types_a) -> match b {
             .Union(types_b) -> type_lists_eq(types_a, types_b)
             _ -> false
         }
-        .Newtype(n1, _) -> match b { .Newtype(n2, _) -> n1 == n2, _ -> false }
-        .NarrowedEnum(e1, v1) -> match b { .NarrowedEnum(e2, v2) -> e1 == e2 && v1 == v2, _ -> false }
+        .Newtype(n1, _, _) -> match b { .Newtype(n2, _, _) -> n1 == n2, _ -> false }
+        .NarrowedEnum(e1, v1, _) -> match b { .NarrowedEnum(e2, v2, _) -> e1 == e2 && v1 == v2, _ -> false }
         .Unknown -> b is .Unknown
         .Task(_) -> b is .Task
         _ -> false
@@ -341,15 +341,15 @@ export fn vtype_closure_captures(t: ValueType) -> int {
 export fn vtype_is_closure(t: ValueType) -> bool { t is .Closure }
 
 export fn vtype_struct_name(t: ValueType) -> string {
-    match t { .Struct(n) -> n, _ -> "" }
+    match t { .Struct(n, _) -> n, _ -> "" }
 }
 
 export fn vtype_enum_name(t: ValueType) -> string {
-    match t { .Enum(n, _) -> n, .NarrowedEnum(n, _) -> n, _ -> "" }
+    match t { .Enum(n, _, _) -> n, .NarrowedEnum(n, _, _) -> n, _ -> "" }
 }
 
 export fn vtype_narrowed_variant(t: ValueType) -> string {
-    match t { .NarrowedEnum(_, v) -> v, _ -> "" }
+    match t { .NarrowedEnum(_, v, _) -> v, _ -> "" }
 }
 
 export fn vtype_display(t: ValueType) -> string {
@@ -358,8 +358,8 @@ export fn vtype_display(t: ValueType) -> string {
         .Str -> "string"
         .Bool -> "bool"
         .Ptr -> "ptr"
-        .Struct(n) -> n
-        .Enum(n, _) -> n
+        .Struct(n, _) -> n
+        .Enum(n, _, _) -> n
         .Tuple(_) -> "(tuple)"
         .List(_) -> "List"
         .Map -> "Map"
@@ -367,10 +367,10 @@ export fn vtype_display(t: ValueType) -> string {
         .Void -> "void"
         .Float -> "float"
         .FnTyped(params, ret) -> "fn(${render_type_list(params)}) -> ${vtype_display(ret)}"
-        .Trait(n) -> "dyn ${n}"
+        .Trait(n, _) -> "dyn ${n}"
         .Union(types) -> render_union_display(types)
-        .Newtype(name, _) -> name
-        .NarrowedEnum(en, vn) -> "${en}.${vn}"
+        .Newtype(name, _, _) -> name
+        .NarrowedEnum(en, vn, _) -> "${en}.${vn}"
         .Unknown -> "<unknown>"
         .Task(r) -> "Task<${vtype_display(r)}>"
     }
@@ -399,8 +399,8 @@ export fn vtype_render_full(t: ValueType) -> string {
         .Str -> "string"
         .Bool -> "bool"
         .Ptr -> "ptr"
-        .Struct(n) -> n
-        .Enum(n, args) -> {
+        .Struct(n, _) -> n
+        .Enum(n, args, _) -> {
             let args_str = render_type_list_full(args)
             if args_str == "" { n } else { "${n}<${args_str}>" }
         }
@@ -411,10 +411,10 @@ export fn vtype_render_full(t: ValueType) -> string {
         .Void -> "void"
         .Float -> "float"
         .FnTyped(params, ret) -> "fn(${render_type_list_full(params)}) -> ${vtype_render_full(ret)}"
-        .Trait(n) -> "dyn ${n}"
+        .Trait(n, _) -> "dyn ${n}"
         .Union(types) -> render_union_full(types)
-        .Newtype(name, _) -> name
-        .NarrowedEnum(en, vn) -> "${en}.${vn}"
+        .Newtype(name, _, _) -> name
+        .NarrowedEnum(en, vn, _) -> "${en}.${vn}"
         .Unknown -> ""
         .Task(r) -> "Task<${vtype_render_full(r)}>"
     }
@@ -449,7 +449,7 @@ fn render_union_full(tl: TypeList) -> string {
 }
 
 export fn vtype_trait_name(t: ValueType) -> string {
-    match t { .Trait(n) -> n, _ -> "" }
+    match t { .Trait(n, _) -> n, _ -> "" }
 }
 
 export fn vtype_is_union(t: ValueType) -> bool { t is .Union }
@@ -457,11 +457,11 @@ export fn vtype_is_union(t: ValueType) -> bool { t is .Union }
 export fn vtype_is_newtype(t: ValueType) -> bool { t is .Newtype }
 
 export fn vtype_newtype_inner(t: ValueType) -> ValueType {
-    match t { .Newtype(_, inner) -> inner, _ -> ValueType.Unknown }
+    match t { .Newtype(_, inner, _) -> inner, _ -> ValueType.Unknown }
 }
 
 export fn vtype_newtype_name(t: ValueType) -> string {
-    match t { .Newtype(n, _) -> n, _ -> "" }
+    match t { .Newtype(n, _, _) -> n, _ -> "" }
 }
 
 export fn vtype_union_types(t: ValueType) -> TypeList {

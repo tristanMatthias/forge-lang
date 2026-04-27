@@ -38,7 +38,7 @@ export fn narrow_env_for_is(ctx: Ctx, env: VarEnv, condition: Expr) -> VarEnv {
     if lu.found {
         let en = vtype_enum_name(lu.ty)
         if en != "" {
-            return env_extend(env, var_name, lu.alloca, ValueType.NarrowedEnum(en, vname))
+            return env_extend(env, var_name, lu.alloca, ValueType.NarrowedEnum(en, vname, 0))
         }
         return env
     }
@@ -47,7 +47,7 @@ export fn narrow_env_for_is(ctx: Ctx, env: VarEnv, condition: Expr) -> VarEnv {
     if g.found {
         let en = vtype_enum_name(g.ty)
         if en != "" {
-            return env_extend(env, var_name, g.llvm_global, ValueType.NarrowedEnum(en, vname))
+            return env_extend(env, var_name, g.llvm_global, ValueType.NarrowedEnum(en, vname, 0))
         }
     }
     env
@@ -85,10 +85,10 @@ fn is_union_safe_type(ty: ValueType) -> bool {
         .Str -> true
         .Bool -> true
         .Float -> true
-        .Struct(_) -> true
-        .Enum(_, _) -> true
+        .Struct(_, _) -> true
+        .Enum(_, _, _) -> true
         .Union(_) -> true
-        .Newtype(_, _) -> true
+        .Newtype(_, _, _) -> true
         _ -> false
     }
 }

@@ -134,15 +134,15 @@ fn should_null_check_vt(vt: ValueType) -> bool {
     match vt {
         .Str -> true
         .Ptr -> true
-        .Struct(_) -> true
-        .Enum(_, _) -> true
+        .Struct(_, _) -> true
+        .Enum(_, _, _) -> true
         .List(_) -> true
         .Map -> true
-        .Trait(_) -> true
+        .Trait(_, _) -> true
         .Union(_) -> true
-        .Newtype(_, inner) -> should_null_check_vt(inner)
+        .Newtype(_, inner, _) -> should_null_check_vt(inner)
         .Tuple(_) -> true
-        .NarrowedEnum(_, _) -> true
+        .NarrowedEnum(_, _, _) -> true
         _ -> false
     }
 }
@@ -548,7 +548,7 @@ fn emit_newtype_ctor(ctx: Ctx, env: VarEnv, name: string, args: ExprList) -> Res
             let r = ctx.emit(env, se.node)?
             let inner_ty = ctx.resolve_codegen_vtype(cg_newtype_vtype_lookup(ctx.newtypes, name))
             // Zero-cost: the value IS the newtype at runtime
-            ok_emit_typed(r.value, .Newtype(name, inner_ty))
+            ok_emit_typed(r.value, .Newtype(name, inner_ty, 0))
         }
     }
 }

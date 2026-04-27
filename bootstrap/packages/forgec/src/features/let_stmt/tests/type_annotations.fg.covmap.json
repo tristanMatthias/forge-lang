@@ -1,0 +1,23 @@
+{"file":"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/packages/forgec/src/features/let_stmt/tests/type_annotations.fg","counters":[
+  {"id":0,"type":"line","fn":"main","line":2,"col":0,"branch":0},
+  {"id":1,"type":"line","fn":"main","line":3,"col":0,"branch":0},
+  {"id":2,"type":"line","fn":"main","line":4,"col":0,"branch":0},
+  {"id":3,"type":"line","fn":"main","line":5,"col":0,"branch":0},
+  {"id":4,"type":"line","fn":"main","line":6,"col":0,"branch":0},
+  {"id":5,"type":"line","fn":"main","line":6,"col":0,"branch":0},
+  {"id":6,"type":"line","fn":"main","line":6,"col":0,"branch":0},
+  {"id":7,"type":"line","fn":"main","line":6,"col":0,"branch":0},
+  {"id":8,"type":"line","fn":"main","line":7,"col":0,"branch":0},
+  {"id":9,"type":"line","fn":"main","line":7,"col":0,"branch":0},
+  {"id":10,"type":"line","fn":"main","line":7,"col":0,"branch":0},
+  {"id":11,"type":"line","fn":"main","line":8,"col":0,"branch":0},
+  {"id":12,"type":"line","fn":"main","line":8,"col":0,"branch":0},
+  {"id":13,"type":"line","fn":"main","line":8,"col":0,"branch":0},
+  {"id":14,"type":"line","fn":"main","line":8,"col":0,"branch":0},
+  {"id":15,"type":"line","fn":"main","line":9,"col":0,"branch":0},
+  {"id":16,"type":"line","fn":"main","line":9,"col":0,"branch":0},
+  {"id":17,"type":"line","fn":"main","line":9,"col":0,"branch":0},
+  {"id":18,"type":"line","fn":"main","line":9,"col":0,"branch":0},
+  {"id":19,"type":"line","fn":"main","line":9,"col":0,"branch":0},
+  {"id":20,"type":"line","fn":"main","line":9,"col":0,"branch":0}
+]}

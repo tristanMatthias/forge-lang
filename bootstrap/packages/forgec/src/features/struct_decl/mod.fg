@@ -79,7 +79,7 @@ fn struct_lit_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .StructLit(name, inits) -> {
             let checked = check_field_inits(tc, inits)
-            tc_er(checked, .Struct(name))
+            tc_er(checked, .Struct(name, 0))
         }
         _ -> tc_er(tc, .Unknown)
     }
@@ -135,7 +135,7 @@ fn enum_ctor_check_expr(tc: TC, expr: Expr) -> ExprResult {
         .EnumCtor(type_name, variant, args) -> {
             let checked = check_expr_list(tc, args)
             let resolved_name = if type_name == "" { tc_enum_find_by_variant(tc.enums, variant) } else { type_name }
-            tc_er(checked, .Enum(resolved_name, TypeList.End))
+            tc_er(checked, .Enum(resolved_name, TypeList.End, 0))
         }
         _ -> tc_er(tc, .Unknown)
     }

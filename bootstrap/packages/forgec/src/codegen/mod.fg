@@ -102,7 +102,7 @@ fn emit_rc_stack(ctx: Ctx, stack: RcCleanupStack) {
 // falls back to plain forge_rc_release.
 export fn emit_rc_release_typed(ctx: Ctx, val: ptr, ty: ValueType) {
     match ty {
-        .Struct(name) -> {
+        .Struct(name, _) -> {
             let release_fn = ctx.get_fn("__release_${name}")
             if release_fn != null {
                 ctx.call("__release_${name}", [val])
@@ -110,7 +110,7 @@ export fn emit_rc_release_typed(ctx: Ctx, val: ptr, ty: ValueType) {
                 ctx.rc_release(val)
             }
         }
-        .Enum(name, _) -> {
+        .Enum(name, _, _) -> {
             let release_fn = ctx.get_fn("__release_${name}")
             if release_fn != null {
                 ctx.call("__release_${name}", [val])
@@ -118,7 +118,7 @@ export fn emit_rc_release_typed(ctx: Ctx, val: ptr, ty: ValueType) {
                 ctx.rc_release(val)
             }
         }
-        .Newtype(name, _) -> {
+        .Newtype(name, _, _) -> {
             // Newtype wraps another type — release via the wrapper's release function if it exists
             let release_fn = ctx.get_fn("__release_${name}")
             if release_fn != null {
@@ -145,7 +145,7 @@ export fn emit_rc_release_typed(ctx: Ctx, val: ptr, ty: ValueType) {
         .Union(_) -> ctx.rc_release(val)
         .List(_) -> ctx.rc_release(val)
         .Map -> ctx.rc_release(val)
-        .Trait(_) -> ctx.rc_release(val)
+        .Trait(_, _) -> ctx.rc_release(val)
         // Value types — not RC-managed, no-op (rc_release checks magic).
         .Int -> {}
         .Bool -> {}
@@ -154,7 +154,7 @@ export fn emit_rc_release_typed(ctx: Ctx, val: ptr, ty: ValueType) {
         // FnTyped — function pointer, not heap-allocated.
         .FnTyped(_, _) -> {}
         // NarrowedEnum — same RC semantics as its base Enum.
-        .NarrowedEnum(name, _) -> {
+        .NarrowedEnum(name, _, _) -> {
             let release_fn = ctx.get_fn("__release_${name}")
             if release_fn != null {
                 ctx.call("__release_${name}", [val])

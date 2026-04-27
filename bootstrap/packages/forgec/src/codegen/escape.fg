@@ -414,10 +414,10 @@ fn vtype_is_copy(vt: ValueType, candidates: CopySet) -> bool {
         .Fn(_) -> false
         .FnTyped(_, _) -> false
         .Closure(_, _) -> false
-        .Struct(name) -> copy_set_has(candidates, name)
-        .Enum(name, _) -> copy_set_has(candidates, name)
-        .Newtype(name, _) -> copy_set_has(candidates, name)
-        .Trait(_) -> false
+        .Struct(name, _) -> copy_set_has(candidates, name)
+        .Enum(name, _, _) -> copy_set_has(candidates, name)
+        .Newtype(name, _, _) -> copy_set_has(candidates, name)
+        .Trait(_, _) -> false
         .Union(_) -> false
         .Tuple(_) -> false
         _ -> false

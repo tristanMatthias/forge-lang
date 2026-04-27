@@ -93,7 +93,7 @@ fn try_copy_for_struct(ctx: Ctx, name: string, ty_vt: ValueType, sname: string) 
     let n: ptr = null
     let drop_fn = ctx.get_fn("${sname}__drop")
     if drop_fn != null { return CopyTarget { active: false, alloca_ptr: n } }
-    let var_ty = if !vtype_is_unknown(ty_vt) { ctx.resolve_codegen_vtype(ty_vt) } else { ValueType.Struct(sname) }
+    let var_ty = if !vtype_is_unknown(ty_vt) { ctx.resolve_codegen_vtype(ty_vt) } else { ValueType.Struct(sname, 0) }
     if vtype_is_copy(var_ty, ctx.copy_types) {
         let st_ty = ctx.get_type(sname)
         if st_ty != null {
