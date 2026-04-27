@@ -82,11 +82,13 @@ build-debug:
 
 # Full safety net: test suite + fixed-point invariant.
 test:
+	@$(DIAG) --regress
 	@$(BS2) test
 	@$(DIAG) --check-fixedpoint
 
 # Just the test suite — faster, useful while iterating.
 regress:
+	@$(DIAG) --regress
 	@$(BS2) test
 
 # Just the fixed-point check.

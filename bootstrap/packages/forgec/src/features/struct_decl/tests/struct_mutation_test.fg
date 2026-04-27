@@ -1,0 +1,27 @@
+type Point = {
+    x: int,
+    y: int,
+}
+
+impl Point {
+    fn move_right(self, dx: int) {
+        self.x = self.x + dx
+    }
+}
+
+spec "struct mutation" {
+    then "initial field value" {
+        mut p = Point { x: 1, y: 2 }
+        p.x == 1
+    }
+    then "method mutates field" {
+        mut p = Point { x: 1, y: 2 }
+        p.move_right(10)
+        p.x == 11
+    }
+    then "direct field assignment" {
+        mut p = Point { x: 1, y: 2 }
+        p.y = 99
+        p.y == 99
+    }
+}

@@ -1,0 +1,39 @@
+enum Shape {
+    Circle(radius: int),
+    Rect(w: int, h: int),
+}
+
+impl Shape {
+    fn area(self) -> int {
+        match self {
+            .Circle(r) -> r * r * 3
+            .Rect(w, h) -> w * h
+        }
+    }
+
+    fn describe(self) -> string {
+        match self {
+            .Circle(r) -> `circle r=${string(r)}`
+            .Rect(w, h) -> `rect ${string(w)}x${string(h)}`
+        }
+    }
+}
+
+spec "impl enum" {
+    then "circle area" {
+        let c = Shape.Circle(5)
+        c.area() == 75
+    }
+    then "circle describe" {
+        let c = Shape.Circle(5)
+        c.describe() == "circle r=5"
+    }
+    then "rect area" {
+        let r = Shape.Rect(4, 6)
+        r.area() == 24
+    }
+    then "rect describe" {
+        let r = Shape.Rect(4, 6)
+        r.describe() == "rect 4x6"
+    }
+}

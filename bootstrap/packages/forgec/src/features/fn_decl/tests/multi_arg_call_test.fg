@@ -1,0 +1,19 @@
+fn add3(a: int, b: int, c: int) -> int {
+    a + b + c
+}
+
+fn greet(prefix: string, name: string, suffix: string) -> string {
+    prefix + name + suffix
+}
+
+spec "multi arg call" {
+    then "three int args" {
+        add3(1, 2, 3) == 6
+    }
+    then "larger int args" {
+        add3(10, 20, 30) == 60
+    }
+    then "three string args" {
+        greet("hello ", "world", "!") == "hello world!"
+    }
+}

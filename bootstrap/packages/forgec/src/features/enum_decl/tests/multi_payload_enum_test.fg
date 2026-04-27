@@ -1,0 +1,22 @@
+enum Result {
+    Ok(value: int),
+    Err(code: int, msg: string),
+}
+
+fn describe_result(r: Result) -> string {
+    match r {
+        .Ok(v) -> string(v)
+        .Err(code, msg) -> string(code) + ": " + msg
+    }
+}
+
+spec "multi payload enum" {
+    then "ok variant" {
+        let ok = Result.Ok(42)
+        describe_result(ok) == "42"
+    }
+    then "err variant with two payloads" {
+        let err = Result.Err(404, "not found")
+        describe_result(err) == "404: not found"
+    }
+}

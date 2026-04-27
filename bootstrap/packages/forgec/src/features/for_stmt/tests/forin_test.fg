@@ -1,0 +1,28 @@
+spec "for-in" {
+    then "iterate string list" {
+        forge_test_capture_start()
+        let names = ["alice", "bob", "carol"]
+        for name in names {
+            println(name)
+        }
+        let out = forge_test_capture_stop()
+        out == "alice\nbob\ncarol"
+    }
+    then "accumulate sum" {
+        let nums = [1, 2, 3, 4, 5]
+        mut sum = 0
+        for n in nums {
+            sum = sum + n
+        }
+        sum == 15
+    }
+    then "break in for-in" {
+        forge_test_capture_start()
+        for x in [10, 20, 30, 40] {
+            if x == 30 { break }
+            x |> string |> println
+        }
+        let out = forge_test_capture_stop()
+        out == "10\n20"
+    }
+}

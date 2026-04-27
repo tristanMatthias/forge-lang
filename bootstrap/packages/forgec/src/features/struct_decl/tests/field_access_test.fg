@@ -1,0 +1,6 @@
+spec "field access" {
+    then "string length" {
+        let t = "hello"
+        t.length == 5
+    }
+}
