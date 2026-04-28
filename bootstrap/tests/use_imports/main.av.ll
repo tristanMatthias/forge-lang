@@ -3,7 +3,7 @@ source_filename = "bootstrap"
 
 @.str = private unnamed_addr constant [4 x i8] c"hi \00", align 1
 @.i2s_fmt = private unnamed_addr constant [5 x i8] c"%lld\00", align 1
-@.str.1 = private unnamed_addr constant [6 x i8] c"forge\00", align 1
+@.str.1 = private unnamed_addr constant [5 x i8] c"avra\00", align 1
 
 declare i32 @puts(ptr)
 

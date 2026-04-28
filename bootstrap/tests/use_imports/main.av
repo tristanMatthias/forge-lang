@@ -4,5 +4,5 @@ use helpers.{helper_add, helper_greet}
 
 fn main() {
     println(string(helper_add(3, 7)))
-    println(helper_greet("forge"))
+    println(helper_greet("avra"))
 }

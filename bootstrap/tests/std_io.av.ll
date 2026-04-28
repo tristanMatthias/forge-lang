@@ -2,7 +2,7 @@
 source_filename = "bootstrap"
 
 @.str = private unnamed_addr constant [26 x i8] c"/tmp/avra_std_io_test.txt\00", align 1
-@.str.4 = private unnamed_addr constant [21 x i8] c"hello forge\0Aline two\00", align 1
+@.str.4 = private unnamed_addr constant [20 x i8] c"hello avra\0Aline two\00", align 1
 @.i2s_fmt = private unnamed_addr constant [5 x i8] c"%lld\00", align 1
 @.i2s_fmt.5 = private unnamed_addr constant [5 x i8] c"%lld\00", align 1
 @.str.6 = private unnamed_addr constant [35 x i8] c"/tmp/nonexistent_avra_test_xyz.txt\00", align 1

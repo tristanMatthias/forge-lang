@@ -1,4 +1,4 @@
 const x = 42
-const name = "forge"
+const name = "avra"
 x |> string |> println
 println(name)

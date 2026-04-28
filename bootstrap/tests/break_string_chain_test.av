@@ -1,7 +1,7 @@
 fn bsc_chain() -> string {
     "  Hello, World!  "
         .trim()
-        .replace("World", "Forge")
+        .replace("World", "Avra")
         .upper()
 }
 
@@ -15,19 +15,19 @@ fn bsc_join() -> string {
 
 spec "break string chain" {
     then "chained string methods" {
-        bsc_chain() == "HELLO, FORGE!"
+        bsc_chain() == "HELLO, AVRA!"
     }
     then "chain length" {
-        bsc_chain().length == 13
+        bsc_chain().length == 12
     }
     then "contains check" {
-        bsc_chain().contains("FORGE") == true
+        bsc_chain().contains("AVRA") == true
     }
     then "starts_with check" {
         bsc_chain().starts_with("HELLO") == true
     }
     then "index_of check" {
-        bsc_chain().index_of("FORGE") == 7
+        bsc_chain().index_of("AVRA") == 7
     }
     then "split and rejoin" {
         bsc_join() == "a-b-c-d"

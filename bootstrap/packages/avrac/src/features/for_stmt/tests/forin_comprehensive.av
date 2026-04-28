@@ -1,7 +1,7 @@
 // Comprehensive for-in tests
 
 // Basic iteration
-let words = ["hello", "world", "forge"]
+let words = ["hello", "world", "avra"]
 for w in words {
     println(w)
 }

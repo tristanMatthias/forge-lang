@@ -8,6 +8,6 @@ fn main() {
     y = y + 5
     y |> string |> println
 
-    let name = "forge"
+    let name = "avra"
     println(name)
 }

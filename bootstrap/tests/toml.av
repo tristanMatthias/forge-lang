@@ -5,7 +5,7 @@ extern fn avra_toml_get_int(toml: string, key: string) -> int
 extern fn avra_toml_get_bool(toml: string, key: string) -> bool
 
 fn main() {
-    let config = "name = \"forge\"\nversion = \"1.2.3\"\noptimize = true\nmax_errors = 10\n"
+    let config = "name = \"avra\"\nversion = \"1.2.3\"\noptimize = true\nmax_errors = 10\n"
 
     println(avra_toml_get_string(config, "name"))
     println(avra_toml_get_string(config, "version"))

@@ -1,4 +1,4 @@
-// Section-aware TOML parsing for forge.toml package manifests.
+// Section-aware TOML parsing for avra.toml package manifests.
 
 extern fn avra_toml_get_section_string(toml: string, section: string, key: string) -> string
 extern fn avra_toml_has_section(toml: string, section: string) -> int

@@ -1,7 +1,7 @@
 // Chain every string method
 let result = "  Hello, World!  "
     .trim()
-    .replace("World", "Forge")
+    .replace("World", "Avra")
     .upper()
 println(result)
 println(string(result.length))

@@ -19,7 +19,7 @@ fn pf_run() -> string {
         println(string(r))
     }
 
-    let words = ["hello", "world", "from", "forge"]
+    let words = ["hello", "world", "from", "avra"]
     let sentence = words.reduce("", (acc, w) -> {
         if acc == "" { return w }
         acc + " " + w
@@ -30,6 +30,6 @@ fn pf_run() -> string {
 
 spec "prod functional" {
     then "compose and pipeline output" {
-        pf_run() == "12\n36\n4\n6\n8\n10\n12\nhello world from forge"
+        pf_run() == "12\n36\n4\n6\n8\n10\n12\nhello world from avra"
     }
 }

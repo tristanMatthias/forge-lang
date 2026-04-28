@@ -863,7 +863,7 @@ fn main() {
         }
         let csource = read_file(cpath)
 
-        // Load forge.toml package manifest if present in entry dir.
+        // Load avra.toml package manifest if present in entry dir.
         let pkg_dir = modules_dirname(cpath)
         let pkg = load_package_config(pkg_dir)
         if pkg.found {

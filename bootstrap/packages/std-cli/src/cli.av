@@ -1,4 +1,4 @@
-// WHY: Pure-Forge CLI argument parsing library.
+// WHY: Pure-Avra CLI argument parsing library.
 // Provides a builder-style API for defining commands, flags, options, and args.
 // Uses avra_selfhost_argc/get_arg_cstr for raw argument access.
 

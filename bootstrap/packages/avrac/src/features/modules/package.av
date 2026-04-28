@@ -1,4 +1,4 @@
-// WHY: parses forge.toml package manifests per spec Axis 16.4/16.8.
+// WHY: parses avra.toml package manifests per spec Axis 16.4/16.8.
 // Extracts [package] name/version and [dependencies] for module
 // resolution. Used by the compile pipeline to know what package
 // we're building and what standard library modules are available.
@@ -15,9 +15,9 @@ fn default_config() -> PackageConfig {
     PackageConfig { name: "", version: "", found: false }
 }
 
-// Reads forge.toml from `dir` and extracts [package] name/version.
+// Reads avra.toml from `dir` and extracts [package] name/version.
 export fn load_package_config(dir: string) -> PackageConfig {
-    let toml_path = "${dir}forge.toml"
+    let toml_path = "${dir}avra.toml"
     if !avra_selfhost_file_exists(toml_path) {
         return default_config()
     }

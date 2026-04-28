@@ -6,7 +6,7 @@ fn sst_run() -> string {
     println(clean)
     println(string(clean.length))
 
-    let shouting = "hello world".replace("world", "forge").upper()
+    let shouting = "hello world".replace("world", "avra").upper()
     println(shouting)
 
     let parts = "a-b-c-d".split("-")
@@ -37,6 +37,6 @@ fn sst_run() -> string {
 
 spec "stress strings" {
     then "string methods output" {
-        sst_run() == "Hello, World!\n13\nHELLO FORGE\n4\na\nb\nc\nd\n0\n-1\n0\n1\n1\n0\n1\n1\n1\n5\n10\n50"
+        sst_run() == "Hello, World!\n13\nHELLO AVRA\n4\na\nb\nc\nd\n0\n-1\n0\n1\n1\n0\n1\n1\n1\n5\n10\n50"
     }
 }

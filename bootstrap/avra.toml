@@ -1,4 +1,4 @@
 [project]
 name = "bootstrap"
 version = "0.1.0"
-entry = "src/main.fg"
+entry = "src/main.av"

@@ -351,11 +351,11 @@ fn get_parsed_arg(args: ParsedArgList, name: string) -> string {
     }
 }
 
-// ── Test: simulate "forge compile --coverage --stop-after=parse test.av" ──
+// ── Test: simulate "avra compile --coverage --stop-after=parse test.av" ──
 
 fn main() {
-    mut app = cli_new("forge", "Forge compiler", "0.1.0")
-    app = cli_add_command(app, "compile", "Compile a Forge file")
+    mut app = cli_new("avra", "Avra compiler", "0.1.0")
+    app = cli_add_command(app, "compile", "Compile a Avra file")
     app = cli_command_add_flag(app, "compile", "--coverage", "-c", "Enable coverage")
     app = cli_command_add_option(app, "compile", "--stop-after", "-s", "Stop after phase", "")
     app = cli_command_add_arg(app, "compile", "file", "Source file", true)

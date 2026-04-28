@@ -1,7 +1,7 @@
 ; ModuleID = 'bootstrap'
 source_filename = "bootstrap"
 
-@.str = private unnamed_addr constant [66 x i8] c"name = \22forge\22\0Aversion = \221.2.3\22\0Aoptimize = true\0Amax_errors = 10\0A\00", align 1
+@.str = private unnamed_addr constant [65 x i8] c"name = \22avra\22\0Aversion = \221.2.3\22\0Aoptimize = true\0Amax_errors = 10\0A\00", align 1
 @.str.4 = private unnamed_addr constant [5 x i8] c"name\00", align 1
 @.str.5 = private unnamed_addr constant [8 x i8] c"version\00", align 1
 @.str.6 = private unnamed_addr constant [9 x i8] c"optimize\00", align 1

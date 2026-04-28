@@ -1,12 +1,12 @@
 spec "for-in comprehensive" {
     then "basic iteration" {
         avra_test_capture_start()
-        let words = ["hello", "world", "forge"]
+        let words = ["hello", "world", "avra"]
         for w in words {
             println(w)
         }
         let out = avra_test_capture_stop()
-        out == "hello\nworld\nforge"
+        out == "hello\nworld\navra"
     }
     then "accumulation" {
         let scores = [10, 20, 30, 40, 50]

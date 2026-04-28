@@ -11,7 +11,7 @@ spec "hunt template complex" {
         htc_greet("world") == "hello world!"
     }
     then "nested template" {
-        `result: ${htc_greet("forge")}` == "result: hello forge!"
+        `result: ${htc_greet("avra")}` == "result: hello avra!"
     }
     then "template with if-expression" {
         let x = 5

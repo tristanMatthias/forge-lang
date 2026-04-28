@@ -25,7 +25,7 @@ for r in results {
 }
 
 // Reduce to build a string
-let words = ["hello", "world", "from", "forge"]
+let words = ["hello", "world", "from", "avra"]
 let sentence = words.reduce("", (acc, w) -> {
     if acc == "" { return w }
     acc + " " + w

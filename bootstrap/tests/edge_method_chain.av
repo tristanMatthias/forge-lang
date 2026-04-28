@@ -1,5 +1,5 @@
 // Long method chains
-let result = "  Hello, World!  ".trim().replace("World", "Forge").upper()
+let result = "  Hello, World!  ".trim().replace("World", "Avra").upper()
 println(result)
 println(string(result.length))
 println(string(result.contains("FORGE")))

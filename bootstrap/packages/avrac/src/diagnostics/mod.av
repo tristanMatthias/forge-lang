@@ -6,7 +6,7 @@ mod suggest
 // source span, help text, and labels. DiagnosticBag collects
 // diagnostics across an entire compilation pass without stopping.
 //
-// Ported from forge/packages/forgec-rust/errors/diagnostic.rs.
+// Ported from avra/packages/forgec-rust/errors/diagnostic.rs.
 // The architecture supports multi-label errors, suggestions with
 // confidence scores, and machine-readable JSON output — even
 // though not all of those are wired up in Phase 0.

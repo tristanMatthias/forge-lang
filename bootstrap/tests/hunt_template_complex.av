@@ -6,7 +6,7 @@ println(`point(${string(p.x)}, ${string(p.y)})`)
 // Template with function call
 fn greet(name: string) -> string { `hello ${name}!` }
 println(greet("world"))
-println(`result: ${greet("forge")}`)
+println(`result: ${greet("avra")}`)
 
 // Template with if-expression
 let x = 5

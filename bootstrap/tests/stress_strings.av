@@ -5,7 +5,7 @@ println(clean)
 println(string(clean.length))
 
 // Replace + upper
-let shouting = "hello world".replace("world", "forge").upper()
+let shouting = "hello world".replace("world", "avra").upper()
 println(shouting)
 
 // Split + iterate

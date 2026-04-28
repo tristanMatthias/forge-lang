@@ -4,7 +4,7 @@ spec "const binding" {
         x == 42
     }
     then "const string" {
-        const name = "forge"
-        name == "forge"
+        const name = "avra"
+        name == "avra"
     }
 }

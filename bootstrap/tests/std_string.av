@@ -21,7 +21,7 @@ fn main() {
     println(string(s.index_of("xyz")))
 
     // Replace
-    let r = s.replace("World", "Forge")
+    let r = s.replace("World", "Avra")
     println(r)
 
     // Trim

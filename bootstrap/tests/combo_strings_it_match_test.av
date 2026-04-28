@@ -16,7 +16,7 @@ fn csim_run() -> string {
     let parts = csv.split(",")
 
     let messy = "  hello world  "
-    let clean = messy.trim().replace("world", "forge").upper()
+    let clean = messy.trim().replace("world", "avra").upper()
 
     avra_test_capture_start()
     println(uppers[0])
@@ -32,6 +32,6 @@ fn csim_run() -> string {
 
 spec "combo strings it match" {
     then "strings it match combo" {
-        csim_run() == "HELLO\nWORLD\n2\napple pie\napple sauce\n3 items\nname=Alice, age=30, role=Engineer\nHELLO FORGE"
+        csim_run() == "HELLO\nWORLD\n2\napple pie\napple sauce\n3 items\nname=Alice, age=30, role=Engineer\nHELLO AVRA"
     }
 }

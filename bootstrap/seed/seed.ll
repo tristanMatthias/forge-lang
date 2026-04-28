@@ -1,5 +1,5 @@
-; seed built from commit 08d9e22b at 2026-04-28T16:20:29Z
-; source hash: f1e93b0700baf0d01dfcc4eb87f4319daa8746ea6472eb7afaed0716e913aa04
+; seed built from commit 8bf236f5 at 2026-04-28T17:04:55Z
+; source hash: af41302259c3d2fba787df4f8fc16de28e558ef8a92e9e824e97f7e86f8031f7
 ; ModuleID = 'bootstrap'
 source_filename = "bootstrap"
 
@@ -13940,7 +13940,7 @@ source_filename = "bootstrap"
 @mu_file.13588 = private unnamed_addr constant [104 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/packages/avrac/src/main.av\00", align 1
 @.str.13589 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
 @.str.13590 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.13591 = private unnamed_addr constant [11 x i8] c"forge.toml\00", align 1
+@.str.13591 = private unnamed_addr constant [10 x i8] c"avra.toml\00", align 1
 @.str.13592 = private unnamed_addr constant [8 x i8] c"package\00", align 1
 @.str.13593 = private unnamed_addr constant [8 x i8] c"package\00", align 1
 @.str.13594 = private unnamed_addr constant [5 x i8] c"name\00", align 1

@@ -27,7 +27,7 @@ spec "std string" {
         "Hello, World!".index_of("xyz") == -1
     }
     then "replace" {
-        "Hello, World!".replace("World", "Forge") == "Hello, Forge!"
+        "Hello, World!".replace("World", "Avra") == "Hello, Avra!"
     }
     then "trim" {
         "  spaced  ".trim() == "spaced"

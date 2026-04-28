@@ -8,7 +8,7 @@ fn main() {
     let path = "/tmp/avra_std_io_test.txt"
 
     // Write
-    let ok = avra_file_write(path, "hello forge\nline two")
+    let ok = avra_file_write(path, "hello avra\nline two")
     println(string(ok))
 
     // Exists

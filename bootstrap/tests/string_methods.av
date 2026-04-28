@@ -6,7 +6,7 @@ println(string(s.starts_with("hello")))
 println(string(s.ends_with("world")))
 println(string(s.index_of("world")))
 
-let r = s.replace("world", "forge")
+let r = s.replace("world", "avra")
 println(r)
 
 let t = "  spaces  ".trim()
