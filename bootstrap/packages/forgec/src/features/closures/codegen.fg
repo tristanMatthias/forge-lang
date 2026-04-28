@@ -12,7 +12,7 @@
 // For non-capturing lambdas (the common case), the closure value
 // is just the function pointer with a null environment.
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, WhenArmList, VarEnv, env_lookup, param_list_length, expr_list_length, ValueType, TypeList, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, vtype_is_unknown}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, WhenArmList, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length, ValueType, TypeList, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, vtype_is_unknown}
 use codegen.types.{Ctx, EmitValue, err_emit, null_ptr_val, ok_emit}
 use codegen.{emit_expr}
 use codegen.escape.{analyze_releasable_expr}
@@ -21,13 +21,13 @@ use codegen.escape.{analyze_releasable_expr}
 
 enum CaptureList {
     End,
-    Node(name: string, alloca: ptr, ty: ValueType, next: CaptureList),
+    Node(name: string, alloca: ptr, ty: ValueType, is_mut: bool, next: CaptureList),
 }
 
 fn capture_list_len(list: CaptureList) -> int {
     match list {
         .End -> 0
-        .Node(_, _, _, next) -> 1 + capture_list_len(next)
+        .Node(_, _, _, _, next) -> 1 + capture_list_len(next)
     }
 }
 
@@ -42,8 +42,62 @@ fn is_param(params: ParamList, name: string) -> bool {
 fn is_captured(captures: CaptureList, name: string) -> bool {
     match captures {
         .End -> false
-        .Node(cname, _, _, _) if cname == name -> true
-        .Node(_, _, _, next) -> is_captured(next, name)
+        .Node(cname, _, _, _, _) if cname == name -> true
+        .Node(_, _, _, _, next) -> is_captured(next, name)
+    }
+}
+
+// Check if an expression assigns to a given variable name.
+fn expr_assigns(expr: Expr, target: string) -> bool {
+    match expr {
+        .Assign(name, val) -> name == target || expr_assigns(val, target)
+        .Binary(l, _, r) -> expr_assigns(l, target) || expr_assigns(r, target)
+        .Unary(_, r) -> expr_assigns(r, target)
+        .Logical(l, _, r) -> expr_assigns(l, target) || expr_assigns(r, target)
+        .Grouping(inner) -> expr_assigns(inner, target)
+        .Call(callee, args) -> expr_assigns(callee, target) || expr_list_assigns(args, target)
+        .Block(body) -> stmt_list_assigns(body, target)
+        .IfExpr(c, t, e) -> expr_assigns(c, target) || expr_assigns(t, target) || expr_assigns(e, target)
+        .Lambda(_, body) -> expr_assigns(body, target)
+        _ -> false
+    }
+}
+
+fn expr_list_assigns(list: ExprList, target: string) -> bool {
+    match list {
+        .End -> false
+        .Node(se, next) -> expr_assigns(se.node, target) || expr_list_assigns(next, target)
+    }
+}
+
+fn stmt_list_assigns(stmts: StmtList, target: string) -> bool {
+    match stmts {
+        .End -> false
+        .Node(ss, next) -> stmt_assigns(ss.node, target) || stmt_list_assigns(next, target)
+    }
+}
+
+fn stmt_assigns(stmt: Stmt, target: string) -> bool {
+    match stmt {
+        .Expr(e) -> expr_assigns(e, target)
+        .Return(e) -> expr_assigns(e, target)
+        .Block(body) -> stmt_list_assigns(body, target)
+        .If(c, t, e) -> expr_assigns(c, target) || stmt_assigns(t, target) || (if e != null { stmt_assigns(e!, target) } else { false })
+        .While(c, body) -> expr_assigns(c, target) || stmt_assigns(body, target)
+        .For(_, s, e, body) -> expr_assigns(s, target) || expr_assigns(e, target) || stmt_assigns(body, target)
+        .ForIn(_, coll, body) -> expr_assigns(coll, target) || stmt_assigns(body, target)
+        _ -> false
+    }
+}
+
+// Mark captures as mutable if the lambda body assigns to them.
+fn mark_mutable_captures(captures: CaptureList, body: Expr) -> CaptureList {
+    match captures {
+        .End -> .End
+        .Node(name, alloca, ty, _, next) -> {
+            let is_mut = expr_assigns(body, name)
+            CaptureList.Node(name, alloca, ty, is_mut, mark_mutable_captures(next, body))
+        }
     }
 }
 
@@ -54,7 +108,7 @@ fn find_captures(expr: Expr, params: ParamList, env: VarEnv, captures: CaptureLi
             if is_captured(captures, name) { return captures }
             let lookup = env_lookup(env, name)
             if !lookup.found { return captures }
-            CaptureList.Node(name, lookup.alloca, lookup.ty, captures)
+            CaptureList.Node(name, lookup.alloca, lookup.ty, false, captures)
         }
         .Binary(left, _, right) -> {
             let c1 = find_captures(left, params, env, captures)
@@ -253,8 +307,8 @@ fn env_type_of(ctx: Ctx, env: VarEnv, name: string) -> ValueType {
 fn capture_type_of(captures: CaptureList, name: string) -> ValueType {
     match captures {
         .End -> ValueType.Unknown
-        .Node(cname, _, ty, _) if cname == name -> ty
-        .Node(_, _, _, next) -> capture_type_of(next, name)
+        .Node(cname, _, ty, _, _) if cname == name -> ty
+        .Node(_, _, _, _, next) -> capture_type_of(next, name)
     }
 }
 
@@ -381,8 +435,10 @@ export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, raw_params: ParamList, body: 
     let name = "__lambda_${string(id)}"
     let params = ctx.resolve_params(raw_params)
 
-    // Detect captured variables from the enclosing scope
-    let captures = find_captures(body, params, env, CaptureList.End)
+    // Detect captured variables from the enclosing scope.
+    // Mark captures as mutable if the lambda body assigns to them.
+    let raw_captures = find_captures(body, params, env, CaptureList.End)
+    let captures = mark_mutable_captures(raw_captures, body)
     let num_captures = capture_list_len(captures)
     let num_declared = param_list_length(params)
     let arity = num_declared + num_captures
@@ -447,9 +503,17 @@ export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, raw_params: ParamList, body: 
 fn bind_captures_as_params(ctx: Ctx, env: VarEnv, captures: CaptureList, fn_val: ptr, idx: int) -> VarEnv {
     match captures {
         .End -> env
-        .Node(name, _, ty, next) -> {
+        .Node(name, _, ty, is_mut_cap, next) -> {
             let param_val = ctx.get_param(fn_val, idx)
-            bind_captures_as_params(ctx, ctx.bind(env, name, param_val, ty), next, fn_val, idx + 1)
+            let new_env = if is_mut_cap {
+                // Mutable capture: param is an alloca POINTER — use directly
+                let alloca = ctx.int_to_ptr(param_val, "cap_alloca")
+                env_extend(env, name, alloca, ty)
+            } else {
+                // Immutable capture: param is a value — create local alloca
+                ctx.bind(env, name, param_val, ty)
+            }
+            bind_captures_as_params(ctx, new_env, next, fn_val, idx + 1)
         }
     }
 }
@@ -457,9 +521,16 @@ fn bind_captures_as_params(ctx: Ctx, env: VarEnv, captures: CaptureList, fn_val:
 fn push_captured_values(ctx: Ctx, captures: CaptureList, arr: ptr) {
     match captures {
         .End -> {}
-        .Node(_, alloca, _, next) -> {
-            let val = ctx.load_i64(alloca, "cap_val")
-            ctx.array_push(arr, val)
+        .Node(_, alloca, _, is_mut, next) -> {
+            if is_mut {
+                // Mutable capture: pass alloca POINTER so writes propagate
+                let ptr_val = ctx.to_i64(alloca, "cap_ptr")
+                ctx.array_push(arr, ptr_val)
+            } else {
+                // Immutable capture: pass current VALUE (copy)
+                let val = ctx.load_i64(alloca, "cap_val")
+                ctx.array_push(arr, val)
+            }
             push_captured_values(ctx, next, arr)
         }
     }
