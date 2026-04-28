@@ -10,6 +10,7 @@
 // operators compile to i64 null-check or enum-tag-check branches.
 
 use core.ast.{Expr, VarEnv, FieldList, field_index_of, ValueType, vtype_eq, vtype_is_unknown, vtype_is_str, vtype_struct_name, vtype_enum_name, variant_lookup}
+use core.type_registry.{is_result_enum_name, is_result_shaped_enum}
 use codegen.types.{Ctx, EmitValue, ok_emit, err_emit, field_resolved_at, vtype_is_ptr_type}
 use features.defer_stmt.codegen.{emit_defers_on_error}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
@@ -100,7 +101,7 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> Result<EmitValue, stri
     // ── Mode 1: Result enum (including monomorphized Result__T__E) ──
     // Check tag: Ok → extract payload value, Err → return Result.
     let enum_name = vtype_enum_name(r.ty)
-    if enum_name == "Result" || enum_name.starts_with("Result__") {
+    if is_result_shaped_enum(ctx.type_reg, enum_name) {
         let enum_ty = ctx.get_type(enum_name)
         let enum_ptr = ctx.to_ptr(r.value, "try_res_ptr")
         let tag_gep = ctx.gep(enum_ty, enum_ptr, 0, "try_tag_ptr")
@@ -217,7 +218,7 @@ export fn emit_catch(ctx: Ctx, env: VarEnv, inner: Expr, binding: string, body: 
 
     // Result enum: check tag, Ok → extract value, Err → evaluate catch body
     let enum_name = vtype_enum_name(r.ty)
-    if enum_name == "Result" || enum_name.starts_with("Result__") {
+    if is_result_shaped_enum(ctx.type_reg, enum_name) {
         let enum_ty = ctx.get_type(enum_name)
         let enum_ptr = ctx.to_ptr(r.value, "catch_res_ptr")
         let tag_gep = ctx.gep(enum_ty, enum_ptr, 0, "catch_tag_ptr")

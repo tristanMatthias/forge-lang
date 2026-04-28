@@ -158,3 +158,42 @@ export fn method_from_mangled(name: string) -> string {
 export fn trait_impl_name(trait_name: string, type_name: string) -> string {
     "${trait_name}:${type_name}"
 }
+
+// True when `name` refers to the Result enum, accepting any of:
+//   "Result"                       — unqualified, non-monomorphized
+//   "Result__int__string"          — unqualified, monomorphized
+//   "<module>::Result"             — qualified, non-monomorphized
+//   "<module>::Result__int__string" — qualified, monomorphized
+// Used by `?` operator codegen and Try expression typecheck so that
+// any Result-shaped enum (regardless of module wrap) is recognized.
+//
+// For user-defined Result-shaped enums (e.g. `enum MyResult { Ok(value: T), Err(error: E) }`),
+// callers should use `is_result_shaped_enum` against the type registry.
+export fn is_result_enum_name(name: string) -> bool {
+    let short = type_short_name(name)
+    short == "Result" || short.starts_with("Result__")
+}
+
+// Structural check: an enum is Result-shaped when it has exactly the variants
+// `Ok(value)` and `Err(error)` (any payload types). This lets the `?` operator
+// and errdefer routing accept user-defined Result-likes (MyResult, TrResult, etc.).
+export fn is_result_shaped_enum(reg: TypeRegistry, enum_name: string) -> bool {
+    if is_result_enum_name(enum_name) { return true }
+    let id = type_registry_id_for(reg, enum_name)
+    if id == 0 { return false }
+    let raw = type_registry_lookup_raw(reg, id)
+    if raw == 0 { return false }
+    let info: TypeInfo = raw
+    match info.kind { .EnumKind -> {}, _ -> { return false } }
+    let ok = variant_list_has(info.variants, "Ok")
+    let err = variant_list_has(info.variants, "Err")
+    ok && err
+}
+
+fn variant_list_has(variants: VariantList, name: string) -> bool {
+    match variants {
+        .End -> false
+        .Node(n, _, _) if n == name -> true
+        .Node(_, _, next) -> variant_list_has(next, name)
+    }
+}

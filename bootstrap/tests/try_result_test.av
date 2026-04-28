@@ -5,11 +5,20 @@ fn tr_divide(a: int, b: int) -> TrResult {
     TrResult.Ok(a / b)
 }
 
-fn tr_chain(r: TrResult, fallback: int) -> int {
-    match r {
-        .Ok(v) -> v
-        .Err(_) -> fallback
-    }
+fn tr_compute_ok() -> TrResult {
+    let x = tr_divide(84, 2)?
+    TrResult.Ok(x)
+}
+
+fn tr_compute_fail() -> TrResult {
+    let x = tr_divide(10, 0)?
+    TrResult.Ok(x)
+}
+
+fn tr_chained() -> TrResult {
+    let a = tr_divide(200, 2)?
+    let b = tr_divide(a, 1)?
+    TrResult.Ok(b)
 }
 
 fn tr_describe(r: TrResult) -> string {
@@ -20,16 +29,13 @@ fn tr_describe(r: TrResult) -> string {
 }
 
 spec "try result" {
-    then "Ok branch carries the value" {
-        tr_describe(tr_divide(84, 2)) == "Ok:42"
+    then "Ok branch unwraps via ?" {
+        tr_describe(tr_compute_ok()) == "Ok:42"
     }
-    then "Err branch carries the message" {
-        tr_describe(tr_divide(10, 0)) == "Err:division by zero"
+    then "Err branch propagates via ?" {
+        tr_describe(tr_compute_fail()) == "Err:division by zero"
     }
-    then "match-based unwrap with fallback" {
-        tr_chain(tr_divide(84, 2), 0 - 1) == 42
-    }
-    then "match-based unwrap of Err returns fallback" {
-        tr_chain(tr_divide(10, 0), 0 - 1) == 0 - 1
+    then "chained ? operations preserve values" {
+        tr_describe(tr_chained()) == "Ok:100"
     }
 }

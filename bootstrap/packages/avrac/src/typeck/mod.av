@@ -11,7 +11,7 @@ use features.trait_decl.typeck.{check_trait_conformance, collect_method_names_fr
 use features.list_lit.typeck.{check_list_method}
 use features.map_lit.typeck.{check_map_method}
 use features.let_stmt.typeck.{is_const_expr}
-use core.type_registry.{method_mangled_name, type_short_name}
+use core.type_registry.{method_mangled_name, type_short_name, is_result_enum_name}
 
 // ── Type environment ──
 
@@ -115,7 +115,7 @@ export fn tc_catch_ok_type(tc: TC, inner: Expr) -> ValueType? {
     // Check if it's Result (Enum with type_args)
     match ret_ty {
         .Enum(name, args, _) -> {
-            if name != "Result" && !name.starts_with("Result__") { return null }
+            if !is_result_enum_name(name) { return null }
             // First type arg is the Ok type
             match args {
                 .Node(ok_ty, _) -> ok_ty
