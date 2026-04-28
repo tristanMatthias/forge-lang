@@ -1,0 +1,18 @@
+spec "typed lambda params" {
+    then "single typed param" {
+        let double = (x: int) -> x * 2
+        double(5) == 10
+    }
+    then "two typed params" {
+        let add = (a: int, b: int) -> a + b
+        add(3, 4) == 7
+    }
+    then "string-typed param" {
+        let greet = (name: string) -> "hi " + name
+        greet("avra") == "hi avra"
+    }
+    then "float-typed param" {
+        let area = (r: float) -> 3.14 * r * r
+        area(10.0) == 314.0
+    }
+}

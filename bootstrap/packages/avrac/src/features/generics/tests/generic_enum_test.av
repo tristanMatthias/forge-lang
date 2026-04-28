@@ -1,0 +1,27 @@
+enum GenOpt<T> {
+    None,
+    Some(value: T),
+}
+
+fn ge_show_int(opt: GenOpt) -> string {
+    match opt {
+        .None -> "none"
+        .Some(v) -> string(v)
+    }
+}
+
+fn ge_show_str(opt: GenOpt) -> string {
+    match opt {
+        .None -> "none"
+        .Some(v) -> v
+    }
+}
+
+spec "generic enum" {
+    then "Some(int) extracts int value" {
+        ge_show_int(GenOpt.Some(42)) == "42"
+    }
+    then "Some(string) extracts string value" {
+        ge_show_str(GenOpt.Some("hello")) == "hello"
+    }
+}

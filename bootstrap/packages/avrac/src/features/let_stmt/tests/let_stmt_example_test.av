@@ -1,0 +1,15 @@
+spec "let stmt example" {
+    then "let binding" {
+        let x = 42
+        x == 42
+    }
+    then "mut binding allows reassignment" {
+        mut y = 10
+        y = y + 5
+        y == 15
+    }
+    then "let string binding" {
+        let name = "avra"
+        name == "avra"
+    }
+}

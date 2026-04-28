@@ -1,6 +1,0 @@
-fn get_pair() {
-    (100, 200)
-}
-let (a, b) = get_pair()
-a |> string |> println
-b |> string |> println

@@ -1,9 +1,0 @@
-// Method chaining via string operations
-let s = "hello world"
-let sub = s.substring(0, 5)
-println(sub)
-sub.length |> string |> println
-
-// Chain length after substring
-let len = "abcdef".substring(1, 4).length
-len |> string |> println

@@ -1,0 +1,33 @@
+fn ex_g_identity<T>(x: T) -> T {
+    x
+}
+
+type ExGPair<A, B> = {
+    first: A,
+    second: B,
+}
+
+enum ExGOption<T> {
+    None,
+    Some(value: T),
+}
+
+fn ex_g_show_opt(opt: ExGOption) -> string {
+    match opt {
+        .None -> string(0)
+        .Some(v) -> string(v)
+    }
+}
+
+spec "generics example" {
+    then "identity inferred from int arg" {
+        ex_g_identity(42) == 42
+    }
+    then "Pair fields sum" {
+        let p = ExGPair { first: 10, second: 20 }
+        p.first + p.second == 30
+    }
+    then "Option.Some(99) unwraps to 99" {
+        ex_g_show_opt(ExGOption.Some(99)) == "99"
+    }
+}

@@ -1,0 +1,19 @@
+type ExSdPoint = {
+    x: int,
+    y: int,
+}
+
+spec "struct decl example" {
+    then "Point.x access" {
+        let p = ExSdPoint { x: 3, y: 4 }
+        p.x == 3
+    }
+    then "Point.y access" {
+        let p = ExSdPoint { x: 3, y: 4 }
+        p.y == 4
+    }
+    then "field arithmetic on struct" {
+        let p = ExSdPoint { x: 3, y: 4 }
+        p.x + p.y == 7
+    }
+}

@@ -9,14 +9,14 @@
 #
 # Quick reference:
 #   make              build the bootstrap compiler
-#   make test         run the full safety net (regression + fixed point)
+#   make test         run the full safety net (spec tests + fixed point)
 #   make run FILE=x   compile and run a Avra program
 #   make update-seed  rebuild seed IR from current source (after dogfooding)
 #   make clean        remove all build artifacts
 #   make help         show this list
 
 .DEFAULT_GOAL := build
-.PHONY: build build-O0 build-debug test run selfhost clean help install-hooks regress score update-seed seed-patch verify-seed seed-sigs next work epic coverage
+.PHONY: build build-O0 build-debug test run selfhost clean help install-hooks score update-seed seed-patch verify-seed seed-sigs next work epic coverage
 
 SRC_DIR := packages/avrac/src
 BS2 := build/bs2
@@ -27,10 +27,9 @@ help:
 	@echo ""
 	@echo "  make build         Build the bootstrap compiler (default)."
 	@echo "  make build-O0      Build at -O0 for lldb debugging (build/bs2_O0)."
-	@echo "  make test          Run regression suite + self-host fixed-point check."
+	@echo "  make test          Run spec tests + self-host fixed-point check."
 	@echo "  make run FILE=x.av Compile and run a Avra program."
 	@echo "  make selfhost      Verify bs2 and bs3 emit byte-identical IR."
-	@echo "  make regress       Run regression suite only (faster than 'test')."
 	@echo "  make update-seed   Rebuild seed/seed.ll from current source (with verify)."
 	@echo "  make seed-patch    Incremental seed update with per-function diff report."
 	@echo "  make verify-seed   Verify bootstrap chain (no auto-cycle on failure)."
@@ -82,14 +81,8 @@ build-debug:
 
 # Full safety net: test suite + fixed-point invariant.
 test:
-	@$(DIAG) --regress
 	@$(BS2) test
 	@$(DIAG) --check-fixedpoint
-
-# Just the test suite — faster, useful while iterating.
-regress:
-	@$(DIAG) --regress
-	@$(BS2) test
 
 # Just the fixed-point check.
 selfhost:

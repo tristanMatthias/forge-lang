@@ -1,0 +1,29 @@
+enum IlmBox { Val(n: int) }
+
+fn ilm_apply(b: IlmBox, f: fn(IlmBox) -> int) -> int { f(b) }
+
+enum IlmExpr { Num(value: int), Add(left: IlmExpr, right: IlmExpr) }
+
+fn ilm_map_expr(expr: IlmExpr, f: fn(IlmExpr) -> IlmExpr) -> IlmExpr {
+    let mapped = match expr {
+        .Num(_) -> expr
+        .Add(l, r) -> IlmExpr.Add(ilm_map_expr(l, f), ilm_map_expr(r, f))
+    }
+    f(mapped)
+}
+
+fn ilm_eval(expr: IlmExpr) -> int {
+    match expr { .Num(v) -> v, .Add(l, r) -> ilm_eval(l) + ilm_eval(r) }
+}
+
+spec "inline lambda match" {
+    then "inline lambda destructures enum payload" {
+        ilm_apply(IlmBox.Val(21), (b: IlmBox) -> match b { .Val(n) -> n * 2, _ -> 0 }) == 42
+    }
+    then "inline lambda used by recursive higher-order mapper" {
+        let factor = 3
+        let tree = IlmExpr.Add(IlmExpr.Num(1), IlmExpr.Add(IlmExpr.Num(2), IlmExpr.Num(3)))
+        let scaled = ilm_map_expr(tree, (e: IlmExpr) -> match e { .Num(v) -> IlmExpr.Num(v * factor), _ -> e })
+        ilm_eval(scaled) == 18
+    }
+}

@@ -1,0 +1,14 @@
+extern fn avra_file_write(path: string, content: string) -> int
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn wce_run() -> string {
+    let src = "trait Printable {\n    fn show(self) -> string\n}\n\nfn display<T: Printable>(x: T) -> string {\n    x.show()\n}\n\ntype Plain = { value: int }\n\nfn entry() {\n    let p = Plain { value: 42 }\n    println(display(p))\n}\n"
+    avra_file_write("/tmp/_wce_compile_test.av", src)
+    avra_shell_exec("./build/bs2 compile /tmp/_wce_compile_test.av 2>&1 || true")
+}
+
+spec "where clause error" {
+    then "type without trait impl reports `does not implement trait`" {
+        wce_run().contains("does not implement trait")
+    }
+}

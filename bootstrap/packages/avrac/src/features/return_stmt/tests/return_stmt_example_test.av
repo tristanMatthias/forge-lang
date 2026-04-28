@@ -1,0 +1,17 @@
+fn ex_rs_early_return(n: int) -> string {
+    if n < 0 { return "negative" }
+    if n == 0 { return "zero" }
+    "positive"
+}
+
+spec "return stmt example" {
+    then "early return on negative" {
+        ex_rs_early_return(0 - 5) == "negative"
+    }
+    then "early return on zero" {
+        ex_rs_early_return(0) == "zero"
+    }
+    then "fall-through to positive" {
+        ex_rs_early_return(42) == "positive"
+    }
+}

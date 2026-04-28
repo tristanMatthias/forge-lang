@@ -1,6 +1,0 @@
-let outer = ((1, 2), (3, 4))
-let (a, b) = outer.0
-a |> string |> println
-b |> string |> println
-let (c, d) = outer.1
-println(string(c + d))

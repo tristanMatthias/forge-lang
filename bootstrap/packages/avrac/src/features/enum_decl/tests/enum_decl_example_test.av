@@ -1,0 +1,20 @@
+enum ExEdOption {
+    Some(value: int)
+    None
+}
+
+fn ex_unwrap_or(opt: ExEdOption, default: int) -> int {
+    match opt {
+        .Some(v) -> v
+        .None -> default
+    }
+}
+
+spec "enum decl example" {
+    then "Some(42) unwraps to 42" {
+        ex_unwrap_or(ExEdOption.Some(42), 0) == 42
+    }
+    then "None falls back to default" {
+        ex_unwrap_or(ExEdOption.None, 0 - 1) == 0 - 1
+    }
+}

@@ -1,0 +1,24 @@
+fn ex_fs_basic_output() -> string {
+    avra_test_capture_start()
+    for i in 0..5 {
+        i |> string |> println
+    }
+    avra_test_capture_stop()
+}
+
+fn ex_fs_sum_to(n: int) -> int {
+    mut sum = 0
+    for j in 1..n + 1 {
+        sum = sum + j
+    }
+    sum
+}
+
+spec "for stmt example" {
+    then "0..5 iterates and prints in order" {
+        ex_fs_basic_output() == "0\n1\n2\n3\n4"
+    }
+    then "computed-bounds for loop sums correctly" {
+        ex_fs_sum_to(3) == 6
+    }
+}

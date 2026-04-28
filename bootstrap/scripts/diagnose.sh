@@ -16,7 +16,6 @@ BOOTSTRAP_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 REPO_DIR=$(CDPATH= cd -- "$BOOTSTRAP_DIR/.." && pwd)
 FORGE_DIR="$REPO_DIR/avra"
 BUILD_DIR="$BOOTSTRAP_DIR/build"
-REGRESS_DIR="$BOOTSTRAP_DIR/tests"
 SEED_LL="$BOOTSTRAP_DIR/seed/seed.ll"
 SEED_BIN="$BUILD_DIR/seed"
 RUNTIME_C="$BOOTSTRAP_DIR/runtime.c"
@@ -112,16 +111,6 @@ DIFF & ANALYSIS
   --rank   <file.av>   Rank functions in <file.av>'s emitted IR by line
                        count — useful for spotting bloat.
 
-REGRESSION SUITE
-  --regress            Compile + run every regress/*.av with bs2 and
-                       compare stdout against the matching .out file.
-                       Exit non-zero on any mismatch. Run before commit.
-  --regress-add <name> <file.av>
-                       Capture <file.av> as a regression test under
-                       regress/<name>.av, with bs2's current stdout
-                       saved as regress/<name>.out.
-  --regress-list       List all captured regression tests.
-
 HEAP / MEMORY DEBUGGING
   --asan   <file.av>   Run bs2_asan on <file.av>. AddressSanitizer
                        reports the exact alloc/use-after-free site.
@@ -173,8 +162,6 @@ EXAMPLES
   diagnose.sh --run /tmp/hello.av   # run a .av file with bs2
   diagnose.sh --diff /tmp/hello.av  # see how stage1 and bs2 diverge
   diagnose.sh --asan /tmp/big.av    # find heap corruption with ASan
-  diagnose.sh --regress             # run regression suite
-  diagnose.sh --regress-add hello /tmp/hello.av
   diagnose.sh --seed-patch            # incremental seed update with diff report
 EOF
 }
@@ -840,191 +827,6 @@ mode_rank() {
   ' "$ll" | sort -rn | head -40
 }
 
-# ─────────────────────────────────────────────────────────────────────
-# Regression suite
-# ─────────────────────────────────────────────────────────────────────
-
-mode_regress() {
-  ensure_bs2
-  shopt -s nullglob
-
-  # Build the test list
-  local test_specs=()
-  for fg in "$SRC_DIR"/features/*/tests/*.av; do
-    test_specs+=("$fg")
-  done
-  for fg in "$SRC_DIR"/features/*/example.av; do
-    [ -f "$(dirname "$fg")/expected.out" ] && test_specs+=("$fg")
-  done
-  for fg in "$REGRESS_DIR"/*.av; do
-    test_specs+=("$fg")
-  done
-  for d in "$REGRESS_DIR"/*/; do
-    if [ -f "${d}main.av" ]; then
-      test_specs+=("${d}main.av")
-    fi
-  done
-
-  # Phase 1: Compile all tests with bs2 (sequential — fast, <1ms each)
-  local names=() expecteds=() fgs=() bins=() slugs=()
-  for fg in "${test_specs[@]}"; do
-    local name expected slug
-    if [[ "$fg" == */main.av ]]; then
-      local expected_dir; expected_dir=$(dirname "$fg")
-      name=$(basename "$expected_dir")
-      expected="$expected_dir/expected.out"
-    elif [[ "$fg" == */example.av ]]; then
-      local feat_dir; feat_dir=$(dirname "$fg")
-      name=$(basename "$feat_dir")
-      expected="$feat_dir/expected.out"
-    else
-      name=$(basename "$fg" .av)
-      expected="$(dirname "$fg")/$name.out"
-    fi
-    local err_file="${expected%.out}.err"
-    [ -f "$expected" ] || [ -f "$err_file" ] || continue
-    slug=$(echo "$fg" | sed 's|[/.]|_|g')
-    names+=("$name")
-    expecteds+=("$expected")
-    fgs+=("$fg")
-    bins+=("$BUILD_DIR/regress_${slug}.bin")
-    slugs+=("$slug")
-  done
-
-  # Compile all .av → .ll (sequential — bs2 is fast)
-  local compile_ok=()
-  for i in "${!fgs[@]}"; do
-    if "$BS2" compile "${fgs[$i]}" >"$BUILD_DIR/regress_${slugs[$i]}.codegen.log" 2>&1; then
-      compile_ok+=("1")
-    else
-      compile_ok+=("0")
-    fi
-  done
-
-  # Phase 2: Link + run in parallel (this is the slow part)
-  local results_dir="$BUILD_DIR/_regress_results"
-  rm -rf "$results_dir"
-  mkdir -p "$results_dir"
-
-  link_and_run() {
-    local fg="$1" bin="$2" expected="$3" slug="$4" compiled="$5" results_dir="$6"
-
-    # Error tests: expected.err contains an error code that must appear
-    # in the compilation output. Compilation should FAIL.
-    local err_expected="${expected%.out}.err"
-    if [ -f "$err_expected" ]; then
-      if [ "$compiled" = "1" ]; then
-        echo "FAIL expected compilation error but it succeeded" > "$results_dir/$slug"; return
-      fi
-      local error_code; error_code=$(cat "$err_expected" | tr -d '[:space:]')
-      local codegen_log="$BUILD_DIR/regress_${slug}.codegen.log"
-      if grep -q "$error_code" "$codegen_log" 2>/dev/null; then
-        echo "PASS" > "$results_dir/$slug"
-      else
-        echo "FAIL expected error $error_code not found in output" > "$results_dir/$slug"
-      fi
-      return
-    fi
-
-    # Normal tests: compile, link, run, compare output
-    if [ "$compiled" != "1" ]; then
-      echo "FAIL codegen failed" > "$results_dir/$slug"; return
-    fi
-    if ! link_ll "$fg.ll" "$bin" "$BUILD_DIR/regress_${slug}.link.log" 2>/dev/null; then
-      echo "FAIL link failed" > "$results_dir/$slug"; return
-    fi
-    local actual
-    actual=$("$bin" 2>&1) || true
-    if [ "$actual" = "$(cat "$expected")" ]; then
-      echo "PASS" > "$results_dir/$slug"
-    else
-      echo "FAIL output mismatch" > "$results_dir/$slug"
-    fi
-  }
-  export -f link_and_run link_ll
-  export BUILD_DIR LLC RUNTIME_O LLVM_WRAPPER_O LLVM_PREFIX
-
-  local njobs
-  njobs=$(sysctl -n hw.logicalcpu 2>/dev/null || nproc 2>/dev/null || echo 4)
-
-  # Link + run tests in parallel with controlled concurrency (njobs at a time).
-  # Each test compiles to a unique path so there is no clobbering.
-  local running=0
-  for i in "${!fgs[@]}"; do
-    link_and_run "${fgs[$i]}" "${bins[$i]}" "${expecteds[$i]}" "${slugs[$i]}" "${compile_ok[$i]}" "${results_dir}" &
-    running=$((running + 1))
-    if [ "$running" -ge "$njobs" ]; then
-      wait -n 2>/dev/null || wait
-      running=$((running - 1))
-    fi
-  done
-  wait
-
-  # Phase 3: Collect results
-  local pass=0 fail=0 idx=0
-  for i in "${!slugs[@]}"; do
-    local result_file="$results_dir/${slugs[$i]}"
-    if [ ! -f "$result_file" ]; then
-      err "${names[$i]}: no result"
-      fail=$((fail+1))
-      continue
-    fi
-    local result
-    result=$(cat "$result_file")
-    case "$result" in
-      PASS) ok "${names[$i]}"; pass=$((pass+1)) ;;
-      FAIL*) err "${names[$i]}: ${result#FAIL }"; fail=$((fail+1)) ;;
-    esac
-  done
-  rm -rf "$results_dir"
-  echo
-  printf "regress: ${C_GREEN}%d passed${C_RESET}, ${C_RED}%d failed${C_RESET}\n" "$pass" "$fail"
-  [ "$fail" -eq 0 ]
-}
-
-mode_regress_add() {
-  local name="$1" fg="$2" dest_dir="${3:-$BOOTSTRAP_DIR/tests}"
-  [ -n "$name" ] || die "--regress-add requires <name> <file.av> [dest_dir]"
-  [ -f "$fg" ] || die "no such file: $fg"
-  ensure_bs2
-  mkdir -p "$dest_dir"
-  local stage="$BUILD_DIR/_capture_$name.av"
-  cp "$fg" "$stage"
-  log "compiling with bs2 to capture expected output"
-  if ! "$BS2" compile "$stage" >/dev/null 2>&1; then
-    rm -f "$stage" "$stage.ll"
-    die "bs2 codegen failed — fix the codegen first"
-  fi
-  local bin="$BUILD_DIR/regress_$name.bin"
-  if ! link_ll "$stage.ll" "$bin" "$BUILD_DIR/_capture.link.log" 2>/dev/null; then
-    rm -f "$stage" "$stage.ll"
-    die "link failed"
-  fi
-  local out
-  out=$("$bin" 2>&1) || true
-  cp "$fg" "$dest_dir/$name.av"
-  printf '%s\n' "$out" >"$dest_dir/$name.out"
-  rm -f "$stage" "$stage.ll" "$bin"
-  ok "captured: $dest_dir/$name.av + $dest_dir/$name.out"
-  echo "expected output:"
-  sed 's/^/    /' "$dest_dir/$name.out"
-}
-
-mode_regress_list() {
-  shopt -s nullglob
-  echo "Feature tests:"
-  for fg in "$SRC_DIR"/features/*/tests/*.av; do
-    printf "  %s/%s\n" "$(basename "$(dirname "$(dirname "$fg")")")" "$(basename "$fg" .av)"
-  done
-  echo "Core tests:"
-  for fg in "$BOOTSTRAP_DIR"/tests/*.av; do
-    printf "  %s\n" "$(basename "$fg" .av)"
-  done
-  echo "Legacy fixtures:"
-  for d in "$REGRESS_DIR"/*/; do
-    [ -f "${d}main.av" ] && printf "  %s\n" "$(basename "$d")"
-  done
-}
 
 # ─────────────────────────────────────────────────────────────────────
 # Heap / memory debugging
@@ -1115,9 +917,6 @@ main() {
     --diff-fn)            mode_diff_fn "$@" ;;
     --score)              mode_score "$@" ;;
     --rank)               mode_rank "$@" ;;
-    --regress)            mode_regress "$@" ;;
-    --regress-add)        mode_regress_add "$@" ;;
-    --regress-list)       mode_regress_list "$@" ;;
     --asan)               mode_asan "$@" ;;
     --malloc-trace)       mode_malloc_trace "$@" ;;
     --bisect-lines)       mode_bisect_lines "$@" ;;

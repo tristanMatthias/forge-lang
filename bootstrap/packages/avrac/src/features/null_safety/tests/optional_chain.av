@@ -1,9 +1,0 @@
-type Point = { x: int, y: int }
-
-let p = Point { x: 10, y: 20 }
-let px = p?.x
-px |> string |> println
-
-let n: ptr = null
-let nx = n?.x
-nx |> string |> println

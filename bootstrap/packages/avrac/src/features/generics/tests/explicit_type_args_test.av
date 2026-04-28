@@ -1,0 +1,22 @@
+fn eta_identity<T>(x: T) -> T { x }
+fn eta_first<A, B>(a: A, b: B) -> A { a }
+
+spec "explicit type args" {
+    then "explicit int type arg via inferred call" {
+        eta_identity(42) == 42
+    }
+    then "explicit string type arg via inferred call" {
+        eta_identity("hello") == "hello"
+    }
+    then "comparison still works alongside generic call" {
+        let a = 3
+        let b = 5
+        a < b
+    }
+    then "two-type-param call inferred from args" {
+        eta_first(10, "ignored") == 10
+    }
+    then "generic call as operand in arithmetic" {
+        eta_identity(1) + 0 == 1
+    }
+}

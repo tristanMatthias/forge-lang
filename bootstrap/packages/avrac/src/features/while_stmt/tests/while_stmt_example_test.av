@@ -1,0 +1,30 @@
+fn ex_ws_loop_with_break_and_continue() -> int {
+    mut sum = 0
+    mut i = 0
+    while i < 10 {
+        i = i + 1
+        if i == 3 { continue }
+        if i == 7 { break }
+        sum = sum + i
+    }
+    sum
+}
+
+fn ex_ws_break_index() -> int {
+    mut i = 0
+    while i < 10 {
+        i = i + 1
+        if i == 3 { continue }
+        if i == 7 { break }
+    }
+    i
+}
+
+spec "while stmt example" {
+    then "while sum skipping i==3 and breaking at i==7 yields 18" {
+        ex_ws_loop_with_break_and_continue() == 18
+    }
+    then "loop variable stops at break" {
+        ex_ws_break_index() == 7
+    }
+}

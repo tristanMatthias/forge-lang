@@ -1,0 +1,38 @@
+fn ex_ut_show(val: int | string) -> string {
+    match val {
+        int(n) -> string(n)
+        string(s) -> s
+    }
+}
+
+fn ex_ut_describe(val: int | string) -> string {
+    match val {
+        int(n) -> "int value: " + string(n)
+        string(s) -> "string value: " + s
+    }
+}
+
+fn ex_ut_with_wildcard(val: int | string) -> string {
+    match val {
+        int(n) -> "got int: " + string(n)
+        _ -> "matched wildcard"
+    }
+}
+
+spec "union type example" {
+    then "show string branch" {
+        ex_ut_show("hello") == "hello"
+    }
+    then "show int branch" {
+        ex_ut_show(42) == "42"
+    }
+    then "describe int branch" {
+        ex_ut_describe(10) == "int value: 10"
+    }
+    then "describe string branch" {
+        ex_ut_describe("world") == "string value: world"
+    }
+    then "wildcard catches string branch" {
+        ex_ut_with_wildcard("anything") == "matched wildcard"
+    }
+}

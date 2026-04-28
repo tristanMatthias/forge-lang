@@ -1,0 +1,8 @@
+extern fn avra_shell_exec(cmd: string) -> string
+
+spec "err module not found" {
+    then "F3100 reported when mod target file doesn't exist" {
+        let out = avra_shell_exec("./build/bs2 compile tests/err_module_not_found/main.av 2>&1 || true")
+        out.contains("F3100")
+    }
+}

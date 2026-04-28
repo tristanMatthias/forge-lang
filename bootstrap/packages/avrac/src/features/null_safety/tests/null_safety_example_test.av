@@ -1,0 +1,17 @@
+spec "null safety example" {
+    then "null coalesce uses fallback when left is null" {
+        let x: ptr = null
+        let y = x ?? 42
+        y == 42
+    }
+    then "null coalesce keeps non-null left value" {
+        let z = 10 ?? 99
+        z == 10
+    }
+    then "chained null coalesce skips nulls" {
+        let a: ptr = null
+        let b: ptr = null
+        let c = a ?? b ?? 7
+        c == 7
+    }
+}

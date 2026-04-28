@@ -1,9 +1,0 @@
-// Type annotations on variables
-let x: int = 42
-let s: string = "hello"
-let b: bool = true
-let p: ptr = null
-x |> string |> println
-println(s)
-b |> string |> println
-println(string(p ?? 0))

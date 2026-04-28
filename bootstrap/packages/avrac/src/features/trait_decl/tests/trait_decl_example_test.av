@@ -1,0 +1,30 @@
+trait ExTdPrintable {
+    fn display(self) -> string
+}
+
+type ExTdDog = { name: string }
+
+impl ExTdPrintable for ExTdDog {
+    fn display(self) -> string {
+        self.name
+    }
+}
+
+type ExTdCat = { name: string }
+
+impl ExTdPrintable for ExTdCat {
+    fn display(self) -> string {
+        "meow from ${self.name}"
+    }
+}
+
+spec "trait decl example" {
+    then "Dog displays its name" {
+        let d = ExTdDog { name: "Rex" }
+        d.display() == "Rex"
+    }
+    then "Cat overrides display formatting" {
+        let c = ExTdCat { name: "Whiskers" }
+        c.display() == "meow from Whiskers"
+    }
+}

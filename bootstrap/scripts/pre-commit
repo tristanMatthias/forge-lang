@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Bootstrap pre-commit hook.
 #
-# Runs the bootstrap regression suite when any staged file is under
+# Runs the bootstrap spec test suite when any staged file is under
 # bootstrap/ or affects bootstrap's build inputs (avra/stdlib/runtime.c,
 # bootstrap/llvm_wrapper.c). Skips otherwise so commits in unrelated
 # parts of the repo aren't slowed down.
@@ -17,7 +17,7 @@ cd "$REPO_DIR"
 # Files staged in this commit.
 staged=$(git diff --cached --name-only --diff-filter=ACMR)
 
-# Trigger the regression suite for any bootstrap-affecting change.
+# Trigger the spec test suite for any bootstrap-affecting change.
 relevant=$(echo "$staged" | grep -E '^(bootstrap/|avra/stdlib/runtime\.c|bootstrap/llvm_wrapper.c)' || true)
 if [ -z "$relevant" ]; then
   exit 0
@@ -25,17 +25,17 @@ fi
 
 # Trigger the (heavier) self-host fixed-point check only when the
 # bootstrap source itself or its build inputs change. Touching just
-# regression test files or scripts doesn't require it.
+# test files or scripts doesn't require it.
 src_relevant=$(echo "$staged" | grep -E '^(bootstrap/packages/avrac/src/|avra/stdlib/runtime\.c|bootstrap/llvm_wrapper.c)' || true)
 
-echo "[pre-commit] bootstrap-affecting changes detected — running regression suite"
-if ! bootstrap/scripts/diagnose.sh --regress; then
+echo "[pre-commit] bootstrap-affecting changes detected — running spec test suite"
+if ! ( cd bootstrap && ./build/bs2 test ); then
   echo
-  echo "[pre-commit] regression suite failed — commit blocked"
+  echo "[pre-commit] spec test suite failed — commit blocked"
   echo "[pre-commit] fix the regression, or 'git commit --no-verify' to bypass"
   exit 1
 fi
-echo "[pre-commit] regression suite passed"
+echo "[pre-commit] spec test suite passed"
 
 if [ -n "$src_relevant" ]; then
   echo "[pre-commit] bootstrap source touched — verifying self-host fixed point"
