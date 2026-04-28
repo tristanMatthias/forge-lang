@@ -3,6 +3,7 @@ mod codegen
 use features.eval.{error_result, ok_result, value_null}
 use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr, resolve_stmt_list}
+use typeck.{check_expr, check_stmt}
 use features.spec_test.codegen.{spec_emit_stmt}
 
 export fn spec_feature() -> Feature {
@@ -31,6 +32,34 @@ export fn then_feature() -> Feature {
         emit_stmt: spec_emit_stmt,
         resolve_stmt: then_resolve_stmt,
         eval_stmt: then_eval_stmt,
+    }
+}
+
+fn check_stmt_list(tc: TC, stmts: StmtList) -> TC {
+    match stmts {
+        .End -> tc
+        .Node(ss, next) -> check_stmt_list(check_stmt(tc, ss.node), next)
+    }
+}
+
+fn spec_check_stmt(tc: TC, stmt: Stmt) -> TC {
+    match stmt {
+        .SpecBlock(_, body) -> check_stmt_list(tc, body)
+        _ -> tc
+    }
+}
+
+fn given_check_stmt(tc: TC, stmt: Stmt) -> TC {
+    match stmt {
+        .GivenBlock(_, body) -> check_stmt_list(tc, body)
+        _ -> tc
+    }
+}
+
+fn then_check_stmt(tc: TC, stmt: Stmt) -> TC {
+    match stmt {
+        .ThenBlock(_, cond) -> check_expr(tc, cond).tc
+        _ -> tc
     }
 }
 

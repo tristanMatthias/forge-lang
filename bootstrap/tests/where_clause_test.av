@@ -1,25 +1,35 @@
-// Where clauses: parsed and accepted on generic functions.
-// Currently the bs2 test runner has limitations on monomorphizing
-// where-bounded generics inside Module-wrapped test files; this test
-// just verifies that bare generics monomorphize correctly through
-// the runner. See features/generics for trait-bound coverage.
+trait WcSized {
+    fn wc_size(self) -> int
+}
 
-fn wc_id<T>(x: T) -> T {
+type WcInt = { v: int }
+
+impl WcSized for WcInt {
+    fn wc_size(self) -> int { self.v }
+}
+
+type WcStr = { s: string }
+
+impl WcSized for WcStr {
+    fn wc_size(self) -> int { self.s.length }
+}
+
+fn wc_identity<T>(x: T) -> T where T: WcSized {
     x
 }
 
-fn wc_pick_first<A, B>(a: A, b: B) -> A {
+fn wc_pick_first<A, B>(a: A, b: B) -> A where A: WcSized, B: WcSized {
     a
 }
 
 spec "where clause" {
-    then "bare generic identity passes int through" {
-        wc_id(42) == 42
+    then "single where clause: identity returns the same value" {
+        wc_identity(WcInt { v: 42 }).v == 42
     }
-    then "bare generic identity passes string through" {
-        wc_id("hello") == "hello"
+    then "multiple where clauses: first arg returned" {
+        wc_pick_first(WcInt { v: 10 }, WcInt { v: 20 }).v == 10
     }
-    then "two-param generic returns first arg" {
-        wc_pick_first(10, 20) == 10
+    then "where clause monomorphizes for string-bearing types" {
+        wc_identity(WcStr { s: "hello" }).s == "hello"
     }
 }

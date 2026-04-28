@@ -323,10 +323,20 @@ enum TraitImplReg {
 }
 
 export fn type_implements_trait(reg: TraitImplReg, type_name: string, trait_name: string) -> bool {
+    // Compare on short names so a query like ("module::WcInt", "WcSized")
+    // matches a registry entry stored as ("module::WcSized", "module::WcInt").
+    // Type param bound strings are not module-qualified by the resolver, so we
+    // can't insist on full-path equality at the bound-check site.
+    let q_trait = type_short_name(trait_name)
+    let q_type = type_short_name(type_name)
+    type_implements_trait_inner(reg, q_type, q_trait)
+}
+
+fn type_implements_trait_inner(reg: TraitImplReg, q_type: string, q_trait: string) -> bool {
     match reg {
         .End -> false
-        .Node(tn, ty, _) if tn == trait_name && ty == type_name -> true
-        .Node(_, _, next) -> type_implements_trait(next, type_name, trait_name)
+        .Node(tn, ty, _) if type_short_name(tn) == q_trait && type_short_name(ty) == q_type -> true
+        .Node(_, _, next) -> type_implements_trait_inner(next, q_type, q_trait)
     }
 }
 

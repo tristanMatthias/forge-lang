@@ -242,6 +242,22 @@ export fn type_expr_list_append(list: TypeExprList, ty: TypeExpr) -> TypeExprLis
     }
 }
 
+// Compare two type names, accepting equality if their last `::`-segments
+// match — used as a fallback in vtype_eq when type IDs aren't both populated.
+// This handles cases where a Module-wrapped test file has a param annotated
+// with a qualified Enum name (e.g. `mymod::Foo`) but an inner EnumCtor
+// literal still carries the bare name (`Foo`).
+fn vtype_names_match(a: string, b: string) -> bool {
+    if a == b { return true }
+    last_seg(a) == last_seg(b)
+}
+
+fn last_seg(s: string) -> string {
+    if !s.contains("::") { return s }
+    let parts = s.split("::")
+    parts[parts.length - 1]
+}
+
 export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
     match a {
         .Int -> b is .Int

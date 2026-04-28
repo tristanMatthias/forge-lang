@@ -249,6 +249,28 @@ fn infer_from_fields(tp: TypeParamList, fields: FieldList, args: ExprList, acc: 
     }
 }
 
+// If the typecheck-annotated arg type is Unknown (which happens when the
+// call site lives in a context the annotate pass doesn't visit, like spec
+// test bodies), fall back to inferring from the literal expression itself
+// so monomorphization can still resolve generic type parameters.
+fn arg_concrete_ty(arg: SExpr) -> ValueType {
+    if !vtype_is_unknown(arg.ty) { return arg.ty }
+    infer_lit_ty(arg.node)
+}
+
+fn infer_lit_ty(e: Expr) -> ValueType {
+    match e {
+        .Number(_) -> ValueType.Int
+        .FloatLit(_) -> ValueType.Float
+        .String(_) -> ValueType.Str
+        .Bool(_) -> ValueType.Bool
+        .StructLit(name, _) if name != "" -> ValueType.Struct(name, 0)
+        .EnumCtor(tn, _, _) if tn != "" -> ValueType.Enum(tn, TypeList.End, 0)
+        .Grouping(inner) -> infer_lit_ty(inner)
+        _ -> ValueType.Unknown
+    }
+}
+
 fn infer_from_params(tp: TypeParamList, params: ParamList, args: ExprList, acc: TypeArgList) -> TypeArgList {
     match params {
         .End -> acc
@@ -256,7 +278,8 @@ fn infer_from_params(tp: TypeParamList, params: ParamList, args: ExprList, acc: 
             .End -> acc
             .Node(arg, rest_args) -> {
                 let ty_name = vtype_display(resolved)
-                let new_acc = if type_param_has(tp, ty_name) { TypeArgList.Node(ty_name, arg.ty, acc) } else { acc }
+                let arg_ty = arg_concrete_ty(arg)
+                let new_acc = if type_param_has(tp, ty_name) { TypeArgList.Node(ty_name, arg_ty, acc) } else { acc }
                 infer_from_params(tp, rest, rest_args, new_acc)
             }
         }
