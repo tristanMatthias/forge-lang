@@ -236,6 +236,17 @@ export fn trait_has(reg: TraitRegistry, name: string) -> bool {
     }
 }
 
+export fn trait_canonical(reg: TraitRegistry, name: string) -> string {
+    match reg {
+        .End -> ""
+        .Node(n, _, _, _) if n == name -> n
+        .Node(n, _, _, next) -> {
+            if n.ends_with("::${name}") { return n }
+            trait_canonical(next, name)
+        }
+    }
+}
+
 export fn trait_assoc_types(reg: TraitRegistry, name: string) -> TraitAssocTypes {
     match reg {
         .End -> TraitAssocTypes.End
@@ -425,7 +436,8 @@ export fn resolve_vtype(tc: TC, vt: ValueType) -> ValueType {
             if !vtype_is_unknown(nt_vt) { return ValueType.Newtype(name, resolve_vtype(tc, nt_vt), 0) }
             let sc = struct_type_canonical(tc.structs, name)
             if sc != "" { return ValueType.Struct(sc, 0) }
-            if trait_has(tc.traits, name) { return ValueType.Trait(name, 0) }
+            let tc_name = trait_canonical(tc.traits, name)
+            if tc_name != "" { return ValueType.Trait(tc_name, 0) }
             vt  // keep Struct(name) — might be from another module or generic
         }
         .Enum(name, args, _) -> {

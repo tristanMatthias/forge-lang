@@ -652,7 +652,17 @@ fn rewrite_expr(ctx: NameCtx, expr: Expr) -> Expr {
     if expr == null { return Expr.Null }
     match expr {
         .Ident(name) -> rewrite_ident(ctx, name, expr)
-        .Call(callee, args) -> .Call(rewrite_expr(ctx, callee), rewrite_expr_list(ctx, args))
+        .Call(callee, args) -> {
+            // Qualify uppercase callee in Call context (newtype constructors)
+            let rewritten_callee = match callee {
+                .Ident(name) if name.length > 0 && name[0] in "A".."Z" -> {
+                    let resolved = resolve_type_in_ctx(ctx, name)
+                    if resolved != name { Expr.QualifiedIdent(resolved) } else { rewrite_ident(ctx, name, callee) }
+                }
+                _ -> rewrite_expr(ctx, callee)
+            }
+            Expr.Call(rewritten_callee, rewrite_expr_list(ctx, args))
+        }
         .GenericCall(callee, ta, args) -> .GenericCall(rewrite_expr(ctx, callee), ta, rewrite_expr_list(ctx, args))
         .Binary(l, op, r) -> .Binary(rewrite_expr(ctx, l), op, rewrite_expr(ctx, r))
         .Unary(op, r) -> .Unary(op, rewrite_expr(ctx, r))
@@ -702,7 +712,7 @@ fn rewrite_ident(ctx: NameCtx, name: string, original: Expr) -> Expr {
     if scope_has(ctx.locals, name) { return original }
     // 2. Builtin function — don't rewrite
     if is_builtin_name(name) { return original }
-    // 3. Uppercase = type/enum name — resolved by codegen registries
+    // 3. Uppercase = type/enum name — leave for codegen (StructLit/EnumCtor handled separately)
     if name.length > 0 && name[0] in "A".."Z" { return original }
     // 4. Use alias (from `use path.{name}`)
     let from_alias = alias_lookup(ctx.aliases, name)

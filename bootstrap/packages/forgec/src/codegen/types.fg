@@ -144,7 +144,10 @@ export fn trait_decl_lookup(reg: TraitDeclReg, name: string) -> TraitMethodNames
     match reg {
         .End -> .End
         .Node(n, methods, _) if n == name -> methods
-        .Node(_, _, next) -> trait_decl_lookup(next, name)
+        .Node(n, methods, next) -> {
+            if n.ends_with("::${name}") { return methods }
+            trait_decl_lookup(next, name)
+        }
     }
 }
 
@@ -152,7 +155,10 @@ export fn trait_decl_has(reg: TraitDeclReg, name: string) -> bool {
     match reg {
         .End -> false
         .Node(n, _, _) if n == name -> true
-        .Node(_, _, next) -> trait_decl_has(next, name)
+        .Node(n, _, next) -> {
+            if n.ends_with("::${name}") { return true }
+            trait_decl_has(next, name)
+        }
     }
 }
 
