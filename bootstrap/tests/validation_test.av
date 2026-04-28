@@ -1,0 +1,15 @@
+extern fn avra_validate_not_null(value: int, name: string) -> int
+extern fn avra_validate_positive(value: int, name: string) -> int
+extern fn avra_validate_not_empty(s: string, name: string) -> string
+
+spec "validation" {
+    then "not_null passes through positive int" {
+        avra_validate_not_null(42, "x") == 42
+    }
+    then "positive passes through positive int" {
+        avra_validate_positive(10, "y") == 10
+    }
+    then "not_empty passes through string" {
+        avra_validate_not_empty("hello", "s") == "hello"
+    }
+}

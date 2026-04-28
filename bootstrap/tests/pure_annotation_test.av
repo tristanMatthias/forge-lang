@@ -1,0 +1,18 @@
+@pure
+fn pure_add(a: int, b: int) -> int {
+    a + b
+}
+
+@pure
+fn pure_double(x: int) -> int {
+    x * 2
+}
+
+spec "pure annotation" {
+    then "@pure-annotated add works" {
+        pure_add(3, 4) == 7
+    }
+    then "@pure-annotated double works" {
+        pure_double(5) == 10
+    }
+}

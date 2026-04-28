@@ -1,0 +1,24 @@
+mut sc_x: int = 0
+
+fn sc_side_effect() -> int {
+    sc_x = sc_x + 1
+    1
+}
+
+spec "shortcircuit" {
+    then "false && expr does not evaluate right side" {
+        sc_x = 0
+        if false && sc_side_effect() == 1 {}
+        sc_x == 0
+    }
+    then "true || expr does not evaluate right side" {
+        sc_x = 0
+        if true || sc_side_effect() == 1 {}
+        sc_x == 0
+    }
+    then "true && expr DOES evaluate right side" {
+        sc_x = 0
+        if true && sc_side_effect() == 1 {}
+        sc_x == 1
+    }
+}

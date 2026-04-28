@@ -1,0 +1,32 @@
+type UaStringOrInt = int | string
+
+fn ua_show(v: UaStringOrInt) -> string {
+    match v {
+        int(n) -> string(n)
+        string(s) -> s
+    }
+}
+
+type UaWrapper = {
+    val: UaStringOrInt,
+}
+
+fn ua_show_wrapped(w: UaWrapper) -> string {
+    match w.val {
+        int(n) -> "struct alias: " + string(n)
+        string(s) -> "struct alias: " + s
+    }
+}
+
+spec "union alias" {
+    then "alias accepts int branch" {
+        ua_show(42) == "42"
+    }
+    then "alias accepts string branch" {
+        ua_show("hi") == "hi"
+    }
+    then "alias used as struct field type" {
+        let w = UaWrapper { val: 99 }
+        ua_show_wrapped(w) == "struct alias: 99"
+    }
+}

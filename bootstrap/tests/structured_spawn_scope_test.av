@@ -1,0 +1,8 @@
+spec "structured spawn scope" {
+    then "spawn body returns value via .await" {
+        let handle = spawn {
+            42
+        }
+        handle.await == 42
+    }
+}

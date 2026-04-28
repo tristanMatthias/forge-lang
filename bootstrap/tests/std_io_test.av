@@ -1,0 +1,25 @@
+extern fn avra_file_read(path: string) -> string
+extern fn avra_file_write(path: string, content: string) -> int
+extern fn avra_file_exists(path: string) -> int
+
+fn std_io_path() -> string { "/tmp/avra_std_io_test.txt" }
+
+spec "std io" {
+    then "write returns success" {
+        avra_file_write(std_io_path(), "hello avra\nline two") == 1
+    }
+    then "exists returns 1 after write" {
+        avra_file_exists(std_io_path()) == 1
+    }
+    then "exists returns 0 for missing path" {
+        avra_file_exists("/tmp/nonexistent_avra_test_xyz.txt") == 0
+    }
+    then "read returns written content" {
+        avra_file_write(std_io_path(), "hello avra\nline two")
+        avra_file_read(std_io_path()) == "hello avra\nline two"
+    }
+    then "overwrite replaces previous content" {
+        avra_file_write(std_io_path(), "replaced")
+        avra_file_read(std_io_path()) == "replaced"
+    }
+}

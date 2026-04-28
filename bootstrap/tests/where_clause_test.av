@@ -1,0 +1,25 @@
+// Where clauses: parsed and accepted on generic functions.
+// Currently the bs2 test runner has limitations on monomorphizing
+// where-bounded generics inside Module-wrapped test files; this test
+// just verifies that bare generics monomorphize correctly through
+// the runner. See features/generics for trait-bound coverage.
+
+fn wc_id<T>(x: T) -> T {
+    x
+}
+
+fn wc_pick_first<A, B>(a: A, b: B) -> A {
+    a
+}
+
+spec "where clause" {
+    then "bare generic identity passes int through" {
+        wc_id(42) == 42
+    }
+    then "bare generic identity passes string through" {
+        wc_id("hello") == "hello"
+    }
+    then "two-param generic returns first arg" {
+        wc_pick_first(10, 20) == 10
+    }
+}

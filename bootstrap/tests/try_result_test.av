@@ -1,0 +1,35 @@
+enum TrResult { Ok(value: int), Err(error: string) }
+
+fn tr_divide(a: int, b: int) -> TrResult {
+    if b == 0 { return TrResult.Err("division by zero") }
+    TrResult.Ok(a / b)
+}
+
+fn tr_chain(r: TrResult, fallback: int) -> int {
+    match r {
+        .Ok(v) -> v
+        .Err(_) -> fallback
+    }
+}
+
+fn tr_describe(r: TrResult) -> string {
+    match r {
+        .Ok(v) -> "Ok:" + string(v)
+        .Err(e) -> "Err:" + e
+    }
+}
+
+spec "try result" {
+    then "Ok branch carries the value" {
+        tr_describe(tr_divide(84, 2)) == "Ok:42"
+    }
+    then "Err branch carries the message" {
+        tr_describe(tr_divide(10, 0)) == "Err:division by zero"
+    }
+    then "match-based unwrap with fallback" {
+        tr_chain(tr_divide(84, 2), 0 - 1) == 42
+    }
+    then "match-based unwrap of Err returns fallback" {
+        tr_chain(tr_divide(10, 0), 0 - 1) == 0 - 1
+    }
+}

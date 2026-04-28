@@ -1,0 +1,35 @@
+extern fn avra_spawn(f: int) -> int
+extern fn avra_thread_join(h: int)
+extern fn avra_channel_new() -> ptr
+extern fn avra_channel_send(ch: ptr, v: int)
+
+mut sel_ch1: ptr = null
+mut sel_ch2: ptr = null
+
+fn sel_send1() { avra_channel_send(sel_ch1, 10) }
+fn sel_send2() { avra_channel_send(sel_ch2, 20) }
+
+fn sel_run() -> int {
+    sel_ch1 = avra_channel_new()
+    sel_ch2 = avra_channel_new()
+    let h1 = avra_spawn(sel_send1)
+    let h2 = avra_spawn(sel_send2)
+    avra_thread_join(h1)
+    avra_thread_join(h2)
+    mut total = 0
+    select {
+        v <- sel_ch1 -> { total = total + v }
+        v <- sel_ch2 -> { total = total + v }
+    }
+    select {
+        v <- sel_ch1 -> { total = total + v }
+        v <- sel_ch2 -> { total = total + v }
+    }
+    total
+}
+
+spec "select stmt" {
+    then "select consumes both channels (sum is 30)" {
+        sel_run() == 30
+    }
+}

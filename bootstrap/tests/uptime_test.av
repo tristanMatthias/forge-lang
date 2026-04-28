@@ -1,0 +1,7 @@
+extern fn avra_uptime_ms() -> int
+
+spec "uptime" {
+    then "uptime is non-negative" {
+        avra_uptime_ms() >= 0
+    }
+}

@@ -1,0 +1,32 @@
+fn tlc_apply(f: fn(int) -> int, x: int) -> int { f(x) }
+
+spec "typed lambda comprehensive" {
+    then "single-arg int lambda" {
+        let double = (x: int) -> x * 2
+        double(5) == 10
+    }
+    then "two-arg int lambda" {
+        let add = (a: int, b: int) -> a + b
+        add(3, 4) == 7
+    }
+    then "string-returning lambda" {
+        let greet = (name: string) -> "hello " + name
+        greet("world") == "hello world"
+    }
+    then "float-returning lambda" {
+        let area = (r: float) -> 3.14 * r * r
+        area(10.0) == 314.0
+    }
+    then "lambda captures outer int" {
+        let n = 10
+        let add_n = (x: int) -> x + n
+        add_n(5) == 15
+    }
+    then "lambda with if-expr body" {
+        let check = (x: int) -> if x > 0 { "yes" } else { "no" }
+        check(1) == "yes"
+    }
+    then "inline lambda passed to higher-order fn" {
+        tlc_apply((n: int) -> n * 2, 3) == 6
+    }
+}

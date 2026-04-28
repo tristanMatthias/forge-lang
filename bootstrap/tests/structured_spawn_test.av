@@ -1,0 +1,23 @@
+extern fn usleep(usec: int) -> int
+
+mut struct_spawn_log: string = ""
+
+fn struct_spawn_block() {
+    spawn {
+        usleep(1000)
+        struct_spawn_log = struct_spawn_log + "task done\n"
+    }
+}
+
+fn run_structured_spawn() -> string {
+    struct_spawn_log = ""
+    struct_spawn_block()
+    struct_spawn_log = struct_spawn_log + "after structured spawn\n"
+    struct_spawn_log
+}
+
+spec "structured spawn" {
+    then "scope awaits spawned tasks before returning" {
+        run_structured_spawn() == "task done\nafter structured spawn\n"
+    }
+}

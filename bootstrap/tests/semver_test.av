@@ -1,0 +1,28 @@
+extern fn avra_semver_major(version: string) -> int
+extern fn avra_semver_minor(version: string) -> int
+extern fn avra_semver_patch(version: string) -> int
+extern fn avra_semver_compare(a: string, b: string) -> int
+
+spec "semver" {
+    then "major component" {
+        avra_semver_major("1.2.3") == 1
+    }
+    then "minor component" {
+        avra_semver_minor("1.2.3") == 2
+    }
+    then "patch component" {
+        avra_semver_patch("1.2.3") == 3
+    }
+    then "compare lower < higher" {
+        avra_semver_compare("1.0.0", "2.0.0") == 0 - 1
+    }
+    then "compare higher > lower" {
+        avra_semver_compare("2.0.0", "1.0.0") == 1
+    }
+    then "compare equal" {
+        avra_semver_compare("1.2.3", "1.2.3") == 0
+    }
+    then "compare patch differs" {
+        avra_semver_compare("1.2.3", "1.2.4") == 0 - 1
+    }
+}

@@ -1,0 +1,52 @@
+shape TseHasName = { name: string }
+
+type TsePerson = { name: string, age: int }
+
+fn tse_greet(x: TseHasName) -> string {
+    "custom: ${x.name}"
+}
+
+type TseUserId = int
+
+fn tse_apply(f: fn(int) -> int, x: int) -> int {
+    f(x)
+}
+
+enum TseTree { Leaf(v: int), Branch(left: TseTree, right: TseTree) }
+
+fn tse_sum_tree(t: TseTree) -> int {
+    match t {
+        .Leaf(v) -> v
+        .Branch(left, right) -> tse_sum_tree(left) + tse_sum_tree(right)
+    }
+}
+
+spec "type system edge cases" {
+    then "shape width subtyping accepts a richer struct" {
+        let p = TsePerson { name: "Bob", age: 25 }
+        tse_greet(p) == "custom: Bob"
+    }
+    then "newtype constructor preserves the inner int" {
+        let uid = TseUserId(99)
+        string(uid) == "99"
+    }
+    then "higher-order fn applies a closure" {
+        tse_apply((x) -> x * 2, 5) == 10
+    }
+    then "when expression as value with default" {
+        let x = 0
+        let label = when {
+            x > 0 -> "positive"
+            x < 0 -> "negative"
+            _ -> "fallback"
+        }
+        label == "fallback"
+    }
+    then "recursive enum sum" {
+        let tree = TseTree.Branch(
+            TseTree.Branch(TseTree.Leaf(1), TseTree.Leaf(2)),
+            TseTree.Branch(TseTree.Leaf(5), TseTree.Leaf(7))
+        )
+        tse_sum_tree(tree) == 15
+    }
+}
