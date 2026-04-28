@@ -144,16 +144,10 @@ export fn struct_type_lookup(reg: StructTypeReg, name: string) -> FieldList {
 }
 
 fn struct_type_has(reg: StructTypeReg, name: string) -> bool {
-    struct_type_canonical(reg, name) != ""
-}
-
-fn struct_type_canonical(reg: StructTypeReg, name: string) -> string {
     match reg {
-        .End -> ""
-        .Node(n, _, _) if n == name -> n
-        .Node(n, _, next) -> {
-            struct_type_canonical(next, name)
-        }
+        .End -> false
+        .Node(n, _, _) if n == name -> true
+        .Node(_, _, next) -> struct_type_has(next, name)
     }
 }
 
@@ -163,16 +157,10 @@ enum EnumTypeReg {
 }
 
 fn enum_type_has(reg: EnumTypeReg, name: string) -> bool {
-    enum_type_canonical(reg, name) != ""
-}
-
-fn enum_type_canonical(reg: EnumTypeReg, name: string) -> string {
     match reg {
-        .End -> ""
-        .Node(n, _, _) if n == name -> n
-        .Node(n, _, next) -> {
-            enum_type_canonical(next, name)
-        }
+        .End -> false
+        .Node(n, _, _) if n == name -> true
+        .Node(_, _, next) -> enum_type_has(next, name)
     }
 }
 
@@ -228,16 +216,6 @@ export fn trait_has(reg: TraitRegistry, name: string) -> bool {
         .Node(n, _, _, _) if n == name -> true
         .Node(n, _, _, next) -> {
             trait_has(next, name)
-        }
-    }
-}
-
-export fn trait_canonical(reg: TraitRegistry, name: string) -> string {
-    match reg {
-        .End -> ""
-        .Node(n, _, _, _) if n == name -> n
-        .Node(n, _, _, next) -> {
-            trait_canonical(next, name)
         }
     }
 }
@@ -422,26 +400,19 @@ export fn resolve_vtype(tc: TC, vt: ValueType) -> ValueType {
                     return resolve_vtype(tc, concrete_vt)
                 }
             }
-            let ec = enum_type_canonical(tc.enums, name)
-            if ec != "" { return ValueType.Enum(ec, TypeList.End, 0) }
+            if enum_type_has(tc.enums, name) { return ValueType.Enum(name, TypeList.End, 0) }
             let ua_vt = union_alias_vtype_lookup(tc.union_aliases, name)
             if !vtype_is_unknown(ua_vt) { return resolve_vtype(tc, ua_vt) }
             let nt_vt = newtype_vtype_lookup(tc.newtypes, name)
             if !vtype_is_unknown(nt_vt) { return ValueType.Newtype(name, resolve_vtype(tc, nt_vt), 0) }
-            let sc = struct_type_canonical(tc.structs, name)
-            if sc != "" { return ValueType.Struct(sc, 0) }
-            let tc_name = trait_canonical(tc.traits, name)
-            if tc_name != "" { return ValueType.Trait(tc_name, 0) }
-            vt  // keep Struct(name) — might be from another module or generic
+            if struct_type_has(tc.structs, name) { return ValueType.Struct(name, 0) }
+            if trait_has(tc.traits, name) { return ValueType.Trait(name, 0) }
+            vt
         }
         .Enum(name, args, _) -> {
-            // Parser produced Enum(name, args) from Generic(name, args).
-            // Resolve the type args and verify it's an enum.
             let resolved_args = resolve_vtype_list(tc, args)
-            let ec2 = enum_type_canonical(tc.enums, name)
-            if ec2 != "" { return ValueType.Enum(ec2, resolved_args, 0) }
-            let sc2 = struct_type_canonical(tc.structs, name)
-            if sc2 != "" { return ValueType.Struct(sc2, 0) }
+            if enum_type_has(tc.enums, name) { return ValueType.Enum(name, resolved_args, 0) }
+            if struct_type_has(tc.structs, name) { return ValueType.Struct(name, 0) }
             ValueType.Enum(name, resolved_args, 0)
         }
         .List(elem) -> ValueType.List(resolve_vtype(tc, elem))

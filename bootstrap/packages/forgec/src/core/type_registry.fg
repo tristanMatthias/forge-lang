@@ -139,6 +139,12 @@ export fn variant_payload_name(enum_name: string, variant: string) -> string {
     "${enum_name}__${variant}"
 }
 
+// Join two name segments with __: "Result__int__string"
+// Used by the monomorphizer for generic type mangling.
+export fn mangle_join(a: string, b: string) -> string {
+    "${a}__${b}"
+}
+
 // Trait impl key: "Printable:Cat"
 export fn trait_impl_name(trait_name: string, type_name: string) -> string {
     "${trait_name}:${type_name}"

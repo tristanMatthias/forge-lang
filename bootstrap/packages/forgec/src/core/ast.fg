@@ -242,10 +242,6 @@ export fn type_expr_list_append(list: TypeExprList, ty: TypeExpr) -> TypeExprLis
     }
 }
 
-fn names_match(a: string, b: string) -> bool {
-    a == b
-}
-
 export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
     match a {
         .Int -> b is .Int
@@ -255,8 +251,8 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
         .List -> b is .List
         .Fn -> b is .Fn
         .Void -> b is .Void
-        .Struct(n1, id1) -> match b { .Struct(n2, id2) -> if id1 > 0 && id2 > 0 { id1 == id2 } else { names_match(n1, n2) }, _ -> false }
-        .Enum(n1, _, id1) -> match b { .Enum(n2, _, id2) -> if id1 > 0 && id2 > 0 { id1 == id2 } else { names_match(n1, n2) }, _ -> false }
+        .Struct(n1, id1) -> match b { .Struct(n2, id2) -> if id1 > 0 && id2 > 0 { id1 == id2 } else { n1 == n2 }, _ -> false }
+        .Enum(n1, _, id1) -> match b { .Enum(n2, _, id2) -> if id1 > 0 && id2 > 0 { id1 == id2 } else { n1 == n2 }, _ -> false }
         .Float -> b is .Float
         .Map -> b is .Map
         .FnTyped(_, _) -> match b { .FnTyped(_, _) -> true, .Fn(_) -> true, _ -> false }
