@@ -1,4 +1,4 @@
-# Forge — Phase 4: Package System Completion (TDD)
+# Avra — Phase 4: Package System Completion (TDD)
 
 **Goal:** Kill `providers.rs`. Build `@std/queue` and `@std/cron` entirely through the package system with zero compiler changes. Validate the architecture.
 
@@ -8,16 +8,16 @@
 
 ## Part 1: Kill providers.rs
 
-The expansion engine must generate real Forge AST (function declarations, extern fn calls, struct types) instead of bridging to old package-specific AST nodes. When done, `providers.rs` is deleted.
+The expansion engine must generate real Avra AST (function declarations, extern fn calls, struct types) instead of bridging to old package-specific AST nodes. When done, `providers.rs` is deleted.
 
 ### Tests
 
-Write these as Forge programs. Each must compile and produce the expected output. They're the same programs that work today — the only change is the codegen path.
+Write these as Avra programs. Each must compile and produce the expected output. They're the same programs that work today — the only change is the codegen path.
 
 **Test 1.1: Model CRUD still works**
 
-```forge
-// test_package_refactor_model.fg
+```avra
+// test_package_refactor_model.av
 use @std.model.{model}
 
 model Item {
@@ -56,8 +56,8 @@ Gadget: 19.99
 
 **Test 1.2: Service hooks still work**
 
-```forge
-// test_package_refactor_service.fg
+```avra
+// test_package_refactor_service.av
 use @std.model.{model, service}
 
 model Task {
@@ -99,8 +99,8 @@ done
 
 **Test 1.3: HTTP server still works**
 
-```forge
-// test_package_refactor_http.fg
+```avra
+// test_package_refactor_http.av
 use @std.model.{model, service}
 use @std.http.{server}
 
@@ -119,7 +119,7 @@ server :9100 {
 
 Test with:
 ```bash
-forge build test_package_refactor_http.fg -o test_http
+avra build test_package_refactor_http.av -o test_http
 ./test_http &
 sleep 1
 curl -s http://localhost:9100/ping                              # {"pong":true}
@@ -130,8 +130,8 @@ kill %1
 
 **Test 1.4: Multiple servers on different ports**
 
-```forge
-// test_multi_server.fg
+```avra
+// test_multi_server.av
 use @std.http.{server}
 
 server :9200 {
@@ -145,7 +145,7 @@ server :9201 {
 
 Test with:
 ```bash
-forge build test_multi_server.fg -o test_multi
+avra build test_multi_server.av -o test_multi
 ./test_multi &
 sleep 1
 curl -s http://localhost:9200/api     # {"service":"api"}
@@ -165,8 +165,8 @@ test ! -f compiler/src/codegen/providers.rs && echo "PASS" || echo "FAIL"
 # Expected: PASS
 
 # The compiler binary should not link rusqlite or tiny_http:
-nm target/release/forge | grep -i sqlite | wc -l   # 0
-nm target/release/forge | grep -i tiny_http | wc -l # 0
+nm target/release/avra | grep -i sqlite | wc -l   # 0
+nm target/release/avra | grep -i tiny_http | wc -l # 0
 ```
 
 ### Implementation Steps
@@ -184,14 +184,14 @@ nm target/release/forge | grep -i tiny_http | wc -l # 0
 
 ## Part 2: @std/queue Package
 
-Build a message queue package entirely through `package.fg` + native Rust library. Zero compiler changes.
+Build a message queue package entirely through `package.av` + native Rust library. Zero compiler changes.
 
 ### Tests
 
 **Test 2.1: Basic queue send/receive**
 
-```forge
-// test_queue_basic.fg
+```avra
+// test_queue_basic.av
 use @std.queue.{queue, worker}
 
 queue task_queue {}
@@ -221,8 +221,8 @@ received: world
 
 **Test 2.2: Queue with config**
 
-```forge
-// test_queue_config.fg
+```avra
+// test_queue_config.av
 use @std.queue.{queue, worker}
 
 queue email_queue {
@@ -258,8 +258,8 @@ sending to: bob@test.com
 
 **Test 2.3: Queue depth and drain**
 
-```forge
-// test_queue_depth.fg
+```avra
+// test_queue_depth.av
 use @std.queue.{queue}
 
 queue work_queue {}
@@ -294,7 +294,7 @@ namespace = "std"
 version = "0.1.0"
 
 [native]
-library = "forge_queue"
+library = "avra_queue"
 
 [keywords.queue]
 kind = "block"
@@ -307,14 +307,14 @@ context = "top_level"
 body = "mixed"
 ```
 
-```forge
-// packages/std-queue/src/package.fg
+```avra
+// packages/std-queue/src/package.av
 
-extern fn forge_queue_create(name: string, buffer_size: int) -> int
-extern fn forge_queue_send(queue_id: int, payload_json: string)
-extern fn forge_queue_receive(queue_id: int) -> string
-extern fn forge_queue_depth(queue_id: int) -> int
-extern fn forge_queue_start_worker(queue_id: int, concurrency: int, handler: fn(string) -> int, error_handler: fn(string, string) -> void)
+extern fn avra_queue_create(name: string, buffer_size: int) -> int
+extern fn avra_queue_send(queue_id: int, payload_json: string)
+extern fn avra_queue_receive(queue_id: int) -> string
+extern fn avra_queue_depth(queue_id: int) -> int
+extern fn avra_queue_start_worker(queue_id: int, concurrency: int, handler: fn(string) -> int, error_handler: fn(string, string) -> void)
 
 keyword queue(name: string, config, schema) {
   config {
@@ -322,19 +322,19 @@ keyword queue(name: string, config, schema) {
     buffer_size: int = 1000
   }
 
-  let id = forge_queue_create(name, config.buffer_size)
+  let id = avra_queue_create(name, config.buffer_size)
 
   fn send(payload: json) {
-    forge_queue_send(id, json.stringify(payload))
+    avra_queue_send(id, json.stringify(payload))
   }
 
   fn receive() -> json? {
-    let raw = forge_queue_receive(id)
+    let raw = avra_queue_receive(id)
     if raw == "" { null } else { json.parse(raw) }
   }
 
   fn depth() -> int {
-    forge_queue_depth(id)
+    avra_queue_depth(id)
   }
 }
 
@@ -350,7 +350,7 @@ keyword worker(name: string, config, schema) {
 
   on startup {
     // Start the worker with the handlers defined in the user's body
-    forge_queue_start_worker(
+    avra_queue_start_worker(
       queue_ref.id,
       config.concurrency,
       message_handler,
@@ -377,7 +377,7 @@ static QUEUES: Mutex<HashMap<i64, (Sender<String>, Receiver<String>)>> = Mutex::
 static NEXT_ID: Mutex<i64> = Mutex::new(1);
 
 #[no_mangle]
-pub extern "C" fn forge_queue_create(name: *const c_char, buffer_size: i64) -> i64 {
+pub extern "C" fn avra_queue_create(name: *const c_char, buffer_size: i64) -> i64 {
     let (tx, rx) = bounded(buffer_size as usize);
     let mut id_lock = NEXT_ID.lock().unwrap();
     let id = *id_lock;
@@ -387,7 +387,7 @@ pub extern "C" fn forge_queue_create(name: *const c_char, buffer_size: i64) -> i
 }
 
 #[no_mangle]
-pub extern "C" fn forge_queue_send(queue_id: i64, payload: *const c_char) {
+pub extern "C" fn avra_queue_send(queue_id: i64, payload: *const c_char) {
     let payload = unsafe { CStr::from_ptr(payload) }.to_str().unwrap().to_string();
     let queues = QUEUES.lock().unwrap();
     if let Some((tx, _)) = queues.get(&queue_id) {
@@ -396,7 +396,7 @@ pub extern "C" fn forge_queue_send(queue_id: i64, payload: *const c_char) {
 }
 
 #[no_mangle]
-pub extern "C" fn forge_queue_receive(queue_id: i64) -> *const c_char {
+pub extern "C" fn avra_queue_receive(queue_id: i64) -> *const c_char {
     let queues = QUEUES.lock().unwrap();
     if let Some((_, rx)) = queues.get(&queue_id) {
         match rx.try_recv() {
@@ -409,7 +409,7 @@ pub extern "C" fn forge_queue_receive(queue_id: i64) -> *const c_char {
 }
 
 #[no_mangle]
-pub extern "C" fn forge_queue_depth(queue_id: i64) -> i64 {
+pub extern "C" fn avra_queue_depth(queue_id: i64) -> i64 {
     let queues = QUEUES.lock().unwrap();
     if let Some((_, rx)) = queues.get(&queue_id) {
         rx.len() as i64
@@ -419,7 +419,7 @@ pub extern "C" fn forge_queue_depth(queue_id: i64) -> i64 {
 }
 
 #[no_mangle]
-pub extern "C" fn forge_queue_start_worker(
+pub extern "C" fn avra_queue_start_worker(
     queue_id: i64,
     concurrency: i64,
     handler: extern "C" fn(*const c_char) -> i64,
@@ -448,7 +448,7 @@ pub extern "C" fn forge_queue_start_worker(
 Cargo.toml:
 ```toml
 [package]
-name = "forge_queue"
+name = "avra_queue"
 version = "0.1.0"
 edition = "2021"
 
@@ -477,8 +477,8 @@ Scheduled task execution. Again, zero compiler changes.
 
 **Test 3.1: Basic schedule**
 
-```forge
-// test_cron_basic.fg
+```avra
+// test_cron_basic.av
 use @std.cron.{schedule}
 
 schedule cleanup {
@@ -504,8 +504,8 @@ tick
 
 **Test 3.2: Cron expression**
 
-```forge
-// test_cron_expr.fg
+```avra
+// test_cron_expr.av
 use @std.cron.{schedule}
 
 schedule report {
@@ -529,8 +529,8 @@ report generated
 
 **Test 3.3: Schedule with config**
 
-```forge
-// test_cron_config.fg
+```avra
+// test_cron_config.av
 use @std.cron.{schedule}
 
 schedule sync {
@@ -569,7 +569,7 @@ namespace = "std"
 version = "0.1.0"
 
 [native]
-library = "forge_cron"
+library = "avra_cron"
 
 [keywords.schedule]
 kind = "block"
@@ -577,14 +577,14 @@ context = "top_level"
 body = "mixed"
 ```
 
-```forge
-// packages/std-cron/src/package.fg
+```avra
+// packages/std-cron/src/package.av
 
-extern fn forge_cron_create(name: string) -> int
-extern fn forge_cron_set_interval_ms(schedule_id: int, ms: int)
-extern fn forge_cron_set_cron(schedule_id: int, expr: string)
-extern fn forge_cron_start(schedule_id: int, handler: fn() -> int, error_handler: fn(string) -> void)
-extern fn forge_cron_start_all()
+extern fn avra_cron_create(name: string) -> int
+extern fn avra_cron_set_interval_ms(schedule_id: int, ms: int)
+extern fn avra_cron_set_cron(schedule_id: int, expr: string)
+extern fn avra_cron_start(schedule_id: int, handler: fn() -> int, error_handler: fn(string) -> void)
+extern fn avra_cron_start_all()
 
 keyword schedule(name: string, config, schema) {
   config {
@@ -592,21 +592,21 @@ keyword schedule(name: string, config, schema) {
     max_retries: int = 0
   }
 
-  let id = forge_cron_create(name)
+  let id = avra_cron_create(name)
 
   // Functions available in the schedule block
   fn every(interval: duration) {
-    forge_cron_set_interval_ms(id, interval.to_ms())
+    avra_cron_set_interval_ms(id, interval.to_ms())
   }
 
   fn cron(expr: string) {
-    forge_cron_set_cron(id, expr)
+    avra_cron_set_cron(id, expr)
   }
 
   // User's block body inserted here (contains every/cron, run, on error)
 
   on startup {
-    forge_cron_start(id, run_handler, error_handler)
+    avra_cron_start(id, run_handler, error_handler)
   }
 }
 ```
@@ -633,7 +633,7 @@ static SCHEDULES: Mutex<HashMap<i64, ScheduleEntry>> = Mutex::new(HashMap::new()
 static NEXT_ID: Mutex<i64> = Mutex::new(1);
 
 #[no_mangle]
-pub extern "C" fn forge_cron_create(name: *const c_char) -> i64 {
+pub extern "C" fn avra_cron_create(name: *const c_char) -> i64 {
     let name = unsafe { CStr::from_ptr(name) }.to_str().unwrap().to_string();
     let mut id_lock = NEXT_ID.lock().unwrap();
     let id = *id_lock;
@@ -647,7 +647,7 @@ pub extern "C" fn forge_cron_create(name: *const c_char) -> i64 {
 }
 
 #[no_mangle]
-pub extern "C" fn forge_cron_set_interval_ms(schedule_id: i64, ms: i64) {
+pub extern "C" fn avra_cron_set_interval_ms(schedule_id: i64, ms: i64) {
     let mut schedules = SCHEDULES.lock().unwrap();
     if let Some(entry) = schedules.get_mut(&schedule_id) {
         entry.interval_ms = Some(ms as u64);
@@ -655,7 +655,7 @@ pub extern "C" fn forge_cron_set_interval_ms(schedule_id: i64, ms: i64) {
 }
 
 #[no_mangle]
-pub extern "C" fn forge_cron_set_cron(schedule_id: i64, expr: *const c_char) {
+pub extern "C" fn avra_cron_set_cron(schedule_id: i64, expr: *const c_char) {
     let expr = unsafe { CStr::from_ptr(expr) }.to_str().unwrap().to_string();
     let mut schedules = SCHEDULES.lock().unwrap();
     if let Some(entry) = schedules.get_mut(&schedule_id) {
@@ -664,7 +664,7 @@ pub extern "C" fn forge_cron_set_cron(schedule_id: i64, expr: *const c_char) {
 }
 
 #[no_mangle]
-pub extern "C" fn forge_cron_start(
+pub extern "C" fn avra_cron_start(
     schedule_id: i64,
     handler: extern "C" fn() -> i64,
     error_handler: extern "C" fn(*const c_char),
@@ -700,16 +700,16 @@ git diff --stat compiler/src/
 
 ## Part 4: Package Scaffold Command
 
-Build `forge package new` so creating packages is easy.
+Build `avra package new` so creating packages is easy.
 
 ### Tests
 
 **Test 4.1: Scaffold creates correct structure**
 
 ```bash
-forge package new my-awesome-package
+avra package new my-awesome-package
 test -f my-awesome-package/package.toml && echo "PASS" || echo "FAIL"
-test -f my-awesome-package/src/package.fg && echo "PASS" || echo "FAIL"
+test -f my-awesome-package/src/package.av && echo "PASS" || echo "FAIL"
 test -d my-awesome-package/native && echo "PASS" || echo "FAIL"
 test -f my-awesome-package/native/Cargo.toml && echo "PASS" || echo "FAIL"
 test -f my-awesome-package/native/src/lib.rs && echo "PASS" || echo "FAIL"
@@ -719,14 +719,14 @@ test -f my-awesome-package/README.md && echo "PASS" || echo "FAIL"
 **Test 4.2: Scaffold package compiles**
 
 ```bash
-forge package new test-package
+avra package new test-package
 cd test-package
 
 # Native lib should compile
 cd native && cargo build --release && cd ..
 
 # The scaffold should include a working example
-forge build example.fg
+avra build example.av
 ./build/example
 # Should print something like "test-package works!"
 ```
@@ -734,10 +734,10 @@ forge build example.fg
 **Test 4.3: Scaffold with keyword flag**
 
 ```bash
-forge package new my-keyword-package --keyword
+avra package new my-keyword-package --keyword
 
-# Should include keyword example in package.fg
-grep "keyword" my-keyword-package/src/package.fg | wc -l
+# Should include keyword example in package.av
+grep "keyword" my-keyword-package/src/package.av | wc -l
 # Expected: > 0
 
 # package.toml should have keyword section
@@ -747,7 +747,7 @@ grep "\[keywords\." my-keyword-package/package.toml | wc -l
 
 ### Generated Files
 
-`forge package new my-package` generates:
+`avra package new my-package` generates:
 
 ```toml
 # package.toml
@@ -758,18 +758,18 @@ version = "0.1.0"
 description = "TODO: describe your package"
 
 [native]
-library = "forge_my_package"
+library = "avra_my_package"
 ```
 
-```forge
-// src/package.fg
+```avra
+// src/package.av
 
 // Native bridge — functions implemented in native/src/lib.rs
-extern fn forge_my_package_hello(name: string) -> string
+extern fn avra_my_package_hello(name: string) -> string
 
-// Exported functions — available to Forge users
+// Exported functions — available to Avra users
 export fn hello(name: string) -> string {
-  forge_my_package_hello(name)
+  avra_my_package_hello(name)
 }
 ```
 
@@ -779,7 +779,7 @@ use std::os::raw::c_char;
 use std::ffi::{CStr, CString};
 
 #[no_mangle]
-pub extern "C" fn forge_my_package_hello(name: *const c_char) -> *const c_char {
+pub extern "C" fn avra_my_package_hello(name: *const c_char) -> *const c_char {
     let name = unsafe { CStr::from_ptr(name) }.to_str().unwrap();
     let greeting = format!("hello from my-package, {}!", name);
     CString::new(greeting).unwrap().into_raw()
@@ -789,7 +789,7 @@ pub extern "C" fn forge_my_package_hello(name: *const c_char) -> *const c_char {
 ```toml
 # native/Cargo.toml
 [package]
-name = "forge_my_package"
+name = "avra_my_package"
 version = "0.1.0"
 edition = "2021"
 
@@ -797,8 +797,8 @@ edition = "2021"
 crate-type = ["staticlib"]
 ```
 
-```forge
-// example.fg
+```avra
+// example.av
 use @local.my_package
 
 fn main() {
@@ -808,11 +808,11 @@ fn main() {
 
 With `--keyword` flag, additionally generates:
 
-```forge
-// src/package.fg (keyword version)
+```avra
+// src/package.av (keyword version)
 
-extern fn forge_my_package_init(name: string) -> int
-extern fn forge_my_package_exec(id: int, data: string) -> string
+extern fn avra_my_package_init(name: string) -> int
+extern fn avra_my_package_exec(id: int, data: string) -> string
 
 export type MyPackageResult = {
   id: int,
@@ -825,11 +825,11 @@ keyword my_package(name: string, config, schema) {
     // option_name: type = default_value
   }
 
-  let id = forge_my_package_init(name)
+  let id = avra_my_package_init(name)
 
   // Define functions available inside the keyword block
   fn exec(data: string) -> MyPackageResult {
-    json.parse(forge_my_package_exec(id, data))
+    json.parse(avra_my_package_exec(id, data))
   }
 
   // User's block body is inserted here automatically
@@ -850,6 +850,6 @@ keyword my_package(name: string, config, schema) {
 4. Test 1.4 passes (multiple servers on different ports)
 5. `@std/queue` works with zero compiler changes — tests 2.1-2.3 pass
 6. `@std/cron` works with zero compiler changes — tests 3.1-3.3 pass
-7. `forge package new` scaffolds a working package — tests 4.1-4.3 pass
+7. `avra package new` scaffolds a working package — tests 4.1-4.3 pass
 8. `git diff --stat compiler/src/` shows zero changes for Parts 2-4
 9. Total package count: 4 (@std/model, @std/http, @std/queue, @std/cron)

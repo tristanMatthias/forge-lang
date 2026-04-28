@@ -1,4 +1,4 @@
-# Forge — @std/channel + @std/process (TDD)
+# Avra — @std/channel + @std/process (TDD)
 
 Two packages that work together. Channels are the connective tissue. Processes are one of many things that plug into them.
 
@@ -8,7 +8,7 @@ Two packages that work together. Channels are the connective tissue. Processes a
 
 ## Test 1.1: Basic send and receive with `<-`
 
-```forge
+```avra
 use @std.channel
 
 fn main() {
@@ -23,7 +23,7 @@ fn main() {
 
 ## Test 1.2: Buffered channel
 
-```forge
+```avra
 fn main() {
   let ch = channel<int>(3)
 
@@ -47,7 +47,7 @@ fn main() {
 
 ## Test 1.3: Channel as iterable (for loop)
 
-```forge
+```avra
 fn main() {
   let ch = channel<string>(10)
 
@@ -70,7 +70,7 @@ fn main() {
 
 ## Test 1.4: Typed channels — compile-time safety
 
-```forge
+```avra
 fn main() {
   let numbers = channel<int>()
   numbers <- 42       // ok
@@ -79,13 +79,13 @@ fn main() {
 ```
 
 ```bash
-forge build test_channel_type.fg 2>&1 | grep "F0012"
+avra build test_channel_type.av 2>&1 | grep "F0012"
 # Expected: match
 ```
 
 ## Test 1.5: Close and drain
 
-```forge
+```avra
 fn main() {
   let ch = channel<string>(10)
   ch <- "a"
@@ -105,7 +105,7 @@ fn main() {
 
 ## Test 1.6: Send to closed channel panics
 
-```forge
+```avra
 fn main() {
   let ch = channel<string>()
   ch.close()
@@ -114,7 +114,7 @@ fn main() {
 ```
 
 ```bash
-forge build test_closed_send.fg -o test_closed
+avra build test_closed_send.av -o test_closed
 ./test_closed 2>&1
 ```
 
@@ -123,7 +123,7 @@ Expected runtime error:
 ```
   ╭─[panic] Send on closed channel
   │
-  │  ╭─[test_closed_send.fg:4:3]
+  │  ╭─[test_closed_send.av:4:3]
   │  │
   │  │    4 │   ch <- "oops"
   │  │      │   ────────────
@@ -134,7 +134,7 @@ Expected runtime error:
 
 ## Test 1.7: One-shot channel
 
-```forge
+```avra
 fn main() {
   let done = channel.once<bool>()
 
@@ -150,7 +150,7 @@ fn main() {
 
 ## Test 1.8: Timeout on receive
 
-```forge
+```avra
 fn main() {
   let ch = channel<string>()
 
@@ -162,7 +162,7 @@ fn main() {
 
 ## Test 1.9: Deadline channel — auto-closes after duration
 
-```forge
+```avra
 fn main() {
   let window = channel<int>.deadline(500ms)
 
@@ -191,7 +191,7 @@ fn main() {
 
 ## Test 1.10: Channel.map — transform stream
 
-```forge
+```avra
 fn main() {
   let raw = channel<string>(10)
   let upper = raw.map(it.upper())
@@ -211,7 +211,7 @@ fn main() {
 
 ## Test 1.11: Channel.filter
 
-```forge
+```avra
 fn main() {
   let all = channel<int>(10)
   let evens = all.filter(it % 2 == 0)
@@ -231,7 +231,7 @@ fn main() {
 
 ## Test 1.12: Channel.batch — collect N then emit
 
-```forge
+```avra
 fn main() {
   let items = channel<string>(20)
   let batched = items.batch(3)
@@ -254,7 +254,7 @@ fn main() {
 
 ## Test 1.13: Channel.debounce
 
-```forge
+```avra
 fn main() {
   let raw = channel<string>(20)
   let debounced = raw.debounce(200ms)
@@ -284,7 +284,7 @@ fn main() {
 
 ## Test 1.14: Channel.merge — combine multiple channels
 
-```forge
+```avra
 fn main() {
   let a = channel<string>(10)
   let b = channel<string>(10)
@@ -310,7 +310,7 @@ fn main() {
 
 ## Test 1.15: Channel chaining with |>
 
-```forge
+```avra
 fn main() {
   let raw = channel<string>(20)
 
@@ -332,7 +332,7 @@ fn main() {
 
 ## Test 1.16: Select — wait on multiple channels
 
-```forge
+```avra
 fn main() {
   let numbers = channel<int>(10)
   let strings = channel<string>(10)
@@ -367,7 +367,7 @@ fn main() {
 
 ## Test 1.17: Select with guard conditions
 
-```forge
+```avra
 fn main() {
   let cpu = channel<float>(10)
   let mem = channel<float>(10)
@@ -408,7 +408,7 @@ fn main() {
 
 ## Test 1.18: Channel as function return type
 
-```forge
+```avra
 fn countdown(from: int) -> channel<int> {
   let ch = channel<int>(from)
 
@@ -439,7 +439,7 @@ fn main() {
 
 ## Test 1.19: Fan-out — one producer, multiple consumers
 
-```forge
+```avra
 fn main() {
   let events = channel<int>(20)
 
@@ -470,7 +470,7 @@ fn main() {
 
 ## Test 1.20: Channel tick — periodic timer
 
-```forge
+```avra
 fn main() {
   let tick = channel.tick(100ms)
 
@@ -490,19 +490,19 @@ fn main() {
 
 ## Test 2.1: Basic run
 
-```forge
+```avra
 use @std.process
 
 fn main() {
-  let result = process.run("echo", ["hello forge"])?
-  println(result.stdout.trim())       // hello forge
+  let result = process.run("echo", ["hello avra"])?
+  println(result.stdout.trim())       // hello avra
   println(string(result.code))        // 0
 }
 ```
 
 ## Test 2.2: Failing process
 
-```forge
+```avra
 fn main() {
   let result = process.run("ls", ["/nonexistent_path_xyz"])?
   println(string(result.code != 0))        // true
@@ -512,21 +512,21 @@ fn main() {
 
 ## Test 2.3: `$` shorthand
 
-```forge
+```avra
 fn main() {
   let greeting = $"echo hello"
   println(greeting.trim())            // hello
 
   // With interpolation
-  let name = "forge"
+  let name = "avra"
   let result = $"echo hello ${name}"
-  println(result.trim())              // hello forge
+  println(result.trim())              // hello avra
 }
 ```
 
 ## Test 2.4: `$` with error fallback
 
-```forge
+```avra
 fn main() {
   let result = $"nonexistent-command-xyz" catch { "failed" }
   println(result)                     // failed
@@ -535,7 +535,7 @@ fn main() {
 
 ## Test 2.5: Spawn and manage background process
 
-```forge
+```avra
 fn main() {
   let handle = process.spawn("sleep", ["30"])?
 
@@ -550,7 +550,7 @@ fn main() {
 
 ## Test 2.6: Spawn and wait for output
 
-```forge
+```avra
 fn main() {
   // Start a process that prints "ready" after a delay
   let handle = process.spawn("sh", ["-c", "sleep 0.1 && echo ready && sleep 30"])?
@@ -563,7 +563,7 @@ fn main() {
 
 ## Test 2.7: Stream output line by line
 
-```forge
+```avra
 fn main() {
   mut lines_received: List<string> = []
 
@@ -577,7 +577,7 @@ fn main() {
 
 ## Test 2.8: Process stdout into channel
 
-```forge
+```avra
 use @std.channel
 
 fn main() {
@@ -602,7 +602,7 @@ fn main() {
 
 ## Test 2.9: Process pipe with |>
 
-```forge
+```avra
 fn main() {
   let result = $"echo hello world"
     |> lines
@@ -615,7 +615,7 @@ fn main() {
 
 ## Test 2.10: Pipe between processes
 
-```forge
+```avra
 fn main() {
   fs.write("pipe_data.txt", "apple\nbanana\napricot\ncherry\navocado")?
   defer fs.remove("pipe_data.txt")
@@ -633,19 +633,19 @@ fn main() {
 
 ## Test 2.11: Environment variables
 
-```forge
+```avra
 fn main() {
   let home = process.env("HOME") ?? "unknown"
   println(string(home.length > 0))    // true
 
-  let missing = process.env("FORGE_TEST_NONEXISTENT_VAR_XYZ")
+  let missing = process.env("AVRA_TEST_NONEXISTENT_VAR_XYZ")
   println(string(missing == null))    // true
 }
 ```
 
 ## Test 2.12: Run with custom environment and cwd
 
-```forge
+```avra
 fn main() {
   let result = process.run("sh", ["-c", "echo $MY_VAR"]) {
     env { MY_VAR "custom_value" }
@@ -655,7 +655,7 @@ fn main() {
 }
 ```
 
-```forge
+```avra
 fn main() {
   fs.mkdir("cwd_test")?
   fs.write("cwd_test/hello.txt", "hi")?
@@ -671,7 +671,7 @@ fn main() {
 
 ## Test 2.13: Run with timeout
 
-```forge
+```avra
 fn main() {
   let result = process.run("sleep", ["30"]) {
     timeout 500ms
@@ -686,7 +686,7 @@ fn main() {
 
 ## Test 2.14: Parallel processes
 
-```forge
+```avra
 fn main() {
   let results = process.parallel(
     () -> process.run("echo", ["first"]),
@@ -701,7 +701,7 @@ fn main() {
 
 ## Test 2.15: Race — first to finish wins
 
-```forge
+```avra
 fn main() {
   let winner = process.race(
     () -> process.run("sh", ["-c", "sleep 0.5 && echo slow"]),
@@ -714,7 +714,7 @@ fn main() {
 
 ## Test 2.16: Chain with reporting
 
-```forge
+```avra
 fn main() {
   mut report: List<string> = []
 
@@ -736,7 +736,7 @@ fn main() {
 
 ## Test 2.17: Chain stops on failure
 
-```forge
+```avra
 fn main() {
   mut steps_run = 0
 
@@ -755,7 +755,7 @@ fn main() {
 
 ## Test 2.18: Retry with backoff
 
-```forge
+```avra
 fn main() {
   mut attempts = 0
 
@@ -776,7 +776,7 @@ fn main() {
 
 ## Test 2.19: `sh` multi-line block
 
-```forge
+```avra
 fn main() {
   fs.mkdir("sh_test")?
   defer fs.remove_dir("sh_test")
@@ -793,15 +793,15 @@ fn main() {
 }
 ```
 
-## Test 2.20: `sh` with Forge variable interpolation
+## Test 2.20: `sh` with Avra variable interpolation
 
-```forge
+```avra
 fn main() {
-  let name = "forge"
+  let name = "avra"
   let count = 3
 
   let result = sh `echo ${name} has ${count} features`
-  println(result.trim())              // forge has 3 features
+  println(result.trim())              // avra has 3 features
 }
 ```
 
@@ -811,7 +811,7 @@ fn main() {
 
 ## Test 3.1: Process output into channel, filter, consume
 
-```forge
+```avra
 use @std.channel
 use @std.process
 
@@ -841,7 +841,7 @@ fn main() {
 
 ## Test 3.2: Multiple processes feeding one channel
 
-```forge
+```avra
 fn main() {
   fs.write("log_a.txt", "from A line 1\nfrom A line 2")?
   fs.write("log_b.txt", "from B line 1\nfrom B line 2")?
@@ -869,7 +869,7 @@ fn main() {
 
 ## Test 3.3: Channel driving process input
 
-```forge
+```avra
 fn main() {
   let commands = channel<string>(10)
 
@@ -893,7 +893,7 @@ fn main() {
 
 ## Test 3.4: Select between process and timer
 
-```forge
+```avra
 fn main() {
   let results = channel<string>(10)
   let tick = channel.tick(200ms)
@@ -929,7 +929,7 @@ fn main() {
 
 ## Test 3.5: Process pipeline through channels
 
-```forge
+```avra
 fn main() {
   let raw = channel<string>(100)
   let parsed = raw.map(json.parse<{level: string, msg: string}>(it))
@@ -954,7 +954,7 @@ fn main() {
 
 ## Test 3.6: Managed process component with channels
 
-```forge
+```avra
 use @std.process.{managed}
 use @std.channel
 
@@ -987,7 +987,7 @@ fn main() {
 
 ## Test 3.7: Full pipeline — HTTP + Queue + Channel + Process
 
-```forge
+```avra
 // This is the dream test — everything connected
 use @std.http.{server}
 use @std.queue.{queue}
@@ -1051,50 +1051,50 @@ version = "0.1.0"
 description = "Typed channels for concurrent communication"
 
 [native]
-library = "forge_channel"
+library = "avra_channel"
 ```
 
-## @std/channel — package.fg
+## @std/channel — package.av
 
-```forge
-extern fn forge_channel_create(capacity: int) -> int
-extern fn forge_channel_send(id: int, data: string) -> bool
-extern fn forge_channel_receive(id: int) -> string
-extern fn forge_channel_try_receive(id: int, timeout_ms: int) -> string
-extern fn forge_channel_close(id: int)
-extern fn forge_channel_is_closed(id: int) -> bool
-extern fn forge_channel_length(id: int) -> int
-extern fn forge_channel_capacity(id: int) -> int
-extern fn forge_channel_drain(id: int) -> string
-extern fn forge_channel_select(channel_ids_json: string, timeout_ms: int) -> string
-extern fn forge_channel_tick_create(interval_ms: int) -> int
+```avra
+extern fn avra_channel_create(capacity: int) -> int
+extern fn avra_channel_send(id: int, data: string) -> bool
+extern fn avra_channel_receive(id: int) -> string
+extern fn avra_channel_try_receive(id: int, timeout_ms: int) -> string
+extern fn avra_channel_close(id: int)
+extern fn avra_channel_is_closed(id: int) -> bool
+extern fn avra_channel_length(id: int) -> int
+extern fn avra_channel_capacity(id: int) -> int
+extern fn avra_channel_drain(id: int) -> string
+extern fn avra_channel_select(channel_ids_json: string, timeout_ms: int) -> string
+extern fn avra_channel_tick_create(interval_ms: int) -> int
 
 export type Channel<T> = {
   id: int,
 }
 
 export fn channel<T>(capacity: int = 0) -> Channel<T> {
-  Channel { id: forge_channel_create(capacity) }
+  Channel { id: avra_channel_create(capacity) }
 }
 
 impl<T> Channel<T> {
   fn send(self, value: T) {
-    forge_channel_send(self.id, json.stringify(value))
+    avra_channel_send(self.id, json.stringify(value))
   }
 
   fn receive(self) -> T {
-    json.parse(forge_channel_receive(self.id))
+    json.parse(avra_channel_receive(self.id))
   }
 
-  fn close(self) { forge_channel_close(self.id) }
-  fn is_closed(self) -> bool { forge_channel_is_closed(self.id) }
-  fn is_empty(self) -> bool { forge_channel_length(self.id) == 0 }
-  fn is_full(self) -> bool { forge_channel_length(self.id) >= forge_channel_capacity(self.id) }
-  fn length(self) -> int { forge_channel_length(self.id) }
-  fn capacity(self) -> int { forge_channel_capacity(self.id) }
+  fn close(self) { avra_channel_close(self.id) }
+  fn is_closed(self) -> bool { avra_channel_is_closed(self.id) }
+  fn is_empty(self) -> bool { avra_channel_length(self.id) == 0 }
+  fn is_full(self) -> bool { avra_channel_length(self.id) >= avra_channel_capacity(self.id) }
+  fn length(self) -> int { avra_channel_length(self.id) }
+  fn capacity(self) -> int { avra_channel_capacity(self.id) }
 
   fn drain(self) -> List<T> {
-    json.parse(forge_channel_drain(self.id))
+    json.parse(avra_channel_drain(self.id))
   }
 
   fn timeout(self, duration: duration) -> Channel<T> {
@@ -1183,7 +1183,7 @@ export fn once<T>() -> Channel<T> {
 }
 
 export fn tick(interval: duration) -> Channel<void> {
-  let id = forge_channel_tick_create(interval.to_ms())
+  let id = avra_channel_tick_create(interval.to_ms())
   Channel { id: id }
 }
 ```
@@ -1198,7 +1198,7 @@ version = "0.1.0"
 description = "Process spawning, management, and shell integration"
 
 [native]
-library = "forge_process"
+library = "avra_process"
 
 [components.managed]
 kind = "block"
@@ -1206,18 +1206,18 @@ context = "top_level"
 body = "mixed"
 ```
 
-## @std/process — package.fg
+## @std/process — package.av
 
-```forge
-extern fn forge_process_run(cmd: string, args_json: string, opts_json: string) -> string
-extern fn forge_process_spawn(cmd: string, args_json: string, opts_json: string) -> int
-extern fn forge_process_kill(pid: int) -> bool
-extern fn forge_process_wait(pid: int) -> string
-extern fn forge_process_wait_for_output(pid: int, pattern: string, timeout_ms: int) -> bool
-extern fn forge_process_read_line(pid: int) -> string
-extern fn forge_process_is_alive(pid: int) -> bool
-extern fn forge_process_env_get(key: string) -> string
-extern fn forge_process_pipe(input: string, cmd: string, args_json: string) -> string
+```avra
+extern fn avra_process_run(cmd: string, args_json: string, opts_json: string) -> string
+extern fn avra_process_spawn(cmd: string, args_json: string, opts_json: string) -> int
+extern fn avra_process_kill(pid: int) -> bool
+extern fn avra_process_wait(pid: int) -> string
+extern fn avra_process_wait_for_output(pid: int, pattern: string, timeout_ms: int) -> bool
+extern fn avra_process_read_line(pid: int) -> string
+extern fn avra_process_is_alive(pid: int) -> bool
+extern fn avra_process_env_get(key: string) -> string
+extern fn avra_process_pipe(input: string, cmd: string, args_json: string) -> string
 
 export type ProcessResult = {
   stdout: string,
@@ -1230,22 +1230,22 @@ export type ProcessHandle = {
 }
 
 export fn run(cmd: string, args: List<string>) -> Result<ProcessResult, string> {
-  let result_json = forge_process_run(cmd, json.stringify(args), "{}")
+  let result_json = avra_process_run(cmd, json.stringify(args), "{}")
   Ok(json.parse(result_json))
 }
 
 export fn spawn(cmd: string, args: List<string>) -> Result<ProcessHandle, string> {
-  let pid = forge_process_spawn(cmd, json.stringify(args), "{}")
+  let pid = avra_process_spawn(cmd, json.stringify(args), "{}")
   if pid < 0 { Err("failed to spawn") } else { Ok(ProcessHandle { pid: pid }) }
 }
 
 export fn env(key: string) -> string? {
-  let val = forge_process_env_get(key)
+  let val = avra_process_env_get(key)
   if val == "\0NULL" { null } else { val }
 }
 
 export fn pipe(input: string, cmd: string, args: List<string>) -> Result<string, string> {
-  let result_json = forge_process_pipe(input, cmd, json.stringify(args))
+  let result_json = avra_process_pipe(input, cmd, json.stringify(args))
   let result: ProcessResult = json.parse(result_json)
   if result.code == 0 { Ok(result.stdout) } else { Err(result.stderr) }
 }
@@ -1253,7 +1253,7 @@ export fn pipe(input: string, cmd: string, args: List<string>) -> Result<string,
 export fn stream(cmd: string, args: List<string>, handler: fn(string)) {
   let handle = spawn(cmd, args)?
   loop {
-    let line = forge_process_read_line(handle.pid)
+    let line = avra_process_read_line(handle.pid)
     if line == "\0EOF" { break }
     handler(line)
   }
@@ -1276,15 +1276,15 @@ export fn race(...fns: List<fn() -> Result<ProcessResult, string>>) -> Result<Pr
 }
 
 impl ProcessHandle {
-  fn kill(self) -> bool { forge_process_kill(self.pid) }
-  fn is_alive(self) -> bool { forge_process_is_alive(self.pid) }
+  fn kill(self) -> bool { avra_process_kill(self.pid) }
+  fn is_alive(self) -> bool { avra_process_is_alive(self.pid) }
 
   fn wait(self) -> Result<ProcessResult, string> {
-    Ok(json.parse(forge_process_wait(self.pid)))
+    Ok(json.parse(avra_process_wait(self.pid)))
   }
 
   fn wait_for_output(self, pattern: string, timeout: duration = 5s) -> Result<void, string> {
-    if forge_process_wait_for_output(self.pid, pattern, timeout.to_ms()) {
+    if avra_process_wait_for_output(self.pid, pattern, timeout.to_ms()) {
       Ok(())
     } else {
       Err(`timed out waiting for "${pattern}"`)
@@ -1366,7 +1366,7 @@ component managed(name: string) {
 | `sh` blocks | compiler | Multi-line shell execution |
 | Process env/cwd/timeout | @std/process | Options struct passed to native |
 | `process.pipe` | @std/process | stdin piping between processes |
-| `process.parallel` | @std/process | Forge's `parallel { }` + collect |
+| `process.parallel` | @std/process | Avra's `parallel { }` + collect |
 | `process.race` | @std/process | First-to-finish via channel |
 | `process.chain` | @std/process | Sequential with early abort |
 | `process.retry` | @std/process | Loop with backoff |

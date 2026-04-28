@@ -599,7 +599,7 @@ void avra_llvm_build_store_cast(LLVMBuilderRef b, LLVMValueRef val, LLVMValueRef
     tracked_store_or_raw(b, val, dest);
 }
 
-// Type introspection helpers for the Forge codegen.
+// Type introspection helpers for the Avra codegen.
 int64_t avra_llvm_type_kind(LLVMTypeRef ty) {
     return (int64_t)LLVMGetTypeKind(ty);
 }

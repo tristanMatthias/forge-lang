@@ -1,0 +1,950 @@
+use core.runtime.{avra_selfhost_argc, avra_selfhost_get_arg_cstr, avra_selfhost_file_exists, avra_selfhost_read_file, avra_selfhost_write_file, avra_shell_exec, avra_process_exit, avra_process_forward, avra_process_env_get, exit, avra_char_from_hex}
+
+// Convenience aliases so the rest of the bootstrap source can keep
+// using the short names.
+fn file_exists(path: string) -> int { avra_selfhost_file_exists(path) }
+fn read_file(path: string) -> string { avra_selfhost_read_file(path) }
+fn write_file(path: string, content: string) -> int { avra_selfhost_write_file(path, content) }
+
+mod core
+mod diagnostics
+mod parse
+mod features
+mod typeck
+mod resolve
+mod codegen
+mod desugar
+mod cli
+use cli.{cli_new, cli_add_command, cli_command_add_flag, cli_command_add_option, cli_command_add_arg, cli_parse, result_has_flag, result_get_option, result_get_arg}
+
+use parse.{parse_expression_source, parse_program_source}
+use core.ast.{render_expr, render_stmt_list, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType}
+use features.eval.{render_value}
+use features.eval.{eval_expression_source, execute_program_source}
+use desugar.{desugar_program}
+use features.component_decl.expand.{expand_components}
+use resolve.names.{resolve_names}
+use features.modules.resolver.{resolve_module_files, modules_dirname, LoadedPaths}
+use features.modules.package.{load_package_config}
+use typeck.{typecheck_program}
+use diagnostics.{bag_has_errors, bag_has_warnings, bag_new, bag_report, diag_error, diag_ice, span_dummy}
+use diagnostics.render.{render_bag, render_bag_json}
+use codegen.setup.{compile_program, codegen_and_emit_object}
+use core.ast.{sstmt_dummy, TypeParamList, ExprList}
+use features.generics.mono.{monomorphize}
+
+fn print_usage() {
+    eprintln("forge-bootstrap v0.1.0")
+    eprintln("Usage: bootstrapc <expr|program|eval|check|compile|run|fix|fmt|lsp|test> <file.av>")
+    eprintln("       bootstrapc compile --stop-after=<parse|resolve|names|check> [--json] <file.av>")
+    eprintln("       bootstrapc fix <file.av>   Apply high-confidence auto-fixes")
+    eprintln("       bootstrapc fmt <file.av>   Format a Avra source file")
+    eprintln("       bootstrapc lsp             Start language server")
+    eprintln("       bootstrapc test <file.av>  Run spec tests in a file")
+}
+
+fn fail(message: string) {
+    eprintln(message)
+    exit(1)
+}
+
+// Module file resolution and name resolution live in features/modules/.
+
+// ── Code formatter (ticket c5w) ──
+// Avra syntax with consistent indentation.
+
+fn fmt_indent(depth: int) -> string {
+    mut result = ""
+    for i in 0..depth {
+        result = result + "    "
+    }
+    result
+}
+
+fn fmt_expr(se: Expr) -> string {
+    match se {
+        .Number(v) -> v
+        .String(v) -> v
+        .Bool(v) -> v
+        .Null -> "null"
+        .Ident(name) -> name
+        .QualifiedIdent(path) -> path
+        .Assign(name, value) -> "${name} = ${fmt_expr(value)}"
+        .Grouping(inner) -> "(${fmt_expr(inner)})"
+        .Unary(op, right) -> "${unop_str(op)}${fmt_expr(right)}"
+        .Binary(left, op, right) -> "${fmt_expr(left)} ${binop_str(op)} ${fmt_expr(right)}"
+        .Logical(left, op, right) -> "${fmt_expr(left)} ${logicop_str(op)} ${fmt_expr(right)}"
+        .Call(callee, args) -> "${fmt_expr(callee)}(${fmt_expr_list_comma(args)})"
+        .GenericCall(callee, ta, args) -> "${fmt_expr(callee)}::<${fmt_type_name_list(ta)}>(${fmt_expr_list_comma(args)})"
+        .StructLit(name, inits) -> "${name} { ${fmt_field_init_list(inits)} }"
+        .FieldAccess(obj, field) -> "${fmt_expr(obj)}.${field}"
+        .EnumCtor(tn, variant, args) -> ".${variant}(${fmt_expr_list_comma(args)})"
+        .Index(obj, idx) -> "${fmt_expr(obj)}[${fmt_expr(idx)}]"
+        .Block(body) -> "{\n${fmt_stmt_list(body, 1)}\n}"
+        .MatchExpr(subject, arms) -> "match ${fmt_expr(subject)} {\n${fmt_match_arms(arms, 1)}\n}"
+        .FieldAssign(obj, field, value) -> "${fmt_expr(obj)}.${field} = ${fmt_expr(value)}"
+        .IfExpr(c, t, e) -> "if ${fmt_expr(c)} { ${fmt_expr(t)} } else { ${fmt_expr(e)} }"
+        .NullCoalesce(left, right) -> "${fmt_expr(left)} ?? ${fmt_expr(right)}"
+        .OptionalChain(obj, field) -> "${fmt_expr(obj)}?.${field}"
+        .Try(inner) -> "${fmt_expr(inner)}?"
+        .Tuple(elements) -> "(${fmt_expr_list_comma(elements)})"
+        .TupleIndex(obj, idx) -> "${fmt_expr(obj)}.${string(idx)}"
+        .With(obj, overrides) -> "${fmt_expr(obj)} with { ${fmt_field_init_list(overrides)} }"
+        .ListLit(elements) -> "[${fmt_expr_list_comma(elements)}]"
+        .Lambda(params, body) -> "(${fmt_param_list_comma(params)}) -> ${fmt_expr(body)}"
+        .MapLit(entries) -> "{ ${fmt_map_entries(entries)} }"
+        .FloatLit(v) -> v
+        .Slice(obj, start, end) -> "${fmt_expr(obj)}[${fmt_expr(start)}..${fmt_expr(end)}]"
+        .IsCheck(subject, vname) -> "${fmt_expr(subject)} is .${vname}"
+        .InCheck(needle, items) -> "${fmt_expr(needle)} in [${fmt_expr_list_comma(items)}]"
+        .ListComp(body, variable, collection, _) -> "[${fmt_expr(body)} for ${variable} in ${fmt_expr(collection)}]"
+        .When(arms) -> "when {\n${fmt_when_arms(arms, 1)}\n}"
+        .Catch(inner, binding, body, _, _) -> "${fmt_expr(inner)} catch ${binding} { ${fmt_expr(body)} }"
+        .Spawn(body) -> "spawn ${fmt_expr(body)}"
+    }
+}
+
+fn fmt_stmt(ss: Stmt, depth: int) -> string {
+    let ind = fmt_indent(depth)
+    match ss {
+        .Let(name, vt, init) -> {
+            let ty_part = if vtype_display(vt) == "" { "" } else { ": ${vtype_display(vt)}" }
+            "${ind}let ${name}${ty_part} = ${fmt_expr(init)}"
+        }
+        .Mut(name, vt, init) -> {
+            let ty_part = if vtype_display(vt) == "" { "" } else { ": ${vtype_display(vt)}" }
+            "${ind}mut ${name}${ty_part} = ${fmt_expr(init)}"
+        }
+        .Const(name, vt, init) -> {
+            let ty_part = if vtype_display(vt) == "" { "" } else { ": ${vtype_display(vt)}" }
+            "${ind}const ${name}${ty_part} = ${fmt_expr(init)}"
+        }
+        .Expr(se) -> "${ind}${fmt_expr(se)}"
+        .Block(body) -> "${ind}{\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
+        .If(condition, then_branch, else_branch) -> {
+            let base = "${ind}if ${fmt_expr(condition)} {\n${fmt_stmt(then_branch, depth + 1)}\n${ind}}"
+            if else_branch == null {
+                base
+            } else {
+                "${base} else {\n${fmt_stmt(else_branch!, depth + 1)}\n${ind}}"
+            }
+        }
+        .While(condition, body) -> "${ind}while ${fmt_expr(condition)} {\n${fmt_stmt(body, depth + 1)}\n${ind}}"
+        .For(variable, start, end, body) -> "${ind}for ${variable} in ${fmt_expr(start)}..${fmt_expr(end)} {\n${fmt_stmt(body, depth + 1)}\n${ind}}"
+        .ForIn(variable, collection, body) -> "${ind}for ${variable} in ${fmt_expr(collection)} {\n${fmt_stmt(body, depth + 1)}\n${ind}}"
+        .Function(name, tp, params, rvt, body) -> {
+            let tp_str = fmt_type_param_list(tp)
+            let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
+            let ret_part = if vtype_eq(rvt, .Void) { "" } else { " -> ${vtype_display(rvt)}" }
+            "${ind}fn ${name}${tp_part}(${fmt_param_list_typed(params)})${ret_part} {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
+        }
+        .Return(value) -> "${ind}return ${fmt_expr(value)}"
+        .ReturnEmpty -> "${ind}return"
+        .TypeDecl(name, tp, fields) -> {
+            let tp_str = fmt_type_param_list(tp)
+            let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
+            "${ind}type ${name}${tp_part} = {\n${fmt_field_decl_list(fields, depth + 1)}\n${ind}}"
+        }
+        .NewtypeDecl(name, inner_vt) -> "${ind}type ${name} = ${vtype_render_full(inner_vt)}"
+        .UnionAliasDecl(name, type_vt) -> "${ind}type ${name} = ${vtype_render_full(type_vt)}"
+        .ShapeDecl(name, fields) -> "${ind}shape ${name} = {\n${fmt_field_decl_list(fields, depth + 1)}\n${ind}}"
+        .EnumDecl(name, tp, variants) -> {
+            let tp_str = fmt_type_param_list(tp)
+            let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
+            "${ind}enum ${name}${tp_part} {\n${fmt_variant_list(variants, depth + 1)}\n${ind}}"
+        }
+        .Match(subject, arms) -> "${ind}match ${fmt_expr(subject)} {\n${fmt_match_arms(arms, depth + 1)}\n${ind}}"
+        .Impl(name, methods) -> {
+            let colon = name.index_of(":")
+            let impl_header = if colon >= 0 {
+                let trait_name = name.substring(0, colon)
+                let type_name = name.substring(colon + 1, name.length)
+                "impl ${trait_name} for ${type_name}"
+            } else {
+                "impl ${name}"
+            }
+            "${ind}${impl_header} {\n${fmt_stmt_list(methods, depth + 1)}\n${ind}}"
+        }
+        .NoOp -> ""
+        .ExternFn(name, params, rvt) -> "${ind}extern fn ${name}(${fmt_param_list_typed(params)}) -> ${vtype_display(rvt)}"
+        .Break -> "${ind}break"
+        .Continue -> "${ind}continue"
+        .TraitDecl(name, methods) -> "${ind}trait ${name} {\n${fmt_stmt_list(methods, depth + 1)}\n${ind}}"
+        .LetDestructure(names, init) -> "${ind}let (${fmt_param_list_comma(names)}) = ${fmt_expr(init)}"
+        .Defer(body) -> "${ind}defer ${fmt_expr(body)}"
+        .Errdefer(body) -> "${ind}errdefer ${fmt_expr(body)}"
+        .Annotated(annotations, inner) -> "${fmt_annotation_list(annotations, depth)}${fmt_stmt(inner, depth)}"
+        .SpecBlock(name, body) -> "${ind}spec ${name} {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
+        .GivenBlock(name, body) -> "${ind}given ${name} {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
+        .ThenBlock(name, cond) -> "${ind}then ${name} { ${fmt_expr(cond)} }"
+        .Select(_) -> "${ind}select { ... }"
+        .Parallel(body) -> "${ind}parallel {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
+        .Module(name, body) -> "${ind}mod ${name}\n${fmt_stmt_list(body, depth)}"
+        .Use(path, names) -> "${ind}use ${path}.{${fmt_param_list_comma(names)}}"
+        .AssocType(name, ty_vt) -> if vtype_is_unknown(ty_vt) { "${ind}type ${name}" } else { "${ind}type ${name} = ${vtype_render_full(ty_vt)}" }
+        .ComponentDef(name, params, _, body) -> "${ind}component ${name}(${fmt_param_list_comma(params)}) {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
+        .ComponentBlock(comp, inst, _, body) -> "${ind}${comp} ${inst} {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
+    }
+}
+
+fn fmt_stmt_list(stmts: StmtList, depth: int) -> string {
+    match stmts {
+        .End -> ""
+        .Node(ss, next) -> {
+            let head = fmt_stmt(ss.node, depth)
+            let tail = fmt_stmt_list(next, depth)
+            if tail == "" { head } else { "${head}\n${tail}" }
+        }
+    }
+}
+
+fn fmt_expr_list_comma(exprs: ExprList) -> string {
+    match exprs {
+        .End -> ""
+        .Node(se, next) -> {
+            let head = fmt_expr(se.node)
+            let tail = fmt_expr_list_comma_tail(next)
+            "${head}${tail}"
+        }
+    }
+}
+
+fn fmt_expr_list_comma_tail(exprs: ExprList) -> string {
+    match exprs {
+        .End -> ""
+        .Node(se, next) -> ", ${fmt_expr(se.node)}${fmt_expr_list_comma_tail(next)}"
+    }
+}
+
+fn fmt_param_list_comma(params: ParamList) -> string {
+    match params {
+        .End -> ""
+        .Node(name, _, next) -> {
+            let tail = fmt_param_list_comma_tail(next)
+            "${name}${tail}"
+        }
+    }
+}
+
+fn fmt_param_list_comma_tail(params: ParamList) -> string {
+    match params {
+        .End -> ""
+        .Node(name, _, next) -> ", ${name}${fmt_param_list_comma_tail(next)}"
+    }
+}
+
+fn fmt_param_list_typed(params: ParamList) -> string {
+    match params {
+        .End -> ""
+        .Node(name, resolved, next) -> {
+            let ty_part = if vtype_is_unknown(resolved) { "" } else { ": ${vtype_display(resolved)}" }
+            let tail = fmt_param_list_typed_tail(next)
+            "${name}${ty_part}${tail}"
+        }
+    }
+}
+
+fn fmt_param_list_typed_tail(params: ParamList) -> string {
+    match params {
+        .End -> ""
+        .Node(name, resolved, next) -> {
+            let ty_part = if vtype_is_unknown(resolved) { "" } else { ": ${vtype_display(resolved)}" }
+            ", ${name}${ty_part}${fmt_param_list_typed_tail(next)}"
+        }
+    }
+}
+
+fn fmt_type_param_list(tp: TypeParamList) -> string {
+    match tp {
+        .End -> ""
+        .Node(name, bound, next) -> {
+            let bound_part = if bound == "" { "" } else { ": ${bound}" }
+            let rest = fmt_type_param_list(next)
+            if rest == "" { "${name}${bound_part}" } else { "${name}${bound_part}, ${rest}" }
+        }
+    }
+}
+
+fn fmt_type_name_list(names: TypeNameList) -> string {
+    match names {
+        .End -> ""
+        .Node(name, next) -> {
+            let rest = fmt_type_name_list(next)
+            if rest == "" { name } else { "${name}, ${rest}" }
+        }
+    }
+}
+
+fn fmt_field_init_list(inits: FieldInitList) -> string {
+    match inits {
+        .End -> ""
+        .Node(name, sv, next) -> {
+            let head = "${name}: ${fmt_expr(sv.node)}"
+            let tail = fmt_field_init_list_tail(next)
+            "${head}${tail}"
+        }
+    }
+}
+
+fn fmt_field_init_list_tail(inits: FieldInitList) -> string {
+    match inits {
+        .End -> ""
+        .Node(name, sv, next) -> ", ${name}: ${fmt_expr(sv.node)}${fmt_field_init_list_tail(next)}"
+    }
+}
+
+fn fmt_field_decl_list(fields: FieldList, depth: int) -> string {
+    let ind = fmt_indent(depth)
+    match fields {
+        .End -> ""
+        .Node(name, vt, next) -> {
+            let head = "${ind}${name}: ${vtype_display(vt)}"
+            let tail = fmt_field_decl_list(next, depth)
+            if tail == "" { head } else { "${head}\n${tail}" }
+        }
+    }
+}
+
+fn fmt_variant_list(variants: VariantList, depth: int) -> string {
+    let ind = fmt_indent(depth)
+    match variants {
+        .End -> ""
+        .Node(name, fields, next) -> {
+            let fields_str = fmt_variant_fields(fields)
+            let head = "${ind}${name}${fields_str}"
+            let tail = fmt_variant_list(next, depth)
+            if tail == "" { head } else { "${head}\n${tail}" }
+        }
+    }
+}
+
+fn fmt_variant_fields(fields: FieldList) -> string {
+    match fields {
+        .End -> ""
+        .Node(name, vt, next) -> {
+            let head = "${name}: ${vtype_display(vt)}"
+            let tail = fmt_variant_fields_tail(next)
+            "(${head}${tail})"
+        }
+    }
+}
+
+fn fmt_variant_fields_tail(fields: FieldList) -> string {
+    match fields {
+        .End -> ""
+        .Node(name, vt, next) -> ", ${name}: ${vtype_display(vt)}${fmt_variant_fields_tail(next)}"
+    }
+}
+
+fn fmt_pattern(p: Pattern) -> string {
+    match p {
+        .Wildcard -> "_"
+        .Variant(name, bindings) -> {
+            let bindings_str = fmt_param_list_comma(bindings)
+            if bindings_str == "" { ".${name}" } else { ".${name}(${bindings_str})" }
+        }
+        .Or(left, right) -> "${fmt_pattern(left)} | ${fmt_pattern(right)}"
+        .TypePattern(type_name, binding) -> "${type_name}(${binding})"
+        _ -> "_"
+    }
+}
+
+fn fmt_match_arms(arms: MatchArmList, depth: int) -> string {
+    let ind = fmt_indent(depth)
+    match arms {
+        .End -> ""
+        .Node(pattern, guard, body, next) -> {
+            let guard_str = if guard != null { " if ${fmt_expr(guard!.node)}" } else { "" }
+            let head = "${ind}${fmt_pattern(pattern)}${guard_str} -> ${fmt_expr(body.node)}"
+            let tail = fmt_match_arms(next, depth)
+            if tail == "" { head } else { "${head}\n${tail}" }
+        }
+    }
+}
+
+fn fmt_when_arms(arms: WhenArmList, depth: int) -> string {
+    let ind = fmt_indent(depth)
+    match arms {
+        .End -> ""
+        .Node(cond, body, next) -> {
+            let cond_str = if cond == null { "_" } else { fmt_expr(cond!.node) }
+            let head = "${ind}${cond_str} -> ${fmt_expr(body.node)}"
+            let tail = fmt_when_arms(next, depth)
+            if tail == "" { head } else { "${head}\n${tail}" }
+        }
+    }
+}
+
+fn fmt_annotation_list(annots: AnnotationList, depth: int) -> string {
+    let ind = fmt_indent(depth)
+    match annots {
+        .End -> ""
+        .Node(name, _, next) -> "${ind}@${name}\n${fmt_annotation_list(next, depth)}"
+    }
+}
+
+fn fmt_map_entries(entries: ExprList) -> string {
+    match entries {
+        .End -> ""
+        .Node(key_se, rest) -> {
+            match rest {
+                .End -> fmt_expr(key_se.node)
+                .Node(val_se, next) -> {
+                    let head = "${fmt_expr(key_se.node)}: ${fmt_expr(val_se.node)}"
+                    let tail = fmt_map_entries(next)
+                    if tail == "" { head } else { "${head}, ${tail}" }
+                }
+            }
+        }
+    }
+}
+
+// ── CLI component definitions ──
+// Match the Rust std-cli component pattern exactly.
+// Template components: init hooks use self.__parent to thread builder calls.
+
+component cli(name: string) {
+    config {
+        description: string = ""
+        version: string = "0.1.0"
+    }
+    fn init() {
+        self.__parent = cli_new(self.name, self.config.description, self.config.version)
+    }
+}
+
+component command(name: string) {
+    config { description: string = "" }
+    fn init() {
+        self.__parent = cli_add_command(self.__parent, self.name, self.config.description)
+    }
+}
+
+component flag(name: string) {
+    config { short: string = "", description: string = "" }
+    fn init() {
+        self.__parent = cli_command_add_flag(self.__parent, self.__parent_name, "--${self.name}", self.config.short, self.config.description)
+    }
+}
+
+component option(name: string) {
+    config { short: string = "", description: string = "", default_val: string = "" }
+    fn init() {
+        self.__parent = cli_command_add_option(self.__parent, self.__parent_name, "--${self.name}", self.config.short, self.config.description, self.config.default_val)
+    }
+}
+
+component arg(name: string) {
+    config { description: string = "", required: bool = false }
+    fn init() {
+        self.__parent = cli_command_add_arg(self.__parent, self.__parent_name, self.name, self.config.description, self.config.required)
+    }
+}
+
+// ── Test runner helpers ──
+
+fn path_basename_no_ext(path: string) -> string {
+    mut last_slash = 0
+    mut si = 0
+    for ch in path {
+        if ch == "/" { last_slash = si + 1 }
+        si = si + 1
+    }
+    let basename = path.substring(last_slash, path.length)
+    if basename.ends_with(".av") {
+        basename.substring(0, basename.length - 3)
+    } else {
+        basename
+    }
+}
+
+fn strip_externs(stmts: StmtList) -> StmtList {
+    match stmts {
+        .End -> StmtList.End
+        .Node(ss, next) -> {
+            match ss.node {
+                .ExternFn(_, _, _) -> strip_externs(next)
+                _ -> StmtList.Node(ss, strip_externs(next))
+            }
+        }
+    }
+}
+
+fn prepend_test_externs(stmts: StmtList) -> StmtList {
+    let s4 = StmtList.Node(sstmt_dummy(Stmt.ExternFn("avra_test_capture_stop", ParamList.End, ValueType.Str)), stmts)
+    let s3 = StmtList.Node(sstmt_dummy(Stmt.ExternFn("avra_test_capture_start", ParamList.End, ValueType.Void)), s4)
+    let s2 = StmtList.Node(sstmt_dummy(Stmt.ExternFn("avra_test_flush", ParamList.End, ValueType.Void)), s3)
+    StmtList.Node(sstmt_dummy(Stmt.ExternFn("avra_test_summary", ParamList.End, ValueType.Int)), s2)
+}
+
+
+
+fn main() {
+    // ── Fully declarative CLI ──
+    // Matches the Rust std-cli pattern: nested component blocks, zero builder calls.
+    cli app {
+        description "Avra bootstrap compiler"
+        version "0.1.0"
+
+        command compile {
+            description "Compile a Avra file to LLVM IR"
+            flag coverage { short "-c", description "Enable coverage instrumentation" }
+            flag debug_null { description "Enable null argument checks" }
+            flag json { description "Output diagnostics as JSON" }
+            option stop_after { description "Stop after phase (parse|resolve|names|check)" }
+            arg file { description "Source file", required true }
+        }
+
+        command check {
+            description "Type-check a Avra file"
+            flag json { description "Output diagnostics as JSON" }
+            arg file { description "Source file", required true }
+        }
+
+        command run {
+            description "Compile and run a Avra file"
+            arg file { description "Source file", required true }
+        }
+
+        command test {
+            description "Run tests"
+            option filter { short "-f", description "Filter tests by name" }
+            flag coverage { short "-c", description "Enable coverage instrumentation" }
+            arg file { description "Test file (optional)" }
+        }
+
+        command expr {
+            description "Parse and display an expression"
+            arg file { description "Source file", required true }
+        }
+
+        command program {
+            description "Parse and display a program"
+            arg file { description "Source file", required true }
+        }
+
+        command eval {
+            description "Evaluate a Avra expression"
+            arg file { description "Source file", required true }
+        }
+
+        command fix {
+            description "Apply auto-fixes to a Avra file"
+            arg file { description "Source file", required true }
+        }
+
+        command fmt {
+            description "Format a Avra source file"
+            arg file { description "Source file", required true }
+        }
+
+        command lsp {
+            description "Start language server"
+        }
+
+        command features {
+            description "List registered features"
+        }
+    }
+
+    // Handle subcommands that don't require a file argument.
+    if avra_selfhost_argc() >= 2 {
+        let cmd0 = avra_selfhost_get_arg_cstr(1)
+        if cmd0 == "lsp" {
+            println("LSP server not yet available — use `avra check` for diagnostics")
+            return
+        }
+        if cmd0 == "test" {
+            let project_dir = avra_process_env_get("PWD")
+
+            // Parse args
+            mut filter_arg = ""
+            mut i = 2
+            while i < avra_selfhost_argc() {
+                let arg = avra_selfhost_get_arg_cstr(i)
+                if arg == "-f" || arg == "--filter" {
+                    if i + 1 < avra_selfhost_argc() {
+                        filter_arg = avra_selfhost_get_arg_cstr(i + 1)
+                    }
+                    i = i + 2
+                    continue
+                }
+                i = i + 1
+            }
+
+            // Step 1: Discover _test.av files
+            // TODO(bead wcrm): replace with proper FS walk
+            let test_files = avra_shell_exec("find ${project_dir} -name '*_test.av' -type f -not -path '*/build/*' 2>/dev/null | sort")
+            if test_files == "" {
+                println("No test files found.")
+                return
+            }
+
+            // Step 2: Parse each test file as a Module
+            // Each file becomes Stmt.Module(name, body) — proper namespacing.
+            // Module-level code (spec blocks) executes via __bs_top_level patching.
+            mut modules = StmtList.End
+            mut count = 0
+            for path in test_files.split("\n") {
+                if path == "" { continue }
+                let content = read_file(path)
+                if !content.contains("spec ") { continue }
+                if content.contains("fn main()") { continue }
+
+                let mod_name = path_basename_no_ext(path)
+                if filter_arg != "" && !mod_name.contains(filter_arg) { continue }
+
+                let parsed = parse_program_source(content)
+                if parsed.had_error || parsed.stmts == null {
+                    if bag_has_errors(parsed.bag) {
+                        render_bag(content, path, parsed.bag)
+                    }
+                    eprintln("error parsing ${path}")
+                    continue
+                }
+
+                // Wrap as Module — gives each test its own namespace
+                modules = StmtList.Node(
+                    sstmt_dummy(Stmt.Module(mod_name, strip_externs(parsed.stmts!))),
+                    modules
+                )
+                count = count + 1
+            }
+
+            if count == 0 {
+                println("No spec test files found.")
+                return
+            }
+
+            // Step 3: Build program — externs + modules + main
+            mut program = prepend_test_externs(modules)
+
+            // main() just calls avra_test_summary().
+            // Module-level spec blocks run via __bs_top_level (codegen patches main to call it).
+            let main_body = StmtList.Node(
+                sstmt_dummy(Stmt.Expr(Expr.Call(Expr.Ident("avra_test_summary"), ExprList.End))),
+                StmtList.End
+            )
+            program = StmtList.Node(
+                sstmt_dummy(Stmt.Function("main", TypeParamList.End, ParamList.End, ValueType.Int, main_body)),
+                program
+            )
+
+            // Step 4: Full pipeline
+            let desugared = desugar_program(program)
+            let expanded = expand_components(desugared)
+            let named = resolve_names(expanded)
+            if bag_has_errors(named.bag) || named.had_error {
+                render_bag("", "<test>", named.bag)
+                fail(named.error_message)
+            }
+            let tc_result = typecheck_program(named.stmts)
+            if bag_has_errors(tc_result.bag) {
+                render_bag("", "<test>", tc_result.bag)
+                fail("type check failed")
+            }
+            let mono = monomorphize(tc_result.stmts, tc_result.trait_impls)
+            if bag_has_errors(mono.bag) { fail("monomorphization failed") }
+
+            // Step 5: Emit object + link + run
+            let build_dir = "${project_dir}/build"
+            let obj_path = "${build_dir}/_test.o"
+            let bin_path = "${build_dir}/_test.bin"
+
+            match codegen_and_emit_object(mono.stmts, obj_path, named.type_reg) {
+                .Ok(_) -> {}
+                .Err(e) -> { fail(e) }
+            }
+
+            let llvm_env = avra_process_env_get("LLVM_PREFIX")
+            let llvm_lib = if llvm_env == "" { "/opt/homebrew/opt/llvm/lib" } else { "${llvm_env}/lib" }
+            let link_args = "[\"${obj_path}\", \"${build_dir}/runtime.o\", \"${build_dir}/llvm_wrapper.o\", \"-o\", \"${bin_path}\", \"-Wl,-stack_size,0x2000000\", \"-L${llvm_lib}\", \"-lLLVM\", \"-lc++\"]"
+            let link_code = avra_process_forward("cc", link_args, "")
+            if link_code != 0 {
+                fail("link failed")
+            }
+
+            // Step 6: Run the test binary (proper fork+exec, no shell)
+            let exit_code = avra_process_forward(bin_path, "[]", "")
+            avra_process_exit(exit_code)
+            return
+        }
+    }
+
+    if avra_selfhost_argc() < 3 {
+        print_usage()
+        exit(1)
+    }
+
+    let command = avra_selfhost_get_arg_cstr(1)
+    let path = avra_selfhost_get_arg_cstr(2)
+    let is_flag = path.starts_with("--")
+    if !is_flag && !file_exists(path) {
+        fail("error: file not found: ${path}")
+    }
+
+    let source = if is_flag { "" } else { read_file(path) }
+    match command {
+        "expr" -> {
+            let result = parse_expression_source(source)
+            if result.had_error || result.expr == null {
+                fail(result.error_message)
+            }
+            println(render_expr(result.expr!))
+            return
+        }
+        "program" -> {
+            let result = parse_program_source(source)
+            if result.had_error || result.stmts == null {
+                fail(result.error_message)
+            }
+            println(render_stmt_list(result.stmts!))
+            return
+        }
+        "eval" -> {
+            let result = eval_expression_source(source)
+            if result.had_error || result.value == null {
+                fail(result.error_message)
+            }
+            println(render_value(result.value!))
+            return
+        }
+        "check" -> {
+            // Parse --json flag using @std/cli
+            let check_parsed = cli_parse(app)
+            let check_json = result_has_flag(check_parsed, "json")
+            let check_argc = avra_selfhost_argc()
+            let check_path = if check_argc > 3 { avra_selfhost_get_arg_cstr(check_argc - 1) } else { path }
+            let check_source = if check_path != path { read_file(check_path) } else { source }
+
+            let parsed = parse_program_source(check_source)
+            if parsed.had_error || parsed.stmts == null {
+                if bag_has_errors(parsed.bag) {
+                    if check_json { render_bag_json(check_path, parsed.bag) } else { render_bag(check_source, check_path, parsed.bag) }
+                }
+                fail(parsed.error_message)
+            }
+            let check_dir = modules_dirname(check_path)
+            let check_pkg = load_package_config(check_dir)
+            if check_pkg.found && !check_json {
+                eprintln("[pkg] ${check_pkg.name} v${check_pkg.version}")
+            }
+            let desugared = desugar_program(parsed.stmts!)
+            let entry_dir = modules_dirname(check_path)
+            let mod_resolved = resolve_module_files(desugared, entry_dir, LoadedPaths.End)
+            if mod_resolved.had_error {
+                let mod_bag = bag_report(bag_new(), diag_error(DiagCode.ModuleNotFound, mod_resolved.error_message, span_dummy()))
+                if check_json { render_bag_json(check_path, mod_bag) } else { render_bag(check_source, check_path, mod_bag) }
+                fail(mod_resolved.error_message)
+            }
+            let expanded = expand_components(mod_resolved.stmts)
+            let named = resolve_names(expanded)
+            if bag_has_errors(named.bag) || bag_has_warnings(named.bag) {
+                if check_json { render_bag_json(check_path, named.bag) } else { render_bag(check_source, check_path, named.bag) }
+            }
+            if named.had_error { fail(named.error_message) }
+            let tc_result = typecheck_program(named.stmts)
+            if bag_has_errors(tc_result.bag) || bag_has_warnings(tc_result.bag) {
+                if check_json { render_bag_json(check_path, tc_result.bag) } else { render_bag(check_source, check_path, tc_result.bag) }
+            }
+            if bag_has_errors(tc_result.bag) { return }
+            if !check_json { println("ok") }
+            return
+        }
+        "run" -> {
+            let result = execute_program_source(source)
+            if result.had_error || result.value == null {
+                fail(result.error_message)
+            }
+            println(render_value(result.value!))
+            return
+        }
+        "fix" -> {
+            // Ticket 8ym: autofix infrastructure.
+            // Parse and check the file, then apply high-confidence fixes.
+            // For v1.0: no auto-fixes are implemented yet, so we just report that.
+            let parsed = parse_program_source(source)
+            if parsed.had_error || parsed.stmts == null {
+                if bag_has_errors(parsed.bag) {
+                    render_bag(source, path, parsed.bag)
+                }
+                fail(parsed.error_message)
+            }
+            let entry_dir = modules_dirname(path)
+            let mod_resolved = resolve_module_files(parsed.stmts!, entry_dir, LoadedPaths.End)
+            if mod_resolved.had_error {
+                fail(mod_resolved.error_message)
+            }
+            let named = resolve_names(mod_resolved.stmts)
+            if bag_has_errors(named.bag) {
+                render_bag(source, path, named.bag)
+            }
+            println("no auto-fixes available")
+            return
+        }
+        "fmt" -> {
+            // Ticket c5w: code formatter (spec Axis 27.1).
+            // Avra syntax.
+            let parsed = parse_program_source(source)
+            if parsed.had_error || parsed.stmts == null {
+                if bag_has_errors(parsed.bag) {
+                    render_bag(source, path, parsed.bag)
+                }
+                fail(parsed.error_message)
+            }
+            println(fmt_stmt_list(parsed.stmts!, 0))
+            return
+        }
+        "test" -> {
+            // Ticket syu: test runner (spec Axis 27.3).
+            // Compile the file (which should contain spec/given/then blocks)
+            // and report the output path for linking and execution.
+            let parsed = parse_program_source(source)
+            if parsed.had_error || parsed.stmts == null {
+                if bag_has_errors(parsed.bag) {
+                    render_bag(source, path, parsed.bag)
+                }
+                fail(parsed.error_message)
+            }
+            let desugared = desugar_program(parsed.stmts!)
+            let entry_dir = modules_dirname(path)
+            let mod_resolved = resolve_module_files(desugared, entry_dir, LoadedPaths.End)
+            if mod_resolved.had_error {
+                let mod_bag = bag_report(bag_new(), diag_error(DiagCode.ModuleNotFound, mod_resolved.error_message, span_dummy()))
+                render_bag(source, path, mod_bag)
+                fail(mod_resolved.error_message)
+            }
+            let expanded = expand_components(mod_resolved.stmts)
+            let named = resolve_names(expanded)
+            if bag_has_errors(named.bag) || bag_has_warnings(named.bag) {
+                render_bag(source, path, named.bag)
+            }
+            if named.had_error { fail(named.error_message) }
+            let tc_result = typecheck_program(named.stmts)
+            if bag_has_errors(tc_result.bag) || bag_has_warnings(tc_result.bag) {
+                render_bag(source, path, tc_result.bag)
+            }
+            if bag_has_errors(tc_result.bag) { fail("type check failed") }
+            let mono = monomorphize(tc_result.stmts, tc_result.trait_impls)
+            if bag_has_errors(mono.bag) {
+                render_bag(source, path, mono.bag)
+                fail("monomorphization failed")
+            }
+            let output = "${path}.ll"
+            match compile_program(mono.stmts, output, false, false, path, named.type_reg) {
+                .Ok(_) -> {}
+                .Err(e) -> {
+                    let ice_bag = bag_report(bag_new(), diag_ice("internal compiler error during codegen: ${e}"))
+                    render_bag(source, path, ice_bag)
+                    fail(e)
+                }
+            }
+            println(output)
+            return
+        }
+        _ -> {}
+    }
+
+    if command == "compile" {
+        // Parse compile flags using @std/cli
+        let parsed = cli_parse(app)
+        let stop_after = result_get_option(parsed, "stop-after")
+        let debug_null = result_has_flag(parsed, "debug-null")
+        let enable_coverage = result_has_flag(parsed, "coverage")
+        let json_output = result_has_flag(parsed, "json")
+        // File path: last positional arg
+        let argc = avra_selfhost_argc()
+        let cpath = avra_selfhost_get_arg_cstr(argc - 1)
+        if cpath.starts_with("-") {
+            fail("error: compile requires a file path argument")
+        }
+        if !file_exists(cpath) {
+            fail("error: file not found: ${cpath}")
+        }
+        let csource = read_file(cpath)
+
+        // Load forge.toml package manifest if present in entry dir.
+        let pkg_dir = modules_dirname(cpath)
+        let pkg = load_package_config(pkg_dir)
+        if pkg.found {
+            eprintln("[pkg] ${pkg.name} v${pkg.version}")
+        }
+
+        let parsed = parse_program_source(csource)
+        if parsed.had_error || parsed.stmts == null {
+            if bag_has_errors(parsed.bag) {
+                if json_output { render_bag_json(cpath, parsed.bag) }
+                else { render_bag(csource, cpath, parsed.bag) }
+            }
+            fail(parsed.error_message)
+        }
+        if stop_after == "parse" {
+            println("ok")
+            return
+        }
+        // Desugar pass: rewrite syntactic sugar to simpler AST forms.
+        let desugared = desugar_program(parsed.stmts!)
+        // Resolve module files: walk the AST, find `mod` stubs, read
+        // and parse the referenced files, attach parsed bodies.
+        let entry_dir = modules_dirname(cpath)
+        let mod_resolved = resolve_module_files(desugared, entry_dir, LoadedPaths.End)
+        if mod_resolved.had_error {
+            let mod_bag = bag_report(bag_new(), diag_error(DiagCode.ModuleNotFound, mod_resolved.error_message, span_dummy()))
+            if json_output { render_bag_json(cpath, mod_bag) }
+            else { render_bag(csource, cpath, mod_bag) }
+            fail(mod_resolved.error_message)
+        }
+        if stop_after == "resolve" {
+            println("ok")
+            return
+        }
+        // Component expansion: runs AFTER module resolution so component
+        // definitions in any module are visible to the expander.
+        let expanded = expand_components(mod_resolved.stmts)
+        let named = resolve_names(expanded)
+        if bag_has_errors(named.bag) || bag_has_warnings(named.bag) {
+            if json_output { render_bag_json(cpath, named.bag) }
+            else { render_bag(csource, cpath, named.bag) }
+        }
+        if named.had_error { fail(named.error_message) }
+        if stop_after == "names" {
+            println("ok")
+            return
+        }
+        // Type check — gates compilation on errors
+        let tc_result = typecheck_program(named.stmts)
+        if bag_has_errors(tc_result.bag) || bag_has_warnings(tc_result.bag) {
+            if json_output { render_bag_json(cpath, tc_result.bag) }
+            else { render_bag(csource, cpath, tc_result.bag) }
+        }
+        if bag_has_errors(tc_result.bag) { fail("type check failed") }
+        if stop_after == "check" {
+            println("ok")
+            return
+        }
+        // Monomorphize: replace generic declarations with concrete specializations.
+        // Uses the type-annotated AST from typeck so inference reads SExpr.ty.
+        let mono = monomorphize(tc_result.stmts, tc_result.trait_impls)
+        if bag_has_errors(mono.bag) {
+            if json_output { render_bag_json(cpath, mono.bag) }
+            else { render_bag(csource, cpath, mono.bag) }
+            fail("monomorphization failed")
+        }
+        let output = "${cpath}.ll"
+        // Ticket t2w: ICE handler — wrap codegen errors in F9999.
+        match compile_program(mono.stmts, output, debug_null, enable_coverage, cpath, named.type_reg) {
+            .Ok(_) -> {}
+            .Err(e) -> {
+                let ice_bag = bag_report(bag_new(), diag_ice("internal compiler error during codegen: ${e}"))
+                if json_output { render_bag_json(cpath, ice_bag) }
+                else { render_bag(csource, cpath, ice_bag) }
+                fail(e)
+            }
+        }
+        println(output)
+        return
+    }
+
+    print_usage()
+    exit(1)
+}

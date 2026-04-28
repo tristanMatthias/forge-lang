@@ -2,7 +2,7 @@
 # Bootstrap pre-commit hook.
 #
 # Runs the bootstrap regression suite when any staged file is under
-# bootstrap/ or affects bootstrap's build inputs (forge/stdlib/runtime.c,
+# bootstrap/ or affects bootstrap's build inputs (avra/stdlib/runtime.c,
 # bootstrap/llvm_wrapper.c). Skips otherwise so commits in unrelated
 # parts of the repo aren't slowed down.
 #
@@ -18,7 +18,7 @@ cd "$REPO_DIR"
 staged=$(git diff --cached --name-only --diff-filter=ACMR)
 
 # Trigger the regression suite for any bootstrap-affecting change.
-relevant=$(echo "$staged" | grep -E '^(bootstrap/|forge/stdlib/runtime\.c|bootstrap/llvm_wrapper.c)' || true)
+relevant=$(echo "$staged" | grep -E '^(bootstrap/|avra/stdlib/runtime\.c|bootstrap/llvm_wrapper.c)' || true)
 if [ -z "$relevant" ]; then
   exit 0
 fi
@@ -26,7 +26,7 @@ fi
 # Trigger the (heavier) self-host fixed-point check only when the
 # bootstrap source itself or its build inputs change. Touching just
 # regression test files or scripts doesn't require it.
-src_relevant=$(echo "$staged" | grep -E '^(bootstrap/packages/forgec/src/|forge/stdlib/runtime\.c|bootstrap/llvm_wrapper.c)' || true)
+src_relevant=$(echo "$staged" | grep -E '^(bootstrap/packages/avrac/src/|avra/stdlib/runtime\.c|bootstrap/llvm_wrapper.c)' || true)
 
 echo "[pre-commit] bootstrap-affecting changes detected — running regression suite"
 if ! bootstrap/scripts/diagnose.sh --regress; then
@@ -42,8 +42,8 @@ if [ -n "$src_relevant" ]; then
   if ! bootstrap/scripts/diagnose.sh --check-fixedpoint; then
     echo
     echo "[pre-commit] SELF-HOST FIXED POINT BROKEN — commit blocked"
-    echo "[pre-commit] bs2 and bs3 emit different IR for packages/forgec/src/main.av"
-    echo "[pre-commit] this means the last change to packages/forgec/src/ produced a"
+    echo "[pre-commit] bs2 and bs3 emit different IR for packages/avrac/src/main.av"
+    echo "[pre-commit] this means the last change to packages/avrac/src/ produced a"
     echo "[pre-commit] non-self-consistent compiler. Fix or 'git commit --no-verify'."
     exit 1
   fi

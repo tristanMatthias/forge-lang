@@ -34,7 +34,7 @@ static void avra_runtime_errorf(const char* fmt, ...);
 
 // ─── Result tagging (debug only) ─────────────────────────────────
 // avra_tag_as_result is called from codegen helpers (ok_emit, err_emit, etc.)
-// to tag pointers for optional debug validation via FORGE_TRACK_RESULTS env var.
+// to tag pointers for optional debug validation via AVRA_TRACK_RESULTS env var.
 // In production (no env var), this is a no-op that returns ptr unchanged.
 
 void* avra_tag_as_result(void* ptr) {
@@ -67,7 +67,7 @@ static int rc_trace = 0;
 
 __attribute__((constructor))
 static void auto_enable_rc_trace(void) {
-    if (getenv("FORGE_RC_TRACE")) {
+    if (getenv("AVRA_RC_TRACE")) {
         rc_trace = 1;
         fprintf(stderr, "[RC_TRACE] enabled\n");
     }
@@ -520,7 +520,7 @@ static void avra_signal_handler(int sig, siginfo_t *si, void *context) {
     // SIGILL: illegal instruction (usually a codegen bug, not user's fault)
     if (sig == SIGILL) {
         avra_runtime_error("illegal instruction — this is a compiler bug, not your code");
-        safe_write("  Please report at https://github.com/forge-lang/forge/issues\n");
+        safe_write("  Please report at https://github.com/forge-lang/avra/issues\n");
         _exit(128 + sig);
     }
 
@@ -577,11 +577,11 @@ static void avra_signal_handler(int sig, siginfo_t *si, void *context) {
     safe_write("  Suggestions:\n");
     safe_write("    - Check for null values passed to functions\n");
     safe_write("    - Recompile with --debug-null to find the exact null argument\n");
-    safe_write("    - Run with FORGE_CRASH_DETAIL=1 for the full technical dump\n");
+    safe_write("    - Run with AVRA_CRASH_DETAIL=1 for the full technical dump\n");
     safe_write("\n");
 
-    // Full technical dump only with FORGE_CRASH_DETAIL=1
-    if (getenv("FORGE_CRASH_DETAIL")) {
+    // Full technical dump only with AVRA_CRASH_DETAIL=1
+    if (getenv("AVRA_CRASH_DETAIL")) {
         char buf[256];
         int len;
         safe_write("  --- Technical details ---\n");
@@ -643,7 +643,7 @@ static void avra_install_signal_handlers(void) {
 
 // ─── Selfhost helpers ─────────────────────────────────────────────
 // These provide process + filesystem access for the bootstrap binary.
-// Signatures use const char* (not ForgeString) to match the bootstrap's
+// Signatures use const char* (not AvraString) to match the bootstrap's
 // i64-encoded pointer model.
 
 static int    _argc = 0;
@@ -711,7 +711,7 @@ int64_t avra_selfhost_write_file(const char* path, const char* content) {
 double avra_selfhost_string_to_float(const char* s) { return strtod(s, NULL); }
 
 // ─── Dynamic Array ────────────────────────────────────────────────
-// Resizable array of i64 values. Used by List<T> in Forge source.
+// Resizable array of i64 values. Used by List<T> in Avra source.
 //
 // Layout: { int64_t* data; int64_t len; int64_t cap; }
 // All values stored as i64 (pointers are ptrtoint'd by the compiler).
@@ -720,10 +720,10 @@ typedef struct {
     int64_t* data;
     int64_t  len;
     int64_t  cap;
-} ForgeArray;
+} AvraArray;
 
 void* avra_array_new(void) {
-    ForgeArray* a = (ForgeArray*)malloc(sizeof(ForgeArray));
+    AvraArray* a = (AvraArray*)malloc(sizeof(AvraArray));
     a->cap = 8;
     a->len = 0;
     a->data = (int64_t*)malloc(a->cap * sizeof(int64_t));
@@ -731,7 +731,7 @@ void* avra_array_new(void) {
 }
 
 void avra_array_push(void* arr, int64_t value) {
-    ForgeArray* a = (ForgeArray*)arr;
+    AvraArray* a = (AvraArray*)arr;
     if (a->len >= a->cap) {
         a->cap *= 2;
         a->data = (int64_t*)realloc(a->data, a->cap * sizeof(int64_t));
@@ -744,7 +744,7 @@ int64_t avra_array_get(void* arr, int64_t idx) {
         avra_runtime_error("index on null list");
         abort();
     }
-    ForgeArray* a = (ForgeArray*)arr;
+    AvraArray* a = (AvraArray*)arr;
     if (idx < 0 || idx >= a->len) {
         avra_runtime_errorf("index %lld out of bounds (length %lld)",
                 (long long)idx, (long long)a->len);
@@ -758,7 +758,7 @@ void avra_array_set(void* arr, int64_t idx, int64_t value) {
         avra_runtime_error("index assignment on null list");
         abort();
     }
-    ForgeArray* a = (ForgeArray*)arr;
+    AvraArray* a = (AvraArray*)arr;
     if (idx < 0 || idx >= a->len) {
         avra_runtime_errorf("index %lld out of bounds for assignment (length %lld)",
                 (long long)idx, (long long)a->len);
@@ -769,7 +769,7 @@ void avra_array_set(void* arr, int64_t idx, int64_t value) {
 
 int64_t avra_array_len(void* arr) {
     if (!arr) return 0;
-    return ((ForgeArray*)arr)->len;
+    return ((AvraArray*)arr)->len;
 }
 
 int64_t avra_array_pop(void* arr) {
@@ -777,7 +777,7 @@ int64_t avra_array_pop(void* arr) {
         avra_runtime_error("pop on null list");
         abort();
     }
-    ForgeArray* a = (ForgeArray*)arr;
+    AvraArray* a = (AvraArray*)arr;
     if (a->len <= 0) {
         avra_runtime_error("pop on empty list");
         abort();
@@ -787,13 +787,13 @@ int64_t avra_array_pop(void* arr) {
 
 // Create a new array from a slice of an existing one.
 void* avra_array_slice(void* arr, int64_t start, int64_t end) {
-    ForgeArray* src = (ForgeArray*)arr;
+    AvraArray* src = (AvraArray*)arr;
     if (start < 0) start = 0;
     if (end > src->len) end = src->len;
     if (start >= end) return avra_array_new();
 
     int64_t count = end - start;
-    ForgeArray* dst = (ForgeArray*)malloc(sizeof(ForgeArray));
+    AvraArray* dst = (AvraArray*)malloc(sizeof(AvraArray));
     dst->cap = count > 8 ? count : 8;
     dst->len = count;
     dst->data = (int64_t*)malloc(dst->cap * sizeof(int64_t));
@@ -807,9 +807,9 @@ void* avra_array_slice(void* arr, int64_t start, int64_t end) {
 #include <dirent.h>
 #include <sys/stat.h>
 
-// List directory entries. Returns a ForgeArray of string pointers.
+// List directory entries. Returns a AvraArray of string pointers.
 void* avra_readdir(const char* path) {
-    ForgeArray* arr = avra_array_new();
+    AvraArray* arr = avra_array_new();
     DIR* d = opendir(path);
     if (!d) return arr;
     struct dirent* entry;
@@ -835,18 +835,18 @@ int64_t avra_is_dir(const char* path) {
 
 // ─── Hash Map ─────────────────────────────────────────────────────
 // String-keyed, i64-valued hash map. Linear probing for simplicity.
-// Used by Map<string, T> in Forge source and internally by the
+// Used by Map<string, T> in Avra source and internally by the
 // compiler for fast symbol lookup.
 
-#define FORGE_MAP_INIT_CAP 32
-#define FORGE_MAP_LOAD_FACTOR 0.75
+#define AVRA_MAP_INIT_CAP 32
+#define AVRA_MAP_LOAD_FACTOR 0.75
 
 typedef struct {
     char**   keys;     // NULL = empty slot
     int64_t* values;
     int64_t  count;
     int64_t  cap;
-} ForgeHashMap;
+} AvraHashMap;
 
 static uint64_t avra_hash_str(const char* s) {
     uint64_t h = 14695981039346656037ULL;
@@ -857,11 +857,11 @@ static uint64_t avra_hash_str(const char* s) {
     return h;
 }
 
-static void avra_map_grow(ForgeHashMap* m);
+static void avra_map_grow(AvraHashMap* m);
 
 void* avra_map_new_cstr(void) {
-    ForgeHashMap* m = (ForgeHashMap*)malloc(sizeof(ForgeHashMap));
-    m->cap = FORGE_MAP_INIT_CAP;
+    AvraHashMap* m = (AvraHashMap*)malloc(sizeof(AvraHashMap));
+    m->cap = AVRA_MAP_INIT_CAP;
     m->count = 0;
     m->keys = (char**)calloc(m->cap, sizeof(char*));
     m->values = (int64_t*)calloc(m->cap, sizeof(int64_t));
@@ -869,8 +869,8 @@ void* avra_map_new_cstr(void) {
 }
 
 void avra_map_set_cstr(void* map, const char* key, int64_t value) {
-    ForgeHashMap* m = (ForgeHashMap*)map;
-    if ((double)m->count / m->cap >= FORGE_MAP_LOAD_FACTOR) {
+    AvraHashMap* m = (AvraHashMap*)map;
+    if ((double)m->count / m->cap >= AVRA_MAP_LOAD_FACTOR) {
         avra_map_grow(m);
     }
     uint64_t idx = avra_hash_str(key) % m->cap;
@@ -887,7 +887,7 @@ void avra_map_set_cstr(void* map, const char* key, int64_t value) {
 }
 
 int64_t avra_map_get_cstr(void* map, const char* key) {
-    ForgeHashMap* m = (ForgeHashMap*)map;
+    AvraHashMap* m = (AvraHashMap*)map;
     uint64_t idx = avra_hash_str(key) % m->cap;
     while (m->keys[idx]) {
         if (strcmp(m->keys[idx], key) == 0) {
@@ -899,7 +899,7 @@ int64_t avra_map_get_cstr(void* map, const char* key) {
 }
 
 int64_t avra_map_has_cstr(void* map, const char* key) {
-    ForgeHashMap* m = (ForgeHashMap*)map;
+    AvraHashMap* m = (AvraHashMap*)map;
     uint64_t idx = avra_hash_str(key) % m->cap;
     while (m->keys[idx]) {
         if (strcmp(m->keys[idx], key) == 0) return 1;
@@ -910,12 +910,12 @@ int64_t avra_map_has_cstr(void* map, const char* key) {
 
 int64_t avra_map_len_cstr(void* map) {
     if (!map) return 0;
-    return ((ForgeHashMap*)map)->count;
+    return ((AvraHashMap*)map)->count;
 }
 
 // Return an array of all keys.
 void* avra_map_keys_cstr(void* map) {
-    ForgeHashMap* m = (ForgeHashMap*)map;
+    AvraHashMap* m = (AvraHashMap*)map;
     void* arr = avra_array_new();
     for (int64_t i = 0; i < m->cap; i++) {
         if (m->keys[i]) {
@@ -927,7 +927,7 @@ void* avra_map_keys_cstr(void* map) {
 
 // Return an array of all values.
 void* avra_map_values_cstr(void* map) {
-    ForgeHashMap* m = (ForgeHashMap*)map;
+    AvraHashMap* m = (AvraHashMap*)map;
     void* arr = avra_array_new();
     for (int64_t i = 0; i < m->cap; i++) {
         if (m->keys[i]) {
@@ -940,7 +940,7 @@ void* avra_map_values_cstr(void* map) {
 // Remove a key from the map. Returns 1 if found, 0 if not.
 int64_t avra_map_remove_cstr(void* map, const char* key) {
     if (!map || !key) return 0;
-    ForgeHashMap* m = (ForgeHashMap*)map;
+    AvraHashMap* m = (AvraHashMap*)map;
     uint64_t h = 5381;
     for (const char* p = key; *p; p++) h = h * 33 + (unsigned char)*p;
     int64_t idx = (int64_t)(h % (uint64_t)m->cap);
@@ -958,7 +958,7 @@ int64_t avra_map_remove_cstr(void* map, const char* key) {
     return 0;
 }
 
-static void avra_map_grow(ForgeHashMap* m) {
+static void avra_map_grow(AvraHashMap* m) {
     int64_t old_cap = m->cap;
     char** old_keys = m->keys;
     int64_t* old_values = m->values;
@@ -983,24 +983,24 @@ static void avra_map_grow(ForgeHashMap* m) {
 // dispatch where keys are small sequential integers (0-63).
 // Values are i64 (function pointers, struct pointers, etc.).
 
-#define FORGE_INTMAP_CAP 256
+#define AVRA_INTMAP_CAP 256
 
 typedef struct {
-    int64_t keys[FORGE_INTMAP_CAP];
-    int64_t values[FORGE_INTMAP_CAP];
-    int8_t  occupied[FORGE_INTMAP_CAP];
-} ForgeIntMap;
+    int64_t keys[AVRA_INTMAP_CAP];
+    int64_t values[AVRA_INTMAP_CAP];
+    int8_t  occupied[AVRA_INTMAP_CAP];
+} AvraIntMap;
 
 void* avra_intmap_new(void) {
-    ForgeIntMap* m = (ForgeIntMap*)calloc(1, sizeof(ForgeIntMap));
+    AvraIntMap* m = (AvraIntMap*)calloc(1, sizeof(AvraIntMap));
     return m;
 }
 
 void avra_intmap_set(void* map, int64_t key, int64_t value) {
-    ForgeIntMap* m = (ForgeIntMap*)map;
-    uint64_t idx = (uint64_t)key % FORGE_INTMAP_CAP;
-    for (int i = 0; i < FORGE_INTMAP_CAP; i++) {
-        uint64_t slot = (idx + i) % FORGE_INTMAP_CAP;
+    AvraIntMap* m = (AvraIntMap*)map;
+    uint64_t idx = (uint64_t)key % AVRA_INTMAP_CAP;
+    for (int i = 0; i < AVRA_INTMAP_CAP; i++) {
+        uint64_t slot = (idx + i) % AVRA_INTMAP_CAP;
         if (!m->occupied[slot] || m->keys[slot] == key) {
             m->keys[slot] = key;
             m->values[slot] = value;
@@ -1011,10 +1011,10 @@ void avra_intmap_set(void* map, int64_t key, int64_t value) {
 }
 
 int64_t avra_intmap_get(void* map, int64_t key) {
-    ForgeIntMap* m = (ForgeIntMap*)map;
-    uint64_t idx = (uint64_t)key % FORGE_INTMAP_CAP;
-    for (int i = 0; i < FORGE_INTMAP_CAP; i++) {
-        uint64_t slot = (idx + i) % FORGE_INTMAP_CAP;
+    AvraIntMap* m = (AvraIntMap*)map;
+    uint64_t idx = (uint64_t)key % AVRA_INTMAP_CAP;
+    for (int i = 0; i < AVRA_INTMAP_CAP; i++) {
+        uint64_t slot = (idx + i) % AVRA_INTMAP_CAP;
         if (!m->occupied[slot]) return 0;
         if (m->keys[slot] == key) return m->values[slot];
     }
@@ -1034,10 +1034,10 @@ int64_t avra_intmap_inc(void* map, int64_t key) {
 }
 
 int64_t avra_intmap_has(void* map, int64_t key) {
-    ForgeIntMap* m = (ForgeIntMap*)map;
-    uint64_t idx = (uint64_t)key % FORGE_INTMAP_CAP;
-    for (int i = 0; i < FORGE_INTMAP_CAP; i++) {
-        uint64_t slot = (idx + i) % FORGE_INTMAP_CAP;
+    AvraIntMap* m = (AvraIntMap*)map;
+    uint64_t idx = (uint64_t)key % AVRA_INTMAP_CAP;
+    for (int i = 0; i < AVRA_INTMAP_CAP; i++) {
+        uint64_t slot = (idx + i) % AVRA_INTMAP_CAP;
         if (!m->occupied[slot]) return 0;
         if (m->keys[slot] == key) return 1;
     }
@@ -1191,7 +1191,7 @@ const char* avra_str_substring(const char* s, int64_t start, int64_t end) {
     return r;
 }
 
-// Split string by separator, returns a ForgeArray of string pointers.
+// Split string by separator, returns a AvraArray of string pointers.
 void* avra_str_split(const char* s, const char* sep) {
     void* arr = avra_array_new();
     size_t seplen = strlen(sep);
@@ -1226,15 +1226,15 @@ void* avra_str_split(const char* s, const char* sep) {
 
 // ─── Higher-order list operations ─────────────────────────────────
 
-typedef int64_t (*ForgeFn1)(int64_t);
-typedef int64_t (*ForgeFn2)(int64_t, int64_t);
+typedef int64_t (*AvraFn1)(int64_t);
+typedef int64_t (*AvraFn2)(int64_t, int64_t);
 
 // Forward declarations for closure trampolines
 int64_t avra_closure_call_1(int64_t closure, int64_t a0);
 int64_t avra_closure_call_2(int64_t closure, int64_t a0, int64_t a1);
 
 void* avra_array_map(void* arr, int64_t fn_ptr) {
-    ForgeArray* src = (ForgeArray*)arr;
+    AvraArray* src = (AvraArray*)arr;
     void* dst = avra_array_new();
     for (int64_t i = 0; i < src->len; i++) {
         avra_array_push(dst, avra_closure_call_1(fn_ptr, src->data[i]));
@@ -1243,7 +1243,7 @@ void* avra_array_map(void* arr, int64_t fn_ptr) {
 }
 
 void* avra_array_filter(void* arr, int64_t fn_ptr) {
-    ForgeArray* src = (ForgeArray*)arr;
+    AvraArray* src = (AvraArray*)arr;
     void* dst = avra_array_new();
     for (int64_t i = 0; i < src->len; i++) {
         if (avra_closure_call_1(fn_ptr, src->data[i])) {
@@ -1254,7 +1254,7 @@ void* avra_array_filter(void* arr, int64_t fn_ptr) {
 }
 
 int64_t avra_array_reduce(void* arr, int64_t initial, int64_t fn_ptr) {
-    ForgeArray* src = (ForgeArray*)arr;
+    AvraArray* src = (AvraArray*)arr;
     int64_t acc = initial;
     for (int64_t i = 0; i < src->len; i++) {
         acc = avra_closure_call_2(fn_ptr, acc, src->data[i]);
@@ -1263,7 +1263,7 @@ int64_t avra_array_reduce(void* arr, int64_t initial, int64_t fn_ptr) {
 }
 
 void avra_array_foreach(void* arr, int64_t fn_ptr) {
-    ForgeArray* src = (ForgeArray*)arr;
+    AvraArray* src = (AvraArray*)arr;
     for (int64_t i = 0; i < src->len; i++) {
         avra_closure_call_1(fn_ptr, src->data[i]);
     }
@@ -1271,7 +1271,7 @@ void avra_array_foreach(void* arr, int64_t fn_ptr) {
 
 // Check if array contains a value. For strings, does pointer/strcmp comparison.
 int64_t avra_array_contains(void* arr, int64_t value) {
-    ForgeArray* a = (ForgeArray*)arr;
+    AvraArray* a = (AvraArray*)arr;
     for (int64_t i = 0; i < a->len; i++) {
         if (a->data[i] == value) return 1;
     }
@@ -1280,7 +1280,7 @@ int64_t avra_array_contains(void* arr, int64_t value) {
 
 // Find index of value in array. Returns -1 if not found.
 int64_t avra_array_index_of(void* arr, int64_t value) {
-    ForgeArray* a = (ForgeArray*)arr;
+    AvraArray* a = (AvraArray*)arr;
     for (int64_t i = 0; i < a->len; i++) {
         if (a->data[i] == value) return i;
     }
@@ -1289,7 +1289,7 @@ int64_t avra_array_index_of(void* arr, int64_t value) {
 
 // Reverse an array in-place. Returns the same array.
 void* avra_array_reverse(void* arr) {
-    ForgeArray* a = (ForgeArray*)arr;
+    AvraArray* a = (AvraArray*)arr;
     for (int64_t i = 0, j = a->len - 1; i < j; i++, j--) {
         int64_t tmp = a->data[i];
         a->data[i] = a->data[j];
@@ -1300,7 +1300,7 @@ void* avra_array_reverse(void* arr) {
 
 // Join a list of strings with a separator.
 const char* avra_str_join(void* arr, const char* sep) {
-    ForgeArray* a = (ForgeArray*)arr;
+    AvraArray* a = (AvraArray*)arr;
     if (a->len == 0) return "";
     size_t sep_len = strlen(sep);
     size_t total = 0;
@@ -1335,17 +1335,17 @@ int64_t avra_file_exists(const char* path) {
 }
 
 // ─── Closure support ──────────────────────────────────────────────
-// A closure with captures is stored as a ForgeArray:
+// A closure with captures is stored as a AvraArray:
 //   [0] = fn_ptr (intptr_t)
 //   [1..N] = captured values
 // A non-capturing closure is a bare function pointer (int64_t).
 //
-// avra_closure_call dispatches: if the value looks like a ForgeArray
+// avra_closure_call dispatches: if the value looks like a AvraArray
 // (has a valid length field), unpack fn_ptr + captures and call with
 // both user args and captures. Otherwise call directly.
 
 // ── Closure representation ────────────────────────────────────────
-// ALL callable values are ForgeArrays: [TAG, fn_ptr, cap1, cap2, ...]
+// ALL callable values are AvraArrays: [TAG, fn_ptr, cap1, cap2, ...]
 //   data[0] = FORGE_CLOSURE_TAG (sentinel for safety checks)
 //   data[1] = fn_ptr (intptr_t of the function)
 //   data[2..] = captured values (0 or more)
@@ -1357,7 +1357,7 @@ int64_t avra_file_exists(const char* path) {
 
 // Extract the function pointer from a closure array.
 int64_t avra_closure_get_fn(int64_t closure_val) {
-    ForgeArray* arr = (ForgeArray*)(uintptr_t)closure_val;
+    AvraArray* arr = (AvraArray*)(uintptr_t)closure_val;
     if (arr && arr->len >= 2 && arr->data && arr->data[0] == FORGE_CLOSURE_TAG) {
         return arr->data[1];
     }
@@ -1370,7 +1370,7 @@ int64_t avra_closure_get_fn(int64_t closure_val) {
 
 // Get a captured value by index (0-based, captures start at data[2]).
 int64_t avra_closure_get_capture(int64_t closure_val, int64_t idx) {
-    ForgeArray* arr = (ForgeArray*)(uintptr_t)closure_val;
+    AvraArray* arr = (AvraArray*)(uintptr_t)closure_val;
     if (arr && arr->len > idx + 2 && arr->data && arr->data[0] == FORGE_CLOSURE_TAG) {
         return arr->data[idx + 2];
     }
@@ -1379,7 +1379,7 @@ int64_t avra_closure_get_capture(int64_t closure_val, int64_t idx) {
 
 // Get the number of captured values.
 int64_t avra_closure_num_captures(int64_t closure_val) {
-    ForgeArray* arr = (ForgeArray*)(uintptr_t)closure_val;
+    AvraArray* arr = (AvraArray*)(uintptr_t)closure_val;
     if (arr && arr->len >= 2 && arr->data && arr->data[0] == FORGE_CLOSURE_TAG) {
         return arr->len - 2;
     }
@@ -1578,7 +1578,7 @@ void avra_trace_ptr(const char* label, int64_t val) {
 
 // ── 3. IR function dumper ───────────────────────────────────────
 // Debug: dump IR for a named function. Not currently used but
-// available for debugging via extern fn in Forge source.
+// available for debugging via extern fn in Avra source.
 
 // ── 4. AST dumper ───────────────────────────────────────────────
 // Prints Stmt/Expr enum tag + pointer for debugging AST traversal.
@@ -2609,7 +2609,7 @@ const char* avra_process_self_dir(void) {
 
 // ── Trait objects (dynamic dispatch) ──
 // A trait object is a 2-element struct: { concrete_value, vtable_ptr }
-// The vtable is a ForgeArray of function pointers (closure arrays).
+// The vtable is a AvraArray of function pointers (closure arrays).
 // vtable[i] = closure array for the i-th trait method.
 // Method dispatch: load vtable[method_index], call with concrete_value as self.
 
@@ -2630,7 +2630,7 @@ void* avra_trait_object_vtable(void* obj) {
 
 // ── Codegen counters ──
 // Monotonic counters for unique name generation during codegen.
-// Kept in C to avoid mutable globals in Forge source.
+// Kept in C to avoid mutable globals in Avra source.
 static int64_t g_lambda_counter = 0;
 int64_t avra_next_lambda_id(void) { return g_lambda_counter++; }
 
@@ -2811,7 +2811,7 @@ const char* avra_test_capture_stop(void) {
 }
 
 // ── Concurrency ──
-// Thread spawning via pthreads. spawn takes a closure (ForgeArray)
+// Thread spawning via pthreads. spawn takes a closure (AvraArray)
 // and runs it in a new thread. Returns a task handle for .await.
 
 typedef struct {
@@ -2819,17 +2819,17 @@ typedef struct {
     int64_t closure;
     int64_t result;     // captured return value from closure
     int joined;         // set to 1 after pthread_join (prevents double-join)
-} ForgeTask;
+} AvraTask;
 
 static void* avra_thread_entry(void* arg) {
-    ForgeTask* task = (ForgeTask*)arg;
+    AvraTask* task = (AvraTask*)arg;
     task->result = avra_closure_call_0(task->closure);
     return NULL;
 }
 
-// Spawn a closure in a new thread. Returns a task handle (ptr to ForgeTask).
+// Spawn a closure in a new thread. Returns a task handle (ptr to AvraTask).
 int64_t avra_spawn(int64_t closure) {
-    ForgeTask* task = (ForgeTask*)malloc(sizeof(ForgeTask));
+    AvraTask* task = (AvraTask*)malloc(sizeof(AvraTask));
     task->closure = closure;
     task->result = 0;
     task->joined = 0;
@@ -2841,7 +2841,7 @@ int64_t avra_spawn(int64_t closure) {
 // Does NOT free the task — the task group frees all tasks at scope exit.
 // When no task group is active (legacy usage), caller is responsible.
 int64_t avra_task_await(int64_t handle) {
-    ForgeTask* task = (ForgeTask*)(uintptr_t)handle;
+    AvraTask* task = (AvraTask*)(uintptr_t)handle;
     if (!task->joined) {
         pthread_join(task->thread, NULL);
         task->joined = 1;
@@ -2852,7 +2852,7 @@ int64_t avra_task_await(int64_t handle) {
 // Cancel a spawned task. Sends SIGCANCEL (pthread_cancel) then joins.
 // Returns 0 on success, -1 if already joined.
 int64_t avra_task_cancel(int64_t handle) {
-    ForgeTask* task = (ForgeTask*)(uintptr_t)handle;
+    AvraTask* task = (AvraTask*)(uintptr_t)handle;
     if (task->joined) return -1;
     pthread_cancel(task->thread);
     pthread_join(task->thread, NULL);
@@ -2863,7 +2863,7 @@ int64_t avra_task_cancel(int64_t handle) {
 // Legacy join — kept for backward compat with existing tests.
 // Does NOT free the task — the task group handles cleanup.
 void avra_thread_join(int64_t handle) {
-    ForgeTask* task = (ForgeTask*)(uintptr_t)handle;
+    AvraTask* task = (AvraTask*)(uintptr_t)handle;
     if (!task->joined) {
         pthread_join(task->thread, NULL);
         task->joined = 1;
@@ -2878,10 +2878,10 @@ typedef struct {
     int64_t* handles;
     int count;
     int capacity;
-} ForgeTaskGroup;
+} AvraTaskGroup;
 
 void* avra_task_group_new(void) {
-    ForgeTaskGroup* g = (ForgeTaskGroup*)malloc(sizeof(ForgeTaskGroup));
+    AvraTaskGroup* g = (AvraTaskGroup*)malloc(sizeof(AvraTaskGroup));
     g->capacity = 8;
     g->count = 0;
     g->handles = (int64_t*)malloc(g->capacity * sizeof(int64_t));
@@ -2889,7 +2889,7 @@ void* avra_task_group_new(void) {
 }
 
 void avra_task_group_add(void* group, int64_t handle) {
-    ForgeTaskGroup* g = (ForgeTaskGroup*)group;
+    AvraTaskGroup* g = (AvraTaskGroup*)group;
     if (g->count >= g->capacity) {
         g->capacity *= 2;
         g->handles = (int64_t*)realloc(g->handles, g->capacity * sizeof(int64_t));
@@ -2898,9 +2898,9 @@ void avra_task_group_add(void* group, int64_t handle) {
 }
 
 void avra_task_group_await_all(void* group) {
-    ForgeTaskGroup* g = (ForgeTaskGroup*)group;
+    AvraTaskGroup* g = (AvraTaskGroup*)group;
     for (int i = 0; i < g->count; i++) {
-        ForgeTask* task = (ForgeTask*)(uintptr_t)g->handles[i];
+        AvraTask* task = (AvraTask*)(uintptr_t)g->handles[i];
         if (!task->joined) {
             pthread_join(task->thread, NULL);
             task->joined = 1;
@@ -2931,10 +2931,10 @@ typedef struct {
     pthread_mutex_t mutex;
     pthread_cond_t send_cond;
     pthread_cond_t recv_cond;
-} ForgeChannel;
+} AvraChannel;
 
 void* avra_channel_new(void) {
-    ForgeChannel* ch = (ForgeChannel*)calloc(1, sizeof(ForgeChannel));
+    AvraChannel* ch = (AvraChannel*)calloc(1, sizeof(AvraChannel));
     pthread_mutex_init(&ch->mutex, NULL);
     pthread_cond_init(&ch->send_cond, NULL);
     pthread_cond_init(&ch->recv_cond, NULL);
@@ -2942,7 +2942,7 @@ void* avra_channel_new(void) {
 }
 
 void avra_channel_send(void* channel, int64_t value) {
-    ForgeChannel* ch = (ForgeChannel*)channel;
+    AvraChannel* ch = (AvraChannel*)channel;
     pthread_mutex_lock(&ch->mutex);
     while (ch->has_value) {
         pthread_cond_wait(&ch->send_cond, &ch->mutex);
@@ -2954,7 +2954,7 @@ void avra_channel_send(void* channel, int64_t value) {
 }
 
 int64_t avra_channel_recv(void* channel) {
-    ForgeChannel* ch = (ForgeChannel*)channel;
+    AvraChannel* ch = (AvraChannel*)channel;
     pthread_mutex_lock(&ch->mutex);
     while (!ch->has_value) {
         pthread_cond_wait(&ch->recv_cond, &ch->mutex);
@@ -2967,19 +2967,19 @@ int64_t avra_channel_recv(void* channel) {
 }
 
 // Select: poll multiple channels, block until one has data.
-// channels is a ForgeArray of channel pointers.
+// channels is a AvraArray of channel pointers.
 // Returns: (index << 32) | (value & 0xFFFFFFFF) packed into i64.
 // Better approach: write index + value to out params.
 typedef struct {
     int64_t index;  // which channel fired
     int64_t value;  // the received value
-} ForgeSelectResult;
+} AvraSelectResult;
 
 // Polls channels in round-robin until one has data.
-// Returns pointer to heap-allocated ForgeSelectResult.
+// Returns pointer to heap-allocated AvraSelectResult.
 void* avra_select(void* channel_array, int64_t count) {
-    ForgeSelectResult* result = (ForgeSelectResult*)malloc(sizeof(ForgeSelectResult));
-    ForgeArray* arr = (ForgeArray*)(uintptr_t)channel_array;
+    AvraSelectResult* result = (AvraSelectResult*)malloc(sizeof(AvraSelectResult));
+    AvraArray* arr = (AvraArray*)(uintptr_t)channel_array;
     if (!arr || arr->len == 0) {
         result->index = -1;
         result->value = 0;
@@ -2990,7 +2990,7 @@ void* avra_select(void* channel_array, int64_t count) {
     // would use condition variables or epoll.
     while (1) {
         for (int64_t i = 0; i < arr->len && i < count; i++) {
-            ForgeChannel* ch = (ForgeChannel*)(uintptr_t)arr->data[i];
+            AvraChannel* ch = (AvraChannel*)(uintptr_t)arr->data[i];
             if (!ch) continue;
             pthread_mutex_lock(&ch->mutex);
             if (ch->has_value) {
@@ -3010,24 +3010,24 @@ void* avra_select(void* channel_array, int64_t count) {
 }
 
 int64_t avra_select_index(void* result) {
-    ForgeSelectResult* r = (ForgeSelectResult*)result;
+    AvraSelectResult* r = (AvraSelectResult*)result;
     return r->index;
 }
 
 int64_t avra_select_value(void* result) {
-    ForgeSelectResult* r = (ForgeSelectResult*)result;
+    AvraSelectResult* r = (AvraSelectResult*)result;
     return r->value;
 }
 
 // Run an array of closures in parallel threads, join all before returning.
 void avra_parallel_run(void* closure_array) {
-    ForgeArray* arr = (ForgeArray*)(uintptr_t)closure_array;
+    AvraArray* arr = (AvraArray*)(uintptr_t)closure_array;
     if (!arr || arr->len == 0) return;
     int64_t n = arr->len;
     pthread_t* threads = (pthread_t*)malloc(n * sizeof(pthread_t));
-    ForgeTask** args = (ForgeTask**)malloc(n * sizeof(ForgeTask*));
+    AvraTask** args = (AvraTask**)malloc(n * sizeof(AvraTask*));
     for (int64_t i = 0; i < n; i++) {
-        args[i] = (ForgeTask*)malloc(sizeof(ForgeTask));
+        args[i] = (AvraTask*)malloc(sizeof(AvraTask));
         args[i]->closure = arr->data[i];
         args[i]->result = 0;
         pthread_create(&threads[i], NULL, avra_thread_entry, args[i]);
@@ -3040,7 +3040,7 @@ void avra_parallel_run(void* closure_array) {
 }
 
 void avra_channel_close(void* channel) {
-    ForgeChannel* ch = (ForgeChannel*)channel;
+    AvraChannel* ch = (AvraChannel*)channel;
     pthread_mutex_destroy(&ch->mutex);
     pthread_cond_destroy(&ch->send_cond);
     pthread_cond_destroy(&ch->recv_cond);

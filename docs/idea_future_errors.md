@@ -1,4 +1,4 @@
-# Forge — Advanced Error Features (TDD)
+# Avra — Advanced Error Features (TDD)
 
 All tests red first. Implement until green.
 
@@ -8,30 +8,30 @@ All tests red first. Implement until green.
 
 ```bash
 # Create a file with a known fixable error
-cat > autofix_test.fg << 'EOF'
+cat > autofix_test.av << 'EOF'
 fn main() {
   let name: int = "hello"
 }
 EOF
 
 # Autofix should modify the file and compile successfully
-forge build autofix_test.fg --autofix
+avra build autofix_test.av --autofix
 
 # The file should now be fixed
-cat autofix_test.fg
+cat autofix_test.av
 # Expected:
 # fn main() {
 #   let name: string = "hello"
 # }
 
 # Should compile cleanly now
-forge build autofix_test.fg
+avra build autofix_test.av
 # Expected: exit code 0, no errors
 ```
 
 ```bash
 # Multiple fixes in one pass
-cat > multi_fix.fg << 'EOF'
+cat > multi_fix.av << 'EOF'
 fn main() {
   let x: string = 42
   let y: int = "hello"
@@ -39,20 +39,20 @@ fn main() {
 }
 EOF
 
-forge build multi_fix.fg --autofix
-forge build multi_fix.fg
+avra build multi_fix.av --autofix
+avra build multi_fix.av
 # Expected: exit code 0
 ```
 
 ```bash
 # Low confidence fixes should NOT auto-apply
-cat > low_confidence.fg << 'EOF'
+cat > low_confidence.av << 'EOF'
 fn main() {
   println(usr.name)
 }
 EOF
 
-forge build low_confidence.fg --autofix 2>&1 | grep "1 error could not be auto-fixed"
+avra build low_confidence.av --autofix 2>&1 | grep "1 error could not be auto-fixed"
 # Expected: match (did-you-mean is not high enough confidence to auto-apply)
 ```
 
@@ -60,8 +60,8 @@ forge build low_confidence.fg --autofix 2>&1 | grep "1 error could not be auto-f
 
 ## Test 2: Causality chains ("because")
 
-```forge
-// test_because_type.fg
+```avra
+// test_because_type.av
 fn get_name() -> string { "alice" }
 
 fn main() {
@@ -70,7 +70,7 @@ fn main() {
 ```
 
 ```bash
-forge build test_because_type.fg 2>&1
+avra build test_because_type.av 2>&1
 ```
 
 Expected output includes a "because" chain:
@@ -78,7 +78,7 @@ Expected output includes a "because" chain:
 ```
   ╭─[error[F0012]] Type mismatch
   │
-  │  ╭─[src/test_because_type.fg:4:17]
+  │  ╭─[src/test_because_type.av:4:17]
   │  │
   │  │    4 │ let x: int = get_name()
   │  │      │        ───   ──────────
@@ -87,7 +87,7 @@ Expected output includes a "because" chain:
   │  │      │         ╰── expected int
   │  │
   │  ├── because: get_name() returns string
-  │  │     → declared at test_because_type.fg:1
+  │  │     → declared at test_because_type.av:1
   │  │     → fn get_name() -> string
   │  │
   │  ├── help: change the type annotation
@@ -96,8 +96,8 @@ Expected output includes a "because" chain:
   │  ╰──
 ```
 
-```forge
-// test_because_chain.fg
+```avra
+// test_because_chain.av
 use @std.model.{model}
 
 model User {
@@ -116,7 +116,7 @@ Expected: because chain traces through model field → nullable return → field
 ```
   ├── because: user?.name is string? because
   │     → user is User? (User.get returns User?)
-  │     → User.name is string (declared at test_because_chain.fg:5)
+  │     → User.name is string (declared at test_because_chain.av:5)
   │     → ?. propagates nullability, so result is string?
 ```
 
@@ -124,8 +124,8 @@ Expected: because chain traces through model field → nullable return → field
 
 ## Test 3: Generated examples from type signatures
 
-```forge
-// test_example_gen.fg
+```avra
+// test_example_gen.av
 use @std.model.{model, service}
 
 model Task {
@@ -146,7 +146,7 @@ Expected output includes a generated example:
 ```
   ╭─[error[F0014]] Wrong number of arguments
   │
-  │  ╭─[test_example_gen.fg:13:3]
+  │  ╭─[test_example_gen.av:13:3]
   │  │
   │  │   13 │ TaskService.create("wrong")
   │  │      │ ───────────────────────────
@@ -159,8 +159,8 @@ Expected output includes a generated example:
   │  ╰──
 ```
 
-```forge
-// test_example_fn.fg
+```avra
+// test_example_fn.av
 fn send_email(to: string, subject: string, body: string) { }
 
 fn main() {
@@ -181,8 +181,8 @@ Expected:
 
 ## Test 4: Runtime errors with source locations
 
-```forge
-// test_runtime_error.fg
+```avra
+// test_runtime_error.av
 fn divide(a: int, b: int) -> int {
   assert b != 0, "division by zero"
   a / b
@@ -200,7 +200,7 @@ fn main() {
 ```
 
 ```bash
-forge build test_runtime_error.fg -o test_runtime
+avra build test_runtime_error.av -o test_runtime
 ./test_runtime 2>&1
 ```
 
@@ -209,7 +209,7 @@ Expected (pretty-printed to stderr, not a raw panic):
 ```
   ╭─[panic] Assertion failed: division by zero
   │
-  │  ╭─[test_runtime_error.fg:2:3]
+  │  ╭─[test_runtime_error.av:2:3]
   │  │
   │  │    2 │   assert b != 0, "division by zero"
   │  │      │   ─────────────
@@ -217,17 +217,17 @@ Expected (pretty-printed to stderr, not a raw panic):
   │  │
   │  ├── stack trace:
   │  │
-  │  │   test_runtime_error.fg:2   divide(10, 0)
-  │  │   test_runtime_error.fg:8   calculate()
-  │  │   test_runtime_error.fg:12  main()
+  │  │   test_runtime_error.av:2   divide(10, 0)
+  │  │   test_runtime_error.av:8   calculate()
+  │  │   test_runtime_error.av:12  main()
   │  │
   │  ╰──
 ```
 
 Key: `b was 0` — the actual value of the variable at the time of the assertion failure.
 
-```forge
-// test_runtime_null.fg
+```avra
+// test_runtime_null.av
 fn main() {
   let name: string? = null
   println(name!.upper())
@@ -239,7 +239,7 @@ Expected:
 ```
   ╭─[panic] Null assertion failed
   │
-  │  ╭─[test_runtime_null.fg:3:11]
+  │  ╭─[test_runtime_null.av:3:11]
   │  │
   │  │    3 │   println(name!.upper())
   │  │      │           ─────
@@ -253,10 +253,10 @@ Expected:
 
 ---
 
-## Test 5: `forge why` command
+## Test 5: `avra why` command
 
-```forge
-// test_why.fg
+```avra
+// test_why.av
 use @std.model.{model}
 
 model User {
@@ -273,7 +273,7 @@ fn main() {
 ```
 
 ```bash
-forge why test_why.fg:10
+avra why test_why.av:10
 ```
 
 Expected:
@@ -283,12 +283,12 @@ Expected:
 
   users: List<User>
     → User.list() returns List<User>
-    → User is a model declared at test_why.fg:3
+    → User is a model declared at test_why.av:3
     → list() is auto-generated by @std/model for all models
 ```
 
 ```bash
-forge why test_why.fg:11
+avra why test_why.av:11
 ```
 
 Expected:
@@ -299,7 +299,7 @@ Expected:
   names: List<string>
     → users is List<User> (from line 10)
     → .map(it.name) transforms each User to User.name
-    → User.name is string (declared at test_why.fg:5)
+    → User.name is string (declared at test_why.av:5)
     → so map returns List<string>
 
   it: User
@@ -308,7 +308,7 @@ Expected:
 ```
 
 ```bash
-forge why test_why.fg:12
+avra why test_why.av:12
 ```
 
 Expected:
@@ -327,7 +327,7 @@ Expected:
 
 ```bash
 # First build with errors
-cat > diff_test.fg << 'EOF'
+cat > diff_test.av << 'EOF'
 fn main() {
   let x: int = "hello"
   let y = undefined_var
@@ -335,10 +335,10 @@ fn main() {
 }
 EOF
 
-forge build diff_test.fg --error-format=json 2> before.json
+avra build diff_test.av --error-format=json 2> before.json
 
 # Fix one error
-cat > diff_test.fg << 'EOF'
+cat > diff_test.av << 'EOF'
 fn main() {
   let x: string = "hello"
   let y = undefined_var
@@ -346,23 +346,23 @@ fn main() {
 }
 EOF
 
-forge build diff_test.fg --error-format=json 2> after.json
+avra build diff_test.av --error-format=json 2> after.json
 
 # Diff
-forge errors diff before.json after.json
+avra errors diff before.json after.json
 ```
 
 Expected:
 
 ```
   ✓ Fixed: 1
-    F0012 at diff_test.fg:2 — type mismatch (int vs string)
+    F0012 at diff_test.av:2 — type mismatch (int vs string)
 
   ✖ New: 0
 
   ● Remaining: 2
-    F0020 at diff_test.fg:3 — undefined variable `undefined_var`
-    F0012 at diff_test.fg:4 — type mismatch (string vs int)
+    F0020 at diff_test.av:3 — undefined variable `undefined_var`
+    F0012 at diff_test.av:4 — type mismatch (string vs int)
 
   Progress: 3 → 2 errors (33% reduction)
 ```
@@ -372,7 +372,7 @@ Expected:
 ## Test 7: Build profiling
 
 ```bash
-forge build my_project/ --profile
+avra build my_project/ --profile
 ```
 
 Expected (appended after normal build output):
@@ -396,7 +396,7 @@ Expected (appended after normal build output):
 
 ```bash
 # JSON output for CI tracking
-forge build my_project/ --profile --profile-format=json
+avra build my_project/ --profile --profile-format=json
 ```
 
 ```json
@@ -421,14 +421,14 @@ forge build my_project/ --profile --profile-format=json
 ## Test 8: --autofix with interactive mode
 
 ```bash
-cat > interactive_test.fg << 'EOF'
+cat > interactive_test.av << 'EOF'
 fn main() {
   let name: int = "hello"
   println(nmae)
 }
 EOF
 
-forge build interactive_test.fg --autofix=interactive
+avra build interactive_test.av --autofix=interactive
 ```
 
 Expected (prompts for each fix):
@@ -471,7 +471,7 @@ Expected (prompts for each fix):
 | Example generation | Given a function signature, construct a valid call with placeholder values |
 | Runtime source locations | Embed source map (file + line for each LLVM instruction) in debug info, format panics through ariadne |
 | Runtime variable values | For `assert`, capture the expression values before the assert and include in panic message |
-| `forge why` | Rerun type checker for a specific span, dump the inference chain |
-| `forge errors diff` | Compare two JSON diagnostic outputs, categorize as fixed/new/remaining |
+| `avra why` | Rerun type checker for a specific span, dump the inference chain |
+| `avra errors diff` | Compare two JSON diagnostic outputs, categorize as fixed/new/remaining |
 | `--profile` | Wrap each compiler stage in `Instant::now()` / `elapsed()`, format results |
 | `--profile-format=json` | Same data, JSON output |

@@ -4,19 +4,19 @@ set -euo pipefail
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 BOOTSTRAP_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 REPO_DIR=$(CDPATH= cd -- "$BOOTSTRAP_DIR/.." && pwd)
-FORGE_DIR="$REPO_DIR/forge"
+FORGE_DIR="$REPO_DIR/avra"
 BUILD_DIR="$BOOTSTRAP_DIR/build"
-HOST_COMPILER="$FORGE_DIR/target/release/forgec"
+HOST_COMPILER="$FORGE_DIR/target/release/avrac"
 
 if [ ! -x "$HOST_COMPILER" ]; then
   (cd "$FORGE_DIR" && cargo build --release)
 fi
 
-if [ ! -f "$FORGE_DIR/packages/std-process/target/release/libforge_process.a" ]; then
+if [ ! -f "$FORGE_DIR/packages/std-process/target/release/libavra_process.a" ]; then
   (cd "$FORGE_DIR/packages/std-process" && cargo build --release)
 fi
 
-# libforge_llvm.a no longer needed — bootstrap uses llvm_wrapper.c directly
+# libavra_llvm.a no longer needed — bootstrap uses llvm_wrapper.c directly
 
 mkdir -p "$BUILD_DIR"
 build_log="$BUILD_DIR/build.log"

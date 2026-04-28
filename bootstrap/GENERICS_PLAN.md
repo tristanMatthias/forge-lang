@@ -27,9 +27,9 @@ Codegen never sees generics — it only sees fully concrete code.
 
 ## Phase 1: Keep Type Params in the AST
 
-### New types in `core/ast.fg`
+### New types in `core/ast.av`
 
-```forge
+```avra
 export enum TypeParamList {
     End
     Node(name: string, bounds: string, next: TypeParamList)
@@ -38,7 +38,7 @@ export enum TypeParamList {
 
 ### Modified Stmt variants
 
-```forge
+```avra
 // Before:
 Function(name: string, params: ParamList, ret_ty: string, body: StmtList)
 TypeDecl(name: string, fields: FieldList)
@@ -67,14 +67,14 @@ it adds `T` to the current scope. This ensures:
 - `T` used inside the body doesn't trigger "undefined variable"
 - Nested generics shadow correctly
 
-Implementation: in `resolve/mod.fg`, when processing a Function/TypeDecl/
+Implementation: in `resolve/mod.av`, when processing a Function/TypeDecl/
 EnumDecl with non-empty type_params, push each type param name into scope.
 
 ## Phase 3: Type Checker — Infer Type Arguments
 
 When the type checker encounters a call to a generic function:
 
-```forge
+```avra
 fn identity<T>(x: T) -> T { x }
 let n = identity(42)
 ```
@@ -96,7 +96,7 @@ Simple unification — walk parameter types and argument types in parallel:
 - If param type is generic (e.g. `List<T>`), recurse into type args
 
 This handles:
-```forge
+```avra
 fn first<A, B>(p: Pair<A, B>) -> A { p.first }
 // Call: first(Pair { first: 42, second: "hello" })
 // Infers: A = int, B = string
@@ -110,7 +110,7 @@ with its resolved type arguments.
 
 ## Phase 4: Monomorphization Pass
 
-New pass: `src/mono/mod.fg`
+New pass: `src/mono/mod.av`
 
 Input: type-checked AST with recorded instantiations.
 Output: AST with no generics — all generic declarations replaced by
@@ -149,7 +149,7 @@ Mangled names use `__` separator (already used for impl methods).
 ### Handling generic types and enums
 
 When we monomorphize `enum Option<T>` with `T=int`:
-```forge
+```avra
 // Original:
 enum Option<T> { None, Some(value: T) }
 
@@ -163,7 +163,7 @@ just regular types with funny names.
 
 ### Recursive/self-referential generics
 
-```forge
+```avra
 enum List<T> {
     End
     Node(value: T, next: List<T>)
@@ -171,7 +171,7 @@ enum List<T> {
 ```
 
 Monomorphized with T=int:
-```forge
+```avra
 enum List__int {
     End
     Node(value: int, next: List__int)
@@ -190,7 +190,7 @@ Codegen sees only concrete, non-generic code. No changes needed.
 ## Phase 6: Unify Linked Lists (Future)
 
 Once generics work:
-```forge
+```avra
 enum List<T> { End, Node(value: T, next: List<T>) }
 type ExprList = List<SExpr>
 type StmtList = List<SStmt>
@@ -201,12 +201,12 @@ The 13 hand-written linked list enums become one generic + type aliases.
 
 ## Implementation Order
 
-1. [x] Add TypeParamList to ast.fg, update Function/TypeDecl/EnumDecl
-2. [x] Change parser: skip_angle_brackets → parse_type_params (in features/generics/parser.fg)
+1. [x] Add TypeParamList to ast.av, update Function/TypeDecl/EnumDecl
+2. [x] Change parser: skip_angle_brackets → parse_type_params (in features/generics/parser.av)
 3. [x] Update all ~40 destructuring sites (mechanical)
 4. [x] Resolver: scope type param names
 5. [x] Type checker: infer type args at generic call sites (TypeBindings, FnTypeEntry extended)
-6. [x] Monomorphization pass: clone, substitute, rewrite, remove (features/generics/mono.fg)
+6. [x] Monomorphization pass: clone, substitute, rewrite, remove (features/generics/mono.av)
 7. [x] Test: existing generics example still passes (42, 30, 99)
 8. [x] Test: multi-instantiation (same generic with different types)
 9. [x] Test: generic types and enums (Wrapper<T>, Option<T>)
@@ -220,9 +220,9 @@ generics can be considered production-quality.
 ### ~~1. `infer_expr_type` only handles literals~~ DONE
 **status:** fixed (April 14, 2026)
 
-Added `ty: ValueType` field to `SExpr` (core/ast.fg). Typeck populates it
+Added `ty: ValueType` field to `SExpr` (core/ast.av). Typeck populates it
 via a Pass 3 annotation walk (`annotate_stmts/annotate_expr/annotate_sexpr`
-in typeck/mod.fg). `TypeCheckResult` now returns the annotated `StmtList`.
+in typeck/mod.av). `TypeCheckResult` now returns the annotated `StmtList`.
 Mono pass reads `arg.ty` from SExpr instead of re-inferring. Deleted all
 inference logic (TypeEnv, FnRetReg, infer_expr_type, normalize_type_str).
 The typeck is the single source of truth for expression types.
@@ -234,7 +234,7 @@ Added `Expr.GenericCall(callee, type_args, args)` variant and `TypeNameList`
 type. Parser uses speculative parsing with backtracking (`save_state`/
 `restore_state` on `Parser`) in `parse_comparison` to disambiguate
 `f<int>(x)` (generic call) from `f < int` (comparison). Backtracking is
-general-purpose infrastructure in `parse/mod.fg`, not generics-specific.
+general-purpose infrastructure in `parse/mod.av`, not generics-specific.
 Mono pass reads explicit type args via `explicit_to_type_args` and
 uses them directly instead of inferring.
 
@@ -273,7 +273,7 @@ the compatible instantiation.
 
 ### 6. F0400 diagnostics have no source location
 **priority:** medium
-**file:** `features/generics/mono.fg`
+**file:** `features/generics/mono.av`
 
 `check_resolved` passes `line: 0, col: 0`. The error renders without a
 source snippet — just the message and help text.
@@ -284,7 +284,7 @@ collection pass into `check_resolved`. The `CollectState` or the
 
 ### 7. Old seed resolver workarounds
 **priority:** low
-**file:** `features/generics/mono.fg`
+**file:** `features/generics/mono.av`
 
 Functions like `try_add_fn_inst`, `try_add_enum_inst`, `try_add_struct_inst`
 exist because the old seed's resolver crashes on `let x = f(...)` inside
@@ -296,7 +296,7 @@ it, remove the helpers. If not, keep them — they're not harmful, just verbose.
 
 ### 8. `substitute_*` and `rewrite_*` are 90% duplicated
 **priority:** low — blocked on closure bug
-**file:** `features/generics/mono.fg`
+**file:** `features/generics/mono.av`
 
 `substitute_stmt`/`substitute_expr` and `rewrite_stmt`/`rewrite_expr` walk
 every AST variant with identical structure, differing only in leaf operations.
@@ -331,4 +331,4 @@ The self-referential `next: List<T>` field type string stays unchanged during
 substitution, which is correct because all enums have the same layout
 `{i64, ptr}`. The `List.Node(1, List.Node(2, ...))` calls correctly infer
 `T=int` and the monomorphized `List__int` enum is generated.
-Test: `tests/recursive_generic.fg`.
+Test: `tests/recursive_generic.av`.

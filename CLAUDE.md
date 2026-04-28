@@ -1,4 +1,4 @@
-## Language: Avra (codenamed Forge during bootstrap)
+## Language: Avra (codenamed Avra during bootstrap)
 
 Avra is a compiled, statically-typed, agent-first language. The full spec lives in `docs/2026_04_18_FULL_SPEC.md`.
 The v1.0 TRD (gap analysis + tickets) lives in `docs/TRD_V1.md`.
@@ -14,22 +14,22 @@ Features are self-contained modules in `bootstrap/src/features/`.
 Each feature has: parser, codegen, and examples with `/// expect:` comments.
 
 ### Key directories
-- `bootstrap/src/core/ast.fg` — AST definitions, token kinds (`Tk` enum), value types, all list types
-- `bootstrap/src/core/llvm.fg` — LLVM C-API extern bindings
-- `bootstrap/src/core/registry.fg` — feature dispatch registry (tag-based routing to feature handlers)
-- `bootstrap/src/parse/mod.fg` — recursive descent parser + lexer
-- `bootstrap/src/codegen/` — LLVM IR emission (mod.fg + helpers + per-feature codegen)
-- `bootstrap/src/typeck/mod.fg` — type checker (currently additive, MUST become gating per spec)
-- `bootstrap/src/resolve/` — name resolver (mod.fg = scope, names.fg = module/import resolution)
+- `bootstrap/src/core/ast.av` — AST definitions, token kinds (`Tk` enum), value types, all list types
+- `bootstrap/src/core/llvm.av` — LLVM C-API extern bindings
+- `bootstrap/src/core/registry.av` — feature dispatch registry (tag-based routing to feature handlers)
+- `bootstrap/src/parse/mod.av` — recursive descent parser + lexer
+- `bootstrap/src/codegen/` — LLVM IR emission (mod.av + helpers + per-feature codegen)
+- `bootstrap/src/typeck/mod.av` — type checker (currently additive, MUST become gating per spec)
+- `bootstrap/src/resolve/` — name resolver (mod.av = scope, names.av = module/import resolution)
 - `bootstrap/runtime.c` — C runtime (~1900 lines: allocator, string ops, LLVM wrappers, channels, threads)
 - `bootstrap/seed/seed.ll` — bootstrap seed IR
 - `bootstrap/regress/` — regression tests (~70 tests)
 
 ### File locations (NOT where old CLAUDE.md said)
-- Token kinds: `Tk` enum in `src/core/ast.fg` (NOT `src/core/kind_ids.fg` — that file doesn't exist)
-- Scanner/lexer: `src/parse/mod.fg` and `src/parse/lexer.fg` (NOT `src/core/scanner.fg`)
-- Resolver: `src/resolve/mod.fg` + `src/resolve/names.fg` (NOT `src/core/resolver.fg`)
-- Eval: `src/features/eval/mod.fg` (NOT `src/core/eval.fg`)
+- Token kinds: `Tk` enum in `src/core/ast.av` (NOT `src/core/kind_ids.av` — that file doesn't exist)
+- Scanner/lexer: `src/parse/mod.av` and `src/parse/lexer.av` (NOT `src/core/scanner.av`)
+- Resolver: `src/resolve/mod.av` + `src/resolve/names.av` (NOT `src/core/resolver.av`)
+- Eval: `src/features/eval/mod.av` (NOT `src/core/eval.av`)
 
 ### Rules
 - Never put feature-specific code in `core/` — core is infrastructure only
@@ -46,8 +46,8 @@ Each feature has: parser, codegen, and examples with `/// expect:` comments.
 - `Float` → double
 - `Str`, `Ptr`, `Struct`, `Enum`, `List`, `Map`, `Fn`, `Closure`, `Trait` → ptr
 
-The canonical type mapping function is `llvm_type_for_full` in `codegen/types.fg`.
-Struct fields use proper LLVM named struct types via `forge_llvm_struct_create_named` + GEP.
+The canonical type mapping function is `llvm_type_for_full` in `codegen/types.av`.
+Struct fields use proper LLVM named struct types via `avra_llvm_struct_create_named` + GEP.
 A legacy `llvm_type_for` still exists (maps Bool/Float to i64) for callers not yet updated.
 
 `EmitValue` carries both `value: ptr` and `ty: ValueType` — every emitted value is type-aware.
@@ -81,7 +81,7 @@ A legacy `llvm_type_for` still exists (maps Bool/Float to i64) for callers not y
 cd bootstrap/
 make              # build the bootstrap compiler (produces build/bs2)
 make test         # regression suite + fixed-point check
-make run FILE=x   # compile and run a Forge program
+make run FILE=x   # compile and run a Avra program
 make update-seed  # rebuild seed IR after dogfooding
 make clean        # remove build artifacts
 make help         # show all targets
@@ -107,18 +107,18 @@ If you discover a missing language feature or infrastructure gap while working, 
 **Phase B — Implementation:** Implement parser/codegen/resolver/typeck. `make build` after every change. Update seed when done.
 
 ### Phase 3: Implementation Checklist
-- [ ] AST (`src/core/ast.fg`) — new Expr/Stmt/Pattern variant
-- [ ] Lexer (`src/parse/lexer.fg`) — new token kind if needed
-- [ ] Scanner (`src/parse/mod.fg` `p_keyword_kind`) — new keyword mapping
-- [ ] Parser (`src/parse/mod.fg` or `src/features/<name>/parser.fg`)
-- [ ] Codegen (`src/codegen/mod.fg` or `src/features/<name>/codegen.fg`)
-- [ ] Resolver (`src/resolve/mod.fg`)
-- [ ] Type checker (`src/typeck/mod.fg`)
-- [ ] Feature registry (`src/features/mod.fg` `init_features`)
-- [ ] AST renderer (`render_expr`/`render_stmt` in `ast.fg`)
+- [ ] AST (`src/core/ast.av`) — new Expr/Stmt/Pattern variant
+- [ ] Lexer (`src/parse/lexer.av`) — new token kind if needed
+- [ ] Scanner (`src/parse/mod.av` `p_keyword_kind`) — new keyword mapping
+- [ ] Parser (`src/parse/mod.av` or `src/features/<name>/parser.av`)
+- [ ] Codegen (`src/codegen/mod.av` or `src/features/<name>/codegen.av`)
+- [ ] Resolver (`src/resolve/mod.av`)
+- [ ] Type checker (`src/typeck/mod.av`)
+- [ ] Feature registry (`src/features/mod.av` `init_features`)
+- [ ] AST renderer (`render_expr`/`render_stmt` in `ast.av`)
 
 ### Phase 4: Testing
-1. Basic happy-path test in `src/features/<name>/example.fg` with `expected.out`
+1. Basic happy-path test in `src/features/<name>/example.av` with `expected.out`
 2. Edge cases (empty, null, zero, negative, boundary values)
 3. Combinatorial: closures, match, nullable, if-expr, structs, enums, loops, pipe, templates, lists, maps, `with`, `defer`, nested, as args/returns
 4. Regression test in `regress/` with `.out` file
@@ -193,18 +193,18 @@ The authoritative spec is `docs/2026_04_18_FULL_SPEC.md`. Key v1.0 requirements:
 
 When hitting a segfault/crash, follow this order. Do NOT guess.
 
-1. **LLDB first:** `lldb -b -o 'target create ./build/bs2' -o 'settings set -- target.run-args check /tmp/test.fg' -o run -o bt -o 'register read x0 x1 x8 x9'`
+1. **LLDB first:** `lldb -b -o 'target create ./build/bs2' -o 'settings set -- target.run-args check /tmp/test.av' -o run -o bt -o 'register read x0 x1 x8 x9'`
 2. **Check seed integrity:** `git diff seed/seed.ll` — if dirty and you didn't update, restore it
 3. **Check -O0 vs -O2:** if only -O2 crashes, it's an alignment bug
-4. **Store tracking:** `FORGE_TRACK_STORES=1` finds return-type mismatches
-5. **Redzones:** `FORGE_REDZONES=1` / `FORGE_PAGE_ALLOC=1` catches cross-allocation writes
+4. **Store tracking:** `AVRA_TRACK_STORES=1` finds return-type mismatches
+5. **Redzones:** `AVRA_REDZONES=1` / `AVRA_PAGE_ALLOC=1` catches cross-allocation writes
 6. Only then read IR
 
 ### C-side debug tools (runtime.c)
-- `forge_trace_i64(v1, v2)` / `forge_trace_ptr(label, val)` — safe tracing (no string alloc)
-- `forge_dump_stmt(label, stmt)` / `forge_dump_stmt_list(label, list)`
-- `forge_cg_trace_enable(1)` / `forge_cg_trace_stmt/emit` — codegen tracing
-- `forge_dump_function(fn_val)` — dump LLVM function IR
+- `avra_trace_i64(v1, v2)` / `avra_trace_ptr(label, val)` — safe tracing (no string alloc)
+- `avra_dump_stmt(label, stmt)` / `avra_dump_stmt_list(label, list)`
+- `avra_cg_trace_enable(1)` / `avra_cg_trace_stmt/emit` — codegen tracing
+- `avra_dump_function(fn_val)` — dump LLVM function IR
 
 **NEVER use `eprintln("text" + string(val))` in hot paths** — causes infinite recursion. Use C-side trace functions.
 
@@ -215,8 +215,8 @@ When hitting a segfault/crash, follow this order. Do NOT guess.
 - Near sp register → stack (valid)
 
 ### Token Kinds
-Token kinds defined as `Tk` enum in `src/core/ast.fg`. Keywords are mapped in `p_keyword_kind` in `src/parse/mod.fg`.
-New keywords must be added to: (1) `Tk` enum in ast.fg, (2) `p_keyword_kind` in parse/mod.fg, (3) `forge_kind_id_for_keyword()` in runtime.c.
+Token kinds defined as `Tk` enum in `src/core/ast.av`. Keywords are mapped in `p_keyword_kind` in `src/parse/mod.av`.
+New keywords must be added to: (1) `Tk` enum in ast.av, (2) `p_keyword_kind` in parse/mod.av, (3) `avra_kind_id_for_keyword()` in runtime.c.
 
 ## Silent Failure Modes
 
@@ -230,7 +230,7 @@ These bugs build successfully but corrupt memory at runtime.
 
 ## CLI Commands
 
-`forge build <file>` | `forge run <file>` | `forge check <file>` | `forge test [feature]` | `forge features [--graph|name]` | `forge explain <code>` | `forge package new <name>`
+`avra build <file>` | `avra run <file>` | `avra check <file>` | `avra test [feature]` | `avra features [--graph|name]` | `avra explain <code>` | `avra package new <name>`
 
 ## Error System — ZERO RAW ERRORS POLICY
 
@@ -253,7 +253,7 @@ Per spec (Axis 20): F-codes are stable identifiers. Ranges: F0001-0999 lexer/par
 - **Naming:** never shadow fn/type names with pattern vars (`expr`, `stmt`). Use short prefixes: `se`, `ss`, `sv`.
 - **Seed cycle is 3+ min** — use LLDB or C-side traces, never eprintln traces requiring rebuild.
 - **Duplicate codegen paths:** `emit_statement` exists twice (feature path + inline path). Both must handle all statement types.
-- **BasicBlockRefs CANNOT survive Forge global store/load** — use C-side `forge_loop_push/break` stack instead.
+- **BasicBlockRefs CANNOT survive Avra global store/load** — use C-side `avra_loop_push/break` stack instead.
 - **Struct methods use self-by-pointer** (ptr, not value) for mutation persistence.
 - **`llvm.type_of(param_val)`** for parameter allocas — not `resolve_type_to_llvm` (circular dependency).
 - **Seed auto-cycling:** `make build` detects when bs2 can't self-compile and cycles the seed forward. Auto-cycle CAN'T help when adding new keywords the seed scanner doesn't recognize. `--seed-status` shows new/changed fns, `--seed-diff <fn>` diffs specific functions.
@@ -272,7 +272,7 @@ Per spec (Axis 20): F-codes are stable identifiers. Ranges: F0001-0999 lexer/par
 8. Always do the right thing. Centralize logic, don't duplicate. Hacks create more hacks.
 9. Fix bugs immediately or record them. Never silently skip.
 10. When adding diagnostics, add to `scripts/diagnose.sh` (centralized), not separate scripts.
-11. When fixing a bug, capture a regression test: `bash scripts/diagnose.sh --regress-add <name> <file.fg>`
+11. When fixing a bug, capture a regression test: `bash scripts/diagnose.sh --regress-add <name> <file.av>`
 12. Be honest about scope. Never say "one more fix." Give real estimates based on data, not optimism.
 13. Do large refactors when necessary. Don't avoid the right fix because it's big.
 14. ALWAYS fix hacks and workarounds before ending a session. No hack survives a commit. If a proper fix requires a seed cycle, do the seed cycle.

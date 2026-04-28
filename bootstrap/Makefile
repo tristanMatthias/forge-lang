@@ -4,13 +4,13 @@
 # It builds from a checked-in LLVM IR seed (seed/seed.ll).
 #
 # Pipeline:
-#   seed/seed.ll → llc + cc → seed binary → compiles packages/forgec/src/ → bs2
-#   bs2 → compiles packages/forgec/src/ → bs3 (must match bs2 = fixed point)
+#   seed/seed.ll → llc + cc → seed binary → compiles packages/avrac/src/ → bs2
+#   bs2 → compiles packages/avrac/src/ → bs3 (must match bs2 = fixed point)
 #
 # Quick reference:
 #   make              build the bootstrap compiler
 #   make test         run the full safety net (regression + fixed point)
-#   make run FILE=x   compile and run a Forge program
+#   make run FILE=x   compile and run a Avra program
 #   make update-seed  rebuild seed IR from current source (after dogfooding)
 #   make clean        remove all build artifacts
 #   make help         show this list
@@ -18,7 +18,7 @@
 .DEFAULT_GOAL := build
 .PHONY: build build-O0 build-debug test run selfhost clean help install-hooks regress score update-seed seed-patch verify-seed seed-sigs next work epic coverage
 
-SRC_DIR := packages/forgec/src
+SRC_DIR := packages/avrac/src
 BS2 := build/bs2
 DIAG := NO_AUTOCYCLE=1 bash scripts/diagnose.sh
 
@@ -28,7 +28,7 @@ help:
 	@echo "  make build         Build the bootstrap compiler (default)."
 	@echo "  make build-O0      Build at -O0 for lldb debugging (build/bs2_O0)."
 	@echo "  make test          Run regression suite + self-host fixed-point check."
-	@echo "  make run FILE=x.av Compile and run a Forge program."
+	@echo "  make run FILE=x.av Compile and run a Avra program."
 	@echo "  make selfhost      Verify bs2 and bs3 emit byte-identical IR."
 	@echo "  make regress       Run regression suite only (faster than 'test')."
 	@echo "  make update-seed   Rebuild seed/seed.ll from current source (with verify)."
@@ -95,7 +95,7 @@ regress:
 selfhost:
 	@$(DIAG) --check-fixedpoint
 
-# Compile and run a single Forge file with the bootstrap compiler.
+# Compile and run a single Avra file with the bootstrap compiler.
 run:
 ifndef FILE
 	@echo "usage: make run FILE=path/to/program.av" >&2
@@ -178,7 +178,7 @@ clean:
 
 # Assemble the canonical grammar from feature fragments.
 grammar:
-	@echo "# Forge Bootstrap Grammar" > GRAMMAR.md
+	@echo "# Avra Bootstrap Grammar" > GRAMMAR.md
 	@echo "" >> GRAMMAR.md
 	@echo "Assembled from \`$(SRC_DIR)/features/*/grammar.md\`." >> GRAMMAR.md
 	@echo "" >> GRAMMAR.md

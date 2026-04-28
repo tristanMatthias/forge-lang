@@ -1,9 +1,9 @@
-# Forge Bootstrap Grammar
+# Avra Bootstrap Grammar
 
 Assembled from `src/features/*/grammar.md`. Each feature owns its
 grammar fragment; this file is the assembled canonical spec.
 
-See also: `parse/mod.fg` for the expression grammar (operators,
+See also: `parse/mod.av` for the expression grammar (operators,
 calls, field access, indexing, literals) which isn't feature-organized.
 
 ---
@@ -20,7 +20,7 @@ Block        ::= '{' Statement* '}'
 ExprStmt     ::= Expr
 ```
 
-## Expressions (not feature-organized — lives in parse/mod.fg)
+## Expressions (not feature-organized — lives in parse/mod.av)
 
 ```ebnf
 Expr         ::= Assignment

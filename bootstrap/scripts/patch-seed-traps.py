@@ -2,7 +2,7 @@
 """Patch seed.ll to convert all match trap blocks to safe fallthrough.
 
 When adding new enum variants, the seed's exhaustive matches crash on
-unknown tags. This script patches all forge_match_unreachable calls
+unknown tags. This script patches all avra_match_unreachable calls
 to return a safe default value instead of calling unreachable.
 
 Usage: python3 scripts/patch-seed-traps.py
@@ -29,7 +29,7 @@ def replace_trap(m):
     if 'ret i1' in func_text: return "ret i1 0"
     return "ret void"
 
-content = re.sub(r'call void @forge_match_unreachable\([^)]+\)\n\s+unreachable', replace_trap, content)
+content = re.sub(r'call void @avra_match_unreachable\([^)]+\)\n\s+unreachable', replace_trap, content)
 with open('seed/seed.ll', 'w') as f:
     f.write(content)
 print(f"Patched {count} match traps in seed.ll")

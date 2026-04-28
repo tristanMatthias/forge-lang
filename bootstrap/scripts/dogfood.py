@@ -18,7 +18,7 @@ import sys
 from collections import OrderedDict
 
 BOOTSTRAP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC = os.path.join(BOOTSTRAP, "packages", "forgec", "src")
+SRC = os.path.join(BOOTSTRAP, "packages", "avrac", "src")
 CSV_PATH = os.path.join(BOOTSTRAP, "dogfood_progress.csv")
 
 # ─── Feature definitions ────────────────────────────────────────────
@@ -728,7 +728,7 @@ FEATURE_BY_KEY = {f["key"]: f for f in FEATURES}
 # ─── File discovery ─────────────────────────────────────────────────
 
 def find_fg_files():
-    """Find all .av source files under packages/forgec/src/, excluding tests/."""
+    """Find all .av source files under packages/avrac/src/, excluding tests/."""
     files = []
     for root, dirs, fnames in os.walk(SRC):
         dirs[:] = [d for d in dirs if d != "tests"]
@@ -859,7 +859,7 @@ def print_task(feat_key, file):
     print()
     print("### Example refactor")
     print()
-    print("```forge")
+    print("```avra")
     print(feat["example"])
     print("```")
     print()

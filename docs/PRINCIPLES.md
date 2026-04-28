@@ -1,4 +1,4 @@
-# Forge Principles:
+# Avra Principles:
 
 - LLMs are the primary writers of code, and we should design for them first
 - Futuristic wherever possible

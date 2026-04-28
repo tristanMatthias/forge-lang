@@ -6,7 +6,7 @@
 
 ## Problem
 
-The Forge compiler has a half-finished modular architecture. Features exist as directories in `compiler/features/` and register metadata via `forge_feature!`, but the actual compiler core still contains most of the logic. Features merely add helper methods via `impl Parser` / `impl Codegen` blocks that core must manually call.
+The Avra compiler has a half-finished modular architecture. Features exist as directories in `compiler/features/` and register metadata via `avra_feature!`, but the actual compiler core still contains most of the logic. Features merely add helper methods via `impl Parser` / `impl Codegen` blocks that core must manually call.
 
 **Current state (by the numbers):**
 | Location | LOC | What's there |
@@ -52,7 +52,7 @@ Each feature implements a single trait that the core compiler dispatches to:
 /// Every language feature implements this trait.
 /// Core iterates registered features and calls these methods.
 pub trait LanguageFeature: Send + Sync {
-    /// Metadata for `forge features` CLI
+    /// Metadata for `avra features` CLI
     fn metadata(&self) -> &FeatureMetadata;
 
     // ─── Lexer ───────────────────────────────────────────
@@ -199,7 +199,7 @@ A proc macro scans feature directories at compile time and generates the full en
 
 ```rust
 // This macro reads features/*/types.rs and generates the Expr enum
-forge_ast! {
+avra_ast! {
     // Core variants are listed here
     pub enum Expr {
         IntLit(i64, Span),
@@ -437,8 +437,8 @@ compiler/features/<feature_id>/
 ├── codegen.rs      # compile_statement / compile_expr
 ├── intrinsics.rs   # register_intrinsics (optional, for built-in methods)
 └── examples/       # Test files with /// expect: comments
-    ├── basic.fg
-    ├── edge_case.fg
+    ├── basic.av
+    ├── edge_case.av
     └── ...
 ```
 
@@ -505,7 +505,7 @@ Core is **infrastructure only**. It knows nothing about specific language constr
 | `errors/` | `CompileError` variants, `render()`, diagnostic system. |
 | `driver.rs` | Pipeline orchestration: lex → parse → check → codegen → link. |
 | `registry.rs` | `FeatureRegistry`, `IntrinsicRegistry`, keyword registry. |
-| `test_runner.rs` | Run `examples/*.fg` test files. |
+| `test_runner.rs` | Run `examples/*.av` test files. |
 
 ### Features (everything else)
 
@@ -695,8 +695,8 @@ Error codes stay in `core/errors/`. Features can emit diagnostics via `ParseCont
 2. **Core ≤ 2,500 LOC** (down from ~12,000)
 3. **All 283+ tests pass** after migration
 4. **Each feature directory is self-contained**: AST types, parser, checker, codegen, tests
-5. **`forge features`** still works, shows all features with test counts
-6. **No performance regression** on `forge test` (within 5% of current)
+5. **`avra features`** still works, shows all features with test counts
+6. **No performance regression** on `avra test` (within 5% of current)
 
 ---
 

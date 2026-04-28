@@ -1,4 +1,4 @@
-# Forge — Bootstrap Memory Strategy
+# Avra — Bootstrap Memory Strategy
 
 ## The Problem
 
@@ -12,10 +12,10 @@ Three phases. Each compiles the next. The Rust bootstrap becomes irrelevant afte
 Phase 0: Rust bootstrap (current, buggy)
   → compiles Phase 1
 
-Phase 1: Copy-everything Forge compiler (slow, correct)
+Phase 1: Copy-everything Avra compiler (slow, correct)
   → compiles Phase 2
 
-Phase 2: Reference-counted Forge compiler (fast, correct)
+Phase 2: Reference-counted Avra compiler (fast, correct)
   → compiles itself forever
 ```
 
@@ -23,7 +23,7 @@ Phase 2: Reference-counted Forge compiler (fast, correct)
 
 Every value passed to a function, returned from a function, or extracted from a struct is deep-copied. No sharing. No aliasing. No lifetime bugs. Correct by construction.
 
-```forge
+```avra
 // What the codegen emits for: process(self.items[0])
 let tmp = deep_copy(self.items[0])
 process(tmp)
@@ -41,7 +41,7 @@ free(tmp)
 
 ## Phase 2: Reference Counting
 
-The self-hosted compiler (written in Forge, compiled by Phase 1) implements RC in its own codegen:
+The self-hosted compiler (written in Avra, compiled by Phase 1) implements RC in its own codegen:
 
 - Every heap value (string, list, struct) has a refcount header
 - Assignment: retain new, release old
@@ -49,7 +49,7 @@ The self-hosted compiler (written in Forge, compiled by Phase 1) implements RC i
 - Scope exit: release all locals
 - Refcount hits zero: free
 
-```forge
+```avra
 fn emit_assignment(self, target: LValue, value: Expr) -> LLVMValue {
   let val = self.emit_expr(value)?
   self.emit_retain(val)
@@ -71,16 +71,16 @@ fn emit_assignment(self, target: LValue, value: Expr) -> LLVMValue {
 ```bash
 # Phase 0 → Phase 1
 cargo build --release                           # build Rust bootstrap
-./forgec build src/main.fg -o forgec-copy       # bootstrap compiles copy-everything compiler
-./forgec-copy test                              # all tests pass
+./avrac build src/main.av -o avrac-copy       # bootstrap compiles copy-everything compiler
+./avrac-copy test                              # all tests pass
 
 # Phase 1 → Phase 2
-./forgec-copy build src/main.fg -o forgec-rc    # slow compiler compiles RC compiler
-./forgec-rc test                                # all tests pass
+./avrac-copy build src/main.av -o avrac-rc    # slow compiler compiles RC compiler
+./avrac-rc test                                # all tests pass
 
 # Phase 2 → Phase 2 (self-sustaining)
-./forgec-rc build src/main.fg -o forgec-rc-v2   # RC compiler compiles itself
-diff <(./forgec-rc test) <(./forgec-rc-v2 test) # identical output
+./avrac-rc build src/main.av -o avrac-rc-v2   # RC compiler compiles itself
+diff <(./avrac-rc test) <(./avrac-rc-v2 test) # identical output
 
 # Rust bootstrap is now irrelevant
 ```

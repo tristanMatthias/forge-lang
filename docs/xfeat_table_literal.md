@@ -1,4 +1,4 @@
-# Forge — Table Literal (TDD)
+# Avra — Table Literal (TDD)
 
 `table` is syntactic sugar that produces a `List<struct>`. The header row defines field names, the compiler infers types from values. That's it — one keyword, desugars to what you'd write by hand.
 
@@ -6,7 +6,7 @@
 
 ## Test 1: Basic table literal
 
-```forge
+```avra
 fn main() {
   let users = table {
     name    | age | active
@@ -23,7 +23,7 @@ fn main() {
 
 ## Test 2: Type inference from values
 
-```forge
+```avra
 fn takes_users(users: List<{name: string, age: int}>) {
   users.each(u -> println(`${u.name}: ${u.age}`))
 }
@@ -43,7 +43,7 @@ fn main() {
 
 ## Test 3: Filter, map, pipe
 
-```forge
+```avra
 fn main() {
   let scores = table {
     name    | score | grade
@@ -64,7 +64,7 @@ fn main() {
 
 ## Test 4: Table in variable, reuse
 
-```forge
+```avra
 fn main() {
   let pricing = table {
     plan         | monthly | annual
@@ -83,7 +83,7 @@ fn main() {
 
 ## Test 5: Table with expressions in cells
 
-```forge
+```avra
 fn discount(price: float) -> float { price * 0.8 }
 
 fn main() {
@@ -104,7 +104,7 @@ fn main() {
 
 ## Test 6: Inline table as function argument
 
-```forge
+```avra
 fn total_score(entries: List<{name: string, score: int}>) -> int {
   entries.map(it.score).sum()
 }
@@ -123,7 +123,7 @@ fn main() {
 
 ## Test 7: Single column table
 
-```forge
+```avra
 fn main() {
   let names = table {
     name
@@ -138,7 +138,7 @@ fn main() {
 
 ## Test 8: Empty table
 
-```forge
+```avra
 fn main() {
   let empty = table {
     name: string | age: int
@@ -152,7 +152,7 @@ Note: empty tables need type annotations in the header since there are no values
 
 ## Test 9: Table with enum values
 
-```forge
+```avra
 enum Role { admin, editor, viewer }
 
 fn main() {
@@ -171,7 +171,7 @@ fn main() {
 
 ## Test 10: Table with nullable values
 
-```forge
+```avra
 fn main() {
   let contacts = table {
     name    | email              | phone
@@ -190,7 +190,7 @@ fn main() {
 
 ## Test 11: Table serialization
 
-```forge
+```avra
 fn main() {
   let data = table {
     name    | score
@@ -213,7 +213,7 @@ fn main() {
 
 ## Test 12: State machine pattern
 
-```forge
+```avra
 enum State { idle, running, paused, done }
 enum Event { start, pause, resume, complete }
 
@@ -247,7 +247,7 @@ fn main() {
 
 ## Test 13: Table in test spec (where clause)
 
-```forge
+```avra
 use @std.test
 
 spec "email validation" {
@@ -266,7 +266,7 @@ spec "email validation" {
 ```
 
 ```bash
-forge test
+avra test
 ```
 
 ```
@@ -282,7 +282,7 @@ forge test
 
 ## Test 14: Table in component config
 
-```forge
+```avra
 server :8080 {
   cors true
 
@@ -304,7 +304,7 @@ server :8080 {
 `table` is a keyword that starts a block. The block has a header row (identifiers separated by `|`) followed by value rows (expressions separated by `|`).
 
 ```rust
-#[forge_feature(
+#[avra_feature(
     name = "Table Literal",
     status = "draft",
     depends = ["types_core"],

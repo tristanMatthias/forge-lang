@@ -1,0 +1,283 @@
+mod render
+mod suggest
+
+// WHY: structured diagnostic types for compiler error reporting.
+// Every error is a Diagnostic record with error code, severity,
+// source span, help text, and labels. DiagnosticBag collects
+// diagnostics across an entire compilation pass without stopping.
+//
+// Ported from forge/packages/forgec-rust/errors/diagnostic.rs.
+// The architecture supports multi-label errors, suggestions with
+// confidence scores, and machine-readable JSON output — even
+// though not all of those are wired up in Phase 0.
+
+// ── Source spans ──
+
+export type Span = {
+    start: int,    // byte offset into source
+    end: int,      // byte offset end
+    line: int,     // 1-based line number
+    col: int,      // 1-based column
+}
+
+export fn span_new(start: int, end: int, line: int, col: int) -> Span {
+    Span { start, end, line, col }
+}
+
+export fn span_dummy() -> Span {
+    Span { start: 0, end: 0, line: 0, col: 0 }
+}
+
+// ── Severity ──
+
+export enum Severity {
+    Error
+    Warning
+    Info
+    Hint
+}
+
+export fn severity_str(s: Severity) -> string {
+    match s {
+        .Error -> "error"
+        .Warning -> "warning"
+        .Info -> "info"
+        .Hint -> "hint"
+    }
+}
+
+// ── Labels ──
+
+export enum LabelKind {
+    Primary
+    Secondary
+}
+
+export type Label = {
+    span: Span,
+    message: string,
+    kind: LabelKind,
+}
+
+export enum LabelList {
+    End
+    Node(label: Label, next: LabelList)
+}
+
+// ── Error codes ──
+// Each error has an enum variant. All metadata (code string, help
+// text) is returned from a single `error_def` match — one place
+// to add a new error, one line per variant.
+
+export enum DiagCode {
+    // Syntax / Lexer (F0001-F0999) — ACTIVE
+    SyntaxError         // F0001 — general parse error
+    BadNumber           // F0006 — reserved: malformed number literal
+    ExpectedBlock       // F0001 — expected { block
+    MismatchedParen     // F0001 — reserved: unmatched (
+    MismatchedBracket   // F0001 — reserved: unmatched [
+    MismatchedBrace     // F0001 — unmatched {
+    ExpectedArrow       // F0001 — reserved: expected ->
+    UnterminatedString  // F0002 — unterminated string
+    UnterminatedTemplate // F0003 — unterminated template
+    ExpectedForVar      // F0001 — reserved: expected for variable
+    ExpectedIn          // F0001 — reserved: expected `in`
+    ExpectedExpression  // F0001 — expected expression
+    UnexpectedSemicolon // F0001 — stray ;
+    // Type checking (F1000-1999 per spec Axis 20) — ACTIVE
+    TypeMismatch        // F1000 — type mismatch
+    WrongArgCount       // F1001 — wrong argument count
+    CannotInferTypeParam // F1002 — generic type param unresolvable
+    // Name resolution (F3000-3999 per spec Axis 20) — ACTIVE
+    UndefinedVariable   // F3000 — undefined variable
+    ImmutableAssign     // F3001 — assign to let binding
+    // Module system (F3100-3199) — ACTIVE
+    ModuleNotFound      // F3100 — module file not found
+    ImportNotFound      // F3101 — imported name not found
+    ImportPrivate       // F3102 — imported name not exported
+    CircularImport      // F3103 — reserved: circular module dependency
+    OrphanImpl          // F3104 — impl for type not in scope
+    // Warnings (F9000-9998 per spec Axis 20) — ACTIVE
+    NonExhaustiveMatch  // F9001 — wildcard hides variants
+    UnusedImport        // F9002 — imported name never used
+    NamingConvention    // F9003 — naming convention violation
+    // Internal (F9900+) — ACTIVE
+    ICE                 // F9999 — internal compiler error
+    // Runtime errors (F5000-5999) — reserved for future runtime diagnostics
+    RuntimeNullDeref
+    RuntimeDivByZero
+    RuntimeIndexOOB
+    RuntimeMatchFallthrough
+    RuntimeStackOverflow
+    RuntimeNullArg
+}
+
+export type ErrorDef = { code: string, help: string }
+
+// Single source of truth for all error metadata.
+// Add a new error = 1 enum variant + 1 match arm here.
+export fn error_def(d: DiagCode) -> ErrorDef {
+    match d {
+        .SyntaxError         -> ErrorDef { code: "F0001", help: "" }
+        .BadNumber           -> ErrorDef { code: "F0006", help: "check the number literal — only digits, `_` separators, and one `.` for floats" }
+        .ExpectedBlock       -> ErrorDef { code: "F0010", help: "blocks require braces: `if cond { ... }`, `fn name() { ... }`" }
+        .MismatchedParen     -> ErrorDef { code: "F0011", help: "check for mismatched parentheses" }
+        .MismatchedBracket   -> ErrorDef { code: "F0012", help: "check for mismatched brackets in list or index expression" }
+        .MismatchedBrace     -> ErrorDef { code: "F0013", help: "check for mismatched braces — every `{` needs a matching `}`" }
+        .ExpectedArrow       -> ErrorDef { code: "F0014", help: "match arms use `->` between pattern and body: `.Variant -> expr`" }
+        .UnterminatedString  -> ErrorDef { code: "F0002", help: "add a closing `\"` to end the string literal" }
+        .UnterminatedTemplate -> ErrorDef { code: "F0003", help: "add a closing backtick to end the template string" }
+        .ExpectedForVar      -> ErrorDef { code: "F0030", help: "for loops need a variable: `for x in collection { ... }`" }
+        .ExpectedIn          -> ErrorDef { code: "F0031", help: "for loops use `in`: `for x in list { ... }` or `for i in 0..10 { ... }`" }
+        .ExpectedExpression  -> ErrorDef { code: "F0040", help: "expected a value, variable, or expression here" }
+        .UnexpectedSemicolon -> ErrorDef { code: "F0041", help: "Avra doesn't use semicolons — remove the `;`" }
+        .TypeMismatch        -> ErrorDef { code: "F1000", help: "" }
+        .WrongArgCount       -> ErrorDef { code: "F1001", help: "" }
+        .CannotInferTypeParam -> ErrorDef { code: "F1002", help: "add explicit type arguments, or ensure the type can be inferred from the arguments" }
+        .UndefinedVariable   -> ErrorDef { code: "F3000", help: "" }
+        .ImmutableAssign     -> ErrorDef { code: "F3001", help: "declare with `mut` instead of `let` to allow reassignment" }
+        .ModuleNotFound      -> ErrorDef { code: "F3100", help: "create the module file or remove the `mod` declaration" }
+        .ImportNotFound      -> ErrorDef { code: "F3101", help: "check the spelling or add `export` to the function in the target module" }
+        .ImportPrivate       -> ErrorDef { code: "F3102", help: "add `export` before the declaration to make it importable" }
+        .CircularImport      -> ErrorDef { code: "F3103", help: "break the cycle by moving shared types to a common module" }
+        .OrphanImpl          -> ErrorDef { code: "F3104", help: "move the `impl` to the module that defines either the trait or the type" }
+        .NonExhaustiveMatch  -> ErrorDef { code: "F9001", help: "add missing match arms or use a wildcard `_` pattern" }
+        .UnusedImport        -> ErrorDef { code: "F9002", help: "remove unused imports to keep code clean" }
+        .NamingConvention    -> ErrorDef { code: "F9003", help: "use PascalCase for types, snake_case for functions/variables, SCREAMING_SNAKE for constants" }
+        .ICE                 -> ErrorDef { code: "F9999", help: "this is a compiler bug — please report it at https://github.com/avra-lang/avra/issues" }
+        .RuntimeNullDeref    -> ErrorDef { code: "F5000", help: "" }
+        .RuntimeDivByZero    -> ErrorDef { code: "F5001", help: "" }
+        .RuntimeIndexOOB     -> ErrorDef { code: "F5002", help: "" }
+        .RuntimeMatchFallthrough -> ErrorDef { code: "F5003", help: "" }
+        .RuntimeStackOverflow -> ErrorDef { code: "F5004", help: "" }
+        .RuntimeNullArg      -> ErrorDef { code: "F5005", help: "" }
+    }
+}
+
+export fn diag_code_str(code: DiagCode) -> string {
+    error_def(code).code
+}
+
+export fn diag_code_help(code: DiagCode) -> string {
+    error_def(code).help
+}
+
+// ── Suggestion confidence ──
+// High = auto-fixable, Medium = likely correct, Low = speculative.
+
+export enum Confidence {
+    High
+    Medium
+    Low
+}
+
+export fn confidence_str(c: Confidence) -> string {
+    match c {
+        .High -> "high"
+        .Medium -> "medium"
+        .Low -> "low"
+    }
+}
+
+// ── Causality chain ──
+// Optional cause chain linking related diagnostics (e.g. "undefined
+// variable" caused by "missing import").
+
+export enum DiagnosticCause {
+    None
+    Cause(diag: Diagnostic)
+}
+
+// ── Diagnostic ──
+
+export type Diagnostic = {
+    code: DiagCode,
+    severity: Severity,
+    message: string,
+    span: Span,
+    help: string,       // empty string = use default from code
+    confidence: Confidence,
+    cause: DiagnosticCause,
+}
+
+// Create an error diagnostic. Help text auto-filled from the code.
+export fn diag_error(code: DiagCode, message: string, span: Span) -> Diagnostic {
+    Diagnostic { code, severity: Severity.Error, message, span, help: diag_code_help(code), confidence: Confidence.High, cause: DiagnosticCause.None }
+}
+
+export fn diag_warning(code: DiagCode, message: string, span: Span) -> Diagnostic {
+    Diagnostic { code, severity: Severity.Warning, message, span, help: diag_code_help(code), confidence: Confidence.High, cause: DiagnosticCause.None }
+}
+
+export fn diag_with_help(d: Diagnostic, help: string) -> Diagnostic {
+    d with { help }
+}
+
+export fn diag_with_confidence(d: Diagnostic, c: Confidence) -> Diagnostic {
+    d with { confidence: c }
+}
+
+export fn diag_with_cause(d: Diagnostic, cause_diag: Diagnostic) -> Diagnostic {
+    d with { cause: DiagnosticCause.Cause(cause_diag) }
+}
+
+// Create an ICE diagnostic for internal compiler errors.
+export fn diag_ice(message: string) -> Diagnostic {
+    Diagnostic { code: DiagCode.ICE, severity: Severity.Error, message, span: span_dummy(), help: diag_code_help(DiagCode.ICE), confidence: Confidence.High, cause: DiagnosticCause.None }
+}
+
+// ── DiagnosticBag ──
+
+export enum DiagnosticList {
+    End
+    Node(diag: Diagnostic, next: DiagnosticList)
+}
+
+export type DiagnosticBag = {
+    diagnostics: DiagnosticList,
+    error_count: int,
+    warning_count: int,
+}
+
+export fn bag_new() -> DiagnosticBag {
+    DiagnosticBag { diagnostics: DiagnosticList.End, error_count: 0, warning_count: 0 }
+}
+
+export fn bag_report(bag: DiagnosticBag, diag: Diagnostic) -> DiagnosticBag {
+    let new_errors = match diag.severity {
+        .Error -> bag.error_count + 1
+        _ -> bag.error_count
+    }
+    let new_warnings = match diag.severity {
+        .Warning -> bag.warning_count + 1
+        _ -> bag.warning_count
+    }
+    DiagnosticBag {
+        diagnostics: DiagnosticList.Node(diag, bag.diagnostics),
+        error_count: new_errors,
+        warning_count: new_warnings,
+    }
+}
+
+export fn bag_has_errors(bag: DiagnosticBag) -> bool {
+    bag.error_count > 0
+}
+
+export fn bag_has_warnings(bag: DiagnosticBag) -> bool {
+    bag.warning_count > 0
+}
+
+export fn bag_merge(a: DiagnosticBag, b: DiagnosticBag) -> DiagnosticBag {
+    // Prepend all of b's diagnostics onto a
+    merge_lists(a, b.diagnostics, b.error_count, b.warning_count)
+}
+
+fn merge_lists(bag: DiagnosticBag, list: DiagnosticList, extra_errors: int, extra_warnings: int) -> DiagnosticBag {
+    match list {
+        .End -> bag with { error_count: bag.error_count + extra_errors, warning_count: bag.warning_count + extra_warnings }
+        .Node(diag, next) -> {
+            let updated = bag with { diagnostics: DiagnosticList.Node(diag, bag.diagnostics) }
+            merge_lists(updated, next, extra_errors, extra_warnings)
+        }
+    }
+}

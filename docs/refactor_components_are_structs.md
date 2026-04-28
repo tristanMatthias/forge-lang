@@ -1,4 +1,4 @@
-# Forge — Components as Values
+# Avra — Components as Values
 
 ## The Change
 
@@ -14,7 +14,7 @@ Components are classes. They're called components, they have nicer syntax, the u
 
 A component body is purely declarative — fields, config, events, methods. All imperative code lives inside function bodies.
 
-```forge
+```avra
 component queue(name: string) {
   config {
     retries: int = 3
@@ -27,25 +27,25 @@ component queue(name: string) {
   let id: int
 
   fn init() {
-    id = forge_queue_create(name, config.buffer_size)
-    if config.retries > 0 { forge_queue_set_retries(id, config.retries) }
+    id = avra_queue_create(name, config.buffer_size)
+    if config.retries > 0 { avra_queue_set_retries(id, config.retries) }
   }
 
   fn send(data: json) {
-    forge_queue_send(id, json.stringify(data))
+    avra_queue_send(id, json.stringify(data))
   }
 
   fn receive() -> json? {
-    let raw = forge_queue_receive(id)
+    let raw = avra_queue_receive(id)
     if raw == "" { null } else { json.parse(raw) }
   }
 
   fn depth() -> int {
-    forge_queue_depth(id)
+    avra_queue_depth(id)
   }
 
   fn drop() {
-    forge_queue_shutdown(id)
+    avra_queue_shutdown(id)
   }
 }
 ```
@@ -83,23 +83,23 @@ impl Queue {
     fn new(name: &str, config: QueueConfig) -> Queue {
         let mut q = Queue { name, config, id: 0, .. };
         // fn init() body:
-        q.id = forge_queue_create(&q.name, q.config.buffer_size);
-        if q.config.retries > 0 { forge_queue_set_retries(q.id, q.config.retries); }
+        q.id = avra_queue_create(&q.name, q.config.buffer_size);
+        if q.config.retries > 0 { avra_queue_set_retries(q.id, q.config.retries); }
         q
     }
-    fn send(&self, data: JsonValue) { forge_queue_send(self.id, ...) }
+    fn send(&self, data: JsonValue) { avra_queue_send(self.id, ...) }
     fn receive(&self) -> Option<JsonValue> { ... }
-    fn depth(&self) -> i64 { forge_queue_depth(self.id) }
+    fn depth(&self) -> i64 { avra_queue_depth(self.id) }
 }
 
 impl Drop for Queue {
-    fn drop(&mut self) { forge_queue_shutdown(self.id) }
+    fn drop(&mut self) { avra_queue_shutdown(self.id) }
 }
 ```
 
 ## User-Facing Syntax (unchanged)
 
-```forge
+```avra
 // Declaration — creates a value bound to a name
 queue orders {
   retries 3
@@ -125,11 +125,11 @@ process(orders)
 
 ## No Inheritance
 
-Forge does not have inheritance. Use composition, traits, and type operators instead.
+Avra does not have inheritance. Use composition, traits, and type operators instead.
 
 ### Traits for shared behavior
 
-```forge
+```avra
 trait Sendable {
   fn send(data: json)
 }
@@ -147,7 +147,7 @@ broadcast([orders, notifications], { alert: "hello" })
 
 ### Type operators for shared structure
 
-```forge
+```avra
 type Base = { id: int, created_at: datetime }
 type User = Base with { name: string, email: string }
 type Post = Base with { title: string, body: string }
@@ -155,7 +155,7 @@ type Post = Base with { title: string, body: string }
 
 ### Composition for reuse
 
-```forge
+```avra
 // Not "Server extends Logger" — Server HAS a logger
 type Server = {
   port: int,
@@ -183,7 +183,7 @@ queue orders { ... }
 
 ### 2. Type checking on method calls
 
-```forge
+```avra
 queue orders { retries 3 }
 orders.send({ data: "hello" })     // OK — Queue has .send()
 orders.banana()                     // COMPILE ERROR: Queue has no method banana()
@@ -191,7 +191,7 @@ orders.banana()                     // COMPILE ERROR: Queue has no method banana
 
 ### 3. Multiple instances work naturally
 
-```forge
+```avra
 queue orders { retries 3 }
 queue notifications { retries 5 }
 
@@ -203,7 +203,7 @@ notifications.send({ alert: "new order" })
 
 ### 4. Components can be passed to functions
 
-```forge
+```avra
 fn drain_queue(q: Queue) {
   while q.depth() > 0 {
     let msg = q.receive()
@@ -217,7 +217,7 @@ drain_queue(notifications)
 
 ### 5. Components work in collections
 
-```forge
+```avra
 let queues = [orders, notifications, alerts]
 queues.each(q -> println(string(q.depth())))
 ```
@@ -226,8 +226,8 @@ queues.each(q -> println(string(q.depth())))
 
 Components can contain other components. This is just composition — a component's state includes other component values.
 
-```forge
-cli forge {
+```avra
+cli avra {
   version "0.1.0"
 
   command build {
@@ -249,7 +249,7 @@ cli forge {
 }
 
 fn main() {
-  forge.run()    // walks the component tree, matches args, delegates
+  avra.run()    // walks the component tree, matches args, delegates
 }
 ```
 
@@ -265,15 +265,15 @@ Component expansion produces a struct type. Config fields, `let` declarations, a
 
 Provider authors write `fn send(data: json)`. The compiler adds `self` as the first param. Any reference to a component-level field (like `id`) is rewritten to `self.id`. The compiler determines which fields a method references by analyzing the body.
 
-```forge
+```avra
 // Provider writes:
 fn send(data: json) {
-  forge_queue_send(id, json.stringify(data))    // references `id`
+  avra_queue_send(id, json.stringify(data))    // references `id`
 }
 
 // Compiler generates:
 fn send(self: &Queue, data: json) {
-  forge_queue_send(self.id, json.stringify(data))
+  avra_queue_send(self.id, json.stringify(data))
 }
 ```
 
@@ -281,14 +281,14 @@ The provider author never writes `self`. The compiler does the rewriting.
 
 ### 3. fn init() is the constructor
 
-```forge
+```avra
 component queue(name: string) {
   config { retries: int = 3 }
   let id: int
 
   fn init() {
-    id = forge_queue_create(name, config.buffer_size)
-    if config.retries > 0 { forge_queue_set_retries(id, config.retries) }
+    id = avra_queue_create(name, config.buffer_size)
+    if config.retries > 0 { avra_queue_set_retries(id, config.retries) }
   }
 }
 ```
@@ -297,9 +297,9 @@ component queue(name: string) {
 
 ### 4. fn drop() is cleanup
 
-```forge
+```avra
 fn drop() {
-  forge_queue_shutdown(id)
+  avra_queue_shutdown(id)
 }
 ```
 
@@ -307,7 +307,7 @@ Compiler generates `impl Drop` from this. Called automatically when the instance
 
 ### 5. Instance declarations desugar to let bindings
 
-```forge
+```avra
 queue orders { retries 3 }
 
 // Desugars to:
@@ -316,7 +316,7 @@ let orders: Queue = Queue.init("orders", { retries: 3 })
 
 ### 6. Events become optional handler fields
 
-```forge
+```avra
 event message(msg: string)
 
 // Becomes a struct field:
@@ -327,7 +327,7 @@ message_handler: fn(string)? = null
 
 ### 7. Method calls become real dispatch
 
-```forge
+```avra
 orders.send(data)
 
 // Compiles to real method call, not flat function lookup
@@ -336,7 +336,7 @@ orders.send(data)
 
 ### 8. `<-` desugars to .send()
 
-```forge
+```avra
 orders <- data
 // Desugars to:
 orders.send(data)
@@ -344,8 +344,8 @@ orders.send(data)
 
 ### 9. Nested components are values in parent fields
 
-```forge
-cli forge {
+```avra
+cli avra {
   command build { ... }
   command test { ... }
 }

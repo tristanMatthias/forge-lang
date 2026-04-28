@@ -8,7 +8,7 @@ session of debugging.
 
 ```
 bootstrap/src/
-  main.fg                 ← entry point, argv handling, command dispatch
+  main.av                 ← entry point, argv handling, command dispatch
   core/                   ← stable infrastructure (ast, cursor, diagnostic, cg, resolver)
   parse/                  ← shared parser building blocks + statement dispatcher
   emit/                   ← shared codegen building blocks + statement dispatcher
@@ -16,9 +16,9 @@ bootstrap/src/
     <name>/
       WHY.md              ← one paragraph
       grammar.md          ← EBNF fragment
-      parser.fg           ← parses just this construct
-      codegen.fg          ← emits IR for just this construct
-      example.fg          ← canonical usage
+      parser.av           ← parses just this construct
+      codegen.av          ← emits IR for just this construct
+      example.av          ← canonical usage
       expected.out        ← expected stdout
 ```
 
@@ -31,8 +31,8 @@ Features (each gets its own `features/<name>/` directory):
 `if`, `while`, `for`, `match`, `let`, `mut`, `fn`, `struct`, `enum`,
 `impl`, `extern`, `return`, `break`, `continue`.
 
-Not features (live in `parse/expr.fg`, `parse/pattern.fg`,
-`parse/type_expr.fg`):
+Not features (live in `parse/expr.av`, `parse/pattern.av`,
+`parse/type_expr.av`):
 - Operators (`+`, `*`, `==`, etc) — they participate in precedence
 - Literals (numbers, strings, bools, null)
 - Postfix forms: calls `()`, indexing `[]`, field access `.x`
@@ -47,7 +47,7 @@ top-level statement?** If yes, feature. If no, building block.
 The dependency arrow always points TOWARD core, never away from it.
 
 ```
-features/X/  →  parse/expr.fg, parse/pattern.fg, core/, etc.
+features/X/  →  parse/expr.av, parse/pattern.av, core/, etc.
               ↑
               never the reverse
 ```
@@ -57,7 +57,7 @@ features/X/  →  parse/expr.fg, parse/pattern.fg, core/, etc.
 - If two features need shared code, that code moves to `core/` or a
   phase building block.
 - `core/` and phase building blocks may not import from `features/`.
-  The dispatchers in `parse/stmt.fg` and `emit/stmt.fg` are the
+  The dispatchers in `parse/stmt.av` and `emit/stmt.av` are the
   ONLY files that import from features, and they import only the
   per-feature parser/codegen entry points.
 
@@ -73,7 +73,7 @@ that llvm_wrapper.c enforces. Project-wide.
 ### No silent value loss in tail position
 Empty `_ -> {}` arms in codegen are forbidden. Every Stmt and Expr
 variant must be exhaustively handled in every emit/check function.
-Until forge's exhaustive-match warning lands here, this is enforced
+Until avra's exhaustive-match warning lands here, this is enforced
 by code review and periodic grep.
 
 ### No mutable globals
@@ -83,7 +83,7 @@ module scope. Globals are spooky action at a distance.
 
 ### No circular module imports
 Module dependencies must form a DAG. If `a` uses `b`, then `b` must
-not transitively use `a`. Forge's host compiler may technically
+not transitively use `a`. Avra's host compiler may technically
 allow cycles, but we forbid them as policy because:
 
   - Go, Swift, Elm, OCaml all forbid them by language design
@@ -94,18 +94,18 @@ allow cycles, but we forbid them as policy because:
 
 When you need a cycle, **extract the shared concept into a
 parent module that both sides depend on.** The dispatcher pattern
-is the canonical example: if `codegen.fg` and `features/match/codegen.fg`
-need to share types, those types live in `core/cg.fg` and both
-sides depend on `core/cg.fg` one-way.
+is the canonical example: if `codegen.av` and `features/match/codegen.av`
+need to share types, those types live in `core/cg.av` and both
+sides depend on `core/cg.av` one-way.
 
 This rule exists because the obvious-feeling shortcut during the
-feature migration (Phase 4b) was to make codegen.fg and
-features/match/codegen.fg circular. The correct answer was a
-shared `core/cg.fg`. The principle costs an extra file but earns
+feature migration (Phase 4b) was to make codegen.av and
+features/match/codegen.av circular. The correct answer was a
+shared `core/cg.av`. The principle costs an extra file but earns
 a clean DAG forever.
 
 ### One construct per file
-A `features/<name>/parser.fg` parses ONE construct (or one tightly
+A `features/<name>/parser.av` parses ONE construct (or one tightly
 related family — e.g. a `match` parser owns both the statement
 form and the expression form because they share an arm-list and
 pattern grammar). If a file starts handling unrelated constructs,
@@ -128,7 +128,7 @@ These words are banned in identifiers and filenames:
 `Wrapper`, `Shim`. They are dumping grounds. Use specific names.
 
 ### File header conventions
-Every `.fg` file starts with:
+Every `.av` file starts with:
 ```
 // WHY: <one sentence saying what this file owns>
 ```
@@ -147,7 +147,7 @@ mutate it.
 These have NAMES because invariants with names are defended:
 
 ### Fixed-Point Invariant
-bs2 and bs3 emit byte-identical IR for `bootstrap/src/main.fg`.
+bs2 and bs3 emit byte-identical IR for `bootstrap/src/main.av`.
 Enforced by `make selfhost` and the pre-commit hook.
 
 ### Cross-Compiler Invariant
@@ -171,14 +171,14 @@ Steps for adding a new language feature, in order:
 
 1. Create `bootstrap/src/features/<name>/`.
 2. Write `WHY.md` (one paragraph) and `grammar.md` (EBNF fragment).
-3. Write `parser.fg` with a `parse_<name>` function.
-4. Add one line to `parse/stmt.fg`'s dispatcher importing and
+3. Write `parser.av` with a `parse_<name>` function.
+4. Add one line to `parse/stmt.av`'s dispatcher importing and
    routing to `parse_<name>`.
-5. Write `codegen.fg` with an `emit_<name>` function.
-6. Add one line to `emit/stmt.fg`'s dispatcher likewise.
-7. Write `example.fg` and `expected.out` (canonical usage).
+5. Write `codegen.av` with an `emit_<name>` function.
+6. Add one line to `emit/stmt.av`'s dispatcher likewise.
+7. Write `example.av` and `expected.out` (canonical usage).
 8. Add the example as a regression test via
-   `bash scripts/diagnose.sh --regress-add <name> <example.fg>`.
+   `bash scripts/diagnose.sh --regress-add <name> <example.av>`.
 9. Write **combination tests** that exercise the new feature
    interacting with every existing feature it could touch.
    Add each as a regression test. See "Testing rules" below.
@@ -193,15 +193,15 @@ Steps for adding a new language feature, in order:
 
 Every feature needs **three layers** of test coverage:
 
-### 1. Per-feature example (`features/<name>/example.fg`)
+### 1. Per-feature example (`features/<name>/example.av`)
 The canonical happy-path usage. Covers the basic syntax and
 one or two variations.
 
-### 2. Edge-case regression tests (`regress/<name>_*.fg`)
+### 2. Edge-case regression tests (`regress/<name>_*.av`)
 Boundary conditions, empty inputs, deeply nested usage,
-error paths. One `.fg` + `.out` pair per scenario.
+error paths. One `.av` + `.out` pair per scenario.
 
-### 3. Combination matrix tests (`regress/combo_*.fg`)
+### 3. Combination matrix tests (`regress/combo_*.av`)
 **When you add feature X, write a test combining X with every
 other feature it could interact with.** The goal is to catch
 bugs at feature boundaries — the places where two features'
@@ -232,7 +232,7 @@ two dispatcher lines plus a `make test`.
 ## Anti-patterns (red flags in code review)
 
 - A file that mixes unrelated concepts (split it by concept, not by size)
-- A file named `*_helpers.fg`, `*_utils.fg`, etc. (be specific)
+- A file named `*_helpers.av`, `*_utils.av`, etc. (be specific)
 - A `_ -> {}` match arm in codegen or check (silent value loss)
 - A function returning a hardcoded constant on failure (fake success)
 - A `mut` global without an `// INVARIANT:` comment

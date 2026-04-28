@@ -14,7 +14,7 @@ CLANG_RT_DIR="$LLVM_PREFIX/lib/clang/$(ls "$LLVM_PREFIX/lib/clang/" | head -1)/l
 BS2=build/bs2
 COV_DIR=build/coverage
 COV_BS2="$COV_DIR/bs2_cov"
-SRC_DIR=packages/forgec/src
+SRC_DIR=packages/avrac/src
 COVMAP=$SRC_DIR/main.av.covmap.json
 
 LCOV_OUT=""

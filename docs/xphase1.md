@@ -1,6 +1,6 @@
-# Forge Compiler — Phase 1 Implementation Spec
+# Avra Compiler — Phase 1 Implementation Spec
 
-**Goal:** Build a working compiler that takes Forge source files (`.fg`) and produces native binaries via LLVM. Phase 1 covers the core language only — no packages, no models, no servers. Just the foundation that everything else builds on.
+**Goal:** Build a working compiler that takes Avra source files (`.av`) and produces native binaries via LLVM. Phase 1 covers the core language only — no packages, no models, no servers. Just the foundation that everything else builds on.
 
 **Success criteria:** The test programs at the end of this document all compile and run correctly.
 
@@ -9,7 +9,7 @@
 ## 1. Architecture Overview
 
 ```
-source.fg
+source.av
     │
     ▼
 ┌──────────┐
@@ -45,7 +45,7 @@ source.fg
 ## 2. Project Structure
 
 ```
-forge/
+avra/
 ├── Cargo.toml
 ├── Cargo.lock
 ├── src/
@@ -61,7 +61,7 @@ forge/
 │   │   └── parser.rs        # Recursive descent parser
 │   ├── typeck/
 │   │   ├── mod.rs           # Type checker module root
-│   │   ├── types.rs         # Forge type representations
+│   │   ├── types.rs         # Avra type representations
 │   │   ├── env.rs           # Type environment / symbol table
 │   │   └── checker.rs       # Type checking / inference logic
 │   ├── codegen/
@@ -78,23 +78,23 @@ forge/
 │   ├── parser_tests.rs      # Unit tests for parser
 │   ├── typeck_tests.rs      # Unit tests for type checker
 │   ├── codegen_tests.rs     # Integration tests: source -> binary -> run
-│   └── programs/            # Test Forge programs (.fg files)
-│       ├── hello.fg
-│       ├── arithmetic.fg
-│       ├── functions.fg
-│       ├── control_flow.fg
-│       ├── strings.fg
-│       ├── closures.fg
-│       ├── pattern_matching.fg
-│       ├── structs.fg
-│       ├── enums.fg
-│       ├── generics.fg
-│       ├── error_handling.fg
-│       ├── nullability.fg
-│       ├── immutability.fg
-│       ├── destructuring.fg
-│       ├── pipes.fg
-│       └── ranges.fg
+│   └── programs/            # Test Avra programs (.av files)
+│       ├── hello.av
+│       ├── arithmetic.av
+│       ├── functions.av
+│       ├── control_flow.av
+│       ├── strings.av
+│       ├── closures.av
+│       ├── pattern_matching.av
+│       ├── structs.av
+│       ├── enums.av
+│       ├── generics.av
+│       ├── error_handling.av
+│       ├── nullability.av
+│       ├── immutability.av
+│       ├── destructuring.av
+│       ├── pipes.av
+│       └── ranges.av
 └── stdlib/
     └── runtime.c            # Minimal C runtime (print, string alloc, refcount)
 ```
@@ -103,10 +103,10 @@ forge/
 
 ```toml
 [package]
-name = "forge"
+name = "avra"
 version = "0.1.0"
 edition = "2021"
-description = "The Forge programming language compiler"
+description = "The Avra programming language compiler"
 
 [dependencies]
 # LLVM bindings — use the version matching your system LLVM
@@ -250,7 +250,7 @@ pub struct Span {
 ```rust
 // src/parser/ast.rs
 
-/// A complete Forge source file
+/// A complete Avra source file
 pub struct Program {
     pub statements: Vec<Statement>,
 }
@@ -680,7 +680,7 @@ The codegen module translates the type-checked AST to LLVM IR using inkwell. Key
 
 ### 7.1 Value Representation
 
-| Forge Type | LLVM Type | Notes |
+| Avra Type | LLVM Type | Notes |
 |---|---|---|
 | `int` | `i64` | Always 64-bit |
 | `float` | `f64` | Always 64-bit |
@@ -703,11 +703,11 @@ For Phase 1, use a simple reference counting scheme:
 - When rc reaches 0, call the type's drop function (free memory)
 - NO cycle detection in Phase 1 — add in Phase 2
 
-The codegen inserts `forge_rc_retain(ptr)` and `forge_rc_release(ptr)` calls. These are defined in the C runtime (`stdlib/runtime.c`).
+The codegen inserts `avra_rc_retain(ptr)` and `avra_rc_release(ptr)` calls. These are defined in the C runtime (`stdlib/runtime.c`).
 
 ### 7.3 C Runtime
 
-A small C file provides the runtime functions that compiled Forge programs link against:
+A small C file provides the runtime functions that compiled Avra programs link against:
 
 ```c
 // stdlib/runtime.c
@@ -722,25 +722,25 @@ A small C file provides the runtime functions that compiled Forge programs link 
 typedef struct {
     int64_t rc;
     // payload follows
-} ForgeHeapObj;
+} AvraHeapObj;
 
-void forge_rc_retain(void* ptr) {
+void avra_rc_retain(void* ptr) {
     if (ptr == NULL) return;
-    ForgeHeapObj* obj = (ForgeHeapObj*)((char*)ptr - sizeof(int64_t));
+    AvraHeapObj* obj = (AvraHeapObj*)((char*)ptr - sizeof(int64_t));
     obj->rc++;
 }
 
-void forge_rc_release(void* ptr) {
+void avra_rc_release(void* ptr) {
     if (ptr == NULL) return;
-    ForgeHeapObj* obj = (ForgeHeapObj*)((char*)ptr - sizeof(int64_t));
+    AvraHeapObj* obj = (AvraHeapObj*)((char*)ptr - sizeof(int64_t));
     obj->rc--;
     if (obj->rc <= 0) {
         free(obj);
     }
 }
 
-void* forge_alloc(int64_t size) {
-    ForgeHeapObj* obj = (ForgeHeapObj*)malloc(sizeof(int64_t) + size);
+void* avra_alloc(int64_t size) {
+    AvraHeapObj* obj = (AvraHeapObj*)malloc(sizeof(int64_t) + size);
     obj->rc = 1;
     return (void*)((char*)obj + sizeof(int64_t));
 }
@@ -750,73 +750,73 @@ void* forge_alloc(int64_t size) {
 typedef struct {
     char* ptr;
     int64_t len;
-} ForgeString;
+} AvraString;
 
-ForgeString forge_string_new(const char* data, int64_t len) {
-    char* buf = (char*)forge_alloc(len + 1);
+AvraString avra_string_new(const char* data, int64_t len) {
+    char* buf = (char*)avra_alloc(len + 1);
     memcpy(buf, data, len);
     buf[len] = '\0';
-    return (ForgeString){ .ptr = buf, .len = len };
+    return (AvraString){ .ptr = buf, .len = len };
 }
 
-ForgeString forge_string_concat(ForgeString a, ForgeString b) {
+AvraString avra_string_concat(AvraString a, AvraString b) {
     int64_t new_len = a.len + b.len;
-    char* buf = (char*)forge_alloc(new_len + 1);
+    char* buf = (char*)avra_alloc(new_len + 1);
     memcpy(buf, a.ptr, a.len);
     memcpy(buf + a.len, b.ptr, b.len);
     buf[new_len] = '\0';
-    return (ForgeString){ .ptr = buf, .len = new_len };
+    return (AvraString){ .ptr = buf, .len = new_len };
 }
 
 // ---- Print functions ----
 
-void forge_print_int(int64_t value) {
+void avra_print_int(int64_t value) {
     printf("%lld", (long long)value);
 }
 
-void forge_print_float(double value) {
+void avra_print_float(double value) {
     printf("%g", value);
 }
 
-void forge_print_string(ForgeString s) {
+void avra_print_string(AvraString s) {
     fwrite(s.ptr, 1, s.len, stdout);
 }
 
-void forge_print_bool(int8_t value) {
+void avra_print_bool(int8_t value) {
     printf("%s", value ? "true" : "false");
 }
 
-void forge_println_string(ForgeString s) {
+void avra_println_string(AvraString s) {
     fwrite(s.ptr, 1, s.len, stdout);
     putchar('\n');
 }
 
 // ---- Conversion ----
 
-ForgeString forge_int_to_string(int64_t value) {
+AvraString avra_int_to_string(int64_t value) {
     char buf[32];
     int len = snprintf(buf, sizeof(buf), "%lld", (long long)value);
-    return forge_string_new(buf, len);
+    return avra_string_new(buf, len);
 }
 
-ForgeString forge_float_to_string(double value) {
+AvraString avra_float_to_string(double value) {
     char buf[64];
     int len = snprintf(buf, sizeof(buf), "%g", value);
-    return forge_string_new(buf, len);
+    return avra_string_new(buf, len);
 }
 
-ForgeString forge_bool_to_string(int8_t value) {
-    return value ? forge_string_new("true", 4) : forge_string_new("false", 5);
+AvraString avra_bool_to_string(int8_t value) {
+    return value ? avra_string_new("true", 4) : avra_string_new("false", 5);
 }
 ```
 
-This runtime is compiled to an object file (`runtime.o`) and linked into every Forge binary.
+This runtime is compiled to an object file (`runtime.o`) and linked into every Avra binary.
 
 ### 7.4 Compilation Pipeline
 
 ```
 1. Compile runtime.c → runtime.o (once, cached)
-2. For each .fg file:
+2. For each .av file:
    a. Lex → tokens
    b. Parse → AST
    c. Type check → typed AST
@@ -831,7 +831,7 @@ This runtime is compiled to an object file (`runtime.o`) and linked into every F
 
 ```
 USAGE:
-    forge <COMMAND>
+    avra <COMMAND>
 
 COMMANDS:
     build       Compile the project
@@ -856,19 +856,19 @@ Example usage:
 
 ```bash
 # Build and run a single file
-forge run hello.fg
+avra run hello.av
 
-# Build a project (reads forge.toml)
-forge build
+# Build a project (reads avra.toml)
+avra build
 
 # Type check only
-forge check src/main.fg
+avra check src/main.av
 
 # Dump LLVM IR for inspection
-forge build --emit-ir hello.fg
+avra build --emit-ir hello.av
 
 # JSON errors for tool integration
-forge build --error-format=json hello.fg
+avra build --error-format=json hello.av
 ```
 
 ## 9. Error Message Format
@@ -877,7 +877,7 @@ forge build --error-format=json hello.fg
 
 ```
 error[E0012]: type mismatch
-  --> src/main.fg:23:14
+  --> src/main.av:23:14
    |
 22 |  let user = get_user(id)
 23 |  let name: int = user.name
@@ -898,7 +898,7 @@ Use the `ariadne` crate for this — it produces Rust-quality error messages wit
     "code": "E0012",
     "severity": "error",
     "message": "type mismatch",
-    "file": "src/main.fg",
+    "file": "src/main.av",
     "line": 23,
     "col": 14,
     "span": { "start": 456, "end": 459 },
@@ -943,16 +943,16 @@ Use the `ariadne` crate for this — it produces Rust-quality error messages wit
 
 These programs define what Phase 1 must support. Each one should compile and produce the expected output.
 
-### 10.1 hello.fg — Basic output
-```forge
+### 10.1 hello.av — Basic output
+```avra
 fn main() {
-  println("hello, forge!")
+  println("hello, avra!")
 }
-// Expected output: hello, forge!
+// Expected output: hello, avra!
 ```
 
-### 10.2 arithmetic.fg — Primitives and math
-```forge
+### 10.2 arithmetic.av — Primitives and math
+```avra
 fn main() {
   let x = 10
   let y = 3
@@ -971,8 +971,8 @@ fn main() {
 }
 ```
 
-### 10.3 immutability.fg — let vs mut vs const
-```forge
+### 10.3 immutability.av — let vs mut vs const
+```avra
 fn main() {
   let x = 42
   // x = 43              // ERROR: cannot assign to immutable binding
@@ -988,8 +988,8 @@ fn main() {
 }
 ```
 
-### 10.4 functions.fg — Functions and closures
-```forge
+### 10.4 functions.av — Functions and closures
+```avra
 fn add(a: int, b: int) -> int {
   a + b
 }
@@ -1016,13 +1016,13 @@ fn main() {
 }
 ```
 
-### 10.5 strings.fg — String interpolation
-```forge
+### 10.5 strings.av — String interpolation
+```avra
 fn main() {
-  let name = "forge"
+  let name = "avra"
   let version = 1
   println(`welcome to ${name} v${version}`)
-  // Expected: welcome to forge v1
+  // Expected: welcome to avra v1
 
   let multiline = `
     this is
@@ -1037,8 +1037,8 @@ fn main() {
 }
 ```
 
-### 10.6 control_flow.fg — if/else, match, loops
-```forge
+### 10.6 control_flow.av — if/else, match, loops
+```avra
 fn main() {
   // If as expression
   let x = 10
@@ -1081,8 +1081,8 @@ fn main() {
 }
 ```
 
-### 10.7 nullability.fg — Nullable types
-```forge
+### 10.7 nullability.av — Nullable types
+```avra
 fn find_user(id: int) -> string? {
   if id == 1 { "alice" } else { null }
 }
@@ -1107,8 +1107,8 @@ fn main() {
 }
 ```
 
-### 10.8 structs.fg — Structural types and with
-```forge
+### 10.8 structs.av — Structural types and with
+```avra
 type Point = { x: float, y: float }
 
 fn distance(p: Point) -> float {
@@ -1129,8 +1129,8 @@ fn main() {
 }
 ```
 
-### 10.9 enums.fg — Enums and pattern matching
-```forge
+### 10.9 enums.av — Enums and pattern matching
+```avra
 enum Shape {
   circle(radius: float)
   rectangle(width: float, height: float)
@@ -1156,8 +1156,8 @@ fn main() {
 }
 ```
 
-### 10.10 error_handling.fg — Result, ?, catch
-```forge
+### 10.10 error_handling.av — Result, ?, catch
+```avra
 fn divide(a: float, b: float) -> Result<float, string> {
   if b == 0.0 {
     Err("division by zero")
@@ -1181,8 +1181,8 @@ fn main() {
 }
 ```
 
-### 10.11 destructuring.fg — Pattern destructuring
-```forge
+### 10.11 destructuring.av — Pattern destructuring
+```avra
 fn swap(pair: (int, int)) -> (int, int) {
   let (a, b) = pair
   (b, a)
@@ -1204,8 +1204,8 @@ fn main() {
 }
 ```
 
-### 10.12 pipes.fg — Pipe operator and `it`
-```forge
+### 10.12 pipes.av — Pipe operator and `it`
+```avra
 fn double(x: int) -> int { x * 2 }
 fn add_one(x: int) -> int { x + 1 }
 
@@ -1236,7 +1236,7 @@ Build these in order. Each step produces a working (if limited) compiler that ca
 - Implement parser for: `fn main() { }`, function calls, string literals
 - Implement codegen for: `main` function, `println` calls (via C runtime)
 - Link against runtime.c
-- **Test: `hello.fg` compiles and runs**
+- **Test: `hello.av` compiles and runs**
 
 ### Step 2: Variables + Arithmetic (Week 2-3)
 - Add `let`, `mut`, `const` to parser
@@ -1244,21 +1244,21 @@ Build these in order. Each step produces a working (if limited) compiler that ca
 - Add type inference for primitive types
 - Implement assignment checking (immutable vs mutable)
 - Codegen for local variables (alloca), arithmetic (LLVM int/float ops)
-- **Test: `arithmetic.fg` and `immutability.fg` compile and run**
+- **Test: `arithmetic.av` and `immutability.av` compile and run**
 
 ### Step 3: Functions + Closures (Week 3-4)
 - Parse function declarations with params, return types, defaults
 - Parse closures (arrow syntax, single-arg no-parens)
 - Type check function signatures, call sites, named args
 - Codegen for functions (LLVM function definitions), closure capture (env struct)
-- **Test: `functions.fg` compiles and runs**
+- **Test: `functions.av` compiles and runs**
 
 ### Step 4: Strings + Interpolation (Week 4-5)
 - Implement template literal parsing (extract expressions from `${}`)
 - String concat, length, method calls on strings
 - Codegen for string operations (call into C runtime)
 - Reference counting for strings (retain/release on assignment)
-- **Test: `strings.fg` compiles and runs**
+- **Test: `strings.av` compiles and runs**
 
 ### Step 5: Control Flow (Week 5-6)
 - Parse and type-check: if/else (as expressions), match, for/in, while, loop
@@ -1266,21 +1266,21 @@ Build these in order. Each step produces a working (if limited) compiler that ca
 - Codegen for branching (LLVM basic blocks, phi nodes for if-expressions)
 - Codegen for loops (LLVM branch/conditional branch)
 - Match as chained conditionals (no exhaustiveness checking yet)
-- **Test: `control_flow.fg` compiles and runs**
+- **Test: `control_flow.av` compiles and runs**
 
 ### Step 6: Nullable Types (Week 6-7)
 - Implement `T?` as `{ tag: i1, value: T }` in the type system
 - Parse `?.`, `??`, `!.` operators
 - Type narrowing in if-blocks (`if x != null { ... }`)
 - Codegen for nullable operations
-- **Test: `nullability.fg` compiles and runs**
+- **Test: `nullability.av` compiles and runs**
 
 ### Step 7: Structs + With (Week 7-8)
 - Parse struct type declarations, struct literals, field access
 - Implement structural type checking (shape matching)
 - Parse and implement `with` expression (copy + override fields)
 - Codegen for struct allocation, field access, with-copy
-- **Test: `structs.fg` compiles and runs**
+- **Test: `structs.av` compiles and runs**
 
 ### Step 8: Enums + Pattern Matching (Week 8-10)
 - Parse enum declarations with associated data
@@ -1288,7 +1288,7 @@ Build these in order. Each step produces a working (if limited) compiler that ca
 - Implement pattern matching in match expressions
 - Add exhaustiveness checking (ensure all variants covered)
 - Codegen for enum construction, tag checking, field extraction
-- **Test: `enums.fg` compiles and runs**
+- **Test: `enums.av` compiles and runs**
 
 ### Step 9: Error Handling (Week 10-11)
 - Implement `Result<T, E>` as a built-in type
@@ -1296,19 +1296,19 @@ Build these in order. Each step produces a working (if limited) compiler that ca
 - Parse and implement `catch` blocks
 - Parse `defer` and `errdefer` (scope-based cleanup)
 - Codegen for Result tag checking, early return, defer
-- **Test: `error_handling.fg` compiles and runs**
+- **Test: `error_handling.av` compiles and runs**
 
 ### Step 10: Destructuring + Pipes + It (Week 11-12)
 - Implement destructuring in let bindings (tuples, structs, lists)
 - Implement pipe operator as desugaring (`a |> f` → `f(a)`)
 - Implement `it` as implicit closure creation
 - Implement basic list operations (filter, map, length, index)
-- **Test: `destructuring.fg` and `pipes.fg` compile and run**
+- **Test: `destructuring.av` and `pipes.av` compile and run**
 
 ### Step 11: Error Messages + Polish (Week 12-14)
 - Implement all error codes from Section 9.3
 - Add human-readable and JSON error output via ariadne
-- Add `forge check` command (type-check without codegen)
+- Add `avra check` command (type-check without codegen)
 - Add `--emit-ir` and `--emit-ast` flags
 - Write comprehensive test suite
 - Fix bugs found during integration testing
@@ -1328,12 +1328,12 @@ These are explicitly deferred to Phase 2+:
 - Hot reload or REPL
 - Multi-file compilation
 - Any standard packages (@std/http, etc.)
-- The `forge.toml` project system
+- The `avra.toml` project system
 - The `spawn`/`parallel` keywords (parsed but not codegen'd)
 - Annotations (`@`)
 - Events (`emit`/`on`)
 
-Phase 1 is a single-file compiler. You give it one `.fg` file and it produces one binary. That's enough to validate the entire language design — syntax, type system, codegen, and error messages.
+Phase 1 is a single-file compiler. You give it one `.av` file and it produces one binary. That's enough to validate the entire language design — syntax, type system, codegen, and error messages.
 
 ## 13. Definition of Done
 
@@ -1341,10 +1341,10 @@ Phase 1 is complete when:
 
 1. All 12 test programs in Section 10 compile and produce correct output
 2. Type errors produce helpful, correctly-formatted error messages (human + JSON)
-3. The `forge build`, `forge run`, `forge check` commands work
+3. The `avra build`, `avra run`, `avra check` commands work
 4. `--emit-ir` produces valid LLVM IR
 5. `--error-format=json` produces parseable JSON
 6. The compiler can be built on macOS (arm64) and Linux (x86_64)
 7. All Rust tests pass (`cargo test`)
 8. A clean build of the compiler takes < 60 seconds
-9. Compiling `hello.fg` takes < 1 second
+9. Compiling `hello.av` takes < 1 second

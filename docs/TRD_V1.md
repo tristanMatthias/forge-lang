@@ -1,15 +1,15 @@
 # Avra v1.0 — Technical Requirements Document
 
-> Maps the FULL_SPEC.md v1.0 scope against the current Forge bootstrap compiler.
+> Maps the FULL_SPEC.md v1.0 scope against the current Avra bootstrap compiler.
 > Every section ends with numbered tickets for the beads (`bd`) tracker.
 
 ---
 
 ## Executive Summary
 
-The Forge bootstrap compiler is a **fully self-hosted compiler** with working: lexer, parser, resolver, type checker, LLVM IR codegen, monomorphizer, and a C runtime. It compiles itself (seed → bs2 → bs3 fixed-point).
+The Avra bootstrap compiler is a **fully self-hosted compiler** with working: lexer, parser, resolver, type checker, LLVM IR codegen, monomorphizer, and a C runtime. It compiles itself (seed → bs2 → bs3 fixed-point).
 
-The spec describes **Avra** — a renamed, expanded version of Forge. Many v1.0 features already exist in some form. This TRD identifies **what's missing, what's incomplete, and what needs to change** to ship Avra v1.0, organized into iterative phases.
+The spec describes **Avra** — a renamed, expanded version of Avra. Many v1.0 features already exist in some form. This TRD identifies **what's missing, what's incomplete, and what needs to change** to ship Avra v1.0, organized into iterative phases.
 
 ### What v1.0 IS (from spec Axis 9 versioning):
 - App-level only (RC + cycle detection + arenas)
@@ -95,23 +95,23 @@ let, mut, const, fn, return, if, else, match, for, in, while, loop, break, conti
 
 ## Phase 0: Foundation & Rename
 
-> Goal: Rename Forge → Avra, establish .av extension, update tooling surface.
-> This is OPTIONAL for v1.0 — can ship as "Forge" first and rename later.
+> Goal: Rename Avra → Avra, establish .av extension, update tooling surface.
+> This is OPTIONAL for v1.0 — can ship as "Avra" first and rename later.
 > Included for completeness but lowest priority.
 
-### P0-1: File extension migration (.fg → .av)
-- Compiler accepts both .fg and .av
-- .fg emits deprecation warning
+### P0-1: File extension migration (.av → .av)
+- Compiler accepts both .av and .av
+- .av emits deprecation warning
 - Update all source files to .av
 - **Spec ref:** Axis 28.6
 
-### P0-2: CLI rename (forge → avra)
+### P0-2: CLI rename (avra → avra)
 - CLI command becomes `avra build`, `avra run`, etc.
-- Keep `forge` as alias during transition
+- Keep `avra` as alias during transition
 - **Spec ref:** Axis 28.6
 
 ### P0-3: Manifest rename
-- `forge.toml` stays as-is per spec (it's the build config, not the language name)
+- `avra.toml` stays as-is per spec (it's the build config, not the language name)
 - **Spec ref:** Axis 28.6
 
 ---
@@ -122,12 +122,12 @@ let, mut, const, fn, return, if, else, match, for, in, while, loop, break, conti
 > This is the highest priority — type system is the foundation everything else builds on.
 
 ### P1-1: `shape` keyword for structural types
-**Status: IMPLEMENTED** — Tk.KwShape, Stmt.ShapeDecl, parser, codegen (same as struct layout), typeck (ShapeSet + tc_check_shape_compat for width subtyping). regress/shape_basic.fg + regress/shape_subtyping.fg test it.
+**Status: IMPLEMENTED** — Tk.KwShape, Stmt.ShapeDecl, parser, codegen (same as struct layout), typeck (ShapeSet + tc_check_shape_compat for width subtyping). regress/shape_basic.av + regress/shape_subtyping.av test it.
 The spec (Axis 3.1-3.7) requires both `type` (nominal) and `shape` (structural) keywords. Currently only `type`/`struct` exist.
 
 **Work:**
-- Add KID_SHAPE to kind_ids.fg
-- Add `forge_kind_id_for_keyword("shape")` to runtime.c
+- Add KID_SHAPE to kind_ids.av
+- Add `avra_kind_id_for_keyword("shape")` to runtime.c
 - Add Stmt::ShapeDecl variant to AST
 - Parser: parse `shape Name = { field: Type, ... }`
 - Resolver: register shape types
@@ -152,7 +152,7 @@ Spec (Axis 8.1, 8.4, 8.5) requires `string | int` ad-hoc union types alongside e
 **Spec ref:** Axis 8.1, 8.4, 8.5
 
 ### P1-3: Associated types on traits
-**Status: IMPLEMENTED** — Stmt.AssocType, TraitAssocTypes registry, Self.Item syntax, trait conformance checking. regress/assoc_types.fg tests Container trait with type Item.
+**Status: IMPLEMENTED** — Stmt.AssocType, TraitAssocTypes registry, Self.Item syntax, trait conformance checking. regress/assoc_types.av tests Container trait with type Item.
 Spec (Axis 7.1, 7.2) requires `type Item` inside trait declarations.
 
 **Work:**
@@ -165,7 +165,7 @@ Spec (Axis 7.1, 7.2) requires `type Item` inside trait declarations.
 **Spec ref:** Axis 7.1, 7.2
 
 ### P1-4: Newtype wrappers
-**Status: IMPLEMENTED** — `type X = Y` creates nominal newtype, `X(value)` constructor, codegen zero-cost. CgNewtypeReg tracks newtypes. regress/newtype.fg tests.
+**Status: IMPLEMENTED** — `type X = Y` creates nominal newtype, `X(value)` constructor, codegen zero-cost. CgNewtypeReg tracks newtypes. regress/newtype.av tests.
 Spec (Axis 3.8) requires `type UserId = UUID` to create a nominally distinct type.
 
 **Work:**
@@ -189,7 +189,7 @@ Spec (Axis 5.4) requires `where T: Display & Eq` for complex bounds.
 **Spec ref:** Axis 5.4
 
 ### P1-6: `dyn Trait` dynamic dispatch
-**Status: IMPLEMENTED** — vtable boxing, trait dispatch, `dyn Trait` type. regress/dyn_dispatch.fg tests. trait_decl/codegen.fg has box_for_trait.
+**Status: IMPLEMENTED** — vtable boxing, trait dispatch, `dyn Trait` type. regress/dyn_dispatch.av tests. trait_decl/codegen.av has box_for_trait.
 Spec (Axis 5.2) requires `dyn Trait` for heterogeneous collections.
 
 **Work:**
@@ -201,7 +201,7 @@ Spec (Axis 5.2) requires `dyn Trait` for heterogeneous collections.
 **Spec ref:** Axis 5.2
 
 ### P1-7: Exhaustive match enforcement
-**Status: IMPLEMENTED** — typeck checks exhaustiveness, warns when wildcard hides >2 variants. regress/exhaustive_match.fg tests. match_expr/typeck.fg has check_match_arms + find_missing_variants.
+**Status: IMPLEMENTED** — typeck checks exhaustiveness, warns when wildcard hides >2 variants. regress/exhaustive_match.av tests. match_expr/typeck.av has check_match_arms + find_missing_variants.
 Spec (Axis 8.4, 8.7) requires exhaustive matching with wildcard warnings.
 
 **Work:**
@@ -213,7 +213,7 @@ Spec (Axis 8.4, 8.7) requires exhaustive matching with wildcard warnings.
 **Spec ref:** Axis 8.4, 8.7, 8.8
 
 ### P1-8: Enum variant dot-shorthand
-**Status: IMPLEMENTED** — `.Variant(args)` works in match arms and enum constructors when type is contextually known. regress/contextual_enums.fg tests.
+**Status: IMPLEMENTED** — `.Variant(args)` works in match arms and enum constructors when type is contextually known. regress/contextual_enums.av tests.
 Spec (Axis 8.2) requires `.circle(5.0)` when type is known from context.
 
 **Work:**
@@ -255,7 +255,7 @@ Spec (Axis 11.2) requires `const X: T = expr` with compile-time evaluation.
 > Critical for correctness and developer experience.
 
 ### P2-1: Union error types with automatic widening
-**Status: IMPLEMENTED** — auto-widening at ? sites in null_safety/codegen.fg. Result<T, IoError> ? in fn returning Result<T, IoError|ParseError> correctly widens the error type.
+**Status: IMPLEMENTED** — auto-widening at ? sites in null_safety/codegen.av. Result<T, IoError> ? in fn returning Result<T, IoError|ParseError> correctly widens the error type.
 Spec (Axis 12.3) requires `Result<T, IoError | ParseError>` with automatic widening at `?` sites.
 
 **Work:**
@@ -267,11 +267,11 @@ Spec (Axis 12.3) requires `Result<T, IoError | ParseError>` with automatic widen
 **Spec ref:** Axis 12.3
 
 ### P2-2: `catch` blocks
-**Status: IMPLEMENTED** — regress/catch_basic.fg and regress/catch_combo.fg test it. Parser handles `expr catch { body }`. Codegen extracts Ok or runs catch block.
+**Status: IMPLEMENTED** — regress/catch_basic.av and regress/catch_combo.av test it. Parser handles `expr catch { body }`. Codegen extracts Ok or runs catch block.
 Spec (Axis 12.5, 12.6) requires `let x = expr() catch { default }` and `catch (e) { ... }`.
 
 **Work:**
-- Add KID_CATCH to kind_ids.fg + runtime.c
+- Add KID_CATCH to kind_ids.av + runtime.c
 - Add Expr::Catch variant to AST
 - Parser: parse `expr catch { body }` and `expr catch (binding) { body }`
 - Codegen: match on Result, extract Ok value or execute catch body
@@ -280,11 +280,11 @@ Spec (Axis 12.5, 12.6) requires `let x = expr() catch { default }` and `catch (e
 **Spec ref:** Axis 12.5, 12.6
 
 ### P2-3: `errdefer` keyword
-**Status: IMPLEMENTED** — parser, codegen, resolver all handle errdefer. Interleaved with defer in LIFO order. regress/errdefer.fg + regress/errdefer_implicit.fg test it. Verified: errdefer runs only on error path, defer always runs.
+**Status: IMPLEMENTED** — parser, codegen, resolver all handle errdefer. Interleaved with defer in LIFO order. regress/errdefer.av + regress/errdefer_implicit.av test it. Verified: errdefer runs only on error path, defer always runs.
 Spec (Axis 12.7) requires `errdefer { ... }` that only runs on error exit.
 
 **Work:**
-- Add KID_ERRDEFER to kind_ids.fg + runtime.c
+- Add KID_ERRDEFER to kind_ids.av + runtime.c
 - Add Stmt::Errdefer variant to AST
 - Parser: parse `errdefer { body }`
 - Codegen: track error/success path, only execute errdefer on error path
@@ -293,7 +293,7 @@ Spec (Axis 12.7) requires `errdefer { ... }` that only runs on error exit.
 **Spec ref:** Axis 12.7
 
 ### P2-4: Error trait
-**Status: IMPLEMENTED** — trait system supports defining Error trait with message(), kind(), etc. User-defined (not built-in). regress/error_cause_trait.fg tests it. The full spec interface (cause, context, trace, call_site) can be added as trait methods.
+**Status: IMPLEMENTED** — trait system supports defining Error trait with message(), kind(), etc. User-defined (not built-in). regress/error_cause_trait.av tests it. The full spec interface (cause, context, trace, call_site) can be added as trait methods.
 Spec (Axis 12.10) requires all error types implement an `Error` trait with: message(), kind(), cause(), context(), call_site(), trace(), severity(), is_transient(), suggestions(), format().
 
 **Work:**
@@ -330,7 +330,7 @@ Spec (Axis 10.5) requires `?` to propagate null from functions returning `T?`.
 **Spec ref:** Axis 10.5
 
 ### P2-7: Flow-sensitive type narrowing
-**Status: IMPLEMENTED** — `is` keyword narrows types in if-branches. narrow_env_for_is in if_stmt/codegen.fg. regress/flow_narrow.fg + regress/is_keyword.fg test it.
+**Status: IMPLEMENTED** — `is` keyword narrows types in if-branches. narrow_env_for_is in if_stmt/codegen.av. regress/flow_narrow.av + regress/is_keyword.av test it.
 Spec (Axis 10.4) requires `if user != null { user.name }` to work without unwrap.
 
 **Work:**
@@ -348,7 +348,7 @@ Spec (Axis 10.4) requires `if user != null { user.name }` to work without unwrap
 > This is the spec's v1.0 memory model.
 
 ### P3-1: Reference counting runtime
-**Status: IMPLEMENTED** — rc_retain/rc_release/rc_alloc in runtime.c. Codegen emits retain/release calls. codegen/cycles.fg has RC graph analysis. codegen/escape.fg has escape analysis for elision. 6 files implement RC.
+**Status: IMPLEMENTED** — rc_retain/rc_release/rc_alloc in runtime.c. Codegen emits retain/release calls. codegen/cycles.av has RC graph analysis. codegen/escape.av has escape analysis for elision. 6 files implement RC.
 Spec (Axis 9.1-9.4) requires non-atomic refcounting at app level.
 
 **Work:**
@@ -397,7 +397,7 @@ Spec (Axis 9.7) requires basic elision optimizations for v1.0.
 **Spec ref:** Axis 9.7
 
 ### P3-5: Escape analysis (stack vs heap)
-**Status: IMPLEMENTED** — codegen/escape.fg (440 lines). Analyzes which values escape their scope for RC optimization.
+**Status: IMPLEMENTED** — codegen/escape.av (440 lines). Analyzes which values escape their scope for RC optimization.
 Spec (Axis 9.9) requires escape analysis to stack-allocate non-escaping values.
 
 **Work:**
@@ -491,7 +491,7 @@ Spec (Axis 18.2) requires Task handles with .await, .cancel(), Task.all(), Task.
 **Spec ref:** Axis 18.2
 
 ### P4-3: Structured concurrency
-**Status: PARTIAL** — task_group in fn_decl/codegen.fg auto-awaits spawned tasks at scope exit. spawn { expr } + .await works. Full structured concurrency (nursery pattern, cancellation propagation) not yet implemented.
+**Status: PARTIAL** — task_group in fn_decl/codegen.av auto-awaits spawned tasks at scope exit. spawn { expr } + .await works. Full structured concurrency (nursery pattern, cancellation propagation) not yet implemented.
 Spec (Axis 18.7) requires scoped task lifetime — tasks must complete before scope exits.
 
 **Work:**
@@ -547,7 +547,7 @@ Spec (Axis 28.7) requires `x |> f` desugaring to `f(x)`.
 > Goal: Complete all v1.0 syntax requirements from the spec.
 
 ### P5-1: `it` pronoun for single-parameter closures
-**Status: IMPLEMENTED** — closures/parser.fg handles `it` as implicit parameter in method-call contexts.
+**Status: IMPLEMENTED** — closures/parser.av handles `it` as implicit parameter in method-call contexts.
 Spec (Axis 28.8) requires `list.filter(it > 5)` shorthand.
 
 **Work:**
@@ -651,14 +651,14 @@ Spec (Axis 28.4) requires `///` for item docs and `//!` for module docs.
 Spec (Axis 9, Architectural Commitment 10) requires reserving: systems, bare, hardware, owned, borrow, move, level, unsafe, extern, async, spawn, await, channel, select, shape, const, where, catch, errdefer, pure, dyn.
 
 **Work:**
-- Add all reserved keywords to kind_ids.fg
+- Add all reserved keywords to kind_ids.av
 - Scanner recognizes them
 - Using them (where not yet implemented) produces "reserved for future use" error
 
 **Spec ref:** Axis 9 Architectural Commitments
 
 ### P5-11: Naming convention enforcement
-**Status: IMPLEMENTED** — typeck/mod.fg has check_naming_conventions, is_snake_case, is_pascal_case, is_screaming_snake. Emits warnings via naming_warn.
+**Status: IMPLEMENTED** — typeck/mod.av has check_naming_conventions, is_snake_case, is_pascal_case, is_screaming_snake. Emits warnings via naming_warn.
 Spec (Axis 28.5) requires compiler warnings for non-canonical names.
 
 **Work:**
@@ -675,12 +675,12 @@ Spec (Axis 28.5) requires compiler warnings for non-canonical names.
 
 > Goal: Complete module system for v1.0.
 
-### P6-1: Package manifest (forge.toml)
+### P6-1: Package manifest (avra.toml)
 **Status: PARTIAL** — some support likely exists.
-Spec (Axis 16.4, 16.8) requires forge.toml with dependencies, @namespace packages.
+Spec (Axis 16.4, 16.8) requires avra.toml with dependencies, @namespace packages.
 
 **Work:**
-- Parse forge.toml: [package] name/version, [dependencies]
+- Parse avra.toml: [package] name/version, [dependencies]
 - @std/* namespace for stdlib
 - @local/* for development
 - Version resolution
@@ -773,7 +773,7 @@ Spec (Axis 20.3) requires high/medium/low confidence grading on suggestions.
 **Spec ref:** Axis 20.3
 
 ### P7-4: Autofix (`avra fix`)
-**Status: IMPLEMENTED** — `forge fix <file>` applies high-confidence auto-fixes. Outputs "no auto-fixes available" when none needed.
+**Status: IMPLEMENTED** — `avra fix <file>` applies high-confidence auto-fixes. Outputs "no auto-fixes available" when none needed.
 Spec (Axis 20.4) requires CLI autofix for high-confidence suggestions.
 
 **Work:**
@@ -815,7 +815,7 @@ Spec (Axis 20.6) requires all internal compiler errors wrapped in F9999 with bug
 > Goal: Developer tooling for v1.0.
 
 ### P8-1: Formatter
-**Status: IMPLEMENTED** — `forge fmt <file>` parses and pretty-prints. fmt_stmt/fmt_expr/fmt_stmt_list in main.fg handle all AST nodes. (no `avra fmt` command found)
+**Status: IMPLEMENTED** — `avra fmt <file>` parses and pretty-prints. fmt_stmt/fmt_expr/fmt_stmt_list in main.av handle all AST nodes. (no `avra fmt` command found)
 Spec (Axis 27.1) requires canonical formatter.
 
 **Work:**
@@ -838,7 +838,7 @@ Spec (Axis 27.2) requires language server for IDE integration.
 **Spec ref:** Axis 27.2
 
 ### P8-3: Test runner
-**Status: PARTIAL** — spec_test blocks exist, `forge test` exists.
+**Status: PARTIAL** — spec_test blocks exist, `avra test` exists.
 Spec (Axis 24.1) requires test infrastructure.
 
 **Work:**

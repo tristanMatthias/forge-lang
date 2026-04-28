@@ -1,4 +1,4 @@
-# Forge — Validation System (TDD)
+# Avra — Validation System (TDD)
 
 Validation is a **core language feature**, not a package feature. Annotations like `@min`, `@max`, `@validate` work on any shaped type — plain `type` aliases, `model` fields, function parameters, anonymous structs. Packages can extend the annotation registry, but the base set lives in the language.
 
@@ -36,7 +36,7 @@ Annotations come from three places:
 
 **1. Core (language-level)** — Built into the compiler. Available everywhere, no import needed. These are primarily validation and data annotations on fields:
 
-```forge
+```avra
 type Input = {
   name: string @min(1) @max(100),
   email: string @transform(it.lower().trim()) @validate(email),
@@ -47,7 +47,7 @@ type Input = {
 
 **2. Package-declared** — A component package declares annotations scoped to its context using the `annotation` keyword:
 
-```forge
+```avra
 // Inside the @std/model package definition
 component model(name: string) {
   annotation field primary()
@@ -62,7 +62,7 @@ component model(name: string) {
 
 These are only valid inside that package's blocks. `@primary` inside a `model` block is valid; `@primary` on a plain `type` field is a compile error.
 
-```forge
+```avra
 // Inside the @std/http package definition
 component server(port: int) {
   annotation route public()
@@ -75,7 +75,7 @@ component server(port: int) {
 
 **3. User-declared** — Users can declare annotations in their own custom component definitions, following the same `annotation target name(args)` pattern:
 
-```forge
+```avra
 component api(name: string) {
   annotation route version(v: int)
   annotation route rate_limit(max: int, window: duration)
@@ -93,7 +93,7 @@ component api(name: string) {
 
 Annotations are passed as data to the functions that handle the annotated declaration. In a component's `@syntax` function, annotations on the matched line are available as `List<Annotation>`:
 
-```forge
+```avra
 @syntax("{name}: {type}")
 fn field(name: string, type: Type, annotations: List<Annotation>) {
   // annotations contains @min(1), @validate(email), etc.
@@ -105,7 +105,7 @@ For core annotations, the language runtime itself reads them at validation bound
 
 ### Target Mismatch — Compile Errors
 
-```forge
+```avra
 // Field annotation on a type target
 model User {
   name: string @table("custom")
@@ -126,7 +126,7 @@ model User {
   ╰──
 ```
 
-```forge
+```avra
 // Route annotation on a field
 type User = {
   name: string @auth(admin),
@@ -144,7 +144,7 @@ type User = {
   ╰──
 ```
 
-```forge
+```avra
 // Package annotation outside its package context
 type UserInput = {
   name: string @primary,    // @primary is a model field annotation, not available on plain types
@@ -167,7 +167,7 @@ type UserInput = {
 
 ### Test 1.1: Annotations on type fields
 
-```forge
+```avra
 type ContactForm = {
   name: string @min(1) @max(100),
   email: string @validate(email),
@@ -185,7 +185,7 @@ fn main() {
 
 ### Test 1.2: validate() returns structured errors
 
-```forge
+```avra
 type ContactForm = {
   name: string @min(1),
   email: string @validate(email),
@@ -213,7 +213,7 @@ fn main() {
 
 ### Test 1.3: validate() returns typed Ok
 
-```forge
+```avra
 type SignupInput = {
   name: string @min(1),
   email: string @validate(email),
@@ -235,7 +235,7 @@ fn main() {
 
 ### Test 1.4: Custom validator on plain type
 
-```forge
+```avra
 type Config = {
   port: int @validate((val) -> {
     if val < 1024 || val > 65535 {
@@ -254,7 +254,7 @@ fn main() {
 
 ### Test 1.5: Annotation on wrong type — compile error
 
-```forge
+```avra
 type Bad = {
   name: int @validate(email),    // email validator on int
 }
@@ -272,7 +272,7 @@ type Bad = {
 
 ### Test 1.6: Unknown annotation — compile error
 
-```forge
+```avra
 type Bad = {
   name: string @required,    // not a core annotation
 }
@@ -295,7 +295,7 @@ type Bad = {
 
 ### Test 2.1: @min / @max on strings (length)
 
-```forge
+```avra
 type Input = { name: string @min(2) @max(50) }
 
 fn main() {
@@ -307,7 +307,7 @@ fn main() {
 
 ### Test 2.2: @min / @max on numbers (value)
 
-```forge
+```avra
 type Input = { age: int @min(0) @max(150) }
 
 fn main() {
@@ -319,7 +319,7 @@ fn main() {
 
 ### Test 2.3: @pattern for regex
 
-```forge
+```avra
 type Input = {
   slug: string @pattern("^[a-z0-9-]+$"),
 }
@@ -332,7 +332,7 @@ fn main() {
 
 ### Test 2.4: @validate with named validators
 
-```forge
+```avra
 type Input = {
   email: string @validate(email),
   url: string @validate(url),
@@ -351,7 +351,7 @@ fn main() {
 
 ### Test 2.5: @transform runs before validation
 
-```forge
+```avra
 type Input = {
   email: string @transform(it.lower().trim()) @validate(email),
 }
@@ -367,7 +367,7 @@ fn main() {
 
 ### Test 2.6: @default provides fallback for optional fields
 
-```forge
+```avra
 type Input = {
   role: string? @default("member"),
   active: bool? @default(true),
@@ -391,7 +391,7 @@ fn main() {
 
 ### Test 3.1: `without` inherits annotations
 
-```forge
+```avra
 type User = {
   id: int,
   name: string @min(1) @max(100),
@@ -418,7 +418,7 @@ fn main() {
 
 ### Test 3.2: `only` inherits annotations
 
-```forge
+```avra
 type User = {
   id: int,
   name: string @min(1) @max(100),
@@ -443,7 +443,7 @@ fn main() {
 
 ### Test 3.3: `with` inherits existing, adds new
 
-```forge
+```avra
 type User = {
   name: string @min(1) @max(100),
   email: string @validate(email),
@@ -474,7 +474,7 @@ fn main() {
 
 ### Test 3.4: `with` can override annotations on existing fields
 
-```forge
+```avra
 type User = {
   name: string @min(1) @max(100),
 }
@@ -490,7 +490,7 @@ fn main() {
 
 ### Test 3.5: `as partial` — validation only on present fields
 
-```forge
+```avra
 type User = {
   name: string @min(1) @max(100),
   email: string @validate(email),
@@ -516,7 +516,7 @@ fn main() {
 
 ### Test 3.6: Chained operators preserve annotations
 
-```forge
+```avra
 type User = {
   id: int,
   name: string @min(1) @max(100),
@@ -543,7 +543,7 @@ fn main() {
 
 ### Test 3.7: @transform inherits through operators
 
-```forge
+```avra
 type User = {
   email: string @transform(it.lower().trim()) @validate(email),
 }
@@ -567,7 +567,7 @@ Models use the same core annotations. `@std/model` adds package-specific annotat
 
 ### Test 4.1: Model validates on create
 
-```forge
+```avra
 use @std.model
 
 model User {
@@ -591,7 +591,7 @@ fn main() {
 
 ### Test 4.2: Model validates on update
 
-```forge
+```avra
 use @std.model
 
 model User {
@@ -608,7 +608,7 @@ fn main() {
 
 ### Test 4.3: Derived type from model inherits all
 
-```forge
+```avra
 use @std.model
 
 model User {
@@ -635,7 +635,7 @@ fn main() {
 
 ### Test 4.4: Skip validation on model
 
-```forge
+```avra
 use @std.model
 
 model User {
@@ -657,7 +657,7 @@ The server layer validates incoming request bodies against typed handler paramet
 
 ### Test 5.1: Typed handler validates body
 
-```forge
+```avra
 use @std.http
 
 type CreatePost = {
@@ -690,7 +690,7 @@ curl -X POST localhost:8080/posts -d '{"title":"hello","body":"world"}'
 
 ### Test 5.2: Derived type on handler inherits validation
 
-```forge
+```avra
 use @std.http
 use @std.model
 
@@ -728,7 +728,7 @@ curl -X POST localhost:8080/users -d '{"name":"","email":"bad","password":"short
 
 ### Test 5.3: Partial type on handler — PATCH semantics
 
-```forge
+```avra
 use @std.http
 use @std.model
 
@@ -763,7 +763,7 @@ curl -X PATCH localhost:8080/users/1 -d '{}'
 
 ### Test 5.4: @transform runs at HTTP boundary
 
-```forge
+```avra
 use @std.http
 
 type CreateUser = {
@@ -791,7 +791,7 @@ curl -X POST localhost:8080/users -d '{"email":"  ALICE@Test.Com  ","name":"  bo
 
 ### Test 6.1: Intersection merges annotations
 
-```forge
+```avra
 type HasName = { name: string @min(1) @max(100) }
 type HasEmail = { email: string @validate(email) }
 type ContactInfo = HasName & HasEmail
@@ -807,7 +807,7 @@ fn main() {
 
 ### Test 6.2: Conflicting annotations in intersection — compile error
 
-```forge
+```avra
 type A = { name: string @min(1) }
 type B = { name: string @min(5) }
 type C = A & B
@@ -826,7 +826,7 @@ type C = A & B
 
 ### Test 6.3: Structural typing respects annotations
 
-```forge
+```avra
 fn create_user(input: { name: string @min(1), email: string @validate(email) }) {
   println(input.name)
 }
@@ -843,7 +843,7 @@ fn main() {
 
 Everything together. Define once, validate everywhere.
 
-```forge
+```avra
 use @std.http
 use @std.model
 
@@ -946,7 +946,7 @@ Type operators inherit **core field annotations**. Package annotations are conte
 
 All validation errors — from `validate()`, model operations, and HTTP body parsing — share the same structure:
 
-```forge
+```avra
 type ValidationError = {
   fields: List<FieldError>,
 }

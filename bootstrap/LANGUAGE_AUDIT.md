@@ -8,15 +8,15 @@ Bootstrap Compiler Audit
   ---
   Top Immediate Wins (existing features, not yet used)
 
-  1. setup.fg — 40× repeated LLVM boilerplate (biggest DRY issue in the codebase)
+  1. setup.av — 40× repeated LLVM boilerplate (biggest DRY issue in the codebase)
 
   Every function declaration is 5 lines of identical structure:
-  // codegen/setup.fg:24-28, :37-41, :43-47, :57-63, :65-70, ... (×40)
-  let puts_param_arr = forge_llvm_type_array_new(1)
-  forge_llvm_type_array_set(puts_param_arr, 0, pt)
-  let puts_type = forge_llvm_function_type(forge_llvm_int32_type(lc), puts_param_arr, 1, 0)
-  forge_llvm_type_array_free(puts_param_arr)
-  forge_llvm_add_function(m, "puts", puts_type)
+  // codegen/setup.av:24-28, :37-41, :43-47, :57-63, :65-70, ... (×40)
+  let puts_param_arr = avra_llvm_type_array_new(1)
+  avra_llvm_type_array_set(puts_param_arr, 0, pt)
+  let puts_type = avra_llvm_function_type(avra_llvm_int32_type(lc), puts_param_arr, 1, 0)
+  avra_llvm_type_array_free(puts_param_arr)
+  avra_llvm_add_function(m, "puts", puts_type)
 
   With a helper + list literals, this becomes one line per function:
   declare_extern(m, lc, "puts", i32t, [pt])
@@ -24,11 +24,11 @@ Bootstrap Compiler Audit
   declare_extern(m, lc, "malloc", pt, [i64t])
   declare_extern(m, lc, "memcpy", pt, [pt, pt, i64t])
   // etc.
-  This alone shrinks setup.fg from ~786 lines to ~100.
+  This alone shrinks setup.av from ~786 lines to ~100.
 
   2. p_keyword_kind — 30+ if-chain should be a match expression
 
-  // parse/mod.fg:161-196 — 35 consecutive if-return statements
+  // parse/mod.av:161-196 — 35 consecutive if-return statements
   if text == "and" { return Tk.KwAnd }
   if text == "const" { return Tk.KwConst }
   // ...
@@ -43,7 +43,7 @@ Bootstrap Compiler Audit
 
   3. ctx_with_* helpers are redundant with with expressions
 
-  codegen/types.fg has ctx_with_fn, ctx_with_loops, ctx_with_top_level, etc. These just wrap with {}. Every call site can inline them directly:
+  codegen/types.av has ctx_with_fn, ctx_with_loops, ctx_with_top_level, etc. These just wrap with {}. Every call site can inline them directly:
   // Before:
   let body_cg = ctx_with_fn(ctx, fn_val, name)
   // After:
@@ -55,7 +55,7 @@ Bootstrap Compiler Audit
   FnRetTypes, FnParamTypes, StructReg, EnumReg, TraitDeclReg, TopLevelVars, LoopStack, DeferStack, ParamTypeList — all are linked-list enums with matching *_lookup functions that are structurally identical. With
   generics this is one Map<K, V> type.
 
-  5. eval/mod.fg — 816 lines, 18 manual had_error checks
+  5. eval/mod.av — 816 lines, 18 manual had_error checks
 
   The eval is the most error-propagation-heavy file. With ? it would shrink dramatically. Also has many match arms that assign to a mut result variable before returning — all of these should be
   match-as-expression.
@@ -125,7 +125,7 @@ Bootstrap Compiler Audit
       "while"  -> Tk.KwWhile
       _        -> Tk.Identifier
   }
-  p_keyword_kind in parse/mod.fg is the canonical example — 35 if text == branches that should be a single match. String match is conceptually simple (just equality), clean to implement, and broadly useful.
+  p_keyword_kind in parse/mod.av is the canonical example — 35 if text == branches that should be a single match. String match is conceptually simple (just equality), clean to implement, and broadly useful.
 
   7. Spread operator for lists
 
@@ -213,7 +213,7 @@ No partial credit. A feature is not done until the codebase actually uses it.
 | 2 | Result<T> built-in          | [x] Done        | Medium     | 🔥 Critical  | Generic Result<T,E> + ? + expression type inference + proper F0400 diagnostics |
 | 3 | `when` expression           | [x] Done        | Low        | High         | `match { cond -> body }` subjectless form; dogfooded in lexer, typeck, resolve |
 | 4 | OR patterns in match        | [x] Done        | Low        | High         | `.A or .B -> body`; dogfooded in codegen, eval, resolve, typeck |
-| 5 | Variadic functions          | [ ] Not started | Medium     | High         | Sugar for `params: [T]`; `setup.fg` is canonical use case |
+| 5 | Variadic functions          | [ ] Not started | Medium     | High         | Sugar for `params: [T]`; `setup.av` is canonical use case |
 | 6 | String patterns in match    | [x] Done        | Low        | High         | `match s { "hello" -> ... }`; p_keyword_kind → 35-arm string match |
 | 7 | Spread operator             | [ ] Not started | Medium     | Medium       | `[...a, ...b]`; recursive list-concat helpers become one-liners |
 | 8 | Named / default arguments   | [ ] Not started | Medium     | Medium       | `fn f(x: int = 0)`; kills Parser flag-dance with `with {}` |

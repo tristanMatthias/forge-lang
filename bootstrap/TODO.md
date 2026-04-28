@@ -15,7 +15,7 @@ engineer reviewing this codebase would flag every one of these.
 **status:** done (MONOMORPHIZATION_PLAN.md)
 
 Function signatures use real LLVM types (ptr, i64, i1, double). Typed
-allocas, loads, stores. Bool is i1, float is double. `forge_llvm_cast_to_type`
+allocas, loads, stores. Bool is i1, float is double. `avra_llvm_cast_to_type`
 handles all conversions. See MONOMORPHIZATION_PLAN.md for full status.
 
 **Remaining debt:** ptrtoint/inttoptr still used for enum payloads and
@@ -87,9 +87,9 @@ should be done AFTER items 1-3.
 **status:** done (April 14, 2026)
 
 TypeParamList added to Function, TypeDecl, EnumDecl variants. Parser keeps
-type params via `parse_type_params()` in `features/generics/parser.fg`.
+type params via `parse_type_params()` in `features/generics/parser.av`.
 Resolver scopes type param names. Type checker infers type args at call sites.
-Monomorphization pass in `features/generics/mono.fg` generates concrete
+Monomorphization pass in `features/generics/mono.av` generates concrete
 specializations with mangled names (e.g., `identity__int`) and rewrites call
 sites. 246 tests pass including 4 generics-specific tests.
 
@@ -165,7 +165,7 @@ translation.
 
 Functions with a declared return type only have explicit `return` statements
 checked. The implicit return (last expression in a block) is not verified:
-```forge
+```avra
 fn foo() -> string {
     42  // returns int, declared string — no error
 }
@@ -189,7 +189,7 @@ to call out separately.
 `where` clauses on type declarations constrain values beyond base type.
 The compiler proves predicates at compile time and inserts runtime assertions when it can't.
 
-```forge
+```avra
 type Positive = int where it > 0
 type ValidPort = int where it >= 1 && it <= 65535
 ```
@@ -207,7 +207,7 @@ If a match doesn't cover all variants and has no `_ ->` catch-all, emit a compil
 error: non-exhaustive match on `ParamList` — missing variant `.Node`
 ```
 The enum registry already tracks all variants — compare matched tags against the full variant list.
-Additionally: the match fallthrough should call `forge_match_unreachable(fn, tag)` instead of
+Additionally: the match fallthrough should call `avra_match_unreachable(fn, tag)` instead of
 silently returning 0, as a runtime safety net.
 
 ### Enum variant tag references
@@ -232,7 +232,7 @@ and `StmtResult` use `had_error: bool`, not nullability.
 
 **The fix:** Add a `Result<T, E>` enum and extend `?` to work with it:
 
-```forge
+```avra
 enum Result<T, E> { Ok(value: T), Err(error: E) }
 
 fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
@@ -263,7 +263,7 @@ Dedicated `catch { body }` block that captures errors from `?` propagation withi
 returning a Result. Currently the bootstrap only supports `??` with block expressions as a
 workaround. The Rust compiler has full catch expression support with Ok/Err result wrapping.
 
-```forge
+```avra
 let result = catch {
     let data = read_file(path)?
     let parsed = parse(data)?
@@ -282,7 +282,7 @@ branch. The Rust compiler detects `x != null` patterns in conditionals and rebin
 with the narrowed type. The bootstrap type checker currently does not narrow — `x` remains
 `T?` even after a null check.
 
-```forge
+```avra
 fn process(x: int?) {
     if x != null {
         println(x + 1)  // x should be int here, not int?
@@ -299,7 +299,7 @@ fn process(x: int?) {
 value payload — `break` is statement-only. The Rust compiler supports `break value` which
 makes loops usable as expressions.
 
-```forge
+```avra
 let found = while i < list.length {
     if list[i] == target { break i }
     i = i + 1
@@ -314,7 +314,7 @@ let found = while i < list.length {
 `loop { body }` as infinite loop syntax. Currently the bootstrap only has `while true { }`.
 A dedicated `loop` keyword is cleaner and pairs naturally with `break value`.
 
-```forge
+```avra
 let line = loop {
     let input = read_line()
     if input != "" { break input }
@@ -330,7 +330,7 @@ let line = loop {
 handles union type expressions. The bootstrap has no union type syntax — only enum variants
 provide sum types.
 
-```forge
+```avra
 fn handle(input: string | int) -> string {
     match input {
         s: string -> s
@@ -347,7 +347,7 @@ fn handle(input: string | int) -> string {
 Traits with associated type declarations. The bootstrap supports trait methods but not
 associated types. The Rust compiler handles `type Item` declarations inside trait blocks.
 
-```forge
+```avra
 trait Iterator {
     type Item
     fn next(self) -> Item?
@@ -365,7 +365,7 @@ impl Iterator for Range {
 
 When calling an extern fn that expects a string argument but receives a struct, the Rust
 compiler automatically JSON-serializes the struct. The bootstrap requires manual
-`forge_json_stringify_*` calls. This is a convenience feature for FFI ergonomics.
+`avra_json_stringify_*` calls. This is a convenience feature for FFI ergonomics.
 
 ### Spec test: skip and todo
 **type:** feature
@@ -376,7 +376,7 @@ compiler automatically JSON-serializes the struct. The bootstrap requires manual
 The bootstrap's spec test framework supports `spec`, `given`, and `then` but not
 skip/todo markers.
 
-```forge
+```avra
 spec "feature X" {
     skip "not implemented yet"
     todo "add edge case test"
@@ -392,7 +392,7 @@ spec "feature X" {
 `should_fail` assertion in spec tests that expects a block to produce an error.
 Useful for testing error paths.
 
-```forge
+```avra
 spec "validation" {
     then "rejects negative" should_fail {
         validate_positive(-1)
@@ -408,7 +408,7 @@ spec "validation" {
 `where` clause on `then` blocks for parameterized (table-driven) tests. Runs the
 assertion body once per row in the table.
 
-```forge
+```avra
 spec "math" {
     then "addition works" where {
         a | b | expected
@@ -429,7 +429,7 @@ spec "math" {
 The bootstrap parses `mut` on struct fields but doesn't enforce immutability. Fields without
 `mut` should be read-only after construction. The Rust compiler has this as a WIP feature.
 
-```forge
+```avra
 type Point = { x: int, mut y: int }
 let p = Point { x: 1, y: 2 }
 p.y = 3    // OK — y is mut
@@ -455,14 +455,14 @@ Completed April 12, 2026. 79-variant Tk enum replaces string-based token dispatc
 comparing pointer addresses, now compares tag bytes).
 
 ### ~~Separate lexer from parser~~ DONE
-Completed April 12, 2026. 488 lines extracted to parse/lexer.fg.
-parse/mod.fg: 1931 → 1455 lines.
+Completed April 12, 2026. 488 lines extracted to parse/lexer.av.
+parse/mod.av: 1931 → 1455 lines.
 
 ### ~~Unify name resolution passes~~ DONE
 Completed April 12-13, 2026. `resolve_names` now calls `resolve_program` internally,
-presenting a single entry point from main.fg. Both passes live in `resolve/` —
-`resolve/mod.fg` (scope validation) and `resolve/names.fg` (module tree + name
-qualification). Module file loading (`features/modules/resolver.fg`) remains separate
+presenting a single entry point from main.av. Both passes live in `resolve/` —
+`resolve/mod.av` (scope validation) and `resolve/names.av` (module tree + name
+qualification). Module file loading (`features/modules/resolver.av`) remains separate
 since it does file I/O. Deeper merge (single AST walk) deferred — current approach
 is clean and works.
 
@@ -475,7 +475,7 @@ Multiple `_ -> captures/false/env/tc` catch-all arms silently skip Expr/Stmt
 variants in recursive walkers. This caused two closure bugs (missed captures in
 MatchExpr/EnumCtor/15+ variants, missed else branch in If). The pattern:
 
-```forge
+```avra
 fn walk_expr(expr: Expr, ...) -> ... {
     match expr {
         .Binary(l, _, r) -> ...
@@ -496,9 +496,9 @@ captures inside MatchExpr, EnumCtor, FieldAccess, NullCoalesce, etc.
 3. Extract a shared `walk_expr` visitor that all AST walkers use
 
 **Affected files:**
-- `closures/codegen.fg`: `find_captures`, `has_float_ident`, `param_used_with_float`
-- `typeck/mod.fg`: `check_expr`, `check_stmt` (existing `_ ->` catch-alls)
-- `features/generics/mono.fg`: `collect_inst_expr`, `substitute_expr`, `rewrite_expr`
+- `closures/codegen.av`: `find_captures`, `has_float_ident`, `param_used_with_float`
+- `typeck/mod.av`: `check_expr`, `check_stmt` (existing `_ ->` catch-alls)
+- `features/generics/mono.av`: `collect_inst_expr`, `substitute_expr`, `rewrite_expr`
 
 ### `has_float_ident` and `param_used_with_float` skip most Expr/Stmt variants
 **type:** bug
@@ -537,7 +537,7 @@ table — a DRY improvement, not a correctness fix.
 **priority:** medium
 **source:** PLUGGABLE_FEATURES.md, TECH_DEBT.md #30
 
-The Feature struct has `resolve_expr` and `check_expr` handlers but resolver.fg and typeck/mod.fg
+The Feature struct has `resolve_expr` and `check_expr` handlers but resolver.av and typeck/mod.av
 still use hardcoded match statements. Catch-all dispatch arms are wired but match arms not yet
 extracted from core into features. Wire `dispatch_expr_resolve` and `dispatch_expr_check` into
 the catch-all arms so features provide all handlers in one Feature struct and central files
@@ -566,7 +566,7 @@ reclaims. Blocked on real memory management (above).
 Completed April 12, 2026. Added 187 `use` imports across 50 files + 49 `export`
 annotations. Removed global index fallback (step 6) from `rewrite_ident`. Names
 must now be explicitly imported via `use` or defined in the current module.
-`resolve/names.fg` (moved from `features/modules/names.fg` on April 13).
+`resolve/names.av` (moved from `features/modules/names.av` on April 13).
 
 ### Per-module compilation
 **type:** debt
@@ -582,7 +582,7 @@ to per-module compilation: each `mod` directory/file produces its own `.o`, link
 This enables incremental builds, parallel compilation, and smaller LLVM working sets.
 
 Production compilers for reference: Rust compiles per-crate, Go per-package, C per-file,
-Swift per-module. All compile units are larger than a single file. The Forge `mod` directory
+Swift per-module. All compile units are larger than a single file. The Avra `mod` directory
 is the natural boundary. Blocked on enforcing module visibility (above) — without real
 imports, separate compilation can't know what to link.
 
@@ -619,7 +619,7 @@ Fix: change `Stmt.Defer(body: Expr)` to `Stmt.Defer(body: SExpr)`. Requires two-
 **priority:** medium
 **source:** discovered April 14, 2026
 
-`check_call` in `typeck/mod.fg` reports errors like F0201 (wrong arg count)
+`check_call` in `typeck/mod.av` reports errors like F0201 (wrong arg count)
 using `tc.current_line/current_col` which is set from the enclosing statement's
 `SStmt` position, not the call expression's position. This causes the error
 caret to point at the `let` keyword instead of the function name:
@@ -643,7 +643,7 @@ Two root causes found and fixed:
    of enum match (variant destructuring). Fix: `fill_arg_array_boxing`
    detects Lambda args and passes the callee's expected param types from
    the function type string (e.g. `fn(Box)->int` → param type `Box`).
-2. `find_captures` in closures/codegen.fg had `_ -> captures` catch-all
+2. `find_captures` in closures/codegen.av had `_ -> captures` catch-all
    that skipped 15+ Expr variants (MatchExpr, EnumCtor, NullCoalesce, etc).
    Captured variables inside these expressions were silently missed.
    Fix: added explicit arms for all sub-expression-containing variants.
@@ -653,7 +653,7 @@ Two root causes found and fixed:
 **priority:** low
 **source:** PLAN.md backlog
 
-`check_match_expr_arms` uses the first arm's type as the result type (`src/typeck/mod.fg:994`).
+`check_match_expr_arms` uses the first arm's type as the result type (`src/typeck/mod.av:994`).
 Real unification should check that all arms produce the same type and report mismatches.
 Currently silently picks the first arm type even when arms disagree.
 
@@ -662,7 +662,7 @@ Currently silently picks the first arm type even when arms disagree.
 **priority:** high
 **source:** discovered April 14, 2026 during generics implementation
 
-`render_diagnostic` in `diagnostics/render.fg` crashes when a diagnostic's line
+`render_diagnostic` in `diagnostics/render.av` crashes when a diagnostic's line
 number exceeds the source file's actual line count. This happens when the type
 checker produces warnings from multi-module compilation — the line number is a
 global offset across all modules, but the renderer only has the entry file's source.
@@ -672,7 +672,7 @@ source line is empty (not found). A guard was added (`if src_line.length == 0 { 
 but the proper fix is to pass per-module source text to the diagnostic renderer
 or translate global line numbers to module-relative ones.
 
-This blocked adding `features/generics/mono.fg` to the build until the seed was
+This blocked adding `features/generics/mono.av` to the build until the seed was
 updated with the guard fix. Any future large module addition may hit the same issue.
 
 ### `consume_type` does not handle tuple return types
@@ -680,7 +680,7 @@ updated with the guard fix. Any future large module addition may hit the same is
 **priority:** low
 **source:** discovered April 14, 2026
 
-`consume_type` in `parse/mod.fg` cannot parse `(A, B)` as a type (e.g., in
+`consume_type` in `parse/mod.av` cannot parse `(A, B)` as a type (e.g., in
 `fn foo<A, B>(a: A, b: B) -> (A, B)`). It encounters `(` and reports
 "expected return type after `->`". Tuple types in return position require the
 parser to handle `(` as a type start. This is only a limitation for explicit
@@ -689,7 +689,7 @@ tuple return type annotations — returning tuples without annotations works fin
 ### ~~Generic type inference defaults unresolved type params to `int`~~ DONE
 **status:** fixed (April 14, 2026)
 
-Expression-based type inference implemented in `features/generics/mono.fg`.
+Expression-based type inference implemented in `features/generics/mono.av`.
 `infer_expr_type` examines argument AST nodes (literals → their type,
 variables/calls → "int" fallback). Enum constructors merge partial inference
 across variants (`Result.Ok(42)` → T=int, `Result.Err("hello")` → E=string
@@ -705,7 +705,7 @@ via the diagnostic system. Mangling follows declaration order via
 The seed's compiled `rewrite_expr(expr: Expr)` (1 parameter) generates code that treats x1
 (second register) as the primary value instead of x0. The codegen's parameter binding generates
 code that accesses the wrong register for single-parameter functions — likely an off-by-one in
-`bind_params_inline` or `forge_llvm_get_param` indexing. Globals-based name resolution works as
+`bind_params_inline` or `avra_llvm_get_param` indexing. Globals-based name resolution works as
 a workaround; parameter-passing is architecturally better but blocked by this.
 
 ---
@@ -739,7 +739,7 @@ Line-aware `--bisect-lines`: bisect on declaration boundaries instead of raw lin
 **source:** POST_MORTEM.md
 
 ```bash
-bs2 compile --only-module=core.names src/main.fg
+bs2 compile --only-module=core.names src/main.av
 ```
 Compiles the full source but only emits codegen for one module. Useful for testing specific
 functions without processing everything.
@@ -749,7 +749,7 @@ functions without processing everything.
 **priority:** low
 **source:** POST_MORTEM.md
 
-Instead of spawning `bs2 compile src/main.fg` as a separate process, have a `--self-test`
+Instead of spawning `bs2 compile src/main.av` as a separate process, have a `--self-test`
 flag that compiles the source in-process. Eliminates process startup overhead and makes the
 test ~2x faster.
 
@@ -774,16 +774,16 @@ wrapper functions instead of inline lambdas. Workaround: define a named function
 `env_lookup` returns `VarLookup { found, alloca, ty }` instead of `ptr?`. Originally worked
 around a Rust host bug. Could migrate to `?`-based returns. The struct pattern is actually readable.
 
-### Tagged Value struct in eval.fg
+### Tagged Value struct in eval.av
 **source:** TECH_DEBT.md #5
 
-eval.fg uses `type Value = { tag, int_val, str_val, ... }` instead of an enum. Originally
+eval.av uses `type Value = { tag, int_val, str_val, ... }` instead of an enum. Originally
 worked around a Rust host bug. eval is rarely used (only for the `eval` command).
 
 ### Recursive enum lists instead of real collections
 **source:** TECH_DEBT.md #6
 
-ExprList, StmtList, ParamList, VarEnv are linked lists. Could migrate to `forge_array_*`
+ExprList, StmtList, ParamList, VarEnv are linked lists. Could migrate to `avra_array_*`
 runtime. The recursive enums work fine for AST sizes and are idiomatic for immutable scope stacks.
 
 ### Remove `ty: string` from ParamList/FieldList
@@ -791,10 +791,10 @@ runtime. The recursive enums work fine for AST sizes and are idiomatic for immut
 
 ParamList.Node and FieldList.Node still carry both `ty: string` and
 `resolved: ValueType`. The string field is only read by:
-- setup.fg's `resolve_field_list`/`resolve_param_list` (to populate `resolved`)
+- setup.av's `resolve_field_list`/`resolve_param_list` (to populate `resolved`)
 - `should_null_check` in fn_decl (string pattern checks)
-- `render_param_list`/`render_field_list` in ast.fg (debug printing)
-- `params_to_type_list` in setup.fg (builds FnParamTypes registry)
+- `render_param_list`/`render_field_list` in ast.av (debug printing)
+- `params_to_type_list` in setup.av (builds FnParamTypes registry)
 
 To remove: change Stmt.Let/Mut/Function/ExternFn to carry ValueType
 instead of string, update parser to resolve types at parse time (or add
@@ -823,12 +823,12 @@ auto-detects and warns about this.
 Upgrading to LLVM 21 may fix it but introduces other -O2 issues (wrong
 register for parameters on ARM64).
 
-### mod.fg re-exports all AST symbols
+### mod.av re-exports all AST symbols
 **source:** codegen cleanup (April 14, 2026)
 
-`codegen/mod.fg` imports ~40 AST symbols and ~20 codegen.types symbols
+`codegen/mod.av` imports ~40 AST symbols and ~20 codegen.types symbols
 that it doesn't use directly — they're re-exported for feature codegen
-files that import through the module system. This makes mod.fg's import
+files that import through the module system. This makes mod.av's import
 list enormous and impossible to clean up without breaking downstream
 files. A proper fix requires the module system to support transitive
 exports or `pub use` re-exports.

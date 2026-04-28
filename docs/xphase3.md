@@ -1,36 +1,36 @@
-# Forge Compiler — Phase 2 Validation & Phase 3 Spec
+# Avra Compiler — Phase 2 Validation & Phase 3 Spec
 
 ---
 
 ## Part 1: Phase 2 Validation
 
-Phase 2 added modules, traits, generics, forge.toml, operator overloading, collection methods, and Drop. These tests are designed to break things at the seams — where features interact with each other.
+Phase 2 added modules, traits, generics, avra.toml, operator overloading, collection methods, and Drop. These tests are designed to break things at the seams — where features interact with each other.
 
 ### 1.1 Run All Phase 2 Test Programs
 
 ```bash
 # Phase 1 regression (these must still work):
-forge run tests/programs/hello.fg
-forge run tests/programs/arithmetic.fg
-forge run tests/programs/immutability.fg
-forge run tests/programs/functions.fg
-forge run tests/programs/strings.fg
-forge run tests/programs/control_flow.fg
-forge run tests/programs/nullability.fg
-forge run tests/programs/structs.fg
-forge run tests/programs/enums.fg
-forge run tests/programs/error_handling.fg
-forge run tests/programs/destructuring.fg
-forge run tests/programs/pipes.fg
+avra run tests/programs/hello.av
+avra run tests/programs/arithmetic.av
+avra run tests/programs/immutability.av
+avra run tests/programs/functions.av
+avra run tests/programs/strings.av
+avra run tests/programs/control_flow.av
+avra run tests/programs/nullability.av
+avra run tests/programs/structs.av
+avra run tests/programs/enums.av
+avra run tests/programs/error_handling.av
+avra run tests/programs/destructuring.av
+avra run tests/programs/pipes.av
 
 # Phase 2 new tests:
-cd test_project && forge build && ./build/test-project    # multi_module
-forge run tests/programs/traits.fg
-forge run tests/programs/generics.fg
-forge run tests/programs/operators.fg
-forge run tests/programs/collections.fg
-cd test_visibility && forge build                          # visibility
-forge run tests/programs/drop.fg
+cd test_project && avra build && ./build/test-project    # multi_module
+avra run tests/programs/traits.av
+avra run tests/programs/generics.av
+avra run tests/programs/operators.av
+avra run tests/programs/collections.av
+cd test_visibility && avra build                          # visibility
+avra run tests/programs/drop.av
 ```
 
 ### 1.2 Cross-Feature Interaction Tests
@@ -38,7 +38,7 @@ forge run tests/programs/drop.fg
 These test features from Phase 1 and Phase 2 interacting. This is where compilers break.
 
 **Traits + Nullability:**
-```forge
+```avra
 trait Describable {
   fn describe(self) -> string
 }
@@ -65,7 +65,7 @@ fn main() {
 ```
 
 **Generics + Error Handling:**
-```forge
+```avra
 fn try_first<T>(list: List<T>) -> Result<T, string> {
   if list.length > 0 { Ok(list[0]) } else { Err("empty list") }
 }
@@ -88,7 +88,7 @@ fn main() {
 ```
 
 **Traits + Operator Overloading + Pipes:**
-```forge
+```avra
 type Money = { cents: int }
 
 impl Add for Money {
@@ -130,23 +130,23 @@ fn main() {
 **Closures Capturing Cross-Module Values:**
 ```
 test_closure_capture/
-├── forge.toml
+├── avra.toml
 └── src/
-    ├── main.fg
+    ├── main.av
     └── config/
-        └── config.fg
+        └── config.av
 ```
 
-```forge
-// src/config/config.fg
+```avra
+// src/config/config.av
 export let MULTIPLIER = 10
 export fn make_scaler(factor: int) -> (int) -> int {
   (x) -> x * factor
 }
 ```
 
-```forge
-// src/main.fg
+```avra
+// src/main.av
 use config.{MULTIPLIER, make_scaler}
 
 fn main() {
@@ -164,7 +164,7 @@ fn main() {
 ```
 
 **Generic Traits (trait with type parameter used in impl):**
-```forge
+```avra
 trait Convertible<Target> {
   fn convert(self) -> Target
 }
@@ -204,7 +204,7 @@ fn main() {
 ```
 
 **Drop + Error Handling (errdefer interaction):**
-```forge
+```avra
 type TempFile = { path: string }
 
 impl Drop for TempFile {
@@ -244,7 +244,7 @@ fn main() {
 ```
 
 **Match + Generics + Traits:**
-```forge
+```avra
 enum Option<T> {
   some(value: T)
   none
@@ -272,7 +272,7 @@ fn main() {
 
 Verify these produce clear, helpful errors:
 
-```forge
+```avra
 // E0040: Trait not implemented
 fn print_it<T: Display>(x: T) { println(x.display()) }
 type Opaque = { data: int }
@@ -282,7 +282,7 @@ fn main() { print_it(Opaque { data: 1 }) }
 //   help: add `impl Display for Opaque { ... }`
 ```
 
-```forge
+```avra
 // E0042: Missing method in impl
 trait Foo {
   fn bar(self) -> int
@@ -296,7 +296,7 @@ impl Foo for X {
 // Expected: error[E0042]: missing method `baz` in impl of `Foo` for `X`
 ```
 
-```forge
+```avra
 // E0050: Cannot infer generic
 fn identity<T>(x: T) -> T { x }
 fn main() {
@@ -305,7 +305,7 @@ fn main() {
 // Expected: error[E0050]: cannot infer type parameter `T`
 ```
 
-```forge
+```avra
 // E0031: Unresolved import
 use nonexistent.module.Thing
 // Expected: error[E0031]: unresolved import `nonexistent.module.Thing`
@@ -316,7 +316,7 @@ use nonexistent.module.Thing
 
 ```bash
 # Create a 10-file project and measure compile time
-time forge build
+time avra build
 # Should be < 5 seconds
 
 # Binary size for a simple project
@@ -326,7 +326,7 @@ ls -lh build/test-project
 
 ### 1.5 Note Before Phase 3
 
-Phase 3 is fundamentally different from Phases 1-2. Phases 1-2 are "standard compiler construction." Phase 3 is "language extensibility architecture." The package system is what makes Forge unique — and it's the hardest part to get right.
+Phase 3 is fundamentally different from Phases 1-2. Phases 1-2 are "standard compiler construction." Phase 3 is "language extensibility architecture." The package system is what makes Avra unique — and it's the hardest part to get right.
 
 Key questions to confirm before starting:
 - Does the trait system work well enough to define package interfaces?
@@ -343,7 +343,7 @@ If any of these are shaky, fix them before Phase 3.
 
 Build the **package system** and the first two standard packages: `@std/model` (data models with auto-persistence) and `@std/http` (HTTP server with routing). At the end of Phase 3, this program compiles and runs:
 
-```forge
+```avra
 use @std.model.{model, service}
 use @std.http.{server, route, mount}
 
@@ -368,7 +368,7 @@ server :8080 {
 ```
 
 ```bash
-forge build
+avra build
 ./build/my-app
 # => Server running on http://localhost:8080
 # => GET /users → []
@@ -382,21 +382,21 @@ forge build
 1. The package system loads and resolves package-registered keywords
 2. `@std/model` provides `model` and `service` keywords with auto-persistence to SQLite
 3. `@std/http` provides `server`, `route`, `mount`, and `middleware` keywords with a working HTTP server
-4. A single binary is produced containing the Forge code, SQLite, and the HTTP server
+4. A single binary is produced containing the Avra code, SQLite, and the HTTP server
 5. All test programs at the end of this document compile and run
 
 ---
 
 ### 3.1 Package System Architecture
 
-This is the core of what makes Forge extensible. The architecture has three layers:
+This is the core of what makes Avra extensible. The architecture has three layers:
 
 ```
 ┌─────────────────────────────┐
-│  Forge Source Code           │  Uses package keywords: model, server, route
+│  Avra Source Code           │  Uses package keywords: model, server, route
 ├─────────────────────────────┤
 │  Package Interface Layer    │  Defines what keywords exist and their syntax
-│  (package.toml + types.fg)  │  Parsed at compile time
+│  (package.toml + types.av)  │  Parsed at compile time
 ├─────────────────────────────┤
 │  Package Implementation     │  Actual Rust code that handles the keywords
 │  (compiled native library)   │  Linked into the final binary
@@ -405,10 +405,10 @@ This is the core of what makes Forge extensible. The architecture has three laye
 
 #### 3.1.1 How Packages Work (The Big Picture)
 
-1. Developer adds `"@std/http" = "0.1.0"` to `forge.toml`
-2. On `forge build`, the compiler reads the package's manifest (`package.toml`)
+1. Developer adds `"@std/http" = "0.1.0"` to `avra.toml`
+2. On `avra build`, the compiler reads the package's manifest (`package.toml`)
 3. The manifest declares keywords (`server`, `route`, etc.) and their syntax patterns
-4. The Forge parser recognizes these keywords and produces package-specific AST nodes
+4. The Avra parser recognizes these keywords and produces package-specific AST nodes
 5. The type checker validates the package blocks using type info from the package
 6. Codegen produces calls into the package's native library (Rust compiled to a static lib)
 7. The linker includes the package's static library in the final binary
@@ -420,11 +420,11 @@ Each package is a directory (or downloaded package) with this structure:
 ```
 std-http/
 ├── package.toml          # Manifest: keywords, syntax, metadata
-├── types.fg               # Forge type definitions the package exposes
+├── types.av               # Avra type definitions the package exposes
 ├── lib/
-│   └── libforge_http.a    # Compiled static library (per platform)
+│   └── libavra_http.a    # Compiled static library (per platform)
 └── include/
-    └── forge_http.h       # C ABI header for the static library
+    └── avra_http.h       # C ABI header for the static library
 ```
 
 For Phase 3, the `@std` packages are **bundled with the compiler** — they live in the compiler's install directory, not downloaded from a registry. Registry support comes in Phase 6.
@@ -434,11 +434,11 @@ For Phase 3, the `@std` packages are **bundled with the compiler** — they live
 ```
 Package resolution order:
 1. Built-in std packages (bundled with compiler)
-   → $FORGE_HOME/packages/std/
+   → $AVRA_HOME/packages/std/
 2. Local packages (in project)
    → ./packages/
 3. Downloaded packages (future — Phase 6)
-   → $FORGE_HOME/cache/packages/
+   → $AVRA_HOME/cache/packages/
 ```
 
 ---
@@ -481,13 +481,13 @@ pattern = "middleware [<handlers:expr_list>]"
 
 # Native library to link
 [native]
-library = "forge_http"
+library = "avra_http"
 link = "static"
 
 # Dependencies this package's native lib needs
 [native.deps]
 # These are Rust crate deps compiled into the package's static lib
-# Not resolved by Forge — the package ships pre-compiled
+# Not resolved by Avra — the package ships pre-compiled
 ```
 
 ```toml
@@ -512,7 +512,7 @@ context = "top_level"
 pattern = "service <name:ident> for <model:ident> <body:service_block>"
 
 [native]
-library = "forge_model"
+library = "avra_model"
 link = "static"
 ```
 
@@ -587,7 +587,7 @@ pub enum PackageArg {
 
 pub enum PackageChild {
     PackageBlock(PackageBlock),   // nested package keyword
-    Statement(Statement),           // regular Forge statements inside package blocks
+    Statement(Statement),           // regular Avra statements inside package blocks
 }
 ```
 
@@ -638,10 +638,10 @@ pub enum HookTiming { Before, After }
 
 ### 3.4 Package Type Integration
 
-Each package ships a `types.fg` file that defines the Forge types it introduces. The compiler parses this and adds the types to the type system.
+Each package ships a `types.av` file that defines the Avra types it introduces. The compiler parses this and adds the types to the type system.
 
-```forge
-// packages/std-http/types.fg
+```avra
+// packages/std-http/types.av
 
 export type Request = {
   method: string,
@@ -662,8 +662,8 @@ export fn respond(status: int, body: json) -> Response
 export fn redirect(url: string, status: int = 302) -> Response
 ```
 
-```forge
-// packages/std-model/types.fg
+```avra
+// packages/std-model/types.av
 
 export type QueryOptions = {
   limit: int?,
@@ -683,7 +683,7 @@ These types are automatically available when the package is imported.
 
 The `model` keyword declares a data structure that auto-persists to SQLite. For each model, the compiler generates:
 
-1. A Forge struct type with the declared fields
+1. A Avra struct type with the declared fields
 2. CRUD functions: `create`, `get`, `get_by`, `list`, `update`, `delete`, `count`, `exists`
 3. SQLite table creation (auto-migrate on first run)
 4. JSON serialization/deserialization
@@ -695,7 +695,7 @@ The `@std/model` package is backed by a Rust static library that handles SQLite 
 
 ```rust
 // packages/std-model/src/lib.rs
-// This compiles to libforge_model.a
+// This compiles to libavra_model.a
 
 use rusqlite::{Connection, params};
 use std::sync::Mutex;
@@ -706,14 +706,14 @@ use std::ffi::{CStr, CString};
 static DB: Mutex<Option<Connection>> = Mutex::new(None);
 
 #[no_mangle]
-pub extern "C" fn forge_model_init(path: *const c_char) {
+pub extern "C" fn avra_model_init(path: *const c_char) {
     let path = unsafe { CStr::from_ptr(path) }.to_str().unwrap();
     let conn = Connection::open(path).expect("Failed to open database");
     *DB.lock().unwrap() = Some(conn);
 }
 
 #[no_mangle]
-pub extern "C" fn forge_model_exec(sql: *const c_char) -> i32 {
+pub extern "C" fn avra_model_exec(sql: *const c_char) -> i32 {
     let sql = unsafe { CStr::from_ptr(sql) }.to_str().unwrap();
     let db = DB.lock().unwrap();
     let conn = db.as_ref().expect("Database not initialized");
@@ -727,7 +727,7 @@ pub extern "C" fn forge_model_exec(sql: *const c_char) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn forge_model_query(
+pub extern "C" fn avra_model_query(
     sql: *const c_char,
     result_buf: *mut c_char,
     buf_len: i64,
@@ -777,7 +777,7 @@ pub extern "C" fn forge_model_query(
 }
 
 #[no_mangle]
-pub extern "C" fn forge_model_insert(
+pub extern "C" fn avra_model_insert(
     table: *const c_char,
     json: *const c_char,
 ) -> i64 {
@@ -787,7 +787,7 @@ pub extern "C" fn forge_model_insert(
 }
 
 #[no_mangle]
-pub extern "C" fn forge_model_last_id() -> i64 {
+pub extern "C" fn avra_model_last_id() -> i64 {
     let db = DB.lock().unwrap();
     let conn = db.as_ref().expect("Database not initialized");
     conn.last_insert_rowid()
@@ -801,17 +801,17 @@ rusqlite = { version = "0.31", features = ["bundled"] }  # bundled = includes SQ
 serde_json = "1"
 ```
 
-The `bundled` feature on rusqlite is critical — it compiles SQLite directly into the static library, so the final Forge binary has zero external dependencies.
+The `bundled` feature on rusqlite is critical — it compiles SQLite directly into the static library, so the final Avra binary has zero external dependencies.
 
 #### 3.5.3 Codegen for Model Declarations
 
 When the compiler encounters a `model User { ... }` block, it generates:
 
-1. **A struct type** for User (standard Forge struct)
+1. **A struct type** for User (standard Avra struct)
 2. **An init call** in the program's startup:
    ```
-   forge_model_init("./data/forge.db")
-   forge_model_exec("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL, active INTEGER DEFAULT 1)")
+   avra_model_init("./data/avra.db")
+   avra_model_exec("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL, active INTEGER DEFAULT 1)")
    ```
 3. **Generated functions** for CRUD:
    ```
@@ -825,11 +825,11 @@ When the compiler encounters a `model User { ... }` block, it generates:
    fn User.count() -> int
    ```
 
-Each generated function calls into the native library (`forge_model_insert`, `forge_model_query`, etc.) and marshals data between Forge types and SQLite via JSON serialization.
+Each generated function calls into the native library (`avra_model_insert`, `avra_model_query`, etc.) and marshals data between Avra types and SQLite via JSON serialization.
 
 #### 3.5.4 Annotation Processing
 
-| Annotation | SQL Effect | Forge Effect |
+| Annotation | SQL Effect | Avra Effect |
 |---|---|---|
 | `@primary` | `PRIMARY KEY` | Field is the identity |
 | `@auto_increment` | `AUTOINCREMENT` | Auto-assigned on create |
@@ -853,7 +853,7 @@ The HTTP package is backed by a Rust static library using `tiny_http` (simpler t
 
 ```rust
 // packages/std-http/src/lib.rs
-// Compiles to libforge_http.a
+// Compiles to libavra_http.a
 
 use tiny_http::{Server, Request, Response as HttpResponse, Method, Header};
 use std::sync::{Arc, Mutex};
@@ -879,7 +879,7 @@ struct Route {
 static ROUTES: Mutex<Vec<Route>> = Mutex::new(Vec::new());
 
 #[no_mangle]
-pub extern "C" fn forge_http_add_route(
+pub extern "C" fn avra_http_add_route(
     method: *const c_char,
     path: *const c_char,
     handler: HandlerFn,
@@ -890,7 +890,7 @@ pub extern "C" fn forge_http_add_route(
 }
 
 #[no_mangle]
-pub extern "C" fn forge_http_serve(port: u16) {
+pub extern "C" fn avra_http_serve(port: u16) {
     let addr = format!("0.0.0.0:{}", port);
     let server = Server::http(&addr).expect("Failed to start server");
     eprintln!("Server running on http://localhost:{}", port);
@@ -987,11 +987,11 @@ tiny_http = "0.12"
 When the compiler encounters a `server :8080 { ... }` block, it generates:
 
 1. Route registration calls for each `route` and `mount` inside the block
-2. A call to `forge_http_serve(8080)` as the last thing in `main`
+2. A call to `avra_http_serve(8080)` as the last thing in `main`
 
 For each `route GET /health -> { status: "ok" }`:
 1. Generate a handler function that evaluates the expression and serializes it to JSON
-2. Call `forge_http_add_route("GET", "/health", handler_fn_ptr)`
+2. Call `avra_http_add_route("GET", "/health", handler_fn_ptr)`
 
 For each `mount UserService at /users`:
 1. Generate 5 handler functions (GET list, GET by id, POST create, PUT update, DELETE)
@@ -1014,7 +1014,7 @@ For each `mount UserService at /users`:
 
 ### 3.7 Service Hooks Codegen
 
-```forge
+```avra
 service UserService for User {
   before create(user) {
     assert user.name.length > 0, "name required"
@@ -1052,7 +1052,7 @@ fn UserService.create(data) -> User {
 
 ### 3.8 JSON Serialization
 
-Phase 3 needs a way to convert Forge structs to/from JSON. This is needed for:
+Phase 3 needs a way to convert Avra structs to/from JSON. This is needed for:
 - HTTP request/response bodies
 - SQLite data marshaling
 - Model serialization
@@ -1060,7 +1060,7 @@ Phase 3 needs a way to convert Forge structs to/from JSON. This is needed for:
 Implementation approach:
 1. Every model auto-derives a `to_json() -> string` and `from_json(string) -> Self` method
 2. These are generated at compile time based on the struct fields
-3. The C runtime provides `forge_json_parse` and `forge_json_serialize` helpers
+3. The C runtime provides `avra_json_parse` and `avra_json_serialize` helpers
 4. Or, more practically: use the generated field info to build/parse JSON strings directly in LLVM IR
 
 For Phase 3, keep it simple — generate string-building code for serialization and a simple recursive-descent JSON parser in the C runtime for deserialization.
@@ -1074,33 +1074,33 @@ The generated `main` function for a program with models and a server:
 ```
 fn main() {
   // 1. Initialize database
-  forge_model_init("./data/forge.db")
+  avra_model_init("./data/avra.db")
 
   // 2. Run auto-migrations
-  forge_model_exec("CREATE TABLE IF NOT EXISTS users (...)")
+  avra_model_exec("CREATE TABLE IF NOT EXISTS users (...)")
 
   // 3. Register routes
-  forge_http_add_route("GET", "/health", health_handler)
-  forge_http_add_route("GET", "/users", users_list_handler)
-  forge_http_add_route("GET", "/users/:id", users_get_handler)
-  forge_http_add_route("POST", "/users", users_create_handler)
-  forge_http_add_route("PUT", "/users/:id", users_update_handler)
-  forge_http_add_route("DELETE", "/users/:id", users_delete_handler)
+  avra_http_add_route("GET", "/health", health_handler)
+  avra_http_add_route("GET", "/users", users_list_handler)
+  avra_http_add_route("GET", "/users/:id", users_get_handler)
+  avra_http_add_route("POST", "/users", users_create_handler)
+  avra_http_add_route("PUT", "/users/:id", users_update_handler)
+  avra_http_add_route("DELETE", "/users/:id", users_delete_handler)
 
   // 4. Start server (blocks)
-  forge_http_serve(8080)
+  avra_http_serve(8080)
 }
 ```
 
 ---
 
-### 3.10 forge.toml Updates
+### 3.10 avra.toml Updates
 
 ```toml
 [project]
 name = "my-app"
 version = "0.1.0"
-entry = "src/main.fg"
+entry = "src/main.av"
 
 [packages]
 "@std/model" = "0.1.0"
@@ -1121,7 +1121,7 @@ The compiler reads `[packages]` and loads each package's manifest. The `[databas
 ### 3.11 New Dependencies
 
 ```toml
-# Add to forge compiler's Cargo.toml
+# Add to avra compiler's Cargo.toml
 
 # For building package native libraries
 [build-dependencies]
@@ -1136,22 +1136,22 @@ The build process for packages:
 ```bash
 # One-time: compile package native libraries
 cd packages/std-model && cargo build --release
-# → produces target/release/libforge_model.a
+# → produces target/release/libavra_model.a
 
 cd packages/std-http && cargo build --release
-# → produces target/release/libforge_http.a
+# → produces target/release/libavra_http.a
 
-# These .a files are bundled with the Forge compiler distribution
-# The Forge compiler links them into the user's binary during codegen
+# These .a files are bundled with the Avra compiler distribution
+# The Avra compiler links them into the user's binary during codegen
 ```
 
 ---
 
 ### 3.12 Test Programs
 
-### 3.12.1 basic_model.fg — Model CRUD
+### 3.12.1 basic_model.av — Model CRUD
 
-```forge
+```avra
 use @std.model.{model}
 
 model Task {
@@ -1192,9 +1192,9 @@ fn main() {
 }
 ```
 
-### 3.12.2 model_service.fg — Service with hooks
+### 3.12.2 model_service.av — Service with hooks
 
-```forge
+```avra
 use @std.model.{model, service}
 
 model User {
@@ -1237,9 +1237,9 @@ fn main() {
 }
 ```
 
-### 3.12.3 basic_server.fg — HTTP server
+### 3.12.3 basic_server.av — HTTP server
 
-```forge
+```avra
 use @std.http.{server, route}
 
 server :3000 {
@@ -1253,17 +1253,17 @@ server :3000 {
 
 Test with curl:
 ```bash
-forge build && ./build/basic-server &
+avra build && ./build/basic-server &
 curl http://localhost:3000/health
 # {"status":"ok"}
-curl http://localhost:3000/hello/forge
-# {"message":"hello forge"}
+curl http://localhost:3000/hello/avra
+# {"message":"hello avra"}
 kill %1
 ```
 
-### 3.12.4 full_stack.fg — The motivating example
+### 3.12.4 full_stack.av — The motivating example
 
-```forge
+```avra
 use @std.model.{model, service}
 use @std.http.{server, route, mount}
 
@@ -1288,7 +1288,7 @@ server :8080 {
 
 Test with curl:
 ```bash
-forge build && ./build/full-stack &
+avra build && ./build/full-stack &
 sleep 1
 
 # Health check
@@ -1296,23 +1296,23 @@ curl http://localhost:8080/health
 # {"status":"ok","count":0}
 
 # Create todos
-curl -X POST http://localhost:8080/todos -d '{"title":"Learn Forge"}'
-# {"id":1,"title":"Learn Forge","done":false}
+curl -X POST http://localhost:8080/todos -d '{"title":"Learn Avra"}'
+# {"id":1,"title":"Learn Avra","done":false}
 
 curl -X POST http://localhost:8080/todos -d '{"title":"Build something"}'
 # {"id":2,"title":"Build something","done":false}
 
 # List todos
 curl http://localhost:8080/todos
-# [{"id":1,"title":"Learn Forge","done":false},{"id":2,...}]
+# [{"id":1,"title":"Learn Avra","done":false},{"id":2,...}]
 
 # Get single todo
 curl http://localhost:8080/todos/1
-# {"id":1,"title":"Learn Forge","done":false}
+# {"id":1,"title":"Learn Avra","done":false}
 
 # Update todo
 curl -X PUT http://localhost:8080/todos/1 -d '{"done":true}'
-# {"id":1,"title":"Learn Forge","done":true}
+# {"id":1,"title":"Learn Avra","done":true}
 
 # Delete todo
 curl -X DELETE http://localhost:8080/todos/2
@@ -1331,7 +1331,7 @@ kill %1
 
 #### Step 1: Package Manifest Loading (Week 1)
 - Define `package.toml` schema and parse with `toml` + `serde`
-- Read `[packages]` from `forge.toml`
+- Read `[packages]` from `avra.toml`
 - Load package manifests from bundled directory
 - Build keyword registry from package manifests
 - **Test: compiler recognizes `model` and `server` as keywords (even if they don't do anything yet)**
@@ -1345,9 +1345,9 @@ kill %1
 - **Test: package keyword programs parse without error, AST is correct**
 
 #### Step 3: Build @std/model Native Library (Week 2-3)
-- Create Rust crate for `forge_model` package
+- Create Rust crate for `avra_model` package
 - Implement SQLite operations (init, exec, query, insert, last_id)
-- Compile to static library (`libforge_model.a`)
+- Compile to static library (`libavra_model.a`)
 - Write C header file for the FFI interface
 - **Test: native library compiles, C test program can create/query SQLite**
 
@@ -1357,20 +1357,20 @@ kill %1
 - Generate CRUD functions that call into native library
 - Generate JSON serialization/deserialization for model types
 - Insert database init + migration into main function
-- Link `libforge_model.a` into final binary
-- **Test: `basic_model.fg` compiles and runs**
+- Link `libavra_model.a` into final binary
+- **Test: `basic_model.av` compiles and runs**
 
 #### Step 5: Service Codegen (Week 4-5)
 - Generate service wrapper functions with hook insertion
 - before/after hooks wrap the generated CRUD calls
 - Custom service methods compile as regular functions
-- **Test: `model_service.fg` compiles and runs**
+- **Test: `model_service.av` compiles and runs**
 
 #### Step 6: Build @std/http Native Library (Week 5-6)
-- Create Rust crate for `forge_http` package
+- Create Rust crate for `avra_http` package
 - Implement HTTP server (tiny_http), route registration, request handling
 - Path pattern matching with parameter extraction
-- Compile to static library (`libforge_http.a`)
+- Compile to static library (`libavra_http.a`)
 - **Test: native library compiles, C test program can start a server**
 
 #### Step 7: HTTP Codegen (Week 6-7)
@@ -1379,15 +1379,15 @@ kill %1
 - Generate route registration calls
 - Generate `mount` auto-endpoints (5 CRUD routes per mounted service)
 - Insert server startup call at end of main
-- Link `libforge_http.a` into final binary
-- **Test: `basic_server.fg` compiles and responds to curl**
+- Link `libavra_http.a` into final binary
+- **Test: `basic_server.av` compiles and responds to curl**
 
 #### Step 8: Integration + Full Stack (Week 7-8)
 - Wire model + http together — mounted services call into model CRUD
 - Request body parsing (JSON → model create/update arguments)
 - Response serialization (model instances → JSON)
 - Error handling (validation failures → 400, not found → 404)
-- **Test: `full_stack.fg` compiles and all curl tests pass**
+- **Test: `full_stack.av` compiles and all curl tests pass**
 
 #### Step 9: Polish + Edge Cases (Week 8-9)
 - Handle package import errors gracefully
@@ -1428,14 +1428,14 @@ Deferred to later phases:
 Phase 3 is complete when:
 
 1. All Phase 1 + Phase 2 tests still pass (no regressions)
-2. `basic_model.fg` creates, reads, updates, and deletes SQLite records
-3. `model_service.fg` runs before/after hooks correctly
-4. `basic_server.fg` responds to HTTP requests with correct JSON
-5. `full_stack.fg` — the motivating example — works end-to-end with curl
+2. `basic_model.av` creates, reads, updates, and deletes SQLite records
+3. `model_service.av` runs before/after hooks correctly
+4. `basic_server.av` responds to HTTP requests with correct JSON
+5. `full_stack.av` — the motivating example — works end-to-end with curl
 6. Package keywords are dynamically loaded from `package.toml` manifests
 7. Package native libraries are statically linked into the final binary
 8. The resulting binary is self-contained (no runtime dependencies, no external SQLite)
-9. Binary size for `full_stack.fg` is < 20MB
+9. Binary size for `full_stack.av` is < 20MB
 10. Server handles at least 100 requests/second on basic endpoints
 11. Error messages for package-related issues are clear and actionable
 12. `cargo test` passes all tests

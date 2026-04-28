@@ -14,7 +14,7 @@ set -uo pipefail
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 BOOTSTRAP_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 REPO_DIR=$(CDPATH= cd -- "$BOOTSTRAP_DIR/.." && pwd)
-FORGE_DIR="$REPO_DIR/forge"
+FORGE_DIR="$REPO_DIR/avra"
 BUILD_DIR="$BOOTSTRAP_DIR/build"
 REGRESS_DIR="$BOOTSTRAP_DIR/tests"
 SEED_LL="$BOOTSTRAP_DIR/seed/seed.ll"
@@ -27,7 +27,7 @@ BS2_O0="$BUILD_DIR/bs2_O0"
 BS2_ASAN="$BUILD_DIR/bs2_asan"
 BS2_DEBUG="$BUILD_DIR/bs2_debug"
 BS3="$BUILD_DIR/bs3"
-SRC_DIR="$BOOTSTRAP_DIR/packages/forgec/src"
+SRC_DIR="$BOOTSTRAP_DIR/packages/avrac/src"
 
 LLVM_PREFIX="${LLVM_PREFIX:-/opt/homebrew/opt/llvm}"
 LLVM_CONFIG="$LLVM_PREFIX/bin/llvm-config"
@@ -70,8 +70,8 @@ USAGE
 BUILD MODES
   --build              Rebuild stage1 (host → stage1 binary) + run all stage1 tests.
                        Same as scripts/test.sh but goes through this script.
-  --build-runtime      Compile forge/stdlib/runtime.c → build/runtime.o.
-  --build-bs2          Compile packages/forgec/src/main.av with stage1 → build/bs2.
+  --build-runtime      Compile avra/stdlib/runtime.c → build/runtime.o.
+  --build-bs2          Compile packages/avrac/src/main.av with stage1 → build/bs2.
   --build-O0           Build bs2 at -O0 (no optimization) for debuggability.
                        Makes lldb usable with breakpoints and variable inspection.
                        Output: build/bs2_O0.
@@ -80,13 +80,13 @@ BUILD MODES
                        parameters. Catches null propagation at the source.
                        Output: build/bs2_debug.
   --build-bs2-asan     Same as --build-bs2 but link with -fsanitize=address.
-  --build-bs3          Compile packages/forgec/src/main.av with bs2 → build/bs3.
+  --build-bs3          Compile packages/avrac/src/main.av with bs2 → build/bs3.
                        (The fixed-point self-host check.)
   --check-fixedpoint   Verify bs2 and bs3 emit byte-identical IR for
-                       packages/forgec/src/main.av. The single most important
+                       packages/avrac/src/main.av. The single most important
                        self-hosting invariant — if this fails, a recent
                        commit broke the bootstrap chain. Wired into the
-                       pre-commit hook when packages/forgec/src/ is touched.
+                       pre-commit hook when packages/avrac/src/ is touched.
 
 RUN MODES
   --run    <file.av>   Compile <file.av> with bs2, link, run. Prints stdout.
@@ -155,7 +155,7 @@ SEED MANAGEMENT
                          a full 'make update-seed' because it skips the
                          verify-seed rebuild. Use when iterating on source.
   --seed-sigs            Compare function signatures (parameter counts)
-                         between seed/seed.ll and packages/forgec/src/**/*.av. Reports
+                         between seed/seed.ll and packages/avrac/src/**/*.av. Reports
                          mismatches, new functions, and removed functions.
                          Catches the most common seed staleness issue:
                          parameter count changes that cause silent corruption.
@@ -278,7 +278,7 @@ ensure_bs2() {
   ensure_seed "${1:-}"
   if [ "${1:-}" = "force" ] || source_newer_than "$BS2" \
      || [ "$SEED_LL" -nt "$BS2" ]; then
-    log "compiling packages/forgec/src/main.av with seed compiler"
+    log "compiling packages/avrac/src/main.av with seed compiler"
     if "$SEED_BIN" compile "$SRC_DIR/main.av" >"$BUILD_DIR/bs2.codegen.log" 2>&1; then
       log "linking $BS2"
       link_ll "$SRC_DIR/main.av.ll" "$BS2" "$BUILD_DIR/bs2.link.log"
@@ -295,7 +295,7 @@ ensure_bs2() {
         || die "seed -O0 link failed"
       if "$BUILD_DIR/seed_o0" compile "$SRC_DIR/main.av" >"$BUILD_DIR/bs2.codegen.log" 2>&1; then
         warn "LLVM OPTIMIZATION BUG: seed works at -O0 but crashes at -O2"
-        warn "This is an llc -O2 miscompilation on $(uname -m), not a Forge bug."
+        warn "This is an llc -O2 miscompilation on $(uname -m), not a Avra bug."
         warn "Fix: run 'make update-seed' to regenerate the seed IR, which"
         warn "      typically produces a different IR pattern that avoids the bug."
         warn ""
@@ -329,7 +329,7 @@ ensure_bs2_O0() {
   ensure_seed
   if source_newer_than "$BS2_O0" \
      || [ "$SEED_LL" -nt "$BS2_O0" ]; then
-    log "compiling packages/forgec/src/main.av with seed compiler (for -O0 build)"
+    log "compiling packages/avrac/src/main.av with seed compiler (for -O0 build)"
     if ! "$SEED_BIN" compile "$SRC_DIR/main.av" >"$BUILD_DIR/bs2_O0.codegen.log" 2>&1; then
       cat "$BUILD_DIR/bs2_O0.codegen.log" >&2
       die "bs2_O0 codegen failed"
@@ -344,7 +344,7 @@ ensure_bs2_debug() {
   ensure_seed
   if source_newer_than "$BS2_DEBUG" \
      || [ "$SEED_LL" -nt "$BS2_DEBUG" ]; then
-    log "compiling packages/forgec/src/main.av with seed compiler (--debug-null)"
+    log "compiling packages/avrac/src/main.av with seed compiler (--debug-null)"
     if ! "$SEED_BIN" compile --debug-null "$SRC_DIR/main.av" >"$BUILD_DIR/bs2_debug.codegen.log" 2>&1; then
       cat "$BUILD_DIR/bs2_debug.codegen.log" >&2
       die "bs2_debug codegen failed"
@@ -359,7 +359,7 @@ ensure_bs2_asan() {
   ensure_seed
   ensure_runtime_asan
   if [ ! -x "$BS2_ASAN" ] || [ "$BS2" -nt "$BS2_ASAN" ]; then
-    log "compiling packages/forgec/src/main.av with seed (for ASan)"
+    log "compiling packages/avrac/src/main.av with seed (for ASan)"
     "$SEED_BIN" compile "$SRC_DIR/main.av" >"$BUILD_DIR/bs2_asan.codegen.log" 2>&1 \
       || { cat "$BUILD_DIR/bs2_asan.codegen.log" >&2; die "bs2_asan codegen failed"; }
     log "linking $BS2_ASAN with -fsanitize=address"
@@ -373,7 +373,7 @@ ensure_bs2_asan() {
 
 ensure_bs3() {
   ensure_bs2
-  log "compiling packages/forgec/src/main.av with bs2 → $BS3"
+  log "compiling packages/avrac/src/main.av with bs2 → $BS3"
   if ! "$BS2" compile "$SRC_DIR/main.av" >"$BUILD_DIR/bs3.codegen.log" 2>&1; then
     cat "$BUILD_DIR/bs3.codegen.log" >&2
     die "bs3 codegen failed (bs2 cannot self-compile)"
@@ -464,7 +464,7 @@ mode_build_bs2() {
       err ""
       err "LLVM OPTIMIZATION BUG DETECTED"
       err "bs2 works at -O0 but crashes at -O2."
-      err "This is an llc -O2 miscompilation on $(uname -m), not a Forge bug."
+      err "This is an llc -O2 miscompilation on $(uname -m), not a Avra bug."
       err ""
       err "Fix: run 'make update-seed' to regenerate the seed IR."
       err "The new IR pattern typically avoids the LLVM bug."
@@ -547,17 +547,17 @@ mode_build_bs2_asan() { ensure_bs2_asan; ok "$BS2_ASAN"; }
 mode_build_bs3()      { ensure_bs3;      ok "$BS3"; }
 
 # Verify bootstrap reaches its self-host fixed point: bs2 and bs3 must
-# emit byte-identical IR for the same input (packages/forgec/src/main.av).
+# emit byte-identical IR for the same input (packages/avrac/src/main.av).
 # If this fails, self-hosting is broken — the bug is somewhere between
 # bs2 and bs3 (one generation diverged from the previous).
 mode_check_fixedpoint() {
   ensure_bs2
   ensure_bs3
-  log "compiling packages/forgec/src/main.av with bs2"
+  log "compiling packages/avrac/src/main.av with bs2"
   "$BS2" compile "$SRC_DIR/main.av" >/dev/null 2>&1 \
     || die "bs2 failed to compile bootstrap source"
   cp "$SRC_DIR/main.av.ll" "$BUILD_DIR/fp_bs2.ll"
-  log "compiling packages/forgec/src/main.av with bs3"
+  log "compiling packages/avrac/src/main.av with bs3"
   "$BS3" compile "$SRC_DIR/main.av" >/dev/null 2>&1 \
     || die "bs3 failed to compile bootstrap source"
   cp "$SRC_DIR/main.av.ll" "$BUILD_DIR/fp_bs3.ll"

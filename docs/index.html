@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Forge Language Specification</title>
-  <meta name="description" content="Forge - A compiled, agent-oriented programming language for building services, APIs, and tools.">
+  <title>Avra Language Specification</title>
+  <meta name="description" content="Avra - A compiled, agent-oriented programming language for building services, APIs, and tools.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -26,7 +26,7 @@
       .then(md => {
         document.getElementById('content').innerHTML = marked.parse(md);
 
-        // Add syntax highlighting class hints for forge code blocks
+        // Add syntax highlighting class hints for avra code blocks
         document.querySelectorAll('pre code').forEach(block => {
           block.parentElement.classList.add('code-block');
         });

@@ -10,10 +10,10 @@
 
 No separate doc-writing pass. No markdown that drifts from reality. The compiler, examples, and annotations ARE the documentation. Two commands, one system:
 
-- **`forge lang`** — Language documentation. Always shows Forge language features, types, syntax, errors. Works anywhere, no project needed.
-- **`forge docs`** — Project documentation. Shows docs for the user's own code. Falls through to `forge lang` when no project symbol matches.
+- **`avra lang`** — Language documentation. Always shows Avra language features, types, syntax, errors. Works anywhere, no project needed.
+- **`avra docs`** — Project documentation. Shows docs for the user's own code. Falls through to `avra lang` when no project symbol matches.
 
-The same `///` annotation format powers both. The doc system isn't just for the language — it's a **language feature** that every Forge project gets for free.
+The same `///` annotation format powers both. The doc system isn't just for the language — it's a **language feature** that every Avra project gets for free.
 
 ---
 
@@ -44,7 +44,7 @@ pub trait LanguageFeature {
     fn short(&self) -> &'static str { self.metadata().description }
 
     /// Symbol(s) this feature introduces: "|>", "?.", "<-"
-    /// Enables symbol lookup: `forge docs "?."` → null_safety
+    /// Enables symbol lookup: `avra docs "?."` → null_safety
     fn symbols(&self) -> &[&'static str] { &[] }
 
     // ... existing methods ...
@@ -53,11 +53,11 @@ pub trait LanguageFeature {
 
 This gives us the **feature index**, **symbol lookup table**, and **compact spec** for free.
 
-### Layer 2: Annotated Examples (from `examples/*.fg`)
+### Layer 2: Annotated Examples (from `examples/*.av`)
 
 Example files are already tests. We add a structured annotation format:
 
-```forge
+```avra
 /// @title: Basic closure syntax
 /// @section: syntax
 /// @tags: functions, first-class
@@ -101,7 +101,7 @@ print(double(5))
 
 **Prose comments** (no `@` prefix) become descriptive text:
 
-```forge
+```avra
 /// Closures capture variables from their enclosing scope.
 /// This means they can read and modify variables defined
 /// outside their body.
@@ -138,11 +138,11 @@ One line per method. The signature is already known from the type system.
 
 ### Layer 4: Error Codes (from `CompileError`)
 
-Already exists via `forge explain`. We unify it into the doc system:
+Already exists via `avra explain`. We unify it into the doc system:
 
-- Each error code gets an addressable path: `forge.errors.F0012`
+- Each error code gets an addressable path: `avra.errors.F0012`
 - `CompileError::render()` help text becomes the doc content
-- Error example files (`error_messages/examples/*.fg`) become the usage examples
+- Error example files (`error_messages/examples/*.av`) become the usage examples
 - Cross-referenced: features link to errors they can produce
 
 ### Layer 5: Grammar Rules (from `syntax()` on LanguageFeature)
@@ -180,8 +180,8 @@ compiler/features/closures/
 ├── parser.rs
 ├── codegen.rs
 ├── examples/
-│   ├── basic.fg
-│   └── captures.fg
+│   ├── basic.av
+│   └── captures.av
 └── docs/
     ├── with_pipes.md        # "Closures + Pipe Operator"
     └── async_patterns.md    # "Closures in Spawn/Channel patterns"
@@ -199,7 +199,7 @@ level: intermediate
 
 The pipe operator and closures compose naturally...
 
-​```forge
+​```avra
 [1, 2, 3]
   |> .map((x) -> x * 2)
   |> .filter((x) -> x > 3)
@@ -214,84 +214,84 @@ Code blocks with `/// expect:` in composition docs **are also tested** by the te
 
 ## Two Commands, One System
 
-### `forge lang` — Language Documentation
+### `avra lang` — Language Documentation
 
-Always shows Forge language docs. Works anywhere, no project needed. Powered by the compiler's own feature registry, intrinsic registry, error system, and annotated examples.
+Always shows Avra language docs. Works anywhere, no project needed. Powered by the compiler's own feature registry, intrinsic registry, error system, and annotated examples.
 
 ```bash
 # Feature docs
-forge lang closures              # Full feature page (assembled)
-forge lang closures.syntax       # Just the syntax section
-forge lang closures.examples     # Just the examples
-forge lang closures --short      # One-liner: (params) -> body
+avra lang closures              # Full feature page (assembled)
+avra lang closures.syntax       # Just the syntax section
+avra lang closures.examples     # Just the examples
+avra lang closures --short      # One-liner: (params) -> body
 
 # Symbol lookup
-forge lang "|>"                  # → pipe_operator
-forge lang "?."                  # → null_safety
-forge lang "defer"               # → defer
-forge lang "<-"                  # → channels
+avra lang "|>"                  # → pipe_operator
+avra lang "?."                  # → null_safety
+avra lang "defer"               # → defer
+avra lang "<-"                  # → channels
 
 # Type/method docs
-forge lang string                # All string methods
-forge lang string.split          # Specific method signature + examples
-forge lang list                  # All list methods
+avra lang string                # All string methods
+avra lang string.split          # Specific method signature + examples
+avra lang list                  # All list methods
 
 # Error docs
-forge lang F0012                 # Error explanation + examples
-forge lang errors                # All error codes, grouped
+avra lang F0012                 # Error explanation + examples
+avra lang errors                # All error codes, grouped
 
 # Search
-forge lang search "iterate"      # Semantic search across all lang docs
-forge lang search --tag "async"  # Filter by tag
+avra lang search "iterate"      # Semantic search across all lang docs
+avra lang search --tag "async"  # Filter by tag
 
 # Index
-forge lang --all                 # List everything in the language
-forge lang --features            # Feature index (like `forge features`)
-forge lang --types               # All types and their methods
-forge lang --errors              # All error codes
+avra lang --all                 # List everything in the language
+avra lang --features            # Feature index (like `avra features`)
+avra lang --types               # All types and their methods
+avra lang --errors              # All error codes
 
 # Compact formats
-forge lang --llm                 # Entire lang spec, ~100 lines, <4K tokens
-forge lang --llm=full            # With one example per feature, ~8K tokens
-forge lang --grammar             # BNF-style grammar, assembled from all features
-forge lang --cheatsheet          # Printable cheatsheet format
+avra lang --llm                 # Entire lang spec, ~100 lines, <4K tokens
+avra lang --llm=full            # With one example per feature, ~8K tokens
+avra lang --grammar             # BNF-style grammar, assembled from all features
+avra lang --cheatsheet          # Printable cheatsheet format
 
 # Website
-forge lang --site                # Generate language reference website
+avra lang --site                # Generate language reference website
 ```
 
-### `forge docs` — Project Documentation
+### `avra docs` — Project Documentation
 
 Shows docs for the user's own code. Extracts from `///` annotations on functions, structs, enums, and modules in the current project.
 
 ```bash
 # Project symbols
-forge docs                       # Project overview (all documented symbols)
-forge docs area                  # User's function
-forge docs Point                 # User's struct
-forge docs Color.Red             # User's enum variant
-forge docs my_module             # User's module
+avra docs                       # Project overview (all documented symbols)
+avra docs area                  # User's function
+avra docs Point                 # User's struct
+avra docs Color.Red             # User's enum variant
+avra docs my_module             # User's module
 
 # Project formats
-forge docs --site                # Generate project doc site
-forge docs --llm                 # Project API in compact LLM format
-forge docs --llm --with-lang     # Project API + language spec together
-forge docs --validate            # Check doc coverage for this project
+avra docs --site                # Generate project doc site
+avra docs --llm                 # Project API in compact LLM format
+avra docs --llm --with-lang     # Project API + language spec together
+avra docs --validate            # Check doc coverage for this project
 
 # Search
-forge docs search "filter"       # Search project symbols
+avra docs search "filter"       # Search project symbols
 ```
 
 ### Fallthrough Behavior
 
-`forge docs` resolves in this order:
+`avra docs` resolves in this order:
 
 1. **Project symbols** — functions, structs, enums, modules in the current project
-2. **Language features** — falls through to `forge lang` if no project match
+2. **Language features** — falls through to `avra lang` if no project match
 3. **Hint shown** when falling through:
 
 ```
-$ forge docs closures
+$ avra docs closures
 
   (No project symbol "closures" — showing language docs)
 
@@ -303,27 +303,27 @@ $ forge docs closures
 When there IS ambiguity (user symbol shadows a language feature):
 
 ```
-$ forge docs filter
+$ avra docs filter
 
   Project: fn filter(items: list<int>, min: int) -> list<int>
   ─────────────────────────────────────────────────────────────
   /// Filter items above a minimum threshold.
   ...
 
-  See also: forge lang list.filter
+  See also: avra lang list.filter
 ```
 
-`forge lang` never looks at project code. It always shows language docs.
+`avra lang` never looks at project code. It always shows language docs.
 
 ### LLM Format Composition
 
 The `--llm` flag works on both commands and they compose:
 
 ```bash
-forge lang --llm              # Language spec only (~4K tokens)
-forge docs --llm              # Project API only
-forge docs --llm --with-lang  # Both together — drop into context and an LLM
-                              # knows Forge AND your project's API
+avra lang --llm              # Language spec only (~4K tokens)
+avra docs --llm              # Project API only
+avra docs --llm --with-lang  # Both together — drop into context and an LLM
+                              # knows Avra AND your project's API
 ```
 
 ---
@@ -335,7 +335,7 @@ forge docs --llm --with-lang  # Both together — drop into context and an LLM
 #### CLI Output Formatting
 
 ```
-$ forge docs closures
+$ avra docs closures
 
   Closures                                          stable | since 0.2.0
   ─────────────────────────────────────────────────────────────────────
@@ -371,7 +371,7 @@ $ forge docs closures
 
 ### LLM Compact Format
 
-`forge docs --llm` generates an LLM-optimized spec. Design goals:
+`avra docs --llm` generates an LLM-optimized spec. Design goals:
 - Entire language in <4K tokens
 - Every feature represented
 - Syntax is unambiguous
@@ -380,7 +380,7 @@ $ forge docs closures
 Format:
 
 ```
-# Forge Language Spec
+# Avra Language Spec
 # Types: int, float, string, bool, null, list<T>, map<K,V>, fn<(A)->R>
 # Truthy: everything except false, null, 0, ""
 
@@ -485,14 +485,14 @@ spec "feature name" {
 This format is:
 - **Complete**: every feature represented
 - **Minimal**: no filler, just syntax + one-line comments
-- **Unambiguous**: a human or LLM can write Forge after reading this
+- **Unambiguous**: a human or LLM can write Avra after reading this
 - **Auto-generated**: assembled from `syntax()`, `short()`, and example files
 
 The `--llm=full` variant adds one real example per feature (pulled from the first example in each feature's `examples/` dir).
 
 ### Static Website
 
-`forge docs --site` generates a static site to `docs/site/`:
+`avra docs --site` generates a static site to `docs/site/`:
 
 ```
 docs/site/
@@ -520,7 +520,7 @@ Built with a minimal built-in template engine (no external SSG dependency). The 
 
 Features on the website:
 - **Client-side search** via pre-built search index
-- **Syntax highlighting** for Forge code (we define the grammar)
+- **Syntax highlighting** for Avra code (we define the grammar)
 - **Run button** on examples (links to a future playground)
 - **Version selector** (when we have versions)
 - **Dark/light mode**
@@ -531,13 +531,13 @@ Features on the website:
 
 ## Doc Comments as a Language Feature
 
-The `///` annotation system is not internal tooling — it's a **first-class language feature** that every Forge project gets. The same annotations that document the language also document user code.
+The `///` annotation system is not internal tooling — it's a **first-class language feature** that every Avra project gets. The same annotations that document the language also document user code.
 
 ### How It Works
 
 The parser preserves `///` comments and attaches them to the next declaration:
 
-```forge
+```avra
 /// Calculate the area of a circle.
 /// @param radius - The radius in meters
 /// @returns The area in square meters
@@ -578,7 +578,7 @@ Doc comments attach to:
 
 All file-level and inline annotations from the language doc system work identically in user code:
 
-```forge
+```avra
 /// @title: Authentication utilities
 /// @section: auth
 /// @tags: security, jwt, session
@@ -596,12 +596,12 @@ fn create_token(user: User, ttl: int) -> string {
 }
 ```
 
-### What `forge docs` Extracts
+### What `avra docs` Extracts
 
-For a project with the code above, `forge docs` auto-generates:
+For a project with the code above, `avra docs` auto-generates:
 
 ```
-$ forge docs create_token
+$ avra docs create_token
 
   fn create_token(user: User, ttl: int) -> string
   ────────────────────────────────────────────────
@@ -626,12 +626,12 @@ $ forge docs create_token
 
 ### Project Doc Site
 
-`forge docs --site` generates a static site with:
+`avra docs --site` generates a static site with:
 - **Auto-discovered modules** from file structure
 - **All documented symbols** grouped by module/file
 - **Cross-references** between types (User links to User's page)
 - **Search** across all project symbols
-- **Language reference** section (embedded from `forge lang`)
+- **Language reference** section (embedded from `avra lang`)
 
 ```
 project-docs/
@@ -654,13 +654,13 @@ project-docs/
 
 ### Why This Matters
 
-Most languages bolt on doc generators after the fact (JSDoc, RustDoc, GoDoc). Forge bakes it in from day one:
+Most languages bolt on doc generators after the fact (JSDoc, RustDoc, GoDoc). Avra bakes it in from day one:
 
 1. **Same comment format everywhere** — language docs and user docs use identical `///` syntax
-2. **Zero config** — `forge docs` just works on any `.fg` file
-3. **Tested docs** — `/// expect:` comments in doc examples are run by `forge test`
-4. **LLM-ready** — `forge docs --llm` gives any AI instant context on your project
-5. **Composable** — `forge docs --llm --with-lang` = complete context for AI-assisted development
+2. **Zero config** — `avra docs` just works on any `.av` file
+3. **Tested docs** — `/// expect:` comments in doc examples are run by `avra test`
+4. **LLM-ready** — `avra docs --llm` gives any AI instant context on your project
+5. **Composable** — `avra docs --llm --with-lang` = complete context for AI-assisted development
 
 ---
 
@@ -668,7 +668,7 @@ Most languages bolt on doc generators after the fact (JSDoc, RustDoc, GoDoc). Fo
 
 Everything is addressable via dot-paths. The two commands have separate resolution chains:
 
-### `forge lang` Resolution (Language)
+### `avra lang` Resolution (Language)
 
 ```
 closures                          → feature overview
@@ -701,7 +701,7 @@ Resolution order:
 6. Package component match (`@http.server`)
 7. Fuzzy search fallback
 
-### `forge docs` Resolution (Project)
+### `avra docs` Resolution (Project)
 
 ```
 area                              → user's function
@@ -716,14 +716,14 @@ Resolution order:
 1. Exact function/struct/enum name match
 2. Module name match (from file structure)
 3. Qualified path (`module.symbol`)
-4. **Fallthrough to `forge lang`** resolution (with hint)
+4. **Fallthrough to `avra lang`** resolution (with hint)
 5. Fuzzy search fallback
 
 ---
 
 ## Package Documentation
 
-Packages are documented via the same system, extracted from `package.toml` + `package.fg`:
+Packages are documented via the same system, extracted from `package.toml` + `package.av`:
 
 ### From `package.toml`:
 ```toml
@@ -736,8 +736,8 @@ description = "HTTP server components"
 description = "HTTP server with routing"
 ```
 
-### From `package.fg`:
-```forge
+### From `package.av`:
+```avra
 /// @title: HTTP Server
 /// @section: components
 /// The server component provides HTTP routing and serving.
@@ -760,7 +760,7 @@ component server(__tpl_name) {
 Rendered:
 
 ```
-$ forge docs @http.server
+$ avra docs @http.server
 
   @http.server                                      std-http v0.1.0
   ─────────────────────────────────────────────────────────────────
@@ -789,10 +789,10 @@ $ forge docs @http.server
 
 ## Doc Validation
 
-`forge docs --validate` checks completeness:
+`avra docs --validate` checks completeness:
 
 ```
-$ forge docs --validate
+$ avra docs --validate
 
   Documentation Coverage Report
   ─────────────────────────────
@@ -801,7 +801,7 @@ $ forge docs --validate
     ✓ closures: 4 examples, 2 sections, syntax defined
     ✓ pipe_operator: 3 examples, 1 section, syntax defined
     ⚠ channels: no @since annotation
-    ✗ table_literal: missing examples/basic.fg
+    ✗ table_literal: missing examples/basic.av
 
   Types: 5/5 documented ✓
     ✓ string: 6 methods documented
@@ -825,49 +825,49 @@ Runs in CI. Blocks merge if coverage drops below threshold.
 
 ## Implementation Plan
 
-### Phase 1: `forge lang` — Annotation Parser + CLI Renderer
-1. Build annotation parser that extracts `@title`, `@section`, `@note`, etc. from `.fg` files
+### Phase 1: `avra lang` — Annotation Parser + CLI Renderer
+1. Build annotation parser that extracts `@title`, `@section`, `@note`, etc. from `.av` files
 2. Extend `LanguageFeature` trait with `syntax()`, `short()`, `symbols()`
-3. Implement `forge lang <feature>` CLI command — assembles and renders feature pages
-4. Implement `forge lang <symbol>` — symbol/keyword lookup
-5. Implement `forge lang --all` — index of everything
+3. Implement `avra lang <feature>` CLI command — assembles and renders feature pages
+4. Implement `avra lang <symbol>` — symbol/keyword lookup
+5. Implement `avra lang --all` — index of everything
 
-### Phase 2: `forge lang` — Type + Intrinsic Extraction
+### Phase 2: `avra lang` — Type + Intrinsic Extraction
 1. Add `.doc()` builder on intrinsic registration
-2. Implement `forge lang <type>` and `forge lang <type>.<method>`
-3. Wire error codes into doc system: `forge lang F0012`
+2. Implement `avra lang <type>` and `avra lang <type>.<method>`
+3. Wire error codes into doc system: `avra lang F0012`
 
-### Phase 3: `forge lang` — Compact Formats
-1. Implement `forge lang --llm` (auto-assembled compact spec)
-2. Implement `forge lang --grammar` (BNF from syntax rules)
-3. Implement `forge lang --cheatsheet`
-4. Implement `forge lang search`
+### Phase 3: `avra lang` — Compact Formats
+1. Implement `avra lang --llm` (auto-assembled compact spec)
+2. Implement `avra lang --grammar` (BNF from syntax rules)
+3. Implement `avra lang --cheatsheet`
+4. Implement `avra lang search`
 
-### Phase 4: `forge docs` — User Code Documentation
+### Phase 4: `avra docs` — User Code Documentation
 1. Parser preserves `///` comments and attaches to next declaration (fn, struct, enum, let)
 2. Extract `@param`, `@returns`, `@doc` annotations from user code
 3. Build project symbol index from parsed AST
-4. Implement `forge docs <symbol>` — project symbol lookup
-5. Implement `forge docs` — project overview
-6. Implement fallthrough to `forge lang` when no project match
-7. Implement `forge docs --llm` and `forge docs --llm --with-lang`
+4. Implement `avra docs <symbol>` — project symbol lookup
+5. Implement `avra docs` — project overview
+6. Implement fallthrough to `avra lang` when no project match
+7. Implement `avra docs --llm` and `avra docs --llm --with-lang`
 
-### Phase 5: `forge docs --validate` + `forge lang --validate`
-1. Implement `forge lang --validate` — checks language doc coverage (features, types, errors)
-2. Implement `forge docs --validate` — checks project doc coverage (exported symbols)
+### Phase 5: `avra docs --validate` + `avra lang --validate`
+1. Implement `avra lang --validate` — checks language doc coverage (features, types, errors)
+2. Implement `avra docs --validate` — checks project doc coverage (exported symbols)
 3. Coverage threshold enforcement
 
 ### Phase 6: Website Generation
 1. Build minimal HTML template engine
-2. Implement `forge lang --site` — language reference website
-3. Implement `forge docs --site` — project doc site (with embedded lang reference)
+2. Implement `avra lang --site` — language reference website
+3. Implement `avra docs --site` — project doc site (with embedded lang reference)
 4. Search index generation
-5. Forge syntax highlighter (for the website)
+5. Avra syntax highlighter (for the website)
 
 ### Phase 7: Package Docs
-1. Extract docs from `package.fg` annotations
+1. Extract docs from `package.av` annotations
 2. Extract config schema docs
-3. `forge lang @namespace.component` resolution
+3. `avra lang @namespace.component` resolution
 
 ---
 
@@ -880,21 +880,21 @@ The compiler already knows the entire language. External tools would require us 
 Because the example file is already a test. Adding annotations keeps everything co-located: the code, its expected output, and its documentation are one artifact. If the example breaks, the doc breaks. You can't have stale docs.
 
 ### Q: Won't the LLM compact format get stale?
-It's generated, not hand-written. `forge docs --llm` reads from the same source as everything else. It changes when features change.
+It's generated, not hand-written. `avra docs --llm` reads from the same source as everything else. It changes when features change.
 
 ### Q: How do we handle features with no examples?
-`forge docs --validate` catches this. A feature without examples is undocumented, period. The status system already tracks this (Draft = no tests = no docs).
+`avra docs --validate` catches this. A feature without examples is undocumented, period. The status system already tracks this (Draft = no tests = no docs).
 
 ### Q: What about non-feature concepts (e.g., "how does scoping work")?
 These go in composition docs (`features/<relevant>/docs/`) or a top-level `docs/concepts/` directory. They're the only hand-written docs. The bar is: if it can't be demonstrated in an example, it gets a composition doc.
 
-### Q: Why `forge lang` and `forge docs` instead of one command?
-Because they serve different audiences at different times. A user learning Forge types `forge lang closures`. A user documenting their API types `forge docs`. A user who can't remember which namespace something is in just types `forge docs thing` and gets an answer either way (thanks to fallthrough). Two commands, one system, zero confusion.
+### Q: Why `avra lang` and `avra docs` instead of one command?
+Because they serve different audiences at different times. A user learning Avra types `avra lang closures`. A user documenting their API types `avra docs`. A user who can't remember which namespace something is in just types `avra docs thing` and gets an answer either way (thanks to fallthrough). Two commands, one system, zero confusion.
 
-### Q: Can `forge docs` work without a project?
-Yes — it just falls through to `forge lang` for everything. So `forge docs closures` outside a project is identical to `forge lang closures`. The UX is seamless.
+### Q: Can `avra docs` work without a project?
+Yes — it just falls through to `avra lang` for everything. So `avra docs closures` outside a project is identical to `avra lang closures`. The UX is seamless.
 
-### Q: How does `forge docs search` work?
+### Q: How does `avra docs search` work?
 We build a search index from:
 - Feature names, descriptions, tags
 - Annotation `@tags`

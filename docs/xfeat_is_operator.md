@@ -1,4 +1,4 @@
-# Forge — `is` Keyword (TDD)
+# Avra — `is` Keyword (TDD)
 
 `is` is a boolean expression that tests whether a value matches a pattern. It's the inline version of `match` — returns true/false instead of branching.
 
@@ -8,7 +8,7 @@ Desugars to: `match value { pattern -> true, _ -> false }`
 
 ## Test 1: Type variant check
 
-```forge
+```avra
 fn divide(a: int, b: int) -> Result<int, string> {
   if b == 0 { Err("division by zero") } else { Ok(a / b) }
 }
@@ -22,7 +22,7 @@ fn main() {
 
 ## Test 2: Null check
 
-```forge
+```avra
 fn main() {
   let a: string? = "hello"
   let b: string? = null
@@ -36,7 +36,7 @@ fn main() {
 
 ## Test 3: Enum variant
 
-```forge
+```avra
 enum Status { pending, active, done, failed }
 
 fn main() {
@@ -50,7 +50,7 @@ fn main() {
 
 ## Test 4: Negation with `is not`
 
-```forge
+```avra
 fn main() {
   let x: string? = "hello"
 
@@ -64,7 +64,7 @@ fn main() {
 
 ## Test 5: In if conditions
 
-```forge
+```avra
 fn handle(result: Result<int, string>) -> string {
   if result is Ok {
     "success"
@@ -81,7 +81,7 @@ fn main() {
 
 ## Test 6: In filter/pipes
 
-```forge
+```avra
 fn main() {
   let items: List<int?> = [1, null, 3, null, 5]
 
@@ -96,7 +96,7 @@ fn main() {
 
 ## Test 7: In while loops
 
-```forge
+```avra
 fn main() {
   mut attempts = 0
   mut result: Result<int, string> = Err("retry")
@@ -114,7 +114,7 @@ fn main() {
 
 ## Test 8: With binding (is + let pattern)
 
-```forge
+```avra
 fn main() {
   let result: Result<int, string> = Ok(42)
 
@@ -132,7 +132,7 @@ fn main() {
 
 ## Test 9: Chained with && and ||
 
-```forge
+```avra
 fn main() {
   let x: int? = 5
   let y: int? = null
@@ -145,7 +145,7 @@ fn main() {
 
 ## Test 10: Struct type check
 
-```forge
+```avra
 type Dog = { name: string, breed: string }
 type Cat = { name: string, indoor: bool }
 type Animal = Dog | Cat
@@ -238,7 +238,7 @@ fn emit_is(ctx: &mut CodegenCtx, expr: &IsExpr) -> Result<LLVMValue, Diagnostic>
 ### Feature Registration
 
 ```rust
-#[forge_feature(
+#[avra_feature(
     name = "Is Keyword",
     status = "draft",
     depends = ["pattern_matching", "types_core"],

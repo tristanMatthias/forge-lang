@@ -6,8 +6,8 @@
 
 ## Test 1.1: Get raw args
 
-```forge
-// test_args.fg
+```avra
+// test_args.av
 use @std.process
 
 fn main() {
@@ -17,7 +17,7 @@ fn main() {
 ```
 
 ```bash
-forge build test_args.fg -o test_args
+avra build test_args.av -o test_args
 ./test_args hello world --flag
 ```
 
@@ -30,8 +30,8 @@ world
 
 ## Test 1.2: Exit with code
 
-```forge
-// test_exit.fg
+```avra
+// test_exit.av
 use @std.process
 
 fn main() {
@@ -41,7 +41,7 @@ fn main() {
 ```
 
 ```bash
-forge build test_exit.fg -o test_exit
+avra build test_exit.av -o test_exit
 ./test_exit
 echo $?
 ```
@@ -54,7 +54,7 @@ No output — `println` never runs.
 
 ## Test 1.3: Exit zero
 
-```forge
+```avra
 fn main() {
   process.exit(0)
 }
@@ -74,7 +74,7 @@ Library package. No components. Just functions wrapping ANSI codes.
 
 ## Test 2.1: Colors
 
-```forge
+```avra
 use @std.term
 
 fn main() {
@@ -97,7 +97,7 @@ Output has ANSI codes:
 
 ## Test 2.2: Styles
 
-```forge
+```avra
 fn main() {
   println(term.bold("important"))
   println(term.italic("emphasis"))
@@ -108,7 +108,7 @@ fn main() {
 
 ## Test 2.3: Composing styles
 
-```forge
+```avra
 fn main() {
   println(term.bold(term.red("critical error")))
   println(term.dim(term.yellow("minor warning")))
@@ -117,7 +117,7 @@ fn main() {
 
 ## Test 2.4: Strip colors when not a TTY
 
-```forge
+```avra
 fn main() {
   // When piped, colors are stripped automatically
   println(term.red("error"))
@@ -134,7 +134,7 @@ fn main() {
 
 ## Test 2.5: Spinner
 
-```forge
+```avra
 fn main() {
   let s = term.spinner("Compiling...")
   sleep(1s)
@@ -146,7 +146,7 @@ Shows animated spinner for 1 second, then replaces with done message.
 
 ## Test 2.6: Progress bar
 
-```forge
+```avra
 fn main() {
   let bar = term.progress(total: 100, label: "Building")
 
@@ -166,7 +166,7 @@ Build complete
 
 ## Test 2.7: Table formatting
 
-```forge
+```avra
 fn main() {
   term.table(table {
     feature     | status  | tests
@@ -189,7 +189,7 @@ Auto-aligns columns. Works with our `table` literal directly.
 
 ## Test 2.8: Styled table
 
-```forge
+```avra
 fn main() {
   term.table(table {
     feature     | status    | tests
@@ -220,7 +220,7 @@ fn main() {
 
 ## Test 3.1: Minimal CLI
 
-```forge
+```avra
 use @std.cli
 
 cli hello {
@@ -236,7 +236,7 @@ cli hello {
 ```
 
 ```bash
-forge build test_cli.fg -o hello
+avra build test_cli.av -o hello
 ./hello world
 ```
 
@@ -246,7 +246,7 @@ hello, world!
 
 ## Test 3.2: Auto-generated help
 
-```forge
+```avra
 cli greeter {
   version "1.0.0"
   description "Greets people"
@@ -285,7 +285,7 @@ greeter 1.0.0
 
 ## Test 3.3: Flags and options
 
-```forge
+```avra
 cli builder {
   version "0.1.0"
   description "Build tool"
@@ -304,7 +304,7 @@ cli builder {
 ```
 
 ```bash
-./builder main.fg
+./builder main.av
 ```
 
 ```
@@ -313,11 +313,11 @@ release: false
 ```
 
 ```bash
-./builder main.fg -r -o dist/app -V
+./builder main.av -r -o dist/app -V
 ```
 
 ```
-building main.fg
+building main.av
 output: dist/app
 release: true
 ```
@@ -345,7 +345,7 @@ release: true
 
 ## Test 3.4: Subcommands
 
-```forge
+```avra
 cli tool {
   version "0.1.0"
   description "Multi-command tool"
@@ -400,11 +400,11 @@ cli tool {
 ```
 
 ```bash
-./tool build main.fg -r
+./tool build main.av -r
 ```
 
 ```
-building main.fg release=true
+building main.av release=true
 ```
 
 ```bash
@@ -461,7 +461,7 @@ Exit code: 1
 ## Test 3.7: Unknown flag
 
 ```bash
-./tool build main.fg --turbo
+./tool build main.av --turbo
 ```
 
 ```
@@ -474,7 +474,7 @@ Exit code: 1
 
 ## Test 3.8: Optional positional args
 
-```forge
+```avra
 cli greeter {
   version "1.0.0"
 
@@ -504,7 +504,7 @@ hello alice
 
 ## Test 3.9: Multiple positional args
 
-```forge
+```avra
 cli copy {
   version "1.0.0"
 
@@ -527,7 +527,7 @@ copying a.txt to b.txt
 
 ## Test 3.10: Variadic args
 
-```forge
+```avra
 cli runner {
   version "1.0.0"
 
@@ -541,22 +541,22 @@ cli runner {
 ```
 
 ```bash
-./runner a.fg b.fg c.fg
+./runner a.av b.av c.av
 ```
 
 ```
 processing 3 files
-a.fg
-b.fg
-c.fg
+a.av
+b.av
+c.av
 ```
 
 ## Test 3.11: Nested subcommands
 
-```forge
-cli forge_cli {
+```avra
+cli avra_cli {
   version "0.1.0"
-  description "The Forge programming language"
+  description "The Avra programming language"
 
   command package {
     description "Package management"
@@ -582,7 +582,7 @@ cli forge_cli {
 ```
 
 ```bash
-./forge_cli package new my-redis
+./avra_cli package new my-redis
 ```
 
 ```
@@ -590,11 +590,11 @@ creating package: my-redis
 ```
 
 ```bash
-./forge_cli package --help
+./avra_cli package --help
 ```
 
 ```
-  forge_cli package
+  avra_cli package
 
   Package management
 
@@ -605,7 +605,7 @@ creating package: my-redis
 
 ## Test 3.12: Before/after hooks
 
-```forge
+```avra
 cli tool {
   version "1.0.0"
 
@@ -627,18 +627,18 @@ cli tool {
 ```
 
 ```bash
-./tool build main.fg -V
+./tool build main.av -V
 ```
 
 ```
 verbose mode on
-building main.fg
+building main.av
 done
 ```
 
 ## Test 3.13: Custom error handling
 
-```forge
+```avra
 cli tool {
   version "1.0.0"
 
@@ -670,7 +670,7 @@ cli tool {
 
 ## Test 3.14: CLI with term integration
 
-```forge
+```avra
 use @std.cli
 use @std.term
 
@@ -684,7 +684,7 @@ cli builder {
     run {
       let s = term.spinner(`Compiling ${file}...`)
 
-      let result = $"forge-compiler ${file}"
+      let result = $"avra-compiler ${file}"
       
       if result.code == 0 {
         s.done(term.green("✓") + ` compiled ${file}`)
@@ -725,21 +725,21 @@ version = "0.1.0"
 description = "Terminal colors, styles, spinners, and formatting"
 
 [native]
-library = "forge_term"
+library = "avra_term"
 ```
 
-## @std/term — package.fg
+## @std/term — package.av
 
-```forge
-extern fn forge_term_is_tty() -> bool
-extern fn forge_term_width() -> int
-extern fn forge_term_spinner_start(msg: string) -> int
-extern fn forge_term_spinner_done(id: int, msg: string)
-extern fn forge_term_progress_start(total: int, label: string) -> int
-extern fn forge_term_progress_update(id: int, current: int)
-extern fn forge_term_progress_done(id: int, msg: string)
+```avra
+extern fn avra_term_is_tty() -> bool
+extern fn avra_term_width() -> int
+extern fn avra_term_spinner_start(msg: string) -> int
+extern fn avra_term_spinner_done(id: int, msg: string)
+extern fn avra_term_progress_start(total: int, label: string) -> int
+extern fn avra_term_progress_update(id: int, current: int)
+extern fn avra_term_progress_done(id: int, msg: string)
 
-let is_tty = forge_term_is_tty()
+let is_tty = avra_term_is_tty()
 
 fn wrap(code: string, text: string) -> string {
   if is_tty { `\x1b[${code}m${text}\x1b[0m` } else { text }
@@ -761,29 +761,29 @@ export fn underline(text: string) -> string { wrap("4", text) }
 export fn strikethrough(text: string) -> string { wrap("9", text) }
 
 // Width
-export fn width() -> int { forge_term_width() }
+export fn width() -> int { avra_term_width() }
 
 // Spinner
 export type Spinner = { id: int }
 
 export fn spinner(msg: string) -> Spinner {
-  Spinner { id: forge_term_spinner_start(msg) }
+  Spinner { id: avra_term_spinner_start(msg) }
 }
 
 impl Spinner {
-  fn done(self, msg: string) { forge_term_spinner_done(self.id, msg) }
+  fn done(self, msg: string) { avra_term_spinner_done(self.id, msg) }
 }
 
 // Progress
 export type Progress = { id: int }
 
 export fn progress(total: int, label: string = "") -> Progress {
-  Progress { id: forge_term_progress_start(total, label) }
+  Progress { id: avra_term_progress_start(total, label) }
 }
 
 impl Progress {
-  fn update(self, current: int) { forge_term_progress_update(self.id, current) }
-  fn done(self, msg: string) { forge_term_progress_done(self.id, msg) }
+  fn update(self, current: int) { avra_term_progress_update(self.id, current) }
+  fn done(self, msg: string) { avra_term_progress_done(self.id, msg) }
 }
 
 // Table formatting
@@ -791,7 +791,7 @@ export fn print_table(data: List<any>) {
   // Auto-detect column widths, print aligned
   // Works directly with table literals since they're List<struct>
   // Native lib handles alignment and box drawing
-  forge_term_print_table(json.stringify(data))
+  avra_term_print_table(json.stringify(data))
 }
 ```
 
@@ -805,7 +805,7 @@ version = "0.1.0"
 description = "Declarative CLI framework"
 
 [native]
-library = "forge_cli"
+library = "avra_cli"
 
 [components.cli]
 kind = "block"
@@ -813,12 +813,12 @@ context = "top_level"
 body = "mixed"
 ```
 
-## @std/cli — package.fg
+## @std/cli — package.av
 
-```forge
-extern fn forge_cli_parse_args(schema_json: string, raw_args_json: string) -> string
-extern fn forge_cli_print_help(schema_json: string)
-extern fn forge_cli_print_version(name: string, version: string)
+```avra
+extern fn avra_cli_parse_args(schema_json: string, raw_args_json: string) -> string
+extern fn avra_cli_print_help(schema_json: string)
+extern fn avra_cli_print_version(name: string, version: string)
 
 component cli(name: string) {
   config {
@@ -861,17 +861,17 @@ component cli(name: string) {
 
     // Check for --help and --version first
     if raw.contains("--help") || raw.contains("-h") {
-      forge_cli_print_help(schema_json())
+      avra_cli_print_help(schema_json())
       process.exit(0)
     }
 
     if raw.contains("--version") || raw.contains("-v") {
-      forge_cli_print_version(name, config.version)
+      avra_cli_print_version(name, config.version)
       process.exit(0)
     }
 
     // Parse args against registered schema
-    let parsed = forge_cli_parse_args(schema_json(), json.stringify(raw))
+    let parsed = avra_cli_parse_args(schema_json(), json.stringify(raw))
     let result = json.parse(parsed)
 
     if result.error is string(err) {
@@ -889,18 +889,18 @@ component cli(name: string) {
 
 ## process additions — two new extern fns
 
-```forge
-// Added to @std/process package.fg
+```avra
+// Added to @std/process package.av
 
-extern fn forge_process_get_args() -> string
-extern fn forge_process_exit(code: int)
+extern fn avra_process_get_args() -> string
+extern fn avra_process_exit(code: int)
 
 export fn args() -> List<string> {
-  json.parse(forge_process_get_args())
+  json.parse(avra_process_get_args())
 }
 
 export fn exit(code: int) {
-  forge_process_exit(code)
+  avra_process_exit(code)
 }
 ```
 

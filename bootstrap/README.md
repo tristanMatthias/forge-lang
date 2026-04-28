@@ -1,10 +1,10 @@
-# Forge Bootstrap
+# Avra Bootstrap
 
 `bootstrap/` is the clean restart for self-hosting.
 
-It is intentionally separate from the legacy `forge/packages/forgec` tree, which contains bootstrap-era experiments, dead ends, and compatibility hacks. This project starts over with a minimal, production-quality compiler written in Forge and compiled by the existing Rust compiler until it can compile itself.
+It is intentionally separate from the legacy `avra/packages/avrac` tree, which contains bootstrap-era experiments, dead ends, and compatibility hacks. This project starts over with a minimal, production-quality compiler written in Avra and compiled by the existing Rust compiler until it can compile itself.
 
-The implementation strategy follows the front-end progression from *Crafting Interpreters*, adapted to Forge:
+The implementation strategy follows the front-end progression from *Crafting Interpreters*, adapted to Avra:
 
 - start with a scanner and stable token model
 - add a recursive-descent expression parser
@@ -19,7 +19,7 @@ The source language subset for this bootstrap lane stays intentionally small: lo
 
 The current milestones implement:
 
-- a standalone `tokens` command that scans Forge source and prints a stable token stream
+- a standalone `tokens` command that scans Avra source and prints a stable token stream
 - a standalone `expr` command that parses expressions and prints a normalized AST form
 - a standalone `program` command that parses statement files and prints a normalized AST form
 - a standalone `eval` command that evaluates expressions using the Chapter 7 tree-walk model
@@ -42,8 +42,8 @@ The everyday entry point is the `Makefile`:
 cd bootstrap
 make              # build the bootstrap compiler
 make test         # run regression suite + self-host fixed-point check
-make run FILE=examples/hello.fg
-                  # compile and run a Forge program
+make run FILE=examples/hello.av
+                  # compile and run a Avra program
 make selfhost     # verify bs2 and bs3 emit byte-identical IR
 make clean        # remove build artifacts
 make help         # list all targets
