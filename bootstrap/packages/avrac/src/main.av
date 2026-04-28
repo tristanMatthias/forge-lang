@@ -15,7 +15,9 @@ mod resolve
 mod codegen
 mod desugar
 mod cli
+mod coverage
 use cli.{cli_new, cli_add_command, cli_command_add_flag, cli_command_add_option, cli_command_add_arg, cli_parse, result_has_flag, result_get_option, result_get_arg}
+use coverage.{render_coverage}
 
 use parse.{parse_expression_source, parse_program_source}
 use core.ast.{render_expr, render_stmt_list, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType}
@@ -739,29 +741,29 @@ fn main() {
                 fail("link failed")
             }
 
-            // Run the instrumented binary, capturing stdout for visibility.
+            // Run the instrumented binary directly so its stdout streams to
+            // the user. We pass LLVM_PROFILE_FILE through the env-options
+            // payload of avra_process_forward (avra_shell_exec would buffer
+            // the entire output and can lose lines on very large suites).
             avra_shell_exec("rm -f ${profraw}")
-            let run_out = avra_shell_exec("LLVM_PROFILE_FILE=${profraw} ${bin_path} 2>&1")
-            println(run_out.trim())
+            let run_opts = "{\"env\":{\"LLVM_PROFILE_FILE\":\"${profraw}\"}}"
+            let run_rc = avra_process_forward(bin_path, "[]", run_opts)
+            if run_rc != 0 { eprintln("test binary exited with code ${string(run_rc)}") }
 
             // Merge profraw → profdata.
             let merge_out = avra_shell_exec("${llvm_prefix}/bin/llvm-profdata merge -sparse -o ${profdata} ${profraw} 2>&1")
             if merge_out.length > 0 { eprintln(merge_out.trim()) }
 
-            // Dump per-function counts. llvm-cov can't produce a region-level
-            // report here because we don't emit the LLVM __llvm_covmap section
-            // — we have our own ${cov_dir}/_test.av.covmap.json instead.
-            // A full Avra-side renderer that joins covmap.json + this dump
-            // is tracked separately; for now print the raw function stats so
-            // the pipeline is end-to-end verifiable.
-            println("")
-            println("== coverage (per-function counts) ==")
-            let report = avra_shell_exec("${llvm_prefix}/bin/llvm-profdata show ${profdata} 2>&1")
-            println(report.trim())
+            // Dump profdata to text and hand off to the Avra-side renderer
+            // (coverage::render_coverage). The renderer joins our codegen-
+            // emitted covmap.json with the per-function counts to produce
+            // line/branch/MC-DC stats and an optional LCOV file.
+            let dump_path = "${cov_dir}/_test.profdata.txt"
+            avra_shell_exec("${llvm_prefix}/bin/llvm-profdata show --all-functions --counts ${profdata} > ${dump_path} 2>/dev/null")
 
-            if lcov_path != "" {
-                eprintln("warning: --lcov is not yet implemented (requires Avra-side covmap.json reader)")
-            }
+            let covmap_path = "${cov_dir}/_test.av.covmap.json"
+            println("")
+            render_coverage(covmap_path, dump_path, lcov_path)
 
             avra_process_exit(0)
             return

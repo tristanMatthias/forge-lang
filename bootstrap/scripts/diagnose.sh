@@ -603,29 +603,6 @@ run_fg() {
 
 mode_run() { run_fg "$1"; }
 
-# Run with coverage instrumentation — produces .profraw
-run_fg_coverage() {
-  local fg="$1"
-  [ -f "$fg" ] || die "no such file: $fg"
-  ensure_bs2
-  local ll bin profraw profdata
-  ll="$fg.ll"
-  bin="${fg%.av}.bin"
-  profraw="${fg%.av}.profraw"
-  profdata="${fg%.av}.profdata"
-  if ! "$BS2" compile --coverage "$fg" >"$BUILD_DIR/last_run.log" 2>&1; then
-    cat "$BUILD_DIR/last_run.log" >&2
-    die "bs2 codegen failed"
-  fi
-  link_ll "$ll" "$bin" "$BUILD_DIR/last_link.log" coverage
-  LLVM_PROFILE_FILE="$profraw" "$bin"
-  "$LLVM_PREFIX/bin/llvm-profdata" merge -sparse "$profraw" -o "$profdata"
-  log "coverage data: $profdata"
-  "$LLVM_PREFIX/bin/llvm-profdata" show "$profdata"
-}
-
-mode_run_coverage() { run_fg_coverage "$1"; }
-
 mode_check() {
   local fg="$1"; [ -f "$fg" ] || die "no such file: $fg"
   ensure_bs2
@@ -910,7 +887,6 @@ main() {
     --build-bs3)          mode_build_bs3 "$@" ;;
     --check-fixedpoint)   mode_check_fixedpoint "$@" ;;
     --run)                mode_run "$@" ;;
-    --run-coverage)       mode_run_coverage "$@" ;;
     --check)              mode_check "$@" ;;
     --ll)                 mode_ll "$@" ;;
     --diff)               mode_diff "$@" ;;

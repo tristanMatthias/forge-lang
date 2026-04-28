@@ -96,22 +96,15 @@ ifndef FILE
 endif
 	@$(DIAG) --run $(FILE)
 
-# Compile and run with coverage instrumentation. Produces .profraw + .profdata.
-run-coverage:
-ifndef FILE
-	@echo "usage: make run-coverage FILE=path/to/program.av" >&2
-	@exit 1
-endif
-	@$(DIAG) --run-coverage $(FILE)
-	@bash scripts/coverage-report.sh $(FILE) $${FILE%.av}.profdata --lcov $${FILE%.av}.lcov
-
-# Compiler self-coverage: instruments bs2, runs all tests, reports per-module coverage.
+# Compiler self-coverage: build the test binary with --coverage, run it
+# through the spec-test harness, render a per-module table.
+# Outputs: terminal report + build/coverage/* intermediates.
 coverage:
-	@bash scripts/compiler-coverage.sh
+	@$(BS2) test --coverage
 
-# Compiler self-coverage with LCOV export.
+# Same, plus LCOV export (consumed by codecov, lcov, etc.).
 coverage-lcov:
-	@bash scripts/compiler-coverage.sh --lcov build/coverage/compiler.lcov
+	@$(BS2) test --lcov build/coverage/compiler.lcov
 
 # Update the seed IR from the current self-hosted compiler.
 # Run this after dogfooding new syntax into bootstrap source.

@@ -1,0 +1,894 @@
+// WHY: post-test coverage report.
+//
+// Parses two inputs produced by the LLVM coverage pipeline:
+//   - covmap.json — written by codegen during instrumented build.
+//                   Maps each instrprof counter id to (function, type,
+//                   line, branch_id). Type is one of:
+//                     fn_entry, line, branch_then, branch_else,
+//                     match_arm, condition_true, condition_false.
+//   - profdata-text — output of `llvm-profdata show --all-functions
+//                     --counts`. One section per fn:
+//                       fn_name:
+//                         Hash: 0x...
+//                         Counters: N
+//                         Function count: K
+//                         Block counts: [c1, c2, ...]
+//                     The leading "Function count" is counter[0]; the
+//                     "Block counts" array is counter[1..N-1].
+//
+// Joins them: for each covmap entry, look up
+// fn_counters[entry.fn][entry.id] to get the hit count. Aggregate per
+// function and per module ("foo::bar::baz" → module "foo::bar"). Print
+// a colored table; optionally write LCOV.
+//
+// This is the Avra port of scripts/compiler-coverage-report.py.
+
+use core.runtime.{avra_selfhost_read_file, avra_selfhost_write_file}
+use core.registry.{avra_map_new_cstr, avra_map_set_cstr, avra_map_get_cstr, avra_map_has_cstr}
+
+// ── Counter record from covmap.json ──
+export type CovEntry = {
+    id: int,
+    ctype: string,    // fn_entry | line | branch_then | branch_else | match_arm | condition_true | condition_false
+    fn_name: string,
+    line: int,
+    col: int,
+    branch: int,
+}
+
+export enum CovEntryList {
+    End
+    Node(entry: CovEntry, next: CovEntryList)
+}
+
+// ── Per-fn counters from profdata text ──
+// fn_counts[i] = hit count for counter i. counter[0] is "Function count",
+// counters[1..N-1] are "Block counts".
+export type FnCounts = {
+    name: string,
+    counts: IntList,    // counts[i] = hit count for counter i
+}
+
+export enum IntList {
+    End
+    Node(value: int, next: IntList)
+}
+
+export enum FnCountsList {
+    End
+    Node(item: FnCounts, next: FnCountsList)
+}
+
+// ── Per-function aggregated stats ──
+export type FnStats = {
+    name: string,
+    fn_entry_count: int,         // entry counter; > 0 means fn was called
+    total_lines: int,
+    hit_lines: int,
+    total_branches: int,         // branch_then + branch_else
+    hit_branches: int,
+    total_conditions: int,       // MC/DC pair groups
+    hit_conditions: int,
+    line_set: IntListSet,        // unique line numbers seen for this fn
+    line_hit_set: IntListSet,    // unique line numbers with count > 0
+}
+
+// Set-of-int implemented as a sorted-or-not linked list (small per fn).
+export enum IntListSet {
+    End
+    Node(value: int, next: IntListSet)
+}
+
+export enum FnStatsList {
+    End
+    Node(item: FnStats, next: FnStatsList)
+}
+
+// ── Per-module rollup ──
+export type ModStats = {
+    module: string,
+    total_lines: int,
+    hit_lines: int,
+    total_branches: int,
+    hit_branches: int,
+    total_fns: int,
+    entered_fns: int,
+}
+
+export enum ModStatsList {
+    End
+    Node(item: ModStats, next: ModStatsList)
+}
+
+// ── Decision (MC/DC) tracking ──
+// Pairs condition_true/condition_false counters by (fn_name, line, branch_id).
+export type Decision = {
+    fn_name: string,
+    line: int,
+    branch_id: int,
+    true_count: int,
+    false_count: int,
+}
+
+export enum DecisionList {
+    End
+    Node(item: Decision, next: DecisionList)
+}
+
+// ── ANSI color helpers ──
+fn ansi_green() -> string { "\x1b[32m" }
+fn ansi_yellow() -> string { "\x1b[33m" }
+fn ansi_red() -> string { "\x1b[31m" }
+fn ansi_reset() -> string { "\x1b[0m" }
+
+fn color_pct(p: int) -> string {
+    let pad = if p < 10 { "  " } else if p < 100 { " " } else { "" }
+    if p >= 80 {
+        "${ansi_green()}${pad}${string(p)}%${ansi_reset()}"
+    } else if p >= 50 {
+        "${ansi_yellow()}${pad}${string(p)}%${ansi_reset()}"
+    } else {
+        "${ansi_red()}${pad}${string(p)}%${ansi_reset()}"
+    }
+}
+
+fn pct(hit: int, total: int) -> int {
+    if total == 0 { 100 } else { hit * 100 / total }
+}
+
+// ── Public entry point ──
+//
+// Reads covmap_path + profdata_text_path, prints colored summary table,
+// optionally writes LCOV to lcov_path (empty string = no LCOV).
+export fn render_coverage(covmap_path: string, profdata_text_path: string, lcov_path: string) {
+    let covmap_src = avra_selfhost_read_file(covmap_path)
+    if covmap_src == "" {
+        eprintln("coverage: empty/missing covmap at ${covmap_path}")
+        return
+    }
+    let profdata_src = avra_selfhost_read_file(profdata_text_path)
+    if profdata_src == "" {
+        eprintln("coverage: empty/missing profdata text at ${profdata_text_path}")
+        return
+    }
+
+    let covmap = parse_covmap(covmap_src)
+    let fn_counts = parse_profdata(profdata_src)
+    let stats = aggregate(covmap, fn_counts)
+    print_summary(stats)
+
+    if lcov_path != "" {
+        let source_file = covmap_file(covmap_src)
+        write_lcov(stats, source_file, lcov_path)
+        println("")
+        println("LCOV written to: ${lcov_path}")
+    }
+}
+
+// ── covmap.json parsing ──
+// The JSON shape is fixed. Top-level: {"file": "<path>", "counters": [<entry>+]}
+// Each entry: {"id":N, "type":"...", "fn":"...", "line":N, "col":N, "branch":N}.
+// Strings have no embedded quotes/escapes (we generate them ourselves).
+
+fn covmap_file(src: string) -> string {
+    // Find "file":"..."
+    let key = "\"file\":\""
+    let start = src.index_of(key)
+    if start < 0 { return "" }
+    let after = start + key.length
+    let rest = src.substring(after, src.length)
+    let end = rest.index_of("\"")
+    if end < 0 { return "" }
+    rest.substring(0, end)
+}
+
+fn parse_covmap(src: string) -> CovEntryList {
+    // Find "counters":[ ... ]
+    let key = "\"counters\":["
+    let start = src.index_of(key)
+    if start < 0 { return CovEntryList.End }
+    let i = start + key.length
+    parse_cov_entries(src, i)
+}
+
+fn parse_cov_entries(src: string, idx: int) -> CovEntryList {
+    // Iterative — covmap.json typically has tens of thousands of entries
+    // so we can't afford recursion depth or substring copies of the remainder
+    // on every iteration (would be O(N^2) memory).
+    mut acc = CovEntryList.End
+    mut i = idx
+    while i < src.length {
+        let j = skip_ws(src, i)
+        if j >= src.length {
+            i = j
+            continue
+        }
+        let ch = src[j]
+        if ch == "]" { return reverse_entries(acc) }
+        if ch == "," {
+            i = j + 1
+            continue
+        }
+        if ch != "{" { return reverse_entries(acc) }
+        let entry_end = scan_to(src, j, "}")
+        if entry_end < 0 { return reverse_entries(acc) }
+        let entry_src = src.substring(j, entry_end + 1)
+        let entry = parse_cov_entry(entry_src)
+        acc = CovEntryList.Node(entry, acc)
+        i = entry_end + 1
+    }
+    reverse_entries(acc)
+}
+
+// Find the first occurrence of `target` (one-char string) in src starting at
+// offset `from`. Returns the absolute index, or -1 if not found. Avoids
+// allocating a substring of the remainder.
+fn scan_to(src: string, from: int, target: string) -> int {
+    let t = target[0]
+    mut i = from
+    while i < src.length {
+        if src[i] == t { return i }
+        i = i + 1
+    }
+    -1
+}
+
+fn reverse_entries(list: CovEntryList) -> CovEntryList {
+    mut out = CovEntryList.End
+    mut cur = list
+    while true {
+        match cur {
+            .End -> return out
+            .Node(e, next) -> {
+                out = CovEntryList.Node(e, out)
+                cur = next
+            }
+        }
+    }
+    out
+}
+
+// Parses a single covmap entry by walking it left-to-right. Each field
+// appears in a fixed order — `{"id":N,"type":"...","fn":"...","line":N,
+// "col":N,"branch":N}` — so we don't need to search for keys by name;
+// we just walk past the next `:` for each field's value.
+fn parse_cov_entry(src: string) -> CovEntry {
+    mut i = 0
+    let id = read_int_after_colon(src, i)
+    i = scan_to(src, i, ",") + 1
+    let ctype = read_str_after_colon(src, i)
+    i = scan_to(src, i, ",") + 1
+    let fn_name = read_str_after_colon(src, i)
+    i = scan_to(src, i, ",") + 1
+    let line = read_int_after_colon(src, i)
+    i = scan_to(src, i, ",") + 1
+    let col = read_int_after_colon(src, i)
+    i = scan_to(src, i, ",") + 1
+    let branch = read_int_after_colon(src, i)
+    CovEntry { id, ctype, fn_name, line, col, branch }
+}
+
+// Skip past the next `:` and read a JSON int. Returns 0 if malformed.
+fn read_int_after_colon(src: string, from: int) -> int {
+    let colon = scan_to(src, from, ":")
+    if colon < 0 { return 0 }
+    parse_int_at(src, colon + 1)
+}
+
+// Skip past the next `:`, then expect `"..."`, return the contents.
+fn read_str_after_colon(src: string, from: int) -> string {
+    let colon = scan_to(src, from, ":")
+    if colon < 0 { return "" }
+    let q1 = scan_to(src, colon + 1, "\"")
+    if q1 < 0 { return "" }
+    let q2 = scan_to(src, q1 + 1, "\"")
+    if q2 < 0 { return "" }
+    src.substring(q1 + 1, q2)
+}
+
+fn parse_int_at(src: string, idx: int) -> int {
+    let start = skip_ws(src, idx)
+    mut i = start
+    let neg = i < src.length && src[i] == "-"
+    if neg { i = i + 1 }
+    mut value = 0
+    while i < src.length && src[i] >= "0" && src[i] <= "9" {
+        value = value * 10 + digit_value(src[i])
+        i = i + 1
+    }
+    if neg { 0 - value } else { value }
+}
+
+fn digit_value(ch: string) -> int {
+    match ch {
+        "0" -> 0
+        "1" -> 1
+        "2" -> 2
+        "3" -> 3
+        "4" -> 4
+        "5" -> 5
+        "6" -> 6
+        "7" -> 7
+        "8" -> 8
+        "9" -> 9
+        _ -> 0
+    }
+}
+
+fn skip_ws(src: string, idx: int) -> int {
+    mut i = idx
+    while i < src.length && (src[i] == " " || src[i] == "\n" || src[i] == "\t" || src[i] == "\r") {
+        i = i + 1
+    }
+    i
+}
+
+// ── profdata-text parsing ──
+//
+// Format (one section per fn, indented two/four spaces):
+//   fn_name:
+//     Hash: 0x...
+//     Counters: N
+//     Function count: K
+//     Block counts: [c1, c2, ...]
+//
+// We extract: fn_name, Function count, Block counts.
+
+fn parse_profdata(src: string) -> FnCountsList {
+    // Iterative — profdata text dump can be thousands of lines.
+    let lines = src.split("\n")
+    mut acc = FnCountsList.End
+    mut cur_fn = ""
+    mut cur_fn_count = 0
+    mut idx = 0
+    while idx < lines.length {
+        let line = lines[idx].trim()
+        idx = idx + 1
+        if line.length == 0 { continue }
+        if line.starts_with("Instrumentation level") || line.starts_with("Functions shown") || line.starts_with("Total functions") || line.starts_with("Maximum function count") || line.starts_with("Maximum internal block count") || line.starts_with("Total number of blocks") || line.starts_with("Total count") {
+            continue
+        }
+        if line == "Counters:" { continue }
+        if line.starts_with("Hash:") || line.starts_with("Counters:") { continue }
+        if line.starts_with("Function count:") {
+            let after = line.substring(15, line.length).trim()
+            cur_fn_count = int(after)
+            continue
+        }
+        if line.starts_with("Block counts:") {
+            let after = line.substring(13, line.length).trim()
+            let inside = if after.starts_with("[") { after.substring(1, after.length) } else { after }
+            let inside2 = if inside.ends_with("]") { inside.substring(0, inside.length - 1) } else { inside }
+            let counts = parse_block_counts(inside2, cur_fn_count)
+            acc = FnCountsList.Node(FnCounts { name: cur_fn, counts }, acc)
+            cur_fn = ""
+            cur_fn_count = 0
+            continue
+        }
+        // Otherwise: fn-name header line like "fn_name:"
+        if line.ends_with(":") {
+            cur_fn = line.substring(0, line.length - 1)
+            cur_fn_count = 0
+        }
+    }
+    acc
+}
+
+// Parse "1, 2, 3" into IntList prepended with fn_count (counter[0]).
+fn parse_block_counts(s: string, fn_count: int) -> IntList {
+    let parts = s.split(",")
+    // Iterative head-build then reverse — N can be hundreds.
+    mut acc = IntList.End
+    mut idx = parts.length - 1
+    while idx >= 0 {
+        let part = parts[idx].trim()
+        if part.length > 0 {
+            acc = IntList.Node(int(part), acc)
+        }
+        idx = idx - 1
+    }
+    IntList.Node(fn_count, acc)
+}
+
+fn int_list_get(list: IntList, idx: int) -> int {
+    // Iterative — counter arrays can have hundreds of elements.
+    mut cur = list
+    mut k = idx
+    while true {
+        match cur {
+            .End -> return 0
+            .Node(v, next) -> {
+                if k == 0 { return v }
+                cur = next
+                k = k - 1
+            }
+        }
+    }
+    0
+}
+
+// ── Aggregate covmap × counters into FnStats ──
+//
+// Hot path. The covmap can have tens of thousands of entries, so we
+// build two cstr-maps for O(1) lookup:
+//   - counts_map[fn_name] → IntList (the per-counter hits)
+//   - stats_map[fn_name]  → FnStats (mutable per-iteration via .set())
+// We also collect names into FnStatsList in insertion order so the
+// final report has a stable iteration order.
+
+fn aggregate(covmap: CovEntryList, counts: FnCountsList) -> FnStatsList {
+    // Build counts_map: fn_name → ptr to IntList (stored).
+    let counts_map = avra_map_new_cstr()
+    mut cc = counts
+    while true {
+        match cc {
+            .End -> { break }
+            .Node(item, next) -> {
+                avra_map_set_cstr(counts_map, item.name, item.counts)
+                cc = next
+            }
+        }
+    }
+
+    let stats_map = avra_map_new_cstr()
+    mut name_list = FnNameList.End
+    mut decisions = DecisionList.End
+
+    mut cur = covmap
+    while true {
+        match cur {
+            .End -> { break }
+            .Node(e, next) -> {
+                // Resolve count
+                mut count = 0
+                if avra_map_has_cstr(counts_map, e.fn_name) == 1 {
+                    let il_ptr = avra_map_get_cstr(counts_map, e.fn_name)
+                    let il: IntList = il_ptr
+                    count = int_list_get(il, e.id)
+                }
+
+                // Look up or create stats; track name on first sight.
+                let was_new = avra_map_has_cstr(stats_map, e.fn_name) == 0
+                let s = stats_get_or_create(stats_map, e.fn_name)
+                if was_new {
+                    name_list = FnNameList.Node(e.fn_name, name_list)
+                }
+
+                let updated = match e.ctype {
+                    "fn_entry" -> s with { fn_entry_count: count }
+                    "line" -> apply_line(s, e.line, count)
+                    "branch_then" -> apply_branch(s, count)
+                    "branch_else" -> apply_branch(s, count)
+                    "match_arm" -> apply_branch(s, count)
+                    _ -> s
+                }
+                avra_map_set_cstr(stats_map, e.fn_name, updated)
+
+                if e.ctype == "condition_true" {
+                    decisions = decision_add_true(decisions, e.fn_name, e.line, e.branch, count)
+                }
+                if e.ctype == "condition_false" {
+                    decisions = decision_add_false(decisions, e.fn_name, e.line, e.branch, count)
+                }
+                cur = next
+            }
+        }
+    }
+
+    // Apply finalized MC/DC decisions to the stats map.
+    mut dcur = decisions
+    while true {
+        match dcur {
+            .End -> { break }
+            .Node(d, dnext) -> {
+                let was_new = avra_map_has_cstr(stats_map, d.fn_name) == 0
+                let s = stats_get_or_create(stats_map, d.fn_name)
+                if was_new {
+                    name_list = FnNameList.Node(d.fn_name, name_list)
+                }
+                let hit = if d.true_count > 0 && d.false_count > 0 { 1 } else { 0 }
+                let updated = s with {
+                    total_conditions: s.total_conditions + 1,
+                    hit_conditions: s.hit_conditions + hit,
+                }
+                avra_map_set_cstr(stats_map, d.fn_name, updated)
+                dcur = dnext
+            }
+        }
+    }
+
+    // Build the FnStatsList in insertion order from name_list (which is
+    // currently reversed — newest first — so reverse it as we build).
+    mut out = FnStatsList.End
+    mut nl = name_list
+    while true {
+        match nl {
+            .End -> { break }
+            .Node(name, nnext) -> {
+                let sptr = avra_map_get_cstr(stats_map, name)
+                let s: FnStats = sptr
+                out = FnStatsList.Node(s, out)
+                nl = nnext
+            }
+        }
+    }
+    out
+}
+
+fn apply_line(s: FnStats, line: int, count: int) -> FnStats {
+    if line <= 0 { return s }
+    let new_set = intset_add(s.line_set, line)
+    let new_hit = if count > 0 { intset_add(s.line_hit_set, line) } else { s.line_hit_set }
+    s with {
+        line_set: new_set,
+        line_hit_set: new_hit,
+        total_lines: intset_size(new_set),
+        hit_lines: intset_size(new_hit),
+    }
+}
+
+fn apply_branch(s: FnStats, count: int) -> FnStats {
+    s with {
+        total_branches: s.total_branches + 1,
+        hit_branches: if count > 0 { s.hit_branches + 1 } else { s.hit_branches },
+    }
+}
+
+fn stats_get_or_create(map: ptr, name: string) -> FnStats {
+    if avra_map_has_cstr(map, name) == 1 {
+        let p = avra_map_get_cstr(map, name)
+        let s: FnStats = p
+        return s
+    }
+    let fresh = empty_stats(name)
+    avra_map_set_cstr(map, name, fresh)
+    fresh
+}
+
+enum FnNameList {
+    End
+    Node(name: string, next: FnNameList)
+}
+
+fn empty_stats(name: string) -> FnStats {
+    FnStats {
+        name,
+        fn_entry_count: 0,
+        total_lines: 0,
+        hit_lines: 0,
+        total_branches: 0,
+        hit_branches: 0,
+        total_conditions: 0,
+        hit_conditions: 0,
+        line_set: IntListSet.End,
+        line_hit_set: IntListSet.End,
+    }
+}
+
+fn stats_lookup_or_create(stats: FnStatsList, name: string) -> FnStats {
+    match stats {
+        .End -> empty_stats(name)
+        .Node(item, next) -> if item.name == name { item } else { stats_lookup_or_create(next, name) }
+    }
+}
+
+fn stats_replace(stats: FnStatsList, replacement: FnStats) -> FnStatsList {
+    match stats {
+        .End -> FnStatsList.Node(replacement, FnStatsList.End)
+        .Node(item, next) -> if item.name == replacement.name {
+            FnStatsList.Node(replacement, next)
+        } else {
+            FnStatsList.Node(item, stats_replace(next, replacement))
+        }
+    }
+}
+
+fn intset_add(set: IntListSet, value: int) -> IntListSet {
+    if intset_has(set, value) { set } else { IntListSet.Node(value, set) }
+}
+
+fn intset_has(set: IntListSet, value: int) -> bool {
+    match set {
+        .End -> false
+        .Node(v, next) -> if v == value { true } else { intset_has(next, value) }
+    }
+}
+
+fn intset_size(set: IntListSet) -> int {
+    match set {
+        .End -> 0
+        .Node(_, next) -> 1 + intset_size(next)
+    }
+}
+
+fn stats_set_entry(stats: FnStatsList, name: string, count: int) -> FnStatsList {
+    let s = stats_lookup_or_create(stats, name)
+    stats_replace(stats, s with { fn_entry_count: count })
+}
+
+fn stats_add_line(stats: FnStatsList, name: string, line: int, count: int) -> FnStatsList {
+    if line <= 0 { return stats }
+    let s = stats_lookup_or_create(stats, name)
+    let new_set = intset_add(s.line_set, line)
+    let new_hit = if count > 0 { intset_add(s.line_hit_set, line) } else { s.line_hit_set }
+    let updated = s with {
+        line_set: new_set,
+        line_hit_set: new_hit,
+        total_lines: intset_size(new_set),
+        hit_lines: intset_size(new_hit),
+    }
+    stats_replace(stats, updated)
+}
+
+fn stats_add_branch(stats: FnStatsList, name: string, count: int) -> FnStatsList {
+    let s = stats_lookup_or_create(stats, name)
+    let updated = s with {
+        total_branches: s.total_branches + 1,
+        hit_branches: if count > 0 { s.hit_branches + 1 } else { s.hit_branches },
+    }
+    stats_replace(stats, updated)
+}
+
+fn decision_add_true(decs: DecisionList, fn_name: string, line: int, branch: int, count: int) -> DecisionList {
+    decision_update(decs, fn_name, line, branch, count, 0)
+}
+
+fn decision_add_false(decs: DecisionList, fn_name: string, line: int, branch: int, count: int) -> DecisionList {
+    decision_update(decs, fn_name, line, branch, 0, count)
+}
+
+fn decision_update(decs: DecisionList, fn_name: string, line: int, branch: int, t_inc: int, f_inc: int) -> DecisionList {
+    match decs {
+        .End -> DecisionList.Node(Decision { fn_name, line, branch_id: branch, true_count: t_inc, false_count: f_inc }, DecisionList.End)
+        .Node(d, next) -> if d.fn_name == fn_name && d.line == line && d.branch_id == branch {
+            DecisionList.Node(d with { true_count: d.true_count + t_inc, false_count: d.false_count + f_inc }, next)
+        } else {
+            DecisionList.Node(d, decision_update(next, fn_name, line, branch, t_inc, f_inc))
+        }
+    }
+}
+
+// After all decisions are collected, fold MC/DC stats into per-fn stats.
+// A decision is "covered" iff both true and false outcomes have been observed.
+fn finalize_decisions(stats: FnStatsList, decs: DecisionList) -> FnStatsList {
+    match decs {
+        .End -> stats
+        .Node(d, next) -> {
+            let s = stats_lookup_or_create(stats, d.fn_name)
+            let updated = s with {
+                total_conditions: s.total_conditions + 1,
+                hit_conditions: if d.true_count > 0 && d.false_count > 0 { s.hit_conditions + 1 } else { s.hit_conditions },
+            }
+            finalize_decisions(stats_replace(stats, updated), next)
+        }
+    }
+}
+
+// ── Per-module rollup ──
+// "foo::bar::baz" → module "foo::bar". Top-level fns → "top-level".
+// Names starting with "__lambda" → "lambdas".
+
+fn module_of(fn_name: string) -> string {
+    if fn_name.starts_with("__lambda") { return "lambdas" }
+    let parts = fn_name.split("::")
+    if parts.length < 2 { return "top-level" }
+    mut acc = parts[0]
+    mut i = 1
+    while i < parts.length - 1 {
+        acc = acc + "::" + parts[i]
+        i = i + 1
+    }
+    acc
+}
+
+fn rollup_modules(stats: FnStatsList) -> ModStatsList {
+    rollup_inner(stats, ModStatsList.End)
+}
+
+fn rollup_inner(stats: FnStatsList, acc: ModStatsList) -> ModStatsList {
+    match stats {
+        .End -> acc
+        .Node(s, next) -> {
+            let mod_name = module_of(s.name)
+            let entered = if s.fn_entry_count > 0 { 1 } else { 0 }
+            rollup_inner(next, mod_upsert(acc, mod_name, s.total_lines, s.hit_lines, s.total_branches, s.hit_branches, entered))
+        }
+    }
+}
+
+fn mod_upsert(acc: ModStatsList, name: string, tl: int, hl: int, tb: int, hb: int, entered: int) -> ModStatsList {
+    match acc {
+        .End -> ModStatsList.Node(ModStats { module: name, total_lines: tl, hit_lines: hl, total_branches: tb, hit_branches: hb, total_fns: 1, entered_fns: entered }, ModStatsList.End)
+        .Node(m, next) -> if m.module == name {
+            ModStatsList.Node(m with {
+                total_lines: m.total_lines + tl,
+                hit_lines: m.hit_lines + hl,
+                total_branches: m.total_branches + tb,
+                hit_branches: m.hit_branches + hb,
+                total_fns: m.total_fns + 1,
+                entered_fns: m.entered_fns + entered,
+            }, next)
+        } else {
+            ModStatsList.Node(m, mod_upsert(next, name, tl, hl, tb, hb, entered))
+        }
+    }
+}
+
+// ── Reporting ──
+
+fn pad_right(s: string, width: int) -> string {
+    if s.length >= width { return s }
+    let mut out = s
+    let mut i = s.length
+    while i < width {
+        out = out + " "
+        i = i + 1
+    }
+    out
+}
+
+fn pad_left(s: string, width: int) -> string {
+    if s.length >= width { return s }
+    let mut out = s
+    let mut i = s.length
+    while i < width {
+        out = " " + out
+        i = i + 1
+    }
+    out
+}
+
+fn count_stats(stats: FnStatsList) -> int {
+    match stats { .End -> 0, .Node(_, next) -> 1 + count_stats(next) }
+}
+
+fn count_entered(stats: FnStatsList) -> int {
+    match stats {
+        .End -> 0
+        .Node(s, next) -> (if s.fn_entry_count > 0 { 1 } else { 0 }) + count_entered(next)
+    }
+}
+
+fn sum_total_lines(stats: FnStatsList) -> int {
+    match stats { .End -> 0, .Node(s, next) -> s.total_lines + sum_total_lines(next) }
+}
+
+fn sum_hit_lines(stats: FnStatsList) -> int {
+    match stats { .End -> 0, .Node(s, next) -> s.hit_lines + sum_hit_lines(next) }
+}
+
+fn sum_total_branches(stats: FnStatsList) -> int {
+    match stats { .End -> 0, .Node(s, next) -> s.total_branches + sum_total_branches(next) }
+}
+
+fn sum_hit_branches(stats: FnStatsList) -> int {
+    match stats { .End -> 0, .Node(s, next) -> s.hit_branches + sum_hit_branches(next) }
+}
+
+fn sum_total_conditions(stats: FnStatsList) -> int {
+    match stats { .End -> 0, .Node(s, next) -> s.total_conditions + sum_total_conditions(next) }
+}
+
+fn sum_hit_conditions(stats: FnStatsList) -> int {
+    match stats { .End -> 0, .Node(s, next) -> s.hit_conditions + sum_hit_conditions(next) }
+}
+
+fn print_summary(stats: FnStatsList) {
+    let total_fns = count_stats(stats)
+    let entered = count_entered(stats)
+    let tl = sum_total_lines(stats)
+    let hl = sum_hit_lines(stats)
+    let tb = sum_total_branches(stats)
+    let hb = sum_hit_branches(stats)
+    let tc = sum_total_conditions(stats)
+    let hc = sum_hit_conditions(stats)
+
+    let bar = "======================================================================"
+    println(bar)
+    println("AVRA COVERAGE")
+    println(bar)
+    println("Functions: ${string(total_fns)} total, ${string(entered)} entered")
+    println("Line coverage:   ${string(hl)}/${string(tl)} (${string(pct(hl, tl))}%)")
+    println("Branch coverage: ${string(hb)}/${string(tb)} (${string(pct(hb, tb))}%)")
+    if tc > 0 {
+        println("MC/DC coverage:  ${string(hc)}/${string(tc)} (${string(pct(hc, tc))}%)")
+    }
+    println("")
+    println("${pad_right("MODULE", 45)} ${pad_left("LINES", 12)}    ${pad_left("BRANCH", 10)}    ${pad_right("FNS", 8)}")
+    let dash = "----------------------------------------------------------------------"
+    println(dash)
+    let modules = rollup_modules(stats)
+    print_modules(modules)
+}
+
+fn print_modules(mods: ModStatsList) {
+    match mods {
+        .End -> {}
+        .Node(m, next) -> {
+            let lp = pct(m.hit_lines, m.total_lines)
+            let lstr = "${string(m.hit_lines)}/${string(m.total_lines)}"
+            let bstr = if m.total_branches > 0 { "${string(m.hit_branches)}/${string(m.total_branches)}" } else { "n/a" }
+            let bpct = if m.total_branches > 0 { color_pct(pct(m.hit_branches, m.total_branches)) } else { "    " }
+            let fstr = "${string(m.entered_fns)}/${string(m.total_fns)}"
+            println("${pad_right(m.module, 45)} ${pad_left(lstr, 8)} ${color_pct(lp)}  ${pad_left(bstr, 7)} ${bpct}  ${pad_left(fstr, 8)}")
+            print_modules(next)
+        }
+    }
+}
+
+// ── LCOV writer ──
+//
+// LCOV format (from genhtml docs):
+//   TN:<test name>
+//   SF:<absolute source path>
+//   FN:<line>,<fn_name>
+//   FNDA:<exec_count>,<fn_name>
+//   FNF:<num fns>
+//   FNH:<num fns hit>
+//   DA:<line>,<exec_count>
+//   LF:<num lines>
+//   LH:<num lines hit>
+//   end_of_record
+
+fn write_lcov(stats: FnStatsList, source_file: string, out_path: string) {
+    let mut s = "TN:\nSF:${source_file}\n"
+    // FN: lines
+    s = s + write_lcov_fns(stats)
+    s = s + write_lcov_fndas(stats)
+    s = s + "FNF:${string(count_stats(stats))}\n"
+    s = s + "FNH:${string(count_entered(stats))}\n"
+    // DA: per-line hits — collapse all fn line sets into one
+    let all_lines = collect_all_lines(stats, IntListSet.End, IntListSet.End)
+    s = s + write_lcov_da(stats, all_lines)
+    s = s + "LF:${string(sum_total_lines(stats))}\n"
+    s = s + "LH:${string(sum_hit_lines(stats))}\n"
+    s = s + "end_of_record\n"
+    avra_selfhost_write_file(out_path, s)
+}
+
+fn write_lcov_fns(stats: FnStatsList) -> string {
+    match stats {
+        .End -> ""
+        .Node(s, next) -> "FN:0,${s.name}\n" + write_lcov_fns(next)
+    }
+}
+
+fn write_lcov_fndas(stats: FnStatsList) -> string {
+    match stats {
+        .End -> ""
+        .Node(s, next) -> "FNDA:${string(s.fn_entry_count)},${s.name}\n" + write_lcov_fndas(next)
+    }
+}
+
+// Walk all fns, collecting line numbers (total) and hit lines (any-hit).
+fn collect_all_lines(stats: FnStatsList, total: IntListSet, hit: IntListSet) -> IntListSet {
+    match stats {
+        .End -> total
+        .Node(s, next) -> collect_all_lines(next, intset_union(total, s.line_set), intset_union(hit, s.line_hit_set))
+    }
+}
+
+fn intset_union(a: IntListSet, b: IntListSet) -> IntListSet {
+    match b {
+        .End -> a
+        .Node(v, next) -> intset_union(intset_add(a, v), next)
+    }
+}
+
+fn write_lcov_da(stats: FnStatsList, all_lines: IntListSet) -> string {
+    match all_lines {
+        .End -> ""
+        .Node(line, next) -> {
+            let was_hit = any_fn_hit_line(stats, line)
+            let hit_str = if was_hit { "1" } else { "0" }
+            "DA:${string(line)},${hit_str}\n" + write_lcov_da(stats, next)
+        }
+    }
+}
+
+fn any_fn_hit_line(stats: FnStatsList, line: int) -> bool {
+    match stats {
+        .End -> false
+        .Node(s, next) -> if intset_has(s.line_hit_set, line) { true } else { any_fn_hit_line(next, line) }
+    }
+}
