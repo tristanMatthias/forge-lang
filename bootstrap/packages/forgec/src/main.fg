@@ -662,7 +662,7 @@ fn main() {
             let obj_path = "${build_dir}/_test.o"
             let bin_path = "${build_dir}/_test.bin"
 
-            match codegen_and_emit_object(mono.stmts, obj_path) {
+            match codegen_and_emit_object(mono.stmts, obj_path, named.type_reg) {
                 .Ok(_) -> {}
                 .Err(e) -> { fail(e) }
             }
@@ -842,7 +842,7 @@ fn main() {
                 fail("monomorphization failed")
             }
             let output = "${path}.ll"
-            match compile_program(mono.stmts, output, false, false, path) {
+            match compile_program(mono.stmts, output, false, false, path, named.type_reg) {
                 .Ok(_) -> {}
                 .Err(e) -> {
                     let ice_bag = bag_report(bag_new(), diag_ice("internal compiler error during codegen: ${e}"))
@@ -943,7 +943,7 @@ fn main() {
         }
         let output = "${cpath}.ll"
         // Ticket t2w: ICE handler — wrap codegen errors in F9999.
-        match compile_program(mono.stmts, output, debug_null, enable_coverage, cpath) {
+        match compile_program(mono.stmts, output, debug_null, enable_coverage, cpath, named.type_reg) {
             .Ok(_) -> {}
             .Err(e) -> {
                 let ice_bag = bag_report(bag_new(), diag_ice("internal compiler error during codegen: ${e}"))

@@ -14,6 +14,7 @@
 
 use core.ast.{Expr, SExpr, VarEnv, FieldList, VariantList, ValueType, vtype_is_str, vtype_is_unknown, variant_lookup, vtype_eq, field_list_length, field_vtype_of, env_extend, union_type_list_merge, find_type_pipe}
 use core.registry.{Registry}
+use core.type_registry.{TypeRegistry, type_registry_id_for}
 use core.llvm.{forge_coverage_emit_hit, forge_covmap_alloc, forge_covmap_counter_count, forge_coverage_finalize_fn}
 use features.error_propagation.{Result}
 use diagnostics.{DiagnosticBag, bag_new, bag_report, diag_warning, span_new, DiagCode}
@@ -76,6 +77,9 @@ export type Ctx = {
     // Enables codegen to emit warnings through the diagnostic system
     // instead of raw eprintln calls.
     bag: DiagnosticBag,
+    // Central type registry — TypeId-based lookups (O(1) intmap).
+    // Will replace the string-keyed linked-list registries above.
+    type_reg: TypeRegistry,
 }
 
 // ── Type registries bundle ──
@@ -1001,22 +1005,22 @@ impl Ctx {
     }
 
     // Upgrade a parser-resolved ValueType using codegen registries.
+    // Uses canonical names from registries to ensure downstream lookups match.
     fn resolve_codegen_vtype(self, vt: ValueType) -> ValueType {
         match vt {
             .Struct(name, _) -> {
-                let e = enum_reg_lookup(self.enums, name)
-                if e.found { return ValueType.Enum(name, TypeList.End, 0) }
-                let s = struct_reg_lookup(self.structs, name)
-                if s.found { return ValueType.Struct(name, 0) }
-                if trait_decl_has(self.trait_decls, name) { return ValueType.Trait(name, 0) }
-                // Check newtype / union alias
+                let ec = enum_reg_canonical(self.enums, name)
+                if ec != "" { return ValueType.Enum(ec, TypeList.End, type_registry_id_for(self.type_reg, ec)) }
+                let sc = struct_reg_canonical(self.structs, name)
+                if sc != "" { return ValueType.Struct(sc, type_registry_id_for(self.type_reg, sc)) }
+                if trait_decl_has(self.trait_decls, name) { return ValueType.Trait(name, type_registry_id_for(self.type_reg, name)) }
                 let nt_vt = cg_newtype_vtype_lookup(self.newtypes, name)
-                if !vtype_is_unknown(nt_vt) { return ValueType.Newtype(name, self.resolve_codegen_vtype(nt_vt, 0)) }
+                if !vtype_is_unknown(nt_vt) { return ValueType.Newtype(name, self.resolve_codegen_vtype(nt_vt), type_registry_id_for(self.type_reg, name)) }
                 let ua_vt = cg_union_alias_vtype_lookup(self.union_aliases, name)
                 if !vtype_is_unknown(ua_vt) { return self.resolve_codegen_vtype(ua_vt) }
-                vt  // keep Struct(name) — might be from another module or generic
+                vt
             }
-            .Enum(name, args, _) -> ValueType.Enum(name, self.resolve_codegen_vtype_list(args, 0))
+            .Enum(name, args, _) -> ValueType.Enum(name, self.resolve_codegen_vtype_list(args), type_registry_id_for(self.type_reg, name))
             .List(elem) -> ValueType.List(self.resolve_codegen_vtype(elem))
             .Union(types) -> ValueType.Union(self.resolve_codegen_vtype_list(types))
             .FnTyped(params, ret) -> ValueType.FnTyped(self.resolve_codegen_vtype_list(params), self.resolve_codegen_vtype(ret))

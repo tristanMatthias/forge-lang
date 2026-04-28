@@ -1,7 +1,7 @@
 // WHY: compilation setup — declaration passes and top-level emission.
 
 use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_has, field_list_length, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, variant_max_payload, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_unknown, vtype_enum_name, vtype_struct_name, env_extend}
-use codegen.types.{Ctx, CgNewtypeReg, CgUnionAliasReg, CopySet, TypeRegs, DeferStack, RcCleanupStack, ReleasableSet, EmitValue, EnumReg, EnumLookup, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for_full, ok_emit, ok_stmt, struct_reg_lookup, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup}
+use codegen.types.{Ctx, CgNewtypeReg, CgUnionAliasReg, CopySet, TypeRegs, DeferStack, RcCleanupStack, ReleasableSet, EmitValue, EnumReg, EnumLookup, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for_full, ok_emit, ok_stmt, struct_reg_lookup, struct_reg_canonical, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup, enum_reg_canonical}
 use codegen.escape.{analyze_releasable, analyze_copy_types}
 use codegen.cycles.{CycleSet, analyze_cycles, cycle_set_has}
 use core.registry.{build_registry}
@@ -10,6 +10,7 @@ use codegen.{emit_expr, emit_stmt, emit_stmt_list}
 use codegen.helpers.{stmts_last_expr}
 use diagnostics.{bag_new}
 use features.fn_decl.codegen.{emit_function_bodies}
+use core.type_registry.{TypeRegistry}
 use core.llvm.{forge_coverage_declare, forge_covmap_begin, forge_covmap_end}
 
 // Declare an extern function from a list of parameter types.
@@ -37,7 +38,7 @@ fn decl_va(m: ptr, name: string, ret: ptr, params: [ptr]) {
 
 // Core codegen: produces an LLVM module from an AST. Returns the Ctx.
 // Callers decide what to do with it (write IR, JIT, emit object).
-fn codegen_program(stmts: StmtList, debug_null_checks: bool, coverage: bool, source_file: string) -> Result<Ctx, string> {
+fn codegen_program(stmts: StmtList, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry) -> Result<Ctx, string> {
     let lc = forge_llvm_context_create()
     let m = forge_llvm_module_create("bootstrap", lc)
     let builder = forge_llvm_create_builder(lc)
@@ -311,6 +312,7 @@ fn codegen_program(stmts: StmtList, debug_null_checks: bool, coverage: bool, sou
         copy_alloc_target: null,
         task_group: null,
         bag: bag_new(),
+        type_reg,
     }
 
     // Analyze which types are cycle-capable (can reference themselves
@@ -387,8 +389,8 @@ fn codegen_program(stmts: StmtList, debug_null_checks: bool, coverage: bool, sou
 }
 
 // Compile a program to LLVM IR and write to a file.
-export fn compile_program(stmts: StmtList, output_path: string, debug_null_checks: bool, coverage: bool, source_file: string) -> Result<int, string> {
-    match codegen_program(stmts, debug_null_checks, coverage, source_file) {
+export fn compile_program(stmts: StmtList, output_path: string, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry) -> Result<int, string> {
+    match codegen_program(stmts, debug_null_checks, coverage, source_file, type_reg) {
         .Ok(ctx) -> {
             let write_result = ctx.write_ir(output_path)
             ctx.dispose()
@@ -402,8 +404,8 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
 }
 
 // Compile and JIT-execute a program in-process. No files, no external processes.
-export fn compile_and_jit(stmts: StmtList) -> Result<int, string> {
-    match codegen_program(stmts, false, false, "") {
+export fn compile_and_jit(stmts: StmtList, type_reg: TypeRegistry) -> Result<int, string> {
+    match codegen_program(stmts, false, false, "", type_reg) {
         .Ok(ctx) -> {
             // JIT engine takes ownership of the module — don't dispose ctx
             let exit_code = forge_llvm_jit_run(ctx.module)
@@ -414,8 +416,8 @@ export fn compile_and_jit(stmts: StmtList) -> Result<int, string> {
 }
 
 // Compile and emit a native object file. No llc needed.
-export fn codegen_and_emit_object(stmts: StmtList, output_path: string) -> Result<int, string> {
-    match codegen_program(stmts, false, false, "") {
+export fn codegen_and_emit_object(stmts: StmtList, output_path: string, type_reg: TypeRegistry) -> Result<int, string> {
+    match codegen_program(stmts, false, false, "", type_reg) {
         .Ok(ctx) -> {
             let result = forge_llvm_emit_object(ctx.module, output_path)
             ctx.dispose()
@@ -466,16 +468,15 @@ fn resolve_field_vt(regs: TypeRegs, pv: ValueType) -> ValueType {
 fn resolve_setup_vt(regs: TypeRegs, vt: ValueType) -> ValueType {
     match vt {
         .Struct(name, _) -> {
-            let e = enum_reg_lookup(regs.enums, name)
-            if e.found { return ValueType.Enum(name, TypeList.End, 0) }
-            let s = struct_reg_lookup(regs.structs, name)
-            if s.found { return ValueType.Struct(name, 0) }
-            // Not in any registry — return Unknown (consistent with resolve_type)
+            let ec = enum_reg_canonical(regs.enums, name)
+            if ec != "" { return ValueType.Enum(ec, TypeList.End, 0) }
+            let sc = struct_reg_canonical(regs.structs, name)
+            if sc != "" { return ValueType.Struct(sc, 0) }
             ValueType.Unknown
         }
         .List(elem) -> ValueType.List(resolve_setup_vt(regs, elem))
         .Union(types) -> ValueType.Union(resolve_setup_vt_list(regs, types))
-        .Enum(name, args, _) -> ValueType.Enum(name, resolve_setup_vt_list(regs, args, 0))
+        .Enum(name, args, _) -> ValueType.Enum(name, resolve_setup_vt_list(regs, args), 0)
         .FnTyped(params, ret) -> ValueType.FnTyped(resolve_setup_vt_list(regs, params), resolve_setup_vt(regs, ret))
         _ -> vt
     }
