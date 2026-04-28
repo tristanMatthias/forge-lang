@@ -1,16 +1,12 @@
-packages/forgec/src/*.fg.ll
-packages/forgec/src/**/*.fg.ll
-packages/forgec/src/**/*.bin
-packages/std-cli/src/**/*.fg.ll
-packages/std-cli/src/**/*.bin
-packages/std-test/src/**/*.fg.ll
-packages/std-test/src/**/*.bin
-tests/*.fg.ll
-tests/*.bin
-regress/*.fg.ll
-regress/*.bin
-regress/**/*.fg.ll
-regress/**/*.bin
+# Build artifacts — per-file IR, coverage, binaries — produced by bs2/bs3
+# compile + link for any .av source. Covers tests/, packages/, src/.
+**/*.av.ll
+**/*.av.cov.ll
+**/*.av.ll.cov.ll
+**/*.av.covmap.json
+**/*.bin
+**/*.bin.o
+**/*.profraw
+**/*.profdata
 build/
-*.bin.o
 dogfood_progress.csv

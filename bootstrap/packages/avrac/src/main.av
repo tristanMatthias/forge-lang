@@ -29,7 +29,7 @@ use features.modules.package.{load_package_config}
 use typeck.{typecheck_program}
 use diagnostics.{bag_has_errors, bag_has_warnings, bag_new, bag_report, diag_error, diag_ice, span_dummy}
 use diagnostics.render.{render_bag, render_bag_json}
-use codegen.setup.{compile_program, codegen_and_emit_object}
+use codegen.setup.{compile_program, codegen_and_emit_object, codegen_and_emit_ir_cov}
 use core.ast.{sstmt_dummy, TypeParamList, ExprList}
 use features.generics.mono.{monomorphize}
 
@@ -559,12 +559,27 @@ fn main() {
 
             // Parse args
             mut filter_arg = ""
+            mut coverage_flag = false
+            mut lcov_path = ""
             mut i = 2
             while i < avra_selfhost_argc() {
                 let arg = avra_selfhost_get_arg_cstr(i)
                 if arg == "-f" || arg == "--filter" {
                     if i + 1 < avra_selfhost_argc() {
                         filter_arg = avra_selfhost_get_arg_cstr(i + 1)
+                    }
+                    i = i + 2
+                    continue
+                }
+                if arg == "-c" || arg == "--coverage" {
+                    coverage_flag = true
+                    i = i + 1
+                    continue
+                }
+                if arg == "--lcov" {
+                    coverage_flag = true
+                    if i + 1 < avra_selfhost_argc() {
+                        lcov_path = avra_selfhost_get_arg_cstr(i + 1)
                     }
                     i = i + 2
                     continue
@@ -658,27 +673,97 @@ fn main() {
                 fail("monomorphization failed")
             }
 
-            // Step 5: Emit object + link + run
+            // Step 5: emit object + link + run.
+            // Non-coverage: codegen straight to .o, link, exec.
+            // Coverage: codegen IR, lower instrprof via opt, llc to .o, link
+            // with profile runtime + 16K-page-aligned profile sections, exec
+            // with LLVM_PROFILE_FILE set, then call llvm-cov for the report.
+            // All coverage intermediates live under build/coverage/ so the
+            // regular build tree stays clean.
             let build_dir = "${project_dir}/build"
-            let obj_path = "${build_dir}/_test.o"
-            let bin_path = "${build_dir}/_test.bin"
+            let llvm_env = avra_process_env_get("LLVM_PREFIX")
+            let llvm_prefix = if llvm_env == "" { "/opt/homebrew/opt/llvm" } else { llvm_env }
+            let llvm_lib = "${llvm_prefix}/lib"
 
-            match codegen_and_emit_object(mono.stmts, obj_path, named.type_reg) {
+            if !coverage_flag {
+                let obj_path = "${build_dir}/_test.o"
+                let bin_path = "${build_dir}/_test.bin"
+                match codegen_and_emit_object(mono.stmts, obj_path, named.type_reg) {
+                    .Ok(_) -> {}
+                    .Err(e) -> { fail(e) }
+                }
+                let link_args = "[\"${obj_path}\", \"${build_dir}/runtime.o\", \"${build_dir}/llvm_wrapper.o\", \"-o\", \"${bin_path}\", \"-Wl,-stack_size,0x2000000\", \"-L${llvm_lib}\", \"-lLLVM\", \"-lc++\"]"
+                if avra_process_forward("cc", link_args, "") != 0 { fail("link failed") }
+                let exit_code = avra_process_forward(bin_path, "[]", "")
+                avra_process_exit(exit_code)
+                return
+            }
+
+            // ── Coverage path ──
+            let cov_dir = "${build_dir}/coverage"
+            avra_shell_exec("mkdir -p ${cov_dir}")
+            let ir_path = "${cov_dir}/_test.ll"
+            let cov_ll = "${cov_dir}/_test.cov.ll"
+            let obj_path = "${cov_dir}/_test.o"
+            let bin_path = "${cov_dir}/_test.bin"
+            let profraw = "${cov_dir}/_test.profraw"
+            let profdata = "${cov_dir}/_test.profdata"
+
+            match codegen_and_emit_ir_cov(mono.stmts, ir_path, named.type_reg, "${cov_dir}/_test.av") {
                 .Ok(_) -> {}
                 .Err(e) -> { fail(e) }
             }
 
-            let llvm_env = avra_process_env_get("LLVM_PREFIX")
-            let llvm_lib = if llvm_env == "" { "/opt/homebrew/opt/llvm/lib" } else { "${llvm_env}/lib" }
-            let link_args = "[\"${obj_path}\", \"${build_dir}/runtime.o\", \"${build_dir}/llvm_wrapper.o\", \"-o\", \"${bin_path}\", \"-Wl,-stack_size,0x2000000\", \"-L${llvm_lib}\", \"-lLLVM\", \"-lc++\"]"
-            let link_code = avra_process_forward("cc", link_args, "")
-            if link_code != 0 {
+            // Lower llvm.instrprof.increment intrinsics to runtime counter updates.
+            let opt_args = "[\"-passes=instrprof\", \"-mtriple=arm64-apple-macosx\", \"-o\", \"${cov_ll}\", \"-S\", \"${ir_path}\"]"
+            if avra_process_forward("${llvm_prefix}/bin/opt", opt_args, "") != 0 {
+                fail("opt instrprof lowering failed")
+            }
+
+            // Lowered IR → object.
+            let llc_args = "[\"-O2\", \"-filetype=obj\", \"${cov_ll}\", \"-o\", \"${obj_path}\"]"
+            if avra_process_forward("${llvm_prefix}/bin/llc", llc_args, "") != 0 {
+                fail("llc failed")
+            }
+
+            // Locate clang_rt.profile_osx (path varies by LLVM version).
+            let darwin_dir = avra_shell_exec("ls -1 ${llvm_prefix}/lib/clang | head -1").trim()
+            let prof_lib_dir = "${llvm_prefix}/lib/clang/${darwin_dir}/lib/darwin"
+            // Page-align the profile sections — clang_rt's profile runtime
+            // computes counter array bounds from section addresses and
+            // expects 16K alignment on Darwin/arm64. Without these flags
+            // llvm-profdata reports "number of counters is zero".
+            let sectalign = "\"-Wl,-sectalign,__DATA,__llvm_prf_cnts,0x4000\", \"-Wl,-sectalign,__DATA,__llvm_prf_bits,0x4000\", \"-Wl,-sectalign,__DATA,__llvm_prf_data,0x4000\""
+            let link_args = "[\"${obj_path}\", \"${build_dir}/runtime.o\", \"${build_dir}/llvm_wrapper.o\", \"-o\", \"${bin_path}\", \"-Wl,-stack_size,0x2000000\", \"-L${llvm_lib}\", \"-lLLVM\", \"-lc++\", \"-L${prof_lib_dir}\", \"-lclang_rt.profile_osx\", ${sectalign}]"
+            if avra_process_forward("cc", link_args, "") != 0 {
                 fail("link failed")
             }
 
-            // Step 6: Run the test binary (proper fork+exec, no shell)
-            let exit_code = avra_process_forward(bin_path, "[]", "")
-            avra_process_exit(exit_code)
+            // Run the instrumented binary, capturing stdout for visibility.
+            avra_shell_exec("rm -f ${profraw}")
+            let run_out = avra_shell_exec("LLVM_PROFILE_FILE=${profraw} ${bin_path} 2>&1")
+            println(run_out.trim())
+
+            // Merge profraw → profdata.
+            let merge_out = avra_shell_exec("${llvm_prefix}/bin/llvm-profdata merge -sparse -o ${profdata} ${profraw} 2>&1")
+            if merge_out.length > 0 { eprintln(merge_out.trim()) }
+
+            // Dump per-function counts. llvm-cov can't produce a region-level
+            // report here because we don't emit the LLVM __llvm_covmap section
+            // — we have our own ${cov_dir}/_test.av.covmap.json instead.
+            // A full Avra-side renderer that joins covmap.json + this dump
+            // is tracked separately; for now print the raw function stats so
+            // the pipeline is end-to-end verifiable.
+            println("")
+            println("== coverage (per-function counts) ==")
+            let report = avra_shell_exec("${llvm_prefix}/bin/llvm-profdata show ${profdata} 2>&1")
+            println(report.trim())
+
+            if lcov_path != "" {
+                eprintln("warning: --lcov is not yet implemented (requires Avra-side covmap.json reader)")
+            }
+
+            avra_process_exit(0)
             return
         }
     }

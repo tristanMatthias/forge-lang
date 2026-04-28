@@ -431,6 +431,27 @@ export fn codegen_and_emit_object(stmts: StmtList, output_path: string, type_reg
     }
 }
 
+// Coverage variant: codegen to IR only. The in-process LLVM backend can't
+// emit a usable object directly when instrprof intrinsics are present —
+// they need to be lowered first by `opt -passes=instrprof`. Caller is
+// expected to run opt + llc on the emitted IR.
+//
+// `source_file` is recorded in the .covmap.json that the codegen pass
+// writes alongside the IR.
+export fn codegen_and_emit_ir_cov(stmts: StmtList, ir_path: string, type_reg: TypeRegistry, source_file: string) -> Result<int, string> {
+    match codegen_program(stmts, false, true, source_file, type_reg) {
+        .Ok(ctx) -> {
+            let write_result = ctx.write_ir(ir_path)
+            ctx.dispose()
+            if write_result != 0 {
+                return Result.Err("failed to write IR to ${ir_path}")
+            }
+            Result.Ok(0)
+        }
+        .Err(e) -> Result.Err(e)
+    }
+}
+
 // Rebuild a FieldList with `resolved` populated from `resolve_type`.
 fn resolve_variant_fields(variants: VariantList, regs: TypeRegs) -> VariantList {
     match variants {
@@ -1130,6 +1151,13 @@ fn emit_top_level(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<VarEnv, stri
                     // Switch to init function and emit module body
                     avra_llvm_position_at_end(ctx.builder, init_entry)
                     let init_ctx = ctx with { current_fn: init_fn, current_fn_name: init_name }
+                    // Reset the per-function counter id and allocate the
+                    // function-entry counter so any module-body coverage hits
+                    // (cov_line / cov_branch_*) attribute to this synthetic
+                    // __init_<name> fn with a correctly-sized counter array.
+                    // Without this, increments emitted in the body inherit the
+                    // previous fn's cov_next_id and overflow a [0 x i64] array.
+                    init_ctx.cov_fn_entry()
                     let new_env = emit_top_level(init_ctx, env, body)?
 
                     // Flush output buffer and terminate init function
@@ -1139,6 +1167,10 @@ fn emit_top_level(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<VarEnv, stri
                     }
                     init_ctx.call("avra_test_flush", [])
                     init_ctx.ret(init_ctx.i64(0), .Int)
+                    // Patch the __init_<name>'s instrprof.increment calls with
+                    // the final counter count so the counter global is sized
+                    // correctly. Mirrors what fn_decl/closures emit per fn.
+                    init_ctx.cov_finalize_fn()
 
                     // Restore caller's position
                     avra_llvm_position_at_end(ctx.builder, saved_bb)

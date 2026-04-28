@@ -166,8 +166,9 @@ install-hooks:
 # Remove all build artifacts. Source and seed are preserved.
 clean:
 	@rm -rf build
-	@rm -f $(SRC_DIR)/*.av.ll
-	@echo "cleaned: build/ and $(SRC_DIR)/*.av.ll"
+	@rm -f $(SRC_DIR)/*.av.ll $(SRC_DIR)/*.av.cov.ll $(SRC_DIR)/*.av.ll.cov.ll $(SRC_DIR)/*.av.covmap.json
+	@find packages tests -type f \( -name '*.av.ll' -o -name '*.av.cov.ll' -o -name '*.av.ll.cov.ll' -o -name '*.av.covmap.json' -o -name '*.bin' -o -name '*.bin.o' -o -name '*.profraw' -o -name '*.profdata' \) -delete 2>/dev/null || true
+	@echo "cleaned: build/ + per-file IR/coverage/binary artifacts"
 
 # Assemble the canonical grammar from feature fragments.
 grammar:
