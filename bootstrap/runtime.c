@@ -989,6 +989,11 @@ int64_t forge_intmap_get(void* map, int64_t key) {
     return 0;
 }
 
+// Get value as a string pointer (for storing strings in intmap).
+const char* forge_intmap_get_as_string(void* map, int64_t key) {
+    return (const char*)(uintptr_t)forge_intmap_get(map, key);
+}
+
 // Read current value at key and increment it. Returns the OLD value.
 int64_t forge_intmap_inc(void* map, int64_t key) {
     int64_t old = forge_intmap_get(map, key);

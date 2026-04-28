@@ -79,14 +79,12 @@ export fn emit_field_assign(ctx: Ctx, env: VarEnv, obj: Expr, field: string, val
 
 export fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> Result<EmitValue, string> {
     // Bare `EnumName.Variant` (zero-arg enum constructor)
-    match obj {
-        .Ident(head) -> {
-            let enum_l = ctx.lookup_enum(head)
-            if enum_l.found {
-                return emit_enum_ctor(ctx, env, head, field, ExprList.End)
-            }
+    let head_name = match obj { .Ident(h) -> h, .QualifiedIdent(h) -> h, _ -> "" }
+    if head_name != "" {
+        let enum_l = ctx.lookup_enum(head_name)
+        if enum_l.found {
+            return emit_enum_ctor(ctx, env, head_name, field, ExprList.End)
         }
-        _ -> {}
     }
 
     let r = ctx.emit(env, obj)?

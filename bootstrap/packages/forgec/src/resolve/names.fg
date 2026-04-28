@@ -484,13 +484,15 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
         }
         .TypeDecl(name, tp, fields) -> {
             let qn = resolve_type_in_ctx(ctx, name)
-            type_registry_register(ctx.type_reg, qn, TypeKind.StructKind, fields, VariantList.End, ValueType.Unknown)
-            Stmt.TypeDecl(qn, tp, fields)
+            let rf = rewrite_field_types(ctx, fields)
+            type_registry_register(ctx.type_reg, qn, TypeKind.StructKind, rf, VariantList.End, ValueType.Unknown)
+            Stmt.TypeDecl(qn, tp, rf)
         }
         .EnumDecl(name, tp, variants) -> {
             let qn = resolve_type_in_ctx(ctx, name)
-            type_registry_register(ctx.type_reg, qn, TypeKind.EnumKind, FieldList.End, variants, ValueType.Unknown)
-            Stmt.EnumDecl(qn, tp, variants)
+            let rv = rewrite_variant_types(ctx, variants)
+            type_registry_register(ctx.type_reg, qn, TypeKind.EnumKind, FieldList.End, rv, ValueType.Unknown)
+            Stmt.EnumDecl(qn, tp, rv)
         }
         .TraitDecl(name, body) -> {
             let qn = resolve_type_in_ctx(ctx, name)
@@ -499,13 +501,15 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
         }
         .ShapeDecl(name, fields) -> {
             let qn = resolve_type_in_ctx(ctx, name)
-            type_registry_register(ctx.type_reg, qn, TypeKind.ShapeKind, fields, VariantList.End, ValueType.Unknown)
-            Stmt.ShapeDecl(qn, fields)
+            let rf = rewrite_field_types(ctx, fields)
+            type_registry_register(ctx.type_reg, qn, TypeKind.ShapeKind, rf, VariantList.End, ValueType.Unknown)
+            Stmt.ShapeDecl(qn, rf)
         }
         .NewtypeDecl(name, inner) -> {
             let qn = resolve_type_in_ctx(ctx, name)
-            type_registry_register(ctx.type_reg, qn, TypeKind.NewtypeKind, FieldList.End, VariantList.End, inner)
-            Stmt.NewtypeDecl(qn, inner)
+            let ri = rewrite_vtype(ctx, inner)
+            type_registry_register(ctx.type_reg, qn, TypeKind.NewtypeKind, FieldList.End, VariantList.End, ri)
+            Stmt.NewtypeDecl(qn, ri)
         }
         .Impl(type_name, methods) -> rewrite_impl_stmt(ctx, type_name, methods)
         .Annotated(annotations, inner) -> .Annotated(annotations, rewrite_stmt(ctx, inner))
@@ -553,6 +557,9 @@ fn find_single_colon(s: string) -> int {
 
 fn resolve_type_in_ctx(ctx: NameCtx, type_name: string) -> string {
     if type_name.contains("::") { return type_name }
+    // Primitives and type parameters (single uppercase letter) stay as-is
+    if type_name in ["int", "string", "bool", "float", "ptr", "void"] { return type_name }
+    if type_name.length == 1 && type_name[0] in "A".."Z" { return type_name }
     let canonical = item_lookup(ctx.global_index, type_name)
     if canonical != "" { return canonical }
     let alias = alias_lookup(ctx.aliases, type_name)
@@ -603,6 +610,20 @@ fn rewrite_vtype_list(ctx: NameCtx, tl: TypeList) -> TypeList {
     match tl {
         .End -> .End
         .Node(vt, next) -> .Node(rewrite_vtype(ctx, vt), rewrite_vtype_list(ctx, next))
+    }
+}
+
+fn rewrite_field_types(ctx: NameCtx, fields: FieldList) -> FieldList {
+    match fields {
+        .End -> .End
+        .Node(name, vt, next) -> .Node(name, rewrite_vtype(ctx, vt), rewrite_field_types(ctx, next))
+    }
+}
+
+fn rewrite_variant_types(ctx: NameCtx, variants: VariantList) -> VariantList {
+    match variants {
+        .End -> .End
+        .Node(name, fields, next) -> .Node(name, rewrite_field_types(ctx, fields), rewrite_variant_types(ctx, next))
     }
 }
 
@@ -679,7 +700,17 @@ fn rewrite_expr(ctx: NameCtx, expr: Expr) -> Expr {
 fn rewrite_expr_compound(ctx: NameCtx, expr: Expr) -> Expr {
     if expr == null { return Expr.Null }
     match expr {
-        .FieldAccess(obj, field) -> .FieldAccess(rewrite_expr(ctx, obj), field)
+        .FieldAccess(obj, field) -> {
+            // Qualify uppercase Ident in FieldAccess (enum constructors: ValueType.Unknown)
+            let rewritten_obj = match obj {
+                .Ident(name) if name.length > 0 && name[0] in "A".."Z" -> {
+                    let resolved = resolve_type_in_ctx(ctx, name)
+                    if resolved != name { Expr.QualifiedIdent(resolved) } else { rewrite_ident(ctx, name, obj) }
+                }
+                _ -> rewrite_expr(ctx, obj)
+            }
+            Expr.FieldAccess(rewritten_obj, field)
+        }
         .FieldAssign(obj, field, val) -> .FieldAssign(rewrite_expr(ctx, obj), field, rewrite_expr(ctx, val))
         .IfExpr(c, t, e) -> .IfExpr(rewrite_expr(ctx, c), rewrite_expr(ctx, t), rewrite_expr(ctx, e))
         .NullCoalesce(l, r) -> .NullCoalesce(rewrite_expr(ctx, l), rewrite_expr(ctx, r))

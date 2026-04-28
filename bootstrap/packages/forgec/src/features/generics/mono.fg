@@ -26,7 +26,6 @@ fn generic_fn_lookup(reg: GenericFnReg, name: string) -> GenericFnReg {
         .End -> .End
         .Node(n, _, _, _, _, _) if n == name -> reg
         .Node(n, _, _, _, _, next) -> {
-            if n.ends_with("::${name}") { return reg }
             generic_fn_lookup(next, name)
         }
     }
@@ -36,7 +35,6 @@ fn generic_enum_lookup(reg: GenericEnumReg, name: string) -> GenericEnumReg {
         .End -> .End
         .Node(n, _, _, _) if n == name -> reg
         .Node(n, _, _, next) -> {
-            if n.ends_with("::${name}") { return reg }
             generic_enum_lookup(next, name)
         }
     }
@@ -46,7 +44,6 @@ fn generic_struct_lookup(reg: GenericStructReg, name: string) -> GenericStructRe
         .End -> .End
         .Node(n, _, _, _) if n == name -> reg
         .Node(n, _, _, next) -> {
-            if n.ends_with("::${name}") { return reg }
             generic_struct_lookup(next, name)
         }
     }

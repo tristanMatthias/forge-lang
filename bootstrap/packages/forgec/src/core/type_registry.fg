@@ -42,17 +42,18 @@ export type TypeInfo = {
 export type TypeRegistry = {
     info_map: ptr,      // intmap: id → TypeInfo ptr (key 0 = next_id counter)
     name_to_id: ptr,    // map_cstr: qualified_name → id
+    id_to_name: ptr,    // intmap: id → name (string ptr as int)
 }
 
 extern fn forge_intmap_inc(map: ptr, key: int) -> int
 
 export fn type_registry_new() -> TypeRegistry {
     let m = forge_intmap_new()
-    // Key 0 stores the next_id counter, starting at 1
     forge_intmap_set(m, 0, 1)
     TypeRegistry {
         info_map: m,
         name_to_id: forge_map_new_cstr(),
+        id_to_name: forge_intmap_new(),
     }
 }
 
@@ -74,6 +75,15 @@ export fn type_registry_register(reg: TypeRegistry, name: string, kind: TypeKind
     }
     forge_intmap_set(reg.info_map, id, info)
     forge_map_set_cstr(reg.name_to_id, name, id)
+    forge_intmap_set(reg.id_to_name, id, name)
+    // Also register short name (last segment after ::) for codegen lookups
+    if name.contains("::") {
+        let parts = name.split("::")
+        let short = parts[parts.length - 1]
+        if forge_map_has_cstr(reg.name_to_id, short) == 0 {
+            forge_map_set_cstr(reg.name_to_id, short, id)
+        }
+    }
     id
 }
 
@@ -94,6 +104,15 @@ export fn type_registry_id_for(reg: TypeRegistry, name: string) -> int {
 // Check if a type id is registered.
 export fn type_registry_has(reg: TypeRegistry, id: int) -> bool {
     id > 0 && forge_intmap_has(reg.info_map, id) == 1
+}
+
+extern fn forge_intmap_get_as_string(map: ptr, key: int) -> string
+
+// Look up the canonical name for a TypeId. Returns "" if not found.
+export fn type_registry_name_for(reg: TypeRegistry, id: int) -> string {
+    if id == 0 { return "" }
+    if forge_intmap_has(reg.id_to_name, id) == 0 { return "" }
+    forge_intmap_get_as_string(reg.id_to_name, id)
 }
 
 // Check if a name is registered.

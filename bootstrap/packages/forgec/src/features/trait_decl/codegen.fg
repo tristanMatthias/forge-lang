@@ -2,8 +2,8 @@
 
 use core.ast.{Expr, ExprList, VarEnv, ValueType, vtype_struct_name, vtype_enum_name, expr_list_length}
 use core.llvm.{forge_llvm_append_basic_block, forge_llvm_position_at_end, forge_llvm_get_insert_block, forge_llvm_function_type, forge_llvm_add_function, forge_llvm_type_array_new, forge_llvm_type_array_set, forge_llvm_type_array_free, forge_llvm_get_param, forge_llvm_count_params, forge_llvm_build_ret, forge_llvm_build_bitcast, forge_llvm_fn_type_of, forge_llvm_value_array_new, forge_llvm_value_array_set, forge_llvm_value_array_free, forge_llvm_build_call_coerce}
-use codegen.types.{Ctx, EmitValue, TraitMethodNames, ok_emit_typed, err_emit, trait_decl_lookup, struct_reg_canonical, enum_reg_canonical}
-use core.type_registry.{method_mangled_name}
+use codegen.types.{Ctx, EmitValue, TraitMethodNames, ok_emit_typed, err_emit, trait_decl_lookup}
+use core.type_registry.{method_mangled_name, type_registry_id_for, type_registry_name_for}
 use features.fn_decl.codegen.{emit_first_arg}
 
 export fn trait_method_idx(methods: TraitMethodNames, name: string, idx: int) -> int {
@@ -144,13 +144,11 @@ export fn push_vtable_entries_call(ctx: Ctx, vtable: ptr, methods: TraitMethodNa
         .Node(method_name, method_ret_vt, next) -> {
             let mangled = method_mangled_name(concrete_name, method_name)
             mut fn_val = ctx.get_fn(mangled)
-            // Canonical fallback for unqualified concrete names
+            // Fallback: resolve via TypeRegistry
             if fn_val == null {
-                let canonical = struct_reg_canonical(ctx.structs, concrete_name)
-                if canonical == "" {
-                    let ec = enum_reg_canonical(ctx.enums, concrete_name)
-                    if ec != "" { fn_val = ctx.get_fn(method_mangled_name(ec, method_name)) }
-                } else {
+                let tid = type_registry_id_for(ctx.type_reg, concrete_name)
+                let canonical = type_registry_name_for(ctx.type_reg, tid)
+                if canonical != "" {
                     fn_val = ctx.get_fn(method_mangled_name(canonical, method_name))
                 }
             }

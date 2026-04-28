@@ -14,7 +14,7 @@
 
 use core.ast.{Expr, SExpr, VarEnv, FieldList, VariantList, ValueType, vtype_is_str, vtype_is_unknown, variant_lookup, vtype_eq, field_list_length, field_vtype_of, env_extend, union_type_list_merge, find_type_pipe}
 use core.registry.{Registry}
-use core.type_registry.{TypeRegistry, type_registry_id_for}
+use core.type_registry.{TypeRegistry, type_registry_id_for, type_registry_name_for}
 use core.llvm.{forge_coverage_emit_hit, forge_covmap_alloc, forge_covmap_counter_count, forge_coverage_finalize_fn}
 use features.error_propagation.{Result}
 use diagnostics.{DiagnosticBag, bag_new, bag_report, diag_warning, span_new, DiagCode}
@@ -145,7 +145,6 @@ export fn trait_decl_lookup(reg: TraitDeclReg, name: string) -> TraitMethodNames
         .End -> .End
         .Node(n, methods, _) if n == name -> methods
         .Node(n, methods, next) -> {
-            if n.ends_with("::${name}") { return methods }
             trait_decl_lookup(next, name)
         }
     }
@@ -156,7 +155,6 @@ export fn trait_decl_has(reg: TraitDeclReg, name: string) -> bool {
         .End -> false
         .Node(n, _, _) if n == name -> true
         .Node(n, _, next) -> {
-            if n.ends_with("::${name}") { return true }
             trait_decl_has(next, name)
         }
     }
@@ -284,7 +282,6 @@ export fn fn_param_lookup(reg: FnParamTypes, name: string) -> ParamTypeList {
         .End -> .End
         .Node(n, params, _) if n == name -> params
         .Node(n, params, next) -> {
-            if n.ends_with("::${name}") { return params }
             fn_param_lookup(next, name)
         }
     }
@@ -379,19 +376,7 @@ export fn struct_reg_lookup(reg: StructReg, name: string) -> StructLookup {
         .End -> StructLookup { found: false, fields: .End }
         .Node(n, fields, _) if n == name -> StructLookup { found: true, fields }
         .Node(n, fields, next) -> {
-            if n.ends_with("::${name}") { return StructLookup { found: true, fields } }
             struct_reg_lookup(next, name)
-        }
-    }
-}
-
-export fn struct_reg_canonical(reg: StructReg, name: string) -> string {
-    match reg {
-        .End -> ""
-        .Node(n, _, _) if n == name -> n
-        .Node(n, _, next) -> {
-            if n.ends_with("::${name}") { return n }
-            struct_reg_canonical(next, name)
         }
     }
 }
@@ -411,19 +396,7 @@ export fn enum_reg_lookup(reg: EnumReg, name: string) -> EnumLookup {
         .End -> EnumLookup { found: false, variants: .End }
         .Node(n, variants, _) if n == name -> EnumLookup { found: true, variants }
         .Node(n, variants, next) -> {
-            if n.ends_with("::${name}") { return EnumLookup { found: true, variants } }
             enum_reg_lookup(next, name)
-        }
-    }
-}
-
-export fn enum_reg_canonical(reg: EnumReg, name: string) -> string {
-    match reg {
-        .End -> ""
-        .Node(n, _, _) if n == name -> n
-        .Node(n, _, next) -> {
-            if n.ends_with("::${name}") { return n }
-            enum_reg_canonical(next, name)
         }
     }
 }
@@ -459,7 +432,6 @@ export fn fn_ret_lookup(reg: FnRetTypes, name: string) -> ValueType {
         .End -> .Unknown
         .Node(n, ty, _) if n == name -> ty
         .Node(n, ty, next) -> {
-            if n.ends_with("::${name}") { return ty }
             fn_ret_lookup(next, name)
         }
     }
@@ -792,15 +764,12 @@ impl Ctx {
     fn get_type(self, name: string) -> ptr {
         let t = forge_llvm_get_type_by_name(self.lc, name)
         if t != null { return t }
-        let sc = struct_reg_canonical(self.structs, name)
-        if sc != "" {
-            let t2 = forge_llvm_get_type_by_name(self.lc, sc)
+        // Fallback: resolve via TypeRegistry
+        let tid = type_registry_id_for(self.type_reg, name)
+        let canonical = type_registry_name_for(self.type_reg, tid)
+        if canonical != "" {
+            let t2 = forge_llvm_get_type_by_name(self.lc, canonical)
             if t2 != null { return t2 }
-        }
-        let ec = enum_reg_canonical(self.enums, name)
-        if ec != "" {
-            let t3 = forge_llvm_get_type_by_name(self.lc, ec)
-            if t3 != null { return t3 }
         }
         null
     }
@@ -1015,14 +984,20 @@ impl Ctx {
     fn resolve_codegen_vtype(self, vt: ValueType) -> ValueType {
         match vt {
             .Struct(name, _) -> {
-                let ec = enum_reg_canonical(self.enums, name)
-                if ec != "" { return ValueType.Enum(ec, TypeList.End, type_registry_id_for(self.type_reg, ec)) }
-                let sc = struct_reg_canonical(self.structs, name)
-                if sc != "" { return ValueType.Struct(sc, type_registry_id_for(self.type_reg, sc)) }
-                if trait_decl_has(self.trait_decls, name) { return ValueType.Trait(name, type_registry_id_for(self.type_reg, name)) }
-                let nt_vt = cg_newtype_vtype_lookup(self.newtypes, name)
-                if !vtype_is_unknown(nt_vt) { return ValueType.Newtype(name, self.resolve_codegen_vtype(nt_vt), type_registry_id_for(self.type_reg, name)) }
-                let ua_vt = cg_union_alias_vtype_lookup(self.union_aliases, name)
+                // Resolve via TypeRegistry first for canonical name
+                let tid = type_registry_id_for(self.type_reg, name)
+                let cn = type_registry_name_for(self.type_reg, tid)
+                let rn = if cn != "" { cn } else { name }
+                let rid = if tid > 0 { tid } else { 0 }
+                // Check registries with resolved name
+                let e = enum_reg_lookup(self.enums, rn)
+                if e.found { return ValueType.Enum(rn, TypeList.End, rid) }
+                let s = struct_reg_lookup(self.structs, rn)
+                if s.found { return ValueType.Struct(rn, rid) }
+                if trait_decl_has(self.trait_decls, rn) { return ValueType.Trait(rn, rid) }
+                let nt_vt = cg_newtype_vtype_lookup(self.newtypes, rn)
+                if !vtype_is_unknown(nt_vt) { return ValueType.Newtype(rn, self.resolve_codegen_vtype(nt_vt), rid) }
+                let ua_vt = cg_union_alias_vtype_lookup(self.union_aliases, rn)
                 if !vtype_is_unknown(ua_vt) { return self.resolve_codegen_vtype(ua_vt) }
                 vt
             }

@@ -242,14 +242,8 @@ export fn type_expr_list_append(list: TypeExprList, ty: TypeExpr) -> TypeExprLis
     }
 }
 
-// Fallback name comparison for ValueTypes with id=0 (unresolved).
-// TypeId comparison handles resolved types; this covers edge cases during
-// bootstrap where some codegen paths still produce id=0.
 fn names_match(a: string, b: string) -> bool {
-    if a == b { return true }
-    if a.ends_with("::${b}") { return true }
-    if b.ends_with("::${a}") { return true }
-    false
+    a == b
 }
 
 export fn vtype_eq(a: ValueType, b: ValueType) -> bool {

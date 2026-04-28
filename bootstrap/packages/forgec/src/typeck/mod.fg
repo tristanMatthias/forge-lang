@@ -138,7 +138,6 @@ export fn struct_type_lookup(reg: StructTypeReg, name: string) -> FieldList {
         .End -> FieldList.End
         .Node(n, fields, _) if n == name -> fields
         .Node(n, fields, next) -> {
-            if n.ends_with("::${name}") { return fields }
             struct_type_lookup(next, name)
         }
     }
@@ -153,7 +152,6 @@ fn struct_type_canonical(reg: StructTypeReg, name: string) -> string {
         .End -> ""
         .Node(n, _, _) if n == name -> n
         .Node(n, _, next) -> {
-            if n.ends_with("::${name}") { return n }
             struct_type_canonical(next, name)
         }
     }
@@ -173,7 +171,6 @@ fn enum_type_canonical(reg: EnumTypeReg, name: string) -> string {
         .End -> ""
         .Node(n, _, _) if n == name -> n
         .Node(n, _, next) -> {
-            if n.ends_with("::${name}") { return n }
             enum_type_canonical(next, name)
         }
     }
@@ -220,7 +217,6 @@ export fn trait_lookup(reg: TraitRegistry, name: string) -> TraitMethodList {
         .End -> TraitMethodList.End
         .Node(n, methods, _, _) if n == name -> methods
         .Node(n, methods, _, next) -> {
-            if n.ends_with("::${name}") { return methods }
             trait_lookup(next, name)
         }
     }
@@ -231,7 +227,6 @@ export fn trait_has(reg: TraitRegistry, name: string) -> bool {
         .End -> false
         .Node(n, _, _, _) if n == name -> true
         .Node(n, _, _, next) -> {
-            if n.ends_with("::${name}") { return true }
             trait_has(next, name)
         }
     }
@@ -242,7 +237,6 @@ export fn trait_canonical(reg: TraitRegistry, name: string) -> string {
         .End -> ""
         .Node(n, _, _, _) if n == name -> n
         .Node(n, _, _, next) -> {
-            if n.ends_with("::${name}") { return n }
             trait_canonical(next, name)
         }
     }
@@ -253,7 +247,6 @@ export fn trait_assoc_types(reg: TraitRegistry, name: string) -> TraitAssocTypes
         .End -> TraitAssocTypes.End
         .Node(n, _, at, _) if n == name -> at
         .Node(n, _, at, next) -> {
-            if n.ends_with("::${name}") { return at }
             trait_assoc_types(next, name)
         }
     }
