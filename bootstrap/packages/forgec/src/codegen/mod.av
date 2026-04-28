@@ -1,0 +1,402 @@
+// WHY: LLVM IR emission — declaration passes, dispatch, and top-level setup.
+// Feature-specific codegen lives in features/*/codegen.av.
+// Operators in codegen/operators.av, strings in codegen/strings.av, etc.
+
+mod types
+mod setup
+mod operators
+mod strings
+mod printing
+mod blocks
+mod indexing
+mod helpers
+mod escape
+mod cycles
+
+use core.ast.{Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, SExpr, SStmt, Stmt, StmtList, TypeList, ValueType, VarEnv, VariantList, env_extend, env_lookup, expr_list_length, field_index_of, field_init_length, field_list_length, param_list_length, sexpr_dummy, stmt_unwrap, variant_lookup, variant_max_payload, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_list_elem, vtype_struct_name, vtype_trait_name}
+use codegen.types.{Ctx, DeferStack, EmitValue, EnumLookup, EnumReg, FnParamTypes, FnRetTypes, LoopFrame, LoopStack, ParamTypeList, RcCleanupStack, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, advance_field_list, err_emit, err_stmt, loops_top, null_ptr_val, ok_emit, ok_emit, ok_stmt, trait_decl_has, trait_decl_lookup, vtype_is_ptr_type}
+
+use core.registry.{build_registry, dispatch_expr_emit, dispatch_stmt_emit, avra_expr_tag, avra_stmt_tag, has_expr_emit, has_stmt_emit, registry_new}
+use features.closures.codegen.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value, emit_typed_lambda_arg}
+use features.defer_stmt.codegen.{emit_defers, emit_defers_on_error}
+use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
+use features.fn_decl.codegen.{emit_function_bodies}
+use features.let_stmt.codegen.{emit_var_decl}
+use features.if_stmt.codegen.{emit_if}
+use features.list_lit.codegen.{emit_list_reduce_typed, emit_list_method_call}
+use features.map_lit.codegen.{emit_map_method_call}
+use features.match_expr.codegen.{emit_match_expr}
+use codegen.operators.{emit_unary, emit_binary, emit_logical}
+use codegen.blocks.{emit_block_expr, emit_block_loop}
+use codegen.indexing.{emit_index, emit_slice}
+use codegen.helpers.{strip_quotes, is_null_literal, stmts_last_expr}
+use codegen.strings.{emit_concat, emit_str_eq, emit_str_cmp, emit_str_replace, emit_substring}
+use codegen.printing.{emit_println, emit_eprintln}
+use features.trait_decl.codegen.{emit_trait_dispatch, box_for_trait, resolve_concrete_type_name, push_vtable_entries_call}
+use features.fn_decl.codegen.{emit_call, emit_call_named, emit_method_call}
+use features.error_propagation.{Result}
+use parse.lexer.{parse_int_literal}
+use core.runtime.{avra_tag_as_result}
+
+//
+// The bootstrap codegen calls a small set of LLVM-C-API wrappers
+// (the `avra_llvm_*` symbols exposed by the @std.llvm package's
+// native library) plus a handful of libc helpers. We declare them
+// directly as `extern fn` so the bootstrap source has no
+// dependence on the host's package namespace dispatch — it just
+// calls C symbols.
+//
+// We keep the local helper names matching the old `llvm.X` shape
+// (e.g. `bs_llvm_context_create`) so the rest of this file reads
+// the same as before; the helpers are thin wrappers over the
+// underlying C symbols.
+
+// ── Public API ──
+
+
+export fn ok_sr(ctx: Ctx, env: VarEnv) -> Result<StmtResult, string> {
+    let r = Result.Ok(StmtResult { ctx, env })
+    avra_tag_as_result(r)
+    r
+}
+
+export fn err_sr(msg: string) -> Result<StmtResult, string> {
+    let r = Result.Err(msg)
+    avra_tag_as_result(r)
+    r
+}
+
+// ── Statement emission ──
+
+export fn emit_stmt_list(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<StmtResult, string> {
+    match stmts {
+        .End -> ok_sr(ctx, env)
+        .Node(ss, next) -> {
+            let line_ctx = ctx with { source_line: ss.line }
+            let sr = emit_stmt(line_ctx, env, ss.node)?
+            emit_stmt_list(sr.ctx, sr.env, next)
+        }
+    }
+}
+
+// Release all RC-managed locals that were NOT moved.
+// Reads from ctx.rc_cleanup which tracks locals pushed via ctx.bind.
+export fn emit_rc_cleanup(ctx: Ctx) {
+    emit_rc_stack(ctx, ctx.rc_cleanup)
+}
+
+fn emit_rc_stack(ctx: Ctx, stack: RcCleanupStack) {
+    match stack {
+        .End -> {}
+        .Node(_, alloca, ty, next) -> {
+            let val = ctx.load(ctx.ptr_type, alloca, "rc_local")
+            emit_rc_release_typed(ctx, val, ty)
+            emit_rc_stack(ctx, next)
+        }
+    }
+}
+
+// Release a value with knowledge of its type. For struct/enum types that
+// have a generated __release_TypeName function, calls that function which
+// recursively releases RC-managed fields before freeing. For other types,
+// falls back to plain avra_rc_release.
+export fn emit_rc_release_typed(ctx: Ctx, val: ptr, ty: ValueType) {
+    match ty {
+        .Struct(name, _) -> {
+            let release_fn = ctx.get_fn("__release_${name}")
+            if release_fn != null {
+                ctx.call("__release_${name}", [val])
+            } else {
+                ctx.rc_release(val)
+            }
+        }
+        .Enum(name, _, _) -> {
+            let release_fn = ctx.get_fn("__release_${name}")
+            if release_fn != null {
+                ctx.call("__release_${name}", [val])
+            } else {
+                ctx.rc_release(val)
+            }
+        }
+        .Newtype(name, _, _) -> {
+            // Newtype wraps another type — release via the wrapper's release function if it exists
+            let release_fn = ctx.get_fn("__release_${name}")
+            if release_fn != null {
+                ctx.call("__release_${name}", [val])
+            } else {
+                ctx.rc_release(val)
+            }
+        }
+        // Str, Ptr, Fn: leaf RC types with no inner RC fields.
+        .Str -> ctx.rc_release(val)
+        .Ptr -> ctx.rc_release(val)
+        .Fn(_) -> ctx.rc_release(val)
+        // Tuple: inline recursive release — check each ptr-typed element.
+        .Tuple(elements) -> emit_rc_release_tuple(ctx, val, elements)
+        // Closure: [TAG, fn_ptr, cap1, cap2, ...] — captures are independently
+        // RC-managed (retained when closure is created), so releasing the closure
+        // array itself via plain rc_release is correct. Each captured value has
+        // its own refcount and will be released when its owning scope ends.
+        .Closure(_, _) -> ctx.rc_release(val)
+        // Union: {i64 tag, ptr payload} — payload values are independently
+        // RC-managed. The union wrapper is a thin envelope; releasing it via
+        // plain rc_release frees the envelope only. The payload's refcount is
+        // managed separately at the site where the value was created/wrapped.
+        .Union(_) -> ctx.rc_release(val)
+        .List(_) -> ctx.rc_release(val)
+        .Map -> ctx.rc_release(val)
+        .Trait(_, _) -> ctx.rc_release(val)
+        // Value types — not RC-managed, no-op (rc_release checks magic).
+        .Int -> {}
+        .Bool -> {}
+        .Float -> {}
+        .Void -> {}
+        // FnTyped — function pointer, not heap-allocated.
+        .FnTyped(_, _) -> {}
+        // NarrowedEnum — same RC semantics as its base Enum.
+        .NarrowedEnum(name, _, _) -> {
+            let release_fn = ctx.get_fn("__release_${name}")
+            if release_fn != null {
+                ctx.call("__release_${name}", [val])
+            } else {
+                ctx.rc_release(val)
+            }
+        }
+        // Catch-all for non-RC types (includes Unknown sentinel).
+        _ -> {}
+    }
+}
+
+// Emit inline recursive release for a tuple.
+// 1. avra_rc_should_free(val) — decrements refcount, returns 1 if it hit 0
+// 2. If should free: load each ptr-typed element, null-check, release recursively, then avra_rc_free
+// 3. If not freeing: done (refcount was just decremented)
+fn emit_rc_release_tuple(ctx: Ctx, val: ptr, elements: TypeList) {
+    let should = ctx.call("avra_rc_should_free", [val])
+    let cond = ctx.icmp_ne(should, ctx.i64(0), "tup_should_free")
+    let free_bb = ctx.bb("tup_free")
+    let done_bb = ctx.bb("tup_done")
+    ctx.cond_br(cond, free_bb, done_bb)
+    ctx.position(free_bb)
+    emit_tuple_elem_releases(ctx, val, elements, 0)
+    ctx.call("avra_rc_free", [val])
+    ctx.br(done_bb)
+    ctx.position(done_bb)
+}
+
+// Recursively emit release code for each ptr-typed element in a tuple.
+fn emit_tuple_elem_releases(ctx: Ctx, buf: ptr, elements: TypeList, idx: int) {
+    match elements {
+        .End -> {}
+        .Node(elem_ty, next) -> {
+            if vtype_is_ptr_type(elem_ty) {
+                let loaded = ctx.load_slot(buf, idx, "trel_${idx}")
+                let as_ptr = ctx.to_ptr(loaded, "trel_ptr_${idx}")
+                let is_null = ctx.icmp_eq(as_ptr, ctx.zero_for(.Ptr), "trel_null_${idx}")
+                let skip_bb = ctx.bb("trel_skip_${idx}")
+                let do_bb = ctx.bb("trel_do_${idx}")
+                ctx.cond_br(is_null, skip_bb, do_bb)
+                ctx.position(do_bb)
+                emit_rc_release_typed(ctx, as_ptr, elem_ty)
+                ctx.br(skip_bb)
+                ctx.position(skip_bb)
+            }
+            emit_tuple_elem_releases(ctx, buf, next, idx + 1)
+        }
+    }
+}
+
+export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
+    // Coverage: instrument each statement with its source line as region ID
+    ctx.cov_line()
+    match stmt {
+        .Expr(expr) -> {
+            emit_expr(ctx, env, expr)?
+            ok_sr(ctx, env)
+        }
+        .Return(value) -> {
+            let r = emit_expr(ctx, env, value)?
+            // Structured concurrency: await all spawned tasks before returning.
+            if ctx.task_group != null {
+                ctx.call("avra_task_group_await_all", [ctx.task_group])
+            }
+            // errdefer: detect error returns — Err(...) or null for nullable fns.
+            let is_err_return = match value {
+                .EnumCtor(_, variant, _) -> variant == "Err"
+                .Null -> true
+                _ -> false
+            }
+            if is_err_return {
+                emit_defers_on_error(ctx, env)
+            } else {
+                emit_defers(ctx, env)
+            }
+            let fn_ret = ctx.current_fn_ret()
+            // Union wrapping: if function returns a union, wrap the concrete value
+            if needs_union_wrap(r.ty, fn_ret) {
+                let wrapped = emit_union_wrap(ctx, r.value, r.ty, fn_ret)?
+                ctx.ret(wrapped.value, fn_ret)
+            } else {
+                ctx.ret(r.value, fn_ret)
+            }
+            ok_sr(ctx, env)
+        }
+        .ReturnEmpty -> {
+            // Structured concurrency: await all spawned tasks before returning.
+            if ctx.task_group != null {
+                ctx.call("avra_task_group_await_all", [ctx.task_group])
+            }
+            emit_defers(ctx, env)
+            let fn_ret = ctx.current_fn_ret()
+            ctx.ret_void(fn_ret)
+            ok_sr(ctx, env)
+        }
+        .Let(name, vt, initializer) -> {
+            let new_env = emit_var_decl(ctx, env, name, vt, initializer)?
+            ok_sr(ctx, new_env)
+        }
+        .Mut(name, vt, initializer) -> {
+            let new_env = emit_var_decl(ctx, env, name, vt, initializer)?
+            ok_sr(ctx, new_env)
+        }
+        .Const(name, vt, initializer) -> {
+            let new_env = emit_var_decl(ctx, env, name, vt, initializer)?
+            ok_sr(ctx, new_env)
+        }
+        .If(condition, then_branch, else_branch) -> emit_if(ctx, env, condition, then_branch, else_branch)
+        .Block(body) -> {
+            let sr = emit_stmt_list(ctx, env, body)?
+            ok_sr(sr.ctx, env)
+        }
+        .TypeDecl(_, _, _) or .NewtypeDecl(_, _) or .UnionAliasDecl(_, _) or .ShapeDecl(_, _) or .EnumDecl(_, _, _) or .Impl(_, _) or .ExternFn(_, _, _)
+        or .NoOp or .TraitDecl(_, _) or .Module(_, _) or .Use(_, _) or .AssocType(_, _) -> ok_sr(ctx, env)
+        .Annotated(_, inner) -> emit_stmt(ctx, env, inner)
+        .Break -> {
+            let frame = loops_top(ctx.loops)
+            if !frame.found {
+                return err_sr("codegen error: break outside loop")
+            }
+            ctx.br(frame.exit_bb)
+            ok_sr(ctx, env)
+        }
+        .Continue -> {
+            let frame = loops_top(ctx.loops)
+            if !frame.found {
+                return err_sr("codegen error: continue outside loop")
+            }
+            ctx.br(frame.cond_bb)
+            ok_sr(ctx, env)
+        }
+        _ -> {
+            let tag = avra_stmt_tag(stmt)
+            if has_stmt_emit(ctx.features, tag) {
+                return dispatch_stmt_emit(ctx.features, tag, ctx, env, stmt)
+            }
+            err_sr("codegen error: unsupported statement type (tag=${string(tag)})")
+        }
+    }
+}
+
+// ── Expression emission ──
+
+export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+    ctx.cov_line()
+    match expr {
+        .Number(text) -> {
+            let value = parse_int_literal(text)
+            ok_emit(ctx.i64(value), .Int)
+        }
+        .FloatLit(text) -> {
+            let str_ptr = ctx.global_str(text, ".float_str")
+            let bits = ctx.call("avra_float_parse", [str_ptr])
+            ok_emit(ctx.cast_to(bits, .Float), .Float)
+        }
+        .Bool(text) -> {
+            if text == "true" {
+                return ok_emit(ctx.i64(1), .Bool)
+            }
+            ok_emit(ctx.i64(0), .Bool)
+        }
+        .Null -> ok_emit(ctx.i64(0), .Void)
+        .String(text) -> {
+            let inner = strip_quotes(text)
+            let str_ptr = ctx.global_str(inner, ".str")
+            ok_emit(str_ptr, .Str)
+        }
+        .Grouping(inner) -> emit_expr(ctx, env, inner)
+        .Unary(op, right) -> emit_unary(ctx, env, op, right)
+        .Binary(left, op, right) -> emit_binary(ctx, env, left, op, right)
+        .Logical(left, op, right) -> emit_logical(ctx, env, left, op, right)
+        .Ident(name) -> emit_name_lookup(ctx, env, name, "variable")
+        .QualifiedIdent(path) -> emit_name_lookup(ctx, env, path, "name")
+        .Assign(name, value) -> {
+            let r = emit_expr(ctx, env, value)?
+            let local = env_lookup(env, name)
+            if local.found {
+                // Union wrapping: reassigning to a union-typed variable
+                if needs_union_wrap(r.ty, local.ty) {
+                    let wrapped = emit_union_wrap(ctx, r.value, r.ty, local.ty)?
+                    ctx.store(wrapped.value, local.alloca)
+                    return ok_emit(wrapped.value, local.ty)
+                }
+                ctx.store(r.value, local.alloca)
+                return ok_emit(r.value, local.ty)
+            }
+            let g = ctx.lookup_toplevel(name)
+            if g.found {
+                if needs_union_wrap(r.ty, g.ty) {
+                    let wrapped = emit_union_wrap(ctx, r.value, r.ty, g.ty)?
+                    ctx.store(wrapped.value, g.llvm_global)
+                    return ok_emit(wrapped.value, g.ty)
+                }
+                ctx.store(r.value, g.llvm_global)
+                return ok_emit(r.value, g.ty)
+            }
+            err_emit("assignment to undefined variable `${name}`")
+        }
+        .Call(callee, args) -> emit_call(ctx, env, callee, args)
+        .Index(obj, idx) -> emit_index(ctx, env, obj, idx)
+        .Block(body) -> emit_block_expr(ctx, env, body)
+        .Slice(obj, start, end) -> emit_slice(ctx, env, obj, start, end)
+        _ -> {
+            let tag = avra_expr_tag(expr)
+            if has_expr_emit(ctx.features, tag) {
+                return dispatch_expr_emit(ctx.features, tag, ctx, env, expr)
+            }
+            err_emit("unsupported expression type (tag=${string(tag)})")
+        }
+    }
+}
+
+// Shared implementation for .Ident and .QualifiedIdent emission.
+// Checks local vars, top-level globals, then named LLVM functions.
+fn emit_name_lookup(ctx: Ctx, env: VarEnv, name: string, label: string) -> Result<EmitValue, string> {
+    let local = env_lookup(env, name)
+    if local.found {
+        let loaded = ctx.load_typed(local.ty, local.alloca, name)
+        return ok_emit(loaded, local.ty)
+    }
+    let g = ctx.lookup_toplevel(name)
+    if g.found {
+        let loaded = ctx.load_typed(g.ty, g.llvm_global, name)
+        return ok_emit(loaded, g.ty)
+    }
+    let fn_val = ctx.get_fn(name)
+    if fn_val != null {
+        let fn_i64 = ctx.to_i64(fn_val, "fn_ref")
+        let closure_arr = ctx.closure_array(fn_i64)
+        let closure_i64 = ctx.to_i64(closure_arr, "fn_ref_i64")
+        let ret_ty = ctx.fn_ret(name)
+        return ok_emit(closure_i64, .Closure(0, ret_ty))
+    }
+    err_emit("undefined ${label} `${name}` in function `${ctx.current_fn_name}`")
+}
+
+// ── Ctx emit methods ──
+// Make expression/statement emission flow through Ctx.
+
+impl Ctx {
+    fn emit(self, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+        emit_expr(self, env, expr)
+    }
+}

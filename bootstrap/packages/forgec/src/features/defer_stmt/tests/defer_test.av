@@ -1,0 +1,39 @@
+fn defer_basic() {
+    defer println("cleanup!")
+    println("working...")
+}
+
+fn defer_lifo() {
+    defer println("third (first deferred)")
+    defer println("second")
+    defer println("first (last deferred)")
+    println("body")
+}
+
+fn defer_early(x: int) -> string {
+    defer println("always runs")
+    if x > 0 { return "positive" }
+    "non-positive"
+}
+
+spec "defer" {
+    then "basic cleanup" {
+        avra_test_capture_start()
+        defer_basic()
+        let out = avra_test_capture_stop()
+        out == "working...\ncleanup!"
+    }
+    then "LIFO order" {
+        avra_test_capture_start()
+        defer_lifo()
+        let out = avra_test_capture_stop()
+        out == "body\nfirst (last deferred)\nsecond\nthird (first deferred)"
+    }
+    then "runs with early return" {
+        avra_test_capture_start()
+        println(defer_early(5))
+        println(defer_early(-1))
+        let out = avra_test_capture_stop()
+        out == "always runs\npositive\nalways runs\nnon-positive"
+    }
+}

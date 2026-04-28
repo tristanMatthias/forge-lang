@@ -1,0 +1,95 @@
+// WHY: codegen for `spawn { body }`. Wraps the body in a zero-arg
+// closure and calls avra_spawn(closure), returning the thread handle.
+// Per spec Axis 18.7: structured concurrency — spawned tasks are bound
+// to the enclosing scope and auto-awaited at scope exit.
+
+use codegen.types.{ok_emit, err_emit, EmitValue}
+use core.ast.{vtype_fn_ret, MatchArmList, ExprList}
+use features.closures.codegen.{emit_lambda}
+
+export fn spawn_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+    match expr {
+        .Spawn(body) -> emit_spawn(ctx, env, body)
+        _ -> err_emit("spawn_emit_expr: expected Spawn")
+    }
+}
+
+fn emit_spawn(ctx: Ctx, env: VarEnv, body: Expr) -> Result<EmitValue, string> {
+    // Wrap body in a zero-arg lambda: () -> { body }
+    let closure = emit_lambda(ctx, env, Expr.Lambda(ParamList.End, body))?
+
+    // Call avra_spawn(closure_ptr) which returns a thread handle
+    let handle = ctx.call("avra_spawn", [closure.value])
+
+    // Structured concurrency: if a task group is active, register
+    // this handle so it gets awaited when the scope exits.
+    if ctx.task_group != null {
+        ctx.call("avra_task_group_add", [ctx.task_group, handle])
+    }
+
+    // Infer result type from the closure's return type
+    let result_ty = vtype_fn_ret(closure.ty)
+    ok_emit(handle, .Task(result_ty))
+}
+
+// ── AST scan: does a statement list contain any Spawn expressions? ──
+// Used by emit_function_body to decide whether to create a task group.
+
+export fn stmts_has_spawn(stmts: StmtList) -> bool {
+    match stmts {
+        .End -> false
+        .Node(ss, next) -> stmt_has_spawn(ss.node) || stmts_has_spawn(next)
+    }
+}
+
+fn stmt_has_spawn(st: Stmt) -> bool {
+    match st {
+        .Expr(e) -> expr_has_spawn(e)
+        .Return(e) -> expr_has_spawn(e)
+        .Let(_, _, e) -> expr_has_spawn(e)
+        .Mut(_, _, e) -> expr_has_spawn(e)
+        .Const(_, _, e) -> expr_has_spawn(e)
+        .Block(body) -> stmts_has_spawn(body)
+        .If(cond, then_b, else_b) -> {
+            if expr_has_spawn(cond) { return true }
+            if stmt_has_spawn(then_b) { return true }
+            if else_b != null { stmt_has_spawn(else_b!) } else { false }
+        }
+        .While(cond, body) -> expr_has_spawn(cond) || stmt_has_spawn(body)
+        .For(_, start, end, body) -> expr_has_spawn(start) || expr_has_spawn(end) || stmt_has_spawn(body)
+        .ForIn(_, coll, body) -> expr_has_spawn(coll) || stmt_has_spawn(body)
+        .Match(subj, arms) -> expr_has_spawn(subj) || arms_have_spawn(arms)
+        .Annotated(_, inner) -> stmt_has_spawn(inner)
+        .Impl(_, methods) -> stmts_has_spawn(methods)
+        .Parallel(body) -> stmts_has_spawn(body)
+        _ -> false
+    }
+}
+
+fn arms_have_spawn(arms: MatchArmList) -> bool {
+    match arms {
+        .End -> false
+        .Node(_, _, body, next) -> expr_has_spawn(body) || arms_have_spawn(next)
+    }
+}
+
+fn expr_has_spawn(ex: Expr) -> bool {
+    match ex {
+        .Spawn(_) -> true
+        .Block(stmts) -> stmts_has_spawn(stmts)
+        .Call(callee, args) -> expr_has_spawn(callee) || exprs_have_spawn(args)
+        .Binary(l, _, r) -> expr_has_spawn(l) || expr_has_spawn(r)
+        .Unary(_, e) -> expr_has_spawn(e)
+        .IfExpr(cond, then_e, else_e) -> expr_has_spawn(cond) || expr_has_spawn(then_e) || expr_has_spawn(else_e)
+        .MatchExpr(subj, arms) -> expr_has_spawn(subj) || arms_have_spawn(arms)
+        .Lambda(_, body) -> expr_has_spawn(body)
+        _ -> false
+    }
+}
+
+fn exprs_have_spawn(args: ExprList) -> bool {
+    match args {
+        .End -> false
+        .Node(se, next) -> expr_has_spawn(se.node) || exprs_have_spawn(next)
+    }
+}

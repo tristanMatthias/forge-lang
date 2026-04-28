@@ -15,7 +15,7 @@ if [ ! -x "$BS2" ]; then
 fi
 
 for name in enum_match struct_mutation while_break nested_if_else multi_arg_call substring; do
-  fg="$REGRESS/$name.fg"
+  fg="$REGRESS/$name.av"
   out="$REGRESS/$name.out"
   if [ ! -f "$fg" ]; then
     echo "SKIP: $fg not found"

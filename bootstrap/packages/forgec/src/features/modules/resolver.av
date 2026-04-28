@@ -1,0 +1,318 @@
+// WHY: resolves module file references. Walks the AST, finds
+// Stmt.Module stubs, reads the corresponding .av files, parses
+// them, and attaches the parsed bodies. This is the bridge between
+// the pure parser (no I/O) and the file system.
+
+use core.ast.{Stmt, StmtList, SStmt, sstmt, AnnotationList}
+use parse.{parse_program_source}
+
+// Returns the directory portion of a path (with trailing slash), or ""
+export fn modules_dirname(path: string) -> string {
+    let len = path.length
+    mut i = len
+    while i > 0 {
+        let prev = i - 1
+        if path[prev] == "/" {
+            return path.substring(0, i)
+        }
+        i = prev
+    }
+    ""
+}
+
+// Set of loaded file paths — prevents double-parsing.
+export enum LoadedPaths {
+    End
+    Node(path: string, next: LoadedPaths)
+}
+
+fn loaded_has(paths: LoadedPaths, path: string) -> bool {
+    match paths {
+        .End -> false
+        .Node(p, _) if p == path -> true
+        .Node(_, next) -> loaded_has(next, path)
+    }
+}
+
+export type ModListResult = {
+    stmts: StmtList,
+    loaded: LoadedPaths,
+    had_error: int,
+    error_message: string,
+}
+
+type ModStmtResult = {
+    stmt: Stmt,
+    loaded: LoadedPaths,
+    had_error: int,
+    error_message: string,
+}
+
+// Import stack — tracks files currently being resolved to detect cycles.
+// Separate from LoadedPaths (which tracks ALL resolved files).
+enum ImportStack {
+    End
+    Node(path: string, next: ImportStack)
+}
+
+fn stack_has(stack: ImportStack, path: string) -> bool {
+    match stack {
+        .End -> false
+        .Node(p, _) if p == path -> true
+        .Node(_, next) -> stack_has(next, path)
+    }
+}
+
+// Render import stack for error messages: "a.av -> b.av -> a.av"
+fn render_cycle(stack: ImportStack, cycle_path: string) -> string {
+    mut parts = cycle_path
+    mut cur = stack
+    while true {
+        match cur {
+            .End -> { return parts }
+            .Node(p, next) -> {
+                parts = "${p} -> ${parts}"
+                cur = next
+                if p == cycle_path { return parts }
+            }
+        }
+    }
+    parts
+}
+
+// Find the packages directory by searching upward from the given directory.
+// Looks for a sibling or ancestor `packages/` directory that contains std packages.
+fn find_packages_dir(dir: string) -> string {
+    // Strategy 1: look for `/packages/` in the path itself (when compiling from within packages/)
+    let marker = "/packages/"
+    let idx = dir.index_of(marker)
+    if idx >= 0 {
+        return dir.substring(0, idx + marker.length)
+    }
+    // Strategy 2: check common relative locations from the working directory
+    // This handles relative paths like "regress/foo/" where walking up
+    // from the relative path can't find the repo root.
+    let cwd_probe = "packages/std-cli/src/cli.av"
+    if avra_selfhost_file_exists(cwd_probe) {
+        return "packages/"
+    }
+    // Strategy 3: walk upward from dir looking for a sibling `packages/` directory
+    mut search = dir
+    while search.length > 1 {
+        let candidate = "${search}packages/"
+        let probe = "${candidate}std-cli/src/cli.av"
+        if avra_selfhost_file_exists(probe) {
+            return candidate
+        }
+        // Go up one directory: strip trailing slash, then find last slash
+        mut trimmed = search
+        if trimmed.length > 0 && trimmed[trimmed.length - 1] == "/" {
+            trimmed = trimmed.substring(0, trimmed.length - 1)
+        }
+        // Find last slash by scanning backward
+        mut last_slash = -1
+        mut si = trimmed.length - 1
+        while si >= 0 {
+            if trimmed[si] == "/" {
+                last_slash = si
+                break
+            }
+            si = si - 1
+        }
+        if last_slash < 0 { break }
+        search = trimmed.substring(0, last_slash + 1)
+    }
+    ""
+}
+
+// Resolve a @std package path to a file path.
+// "@std.cli" → "{packages_dir}/std-cli/src/cli.av"
+fn resolve_package_path(pkg_path: string, packages_dir: string) -> string {
+    // pkg_path is like "@std.cli" — extract scope ("std") and name ("cli")
+    if packages_dir == "" { return "" }
+    // Skip the "@" prefix
+    let without_at = pkg_path.substring(1, pkg_path.length)
+    // Split on first "."
+    let dot = without_at.index_of(".")
+    if dot < 0 { return "" }
+    let scope = without_at.substring(0, dot)
+    let name = without_at.substring(dot + 1, without_at.length)
+    // Check for sub-path (e.g., "@std.cli.sub" → name="cli", sub="sub")
+    let name_dot = name.index_of(".")
+    mut pkg_name = name
+    if name_dot >= 0 {
+        pkg_name = name.substring(0, name_dot)
+    }
+    let pkg_dir = "${packages_dir}${scope}-${pkg_name}/src/"
+    // Try the package-name file first, then mod.av
+    let entry = "${pkg_dir}${pkg_name}.av"
+    if avra_selfhost_file_exists(entry) { return entry }
+    let mod_entry = "${pkg_dir}mod.av"
+    if avra_selfhost_file_exists(mod_entry) { return mod_entry }
+    ""
+}
+
+// Resolve all Stmt.Module stubs in a StmtList.
+export fn resolve_module_files(stmts: StmtList, dir: string, loaded: LoadedPaths) -> ModListResult {
+    resolve_module_files_inner(stmts, dir, loaded, ImportStack.End)
+}
+
+// Check if a use path is a package import (starts with "@")
+fn is_package_use(path: string) -> bool {
+    path.length > 0 && path[0] == "@"
+}
+
+// Extract the package module name from a use path.
+// "@std.cli" → "@std.cli", "@std.cli.sub" → "@std.cli"
+fn package_module_name(path: string) -> string {
+    // Skip "@" prefix, find scope.name
+    let without_at = path.substring(1, path.length)
+    let dot = without_at.index_of(".")
+    if dot < 0 { return path }
+    let scope = without_at.substring(0, dot)
+    let rest = without_at.substring(dot + 1, without_at.length)
+    let next_dot = rest.index_of(".")
+    if next_dot >= 0 {
+        let name = rest.substring(0, next_dot)
+        return "@${scope}.${name}"
+    }
+    path
+}
+
+fn resolve_module_files_inner(stmts: StmtList, dir: string, loaded: LoadedPaths, stack: ImportStack) -> ModListResult {
+    match stmts {
+        .End -> ModListResult { stmts: StmtList.End, loaded, had_error: false, error_message: "" }
+        .Node(ss, next) -> {
+            // Check for package use statements — auto-load the package module
+            // Unwrap Annotated wrappers (e.g., doc comments) to find Use statements
+            let is_pkg = match ss.node {
+                .Use(up, _) -> is_package_use(up)
+                .Annotated(_, inner) -> match inner {
+                    .Use(up, _) -> is_package_use(up)
+                    _ -> false
+                }
+                _ -> false
+            }
+            if is_pkg {
+                return resolve_package_use_and_continue(ss, next, dir, loaded, stack)
+            }
+            let head = resolve_module_stmt(ss.node, dir, loaded, stack)
+            if head.had_error {
+                return ModListResult { stmts: StmtList.End, loaded: head.loaded, had_error: true, error_message: head.error_message }
+            }
+            let rest = resolve_module_files_inner(next, dir, head.loaded, stack)
+            if rest.had_error { return rest }
+            ModListResult {
+                stmts: StmtList.Node(sstmt(head.stmt, ss.line, ss.col), rest.stmts),
+                loaded: rest.loaded,
+                had_error: false,
+                error_message: "",
+            }
+        }
+    }
+}
+
+// Extract the use path from a statement, unwrapping Annotated wrappers
+fn extract_use_path(stmt: Stmt) -> string {
+    match stmt {
+        .Use(up, _) -> up
+        .Annotated(_, inner) -> extract_use_path(inner)
+        _ -> ""
+    }
+}
+
+fn resolve_package_use_and_continue(ss: SStmt, next: StmtList, dir: string, loaded: LoadedPaths, stack: ImportStack) -> ModListResult {
+    let use_path = extract_use_path(ss.node)
+    let pkg_mod = package_module_name(use_path)
+    let packages_dir = find_packages_dir(dir)
+    if packages_dir == "" {
+        return ModListResult { stmts: StmtList.End, loaded, had_error: true, error_message: "cannot resolve package `${pkg_mod}`: no packages/ directory found in path" }
+    }
+    let pkg_file = resolve_package_path(pkg_mod, packages_dir)
+    if pkg_file == "" {
+        return ModListResult { stmts: StmtList.End, loaded, had_error: true, error_message: "package `${pkg_mod}` not found" }
+    }
+    if loaded_has(loaded, pkg_file) {
+        // Already loaded — just pass through the use statement
+        let rest = resolve_module_files_inner(next, dir, loaded, stack)
+        if rest.had_error { return rest }
+        return ModListResult {
+            stmts: StmtList.Node(ss, rest.stmts),
+            loaded: rest.loaded,
+            had_error: false,
+            error_message: "",
+        }
+    }
+    // Load and parse the package file
+    let new_loaded = LoadedPaths.Node(pkg_file, loaded)
+    let pkg_source = avra_selfhost_read_file(pkg_file)
+    let parsed = parse_program_source(pkg_source)
+    if parsed.had_error || parsed.stmts == null {
+        return ModListResult { stmts: StmtList.End, loaded: new_loaded, had_error: true, error_message: "error in package `${pkg_mod}`: ${parsed.error_message}" }
+    }
+    let pkg_dir = modules_dirname(pkg_file)
+    let resolved = resolve_module_files_inner(parsed.stmts!, pkg_dir, new_loaded, stack)
+    if resolved.had_error { return resolved }
+    // Create a nested module structure: @std → cli → {body}
+    let without_at = pkg_mod.substring(1, pkg_mod.length)
+    let dot = without_at.index_of(".")
+    let scope_name = without_at.substring(0, dot)
+    let pkg_name = without_at.substring(dot + 1, without_at.length)
+    let inner_mod = Stmt.Module(pkg_name, resolved.stmts)
+    let outer_mod = Stmt.Module("@${scope_name}", StmtList.Node(sstmt(inner_mod, ss.line, ss.col), StmtList.End))
+    // Continue processing rest of the statement list
+    let rest = resolve_module_files_inner(next, dir, resolved.loaded, stack)
+    if rest.had_error { return rest }
+    // Emit: [module_decl, use_stmt, ...rest]
+    ModListResult {
+        stmts: StmtList.Node(
+            sstmt(outer_mod, ss.line, ss.col),
+            StmtList.Node(ss, rest.stmts)
+        ),
+        loaded: rest.loaded,
+        had_error: false,
+        error_message: "",
+    }
+}
+
+fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths, stack: ImportStack) -> ModStmtResult {
+    match stmt {
+        .Module(name, _) -> {
+            let sibling = "${dir}${name}.av"
+            let dir_mod = "${dir}${name}/mod.av"
+            mut mod_path = ""
+            if avra_selfhost_file_exists(sibling) { mod_path = sibling }
+            if mod_path == "" && avra_selfhost_file_exists(dir_mod) { mod_path = dir_mod }
+            if mod_path == "" {
+                return ModStmtResult { stmt, loaded, had_error: true, error_message: "module `${name}` not found (looked for ${sibling} and ${dir_mod})" }
+            }
+            // Circular import detection: if mod_path is on the import
+            // stack, we have a cycle. Report a clear error.
+            if stack_has(stack, mod_path) {
+                let cycle = render_cycle(stack, mod_path)
+                return ModStmtResult { stmt, loaded, had_error: true, error_message: "[F3103] circular import detected: ${cycle}" }
+            }
+            if loaded_has(loaded, mod_path) {
+                return ModStmtResult { stmt: Stmt.Module(name, StmtList.End), loaded, had_error: false, error_message: "" }
+            }
+            let new_loaded = LoadedPaths.Node(mod_path, loaded)
+            let new_stack = ImportStack.Node(mod_path, stack)
+            let mod_source = avra_selfhost_read_file(mod_path)
+            let parsed = parse_program_source(mod_source)
+            if parsed.had_error || parsed.stmts == null {
+                return ModStmtResult { stmt, loaded: new_loaded, had_error: true, error_message: "error in module `${name}`: ${parsed.error_message}" }
+            }
+            let mod_dir = modules_dirname(mod_path)
+            let resolved = resolve_module_files_inner(parsed.stmts!, mod_dir, new_loaded, new_stack)
+            if resolved.had_error {
+                return ModStmtResult { stmt, loaded: resolved.loaded, had_error: true, error_message: resolved.error_message }
+            }
+            ModStmtResult { stmt: Stmt.Module(name, resolved.stmts), loaded: resolved.loaded, had_error: false, error_message: "" }
+        }
+        .Annotated(annotations, inner) -> {
+            let r = resolve_module_stmt(inner, dir, loaded, stack)?
+            ModStmtResult { stmt: Stmt.Annotated(annotations, r.stmt), loaded: r.loaded, had_error: false, error_message: "" }
+        }
+        _ -> ModStmtResult { stmt, loaded, had_error: false, error_message: "" }
+    }
+}

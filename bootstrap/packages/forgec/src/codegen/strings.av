@@ -1,0 +1,109 @@
+// WHY: codegen for string operations — concat, comparison, replace, substring.
+
+use core.ast.{Expr, ExprList, VarEnv}
+use codegen.types.{Ctx, EmitValue, ok_emit, err_emit}
+use codegen.helpers.{strip_quotes}
+
+export fn emit_concat(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr) -> Result<EmitValue, string> {
+    let lhs_ptr = ctx.to_ptr(lhs_i64, "concat_l")
+    let rhs_ptr = ctx.to_ptr(rhs_i64, "concat_r")
+
+    let lhs_len = ctx.call("strlen", [lhs_ptr])
+    let rhs_len = ctx.call("strlen", [rhs_ptr])
+
+    let total = ctx.add(lhs_len, rhs_len, "concat_total")
+    let alloc_size = ctx.add(total, ctx.i64(1), "concat_size")
+    let buf = ctx.rc_alloc(alloc_size)
+
+    ctx.call("memcpy", [buf, lhs_ptr, lhs_len])
+
+    let buf_int = ctx.to_i64(buf, "buf_int")
+    let dst2 = ctx.to_ptr(ctx.add(buf_int, lhs_len, "dst2_int"), "dst2")
+    ctx.call("memcpy", [dst2, rhs_ptr, ctx.add(rhs_len, ctx.i64(1), "rhs_len_p1")])
+
+    ok_emit(buf, .Str)
+}
+
+export fn emit_str_replace(ctx: Ctx, env: VarEnv, str_i64: ptr, args: ExprList) -> Result<EmitValue, string> {
+    match args {
+        .Node(se_from, rest) -> {
+            match rest {
+                .Node(se_to, _) -> {
+                    let from_r = ctx.emit(env, se_from.node)?
+                    let to_r = ctx.emit(env, se_to.node)?
+                    let str_ptr = ctx.to_ptr(str_i64, "rep_self")
+                    let from_ptr = ctx.to_ptr(from_r.value, "rep_from")
+                    let to_ptr_v = ctx.to_ptr(to_r.value, "rep_to")
+                    let result = ctx.call("avra_str_replace", [str_ptr, from_ptr, to_ptr_v])
+                    ok_emit(result, .Str)
+                }
+                _ -> err_emit("replace expects 2 arguments")
+            }
+        }
+        _ -> err_emit("replace expects 2 arguments")
+    }
+}
+
+export fn emit_substring(ctx: Ctx, env: VarEnv, str_i64: ptr, args: ExprList) -> Result<EmitValue, string> {
+    // Expect exactly two integer args: start and end (exclusive).
+    // Destructure exactly once — repeated `match args` corrupts
+    // the inner payloads (host-compiler issue).
+    match args {
+        .End -> err_emit("substring expects 2 args, got 0")
+        .Node(se_start, rest) -> {
+            match rest {
+                .End -> err_emit("substring expects 2 args, got 1")
+                .Node(se_end, _) -> emit_substring_inner(ctx, env, str_i64, se_start.node, se_end.node)
+            }
+        }
+    }
+}
+
+export fn emit_substring_inner(ctx: Ctx, env: VarEnv, str_i64: ptr, start_arg: Expr, end_arg: Expr) -> Result<EmitValue, string> {
+    let start_r = ctx.emit(env, start_arg)?
+    let end_r = ctx.emit(env, end_arg)?
+    let str_ptr = ctx.to_ptr(str_i64, "sub_src")
+    let len = ctx.sub(end_r.value, start_r.value, "sub_len")
+    let one = ctx.i64(1)
+    let alloc_size = ctx.add(len, one, "sub_alloc")
+    // malloc(alloc_size)
+    let buf = ctx.rc_alloc(alloc_size)
+    // memcpy(buf, src + start, len)
+    let src_int = ctx.to_i64(str_ptr, "sub_src_int")
+    let off_int = ctx.add(src_int, start_r.value, "sub_off_int")
+    let off_ptr = ctx.to_ptr(off_int, "sub_off")
+    ctx.call("memcpy", [buf, off_ptr, len])
+    // Null-terminate at buf[len].
+    let buf_int2 = ctx.to_i64(buf, "sub_buf_int")
+    let nul_int = ctx.add(buf_int2, len, "sub_nul_int")
+    let nul_ptr = ctx.to_ptr(nul_int, "sub_nul")
+    ctx.store(ctx.i8(0), nul_ptr)
+    ok_emit(buf, .Str)
+}
+
+export fn emit_str_cmp(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, pred: int) -> Result<EmitValue, string> {
+    // Lower string ordering ops (<, <=, >, >=) to a libc strcmp
+    // call followed by a signed comparison of the result against
+    // 0. We sign-extend strcmp's i32 result into i64 ourselves
+    // because the host's build_icmp wrapper auto-promotes i32
+    // operands via zero-extend, which would turn a negative
+    // strcmp result into a huge positive i64 and break signed
+    // comparison.
+    let lhs_ptr = ctx.to_ptr(lhs_i64, "scmp_l")
+    let rhs_ptr = ctx.to_ptr(rhs_i64, "scmp_r")
+    let result32 = ctx.call("strcmp", [lhs_ptr, rhs_ptr])
+    let result64 = ctx.sext(result32, ctx.i64_type, "strcmp_sext")
+    let zero64 = ctx.i64(0)
+    let cmp = ctx.icmp(pred, result64, zero64, "scmp_cmp")
+    ok_emit(ctx.zext(cmp, ctx.i64_type, "scmp_ext"), .Bool)
+}
+
+export fn emit_str_eq(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, invert: bool) -> Result<EmitValue, string> {
+    let lhs_ptr = ctx.to_ptr(lhs_i64, "streq_l")
+    let rhs_ptr = ctx.to_ptr(rhs_i64, "streq_r")
+    let result = ctx.call("strcmp", [lhs_ptr, rhs_ptr])
+    let pred = if invert { 33 } else { 32 }
+    let cmp = ctx.icmp(pred, result, ctx.i64(0), "streq_cmp")
+    ok_emit(ctx.zext(cmp, ctx.i64_type, "streq_ext"), .Bool)
+}
+

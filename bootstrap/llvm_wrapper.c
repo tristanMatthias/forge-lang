@@ -1,5 +1,5 @@
 // Pure C wrapper around LLVM's C API.
-// Replaces libforge_llvm.a (Rust) — no Rust toolchain needed.
+// Replaces libavra_llvm.a (Rust) — no Rust toolchain needed.
 // Targets LLVM 21 C API.
 
 #include <llvm-c/Core.h>
@@ -11,89 +11,89 @@
 #include <string.h>
 #include <stdio.h>
 
-// All functions use the forge_llvm_* naming convention matching
+// All functions use the avra_llvm_* naming convention matching
 // the extern fn declarations in src/core/llvm.fg.
 
 // ── Context / Module / Builder ──
 
-LLVMContextRef forge_llvm_context_create(void) {
+LLVMContextRef avra_llvm_context_create(void) {
     return LLVMContextCreate();
 }
 
-void forge_llvm_context_dispose(LLVMContextRef ctx) {
+void avra_llvm_context_dispose(LLVMContextRef ctx) {
     LLVMContextDispose(ctx);
 }
 
-LLVMModuleRef forge_llvm_module_create(const char* name, LLVMContextRef ctx) {
+LLVMModuleRef avra_llvm_module_create(const char* name, LLVMContextRef ctx) {
     return LLVMModuleCreateWithNameInContext(name, ctx);
 }
 
-void forge_llvm_module_dispose(LLVMModuleRef m) {
+void avra_llvm_module_dispose(LLVMModuleRef m) {
     LLVMDisposeModule(m);
 }
 
-LLVMBuilderRef forge_llvm_create_builder(LLVMContextRef ctx) {
+LLVMBuilderRef avra_llvm_create_builder(LLVMContextRef ctx) {
     return LLVMCreateBuilderInContext(ctx);
 }
 
-void forge_llvm_dispose_builder(LLVMBuilderRef b) {
+void avra_llvm_dispose_builder(LLVMBuilderRef b) {
     LLVMDisposeBuilder(b);
 }
 
 // ── Types ──
 
-LLVMTypeRef forge_llvm_int1_type(LLVMContextRef ctx) {
+LLVMTypeRef avra_llvm_int1_type(LLVMContextRef ctx) {
     return LLVMInt1TypeInContext(ctx);
 }
 
-LLVMTypeRef forge_llvm_int8_type(LLVMContextRef ctx) {
+LLVMTypeRef avra_llvm_int8_type(LLVMContextRef ctx) {
     return LLVMInt8TypeInContext(ctx);
 }
 
-LLVMTypeRef forge_llvm_int32_type(LLVMContextRef ctx) {
+LLVMTypeRef avra_llvm_int32_type(LLVMContextRef ctx) {
     return LLVMInt32TypeInContext(ctx);
 }
 
-LLVMTypeRef forge_llvm_int64_type(LLVMContextRef ctx) {
+LLVMTypeRef avra_llvm_int64_type(LLVMContextRef ctx) {
     return LLVMInt64TypeInContext(ctx);
 }
 
-LLVMTypeRef forge_llvm_double_type(LLVMContextRef ctx) {
+LLVMTypeRef avra_llvm_double_type(LLVMContextRef ctx) {
     return LLVMDoubleTypeInContext(ctx);
 }
 
-LLVMTypeRef forge_llvm_void_type(LLVMContextRef ctx) {
+LLVMTypeRef avra_llvm_void_type(LLVMContextRef ctx) {
     return LLVMVoidTypeInContext(ctx);
 }
 
-LLVMTypeRef forge_llvm_pointer_type(LLVMContextRef ctx) {
+LLVMTypeRef avra_llvm_pointer_type(LLVMContextRef ctx) {
     return LLVMPointerTypeInContext(ctx, 0);
 }
 
-LLVMValueRef forge_llvm_const_null(LLVMTypeRef ty) {
+LLVMValueRef avra_llvm_const_null(LLVMTypeRef ty) {
     if (!ty) {
-        fprintf(stderr, "[CRASH] forge_llvm_const_null: ty is NULL\n");
+        fprintf(stderr, "[CRASH] avra_llvm_const_null: ty is NULL\n");
         abort();
     }
     return LLVMConstNull(ty);
 }
 
-LLVMTypeRef forge_llvm_function_type(LLVMTypeRef ret, LLVMTypeRef* params, int param_count, int is_vararg) {
+LLVMTypeRef avra_llvm_function_type(LLVMTypeRef ret, LLVMTypeRef* params, int param_count, int is_vararg) {
     return LLVMFunctionType(ret, params, (unsigned)param_count, is_vararg);
 }
 
-LLVMTypeRef forge_llvm_struct_create_named(LLVMContextRef ctx, const char* name) {
+LLVMTypeRef avra_llvm_struct_create_named(LLVMContextRef ctx, const char* name) {
     return LLVMStructCreateNamed(ctx, name);
 }
 
-LLVMTypeRef forge_llvm_struct_set_body(LLVMTypeRef st, LLVMTypeRef* elems, int count, int packed) {
+LLVMTypeRef avra_llvm_struct_set_body(LLVMTypeRef st, LLVMTypeRef* elems, int count, int packed) {
     if (!st) {
-        fprintf(stderr, "[CRASH] forge_llvm_struct_set_body: st is NULL\n");
+        fprintf(stderr, "[CRASH] avra_llvm_struct_set_body: st is NULL\n");
         abort();
     }
     for (int i = 0; i < count; i++) {
         if (!elems[i]) {
-            fprintf(stderr, "[CRASH] forge_llvm_struct_set_body: elems[%d] is NULL (struct=%s)\n",
+            fprintf(stderr, "[CRASH] avra_llvm_struct_set_body: elems[%d] is NULL (struct=%s)\n",
                     i, LLVMGetStructName(st));
             abort();
         }
@@ -102,43 +102,43 @@ LLVMTypeRef forge_llvm_struct_set_body(LLVMTypeRef st, LLVMTypeRef* elems, int c
     return st;
 }
 
-LLVMTypeRef forge_llvm_get_type_by_name(LLVMContextRef ctx, const char* name) {
+LLVMTypeRef avra_llvm_get_type_by_name(LLVMContextRef ctx, const char* name) {
     return LLVMGetTypeByName2(ctx, name);
 }
 
 // ── Type/Value arrays (heap-allocated) ──
 
-LLVMTypeRef* forge_llvm_type_array_new(int count) {
+LLVMTypeRef* avra_llvm_type_array_new(int count) {
     if (count <= 0) return (LLVMTypeRef*)calloc(1, sizeof(LLVMTypeRef));
     return (LLVMTypeRef*)calloc(count, sizeof(LLVMTypeRef));
 }
 
-void forge_llvm_type_array_set(LLVMTypeRef* arr, int idx, LLVMTypeRef ty) {
+void avra_llvm_type_array_set(LLVMTypeRef* arr, int idx, LLVMTypeRef ty) {
     arr[idx] = ty;
 }
 
-void forge_llvm_type_array_free(LLVMTypeRef* arr) {
+void avra_llvm_type_array_free(LLVMTypeRef* arr) {
     free(arr);
 }
 
-LLVMValueRef* forge_llvm_value_array_new(int count) {
+LLVMValueRef* avra_llvm_value_array_new(int count) {
     if (count <= 0) return (LLVMValueRef*)calloc(1, sizeof(LLVMValueRef));
     return (LLVMValueRef*)calloc(count, sizeof(LLVMValueRef));
 }
 
-void forge_llvm_value_array_set(LLVMValueRef* arr, int idx, LLVMValueRef val) {
+void avra_llvm_value_array_set(LLVMValueRef* arr, int idx, LLVMValueRef val) {
     arr[idx] = val;
 }
 
-void forge_llvm_value_array_free(LLVMValueRef* arr) {
+void avra_llvm_value_array_free(LLVMValueRef* arr) {
     free(arr);
 }
 
 // ── Constants ──
 
-LLVMValueRef forge_llvm_const_int(LLVMTypeRef ty, int64_t value, int sign_extend) {
+LLVMValueRef avra_llvm_const_int(LLVMTypeRef ty, int64_t value, int sign_extend) {
     if (!ty) {
-        fprintf(stderr, "[CRASH] forge_llvm_const_int: ty is NULL (value=%lld)\n", value);
+        fprintf(stderr, "[CRASH] avra_llvm_const_int: ty is NULL (value=%lld)\n", value);
         abort();
     }
     // Safety: the bootstrap sometimes passes null or non-integer types.
@@ -154,33 +154,33 @@ LLVMValueRef forge_llvm_const_int(LLVMTypeRef ty, int64_t value, int sign_extend
 
 // ── Functions ──
 
-LLVMValueRef forge_llvm_add_function(LLVMModuleRef m, const char* name, LLVMTypeRef fn_type) {
+LLVMValueRef avra_llvm_add_function(LLVMModuleRef m, const char* name, LLVMTypeRef fn_type) {
     if (!fn_type) {
-        fprintf(stderr, "[CRASH] forge_llvm_add_function: fn_type is NULL (name=%s)\n", name);
+        fprintf(stderr, "[CRASH] avra_llvm_add_function: fn_type is NULL (name=%s)\n", name);
         abort();
     }
     return LLVMAddFunction(m, name, fn_type);
 }
 
-LLVMValueRef forge_llvm_get_named_function(LLVMModuleRef m, const char* name) {
+LLVMValueRef avra_llvm_get_named_function(LLVMModuleRef m, const char* name) {
     return LLVMGetNamedFunction(m, name);
 }
 
-LLVMValueRef forge_llvm_get_param(LLVMValueRef f, int index) {
+LLVMValueRef avra_llvm_get_param(LLVMValueRef f, int index) {
     return LLVMGetParam(f, (unsigned)index);
 }
 
-int64_t forge_llvm_count_params(LLVMValueRef f) {
+int64_t avra_llvm_count_params(LLVMValueRef f) {
     if (!f) {
-        fprintf(stderr, "[CRASH] forge_llvm_count_params: fn is NULL\n");
+        fprintf(stderr, "[CRASH] avra_llvm_count_params: fn is NULL\n");
         abort();
     }
     return (int64_t)LLVMCountParams(f);
 }
 
-LLVMTypeRef forge_llvm_fn_type_of(LLVMValueRef fn_val) {
+LLVMTypeRef avra_llvm_fn_type_of(LLVMValueRef fn_val) {
     if (!fn_val) {
-        fprintf(stderr, "[CRASH] forge_llvm_fn_type_of: fn_val is NULL\n");
+        fprintf(stderr, "[CRASH] avra_llvm_fn_type_of: fn_val is NULL\n");
         abort();
     }
     return LLVMGlobalGetValueType(fn_val);
@@ -188,125 +188,125 @@ LLVMTypeRef forge_llvm_fn_type_of(LLVMValueRef fn_val) {
 
 // ── Globals ──
 
-LLVMValueRef forge_llvm_add_global(LLVMModuleRef m, LLVMTypeRef ty, const char* name) {
+LLVMValueRef avra_llvm_add_global(LLVMModuleRef m, LLVMTypeRef ty, const char* name) {
     return LLVMAddGlobal(m, ty, name);
 }
 
-void forge_llvm_set_initializer(LLVMValueRef g, LLVMValueRef val) {
+void avra_llvm_set_initializer(LLVMValueRef g, LLVMValueRef val) {
     LLVMSetInitializer(g, val);
 }
 
 // ── Basic blocks ──
 
-LLVMBasicBlockRef forge_llvm_append_basic_block(LLVMContextRef ctx, LLVMValueRef fn_val, const char* name) {
+LLVMBasicBlockRef avra_llvm_append_basic_block(LLVMContextRef ctx, LLVMValueRef fn_val, const char* name) {
     return LLVMAppendBasicBlockInContext(ctx, fn_val, name);
 }
 
-void forge_llvm_position_at_end(LLVMBuilderRef b, LLVMBasicBlockRef bb) {
+void avra_llvm_position_at_end(LLVMBuilderRef b, LLVMBasicBlockRef bb) {
     LLVMPositionBuilderAtEnd(b, bb);
 }
 
-int forge_llvm_block_has_terminator(LLVMBuilderRef b) {
+int avra_llvm_block_has_terminator(LLVMBuilderRef b) {
     LLVMBasicBlockRef bb = LLVMGetInsertBlock(b);
     if (!bb) return 0;
     return LLVMGetBasicBlockTerminator(bb) != NULL ? 1 : 0;
 }
 
-LLVMBasicBlockRef forge_llvm_get_insert_block(LLVMBuilderRef b) {
+LLVMBasicBlockRef avra_llvm_get_insert_block(LLVMBuilderRef b) {
     return LLVMGetInsertBlock(b);
 }
 
 // ── Integer arithmetic ──
 
-LLVMValueRef forge_llvm_build_add(LLVMBuilderRef b, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
+LLVMValueRef avra_llvm_build_add(LLVMBuilderRef b, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
     return LLVMBuildAdd(b, lhs, rhs, name);
 }
 
-LLVMValueRef forge_llvm_build_sub(LLVMBuilderRef b, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
+LLVMValueRef avra_llvm_build_sub(LLVMBuilderRef b, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
     return LLVMBuildSub(b, lhs, rhs, name);
 }
 
-LLVMValueRef forge_llvm_build_mul(LLVMBuilderRef b, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
+LLVMValueRef avra_llvm_build_mul(LLVMBuilderRef b, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
     return LLVMBuildMul(b, lhs, rhs, name);
 }
 
-LLVMValueRef forge_llvm_build_sdiv(LLVMBuilderRef b, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
+LLVMValueRef avra_llvm_build_sdiv(LLVMBuilderRef b, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
     return LLVMBuildSDiv(b, lhs, rhs, name);
 }
 
-LLVMValueRef forge_llvm_build_srem(LLVMBuilderRef b, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
+LLVMValueRef avra_llvm_build_srem(LLVMBuilderRef b, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
     return LLVMBuildSRem(b, lhs, rhs, name);
 }
 
 // ── Bitwise ──
 
-LLVMValueRef forge_llvm_build_and(LLVMBuilderRef b, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
+LLVMValueRef avra_llvm_build_and(LLVMBuilderRef b, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
     return LLVMBuildAnd(b, lhs, rhs, name);
 }
 
-LLVMValueRef forge_llvm_build_or(LLVMBuilderRef b, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
+LLVMValueRef avra_llvm_build_or(LLVMBuilderRef b, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
     return LLVMBuildOr(b, lhs, rhs, name);
 }
 
-LLVMValueRef forge_llvm_build_xor(LLVMBuilderRef b, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
+LLVMValueRef avra_llvm_build_xor(LLVMBuilderRef b, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
     return LLVMBuildXor(b, lhs, rhs, name);
 }
 
-LLVMValueRef forge_llvm_build_shl(LLVMBuilderRef b, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
+LLVMValueRef avra_llvm_build_shl(LLVMBuilderRef b, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
     return LLVMBuildShl(b, lhs, rhs, name);
 }
 
-LLVMValueRef forge_llvm_build_ashr(LLVMBuilderRef b, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
+LLVMValueRef avra_llvm_build_ashr(LLVMBuilderRef b, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
     return LLVMBuildAShr(b, lhs, rhs, name);
 }
 
-LLVMValueRef forge_llvm_build_not(LLVMBuilderRef b, LLVMValueRef val, const char* name) {
+LLVMValueRef avra_llvm_build_not(LLVMBuilderRef b, LLVMValueRef val, const char* name) {
     return LLVMBuildNot(b, val, name);
 }
 
 // ── Comparison ──
 
-LLVMValueRef forge_llvm_build_icmp(LLVMBuilderRef b, int pred, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
+LLVMValueRef avra_llvm_build_icmp(LLVMBuilderRef b, int pred, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
     return LLVMBuildICmp(b, (LLVMIntPredicate)pred, lhs, rhs, name);
 }
 
 // ── Float arithmetic ──
 
-LLVMValueRef forge_llvm_build_fadd(LLVMBuilderRef b, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
+LLVMValueRef avra_llvm_build_fadd(LLVMBuilderRef b, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
     return LLVMBuildFAdd(b, lhs, rhs, name);
 }
 
-LLVMValueRef forge_llvm_build_fsub(LLVMBuilderRef b, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
+LLVMValueRef avra_llvm_build_fsub(LLVMBuilderRef b, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
     return LLVMBuildFSub(b, lhs, rhs, name);
 }
 
-LLVMValueRef forge_llvm_build_fmul(LLVMBuilderRef b, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
+LLVMValueRef avra_llvm_build_fmul(LLVMBuilderRef b, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
     return LLVMBuildFMul(b, lhs, rhs, name);
 }
 
-LLVMValueRef forge_llvm_build_fdiv(LLVMBuilderRef b, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
+LLVMValueRef avra_llvm_build_fdiv(LLVMBuilderRef b, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
     return LLVMBuildFDiv(b, lhs, rhs, name);
 }
 
-LLVMValueRef forge_llvm_build_frem(LLVMBuilderRef b, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
+LLVMValueRef avra_llvm_build_frem(LLVMBuilderRef b, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
     return LLVMBuildFRem(b, lhs, rhs, name);
 }
 
-LLVMValueRef forge_llvm_build_fneg(LLVMBuilderRef b, LLVMValueRef val, const char* name) {
+LLVMValueRef avra_llvm_build_fneg(LLVMBuilderRef b, LLVMValueRef val, const char* name) {
     return LLVMBuildFNeg(b, val, name);
 }
 
-LLVMValueRef forge_llvm_build_fcmp(LLVMBuilderRef b, int pred, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
+LLVMValueRef avra_llvm_build_fcmp(LLVMBuilderRef b, int pred, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
     return LLVMBuildFCmp(b, (LLVMRealPredicate)pred, lhs, rhs, name);
 }
 
 // ── Casts ──
 
-LLVMValueRef forge_llvm_build_zext(LLVMBuilderRef b, LLVMValueRef val, LLVMTypeRef dest_ty, const char* name) {
+LLVMValueRef avra_llvm_build_zext(LLVMBuilderRef b, LLVMValueRef val, LLVMTypeRef dest_ty, const char* name) {
     return LLVMBuildZExt(b, val, dest_ty, name);
 }
 
-LLVMValueRef forge_llvm_build_sext(LLVMBuilderRef b, LLVMValueRef val, LLVMTypeRef dest_ty, const char* name) {
+LLVMValueRef avra_llvm_build_sext(LLVMBuilderRef b, LLVMValueRef val, LLVMTypeRef dest_ty, const char* name) {
     return LLVMBuildSExt(b, val, dest_ty, name);
 }
 
@@ -319,31 +319,31 @@ static const char* safe_name(const char* name, const char* fallback) {
     return fallback;
 }
 
-LLVMValueRef forge_llvm_build_ptr_to_int(LLVMBuilderRef b, LLVMValueRef val, LLVMTypeRef dest_ty, const char* name) {
+LLVMValueRef avra_llvm_build_ptr_to_int(LLVMBuilderRef b, LLVMValueRef val, LLVMTypeRef dest_ty, const char* name) {
     return LLVMBuildPtrToInt(b, val, dest_ty, safe_name(name, "p2i"));
 }
 
-LLVMValueRef forge_llvm_build_int_to_ptr(LLVMBuilderRef b, LLVMValueRef val, LLVMTypeRef dest_ty, const char* name) {
+LLVMValueRef avra_llvm_build_int_to_ptr(LLVMBuilderRef b, LLVMValueRef val, LLVMTypeRef dest_ty, const char* name) {
     return LLVMBuildIntToPtr(b, val, dest_ty, safe_name(name, "i2p"));
 }
 
-LLVMValueRef forge_llvm_build_si_to_fp(LLVMBuilderRef b, LLVMValueRef val, LLVMTypeRef dest_ty, const char* name) {
+LLVMValueRef avra_llvm_build_si_to_fp(LLVMBuilderRef b, LLVMValueRef val, LLVMTypeRef dest_ty, const char* name) {
     return LLVMBuildSIToFP(b, val, dest_ty, name);
 }
 
-LLVMValueRef forge_llvm_build_fp_to_si(LLVMBuilderRef b, LLVMValueRef val, LLVMTypeRef dest_ty, const char* name) {
+LLVMValueRef avra_llvm_build_fp_to_si(LLVMBuilderRef b, LLVMValueRef val, LLVMTypeRef dest_ty, const char* name) {
     return LLVMBuildFPToSI(b, val, dest_ty, name);
 }
 
-LLVMValueRef forge_llvm_build_bitcast(LLVMBuilderRef b, LLVMValueRef val, LLVMTypeRef dest_ty, const char* name) {
+LLVMValueRef avra_llvm_build_bitcast(LLVMBuilderRef b, LLVMValueRef val, LLVMTypeRef dest_ty, const char* name) {
     return LLVMBuildBitCast(b, val, dest_ty, name);
 }
 
 // ── Memory ──
 
-LLVMValueRef forge_llvm_build_alloca(LLVMBuilderRef b, LLVMTypeRef ty, const char* name) {
+LLVMValueRef avra_llvm_build_alloca(LLVMBuilderRef b, LLVMTypeRef ty, const char* name) {
     if (!ty) {
-        fprintf(stderr, "[CRASH] forge_llvm_build_alloca: ty is NULL (name=%s)\n", name);
+        fprintf(stderr, "[CRASH] avra_llvm_build_alloca: ty is NULL (name=%s)\n", name);
         abort();
     }
     // Always place allocas in the entry block for correctness.
@@ -363,9 +363,9 @@ LLVMValueRef forge_llvm_build_alloca(LLVMBuilderRef b, LLVMTypeRef ty, const cha
     return alloca;
 }
 
-LLVMValueRef forge_llvm_build_load(LLVMBuilderRef b, LLVMTypeRef ty, LLVMValueRef ptr_val, const char* name) {
+LLVMValueRef avra_llvm_build_load(LLVMBuilderRef b, LLVMTypeRef ty, LLVMValueRef ptr_val, const char* name) {
     if (!ty) {
-        fprintf(stderr, "[CRASH] forge_llvm_build_load: ty is NULL (name=%s)\n", name);
+        fprintf(stderr, "[CRASH] avra_llvm_build_load: ty is NULL (name=%s)\n", name);
         abort();
     }
     LLVMValueRef load = LLVMBuildLoad2(b, ty, ptr_val, name);
@@ -374,7 +374,7 @@ LLVMValueRef forge_llvm_build_load(LLVMBuilderRef b, LLVMTypeRef ty, LLVMValueRe
     return load;
 }
 
-// Emit a CALL to forge_track_store_i64/ptr that logs and performs the store.
+// Emit a CALL to avra_track_store_i64/ptr that logs and performs the store.
 // Falls back to raw store if the tracking function isn't available.
 static LLVMValueRef tracked_store_or_raw(LLVMBuilderRef b, LLVMValueRef val, LLVMValueRef ptr_val) {
     if (!getenv("FORGE_TRACK_STORES")) {
@@ -393,10 +393,10 @@ static LLVMValueRef tracked_store_or_raw(LLVMBuilderRef b, LLVMValueRef val, LLV
     const char* fn_name;
     LLVMTypeRef arg1_ty;
     if (kind == LLVMPointerTypeKind) {
-        fn_name = "forge_track_store_ptr";
+        fn_name = "avra_track_store_ptr";
         arg1_ty = pt;
     } else if (kind == LLVMIntegerTypeKind && LLVMGetIntTypeWidth(val_ty) == 64) {
-        fn_name = "forge_track_store_i64";
+        fn_name = "avra_track_store_i64";
         arg1_ty = i64t;
     } else {
         // Types we don't track (i1, f64, etc.) — raw store
@@ -417,28 +417,28 @@ static LLVMValueRef tracked_store_or_raw(LLVMBuilderRef b, LLVMValueRef val, LLV
     return NULL;
 }
 
-LLVMValueRef forge_llvm_build_store(LLVMBuilderRef b, LLVMValueRef val, LLVMValueRef ptr_val) {
+LLVMValueRef avra_llvm_build_store(LLVMBuilderRef b, LLVMValueRef val, LLVMValueRef ptr_val) {
     LLVMValueRef r = tracked_store_or_raw(b, val, ptr_val);
     return r;
 }
 
-LLVMValueRef forge_llvm_build_struct_gep2(LLVMBuilderRef b, LLVMTypeRef ty, LLVMValueRef ptr_val, int idx, const char* name) {
+LLVMValueRef avra_llvm_build_struct_gep2(LLVMBuilderRef b, LLVMTypeRef ty, LLVMValueRef ptr_val, int idx, const char* name) {
     if (!ty) {
-        fprintf(stderr, "[CRASH] forge_llvm_build_struct_gep2: ty is NULL (idx=%d, name=%s)\n", idx, name);
+        fprintf(stderr, "[CRASH] avra_llvm_build_struct_gep2: ty is NULL (idx=%d, name=%s)\n", idx, name);
         abort();
     }
     return LLVMBuildStructGEP2(b, ty, ptr_val, (unsigned)idx, name);
 }
 
-LLVMValueRef forge_llvm_build_global_string_ptr(LLVMBuilderRef b, const char* s, const char* name) {
+LLVMValueRef avra_llvm_build_global_string_ptr(LLVMBuilderRef b, const char* s, const char* name) {
     return LLVMBuildGlobalStringPtr(b, s, name);
 }
 
 // ── Calls ──
 
-LLVMValueRef forge_llvm_build_call(LLVMBuilderRef b, LLVMTypeRef fn_type, LLVMValueRef fn_val, LLVMValueRef* args, int count, const char* name) {
+LLVMValueRef avra_llvm_build_call(LLVMBuilderRef b, LLVMTypeRef fn_type, LLVMValueRef fn_val, LLVMValueRef* args, int count, const char* name) {
     if (!fn_type) {
-        fprintf(stderr, "[CRASH] forge_llvm_build_call: fn_type is NULL (name=%s)\n", name ? name : "(null)");
+        fprintf(stderr, "[CRASH] avra_llvm_build_call: fn_type is NULL (name=%s)\n", name ? name : "(null)");
         abort();
     }
     LLVMTypeRef ret_type = LLVMGetReturnType(fn_type);
@@ -454,33 +454,33 @@ LLVMValueRef forge_llvm_build_call(LLVMBuilderRef b, LLVMTypeRef fn_type, LLVMVa
 
 // ── Control flow ──
 
-LLVMValueRef forge_llvm_build_br(LLVMBuilderRef b, LLVMBasicBlockRef bb) {
+LLVMValueRef avra_llvm_build_br(LLVMBuilderRef b, LLVMBasicBlockRef bb) {
     return LLVMBuildBr(b, bb);
 }
 
-LLVMValueRef forge_llvm_build_cond_br(LLVMBuilderRef b, LLVMValueRef cond, LLVMBasicBlockRef then_bb, LLVMBasicBlockRef else_bb) {
+LLVMValueRef avra_llvm_build_cond_br(LLVMBuilderRef b, LLVMValueRef cond, LLVMBasicBlockRef then_bb, LLVMBasicBlockRef else_bb) {
     return LLVMBuildCondBr(b, cond, then_bb, else_bb);
 }
 
-LLVMValueRef forge_llvm_build_ret(LLVMBuilderRef b, LLVMValueRef val) {
+LLVMValueRef avra_llvm_build_ret(LLVMBuilderRef b, LLVMValueRef val) {
     return LLVMBuildRet(b, val);
 }
 
-LLVMValueRef forge_llvm_build_unreachable(LLVMBuilderRef b) {
+LLVMValueRef avra_llvm_build_unreachable(LLVMBuilderRef b) {
     return LLVMBuildUnreachable(b);
 }
 
 // ── PHI nodes ──
 
-LLVMValueRef forge_llvm_build_phi(LLVMBuilderRef b, LLVMTypeRef ty, const char* name) {
+LLVMValueRef avra_llvm_build_phi(LLVMBuilderRef b, LLVMTypeRef ty, const char* name) {
     if (!ty) {
-        fprintf(stderr, "[CRASH] forge_llvm_build_phi: ty is NULL (name=%s)\n", name);
+        fprintf(stderr, "[CRASH] avra_llvm_build_phi: ty is NULL (name=%s)\n", name);
         abort();
     }
     return LLVMBuildPhi(b, ty, name);
 }
 
-void forge_llvm_add_incoming(LLVMValueRef phi, LLVMValueRef value, LLVMBasicBlockRef block) {
+void avra_llvm_add_incoming(LLVMValueRef phi, LLVMValueRef value, LLVMBasicBlockRef block) {
     LLVMValueRef vals[1] = { value };
     LLVMBasicBlockRef blocks[1] = { block };
     LLVMAddIncoming(phi, vals, blocks, 1);
@@ -488,7 +488,7 @@ void forge_llvm_add_incoming(LLVMValueRef phi, LLVMValueRef value, LLVMBasicBloc
 
 // ── Module output ──
 
-int forge_llvm_print_module_to_file(LLVMModuleRef m, const char* path) {
+int avra_llvm_print_module_to_file(LLVMModuleRef m, const char* path) {
     char* error = NULL;
     int result = LLVMPrintModuleToFile(m, path, &error);
     if (error) {
@@ -498,7 +498,7 @@ int forge_llvm_print_module_to_file(LLVMModuleRef m, const char* path) {
     return result;
 }
 
-int forge_llvm_verify_module_print(LLVMModuleRef m) {
+int avra_llvm_verify_module_print(LLVMModuleRef m) {
     char* error = NULL;
     int result = LLVMVerifyModule(m, LLVMPrintMessageAction, &error);
     if (error) LLVMDisposeMessage(error);
@@ -507,7 +507,7 @@ int forge_llvm_verify_module_print(LLVMModuleRef m) {
 
 // Verify a single function. Returns 0 if valid, 1 if invalid.
 // Prints the error to stderr with the function name for easy debugging.
-int forge_llvm_verify_function(LLVMValueRef fn_val) {
+int avra_llvm_verify_function(LLVMValueRef fn_val) {
     int result = LLVMVerifyFunction(fn_val, LLVMPrintMessageAction);
     if (result) {
         const char* name = LLVMGetValueName(fn_val);
@@ -520,17 +520,17 @@ int forge_llvm_verify_function(LLVMValueRef fn_val) {
 
 // Returns 1 if the LLVM value's type is a pointer type, 0 otherwise.
 // Used by the codegen to avoid redundant ptrtoint/inttoptr casts.
-int forge_llvm_is_ptr_value(LLVMValueRef val) {
+int avra_llvm_is_ptr_value(LLVMValueRef val) {
     return LLVMGetTypeKind(LLVMTypeOf(val)) == LLVMPointerTypeKind ? 1 : 0;
 }
 
 // Returns the LLVM type of a value (LLVMTypeOf wrapper).
-LLVMTypeRef forge_llvm_typeof(LLVMValueRef val) {
+LLVMTypeRef avra_llvm_typeof(LLVMValueRef val) {
     return LLVMTypeOf(val);
 }
 
 // Returns 1 if the LLVM value has void type, 0 otherwise.
-int forge_llvm_is_void_value(LLVMValueRef val) {
+int avra_llvm_is_void_value(LLVMValueRef val) {
     if (!val) return 1;
     return LLVMGetTypeKind(LLVMTypeOf(val)) == LLVMVoidTypeKind ? 1 : 0;
 }
@@ -542,7 +542,7 @@ int forge_llvm_is_void_value(LLVMValueRef val) {
 //   smaller int → double: sitofp
 //   double → smaller int: fptosi
 // Returns val unchanged if types already match.
-LLVMValueRef forge_llvm_cast_to_type(LLVMBuilderRef b, LLVMValueRef val, LLVMTypeRef expected) {
+LLVMValueRef avra_llvm_cast_to_type(LLVMBuilderRef b, LLVMValueRef val, LLVMTypeRef expected) {
     LLVMTypeRef actual = LLVMTypeOf(val);
     if (actual == expected) return val;
     LLVMTypeKind ak = LLVMGetTypeKind(actual);
@@ -591,30 +591,30 @@ LLVMValueRef forge_llvm_cast_to_type(LLVMBuilderRef b, LLVMValueRef val, LLVMTyp
 // the alloca's allocated type. For non-alloca destinations (GEPs),
 // performs a raw store — the caller MUST use store_field with an
 // explicit type for struct field stores.
-void forge_llvm_build_store_cast(LLVMBuilderRef b, LLVMValueRef val, LLVMValueRef dest) {
+void avra_llvm_build_store_cast(LLVMBuilderRef b, LLVMValueRef val, LLVMValueRef dest) {
     LLVMTypeRef dest_ty = LLVMGetAllocatedType(dest);
     if (dest_ty) {
-        val = forge_llvm_cast_to_type(b, val, dest_ty);
+        val = avra_llvm_cast_to_type(b, val, dest_ty);
     }
     tracked_store_or_raw(b, val, dest);
 }
 
 // Type introspection helpers for the Forge codegen.
-int64_t forge_llvm_type_kind(LLVMTypeRef ty) {
+int64_t avra_llvm_type_kind(LLVMTypeRef ty) {
     return (int64_t)LLVMGetTypeKind(ty);
 }
-int64_t forge_llvm_int_type_width(LLVMTypeRef ty) {
+int64_t avra_llvm_int_type_width(LLVMTypeRef ty) {
     return (int64_t)LLVMGetIntTypeWidth(ty);
 }
 
 // Build a call with automatic argument type coercion.
 // For each argument, if the value type doesn't match the function's
 // expected parameter type, insert a cast (ptr↔i64).
-LLVMValueRef forge_llvm_build_call_coerce(LLVMBuilderRef b,
+LLVMValueRef avra_llvm_build_call_coerce(LLVMBuilderRef b,
     LLVMTypeRef fn_type, LLVMValueRef fn_val,
     LLVMValueRef* args, int64_t count, const char* name) {
     if (!fn_type) {
-        fprintf(stderr, "[CRASH] forge_llvm_build_call_coerce: fn_type is NULL (name=%s)\n", name ? name : "(null)");
+        fprintf(stderr, "[CRASH] avra_llvm_build_call_coerce: fn_type is NULL (name=%s)\n", name ? name : "(null)");
         abort();
     }
     unsigned param_count = LLVMCountParamTypes(fn_type);
@@ -624,7 +624,7 @@ LLVMValueRef forge_llvm_build_call_coerce(LLVMBuilderRef b,
         LLVMGetParamTypes(fn_type, param_types);
     }
     for (int i = 0; i < count && i < (int)param_count; i++) {
-        args[i] = forge_llvm_cast_to_type(b, args[i], param_types[i]);
+        args[i] = avra_llvm_cast_to_type(b, args[i], param_types[i]);
     }
     if (param_types) free(param_types);
     // Void-returning calls must not have a name (LLVM requirement).
@@ -663,7 +663,7 @@ static int32_t coverage_fn_region_count = 0;
 
 // Declare @llvm.instrprof.increment(ptr, i64, i32, i32) in the module.
 // Idempotent — safe to call multiple times.
-void forge_coverage_declare(LLVMModuleRef m) {
+void avra_coverage_declare(LLVMModuleRef m) {
     if (coverage_intrinsic) return;
     LLVMContextRef ctx = LLVMGetModuleContext(m);
     LLVMTypeRef param_types[] = {
@@ -678,7 +678,7 @@ void forge_coverage_declare(LLVMModuleRef m) {
 
 // Create @__profn_<name> = private constant [N x i8] c"<name>"
 // Returns the global value for use in instrprof.increment calls.
-LLVMValueRef forge_coverage_name_global(LLVMModuleRef m, const char* fn_name) {
+LLVMValueRef avra_coverage_name_global(LLVMModuleRef m, const char* fn_name) {
     // Check if already created
     char buf[512];
     snprintf(buf, sizeof(buf), "__profn_%s", fn_name);
@@ -697,8 +697,8 @@ LLVMValueRef forge_coverage_name_global(LLVMModuleRef m, const char* fn_name) {
 
 // Emit: call void @llvm.instrprof.increment(ptr @__profn_<name>, i64 <hash>, i32 <num_counters>, i32 <idx>)
 // num_counters is set to a placeholder (0) during codegen, then patched to
-// the actual count by forge_coverage_finalize_fn at function end.
-void forge_coverage_emit_hit(LLVMBuilderRef builder, LLVMModuleRef m,
+// the actual count by avra_coverage_finalize_fn at function end.
+void avra_coverage_emit_hit(LLVMBuilderRef builder, LLVMModuleRef m,
                               const char* fn_name, int64_t fn_hash_unused,
                               int32_t num_counters_unused, int32_t counter_idx) {
     if (!coverage_intrinsic) return;
@@ -707,7 +707,7 @@ void forge_coverage_emit_hit(LLVMBuilderRef builder, LLVMModuleRef m,
     for (const char* p = fn_name; *p; p++)
         hash = ((hash << 5) + hash) + (uint64_t)*p;
     LLVMContextRef ctx = LLVMGetModuleContext(m);
-    LLVMValueRef name_global = forge_coverage_name_global(m, fn_name);
+    LLVMValueRef name_global = avra_coverage_name_global(m, fn_name);
     // Use 0 as placeholder for num_counters — patched by finalize_fn
     LLVMValueRef args[] = {
         name_global,
@@ -727,7 +727,7 @@ void forge_coverage_emit_hit(LLVMBuilderRef builder, LLVMModuleRef m,
 
 // Patch all llvm.instrprof.increment calls in fn_val to use actual_count
 // as the num_counters argument (arg index 2).
-void forge_coverage_finalize_fn(LLVMValueRef fn_val, int32_t actual_count) {
+void avra_coverage_finalize_fn(LLVMValueRef fn_val, int32_t actual_count) {
     if (!coverage_intrinsic || actual_count <= 0) return;
     LLVMContextRef ctx = LLVMGetGlobalParent(fn_val) ?
         LLVMGetModuleContext(LLVMGetGlobalParent(fn_val)) : NULL;
@@ -773,7 +773,7 @@ static int32_t cov_total_entries = 0;
 static const char* cov_source_file = NULL;
 static FILE* cov_map_file = NULL;
 
-void forge_covmap_begin(const char* source_file, const char* covmap_path) {
+void avra_covmap_begin(const char* source_file, const char* covmap_path) {
     cov_next_id = 0;
     cov_branch_id = 0;
     cov_decision_id = 0;
@@ -785,7 +785,7 @@ void forge_covmap_begin(const char* source_file, const char* covmap_path) {
     }
 }
 
-int32_t forge_covmap_alloc(const char* type, const char* fn_name, int32_t line, int32_t col, int32_t branch_id) {
+int32_t avra_covmap_alloc(const char* type, const char* fn_name, int32_t line, int32_t col, int32_t branch_id) {
     if (cov_next_id >= COV_MAX_COUNTERS) return -1;
     int32_t id = cov_next_id++;
     cov_counters[id].type = type;
@@ -803,24 +803,24 @@ int32_t forge_covmap_alloc(const char* type, const char* fn_name, int32_t line, 
     return id;
 }
 
-void forge_covmap_reset_fn(void) {
+void avra_covmap_reset_fn(void) {
     cov_next_id = 0;
 }
 
 // Returns the number of counters allocated for the current function.
-int32_t forge_covmap_counter_count(void) {
+int32_t avra_covmap_counter_count(void) {
     return cov_next_id;
 }
 
-int32_t forge_covmap_next_branch_id(void) {
+int32_t avra_covmap_next_branch_id(void) {
     return cov_branch_id++;
 }
 
-int32_t forge_covmap_next_decision_id(void) {
+int32_t avra_covmap_next_decision_id(void) {
     return cov_decision_id++;
 }
 
-void forge_covmap_end(void) {
+void avra_covmap_end(void) {
     if (cov_map_file) {
         fprintf(cov_map_file, "\n]}\n");
         fclose(cov_map_file);
@@ -830,19 +830,19 @@ void forge_covmap_end(void) {
 
 // ── Basic block / instruction helpers ──
 
-LLVMBasicBlockRef forge_llvm_get_entry_basic_block(LLVMValueRef fn) {
+LLVMBasicBlockRef avra_llvm_get_entry_basic_block(LLVMValueRef fn) {
     return LLVMGetEntryBasicBlock(fn);
 }
 
-LLVMValueRef forge_llvm_get_first_instruction(LLVMBasicBlockRef bb) {
+LLVMValueRef avra_llvm_get_first_instruction(LLVMBasicBlockRef bb) {
     return LLVMGetFirstInstruction(bb);
 }
 
-void forge_llvm_position_before(LLVMBuilderRef builder, LLVMValueRef instr) {
+void avra_llvm_position_before(LLVMBuilderRef builder, LLVMValueRef instr) {
     LLVMPositionBuilderBefore(builder, instr);
 }
 
-void forge_llvm_build_call_void(LLVMBuilderRef builder, LLVMModuleRef mod, const char* fn_name, LLVMValueRef* args, int arg_count) {
+void avra_llvm_build_call_void(LLVMBuilderRef builder, LLVMModuleRef mod, const char* fn_name, LLVMValueRef* args, int arg_count) {
     LLVMValueRef fn = LLVMGetNamedFunction(mod, fn_name);
     if (!fn) return;
     LLVMTypeRef fn_ty = LLVMGlobalGetValueType(fn);
@@ -853,7 +853,7 @@ void forge_llvm_build_call_void(LLVMBuilderRef builder, LLVMModuleRef mod, const
 // Execute an LLVM module's main() function in-process via MCJIT.
 // Returns the exit code from main(), or -1 on error.
 
-int64_t forge_llvm_jit_run(LLVMModuleRef module) {
+int64_t avra_llvm_jit_run(LLVMModuleRef module) {
     // Initialize native target for JIT
     LLVMLinkInMCJIT();
     LLVMInitializeNativeTarget();
@@ -892,7 +892,7 @@ int64_t forge_llvm_jit_run(LLVMModuleRef module) {
 // ── Object File Emission ──
 // Emit an LLVM module as an object file. Returns 0 on success, -1 on error.
 
-int64_t forge_llvm_emit_object(LLVMModuleRef module, const char* output_path) {
+int64_t avra_llvm_emit_object(LLVMModuleRef module, const char* output_path) {
     LLVMInitializeNativeTarget();
     LLVMInitializeNativeAsmPrinter();
 

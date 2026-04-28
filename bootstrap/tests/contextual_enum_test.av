@@ -1,0 +1,55 @@
+// Contextual enum resolution: .Variant resolves by searching all declared enums.
+
+enum CeColor { Red, Green, Blue }
+enum CeDir { Up, Down, Left, Right }
+enum CeOption { None, Some(value: int) }
+
+fn ce_color_name(c: CeColor) -> string {
+    match c {
+        .Red -> "red"
+        .Green -> "green"
+        .Blue -> "blue"
+    }
+}
+
+fn ce_dir_name(d: CeDir) -> string {
+    match d {
+        .Up -> "up"
+        .Down -> "down"
+        .Left -> "left"
+        .Right -> "right"
+    }
+}
+
+fn ce_run() -> string {
+    avra_test_capture_start()
+    let c = .Red
+    println(ce_color_name(c))
+    println(ce_color_name(.Green))
+    println(ce_color_name(.Blue))
+    let d = .Up
+    println(ce_dir_name(d))
+    println(ce_dir_name(.Right))
+    let x = .Some(42)
+    match x {
+        .Some(v) -> println(string(v))
+        .None -> println("none")
+    }
+    let n = .None
+    match n {
+        .Some(v) -> println(string(v))
+        .None -> println("none")
+    }
+    let result = if true { .Some(99) } else { .None }
+    match result {
+        .Some(v) -> println(string(v))
+        .None -> println("none")
+    }
+    avra_test_capture_stop()
+}
+
+spec "contextual enum" {
+    then "contextual resolution works" {
+        ce_run() == "red\ngreen\nblue\nup\nright\n42\nnone\n99"
+    }
+}

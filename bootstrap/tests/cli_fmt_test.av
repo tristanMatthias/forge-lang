@@ -1,0 +1,29 @@
+fn cfmt_add(a: int, b: int) -> int { a + b }
+
+type CfmtPoint = { x: int, y: int }
+
+enum CfmtColor { Red, Green, Blue }
+
+fn cfmt_run() -> string {
+    let p = CfmtPoint { x: 1, y: 2 }
+    let c = CfmtColor.Red
+    let color_str = match c {
+        .Red -> "red"
+        .Green -> "green"
+        .Blue -> "blue"
+    }
+    avra_test_capture_start()
+    println(string(p.x + p.y))
+    println(color_str)
+    println(string(cfmt_add(10, 20)))
+    for i in 0..3 {
+        println(string(i))
+    }
+    avra_test_capture_stop()
+}
+
+spec "cli fmt" {
+    then "format output is correct" {
+        cfmt_run() == "3\nred\n30\n0\n1\n2"
+    }
+}

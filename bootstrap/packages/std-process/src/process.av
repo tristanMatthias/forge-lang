@@ -1,0 +1,152 @@
+// WHY: @std/process — subprocess execution, environment, and process control.
+// Port of the Rust std-process package. All functions backed by C runtime.
+//
+// Usage:
+//   use @std.process.{run, spawn, env_get}
+//
+// Process.run returns a ProcessResult with stdout, stderr, and exit code.
+// Process.spawn returns a handle for async process management.
+
+extern fn avra_process_run(cmd: string, args_json: string, opts_json: string) -> string
+extern fn avra_process_spawn_bg(cmd: string, args_json: string, opts_json: string) -> int
+extern fn avra_process_kill(handle: int) -> int
+extern fn avra_process_wait(handle: int) -> string
+extern fn avra_process_read_line(handle: int) -> string
+extern fn avra_process_wait_for_output(handle: int, pattern: string, timeout_ms: int) -> int
+extern fn avra_process_is_alive(handle: int) -> int
+extern fn avra_process_forward(cmd: string, args_json: string, opts_json: string) -> int
+extern fn avra_process_pipe(input: string, cmd: string, args_json: string) -> string
+extern fn avra_process_env_get(key: string) -> string
+extern fn avra_process_exit(code: int)
+extern fn avra_process_self_dir() -> string
+
+// ── Result parsing ──
+// avra_process_run returns JSON: {"stdout":"...","stderr":"...","code":N}
+// These helpers extract fields without a full JSON parser.
+
+export type ProcessResult = {
+    stdout: string,
+    stderr: string,
+    code: int,
+}
+
+fn extract_json_field(json: string, field: string) -> string {
+    let key = "\"${field}\":\""
+    let start = json.index_of(key)
+    if start < 0 { return "" }
+    let val_start = start + key.length
+    mut val_end = val_start
+    while val_end < json.length {
+        let ch = json[val_end]
+        if ch == "\\" {
+            val_end = val_end + 2
+            continue
+        }
+        if ch == "\"" { break }
+        val_end = val_end + 1
+    }
+    json.substring(val_start, val_end)
+}
+
+fn extract_json_int(json: string, field: string) -> int {
+    let key = "\"${field}\":"
+    let start = json.index_of(key)
+    if start < 0 { return -1 }
+    let val_start = start + key.length
+    mut val_end = val_start
+    while val_end < json.length {
+        let ch = json[val_end]
+        if ch == "}" || ch == "," { break }
+        val_end = val_end + 1
+    }
+    let num_str = json.substring(val_start, val_end)
+    // Simple int parse
+    avra_parse_int(num_str)
+}
+
+extern fn avra_parse_int(s: string) -> int
+
+fn parse_result(json: string) -> ProcessResult {
+    ProcessResult {
+        stdout: extract_json_field(json, "stdout"),
+        stderr: extract_json_field(json, "stderr"),
+        code: extract_json_int(json, "code"),
+    }
+}
+
+// ── Public API ──
+
+/// Run a command synchronously. Returns ProcessResult with stdout, stderr, code.
+export fn run(cmd: string, args: string, opts: string) -> ProcessResult {
+    let json = avra_process_run(cmd, args, opts)
+    parse_result(json)
+}
+
+/// Run a command with just a string array of args (no opts).
+export fn exec(cmd: string, args: string) -> ProcessResult {
+    run(cmd, args, "")
+}
+
+/// Run a simple command with no args.
+export fn exec_simple(cmd: string) -> ProcessResult {
+    run(cmd, "[]", "")
+}
+
+/// Spawn a background process. Returns handle.
+export fn spawn(cmd: string, args: string, opts: string) -> int {
+    avra_process_spawn_bg(cmd, args, opts)
+}
+
+/// Kill a spawned process.
+export fn kill(handle: int) -> bool {
+    avra_process_kill(handle) != 0
+}
+
+/// Wait for a spawned process to complete. Returns ProcessResult.
+export fn wait(handle: int) -> ProcessResult {
+    let json = avra_process_wait(handle)
+    parse_result(json)
+}
+
+/// Read a line from a spawned process's stdout.
+export fn read_line(handle: int) -> string {
+    avra_process_read_line(handle)
+}
+
+/// Wait for a pattern in stdout. Returns true if found before timeout.
+export fn wait_for(handle: int, pattern: string, timeout_ms: int) -> bool {
+    avra_process_wait_for_output(handle, pattern, timeout_ms) != 0
+}
+
+/// Check if a spawned process is still running.
+export fn is_alive(handle: int) -> bool {
+    avra_process_is_alive(handle) != 0
+}
+
+/// Run with inherited stdio (passthrough). Returns exit code.
+export fn forward(cmd: string, args: string, opts: string) -> int {
+    avra_process_forward(cmd, args, opts)
+}
+
+/// Pipe input string to a command's stdin. Returns ProcessResult.
+export fn pipe_to(input: string, cmd: string, args: string) -> ProcessResult {
+    let json = avra_process_pipe(input, cmd, args)
+    parse_result(json)
+}
+
+/// Get an environment variable. Returns null if not set.
+export fn env_get(key: string) -> string? {
+    let val = avra_process_env_get(key)
+    if val == "\0NULL" { return null }
+    val
+}
+
+/// Exit the process.
+export fn exit(code: int) {
+    avra_process_exit(code)
+}
+
+/// Get the directory containing the current executable.
+export fn self_dir() -> string {
+    avra_process_self_dir()
+}

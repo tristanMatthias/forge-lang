@@ -1,0 +1,47 @@
+type ClmsUser = { name: string, age: int }
+
+impl ClmsUser {
+    fn display(self) -> string {
+        `${self.name} (${string(self.age)})`
+    }
+    fn is_adult(self) -> bool {
+        self.age >= 18
+    }
+}
+
+fn clms_run() -> string {
+    let users = [
+        ClmsUser { name: "Alice", age: 30 },
+        ClmsUser { name: "Bob", age: 15 },
+        ClmsUser { name: "Charlie", age: 25 },
+        ClmsUser { name: "Diana", age: 12 }
+    ]
+
+    let names = users.map(it.name)
+    let ages = users.map(it.age)
+    let adult_ages = ages.filter(it >= 18)
+    let total_age = ages.reduce(0, (acc, a) -> { acc + a })
+    let displays = users.map(it.display())
+    let data = { "count": string(users.length), "oldest": "Alice" }
+
+    avra_test_capture_start()
+    println(names[0])
+    println(names[1])
+    println(names[2])
+    println(names[3])
+    println(string(adult_ages.length))
+    println(string(adult_ages[0]))
+    println(string(adult_ages[1]))
+    println(string(total_age))
+    println(displays[0])
+    println(displays[3])
+    println(data.get("count"))
+    println(data.get("oldest"))
+    avra_test_capture_stop()
+}
+
+spec "combo list map struct" {
+    then "list map struct combo" {
+        clms_run() == "Alice\nBob\nCharlie\nDiana\n2\n30\n25\n82\nAlice (30)\nDiana (12)\n4\nAlice"
+    }
+}

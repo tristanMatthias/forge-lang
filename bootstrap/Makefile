@@ -28,7 +28,7 @@ help:
 	@echo "  make build         Build the bootstrap compiler (default)."
 	@echo "  make build-O0      Build at -O0 for lldb debugging (build/bs2_O0)."
 	@echo "  make test          Run regression suite + self-host fixed-point check."
-	@echo "  make run FILE=x.fg Compile and run a Forge program."
+	@echo "  make run FILE=x.av Compile and run a Forge program."
 	@echo "  make selfhost      Verify bs2 and bs3 emit byte-identical IR."
 	@echo "  make regress       Run regression suite only (faster than 'test')."
 	@echo "  make update-seed   Rebuild seed/seed.ll from current source (with verify)."
@@ -52,7 +52,7 @@ lint:
 	@# Check for ValueType.Int in Stmt constructors outside parsers.
 	@# This catches the bug where pipeline stages (desugar, resolver, mono)
 	@# discard parser-resolved ValueType fields by writing ValueType.Int.
-	@HITS=$$(grep -rn 'ValueType\.Int' $(SRC_DIR)/ --include='*.fg' \
+	@HITS=$$(grep -rn 'ValueType\.Int' $(SRC_DIR)/ --include='*.av' \
 		| grep -E '\.(Let|Mut|Const|Function|ExternFn)\(' \
 		| grep -v 'parser\.' | grep -v '// '); \
 	if [ -n "$$HITS" ]; then \
@@ -61,7 +61,7 @@ lint:
 		echo ""; \
 	fi
 	@# Remind about pipeline tracing when typeck/codegen changed.
-	@if git diff --name-only HEAD 2>/dev/null | grep -qE 'typeck/|codegen/|desugar/|resolve/|mono\.fg'; then \
+	@if git diff --name-only HEAD 2>/dev/null | grep -qE 'typeck/|codegen/|desugar/|resolve/|mono\.av'; then \
 		echo "\033[1;33m[lint]\033[0m Pipeline stage modified. If tests fail, trace values through:"; \
 		echo "       parse → desugar → resolve_names → typecheck → monomorphize → codegen"; \
 		echo "       Use 'check' before 'compile' to isolate typeck vs codegen."; \
@@ -98,7 +98,7 @@ selfhost:
 # Compile and run a single Forge file with the bootstrap compiler.
 run:
 ifndef FILE
-	@echo "usage: make run FILE=path/to/program.fg" >&2
+	@echo "usage: make run FILE=path/to/program.av" >&2
 	@exit 1
 endif
 	@$(DIAG) --run $(FILE)
@@ -106,11 +106,11 @@ endif
 # Compile and run with coverage instrumentation. Produces .profraw + .profdata.
 run-coverage:
 ifndef FILE
-	@echo "usage: make run-coverage FILE=path/to/program.fg" >&2
+	@echo "usage: make run-coverage FILE=path/to/program.av" >&2
 	@exit 1
 endif
 	@$(DIAG) --run-coverage $(FILE)
-	@bash scripts/coverage-report.sh $(FILE) $${FILE%.fg}.profdata --lcov $${FILE%.fg}.lcov
+	@bash scripts/coverage-report.sh $(FILE) $${FILE%.av}.profdata --lcov $${FILE%.av}.lcov
 
 # Compiler self-coverage: instruments bs2, runs all tests, reports per-module coverage.
 coverage:
@@ -127,11 +127,11 @@ coverage-lcov:
 update-seed:
 	@$(DIAG) --build-bs2
 	@$(DIAG) --check-fixedpoint
-	@cp $(SRC_DIR)/main.fg.ll seed/seed.ll
+	@cp $(SRC_DIR)/main.av.ll seed/seed.ll
 	@# Prepend provenance comment (commit hash, timestamp, source hash)
 	@COMMIT=$$(git rev-parse --short HEAD); \
 	 TIMESTAMP=$$(date -u +%Y-%m-%dT%H:%M:%SZ); \
-	 SRC_HASH=$$(find $(SRC_DIR)/ -name '*.fg' -exec shasum -a 256 {} + | shasum -a 256 | cut -d' ' -f1); \
+	 SRC_HASH=$$(find $(SRC_DIR)/ -name '*.av' -exec shasum -a 256 {} + | shasum -a 256 | cut -d' ' -f1); \
 	 { printf '; seed built from commit %s at %s\n; source hash: %s\n' "$$COMMIT" "$$TIMESTAMP" "$$SRC_HASH"; cat seed/seed.ll; } > seed/seed.ll.tmp && \
 	 mv seed/seed.ll.tmp seed/seed.ll
 	@rm -f build/seed build/seed.o
@@ -160,7 +160,7 @@ seed-patch-traps:
 verify-seed:
 	@$(DIAG) --verify-seed
 
-# Compare function signatures between seed IR and source .fg files.
+# Compare function signatures between seed IR and source .av files.
 # Reports parameter count mismatches, new functions, and removed functions.
 seed-sigs:
 	@$(DIAG) --seed-sigs
@@ -173,8 +173,8 @@ install-hooks:
 # Remove all build artifacts. Source and seed are preserved.
 clean:
 	@rm -rf build
-	@rm -f $(SRC_DIR)/*.fg.ll
-	@echo "cleaned: build/ and $(SRC_DIR)/*.fg.ll"
+	@rm -f $(SRC_DIR)/*.av.ll
+	@echo "cleaned: build/ and $(SRC_DIR)/*.av.ll"
 
 # Assemble the canonical grammar from feature fragments.
 grammar:

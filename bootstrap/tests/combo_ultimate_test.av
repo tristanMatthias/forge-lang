@@ -1,0 +1,58 @@
+trait CuDescribable {
+    fn describe(self) -> string
+}
+
+type CuTask = { title: string, priority: int, done: int }
+
+impl CuDescribable for CuTask {
+    fn describe(self) -> string {
+        `${self.title} (p${string(self.priority)})`
+    }
+}
+
+impl CuTask {
+    fn is_high_priority(self) -> bool {
+        self.priority >= 3
+    }
+}
+
+fn cu_run() -> string {
+    avra_test_capture_start()
+    let tasks = [
+        CuTask { title: "design", priority: 5, done: 1 },
+        CuTask { title: "implement", priority: 4, done: 0 },
+        CuTask { title: "test", priority: 3, done: 0 },
+        CuTask { title: "docs", priority: 1, done: 1 },
+        CuTask { title: "deploy", priority: 5, done: 0 },
+    ]
+    for t in tasks {
+        if t.is_high_priority() && t.done == 0 {
+            println(t.describe())
+        }
+    }
+    let READ = 1
+    let WRITE = 2
+    let EXEC = 4
+    let perms = READ | WRITE
+    println(string(perms & READ != 0))
+    println(string(perms & EXEC != 0))
+    mut results = {}
+    results.set("pass", "3")
+    results.set("fail", "0")
+    results.set("skip", "1")
+    println(results.get("pass"))
+    let (x, y) = (42, 99)
+    println(`x=${string(x)}, y=${string(y)}`)
+    let sum = [1, 2, 3, 4, 5].reduce(0, (a, b) -> a + b)
+    println(string(sum))
+    for n in [10, 20, 30, 40, 50][1..4] {
+        println(string(n))
+    }
+    avra_test_capture_stop()
+}
+
+spec "combo ultimate" {
+    then "full output" {
+        cu_run() == "implement (p4)\ntest (p3)\ndeploy (p5)\n1\n0\n3\nx=42, y=99\n15\n20\n30\n40"
+    }
+}

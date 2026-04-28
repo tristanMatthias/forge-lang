@@ -1,5 +1,5 @@
 #!/bin/bash
-# Usage: coverage-report.sh <source.fg> <profdata> [--lcov <output.lcov>]
+# Usage: coverage-report.sh <source.av> <profdata> [--lcov <output.lcov>]
 set -euo pipefail
 
 SOURCE="$1"

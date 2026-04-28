@@ -1,0 +1,42 @@
+fn sst_run() -> string {
+    let s = "  Hello, World!  "
+    let clean = s.trim()
+
+    avra_test_capture_start()
+    println(clean)
+    println(string(clean.length))
+
+    let shouting = "hello world".replace("world", "forge").upper()
+    println(shouting)
+
+    let parts = "a-b-c-d".split("-")
+    println(string(parts.length))
+    for p in parts {
+        println(p)
+    }
+
+    println(string("hello".index_of("hello")))
+    println(string("hello".index_of("x")))
+    println(string("hello".index_of("")))
+
+    println(string("hello".contains("")))
+    println(string("".contains("")))
+    println(string("".contains("x")))
+
+    println(string("hello".starts_with("")))
+    println(string("hello".ends_with("")))
+    println(string("".starts_with("")))
+
+    let csv = "10,20,30,40,50"
+    let values = csv.split(",")
+    println(string(values.length))
+    println(values[0])
+    println(values[4])
+    avra_test_capture_stop()
+}
+
+spec "stress strings" {
+    then "string methods output" {
+        sst_run() == "Hello, World!\n13\nHELLO FORGE\n4\na\nb\nc\nd\n0\n-1\n0\n1\n1\n0\n1\n1\n1\n5\n10\n50"
+    }
+}

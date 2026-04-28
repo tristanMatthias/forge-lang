@@ -1,0 +1,36 @@
+type UiDog = { name: string }
+type UiCat = { color: string }
+
+fn ui_run() -> string {
+    avra_test_capture_start()
+    let u = if true { "hello" } else { 3.14 }
+    match u {
+        string(s) -> println(s)
+        float(f) -> println(string(f))
+    }
+
+    let u2 = if false { "hello" } else { 3.14 }
+    match u2 {
+        string(s) -> println(s)
+        float(f) -> println(string(f))
+    }
+
+    let pet = if true { UiDog { name: "Alice" } } else { UiCat { color: "orange" } }
+    match pet {
+        UiDog(d) -> println("name: " + d.name)
+        UiCat(c) -> println("color: " + c.color)
+    }
+
+    let b = if true { true } else { "nope" }
+    match b {
+        bool(v) -> println(string(v))
+        string(s) -> println(s)
+    }
+    avra_test_capture_stop()
+}
+
+spec "union ifexpr" {
+    then "union if expression output" {
+        ui_run() == "hello\n3.14\nname: Alice\n1"
+    }
+}

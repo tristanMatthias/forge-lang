@@ -1,0 +1,6 @@
+spec "simple map" {
+    then "map get works" {
+        let m = {"x": "42"}
+        int(m.get("x")) == 42
+    }
+}

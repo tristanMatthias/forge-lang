@@ -1,0 +1,120 @@
+// WHY: aggregator for all language features. Each subdirectory is
+// one feature with its own parser.av, codegen.av, example.av.
+//
+// Each feature module exports Feature values via factory functions.
+// This file just imports and registers them all.
+
+mod match_expr
+mod return_stmt
+mod if_stmt
+mod while_stmt
+mod for_stmt
+mod extern_decl
+mod let_stmt
+mod fn_decl
+mod struct_decl
+mod enum_decl
+mod impl_decl
+mod generics
+mod error_propagation
+mod null_safety
+mod trait_decl
+mod tuples
+mod with_expr
+mod list_lit
+mod closures
+mod map_lit
+mod defer_stmt
+mod is_keyword
+mod in_operator
+mod spec_test
+mod select_stmt
+mod parallel_stmt
+mod spawn_expr
+mod modules
+mod eval
+mod union_type
+mod component_decl
+use features.closures.{closures_feature}
+use features.defer_stmt.{defer_feature, errdefer_feature}
+use features.enum_decl.{enum_decl_feature}
+use features.extern_decl.{extern_decl_feature}
+use features.fn_decl.{fn_decl_feature}
+use features.for_stmt.{for_feature, for_in_feature}
+use features.if_stmt.{if_stmt_feature}
+use features.impl_decl.{impl_decl_feature}
+use features.is_keyword.{is_keyword_feature}
+use features.in_operator.{in_operator_feature}
+use features.let_stmt.{let_destructure_feature, let_keyword_feature, const_keyword_feature, mut_keyword_feature}
+use features.list_lit.{list_lit_feature}
+use features.map_lit.{map_lit_feature}
+use features.match_expr.{match_feature, when_feature}
+use features.modules.{mod_feature, use_feature}
+use features.null_safety.{null_coalesce_feature, optional_chain_feature, try_feature, catch_feature}
+use features.parallel_stmt.{parallel_feature}
+use features.spawn_expr.{spawn_expr_feature}
+use features.return_stmt.{return_stmt_feature}
+use features.select_stmt.{select_feature}
+use features.spec_test.{spec_feature, given_feature, then_feature}
+use features.struct_decl.{struct_lit_feature, field_access_feature, enum_ctor_feature, field_assign_feature, type_decl_feature, shape_decl_feature}
+use features.trait_decl.{trait_decl_feature}
+use features.tuples.{tuple_feature, tuple_index_feature}
+use features.while_stmt.{while_feature}
+use features.with_expr.{with_expr_feature}
+use features.component_decl.{component_decl_feature}
+use core.registry.{register}
+
+export fn init_features(reg: Registry) {
+    // ── Statements ──
+    register(reg, defer_feature())
+    register(reg, errdefer_feature())
+    register(reg, if_stmt_feature())
+    register(reg, while_feature())
+    register(reg, for_feature())
+    register(reg, for_in_feature())
+    register(reg, let_destructure_feature())
+    register(reg, select_feature())
+    register(reg, parallel_feature())
+
+    // ── Expressions ──
+    register(reg, match_feature())
+    register(reg, when_feature())
+    register(reg, closures_feature())
+    register(reg, is_keyword_feature())
+    register(reg, in_operator_feature())
+    register(reg, spawn_expr_feature())
+    register(reg, with_expr_feature())
+    register(reg, tuple_feature())
+    register(reg, tuple_index_feature())
+    register(reg, list_lit_feature())
+    register(reg, map_lit_feature())
+    register(reg, null_coalesce_feature())
+    register(reg, optional_chain_feature())
+    register(reg, try_feature())
+    register(reg, catch_feature())
+    register(reg, struct_lit_feature())
+    register(reg, field_access_feature())
+    register(reg, enum_ctor_feature())
+    register(reg, field_assign_feature())
+
+    // ── Declarations (parse-only) ──
+    register(reg, fn_decl_feature())
+    register(reg, enum_decl_feature())
+    register(reg, impl_decl_feature())
+    register(reg, extern_decl_feature())
+    register(reg, trait_decl_feature())
+    register(reg, type_decl_feature())
+    register(reg, shape_decl_feature())
+    register(reg, return_stmt_feature())
+    register(reg, let_keyword_feature())
+    register(reg, const_keyword_feature())
+    register(reg, mut_keyword_feature())
+    register(reg, spec_feature())
+    register(reg, given_feature())
+    register(reg, then_feature())
+
+    // ── Infrastructure ──
+    register(reg, mod_feature())
+    register(reg, use_feature())
+    register(reg, component_decl_feature())
+}

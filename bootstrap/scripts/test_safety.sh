@@ -8,9 +8,9 @@ PASS=0; FAIL=0
 
 check() {
     local name="$1" expect="$2" src="$3"
-    echo "$src" > "/tmp/safety_${name}.fg"
-    $BS2 compile "/tmp/safety_${name}.fg" >/dev/null 2>&1 || { echo "  SKIP $name (compile error)"; return; }
-    $LLC -filetype=obj "/tmp/safety_${name}.fg.ll" -o "/tmp/safety_${name}.o" 2>/dev/null || { echo "  SKIP $name (llc error)"; return; }
+    echo "$src" > "/tmp/safety_${name}.av"
+    $BS2 compile "/tmp/safety_${name}.av" >/dev/null 2>&1 || { echo "  SKIP $name (compile error)"; return; }
+    $LLC -filetype=obj "/tmp/safety_${name}.av.ll" -o "/tmp/safety_${name}.o" 2>/dev/null || { echo "  SKIP $name (llc error)"; return; }
     cc -o "/tmp/safety_${name}" "/tmp/safety_${name}.o" build/runtime.o build/llvm_wrapper.o \
         -Wl,-stack_size,0x800000 -L/opt/homebrew/opt/llvm/lib -lLLVM -lc++ 2>/dev/null || { echo "  SKIP $name (link error)"; return; }
     local output=$("/tmp/safety_${name}" 2>&1 || true)

@@ -1,0 +1,67 @@
+fn scr_double(x: int) -> int { x * 2 }
+
+fn scr_safe_div(a: int, b: int) -> int? {
+    if b == 0 { return null }
+    a / b
+}
+
+fn scr_run_int() -> string {
+    avra_test_capture_start()
+    let x = 42
+    println(string(x))
+    println(string(x + 8))
+    println(string(-x))
+    avra_test_capture_stop()
+}
+
+fn scr_run_float() -> string {
+    avra_test_capture_start()
+    let f = 3.14
+    println(string(f))
+    let g = f + 1.0
+    println(string(g))
+    avra_test_capture_stop()
+}
+
+fn scr_run_bool() -> string {
+    avra_test_capture_start()
+    let t = true
+    let f2 = false
+    println(string(t))
+    println(string(f2))
+    println(string(t && f2))
+    println(string(t || f2))
+    println(string(!f2))
+    avra_test_capture_stop()
+}
+
+spec "std core" {
+    then "int operations" {
+        scr_run_int() == "42\n50\n-42"
+    }
+    then "float operations" {
+        scr_run_float() == "3.14\n4.14"
+    }
+    then "bool operations" {
+        scr_run_bool() == "1\n0\n0\n1\n1"
+    }
+    then "string concat" {
+        "hello" + " world" == "hello world"
+    }
+    then "string length" {
+        "hello".length == 5
+    }
+    then "safe div ok" {
+        (scr_safe_div(10, 2) ?? 0) == 5
+    }
+    then "safe div by zero" {
+        scr_safe_div(10, 0) == null
+    }
+    then "null coalesce" {
+        (scr_safe_div(10, 0) ?? -1) == -1
+    }
+    then "function as value" {
+        let f3 = scr_double
+        f3(21) == 42
+    }
+}

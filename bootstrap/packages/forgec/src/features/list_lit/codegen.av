@@ -1,0 +1,149 @@
+// WHY: codegen for list literals [1, 2, 3] and list higher-order methods.
+// Lists are backed by the C-runtime avra_array_* functions.
+
+use core.ast.{Expr, ExprList, VarEnv, ValueType, TypeList, vtype_list_elem, vtype_fn_ret}
+use codegen.types.{Ctx, EmitValue, ok_emit, err_emit}
+use features.closures.codegen.{emit_lambda_typed, emit_typed_lambda_arg}
+use codegen.helpers.{emit_single_arg}
+
+export fn emit_list_lit(ctx: Ctx, env: VarEnv, elements: ExprList) -> Result<EmitValue, string> {
+    let arr = ctx.array_new()
+    match elements {
+        .End -> ok_emit(arr, .List(.Unknown))
+        .Node(se, next) -> {
+            let r = ctx.emit(env, se.node)?
+            ctx.array_push(arr, r.value)
+            push_list_elements(ctx, env, next, arr, r.ty)
+        }
+    }
+}
+
+fn push_list_elements(ctx: Ctx, env: VarEnv, elements: ExprList, arr: ptr, elem_ty: ValueType) -> Result<EmitValue, string> {
+    match elements {
+        .End -> ok_emit(arr, .List(elem_ty))
+        .Node(se, next) -> {
+            let r = ctx.emit(env, se.node)?
+            ctx.array_push(arr, r.value)
+            push_list_elements(ctx, env, next, arr, elem_ty)
+        }
+    }
+}
+
+export fn emit_list_reduce_typed(ctx: Ctx, env: VarEnv, list_val: ptr, args: ExprList, elem_ty: ValueType) -> Result<EmitValue, string> {
+    match args {
+        .Node(se_init, rest) -> {
+            match rest {
+                .Node(se_fn, _) -> {
+                    let init_r = ctx.emit(env, se_init.node)?
+                    // Reduce fn takes (acc, elem) — acc type from init, elem from list
+                    mut fn_r = EmitValue { value: ctx.i64(0), ty: .Int }
+                    match se_fn.node {
+                        .Lambda(params, body) -> {
+                            fn_r = emit_lambda_typed(ctx, env, params, body, TypeList.Node(init_r.ty, TypeList.Node(elem_ty, TypeList.End)))?
+                        }
+                        _ -> {
+                            fn_r = ctx.emit(env, se_fn.node)?
+                        }
+                    }
+                    let result = ctx.call("avra_array_reduce", [list_val, init_r.value, fn_r.value])
+                    ok_emit(result, .Int)
+                }
+                _ -> err_emit("reduce expects 2 arguments: initial value and function")
+            }
+        }
+        _ -> err_emit("reduce expects 2 arguments: initial value and function")
+    }
+}
+
+export fn emit_list_method_call(ctx: Ctx, env: VarEnv, list_val: ptr, list_ty: ValueType, method: string, args: ExprList) -> Result<EmitValue, string> {
+    match method {
+        "length" or "len" -> return ok_emit(ctx.array_len(list_val), .Int)
+        "push" -> {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            ctx.array_push(list_val, arg_r.value)
+            return ok_emit(list_val, list_ty)
+        }
+        "pop" -> {
+            let elem_ty = vtype_list_elem(list_ty)
+            return ok_emit(ctx.call("avra_array_pop", [list_val]), elem_ty)
+        }
+        "get" -> {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            let elem_ty = vtype_list_elem(list_ty)
+            return ok_emit(ctx.array_get(list_val, arg_r.value), elem_ty)
+        }
+        "set" -> return emit_list_set(ctx, env, list_val, args)
+        "map" -> {
+            let elem_ty = vtype_list_elem(list_ty)
+            let arg_r = emit_typed_lambda_arg(ctx, env, args, TypeList.Node(elem_ty, TypeList.End))?
+            let result = ctx.call("avra_array_map", [list_val, arg_r.value])
+            return ok_emit(result, .List(vtype_fn_ret(arg_r.ty)))
+        }
+        "filter" -> {
+            let elem_ty = vtype_list_elem(list_ty)
+            let arg_r = emit_typed_lambda_arg(ctx, env, args, TypeList.Node(elem_ty, TypeList.End))?
+            return ok_emit(ctx.call("avra_array_filter", [list_val, arg_r.value]), .List(elem_ty))
+        }
+        "foreach" -> {
+            let elem_ty = vtype_list_elem(list_ty)
+            let arg_r = emit_typed_lambda_arg(ctx, env, args, TypeList.Node(elem_ty, TypeList.End))?
+            ctx.call("avra_array_foreach", [list_val, arg_r.value])
+            return ok_emit(ctx.i64(0), .Int)
+        }
+        "reduce" -> {
+            let elem_ty = vtype_list_elem(list_ty)
+            return emit_list_reduce_typed(ctx, env, list_val, args, elem_ty)
+        }
+        "contains" -> {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            return ok_emit(ctx.call("avra_array_contains", [list_val, arg_r.value]), .Int)
+        }
+        "index_of" -> {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            return ok_emit(ctx.call("avra_array_index_of", [list_val, arg_r.value]), .Int)
+        }
+        "reverse" -> {
+            return ok_emit(ctx.call("avra_array_reverse", [list_val]), list_ty)
+        }
+        "slice" -> return emit_list_slice(ctx, env, list_val, list_ty, args)
+        "join" -> {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            let sep_ptr = ctx.to_ptr(arg_r.value, "join_sep")
+            return ok_emit(ctx.call("avra_str_join", [list_val, sep_ptr]), .Str)
+        }
+        _ -> err_emit("list method `${method}` not implemented")
+    }
+}
+
+fn emit_list_slice(ctx: Ctx, env: VarEnv, list: ptr, list_ty: ValueType, args: ExprList) -> Result<EmitValue, string> {
+    match args {
+        .Node(se_start, rest) -> {
+            match rest {
+                .Node(se_end, _) -> {
+                    let start_r = ctx.emit(env, se_start.node)?
+                    let end_r = ctx.emit(env, se_end.node)?
+                    ok_emit(ctx.call("avra_array_slice", [list, start_r.value, end_r.value]), list_ty)
+                }
+                _ -> err_emit("list.slice expects 2 arguments: start and end")
+            }
+        }
+        _ -> err_emit("list.slice expects 2 arguments: start and end")
+    }
+}
+
+fn emit_list_set(ctx: Ctx, env: VarEnv, list: ptr, args: ExprList) -> Result<EmitValue, string> {
+    match args {
+        .Node(se_idx, rest) -> {
+            match rest {
+                .Node(se_val, _) -> {
+                    let idx_r = ctx.emit(env, se_idx.node)?
+                    let val_r = ctx.emit(env, se_val.node)?
+                    ctx.call("avra_array_set", [list, idx_r.value, val_r.value])
+                    ok_emit(list, .List(.Unknown))
+                }
+                _ -> err_emit("list.set expects 2 arguments: index and value")
+            }
+        }
+        _ -> err_emit("list.set expects 2 arguments: index and value")
+    }
+}

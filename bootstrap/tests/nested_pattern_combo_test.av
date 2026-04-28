@@ -1,0 +1,87 @@
+enum NpcInner { A(x: int), B(msg: string), Empty }
+enum NpcOuter { Wrap(inner: NpcInner), Pair(a: NpcInner, b: NpcInner), None }
+
+fn npc_describe(o: NpcOuter) -> string {
+    match o {
+        .Wrap(.A(x)) -> "wrap-a: " + string(x)
+        .Wrap(.B(msg)) -> "wrap-b: " + msg
+        .Wrap(.Empty) -> "wrap-empty"
+        .Pair(.A(x), .A(y)) -> "pair-aa: " + string(x) + "," + string(y)
+        .Pair(.A(x), .B(msg)) -> "pair-ab: " + string(x) + " " + msg
+        .None -> "none"
+        _ -> "other"
+    }
+}
+
+fn npc_guarded(o: NpcOuter) -> string {
+    match o {
+        .Wrap(.A(x)) if x > 10 -> "big: " + string(x)
+        .Wrap(.A(x)) -> "small: " + string(x)
+        _ -> "?"
+    }
+}
+
+fn npc_classify(o: NpcOuter) -> int {
+    match o {
+        .Wrap(.A(_)) -> 1
+        .Wrap(.B(_)) -> 2
+        .None -> 0
+        _ -> 3
+    }
+}
+
+fn npc_is_wrap_a(o: NpcOuter) -> bool {
+    o is .Wrap
+}
+
+fn npc_run() -> string {
+    avra_test_capture_start()
+    println(npc_describe(NpcOuter.Wrap(NpcInner.A(42))))
+    println(npc_describe(NpcOuter.Wrap(NpcInner.B("hello"))))
+    println(npc_describe(NpcOuter.Wrap(NpcInner.Empty)))
+    println(npc_describe(NpcOuter.Pair(NpcInner.A(1), NpcInner.A(2))))
+    println(npc_describe(NpcOuter.Pair(NpcInner.A(3), NpcInner.B("yo"))))
+    println(npc_describe(NpcOuter.None))
+    println(npc_guarded(NpcOuter.Wrap(NpcInner.A(5))))
+    println(npc_guarded(NpcOuter.Wrap(NpcInner.A(20))))
+    println(string(npc_classify(NpcOuter.Wrap(NpcInner.A(1)))))
+    println(string(npc_classify(NpcOuter.Wrap(NpcInner.B("x")))))
+    println(string(npc_classify(NpcOuter.None)))
+    println(string(npc_is_wrap_a(NpcOuter.Wrap(NpcInner.A(1)))))
+    println(string(npc_is_wrap_a(NpcOuter.None)))
+    let items = [NpcOuter.Wrap(NpcInner.A(10)), NpcOuter.None, NpcOuter.Wrap(NpcInner.A(20))]
+    for i in 0..items.length {
+        match items[i] {
+            .Wrap(.A(x)) -> println(string(x))
+            _ -> println("skip")
+        }
+    }
+    avra_test_capture_stop()
+}
+
+spec "nested pattern combo" {
+    then "wrap-a" {
+        npc_describe(NpcOuter.Wrap(NpcInner.A(42))) == "wrap-a: 42"
+    }
+    then "pair-aa" {
+        npc_describe(NpcOuter.Pair(NpcInner.A(1), NpcInner.A(2))) == "pair-aa: 1,2"
+    }
+    then "guarded small" {
+        npc_guarded(NpcOuter.Wrap(NpcInner.A(5))) == "small: 5"
+    }
+    then "guarded big" {
+        npc_guarded(NpcOuter.Wrap(NpcInner.A(20))) == "big: 20"
+    }
+    then "classify wrap-a" {
+        npc_classify(NpcOuter.Wrap(NpcInner.A(1))) == 1
+    }
+    then "is_wrap_a true" {
+        npc_is_wrap_a(NpcOuter.Wrap(NpcInner.A(1))) == true
+    }
+    then "is_wrap_a false" {
+        npc_is_wrap_a(NpcOuter.None) == false
+    }
+    then "full output" {
+        npc_run() == "wrap-a: 42\nwrap-b: hello\nwrap-empty\npair-aa: 1,2\npair-ab: 3 yo\nnone\nsmall: 5\nbig: 20\n1\n2\n0\n1\n0\n10\nskip\n20"
+    }
+}

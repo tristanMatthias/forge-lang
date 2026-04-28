@@ -42,7 +42,7 @@ if [ -n "$src_relevant" ]; then
   if ! bootstrap/scripts/diagnose.sh --check-fixedpoint; then
     echo
     echo "[pre-commit] SELF-HOST FIXED POINT BROKEN — commit blocked"
-    echo "[pre-commit] bs2 and bs3 emit different IR for packages/forgec/src/main.fg"
+    echo "[pre-commit] bs2 and bs3 emit different IR for packages/forgec/src/main.av"
     echo "[pre-commit] this means the last change to packages/forgec/src/ produced a"
     echo "[pre-commit] non-self-consistent compiler. Fix or 'git commit --no-verify'."
     exit 1

@@ -1,0 +1,8 @@
+/// expect: hello from cli
+
+extern fn avra_selfhost_argc() -> int
+extern fn avra_selfhost_get_arg_cstr(idx: int) -> string
+
+fn main() {
+    println("hello from cli")
+}

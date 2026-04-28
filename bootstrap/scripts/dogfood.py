@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Dogfooding task runner for the bootstrap compiler.
 
-Tracks adoption of every language feature across every .fg source file.
+Tracks adoption of every language feature across every .av source file.
 State lives in dogfood_progress.csv. The agent only interacts via this CLI.
 
 Usage:
@@ -613,7 +613,7 @@ FEATURES = [
         "look_for": (
             "Look for match arms, if-else branches, or function bodies that are "
             "near-identical (same structure, different variable names). Key hotspot: "
-            "codegen/mod.fg `.Ident` vs `.QualifiedIdent` arms (~48 duplicated lines). "
+            "codegen/mod.av `.Ident` vs `.QualifiedIdent` arms (~48 duplicated lines). "
             "Also check for repeated multi-line patterns across features."
         ),
         "example": (
@@ -636,7 +636,7 @@ FEATURES = [
         ),
         "look_for": (
             "Grep for `had_error: false, error_message: \"\"` — every hit is a manual "
-            "construction that should use a helper. Check codegen/types.fg for the "
+            "construction that should use a helper. Check codegen/types.av for the "
             "available helpers: ok_emit, ok_emit_str, ok_emit_typed, err_emit, "
             "ok_stmt, err_stmt, err_stmt_from_expr. "
             "~36 manual EmitResult constructions exist; ~15 are straightforward replacements."
@@ -728,12 +728,12 @@ FEATURE_BY_KEY = {f["key"]: f for f in FEATURES}
 # ─── File discovery ─────────────────────────────────────────────────
 
 def find_fg_files():
-    """Find all .fg source files under packages/forgec/src/, excluding tests/."""
+    """Find all .av source files under packages/forgec/src/, excluding tests/."""
     files = []
     for root, dirs, fnames in os.walk(SRC):
         dirs[:] = [d for d in dirs if d != "tests"]
         for f in fnames:
-            if f.endswith(".fg"):
+            if f.endswith(".av"):
                 rel = os.path.relpath(os.path.join(root, f), BOOTSTRAP)
                 files.append(rel)
     files.sort()

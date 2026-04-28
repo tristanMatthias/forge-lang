@@ -51,13 +51,13 @@ warn() { printf "${C_YELLOW}[warn]${C_RESET} %s\n" "$*" >&2; }
 err()  { printf "${C_RED}[err]${C_RESET}  %s\n" "$*" >&2; }
 die()  { err "$*"; exit 1; }
 
-# Check if any .fg source file is newer than a target binary.
+# Check if any .av source file is newer than a target binary.
 # Returns 0 (true) if rebuild is needed, 1 (false) if up to date.
 source_newer_than() {
   local target="$1"
   [ ! -x "$target" ] && return 0
-  # Find any .fg file newer than target — exits as soon as one is found.
-  [ -n "$(find "$SRC_DIR" -name '*.fg' -newer "$target" -print -quit 2>/dev/null)" ]
+  # Find any .av file newer than target — exits as soon as one is found.
+  [ -n "$(find "$SRC_DIR" -name '*.av' -newer "$target" -print -quit 2>/dev/null)" ]
 }
 
 print_help() {
@@ -71,7 +71,7 @@ BUILD MODES
   --build              Rebuild stage1 (host → stage1 binary) + run all stage1 tests.
                        Same as scripts/test.sh but goes through this script.
   --build-runtime      Compile forge/stdlib/runtime.c → build/runtime.o.
-  --build-bs2          Compile packages/forgec/src/main.fg with stage1 → build/bs2.
+  --build-bs2          Compile packages/forgec/src/main.av with stage1 → build/bs2.
   --build-O0           Build bs2 at -O0 (no optimization) for debuggability.
                        Makes lldb usable with breakpoints and variable inspection.
                        Output: build/bs2_O0.
@@ -80,27 +80,27 @@ BUILD MODES
                        parameters. Catches null propagation at the source.
                        Output: build/bs2_debug.
   --build-bs2-asan     Same as --build-bs2 but link with -fsanitize=address.
-  --build-bs3          Compile packages/forgec/src/main.fg with bs2 → build/bs3.
+  --build-bs3          Compile packages/forgec/src/main.av with bs2 → build/bs3.
                        (The fixed-point self-host check.)
   --check-fixedpoint   Verify bs2 and bs3 emit byte-identical IR for
-                       packages/forgec/src/main.fg. The single most important
+                       packages/forgec/src/main.av. The single most important
                        self-hosting invariant — if this fails, a recent
                        commit broke the bootstrap chain. Wired into the
                        pre-commit hook when packages/forgec/src/ is touched.
 
 RUN MODES
-  --run    <file.fg>   Compile <file.fg> with bs2, link, run. Prints stdout.
-  --run-stage1 <file.fg>
+  --run    <file.av>   Compile <file.av> with bs2, link, run. Prints stdout.
+  --run-stage1 <file.av>
                        Same but with stage1 (the host-built bootstrapc).
-  --check  <file.fg>   Run bs2's parse+resolve only — no codegen, no link.
-  --ll     <file.fg>   Emit LLVM IR via bs2 to stdout (don't link or run).
-  --ll-stage1 <file.fg>
+  --check  <file.av>   Run bs2's parse+resolve only — no codegen, no link.
+  --ll     <file.av>   Emit LLVM IR via bs2 to stdout (don't link or run).
+  --ll-stage1 <file.av>
                        Same with stage1.
 
 DIFF & ANALYSIS
-  --diff   <file.fg>   Compile <file.fg> with both stage1 and bs2, diff
+  --diff   <file.av>   Compile <file.av> with both stage1 and bs2, diff
                        the resulting .ll files. Highlights divergence.
-  --diff-fn <file.fg> <fn>
+  --diff-fn <file.av> <fn>
                        Same as --diff but only shows the body of one
                        function.
   --score  [file.ll]   Score an emitted IR file. Counts ret-undef, orphan
@@ -109,28 +109,28 @@ DIFF & ANALYSIS
                        Lower is better. Wide-store hits are fatal (the
                        heap-corruption bug class) and exit non-zero.
                        Defaults to the most recently emitted .ll.
-  --rank   <file.fg>   Rank functions in <file.fg>'s emitted IR by line
+  --rank   <file.av>   Rank functions in <file.av>'s emitted IR by line
                        count — useful for spotting bloat.
 
 REGRESSION SUITE
-  --regress            Compile + run every regress/*.fg with bs2 and
+  --regress            Compile + run every regress/*.av with bs2 and
                        compare stdout against the matching .out file.
                        Exit non-zero on any mismatch. Run before commit.
-  --regress-add <name> <file.fg>
-                       Capture <file.fg> as a regression test under
-                       regress/<name>.fg, with bs2's current stdout
+  --regress-add <name> <file.av>
+                       Capture <file.av> as a regression test under
+                       regress/<name>.av, with bs2's current stdout
                        saved as regress/<name>.out.
   --regress-list       List all captured regression tests.
 
 HEAP / MEMORY DEBUGGING
-  --asan   <file.fg>   Run bs2_asan on <file.fg>. AddressSanitizer
+  --asan   <file.av>   Run bs2_asan on <file.av>. AddressSanitizer
                        reports the exact alloc/use-after-free site.
                        Builds bs2_asan if missing.
-  --malloc-trace <file.fg>
+  --malloc-trace <file.av>
                        Run bs2 under MallocStackLogging + DYLD malloc
                        guard. Crash dumps include the alloc backtrace.
-  --bisect-lines <file.fg>
-                       Binary-search the line count of <file.fg> to find
+  --bisect-lines <file.av>
+                       Binary-search the line count of <file.av> to find
                        the smallest prefix that still makes bs2 crash.
                        Useful for isolating heap-corruption triggers.
 
@@ -148,14 +148,14 @@ SEED MANAGEMENT
                          verifies the resulting binary can also self-compile.
                          Prints OK or specific failure point. Use this to
                          check seed health before committing.
-  --seed-patch           Incremental seed update. Compiles main.fg with
+  --seed-patch           Incremental seed update. Compiles main.av with
                          bs2, diffs against seed/seed.ll per-function, copies
                          the new IR to seed, and reports exactly which
                          functions changed. Much faster feedback loop than
                          a full 'make update-seed' because it skips the
                          verify-seed rebuild. Use when iterating on source.
   --seed-sigs            Compare function signatures (parameter counts)
-                         between seed/seed.ll and packages/forgec/src/**/*.fg. Reports
+                         between seed/seed.ll and packages/forgec/src/**/*.av. Reports
                          mismatches, new functions, and removed functions.
                          Catches the most common seed staleness issue:
                          parameter count changes that cause silent corruption.
@@ -170,11 +170,11 @@ ENVIRONMENT
 EXAMPLES
   diagnose.sh --build               # rebuild stage1 from rust + run tests
   diagnose.sh --build-bs2           # build the self-compiled bs2
-  diagnose.sh --run /tmp/hello.fg   # run a .fg file with bs2
-  diagnose.sh --diff /tmp/hello.fg  # see how stage1 and bs2 diverge
-  diagnose.sh --asan /tmp/big.fg    # find heap corruption with ASan
+  diagnose.sh --run /tmp/hello.av   # run a .av file with bs2
+  diagnose.sh --diff /tmp/hello.av  # see how stage1 and bs2 diverge
+  diagnose.sh --asan /tmp/big.av    # find heap corruption with ASan
   diagnose.sh --regress             # run regression suite
-  diagnose.sh --regress-add hello /tmp/hello.fg
+  diagnose.sh --regress-add hello /tmp/hello.av
   diagnose.sh --seed-patch            # incremental seed update with diff report
 EOF
 }
@@ -278,10 +278,10 @@ ensure_bs2() {
   ensure_seed "${1:-}"
   if [ "${1:-}" = "force" ] || source_newer_than "$BS2" \
      || [ "$SEED_LL" -nt "$BS2" ]; then
-    log "compiling packages/forgec/src/main.fg with seed compiler"
-    if "$SEED_BIN" compile "$SRC_DIR/main.fg" >"$BUILD_DIR/bs2.codegen.log" 2>&1; then
+    log "compiling packages/forgec/src/main.av with seed compiler"
+    if "$SEED_BIN" compile "$SRC_DIR/main.av" >"$BUILD_DIR/bs2.codegen.log" 2>&1; then
       log "linking $BS2"
-      link_ll "$SRC_DIR/main.fg.ll" "$BS2" "$BUILD_DIR/bs2.link.log"
+      link_ll "$SRC_DIR/main.av.ll" "$BS2" "$BUILD_DIR/bs2.link.log"
       ok "built $BS2"
     else
       # Seed crashed. Check if it's an LLVM -O2 miscompilation by
@@ -293,7 +293,7 @@ ensure_bs2() {
         -Wl,-stack_size,0x2000000 \
         -L"$LLVM_PREFIX/lib" -lLLVM -lc++ 2>/dev/null \
         || die "seed -O0 link failed"
-      if "$BUILD_DIR/seed_o0" compile "$SRC_DIR/main.fg" >"$BUILD_DIR/bs2.codegen.log" 2>&1; then
+      if "$BUILD_DIR/seed_o0" compile "$SRC_DIR/main.av" >"$BUILD_DIR/bs2.codegen.log" 2>&1; then
         warn "LLVM OPTIMIZATION BUG: seed works at -O0 but crashes at -O2"
         warn "This is an llc -O2 miscompilation on $(uname -m), not a Forge bug."
         warn "Fix: run 'make update-seed' to regenerate the seed IR, which"
@@ -303,7 +303,7 @@ ensure_bs2() {
         # Use the -O0 seed to complete the build
         cp "$BUILD_DIR/seed_o0" "$SEED_BIN"
         log "linking $BS2"
-        link_ll "$SRC_DIR/main.fg.ll" "$BS2" "$BUILD_DIR/bs2.link.log"
+        link_ll "$SRC_DIR/main.av.ll" "$BS2" "$BUILD_DIR/bs2.link.log"
         ok "built $BS2 (via -O0 seed fallback)"
       else
         cat "$BUILD_DIR/bs2.codegen.log" >&2
@@ -329,13 +329,13 @@ ensure_bs2_O0() {
   ensure_seed
   if source_newer_than "$BS2_O0" \
      || [ "$SEED_LL" -nt "$BS2_O0" ]; then
-    log "compiling packages/forgec/src/main.fg with seed compiler (for -O0 build)"
-    if ! "$SEED_BIN" compile "$SRC_DIR/main.fg" >"$BUILD_DIR/bs2_O0.codegen.log" 2>&1; then
+    log "compiling packages/forgec/src/main.av with seed compiler (for -O0 build)"
+    if ! "$SEED_BIN" compile "$SRC_DIR/main.av" >"$BUILD_DIR/bs2_O0.codegen.log" 2>&1; then
       cat "$BUILD_DIR/bs2_O0.codegen.log" >&2
       die "bs2_O0 codegen failed"
     fi
     log "linking $BS2_O0 at -O0"
-    link_ll_O0 "$SRC_DIR/main.fg.ll" "$BS2_O0" "$BUILD_DIR/bs2_O0.link.log"
+    link_ll_O0 "$SRC_DIR/main.av.ll" "$BS2_O0" "$BUILD_DIR/bs2_O0.link.log"
     ok "built $BS2_O0 (lldb-friendly, -O0)"
   fi
 }
@@ -344,13 +344,13 @@ ensure_bs2_debug() {
   ensure_seed
   if source_newer_than "$BS2_DEBUG" \
      || [ "$SEED_LL" -nt "$BS2_DEBUG" ]; then
-    log "compiling packages/forgec/src/main.fg with seed compiler (--debug-null)"
-    if ! "$SEED_BIN" compile --debug-null "$SRC_DIR/main.fg" >"$BUILD_DIR/bs2_debug.codegen.log" 2>&1; then
+    log "compiling packages/forgec/src/main.av with seed compiler (--debug-null)"
+    if ! "$SEED_BIN" compile --debug-null "$SRC_DIR/main.av" >"$BUILD_DIR/bs2_debug.codegen.log" 2>&1; then
       cat "$BUILD_DIR/bs2_debug.codegen.log" >&2
       die "bs2_debug codegen failed"
     fi
     log "linking $BS2_DEBUG at -O0"
-    link_ll_O0 "$SRC_DIR/main.fg.ll" "$BS2_DEBUG" "$BUILD_DIR/bs2_debug.link.log"
+    link_ll_O0 "$SRC_DIR/main.av.ll" "$BS2_DEBUG" "$BUILD_DIR/bs2_debug.link.log"
     ok "built $BS2_DEBUG (null checks enabled, -O0)"
   fi
 }
@@ -359,12 +359,12 @@ ensure_bs2_asan() {
   ensure_seed
   ensure_runtime_asan
   if [ ! -x "$BS2_ASAN" ] || [ "$BS2" -nt "$BS2_ASAN" ]; then
-    log "compiling packages/forgec/src/main.fg with seed (for ASan)"
-    "$SEED_BIN" compile "$SRC_DIR/main.fg" >"$BUILD_DIR/bs2_asan.codegen.log" 2>&1 \
+    log "compiling packages/forgec/src/main.av with seed (for ASan)"
+    "$SEED_BIN" compile "$SRC_DIR/main.av" >"$BUILD_DIR/bs2_asan.codegen.log" 2>&1 \
       || { cat "$BUILD_DIR/bs2_asan.codegen.log" >&2; die "bs2_asan codegen failed"; }
     log "linking $BS2_ASAN with -fsanitize=address"
     cc -fsanitize=address -g -o "$BS2_ASAN" \
-       "$SRC_DIR/main.fg.ll" "$RUNTIME_ASAN_O" "$LLVM_WRAPPER_O" \
+       "$SRC_DIR/main.av.ll" "$RUNTIME_ASAN_O" "$LLVM_WRAPPER_O" \
        -L"$LLVM_PREFIX/lib" -lLLVM -lc++ 2>"$BUILD_DIR/bs2_asan.link.log" \
       || { cat "$BUILD_DIR/bs2_asan.link.log" >&2; die "bs2_asan link failed"; }
     ok "built $BS2_ASAN"
@@ -373,12 +373,12 @@ ensure_bs2_asan() {
 
 ensure_bs3() {
   ensure_bs2
-  log "compiling packages/forgec/src/main.fg with bs2 → $BS3"
-  if ! "$BS2" compile "$SRC_DIR/main.fg" >"$BUILD_DIR/bs3.codegen.log" 2>&1; then
+  log "compiling packages/forgec/src/main.av with bs2 → $BS3"
+  if ! "$BS2" compile "$SRC_DIR/main.av" >"$BUILD_DIR/bs3.codegen.log" 2>&1; then
     cat "$BUILD_DIR/bs3.codegen.log" >&2
     die "bs3 codegen failed (bs2 cannot self-compile)"
   fi
-  link_ll "$SRC_DIR/main.fg.ll" "$BS3" "$BUILD_DIR/bs3.link.log"
+  link_ll "$SRC_DIR/main.av.ll" "$BS3" "$BUILD_DIR/bs3.link.log"
   ok "built $BS3"
 }
 
@@ -395,7 +395,7 @@ mode_build_bs2() {
   ensure_bs2
   # Verify bs2 can compile itself (bootstrap chain integrity).
   log "verifying bs2 can self-compile (bootstrap safety check)"
-  if "$BS2" compile "$SRC_DIR/main.fg" >"$BUILD_DIR/bs2_selfcheck.log" 2>&1; then
+  if "$BS2" compile "$SRC_DIR/main.av" >"$BUILD_DIR/bs2_selfcheck.log" 2>&1; then
     ok "$BS2"
     return
   fi
@@ -412,7 +412,7 @@ mode_build_bs2() {
 
   # bs2 was compiled by the seed successfully (ensure_bs2 passed).
   # Its IR is the best candidate for a new seed.
-  local bs2_ll="$SRC_DIR/main.fg.ll"
+  local bs2_ll="$SRC_DIR/main.av.ll"
   if [ ! -f "$bs2_ll" ]; then
     err "no IR file found at $bs2_ll — cannot auto-cycle"
     head -30 "$BUILD_DIR/bs2_selfcheck.log" >&2
@@ -435,16 +435,16 @@ mode_build_bs2() {
 
   # Try self-compile again
   log "retrying self-compile with updated seed"
-  if "$BS2" compile "$SRC_DIR/main.fg" >"$BUILD_DIR/bs2_selfcheck.log" 2>&1; then
+  if "$BS2" compile "$SRC_DIR/main.av" >"$BUILD_DIR/bs2_selfcheck.log" 2>&1; then
     ok "auto-cycle succeeded — bs2 self-compiles after seed update"
     ok "$BS2"
 
     # Verify fixed point: bs2 and bs3 should agree
     log "verifying fixed point after auto-cycle"
     local bs2_ir="$BUILD_DIR/fp_autocycle_bs2.ll"
-    cp "$SRC_DIR/main.fg.ll" "$bs2_ir"
-    if "$BS2" compile "$SRC_DIR/main.fg" >/dev/null 2>&1; then
-      if diff -q "$bs2_ir" "$SRC_DIR/main.fg.ll" >/dev/null 2>&1; then
+    cp "$SRC_DIR/main.av.ll" "$bs2_ir"
+    if "$BS2" compile "$SRC_DIR/main.av" >/dev/null 2>&1; then
+      if diff -q "$bs2_ir" "$SRC_DIR/main.av.ll" >/dev/null 2>&1; then
         ok "fixed point holds after auto-cycle"
       else
         warn "fixed point does NOT hold after auto-cycle — run 'make update-seed' to stabilize"
@@ -456,11 +456,11 @@ mode_build_bs2() {
   # Auto-cycle didn't help. Before giving up, check if it's an LLVM
   # -O2 miscompilation: rebuild bs2 at -O0 and test self-compile.
   warn "auto-cycle failed — checking for LLVM -O2 miscompilation"
-  "$LLC" -O0 -filetype=obj "$SRC_DIR/main.fg.ll" -o "$BUILD_DIR/bs2_o0.o" 2>/dev/null
+  "$LLC" -O0 -filetype=obj "$SRC_DIR/main.av.ll" -o "$BUILD_DIR/bs2_o0.o" 2>/dev/null
   if cc -o "$BUILD_DIR/bs2_o0" "$BUILD_DIR/bs2_o0.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
        -Wl,-stack_size,0x2000000 \
        -L"$LLVM_PREFIX/lib" -lLLVM -lc++ 2>/dev/null; then
-    if "$BUILD_DIR/bs2_o0" compile "$SRC_DIR/main.fg" >/dev/null 2>&1; then
+    if "$BUILD_DIR/bs2_o0" compile "$SRC_DIR/main.av" >/dev/null 2>&1; then
       err ""
       err "LLVM OPTIMIZATION BUG DETECTED"
       err "bs2 works at -O0 but crashes at -O2."
@@ -495,7 +495,7 @@ mode_build_bs2() {
 # requiring manual investigation.
 mode_diagnose_selfcompile_failure() {
   local seed_ir="$SEED_LL"
-  local bs2_ir="$SRC_DIR/main.fg.ll"
+  local bs2_ir="$SRC_DIR/main.av.ll"
   [ -f "$bs2_ir" ] || return
 
   # Extract function names from both
@@ -547,20 +547,20 @@ mode_build_bs2_asan() { ensure_bs2_asan; ok "$BS2_ASAN"; }
 mode_build_bs3()      { ensure_bs3;      ok "$BS3"; }
 
 # Verify bootstrap reaches its self-host fixed point: bs2 and bs3 must
-# emit byte-identical IR for the same input (packages/forgec/src/main.fg).
+# emit byte-identical IR for the same input (packages/forgec/src/main.av).
 # If this fails, self-hosting is broken — the bug is somewhere between
 # bs2 and bs3 (one generation diverged from the previous).
 mode_check_fixedpoint() {
   ensure_bs2
   ensure_bs3
-  log "compiling packages/forgec/src/main.fg with bs2"
-  "$BS2" compile "$SRC_DIR/main.fg" >/dev/null 2>&1 \
+  log "compiling packages/forgec/src/main.av with bs2"
+  "$BS2" compile "$SRC_DIR/main.av" >/dev/null 2>&1 \
     || die "bs2 failed to compile bootstrap source"
-  cp "$SRC_DIR/main.fg.ll" "$BUILD_DIR/fp_bs2.ll"
-  log "compiling packages/forgec/src/main.fg with bs3"
-  "$BS3" compile "$SRC_DIR/main.fg" >/dev/null 2>&1 \
+  cp "$SRC_DIR/main.av.ll" "$BUILD_DIR/fp_bs2.ll"
+  log "compiling packages/forgec/src/main.av with bs3"
+  "$BS3" compile "$SRC_DIR/main.av" >/dev/null 2>&1 \
     || die "bs3 failed to compile bootstrap source"
-  cp "$SRC_DIR/main.fg.ll" "$BUILD_DIR/fp_bs3.ll"
+  cp "$SRC_DIR/main.av.ll" "$BUILD_DIR/fp_bs3.ll"
   if diff -q "$BUILD_DIR/fp_bs2.ll" "$BUILD_DIR/fp_bs3.ll" >/dev/null; then
     local lines; lines=$(wc -l <"$BUILD_DIR/fp_bs2.ll" | tr -d ' ')
     ok "fixed point holds — bs2 and bs3 emit byte-identical $lines-line IR"
@@ -576,12 +576,12 @@ mode_check_fixedpoint() {
       ensure_bs2 force
       ensure_bs3
       # Re-check
-      "$BS2" compile "$SRC_DIR/main.fg" >/dev/null 2>&1 \
+      "$BS2" compile "$SRC_DIR/main.av" >/dev/null 2>&1 \
         || die "bs2 failed during auto-cycle $cycle"
-      cp "$SRC_DIR/main.fg.ll" "$BUILD_DIR/fp_bs2.ll"
-      "$BS3" compile "$SRC_DIR/main.fg" >/dev/null 2>&1 \
+      cp "$SRC_DIR/main.av.ll" "$BUILD_DIR/fp_bs2.ll"
+      "$BS3" compile "$SRC_DIR/main.av" >/dev/null 2>&1 \
         || die "bs3 failed during auto-cycle $cycle"
-      cp "$SRC_DIR/main.fg.ll" "$BUILD_DIR/fp_bs3.ll"
+      cp "$SRC_DIR/main.av.ll" "$BUILD_DIR/fp_bs3.ll"
       if diff -q "$BUILD_DIR/fp_bs2.ll" "$BUILD_DIR/fp_bs3.ll" >/dev/null; then
         # Converged! Update the seed to the stable version.
         cp "$BUILD_DIR/fp_bs2.ll" "$BOOTSTRAP_DIR/seed/seed.ll"
@@ -598,14 +598,14 @@ mode_check_fixedpoint() {
   fi
 }
 
-# Compile + link + run a .fg with bs2 (or stage1).
+# Compile + link + run a .av with bs2 (or stage1).
 run_fg() {
   local fg="$1"
   [ -f "$fg" ] || die "no such file: $fg"
   ensure_bs2
   local ll bin
   ll="$fg.ll"
-  bin="${fg%.fg}.bin"
+  bin="${fg%.av}.bin"
   if ! "$BS2" compile "$fg" >"$BUILD_DIR/last_run.log" 2>&1; then
     cat "$BUILD_DIR/last_run.log" >&2
     die "bs2 codegen failed"
@@ -623,9 +623,9 @@ run_fg_coverage() {
   ensure_bs2
   local ll bin profraw profdata
   ll="$fg.ll"
-  bin="${fg%.fg}.bin"
-  profraw="${fg%.fg}.profraw"
-  profdata="${fg%.fg}.profdata"
+  bin="${fg%.av}.bin"
+  profraw="${fg%.av}.profraw"
+  profdata="${fg%.av}.profdata"
   if ! "$BS2" compile --coverage "$fg" >"$BUILD_DIR/last_run.log" 2>&1; then
     cat "$BUILD_DIR/last_run.log" >&2
     die "bs2 codegen failed"
@@ -673,7 +673,7 @@ mode_diff() {
 mode_diff_fn() {
   local fg="$1" fn="$2"
   [ -f "$fg" ] || die "no such file: $fg"
-  [ -n "$fn" ] || die "--diff-fn requires <file.fg> <fn-name>"
+  [ -n "$fn" ] || die "--diff-fn requires <file.av> <fn-name>"
   ensure_bs2; ensure_bs3
   local b2_ll="$BUILD_DIR/$(basename "$fg").bs2.ll"
   local b3_ll="$BUILD_DIR/$(basename "$fg").bs3.ll"
@@ -822,12 +822,12 @@ mode_rank() {
   local ll
   case "$arg" in
     *.ll) ll="$arg" ;;
-    *.fg)
+    *.av)
       ensure_bs2
       "$BS2" compile "$arg" >/dev/null 2>&1 || die "bs2 codegen failed"
       ll="$arg.ll"
       ;;
-    *) die "--rank: pass a .fg or .ll file" ;;
+    *) die "--rank: pass a .av or .ll file" ;;
   esac
   awk '
     /^define / {
@@ -850,18 +850,18 @@ mode_regress() {
 
   # Build the test list
   local test_specs=()
-  for fg in "$SRC_DIR"/features/*/tests/*.fg; do
+  for fg in "$SRC_DIR"/features/*/tests/*.av; do
     test_specs+=("$fg")
   done
-  for fg in "$SRC_DIR"/features/*/example.fg; do
+  for fg in "$SRC_DIR"/features/*/example.av; do
     [ -f "$(dirname "$fg")/expected.out" ] && test_specs+=("$fg")
   done
-  for fg in "$REGRESS_DIR"/*.fg; do
+  for fg in "$REGRESS_DIR"/*.av; do
     test_specs+=("$fg")
   done
   for d in "$REGRESS_DIR"/*/; do
-    if [ -f "${d}main.fg" ]; then
-      test_specs+=("${d}main.fg")
+    if [ -f "${d}main.av" ]; then
+      test_specs+=("${d}main.av")
     fi
   done
 
@@ -869,16 +869,16 @@ mode_regress() {
   local names=() expecteds=() fgs=() bins=() slugs=()
   for fg in "${test_specs[@]}"; do
     local name expected slug
-    if [[ "$fg" == */main.fg ]]; then
+    if [[ "$fg" == */main.av ]]; then
       local expected_dir; expected_dir=$(dirname "$fg")
       name=$(basename "$expected_dir")
       expected="$expected_dir/expected.out"
-    elif [[ "$fg" == */example.fg ]]; then
+    elif [[ "$fg" == */example.av ]]; then
       local feat_dir; feat_dir=$(dirname "$fg")
       name=$(basename "$feat_dir")
       expected="$feat_dir/expected.out"
     else
-      name=$(basename "$fg" .fg)
+      name=$(basename "$fg" .av)
       expected="$(dirname "$fg")/$name.out"
     fi
     local err_file="${expected%.out}.err"
@@ -891,7 +891,7 @@ mode_regress() {
     slugs+=("$slug")
   done
 
-  # Compile all .fg → .ll (sequential — bs2 is fast)
+  # Compile all .av → .ll (sequential — bs2 is fast)
   local compile_ok=()
   for i in "${!fgs[@]}"; do
     if "$BS2" compile "${fgs[$i]}" >"$BUILD_DIR/regress_${slugs[$i]}.codegen.log" 2>&1; then
@@ -984,11 +984,11 @@ mode_regress() {
 
 mode_regress_add() {
   local name="$1" fg="$2" dest_dir="${3:-$BOOTSTRAP_DIR/tests}"
-  [ -n "$name" ] || die "--regress-add requires <name> <file.fg> [dest_dir]"
+  [ -n "$name" ] || die "--regress-add requires <name> <file.av> [dest_dir]"
   [ -f "$fg" ] || die "no such file: $fg"
   ensure_bs2
   mkdir -p "$dest_dir"
-  local stage="$BUILD_DIR/_capture_$name.fg"
+  local stage="$BUILD_DIR/_capture_$name.av"
   cp "$fg" "$stage"
   log "compiling with bs2 to capture expected output"
   if ! "$BS2" compile "$stage" >/dev/null 2>&1; then
@@ -1002,10 +1002,10 @@ mode_regress_add() {
   fi
   local out
   out=$("$bin" 2>&1) || true
-  cp "$fg" "$dest_dir/$name.fg"
+  cp "$fg" "$dest_dir/$name.av"
   printf '%s\n' "$out" >"$dest_dir/$name.out"
   rm -f "$stage" "$stage.ll" "$bin"
-  ok "captured: $dest_dir/$name.fg + $dest_dir/$name.out"
+  ok "captured: $dest_dir/$name.av + $dest_dir/$name.out"
   echo "expected output:"
   sed 's/^/    /' "$dest_dir/$name.out"
 }
@@ -1013,16 +1013,16 @@ mode_regress_add() {
 mode_regress_list() {
   shopt -s nullglob
   echo "Feature tests:"
-  for fg in "$SRC_DIR"/features/*/tests/*.fg; do
-    printf "  %s/%s\n" "$(basename "$(dirname "$(dirname "$fg")")")" "$(basename "$fg" .fg)"
+  for fg in "$SRC_DIR"/features/*/tests/*.av; do
+    printf "  %s/%s\n" "$(basename "$(dirname "$(dirname "$fg")")")" "$(basename "$fg" .av)"
   done
   echo "Core tests:"
-  for fg in "$BOOTSTRAP_DIR"/tests/*.fg; do
-    printf "  %s\n" "$(basename "$fg" .fg)"
+  for fg in "$BOOTSTRAP_DIR"/tests/*.av; do
+    printf "  %s\n" "$(basename "$fg" .av)"
   done
   echo "Legacy fixtures:"
   for d in "$REGRESS_DIR"/*/; do
-    [ -f "${d}main.fg" ] && printf "  %s\n" "$(basename "$d")"
+    [ -f "${d}main.av" ] && printf "  %s\n" "$(basename "$d")"
   done
 }
 
@@ -1056,7 +1056,7 @@ mode_bisect_lines() {
   local total
   total=$(wc -l <"$fg" | tr -d ' ')
   log "bisecting $fg ($total lines)"
-  local lo=1 hi=$total mid tmp="$BUILD_DIR/_bisect.fg"
+  local lo=1 hi=$total mid tmp="$BUILD_DIR/_bisect.av"
   # Verify the full file actually crashes; otherwise bisection is meaningless.
   if "$BS2" compile "$fg" >/dev/null 2>&1; then
     ok "full file compiles cleanly — nothing to bisect"
@@ -1086,8 +1086,8 @@ mode_bisect_lines() {
   echo "─── lines $((lo-3))..$lo ───"
   sed -n "$((lo-3)),${lo}p" "$fg"
   echo "─────────────────────────"
-  cp "$tmp" "$BUILD_DIR/bisect_${$}.fg"
-  log "saved minimal crash repro: $BUILD_DIR/bisect_${$}.fg"
+  cp "$tmp" "$BUILD_DIR/bisect_${$}.av"
+  log "saved minimal crash repro: $BUILD_DIR/bisect_${$}.av"
 }
 
 # ─────────────────────────────────────────────────────────────────────
@@ -1135,7 +1135,7 @@ main() {
 # Copy current bs2 IR output to seed/seed.ll with provenance metadata.
 # Prepends a comment with commit hash, timestamp, and source directory hash.
 mode_update_seed() {
-  local src_ir="$SRC_DIR/main.fg.ll"
+  local src_ir="$SRC_DIR/main.av.ll"
   [ -f "$src_ir" ] || die "no IR found at $src_ir — run --build-bs2 first"
 
   cp "$src_ir" "$SEED_LL"
@@ -1144,7 +1144,7 @@ mode_update_seed() {
   local commit timestamp src_hash
   commit=$(git -C "$BOOTSTRAP_DIR" rev-parse --short HEAD 2>/dev/null || echo "unknown")
   timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-  src_hash=$(find "$SRC_DIR" -name '*.fg' -exec shasum -a 256 {} + | shasum -a 256 | cut -d' ' -f1)
+  src_hash=$(find "$SRC_DIR" -name '*.av' -exec shasum -a 256 {} + | shasum -a 256 | cut -d' ' -f1)
 
   {
     printf '; seed built from commit %s at %s\n' "$commit" "$timestamp"
@@ -1165,12 +1165,12 @@ mode_seed_status() {
   # Compile current source with the seed (without linking) to get fresh IR
   ensure_seed
   log "compiling source with seed to compare..."
-  if ! "$SEED_BIN" compile "$SRC_DIR/main.fg" >/dev/null 2>&1; then
+  if ! "$SEED_BIN" compile "$SRC_DIR/main.av" >/dev/null 2>&1; then
     err "seed cannot compile current source — seed is too old"
     return 1
   fi
 
-  local fresh_ir="$SRC_DIR/main.fg.ll"
+  local fresh_ir="$SRC_DIR/main.av.ll"
   [ -f "$fresh_ir" ] || die "no IR produced"
 
   local seed_fn_count fresh_fn_count
@@ -1239,11 +1239,11 @@ mode_seed_diff() {
   [ -f "$SEED_LL" ] || die "no seed found"
 
   ensure_seed
-  if ! "$SEED_BIN" compile "$SRC_DIR/main.fg" >/dev/null 2>&1; then
+  if ! "$SEED_BIN" compile "$SRC_DIR/main.av" >/dev/null 2>&1; then
     die "seed cannot compile current source"
   fi
 
-  local fresh_ir="$SRC_DIR/main.fg.ll"
+  local fresh_ir="$SRC_DIR/main.av.ll"
   if [ -n "$fn_name" ]; then
     # Diff a specific function. Handles both bare names (@foo) and
     # qualified names (@"core::names::foo"). Matches any function
@@ -1277,26 +1277,26 @@ mode_verify_seed() {
   ensure_seed
   ok "seed binary built"
 
-  log "step 2/4: compiling main.fg with seed → bs2"
+  log "step 2/4: compiling main.av with seed → bs2"
   # Force a fresh bs2 build
   rm -f "$BS2"
-  if ! "$SEED_BIN" compile "$SRC_DIR/main.fg" >"$BUILD_DIR/verify_bs2.log" 2>&1; then
+  if ! "$SEED_BIN" compile "$SRC_DIR/main.av" >"$BUILD_DIR/verify_bs2.log" 2>&1; then
     cat "$BUILD_DIR/verify_bs2.log" >&2
     die "FAIL: seed cannot compile current source"
   fi
-  link_ll "$SRC_DIR/main.fg.ll" "$BS2" "$BUILD_DIR/verify_bs2_link.log"
+  link_ll "$SRC_DIR/main.av.ll" "$BS2" "$BUILD_DIR/verify_bs2_link.log"
   ok "bs2 built from seed"
 
-  log "step 3/4: verifying bs2 can compile main.fg"
-  if ! "$BS2" compile "$SRC_DIR/main.fg" >"$BUILD_DIR/verify_bs2_self.log" 2>&1; then
+  log "step 3/4: verifying bs2 can compile main.av"
+  if ! "$BS2" compile "$SRC_DIR/main.av" >"$BUILD_DIR/verify_bs2_self.log" 2>&1; then
     cat "$BUILD_DIR/verify_bs2_self.log" >&2
     die "FAIL: bs2 cannot self-compile (seed is stale or source has breaking changes)"
   fi
   ok "bs2 self-compile succeeded"
 
-  log "step 4/4: linking and verifying bs3 can compile main.fg"
-  link_ll "$SRC_DIR/main.fg.ll" "$BS3" "$BUILD_DIR/verify_bs3_link.log"
-  if ! "$BS3" compile "$SRC_DIR/main.fg" >"$BUILD_DIR/verify_bs3_self.log" 2>&1; then
+  log "step 4/4: linking and verifying bs3 can compile main.av"
+  link_ll "$SRC_DIR/main.av.ll" "$BS3" "$BUILD_DIR/verify_bs3_link.log"
+  if ! "$BS3" compile "$SRC_DIR/main.av" >"$BUILD_DIR/verify_bs3_self.log" 2>&1; then
     cat "$BUILD_DIR/verify_bs3_self.log" >&2
     die "FAIL: bs3 cannot self-compile (bootstrap chain is broken at generation 3)"
   fi
@@ -1311,12 +1311,12 @@ mode_verify_seed() {
 mode_seed_patch() {
   ensure_bs2
 
-  log "compiling main.fg with bs2 for incremental seed update"
-  if ! "$BS2" compile "$SRC_DIR/main.fg" >/dev/null 2>&1; then
-    die "bs2 cannot compile main.fg — fix errors first"
+  log "compiling main.av with bs2 for incremental seed update"
+  if ! "$BS2" compile "$SRC_DIR/main.av" >/dev/null 2>&1; then
+    die "bs2 cannot compile main.av — fix errors first"
   fi
 
-  local new_ir="$SRC_DIR/main.fg.ll"
+  local new_ir="$SRC_DIR/main.av.ll"
   [ -f "$new_ir" ] || die "no IR produced at $new_ir"
   [ -f "$SEED_LL" ] || die "no seed found at $SEED_LL"
 
@@ -1421,7 +1421,7 @@ print(f'TOTAL:{total_changed}/{total_new}')
   local commit timestamp src_hash
   commit=$(git -C "$BOOTSTRAP_DIR" rev-parse --short HEAD 2>/dev/null || echo "unknown")
   timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-  src_hash=$(find "$SRC_DIR" -name '*.fg' -exec shasum -a 256 {} + | shasum -a 256 | cut -d' ' -f1)
+  src_hash=$(find "$SRC_DIR" -name '*.av' -exec shasum -a 256 {} + | shasum -a 256 | cut -d' ' -f1)
 
   {
     printf '; seed built from commit %s at %s\n' "$commit" "$timestamp"
@@ -1436,7 +1436,7 @@ print(f'TOTAL:{total_changed}/{total_new}')
   log "provenance: commit=$commit time=$timestamp"
 }
 
-# Compare function signatures between seed IR and source .fg files.
+# Compare function signatures between seed IR and source .av files.
 # Catches the most common seed staleness issue: parameter count changes.
 mode_seed_sigs() {
   [ -f "$SEED_LL" ] || die "no seed found at $SEED_LL"
@@ -1466,10 +1466,10 @@ mode_seed_sigs() {
     echo "$bare_name $count $full_name"
   done | sort -k1,1 > "$tmpdir/seed_sigs.txt"
 
-  # Extract source function signatures from .fg files.
+  # Extract source function signatures from .av files.
   # Matches: fn name(...) and export fn name(...)
   # Counts parameters by counting commas + 1 (if non-empty param list).
-  find "$SRC_DIR" -name '*.fg' -print0 | xargs -0 grep -h '^\(export \)\{0,1\}fn ' | \
+  find "$SRC_DIR" -name '*.av' -print0 | xargs -0 grep -h '^\(export \)\{0,1\}fn ' | \
     sed 's/^export //' | while IFS= read -r line; do
     # Extract function name
     local name

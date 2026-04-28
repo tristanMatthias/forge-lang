@@ -1,0 +1,18 @@
+fn bcs_run() -> string {
+    mut counter = 0
+    let inc = () -> {
+        counter = counter + 1
+        counter
+    }
+    avra_test_capture_start()
+    println(string(inc()))
+    println(string(inc()))
+    println(string(counter))
+    avra_test_capture_stop()
+}
+
+spec "break closure scope" {
+    then "closure captures mutable variable" {
+        bcs_run() == "1\n2\n2"
+    }
+}

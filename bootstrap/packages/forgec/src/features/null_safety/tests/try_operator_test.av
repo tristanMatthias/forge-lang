@@ -1,0 +1,27 @@
+fn nsto_find(name: string) -> string? {
+    if name == "alice" {
+        return "found alice"
+    }
+    null
+}
+
+fn nsto_greet(name: string) -> string? {
+    let found = nsto_find(name)?
+    "hello " + found
+}
+
+spec "try operator" {
+    then "found value returns greeting" {
+        avra_test_capture_start()
+        let r1 = nsto_greet("alice")
+        if r1 != null {
+            println(r1!)
+        }
+        let out = avra_test_capture_stop()
+        out == "hello found alice"
+    }
+    then "missing value returns null" {
+        let r2 = nsto_greet("bob")
+        r2 == null
+    }
+}

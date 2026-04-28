@@ -1,0 +1,21 @@
+fn bc_run() -> string {
+    avra_test_capture_start()
+    /* simple block comment */
+    println("a")
+    /* nested /* inner */ still comment */
+    println("b")
+    /*
+     * multiline
+     * block comment
+     */
+    println("c")
+    /* deeply /* nested /* three */ levels */ done */
+    println("d")
+    avra_test_capture_stop()
+}
+
+spec "block comments" {
+    then "block comments are ignored correctly" {
+        bc_run() == "a\nb\nc\nd"
+    }
+}

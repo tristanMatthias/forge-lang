@@ -1,0 +1,454 @@
+// WHY: name resolution pass — checks that every variable reference
+// has a visible declaration before codegen runs. Tracks scopes via
+// a linked-list stack; functions are pre-declared so mutual
+// recursion works.
+
+mod names
+
+use core.ast.{Expr, ExprList, FieldInitList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeParamList, stmt_unwrap}
+use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_with_help, span_dummy, span_new}
+use core.registry.{Registry, build_registry, dispatch_stmt_resolve, dispatch_expr_resolve, avra_stmt_tag, avra_expr_tag}
+
+export type ResolveResult = {
+    had_error: int,
+    error_message: string,
+    bag: DiagnosticBag,
+}
+
+enum ScopeEntry {
+    End
+    Node(name: string, defined: int, mutable: int, depth: int, next: ScopeEntry)
+}
+
+enum FnEntry {
+    End
+    Node(name: string, next: FnEntry)
+}
+
+type Resolver = {
+    scopes: ScopeEntry,
+    functions: FnEntry,
+    depth: int,
+    had_error: int,
+    error_message: string,
+    bag: DiagnosticBag,
+    features: Registry,
+    source_line: int,
+    source_col: int,
+}
+
+export fn resolve_program(stmts: StmtList) -> ResolveResult {
+    mut r = resolver_new()
+    // Pre-declare builtins so they resolve like any other function
+    r = declare_function(r, "println")
+    r = declare_function(r, "eprintln")
+    r = declare_function(r, "print")
+    r = declare_function(r, "eprint")
+    r = declare_function(r, "string")
+    r = declare_function(r, "int")
+    r = declare_function(r, "float")
+    r = declare_function(r, "panic")
+    r = declare_function(r, "exit")
+    r = declare_function(r, "avra_format_float")
+    r = declare_function(r, "avra_format_int")
+    r = declare_function(r, "self")
+    r = collect_function_names(r, stmts)
+    r = resolve_stmt_list(r, stmts)
+    ResolveResult {
+        had_error: r.had_error,
+        error_message: r.error_message,
+        bag: r.bag,
+    }
+}
+
+fn collect_function_names(r: Resolver, stmts: StmtList) -> Resolver {
+    mut current = stmts
+    mut res = r
+    while true {
+        match current {
+            .End -> { return res }
+            .Node(ss, next) -> {
+                res = match stmt_unwrap(ss.node) {
+                    .Function(name, _, _, _, _) -> declare_function(res, name)
+                    .ExternFn(name, _, _) -> declare_function(res, name)
+                    .Impl(_, methods) -> collect_method_names(res, methods)
+                    .Module(_, body) -> collect_function_names(res, body)
+                    _ -> res
+                }
+                current = next
+            }
+        }
+    }
+    res
+}
+
+fn collect_method_names(r: Resolver, methods: StmtList) -> Resolver {
+    mut current = methods
+    mut res = r
+    while true {
+        match current {
+            .End -> { return res }
+            .Node(ss, next) -> {
+                res = match stmt_unwrap(ss.node) {
+                    .Function(name, _, _, _, _) -> declare_function(res, name)
+                    _ -> res
+                }
+                current = next
+            }
+        }
+    }
+    res
+}
+
+fn resolver_new() -> Resolver {
+    Resolver {
+        scopes: ScopeEntry.End,
+        functions: FnEntry.End,
+        depth: 0,
+        had_error: false,
+        error_message: "",
+        bag: bag_new(),
+        features: build_registry(),
+        source_line: 0,
+        source_col: 0,
+    }
+}
+
+fn set_resolve_error(r: Resolver, message: string) -> Resolver {
+    resolve_report(r, DiagCode.UndefinedVariable, message)
+}
+
+fn resolve_report(r: Resolver, code: DiagCode, message: string) -> Resolver {
+    let loc = if r.source_line > 0 { " (line ${string(r.source_line)})" } else { "" }
+    let span = span_new(0, 0, r.source_line, r.source_col)
+    let diag = diag_error(code, "${message}${loc}", span)
+    r with {
+        had_error: true,
+        error_message: if r.error_message.length == 0 { "resolve error: ${message}${loc}" } else { r.error_message },
+        bag: bag_report(r.bag, diag),
+    }
+}
+
+export fn enter_resolve_scope(r: Resolver) -> Resolver {
+    r with { depth: r.depth + 1 }
+}
+
+export fn exit_resolve_scope(r: Resolver) -> Resolver {
+    r with { scopes: pop_resolve_scope(r.scopes, r.depth), depth: r.depth - 1 }
+}
+
+fn pop_resolve_scope(entries: ScopeEntry, depth: int) -> ScopeEntry {
+    match entries {
+        .End -> ScopeEntry.End
+        .Node(_, _, _, entry_depth, next) if entry_depth == depth -> pop_resolve_scope(next, depth)
+        .Node(name, defined, is_mut, entry_depth, next) -> ScopeEntry.Node(name, defined, is_mut, entry_depth, next)
+    }
+}
+
+export fn declare_name(r: Resolver, name: string) -> Resolver {
+    declare_name_mut(r, name, false)
+}
+
+fn declare_name_mutable(r: Resolver, name: string) -> Resolver {
+    declare_name_mut(r, name, true)
+}
+
+fn declare_name_mut(r: Resolver, name: string, is_mut: int) -> Resolver {
+    r with { scopes: ScopeEntry.Node(name, false, is_mut, r.depth, r.scopes) }
+}
+
+export fn define_name(r: Resolver, name: string) -> Resolver {
+    r with { scopes: mark_defined(r.scopes, name, r.depth) }
+}
+
+export fn define_param_names(r: Resolver, params: ParamList) -> Resolver {
+    match params {
+        .End -> r
+        .Node(name, _, next) -> {
+            let after = declare_name(r, name)
+            let defined = define_name(after, name)
+            define_param_names(defined, next)
+        }
+    }
+}
+
+// Push type param names (T, U, ...) into scope as defined variables.
+// This prevents "undefined variable" errors when T appears in param
+// types, return types, or the function body.
+fn define_type_params(r: Resolver, params: TypeParamList) -> Resolver {
+    match params {
+        .End -> r
+        .Node(name, _, next) -> {
+            let after = declare_name(r, name)
+            let defined = define_name(after, name)
+            define_type_params(defined, next)
+        }
+    }
+}
+
+fn mark_defined(entries: ScopeEntry, name: string, depth: int) -> ScopeEntry {
+    match entries {
+        .End -> ScopeEntry.End
+        .Node(entry_name, _, is_mut, entry_depth, next) if entry_name == name && entry_depth == depth ->
+            ScopeEntry.Node(entry_name, true, is_mut, entry_depth, next)
+        .Node(entry_name, defined, is_mut, entry_depth, next) ->
+            ScopeEntry.Node(entry_name, defined, is_mut, entry_depth, mark_defined(next, name, depth))
+    }
+}
+
+fn declare_function(r: Resolver, name: string) -> Resolver {
+    r with { functions: FnEntry.Node(name, r.functions) }
+}
+
+type NameLookup = {
+    found: int,
+    defined: int,
+    mutable: int,
+}
+
+fn lookup_name(entries: ScopeEntry, name: string) -> NameLookup {
+    match entries {
+        .End -> NameLookup { found: false, defined: false, mutable: false }
+        .Node(entry_name, defined, is_mut, _, _) if entry_name == name -> NameLookup { found: true, defined, mutable: is_mut }
+        .Node(_, _, _, _, next) -> lookup_name(next, name)
+    }
+}
+
+fn lookup_fn(fns: FnEntry, name: string) -> bool {
+    match fns {
+        .End -> false
+        .Node(fn_name, _) if fn_name == name -> true
+        .Node(_, next) -> lookup_fn(next, name)
+    }
+}
+
+export fn resolve_stmt_list(r: Resolver, stmts: StmtList) -> Resolver {
+    mut current = stmts
+    mut res = r
+    while true {
+        match current {
+            .End -> { return res }
+            .Node(ss, next) -> {
+                res = resolve_stmt(res with { source_line: ss.line, source_col: ss.col }, ss.node)
+                current = next
+            }
+        }
+    }
+    res
+}
+
+export fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
+    match stmt {
+        .Let(name, _, init) -> resolve_binding(r, name, init, false)
+        .Mut(name, _, init) -> resolve_binding(r, name, init, true)
+        .Const(name, _, init) -> resolve_binding(r, name, init, false)
+        .Expr(expr) -> resolve_expr(r, expr)
+        .Block(body) -> {
+            let entered = enter_resolve_scope(r)
+            let after = resolve_stmt_list(entered, body)
+            exit_resolve_scope(after)
+        }
+        .Function(name, tp, params, _, body) -> {
+            let with_fn = declare_function(r, name)
+            let entered = enter_resolve_scope(with_fn)
+            let with_tp = define_type_params(entered, tp)
+            let with_params = declare_params(with_tp, params)
+            let after_body = resolve_stmt_list(with_params, body)
+            exit_resolve_scope(after_body)
+        }
+        .Return(value) -> resolve_expr(r, value)
+        .ReturnEmpty or .NoOp or .Break or .Continue -> r
+        .TypeDecl(_, _, _) or .NewtypeDecl(_, _) or .UnionAliasDecl(_, _) or .ShapeDecl(_, _) or .EnumDecl(_, _, _) or .TraitDecl(_, _) or .Use(_, _) or .AssocType(_, _) -> r
+        .Impl(_, methods) -> resolve_stmt_list(r, methods)
+        .ExternFn(name, _, _) -> declare_function(r, name)
+        .Annotated(_, inner) -> resolve_stmt(r, inner)
+        _ -> {
+            let tag = avra_stmt_tag(stmt)
+            let result = dispatch_stmt_resolve(r.features, tag, r, stmt)
+            if result != null { return result! }
+            r
+        }
+    }
+}
+
+export fn declare_params(r: Resolver, params: ParamList) -> Resolver {
+    mut current = params
+    mut res = r
+    while true {
+        match current {
+            .End -> { return res }
+            .Node(name, _, next) -> {
+                let declared = declare_name(res, name)
+                res = define_name(declared, name)
+                current = next
+            }
+        }
+    }
+    res
+}
+
+fn fa_root(expr: Expr) -> string {
+    match expr {
+        .Ident(nm) -> nm
+        .FieldAccess(inner, _) -> fa_root(inner)
+        _ -> ""
+    }
+}
+
+// Check that a mutation operation on `obj` targets a mutable root variable.
+fn check_immutable_root(r: Resolver, obj: Expr, operation: string) -> Resolver? {
+    let root = fa_root(obj)
+    if root.length > 0 && root != "self" {
+        let lu = lookup_name(r.scopes, root)
+        if lu.found && !lu.mutable {
+            return resolve_report(r, DiagCode.ImmutableAssign, "${operation} on immutable variable `${root}` (use `mut` or `with` for updates)")
+        }
+    }
+    null
+}
+
+fn resolve_binding(r: Resolver, name: string, init: Expr, is_mutable: bool) -> Resolver {
+    let declared = if is_mutable { declare_name_mutable(r, name) } else { declare_name(r, name) }
+    let after_init = resolve_expr(declared, init)
+    define_name(after_init, name)
+}
+
+// Built-in methods that mutate their receiver (spec Axis 11.5).
+fn is_mutating_method(name: string) -> bool {
+    name in ["push", "pop", "insert", "remove", "clear", "sort", "set"]
+}
+
+export fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .Number(_) -> r
+        .FloatLit(_) -> r
+        .String(_) -> r
+        .Bool(_) -> r
+        .Null -> r
+        .Ident(name) -> {
+            // Uppercase identifiers are treated as type names — the
+            // resolver doesn't track them, codegen does.
+            if starts_with_upper(name) {
+                return r
+            }
+            let result = lookup_name(r.scopes, name)
+            if result.found {
+                if !result.defined {
+                    return set_resolve_error(r, "cannot read variable `${name}` in its own initializer")
+                }
+                return r
+            }
+            if lookup_fn(r.functions, name) {
+                return r
+            }
+            set_resolve_error(r, "undefined variable `${name}`")
+        }
+        .Assign(name, value) -> {
+            let after_value = resolve_expr(r, value)
+            // Uppercase names are treated as opaque mut globals.
+            if starts_with_upper(name) {
+                return after_value
+            }
+            let result = lookup_name(after_value.scopes, name)
+            if !result.found {
+                return set_resolve_error(after_value, "undefined variable `${name}`")
+            }
+            if !result.mutable {
+                return resolve_report(after_value, DiagCode.ImmutableAssign, "cannot assign to immutable variable `${name}`")
+            }
+            after_value
+        }
+        .Grouping(inner) -> resolve_expr(r, inner)
+        .Unary(_, right) -> resolve_expr(r, right)
+        .Binary(left, _, right) -> {
+            let after_left = resolve_expr(r, left)
+            resolve_expr(after_left, right)
+        }
+        .Logical(left, _, right) -> {
+            let after_left = resolve_expr(r, left)
+            resolve_expr(after_left, right)
+        }
+        .Call(callee, args) -> {
+            let after_callee = resolve_expr(r, callee)
+            let after_args = resolve_expr_list(after_callee, args)
+            match callee {
+                .FieldAccess(obj, method) -> {
+                    if is_mutating_method(method) {
+                        let err = check_immutable_root(after_args, obj, "cannot call mutating method `${method}`")
+                        if err != null { return err! }
+                    }
+                }
+                _ -> {}
+            }
+            after_args
+        }
+        .Index(obj, idx) -> {
+            let after_obj = resolve_expr(r, obj)
+            resolve_expr(after_obj, idx)
+        }
+        .Block(body) -> {
+            let entered = enter_resolve_scope(r)
+            let after = resolve_stmt_list(entered, body)
+            exit_resolve_scope(after)
+        }
+        .Slice(obj, start, end) -> {
+            let a = resolve_expr(r, obj)
+            let b = resolve_expr(a, start)
+            resolve_expr(b, end)
+        }
+        .QualifiedIdent(_) -> r
+        .FieldAssign(obj, field, value) -> {
+            let ra = resolve_expr(r, obj)
+            let rb = resolve_expr(ra, value)
+            let err = check_immutable_root(rb, obj, "cannot mutate field `${field}`")
+            if err != null { return err! }
+            rb
+        }
+        _ -> {
+            let tag = avra_expr_tag(expr)
+            let result = dispatch_expr_resolve(r.features, tag, r, expr)
+            if result != null { return result! }
+            r
+        }
+    }
+}
+
+export fn starts_with_upper(name: string) -> bool {
+    if name.length < 1 {
+        return false
+    }
+    let head = name.substring(0, 1)
+    head in "A".."Z"
+}
+
+export fn resolve_field_init_list(r: Resolver, inits: FieldInitList) -> Resolver {
+    mut current = inits
+    mut res = r
+    while true {
+        if res.had_error { return res }
+        match current {
+            .End -> { return res }
+            .Node(_, sv, next) -> {
+                res = resolve_expr(res, sv.node)
+                current = next
+            }
+        }
+    }
+    res
+}
+
+export fn resolve_expr_list(r: Resolver, exprs: ExprList) -> Resolver {
+    mut current = exprs
+    mut res = r
+    while true {
+        if res.had_error { return res }
+        match current {
+            .End -> { return res }
+            .Node(se, next) -> {
+                res = resolve_expr(res, se.node)
+                current = next
+            }
+        }
+    }
+    res
+}

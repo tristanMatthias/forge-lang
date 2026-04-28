@@ -1,0 +1,27 @@
+fn bmev_double(x: int) -> int { x * 2 }
+
+fn bmev_run() -> string {
+    let x = 5
+    avra_test_capture_start()
+    println(string(bmev_double(match x { _ if x > 3 -> x, _ -> 0 })))
+    let items = [
+        (match x { _ if x > 3 -> "big", _ -> "small" }),
+        (match x { _ if x > 10 -> "huge", _ -> "normal" }),
+    ]
+    println(items[0])
+    println(items[1])
+    println(`result: ${match x { _ if x > 0 -> "positive", _ -> "negative" }}`)
+    let val = match x {
+        _ if x > 10 -> (match x { _ if x > 100 -> "huge", _ -> "big" })
+        _ if x > 0 -> "small"
+        _ -> "zero"
+    }
+    println(val)
+    avra_test_capture_stop()
+}
+
+spec "break match expr value" {
+    then "match as expression in various positions" {
+        bmev_run() == "10\nbig\nnormal\nresult: positive\nsmall"
+    }
+}

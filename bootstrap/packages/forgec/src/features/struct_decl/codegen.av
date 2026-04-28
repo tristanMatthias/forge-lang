@@ -1,0 +1,162 @@
+// WHY: emits struct literal construction and field-filling.
+
+use core.ast.{Expr, ExprList, FieldList, FieldInitList, VarEnv, field_index_of, field_list_length, ValueType, vtype_struct_name, vtype_display, vtype_is_str, vtype_is_list, vtype_is_map, vtype_narrowed_variant, vtype_enum_name, variant_lookup}
+use codegen.types.{Ctx, EmitValue, ok_emit, err_emit, null_ptr_val}
+use core.type_registry.{type_registry_id_for}
+use features.enum_decl.codegen.{emit_enum_ctor}
+use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
+
+export fn emit_struct_lit(ctx: Ctx, env: VarEnv, name: string, inits: FieldInitList) -> Result<EmitValue, string> {
+    let lookup = ctx.lookup_struct(name)
+    if !lookup.found {
+        return err_emit("undefined struct type `${name}`")
+    }
+    let st_ty = ctx.get_type(name)
+    if st_ty == null {
+        return err_emit("LLVM struct type `${name}` not declared")
+    }
+    let buf = malloc_struct_bytes(ctx, name, lookup.fields)
+    let fill = fill_struct_fields(ctx, env, st_ty, buf, inits, lookup.fields)?
+    let as_i64 = ctx.to_i64(buf, "struct_i64")
+    ok_emit(as_i64, .Struct(name, type_registry_id_for(ctx.type_reg, name)))
+}
+
+fn malloc_struct_bytes(ctx: Ctx, name: string, fields: FieldList) -> ptr {
+    // Copy-type stack allocation (spec 9.12): if a pre-allocated stack
+    // target exists (set by emit_var_decl), write directly into it.
+    if ctx.copy_alloc_target != null {
+        return ctx.copy_alloc_target
+    }
+    let count = field_list_length(fields)
+    ctx.arena_alloc(ctx.i64(count * 8))
+}
+
+fn fill_struct_fields(ctx: Ctx, env: VarEnv, st_ty: ptr, alloca: ptr, inits: FieldInitList, fields: FieldList) -> Result<EmitValue, string> {
+    match inits {
+        .End -> ok_emit(null_ptr_val(), .Void)
+        .Node(field_name, sv, next) -> {
+            let idx = field_index_of(fields, field_name)
+            if idx < 0 { return err_emit("unknown field `${field_name}`") }
+            let r = ctx.emit(env, sv.node)?
+            let fld_ty = ctx.resolve_field_type(fields, field_name)
+            let gep = ctx.gep(st_ty, alloca, idx, "fld_ptr")
+            // Union wrapping: if field type is union and value is a concrete member
+            if needs_union_wrap(r.ty, fld_ty) {
+                let wrapped = emit_union_wrap(ctx, r.value, r.ty, fld_ty)?
+                ctx.store_field(wrapped.value, gep, fld_ty)
+            } else {
+                ctx.store_field(r.value, gep, fld_ty)
+            }
+            fill_struct_fields(ctx, env, st_ty, alloca, next, fields)
+        }
+    }
+}
+
+export fn emit_field_assign(ctx: Ctx, env: VarEnv, obj: Expr, field: string, value: Expr) -> Result<EmitValue, string> {
+    let r = ctx.emit(env, obj)?
+    let struct_name = vtype_struct_name(r.ty)
+    if struct_name == "" {
+        return err_emit("field assignment on non-struct value (ty=${vtype_display(r.ty)})")
+    }
+    let lookup = ctx.lookup_struct(struct_name)
+    if !lookup.found { return err_emit("unknown struct `${struct_name}`") }
+    let idx = field_index_of(lookup.fields, field)
+    if idx < 0 { return err_emit("unknown field `${field}` on struct `${struct_name}`") }
+    let st_ty = ctx.get_type(struct_name)
+    let obj_ptr = ctx.to_ptr(r.value, "fa_ptr")
+    let gep = ctx.gep(st_ty, obj_ptr, idx, "fa_fld")
+    let v = ctx.emit(env, value)?
+    let fld_ty = ctx.resolve_field_type(lookup.fields, field)
+    if needs_union_wrap(v.ty, fld_ty) {
+        let wrapped = emit_union_wrap(ctx, v.value, v.ty, fld_ty)?
+        ctx.store_field(wrapped.value, gep, fld_ty)
+        ok_emit(wrapped.value, wrapped.ty)
+    } else {
+        ctx.store_field(v.value, gep, fld_ty)
+        ok_emit(v.value, v.ty)
+    }
+}
+
+export fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> Result<EmitValue, string> {
+    // Bare `EnumName.Variant` (zero-arg enum constructor)
+    let head_name = match obj { .Ident(h) -> h, .QualifiedIdent(h) -> h, _ -> "" }
+    if head_name != "" {
+        let enum_l = ctx.lookup_enum(head_name)
+        if enum_l.found {
+            return emit_enum_ctor(ctx, env, head_name, field, ExprList.End)
+        }
+    }
+
+    let r = ctx.emit(env, obj)?
+
+    // Task.await — join the thread and return its result with the Task's result type.
+    if field == "await" {
+        let result = ctx.call("avra_task_await", [r.value])
+        let result_ty = match r.ty { .Task(rt) -> rt, _ -> ValueType.Unknown }
+        return ok_emit(result, result_ty)
+    }
+
+    // String/List/Map .length
+    if vtype_is_str(r.ty) && field == "length" {
+        let str_ptr = ctx.to_ptr(r.value, "len_arg")
+        return ok_emit(ctx.call("strlen", [str_ptr]), .Int)
+    }
+    if vtype_is_list(r.ty) && field == "length" {
+        return ok_emit(ctx.array_len(r.value), .Int)
+    }
+    if vtype_is_map(r.ty) && field == "length" {
+        return ok_emit(ctx.call("avra_map_len_cstr", [r.value]), .Int)
+    }
+
+    // Flow-sensitive narrowing: NarrowedEnum(enum, variant) allows
+    // direct payload field access after `if x is .Variant`.
+    let narrowed_vname = vtype_narrowed_variant(r.ty)
+    if narrowed_vname != "" {
+        return emit_narrowed_field(ctx, r, field, narrowed_vname)
+    }
+
+    let struct_name = vtype_struct_name(r.ty)
+    if struct_name == "" {
+        return err_emit("field access on non-struct value (ty=${vtype_display(r.ty)}, field=${field}, line=${string(ctx.source_line)})")
+    }
+    let lookup = ctx.lookup_struct(struct_name)
+    if !lookup.found { return err_emit("unknown struct `${struct_name}`") }
+    let idx = field_index_of(lookup.fields, field)
+    if idx < 0 { return err_emit("unknown field `${field}` on struct `${struct_name}`") }
+    let st_ty = ctx.get_type(struct_name)
+    let obj_ptr = ctx.to_ptr(r.value, "obj_ptr")
+
+    ctx.null_check(r.value, field, struct_name)
+
+    let field_ty = ctx.resolve_field_type(lookup.fields, field)
+    let loaded = ctx.field_typed(r.value, struct_name, idx, field_ty, field)
+    ok_emit(loaded, field_ty)
+}
+
+// Extract a payload field from a narrowed enum value.
+// The value is a ptr to {i64 tag, ptr payload}. The payload is a
+// heap-allocated buffer with fields at payload[0], payload[1], etc.
+fn emit_narrowed_field(ctx: Ctx, r: EmitValue, field: string, vname: string) -> Result<EmitValue, string> {
+    let en = vtype_enum_name(r.ty)
+    let lookup = ctx.lookup_enum(en)
+    if !lookup.found {
+        return err_emit("unknown enum `${en}` in narrowed field access")
+    }
+    let v = variant_lookup(lookup.variants, vname)
+    if !v.found {
+        return err_emit("unknown variant `${vname}` in enum `${en}`")
+    }
+    let fields = ctx.resolve_fields(v.fields)
+    let idx = field_index_of(fields, field)
+    if idx < 0 {
+        return err_emit("unknown field `${field}` on variant `${en}.${vname}`")
+    }
+    let field_ty = ctx.resolve_field_type(v.fields, field)
+    // Navigate: enum_ptr -> payload_ptr -> field
+    let enum_ty = ctx.get_type(en)
+    let enum_ptr = ctx.to_ptr(r.value, "narrow_eptr")
+    let pay_gep = ctx.gep(enum_ty, enum_ptr, 1, "narrow_pay_slot")
+    let pay_ptr = ctx.load(ctx.ptr_type, pay_gep, "narrow_payload")
+    let loaded = ctx.load_slot_typed(pay_ptr, idx, field_ty, "narrow_${field}")
+    ok_emit(loaded, field_ty)
+}

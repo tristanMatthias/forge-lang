@@ -1,0 +1,25 @@
+// WHY: @std/testing library — extern declarations for the spec/given/then
+// test framework. The implementation is in runtime.c (C runtime).
+// The spec/given/then syntax is a built-in language feature; this file
+// provides additional utilities like skip, todo, and roughly.
+
+extern fn avra_test_start_spec(name: string)
+extern fn avra_test_end_spec()
+extern fn avra_test_start_given(name: string)
+extern fn avra_test_end_given()
+extern fn avra_test_run_then(name: string, result: int)
+extern fn avra_test_skip(name: string)
+extern fn avra_test_todo(name: string)
+extern fn avra_test_summary() -> int
+extern fn avra_test_roughly(actual: float, expected: float, tolerance: float) -> int
+extern fn avra_test_capture_start()
+extern fn avra_test_capture_stop() -> string
+
+// Capture stdout from a block of code. Returns the captured output.
+// Usage: let output = capture { println("hello") }
+// For now, use start/stop directly:
+//   avra_test_capture_start()
+//   ... code that prints ...
+//   let output = avra_test_capture_stop()
+export fn capture_start() { avra_test_capture_start() }
+export fn capture_stop() -> string { avra_test_capture_stop() }

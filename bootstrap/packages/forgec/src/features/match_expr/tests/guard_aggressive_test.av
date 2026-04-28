@@ -1,0 +1,95 @@
+enum GuardExpr {
+    Num(n: int),
+    Add(a: GuardExpr, b: GuardExpr),
+}
+
+fn guard_eval(e: GuardExpr) -> int {
+    match e {
+        .Num(n) -> n
+        .Add(a, b) -> guard_eval(a) + guard_eval(b)
+    }
+}
+
+fn guard_classify_expr(e: GuardExpr) -> string {
+    match e {
+        .Num(n) if n == 0 -> "zero"
+        .Num(n) if n > 0 && n < 10 -> "small positive"
+        .Num(n) if n >= 10 -> "large positive"
+        .Num(_) -> "negative"
+        .Add(a, b) if guard_eval(a) + guard_eval(b) > 100 -> "big sum"
+        .Add(_, _) -> "sum"
+    }
+}
+
+fn guard_abs(x: int) -> int {
+    match x {
+        _ if x >= 0 -> x
+        _ -> -x
+    }
+}
+
+fn guard_categorize(s: string) -> string {
+    match s {
+        _ if s.length == 0 -> "empty"
+        _ if s.length < 5 -> "short"
+        _ if s.contains(" ") -> "multi-word"
+        _ -> "single word"
+    }
+}
+
+enum GuardResponse {
+    Success(code: int),
+    Error(code: int, msg: string),
+}
+
+fn guard_describe_response(r: GuardResponse) -> string {
+    match r {
+        .Success(code) if code == 200 -> "OK"
+        .Success(code) if code == 201 -> "Created"
+        .Success(code) -> `Success ${string(code)}`
+        .Error(code, msg) if code >= 500 -> `Server error: ${msg}`
+        .Error(code, msg) if code == 404 -> "Not found"
+        .Error(code, msg) -> `Error ${string(code)}: ${msg}`
+    }
+}
+
+spec "guard aggressive" {
+    then "classify zero" { guard_classify_expr(GuardExpr.Num(0)) == "zero" }
+    then "classify small positive" { guard_classify_expr(GuardExpr.Num(5)) == "small positive" }
+    then "classify large positive" { guard_classify_expr(GuardExpr.Num(42)) == "large positive" }
+    then "classify negative" { guard_classify_expr(GuardExpr.Num(-3)) == "negative" }
+    then "classify big sum" { guard_classify_expr(GuardExpr.Add(GuardExpr.Num(50), GuardExpr.Num(60))) == "big sum" }
+    then "classify sum" { guard_classify_expr(GuardExpr.Add(GuardExpr.Num(1), GuardExpr.Num(2))) == "sum" }
+    then "abs positive" { guard_abs(42) == 42 }
+    then "abs negative" { guard_abs(-42) == 42 }
+    then "categorize empty" { guard_categorize("") == "empty" }
+    then "categorize short" { guard_categorize("hi") == "short" }
+    then "categorize multi-word" { guard_categorize("hello world") == "multi-word" }
+    then "categorize single word" { guard_categorize("supercalifragilistic") == "single word" }
+    then "grades from scores" {
+        avra_test_capture_start()
+        let scores = [95, 82, 67, 91, 43, 78]
+        mut grades = []
+        for s in scores {
+            let grade = match s {
+                _ if s >= 90 -> "A"
+                _ if s >= 80 -> "B"
+                _ if s >= 70 -> "C"
+                _ if s >= 60 -> "D"
+                _ -> "F"
+            }
+            grades.push(grade)
+        }
+        for g in grades {
+            println(g)
+        }
+        let out = avra_test_capture_stop()
+        out == "A\nB\nD\nA\nF\nC"
+    }
+    then "response OK" { guard_describe_response(GuardResponse.Success(200)) == "OK" }
+    then "response Created" { guard_describe_response(GuardResponse.Success(201)) == "Created" }
+    then "response Success other" { guard_describe_response(GuardResponse.Success(302)) == "Success 302" }
+    then "response server error" { guard_describe_response(GuardResponse.Error(500, "internal")) == "Server error: internal" }
+    then "response not found" { guard_describe_response(GuardResponse.Error(404, "missing")) == "Not found" }
+    then "response other error" { guard_describe_response(GuardResponse.Error(403, "forbidden")) == "Error 403: forbidden" }
+}

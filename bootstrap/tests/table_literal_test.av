@@ -1,0 +1,21 @@
+fn tl_run() -> string {
+    let users = table {
+        name | age
+        "alice" | 30
+        "bob" | 25
+        "charlie" | 35
+    }
+
+    avra_test_capture_start()
+    println(string(users.length))
+    let m = {"x": 1, "y": 2}
+    println(string(m.get("x")))
+    println(string(m.get("y")))
+    avra_test_capture_stop()
+}
+
+spec "table literal" {
+    then "table output" {
+        tl_run() == "3\n1\n2"
+    }
+}

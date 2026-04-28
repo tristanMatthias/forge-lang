@@ -27,8 +27,8 @@ fi
 
 cases=0
 
-for input in "$BOOTSTRAP_DIR"/tests/scanner/*.fg; do
-  name=$(basename "$input" .fg)
+for input in "$BOOTSTRAP_DIR"/tests/scanner/*.av; do
+  name=$(basename "$input" .av)
   expected="$BOOTSTRAP_DIR/tests/scanner/$name.tokens"
   actual="$BUILD_DIR/$name.actual"
   stderr_log="$BUILD_DIR/$name.stderr"
@@ -42,8 +42,8 @@ for input in "$BOOTSTRAP_DIR"/tests/scanner/*.fg; do
   cases=$((cases + 1))
 done
 
-for input in "$BOOTSTRAP_DIR"/tests/expr/*.fg; do
-  name=$(basename "$input" .fg)
+for input in "$BOOTSTRAP_DIR"/tests/expr/*.av; do
+  name=$(basename "$input" .av)
   expected="$BOOTSTRAP_DIR/tests/expr/$name.ast"
   actual="$BUILD_DIR/$name.actual"
   stderr_log="$BUILD_DIR/$name.stderr"
@@ -57,8 +57,8 @@ for input in "$BOOTSTRAP_DIR"/tests/expr/*.fg; do
   cases=$((cases + 1))
 done
 
-for input in "$BOOTSTRAP_DIR"/tests/program/*.fg; do
-  name=$(basename "$input" .fg)
+for input in "$BOOTSTRAP_DIR"/tests/program/*.av; do
+  name=$(basename "$input" .av)
   expected="$BOOTSTRAP_DIR/tests/program/$name.ast"
   actual="$BUILD_DIR/$name.actual"
   stderr_log="$BUILD_DIR/$name.stderr"
@@ -72,8 +72,8 @@ for input in "$BOOTSTRAP_DIR"/tests/program/*.fg; do
   cases=$((cases + 1))
 done
 
-for input in "$BOOTSTRAP_DIR"/tests/eval/*.fg; do
-  name=$(basename "$input" .fg)
+for input in "$BOOTSTRAP_DIR"/tests/eval/*.av; do
+  name=$(basename "$input" .av)
   expected="$BOOTSTRAP_DIR/tests/eval/$name.out"
   actual="$BUILD_DIR/$name.actual"
   stderr_log="$BUILD_DIR/$name.stderr"
@@ -87,8 +87,8 @@ for input in "$BOOTSTRAP_DIR"/tests/eval/*.fg; do
   cases=$((cases + 1))
 done
 
-for input in "$BOOTSTRAP_DIR"/tests/check/*.fg; do
-  name=$(basename "$input" .fg)
+for input in "$BOOTSTRAP_DIR"/tests/check/*.av; do
+  name=$(basename "$input" .av)
   actual="$BUILD_DIR/$name.actual"
   stderr_log="$BUILD_DIR/$name.stderr"
 
@@ -115,8 +115,8 @@ for input in "$BOOTSTRAP_DIR"/tests/check/*.fg; do
   cases=$((cases + 1))
 done
 
-for input in "$BOOTSTRAP_DIR"/tests/run/*.fg; do
-  name=$(basename "$input" .fg)
+for input in "$BOOTSTRAP_DIR"/tests/run/*.av; do
+  name=$(basename "$input" .av)
   expected="$BOOTSTRAP_DIR/tests/run/$name.out"
   actual="$BUILD_DIR/$name.actual"
   stderr_log="$BUILD_DIR/$name.stderr"
@@ -130,20 +130,20 @@ for input in "$BOOTSTRAP_DIR"/tests/run/*.fg; do
   cases=$((cases + 1))
 done
 
-for input in "$BOOTSTRAP_DIR"/tests/compile/*.fg; do
-  name=$(basename "$input" .fg)
+for input in "$BOOTSTRAP_DIR"/tests/compile/*.av; do
+  name=$(basename "$input" .av)
   expected_exit=$(cat "$BOOTSTRAP_DIR/tests/compile/$name.exit")
   ll_path="$BUILD_DIR/$name.ll"
   bin_path="$BUILD_DIR/$name.bin"
   stderr_log="$BUILD_DIR/$name.stderr"
 
   echo "compile/$name"
-  cp "$input" "$BUILD_DIR/$name.fg"
-  if ! "$BUILD_DIR/bootstrapc" compile "$BUILD_DIR/$name.fg" > /dev/null 2> "$stderr_log"; then
+  cp "$input" "$BUILD_DIR/$name.av"
+  if ! "$BUILD_DIR/bootstrapc" compile "$BUILD_DIR/$name.av" > /dev/null 2> "$stderr_log"; then
     cat "$stderr_log"
     exit 1
   fi
-  mv "$BUILD_DIR/$name.fg.ll" "$ll_path"
+  mv "$BUILD_DIR/$name.av.ll" "$ll_path"
   if ! cc -o "$bin_path" "$ll_path" 2> "$stderr_log"; then
     cat "$stderr_log"
     exit 1

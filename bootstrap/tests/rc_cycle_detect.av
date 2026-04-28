@@ -1,0 +1,23 @@
+// Test: RC cycle detection — self-referential struct with nullable
+// field. The cycle collector (avra_rc_collect) at program exit
+// reclaims objects trapped in reference cycles.
+
+type Node = {
+    name: string,
+    next: Node?,
+}
+
+fn test_no_cycle() -> string {
+    let a = Node { name: "solo", next: null }
+    a.name
+}
+
+fn test_chain() -> string {
+    let b = Node { name: "second", next: null }
+    let a = Node { name: "first", next: b }
+    a.name
+}
+
+println(test_no_cycle())
+println(test_chain())
+println("ok")

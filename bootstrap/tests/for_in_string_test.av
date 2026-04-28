@@ -1,0 +1,15 @@
+// Test: for-in loop over string characters.
+
+fn fis_chars() -> string {
+    avra_test_capture_start()
+    for ch in "hello" {
+        println(ch)
+    }
+    avra_test_capture_stop()
+}
+
+spec "for in string" {
+    then "iterates over each character" {
+        fis_chars() == "h\ne\nl\nl\no"
+    }
+}

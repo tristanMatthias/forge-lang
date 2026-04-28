@@ -1,0 +1,50 @@
+fn hml_status_text(code: int) -> string {
+    match code {
+        200 -> "OK"
+        301 -> "Moved"
+        404 -> "Not Found"
+        _ -> "Unknown"
+    }
+}
+
+fn hml_run() -> string {
+    avra_test_capture_start()
+    let cmd = "quit"
+    match cmd {
+        "start" -> println("starting")
+        "stop" -> println("stopping")
+        "quit" -> println("quitting")
+        _ -> println("unknown")
+    }
+    let code = 404
+    match code {
+        200 -> println("ok")
+        404 -> println("not found")
+        500 -> println("server error")
+        _ -> println("other")
+    }
+    let flag = true
+    match flag {
+        true -> println("yes")
+        false -> println("no")
+    }
+    println(hml_status_text(404))
+    println(hml_status_text(200))
+    println(hml_status_text(999))
+    avra_test_capture_stop()
+}
+
+spec "hunt match literal" {
+    then "status text 404" {
+        hml_status_text(404) == "Not Found"
+    }
+    then "status text 200" {
+        hml_status_text(200) == "OK"
+    }
+    then "status text unknown" {
+        hml_status_text(999) == "Unknown"
+    }
+    then "full output" {
+        hml_run() == "quitting\nnot found\nyes\nNot Found\nOK\nUnknown"
+    }
+}

@@ -1,0 +1,41 @@
+// Test: errdefer with implicit Result return.
+
+enum EdiResult { Ok(value: string), Err(error: string) }
+
+fn edi_release(r: int) { println("released ${string(r)}") }
+fn edi_cleanup() { println("cleanup") }
+
+fn edi_do_work(fail: bool) -> EdiResult {
+    let resource = 42
+    errdefer edi_release(resource)
+    defer edi_cleanup()
+    if fail { return EdiResult.Err("failed") }
+    EdiResult.Ok("success")
+}
+
+fn edi_run_fail() -> string {
+    avra_test_capture_start()
+    match edi_do_work(true) {
+        .Ok(v) -> println("ok: ${v}")
+        .Err(e) -> println("err: ${e}")
+    }
+    avra_test_capture_stop()
+}
+
+fn edi_run_ok() -> string {
+    avra_test_capture_start()
+    match edi_do_work(false) {
+        .Ok(v) -> println("ok: ${v}")
+        .Err(e) -> println("err: ${e}")
+    }
+    avra_test_capture_stop()
+}
+
+spec "errdefer implicit" {
+    then "failure triggers errdefer" {
+        edi_run_fail() == "cleanup\nreleased 42\nerr: failed"
+    }
+    then "success skips errdefer" {
+        edi_run_ok() == "cleanup\nok: success"
+    }
+}

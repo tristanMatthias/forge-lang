@@ -1,0 +1,9 @@
+// WHY: generic type parameters (`<T>`) on functions, types, and enums.
+// Parsing lives in parser.av (extends Parser with parse_type_params).
+// Declaration parsers (fn_decl, struct_decl, enum_decl) call
+// parse_type_params when they see `<` after the declaration name.
+// The monomorphization pass (mono.av) consumes TypeParamList to generate
+// concrete specializations before codegen.
+
+mod parser
+mod mono

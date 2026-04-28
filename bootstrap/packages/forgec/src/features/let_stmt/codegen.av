@@ -1,0 +1,142 @@
+// WHY: emits LLVM IR for `let` and `mut` variable bindings.
+// Handles trait boxing: `let d: Describable = Circle { ... }` creates
+// a trait object with a vtable for dynamic dispatch.
+
+use core.ast.{Expr, ExprList, ValueType, VarEnv, vtype_is_unknown, vtype_trait_name, vtype_struct_name, vtype_enum_name, vtype_list_elem, vtype_is_list}
+use core.type_registry.{type_registry_id_for, method_mangled_name}
+use codegen.types.{Ctx, ok_stmt, vtype_is_copy, releasable_has}
+use features.trait_decl.codegen.{box_for_trait}
+use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
+use diagnostics.{DiagCode}
+
+export fn emit_var_decl(ctx: Ctx, env: VarEnv, name: string, ty_vt: ValueType, initializer: Expr) -> Result<VarEnv, string> {
+    // Copy-type stack allocation (spec 9.12): if the initializer is
+    // a struct literal, the type is Copy, and the local is releasable
+    // (non-escaping), pre-allocate a stack buffer and pass it through
+    // Ctx so emit_struct_lit writes directly into it. No heap alloc needed.
+    let copy_target = try_copy_stack_target(ctx, name, ty_vt, initializer)
+    let emit_ctx = if copy_target.active {
+        ctx with { copy_alloc_target: copy_target.alloca_ptr }
+    } else {
+        ctx
+    }
+    let r = emit_ctx.emit(env, initializer)?
+    // Use the type annotation when present, otherwise infer from initializer.
+    let var_ty = if !vtype_is_unknown(ty_vt) {
+        ctx.resolve_codegen_vtype(ty_vt)
+    } else {
+        r.ty
+    }
+    // Trait boxing: `let d: Trait = concrete_value`
+    let trait_name = vtype_trait_name(var_ty)
+    if trait_name != "" {
+        let concrete_name = resolve_concrete_name(r.ty)
+        if concrete_name != "" {
+            let obj_i64 = box_for_trait(ctx, r.value, trait_name, concrete_name)
+            return ok_stmt(ctx.bind(env, name, obj_i64, var_ty))
+        }
+    }
+    // List<Trait> boxing: `let xs: List<Trait> = [concrete1, concrete2]`
+    // Each element must be individually boxed as a trait object.
+    if vtype_is_list(var_ty) {
+        let elem_ty = vtype_list_elem(var_ty)
+        let elem_trait = vtype_trait_name(elem_ty)
+        if elem_trait != "" {
+            match initializer {
+                .ListLit(elements) -> {
+                    let boxed_list = emit_trait_boxed_list(ctx, env, elements, elem_trait)?
+                    return ok_stmt(ctx.bind(env, name, boxed_list, var_ty))
+                }
+                _ -> {
+                    ctx.warn(DiagCode.TypeMismatch, "List<${elem_trait}> binding requires a list literal for trait boxing — variable assignment skips boxing")
+                }
+            }
+        }
+    }
+    // Union wrapping: `let x: int | string = 42` → wrap into discriminated union
+    if needs_union_wrap(r.ty, var_ty) {
+        let wrapped = emit_union_wrap(ctx, r.value, r.ty, var_ty)?
+        return ok_stmt(ctx.bind(env, name, wrapped.value, var_ty))
+    }
+    // For Copy-type stack allocations, bind without RC cleanup.
+    // The struct data is on the stack — no heap free needed.
+    if copy_target.active {
+        let sn = vtype_struct_name(var_ty)
+        if sn != "" {
+            return ok_stmt(ctx.bind_copy_stack(env, name, r.value, var_ty, sn))
+        }
+    }
+    ok_stmt(ctx.bind(env, name, r.value, var_ty))
+}
+
+type CopyTarget = { active: bool, alloca_ptr: ptr }
+
+fn try_copy_stack_target(ctx: Ctx, name: string, ty_vt: ValueType, init: Expr) -> CopyTarget {
+    let n: ptr = null
+    if !releasable_has(ctx.rc_releasable, name) {
+        return CopyTarget { active: false, alloca_ptr: n }
+    }
+    match init {
+        .StructLit(sname, _) -> try_copy_for_struct(ctx, name, ty_vt, sname)
+        .With(_, _) -> {
+            let var_ty = ctx.resolve_codegen_vtype(ty_vt)
+            let sname = vtype_struct_name(var_ty)
+            if sname != "" {
+                return try_copy_for_struct(ctx, name, ty_vt, sname)
+            }
+            CopyTarget { active: false, alloca_ptr: n }
+        }
+        _ -> CopyTarget { active: false, alloca_ptr: n }
+    }
+}
+
+fn try_copy_for_struct(ctx: Ctx, name: string, ty_vt: ValueType, sname: string) -> CopyTarget {
+    let n: ptr = null
+    let drop_fn = ctx.get_fn(method_mangled_name(sname, "drop"))
+    if drop_fn != null { return CopyTarget { active: false, alloca_ptr: n } }
+    let var_ty = if !vtype_is_unknown(ty_vt) { ctx.resolve_codegen_vtype(ty_vt) } else { ValueType.Struct(sname, type_registry_id_for(ctx.type_reg, sname)) }
+    if vtype_is_copy(var_ty, ctx.copy_types) {
+        let st_ty = ctx.get_type(sname)
+        if st_ty != null {
+            let buf = ctx.alloca(st_ty, "${name}_copy")
+            return CopyTarget { active: true, alloca_ptr: buf }
+        }
+    }
+    CopyTarget { active: false, alloca_ptr: n }
+}
+
+// Resolve the concrete type name from a ValueType.
+fn resolve_concrete_name(ty: ValueType) -> string {
+    let s = vtype_struct_name(ty)
+    if s != "" { return s }
+    let e = vtype_enum_name(ty)
+    if e != "" { return e }
+    ""
+}
+
+// Emit a list literal where each element is trait-boxed.
+// Used for `let xs: List<Trait> = [concrete1, concrete2]`.
+fn emit_trait_boxed_list(ctx: Ctx, env: VarEnv, elements: ExprList, trait_name: string) -> Result<ptr, string> {
+    let arr = ctx.array_new()
+    push_boxed_elements(ctx, env, arr, elements, trait_name)
+}
+
+fn push_boxed_elements(ctx: Ctx, env: VarEnv, arr: ptr, elements: ExprList, trait_name: string) -> Result<ptr, string> {
+    match elements {
+        .End -> .Ok(arr)
+        .Node(se, next) -> {
+            let r = ctx.emit(env, se.node)?
+            let concrete_name = resolve_concrete_name(r.ty)
+            let boxed = if concrete_name != "" {
+                box_for_trait(ctx, r.value, trait_name, concrete_name)
+            } else {
+                // Already boxed or unknown type — push as-is
+                r.value
+            }
+            ctx.array_push(arr, boxed)
+            push_boxed_elements(ctx, env, arr, next, trait_name)
+        }
+    }
+}
+
+// build_vtable and push_vtable_entries removed — use box_for_trait from codegen/mod.av

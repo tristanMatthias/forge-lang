@@ -1,0 +1,136 @@
+// WHY: block expression codegen — evaluating statement blocks as values.
+
+use core.ast.{Expr, Stmt, StmtList, ValueType, VarEnv, SStmt, stmt_unwrap}
+use codegen.types.{BlockResult, Ctx, EmitValue, StmtResult,  err_emit, ok_emit, ok_stmt, emit_value_ptr, emit_value_ty}
+use codegen.{emit_expr, emit_stmt, emit_stmt_list}
+use features.match_expr.codegen.{emit_match_expr}
+use features.if_stmt.codegen.{narrow_env_for_is}
+use core.llvm.{avra_covmap_next_branch_id}
+use features.error_propagation.{Result}
+use core.runtime.{avra_tag_as_result}
+
+
+fn ok_br(value: ptr, ty: ValueType, ctx: Ctx, env: VarEnv) -> Result<BlockResult, string> {
+    let r = Result.Ok(BlockResult { value, ty, ctx, env })
+    avra_tag_as_result(r)
+    r
+}
+
+fn err_br(msg: string) -> Result<BlockResult, string> {
+    let r = Result.Err(msg)
+    avra_tag_as_result(r)
+    r
+}
+
+export fn emit_block_expr(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<EmitValue, string> {
+    // A block expression's value is the value of the LAST
+    // statement, if that statement is a `Stmt.Expr`. Anything
+    // else (return, let, while, ...) yields i64 0. Each non-last
+    // statement is executed for its side effects.
+    emit_block_loop(ctx, env, stmts, ctx.i64(0), .Unknown)
+}
+
+export fn emit_stmt_as_value(ctx: Ctx, env: VarEnv, stmt: Stmt, last_val: ptr, last_ty: ValueType) -> Result<EmitValue, string> {
+    match stmt {
+        .Expr(e) -> ctx.emit(env, e)
+        .Block(body) -> emit_block_expr(ctx, env, body)
+        .Match(subject, arms) -> emit_match_expr(ctx, env, subject, arms)
+        .If(condition, then_branch, else_branch) -> emit_stmt_if_as_value(ctx, env, condition, then_branch, else_branch)
+        _ -> {
+            let sr = emit_stmt(ctx, env, stmt)?
+            ok_emit(last_val, last_ty)
+        }
+    }
+}
+
+fn emit_stmt_as_value_ctx(ctx: Ctx, env: VarEnv, stmt: Stmt, last_val: ptr, last_ty: ValueType) -> Result<BlockResult, string> {
+    ctx.cov_line()
+    match stmt {
+        .Expr(e) -> {
+            let r = ctx.emit(env, e)?
+            ok_br(r.value, r.ty, ctx, env)
+        }
+        .Block(body) -> {
+            let r = emit_block_loop_ctx(ctx, env, body, ctx.i64(0), .Unknown)?
+            ok_br(r.value, r.ty, r.ctx, r.env)
+        }
+        .Match(subject, arms) -> {
+            let r = emit_match_expr(ctx, env, subject, arms)?
+            ok_br(r.value, r.ty, ctx, env)
+        }
+        .If(condition, then_branch, else_branch) -> {
+            let r = emit_stmt_if_as_value(ctx, env, condition, then_branch, else_branch)?
+            ok_br(r.value, r.ty, ctx, env)
+        }
+        _ -> {
+            let sr = emit_stmt(ctx, env, stmt)?
+            ok_br(last_val, last_ty, sr.ctx, sr.env)
+        }
+    }
+}
+
+export fn emit_stmt_if_as_value(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> Result<EmitValue, string> {
+    let branch_id = avra_covmap_next_branch_id()
+    let cond = ctx.emit(env, condition)?
+    let cond_i1 = ctx.truthy(emit_value_ptr(cond), "sif_cond")
+    let then_bb = ctx.bb("sif_then")
+    let else_bb = ctx.bb("sif_else")
+    let merge_bb = ctx.bb("sif_end")
+    let result_slot = ctx.alloca_i64("sif_result")
+    ctx.store(ctx.i64(0), result_slot)
+    ctx.cond_br(cond_i1, then_bb, else_bb)
+
+    ctx.position(then_bb)
+    ctx.cov_branch_then(branch_id)
+    let zero = ctx.i64(0)
+    let then_env = narrow_env_for_is(ctx, env, condition)
+    let t = emit_stmt_as_value(ctx, then_env, then_branch, zero, .Unknown)?
+    ctx.store_br_if_open(emit_value_ptr(t), result_slot, merge_bb)
+
+    ctx.position(else_bb)
+    ctx.cov_branch_else(branch_id)
+    if else_branch != null {
+        let e = emit_stmt_as_value(ctx, env, else_branch!, zero, .Unknown)?
+        ctx.store_br_if_open(emit_value_ptr(e), result_slot, merge_bb)
+    } else {
+        ctx.br(merge_bb)
+    }
+
+    ctx.position(merge_bb)
+    let loaded = ctx.load_i64(result_slot, "sif_val")
+    ok_emit(loaded, emit_value_ty(t))
+}
+
+export fn emit_block_loop(ctx: Ctx, env: VarEnv, stmts: StmtList, last_val: ptr, last_ty: ValueType) -> Result<EmitValue, string> {
+    match stmts {
+        .End -> ok_emit(last_val, last_ty)
+        .Node(ss, next) -> {
+            let line_ctx = ctx with { source_line: ss.line }
+            match next {
+                .End -> emit_stmt_as_value(line_ctx, env, ss.node, last_val, last_ty)
+                _ -> {
+                    let sr = emit_stmt(line_ctx, env, ss.node)?
+                    emit_block_loop(sr.ctx, sr.env, next, last_val, last_ty)
+                }
+            }
+        }
+    }
+}
+
+// Like emit_block_loop but returns BlockResult with the final Ctx,
+// so the caller can access accumulated defers.
+export fn emit_block_loop_ctx(ctx: Ctx, env: VarEnv, stmts: StmtList, last_val: ptr, last_ty: ValueType) -> Result<BlockResult, string> {
+    match stmts {
+        .End -> ok_br(last_val, last_ty, ctx, VarEnv.End)
+        .Node(ss, next) -> {
+            let line_ctx = ctx with { source_line: ss.line }
+            match next {
+                .End -> emit_stmt_as_value_ctx(line_ctx, env, ss.node, last_val, last_ty)
+                _ -> {
+                    let sr = emit_stmt(line_ctx, env, ss.node)?
+                    emit_block_loop_ctx(sr.ctx, sr.env, next, last_val, last_ty)
+                }
+            }
+        }
+    }
+}
