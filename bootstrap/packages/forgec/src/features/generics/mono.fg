@@ -6,7 +6,7 @@
 use core.ast.{Expr, ExprList, sexpr, sstmt, Stmt, StmtList, ParamList, FieldList, FieldInitList, TypeList, VariantList, MatchArmList, TypeParamList, TypeNameList, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_warning, span_new}
 use typeck.{TraitImplReg, type_implements_trait}
-use core.type_registry.{mangle_join}
+use core.type_registry.{mangle_join, type_short_name}
 
 // ── Registries ──
 
@@ -218,27 +218,20 @@ fn is_generic_decl(stmt: Stmt) -> bool {
 }
 
 fn mangle_name_ordered(base: string, tp: TypeParamList, ta: TypeArgList) -> string {
-    mangle_join(strip_module_prefix(base), mangle_ordered(tp, ta))
+    mangle_join(type_short_name(base), mangle_ordered(tp, ta))
 }
 
 fn mangle_ordered(tp: TypeParamList, ta: TypeArgList) -> string {
     match tp {
         .End -> ""
         .Node(name, _, next) -> {
-            let ty = strip_module_prefix(vtype_render_full(type_arg_lookup(ta, name)))
+            let ty = type_short_name(vtype_render_full(type_arg_lookup(ta, name)))
             let rest = mangle_ordered(next, ta)
             if rest == "" { ty } else { mangle_join(ty, rest) }
         }
     }
 }
 
-// Strip module prefix from a type name for mangling.
-// "codegen::types::EmitValue" → "EmitValue"
-fn strip_module_prefix(name: string) -> string {
-    if !name.contains("::") { return name }
-    let parts = name.split("::")
-    parts[parts.length - 1]
-}
 
 // ── Type reading (from typeck-annotated SExpr.ty) ──
 

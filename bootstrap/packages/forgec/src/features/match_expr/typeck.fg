@@ -3,6 +3,7 @@
 
 use core.ast.{Expr, Pattern, PatternList, MatchArmList, TypeList, WhenArmList, ParamList, Stmt, StmtList, VariantList, ValueType, stmt_unwrap, vtype_display, vtype_enum_name, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types}
 use diagnostics.{DiagCode, diag_warning, span_new, bag_report}
+use core.type_registry.{type_short_name}
 use typeck.{EnumTypeReg, ExprResult, TC, check_expr, tc_bind, tc_check_explicit_returns, tc_enter, tc_er, tc_exit, tc_report, resolve_vtype}
 use core.ast.{vtype_from_name}
 
@@ -122,8 +123,7 @@ fn variant_in_matched(name: string, matched: string) -> bool {
     }
     // Module-qualified name: check short form
     if name.contains("::") {
-        let parts = name.split("::")
-        return variant_in_matched(parts[parts.length - 1], matched)
+        return variant_in_matched(type_short_name(name), matched)
     }
     false
 }

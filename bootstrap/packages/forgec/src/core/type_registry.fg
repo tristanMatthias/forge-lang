@@ -145,6 +145,24 @@ export fn mangle_join(a: string, b: string) -> string {
     "${a}__${b}"
 }
 
+// Extract the short name from a qualified name: "codegen::types::Ctx" → "Ctx"
+export fn type_short_name(name: string) -> string {
+    if !name.contains("::") { return name }
+    let parts = name.split("::")
+    parts[parts.length - 1]
+}
+
+// Check if a name is a method mangled name (contains __)
+export fn is_mangled_method(name: string) -> bool {
+    name.contains("__")
+}
+
+// Extract method name from mangled: "Type__method" → "method"
+export fn method_from_mangled(name: string) -> string {
+    let parts = name.split("__")
+    if parts.length > 1 { parts[1] } else { name }
+}
+
 // Trait impl key: "Printable:Cat"
 export fn trait_impl_name(trait_name: string, type_name: string) -> string {
     "${trait_name}:${type_name}"
