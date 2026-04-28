@@ -1,5 +1,5 @@
-; seed built from commit 8c7f952a at 2026-04-28T10:01:41Z
-; source hash: 209da7cad47c8981c765a8e17f75b62ae4658e11ac0ec038557feb7d96026d40
+; seed built from commit 8ecd8e2d at 2026-04-28T15:37:48Z
+; source hash: a8b9d395c823e675180c040443cc7751536ba9268bf15aa8fa07c8893f2341f3
 ; ModuleID = 'bootstrap'
 source_filename = "bootstrap"
 
@@ -150202,7 +150202,7 @@ try_ok:                                           ; preds = %parm_body
   %10 = call ptr @"codegen::types::Ctx__call"(ptr %ctx5, ptr @.str.12514, ptr %8)
   %11 = call ptr @forge_rc_alloc(i64 16)
   %tag_ptr = getelementptr inbounds nuw %"core::ast::ValueType", ptr %11, i32 0, i32 0
-  store i64 193460240, ptr %tag_ptr, align 8
+  store i64 229444052301365, ptr %tag_ptr, align 8
   %pay_ptr = getelementptr inbounds nuw %"core::ast::ValueType", ptr %11, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast18 = ptrtoint ptr %11 to i64

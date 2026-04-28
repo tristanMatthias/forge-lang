@@ -31,7 +31,7 @@ export fn emit_map_method_call(ctx: Ctx, env: VarEnv, map_ptr: ptr, method: stri
     match method {
         "get" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
-            return ok_emit(ctx.call("forge_map_get_cstr", [map_ptr, ctx.to_ptr(arg_r.value, "map_key")]), .Int)
+            return ok_emit(ctx.call("forge_map_get_cstr", [map_ptr, ctx.to_ptr(arg_r.value, "map_key")]), .Unknown)
         }
         "has" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
