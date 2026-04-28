@@ -199,9 +199,9 @@ Feature Roadmap
 Every feature on this list must complete ALL of the following before being marked done:
 
 1. **Implement** — parser, codegen, resolver, type checker, eval stub (follow CLAUDE.md Phase 3 checklist)
-2. **Test** — create `src/features/<name>/` with examples and `/// expect:` comments; add edge cases and combinatorial tests; all `make test` tests pass
+2. **Test** — create `src/features/<name>/tests/<name>_test.av` with `spec`/`given`/`then` blocks; add edge cases and combinatorial tests; all `make test` tests pass
 3. **Dogfood** — grep the entire bootstrap source for patterns the feature replaces; refactor every applicable site to use the new feature; no old pattern left standing
-4. **Commit** — one commit per feature: `feat: <name> — <what it does>`; the pre-commit hook (regression + selfhost check) must pass clean
+4. **Commit** — one commit per feature: `feat: <name> — <what it does>`; the pre-commit hook (spec test + selfhost check) must pass clean
 
 No partial credit. A feature is not done until the codebase actually uses it.
 

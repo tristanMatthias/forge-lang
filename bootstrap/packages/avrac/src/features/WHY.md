@@ -8,8 +8,7 @@ return, break, continue).
 Each feature directory contains:
   parser.av     ← parses just this construct
   codegen.av    ← emits LLVM IR for just this construct
-  example.av    ← canonical usage (also a regression test)
-  expected.out  ← expected stdout
+  tests/        ← *_test.av spec/given/then files (canonical usage + tests)
   WHY.md        ← one paragraph: what is this feature?
   grammar.md    ← EBNF fragment (assembled into GRAMMAR.md)
 

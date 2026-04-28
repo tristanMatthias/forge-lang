@@ -1,0 +1,21 @@
+type NeUserId = string
+type NeMeters = int
+
+fn ne_greet(uid: NeUserId) -> string {
+    "Hello user " + uid.raw()
+}
+
+spec "newtype example" {
+    then "newtype string greeting" {
+        let uid = NeUserId("alice")
+        ne_greet(uid) == "Hello user alice"
+    }
+    then "newtype string raw() unwraps" {
+        let uid = NeUserId("alice")
+        uid.raw() == "alice"
+    }
+    then "newtype int raw()" {
+        let dist = NeMeters(42)
+        dist.raw() == 42
+    }
+}

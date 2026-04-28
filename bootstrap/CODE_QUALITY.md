@@ -18,8 +18,7 @@ bootstrap/src/
       grammar.md          ← EBNF fragment
       parser.av           ← parses just this construct
       codegen.av          ← emits IR for just this construct
-      example.av          ← canonical usage
-      expected.out        ← expected stdout
+      tests/              ← *_test.av spec/given/then tests + canonical usage
 ```
 
 ## What goes where
@@ -151,8 +150,8 @@ bs2 and bs3 emit byte-identical IR for `bootstrap/src/main.av`.
 Enforced by `make selfhost` and the pre-commit hook.
 
 ### Cross-Compiler Invariant
-stage1 and bs2 produce identical stdout for every regression test.
-Enforced by `make regress` and the pre-commit hook.
+bs2 passes every spec test under `make test`. Enforced by `make test`
+and the pre-commit hook.
 
 ### Score Invariant
 `make score` reports zero wide-store-into-narrow-malloc bugs (the
@@ -176,14 +175,13 @@ Steps for adding a new language feature, in order:
    routing to `parse_<name>`.
 5. Write `codegen.av` with an `emit_<name>` function.
 6. Add one line to `emit/stmt.av`'s dispatcher likewise.
-7. Write `example.av` and `expected.out` (canonical usage).
-8. Add the example as a regression test via
-   `bash scripts/diagnose.sh --regress-add <name> <example.av>`.
-9. Write **combination tests** that exercise the new feature
+7. Write `tests/<name>_test.av` with `spec`/`given`/`then` blocks
+   covering canonical usage.
+8. Write **combination tests** that exercise the new feature
    interacting with every existing feature it could touch.
-   Add each as a regression test. See "Testing rules" below.
-10. Run `make test`. If it passes, commit.
-11. Run `make selfhost`. If it passes, commit.
+   Add each as a `tests/<scenario>_test.av` spec file.
+9. Run `make test`. If it passes, commit.
+10. Run `make selfhost`. If it passes, commit.
 12. Dogfood: refactor bootstrap source to USE the new feature
     (see FEATURE_PARITY.md § Dogfooding Rule).
 13. Verify the feature appears in the assembled `GRAMMAR.md` after
@@ -191,17 +189,19 @@ Steps for adding a new language feature, in order:
 
 ## Testing rules
 
-Every feature needs **three layers** of test coverage:
+Every feature needs **three layers** of test coverage in
+`features/<name>/tests/`:
 
-### 1. Per-feature example (`features/<name>/example.av`)
+### 1. Per-feature canonical test (`tests/<name>_example_test.av`)
 The canonical happy-path usage. Covers the basic syntax and
-one or two variations.
+one or two variations, expressed as `spec`/`given`/`then`.
 
-### 2. Edge-case regression tests (`regress/<name>_*.av`)
+### 2. Edge-case spec tests (`tests/<scenario>_test.av`)
 Boundary conditions, empty inputs, deeply nested usage,
-error paths. One `.av` + `.out` pair per scenario.
+error paths. One `_test.av` per scenario, each with its own
+spec block.
 
-### 3. Combination matrix tests (`regress/combo_*.av`)
+### 3. Combination matrix tests (`tests/combo_*_test.av` or `tests/<scenario>_test.av`)
 **When you add feature X, write a test combining X with every
 other feature it could interact with.** The goal is to catch
 bugs at feature boundaries — the places where two features'
@@ -222,9 +222,6 @@ default is to TEST IT. We've found bugs at every feature boundary
 we've tested (template + sub-parser, `??` + string types,
 for + break + continue). The ones we don't test are where the
 next bug hides.
-
-Tests that trigger known stage1 codegen divergences get a
-`.bs2only` sidecar file (see `regress/template_expr.bs2only`).
 
 Removing a feature is `rm -r features/<name>/` plus removing the
 two dispatcher lines plus a `make test`.

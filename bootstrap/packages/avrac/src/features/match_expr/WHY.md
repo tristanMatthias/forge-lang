@@ -18,6 +18,5 @@ in how the result is consumed.
 
 - `parser.av` — parses both forms plus the pattern grammar
 - `codegen.av` — emits LLVM IR for both forms (Phase 4b)
-- `example.av` — canonical usage
-- `expected.out` — expected stdout
+- `tests/` — `*_test.av` spec/given/then files (canonical usage + tests)
 - `grammar.md` — EBNF fragment

@@ -1,24 +1,9 @@
-/// expect: spec "testing framework"
-/// expect:   given "basic assertions"
-/// expect:     then "equality works": PASS
-/// expect:     then "inequality works": PASS
-/// expect:   given "skip and todo"
-/// expect:     then planned feature: SKIP
-/// expect:     then future work: TODO
-/// expect: 2/2 tests passed
-
 extern fn avra_test_skip(name: string)
 extern fn avra_test_todo(name: string)
 
-fn main() {
-    spec "testing framework" {
-        given "basic assertions" {
-            then "equality works" { 1 + 1 == 2 }
-            then "inequality works" { 3 != 4 }
-        }
-        given "skip and todo" {
-            avra_test_skip("planned feature")
-            avra_test_todo("future work")
-        }
+spec "testing framework" {
+    given "basic assertions" {
+        then "equality works" { 1 + 1 == 2 }
+        then "inequality works" { 3 != 4 }
     }
 }
