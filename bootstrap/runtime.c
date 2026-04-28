@@ -801,6 +801,38 @@ void* forge_array_slice(void* arr, int64_t start, int64_t end) {
     return dst;
 }
 
+// ─── Filesystem APIs ─────────────────────────────────────────────
+// Native replacements for forge_shell_exec("find ...").
+
+#include <dirent.h>
+#include <sys/stat.h>
+
+// List directory entries. Returns a ForgeArray of string pointers.
+void* forge_readdir(const char* path) {
+    ForgeArray* arr = forge_array_new();
+    DIR* d = opendir(path);
+    if (!d) return arr;
+    struct dirent* entry;
+    while ((entry = readdir(d)) != NULL) {
+        if (entry->d_name[0] == '.' && (entry->d_name[1] == '\0' ||
+            (entry->d_name[1] == '.' && entry->d_name[2] == '\0'))) continue;
+        size_t len = strlen(entry->d_name);
+        char* name = (char*)malloc(len + 1);
+        memcpy(name, entry->d_name, len + 1);
+        forge_array_push(arr, (int64_t)(uintptr_t)name);
+    }
+    closedir(d);
+    return arr;
+}
+
+// Check if path is a directory.
+int64_t forge_is_dir(const char* path) {
+    struct stat st;
+    if (stat(path, &st) != 0) return 0;
+    return S_ISDIR(st.st_mode) ? 1 : 0;
+}
+
+
 // ─── Hash Map ─────────────────────────────────────────────────────
 // String-keyed, i64-valued hash map. Linear probing for simplicity.
 // Used by Map<string, T> in Forge source and internally by the

@@ -28,6 +28,11 @@ extern fn forge_char_from_hex(hi: string, lo: string) -> string
 extern fn forge_toml_has_section(toml: string, section: string) -> int
 extern fn forge_toml_get_section_string(toml: string, section: string, key: string) -> string
 
+// ── Filesystem ──
+extern fn forge_readdir(path: string) -> ptr
+extern fn forge_is_dir(path: string) -> int
+extern fn forge_str_ends_with(s: string, suffix: string) -> int
+
 // ── Intmap extensions ──
 extern fn forge_intmap_inc(map: ptr, key: int) -> int
 extern fn forge_intmap_get_as_string(map: ptr, key: int) -> string
