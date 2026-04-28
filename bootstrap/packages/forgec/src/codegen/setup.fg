@@ -1,7 +1,7 @@
 // WHY: compilation setup — declaration passes and top-level emission.
 
 use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_has, field_list_length, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, variant_max_payload, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_unknown, vtype_enum_name, vtype_struct_name, env_extend}
-use codegen.types.{Ctx, CgNewtypeReg, CgUnionAliasReg, CopySet, TypeRegs, DeferStack, RcCleanupStack, ReleasableSet, EmitValue, EnumReg, EnumLookup, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for_full, ok_emit, ok_stmt, struct_reg_lookup, struct_reg_canonical, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup, enum_reg_canonical}
+use codegen.types.{Ctx, CgNewtypeReg, CgUnionAliasReg, CopySet, TypeRegs, DeferStack, RcCleanupStack, ReleasableSet, EmitValue, EnumReg, EnumLookup, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for_full, ok_emit, ok_stmt, struct_reg_lookup, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup}
 use codegen.escape.{analyze_releasable, analyze_copy_types}
 use codegen.cycles.{CycleSet, analyze_cycles, cycle_set_has}
 use core.registry.{build_registry}
@@ -468,10 +468,10 @@ fn resolve_field_vt(regs: TypeRegs, pv: ValueType) -> ValueType {
 fn resolve_setup_vt(regs: TypeRegs, vt: ValueType) -> ValueType {
     match vt {
         .Struct(name, _) -> {
-            let ec = enum_reg_canonical(regs.enums, name)
-            if ec != "" { return ValueType.Enum(ec, TypeList.End, 0) }
-            let sc = struct_reg_canonical(regs.structs, name)
-            if sc != "" { return ValueType.Struct(sc, 0) }
+            let e = enum_reg_lookup(regs.enums, name)
+            if e.found { return ValueType.Enum(name, TypeList.End, 0) }
+            let s = struct_reg_lookup(regs.structs, name)
+            if s.found { return ValueType.Struct(name, 0) }
             ValueType.Unknown
         }
         .List(elem) -> ValueType.List(resolve_setup_vt(regs, elem))
