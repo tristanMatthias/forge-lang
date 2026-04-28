@@ -71,6 +71,7 @@ fn codegen_program(stmts: StmtList, debug_null_checks: bool, coverage: bool, sou
     decl(m, "strcmp", i32t, [pt, pt])
     decl_va(m, "snprintf", i32t, [pt, i64t, pt])
     decl(m, "atoi", i32t, [pt])
+    decl(m, "forge_parse_int", i64t, [pt])
     decl(m, "exit", vt, [i32t])
 
     // ── null safety ──

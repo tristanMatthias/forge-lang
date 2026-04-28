@@ -483,7 +483,6 @@ fn emit_format_int(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<EmitValue, s
 }
 
 export fn emit_string_to_int(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<EmitValue, string> {
-    // int(str) → i64 via libc atoi.
     match args {
         .End -> err_emit("int() expects 1 arg")
         .Node(se, _) -> {
@@ -491,13 +490,12 @@ export fn emit_string_to_int(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<Em
             if vtype_eq(r.ty, .Float) {
                 return ok_emit(ctx.fptosi(r.value, "f2i"))
             }
-            if !vtype_is_str(r.ty) {
-                return ok_emit_typed(r.value, r.ty)
+            if vtype_eq(r.ty, .Int) || vtype_eq(r.ty, .Bool) {
+                return ok_emit_typed(r.value, .Int)
             }
-            let str_ptr = ctx.to_ptr(r.value, "atoi_arg")
-            let result32 = ctx.call("atoi", [str_ptr])
-            // Sign-extend i32 → i64.
-            ok_emit(ctx.sext(result32, ctx.i64_type, "atoi_ext"))
+            // String or Unknown → parse via forge_parse_int (handles both)
+            let str_ptr = ctx.to_ptr(r.value, "parseInt_arg")
+            ok_emit(ctx.call("forge_parse_int", [str_ptr]))
         }
     }
 }

@@ -57,13 +57,16 @@ export fn emit_list_reduce_typed(ctx: Ctx, env: VarEnv, list_val: ptr, args: Exp
 
 export fn emit_list_method_call(ctx: Ctx, env: VarEnv, list_val: ptr, list_ty: ValueType, method: string, args: ExprList) -> Result<EmitValue, string> {
     match method {
-        "length" or "len" -> return ok_emit(ctx.array_len(list_val))
+        "length" or "len" -> return ok_emit_typed(ctx.array_len(list_val), .Int)
         "push" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
             ctx.array_push(list_val, arg_r.value)
             return ok_emit(list_val)
         }
-        "pop" -> return ok_emit(ctx.call("forge_array_pop", [list_val]))
+        "pop" -> {
+            let elem_ty = vtype_list_elem(list_ty)
+            return ok_emit_typed(ctx.call("forge_array_pop", [list_val]), elem_ty)
+        }
         "get" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
             let elem_ty = vtype_list_elem(list_ty)
