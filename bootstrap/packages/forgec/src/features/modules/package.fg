@@ -3,10 +3,7 @@
 // resolution. Used by the compile pipeline to know what package
 // we're building and what standard library modules are available.
 
-extern fn forge_selfhost_file_exists(path: string) -> int
-extern fn forge_selfhost_read_file(path: string) -> string
-extern fn forge_toml_get_section_string(toml: string, section: string, key: string) -> string
-extern fn forge_toml_has_section(toml: string, section: string) -> int
+use core.runtime.{forge_selfhost_file_exists, forge_selfhost_read_file, forge_toml_get_section_string, forge_toml_has_section}
 
 export type PackageConfig = {
     name: string,

@@ -7,8 +7,8 @@ use features.match_expr.codegen.{emit_match_expr}
 use features.if_stmt.codegen.{narrow_env_for_is}
 use core.llvm.{forge_covmap_next_branch_id}
 use features.error_propagation.{Result}
+use core.runtime.{forge_tag_as_result}
 
-extern fn forge_tag_as_result(ptr: ptr) -> ptr
 
 fn ok_br(value: ptr, ty: ValueType, ctx: Ctx, env: VarEnv) -> Result<BlockResult, string> {
     let r = Result.Ok(BlockResult { value, ty, ctx, env })

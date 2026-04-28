@@ -36,6 +36,7 @@ use features.trait_decl.codegen.{emit_trait_dispatch, box_for_trait, resolve_con
 use features.fn_decl.codegen.{emit_call, emit_call_named, emit_method_call}
 use features.error_propagation.{Result}
 use parse.lexer.{parse_int_literal}
+use core.runtime.{forge_tag_as_result}
 
 //
 // The bootstrap codegen calls a small set of LLVM-C-API wrappers
@@ -52,7 +53,6 @@ use parse.lexer.{parse_int_literal}
 
 // ── Public API ──
 
-extern fn forge_tag_as_result(ptr: ptr) -> ptr
 
 export fn ok_sr(ctx: Ctx, env: VarEnv) -> Result<StmtResult, string> {
     let r = Result.Ok(StmtResult { ctx, env })

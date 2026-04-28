@@ -19,7 +19,7 @@ use core.registry.{Registry, build_registry, dispatch_stmt_eval, dispatch_expr_e
 // takes `const char*` to match the bootstrap's calling
 // convention); the wrapper `fn float(s)` lets the rest of the
 // source keep using the short name.
-extern fn forge_selfhost_string_to_float(s: string) -> int
+use core.runtime.{forge_selfhost_string_to_float}
 
 fn float(s: string) -> int { forge_selfhost_string_to_float(s) }
 

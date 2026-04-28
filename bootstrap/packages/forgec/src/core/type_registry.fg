@@ -3,15 +3,8 @@
 // String names are kept only for diagnostics and LLVM type name generation.
 
 use core.ast.{FieldList, VariantList, ValueType, TypeList}
-
-extern fn forge_intmap_new() -> ptr
-extern fn forge_intmap_set(map: ptr, key: int, val: int)
-extern fn forge_intmap_get(map: ptr, key: int) -> int
-extern fn forge_intmap_has(map: ptr, key: int) -> int
-extern fn forge_map_new_cstr() -> ptr
-extern fn forge_map_set_cstr(map: ptr, key: string, val: int)
-extern fn forge_map_get_cstr(map: ptr, key: string) -> int
-extern fn forge_map_has_cstr(map: ptr, key: string) -> int
+use core.registry.{forge_intmap_new, forge_intmap_set, forge_intmap_get, forge_intmap_has, forge_map_new_cstr, forge_map_set_cstr, forge_map_get_cstr, forge_map_has_cstr}
+use core.runtime.{forge_intmap_inc, forge_intmap_get_as_string}
 
 // ── TypeKind ──
 
@@ -45,7 +38,6 @@ export type TypeRegistry = {
     id_to_name: ptr,    // intmap: id → name (string ptr as int)
 }
 
-extern fn forge_intmap_inc(map: ptr, key: int) -> int
 
 export fn type_registry_new() -> TypeRegistry {
     let m = forge_intmap_new()
@@ -106,7 +98,6 @@ export fn type_registry_has(reg: TypeRegistry, id: int) -> bool {
     id > 0 && forge_intmap_has(reg.info_map, id) == 1
 }
 
-extern fn forge_intmap_get_as_string(map: ptr, key: int) -> string
 
 // Look up the canonical name for a TypeId. Returns "" if not found.
 export fn type_registry_name_for(reg: TypeRegistry, id: int) -> string {

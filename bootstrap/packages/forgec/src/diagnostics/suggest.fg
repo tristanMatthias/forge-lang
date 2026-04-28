@@ -1,7 +1,7 @@
 // WHY: "did you mean?" suggestions for undefined variables and fields.
 // Uses Levenshtein edit distance to find the closest match.
 
-extern fn forge_selfhost_levenshtein(a: string, b: string, len_a: int, len_b: int) -> int
+use core.runtime.{forge_selfhost_levenshtein}
 
 // Levenshtein distance between two strings.
 // Implemented in C (runtime.c) for performance — the bootstrap's

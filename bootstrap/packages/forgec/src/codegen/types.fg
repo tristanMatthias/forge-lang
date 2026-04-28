@@ -18,6 +18,7 @@ use core.type_registry.{TypeRegistry, type_registry_id_for, type_registry_name_f
 use core.llvm.{forge_coverage_emit_hit, forge_covmap_alloc, forge_covmap_counter_count, forge_coverage_finalize_fn}
 use features.error_propagation.{Result}
 use diagnostics.{DiagnosticBag, bag_new, bag_report, diag_warning, span_new, DiagCode}
+use core.runtime.{forge_tag_as_result}
 
 // ── Codegen context ──
 //
@@ -183,7 +184,6 @@ export fn emit_value_ty(v: EmitValue) -> ValueType {
     v.ty
 }
 
-extern fn forge_tag_as_result(ptr: ptr) -> ptr
 
 // Every emitted value MUST have an explicit type. No untyped emissions.
 export fn ok_emit(value: ptr, ty: ValueType) -> Result<EmitValue, string> {
