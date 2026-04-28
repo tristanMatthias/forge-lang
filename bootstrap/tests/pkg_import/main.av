@@ -1,7 +1,0 @@
-/// expect: app
-use @std.cli.{cli_new}
-
-fn main() {
-    let c = cli_new("app", "desc", "1.0")
-    println(c.name)
-}

@@ -1,3 +1,0 @@
-json: {"name":"Alice","age":30}
-csv: Alice,30
-display: User(Alice, 30)

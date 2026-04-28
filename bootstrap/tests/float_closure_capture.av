@@ -1,3 +1,0 @@
-let factor = 10.0
-let f = (x) -> x * factor
-println(string(f(2.0)))

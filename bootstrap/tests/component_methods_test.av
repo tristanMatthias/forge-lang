@@ -1,0 +1,22 @@
+component math_box_m {
+    config {
+        multiplier: int = 1
+    }
+
+    fn double(x: int) -> int {
+        x * 2
+    }
+
+    fn triple(x: int) -> int {
+        x * 3
+    }
+}
+
+spec "component methods" {
+    then "double extracted as math_box_m_double" {
+        math_box_m_double(5) == 10
+    }
+    then "triple extracted as math_box_m_triple" {
+        math_box_m_triple(5) + math_box_m_double(5) - 5 == 20
+    }
+}

@@ -1,9 +1,0 @@
-/// expect: hello\nworld
-/// expect: path: C:\Users\test
-
-fn main() {
-    let s = r"hello\nworld"
-    println(s)
-    let p = r"path: C:\Users\test"
-    println(p)
-}

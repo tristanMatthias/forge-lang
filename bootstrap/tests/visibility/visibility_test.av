@@ -1,0 +1,12 @@
+mod mathlib
+
+use mathlib.{add, mul}
+
+spec "visibility" {
+    then "exported add visible via use" {
+        add(3, 4) == 7
+    }
+    then "exported mul visible via use" {
+        mul(5, 6) == 30
+    }
+}

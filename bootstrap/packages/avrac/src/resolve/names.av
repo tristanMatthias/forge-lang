@@ -253,10 +253,18 @@ fn annotation_has_export(annotations: AnnotationList) -> bool {
 // the module tree and build an alias table for the containing scope.
 
 fn resolve_use_aliases(stmts: StmtList, tree: ModuleNode) -> UseResult {
+    resolve_use_aliases_in(stmts, tree, "")
+}
+
+// Resolve `use` statements relative to a current module path.
+// If `current_module` is non-empty, lookup tries `current_module::path` first
+// before falling back to the absolute `path`. This lets a test file wrapped
+// in `Module foo { mod helpers; use helpers.{...} }` find the helpers child.
+fn resolve_use_aliases_in(stmts: StmtList, tree: ModuleNode, current_module: string) -> UseResult {
     match stmts {
         .End -> UseResult { aliases: AliasEntry.End, bag: bag_new() }
         .Node(ss, next) -> {
-            let rest = resolve_use_aliases(next, tree)
+            let rest = resolve_use_aliases_in(next, tree, current_module)
             let unwrapped = match ss.node {
                 .Annotated(_, inner) -> inner
                 _ -> ss.node
@@ -265,7 +273,27 @@ fn resolve_use_aliases(stmts: StmtList, tree: ModuleNode) -> UseResult {
                 .Use(mod_path, names) -> {
                     let canonical_path = dots_to_colons(mod_path)
                     let sp = span_new(0, 0, ss.line, ss.col)
-                    resolve_use_names(canonical_path, names, tree, rest, sp)
+                    // Prefer absolute (root-relative) lookup. Only fall back to
+                    // current-module-scoped lookup when the absolute path is not
+                    // in the tree — this lets a Module-wrapped test file find
+                    // sibling modules nested inside the wrap, without shadowing
+                    // root-level modules with same-named local children.
+                    let abs_node = module_find(tree, canonical_path)
+                    match abs_node {
+                        .End -> {
+                            if current_module != "" {
+                                let scoped_path = type_qualified_name(current_module, canonical_path)
+                                let scoped_node = module_find(tree, scoped_path)
+                                match scoped_node {
+                                    .End -> resolve_use_names(canonical_path, names, tree, rest, sp)
+                                    _ -> resolve_use_names(scoped_path, names, tree, rest, sp)
+                                }
+                            } else {
+                                resolve_use_names(canonical_path, names, tree, rest, sp)
+                            }
+                        }
+                        _ -> resolve_use_names(canonical_path, names, tree, rest, sp)
+                    }
                 }
                 _ -> rest
             }
@@ -479,7 +507,7 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
         .Match(subject, arms) -> .Match(rewrite_expr(ctx, subject), rewrite_match_arms(ctx, arms))
         .Module(name, body) -> {
             let mod_path = type_qualified_name(ctx.current_module, name)
-            let mod_uses = resolve_use_aliases(body, ctx.tree)
+            let mod_uses = resolve_use_aliases_in(body, ctx.tree, mod_path)
             Stmt.Module(name, rewrite_stmt_list(ctx_with_module(ctx, mod_path, merge_aliases(ctx.aliases, mod_uses.aliases)), body))
         }
         .TypeDecl(name, tp, fields) -> {

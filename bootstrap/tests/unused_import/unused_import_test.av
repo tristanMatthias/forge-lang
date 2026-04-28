@@ -1,0 +1,8 @@
+mod helpers
+use helpers.{used_fn, unused_fn}
+
+spec "unused import" {
+    then "imported fn callable" {
+        used_fn() == "used"
+    }
+}

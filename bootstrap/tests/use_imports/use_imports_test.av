@@ -1,0 +1,12 @@
+mod helpers
+
+use helpers.{helper_add, helper_greet}
+
+spec "use imports" {
+    then "import works for ints" {
+        helper_add(3, 7) == 10
+    }
+    then "import works for strings" {
+        helper_greet("avra") == "hi avra"
+    }
+}

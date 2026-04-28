@@ -1,5 +1,0 @@
-// Test: --json diagnostic output produces machine-readable JSON.
-// This file has valid syntax, so compile --json should succeed.
-fn main() {
-    println("json diag test")
-}

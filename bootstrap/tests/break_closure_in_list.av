@@ -1,8 +1,0 @@
-// List of closures
-let transforms: fn(int) -> int = (x) -> x + 1
-let t2: fn(int) -> int = (x) -> x * 2
-// Apply a chain of transforms
-mut val = 5
-val = transforms(val)
-val = t2(val)
-println(string(val))

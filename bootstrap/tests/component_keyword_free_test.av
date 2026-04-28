@@ -1,0 +1,35 @@
+component app_comp_kf {
+    config {
+        version: string = "0.0.0"
+    }
+}
+
+component sub_comp_kf {
+    config {
+        description: string = ""
+    }
+}
+
+fn ckf_run() -> string {
+    avra_test_capture_start()
+    app_comp_kf app {
+        version "v1.0"
+    }
+    println(app.name)
+    println(app.version)
+    sub_comp_kf build {
+        description "Build it"
+    }
+    println(build.name)
+    sub_comp_kf test_cmd {
+        description "Test it"
+    }
+    println(test_cmd.name)
+    avra_test_capture_stop()
+}
+
+spec "component keyword free" {
+    then "instantiation without `component` keyword" {
+        ckf_run() == "app\nv1.0\nbuild\ntest_cmd"
+    }
+}

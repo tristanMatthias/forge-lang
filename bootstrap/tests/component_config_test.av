@@ -1,0 +1,33 @@
+component counter_cfg {
+    config {
+        start: int = 0
+    }
+}
+
+component greeter_cfg {
+    config {
+        greeting: string = "hello"
+    }
+}
+
+fn cc_run() -> string {
+    avra_test_capture_start()
+    component counter_cfg c1 {}
+    println(c1.name)
+    println(string(c1.start))
+    component counter_cfg c2 {
+        start 42
+    }
+    println(c2.name)
+    println(string(c2.start))
+    component greeter_cfg g1 {}
+    println(g1.name)
+    println(g1.greeting)
+    avra_test_capture_stop()
+}
+
+spec "component config" {
+    then "default value, override, string config" {
+        cc_run() == "c1\n0\nc2\n42\ng1\nhello"
+    }
+}

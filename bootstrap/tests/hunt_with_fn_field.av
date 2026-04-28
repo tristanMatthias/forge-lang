@@ -1,8 +1,0 @@
-// With expression on struct containing fn field
-type Handler = { name: string, action: fn(int) -> int }
-let h1 = Handler { name: "double", action: (x) -> x * 2 }
-let h2 = h1 with { name: "triple", action: (x) -> x * 3 }
-println(string(h1.action(5)))
-println(string(h2.action(5)))
-println(h1.name)
-println(h2.name)

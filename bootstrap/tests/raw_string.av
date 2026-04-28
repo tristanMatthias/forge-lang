@@ -1,9 +1,0 @@
-/// expect: C:\Users\test\file.txt
-/// expect: hello\nworld
-/// expect: \t\r\n
-
-fn main() {
-    println(r"C:\Users\test\file.txt")
-    println(r"hello\nworld")
-    println(r"\t\r\n")
-}

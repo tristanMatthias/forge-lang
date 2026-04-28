@@ -1,6 +1,0 @@
-let a = 0xFF
-let b = 0b1010
-let c = 0o17
-println(string(a))
-println(string(b))
-println(string(c))

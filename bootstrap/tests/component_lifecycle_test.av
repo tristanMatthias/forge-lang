@@ -1,0 +1,27 @@
+component server_lc(name: string) {
+    config {
+        port: int = 3000
+    }
+
+    fn init() {
+        println("init: ${self.name} on port ${string(self.config.port)}")
+    }
+
+    on after_children {
+        println("after: ${self.name} ready")
+    }
+}
+
+fn clc_run() -> string {
+    avra_test_capture_start()
+    component server_lc srv {
+        port 8080
+    }
+    avra_test_capture_stop()
+}
+
+spec "component lifecycle" {
+    then "init then after_children" {
+        clc_run() == "init: srv on port 8080\nafter: srv ready"
+    }
+}

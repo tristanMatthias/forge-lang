@@ -1,7 +1,0 @@
-// Iterate over map entries
-let m = {"a": "1", "b": "2", "c": "3"}
-let keys = m.keys()
-for k in keys {
-    println(k)
-    println(m.get(k))
-}

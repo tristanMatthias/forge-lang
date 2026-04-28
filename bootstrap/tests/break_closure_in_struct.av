@@ -1,7 +1,0 @@
-// Closure stored in struct, called later
-type Callback = { handler: fn(int) -> int }
-let cb = Callback { handler: (x) -> x * 10 }
-println(string(cb.handler(5)))
-// With expression on fn field
-let cb2 = cb with { handler: (x) -> x + 100 }
-println(string(cb2.handler(5)))

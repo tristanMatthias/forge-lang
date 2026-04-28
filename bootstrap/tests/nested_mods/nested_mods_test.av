@@ -1,0 +1,14 @@
+mod helpers
+mod sub
+
+use helpers.{greet}
+use sub.{deep_greet}
+
+spec "nested mods" {
+    then "sibling module via mod stub" {
+        greet() == "from sibling"
+    }
+    then "nested directory module via dir/mod.av" {
+        deep_greet() == "from nested dir"
+    }
+}

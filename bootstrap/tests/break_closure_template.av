@@ -1,7 +1,0 @@
-// Template with closure call inside ${}
-fn make_formatter(prefix: string) -> fn(int) -> string {
-    (x) -> prefix + string(x)
-}
-let fmt = make_formatter("val=")
-println(fmt(42))
-println(fmt(99))

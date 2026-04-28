@@ -1,4 +1,0 @@
-// Test: the `fix` subcommand runs without crashing on valid code.
-fn main() {
-    println("fix test")
-}

@@ -603,9 +603,18 @@ fn main() {
                     continue
                 }
 
+                // Resolve any `mod foo` stubs against the test file's
+                // directory so sibling .av files are pulled in.
+                let test_dir = modules_dirname(path)
+                let mod_resolved = resolve_module_files(parsed.stmts!, test_dir, LoadedPaths.End)
+                if mod_resolved.had_error {
+                    eprintln("module resolve error in ${path}: ${mod_resolved.error_message}")
+                    continue
+                }
+
                 // Wrap as Module — gives each test its own namespace
                 modules = StmtList.Node(
-                    sstmt_dummy(Stmt.Module(mod_name, parsed.stmts!)),
+                    sstmt_dummy(Stmt.Module(mod_name, mod_resolved.stmts)),
                     modules
                 )
                 count = count + 1

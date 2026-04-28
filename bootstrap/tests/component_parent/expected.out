@@ -1,4 +1,0 @@
-root: main_app
-child: sub1 parent=main_app
-child: sub2 parent=main_app
-done

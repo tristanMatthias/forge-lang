@@ -1,0 +1,12 @@
+mod middle
+
+use middle.{greet, add}
+
+spec "reexport use" {
+    then "re-exported greet from inner module" {
+        greet("world") == "hello world"
+    }
+    then "re-exported add from inner module" {
+        add(3, 4) == 7
+    }
+}

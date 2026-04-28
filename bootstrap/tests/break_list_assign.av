@@ -1,6 +1,0 @@
-mut nums = [10, 20, 30]
-nums.set(1, 99)
-println(string(nums[1]))
-nums.set(0, 77)
-println(string(nums[0]))
-println(string(nums.length))

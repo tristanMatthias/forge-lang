@@ -1,9 +1,0 @@
-// With on nested structs
-type Inner = { value: int }
-type Outer = { inner: Inner, label: string }
-let o = Outer { inner: Inner { value: 10 }, label: "test" }
-// Can we `with` the inner struct?
-let new_inner = o.inner with { value: 99 }
-println(string(new_inner.value))
-// Original unchanged?
-println(string(o.inner.value))

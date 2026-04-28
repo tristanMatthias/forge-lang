@@ -1,0 +1,39 @@
+// defer behavior is also covered by features/defer_stmt/tests/defer_test.av;
+// this file mirrors the original tests/defer.av integration coverage.
+
+fn defer_basic_top() {
+    defer println("cleanup!")
+    println("working...")
+}
+
+fn defer_lifo_top() {
+    defer println("third (first deferred)")
+    defer println("second")
+    defer println("first (last deferred)")
+    println("body")
+}
+
+fn defer_early_top(x: int) -> string {
+    defer println("always runs")
+    if x > 0 { return "positive" }
+    "non-positive"
+}
+
+spec "defer top" {
+    then "basic cleanup runs after body" {
+        avra_test_capture_start()
+        defer_basic_top()
+        avra_test_capture_stop() == "working...\ncleanup!"
+    }
+    then "LIFO defer order" {
+        avra_test_capture_start()
+        defer_lifo_top()
+        avra_test_capture_stop() == "body\nfirst (last deferred)\nsecond\nthird (first deferred)"
+    }
+    then "defer fires on early return" {
+        avra_test_capture_start()
+        println(defer_early_top(5))
+        println(defer_early_top(0 - 1))
+        avra_test_capture_stop() == "always runs\npositive\nalways runs\nnon-positive"
+    }
+}

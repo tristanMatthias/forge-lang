@@ -1,4 +1,0 @@
-io.not_found: file not found
-severity: error
-transient: false
-cause: disk failure

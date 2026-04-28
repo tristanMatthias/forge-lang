@@ -1,0 +1,30 @@
+fn ceq_add(a: int, b: int) -> int { a + b }
+
+component widget_eq {
+    config {
+        value: int = 0
+        label: string = ""
+        active: bool = false
+    }
+    fn init() {
+        println(string(self.config.value))
+        println(self.config.label)
+        if self.config.active { println("true") } else { println("false") }
+    }
+}
+
+fn ceq_run() -> string {
+    avra_test_capture_start()
+    widget_eq w {
+        value = ceq_add(5, 10)
+        label = "hello"
+        active = true
+    }
+    avra_test_capture_stop()
+}
+
+spec "component config eq" {
+    then "config pairs with = support arbitrary expressions" {
+        ceq_run() == "15\nhello\ntrue"
+    }
+}

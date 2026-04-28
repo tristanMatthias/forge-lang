@@ -1,9 +1,0 @@
-mod mathlib
-
-use mathlib.{add, mul}
-
-fn main() {
-    // Exported functions accessed via use import
-    println(string(add(3, 4)))
-    println(string(mul(5, 6)))
-}
