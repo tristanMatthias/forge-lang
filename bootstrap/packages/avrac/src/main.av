@@ -605,7 +605,7 @@ fn main() {
 
                 // Wrap as Module — gives each test its own namespace
                 modules = StmtList.Node(
-                    sstmt_dummy(Stmt.Module(mod_name, strip_externs(parsed.stmts!))),
+                    sstmt_dummy(Stmt.Module(mod_name, parsed.stmts!)),
                     modules
                 )
                 count = count + 1

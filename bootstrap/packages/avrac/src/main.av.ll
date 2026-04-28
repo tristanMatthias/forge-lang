@@ -269675,18 +269675,17 @@ ifcont245:                                        ; preds = %if_else248
   call void @avra_null_deref_trap(ptr @fld_name.21425, i64 5, ptr @sty_name.21426, i64 25, i64 %null_ext281, ptr @src_file.21427, i64 103, i64 632)
   %stmts_ptr282 = getelementptr inbounds nuw %"parse::ProgramParseResult", ptr %parsed278, i32 0, i32 0
   %stmts283 = load ptr, ptr %stmts_ptr282, align 8
-  %106 = call ptr @strip_externs(ptr %stmts283)
   %slot_base284 = ptrtoint ptr %105 to i64
   %slot_addr285 = add i64 %slot_base284, 8
   %slot286 = inttoptr i64 %slot_addr285 to ptr
-  store ptr %106, ptr %slot286, align 8
+  store ptr %stmts283, ptr %slot286, align 8
   %cast287 = ptrtoint ptr %104 to i64
   %cast288 = inttoptr i64 %cast287 to ptr
-  %107 = call ptr @"core::ast::sstmt_dummy"(ptr %cast288)
+  %106 = call ptr @"core::ast::sstmt_dummy"(ptr %cast288)
   %slot_base289 = ptrtoint ptr %103 to i64
   %slot_addr290 = add i64 %slot_base289, 0
   %slot291 = inttoptr i64 %slot_addr290 to ptr
-  store ptr %107, ptr %slot291, align 8
+  store ptr %106, ptr %slot291, align 8
   %modules292 = load ptr, ptr %modules, align 8
   %slot_base293 = ptrtoint ptr %103 to i64
   %slot_addr294 = add i64 %slot_base293, 8
@@ -269708,8 +269707,8 @@ if_then247:                                       ; preds = %sc_merge234
   call void @avra_null_deref_trap(ptr @fld_name.21418, i64 3, ptr @sty_name.21419, i64 25, i64 %null_ext252, ptr @src_file.21420, i64 103, i64 624)
   %bag_ptr = getelementptr inbounds nuw %"parse::ProgramParseResult", ptr %parsed249, i32 0, i32 3
   %bag = load ptr, ptr %bag_ptr, align 8
-  %108 = call i1 @"diagnostics::bag_has_errors"(ptr %bag)
-  %widen253 = zext i1 %108 to i64
+  %107 = call i1 @"diagnostics::bag_has_errors"(ptr %bag)
+  %widen253 = zext i1 %107 to i64
   %if_cond255 = icmp ne i64 %widen253, 0
   br i1 %if_cond255, label %if_then256, label %if_else257
 
@@ -269718,18 +269717,18 @@ if_else248:                                       ; preds = %sc_merge234
 
 ifcont254:                                        ; preds = %if_else257, %if_then256
   %path266 = load ptr, ptr %path, align 8
-  %109 = call i64 @strlen(ptr @.str.21424)
-  %110 = call i64 @strlen(ptr %path266)
-  %concat_total267 = add i64 %109, %110
+  %108 = call i64 @strlen(ptr @.str.21424)
+  %109 = call i64 @strlen(ptr %path266)
+  %concat_total267 = add i64 %108, %109
   %concat_size268 = add i64 %concat_total267, 1
-  %111 = call ptr @avra_rc_alloc(i64 %concat_size268)
-  %112 = call ptr @memcpy(ptr %111, ptr @.str.21424, i64 %109)
-  %cast269 = ptrtoint ptr %111 to i64
-  %dst2_int270 = add i64 %cast269, %109
+  %110 = call ptr @avra_rc_alloc(i64 %concat_size268)
+  %111 = call ptr @memcpy(ptr %110, ptr @.str.21424, i64 %108)
+  %cast269 = ptrtoint ptr %110 to i64
+  %dst2_int270 = add i64 %cast269, %108
   %cast271 = inttoptr i64 %dst2_int270 to ptr
-  %rhs_len_p1272 = add i64 %110, 1
-  %113 = call ptr @memcpy(ptr %cast271, ptr %path266, i64 %rhs_len_p1272)
-  call void @avra_eprintln(ptr %111)
+  %rhs_len_p1272 = add i64 %109, 1
+  %112 = call ptr @memcpy(ptr %cast271, ptr %path266, i64 %rhs_len_p1272)
+  call void @avra_eprintln(ptr %110)
   br label %forin.incr
 
 if_then256:                                       ; preds = %if_then247
@@ -269742,7 +269741,7 @@ if_then256:                                       ; preds = %if_then247
   call void @avra_null_deref_trap(ptr @fld_name.21421, i64 3, ptr @sty_name.21422, i64 25, i64 %null_ext263, ptr @src_file.21423, i64 103, i64 625)
   %bag_ptr264 = getelementptr inbounds nuw %"parse::ProgramParseResult", ptr %parsed260, i32 0, i32 3
   %bag265 = load ptr, ptr %bag_ptr264, align 8
-  %114 = call i64 @"diagnostics::render::render_bag"(ptr %content258, ptr %path259, ptr %bag265)
+  %113 = call i64 @"diagnostics::render::render_bag"(ptr %content258, ptr %path259, ptr %bag265)
   br label %ifcont254
 
 if_else257:                                       ; preds = %if_then247
@@ -269750,158 +269749,158 @@ if_else257:                                       ; preds = %if_then247
 
 ifcont303:                                        ; preds = %if_else306
   %modules308 = load ptr, ptr %modules, align 8
-  %115 = call ptr @prepend_test_externs(ptr %modules308)
-  store ptr %115, ptr %program, align 8
-  %116 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr309 = getelementptr inbounds nuw %"core::ast::StmtList", ptr %116, i32 0, i32 0
+  %114 = call ptr @prepend_test_externs(ptr %modules308)
+  store ptr %114, ptr %program, align 8
+  %115 = call ptr @avra_rc_alloc(i64 16)
+  %tag_ptr309 = getelementptr inbounds nuw %"core::ast::StmtList", ptr %115, i32 0, i32 0
   store i64 6384368267, ptr %tag_ptr309, align 8
-  %pay_ptr310 = getelementptr inbounds nuw %"core::ast::StmtList", ptr %116, i32 0, i32 1
+  %pay_ptr310 = getelementptr inbounds nuw %"core::ast::StmtList", ptr %115, i32 0, i32 1
+  %116 = call ptr @avra_rc_alloc(i64 16)
+  store ptr %116, ptr %pay_ptr310, align 8
   %117 = call ptr @avra_rc_alloc(i64 16)
-  store ptr %117, ptr %pay_ptr310, align 8
-  %118 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr311 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %118, i32 0, i32 0
+  %tag_ptr311 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %117, i32 0, i32 0
   store i64 6384055044, ptr %tag_ptr311, align 8
-  %pay_ptr312 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %118, i32 0, i32 1
-  %119 = call ptr @avra_rc_alloc(i64 8)
-  store ptr %119, ptr %pay_ptr312, align 8
-  %120 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr313 = getelementptr inbounds nuw %"core::ast::Expr", ptr %120, i32 0, i32 0
+  %pay_ptr312 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %117, i32 0, i32 1
+  %118 = call ptr @avra_rc_alloc(i64 8)
+  store ptr %118, ptr %pay_ptr312, align 8
+  %119 = call ptr @avra_rc_alloc(i64 16)
+  %tag_ptr313 = getelementptr inbounds nuw %"core::ast::Expr", ptr %119, i32 0, i32 0
   store i64 6383957985, ptr %tag_ptr313, align 8
-  %pay_ptr314 = getelementptr inbounds nuw %"core::ast::Expr", ptr %120, i32 0, i32 1
+  %pay_ptr314 = getelementptr inbounds nuw %"core::ast::Expr", ptr %119, i32 0, i32 1
+  %120 = call ptr @avra_rc_alloc(i64 16)
+  store ptr %120, ptr %pay_ptr314, align 8
   %121 = call ptr @avra_rc_alloc(i64 16)
-  store ptr %121, ptr %pay_ptr314, align 8
-  %122 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr315 = getelementptr inbounds nuw %"core::ast::Expr", ptr %122, i32 0, i32 0
+  %tag_ptr315 = getelementptr inbounds nuw %"core::ast::Expr", ptr %121, i32 0, i32 0
   store i64 210677829401, ptr %tag_ptr315, align 8
-  %pay_ptr316 = getelementptr inbounds nuw %"core::ast::Expr", ptr %122, i32 0, i32 1
-  %123 = call ptr @avra_rc_alloc(i64 8)
-  store ptr %123, ptr %pay_ptr316, align 8
-  %slot_base317 = ptrtoint ptr %123 to i64
+  %pay_ptr316 = getelementptr inbounds nuw %"core::ast::Expr", ptr %121, i32 0, i32 1
+  %122 = call ptr @avra_rc_alloc(i64 8)
+  store ptr %122, ptr %pay_ptr316, align 8
+  %slot_base317 = ptrtoint ptr %122 to i64
   %slot_addr318 = add i64 %slot_base317, 0
   %slot319 = inttoptr i64 %slot_addr318 to ptr
   store ptr @.str.21429, ptr %slot319, align 8
-  %cast320 = ptrtoint ptr %122 to i64
-  %slot_base321 = ptrtoint ptr %121 to i64
+  %cast320 = ptrtoint ptr %121 to i64
+  %slot_base321 = ptrtoint ptr %120 to i64
   %slot_addr322 = add i64 %slot_base321, 0
   %slot323 = inttoptr i64 %slot_addr322 to ptr
   %cast324 = inttoptr i64 %cast320 to ptr
   store ptr %cast324, ptr %slot323, align 8
-  %124 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr325 = getelementptr inbounds nuw %"core::ast::ExprList", ptr %124, i32 0, i32 0
+  %123 = call ptr @avra_rc_alloc(i64 16)
+  %tag_ptr325 = getelementptr inbounds nuw %"core::ast::ExprList", ptr %123, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr325, align 8
-  %pay_ptr326 = getelementptr inbounds nuw %"core::ast::ExprList", ptr %124, i32 0, i32 1
+  %pay_ptr326 = getelementptr inbounds nuw %"core::ast::ExprList", ptr %123, i32 0, i32 1
   store ptr null, ptr %pay_ptr326, align 8
-  %cast327 = ptrtoint ptr %124 to i64
-  %slot_base328 = ptrtoint ptr %121 to i64
+  %cast327 = ptrtoint ptr %123 to i64
+  %slot_base328 = ptrtoint ptr %120 to i64
   %slot_addr329 = add i64 %slot_base328, 8
   %slot330 = inttoptr i64 %slot_addr329 to ptr
   %cast331 = inttoptr i64 %cast327 to ptr
   store ptr %cast331, ptr %slot330, align 8
-  %cast332 = ptrtoint ptr %120 to i64
-  %slot_base333 = ptrtoint ptr %119 to i64
+  %cast332 = ptrtoint ptr %119 to i64
+  %slot_base333 = ptrtoint ptr %118 to i64
   %slot_addr334 = add i64 %slot_base333, 0
   %slot335 = inttoptr i64 %slot_addr334 to ptr
   %cast336 = inttoptr i64 %cast332 to ptr
   store ptr %cast336, ptr %slot335, align 8
-  %cast337 = ptrtoint ptr %118 to i64
+  %cast337 = ptrtoint ptr %117 to i64
   %cast338 = inttoptr i64 %cast337 to ptr
-  %125 = call ptr @"core::ast::sstmt_dummy"(ptr %cast338)
-  %slot_base339 = ptrtoint ptr %117 to i64
+  %124 = call ptr @"core::ast::sstmt_dummy"(ptr %cast338)
+  %slot_base339 = ptrtoint ptr %116 to i64
   %slot_addr340 = add i64 %slot_base339, 0
   %slot341 = inttoptr i64 %slot_addr340 to ptr
-  store ptr %125, ptr %slot341, align 8
-  %126 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr342 = getelementptr inbounds nuw %"core::ast::StmtList", ptr %126, i32 0, i32 0
+  store ptr %124, ptr %slot341, align 8
+  %125 = call ptr @avra_rc_alloc(i64 16)
+  %tag_ptr342 = getelementptr inbounds nuw %"core::ast::StmtList", ptr %125, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr342, align 8
-  %pay_ptr343 = getelementptr inbounds nuw %"core::ast::StmtList", ptr %126, i32 0, i32 1
+  %pay_ptr343 = getelementptr inbounds nuw %"core::ast::StmtList", ptr %125, i32 0, i32 1
   store ptr null, ptr %pay_ptr343, align 8
-  %cast344 = ptrtoint ptr %126 to i64
-  %slot_base345 = ptrtoint ptr %117 to i64
+  %cast344 = ptrtoint ptr %125 to i64
+  %slot_base345 = ptrtoint ptr %116 to i64
   %slot_addr346 = add i64 %slot_base345, 8
   %slot347 = inttoptr i64 %slot_addr346 to ptr
   %cast348 = inttoptr i64 %cast344 to ptr
   store ptr %cast348, ptr %slot347, align 8
-  %cast349 = ptrtoint ptr %116 to i64
+  %cast349 = ptrtoint ptr %115 to i64
   %cast350 = inttoptr i64 %cast349 to ptr
   store ptr %cast350, ptr %main_body, align 8
-  %127 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr351 = getelementptr inbounds nuw %"core::ast::StmtList", ptr %127, i32 0, i32 0
+  %126 = call ptr @avra_rc_alloc(i64 16)
+  %tag_ptr351 = getelementptr inbounds nuw %"core::ast::StmtList", ptr %126, i32 0, i32 0
   store i64 6384368267, ptr %tag_ptr351, align 8
-  %pay_ptr352 = getelementptr inbounds nuw %"core::ast::StmtList", ptr %127, i32 0, i32 1
+  %pay_ptr352 = getelementptr inbounds nuw %"core::ast::StmtList", ptr %126, i32 0, i32 1
+  %127 = call ptr @avra_rc_alloc(i64 16)
+  store ptr %127, ptr %pay_ptr352, align 8
   %128 = call ptr @avra_rc_alloc(i64 16)
-  store ptr %128, ptr %pay_ptr352, align 8
-  %129 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr353 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %129, i32 0, i32 0
+  %tag_ptr353 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %128, i32 0, i32 0
   store i64 7571023594101803, ptr %tag_ptr353, align 8
-  %pay_ptr354 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %129, i32 0, i32 1
-  %130 = call ptr @avra_rc_alloc(i64 40)
-  store ptr %130, ptr %pay_ptr354, align 8
-  %slot_base355 = ptrtoint ptr %130 to i64
+  %pay_ptr354 = getelementptr inbounds nuw %"core::ast::Stmt", ptr %128, i32 0, i32 1
+  %129 = call ptr @avra_rc_alloc(i64 40)
+  store ptr %129, ptr %pay_ptr354, align 8
+  %slot_base355 = ptrtoint ptr %129 to i64
   %slot_addr356 = add i64 %slot_base355, 0
   %slot357 = inttoptr i64 %slot_addr356 to ptr
   store ptr @.str.21430, ptr %slot357, align 8
-  %131 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr358 = getelementptr inbounds nuw %"core::ast::TypeParamList", ptr %131, i32 0, i32 0
+  %130 = call ptr @avra_rc_alloc(i64 16)
+  %tag_ptr358 = getelementptr inbounds nuw %"core::ast::TypeParamList", ptr %130, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr358, align 8
-  %pay_ptr359 = getelementptr inbounds nuw %"core::ast::TypeParamList", ptr %131, i32 0, i32 1
+  %pay_ptr359 = getelementptr inbounds nuw %"core::ast::TypeParamList", ptr %130, i32 0, i32 1
   store ptr null, ptr %pay_ptr359, align 8
-  %cast360 = ptrtoint ptr %131 to i64
-  %slot_base361 = ptrtoint ptr %130 to i64
+  %cast360 = ptrtoint ptr %130 to i64
+  %slot_base361 = ptrtoint ptr %129 to i64
   %slot_addr362 = add i64 %slot_base361, 8
   %slot363 = inttoptr i64 %slot_addr362 to ptr
   %cast364 = inttoptr i64 %cast360 to ptr
   store ptr %cast364, ptr %slot363, align 8
-  %132 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr365 = getelementptr inbounds nuw %"core::ast::ParamList", ptr %132, i32 0, i32 0
+  %131 = call ptr @avra_rc_alloc(i64 16)
+  %tag_ptr365 = getelementptr inbounds nuw %"core::ast::ParamList", ptr %131, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr365, align 8
-  %pay_ptr366 = getelementptr inbounds nuw %"core::ast::ParamList", ptr %132, i32 0, i32 1
+  %pay_ptr366 = getelementptr inbounds nuw %"core::ast::ParamList", ptr %131, i32 0, i32 1
   store ptr null, ptr %pay_ptr366, align 8
-  %cast367 = ptrtoint ptr %132 to i64
-  %slot_base368 = ptrtoint ptr %130 to i64
+  %cast367 = ptrtoint ptr %131 to i64
+  %slot_base368 = ptrtoint ptr %129 to i64
   %slot_addr369 = add i64 %slot_base368, 16
   %slot370 = inttoptr i64 %slot_addr369 to ptr
   %cast371 = inttoptr i64 %cast367 to ptr
   store ptr %cast371, ptr %slot370, align 8
-  %133 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr372 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %133, i32 0, i32 0
+  %132 = call ptr @avra_rc_alloc(i64 16)
+  %tag_ptr372 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %132, i32 0, i32 0
   store i64 193460240, ptr %tag_ptr372, align 8
-  %pay_ptr373 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %133, i32 0, i32 1
+  %pay_ptr373 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %132, i32 0, i32 1
   store ptr null, ptr %pay_ptr373, align 8
-  %cast374 = ptrtoint ptr %133 to i64
-  %slot_base375 = ptrtoint ptr %130 to i64
+  %cast374 = ptrtoint ptr %132 to i64
+  %slot_base375 = ptrtoint ptr %129 to i64
   %slot_addr376 = add i64 %slot_base375, 24
   %slot377 = inttoptr i64 %slot_addr376 to ptr
   %cast378 = inttoptr i64 %cast374 to ptr
   store ptr %cast378, ptr %slot377, align 8
   %main_body379 = load ptr, ptr %main_body, align 8
-  %slot_base380 = ptrtoint ptr %130 to i64
+  %slot_base380 = ptrtoint ptr %129 to i64
   %slot_addr381 = add i64 %slot_base380, 32
   %slot382 = inttoptr i64 %slot_addr381 to ptr
   store ptr %main_body379, ptr %slot382, align 8
-  %cast383 = ptrtoint ptr %129 to i64
+  %cast383 = ptrtoint ptr %128 to i64
   %cast384 = inttoptr i64 %cast383 to ptr
-  %134 = call ptr @"core::ast::sstmt_dummy"(ptr %cast384)
-  %slot_base385 = ptrtoint ptr %128 to i64
+  %133 = call ptr @"core::ast::sstmt_dummy"(ptr %cast384)
+  %slot_base385 = ptrtoint ptr %127 to i64
   %slot_addr386 = add i64 %slot_base385, 0
   %slot387 = inttoptr i64 %slot_addr386 to ptr
-  store ptr %134, ptr %slot387, align 8
+  store ptr %133, ptr %slot387, align 8
   %program388 = load ptr, ptr %program, align 8
-  %slot_base389 = ptrtoint ptr %128 to i64
+  %slot_base389 = ptrtoint ptr %127 to i64
   %slot_addr390 = add i64 %slot_base389, 8
   %slot391 = inttoptr i64 %slot_addr390 to ptr
   store ptr %program388, ptr %slot391, align 8
-  %cast392 = ptrtoint ptr %127 to i64
+  %cast392 = ptrtoint ptr %126 to i64
   %cast393 = inttoptr i64 %cast392 to ptr
   store ptr %cast393, ptr %program, align 8
   %program394 = load ptr, ptr %program, align 8
-  %135 = call ptr @"desugar::desugar_program"(ptr %program394)
-  store ptr %135, ptr %desugared, align 8
+  %134 = call ptr @"desugar::desugar_program"(ptr %program394)
+  store ptr %134, ptr %desugared, align 8
   %desugared395 = load ptr, ptr %desugared, align 8
-  %136 = call ptr @"features::component_decl::expand::expand_components"(ptr %desugared395)
-  store ptr %136, ptr %expanded, align 8
+  %135 = call ptr @"features::component_decl::expand::expand_components"(ptr %desugared395)
+  store ptr %135, ptr %expanded, align 8
   %expanded396 = load ptr, ptr %expanded, align 8
-  %137 = call ptr @"resolve::names::resolve_names"(ptr %expanded396)
-  store ptr %137, ptr %named, align 8
+  %136 = call ptr @"resolve::names::resolve_names"(ptr %expanded396)
+  store ptr %136, ptr %named, align 8
   %named397 = load ptr, ptr %named, align 8
   %cast398 = ptrtoint ptr %named397 to i64
   %null_chk399 = icmp eq i64 %cast398, 0
@@ -269909,14 +269908,14 @@ ifcont303:                                        ; preds = %if_else306
   call void @avra_null_deref_trap(ptr @fld_name.21431, i64 3, ptr @sty_name.21432, i64 33, i64 %null_ext400, ptr @src_file.21433, i64 103, i64 662)
   %bag_ptr401 = getelementptr inbounds nuw %"resolve::names::NameResolveResult", ptr %named397, i32 0, i32 3
   %bag402 = load ptr, ptr %bag_ptr401, align 8
-  %138 = call i1 @"diagnostics::bag_has_errors"(ptr %bag402)
-  %widen403 = zext i1 %138 to i64
+  %137 = call i1 @"diagnostics::bag_has_errors"(ptr %bag402)
+  %widen403 = zext i1 %137 to i64
   %l_bool404 = icmp ne i64 %widen403, 0
   br i1 %l_bool404, label %sc_short406, label %sc_rhs405
 
 if_then305:                                       ; preds = %forin.exit
-  %139 = call i32 @puts(ptr @.str.21428)
-  %widen307 = sext i32 %139 to i64
+  %138 = call i32 @puts(ptr @.str.21428)
+  %widen307 = sext i32 %138 to i64
   ret i64 0
 
 if_else306:                                       ; preds = %forin.exit
@@ -269959,8 +269958,8 @@ ifcont420:                                        ; preds = %if_else423, %if_the
   call void @avra_null_deref_trap(ptr @fld_name.21445, i64 5, ptr @sty_name.21446, i64 33, i64 %null_ext437, ptr @src_file.21447, i64 103, i64 666)
   %stmts_ptr438 = getelementptr inbounds nuw %"resolve::names::NameResolveResult", ptr %named434, i32 0, i32 0
   %stmts439 = load ptr, ptr %stmts_ptr438, align 8
-  %140 = call ptr @"typeck::typecheck_program"(ptr %stmts439)
-  store ptr %140, ptr %tc_result, align 8
+  %139 = call ptr @"typeck::typecheck_program"(ptr %stmts439)
+  store ptr %139, ptr %tc_result, align 8
   %tc_result440 = load ptr, ptr %tc_result, align 8
   %cast441 = ptrtoint ptr %tc_result440 to i64
   %null_chk442 = icmp eq i64 %cast441, 0
@@ -269968,8 +269967,8 @@ ifcont420:                                        ; preds = %if_else423, %if_the
   call void @avra_null_deref_trap(ptr @fld_name.21448, i64 3, ptr @sty_name.21449, i64 23, i64 %null_ext443, ptr @src_file.21450, i64 103, i64 667)
   %bag_ptr444 = getelementptr inbounds nuw %"typeck::TypeCheckResult", ptr %tc_result440, i32 0, i32 2
   %bag445 = load ptr, ptr %bag_ptr444, align 8
-  %141 = call i1 @"diagnostics::bag_has_errors"(ptr %bag445)
-  %widen446 = zext i1 %141 to i64
+  %140 = call i1 @"diagnostics::bag_has_errors"(ptr %bag445)
+  %widen446 = zext i1 %140 to i64
   %if_cond448 = icmp ne i64 %widen446, 0
   br i1 %if_cond448, label %if_then449, label %if_else450
 
@@ -269981,7 +269980,7 @@ if_then422:                                       ; preds = %sc_merge407
   call void @avra_null_deref_trap(ptr @fld_name.21439, i64 3, ptr @sty_name.21440, i64 33, i64 %null_ext427, ptr @src_file.21441, i64 103, i64 663)
   %bag_ptr428 = getelementptr inbounds nuw %"resolve::names::NameResolveResult", ptr %named424, i32 0, i32 3
   %bag429 = load ptr, ptr %bag_ptr428, align 8
-  %142 = call i64 @"diagnostics::render::render_bag"(ptr @.str.21437, ptr @.str.21438, ptr %bag429)
+  %141 = call i64 @"diagnostics::render::render_bag"(ptr @.str.21437, ptr @.str.21438, ptr %bag429)
   %named430 = load ptr, ptr %named, align 8
   %cast431 = ptrtoint ptr %named430 to i64
   %null_chk432 = icmp eq i64 %cast431, 0
@@ -269989,7 +269988,7 @@ if_then422:                                       ; preds = %sc_merge407
   call void @avra_null_deref_trap(ptr @fld_name.21442, i64 13, ptr @sty_name.21443, i64 33, i64 %null_ext433, ptr @src_file.21444, i64 103, i64 664)
   %error_message_ptr = getelementptr inbounds nuw %"resolve::names::NameResolveResult", ptr %named430, i32 0, i32 2
   %error_message = load ptr, ptr %error_message_ptr, align 8
-  %143 = call i64 @fail(ptr %error_message)
+  %142 = call i64 @fail(ptr %error_message)
   br label %ifcont420
 
 if_else423:                                       ; preds = %sc_merge407
@@ -270010,8 +270009,8 @@ ifcont447:                                        ; preds = %if_else450, %if_the
   call void @avra_null_deref_trap(ptr @fld_name.21460, i64 11, ptr @sty_name.21461, i64 23, i64 %null_ext466, ptr @src_file.21462, i64 103, i64 671)
   %trait_impls_ptr = getelementptr inbounds nuw %"typeck::TypeCheckResult", ptr %tc_result463, i32 0, i32 3
   %trait_impls = load ptr, ptr %trait_impls_ptr, align 8
-  %144 = call ptr @"features::generics::mono::monomorphize"(ptr %stmts462, ptr %trait_impls)
-  store ptr %144, ptr %mono, align 8
+  %143 = call ptr @"features::generics::mono::monomorphize"(ptr %stmts462, ptr %trait_impls)
+  store ptr %143, ptr %mono, align 8
   %mono467 = load ptr, ptr %mono, align 8
   %cast468 = ptrtoint ptr %mono467 to i64
   %null_chk469 = icmp eq i64 %cast468, 0
@@ -270019,8 +270018,8 @@ ifcont447:                                        ; preds = %if_else450, %if_the
   call void @avra_null_deref_trap(ptr @fld_name.21463, i64 3, ptr @sty_name.21464, i64 36, i64 %null_ext470, ptr @src_file.21465, i64 103, i64 672)
   %bag_ptr471 = getelementptr inbounds nuw %"features::generics::mono::MonoResult", ptr %mono467, i32 0, i32 1
   %bag472 = load ptr, ptr %bag_ptr471, align 8
-  %145 = call i1 @"diagnostics::bag_has_errors"(ptr %bag472)
-  %widen473 = zext i1 %145 to i64
+  %144 = call i1 @"diagnostics::bag_has_errors"(ptr %bag472)
+  %widen473 = zext i1 %144 to i64
   %if_cond475 = icmp ne i64 %widen473, 0
   br i1 %if_cond475, label %if_then476, label %if_else477
 
@@ -270032,8 +270031,8 @@ if_then449:                                       ; preds = %ifcont420
   call void @avra_null_deref_trap(ptr @fld_name.21453, i64 3, ptr @sty_name.21454, i64 23, i64 %null_ext454, ptr @src_file.21455, i64 103, i64 668)
   %bag_ptr455 = getelementptr inbounds nuw %"typeck::TypeCheckResult", ptr %tc_result451, i32 0, i32 2
   %bag456 = load ptr, ptr %bag_ptr455, align 8
-  %146 = call i64 @"diagnostics::render::render_bag"(ptr @.str.21451, ptr @.str.21452, ptr %bag456)
-  %147 = call i64 @fail(ptr @.str.21456)
+  %145 = call i64 @"diagnostics::render::render_bag"(ptr @.str.21451, ptr @.str.21452, ptr %bag456)
+  %146 = call i64 @fail(ptr @.str.21456)
   br label %ifcont447
 
 if_else450:                                       ; preds = %ifcont420
@@ -270041,44 +270040,44 @@ if_else450:                                       ; preds = %ifcont420
 
 ifcont474:                                        ; preds = %if_else477, %if_then476
   %project_dir478 = load ptr, ptr %project_dir, align 8
-  %148 = call i64 @strlen(ptr %project_dir478)
-  %149 = call i64 @strlen(ptr @.str.21467)
-  %concat_total479 = add i64 %148, %149
+  %147 = call i64 @strlen(ptr %project_dir478)
+  %148 = call i64 @strlen(ptr @.str.21467)
+  %concat_total479 = add i64 %147, %148
   %concat_size480 = add i64 %concat_total479, 1
-  %150 = call ptr @avra_rc_alloc(i64 %concat_size480)
-  %151 = call ptr @memcpy(ptr %150, ptr %project_dir478, i64 %148)
-  %cast481 = ptrtoint ptr %150 to i64
-  %dst2_int482 = add i64 %cast481, %148
+  %149 = call ptr @avra_rc_alloc(i64 %concat_size480)
+  %150 = call ptr @memcpy(ptr %149, ptr %project_dir478, i64 %147)
+  %cast481 = ptrtoint ptr %149 to i64
+  %dst2_int482 = add i64 %cast481, %147
   %cast483 = inttoptr i64 %dst2_int482 to ptr
-  %rhs_len_p1484 = add i64 %149, 1
-  %152 = call ptr @memcpy(ptr %cast483, ptr @.str.21467, i64 %rhs_len_p1484)
-  store ptr %150, ptr %build_dir, align 8
+  %rhs_len_p1484 = add i64 %148, 1
+  %151 = call ptr @memcpy(ptr %cast483, ptr @.str.21467, i64 %rhs_len_p1484)
+  store ptr %149, ptr %build_dir, align 8
   %build_dir485 = load ptr, ptr %build_dir, align 8
-  %153 = call i64 @strlen(ptr %build_dir485)
-  %154 = call i64 @strlen(ptr @.str.21468)
-  %concat_total486 = add i64 %153, %154
+  %152 = call i64 @strlen(ptr %build_dir485)
+  %153 = call i64 @strlen(ptr @.str.21468)
+  %concat_total486 = add i64 %152, %153
   %concat_size487 = add i64 %concat_total486, 1
-  %155 = call ptr @avra_rc_alloc(i64 %concat_size487)
-  %156 = call ptr @memcpy(ptr %155, ptr %build_dir485, i64 %153)
-  %cast488 = ptrtoint ptr %155 to i64
-  %dst2_int489 = add i64 %cast488, %153
+  %154 = call ptr @avra_rc_alloc(i64 %concat_size487)
+  %155 = call ptr @memcpy(ptr %154, ptr %build_dir485, i64 %152)
+  %cast488 = ptrtoint ptr %154 to i64
+  %dst2_int489 = add i64 %cast488, %152
   %cast490 = inttoptr i64 %dst2_int489 to ptr
-  %rhs_len_p1491 = add i64 %154, 1
-  %157 = call ptr @memcpy(ptr %cast490, ptr @.str.21468, i64 %rhs_len_p1491)
-  store ptr %155, ptr %obj_path, align 8
+  %rhs_len_p1491 = add i64 %153, 1
+  %156 = call ptr @memcpy(ptr %cast490, ptr @.str.21468, i64 %rhs_len_p1491)
+  store ptr %154, ptr %obj_path, align 8
   %build_dir492 = load ptr, ptr %build_dir, align 8
-  %158 = call i64 @strlen(ptr %build_dir492)
-  %159 = call i64 @strlen(ptr @.str.21469)
-  %concat_total493 = add i64 %158, %159
+  %157 = call i64 @strlen(ptr %build_dir492)
+  %158 = call i64 @strlen(ptr @.str.21469)
+  %concat_total493 = add i64 %157, %158
   %concat_size494 = add i64 %concat_total493, 1
-  %160 = call ptr @avra_rc_alloc(i64 %concat_size494)
-  %161 = call ptr @memcpy(ptr %160, ptr %build_dir492, i64 %158)
-  %cast495 = ptrtoint ptr %160 to i64
-  %dst2_int496 = add i64 %cast495, %158
+  %159 = call ptr @avra_rc_alloc(i64 %concat_size494)
+  %160 = call ptr @memcpy(ptr %159, ptr %build_dir492, i64 %157)
+  %cast495 = ptrtoint ptr %159 to i64
+  %dst2_int496 = add i64 %cast495, %157
   %cast497 = inttoptr i64 %dst2_int496 to ptr
-  %rhs_len_p1498 = add i64 %159, 1
-  %162 = call ptr @memcpy(ptr %cast497, ptr @.str.21469, i64 %rhs_len_p1498)
-  store ptr %160, ptr %bin_path, align 8
+  %rhs_len_p1498 = add i64 %158, 1
+  %161 = call ptr @memcpy(ptr %cast497, ptr @.str.21469, i64 %rhs_len_p1498)
+  store ptr %159, ptr %bin_path, align 8
   %mono499 = load ptr, ptr %mono, align 8
   %cast500 = ptrtoint ptr %mono499 to i64
   %null_chk501 = icmp eq i64 %cast500, 0
@@ -270094,33 +270093,33 @@ ifcont474:                                        ; preds = %if_else477, %if_the
   call void @avra_null_deref_trap(ptr @fld_name.21473, i64 8, ptr @sty_name.21474, i64 33, i64 %null_ext509, ptr @src_file.21475, i64 103, i64 679)
   %type_reg_ptr = getelementptr inbounds nuw %"resolve::names::NameResolveResult", ptr %named506, i32 0, i32 4
   %type_reg = load ptr, ptr %type_reg_ptr, align 8
-  %163 = call ptr @"codegen::setup::codegen_and_emit_object"(ptr %stmts504, ptr %obj_path505, ptr %type_reg)
-  %tag_ptr510 = getelementptr inbounds nuw %Result__int__string, ptr %163, i32 0, i32 0
+  %162 = call ptr @"codegen::setup::codegen_and_emit_object"(ptr %stmts504, ptr %obj_path505, ptr %type_reg)
+  %tag_ptr510 = getelementptr inbounds nuw %Result__int__string, ptr %162, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr510, align 8
   %tag_eq = icmp eq i64 %tag, 5862623
   br i1 %tag_eq, label %march_arm, label %march_next
 
 if_then476:                                       ; preds = %ifcont447
-  %164 = call i64 @fail(ptr @.str.21466)
+  %163 = call i64 @fail(ptr @.str.21466)
   br label %ifcont474
 
 if_else477:                                       ; preds = %ifcont447
   br label %ifcont474
 
 match_end:                                        ; preds = %march_arm512, %march_arm
-  %165 = call ptr @avra_process_env_get(ptr @.str.21478)
-  store ptr %165, ptr %llvm_env, align 8
+  %164 = call ptr @avra_process_env_get(ptr @.str.21478)
+  store ptr %164, ptr %llvm_env, align 8
   %llvm_env517 = load ptr, ptr %llvm_env, align 8
-  %166 = call i32 @strcmp(ptr %llvm_env517, ptr @.str.21479)
-  %widen518 = sext i32 %166 to i64
+  %165 = call i32 @strcmp(ptr %llvm_env517, ptr @.str.21479)
+  %widen518 = sext i32 %165 to i64
   %streq_cmp519 = icmp eq i64 %widen518, 0
   %streq_ext520 = zext i1 %streq_cmp519 to i64
   %ife_cond = icmp ne i64 %streq_ext520, 0
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_arm:                                        ; preds = %ifcont474
-  %167 = call ptr @avra_map_new_cstr()
-  %cast511 = ptrtoint ptr %167 to i64
+  %166 = call ptr @avra_map_new_cstr()
+  %cast511 = ptrtoint ptr %166 to i64
   store i64 %cast511, ptr %match_stmt_discard, align 8
   br label %match_end
 
@@ -270129,7 +270128,7 @@ march_next:                                       ; preds = %ifcont474
   br i1 %tag_eq514, label %march_arm512, label %march_next513
 
 march_arm512:                                     ; preds = %march_next
-  %pay_slot = getelementptr inbounds nuw %Result__int__string, ptr %163, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Result__int__string, ptr %162, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %e_slot_base = ptrtoint ptr %payload to i64
   %e_slot_addr = add i64 %e_slot_base, 0
@@ -270138,8 +270137,8 @@ march_arm512:                                     ; preds = %march_next
   call void @avra_rc_retain(ptr %e)
   store ptr %e, ptr %e515, align 8
   %e516 = load ptr, ptr %e515, align 8
-  %168 = call i64 @fail(ptr %e516)
-  store i64 %168, ptr %match_stmt_discard, align 8
+  %167 = call i64 @fail(ptr %e516)
+  store i64 %167, ptr %match_stmt_discard, align 8
   br label %match_end
 
 march_next513:                                    ; preds = %march_next
@@ -270151,124 +270150,124 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %cast529 = inttoptr i64 %ife_val to ptr
   store ptr %cast529, ptr %llvm_lib, align 8
   %obj_path530 = load ptr, ptr %obj_path, align 8
-  %169 = call i64 @strlen(ptr @.str.21482)
-  %170 = call i64 @strlen(ptr %obj_path530)
-  %concat_total531 = add i64 %169, %170
+  %168 = call i64 @strlen(ptr @.str.21482)
+  %169 = call i64 @strlen(ptr %obj_path530)
+  %concat_total531 = add i64 %168, %169
   %concat_size532 = add i64 %concat_total531, 1
-  %171 = call ptr @avra_rc_alloc(i64 %concat_size532)
-  %172 = call ptr @memcpy(ptr %171, ptr @.str.21482, i64 %169)
-  %cast533 = ptrtoint ptr %171 to i64
-  %dst2_int534 = add i64 %cast533, %169
+  %170 = call ptr @avra_rc_alloc(i64 %concat_size532)
+  %171 = call ptr @memcpy(ptr %170, ptr @.str.21482, i64 %168)
+  %cast533 = ptrtoint ptr %170 to i64
+  %dst2_int534 = add i64 %cast533, %168
   %cast535 = inttoptr i64 %dst2_int534 to ptr
-  %rhs_len_p1536 = add i64 %170, 1
-  %173 = call ptr @memcpy(ptr %cast535, ptr %obj_path530, i64 %rhs_len_p1536)
-  %174 = call i64 @strlen(ptr %171)
-  %175 = call i64 @strlen(ptr @.str.21483)
-  %concat_total537 = add i64 %174, %175
+  %rhs_len_p1536 = add i64 %169, 1
+  %172 = call ptr @memcpy(ptr %cast535, ptr %obj_path530, i64 %rhs_len_p1536)
+  %173 = call i64 @strlen(ptr %170)
+  %174 = call i64 @strlen(ptr @.str.21483)
+  %concat_total537 = add i64 %173, %174
   %concat_size538 = add i64 %concat_total537, 1
-  %176 = call ptr @avra_rc_alloc(i64 %concat_size538)
-  %177 = call ptr @memcpy(ptr %176, ptr %171, i64 %174)
-  %cast539 = ptrtoint ptr %176 to i64
-  %dst2_int540 = add i64 %cast539, %174
+  %175 = call ptr @avra_rc_alloc(i64 %concat_size538)
+  %176 = call ptr @memcpy(ptr %175, ptr %170, i64 %173)
+  %cast539 = ptrtoint ptr %175 to i64
+  %dst2_int540 = add i64 %cast539, %173
   %cast541 = inttoptr i64 %dst2_int540 to ptr
-  %rhs_len_p1542 = add i64 %175, 1
-  %178 = call ptr @memcpy(ptr %cast541, ptr @.str.21483, i64 %rhs_len_p1542)
+  %rhs_len_p1542 = add i64 %174, 1
+  %177 = call ptr @memcpy(ptr %cast541, ptr @.str.21483, i64 %rhs_len_p1542)
   %build_dir543 = load ptr, ptr %build_dir, align 8
-  %179 = call i64 @strlen(ptr %176)
-  %180 = call i64 @strlen(ptr %build_dir543)
-  %concat_total544 = add i64 %179, %180
+  %178 = call i64 @strlen(ptr %175)
+  %179 = call i64 @strlen(ptr %build_dir543)
+  %concat_total544 = add i64 %178, %179
   %concat_size545 = add i64 %concat_total544, 1
-  %181 = call ptr @avra_rc_alloc(i64 %concat_size545)
-  %182 = call ptr @memcpy(ptr %181, ptr %176, i64 %179)
-  %cast546 = ptrtoint ptr %181 to i64
-  %dst2_int547 = add i64 %cast546, %179
+  %180 = call ptr @avra_rc_alloc(i64 %concat_size545)
+  %181 = call ptr @memcpy(ptr %180, ptr %175, i64 %178)
+  %cast546 = ptrtoint ptr %180 to i64
+  %dst2_int547 = add i64 %cast546, %178
   %cast548 = inttoptr i64 %dst2_int547 to ptr
-  %rhs_len_p1549 = add i64 %180, 1
-  %183 = call ptr @memcpy(ptr %cast548, ptr %build_dir543, i64 %rhs_len_p1549)
-  %184 = call i64 @strlen(ptr %181)
-  %185 = call i64 @strlen(ptr @.str.21484)
-  %concat_total550 = add i64 %184, %185
+  %rhs_len_p1549 = add i64 %179, 1
+  %182 = call ptr @memcpy(ptr %cast548, ptr %build_dir543, i64 %rhs_len_p1549)
+  %183 = call i64 @strlen(ptr %180)
+  %184 = call i64 @strlen(ptr @.str.21484)
+  %concat_total550 = add i64 %183, %184
   %concat_size551 = add i64 %concat_total550, 1
-  %186 = call ptr @avra_rc_alloc(i64 %concat_size551)
-  %187 = call ptr @memcpy(ptr %186, ptr %181, i64 %184)
-  %cast552 = ptrtoint ptr %186 to i64
-  %dst2_int553 = add i64 %cast552, %184
+  %185 = call ptr @avra_rc_alloc(i64 %concat_size551)
+  %186 = call ptr @memcpy(ptr %185, ptr %180, i64 %183)
+  %cast552 = ptrtoint ptr %185 to i64
+  %dst2_int553 = add i64 %cast552, %183
   %cast554 = inttoptr i64 %dst2_int553 to ptr
-  %rhs_len_p1555 = add i64 %185, 1
-  %188 = call ptr @memcpy(ptr %cast554, ptr @.str.21484, i64 %rhs_len_p1555)
+  %rhs_len_p1555 = add i64 %184, 1
+  %187 = call ptr @memcpy(ptr %cast554, ptr @.str.21484, i64 %rhs_len_p1555)
   %build_dir556 = load ptr, ptr %build_dir, align 8
-  %189 = call i64 @strlen(ptr %186)
-  %190 = call i64 @strlen(ptr %build_dir556)
-  %concat_total557 = add i64 %189, %190
+  %188 = call i64 @strlen(ptr %185)
+  %189 = call i64 @strlen(ptr %build_dir556)
+  %concat_total557 = add i64 %188, %189
   %concat_size558 = add i64 %concat_total557, 1
-  %191 = call ptr @avra_rc_alloc(i64 %concat_size558)
-  %192 = call ptr @memcpy(ptr %191, ptr %186, i64 %189)
-  %cast559 = ptrtoint ptr %191 to i64
-  %dst2_int560 = add i64 %cast559, %189
+  %190 = call ptr @avra_rc_alloc(i64 %concat_size558)
+  %191 = call ptr @memcpy(ptr %190, ptr %185, i64 %188)
+  %cast559 = ptrtoint ptr %190 to i64
+  %dst2_int560 = add i64 %cast559, %188
   %cast561 = inttoptr i64 %dst2_int560 to ptr
-  %rhs_len_p1562 = add i64 %190, 1
-  %193 = call ptr @memcpy(ptr %cast561, ptr %build_dir556, i64 %rhs_len_p1562)
-  %194 = call i64 @strlen(ptr %191)
-  %195 = call i64 @strlen(ptr @.str.21485)
-  %concat_total563 = add i64 %194, %195
+  %rhs_len_p1562 = add i64 %189, 1
+  %192 = call ptr @memcpy(ptr %cast561, ptr %build_dir556, i64 %rhs_len_p1562)
+  %193 = call i64 @strlen(ptr %190)
+  %194 = call i64 @strlen(ptr @.str.21485)
+  %concat_total563 = add i64 %193, %194
   %concat_size564 = add i64 %concat_total563, 1
-  %196 = call ptr @avra_rc_alloc(i64 %concat_size564)
-  %197 = call ptr @memcpy(ptr %196, ptr %191, i64 %194)
-  %cast565 = ptrtoint ptr %196 to i64
-  %dst2_int566 = add i64 %cast565, %194
+  %195 = call ptr @avra_rc_alloc(i64 %concat_size564)
+  %196 = call ptr @memcpy(ptr %195, ptr %190, i64 %193)
+  %cast565 = ptrtoint ptr %195 to i64
+  %dst2_int566 = add i64 %cast565, %193
   %cast567 = inttoptr i64 %dst2_int566 to ptr
-  %rhs_len_p1568 = add i64 %195, 1
-  %198 = call ptr @memcpy(ptr %cast567, ptr @.str.21485, i64 %rhs_len_p1568)
+  %rhs_len_p1568 = add i64 %194, 1
+  %197 = call ptr @memcpy(ptr %cast567, ptr @.str.21485, i64 %rhs_len_p1568)
   %bin_path569 = load ptr, ptr %bin_path, align 8
-  %199 = call i64 @strlen(ptr %196)
-  %200 = call i64 @strlen(ptr %bin_path569)
-  %concat_total570 = add i64 %199, %200
+  %198 = call i64 @strlen(ptr %195)
+  %199 = call i64 @strlen(ptr %bin_path569)
+  %concat_total570 = add i64 %198, %199
   %concat_size571 = add i64 %concat_total570, 1
-  %201 = call ptr @avra_rc_alloc(i64 %concat_size571)
-  %202 = call ptr @memcpy(ptr %201, ptr %196, i64 %199)
-  %cast572 = ptrtoint ptr %201 to i64
-  %dst2_int573 = add i64 %cast572, %199
+  %200 = call ptr @avra_rc_alloc(i64 %concat_size571)
+  %201 = call ptr @memcpy(ptr %200, ptr %195, i64 %198)
+  %cast572 = ptrtoint ptr %200 to i64
+  %dst2_int573 = add i64 %cast572, %198
   %cast574 = inttoptr i64 %dst2_int573 to ptr
-  %rhs_len_p1575 = add i64 %200, 1
-  %203 = call ptr @memcpy(ptr %cast574, ptr %bin_path569, i64 %rhs_len_p1575)
-  %204 = call i64 @strlen(ptr %201)
-  %205 = call i64 @strlen(ptr @.str.21486)
-  %concat_total576 = add i64 %204, %205
+  %rhs_len_p1575 = add i64 %199, 1
+  %202 = call ptr @memcpy(ptr %cast574, ptr %bin_path569, i64 %rhs_len_p1575)
+  %203 = call i64 @strlen(ptr %200)
+  %204 = call i64 @strlen(ptr @.str.21486)
+  %concat_total576 = add i64 %203, %204
   %concat_size577 = add i64 %concat_total576, 1
-  %206 = call ptr @avra_rc_alloc(i64 %concat_size577)
-  %207 = call ptr @memcpy(ptr %206, ptr %201, i64 %204)
-  %cast578 = ptrtoint ptr %206 to i64
-  %dst2_int579 = add i64 %cast578, %204
+  %205 = call ptr @avra_rc_alloc(i64 %concat_size577)
+  %206 = call ptr @memcpy(ptr %205, ptr %200, i64 %203)
+  %cast578 = ptrtoint ptr %205 to i64
+  %dst2_int579 = add i64 %cast578, %203
   %cast580 = inttoptr i64 %dst2_int579 to ptr
-  %rhs_len_p1581 = add i64 %205, 1
-  %208 = call ptr @memcpy(ptr %cast580, ptr @.str.21486, i64 %rhs_len_p1581)
+  %rhs_len_p1581 = add i64 %204, 1
+  %207 = call ptr @memcpy(ptr %cast580, ptr @.str.21486, i64 %rhs_len_p1581)
   %llvm_lib582 = load ptr, ptr %llvm_lib, align 8
-  %209 = call i64 @strlen(ptr %206)
-  %210 = call i64 @strlen(ptr %llvm_lib582)
-  %concat_total583 = add i64 %209, %210
+  %208 = call i64 @strlen(ptr %205)
+  %209 = call i64 @strlen(ptr %llvm_lib582)
+  %concat_total583 = add i64 %208, %209
   %concat_size584 = add i64 %concat_total583, 1
-  %211 = call ptr @avra_rc_alloc(i64 %concat_size584)
-  %212 = call ptr @memcpy(ptr %211, ptr %206, i64 %209)
-  %cast585 = ptrtoint ptr %211 to i64
-  %dst2_int586 = add i64 %cast585, %209
+  %210 = call ptr @avra_rc_alloc(i64 %concat_size584)
+  %211 = call ptr @memcpy(ptr %210, ptr %205, i64 %208)
+  %cast585 = ptrtoint ptr %210 to i64
+  %dst2_int586 = add i64 %cast585, %208
   %cast587 = inttoptr i64 %dst2_int586 to ptr
-  %rhs_len_p1588 = add i64 %210, 1
-  %213 = call ptr @memcpy(ptr %cast587, ptr %llvm_lib582, i64 %rhs_len_p1588)
-  %214 = call i64 @strlen(ptr %211)
-  %215 = call i64 @strlen(ptr @.str.21487)
-  %concat_total589 = add i64 %214, %215
+  %rhs_len_p1588 = add i64 %209, 1
+  %212 = call ptr @memcpy(ptr %cast587, ptr %llvm_lib582, i64 %rhs_len_p1588)
+  %213 = call i64 @strlen(ptr %210)
+  %214 = call i64 @strlen(ptr @.str.21487)
+  %concat_total589 = add i64 %213, %214
   %concat_size590 = add i64 %concat_total589, 1
-  %216 = call ptr @avra_rc_alloc(i64 %concat_size590)
-  %217 = call ptr @memcpy(ptr %216, ptr %211, i64 %214)
-  %cast591 = ptrtoint ptr %216 to i64
-  %dst2_int592 = add i64 %cast591, %214
+  %215 = call ptr @avra_rc_alloc(i64 %concat_size590)
+  %216 = call ptr @memcpy(ptr %215, ptr %210, i64 %213)
+  %cast591 = ptrtoint ptr %215 to i64
+  %dst2_int592 = add i64 %cast591, %213
   %cast593 = inttoptr i64 %dst2_int592 to ptr
-  %rhs_len_p1594 = add i64 %215, 1
-  %218 = call ptr @memcpy(ptr %cast593, ptr @.str.21487, i64 %rhs_len_p1594)
-  store ptr %216, ptr %link_args, align 8
+  %rhs_len_p1594 = add i64 %214, 1
+  %217 = call ptr @memcpy(ptr %cast593, ptr @.str.21487, i64 %rhs_len_p1594)
+  store ptr %215, ptr %link_args, align 8
   %link_args595 = load ptr, ptr %link_args, align 8
-  %219 = call i64 @avra_process_forward(ptr @.str.21488, ptr %link_args595, ptr @.str.21489)
-  store i64 %219, ptr %link_code, align 8
+  %218 = call i64 @avra_process_forward(ptr @.str.21488, ptr %link_args595, ptr @.str.21489)
+  store i64 %218, ptr %link_code, align 8
   %link_code596 = load i64, ptr %link_code, align 8
   %ne = icmp ne i64 %link_code596, 0
   %ne_ext = zext i1 %ne to i64
@@ -270281,44 +270280,44 @@ ife_then:                                         ; preds = %match_end
 
 ife_else:                                         ; preds = %match_end
   %llvm_env521 = load ptr, ptr %llvm_env, align 8
-  %220 = call i64 @strlen(ptr %llvm_env521)
-  %221 = call i64 @strlen(ptr @.str.21481)
-  %concat_total522 = add i64 %220, %221
+  %219 = call i64 @strlen(ptr %llvm_env521)
+  %220 = call i64 @strlen(ptr @.str.21481)
+  %concat_total522 = add i64 %219, %220
   %concat_size523 = add i64 %concat_total522, 1
-  %222 = call ptr @avra_rc_alloc(i64 %concat_size523)
-  %223 = call ptr @memcpy(ptr %222, ptr %llvm_env521, i64 %220)
-  %cast524 = ptrtoint ptr %222 to i64
-  %dst2_int525 = add i64 %cast524, %220
+  %221 = call ptr @avra_rc_alloc(i64 %concat_size523)
+  %222 = call ptr @memcpy(ptr %221, ptr %llvm_env521, i64 %219)
+  %cast524 = ptrtoint ptr %221 to i64
+  %dst2_int525 = add i64 %cast524, %219
   %cast526 = inttoptr i64 %dst2_int525 to ptr
-  %rhs_len_p1527 = add i64 %221, 1
-  %224 = call ptr @memcpy(ptr %cast526, ptr @.str.21481, i64 %rhs_len_p1527)
-  %cast528 = ptrtoint ptr %222 to i64
+  %rhs_len_p1527 = add i64 %220, 1
+  %223 = call ptr @memcpy(ptr %cast526, ptr @.str.21481, i64 %rhs_len_p1527)
+  %cast528 = ptrtoint ptr %221 to i64
   store i64 %cast528, ptr %ife_result, align 8
   br label %ife_end
 
 ifcont597:                                        ; preds = %if_else600, %if_then599
   %bin_path601 = load ptr, ptr %bin_path, align 8
-  %225 = call i64 @avra_process_forward(ptr %bin_path601, ptr @.str.21491, ptr @.str.21492)
-  store i64 %225, ptr %exit_code, align 8
+  %224 = call i64 @avra_process_forward(ptr %bin_path601, ptr @.str.21491, ptr @.str.21492)
+  store i64 %224, ptr %exit_code, align 8
   %exit_code602 = load i64, ptr %exit_code, align 8
-  %226 = call i64 @avra_process_exit(i64 %exit_code602)
+  %225 = call i64 @avra_process_exit(i64 %exit_code602)
   ret i64 0
 
 if_then599:                                       ; preds = %ife_end
-  %227 = call i64 @fail(ptr @.str.21490)
+  %226 = call i64 @fail(ptr @.str.21490)
   br label %ifcont597
 
 if_else600:                                       ; preds = %ife_end
   br label %ifcont597
 
 ifcont605:                                        ; preds = %if_else608, %if_then607
-  %228 = call ptr @avra_selfhost_get_arg_cstr(i64 1)
-  store ptr %228, ptr %command, align 8
-  %229 = call ptr @avra_selfhost_get_arg_cstr(i64 2)
-  store ptr %229, ptr %path609, align 8
+  %227 = call ptr @avra_selfhost_get_arg_cstr(i64 1)
+  store ptr %227, ptr %command, align 8
+  %228 = call ptr @avra_selfhost_get_arg_cstr(i64 2)
+  store ptr %228, ptr %path609, align 8
   %path610 = load ptr, ptr %path609, align 8
-  %230 = call i64 @avra_str_starts_with(ptr %path610, ptr @.str.21493)
-  store i64 %230, ptr %is_flag, align 8
+  %229 = call i64 @avra_str_starts_with(ptr %path610, ptr @.str.21493)
+  store i64 %229, ptr %is_flag, align 8
   %is_flag611 = load i64, ptr %is_flag, align 8
   %not_cmp612 = icmp eq i64 %is_flag611, 0
   %not_cmp_ext613 = zext i1 %not_cmp612 to i64
@@ -270326,7 +270325,7 @@ ifcont605:                                        ; preds = %if_else608, %if_the
   br i1 %l_bool614, label %sc_rhs615, label %sc_short616
 
 if_then607:                                       ; preds = %ifcont
-  %231 = call i64 @print_usage()
+  %230 = call i64 @print_usage()
   call void @exit(i32 1)
   br label %ifcont605
 
@@ -270335,8 +270334,8 @@ if_else608:                                       ; preds = %ifcont
 
 sc_rhs615:                                        ; preds = %ifcont605
   %path618 = load ptr, ptr %path609, align 8
-  %232 = call i64 @file_exists(ptr %path618)
-  %not_cmp619 = icmp eq i64 %232, 0
+  %231 = call i64 @file_exists(ptr %path618)
+  %not_cmp619 = icmp eq i64 %231, 0
   %not_cmp_ext620 = zext i1 %not_cmp619 to i64
   %r_bool621 = icmp ne i64 %not_cmp_ext620, 0
   br i1 %r_bool621, label %sc_r_true622, label %sc_r_false623
@@ -270366,18 +270365,18 @@ ifcont627:                                        ; preds = %if_else630, %if_the
 
 if_then629:                                       ; preds = %sc_merge617
   %path631 = load ptr, ptr %path609, align 8
-  %233 = call i64 @strlen(ptr @.str.21494)
-  %234 = call i64 @strlen(ptr %path631)
-  %concat_total632 = add i64 %233, %234
+  %232 = call i64 @strlen(ptr @.str.21494)
+  %233 = call i64 @strlen(ptr %path631)
+  %concat_total632 = add i64 %232, %233
   %concat_size633 = add i64 %concat_total632, 1
-  %235 = call ptr @avra_rc_alloc(i64 %concat_size633)
-  %236 = call ptr @memcpy(ptr %235, ptr @.str.21494, i64 %233)
-  %cast634 = ptrtoint ptr %235 to i64
-  %dst2_int635 = add i64 %cast634, %233
+  %234 = call ptr @avra_rc_alloc(i64 %concat_size633)
+  %235 = call ptr @memcpy(ptr %234, ptr @.str.21494, i64 %232)
+  %cast634 = ptrtoint ptr %234 to i64
+  %dst2_int635 = add i64 %cast634, %232
   %cast636 = inttoptr i64 %dst2_int635 to ptr
-  %rhs_len_p1637 = add i64 %234, 1
-  %237 = call ptr @memcpy(ptr %cast636, ptr %path631, i64 %rhs_len_p1637)
-  %238 = call i64 @fail(ptr %235)
+  %rhs_len_p1637 = add i64 %233, 1
+  %236 = call ptr @memcpy(ptr %cast636, ptr %path631, i64 %rhs_len_p1637)
+  %237 = call i64 @fail(ptr %234)
   br label %ifcont627
 
 if_else630:                                       ; preds = %sc_merge617
@@ -270388,8 +270387,8 @@ ife_end640:                                       ; preds = %ife_else643, %ife_t
   %cast647 = inttoptr i64 %ife_val646 to ptr
   store ptr %cast647, ptr %source, align 8
   %command648 = load ptr, ptr %command, align 8
-  %239 = call i32 @strcmp(ptr %command648, ptr @.lit_str.21496)
-  %widen649 = sext i32 %239 to i64
+  %238 = call i32 @strcmp(ptr %command648, ptr @.lit_str.21496)
+  %widen649 = sext i32 %238 to i64
   %str_eq = icmp eq i64 %widen649, 0
   br i1 %str_eq, label %parm_body, label %parm_next
 
@@ -270399,15 +270398,15 @@ ife_then642:                                      ; preds = %ifcont627
 
 ife_else643:                                      ; preds = %ifcont627
   %path644 = load ptr, ptr %path609, align 8
-  %240 = call ptr @read_file(ptr %path644)
-  %cast645 = ptrtoint ptr %240 to i64
+  %239 = call ptr @read_file(ptr %path644)
+  %cast645 = ptrtoint ptr %239 to i64
   store i64 %cast645, ptr %ife_result639, align 8
   br label %ife_end640
 
 pmatch_end:                                       ; preds = %parm_body1660
   %command1663 = load ptr, ptr %command, align 8
-  %241 = call i32 @strcmp(ptr %command1663, ptr @.str.21772)
-  %widen1664 = sext i32 %241 to i64
+  %240 = call i32 @strcmp(ptr %command1663, ptr @.str.21772)
+  %widen1664 = sext i32 %240 to i64
   %streq_cmp1665 = icmp eq i64 %widen1664, 0
   %streq_ext1666 = zext i1 %streq_cmp1665 to i64
   %if_cond1668 = icmp ne i64 %streq_ext1666, 0
@@ -270415,8 +270414,8 @@ pmatch_end:                                       ; preds = %parm_body1660
 
 parm_body:                                        ; preds = %ife_end640
   %source650 = load ptr, ptr %source, align 8
-  %242 = call ptr @"parse::parse_expression_source"(ptr %source650)
-  store ptr %242, ptr %result, align 8
+  %241 = call ptr @"parse::parse_expression_source"(ptr %source650)
+  store ptr %241, ptr %result, align 8
   %result651 = load ptr, ptr %result, align 8
   %cast652 = ptrtoint ptr %result651 to i64
   %null_chk653 = icmp eq i64 %cast652, 0
@@ -270428,8 +270427,8 @@ parm_body:                                        ; preds = %ife_end640
   br i1 %l_bool657, label %sc_short659, label %sc_rhs658
 
 parm_next:                                        ; preds = %ife_end640
-  %243 = call i32 @strcmp(ptr %command648, ptr @.lit_str.21509)
-  %widen692 = sext i32 %243 to i64
+  %242 = call i32 @strcmp(ptr %command648, ptr @.lit_str.21509)
+  %widen692 = sext i32 %242 to i64
   %str_eq693 = icmp eq i64 %widen692, 0
   br i1 %str_eq693, label %parm_body690, label %parm_next691
 
@@ -270472,9 +270471,9 @@ ifcont673:                                        ; preds = %if_else676, %if_the
   call void @avra_null_deref_trap(ptr @fld_name.21506, i64 4, ptr @sty_name.21507, i64 18, i64 %null_ext686, ptr @src_file.21508, i64 103, i64 719)
   %expr_ptr687 = getelementptr inbounds nuw %"parse::ParseResult", ptr %result683, i32 0, i32 0
   %expr688 = load ptr, ptr %expr_ptr687, align 8
-  %244 = call ptr @"core::ast::render_expr"(ptr %expr688)
-  %245 = call i32 @puts(ptr %244)
-  %widen689 = sext i32 %245 to i64
+  %243 = call ptr @"core::ast::render_expr"(ptr %expr688)
+  %244 = call i32 @puts(ptr %243)
+  %widen689 = sext i32 %244 to i64
   ret i64 0
 
 if_then675:                                       ; preds = %sc_merge660
@@ -270485,7 +270484,7 @@ if_then675:                                       ; preds = %sc_merge660
   call void @avra_null_deref_trap(ptr @fld_name.21503, i64 13, ptr @sty_name.21504, i64 18, i64 %null_ext680, ptr @src_file.21505, i64 103, i64 717)
   %error_message_ptr681 = getelementptr inbounds nuw %"parse::ParseResult", ptr %result677, i32 0, i32 2
   %error_message682 = load ptr, ptr %error_message_ptr681, align 8
-  %246 = call i64 @fail(ptr %error_message682)
+  %245 = call i64 @fail(ptr %error_message682)
   br label %ifcont673
 
 if_else676:                                       ; preds = %sc_merge660
@@ -270493,8 +270492,8 @@ if_else676:                                       ; preds = %sc_merge660
 
 parm_body690:                                     ; preds = %parm_next
   %source694 = load ptr, ptr %source, align 8
-  %247 = call ptr @"parse::parse_program_source"(ptr %source694)
-  store ptr %247, ptr %result695, align 8
+  %246 = call ptr @"parse::parse_program_source"(ptr %source694)
+  store ptr %246, ptr %result695, align 8
   %result696 = load ptr, ptr %result695, align 8
   %cast697 = ptrtoint ptr %result696 to i64
   %null_chk698 = icmp eq i64 %cast697, 0
@@ -270506,8 +270505,8 @@ parm_body690:                                     ; preds = %parm_next
   br i1 %l_bool702, label %sc_short704, label %sc_rhs703
 
 parm_next691:                                     ; preds = %parm_next
-  %248 = call i32 @strcmp(ptr %command648, ptr @.lit_str.21522)
-  %widen739 = sext i32 %248 to i64
+  %247 = call i32 @strcmp(ptr %command648, ptr @.lit_str.21522)
+  %widen739 = sext i32 %247 to i64
   %str_eq740 = icmp eq i64 %widen739, 0
   br i1 %str_eq740, label %parm_body737, label %parm_next738
 
@@ -270550,9 +270549,9 @@ ifcont720:                                        ; preds = %if_else723, %if_the
   call void @avra_null_deref_trap(ptr @fld_name.21519, i64 5, ptr @sty_name.21520, i64 25, i64 %null_ext733, ptr @src_file.21521, i64 103, i64 728)
   %stmts_ptr734 = getelementptr inbounds nuw %"parse::ProgramParseResult", ptr %result730, i32 0, i32 0
   %stmts735 = load ptr, ptr %stmts_ptr734, align 8
-  %249 = call ptr @"core::ast::render_stmt_list"(ptr %stmts735)
-  %250 = call i32 @puts(ptr %249)
-  %widen736 = sext i32 %250 to i64
+  %248 = call ptr @"core::ast::render_stmt_list"(ptr %stmts735)
+  %249 = call i32 @puts(ptr %248)
+  %widen736 = sext i32 %249 to i64
   ret i64 0
 
 if_then722:                                       ; preds = %sc_merge705
@@ -270563,7 +270562,7 @@ if_then722:                                       ; preds = %sc_merge705
   call void @avra_null_deref_trap(ptr @fld_name.21516, i64 13, ptr @sty_name.21517, i64 25, i64 %null_ext727, ptr @src_file.21518, i64 103, i64 726)
   %error_message_ptr728 = getelementptr inbounds nuw %"parse::ProgramParseResult", ptr %result724, i32 0, i32 2
   %error_message729 = load ptr, ptr %error_message_ptr728, align 8
-  %251 = call i64 @fail(ptr %error_message729)
+  %250 = call i64 @fail(ptr %error_message729)
   br label %ifcont720
 
 if_else723:                                       ; preds = %sc_merge705
@@ -270571,8 +270570,8 @@ if_else723:                                       ; preds = %sc_merge705
 
 parm_body737:                                     ; preds = %parm_next691
   %source741 = load ptr, ptr %source, align 8
-  %252 = call ptr @"features::eval::eval_expression_source"(ptr %source741)
-  store ptr %252, ptr %result742, align 8
+  %251 = call ptr @"features::eval::eval_expression_source"(ptr %source741)
+  store ptr %251, ptr %result742, align 8
   %result743 = load ptr, ptr %result742, align 8
   %cast744 = ptrtoint ptr %result743 to i64
   %null_chk745 = icmp eq i64 %cast744, 0
@@ -270584,8 +270583,8 @@ parm_body737:                                     ; preds = %parm_next691
   br i1 %l_bool749, label %sc_short751, label %sc_rhs750
 
 parm_next738:                                     ; preds = %parm_next691
-  %253 = call i32 @strcmp(ptr %command648, ptr @.lit_str.21535)
-  %widen784 = sext i32 %253 to i64
+  %252 = call i32 @strcmp(ptr %command648, ptr @.lit_str.21535)
+  %widen784 = sext i32 %252 to i64
   %str_eq785 = icmp eq i64 %widen784, 0
   br i1 %str_eq785, label %parm_body782, label %parm_next783
 
@@ -270628,9 +270627,9 @@ ifcont765:                                        ; preds = %if_else768, %if_the
   call void @avra_null_deref_trap(ptr @fld_name.21532, i64 5, ptr @sty_name.21533, i64 26, i64 %null_ext778, ptr @src_file.21534, i64 103, i64 737)
   %value_ptr779 = getelementptr inbounds nuw %"features::eval::EvalResult", ptr %result775, i32 0, i32 0
   %value780 = load ptr, ptr %value_ptr779, align 8
-  %254 = call ptr @"features::eval::render_value"(ptr %value780)
-  %255 = call i32 @puts(ptr %254)
-  %widen781 = sext i32 %255 to i64
+  %253 = call ptr @"features::eval::render_value"(ptr %value780)
+  %254 = call i32 @puts(ptr %253)
+  %widen781 = sext i32 %254 to i64
   ret i64 0
 
 if_then767:                                       ; preds = %sc_merge752
@@ -270641,7 +270640,7 @@ if_then767:                                       ; preds = %sc_merge752
   call void @avra_null_deref_trap(ptr @fld_name.21529, i64 13, ptr @sty_name.21530, i64 26, i64 %null_ext772, ptr @src_file.21531, i64 103, i64 735)
   %error_message_ptr773 = getelementptr inbounds nuw %"features::eval::EvalResult", ptr %result769, i32 0, i32 2
   %error_message774 = load ptr, ptr %error_message_ptr773, align 8
-  %256 = call i64 @fail(ptr %error_message774)
+  %255 = call i64 @fail(ptr %error_message774)
   br label %ifcont765
 
 if_else768:                                       ; preds = %sc_merge752
@@ -270650,15 +270649,15 @@ if_else768:                                       ; preds = %sc_merge752
 parm_body782:                                     ; preds = %parm_next738
   %app786 = load i64, ptr %app, align 8
   %cast787 = inttoptr i64 %app786 to ptr
-  %257 = call ptr @"cli::cli_parse"(ptr %cast787)
-  store ptr %257, ptr %check_parsed, align 8
+  %256 = call ptr @"cli::cli_parse"(ptr %cast787)
+  store ptr %256, ptr %check_parsed, align 8
   %check_parsed788 = load ptr, ptr %check_parsed, align 8
-  %258 = call i1 @"cli::result_has_flag"(ptr %check_parsed788, ptr @.str.21536)
-  %widen789 = zext i1 %258 to i64
+  %257 = call i1 @"cli::result_has_flag"(ptr %check_parsed788, ptr @.str.21536)
+  %widen789 = zext i1 %257 to i64
   %cast790 = trunc i64 %widen789 to i1
   store i1 %cast790, ptr %check_json, align 8
-  %259 = call i64 @avra_selfhost_argc()
-  store i64 %259, ptr %check_argc, align 8
+  %258 = call i64 @avra_selfhost_argc()
+  store i64 %258, ptr %check_argc, align 8
   %check_argc791 = load i64, ptr %check_argc, align 8
   %sgt = icmp sgt i64 %check_argc791, 3
   %sgt_ext = zext i1 %sgt to i64
@@ -270666,8 +270665,8 @@ parm_body782:                                     ; preds = %parm_next738
   br i1 %ife_cond794, label %ife_then795, label %ife_else796
 
 parm_next783:                                     ; preds = %parm_next738
-  %260 = call i32 @strcmp(ptr %command648, ptr @.lit_str.21618)
-  %widen1129 = sext i32 %260 to i64
+  %259 = call i32 @strcmp(ptr %command648, ptr @.lit_str.21618)
+  %widen1129 = sext i32 %259 to i64
   %str_eq1130 = icmp eq i64 %widen1129, 0
   br i1 %str_eq1130, label %parm_body1127, label %parm_next1128
 
@@ -270677,8 +270676,8 @@ ife_end793:                                       ; preds = %ife_else796, %ife_t
   store ptr %cast802, ptr %check_path, align 8
   %check_path803 = load ptr, ptr %check_path, align 8
   %path804 = load ptr, ptr %path609, align 8
-  %261 = call i32 @strcmp(ptr %check_path803, ptr %path804)
-  %widen805 = sext i32 %261 to i64
+  %260 = call i32 @strcmp(ptr %check_path803, ptr %path804)
+  %widen805 = sext i32 %260 to i64
   %streq_cmp806 = icmp ne i64 %widen805, 0
   %streq_ext807 = zext i1 %streq_cmp806 to i64
   %ife_cond810 = icmp ne i64 %streq_ext807, 0
@@ -270687,8 +270686,8 @@ ife_end793:                                       ; preds = %ife_else796, %ife_t
 ife_then795:                                      ; preds = %parm_body782
   %check_argc797 = load i64, ptr %check_argc, align 8
   %sub = sub i64 %check_argc797, 1
-  %262 = call ptr @avra_selfhost_get_arg_cstr(i64 %sub)
-  %cast798 = ptrtoint ptr %262 to i64
+  %261 = call ptr @avra_selfhost_get_arg_cstr(i64 %sub)
+  %cast798 = ptrtoint ptr %261 to i64
   store i64 %cast798, ptr %ife_result792, align 8
   br label %ife_end793
 
@@ -270703,8 +270702,8 @@ ife_end809:                                       ; preds = %ife_else812, %ife_t
   %cast818 = inttoptr i64 %ife_val817 to ptr
   store ptr %cast818, ptr %check_source, align 8
   %check_source819 = load ptr, ptr %check_source, align 8
-  %263 = call ptr @"parse::parse_program_source"(ptr %check_source819)
-  store ptr %263, ptr %parsed820, align 8
+  %262 = call ptr @"parse::parse_program_source"(ptr %check_source819)
+  store ptr %262, ptr %parsed820, align 8
   %parsed821 = load ptr, ptr %parsed820, align 8
   %cast822 = ptrtoint ptr %parsed821 to i64
   %null_chk823 = icmp eq i64 %cast822, 0
@@ -270717,8 +270716,8 @@ ife_end809:                                       ; preds = %ife_else812, %ife_t
 
 ife_then811:                                      ; preds = %ife_end793
   %check_path813 = load ptr, ptr %check_path, align 8
-  %264 = call ptr @read_file(ptr %check_path813)
-  %cast814 = ptrtoint ptr %264 to i64
+  %263 = call ptr @read_file(ptr %check_path813)
+  %cast814 = ptrtoint ptr %263 to i64
   store i64 %cast814, ptr %ife_result808, align 8
   br label %ife_end809
 
@@ -270761,11 +270760,11 @@ sc_r_merge842:                                    ; preds = %sc_r_false841, %sc_
 
 ifcont845:                                        ; preds = %if_else848, %ifcont856
   %check_path885 = load ptr, ptr %check_path, align 8
-  %265 = call ptr @"features::modules::resolver::modules_dirname"(ptr %check_path885)
-  store ptr %265, ptr %check_dir, align 8
+  %264 = call ptr @"features::modules::resolver::modules_dirname"(ptr %check_path885)
+  store ptr %264, ptr %check_dir, align 8
   %check_dir886 = load ptr, ptr %check_dir, align 8
-  %266 = call ptr @"features::modules::package::load_package_config"(ptr %check_dir886)
-  store ptr %266, ptr %check_pkg, align 8
+  %265 = call ptr @"features::modules::package::load_package_config"(ptr %check_dir886)
+  store ptr %265, ptr %check_pkg, align 8
   %check_pkg887 = load ptr, ptr %check_pkg, align 8
   %cast888 = ptrtoint ptr %check_pkg887 to i64
   %null_chk889 = icmp eq i64 %cast888, 0
@@ -270783,8 +270782,8 @@ if_then847:                                       ; preds = %sc_merge830
   call void @avra_null_deref_trap(ptr @fld_name.21543, i64 3, ptr @sty_name.21544, i64 25, i64 %null_ext852, ptr @src_file.21545, i64 103, i64 752)
   %bag_ptr853 = getelementptr inbounds nuw %"parse::ProgramParseResult", ptr %parsed849, i32 0, i32 3
   %bag854 = load ptr, ptr %bag_ptr853, align 8
-  %267 = call i1 @"diagnostics::bag_has_errors"(ptr %bag854)
-  %widen855 = zext i1 %267 to i64
+  %266 = call i1 @"diagnostics::bag_has_errors"(ptr %bag854)
+  %widen855 = zext i1 %266 to i64
   %if_cond857 = icmp ne i64 %widen855, 0
   br i1 %if_cond857, label %if_then858, label %if_else859
 
@@ -270799,7 +270798,7 @@ ifcont856:                                        ; preds = %if_else859, %ifcont
   call void @avra_null_deref_trap(ptr @fld_name.21552, i64 13, ptr @sty_name.21553, i64 25, i64 %null_ext882, ptr @src_file.21554, i64 103, i64 755)
   %error_message_ptr883 = getelementptr inbounds nuw %"parse::ProgramParseResult", ptr %parsed879, i32 0, i32 2
   %error_message884 = load ptr, ptr %error_message_ptr883, align 8
-  %268 = call i64 @fail(ptr %error_message884)
+  %267 = call i64 @fail(ptr %error_message884)
   br label %ifcont845
 
 if_then858:                                       ; preds = %if_then847
@@ -270821,7 +270820,7 @@ if_then862:                                       ; preds = %if_then858
   call void @avra_null_deref_trap(ptr @fld_name.21546, i64 3, ptr @sty_name.21547, i64 25, i64 %null_ext868, ptr @src_file.21548, i64 103, i64 753)
   %bag_ptr869 = getelementptr inbounds nuw %"parse::ProgramParseResult", ptr %parsed865, i32 0, i32 3
   %bag870 = load ptr, ptr %bag_ptr869, align 8
-  %269 = call i64 @"diagnostics::render::render_bag_json"(ptr %check_path864, ptr %bag870)
+  %268 = call i64 @"diagnostics::render::render_bag_json"(ptr %check_path864, ptr %bag870)
   br label %ifcont861
 
 if_else863:                                       ; preds = %if_then858
@@ -270834,7 +270833,7 @@ if_else863:                                       ; preds = %if_then858
   call void @avra_null_deref_trap(ptr @fld_name.21549, i64 3, ptr @sty_name.21550, i64 25, i64 %null_ext876, ptr @src_file.21551, i64 103, i64 753)
   %bag_ptr877 = getelementptr inbounds nuw %"parse::ProgramParseResult", ptr %parsed873, i32 0, i32 3
   %bag878 = load ptr, ptr %bag_ptr877, align 8
-  %270 = call i64 @"diagnostics::render::render_bag"(ptr %check_source871, ptr %check_path872, ptr %bag878)
+  %269 = call i64 @"diagnostics::render::render_bag"(ptr %check_source871, ptr %check_path872, ptr %bag878)
   br label %ifcont861
 
 sc_rhs891:                                        ; preds = %ifcont845
@@ -270870,22 +270869,22 @@ ifcont903:                                        ; preds = %if_else906, %if_the
   call void @avra_null_deref_trap(ptr @fld_name.21566, i64 5, ptr @sty_name.21567, i64 25, i64 %null_ext936, ptr @src_file.21568, i64 103, i64 762)
   %stmts_ptr937 = getelementptr inbounds nuw %"parse::ProgramParseResult", ptr %parsed933, i32 0, i32 0
   %stmts938 = load ptr, ptr %stmts_ptr937, align 8
-  %271 = call ptr @"desugar::desugar_program"(ptr %stmts938)
-  store ptr %271, ptr %desugared939, align 8
+  %270 = call ptr @"desugar::desugar_program"(ptr %stmts938)
+  store ptr %270, ptr %desugared939, align 8
   %check_path940 = load ptr, ptr %check_path, align 8
-  %272 = call ptr @"features::modules::resolver::modules_dirname"(ptr %check_path940)
-  store ptr %272, ptr %entry_dir, align 8
+  %271 = call ptr @"features::modules::resolver::modules_dirname"(ptr %check_path940)
+  store ptr %271, ptr %entry_dir, align 8
   %desugared941 = load ptr, ptr %desugared939, align 8
   %entry_dir942 = load ptr, ptr %entry_dir, align 8
-  %273 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr943 = getelementptr inbounds nuw %"features::modules::resolver::LoadedPaths", ptr %273, i32 0, i32 0
+  %272 = call ptr @avra_rc_alloc(i64 16)
+  %tag_ptr943 = getelementptr inbounds nuw %"features::modules::resolver::LoadedPaths", ptr %272, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr943, align 8
-  %pay_ptr944 = getelementptr inbounds nuw %"features::modules::resolver::LoadedPaths", ptr %273, i32 0, i32 1
+  %pay_ptr944 = getelementptr inbounds nuw %"features::modules::resolver::LoadedPaths", ptr %272, i32 0, i32 1
   store ptr null, ptr %pay_ptr944, align 8
-  %cast945 = ptrtoint ptr %273 to i64
+  %cast945 = ptrtoint ptr %272 to i64
   %cast946 = inttoptr i64 %cast945 to ptr
-  %274 = call ptr @"features::modules::resolver::resolve_module_files"(ptr %desugared941, ptr %entry_dir942, ptr %cast946)
-  store ptr %274, ptr %mod_resolved, align 8
+  %273 = call ptr @"features::modules::resolver::resolve_module_files"(ptr %desugared941, ptr %entry_dir942, ptr %cast946)
+  store ptr %273, ptr %mod_resolved, align 8
   %mod_resolved947 = load ptr, ptr %mod_resolved, align 8
   %cast948 = ptrtoint ptr %mod_resolved947 to i64
   %null_chk949 = icmp eq i64 %cast948, 0
@@ -270904,28 +270903,28 @@ if_then905:                                       ; preds = %sc_merge893
   call void @avra_null_deref_trap(ptr @fld_name.21559, i64 4, ptr @sty_name.21560, i64 41, i64 %null_ext910, ptr @src_file.21561, i64 103, i64 760)
   %name_ptr = getelementptr inbounds nuw %"features::modules::package::PackageConfig", ptr %check_pkg907, i32 0, i32 0
   %name = load ptr, ptr %name_ptr, align 8
-  %275 = call i64 @strlen(ptr @.str.21558)
-  %276 = call i64 @strlen(ptr %name)
-  %concat_total911 = add i64 %275, %276
+  %274 = call i64 @strlen(ptr @.str.21558)
+  %275 = call i64 @strlen(ptr %name)
+  %concat_total911 = add i64 %274, %275
   %concat_size912 = add i64 %concat_total911, 1
-  %277 = call ptr @avra_rc_alloc(i64 %concat_size912)
-  %278 = call ptr @memcpy(ptr %277, ptr @.str.21558, i64 %275)
-  %cast913 = ptrtoint ptr %277 to i64
-  %dst2_int914 = add i64 %cast913, %275
+  %276 = call ptr @avra_rc_alloc(i64 %concat_size912)
+  %277 = call ptr @memcpy(ptr %276, ptr @.str.21558, i64 %274)
+  %cast913 = ptrtoint ptr %276 to i64
+  %dst2_int914 = add i64 %cast913, %274
   %cast915 = inttoptr i64 %dst2_int914 to ptr
-  %rhs_len_p1916 = add i64 %276, 1
-  %279 = call ptr @memcpy(ptr %cast915, ptr %name, i64 %rhs_len_p1916)
-  %280 = call i64 @strlen(ptr %277)
-  %281 = call i64 @strlen(ptr @.str.21562)
-  %concat_total917 = add i64 %280, %281
+  %rhs_len_p1916 = add i64 %275, 1
+  %278 = call ptr @memcpy(ptr %cast915, ptr %name, i64 %rhs_len_p1916)
+  %279 = call i64 @strlen(ptr %276)
+  %280 = call i64 @strlen(ptr @.str.21562)
+  %concat_total917 = add i64 %279, %280
   %concat_size918 = add i64 %concat_total917, 1
-  %282 = call ptr @avra_rc_alloc(i64 %concat_size918)
-  %283 = call ptr @memcpy(ptr %282, ptr %277, i64 %280)
-  %cast919 = ptrtoint ptr %282 to i64
-  %dst2_int920 = add i64 %cast919, %280
+  %281 = call ptr @avra_rc_alloc(i64 %concat_size918)
+  %282 = call ptr @memcpy(ptr %281, ptr %276, i64 %279)
+  %cast919 = ptrtoint ptr %281 to i64
+  %dst2_int920 = add i64 %cast919, %279
   %cast921 = inttoptr i64 %dst2_int920 to ptr
-  %rhs_len_p1922 = add i64 %281, 1
-  %284 = call ptr @memcpy(ptr %cast921, ptr @.str.21562, i64 %rhs_len_p1922)
+  %rhs_len_p1922 = add i64 %280, 1
+  %283 = call ptr @memcpy(ptr %cast921, ptr @.str.21562, i64 %rhs_len_p1922)
   %check_pkg923 = load ptr, ptr %check_pkg, align 8
   %cast924 = ptrtoint ptr %check_pkg923 to i64
   %null_chk925 = icmp eq i64 %cast924, 0
@@ -270933,18 +270932,18 @@ if_then905:                                       ; preds = %sc_merge893
   call void @avra_null_deref_trap(ptr @fld_name.21563, i64 7, ptr @sty_name.21564, i64 41, i64 %null_ext926, ptr @src_file.21565, i64 103, i64 760)
   %version_ptr = getelementptr inbounds nuw %"features::modules::package::PackageConfig", ptr %check_pkg923, i32 0, i32 1
   %version = load ptr, ptr %version_ptr, align 8
-  %285 = call i64 @strlen(ptr %282)
-  %286 = call i64 @strlen(ptr %version)
-  %concat_total927 = add i64 %285, %286
+  %284 = call i64 @strlen(ptr %281)
+  %285 = call i64 @strlen(ptr %version)
+  %concat_total927 = add i64 %284, %285
   %concat_size928 = add i64 %concat_total927, 1
-  %287 = call ptr @avra_rc_alloc(i64 %concat_size928)
-  %288 = call ptr @memcpy(ptr %287, ptr %282, i64 %285)
-  %cast929 = ptrtoint ptr %287 to i64
-  %dst2_int930 = add i64 %cast929, %285
+  %286 = call ptr @avra_rc_alloc(i64 %concat_size928)
+  %287 = call ptr @memcpy(ptr %286, ptr %281, i64 %284)
+  %cast929 = ptrtoint ptr %286 to i64
+  %dst2_int930 = add i64 %cast929, %284
   %cast931 = inttoptr i64 %dst2_int930 to ptr
-  %rhs_len_p1932 = add i64 %286, 1
-  %289 = call ptr @memcpy(ptr %cast931, ptr %version, i64 %rhs_len_p1932)
-  call void @avra_eprintln(ptr %287)
+  %rhs_len_p1932 = add i64 %285, 1
+  %288 = call ptr @memcpy(ptr %cast931, ptr %version, i64 %rhs_len_p1932)
+  call void @avra_eprintln(ptr %286)
   br label %ifcont903
 
 if_else906:                                       ; preds = %sc_merge893
@@ -270958,11 +270957,11 @@ ifcont953:                                        ; preds = %if_else956, %ifcont
   call void @avra_null_deref_trap(ptr @fld_name.21578, i64 5, ptr @sty_name.21579, i64 42, i64 %null_ext985, ptr @src_file.21580, i64 103, i64 770)
   %stmts_ptr986 = getelementptr inbounds nuw %"features::modules::resolver::ModListResult", ptr %mod_resolved982, i32 0, i32 0
   %stmts987 = load ptr, ptr %stmts_ptr986, align 8
-  %290 = call ptr @"features::component_decl::expand::expand_components"(ptr %stmts987)
-  store ptr %290, ptr %expanded988, align 8
+  %289 = call ptr @"features::component_decl::expand::expand_components"(ptr %stmts987)
+  store ptr %289, ptr %expanded988, align 8
   %expanded989 = load ptr, ptr %expanded988, align 8
-  %291 = call ptr @"resolve::names::resolve_names"(ptr %expanded989)
-  store ptr %291, ptr %named990, align 8
+  %290 = call ptr @"resolve::names::resolve_names"(ptr %expanded989)
+  store ptr %290, ptr %named990, align 8
   %named991 = load ptr, ptr %named990, align 8
   %cast992 = ptrtoint ptr %named991 to i64
   %null_chk993 = icmp eq i64 %cast992, 0
@@ -270970,19 +270969,19 @@ ifcont953:                                        ; preds = %if_else956, %ifcont
   call void @avra_null_deref_trap(ptr @fld_name.21581, i64 3, ptr @sty_name.21582, i64 33, i64 %null_ext994, ptr @src_file.21583, i64 103, i64 772)
   %bag_ptr995 = getelementptr inbounds nuw %"resolve::names::NameResolveResult", ptr %named991, i32 0, i32 3
   %bag996 = load ptr, ptr %bag_ptr995, align 8
-  %292 = call i1 @"diagnostics::bag_has_errors"(ptr %bag996)
-  %widen997 = zext i1 %292 to i64
+  %291 = call i1 @"diagnostics::bag_has_errors"(ptr %bag996)
+  %widen997 = zext i1 %291 to i64
   %l_bool998 = icmp ne i64 %widen997, 0
   br i1 %l_bool998, label %sc_short1000, label %sc_rhs999
 
 if_then955:                                       ; preds = %ifcont903
-  %293 = call ptr @"diagnostics::bag_new"()
-  %294 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr957 = getelementptr inbounds nuw %"diagnostics::DiagCode", ptr %294, i32 0, i32 0
+  %292 = call ptr @"diagnostics::bag_new"()
+  %293 = call ptr @avra_rc_alloc(i64 16)
+  %tag_ptr957 = getelementptr inbounds nuw %"diagnostics::DiagCode", ptr %293, i32 0, i32 0
   store i64 6736596269474561240, ptr %tag_ptr957, align 8
-  %pay_ptr958 = getelementptr inbounds nuw %"diagnostics::DiagCode", ptr %294, i32 0, i32 1
+  %pay_ptr958 = getelementptr inbounds nuw %"diagnostics::DiagCode", ptr %293, i32 0, i32 1
   store ptr null, ptr %pay_ptr958, align 8
-  %cast959 = ptrtoint ptr %294 to i64
+  %cast959 = ptrtoint ptr %293 to i64
   %mod_resolved960 = load ptr, ptr %mod_resolved, align 8
   %cast961 = ptrtoint ptr %mod_resolved960 to i64
   %null_chk962 = icmp eq i64 %cast961, 0
@@ -270990,11 +270989,11 @@ if_then955:                                       ; preds = %ifcont903
   call void @avra_null_deref_trap(ptr @fld_name.21572, i64 13, ptr @sty_name.21573, i64 42, i64 %null_ext963, ptr @src_file.21574, i64 103, i64 766)
   %error_message_ptr964 = getelementptr inbounds nuw %"features::modules::resolver::ModListResult", ptr %mod_resolved960, i32 0, i32 3
   %error_message965 = load ptr, ptr %error_message_ptr964, align 8
-  %295 = call ptr @"diagnostics::span_dummy"()
+  %294 = call ptr @"diagnostics::span_dummy"()
   %cast966 = inttoptr i64 %cast959 to ptr
-  %296 = call ptr @"diagnostics::diag_error"(ptr %cast966, ptr %error_message965, ptr %295)
-  %297 = call ptr @"diagnostics::bag_report"(ptr %293, ptr %296)
-  store ptr %297, ptr %mod_bag, align 8
+  %295 = call ptr @"diagnostics::diag_error"(ptr %cast966, ptr %error_message965, ptr %294)
+  %296 = call ptr @"diagnostics::bag_report"(ptr %292, ptr %295)
+  store ptr %296, ptr %mod_bag, align 8
   %check_json967 = load i1, ptr %check_json, align 8
   br i1 %check_json967, label %if_then969, label %if_else970
 
@@ -271009,20 +271008,20 @@ ifcont968:                                        ; preds = %if_else970, %if_the
   call void @avra_null_deref_trap(ptr @fld_name.21575, i64 13, ptr @sty_name.21576, i64 42, i64 %null_ext979, ptr @src_file.21577, i64 103, i64 768)
   %error_message_ptr980 = getelementptr inbounds nuw %"features::modules::resolver::ModListResult", ptr %mod_resolved976, i32 0, i32 3
   %error_message981 = load ptr, ptr %error_message_ptr980, align 8
-  %298 = call i64 @fail(ptr %error_message981)
+  %297 = call i64 @fail(ptr %error_message981)
   br label %ifcont953
 
 if_then969:                                       ; preds = %if_then955
   %check_path971 = load ptr, ptr %check_path, align 8
   %mod_bag972 = load ptr, ptr %mod_bag, align 8
-  %299 = call i64 @"diagnostics::render::render_bag_json"(ptr %check_path971, ptr %mod_bag972)
+  %298 = call i64 @"diagnostics::render::render_bag_json"(ptr %check_path971, ptr %mod_bag972)
   br label %ifcont968
 
 if_else970:                                       ; preds = %if_then955
   %check_source973 = load ptr, ptr %check_source, align 8
   %check_path974 = load ptr, ptr %check_path, align 8
   %mod_bag975 = load ptr, ptr %mod_bag, align 8
-  %300 = call i64 @"diagnostics::render::render_bag"(ptr %check_source973, ptr %check_path974, ptr %mod_bag975)
+  %299 = call i64 @"diagnostics::render::render_bag"(ptr %check_source973, ptr %check_path974, ptr %mod_bag975)
   br label %ifcont968
 
 sc_rhs999:                                        ; preds = %ifcont953
@@ -271033,8 +271032,8 @@ sc_rhs999:                                        ; preds = %ifcont953
   call void @avra_null_deref_trap(ptr @fld_name.21584, i64 3, ptr @sty_name.21585, i64 33, i64 %null_ext1005, ptr @src_file.21586, i64 103, i64 772)
   %bag_ptr1006 = getelementptr inbounds nuw %"resolve::names::NameResolveResult", ptr %named1002, i32 0, i32 3
   %bag1007 = load ptr, ptr %bag_ptr1006, align 8
-  %301 = call i1 @"diagnostics::bag_has_warnings"(ptr %bag1007)
-  %widen1008 = zext i1 %301 to i64
+  %300 = call i1 @"diagnostics::bag_has_warnings"(ptr %bag1007)
+  %widen1008 = zext i1 %300 to i64
   %r_bool1009 = icmp ne i64 %widen1008, 0
   br i1 %r_bool1009, label %sc_r_true1010, label %sc_r_false1011
 
@@ -271086,7 +271085,7 @@ if_then1021:                                      ; preds = %if_then1017
   call void @avra_null_deref_trap(ptr @fld_name.21587, i64 3, ptr @sty_name.21588, i64 33, i64 %null_ext1027, ptr @src_file.21589, i64 103, i64 773)
   %bag_ptr1028 = getelementptr inbounds nuw %"resolve::names::NameResolveResult", ptr %named1024, i32 0, i32 3
   %bag1029 = load ptr, ptr %bag_ptr1028, align 8
-  %302 = call i64 @"diagnostics::render::render_bag_json"(ptr %check_path1023, ptr %bag1029)
+  %301 = call i64 @"diagnostics::render::render_bag_json"(ptr %check_path1023, ptr %bag1029)
   br label %ifcont1020
 
 if_else1022:                                      ; preds = %if_then1017
@@ -271099,7 +271098,7 @@ if_else1022:                                      ; preds = %if_then1017
   call void @avra_null_deref_trap(ptr @fld_name.21590, i64 3, ptr @sty_name.21591, i64 33, i64 %null_ext1035, ptr @src_file.21592, i64 103, i64 773)
   %bag_ptr1036 = getelementptr inbounds nuw %"resolve::names::NameResolveResult", ptr %named1032, i32 0, i32 3
   %bag1037 = load ptr, ptr %bag_ptr1036, align 8
-  %303 = call i64 @"diagnostics::render::render_bag"(ptr %check_source1030, ptr %check_path1031, ptr %bag1037)
+  %302 = call i64 @"diagnostics::render::render_bag"(ptr %check_source1030, ptr %check_path1031, ptr %bag1037)
   br label %ifcont1020
 
 ifcont1044:                                       ; preds = %if_else1047, %if_then1046
@@ -271110,8 +271109,8 @@ ifcont1044:                                       ; preds = %if_else1047, %if_th
   call void @avra_null_deref_trap(ptr @fld_name.21599, i64 5, ptr @sty_name.21600, i64 33, i64 %null_ext1057, ptr @src_file.21601, i64 103, i64 776)
   %stmts_ptr1058 = getelementptr inbounds nuw %"resolve::names::NameResolveResult", ptr %named1054, i32 0, i32 0
   %stmts1059 = load ptr, ptr %stmts_ptr1058, align 8
-  %304 = call ptr @"typeck::typecheck_program"(ptr %stmts1059)
-  store ptr %304, ptr %tc_result1060, align 8
+  %303 = call ptr @"typeck::typecheck_program"(ptr %stmts1059)
+  store ptr %303, ptr %tc_result1060, align 8
   %tc_result1061 = load ptr, ptr %tc_result1060, align 8
   %cast1062 = ptrtoint ptr %tc_result1061 to i64
   %null_chk1063 = icmp eq i64 %cast1062, 0
@@ -271119,8 +271118,8 @@ ifcont1044:                                       ; preds = %if_else1047, %if_th
   call void @avra_null_deref_trap(ptr @fld_name.21602, i64 3, ptr @sty_name.21603, i64 23, i64 %null_ext1064, ptr @src_file.21604, i64 103, i64 777)
   %bag_ptr1065 = getelementptr inbounds nuw %"typeck::TypeCheckResult", ptr %tc_result1061, i32 0, i32 2
   %bag1066 = load ptr, ptr %bag_ptr1065, align 8
-  %305 = call i1 @"diagnostics::bag_has_errors"(ptr %bag1066)
-  %widen1067 = zext i1 %305 to i64
+  %304 = call i1 @"diagnostics::bag_has_errors"(ptr %bag1066)
+  %widen1067 = zext i1 %304 to i64
   %l_bool1068 = icmp ne i64 %widen1067, 0
   br i1 %l_bool1068, label %sc_short1070, label %sc_rhs1069
 
@@ -271132,7 +271131,7 @@ if_then1046:                                      ; preds = %ifcont1015
   call void @avra_null_deref_trap(ptr @fld_name.21596, i64 13, ptr @sty_name.21597, i64 33, i64 %null_ext1051, ptr @src_file.21598, i64 103, i64 775)
   %error_message_ptr1052 = getelementptr inbounds nuw %"resolve::names::NameResolveResult", ptr %named1048, i32 0, i32 2
   %error_message1053 = load ptr, ptr %error_message_ptr1052, align 8
-  %306 = call i64 @fail(ptr %error_message1053)
+  %305 = call i64 @fail(ptr %error_message1053)
   br label %ifcont1044
 
 if_else1047:                                      ; preds = %ifcont1015
@@ -271146,8 +271145,8 @@ sc_rhs1069:                                       ; preds = %ifcont1044
   call void @avra_null_deref_trap(ptr @fld_name.21605, i64 3, ptr @sty_name.21606, i64 23, i64 %null_ext1075, ptr @src_file.21607, i64 103, i64 777)
   %bag_ptr1076 = getelementptr inbounds nuw %"typeck::TypeCheckResult", ptr %tc_result1072, i32 0, i32 2
   %bag1077 = load ptr, ptr %bag_ptr1076, align 8
-  %307 = call i1 @"diagnostics::bag_has_warnings"(ptr %bag1077)
-  %widen1078 = zext i1 %307 to i64
+  %306 = call i1 @"diagnostics::bag_has_warnings"(ptr %bag1077)
+  %widen1078 = zext i1 %306 to i64
   %r_bool1079 = icmp ne i64 %widen1078, 0
   br i1 %r_bool1079, label %sc_r_true1080, label %sc_r_false1081
 
@@ -271177,8 +271176,8 @@ ifcont1085:                                       ; preds = %if_else1088, %ifcon
   call void @avra_null_deref_trap(ptr @fld_name.21614, i64 3, ptr @sty_name.21615, i64 23, i64 %null_ext1111, ptr @src_file.21616, i64 103, i64 780)
   %bag_ptr1112 = getelementptr inbounds nuw %"typeck::TypeCheckResult", ptr %tc_result1108, i32 0, i32 2
   %bag1113 = load ptr, ptr %bag_ptr1112, align 8
-  %308 = call i1 @"diagnostics::bag_has_errors"(ptr %bag1113)
-  %widen1114 = zext i1 %308 to i64
+  %307 = call i1 @"diagnostics::bag_has_errors"(ptr %bag1113)
+  %widen1114 = zext i1 %307 to i64
   %if_cond1116 = icmp ne i64 %widen1114, 0
   br i1 %if_cond1116, label %if_then1117, label %if_else1118
 
@@ -271201,7 +271200,7 @@ if_then1091:                                      ; preds = %if_then1087
   call void @avra_null_deref_trap(ptr @fld_name.21608, i64 3, ptr @sty_name.21609, i64 23, i64 %null_ext1097, ptr @src_file.21610, i64 103, i64 778)
   %bag_ptr1098 = getelementptr inbounds nuw %"typeck::TypeCheckResult", ptr %tc_result1094, i32 0, i32 2
   %bag1099 = load ptr, ptr %bag_ptr1098, align 8
-  %309 = call i64 @"diagnostics::render::render_bag_json"(ptr %check_path1093, ptr %bag1099)
+  %308 = call i64 @"diagnostics::render::render_bag_json"(ptr %check_path1093, ptr %bag1099)
   br label %ifcont1090
 
 if_else1092:                                      ; preds = %if_then1087
@@ -271214,7 +271213,7 @@ if_else1092:                                      ; preds = %if_then1087
   call void @avra_null_deref_trap(ptr @fld_name.21611, i64 3, ptr @sty_name.21612, i64 23, i64 %null_ext1105, ptr @src_file.21613, i64 103, i64 778)
   %bag_ptr1106 = getelementptr inbounds nuw %"typeck::TypeCheckResult", ptr %tc_result1102, i32 0, i32 2
   %bag1107 = load ptr, ptr %bag_ptr1106, align 8
-  %310 = call i64 @"diagnostics::render::render_bag"(ptr %check_source1100, ptr %check_path1101, ptr %bag1107)
+  %309 = call i64 @"diagnostics::render::render_bag"(ptr %check_source1100, ptr %check_path1101, ptr %bag1107)
   br label %ifcont1090
 
 ifcont1115:                                       ; preds = %if_else1118
@@ -271234,8 +271233,8 @@ ifcont1122:                                       ; preds = %if_else1125, %if_th
   ret i64 0
 
 if_then1124:                                      ; preds = %ifcont1115
-  %311 = call i32 @puts(ptr @.str.21617)
-  %widen1126 = sext i32 %311 to i64
+  %310 = call i32 @puts(ptr @.str.21617)
+  %widen1126 = sext i32 %310 to i64
   br label %ifcont1122
 
 if_else1125:                                      ; preds = %ifcont1115
@@ -271243,8 +271242,8 @@ if_else1125:                                      ; preds = %ifcont1115
 
 parm_body1127:                                    ; preds = %parm_next783
   %source1131 = load ptr, ptr %source, align 8
-  %312 = call ptr @"features::eval::execute_program_source"(ptr %source1131)
-  store ptr %312, ptr %result1132, align 8
+  %311 = call ptr @"features::eval::execute_program_source"(ptr %source1131)
+  store ptr %311, ptr %result1132, align 8
   %result1133 = load ptr, ptr %result1132, align 8
   %cast1134 = ptrtoint ptr %result1133 to i64
   %null_chk1135 = icmp eq i64 %cast1134, 0
@@ -271256,8 +271255,8 @@ parm_body1127:                                    ; preds = %parm_next783
   br i1 %l_bool1139, label %sc_short1141, label %sc_rhs1140
 
 parm_next1128:                                    ; preds = %parm_next783
-  %313 = call i32 @strcmp(ptr %command648, ptr @.lit_str.21631)
-  %widen1176 = sext i32 %313 to i64
+  %312 = call i32 @strcmp(ptr %command648, ptr @.lit_str.21631)
+  %widen1176 = sext i32 %312 to i64
   %str_eq1177 = icmp eq i64 %widen1176, 0
   br i1 %str_eq1177, label %parm_body1174, label %parm_next1175
 
@@ -271300,9 +271299,9 @@ ifcont1157:                                       ; preds = %if_else1160, %if_th
   call void @avra_null_deref_trap(ptr @fld_name.21628, i64 5, ptr @sty_name.21629, i64 26, i64 %null_ext1170, ptr @src_file.21630, i64 103, i64 790)
   %value_ptr1171 = getelementptr inbounds nuw %"features::eval::EvalResult", ptr %result1167, i32 0, i32 0
   %value1172 = load ptr, ptr %value_ptr1171, align 8
-  %314 = call ptr @"features::eval::render_value"(ptr %value1172)
-  %315 = call i32 @puts(ptr %314)
-  %widen1173 = sext i32 %315 to i64
+  %313 = call ptr @"features::eval::render_value"(ptr %value1172)
+  %314 = call i32 @puts(ptr %313)
+  %widen1173 = sext i32 %314 to i64
   ret i64 0
 
 if_then1159:                                      ; preds = %sc_merge1142
@@ -271313,7 +271312,7 @@ if_then1159:                                      ; preds = %sc_merge1142
   call void @avra_null_deref_trap(ptr @fld_name.21625, i64 13, ptr @sty_name.21626, i64 26, i64 %null_ext1164, ptr @src_file.21627, i64 103, i64 788)
   %error_message_ptr1165 = getelementptr inbounds nuw %"features::eval::EvalResult", ptr %result1161, i32 0, i32 2
   %error_message1166 = load ptr, ptr %error_message_ptr1165, align 8
-  %316 = call i64 @fail(ptr %error_message1166)
+  %315 = call i64 @fail(ptr %error_message1166)
   br label %ifcont1157
 
 if_else1160:                                      ; preds = %sc_merge1142
@@ -271321,8 +271320,8 @@ if_else1160:                                      ; preds = %sc_merge1142
 
 parm_body1174:                                    ; preds = %parm_next1128
   %source1178 = load ptr, ptr %source, align 8
-  %317 = call ptr @"parse::parse_program_source"(ptr %source1178)
-  store ptr %317, ptr %parsed1179, align 8
+  %316 = call ptr @"parse::parse_program_source"(ptr %source1178)
+  store ptr %316, ptr %parsed1179, align 8
   %parsed1180 = load ptr, ptr %parsed1179, align 8
   %cast1181 = ptrtoint ptr %parsed1180 to i64
   %null_chk1182 = icmp eq i64 %cast1181, 0
@@ -271334,8 +271333,8 @@ parm_body1174:                                    ; preds = %parm_next1128
   br i1 %l_bool1186, label %sc_short1188, label %sc_rhs1187
 
 parm_next1175:                                    ; preds = %parm_next1128
-  %318 = call i32 @strcmp(ptr %command648, ptr @.lit_str.21666)
-  %widen1292 = sext i32 %318 to i64
+  %317 = call i32 @strcmp(ptr %command648, ptr @.lit_str.21666)
+  %widen1292 = sext i32 %317 to i64
   %str_eq1293 = icmp eq i64 %widen1292, 0
   br i1 %str_eq1293, label %parm_body1290, label %parm_next1291
 
@@ -271372,8 +271371,8 @@ sc_r_merge1201:                                   ; preds = %sc_r_false1200, %sc
 
 ifcont1204:                                       ; preds = %if_else1207, %ifcont1215
   %path1233 = load ptr, ptr %path609, align 8
-  %319 = call ptr @"features::modules::resolver::modules_dirname"(ptr %path1233)
-  store ptr %319, ptr %entry_dir1234, align 8
+  %318 = call ptr @"features::modules::resolver::modules_dirname"(ptr %path1233)
+  store ptr %318, ptr %entry_dir1234, align 8
   %parsed1235 = load ptr, ptr %parsed1179, align 8
   %cast1236 = ptrtoint ptr %parsed1235 to i64
   %null_chk1237 = icmp eq i64 %cast1236, 0
@@ -271382,15 +271381,15 @@ ifcont1204:                                       ; preds = %if_else1207, %ifcon
   %stmts_ptr1239 = getelementptr inbounds nuw %"parse::ProgramParseResult", ptr %parsed1235, i32 0, i32 0
   %stmts1240 = load ptr, ptr %stmts_ptr1239, align 8
   %entry_dir1241 = load ptr, ptr %entry_dir1234, align 8
-  %320 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr1242 = getelementptr inbounds nuw %"features::modules::resolver::LoadedPaths", ptr %320, i32 0, i32 0
+  %319 = call ptr @avra_rc_alloc(i64 16)
+  %tag_ptr1242 = getelementptr inbounds nuw %"features::modules::resolver::LoadedPaths", ptr %319, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr1242, align 8
-  %pay_ptr1243 = getelementptr inbounds nuw %"features::modules::resolver::LoadedPaths", ptr %320, i32 0, i32 1
+  %pay_ptr1243 = getelementptr inbounds nuw %"features::modules::resolver::LoadedPaths", ptr %319, i32 0, i32 1
   store ptr null, ptr %pay_ptr1243, align 8
-  %cast1244 = ptrtoint ptr %320 to i64
+  %cast1244 = ptrtoint ptr %319 to i64
   %cast1245 = inttoptr i64 %cast1244 to ptr
-  %321 = call ptr @"features::modules::resolver::resolve_module_files"(ptr %stmts1240, ptr %entry_dir1241, ptr %cast1245)
-  store ptr %321, ptr %mod_resolved1246, align 8
+  %320 = call ptr @"features::modules::resolver::resolve_module_files"(ptr %stmts1240, ptr %entry_dir1241, ptr %cast1245)
+  store ptr %320, ptr %mod_resolved1246, align 8
   %mod_resolved1247 = load ptr, ptr %mod_resolved1246, align 8
   %cast1248 = ptrtoint ptr %mod_resolved1247 to i64
   %null_chk1249 = icmp eq i64 %cast1248, 0
@@ -271409,8 +271408,8 @@ if_then1206:                                      ; preds = %sc_merge1189
   call void @avra_null_deref_trap(ptr @fld_name.21638, i64 3, ptr @sty_name.21639, i64 25, i64 %null_ext1211, ptr @src_file.21640, i64 103, i64 803)
   %bag_ptr1212 = getelementptr inbounds nuw %"parse::ProgramParseResult", ptr %parsed1208, i32 0, i32 3
   %bag1213 = load ptr, ptr %bag_ptr1212, align 8
-  %322 = call i1 @"diagnostics::bag_has_errors"(ptr %bag1213)
-  %widen1214 = zext i1 %322 to i64
+  %321 = call i1 @"diagnostics::bag_has_errors"(ptr %bag1213)
+  %widen1214 = zext i1 %321 to i64
   %if_cond1216 = icmp ne i64 %widen1214, 0
   br i1 %if_cond1216, label %if_then1217, label %if_else1218
 
@@ -271425,7 +271424,7 @@ ifcont1215:                                       ; preds = %if_else1218, %if_th
   call void @avra_null_deref_trap(ptr @fld_name.21644, i64 13, ptr @sty_name.21645, i64 25, i64 %null_ext1230, ptr @src_file.21646, i64 103, i64 806)
   %error_message_ptr1231 = getelementptr inbounds nuw %"parse::ProgramParseResult", ptr %parsed1227, i32 0, i32 2
   %error_message1232 = load ptr, ptr %error_message_ptr1231, align 8
-  %323 = call i64 @fail(ptr %error_message1232)
+  %322 = call i64 @fail(ptr %error_message1232)
   br label %ifcont1204
 
 if_then1217:                                      ; preds = %if_then1206
@@ -271438,7 +271437,7 @@ if_then1217:                                      ; preds = %if_then1206
   call void @avra_null_deref_trap(ptr @fld_name.21641, i64 3, ptr @sty_name.21642, i64 25, i64 %null_ext1224, ptr @src_file.21643, i64 103, i64 804)
   %bag_ptr1225 = getelementptr inbounds nuw %"parse::ProgramParseResult", ptr %parsed1221, i32 0, i32 3
   %bag1226 = load ptr, ptr %bag_ptr1225, align 8
-  %324 = call i64 @"diagnostics::render::render_bag"(ptr %source1219, ptr %path1220, ptr %bag1226)
+  %323 = call i64 @"diagnostics::render::render_bag"(ptr %source1219, ptr %path1220, ptr %bag1226)
   br label %ifcont1215
 
 if_else1218:                                      ; preds = %if_then1206
@@ -271452,8 +271451,8 @@ ifcont1253:                                       ; preds = %if_else1256, %if_th
   call void @avra_null_deref_trap(ptr @fld_name.21656, i64 5, ptr @sty_name.21657, i64 42, i64 %null_ext1266, ptr @src_file.21658, i64 103, i64 813)
   %stmts_ptr1267 = getelementptr inbounds nuw %"features::modules::resolver::ModListResult", ptr %mod_resolved1263, i32 0, i32 0
   %stmts1268 = load ptr, ptr %stmts_ptr1267, align 8
-  %325 = call ptr @"resolve::names::resolve_names"(ptr %stmts1268)
-  store ptr %325, ptr %named1269, align 8
+  %324 = call ptr @"resolve::names::resolve_names"(ptr %stmts1268)
+  store ptr %324, ptr %named1269, align 8
   %named1270 = load ptr, ptr %named1269, align 8
   %cast1271 = ptrtoint ptr %named1270 to i64
   %null_chk1272 = icmp eq i64 %cast1271, 0
@@ -271461,8 +271460,8 @@ ifcont1253:                                       ; preds = %if_else1256, %if_th
   call void @avra_null_deref_trap(ptr @fld_name.21659, i64 3, ptr @sty_name.21660, i64 33, i64 %null_ext1273, ptr @src_file.21661, i64 103, i64 814)
   %bag_ptr1274 = getelementptr inbounds nuw %"resolve::names::NameResolveResult", ptr %named1270, i32 0, i32 3
   %bag1275 = load ptr, ptr %bag_ptr1274, align 8
-  %326 = call i1 @"diagnostics::bag_has_errors"(ptr %bag1275)
-  %widen1276 = zext i1 %326 to i64
+  %325 = call i1 @"diagnostics::bag_has_errors"(ptr %bag1275)
+  %widen1276 = zext i1 %325 to i64
   %if_cond1278 = icmp ne i64 %widen1276, 0
   br i1 %if_cond1278, label %if_then1279, label %if_else1280
 
@@ -271474,15 +271473,15 @@ if_then1255:                                      ; preds = %ifcont1204
   call void @avra_null_deref_trap(ptr @fld_name.21653, i64 13, ptr @sty_name.21654, i64 42, i64 %null_ext1260, ptr @src_file.21655, i64 103, i64 811)
   %error_message_ptr1261 = getelementptr inbounds nuw %"features::modules::resolver::ModListResult", ptr %mod_resolved1257, i32 0, i32 3
   %error_message1262 = load ptr, ptr %error_message_ptr1261, align 8
-  %327 = call i64 @fail(ptr %error_message1262)
+  %326 = call i64 @fail(ptr %error_message1262)
   br label %ifcont1253
 
 if_else1256:                                      ; preds = %ifcont1204
   br label %ifcont1253
 
 ifcont1277:                                       ; preds = %if_else1280, %if_then1279
-  %328 = call i32 @puts(ptr @.str.21665)
-  %widen1289 = sext i32 %328 to i64
+  %327 = call i32 @puts(ptr @.str.21665)
+  %widen1289 = sext i32 %327 to i64
   ret i64 0
 
 if_then1279:                                      ; preds = %ifcont1253
@@ -271495,7 +271494,7 @@ if_then1279:                                      ; preds = %ifcont1253
   call void @avra_null_deref_trap(ptr @fld_name.21662, i64 3, ptr @sty_name.21663, i64 33, i64 %null_ext1286, ptr @src_file.21664, i64 103, i64 815)
   %bag_ptr1287 = getelementptr inbounds nuw %"resolve::names::NameResolveResult", ptr %named1283, i32 0, i32 3
   %bag1288 = load ptr, ptr %bag_ptr1287, align 8
-  %329 = call i64 @"diagnostics::render::render_bag"(ptr %source1281, ptr %path1282, ptr %bag1288)
+  %328 = call i64 @"diagnostics::render::render_bag"(ptr %source1281, ptr %path1282, ptr %bag1288)
   br label %ifcont1277
 
 if_else1280:                                      ; preds = %ifcont1253
@@ -271503,8 +271502,8 @@ if_else1280:                                      ; preds = %ifcont1253
 
 parm_body1290:                                    ; preds = %parm_next1175
   %source1294 = load ptr, ptr %source, align 8
-  %330 = call ptr @"parse::parse_program_source"(ptr %source1294)
-  store ptr %330, ptr %parsed1295, align 8
+  %329 = call ptr @"parse::parse_program_source"(ptr %source1294)
+  store ptr %329, ptr %parsed1295, align 8
   %parsed1296 = load ptr, ptr %parsed1295, align 8
   %cast1297 = ptrtoint ptr %parsed1296 to i64
   %null_chk1298 = icmp eq i64 %cast1297, 0
@@ -271516,8 +271515,8 @@ parm_body1290:                                    ; preds = %parm_next1175
   br i1 %l_bool1302, label %sc_short1304, label %sc_rhs1303
 
 parm_next1291:                                    ; preds = %parm_next1175
-  %331 = call i32 @strcmp(ptr %command648, ptr @.lit_str.21685)
-  %widen1358 = sext i32 %331 to i64
+  %330 = call i32 @strcmp(ptr %command648, ptr @.lit_str.21685)
+  %widen1358 = sext i32 %330 to i64
   %str_eq1359 = icmp eq i64 %widen1358, 0
   br i1 %str_eq1359, label %parm_body1356, label %parm_next1357
 
@@ -271560,9 +271559,9 @@ ifcont1320:                                       ; preds = %if_else1323, %ifcon
   call void @avra_null_deref_trap(ptr @fld_name.21682, i64 5, ptr @sty_name.21683, i64 25, i64 %null_ext1352, ptr @src_file.21684, i64 103, i64 833)
   %stmts_ptr1353 = getelementptr inbounds nuw %"parse::ProgramParseResult", ptr %parsed1349, i32 0, i32 0
   %stmts1354 = load ptr, ptr %stmts_ptr1353, align 8
-  %332 = call ptr @fmt_stmt_list(ptr %stmts1354, i64 0)
-  %333 = call i32 @puts(ptr %332)
-  %widen1355 = sext i32 %333 to i64
+  %331 = call ptr @fmt_stmt_list(ptr %stmts1354, i64 0)
+  %332 = call i32 @puts(ptr %331)
+  %widen1355 = sext i32 %332 to i64
   ret i64 0
 
 if_then1322:                                      ; preds = %sc_merge1305
@@ -271573,8 +271572,8 @@ if_then1322:                                      ; preds = %sc_merge1305
   call void @avra_null_deref_trap(ptr @fld_name.21673, i64 3, ptr @sty_name.21674, i64 25, i64 %null_ext1327, ptr @src_file.21675, i64 103, i64 828)
   %bag_ptr1328 = getelementptr inbounds nuw %"parse::ProgramParseResult", ptr %parsed1324, i32 0, i32 3
   %bag1329 = load ptr, ptr %bag_ptr1328, align 8
-  %334 = call i1 @"diagnostics::bag_has_errors"(ptr %bag1329)
-  %widen1330 = zext i1 %334 to i64
+  %333 = call i1 @"diagnostics::bag_has_errors"(ptr %bag1329)
+  %widen1330 = zext i1 %333 to i64
   %if_cond1332 = icmp ne i64 %widen1330, 0
   br i1 %if_cond1332, label %if_then1333, label %if_else1334
 
@@ -271589,7 +271588,7 @@ ifcont1331:                                       ; preds = %if_else1334, %if_th
   call void @avra_null_deref_trap(ptr @fld_name.21679, i64 13, ptr @sty_name.21680, i64 25, i64 %null_ext1346, ptr @src_file.21681, i64 103, i64 831)
   %error_message_ptr1347 = getelementptr inbounds nuw %"parse::ProgramParseResult", ptr %parsed1343, i32 0, i32 2
   %error_message1348 = load ptr, ptr %error_message_ptr1347, align 8
-  %335 = call i64 @fail(ptr %error_message1348)
+  %334 = call i64 @fail(ptr %error_message1348)
   br label %ifcont1320
 
 if_then1333:                                      ; preds = %if_then1322
@@ -271602,7 +271601,7 @@ if_then1333:                                      ; preds = %if_then1322
   call void @avra_null_deref_trap(ptr @fld_name.21676, i64 3, ptr @sty_name.21677, i64 25, i64 %null_ext1340, ptr @src_file.21678, i64 103, i64 829)
   %bag_ptr1341 = getelementptr inbounds nuw %"parse::ProgramParseResult", ptr %parsed1337, i32 0, i32 3
   %bag1342 = load ptr, ptr %bag_ptr1341, align 8
-  %336 = call i64 @"diagnostics::render::render_bag"(ptr %source1335, ptr %path1336, ptr %bag1342)
+  %335 = call i64 @"diagnostics::render::render_bag"(ptr %source1335, ptr %path1336, ptr %bag1342)
   br label %ifcont1331
 
 if_else1334:                                      ; preds = %if_then1322
@@ -271610,8 +271609,8 @@ if_else1334:                                      ; preds = %if_then1322
 
 parm_body1356:                                    ; preds = %parm_next1291
   %source1360 = load ptr, ptr %source, align 8
-  %337 = call ptr @"parse::parse_program_source"(ptr %source1360)
-  store ptr %337, ptr %parsed1361, align 8
+  %336 = call ptr @"parse::parse_program_source"(ptr %source1360)
+  store ptr %336, ptr %parsed1361, align 8
   %parsed1362 = load ptr, ptr %parsed1361, align 8
   %cast1363 = ptrtoint ptr %parsed1362 to i64
   %null_chk1364 = icmp eq i64 %cast1363, 0
@@ -271664,22 +271663,22 @@ ifcont1386:                                       ; preds = %if_else1389, %ifcon
   call void @avra_null_deref_trap(ptr @fld_name.21701, i64 5, ptr @sty_name.21702, i64 25, i64 %null_ext1418, ptr @src_file.21703, i64 103, i64 851)
   %stmts_ptr1419 = getelementptr inbounds nuw %"parse::ProgramParseResult", ptr %parsed1415, i32 0, i32 0
   %stmts1420 = load ptr, ptr %stmts_ptr1419, align 8
-  %338 = call ptr @"desugar::desugar_program"(ptr %stmts1420)
-  store ptr %338, ptr %desugared1421, align 8
+  %337 = call ptr @"desugar::desugar_program"(ptr %stmts1420)
+  store ptr %337, ptr %desugared1421, align 8
   %path1422 = load ptr, ptr %path609, align 8
-  %339 = call ptr @"features::modules::resolver::modules_dirname"(ptr %path1422)
-  store ptr %339, ptr %entry_dir1423, align 8
+  %338 = call ptr @"features::modules::resolver::modules_dirname"(ptr %path1422)
+  store ptr %338, ptr %entry_dir1423, align 8
   %desugared1424 = load ptr, ptr %desugared1421, align 8
   %entry_dir1425 = load ptr, ptr %entry_dir1423, align 8
-  %340 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr1426 = getelementptr inbounds nuw %"features::modules::resolver::LoadedPaths", ptr %340, i32 0, i32 0
+  %339 = call ptr @avra_rc_alloc(i64 16)
+  %tag_ptr1426 = getelementptr inbounds nuw %"features::modules::resolver::LoadedPaths", ptr %339, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr1426, align 8
-  %pay_ptr1427 = getelementptr inbounds nuw %"features::modules::resolver::LoadedPaths", ptr %340, i32 0, i32 1
+  %pay_ptr1427 = getelementptr inbounds nuw %"features::modules::resolver::LoadedPaths", ptr %339, i32 0, i32 1
   store ptr null, ptr %pay_ptr1427, align 8
-  %cast1428 = ptrtoint ptr %340 to i64
+  %cast1428 = ptrtoint ptr %339 to i64
   %cast1429 = inttoptr i64 %cast1428 to ptr
-  %341 = call ptr @"features::modules::resolver::resolve_module_files"(ptr %desugared1424, ptr %entry_dir1425, ptr %cast1429)
-  store ptr %341, ptr %mod_resolved1430, align 8
+  %340 = call ptr @"features::modules::resolver::resolve_module_files"(ptr %desugared1424, ptr %entry_dir1425, ptr %cast1429)
+  store ptr %340, ptr %mod_resolved1430, align 8
   %mod_resolved1431 = load ptr, ptr %mod_resolved1430, align 8
   %cast1432 = ptrtoint ptr %mod_resolved1431 to i64
   %null_chk1433 = icmp eq i64 %cast1432, 0
@@ -271698,8 +271697,8 @@ if_then1388:                                      ; preds = %sc_merge1371
   call void @avra_null_deref_trap(ptr @fld_name.21692, i64 3, ptr @sty_name.21693, i64 25, i64 %null_ext1393, ptr @src_file.21694, i64 103, i64 846)
   %bag_ptr1394 = getelementptr inbounds nuw %"parse::ProgramParseResult", ptr %parsed1390, i32 0, i32 3
   %bag1395 = load ptr, ptr %bag_ptr1394, align 8
-  %342 = call i1 @"diagnostics::bag_has_errors"(ptr %bag1395)
-  %widen1396 = zext i1 %342 to i64
+  %341 = call i1 @"diagnostics::bag_has_errors"(ptr %bag1395)
+  %widen1396 = zext i1 %341 to i64
   %if_cond1398 = icmp ne i64 %widen1396, 0
   br i1 %if_cond1398, label %if_then1399, label %if_else1400
 
@@ -271714,7 +271713,7 @@ ifcont1397:                                       ; preds = %if_else1400, %if_th
   call void @avra_null_deref_trap(ptr @fld_name.21698, i64 13, ptr @sty_name.21699, i64 25, i64 %null_ext1412, ptr @src_file.21700, i64 103, i64 849)
   %error_message_ptr1413 = getelementptr inbounds nuw %"parse::ProgramParseResult", ptr %parsed1409, i32 0, i32 2
   %error_message1414 = load ptr, ptr %error_message_ptr1413, align 8
-  %343 = call i64 @fail(ptr %error_message1414)
+  %342 = call i64 @fail(ptr %error_message1414)
   br label %ifcont1386
 
 if_then1399:                                      ; preds = %if_then1388
@@ -271727,7 +271726,7 @@ if_then1399:                                      ; preds = %if_then1388
   call void @avra_null_deref_trap(ptr @fld_name.21695, i64 3, ptr @sty_name.21696, i64 25, i64 %null_ext1406, ptr @src_file.21697, i64 103, i64 847)
   %bag_ptr1407 = getelementptr inbounds nuw %"parse::ProgramParseResult", ptr %parsed1403, i32 0, i32 3
   %bag1408 = load ptr, ptr %bag_ptr1407, align 8
-  %344 = call i64 @"diagnostics::render::render_bag"(ptr %source1401, ptr %path1402, ptr %bag1408)
+  %343 = call i64 @"diagnostics::render::render_bag"(ptr %source1401, ptr %path1402, ptr %bag1408)
   br label %ifcont1397
 
 if_else1400:                                      ; preds = %if_then1388
@@ -271741,11 +271740,11 @@ ifcont1437:                                       ; preds = %if_else1440, %if_th
   call void @avra_null_deref_trap(ptr @fld_name.21713, i64 5, ptr @sty_name.21714, i64 42, i64 %null_ext1464, ptr @src_file.21715, i64 103, i64 859)
   %stmts_ptr1465 = getelementptr inbounds nuw %"features::modules::resolver::ModListResult", ptr %mod_resolved1461, i32 0, i32 0
   %stmts1466 = load ptr, ptr %stmts_ptr1465, align 8
-  %345 = call ptr @"features::component_decl::expand::expand_components"(ptr %stmts1466)
-  store ptr %345, ptr %expanded1467, align 8
+  %344 = call ptr @"features::component_decl::expand::expand_components"(ptr %stmts1466)
+  store ptr %344, ptr %expanded1467, align 8
   %expanded1468 = load ptr, ptr %expanded1467, align 8
-  %346 = call ptr @"resolve::names::resolve_names"(ptr %expanded1468)
-  store ptr %346, ptr %named1469, align 8
+  %345 = call ptr @"resolve::names::resolve_names"(ptr %expanded1468)
+  store ptr %345, ptr %named1469, align 8
   %named1470 = load ptr, ptr %named1469, align 8
   %cast1471 = ptrtoint ptr %named1470 to i64
   %null_chk1472 = icmp eq i64 %cast1471, 0
@@ -271753,19 +271752,19 @@ ifcont1437:                                       ; preds = %if_else1440, %if_th
   call void @avra_null_deref_trap(ptr @fld_name.21716, i64 3, ptr @sty_name.21717, i64 33, i64 %null_ext1473, ptr @src_file.21718, i64 103, i64 861)
   %bag_ptr1474 = getelementptr inbounds nuw %"resolve::names::NameResolveResult", ptr %named1470, i32 0, i32 3
   %bag1475 = load ptr, ptr %bag_ptr1474, align 8
-  %347 = call i1 @"diagnostics::bag_has_errors"(ptr %bag1475)
-  %widen1476 = zext i1 %347 to i64
+  %346 = call i1 @"diagnostics::bag_has_errors"(ptr %bag1475)
+  %widen1476 = zext i1 %346 to i64
   %l_bool1477 = icmp ne i64 %widen1476, 0
   br i1 %l_bool1477, label %sc_short1479, label %sc_rhs1478
 
 if_then1439:                                      ; preds = %ifcont1386
-  %348 = call ptr @"diagnostics::bag_new"()
-  %349 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr1441 = getelementptr inbounds nuw %"diagnostics::DiagCode", ptr %349, i32 0, i32 0
+  %347 = call ptr @"diagnostics::bag_new"()
+  %348 = call ptr @avra_rc_alloc(i64 16)
+  %tag_ptr1441 = getelementptr inbounds nuw %"diagnostics::DiagCode", ptr %348, i32 0, i32 0
   store i64 6736596269474561240, ptr %tag_ptr1441, align 8
-  %pay_ptr1442 = getelementptr inbounds nuw %"diagnostics::DiagCode", ptr %349, i32 0, i32 1
+  %pay_ptr1442 = getelementptr inbounds nuw %"diagnostics::DiagCode", ptr %348, i32 0, i32 1
   store ptr null, ptr %pay_ptr1442, align 8
-  %cast1443 = ptrtoint ptr %349 to i64
+  %cast1443 = ptrtoint ptr %348 to i64
   %mod_resolved1444 = load ptr, ptr %mod_resolved1430, align 8
   %cast1445 = ptrtoint ptr %mod_resolved1444 to i64
   %null_chk1446 = icmp eq i64 %cast1445, 0
@@ -271773,15 +271772,15 @@ if_then1439:                                      ; preds = %ifcont1386
   call void @avra_null_deref_trap(ptr @fld_name.21707, i64 13, ptr @sty_name.21708, i64 42, i64 %null_ext1447, ptr @src_file.21709, i64 103, i64 855)
   %error_message_ptr1448 = getelementptr inbounds nuw %"features::modules::resolver::ModListResult", ptr %mod_resolved1444, i32 0, i32 3
   %error_message1449 = load ptr, ptr %error_message_ptr1448, align 8
-  %350 = call ptr @"diagnostics::span_dummy"()
+  %349 = call ptr @"diagnostics::span_dummy"()
   %cast1450 = inttoptr i64 %cast1443 to ptr
-  %351 = call ptr @"diagnostics::diag_error"(ptr %cast1450, ptr %error_message1449, ptr %350)
-  %352 = call ptr @"diagnostics::bag_report"(ptr %348, ptr %351)
-  store ptr %352, ptr %mod_bag1451, align 8
+  %350 = call ptr @"diagnostics::diag_error"(ptr %cast1450, ptr %error_message1449, ptr %349)
+  %351 = call ptr @"diagnostics::bag_report"(ptr %347, ptr %350)
+  store ptr %351, ptr %mod_bag1451, align 8
   %source1452 = load ptr, ptr %source, align 8
   %path1453 = load ptr, ptr %path609, align 8
   %mod_bag1454 = load ptr, ptr %mod_bag1451, align 8
-  %353 = call i64 @"diagnostics::render::render_bag"(ptr %source1452, ptr %path1453, ptr %mod_bag1454)
+  %352 = call i64 @"diagnostics::render::render_bag"(ptr %source1452, ptr %path1453, ptr %mod_bag1454)
   %mod_resolved1455 = load ptr, ptr %mod_resolved1430, align 8
   %cast1456 = ptrtoint ptr %mod_resolved1455 to i64
   %null_chk1457 = icmp eq i64 %cast1456, 0
@@ -271789,7 +271788,7 @@ if_then1439:                                      ; preds = %ifcont1386
   call void @avra_null_deref_trap(ptr @fld_name.21710, i64 13, ptr @sty_name.21711, i64 42, i64 %null_ext1458, ptr @src_file.21712, i64 103, i64 857)
   %error_message_ptr1459 = getelementptr inbounds nuw %"features::modules::resolver::ModListResult", ptr %mod_resolved1455, i32 0, i32 3
   %error_message1460 = load ptr, ptr %error_message_ptr1459, align 8
-  %354 = call i64 @fail(ptr %error_message1460)
+  %353 = call i64 @fail(ptr %error_message1460)
   br label %ifcont1437
 
 if_else1440:                                      ; preds = %ifcont1386
@@ -271803,8 +271802,8 @@ sc_rhs1478:                                       ; preds = %ifcont1437
   call void @avra_null_deref_trap(ptr @fld_name.21719, i64 3, ptr @sty_name.21720, i64 33, i64 %null_ext1484, ptr @src_file.21721, i64 103, i64 861)
   %bag_ptr1485 = getelementptr inbounds nuw %"resolve::names::NameResolveResult", ptr %named1481, i32 0, i32 3
   %bag1486 = load ptr, ptr %bag_ptr1485, align 8
-  %355 = call i1 @"diagnostics::bag_has_warnings"(ptr %bag1486)
-  %widen1487 = zext i1 %355 to i64
+  %354 = call i1 @"diagnostics::bag_has_warnings"(ptr %bag1486)
+  %widen1487 = zext i1 %354 to i64
   %r_bool1488 = icmp ne i64 %widen1487, 0
   br i1 %r_bool1488, label %sc_r_true1489, label %sc_r_false1490
 
@@ -271847,7 +271846,7 @@ if_then1496:                                      ; preds = %sc_merge1480
   call void @avra_null_deref_trap(ptr @fld_name.21722, i64 3, ptr @sty_name.21723, i64 33, i64 %null_ext1503, ptr @src_file.21724, i64 103, i64 862)
   %bag_ptr1504 = getelementptr inbounds nuw %"resolve::names::NameResolveResult", ptr %named1500, i32 0, i32 3
   %bag1505 = load ptr, ptr %bag_ptr1504, align 8
-  %356 = call i64 @"diagnostics::render::render_bag"(ptr %source1498, ptr %path1499, ptr %bag1505)
+  %355 = call i64 @"diagnostics::render::render_bag"(ptr %source1498, ptr %path1499, ptr %bag1505)
   br label %ifcont1494
 
 if_else1497:                                      ; preds = %sc_merge1480
@@ -271861,8 +271860,8 @@ ifcont1512:                                       ; preds = %if_else1515, %if_th
   call void @avra_null_deref_trap(ptr @fld_name.21731, i64 5, ptr @sty_name.21732, i64 33, i64 %null_ext1525, ptr @src_file.21733, i64 103, i64 865)
   %stmts_ptr1526 = getelementptr inbounds nuw %"resolve::names::NameResolveResult", ptr %named1522, i32 0, i32 0
   %stmts1527 = load ptr, ptr %stmts_ptr1526, align 8
-  %357 = call ptr @"typeck::typecheck_program"(ptr %stmts1527)
-  store ptr %357, ptr %tc_result1528, align 8
+  %356 = call ptr @"typeck::typecheck_program"(ptr %stmts1527)
+  store ptr %356, ptr %tc_result1528, align 8
   %tc_result1529 = load ptr, ptr %tc_result1528, align 8
   %cast1530 = ptrtoint ptr %tc_result1529 to i64
   %null_chk1531 = icmp eq i64 %cast1530, 0
@@ -271870,8 +271869,8 @@ ifcont1512:                                       ; preds = %if_else1515, %if_th
   call void @avra_null_deref_trap(ptr @fld_name.21734, i64 3, ptr @sty_name.21735, i64 23, i64 %null_ext1532, ptr @src_file.21736, i64 103, i64 866)
   %bag_ptr1533 = getelementptr inbounds nuw %"typeck::TypeCheckResult", ptr %tc_result1529, i32 0, i32 2
   %bag1534 = load ptr, ptr %bag_ptr1533, align 8
-  %358 = call i1 @"diagnostics::bag_has_errors"(ptr %bag1534)
-  %widen1535 = zext i1 %358 to i64
+  %357 = call i1 @"diagnostics::bag_has_errors"(ptr %bag1534)
+  %widen1535 = zext i1 %357 to i64
   %l_bool1536 = icmp ne i64 %widen1535, 0
   br i1 %l_bool1536, label %sc_short1538, label %sc_rhs1537
 
@@ -271883,7 +271882,7 @@ if_then1514:                                      ; preds = %ifcont1494
   call void @avra_null_deref_trap(ptr @fld_name.21728, i64 13, ptr @sty_name.21729, i64 33, i64 %null_ext1519, ptr @src_file.21730, i64 103, i64 864)
   %error_message_ptr1520 = getelementptr inbounds nuw %"resolve::names::NameResolveResult", ptr %named1516, i32 0, i32 2
   %error_message1521 = load ptr, ptr %error_message_ptr1520, align 8
-  %359 = call i64 @fail(ptr %error_message1521)
+  %358 = call i64 @fail(ptr %error_message1521)
   br label %ifcont1512
 
 if_else1515:                                      ; preds = %ifcont1494
@@ -271897,8 +271896,8 @@ sc_rhs1537:                                       ; preds = %ifcont1512
   call void @avra_null_deref_trap(ptr @fld_name.21737, i64 3, ptr @sty_name.21738, i64 23, i64 %null_ext1543, ptr @src_file.21739, i64 103, i64 866)
   %bag_ptr1544 = getelementptr inbounds nuw %"typeck::TypeCheckResult", ptr %tc_result1540, i32 0, i32 2
   %bag1545 = load ptr, ptr %bag_ptr1544, align 8
-  %360 = call i1 @"diagnostics::bag_has_warnings"(ptr %bag1545)
-  %widen1546 = zext i1 %360 to i64
+  %359 = call i1 @"diagnostics::bag_has_warnings"(ptr %bag1545)
+  %widen1546 = zext i1 %359 to i64
   %r_bool1547 = icmp ne i64 %widen1546, 0
   br i1 %r_bool1547, label %sc_r_true1548, label %sc_r_false1549
 
@@ -271928,8 +271927,8 @@ ifcont1553:                                       ; preds = %if_else1556, %if_th
   call void @avra_null_deref_trap(ptr @fld_name.21743, i64 3, ptr @sty_name.21744, i64 23, i64 %null_ext1568, ptr @src_file.21745, i64 103, i64 869)
   %bag_ptr1569 = getelementptr inbounds nuw %"typeck::TypeCheckResult", ptr %tc_result1565, i32 0, i32 2
   %bag1570 = load ptr, ptr %bag_ptr1569, align 8
-  %361 = call i1 @"diagnostics::bag_has_errors"(ptr %bag1570)
-  %widen1571 = zext i1 %361 to i64
+  %360 = call i1 @"diagnostics::bag_has_errors"(ptr %bag1570)
+  %widen1571 = zext i1 %360 to i64
   %if_cond1573 = icmp ne i64 %widen1571, 0
   br i1 %if_cond1573, label %if_then1574, label %if_else1575
 
@@ -271943,7 +271942,7 @@ if_then1555:                                      ; preds = %sc_merge1539
   call void @avra_null_deref_trap(ptr @fld_name.21740, i64 3, ptr @sty_name.21741, i64 23, i64 %null_ext1562, ptr @src_file.21742, i64 103, i64 867)
   %bag_ptr1563 = getelementptr inbounds nuw %"typeck::TypeCheckResult", ptr %tc_result1559, i32 0, i32 2
   %bag1564 = load ptr, ptr %bag_ptr1563, align 8
-  %362 = call i64 @"diagnostics::render::render_bag"(ptr %source1557, ptr %path1558, ptr %bag1564)
+  %361 = call i64 @"diagnostics::render::render_bag"(ptr %source1557, ptr %path1558, ptr %bag1564)
   br label %ifcont1553
 
 if_else1556:                                      ; preds = %sc_merge1539
@@ -271964,8 +271963,8 @@ ifcont1572:                                       ; preds = %if_else1575, %if_th
   call void @avra_null_deref_trap(ptr @fld_name.21750, i64 11, ptr @sty_name.21751, i64 23, i64 %null_ext1585, ptr @src_file.21752, i64 103, i64 870)
   %trait_impls_ptr1586 = getelementptr inbounds nuw %"typeck::TypeCheckResult", ptr %tc_result1582, i32 0, i32 3
   %trait_impls1587 = load ptr, ptr %trait_impls_ptr1586, align 8
-  %363 = call ptr @"features::generics::mono::monomorphize"(ptr %stmts1581, ptr %trait_impls1587)
-  store ptr %363, ptr %mono1588, align 8
+  %362 = call ptr @"features::generics::mono::monomorphize"(ptr %stmts1581, ptr %trait_impls1587)
+  store ptr %362, ptr %mono1588, align 8
   %mono1589 = load ptr, ptr %mono1588, align 8
   %cast1590 = ptrtoint ptr %mono1589 to i64
   %null_chk1591 = icmp eq i64 %cast1590, 0
@@ -271973,13 +271972,13 @@ ifcont1572:                                       ; preds = %if_else1575, %if_th
   call void @avra_null_deref_trap(ptr @fld_name.21753, i64 3, ptr @sty_name.21754, i64 36, i64 %null_ext1592, ptr @src_file.21755, i64 103, i64 871)
   %bag_ptr1593 = getelementptr inbounds nuw %"features::generics::mono::MonoResult", ptr %mono1589, i32 0, i32 1
   %bag1594 = load ptr, ptr %bag_ptr1593, align 8
-  %364 = call i1 @"diagnostics::bag_has_errors"(ptr %bag1594)
-  %widen1595 = zext i1 %364 to i64
+  %363 = call i1 @"diagnostics::bag_has_errors"(ptr %bag1594)
+  %widen1595 = zext i1 %363 to i64
   %if_cond1597 = icmp ne i64 %widen1595, 0
   br i1 %if_cond1597, label %if_then1598, label %if_else1599
 
 if_then1574:                                      ; preds = %ifcont1553
-  %365 = call i64 @fail(ptr @.str.21746)
+  %364 = call i64 @fail(ptr @.str.21746)
   br label %ifcont1572
 
 if_else1575:                                      ; preds = %ifcont1553
@@ -271987,18 +271986,18 @@ if_else1575:                                      ; preds = %ifcont1553
 
 ifcont1596:                                       ; preds = %if_else1599, %if_then1598
   %path1608 = load ptr, ptr %path609, align 8
-  %366 = call i64 @strlen(ptr %path1608)
-  %367 = call i64 @strlen(ptr @.str.21760)
-  %concat_total1609 = add i64 %366, %367
+  %365 = call i64 @strlen(ptr %path1608)
+  %366 = call i64 @strlen(ptr @.str.21760)
+  %concat_total1609 = add i64 %365, %366
   %concat_size1610 = add i64 %concat_total1609, 1
-  %368 = call ptr @avra_rc_alloc(i64 %concat_size1610)
-  %369 = call ptr @memcpy(ptr %368, ptr %path1608, i64 %366)
-  %cast1611 = ptrtoint ptr %368 to i64
-  %dst2_int1612 = add i64 %cast1611, %366
+  %367 = call ptr @avra_rc_alloc(i64 %concat_size1610)
+  %368 = call ptr @memcpy(ptr %367, ptr %path1608, i64 %365)
+  %cast1611 = ptrtoint ptr %367 to i64
+  %dst2_int1612 = add i64 %cast1611, %365
   %cast1613 = inttoptr i64 %dst2_int1612 to ptr
-  %rhs_len_p11614 = add i64 %367, 1
-  %370 = call ptr @memcpy(ptr %cast1613, ptr @.str.21760, i64 %rhs_len_p11614)
-  store ptr %368, ptr %output, align 8
+  %rhs_len_p11614 = add i64 %366, 1
+  %369 = call ptr @memcpy(ptr %cast1613, ptr @.str.21760, i64 %rhs_len_p11614)
+  store ptr %367, ptr %output, align 8
   %mono1615 = load ptr, ptr %mono1588, align 8
   %cast1616 = ptrtoint ptr %mono1615 to i64
   %null_chk1617 = icmp eq i64 %cast1616, 0
@@ -272015,8 +272014,8 @@ ifcont1596:                                       ; preds = %if_else1599, %if_th
   call void @avra_null_deref_trap(ptr @fld_name.21764, i64 8, ptr @sty_name.21765, i64 33, i64 %null_ext1626, ptr @src_file.21766, i64 103, i64 876)
   %type_reg_ptr1627 = getelementptr inbounds nuw %"resolve::names::NameResolveResult", ptr %named1623, i32 0, i32 4
   %type_reg1628 = load ptr, ptr %type_reg_ptr1627, align 8
-  %371 = call ptr @"codegen::setup::compile_program"(ptr %stmts1620, ptr %output1621, i1 false, i1 false, ptr %path1622, ptr %type_reg1628)
-  %tag_ptr1629 = getelementptr inbounds nuw %Result__int__string, ptr %371, i32 0, i32 0
+  %370 = call ptr @"codegen::setup::compile_program"(ptr %stmts1620, ptr %output1621, i1 false, i1 false, ptr %path1622, ptr %type_reg1628)
+  %tag_ptr1629 = getelementptr inbounds nuw %Result__int__string, ptr %370, i32 0, i32 0
   %tag1630 = load i64, ptr %tag_ptr1629, align 8
   %tag_eq1635 = icmp eq i64 %tag1630, 5862623
   br i1 %tag_eq1635, label %march_arm1633, label %march_next1634
@@ -272031,8 +272030,8 @@ if_then1598:                                      ; preds = %ifcont1572
   call void @avra_null_deref_trap(ptr @fld_name.21756, i64 3, ptr @sty_name.21757, i64 36, i64 %null_ext1605, ptr @src_file.21758, i64 103, i64 872)
   %bag_ptr1606 = getelementptr inbounds nuw %"features::generics::mono::MonoResult", ptr %mono1602, i32 0, i32 1
   %bag1607 = load ptr, ptr %bag_ptr1606, align 8
-  %372 = call i64 @"diagnostics::render::render_bag"(ptr %source1600, ptr %path1601, ptr %bag1607)
-  %373 = call i64 @fail(ptr @.str.21759)
+  %371 = call i64 @"diagnostics::render::render_bag"(ptr %source1600, ptr %path1601, ptr %bag1607)
+  %372 = call i64 @fail(ptr @.str.21759)
   br label %ifcont1596
 
 if_else1599:                                      ; preds = %ifcont1572
@@ -272040,13 +272039,13 @@ if_else1599:                                      ; preds = %ifcont1572
 
 match_end1631:                                    ; preds = %march_arm1637, %march_arm1633
   %output1658 = load ptr, ptr %output, align 8
-  %374 = call i32 @puts(ptr %output1658)
-  %widen1659 = sext i32 %374 to i64
+  %373 = call i32 @puts(ptr %output1658)
+  %widen1659 = sext i32 %373 to i64
   ret i64 0
 
 march_arm1633:                                    ; preds = %ifcont1596
-  %375 = call ptr @avra_map_new_cstr()
-  %cast1636 = ptrtoint ptr %375 to i64
+  %374 = call ptr @avra_map_new_cstr()
+  %cast1636 = ptrtoint ptr %374 to i64
   store i64 %cast1636, ptr %match_stmt_discard1632, align 8
   br label %match_end1631
 
@@ -272055,7 +272054,7 @@ march_next1634:                                   ; preds = %ifcont1596
   br i1 %tag_eq1639, label %march_arm1637, label %march_next1638
 
 march_arm1637:                                    ; preds = %march_next1634
-  %pay_slot1640 = getelementptr inbounds nuw %Result__int__string, ptr %371, i32 0, i32 1
+  %pay_slot1640 = getelementptr inbounds nuw %Result__int__string, ptr %370, i32 0, i32 1
   %payload1641 = load ptr, ptr %pay_slot1640, align 8
   %e_slot_base1642 = ptrtoint ptr %payload1641 to i64
   %e_slot_addr1643 = add i64 %e_slot_base1642, 0
@@ -272063,29 +272062,29 @@ march_arm1637:                                    ; preds = %march_next1634
   %e1645 = load ptr, ptr %e_slot1644, align 8
   call void @avra_rc_retain(ptr %e1645)
   store ptr %e1645, ptr %e1646, align 8
-  %376 = call ptr @"diagnostics::bag_new"()
+  %375 = call ptr @"diagnostics::bag_new"()
   %e1647 = load ptr, ptr %e1646, align 8
-  %377 = call i64 @strlen(ptr @.str.21767)
-  %378 = call i64 @strlen(ptr %e1647)
-  %concat_total1648 = add i64 %377, %378
+  %376 = call i64 @strlen(ptr @.str.21767)
+  %377 = call i64 @strlen(ptr %e1647)
+  %concat_total1648 = add i64 %376, %377
   %concat_size1649 = add i64 %concat_total1648, 1
-  %379 = call ptr @avra_rc_alloc(i64 %concat_size1649)
-  %380 = call ptr @memcpy(ptr %379, ptr @.str.21767, i64 %377)
-  %cast1650 = ptrtoint ptr %379 to i64
-  %dst2_int1651 = add i64 %cast1650, %377
+  %378 = call ptr @avra_rc_alloc(i64 %concat_size1649)
+  %379 = call ptr @memcpy(ptr %378, ptr @.str.21767, i64 %376)
+  %cast1650 = ptrtoint ptr %378 to i64
+  %dst2_int1651 = add i64 %cast1650, %376
   %cast1652 = inttoptr i64 %dst2_int1651 to ptr
-  %rhs_len_p11653 = add i64 %378, 1
-  %381 = call ptr @memcpy(ptr %cast1652, ptr %e1647, i64 %rhs_len_p11653)
-  %382 = call ptr @"diagnostics::diag_ice"(ptr %379)
-  %383 = call ptr @"diagnostics::bag_report"(ptr %376, ptr %382)
-  store ptr %383, ptr %ice_bag, align 8
+  %rhs_len_p11653 = add i64 %377, 1
+  %380 = call ptr @memcpy(ptr %cast1652, ptr %e1647, i64 %rhs_len_p11653)
+  %381 = call ptr @"diagnostics::diag_ice"(ptr %378)
+  %382 = call ptr @"diagnostics::bag_report"(ptr %375, ptr %381)
+  store ptr %382, ptr %ice_bag, align 8
   %source1654 = load ptr, ptr %source, align 8
   %path1655 = load ptr, ptr %path609, align 8
   %ice_bag1656 = load ptr, ptr %ice_bag, align 8
-  %384 = call i64 @"diagnostics::render::render_bag"(ptr %source1654, ptr %path1655, ptr %ice_bag1656)
+  %383 = call i64 @"diagnostics::render::render_bag"(ptr %source1654, ptr %path1655, ptr %ice_bag1656)
   %e1657 = load ptr, ptr %e1646, align 8
-  %385 = call i64 @fail(ptr %e1657)
-  store i64 %385, ptr %match_stmt_discard1632, align 8
+  %384 = call i64 @fail(ptr %e1657)
+  store i64 %384, ptr %match_stmt_discard1632, align 8
   br label %match_end1631
 
 march_next1638:                                   ; preds = %march_next1634
@@ -272093,8 +272092,8 @@ march_next1638:                                   ; preds = %march_next1634
   unreachable
 
 parm_body1660:                                    ; preds = %parm_next1357
-  %386 = call ptr @avra_map_new_cstr()
-  %cast1662 = ptrtoint ptr %386 to i64
+  %385 = call ptr @avra_map_new_cstr()
+  %cast1662 = ptrtoint ptr %385 to i64
   store i64 %cast1662, ptr %pmatch_stmt_discard, align 8
   br label %pmatch_end
 
@@ -272103,42 +272102,42 @@ parm_next1661:                                    ; No predecessors!
   unreachable
 
 ifcont1667:                                       ; preds = %if_else1670
-  %387 = call i64 @print_usage()
+  %386 = call i64 @print_usage()
   call void @exit(i32 1)
   ret i64 0
 
 if_then1669:                                      ; preds = %pmatch_end
   %app1671 = load i64, ptr %app, align 8
   %cast1672 = inttoptr i64 %app1671 to ptr
-  %388 = call ptr @"cli::cli_parse"(ptr %cast1672)
-  store ptr %388, ptr %parsed1673, align 8
+  %387 = call ptr @"cli::cli_parse"(ptr %cast1672)
+  store ptr %387, ptr %parsed1673, align 8
   %parsed1674 = load ptr, ptr %parsed1673, align 8
-  %389 = call ptr @"cli::result_get_option"(ptr %parsed1674, ptr @.str.21773)
-  store ptr %389, ptr %stop_after, align 8
+  %388 = call ptr @"cli::result_get_option"(ptr %parsed1674, ptr @.str.21773)
+  store ptr %388, ptr %stop_after, align 8
   %parsed1675 = load ptr, ptr %parsed1673, align 8
-  %390 = call i1 @"cli::result_has_flag"(ptr %parsed1675, ptr @.str.21774)
-  %widen1676 = zext i1 %390 to i64
+  %389 = call i1 @"cli::result_has_flag"(ptr %parsed1675, ptr @.str.21774)
+  %widen1676 = zext i1 %389 to i64
   %cast1677 = trunc i64 %widen1676 to i1
   store i1 %cast1677, ptr %debug_null, align 8
   %parsed1678 = load ptr, ptr %parsed1673, align 8
-  %391 = call i1 @"cli::result_has_flag"(ptr %parsed1678, ptr @.str.21775)
-  %widen1679 = zext i1 %391 to i64
+  %390 = call i1 @"cli::result_has_flag"(ptr %parsed1678, ptr @.str.21775)
+  %widen1679 = zext i1 %390 to i64
   %cast1680 = trunc i64 %widen1679 to i1
   store i1 %cast1680, ptr %enable_coverage, align 8
   %parsed1681 = load ptr, ptr %parsed1673, align 8
-  %392 = call i1 @"cli::result_has_flag"(ptr %parsed1681, ptr @.str.21776)
-  %widen1682 = zext i1 %392 to i64
+  %391 = call i1 @"cli::result_has_flag"(ptr %parsed1681, ptr @.str.21776)
+  %widen1682 = zext i1 %391 to i64
   %cast1683 = trunc i64 %widen1682 to i1
   store i1 %cast1683, ptr %json_output, align 8
-  %393 = call i64 @avra_selfhost_argc()
-  store i64 %393, ptr %argc, align 8
+  %392 = call i64 @avra_selfhost_argc()
+  store i64 %392, ptr %argc, align 8
   %argc1684 = load i64, ptr %argc, align 8
   %sub1685 = sub i64 %argc1684, 1
-  %394 = call ptr @avra_selfhost_get_arg_cstr(i64 %sub1685)
-  store ptr %394, ptr %cpath, align 8
+  %393 = call ptr @avra_selfhost_get_arg_cstr(i64 %sub1685)
+  store ptr %393, ptr %cpath, align 8
   %cpath1686 = load ptr, ptr %cpath, align 8
-  %395 = call i64 @avra_str_starts_with(ptr %cpath1686, ptr @.str.21777)
-  %if_cond1688 = icmp ne i64 %395, 0
+  %394 = call i64 @avra_str_starts_with(ptr %cpath1686, ptr @.str.21777)
+  %if_cond1688 = icmp ne i64 %394, 0
   br i1 %if_cond1688, label %if_then1689, label %if_else1690
 
 if_else1670:                                      ; preds = %pmatch_end
@@ -272146,14 +272145,14 @@ if_else1670:                                      ; preds = %pmatch_end
 
 ifcont1687:                                       ; preds = %if_else1690, %if_then1689
   %cpath1691 = load ptr, ptr %cpath, align 8
-  %396 = call i64 @file_exists(ptr %cpath1691)
-  %not_cmp1692 = icmp eq i64 %396, 0
+  %395 = call i64 @file_exists(ptr %cpath1691)
+  %not_cmp1692 = icmp eq i64 %395, 0
   %not_cmp_ext1693 = zext i1 %not_cmp1692 to i64
   %if_cond1695 = icmp ne i64 %not_cmp_ext1693, 0
   br i1 %if_cond1695, label %if_then1696, label %if_else1697
 
 if_then1689:                                      ; preds = %if_then1669
-  %397 = call i64 @fail(ptr @.str.21778)
+  %396 = call i64 @fail(ptr @.str.21778)
   br label %ifcont1687
 
 if_else1690:                                      ; preds = %if_then1669
@@ -272161,14 +272160,14 @@ if_else1690:                                      ; preds = %if_then1669
 
 ifcont1694:                                       ; preds = %if_else1697, %if_then1696
   %cpath1705 = load ptr, ptr %cpath, align 8
-  %398 = call ptr @read_file(ptr %cpath1705)
-  store ptr %398, ptr %csource, align 8
+  %397 = call ptr @read_file(ptr %cpath1705)
+  store ptr %397, ptr %csource, align 8
   %cpath1706 = load ptr, ptr %cpath, align 8
-  %399 = call ptr @"features::modules::resolver::modules_dirname"(ptr %cpath1706)
-  store ptr %399, ptr %pkg_dir, align 8
+  %398 = call ptr @"features::modules::resolver::modules_dirname"(ptr %cpath1706)
+  store ptr %398, ptr %pkg_dir, align 8
   %pkg_dir1707 = load ptr, ptr %pkg_dir, align 8
-  %400 = call ptr @"features::modules::package::load_package_config"(ptr %pkg_dir1707)
-  store ptr %400, ptr %pkg, align 8
+  %399 = call ptr @"features::modules::package::load_package_config"(ptr %pkg_dir1707)
+  store ptr %399, ptr %pkg, align 8
   %pkg1708 = load ptr, ptr %pkg, align 8
   %cast1709 = ptrtoint ptr %pkg1708 to i64
   %null_chk1710 = icmp eq i64 %cast1709, 0
@@ -272180,18 +272179,18 @@ ifcont1694:                                       ; preds = %if_else1697, %if_th
 
 if_then1696:                                      ; preds = %ifcont1687
   %cpath1698 = load ptr, ptr %cpath, align 8
-  %401 = call i64 @strlen(ptr @.str.21779)
-  %402 = call i64 @strlen(ptr %cpath1698)
-  %concat_total1699 = add i64 %401, %402
+  %400 = call i64 @strlen(ptr @.str.21779)
+  %401 = call i64 @strlen(ptr %cpath1698)
+  %concat_total1699 = add i64 %400, %401
   %concat_size1700 = add i64 %concat_total1699, 1
-  %403 = call ptr @avra_rc_alloc(i64 %concat_size1700)
-  %404 = call ptr @memcpy(ptr %403, ptr @.str.21779, i64 %401)
-  %cast1701 = ptrtoint ptr %403 to i64
-  %dst2_int1702 = add i64 %cast1701, %401
+  %402 = call ptr @avra_rc_alloc(i64 %concat_size1700)
+  %403 = call ptr @memcpy(ptr %402, ptr @.str.21779, i64 %400)
+  %cast1701 = ptrtoint ptr %402 to i64
+  %dst2_int1702 = add i64 %cast1701, %400
   %cast1703 = inttoptr i64 %dst2_int1702 to ptr
-  %rhs_len_p11704 = add i64 %402, 1
-  %405 = call ptr @memcpy(ptr %cast1703, ptr %cpath1698, i64 %rhs_len_p11704)
-  %406 = call i64 @fail(ptr %403)
+  %rhs_len_p11704 = add i64 %401, 1
+  %404 = call ptr @memcpy(ptr %cast1703, ptr %cpath1698, i64 %rhs_len_p11704)
+  %405 = call i64 @fail(ptr %402)
   br label %ifcont1694
 
 if_else1697:                                      ; preds = %ifcont1687
@@ -272199,8 +272198,8 @@ if_else1697:                                      ; preds = %ifcont1687
 
 ifcont1714:                                       ; preds = %if_else1716, %if_then1715
   %csource1747 = load ptr, ptr %csource, align 8
-  %407 = call ptr @"parse::parse_program_source"(ptr %csource1747)
-  store ptr %407, ptr %parsed1748, align 8
+  %406 = call ptr @"parse::parse_program_source"(ptr %csource1747)
+  store ptr %406, ptr %parsed1748, align 8
   %parsed1749 = load ptr, ptr %parsed1748, align 8
   %cast1750 = ptrtoint ptr %parsed1749 to i64
   %null_chk1751 = icmp eq i64 %cast1750, 0
@@ -272219,28 +272218,28 @@ if_then1715:                                      ; preds = %ifcont1694
   call void @avra_null_deref_trap(ptr @fld_name.21784, i64 4, ptr @sty_name.21785, i64 41, i64 %null_ext1720, ptr @src_file.21786, i64 103, i64 913)
   %name_ptr1721 = getelementptr inbounds nuw %"features::modules::package::PackageConfig", ptr %pkg1717, i32 0, i32 0
   %name1722 = load ptr, ptr %name_ptr1721, align 8
-  %408 = call i64 @strlen(ptr @.str.21783)
-  %409 = call i64 @strlen(ptr %name1722)
-  %concat_total1723 = add i64 %408, %409
+  %407 = call i64 @strlen(ptr @.str.21783)
+  %408 = call i64 @strlen(ptr %name1722)
+  %concat_total1723 = add i64 %407, %408
   %concat_size1724 = add i64 %concat_total1723, 1
-  %410 = call ptr @avra_rc_alloc(i64 %concat_size1724)
-  %411 = call ptr @memcpy(ptr %410, ptr @.str.21783, i64 %408)
-  %cast1725 = ptrtoint ptr %410 to i64
-  %dst2_int1726 = add i64 %cast1725, %408
+  %409 = call ptr @avra_rc_alloc(i64 %concat_size1724)
+  %410 = call ptr @memcpy(ptr %409, ptr @.str.21783, i64 %407)
+  %cast1725 = ptrtoint ptr %409 to i64
+  %dst2_int1726 = add i64 %cast1725, %407
   %cast1727 = inttoptr i64 %dst2_int1726 to ptr
-  %rhs_len_p11728 = add i64 %409, 1
-  %412 = call ptr @memcpy(ptr %cast1727, ptr %name1722, i64 %rhs_len_p11728)
-  %413 = call i64 @strlen(ptr %410)
-  %414 = call i64 @strlen(ptr @.str.21787)
-  %concat_total1729 = add i64 %413, %414
+  %rhs_len_p11728 = add i64 %408, 1
+  %411 = call ptr @memcpy(ptr %cast1727, ptr %name1722, i64 %rhs_len_p11728)
+  %412 = call i64 @strlen(ptr %409)
+  %413 = call i64 @strlen(ptr @.str.21787)
+  %concat_total1729 = add i64 %412, %413
   %concat_size1730 = add i64 %concat_total1729, 1
-  %415 = call ptr @avra_rc_alloc(i64 %concat_size1730)
-  %416 = call ptr @memcpy(ptr %415, ptr %410, i64 %413)
-  %cast1731 = ptrtoint ptr %415 to i64
-  %dst2_int1732 = add i64 %cast1731, %413
+  %414 = call ptr @avra_rc_alloc(i64 %concat_size1730)
+  %415 = call ptr @memcpy(ptr %414, ptr %409, i64 %412)
+  %cast1731 = ptrtoint ptr %414 to i64
+  %dst2_int1732 = add i64 %cast1731, %412
   %cast1733 = inttoptr i64 %dst2_int1732 to ptr
-  %rhs_len_p11734 = add i64 %414, 1
-  %417 = call ptr @memcpy(ptr %cast1733, ptr @.str.21787, i64 %rhs_len_p11734)
+  %rhs_len_p11734 = add i64 %413, 1
+  %416 = call ptr @memcpy(ptr %cast1733, ptr @.str.21787, i64 %rhs_len_p11734)
   %pkg1735 = load ptr, ptr %pkg, align 8
   %cast1736 = ptrtoint ptr %pkg1735 to i64
   %null_chk1737 = icmp eq i64 %cast1736, 0
@@ -272248,18 +272247,18 @@ if_then1715:                                      ; preds = %ifcont1694
   call void @avra_null_deref_trap(ptr @fld_name.21788, i64 7, ptr @sty_name.21789, i64 41, i64 %null_ext1738, ptr @src_file.21790, i64 103, i64 913)
   %version_ptr1739 = getelementptr inbounds nuw %"features::modules::package::PackageConfig", ptr %pkg1735, i32 0, i32 1
   %version1740 = load ptr, ptr %version_ptr1739, align 8
-  %418 = call i64 @strlen(ptr %415)
-  %419 = call i64 @strlen(ptr %version1740)
-  %concat_total1741 = add i64 %418, %419
+  %417 = call i64 @strlen(ptr %414)
+  %418 = call i64 @strlen(ptr %version1740)
+  %concat_total1741 = add i64 %417, %418
   %concat_size1742 = add i64 %concat_total1741, 1
-  %420 = call ptr @avra_rc_alloc(i64 %concat_size1742)
-  %421 = call ptr @memcpy(ptr %420, ptr %415, i64 %418)
-  %cast1743 = ptrtoint ptr %420 to i64
-  %dst2_int1744 = add i64 %cast1743, %418
+  %419 = call ptr @avra_rc_alloc(i64 %concat_size1742)
+  %420 = call ptr @memcpy(ptr %419, ptr %414, i64 %417)
+  %cast1743 = ptrtoint ptr %419 to i64
+  %dst2_int1744 = add i64 %cast1743, %417
   %cast1745 = inttoptr i64 %dst2_int1744 to ptr
-  %rhs_len_p11746 = add i64 %419, 1
-  %422 = call ptr @memcpy(ptr %cast1745, ptr %version1740, i64 %rhs_len_p11746)
-  call void @avra_eprintln(ptr %420)
+  %rhs_len_p11746 = add i64 %418, 1
+  %421 = call ptr @memcpy(ptr %cast1745, ptr %version1740, i64 %rhs_len_p11746)
+  call void @avra_eprintln(ptr %419)
   br label %ifcont1714
 
 if_else1716:                                      ; preds = %ifcont1694
@@ -272298,8 +272297,8 @@ sc_r_merge1770:                                   ; preds = %sc_r_false1769, %sc
 
 ifcont1773:                                       ; preds = %if_else1776, %ifcont1784
   %stop_after1813 = load ptr, ptr %stop_after, align 8
-  %423 = call i32 @strcmp(ptr %stop_after1813, ptr @.str.21809)
-  %widen1814 = sext i32 %423 to i64
+  %422 = call i32 @strcmp(ptr %stop_after1813, ptr @.str.21809)
+  %widen1814 = sext i32 %422 to i64
   %streq_cmp1815 = icmp eq i64 %widen1814, 0
   %streq_ext1816 = zext i1 %streq_cmp1815 to i64
   %if_cond1818 = icmp ne i64 %streq_ext1816, 0
@@ -272313,8 +272312,8 @@ if_then1775:                                      ; preds = %sc_merge1758
   call void @avra_null_deref_trap(ptr @fld_name.21797, i64 3, ptr @sty_name.21798, i64 25, i64 %null_ext1780, ptr @src_file.21799, i64 103, i64 918)
   %bag_ptr1781 = getelementptr inbounds nuw %"parse::ProgramParseResult", ptr %parsed1777, i32 0, i32 3
   %bag1782 = load ptr, ptr %bag_ptr1781, align 8
-  %424 = call i1 @"diagnostics::bag_has_errors"(ptr %bag1782)
-  %widen1783 = zext i1 %424 to i64
+  %423 = call i1 @"diagnostics::bag_has_errors"(ptr %bag1782)
+  %widen1783 = zext i1 %423 to i64
   %if_cond1785 = icmp ne i64 %widen1783, 0
   br i1 %if_cond1785, label %if_then1786, label %if_else1787
 
@@ -272329,7 +272328,7 @@ ifcont1784:                                       ; preds = %if_else1787, %ifcon
   call void @avra_null_deref_trap(ptr @fld_name.21806, i64 13, ptr @sty_name.21807, i64 25, i64 %null_ext1810, ptr @src_file.21808, i64 103, i64 922)
   %error_message_ptr1811 = getelementptr inbounds nuw %"parse::ProgramParseResult", ptr %parsed1807, i32 0, i32 2
   %error_message1812 = load ptr, ptr %error_message_ptr1811, align 8
-  %425 = call i64 @fail(ptr %error_message1812)
+  %424 = call i64 @fail(ptr %error_message1812)
   br label %ifcont1773
 
 if_then1786:                                      ; preds = %if_then1775
@@ -272351,7 +272350,7 @@ if_then1790:                                      ; preds = %if_then1786
   call void @avra_null_deref_trap(ptr @fld_name.21800, i64 3, ptr @sty_name.21801, i64 25, i64 %null_ext1796, ptr @src_file.21802, i64 103, i64 919)
   %bag_ptr1797 = getelementptr inbounds nuw %"parse::ProgramParseResult", ptr %parsed1793, i32 0, i32 3
   %bag1798 = load ptr, ptr %bag_ptr1797, align 8
-  %426 = call i64 @"diagnostics::render::render_bag_json"(ptr %cpath1792, ptr %bag1798)
+  %425 = call i64 @"diagnostics::render::render_bag_json"(ptr %cpath1792, ptr %bag1798)
   br label %ifcont1789
 
 if_else1791:                                      ; preds = %if_then1786
@@ -272364,7 +272363,7 @@ if_else1791:                                      ; preds = %if_then1786
   call void @avra_null_deref_trap(ptr @fld_name.21803, i64 3, ptr @sty_name.21804, i64 25, i64 %null_ext1804, ptr @src_file.21805, i64 103, i64 920)
   %bag_ptr1805 = getelementptr inbounds nuw %"parse::ProgramParseResult", ptr %parsed1801, i32 0, i32 3
   %bag1806 = load ptr, ptr %bag_ptr1805, align 8
-  %427 = call i64 @"diagnostics::render::render_bag"(ptr %csource1799, ptr %cpath1800, ptr %bag1806)
+  %426 = call i64 @"diagnostics::render::render_bag"(ptr %csource1799, ptr %cpath1800, ptr %bag1806)
   br label %ifcont1789
 
 ifcont1817:                                       ; preds = %if_else1820
@@ -272375,22 +272374,22 @@ ifcont1817:                                       ; preds = %if_else1820
   call void @avra_null_deref_trap(ptr @fld_name.21811, i64 5, ptr @sty_name.21812, i64 25, i64 %null_ext1825, ptr @src_file.21813, i64 103, i64 929)
   %stmts_ptr1826 = getelementptr inbounds nuw %"parse::ProgramParseResult", ptr %parsed1822, i32 0, i32 0
   %stmts1827 = load ptr, ptr %stmts_ptr1826, align 8
-  %428 = call ptr @"desugar::desugar_program"(ptr %stmts1827)
-  store ptr %428, ptr %desugared1828, align 8
+  %427 = call ptr @"desugar::desugar_program"(ptr %stmts1827)
+  store ptr %427, ptr %desugared1828, align 8
   %cpath1829 = load ptr, ptr %cpath, align 8
-  %429 = call ptr @"features::modules::resolver::modules_dirname"(ptr %cpath1829)
-  store ptr %429, ptr %entry_dir1830, align 8
+  %428 = call ptr @"features::modules::resolver::modules_dirname"(ptr %cpath1829)
+  store ptr %428, ptr %entry_dir1830, align 8
   %desugared1831 = load ptr, ptr %desugared1828, align 8
   %entry_dir1832 = load ptr, ptr %entry_dir1830, align 8
-  %430 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr1833 = getelementptr inbounds nuw %"features::modules::resolver::LoadedPaths", ptr %430, i32 0, i32 0
+  %429 = call ptr @avra_rc_alloc(i64 16)
+  %tag_ptr1833 = getelementptr inbounds nuw %"features::modules::resolver::LoadedPaths", ptr %429, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr1833, align 8
-  %pay_ptr1834 = getelementptr inbounds nuw %"features::modules::resolver::LoadedPaths", ptr %430, i32 0, i32 1
+  %pay_ptr1834 = getelementptr inbounds nuw %"features::modules::resolver::LoadedPaths", ptr %429, i32 0, i32 1
   store ptr null, ptr %pay_ptr1834, align 8
-  %cast1835 = ptrtoint ptr %430 to i64
+  %cast1835 = ptrtoint ptr %429 to i64
   %cast1836 = inttoptr i64 %cast1835 to ptr
-  %431 = call ptr @"features::modules::resolver::resolve_module_files"(ptr %desugared1831, ptr %entry_dir1832, ptr %cast1836)
-  store ptr %431, ptr %mod_resolved1837, align 8
+  %430 = call ptr @"features::modules::resolver::resolve_module_files"(ptr %desugared1831, ptr %entry_dir1832, ptr %cast1836)
+  store ptr %430, ptr %mod_resolved1837, align 8
   %mod_resolved1838 = load ptr, ptr %mod_resolved1837, align 8
   %cast1839 = ptrtoint ptr %mod_resolved1838 to i64
   %null_chk1840 = icmp eq i64 %cast1839, 0
@@ -272402,8 +272401,8 @@ ifcont1817:                                       ; preds = %if_else1820
   br i1 %if_cond1845, label %if_then1846, label %if_else1847
 
 if_then1819:                                      ; preds = %ifcont1773
-  %432 = call i32 @puts(ptr @.str.21810)
-  %widen1821 = sext i32 %432 to i64
+  %431 = call i32 @puts(ptr @.str.21810)
+  %widen1821 = sext i32 %431 to i64
   ret i64 0
 
 if_else1820:                                      ; preds = %ifcont1773
@@ -272411,21 +272410,21 @@ if_else1820:                                      ; preds = %ifcont1773
 
 ifcont1844:                                       ; preds = %if_else1847, %ifcont1860
   %stop_after1874 = load ptr, ptr %stop_after, align 8
-  %433 = call i32 @strcmp(ptr %stop_after1874, ptr @.str.21823)
-  %widen1875 = sext i32 %433 to i64
+  %432 = call i32 @strcmp(ptr %stop_after1874, ptr @.str.21823)
+  %widen1875 = sext i32 %432 to i64
   %streq_cmp1876 = icmp eq i64 %widen1875, 0
   %streq_ext1877 = zext i1 %streq_cmp1876 to i64
   %if_cond1879 = icmp ne i64 %streq_ext1877, 0
   br i1 %if_cond1879, label %if_then1880, label %if_else1881
 
 if_then1846:                                      ; preds = %ifcont1817
-  %434 = call ptr @"diagnostics::bag_new"()
-  %435 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr1848 = getelementptr inbounds nuw %"diagnostics::DiagCode", ptr %435, i32 0, i32 0
+  %433 = call ptr @"diagnostics::bag_new"()
+  %434 = call ptr @avra_rc_alloc(i64 16)
+  %tag_ptr1848 = getelementptr inbounds nuw %"diagnostics::DiagCode", ptr %434, i32 0, i32 0
   store i64 6736596269474561240, ptr %tag_ptr1848, align 8
-  %pay_ptr1849 = getelementptr inbounds nuw %"diagnostics::DiagCode", ptr %435, i32 0, i32 1
+  %pay_ptr1849 = getelementptr inbounds nuw %"diagnostics::DiagCode", ptr %434, i32 0, i32 1
   store ptr null, ptr %pay_ptr1849, align 8
-  %cast1850 = ptrtoint ptr %435 to i64
+  %cast1850 = ptrtoint ptr %434 to i64
   %mod_resolved1851 = load ptr, ptr %mod_resolved1837, align 8
   %cast1852 = ptrtoint ptr %mod_resolved1851 to i64
   %null_chk1853 = icmp eq i64 %cast1852, 0
@@ -272433,11 +272432,11 @@ if_then1846:                                      ; preds = %ifcont1817
   call void @avra_null_deref_trap(ptr @fld_name.21817, i64 13, ptr @sty_name.21818, i64 42, i64 %null_ext1854, ptr @src_file.21819, i64 103, i64 935)
   %error_message_ptr1855 = getelementptr inbounds nuw %"features::modules::resolver::ModListResult", ptr %mod_resolved1851, i32 0, i32 3
   %error_message1856 = load ptr, ptr %error_message_ptr1855, align 8
-  %436 = call ptr @"diagnostics::span_dummy"()
+  %435 = call ptr @"diagnostics::span_dummy"()
   %cast1857 = inttoptr i64 %cast1850 to ptr
-  %437 = call ptr @"diagnostics::diag_error"(ptr %cast1857, ptr %error_message1856, ptr %436)
-  %438 = call ptr @"diagnostics::bag_report"(ptr %434, ptr %437)
-  store ptr %438, ptr %mod_bag1858, align 8
+  %436 = call ptr @"diagnostics::diag_error"(ptr %cast1857, ptr %error_message1856, ptr %435)
+  %437 = call ptr @"diagnostics::bag_report"(ptr %433, ptr %436)
+  store ptr %437, ptr %mod_bag1858, align 8
   %json_output1859 = load i1, ptr %json_output, align 8
   br i1 %json_output1859, label %if_then1861, label %if_else1862
 
@@ -272452,20 +272451,20 @@ ifcont1860:                                       ; preds = %if_else1862, %if_th
   call void @avra_null_deref_trap(ptr @fld_name.21820, i64 13, ptr @sty_name.21821, i64 42, i64 %null_ext1871, ptr @src_file.21822, i64 103, i64 938)
   %error_message_ptr1872 = getelementptr inbounds nuw %"features::modules::resolver::ModListResult", ptr %mod_resolved1868, i32 0, i32 3
   %error_message1873 = load ptr, ptr %error_message_ptr1872, align 8
-  %439 = call i64 @fail(ptr %error_message1873)
+  %438 = call i64 @fail(ptr %error_message1873)
   br label %ifcont1844
 
 if_then1861:                                      ; preds = %if_then1846
   %cpath1863 = load ptr, ptr %cpath, align 8
   %mod_bag1864 = load ptr, ptr %mod_bag1858, align 8
-  %440 = call i64 @"diagnostics::render::render_bag_json"(ptr %cpath1863, ptr %mod_bag1864)
+  %439 = call i64 @"diagnostics::render::render_bag_json"(ptr %cpath1863, ptr %mod_bag1864)
   br label %ifcont1860
 
 if_else1862:                                      ; preds = %if_then1846
   %csource1865 = load ptr, ptr %csource, align 8
   %cpath1866 = load ptr, ptr %cpath, align 8
   %mod_bag1867 = load ptr, ptr %mod_bag1858, align 8
-  %441 = call i64 @"diagnostics::render::render_bag"(ptr %csource1865, ptr %cpath1866, ptr %mod_bag1867)
+  %440 = call i64 @"diagnostics::render::render_bag"(ptr %csource1865, ptr %cpath1866, ptr %mod_bag1867)
   br label %ifcont1860
 
 ifcont1878:                                       ; preds = %if_else1881
@@ -272476,11 +272475,11 @@ ifcont1878:                                       ; preds = %if_else1881
   call void @avra_null_deref_trap(ptr @fld_name.21825, i64 5, ptr @sty_name.21826, i64 42, i64 %null_ext1886, ptr @src_file.21827, i64 103, i64 946)
   %stmts_ptr1887 = getelementptr inbounds nuw %"features::modules::resolver::ModListResult", ptr %mod_resolved1883, i32 0, i32 0
   %stmts1888 = load ptr, ptr %stmts_ptr1887, align 8
-  %442 = call ptr @"features::component_decl::expand::expand_components"(ptr %stmts1888)
-  store ptr %442, ptr %expanded1889, align 8
+  %441 = call ptr @"features::component_decl::expand::expand_components"(ptr %stmts1888)
+  store ptr %441, ptr %expanded1889, align 8
   %expanded1890 = load ptr, ptr %expanded1889, align 8
-  %443 = call ptr @"resolve::names::resolve_names"(ptr %expanded1890)
-  store ptr %443, ptr %named1891, align 8
+  %442 = call ptr @"resolve::names::resolve_names"(ptr %expanded1890)
+  store ptr %442, ptr %named1891, align 8
   %named1892 = load ptr, ptr %named1891, align 8
   %cast1893 = ptrtoint ptr %named1892 to i64
   %null_chk1894 = icmp eq i64 %cast1893, 0
@@ -272488,14 +272487,14 @@ ifcont1878:                                       ; preds = %if_else1881
   call void @avra_null_deref_trap(ptr @fld_name.21828, i64 3, ptr @sty_name.21829, i64 33, i64 %null_ext1895, ptr @src_file.21830, i64 103, i64 948)
   %bag_ptr1896 = getelementptr inbounds nuw %"resolve::names::NameResolveResult", ptr %named1892, i32 0, i32 3
   %bag1897 = load ptr, ptr %bag_ptr1896, align 8
-  %444 = call i1 @"diagnostics::bag_has_errors"(ptr %bag1897)
-  %widen1898 = zext i1 %444 to i64
+  %443 = call i1 @"diagnostics::bag_has_errors"(ptr %bag1897)
+  %widen1898 = zext i1 %443 to i64
   %l_bool1899 = icmp ne i64 %widen1898, 0
   br i1 %l_bool1899, label %sc_short1901, label %sc_rhs1900
 
 if_then1880:                                      ; preds = %ifcont1844
-  %445 = call i32 @puts(ptr @.str.21824)
-  %widen1882 = sext i32 %445 to i64
+  %444 = call i32 @puts(ptr @.str.21824)
+  %widen1882 = sext i32 %444 to i64
   ret i64 0
 
 if_else1881:                                      ; preds = %ifcont1844
@@ -272509,8 +272508,8 @@ sc_rhs1900:                                       ; preds = %ifcont1878
   call void @avra_null_deref_trap(ptr @fld_name.21831, i64 3, ptr @sty_name.21832, i64 33, i64 %null_ext1906, ptr @src_file.21833, i64 103, i64 948)
   %bag_ptr1907 = getelementptr inbounds nuw %"resolve::names::NameResolveResult", ptr %named1903, i32 0, i32 3
   %bag1908 = load ptr, ptr %bag_ptr1907, align 8
-  %446 = call i1 @"diagnostics::bag_has_warnings"(ptr %bag1908)
-  %widen1909 = zext i1 %446 to i64
+  %445 = call i1 @"diagnostics::bag_has_warnings"(ptr %bag1908)
+  %widen1909 = zext i1 %445 to i64
   %r_bool1910 = icmp ne i64 %widen1909, 0
   br i1 %r_bool1910, label %sc_r_true1911, label %sc_r_false1912
 
@@ -272562,7 +272561,7 @@ if_then1922:                                      ; preds = %if_then1918
   call void @avra_null_deref_trap(ptr @fld_name.21834, i64 3, ptr @sty_name.21835, i64 33, i64 %null_ext1928, ptr @src_file.21836, i64 103, i64 949)
   %bag_ptr1929 = getelementptr inbounds nuw %"resolve::names::NameResolveResult", ptr %named1925, i32 0, i32 3
   %bag1930 = load ptr, ptr %bag_ptr1929, align 8
-  %447 = call i64 @"diagnostics::render::render_bag_json"(ptr %cpath1924, ptr %bag1930)
+  %446 = call i64 @"diagnostics::render::render_bag_json"(ptr %cpath1924, ptr %bag1930)
   br label %ifcont1921
 
 if_else1923:                                      ; preds = %if_then1918
@@ -272575,13 +272574,13 @@ if_else1923:                                      ; preds = %if_then1918
   call void @avra_null_deref_trap(ptr @fld_name.21837, i64 3, ptr @sty_name.21838, i64 33, i64 %null_ext1936, ptr @src_file.21839, i64 103, i64 950)
   %bag_ptr1937 = getelementptr inbounds nuw %"resolve::names::NameResolveResult", ptr %named1933, i32 0, i32 3
   %bag1938 = load ptr, ptr %bag_ptr1937, align 8
-  %448 = call i64 @"diagnostics::render::render_bag"(ptr %csource1931, ptr %cpath1932, ptr %bag1938)
+  %447 = call i64 @"diagnostics::render::render_bag"(ptr %csource1931, ptr %cpath1932, ptr %bag1938)
   br label %ifcont1921
 
 ifcont1945:                                       ; preds = %if_else1948, %if_then1947
   %stop_after1955 = load ptr, ptr %stop_after, align 8
-  %449 = call i32 @strcmp(ptr %stop_after1955, ptr @.str.21846)
-  %widen1956 = sext i32 %449 to i64
+  %448 = call i32 @strcmp(ptr %stop_after1955, ptr @.str.21846)
+  %widen1956 = sext i32 %448 to i64
   %streq_cmp1957 = icmp eq i64 %widen1956, 0
   %streq_ext1958 = zext i1 %streq_cmp1957 to i64
   %if_cond1960 = icmp ne i64 %streq_ext1958, 0
@@ -272595,7 +272594,7 @@ if_then1947:                                      ; preds = %ifcont1916
   call void @avra_null_deref_trap(ptr @fld_name.21843, i64 13, ptr @sty_name.21844, i64 33, i64 %null_ext1952, ptr @src_file.21845, i64 103, i64 952)
   %error_message_ptr1953 = getelementptr inbounds nuw %"resolve::names::NameResolveResult", ptr %named1949, i32 0, i32 2
   %error_message1954 = load ptr, ptr %error_message_ptr1953, align 8
-  %450 = call i64 @fail(ptr %error_message1954)
+  %449 = call i64 @fail(ptr %error_message1954)
   br label %ifcont1945
 
 if_else1948:                                      ; preds = %ifcont1916
@@ -272609,8 +272608,8 @@ ifcont1959:                                       ; preds = %if_else1962
   call void @avra_null_deref_trap(ptr @fld_name.21848, i64 5, ptr @sty_name.21849, i64 33, i64 %null_ext1967, ptr @src_file.21850, i64 103, i64 958)
   %stmts_ptr1968 = getelementptr inbounds nuw %"resolve::names::NameResolveResult", ptr %named1964, i32 0, i32 0
   %stmts1969 = load ptr, ptr %stmts_ptr1968, align 8
-  %451 = call ptr @"typeck::typecheck_program"(ptr %stmts1969)
-  store ptr %451, ptr %tc_result1970, align 8
+  %450 = call ptr @"typeck::typecheck_program"(ptr %stmts1969)
+  store ptr %450, ptr %tc_result1970, align 8
   %tc_result1971 = load ptr, ptr %tc_result1970, align 8
   %cast1972 = ptrtoint ptr %tc_result1971 to i64
   %null_chk1973 = icmp eq i64 %cast1972, 0
@@ -272618,14 +272617,14 @@ ifcont1959:                                       ; preds = %if_else1962
   call void @avra_null_deref_trap(ptr @fld_name.21851, i64 3, ptr @sty_name.21852, i64 23, i64 %null_ext1974, ptr @src_file.21853, i64 103, i64 959)
   %bag_ptr1975 = getelementptr inbounds nuw %"typeck::TypeCheckResult", ptr %tc_result1971, i32 0, i32 2
   %bag1976 = load ptr, ptr %bag_ptr1975, align 8
-  %452 = call i1 @"diagnostics::bag_has_errors"(ptr %bag1976)
-  %widen1977 = zext i1 %452 to i64
+  %451 = call i1 @"diagnostics::bag_has_errors"(ptr %bag1976)
+  %widen1977 = zext i1 %451 to i64
   %l_bool1978 = icmp ne i64 %widen1977, 0
   br i1 %l_bool1978, label %sc_short1980, label %sc_rhs1979
 
 if_then1961:                                      ; preds = %ifcont1945
-  %453 = call i32 @puts(ptr @.str.21847)
-  %widen1963 = sext i32 %453 to i64
+  %452 = call i32 @puts(ptr @.str.21847)
+  %widen1963 = sext i32 %452 to i64
   ret i64 0
 
 if_else1962:                                      ; preds = %ifcont1945
@@ -272639,8 +272638,8 @@ sc_rhs1979:                                       ; preds = %ifcont1959
   call void @avra_null_deref_trap(ptr @fld_name.21854, i64 3, ptr @sty_name.21855, i64 23, i64 %null_ext1985, ptr @src_file.21856, i64 103, i64 959)
   %bag_ptr1986 = getelementptr inbounds nuw %"typeck::TypeCheckResult", ptr %tc_result1982, i32 0, i32 2
   %bag1987 = load ptr, ptr %bag_ptr1986, align 8
-  %454 = call i1 @"diagnostics::bag_has_warnings"(ptr %bag1987)
-  %widen1988 = zext i1 %454 to i64
+  %453 = call i1 @"diagnostics::bag_has_warnings"(ptr %bag1987)
+  %widen1988 = zext i1 %453 to i64
   %r_bool1989 = icmp ne i64 %widen1988, 0
   br i1 %r_bool1989, label %sc_r_true1990, label %sc_r_false1991
 
@@ -272670,8 +272669,8 @@ ifcont1995:                                       ; preds = %if_else1998, %ifcon
   call void @avra_null_deref_trap(ptr @fld_name.21863, i64 3, ptr @sty_name.21864, i64 23, i64 %null_ext2021, ptr @src_file.21865, i64 103, i64 963)
   %bag_ptr2022 = getelementptr inbounds nuw %"typeck::TypeCheckResult", ptr %tc_result2018, i32 0, i32 2
   %bag2023 = load ptr, ptr %bag_ptr2022, align 8
-  %455 = call i1 @"diagnostics::bag_has_errors"(ptr %bag2023)
-  %widen2024 = zext i1 %455 to i64
+  %454 = call i1 @"diagnostics::bag_has_errors"(ptr %bag2023)
+  %widen2024 = zext i1 %454 to i64
   %if_cond2026 = icmp ne i64 %widen2024, 0
   br i1 %if_cond2026, label %if_then2027, label %if_else2028
 
@@ -272694,7 +272693,7 @@ if_then2001:                                      ; preds = %if_then1997
   call void @avra_null_deref_trap(ptr @fld_name.21857, i64 3, ptr @sty_name.21858, i64 23, i64 %null_ext2007, ptr @src_file.21859, i64 103, i64 960)
   %bag_ptr2008 = getelementptr inbounds nuw %"typeck::TypeCheckResult", ptr %tc_result2004, i32 0, i32 2
   %bag2009 = load ptr, ptr %bag_ptr2008, align 8
-  %456 = call i64 @"diagnostics::render::render_bag_json"(ptr %cpath2003, ptr %bag2009)
+  %455 = call i64 @"diagnostics::render::render_bag_json"(ptr %cpath2003, ptr %bag2009)
   br label %ifcont2000
 
 if_else2002:                                      ; preds = %if_then1997
@@ -272707,20 +272706,20 @@ if_else2002:                                      ; preds = %if_then1997
   call void @avra_null_deref_trap(ptr @fld_name.21860, i64 3, ptr @sty_name.21861, i64 23, i64 %null_ext2015, ptr @src_file.21862, i64 103, i64 961)
   %bag_ptr2016 = getelementptr inbounds nuw %"typeck::TypeCheckResult", ptr %tc_result2012, i32 0, i32 2
   %bag2017 = load ptr, ptr %bag_ptr2016, align 8
-  %457 = call i64 @"diagnostics::render::render_bag"(ptr %csource2010, ptr %cpath2011, ptr %bag2017)
+  %456 = call i64 @"diagnostics::render::render_bag"(ptr %csource2010, ptr %cpath2011, ptr %bag2017)
   br label %ifcont2000
 
 ifcont2025:                                       ; preds = %if_else2028, %if_then2027
   %stop_after2029 = load ptr, ptr %stop_after, align 8
-  %458 = call i32 @strcmp(ptr %stop_after2029, ptr @.str.21867)
-  %widen2030 = sext i32 %458 to i64
+  %457 = call i32 @strcmp(ptr %stop_after2029, ptr @.str.21867)
+  %widen2030 = sext i32 %457 to i64
   %streq_cmp2031 = icmp eq i64 %widen2030, 0
   %streq_ext2032 = zext i1 %streq_cmp2031 to i64
   %if_cond2034 = icmp ne i64 %streq_ext2032, 0
   br i1 %if_cond2034, label %if_then2035, label %if_else2036
 
 if_then2027:                                      ; preds = %ifcont1995
-  %459 = call i64 @fail(ptr @.str.21866)
+  %458 = call i64 @fail(ptr @.str.21866)
   br label %ifcont2025
 
 if_else2028:                                      ; preds = %ifcont1995
@@ -272741,8 +272740,8 @@ ifcont2033:                                       ; preds = %if_else2036
   call void @avra_null_deref_trap(ptr @fld_name.21872, i64 11, ptr @sty_name.21873, i64 23, i64 %null_ext2047, ptr @src_file.21874, i64 103, i64 970)
   %trait_impls_ptr2048 = getelementptr inbounds nuw %"typeck::TypeCheckResult", ptr %tc_result2044, i32 0, i32 3
   %trait_impls2049 = load ptr, ptr %trait_impls_ptr2048, align 8
-  %460 = call ptr @"features::generics::mono::monomorphize"(ptr %stmts2043, ptr %trait_impls2049)
-  store ptr %460, ptr %mono2050, align 8
+  %459 = call ptr @"features::generics::mono::monomorphize"(ptr %stmts2043, ptr %trait_impls2049)
+  store ptr %459, ptr %mono2050, align 8
   %mono2051 = load ptr, ptr %mono2050, align 8
   %cast2052 = ptrtoint ptr %mono2051 to i64
   %null_chk2053 = icmp eq i64 %cast2052, 0
@@ -272750,14 +272749,14 @@ ifcont2033:                                       ; preds = %if_else2036
   call void @avra_null_deref_trap(ptr @fld_name.21875, i64 3, ptr @sty_name.21876, i64 36, i64 %null_ext2054, ptr @src_file.21877, i64 103, i64 971)
   %bag_ptr2055 = getelementptr inbounds nuw %"features::generics::mono::MonoResult", ptr %mono2051, i32 0, i32 1
   %bag2056 = load ptr, ptr %bag_ptr2055, align 8
-  %461 = call i1 @"diagnostics::bag_has_errors"(ptr %bag2056)
-  %widen2057 = zext i1 %461 to i64
+  %460 = call i1 @"diagnostics::bag_has_errors"(ptr %bag2056)
+  %widen2057 = zext i1 %460 to i64
   %if_cond2059 = icmp ne i64 %widen2057, 0
   br i1 %if_cond2059, label %if_then2060, label %if_else2061
 
 if_then2035:                                      ; preds = %ifcont2025
-  %462 = call i32 @puts(ptr @.str.21868)
-  %widen2037 = sext i32 %462 to i64
+  %461 = call i32 @puts(ptr @.str.21868)
+  %widen2037 = sext i32 %461 to i64
   ret i64 0
 
 if_else2036:                                      ; preds = %ifcont2025
@@ -272765,18 +272764,18 @@ if_else2036:                                      ; preds = %ifcont2025
 
 ifcont2058:                                       ; preds = %if_else2061, %ifcont2063
   %cpath2081 = load ptr, ptr %cpath, align 8
-  %463 = call i64 @strlen(ptr %cpath2081)
-  %464 = call i64 @strlen(ptr @.str.21885)
-  %concat_total2082 = add i64 %463, %464
+  %462 = call i64 @strlen(ptr %cpath2081)
+  %463 = call i64 @strlen(ptr @.str.21885)
+  %concat_total2082 = add i64 %462, %463
   %concat_size2083 = add i64 %concat_total2082, 1
-  %465 = call ptr @avra_rc_alloc(i64 %concat_size2083)
-  %466 = call ptr @memcpy(ptr %465, ptr %cpath2081, i64 %463)
-  %cast2084 = ptrtoint ptr %465 to i64
-  %dst2_int2085 = add i64 %cast2084, %463
+  %464 = call ptr @avra_rc_alloc(i64 %concat_size2083)
+  %465 = call ptr @memcpy(ptr %464, ptr %cpath2081, i64 %462)
+  %cast2084 = ptrtoint ptr %464 to i64
+  %dst2_int2085 = add i64 %cast2084, %462
   %cast2086 = inttoptr i64 %dst2_int2085 to ptr
-  %rhs_len_p12087 = add i64 %464, 1
-  %467 = call ptr @memcpy(ptr %cast2086, ptr @.str.21885, i64 %rhs_len_p12087)
-  store ptr %465, ptr %output2088, align 8
+  %rhs_len_p12087 = add i64 %463, 1
+  %466 = call ptr @memcpy(ptr %cast2086, ptr @.str.21885, i64 %rhs_len_p12087)
+  store ptr %464, ptr %output2088, align 8
   %mono2089 = load ptr, ptr %mono2050, align 8
   %cast2090 = ptrtoint ptr %mono2089 to i64
   %null_chk2091 = icmp eq i64 %cast2090, 0
@@ -272795,8 +272794,8 @@ ifcont2058:                                       ; preds = %if_else2061, %ifcon
   call void @avra_null_deref_trap(ptr @fld_name.21889, i64 8, ptr @sty_name.21890, i64 33, i64 %null_ext2102, ptr @src_file.21891, i64 103, i64 978)
   %type_reg_ptr2103 = getelementptr inbounds nuw %"resolve::names::NameResolveResult", ptr %named2099, i32 0, i32 4
   %type_reg2104 = load ptr, ptr %type_reg_ptr2103, align 8
-  %468 = call ptr @"codegen::setup::compile_program"(ptr %stmts2094, ptr %output2095, i1 %debug_null2096, i1 %enable_coverage2097, ptr %cpath2098, ptr %type_reg2104)
-  %tag_ptr2105 = getelementptr inbounds nuw %Result__int__string, ptr %468, i32 0, i32 0
+  %467 = call ptr @"codegen::setup::compile_program"(ptr %stmts2094, ptr %output2095, i1 %debug_null2096, i1 %enable_coverage2097, ptr %cpath2098, ptr %type_reg2104)
+  %tag_ptr2105 = getelementptr inbounds nuw %Result__int__string, ptr %467, i32 0, i32 0
   %tag2106 = load i64, ptr %tag_ptr2105, align 8
   %tag_eq2111 = icmp eq i64 %tag2106, 5862623
   br i1 %tag_eq2111, label %march_arm2109, label %march_next2110
@@ -272809,7 +272808,7 @@ if_else2061:                                      ; preds = %ifcont2033
   br label %ifcont2058
 
 ifcont2063:                                       ; preds = %if_else2065, %if_then2064
-  %469 = call i64 @fail(ptr @.str.21884)
+  %468 = call i64 @fail(ptr @.str.21884)
   br label %ifcont2058
 
 if_then2064:                                      ; preds = %if_then2060
@@ -272821,7 +272820,7 @@ if_then2064:                                      ; preds = %if_then2060
   call void @avra_null_deref_trap(ptr @fld_name.21878, i64 3, ptr @sty_name.21879, i64 36, i64 %null_ext2070, ptr @src_file.21880, i64 103, i64 972)
   %bag_ptr2071 = getelementptr inbounds nuw %"features::generics::mono::MonoResult", ptr %mono2067, i32 0, i32 1
   %bag2072 = load ptr, ptr %bag_ptr2071, align 8
-  %470 = call i64 @"diagnostics::render::render_bag_json"(ptr %cpath2066, ptr %bag2072)
+  %469 = call i64 @"diagnostics::render::render_bag_json"(ptr %cpath2066, ptr %bag2072)
   br label %ifcont2063
 
 if_else2065:                                      ; preds = %if_then2060
@@ -272834,18 +272833,18 @@ if_else2065:                                      ; preds = %if_then2060
   call void @avra_null_deref_trap(ptr @fld_name.21881, i64 3, ptr @sty_name.21882, i64 36, i64 %null_ext2078, ptr @src_file.21883, i64 103, i64 973)
   %bag_ptr2079 = getelementptr inbounds nuw %"features::generics::mono::MonoResult", ptr %mono2075, i32 0, i32 1
   %bag2080 = load ptr, ptr %bag_ptr2079, align 8
-  %471 = call i64 @"diagnostics::render::render_bag"(ptr %csource2073, ptr %cpath2074, ptr %bag2080)
+  %470 = call i64 @"diagnostics::render::render_bag"(ptr %csource2073, ptr %cpath2074, ptr %bag2080)
   br label %ifcont2063
 
 match_end2107:                                    ; preds = %ifcont2132, %march_arm2109
   %output2141 = load ptr, ptr %output2088, align 8
-  %472 = call i32 @puts(ptr %output2141)
-  %widen2142 = sext i32 %472 to i64
+  %471 = call i32 @puts(ptr %output2141)
+  %widen2142 = sext i32 %471 to i64
   ret i64 0
 
 march_arm2109:                                    ; preds = %ifcont2058
-  %473 = call ptr @avra_map_new_cstr()
-  %cast2112 = ptrtoint ptr %473 to i64
+  %472 = call ptr @avra_map_new_cstr()
+  %cast2112 = ptrtoint ptr %472 to i64
   store i64 %cast2112, ptr %match_stmt_discard2108, align 8
   br label %match_end2107
 
@@ -272854,7 +272853,7 @@ march_next2110:                                   ; preds = %ifcont2058
   br i1 %tag_eq2115, label %march_arm2113, label %march_next2114
 
 march_arm2113:                                    ; preds = %march_next2110
-  %pay_slot2116 = getelementptr inbounds nuw %Result__int__string, ptr %468, i32 0, i32 1
+  %pay_slot2116 = getelementptr inbounds nuw %Result__int__string, ptr %467, i32 0, i32 1
   %payload2117 = load ptr, ptr %pay_slot2116, align 8
   %e_slot_base2118 = ptrtoint ptr %payload2117 to i64
   %e_slot_addr2119 = add i64 %e_slot_base2118, 0
@@ -272862,22 +272861,22 @@ march_arm2113:                                    ; preds = %march_next2110
   %e2121 = load ptr, ptr %e_slot2120, align 8
   call void @avra_rc_retain(ptr %e2121)
   store ptr %e2121, ptr %e2122, align 8
-  %474 = call ptr @"diagnostics::bag_new"()
+  %473 = call ptr @"diagnostics::bag_new"()
   %e2123 = load ptr, ptr %e2122, align 8
-  %475 = call i64 @strlen(ptr @.str.21892)
-  %476 = call i64 @strlen(ptr %e2123)
-  %concat_total2124 = add i64 %475, %476
+  %474 = call i64 @strlen(ptr @.str.21892)
+  %475 = call i64 @strlen(ptr %e2123)
+  %concat_total2124 = add i64 %474, %475
   %concat_size2125 = add i64 %concat_total2124, 1
-  %477 = call ptr @avra_rc_alloc(i64 %concat_size2125)
-  %478 = call ptr @memcpy(ptr %477, ptr @.str.21892, i64 %475)
-  %cast2126 = ptrtoint ptr %477 to i64
-  %dst2_int2127 = add i64 %cast2126, %475
+  %476 = call ptr @avra_rc_alloc(i64 %concat_size2125)
+  %477 = call ptr @memcpy(ptr %476, ptr @.str.21892, i64 %474)
+  %cast2126 = ptrtoint ptr %476 to i64
+  %dst2_int2127 = add i64 %cast2126, %474
   %cast2128 = inttoptr i64 %dst2_int2127 to ptr
-  %rhs_len_p12129 = add i64 %476, 1
-  %479 = call ptr @memcpy(ptr %cast2128, ptr %e2123, i64 %rhs_len_p12129)
-  %480 = call ptr @"diagnostics::diag_ice"(ptr %477)
-  %481 = call ptr @"diagnostics::bag_report"(ptr %474, ptr %480)
-  store ptr %481, ptr %ice_bag2130, align 8
+  %rhs_len_p12129 = add i64 %475, 1
+  %478 = call ptr @memcpy(ptr %cast2128, ptr %e2123, i64 %rhs_len_p12129)
+  %479 = call ptr @"diagnostics::diag_ice"(ptr %476)
+  %480 = call ptr @"diagnostics::bag_report"(ptr %473, ptr %479)
+  store ptr %480, ptr %ice_bag2130, align 8
   %json_output2131 = load i1, ptr %json_output, align 8
   br i1 %json_output2131, label %if_then2133, label %if_else2134
 
@@ -272887,21 +272886,21 @@ march_next2114:                                   ; preds = %march_next2110
 
 ifcont2132:                                       ; preds = %if_else2134, %if_then2133
   %e2140 = load ptr, ptr %e2122, align 8
-  %482 = call i64 @fail(ptr %e2140)
-  store i64 %482, ptr %match_stmt_discard2108, align 8
+  %481 = call i64 @fail(ptr %e2140)
+  store i64 %481, ptr %match_stmt_discard2108, align 8
   br label %match_end2107
 
 if_then2133:                                      ; preds = %march_arm2113
   %cpath2135 = load ptr, ptr %cpath, align 8
   %ice_bag2136 = load ptr, ptr %ice_bag2130, align 8
-  %483 = call i64 @"diagnostics::render::render_bag_json"(ptr %cpath2135, ptr %ice_bag2136)
+  %482 = call i64 @"diagnostics::render::render_bag_json"(ptr %cpath2135, ptr %ice_bag2136)
   br label %ifcont2132
 
 if_else2134:                                      ; preds = %march_arm2113
   %csource2137 = load ptr, ptr %csource, align 8
   %cpath2138 = load ptr, ptr %cpath, align 8
   %ice_bag2139 = load ptr, ptr %ice_bag2130, align 8
-  %484 = call i64 @"diagnostics::render::render_bag"(ptr %csource2137, ptr %cpath2138, ptr %ice_bag2139)
+  %483 = call i64 @"diagnostics::render::render_bag"(ptr %csource2137, ptr %cpath2138, ptr %ice_bag2139)
   br label %ifcont2132
 }
 
