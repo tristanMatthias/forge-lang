@@ -989,6 +989,13 @@ int64_t forge_intmap_get(void* map, int64_t key) {
     return 0;
 }
 
+// Read current value at key and increment it. Returns the OLD value.
+int64_t forge_intmap_inc(void* map, int64_t key) {
+    int64_t old = forge_intmap_get(map, key);
+    forge_intmap_set(map, key, old + 1);
+    return old;
+}
+
 int64_t forge_intmap_has(void* map, int64_t key) {
     ForgeIntMap* m = (ForgeIntMap*)map;
     uint64_t idx = (uint64_t)key % FORGE_INTMAP_CAP;

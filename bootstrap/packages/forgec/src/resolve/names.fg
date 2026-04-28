@@ -12,9 +12,10 @@
 //   do NOT read this file when:   the issue is variable scoping or
 //                                  type checking
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, WhenArmList, Pattern, PatternList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, stmt_unwrap, AnnotationList, ValueType, TypeList}
+use core.ast.{Expr, ExprList, FieldList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, WhenArmList, Pattern, PatternList, SExpr, SStmt, VariantList, sexpr, sexpr_dummy, sstmt, stmt_unwrap, AnnotationList, ValueType, TypeList}
 use diagnostics.{Confidence, DiagCode, Span, DiagnosticBag, bag_new, bag_merge, bag_report, bag_has_errors, diag_error, diag_warning, diag_with_confidence, span_new, span_dummy}
 use resolve.{resolve_program}
+use core.type_registry.{TypeRegistry, TypeKind, type_registry_new, type_registry_register, type_registry_id_for, type_qualified_name, method_mangled_name, trait_impl_name}
 
 // ── Module tree ──
 //
@@ -362,6 +363,8 @@ type NameCtx = {
     // by short name. Built once in resolve_names, used by the
     // global search fallback in rewrite_ident.
     global_index: ModuleItem,
+    // Central type registry — assigns unique TypeIds to every type.
+    type_reg: TypeRegistry,
 }
 
 fn ctx_with_locals(ctx: NameCtx, locals: LocalScope) -> NameCtx {
@@ -410,6 +413,7 @@ export type NameResolveResult = {
     had_error: int,
     error_message: string,
     bag: DiagnosticBag,
+    type_reg: TypeRegistry,
 }
 
 export fn resolve_names(stmts: StmtList) -> NameResolveResult {
@@ -417,7 +421,8 @@ export fn resolve_names(stmts: StmtList) -> NameResolveResult {
     let tree = build_module_tree(stmts, "", ModuleNode.End)
     let use_result = resolve_use_aliases(stmts, tree)
     let global_index = build_global_index(tree, ModuleItem.End)
-    let ctx = NameCtx { tree, aliases: use_result.aliases, current_module: "", locals: LocalScope.End, global_index }
+    let reg = type_registry_new()
+    let ctx = NameCtx { tree, aliases: use_result.aliases, current_module: "", locals: LocalScope.End, global_index, type_reg: reg }
     let rewritten = rewrite_stmt_list(ctx, stmts)
 
     // Pass 2: Validate variable scopes (was separate resolve_program call)
@@ -437,6 +442,7 @@ export fn resolve_names(stmts: StmtList) -> NameResolveResult {
         error_message: if has_errors {
             if resolved.had_error { resolved.error_message } else { "module resolution errors" }
         } else { "" },
+        type_reg: ctx.type_reg,
         bag: merged_bag,
     }
 }
@@ -466,21 +472,41 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
         .ForIn(var, coll, body) -> .ForIn(var, rewrite_expr(ctx, coll), rewrite_stmt(ctx, body))
         .Function(name, tp, params, rvt, body) -> {
             let is_impl_method = name.contains("__")
-            let qualified = if ctx.current_module != "" && name != "main" && !is_impl_method { "${ctx.current_module}::${name}" } else { name }
+            let qualified = if ctx.current_module != "" && name != "main" && !is_impl_method { type_qualified_name(ctx.current_module, name) } else { name }
             let rp = rewrite_param_types(ctx, params)
             Stmt.Function(qualified, tp, rp, rewrite_vtype(ctx, rvt), rewrite_stmt_list(bind_params_ctx(ctx, rp), body))
         }
         .Match(subject, arms) -> .Match(rewrite_expr(ctx, subject), rewrite_match_arms(ctx, arms))
         .Module(name, body) -> {
-            let mod_path = if ctx.current_module == "" { name } else { "${ctx.current_module}::${name}" }
+            let mod_path = type_qualified_name(ctx.current_module, name)
             let mod_uses = resolve_use_aliases(body, ctx.tree)
             Stmt.Module(name, rewrite_stmt_list(ctx_with_module(ctx, mod_path, merge_aliases(ctx.aliases, mod_uses.aliases)), body))
         }
-        .TypeDecl(name, tp, fields) -> .TypeDecl(resolve_type_in_ctx(ctx, name), tp, fields)
-        .EnumDecl(name, tp, variants) -> .EnumDecl(resolve_type_in_ctx(ctx, name), tp, variants)
-        .TraitDecl(name, body) -> .TraitDecl(resolve_type_in_ctx(ctx, name), body)
-        .ShapeDecl(name, fields) -> .ShapeDecl(resolve_type_in_ctx(ctx, name), fields)
-        .NewtypeDecl(name, inner) -> .NewtypeDecl(resolve_type_in_ctx(ctx, name), inner)
+        .TypeDecl(name, tp, fields) -> {
+            let qn = resolve_type_in_ctx(ctx, name)
+            type_registry_register(ctx.type_reg, qn, TypeKind.StructKind, fields, VariantList.End, ValueType.Unknown)
+            Stmt.TypeDecl(qn, tp, fields)
+        }
+        .EnumDecl(name, tp, variants) -> {
+            let qn = resolve_type_in_ctx(ctx, name)
+            type_registry_register(ctx.type_reg, qn, TypeKind.EnumKind, FieldList.End, variants, ValueType.Unknown)
+            Stmt.EnumDecl(qn, tp, variants)
+        }
+        .TraitDecl(name, body) -> {
+            let qn = resolve_type_in_ctx(ctx, name)
+            type_registry_register(ctx.type_reg, qn, TypeKind.TraitKind, FieldList.End, VariantList.End, ValueType.Unknown)
+            Stmt.TraitDecl(qn, body)
+        }
+        .ShapeDecl(name, fields) -> {
+            let qn = resolve_type_in_ctx(ctx, name)
+            type_registry_register(ctx.type_reg, qn, TypeKind.ShapeKind, fields, VariantList.End, ValueType.Unknown)
+            Stmt.ShapeDecl(qn, fields)
+        }
+        .NewtypeDecl(name, inner) -> {
+            let qn = resolve_type_in_ctx(ctx, name)
+            type_registry_register(ctx.type_reg, qn, TypeKind.NewtypeKind, FieldList.End, VariantList.End, inner)
+            Stmt.NewtypeDecl(qn, inner)
+        }
         .Impl(type_name, methods) -> rewrite_impl_stmt(ctx, type_name, methods)
         .Annotated(annotations, inner) -> .Annotated(annotations, rewrite_stmt(ctx, inner))
         .Defer(body) -> .Defer(rewrite_expr(ctx, body))
@@ -502,7 +528,7 @@ fn rewrite_impl_stmt(ctx: NameCtx, type_name: string, methods: StmtList) -> Stmt
         let type_part = type_name.substring(sep + 1, type_name.length)
         let rt = resolve_type_in_ctx(ctx, trait_part)
         let tt = resolve_type_in_ctx(ctx, type_part)
-        Stmt.Impl("${rt}:${tt}", rewrite_impl_methods(ctx, tt, methods))
+        Stmt.Impl(trait_impl_name(rt, tt), rewrite_impl_methods(ctx, tt, methods))
     } else {
         let rt = resolve_type_in_ctx(ctx, type_name)
         Stmt.Impl(rt, rewrite_impl_methods(ctx, rt, methods))
@@ -532,7 +558,7 @@ fn resolve_type_in_ctx(ctx: NameCtx, type_name: string) -> string {
     let alias = alias_lookup(ctx.aliases, type_name)
     if alias != "" { return alias }
     if ctx.current_module != "" {
-        return "${ctx.current_module}::${type_name}"
+        return type_qualified_name(ctx.current_module, type_name)
     }
     type_name
 }
@@ -543,11 +569,26 @@ fn resolve_type_in_ctx(ctx: NameCtx, type_name: string) -> string {
 
 fn rewrite_vtype(ctx: NameCtx, vt: ValueType) -> ValueType {
     match vt {
-        .Struct(name, _) if name != "" -> .Struct(resolve_type_in_ctx(ctx, name))
-        .Enum(name, args, _) if name != "" -> .Enum(resolve_type_in_ctx(ctx, name), rewrite_vtype_list(ctx, args))
-        .Trait(name, _) if name != "" -> .Trait(resolve_type_in_ctx(ctx, name))
-        .Newtype(name, inner, _) if name != "" -> .Newtype(resolve_type_in_ctx(ctx, name), rewrite_vtype(ctx, inner))
-        .NarrowedEnum(en, v, _) if en != "" -> .NarrowedEnum(resolve_type_in_ctx(ctx, en), v)
+        .Struct(name, _) if name != "" -> {
+            let qn = resolve_type_in_ctx(ctx, name)
+            ValueType.Struct(qn, type_registry_id_for(ctx.type_reg, qn))
+        }
+        .Enum(name, args, _) if name != "" -> {
+            let qn = resolve_type_in_ctx(ctx, name)
+            ValueType.Enum(qn, rewrite_vtype_list(ctx, args), type_registry_id_for(ctx.type_reg, qn))
+        }
+        .Trait(name, _) if name != "" -> {
+            let qn = resolve_type_in_ctx(ctx, name)
+            ValueType.Trait(qn, type_registry_id_for(ctx.type_reg, qn))
+        }
+        .Newtype(name, inner, _) if name != "" -> {
+            let qn = resolve_type_in_ctx(ctx, name)
+            ValueType.Newtype(qn, rewrite_vtype(ctx, inner), type_registry_id_for(ctx.type_reg, qn))
+        }
+        .NarrowedEnum(en, v, _) if en != "" -> {
+            let qn = resolve_type_in_ctx(ctx, en)
+            ValueType.NarrowedEnum(qn, v, type_registry_id_for(ctx.type_reg, qn))
+        }
         .List(elem) -> .List(rewrite_vtype(ctx, elem))
         .Fn(ret) -> .Fn(rewrite_vtype(ctx, ret))
         .FnTyped(params, ret) -> .FnTyped(rewrite_vtype_list(ctx, params), rewrite_vtype(ctx, ret))
@@ -572,14 +613,15 @@ fn rewrite_param_types(ctx: NameCtx, params: ParamList) -> ParamList {
     }
 }
 
-fn qualify_self_param(params: ParamList, qualified_type: string) -> ParamList {
+fn qualify_self_param(ctx: NameCtx, params: ParamList, qualified_type: string) -> ParamList {
     match params {
         .End -> .End
         .Node(name, vt, next) -> {
             if name == "self" {
-                ParamList.Node("self", ValueType.Struct(qualified_type, 0), next)
+                let tid = type_registry_id_for(ctx.type_reg, qualified_type)
+                ParamList.Node("self", ValueType.Struct(qualified_type, tid), next)
             } else {
-                ParamList.Node(name, vt, qualify_self_param(next, qualified_type))
+                ParamList.Node(name, vt, qualify_self_param(ctx, next, qualified_type))
             }
         }
     }
@@ -593,8 +635,8 @@ fn rewrite_impl_methods(ctx: NameCtx, qualified_type: string, stmts: StmtList) -
                 .Function(name, tp, params, rvt, body) -> {
                     let parts = name.split("__")
                     let method_name = if parts.length > 1 { parts[1] } else { name }
-                    let qualified_name = "${qualified_type}__${method_name}"
-                    let rp = rewrite_param_types(ctx, qualify_self_param(params, qualified_type))
+                    let qualified_name = method_mangled_name(qualified_type, method_name)
+                    let rp = rewrite_param_types(ctx, qualify_self_param(ctx, params, qualified_type))
                     Stmt.Function(qualified_name, tp, rp, rewrite_vtype(ctx, rvt), rewrite_stmt_list(bind_params_ctx(ctx, rp), body))
                 }
                 _ -> rewrite_stmt(ctx, ss.node)

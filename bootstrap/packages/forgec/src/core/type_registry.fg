@@ -40,15 +40,18 @@ export type TypeInfo = {
 // The single source of truth for type identity.
 
 export type TypeRegistry = {
-    next_id: int,
-    info_map: ptr,
-    name_to_id: ptr,
+    info_map: ptr,      // intmap: id → TypeInfo ptr (key 0 = next_id counter)
+    name_to_id: ptr,    // map_cstr: qualified_name → id
 }
 
+extern fn forge_intmap_inc(map: ptr, key: int) -> int
+
 export fn type_registry_new() -> TypeRegistry {
+    let m = forge_intmap_new()
+    // Key 0 stores the next_id counter, starting at 1
+    forge_intmap_set(m, 0, 1)
     TypeRegistry {
-        next_id: 1,
-        info_map: forge_intmap_new(),
+        info_map: m,
         name_to_id: forge_map_new_cstr(),
     }
 }
@@ -59,7 +62,8 @@ export fn type_registry_register(reg: TypeRegistry, name: string, kind: TypeKind
     if forge_map_has_cstr(reg.name_to_id, name) == 1 {
         return forge_map_get_cstr(reg.name_to_id, name)
     }
-    let id = reg.next_id
+    // Atomically get and increment the next_id counter at key 0
+    let id = forge_intmap_inc(reg.info_map, 0)
     let info = TypeInfo {
         id,
         name,
@@ -70,17 +74,15 @@ export fn type_registry_register(reg: TypeRegistry, name: string, kind: TypeKind
     }
     forge_intmap_set(reg.info_map, id, info)
     forge_map_set_cstr(reg.name_to_id, name, id)
-    // Mutate next_id — TypeRegistry is passed by pointer (struct semantics)
-    reg.next_id = id + 1
     id
 }
 
-// Look up a type by id. Returns null if not found.
-export fn type_registry_lookup(reg: TypeRegistry, id: int) -> TypeInfo? {
-    if id == 0 { return null }
-    if forge_intmap_has(reg.info_map, id) == 0 { return null }
-    let ptr_val = forge_intmap_get(reg.info_map, id)
-    ptr_val
+// Look up type info by id. Returns the raw intmap value (TypeInfo pointer as int).
+// Returns 0 if not found. Callers cast to TypeInfo.
+export fn type_registry_lookup_raw(reg: TypeRegistry, id: int) -> int {
+    if id == 0 { return 0 }
+    if forge_intmap_has(reg.info_map, id) == 0 { return 0 }
+    forge_intmap_get(reg.info_map, id)
 }
 
 // Look up a type id by name. Returns 0 if not found.
