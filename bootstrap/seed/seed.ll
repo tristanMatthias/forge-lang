@@ -1,5 +1,5 @@
-; seed built from commit 9b944a7a at 2026-04-28T01:22:58Z
-; source hash: 49a8ab79cee76dfe204931352b18fa5276b2f8de7c655d16f3d11c21bb2483ad
+; seed built from commit 3645679b at 2026-04-28T01:36:49Z
+; source hash: 98cf1bb09e7af96b34cefd1db03f410f2964cee90cab7f8da236c05c384f5ef4
 ; ModuleID = 'bootstrap'
 source_filename = "bootstrap"
 
@@ -23951,28 +23951,34 @@ if_else21:                                        ; preds = %ifcont6
 
 define i1 @"core::ast::vtype_eq"(ptr %0, ptr %1) {
 entry:
-  %v2273 = alloca ptr, align 8
-  %e2270 = alloca ptr, align 8
-  %match_result263 = alloca i64, align 8
-  %v1259 = alloca ptr, align 8
-  %e1256 = alloca ptr, align 8
-  %n2242 = alloca ptr, align 8
-  %match_result231 = alloca i64, align 8
-  %n1227 = alloca ptr, align 8
-  %types_b211 = alloca ptr, align 8
-  %match_result204 = alloca i64, align 8
-  %types_a200 = alloca ptr, align 8
-  %match_result187 = alloca i64, align 8
-  %match_result173 = alloca i64, align 8
-  %n2160 = alloca ptr, align 8
-  %match_result149 = alloca i64, align 8
-  %n1145 = alloca ptr, align 8
-  %match_result125 = alloca i64, align 8
-  %n296 = alloca ptr, align 8
-  %match_result85 = alloca i64, align 8
-  %n181 = alloca ptr, align 8
-  %n267 = alloca ptr, align 8
-  %match_result60 = alloca i64, align 8
+  %v2325 = alloca ptr, align 8
+  %e2322 = alloca ptr, align 8
+  %match_result315 = alloca i64, align 8
+  %v1311 = alloca ptr, align 8
+  %e1308 = alloca ptr, align 8
+  %n2294 = alloca ptr, align 8
+  %match_result283 = alloca i64, align 8
+  %n1279 = alloca ptr, align 8
+  %types_b263 = alloca ptr, align 8
+  %match_result256 = alloca i64, align 8
+  %types_a252 = alloca ptr, align 8
+  %match_result239 = alloca i64, align 8
+  %match_result225 = alloca i64, align 8
+  %n2212 = alloca ptr, align 8
+  %match_result201 = alloca i64, align 8
+  %n1197 = alloca ptr, align 8
+  %match_result177 = alloca i64, align 8
+  %ife_result139 = alloca i64, align 8
+  %id2122 = alloca i64, align 8
+  %n2115 = alloca ptr, align 8
+  %match_result104 = alloca i64, align 8
+  %id1100 = alloca i64, align 8
+  %n193 = alloca ptr, align 8
+  %ife_result = alloca i64, align 8
+  %id273 = alloca i64, align 8
+  %n270 = alloca ptr, align 8
+  %match_result63 = alloca i64, align 8
+  %id159 = alloca i64, align 8
   %n156 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %b = alloca ptr, align 8
@@ -23986,9 +23992,9 @@ entry:
   %tag_eq = icmp eq i64 %tag, 193460240
   br i1 %tag_eq, label %march_arm, label %march_next
 
-match_end:                                        ; preds = %march_arm303, %march_arm295, %march_arm287, %match_end264, %match_end232, %match_end205, %match_end188, %match_end174, %match_end150, %match_end126, %march_arm111, %march_arm103, %match_end86, %match_end61, %march_arm45, %march_arm37, %march_arm29, %march_arm21, %march_arm13, %march_arm5, %march_arm
-  %match_val305 = load i64, ptr %match_result, align 8
-  %cast = trunc i64 %match_val305 to i1
+match_end:                                        ; preds = %march_arm365, %march_arm357, %march_arm349, %match_end316, %match_end284, %match_end257, %match_end240, %match_end226, %match_end202, %match_end178, %march_arm163, %march_arm155, %match_end105, %match_end64, %march_arm45, %march_arm37, %march_arm29, %march_arm21, %march_arm13, %march_arm5, %march_arm
+  %match_val367 = load i64, ptr %match_result, align 8
+  %cast = trunc i64 %match_val367 to i1
   ret i1 %cast
 
 march_arm:                                        ; preds = %entry
@@ -24091,471 +24097,69 @@ march_arm53:                                      ; preds = %march_next46
   %n1 = load ptr, ptr %n1_slot, align 8
   call void @forge_rc_retain(ptr %n1)
   store ptr %n1, ptr %n156, align 8
-  %b57 = load ptr, ptr %b, align 8
-  %tag_ptr58 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b57, i32 0, i32 0
-  %tag59 = load i64, ptr %tag_ptr58, align 8
-  store i64 0, ptr %match_result60, align 8
-  %tag_eq64 = icmp eq i64 %tag59, 6952779173258
-  br i1 %tag_eq64, label %march_arm62, label %march_next63
+  %pay_slot57 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %a1, i32 0, i32 1
+  %payload58 = load ptr, ptr %pay_slot57, align 8
+  %id1_slot_base = ptrtoint ptr %payload58 to i64
+  %id1_slot_addr = add i64 %id1_slot_base, 8
+  %id1_slot = inttoptr i64 %id1_slot_addr to ptr
+  %id1 = load i64, ptr %id1_slot, align 8
+  store i64 %id1, ptr %id159, align 8
+  %b60 = load ptr, ptr %b, align 8
+  %tag_ptr61 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b60, i32 0, i32 0
+  %tag62 = load i64, ptr %tag_ptr61, align 8
+  store i64 0, ptr %match_result63, align 8
+  %tag_eq67 = icmp eq i64 %tag62, 6952779173258
+  br i1 %tag_eq67, label %march_arm65, label %march_next66
 
 march_next54:                                     ; preds = %march_next46
-  %tag_eq74 = icmp eq i64 %tag, 6384044314
-  br i1 %tag_eq74, label %march_arm72, label %march_next73
+  %tag_eq86 = icmp eq i64 %tag, 6384044314
+  br i1 %tag_eq86, label %march_arm84, label %march_next85
 
-match_end61:                                      ; preds = %march_arm70, %march_arm62
-  %match_val = load i64, ptr %match_result60, align 8
+match_end64:                                      ; preds = %march_arm82, %ife_end
+  %match_val = load i64, ptr %match_result63, align 8
   store i64 %match_val, ptr %match_result, align 8
   br label %match_end
 
-march_arm62:                                      ; preds = %march_arm53
-  %pay_slot65 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b57, i32 0, i32 1
-  %payload66 = load ptr, ptr %pay_slot65, align 8
-  %n2_slot_base = ptrtoint ptr %payload66 to i64
+march_arm65:                                      ; preds = %march_arm53
+  %pay_slot68 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b60, i32 0, i32 1
+  %payload69 = load ptr, ptr %pay_slot68, align 8
+  %n2_slot_base = ptrtoint ptr %payload69 to i64
   %n2_slot_addr = add i64 %n2_slot_base, 0
   %n2_slot = inttoptr i64 %n2_slot_addr to ptr
   %n2 = load ptr, ptr %n2_slot, align 8
   call void @forge_rc_retain(ptr %n2)
-  store ptr %n2, ptr %n267, align 8
-  %n168 = load ptr, ptr %n156, align 8
-  %n269 = load ptr, ptr %n267, align 8
-  %2 = call i1 @"core::ast::names_match"(ptr %n168, ptr %n269)
-  %widen = zext i1 %2 to i64
-  store i64 %widen, ptr %match_result60, align 8
-  br label %match_end61
-
-march_next63:                                     ; preds = %march_arm53
-  br label %march_arm70
-
-march_arm70:                                      ; preds = %march_next63
-  store i64 0, ptr %match_result60, align 8
-  br label %match_end61
-
-march_next71:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.72, i64 %tag59, ptr @mu_file.73, i64 259)
-  unreachable
-
-march_arm72:                                      ; preds = %march_next54
-  %pay_slot75 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %a1, i32 0, i32 1
-  %payload76 = load ptr, ptr %pay_slot75, align 8
-  %n1_slot_base77 = ptrtoint ptr %payload76 to i64
-  %n1_slot_addr78 = add i64 %n1_slot_base77, 0
-  %n1_slot79 = inttoptr i64 %n1_slot_addr78 to ptr
-  %n180 = load ptr, ptr %n1_slot79, align 8
-  call void @forge_rc_retain(ptr %n180)
-  store ptr %n180, ptr %n181, align 8
-  %b82 = load ptr, ptr %b, align 8
-  %tag_ptr83 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b82, i32 0, i32 0
-  %tag84 = load i64, ptr %tag_ptr83, align 8
-  store i64 0, ptr %match_result85, align 8
-  %tag_eq89 = icmp eq i64 %tag84, 6384044314
-  br i1 %tag_eq89, label %march_arm87, label %march_next88
-
-march_next73:                                     ; preds = %march_next54
-  %tag_eq105 = icmp eq i64 %tag, 210674569595
-  br i1 %tag_eq105, label %march_arm103, label %march_next104
-
-match_end86:                                      ; preds = %march_arm100, %march_arm87
-  %match_val102 = load i64, ptr %match_result85, align 8
-  store i64 %match_val102, ptr %match_result, align 8
-  br label %match_end
-
-march_arm87:                                      ; preds = %march_arm72
-  %pay_slot90 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b82, i32 0, i32 1
-  %payload91 = load ptr, ptr %pay_slot90, align 8
-  %n2_slot_base92 = ptrtoint ptr %payload91 to i64
-  %n2_slot_addr93 = add i64 %n2_slot_base92, 0
-  %n2_slot94 = inttoptr i64 %n2_slot_addr93 to ptr
-  %n295 = load ptr, ptr %n2_slot94, align 8
-  call void @forge_rc_retain(ptr %n295)
-  store ptr %n295, ptr %n296, align 8
-  %n197 = load ptr, ptr %n181, align 8
-  %n298 = load ptr, ptr %n296, align 8
-  %3 = call i1 @"core::ast::names_match"(ptr %n197, ptr %n298)
-  %widen99 = zext i1 %3 to i64
-  store i64 %widen99, ptr %match_result85, align 8
-  br label %match_end86
-
-march_next88:                                     ; preds = %march_arm72
-  br label %march_arm100
-
-march_arm100:                                     ; preds = %march_next88
-  store i64 0, ptr %match_result85, align 8
-  br label %match_end86
-
-march_next101:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.74, i64 %tag84, ptr @mu_file.75, i64 259)
-  unreachable
-
-march_arm103:                                     ; preds = %march_next73
-  %b106 = load ptr, ptr %b, align 8
-  %tag_ptr107 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b106, i32 0, i32 0
-  %tag108 = load i64, ptr %tag_ptr107, align 8
-  %is_eq109 = icmp eq i64 %tag108, 210674569595
-  %is_eq_ext110 = zext i1 %is_eq109 to i64
-  store i64 %is_eq_ext110, ptr %match_result, align 8
-  br label %match_end
-
-march_next104:                                    ; preds = %march_next73
-  %tag_eq113 = icmp eq i64 %tag, 193464163
-  br i1 %tag_eq113, label %march_arm111, label %march_next112
-
-march_arm111:                                     ; preds = %march_next104
-  %b114 = load ptr, ptr %b, align 8
-  %tag_ptr115 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b114, i32 0, i32 0
-  %tag116 = load i64, ptr %tag_ptr115, align 8
-  %is_eq117 = icmp eq i64 %tag116, 193464163
-  %is_eq_ext118 = zext i1 %is_eq117 to i64
-  store i64 %is_eq_ext118, ptr %match_result, align 8
-  br label %match_end
-
-march_next112:                                    ; preds = %march_next104
-  %tag_eq121 = icmp eq i64 %tag, 229424653401439
-  br i1 %tag_eq121, label %march_arm119, label %march_next120
-
-march_arm119:                                     ; preds = %march_next112
-  %b122 = load ptr, ptr %b, align 8
-  %tag_ptr123 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b122, i32 0, i32 0
-  %tag124 = load i64, ptr %tag_ptr123, align 8
-  store i64 0, ptr %match_result125, align 8
-  %tag_eq129 = icmp eq i64 %tag124, 229424653401439
-  br i1 %tag_eq129, label %march_arm127, label %march_next128
-
-march_next120:                                    ; preds = %march_next112
-  %tag_eq138 = icmp eq i64 %tag, 210691373129
-  br i1 %tag_eq138, label %march_arm136, label %march_next137
-
-match_end126:                                     ; preds = %march_arm133, %march_arm130, %march_arm127
-  %match_val135 = load i64, ptr %match_result125, align 8
-  store i64 %match_val135, ptr %match_result, align 8
-  br label %match_end
-
-march_arm127:                                     ; preds = %march_arm119
-  store i64 1, ptr %match_result125, align 8
-  br label %match_end126
-
-march_next128:                                    ; preds = %march_arm119
-  %tag_eq132 = icmp eq i64 %tag124, 5862329
-  br i1 %tag_eq132, label %march_arm130, label %march_next131
-
-march_arm130:                                     ; preds = %march_next128
-  store i64 1, ptr %match_result125, align 8
-  br label %match_end126
-
-march_next131:                                    ; preds = %march_next128
-  br label %march_arm133
-
-march_arm133:                                     ; preds = %march_next131
-  store i64 0, ptr %match_result125, align 8
-  br label %match_end126
-
-march_next134:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.76, i64 %tag124, ptr @mu_file.77, i64 259)
-  unreachable
-
-march_arm136:                                     ; preds = %march_next120
-  %pay_slot139 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %a1, i32 0, i32 1
-  %payload140 = load ptr, ptr %pay_slot139, align 8
-  %n1_slot_base141 = ptrtoint ptr %payload140 to i64
-  %n1_slot_addr142 = add i64 %n1_slot_base141, 0
-  %n1_slot143 = inttoptr i64 %n1_slot_addr142 to ptr
-  %n1144 = load ptr, ptr %n1_slot143, align 8
-  call void @forge_rc_retain(ptr %n1144)
-  store ptr %n1144, ptr %n1145, align 8
-  %b146 = load ptr, ptr %b, align 8
-  %tag_ptr147 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b146, i32 0, i32 0
-  %tag148 = load i64, ptr %tag_ptr147, align 8
-  store i64 0, ptr %match_result149, align 8
-  %tag_eq153 = icmp eq i64 %tag148, 210691373129
-  br i1 %tag_eq153, label %march_arm151, label %march_next152
-
-march_next137:                                    ; preds = %march_next120
-  %tag_eq169 = icmp eq i64 %tag, 210691497359
-  br i1 %tag_eq169, label %march_arm167, label %march_next168
-
-match_end150:                                     ; preds = %march_arm164, %march_arm151
-  %match_val166 = load i64, ptr %match_result149, align 8
-  store i64 %match_val166, ptr %match_result, align 8
-  br label %match_end
-
-march_arm151:                                     ; preds = %march_arm136
-  %pay_slot154 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b146, i32 0, i32 1
-  %payload155 = load ptr, ptr %pay_slot154, align 8
-  %n2_slot_base156 = ptrtoint ptr %payload155 to i64
-  %n2_slot_addr157 = add i64 %n2_slot_base156, 0
-  %n2_slot158 = inttoptr i64 %n2_slot_addr157 to ptr
-  %n2159 = load ptr, ptr %n2_slot158, align 8
-  call void @forge_rc_retain(ptr %n2159)
-  store ptr %n2159, ptr %n2160, align 8
-  %n1161 = load ptr, ptr %n1145, align 8
-  %n2162 = load ptr, ptr %n2160, align 8
-  %4 = call i32 @strcmp(ptr %n1161, ptr %n2162)
-  %widen163 = sext i32 %4 to i64
-  %streq_cmp = icmp eq i64 %widen163, 0
-  %streq_ext = zext i1 %streq_cmp to i64
-  store i64 %streq_ext, ptr %match_result149, align 8
-  br label %match_end150
-
-march_next152:                                    ; preds = %march_arm136
-  br label %march_arm164
-
-march_arm164:                                     ; preds = %march_next152
-  store i64 0, ptr %match_result149, align 8
-  br label %match_end150
-
-march_next165:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.78, i64 %tag148, ptr @mu_file.79, i64 259)
-  unreachable
-
-march_arm167:                                     ; preds = %march_next137
-  %b170 = load ptr, ptr %b, align 8
-  %tag_ptr171 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b170, i32 0, i32 0
-  %tag172 = load i64, ptr %tag_ptr171, align 8
-  store i64 0, ptr %match_result173, align 8
-  %tag_eq177 = icmp eq i64 %tag172, 210691497359
-  br i1 %tag_eq177, label %march_arm175, label %march_next176
-
-march_next168:                                    ; preds = %march_next137
-  %tag_eq183 = icmp eq i64 %tag, 229420732536866
-  br i1 %tag_eq183, label %march_arm181, label %march_next182
-
-match_end174:                                     ; preds = %march_arm178, %march_arm175
-  %match_val180 = load i64, ptr %match_result173, align 8
-  store i64 %match_val180, ptr %match_result, align 8
-  br label %match_end
-
-march_arm175:                                     ; preds = %march_arm167
-  store i64 1, ptr %match_result173, align 8
-  br label %match_end174
-
-march_next176:                                    ; preds = %march_arm167
-  br label %march_arm178
-
-march_arm178:                                     ; preds = %march_next176
-  store i64 0, ptr %match_result173, align 8
-  br label %match_end174
-
-march_next179:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.80, i64 %tag172, ptr @mu_file.81, i64 259)
-  unreachable
-
-march_arm181:                                     ; preds = %march_next168
-  %b184 = load ptr, ptr %b, align 8
-  %tag_ptr185 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b184, i32 0, i32 0
-  %tag186 = load i64, ptr %tag_ptr185, align 8
-  store i64 0, ptr %match_result187, align 8
-  %tag_eq191 = icmp eq i64 %tag186, 229420732536866
-  br i1 %tag_eq191, label %march_arm189, label %march_next190
-
-march_next182:                                    ; preds = %march_next168
-  %tag_eq197 = icmp eq i64 %tag, 210692424206
-  br i1 %tag_eq197, label %march_arm195, label %march_next196
-
-match_end188:                                     ; preds = %march_arm192, %march_arm189
-  %match_val194 = load i64, ptr %match_result187, align 8
-  store i64 %match_val194, ptr %match_result, align 8
-  br label %match_end
-
-march_arm189:                                     ; preds = %march_arm181
-  store i64 1, ptr %match_result187, align 8
-  br label %match_end188
-
-march_next190:                                    ; preds = %march_arm181
-  br label %march_arm192
-
-march_arm192:                                     ; preds = %march_next190
-  store i64 0, ptr %match_result187, align 8
-  br label %match_end188
-
-march_next193:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.82, i64 %tag186, ptr @mu_file.83, i64 259)
-  unreachable
-
-march_arm195:                                     ; preds = %march_next182
-  %pay_slot198 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %a1, i32 0, i32 1
-  %payload199 = load ptr, ptr %pay_slot198, align 8
-  %types_a_slot_base = ptrtoint ptr %payload199 to i64
-  %types_a_slot_addr = add i64 %types_a_slot_base, 0
-  %types_a_slot = inttoptr i64 %types_a_slot_addr to ptr
-  %types_a = load ptr, ptr %types_a_slot, align 8
-  call void @forge_rc_retain(ptr %types_a)
-  store ptr %types_a, ptr %types_a200, align 8
-  %b201 = load ptr, ptr %b, align 8
-  %tag_ptr202 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b201, i32 0, i32 0
-  %tag203 = load i64, ptr %tag_ptr202, align 8
-  store i64 0, ptr %match_result204, align 8
-  %tag_eq208 = icmp eq i64 %tag203, 210692424206
-  br i1 %tag_eq208, label %march_arm206, label %march_next207
-
-march_next196:                                    ; preds = %march_next182
-  %tag_eq220 = icmp eq i64 %tag, 229434674264369
-  br i1 %tag_eq220, label %march_arm218, label %march_next219
-
-match_end205:                                     ; preds = %march_arm215, %march_arm206
-  %match_val217 = load i64, ptr %match_result204, align 8
-  store i64 %match_val217, ptr %match_result, align 8
-  br label %match_end
-
-march_arm206:                                     ; preds = %march_arm195
-  %pay_slot209 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b201, i32 0, i32 1
-  %payload210 = load ptr, ptr %pay_slot209, align 8
-  %types_b_slot_base = ptrtoint ptr %payload210 to i64
-  %types_b_slot_addr = add i64 %types_b_slot_base, 0
-  %types_b_slot = inttoptr i64 %types_b_slot_addr to ptr
-  %types_b = load ptr, ptr %types_b_slot, align 8
-  call void @forge_rc_retain(ptr %types_b)
-  store ptr %types_b, ptr %types_b211, align 8
-  %types_a212 = load ptr, ptr %types_a200, align 8
-  %types_b213 = load ptr, ptr %types_b211, align 8
-  %5 = call i1 @"core::ast::type_lists_eq"(ptr %types_a212, ptr %types_b213)
-  %widen214 = zext i1 %5 to i64
-  store i64 %widen214, ptr %match_result204, align 8
-  br label %match_end205
-
-march_next207:                                    ; preds = %march_arm195
-  br label %march_arm215
-
-march_arm215:                                     ; preds = %march_next207
-  store i64 0, ptr %match_result204, align 8
-  br label %match_end205
-
-march_next216:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.84, i64 %tag203, ptr @mu_file.85, i64 259)
-  unreachable
-
-march_arm218:                                     ; preds = %march_next196
-  %pay_slot221 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %a1, i32 0, i32 1
-  %payload222 = load ptr, ptr %pay_slot221, align 8
-  %n1_slot_base223 = ptrtoint ptr %payload222 to i64
-  %n1_slot_addr224 = add i64 %n1_slot_base223, 0
-  %n1_slot225 = inttoptr i64 %n1_slot_addr224 to ptr
-  %n1226 = load ptr, ptr %n1_slot225, align 8
-  call void @forge_rc_retain(ptr %n1226)
-  store ptr %n1226, ptr %n1227, align 8
-  %b228 = load ptr, ptr %b, align 8
-  %tag_ptr229 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b228, i32 0, i32 0
-  %tag230 = load i64, ptr %tag_ptr229, align 8
-  store i64 0, ptr %match_result231, align 8
-  %tag_eq235 = icmp eq i64 %tag230, 229434674264369
-  br i1 %tag_eq235, label %march_arm233, label %march_next234
-
-march_next219:                                    ; preds = %march_next196
-  %tag_eq253 = icmp eq i64 %tag, -4554580336688187492
-  br i1 %tag_eq253, label %march_arm251, label %march_next252
-
-match_end232:                                     ; preds = %march_arm248, %march_arm233
-  %match_val250 = load i64, ptr %match_result231, align 8
-  store i64 %match_val250, ptr %match_result, align 8
-  br label %match_end
-
-march_arm233:                                     ; preds = %march_arm218
-  %pay_slot236 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b228, i32 0, i32 1
-  %payload237 = load ptr, ptr %pay_slot236, align 8
-  %n2_slot_base238 = ptrtoint ptr %payload237 to i64
-  %n2_slot_addr239 = add i64 %n2_slot_base238, 0
-  %n2_slot240 = inttoptr i64 %n2_slot_addr239 to ptr
-  %n2241 = load ptr, ptr %n2_slot240, align 8
-  call void @forge_rc_retain(ptr %n2241)
-  store ptr %n2241, ptr %n2242, align 8
-  %n1243 = load ptr, ptr %n1227, align 8
-  %n2244 = load ptr, ptr %n2242, align 8
-  %6 = call i32 @strcmp(ptr %n1243, ptr %n2244)
-  %widen245 = sext i32 %6 to i64
-  %streq_cmp246 = icmp eq i64 %widen245, 0
-  %streq_ext247 = zext i1 %streq_cmp246 to i64
-  store i64 %streq_ext247, ptr %match_result231, align 8
-  br label %match_end232
-
-march_next234:                                    ; preds = %march_arm218
-  br label %march_arm248
-
-march_arm248:                                     ; preds = %march_next234
-  store i64 0, ptr %match_result231, align 8
-  br label %match_end232
-
-march_next249:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.86, i64 %tag230, ptr @mu_file.87, i64 259)
-  unreachable
-
-march_arm251:                                     ; preds = %march_next219
-  %pay_slot254 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %a1, i32 0, i32 1
-  %payload255 = load ptr, ptr %pay_slot254, align 8
-  %e1_slot_base = ptrtoint ptr %payload255 to i64
-  %e1_slot_addr = add i64 %e1_slot_base, 0
-  %e1_slot = inttoptr i64 %e1_slot_addr to ptr
-  %e1 = load ptr, ptr %e1_slot, align 8
-  call void @forge_rc_retain(ptr %e1)
-  store ptr %e1, ptr %e1256, align 8
-  %pay_slot257 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %a1, i32 0, i32 1
-  %payload258 = load ptr, ptr %pay_slot257, align 8
-  %v1_slot_base = ptrtoint ptr %payload258 to i64
-  %v1_slot_addr = add i64 %v1_slot_base, 8
-  %v1_slot = inttoptr i64 %v1_slot_addr to ptr
-  %v1 = load ptr, ptr %v1_slot, align 8
-  call void @forge_rc_retain(ptr %v1)
-  store ptr %v1, ptr %v1259, align 8
-  %b260 = load ptr, ptr %b, align 8
-  %tag_ptr261 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b260, i32 0, i32 0
-  %tag262 = load i64, ptr %tag_ptr261, align 8
-  store i64 0, ptr %match_result263, align 8
-  %tag_eq267 = icmp eq i64 %tag262, -4554580336688187492
-  br i1 %tag_eq267, label %march_arm265, label %march_next266
-
-march_next252:                                    ; preds = %march_next219
-  %tag_eq289 = icmp eq i64 %tag, 229444052301365
-  br i1 %tag_eq289, label %march_arm287, label %march_next288
-
-match_end264:                                     ; preds = %march_arm284, %sc_merge
-  %match_val286 = load i64, ptr %match_result263, align 8
-  store i64 %match_val286, ptr %match_result, align 8
-  br label %match_end
-
-march_arm265:                                     ; preds = %march_arm251
-  %pay_slot268 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b260, i32 0, i32 1
-  %payload269 = load ptr, ptr %pay_slot268, align 8
-  %e2_slot_base = ptrtoint ptr %payload269 to i64
-  %e2_slot_addr = add i64 %e2_slot_base, 0
-  %e2_slot = inttoptr i64 %e2_slot_addr to ptr
-  %e2 = load ptr, ptr %e2_slot, align 8
-  call void @forge_rc_retain(ptr %e2)
-  store ptr %e2, ptr %e2270, align 8
-  %pay_slot271 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b260, i32 0, i32 1
-  %payload272 = load ptr, ptr %pay_slot271, align 8
-  %v2_slot_base = ptrtoint ptr %payload272 to i64
-  %v2_slot_addr = add i64 %v2_slot_base, 8
-  %v2_slot = inttoptr i64 %v2_slot_addr to ptr
-  %v2 = load ptr, ptr %v2_slot, align 8
-  call void @forge_rc_retain(ptr %v2)
-  store ptr %v2, ptr %v2273, align 8
-  %e1274 = load ptr, ptr %e1256, align 8
-  %e2275 = load ptr, ptr %e2270, align 8
-  %7 = call i32 @strcmp(ptr %e1274, ptr %e2275)
-  %widen276 = sext i32 %7 to i64
-  %streq_cmp277 = icmp eq i64 %widen276, 0
-  %streq_ext278 = zext i1 %streq_cmp277 to i64
-  %l_bool = icmp ne i64 %streq_ext278, 0
+  store ptr %n2, ptr %n270, align 8
+  %pay_slot71 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b60, i32 0, i32 1
+  %payload72 = load ptr, ptr %pay_slot71, align 8
+  %id2_slot_base = ptrtoint ptr %payload72 to i64
+  %id2_slot_addr = add i64 %id2_slot_base, 8
+  %id2_slot = inttoptr i64 %id2_slot_addr to ptr
+  %id2 = load i64, ptr %id2_slot, align 8
+  store i64 %id2, ptr %id273, align 8
+  %id174 = load i64, ptr %id159, align 8
+  %sgt = icmp sgt i64 %id174, 0
+  %sgt_ext = zext i1 %sgt to i64
+  %l_bool = icmp ne i64 %sgt_ext, 0
   br i1 %l_bool, label %sc_rhs, label %sc_short
 
-march_next266:                                    ; preds = %march_arm251
-  br label %march_arm284
+march_next66:                                     ; preds = %march_arm53
+  br label %march_arm82
 
-sc_rhs:                                           ; preds = %march_arm265
-  %v1279 = load ptr, ptr %v1259, align 8
-  %v2280 = load ptr, ptr %v2273, align 8
-  %8 = call i32 @strcmp(ptr %v1279, ptr %v2280)
-  %widen281 = sext i32 %8 to i64
-  %streq_cmp282 = icmp eq i64 %widen281, 0
-  %streq_ext283 = zext i1 %streq_cmp282 to i64
-  %r_bool = icmp ne i64 %streq_ext283, 0
+sc_rhs:                                           ; preds = %march_arm65
+  %id275 = load i64, ptr %id273, align 8
+  %sgt76 = icmp sgt i64 %id275, 0
+  %sgt_ext77 = zext i1 %sgt76 to i64
+  %r_bool = icmp ne i64 %sgt_ext77, 0
   br i1 %r_bool, label %sc_r_true, label %sc_r_false
 
-sc_short:                                         ; preds = %march_arm265
+sc_short:                                         ; preds = %march_arm65
   br label %sc_merge
 
 sc_merge:                                         ; preds = %sc_r_merge, %sc_short
   %sc_phi = phi i1 [ false, %sc_short ], [ %r_bool, %sc_r_merge ]
   %sc_ext = zext i1 %sc_phi to i64
-  store i64 %sc_ext, ptr %match_result263, align 8
-  br label %match_end264
+  %ife_cond = icmp ne i64 %sc_ext, 0
+  br i1 %ife_cond, label %ife_then, label %ife_else
 
 sc_r_true:                                        ; preds = %sc_rhs
   br label %sc_r_merge
@@ -24566,45 +24170,565 @@ sc_r_false:                                       ; preds = %sc_rhs
 sc_r_merge:                                       ; preds = %sc_r_false, %sc_r_true
   br label %sc_merge
 
-march_arm284:                                     ; preds = %march_next266
-  store i64 0, ptr %match_result263, align 8
-  br label %match_end264
+ife_end:                                          ; preds = %ife_else, %ife_then
+  %ife_val = load i64, ptr %ife_result, align 8
+  store i64 %ife_val, ptr %match_result63, align 8
+  br label %match_end64
 
-march_next285:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.88, i64 %tag262, ptr @mu_file.89, i64 259)
+ife_then:                                         ; preds = %sc_merge
+  %id178 = load i64, ptr %id159, align 8
+  %id279 = load i64, ptr %id273, align 8
+  %eq = icmp eq i64 %id178, %id279
+  %eq_ext = zext i1 %eq to i64
+  store i64 %eq_ext, ptr %ife_result, align 8
+  br label %ife_end
+
+ife_else:                                         ; preds = %sc_merge
+  %n180 = load ptr, ptr %n156, align 8
+  %n281 = load ptr, ptr %n270, align 8
+  %2 = call i1 @"core::ast::names_match"(ptr %n180, ptr %n281)
+  %widen = zext i1 %2 to i64
+  store i64 %widen, ptr %ife_result, align 8
+  br label %ife_end
+
+march_arm82:                                      ; preds = %march_next66
+  store i64 0, ptr %match_result63, align 8
+  br label %match_end64
+
+march_next83:                                     ; No predecessors!
+  call void @forge_match_unreachable(ptr @.match_fn.72, i64 %tag62, ptr @mu_file.73, i64 260)
   unreachable
 
-march_arm287:                                     ; preds = %march_next252
-  %b290 = load ptr, ptr %b, align 8
-  %tag_ptr291 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b290, i32 0, i32 0
-  %tag292 = load i64, ptr %tag_ptr291, align 8
-  %is_eq293 = icmp eq i64 %tag292, 229444052301365
-  %is_eq_ext294 = zext i1 %is_eq293 to i64
-  store i64 %is_eq_ext294, ptr %match_result, align 8
+march_arm84:                                      ; preds = %march_next54
+  %pay_slot87 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %a1, i32 0, i32 1
+  %payload88 = load ptr, ptr %pay_slot87, align 8
+  %n1_slot_base89 = ptrtoint ptr %payload88 to i64
+  %n1_slot_addr90 = add i64 %n1_slot_base89, 0
+  %n1_slot91 = inttoptr i64 %n1_slot_addr90 to ptr
+  %n192 = load ptr, ptr %n1_slot91, align 8
+  call void @forge_rc_retain(ptr %n192)
+  store ptr %n192, ptr %n193, align 8
+  %pay_slot94 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %a1, i32 0, i32 1
+  %payload95 = load ptr, ptr %pay_slot94, align 8
+  %id1_slot_base96 = ptrtoint ptr %payload95 to i64
+  %id1_slot_addr97 = add i64 %id1_slot_base96, 16
+  %id1_slot98 = inttoptr i64 %id1_slot_addr97 to ptr
+  %id199 = load i64, ptr %id1_slot98, align 8
+  store i64 %id199, ptr %id1100, align 8
+  %b101 = load ptr, ptr %b, align 8
+  %tag_ptr102 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b101, i32 0, i32 0
+  %tag103 = load i64, ptr %tag_ptr102, align 8
+  store i64 0, ptr %match_result104, align 8
+  %tag_eq108 = icmp eq i64 %tag103, 6384044314
+  br i1 %tag_eq108, label %march_arm106, label %march_next107
+
+march_next85:                                     ; preds = %march_next54
+  %tag_eq157 = icmp eq i64 %tag, 210674569595
+  br i1 %tag_eq157, label %march_arm155, label %march_next156
+
+match_end105:                                     ; preds = %march_arm152, %ife_end140
+  %match_val154 = load i64, ptr %match_result104, align 8
+  store i64 %match_val154, ptr %match_result, align 8
   br label %match_end
 
-march_next288:                                    ; preds = %march_next252
-  %tag_eq297 = icmp eq i64 %tag, 6384569144
-  br i1 %tag_eq297, label %march_arm295, label %march_next296
+march_arm106:                                     ; preds = %march_arm84
+  %pay_slot109 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b101, i32 0, i32 1
+  %payload110 = load ptr, ptr %pay_slot109, align 8
+  %n2_slot_base111 = ptrtoint ptr %payload110 to i64
+  %n2_slot_addr112 = add i64 %n2_slot_base111, 0
+  %n2_slot113 = inttoptr i64 %n2_slot_addr112 to ptr
+  %n2114 = load ptr, ptr %n2_slot113, align 8
+  call void @forge_rc_retain(ptr %n2114)
+  store ptr %n2114, ptr %n2115, align 8
+  %pay_slot116 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b101, i32 0, i32 1
+  %payload117 = load ptr, ptr %pay_slot116, align 8
+  %id2_slot_base118 = ptrtoint ptr %payload117 to i64
+  %id2_slot_addr119 = add i64 %id2_slot_base118, 16
+  %id2_slot120 = inttoptr i64 %id2_slot_addr119 to ptr
+  %id2121 = load i64, ptr %id2_slot120, align 8
+  store i64 %id2121, ptr %id2122, align 8
+  %id1123 = load i64, ptr %id1100, align 8
+  %sgt124 = icmp sgt i64 %id1123, 0
+  %sgt_ext125 = zext i1 %sgt124 to i64
+  %l_bool126 = icmp ne i64 %sgt_ext125, 0
+  br i1 %l_bool126, label %sc_rhs127, label %sc_short128
 
-march_arm295:                                     ; preds = %march_next288
-  %b298 = load ptr, ptr %b, align 8
-  %tag_ptr299 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b298, i32 0, i32 0
-  %tag300 = load i64, ptr %tag_ptr299, align 8
-  %is_eq301 = icmp eq i64 %tag300, 6384569144
-  %is_eq_ext302 = zext i1 %is_eq301 to i64
-  store i64 %is_eq_ext302, ptr %match_result, align 8
+march_next107:                                    ; preds = %march_arm84
+  br label %march_arm152
+
+sc_rhs127:                                        ; preds = %march_arm106
+  %id2130 = load i64, ptr %id2122, align 8
+  %sgt131 = icmp sgt i64 %id2130, 0
+  %sgt_ext132 = zext i1 %sgt131 to i64
+  %r_bool133 = icmp ne i64 %sgt_ext132, 0
+  br i1 %r_bool133, label %sc_r_true134, label %sc_r_false135
+
+sc_short128:                                      ; preds = %march_arm106
+  br label %sc_merge129
+
+sc_merge129:                                      ; preds = %sc_r_merge136, %sc_short128
+  %sc_phi137 = phi i1 [ false, %sc_short128 ], [ %r_bool133, %sc_r_merge136 ]
+  %sc_ext138 = zext i1 %sc_phi137 to i64
+  %ife_cond141 = icmp ne i64 %sc_ext138, 0
+  br i1 %ife_cond141, label %ife_then142, label %ife_else143
+
+sc_r_true134:                                     ; preds = %sc_rhs127
+  br label %sc_r_merge136
+
+sc_r_false135:                                    ; preds = %sc_rhs127
+  br label %sc_r_merge136
+
+sc_r_merge136:                                    ; preds = %sc_r_false135, %sc_r_true134
+  br label %sc_merge129
+
+ife_end140:                                       ; preds = %ife_else143, %ife_then142
+  %ife_val151 = load i64, ptr %ife_result139, align 8
+  store i64 %ife_val151, ptr %match_result104, align 8
+  br label %match_end105
+
+ife_then142:                                      ; preds = %sc_merge129
+  %id1144 = load i64, ptr %id1100, align 8
+  %id2145 = load i64, ptr %id2122, align 8
+  %eq146 = icmp eq i64 %id1144, %id2145
+  %eq_ext147 = zext i1 %eq146 to i64
+  store i64 %eq_ext147, ptr %ife_result139, align 8
+  br label %ife_end140
+
+ife_else143:                                      ; preds = %sc_merge129
+  %n1148 = load ptr, ptr %n193, align 8
+  %n2149 = load ptr, ptr %n2115, align 8
+  %3 = call i1 @"core::ast::names_match"(ptr %n1148, ptr %n2149)
+  %widen150 = zext i1 %3 to i64
+  store i64 %widen150, ptr %ife_result139, align 8
+  br label %ife_end140
+
+march_arm152:                                     ; preds = %march_next107
+  store i64 0, ptr %match_result104, align 8
+  br label %match_end105
+
+march_next153:                                    ; No predecessors!
+  call void @forge_match_unreachable(ptr @.match_fn.74, i64 %tag103, ptr @mu_file.75, i64 260)
+  unreachable
+
+march_arm155:                                     ; preds = %march_next85
+  %b158 = load ptr, ptr %b, align 8
+  %tag_ptr159 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b158, i32 0, i32 0
+  %tag160 = load i64, ptr %tag_ptr159, align 8
+  %is_eq161 = icmp eq i64 %tag160, 210674569595
+  %is_eq_ext162 = zext i1 %is_eq161 to i64
+  store i64 %is_eq_ext162, ptr %match_result, align 8
   br label %match_end
 
-march_next296:                                    ; preds = %march_next288
-  br label %march_arm303
+march_next156:                                    ; preds = %march_next85
+  %tag_eq165 = icmp eq i64 %tag, 193464163
+  br i1 %tag_eq165, label %march_arm163, label %march_next164
 
-march_arm303:                                     ; preds = %march_next296
+march_arm163:                                     ; preds = %march_next156
+  %b166 = load ptr, ptr %b, align 8
+  %tag_ptr167 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b166, i32 0, i32 0
+  %tag168 = load i64, ptr %tag_ptr167, align 8
+  %is_eq169 = icmp eq i64 %tag168, 193464163
+  %is_eq_ext170 = zext i1 %is_eq169 to i64
+  store i64 %is_eq_ext170, ptr %match_result, align 8
+  br label %match_end
+
+march_next164:                                    ; preds = %march_next156
+  %tag_eq173 = icmp eq i64 %tag, 229424653401439
+  br i1 %tag_eq173, label %march_arm171, label %march_next172
+
+march_arm171:                                     ; preds = %march_next164
+  %b174 = load ptr, ptr %b, align 8
+  %tag_ptr175 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b174, i32 0, i32 0
+  %tag176 = load i64, ptr %tag_ptr175, align 8
+  store i64 0, ptr %match_result177, align 8
+  %tag_eq181 = icmp eq i64 %tag176, 229424653401439
+  br i1 %tag_eq181, label %march_arm179, label %march_next180
+
+march_next172:                                    ; preds = %march_next164
+  %tag_eq190 = icmp eq i64 %tag, 210691373129
+  br i1 %tag_eq190, label %march_arm188, label %march_next189
+
+match_end178:                                     ; preds = %march_arm185, %march_arm182, %march_arm179
+  %match_val187 = load i64, ptr %match_result177, align 8
+  store i64 %match_val187, ptr %match_result, align 8
+  br label %match_end
+
+march_arm179:                                     ; preds = %march_arm171
+  store i64 1, ptr %match_result177, align 8
+  br label %match_end178
+
+march_next180:                                    ; preds = %march_arm171
+  %tag_eq184 = icmp eq i64 %tag176, 5862329
+  br i1 %tag_eq184, label %march_arm182, label %march_next183
+
+march_arm182:                                     ; preds = %march_next180
+  store i64 1, ptr %match_result177, align 8
+  br label %match_end178
+
+march_next183:                                    ; preds = %march_next180
+  br label %march_arm185
+
+march_arm185:                                     ; preds = %march_next183
+  store i64 0, ptr %match_result177, align 8
+  br label %match_end178
+
+march_next186:                                    ; No predecessors!
+  call void @forge_match_unreachable(ptr @.match_fn.76, i64 %tag176, ptr @mu_file.77, i64 260)
+  unreachable
+
+march_arm188:                                     ; preds = %march_next172
+  %pay_slot191 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %a1, i32 0, i32 1
+  %payload192 = load ptr, ptr %pay_slot191, align 8
+  %n1_slot_base193 = ptrtoint ptr %payload192 to i64
+  %n1_slot_addr194 = add i64 %n1_slot_base193, 0
+  %n1_slot195 = inttoptr i64 %n1_slot_addr194 to ptr
+  %n1196 = load ptr, ptr %n1_slot195, align 8
+  call void @forge_rc_retain(ptr %n1196)
+  store ptr %n1196, ptr %n1197, align 8
+  %b198 = load ptr, ptr %b, align 8
+  %tag_ptr199 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b198, i32 0, i32 0
+  %tag200 = load i64, ptr %tag_ptr199, align 8
+  store i64 0, ptr %match_result201, align 8
+  %tag_eq205 = icmp eq i64 %tag200, 210691373129
+  br i1 %tag_eq205, label %march_arm203, label %march_next204
+
+march_next189:                                    ; preds = %march_next172
+  %tag_eq221 = icmp eq i64 %tag, 210691497359
+  br i1 %tag_eq221, label %march_arm219, label %march_next220
+
+match_end202:                                     ; preds = %march_arm216, %march_arm203
+  %match_val218 = load i64, ptr %match_result201, align 8
+  store i64 %match_val218, ptr %match_result, align 8
+  br label %match_end
+
+march_arm203:                                     ; preds = %march_arm188
+  %pay_slot206 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b198, i32 0, i32 1
+  %payload207 = load ptr, ptr %pay_slot206, align 8
+  %n2_slot_base208 = ptrtoint ptr %payload207 to i64
+  %n2_slot_addr209 = add i64 %n2_slot_base208, 0
+  %n2_slot210 = inttoptr i64 %n2_slot_addr209 to ptr
+  %n2211 = load ptr, ptr %n2_slot210, align 8
+  call void @forge_rc_retain(ptr %n2211)
+  store ptr %n2211, ptr %n2212, align 8
+  %n1213 = load ptr, ptr %n1197, align 8
+  %n2214 = load ptr, ptr %n2212, align 8
+  %4 = call i32 @strcmp(ptr %n1213, ptr %n2214)
+  %widen215 = sext i32 %4 to i64
+  %streq_cmp = icmp eq i64 %widen215, 0
+  %streq_ext = zext i1 %streq_cmp to i64
+  store i64 %streq_ext, ptr %match_result201, align 8
+  br label %match_end202
+
+march_next204:                                    ; preds = %march_arm188
+  br label %march_arm216
+
+march_arm216:                                     ; preds = %march_next204
+  store i64 0, ptr %match_result201, align 8
+  br label %match_end202
+
+march_next217:                                    ; No predecessors!
+  call void @forge_match_unreachable(ptr @.match_fn.78, i64 %tag200, ptr @mu_file.79, i64 260)
+  unreachable
+
+march_arm219:                                     ; preds = %march_next189
+  %b222 = load ptr, ptr %b, align 8
+  %tag_ptr223 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b222, i32 0, i32 0
+  %tag224 = load i64, ptr %tag_ptr223, align 8
+  store i64 0, ptr %match_result225, align 8
+  %tag_eq229 = icmp eq i64 %tag224, 210691497359
+  br i1 %tag_eq229, label %march_arm227, label %march_next228
+
+march_next220:                                    ; preds = %march_next189
+  %tag_eq235 = icmp eq i64 %tag, 229420732536866
+  br i1 %tag_eq235, label %march_arm233, label %march_next234
+
+match_end226:                                     ; preds = %march_arm230, %march_arm227
+  %match_val232 = load i64, ptr %match_result225, align 8
+  store i64 %match_val232, ptr %match_result, align 8
+  br label %match_end
+
+march_arm227:                                     ; preds = %march_arm219
+  store i64 1, ptr %match_result225, align 8
+  br label %match_end226
+
+march_next228:                                    ; preds = %march_arm219
+  br label %march_arm230
+
+march_arm230:                                     ; preds = %march_next228
+  store i64 0, ptr %match_result225, align 8
+  br label %match_end226
+
+march_next231:                                    ; No predecessors!
+  call void @forge_match_unreachable(ptr @.match_fn.80, i64 %tag224, ptr @mu_file.81, i64 260)
+  unreachable
+
+march_arm233:                                     ; preds = %march_next220
+  %b236 = load ptr, ptr %b, align 8
+  %tag_ptr237 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b236, i32 0, i32 0
+  %tag238 = load i64, ptr %tag_ptr237, align 8
+  store i64 0, ptr %match_result239, align 8
+  %tag_eq243 = icmp eq i64 %tag238, 229420732536866
+  br i1 %tag_eq243, label %march_arm241, label %march_next242
+
+march_next234:                                    ; preds = %march_next220
+  %tag_eq249 = icmp eq i64 %tag, 210692424206
+  br i1 %tag_eq249, label %march_arm247, label %march_next248
+
+match_end240:                                     ; preds = %march_arm244, %march_arm241
+  %match_val246 = load i64, ptr %match_result239, align 8
+  store i64 %match_val246, ptr %match_result, align 8
+  br label %match_end
+
+march_arm241:                                     ; preds = %march_arm233
+  store i64 1, ptr %match_result239, align 8
+  br label %match_end240
+
+march_next242:                                    ; preds = %march_arm233
+  br label %march_arm244
+
+march_arm244:                                     ; preds = %march_next242
+  store i64 0, ptr %match_result239, align 8
+  br label %match_end240
+
+march_next245:                                    ; No predecessors!
+  call void @forge_match_unreachable(ptr @.match_fn.82, i64 %tag238, ptr @mu_file.83, i64 260)
+  unreachable
+
+march_arm247:                                     ; preds = %march_next234
+  %pay_slot250 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %a1, i32 0, i32 1
+  %payload251 = load ptr, ptr %pay_slot250, align 8
+  %types_a_slot_base = ptrtoint ptr %payload251 to i64
+  %types_a_slot_addr = add i64 %types_a_slot_base, 0
+  %types_a_slot = inttoptr i64 %types_a_slot_addr to ptr
+  %types_a = load ptr, ptr %types_a_slot, align 8
+  call void @forge_rc_retain(ptr %types_a)
+  store ptr %types_a, ptr %types_a252, align 8
+  %b253 = load ptr, ptr %b, align 8
+  %tag_ptr254 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b253, i32 0, i32 0
+  %tag255 = load i64, ptr %tag_ptr254, align 8
+  store i64 0, ptr %match_result256, align 8
+  %tag_eq260 = icmp eq i64 %tag255, 210692424206
+  br i1 %tag_eq260, label %march_arm258, label %march_next259
+
+march_next248:                                    ; preds = %march_next234
+  %tag_eq272 = icmp eq i64 %tag, 229434674264369
+  br i1 %tag_eq272, label %march_arm270, label %march_next271
+
+match_end257:                                     ; preds = %march_arm267, %march_arm258
+  %match_val269 = load i64, ptr %match_result256, align 8
+  store i64 %match_val269, ptr %match_result, align 8
+  br label %match_end
+
+march_arm258:                                     ; preds = %march_arm247
+  %pay_slot261 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b253, i32 0, i32 1
+  %payload262 = load ptr, ptr %pay_slot261, align 8
+  %types_b_slot_base = ptrtoint ptr %payload262 to i64
+  %types_b_slot_addr = add i64 %types_b_slot_base, 0
+  %types_b_slot = inttoptr i64 %types_b_slot_addr to ptr
+  %types_b = load ptr, ptr %types_b_slot, align 8
+  call void @forge_rc_retain(ptr %types_b)
+  store ptr %types_b, ptr %types_b263, align 8
+  %types_a264 = load ptr, ptr %types_a252, align 8
+  %types_b265 = load ptr, ptr %types_b263, align 8
+  %5 = call i1 @"core::ast::type_lists_eq"(ptr %types_a264, ptr %types_b265)
+  %widen266 = zext i1 %5 to i64
+  store i64 %widen266, ptr %match_result256, align 8
+  br label %match_end257
+
+march_next259:                                    ; preds = %march_arm247
+  br label %march_arm267
+
+march_arm267:                                     ; preds = %march_next259
+  store i64 0, ptr %match_result256, align 8
+  br label %match_end257
+
+march_next268:                                    ; No predecessors!
+  call void @forge_match_unreachable(ptr @.match_fn.84, i64 %tag255, ptr @mu_file.85, i64 260)
+  unreachable
+
+march_arm270:                                     ; preds = %march_next248
+  %pay_slot273 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %a1, i32 0, i32 1
+  %payload274 = load ptr, ptr %pay_slot273, align 8
+  %n1_slot_base275 = ptrtoint ptr %payload274 to i64
+  %n1_slot_addr276 = add i64 %n1_slot_base275, 0
+  %n1_slot277 = inttoptr i64 %n1_slot_addr276 to ptr
+  %n1278 = load ptr, ptr %n1_slot277, align 8
+  call void @forge_rc_retain(ptr %n1278)
+  store ptr %n1278, ptr %n1279, align 8
+  %b280 = load ptr, ptr %b, align 8
+  %tag_ptr281 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b280, i32 0, i32 0
+  %tag282 = load i64, ptr %tag_ptr281, align 8
+  store i64 0, ptr %match_result283, align 8
+  %tag_eq287 = icmp eq i64 %tag282, 229434674264369
+  br i1 %tag_eq287, label %march_arm285, label %march_next286
+
+march_next271:                                    ; preds = %march_next248
+  %tag_eq305 = icmp eq i64 %tag, -4554580336688187492
+  br i1 %tag_eq305, label %march_arm303, label %march_next304
+
+match_end284:                                     ; preds = %march_arm300, %march_arm285
+  %match_val302 = load i64, ptr %match_result283, align 8
+  store i64 %match_val302, ptr %match_result, align 8
+  br label %match_end
+
+march_arm285:                                     ; preds = %march_arm270
+  %pay_slot288 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b280, i32 0, i32 1
+  %payload289 = load ptr, ptr %pay_slot288, align 8
+  %n2_slot_base290 = ptrtoint ptr %payload289 to i64
+  %n2_slot_addr291 = add i64 %n2_slot_base290, 0
+  %n2_slot292 = inttoptr i64 %n2_slot_addr291 to ptr
+  %n2293 = load ptr, ptr %n2_slot292, align 8
+  call void @forge_rc_retain(ptr %n2293)
+  store ptr %n2293, ptr %n2294, align 8
+  %n1295 = load ptr, ptr %n1279, align 8
+  %n2296 = load ptr, ptr %n2294, align 8
+  %6 = call i32 @strcmp(ptr %n1295, ptr %n2296)
+  %widen297 = sext i32 %6 to i64
+  %streq_cmp298 = icmp eq i64 %widen297, 0
+  %streq_ext299 = zext i1 %streq_cmp298 to i64
+  store i64 %streq_ext299, ptr %match_result283, align 8
+  br label %match_end284
+
+march_next286:                                    ; preds = %march_arm270
+  br label %march_arm300
+
+march_arm300:                                     ; preds = %march_next286
+  store i64 0, ptr %match_result283, align 8
+  br label %match_end284
+
+march_next301:                                    ; No predecessors!
+  call void @forge_match_unreachable(ptr @.match_fn.86, i64 %tag282, ptr @mu_file.87, i64 260)
+  unreachable
+
+march_arm303:                                     ; preds = %march_next271
+  %pay_slot306 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %a1, i32 0, i32 1
+  %payload307 = load ptr, ptr %pay_slot306, align 8
+  %e1_slot_base = ptrtoint ptr %payload307 to i64
+  %e1_slot_addr = add i64 %e1_slot_base, 0
+  %e1_slot = inttoptr i64 %e1_slot_addr to ptr
+  %e1 = load ptr, ptr %e1_slot, align 8
+  call void @forge_rc_retain(ptr %e1)
+  store ptr %e1, ptr %e1308, align 8
+  %pay_slot309 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %a1, i32 0, i32 1
+  %payload310 = load ptr, ptr %pay_slot309, align 8
+  %v1_slot_base = ptrtoint ptr %payload310 to i64
+  %v1_slot_addr = add i64 %v1_slot_base, 8
+  %v1_slot = inttoptr i64 %v1_slot_addr to ptr
+  %v1 = load ptr, ptr %v1_slot, align 8
+  call void @forge_rc_retain(ptr %v1)
+  store ptr %v1, ptr %v1311, align 8
+  %b312 = load ptr, ptr %b, align 8
+  %tag_ptr313 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b312, i32 0, i32 0
+  %tag314 = load i64, ptr %tag_ptr313, align 8
+  store i64 0, ptr %match_result315, align 8
+  %tag_eq319 = icmp eq i64 %tag314, -4554580336688187492
+  br i1 %tag_eq319, label %march_arm317, label %march_next318
+
+march_next304:                                    ; preds = %march_next271
+  %tag_eq351 = icmp eq i64 %tag, 229444052301365
+  br i1 %tag_eq351, label %march_arm349, label %march_next350
+
+match_end316:                                     ; preds = %march_arm346, %sc_merge334
+  %match_val348 = load i64, ptr %match_result315, align 8
+  store i64 %match_val348, ptr %match_result, align 8
+  br label %match_end
+
+march_arm317:                                     ; preds = %march_arm303
+  %pay_slot320 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b312, i32 0, i32 1
+  %payload321 = load ptr, ptr %pay_slot320, align 8
+  %e2_slot_base = ptrtoint ptr %payload321 to i64
+  %e2_slot_addr = add i64 %e2_slot_base, 0
+  %e2_slot = inttoptr i64 %e2_slot_addr to ptr
+  %e2 = load ptr, ptr %e2_slot, align 8
+  call void @forge_rc_retain(ptr %e2)
+  store ptr %e2, ptr %e2322, align 8
+  %pay_slot323 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b312, i32 0, i32 1
+  %payload324 = load ptr, ptr %pay_slot323, align 8
+  %v2_slot_base = ptrtoint ptr %payload324 to i64
+  %v2_slot_addr = add i64 %v2_slot_base, 8
+  %v2_slot = inttoptr i64 %v2_slot_addr to ptr
+  %v2 = load ptr, ptr %v2_slot, align 8
+  call void @forge_rc_retain(ptr %v2)
+  store ptr %v2, ptr %v2325, align 8
+  %e1326 = load ptr, ptr %e1308, align 8
+  %e2327 = load ptr, ptr %e2322, align 8
+  %7 = call i32 @strcmp(ptr %e1326, ptr %e2327)
+  %widen328 = sext i32 %7 to i64
+  %streq_cmp329 = icmp eq i64 %widen328, 0
+  %streq_ext330 = zext i1 %streq_cmp329 to i64
+  %l_bool331 = icmp ne i64 %streq_ext330, 0
+  br i1 %l_bool331, label %sc_rhs332, label %sc_short333
+
+march_next318:                                    ; preds = %march_arm303
+  br label %march_arm346
+
+sc_rhs332:                                        ; preds = %march_arm317
+  %v1335 = load ptr, ptr %v1311, align 8
+  %v2336 = load ptr, ptr %v2325, align 8
+  %8 = call i32 @strcmp(ptr %v1335, ptr %v2336)
+  %widen337 = sext i32 %8 to i64
+  %streq_cmp338 = icmp eq i64 %widen337, 0
+  %streq_ext339 = zext i1 %streq_cmp338 to i64
+  %r_bool340 = icmp ne i64 %streq_ext339, 0
+  br i1 %r_bool340, label %sc_r_true341, label %sc_r_false342
+
+sc_short333:                                      ; preds = %march_arm317
+  br label %sc_merge334
+
+sc_merge334:                                      ; preds = %sc_r_merge343, %sc_short333
+  %sc_phi344 = phi i1 [ false, %sc_short333 ], [ %r_bool340, %sc_r_merge343 ]
+  %sc_ext345 = zext i1 %sc_phi344 to i64
+  store i64 %sc_ext345, ptr %match_result315, align 8
+  br label %match_end316
+
+sc_r_true341:                                     ; preds = %sc_rhs332
+  br label %sc_r_merge343
+
+sc_r_false342:                                    ; preds = %sc_rhs332
+  br label %sc_r_merge343
+
+sc_r_merge343:                                    ; preds = %sc_r_false342, %sc_r_true341
+  br label %sc_merge334
+
+march_arm346:                                     ; preds = %march_next318
+  store i64 0, ptr %match_result315, align 8
+  br label %match_end316
+
+march_next347:                                    ; No predecessors!
+  call void @forge_match_unreachable(ptr @.match_fn.88, i64 %tag314, ptr @mu_file.89, i64 260)
+  unreachable
+
+march_arm349:                                     ; preds = %march_next304
+  %b352 = load ptr, ptr %b, align 8
+  %tag_ptr353 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b352, i32 0, i32 0
+  %tag354 = load i64, ptr %tag_ptr353, align 8
+  %is_eq355 = icmp eq i64 %tag354, 229444052301365
+  %is_eq_ext356 = zext i1 %is_eq355 to i64
+  store i64 %is_eq_ext356, ptr %match_result, align 8
+  br label %match_end
+
+march_next350:                                    ; preds = %march_next304
+  %tag_eq359 = icmp eq i64 %tag, 6384569144
+  br i1 %tag_eq359, label %march_arm357, label %march_next358
+
+march_arm357:                                     ; preds = %march_next350
+  %b360 = load ptr, ptr %b, align 8
+  %tag_ptr361 = getelementptr inbounds nuw %"core::ast::ValueType", ptr %b360, i32 0, i32 0
+  %tag362 = load i64, ptr %tag_ptr361, align 8
+  %is_eq363 = icmp eq i64 %tag362, 6384569144
+  %is_eq_ext364 = zext i1 %is_eq363 to i64
+  store i64 %is_eq_ext364, ptr %match_result, align 8
+  br label %match_end
+
+march_next358:                                    ; preds = %march_next350
+  br label %march_arm365
+
+march_arm365:                                     ; preds = %march_next358
   store i64 0, ptr %match_result, align 8
   br label %match_end
 
-march_next304:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.90, i64 %tag, ptr @mu_file.91, i64 259)
+march_next366:                                    ; No predecessors!
+  call void @forge_match_unreachable(ptr @.match_fn.90, i64 %tag, ptr @mu_file.91, i64 260)
   unreachable
 }
 
@@ -24670,7 +24794,7 @@ march_arm5:                                       ; preds = %march_next
   br i1 %tag_eq19, label %march_arm17, label %march_next18
 
 march_next6:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.94, i64 %tag, ptr @mu_file.95, i64 288)
+  call void @forge_match_unreachable(ptr @.match_fn.94, i64 %tag, ptr @mu_file.95, i64 289)
   unreachable
 
 match_end16:                                      ; preds = %sc_merge, %march_arm17
@@ -24711,7 +24835,7 @@ march_arm20:                                      ; preds = %march_next18
   br i1 %l_bool, label %sc_rhs, label %sc_short
 
 march_next21:                                     ; preds = %march_next18
-  call void @forge_match_unreachable(ptr @.match_fn.92, i64 %tag14, ptr @mu_file.93, i64 288)
+  call void @forge_match_unreachable(ptr @.match_fn.92, i64 %tag14, ptr @mu_file.93, i64 289)
   unreachable
 
 sc_rhs:                                           ; preds = %march_arm20
@@ -24813,7 +24937,7 @@ march_arm15:                                      ; preds = %march_next
   br label %match_end
 
 march_next16:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.96, i64 %tag, ptr @mu_file.97, i64 304)
+  call void @forge_match_unreachable(ptr @.match_fn.96, i64 %tag, ptr @mu_file.97, i64 305)
   unreachable
 }
 
@@ -24996,7 +25120,7 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.101, i64 %tag, ptr @mu_file.102, i64 326)
+  call void @forge_match_unreachable(ptr @.match_fn.101, i64 %tag, ptr @mu_file.102, i64 327)
   unreachable
 }
 
@@ -25058,7 +25182,7 @@ march_arm8:                                       ; preds = %march_next6
   br label %match_end
 
 march_next9:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.103, i64 %tag, ptr @mu_file.104, i64 332)
+  call void @forge_match_unreachable(ptr @.match_fn.103, i64 %tag, ptr @mu_file.104, i64 333)
   unreachable
 }
 
@@ -25146,7 +25270,7 @@ march_arm28:                                      ; preds = %march_next17
   br label %match_end
 
 march_next29:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.105, i64 %tag, ptr @mu_file.106, i64 336)
+  call void @forge_match_unreachable(ptr @.match_fn.105, i64 %tag, ptr @mu_file.106, i64 337)
   unreachable
 }
 
@@ -25196,7 +25320,7 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.107, i64 %tag, ptr @mu_file.108, i64 340)
+  call void @forge_match_unreachable(ptr @.match_fn.107, i64 %tag, ptr @mu_file.108, i64 341)
   unreachable
 }
 
@@ -25237,7 +25361,7 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.109, i64 %tag, ptr @mu_file.110, i64 344)
+  call void @forge_match_unreachable(ptr @.match_fn.109, i64 %tag, ptr @mu_file.110, i64 345)
   unreachable
 }
 
@@ -25294,7 +25418,7 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.112, i64 %tag, ptr @mu_file.113, i64 350)
+  call void @forge_match_unreachable(ptr @.match_fn.112, i64 %tag, ptr @mu_file.113, i64 351)
   unreachable
 }
 
@@ -25357,7 +25481,7 @@ march_arm16:                                      ; preds = %march_next5
   br label %match_end
 
 march_next17:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.115, i64 %tag, ptr @mu_file.116, i64 354)
+  call void @forge_match_unreachable(ptr @.match_fn.115, i64 %tag, ptr @mu_file.116, i64 355)
   unreachable
 }
 
@@ -25401,7 +25525,7 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.118, i64 %tag, ptr @mu_file.119, i64 358)
+  call void @forge_match_unreachable(ptr @.match_fn.118, i64 %tag, ptr @mu_file.119, i64 359)
   unreachable
 }
 
@@ -25775,7 +25899,7 @@ march_arm134:                                     ; preds = %march_next132
   br label %match_end
 
 march_next135:                                    ; preds = %march_next132
-  call void @forge_match_unreachable(ptr @.match_fn.137, i64 %tag, ptr @mu_file.138, i64 362)
+  call void @forge_match_unreachable(ptr @.match_fn.137, i64 %tag, ptr @mu_file.138, i64 363)
   unreachable
 }
 
@@ -25838,7 +25962,7 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.142, i64 %tag, ptr @mu_file.143, i64 386)
+  call void @forge_match_unreachable(ptr @.match_fn.142, i64 %tag, ptr @mu_file.143, i64 387)
   unreachable
 
 sif_then:                                         ; preds = %march_arm2
@@ -26391,7 +26515,7 @@ march_arm198:                                     ; preds = %march_next196
   br label %match_end
 
 march_next199:                                    ; preds = %march_next196
-  call void @forge_match_unreachable(ptr @.match_fn.166, i64 %tag, ptr @mu_file.167, i64 404)
+  call void @forge_match_unreachable(ptr @.match_fn.166, i64 %tag, ptr @mu_file.167, i64 405)
   unreachable
 }
 
@@ -26454,7 +26578,7 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.171, i64 %tag, ptr @mu_file.172, i64 432)
+  call void @forge_match_unreachable(ptr @.match_fn.171, i64 %tag, ptr @mu_file.172, i64 433)
   unreachable
 
 sif_then:                                         ; preds = %march_arm2
@@ -26559,7 +26683,7 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.176, i64 %tag, ptr @mu_file.177, i64 447)
+  call void @forge_match_unreachable(ptr @.match_fn.176, i64 %tag, ptr @mu_file.177, i64 448)
   unreachable
 
 sif_then:                                         ; preds = %march_arm2
@@ -26645,7 +26769,7 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.179, i64 %tag, ptr @mu_file.180, i64 462)
+  call void @forge_match_unreachable(ptr @.match_fn.179, i64 %tag, ptr @mu_file.180, i64 463)
   unreachable
 }
 
@@ -26721,7 +26845,7 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.181, i64 %tag, ptr @mu_file.182, i64 470)
+  call void @forge_match_unreachable(ptr @.match_fn.181, i64 %tag, ptr @mu_file.182, i64 471)
   unreachable
 }
 
@@ -26765,7 +26889,7 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.184, i64 %tag, ptr @mu_file.185, i64 474)
+  call void @forge_match_unreachable(ptr @.match_fn.184, i64 %tag, ptr @mu_file.185, i64 475)
   unreachable
 }
 
@@ -26815,7 +26939,7 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.186, i64 %tag, ptr @mu_file.187, i64 478)
+  call void @forge_match_unreachable(ptr @.match_fn.186, i64 %tag, ptr @mu_file.187, i64 479)
   unreachable
 }
 
@@ -26874,7 +26998,7 @@ march_arm2:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.188, i64 %tag, ptr @mu_file.189, i64 483)
+  call void @forge_match_unreachable(ptr @.match_fn.188, i64 %tag, ptr @mu_file.189, i64 484)
   unreachable
 
 ife_end:                                          ; preds = %ife_else, %ife_then
@@ -26970,7 +27094,7 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.190, i64 %tag, ptr @mu_file.191, i64 491)
+  call void @forge_match_unreachable(ptr @.match_fn.190, i64 %tag, ptr @mu_file.191, i64 492)
   unreachable
 
 match_end21:                                      ; preds = %march_arm34, %march_arm22
@@ -27027,7 +27151,7 @@ march_arm34:                                      ; preds = %march_next23
   br label %match_end21
 
 march_next35:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.192, i64 %tag19, ptr @mu_file.193, i64 495)
+  call void @forge_match_unreachable(ptr @.match_fn.192, i64 %tag19, ptr @mu_file.193, i64 496)
   unreachable
 }
 
@@ -27102,7 +27226,7 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.194, i64 %tag, ptr @mu_file.195, i64 503)
+  call void @forge_match_unreachable(ptr @.match_fn.194, i64 %tag, ptr @mu_file.195, i64 504)
   unreachable
 }
 
@@ -27147,7 +27271,7 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.196, i64 %tag, ptr @mu_file.197, i64 510)
+  call void @forge_match_unreachable(ptr @.match_fn.196, i64 %tag, ptr @mu_file.197, i64 511)
   unreachable
 }
 
@@ -27211,7 +27335,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.198, i64 %tag, ptr @mu_file.199, i64 517)
+  call void @forge_match_unreachable(ptr @.match_fn.198, i64 %tag, ptr @mu_file.199, i64 518)
   unreachable
 
 ife_end:                                          ; preds = %ife_else, %ife_then
@@ -27525,7 +27649,7 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.210, i64 %tag, ptr @mu_file.211, i64 543)
+  call void @forge_match_unreachable(ptr @.match_fn.210, i64 %tag, ptr @mu_file.211, i64 544)
   unreachable
 
 sif_then:                                         ; preds = %march_arm2
@@ -27621,7 +27745,7 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.212, i64 %tag, ptr @mu_file.213, i64 558)
+  call void @forge_match_unreachable(ptr @.match_fn.212, i64 %tag, ptr @mu_file.213, i64 559)
   unreachable
 }
 
@@ -27703,7 +27827,7 @@ march_arm10:                                      ; preds = %march_next4
   br label %match_end
 
 march_next11:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.214, i64 %tag, ptr @mu_file.215, i64 565)
+  call void @forge_match_unreachable(ptr @.match_fn.214, i64 %tag, ptr @mu_file.215, i64 566)
   unreachable
 }
 
@@ -27849,7 +27973,7 @@ march_arm44:                                      ; preds = %march_next42
   br label %match_end
 
 march_next45:                                     ; preds = %march_next42
-  call void @forge_match_unreachable(ptr @.match_fn.232, i64 %tag, ptr @mu_file.233, i64 589)
+  call void @forge_match_unreachable(ptr @.match_fn.232, i64 %tag, ptr @mu_file.233, i64 590)
   unreachable
 }
 
@@ -27891,7 +28015,7 @@ march_arm5:                                       ; preds = %march_next3
   br label %match_end
 
 march_next6:                                      ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.237, i64 %tag, ptr @mu_file.238, i64 610)
+  call void @forge_match_unreachable(ptr @.match_fn.237, i64 %tag, ptr @mu_file.238, i64 611)
   unreachable
 }
 
@@ -27925,7 +28049,7 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.241, i64 %tag, ptr @mu_file.242, i64 618)
+  call void @forge_match_unreachable(ptr @.match_fn.241, i64 %tag, ptr @mu_file.242, i64 619)
   unreachable
 }
 
@@ -27971,7 +28095,7 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.243, i64 %tag, ptr @mu_file.244, i64 744)
+  call void @forge_match_unreachable(ptr @.match_fn.243, i64 %tag, ptr @mu_file.244, i64 745)
   unreachable
 }
 
@@ -28093,7 +28217,7 @@ march_arm27:                                      ; preds = %march_next9
   br label %match_end
 
 march_next28:                                     ; preds = %march_next9
-  call void @forge_match_unreachable(ptr @.match_fn.245, i64 %tag, ptr @mu_file.246, i64 775)
+  call void @forge_match_unreachable(ptr @.match_fn.245, i64 %tag, ptr @mu_file.246, i64 776)
   unreachable
 }
 
@@ -28248,7 +28372,7 @@ march_arm24:                                      ; preds = %march_next6
   br label %match_end
 
 march_next25:                                     ; preds = %march_next6
-  call void @forge_match_unreachable(ptr @.match_fn.247, i64 %tag, ptr @mu_file.248, i64 803)
+  call void @forge_match_unreachable(ptr @.match_fn.247, i64 %tag, ptr @mu_file.248, i64 804)
   unreachable
 }
 
@@ -28334,7 +28458,7 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.249, i64 %tag, ptr @mu_file.250, i64 819)
+  call void @forge_match_unreachable(ptr @.match_fn.249, i64 %tag, ptr @mu_file.250, i64 820)
   unreachable
 }
 
@@ -28379,7 +28503,7 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.251, i64 %tag, ptr @mu_file.252, i64 826)
+  call void @forge_match_unreachable(ptr @.match_fn.251, i64 %tag, ptr @mu_file.252, i64 827)
   unreachable
 }
 
@@ -28424,7 +28548,7 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.253, i64 %tag, ptr @mu_file.254, i64 833)
+  call void @forge_match_unreachable(ptr @.match_fn.253, i64 %tag, ptr @mu_file.254, i64 834)
   unreachable
 }
 
@@ -28500,7 +28624,7 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.255, i64 %tag, ptr @mu_file.256, i64 840)
+  call void @forge_match_unreachable(ptr @.match_fn.255, i64 %tag, ptr @mu_file.256, i64 841)
   unreachable
 }
 
@@ -28631,7 +28755,7 @@ march_arm15:                                      ; preds = %march_next4
   br label %match_end
 
 march_next16:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.257, i64 %tag, ptr @mu_file.258, i64 848)
+  call void @forge_match_unreachable(ptr @.match_fn.257, i64 %tag, ptr @mu_file.258, i64 849)
   unreachable
 }
 
@@ -28753,7 +28877,7 @@ march_arm28:                                      ; preds = %march_next4
   br label %match_end
 
 march_next29:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.259, i64 %tag, ptr @mu_file.260, i64 856)
+  call void @forge_match_unreachable(ptr @.match_fn.259, i64 %tag, ptr @mu_file.260, i64 857)
   unreachable
 }
 
@@ -28798,7 +28922,7 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.261, i64 %tag, ptr @mu_file.262, i64 864)
+  call void @forge_match_unreachable(ptr @.match_fn.261, i64 %tag, ptr @mu_file.262, i64 865)
   unreachable
 }
 
@@ -28889,7 +29013,7 @@ march_arm9:                                       ; preds = %march_next3
   br label %match_end
 
 march_next10:                                     ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.263, i64 %tag, ptr @mu_file.264, i64 876)
+  call void @forge_match_unreachable(ptr @.match_fn.263, i64 %tag, ptr @mu_file.264, i64 877)
   unreachable
 }
 
@@ -28934,7 +29058,7 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.265, i64 %tag, ptr @mu_file.266, i64 884)
+  call void @forge_match_unreachable(ptr @.match_fn.265, i64 %tag, ptr @mu_file.266, i64 885)
   unreachable
 }
 
@@ -29059,7 +29183,7 @@ march_arm22:                                      ; preds = %march_next8
   br label %match_end
 
 march_next23:                                     ; preds = %march_next8
-  call void @forge_match_unreachable(ptr @.match_fn.267, i64 %tag, ptr @mu_file.268, i64 905)
+  call void @forge_match_unreachable(ptr @.match_fn.267, i64 %tag, ptr @mu_file.268, i64 906)
   unreachable
 }
 
@@ -29124,7 +29248,7 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.269, i64 %tag, ptr @mu_file.270, i64 915)
+  call void @forge_match_unreachable(ptr @.match_fn.269, i64 %tag, ptr @mu_file.270, i64 916)
   unreachable
 
 sif_then:                                         ; preds = %march_arm2
@@ -29232,7 +29356,7 @@ march_arm14:                                      ; preds = %march_next4
   br label %match_end
 
 march_next15:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.271, i64 %tag, ptr @mu_file.272, i64 932)
+  call void @forge_match_unreachable(ptr @.match_fn.271, i64 %tag, ptr @mu_file.272, i64 933)
   unreachable
 }
 
@@ -31721,7 +31845,7 @@ march_arm1291:                                    ; preds = %march_next1232
   br label %match_end
 
 march_next1292:                                   ; preds = %march_next1232
-  call void @forge_match_unreachable(ptr @.match_fn.368, i64 %tag, ptr @mu_file.369, i64 940)
+  call void @forge_match_unreachable(ptr @.match_fn.368, i64 %tag, ptr @mu_file.369, i64 941)
   unreachable
 }
 
@@ -31787,7 +31911,7 @@ march_arm2:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.377, i64 %tag, ptr @mu_file.378, i64 983)
+  call void @forge_match_unreachable(ptr @.match_fn.377, i64 %tag, ptr @mu_file.378, i64 984)
   unreachable
 
 ife_end:                                          ; preds = %ife_else, %ife_then
@@ -31810,7 +31934,7 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %cast20 = ptrtoint ptr %body19 to i64
   %null_chk21 = icmp eq i64 %cast20, 0
   %null_ext22 = zext i1 %null_chk21 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.373, i64 4, ptr @sty_name.374, i64 16, i64 %null_ext22, ptr @src_file.375, i64 104, i64 988)
+  call void @forge_null_deref_trap(ptr @fld_name.373, i64 4, ptr @sty_name.374, i64 16, i64 %null_ext22, ptr @src_file.375, i64 104, i64 989)
   %node_ptr23 = getelementptr inbounds nuw %"core::ast::SExpr", ptr %body19, i32 0, i32 0
   %node24 = load ptr, ptr %node_ptr23, align 8
   %6 = call ptr @"core::ast::render_expr"(ptr %node24)
@@ -31862,7 +31986,7 @@ ife_else:                                         ; preds = %march_arm2
   %cast = ptrtoint ptr %cond13 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name, i64 4, ptr @sty_name, i64 16, i64 %null_ext, ptr @src_file, i64 104, i64 987)
+  call void @forge_null_deref_trap(ptr @fld_name, i64 4, ptr @sty_name, i64 16, i64 %null_ext, ptr @src_file, i64 104, i64 988)
   %node_ptr = getelementptr inbounds nuw %"core::ast::SExpr", ptr %cond13, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %23 = call ptr @"core::ast::render_expr"(ptr %node)
@@ -31942,7 +32066,7 @@ march_arm2:                                       ; preds = %march_next
   %cast15 = ptrtoint ptr %sv14 to i64
   %null_chk = icmp eq i64 %cast15, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.381, i64 4, ptr @sty_name.382, i64 16, i64 %null_ext, ptr @src_file.383, i64 104, i64 998)
+  call void @forge_null_deref_trap(ptr @fld_name.381, i64 4, ptr @sty_name.382, i64 16, i64 %null_ext, ptr @src_file.383, i64 104, i64 999)
   %node_ptr = getelementptr inbounds nuw %"core::ast::SExpr", ptr %sv14, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %6 = call ptr @"core::ast::render_expr"(ptr %node)
@@ -32001,7 +32125,7 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.386, i64 %tag, ptr @mu_file.387, i64 994)
+  call void @forge_match_unreachable(ptr @.match_fn.386, i64 %tag, ptr @mu_file.387, i64 995)
   unreachable
 }
 
@@ -32085,7 +32209,7 @@ march_arm2:                                       ; preds = %march_next
   %cast21 = ptrtoint ptr %sv20 to i64
   %null_chk = icmp eq i64 %cast21, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.391, i64 4, ptr @sty_name.392, i64 16, i64 %null_ext, ptr @src_file.393, i64 104, i64 1006)
+  call void @forge_null_deref_trap(ptr @fld_name.391, i64 4, ptr @sty_name.392, i64 16, i64 %null_ext, ptr @src_file.393, i64 104, i64 1007)
   %node_ptr = getelementptr inbounds nuw %"core::ast::SExpr", ptr %sv20, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %11 = call ptr @"core::ast::render_expr"(ptr %node)
@@ -32118,7 +32242,7 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.394, i64 %tag, ptr @mu_file.395, i64 1006)
+  call void @forge_match_unreachable(ptr @.match_fn.394, i64 %tag, ptr @mu_file.395, i64 1007)
   unreachable
 }
 
@@ -32246,7 +32370,7 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.400, i64 %tag, ptr @mu_file.401, i64 1013)
+  call void @forge_match_unreachable(ptr @.match_fn.400, i64 %tag, ptr @mu_file.401, i64 1014)
   unreachable
 }
 
@@ -32357,7 +32481,7 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.405, i64 %tag, ptr @mu_file.406, i64 1025)
+  call void @forge_match_unreachable(ptr @.match_fn.405, i64 %tag, ptr @mu_file.406, i64 1026)
   unreachable
 }
 
@@ -32420,7 +32544,7 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.410, i64 %tag, ptr @mu_file.411, i64 1032)
+  call void @forge_match_unreachable(ptr @.match_fn.410, i64 %tag, ptr @mu_file.411, i64 1033)
   unreachable
 
 sif_then:                                         ; preds = %march_arm2
@@ -32514,7 +32638,7 @@ march_arm2:                                       ; preds = %march_next
   %cast = ptrtoint ptr %se9 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.413, i64 4, ptr @sty_name.414, i64 16, i64 %null_ext, ptr @src_file.415, i64 104, i64 1047)
+  call void @forge_null_deref_trap(ptr @fld_name.413, i64 4, ptr @sty_name.414, i64 16, i64 %null_ext, ptr @src_file.415, i64 104, i64 1048)
   %node_ptr = getelementptr inbounds nuw %"core::ast::SExpr", ptr %se9, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %1 = call ptr @"core::ast::render_expr"(ptr %node)
@@ -32562,7 +32686,7 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.418, i64 %tag, ptr @mu_file.419, i64 1043)
+  call void @forge_match_unreachable(ptr @.match_fn.418, i64 %tag, ptr @mu_file.419, i64 1044)
   unreachable
 }
 
@@ -32614,7 +32738,7 @@ march_arm2:                                       ; preds = %march_next
   %cast = ptrtoint ptr %se9 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.422, i64 4, ptr @sty_name.423, i64 16, i64 %null_ext, ptr @src_file.424, i64 104, i64 1055)
+  call void @forge_null_deref_trap(ptr @fld_name.422, i64 4, ptr @sty_name.423, i64 16, i64 %null_ext, ptr @src_file.424, i64 104, i64 1056)
   %node_ptr = getelementptr inbounds nuw %"core::ast::SExpr", ptr %se9, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %1 = call ptr @"core::ast::render_expr"(ptr %node)
@@ -32647,7 +32771,7 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.425, i64 %tag, ptr @mu_file.426, i64 1055)
+  call void @forge_match_unreachable(ptr @.match_fn.425, i64 %tag, ptr @mu_file.426, i64 1056)
   unreachable
 }
 
@@ -32739,7 +32863,7 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.430, i64 %tag, ptr @mu_file.431, i64 1062)
+  call void @forge_match_unreachable(ptr @.match_fn.430, i64 %tag, ptr @mu_file.431, i64 1063)
   unreachable
 }
 
@@ -32817,7 +32941,7 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.434, i64 %tag, ptr @mu_file.435, i64 1073)
+  call void @forge_match_unreachable(ptr @.match_fn.434, i64 %tag, ptr @mu_file.435, i64 1074)
   unreachable
 }
 
@@ -35713,7 +35837,7 @@ march_arm1485:                                    ; preds = %march_next1422
   br label %match_end
 
 march_next1486:                                   ; preds = %march_next1422
-  call void @forge_match_unreachable(ptr @.match_fn.558, i64 %tag, ptr @mu_file.559, i64 1080)
+  call void @forge_match_unreachable(ptr @.match_fn.558, i64 %tag, ptr @mu_file.559, i64 1081)
   unreachable
 }
 
@@ -35802,7 +35926,7 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.563, i64 %tag, ptr @mu_file.564, i64 1146)
+  call void @forge_match_unreachable(ptr @.match_fn.563, i64 %tag, ptr @mu_file.564, i64 1147)
   unreachable
 }
 
@@ -35919,7 +36043,7 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.568, i64 %tag, ptr @mu_file.569, i64 1153)
+  call void @forge_match_unreachable(ptr @.match_fn.568, i64 %tag, ptr @mu_file.569, i64 1154)
   unreachable
 }
 
@@ -36019,7 +36143,7 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.572, i64 %tag, ptr @mu_file.573, i64 1165)
+  call void @forge_match_unreachable(ptr @.match_fn.572, i64 %tag, ptr @mu_file.573, i64 1166)
   unreachable
 }
 
@@ -36219,7 +36343,7 @@ march_arm73:                                      ; preds = %march_next44
   br label %match_end
 
 march_next74:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.580, i64 %tag, ptr @mu_file.581, i64 1172)
+  call void @forge_match_unreachable(ptr @.match_fn.580, i64 %tag, ptr @mu_file.581, i64 1173)
   unreachable
 }
 
@@ -36296,7 +36420,7 @@ march_arm2:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.594, i64 %tag, ptr @mu_file.595, i64 1182)
+  call void @forge_match_unreachable(ptr @.match_fn.594, i64 %tag, ptr @mu_file.595, i64 1183)
   unreachable
 
 ife_end:                                          ; preds = %ife_else, %ife_then
@@ -36332,7 +36456,7 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %cast36 = ptrtoint ptr %body35 to i64
   %null_chk37 = icmp eq i64 %cast36, 0
   %null_ext38 = zext i1 %null_chk37 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.589, i64 4, ptr @sty_name.590, i64 16, i64 %null_ext38, ptr @src_file.591, i64 104, i64 1187)
+  call void @forge_null_deref_trap(ptr @fld_name.589, i64 4, ptr @sty_name.590, i64 16, i64 %null_ext38, ptr @src_file.591, i64 104, i64 1188)
   %node_ptr39 = getelementptr inbounds nuw %"core::ast::SExpr", ptr %body35, i32 0, i32 0
   %node40 = load ptr, ptr %node_ptr39, align 8
   %12 = call ptr @"core::ast::render_expr"(ptr %node40)
@@ -36395,7 +36519,7 @@ ife_then:                                         ; preds = %march_arm2
   %cast = ptrtoint ptr %guard16 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.584, i64 4, ptr @sty_name.585, i64 16, i64 %null_ext, ptr @src_file.586, i64 104, i64 1186)
+  call void @forge_null_deref_trap(ptr @fld_name.584, i64 4, ptr @sty_name.585, i64 16, i64 %null_ext, ptr @src_file.586, i64 104, i64 1187)
   %node_ptr = getelementptr inbounds nuw %"core::ast::SExpr", ptr %guard16, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %34 = call ptr @"core::ast::render_expr"(ptr %node)
@@ -36490,7 +36614,7 @@ march_arm2:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.607, i64 %tag, ptr @mu_file.608, i64 1195)
+  call void @forge_match_unreachable(ptr @.match_fn.607, i64 %tag, ptr @mu_file.608, i64 1196)
   unreachable
 
 ife_end:                                          ; preds = %ife_else, %ife_then
@@ -36537,7 +36661,7 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %cast42 = ptrtoint ptr %body41 to i64
   %null_chk43 = icmp eq i64 %cast42, 0
   %null_ext44 = zext i1 %null_chk43 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.604, i64 4, ptr @sty_name.605, i64 16, i64 %null_ext44, ptr @src_file.606, i64 104, i64 1200)
+  call void @forge_null_deref_trap(ptr @fld_name.604, i64 4, ptr @sty_name.605, i64 16, i64 %null_ext44, ptr @src_file.606, i64 104, i64 1201)
   %node_ptr45 = getelementptr inbounds nuw %"core::ast::SExpr", ptr %body41, i32 0, i32 0
   %node46 = load ptr, ptr %node_ptr45, align 8
   %17 = call ptr @"core::ast::render_expr"(ptr %node46)
@@ -36574,7 +36698,7 @@ ife_then:                                         ; preds = %march_arm2
   %cast = ptrtoint ptr %guard16 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.598, i64 4, ptr @sty_name.599, i64 16, i64 %null_ext, ptr @src_file.600, i64 104, i64 1199)
+  call void @forge_null_deref_trap(ptr @fld_name.598, i64 4, ptr @sty_name.599, i64 16, i64 %null_ext, ptr @src_file.600, i64 104, i64 1200)
   %node_ptr = getelementptr inbounds nuw %"core::ast::SExpr", ptr %guard16, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %29 = call ptr @"core::ast::render_expr"(ptr %node)
@@ -36649,7 +36773,7 @@ march_arm2:                                       ; preds = %march_next
   %cast = ptrtoint ptr %ss9 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.610, i64 4, ptr @sty_name.611, i64 16, i64 %null_ext, ptr @src_file.612, i64 104, i64 1210)
+  call void @forge_null_deref_trap(ptr @fld_name.610, i64 4, ptr @sty_name.611, i64 16, i64 %null_ext, ptr @src_file.612, i64 104, i64 1211)
   %node_ptr = getelementptr inbounds nuw %"core::ast::SStmt", ptr %ss9, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %1 = call ptr @"core::ast::render_stmt"(ptr %node)
@@ -36667,7 +36791,7 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.615, i64 %tag, ptr @mu_file.616, i64 1206)
+  call void @forge_match_unreachable(ptr @.match_fn.615, i64 %tag, ptr @mu_file.616, i64 1207)
   unreachable
 
 sif_then:                                         ; preds = %march_arm2
@@ -37076,7 +37200,7 @@ march_arm128:                                     ; preds = %march_next126
   br label %match_end
 
 march_next129:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.661, i64 %tag, ptr @mu_file.662, i64 1329)
+  call void @forge_match_unreachable(ptr @.match_fn.661, i64 %tag, ptr @mu_file.662, i64 1330)
   unreachable
 }
 

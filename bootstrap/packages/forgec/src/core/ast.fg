@@ -242,8 +242,9 @@ export fn type_expr_list_append(list: TypeExprList, ty: TypeExpr) -> TypeExprLis
     }
 }
 
-// Compare type names allowing qualified/unqualified match.
-// TODO: Remove once all ValueTypes carry TypeId — compare by id instead.
+// Fallback name comparison for ValueTypes with id=0 (unresolved).
+// TypeId comparison handles resolved types; this covers edge cases during
+// bootstrap where some codegen paths still produce id=0.
 fn names_match(a: string, b: string) -> bool {
     if a == b { return true }
     if a.ends_with("::${b}") { return true }
@@ -260,8 +261,8 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
         .List -> b is .List
         .Fn -> b is .Fn
         .Void -> b is .Void
-        .Struct(n1, _) -> match b { .Struct(n2, _) -> names_match(n1, n2), _ -> false }
-        .Enum(n1, _, _) -> match b { .Enum(n2, _, _) -> names_match(n1, n2), _ -> false }
+        .Struct(n1, id1) -> match b { .Struct(n2, id2) -> if id1 > 0 && id2 > 0 { id1 == id2 } else { names_match(n1, n2) }, _ -> false }
+        .Enum(n1, _, id1) -> match b { .Enum(n2, _, id2) -> if id1 > 0 && id2 > 0 { id1 == id2 } else { names_match(n1, n2) }, _ -> false }
         .Float -> b is .Float
         .Map -> b is .Map
         .FnTyped(_, _) -> match b { .FnTyped(_, _) -> true, .Fn(_) -> true, _ -> false }
