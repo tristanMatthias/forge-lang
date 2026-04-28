@@ -21,7 +21,7 @@ export fn emit_concat(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr) -> Result<EmitValue,
     let dst2 = ctx.to_ptr(ctx.add(buf_int, lhs_len, "dst2_int"), "dst2")
     ctx.call("memcpy", [dst2, rhs_ptr, ctx.add(rhs_len, ctx.i64(1), "rhs_len_p1")])
 
-    ok_emit_str(buf)
+    ok_emit_typed(buf, .Str)
 }
 
 export fn emit_str_replace(ctx: Ctx, env: VarEnv, str_i64: ptr, args: ExprList) -> Result<EmitValue, string> {
@@ -35,7 +35,7 @@ export fn emit_str_replace(ctx: Ctx, env: VarEnv, str_i64: ptr, args: ExprList) 
                     let from_ptr = ctx.to_ptr(from_r.value, "rep_from")
                     let to_ptr_v = ctx.to_ptr(to_r.value, "rep_to")
                     let result = ctx.call("forge_str_replace", [str_ptr, from_ptr, to_ptr_v])
-                    ok_emit_str(result)
+                    ok_emit_typed(result, .Str)
                 }
                 _ -> err_emit("replace expects 2 arguments")
             }
@@ -78,7 +78,7 @@ export fn emit_substring_inner(ctx: Ctx, env: VarEnv, str_i64: ptr, start_arg: E
     let nul_int = ctx.add(buf_int2, len, "sub_nul_int")
     let nul_ptr = ctx.to_ptr(nul_int, "sub_nul")
     ctx.store(ctx.i8(0), nul_ptr)
-    ok_emit_str(buf)
+    ok_emit_typed(buf, .Str)
 }
 
 export fn emit_str_cmp(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, pred: int) -> Result<EmitValue, string> {

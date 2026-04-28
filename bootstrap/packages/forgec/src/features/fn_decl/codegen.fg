@@ -218,19 +218,19 @@ fn emit_string_method(ctx: Ctx, env: VarEnv, str_val: ptr, method: string, args:
     match method {
         "length" -> {
             let str_ptr = ctx.to_ptr(str_val, "len_arg")
-            ok_emit(ctx.call("strlen", [str_ptr]))
+            ok_emit_typed(ctx.call("strlen", [str_ptr]), .Int)
         }
         "substring" -> emit_substring(ctx, env, str_val, args)
         "contains" or "starts_with" or "ends_with" or "index_of" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
             let str_ptr = ctx.to_ptr(str_val, "str_self")
             let arg_ptr = ctx.to_ptr(arg_r.value, "str_arg")
-            ok_emit(ctx.call("forge_str_${method}", [str_ptr, arg_ptr]))
+            ok_emit_typed(ctx.call("forge_str_${method}", [str_ptr, arg_ptr]), .Int)
         }
         "replace" -> emit_str_replace(ctx, env, str_val, args)
-        "trim" -> ok_emit_str(ctx.call("forge_str_trim", [ctx.to_ptr(str_val, "str_self")]))
-        "to_upper" or "upper" -> ok_emit_str(ctx.call("forge_str_to_upper", [ctx.to_ptr(str_val, "str_self")]))
-        "to_lower" or "lower" -> ok_emit_str(ctx.call("forge_str_to_lower", [ctx.to_ptr(str_val, "str_self")]))
+        "trim" -> ok_emit_typed(ctx.call("forge_str_trim", [ctx.to_ptr(str_val, "str_self")]), .Str)
+        "to_upper" or "upper" -> ok_emit_typed(ctx.call("forge_str_to_upper", [ctx.to_ptr(str_val, "str_self")]), .Str)
+        "to_lower" or "lower" -> ok_emit_typed(ctx.call("forge_str_to_lower", [ctx.to_ptr(str_val, "str_self")]), .Str)
         "split" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
             let str_ptr = ctx.to_ptr(str_val, "str_self")
@@ -240,13 +240,13 @@ fn emit_string_method(ctx: Ctx, env: VarEnv, str_val: ptr, method: string, args:
         "char_code" -> {
             let str_ptr = ctx.to_ptr(str_val, "str_self")
             let byte_val = ctx.load_i8(str_ptr, "char_byte")
-            ok_emit(ctx.zext(byte_val, ctx.i64_type, "char_code"))
+            ok_emit_typed(ctx.zext(byte_val, ctx.i64_type, "char_code"), .Int)
         }
         "repeat" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
-            ok_emit_str(ctx.call("forge_str_repeat", [ctx.to_ptr(str_val, "str_self"), arg_r.value]))
+            ok_emit_typed(ctx.call("forge_str_repeat", [ctx.to_ptr(str_val, "str_self"), arg_r.value]), .Str)
         }
-        "reverse" -> ok_emit_str(ctx.call("forge_str_reverse", [ctx.to_ptr(str_val, "str_self")]))
+        "reverse" -> ok_emit_typed(ctx.call("forge_str_reverse", [ctx.to_ptr(str_val, "str_self")]), .Str)
         _ -> err_emit("string method `${method}` not implemented")
     }
 }
@@ -411,12 +411,12 @@ export fn emit_int_to_string(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<Em
             let r = ctx.emit(env, se.node)?
             // If the value is already a str, pass it through.
             if vtype_is_str(r.ty) {
-                return ok_emit_str(r.value)
+                return ok_emit_typed(r.value, .Str)
             }
             // Newtype: unwrap and convert inner type
             if vtype_is_newtype(r.ty) {
                 let inner = vtype_newtype_inner(r.ty)
-                if vtype_is_str(inner) { return ok_emit_str(r.value) }
+                if vtype_is_str(inner) { return ok_emit_typed(r.value, .Str) }
                 // For non-string inner types, fall through to normal conversion
                 return emit_int_to_string_inner(ctx, r.value, inner)
             }
@@ -427,13 +427,13 @@ export fn emit_int_to_string(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<Em
             // Float → string via forge_float_to_string(i64_bits) → ptr
             if vtype_eq(r.ty, .Float) {
                 let str_ptr = ctx.call("forge_float_to_string", [r.value])
-                return ok_emit_str(str_ptr)
+                return ok_emit_typed(str_ptr, .Str)
             }
             // Int → string via snprintf into a 32-byte malloc'd buffer.
             let buf = ctx.rc_alloc(ctx.i64(32))
             let fmt = ctx.global_str("%lld", ".i2s_fmt")
             ctx.call("snprintf", [buf, ctx.i64(32), fmt, r.value])
-            ok_emit_str(buf)
+            ok_emit_typed(buf, .Str)
         }
     }
 }
@@ -441,12 +441,12 @@ export fn emit_int_to_string(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<Em
 fn emit_int_to_string_inner(ctx: Ctx, val: ptr, ty: ValueType) -> Result<EmitValue, string> {
     if vtype_eq(ty, .Float) {
         let str_ptr = ctx.call("forge_float_to_string", [val])
-        return ok_emit_str(str_ptr)
+        return ok_emit_typed(str_ptr, .Str)
     }
     let buf = ctx.rc_alloc(ctx.i64(32))
     let fmt = ctx.global_str("%lld", ".i2s_fmt")
     ctx.call("snprintf", [buf, ctx.i64(32), fmt, val])
-    ok_emit_str(buf)
+    ok_emit_typed(buf, .Str)
 }
 
 // forge_format_float(float_val, spec_str) → str
@@ -460,7 +460,7 @@ fn emit_format_float(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<EmitValue,
                 let spec_r = ctx.emit(env, se2.node)?
                 let spec_ptr = ctx.to_ptr(spec_r.value, "fmt_spec")
                 let result = ctx.call("forge_format_float", [val_r.value, spec_ptr])
-                ok_emit_str(result)
+                ok_emit_typed(result, .Str)
             }
         }
     }
@@ -477,7 +477,7 @@ fn emit_format_int(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<EmitValue, s
                 let spec_r = ctx.emit(env, se2.node)?
                 let spec_ptr = ctx.to_ptr(spec_r.value, "fmt_spec")
                 let result = ctx.call("forge_format_int", [val_r.value, spec_ptr])
-                ok_emit_str(result)
+                ok_emit_typed(result, .Str)
             }
         }
     }
@@ -489,14 +489,14 @@ export fn emit_string_to_int(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<Em
         .Node(se, _) -> {
             let r = ctx.emit(env, se.node)?
             if vtype_eq(r.ty, .Float) {
-                return ok_emit(ctx.fptosi(r.value, "f2i"))
+                return ok_emit_typed(ctx.fptosi(r.value, "f2i"), .Int)
             }
             if vtype_eq(r.ty, .Int) || vtype_eq(r.ty, .Bool) {
                 return ok_emit_typed(r.value, .Int)
             }
             // String or Unknown → parse via forge_parse_int (handles both)
             let str_ptr = ctx.to_ptr(r.value, "parseInt_arg")
-            ok_emit(ctx.call("forge_parse_int", [str_ptr]))
+            ok_emit_typed(ctx.call("forge_parse_int", [str_ptr]), .Int)
         }
     }
 }
@@ -534,7 +534,7 @@ export fn emit_panic(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<EmitValue,
             // exit(1)
             ctx.call("exit", [ctx.i64(1)])
             // Unreachable — but return a value for the type system
-            ok_emit(ctx.i64(0))
+            ok_emit_typed(ctx.i64(0), .Int)
         }
     }
 }

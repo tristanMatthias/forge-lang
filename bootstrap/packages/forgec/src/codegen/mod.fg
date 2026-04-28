@@ -304,7 +304,7 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, stri
     match expr {
         .Number(text) -> {
             let value = parse_int_literal(text)
-            ok_emit(ctx.i64(value))
+            ok_emit_typed(ctx.i64(value), .Int)
         }
         .FloatLit(text) -> {
             let str_ptr = ctx.global_str(text, ".float_str")
@@ -321,7 +321,7 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, stri
         .String(text) -> {
             let inner = strip_quotes(text)
             let str_ptr = ctx.global_str(inner, ".str")
-            ok_emit_str(str_ptr)
+            ok_emit_typed(str_ptr, .Str)
         }
         .Grouping(inner) -> emit_expr(ctx, env, inner)
         .Unary(op, right) -> emit_unary(ctx, env, op, right)

@@ -1,7 +1,7 @@
 // WHY: codegen for println/eprintln builtins.
 
 use core.ast.{Expr, ExprList, VarEnv, ValueType, vtype_is_str, vtype_eq}
-use codegen.types.{Ctx, EmitValue, ok_emit, err_emit}
+use codegen.types.{Ctx, EmitValue, ok_emit, ok_emit_typed, err_emit}
 use codegen.strings.{emit_concat}
 use codegen.helpers.{strip_quotes}
 
@@ -26,7 +26,7 @@ export fn emit_eprintln(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<EmitVal
                 }
             }
             ctx.call("forge_eprintln", [str_ptr])
-            ok_emit(ctx.i64(0))
+            ok_emit_typed(ctx.i64(0), .Void)
         }
     }
 }
@@ -61,6 +61,6 @@ export fn emit_println(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<EmitValu
         }
     }
     ctx.call("puts", [print_ptr])
-    ok_emit(ctx.i64(0))
+    ok_emit_typed(ctx.i64(0), .Void)
 }
 

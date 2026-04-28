@@ -17,10 +17,10 @@ export fn emit_unary(ctx: Ctx, env: VarEnv, op: UnOp, right: Expr) -> Result<Emi
                 let neg = ctx.fneg(fval, "fneg")
                 return ok_emit_typed(ctx.cast_to(neg, .Float), .Float)
             }
-            ok_emit(ctx.sub(ctx.i64(0), r.value, "neg"))
+            ok_emit_typed(ctx.sub(ctx.i64(0), r.value, "neg"), .Int)
         }
         .Not -> ok_emit_typed(ctx.icmp_eq(r.value, ctx.i64(0), "not_cmp"), .Bool)
-        .BitNot -> ok_emit(ctx.bit_not(r.value, "bnot"))
+        .BitNot -> ok_emit_typed(ctx.bit_not(r.value, "bnot"), .Int)
     }
 }
 
@@ -61,7 +61,7 @@ export fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, op: BinOp, right: Expr)
                 let r_i64 = ctx.to_i64(rhs, "padd_r")
                 return ok_emit_typed(ctx.int_to_ptr(ctx.add(l_i64, r_i64, "ptr_add"), "ptr_sum"), .Ptr)
             }
-            ok_emit(ctx.add(lhs, rhs, "add"))
+            ok_emit_typed(ctx.add(lhs, rhs, "add"), .Int)
         }
         .Sub -> {
             if is_ptr {
@@ -69,22 +69,22 @@ export fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, op: BinOp, right: Expr)
                 let r_i64 = ctx.to_i64(rhs, "psub_r")
                 return ok_emit_typed(ctx.int_to_ptr(ctx.sub(l_i64, r_i64, "ptr_sub"), "ptr_diff"), .Ptr)
             }
-            ok_emit(ctx.sub(lhs, rhs, "sub"))
+            ok_emit_typed(ctx.sub(lhs, rhs, "sub"), .Int)
         }
-        .Mul -> ok_emit(ctx.mul(lhs, rhs, "mul"))
+        .Mul -> ok_emit_typed(ctx.mul(lhs, rhs, "mul"), .Int)
         .Div -> {
             ctx.div_zero_trap(rhs)
-            ok_emit(ctx.sdiv(lhs, rhs, "div"))
+            ok_emit_typed(ctx.sdiv(lhs, rhs, "div"), .Int)
         }
         .Mod -> {
             ctx.div_zero_trap(rhs)
-            ok_emit(ctx.srem(lhs, rhs, "mod"))
+            ok_emit_typed(ctx.srem(lhs, rhs, "mod"), .Int)
         }
-        .BitAnd -> ok_emit(ctx.bit_and(lhs, rhs, "band"))
-        .BitOr -> ok_emit(ctx.bit_or(lhs, rhs, "bor"))
-        .BitXor -> ok_emit(ctx.bit_xor(lhs, rhs, "bxor"))
-        .Shl -> ok_emit(ctx.shl(lhs, rhs, "shl"))
-        .Shr -> ok_emit(ctx.shr(lhs, rhs, "shr"))
+        .BitAnd -> ok_emit_typed(ctx.bit_and(lhs, rhs, "band"), .Int)
+        .BitOr -> ok_emit_typed(ctx.bit_or(lhs, rhs, "bor"), .Int)
+        .BitXor -> ok_emit_typed(ctx.bit_xor(lhs, rhs, "bxor"), .Int)
+        .Shl -> ok_emit_typed(ctx.shl(lhs, rhs, "shl"), .Int)
+        .Shr -> ok_emit_typed(ctx.shr(lhs, rhs, "shr"), .Int)
         .Eq -> {
             if !null_cmp && is_str { return emit_str_eq(ctx, lhs, rhs, false) }
             let is_enum = vtype_enum_name(left_result.ty) != "" && vtype_enum_name(right_result.ty) != ""
@@ -137,7 +137,7 @@ export fn emit_float_binary(ctx: Ctx, lhs: ptr, rhs: ptr, op: BinOp, lty: ValueT
         .Le -> ctx.fcmp_bool(5, fl, fr, "fle")
         .Gt -> ctx.fcmp_bool(2, fl, fr, "fgt")
         .Ge -> ctx.fcmp_bool(3, fl, fr, "fge")
-        _ -> ok_emit(ctx.add(lhs, rhs, "add"))
+        _ -> ok_emit_typed(ctx.add(lhs, rhs, "add"), .Int)
     }
 }
 

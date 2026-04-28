@@ -543,7 +543,7 @@ fn emit_closure_call(ctx: Ctx, env: VarEnv, closure_val: ptr, args: ExprList, nu
 
     let result = ctx.build_call(fn_type, fn_ptr, val_arr, total_args, "closure_call")
     ctx.value_array_free(val_arr)
-    ok_emit(result)
+    ok_emit_typed(result, .Int)
 }
 
 fn fill_closure_captures(ctx: Ctx, val_arr: ptr, closure_val: ptr, start_idx: int, count: int, i: int) {
@@ -576,13 +576,13 @@ export fn emit_indirect_call_value(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: Exp
     // args (user + captures).
     let user_arg_count = expr_list_length(args)
     if user_arg_count == 0 {
-        return ok_emit(ctx.call("forge_closure_call_0", [fn_i64]))
+        return ok_emit_typed(ctx.call("forge_closure_call_0", [fn_i64]), .Int)
     }
     if user_arg_count == 1 {
         match args {
             .Node(se, _) -> {
                 let a0 = ctx.emit(env, se.node)?
-                return ok_emit(ctx.call("forge_closure_call_1", [fn_i64, a0.value]))
+                return ok_emit_typed(ctx.call("forge_closure_call_1", [fn_i64, a0.value]), .Int)
             }
             _ -> { return err_emit("expected 1 arg") }
         }
@@ -594,7 +594,7 @@ export fn emit_indirect_call_value(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: Exp
                 match rest {
                     .Node(se1, _) -> {
                         let a1 = ctx.emit(env, se1.node)?
-                        return ok_emit(ctx.call("forge_closure_call_2", [fn_i64, a0.value, a1.value]))
+                        return ok_emit_typed(ctx.call("forge_closure_call_2", [fn_i64, a0.value, a1.value]), .Int)
                     }
                     _ -> { return err_emit("expected 2 args") }
                 }
@@ -612,7 +612,7 @@ export fn emit_indirect_call_value(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: Exp
                         match rest1 {
                             .Node(se2, _) -> {
                                 let a2 = ctx.emit(env, se2.node)?
-                                return ok_emit(ctx.call("forge_closure_call_3", [fn_i64, a0.value, a1.value, a2.value]))
+                                return ok_emit_typed(ctx.call("forge_closure_call_3", [fn_i64, a0.value, a1.value, a2.value]), .Int)
                             }
                             _ -> { return err_emit("expected 3 args") }
                         }

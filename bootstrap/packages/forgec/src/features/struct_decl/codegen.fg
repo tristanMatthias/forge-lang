@@ -99,13 +99,13 @@ export fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> 
     // String/List/Map .length
     if vtype_is_str(r.ty) && field == "length" {
         let str_ptr = ctx.to_ptr(r.value, "len_arg")
-        return ok_emit(ctx.call("strlen", [str_ptr]))
+        return ok_emit_typed(ctx.call("strlen", [str_ptr]), .Int)
     }
     if vtype_is_list(r.ty) && field == "length" {
-        return ok_emit(ctx.array_len(r.value))
+        return ok_emit_typed(ctx.array_len(r.value), .Int)
     }
     if vtype_is_map(r.ty) && field == "length" {
-        return ok_emit(ctx.call("forge_map_len_cstr", [r.value]))
+        return ok_emit_typed(ctx.call("forge_map_len_cstr", [r.value]), .Int)
     }
 
     // Flow-sensitive narrowing: NarrowedEnum(enum, variant) allows

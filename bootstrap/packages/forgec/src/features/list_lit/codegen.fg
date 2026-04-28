@@ -46,7 +46,7 @@ export fn emit_list_reduce_typed(ctx: Ctx, env: VarEnv, list_val: ptr, args: Exp
                         }
                     }
                     let result = ctx.call("forge_array_reduce", [list_val, init_r.value, fn_r.value])
-                    ok_emit(result)
+                    ok_emit_typed(result, .Int)
                 }
                 _ -> err_emit("reduce expects 2 arguments: initial value and function")
             }
@@ -61,7 +61,7 @@ export fn emit_list_method_call(ctx: Ctx, env: VarEnv, list_val: ptr, list_ty: V
         "push" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
             ctx.array_push(list_val, arg_r.value)
-            return ok_emit(list_val)
+            return ok_emit_typed(list_val, list_ty)
         }
         "pop" -> {
             let elem_ty = vtype_list_elem(list_ty)
@@ -88,7 +88,7 @@ export fn emit_list_method_call(ctx: Ctx, env: VarEnv, list_val: ptr, list_ty: V
             let elem_ty = vtype_list_elem(list_ty)
             let arg_r = emit_typed_lambda_arg(ctx, env, args, TypeList.Node(elem_ty, TypeList.End))?
             ctx.call("forge_array_foreach", [list_val, arg_r.value])
-            return ok_emit(ctx.i64(0))
+            return ok_emit_typed(ctx.i64(0), .Int)
         }
         "reduce" -> {
             let elem_ty = vtype_list_elem(list_ty)
@@ -96,11 +96,11 @@ export fn emit_list_method_call(ctx: Ctx, env: VarEnv, list_val: ptr, list_ty: V
         }
         "contains" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
-            return ok_emit(ctx.call("forge_array_contains", [list_val, arg_r.value]))
+            return ok_emit_typed(ctx.call("forge_array_contains", [list_val, arg_r.value]), .Int)
         }
         "index_of" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
-            return ok_emit(ctx.call("forge_array_index_of", [list_val, arg_r.value]))
+            return ok_emit_typed(ctx.call("forge_array_index_of", [list_val, arg_r.value]), .Int)
         }
         "reverse" -> {
             return ok_emit_typed(ctx.call("forge_array_reverse", [list_val]), list_ty)
@@ -139,7 +139,7 @@ fn emit_list_set(ctx: Ctx, env: VarEnv, list: ptr, args: ExprList) -> Result<Emi
                     let idx_r = ctx.emit(env, se_idx.node)?
                     let val_r = ctx.emit(env, se_val.node)?
                     ctx.call("forge_array_set", [list, idx_r.value, val_r.value])
-                    ok_emit(list)
+                    ok_emit_typed(list, .List(.Unknown))
                 }
                 _ -> err_emit("list.set expects 2 arguments: index and value")
             }
