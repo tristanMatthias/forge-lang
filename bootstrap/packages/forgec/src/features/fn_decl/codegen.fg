@@ -3,7 +3,7 @@
 
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, VarEnv, env_lookup, ValueType, stmt_unwrap, expr_list_length, field_index_of, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_is_newtype, vtype_newtype_inner, vtype_newtype_name, vtype_struct_name, vtype_trait_name, vtype_is_unknown}
 use codegen.types.{cg_newtype_vtype_lookup, struct_reg_canonical, enum_reg_canonical}
-use core.type_registry.{method_mangled_name}
+use core.type_registry.{method_mangled_name, type_registry_id_for}
 use codegen.types.{Ctx, EmitValue, ok_emit, ok_emit_str, ok_emit_typed, ok_stmt, err_emit, err_stmt, trait_decl_has}
 use features.closures.codegen.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value}
 use features.defer_stmt.codegen.{emit_defers, emit_defers_on_error}
@@ -549,7 +549,7 @@ fn emit_newtype_ctor(ctx: Ctx, env: VarEnv, name: string, args: ExprList) -> Res
             let r = ctx.emit(env, se.node)?
             let inner_ty = ctx.resolve_codegen_vtype(cg_newtype_vtype_lookup(ctx.newtypes, name))
             // Zero-cost: the value IS the newtype at runtime
-            ok_emit_typed(r.value, .Newtype(name, inner_ty, 0))
+            ok_emit_typed(r.value, .Newtype(name, inner_ty, type_registry_id_for(ctx.type_reg, name)))
         }
     }
 }

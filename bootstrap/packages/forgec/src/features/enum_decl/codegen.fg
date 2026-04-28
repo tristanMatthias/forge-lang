@@ -3,6 +3,7 @@
 
 use core.ast.{ExprList, FieldList, VariantList, VarEnv, variant_lookup, field_list_length, expr_list_length, ValueType, vtype_enum_name}
 use codegen.types.{Ctx, EmitValue, ok_emit, ok_emit_typed, err_emit, null_ptr_val, enum_reg_find_by_variant, enum_reg_find_by_variant_arity}
+use core.type_registry.{type_registry_id_for, variant_payload_name}
 
 export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: string, args: ExprList) -> Result<EmitValue, string> {
     // Contextual resolution: `.Variant` with empty type_name.
@@ -54,7 +55,7 @@ export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: stri
         let fill = fill_enum_payload(ctx, env, pay_buf, resolved_fields, args, 0)?
     }
     let as_i64 = ctx.to_i64(buf, "enum_i64")
-    ok_emit_typed(as_i64, .Enum(resolved_name, TypeList.End, 0))
+    ok_emit_typed(as_i64, .Enum(resolved_name, TypeList.End, type_registry_id_for(ctx.type_reg, resolved_name)))
 }
 
 export fn malloc_enum_bytes(ctx: Ctx, variants: VariantList) -> ptr {

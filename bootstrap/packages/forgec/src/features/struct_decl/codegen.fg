@@ -2,6 +2,7 @@
 
 use core.ast.{Expr, ExprList, FieldList, FieldInitList, VarEnv, field_index_of, field_list_length, ValueType, vtype_struct_name, vtype_display, vtype_is_str, vtype_is_list, vtype_is_map, vtype_narrowed_variant, vtype_enum_name, variant_lookup}
 use codegen.types.{Ctx, EmitValue, ok_emit, ok_emit_typed, err_emit, null_ptr_val}
+use core.type_registry.{type_registry_id_for}
 use features.enum_decl.codegen.{emit_enum_ctor}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
 
@@ -17,7 +18,7 @@ export fn emit_struct_lit(ctx: Ctx, env: VarEnv, name: string, inits: FieldInitL
     let buf = malloc_struct_bytes(ctx, name, lookup.fields)
     let fill = fill_struct_fields(ctx, env, st_ty, buf, inits, lookup.fields)?
     let as_i64 = ctx.to_i64(buf, "struct_i64")
-    ok_emit_typed(as_i64, .Struct(name, 0))
+    ok_emit_typed(as_i64, .Struct(name, type_registry_id_for(ctx.type_reg, name)))
 }
 
 fn malloc_struct_bytes(ctx: Ctx, name: string, fields: FieldList) -> ptr {

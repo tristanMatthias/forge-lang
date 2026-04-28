@@ -3,6 +3,7 @@
 // a trait object with a vtable for dynamic dispatch.
 
 use core.ast.{Expr, ExprList, ValueType, VarEnv, vtype_is_unknown, vtype_trait_name, vtype_struct_name, vtype_enum_name, vtype_list_elem, vtype_is_list}
+use core.type_registry.{type_registry_id_for, method_mangled_name}
 use codegen.types.{Ctx, ok_stmt, vtype_is_copy, releasable_has}
 use features.trait_decl.codegen.{box_for_trait}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
@@ -91,9 +92,9 @@ fn try_copy_stack_target(ctx: Ctx, name: string, ty_vt: ValueType, init: Expr) -
 
 fn try_copy_for_struct(ctx: Ctx, name: string, ty_vt: ValueType, sname: string) -> CopyTarget {
     let n: ptr = null
-    let drop_fn = ctx.get_fn("${sname}__drop")
+    let drop_fn = ctx.get_fn(method_mangled_name(sname, "drop"))
     if drop_fn != null { return CopyTarget { active: false, alloca_ptr: n } }
-    let var_ty = if !vtype_is_unknown(ty_vt) { ctx.resolve_codegen_vtype(ty_vt) } else { ValueType.Struct(sname, 0) }
+    let var_ty = if !vtype_is_unknown(ty_vt) { ctx.resolve_codegen_vtype(ty_vt) } else { ValueType.Struct(sname, type_registry_id_for(ctx.type_reg, sname)) }
     if vtype_is_copy(var_ty, ctx.copy_types) {
         let st_ty = ctx.get_type(sname)
         if st_ty != null {
