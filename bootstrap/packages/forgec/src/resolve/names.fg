@@ -749,10 +749,35 @@ fn rewrite_match_arms(ctx: NameCtx, arms: MatchArmList) -> MatchArmList {
     match arms {
         .End -> MatchArmList.End
         .Node(pattern, guard, body, next) -> {
-            let arm_ctx = bind_pattern_ctx(ctx, pattern)
+            let rp = rewrite_pattern(ctx, pattern)
+            let arm_ctx = bind_pattern_ctx(ctx, rp)
             let new_guard = if guard != null { sexpr(rewrite_expr(arm_ctx, guard!.node), guard!.line, guard!.col) } else { null }
-            MatchArmList.Node(pattern, new_guard, sexpr(rewrite_expr(arm_ctx, body.node), body.line, body.col), rewrite_match_arms(ctx, next))
+            MatchArmList.Node(rp, new_guard, sexpr(rewrite_expr(arm_ctx, body.node), body.line, body.col), rewrite_match_arms(ctx, next))
         }
+    }
+}
+
+// Qualify type names inside match patterns
+fn is_primitive_type(name: string) -> bool {
+    name in ["int", "string", "bool", "float", "ptr", "void"]
+}
+
+fn rewrite_pattern(ctx: NameCtx, pattern: Pattern) -> Pattern {
+    match pattern {
+        .TypePattern(type_name, binding) -> {
+            if is_primitive_type(type_name) { return pattern }
+            let resolved = resolve_type_in_ctx(ctx, type_name)
+            Pattern.TypePattern(resolved, binding)
+        }
+        .NestedVariant(name, sub_pats) -> Pattern.NestedVariant(name, rewrite_pattern_list(ctx, sub_pats))
+        _ -> pattern
+    }
+}
+
+fn rewrite_pattern_list(ctx: NameCtx, pats: PatternList) -> PatternList {
+    match pats {
+        .End -> PatternList.End
+        .Node(pat, next) -> PatternList.Node(rewrite_pattern(ctx, pat), rewrite_pattern_list(ctx, next))
     }
 }
 
