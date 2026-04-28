@@ -3,6 +3,7 @@
 
 use core.ast.{Stmt, StmtList, ParamList, TypeParamList, SStmt, sstmt, ValueType, type_expr_to_vtype, vtype_from_name}
 use parse.{Parser}
+use core.type_registry.{method_mangled_name}
 use core.ast.{Tk}
 
 impl Parser {
@@ -99,7 +100,7 @@ impl Parser {
         if !self.consume(Tk.RightBrace, "expected `}` after method body") {
             return null
         }
-        let mangled = "${type_name}__${name}"
+        let mangled = method_mangled_name(type_name, name)
         Stmt.Function(mangled, TypeParamList.End, params, ret_vtype, body)
     }
 

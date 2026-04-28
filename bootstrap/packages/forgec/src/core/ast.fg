@@ -242,6 +242,8 @@ export fn type_expr_list_append(list: TypeExprList, ty: TypeExpr) -> TypeExprLis
     }
 }
 
+// Compare type names allowing qualified/unqualified match.
+// TODO: Remove once all ValueTypes carry TypeId — compare by id instead.
 fn names_match(a: string, b: string) -> bool {
     if a == b { return true }
     if a.ends_with("::${b}") { return true }

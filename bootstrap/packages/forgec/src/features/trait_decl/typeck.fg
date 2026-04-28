@@ -3,6 +3,7 @@
 use core.ast.{Stmt, StmtList, SStmt, ParamList, param_list_length, vtype_is_unknown}
 use diagnostics.{DiagCode}
 use typeck.{TC, tc_report, TraitRegistry, TraitMethodList, TraitAssocTypes, trait_lookup, trait_has, trait_assoc_types, tc_owns_type}
+use core.type_registry.{method_mangled_name}
 
 export fn find_trait_separator(name: string) -> int {
     mut i = 0
@@ -76,7 +77,7 @@ fn check_required_methods(tc: TC, trait_name: string, type_name: string, require
     match required {
         .End -> tc
         .Node(name, expected_params, next) -> {
-            let mangled = "${type_name}__${name}"
+            let mangled = method_mangled_name(type_name, name)
             if !impl_has_method(impl_methods, mangled) {
                 let after = tc_report(tc, DiagCode.TypeMismatch, "trait `${trait_name}` requires method `${name}` but `${type_name}` does not implement it")
                 check_required_methods(after, trait_name, type_name, next, impl_methods)

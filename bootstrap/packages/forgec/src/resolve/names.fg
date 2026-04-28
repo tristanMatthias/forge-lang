@@ -125,7 +125,7 @@ fn build_module_tree(stmts: StmtList, parent_path: string, tree: ModuleNode) -> 
 fn build_tree_from_stmt(stmt: Stmt, parent_path: string, tree: ModuleNode) -> ModuleNode {
     match stmt {
         .Module(name, body) -> {
-            let mod_path = if parent_path == "" { name } else { "${parent_path}::${name}" }
+            let mod_path = type_qualified_name(parent_path, name)
             // Collect items in this module
             let items = collect_module_items(body, mod_path)
             // Recursively build tree for nested modules
@@ -152,7 +152,7 @@ fn collect_module_items(stmts: StmtList, mod_path: string) -> ModuleItem {
 fn collect_item_from_stmt(stmt: Stmt, mod_path: string, exported: int, rest: ModuleItem) -> ModuleItem {
     match stmt {
         .Function(name, _, _, _, _) -> {
-            let canonical = "${mod_path}::${name}"
+            let canonical = type_qualified_name(mod_path, name)
             ModuleItem.Node(name, canonical, exported, rest)
         }
         .ExternFn(name, _, _) -> {
@@ -161,27 +161,27 @@ fn collect_item_from_stmt(stmt: Stmt, mod_path: string, exported: int, rest: Mod
             ModuleItem.Node(name, name, true, rest)
         }
         .TypeDecl(name, _, _) -> {
-            let canonical = "${mod_path}::${name}"
+            let canonical = type_qualified_name(mod_path, name)
             ModuleItem.Node(name, canonical, exported, rest)
         }
         .NewtypeDecl(name, _) -> {
-            let canonical = "${mod_path}::${name}"
+            let canonical = type_qualified_name(mod_path, name)
             ModuleItem.Node(name, canonical, exported, rest)
         }
         .UnionAliasDecl(name, _) -> {
-            let canonical = "${mod_path}::${name}"
+            let canonical = type_qualified_name(mod_path, name)
             ModuleItem.Node(name, canonical, exported, rest)
         }
         .ShapeDecl(name, _) -> {
-            let canonical = "${mod_path}::${name}"
+            let canonical = type_qualified_name(mod_path, name)
             ModuleItem.Node(name, canonical, exported, rest)
         }
         .EnumDecl(name, _, _) -> {
-            let canonical = "${mod_path}::${name}"
+            let canonical = type_qualified_name(mod_path, name)
             ModuleItem.Node(name, canonical, exported, rest)
         }
         .TraitDecl(name, _) -> {
-            let canonical = "${mod_path}::${name}"
+            let canonical = type_qualified_name(mod_path, name)
             ModuleItem.Node(name, canonical, exported, rest)
         }
         .Impl(_, methods) -> collect_impl_items(methods, mod_path, rest)
@@ -195,7 +195,7 @@ fn collect_item_from_stmt(stmt: Stmt, mod_path: string, exported: int, rest: Mod
                         // The use path is relative to the current module, so
                         // prefix with the module path to get the canonical path.
                         let rel_path = dots_to_colons(use_path)
-                        let canonical_mod = if mod_path == "" { rel_path } else { "${mod_path}::${rel_path}" }
+                        let canonical_mod = type_qualified_name(mod_path, rel_path)
                         return collect_reexport_items(names, canonical_mod, rest)
                     }
                     _ -> {}
@@ -214,7 +214,7 @@ fn collect_reexport_items(names: ParamList, source_mod: string, rest: ModuleItem
     match names {
         .End -> rest
         .Node(name, _, next) -> {
-            let canonical = "${source_mod}::${name}"
+            let canonical = type_qualified_name(source_mod, name)
             ModuleItem.Node(name, canonical, true, collect_reexport_items(next, source_mod, rest))
         }
     }

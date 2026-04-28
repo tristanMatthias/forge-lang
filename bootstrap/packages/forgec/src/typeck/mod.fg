@@ -11,6 +11,7 @@ use features.trait_decl.typeck.{check_trait_conformance, collect_method_names_fr
 use features.list_lit.typeck.{check_list_method}
 use features.map_lit.typeck.{check_map_method}
 use features.let_stmt.typeck.{is_const_expr}
+use core.type_registry.{method_mangled_name}
 
 // ── Type environment ──
 
@@ -1128,7 +1129,7 @@ fn check_method_call(tc: TC, obj: Expr, method: string, args: ExprList) -> ExprR
         _ -> ""
     }
     if type_name.length > 0 {
-        let qualified = "${type_name}__${method}"
+        let qualified = method_mangled_name(type_name, method)
         if fn_type_has(checked_args.fns, qualified) {
             return tc_er(checked_args, fn_type_lookup(checked_args.fns, qualified))
         }
@@ -1387,6 +1388,11 @@ fn is_naming_digit(ch: string) -> bool { ch in "0".."9" }
 
 fn is_pascal_case(name: string) -> bool {
     if name.length == 0 { return true }
+    // For qualified names like "module::TypeName", check the last segment
+    if name.contains("::") {
+        let parts = name.split("::")
+        return is_pascal_case(parts[parts.length - 1])
+    }
     let first = name[0]
     if first == "_" { return true }  // skip private names
     if !is_upper(first) { return false }

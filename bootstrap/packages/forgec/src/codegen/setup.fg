@@ -10,7 +10,7 @@ use codegen.{emit_expr, emit_stmt, emit_stmt_list}
 use codegen.helpers.{stmts_last_expr}
 use diagnostics.{bag_new}
 use features.fn_decl.codegen.{emit_function_bodies}
-use core.type_registry.{TypeRegistry}
+use core.type_registry.{TypeRegistry, variant_payload_name}
 use core.llvm.{forge_coverage_declare, forge_covmap_begin, forge_covmap_end}
 
 // Declare an extern function from a list of parameter types.
@@ -607,7 +607,7 @@ fn declare_variant_payloads(lc: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, enum
         .Node(vname, fields, next) -> {
             let count = field_list_length(fields)
             if count > 0 {
-                let payload_name = "${enum_name}__${vname}"
+                let payload_name = variant_payload_name(enum_name, vname)
                 let vp_regs = TypeRegs { structs, enums, newtypes: nts, union_aliases: uas }
                 let resolved_fields = resolve_field_list(fields, vp_regs)
                 let arr = forge_llvm_type_array_new(count)
@@ -811,7 +811,7 @@ fn emit_variant_field_releases(ctx: Ctx, payload: ptr, enum_name: string, varian
         .End -> {}
         .Node(fname, resolved, next) -> {
             if vtype_is_ptr_type(resolved) {
-                let payload_type_name = "${enum_name}__${variant_name}"
+                let payload_type_name = variant_payload_name(enum_name, variant_name)
                 let pay_ty = ctx.get_type(payload_type_name)
                 if pay_ty != null {
                     let fld_gep = forge_llvm_build_struct_gep2(ctx.builder, pay_ty, payload, idx, "vrel_${fname}_ptr")
