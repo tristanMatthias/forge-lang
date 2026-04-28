@@ -33,7 +33,7 @@ fn malloc_struct_bytes(ctx: Ctx, name: string, fields: FieldList) -> ptr {
 
 fn fill_struct_fields(ctx: Ctx, env: VarEnv, st_ty: ptr, alloca: ptr, inits: FieldInitList, fields: FieldList) -> Result<EmitValue, string> {
     match inits {
-        .End -> ok_emit(null_ptr_val())
+        .End -> ok_emit_typed(null_ptr_val(), .Void)
         .Node(field_name, sv, next) -> {
             let idx = field_index_of(fields, field_name)
             if idx < 0 { return err_emit("unknown field `${field_name}`") }
@@ -70,10 +70,10 @@ export fn emit_field_assign(ctx: Ctx, env: VarEnv, obj: Expr, field: string, val
     if needs_union_wrap(v.ty, fld_ty) {
         let wrapped = emit_union_wrap(ctx, v.value, v.ty, fld_ty)?
         ctx.store_field(wrapped.value, gep, fld_ty)
-        ok_emit(wrapped.value)
+        ok_emit_typed(wrapped.value, wrapped.ty)
     } else {
         ctx.store_field(v.value, gep, fld_ty)
-        ok_emit(v.value)
+        ok_emit_typed(v.value, v.ty)
     }
 }
 

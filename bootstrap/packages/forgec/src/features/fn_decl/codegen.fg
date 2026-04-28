@@ -269,7 +269,7 @@ export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, arg
     match r.ty {
         .Task(_) -> {
             if method == "cancel" {
-                return ok_emit(ctx.call("forge_task_cancel", [r.value]))
+                return ok_emit_typed(ctx.call("forge_task_cancel", [r.value]), .Void)
             }
             return err_emit("Task has no method `${method}` (available: .await, .cancel())")
         }

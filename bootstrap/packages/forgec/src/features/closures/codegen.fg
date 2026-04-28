@@ -628,7 +628,7 @@ export fn emit_indirect_call_value(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: Exp
 
 fn fill_lambda_args(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, idx: int) -> Result<EmitValue, string> {
     match args {
-        .End -> ok_emit(null_ptr_val())
+        .End -> ok_emit_typed(null_ptr_val(), .Void)
         .Node(se, next) -> {
             let r = ctx.emit(env, se.node)?
             ctx.value_array_set(arr, idx, r.value)

@@ -31,19 +31,19 @@ export fn emit_map_method_call(ctx: Ctx, env: VarEnv, map_ptr: ptr, method: stri
     match method {
         "get" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
-            return ok_emit(ctx.call("forge_map_get_cstr", [map_ptr, ctx.to_ptr(arg_r.value, "map_key")]))
+            return ok_emit_typed(ctx.call("forge_map_get_cstr", [map_ptr, ctx.to_ptr(arg_r.value, "map_key")]), .Int)
         }
         "has" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
-            return ok_emit(ctx.call("forge_map_has_cstr", [map_ptr, ctx.to_ptr(arg_r.value, "map_key")]))
+            return ok_emit_typed(ctx.call("forge_map_has_cstr", [map_ptr, ctx.to_ptr(arg_r.value, "map_key")]), .Bool)
         }
         "set" -> return emit_map_set(ctx, env, map_ptr, args)
-        "len" or "length" -> return ok_emit(ctx.call("forge_map_len_cstr", [map_ptr]))
+        "len" or "length" -> return ok_emit_typed(ctx.call("forge_map_len_cstr", [map_ptr]), .Int)
         "keys" -> return ok_emit_typed(ctx.call("forge_map_keys_cstr", [map_ptr]), .List(.Str))
         "values" -> return ok_emit_typed(ctx.call("forge_map_values_cstr", [map_ptr]), .List(.Unknown))
         "remove" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
-            return ok_emit(ctx.call("forge_map_remove_cstr", [map_ptr, ctx.to_ptr(arg_r.value, "map_key")]))
+            return ok_emit_typed(ctx.call("forge_map_remove_cstr", [map_ptr, ctx.to_ptr(arg_r.value, "map_key")]), .Void)
         }
         _ -> err_emit("map method `${method}` not implemented")
     }
@@ -58,7 +58,7 @@ fn emit_map_set(ctx: Ctx, env: VarEnv, map: ptr, args: ExprList) -> Result<EmitV
                     let val_r = ctx.emit(env, se_val.node)?
                     let key_ptr = ctx.to_ptr(key_r.value, "set_key")
                     ctx.call("forge_map_set_cstr", [map, key_ptr, val_r.value])
-                    ok_emit(map)
+                    ok_emit_typed(map, .Map)
                 }
                 _ -> err_emit("map.set expects 2 arguments: key and value")
             }
