@@ -3,7 +3,7 @@
 // Per spec Axis 18.7: structured concurrency — spawned tasks are bound
 // to the enclosing scope and auto-awaited at scope exit.
 
-use codegen.types.{ok_emit_typed, err_emit, EmitValue}
+use codegen.types.{ok_emit, err_emit, EmitValue}
 use core.ast.{vtype_fn_ret, MatchArmList, ExprList}
 use features.closures.codegen.{emit_lambda}
 
@@ -29,7 +29,7 @@ fn emit_spawn(ctx: Ctx, env: VarEnv, body: Expr) -> Result<EmitValue, string> {
 
     // Infer result type from the closure's return type
     let result_ty = vtype_fn_ret(closure.ty)
-    ok_emit_typed(handle, .Task(result_ty))
+    ok_emit(handle, .Task(result_ty))
 }
 
 // ── AST scan: does a statement list contain any Spawn expressions? ──

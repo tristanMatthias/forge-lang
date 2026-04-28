@@ -10,7 +10,7 @@
 // operators compile to i64 null-check or enum-tag-check branches.
 
 use core.ast.{Expr, VarEnv, FieldList, field_index_of, ValueType, vtype_eq, vtype_is_unknown, vtype_is_str, vtype_struct_name, vtype_enum_name, variant_lookup}
-use codegen.types.{Ctx, EmitValue, ok_emit_typed, err_emit, field_resolved_at, vtype_is_ptr_type}
+use codegen.types.{Ctx, EmitValue, ok_emit, err_emit, field_resolved_at, vtype_is_ptr_type}
 use features.defer_stmt.codegen.{emit_defers_on_error}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
 
@@ -39,7 +39,7 @@ export fn emit_null_coalesce(ctx: Ctx, env: VarEnv, left: Expr, right: Expr) -> 
     ctx.position(merge_bb)
     let loaded = ctx.load_i64(result_slot, "nc_val")
     let merged_ty = if (vtype_is_unknown(l.ty) || vtype_eq(l.ty, .Void)) && vtype_is_str(r.ty) { ValueType.Str } else { l.ty }
-    ok_emit_typed(loaded, merged_ty)
+    ok_emit(loaded, merged_ty)
 }
 
 export fn emit_optional_chain(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> Result<EmitValue, string> {
@@ -68,7 +68,7 @@ export fn emit_optional_chain(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -
         ctx.br(merge_bb)
         ctx.position(merge_bb)
         let loaded = ctx.load_i64(result_slot, "oc_val")
-        return ok_emit_typed(loaded, r.ty)
+        return ok_emit(loaded, r.ty)
     }
     let lookup = ctx.lookup_struct(struct_name)
     if !lookup.found {
@@ -88,7 +88,7 @@ export fn emit_optional_chain(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -
     ctx.position(merge_bb)
     let final_val = ctx.load_i64(result_slot, "oc_val")
     let field_ty = ctx.resolve_field_type(lookup.fields, field)
-    ok_emit_typed(final_val, field_ty)
+    ok_emit(final_val, field_ty)
 }
 
 export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> Result<EmitValue, string> {
@@ -159,7 +159,7 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> Result<EmitValue, stri
             let ok_ptr = ctx.int_to_ptr(ok_val, "try_ok_ptr")
             ctx.rc_retain(ok_ptr)
         }
-        return ok_emit_typed(ok_val, ok_ty)
+        return ok_emit(ok_val, ok_ty)
     }
 
     // ── Mode 2: Struct with `had_error` field ──
@@ -187,7 +187,7 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> Result<EmitValue, stri
                 ctx.ret(r.value, s_fn_ret)
 
                 ctx.position(cont_bb)
-                return ok_emit_typed(r.value, r.ty)
+                return ok_emit(r.value, r.ty)
             }
         }
     }
@@ -209,7 +209,7 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> Result<EmitValue, stri
     ctx.ret_void(fn_ret)
 
     ctx.position(cont_bb)
-    ok_emit_typed(r.value, r.ty)
+    ok_emit(r.value, r.ty)
 }
 
 export fn emit_catch(ctx: Ctx, env: VarEnv, inner: Expr, binding: string, body: Expr) -> Result<EmitValue, string> {
@@ -256,7 +256,7 @@ export fn emit_catch(ctx: Ctx, env: VarEnv, inner: Expr, binding: string, body: 
 
         ctx.position(merge_bb)
         let merged = ctx.load_i64(result_slot, "catch_merged")
-        return ok_emit_typed(merged, ctx.resolve_ok_type(enum_name))
+        return ok_emit(merged, ctx.resolve_ok_type(enum_name))
     }
 
     // Nullable: if null, evaluate catch body
@@ -283,5 +283,5 @@ export fn emit_catch(ctx: Ctx, env: VarEnv, inner: Expr, binding: string, body: 
 
     ctx.position(merge_bb)
     let merged = ctx.load_i64(result_slot, "catch_merged")
-    ok_emit_typed(merged, r.ty)
+    ok_emit(merged, r.ty)
 }

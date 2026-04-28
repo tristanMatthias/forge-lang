@@ -2,7 +2,7 @@
 // enum value comparison (tag equality via struct GEP).
 
 use core.ast.{ExprList, FieldList, VariantList, VarEnv, variant_lookup, field_list_length, expr_list_length, ValueType, vtype_enum_name}
-use codegen.types.{Ctx, EmitValue, ok_emit, ok_emit_typed, err_emit, null_ptr_val, enum_reg_find_by_variant, enum_reg_find_by_variant_arity}
+use codegen.types.{Ctx, EmitValue, ok_emit, err_emit, null_ptr_val, enum_reg_find_by_variant, enum_reg_find_by_variant_arity}
 use core.type_registry.{type_registry_id_for, variant_payload_name}
 
 export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: string, args: ExprList) -> Result<EmitValue, string> {
@@ -55,7 +55,7 @@ export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: stri
         let fill = fill_enum_payload(ctx, env, pay_buf, resolved_fields, args, 0)?
     }
     let as_i64 = ctx.to_i64(buf, "enum_i64")
-    ok_emit_typed(as_i64, .Enum(resolved_name, TypeList.End, type_registry_id_for(ctx.type_reg, resolved_name)))
+    ok_emit(as_i64, .Enum(resolved_name, TypeList.End, type_registry_id_for(ctx.type_reg, resolved_name)))
 }
 
 export fn malloc_enum_bytes(ctx: Ctx, variants: VariantList) -> ptr {
@@ -65,7 +65,7 @@ export fn malloc_enum_bytes(ctx: Ctx, variants: VariantList) -> ptr {
 
 fn fill_enum_payload(ctx: Ctx, env: VarEnv, payload_ptr: ptr, fields: FieldList, args: ExprList, idx: int) -> Result<EmitValue, string> {
     match args {
-        .End -> ok_emit_typed(null_ptr_val(), .Void)
+        .End -> ok_emit(null_ptr_val(), .Void)
         .Node(se, next) -> {
             let r = ctx.emit(env, se.node)?
             let fld_ty = match fields {
@@ -82,7 +82,7 @@ fn fill_enum_payload(ctx: Ctx, env: VarEnv, payload_ptr: ptr, fields: FieldList,
 // Type-safe payload fill: uses GEP into the per-variant struct type.
 fn fill_enum_payload_typed(ctx: Ctx, env: VarEnv, pay_ty: ptr, payload_ptr: ptr, fields: FieldList, args: ExprList, idx: int) -> Result<EmitValue, string> {
     match args {
-        .End -> ok_emit_typed(null_ptr_val(), .Void)
+        .End -> ok_emit(null_ptr_val(), .Void)
         .Node(se, next) -> {
             let r = ctx.emit(env, se.node)?
             let fld_gep = ctx.gep(pay_ty, payload_ptr, idx, "pay_fld")
@@ -109,5 +109,5 @@ export fn emit_enum_tag_cmp(ctx: Ctx, lhs: ptr, rhs: ptr, ty: ValueType, pred: i
     let l_tag = ctx.load_i64(l_gep, "ltag")
     let r_tag = ctx.load_i64(r_gep, "rtag")
     let cmp = ctx.icmp(pred, l_tag, r_tag, "tag_cmp")
-    ok_emit_typed(ctx.zext(cmp, ctx.i64_type, "tag_cmp_ext"), .Bool)
+    ok_emit(ctx.zext(cmp, ctx.i64_type, "tag_cmp_ext"), .Bool)
 }

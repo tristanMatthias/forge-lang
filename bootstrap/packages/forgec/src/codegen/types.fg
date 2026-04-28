@@ -185,19 +185,8 @@ export fn emit_value_ty(v: EmitValue) -> ValueType {
 
 extern fn forge_tag_as_result(ptr: ptr) -> ptr
 
-export fn ok_emit(value: ptr) -> Result<EmitValue, string> {
-    let r = Result.Ok(EmitValue { value, ty: .Int })
-    forge_tag_as_result(r)
-    r
-}
-
-export fn ok_emit_str(value: ptr) -> Result<EmitValue, string> {
-
-    let r = Result.Ok(EmitValue { value, ty: .Str })
-    forge_tag_as_result(r)
-    r
-}
-export fn ok_emit_typed(value: ptr, ty: ValueType) -> Result<EmitValue, string> {
+// Every emitted value MUST have an explicit type. No untyped emissions.
+export fn ok_emit(value: ptr, ty: ValueType) -> Result<EmitValue, string> {
 
     let r = Result.Ok(EmitValue { value, ty })
     forge_tag_as_result(r)
@@ -1037,17 +1026,17 @@ impl Ctx {
     }
 
     // ── Comparison → Bool helpers ──
-    // icmp/fcmp + zext to i64 + wrap in ok_emit_typed(.Bool) — the
+    // icmp/fcmp + zext to i64 + wrap in ok_emit(.Bool) — the
     // universal pattern for comparison operators returning Bool.
 
     fn icmp_bool(self, pred: int, a: ptr, b: ptr, name: string) -> Result<EmitValue, string> {
         let cmp = forge_llvm_build_icmp(self.builder, pred, a, b, name)
-        ok_emit_typed(forge_llvm_build_zext(self.builder, cmp, self.i64_type, "${name}_ext"), .Bool)
+        ok_emit(forge_llvm_build_zext(self.builder, cmp, self.i64_type, "${name}_ext"), .Bool)
     }
 
     fn fcmp_bool(self, pred: int, a: ptr, b: ptr, name: string) -> Result<EmitValue, string> {
         let cmp = forge_llvm_build_fcmp(self.builder, pred, a, b, name)
-        ok_emit_typed(forge_llvm_build_zext(self.builder, cmp, self.i64_type, "${name}_ext"), .Bool)
+        ok_emit(forge_llvm_build_zext(self.builder, cmp, self.i64_type, "${name}_ext"), .Bool)
     }
 
     // ── Traps ──

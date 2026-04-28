@@ -1,7 +1,7 @@
 // WHY: emits LLVM IR for `match` as both a statement and an expression.
 
 use core.ast.{Expr, Pattern, PatternList, MatchArmList, WhenArmList, ParamList, FieldList, TypeList, VariantList, VarEnv, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types}
-use codegen.types.{Ctx, EmitValue, StmtResult, err_emit, ok_emit_typed, field_resolved_at, advance_field_list, emit_value_ptr, emit_value_ty, enum_reg_find_by_variant, vtype_is_ptr_type}
+use codegen.types.{Ctx, EmitValue, StmtResult, err_emit, ok_emit, field_resolved_at, advance_field_list, emit_value_ptr, emit_value_ty, enum_reg_find_by_variant, vtype_is_ptr_type}
 use core.ast.{vtype_from_name}
 use codegen.{ok_sr, err_sr}
 use features.union_type.codegen.{emit_union_tag, emit_union_extract}
@@ -55,7 +55,7 @@ export fn emit_match_expr(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmLi
             let result_ty = emit_match_expr_arms(ctx, env, arms, st_ty, subj_ptr, tag_val, lookup.variants, merge_bb, result_slot)?
             ctx.position(merge_bb)
             let loaded = ctx.load_i64(result_slot, "match_val")
-            ok_emit_typed(loaded, result_ty)
+            ok_emit(loaded, result_ty)
         }
     }
 }
@@ -71,7 +71,7 @@ fn emit_union_match_expr(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: MatchArmL
     let result_ty = emit_union_match_arms(ctx, env, arms, emit_value_ptr(subj), tag_val, union_types, merge_bb, result_slot)?
     ctx.position(merge_bb)
     let loaded = ctx.load_i64(result_slot, "union_match_val")
-    ok_emit_typed(loaded, result_ty)
+    ok_emit(loaded, result_ty)
 }
 
 fn emit_union_match_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, subj_val: ptr, tag_val: ptr, union_types: TypeList, merge_bb: ptr, result_slot: ptr) -> Result<ValueType, string> {
@@ -489,7 +489,7 @@ fn emit_primitive_match_expr(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: Match
     let merge_bb = ctx.bb("pmatch_end")
     let result_ty = emit_primitive_arms_expr(ctx, env, subj, arms, merge_bb, result_slot)?
     ctx.position(merge_bb)
-    ok_emit_typed(ctx.load_i64(result_slot, "pmatch_val"), result_ty)
+    ok_emit(ctx.load_i64(result_slot, "pmatch_val"), result_ty)
 }
 
 // Generate a boolean comparison for a literal pattern against the subject.
@@ -630,7 +630,7 @@ export fn emit_when_expr(ctx: Ctx, env: VarEnv, arms: WhenArmList) -> Result<Emi
     let ty = emit_when_arms(ctx, env, arms, merge_bb, result_slot)?
     ctx.position(merge_bb)
     let loaded = ctx.load_i64(result_slot, "when_val")
-    ok_emit_typed(loaded, ty)
+    ok_emit(loaded, ty)
 }
 
 fn emit_when_arms(ctx: Ctx, env: VarEnv, arms: WhenArmList, merge_bb: ptr, result_slot: ptr) -> Result<ValueType, string> {

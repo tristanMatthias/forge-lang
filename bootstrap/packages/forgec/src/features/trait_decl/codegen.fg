@@ -2,7 +2,7 @@
 
 use core.ast.{Expr, ExprList, VarEnv, ValueType, vtype_struct_name, vtype_enum_name, expr_list_length}
 use core.llvm.{forge_llvm_append_basic_block, forge_llvm_position_at_end, forge_llvm_get_insert_block, forge_llvm_function_type, forge_llvm_add_function, forge_llvm_type_array_new, forge_llvm_type_array_set, forge_llvm_type_array_free, forge_llvm_get_param, forge_llvm_count_params, forge_llvm_build_ret, forge_llvm_build_bitcast, forge_llvm_fn_type_of, forge_llvm_value_array_new, forge_llvm_value_array_set, forge_llvm_value_array_free, forge_llvm_build_call_coerce}
-use codegen.types.{Ctx, EmitValue, TraitMethodNames, ok_emit_typed, err_emit, trait_decl_lookup}
+use codegen.types.{Ctx, EmitValue, TraitMethodNames, ok_emit, err_emit, trait_decl_lookup}
 use core.type_registry.{method_mangled_name, type_registry_id_for, type_registry_name_for}
 use features.fn_decl.codegen.{emit_first_arg}
 
@@ -37,25 +37,25 @@ export fn emit_trait_dispatch(ctx: Ctx, env: VarEnv, obj_val: ptr, trait_name: s
     let user_count = expr_list_length(args)
     if user_count == 0 {
         let raw = ctx.call("forge_closure_call_1", [fn_closure, concrete])
-        return ok_emit_typed(ctx.cast_to(raw, ret_ty), ret_ty)
+        return ok_emit(ctx.cast_to(raw, ret_ty), ret_ty)
     }
     if user_count == 1 {
         let first_arg = emit_first_arg(ctx, env, args)?
         let raw = ctx.call("forge_closure_call_2", [fn_closure, concrete, first_arg.value])
-        return ok_emit_typed(ctx.cast_to(raw, ret_ty), ret_ty)
+        return ok_emit(ctx.cast_to(raw, ret_ty), ret_ty)
     }
     if user_count == 2 {
         let a0 = emit_trait_arg(ctx, env, args, 0)?
         let a1 = emit_trait_arg(ctx, env, args, 1)?
         let raw = ctx.call("forge_closure_call_3", [fn_closure, concrete, a0.value, a1.value])
-        return ok_emit_typed(ctx.cast_to(raw, ret_ty), ret_ty)
+        return ok_emit(ctx.cast_to(raw, ret_ty), ret_ty)
     }
     if user_count == 3 {
         let a0 = emit_trait_arg(ctx, env, args, 0)?
         let a1 = emit_trait_arg(ctx, env, args, 1)?
         let a2 = emit_trait_arg(ctx, env, args, 2)?
         let raw = ctx.call("forge_closure_call_4", [fn_closure, concrete, a0.value, a1.value, a2.value])
-        return ok_emit_typed(ctx.cast_to(raw, ret_ty), ret_ty)
+        return ok_emit(ctx.cast_to(raw, ret_ty), ret_ty)
     }
     if user_count == 4 {
         let a0 = emit_trait_arg(ctx, env, args, 0)?
@@ -63,7 +63,7 @@ export fn emit_trait_dispatch(ctx: Ctx, env: VarEnv, obj_val: ptr, trait_name: s
         let a2 = emit_trait_arg(ctx, env, args, 2)?
         let a3 = emit_trait_arg(ctx, env, args, 3)?
         let raw = ctx.call("forge_closure_call_5", [fn_closure, concrete, a0.value, a1.value, a2.value, a3.value])
-        return ok_emit_typed(ctx.cast_to(raw, ret_ty), ret_ty)
+        return ok_emit(ctx.cast_to(raw, ret_ty), ret_ty)
     }
     err_emit("trait dispatch supports up to 4 user arguments (got ${string(user_count)})")
 }

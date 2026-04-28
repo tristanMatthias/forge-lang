@@ -13,7 +13,7 @@
 // is just the function pointer with a null environment.
 
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, WhenArmList, VarEnv, env_lookup, param_list_length, expr_list_length, ValueType, TypeList, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, vtype_is_unknown}
-use codegen.types.{Ctx, EmitValue, err_emit, null_ptr_val, ok_emit, ok_emit_typed}
+use codegen.types.{Ctx, EmitValue, err_emit, null_ptr_val, ok_emit}
 use codegen.{emit_expr}
 use codegen.escape.{analyze_releasable_expr}
 
@@ -441,7 +441,7 @@ export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, raw_params: ParamList, body: 
         push_captured_values(ctx, captures, closure_arr)
     }
     let closure_i64 = ctx.to_i64(closure_arr, "closure_i64")
-    ok_emit_typed(closure_i64, ValueType.Closure(num_captures, result.ty))
+    ok_emit(closure_i64, ValueType.Closure(num_captures, result.ty))
 }
 
 fn bind_captures_as_params(ctx: Ctx, env: VarEnv, captures: CaptureList, fn_val: ptr, idx: int) -> VarEnv {
@@ -543,7 +543,7 @@ fn emit_closure_call(ctx: Ctx, env: VarEnv, closure_val: ptr, args: ExprList, nu
 
     let result = ctx.build_call(fn_type, fn_ptr, val_arr, total_args, "closure_call")
     ctx.value_array_free(val_arr)
-    ok_emit_typed(result, .Int)
+    ok_emit(result, .Int)
 }
 
 fn fill_closure_captures(ctx: Ctx, val_arr: ptr, closure_val: ptr, start_idx: int, count: int, i: int) {
@@ -556,12 +556,12 @@ fn fill_closure_captures(ctx: Ctx, val_arr: ptr, closure_val: ptr, start_idx: in
 
 export fn emit_indirect_call_typed(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: ExprList, ret_ty: ValueType) -> Result<EmitValue, string> {
     let r = emit_indirect_call_value(ctx, env, fn_i64, args)?
-    ok_emit_typed(r.value, ret_ty)
+    ok_emit(r.value, ret_ty)
 }
 
 export fn emit_closure_call_typed(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: ExprList, num_captures: int, ret_ty: ValueType) -> Result<EmitValue, string> {
     let r = emit_closure_call(ctx, env, fn_i64, args, num_captures)?
-    ok_emit_typed(r.value, ret_ty)
+    ok_emit(r.value, ret_ty)
 }
 
 export fn emit_indirect_call_value(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: ExprList) -> Result<EmitValue, string> {
@@ -576,13 +576,13 @@ export fn emit_indirect_call_value(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: Exp
     // args (user + captures).
     let user_arg_count = expr_list_length(args)
     if user_arg_count == 0 {
-        return ok_emit_typed(ctx.call("forge_closure_call_0", [fn_i64]), .Int)
+        return ok_emit(ctx.call("forge_closure_call_0", [fn_i64]), .Int)
     }
     if user_arg_count == 1 {
         match args {
             .Node(se, _) -> {
                 let a0 = ctx.emit(env, se.node)?
-                return ok_emit_typed(ctx.call("forge_closure_call_1", [fn_i64, a0.value]), .Int)
+                return ok_emit(ctx.call("forge_closure_call_1", [fn_i64, a0.value]), .Int)
             }
             _ -> { return err_emit("expected 1 arg") }
         }
@@ -594,7 +594,7 @@ export fn emit_indirect_call_value(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: Exp
                 match rest {
                     .Node(se1, _) -> {
                         let a1 = ctx.emit(env, se1.node)?
-                        return ok_emit_typed(ctx.call("forge_closure_call_2", [fn_i64, a0.value, a1.value]), .Int)
+                        return ok_emit(ctx.call("forge_closure_call_2", [fn_i64, a0.value, a1.value]), .Int)
                     }
                     _ -> { return err_emit("expected 2 args") }
                 }
@@ -612,7 +612,7 @@ export fn emit_indirect_call_value(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: Exp
                         match rest1 {
                             .Node(se2, _) -> {
                                 let a2 = ctx.emit(env, se2.node)?
-                                return ok_emit_typed(ctx.call("forge_closure_call_3", [fn_i64, a0.value, a1.value, a2.value]), .Int)
+                                return ok_emit(ctx.call("forge_closure_call_3", [fn_i64, a0.value, a1.value, a2.value]), .Int)
                             }
                             _ -> { return err_emit("expected 3 args") }
                         }
@@ -628,7 +628,7 @@ export fn emit_indirect_call_value(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: Exp
 
 fn fill_lambda_args(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, idx: int) -> Result<EmitValue, string> {
     match args {
-        .End -> ok_emit_typed(null_ptr_val(), .Void)
+        .End -> ok_emit(null_ptr_val(), .Void)
         .Node(se, next) -> {
             let r = ctx.emit(env, se.node)?
             ctx.value_array_set(arr, idx, r.value)

@@ -1,7 +1,7 @@
 // WHY: block expression codegen — evaluating statement blocks as values.
 
 use core.ast.{Expr, Stmt, StmtList, ValueType, VarEnv, SStmt, stmt_unwrap}
-use codegen.types.{BlockResult, Ctx, EmitValue, StmtResult,  err_emit, ok_emit_typed, ok_emit, ok_stmt, emit_value_ptr, emit_value_ty}
+use codegen.types.{BlockResult, Ctx, EmitValue, StmtResult,  err_emit, ok_emit, ok_stmt, emit_value_ptr, emit_value_ty}
 use codegen.{emit_expr, emit_stmt, emit_stmt_list}
 use features.match_expr.codegen.{emit_match_expr}
 use features.if_stmt.codegen.{narrow_env_for_is}
@@ -38,7 +38,7 @@ export fn emit_stmt_as_value(ctx: Ctx, env: VarEnv, stmt: Stmt, last_val: ptr, l
         .If(condition, then_branch, else_branch) -> emit_stmt_if_as_value(ctx, env, condition, then_branch, else_branch)
         _ -> {
             let sr = emit_stmt(ctx, env, stmt)?
-            ok_emit_typed(last_val, last_ty)
+            ok_emit(last_val, last_ty)
         }
     }
 }
@@ -98,12 +98,12 @@ export fn emit_stmt_if_as_value(ctx: Ctx, env: VarEnv, condition: Expr, then_bra
 
     ctx.position(merge_bb)
     let loaded = ctx.load_i64(result_slot, "sif_val")
-    ok_emit_typed(loaded, emit_value_ty(t))
+    ok_emit(loaded, emit_value_ty(t))
 }
 
 export fn emit_block_loop(ctx: Ctx, env: VarEnv, stmts: StmtList, last_val: ptr, last_ty: ValueType) -> Result<EmitValue, string> {
     match stmts {
-        .End -> ok_emit_typed(last_val, last_ty)
+        .End -> ok_emit(last_val, last_ty)
         .Node(ss, next) -> {
             let line_ctx = ctx with { source_line: ss.line }
             match next {

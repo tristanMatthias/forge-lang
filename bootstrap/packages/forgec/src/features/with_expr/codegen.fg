@@ -6,7 +6,7 @@
 // then overwrite the specified fields with new values.
 
 use core.ast.{Expr, FieldList, FieldInitList, VarEnv, field_index_of, field_list_length, vtype_struct_name, vtype_display}
-use codegen.types.{Ctx, EmitValue, ok_emit_typed, err_emit}
+use codegen.types.{Ctx, EmitValue, ok_emit, err_emit}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
 
 export fn emit_with(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
@@ -45,7 +45,7 @@ fn emit_with_inner(ctx: Ctx, env: VarEnv, obj: Expr, overrides: FieldInitList) -
     // Override specified fields
     apply_overrides(ctx, env, new_buf, struct_name, lookup.fields, overrides)?
 
-    ok_emit_typed(ctx.to_i64(new_buf, "with_result"), r.ty)
+    ok_emit(ctx.to_i64(new_buf, "with_result"), r.ty)
 }
 
 fn copy_struct_fields(ctx: Ctx, src: ptr, dst: ptr, struct_name: string, fields: FieldList, idx: int) {

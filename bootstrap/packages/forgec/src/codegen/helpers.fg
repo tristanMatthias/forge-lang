@@ -24,7 +24,7 @@ export fn strip_quotes(s: string) -> string {
 
 export fn fill_arg_array(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, idx: int) -> Result<EmitValue, string> {
     match args {
-        .End -> ok_emit_typed(null_ptr_val(), .Void)
+        .End -> ok_emit(null_ptr_val(), .Void)
         .Node(se, next) -> {
             let r = ctx.emit(env, se.node)?
             ctx.value_array_set(arr, idx, r.value)
@@ -35,7 +35,7 @@ export fn fill_arg_array(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, idx: i
 
 export fn fill_arg_array_boxing(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, ptypes: ParamTypeList, idx: int) -> Result<EmitValue, string> {
     match args {
-        .End -> ok_emit_typed(null_ptr_val(), .Void)
+        .End -> ok_emit(null_ptr_val(), .Void)
         .Node(se, next) -> {
             // When a Lambda arg is passed to a function expecting a typed fn param,
             // compile the lambda with the expected param types so enum matching works.

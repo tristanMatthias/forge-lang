@@ -9,7 +9,7 @@
 // (critical for match on enum tuple elements).
 
 use core.ast.{Expr, ExprList, ParamList, VarEnv, env_extend, expr_list_length, ValueType, TypeList, vtype_tuple_at}
-use codegen.types.{Ctx, EmitValue,  ok_emit, ok_emit_typed, err_emit, ok_stmt}
+use codegen.types.{Ctx, EmitValue,  ok_emit, err_emit, ok_stmt}
 
 fn tuple_load(ctx: Ctx, base: ptr, idx: int, name: string) -> ptr { ctx.load_slot(base, idx, name) }
 fn tuple_store(ctx: Ctx, base: ptr, idx: int, value: ptr) { ctx.store_slot(base, idx, value, .Int) }
@@ -33,7 +33,7 @@ fn store_tuple_elements(ctx: Ctx, env: VarEnv, elements: ExprList, buf: ptr, idx
     match elements {
         .End -> {
             let ty = .Tuple(reverse_type_list(types_acc, .End))
-            ok_emit_typed(ctx.to_i64(buf, "tuple_i64"), ty)
+            ok_emit(ctx.to_i64(buf, "tuple_i64"), ty)
         }
         .Node(se, next) -> {
             let r = ctx.emit(env, se.node)?
@@ -63,7 +63,7 @@ fn emit_tuple_index_inner(ctx: Ctx, env: VarEnv, obj: Expr, idx: int) -> Result<
     let ptr = ctx.to_ptr(r.value, "tup_ptr")
     let loaded = tuple_load(ctx, ptr, idx, "tup_val")
     let elem_ty = vtype_tuple_at(r.ty, idx)
-    ok_emit_typed(loaded, elem_ty)
+    ok_emit(loaded, elem_ty)
 }
 
 export fn emit_let_destructure(ctx: Ctx, env: VarEnv, names: ParamList, initializer: Expr) -> Result<VarEnv, string> {

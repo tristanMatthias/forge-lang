@@ -14,7 +14,7 @@ mod escape
 mod cycles
 
 use core.ast.{Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, SExpr, SStmt, Stmt, StmtList, TypeList, ValueType, VarEnv, VariantList, env_extend, env_lookup, expr_list_length, field_index_of, field_init_length, field_list_length, param_list_length, sexpr_dummy, stmt_unwrap, variant_lookup, variant_max_payload, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_list_elem, vtype_struct_name, vtype_trait_name}
-use codegen.types.{Ctx, DeferStack, EmitValue, EnumLookup, EnumReg, FnParamTypes, FnRetTypes, LoopFrame, LoopStack, ParamTypeList, RcCleanupStack, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, advance_field_list, err_emit, err_stmt, loops_top, null_ptr_val, ok_emit, ok_emit_str, ok_emit_typed, ok_stmt, trait_decl_has, trait_decl_lookup, vtype_is_ptr_type}
+use codegen.types.{Ctx, DeferStack, EmitValue, EnumLookup, EnumReg, FnParamTypes, FnRetTypes, LoopFrame, LoopStack, ParamTypeList, RcCleanupStack, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, advance_field_list, err_emit, err_stmt, loops_top, null_ptr_val, ok_emit, ok_emit, ok_stmt, trait_decl_has, trait_decl_lookup, vtype_is_ptr_type}
 
 use core.registry.{build_registry, dispatch_expr_emit, dispatch_stmt_emit, forge_expr_tag, forge_stmt_tag, has_expr_emit, has_stmt_emit, registry_new}
 use features.closures.codegen.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value, emit_typed_lambda_arg}
@@ -304,24 +304,24 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, stri
     match expr {
         .Number(text) -> {
             let value = parse_int_literal(text)
-            ok_emit_typed(ctx.i64(value), .Int)
+            ok_emit(ctx.i64(value), .Int)
         }
         .FloatLit(text) -> {
             let str_ptr = ctx.global_str(text, ".float_str")
             let bits = ctx.call("forge_float_parse", [str_ptr])
-            ok_emit_typed(ctx.cast_to(bits, .Float), .Float)
+            ok_emit(ctx.cast_to(bits, .Float), .Float)
         }
         .Bool(text) -> {
             if text == "true" {
-                return ok_emit_typed(ctx.i64(1), .Bool)
+                return ok_emit(ctx.i64(1), .Bool)
             }
-            ok_emit_typed(ctx.i64(0), .Bool)
+            ok_emit(ctx.i64(0), .Bool)
         }
-        .Null -> ok_emit_typed(ctx.i64(0), .Void)
+        .Null -> ok_emit(ctx.i64(0), .Void)
         .String(text) -> {
             let inner = strip_quotes(text)
             let str_ptr = ctx.global_str(inner, ".str")
-            ok_emit_typed(str_ptr, .Str)
+            ok_emit(str_ptr, .Str)
         }
         .Grouping(inner) -> emit_expr(ctx, env, inner)
         .Unary(op, right) -> emit_unary(ctx, env, op, right)
@@ -337,20 +337,20 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, stri
                 if needs_union_wrap(r.ty, local.ty) {
                     let wrapped = emit_union_wrap(ctx, r.value, r.ty, local.ty)?
                     ctx.store(wrapped.value, local.alloca)
-                    return ok_emit_typed(wrapped.value, local.ty)
+                    return ok_emit(wrapped.value, local.ty)
                 }
                 ctx.store(r.value, local.alloca)
-                return ok_emit_typed(r.value, local.ty)
+                return ok_emit(r.value, local.ty)
             }
             let g = ctx.lookup_toplevel(name)
             if g.found {
                 if needs_union_wrap(r.ty, g.ty) {
                     let wrapped = emit_union_wrap(ctx, r.value, r.ty, g.ty)?
                     ctx.store(wrapped.value, g.llvm_global)
-                    return ok_emit_typed(wrapped.value, g.ty)
+                    return ok_emit(wrapped.value, g.ty)
                 }
                 ctx.store(r.value, g.llvm_global)
-                return ok_emit_typed(r.value, g.ty)
+                return ok_emit(r.value, g.ty)
             }
             err_emit("assignment to undefined variable `${name}`")
         }
@@ -374,12 +374,12 @@ fn emit_name_lookup(ctx: Ctx, env: VarEnv, name: string, label: string) -> Resul
     let local = env_lookup(env, name)
     if local.found {
         let loaded = ctx.load_typed(local.ty, local.alloca, name)
-        return ok_emit_typed(loaded, local.ty)
+        return ok_emit(loaded, local.ty)
     }
     let g = ctx.lookup_toplevel(name)
     if g.found {
         let loaded = ctx.load_typed(g.ty, g.llvm_global, name)
-        return ok_emit_typed(loaded, g.ty)
+        return ok_emit(loaded, g.ty)
     }
     let fn_val = ctx.get_fn(name)
     if fn_val != null {
@@ -387,7 +387,7 @@ fn emit_name_lookup(ctx: Ctx, env: VarEnv, name: string, label: string) -> Resul
         let closure_arr = ctx.closure_array(fn_i64)
         let closure_i64 = ctx.to_i64(closure_arr, "fn_ref_i64")
         let ret_ty = ctx.fn_ret(name)
-        return ok_emit_typed(closure_i64, .Closure(0, ret_ty))
+        return ok_emit(closure_i64, .Closure(0, ret_ty))
     }
     err_emit("undefined ${label} `${name}` in function `${ctx.current_fn_name}`")
 }

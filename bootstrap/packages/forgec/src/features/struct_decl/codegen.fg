@@ -1,7 +1,7 @@
 // WHY: emits struct literal construction and field-filling.
 
 use core.ast.{Expr, ExprList, FieldList, FieldInitList, VarEnv, field_index_of, field_list_length, ValueType, vtype_struct_name, vtype_display, vtype_is_str, vtype_is_list, vtype_is_map, vtype_narrowed_variant, vtype_enum_name, variant_lookup}
-use codegen.types.{Ctx, EmitValue, ok_emit, ok_emit_typed, err_emit, null_ptr_val}
+use codegen.types.{Ctx, EmitValue, ok_emit, err_emit, null_ptr_val}
 use core.type_registry.{type_registry_id_for}
 use features.enum_decl.codegen.{emit_enum_ctor}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
@@ -18,7 +18,7 @@ export fn emit_struct_lit(ctx: Ctx, env: VarEnv, name: string, inits: FieldInitL
     let buf = malloc_struct_bytes(ctx, name, lookup.fields)
     let fill = fill_struct_fields(ctx, env, st_ty, buf, inits, lookup.fields)?
     let as_i64 = ctx.to_i64(buf, "struct_i64")
-    ok_emit_typed(as_i64, .Struct(name, type_registry_id_for(ctx.type_reg, name)))
+    ok_emit(as_i64, .Struct(name, type_registry_id_for(ctx.type_reg, name)))
 }
 
 fn malloc_struct_bytes(ctx: Ctx, name: string, fields: FieldList) -> ptr {
@@ -33,7 +33,7 @@ fn malloc_struct_bytes(ctx: Ctx, name: string, fields: FieldList) -> ptr {
 
 fn fill_struct_fields(ctx: Ctx, env: VarEnv, st_ty: ptr, alloca: ptr, inits: FieldInitList, fields: FieldList) -> Result<EmitValue, string> {
     match inits {
-        .End -> ok_emit_typed(null_ptr_val(), .Void)
+        .End -> ok_emit(null_ptr_val(), .Void)
         .Node(field_name, sv, next) -> {
             let idx = field_index_of(fields, field_name)
             if idx < 0 { return err_emit("unknown field `${field_name}`") }
@@ -70,10 +70,10 @@ export fn emit_field_assign(ctx: Ctx, env: VarEnv, obj: Expr, field: string, val
     if needs_union_wrap(v.ty, fld_ty) {
         let wrapped = emit_union_wrap(ctx, v.value, v.ty, fld_ty)?
         ctx.store_field(wrapped.value, gep, fld_ty)
-        ok_emit_typed(wrapped.value, wrapped.ty)
+        ok_emit(wrapped.value, wrapped.ty)
     } else {
         ctx.store_field(v.value, gep, fld_ty)
-        ok_emit_typed(v.value, v.ty)
+        ok_emit(v.value, v.ty)
     }
 }
 
@@ -93,19 +93,19 @@ export fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> 
     if field == "await" {
         let result = ctx.call("forge_task_await", [r.value])
         let result_ty = match r.ty { .Task(rt) -> rt, _ -> ValueType.Unknown }
-        return ok_emit_typed(result, result_ty)
+        return ok_emit(result, result_ty)
     }
 
     // String/List/Map .length
     if vtype_is_str(r.ty) && field == "length" {
         let str_ptr = ctx.to_ptr(r.value, "len_arg")
-        return ok_emit_typed(ctx.call("strlen", [str_ptr]), .Int)
+        return ok_emit(ctx.call("strlen", [str_ptr]), .Int)
     }
     if vtype_is_list(r.ty) && field == "length" {
-        return ok_emit_typed(ctx.array_len(r.value), .Int)
+        return ok_emit(ctx.array_len(r.value), .Int)
     }
     if vtype_is_map(r.ty) && field == "length" {
-        return ok_emit_typed(ctx.call("forge_map_len_cstr", [r.value]), .Int)
+        return ok_emit(ctx.call("forge_map_len_cstr", [r.value]), .Int)
     }
 
     // Flow-sensitive narrowing: NarrowedEnum(enum, variant) allows
@@ -130,7 +130,7 @@ export fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> 
 
     let field_ty = ctx.resolve_field_type(lookup.fields, field)
     let loaded = ctx.field_typed(r.value, struct_name, idx, field_ty, field)
-    ok_emit_typed(loaded, field_ty)
+    ok_emit(loaded, field_ty)
 }
 
 // Extract a payload field from a narrowed enum value.
@@ -158,5 +158,5 @@ fn emit_narrowed_field(ctx: Ctx, r: EmitValue, field: string, vname: string) -> 
     let pay_gep = ctx.gep(enum_ty, enum_ptr, 1, "narrow_pay_slot")
     let pay_ptr = ctx.load(ctx.ptr_type, pay_gep, "narrow_payload")
     let loaded = ctx.load_slot_typed(pay_ptr, idx, field_ty, "narrow_${field}")
-    ok_emit_typed(loaded, field_ty)
+    ok_emit(loaded, field_ty)
 }

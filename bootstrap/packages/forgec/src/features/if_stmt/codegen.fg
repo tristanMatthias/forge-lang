@@ -3,7 +3,7 @@
 // `x is .Variant`, the then-branch sees `x` as NarrowedEnum.
 
 use core.ast.{Expr, Stmt, TypeList, ValueType, VarEnv, vtype_eq, env_lookup, env_extend, vtype_enum_name}
-use codegen.types.{Ctx, EmitValue, StmtResult, ok_emit_typed, emit_value_ptr, emit_value_ty}
+use codegen.types.{Ctx, EmitValue, StmtResult, ok_emit, emit_value_ptr, emit_value_ty}
 use codegen.{emit_stmt, ok_sr}
 use core.llvm.{forge_covmap_next_branch_id}
 use features.union_type.codegen.{emit_union_wrap}
@@ -122,7 +122,7 @@ export fn emit_if_expr(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Expr
     // Same type or non-union-safe: load raw value
     if vtype_eq(t_ty, e_ty) || !is_union_safe_type(t_ty) || !is_union_safe_type(e_ty) {
         let result = ctx.load_i64(result_slot, "ife_val")
-        return ok_emit_typed(result, t_ty)
+        return ok_emit(result, t_ty)
     }
 
     // Mixed user-facing types: re-emit with wrapping baked into each branch.
@@ -159,5 +159,5 @@ export fn emit_if_expr(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Expr
 
     ctx.position(wrap_merge)
     let result = ctx.load_i64(wrap_slot, "ife_union_val")
-    ok_emit_typed(result, union_ty)
+    ok_emit(result, union_ty)
 }

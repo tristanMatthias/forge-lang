@@ -1,7 +1,7 @@
 // WHY: codegen for string operations — concat, comparison, replace, substring.
 
 use core.ast.{Expr, ExprList, VarEnv}
-use codegen.types.{Ctx, EmitValue, ok_emit, ok_emit_str, err_emit}
+use codegen.types.{Ctx, EmitValue, ok_emit, err_emit}
 use codegen.helpers.{strip_quotes}
 
 export fn emit_concat(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr) -> Result<EmitValue, string> {
@@ -21,7 +21,7 @@ export fn emit_concat(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr) -> Result<EmitValue,
     let dst2 = ctx.to_ptr(ctx.add(buf_int, lhs_len, "dst2_int"), "dst2")
     ctx.call("memcpy", [dst2, rhs_ptr, ctx.add(rhs_len, ctx.i64(1), "rhs_len_p1")])
 
-    ok_emit_typed(buf, .Str)
+    ok_emit(buf, .Str)
 }
 
 export fn emit_str_replace(ctx: Ctx, env: VarEnv, str_i64: ptr, args: ExprList) -> Result<EmitValue, string> {
@@ -35,7 +35,7 @@ export fn emit_str_replace(ctx: Ctx, env: VarEnv, str_i64: ptr, args: ExprList) 
                     let from_ptr = ctx.to_ptr(from_r.value, "rep_from")
                     let to_ptr_v = ctx.to_ptr(to_r.value, "rep_to")
                     let result = ctx.call("forge_str_replace", [str_ptr, from_ptr, to_ptr_v])
-                    ok_emit_typed(result, .Str)
+                    ok_emit(result, .Str)
                 }
                 _ -> err_emit("replace expects 2 arguments")
             }
@@ -78,7 +78,7 @@ export fn emit_substring_inner(ctx: Ctx, env: VarEnv, str_i64: ptr, start_arg: E
     let nul_int = ctx.add(buf_int2, len, "sub_nul_int")
     let nul_ptr = ctx.to_ptr(nul_int, "sub_nul")
     ctx.store(ctx.i8(0), nul_ptr)
-    ok_emit_typed(buf, .Str)
+    ok_emit(buf, .Str)
 }
 
 export fn emit_str_cmp(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, pred: int) -> Result<EmitValue, string> {
@@ -95,7 +95,7 @@ export fn emit_str_cmp(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, pred: int) -> Resul
     let result64 = ctx.sext(result32, ctx.i64_type, "strcmp_sext")
     let zero64 = ctx.i64(0)
     let cmp = ctx.icmp(pred, result64, zero64, "scmp_cmp")
-    ok_emit_typed(ctx.zext(cmp, ctx.i64_type, "scmp_ext"), .Bool)
+    ok_emit(ctx.zext(cmp, ctx.i64_type, "scmp_ext"), .Bool)
 }
 
 export fn emit_str_eq(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, invert: bool) -> Result<EmitValue, string> {
@@ -104,6 +104,6 @@ export fn emit_str_eq(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, invert: bool) -> Res
     let result = ctx.call("strcmp", [lhs_ptr, rhs_ptr])
     let pred = if invert { 33 } else { 32 }
     let cmp = ctx.icmp(pred, result, ctx.i64(0), "streq_cmp")
-    ok_emit_typed(ctx.zext(cmp, ctx.i64_type, "streq_ext"), .Bool)
+    ok_emit(ctx.zext(cmp, ctx.i64_type, "streq_ext"), .Bool)
 }
 
