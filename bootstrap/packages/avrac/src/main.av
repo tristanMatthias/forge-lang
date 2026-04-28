@@ -644,7 +644,10 @@ fn main() {
                 fail("type check failed")
             }
             let mono = monomorphize(tc_result.stmts, tc_result.trait_impls)
-            if bag_has_errors(mono.bag) { fail("monomorphization failed") }
+            if bag_has_errors(mono.bag) {
+                render_bag("", "<test>", mono.bag)
+                fail("monomorphization failed")
+            }
 
             // Step 5: Emit object + link + run
             let build_dir = "${project_dir}/build"

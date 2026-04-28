@@ -3,7 +3,7 @@
 // checking and before codegen. After this pass, the AST contains no
 // generic declarations — codegen sees only concrete code.
 
-use core.ast.{Expr, ExprList, sexpr, sstmt, Stmt, StmtList, ParamList, FieldList, FieldInitList, TypeList, VariantList, MatchArmList, TypeParamList, TypeNameList, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge}
+use core.ast.{Expr, ExprList, sexpr, sstmt, Stmt, StmtList, ParamList, FieldList, FieldInitList, TypeList, VariantList, MatchArmList, TypeParamList, TypeNameList, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge, SelectArmList}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_warning, span_new}
 use typeck.{TraitImplReg, type_implements_trait}
 use core.type_registry.{mangle_join, type_short_name}
@@ -532,7 +532,21 @@ fn collect_inst_stmt(stmt: Stmt, regs: GenRegs, st: CollectState) -> CollectStat
         .Match(subj, arms) -> collect_inst_arms(arms, regs, collect_inst_expr(subj, regs, st))
         .Annotated(_, inner) -> collect_inst_stmt(inner, regs, st)
         .Impl(_, methods) -> collect_inst_stmts(methods, regs, st)
+        .SpecBlock(_, body) -> collect_inst_stmts(body, regs, st)
+        .GivenBlock(_, body) -> collect_inst_stmts(body, regs, st)
+        .ThenBlock(_, cond) -> collect_inst_expr(cond, regs, st)
+        .Parallel(body) -> collect_inst_stmts(body, regs, st)
+        .Select(arms) -> collect_inst_select_arms(arms, regs, st)
+        .Const(_, _, init) -> collect_inst_expr(init, regs, st)
+        .Errdefer(body) -> collect_inst_expr(body, regs, st)
         _ -> st
+    }
+}
+
+fn collect_inst_select_arms(arms: SelectArmList, regs: GenRegs, st: CollectState) -> CollectState {
+    match arms {
+        .End -> st
+        .Node(_, channel, body, next) -> collect_inst_select_arms(next, regs, collect_inst_stmts(body, regs, collect_inst_expr(channel, regs, st)))
     }
 }
 
@@ -546,6 +560,11 @@ fn collect_inst_expr(expr: Expr, regs: GenRegs, st: CollectState) -> CollectStat
                         try_add_fn_inst(name, tp, params, args, s)
                     .End -> s
                 }
+                .QualifiedIdent(name) -> match generic_fn_lookup(regs.fns, name) {
+                    .Node(_, tp, params, _, _, _) ->
+                        try_add_fn_inst(name, tp, params, args, s)
+                    .End -> s
+                }
                 _ -> collect_inst_expr(callee, regs, s)
             }
         }
@@ -553,6 +572,11 @@ fn collect_inst_expr(expr: Expr, regs: GenRegs, st: CollectState) -> CollectStat
             let s = collect_inst_exprs(args, regs, st)
             match callee {
                 .Ident(name) -> match generic_fn_lookup(regs.fns, name) {
+                    .Node(_, tp, _, _, _, _) ->
+                        add_resolved_inst(name, tp, explicit_to_type_args(tp, type_names), s)
+                    .End -> s
+                }
+                .QualifiedIdent(name) -> match generic_fn_lookup(regs.fns, name) {
                     .Node(_, tp, _, _, _, _) ->
                         add_resolved_inst(name, tp, explicit_to_type_args(tp, type_names), s)
                     .End -> s
@@ -952,7 +976,26 @@ fn rewrite_stmt(stmt: Stmt, regs: GenRegs, insts: InstList) -> Stmt {
         .Annotated(annots, inner) -> .Annotated(annots, rewrite_stmt(inner, regs, insts))
         .Impl(name, methods) -> .Impl(name, rewrite_stmts(methods, regs, insts))
         .Defer(body) -> .Defer(rewrite_expr(body, regs, insts))
+        .Errdefer(body) -> .Errdefer(rewrite_expr(body, regs, insts))
+        .SpecBlock(name, body) -> .SpecBlock(name, rewrite_stmts(body, regs, insts))
+        .GivenBlock(name, body) -> .GivenBlock(name, rewrite_stmts(body, regs, insts))
+        .ThenBlock(name, cond) -> .ThenBlock(name, rewrite_expr(cond, regs, insts))
+        .Parallel(body) -> .Parallel(rewrite_stmts(body, regs, insts))
+        .Select(arms) -> .Select(rewrite_select_arms_mono(arms, regs, insts))
+        .Const(n, vt, init) -> .Const(n, vt, rewrite_expr(init, regs, insts))
         _ -> stmt
+    }
+}
+
+fn rewrite_select_arms_mono(arms: SelectArmList, regs: GenRegs, insts: InstList) -> SelectArmList {
+    match arms {
+        .End -> SelectArmList.End
+        .Node(binding, channel, body, next) -> SelectArmList.Node(
+            binding,
+            rewrite_expr(channel, regs, insts),
+            rewrite_stmts(body, regs, insts),
+            rewrite_select_arms_mono(next, regs, insts)
+        )
     }
 }
 
@@ -966,6 +1009,11 @@ fn rewrite_expr(expr: Expr, regs: GenRegs, insts: InstList) -> Expr {
                         .Call(.Ident(mangle_name_ordered(name, tp, infer_from_params(tp, params, args, TypeArgList.End))), new_args)
                     .End -> .Call(callee, new_args)
                 }
+                .QualifiedIdent(name) -> match generic_fn_lookup(regs.fns, name) {
+                    .Node(_, tp, params, _, _, _) ->
+                        .Call(.Ident(mangle_name_ordered(name, tp, infer_from_params(tp, params, args, TypeArgList.End))), new_args)
+                    .End -> .Call(callee, new_args)
+                }
                 _ -> .Call(rewrite_expr(callee, regs, insts), new_args)
             }
         }
@@ -974,6 +1022,11 @@ fn rewrite_expr(expr: Expr, regs: GenRegs, insts: InstList) -> Expr {
             let new_args = rewrite_expr_list(args, regs, insts)
             match callee {
                 .Ident(name) -> match generic_fn_lookup(regs.fns, name) {
+                    .Node(_, tp, _, _, _, _) ->
+                        .Call(.Ident(mangle_name_ordered(name, tp, explicit_to_type_args(tp, type_names))), new_args)
+                    .End -> .Call(callee, new_args)
+                }
+                .QualifiedIdent(name) -> match generic_fn_lookup(regs.fns, name) {
                     .Node(_, tp, _, _, _, _) ->
                         .Call(.Ident(mangle_name_ordered(name, tp, explicit_to_type_args(tp, type_names))), new_args)
                     .End -> .Call(callee, new_args)
