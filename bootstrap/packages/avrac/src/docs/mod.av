@@ -313,6 +313,33 @@ fn print_with_loc_kind(list: SymList, want_bucket: int) {
 
 // ── Symbol detail (`avra docs <name>`) ──────────────────────────────
 
+// "Did you mean?" — best-scoring sym name above threshold, or "" if
+// no candidate is plausibly close. Threshold matches @std/lsp's
+// did_you_mean default: silence beats a misleading suggestion.
+export fn suggest_similar(query: string, docs: SymList) -> string {
+    mut best_score = 199
+    mut best_name = ""
+    mut cur = docs
+    while true {
+        match cur {
+            .End -> {
+                return best_name
+            }
+            .Node(item, next) -> {
+                if is_renderable(item) {
+                    let s = fuzzy_score(query, item.name)
+                    if s > best_score {
+                        best_score = s
+                        best_name = item.name
+                    }
+                }
+                cur = next
+            }
+        }
+    }
+    best_name
+}
+
 export fn show_symbol(query: string, docs: SymList) -> bool {
     mut cur = docs
     while true {

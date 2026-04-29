@@ -22,7 +22,7 @@ mod indexer
 mod docs
 use cli.{cli_new, cli_add_command, cli_command_add_flag, cli_command_add_option, cli_command_add_arg, cli_parse, result_has_flag, result_get_option}
 use coverage.{render_coverage}
-use docs.{extract_project_docs_ast, show_overview, show_symbol, show_short, show_symbols, show_search, show_llm, validate_docs}
+use docs.{extract_project_docs_ast, show_overview, show_symbol, show_short, show_symbols, show_search, show_llm, validate_docs, suggest_similar}
 use indexer.{run_lsp_server}
 use pathutil.{basename_no_ext}
 
@@ -644,17 +644,18 @@ fn main() {
                 return
             }
             if query != "" {
-                if want_short {
-                    if !show_short(query, docs_set) {
-                        eprintln("")
-                        eprintln("  No symbol '${query}' found in project.")
-                        eprintln("  Hint: try `avra docs` for an overview.")
-                        eprintln("")
-                        exit(1)
-                    }
-                } else if !show_symbol(query, docs_set) {
+                let found = if want_short {
+                    show_short(query, docs_set)
+                } else {
+                    show_symbol(query, docs_set)
+                }
+                if !found {
+                    let suggestion = suggest_similar(query, docs_set)
                     eprintln("")
                     eprintln("  No symbol '${query}' found in project.")
+                    if suggestion != "" {
+                        eprintln("  Did you mean: ${suggestion}?")
+                    }
                     eprintln("  Hint: try `avra docs` for an overview.")
                     eprintln("")
                     exit(1)
