@@ -64,61 +64,146 @@ export enum LabelList {
     Node(label: Label, next: LabelList)
 }
 
-// ── Error codes ──
-// Each error has an enum variant. All metadata (code string, help
-// text) is returned from a single `error_def` match — one place
-// to add a new error, one line per variant.
-
+/// Compiler-emitted diagnostic code. Each variant maps to a stable
+/// F-code (string) and a help-text suggestion via `error_def`. New
+/// errors are added in three places — the variant here, the match
+/// arm in `error_def`, and (for runtime errors) a corresponding
+/// trap in runtime.c.
+///
+/// Numbering is grouped by phase per spec Axis 20:
+///   - F0001-0999 : lexer / parser
+///   - F1000-1999 : typechecker
+///   - F3000-3999 : resolver / module system
+///   - F5000-5999 : runtime traps
+///   - F9000-9998 : warnings
+///   - F9999      : internal compiler error
 export enum DiagCode {
-    // Syntax / Lexer (F0001-F0999) — ACTIVE
-    SyntaxError         // F0001 — general parse error
-    BadNumber           // F0006 — reserved: malformed number literal
-    ExpectedBlock       // F0001 — expected { block
-    MismatchedParen     // F0001 — reserved: unmatched (
-    MismatchedBracket   // F0001 — reserved: unmatched [
-    MismatchedBrace     // F0001 — unmatched {
-    ExpectedArrow       // F0001 — reserved: expected ->
-    UnterminatedString  // F0002 — unterminated string
-    UnterminatedTemplate // F0003 — unterminated template
-    ExpectedForVar      // F0001 — reserved: expected for variable
-    ExpectedIn          // F0001 — reserved: expected `in`
-    ExpectedExpression  // F0001 — expected expression
-    UnexpectedSemicolon // F0001 — stray ;
-    // Type checking (F1000-1999 per spec Axis 20) — ACTIVE
-    TypeMismatch        // F1000 — type mismatch
-    WrongArgCount       // F1001 — wrong argument count
-    CannotInferTypeParam // F1002 — generic type param unresolvable
-    // Name resolution (F3000-3999 per spec Axis 20) — ACTIVE
-    UndefinedVariable   // F3000 — undefined variable
-    ImmutableAssign     // F3001 — assign to let binding
-    // Module system (F3100-3199) — ACTIVE
-    ModuleNotFound      // F3100 — module file not found
-    ImportNotFound      // F3101 — imported name not found
-    ImportPrivate       // F3102 — imported name not exported
-    CircularImport      // F3103 — reserved: circular module dependency
-    OrphanImpl          // F3104 — impl for type not in scope
-    // Warnings (F9000-9998 per spec Axis 20) — ACTIVE
-    NonExhaustiveMatch  // F9001 — wildcard hides variants
-    UnusedImport        // F9002 — imported name never used
-    NamingConvention    // F9003 — naming convention violation
-    // Internal (F9900+) — ACTIVE
-    ICE                 // F9999 — internal compiler error
-    // Runtime errors (F5000-5999) — reserved for future runtime diagnostics
+    // ── Syntax / Lexer (F0001-F0999) ────────────────────────────────
+    /// F0001 — general parse error. Emitted when the parser hits a
+    /// token it cannot fit into any grammar rule. Specific shapes
+    /// (mismatched brace, missing arrow) get their own variants.
+    SyntaxError
+    /// F0006 — malformed numeric literal (e.g. `1.2.3`, `123abc`).
+    BadNumber
+    /// F0010 — expected a `{` block but saw something else (e.g.
+    /// `if cond expr` instead of `if cond { expr }`).
+    ExpectedBlock
+    /// F0011 — `(` opened but never closed by `)` — usually a missing
+    /// argument or paren in an expression.
+    MismatchedParen
+    /// F0012 — `[` opened but never closed by `]` — list literal or
+    /// index expression missing its closer.
+    MismatchedBracket
+    /// F0013 — `{` opened but never closed by `}` — block, struct
+    /// literal, or map literal missing its closer.
+    MismatchedBrace
+    /// F0014 — match arm or fn return type missing the `->` separator.
+    ExpectedArrow
+    /// F0002 — string literal opened with `"` but EOF reached before a
+    /// closing `"`. Often caused by a stray newline inside `"..."`
+    /// (multiline strings need `"""..."""`).
+    UnterminatedString
+    /// F0003 — template string opened with backtick but never closed,
+    /// or a `${` expression inside ran to EOF.
+    UnterminatedTemplate
+    /// F0030 — `for` keyword without a binding name: `for in xs` or
+    /// `for { }`.
+    ExpectedForVar
+    /// F0031 — `for x ...` without the `in` keyword separating the
+    /// variable from the collection / range.
+    ExpectedIn
+    /// F0040 — parser expected an expression value (RHS of `=`, arg to
+    /// a call, etc.) but saw a statement keyword or punctuator.
+    ExpectedExpression
+    /// F0041 — stray `;`. Avra is newline-sensitive and has no
+    /// statement terminator; semicolons mean nothing here.
+    UnexpectedSemicolon
+    // ── Type checking (F1000-1999) ──────────────────────────────────
+    /// F1000 — incompatible types in expression / assignment. The
+    /// most common typecheck error.
+    TypeMismatch
+    /// F1001 — function call with wrong number of arguments. The
+    /// typechecker compares against the declared signature.
+    WrongArgCount
+    /// F1002 — generic call where T can't be inferred from the
+    /// arguments. Add explicit type args (`f::<int>(x)`) or pass a
+    /// value whose type pins T.
+    CannotInferTypeParam
+    // ── Name resolution (F3000-3999) ────────────────────────────────
+    /// F3000 — name not in scope. Either a typo, missing `use`, or
+    /// reference to a private symbol.
+    UndefinedVariable
+    /// F3001 — assignment to a `let` binding. `let` is immutable;
+    /// declare with `mut` for reassignable bindings.
+    ImmutableAssign
+    /// F3100 — `mod foo` declared but no `foo.av` / `foo/mod.av`
+    /// found relative to the current module.
+    ModuleNotFound
+    /// F3101 — `use mod.{name}` where `name` doesn't exist in `mod`.
+    /// Either misspelled or `mod` doesn't export it.
+    ImportNotFound
+    /// F3102 — `use mod.{name}` where `name` exists but lacks the
+    /// `export` modifier — visible from `mod` but not to importers.
+    ImportPrivate
+    /// F3103 — module A `use`s B which (transitively) `use`s A. The
+    /// resolver detects the cycle before it loops forever.
+    CircularImport
+    /// F3104 — `impl Trait for Type` where neither Trait nor Type is
+    /// declared in the current module's scope. Required by the
+    /// orphan rule for trait-impl coherence.
+    OrphanImpl
+    // ── Warnings (F9000-9998) ───────────────────────────────────────
+    /// F9001 — `match` whose wildcard `_` arm hides more than two
+    /// uncovered variants. Style nudge — add explicit arms or
+    /// acknowledge with a comment.
+    NonExhaustiveMatch
+    /// F9002 — name imported via `use ...{name}` but never referenced
+    /// in the file. Silently dead; remove or use it.
+    UnusedImport
+    /// F9003 — identifier doesn't follow the project naming
+    /// convention (PascalCase types, snake_case fns/vars,
+    /// SCREAMING_SNAKE constants).
+    NamingConvention
+    // ── Internal (F9999) ────────────────────────────────────────────
+    /// F9999 — internal compiler error. Compiler invariant violated;
+    /// the bug is in the compiler, not the user's code. Report.
+    ICE
+    // ── Runtime traps (F5000-5999) ──────────────────────────────────
+    /// F5000 — null dereference at runtime. Compiled code touched a
+    /// null pointer (typically a dropped Option-wrap).
     RuntimeNullDeref
+    /// F5001 — integer or float divide-by-zero at runtime.
     RuntimeDivByZero
+    /// F5002 — list / string / map index out of bounds at runtime.
     RuntimeIndexOOB
+    /// F5003 — `match` reached the end of its arms without binding —
+    /// usually means a non-exhaustive pattern matched against an
+    /// unexpected variant.
     RuntimeMatchFallthrough
+    /// F5004 — call stack exceeded its depth limit at runtime —
+    /// usually unbounded recursion.
     RuntimeStackOverflow
+    /// F5005 — function argument was null where the parameter type
+    /// guaranteed non-null. Emitted by `--debug-null` instrumentation.
     RuntimeNullArg
 }
 
+/// Static metadata for a DiagCode: the stable F-code string surfaced
+/// to users and tools, and a human-readable help suggestion. Kept in
+/// one record so `avra explain Fxxxx` and the renderer share their
+/// source of truth.
+/// @field code — F-code identifier, stable across versions (used by
+///                CI greps and the language reference).
+/// @field help — one-line user-facing suggestion, may be empty for
+///                phase-internal codes still being refined.
 export type ErrorDef = { code: string, help: string }
 
-// Single source of truth for all error metadata.
-// Add a new error = 1 enum variant + 1 match arm here.
+/// Single source of truth for all error metadata. Add a new error in
+/// three places: a DiagCode variant, a match arm here, and (for
+/// runtime traps) a corresponding handler in runtime.c.
 export fn error_def(d: DiagCode) -> ErrorDef {
     match d {
-        .SyntaxError         -> ErrorDef { code: "F0001", help: "" }
+        .SyntaxError         -> ErrorDef { code: "F0001", help: "check the surrounding tokens — the parser couldn't fit them into any grammar rule" }
         .BadNumber           -> ErrorDef { code: "F0006", help: "check the number literal — only digits, `_` separators, and one `.` for floats" }
         .ExpectedBlock       -> ErrorDef { code: "F0010", help: "blocks require braces: `if cond { ... }`, `fn name() { ... }`" }
         .MismatchedParen     -> ErrorDef { code: "F0011", help: "check for mismatched parentheses" }
@@ -131,10 +216,10 @@ export fn error_def(d: DiagCode) -> ErrorDef {
         .ExpectedIn          -> ErrorDef { code: "F0031", help: "for loops use `in`: `for x in list { ... }` or `for i in 0..10 { ... }`" }
         .ExpectedExpression  -> ErrorDef { code: "F0040", help: "expected a value, variable, or expression here" }
         .UnexpectedSemicolon -> ErrorDef { code: "F0041", help: "Avra doesn't use semicolons — remove the `;`" }
-        .TypeMismatch        -> ErrorDef { code: "F1000", help: "" }
-        .WrongArgCount       -> ErrorDef { code: "F1001", help: "" }
+        .TypeMismatch        -> ErrorDef { code: "F1000", help: "the value's type doesn't match what's expected — coerce explicitly or change one side" }
+        .WrongArgCount       -> ErrorDef { code: "F1001", help: "check the function's declared arity against the call site" }
         .CannotInferTypeParam -> ErrorDef { code: "F1002", help: "add explicit type arguments, or ensure the type can be inferred from the arguments" }
-        .UndefinedVariable   -> ErrorDef { code: "F3000", help: "" }
+        .UndefinedVariable   -> ErrorDef { code: "F3000", help: "name not in scope — check spelling, add a `use` import, or declare it" }
         .ImmutableAssign     -> ErrorDef { code: "F3001", help: "declare with `mut` instead of `let` to allow reassignment" }
         .ModuleNotFound      -> ErrorDef { code: "F3100", help: "create the module file or remove the `mod` declaration" }
         .ImportNotFound      -> ErrorDef { code: "F3101", help: "check the spelling or add `export` to the function in the target module" }
@@ -145,32 +230,40 @@ export fn error_def(d: DiagCode) -> ErrorDef {
         .UnusedImport        -> ErrorDef { code: "F9002", help: "remove unused imports to keep code clean" }
         .NamingConvention    -> ErrorDef { code: "F9003", help: "use PascalCase for types, snake_case for functions/variables, SCREAMING_SNAKE for constants" }
         .ICE                 -> ErrorDef { code: "F9999", help: "this is a compiler bug — please report it at https://github.com/avra-lang/avra/issues" }
-        .RuntimeNullDeref    -> ErrorDef { code: "F5000", help: "" }
-        .RuntimeDivByZero    -> ErrorDef { code: "F5001", help: "" }
-        .RuntimeIndexOOB     -> ErrorDef { code: "F5002", help: "" }
-        .RuntimeMatchFallthrough -> ErrorDef { code: "F5003", help: "" }
-        .RuntimeStackOverflow -> ErrorDef { code: "F5004", help: "" }
-        .RuntimeNullArg      -> ErrorDef { code: "F5005", help: "" }
+        .RuntimeNullDeref    -> ErrorDef { code: "F5000", help: "code dereferenced a null pointer — check optional unwraps and trait casts" }
+        .RuntimeDivByZero    -> ErrorDef { code: "F5001", help: "guard the divisor: `if denom != 0 { num / denom } else { default }`" }
+        .RuntimeIndexOOB     -> ErrorDef { code: "F5002", help: "check `idx < list.length` before indexing, or use `list[start..end]` for a safe slice" }
+        .RuntimeMatchFallthrough -> ErrorDef { code: "F5003", help: "match was non-exhaustive — add the missing arm or a wildcard `_`" }
+        .RuntimeStackOverflow -> ErrorDef { code: "F5004", help: "call depth exceeded — usually unbounded recursion; add a base case or convert to a loop" }
+        .RuntimeNullArg      -> ErrorDef { code: "F5005", help: "non-null parameter received null — check the call site, or mark the parameter `T?`" }
     }
 }
 
+/// Convenience accessor: just the F-code string for a DiagCode.
 export fn diag_code_str(code: DiagCode) -> string {
     error_def(code).code
 }
 
+/// Convenience accessor: just the help-text string for a DiagCode.
+/// May be empty when the code's help text hasn't been written yet.
 export fn diag_code_help(code: DiagCode) -> string {
     error_def(code).help
 }
 
-// ── Suggestion confidence ──
-// High = auto-fixable, Medium = likely correct, Low = speculative.
-
+/// How sure the compiler is about a suggested fix. Drives whether
+/// `--fix` will apply the suggestion automatically (High only) and
+/// how the renderer surfaces it.
 export enum Confidence {
+    /// Auto-fixable — the suggestion is the unambiguous correct change.
     High
+    /// Likely correct, but worth a human glance before applying.
     Medium
+    /// Speculative — surfaced as a hint, never auto-applied.
     Low
 }
 
+/// Render Confidence as the lowercase tag used in the JSON
+/// diagnostic output and CLI rendering.
 export fn confidence_str(c: Confidence) -> string {
     match c {
         .High -> "high"
@@ -179,70 +272,97 @@ export fn confidence_str(c: Confidence) -> string {
     }
 }
 
-// ── Causality chain ──
-// Optional cause chain linking related diagnostics (e.g. "undefined
-// variable" caused by "missing import").
-
+/// Optional causality chain — a Diagnostic can point at the upstream
+/// Diagnostic that caused it (e.g. "undefined variable" caused by
+/// "missing import"), so the renderer can show the chain.
 export enum DiagnosticCause {
     None
     Cause(diag: Diagnostic)
 }
 
-// ── Diagnostic ──
-
+/// A single diagnostic — error, warning, or info — emitted by the
+/// compiler. All user-facing problems travel through this record so
+/// the renderer can format them uniformly.
+/// @field code       — DiagCode the message is attached to.
+/// @field severity   — error/warning/info, drives exit status + colour.
+/// @field message    — short, contextual, one-line diagnosis.
+/// @field span       — source range; renderer shows the span underlined.
+/// @field help       — suggestion (empty = fall back to error_def).
+/// @field confidence — drives the auto-fix gate.
+/// @field cause      — optional upstream diagnostic that caused this one.
 export type Diagnostic = {
     code: DiagCode,
     severity: Severity,
     message: string,
     span: Span,
-    help: string,       // empty string = use default from code
+    help: string,
     confidence: Confidence,
     cause: DiagnosticCause,
 }
 
-// Create an error diagnostic. Help text auto-filled from the code.
+/// Construct an error-severity Diagnostic. Help text auto-fills from
+/// the code's `error_def` — override later via `diag_with_help`.
 export fn diag_error(code: DiagCode, message: string, span: Span) -> Diagnostic {
     Diagnostic { code, severity: Severity.Error, message, span, help: diag_code_help(code), confidence: Confidence.High, cause: DiagnosticCause.None }
 }
 
+/// Construct a warning-severity Diagnostic. Same auto-fill as
+/// `diag_error` — warnings go through `bag_report` like errors but
+/// don't cause `bag_has_errors` to fire.
 export fn diag_warning(code: DiagCode, message: string, span: Span) -> Diagnostic {
     Diagnostic { code, severity: Severity.Warning, message, span, help: diag_code_help(code), confidence: Confidence.High, cause: DiagnosticCause.None }
 }
 
+/// Override the help-text on an existing Diagnostic. Useful when a
+/// callsite knows a more specific suggestion than the default.
 export fn diag_with_help(d: Diagnostic, help: string) -> Diagnostic {
     d with { help }
 }
 
+/// Override the confidence level. Lower the confidence when a
+/// suggestion is speculative ("did you mean X?") so `--fix` won't
+/// apply it automatically.
 export fn diag_with_confidence(d: Diagnostic, c: Confidence) -> Diagnostic {
     d with { confidence: c }
 }
 
+/// Attach an upstream Diagnostic as the cause. The renderer shows it
+/// indented underneath the primary, making causality chains visible.
 export fn diag_with_cause(d: Diagnostic, cause_diag: Diagnostic) -> Diagnostic {
     d with { cause: DiagnosticCause.Cause(cause_diag) }
 }
 
-// Create an ICE diagnostic for internal compiler errors.
+/// Construct an ICE — internal compiler error — diagnostic. Used
+/// when a compiler invariant fails; the bug is in the compiler, not
+/// the user's code.
 export fn diag_ice(message: string) -> Diagnostic {
     Diagnostic { code: DiagCode.ICE, severity: Severity.Error, message, span: span_dummy(), help: diag_code_help(DiagCode.ICE), confidence: Confidence.High, cause: DiagnosticCause.None }
 }
 
-// ── DiagnosticBag ──
-
+/// Linked list of Diagnostic. The cons-list shape lets each pass
+/// prepend in O(1) without mutating the upstream's view.
 export enum DiagnosticList {
     End
     Node(diag: Diagnostic, next: DiagnosticList)
 }
 
+/// Accumulator for diagnostics emitted during compilation. Carries
+/// the running list plus pre-computed error/warning counts so
+/// `bag_has_errors` is O(1) — important when each pass merges its
+/// own bag at the end.
 export type DiagnosticBag = {
     diagnostics: DiagnosticList,
     error_count: int,
     warning_count: int,
 }
 
+/// Empty bag — every pass starts here and grows it via `bag_report`.
 export fn bag_new() -> DiagnosticBag {
     DiagnosticBag { diagnostics: DiagnosticList.End, error_count: 0, warning_count: 0 }
 }
 
+/// Append `diag` to the bag. Updates the appropriate counter so the
+/// `_has_errors` / `_has_warnings` checks stay O(1).
 export fn bag_report(bag: DiagnosticBag, diag: Diagnostic) -> DiagnosticBag {
     let new_errors = match diag.severity {
         .Error -> bag.error_count + 1
@@ -259,16 +379,21 @@ export fn bag_report(bag: DiagnosticBag, diag: Diagnostic) -> DiagnosticBag {
     }
 }
 
+/// True iff at least one Error-severity diagnostic has been reported.
+/// Drives the compile-pipeline gate (don't proceed past failed pass).
 export fn bag_has_errors(bag: DiagnosticBag) -> bool {
     bag.error_count > 0
 }
 
+/// True iff at least one Warning-severity diagnostic has been reported.
+/// Used by `--warnings-as-errors` and the test runner's strict mode.
 export fn bag_has_warnings(bag: DiagnosticBag) -> bool {
     bag.warning_count > 0
 }
 
+/// Concatenate two bags. Used between phases to roll up per-pass
+/// diagnostics into one program-level bag for rendering.
 export fn bag_merge(a: DiagnosticBag, b: DiagnosticBag) -> DiagnosticBag {
-    // Prepend all of b's diagnostics onto a
     merge_lists(a, b.diagnostics, b.error_count, b.warning_count)
 }
 

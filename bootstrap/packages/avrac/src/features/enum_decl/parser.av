@@ -26,6 +26,13 @@ impl Parser {
     }
 
     fn parse_variant_list(self) -> VariantList? {
+        // Skip any /// doc comments preceding this variant. We don't
+        // attach them to variants yet (would require widening
+        // VariantList) — but allowing them keeps inline-documented
+        // enums (e.g. DiagCode) parseable today.
+        while self.check(Tk.DocComment) {
+            self.advance()
+        }
         if self.check(Tk.RightBrace) {
             return VariantList.End
         }
@@ -48,12 +55,12 @@ impl Parser {
         }
         // Accept either comma-separated OR newline-separated
         // variants. After consuming the optional comma, if we
-        // immediately see a `}` we're done. Otherwise, the next
-        // identifier starts another variant.
+        // immediately see a `}` we're done. /// doc comments before
+        // the next variant are skipped (see parse_variant_list).
         if self.check(Tk.RightBrace) {
             return VariantList.Node(name, fields, VariantList.End)
         }
-        if self.check(Tk.Identifier) {
+        if self.check(Tk.Identifier) || self.check(Tk.DocComment) {
             let rest = self.parse_variant_list()?
             return VariantList.Node(name, fields, rest)
         }
