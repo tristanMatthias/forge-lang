@@ -853,7 +853,10 @@ export fn query_callees(calls: CallList, caller_qualified: string) -> CallList {
     collect_edges_from(calls, caller_qualified)
 }
 
-fn collect_edges_to(list: CallList, target: string) -> CallList {
+// One traversal helper for every "filter call edges by predicate"
+// case. Order is reversed (insertion order); callers that need
+// stable ordering should reverse externally.
+fn call_list_filter(list: CallList, pred: fn(CallEdge) -> bool) -> CallList {
     mut acc = CallList.End
     mut cur = list
     while true {
@@ -862,7 +865,7 @@ fn collect_edges_to(list: CallList, target: string) -> CallList {
                 return acc
             }
             .Node(edge, next) -> {
-                if edge.callee == target {
+                if pred(edge) {
                     acc = CallList.Node(edge, acc)
                 }
                 cur = next
@@ -872,23 +875,12 @@ fn collect_edges_to(list: CallList, target: string) -> CallList {
     CallList.End
 }
 
+fn collect_edges_to(list: CallList, target: string) -> CallList {
+    call_list_filter(list, (edge: CallEdge) -> edge.callee == target)
+}
+
 fn collect_edges_from(list: CallList, caller: string) -> CallList {
-    mut acc = CallList.End
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return acc
-            }
-            .Node(edge, next) -> {
-                if edge.caller == caller {
-                    acc = CallList.Node(edge, acc)
-                }
-                cur = next
-            }
-        }
-    }
-    CallList.End
+    call_list_filter(list, (edge: CallEdge) -> edge.caller == caller)
 }
 
 fn edges_to_caller_syms(g: SymbolGraph, edges: CallList, acc: SymList) -> SymList {
