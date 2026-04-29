@@ -1,15 +1,25 @@
-// WHY: bootstrap port of the Rust `compiler docs` command.
+// `avra docs` — project documentation rendered from the @std/lsp
+// SymbolGraph.
 //
-// Walks .av source files in a project, extracts `///` doc comments
-// attached to the next declaration, and renders project-wide docs.
-// Mirrors forge/packages/forgec-rust/docs.rs but operates over a
-// single DocSymList instead of four typed lists, since Avra's linked-list
-// boilerplate would otherwise dwarf the actual logic.
+// History: this file used to carry a private `DocSym` shape adapted
+// from the original line-based regex extractor. Ticket
+// forge-crafting-intepreters-ovm8.1 collapsed that — the renderer now
+// reads @std/lsp's portable `Sym` records directly, so symbol shape
+// stays consistent across the docs CLI, future LSP server, and any
+// other consumer.
 //
-// Recognised declarations: `fn`, `type`, `enum`, `let`/`mut`/`const`.
-// `export ` prefix is detected and recorded.
-// Doc blocks containing `expect:` / `expect-error:` are treated as
-// spec-test fixtures and skipped, matching the Rust extractor.
+// Pipeline:
+//   parse each .av in PWD → indexer.extract_from_ast → SymList
+//   renderers below filter / format / paginate that list
+//
+// Renderer surface (kept compatible with the prior CLI flags):
+//   show_overview        avra docs                (no args)
+//   show_symbol          avra docs <name>
+//   show_short           avra docs --short <name>
+//   show_symbols         avra docs --symbols
+//   show_search          avra docs --search <q>
+//   show_llm             avra docs --llm
+//   validate_docs        avra docs --validate
 
 use core.runtime.{avra_selfhost_read_file, avra_shell_exec}
 use parse.{parse_program_source}
@@ -19,172 +29,69 @@ use render.{bold, dim, cyan, green, yellow, red,
             pad_right, truncate_str, rule, first_line, icase_eq, pct}
 use pathutil.{relativise}
 
-// ── Types ───────────────────────────────────────────────────────────
+// ── Project walk ─────────────────────────────────────────────────────
 
-// kind: 1=fn, 2=type, 3=enum, 4=var
-export type DocSym = {
-    kind: int,
-    name: string,
-    sig: string,
-    variants: string,
-    doc: string,
-    file: string,
-    line: int,
-    exported: int,
-    var_kind: string
-}
-
-export enum DocSymList {
-    End
-    Node(item: DocSym, next: DocSymList)
-}
-
-// ── AST-based extractor ─────────────────────────────────────────────
-//
-// Replaces the line-based regex extractor above with one that runs
-// the real parser and walks the AST through @std/lsp's indexer. Wins:
-//   - Multiline decls work (the regex extractor read only the first line).
-//   - Generic params, return types, field types come from the parser
-//     instead of re-parsing source.
-//   - /// → @doc desugaring is shared with the rest of the toolchain.
-//
-// The CLI keeps its existing DocSymList-based renderers; this function
-// adapts std-lsp's portable Sym shape into DocSym for the renderer.
-// Eventual cleanup (epic forge-crafting-intepreters-ovm8.1) collapses
-// DocSym entirely once the renderers are refactored to consume Sym
-// directly.
-
-export fn extract_project_docs_ast(dir: string) -> DocSymList {
+export fn extract_project_docs_ast(dir: string) -> SymList {
     let cmd = "find ${dir} -name '*.av' -type f -not -path '*/build/*' -not -path '*/.beads/*' -not -path '*/seed/*' 2>/dev/null | sort"
     let files_text = avra_shell_exec(cmd)
-    if files_text == "" { return DocSymList.End }
+    if files_text == "" { return SymList.End }
 
-    mut all = DocSymList.End
+    mut all = SymList.End
     for path in files_text.split("\n") {
         if path == "" { continue }
         let content = avra_selfhost_read_file(path)
         if content == "" { continue }
-        let rel = relativise(path, dir)
         let parsed = parse_program_source(content)
         if parsed.had_error || parsed.stmts == null {
-            // Skip files that don't parse; tooling shouldn't fail on
-            // a syntactically broken source file. The compiler's
-            // primary error path will surface the parse error in
-            // its own time.
+            // Tooling shouldn't fail on a syntactically broken
+            // source file; the compiler's primary error path will
+            // surface the parse error in its own time.
             continue
         }
-        let lsp_syms = extract_from_ast(parsed.stmts!, rel)
-        let doc_syms = lsp_syms_to_doc(lsp_syms)
-        all = append_syms(all, doc_syms)
+        let rel = relativise(path, dir)
+        let file_syms = extract_from_ast(parsed.stmts!, rel)
+        all = sym_list_append(file_syms, all)
     }
     all
 }
 
-// Adapter: every variant of std-lsp's SymKind maps to one of the
-// DocSym kind ints. The renderer below dispatches on those ints.
-fn lsp_syms_to_doc(list: SymList) -> DocSymList {
-    mut acc = DocSymList.End
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return reverse_doc_syms(acc)
-            }
-            .Node(s, next) -> {
-                let converted = lsp_sym_to_doc(s)
-                if converted.kind != 0 {
-                    acc = DocSymList.Node(converted, acc)
-                }
-                cur = next
-            }
-        }
-    }
-    DocSymList.End
-}
-
-fn lsp_sym_to_doc(s: Sym) -> DocSym {
-    let exp = if s.exported { 1 } else { 0 }
-    match s.kind {
-        .Fn(sig, _) -> DocSym {
-            kind: 1, name: s.name, sig, variants: "",
-            doc: s.doc, file: s.file, line: s.span.start.line,
-            exported: exp, var_kind: ""
-        }
-        .Type(rendered) -> DocSym {
-            kind: 2, name: s.name, sig: rendered, variants: "",
-            doc: s.doc, file: s.file, line: s.span.start.line,
-            exported: exp, var_kind: ""
-        }
-        .Enum(csv) -> DocSym {
-            kind: 3, name: s.name, sig: "enum ${s.name}", variants: csv,
-            doc: s.doc, file: s.file, line: s.span.start.line,
-            exported: exp, var_kind: ""
-        }
-        .Const(ty) -> DocSym {
-            kind: 4, name: s.name, sig: const_sig("const", s.name, ty),
-            variants: "", doc: s.doc, file: s.file, line: s.span.start.line,
-            exported: exp, var_kind: "const"
-        }
-        .Mut(ty) -> DocSym {
-            kind: 4, name: s.name, sig: const_sig("mut", s.name, ty),
-            variants: "", doc: s.doc, file: s.file, line: s.span.start.line,
-            exported: exp, var_kind: "mut"
-        }
-        .Let(ty) -> DocSym {
-            kind: 4, name: s.name, sig: const_sig("let", s.name, ty),
-            variants: "", doc: s.doc, file: s.file, line: s.span.start.line,
-            exported: exp, var_kind: "let"
-        }
-        // Trait, Impl, ErrorCode, Keyword, Module are surfaced by
-        // future docs flags but the existing renderer only knows
-        // about fn/type/enum/var. Drop them via kind=0 so the
-        // skipping rule in lsp_syms_to_doc filters them out.
-        _ -> DocSym {
-            kind: 0, name: "", sig: "", variants: "",
-            doc: "", file: "", line: 0, exported: 0, var_kind: ""
-        }
-    }
-}
-
-fn const_sig(kind_str: string, name: string, ty: string) -> string {
-    if ty == "" || ty == "<unknown>" {
-        "${kind_str} ${name}"
-    } else {
-        "${kind_str} ${name}: ${ty}"
-    }
-}
-
-fn reverse_doc_syms(list: DocSymList) -> DocSymList {
-    mut acc = DocSymList.End
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return acc
-            }
-            .Node(item, next) -> {
-                acc = DocSymList.Node(item, acc)
-                cur = next
-            }
-        }
-    }
-    DocSymList.End
-}
-
-fn append_syms(a: DocSymList, b: DocSymList) -> DocSymList {
+fn sym_list_append(a: SymList, b: SymList) -> SymList {
     match a {
         .End -> b
-        .Node(item, next) -> DocSymList.Node(item, append_syms(next, b))
+        .Node(item, next) -> SymList.Node(item, sym_list_append(next, b))
     }
 }
 
-// ── List helpers ────────────────────────────────────────────────────
+// ── Kind classification ─────────────────────────────────────────────
+//
+// Renderers group symbols into four buckets matching the prior CLI
+// output: Functions / Types / Enums / Constants. The prior code used
+// a `kind: int` discriminant; we now derive the bucket from SymKind.
+// A 0-bucket means "skip in the renderer" (Trait / Impl / ErrorCode /
+// Keyword / Module — surfaced by future flags).
 
-// One traversal helper for every "count items matching predicate"
-// case. Replaces four near-identical loops with four one-line
-// closures. Predicate is a closure so each call site states its
-// rule inline.
-fn count_doc_syms(list: DocSymList, pred: fn(DocSym) -> bool) -> int {
+fn bucket_of(s: Sym) -> int {
+    match s.kind {
+        .Fn(_, _) -> 1
+        .Type(_) -> 2
+        .Enum(_) -> 3
+        .Const(_) -> 4
+        .Mut(_) -> 4
+        .Let(_) -> 4
+        _ -> 0
+    }
+}
+
+fn is_fn(s: Sym) -> bool { bucket_of(s) == 1 }
+fn is_type(s: Sym) -> bool { bucket_of(s) == 2 }
+fn is_enum(s: Sym) -> bool { bucket_of(s) == 3 }
+fn is_var(s: Sym) -> bool { bucket_of(s) == 4 }
+fn is_renderable(s: Sym) -> bool { bucket_of(s) != 0 }
+fn has_doc(s: Sym) -> bool { s.doc != "" }
+
+// ── List traversal ──────────────────────────────────────────────────
+
+fn count_syms(list: SymList, pred: fn(Sym) -> bool) -> int {
     mut cur = list
     mut n = 0
     while true {
@@ -199,25 +106,137 @@ fn count_doc_syms(list: DocSymList, pred: fn(DocSym) -> bool) -> int {
     n
 }
 
-fn count_kind(list: DocSymList, kind: int) -> int {
-    count_doc_syms(list, (item: DocSym) -> item.kind == kind)
+fn count_total(list: SymList) -> int {
+    count_syms(list, is_renderable)
 }
 
-fn count_total(list: DocSymList) -> int {
-    count_doc_syms(list, (_: DocSym) -> true)
+fn count_documented(list: SymList) -> int {
+    mut cur = list
+    mut n = 0
+    while true {
+        match cur {
+            .End -> return n
+            .Node(item, next) -> {
+                if is_renderable(item) && has_doc(item) { n = n + 1 }
+                cur = next
+            }
+        }
+    }
+    n
 }
 
-fn count_documented(list: DocSymList) -> int {
-    count_doc_syms(list, (item: DocSym) -> item.doc != "")
+fn count_documented_in(list: SymList, want_bucket: int) -> int {
+    mut cur = list
+    mut n = 0
+    while true {
+        match cur {
+            .End -> return n
+            .Node(item, next) -> {
+                if bucket_of(item) == want_bucket && has_doc(item) {
+                    n = n + 1
+                }
+                cur = next
+            }
+        }
+    }
+    n
 }
 
-fn count_documented_kind(list: DocSymList, kind: int) -> int {
-    count_doc_syms(list, (item: DocSym) -> item.kind == kind && item.doc != "")
+fn count_in_bucket(list: SymList, want_bucket: int) -> int {
+    mut cur = list
+    mut n = 0
+    while true {
+        match cur {
+            .End -> return n
+            .Node(item, next) -> {
+                if bucket_of(item) == want_bucket { n = n + 1 }
+                cur = next
+            }
+        }
+    }
+    n
 }
 
-// ── Overview ────────────────────────────────────────────────────────
+// ── Rendering ────────────────────────────────────────────────────────
 
-export fn show_overview(docs: DocSymList) {
+// Header for the summary view: signature for fns, "type Name" for
+// types, "name { variants }" for enums, "kind name: type" for vars.
+fn summary_head(s: Sym) -> string {
+    match s.kind {
+        .Fn(sig, _) -> sig
+        .Type(_) -> s.name
+        .Enum(csv) -> {
+            if csv == "" {
+                s.name
+            } else {
+                let vs = "{ ${csv} }"
+                "${s.name}  ${dim(vs)}"
+            }
+        }
+        .Const(ty) -> var_signature("const", s.name, ty)
+        .Mut(ty) -> var_signature("mut", s.name, ty)
+        .Let(ty) -> var_signature("let", s.name, ty)
+        _ -> s.name
+    }
+}
+
+// "type Foo" / "enum Bar" / fn signature — used by --symbols and the
+// detail view.
+fn declaration_line(s: Sym) -> string {
+    match s.kind {
+        .Fn(sig, _) -> sig
+        .Type(_) -> "type ${s.name}"
+        .Enum(_) -> "enum ${s.name}"
+        .Const(ty) -> var_signature("const", s.name, ty)
+        .Mut(ty) -> var_signature("mut", s.name, ty)
+        .Let(ty) -> var_signature("let", s.name, ty)
+        _ -> s.name
+    }
+}
+
+fn var_signature(kind_str: string, name: string, ty: string) -> string {
+    if ty == "" || ty == "<unknown>" {
+        "${kind_str} ${name}"
+    } else {
+        "${kind_str} ${name}: ${ty}"
+    }
+}
+
+fn export_tag(s: Sym) -> string {
+    if s.exported { dim(" [export]") } else { "" }
+}
+
+fn print_summary_row(s: Sym) {
+    let head = summary_head(s)
+    let preview = first_line(s.doc)
+    if preview == "" {
+        println("    ${head}${export_tag(s)}")
+    } else {
+        let head_padded = pad_right(head, 44)
+        println("    ${head_padded} ${dim(truncate_str(preview, 30))}${export_tag(s)}")
+    }
+}
+
+fn print_summary_kind(list: SymList, want_bucket: int) {
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return
+            }
+            .Node(item, next) -> {
+                if bucket_of(item) == want_bucket {
+                    print_summary_row(item)
+                }
+                cur = next
+            }
+        }
+    }
+}
+
+// ── Overview (`avra docs`) ──────────────────────────────────────────
+
+export fn show_overview(docs: SymList) {
     println("")
     println("  ${bold("avra docs")} ${dim("—")} Project Documentation")
     println("  ${dim(rule(37))}")
@@ -230,34 +249,34 @@ export fn show_overview(docs: DocSymList) {
         return
     }
 
-    let n_fns = count_kind(docs, 1)
-    let n_types = count_kind(docs, 2)
-    let n_enums = count_kind(docs, 3)
-    let n_vars = count_kind(docs, 4)
+    let n_fns = count_in_bucket(docs, 1)
+    let n_types = count_in_bucket(docs, 2)
+    let n_enums = count_in_bucket(docs, 3)
+    let n_vars = count_in_bucket(docs, 4)
 
     if n_fns > 0 {
         println("")
         println("  ${bold("Functions")} (${string(n_fns)})")
         println("")
-        print_kind_summary(docs, 1)
+        print_summary_kind(docs, 1)
     }
     if n_types > 0 {
         println("")
         println("  ${bold("Types")} (${string(n_types)})")
         println("")
-        print_kind_summary(docs, 2)
+        print_summary_kind(docs, 2)
     }
     if n_enums > 0 {
         println("")
         println("  ${bold("Enums")} (${string(n_enums)})")
         println("")
-        print_kind_summary(docs, 3)
+        print_summary_kind(docs, 3)
     }
     if n_vars > 0 {
         println("")
         println("  ${bold("Constants")} (${string(n_vars)})")
         println("")
-        print_kind_summary(docs, 4)
+        print_summary_kind(docs, 4)
     }
 
     let total = count_total(docs)
@@ -273,72 +292,32 @@ export fn show_overview(docs: DocSymList) {
     println("")
 }
 
-fn summary_head(item: DocSym) -> string {
-    if item.kind == 3 && item.variants != "" {
-        let vs = "{ ${item.variants} }"
-        return "${item.name}  ${dim(vs)}"
-    }
-    if item.kind == 2 {
-        return item.name
-    }
-    return item.sig
-}
+// ── --symbols (flat reference with locations) ───────────────────────
 
-fn print_summary_one(item: DocSym) {
-    let head = summary_head(item)
-    let export_tag = if item.exported == 1 { dim(" [export]") } else { "" }
-    let preview = first_line(item.doc)
-    if preview == "" {
-        println("    ${head}${export_tag}")
-    } else {
-        let head_padded = pad_right(head, 44)
-        println("    ${head_padded} ${dim(truncate_str(preview, 30))}${export_tag}")
-    }
-}
-
-fn print_kind_summary(list: DocSymList, kind: int) {
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return
-            }
-            .Node(item, next) -> {
-                if item.kind == kind {
-                    print_summary_one(item)
-                }
-                cur = next
-            }
-        }
-    }
-}
-
-// ── Symbols listing (--symbols) ────────────────────────────────────
-
-export fn show_symbols(docs: DocSymList) {
+export fn show_symbols(docs: SymList) {
     println("")
     println("  ${bold("Symbol Reference")}")
     println("  ${dim(rule(16))}")
     println("")
 
-    if count_kind(docs, 1) > 0 {
+    if count_in_bucket(docs, 1) > 0 {
         println("  ${bold("Functions")}")
-        print_kind_with_loc(docs, 1)
+        print_with_loc_kind(docs, 1)
         println("")
     }
-    if count_kind(docs, 2) > 0 {
+    if count_in_bucket(docs, 2) > 0 {
         println("  ${bold("Types")}")
-        print_kind_with_loc(docs, 2)
+        print_with_loc_kind(docs, 2)
         println("")
     }
-    if count_kind(docs, 3) > 0 {
+    if count_in_bucket(docs, 3) > 0 {
         println("  ${bold("Enums")}")
-        print_kind_with_loc(docs, 3)
+        print_with_loc_kind(docs, 3)
         println("")
     }
-    if count_kind(docs, 4) > 0 {
+    if count_in_bucket(docs, 4) > 0 {
         println("  ${bold("Constants")}")
-        print_kind_with_loc(docs, 4)
+        print_with_loc_kind(docs, 4)
         println("")
     }
 
@@ -348,7 +327,7 @@ export fn show_symbols(docs: DocSymList) {
     }
 }
 
-fn print_kind_with_loc(list: DocSymList, kind: int) {
+fn print_with_loc_kind(list: SymList, want_bucket: int) {
     mut cur = list
     while true {
         match cur {
@@ -356,11 +335,9 @@ fn print_kind_with_loc(list: DocSymList, kind: int) {
                 return
             }
             .Node(item, next) -> {
-                if item.kind == kind {
-                    let head = if item.kind == 2 { "type ${item.name}" }
-                              else if item.kind == 3 { "enum ${item.name}" }
-                              else { item.sig }
-                    let loc = "${item.file}:${string(item.line)}"
+                if bucket_of(item) == want_bucket {
+                    let head = declaration_line(item)
+                    let loc = "${item.file}:${string(item.span.start.line)}"
                     println("    ${pad_right(head, 44)} ${dim(loc)}")
                 }
                 cur = next
@@ -369,15 +346,15 @@ fn print_kind_with_loc(list: DocSymList, kind: int) {
     }
 }
 
-// ── Symbol detail (avra docs <name>) ───────────────────────────────
+// ── Symbol detail (`avra docs <name>`) ──────────────────────────────
 
-export fn show_symbol(query: string, docs: DocSymList) -> bool {
+export fn show_symbol(query: string, docs: SymList) -> bool {
     mut cur = docs
     while true {
         match cur {
             .End -> return false
             .Node(item, next) -> {
-                if icase_eq(item.name, query) {
+                if is_renderable(item) && icase_eq(item.name, query) {
                     show_one(item)
                     return true
                 }
@@ -388,11 +365,8 @@ export fn show_symbol(query: string, docs: DocSymList) -> bool {
     false
 }
 
-fn show_one(s: DocSym) {
-    let header = if s.kind == 1 { s.sig }
-                 else if s.kind == 2 { "type ${s.name}" }
-                 else if s.kind == 3 { "enum ${s.name}" }
-                 else { s.sig }
+fn show_one(s: Sym) {
+    let header = declaration_line(s)
     let rule_len = if header.length > 20 { header.length } else { 20 }
 
     println("")
@@ -406,31 +380,40 @@ fn show_one(s: DocSym) {
         }
     }
 
-    if s.kind == 3 && s.variants != "" {
-        println("")
-        println("  ${bold("Variants")}")
-        for v in s.variants.split(", ") {
-            println("    ${v}")
-        }
-    }
+    print_variant_block(s)
 
     println("")
-    println("  ${dim("Defined in")} ${s.file}:${string(s.line)}")
-    if s.exported == 1 {
+    println("  ${dim("Defined in")} ${s.file}:${string(s.span.start.line)}")
+    if s.exported {
         println("  ${dim("Exported")}")
     }
     println("")
 }
 
-// ── Short one-liner (--short) ──────────────────────────────────────
+fn print_variant_block(s: Sym) {
+    match s.kind {
+        .Enum(csv) -> {
+            if csv != "" {
+                println("")
+                println("  ${bold("Variants")}")
+                for v in csv.split(",") {
+                    println("    ${v.trim()}")
+                }
+            }
+        }
+        _ -> {}
+    }
+}
 
-export fn show_short(query: string, docs: DocSymList) -> bool {
+// ── Short one-liner (`--short`) ─────────────────────────────────────
+
+export fn show_short(query: string, docs: SymList) -> bool {
     mut cur = docs
     while true {
         match cur {
             .End -> return false
             .Node(item, next) -> {
-                if icase_eq(item.name, query) {
+                if is_renderable(item) && icase_eq(item.name, query) {
                     let line = first_line(item.doc)
                     let desc = if line == "" { "(undocumented)" } else { line }
                     println("  ${item.name}: ${desc}")
@@ -443,9 +426,13 @@ export fn show_short(query: string, docs: DocSymList) -> bool {
     false
 }
 
-// ── Search (--search) ──────────────────────────────────────────────
+// ── Search (`--search`) ─────────────────────────────────────────────
+//
+// Composed scoring: 5=exact, 3=prefix, 2=name-contains, 1=doc-contains,
+// 0=miss. Mirrors @std/lsp's fuzzy_score tiers but operates over the
+// trio (name, doc, query) directly so we don't need to import the
+// fuzzy module for this single use.
 
-// Match scoring: 5=exact, 3=prefix, 2=contains, 1=doc-contains, 0=miss.
 fn score_match(name: string, doc: string, q: string) -> int {
     let nl = name.to_lower()
     let dl = doc.to_lower()
@@ -457,9 +444,8 @@ fn score_match(name: string, doc: string, q: string) -> int {
     0
 }
 
-export fn show_search(query: string, docs: DocSymList) {
-    let total = count_total(docs)
-    if total == 0 {
+export fn show_search(query: string, docs: SymList) {
+    if count_total(docs) == 0 {
         println("")
         println("  No results for \"${query}\".")
         println("  Try: ${cyan("avra docs")}")
@@ -467,10 +453,10 @@ export fn show_search(query: string, docs: DocSymList) {
         return
     }
 
-    let n_fns = count_search_hits(docs, query, 1)
-    let n_types = count_search_hits(docs, query, 2)
-    let n_enums = count_search_hits(docs, query, 3)
-    let n_vars = count_search_hits(docs, query, 4)
+    let n_fns = count_search_in_bucket(docs, query, 1)
+    let n_types = count_search_in_bucket(docs, query, 2)
+    let n_enums = count_search_in_bucket(docs, query, 3)
+    let n_vars = count_search_in_bucket(docs, query, 4)
     let total_hits = n_fns + n_types + n_enums + n_vars
 
     if total_hits == 0 {
@@ -511,12 +497,24 @@ export fn show_search(query: string, docs: DocSymList) {
     println("")
 }
 
-fn count_search_hits(list: DocSymList, q: string, kind: int) -> int {
-    count_doc_syms(list,
-        (item: DocSym) -> item.kind == kind && score_match(item.name, item.doc, q) > 0)
+fn count_search_in_bucket(list: SymList, q: string, want_bucket: int) -> int {
+    mut cur = list
+    mut n = 0
+    while true {
+        match cur {
+            .End -> return n
+            .Node(item, next) -> {
+                if bucket_of(item) == want_bucket && score_match(item.name, item.doc, q) > 0 {
+                    n = n + 1
+                }
+                cur = next
+            }
+        }
+    }
+    n
 }
 
-fn print_search_kind(list: DocSymList, q: string, kind: int) {
+fn print_search_kind(list: SymList, q: string, want_bucket: int) {
     mut cur = list
     while true {
         match cur {
@@ -524,7 +522,7 @@ fn print_search_kind(list: DocSymList, q: string, kind: int) {
                 return
             }
             .Node(item, next) -> {
-                if item.kind == kind && score_match(item.name, item.doc, q) > 0 {
+                if bucket_of(item) == want_bucket && score_match(item.name, item.doc, q) > 0 {
                     let desc = truncate_str(first_line(item.doc), 50)
                     println("    ${pad_right(item.name, 24)} ${dim(desc)}")
                 }
@@ -534,35 +532,35 @@ fn print_search_kind(list: DocSymList, q: string, kind: int) {
     }
 }
 
-// ── LLM-friendly dump (--llm) ──────────────────────────────────────
+// ── LLM-friendly dump (`--llm`) ─────────────────────────────────────
 
-export fn show_llm(docs: DocSymList) {
+export fn show_llm(docs: SymList) {
     println("# Project Documentation (LLM-friendly)")
     println("")
 
-    if count_kind(docs, 1) > 0 {
+    if count_in_bucket(docs, 1) > 0 {
         println("## Functions")
         print_llm_kind(docs, 1)
         println("")
     }
-    if count_kind(docs, 2) > 0 {
+    if count_in_bucket(docs, 2) > 0 {
         println("## Types")
         print_llm_kind(docs, 2)
         println("")
     }
-    if count_kind(docs, 3) > 0 {
+    if count_in_bucket(docs, 3) > 0 {
         println("## Enums")
         print_llm_kind(docs, 3)
         println("")
     }
-    if count_kind(docs, 4) > 0 {
+    if count_in_bucket(docs, 4) > 0 {
         println("## Constants")
         print_llm_kind(docs, 4)
         println("")
     }
 }
 
-fn print_llm_kind(list: DocSymList, kind: int) {
+fn print_llm_kind(list: SymList, want_bucket: int) {
     mut cur = list
     while true {
         match cur {
@@ -570,16 +568,10 @@ fn print_llm_kind(list: DocSymList, kind: int) {
                 return
             }
             .Node(item, next) -> {
-                if item.kind == kind {
-                    let head = if item.kind == 3 && item.variants != "" {
-                        "enum ${item.name} { ${item.variants} }"
-                    } else if item.kind == 2 {
-                        "type ${item.name}"
-                    } else {
-                        item.sig
-                    }
-                    let export_tag = if item.exported == 1 { " [export]" } else { "" }
-                    println("${head}${export_tag}")
+                if bucket_of(item) == want_bucket {
+                    let head = llm_head(item)
+                    let exp = if item.exported { " [export]" } else { "" }
+                    println("${head}${exp}")
                     if item.doc != "" {
                         println("# ${first_line(item.doc)}")
                     }
@@ -590,7 +582,25 @@ fn print_llm_kind(list: DocSymList, kind: int) {
     }
 }
 
-// ── Validate (--validate) ──────────────────────────────────────────
+fn llm_head(s: Sym) -> string {
+    match s.kind {
+        .Fn(sig, _) -> sig
+        .Type(_) -> "type ${s.name}"
+        .Enum(csv) -> {
+            if csv == "" {
+                "enum ${s.name}"
+            } else {
+                "enum ${s.name} { ${csv} }"
+            }
+        }
+        .Const(ty) -> var_signature("const", s.name, ty)
+        .Mut(ty) -> var_signature("mut", s.name, ty)
+        .Let(ty) -> var_signature("let", s.name, ty)
+        _ -> s.name
+    }
+}
+
+// ── Validation (`--validate`) ───────────────────────────────────────
 
 export fn validate_docs(dir: string) {
     let docs = extract_project_docs_ast(dir)
@@ -603,10 +613,10 @@ export fn validate_docs(dir: string) {
     println("")
     println("  Symbols found: ${string(total)}")
 
-    print_kind_validation(docs, 1, "Functions")
-    print_kind_validation(docs, 2, "Types")
-    print_kind_validation(docs, 3, "Enums")
-    print_kind_validation(docs, 4, "Constants")
+    print_validation_kind(docs, 1, "Functions")
+    print_validation_kind(docs, 2, "Types")
+    print_validation_kind(docs, 3, "Enums")
+    print_validation_kind(docs, 4, "Constants")
 
     let undocumented = total - documented
     let coverage = if total == 0 { 100 } else { pct(documented, total) }
@@ -620,10 +630,10 @@ export fn validate_docs(dir: string) {
     println("")
 }
 
-fn print_kind_validation(list: DocSymList, kind: int, label: string) {
-    let total = count_kind(list, kind)
+fn print_validation_kind(list: SymList, want_bucket: int, label: string) {
+    let total = count_in_bucket(list, want_bucket)
     if total == 0 { return }
-    let doc_n = count_documented_kind(list, kind)
+    let doc_n = count_documented_in(list, want_bucket)
     let coverage = pct(doc_n, total)
 
     println("")
@@ -632,19 +642,19 @@ fn print_kind_validation(list: DocSymList, kind: int, label: string) {
 
     let undoc_n = total - doc_n
     if undoc_n > 0 {
-        let names = collect_undocumented_names(list, kind)
+        let names = collect_undocumented_names(list, want_bucket)
         println("    ${red("✗")} undocumented: ${names}")
     }
 }
 
-fn collect_undocumented_names(list: DocSymList, kind: int) -> string {
+fn collect_undocumented_names(list: SymList, want_bucket: int) -> string {
     mut cur = list
     mut acc = ""
     while true {
         match cur {
             .End -> return acc
             .Node(item, next) -> {
-                if item.kind == kind && item.doc == "" {
+                if bucket_of(item) == want_bucket && !has_doc(item) {
                     acc = if acc == "" { item.name } else { acc + ", " + item.name }
                 }
                 cur = next
