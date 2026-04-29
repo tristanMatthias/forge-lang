@@ -21,7 +21,7 @@
 //   show_llm             avra docs --llm
 //   validate_docs        avra docs --validate
 
-use core.runtime.{avra_selfhost_read_file, avra_shell_exec}
+use core.runtime.{avra_selfhost_read_file, avra_shell_exec, avra_selfhost_levenshtein}
 use parse.{parse_program_source}
 use indexer.{extract_from_ast}
 use @std.lsp.{Sym, SymList, SymKind}
@@ -393,20 +393,70 @@ export fn show_short(query: string, docs: SymList) -> bool {
 
 // ── Search (`--search`) ─────────────────────────────────────────────
 //
-// Composed scoring: 5=exact, 3=prefix, 2=name-contains, 1=doc-contains,
-// 0=miss. Mirrors @std/lsp's fuzzy_score tiers but operates over the
-// trio (name, doc, query) directly so we don't need to import the
-// fuzzy module for this single use.
+// Composed scoring tiers (highest first), mirrored from @std/lsp's
+// fuzzy_score so `--search` gets typo-tolerant + subsequence matching:
+//
+//   1000  exact         800  case-insensitive exact
+//    600  prefix         400  subsequence ("iu" matches "init_user")
+//    300  substring      200  Levenshtein ≤ 2
+//      0  no match
+//
+// The doc body is checked too — at half the score of a name match —
+// so `avra docs --search auth` still surfaces a fn whose name doesn't
+// contain "auth" but whose doc does.
+//
+// Duplicates @std/lsp's fuzzy_score body verbatim because the
+// bootstrap module resolver dedupes function imports: a second
+// `use @std.lsp.{fuzzy_score}` from this file would silently lose the
+// binding (TYPE imports cross fine, FN imports don't, see ovm8.1
+// commit comment in 4df15e0e). Once the resolver bug is fixed, this
+// can become a one-line re-import.
 
 fn score_match(name: string, doc: string, q: string) -> int {
-    let nl = name.to_lower()
-    let dl = doc.to_lower()
-    let ql = q.to_lower()
-    if nl == ql { return 5 }
-    if nl.starts_with(ql) { return 3 }
-    if nl.contains(ql) { return 2 }
-    if dl.contains(ql) { return 1 }
+    let s = fuzzy_score(q, name)
+    if s > 0 { return s }
+    // Doc-body fallback: any contains-match in the doc body counts as
+    // a tier-100 hit so `--search` still surfaces undeclared-named
+    // matches when the user remembers a description not a symbol.
+    if doc.to_lower().contains(q.to_lower()) { return 100 }
     0
+}
+
+fn fuzzy_score(query: string, candidate: string) -> int {
+    if query == candidate { return 1000 }
+    let ql = query.to_lower()
+    let cl = candidate.to_lower()
+    if ql == cl { return 800 }
+    if cl.starts_with(ql) {
+        let len_diff = candidate.length - query.length
+        let pen = if len_diff > 0 { len_diff } else { 0 - len_diff }
+        return 600 - pen
+    }
+    if is_subsequence(ql, cl) {
+        let pen = candidate.length - query.length
+        return 400 - if pen > 0 { pen } else { 0 - pen }
+    }
+    if cl.contains(ql) {
+        let pos_pen = cl.index_of(ql)
+        return 300 - pos_pen
+    }
+    let dist = avra_selfhost_levenshtein(ql, cl, ql.length, cl.length)
+    if dist <= 2 { return 200 - dist * 50 }
+    0
+}
+
+fn is_subsequence(needle: string, haystack: string) -> bool {
+    if needle.length == 0 { return true }
+    mut ni = 0
+    mut hi = 0
+    while hi < haystack.length {
+        if needle.substring(ni, ni + 1) == haystack.substring(hi, hi + 1) {
+            ni = ni + 1
+            if ni == needle.length { return true }
+        }
+        hi = hi + 1
+    }
+    false
 }
 
 export fn show_search(query: string, docs: SymList) {

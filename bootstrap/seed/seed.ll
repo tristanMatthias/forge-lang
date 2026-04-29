@@ -1,5 +1,5 @@
-; seed built from commit 4df15e0e at 2026-04-29T08:12:46Z
-; source hash: 390ae67137ee7d8dce4f3213eb230f3d0cdc953453017fefb40572729ac91b70
+; seed built from commit 693ea45f at 2026-04-29T08:22:03Z
+; source hash: 03c1d93422d5fb0b4cb7943a8822e41da7c2ffa32ae3b1448e2d1fab83cb9ac6
 ; ModuleID = 'bootstrap'
 source_filename = "bootstrap"
 
@@ -291237,80 +291237,334 @@ ife_else:                                         ; preds = %if_then
 
 define i64 @"docs::score_match"(ptr %0, ptr %1, ptr %2) {
 entry:
-  %ql = alloca ptr, align 8
-  %dl = alloca ptr, align 8
-  %nl = alloca ptr, align 8
+  %s = alloca i64, align 8
   %q = alloca ptr, align 8
   %doc = alloca ptr, align 8
   %name = alloca ptr, align 8
   store ptr %0, ptr %name, align 8
   store ptr %1, ptr %doc, align 8
   store ptr %2, ptr %q, align 8
-  %name1 = load ptr, ptr %name, align 8
-  %3 = call ptr @avra_str_to_lower(ptr %name1)
-  store ptr %3, ptr %nl, align 8
-  %doc2 = load ptr, ptr %doc, align 8
-  %4 = call ptr @avra_str_to_lower(ptr %doc2)
-  store ptr %4, ptr %dl, align 8
-  %q3 = load ptr, ptr %q, align 8
-  %5 = call ptr @avra_str_to_lower(ptr %q3)
-  store ptr %5, ptr %ql, align 8
-  %nl4 = load ptr, ptr %nl, align 8
-  %ql5 = load ptr, ptr %ql, align 8
-  %6 = call i32 @strcmp(ptr %nl4, ptr %ql5)
-  %widen = sext i32 %6 to i64
+  %q1 = load ptr, ptr %q, align 8
+  %name2 = load ptr, ptr %name, align 8
+  %3 = call i64 @"docs::fuzzy_score"(ptr %q1, ptr %name2)
+  store i64 %3, ptr %s, align 8
+  %s3 = load i64, ptr %s, align 8
+  %sgt = icmp sgt i64 %s3, 0
+  %sgt_ext = zext i1 %sgt to i64
+  %if_cond = icmp ne i64 %sgt_ext, 0
+  br i1 %if_cond, label %if_then, label %if_else
+
+ifcont:                                           ; preds = %if_else
+  %doc5 = load ptr, ptr %doc, align 8
+  %4 = call ptr @avra_str_to_lower(ptr %doc5)
+  %q6 = load ptr, ptr %q, align 8
+  %5 = call ptr @avra_str_to_lower(ptr %q6)
+  %6 = call i64 @avra_str_contains(ptr %4, ptr %5)
+  %if_cond8 = icmp ne i64 %6, 0
+  br i1 %if_cond8, label %if_then9, label %if_else10
+
+if_then:                                          ; preds = %entry
+  %s4 = load i64, ptr %s, align 8
+  ret i64 %s4
+
+if_else:                                          ; preds = %entry
+  br label %ifcont
+
+ifcont7:                                          ; preds = %if_else10
+  ret i64 0
+
+if_then9:                                         ; preds = %ifcont
+  ret i64 100
+
+if_else10:                                        ; preds = %ifcont
+  br label %ifcont7
+}
+
+define i64 @"docs::fuzzy_score"(ptr %0, ptr %1) {
+entry:
+  %dist = alloca i64, align 8
+  %pos_pen = alloca i64, align 8
+  %ife_result42 = alloca i64, align 8
+  %pen38 = alloca i64, align 8
+  %pen = alloca i64, align 8
+  %ife_result = alloca i64, align 8
+  %len_diff = alloca i64, align 8
+  %cl = alloca ptr, align 8
+  %ql = alloca ptr, align 8
+  %candidate = alloca ptr, align 8
+  %query = alloca ptr, align 8
+  store ptr %0, ptr %query, align 8
+  store ptr %1, ptr %candidate, align 8
+  %query1 = load ptr, ptr %query, align 8
+  %candidate2 = load ptr, ptr %candidate, align 8
+  %2 = call i32 @strcmp(ptr %query1, ptr %candidate2)
+  %widen = sext i32 %2 to i64
   %streq_cmp = icmp eq i64 %widen, 0
   %streq_ext = zext i1 %streq_cmp to i64
   %if_cond = icmp ne i64 %streq_ext, 0
   br i1 %if_cond, label %if_then, label %if_else
 
 ifcont:                                           ; preds = %if_else
-  %nl6 = load ptr, ptr %nl, align 8
-  %ql7 = load ptr, ptr %ql, align 8
-  %7 = call i64 @avra_str_starts_with(ptr %nl6, ptr %ql7)
-  %if_cond9 = icmp ne i64 %7, 0
-  br i1 %if_cond9, label %if_then10, label %if_else11
+  %query3 = load ptr, ptr %query, align 8
+  %3 = call ptr @avra_str_to_lower(ptr %query3)
+  store ptr %3, ptr %ql, align 8
+  %candidate4 = load ptr, ptr %candidate, align 8
+  %4 = call ptr @avra_str_to_lower(ptr %candidate4)
+  store ptr %4, ptr %cl, align 8
+  %ql5 = load ptr, ptr %ql, align 8
+  %cl6 = load ptr, ptr %cl, align 8
+  %5 = call i32 @strcmp(ptr %ql5, ptr %cl6)
+  %widen7 = sext i32 %5 to i64
+  %streq_cmp8 = icmp eq i64 %widen7, 0
+  %streq_ext9 = zext i1 %streq_cmp8 to i64
+  %if_cond11 = icmp ne i64 %streq_ext9, 0
+  br i1 %if_cond11, label %if_then12, label %if_else13
 
 if_then:                                          ; preds = %entry
-  ret i64 5
+  ret i64 1000
 
 if_else:                                          ; preds = %entry
   br label %ifcont
 
-ifcont8:                                          ; preds = %if_else11
-  %nl12 = load ptr, ptr %nl, align 8
-  %ql13 = load ptr, ptr %ql, align 8
-  %8 = call i64 @avra_str_contains(ptr %nl12, ptr %ql13)
-  %if_cond15 = icmp ne i64 %8, 0
-  br i1 %if_cond15, label %if_then16, label %if_else17
+ifcont10:                                         ; preds = %if_else13
+  %cl14 = load ptr, ptr %cl, align 8
+  %ql15 = load ptr, ptr %ql, align 8
+  %6 = call i64 @avra_str_starts_with(ptr %cl14, ptr %ql15)
+  %if_cond17 = icmp ne i64 %6, 0
+  br i1 %if_cond17, label %if_then18, label %if_else19
 
-if_then10:                                        ; preds = %ifcont
-  ret i64 3
+if_then12:                                        ; preds = %ifcont
+  ret i64 800
 
-if_else11:                                        ; preds = %ifcont
-  br label %ifcont8
+if_else13:                                        ; preds = %ifcont
+  br label %ifcont10
 
-ifcont14:                                         ; preds = %if_else17
-  %dl18 = load ptr, ptr %dl, align 8
-  %ql19 = load ptr, ptr %ql, align 8
-  %9 = call i64 @avra_str_contains(ptr %dl18, ptr %ql19)
-  %if_cond21 = icmp ne i64 %9, 0
-  br i1 %if_cond21, label %if_then22, label %if_else23
+ifcont16:                                         ; preds = %if_else19
+  %ql28 = load ptr, ptr %ql, align 8
+  %cl29 = load ptr, ptr %cl, align 8
+  %7 = call i1 @"docs::is_subsequence"(ptr %ql28, ptr %cl29)
+  %widen30 = zext i1 %7 to i64
+  %if_cond32 = icmp ne i64 %widen30, 0
+  br i1 %if_cond32, label %if_then33, label %if_else34
 
-if_then16:                                        ; preds = %ifcont8
-  ret i64 2
+if_then18:                                        ; preds = %ifcont10
+  %candidate20 = load ptr, ptr %candidate, align 8
+  %8 = call i64 @strlen(ptr %candidate20)
+  %query21 = load ptr, ptr %query, align 8
+  %9 = call i64 @strlen(ptr %query21)
+  %sub = sub i64 %8, %9
+  store i64 %sub, ptr %len_diff, align 8
+  %len_diff22 = load i64, ptr %len_diff, align 8
+  %sgt = icmp sgt i64 %len_diff22, 0
+  %sgt_ext = zext i1 %sgt to i64
+  %ife_cond = icmp ne i64 %sgt_ext, 0
+  br i1 %ife_cond, label %ife_then, label %ife_else
 
-if_else17:                                        ; preds = %ifcont8
-  br label %ifcont14
+if_else19:                                        ; preds = %ifcont10
+  br label %ifcont16
 
-ifcont20:                                         ; preds = %if_else23
+ife_end:                                          ; preds = %ife_else, %ife_then
+  %ife_val = load i64, ptr %ife_result, align 8
+  store i64 %ife_val, ptr %pen, align 8
+  %pen26 = load i64, ptr %pen, align 8
+  %sub27 = sub i64 600, %pen26
+  ret i64 %sub27
+
+ife_then:                                         ; preds = %if_then18
+  %len_diff23 = load i64, ptr %len_diff, align 8
+  store i64 %len_diff23, ptr %ife_result, align 8
+  br label %ife_end
+
+ife_else:                                         ; preds = %if_then18
+  %len_diff24 = load i64, ptr %len_diff, align 8
+  %sub25 = sub i64 0, %len_diff24
+  store i64 %sub25, ptr %ife_result, align 8
+  br label %ife_end
+
+ifcont31:                                         ; preds = %if_else34
+  %cl52 = load ptr, ptr %cl, align 8
+  %ql53 = load ptr, ptr %ql, align 8
+  %10 = call i64 @avra_str_contains(ptr %cl52, ptr %ql53)
+  %if_cond55 = icmp ne i64 %10, 0
+  br i1 %if_cond55, label %if_then56, label %if_else57
+
+if_then33:                                        ; preds = %ifcont16
+  %candidate35 = load ptr, ptr %candidate, align 8
+  %11 = call i64 @strlen(ptr %candidate35)
+  %query36 = load ptr, ptr %query, align 8
+  %12 = call i64 @strlen(ptr %query36)
+  %sub37 = sub i64 %11, %12
+  store i64 %sub37, ptr %pen38, align 8
+  %pen39 = load i64, ptr %pen38, align 8
+  %sgt40 = icmp sgt i64 %pen39, 0
+  %sgt_ext41 = zext i1 %sgt40 to i64
+  %ife_cond44 = icmp ne i64 %sgt_ext41, 0
+  br i1 %ife_cond44, label %ife_then45, label %ife_else46
+
+if_else34:                                        ; preds = %ifcont16
+  br label %ifcont31
+
+ife_end43:                                        ; preds = %ife_else46, %ife_then45
+  %ife_val50 = load i64, ptr %ife_result42, align 8
+  %sub51 = sub i64 400, %ife_val50
+  ret i64 %sub51
+
+ife_then45:                                       ; preds = %if_then33
+  %pen47 = load i64, ptr %pen38, align 8
+  store i64 %pen47, ptr %ife_result42, align 8
+  br label %ife_end43
+
+ife_else46:                                       ; preds = %if_then33
+  %pen48 = load i64, ptr %pen38, align 8
+  %sub49 = sub i64 0, %pen48
+  store i64 %sub49, ptr %ife_result42, align 8
+  br label %ife_end43
+
+ifcont54:                                         ; preds = %if_else57
+  %ql62 = load ptr, ptr %ql, align 8
+  %cl63 = load ptr, ptr %cl, align 8
+  %ql64 = load ptr, ptr %ql, align 8
+  %13 = call i64 @strlen(ptr %ql64)
+  %cl65 = load ptr, ptr %cl, align 8
+  %14 = call i64 @strlen(ptr %cl65)
+  %15 = call i64 @avra_selfhost_levenshtein(ptr %ql62, ptr %cl63, i64 %13, i64 %14)
+  store i64 %15, ptr %dist, align 8
+  %dist66 = load i64, ptr %dist, align 8
+  %sle = icmp sle i64 %dist66, 2
+  %sle_ext = zext i1 %sle to i64
+  %if_cond68 = icmp ne i64 %sle_ext, 0
+  br i1 %if_cond68, label %if_then69, label %if_else70
+
+if_then56:                                        ; preds = %ifcont31
+  %cl58 = load ptr, ptr %cl, align 8
+  %ql59 = load ptr, ptr %ql, align 8
+  %16 = call i64 @avra_str_index_of(ptr %cl58, ptr %ql59)
+  store i64 %16, ptr %pos_pen, align 8
+  %pos_pen60 = load i64, ptr %pos_pen, align 8
+  %sub61 = sub i64 300, %pos_pen60
+  ret i64 %sub61
+
+if_else57:                                        ; preds = %ifcont31
+  br label %ifcont54
+
+ifcont67:                                         ; preds = %if_else70
   ret i64 0
 
-if_then22:                                        ; preds = %ifcont14
-  ret i64 1
+if_then69:                                        ; preds = %ifcont54
+  %dist71 = load i64, ptr %dist, align 8
+  %mul = mul i64 %dist71, 50
+  %sub72 = sub i64 200, %mul
+  ret i64 %sub72
 
-if_else23:                                        ; preds = %ifcont14
-  br label %ifcont20
+if_else70:                                        ; preds = %ifcont54
+  br label %ifcont67
+}
+
+define i1 @"docs::is_subsequence"(ptr %0, ptr %1) {
+entry:
+  %hi = alloca i64, align 8
+  %ni = alloca i64, align 8
+  %haystack = alloca ptr, align 8
+  %needle = alloca ptr, align 8
+  store ptr %0, ptr %needle, align 8
+  store ptr %1, ptr %haystack, align 8
+  %needle1 = load ptr, ptr %needle, align 8
+  %2 = call i64 @strlen(ptr %needle1)
+  %eq = icmp eq i64 %2, 0
+  %eq_ext = zext i1 %eq to i64
+  %if_cond = icmp ne i64 %eq_ext, 0
+  br i1 %if_cond, label %if_then, label %if_else
+
+ifcont:                                           ; preds = %if_else
+  store i64 0, ptr %ni, align 8
+  store i64 0, ptr %hi, align 8
+  br label %while.cond
+
+if_then:                                          ; preds = %entry
+  ret i1 true
+
+if_else:                                          ; preds = %entry
+  br label %ifcont
+
+while.cond:                                       ; preds = %ifcont22, %ifcont
+  %hi2 = load i64, ptr %hi, align 8
+  %haystack3 = load ptr, ptr %haystack, align 8
+  %3 = call i64 @strlen(ptr %haystack3)
+  %slt = icmp slt i64 %hi2, %3
+  %slt_ext = zext i1 %slt to i64
+  %while_cond = icmp ne i64 %slt_ext, 0
+  br i1 %while_cond, label %while.body, label %while.exit
+
+while.body:                                       ; preds = %while.cond
+  %needle4 = load ptr, ptr %needle, align 8
+  %ni5 = load i64, ptr %ni, align 8
+  %ni6 = load i64, ptr %ni, align 8
+  %add = add i64 %ni6, 1
+  %sub_len = sub i64 %add, %ni5
+  %sub_alloc = add i64 %sub_len, 1
+  %4 = call ptr @avra_rc_alloc(i64 %sub_alloc)
+  %cast = ptrtoint ptr %needle4 to i64
+  %sub_off_int = add i64 %cast, %ni5
+  %cast7 = inttoptr i64 %sub_off_int to ptr
+  %5 = call ptr @memcpy(ptr %4, ptr %cast7, i64 %sub_len)
+  %cast8 = ptrtoint ptr %4 to i64
+  %sub_nul_int = add i64 %cast8, %sub_len
+  %cast9 = inttoptr i64 %sub_nul_int to ptr
+  store i8 0, ptr %cast9, align 8
+  %haystack10 = load ptr, ptr %haystack, align 8
+  %hi11 = load i64, ptr %hi, align 8
+  %hi12 = load i64, ptr %hi, align 8
+  %add13 = add i64 %hi12, 1
+  %sub_len14 = sub i64 %add13, %hi11
+  %sub_alloc15 = add i64 %sub_len14, 1
+  %6 = call ptr @avra_rc_alloc(i64 %sub_alloc15)
+  %cast16 = ptrtoint ptr %haystack10 to i64
+  %sub_off_int17 = add i64 %cast16, %hi11
+  %cast18 = inttoptr i64 %sub_off_int17 to ptr
+  %7 = call ptr @memcpy(ptr %6, ptr %cast18, i64 %sub_len14)
+  %cast19 = ptrtoint ptr %6 to i64
+  %sub_nul_int20 = add i64 %cast19, %sub_len14
+  %cast21 = inttoptr i64 %sub_nul_int20 to ptr
+  store i8 0, ptr %cast21, align 8
+  %8 = call i32 @strcmp(ptr %4, ptr %6)
+  %widen = sext i32 %8 to i64
+  %streq_cmp = icmp eq i64 %widen, 0
+  %streq_ext = zext i1 %streq_cmp to i64
+  %if_cond23 = icmp ne i64 %streq_ext, 0
+  br i1 %if_cond23, label %if_then24, label %if_else25
+
+while.exit:                                       ; preds = %while.cond
+  ret i1 false
+
+ifcont22:                                         ; preds = %if_else25, %ifcont32
+  %hi36 = load i64, ptr %hi, align 8
+  %add37 = add i64 %hi36, 1
+  store i64 %add37, ptr %hi, align 8
+  br label %while.cond
+
+if_then24:                                        ; preds = %while.body
+  %ni26 = load i64, ptr %ni, align 8
+  %add27 = add i64 %ni26, 1
+  store i64 %add27, ptr %ni, align 8
+  %ni28 = load i64, ptr %ni, align 8
+  %needle29 = load ptr, ptr %needle, align 8
+  %9 = call i64 @strlen(ptr %needle29)
+  %eq30 = icmp eq i64 %ni28, %9
+  %eq_ext31 = zext i1 %eq30 to i64
+  %if_cond33 = icmp ne i64 %eq_ext31, 0
+  br i1 %if_cond33, label %if_then34, label %if_else35
+
+if_else25:                                        ; preds = %while.body
+  br label %ifcont22
+
+ifcont32:                                         ; preds = %if_else35
+  br label %ifcont22
+
+if_then34:                                        ; preds = %if_then24
+  ret i1 true
+
+if_else35:                                        ; preds = %if_then24
+  br label %ifcont32
 }
 
 define i64 @"docs::show_search"(ptr %0, ptr %1) {
@@ -291743,7 +291997,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_rhs, label %sc_short
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.22845, i64 %tag, ptr @mu_file.22846, i64 482)
+  call void @avra_match_unreachable(ptr @.match_fn.22845, i64 %tag, ptr @mu_file.22846, i64 532)
   unreachable
 
 sc_rhs:                                           ; preds = %march_arm3
@@ -291751,14 +292005,14 @@ sc_rhs:                                           ; preds = %march_arm3
   %cast = ptrtoint ptr %item12 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.22831, i64 4, ptr @sty_name.22832, i64 23, i64 %null_ext, ptr @src_file.22833, i64 103, i64 489)
+  call void @avra_null_deref_trap(ptr @fld_name.22831, i64 4, ptr @sty_name.22832, i64 23, i64 %null_ext, ptr @src_file.22833, i64 103, i64 539)
   %name_ptr = getelementptr inbounds nuw %"indexer::@std::lsp::Sym", ptr %item12, i32 0, i32 1
   %name = load ptr, ptr %name_ptr, align 8
   %item13 = load ptr, ptr %item6, align 8
   %cast14 = ptrtoint ptr %item13 to i64
   %null_chk15 = icmp eq i64 %cast14, 0
   %null_ext16 = zext i1 %null_chk15 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.22834, i64 3, ptr @sty_name.22835, i64 23, i64 %null_ext16, ptr @src_file.22836, i64 103, i64 489)
+  call void @avra_null_deref_trap(ptr @fld_name.22834, i64 3, ptr @sty_name.22835, i64 23, i64 %null_ext16, ptr @src_file.22836, i64 103, i64 539)
   %doc_ptr = getelementptr inbounds nuw %"indexer::@std::lsp::Sym", ptr %item13, i32 0, i32 4
   %doc = load ptr, ptr %doc_ptr, align 8
   %q17 = load ptr, ptr %q, align 8
@@ -291798,7 +292052,7 @@ if_then:                                          ; preds = %sc_merge
   %cast19 = ptrtoint ptr %item18 to i64
   %null_chk20 = icmp eq i64 %cast19, 0
   %null_ext21 = zext i1 %null_chk20 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.22837, i64 3, ptr @sty_name.22838, i64 23, i64 %null_ext21, ptr @src_file.22839, i64 103, i64 490)
+  call void @avra_null_deref_trap(ptr @fld_name.22837, i64 3, ptr @sty_name.22838, i64 23, i64 %null_ext21, ptr @src_file.22839, i64 103, i64 540)
   %doc_ptr22 = getelementptr inbounds nuw %"indexer::@std::lsp::Sym", ptr %item18, i32 0, i32 4
   %doc23 = load ptr, ptr %doc_ptr22, align 8
   %5 = call ptr @"render::first_line"(ptr %doc23)
@@ -291808,7 +292062,7 @@ if_then:                                          ; preds = %sc_merge
   %cast25 = ptrtoint ptr %item24 to i64
   %null_chk26 = icmp eq i64 %cast25, 0
   %null_ext27 = zext i1 %null_chk26 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.22841, i64 4, ptr @sty_name.22842, i64 23, i64 %null_ext27, ptr @src_file.22843, i64 103, i64 491)
+  call void @avra_null_deref_trap(ptr @fld_name.22841, i64 4, ptr @sty_name.22842, i64 23, i64 %null_ext27, ptr @src_file.22843, i64 103, i64 541)
   %name_ptr28 = getelementptr inbounds nuw %"indexer::@std::lsp::Sym", ptr %item24, i32 0, i32 1
   %name29 = load ptr, ptr %name_ptr28, align 8
   %7 = call ptr @"render::pad_right"(ptr %name29, i64 24)
@@ -292016,7 +292270,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.22870, i64 %tag, ptr @mu_file.22871, i64 530)
+  call void @avra_match_unreachable(ptr @.match_fn.22870, i64 %tag, ptr @mu_file.22871, i64 580)
   unreachable
 
 ifcont:                                           ; preds = %if_else, %ifcont24
@@ -292034,7 +292288,7 @@ if_then:                                          ; preds = %march_arm3
   %cast = ptrtoint ptr %item13 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.22857, i64 8, ptr @sty_name.22858, i64 23, i64 %null_ext, ptr @src_file.22859, i64 103, i64 539)
+  call void @avra_null_deref_trap(ptr @fld_name.22857, i64 8, ptr @sty_name.22858, i64 23, i64 %null_ext, ptr @src_file.22859, i64 103, i64 589)
   %exported_ptr = getelementptr inbounds nuw %"indexer::@std::lsp::Sym", ptr %item13, i32 0, i32 7
   %exported = load i1, ptr %exported_ptr, align 8
   br i1 %exported, label %ife_then, label %ife_else
@@ -292065,7 +292319,7 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %cast20 = ptrtoint ptr %item19 to i64
   %null_chk21 = icmp eq i64 %cast20, 0
   %null_ext22 = zext i1 %null_chk21 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.22862, i64 3, ptr @sty_name.22863, i64 23, i64 %null_ext22, ptr @src_file.22864, i64 103, i64 541)
+  call void @avra_null_deref_trap(ptr @fld_name.22862, i64 3, ptr @sty_name.22863, i64 23, i64 %null_ext22, ptr @src_file.22864, i64 103, i64 591)
   %doc_ptr = getelementptr inbounds nuw %"indexer::@std::lsp::Sym", ptr %item19, i32 0, i32 4
   %doc = load ptr, ptr %doc_ptr, align 8
   %10 = call i32 @strcmp(ptr %doc, ptr @.str.22865)
@@ -292091,7 +292345,7 @@ if_then26:                                        ; preds = %ife_end
   %cast29 = ptrtoint ptr %item28 to i64
   %null_chk30 = icmp eq i64 %cast29, 0
   %null_ext31 = zext i1 %null_chk30 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.22867, i64 3, ptr @sty_name.22868, i64 23, i64 %null_ext31, ptr @src_file.22869, i64 103, i64 542)
+  call void @avra_null_deref_trap(ptr @fld_name.22867, i64 3, ptr @sty_name.22868, i64 23, i64 %null_ext31, ptr @src_file.22869, i64 103, i64 592)
   %doc_ptr32 = getelementptr inbounds nuw %"indexer::@std::lsp::Sym", ptr %item28, i32 0, i32 4
   %doc33 = load ptr, ptr %doc_ptr32, align 8
   %11 = call ptr @"render::first_line"(ptr %doc33)
@@ -292129,7 +292383,7 @@ entry:
   %cast = ptrtoint ptr %s1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.22872, i64 4, ptr @sty_name.22873, i64 23, i64 %null_ext, ptr @src_file.22874, i64 103, i64 552)
+  call void @avra_null_deref_trap(ptr @fld_name.22872, i64 4, ptr @sty_name.22873, i64 23, i64 %null_ext, ptr @src_file.22874, i64 103, i64 602)
   %kind_ptr = getelementptr inbounds nuw %"indexer::@std::lsp::Sym", ptr %s1, i32 0, i32 3
   %kind = load ptr, ptr %kind_ptr, align 8
   %tag_ptr = getelementptr inbounds nuw %"indexer::@std::lsp::SymKind", ptr %kind, i32 0, i32 0
@@ -292166,7 +292420,7 @@ march_arm5:                                       ; preds = %march_next
   %cast9 = ptrtoint ptr %s8 to i64
   %null_chk10 = icmp eq i64 %cast9, 0
   %null_ext11 = zext i1 %null_chk10 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.22876, i64 4, ptr @sty_name.22877, i64 23, i64 %null_ext11, ptr @src_file.22878, i64 103, i64 552)
+  call void @avra_null_deref_trap(ptr @fld_name.22876, i64 4, ptr @sty_name.22877, i64 23, i64 %null_ext11, ptr @src_file.22878, i64 103, i64 602)
   %name_ptr = getelementptr inbounds nuw %"indexer::@std::lsp::Sym", ptr %s8, i32 0, i32 1
   %name = load ptr, ptr %name_ptr, align 8
   %1 = call i64 @strlen(ptr @.str.22875)
@@ -292215,7 +292469,7 @@ sif_then:                                         ; preds = %march_arm15
   %cast23 = ptrtoint ptr %s22 to i64
   %null_chk24 = icmp eq i64 %cast23, 0
   %null_ext25 = zext i1 %null_chk24 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.22881, i64 4, ptr @sty_name.22882, i64 23, i64 %null_ext25, ptr @src_file.22883, i64 103, i64 558)
+  call void @avra_null_deref_trap(ptr @fld_name.22881, i64 4, ptr @sty_name.22882, i64 23, i64 %null_ext25, ptr @src_file.22883, i64 103, i64 608)
   %name_ptr26 = getelementptr inbounds nuw %"indexer::@std::lsp::Sym", ptr %s22, i32 0, i32 1
   %name27 = load ptr, ptr %name_ptr26, align 8
   %7 = call i64 @strlen(ptr @.str.22880)
@@ -292238,7 +292492,7 @@ sif_else:                                         ; preds = %march_arm15
   %cast36 = ptrtoint ptr %s35 to i64
   %null_chk37 = icmp eq i64 %cast36, 0
   %null_ext38 = zext i1 %null_chk37 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.22885, i64 4, ptr @sty_name.22886, i64 23, i64 %null_ext38, ptr @src_file.22887, i64 103, i64 560)
+  call void @avra_null_deref_trap(ptr @fld_name.22885, i64 4, ptr @sty_name.22886, i64 23, i64 %null_ext38, ptr @src_file.22887, i64 103, i64 610)
   %name_ptr39 = getelementptr inbounds nuw %"indexer::@std::lsp::Sym", ptr %s35, i32 0, i32 1
   %name40 = load ptr, ptr %name_ptr39, align 8
   %12 = call i64 @strlen(ptr @.str.22884)
@@ -292308,7 +292562,7 @@ march_arm67:                                      ; preds = %march_next16
   %cast74 = ptrtoint ptr %s73 to i64
   %null_chk75 = icmp eq i64 %cast74, 0
   %null_ext76 = zext i1 %null_chk75 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.22891, i64 4, ptr @sty_name.22892, i64 23, i64 %null_ext76, ptr @src_file.22893, i64 103, i64 552)
+  call void @avra_null_deref_trap(ptr @fld_name.22891, i64 4, ptr @sty_name.22892, i64 23, i64 %null_ext76, ptr @src_file.22893, i64 103, i64 602)
   %name_ptr77 = getelementptr inbounds nuw %"indexer::@std::lsp::Sym", ptr %s73, i32 0, i32 1
   %name78 = load ptr, ptr %name_ptr77, align 8
   %ty79 = load ptr, ptr %ty72, align 8
@@ -292334,7 +292588,7 @@ march_arm81:                                      ; preds = %march_next68
   %cast92 = ptrtoint ptr %s91 to i64
   %null_chk93 = icmp eq i64 %cast92, 0
   %null_ext94 = zext i1 %null_chk93 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.22895, i64 4, ptr @sty_name.22896, i64 23, i64 %null_ext94, ptr @src_file.22897, i64 103, i64 552)
+  call void @avra_null_deref_trap(ptr @fld_name.22895, i64 4, ptr @sty_name.22896, i64 23, i64 %null_ext94, ptr @src_file.22897, i64 103, i64 602)
   %name_ptr95 = getelementptr inbounds nuw %"indexer::@std::lsp::Sym", ptr %s91, i32 0, i32 1
   %name96 = load ptr, ptr %name_ptr95, align 8
   %ty97 = load ptr, ptr %ty90, align 8
@@ -292360,7 +292614,7 @@ march_arm99:                                      ; preds = %march_next82
   %cast110 = ptrtoint ptr %s109 to i64
   %null_chk111 = icmp eq i64 %cast110, 0
   %null_ext112 = zext i1 %null_chk111 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.22899, i64 4, ptr @sty_name.22900, i64 23, i64 %null_ext112, ptr @src_file.22901, i64 103, i64 552)
+  call void @avra_null_deref_trap(ptr @fld_name.22899, i64 4, ptr @sty_name.22900, i64 23, i64 %null_ext112, ptr @src_file.22901, i64 103, i64 602)
   %name_ptr113 = getelementptr inbounds nuw %"indexer::@std::lsp::Sym", ptr %s109, i32 0, i32 1
   %name114 = load ptr, ptr %name_ptr113, align 8
   %ty115 = load ptr, ptr %ty108, align 8
@@ -292377,7 +292631,7 @@ march_arm117:                                     ; preds = %march_next100
   %cast120 = ptrtoint ptr %s119 to i64
   %null_chk121 = icmp eq i64 %cast120, 0
   %null_ext122 = zext i1 %null_chk121 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.22902, i64 4, ptr @sty_name.22903, i64 23, i64 %null_ext122, ptr @src_file.22904, i64 103, i64 552)
+  call void @avra_null_deref_trap(ptr @fld_name.22902, i64 4, ptr @sty_name.22903, i64 23, i64 %null_ext122, ptr @src_file.22904, i64 103, i64 602)
   %name_ptr123 = getelementptr inbounds nuw %"indexer::@std::lsp::Sym", ptr %s119, i32 0, i32 1
   %name124 = load ptr, ptr %name_ptr123, align 8
   %cast125 = ptrtoint ptr %name124 to i64
@@ -292385,7 +292639,7 @@ march_arm117:                                     ; preds = %march_next100
   br label %match_end
 
 march_next118:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.22905, i64 %tag, ptr @mu_file.22906, i64 552)
+  call void @avra_match_unreachable(ptr @.match_fn.22905, i64 %tag, ptr @mu_file.22906, i64 602)
   unreachable
 }
 
@@ -292980,7 +293234,7 @@ march_arm4:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_rhs, label %sc_short
 
 march_next5:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.22960, i64 %tag, ptr @mu_file.22961, i64 621)
+  call void @avra_match_unreachable(ptr @.match_fn.22960, i64 %tag, ptr @mu_file.22961, i64 671)
   unreachable
 
 sc_rhs:                                           ; preds = %march_arm4
@@ -293040,7 +293294,7 @@ ife_then:                                         ; preds = %if_then
   %cast = ptrtoint ptr %item16 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.22953, i64 4, ptr @sty_name.22954, i64 23, i64 %null_ext, ptr @src_file.22955, i64 103, i64 626)
+  call void @avra_null_deref_trap(ptr @fld_name.22953, i64 4, ptr @sty_name.22954, i64 23, i64 %null_ext, ptr @src_file.22955, i64 103, i64 676)
   %name_ptr = getelementptr inbounds nuw %"indexer::@std::lsp::Sym", ptr %item16, i32 0, i32 1
   %name = load ptr, ptr %name_ptr, align 8
   %cast17 = ptrtoint ptr %name to i64
@@ -293064,7 +293318,7 @@ ife_else:                                         ; preds = %if_then
   %cast22 = ptrtoint ptr %item21 to i64
   %null_chk23 = icmp eq i64 %cast22, 0
   %null_ext24 = zext i1 %null_chk23 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.22957, i64 4, ptr @sty_name.22958, i64 23, i64 %null_ext24, ptr @src_file.22959, i64 103, i64 626)
+  call void @avra_null_deref_trap(ptr @fld_name.22957, i64 4, ptr @sty_name.22958, i64 23, i64 %null_ext24, ptr @src_file.22959, i64 103, i64 676)
   %name_ptr25 = getelementptr inbounds nuw %"indexer::@std::lsp::Sym", ptr %item21, i32 0, i32 1
   %name26 = load ptr, ptr %name_ptr25, align 8
   %10 = call i64 @strlen(ptr %7)
@@ -321738,14 +321992,14 @@ sc_rhs:                                           ; preds = %entry
   %cast4 = ptrtoint ptr %item3 to i64
   %null_chk = icmp eq i64 %cast4, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.22825, i64 4, ptr @sty_name.22826, i64 23, i64 %null_ext, ptr @src_file.22827, i64 103, i64 475)
+  call void @avra_null_deref_trap(ptr @fld_name.22825, i64 4, ptr @sty_name.22826, i64 23, i64 %null_ext, ptr @src_file.22827, i64 103, i64 525)
   %name_ptr = getelementptr inbounds nuw %"indexer::@std::lsp::Sym", ptr %item3, i32 0, i32 1
   %name = load ptr, ptr %name_ptr, align 8
   %item5 = load ptr, ptr %item, align 8
   %cast6 = ptrtoint ptr %item5 to i64
   %null_chk7 = icmp eq i64 %cast6, 0
   %null_ext8 = zext i1 %null_chk7 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.22828, i64 3, ptr @sty_name.22829, i64 23, i64 %null_ext8, ptr @src_file.22830, i64 103, i64 475)
+  call void @avra_null_deref_trap(ptr @fld_name.22828, i64 3, ptr @sty_name.22829, i64 23, i64 %null_ext8, ptr @src_file.22830, i64 103, i64 525)
   %doc_ptr = getelementptr inbounds nuw %"indexer::@std::lsp::Sym", ptr %item5, i32 0, i32 4
   %doc = load ptr, ptr %doc_ptr, align 8
   %q9 = load ptr, ptr %q, align 8
