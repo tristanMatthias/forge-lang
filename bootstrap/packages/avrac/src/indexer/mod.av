@@ -15,11 +15,13 @@
 // types — they never import compiler internals.
 
 use core.ast.{Stmt, StmtList, SStmt,
+              Expr, SExpr, ExprList,
               AnnotationList, ParamList, FieldList,
               VariantList, ValueType, TypeParamList,
               vtype_display, vtype_render_full,
               find_annotation, doc_string_for, stmt_unwrap}
 use @std.lsp.{LspPos, LspSpan, Sym, SymList, SymKind,
+              CallEdge, CallList, calls_new, calls_add,
               lsp_pos, lsp_span, sym_new}
 
 // ── Public API ──────────────────────────────────────────────────────
@@ -33,6 +35,123 @@ use @std.lsp.{LspPos, LspSpan, Sym, SymList, SymKind,
 // produces a Sym with name="foo", qualified="core::foo".
 export fn extract_from_ast(stmts: StmtList, file: string) -> SymList {
     extract_inner(stmts, file, "")
+}
+
+// Walk `stmts` again, this time collecting CallEdge records for every
+// `Expr.Call(Ident, _)` site we find inside a function body. Captures
+// the most common "X calls Y" relationship without recursing into
+// every nested expression — deeper coverage (calls inside match arms,
+// closures, lambdas) is layered on as needed.
+export fn extract_calls_from_ast(stmts: StmtList, file: string) -> CallList {
+    extract_calls_inner(stmts, file, "", calls_new())
+}
+
+fn extract_calls_inner(stmts: StmtList, file: string, qual_prefix: string, acc: CallList) -> CallList {
+    mut cur_acc = acc
+    mut cur = stmts
+    while true {
+        match cur {
+            .End -> {
+                return cur_acc
+            }
+            .Node(ss, next) -> {
+                let inner = stmt_unwrap(ss.node)
+                cur_acc = match inner {
+                    .Function(name, _, _, _, body) -> {
+                        let qual = qualify(qual_prefix, name)
+                        walk_body_for_calls(body, file, qual, cur_acc)
+                    }
+                    .Module(name, body) -> {
+                        let nested_qual = qualify(qual_prefix, name)
+                        extract_calls_inner(body, file, nested_qual, cur_acc)
+                    }
+                    .Impl(_, methods) -> extract_calls_inner(methods, file, qual_prefix, cur_acc)
+                    _ -> cur_acc
+                }
+                cur = next
+            }
+        }
+    }
+    cur_acc
+}
+
+// One level deep into a function body — capture direct Expr.Call
+// sites whose callee is a bare identifier.
+fn walk_body_for_calls(stmts: StmtList, file: string, caller: string, acc: CallList) -> CallList {
+    mut cur_acc = acc
+    mut cur = stmts
+    while true {
+        match cur {
+            .End -> {
+                return cur_acc
+            }
+            .Node(ss, next) -> {
+                cur_acc = scan_stmt_for_calls(ss, file, caller, cur_acc)
+                cur = next
+            }
+        }
+    }
+    cur_acc
+}
+
+fn scan_stmt_for_calls(ss: SStmt, file: string, caller: string, acc: CallList) -> CallList {
+    let inner = stmt_unwrap(ss.node)
+    match inner {
+        .Expr(e) -> scan_expr_for_calls(e, file, caller, ss.line, ss.col, acc)
+        .Return(e) -> scan_expr_for_calls(e, file, caller, ss.line, ss.col, acc)
+        .Let(_, _, e) -> scan_expr_for_calls(e, file, caller, ss.line, ss.col, acc)
+        .Mut(_, _, e) -> scan_expr_for_calls(e, file, caller, ss.line, ss.col, acc)
+        .Const(_, _, e) -> scan_expr_for_calls(e, file, caller, ss.line, ss.col, acc)
+        .Block(body) -> walk_body_for_calls(body, file, caller, acc)
+        .If(cond, then_branch, _) -> {
+            let a1 = scan_expr_for_calls(cond, file, caller, ss.line, ss.col, acc)
+            scan_stmt_for_calls(SStmt { node: then_branch, line: ss.line, col: ss.col }, file, caller, a1)
+        }
+        .While(cond, body) -> {
+            let a1 = scan_expr_for_calls(cond, file, caller, ss.line, ss.col, acc)
+            scan_stmt_for_calls(SStmt { node: body, line: ss.line, col: ss.col }, file, caller, a1)
+        }
+        _ -> acc
+    }
+}
+
+fn scan_expr_for_calls(e: Expr, file: string, caller: string, line: int, col: int, acc: CallList) -> CallList {
+    match e {
+        .Call(callee, args) -> {
+            let with_callee = match callee {
+                .Ident(name) -> calls_add(acc, CallEdge { caller, callee: name, file, line, col })
+                _ -> acc
+            }
+            scan_expr_list(args, file, caller, line, col, with_callee)
+        }
+        .Binary(left, _, right) -> {
+            let a1 = scan_expr_for_calls(left, file, caller, line, col, acc)
+            scan_expr_for_calls(right, file, caller, line, col, a1)
+        }
+        .Logical(left, _, right) -> {
+            let a1 = scan_expr_for_calls(left, file, caller, line, col, acc)
+            scan_expr_for_calls(right, file, caller, line, col, a1)
+        }
+        .Grouping(inner) -> scan_expr_for_calls(inner, file, caller, line, col, acc)
+        _ -> acc
+    }
+}
+
+fn scan_expr_list(es: ExprList, file: string, caller: string, line: int, col: int, acc: CallList) -> CallList {
+    mut cur_acc = acc
+    mut cur = es
+    while true {
+        match cur {
+            .End -> {
+                return cur_acc
+            }
+            .Node(se, next) -> {
+                cur_acc = scan_expr_for_calls(se.node, file, caller, line, col, cur_acc)
+                cur = next
+            }
+        }
+    }
+    cur_acc
 }
 
 // ── Internals ───────────────────────────────────────────────────────

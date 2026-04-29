@@ -784,6 +784,272 @@ export fn query_all(g: SymbolGraph) -> SymList {
     graph_all(g)
 }
 
+// ── Call graph + references ────────────────────────────────────────
+//
+// One CallEdge per "X uses Y" relationship — function call, type
+// reference, enum-ctor mention. The indexer (rnb9.3) populates these
+// while it walks AST bodies; std-lsp owns the storage and queries.
+//
+// `caller` is the qualified path of the *containing* fn/module that
+// holds the use site. `callee` is the *target* — usually a leaf name,
+// since the AST records identifiers before resolution.
+
+/// One use-site edge: "caller_qual references callee".
+export type CallEdge = {
+    caller: string,
+    callee: string,
+    file: string,
+    line: int,
+    col: int
+}
+
+export enum CallList {
+    End
+    Node(item: CallEdge, next: CallList)
+}
+
+export fn calls_new() -> CallList { CallList.End }
+
+export fn calls_add(list: CallList, edge: CallEdge) -> CallList {
+    CallList.Node(edge, list)
+}
+
+/// Every symbol that *calls* (or otherwise references) `target_name`.
+/// Returns the resolved caller Syms — handy for `avra docs <name>
+/// --callers` rendering.
+export fn query_callers(g: SymbolGraph, calls: CallList, target_name: string) -> SymList {
+    let edges = collect_edges_to(calls, target_name)
+    edges_to_caller_syms(g, edges, SymList.End)
+}
+
+/// Every use-site Location of `target_name`. Same edges as
+/// `query_callers` but returned as raw Locations rather than the
+/// caller Sym (for "find references" rendering).
+export fn query_references(g: SymbolGraph, calls: CallList, target_name: string) -> CallList {
+    collect_edges_to(calls, target_name)
+}
+
+/// Every callee (target name) referenced by `caller_qualified`.
+/// Used by hover detail to show "this fn calls: foo, bar, baz".
+export fn query_callees(calls: CallList, caller_qualified: string) -> CallList {
+    collect_edges_from(calls, caller_qualified)
+}
+
+fn collect_edges_to(list: CallList, target: string) -> CallList {
+    mut acc = CallList.End
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return acc
+            }
+            .Node(edge, next) -> {
+                if edge.callee == target {
+                    acc = CallList.Node(edge, acc)
+                }
+                cur = next
+            }
+        }
+    }
+    CallList.End
+}
+
+fn collect_edges_from(list: CallList, caller: string) -> CallList {
+    mut acc = CallList.End
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return acc
+            }
+            .Node(edge, next) -> {
+                if edge.caller == caller {
+                    acc = CallList.Node(edge, acc)
+                }
+                cur = next
+            }
+        }
+    }
+    CallList.End
+}
+
+fn edges_to_caller_syms(g: SymbolGraph, edges: CallList, acc: SymList) -> SymList {
+    mut cur = edges
+    mut out = acc
+    while true {
+        match cur {
+            .End -> {
+                return out
+            }
+            .Node(edge, next) -> {
+                let s = graph_by_qualified(g, edge.caller)
+                if s != null && !sym_list_contains_id(out, s!.id) {
+                    out = SymList.Node(s!, out)
+                }
+                cur = next
+            }
+        }
+    }
+    SymList.End
+}
+
+fn sym_list_contains_id(list: SymList, id: SymId) -> bool {
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return false
+            }
+            .Node(item, next) -> {
+                if item.id.value == id.value { return true }
+                cur = next
+            }
+        }
+    }
+    false
+}
+
+// ── Position-indexed lookup ────────────────────────────────────────
+//
+// Hover / go-to-definition need "what symbol is at file:line"? We do
+// the cheap thing: scan every Sym whose file matches and pick the one
+// whose start position covers the requested point. Ticket rnb9.7
+// will replace this with a span-keyed sidecar for big projects.
+
+/// Sym at file:line — first match wins. Returns null if no Sym
+/// declares that exact line in that file. Used by IDE hover.
+export fn query_at(g: SymbolGraph, file: string, line: int) -> Sym? {
+    sym_at_position(g.syms, file, line)
+}
+
+fn sym_at_position(list: SymList, file: string, line: int) -> Sym? {
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return null
+            }
+            .Node(item, next) -> {
+                if item.file == file && item.span.start.line == line {
+                    return item
+                }
+                cur = next
+            }
+        }
+    }
+    null
+}
+
+// ── Hover / completion ─────────────────────────────────────────────
+
+/// Build a hover record for a Sym — pre-rendered detail string ready
+/// for terminal or IDE display.
+export fn query_hover_for_sym(s: Sym) -> Hover {
+    let header = sym_kind_render(s.kind)
+    let doc = if s.doc == "" { "" } else { "\n\n${s.doc}" }
+    let loc = "\n\nDefined in ${s.file}:${string(s.span.start.line)}"
+    Hover { sym: s, rendered: "${header}${doc}${loc}" }
+}
+
+/// Hover by file:line (IDE flow).
+export fn query_hover(g: SymbolGraph, file: string, line: int) -> Hover? {
+    let s = query_at(g, file, line)
+    if s == null { return null }
+    query_hover_for_sym(s!)
+}
+
+/// Hover by qualified path (CLI flow: `avra docs <name>`).
+export fn query_hover_by_path(g: SymbolGraph, path: string) -> Hover? {
+    let s = graph_resolve(g, path)
+    if s == null { return null }
+    query_hover_for_sym(s!)
+}
+
+/// Top-N completion candidates for `prefix` — uses the fuzzy scorer
+/// from .2. Filtered to exported symbols when `exported_only` is
+/// true (the IDE's default) so private internals don't leak into
+/// editor completion.
+export fn query_completion(g: SymbolGraph, prefix: string, limit: int, exported_only: bool) -> List<CompletionItem> {
+    let candidates = if exported_only {
+        filter_exported(g.syms)
+    } else {
+        g.syms
+    }
+    let scored = fuzzy_search_syms(prefix, candidates, limit)
+    scored_syms_to_completion_items(scored)
+}
+
+fn filter_exported(list: SymList) -> SymList {
+    mut acc = SymList.End
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return reverse_syms(acc)
+            }
+            .Node(item, next) -> {
+                if item.exported {
+                    acc = SymList.Node(item, acc)
+                }
+                cur = next
+            }
+        }
+    }
+    SymList.End
+}
+
+fn scored_syms_to_completion_items(list: ScoredSymList) -> List<CompletionItem> {
+    mut acc: List<CompletionItem> = []
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return acc
+            }
+            .Node(item, next) -> {
+                let detail = sym_kind_render(item.sym.kind)
+                acc.push(CompletionItem { label: item.sym.name, detail, sym: item.sym })
+                cur = next
+            }
+        }
+    }
+    acc
+}
+
+/// Symbols filtered by scope. Used by the LSP's documentSymbol
+/// (per-file outline) and the CLI's `avra docs --symbols` flag.
+export fn query_symbols(g: SymbolGraph, scope: Scope) -> SymList {
+    match scope {
+        .All -> graph_all(g)
+        .File(path) -> filter_by_file(g.syms, path)
+        .Module(qualified) -> graph_children(g, qualified)
+    }
+}
+
+fn filter_by_file(list: SymList, file: string) -> SymList {
+    mut acc = SymList.End
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return reverse_syms(acc)
+            }
+            .Node(item, next) -> {
+                if item.file == file {
+                    acc = SymList.Node(item, acc)
+                }
+                cur = next
+            }
+        }
+    }
+    SymList.End
+}
+
+/// Project-wide search via the composed fuzzy scorer.
+export fn query_search(g: SymbolGraph, query: string, limit: int) -> ScoredSymList {
+    fuzzy_search_syms(query, g.syms, limit)
+}
+
 // ╔═══════════════════════════════════════════════════════════════════╗
 // ║                              FUZZY                                ║
 // ╚═══════════════════════════════════════════════════════════════════╝

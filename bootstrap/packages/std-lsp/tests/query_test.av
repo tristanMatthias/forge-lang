@@ -1,0 +1,250 @@
+// In-process query API: hover, definition (via at-position), references,
+// callers, completion, symbols-by-scope, search.
+
+use @std.lsp.{lsp_pos,
+              SymKind, SymbolGraph, SymList, Sym,
+              graph_new, graph_add, sym_new, sym_id_for,
+              CallEdge, CallList, calls_new, calls_add,
+              query_callers, query_callees, query_references,
+              query_at, query_hover, query_hover_by_path,
+              query_completion, query_symbols, query_search,
+              ScoredSymList,
+              Scope, Hover, CompletionItem}
+
+fn q_test_span() -> LspSpan {
+    LspSpan { start: lsp_pos(10, 1), end: lsp_pos(10, 1) }
+}
+
+fn q_test_graph() -> SymbolGraph {
+    let sp = q_test_span()
+    mut g = graph_new()
+    g = graph_add(g, sym_new("square", "math::square",
+        SymKind.Fn("fn square(x: int) -> int", "int"),
+        "Square a number.", "math.av",
+        LspSpan { start: lsp_pos(5, 1), end: lsp_pos(5, 1) },
+        true, ""))
+    g = graph_add(g, sym_new("pythagorean", "math::pythagorean",
+        SymKind.Fn("fn pythagorean(a: int, b: int) -> int", "int"),
+        "", "math.av",
+        LspSpan { start: lsp_pos(12, 1), end: lsp_pos(12, 1) },
+        true, ""))
+    g = graph_add(g, sym_new("variance", "stats::variance",
+        SymKind.Fn("fn variance(xs: List<int>) -> int", "int"),
+        "", "stats.av",
+        LspSpan { start: lsp_pos(8, 1), end: lsp_pos(8, 1) },
+        true, ""))
+    g = graph_add(g, sym_new("private_helper", "math::private_helper",
+        SymKind.Fn("fn private_helper() -> int", "int"),
+        "", "math.av",
+        LspSpan { start: lsp_pos(20, 1), end: lsp_pos(20, 1) },
+        false, ""))
+    g
+}
+
+fn q_test_calls() -> CallList {
+    mut c = calls_new()
+    c = calls_add(c, CallEdge { caller: "math::pythagorean", callee: "square", file: "math.av", line: 13, col: 5 })
+    c = calls_add(c, CallEdge { caller: "math::pythagorean", callee: "square", file: "math.av", line: 13, col: 20 })
+    c = calls_add(c, CallEdge { caller: "stats::variance", callee: "square", file: "stats.av", line: 9, col: 12 })
+    c = calls_add(c, CallEdge { caller: "math::pythagorean", callee: "private_helper", file: "math.av", line: 14, col: 5 })
+    c
+}
+
+fn q_count_syms(list: SymList) -> int {
+    mut n = 0
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return n
+            }
+            .Node(_, next) -> {
+                n = n + 1
+                cur = next
+            }
+        }
+    }
+    n
+}
+
+fn q_count_calls(list: CallList) -> int {
+    mut n = 0
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return n
+            }
+            .Node(_, next) -> {
+                n = n + 1
+                cur = next
+            }
+        }
+    }
+    n
+}
+
+fn q_count_completion(list: List<CompletionItem>) -> int {
+    list.length
+}
+
+fn q_count_scored(list: ScoredSymList) -> int {
+    mut n = 0
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return n
+            }
+            .Node(_, next) -> {
+                n = n + 1
+                cur = next
+            }
+        }
+    }
+    n
+}
+
+spec "query: callers and references" {
+    given "a fn called from two other fns" {
+        then "query_callers returns both unique callers" {
+            let g = q_test_graph()
+            let c = q_test_calls()
+            let callers = query_callers(g, c, "square")
+            // pythagorean (twice in calls list) + variance — dedup → 2
+            q_count_syms(callers) == 2
+        }
+        then "query_references returns every use-site" {
+            let g = q_test_graph()
+            let c = q_test_calls()
+            let refs = query_references(g, c, "square")
+            // 3 raw call edges (pythagorean cites it twice, variance once)
+            q_count_calls(refs) == 3
+        }
+    }
+    given "a fn that calls others" {
+        then "query_callees returns its outgoing edges" {
+            let c = q_test_calls()
+            let callees = query_callees(c, "math::pythagorean")
+            // 2 calls to square + 1 call to private_helper
+            q_count_calls(callees) == 3
+        }
+    }
+    given "a fn no one calls" {
+        then "query_callers returns empty" {
+            let g = q_test_graph()
+            let c = q_test_calls()
+            q_count_syms(query_callers(g, c, "variance")) == 0
+        }
+    }
+}
+
+spec "query: position-indexed lookup" {
+    given "a known file:line of a declaration" {
+        then "query_at finds it" {
+            let g = q_test_graph()
+            let s = query_at(g, "math.av", 5)
+            s != null && s!.name == "square"
+        }
+    }
+    given "a file:line that's not a declaration" {
+        then "query_at returns null" {
+            let g = q_test_graph()
+            query_at(g, "math.av", 999) == null
+        }
+    }
+}
+
+spec "query: hover" {
+    given "hover by file:line" {
+        then "renders the kind + doc + location" {
+            let g = q_test_graph()
+            let h = query_hover(g, "math.av", 5)
+            h != null && h!.rendered.contains("Square a number")
+                && h!.rendered.contains("math.av:5")
+        }
+    }
+    given "hover by qualified path" {
+        then "resolves through partial-path lookup" {
+            let g = q_test_graph()
+            let h = query_hover_by_path(g, "math::square")
+            h != null && h!.sym.name == "square"
+        }
+        then "accepts a bare leaf name too" {
+            let g = q_test_graph()
+            let h = query_hover_by_path(g, "square")
+            h != null && h!.sym.name == "square"
+        }
+    }
+    given "hover for an unknown path" {
+        then "returns null" {
+            let g = q_test_graph()
+            query_hover_by_path(g, "no_such_thing") == null
+        }
+    }
+}
+
+spec "query: completion" {
+    given "exported_only=true (IDE default)" {
+        then "skips non-exported symbols" {
+            let g = q_test_graph()
+            let items = query_completion(g, "private", 10, true)
+            // private_helper isn't exported → no match
+            q_count_completion(items) == 0
+        }
+    }
+    given "exported_only=false" {
+        then "includes private symbols" {
+            let g = q_test_graph()
+            let items = query_completion(g, "private", 10, false)
+            q_count_completion(items) >= 1
+        }
+    }
+    given "completion for a prefix" {
+        then "returns scored matches up to limit" {
+            let g = q_test_graph()
+            let items = query_completion(g, "sq", 10, true)
+            // square should appear
+            q_count_completion(items) >= 1
+        }
+    }
+}
+
+spec "query: symbols by scope" {
+    given "Scope.All" {
+        then "returns every Sym" {
+            let g = q_test_graph()
+            q_count_syms(query_symbols(g, Scope.All)) == 4
+        }
+    }
+    given "Scope.File" {
+        then "returns only Syms in that file" {
+            let g = q_test_graph()
+            // math.av: square, pythagorean, private_helper
+            q_count_syms(query_symbols(g, Scope.File("math.av"))) == 3
+        }
+    }
+    given "Scope.Module" {
+        then "returns the module's descendants" {
+            let g = q_test_graph()
+            // math:: namespace: square, pythagorean, private_helper
+            q_count_syms(query_symbols(g, Scope.Module("math"))) == 3
+        }
+    }
+}
+
+spec "query: search" {
+    given "a typo" {
+        then "search returns near matches" {
+            let g = q_test_graph()
+            let results = query_search(g, "squre", 5)
+            q_count_scored(results) >= 1
+        }
+    }
+    given "a query with no match" {
+        then "search returns empty" {
+            let g = q_test_graph()
+            q_count_scored(query_search(g, "xyzzy", 5)) == 0
+        }
+    }
+}
