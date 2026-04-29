@@ -165,16 +165,21 @@ fn docs_args_default() -> DocsArgs {
 type FlagApply = { args: DocsArgs, matched: bool }
 
 fn pure_flag_apply(arg: string, a: DocsArgs) -> FlagApply {
-    if arg == "--symbols" { return FlagApply { args: a with { want_symbols: true }, matched: true } }
-    if arg == "--short" { return FlagApply { args: a with { want_short: true }, matched: true } }
-    if arg == "--llm" { return FlagApply { args: a with { want_llm: true }, matched: true } }
-    if arg == "--validate" { return FlagApply { args: a with { want_validate: true }, matched: true } }
-    if arg == "--callers" || arg == "--used-by" { return FlagApply { args: a with { want_callers: true }, matched: true } }
-    if arg == "--no-cache" { return FlagApply { args: a with { want_no_cache: true }, matched: true } }
-    if arg == "--doctest" { return FlagApply { args: a with { want_doctest: true }, matched: true } }
-    if arg == "--print" { return FlagApply { args: a with { want_print: true }, matched: true } }
-    FlagApply { args: a, matched: false }
+    match arg {
+        "--symbols"  -> matched_flag(a with { want_symbols: true })
+        "--short"    -> matched_flag(a with { want_short: true })
+        "--llm"      -> matched_flag(a with { want_llm: true })
+        "--validate" -> matched_flag(a with { want_validate: true })
+        "--callers"  -> matched_flag(a with { want_callers: true })
+        "--used-by"  -> matched_flag(a with { want_callers: true })
+        "--no-cache" -> matched_flag(a with { want_no_cache: true })
+        "--doctest"  -> matched_flag(a with { want_doctest: true })
+        "--print"    -> matched_flag(a with { want_print: true })
+        _            -> FlagApply { args: a, matched: false }
+    }
 }
+
+fn matched_flag(a: DocsArgs) -> FlagApply { FlagApply { args: a, matched: true } }
 
 // Read the value attached to a `--key` flag at argv[idx]: returns the
 // value plus the number of argv slots consumed (1 for `--key=value`,
