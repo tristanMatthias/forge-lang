@@ -26,7 +26,7 @@ use coverage.{render_coverage}
 use docs.{extract_project_docs_ast, extract_project_corpus,
           show_overview, show_symbol, show_short, show_symbols,
           show_search, show_llm, show_callers, show_module,
-          validate_docs, suggest_similar}
+          validate_docs, suggest_similar, run_doctests}
 use lang_gen.{render_lang_av, write_lang_av}
 use indexer.{run_lsp_server, extract_project_syms_cached}
 use pathutil.{basename_no_ext}
@@ -611,6 +611,7 @@ fn main() {
             mut want_callers = false
             mut module_path = ""
             mut want_no_cache = false
+            mut want_doctest = false
             mut k = 2
             while k < avra_selfhost_argc() {
                 let arg = avra_selfhost_get_arg_cstr(k)
@@ -641,6 +642,11 @@ fn main() {
                 }
                 if arg == "--no-cache" {
                     want_no_cache = true
+                    k = k + 1
+                    continue
+                }
+                if arg == "--doctest" {
+                    want_doctest = true
                     k = k + 1
                     continue
                 }
@@ -701,6 +707,12 @@ fn main() {
             // hit target/lsp/cache.tsv for incremental rebuilds; pass
             // --no-cache to force a full re-walk.
             let docs_set = extract_project_syms_cached(project_dir, want_no_cache)
+
+            if want_doctest {
+                let ok = run_doctests(docs_set)
+                if !ok { exit(1) }
+                return
+            }
 
             if module_path != "" {
                 if !show_module(module_path, docs_set) {

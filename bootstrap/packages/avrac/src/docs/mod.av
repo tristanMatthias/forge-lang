@@ -1066,6 +1066,98 @@ fn render_see_ref(name: string, docs: SymList) -> string {
     "${cyan(s.qualified)} ${dim(loc)}"
 }
 
+// ── Doctests (`--doctest`) ──────────────────────────────────────────
+//
+// Walk every Sym, extract fenced ```avra``` examples from /// blocks,
+// try to parse each as Avra source. Parse failures print as doctest
+// failures so stale examples get caught at CI time.
+
+export fn run_doctests(docs: SymList) -> bool {
+    mut total = 0
+    mut passed = 0
+    println("")
+    println("  ${bold("Doctests")}")
+    println("  ${dim(rule(20))}")
+    mut cur = docs
+    while true {
+        match cur {
+            .End -> {
+                break
+            }
+            .Node(item, next) -> {
+                if is_renderable(item) && item.doc != "" {
+                    let block = parse_doc(item.doc)
+                    mut idx = 0
+                    while idx < block.examples.length {
+                        total = total + 1
+                        let ex = block.examples[idx]
+                        let ok = doctest_check(ex)
+                        if ok {
+                            passed = passed + 1
+                            println("    ${green("✓")} ${item.qualified} [${string(idx)}]")
+                        } else {
+                            println("    ${red("✗")} ${item.qualified} [${string(idx)}] failed to parse")
+                        }
+                        idx = idx + 1
+                    }
+                }
+                cur = next
+            }
+        }
+    }
+    println("")
+    if total == 0 {
+        println("  ${dim("(no doctests found)")}")
+        println("")
+        return true
+    }
+    if passed == total {
+        println("  ${green("All doctests passed")} (${string(passed)}/${string(total)})")
+    } else {
+        println("  ${red("Doctest failures")} (${string(passed)}/${string(total)})")
+    }
+    println("")
+    passed == total
+}
+
+// Try to parse `source` as a top-level Avra program. Wrapping in a
+// synthetic main keeps single-expression examples like `square(5)`
+// from triggering "expression at top level" errors. Multi-statement
+// examples that already declare top-level fns also work because we
+// only wrap when the source looks like a bare expression (no fn /
+// type / let at column 0).
+fn doctest_check(source: string) -> bool {
+    let wrapped = wrap_doctest_source(source)
+    let parsed = parse_program_source(wrapped)
+    !parsed.had_error && parsed.stmts != null
+}
+
+fn wrap_doctest_source(source: string) -> string {
+    if source_has_top_decl(source) {
+        return source
+    }
+    "fn __doctest_main() {\n${source}\n}\n"
+}
+
+// True if any non-comment line starts with a top-level decl keyword.
+// Cheap heuristic — false negatives just mean we wrap the example,
+// which is harmless for fn-only examples.
+fn source_has_top_decl(source: string) -> bool {
+    for raw in source.split("\n") {
+        let line = raw.trim()
+        if line == "" || line.starts_with("//") { continue }
+        if line.starts_with("fn ") || line.starts_with("export fn ")
+            || line.starts_with("type ") || line.starts_with("export type ")
+            || line.starts_with("enum ") || line.starts_with("export enum ")
+            || line.starts_with("trait ") || line.starts_with("impl ")
+            || line.starts_with("const ") || line.starts_with("export const ")
+            || line.starts_with("let ") || line.starts_with("mut ") {
+            return true
+        }
+    }
+    false
+}
+
 // ── DocBlock parser ─────────────────────────────────────────────────
 //
 // Parse a /// body into structured sections so renderers can show
