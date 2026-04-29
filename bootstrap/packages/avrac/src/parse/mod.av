@@ -16,12 +16,17 @@ use core.registry.{Registry, build_registry, lookup_decl_parser, lookup_stmt_par
 use features.closures.parser.{expr_contains_it, wrap_in_it_lambda}
 use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, diag_error, diag_with_help, span_new}
 
+/// Output of `parse_expression_source`. `expr` is null on parse
+/// failure; consult `had_error` / `error_message` for the cause.
 export type ParseResult = {
     expr: Expr?,
     had_error: int,
     error_message: string,
 }
 
+/// Output of `parse_program_source`. Same shape as ParseResult but
+/// carries a StmtList plus the full DiagnosticBag so later passes
+/// can render multi-error messages.
 export type ProgramParseResult = {
     stmts: StmtList?,
     had_error: int,
@@ -29,7 +34,9 @@ export type ProgramParseResult = {
     bag: DiagnosticBag,
 }
 
-// Saved parser state for speculative parsing with backtracking.
+/// Saved parser state used by speculative parses (e.g. generic call
+/// disambiguation). Pair with `parser.save_state` /
+/// `parser.restore_state` to back out of an attempted parse.
 export type ParserState = {
     start: int,
     current: int,
@@ -45,6 +52,33 @@ export type ParserState = {
     bag: DiagnosticBag,
 }
 
+/// Mutable parser state. Tracks lexer position, the currently-staged
+/// token, error state, the diagnostic bag, and a few mode flags
+/// that gate context-sensitive parses.
+/// @field source             — the entire program text.
+/// @field start / current    — lexer byte offsets (start = current
+///                              token's first byte).
+/// @field line / column      — lexer's source position.
+/// @field current_kind       — Tk discriminant of the staged token.
+/// @field current_lexeme     — the staged token's source text.
+/// @field current_line/col   — span coordinates of the staged token.
+/// @field prev_line          — line of the previously-consumed token;
+///                              used to gate same-line postfix attach.
+/// @field had_error          — sticky failure flag.
+/// @field error_message      — first error's message (legacy).
+/// @field allow_struct_lit   — when 0, `Ident { ... }` parses as
+///                              Ident-then-block (inside `if` / `while`
+///                              conditions); when 1, it's a struct
+///                              literal.
+/// @field allow_dot_postfix  — when 0, `.` doesn't attach as postfix
+///                              (inside match-arm bodies, so the next
+///                              `.Variant` arm isn't gobbled).
+/// @field allow_it_sugar     — when 1, `it` inside an arg list wraps
+///                              the expr in an implicit lambda. Set
+///                              by method calls, not regular calls.
+/// @field current_start      — byte offset of the staged token's start.
+/// @field bag                — accumulated diagnostics.
+/// @field features           — feature registry for parser dispatch.
 export type Parser = {
     source: string,
     mut start: int,
@@ -76,19 +110,29 @@ export type Parser = {
     features: Registry,
 }
 
+/// Parse a single expression. Used by `bs2 expr` for AST inspection
+/// and by the eval interpreter's REPL-style entry.
 export fn parse_expression_source(source: string) -> ParseResult {
     mut parser = parser_new(source)
     parser.parse_file_expression()
 }
 
+/// Parse a whole program (a sequence of declarations + statements).
+/// Top-level entry consumed by every CLI subcommand that ingests
+/// source.
 export fn parse_program_source(source: string) -> ProgramParseResult {
     mut parser = parser_new(source)
     parser.parse_file_program()
 }
 
+/// Reverse an ExprList. O(n). Used to undo the cons-prepend pattern
+/// once an arg list has been collected in source order via
+/// `cons-and-iterate`.
 export fn reverse_expr_list(list: ExprList) -> ExprList {
     reverse_expr_list_acc(list, ExprList.End)
 }
+
+/// Tail-recursive accumulator for `reverse_expr_list`.
 fn reverse_expr_list_acc(list: ExprList, acc: ExprList) -> ExprList {
     match list {
         .End -> acc
@@ -96,8 +140,9 @@ fn reverse_expr_list_acc(list: ExprList, acc: ExprList) -> ExprList {
     }
 }
 
-// Interleave header names and values: [k1,k2] + [v1,v2] → [k1,v1,k2,v2]
-// MapLit expects entries as flat: key1, val1, key2, val2, ...
+/// Interleave header names and values into a flat alternating list:
+/// `[k1, k2]` + `[v1, v2]` → `[k1, v1, k2, v2]`. MapLit expects this
+/// flat shape; table-literal parsing produces it.
 export fn table_zip_entries(headers: ExprList, values: ExprList) -> ExprList {
     match headers {
         .End -> ExprList.End
@@ -112,6 +157,8 @@ export fn table_zip_entries(headers: ExprList, values: ExprList) -> ExprList {
     }
 }
 
+/// True iff `e` is a bare or qualified identifier — used to gate
+/// promotions like Ident-to-call or Ident-to-pattern.
 fn expr_is_ident(e: Expr) -> bool {
     match e {
         .Ident(_) -> true
@@ -120,6 +167,9 @@ fn expr_is_ident(e: Expr) -> bool {
     }
 }
 
+/// True iff `e` is an identifier whose first letter is uppercase —
+/// the syntactic marker the resolver uses to distinguish a type ref
+/// from a value ref.
 fn expr_is_upper_ident(e: Expr) -> bool {
     match e {
         .Ident(n) -> p_starts_with_upper(n)
@@ -128,9 +178,10 @@ fn expr_is_upper_ident(e: Expr) -> bool {
     }
 }
 
-// Convert a list of Ident expressions into a ParamList (for lambda parsing).
-// (x, y) -> ... parses the parens as expressions first, then reinterprets
-// the Ident names as parameter names when -> is seen.
+/// Convert a list of Ident expressions into a ParamList (for lambda
+/// parsing). `(x, y) -> ...` parses the parens as expressions first,
+/// then reinterprets the Ident names as parameter names once `->`
+/// is seen.
 fn exprs_to_params(exprs: ExprList) -> ParamList {
     match exprs {
         .End -> ParamList.End
@@ -145,6 +196,9 @@ fn exprs_to_params(exprs: ExprList) -> ParamList {
     }
 }
 
+/// True iff `expr` is something that could syntactically be the
+/// callee of `expr(args)` — bare ident, qualified ident, or a field
+/// access (method call). Used by the postfix-call gate.
 fn is_callable(expr: Expr) -> bool {
     match expr {
         .Ident(_) -> true
@@ -154,6 +208,8 @@ fn is_callable(expr: Expr) -> bool {
     }
 }
 
+/// True iff `name` starts with an uppercase ASCII letter — Avra's
+/// type / variant naming convention.
 fn p_starts_with_upper(name: string) -> bool {
     if name.length < 1 {
         return false
@@ -162,9 +218,9 @@ fn p_starts_with_upper(name: string) -> bool {
     head in "A".."Z"
 }
 
-// Check if a template interpolation content is a simple identifier
-// (letters, digits, underscores only). Simple idents don't need a
-// sub-parser — they're just Expr.Ident.
+/// True iff `s` is a simple identifier (alpha first, then alnum or
+/// underscores). Simple idents inside `${...}` don't need a sub-
+/// parser — they lower directly to `Expr.Ident`.
 fn template_is_simple_ident(s: string) -> bool {
     if s.length == 0 { return false }
     // First char must be alpha (not digit) to be an identifier
@@ -180,11 +236,14 @@ fn template_is_simple_ident(s: string) -> bool {
     true
 }
 
-// Result of splitting a template interpolation on format spec.
+/// Output of `template_split_format`: the expression text and its
+/// optional `:format-spec` suffix (empty when no spec).
 type FormatSplit = { expr: string, fmt: string }
 
-// Split `expr:spec` at the last colon at brace/paren depth 0.
-// Returns the expression part and format spec (empty if no spec).
+/// Split a template interpolation body `"${expr:fmt}"` at the last
+/// colon at brace/paren depth 0. Returns the parts so the lowerer
+/// can route them to the right runtime call. When no valid format
+/// spec is found, the whole input is treated as the expression.
 fn template_split_format(s: string) -> FormatSplit {
     mut last_colon = -1
     mut depth = 0
@@ -215,13 +274,19 @@ fn template_split_format(s: string) -> FormatSplit {
     }
 }
 
-// Parse a sub-expression from a string (used by template desugaring).
-// Creates its own parser instance to avoid mutating the parent.
+/// Parse a sub-expression from a string. Used by template
+/// desugaring — creates its own parser instance so the parent's
+/// state isn't disturbed by the inner walk.
 fn parse_template_expr(source: string) -> Expr? {
     mut p = parser_new(source)
     p.parse_expression()
 }
 
+/// Map a source identifier to its keyword Tk variant. Returns
+/// `Tk.Identifier` when `text` isn't a reserved word. Reserved-but-
+/// inactive keywords (`async`, `await`, `bare`, ...) map to
+/// `Tk.KwReserved` — the lexer rejects them at the use site so we
+/// reserve the name space without committing to semantics.
 export fn p_keyword_kind(text: string) -> Tk {
     match text {
         "and"      -> Tk.KwAnd
@@ -284,6 +349,9 @@ export fn p_keyword_kind(text: string) -> Tk {
     }
 }
 
+/// Construct a Parser positioned on the first token of `source`.
+/// All mode flags default to permissive; feature parsers may flip
+/// them transiently for context-sensitive parses.
 export fn parser_new(source: string) -> Parser {
     mut parser = Parser {
         source,
@@ -650,6 +718,9 @@ impl Parser {
 
 }
 
+/// True iff the pipe RHS arg list contains an `_` placeholder.
+/// `x |> f(_, 2)` uses the placeholder to position the LHS at a
+/// specific arg slot; without one, the LHS becomes the first arg.
 fn pipe_args_has_placeholder(args: ExprList) -> bool {
     match args {
         .End -> false
@@ -660,6 +731,8 @@ fn pipe_args_has_placeholder(args: ExprList) -> bool {
     }
 }
 
+/// Replace the first `_` placeholder in `args` with the pipe's LHS
+/// expression. Counterpart to `pipe_args_has_placeholder`.
 fn pipe_replace_placeholder(args: ExprList, replacement: SExpr) -> ExprList {
     match args {
         .End -> ExprList.End

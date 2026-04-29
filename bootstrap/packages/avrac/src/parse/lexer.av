@@ -5,26 +5,35 @@ use core.ast.{Tk}
 use diagnostics.{DiagCode}
 use parse.{p_keyword_kind}
 
+/// True iff `ch` is an ASCII decimal digit (`0`-`9`).
 export fn p_is_digit(ch: string) -> bool {
     ch in "0".."9"
 }
 
+/// True iff `ch` starts an Avra identifier — ASCII letter or `_`.
+/// Note: the start char excludes digits; mid-identifier digits are
+/// gated by `p_is_alpha_numeric`.
 export fn p_is_alpha(ch: string) -> bool {
     ch in "a".."z" || ch in "A".."Z" || ch == "_"
 }
 
+/// True iff `ch` is valid as a non-first character of an identifier:
+/// alpha-or-digit (or `_`).
 export fn p_is_alpha_numeric(ch: string) -> bool {
     p_is_alpha(ch) || p_is_digit(ch)
 }
 
+/// True iff `ch` is a valid hex digit (`0`-`9`, `a`-`f`, `A`-`F`).
 export fn p_is_hex_digit(ch: string) -> bool {
     p_is_digit(ch) || ch in "a".."f" || ch in "A".."F"
 }
 
+/// True iff `ch` is `0` or `1`.
 export fn p_is_binary_digit(ch: string) -> bool {
     ch in ["0", "1"]
 }
 
+/// True iff `ch` is in `0`-`7`.
 export fn p_is_octal_digit(ch: string) -> bool {
     ch in "0".."7"
 }
@@ -656,8 +665,11 @@ impl Parser {
 
 }
 
-// Strip common leading whitespace from multiline string content.
-// The indentation is determined by the last line (which contained the closing """).
+/// Strip common leading whitespace from a multiline string body.
+/// The indentation is determined by the last line (the one that
+/// contained the closing `"""`); every other line gets that same
+/// prefix removed so the source can be indented inline without
+/// polluting the string's value.
 fn multiline_strip_indent(raw: string) -> string {
     // Find the last line to determine indent
     mut last_newline = -1
@@ -713,6 +725,9 @@ fn multiline_strip_indent(raw: string) -> string {
 
 // ── Numeric literal parsing ──
 
+/// Drop every `_` from `s`. Used by numeric literal parsing —
+/// Avra allows `1_000_000` for readability but the digit-walker
+/// wants the bare digits.
 export fn strip_underscores(s: string) -> string {
     mut out = ""
     for i in 0..s.length {
@@ -723,6 +738,9 @@ export fn strip_underscores(s: string) -> string {
     out
 }
 
+/// Parse a Number literal's lexeme into an int. Auto-detects the
+/// base from the leading `0x` / `0b` / `0o` prefix; defaults to
+/// decimal. Underscores are stripped before parsing.
 export fn parse_int_literal(text: string) -> int {
     let clean = strip_underscores(text)
     if clean.starts_with("0x") || clean.starts_with("0X") {
@@ -737,6 +755,8 @@ export fn parse_int_literal(text: string) -> int {
     int(clean)
 }
 
+/// Convert a hex digit char to its 0-15 numeric value. Returns 0
+/// for non-hex chars (caller is expected to gate with `p_is_hex_digit`).
 export fn hex_digit_value(ch: string) -> int {
     match ch {
         "0" -> 0
@@ -759,6 +779,7 @@ export fn hex_digit_value(ch: string) -> int {
     }
 }
 
+/// Parse a hex digit string (no `0x` prefix) into an int.
 export fn parse_hex(digits: string) -> int {
     mut result = 0
     mut i = 0
@@ -769,6 +790,7 @@ export fn parse_hex(digits: string) -> int {
     result
 }
 
+/// Parse a binary digit string (no `0b` prefix) into an int.
 export fn parse_binary(digits: string) -> int {
     mut result = 0
     mut i = 0
@@ -784,6 +806,7 @@ export fn parse_binary(digits: string) -> int {
     result
 }
 
+/// Parse an octal digit string (no `0o` prefix) into an int.
 export fn parse_octal(digits: string) -> int {
     mut result = 0
     mut i = 0
@@ -794,6 +817,8 @@ export fn parse_octal(digits: string) -> int {
     result
 }
 
+/// Convert a decimal digit char to its 0-9 numeric value. 0 for
+/// non-digits (caller gates with `p_is_digit`).
 export fn decimal_digit_value(ch: string) -> int {
     match ch {
         "0" -> 0
