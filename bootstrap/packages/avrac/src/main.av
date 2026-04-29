@@ -20,12 +20,14 @@ mod cli
 mod coverage
 mod indexer
 mod docs
+mod lang_gen
 use cli.{cli_new, cli_add_command, cli_command_add_flag, cli_command_add_option, cli_command_add_arg, cli_parse, result_has_flag, result_get_option}
 use coverage.{render_coverage}
 use docs.{extract_project_docs_ast, extract_project_corpus,
           show_overview, show_symbol, show_short, show_symbols,
           show_search, show_llm, show_callers, show_module,
           validate_docs, suggest_similar}
+use lang_gen.{render_lang_av, write_lang_av}
 use indexer.{run_lsp_server}
 use pathutil.{basename_no_ext}
 
@@ -568,6 +570,31 @@ fn main() {
             // for the cache layer (rnb9.7) to grow a watch loop.
             let project_dir = avra_process_env_get("PWD")
             run_lsp_server(project_dir)
+            return
+        }
+        if cmd0 == "lang" {
+            // Generate the language reference from compiler internals.
+            // Writes to ./target/lang.av by default; --print pipes to
+            // stdout so CI can diff against the checked-in copy.
+            mut want_print = false
+            mut k = 2
+            while k < avra_selfhost_argc() {
+                if avra_selfhost_get_arg_cstr(k) == "--print" {
+                    want_print = true
+                }
+                k = k + 1
+            }
+            if want_print {
+                println(render_lang_av())
+                return
+            }
+            avra_shell_exec("mkdir -p target")
+            let path = "target/lang.av"
+            if write_lang_av(path) == 0 {
+                eprintln("error: failed to write ${path}")
+                exit(1)
+            }
+            println("wrote ${path}")
             return
         }
         if cmd0 == "docs" {
