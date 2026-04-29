@@ -33,19 +33,19 @@
 // Spans carry no file path — that lives on the enclosing Location, so
 // the same Span can be relativised across consumers.
 
-// A 1-based file position. Line and column count from 1.
+/// A 1-based file position. Line and column count from 1.
 export type Pos = {
     line: int,
     col: int
 }
 
-// A half-open range within a single source file: [start, end).
+/// A half-open range within a single source file: [start, end).
 export type Span = {
     start: Pos,
     end: Pos
 }
 
-// A span anchored to a specific file path.
+/// A span anchored to a specific file path.
 export type Location = {
     file: string,
     span: Span
@@ -63,7 +63,7 @@ export fn span_new(start: Pos, end: Pos) -> Span {
     Span { start, end }
 }
 
-// A single-point span, useful when only the start is known.
+/// A single-point span, useful when only the start is known.
 export fn span_point(p: Pos) -> Span {
     Span { start: p, end: p }
 }
@@ -72,7 +72,7 @@ export fn location_new(file: string, span: Span) -> Location {
     Location { file, span }
 }
 
-// True if `p` falls within `s` (inclusive of start, exclusive of end).
+/// True if `p` falls within `s` (inclusive of start, exclusive of end).
 export fn span_contains(s: Span, p: Pos) -> bool {
     let after_start = p.line > s.start.line
         || (p.line == s.start.line && p.col >= s.start.col)
@@ -100,13 +100,13 @@ export fn span_contains(s: Span, p: Pos) -> bool {
 // readability; ticket .7 introduces a hash-keyed sidecar for
 // incremental rebuilds.
 
-// Stable identifier — djb2(qualified_path).
+/// Stable identifier — djb2(qualified_path).
 export type SymId = {
     value: int
 }
 
 // What kind of thing a symbol *is*. Each variant carries a
-// pre-rendered signature so consumers don't need the typed AST.
+/// pre-rendered signature so consumers don't need the typed AST.
 export enum SymKind {
     Fn(sig: string, ret: string)
     Type(rendered: string)
@@ -121,7 +121,7 @@ export enum SymKind {
     Module
 }
 
-// One symbol in the graph.
+/// One symbol in the graph.
 export type Sym = {
     id: SymId,
     name: string,
@@ -134,13 +134,13 @@ export type Sym = {
     tags_csv: string
 }
 
-// Linked list of Sym.
+/// Linked list of Sym.
 export enum SymList {
     End
     Node(item: Sym, next: SymList)
 }
 
-// The graph itself. Opaque-ish; consumers go through query helpers.
+/// The graph itself. Opaque-ish; consumers go through query helpers.
 export type SymbolGraph = {
     syms: SymList
 }
@@ -152,7 +152,7 @@ export fn graph_new() -> SymbolGraph {
 }
 
 // Prepend a sym. Insertion order is reversed in `syms`; iteration
-// helpers compensate when stable order matters.
+/// helpers compensate when stable order matters.
 export fn graph_add(g: SymbolGraph, s: Sym) -> SymbolGraph {
     g with { syms: SymList.Node(s, g.syms) }
 }
@@ -164,7 +164,7 @@ export fn graph_extend(g: SymbolGraph, list: SymList) -> SymbolGraph {
 // ── Identity ────────────────────────────────────────────────────────
 
 // Stable djb2 hash. Avra has no bitshift operator, so the canonical
-// `(h << 5) + h` is rewritten as `h * 33`.
+/// `(h << 5) + h` is rewritten as `h * 33`.
 export fn sym_id_for(qualified: string) -> SymId {
     SymId { value: djb2(qualified) }
 }
@@ -180,7 +180,7 @@ fn djb2(s: string) -> int {
     h
 }
 
-// Convenience: create a Sym with a derived id.
+/// Convenience: create a Sym with a derived id.
 export fn sym_new(name: string, qualified: string, kind: SymKind,
                   doc: string, file: string, span: Span,
                   exported: bool, tags_csv: string) -> Sym {
@@ -199,7 +199,7 @@ export fn sym_new(name: string, qualified: string, kind: SymKind,
 
 // ── Queries ─────────────────────────────────────────────────────────
 
-// All symbols in the graph (in reverse-insertion order).
+/// All symbols in the graph (in reverse-insertion order).
 export fn graph_all(g: SymbolGraph) -> SymList {
     g.syms
 }
@@ -208,22 +208,22 @@ export fn graph_count(g: SymbolGraph) -> int {
     sym_list_len(g.syms)
 }
 
-// Lookup by stable id. None if not present.
+/// Lookup by stable id. None if not present.
 export fn graph_by_id(g: SymbolGraph, id: SymId) -> Sym? {
     sym_list_find_id(g.syms, id)
 }
 
-// Lookup by display name (case-insensitive). Returns the first match.
+/// Lookup by display name (case-insensitive). Returns the first match.
 export fn graph_by_name(g: SymbolGraph, name: string) -> Sym? {
     sym_list_find_name(g.syms, name)
 }
 
-// Every symbol whose display name equals `name` (modulo case).
+/// Every symbol whose display name equals `name` (modulo case).
 export fn graph_all_by_name(g: SymbolGraph, name: string) -> SymList {
     collect_by_name(g.syms, name)
 }
 
-// Lookup by fully-qualified path.
+/// Lookup by fully-qualified path.
 export fn graph_by_qualified(g: SymbolGraph, qualified: string) -> Sym? {
     let id = sym_id_for(qualified)
     let found = sym_list_find_id(g.syms, id)
@@ -237,7 +237,7 @@ export fn graph_by_qualified(g: SymbolGraph, qualified: string) -> Sym? {
 }
 
 // Symbols whose qualified path begins with `prefix::`. Ticket .4
-// uses this for hierarchical navigation.
+/// uses this for hierarchical navigation.
 export fn graph_children(g: SymbolGraph, prefix: string) -> SymList {
     collect_children(g.syms, prefix)
 }
@@ -383,7 +383,7 @@ fn sym_list_concat(a: SymList, b: SymList) -> SymList {
 // ── Display helpers ─────────────────────────────────────────────────
 
 // One-line rendering of what a symbol is. Used by --short, search
-// snippets, and any renderer that wants a uniform header.
+/// snippets, and any renderer that wants a uniform header.
 export fn sym_kind_render(k: SymKind) -> string {
     match k {
         .Fn(sig, _) -> sig
@@ -400,7 +400,7 @@ export fn sym_kind_render(k: SymKind) -> string {
     }
 }
 
-// Short tag for grouping in summaries.
+/// Short tag for grouping in summaries.
 export fn sym_kind_tag(k: SymKind) -> string {
     match k {
         .Fn(_, _) -> "fn"
@@ -428,7 +428,7 @@ export fn sym_kind_tag(k: SymKind) -> string {
 //   StdlibCorpus     — once stdlib stabilises (deferred)
 
 // Errors any corpus extractor can raise. Kept small and self-contained
-// so std-lsp doesn't pull in the compiler's CompileError machinery.
+/// so std-lsp doesn't pull in the compiler's CompileError machinery.
 export enum IoError {
     NotFound(path: string)
     PermissionDenied(path: string)
@@ -440,7 +440,7 @@ export enum IoError {
 // inside trait bodies, so the contract is documented here):
 //   id()          — "project" / "lang" / "errors" / "stdlib"
 //   description() — one-liner for help screens
-//   extract()     — pull every symbol; incremental caching is .7
+///   extract()     — pull every symbol; incremental caching is .7
 export trait Corpus {
     fn id(self) -> string
     fn description(self) -> string
@@ -458,7 +458,7 @@ export trait Corpus {
 // resolver mistakenly qualifies `Result` as `@std::lsp::Result` and
 // codegen then fails to find it. Concrete impls live in consumer
 // crates (tickets .3 / .7), which don't trigger the bug. Pure-fn
-// helpers below give EmptyCorpus the same surface without the impl.
+/// helpers below give EmptyCorpus the same surface without the impl.
 export type EmptyCorpus = {
     label: string
 }
@@ -493,21 +493,21 @@ export fn empty_corpus_extract(c: EmptyCorpus) -> SymList {
 // against this file before .5 lands.
 
 // A hover response: documentation rendered for display, with the
-// authoritative location of the symbol it describes.
+/// authoritative location of the symbol it describes.
 export type Hover = {
     sym: Sym,
     rendered: string
 }
 
 // Completion candidate. Ticket .5 expands this with kind icons,
-// detail (signature), and documentation tail.
+/// detail (signature), and documentation tail.
 export type CompletionItem = {
     label: string,
     detail: string,
     sym: Sym
 }
 
-// Scoped enumeration: "all syms", "this file", "this module".
+/// Scoped enumeration: "all syms", "this file", "this module".
 export enum Scope {
     All
     File(path: string)
@@ -516,7 +516,7 @@ export enum Scope {
 
 // The query trait. v1 has free-function variants below; the trait
 // exists so ticket .5 can plug in alternative backends (e.g. an
-// indexed cache) without changing call sites.
+/// indexed cache) without changing call sites.
 export trait Query {
     fn hover(self, file: string, pos: Pos) -> Hover?
     fn definition(self, file: string, pos: Pos) -> Location?
@@ -532,22 +532,22 @@ export trait Query {
 // Position-aware queries (hover/definition by Pos) need span-indexed
 // lookup that lands in ticket .5.
 
-// Look up a symbol by stable id.
+/// Look up a symbol by stable id.
 export fn query_by_id(g: SymbolGraph, id: SymId) -> Sym? {
     graph_by_id(g, id)
 }
 
-// Look up a symbol by display name (case-insensitive).
+/// Look up a symbol by display name (case-insensitive).
 export fn query_by_name(g: SymbolGraph, name: string) -> Sym? {
     graph_by_name(g, name)
 }
 
-// Look up a symbol by fully-qualified path.
+/// Look up a symbol by fully-qualified path.
 export fn query_by_qualified(g: SymbolGraph, qualified: string) -> Sym? {
     graph_by_qualified(g, qualified)
 }
 
-// Every symbol in the graph.
+/// Every symbol in the graph.
 export fn query_all(g: SymbolGraph) -> SymList {
     graph_all(g)
 }
@@ -582,7 +582,7 @@ extern fn avra_selfhost_levenshtein(a: string, b: string, len_a: int, len_b: int
 fn fuzzy_did_you_mean_threshold() -> int { 200 }
 
 // Composed score for a single (query, candidate) pair. Pure: same
-// inputs always yield the same int; safe to cache by (q,c) hash.
+/// inputs always yield the same int; safe to cache by (q,c) hash.
 export fn fuzzy_score(query: string, candidate: string) -> int {
     if query == candidate {
         return 1000
@@ -634,7 +634,7 @@ fn fuzzy_is_subsequence(needle: string, haystack: string) -> bool {
 // String-keyed candidate list. Linked list because Avra collections
 // don't yet have rich vec semantics, and consumers pass either
 // hand-built lists (fixture tests, CLI flag enumerations) or lists
-// derived from a SymList walk.
+/// derived from a SymList walk.
 export enum StrList {
     End
     Node(value: string, next: StrList)
@@ -644,7 +644,7 @@ export fn strlist_cons(head: string, tail: StrList) -> StrList {
     StrList.Node(head, tail)
 }
 
-// Scored candidate, paired with its score for sorting.
+/// Scored candidate, paired with its score for sorting.
 export type Scored = {
     value: string,
     score: int
@@ -657,7 +657,7 @@ export enum ScoredList {
 
 // Score every candidate, drop zeros, sort score-desc then lex-asc,
 // truncate to `limit`. Used by --search, completion ranking, and
-// every "find me the closest matches to X" UX.
+/// every "find me the closest matches to X" UX.
 export fn fuzzy_search(query: string, candidates: StrList, limit: int) -> ScoredList {
     let scored = score_all(query, candidates)
     let sorted = scored_list_sort(scored)
@@ -667,7 +667,7 @@ export fn fuzzy_search(query: string, candidates: StrList, limit: int) -> Scored
 // Best single suggestion for `query` among `candidates`. Returns the
 // empty string when no candidate scores ≥ threshold — callers should
 // suppress the "did you mean" line in that case (silence beats a
-// misleading suggestion).
+/// misleading suggestion).
 export fn did_you_mean(query: string, candidates: StrList) -> string {
     mut best_value = ""
     mut best_score = fuzzy_did_you_mean_threshold() - 1
@@ -691,7 +691,7 @@ export fn did_you_mean(query: string, candidates: StrList) -> string {
 }
 
 // Top-N suggestions for `query`, used by error renderers that show
-// up to three "did you mean" candidates instead of just one.
+/// up to three "did you mean" candidates instead of just one.
 export fn did_you_mean_n(query: string, candidates: StrList, n: int) -> StrList {
     mut acc = StrList.End
     mut cur = scored_take_threshold(score_all(query, candidates), fuzzy_did_you_mean_threshold())

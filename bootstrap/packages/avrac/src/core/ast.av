@@ -737,11 +737,90 @@ export enum CompConfigPairList {
 }
 
 // Unwrap Annotated wrapper, returning the inner statement.
-// If not Annotated, returns the statement as-is.
+// Strip every Annotated wrapper, returning the underlying decl.
+//
+// Recursive on purpose: a single decl can wear multiple annotations
+// (e.g. `/// docstring\nexport fn foo() -> int { ... }` parses to
+// Annotated(@doc, Annotated(@export, Function))), and call sites
+// that dispatch on the inner Stmt variant need to reach Function
+// regardless of how many `///` / `@export` / `@inline` / etc.
+// layers happen to wrap it.
 export fn stmt_unwrap(s: Stmt) -> Stmt {
     match s {
-        .Annotated(_, inner) -> inner
+        .Annotated(_, inner) -> stmt_unwrap(inner)
         _ -> s
+    }
+}
+
+// Look up an annotation by name on a Stmt. Walks every Annotated
+// layer (so `/// foo\n@inline\nfn bar()` finds @doc, @inline, etc.),
+// returning the first occurrence. Returns the raw arg list — the
+// caller decides what shape it expects (single string for @doc,
+// no args for @export, etc.).
+export fn find_annotation(s: Stmt, name: string) -> AnnotationList? {
+    match s {
+        .Annotated(annots, inner) -> {
+            let here = annotation_list_find(annots, name)
+            if here != null {
+                return here
+            }
+            find_annotation(inner, name)
+        }
+        _ -> null
+    }
+}
+
+// Extract the first @doc annotation's text body, with surrounding
+// `"..."` literal quotes stripped. Returns "" if the stmt has no
+// @doc annotation. Tooling (std-lsp indexer, IDE hover, the docs
+// CLI) should prefer this over reading the AnnotationList directly.
+export fn doc_string_for(s: Stmt) -> string {
+    let found = find_annotation(s, "doc")
+    if found == null { return "" }
+    annotation_first_string(found!)
+}
+
+fn annotation_list_find(annots: AnnotationList, name: string) -> AnnotationList? {
+    match annots {
+        .End -> null
+        .Node(n, args, next) -> {
+            if n == name {
+                AnnotationList.Node(n, args, AnnotationList.End)
+            } else {
+                annotation_list_find(next, name)
+            }
+        }
+    }
+}
+
+// Pull the first arg's string body out of an annotation. The parser
+// stores doc comments as Expr.String("\"…raw text…\"") — quotes are
+// part of the literal form, so we strip them here.
+fn annotation_first_string(annots: AnnotationList) -> string {
+    match annots {
+        .End -> ""
+        .Node(_, args, _) -> {
+            match args {
+                .End -> ""
+                .Node(se, _) -> {
+                    match se.node {
+                        .String(literal) -> strip_quotes(literal)
+                        _ -> ""
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn strip_quotes(s: string) -> string {
+    if s.length < 2 { return s }
+    let first = s.substring(0, 1)
+    let last = s.substring(s.length - 1, s.length)
+    if first == "\"" && last == "\"" {
+        s.substring(1, s.length - 1)
+    } else {
+        s
     }
 }
 
