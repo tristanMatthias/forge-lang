@@ -1,0 +1,216 @@
+// Cache encode/decode round-trip + freshness predicate + per-file
+// eviction. Disk-side load/save is exercised by writing to /tmp.
+
+use @std.lsp.{lsp_pos,
+              SymKind, SymbolGraph, SymList, Sym,
+              graph_new, graph_add, sym_new,
+              CacheState, CacheFileEntry, CacheFileList,
+              cache_empty, cache_is_fresh, cache_evict_file,
+              cache_add_file, cache_encode, cache_decode,
+              cache_load, cache_save}
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn cache_test_span() -> LspSpan {
+    LspSpan { start: lsp_pos(7, 1), end: lsp_pos(7, 1) }
+}
+
+fn cache_test_syms_for_file(file: string) -> SymList {
+    let sp = cache_test_span()
+    SymList.Node(
+        sym_new("foo", "mod_a::foo",
+            SymKind.Fn("fn foo() -> int", "int"),
+            "Doc for foo.", file, sp, true, ""),
+        SymList.Node(
+            sym_new("Bar", "mod_a::Bar",
+                SymKind.Type("type Bar"),
+                "Doc for Bar.", file, sp, true, ""),
+            SymList.End))
+}
+
+fn cache_test_state() -> CacheState {
+    let mut s = cache_empty()
+    cache_add_file(s, "mod_a.av", 1000000000, cache_test_syms_for_file("mod_a.av"))
+}
+
+fn cache_test_count_syms(list: SymList) -> int {
+    mut n = 0
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return n
+            }
+            .Node(_, next) -> {
+                n = n + 1
+                cur = next
+            }
+        }
+    }
+    n
+}
+
+fn cache_test_count_files(list: CacheFileList) -> int {
+    mut n = 0
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return n
+            }
+            .Node(_, next) -> {
+                n = n + 1
+                cur = next
+            }
+        }
+    }
+    n
+}
+
+fn cache_test_first_sym_qualified(list: SymList) -> string {
+    match list {
+        .End -> ""
+        .Node(item, _) -> item.qualified
+    }
+}
+
+spec "cache: empty state" {
+    given "a freshly-built cache" {
+        then "cache_empty has no files and no syms" {
+            let s = cache_empty()
+            cache_test_count_files(s.files) == 0 && cache_test_count_syms(s.syms) == 0
+        }
+        then "version is empty until populated" {
+            cache_empty().version == ""
+        }
+    }
+}
+
+spec "cache: add and evict by file" {
+    given "a cache populated for one file" {
+        then "sym_count and file row both present" {
+            let s = cache_test_state()
+            cache_test_count_files(s.files) == 1 && cache_test_count_syms(s.syms) == 2
+        }
+    }
+    given "evicting the file" {
+        then "drops both its row and every Sym from that file" {
+            let s = cache_test_state()
+            let after = cache_evict_file(s, "mod_a.av")
+            cache_test_count_files(after.files) == 0 && cache_test_count_syms(after.syms) == 0
+        }
+    }
+    given "evicting a file that isn't cached" {
+        then "leaves the cache unchanged" {
+            let s = cache_test_state()
+            let after = cache_evict_file(s, "missing.av")
+            cache_test_count_files(after.files) == 1 && cache_test_count_syms(after.syms) == 2
+        }
+    }
+}
+
+spec "cache: round-trip via TSV" {
+    given "encode then decode" {
+        then "preserves sym count" {
+            let s = cache_test_state()
+            let encoded = cache_encode(s, "test-version")
+            let decoded = cache_decode(encoded)
+            cache_test_count_syms(decoded.syms) == cache_test_count_syms(s.syms)
+        }
+        then "preserves the version header" {
+            let s = cache_test_state()
+            let encoded = cache_encode(s, "0.3.7")
+            cache_decode(encoded).version == "0.3.7"
+        }
+        then "preserves qualified paths" {
+            let s = cache_test_state()
+            let decoded = cache_decode(cache_encode(s, "v"))
+            cache_test_first_sym_qualified(decoded.syms) == "mod_a::foo"
+        }
+    }
+    given "decoding an empty string" {
+        then "yields an empty cache" {
+            let s = cache_decode("")
+            cache_test_count_files(s.files) == 0 && cache_test_count_syms(s.syms) == 0
+        }
+    }
+    given "decoding a header-less blob" {
+        then "yields an empty cache (treated as invalid)" {
+            let s = cache_decode("just\nrandom\nlines\n")
+            cache_test_count_files(s.files) == 0 && cache_test_count_syms(s.syms) == 0
+        }
+    }
+}
+
+spec "cache: doc + sig escape round-trip" {
+    given "a Sym whose doc contains tabs and newlines" {
+        then "encode + decode preserves the body" {
+            let sp = cache_test_span()
+            let weird = sym_new("weird", "weird::weird",
+                SymKind.Fn("fn weird() -> int", "int"),
+                "Line one.\nLine two.\twith tab.", "weird.av", sp, true, "")
+            let s = cache_add_file(cache_empty(), "weird.av", 1, SymList.Node(weird, SymList.End))
+            let decoded = cache_decode(cache_encode(s, "v"))
+            match decoded.syms {
+                .Node(item, _) -> item.doc == "Line one.\nLine two.\twith tab."
+                _ -> false
+            }
+        }
+    }
+}
+
+spec "cache: freshness against real files" {
+    given "a non-existent path" {
+        then "cache_is_fresh returns false (current mtime is 0)" {
+            let nonexistent = "/tmp/avra_lsp_definitely_does_not_exist_xyz.av"
+            avra_shell_exec("rm -f ${nonexistent}")
+            let s = cache_add_file(cache_empty(), nonexistent, 1000000000, SymList.End)
+            let result = cache_is_fresh(s, nonexistent)
+            result == false
+        }
+    }
+    given "a file with a real mtime" {
+        then "cache stamped far in the future is fresh" {
+            let tmp = "/tmp/avra_lsp_cache_freshness_test.av"
+            avra_shell_exec("touch ${tmp}")
+            let future = 9999999999000000000
+            let s = cache_add_file(cache_empty(), tmp, future, SymList.End)
+            cache_is_fresh(s, tmp) == true
+        }
+        then "cache stamped at epoch 1 is stale" {
+            let tmp = "/tmp/avra_lsp_cache_freshness_test_old.av"
+            avra_shell_exec("touch ${tmp}")
+            let s = cache_add_file(cache_empty(), tmp, 1, SymList.End)
+            cache_is_fresh(s, tmp) == false
+        }
+    }
+}
+
+spec "cache: disk persistence" {
+    given "save followed by load" {
+        then "produces a cache with the same sym count" {
+            let s = cache_test_state()
+            let path = "/tmp/avra_lsp_cache_disk_test.tsv"
+            avra_shell_exec("rm -f ${path}")
+            cache_save(s, path, "test-v1")
+            let loaded = cache_load(path)
+            cache_test_count_syms(loaded.syms) == cache_test_count_syms(s.syms)
+        }
+        then "the loaded cache reports the saved version" {
+            let s = cache_test_state()
+            let path = "/tmp/avra_lsp_cache_disk_test_v.tsv"
+            avra_shell_exec("rm -f ${path}")
+            cache_save(s, path, "v9.9.9")
+            cache_load(path).version == "v9.9.9"
+        }
+    }
+    given "loading a non-existent path" {
+        then "returns an empty cache" {
+            let path = "/tmp/avra_lsp_cache_does_not_exist_xyz.tsv"
+            avra_shell_exec("rm -f ${path}")
+            let loaded = cache_load(path)
+            cache_test_count_syms(loaded.syms) == 0
+                && cache_test_count_files(loaded.files) == 0
+        }
+    }
+}

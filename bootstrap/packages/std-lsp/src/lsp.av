@@ -1366,3 +1366,372 @@ fn scored_sym_take(list: ScoredSymList, n: int) -> ScoredSymList {
         .Node(item, next) -> ScoredSymList.Node(item, scored_sym_take(next, n - 1))
     }
 }
+
+// ╔═══════════════════════════════════════════════════════════════════╗
+// ║                              CACHE                                ║
+// ╚═══════════════════════════════════════════════════════════════════╝
+//
+// Persist the SymList between `avra docs` invocations so the second
+// run is sub-50ms instead of re-walking + re-parsing every .av.
+//
+// Layout (`target/lsp/`):
+//   files.tsv  — header + one row per source file:
+//                  # avra-lsp-cache v=<version>
+//                  <path>\t<mtime_ns>\t<sym_count>
+//                ...
+//   syms.tsv   — one row per Sym:
+//                  <file>\t<qualified>\t<kind_tag>\t<sig>\t<doc_b64>\t<line>\t<exported>
+//
+// The cache is *plain text* on purpose — easy to inspect, easy to
+// reproduce, no serialisation library coupling. Doc bodies are
+// base64-light-encoded (newlines → \n literals, tabs → \t literals)
+// so each Sym fits on one line.
+//
+// Freshness: for each file in the project, stat its mtime and compare
+// to the cached row. Files with no row, or with a newer mtime, get
+// re-extracted; their old Syms are evicted from the merged list.
+//
+// Compiler version: callers pass it in (the bootstrap doesn't have a
+// stable version constant yet). When the version field doesn't match
+// the cache's header, the whole cache is invalidated and rebuilt.
+
+extern fn avra_file_mtime(path: string) -> int
+
+/// One per-file cache row: path, last-seen mtime, count of Syms that
+/// were extracted from it. The Syms themselves live in the parallel
+/// SymList; the row exists so freshness checks don't need to scan
+/// the SymList.
+export type CacheFileEntry = {
+    path: string,
+    mtime_ns: int,
+    sym_count: int
+}
+
+export enum CacheFileList {
+    End
+    Node(item: CacheFileEntry, next: CacheFileList)
+}
+
+/// Loaded cache state — header + per-file rows + the materialised
+/// SymList. `version` is empty when no cache file existed.
+export type CacheState = {
+    version: string,
+    files: CacheFileList,
+    syms: SymList
+}
+
+export fn cache_empty() -> CacheState {
+    CacheState { version: "", files: CacheFileList.End, syms: SymList.End }
+}
+
+/// True if `path` appears in the cache with mtime >= the file's
+/// current mtime — meaning the cached Syms are still fresh.
+export fn cache_is_fresh(state: CacheState, path: string) -> bool {
+    let row = cache_files_find(state.files, path)
+    if row == null { return false }
+    let current = avra_file_mtime(path)
+    if current == 0 { return false }
+    row!.mtime_ns >= current
+}
+
+fn cache_files_find(list: CacheFileList, path: string) -> CacheFileEntry? {
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return null
+            }
+            .Node(item, next) -> {
+                if item.path == path {
+                    return item
+                }
+                cur = next
+            }
+        }
+    }
+    null
+}
+
+/// Drop every Sym whose `file` matches `path`. Used when a file goes
+/// stale: evict its old contribution before re-extracting.
+export fn cache_evict_file(state: CacheState, path: string) -> CacheState {
+    let kept_syms = sym_list_drop_by_file(state.syms, path)
+    let kept_files = file_list_drop(state.files, path)
+    state with { syms: kept_syms, files: kept_files }
+}
+
+/// Add a fresh per-file slice to the cache: the new SymList for
+/// `path` plus an updated CacheFileEntry. Caller is responsible for
+/// having evicted any prior slice for the same path.
+export fn cache_add_file(state: CacheState, path: string, mtime_ns: int, syms: SymList) -> CacheState {
+    let count = sym_list_len(syms)
+    let entry = CacheFileEntry { path, mtime_ns, sym_count: count }
+    state with {
+        syms: sym_list_concat(syms, state.syms),
+        files: CacheFileList.Node(entry, state.files)
+    }
+}
+
+fn sym_list_drop_by_file(list: SymList, path: string) -> SymList {
+    mut acc = SymList.End
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return reverse_syms(acc)
+            }
+            .Node(item, next) -> {
+                if item.file != path {
+                    acc = SymList.Node(item, acc)
+                }
+                cur = next
+            }
+        }
+    }
+    SymList.End
+}
+
+fn file_list_drop(list: CacheFileList, path: string) -> CacheFileList {
+    match list {
+        .End -> CacheFileList.End
+        .Node(item, next) -> {
+            if item.path == path {
+                file_list_drop(next, path)
+            } else {
+                CacheFileList.Node(item, file_list_drop(next, path))
+            }
+        }
+    }
+}
+
+// ── TSV encode / decode ─────────────────────────────────────────────
+
+extern fn avra_selfhost_read_file(path: string) -> string
+extern fn avra_selfhost_write_file(path: string, content: string) -> int
+extern fn avra_selfhost_file_exists(path: string) -> int
+
+/// Encode a CacheState into TSV form. `version` is written as a
+/// header line so the loader can detect compiler-version mismatches.
+export fn cache_encode(state: CacheState, version: string) -> string {
+    let header = "# avra-lsp-cache v=${version}\n"
+    let files_section = encode_files(state.files)
+    let syms_section = encode_syms(state.syms)
+    "${header}${files_section}--\n${syms_section}"
+}
+
+fn encode_files(list: CacheFileList) -> string {
+    mut out = ""
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return out
+            }
+            .Node(item, next) -> {
+                let line = "${item.path}\t${string(item.mtime_ns)}\t${string(item.sym_count)}\n"
+                out = "${out}${line}"
+                cur = next
+            }
+        }
+    }
+    out
+}
+
+fn encode_syms(list: SymList) -> string {
+    mut out = ""
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return out
+            }
+            .Node(item, next) -> {
+                out = "${out}${encode_sym(item)}\n"
+                cur = next
+            }
+        }
+    }
+    out
+}
+
+fn encode_sym(s: Sym) -> string {
+    let kind_tag = sym_kind_tag(s.kind)
+    let sig = sym_kind_render(s.kind)
+    let doc = escape_field(s.doc)
+    let exp = if s.exported { "1" } else { "0" }
+    "${s.file}\t${s.qualified}\t${kind_tag}\t${escape_field(sig)}\t${doc}\t${string(s.span.start.line)}\t${exp}"
+}
+
+// Tabs and newlines inside doc/sig bodies break the TSV row format.
+// Replace them with literal `\t` and `\n` two-char sequences; the
+// loader does the inverse.
+fn escape_field(s: string) -> string {
+    mut out = ""
+    mut i = 0
+    while i < s.length {
+        let ch = s.substring(i, i + 1)
+        if ch == "\t" {
+            out = "${out}\\t"
+        } else if ch == "\n" {
+            out = "${out}\\n"
+        } else {
+            out = "${out}${ch}"
+        }
+        i = i + 1
+    }
+    out
+}
+
+fn unescape_field(s: string) -> string {
+    mut out = ""
+    mut i = 0
+    while i < s.length {
+        let ch = s.substring(i, i + 1)
+        if ch == "\\" && i + 1 < s.length {
+            let nxt = s.substring(i + 1, i + 2)
+            if nxt == "t" {
+                out = "${out}\t"
+                i = i + 2
+                continue
+            }
+            if nxt == "n" {
+                out = "${out}\n"
+                i = i + 2
+                continue
+            }
+        }
+        out = "${out}${ch}"
+        i = i + 1
+    }
+    out
+}
+
+/// Decode TSV output from `cache_encode` back into CacheState. On
+/// any parse hiccup (header malformed, version field absent), returns
+/// an empty cache so the caller falls back to a full rebuild.
+export fn cache_decode(source: string) -> CacheState {
+    if source.length == 0 { return cache_empty() }
+    let lines = source.split("\n")
+    if lines.length == 0 { return cache_empty() }
+
+    // Header: "# avra-lsp-cache v=<version>"
+    let header = lines[0]
+    if !header.starts_with("# avra-lsp-cache v=") {
+        return cache_empty()
+    }
+    let version = header.substring(19, header.length)
+
+    mut files = CacheFileList.End
+    mut syms = SymList.End
+    mut idx = 1
+    mut in_syms = false
+    while idx < lines.length {
+        let line = lines[idx]
+        idx = idx + 1
+        if line == "" { continue }
+        if line == "--" {
+            in_syms = true
+            continue
+        }
+        if in_syms {
+            let parsed = decode_sym(line)
+            if parsed != null {
+                syms = SymList.Node(parsed!, syms)
+            }
+        } else {
+            let parsed = decode_file_row(line)
+            if parsed != null {
+                files = CacheFileList.Node(parsed!, files)
+            }
+        }
+    }
+    CacheState { version, files: cache_files_reverse(files), syms: reverse_syms(syms) }
+}
+
+fn cache_files_reverse(list: CacheFileList) -> CacheFileList {
+    mut acc = CacheFileList.End
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return acc
+            }
+            .Node(item, next) -> {
+                acc = CacheFileList.Node(item, acc)
+                cur = next
+            }
+        }
+    }
+    CacheFileList.End
+}
+
+fn decode_file_row(line: string) -> CacheFileEntry? {
+    let parts = line.split("\t")
+    if parts.length < 3 { return null }
+    CacheFileEntry {
+        path: parts[0],
+        mtime_ns: int(parts[1]),
+        sym_count: int(parts[2])
+    }
+}
+
+fn decode_sym(line: string) -> Sym? {
+    // file \t qualified \t kind_tag \t sig \t doc \t line \t exported
+    let parts = line.split("\t")
+    if parts.length < 7 { return null }
+    let file = parts[0]
+    let qualified = parts[1]
+    let kind_tag = parts[2]
+    let sig = unescape_field(parts[3])
+    let doc = unescape_field(parts[4])
+    let line_num = int(parts[5])
+    let exported = parts[6] == "1"
+    let kind = decode_kind(kind_tag, sig)
+    let name = qualified_leaf(qualified)
+    let span = lsp_span(lsp_pos(line_num, 1), lsp_pos(line_num, 1))
+    sym_new(name, qualified, kind, doc, file, span, exported, "")
+}
+
+fn decode_kind(tag: string, sig: string) -> SymKind {
+    match tag {
+        "fn" -> SymKind.Fn(sig, "")
+        "type" -> SymKind.Type(sig)
+        "enum" -> {
+            // sig is "enum { A, B, C }" or "enum"; strip wrapper.
+            if sig.starts_with("enum { ") && sig.ends_with(" }") {
+                SymKind.Enum(sig.substring(7, sig.length - 2))
+            } else {
+                SymKind.Enum("")
+            }
+        }
+        "trait" -> SymKind.Trait(sig)
+        "const" -> SymKind.Const(strip_kind_prefix(sig, "const"))
+        "mut" -> SymKind.Mut(strip_kind_prefix(sig, "mut"))
+        "let" -> SymKind.Let(strip_kind_prefix(sig, "let"))
+        "module" -> SymKind.Module
+        _ -> SymKind.Type(sig)
+    }
+}
+
+fn strip_kind_prefix(sig: string, kind: string) -> string {
+    let pfx = "${kind}: "
+    if sig.starts_with(pfx) {
+        sig.substring(pfx.length, sig.length)
+    } else {
+        ""
+    }
+}
+
+// ── Disk persistence ─────────────────────────────────────────────────
+
+/// Read `path` and decode. Returns an empty cache when the file
+/// doesn't exist or fails to parse.
+export fn cache_load(path: string) -> CacheState {
+    if avra_selfhost_file_exists(path) == 0 { return cache_empty() }
+    cache_decode(avra_selfhost_read_file(path))
+}
+
+/// Encode + write. Returns 1 on success, 0 on failure.
+export fn cache_save(state: CacheState, path: string, version: string) -> int {
+    avra_selfhost_write_file(path, cache_encode(state, version))
+}

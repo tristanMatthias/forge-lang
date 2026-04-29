@@ -832,6 +832,22 @@ int64_t avra_is_dir(const char* path) {
     return S_ISDIR(st.st_mode) ? 1 : 0;
 }
 
+// File modification time as nanoseconds since unix epoch. Returns 0
+// if the path doesn't exist (caller treats 0 as "stale, re-extract").
+// Used by std-lsp's incremental cache to detect changed source files
+// without reading file contents.
+int64_t avra_file_mtime(const char* path) {
+    struct stat st;
+    if (stat(path, &st) != 0) return 0;
+#if defined(__APPLE__)
+    return (int64_t)st.st_mtimespec.tv_sec * 1000000000LL
+         + (int64_t)st.st_mtimespec.tv_nsec;
+#else
+    return (int64_t)st.st_mtim.tv_sec * 1000000000LL
+         + (int64_t)st.st_mtim.tv_nsec;
+#endif
+}
+
 
 // ─── Hash Map ─────────────────────────────────────────────────────
 // String-keyed, i64-valued hash map. Linear probing for simplicity.
