@@ -15,6 +15,9 @@ use core.runtime.{avra_selfhost_read_file, avra_shell_exec}
 use parse.{parse_program_source}
 use indexer.{extract_from_ast}
 use @std.lsp.{Sym, SymList, SymKind}
+use render.{bold, dim, cyan, green, yellow, red,
+            pad_right, truncate_str, rule, first_line, icase_eq, pct}
+use pathutil.{relativise}
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -34,253 +37,6 @@ export type DocSym = {
 export enum DocSymList {
     End
     Node(item: DocSym, next: DocSymList)
-}
-
-// ── ANSI helpers ────────────────────────────────────────────────────
-
-fn ansi_bold() -> string { "\x1b[1m" }
-fn ansi_dim() -> string { "\x1b[2m" }
-fn ansi_cyan() -> string { "\x1b[36m" }
-fn ansi_green() -> string { "\x1b[32m" }
-fn ansi_yellow() -> string { "\x1b[33m" }
-fn ansi_red() -> string { "\x1b[31m" }
-fn ansi_reset() -> string { "\x1b[0m" }
-
-fn bold(s: string) -> string { "${ansi_bold()}${s}${ansi_reset()}" }
-fn dim(s: string) -> string { "${ansi_dim()}${s}${ansi_reset()}" }
-fn cyan(s: string) -> string { "${ansi_cyan()}${s}${ansi_reset()}" }
-fn green(s: string) -> string { "${ansi_green()}${s}${ansi_reset()}" }
-fn yellow(s: string) -> string { "${ansi_yellow()}${s}${ansi_reset()}" }
-fn red(s: string) -> string { "${ansi_red()}${s}${ansi_reset()}" }
-
-// ── Source-level extraction ─────────────────────────────────────────
-
-export fn extract_docs(source: string, file_path: string) -> DocSymList {
-    let lines = source.split("\n")
-    mut acc = DocSymList.End
-    mut i = 0
-    while i < lines.length {
-        // Collect consecutive /// lines.
-        mut doc_text = ""
-        while i < lines.length {
-            let trimmed = lines[i].trim()
-            if trimmed.starts_with("///") {
-                let after = trimmed.substring(3, trimmed.length)
-                let content = if after.starts_with(" ") { after.substring(1, after.length) } else { after }
-                doc_text = if doc_text == "" { content } else { doc_text + "\n" + content }
-                i = i + 1
-            } else {
-                break
-            }
-        }
-
-        if i >= lines.length { break }
-
-        // Skip spec-test directive blocks.
-        if doc_text.contains("expect:") || doc_text.contains("expect-error:") {
-            i = i + 1
-            continue
-        }
-
-        let raw = lines[i].trim()
-        let line_num = i + 1
-
-        let exported = if raw.starts_with("export ") { 1 } else { 0 }
-        let decl = if exported == 1 { raw.substring(7, raw.length).trim() } else { raw }
-
-        if decl.starts_with("fn ") {
-            let s = parse_fn_decl(decl, doc_text, file_path, line_num, exported)
-            acc = DocSymList.Node(s, acc)
-        } else if decl.starts_with("type ") {
-            let s = parse_type_decl(decl, doc_text, file_path, line_num, exported)
-            acc = DocSymList.Node(s, acc)
-        } else if decl.starts_with("enum ") {
-            let s = parse_enum_decl(decl, lines, i, doc_text, file_path, line_num, exported)
-            acc = DocSymList.Node(s, acc)
-        } else if decl.starts_with("let ") || decl.starts_with("mut ") || decl.starts_with("const ") {
-            let s = parse_var_decl(decl, doc_text, file_path, line_num, exported)
-            acc = DocSymList.Node(s, acc)
-        }
-
-        i = i + 1
-    }
-    reverse_syms(acc)
-}
-
-fn reverse_syms(list: DocSymList) -> DocSymList {
-    mut acc = DocSymList.End
-    mut cur = list
-    while true {
-        match cur {
-            .End -> return acc
-            .Node(item, next) -> {
-                acc = DocSymList.Node(item, acc)
-                cur = next
-            }
-        }
-    }
-    acc
-}
-
-fn parse_fn_decl(decl: string, doc: string, file: string, line: int, exported: int) -> DocSym {
-    // Extract name from `fn NAME(` or `fn NAME<...>(`.
-    let rest = decl.substring(3, decl.length).trim()
-    mut name_end = 0
-    while name_end < rest.length {
-        let ch = rest.substring(name_end, name_end + 1)
-        if ch == "(" || ch == "<" || ch == " " { break }
-        name_end = name_end + 1
-    }
-    let name = rest.substring(0, name_end).trim()
-
-    // Take the signature up to the body brace (or end of line).
-    let brace = decl.index_of("{")
-    let sig_end = if brace >= 0 { brace } else { decl.length }
-    let sig = decl.substring(0, sig_end).trim()
-
-    DocSym {
-        kind: 1,
-        name,
-        sig,
-        variants: "",
-        doc,
-        file,
-        line,
-        exported,
-        var_kind: ""
-    }
-}
-
-fn parse_type_decl(decl: string, doc: string, file: string, line: int, exported: int) -> DocSym {
-    let rest = decl.substring(5, decl.length).trim()
-    mut name_end = 0
-    while name_end < rest.length {
-        let ch = rest.substring(name_end, name_end + 1)
-        if ch == "=" || ch == "<" || ch == " " { break }
-        name_end = name_end + 1
-    }
-    let name = rest.substring(0, name_end).trim()
-    DocSym {
-        kind: 2,
-        name,
-        sig: "type ${name}",
-        variants: "",
-        doc,
-        file,
-        line,
-        exported,
-        var_kind: ""
-    }
-}
-
-fn parse_enum_decl(decl: string, lines: List<string>, start: int, doc: string, file: string, line: int, exported: int) -> DocSym {
-    let rest = decl.substring(5, decl.length).trim()
-    mut name_end = 0
-    while name_end < rest.length {
-        let ch = rest.substring(name_end, name_end + 1)
-        if ch == "{" || ch == "<" || ch == " " { break }
-        name_end = name_end + 1
-    }
-    let name = rest.substring(0, name_end).trim()
-
-    // Walk subsequent lines collecting variant names until `}`.
-    mut variants = ""
-    mut j = start + 1
-    while j < lines.length {
-        let vline = lines[j].trim()
-        if vline == "}" || vline.starts_with("}") { break }
-        if vline.length > 0 && !vline.starts_with("//") {
-            mut vend = 0
-            while vend < vline.length {
-                let ch = vline.substring(vend, vend + 1)
-                if ch == "(" || ch == "," || ch == " " { break }
-                vend = vend + 1
-            }
-            let vname = vline.substring(0, vend).trim()
-            if vname.length > 0 {
-                variants = if variants == "" { vname } else { variants + ", " + vname }
-            }
-        }
-        j = j + 1
-    }
-
-    DocSym {
-        kind: 3,
-        name,
-        sig: "enum ${name}",
-        variants,
-        doc,
-        file,
-        line,
-        exported,
-        var_kind: ""
-    }
-}
-
-fn parse_var_decl(decl: string, doc: string, file: string, line: int, exported: int) -> DocSym {
-    let var_kind = if decl.starts_with("const ") { "const" }
-                   else if decl.starts_with("mut ") { "mut" }
-                   else { "let" }
-    let prefix_len = var_kind.length + 1
-    let rest = decl.substring(prefix_len, decl.length).trim()
-
-    mut name_end = 0
-    while name_end < rest.length {
-        let ch = rest.substring(name_end, name_end + 1)
-        if ch == ":" || ch == "=" || ch == " " { break }
-        name_end = name_end + 1
-    }
-    let name = rest.substring(0, name_end).trim()
-
-    let colon = rest.index_of(":")
-    let type_ann = if colon >= 0 {
-        let after = rest.substring(colon + 1, rest.length)
-        let eq_pos = after.index_of("=")
-        let end_pos = if eq_pos >= 0 { eq_pos } else { after.length }
-        after.substring(0, end_pos).trim()
-    } else { "" }
-
-    let sig = if type_ann == "" { "${var_kind} ${name}" } else { "${var_kind} ${name}: ${type_ann}" }
-
-    DocSym {
-        kind: 4,
-        name,
-        sig,
-        variants: "",
-        doc,
-        file,
-        line,
-        exported,
-        var_kind
-    }
-}
-
-// ── Project-wide walk ───────────────────────────────────────────────
-
-export fn extract_project_docs(dir: string) -> DocSymList {
-    // TODO(filesystem): replace with avra_readdir-based recursion once
-    // the bootstrap has a directory walker. `find` matches the test
-    // runner's existing approach in main.av.
-    let cmd = "find ${dir} -name '*.av' -type f -not -path '*/build/*' -not -path '*/.beads/*' -not -path '*/seed/*' 2>/dev/null | sort"
-    let files_text = avra_shell_exec(cmd)
-    if files_text == "" { return DocSymList.End }
-
-    mut all = DocSymList.End
-    for path in files_text.split("\n") {
-        if path == "" { continue }
-        let content = avra_selfhost_read_file(path)
-        if content == "" { continue }
-        let rel = relativise(path, dir)
-        let file_syms = extract_docs(content, rel)
-        all = append_syms(all, file_syms)
-    }
-    all
-}
-
-fn relativise(path: string, dir: string) -> string {
-    if !path.starts_with(dir) { return path }
-    let after = path.substring(dir.length, path.length)
-    if after.starts_with("/") { after.substring(1, after.length) } else { after }
 }
 
 // ── AST-based extractor ─────────────────────────────────────────────
@@ -482,31 +238,6 @@ fn count_documented_kind(list: DocSymList, kind: int) -> int {
         }
     }
     n
-}
-
-fn first_line(s: string) -> string {
-    let nl = s.index_of("\n")
-    if nl < 0 { s } else { s.substring(0, nl) }
-}
-
-fn truncate_str(s: string, max: int) -> string {
-    if s.length <= max { return s }
-    if max < 4 { return s.substring(0, max) }
-    "${s.substring(0, max - 3)}..."
-}
-
-fn pad_right(s: string, width: int) -> string {
-    if s.length >= width { return s }
-    let pad = " ".repeat(width - s.length)
-    "${s}${pad}"
-}
-
-fn rule(width: int) -> string {
-    "─".repeat(width)
-}
-
-fn icase_eq(a: string, b: string) -> bool {
-    a.to_lower() == b.to_lower()
 }
 
 // ── Overview ────────────────────────────────────────────────────────
@@ -915,11 +646,11 @@ export fn validate_docs(dir: string) {
     print_kind_validation(docs, 4, "Constants")
 
     let undocumented = total - documented
-    let pct = if total > 0 { documented * 100 / total } else { 100 }
+    let coverage = if total == 0 { 100 } else { pct(documented, total) }
 
     println("")
     println("  ${bold("Summary")}")
-    println("    ${pad_right("Documented:", 16)} ${string(documented)}/${string(total)} symbols (${string(pct)}%)")
+    println("    ${pad_right("Documented:", 16)} ${string(documented)}/${string(total)} symbols (${string(coverage)}%)")
     if undocumented > 0 {
         println("    ${pad_right("Undocumented:", 16)} ${string(undocumented)} symbols")
     }
@@ -930,11 +661,11 @@ fn print_kind_validation(list: DocSymList, kind: int, label: string) {
     let total = count_kind(list, kind)
     if total == 0 { return }
     let doc_n = count_documented_kind(list, kind)
-    let pct = if total > 0 { doc_n * 100 / total } else { 0 }
+    let coverage = pct(doc_n, total)
 
     println("")
     println("  ${bold(label)}: ${string(total)} total")
-    println("    ${green("✓")} documented: ${string(doc_n)} (${string(pct)}%)")
+    println("    ${green("✓")} documented: ${string(doc_n)} (${string(coverage)}%)")
 
     let undoc_n = total - doc_n
     if undoc_n > 0 {

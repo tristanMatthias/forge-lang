@@ -24,6 +24,7 @@
 
 use core.runtime.{avra_selfhost_read_file, avra_selfhost_write_file, avra_shell_exec}
 use core.registry.{avra_map_new_cstr, avra_map_set_cstr, avra_map_get_cstr, avra_map_has_cstr}
+use render.{color_pct, pad_right, pad_left}
 
 // ── Counter record from covmap.json ──
 export type CovEntry = {
@@ -114,23 +115,9 @@ export enum DecisionList {
     Node(item: Decision, next: DecisionList)
 }
 
-// ── ANSI color helpers ──
-fn ansi_green() -> string { "\x1b[32m" }
-fn ansi_yellow() -> string { "\x1b[33m" }
-fn ansi_red() -> string { "\x1b[31m" }
-fn ansi_reset() -> string { "\x1b[0m" }
-
-fn color_pct(p: int) -> string {
-    let pad = if p < 10 { "  " } else if p < 100 { " " } else { "" }
-    if p >= 80 {
-        "${ansi_green()}${pad}${string(p)}%${ansi_reset()}"
-    } else if p >= 50 {
-        "${ansi_yellow()}${pad}${string(p)}%${ansi_reset()}"
-    } else {
-        "${ansi_red()}${pad}${string(p)}%${ansi_reset()}"
-    }
-}
-
+// `color_pct` and `pad_*` come from `render`. Coverage's local `pct`
+// preserves "100% when total=0" (no work = trivially covered), which
+// differs from `render.pct`'s 0-on-empty default.
 fn pct(hit: int, total: int) -> int {
     if total == 0 { 100 } else { hit * 100 / total }
 }
@@ -588,28 +575,7 @@ fn mod_upsert(acc: ModStatsList, name: string, tl: int, hl: int, tb: int, hb: in
 }
 
 // ── Reporting ──
-
-fn pad_right(s: string, width: int) -> string {
-    if s.length >= width { return s }
-    let mut out = s
-    let mut i = s.length
-    while i < width {
-        out = out + " "
-        i = i + 1
-    }
-    out
-}
-
-fn pad_left(s: string, width: int) -> string {
-    if s.length >= width { return s }
-    let mut out = s
-    let mut i = s.length
-    while i < width {
-        out = " " + out
-        i = i + 1
-    }
-    out
-}
+// `pad_right` / `pad_left` imported from `render`.
 
 fn count_stats(stats: FnStatsList) -> int {
     match stats { .End -> 0, .Node(_, next) -> 1 + count_stats(next) }

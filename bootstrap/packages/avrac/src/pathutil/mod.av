@@ -1,0 +1,31 @@
+// Filesystem path manipulation helpers used by docs / indexer /
+// lsp_server / test runner. Centralised so each consumer doesn't
+// hand-roll its own copy of "strip dir prefix" or "drop the .av
+// extension".
+
+/// Trim `dir` from the front of `path`, returning a project-relative
+/// string. If `path` doesn't start with `dir`, return it unchanged.
+/// A leading "/" after stripping is also dropped, so
+/// `relativise("/proj/src/a.av", "/proj")` → "src/a.av".
+export fn relativise(path: string, dir: string) -> string {
+    if !path.starts_with(dir) { return path }
+    let after = path.substring(dir.length, path.length)
+    if after.starts_with("/") { after.substring(1, after.length) } else { after }
+}
+
+/// Strip every leading directory and a trailing `.av` extension.
+/// `basename_no_ext("src/parse/lexer.av")` → "lexer".
+export fn basename_no_ext(path: string) -> string {
+    mut last_slash = 0
+    mut si = 0
+    for ch in path {
+        if ch == "/" { last_slash = si + 1 }
+        si = si + 1
+    }
+    let basename = path.substring(last_slash, path.length)
+    if basename.ends_with(".av") {
+        basename.substring(0, basename.length - 3)
+    } else {
+        basename
+    }
+}

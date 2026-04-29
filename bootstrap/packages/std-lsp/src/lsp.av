@@ -1804,6 +1804,19 @@ export fn lsp_read_frame() -> string {
 // from the raw request body, which is more efficient and avoids a
 // full parser.
 
+// Inverse of `json_unescape_char` — encode one char as its JSON
+// escape sequence if needed, otherwise return it unchanged.
+fn json_escape_char(ch: string) -> string {
+    match ch {
+        "\"" -> "\\\""
+        "\\" -> "\\\\"
+        "\n" -> "\\n"
+        "\r" -> "\\r"
+        "\t" -> "\\t"
+        _ -> ch
+    }
+}
+
 /// Escape a string for JSON: `"`, `\`, `\n`, `\r`, `\t` get the
 /// canonical backslash forms. Non-ASCII passes through unchanged
 /// (LSP allows utf-8 directly inside JSON strings).
@@ -1811,20 +1824,7 @@ export fn json_escape(s: string) -> string {
     mut out = ""
     mut i = 0
     while i < s.length {
-        let ch = s.substring(i, i + 1)
-        if ch == "\"" {
-            out = "${out}\\\""
-        } else if ch == "\\" {
-            out = "${out}\\\\"
-        } else if ch == "\n" {
-            out = "${out}\\n"
-        } else if ch == "\r" {
-            out = "${out}\\r"
-        } else if ch == "\t" {
-            out = "${out}\\t"
-        } else {
-            out = "${out}${ch}"
-        }
+        out = "${out}${json_escape_char(s.substring(i, i + 1))}"
         i = i + 1
     }
     out
@@ -1852,14 +1852,16 @@ export fn jsonrpc_error(id: string, code: int, message: string) -> string {
 // whitespace; doesn't handle deeply nested escaping but suffices for
 // well-formed LSP requests we see in practice.
 
-/// Pull a string-typed field's value out of a JSON blob. Returns ""
-/// if the field is missing or not a string.
-export fn json_extract_string(body: string, key: string) -> string {
+// Find the index of the first non-whitespace char of `key`'s value.
+// Returns -1 if the key is missing or has no `:` follow-up. Shared
+// preamble for json_extract_string and json_extract_int — neither
+// extractor should hand-roll this scan again.
+fn json_value_start(body: string, key: string) -> int {
     let needle = "\"${key}\""
     let pos = body.index_of(needle)
-    if pos < 0 { return "" }
-    // Skip past the colon following the key.
+    if pos < 0 { return -1 }
     mut i = pos + needle.length
+    // Skip to and past the colon.
     while i < body.length {
         let ch = body.substring(i, i + 1)
         if ch == ":" {
@@ -1874,40 +1876,38 @@ export fn json_extract_string(body: string, key: string) -> string {
         if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" { break }
         i = i + 1
     }
-    if i >= body.length { return "" }
+    if i >= body.length { return -1 }
+    i
+}
+
+// Decode one JSON escape sequence (`\"`, `\\`, `\n`, `\r`, `\t`).
+// Returns the unescaped char, or the raw second char as a fallback —
+// matches what well-formed LSP requests we see in practice.
+fn json_unescape_char(c: string) -> string {
+    match c {
+        "\"" -> "\""
+        "\\" -> "\\"
+        "n" -> "\n"
+        "r" -> "\r"
+        "t" -> "\t"
+        _ -> c
+    }
+}
+
+/// Pull a string-typed field's value out of a JSON blob. Returns ""
+/// if the field is missing or not a string.
+export fn json_extract_string(body: string, key: string) -> string {
+    mut i = json_value_start(body, key)
+    if i < 0 { return "" }
     if body.substring(i, i + 1) != "\"" { return "" }
     i = i + 1
-    // Read until the next unescaped quote.
     mut out = ""
     while i < body.length {
         let ch = body.substring(i, i + 1)
         if ch == "\\" && i + 1 < body.length {
-            let nxt = body.substring(i + 1, i + 2)
-            if nxt == "\"" {
-                out = "${out}\""
-                i = i + 2
-                continue
-            }
-            if nxt == "\\" {
-                out = "${out}\\"
-                i = i + 2
-                continue
-            }
-            if nxt == "n" {
-                out = "${out}\n"
-                i = i + 2
-                continue
-            }
-            if nxt == "r" {
-                out = "${out}\r"
-                i = i + 2
-                continue
-            }
-            if nxt == "t" {
-                out = "${out}\t"
-                i = i + 2
-                continue
-            }
+            out = "${out}${json_unescape_char(body.substring(i + 1, i + 2))}"
+            i = i + 2
+            continue
         }
         if ch == "\"" { return out }
         out = "${out}${ch}"
@@ -1918,23 +1918,8 @@ export fn json_extract_string(body: string, key: string) -> string {
 
 /// Pull a numeric-typed field's value. Returns 0 if missing.
 export fn json_extract_int(body: string, key: string) -> int {
-    let needle = "\"${key}\""
-    let pos = body.index_of(needle)
-    if pos < 0 { return 0 }
-    mut i = pos + needle.length
-    while i < body.length {
-        let ch = body.substring(i, i + 1)
-        if ch == ":" {
-            i = i + 1
-            break
-        }
-        i = i + 1
-    }
-    while i < body.length {
-        let ch = body.substring(i, i + 1)
-        if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" { break }
-        i = i + 1
-    }
+    mut i = json_value_start(body, key)
+    if i < 0 { return 0 }
     mut digits = ""
     while i < body.length {
         let ch = body.substring(i, i + 1)

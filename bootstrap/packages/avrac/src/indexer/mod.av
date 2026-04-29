@@ -22,6 +22,7 @@ use core.ast.{Stmt, StmtList, SStmt,
               vtype_display, vtype_render_full,
               find_annotation, doc_string_for, stmt_unwrap}
 use parse.{parse_program_source}
+use pathutil.{relativise}
 use @std.lsp.{LspPos, LspSpan, Sym, SymList, SymKind,
               SymbolGraph, CallEdge, CallList,
               calls_new, calls_add,
@@ -101,12 +102,13 @@ fn walk_body_for_calls(stmts: StmtList, file: string, caller: string, acc: CallL
 
 fn scan_stmt_for_calls(ss: SStmt, file: string, caller: string, acc: CallList) -> CallList {
     let inner = stmt_unwrap(ss.node)
+    let scan_e = (e: Expr) -> scan_expr_for_calls(e, file, caller, ss.line, ss.col, acc)
     match inner {
-        .Expr(e) -> scan_expr_for_calls(e, file, caller, ss.line, ss.col, acc)
-        .Return(e) -> scan_expr_for_calls(e, file, caller, ss.line, ss.col, acc)
-        .Let(_, _, e) -> scan_expr_for_calls(e, file, caller, ss.line, ss.col, acc)
-        .Mut(_, _, e) -> scan_expr_for_calls(e, file, caller, ss.line, ss.col, acc)
-        .Const(_, _, e) -> scan_expr_for_calls(e, file, caller, ss.line, ss.col, acc)
+        .Expr(e) -> scan_e(e)
+        .Return(e) -> scan_e(e)
+        .Let(_, _, e) -> scan_e(e)
+        .Mut(_, _, e) -> scan_e(e)
+        .Const(_, _, e) -> scan_e(e)
         .Block(body) -> walk_body_for_calls(body, file, caller, acc)
         .If(cond, then_branch, _) -> {
             let a1 = scan_expr_for_calls(cond, file, caller, ss.line, ss.col, acc)
@@ -395,7 +397,7 @@ export fn run_lsp_server(project_dir: string) {
         if content == "" { continue }
         let parsed = parse_program_source(content)
         if parsed.had_error || parsed.stmts == null { continue }
-        let rel = relativise_indexer_path(path, project_dir)
+        let rel = relativise(path, project_dir)
         let file_syms = extract_from_ast(parsed.stmts!, rel)
         let file_calls = extract_calls_from_ast(parsed.stmts!, rel)
         g = graph_extend(g, file_syms)
@@ -403,12 +405,6 @@ export fn run_lsp_server(project_dir: string) {
     }
 
     lsp_serve(g, calls)
-}
-
-fn relativise_indexer_path(path: string, dir: string) -> string {
-    if !path.starts_with(dir) { return path }
-    let after = path.substring(dir.length, path.length)
-    if after.starts_with("/") { after.substring(1, after.length) } else { after }
 }
 
 fn call_list_concat(a: CallList, b: CallList) -> CallList {

@@ -14,14 +14,17 @@ mod typeck
 mod resolve
 mod codegen
 mod desugar
+mod render
+mod pathutil
 mod cli
 mod coverage
 mod indexer
 mod docs
 use cli.{cli_new, cli_add_command, cli_command_add_flag, cli_command_add_option, cli_command_add_arg, cli_parse, result_has_flag, result_get_option}
 use coverage.{render_coverage}
-use docs.{extract_project_docs, extract_project_docs_ast, show_overview, show_symbol, show_short, show_symbols, show_search, show_llm, validate_docs}
+use docs.{extract_project_docs_ast, show_overview, show_symbol, show_short, show_symbols, show_search, show_llm, validate_docs}
 use indexer.{run_lsp_server}
+use pathutil.{basename_no_ext}
 
 use parse.{parse_expression_source, parse_program_source}
 use core.ast.{render_expr, render_stmt_list, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType}
@@ -454,21 +457,6 @@ component arg(name: string) {
 
 // ── Test runner helpers ──
 
-fn path_basename_no_ext(path: string) -> string {
-    mut last_slash = 0
-    mut si = 0
-    for ch in path {
-        if ch == "/" { last_slash = si + 1 }
-        si = si + 1
-    }
-    let basename = path.substring(last_slash, path.length)
-    if basename.ends_with(".av") {
-        basename.substring(0, basename.length - 3)
-    } else {
-        basename
-    }
-}
-
 fn strip_externs(stmts: StmtList) -> StmtList {
     match stmts {
         .End -> StmtList.End
@@ -729,7 +717,7 @@ fn main() {
                 if !content.contains("spec ") { continue }
                 if content.contains("fn main()") { continue }
 
-                let mod_name = path_basename_no_ext(path)
+                let mod_name = basename_no_ext(path)
                 if filter_arg != "" && !mod_name.contains(filter_arg) { continue }
 
                 let parsed = parse_program_source(content)

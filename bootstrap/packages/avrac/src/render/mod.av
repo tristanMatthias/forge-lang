@@ -1,0 +1,87 @@
+// Presentation helpers shared across the compiler's user-facing
+// surfaces (avra docs, avra test --coverage, error rendering).
+//
+// Anything that's "ANSI escape, pad, truncate, percent" lives here so
+// the docs CLI and coverage report don't drift apart in styling and
+// so each renderer doesn't carry its own copy of these primitives.
+
+// ── ANSI escapes ────────────────────────────────────────────────────
+
+export fn ansi_bold() -> string { "\x1b[1m" }
+export fn ansi_dim() -> string { "\x1b[2m" }
+export fn ansi_cyan() -> string { "\x1b[36m" }
+export fn ansi_green() -> string { "\x1b[32m" }
+export fn ansi_yellow() -> string { "\x1b[33m" }
+export fn ansi_red() -> string { "\x1b[31m" }
+export fn ansi_reset() -> string { "\x1b[0m" }
+
+// ── Wrappers (apply + reset) ────────────────────────────────────────
+
+export fn bold(s: string) -> string { "${ansi_bold()}${s}${ansi_reset()}" }
+export fn dim(s: string) -> string { "${ansi_dim()}${s}${ansi_reset()}" }
+export fn cyan(s: string) -> string { "${ansi_cyan()}${s}${ansi_reset()}" }
+export fn green(s: string) -> string { "${ansi_green()}${s}${ansi_reset()}" }
+export fn yellow(s: string) -> string { "${ansi_yellow()}${s}${ansi_reset()}" }
+export fn red(s: string) -> string { "${ansi_red()}${s}${ansi_reset()}" }
+
+// ── Text shaping ────────────────────────────────────────────────────
+
+/// Right-pad `s` with spaces until at least `width` chars.
+export fn pad_right(s: string, width: int) -> string {
+    if s.length >= width { return s }
+    "${s}${" ".repeat(width - s.length)}"
+}
+
+/// Left-pad `s` with spaces until at least `width` chars.
+export fn pad_left(s: string, width: int) -> string {
+    if s.length >= width { return s }
+    "${" ".repeat(width - s.length)}${s}"
+}
+
+/// Truncate to `max` chars, replacing the tail with `...`.
+export fn truncate_str(s: string, max: int) -> string {
+    if s.length <= max { return s }
+    if max < 4 { return s.substring(0, max) }
+    "${s.substring(0, max - 3)}..."
+}
+
+/// Repeat the box-drawing horizontal rule character.
+export fn rule(width: int) -> string {
+    "─".repeat(width)
+}
+
+/// First line of a multi-line string. Used for one-liner doc previews.
+export fn first_line(s: string) -> string {
+    let nl = s.index_of("\n")
+    if nl < 0 { s } else { s.substring(0, nl) }
+}
+
+// ── Percentages ─────────────────────────────────────────────────────
+
+/// hit/total as a percentage int (0..100). Returns 0 when total is 0.
+export fn pct(hit: int, total: int) -> int {
+    if total == 0 { return 0 }
+    hit * 100 / total
+}
+
+/// Render a percentage with traffic-light colouring: green ≥80,
+/// yellow ≥50, red below. Width-padded to 4 chars (e.g. " 75%").
+export fn color_pct(p: int) -> string {
+    let pad = if p < 10 { "  " } else if p < 100 { " " } else { "" }
+    let body = "${pad}${string(p)}%"
+    if p >= 80 {
+        "${ansi_green()}${body}${ansi_reset()}"
+    } else if p >= 50 {
+        "${ansi_yellow()}${body}${ansi_reset()}"
+    } else {
+        "${ansi_red()}${body}${ansi_reset()}"
+    }
+}
+
+// ── Case-fold equality ──────────────────────────────────────────────
+
+/// Case-insensitive string equality. Used by query-by-name lookups
+/// across docs / fuzzy / hover so the matching rule is consistent.
+export fn icase_eq(a: string, b: string) -> bool {
+    a.to_lower() == b.to_lower()
+}
