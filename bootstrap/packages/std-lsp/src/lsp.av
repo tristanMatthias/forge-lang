@@ -69,14 +69,21 @@ export type LspLocation = {
     span: LspSpan
 }
 
+/// Construct an LspPos. Lines and columns are 1-based, matching the
+/// LSP protocol and the way the indexer reports source positions.
 export fn lsp_pos(line: int, col: int) -> LspPos {
     LspPos { line, col }
 }
 
+/// The conventional "no position known" sentinel: line 1, column 1.
+/// Use this when an indexer can't attribute a Sym to a specific source
+/// location (e.g. synthesised symbols from generated code).
 export fn lsp_pos_zero() -> LspPos {
     LspPos { line: 1, col: 1 }
 }
 
+/// Build a span from explicit start / end positions. Half-open:
+/// `start` is inclusive, `end` is exclusive — matches lsp_span_contains.
 export fn lsp_span(start: LspPos, end: LspPos) -> LspSpan {
     LspSpan { start, end }
 }
@@ -86,6 +93,8 @@ export fn lsp_span_point(p: LspPos) -> LspSpan {
     LspSpan { start: p, end: p }
 }
 
+/// Pair a span with the source file it lives in. The standard "where
+/// is this symbol?" record returned by definition / hover queries.
 export fn lsp_location(file: string, span: LspSpan) -> LspLocation {
     LspLocation { file, span }
 }
@@ -165,6 +174,8 @@ export type SymbolGraph = {
 
 // ── Construction ────────────────────────────────────────────────────
 
+/// Empty graph. Build up via `graph_add` or `graph_extend`. Held by
+/// every higher-level API as the canonical symbol-source.
 export fn graph_new() -> SymbolGraph {
     SymbolGraph { syms: SymList.End }
 }
@@ -175,6 +186,8 @@ export fn graph_add(g: SymbolGraph, s: Sym) -> SymbolGraph {
     g with { syms: SymList.Node(s, g.syms) }
 }
 
+/// Append a SymList to the graph. Cheaper than repeated `graph_add`
+/// when bulk-loading from a single corpus / file.
 export fn graph_extend(g: SymbolGraph, list: SymList) -> SymbolGraph {
     g with { syms: sym_list_concat(list, g.syms) }
 }
@@ -222,6 +235,8 @@ export fn graph_all(g: SymbolGraph) -> SymList {
     g.syms
 }
 
+/// Total number of Sym entries in the graph. O(n) — walks the
+/// linked list once.
 export fn graph_count(g: SymbolGraph) -> int {
     sym_list_len(g.syms)
 }
@@ -623,13 +638,19 @@ export trait Corpus {
     fn extract(self) -> Result<SymList, IoError>
 }
 
-// A corpus that yields no symbols. Useful for spec tests and as a
-// safe default when a higher-level component asks for "all corpora"
-// before any have been registered.
+/// Corpus that yields no symbols. Plays the null-object role for
+/// composition: `build_graph(corpora)` accepts an EmptyCorpus the same
+/// way it accepts any other Corpus impl, so spec tests can fix the
+/// upstream without injecting test doubles.
+/// @field label — short identifier returned by `id()`; defaults to
+///                 "empty" via `empty_corpus_new`.
 export type EmptyCorpus = {
     label: string
 }
 
+/// Construct an EmptyCorpus with the canonical "empty" label. Use
+/// when a Corpus value is required structurally but the test or
+/// scaffolding shouldn't introduce real symbols.
 export fn empty_corpus_new() -> EmptyCorpus {
     EmptyCorpus { label: "empty" }
 }
@@ -732,13 +753,21 @@ export type CallEdge = {
     col: int
 }
 
+/// Linked list of CallEdge. Encodes the program's call graph: one
+/// node per call site, in the order the indexer visited them.
+/// `query_callers` and `query_callees` walk this list to answer
+/// reverse / forward lookups for a given symbol.
 export enum CallList {
     End
     Node(item: CallEdge, next: CallList)
 }
 
+/// Empty CallList — preferred over `CallList.End` at call sites for
+/// symmetry with `graph_new` / `calls_add`.
 export fn calls_new() -> CallList { CallList.End }
 
+/// Prepend a CallEdge to the list. O(1); insertion order is reversed
+/// vs the source — `query_callers` accounts for this.
 export fn calls_add(list: CallList, edge: CallEdge) -> CallList {
     CallList.Node(edge, list)
 }
@@ -1039,6 +1068,8 @@ export type Scored = {
     score: int
 }
 
+/// Linked list of Scored entries. Used by fuzzy_search internally
+/// before its callers convert to a sorted top-N list of plain strings.
 export enum ScoredList {
     End
     Node(item: Scored, next: ScoredList)
@@ -1183,11 +1214,17 @@ fn scored_to_strs(list: ScoredList) -> StrList {
 // Bridge fuzzy scoring to the SymbolGraph: search by Sym.name with
 // the same composed scorer. Returns SymList ranked by score.
 
+/// Sym paired with the fuzzy-search score that ranked it. Output of
+/// `fuzzy_search_syms`; consumers like `query_completion` discard the
+/// score after the sort, but it stays attached so client code can
+/// surface `did-you-mean` cutoffs ("only show ≥600").
 export type ScoredSym = {
     sym: Sym,
     score: int
 }
 
+/// Linked list of ScoredSym, mirroring SymList shape so consumers can
+/// reuse the standard list traversal patterns.
 export enum ScoredSymList {
     End
     Node(item: ScoredSym, next: ScoredSymList)
@@ -1298,6 +1335,9 @@ export type CacheFileEntry = {
     sym_count: int
 }
 
+/// Linked list of CacheFileEntry. One node per source file the cache
+/// has stamped — used by `cache_is_fresh` for the mtime probe and by
+/// `cache_evict_file` to drop stale rows when a file changes.
 export enum CacheFileList {
     End
     Node(item: CacheFileEntry, next: CacheFileList)
