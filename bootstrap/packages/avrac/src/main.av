@@ -44,12 +44,11 @@ mod codegen
 mod desugar
 mod render
 mod pathutil
-mod cli
 mod coverage
 mod indexer
 mod docs
 mod lang_gen
-use cli.{cli_new, cli_add_command, cli_command_add_flag, cli_command_add_option, cli_command_add_arg, cli_parse, result_has_flag, result_get_option}
+use @std.cli.{cli_new, cli_add_command, cli_command_add_flag, cli_command_add_option, cli_command_add_arg, cli_parse, result_has_flag, result_get_option}
 use coverage.{render_coverage}
 use docs.{extract_project_docs_ast, extract_project_corpus,
           show_overview, show_symbol, show_short, show_symbols,

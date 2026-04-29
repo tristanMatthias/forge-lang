@@ -85,7 +85,7 @@ enum ParsedArgList {
 /// Output of `cli_parse`. `command` is "" for top-level invocations
 /// (no subcommand matched). `error` is "" on success; non-empty
 /// strings carry a user-facing error message.
-export type ParseResult = {
+export type CliResult = {
     command: string,
     flags: ParsedFlagList,
     options: ParsedOptionList,
@@ -229,10 +229,10 @@ fn update_command_args(cmds: CommandList, cmd_name: string, name: string, desc: 
 /// `avra_selfhost_get_arg_cstr()` directly, so call only after
 /// process startup. Auto-handles `--help` / `--version` (exits the
 /// process before returning).
-export fn cli_parse(cli: Cli) -> ParseResult {
+export fn cli_parse(cli: Cli) -> CliResult {
     let argc = avra_selfhost_argc()
     if argc < 2 {
-        return ParseResult {
+        return CliResult {
             command: "",
             flags: ParsedFlagList.End,
             options: ParsedOptionList.End,
@@ -278,9 +278,9 @@ fn find_command(cmds: CommandList, name: string) -> CommandDef? {
 
 /// Walk argv from `start_idx` to `argc`, classifying each token as
 /// a flag (`--name`/`-s`), an option (`--key=value`), or a
-/// positional. Builds the ParseResult containing every match.
+/// positional. Builds the CliResult containing every match.
 fn parse_args(cmd_name: string, flags: FlagList, options: OptionList, args: ArgList,
-              start_idx: int, argc: int) -> ParseResult {
+              start_idx: int, argc: int) -> CliResult {
     mut parsed_flags = ParsedFlagList.End
     mut parsed_options = ParsedOptionList.End
     mut parsed_args = ParsedArgList.End
@@ -334,7 +334,7 @@ fn parse_args(cmd_name: string, flags: FlagList, options: OptionList, args: ArgL
         }
     }
 
-    ParseResult { command: cmd_name, flags: parsed_flags, options: parsed_options, args: parsed_args, error }
+    CliResult { command: cmd_name, flags: parsed_flags, options: parsed_options, args: parsed_args, error }
 }
 
 // ── Helpers ──
@@ -435,7 +435,7 @@ fn merge_arg_lists(a: ArgList, b: ArgList) -> ArgList {
 
 /// True iff the named flag was set on argv. Convenience over
 /// matching on the ParsedFlagList directly.
-export fn result_has_flag(result: ParseResult, name: string) -> bool {
+export fn result_has_flag(result: CliResult, name: string) -> bool {
     has_parsed_flag(result.flags, name)
 }
 
@@ -451,7 +451,7 @@ fn has_parsed_flag(flags: ParsedFlagList, name: string) -> bool {
 
 /// Read an option's value from the parse result, falling back to
 /// the option's declared default when not set.
-export fn result_get_option(result: ParseResult, name: string) -> string {
+export fn result_get_option(result: CliResult, name: string) -> string {
     get_parsed_option(result.options, name)
 }
 
@@ -466,7 +466,7 @@ fn get_parsed_option(options: ParsedOptionList, name: string) -> string {
 }
 
 /// Read a positional arg's value by name, "" when not supplied.
-export fn result_get_arg(result: ParseResult, name: string) -> string {
+export fn result_get_arg(result: CliResult, name: string) -> string {
     get_parsed_arg(result.args, name)
 }
 
@@ -481,7 +481,7 @@ fn get_parsed_arg(args: ParsedArgList, name: string) -> string {
 }
 
 /// True iff the parser reported an error (unknown flag etc).
-export fn result_has_error(result: ParseResult) -> bool {
+export fn result_has_error(result: CliResult) -> bool {
     result.error != ""
 }
 
