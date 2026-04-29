@@ -15,11 +15,17 @@ use core.type_registry.{method_mangled_name, type_short_name, is_result_enum_nam
 
 // ── Type environment ──
 
+/// Scope-stack entry for the type checker. Each binding records
+/// the variable's name, inferred type, and the depth at which it
+/// was declared (for scope-pop on block exit).
 enum TypeEntry {
     End
     Node(name: string, ty: ValueType, depth: int, next: TypeEntry)
 }
 
+/// Walk the type-environment chain looking for `name`. Returns
+/// `ValueType.Unknown` when not bound — typecheck callers branch
+/// on Unknown rather than pattern-matching on Option.
 fn type_lookup(env: TypeEntry, name: string) -> ValueType {
     match env {
         .End -> ValueType.Unknown
@@ -28,10 +34,13 @@ fn type_lookup(env: TypeEntry, name: string) -> ValueType {
     }
 }
 
+/// Cons a binding onto the type environment. Innermost shadowing.
 fn type_bind(env: TypeEntry, name: string, ty: ValueType, depth: int) -> TypeEntry {
     TypeEntry.Node(name, ty, depth, env)
 }
 
+/// Pop every entry whose declared depth is `>= depth`. Used on
+/// block / fn exit to drop bindings that left their scope.
 fn type_pop_scope(env: TypeEntry, depth: int) -> TypeEntry {
     match env {
         .End -> TypeEntry.End
@@ -42,11 +51,15 @@ fn type_pop_scope(env: TypeEntry, depth: int) -> TypeEntry {
 
 // ── Function type registry ──
 
+/// Function-name → (params, return type) table. Looked up by call
+/// expressions to typecheck arity + per-arg compatibility.
 enum FnTypeEntry {
     End
     Node(name: string, params: ParamList, ret_ty: ValueType, next: FnTypeEntry)
 }
 
+/// Get the return type of a registered fn. Returns Unknown when not
+/// found — `fn_type_has` distinguishes "void return" from "missing".
 fn fn_type_lookup(fns: FnTypeEntry, name: string) -> ValueType {
     match fns {
         .End -> ValueType.Unknown
@@ -55,6 +68,7 @@ fn fn_type_lookup(fns: FnTypeEntry, name: string) -> ValueType {
     }
 }
 
+/// Membership probe for the FnTypeEntry chain.
 fn fn_type_has(fns: FnTypeEntry, name: string) -> bool {
     match fns {
         .End -> false
@@ -63,6 +77,8 @@ fn fn_type_has(fns: FnTypeEntry, name: string) -> bool {
     }
 }
 
+/// Number of parameters a registered fn accepts. -1 when not
+/// registered, signalling the caller to skip arity-check.
 fn tc_fn_arity(fns: FnTypeEntry, name: string) -> int {
     match fns {
         .End -> 0
@@ -71,6 +87,8 @@ fn tc_fn_arity(fns: FnTypeEntry, name: string) -> int {
     }
 }
 
+/// Parameter list of a registered fn. Empty list when not found —
+/// the typecheck caller should have gated with `fn_type_has`.
 fn tc_fn_params(fns: FnTypeEntry, name: string) -> ParamList {
     match fns {
         .End -> ParamList.End
@@ -80,6 +98,9 @@ fn tc_fn_params(fns: FnTypeEntry, name: string) -> ParamList {
 }
 
 
+/// Length of an ExprList. Local copy so typecheck doesn't depend
+/// on core/ast.av's `expr_list_length` import — keeps the import
+/// surface tight.
 fn tc_count_args(list: ExprList) -> int {
     match list {
         .End -> 0
@@ -95,6 +116,9 @@ fn tc_count_args(list: ExprList) -> int {
 // Look up the Ok type for a catch expression.
 // Given a TC and the inner expression, determines the expected catch body type.
 // Returns the Ok type as a ValueType, or null if unknown.
+/// For `expr catch (e) { body }`: when `expr` is a Result-shaped
+/// Try, return the Ok-arm's payload type so `body` can be checked
+/// against the same type. Returns null when `expr` isn't a Result.
 export fn tc_catch_ok_type(tc: TC, inner: Expr) -> ValueType? {
     let fn_name = match inner {
         .Call(callee, _) -> match callee {
@@ -128,11 +152,15 @@ export fn tc_catch_ok_type(tc: TC, inner: Expr) -> ValueType? {
 
 // ── Struct/Enum registries ──
 
+/// Struct-name → FieldList table. Populated during the
+/// `collect_decls` pre-pass; consulted by struct-literal and field-
+/// access typecheck.
 enum StructTypeReg {
     End
     Node(name: string, fields: FieldList, next: StructTypeReg)
 }
 
+/// Look up a struct's FieldList by name. Empty list when not found.
 export fn struct_type_lookup(reg: StructTypeReg, name: string) -> FieldList {
     match reg {
         .End -> FieldList.End
@@ -143,6 +171,7 @@ export fn struct_type_lookup(reg: StructTypeReg, name: string) -> FieldList {
     }
 }
 
+/// Membership probe for the struct registry.
 fn struct_type_has(reg: StructTypeReg, name: string) -> bool {
     match reg {
         .End -> false
@@ -151,11 +180,13 @@ fn struct_type_has(reg: StructTypeReg, name: string) -> bool {
     }
 }
 
+/// Enum-name → VariantList table. Mirror of StructTypeReg for enums.
 enum EnumTypeReg {
     End
     Node(name: string, variants: VariantList, next: EnumTypeReg)
 }
 
+/// Membership probe for the enum registry.
 fn enum_type_has(reg: EnumTypeReg, name: string) -> bool {
     match reg {
         .End -> false
@@ -164,6 +195,9 @@ fn enum_type_has(reg: EnumTypeReg, name: string) -> bool {
     }
 }
 
+/// Reverse lookup: which enum declares `variant`? Returns "" when
+/// the variant isn't registered. Used to type bare `.Variant`
+/// expressions where the enum name is implicit from context.
 export fn tc_enum_find_by_variant(reg: EnumTypeReg, variant: string) -> string {
     match reg {
         .End -> ""
@@ -173,6 +207,7 @@ export fn tc_enum_find_by_variant(reg: EnumTypeReg, variant: string) -> string {
     }
 }
 
+/// True iff `name` matches any variant in the list.
 fn variant_has(variants: VariantList, name: string) -> bool {
     match variants {
         .End -> false
@@ -183,23 +218,32 @@ fn variant_has(variants: VariantList, name: string) -> bool {
 
 // ── Checker state ──
 
-// Trait registry: maps trait name to its required method names.
+/// Method-signatures of one trait — name + param count per method.
+/// Used by `check_trait_conformance` to verify impl methods have
+/// matching arity.
 enum TraitMethodList {
     End
     Node(name: string, param_count: int, next: TraitMethodList)
 }
 
-// Associated types declared on a trait (e.g. `type Item`).
+/// Associated types declared on a trait (`type Item` inside the
+/// trait body).
 enum TraitAssocTypes {
     End
     Node(name: string, next: TraitAssocTypes)
 }
 
+/// Trait-name → (methods, assoc types) table. Populated by the
+/// pre-pass `collect_decls`; consulted whenever an impl block or
+/// `dyn Trait` appears.
 enum TraitRegistry {
     End
     Node(trait_name: string, methods: TraitMethodList, assoc_types: TraitAssocTypes, next: TraitRegistry)
 }
 
+/// Look up a trait's method list. Empty list when not registered —
+/// pair with `trait_has` to distinguish "trait with no methods" vs
+/// "no such trait".
 export fn trait_lookup(reg: TraitRegistry, name: string) -> TraitMethodList {
     match reg {
         .End -> TraitMethodList.End
@@ -210,6 +254,7 @@ export fn trait_lookup(reg: TraitRegistry, name: string) -> TraitMethodList {
     }
 }
 
+/// Membership probe for the trait registry.
 export fn trait_has(reg: TraitRegistry, name: string) -> bool {
     match reg {
         .End -> false
@@ -220,6 +265,8 @@ export fn trait_has(reg: TraitRegistry, name: string) -> bool {
     }
 }
 
+/// Look up a trait's associated types. Empty list when the trait
+/// has none (or isn't registered).
 export fn trait_assoc_types(reg: TraitRegistry, name: string) -> TraitAssocTypes {
     match reg {
         .End -> TraitAssocTypes.End
@@ -230,7 +277,9 @@ export fn trait_assoc_types(reg: TraitRegistry, name: string) -> TraitAssocTypes
     }
 }
 
-// Orphan rule helper: check if a type name is defined in this compilation unit.
+/// Orphan-rule helper — true iff `name` is a type declared in this
+/// compilation unit (or a primitive). Drives the impl-coherence
+/// check that requires either the trait OR the type to be local.
 export fn tc_owns_type(tc: TC, name: string) -> bool {
     if struct_type_has(tc.structs, name) { return true }
     if enum_type_has(tc.enums, name) { return true }
@@ -239,12 +288,14 @@ export fn tc_owns_type(tc: TC, name: string) -> bool {
     false
 }
 
-// Shape name set — tracks which struct names are shapes (structural types).
+/// Set of struct names that are declared with `shape` rather than
+/// `type`. Drives structural (width-subtype) compatibility checks.
 enum ShapeSet {
     End
     Node(name: string, next: ShapeSet)
 }
 
+/// Membership probe for the shape set.
 fn is_shape(set: ShapeSet, name: string) -> bool {
     match set {
         .End -> false
@@ -253,12 +304,15 @@ fn is_shape(set: ShapeSet, name: string) -> bool {
     }
 }
 
-// Newtype registry: maps name to inner ValueType
+/// Newtype-name → inner-type table. Populated by `collect_decls`,
+/// consulted by `resolve_vtype` to peel newtype wrappers when
+/// matching types.
 enum NewtypeReg {
     End
     Node(name: string, inner_vt: ValueType, next: NewtypeReg)
 }
 
+/// Look up a newtype's inner type. Unknown when not found.
 fn newtype_vtype_lookup(reg: NewtypeReg, name: string) -> ValueType {
     match reg {
         .End -> ValueType.Unknown
@@ -267,12 +321,14 @@ fn newtype_vtype_lookup(reg: NewtypeReg, name: string) -> ValueType {
     }
 }
 
-// Union alias registry: maps name to ValueType
+/// Union-alias table: `type Json = string | int | bool` → name
+/// → Union ValueType. Used to expand the alias when typechecking.
 enum UnionAliasReg {
     End
     Node(name: string, type_vt: ValueType, next: UnionAliasReg)
 }
 
+/// Look up a union alias's expanded type. Unknown when not registered.
 fn union_alias_vtype_lookup(reg: UnionAliasReg, name: string) -> ValueType {
     match reg {
         .End -> ValueType.Unknown
@@ -281,13 +337,17 @@ fn union_alias_vtype_lookup(reg: UnionAliasReg, name: string) -> ValueType {
     }
 }
 
-// Associated type definitions from `impl Trait for Type { type Item = ConcreteType }`.
-// Key: "TypeName.AssocName" (e.g. "Circle.Item"), Value: concrete ValueType.
+/// Associated-type definitions from `impl Trait for Type { type
+/// Item = ConcreteType }`. Key shape: `"TypeName.AssocName"` (e.g.
+/// `"Circle.Item"`); value is the concrete ValueType the impl
+/// pinned the trait's associated type to.
 enum AssocTypeDefs {
     End
     Node(key: string, concrete_vt: ValueType, next: AssocTypeDefs)
 }
 
+/// Look up an associated-type definition by `"TypeName.AssocName"`
+/// key. Returns Unknown when the impl didn't pin that assoc type.
 fn assoc_type_vt_lookup(reg: AssocTypeDefs, key: string) -> ValueType {
     match reg {
         .End -> ValueType.Unknown
@@ -296,6 +356,10 @@ fn assoc_type_vt_lookup(reg: AssocTypeDefs, key: string) -> ValueType {
     }
 }
 
+/// Mutable threaded state for the type-checker pass. Carries every
+/// lookup table the checker needs plus the diagnostics bag and
+/// current source position. Like Resolver, threaded purely
+/// functionally despite the imperative-looking call sites.
 type TC = {
     types: TypeEntry,
     fns: FnTypeEntry,
@@ -315,23 +379,26 @@ type TC = {
     features: Registry,
 }
 
-// Registry of "impl Trait for Type" relationships.
-// Used to verify trait bounds on generic type arguments.
+/// Registry of `impl Trait for Type` relationships. Used to verify
+/// trait bounds on generic type arguments at instantiation sites.
 enum TraitImplReg {
     End
     Node(trait_name: string, type_name: string, next: TraitImplReg)
 }
 
+/// True iff some `impl trait_name for type_name` is registered.
+/// Compares on short names so a query like
+/// `("module::WcInt", "WcSized")` matches a registry entry stored
+/// as `("module::WcSized", "module::WcInt")` — type param bound
+/// strings aren't module-qualified by the resolver.
 export fn type_implements_trait(reg: TraitImplReg, type_name: string, trait_name: string) -> bool {
-    // Compare on short names so a query like ("module::WcInt", "WcSized")
-    // matches a registry entry stored as ("module::WcSized", "module::WcInt").
-    // Type param bound strings are not module-qualified by the resolver, so we
-    // can't insist on full-path equality at the bound-check site.
     let q_trait = type_short_name(trait_name)
     let q_type = type_short_name(type_name)
     type_implements_trait_inner(reg, q_type, q_trait)
 }
 
+/// Implementation backing `type_implements_trait` — short-name
+/// comparison after both sides have been canonicalised.
 fn type_implements_trait_inner(reg: TraitImplReg, q_type: string, q_trait: string) -> bool {
     match reg {
         .End -> false
@@ -340,11 +407,14 @@ fn type_implements_trait_inner(reg: TraitImplReg, q_type: string, q_trait: strin
     }
 }
 
+/// Output of the per-expression checker: the updated TC plus the
+/// expression's inferred type.
 type ExprResult = {
     tc: TC,
     ty: ValueType,
 }
 
+/// Fresh empty TC at depth 0 with a fresh feature registry.
 fn tc_new() -> TC {
     TC {
         types: TypeEntry.End,
@@ -366,17 +436,27 @@ fn tc_new() -> TC {
     }
 }
 
+/// Bump scope depth — entering a new block.
 export fn tc_enter(tc: TC) -> TC { tc with { depth: tc.depth + 1 } }
+/// Pop bindings declared at the current depth and decrement.
 export fn tc_exit(tc: TC) -> TC {
     tc with { types: type_pop_scope(tc.types, tc.depth), depth: tc.depth - 1 }
 }
+/// Register `name: ty` at the current depth — the typecheck
+/// equivalent of `let name: ty`.
 export fn tc_bind(tc: TC, name: string, ty: ValueType) -> TC {
     tc with { types: type_bind(tc.types, name, ty, tc.depth) }
 }
+/// Append a diagnostic at the TC's current line/col. Most call
+/// sites use this rather than `tc_report_at` because they're
+/// already tracking position via `current_line` / `current_col`.
 export fn tc_report(tc: TC, code: DiagCode, msg: string) -> TC {
     tc_report_at(tc, code, msg, tc.current_line, tc.current_col, 0)
 }
 
+/// Append a diagnostic at an explicit `(line, col, len)` span.
+/// Used when the offending expression has a known span that
+/// differs from the TC's "current" position.
 export fn tc_report_at(tc: TC, code: DiagCode, msg: string, line: int, col: int, len: int) -> TC {
     let message = if tc.current_fn.length > 0 {
         "${msg} (in function `${tc.current_fn}`)"
@@ -385,6 +465,8 @@ export fn tc_report_at(tc: TC, code: DiagCode, msg: string, line: int, col: int,
     tc with { bag: bag_report(tc.bag, diag_error(code, message, sp)) }
 }
 
+/// Append a diagnostic with a dedicated cause message — surfaced
+/// indented under the primary by the renderer.
 export fn tc_report_with_cause(tc: TC, code: DiagCode, msg: string, cause_msg: string) -> TC {
     let message = if tc.current_fn.length > 0 {
         "${msg} (in function `${tc.current_fn}`)"
@@ -395,9 +477,14 @@ export fn tc_report_with_cause(tc: TC, code: DiagCode, msg: string, cause_msg: s
     tc with { bag: bag_report(tc.bag, diag_with_cause(primary, cause)) }
 }
 
+/// Build an ExprResult — convenience constructor used pervasively
+/// by the per-expression checker arms.
 export fn tc_er(tc: TC, ty: ValueType) -> ExprResult { ExprResult { tc, ty } }
 
 // Parse a union alias string "A | B | C" into ValueType.Union.
+/// Canonicalise a ValueType against the TC's registries — peel
+/// newtypes, expand union aliases, etc. Idempotent — calling
+/// twice produces the same result.
 export fn resolve_vtype(tc: TC, vt: ValueType) -> ValueType {
     match vt {
         .Struct(name, _) -> {
@@ -432,6 +519,7 @@ export fn resolve_vtype(tc: TC, vt: ValueType) -> ValueType {
     }
 }
 
+/// Map `resolve_vtype` over each TypeList element.
 fn resolve_vtype_list(tc: TC, types: TypeList) -> TypeList {
     match types {
         .End -> .End
@@ -441,6 +529,9 @@ fn resolve_vtype_list(tc: TC, types: TypeList) -> TypeList {
 
 // ── Entry point ──
 
+/// Output of `typecheck_program`: the annotated stmt tree, the
+/// diagnostic bag, and the trait-impl registry (consumed later by
+/// the monomorphizer for trait-bound monomorphisation).
 export type TypeCheckResult = {
     stmts: StmtList,
     had_error: int,
@@ -448,6 +539,10 @@ export type TypeCheckResult = {
     trait_impls: TraitImplReg,
 }
 
+/// Top-level entry: run the type-checker over `stmts`. Three
+/// passes: pre-pass `collect_decls` registers types/fns; main
+/// `check_stmts` walks the AST inferring + checking types;
+/// `annotate_*` writes the inferred types back into SExpr.ty.
 export fn typecheck_program(stmts: StmtList) -> TypeCheckResult {
     let tc0 = tc_new()
     // Pass 1: collect declarations (types, enums, functions)
@@ -468,6 +563,10 @@ export fn typecheck_program(stmts: StmtList) -> TypeCheckResult {
 // ── Pass 1: Declaration collection ──
 
 // Resolve type operator fields (without/only) against the struct registry.
+/// Resolve `type Foo = TypeOp(Bar)`-shaped declarations: a field
+/// list that's actually a request to compose another struct's
+/// fields. Inlines the resolved fields so downstream typecheck
+/// sees a flat shape.
 fn tc_resolve_type_operator(fields: FieldList, reg: StructTypeReg) -> FieldList {
     match fields {
         .Node(marker, base_vt, rest) if marker == "__base" -> {
@@ -488,6 +587,10 @@ fn tc_resolve_type_operator(fields: FieldList, reg: StructTypeReg) -> FieldList 
 
 // field_list_has, filter_fields_without, filter_fields_only now in core/ast.av
 
+/// Pre-pass: register every declaration into the right TC table
+/// (struct, enum, trait, impl, fn signature, ...) before the main
+/// check walks the bodies. Lets bodies forward-reference any
+/// declaration regardless of source order.
 fn collect_decls(tc: TC, stmts: StmtList) -> TC {
     match stmts {
         .End -> tc
@@ -551,6 +654,8 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
 
 // Collect associated type definitions from an impl block.
 // `type Item = ConcreteType` → store "TypeName.Item" → ConcreteType vtype in assoc_type_defs.
+/// Walk an impl block to register its `type AssocName = Concrete`
+/// definitions into `tc.assoc_type_defs`.
 fn collect_impl_assoc_types(tc: TC, type_name: string, stmts: StmtList) -> TC {
     match stmts {
         .End -> tc
@@ -573,6 +678,7 @@ fn collect_impl_assoc_types(tc: TC, type_name: string, stmts: StmtList) -> TC {
 
 // ── Pass 2: Statement checking ──
 
+/// Type-check every statement in a list, threading the TC.
 fn check_stmts(tc: TC, stmts: StmtList) -> TC {
     match stmts {
         .End -> tc
@@ -584,6 +690,9 @@ fn check_stmts(tc: TC, stmts: StmtList) -> TC {
     }
 }
 
+/// Type-check a `let` / `mut` / `const` binding: infer the
+/// initializer's type, verify it matches any declared annotation,
+/// and bind `name: type` into the env.
 fn check_binding(tc: TC, name: string, ty_vt: ValueType, init: Expr, is_const: bool) -> TC {
     let has_annotation = !vtype_is_unknown(ty_vt)
     let r = check_expr(tc, init)
@@ -618,6 +727,9 @@ fn check_binding(tc: TC, name: string, ty_vt: ValueType, init: Expr, is_const: b
     tc_bind(after_shape, name, declared_ty)
 }
 
+/// Type-check a single statement. Each variant routes to the
+/// appropriate inference / verification path; declarations
+/// recurse into their bodies and registries.
 export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
     match stmt {
         .Let(name, ty_vt, init) -> check_binding(tc, name, ty_vt, init, false)
@@ -698,6 +810,9 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
 }
 
 // Check that `impl Trait for Type` provides all required methods.
+/// Type-check a function body against its declared return type.
+/// Includes implicit-return checking (the body's tail expression
+/// must match `ret_vt`) and explicit-return path verification.
 fn tc_check_fn_body(tc: TC, name: string, ret_vt: ValueType, body: StmtList) -> TC {
     let checked = check_stmts(tc, body)
     // Skip return type checking for functions without a declared return type.
@@ -717,6 +832,8 @@ fn tc_check_fn_body(tc: TC, name: string, ret_vt: ValueType, body: StmtList) -> 
 // the declared return type. Only flags concrete mismatches (e.g.
 // string vs int). Skips Void (statements/loops with no value) and
 // functions whose last statement isn't an expression.
+/// Verify that the body's tail expression matches the declared
+/// return type — Avra's implicit-return rule. Skipped for void.
 fn tc_check_implicit_return(tc: TC, fn_name: string, declared: ValueType, stmts: StmtList) -> TC {
     let body_ty = tc_body_tail_type(tc, stmts)
     // Skip when either side is Unknown (fallback/unreliable) or Void (no value).
@@ -738,6 +855,9 @@ fn tc_check_implicit_return(tc: TC, fn_name: string, declared: ValueType, stmts:
 
 // Get the type of the last expression in a statement list.
 // Returns Void if the last statement is not an expression.
+/// Compute the type of the tail expression of a block. Skips
+/// trailing return / break / continue. Used to determine the
+/// implicit-return value type.
 fn tc_body_tail_type(tc: TC, stmts: StmtList) -> ValueType {
     match stmts {
         .End -> ValueType.Void
@@ -764,6 +884,9 @@ fn tc_body_tail_type(tc: TC, stmts: StmtList) -> ValueType {
 // `return` matches the declared return type. This is flow-insensitive
 // (checks ALL returns regardless of reachability) but sound — every
 // return statement must produce the right type even if dead.
+/// Walk every explicit `return value` in `stmts`, verifying
+/// `value`'s type matches `declared`. Recurses into nested blocks
+/// and conditionals.
 export fn tc_check_explicit_returns(tc: TC, fn_name: string, declared: ValueType, stmts: StmtList) -> TC {
     match stmts {
         .End -> tc
@@ -774,6 +897,8 @@ export fn tc_check_explicit_returns(tc: TC, fn_name: string, declared: ValueType
     }
 }
 
+/// Per-stmt branch of `tc_check_explicit_returns` — the recursive
+/// case that descends into If / While / Block / Match etc.
 fn tc_check_stmt_returns(tc: TC, fn_name: string, declared: ValueType, stmt: Stmt) -> TC {
     match stmt {
         .Return(value) -> {
@@ -805,6 +930,8 @@ fn tc_check_stmt_returns(tc: TC, fn_name: string, declared: ValueType, stmt: Stm
     }
 }
 
+/// Bind every parameter of a fn into the type environment as a
+/// defined binding. Mirrors `define_param_names` in resolve/.
 export fn tc_bind_params(tc: TC, params: ParamList) -> TC {
     match params {
         .End -> tc
@@ -817,6 +944,9 @@ export fn tc_bind_params(tc: TC, params: ParamList) -> TC {
 
 // ── Expression checking ──
 
+/// Type-check + infer-type for an Expr. Returns `(updated TC,
+/// inferred ValueType)`. Each Expr variant gets its own arm; this
+/// is the heart of the type checker.
 export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .Number(_) -> tc_er(tc, .Int)
@@ -887,6 +1017,8 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
 // Verify that all fields of a shape exist in the argument type.
 // Called when a function parameter is a shape and the argument is a struct.
 
+/// Verify that each arg passed to a shape-typed parameter has all
+/// the required fields (width-subtype check).
 fn tc_check_shape_args(tc: TC, params: ParamList, args: ExprList) -> TC {
     match params {
         .End -> tc
@@ -902,6 +1034,9 @@ fn tc_check_shape_args(tc: TC, params: ParamList, args: ExprList) -> TC {
 }
 
 // Check that newtype arguments match — UserId != OrderId even if both wrap string
+/// Verify newtype-wrapped arguments: a `UserId` param doesn't
+/// accept a bare `UUID` — the wrapper has to be explicit at the
+/// call site.
 fn tc_check_newtype_args(tc: TC, fn_name: string, params: ParamList, args: ExprList) -> TC {
     match params {
         .End -> tc
@@ -925,6 +1060,8 @@ fn tc_check_newtype_args(tc: TC, fn_name: string, params: ParamList, args: ExprL
 
 // Extract the first argument's type. Safe to call after check_expr_list
 // because re-deriving an expression's type is idempotent (no new bindings).
+/// Infer the type of the first argument in an ExprList, or
+/// Unknown when the list is empty. Used by newtype-ctor inference.
 fn tc_first_arg_type(tc: TC, args: ExprList) -> ValueType {
     match args {
         .End -> ValueType.Void
@@ -933,6 +1070,8 @@ fn tc_first_arg_type(tc: TC, args: ExprList) -> ValueType {
 }
 
 // Check newtype constructor argument matches the inner type
+/// Verify that the single arg to a newtype constructor matches the
+/// newtype's declared inner type. `UserId(uuid)` should pass a UUID.
 fn tc_check_newtype_ctor(tc: TC, name: string, ret_ty: ValueType, arg_ty: ValueType) -> TC {
     match ret_ty {
         .Newtype(_, inner_ty, _) -> {
@@ -946,6 +1085,9 @@ fn tc_check_newtype_ctor(tc: TC, name: string, ret_ty: ValueType, arg_ty: ValueT
     }
 }
 
+/// Verify shape compatibility — the arg's struct must have all the
+/// fields the shape param requires (extras are fine; that's the
+/// width-subtype rule).
 fn tc_check_shape_compat(tc: TC, param_ty_str: string, arg_ty: ValueType) -> TC {
     // Only check when parameter type is a shape
     if !is_shape(tc.shapes, param_ty_str) { return tc }
@@ -962,6 +1104,8 @@ fn tc_check_shape_compat(tc: TC, param_ty_str: string, arg_ty: ValueType) -> TC 
     tc_check_fields_present(tc, param_ty_str, arg_name, shape_fields, arg_fields)
 }
 
+/// Inner check for `tc_check_shape_compat` — emit an error per
+/// field that's required but missing from the arg type.
 fn tc_check_fields_present(tc: TC, shape_name: string, arg_name: string, required: FieldList, available: FieldList) -> TC {
     match required {
         .End -> tc
@@ -984,6 +1128,9 @@ fn tc_check_fields_present(tc: TC, shape_name: string, arg_name: string, require
 
 // ── Binary operator type rules ──
 
+/// Type-check a binary operator. Most return Bool (comparisons) or
+/// the operand's type (arithmetic); union-arg cases dispatch to
+/// the appropriate concrete branch.
 fn check_binary_type(tc: TC, left: ValueType, op: BinOp, right: ValueType) -> ExprResult {
     // If either operand is Float, arithmetic produces Float.
     let arith_ty = if vtype_eq(left, .Float) || vtype_eq(right, .Float) { ValueType.Float } else { ValueType.Int }
@@ -1009,6 +1156,10 @@ fn check_binary_type(tc: TC, left: ValueType, op: BinOp, right: ValueType) -> Ex
 // ── Call type inference ──
 
 // Check arity and return type for a named function call.
+/// Type-check a fn call by name: verify arity, walk each arg
+/// against its declared param type, and return the fn's declared
+/// return type. Caller has already type-checked args via
+/// `check_expr_list_types`.
 fn tc_check_fn_call(checked: TC, name: string, args: ExprList) -> ExprResult {
     let expected = tc_fn_arity(checked.fns, name)
     let actual = tc_count_args(args)
@@ -1026,6 +1177,9 @@ fn tc_check_fn_call(checked: TC, name: string, args: ExprList) -> ExprResult {
     tc_er(ctor_checked, ret_ty)
 }
 
+/// Type-check a `Call` expression. Routes to `check_method_call`
+/// for `obj.method(args)`, otherwise falls through to
+/// `tc_check_fn_call` after resolving the callee name.
 fn check_call(tc: TC, callee: Expr, args: ExprList) -> ExprResult {
     match callee {
         .Ident(name) -> {
@@ -1067,6 +1221,9 @@ fn check_call(tc: TC, callee: Expr, args: ExprList) -> ExprResult {
 
 // ── Method call type inference ──
 
+/// Type-check `obj.method(args)`: dispatch to type-specific
+/// method tables (List / Map built-ins) or fall back to user-
+/// defined impl blocks looked up by mangled name.
 fn check_method_call(tc: TC, obj: Expr, method: string, args: ExprList) -> ExprResult {
     let o = check_expr(tc, obj)
     let checked_args = check_expr_list(o.tc, args)
@@ -1115,6 +1272,9 @@ fn check_method_call(tc: TC, obj: Expr, method: string, args: ExprList) -> ExprR
 
 // ── Block expression type ──
 
+/// Type-check a block as an expression — the block's value is
+/// the value of its last statement (when that's an Expr stmt) or
+/// Void otherwise.
 fn check_block(tc: TC, stmts: StmtList) -> ExprResult {
     let inner = tc_enter(tc)
     let pair = check_block_stmts(inner, stmts)
@@ -1122,6 +1282,8 @@ fn check_block(tc: TC, stmts: StmtList) -> ExprResult {
     tc_er(after, pair.ty)
 }
 
+/// Implementation of `check_block` — walks every stmt, returning
+/// the last one's value type as the block's type.
 fn check_block_stmts(tc: TC, stmts: StmtList) -> ExprResult {
     match stmts {
         .End -> tc_er(tc, .Void)
@@ -1148,6 +1310,9 @@ fn check_block_stmts(tc: TC, stmts: StmtList) -> ExprResult {
 
 // ── Helpers ──
 
+/// Type-check every expression in `exprs` for side effects only —
+/// drops the inferred types. Use `check_expr_list_types` when the
+/// caller needs the resulting type list.
 export fn check_expr_list(tc: TC, exprs: ExprList) -> TC {
     match exprs {
         .End -> tc
@@ -1158,11 +1323,16 @@ export fn check_expr_list(tc: TC, exprs: ExprList) -> TC {
     }
 }
 
+/// Output of `check_expr_list_types` — the threaded TC plus the
+/// inferred TypeList for the input expressions, in source order.
 type ExprListResult = {
     tc: TC,
     types: TypeList,
 }
 
+/// Type-check every expression in `exprs` and return the list of
+/// inferred types alongside the updated TC. Used by call-site
+/// arity / per-arg type checks.
 export fn check_expr_list_types(tc: TC, exprs: ExprList) -> ExprListResult {
     match exprs {
         .End -> ExprListResult { tc, types: TypeList.End }
@@ -1178,16 +1348,24 @@ export fn check_expr_list_types(tc: TC, exprs: ExprList) -> ExprListResult {
 // Walks the AST and stamps resolved ValueTypes onto SExpr.ty fields.
 // Uses the TC state populated by Pass 1+2 (all bindings are in scope).
 
+/// Annotation-pass scope-enter: bind every param into the type env
+/// at the new depth. Mirror of `tc_bind_params` for the second
+/// pass that writes types back into the AST.
 fn annotate_enter_fn(tc: TC, params: ParamList) -> TC {
     tc_bind_params(tc_enter(tc), params)
 }
 
+/// Annotation-pass let-binding: re-infer the initializer's type
+/// (mostly free since the check pass already did the work) and
+/// register the binding for downstream lookups.
 fn annotate_bind(tc: TC, name: string, ty_vt: ValueType, init: Expr) -> TC {
     let r = check_expr(tc, init)
     let declared_ty = if !vtype_is_unknown(ty_vt) { resolve_vtype(tc, ty_vt) } else { r.ty }
     tc_bind(tc, name, declared_ty)
 }
 
+/// Walk a StmtList, returning a copy with every contained SExpr's
+/// `.ty` field filled in.
 fn annotate_stmts(tc: TC, stmts: StmtList) -> StmtList {
     match stmts {
         .End -> .End
@@ -1204,6 +1382,7 @@ fn annotate_stmts(tc: TC, stmts: StmtList) -> StmtList {
     }
 }
 
+/// Per-stmt branch of the annotation pass.
 fn annotate_stmt(tc: TC, stmt: Stmt) -> Stmt {
     match stmt {
         .Let(name, vt, init) -> .Let(name, vt, annotate_expr(tc, init))
@@ -1237,6 +1416,8 @@ fn annotate_stmt(tc: TC, stmt: Stmt) -> Stmt {
 }
 
 // Recursively annotate SExpr-containing sub-structures within an Expr.
+/// Recurse into nested expressions, threading the TC so SExprs
+/// emerge with their `.ty` populated.
 fn annotate_expr(tc: TC, expr: Expr) -> Expr {
     match expr {
         .Call(callee, args) -> .Call(annotate_expr(tc, callee), annotate_expr_list(tc, args))
@@ -1280,6 +1461,8 @@ fn annotate_expr(tc: TC, expr: Expr) -> Expr {
     }
 }
 
+/// Run `check_expr` on `se.node`, write the inferred type back to
+/// `se.ty`, and recurse into the inner Expr.
 fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
     // Annotate the inner expression tree (recurse into sub-expressions)
     let annotated_node = annotate_expr(tc, se.node)
@@ -1317,6 +1500,7 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
     sexpr_typed(annotated_node, se.line, se.col, ty)
 }
 
+/// Map `annotate_sexpr` over an ExprList.
 fn annotate_expr_list(tc: TC, exprs: ExprList) -> ExprList {
     match exprs {
         .End -> .End
@@ -1324,6 +1508,8 @@ fn annotate_expr_list(tc: TC, exprs: ExprList) -> ExprList {
     }
 }
 
+/// Walk every match arm, binding pattern captures into the type
+/// env, then annotating both guard and body.
 fn annotate_match_arms(tc: TC, arms: MatchArmList) -> MatchArmList {
     match arms {
         .End -> .End
@@ -1334,6 +1520,7 @@ fn annotate_match_arms(tc: TC, arms: MatchArmList) -> MatchArmList {
     }
 }
 
+/// Map `annotate_sexpr` over each FieldInitList value.
 fn annotate_field_inits(tc: TC, inits: FieldInitList) -> FieldInitList {
     match inits {
         .End -> .End
@@ -1341,6 +1528,7 @@ fn annotate_field_inits(tc: TC, inits: FieldInitList) -> FieldInitList {
     }
 }
 
+/// Walk every `when` arm, annotating cond + body SExprs.
 fn annotate_when_arms(tc: TC, arms: WhenArmList) -> WhenArmList {
     match arms {
         .End -> .End
@@ -1356,10 +1544,17 @@ fn annotate_when_arms(tc: TC, arms: WhenArmList) -> WhenArmList {
 // snake_case: all lowercase or underscore or digit
 // SCREAMING_SNAKE: all uppercase or underscore or digit
 
+/// True iff `ch` is an ASCII uppercase letter.
 fn is_upper(ch: string) -> bool { ch in "A".."Z" }
+/// True iff `ch` is an ASCII lowercase letter.
 fn is_lower(ch: string) -> bool { ch in "a".."z" }
+/// True iff `ch` is an ASCII digit. Local copy so the
+/// naming-convention helpers don't depend on lexer/.
 fn is_naming_digit(ch: string) -> bool { ch in "0".."9" }
 
+/// True iff `name` follows the PascalCase convention: first char
+/// uppercase, no underscores in the rest. Leading `_` is allowed
+/// for explicitly-private types.
 fn is_pascal_case(name: string) -> bool {
     if name.length == 0 { return true }
     // For qualified names like "module::TypeName", check the last segment
@@ -1378,6 +1573,8 @@ fn is_pascal_case(name: string) -> bool {
     true
 }
 
+/// True iff `name` is snake_case: all lowercase / digits /
+/// underscores. Leading `_` allowed for private bindings.
 fn is_snake_case(name: string) -> bool {
     if name.length == 0 { return true }
     let first = name[0]
@@ -1394,6 +1591,8 @@ fn is_snake_case(name: string) -> bool {
     true
 }
 
+/// True iff `name` is SCREAMING_SNAKE_CASE: all uppercase / digits
+/// / underscores. Used for `const` declarations.
 fn is_screaming_snake(name: string) -> bool {
     if name.length == 0 { return true }
     if name[0] == "_" { return true }
@@ -1408,12 +1607,16 @@ fn is_screaming_snake(name: string) -> bool {
     true
 }
 
+/// Emit an `F9003 NamingConvention` warning at the TC's current
+/// position with `msg` as the body.
 fn naming_warn(tc: TC, msg: string) -> TC {
     let sp = span_dummy()
     let d = diag_with_confidence(diag_warning(DiagCode.NamingConvention, msg, sp), Confidence.Medium)
     tc with { bag: bag_report(tc.bag, d) }
 }
 
+/// Walk every top-level statement and apply the per-decl naming-
+/// convention check.
 fn check_naming_conventions(tc: TC, stmts: StmtList) -> TC {
     match stmts {
         .End -> tc
@@ -1424,6 +1627,9 @@ fn check_naming_conventions(tc: TC, stmts: StmtList) -> TC {
     }
 }
 
+/// Per-stmt branch of `check_naming_conventions`. Each declaration
+/// kind has its own expected case (PascalCase for types/enums/
+/// traits, snake_case for fns/lets, SCREAMING_SNAKE for consts).
 fn check_naming_stmt(tc: TC, stmt: Stmt) -> TC {
     match stmt {
         .Annotated(_, inner) -> check_naming_stmt(tc, inner)
