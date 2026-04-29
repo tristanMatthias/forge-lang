@@ -595,6 +595,22 @@ fn append_stmt_list(a: StmtList, b: StmtList) -> StmtList {
     }
 }
 
+// "No symbol 'foo' found" + optional did-you-mean hint. Centralised
+// because the docs handler hits this branch from --gen, --callers,
+// and the bare-query miss path with identical formatting.
+fn print_no_symbol(query: string, list: SymList, hint: string) {
+    let suggestion = suggest_similar(query, list)
+    eprintln("")
+    eprintln("  No symbol '${query}' found in project.")
+    if suggestion != "" {
+        eprintln("  Did you mean: ${suggestion}?")
+    }
+    if hint != "" {
+        eprintln(hint)
+    }
+    eprintln("")
+}
+
 // Look up `query` in the project's SymList and either print a doc-stub
 // to stdout (`--print`) or insert it above the symbol's decl. Returns
 // false when the symbol can't be found so the caller can render a
@@ -894,13 +910,7 @@ fn main() {
             if want_callers && query != "" {
                 let corpus = extract_project_corpus(project_dir)
                 if !show_callers(query, corpus) {
-                    let suggestion = suggest_similar(query, corpus.syms)
-                    eprintln("")
-                    eprintln("  No symbol '${query}' found in project.")
-                    if suggestion != "" {
-                        eprintln("  Did you mean: ${suggestion}?")
-                    }
-                    eprintln("")
+                    print_no_symbol(query, corpus.syms, "")
                     exit(1)
                 }
                 return
@@ -937,13 +947,7 @@ fn main() {
                     exit(1)
                 }
                 if !gen_for_symbol(query, docs_set, want_print) {
-                    let suggestion = suggest_similar(query, docs_set)
-                    eprintln("")
-                    eprintln("  No symbol '${query}' found in project.")
-                    if suggestion != "" {
-                        eprintln("  Did you mean: ${suggestion}?")
-                    }
-                    eprintln("")
+                    print_no_symbol(query, docs_set, "")
                     exit(1)
                 }
                 return
@@ -993,14 +997,7 @@ fn main() {
                     show_symbol(query, docs_set)
                 }
                 if !found {
-                    let suggestion = suggest_similar(query, docs_set)
-                    eprintln("")
-                    eprintln("  No symbol '${query}' found in project.")
-                    if suggestion != "" {
-                        eprintln("  Did you mean: ${suggestion}?")
-                    }
-                    eprintln("  Hint: try `avra docs` for an overview.")
-                    eprintln("")
+                    print_no_symbol(query, docs_set, "  Hint: try `avra docs` for an overview.")
                     exit(1)
                 }
                 return

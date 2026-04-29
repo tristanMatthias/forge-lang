@@ -228,6 +228,18 @@ fn print_summary_kind(list: SymList, want_bucket: int) {
     }
 }
 
+// Label for each renderable bucket — used by show_overview and
+// show_symbols so the strings stay in lockstep across the renderers.
+fn kind_label(bucket: int) -> string {
+    match bucket {
+        1 -> "Functions"
+        2 -> "Types"
+        3 -> "Enums"
+        4 -> "Constants"
+        _ -> "Unknown"
+    }
+}
+
 // ── Overview (`avra docs`) ──────────────────────────────────────────
 
 export fn show_overview(docs: SymList) {
@@ -243,34 +255,14 @@ export fn show_overview(docs: SymList) {
         return
     }
 
-    let n_fns = count_in_bucket(docs, 1)
-    let n_types = count_in_bucket(docs, 2)
-    let n_enums = count_in_bucket(docs, 3)
-    let n_vars = count_in_bucket(docs, 4)
-
-    if n_fns > 0 {
-        println("")
-        println("  ${bold("Functions")} (${string(n_fns)})")
-        println("")
-        print_summary_kind(docs, 1)
-    }
-    if n_types > 0 {
-        println("")
-        println("  ${bold("Types")} (${string(n_types)})")
-        println("")
-        print_summary_kind(docs, 2)
-    }
-    if n_enums > 0 {
-        println("")
-        println("  ${bold("Enums")} (${string(n_enums)})")
-        println("")
-        print_summary_kind(docs, 3)
-    }
-    if n_vars > 0 {
-        println("")
-        println("  ${bold("Constants")} (${string(n_vars)})")
-        println("")
-        print_summary_kind(docs, 4)
+    for bucket in 1..5 {
+        let n = count_in_bucket(docs, bucket)
+        if n > 0 {
+            println("")
+            println("  ${bold(kind_label(bucket))} (${string(n)})")
+            println("")
+            print_summary_kind(docs, bucket)
+        }
     }
 
     let total = count_total(docs)
@@ -294,25 +286,12 @@ export fn show_symbols(docs: SymList) {
     println("  ${dim(rule(16))}")
     println("")
 
-    if count_in_bucket(docs, 1) > 0 {
-        println("  ${bold("Functions")}")
-        print_with_loc_kind(docs, 1)
-        println("")
-    }
-    if count_in_bucket(docs, 2) > 0 {
-        println("  ${bold("Types")}")
-        print_with_loc_kind(docs, 2)
-        println("")
-    }
-    if count_in_bucket(docs, 3) > 0 {
-        println("  ${bold("Enums")}")
-        print_with_loc_kind(docs, 3)
-        println("")
-    }
-    if count_in_bucket(docs, 4) > 0 {
-        println("  ${bold("Constants")}")
-        print_with_loc_kind(docs, 4)
-        println("")
+    for bucket in 1..5 {
+        if count_in_bucket(docs, bucket) > 0 {
+            println("  ${bold(kind_label(bucket))}")
+            print_with_loc_kind(docs, bucket)
+            println("")
+        }
     }
 
     if count_total(docs) == 0 {
@@ -878,25 +857,12 @@ export fn show_llm(docs: SymList) {
     println("# Project Documentation (LLM-friendly)")
     println("")
 
-    if count_in_bucket(docs, 1) > 0 {
-        println("## Functions")
-        print_llm_kind(docs, 1)
-        println("")
-    }
-    if count_in_bucket(docs, 2) > 0 {
-        println("## Types")
-        print_llm_kind(docs, 2)
-        println("")
-    }
-    if count_in_bucket(docs, 3) > 0 {
-        println("## Enums")
-        print_llm_kind(docs, 3)
-        println("")
-    }
-    if count_in_bucket(docs, 4) > 0 {
-        println("## Constants")
-        print_llm_kind(docs, 4)
-        println("")
+    for bucket in 1..5 {
+        if count_in_bucket(docs, bucket) > 0 {
+            println("## ${kind_label(bucket)}")
+            print_llm_kind(docs, bucket)
+            println("")
+        }
     }
 }
 
@@ -953,10 +919,9 @@ export fn validate_docs(dir: string) {
     println("")
     println("  Symbols found: ${string(total)}")
 
-    print_validation_kind(docs, 1, "Functions")
-    print_validation_kind(docs, 2, "Types")
-    print_validation_kind(docs, 3, "Enums")
-    print_validation_kind(docs, 4, "Constants")
+    for bucket in 1..5 {
+        print_validation_kind(docs, bucket, kind_label(bucket))
+    }
 
     let undocumented = total - documented
     let coverage = if total == 0 { 100 } else { pct(documented, total) }
@@ -1116,17 +1081,10 @@ fn sym_kind_tag(s: Sym) -> string {
 
 export fn render_markdown(docs: SymList) -> string {
     mut out = "# Project Documentation\n\n"
-    if count_in_bucket(docs, 1) > 0 {
-        out = out + "## Functions\n\n" + render_md_kind(docs, 1)
-    }
-    if count_in_bucket(docs, 2) > 0 {
-        out = out + "## Types\n\n" + render_md_kind(docs, 2)
-    }
-    if count_in_bucket(docs, 3) > 0 {
-        out = out + "## Enums\n\n" + render_md_kind(docs, 3)
-    }
-    if count_in_bucket(docs, 4) > 0 {
-        out = out + "## Constants\n\n" + render_md_kind(docs, 4)
+    for bucket in 1..5 {
+        if count_in_bucket(docs, bucket) > 0 {
+            out = "${out}## ${kind_label(bucket)}\n\n${render_md_kind(docs, bucket)}"
+        }
     }
     out
 }
