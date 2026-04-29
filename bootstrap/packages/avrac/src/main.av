@@ -22,7 +22,10 @@ mod indexer
 mod docs
 use cli.{cli_new, cli_add_command, cli_command_add_flag, cli_command_add_option, cli_command_add_arg, cli_parse, result_has_flag, result_get_option}
 use coverage.{render_coverage}
-use docs.{extract_project_docs_ast, show_overview, show_symbol, show_short, show_symbols, show_search, show_llm, validate_docs, suggest_similar}
+use docs.{extract_project_docs_ast, extract_project_corpus,
+          show_overview, show_symbol, show_short, show_symbols,
+          show_search, show_llm, show_callers,
+          validate_docs, suggest_similar}
 use indexer.{run_lsp_server}
 use pathutil.{basename_no_ext}
 
@@ -578,6 +581,7 @@ fn main() {
             mut want_validate = false
             mut search_term = ""
             mut query = ""
+            mut want_callers = false
             mut k = 2
             while k < avra_selfhost_argc() {
                 let arg = avra_selfhost_get_arg_cstr(k)
@@ -598,6 +602,11 @@ fn main() {
                 }
                 if arg == "--validate" {
                     want_validate = true
+                    k = k + 1
+                    continue
+                }
+                if arg == "--callers" || arg == "--used-by" {
+                    want_callers = true
                     k = k + 1
                     continue
                 }
@@ -624,11 +633,25 @@ fn main() {
                 return
             }
 
+            // --callers needs the call graph in addition to the
+            // SymList, so cash both at once.
+            if want_callers && query != "" {
+                let corpus = extract_project_corpus(project_dir)
+                if !show_callers(query, corpus) {
+                    let suggestion = suggest_similar(query, corpus.syms)
+                    eprintln("")
+                    eprintln("  No symbol '${query}' found in project.")
+                    if suggestion != "" {
+                        eprintln("  Did you mean: ${suggestion}?")
+                    }
+                    eprintln("")
+                    exit(1)
+                }
+                return
+            }
+
             // AST-based extractor (rnb9.3) parses every .av and walks
-            // the typed AST through @std/lsp's indexer. The legacy
-            // line-based scanner (extract_project_docs) is kept in
-            // src/docs/mod.av for now — folding it together with the
-            // renderer is the cleanup tracked by ovm8.1.
+            // the typed AST through @std/lsp's indexer.
             let docs_set = extract_project_docs_ast(project_dir)
 
             if search_term != "" {

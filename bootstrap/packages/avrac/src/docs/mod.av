@@ -23,20 +23,32 @@
 
 use core.runtime.{avra_selfhost_read_file, avra_shell_exec, avra_selfhost_levenshtein}
 use parse.{parse_program_source}
-use indexer.{extract_from_ast}
-use @std.lsp.{Sym, SymList, SymKind}
+use indexer.{extract_from_ast, extract_calls_from_ast}
+use @std.lsp.{Sym, SymList, SymKind, CallEdge, CallList}
 use render.{bold, dim, cyan, green, yellow, red,
             pad_right, truncate_str, rule, first_line, icase_eq, pct}
 use pathutil.{relativise}
 
 // ── Project walk ─────────────────────────────────────────────────────
 
-export fn extract_project_docs_ast(dir: string) -> SymList {
+// Both pieces of the project corpus the renderers need: the symbol
+// graph (for documentation queries) and the call edges (for
+// `--callers` reverse-lookup). Walking once means we don't pay for
+// double parsing when callers are requested.
+export type DocsCorpus = {
+    syms: SymList,
+    calls: CallList
+}
+
+export fn extract_project_corpus(dir: string) -> DocsCorpus {
     let cmd = "find ${dir} -name '*.av' -type f -not -path '*/build/*' -not -path '*/.beads/*' -not -path '*/seed/*' 2>/dev/null | sort"
     let files_text = avra_shell_exec(cmd)
-    if files_text == "" { return SymList.End }
+    if files_text == "" {
+        return DocsCorpus { syms: SymList.End, calls: CallList.End }
+    }
 
-    mut all = SymList.End
+    mut syms = SymList.End
+    mut calls = CallList.End
     for path in files_text.split("\n") {
         if path == "" { continue }
         let content = avra_selfhost_read_file(path)
@@ -50,9 +62,24 @@ export fn extract_project_docs_ast(dir: string) -> SymList {
         }
         let rel = relativise(path, dir)
         let file_syms = extract_from_ast(parsed.stmts!, rel)
-        all = sym_list_append(file_syms, all)
+        let file_calls = extract_calls_from_ast(parsed.stmts!, rel)
+        syms = sym_list_append(file_syms, syms)
+        calls = call_list_append(file_calls, calls)
     }
-    all
+    DocsCorpus { syms, calls }
+}
+
+// Backwards-compat wrapper for callers that only want the SymList
+// half.
+export fn extract_project_docs_ast(dir: string) -> SymList {
+    extract_project_corpus(dir).syms
+}
+
+fn call_list_append(a: CallList, b: CallList) -> CallList {
+    match a {
+        .End -> b
+        .Node(item, next) -> CallList.Node(item, call_list_append(next, b))
+    }
 }
 
 fn sym_list_append(a: SymList, b: SymList) -> SymList {
@@ -312,6 +339,105 @@ fn print_with_loc_kind(list: SymList, want_bucket: int) {
 }
 
 // ── Symbol detail (`avra docs <name>`) ──────────────────────────────
+
+// ── Callers (`--callers`) ───────────────────────────────────────────
+//
+// Given a target symbol name, walk the CallList for edges whose
+// callee matches and render their call sites. Same shape as the
+// LSP `avra/callers` request — see protocol_test.av for the
+// equivalent end-to-end test.
+
+export fn show_callers(query: string, corpus: DocsCorpus) -> bool {
+    let target = sym_by_name(corpus.syms, query)
+    if target == null { return false }
+
+    let edges = call_edges_to(corpus.calls, query)
+    println("")
+    println("  ${bold(declaration_line(target!))}")
+    println("  ${dim("Used by:")}")
+
+    if call_list_len(edges) == 0 {
+        println("    ${dim("(no callers in project)")}")
+        println("")
+        return true
+    }
+
+    print_call_edges(edges)
+    println("    ${dim("(${string(call_list_len(edges))} callers)")}")
+    println("")
+    true
+}
+
+fn sym_by_name(list: SymList, name: string) -> Sym? {
+    let want = name.to_lower()
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return null
+            }
+            .Node(item, next) -> {
+                if is_renderable(item) && item.name.to_lower() == want {
+                    return item
+                }
+                cur = next
+            }
+        }
+    }
+    null
+}
+
+fn call_edges_to(calls: CallList, target: string) -> CallList {
+    mut acc = CallList.End
+    mut cur = calls
+    while true {
+        match cur {
+            .End -> {
+                return acc
+            }
+            .Node(edge, next) -> {
+                if edge.callee == target {
+                    acc = CallList.Node(edge, acc)
+                }
+                cur = next
+            }
+        }
+    }
+    CallList.End
+}
+
+fn call_list_len(list: CallList) -> int {
+    mut n = 0
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return n
+            }
+            .Node(_, next) -> {
+                n = n + 1
+                cur = next
+            }
+        }
+    }
+    n
+}
+
+fn print_call_edges(edges: CallList) {
+    mut cur = edges
+    while true {
+        match cur {
+            .End -> {
+                return
+            }
+            .Node(edge, next) -> {
+                let loc = "${edge.file}:${string(edge.line)}"
+                println("    ${pad_right(edge.caller, 36)} ${dim(loc)}")
+                cur = next
+            }
+        }
+    }
+}
 
 // "Did you mean?" — best-scoring sym name above threshold, or "" if
 // no candidate is plausibly close. Threshold matches @std/lsp's
