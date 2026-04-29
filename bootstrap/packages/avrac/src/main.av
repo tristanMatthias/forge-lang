@@ -26,7 +26,8 @@ use coverage.{render_coverage}
 use docs.{extract_project_docs_ast, extract_project_corpus,
           show_overview, show_symbol, show_short, show_symbols,
           show_search, show_llm, show_callers, show_module,
-          validate_docs, suggest_similar, run_doctests}
+          validate_docs, suggest_similar, run_doctests,
+          render_json, render_markdown}
 use lang_gen.{render_lang_av, write_lang_av}
 use indexer.{run_lsp_server, extract_project_syms_cached, extract_from_ast}
 use pathutil.{basename_no_ext}
@@ -677,6 +678,7 @@ fn main() {
             mut want_no_cache = false
             mut want_doctest = false
             mut scope = "project"
+            mut format = "human"
             mut k = 2
             while k < avra_selfhost_argc() {
                 let arg = avra_selfhost_get_arg_cstr(k)
@@ -724,6 +726,18 @@ fn main() {
                 }
                 if arg.starts_with("--scope=") {
                     scope = arg.substring(8, arg.length)
+                    k = k + 1
+                    continue
+                }
+                if arg == "--format" {
+                    if k + 1 < avra_selfhost_argc() {
+                        format = avra_selfhost_get_arg_cstr(k + 1)
+                    }
+                    k = k + 2
+                    continue
+                }
+                if arg.starts_with("--format=") {
+                    format = arg.substring(9, arg.length)
                     k = k + 1
                     continue
                 }
@@ -802,6 +816,22 @@ fn main() {
                 let ok = run_doctests(docs_set)
                 if !ok { exit(1) }
                 return
+            }
+
+            // Non-human formats short-circuit the rest of the dispatch:
+            // `--format=json` dumps the whole SymList; `--format=markdown`
+            // emits a clean markdown rendering.
+            if format == "json" {
+                println(render_json(docs_set))
+                return
+            }
+            if format == "markdown" {
+                println(render_markdown(docs_set))
+                return
+            }
+            if format != "human" {
+                eprintln("error: unknown format '${format}' (try human / markdown / json)")
+                exit(1)
             }
 
             if module_path != "" {

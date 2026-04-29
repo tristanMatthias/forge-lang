@@ -1066,6 +1066,145 @@ fn render_see_ref(name: string, docs: SymList) -> string {
     "${cyan(s.qualified)} ${dim(loc)}"
 }
 
+// Mirrored from @std/json — bootstrap module-resolver dedupe bug
+// silently drops function imports when @std.json is already loaded
+// by another module. Once that fix lands these can become a one-line
+// re-import.
+fn json_str(s: string) -> string {
+    "\"${json_escape_for_render(s)}\""
+}
+
+fn json_escape_for_render(s: string) -> string {
+    mut out = ""
+    mut i = 0
+    while i < s.length {
+        let ch = s.substring(i, i + 1)
+        out = out + json_escape_one(ch)
+        i = i + 1
+    }
+    out
+}
+
+fn json_escape_one(ch: string) -> string {
+    match ch {
+        "\"" -> "\\\""
+        "\\" -> "\\\\"
+        "\n" -> "\\n"
+        "\r" -> "\\r"
+        "\t" -> "\\t"
+        _ -> ch
+    }
+}
+
+// ── Format-as-JSON (`--format=json`) ────────────────────────────────
+//
+// Render the SymList as a JSON array — one record per Sym with
+// name / qualified / kind / detail / doc / file / line / exported.
+// Consumed by IDE plugins, MCP clients, CI tooling, anything that
+// wants structured output. Schema is stable; bumping it is a
+// breaking change worth a major version.
+
+export fn render_json(docs: SymList) -> string {
+    mut out = "["
+    mut first = true
+    mut cur = docs
+    while true {
+        match cur {
+            .End -> {
+                break
+            }
+            .Node(item, next) -> {
+                if is_renderable(item) {
+                    let row = render_sym_json(item)
+                    if first {
+                        out = "${out}${row}"
+                        first = false
+                    } else {
+                        out = "${out},${row}"
+                    }
+                }
+                cur = next
+            }
+        }
+    }
+    "${out}]"
+}
+
+fn render_sym_json(s: Sym) -> string {
+    let kind_tag = sym_kind_tag(s)
+    let detail = json_str(declaration_line(s))
+    let name = json_str(s.name)
+    let qual = json_str(s.qualified)
+    let doc = json_str(s.doc)
+    let file = json_str(s.file)
+    let exp = if s.exported { "true" } else { "false" }
+    "{\"name\":${name},\"qualified\":${qual},\"kind\":${json_str(kind_tag)},\"detail\":${detail},\"doc\":${doc},\"file\":${file},\"line\":${string(s.span.start.line)},\"exported\":${exp}}"
+}
+
+fn sym_kind_tag(s: Sym) -> string {
+    match s.kind {
+        .Fn(_, _) -> "fn"
+        .Type(_) -> "type"
+        .Enum(_) -> "enum"
+        .Trait(_) -> "trait"
+        .Impl(_, _) -> "impl"
+        .Const(_) -> "const"
+        .Mut(_) -> "mut"
+        .Let(_) -> "let"
+        .ErrorCode(_) -> "error"
+        .Keyword(_) -> "keyword"
+        .Module -> "module"
+    }
+}
+
+// ── Format-as-markdown (`--format=markdown`) ────────────────────────
+//
+// Plain markdown — no ANSI codes — suitable for pasting into a
+// GitHub README or piping into `glow`. Mirrors show_llm's structure
+// but without the "LLM-friendly" framing.
+
+export fn render_markdown(docs: SymList) -> string {
+    mut out = "# Project Documentation\n\n"
+    if count_in_bucket(docs, 1) > 0 {
+        out = out + "## Functions\n\n" + render_md_kind(docs, 1)
+    }
+    if count_in_bucket(docs, 2) > 0 {
+        out = out + "## Types\n\n" + render_md_kind(docs, 2)
+    }
+    if count_in_bucket(docs, 3) > 0 {
+        out = out + "## Enums\n\n" + render_md_kind(docs, 3)
+    }
+    if count_in_bucket(docs, 4) > 0 {
+        out = out + "## Constants\n\n" + render_md_kind(docs, 4)
+    }
+    out
+}
+
+fn render_md_kind(list: SymList, want_bucket: int) -> string {
+    mut out = ""
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return out
+            }
+            .Node(item, next) -> {
+                if bucket_of(item) == want_bucket {
+                    let head = declaration_line(item)
+                    let exp = if item.exported { " *(exported)*" } else { "" }
+                    out = out + "### `" + head + "`" + exp + "\n\n"
+                    if item.doc != "" {
+                        out = out + item.doc + "\n\n"
+                    }
+                    out = out + "_" + item.file + ":" + string(item.span.start.line) + "_\n\n"
+                }
+                cur = next
+            }
+        }
+    }
+    out
+}
+
 // ── Doctests (`--doctest`) ──────────────────────────────────────────
 //
 // Walk every Sym, extract fenced ```avra``` examples from /// blocks,
