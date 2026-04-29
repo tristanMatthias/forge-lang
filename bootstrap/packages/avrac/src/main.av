@@ -595,6 +595,130 @@ fn append_stmt_list(a: StmtList, b: StmtList) -> StmtList {
     }
 }
 
+// Parsed view of `avra docs ...` argv. Keeps the main() handler from
+// drowning in 100+ lines of flag-by-flag if statements.
+type DocsArgs = {
+    want_symbols: bool,
+    want_short: bool,
+    want_llm: bool,
+    want_validate: bool,
+    want_callers: bool,
+    want_no_cache: bool,
+    want_doctest: bool,
+    want_gen: bool,
+    want_print: bool,
+    search_term: string,
+    module_path: string,
+    scope: string,
+    format: string,
+    query: string,
+}
+
+fn docs_args_default() -> DocsArgs {
+    DocsArgs {
+        want_symbols: false, want_short: false, want_llm: false,
+        want_validate: false, want_callers: false, want_no_cache: false,
+        want_doctest: false, want_gen: false, want_print: false,
+        search_term: "", module_path: "", scope: "project",
+        format: "human", query: "",
+    }
+}
+
+// Apply a pure flag (toggle one bool, no value). matched=false means
+// arg wasn't a recognised pure flag and the caller should keep parsing.
+type FlagApply = { args: DocsArgs, matched: bool }
+
+fn pure_flag_apply(arg: string, a: DocsArgs) -> FlagApply {
+    if arg == "--symbols" { return FlagApply { args: a with { want_symbols: true }, matched: true } }
+    if arg == "--short" { return FlagApply { args: a with { want_short: true }, matched: true } }
+    if arg == "--llm" { return FlagApply { args: a with { want_llm: true }, matched: true } }
+    if arg == "--validate" { return FlagApply { args: a with { want_validate: true }, matched: true } }
+    if arg == "--callers" || arg == "--used-by" { return FlagApply { args: a with { want_callers: true }, matched: true } }
+    if arg == "--no-cache" { return FlagApply { args: a with { want_no_cache: true }, matched: true } }
+    if arg == "--doctest" { return FlagApply { args: a with { want_doctest: true }, matched: true } }
+    if arg == "--print" { return FlagApply { args: a with { want_print: true }, matched: true } }
+    FlagApply { args: a, matched: false }
+}
+
+// Read the value attached to a `--key` flag at argv[idx]: returns the
+// value plus the number of argv slots consumed (1 for `--key=value`,
+// 2 for `--key value`).
+type KvRead = { value: string, consumed: int }
+
+fn read_kv_value(idx: int, key: string, prefix_len: int) -> KvRead {
+    let arg = avra_selfhost_get_arg_cstr(idx)
+    if arg.starts_with("${key}=") {
+        return KvRead { value: arg.substring(prefix_len + 1, arg.length), consumed: 1 }
+    }
+    if idx + 1 < avra_selfhost_argc() {
+        return KvRead { value: avra_selfhost_get_arg_cstr(idx + 1), consumed: 2 }
+    }
+    KvRead { value: "", consumed: 1 }
+}
+
+fn matches_kv_flag(arg: string, key: string) -> bool {
+    arg == key || arg.starts_with("${key}=")
+}
+
+fn parse_docs_args() -> DocsArgs {
+    mut a = docs_args_default()
+    mut k = 2
+    while k < avra_selfhost_argc() {
+        let arg = avra_selfhost_get_arg_cstr(k)
+        let pure = pure_flag_apply(arg, a)
+        if pure.matched {
+            a = pure.args
+            k = k + 1
+            continue
+        }
+        // --gen with optional positional symbol name.
+        if arg == "--gen" {
+            a = a with { want_gen: true }
+            if k + 1 < avra_selfhost_argc() {
+                let next = avra_selfhost_get_arg_cstr(k + 1)
+                if !next.starts_with("-") {
+                    a = a with { query: next }
+                    k = k + 2
+                    continue
+                }
+            }
+            k = k + 1
+            continue
+        }
+        // --key value / --key=value pairs.
+        if matches_kv_flag(arg, "--scope") {
+            let r = read_kv_value(k, "--scope", 7)
+            a = a with { scope: r.value }
+            k = k + r.consumed
+            continue
+        }
+        if matches_kv_flag(arg, "--format") {
+            let r = read_kv_value(k, "--format", 8)
+            a = a with { format: r.value }
+            k = k + r.consumed
+            continue
+        }
+        if matches_kv_flag(arg, "--module") {
+            let r = read_kv_value(k, "--module", 8)
+            a = a with { module_path: r.value }
+            k = k + r.consumed
+            continue
+        }
+        if matches_kv_flag(arg, "--search") {
+            let r = read_kv_value(k, "--search", 8)
+            a = a with { search_term: r.value }
+            k = k + r.consumed
+            continue
+        }
+        // Positional symbol query — first non-flag token.
+        if !arg.starts_with("-") && a.query == "" {
+            a = a with { query: arg }
+        }
+        k = k + 1
+    }
+    a
+}
+
 // "No symbol 'foo' found" + optional did-you-mean hint. Centralised
 // because the docs handler hits this branch from --gen, --callers,
 // and the bare-query miss path with identical formatting.
@@ -609,6 +733,123 @@ fn print_no_symbol(query: string, list: SymList, hint: string) {
         eprintln(hint)
     }
     eprintln("")
+}
+
+// Top-level dispatch for `avra docs`. Pulls argv via parse_docs_args,
+// loads the requested corpus, then routes to the matching renderer.
+// Used to live inline in main(); split out so main()'s body stays
+// readable as the docs surface keeps growing.
+fn run_docs_command() {
+    let args = parse_docs_args()
+    let project_dir = avra_process_env_get("PWD")
+
+    if args.want_validate {
+        validate_docs(project_dir)
+        return
+    }
+
+    // --callers needs the call graph in addition to the SymList; load
+    // both so a single corpus walk feeds the reverse-lookup.
+    if args.want_callers && args.query != "" {
+        let corpus = extract_project_corpus(project_dir)
+        if !show_callers(args.query, corpus) {
+            print_no_symbol(args.query, corpus.syms, "")
+            exit(1)
+        }
+        return
+    }
+
+    let docs_set = load_docs_corpus(project_dir, args)
+
+    if args.want_doctest {
+        if !run_doctests(docs_set) {
+            exit(1)
+        }
+        return
+    }
+
+    if args.want_gen {
+        if args.query == "" {
+            eprintln("error: --gen requires a symbol name")
+            exit(1)
+        }
+        if !gen_for_symbol(args.query, docs_set, args.want_print) {
+            print_no_symbol(args.query, docs_set, "")
+            exit(1)
+        }
+        return
+    }
+
+    // Non-human formats short-circuit. `--format=json` dumps the SymList;
+    // `--format=markdown` emits clean GitHub-style markdown.
+    if args.format == "json" {
+        println(render_json(docs_set))
+        return
+    }
+    if args.format == "markdown" {
+        println(render_markdown(docs_set))
+        return
+    }
+    if args.format != "human" {
+        eprintln("error: unknown format '${args.format}' (try human / markdown / json)")
+        exit(1)
+    }
+
+    if args.module_path != "" {
+        if !show_module(args.module_path, docs_set) {
+            eprintln("")
+            eprintln("  No module '${args.module_path}' found in project.")
+            eprintln("")
+            exit(1)
+        }
+        return
+    }
+    if args.search_term != "" {
+        show_search(args.search_term, docs_set)
+        return
+    }
+    if args.want_llm {
+        show_llm(docs_set)
+        return
+    }
+    if args.want_symbols {
+        show_symbols(docs_set)
+        return
+    }
+    if args.query != "" {
+        let found = if args.want_short {
+            show_short(args.query, docs_set)
+        } else {
+            show_symbol(args.query, docs_set)
+        }
+        if !found {
+            print_no_symbol(args.query, docs_set, "  Hint: try `avra docs` for an overview.")
+            exit(1)
+        }
+        return
+    }
+    show_overview(docs_set)
+}
+
+// Pick the corpus by scope:
+//   project (default) — walk PWD/*.av through the indexer
+//   lang              — read target/lang.av (generated by `avra lang`)
+//   errors            — same as lang, filtered to F-codes
+//   all               — project ∪ lang
+fn load_docs_corpus(project_dir: string, args: DocsArgs) -> SymList {
+    match args.scope {
+        "project" -> extract_project_syms_cached(project_dir, args.want_no_cache)
+        "lang" -> extract_lang_corpus(project_dir)
+        "errors" -> extract_errors_corpus(project_dir)
+        "all" -> sym_list_concat(
+            extract_project_syms_cached(project_dir, args.want_no_cache),
+            extract_lang_corpus(project_dir))
+        _ -> {
+            eprintln("error: unknown scope '${args.scope}' (try project / lang / errors / all)")
+            exit(1)
+            SymList.End
+        }
+    }
 }
 
 // Look up `query` in the project's SymList and either print a doc-stub
@@ -772,238 +1013,7 @@ fn main() {
             return
         }
         if cmd0 == "docs" {
-            let project_dir = avra_process_env_get("PWD")
-
-            // Parse flags / option / positional from argv (cli_parse returns
-            // the option/flag set keyed off the matched command).
-            mut want_symbols = false
-            mut want_short = false
-            mut want_llm = false
-            mut want_validate = false
-            mut search_term = ""
-            mut query = ""
-            mut want_callers = false
-            mut module_path = ""
-            mut want_no_cache = false
-            mut want_doctest = false
-            mut want_gen = false
-            mut want_print = false
-            mut scope = "project"
-            mut format = "human"
-            mut k = 2
-            while k < avra_selfhost_argc() {
-                let arg = avra_selfhost_get_arg_cstr(k)
-                if arg == "--symbols" {
-                    want_symbols = true
-                    k = k + 1
-                    continue
-                }
-                if arg == "--short" {
-                    want_short = true
-                    k = k + 1
-                    continue
-                }
-                if arg == "--llm" {
-                    want_llm = true
-                    k = k + 1
-                    continue
-                }
-                if arg == "--validate" {
-                    want_validate = true
-                    k = k + 1
-                    continue
-                }
-                if arg == "--callers" || arg == "--used-by" {
-                    want_callers = true
-                    k = k + 1
-                    continue
-                }
-                if arg == "--no-cache" {
-                    want_no_cache = true
-                    k = k + 1
-                    continue
-                }
-                if arg == "--doctest" {
-                    want_doctest = true
-                    k = k + 1
-                    continue
-                }
-                if arg == "--gen" {
-                    want_gen = true
-                    if k + 1 < avra_selfhost_argc() {
-                        let next = avra_selfhost_get_arg_cstr(k + 1)
-                        if !next.starts_with("-") {
-                            query = next
-                            k = k + 2
-                            continue
-                        }
-                    }
-                    k = k + 1
-                    continue
-                }
-                if arg == "--print" {
-                    want_print = true
-                    k = k + 1
-                    continue
-                }
-                if arg == "--scope" {
-                    if k + 1 < avra_selfhost_argc() {
-                        scope = avra_selfhost_get_arg_cstr(k + 1)
-                    }
-                    k = k + 2
-                    continue
-                }
-                if arg.starts_with("--scope=") {
-                    scope = arg.substring(8, arg.length)
-                    k = k + 1
-                    continue
-                }
-                if arg == "--format" {
-                    if k + 1 < avra_selfhost_argc() {
-                        format = avra_selfhost_get_arg_cstr(k + 1)
-                    }
-                    k = k + 2
-                    continue
-                }
-                if arg.starts_with("--format=") {
-                    format = arg.substring(9, arg.length)
-                    k = k + 1
-                    continue
-                }
-                if arg == "--module" {
-                    if k + 1 < avra_selfhost_argc() {
-                        module_path = avra_selfhost_get_arg_cstr(k + 1)
-                    }
-                    k = k + 2
-                    continue
-                }
-                if arg.starts_with("--module=") {
-                    module_path = arg.substring(9, arg.length)
-                    k = k + 1
-                    continue
-                }
-                if arg == "--search" {
-                    if k + 1 < avra_selfhost_argc() {
-                        search_term = avra_selfhost_get_arg_cstr(k + 1)
-                    }
-                    k = k + 2
-                    continue
-                }
-                if arg.starts_with("--search=") {
-                    search_term = arg.substring(9, arg.length)
-                    k = k + 1
-                    continue
-                }
-                if !arg.starts_with("-") && query == "" {
-                    query = arg
-                }
-                k = k + 1
-            }
-
-            if want_validate {
-                validate_docs(project_dir)
-                return
-            }
-
-            // --callers needs the call graph in addition to the
-            // SymList, so cash both at once.
-            if want_callers && query != "" {
-                let corpus = extract_project_corpus(project_dir)
-                if !show_callers(query, corpus) {
-                    print_no_symbol(query, corpus.syms, "")
-                    exit(1)
-                }
-                return
-            }
-
-            // Pick the corpus by scope:
-            //   project (default) — walk PWD/*.av through the indexer
-            //   lang              — read target/lang.av (generated by `avra lang`)
-            //   errors            — same as lang, filtered to F-codes
-            //   all               — project ∪ lang
-            let docs_set = match scope {
-                "project" -> extract_project_syms_cached(project_dir, want_no_cache)
-                "lang" -> extract_lang_corpus(project_dir)
-                "errors" -> extract_errors_corpus(project_dir)
-                "all" -> sym_list_concat(
-                    extract_project_syms_cached(project_dir, want_no_cache),
-                    extract_lang_corpus(project_dir))
-                _ -> {
-                    eprintln("error: unknown scope '${scope}' (try project / lang / errors / all)")
-                    exit(1)
-                    SymList.End
-                }
-            }
-
-            if want_doctest {
-                let ok = run_doctests(docs_set)
-                if !ok { exit(1) }
-                return
-            }
-
-            if want_gen {
-                if query == "" {
-                    eprintln("error: --gen requires a symbol name")
-                    exit(1)
-                }
-                if !gen_for_symbol(query, docs_set, want_print) {
-                    print_no_symbol(query, docs_set, "")
-                    exit(1)
-                }
-                return
-            }
-
-            // Non-human formats short-circuit the rest of the dispatch:
-            // `--format=json` dumps the whole SymList; `--format=markdown`
-            // emits a clean markdown rendering.
-            if format == "json" {
-                println(render_json(docs_set))
-                return
-            }
-            if format == "markdown" {
-                println(render_markdown(docs_set))
-                return
-            }
-            if format != "human" {
-                eprintln("error: unknown format '${format}' (try human / markdown / json)")
-                exit(1)
-            }
-
-            if module_path != "" {
-                if !show_module(module_path, docs_set) {
-                    eprintln("")
-                    eprintln("  No module '${module_path}' found in project.")
-                    eprintln("")
-                    exit(1)
-                }
-                return
-            }
-            if search_term != "" {
-                show_search(search_term, docs_set)
-                return
-            }
-            if want_llm {
-                show_llm(docs_set)
-                return
-            }
-            if want_symbols {
-                show_symbols(docs_set)
-                return
-            }
-            if query != "" {
-                let found = if want_short {
-                    show_short(query, docs_set)
-                } else {
-                    show_symbol(query, docs_set)
-                }
-                if !found {
-                    print_no_symbol(query, docs_set, "  Hint: try `avra docs` for an overview.")
-                    exit(1)
-                }
-                return
-            }
-
-            show_overview(docs_set)
+            run_docs_command()
             return
         }
         if cmd0 == "test" {
