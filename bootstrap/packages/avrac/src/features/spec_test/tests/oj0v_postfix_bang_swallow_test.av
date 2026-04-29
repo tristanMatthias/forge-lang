@@ -1,0 +1,39 @@
+// Regression for forge-crafting-intepreters-oj0v: a postfix `!`
+// (force-unwrap) on the previous statement was greedily swallowing
+// the prefix `!` (negation) of the next statement, when the two
+// happened to share an expression context (then-block, fn body).
+//
+// Now postfix `!`/`?` only attach when on the same line as the
+// preceding token — newlines reset the postfix-context, so a leading
+// `!` on the next line is parsed as prefix negation as intended.
+
+type State = {
+    name: string,
+    flag: bool,
+}
+
+fn make_state() -> State {
+    State { name: "x", flag: false }
+}
+
+fn check_state(s: State, path: string) -> bool {
+    if s.name == path { s.flag } else { false }
+}
+
+spec "prefix-bang after multi-arg call (oj0v)" {
+    given "a state value bound on a separate line" {
+        then "!check_state on the next line negates the call result" {
+            let s = make_state()
+            !check_state(s, "/no/match")
+        }
+        then "explicit == false control still passes" {
+            let s = make_state()
+            check_state(s, "/no/match") == false
+        }
+        then "let-bound !fn(args) result is true" {
+            let s = make_state()
+            let r = !check_state(s, "/no/match")
+            r
+        }
+    }
+}

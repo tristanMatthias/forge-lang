@@ -925,7 +925,7 @@ impl Parser {
         mut result = expr
         // If [ appears on a DIFFERENT line than the previous token,
         // it's a new statement (list literal), not postfix indexing.
-        while (self.check(Tk.LeftParen) && self.current_line == self.prev_line) || (self.check(Tk.Dot) && self.dot_is_postfix(result)) || (self.check(Tk.Bang) && self.allow_dot_postfix) || (self.check(Tk.LeftBracket) && self.current_line == self.prev_line) || self.check(Tk.QuestionDot) || (self.check(Tk.Question) && self.allow_dot_postfix) || (self.check(Tk.Less) && is_callable(result)) || self.check(Tk.KwCatch) {
+        while (self.check(Tk.LeftParen) && self.current_line == self.prev_line) || (self.check(Tk.Dot) && self.dot_is_postfix(result)) || (self.check(Tk.Bang) && self.allow_dot_postfix && self.current_line == self.prev_line) || (self.check(Tk.LeftBracket) && self.current_line == self.prev_line) || self.check(Tk.QuestionDot) || (self.check(Tk.Question) && self.allow_dot_postfix && self.current_line == self.prev_line) || (self.check(Tk.Less) && is_callable(result)) || self.check(Tk.KwCatch) {
             // Force-unwrap `expr!` is a no-op pass-through since we
             // don't track nullability in the value tag.
             while self.check(Tk.Bang) {
