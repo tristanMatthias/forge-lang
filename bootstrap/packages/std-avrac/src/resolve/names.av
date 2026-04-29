@@ -288,10 +288,14 @@ fn resolve_use_aliases(stmts: StmtList, tree: ModuleNode) -> UseResult {
 }
 
 /// Resolve `use` statements relative to a current module path.
-/// If `current_module` is non-empty, lookup tries
-/// `current_module::path` first before falling back to the absolute
-/// `path`. This lets a test file wrapped in `Module foo { mod
-/// helpers; use helpers.{...} }` find the helpers child.
+/// Lookup order:
+///   1. Absolute (root-relative) `canonical_path`.
+///   2. `current_module::canonical_path` and each ancestor scope
+///      walking up to the root.
+/// The ancestor walk is what lets a sub-module of `@std.avrac.indexer`
+/// say `use core.runtime.{...}` and have it resolve to the sibling
+/// `@std.avrac.core.runtime` rather than failing because no such
+/// module exists at the program root.
 fn resolve_use_aliases_in(stmts: StmtList, tree: ModuleNode, current_module: string) -> UseResult {
     match stmts {
         .End -> UseResult { aliases: AliasEntry.End, bag: bag_new() }
@@ -305,32 +309,58 @@ fn resolve_use_aliases_in(stmts: StmtList, tree: ModuleNode, current_module: str
                 .Use(mod_path, names) -> {
                     let canonical_path = dots_to_colons(mod_path)
                     let sp = span_new(0, 0, ss.line, ss.col)
-                    // Prefer absolute (root-relative) lookup. Only fall back to
-                    // current-module-scoped lookup when the absolute path is not
-                    // in the tree — this lets a Module-wrapped test file find
-                    // sibling modules nested inside the wrap, without shadowing
-                    // root-level modules with same-named local children.
-                    let abs_node = module_find(tree, canonical_path)
-                    match abs_node {
-                        .End -> {
-                            if current_module != "" {
-                                let scoped_path = type_qualified_name(current_module, canonical_path)
-                                let scoped_node = module_find(tree, scoped_path)
-                                match scoped_node {
-                                    .End -> resolve_use_names(canonical_path, names, tree, rest, sp)
-                                    _ -> resolve_use_names(scoped_path, names, tree, rest, sp)
-                                }
-                            } else {
-                                resolve_use_names(canonical_path, names, tree, rest, sp)
-                            }
-                        }
-                        _ -> resolve_use_names(canonical_path, names, tree, rest, sp)
-                    }
+                    let resolved_path = find_use_path(tree, current_module, canonical_path)
+                    resolve_use_names(resolved_path, names, tree, rest, sp)
                 }
                 _ -> rest
             }
         }
     }
+}
+
+/// Resolve a use path against the module tree, walking up the
+/// ancestor chain of `current_module` after trying the absolute
+/// path. Returns the first matching qualified path, or
+/// `canonical_path` itself when nothing matched (so the caller's
+/// import-not-found diagnostic still has a useful path to report).
+///
+/// Skips matches that resolve back to `current_module` itself —
+/// the user can't reasonably mean "import myself", and at depths
+/// like `@std::avrac::features::select_stmt::codegen` the parent
+/// walk would otherwise pick the local file's path before reaching
+/// the intended top-level `@std::avrac::codegen` ancestor.
+fn find_use_path(tree: ModuleNode, current_module: string, canonical_path: string) -> string {
+    if module_node_exists(module_find(tree, canonical_path)) { return canonical_path }
+    mut search = current_module
+    while search != "" {
+        let scoped = type_qualified_name(search, canonical_path)
+        if scoped != current_module && module_node_exists(module_find(tree, scoped)) {
+            return scoped
+        }
+        search = strip_last_module_segment(search)
+    }
+    canonical_path
+}
+
+/// True iff a `module_find` lookup hit a real module node (i.e. not
+/// the End sentinel). Pulls the match out so callers stay readable.
+fn module_node_exists(node: ModuleNode) -> bool {
+    match node {
+        .End -> false
+        _ -> true
+    }
+}
+
+/// Drop the trailing `::name` from a module path. Returns `""`
+/// when the input has no `::` separator.
+fn strip_last_module_segment(path: string) -> string {
+    mut last = -1
+    mut i = 0
+    while i < path.length - 1 {
+        if path[i] == ":" && path[i + 1] == ":" { last = i }
+        i = i + 1
+    }
+    if last < 0 { "" } else { path.substring(0, last) }
 }
 
 /// Output of `resolve_use_aliases` — the alias chain plus any

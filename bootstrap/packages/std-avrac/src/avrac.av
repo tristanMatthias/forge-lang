@@ -1,0 +1,30 @@
+// WHY: `@std.avrac` library entry — exposes the Avra compiler as a
+// reusable library so downstream tools (the `avra` CLI binary,
+// editor plugins, doc generators, fuzz harnesses) can invoke any
+// pipeline stage without pulling in a CLI driver.
+//
+// All public symbols are accessible by their submodule path, e.g.
+// `use @std.avrac.parse.{parse_program_source}`,
+// `use @std.avrac.codegen.setup.{compile_program}`,
+// `use @std.avrac.diagnostics.{bag_has_errors}`.
+//
+// The bootstrap module resolver wraps this file's contents in
+// `Module("@std") { Module("avrac") { ... } }` so every submodule
+// declared below becomes addressable at `@std.avrac.<sub>`.
+
+mod core
+mod diagnostics
+mod parse
+mod features
+mod typeck
+mod resolve
+mod codegen
+mod desugar
+mod render
+mod pathutil
+mod coverage
+mod indexer
+mod docs
+mod lang_gen
+mod fmt
+mod test_runner

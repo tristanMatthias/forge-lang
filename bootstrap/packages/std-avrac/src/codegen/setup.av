@@ -12,6 +12,7 @@ use diagnostics.{bag_new}
 use features.fn_decl.codegen.{emit_function_bodies}
 use core.type_registry.{TypeRegistry, variant_payload_name}
 use core.llvm.{avra_coverage_declare, avra_covmap_begin, avra_covmap_end}
+use core.runtime.{exit}
 
 /// Declare a fixed-arity extern function in the current module.
 /// Workhorse for the long list of `decl(m, "avra_*", …)` calls below.
@@ -1192,7 +1193,8 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, re
                     let arity = param_list_length(resolved_params)
                     let existing = avra_llvm_get_named_function(m, name)
                     if existing != null {
-                        fail("FATAL: duplicate function `${name}` — rename to avoid collision")
+                        eprintln("FATAL: duplicate function `${name}` — rename to avoid collision")
+                        exit(1)
                     }
                     let param_arr = avra_llvm_type_array_new(arity)
                     fill_typed_param_array(param_arr, i64t, i1t, dt, pt, resolved_params, 0)

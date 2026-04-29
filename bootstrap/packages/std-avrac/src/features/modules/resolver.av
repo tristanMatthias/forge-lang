@@ -184,8 +184,99 @@ export fn resolve_package_path(pkg_path: string, packages_dir: string) -> string
 /// Resolve every `Stmt.Module` stub in `stmts` by reading the
 /// matching .av file, parsing it, and attaching the parsed body.
 /// Cycles are detected via an internal ImportStack.
+///
+/// The result has every `@`-prefixed package wrapper hoisted to
+/// the top of the program. Without that step a `use @std.lsp.{X}`
+/// at the cli's main.av could fail to resolve because the @std.lsp
+/// wrapper got emitted inside a deep submodule (e.g. inside
+/// `@std.avrac.indexer` which uses @std.lsp internally) — hoisting
+/// guarantees package paths exist at root regardless of where they
+/// were first imported.
 export fn resolve_module_files(stmts: StmtList, dir: string, loaded: LoadedPaths) -> ModListResult {
-    resolve_module_files_inner(stmts, dir, loaded, ImportStack.End)
+    let inner = resolve_module_files_inner(stmts, dir, loaded, ImportStack.End)
+    if inner.had_error { return inner }
+    let split = hoist_package_modules(inner.stmts)
+    ModListResult {
+        stmts: append_stmt_list(split.packages, split.body),
+        loaded: inner.loaded,
+        had_error: false,
+        error_message: "",
+    }
+}
+
+/// Buckets produced by `hoist_package_modules`: every `@`-prefixed
+/// `Module` lives in `packages`, the rest in `body`. The two get
+/// concatenated to put package wrappers at the program root.
+type HoistSplit = {
+    packages: StmtList,
+    body: StmtList,
+}
+
+/// Walk the resolved stmt list and pull every `@`-prefixed Module
+/// (package wrapper) out to a separate list. Only @-prefixed
+/// Modules are rebuilt; other statements pass through unchanged so
+/// the post-resolve AST stays byte-identical to the legacy path
+/// when no hoisting is needed (preserves the bs2/bs3 fixed point).
+/// Recurses into both `@`-prefixed and regular Module bodies so a
+/// sub-package wrapper that landed inside another package (e.g.
+/// `@std.lsp` inside `@std.avrac.indexer`) also reaches the root.
+fn hoist_package_modules(stmts: StmtList) -> HoistSplit {
+    match stmts {
+        .End -> HoistSplit { packages: StmtList.End, body: StmtList.End }
+        .Node(ss, next) -> {
+            let rest = hoist_package_modules(next)
+            match ss.node {
+                .Module(name, body) if name.length > 0 && name[0] == "@" -> {
+                    let inner = hoist_package_modules(body)
+                    let cleaned = sstmt(Stmt.Module(name, inner.body), ss.line, ss.col)
+                    HoistSplit {
+                        packages: append_stmt_list(inner.packages, StmtList.Node(cleaned, rest.packages)),
+                        body: rest.body,
+                    }
+                }
+                .Module(name, body) -> {
+                    let inner = hoist_package_modules(body)
+                    if has_no_packages(inner) {
+                        HoistSplit {
+                            packages: rest.packages,
+                            body: StmtList.Node(ss, rest.body),
+                        }
+                    } else {
+                        let cleaned = sstmt(Stmt.Module(name, inner.body), ss.line, ss.col)
+                        HoistSplit {
+                            packages: append_stmt_list(inner.packages, rest.packages),
+                            body: StmtList.Node(cleaned, rest.body),
+                        }
+                    }
+                }
+                _ -> HoistSplit {
+                    packages: rest.packages,
+                    body: StmtList.Node(ss, rest.body),
+                }
+            }
+        }
+    }
+}
+
+/// True iff the inner hoist split produced no @-prefixed modules
+/// to lift. Used to short-circuit the rebuild of regular Module
+/// nodes when nothing inside them needed hoisting — the original
+/// SStmt can pass through verbatim, preserving span identity.
+fn has_no_packages(split: HoistSplit) -> bool {
+    match split.packages {
+        .End -> true
+        _ -> false
+    }
+}
+
+/// Concat two stmt lists order-preservingly. Pulled in here so
+/// `resolve_module_files` can reuse it for the hoist append without
+/// dragging in another module dependency.
+fn append_stmt_list(a: StmtList, b: StmtList) -> StmtList {
+    match a {
+        .End -> b
+        .Node(ss, next) -> StmtList.Node(ss, append_stmt_list(next, b))
+    }
 }
 
 /// True when the use path is a `@scope.pkg` package import
@@ -211,6 +302,75 @@ export fn package_module_name(path: string) -> string {
         return "@${scope}.${name}"
     }
     path
+}
+
+/// Walk every statement (recursing into Module bodies) inside a
+/// package's resolved AST and rewrite each non-`@`-prefixed
+/// `use X.Y.{...}` to `use ${pkg_qual}.X.Y.{...}`. This anchors
+/// internal paths to the package's own root so they survive the
+/// `Module("@scope") { Module(name) { ... } }` wrapping the consumer
+/// puts around the package — without it, a `use codegen.X` written
+/// inside std-avrac would resolve against the consumer's top-level
+/// scope (and miss, or worse, latch onto a same-named local sibling
+/// during the parent-walk in `resolve_use_aliases_in`).
+///
+/// Skips uses that are already package-qualified (`@scope.pkg.…`)
+/// and uses already qualified to *this* package — those carry their
+/// anchor explicitly. The recursion goes into every Module body so
+/// sub-files (e.g. `features/match_expr/typeck.av`) get anchored
+/// just like the package's top-level body does.
+fn qualify_uses_recursively(stmts: StmtList, pkg_qual: string) -> StmtList {
+    match stmts {
+        .End -> StmtList.End
+        .Node(ss, next) -> {
+            let head = qualify_use_in_stmt(ss, pkg_qual)
+            StmtList.Node(head, qualify_uses_recursively(next, pkg_qual))
+        }
+    }
+}
+
+/// Per-statement worker: rewrite `Use` (handling Annotated wrappers)
+/// and recurse into `Module` bodies. Other statements pass through.
+fn qualify_use_in_stmt(ss: SStmt, pkg_qual: string) -> SStmt {
+    match ss.node {
+        .Use(up, names) -> {
+            let new_path = anchor_use_path(up, pkg_qual)
+            if new_path == up { ss } else { sstmt(Stmt.Use(new_path, names), ss.line, ss.col) }
+        }
+        .Annotated(annots, inner) -> {
+            match inner {
+                .Use(up, names) -> {
+                    let new_path = anchor_use_path(up, pkg_qual)
+                    if new_path == up {
+                        ss
+                    } else {
+                        sstmt(Stmt.Annotated(annots, Stmt.Use(new_path, names)), ss.line, ss.col)
+                    }
+                }
+                .Module(name, body) -> {
+                    let new_body = qualify_uses_recursively(body, pkg_qual)
+                    sstmt(Stmt.Annotated(annots, Stmt.Module(name, new_body)), ss.line, ss.col)
+                }
+                _ -> ss
+            }
+        }
+        .Module(name, body) -> {
+            let new_body = qualify_uses_recursively(body, pkg_qual)
+            sstmt(Stmt.Module(name, new_body), ss.line, ss.col)
+        }
+        _ -> ss
+    }
+}
+
+/// Decide whether a use path needs the `${pkg_qual}.` prefix:
+///   - Already starts with `@` → cross-package, leave alone.
+///   - Already starts with `${pkg_qual}.` → already anchored.
+///   - Otherwise → prepend `${pkg_qual}.`.
+fn anchor_use_path(up: string, pkg_qual: string) -> string {
+    if up.length > 0 && up[0] == "@" { return up }
+    let prefix = "${pkg_qual}."
+    if up.length >= prefix.length && up.substring(0, prefix.length) == prefix { return up }
+    "${pkg_qual}.${up}"
 }
 
 /// Recursive worker for `resolve_module_files`. Walks each
@@ -303,7 +463,18 @@ fn resolve_package_use_and_continue(ss: SStmt, next: StmtList, dir: string, load
     let dot = without_at.index_of(".")
     let scope_name = without_at.substring(0, dot)
     let pkg_name = without_at.substring(dot + 1, without_at.length)
-    let inner_mod = Stmt.Module(pkg_name, resolved.stmts)
+    // Anchor every internal `use X.Y` inside the loaded body to this
+    // package's root before wrapping. Otherwise a `use codegen.X`
+    // written inside the package would get reinterpreted against the
+    // consumer's top-level scope after wrapping (and the parent walk
+    // in `resolve_use_aliases_in` would happily pick a same-named
+    // local sub-module ancestor instead of the intended top-level
+    // package member). Walks recursively so nested modules' uses are
+    // qualified too. `@`-prefixed and already-qualified paths pass
+    // through unchanged.
+    let pkg_qual = "@${scope_name}.${pkg_name}"
+    let qualified_body = qualify_uses_recursively(resolved.stmts, pkg_qual)
+    let inner_mod = Stmt.Module(pkg_name, qualified_body)
     let outer_mod = Stmt.Module("@${scope_name}", StmtList.Node(sstmt(inner_mod, ss.line, ss.col), StmtList.End))
     // Continue processing rest of the statement list
     let rest = resolve_module_files_inner(next, dir, resolved.loaded, stack)
