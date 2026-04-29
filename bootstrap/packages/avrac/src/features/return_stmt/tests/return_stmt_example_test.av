@@ -1,3 +1,6 @@
+/// Test fixture: classic three-way classification using two early
+/// `return`s and an implicit final value. Exercises the codegen's
+/// handling of multiple control-flow exits.
 fn ex_rs_early_return(n: int) -> string {
     if n < 0 { return "negative" }
     if n == 0 { return "zero" }

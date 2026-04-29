@@ -5,6 +5,9 @@ use features.struct_decl.typeck.{check_field_inits}
 use features.with_expr.codegen.{emit_with}
 use typeck.{check_expr, tc_er}
 
+/// Register the `with` expression feature. Used to produce a
+/// shallow-copied struct value with selected fields overridden:
+/// `point with { x: 5 }`. Spec axis 28.
 export fn with_expr_feature() -> Feature {
     feature_new("with") with {
         expr_tag: Expr.With(Expr.Null, FieldInitList.End),
@@ -14,6 +17,8 @@ export fn with_expr_feature() -> Feature {
     }
 }
 
+/// Resolver hook for `With`. Walks the source object, then the
+/// override field-init list so any names in either side resolve.
 fn with_resolve(r: Resolver, expr: Expr) -> Resolver {
     match expr {
         .With(obj, overrides) -> {
@@ -24,6 +29,9 @@ fn with_resolve(r: Resolver, expr: Expr) -> Resolver {
     }
 }
 
+/// Type-check hook for `With`. Checks the source object and each
+/// override expression. Result type matches the source — `with`
+/// is a shallow copy, not a coercion.
 fn with_check(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .With(obj, overrides) -> {

@@ -1,3 +1,6 @@
+/// Test fixture: a fn whose body uses `assert(...)`. Verifies
+/// that the desugar pass correctly rewrites `assert` into a panic
+/// without losing the surrounding control flow.
 fn check(x: int) -> bool {
     assert(x > 0, "x must be positive")
     true

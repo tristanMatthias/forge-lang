@@ -5,6 +5,8 @@ use core.ast.{Expr, Stmt, VarEnv}
 use codegen.types.{Ctx, LoopStack, StmtResult,  ok_stmt, emit_value_ptr}
 use codegen.{emit_expr, emit_stmt, ok_sr, err_sr}
 
+/// Codegen entry for `while cond { body }`. Pattern-matches the
+/// `While` AST node and forwards to `emit_while_inner`.
 export fn emit_while(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .While(condition, body) -> emit_while_inner(ctx, env, condition, body)
@@ -12,6 +14,10 @@ export fn emit_while(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, st
     }
 }
 
+/// Inner emitter: lay out cond/body/exit basic blocks, push a
+/// LoopStack frame onto the scoped Ctx so `break` / `continue`
+/// resolve correctly inside the body. Falls through to `exit_bb`
+/// when the body ends without an early exit.
 fn emit_while_inner(ctx: Ctx, env: VarEnv, condition: Expr, body: Stmt) -> Result<StmtResult, string> {
     ctx.cov_line()
     let cond_bb = ctx.bb("while.cond")

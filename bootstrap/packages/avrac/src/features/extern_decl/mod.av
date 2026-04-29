@@ -1,6 +1,10 @@
 mod parser
 use core.registry.{feature_new, Feature}
 
+/// Register the `extern fn` feature with the compiler. Picks up
+/// the `extern` keyword and routes to the parser's
+/// `parse_extern_declaration`. Registered via
+/// `init_features` in `features/mod.av`.
 export fn extern_decl_feature() -> Feature {
     feature_new("extern_decl") with {
         decl_keyword: "kw_extern",

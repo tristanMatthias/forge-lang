@@ -1,6 +1,10 @@
 mod parser
 use core.registry.{feature_new, Feature}
 
+/// Register the `impl` block feature. Picks up the `impl` keyword
+/// (both inherent — `impl Type { ... }` — and trait —
+/// `impl Trait for Type { ... }`) and routes to the parser's
+/// `parse_impl_declaration`.
 export fn impl_decl_feature() -> Feature {
     feature_new("impl_decl") with {
         decl_keyword: "kw_impl",

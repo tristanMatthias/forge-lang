@@ -1,3 +1,6 @@
+/// Test fixture: simple fn used as the inner expression in
+/// `dbg(dbg_add(...))` — exercises the desugar pass's print-and-
+/// return semantics without depending on impl-side helpers.
 fn dbg_add(a: int, b: int) -> int {
     a + b
 }

@@ -10,6 +10,8 @@ use features.let_stmt.typeck.{bind_destructure}
 use features.tuples.codegen.{emit_let_destructure}
 use typeck.{check_expr}
 
+/// Register the `let (a, b, c) = tuple` destructuring feature.
+/// Wires up resolver, typeck, codegen, and eval hooks.
 export fn let_destructure_feature() -> Feature {
     feature_new("let_destructure") with {
         stmt_tag: Stmt.LetDestructure(ParamList.End, Expr.Null),
@@ -20,6 +22,8 @@ export fn let_destructure_feature() -> Feature {
     }
 }
 
+/// Register the `let` keyword feature — immutable bindings.
+/// Routes to the parser's `parse_let_statement`.
 export fn let_keyword_feature() -> Feature {
     feature_new("let") with {
         decl_keyword: "kw_let",
@@ -27,6 +31,8 @@ export fn let_keyword_feature() -> Feature {
     }
 }
 
+/// Register the `const` keyword feature — compile-time constant
+/// bindings. Routes to the parser's `parse_const_statement`.
 export fn const_keyword_feature() -> Feature {
     feature_new("const") with {
         decl_keyword: "kw_const",
@@ -34,6 +40,8 @@ export fn const_keyword_feature() -> Feature {
     }
 }
 
+/// Register the `mut` keyword feature — mutable bindings. Routes
+/// to the parser's `parse_mut_statement`.
 export fn mut_keyword_feature() -> Feature {
     feature_new("mut") with {
         decl_keyword: "kw_mut",
@@ -41,18 +49,25 @@ export fn mut_keyword_feature() -> Feature {
     }
 }
 
+/// Parser dispatch hook for the `let` keyword. Forwards to the
+/// recursive-descent parser's let-statement entry.
 fn kw_parse_let(p: Parser) -> Stmt? {
     p.parse_let_statement()
 }
 
+/// Parser dispatch hook for the `const` keyword.
 fn kw_parse_const(p: Parser) -> Stmt? {
     p.parse_const_statement()
 }
 
+/// Parser dispatch hook for the `mut` keyword.
 fn kw_parse_mut(p: Parser) -> Stmt? {
     p.parse_mut_statement()
 }
 
+/// Resolver hook for `let (a, b, c) = ...`. Resolves the
+/// initializer first, then defines each tuple-position name in
+/// the post-init scope.
 fn let_destructure_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
     match stmt {
         .LetDestructure(names, initializer) -> {
@@ -63,6 +78,9 @@ fn let_destructure_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
     }
 }
 
+/// Type-check hook for `let (a, b, c) = ...`. Checks the
+/// initializer then binds each destructured name with its tuple-
+/// position type via `bind_destructure`.
 fn let_destructure_check_stmt(tc: TC, stmt: Stmt) -> TC {
     match stmt {
         .LetDestructure(names, init) -> {
@@ -73,6 +91,9 @@ fn let_destructure_check_stmt(tc: TC, stmt: Stmt) -> TC {
     }
 }
 
+/// Tree-walk evaluator hook for `let (a, b) = ...`. Currently
+/// unsupported — the eval path returns an error so the failure is
+/// visible (the codegen path handles destructuring).
 fn let_destructure_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
     match stmt {
         .LetDestructure(_, _) -> error_result(rt, "destructuring is not supported by the tree-walk evaluator")
@@ -80,6 +101,9 @@ fn let_destructure_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
     }
 }
 
+/// Codegen hook for `let (a, b) = ...`. Forwards to the tuples
+/// feature's `emit_let_destructure`, which emits per-position
+/// loads from the tuple alloca.
 fn let_destructure_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .LetDestructure(names, initializer) -> {

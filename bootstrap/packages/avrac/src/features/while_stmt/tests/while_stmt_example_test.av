@@ -1,3 +1,6 @@
+/// Test fixture: while-loop summing 1..10 but skipping 3 (via
+/// `continue`) and stopping early at 7 (via `break`). Exercises
+/// both control-flow keywords inside the same body.
 fn ex_ws_loop_with_break_and_continue() -> int {
     mut sum = 0
     mut i = 0
@@ -10,6 +13,9 @@ fn ex_ws_loop_with_break_and_continue() -> int {
     sum
 }
 
+/// Test fixture: variant of `ex_ws_loop_with_break_and_continue`
+/// returning the loop index at the `break` point — verifies that
+/// the loop variable is observable after the loop exits.
 fn ex_ws_break_index() -> int {
     mut i = 0
     while i < 10 {

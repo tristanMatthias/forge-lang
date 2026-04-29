@@ -1,3 +1,8 @@
+/// Test fixture: minimal struct used by the `impl` example test.
+/// One mutable counter, plus inherent `increment` / `value`
+/// methods to exercise method-call codegen.
+///
+/// @field count — running call count.
 type ExIdCounter = {
     count: int
 }

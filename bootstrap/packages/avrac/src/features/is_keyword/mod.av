@@ -4,6 +4,10 @@ use resolve.{resolve_expr}
 use features.is_keyword.codegen.{emit_is_check}
 use typeck.{check_expr, tc_er}
 
+/// Register the `is` operator feature. Used for runtime variant
+/// checks (`x is .Some`) — produces a Bool. Wired up to the
+/// resolver, type-checker, and codegen via the standard tag-based
+/// dispatch.
 export fn is_keyword_feature() -> Feature {
     feature_new("is") with {
         expr_tag: Expr.IsCheck(Expr.Null, ""),
@@ -13,6 +17,9 @@ export fn is_keyword_feature() -> Feature {
     }
 }
 
+/// Resolver hook for `IsCheck`. The variant name on the right-hand
+/// side resolves later (during typeck against the enum type), so
+/// here we only need to walk the subject expression.
 fn is_resolve(r: Resolver, expr: Expr) -> Resolver {
     match expr {
         .IsCheck(subject, _) -> resolve_expr(r, subject)
@@ -20,6 +27,10 @@ fn is_resolve(r: Resolver, expr: Expr) -> Resolver {
     }
 }
 
+/// Type-check hook for `IsCheck`. Walks the subject (so its
+/// errors are reported), then declares the result Bool — variant
+/// existence is verified separately by the enum exhaustiveness
+/// check.
 fn is_check(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .IsCheck(subject, _) -> {

@@ -8,6 +8,9 @@ use resolve.{resolve_expr, resolve_stmt}
 use features.while_stmt.codegen.{emit_while}
 use typeck.{check_expr, check_stmt, tc_report}
 
+/// Resolver hook for `while`. Resolves the condition first, then
+/// the body in the post-condition scope so any names bound in the
+/// condition (rare but legal) flow into the body.
 fn while_resolve(r: Resolver, stmt: Stmt) -> Resolver {
     match stmt {
         .While(condition, body) -> {
@@ -18,6 +21,9 @@ fn while_resolve(r: Resolver, stmt: Stmt) -> Resolver {
     }
 }
 
+/// Type-check hook for `while`. The condition must be Bool (Int
+/// accepted for legacy compatibility); anything else surfaces as
+/// `F1000 TypeMismatch`. The body is checked unconditionally.
 fn while_check(tc: TC, stmt: Stmt) -> TC {
     match stmt {
         .While(cond, body) -> {
@@ -31,6 +37,9 @@ fn while_check(tc: TC, stmt: Stmt) -> TC {
     }
 }
 
+/// Tree-walking evaluator hook for `while`. Forwards to the eval
+/// loop's `execute_while` worker. Used by the `avra check` /
+/// repl-style tooling that doesn't go through codegen.
 fn while_eval(rt: Runtime, stmt: Stmt) -> StepResult {
     match stmt {
         .While(condition, body) -> execute_while(rt, condition, body)
@@ -38,6 +47,8 @@ fn while_eval(rt: Runtime, stmt: Stmt) -> StepResult {
     }
 }
 
+/// Register the `while` loop feature. Wires up parser, resolver,
+/// type-checker, codegen, and eval hooks via the feature registry.
 export fn while_feature() -> Feature {
     feature_new("while") with {
         stmt_tag: Stmt.While(Expr.Null, Stmt.NoOp),

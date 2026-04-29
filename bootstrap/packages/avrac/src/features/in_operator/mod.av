@@ -4,6 +4,8 @@ use resolve.{resolve_expr, resolve_expr_list}
 use features.in_operator.codegen.{emit_in_check}
 use typeck.{check_expr, check_expr_list, tc_er}
 
+/// Register the `in` operator feature. Used for membership tests
+/// (`x in [1, 2, 3]` and `n in 0..10`). Returns Bool.
 export fn in_operator_feature() -> Feature {
     feature_new("in") with {
         expr_tag: Expr.InCheck(Expr.Null, ExprList.End),
@@ -13,6 +15,8 @@ export fn in_operator_feature() -> Feature {
     }
 }
 
+/// Resolver hook for `InCheck`. Recurses into the needle and the
+/// items list so any names they reference get resolved.
 fn in_resolve(r: Resolver, expr: Expr) -> Resolver {
     match expr {
         .InCheck(needle, items) -> {
@@ -23,6 +27,8 @@ fn in_resolve(r: Resolver, expr: Expr) -> Resolver {
     }
 }
 
+/// Type-check hook for `InCheck`. Walks the needle and items so
+/// their errors are reported, then declares the result Bool.
 fn in_check(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .InCheck(needle, items) -> {

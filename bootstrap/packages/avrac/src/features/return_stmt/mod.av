@@ -1,6 +1,10 @@
 mod parser
 use core.registry.{feature_new, Feature}
 
+/// Register the `return` statement feature with the compiler.
+/// Picks up the `return` keyword and routes to the parser's
+/// `parse_return_statement`. Registered via `init_features` in
+/// `features/mod.av`.
 export fn return_stmt_feature() -> Feature {
     feature_new("return_stmt") with {
         stmt_keyword: "kw_return",

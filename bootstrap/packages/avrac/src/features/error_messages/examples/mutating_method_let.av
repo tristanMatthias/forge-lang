@@ -1,3 +1,7 @@
+/// Negative example: calling a mutating method on a `let`
+/// binding. The diagnostics test harness asserts that the type
+/// checker rejects this with the expected wording.
+///
 /// expect-error: cannot call mutating method
 fn main() {
     let items = [1, 2, 3]

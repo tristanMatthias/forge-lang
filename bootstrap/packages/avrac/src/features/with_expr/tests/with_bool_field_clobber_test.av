@@ -3,11 +3,21 @@
 // fields in the struct. apply_overrides now uses store_field so the
 // store respects the field's LLVM type.
 
+/// Test fixture: a struct with nine `bool` fields plus two strings,
+/// chosen to lay out a packed run of i1 slots that the
+/// regression-causing 64-bit store could clobber.
+///
+/// @field f1..f9 — nine bool fields, packed in source order.
+/// @field s1, s2 — trailing string fields, included to mimic real
+///                 layouts where `with` updates often run.
 type Args = {
     f1: bool, f2: bool, f3: bool, f4: bool, f5: bool, f6: bool, f7: bool, f8: bool, f9: bool,
     s1: string, s2: string,
 }
 
+/// Test fixture: build an Args with every bool false and both
+/// strings empty. Lets the test focus on what `with { ... }`
+/// changes without leaking other state.
 fn args_default() -> Args {
     Args { f1: false, f2: false, f3: false, f4: false, f5: false, f6: false, f7: false, f8: false, f9: false,
            s1: "", s2: "" }

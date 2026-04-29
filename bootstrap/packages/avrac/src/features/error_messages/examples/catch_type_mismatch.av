@@ -1,11 +1,20 @@
+/// Negative example: `catch` body's type doesn't match the
+/// fallible expression's success type. The diagnostics test
+/// harness asserts the type checker emits a "catch body type"
+/// error here.
+///
 /// expect-error: catch body type
 enum Result<T, E> { Ok(value: T), Err(error: E) }
 
+/// Test fixture: a Result-returning fn used as the operand to
+/// `catch`. Always fails on input "bad" so the catch body fires.
 fn parse_int(s: string) -> Result<int, string> {
     if s == "42" { return Result.Ok(42) }
     Result.Err("not a number")
 }
 
+/// Test fixture: triggers the catch-type mismatch by recovering
+/// to a string from an int-returning call.
 fn main() {
     let port = parse_int("bad") catch { "hello" }
     println(string(port))

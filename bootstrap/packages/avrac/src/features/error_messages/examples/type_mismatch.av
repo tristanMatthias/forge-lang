@@ -1,3 +1,7 @@
+/// Negative example used by the diagnostics test harness:
+/// assigns a string literal to an `int`-typed binding so the
+/// type checker emits F1000 with the expected wording.
+///
 /// expect-error: type mismatch: expected `int`, got `string`
 fn main() {
     let x: int = "hello"

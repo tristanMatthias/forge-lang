@@ -1,3 +1,6 @@
+/// Test fixture: classify a single character via `in` against
+/// inclusive char ranges. Exercises the range form of the `in`
+/// operator in subjectless `match` arms.
 fn inrange_classify(ch: string) -> string {
     match {
         ch in "0".."9" -> "digit"

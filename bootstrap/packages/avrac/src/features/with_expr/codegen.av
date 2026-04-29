@@ -9,6 +9,8 @@ use core.ast.{Expr, FieldList, FieldInitList, VarEnv, field_index_of, field_list
 use codegen.types.{Ctx, EmitValue, ok_emit, err_emit}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
 
+/// Codegen entry for `obj with { field: val, ... }`. Pattern-
+/// matches the `With` AST node and forwards to `emit_with_inner`.
 export fn emit_with(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .With(obj, overrides) -> emit_with_inner(ctx, env, obj, overrides)
@@ -16,6 +18,10 @@ export fn emit_with(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, stri
     }
 }
 
+/// Inner emitter: evaluate the source object, allocate a new
+/// struct buffer (or reuse the Copy-type stack target when set —
+/// spec 9.12), copy every field, then overwrite the named ones
+/// with their override expressions.
 fn emit_with_inner(ctx: Ctx, env: VarEnv, obj: Expr, overrides: FieldInitList) -> Result<EmitValue, string> {
     let r = ctx.emit(env, obj)?
 
@@ -48,6 +54,10 @@ fn emit_with_inner(ctx: Ctx, env: VarEnv, obj: Expr, overrides: FieldInitList) -
     ok_emit(ctx.to_i64(new_buf, "with_result"), r.ty)
 }
 
+/// Copy every field of a struct from `src` to `dst` via per-field
+/// load/store. Respects each field's LLVM type via `store_field`
+/// so packed bool/i1 fields don't overwrite adjacent slots
+/// (ticket 14s7 was a 64-bit store clobbering a neighbouring i1).
 fn copy_struct_fields(ctx: Ctx, src: ptr, dst: ptr, struct_name: string, fields: FieldList, idx: int) {
     match fields {
         .End -> {}
@@ -66,6 +76,11 @@ fn copy_struct_fields(ctx: Ctx, src: ptr, dst: ptr, struct_name: string, fields:
     }
 }
 
+/// Apply each `field: value` override to the freshly-copied
+/// struct buffer. Walks the override list in source order, looks
+/// up each field's index, emits the override expression, and
+/// stores it via `store_field`. Union-typed fields receive a
+/// `union_wrap` first when needed.
 fn apply_overrides(ctx: Ctx, env: VarEnv, dst: ptr, struct_name: string, fields: FieldList, overrides: FieldInitList) -> Result<int, string> {
     match overrides {
         .End -> .Ok(0)
