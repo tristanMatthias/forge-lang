@@ -28,6 +28,7 @@ use docs.{extract_project_docs_ast, extract_project_corpus,
           show_search, show_llm, show_callers, show_module,
           validate_docs, suggest_similar, run_doctests,
           render_json, render_markdown}
+use docs.gen.{gen_stub_for_sym, gen_apply, GenStubResult}
 use lang_gen.{render_lang_av, write_lang_av}
 use indexer.{run_lsp_server, extract_project_syms_cached, extract_from_ast}
 use pathutil.{basename_no_ext}
@@ -554,6 +555,12 @@ type PackageSplit = {
     body: StmtList,
 }
 
+// Collect every @-prefixed Module from `stmts` (recursing through any
+// nested Module bodies — when a `mod foo` resolves a sibling file that
+// imports an @std package, the package wrapper lands one level deep)
+// and return the residue with those wrappers stripped. Each package is
+// only lifted from its first occurrence; resolve_module_files's shared
+// LoadedPaths means it appears at most once across the whole program.
 fn split_package_modules(stmts: StmtList) -> PackageSplit {
     match stmts {
         .End -> PackageSplit { packages: StmtList.End, body: StmtList.End }
@@ -563,6 +570,14 @@ fn split_package_modules(stmts: StmtList) -> PackageSplit {
                 .Module(name, _) if name.length > 0 && name[0] == "@" -> PackageSplit {
                     packages: StmtList.Node(ss, rest.packages),
                     body: rest.body,
+                }
+                .Module(name, body) -> {
+                    let inner = split_package_modules(body)
+                    let cleaned = sstmt_dummy(Stmt.Module(name, inner.body))
+                    PackageSplit {
+                        packages: append_stmt_list(inner.packages, rest.packages),
+                        body: StmtList.Node(cleaned, rest.body),
+                    }
                 }
                 _ -> PackageSplit {
                     packages: rest.packages,
@@ -577,6 +592,50 @@ fn append_stmt_list(a: StmtList, b: StmtList) -> StmtList {
     match a {
         .End -> b
         .Node(ss, next) -> StmtList.Node(ss, append_stmt_list(next, b))
+    }
+}
+
+// Look up `query` in the project's SymList and either print a doc-stub
+// to stdout (`--print`) or insert it above the symbol's decl. Returns
+// false when the symbol can't be found so the caller can render a
+// did-you-mean hint.
+fn gen_for_symbol(query: string, docs_set: SymList, want_print: bool) -> bool {
+    let target = find_sym_for_gen(docs_set, query)
+    if target == null { return false }
+    let s = target!
+    let stub = gen_stub_for_sym(s)
+    if want_print {
+        println(stub)
+        return true
+    }
+    // The Sym's span anchors to the leading /// when one exists, so an
+    // already-documented decl reports `doc != ""`. That's our primary
+    // idempotency guard; gen_apply also re-checks line-1 to catch hand-
+    // edited /// blocks that the indexer hadn't picked up yet.
+    if s.doc != "" {
+        println("${s.qualified}: already documented")
+        return true
+    }
+    let r = gen_apply(s.file, s.span.start.line, stub)
+    if r.error != "" {
+        eprintln("error: ${r.error}")
+        return false
+    }
+    if r.skipped {
+        println("${s.qualified}: ${r.reason}")
+    } else {
+        println("${s.file}:${s.span.start.line}: inserted /// stub for ${s.qualified}")
+    }
+    true
+}
+
+fn find_sym_for_gen(list: SymList, query: string) -> Sym? {
+    match list {
+        .End -> null
+        .Node(s, next) -> {
+            if s.name == query || s.qualified == query { return s }
+            find_sym_for_gen(next, query)
+        }
     }
 }
 
@@ -711,6 +770,8 @@ fn main() {
             mut module_path = ""
             mut want_no_cache = false
             mut want_doctest = false
+            mut want_gen = false
+            mut want_print = false
             mut scope = "project"
             mut format = "human"
             mut k = 2
@@ -748,6 +809,24 @@ fn main() {
                 }
                 if arg == "--doctest" {
                     want_doctest = true
+                    k = k + 1
+                    continue
+                }
+                if arg == "--gen" {
+                    want_gen = true
+                    if k + 1 < avra_selfhost_argc() {
+                        let next = avra_selfhost_get_arg_cstr(k + 1)
+                        if !next.starts_with("-") {
+                            query = next
+                            k = k + 2
+                            continue
+                        }
+                    }
+                    k = k + 1
+                    continue
+                }
+                if arg == "--print" {
+                    want_print = true
                     k = k + 1
                     continue
                 }
@@ -849,6 +928,24 @@ fn main() {
             if want_doctest {
                 let ok = run_doctests(docs_set)
                 if !ok { exit(1) }
+                return
+            }
+
+            if want_gen {
+                if query == "" {
+                    eprintln("error: --gen requires a symbol name")
+                    exit(1)
+                }
+                if !gen_for_symbol(query, docs_set, want_print) {
+                    let suggestion = suggest_similar(query, docs_set)
+                    eprintln("")
+                    eprintln("  No symbol '${query}' found in project.")
+                    if suggestion != "" {
+                        eprintln("  Did you mean: ${suggestion}?")
+                    }
+                    eprintln("")
+                    exit(1)
+                }
                 return
             }
 

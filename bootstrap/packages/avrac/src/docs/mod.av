@@ -21,6 +21,8 @@
 //   show_llm             avra docs --llm
 //   validate_docs        avra docs --validate
 
+mod gen
+
 use core.runtime.{avra_selfhost_read_file, avra_shell_exec, avra_selfhost_levenshtein}
 use parse.{parse_program_source}
 use indexer.{extract_from_ast_at, extract_calls_from_ast_at}

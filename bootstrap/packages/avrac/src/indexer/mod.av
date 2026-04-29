@@ -253,7 +253,7 @@ fn process_stmt(ss: SStmt, file: string, qual_prefix: string, acc: SymList) -> S
             SymList.Node(sym, acc)
         }
         .TypeDecl(name, tp, fields) -> {
-            let rendered = render_type_decl(name, tp)
+            let rendered = render_type_decl_with_fields(name, tp, fields)
             let qual = qualify(qual_prefix, name)
             let sym = sym_new(name, qual, SymKind.Type(rendered), doc, file, sp, exported, "")
             SymList.Node(sym, acc)
@@ -355,6 +355,34 @@ fn render_type_decl(name: string, tp: TypeParamList) -> string {
     let tp_str = render_type_params(tp)
     let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
     "type ${name}${tp_part}"
+}
+
+// Render a type declaration with its field list inline:
+//   type Point = { x: int, y: int }
+// Used by the indexer so docs --gen can recover field names without
+// re-parsing the source.
+fn render_type_decl_with_fields(name: string, tp: TypeParamList, fields: FieldList) -> string {
+    let header = render_type_decl(name, tp)
+    let body = render_field_decls(fields)
+    if body == "" { return header }
+    "${header} = { ${body} }"
+}
+
+fn render_field_decls(fields: FieldList) -> string {
+    match fields {
+        .End -> ""
+        .Node(name, vt, next) -> {
+            let rest = render_field_decls_tail(next)
+            "${name}: ${vtype_display(vt)}${rest}"
+        }
+    }
+}
+
+fn render_field_decls_tail(fields: FieldList) -> string {
+    match fields {
+        .End -> ""
+        .Node(name, vt, next) -> ", ${name}: ${vtype_display(vt)}${render_field_decls_tail(next)}"
+    }
 }
 
 fn render_type_params(tp: TypeParamList) -> string {

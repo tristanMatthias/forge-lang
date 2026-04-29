@@ -1,0 +1,185 @@
+// Spec coverage for the docs --gen stub formatter and file insertion
+// path. Lives next to gen.av so a `mod gen` brings the implementation
+// into the test's namespace; @std.lsp supplies SymKind so the
+// fixtures look like real indexer output.
+
+mod gen
+
+use gen.{gen_stub_for_sym, gen_apply, GenStubResult,
+         already_documented, insert_at_line}
+use @std.lsp.{Sym, SymKind, SymId, LspSpan, LspPos}
+use core.runtime.{avra_selfhost_write_file}
+
+// Construct fixtures inline: the second `use @std.lsp.{fn}` import in
+// any program currently silently drops function bindings (resolver
+// dedupe — type imports cross fine). gen.av already imports types from
+// @std.lsp; this test mirrors that constraint by avoiding the
+// re-import of helper fns and building literals directly instead.
+
+fn fixture_pos(line: int, col: int) -> LspPos {
+    LspPos { line: line, col: col }
+}
+
+fn fixture_span() -> LspSpan {
+    LspSpan { start: fixture_pos(1, 1), end: fixture_pos(1, 1) }
+}
+
+fn fixture_sym_id(name: string) -> SymId {
+    SymId { value: 0 }
+}
+
+fn fixture_sym(name: string, kind: SymKind) -> Sym {
+    Sym {
+        id: fixture_sym_id(name),
+        name: name,
+        qualified: name,
+        kind: kind,
+        doc: "",
+        file: "",
+        span: fixture_span(),
+        exported: true,
+        tags_csv: "",
+    }
+}
+
+spec "docs --gen: fn signature → @param + @returns" {
+    given "a function with two params and a non-void return" {
+        then "stub has summary, both @param lines, and @returns" {
+            let s = fixture_sym("add",
+                SymKind.Fn("fn add(x: int, y: int) -> int", "int"))
+            gen_stub_for_sym(s) ==
+                "/// summary\n/// @param x description\n/// @param y description\n/// @returns int description\n"
+        }
+    }
+
+    given "a void function" {
+        then "stub omits @returns" {
+            let s = fixture_sym("noop",
+                SymKind.Fn("fn noop()", ""))
+            gen_stub_for_sym(s) == "/// summary\n"
+        }
+    }
+
+    given "a method with self" {
+        then "self is excluded from @param" {
+            let s = fixture_sym("greet",
+                SymKind.Fn("fn greet(self, name: string) -> string", "string"))
+            gen_stub_for_sym(s) ==
+                "/// summary\n/// @param name description\n/// @returns string description\n"
+        }
+    }
+
+    given "a fn with generic param types" {
+        then "angle-bracket commas don't fragment params" {
+            let s = fixture_sym("zip",
+                SymKind.Fn("fn zip(xs: List<int>, ys: List<string>) -> Map<int, string>",
+                           "Map<int, string>"))
+            gen_stub_for_sym(s) ==
+                "/// summary\n/// @param xs description\n/// @param ys description\n/// @returns Map<int, string> description\n"
+        }
+    }
+}
+
+spec "docs --gen: type → @field per field" {
+    given "a struct rendered as `type T = { a: int, b: string }`" {
+        then "stub emits one @field per declared field" {
+            let s = fixture_sym("Point",
+                SymKind.Type("type Point = { x: int, y: int }"))
+            gen_stub_for_sym(s) ==
+                "/// summary\n/// @field x description\n/// @field y description\n"
+        }
+    }
+
+    given "a type with no rendered field list" {
+        then "stub falls back to a bare summary" {
+            let s = fixture_sym("UserId", SymKind.Type("type UserId"))
+            gen_stub_for_sym(s) == "/// summary\n"
+        }
+    }
+}
+
+spec "docs --gen: enum → variants line" {
+    given "an enum with variants Red, Green, Blue" {
+        then "stub lists them on a single /// line" {
+            let s = fixture_sym("Color",
+                SymKind.Enum("Red, Green, Blue"))
+            gen_stub_for_sym(s) ==
+                "/// summary\n/// variants: Red, Green, Blue\n"
+        }
+    }
+
+    given "an enum with empty variants string" {
+        then "stub is just summary" {
+            let s = fixture_sym("Empty", SymKind.Enum(""))
+            gen_stub_for_sym(s) == "/// summary\n"
+        }
+    }
+}
+
+spec "docs --gen: const → bare summary" {
+    given "a const symbol" {
+        then "stub is just summary" {
+            let s = fixture_sym("MAX", SymKind.Const("int"))
+            gen_stub_for_sym(s) == "/// summary\n"
+        }
+    }
+}
+
+spec "docs --gen: insert_at_line preserves indentation" {
+    given "a decl at column-4 inside a block-scoped file" {
+        then "the inserted /// keeps the same indent" {
+            let content = "fn outer() {\n    fn inner() {}\n}\n"
+            let stub = "/// summary\n"
+            let updated = insert_at_line(content, 2, stub)
+            updated == "fn outer() {\n    /// summary\n    fn inner() {}\n}\n"
+        }
+    }
+
+    given "the very first line of the file" {
+        then "the stub lands at line 1" {
+            let content = "fn add(x: int) -> int { x }\n"
+            let updated = insert_at_line(content, 1, "/// summary\n")
+            updated == "/// summary\nfn add(x: int) -> int { x }\n"
+        }
+    }
+}
+
+spec "docs --gen: already_documented detects /// above the decl" {
+    given "a fn decl with /// on the line above" {
+        then "already_documented returns true" {
+            let content = "/// summary\nfn add(x: int) -> int { x }\n"
+            already_documented(content, 2) == true
+        }
+    }
+
+    given "a fn decl with no /// above" {
+        then "already_documented returns false" {
+            let content = "// regular comment\nfn add(x: int) -> int { x }\n"
+            already_documented(content, 2) == false
+        }
+    }
+
+    given "a fn decl on line 1" {
+        then "already_documented returns false (no preceding line)" {
+            already_documented("fn x() {}\n", 1) == false
+        }
+    }
+}
+
+fn fixture_path() -> string {
+    "/tmp/avra_gen_test_fixture.av"
+}
+
+spec "docs --gen: gen_apply writes and is idempotent" {
+    given "a tmp file with an undocumented fn" {
+        then "first gen_apply inserts the stub" {
+            avra_selfhost_write_file(fixture_path(), "fn add(x: int) -> int { x }\n")
+            let r = gen_apply(fixture_path(), 1, "/// summary\n")
+            r.error == "" && r.skipped == false
+        }
+        then "second gen_apply on the same line skips" {
+            let r = gen_apply(fixture_path(), 2, "/// summary\n")
+            r.error == "" && r.skipped == true && r.reason == "already documented"
+        }
+    }
+}
