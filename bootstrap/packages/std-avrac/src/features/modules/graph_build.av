@@ -32,6 +32,7 @@ use core.module_graph.{
     module_graph_add_package_root, module_graph_package_root,
     module_graph_link_child, module_graph_child_id,
     module_graph_alloc_item, module_graph_add_item,
+    module_graph_set_canonical,
     interner_intern,
     ID_NONE,
 }
@@ -115,7 +116,9 @@ export fn build_module_graph(entry_file: string) -> BuildGraphResult {
         }
     }
     let entry_dir = modules_dirname(entry_file)
-    walk_stmts(pr.graph, parsed.stmts!, pr.mod_id, pr.pkg_id, entry_dir, UseEdgeList.End)
+    // The entry file is the program root — canonical path "".
+    let g_canon = module_graph_set_canonical(pr.graph, "", pr.mod_id)
+    walk_stmts(g_canon, parsed.stmts!, pr.mod_id, pr.pkg_id, "", entry_dir, UseEdgeList.End)
 }
 
 // ── Internal walker ──────────────────────────────────────────────────
@@ -128,13 +131,13 @@ export fn build_module_graph(entry_file: string) -> BuildGraphResult {
 /// `parent_id` is the ModuleId currently being populated (the file
 /// these stmts came from). `pkg_id` is its package. `dir` is the
 /// directory of `parent_id`'s source file — used for sibling lookup.
-fn walk_stmts(g: ModuleGraph, stmts: StmtList, parent_id: int, pkg_id: int, dir: string, uses: UseEdgeList) -> BuildGraphResult {
+fn walk_stmts(g: ModuleGraph, stmts: StmtList, parent_id: int, pkg_id: int, canon: string, dir: string, uses: UseEdgeList) -> BuildGraphResult {
     match stmts {
         .End -> BuildGraphResult { graph: g, uses, had_error: 0, error_message: "" }
         .Node(ss, next) -> {
-            let head = walk_stmt(g, ss, parent_id, pkg_id, dir, uses)
+            let head = walk_stmt(g, ss, parent_id, pkg_id, canon, dir, uses)
             if head.had_error { return head }
-            walk_stmts(head.graph, next, parent_id, pkg_id, dir, head.uses)
+            walk_stmts(head.graph, next, parent_id, pkg_id, canon, dir, head.uses)
         }
     }
 }
@@ -148,13 +151,13 @@ fn walk_stmts(g: ModuleGraph, stmts: StmtList, parent_id: int, pkg_id: int, dir:
 ///                            and attributes don't affect resolution.
 ///   - everything else     → no-op (decls become items at y4n1.8;
 ///                            for now we only build structure).
-fn walk_stmt(g: ModuleGraph, ss: SStmt, parent_id: int, pkg_id: int, dir: string, uses: UseEdgeList) -> BuildGraphResult {
+fn walk_stmt(g: ModuleGraph, ss: SStmt, parent_id: int, pkg_id: int, canon: string, dir: string, uses: UseEdgeList) -> BuildGraphResult {
     match ss.node {
-        .Module(name, body) -> walk_mod_decl(g, name, body, parent_id, pkg_id, dir, uses)
+        .Module(name, body) -> walk_mod_decl(g, name, body, parent_id, pkg_id, canon, dir, uses)
         .Use(path, names) -> walk_use_stmt(g, path, names, parent_id, pkg_id, dir, uses)
         .Annotated(_, inner) -> {
             let wrapped = SStmt { node: inner, line: ss.line, col: ss.col }
-            walk_stmt(g, wrapped, parent_id, pkg_id, dir, uses)
+            walk_stmt(g, wrapped, parent_id, pkg_id, canon, dir, uses)
         }
         // Top-level decls register as items in this module so name
         // resolution can look them up by ItemId. We only allocate ids;
@@ -189,7 +192,7 @@ fn register_item(g: ModuleGraph, parent_id: int, name: string, uses: UseEdgeList
 /// graph node, we skip re-parsing and just wire up the parent→child
 /// edge against the existing id. Cycles are impossible here because
 /// `mod X` always references a distinct file.
-fn walk_mod_decl(g: ModuleGraph, name: string, _body: StmtList, parent_id: int, pkg_id: int, dir: string, uses: UseEdgeList) -> BuildGraphResult {
+fn walk_mod_decl(g: ModuleGraph, name: string, _body: StmtList, parent_id: int, pkg_id: int, canon: string, dir: string, uses: UseEdgeList) -> BuildGraphResult {
     let sibling = "${dir}${name}.av"
     let dir_mod = "${dir}${name}/mod.av"
     mut mod_path = ""
@@ -201,26 +204,30 @@ fn walk_mod_decl(g: ModuleGraph, name: string, _body: StmtList, parent_id: int, 
             error_message: "module `${name}` not found (looked for ${sibling} and ${dir_mod})",
         }
     }
+    // Compute canonical path for this child: parent_canon::name.
+    let child_canon = if canon == "" { name } else { "${canon}::${name}" }
     // Dedup: already-loaded files just wire the parent→child edge.
     let existing = module_graph_find_by_file(g, mod_path)
     if existing != ID_NONE {
         let g_linked = module_graph_link_child(g, parent_id, name, existing)
-        return BuildGraphResult { graph: g_linked, uses, had_error: 0, error_message: "" }
+        let g_canon = module_graph_set_canonical(g_linked, child_canon, existing)
+        return BuildGraphResult { graph: g_canon, uses, had_error: 0, error_message: "" }
     }
-    // Allocate a fresh node and register parent→child edge.
+    // Allocate a fresh node and register parent→child edge + canonical.
     let added = module_graph_add(g, mod_path, parent_id, pkg_id)
     let linked = module_graph_link_child(added.graph, parent_id, name, added.id)
+    let g_canon = module_graph_set_canonical(linked, child_canon, added.id)
     // Parse + recurse.
     let content = avra_selfhost_read_file(mod_path)
     let parsed = parse_program_source(content)
     if parsed.had_error || parsed.stmts == null {
         return BuildGraphResult {
-            graph: linked, uses, had_error: 1,
+            graph: g_canon, uses, had_error: 1,
             error_message: "parse error in module `${name}` (${mod_path}): ${parsed.error_message}",
         }
     }
     let mod_dir = modules_dirname(mod_path)
-    walk_stmts(linked, parsed.stmts!, added.id, pkg_id, mod_dir, uses)
+    walk_stmts(g_canon, parsed.stmts!, added.id, pkg_id, child_canon, mod_dir, uses)
 }
 
 /// Handle a `use X.Y.{Z}` statement. Classifies the path:
@@ -311,21 +318,43 @@ fn ensure_package_loaded(g: ModuleGraph, use_path: string, dir: string) -> Ensur
     }
     // Allocate a new package + root module atomically, parse + walk.
     let pr = module_graph_add_package_root(g, pkg_file)
+    // Canonical for the package root mirrors how name resolution
+    // expects to address it (e.g. "@std::avrac"). pkg_mod_name is
+    // dotted (`@std.avrac`); convert dots to `::`.
+    let pkg_canon = pkg_dots_to_colons(pkg_mod_name)
+    let g_canon = module_graph_set_canonical(pr.graph, pkg_canon, pr.mod_id)
     let content = avra_selfhost_read_file(pkg_file)
     let parsed = parse_program_source(content)
     if parsed.had_error || parsed.stmts == null {
         return EnsurePackageResult {
-            graph: pr.graph, pkg_id: pr.pkg_id,
+            graph: g_canon, pkg_id: pr.pkg_id,
             had_error: 1,
             error_message: "parse error in package `${pkg_mod_name}` (${pkg_file}): ${parsed.error_message}",
         }
     }
     let pkg_dir = modules_dirname(pkg_file)
-    let walked = walk_stmts(pr.graph, parsed.stmts!, pr.mod_id, pr.pkg_id, pkg_dir, UseEdgeList.End)
+    let walked = walk_stmts(g_canon, parsed.stmts!, pr.mod_id, pr.pkg_id, pkg_canon, pkg_dir, UseEdgeList.End)
     EnsurePackageResult {
         graph: walked.graph, pkg_id: pr.pkg_id,
         had_error: walked.had_error, error_message: walked.error_message,
     }
+}
+
+/// Convert `@std.avrac.foo` → `@std::avrac::foo`. Used to align the
+/// graph's canonical-path keys with the `::` form name resolution
+/// uses everywhere else.
+fn pkg_dots_to_colons(s: string) -> string {
+    mut out = ""
+    mut i = 0
+    while i < s.length {
+        if s[i] == "." {
+            out = "${out}::"
+        } else {
+            out = "${out}${s[i]}"
+        }
+        i = i + 1
+    }
+    out
 }
 
 /// Linear search: which package id has its root set to `root_id`?

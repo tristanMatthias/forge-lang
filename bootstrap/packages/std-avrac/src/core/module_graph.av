@@ -191,6 +191,7 @@ export enum ModuleGraphNodeList {
 export type ModuleGraph = {
     modules: ModuleGraphNodeList,
     by_path: ptr,
+    by_canonical: ptr,
     package_roots: ptr,
     next_module_id: int,
     next_item_id: int,
@@ -203,11 +204,31 @@ export fn module_graph_new() -> ModuleGraph {
     ModuleGraph {
         modules: ModuleGraphNodeList.End,
         by_path: avra_map_new_cstr(),
+        by_canonical: avra_map_new_cstr(),
         package_roots: avra_intmap_new(),
         next_module_id: 0,
         next_item_id: 0,
         next_package_id: 0,
         interner: interner_new(),
+    }
+}
+
+/// Register `mod_id` under its canonical path (e.g. `"core::ast"` or
+/// `"@std::avrac::codegen::escape"`). Subsequent
+/// `module_graph_find_by_canonical` lookups become O(1).
+export fn module_graph_set_canonical(g: ModuleGraph, canonical: string, mod_id: int) -> ModuleGraph {
+    avra_map_set_cstr(g.by_canonical, canonical, mod_id)
+    g
+}
+
+/// Look up a ModuleId by its canonical path (the same string format
+/// the resolver uses for diagnostics: `core::ast`, `@std::avrac::X`).
+/// Returns ID_NONE when no such canonical path is registered.
+export fn module_graph_find_by_canonical(g: ModuleGraph, canonical: string) -> int {
+    if avra_map_has_cstr(g.by_canonical, canonical) != 0 {
+        avra_map_get_cstr(g.by_canonical, canonical)
+    } else {
+        ID_NONE
     }
 }
 
