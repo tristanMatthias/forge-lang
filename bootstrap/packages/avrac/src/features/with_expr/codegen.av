@@ -56,7 +56,11 @@ fn copy_struct_fields(ctx: Ctx, src: ptr, dst: ptr, struct_name: string, fields:
             let src_gep = ctx.gep(st_ty, src, idx, "with_cp_src")
             let val = ctx.load_typed(resolved, src_gep, "with_cp_val")
             let dst_gep = ctx.gep(st_ty, dst, idx, "with_cp_dst")
-            ctx.store(val, dst_gep)
+            // store_field respects the destination field's LLVM type
+            // (i1 for bool, ptr for refs, etc.). Plain ctx.store would
+            // write 8 bytes and clobber adjacent packed bool fields
+            // (forge-crafting-intepreters-14s7).
+            ctx.store_field(val, dst_gep, resolved)
             copy_struct_fields(ctx, src, dst, struct_name, next, idx + 1)
         }
     }
