@@ -22,3 +22,7 @@
 
 # Beads / Dolt files (added by bd init)
 .beads-credential-key
+
+# macOS metadata
+.DS_Store
+**/.DS_Store
