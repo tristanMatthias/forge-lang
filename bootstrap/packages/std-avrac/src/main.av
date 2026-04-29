@@ -48,16 +48,22 @@ mod coverage
 mod indexer
 mod docs
 mod lang_gen
+mod fmt
+mod test_runner
 use @std.cli.{cli_new, cli_add_command, cli_command_add_flag, cli_command_add_option, cli_command_add_arg, cli_parse, result_has_flag, result_get_option}
+use fmt.{fmt_stmt_list}
+use test_runner.{prepend_test_externs, split_package_modules, append_stmt_list}
 use coverage.{render_coverage}
 use docs.{extract_project_docs_ast, extract_project_corpus,
           show_overview, show_symbol, show_short, show_symbols,
           show_search, show_llm, show_callers, show_module,
           validate_docs, suggest_similar, run_doctests,
           render_json, render_markdown}
+use docs.corpus.{extract_lang_corpus, extract_errors_corpus,
+                 sym_list_concat, find_sym_for_gen}
 use docs.gen.{gen_stub_for_sym, gen_apply, GenStubResult}
 use lang_gen.{render_lang_av, write_lang_av}
-use indexer.{run_lsp_server, extract_project_syms_cached, extract_from_ast}
+use indexer.{run_lsp_server, extract_project_syms_cached}
 use pathutil.{basename_no_ext}
 
 use parse.{parse_expression_source, parse_program_source}
@@ -98,354 +104,6 @@ fn fail(message: string) {
 
 // Module file resolution and name resolution live in features/modules/.
 
-// ── Code formatter (ticket c5w) ──
-// Avra syntax with consistent indentation.
-
-fn fmt_indent(depth: int) -> string {
-    mut result = ""
-    for i in 0..depth {
-        result = result + "    "
-    }
-    result
-}
-
-fn fmt_expr(se: Expr) -> string {
-    match se {
-        .Number(v) -> v
-        .String(v) -> v
-        .Bool(v) -> v
-        .Null -> "null"
-        .Ident(name) -> name
-        .QualifiedIdent(path) -> path
-        .Assign(name, value) -> "${name} = ${fmt_expr(value)}"
-        .Grouping(inner) -> "(${fmt_expr(inner)})"
-        .Unary(op, right) -> "${unop_str(op)}${fmt_expr(right)}"
-        .Binary(left, op, right) -> "${fmt_expr(left)} ${binop_str(op)} ${fmt_expr(right)}"
-        .Logical(left, op, right) -> "${fmt_expr(left)} ${logicop_str(op)} ${fmt_expr(right)}"
-        .Call(callee, args) -> "${fmt_expr(callee)}(${fmt_expr_list_comma(args)})"
-        .GenericCall(callee, ta, args) -> "${fmt_expr(callee)}::<${fmt_type_name_list(ta)}>(${fmt_expr_list_comma(args)})"
-        .StructLit(name, inits) -> "${name} { ${fmt_field_init_list(inits)} }"
-        .FieldAccess(obj, field) -> "${fmt_expr(obj)}.${field}"
-        .EnumCtor(tn, variant, args) -> ".${variant}(${fmt_expr_list_comma(args)})"
-        .Index(obj, idx) -> "${fmt_expr(obj)}[${fmt_expr(idx)}]"
-        .Block(body) -> "{\n${fmt_stmt_list(body, 1)}\n}"
-        .MatchExpr(subject, arms) -> "match ${fmt_expr(subject)} {\n${fmt_match_arms(arms, 1)}\n}"
-        .FieldAssign(obj, field, value) -> "${fmt_expr(obj)}.${field} = ${fmt_expr(value)}"
-        .IfExpr(c, t, e) -> "if ${fmt_expr(c)} { ${fmt_expr(t)} } else { ${fmt_expr(e)} }"
-        .NullCoalesce(left, right) -> "${fmt_expr(left)} ?? ${fmt_expr(right)}"
-        .OptionalChain(obj, field) -> "${fmt_expr(obj)}?.${field}"
-        .Try(inner) -> "${fmt_expr(inner)}?"
-        .Tuple(elements) -> "(${fmt_expr_list_comma(elements)})"
-        .TupleIndex(obj, idx) -> "${fmt_expr(obj)}.${string(idx)}"
-        .With(obj, overrides) -> "${fmt_expr(obj)} with { ${fmt_field_init_list(overrides)} }"
-        .ListLit(elements) -> "[${fmt_expr_list_comma(elements)}]"
-        .Lambda(params, body) -> "(${fmt_param_list_comma(params)}) -> ${fmt_expr(body)}"
-        .MapLit(entries) -> "{ ${fmt_map_entries(entries)} }"
-        .FloatLit(v) -> v
-        .Slice(obj, start, end) -> "${fmt_expr(obj)}[${fmt_expr(start)}..${fmt_expr(end)}]"
-        .IsCheck(subject, vname) -> "${fmt_expr(subject)} is .${vname}"
-        .InCheck(needle, items) -> "${fmt_expr(needle)} in [${fmt_expr_list_comma(items)}]"
-        .ListComp(body, variable, collection, _) -> "[${fmt_expr(body)} for ${variable} in ${fmt_expr(collection)}]"
-        .When(arms) -> "when {\n${fmt_when_arms(arms, 1)}\n}"
-        .Catch(inner, binding, body, _, _) -> "${fmt_expr(inner)} catch ${binding} { ${fmt_expr(body)} }"
-        .Spawn(body) -> "spawn ${fmt_expr(body)}"
-    }
-}
-
-fn fmt_stmt(ss: Stmt, depth: int) -> string {
-    let ind = fmt_indent(depth)
-    match ss {
-        .Let(name, vt, init) -> {
-            let ty_part = if vtype_display(vt) == "" { "" } else { ": ${vtype_display(vt)}" }
-            "${ind}let ${name}${ty_part} = ${fmt_expr(init)}"
-        }
-        .Mut(name, vt, init) -> {
-            let ty_part = if vtype_display(vt) == "" { "" } else { ": ${vtype_display(vt)}" }
-            "${ind}mut ${name}${ty_part} = ${fmt_expr(init)}"
-        }
-        .Const(name, vt, init) -> {
-            let ty_part = if vtype_display(vt) == "" { "" } else { ": ${vtype_display(vt)}" }
-            "${ind}const ${name}${ty_part} = ${fmt_expr(init)}"
-        }
-        .Expr(se) -> "${ind}${fmt_expr(se)}"
-        .Block(body) -> "${ind}{\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
-        .If(condition, then_branch, else_branch) -> {
-            let base = "${ind}if ${fmt_expr(condition)} {\n${fmt_stmt(then_branch, depth + 1)}\n${ind}}"
-            if else_branch == null {
-                base
-            } else {
-                "${base} else {\n${fmt_stmt(else_branch!, depth + 1)}\n${ind}}"
-            }
-        }
-        .While(condition, body) -> "${ind}while ${fmt_expr(condition)} {\n${fmt_stmt(body, depth + 1)}\n${ind}}"
-        .For(variable, start, end, body) -> "${ind}for ${variable} in ${fmt_expr(start)}..${fmt_expr(end)} {\n${fmt_stmt(body, depth + 1)}\n${ind}}"
-        .ForIn(variable, collection, body) -> "${ind}for ${variable} in ${fmt_expr(collection)} {\n${fmt_stmt(body, depth + 1)}\n${ind}}"
-        .Function(name, tp, params, rvt, body) -> {
-            let tp_str = fmt_type_param_list(tp)
-            let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
-            let ret_part = if vtype_eq(rvt, .Void) { "" } else { " -> ${vtype_display(rvt)}" }
-            "${ind}fn ${name}${tp_part}(${fmt_param_list_typed(params)})${ret_part} {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
-        }
-        .Return(value) -> "${ind}return ${fmt_expr(value)}"
-        .ReturnEmpty -> "${ind}return"
-        .TypeDecl(name, tp, fields) -> {
-            let tp_str = fmt_type_param_list(tp)
-            let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
-            "${ind}type ${name}${tp_part} = {\n${fmt_field_decl_list(fields, depth + 1)}\n${ind}}"
-        }
-        .NewtypeDecl(name, inner_vt) -> "${ind}type ${name} = ${vtype_render_full(inner_vt)}"
-        .UnionAliasDecl(name, type_vt) -> "${ind}type ${name} = ${vtype_render_full(type_vt)}"
-        .ShapeDecl(name, fields) -> "${ind}shape ${name} = {\n${fmt_field_decl_list(fields, depth + 1)}\n${ind}}"
-        .EnumDecl(name, tp, variants) -> {
-            let tp_str = fmt_type_param_list(tp)
-            let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
-            "${ind}enum ${name}${tp_part} {\n${fmt_variant_list(variants, depth + 1)}\n${ind}}"
-        }
-        .Match(subject, arms) -> "${ind}match ${fmt_expr(subject)} {\n${fmt_match_arms(arms, depth + 1)}\n${ind}}"
-        .Impl(name, methods) -> {
-            let colon = name.index_of(":")
-            let impl_header = if colon >= 0 {
-                let trait_name = name.substring(0, colon)
-                let type_name = name.substring(colon + 1, name.length)
-                "impl ${trait_name} for ${type_name}"
-            } else {
-                "impl ${name}"
-            }
-            "${ind}${impl_header} {\n${fmt_stmt_list(methods, depth + 1)}\n${ind}}"
-        }
-        .NoOp -> ""
-        .ExternFn(name, params, rvt) -> "${ind}extern fn ${name}(${fmt_param_list_typed(params)}) -> ${vtype_display(rvt)}"
-        .Break -> "${ind}break"
-        .Continue -> "${ind}continue"
-        .TraitDecl(name, methods) -> "${ind}trait ${name} {\n${fmt_stmt_list(methods, depth + 1)}\n${ind}}"
-        .LetDestructure(names, init) -> "${ind}let (${fmt_param_list_comma(names)}) = ${fmt_expr(init)}"
-        .Defer(body) -> "${ind}defer ${fmt_expr(body)}"
-        .Errdefer(body) -> "${ind}errdefer ${fmt_expr(body)}"
-        .Annotated(annotations, inner) -> "${fmt_annotation_list(annotations, depth)}${fmt_stmt(inner, depth)}"
-        .SpecBlock(name, body) -> "${ind}spec ${name} {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
-        .GivenBlock(name, body) -> "${ind}given ${name} {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
-        .ThenBlock(name, cond) -> "${ind}then ${name} { ${fmt_expr(cond)} }"
-        .Select(_) -> "${ind}select { ... }"
-        .Parallel(body) -> "${ind}parallel {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
-        .Module(name, body) -> "${ind}mod ${name}\n${fmt_stmt_list(body, depth)}"
-        .Use(path, names) -> "${ind}use ${path}.{${fmt_param_list_comma(names)}}"
-        .AssocType(name, ty_vt) -> if vtype_is_unknown(ty_vt) { "${ind}type ${name}" } else { "${ind}type ${name} = ${vtype_render_full(ty_vt)}" }
-        .ComponentDef(name, params, _, body) -> "${ind}component ${name}(${fmt_param_list_comma(params)}) {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
-        .ComponentBlock(comp, inst, _, body) -> "${ind}${comp} ${inst} {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
-    }
-}
-
-fn fmt_stmt_list(stmts: StmtList, depth: int) -> string {
-    match stmts {
-        .End -> ""
-        .Node(ss, next) -> {
-            let head = fmt_stmt(ss.node, depth)
-            let tail = fmt_stmt_list(next, depth)
-            if tail == "" { head } else { "${head}\n${tail}" }
-        }
-    }
-}
-
-fn fmt_expr_list_comma(exprs: ExprList) -> string {
-    match exprs {
-        .End -> ""
-        .Node(se, next) -> {
-            let head = fmt_expr(se.node)
-            let tail = fmt_expr_list_comma_tail(next)
-            "${head}${tail}"
-        }
-    }
-}
-
-fn fmt_expr_list_comma_tail(exprs: ExprList) -> string {
-    match exprs {
-        .End -> ""
-        .Node(se, next) -> ", ${fmt_expr(se.node)}${fmt_expr_list_comma_tail(next)}"
-    }
-}
-
-fn fmt_param_list_comma(params: ParamList) -> string {
-    match params {
-        .End -> ""
-        .Node(name, _, next) -> {
-            let tail = fmt_param_list_comma_tail(next)
-            "${name}${tail}"
-        }
-    }
-}
-
-fn fmt_param_list_comma_tail(params: ParamList) -> string {
-    match params {
-        .End -> ""
-        .Node(name, _, next) -> ", ${name}${fmt_param_list_comma_tail(next)}"
-    }
-}
-
-fn fmt_param_list_typed(params: ParamList) -> string {
-    match params {
-        .End -> ""
-        .Node(name, resolved, next) -> {
-            let ty_part = if vtype_is_unknown(resolved) { "" } else { ": ${vtype_display(resolved)}" }
-            let tail = fmt_param_list_typed_tail(next)
-            "${name}${ty_part}${tail}"
-        }
-    }
-}
-
-fn fmt_param_list_typed_tail(params: ParamList) -> string {
-    match params {
-        .End -> ""
-        .Node(name, resolved, next) -> {
-            let ty_part = if vtype_is_unknown(resolved) { "" } else { ": ${vtype_display(resolved)}" }
-            ", ${name}${ty_part}${fmt_param_list_typed_tail(next)}"
-        }
-    }
-}
-
-fn fmt_type_param_list(tp: TypeParamList) -> string {
-    match tp {
-        .End -> ""
-        .Node(name, bound, next) -> {
-            let bound_part = if bound == "" { "" } else { ": ${bound}" }
-            let rest = fmt_type_param_list(next)
-            if rest == "" { "${name}${bound_part}" } else { "${name}${bound_part}, ${rest}" }
-        }
-    }
-}
-
-fn fmt_type_name_list(names: TypeNameList) -> string {
-    match names {
-        .End -> ""
-        .Node(name, next) -> {
-            let rest = fmt_type_name_list(next)
-            if rest == "" { name } else { "${name}, ${rest}" }
-        }
-    }
-}
-
-fn fmt_field_init_list(inits: FieldInitList) -> string {
-    match inits {
-        .End -> ""
-        .Node(name, sv, next) -> {
-            let head = "${name}: ${fmt_expr(sv.node)}"
-            let tail = fmt_field_init_list_tail(next)
-            "${head}${tail}"
-        }
-    }
-}
-
-fn fmt_field_init_list_tail(inits: FieldInitList) -> string {
-    match inits {
-        .End -> ""
-        .Node(name, sv, next) -> ", ${name}: ${fmt_expr(sv.node)}${fmt_field_init_list_tail(next)}"
-    }
-}
-
-fn fmt_field_decl_list(fields: FieldList, depth: int) -> string {
-    let ind = fmt_indent(depth)
-    match fields {
-        .End -> ""
-        .Node(name, vt, next) -> {
-            let head = "${ind}${name}: ${vtype_display(vt)}"
-            let tail = fmt_field_decl_list(next, depth)
-            if tail == "" { head } else { "${head}\n${tail}" }
-        }
-    }
-}
-
-fn fmt_variant_list(variants: VariantList, depth: int) -> string {
-    let ind = fmt_indent(depth)
-    match variants {
-        .End -> ""
-        .Node(name, fields, next) -> {
-            let fields_str = fmt_variant_fields(fields)
-            let head = "${ind}${name}${fields_str}"
-            let tail = fmt_variant_list(next, depth)
-            if tail == "" { head } else { "${head}\n${tail}" }
-        }
-    }
-}
-
-fn fmt_variant_fields(fields: FieldList) -> string {
-    match fields {
-        .End -> ""
-        .Node(name, vt, next) -> {
-            let head = "${name}: ${vtype_display(vt)}"
-            let tail = fmt_variant_fields_tail(next)
-            "(${head}${tail})"
-        }
-    }
-}
-
-fn fmt_variant_fields_tail(fields: FieldList) -> string {
-    match fields {
-        .End -> ""
-        .Node(name, vt, next) -> ", ${name}: ${vtype_display(vt)}${fmt_variant_fields_tail(next)}"
-    }
-}
-
-fn fmt_pattern(p: Pattern) -> string {
-    match p {
-        .Wildcard -> "_"
-        .Variant(name, bindings) -> {
-            let bindings_str = fmt_param_list_comma(bindings)
-            if bindings_str == "" { ".${name}" } else { ".${name}(${bindings_str})" }
-        }
-        .Or(left, right) -> "${fmt_pattern(left)} | ${fmt_pattern(right)}"
-        .TypePattern(type_name, binding) -> "${type_name}(${binding})"
-        _ -> "_"
-    }
-}
-
-fn fmt_match_arms(arms: MatchArmList, depth: int) -> string {
-    let ind = fmt_indent(depth)
-    match arms {
-        .End -> ""
-        .Node(pattern, guard, body, next) -> {
-            let guard_str = if guard != null { " if ${fmt_expr(guard!.node)}" } else { "" }
-            let head = "${ind}${fmt_pattern(pattern)}${guard_str} -> ${fmt_expr(body.node)}"
-            let tail = fmt_match_arms(next, depth)
-            if tail == "" { head } else { "${head}\n${tail}" }
-        }
-    }
-}
-
-fn fmt_when_arms(arms: WhenArmList, depth: int) -> string {
-    let ind = fmt_indent(depth)
-    match arms {
-        .End -> ""
-        .Node(cond, body, next) -> {
-            let cond_str = if cond == null { "_" } else { fmt_expr(cond!.node) }
-            let head = "${ind}${cond_str} -> ${fmt_expr(body.node)}"
-            let tail = fmt_when_arms(next, depth)
-            if tail == "" { head } else { "${head}\n${tail}" }
-        }
-    }
-}
-
-fn fmt_annotation_list(annots: AnnotationList, depth: int) -> string {
-    let ind = fmt_indent(depth)
-    match annots {
-        .End -> ""
-        .Node(name, _, next) -> "${ind}@${name}\n${fmt_annotation_list(next, depth)}"
-    }
-}
-
-fn fmt_map_entries(entries: ExprList) -> string {
-    match entries {
-        .End -> ""
-        .Node(key_se, rest) -> {
-            match rest {
-                .End -> fmt_expr(key_se.node)
-                .Node(val_se, next) -> {
-                    let head = "${fmt_expr(key_se.node)}: ${fmt_expr(val_se.node)}"
-                    let tail = fmt_map_entries(next)
-                    if tail == "" { head } else { "${head}, ${tail}" }
-                }
-            }
-        }
-    }
-}
 
 // ── CLI component definitions ──
 // Match the Rust std-cli component pattern exactly.
@@ -486,139 +144,6 @@ component arg(name: string) {
     config { description: string = "", required: bool = false }
     fn init() {
         self.__parent = cli_command_add_arg(self.__parent, self.__parent_name, self.name, self.config.description, self.config.required)
-    }
-}
-
-// ── Test runner helpers ──
-
-// Lang corpus = parse target/lang.av (generated by `avra lang`) and
-// run it through the indexer. Filtered variants pull just the
-// F-coded error consts.
-
-fn extract_lang_corpus(project_dir: string) -> SymList {
-    let path = "${project_dir}/target/lang.av"
-    if avra_selfhost_file_exists(path) == 0 {
-        eprintln("error: target/lang.av not found — run `avra lang` first")
-        exit(1)
-    }
-    let content = avra_selfhost_read_file(path)
-    if content == "" { return SymList.End }
-    let parsed = parse_program_source(content)
-    if parsed.had_error || parsed.stmts == null { return SymList.End }
-    extract_from_ast(parsed.stmts!, "target/lang.av")
-}
-
-fn extract_errors_corpus(project_dir: string) -> SymList {
-    sym_list_filter_errors(extract_lang_corpus(project_dir))
-}
-
-fn sym_list_filter_errors(list: SymList) -> SymList {
-    mut acc = SymList.End
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return reverse_sym_list(acc)
-            }
-            .Node(item, next) -> {
-                if item.name.starts_with("F") && item.name.length >= 5 {
-                    acc = SymList.Node(item, acc)
-                }
-                cur = next
-            }
-        }
-    }
-    SymList.End
-}
-
-fn sym_list_concat(a: SymList, b: SymList) -> SymList {
-    match a {
-        .End -> b
-        .Node(item, next) -> SymList.Node(item, sym_list_concat(next, b))
-    }
-}
-
-fn reverse_sym_list(list: SymList) -> SymList {
-    mut acc = SymList.End
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return acc
-            }
-            .Node(item, next) -> {
-                acc = SymList.Node(item, acc)
-                cur = next
-            }
-        }
-    }
-    SymList.End
-}
-
-fn strip_externs(stmts: StmtList) -> StmtList {
-    match stmts {
-        .End -> StmtList.End
-        .Node(ss, next) -> {
-            match ss.node {
-                .ExternFn(_, _, _) -> strip_externs(next)
-                _ -> StmtList.Node(ss, strip_externs(next))
-            }
-        }
-    }
-}
-
-fn prepend_test_externs(stmts: StmtList) -> StmtList {
-    let s4 = StmtList.Node(sstmt_dummy(Stmt.ExternFn("avra_test_capture_stop", ParamList.End, ValueType.Str)), stmts)
-    let s3 = StmtList.Node(sstmt_dummy(Stmt.ExternFn("avra_test_capture_start", ParamList.End, ValueType.Void)), s4)
-    let s2 = StmtList.Node(sstmt_dummy(Stmt.ExternFn("avra_test_flush", ParamList.End, ValueType.Void)), s3)
-    StmtList.Node(sstmt_dummy(Stmt.ExternFn("avra_test_summary", ParamList.End, ValueType.Int)), s2)
-}
-
-// Outcome of splitting a stmt list into hoistable package modules and
-// the per-test body. Used by the test runner to keep each @std::pkg
-// module unique across the whole program.
-type PackageSplit = {
-    packages: StmtList,
-    body: StmtList,
-}
-
-// Collect every @-prefixed Module from `stmts` (recursing through any
-// nested Module bodies — when a `mod foo` resolves a sibling file that
-// imports an @std package, the package wrapper lands one level deep)
-// and return the residue with those wrappers stripped. Each package is
-// only lifted from its first occurrence; resolve_module_files's shared
-// LoadedPaths means it appears at most once across the whole program.
-fn split_package_modules(stmts: StmtList) -> PackageSplit {
-    match stmts {
-        .End -> PackageSplit { packages: StmtList.End, body: StmtList.End }
-        .Node(ss, next) -> {
-            let rest = split_package_modules(next)
-            match ss.node {
-                .Module(name, _) if name.length > 0 && name[0] == "@" -> PackageSplit {
-                    packages: StmtList.Node(ss, rest.packages),
-                    body: rest.body,
-                }
-                .Module(name, body) -> {
-                    let inner = split_package_modules(body)
-                    let cleaned = sstmt_dummy(Stmt.Module(name, inner.body))
-                    PackageSplit {
-                        packages: append_stmt_list(inner.packages, rest.packages),
-                        body: StmtList.Node(cleaned, rest.body),
-                    }
-                }
-                _ -> PackageSplit {
-                    packages: rest.packages,
-                    body: StmtList.Node(ss, rest.body),
-                }
-            }
-        }
-    }
-}
-
-fn append_stmt_list(a: StmtList, b: StmtList) -> StmtList {
-    match a {
-        .End -> b
-        .Node(ss, next) -> StmtList.Node(ss, append_stmt_list(next, b))
     }
 }
 
@@ -863,11 +388,21 @@ fn run_docs_command() {
 //   lang              — read target/lang.av (generated by `avra lang`)
 //   errors            — same as lang, filtered to F-codes
 //   all               — project ∪ lang
+//
+// `lang`/`errors` paths verify target/lang.av exists before calling
+// the lib helper — the lib returns an empty SymList on absence so it
+// stays argv-free; the CLI surfaces the missing-file diagnostic.
 fn load_docs_corpus(project_dir: string, args: DocsArgs) -> SymList {
     match args.scope {
         "project" -> extract_project_syms_cached(project_dir, args.want_no_cache)
-        "lang" -> extract_lang_corpus(project_dir)
-        "errors" -> extract_errors_corpus(project_dir)
+        "lang" -> {
+            require_lang_av(project_dir)
+            extract_lang_corpus(project_dir)
+        }
+        "errors" -> {
+            require_lang_av(project_dir)
+            extract_errors_corpus(project_dir)
+        }
         "all" -> sym_list_concat(
             extract_project_syms_cached(project_dir, args.want_no_cache),
             extract_lang_corpus(project_dir))
@@ -876,6 +411,15 @@ fn load_docs_corpus(project_dir: string, args: DocsArgs) -> SymList {
             exit(1)
             SymList.End
         }
+    }
+}
+
+// CLI guard: bail with a friendly message when the lang corpus
+// scopes are requested but `target/lang.av` is absent.
+fn require_lang_av(project_dir: string) {
+    if avra_selfhost_file_exists("${project_dir}/target/lang.av") == 0 {
+        eprintln("error: target/lang.av not found — run `avra lang` first")
+        exit(1)
     }
 }
 
@@ -912,18 +456,6 @@ fn gen_for_symbol(query: string, docs_set: SymList, want_print: bool) -> bool {
     }
     true
 }
-
-fn find_sym_for_gen(list: SymList, query: string) -> Sym? {
-    match list {
-        .End -> null
-        .Node(s, next) -> {
-            if s.name == query || s.qualified == query { return s }
-            find_sym_for_gen(next, query)
-        }
-    }
-}
-
-
 
 fn main() {
     // ── Fully declarative CLI ──

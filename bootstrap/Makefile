@@ -4,8 +4,8 @@
 # It builds from a checked-in LLVM IR seed (seed/seed.ll).
 #
 # Pipeline:
-#   seed/seed.ll → llc + cc → seed binary → compiles packages/avrac/src/ → bs2
-#   bs2 → compiles packages/avrac/src/ → bs3 (must match bs2 = fixed point)
+#   seed/seed.ll → llc + cc → seed binary → compiles packages/std-avrac/src/ → bs2
+#   bs2 → compiles packages/std-avrac/src/ → bs3 (must match bs2 = fixed point)
 #
 # Quick reference:
 #   make              build the bootstrap compiler
@@ -18,7 +18,7 @@
 .DEFAULT_GOAL := build
 .PHONY: build build-O0 build-debug test run selfhost clean help install-hooks score update-seed seed-patch verify-seed seed-sigs next work epic coverage
 
-SRC_DIR := packages/avrac/src
+SRC_DIR := packages/std-avrac/src
 BS2 := build/bs2
 DIAG := NO_AUTOCYCLE=1 bash scripts/diagnose.sh
 

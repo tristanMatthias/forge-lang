@@ -8,14 +8,14 @@
 
 | Package                | Symbols | Documented | Coverage | Owner ticket           |
 | ---------------------- | ------: | ---------: | -------: | ---------------------- |
-| `packages/avrac/src/`  |    1781 |       180+ |   **>10%** | many (see breakdown)   |
+| `packages/std-avrac/src/`  |    1781 |       180+ |   **>10%** | many (see breakdown)   |
 | `packages/std-lsp/src/`|     165 |        165 |  **100%** ✓ | 0kdk closed             |
 | `packages/std-cli/src/`|      49 |         49 |  **100%** ✓ | 0kdk closed             |
 | `packages/std-test/src/`|      2 |          2 |  **100%** ✓ | 0kdk closed             |
 | `packages/std-process/src/`|   0 |          0 |  **100%** | (n/a — empty)         |
 | `packages/std-json/src/`|     21 |         21 |  **100%** ✓ | 0kdk closed             |
 
-## Compiler internals breakdown (`packages/avrac/src/`)
+## Compiler internals breakdown (`packages/std-avrac/src/`)
 
 The bulk of work. Per-area sub-tickets carve up the surface:
 

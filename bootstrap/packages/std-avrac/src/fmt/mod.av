@@ -1,0 +1,398 @@
+// WHY: Pretty-printer for Avra source — round-trips parsed AST back to
+// canonical surface syntax with consistent indentation. Used by the
+// `avra fmt` subcommand and any tooling that wants to render an AST
+// (codemod previews, error reporting, doc-comment scaffolding).
+//
+// Pure: no argv, no I/O, no globals. Takes an AST node, returns a string.
+// Public entry point is `fmt_stmt_list(stmts, 0)`.
+
+use core.ast.{
+    Expr, Stmt, StmtList, ExprList, ParamList,
+    TypeParamList, TypeNameList, FieldInitList, FieldList,
+    VariantList, Pattern, MatchArmList, WhenArmList, AnnotationList,
+    binop_str, unop_str, logicop_str,
+    vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq,
+}
+
+/// Render `depth * 4` spaces — Avra's canonical indent unit.
+fn fmt_indent(depth: int) -> string {
+    mut result = ""
+    for i in 0..depth {
+        result = result + "    "
+    }
+    result
+}
+
+/// Render an expression node back to source. Recursive — composes with
+/// the helper renderers (lists, patterns, match arms) for nested forms.
+export fn fmt_expr(se: Expr) -> string {
+    match se {
+        .Number(v) -> v
+        .String(v) -> v
+        .Bool(v) -> v
+        .Null -> "null"
+        .Ident(name) -> name
+        .QualifiedIdent(path) -> path
+        .Assign(name, value) -> "${name} = ${fmt_expr(value)}"
+        .Grouping(inner) -> "(${fmt_expr(inner)})"
+        .Unary(op, right) -> "${unop_str(op)}${fmt_expr(right)}"
+        .Binary(left, op, right) -> "${fmt_expr(left)} ${binop_str(op)} ${fmt_expr(right)}"
+        .Logical(left, op, right) -> "${fmt_expr(left)} ${logicop_str(op)} ${fmt_expr(right)}"
+        .Call(callee, args) -> "${fmt_expr(callee)}(${fmt_expr_list_comma(args)})"
+        .GenericCall(callee, ta, args) -> "${fmt_expr(callee)}::<${fmt_type_name_list(ta)}>(${fmt_expr_list_comma(args)})"
+        .StructLit(name, inits) -> "${name} { ${fmt_field_init_list(inits)} }"
+        .FieldAccess(obj, field) -> "${fmt_expr(obj)}.${field}"
+        .EnumCtor(tn, variant, args) -> ".${variant}(${fmt_expr_list_comma(args)})"
+        .Index(obj, idx) -> "${fmt_expr(obj)}[${fmt_expr(idx)}]"
+        .Block(body) -> "{\n${fmt_stmt_list(body, 1)}\n}"
+        .MatchExpr(subject, arms) -> "match ${fmt_expr(subject)} {\n${fmt_match_arms(arms, 1)}\n}"
+        .FieldAssign(obj, field, value) -> "${fmt_expr(obj)}.${field} = ${fmt_expr(value)}"
+        .IfExpr(c, t, e) -> "if ${fmt_expr(c)} { ${fmt_expr(t)} } else { ${fmt_expr(e)} }"
+        .NullCoalesce(left, right) -> "${fmt_expr(left)} ?? ${fmt_expr(right)}"
+        .OptionalChain(obj, field) -> "${fmt_expr(obj)}?.${field}"
+        .Try(inner) -> "${fmt_expr(inner)}?"
+        .Tuple(elements) -> "(${fmt_expr_list_comma(elements)})"
+        .TupleIndex(obj, idx) -> "${fmt_expr(obj)}.${string(idx)}"
+        .With(obj, overrides) -> "${fmt_expr(obj)} with { ${fmt_field_init_list(overrides)} }"
+        .ListLit(elements) -> "[${fmt_expr_list_comma(elements)}]"
+        .Lambda(params, body) -> "(${fmt_param_list_comma(params)}) -> ${fmt_expr(body)}"
+        .MapLit(entries) -> "{ ${fmt_map_entries(entries)} }"
+        .FloatLit(v) -> v
+        .Slice(obj, start, end) -> "${fmt_expr(obj)}[${fmt_expr(start)}..${fmt_expr(end)}]"
+        .IsCheck(subject, vname) -> "${fmt_expr(subject)} is .${vname}"
+        .InCheck(needle, items) -> "${fmt_expr(needle)} in [${fmt_expr_list_comma(items)}]"
+        .ListComp(body, variable, collection, _) -> "[${fmt_expr(body)} for ${variable} in ${fmt_expr(collection)}]"
+        .When(arms) -> "when {\n${fmt_when_arms(arms, 1)}\n}"
+        .Catch(inner, binding, body, _, _) -> "${fmt_expr(inner)} catch ${binding} { ${fmt_expr(body)} }"
+        .Spawn(body) -> "spawn ${fmt_expr(body)}"
+    }
+}
+
+/// Render a single statement at the given indentation depth.
+export fn fmt_stmt(ss: Stmt, depth: int) -> string {
+    let ind = fmt_indent(depth)
+    match ss {
+        .Let(name, vt, init) -> {
+            let ty_part = if vtype_display(vt) == "" { "" } else { ": ${vtype_display(vt)}" }
+            "${ind}let ${name}${ty_part} = ${fmt_expr(init)}"
+        }
+        .Mut(name, vt, init) -> {
+            let ty_part = if vtype_display(vt) == "" { "" } else { ": ${vtype_display(vt)}" }
+            "${ind}mut ${name}${ty_part} = ${fmt_expr(init)}"
+        }
+        .Const(name, vt, init) -> {
+            let ty_part = if vtype_display(vt) == "" { "" } else { ": ${vtype_display(vt)}" }
+            "${ind}const ${name}${ty_part} = ${fmt_expr(init)}"
+        }
+        .Expr(se) -> "${ind}${fmt_expr(se)}"
+        .Block(body) -> "${ind}{\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
+        .If(condition, then_branch, else_branch) -> {
+            let base = "${ind}if ${fmt_expr(condition)} {\n${fmt_stmt(then_branch, depth + 1)}\n${ind}}"
+            if else_branch == null {
+                base
+            } else {
+                "${base} else {\n${fmt_stmt(else_branch!, depth + 1)}\n${ind}}"
+            }
+        }
+        .While(condition, body) -> "${ind}while ${fmt_expr(condition)} {\n${fmt_stmt(body, depth + 1)}\n${ind}}"
+        .For(variable, start, end, body) -> "${ind}for ${variable} in ${fmt_expr(start)}..${fmt_expr(end)} {\n${fmt_stmt(body, depth + 1)}\n${ind}}"
+        .ForIn(variable, collection, body) -> "${ind}for ${variable} in ${fmt_expr(collection)} {\n${fmt_stmt(body, depth + 1)}\n${ind}}"
+        .Function(name, tp, params, rvt, body) -> {
+            let tp_str = fmt_type_param_list(tp)
+            let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
+            let ret_part = if vtype_eq(rvt, .Void) { "" } else { " -> ${vtype_display(rvt)}" }
+            "${ind}fn ${name}${tp_part}(${fmt_param_list_typed(params)})${ret_part} {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
+        }
+        .Return(value) -> "${ind}return ${fmt_expr(value)}"
+        .ReturnEmpty -> "${ind}return"
+        .TypeDecl(name, tp, fields) -> {
+            let tp_str = fmt_type_param_list(tp)
+            let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
+            "${ind}type ${name}${tp_part} = {\n${fmt_field_decl_list(fields, depth + 1)}\n${ind}}"
+        }
+        .NewtypeDecl(name, inner_vt) -> "${ind}type ${name} = ${vtype_render_full(inner_vt)}"
+        .UnionAliasDecl(name, type_vt) -> "${ind}type ${name} = ${vtype_render_full(type_vt)}"
+        .ShapeDecl(name, fields) -> "${ind}shape ${name} = {\n${fmt_field_decl_list(fields, depth + 1)}\n${ind}}"
+        .EnumDecl(name, tp, variants) -> {
+            let tp_str = fmt_type_param_list(tp)
+            let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
+            "${ind}enum ${name}${tp_part} {\n${fmt_variant_list(variants, depth + 1)}\n${ind}}"
+        }
+        .Match(subject, arms) -> "${ind}match ${fmt_expr(subject)} {\n${fmt_match_arms(arms, depth + 1)}\n${ind}}"
+        .Impl(name, methods) -> {
+            let colon = name.index_of(":")
+            let impl_header = if colon >= 0 {
+                let trait_name = name.substring(0, colon)
+                let type_name = name.substring(colon + 1, name.length)
+                "impl ${trait_name} for ${type_name}"
+            } else {
+                "impl ${name}"
+            }
+            "${ind}${impl_header} {\n${fmt_stmt_list(methods, depth + 1)}\n${ind}}"
+        }
+        .NoOp -> ""
+        .ExternFn(name, params, rvt) -> "${ind}extern fn ${name}(${fmt_param_list_typed(params)}) -> ${vtype_display(rvt)}"
+        .Break -> "${ind}break"
+        .Continue -> "${ind}continue"
+        .TraitDecl(name, methods) -> "${ind}trait ${name} {\n${fmt_stmt_list(methods, depth + 1)}\n${ind}}"
+        .LetDestructure(names, init) -> "${ind}let (${fmt_param_list_comma(names)}) = ${fmt_expr(init)}"
+        .Defer(body) -> "${ind}defer ${fmt_expr(body)}"
+        .Errdefer(body) -> "${ind}errdefer ${fmt_expr(body)}"
+        .Annotated(annotations, inner) -> "${fmt_annotation_list(annotations, depth)}${fmt_stmt(inner, depth)}"
+        .SpecBlock(name, body) -> "${ind}spec ${name} {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
+        .GivenBlock(name, body) -> "${ind}given ${name} {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
+        .ThenBlock(name, cond) -> "${ind}then ${name} { ${fmt_expr(cond)} }"
+        .Select(_) -> "${ind}select { ... }"
+        .Parallel(body) -> "${ind}parallel {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
+        .Module(name, body) -> "${ind}mod ${name}\n${fmt_stmt_list(body, depth)}"
+        .Use(path, names) -> "${ind}use ${path}.{${fmt_param_list_comma(names)}}"
+        .AssocType(name, ty_vt) -> if vtype_is_unknown(ty_vt) { "${ind}type ${name}" } else { "${ind}type ${name} = ${vtype_render_full(ty_vt)}" }
+        .ComponentDef(name, params, _, body) -> "${ind}component ${name}(${fmt_param_list_comma(params)}) {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
+        .ComponentBlock(comp, inst, _, body) -> "${ind}${comp} ${inst} {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
+    }
+}
+
+/// Public entry point — render a top-level statement list. Each
+/// statement gets one source line, joined with `\n`.
+export fn fmt_stmt_list(stmts: StmtList, depth: int) -> string {
+    match stmts {
+        .End -> ""
+        .Node(ss, next) -> {
+            let head = fmt_stmt(ss.node, depth)
+            let tail = fmt_stmt_list(next, depth)
+            if tail == "" { head } else { "${head}\n${tail}" }
+        }
+    }
+}
+
+/// Render an ExprList as comma-separated expressions — used inside
+/// call args, list literals, tuple elements, and generic call args.
+fn fmt_expr_list_comma(exprs: ExprList) -> string {
+    match exprs {
+        .End -> ""
+        .Node(se, next) -> {
+            let head = fmt_expr(se.node)
+            let tail = fmt_expr_list_comma_tail(next)
+            "${head}${tail}"
+        }
+    }
+}
+
+/// Tail recursion for `fmt_expr_list_comma` — every element after
+/// the head gets a leading `, ` separator.
+fn fmt_expr_list_comma_tail(exprs: ExprList) -> string {
+    match exprs {
+        .End -> ""
+        .Node(se, next) -> ", ${fmt_expr(se.node)}${fmt_expr_list_comma_tail(next)}"
+    }
+}
+
+/// Render a ParamList as comma-separated names (no types) —
+/// for destructuring patterns and lambda parameter lists.
+fn fmt_param_list_comma(params: ParamList) -> string {
+    match params {
+        .End -> ""
+        .Node(name, _, next) -> {
+            let tail = fmt_param_list_comma_tail(next)
+            "${name}${tail}"
+        }
+    }
+}
+
+/// Tail of `fmt_param_list_comma` — every element after head gets
+/// a leading `, `.
+fn fmt_param_list_comma_tail(params: ParamList) -> string {
+    match params {
+        .End -> ""
+        .Node(name, _, next) -> ", ${name}${fmt_param_list_comma_tail(next)}"
+    }
+}
+
+/// Render a ParamList with type annotations — for `fn` and
+/// `extern fn` signatures.
+fn fmt_param_list_typed(params: ParamList) -> string {
+    match params {
+        .End -> ""
+        .Node(name, resolved, next) -> {
+            let ty_part = if vtype_is_unknown(resolved) { "" } else { ": ${vtype_display(resolved)}" }
+            let tail = fmt_param_list_typed_tail(next)
+            "${name}${ty_part}${tail}"
+        }
+    }
+}
+
+/// Tail of `fmt_param_list_typed`.
+fn fmt_param_list_typed_tail(params: ParamList) -> string {
+    match params {
+        .End -> ""
+        .Node(name, resolved, next) -> {
+            let ty_part = if vtype_is_unknown(resolved) { "" } else { ": ${vtype_display(resolved)}" }
+            ", ${name}${ty_part}${fmt_param_list_typed_tail(next)}"
+        }
+    }
+}
+
+/// Render a generic-parameter list — `T, U: SomeBound`.
+fn fmt_type_param_list(tp: TypeParamList) -> string {
+    match tp {
+        .End -> ""
+        .Node(name, bound, next) -> {
+            let bound_part = if bound == "" { "" } else { ": ${bound}" }
+            let rest = fmt_type_param_list(next)
+            if rest == "" { "${name}${bound_part}" } else { "${name}${bound_part}, ${rest}" }
+        }
+    }
+}
+
+/// Render a comma-separated list of type names — for explicit
+/// generic-call type arguments `f::<T, U>(x)`.
+fn fmt_type_name_list(names: TypeNameList) -> string {
+    match names {
+        .End -> ""
+        .Node(name, next) -> {
+            let rest = fmt_type_name_list(next)
+            if rest == "" { name } else { "${name}, ${rest}" }
+        }
+    }
+}
+
+/// Render a struct/with field-init list — `name: expr, name: expr`.
+fn fmt_field_init_list(inits: FieldInitList) -> string {
+    match inits {
+        .End -> ""
+        .Node(name, sv, next) -> {
+            let head = "${name}: ${fmt_expr(sv.node)}"
+            let tail = fmt_field_init_list_tail(next)
+            "${head}${tail}"
+        }
+    }
+}
+
+/// Tail of `fmt_field_init_list`.
+fn fmt_field_init_list_tail(inits: FieldInitList) -> string {
+    match inits {
+        .End -> ""
+        .Node(name, sv, next) -> ", ${name}: ${fmt_expr(sv.node)}${fmt_field_init_list_tail(next)}"
+    }
+}
+
+/// Render a struct-decl/shape field list — one `name: Type` per
+/// indented line.
+fn fmt_field_decl_list(fields: FieldList, depth: int) -> string {
+    let ind = fmt_indent(depth)
+    match fields {
+        .End -> ""
+        .Node(name, vt, next) -> {
+            let head = "${ind}${name}: ${vtype_display(vt)}"
+            let tail = fmt_field_decl_list(next, depth)
+            if tail == "" { head } else { "${head}\n${tail}" }
+        }
+    }
+}
+
+/// Render an enum-variant list — one `Name(field: T, ...)` per
+/// indented line.
+fn fmt_variant_list(variants: VariantList, depth: int) -> string {
+    let ind = fmt_indent(depth)
+    match variants {
+        .End -> ""
+        .Node(name, fields, next) -> {
+            let fields_str = fmt_variant_fields(fields)
+            let head = "${ind}${name}${fields_str}"
+            let tail = fmt_variant_list(next, depth)
+            if tail == "" { head } else { "${head}\n${tail}" }
+        }
+    }
+}
+
+/// Render the parameter section of an enum variant — `(name: T, ...)`,
+/// or empty when the variant carries no payload.
+fn fmt_variant_fields(fields: FieldList) -> string {
+    match fields {
+        .End -> ""
+        .Node(name, vt, next) -> {
+            let head = "${name}: ${vtype_display(vt)}"
+            let tail = fmt_variant_fields_tail(next)
+            "(${head}${tail})"
+        }
+    }
+}
+
+/// Tail of `fmt_variant_fields`.
+fn fmt_variant_fields_tail(fields: FieldList) -> string {
+    match fields {
+        .End -> ""
+        .Node(name, vt, next) -> ", ${name}: ${vtype_display(vt)}${fmt_variant_fields_tail(next)}"
+    }
+}
+
+/// Render a match-arm pattern.
+fn fmt_pattern(p: Pattern) -> string {
+    match p {
+        .Wildcard -> "_"
+        .Variant(name, bindings) -> {
+            let bindings_str = fmt_param_list_comma(bindings)
+            if bindings_str == "" { ".${name}" } else { ".${name}(${bindings_str})" }
+        }
+        .Or(left, right) -> "${fmt_pattern(left)} | ${fmt_pattern(right)}"
+        .TypePattern(type_name, binding) -> "${type_name}(${binding})"
+        _ -> "_"
+    }
+}
+
+/// Render a match-arm list — one arm per indented line.
+fn fmt_match_arms(arms: MatchArmList, depth: int) -> string {
+    let ind = fmt_indent(depth)
+    match arms {
+        .End -> ""
+        .Node(pattern, guard, body, next) -> {
+            let guard_str = if guard != null { " if ${fmt_expr(guard!.node)}" } else { "" }
+            let head = "${ind}${fmt_pattern(pattern)}${guard_str} -> ${fmt_expr(body.node)}"
+            let tail = fmt_match_arms(next, depth)
+            if tail == "" { head } else { "${head}\n${tail}" }
+        }
+    }
+}
+
+/// Render a `when` arm list — one arm per indented line. A null
+/// condition becomes `_` (the catch-all).
+fn fmt_when_arms(arms: WhenArmList, depth: int) -> string {
+    let ind = fmt_indent(depth)
+    match arms {
+        .End -> ""
+        .Node(cond, body, next) -> {
+            let cond_str = if cond == null { "_" } else { fmt_expr(cond!.node) }
+            let head = "${ind}${cond_str} -> ${fmt_expr(body.node)}"
+            let tail = fmt_when_arms(next, depth)
+            if tail == "" { head } else { "${head}\n${tail}" }
+        }
+    }
+}
+
+/// Render an annotation chain — `@name\n@name\n` prefix to a stmt.
+fn fmt_annotation_list(annots: AnnotationList, depth: int) -> string {
+    let ind = fmt_indent(depth)
+    match annots {
+        .End -> ""
+        .Node(name, _, next) -> "${ind}@${name}\n${fmt_annotation_list(next, depth)}"
+    }
+}
+
+/// Render map-literal entries — flat `key: val, key: val` form.
+/// Map AST stores keys and values as alternating ExprList nodes;
+/// this walks them pairwise.
+fn fmt_map_entries(entries: ExprList) -> string {
+    match entries {
+        .End -> ""
+        .Node(key_se, rest) -> {
+            match rest {
+                .End -> fmt_expr(key_se.node)
+                .Node(val_se, next) -> {
+                    let head = "${fmt_expr(key_se.node)}: ${fmt_expr(val_se.node)}"
+                    let tail = fmt_map_entries(next)
+                    if tail == "" { head } else { "${head}, ${tail}" }
+                }
+            }
+        }
+    }
+}

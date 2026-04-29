@@ -22,6 +22,7 @@
 //   validate_docs        avra docs --validate
 
 mod gen
+mod corpus
 
 use core.runtime.{avra_selfhost_read_file, avra_shell_exec, avra_selfhost_levenshtein}
 use parse.{parse_program_source}

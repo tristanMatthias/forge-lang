@@ -1,0 +1,104 @@
+// WHY: Pure-AST helpers for assembling a synthetic test program from a
+// set of `_test.av` source files. Used by the `avra test` driver to
+// stitch each test file into one StmtList, hoist package modules so
+// each @std package appears only once, and prepend the externs the
+// test harness binds against.
+//
+// All functions here are pure on the AST side — no I/O, no argv, no
+// process exit. Any caller (CLI driver, IDE plugin, fuzz harness) can
+// reuse them to build a test program.
+
+use core.ast.{
+    Stmt, StmtList, ParamList, ValueType,
+    SStmt, sstmt_dummy,
+}
+
+/// Drop every `extern fn` declaration from the list.
+///
+/// Test files re-import the extern declarations the runtime supplies
+/// (`avra_test_*`); when we then concatenate the file's body into a
+/// shared program, those externs would collide with the canonical
+/// set we prepend in `prepend_test_externs`. Stripping them once on
+/// each test file keeps a single declaration of each runtime hook in
+/// the assembled program.
+export fn strip_externs(stmts: StmtList) -> StmtList {
+    match stmts {
+        .End -> StmtList.End
+        .Node(ss, next) -> {
+            match ss.node {
+                .ExternFn(_, _, _) -> strip_externs(next)
+                _ -> StmtList.Node(ss, strip_externs(next))
+            }
+        }
+    }
+}
+
+/// Prepend the four runtime externs that every assembled test
+/// program needs to link against:
+///   - `avra_test_summary()  -> int`  → final pass/fail tally
+///   - `avra_test_flush()    -> void` → drain the captured-output ring
+///   - `avra_test_capture_start() -> void`
+///   - `avra_test_capture_stop()  -> string`
+///
+/// Order is reversed inside (cons-prepend) so the rendered program
+/// reads top-to-bottom in declaration order (`summary` first).
+export fn prepend_test_externs(stmts: StmtList) -> StmtList {
+    let s4 = StmtList.Node(sstmt_dummy(Stmt.ExternFn("avra_test_capture_stop", ParamList.End, ValueType.Str)), stmts)
+    let s3 = StmtList.Node(sstmt_dummy(Stmt.ExternFn("avra_test_capture_start", ParamList.End, ValueType.Void)), s4)
+    let s2 = StmtList.Node(sstmt_dummy(Stmt.ExternFn("avra_test_flush", ParamList.End, ValueType.Void)), s3)
+    StmtList.Node(sstmt_dummy(Stmt.ExternFn("avra_test_summary", ParamList.End, ValueType.Int)), s2)
+}
+
+/// Outcome of splitting a stmt list into hoistable package modules
+/// and the per-test body. The runner uses this to keep each
+/// `@std::pkg` module unique across the assembled program — see
+/// `split_package_modules` for the rationale.
+export type PackageSplit = {
+    packages: StmtList,
+    body: StmtList,
+}
+
+/// Collect every `@`-prefixed `Module` (a package wrapper) from the
+/// statement list and return the residue with those wrappers stripped.
+///
+/// Recurses through nested `Module` bodies because when a `mod foo`
+/// stub resolves a sibling file that itself imports an `@std`
+/// package, the package wrapper lands one level deep. The shared
+/// `LoadedPaths` set in `resolve_module_files` already de-dupes by
+/// file path, so each package appears at most once across the whole
+/// list — we just need to lift them out of wherever they showed up.
+export fn split_package_modules(stmts: StmtList) -> PackageSplit {
+    match stmts {
+        .End -> PackageSplit { packages: StmtList.End, body: StmtList.End }
+        .Node(ss, next) -> {
+            let rest = split_package_modules(next)
+            match ss.node {
+                .Module(name, _) if name.length > 0 && name[0] == "@" -> PackageSplit {
+                    packages: StmtList.Node(ss, rest.packages),
+                    body: rest.body,
+                }
+                .Module(name, body) -> {
+                    let inner = split_package_modules(body)
+                    let cleaned = sstmt_dummy(Stmt.Module(name, inner.body))
+                    PackageSplit {
+                        packages: append_stmt_list(inner.packages, rest.packages),
+                        body: StmtList.Node(cleaned, rest.body),
+                    }
+                }
+                _ -> PackageSplit {
+                    packages: rest.packages,
+                    body: StmtList.Node(ss, rest.body),
+                }
+            }
+        }
+    }
+}
+
+/// Concatenate two statement lists. Order-preserving: every node
+/// from `a` comes before every node from `b`.
+export fn append_stmt_list(a: StmtList, b: StmtList) -> StmtList {
+    match a {
+        .End -> b
+        .Node(ss, next) -> StmtList.Node(ss, append_stmt_list(next, b))
+    }
+}

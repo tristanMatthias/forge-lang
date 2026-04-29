@@ -728,7 +728,7 @@ FEATURE_BY_KEY = {f["key"]: f for f in FEATURES}
 # ─── File discovery ─────────────────────────────────────────────────
 
 def find_fg_files():
-    """Find all .av source files under packages/avrac/src/, excluding tests/."""
+    """Find all .av source files under packages/std-avrac/src/, excluding tests/."""
     files = []
     for root, dirs, fnames in os.walk(SRC):
         dirs[:] = [d for d in dirs if d != "tests"]

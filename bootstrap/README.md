@@ -2,7 +2,7 @@
 
 `bootstrap/` is the clean restart for self-hosting.
 
-It is intentionally separate from the legacy `avra/packages/avrac` tree, which contains bootstrap-era experiments, dead ends, and compatibility hacks. This project starts over with a minimal, production-quality compiler written in Avra and compiled by the existing Rust compiler until it can compile itself.
+It is intentionally separate from the legacy `avra/packages/std-avrac` tree, which contains bootstrap-era experiments, dead ends, and compatibility hacks. This project starts over with a minimal, production-quality compiler written in Avra and compiled by the existing Rust compiler until it can compile itself.
 
 The implementation strategy follows the front-end progression from *Crafting Interpreters*, adapted to Avra:
 
