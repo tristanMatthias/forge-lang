@@ -68,7 +68,6 @@ USAGE
 
 BUILD MODES
   --build              Rebuild stage1 (host → stage1 binary) + run all stage1 tests.
-                       Same as scripts/test.sh but goes through this script.
   --build-runtime      Compile avra/stdlib/runtime.c → build/runtime.o.
   --build-bs2          Compile packages/avrac/src/main.av with stage1 → build/bs2.
   --build-O0           Build bs2 at -O0 (no optimization) for debuggability.

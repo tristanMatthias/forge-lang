@@ -10,8 +10,8 @@ The v1.0 TRD (gap analysis + tickets) lives in `docs/TRD_V1.md`.
 The bootstrap compiler is fully self-hosted in `bootstrap/`. No external compiler needed.
 It builds from a checked-in LLVM IR seed (`bootstrap/seed/seed.ll`).
 
-Features are self-contained modules in `bootstrap/src/features/`.
-Each feature has: parser, codegen, and examples with `/// expect:` comments.
+Features are self-contained modules in `bootstrap/packages/avrac/src/features/`.
+Each feature has: parser, codegen, and `tests/*_test.av` spec/given/then files.
 
 ### Key directories
 - `bootstrap/src/core/ast.av` — AST definitions, token kinds (`Tk` enum), value types, all list types
@@ -23,7 +23,7 @@ Each feature has: parser, codegen, and examples with `/// expect:` comments.
 - `bootstrap/src/resolve/` — name resolver (mod.av = scope, names.av = module/import resolution)
 - `bootstrap/runtime.c` — C runtime (~1900 lines: allocator, string ops, LLVM wrappers, channels, threads)
 - `bootstrap/seed/seed.ll` — bootstrap seed IR
-- `bootstrap/regress/` — regression tests (~70 tests)
+- `bootstrap/tests/` — spec/given/then test files (`*_test.av`); run via `bs2 test`
 
 ### File locations (NOT where old CLAUDE.md said)
 - Token kinds: `Tk` enum in `src/core/ast.av` (NOT `src/core/kind_ids.av` — that file doesn't exist)
@@ -35,7 +35,7 @@ Each feature has: parser, codegen, and examples with `/// expect:` comments.
 - Never put feature-specific code in `core/` — core is infrastructure only
 - **NEVER put package-specific or @std-specific code in core/ or features/.** All package behavior uses the generic template/expansion system.
 - **NEVER add brittle heuristics.** No string-matching to detect behavior. Use annotations, type system checks, or structural analysis.
-- Every example file must have `/// expect:` comments
+- Every feature must have `tests/*_test.av` files with `spec`/`given`/`then` blocks asserting behavior
 - Feature status: draft (no tests), wip (some pass), testing (most pass), stable (all pass)
 
 ## Value Model
@@ -80,7 +80,8 @@ A legacy `llvm_type_for` still exists (maps Bool/Float to i64) for callers not y
 ```bash
 cd bootstrap/
 make              # build the bootstrap compiler (produces build/bs2)
-make test         # regression suite + fixed-point check
+make test         # spec test suite + fixed-point check
+make coverage     # run all spec tests with coverage instrumentation
 make run FILE=x   # compile and run a Avra program
 make update-seed  # rebuild seed IR after dogfooding
 make clean        # remove build artifacts
@@ -118,11 +119,10 @@ If you discover a missing language feature or infrastructure gap while working, 
 - [ ] AST renderer (`render_expr`/`render_stmt` in `ast.av`)
 
 ### Phase 4: Testing
-1. Basic happy-path test in `src/features/<name>/example.av` with `expected.out`
-2. Edge cases (empty, null, zero, negative, boundary values)
+1. Basic happy-path test in `src/features/<name>/tests/<name>_example_test.av` (spec/given/then format)
+2. Edge cases (empty, null, zero, negative, boundary values) — one `*_test.av` per scenario
 3. Combinatorial: closures, match, nullable, if-expr, structs, enums, loops, pipe, templates, lists, maps, `with`, `defer`, nested, as args/returns
-4. Regression test in `regress/` with `.out` file
-5. Error tests in `src/features/error_messages/examples/` with `/// expect-error:`
+4. Compile-error tests via `avra_shell_exec("./build/bs2 compile ...")` from a spec block — assert the F-code in the captured output
 
 ### Phase 5: Documentation
 1. Create `src/features/<name>/grammar.md` describing syntax
@@ -133,7 +133,7 @@ If you discover a missing language feature or infrastructure gap while working, 
 Search bootstrap source for places to use the new feature. Refactor, update seed, `make test`.
 
 ### Phase 7: Commit
-Commit with `feat: <feature> — <what it does>`. Pre-commit hook runs regression + selfhost check. Never `--no-verify`.
+Commit with `feat: <feature> — <what it does>`. Pre-commit hook runs spec test suite + selfhost check. Never `--no-verify`.
 
 ### Anti-Patterns
 - Never skip tests, seed update, resolver, type checker, or registry registration
@@ -272,7 +272,7 @@ Per spec (Axis 20): F-codes are stable identifiers. Ranges: F0001-0999 lexer/par
 8. Always do the right thing. Centralize logic, don't duplicate. Hacks create more hacks.
 9. Fix bugs immediately or record them. Never silently skip.
 10. When adding diagnostics, add to `scripts/diagnose.sh` (centralized), not separate scripts.
-11. When fixing a bug, capture a regression test: `bash scripts/diagnose.sh --regress-add <name> <file.av>`
+11. When fixing a bug, capture a spec test: write a `tests/<scenario>_test.av` with a `then` block that exercises the fixed path.
 12. Be honest about scope. Never say "one more fix." Give real estimates based on data, not optimism.
 13. Do large refactors when necessary. Don't avoid the right fix because it's big.
 14. ALWAYS fix hacks and workarounds before ending a session. No hack survives a commit. If a proper fix requires a seed cycle, do the seed cycle.

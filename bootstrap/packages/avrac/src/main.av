@@ -16,7 +16,7 @@ mod codegen
 mod desugar
 mod cli
 mod coverage
-use cli.{cli_new, cli_add_command, cli_command_add_flag, cli_command_add_option, cli_command_add_arg, cli_parse, result_has_flag, result_get_option, result_get_arg}
+use cli.{cli_new, cli_add_command, cli_command_add_flag, cli_command_add_option, cli_command_add_arg, cli_parse, result_has_flag, result_get_option}
 use coverage.{render_coverage}
 
 use parse.{parse_expression_source, parse_program_source}

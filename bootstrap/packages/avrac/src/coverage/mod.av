@@ -20,8 +20,6 @@
 // fn_counters[entry.fn][entry.id] to get the hit count. Aggregate per
 // function and per module ("foo::bar::baz" → module "foo::bar"). Print
 // a colored table; optionally write LCOV.
-//
-// This is the Avra port of scripts/compiler-coverage-report.py.
 
 use core.runtime.{avra_selfhost_read_file, avra_selfhost_write_file}
 use core.registry.{avra_map_new_cstr, avra_map_set_cstr, avra_map_get_cstr, avra_map_has_cstr}
@@ -565,24 +563,6 @@ fn empty_stats(name: string) -> FnStats {
     }
 }
 
-fn stats_lookup_or_create(stats: FnStatsList, name: string) -> FnStats {
-    match stats {
-        .End -> empty_stats(name)
-        .Node(item, next) -> if item.name == name { item } else { stats_lookup_or_create(next, name) }
-    }
-}
-
-fn stats_replace(stats: FnStatsList, replacement: FnStats) -> FnStatsList {
-    match stats {
-        .End -> FnStatsList.Node(replacement, FnStatsList.End)
-        .Node(item, next) -> if item.name == replacement.name {
-            FnStatsList.Node(replacement, next)
-        } else {
-            FnStatsList.Node(item, stats_replace(next, replacement))
-        }
-    }
-}
-
 fn intset_add(set: IntListSet, value: int) -> IntListSet {
     if intset_has(set, value) { set } else { IntListSet.Node(value, set) }
 }
@@ -601,34 +581,6 @@ fn intset_size(set: IntListSet) -> int {
     }
 }
 
-fn stats_set_entry(stats: FnStatsList, name: string, count: int) -> FnStatsList {
-    let s = stats_lookup_or_create(stats, name)
-    stats_replace(stats, s with { fn_entry_count: count })
-}
-
-fn stats_add_line(stats: FnStatsList, name: string, line: int, count: int) -> FnStatsList {
-    if line <= 0 { return stats }
-    let s = stats_lookup_or_create(stats, name)
-    let new_set = intset_add(s.line_set, line)
-    let new_hit = if count > 0 { intset_add(s.line_hit_set, line) } else { s.line_hit_set }
-    let updated = s with {
-        line_set: new_set,
-        line_hit_set: new_hit,
-        total_lines: intset_size(new_set),
-        hit_lines: intset_size(new_hit),
-    }
-    stats_replace(stats, updated)
-}
-
-fn stats_add_branch(stats: FnStatsList, name: string, count: int) -> FnStatsList {
-    let s = stats_lookup_or_create(stats, name)
-    let updated = s with {
-        total_branches: s.total_branches + 1,
-        hit_branches: if count > 0 { s.hit_branches + 1 } else { s.hit_branches },
-    }
-    stats_replace(stats, updated)
-}
-
 fn decision_add_true(decs: DecisionList, fn_name: string, line: int, branch: int, count: int) -> DecisionList {
     decision_update(decs, fn_name, line, branch, count, 0)
 }
@@ -644,22 +596,6 @@ fn decision_update(decs: DecisionList, fn_name: string, line: int, branch: int, 
             DecisionList.Node(d with { true_count: d.true_count + t_inc, false_count: d.false_count + f_inc }, next)
         } else {
             DecisionList.Node(d, decision_update(next, fn_name, line, branch, t_inc, f_inc))
-        }
-    }
-}
-
-// After all decisions are collected, fold MC/DC stats into per-fn stats.
-// A decision is "covered" iff both true and false outcomes have been observed.
-fn finalize_decisions(stats: FnStatsList, decs: DecisionList) -> FnStatsList {
-    match decs {
-        .End -> stats
-        .Node(d, next) -> {
-            let s = stats_lookup_or_create(stats, d.fn_name)
-            let updated = s with {
-                total_conditions: s.total_conditions + 1,
-                hit_conditions: if d.true_count > 0 && d.false_count > 0 { s.hit_conditions + 1 } else { s.hit_conditions },
-            }
-            finalize_decisions(stats_replace(stats, updated), next)
         }
     }
 }
