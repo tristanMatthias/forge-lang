@@ -546,6 +546,40 @@ fn prepend_test_externs(stmts: StmtList) -> StmtList {
     StmtList.Node(sstmt_dummy(Stmt.ExternFn("avra_test_summary", ParamList.End, ValueType.Int)), s2)
 }
 
+// Outcome of splitting a stmt list into hoistable package modules and
+// the per-test body. Used by the test runner to keep each @std::pkg
+// module unique across the whole program.
+type PackageSplit = {
+    packages: StmtList,
+    body: StmtList,
+}
+
+fn split_package_modules(stmts: StmtList) -> PackageSplit {
+    match stmts {
+        .End -> PackageSplit { packages: StmtList.End, body: StmtList.End }
+        .Node(ss, next) -> {
+            let rest = split_package_modules(next)
+            match ss.node {
+                .Module(name, _) if name.length > 0 && name[0] == "@" -> PackageSplit {
+                    packages: StmtList.Node(ss, rest.packages),
+                    body: rest.body,
+                }
+                _ -> PackageSplit {
+                    packages: rest.packages,
+                    body: StmtList.Node(ss, rest.body),
+                }
+            }
+        }
+    }
+}
+
+fn append_stmt_list(a: StmtList, b: StmtList) -> StmtList {
+    match a {
+        .End -> b
+        .Node(ss, next) -> StmtList.Node(ss, append_stmt_list(next, b))
+    }
+}
+
 
 
 fn main() {
@@ -922,7 +956,16 @@ fn main() {
             // Step 2: Parse each test file as a Module
             // Each file becomes Stmt.Module(name, body) — proper namespacing.
             // Module-level code (spec blocks) executes via __bs_top_level patching.
+            //
+            // @std packages are loaded once and HOISTED to the top level of the
+            // program. Without hoisting, every test file would carry its own
+            // copy of each @std package; the resolver's global index would then
+            // contain N copies of every package-defined type and `item_lookup`
+            // returns the first match, mis-qualifying types and producing
+            // duplicate impl-method names (forge-crafting-intepreters-xks4).
             mut modules = StmtList.End
+            mut packages = StmtList.End
+            mut shared_loaded = LoadedPaths.End
             mut count = 0
             for path in test_files.split("\n") {
                 if path == "" { continue }
@@ -943,17 +986,24 @@ fn main() {
                 }
 
                 // Resolve any `mod foo` stubs against the test file's
-                // directory so sibling .av files are pulled in.
+                // directory so sibling .av files are pulled in. Share
+                // LoadedPaths across tests so each @std package is only
+                // inlined the first time any test imports it.
                 let test_dir = modules_dirname(path)
-                let mod_resolved = resolve_module_files(parsed.stmts!, test_dir, LoadedPaths.End)
+                let mod_resolved = resolve_module_files(parsed.stmts!, test_dir, shared_loaded)
                 if mod_resolved.had_error {
                     eprintln("module resolve error in ${path}: ${mod_resolved.error_message}")
                     continue
                 }
+                shared_loaded = mod_resolved.loaded
 
-                // Wrap as Module — gives each test its own namespace
+                // Hoist @-prefixed package modules out of the test body and
+                // into a single top-level group. Per-test bodies keep `use`
+                // statements, which still resolve against the hoisted modules.
+                let split = split_package_modules(mod_resolved.stmts)
+                packages = append_stmt_list(split.packages, packages)
                 modules = StmtList.Node(
-                    sstmt_dummy(Stmt.Module(mod_name, mod_resolved.stmts)),
+                    sstmt_dummy(Stmt.Module(mod_name, split.body)),
                     modules
                 )
                 count = count + 1
@@ -964,8 +1014,12 @@ fn main() {
                 return
             }
 
-            // Step 3: Build program — externs + modules + main
-            mut program = prepend_test_externs(modules)
+            // Step 3: Build program — externs + packages + modules + main
+            //
+            // Hoisted package modules sit at the program root so the
+            // resolver's module tree contains exactly one copy of each
+            // @std::pkg, regardless of how many tests imported it.
+            mut program = prepend_test_externs(append_stmt_list(packages, modules))
 
             // main() just calls avra_test_summary().
             // Module-level spec blocks run via __bs_top_level (codegen patches main to call it).

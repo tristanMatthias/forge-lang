@@ -626,15 +626,6 @@ export trait Corpus {
 // A corpus that yields no symbols. Useful for spec tests and as a
 // safe default when a higher-level component asks for "all corpora"
 // before any have been registered.
-//
-// NOTE: a concrete `impl Corpus for EmptyCorpus` is intentionally
-// omitted. The bootstrap module resolver mishandles trait impls whose
-// signatures reference the built-in `Result<T, E>` enum when the
-// package is wrapped by an outer test-runner Module wrapper — the
-// resolver mistakenly qualifies `Result` as `@std::lsp::Result` and
-// codegen then fails to find it. Concrete impls live in consumer
-// crates (tickets .3 / .7), which don't trigger the bug. Pure-fn
-/// helpers below give EmptyCorpus the same surface without the impl.
 export type EmptyCorpus = {
     label: string
 }
@@ -643,16 +634,10 @@ export fn empty_corpus_new() -> EmptyCorpus {
     EmptyCorpus { label: "empty" }
 }
 
-export fn empty_corpus_id(c: EmptyCorpus) -> string {
-    c.label
-}
-
-export fn empty_corpus_description(c: EmptyCorpus) -> string {
-    "yields no symbols (placeholder for tests)"
-}
-
-export fn empty_corpus_extract(c: EmptyCorpus) -> SymList {
-    SymList.End
+impl Corpus for EmptyCorpus {
+    fn id(self) -> string { self.label }
+    fn description(self) -> string { "yields no symbols (placeholder for tests)" }
+    fn extract(self) -> Result<SymList, IoError> { Result.Ok(SymList.End) }
 }
 
 // build_graph(corpora) lives with the unified --scope CLI (epic

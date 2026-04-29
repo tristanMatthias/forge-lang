@@ -5,8 +5,7 @@ use @std.lsp.{lsp_pos,
               graph_by_id, graph_by_name, graph_by_qualified,
               graph_children, graph_all,
               sym_id_for, sym_new,
-              empty_corpus_new, empty_corpus_id, empty_corpus_description,
-              empty_corpus_extract}
+              empty_corpus_new}
 
 fn lsp_test_span() -> LspSpan {
     LspSpan { start: lsp_pos(1, 1), end: lsp_pos(1, 10) }
@@ -73,18 +72,21 @@ spec "std-lsp graph: queries over a hand-built graph" {
     }
 }
 
-spec "std-lsp corpus: EmptyCorpus" {
+spec "std-lsp corpus: EmptyCorpus via Corpus trait" {
     given "an EmptyCorpus" {
         then "advertises a stable id" {
-            empty_corpus_id(empty_corpus_new()) == "empty"
+            empty_corpus_new().id() == "empty"
         }
         then "describes itself" {
-            empty_corpus_description(empty_corpus_new()) != ""
+            empty_corpus_new().description() != ""
         }
         then "yields no symbols" {
-            match empty_corpus_extract(empty_corpus_new()) {
-                .End -> true
-                _ -> false
+            match empty_corpus_new().extract() {
+                .Ok(syms) -> match syms {
+                    .End -> true
+                    _ -> false
+                }
+                .Err(_) -> false
             }
         }
     }

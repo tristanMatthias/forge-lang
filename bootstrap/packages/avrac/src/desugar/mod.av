@@ -7,12 +7,60 @@
 // Component expansion is a SEPARATE pass that runs before desugar.
 // See features/component_decl/expand.av.
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, FieldList, FieldInitList, MatchArmList, WhenArmList, PatternList, ParamList, Pattern, BinOp, UnOp, ValueType}
+use core.ast.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_dummy, stmt_unwrap, FieldList, FieldInitList, MatchArmList, WhenArmList, PatternList, ParamList, Pattern, BinOp, UnOp, ValueType, VariantList, TypeParamList}
 
 // ── Public API ──
 
 export fn desugar_program(stmts: StmtList) -> StmtList {
-    desugar_stmt_list(stmts)
+    desugar_stmt_list(inject_intrinsics(stmts))
+}
+
+// ── Intrinsic injection ──
+// Result<T, E> ships with the language but isn't auto-loaded like a
+// stdlib module. Self-compiling the bootstrap finds it via
+// `features/error_propagation/mod.av`; user programs (and the test
+// runner that wraps test files in Modules) wouldn't otherwise see it,
+// so we synthesize the declaration when missing.
+//
+// This also fixes forge-crafting-intepreters-xks4: a trait impl
+// returning Result inside a Module-wrapped @std package mis-qualifies
+// `Result` as `<wrap>::@std::<pkg>::Result` because the resolver can't
+// find Result in any module's items. Injecting it at the top level
+// (outside any Module) puts it in the global index and the resolver
+// keeps it bare.
+
+fn inject_intrinsics(stmts: StmtList) -> StmtList {
+    if program_declares_enum(stmts, "Result") { return stmts }
+    StmtList.Node(sstmt_dummy(synthesize_result_enum()), stmts)
+}
+
+fn synthesize_result_enum() -> Stmt {
+    let t = ValueType.Struct("T", 0)
+    let e = ValueType.Struct("E", 0)
+    let ok_fields = FieldList.Node("value", t, FieldList.End)
+    let err_fields = FieldList.Node("error", e, FieldList.End)
+    let variants = VariantList.Node(
+        "Ok", ok_fields,
+        VariantList.Node("Err", err_fields, VariantList.End)
+    )
+    let type_params = TypeParamList.Node(
+        "T", "",
+        TypeParamList.Node("E", "", TypeParamList.End)
+    )
+    Stmt.EnumDecl("Result", type_params, variants)
+}
+
+fn program_declares_enum(stmts: StmtList, target: string) -> bool {
+    match stmts {
+        .End -> false
+        .Node(ss, next) -> {
+            match stmt_unwrap(ss.node) {
+                .EnumDecl(name, _, _) if name == target -> true
+                .Module(_, body) if program_declares_enum(body, target) -> true
+                _ -> program_declares_enum(next, target)
+            }
+        }
+    }
 }
 
 // ── Statement desugaring ──

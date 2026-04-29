@@ -448,7 +448,13 @@ export fn resolve_names(stmts: StmtList) -> NameResolveResult {
     // Pass 1: Build module tree and qualify names
     let tree = build_module_tree(stmts, "", ModuleNode.End)
     let use_result = resolve_use_aliases(stmts, tree)
-    let global_index = build_global_index(tree, ModuleItem.End)
+    // Top-level items (declared outside any Module) need to be in the
+    // global index so that references from inside Module-wrapped bodies
+    // can find them. Without this, the resolver mis-qualifies bare names
+    // like `Result` as `<wrap_module>::Result` (forge-crafting-intepreters-xks4).
+    let module_items = build_global_index(tree, ModuleItem.End)
+    let top_level_items = collect_module_items(stmts, "")
+    let global_index = append_items(top_level_items, module_items)
     let reg = type_registry_new()
     let ctx = NameCtx { tree, aliases: use_result.aliases, current_module: "", locals: LocalScope.End, global_index, type_reg: reg }
     let rewritten = rewrite_stmt_list(ctx, stmts)
