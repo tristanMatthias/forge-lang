@@ -6,20 +6,32 @@ use core.ast.{FieldList, VariantList, ValueType, TypeList}
 use core.registry.{avra_intmap_new, avra_intmap_set, avra_intmap_get, avra_intmap_has, avra_map_new_cstr, avra_map_set_cstr, avra_map_get_cstr, avra_map_has_cstr}
 use core.runtime.{avra_intmap_inc, avra_intmap_get_as_string}
 
-// ── TypeKind ──
-
+/// Categorical kind for a registered type — drives codegen layout
+/// decisions (struct vs enum tagged-union, newtype passthrough, etc.).
 export enum TypeKind {
+    /// Nominal record: `type Foo = { a: int, b: string }`.
     StructKind,
+    /// Sum type with named variants and optional payloads.
     EnumKind,
+    /// Trait declaration — interface for `impl Trait for Type`.
     TraitKind,
+    /// Wrapper around a single inner type: `type UserId = UUID`.
     NewtypeKind,
+    /// Union type alias: `type Json = string | int | bool`.
     UnionAliasKind,
+    /// Structural shape: width-subtyping record, no nominal identity.
     ShapeKind,
 }
 
-// ── TypeInfo ──
-// All information about a registered type, keyed by TypeId.
-
+/// Everything the compiler needs to know about a registered type,
+/// looked up by integer TypeId. Allocated once per type, cached in
+/// the TypeRegistry's info_map.
+/// @field id        — unique integer identity, stable for a build.
+/// @field name      — fully-qualified canonical name.
+/// @field kind      — TypeKind discriminant.
+/// @field fields    — populated for StructKind / ShapeKind.
+/// @field variants  — populated for EnumKind.
+/// @field inner_vt  — populated for NewtypeKind / UnionAliasKind.
 export type TypeInfo = {
     id: int,
     name: string,
@@ -29,16 +41,23 @@ export type TypeInfo = {
     inner_vt: ValueType,
 }
 
-// ── TypeRegistry ──
-// The single source of truth for type identity.
-
+/// Single source of truth for type identity. Replaces the historic
+/// "string-name everywhere" approach with O(1) integer ids and
+/// constant-time name ↔ id lookups. Pass-by-value (the maps are
+/// pointers — copying TypeRegistry shares the underlying tables).
+/// @field info_map   — intmap: id → TypeInfo ptr (key 0 holds the
+///                     next-id counter).
+/// @field name_to_id — string-keyed map: qualified name → id.
+/// @field id_to_name — intmap: id → name string ptr.
 export type TypeRegistry = {
-    info_map: ptr,      // intmap: id → TypeInfo ptr (key 0 = next_id counter)
-    name_to_id: ptr,    // map_cstr: qualified_name → id
-    id_to_name: ptr,    // intmap: id → name (string ptr as int)
+    info_map: ptr,
+    name_to_id: ptr,
+    id_to_name: ptr,
 }
 
 
+/// Construct an empty registry. The id counter starts at 1 — id 0 is
+/// reserved as the "no such type" sentinel returned by lookups.
 export fn type_registry_new() -> TypeRegistry {
     let m = avra_intmap_new()
     avra_intmap_set(m, 0, 1)
@@ -49,7 +68,11 @@ export fn type_registry_new() -> TypeRegistry {
     }
 }
 
-// Register a new type. Returns the assigned TypeId.
+/// Register a type. Idempotent — re-registering an existing name
+/// returns the original id without reallocating the TypeInfo. Also
+/// indexes the unqualified short name (`Foo` for `module::Foo`) when
+/// the short form is unambiguous.
+/// @returns the assigned TypeId, or the existing id on duplicate.
 export fn type_registry_register(reg: TypeRegistry, name: string, kind: TypeKind, fields: FieldList, variants: VariantList, inner_vt: ValueType) -> int {
     // If already registered, return existing id
     if avra_map_has_cstr(reg.name_to_id, name) == 1 {
@@ -79,104 +102,132 @@ export fn type_registry_register(reg: TypeRegistry, name: string, kind: TypeKind
     id
 }
 
-// Look up type info by id. Returns the raw intmap value (TypeInfo pointer as int).
-// Returns 0 if not found. Callers cast to TypeInfo.
+/// Look up the raw TypeInfo pointer (as int) for a given id. Returns
+/// 0 if not found. Callers cast back to TypeInfo — the raw form
+/// keeps the registry layer free of TypeInfo dependencies in C-side
+/// helpers.
 export fn type_registry_lookup_raw(reg: TypeRegistry, id: int) -> int {
     if id == 0 { return 0 }
     if avra_intmap_has(reg.info_map, id) == 0 { return 0 }
     avra_intmap_get(reg.info_map, id)
 }
 
-// Look up a type id by name. Returns 0 if not found.
+/// Resolve a type name to its TypeId. Returns 0 when the name has
+/// not been registered (lets callers branch on the sentinel without
+/// pattern-matching on Option).
 export fn type_registry_id_for(reg: TypeRegistry, name: string) -> int {
     if avra_map_has_cstr(reg.name_to_id, name) == 0 { return 0 }
     avra_map_get_cstr(reg.name_to_id, name)
 }
 
-// Check if a type id is registered.
+/// True iff `id` corresponds to a registered type. Cheap O(1) probe;
+/// use this before treating a non-zero id as valid.
 export fn type_registry_has(reg: TypeRegistry, id: int) -> bool {
     id > 0 && avra_intmap_has(reg.info_map, id) == 1
 }
 
 
-// Look up the canonical name for a TypeId. Returns "" if not found.
+/// Reverse lookup: TypeId → canonical name. Returns "" for unknown
+/// ids; the empty string acts as a sentinel paralleling 0 from
+/// `type_registry_id_for`.
 export fn type_registry_name_for(reg: TypeRegistry, id: int) -> string {
     if id == 0 { return "" }
     if avra_intmap_has(reg.id_to_name, id) == 0 { return "" }
     avra_intmap_get_as_string(reg.id_to_name, id)
 }
 
-// Check if a name is registered.
+/// True iff the given name has been registered. Equivalent to
+/// `type_registry_id_for(reg, name) != 0` but skips the integer
+/// fetch when the caller only needs presence.
 export fn type_registry_has_name(reg: TypeRegistry, name: string) -> bool {
     avra_map_has_cstr(reg.name_to_id, name) == 1
 }
 
 // ── Centralized name generation ──
-// The ONLY functions that produce :: or __ in type/method names.
-// If the naming convention ever changes, there's exactly one place to update.
+//
+// The ONLY functions that produce `::` or `__` in type / method
+// names. Single point of change if the naming convention ever moves.
 
-// Module-qualified type name: "codegen::types::Ctx"
+/// Build a module-qualified name. Empty module returns `name` bare —
+/// used by passes that may emit either top-level or nested decls.
+/// Example: `("codegen::types", "Ctx") → "codegen::types::Ctx"`.
 export fn type_qualified_name(module: string, name: string) -> string {
     if module == "" { name } else { "${module}::${name}" }
 }
 
-// Method mangling: "Point__distance"
+/// Mangle a method into its dispatch symbol. Example:
+/// `("Point", "distance") → "Point__distance"`. The double underscore
+/// avoids collisions with user identifiers (Avra forbids `__` in
+/// hand-written names per spec Axis 28).
 export fn method_mangled_name(type_name: string, method: string) -> string {
     "${type_name}__${method}"
 }
 
-// Variant payload struct name: "Option__Some"
+/// Build the payload struct name for an enum variant. Example:
+/// `("Option", "Some") → "Option__Some"`. Each variant with a payload
+/// gets its own struct in codegen so GEPs are statically typed.
 export fn variant_payload_name(enum_name: string, variant: string) -> string {
     "${enum_name}__${variant}"
 }
 
-// Join two name segments with __: "Result__int__string"
-// Used by the monomorphizer for generic type mangling.
+/// Join two name segments with `__`. Used by the monomorphizer for
+/// generic type mangling: `("Result", "int__string")` →
+/// `"Result__int__string"`.
 export fn mangle_join(a: string, b: string) -> string {
     "${a}__${b}"
 }
 
-// Extract the short name from a qualified name: "codegen::types::Ctx" → "Ctx"
+/// Strip the module prefix from a qualified name. Returns the input
+/// unchanged when no `::` is present.
+/// Example: `"codegen::types::Ctx" → "Ctx"`.
 export fn type_short_name(name: string) -> string {
     if !name.contains("::") { return name }
     let parts = name.split("::")
     parts[parts.length - 1]
 }
 
-// Check if a name is a method mangled name (contains __)
+/// Heuristic: a name is method-mangled if it contains `__`. Cheap;
+/// false positives are impossible because user identifiers can't
+/// contain `__` (spec Axis 28).
 export fn is_mangled_method(name: string) -> bool {
     name.contains("__")
 }
 
-// Extract method name from mangled: "Type__method" → "method"
+/// Extract the method portion of a mangled name.
+/// Example: `"Type__method" → "method"`. Returns `name` unchanged
+/// when not mangled (no `__`).
 export fn method_from_mangled(name: string) -> string {
     let parts = name.split("__")
     if parts.length > 1 { parts[1] } else { name }
 }
 
-// Trait impl key: "Printable:Cat"
+/// Build the registry key for a trait impl: `"Trait:Type"`. Single
+/// `:` (not `::`) to keep impl entries distinct from qualified type
+/// names in the same lookup tables.
 export fn trait_impl_name(trait_name: string, type_name: string) -> string {
     "${trait_name}:${type_name}"
 }
 
-// True when `name` refers to the Result enum, accepting any of:
-//   "Result"                       — unqualified, non-monomorphized
-//   "Result__int__string"          — unqualified, monomorphized
-//   "<module>::Result"             — qualified, non-monomorphized
-//   "<module>::Result__int__string" — qualified, monomorphized
-// Used by `?` operator codegen and Try expression typecheck so that
-// any Result-shaped enum (regardless of module wrap) is recognized.
-//
-// For user-defined Result-shaped enums (e.g. `enum MyResult { Ok(value: T), Err(error: E) }`),
-// callers should use `is_result_shaped_enum` against the type registry.
+/// True when `name` refers to the built-in Result enum, accepting any
+/// of these shapes:
+///   - `"Result"`                       — unqualified, non-mono
+///   - `"Result__int__string"`          — unqualified, monomorphized
+///   - `"<module>::Result"`             — qualified, non-mono
+///   - `"<module>::Result__int__string"` — qualified, monomorphized
+/// Used by `?` operator codegen and Try-expression typecheck so any
+/// Result-shaped enum (regardless of module wrap) is recognised.
+///
+/// For user-defined Result-shaped enums (`enum MyResult { Ok, Err }`),
+/// use `is_result_shaped_enum` against the type registry instead.
 export fn is_result_enum_name(name: string) -> bool {
     let short = type_short_name(name)
     short == "Result" || short.starts_with("Result__")
 }
 
-// Structural check: an enum is Result-shaped when it has exactly the variants
-// `Ok(value)` and `Err(error)` (any payload types). This lets the `?` operator
-// and errdefer routing accept user-defined Result-likes (MyResult, TrResult, etc.).
+/// Structural check: an enum is Result-shaped when it has both an
+/// `Ok` and an `Err` variant (payload types ignored). This lets the
+/// `?` operator and errdefer routing accept user-defined Result-likes
+/// (MyResult, TrResult, etc.) without naming convention coupling.
 export fn is_result_shaped_enum(reg: TypeRegistry, enum_name: string) -> bool {
     if is_result_enum_name(enum_name) { return true }
     let id = type_registry_id_for(reg, enum_name)

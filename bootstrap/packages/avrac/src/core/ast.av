@@ -3,82 +3,122 @@
 // all logic (parsing, resolution, codegen) lives elsewhere.
 
 // ── Spanned wrappers ──
-// Phase A: types + helpers added, containers NOT yet changed.
-// Phase B (after seed update): containers use SExpr/SStmt.
+//
+// Every Expr / Stmt in the AST is wrapped in a span carrier so error
+// messages and the LSP can point at the originating source range
+// without an out-of-band side-table. Carriers also park the inferred
+// ValueType (SExpr only) so passes can read types without a separate
+// annotation layer.
+
+/// Spanned expression. `line`/`col` are 1-based source coordinates;
+/// `ty` is the inferred ValueType (Unknown until typecheck runs).
 export type SExpr = { node: Expr, line: int, col: int, ty: ValueType }
+
+/// Spanned statement. Mirrors SExpr but without the cached type —
+/// statements have no result value to track.
 export type SStmt = { node: Stmt, line: int, col: int }
+
+/// Build an SExpr at a known source position. Type field defaults to
+/// Unknown — typecheck fills it in.
 export fn sexpr(e: Expr, line: int, col: int) -> SExpr { SExpr { node: e, line, col, ty: ValueType.Unknown } }
+
+/// Build an SExpr with no source position. Used by passes that
+/// synthesise nodes (desugar, monomorphizer) where line/col would be
+/// misleading.
 export fn sexpr_dummy(e: Expr) -> SExpr { SExpr { node: e, line: 0, col: 0, ty: ValueType.Unknown } }
+
+/// Build a fully-annotated SExpr. Used by the typechecker to attach
+/// a known type without mutating the existing wrapper.
 export fn sexpr_typed(e: Expr, line: int, col: int, ty: ValueType) -> SExpr { SExpr { node: e, line, col, ty } }
+
+/// Build an SStmt at a known source position.
 export fn sstmt(s: Stmt, line: int, col: int) -> SStmt { SStmt { node: s, line, col } }
+
+/// Build an SStmt with no source position. Same caveats as
+/// `sexpr_dummy` — synthesised nodes only.
 export fn sstmt_dummy(s: Stmt) -> SStmt { SStmt { node: s, line: 0, col: 0 } }
 
+/// Linked list of expressions. Used for call args, list literals,
+/// and any other comma-separated expression sequence.
 export enum ExprList {
     End
     Node(expr: SExpr, next: ExprList)
 }
 
+/// Function parameter list. Each param carries its resolved
+/// ValueType — populated by the resolver, used by typecheck and
+/// codegen for arity and ABI matching.
 export enum ParamList {
     End
     Node(name: string, resolved: ValueType, next: ParamList)
 }
 
-// Struct field declaration list — used in `type Foo = { f1: i64, f2: str }`.
+/// Struct field declaration list — used in `type Foo = { f1: int, f2: string }`.
 export enum FieldList {
     End
     Node(name: string, resolved: ValueType, next: FieldList)
 }
 
-// Field initializer list — used in `Foo { f1: 1, f2: "hi" }`.
+/// Field initializer list — used in literal construction like
+/// `Foo { f1: 1, f2: "hi" }`.
 export enum FieldInitList {
     End
     Node(name: string, value: SExpr, next: FieldInitList)
 }
 
-// Variant of an enum declaration. Each variant has zero or more
-// payload fields. Field types are tracked as textual tags ("i64"/"str")
-// like everywhere else in the MVP.
+/// Variant of an enum declaration. Each variant has zero or more
+/// payload fields, stored as a FieldList so the same renderer works
+/// for both struct fields and variant payloads.
 export enum VariantList {
     End
     Node(name: string, fields: FieldList, next: VariantList)
 }
 
-// Recursive pattern list for nested pattern matching.
+/// Recursive pattern list for nested pattern matching:
+/// `match v { .Some(.Ok(x)) -> ... }` builds nested NestedVariant
+/// patterns whose sub-patterns live in this list.
 export enum PatternList {
     End
     Node(pattern: Pattern, next: PatternList)
 }
 
-// Pattern in a match arm.
-//   .Variant            → no payload binding
-//   .Variant(a, b)      → bind payload positionally to `a`, `b`
-//   _                   → wildcard
-//   "string" / 42 / true / false → literal match
-//   .Variant(.Inner(x)) → nested destructure (NestedVariant)
-//   int(n) / string(s)  → union type pattern (binds the unwrapped value)
+/// Pattern in a match arm. Used by `match`, `when`, and destructuring
+/// `let (a, b) = tuple`.
 export enum Pattern {
+    /// `_` — matches anything, binds nothing.
     Wildcard
+    /// `.Variant(a, b)` — positional payload bindings into `bindings`.
+    /// Bare `.Variant` (no payload) shows up here with empty bindings.
     Variant(name: string, bindings: ParamList)
+    /// String literal pattern: `"hello" -> ...`.
     LitString(value: string)
+    /// Integer literal pattern: `42 -> ...`.
     LitInt(value: int)
+    /// Boolean literal pattern: `true -> ...` / `false -> ...`.
     LitBool(value: int)
+    /// Float literal pattern (stored as string to preserve precision).
     LitFloat(value: string)
+    /// Nested destructure: `.Some(.Ok(x))` — sub-patterns recurse.
     NestedVariant(name: string, sub_patterns: PatternList)
+    /// Or-pattern: `.Red | .Green | .Blue -> ...`.
     Or(left: Pattern, right: Pattern)
+    /// Union-type pattern: `int(n)` matches the int branch of a
+    /// union-typed subject and binds the unwrapped value to `binding`.
     TypePattern(type_name: string, binding: string)
 }
 
-// Arms of a match expression/statement, terminated by `End`.
-// Body is an Expr — single-expression arms are common, and a brace
-// block is itself an Expr.Block.
+/// Arms of a match expression / statement, terminated by `End`. Body
+/// is an SExpr — single-expression arms are common, and a brace
+/// block is itself an `Expr.Block`. Optional `guard` adds an `if`
+/// condition that must hold for the arm to fire.
 export enum MatchArmList {
     End
     Node(pattern: Pattern, guard: SExpr?, body: SExpr, next: MatchArmList)
 }
 
-// ── Type parameter list ──
-// Used on generic declarations: fn foo<T, U: Display>(...).
-// `bounds` is "" for unconstrained, or a trait name for bounded params.
+/// Type parameter list — used on generic declarations
+/// (`fn foo<T, U: Display>(...)`). `bounds` is `""` for unconstrained
+/// params, or a trait name for bounded params.
 export enum TypeParamList {
     End
     Node(name: string, bounds: string, next: TypeParamList)
@@ -103,55 +143,107 @@ export fn render_type_param_list(params: TypeParamList) -> string {
     }
 }
 
-// Explicit type arguments at call sites: identity::<int, string>(x)
+/// Explicit type arguments at call sites: `identity::<int, string>(x)`
+/// — used by GenericCall to pin generic type parameters.
 export enum TypeNameList {
     End
     Node(name: string, next: TypeNameList)
 }
 
 // ── Value types ──
+//
 // Every compiled value carries a ValueType that tells codegen how
-// to dispatch operations. No more string tags or CSV parsing.
+// to dispatch operations. The string-tag-everywhere model has been
+// retired — ValueType is the single source of truth.
 
+/// Linked list of ValueType. Used for tuple element types, generic
+/// type args, and union member types.
 export enum TypeList {
     End,
     Node(ty: ValueType, next: TypeList),
 }
 
+/// The compiler's central type representation. Every Sym, every Expr
+/// carries one of these; codegen dispatches on the variant to pick
+/// the LLVM type and ABI. New variants here also need a row in
+/// `llvm_type_for_full` and an arm in `vtype_display`.
 export enum ValueType {
+    /// `int` — i64 in LLVM.
     Int,
+    /// `string` — heap-allocated, ptr in LLVM.
     Str,
+    /// `bool` — i1 in LLVM (1 byte storage).
     Bool,
+    /// Opaque pointer — used for FFI and runtime handles.
     Ptr,
+    /// Nominal struct: `name` is fully qualified, `id` is the
+    /// TypeRegistry id (0 before resolve runs).
     Struct(name: string, id: int),
+    /// Enum (sum type). `type_args` populated for generic instances
+    /// (`Result<int, string>` carries Int + Str in type_args).
     Enum(name: string, type_args: TypeList, id: int),
+    /// Anonymous tuple: `(int, string, bool)`.
     Tuple(elements: TypeList),
+    /// Homogeneous list. `elem` is the element type.
     List(elem: ValueType),
+    /// String-keyed map. Element type pinned by usage / inference.
     Map,
+    /// Function value. `ret` is the return type — params are
+    /// elided pre-typecheck and resolved into `FnTyped`.
     Fn(ret: ValueType),
+    /// Closure value with captured environment. `num_captures` is
+    /// the count of captured locals; codegen sizes the env struct
+    /// from this.
     Closure(num_captures: int, ret: ValueType),
+    /// `void` — fn-without-return-type tag.
     Void,
+    /// `float` — double in LLVM.
     Float,
+    /// Function type with full param + return signature. Resolver
+    /// upgrades plain `Fn(ret)` into this once arity / param types
+    /// are known.
     FnTyped(params: TypeList, ret: ValueType),
+    /// Trait reference: `dyn Printable` etc. `id` is the TypeRegistry id.
     Trait(name: string, id: int),
+    /// Union type: `int | string | bool`. `types` is the list of
+    /// alternatives.
     Union(types: TypeList),
+    /// Newtype wrapper. `inner` is the wrapped type — codegen passes
+    /// it through, but typecheck enforces nominal distinction.
     Newtype(name: string, inner: ValueType, id: int),
+    /// Flow-narrowed enum: after `if x is .Some`, the `then` branch
+    /// sees `x` typed as NarrowedEnum so payload field accesses don't
+    /// need an explicit destructure.
     NarrowedEnum(enum_name: string, variant_name: string, id: int),
+    /// Type not yet resolved. Default for fresh AST nodes; typecheck
+    /// replaces these with concrete variants.
     Unknown,
+    /// Task / future type from `spawn`: `result_ty` is what the task
+    /// resolves to when awaited.
     Task(result_ty: ValueType),
 }
 
-// TypeExpr — structured type annotation replacing string-based types.
+/// Structured type annotation as written in source. Pre-resolution
+/// representation — the resolver lowers TypeExpr to ValueType once
+/// names are bound. Replaces the historic string-based type tags.
 export enum TypeExpr {
+    /// Bare named type: `int`, `Foo`, `T`.
     Named(name: string)
+    /// Implicit type — `_` placeholder or a missing annotation.
     Infer
+    /// Pipe-union: `int | string`.
     Union(left: TypeExpr, right: TypeExpr)
+    /// Nullable: `T?`.
     Optional(inner: TypeExpr)
+    /// Function type: `fn(int, string) -> bool`.
     FnType(params: TypeExprList, ret: TypeExpr)
+    /// List type: `[T]` / `List<T>`.
     ListType(elem: TypeExpr)
+    /// Generic instantiation: `Result<int, IoError>`.
     Generic(base: string, args: TypeExprList)
 }
 
+/// Linked list of TypeExpr — used for generic args, fn params, etc.
 export enum TypeExprList {
     End
     Node(ty: TypeExpr, next: TypeExprList)
@@ -258,6 +350,11 @@ fn last_seg(s: string) -> string {
     parts[parts.length - 1]
 }
 
+/// Strict ValueType equality. Two types are equal when they have
+/// the same shape AND the same identity for nominal kinds (matched
+/// by TypeRegistry id when both are non-zero, else by name string).
+/// Use `vtype_assignable` for the broader "can A be passed where B
+/// is expected" check.
 export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
     match a {
         .Int -> b is .Int
@@ -297,9 +394,10 @@ fn type_lists_eq(a: TypeList, b: TypeList) -> bool {
     }
 }
 
-// Check if a value of type `src` can be assigned to a target of type `dst`.
-// This is broader than vtype_eq: a concrete type is assignable to a union
-// that contains it.
+/// Subtype check: can a `src`-typed value be passed where a `dst`
+/// is expected? Broader than `vtype_eq` — a concrete type is
+/// assignable to any Union containing it, and a NarrowedEnum is
+/// assignable back to its underlying Enum.
 export fn vtype_assignable(src: ValueType, dst: ValueType) -> bool {
     if vtype_eq(src, dst) { return true }
     // NarrowedEnum is assignable to its base Enum
@@ -319,48 +417,67 @@ fn narrowed_assignable_to(src: ValueType, dst: ValueType) -> bool {
     false
 }
 
+/// True iff `t` is the unresolved-type sentinel.
 export fn vtype_is_unknown(t: ValueType) -> bool { t is .Unknown }
 
+/// True iff `t` is the `string` type.
 export fn vtype_is_str(t: ValueType) -> bool { t is .Str }
 
+/// True iff `t` is a `List<…>`.
 export fn vtype_is_list(t: ValueType) -> bool { t is .List }
 
+/// Extract the element type of a List, or Unknown for non-List.
 export fn vtype_list_elem(t: ValueType) -> ValueType {
     match t { .List(e) -> e, _ -> ValueType.Unknown }
 }
 
+/// True iff `t` is a `Map`.
 export fn vtype_is_map(t: ValueType) -> bool { t is .Map }
 
+/// True iff `t` is any callable shape — Fn, Closure, or FnTyped.
 export fn vtype_is_fn(t: ValueType) -> bool {
     match t { .Fn(_) -> true, .Closure(_, _) -> true, .FnTyped(_, _) -> true, _ -> false }
 }
 
+/// Return type of a callable, or Unknown for non-callable.
 export fn vtype_fn_ret(t: ValueType) -> ValueType {
     match t { .Fn(r) -> r, .Closure(_, r) -> r, .FnTyped(_, r) -> r, _ -> ValueType.Unknown }
 }
 
+/// Parameter list for a fully-typed callable. `Fn(ret)` (params not
+/// yet resolved) returns an empty list.
 export fn vtype_fn_params(t: ValueType) -> TypeList {
     match t { .FnTyped(p, _) -> p, _ -> TypeList.End }
 }
 
+/// Number of captured locals for a Closure, 0 otherwise. Codegen
+/// uses this to size the env struct.
 export fn vtype_closure_captures(t: ValueType) -> int {
     match t { .Closure(n, _) -> n, _ -> 0 }
 }
 
+/// True iff `t` is a Closure (carries captures, distinct from Fn).
 export fn vtype_is_closure(t: ValueType) -> bool { t is .Closure }
 
+/// Name of a Struct type, or "" for non-Struct. Cheap accessor used
+/// pervasively by codegen for GEPs.
 export fn vtype_struct_name(t: ValueType) -> string {
     match t { .Struct(n, _) -> n, _ -> "" }
 }
 
+/// Name of an Enum (or its NarrowedEnum form), or "" otherwise.
 export fn vtype_enum_name(t: ValueType) -> string {
     match t { .Enum(n, _, _) -> n, .NarrowedEnum(n, _, _) -> n, _ -> "" }
 }
 
+/// Variant name pinned by a NarrowedEnum, or "" otherwise.
 export fn vtype_narrowed_variant(t: ValueType) -> string {
     match t { .NarrowedEnum(_, v, _) -> v, _ -> "" }
 }
 
+/// Render a ValueType for human-facing output (diagnostics, hover).
+/// Concise — compound types abbreviate to e.g. `(tuple)`. For full
+/// structural rendering, use `vtype_render_full`.
 export fn vtype_display(t: ValueType) -> string {
     match t {
         .Int -> "int"
@@ -399,9 +516,10 @@ fn render_union_display(tl: TypeList) -> string {
     }
 }
 
-// Renders a ValueType as a full type string suitable for mono.av.
-// Unlike vtype_display which returns just the base name for enums,
-// this includes generic type arguments: Result<int, string>.
+/// Render a ValueType including generic type arguments — e.g.
+/// `Result<int, string>` rather than `Result`. Used by the
+/// monomorphizer for symbol mangling and by docs --gen for accurate
+/// signature reproduction.
 export fn vtype_render_full(t: ValueType) -> string {
     match t {
         .Int -> "int"
@@ -569,16 +687,25 @@ fn typelist_at(list: TypeList, idx: int) -> ValueType {
 
 // ── Operators ──
 
+/// Binary operators that appear in `Expr.Binary(left, op, right)`.
+/// Renderer + codegen dispatch on this discriminant; `binop_str`
+/// gives the source token. Logical short-circuit ops live in LogicOp,
+/// not here, because they need lazy evaluation.
 export enum BinOp {
     Add, Sub, Mul, Div, Mod,
     Eq, Ne, Lt, Le, Gt, Ge,
     BitAnd, BitOr, BitXor, Shl, Shr,
 }
 
+/// Unary prefix operators in `Expr.Unary(op, right)`. `Not` is
+/// logical negation (`!`); `BitNot` is bitwise (`~`).
 export enum UnOp {
     Neg, Not, BitNot,
 }
 
+/// Short-circuit logical operators. Distinct from BinOp because the
+/// RHS is conditionally evaluated at runtime — codegen emits a
+/// branch instead of an arithmetic op.
 export enum LogicOp {
     And, Or,
 }
@@ -619,132 +746,231 @@ export fn logicop_str(op: LogicOp) -> string {
     }
 }
 
+/// Avra expression AST. Every value-producing source construct lowers
+/// to one of these variants. Adding a new variant requires touching
+/// every walker (resolver, typecheck, mono, codegen, render) — see
+/// the existing match arms for the pattern.
 export enum Expr {
+    /// Integer literal (text form, parsed lazily by codegen).
     Number(value: string)
+    /// String literal — `value` includes the surrounding quotes so
+    /// the renderer can round-trip without re-quoting.
     String(value: string)
+    /// Boolean literal: `"true"` or `"false"` (text for renderer).
     Bool(value: string)
+    /// `null` keyword.
     Null
+    /// Identifier reference. Resolver replaces with QualifiedIdent
+    /// when the name resolves to a top-level / module-qualified item.
     Ident(name: string)
+    /// `name = value` reassignment. Only valid for `mut` bindings.
     Assign(name: string, value: Expr)
+    /// `(expr)` — preserves source parenthesisation for renderer.
     Grouping(expr: Expr)
+    /// Prefix unary: `!x`, `-x`, `~x`.
     Unary(op: UnOp, right: Expr)
+    /// Binary infix: `a + b`, `x == y`, `a & b`.
     Binary(left: Expr, op: BinOp, right: Expr)
+    /// Short-circuit logical: `a && b`, `a || b`.
     Logical(left: Expr, op: LogicOp, right: Expr)
+    /// Function call: `f(a, b)`.
     Call(callee: Expr, args: ExprList)
-    // Call with explicit type arguments: f::<int, string>(x, y)
+    /// Call with explicit type arguments: `f::<int, string>(x, y)`.
     GenericCall(callee: Expr, type_args: TypeNameList, args: ExprList)
+    /// Struct literal: `Foo { x: 1, y: 2 }`.
     StructLit(name: string, inits: FieldInitList)
+    /// Field access: `obj.field`.
     FieldAccess(obj: Expr, field: string)
+    /// Enum constructor with payload: `Color.Red(255)` or `.Some(x)`.
     EnumCtor(type_name: string, variant: string, args: ExprList)
+    /// Index access: `list[i]` / `map["key"]`.
     Index(obj: Expr, idx: Expr)
+    /// Block expression — value is the last statement's value.
     Block(body: StmtList)
+    /// `match subject { arms }` — match used as an expression.
     MatchExpr(subject: Expr, arms: MatchArmList)
+    /// Field reassignment: `obj.field = value`.
     FieldAssign(obj: Expr, field: string, value: Expr)
+    /// Ternary-like `if cond { then } else { else_branch }` as an expr.
     IfExpr(condition: Expr, then_branch: Expr, else_branch: Expr)
+    /// Null coalesce: `a ?? default`.
     NullCoalesce(left: Expr, right: Expr)
+    /// Optional chain: `obj?.field` — null obj passes through, no
+    /// deref on null.
     OptionalChain(obj: Expr, field: string)
+    /// Error / null propagate: `expr?` — bails the enclosing fn early
+    /// if `expr` is Err / null.
     Try(expr: Expr)
+    /// Tuple literal: `(a, b, c)`.
     Tuple(elements: ExprList)
+    /// Tuple index: `t.0`, `t.1`.
     TupleIndex(obj: Expr, index: int)
+    /// Functional struct update: `obj with { field: new_value }`.
     With(obj: Expr, overrides: FieldInitList)
+    /// List literal: `[1, 2, 3]`.
     ListLit(elements: ExprList)
+    /// Closure literal: `(x, y) -> body`.
     Lambda(params: ParamList, body: Expr)
-    // Entries is a flat list: key1, val1, key2, val2, ...
+    /// Map literal — flat list of alternating key/value:
+    /// `{ "a": 1, "b": 2 }` → entries = [key1, val1, key2, val2, ...].
     MapLit(entries: ExprList)
+    /// Slice: `list[start..end]`.
     Slice(obj: Expr, start: Expr, end: Expr)
+    /// Float literal (text form, like Number).
     FloatLit(value: string)
+    /// Type-narrowing test: `subject is .Variant`.
     IsCheck(subject: Expr, variant_name: string)
+    /// Membership test: `needle in [a, b, c]`.
     InCheck(needle: Expr, items: ExprList)
+    /// List comprehension: `[body for variable in collection if filter]`.
     ListComp(body: Expr, variable: string, collection: Expr, filter: Expr?)
+    /// Module-qualified identifier — produced by the resolver from
+    /// `Ident(name)` once the name's canonical path is known.
     QualifiedIdent(path: string)
+    /// Subjectless match: `when { cond -> body, else -> body }`.
     When(arms: WhenArmList)
+    /// Catch block: `expr catch (e) { body }` — recovers from an
+    /// erroring `expr` by binding the error to `e`.
     Catch(inner: Expr, binding: string, body: Expr, line: int, col: int)
+    /// `spawn body` — start a green-thread Task running `body`.
     Spawn(body: Expr)
 }
 
+/// Avra statement AST. Anything that doesn't produce a value lowers
+/// to one of these. `Expr(e)` is the bridge — wraps an expression so
+/// it can stand alone in a block without yielding.
 export enum Stmt {
+    /// Immutable binding: `let name: T = init`.
     Let(name: string, ty_vt: ValueType, initializer: Expr)
+    /// Mutable binding: `mut name: T = init`. Reassign with
+    /// `Expr.Assign` later.
     Mut(name: string, ty_vt: ValueType, initializer: Expr)
+    /// Compile-time constant: `const NAME: T = init`.
     Const(name: string, ty_vt: ValueType, initializer: Expr)
+    /// Expression as a statement — runs for side effects, value
+    /// discarded except as the final expression of a block.
     Expr(expr: Expr)
+    /// Brace block: `{ stmt1; stmt2; }`.
     Block(body: StmtList)
+    /// `if cond { then } else { else_branch }` (else may be null).
     If(condition: Expr, then_branch: Stmt, else_branch: Stmt?)
+    /// `while cond { body }`.
     While(condition: Expr, body: Stmt)
+    /// `for variable in start..end { body }` — integer range loop.
     For(variable: string, start: Expr, end: Expr, body: Stmt)
+    /// `for variable in collection { body }` — list / iterator loop.
     ForIn(variable: string, collection: Expr, body: Stmt)
+    /// Function declaration. `type_params` empty for non-generic
+    /// fns; resolver fills `ret_vtype` from the source annotation.
     Function(name: string, type_params: TypeParamList, params: ParamList, ret_vtype: ValueType, body: StmtList)
+    /// `return value` — early return with an expression.
     Return(value: Expr)
+    /// Bare `return` — ends a void fn.
     ReturnEmpty
+    /// Struct type declaration: `type Point = { x: int, y: int }`.
     TypeDecl(name: string, type_params: TypeParamList, fields: FieldList)
+    /// Newtype: `type UserId = UUID` — nominal wrapper.
     NewtypeDecl(name: string, inner_vt: ValueType)
+    /// Union alias: `type Json = string | int | bool`.
     UnionAliasDecl(name: string, type_vt: ValueType)
+    /// Structural shape: `shape Point = { x: int, y: int }` —
+    /// width-subtyping record.
     ShapeDecl(name: string, fields: FieldList)
+    /// Enum declaration: `enum Color { Red, Green, Blue }`.
     EnumDecl(name: string, type_params: TypeParamList, variants: VariantList)
+    /// Match as a statement: `match v { ... }` with no result.
     Match(subject: Expr, arms: MatchArmList)
+    /// `impl Type { fns }` or `impl Trait for Type { fns }`. The
+    /// `:` form encodes the trait+type pair as `"Trait:Type"`.
     Impl(type_name: string, methods: StmtList)
+    /// Placeholder — used after rewriting passes that drop a stmt.
     NoOp
+    /// FFI declaration: `extern fn name(...)`. No body; ABI matches C.
     ExternFn(name: string, params: ParamList, ret_vtype: ValueType)
+    /// `break` — exit the enclosing loop.
     Break
+    /// `continue` — skip to the next iteration of the enclosing loop.
     Continue
+    /// `trait Name { fn ... }` — interface declaration.
     TraitDecl(name: string, methods: StmtList)
+    /// Destructuring let: `let (a, b) = pair` / `let {x, y} = struct`.
     LetDestructure(names: ParamList, initializer: Expr)
+    /// `defer expr` — runs `expr` at scope exit, LIFO order.
     Defer(body: Expr)
+    /// `errdefer expr` — runs `expr` only on Err / panic exit.
     Errdefer(body: Expr)
+    /// Annotation wrapper: `@annot stmt` — annotations live here so
+    /// the inner stmt's match arms stay focused on the actual decl.
     Annotated(annotations: AnnotationList, inner: Stmt)
+    /// Test outer block: `spec "name" { ... }`.
     SpecBlock(name: string, body: StmtList)
+    /// Test setup block: `given "name" { let setup = ...; then "..." }`.
     GivenBlock(name: string, body: StmtList)
+    /// Test assertion block: `then "name" { boolean_condition }`.
     ThenBlock(name: string, condition: Expr)
+    /// `select { x <- ch1 -> body, ... }` — multi-channel wait.
     Select(arms: SelectArmList)
+    /// `parallel { stmts }` — run statements concurrently as Tasks.
     Parallel(body: StmtList)
+    /// `mod name { body }` — namespaced sub-module. Pre-resolution
+    /// `mod name` (no body) shows up here with empty body and is
+    /// filled in by the module resolver.
     Module(name: string, body: StmtList)
+    /// `use module.path.{name1, name2}` — import declaration.
     Use(module_path: string, names: ParamList)
+    /// Trait associated type: `type Item = T` inside a trait body.
     AssocType(name: string, ty_vt: ValueType)
-    // Component system: definitions and instantiation blocks
+    /// Component declaration: `component Name(params) { body }` —
+    /// reusable templated block of statements.
     ComponentDef(name: string, params: ParamList, config: CompConfigList, body: StmtList)
+    /// Component instantiation: `component Foo as bar { config; body }`.
     ComponentBlock(comp_name: string, instance: string, config: CompConfigPairList, body: StmtList)
 }
 
-// When arms: `cond -> body` or `else -> body` (cond is null for else)
+/// When-arms: `cond -> body` or `else -> body` (cond is null for the
+/// final else). Used by the subjectless `when { ... }` expression.
 export enum WhenArmList {
     End
     Node(cond: SExpr?, body: SExpr, next: WhenArmList)
 }
 
-// Select arms: `binding <- channel -> body`
+/// Select-arms: `binding <- channel -> body` — one branch of a
+/// `select` block.
 export enum SelectArmList {
     End
     Node(binding: string, channel: Expr, body: StmtList, next: SelectArmList)
 }
 
-// Annotations attached to declarations: @name or @name(args).
-// Args are stored as ExprList for generality.
+/// Annotations attached to declarations: `@name` or `@name(args)`.
+/// Args are stored as ExprList for generality so any annotation
+/// shape works without dedicated AST variants.
 export enum AnnotationList {
     End
     Node(name: string, args: ExprList, next: AnnotationList)
 }
 
-// Component config schema entries: key, type, optional default value.
-// Used in ComponentDef to declare config fields.
+/// Component config schema entries: `key`, `ty_vt`, optional default
+/// value. Declared by ComponentDef so call sites can be type-checked
+/// against the schema.
 export enum CompConfigList {
     End
     Node(key: string, ty_vt: ValueType, default_val: Expr?, next: CompConfigList)
 }
 
-// Component config pairs: user-supplied key=value in a ComponentBlock.
+/// Component config pairs as supplied in a ComponentBlock — `key:
+/// value` filled in by the consumer.
 export enum CompConfigPairList {
     End
     Node(key: string, value: Expr, next: CompConfigPairList)
 }
 
-// Unwrap Annotated wrapper, returning the inner statement.
-// Strip every Annotated wrapper, returning the underlying decl.
-//
-// Recursive on purpose: a single decl can wear multiple annotations
-// (e.g. `/// docstring\nexport fn foo() -> int { ... }` parses to
-// Annotated(@doc, Annotated(@export, Function))), and call sites
-// that dispatch on the inner Stmt variant need to reach Function
-// regardless of how many `///` / `@export` / `@inline` / etc.
-// layers happen to wrap it.
+/// Strip every Annotated wrapper, returning the underlying decl.
+/// Recursive on purpose: a single decl can wear multiple annotations
+/// (e.g. `/// docstring\nexport fn foo()` parses to
+/// `Annotated(@doc, Annotated(@export, Function))`), and call sites
+/// that dispatch on the inner Stmt variant need to reach Function
+/// regardless of how many `///` / `@export` / `@inline` / etc.
+/// layers happen to wrap it.
 export fn stmt_unwrap(s: Stmt) -> Stmt {
     match s {
         .Annotated(_, inner) -> stmt_unwrap(inner)
@@ -752,11 +978,11 @@ export fn stmt_unwrap(s: Stmt) -> Stmt {
     }
 }
 
-// Look up an annotation by name on a Stmt. Walks every Annotated
-// layer (so `/// foo\n@inline\nfn bar()` finds @doc, @inline, etc.),
-// returning the first occurrence. Returns the raw arg list — the
-// caller decides what shape it expects (single string for @doc,
-// no args for @export, etc.).
+/// Look up an annotation by name on a Stmt. Walks every Annotated
+/// layer (so `/// foo\n@inline\nfn bar()` finds @doc, @inline, etc.),
+/// returning the first occurrence. Returns the raw arg list — the
+/// caller decides what shape it expects (single string for @doc,
+/// no args for @export, etc.).
 export fn find_annotation(s: Stmt, name: string) -> AnnotationList? {
     match s {
         .Annotated(annots, inner) -> {
@@ -770,10 +996,10 @@ export fn find_annotation(s: Stmt, name: string) -> AnnotationList? {
     }
 }
 
-// Extract the first @doc annotation's text body, with surrounding
-// `"..."` literal quotes stripped. Returns "" if the stmt has no
-// @doc annotation. Tooling (std-lsp indexer, IDE hover, the docs
-// CLI) should prefer this over reading the AnnotationList directly.
+/// Extract the first `@doc` annotation's text body, with surrounding
+/// `"..."` literal quotes stripped. Returns "" if the stmt has no
+/// @doc annotation. Tooling (std-lsp indexer, IDE hover, the docs
+/// CLI) should prefer this over reading the AnnotationList directly.
 export fn doc_string_for(s: Stmt) -> string {
     let found = find_annotation(s, "doc")
     if found == null { return "" }
@@ -824,30 +1050,34 @@ fn strip_quotes(s: string) -> string {
     }
 }
 
+/// Linked list of spanned statements. Every block-shaped construct
+/// (Function body, Block, Module body, etc.) holds one of these.
 export enum StmtList {
     End
     Node(stmt: SStmt, next: StmtList)
 }
 
-// Recursive variable environment used by codegen.
-// We can't use `List` here because host `List.push()` corrupts
-// the bootstrap path — see TECH_DEBT.md #1.
-//
-// `ty` is one of "i64" or "str" — bootstrap MVP only has those two
-// value types and they're both stored in i64-shaped allocas (str
-// values are pointer-encoded into the i64 slot via ptrtoint). The
-// tag tells `+` whether to emit an i64 add or a string concat.
+/// Recursive variable environment threaded through codegen. Each
+/// node binds a name to its alloca (i64-shaped, holds either an int
+/// or a ptr-encoded value) plus the ValueType tag that drives op
+/// dispatch. Newer bindings sit at the head — `env_lookup` walks
+/// in source order (innermost shadowing).
 export enum VarEnv {
     End
     Node(name: string, alloca: ptr, ty: ValueType, next: VarEnv)
 }
 
+/// Result of an `env_lookup`. `found` is 0 / 1 (Avra has no Option
+/// for ptr at the time this was written) — see callers for the idiom.
 export type VarLookup = {
     found: int,
     alloca: ptr,
     ty: ValueType,
 }
 
+/// Look up a name in the env. Returns `found: false` with a null
+/// alloca and Unknown type when not present. Innermost (head-most)
+/// binding wins — supports lexical shadowing.
 export fn env_lookup(env: VarEnv, name: string) -> VarLookup {
     match env {
         .End -> {
@@ -859,22 +1089,30 @@ export fn env_lookup(env: VarEnv, name: string) -> VarLookup {
     }
 }
 
+/// Cons a new binding at the head — pure functional update, leaves
+/// the underlying VarEnv shared with prior callers.
 export fn env_extend(env: VarEnv, name: string, alloca: ptr, ty: ValueType) -> VarEnv {
     VarEnv.Node(name, alloca, ty, env)
 }
 
-// Function symbol table — name → (LLVM function value, arity).
+/// Function symbol table — name → (LLVM function value, arity).
+/// Separate from VarEnv because fns are visible across the whole
+/// module and don't follow lexical scope rules.
 export enum FnEnv {
     End
     Node(name: string, fn_val: ptr, arity: int, next: FnEnv)
 }
 
+/// Result of a `fn_env_lookup`. Same convention as VarLookup:
+/// `found: false` carries a null fn_val + arity 0.
 export type FnLookup = {
     found: int,
     fn_val: ptr,
     arity: int,
 }
 
+/// Look up a function by name. Like env_lookup, returns the unfound
+/// sentinel rather than an Option for pointer fields.
 export fn fn_env_lookup(env: FnEnv, name: string) -> FnLookup {
     match env {
         .End -> {
@@ -1279,9 +1517,23 @@ export fn render_stmt_list(stmts: StmtList) -> string {
 }
 
 // ── Token kinds ──
-// Enum-based token kinds replace string-based dispatch in the parser.
-// Type-safe, fast (integer comparison), and compiler-checked.
+//
+// Enum-based token kinds — replaces the historic string-tag dispatch
+// in the parser. Type-safe, integer-comparison fast, and exhaustive-
+// match-checked. Adding a new token requires:
+//   - a Tk variant here
+//   - an entry in `tk_keyword_str` (and `p_keyword_kind` for keywords)
+//   - lexer recognition in `parse/lexer.av`
+//   - any seed-patching needed when bs2 self-compiles past the change.
 
+/// Token kind discriminant. Each variant maps to one of:
+///   - punctuation (LeftParen, Dot, ...)
+///   - operators (Plus, EqualEqual, ...)
+///   - keywords (KwLet, KwFn, ...)
+///   - reserved-but-inactive keywords (KwReserved family)
+///   - literals (Number, String, Bool, ...)
+///   - documentation (DocComment, ModDocComment)
+///   - whitespace / structural (Newline, Eof)
 export enum Tk {
     // Punctuation
     LeftParen
