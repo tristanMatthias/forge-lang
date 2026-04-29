@@ -1,0 +1,91 @@
+// Round-trip a hand-built SymbolGraph through every public query.
+
+use @std.lsp.{pos_new,
+              SymKind, graph_new, graph_add, graph_count,
+              graph_by_id, graph_by_name, graph_by_qualified,
+              graph_children, graph_all,
+              sym_id_for, sym_new,
+              empty_corpus_new, empty_corpus_id, empty_corpus_description,
+              empty_corpus_extract}
+
+fn lsp_test_span() -> Span {
+    Span { start: pos_new(1, 1), end: pos_new(1, 10) }
+}
+
+fn lsp_test_graph() -> SymbolGraph {
+    let sp = lsp_test_span()
+    mut g = graph_new()
+    g = graph_add(g, sym_new(
+        "square", "math::square",
+        SymKind.Fn("fn square(x: int) -> int", "int"),
+        "Square a number.", "math.av", sp, true, ""))
+    g = graph_add(g, sym_new(
+        "User", "core::User",
+        SymKind.Type("type User"),
+        "User account.", "user.av", sp, true, ""))
+    g = graph_add(g, sym_new(
+        "AuthResult", "core::auth::AuthResult",
+        SymKind.Enum("Ok, Forbidden, NotFound"),
+        "Authentication outcome.", "auth.av", sp, true, ""))
+    g = graph_add(g, sym_new(
+        "MAX_SIZE", "config::MAX_SIZE",
+        SymKind.Const("int"),
+        "Maximum payload size.", "config.av", sp, false, ""))
+    g
+}
+
+spec "std-lsp graph: identity" {
+    given "the same qualified path" {
+        then "yields the same SymId" {
+            sym_id_for("math::square").value == sym_id_for("math::square").value
+        }
+        then "differs from a different path" {
+            sym_id_for("math::square").value != sym_id_for("math::cube").value
+        }
+    }
+}
+
+spec "std-lsp graph: queries over a hand-built graph" {
+    given "a populated graph" {
+        then "graph_count reports every Sym" {
+            graph_count(lsp_test_graph()) == 4
+        }
+        then "graph_by_id finds the function" {
+            let g = lsp_test_graph()
+            let id = sym_id_for("math::square")
+            let found = graph_by_id(g, id)
+            found != null && found!.name == "square"
+        }
+        then "graph_by_name is case-insensitive" {
+            let g = lsp_test_graph()
+            let found = graph_by_name(g, "USER")
+            found != null && found!.qualified == "core::User"
+        }
+        then "graph_by_qualified anchors exactly" {
+            let g = lsp_test_graph()
+            let found = graph_by_qualified(g, "core::auth::AuthResult")
+            found != null && found!.name == "AuthResult"
+        }
+        then "graph_by_qualified misses on prefix-only match" {
+            let g = lsp_test_graph()
+            graph_by_qualified(g, "core::auth") == null
+        }
+    }
+}
+
+spec "std-lsp corpus: EmptyCorpus" {
+    given "an EmptyCorpus" {
+        then "advertises a stable id" {
+            empty_corpus_id(empty_corpus_new()) == "empty"
+        }
+        then "describes itself" {
+            empty_corpus_description(empty_corpus_new()) != ""
+        }
+        then "yields no symbols" {
+            match empty_corpus_extract(empty_corpus_new()) {
+                .End -> true
+                _ -> false
+            }
+        }
+    }
+}

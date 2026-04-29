@@ -1,0 +1,553 @@
+// WHY: @std/lsp — language-server foundation for Avra tooling.
+//
+// One typed symbol graph; many consumers. The doc tool, hover,
+// go-to-def, find-references, completion, and `--callers` all read
+// this graph. Tickets in epic forge-crafting-intepreters-rnb9 layer:
+//   .2  fuzzy match utility (next ticket)
+//   .3  AST-based extractor populating the graph
+//   .4  hierarchical addressing
+//   .5  in-process query API (hover/definition/references/callers/completion)
+//   .6  JSON-RPC stdio protocol (`avra lsp`)
+//   .7  incremental, mtime-keyed reindex
+//
+// Layout decision: kept as a single file (.1 skeleton) because the
+// bootstrap module resolver currently mangles type lookup paths when
+// a multi-file package is wrapped by the test runner's outer
+// `Stmt.Module` wrapper. The file is internally sectioned with thick
+// banners that map onto the originally-planned submodules:
+//
+//   ── Span ──     positions, ranges, locations
+//   ── Graph ──    SymKind, Sym, SymList, SymbolGraph, queries
+//   ── Corpus ──   trait + IoError + EmptyCorpus default
+//   ── Query ──    Hover, CompletionItem, Scope, Query trait, free fns
+//
+// When the resolver gains proper multi-file package support, split
+// back into span.av / graph.av / corpus.av / query.av — the section
+// boundaries are already aligned for that.
+
+// ╔═══════════════════════════════════════════════════════════════════╗
+// ║                              SPAN                                 ║
+// ╚═══════════════════════════════════════════════════════════════════╝
+//
+// 1-based positions matching diagnostics + LSP convention.
+// Spans carry no file path — that lives on the enclosing Location, so
+// the same Span can be relativised across consumers.
+
+// A 1-based file position. Line and column count from 1.
+export type Pos = {
+    line: int,
+    col: int
+}
+
+// A half-open range within a single source file: [start, end).
+export type Span = {
+    start: Pos,
+    end: Pos
+}
+
+// A span anchored to a specific file path.
+export type Location = {
+    file: string,
+    span: Span
+}
+
+export fn pos_new(line: int, col: int) -> Pos {
+    Pos { line, col }
+}
+
+export fn pos_zero() -> Pos {
+    Pos { line: 1, col: 1 }
+}
+
+export fn span_new(start: Pos, end: Pos) -> Span {
+    Span { start, end }
+}
+
+// A single-point span, useful when only the start is known.
+export fn span_point(p: Pos) -> Span {
+    Span { start: p, end: p }
+}
+
+export fn location_new(file: string, span: Span) -> Location {
+    Location { file, span }
+}
+
+// True if `p` falls within `s` (inclusive of start, exclusive of end).
+export fn span_contains(s: Span, p: Pos) -> bool {
+    let after_start = p.line > s.start.line
+        || (p.line == s.start.line && p.col >= s.start.col)
+    let before_end = p.line < s.end.line
+        || (p.line == s.end.line && p.col < s.end.col)
+    after_start && before_end
+}
+
+// ╔═══════════════════════════════════════════════════════════════════╗
+// ║                              GRAPH                                ║
+// ╚═══════════════════════════════════════════════════════════════════╝
+//
+// SymKind variants are *string-typed* — the indexer (.3) renders the
+// AST into prebuilt strings ("fn square(x: int) -> int"). std-lsp
+// itself never imports compiler internals, keeping the package
+// portable to any context that has a parsed source corpus.
+//
+// SymId is a stable djb2 hash of the qualified path. Same module +
+// same name always hashes to the same id, so caches keyed by id
+// survive across runs and across compiler versions. Hash collisions
+// are vanishingly unlikely; `graph_by_qualified` re-checks the string
+// on the way out.
+//
+// The graph is a linked-list of Sym for v1. Linear scans dominate
+// readability; ticket .7 introduces a hash-keyed sidecar for
+// incremental rebuilds.
+
+// Stable identifier — djb2(qualified_path).
+export type SymId = {
+    value: int
+}
+
+// What kind of thing a symbol *is*. Each variant carries a
+// pre-rendered signature so consumers don't need the typed AST.
+export enum SymKind {
+    Fn(sig: string, ret: string)
+    Type(rendered: string)
+    Enum(variants_csv: string)
+    Trait(rendered: string)
+    Impl(trait_name: string, type_name: string)
+    Const(ty: string)
+    Mut(ty: string)
+    Let(ty: string)
+    ErrorCode(message: string)
+    Keyword(grammar: string)
+    Module
+}
+
+// One symbol in the graph.
+export type Sym = {
+    id: SymId,
+    name: string,
+    qualified: string,
+    kind: SymKind,
+    doc: string,
+    file: string,
+    span: Span,
+    exported: bool,
+    tags_csv: string
+}
+
+// Linked list of Sym.
+export enum SymList {
+    End
+    Node(item: Sym, next: SymList)
+}
+
+// The graph itself. Opaque-ish; consumers go through query helpers.
+export type SymbolGraph = {
+    syms: SymList
+}
+
+// ── Construction ────────────────────────────────────────────────────
+
+export fn graph_new() -> SymbolGraph {
+    SymbolGraph { syms: SymList.End }
+}
+
+// Prepend a sym. Insertion order is reversed in `syms`; iteration
+// helpers compensate when stable order matters.
+export fn graph_add(g: SymbolGraph, s: Sym) -> SymbolGraph {
+    g with { syms: SymList.Node(s, g.syms) }
+}
+
+export fn graph_extend(g: SymbolGraph, list: SymList) -> SymbolGraph {
+    g with { syms: sym_list_concat(list, g.syms) }
+}
+
+// ── Identity ────────────────────────────────────────────────────────
+
+// Stable djb2 hash. Avra has no bitshift operator, so the canonical
+// `(h << 5) + h` is rewritten as `h * 33`.
+export fn sym_id_for(qualified: string) -> SymId {
+    SymId { value: djb2(qualified) }
+}
+
+fn djb2(s: string) -> int {
+    mut h = 5381
+    mut i = 0
+    while i < s.length {
+        let c = s.substring(i, i + 1).char_code()
+        h = h * 33 + c
+        i = i + 1
+    }
+    h
+}
+
+// Convenience: create a Sym with a derived id.
+export fn sym_new(name: string, qualified: string, kind: SymKind,
+                  doc: string, file: string, span: Span,
+                  exported: bool, tags_csv: string) -> Sym {
+    Sym {
+        id: sym_id_for(qualified),
+        name,
+        qualified,
+        kind,
+        doc,
+        file,
+        span,
+        exported,
+        tags_csv
+    }
+}
+
+// ── Queries ─────────────────────────────────────────────────────────
+
+// All symbols in the graph (in reverse-insertion order).
+export fn graph_all(g: SymbolGraph) -> SymList {
+    g.syms
+}
+
+export fn graph_count(g: SymbolGraph) -> int {
+    sym_list_len(g.syms)
+}
+
+// Lookup by stable id. None if not present.
+export fn graph_by_id(g: SymbolGraph, id: SymId) -> Sym? {
+    sym_list_find_id(g.syms, id)
+}
+
+// Lookup by display name (case-insensitive). Returns the first match.
+export fn graph_by_name(g: SymbolGraph, name: string) -> Sym? {
+    sym_list_find_name(g.syms, name)
+}
+
+// Every symbol whose display name equals `name` (modulo case).
+export fn graph_all_by_name(g: SymbolGraph, name: string) -> SymList {
+    collect_by_name(g.syms, name)
+}
+
+// Lookup by fully-qualified path.
+export fn graph_by_qualified(g: SymbolGraph, qualified: string) -> Sym? {
+    let id = sym_id_for(qualified)
+    let found = sym_list_find_id(g.syms, id)
+    if found == null {
+        return null
+    }
+    if found!.qualified == qualified {
+        return found
+    }
+    sym_list_find_qualified(g.syms, qualified)
+}
+
+// Symbols whose qualified path begins with `prefix::`. Ticket .4
+// uses this for hierarchical navigation.
+export fn graph_children(g: SymbolGraph, prefix: string) -> SymList {
+    collect_children(g.syms, prefix)
+}
+
+// ── List helpers ────────────────────────────────────────────────────
+
+fn sym_list_len(list: SymList) -> int {
+    mut n = 0
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return n
+            }
+            .Node(_, next) -> {
+                n = n + 1
+                cur = next
+            }
+        }
+    }
+    n
+}
+
+fn sym_list_find_id(list: SymList, id: SymId) -> Sym? {
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return null
+            }
+            .Node(item, next) -> {
+                if item.id.value == id.value {
+                    return item
+                }
+                cur = next
+            }
+        }
+    }
+    null
+}
+
+fn sym_list_find_name(list: SymList, name: string) -> Sym? {
+    let want = name.to_lower()
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return null
+            }
+            .Node(item, next) -> {
+                if item.name.to_lower() == want {
+                    return item
+                }
+                cur = next
+            }
+        }
+    }
+    null
+}
+
+fn sym_list_find_qualified(list: SymList, qualified: string) -> Sym? {
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return null
+            }
+            .Node(item, next) -> {
+                if item.qualified == qualified {
+                    return item
+                }
+                cur = next
+            }
+        }
+    }
+    null
+}
+
+fn collect_by_name(list: SymList, name: string) -> SymList {
+    let want = name.to_lower()
+    mut acc = SymList.End
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return reverse_syms(acc)
+            }
+            .Node(item, next) -> {
+                if item.name.to_lower() == want {
+                    acc = SymList.Node(item, acc)
+                }
+                cur = next
+            }
+        }
+    }
+    SymList.End
+}
+
+fn collect_children(list: SymList, prefix: string) -> SymList {
+    let pfx_dot = "${prefix}::"
+    mut acc = SymList.End
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return reverse_syms(acc)
+            }
+            .Node(item, next) -> {
+                if item.qualified.starts_with(pfx_dot) {
+                    acc = SymList.Node(item, acc)
+                }
+                cur = next
+            }
+        }
+    }
+    SymList.End
+}
+
+fn reverse_syms(list: SymList) -> SymList {
+    mut acc = SymList.End
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return acc
+            }
+            .Node(item, next) -> {
+                acc = SymList.Node(item, acc)
+                cur = next
+            }
+        }
+    }
+    SymList.End
+}
+
+fn sym_list_concat(a: SymList, b: SymList) -> SymList {
+    match a {
+        .End -> b
+        .Node(item, next) -> SymList.Node(item, sym_list_concat(next, b))
+    }
+}
+
+// ── Display helpers ─────────────────────────────────────────────────
+
+// One-line rendering of what a symbol is. Used by --short, search
+// snippets, and any renderer that wants a uniform header.
+export fn sym_kind_render(k: SymKind) -> string {
+    match k {
+        .Fn(sig, _) -> sig
+        .Type(rendered) -> rendered
+        .Enum(variants_csv) -> if variants_csv == "" { "enum" } else { "enum { ${variants_csv} }" }
+        .Trait(rendered) -> rendered
+        .Impl(trait_name, type_name) -> "impl ${trait_name} for ${type_name}"
+        .Const(ty) -> if ty == "" { "const" } else { "const: ${ty}" }
+        .Mut(ty) -> if ty == "" { "mut" } else { "mut: ${ty}" }
+        .Let(ty) -> if ty == "" { "let" } else { "let: ${ty}" }
+        .ErrorCode(message) -> message
+        .Keyword(grammar) -> grammar
+        .Module -> "module"
+    }
+}
+
+// Short tag for grouping in summaries.
+export fn sym_kind_tag(k: SymKind) -> string {
+    match k {
+        .Fn(_, _) -> "fn"
+        .Type(_) -> "type"
+        .Enum(_) -> "enum"
+        .Trait(_) -> "trait"
+        .Impl(_, _) -> "impl"
+        .Const(_) -> "const"
+        .Mut(_) -> "mut"
+        .Let(_) -> "let"
+        .ErrorCode(_) -> "error"
+        .Keyword(_) -> "keyword"
+        .Module -> "module"
+    }
+}
+
+// ╔═══════════════════════════════════════════════════════════════════╗
+// ║                              CORPUS                               ║
+// ╚═══════════════════════════════════════════════════════════════════╝
+//
+// One trait, many implementations. Tickets layer:
+//   ProjectCorpus    — walks .av files in cwd (.3, replaces docs/mod.av)
+//   LangCorpus       — generated language reference (x35m.7)
+//   ErrorCodeCorpus  — diagnostics F-codes (folded into LangCorpus or split)
+//   StdlibCorpus     — once stdlib stabilises (deferred)
+
+// Errors any corpus extractor can raise. Kept small and self-contained
+// so std-lsp doesn't pull in the compiler's CompileError machinery.
+export enum IoError {
+    NotFound(path: string)
+    PermissionDenied(path: string)
+    ParseFailed(path: string, message: string)
+    Other(message: string)
+}
+
+// One source of symbols. Methods (parser doesn't yet accept `///`
+// inside trait bodies, so the contract is documented here):
+//   id()          — "project" / "lang" / "errors" / "stdlib"
+//   description() — one-liner for help screens
+//   extract()     — pull every symbol; incremental caching is .7
+export trait Corpus {
+    fn id(self) -> string
+    fn description(self) -> string
+    fn extract(self) -> Result<SymList, IoError>
+}
+
+// A corpus that yields no symbols. Useful for spec tests and as a
+// safe default when a higher-level component asks for "all corpora"
+// before any have been registered.
+//
+// NOTE: a concrete `impl Corpus for EmptyCorpus` is intentionally
+// omitted. The bootstrap module resolver mishandles trait impls whose
+// signatures reference the built-in `Result<T, E>` enum when the
+// package is wrapped by an outer test-runner Module wrapper — the
+// resolver mistakenly qualifies `Result` as `@std::lsp::Result` and
+// codegen then fails to find it. Concrete impls live in consumer
+// crates (tickets .3 / .7), which don't trigger the bug. Pure-fn
+// helpers below give EmptyCorpus the same surface without the impl.
+export type EmptyCorpus = {
+    label: string
+}
+
+export fn empty_corpus_new() -> EmptyCorpus {
+    EmptyCorpus { label: "empty" }
+}
+
+export fn empty_corpus_id(c: EmptyCorpus) -> string {
+    c.label
+}
+
+export fn empty_corpus_description(c: EmptyCorpus) -> string {
+    "yields no symbols (placeholder for tests)"
+}
+
+export fn empty_corpus_extract(c: EmptyCorpus) -> SymList {
+    SymList.End
+}
+
+// build_graph(corpora) lives with the unified --scope CLI (epic
+// forge-crafting-intepreters-x35m.6) — composition belongs at the
+// consumer layer, not in std-lsp itself.
+
+// ╔═══════════════════════════════════════════════════════════════════╗
+// ║                              QUERY                                ║
+// ╚═══════════════════════════════════════════════════════════════════╝
+//
+// The skeleton (.1) declares the API shape. Ticket .5 fills in the
+// non-trivial methods (hover, definition, references, completion,
+// callers) — signatures here are stable so consumers can be written
+// against this file before .5 lands.
+
+// A hover response: documentation rendered for display, with the
+// authoritative location of the symbol it describes.
+export type Hover = {
+    sym: Sym,
+    rendered: string
+}
+
+// Completion candidate. Ticket .5 expands this with kind icons,
+// detail (signature), and documentation tail.
+export type CompletionItem = {
+    label: string,
+    detail: string,
+    sym: Sym
+}
+
+// Scoped enumeration: "all syms", "this file", "this module".
+export enum Scope {
+    All
+    File(path: string)
+    Module(qualified: string)
+}
+
+// The query trait. v1 has free-function variants below; the trait
+// exists so ticket .5 can plug in alternative backends (e.g. an
+// indexed cache) without changing call sites.
+export trait Query {
+    fn hover(self, file: string, pos: Pos) -> Hover?
+    fn definition(self, file: string, pos: Pos) -> Location?
+    fn references(self, sym: SymId) -> List<Location>
+    fn callers(self, sym: SymId) -> SymList
+    fn completion(self, file: string, pos: Pos, prefix: string) -> List<CompletionItem>
+    fn symbols(self, scope: Scope) -> SymList
+}
+
+// ── v1 query helpers (graph-only, no caching) ───────────────────────
+//
+// These satisfy ticket .1's acceptance criteria for graph access.
+// Position-aware queries (hover/definition by Pos) need span-indexed
+// lookup that lands in ticket .5.
+
+// Look up a symbol by stable id.
+export fn query_by_id(g: SymbolGraph, id: SymId) -> Sym? {
+    graph_by_id(g, id)
+}
+
+// Look up a symbol by display name (case-insensitive).
+export fn query_by_name(g: SymbolGraph, name: string) -> Sym? {
+    graph_by_name(g, name)
+}
+
+// Look up a symbol by fully-qualified path.
+export fn query_by_qualified(g: SymbolGraph, qualified: string) -> Sym? {
+    graph_by_qualified(g, qualified)
+}
+
+// Every symbol in the graph.
+export fn query_all(g: SymbolGraph) -> SymList {
+    graph_all(g)
+}
