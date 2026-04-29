@@ -784,11 +784,10 @@ export fn show_search(query: string, docs: SymList) {
         return
     }
 
-    let n_fns = count_search_in_bucket(docs, query, 1)
-    let n_types = count_search_in_bucket(docs, query, 2)
-    let n_enums = count_search_in_bucket(docs, query, 3)
-    let n_vars = count_search_in_bucket(docs, query, 4)
-    let total_hits = n_fns + n_types + n_enums + n_vars
+    mut total_hits = 0
+    for bucket in 1..5 {
+        total_hits = total_hits + count_search_in_bucket(docs, query, bucket)
+    }
 
     if total_hits == 0 {
         println("")
@@ -803,25 +802,12 @@ export fn show_search(query: string, docs: SymList) {
     println("  ${dim(rule(20 + query.length))}")
     println("")
 
-    if n_fns > 0 {
-        println("  ${bold("Functions")}")
-        print_search_kind(docs, query, 1)
-        println("")
-    }
-    if n_types > 0 {
-        println("  ${bold("Types")}")
-        print_search_kind(docs, query, 2)
-        println("")
-    }
-    if n_enums > 0 {
-        println("  ${bold("Enums")}")
-        print_search_kind(docs, query, 3)
-        println("")
-    }
-    if n_vars > 0 {
-        println("  ${bold("Constants")}")
-        print_search_kind(docs, query, 4)
-        println("")
+    for bucket in 1..5 {
+        if count_search_in_bucket(docs, query, bucket) > 0 {
+            println("  ${bold(kind_label(bucket))}")
+            print_search_kind(docs, query, bucket)
+            println("")
+        }
     }
 
     println("  ${dim("Hint: avra docs <name> for full docs")}")
