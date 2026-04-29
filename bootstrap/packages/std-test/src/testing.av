@@ -15,11 +15,16 @@ extern fn avra_test_roughly(actual: float, expected: float, tolerance: float) ->
 extern fn avra_test_capture_start()
 extern fn avra_test_capture_stop() -> string
 
-// Capture stdout from a block of code. Returns the captured output.
-// Usage: let output = capture { println("hello") }
-// For now, use start/stop directly:
-//   avra_test_capture_start()
-//   ... code that prints ...
-//   let output = avra_test_capture_stop()
+/// Begin redirecting stdout into the test capture buffer. Pair with
+/// `capture_stop()` to retrieve and reset.
+///
+/// ```avra
+/// capture_start()
+/// println("hello")
+/// let output = capture_stop()
+/// ```
 export fn capture_start() { avra_test_capture_start() }
+
+/// End the active stdout capture and return the buffered text.
+/// Also re-enables direct stdout writes for subsequent code.
 export fn capture_stop() -> string { avra_test_capture_stop() }

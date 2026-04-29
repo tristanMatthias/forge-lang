@@ -200,6 +200,8 @@ export fn sym_id_for(qualified: string) -> SymId {
     SymId { value: djb2(qualified) }
 }
 
+/// Stable djb2 hash. Avra has no bitshift operator at this layer, so
+/// the canonical `(h << 5) + h` is rewritten as `h * 33`.
 fn djb2(s: string) -> int {
     mut h = 5381
     mut i = 0
@@ -387,6 +389,8 @@ export fn qualified_breadcrumbs(qualified: string) -> string {
     if acc == "" { last } else { "${acc} ▸ ${last}" }
 }
 
+/// Index of the last `::` in a qualified path, or -1 when absent.
+/// Walks right-to-left so deeply nested modules stay O(name).
 fn qualified_last_separator(qualified: string) -> int {
     mut i = qualified.length - 2
     while i >= 0 {
@@ -412,6 +416,8 @@ export fn render_tree_summary(g: SymbolGraph, prefix: string) -> string {
     render_tree_lines(g, direct, "")
 }
 
+/// Render `list` as one indented line per node, with child counts.
+/// `indent` is prepended verbatim — callers feed `""` at the root.
 fn render_tree_lines(g: SymbolGraph, list: SymList, indent: string) -> string {
     mut out = ""
     mut cur = list
@@ -435,6 +441,9 @@ fn render_tree_lines(g: SymbolGraph, list: SymList, indent: string) -> string {
 
 // ── Hierarchy collection internals ──────────────────────────────────
 
+/// Filter `list` to immediate children of the qualified `prefix`
+/// (one `::` deeper than `prefix`). When `prefix == ""`, returns
+/// the top-level — symbols with no `::` in their qualified path.
 fn collect_direct_children(list: SymList, prefix: string) -> SymList {
     let pfx_dot = "${prefix}::"
     let pfx_depth = if prefix == "" { -1 } else { qualified_depth(prefix) }
@@ -448,15 +457,21 @@ fn collect_direct_children(list: SymList, prefix: string) -> SymList {
     })
 }
 
+/// Filter `list` to module-root symbols — those whose qualified
+/// path has no `::`, i.e. top-level types / fns.
 fn collect_module_roots(list: SymList) -> SymList {
     sym_list_filter(list, (item: Sym) -> !item.qualified.contains("::"))
 }
 
+/// Filter `list` to symbols whose qualified path ends in `suffix`
+/// (the `::leaf` form) or equals the leaf bare. Used by the
+/// hierarchy resolver for ambiguous-name fallback.
 fn collect_qualified_suffix(list: SymList, suffix: string) -> SymList {
     let leaf = suffix.substring(2, suffix.length)
     sym_list_filter(list, (item: Sym) -> item.qualified.ends_with(suffix) || item.qualified == leaf)
 }
 
+/// First Sym in a SymList, or null when empty.
 fn sym_list_first(list: SymList) -> Sym? {
     match list {
         .End -> null
@@ -466,6 +481,7 @@ fn sym_list_first(list: SymList) -> Sym? {
 
 // ── List helpers ────────────────────────────────────────────────────
 
+/// Length of a SymList. O(n).
 fn sym_list_len(list: SymList) -> int {
     mut n = 0
     mut cur = list
@@ -483,8 +499,8 @@ fn sym_list_len(list: SymList) -> int {
     n
 }
 
-// Find the first sym matching a predicate. Closure form lets every
-// caller state its rule inline; the traversal lives in one place.
+/// First Sym matching `pred`, or null. Closure form lets every
+/// caller state its rule inline; the traversal lives in one place.
 fn sym_list_find(list: SymList, pred: fn(Sym) -> bool) -> Sym? {
     mut cur = list
     while true {
@@ -503,21 +519,24 @@ fn sym_list_find(list: SymList, pred: fn(Sym) -> bool) -> Sym? {
     null
 }
 
+/// Find a Sym by stable id (djb2 of qualified path).
 fn sym_list_find_id(list: SymList, id: SymId) -> Sym? {
     sym_list_find(list, (item: Sym) -> item.id.value == id.value)
 }
 
+/// Find a Sym by short name, case-insensitive.
 fn sym_list_find_name(list: SymList, name: string) -> Sym? {
     let want = name.to_lower()
     sym_list_find(list, (item: Sym) -> item.name.to_lower() == want)
 }
 
+/// Find a Sym by exact qualified path. Case-sensitive.
 fn sym_list_find_qualified(list: SymList, qualified: string) -> Sym? {
     sym_list_find(list, (item: Sym) -> item.qualified == qualified)
 }
 
-// Filter a SymList by predicate, preserving original order. Closure
-// form replaces what used to be six near-identical accumulator loops.
+/// Filter a SymList by predicate, preserving original order. Closure
+/// form replaces what used to be six near-identical accumulator loops.
 fn sym_list_filter(list: SymList, pred: fn(Sym) -> bool) -> SymList {
     mut acc = SymList.End
     mut cur = list
@@ -537,16 +556,21 @@ fn sym_list_filter(list: SymList, pred: fn(Sym) -> bool) -> SymList {
     SymList.End
 }
 
+/// All Syms whose short name matches `name` case-insensitively.
 fn collect_by_name(list: SymList, name: string) -> SymList {
     let want = name.to_lower()
     sym_list_filter(list, (item: Sym) -> item.name.to_lower() == want)
 }
 
+/// All Syms whose qualified path lives under `prefix` (any depth).
+/// Distinct from `collect_direct_children` which restricts to one level.
 fn collect_children(list: SymList, prefix: string) -> SymList {
     let pfx_dot = "${prefix}::"
     sym_list_filter(list, (item: Sym) -> item.qualified.starts_with(pfx_dot))
 }
 
+/// Reverse a SymList. O(n) — used to undo the cons-prepend pattern
+/// after `sym_list_filter` accumulates results.
 fn reverse_syms(list: SymList) -> SymList {
     mut acc = SymList.End
     mut cur = list
@@ -564,6 +588,7 @@ fn reverse_syms(list: SymList) -> SymList {
     SymList.End
 }
 
+/// Append `b` after `a`. O(n) in `a` — used by `graph_extend`.
 fn sym_list_concat(a: SymList, b: SymList) -> SymList {
     match a {
         .End -> b
@@ -793,9 +818,9 @@ export fn query_callees(calls: CallList, caller_qualified: string) -> CallList {
     collect_edges_from(calls, caller_qualified)
 }
 
-// One traversal helper for every "filter call edges by predicate"
-// case. Order is reversed (insertion order); callers that need
-// stable ordering should reverse externally.
+/// One traversal helper for every "filter call edges by predicate"
+/// case. Order is reversed (insertion order); callers that need
+/// stable ordering should reverse externally.
 fn call_list_filter(list: CallList, pred: fn(CallEdge) -> bool) -> CallList {
     mut acc = CallList.End
     mut cur = list
@@ -815,14 +840,19 @@ fn call_list_filter(list: CallList, pred: fn(CallEdge) -> bool) -> CallList {
     CallList.End
 }
 
+/// CallEdges whose callee is `target` — backs `query_callers`.
 fn collect_edges_to(list: CallList, target: string) -> CallList {
     call_list_filter(list, (edge: CallEdge) -> edge.callee == target)
 }
 
+/// CallEdges whose caller is `caller` — backs `query_callees`.
 fn collect_edges_from(list: CallList, caller: string) -> CallList {
     call_list_filter(list, (edge: CallEdge) -> edge.caller == caller)
 }
 
+/// Resolve each CallEdge's caller-name to a Sym via `graph_by_qualified`,
+/// dedup by id (multiple call sites can share a caller fn), and prepend
+/// to `acc`.
 fn edges_to_caller_syms(g: SymbolGraph, edges: CallList, acc: SymList) -> SymList {
     mut cur = edges
     mut out = acc
@@ -843,6 +873,7 @@ fn edges_to_caller_syms(g: SymbolGraph, edges: CallList, acc: SymList) -> SymLis
     SymList.End
 }
 
+/// True iff any Sym in `list` has the given stable id.
 fn sym_list_contains_id(list: SymList, id: SymId) -> bool {
     mut cur = list
     while true {
@@ -872,6 +903,8 @@ export fn query_at(g: SymbolGraph, file: string, line: int) -> Sym? {
     sym_at_position(g.syms, file, line)
 }
 
+/// Find the Sym whose decl span contains `(file, line)`. Backs
+/// `query_at` and the LSP `textDocument/hover` request.
 fn sym_at_position(list: SymList, file: string, line: int) -> Sym? {
     mut cur = list
     while true {
@@ -929,10 +962,12 @@ export fn query_completion(g: SymbolGraph, prefix: string, limit: int, exported_
     scored_syms_to_completion_items(scored)
 }
 
+/// Keep only `exported: true` Syms — surfaces public-API completion.
 fn filter_exported(list: SymList) -> SymList {
     sym_list_filter(list, (item: Sym) -> item.exported)
 }
 
+/// Convert a ranked ScoredSymList into LSP CompletionItem records.
 fn scored_syms_to_completion_items(list: ScoredSymList) -> List<CompletionItem> {
     mut acc: List<CompletionItem> = []
     mut cur = list
@@ -961,6 +996,8 @@ export fn query_symbols(g: SymbolGraph, scope: Scope) -> SymList {
     }
 }
 
+/// Keep only Syms whose `file` field matches `file` exactly. Backs
+/// the LSP `textDocument/documentSymbol` query.
 fn filter_by_file(list: SymList, file: string) -> SymList {
     sym_list_filter(list, (item: Sym) -> item.file == file)
 }
@@ -996,7 +1033,9 @@ export fn query_search(g: SymbolGraph, query: string, limit: int) -> ScoredSymLi
 
 extern fn avra_selfhost_levenshtein(a: string, b: string, len_a: int, len_b: int) -> int
 
-// Threshold below which `did_you_mean` returns the empty string.
+/// Threshold below which `did_you_mean` returns the empty string.
+/// 200 = the Levenshtein-≤2 floor in `fuzzy_score`; anything cheaper
+/// is too speculative to surface as a hint.
 fn fuzzy_did_you_mean_threshold() -> int { 200 }
 
 // Composed score for a single (query, candidate) pair. Pure: same
@@ -1030,9 +1069,10 @@ export fn fuzzy_score(query: string, candidate: string) -> int {
     0
 }
 
-// Does `needle` occur in `haystack` with characters in order, allowing
-// gaps? "iu" matches "init_user" (i…u…), "uf" matches "use_fn" (u…f…),
-// but "fu" does not match "use_fn" (no f before u).
+/// Does `needle` occur in `haystack` with characters in order,
+/// allowing gaps? `"iu"` matches `"init_user"` (i…u…), `"uf"` matches
+/// `"use_fn"` (u…f…), but `"fu"` does not match `"use_fn"` (no `f`
+/// before `u`).
 fn fuzzy_is_subsequence(needle: string, haystack: string) -> bool {
     if needle.length == 0 { return true }
     mut ni = 0
@@ -1058,6 +1098,8 @@ export enum StrList {
     Node(value: string, next: StrList)
 }
 
+/// Cons a string onto the head of a StrList. Symmetry with the rest
+/// of the linked-list API.
 export fn strlist_cons(head: string, tail: StrList) -> StrList {
     StrList.Node(head, tail)
 }
@@ -1122,6 +1164,9 @@ export fn did_you_mean_n(query: string, candidates: StrList, n: int) -> StrList 
 
 // ── internals ───────────────────────────────────────────────────────
 
+/// Score every candidate against `query`, dropping zero-scored
+/// (no-match) entries. Returned in reverse-source order; sort the
+/// result via `scored_list_sort` before consumption.
 fn score_all(query: string, candidates: StrList) -> ScoredList {
     mut acc = ScoredList.End
     mut cur = candidates
@@ -1142,6 +1187,8 @@ fn score_all(query: string, candidates: StrList) -> ScoredList {
     acc
 }
 
+/// Drop ScoredList entries whose score falls below `threshold`.
+/// Used by `did_you_mean_n` to keep only confident suggestions.
 fn scored_take_threshold(list: ScoredList, threshold: int) -> ScoredList {
     mut acc = ScoredList.End
     mut cur = list
@@ -1161,8 +1208,8 @@ fn scored_take_threshold(list: ScoredList, threshold: int) -> ScoredList {
     acc
 }
 
-// Insertion sort by score-desc, then value-asc. Stable. Inputs are
-// typically small (≤ a few hundred); insertion sort is fine.
+/// Insertion sort by score-desc, then value-asc. Stable. Inputs are
+/// typically small (≤ a few hundred); insertion sort is fine.
 fn scored_list_sort(list: ScoredList) -> ScoredList {
     mut sorted = ScoredList.End
     mut cur = list
@@ -1180,6 +1227,8 @@ fn scored_list_sort(list: ScoredList) -> ScoredList {
     sorted
 }
 
+/// Insert a Scored entry into a (already-sorted) ScoredList,
+/// preserving the score-desc / value-asc ordering.
 fn scored_insert(list: ScoredList, item: Scored) -> ScoredList {
     match list {
         .End -> ScoredList.Node(item, ScoredList.End)
@@ -1194,6 +1243,8 @@ fn scored_insert(list: ScoredList, item: Scored) -> ScoredList {
     }
 }
 
+/// First `n` entries of a ScoredList. Identity-preserving — stops
+/// short rather than rebuilding when the list is shorter than `n`.
 fn scored_list_take(list: ScoredList, n: int) -> ScoredList {
     if n <= 0 { return ScoredList.End }
     match list {
@@ -1202,6 +1253,8 @@ fn scored_list_take(list: ScoredList, n: int) -> ScoredList {
     }
 }
 
+/// Strip scores, returning the underlying StrList — final step of
+/// `fuzzy_search` after sort + take.
 fn scored_to_strs(list: ScoredList) -> StrList {
     match list {
         .End -> StrList.End
@@ -1230,12 +1283,18 @@ export enum ScoredSymList {
     Node(item: ScoredSym, next: ScoredSymList)
 }
 
+/// Sym-aware `fuzzy_search`. Scores every Sym's `name` against
+/// `query`, sorts by score-desc / name-asc, and returns the top
+/// `limit` as ScoredSyms.
 export fn fuzzy_search_syms(query: string, syms: SymList, limit: int) -> ScoredSymList {
     let scored = score_syms(query, syms)
     let sorted = scored_sym_sort(scored)
     scored_sym_take(sorted, limit)
 }
 
+/// Score every Sym in `syms` against `query`, dropping zero scores.
+/// Returns reverse-source order; sort with `scored_sym_sort` for
+/// ranked output.
 fn score_syms(query: string, syms: SymList) -> ScoredSymList {
     mut acc = ScoredSymList.End
     mut cur = syms
@@ -1256,6 +1315,8 @@ fn score_syms(query: string, syms: SymList) -> ScoredSymList {
     acc
 }
 
+/// Insertion sort by score-desc then `sym.name`-asc. Mirror of
+/// `scored_list_sort` for the ScoredSym shape.
 fn scored_sym_sort(list: ScoredSymList) -> ScoredSymList {
     mut sorted = ScoredSymList.End
     mut cur = list
@@ -1273,6 +1334,8 @@ fn scored_sym_sort(list: ScoredSymList) -> ScoredSymList {
     sorted
 }
 
+/// Sorted insert into a ScoredSymList — counterpart to
+/// `scored_insert` for the Sym shape.
 fn scored_sym_insert(list: ScoredSymList, item: ScoredSym) -> ScoredSymList {
     match list {
         .End -> ScoredSymList.Node(item, ScoredSymList.End)
@@ -1287,6 +1350,8 @@ fn scored_sym_insert(list: ScoredSymList, item: ScoredSym) -> ScoredSymList {
     }
 }
 
+/// First `n` entries of a ScoredSymList — counterpart to
+/// `scored_list_take` for the Sym shape.
 fn scored_sym_take(list: ScoredSymList, n: int) -> ScoredSymList {
     if n <= 0 { return ScoredSymList.End }
     match list {
@@ -1351,6 +1416,8 @@ export type CacheState = {
     syms: SymList
 }
 
+/// Empty cache — `version: ""` is the "no cache file existed yet"
+/// sentinel, distinguished from an explicitly-versioned reload.
 export fn cache_empty() -> CacheState {
     CacheState { version: "", files: CacheFileList.End, syms: SymList.End }
 }
@@ -1365,6 +1432,8 @@ export fn cache_is_fresh(state: CacheState, path: string) -> bool {
     row!.mtime_ns >= current
 }
 
+/// Linear lookup of a CacheFileEntry by `path`, or null. Backs
+/// `cache_is_fresh` and the eviction path.
 fn cache_files_find(list: CacheFileList, path: string) -> CacheFileEntry? {
     mut cur = list
     while true {
@@ -1403,10 +1472,12 @@ export fn cache_add_file(state: CacheState, path: string, mtime_ns: int, syms: S
     }
 }
 
+/// Drop every Sym whose `file` equals `path` — half of file eviction.
 fn sym_list_drop_by_file(list: SymList, path: string) -> SymList {
     sym_list_filter(list, (item: Sym) -> item.file != path)
 }
 
+/// Drop the CacheFileEntry for `path` — the other half of eviction.
 fn file_list_drop(list: CacheFileList, path: string) -> CacheFileList {
     match list {
         .End -> CacheFileList.End
@@ -1435,6 +1506,8 @@ export fn cache_encode(state: CacheState, version: string) -> string {
     "${header}${files_section}--\n${syms_section}"
 }
 
+/// Encode the file-mtime header section of the cache: one
+/// `path<TAB>mtime<TAB>sym_count` row per CacheFileEntry.
 fn encode_files(list: CacheFileList) -> string {
     mut out = ""
     mut cur = list
@@ -1453,6 +1526,7 @@ fn encode_files(list: CacheFileList) -> string {
     out
 }
 
+/// Encode the Sym body section of the cache: one TSV row per Sym.
 fn encode_syms(list: SymList) -> string {
     mut out = ""
     mut cur = list
@@ -1470,6 +1544,8 @@ fn encode_syms(list: SymList) -> string {
     out
 }
 
+/// Encode a single Sym as one TSV row. Field order matters — the
+/// decoder is index-based for speed, not name-based.
 fn encode_sym(s: Sym) -> string {
     let kind_tag = sym_kind_tag(s.kind)
     let sig = sym_kind_render(s.kind)
@@ -1481,6 +1557,8 @@ fn encode_sym(s: Sym) -> string {
 // Tabs and newlines inside doc/sig bodies break the TSV row format.
 // Replace them with literal `\t` and `\n` two-char sequences; the
 // loader does the inverse.
+/// Escape one TSV-significant char (`\`, `\t`, `\n`) into its
+/// `\xx` form. Pass-through for everything else.
 fn tsv_escape_char(ch: string) -> string {
     match ch {
         "\t" -> "\\t"
@@ -1489,6 +1567,8 @@ fn tsv_escape_char(ch: string) -> string {
     }
 }
 
+/// Escape every TSV-significant char in `s`. Output is round-trip
+/// safe under `unescape_field`.
 fn escape_field(s: string) -> string {
     map_chars(s, tsv_escape_char)
 }
@@ -1496,6 +1576,8 @@ fn escape_field(s: string) -> string {
 // Walk `s` char-by-char, applying `f` to each. Shared helper for
 // json_escape, escape_field, and any other "encode every char with
 // a substitution table" pass.
+/// Apply `f` to each character of `s` and concat. Generic enough
+/// that it powers both `escape_field` and `unescape_field`.
 fn map_chars(s: string, f: fn(string) -> string) -> string {
     mut out = ""
     mut i = 0
@@ -1506,6 +1588,8 @@ fn map_chars(s: string, f: fn(string) -> string) -> string {
     out
 }
 
+/// Inverse of `tsv_escape_char`. Pass-through for chars without an
+/// escape mapping.
 fn tsv_unescape_char(c: string) -> string {
     match c {
         "t" -> "\t"
@@ -1514,6 +1598,8 @@ fn tsv_unescape_char(c: string) -> string {
     }
 }
 
+/// Inverse of `escape_field`. Walks `s` looking for `\xx` escape
+/// pairs and substitutes via `tsv_unescape_char`.
 fn unescape_field(s: string) -> string {
     decode_escaped(s, tsv_unescape_char)
 }
@@ -1521,6 +1607,8 @@ fn unescape_field(s: string) -> string {
 // Walk `s`, copying chars literally except for `\X` pairs which are
 // passed through `decoder`. Shared with the JSON decoder below — the
 // only difference between TSV and JSON is which character maps where.
+/// Generic `\\x` → `decoder(x)` walker. Used by both TSV decode and
+/// JSON decode by passing different per-char decoders.
 fn decode_escaped(s: string, decoder: fn(string) -> string) -> string {
     mut out = ""
     mut i = 0
@@ -1579,6 +1667,8 @@ export fn cache_decode(source: string) -> CacheState {
     CacheState { version, files: cache_files_reverse(files), syms: reverse_syms(syms) }
 }
 
+/// Reverse a CacheFileList — used to undo the cons-prepend ordering
+/// after the decoder accumulates rows.
 fn cache_files_reverse(list: CacheFileList) -> CacheFileList {
     mut acc = CacheFileList.End
     mut cur = list
@@ -1596,6 +1686,8 @@ fn cache_files_reverse(list: CacheFileList) -> CacheFileList {
     CacheFileList.End
 }
 
+/// Parse one TSV row from the cache header into a CacheFileEntry,
+/// or null when the row is malformed.
 fn decode_file_row(line: string) -> CacheFileEntry? {
     let parts = line.split("\t")
     if parts.length < 3 { return null }
@@ -1606,6 +1698,8 @@ fn decode_file_row(line: string) -> CacheFileEntry? {
     }
 }
 
+/// Parse one TSV row from the cache body into a Sym, or null on
+/// malformed input.
 fn decode_sym(line: string) -> Sym? {
     // file \t qualified \t kind_tag \t sig \t doc \t line \t exported
     let parts = line.split("\t")
@@ -1623,6 +1717,8 @@ fn decode_sym(line: string) -> Sym? {
     sym_new(name, qualified, kind, doc, file, span, exported, "")
 }
 
+/// Inverse of `sym_kind_tag` (in docs/mod.av) — turn a `(tag, sig)`
+/// pair from the cache TSV back into a SymKind.
 fn decode_kind(tag: string, sig: string) -> SymKind {
     match tag {
         "fn" -> SymKind.Fn(sig, "")
@@ -1644,6 +1740,8 @@ fn decode_kind(tag: string, sig: string) -> SymKind {
     }
 }
 
+/// Strip the `kind:` prefix from a serialized SymKind signature so
+/// downstream callers don't have to think about the wire format.
 fn strip_kind_prefix(sig: string, kind: string) -> string {
     let pfx = "${kind}: "
     if sig.starts_with(pfx) {
@@ -1737,6 +1835,8 @@ export fn lsp_read_frame() -> string {
 
 // Inverse of `json_unescape_char` — encode one char as its JSON
 // escape sequence if needed, otherwise return it unchanged.
+/// JSON escape one char (`"`, `\`, control chars). Pass-through for
+/// printable ASCII, matching RFC 8259.
 fn json_escape_char(ch: string) -> string {
     match ch {
         "\"" -> "\\\""
@@ -1771,6 +1871,9 @@ export fn jsonrpc_error(id: string, code: int, message: string) -> string {
 
 // Find the index of the first non-whitespace char of `key`'s value.
 // Mirrors @std/json.json_value_start.
+/// Find the byte offset where `"key":` value begins in `body`, or
+/// -1 when missing. Cheap structural extraction — avoids a full
+/// JSON parse for the few fields the LSP server cares about.
 fn json_value_start(body: string, key: string) -> int {
     let needle = "\"${key}\""
     let pos = body.index_of(needle)
@@ -1793,6 +1896,8 @@ fn json_value_start(body: string, key: string) -> int {
     i
 }
 
+/// Inverse of `json_escape_char` — used by `decode_escaped` when
+/// parsing JSON-encoded strings out of incoming LSP messages.
 fn json_unescape_char(c: string) -> string {
     match c {
         "\"" -> "\""
@@ -1918,12 +2023,16 @@ export fn lsp_dispatch(g: SymbolGraph, calls: CallList, id: string, method: stri
     }
 }
 
+/// Static `initialize` response: declares which LSP capabilities the
+/// server supports (hover, definition, references, etc.).
 fn lsp_initialize_result() -> string {
     // Capabilities the server actually implements. Keep the set
     // honest — clients use this to enable/disable UI features.
     "{\"capabilities\":{\"hoverProvider\":true,\"definitionProvider\":true,\"documentSymbolProvider\":true,\"workspaceSymbolProvider\":true},\"serverInfo\":{\"name\":\"avra-lsp\",\"version\":\"0.1.0\"}}"
 }
 
+/// Handle `textDocument/hover` — find the Sym at the requested
+/// position, render its hover panel.
 fn dispatch_hover(g: SymbolGraph, id: string, params: string) -> string {
     let uri = json_extract_string(params, "uri")
     let line = json_extract_int(params, "line")
@@ -1936,6 +2045,8 @@ fn dispatch_hover(g: SymbolGraph, id: string, params: string) -> string {
     jsonrpc_response(id, body)
 }
 
+/// Handle `textDocument/definition` — return the LspLocation of the
+/// Sym at the requested position.
 fn dispatch_definition(g: SymbolGraph, id: string, params: string) -> string {
     let uri = json_extract_string(params, "uri")
     let line = json_extract_int(params, "line")
@@ -1948,6 +2059,8 @@ fn dispatch_definition(g: SymbolGraph, id: string, params: string) -> string {
     jsonrpc_response(id, body)
 }
 
+/// Handle `textDocument/documentSymbol` — list every Sym in the
+/// requested file as a flat array.
 fn dispatch_document_symbol(g: SymbolGraph, id: string, params: string) -> string {
     let uri = json_extract_string(params, "uri")
     let file = uri_to_file(uri)
@@ -1955,30 +2068,40 @@ fn dispatch_document_symbol(g: SymbolGraph, id: string, params: string) -> strin
     jsonrpc_response(id, symlist_to_json(syms))
 }
 
+/// Handle `workspace/symbol` — fuzzy-search the entire graph
+/// against the request's `query` string.
 fn dispatch_workspace_symbol(g: SymbolGraph, id: string, params: string) -> string {
     let q = json_extract_string(params, "query")
     let scored = query_search(g, q, 50)
     jsonrpc_response(id, scored_syms_to_json(scored))
 }
 
+/// Handle the custom `avra/callers` request — every Sym that calls
+/// the request's target qualified name.
 fn dispatch_callers(g: SymbolGraph, calls: CallList, id: string, params: string) -> string {
     let name = json_extract_string(params, "name")
     let callers = query_callers(g, calls, name)
     jsonrpc_response(id, symlist_to_json(callers))
 }
 
+/// Handle the custom `avra/callees` request — every name called
+/// from the request's caller qualified name.
 fn dispatch_callees(calls: CallList, id: string, params: string) -> string {
     let qualified = json_extract_string(params, "qualified")
     let edges = query_callees(calls, qualified)
     jsonrpc_response(id, calls_to_json(edges))
 }
 
+/// Render a Sym as an LSP Location JSON object — used by every
+/// dispatch_* response that returns "where is this symbol?".
 fn sym_to_location_json(s: Sym) -> string {
     let uri = "file://${s.file}"
     let line = string(s.span.start.line - 1)  // LSP 0-based
     "{\"uri\":${json_str(uri)},\"range\":{\"start\":{\"line\":${line},\"character\":0},\"end\":{\"line\":${line},\"character\":0}}}"
 }
 
+/// Strip a leading `file://` from an LSP URI to get a plain path.
+/// Pass-through for non-file URIs.
 fn uri_to_file(uri: string) -> string {
     if uri.starts_with("file://") {
         uri.substring(7, uri.length)
@@ -1987,6 +2110,7 @@ fn uri_to_file(uri: string) -> string {
     }
 }
 
+/// Serialize a ScoredSymList as a JSON array of CompletionItems.
 fn scored_syms_to_json(list: ScoredSymList) -> string {
     mut out = "["
     mut first = true
@@ -2010,6 +2134,8 @@ fn scored_syms_to_json(list: ScoredSymList) -> string {
     "${out}]"
 }
 
+/// Serialize a CallList as a JSON array of Location objects (one
+/// per CallEdge) — used by `dispatch_callees` and references.
 fn calls_to_json(list: CallList) -> string {
     mut out = "["
     mut first = true
@@ -2044,6 +2170,10 @@ fn calls_to_json(list: CallList) -> string {
 // did-change overlay. v1 serves a static graph; reindex-on-edit is
 // future work that ticket .7's incremental cache enables.
 
+/// Run the JSON-RPC stdio loop. Reads framed LSP messages from
+/// stdin, dispatches to the appropriate `dispatch_*` handler, and
+/// writes framed responses to stdout. Returns when stdin closes
+/// (typically on the editor's `exit` notification).
 export fn lsp_serve(g: SymbolGraph, calls: CallList) {
     while true {
         let body = lsp_read_frame()
@@ -2062,6 +2192,9 @@ export fn lsp_serve(g: SymbolGraph, calls: CallList) {
 // JSON form (with quotes if it's a string, bare digits if int) so
 // the response echoes the same shape — JSON-RPC requires id
 // preservation, not normalisation.
+/// Pull the `id` field out of an incoming JSON-RPC envelope as a
+/// raw substring (number or quoted string). Used to thread the id
+/// through into the response so the editor can correlate replies.
 fn extract_id_raw(body: string) -> string {
     let needle = "\"id\""
     let pos = body.index_of(needle)

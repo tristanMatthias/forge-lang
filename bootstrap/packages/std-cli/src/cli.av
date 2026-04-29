@@ -8,25 +8,39 @@ extern fn avra_process_exit(code: int)
 
 // ── Types ──
 
+/// Boolean flag declaration: `--name` / `-s`. No value — presence
+/// alone toggles it.
 type FlagDef = { name: string, short: string, description: string }
+
+/// Option declaration: `--name <value>` or `--name=<value>` /
+/// `-s <value>`. Carries a default for when the user omits it.
 type OptionDef = { name: string, short: string, description: string, default_val: string }
+
+/// Positional argument declaration. `required: true` means the
+/// parser fails when the user doesn't supply it.
 type ArgDef = { name: string, description: string, required: bool }
 
+/// Linked list of FlagDef.
 enum FlagList {
     End
     Node(item: FlagDef, next: FlagList)
 }
 
+/// Linked list of OptionDef.
 enum OptionList {
     End
     Node(item: OptionDef, next: OptionList)
 }
 
+/// Linked list of ArgDef.
 enum ArgList {
     End
     Node(item: ArgDef, next: ArgList)
 }
 
+/// One subcommand declaration: `name`, help text, and its own
+/// per-command flag / option / arg sets. Top-level Cli uses the same
+/// shape via its own flag / option / arg fields.
 type CommandDef = {
     name: string,
     description: string,
@@ -35,31 +49,42 @@ type CommandDef = {
     args: ArgList
 }
 
+/// Linked list of CommandDef.
 enum CommandList {
     End
     Node(item: CommandDef, next: CommandList)
 }
 
-// Parsed result: which command matched, parsed flags/options/args
+/// Parsed flag: `value: true` when the flag appeared in argv.
 type ParsedFlag = { name: string, value: bool }
+
+/// Parsed option: the user-supplied value (or the default).
 type ParsedOption = { name: string, value: string }
+
+/// Parsed positional arg: name from the schema, value from argv.
 type ParsedArg = { name: string, value: string }
 
+/// Linked list of ParsedFlag.
 enum ParsedFlagList {
     End
     Node(item: ParsedFlag, next: ParsedFlagList)
 }
 
+/// Linked list of ParsedOption.
 enum ParsedOptionList {
     End
     Node(item: ParsedOption, next: ParsedOptionList)
 }
 
+/// Linked list of ParsedArg.
 enum ParsedArgList {
     End
     Node(item: ParsedArg, next: ParsedArgList)
 }
 
+/// Output of `cli_parse`. `command` is "" for top-level invocations
+/// (no subcommand matched). `error` is "" on success; non-empty
+/// strings carry a user-facing error message.
 export type ParseResult = {
     command: string,
     flags: ParsedFlagList,
@@ -68,6 +93,8 @@ export type ParseResult = {
     error: string
 }
 
+/// Top-level CLI definition. Built up via `cli_new` + the
+/// `cli_add_*` builders, then handed to `cli_parse` against argv.
 export type Cli = {
     name: string,
     description: string,
@@ -80,6 +107,9 @@ export type Cli = {
 
 // ── Builder ──
 
+/// Construct an empty Cli. Use `cli_add_command` / `cli_add_flag`
+/// / `cli_add_option` / `cli_add_arg` to populate, then `cli_parse`
+/// to consume argv.
 export fn cli_new(name: string, description: string, version: string) -> Cli {
     Cli {
         name,
@@ -92,6 +122,9 @@ export fn cli_new(name: string, description: string, version: string) -> Cli {
     }
 }
 
+/// Register a top-level subcommand. Each command starts with empty
+/// flag / option / arg sets — use the `cli_command_add_*` builders
+/// to populate them.
 export fn cli_add_command(cli: Cli, name: string, description: string) -> Cli {
     let cmd = CommandDef {
         name,
@@ -103,34 +136,44 @@ export fn cli_add_command(cli: Cli, name: string, description: string) -> Cli {
     cli with { commands: CommandList.Node(cmd, cli.commands) }
 }
 
+/// Register a top-level boolean flag (`--name` / `-s`). Visible
+/// under any subcommand.
 export fn cli_add_flag(cli: Cli, name: string, short: string, description: string) -> Cli {
     let f = FlagDef { name, short, description }
     cli with { flags: FlagList.Node(f, cli.flags) }
 }
 
+/// Register a top-level option (`--name=value`). `default_val`
+/// fills `ParsedOption.value` when the user omits the flag.
 export fn cli_add_option(cli: Cli, name: string, short: string, description: string, default_val: string) -> Cli {
     let o = OptionDef { name, short, description, default_val }
     cli with { options: OptionList.Node(o, cli.options) }
 }
 
+/// Register a top-level positional argument. `required: true`
+/// makes the parser produce an error when the user omits it.
 export fn cli_add_arg(cli: Cli, name: string, description: string, required: bool) -> Cli {
     let a = ArgDef { name, description, required }
     cli with { args: ArgList.Node(a, cli.args) }
 }
 
-// Add flag/option/arg to a specific command
+/// Register a flag scoped to a specific subcommand.
 export fn cli_command_add_flag(cli: Cli, cmd_name: string, name: string, short: string, description: string) -> Cli {
     cli with { commands: update_command_flags(cli.commands, cmd_name, name, short, description) }
 }
 
+/// Register an option scoped to a specific subcommand.
 export fn cli_command_add_option(cli: Cli, cmd_name: string, name: string, short: string, description: string, default_val: string) -> Cli {
     cli with { commands: update_command_options(cli.commands, cmd_name, name, short, description, default_val) }
 }
 
+/// Register a positional arg scoped to a specific subcommand.
 export fn cli_command_add_arg(cli: Cli, cmd_name: string, name: string, description: string, required: bool) -> Cli {
     cli with { commands: update_command_args(cli.commands, cmd_name, name, description, required) }
 }
 
+/// Walk the command list, prepending a new FlagDef onto the
+/// matching command. Other commands pass through unchanged.
 fn update_command_flags(cmds: CommandList, cmd_name: string, name: string, short: string, desc: string) -> CommandList {
     match cmds {
         .End -> CommandList.End
@@ -146,6 +189,8 @@ fn update_command_flags(cmds: CommandList, cmd_name: string, name: string, short
     }
 }
 
+/// Walk the command list, prepending a new OptionDef onto the
+/// matching command.
 fn update_command_options(cmds: CommandList, cmd_name: string, name: string, short: string, desc: string, default_val: string) -> CommandList {
     match cmds {
         .End -> CommandList.End
@@ -161,6 +206,8 @@ fn update_command_options(cmds: CommandList, cmd_name: string, name: string, sho
     }
 }
 
+/// Walk the command list, prepending a new ArgDef onto the
+/// matching command.
 fn update_command_args(cmds: CommandList, cmd_name: string, name: string, desc: string, required: bool) -> CommandList {
     match cmds {
         .End -> CommandList.End
@@ -178,6 +225,10 @@ fn update_command_args(cmds: CommandList, cmd_name: string, name: string, desc: 
 
 // ── Parsing ──
 
+/// Run argv through the Cli definition. Reads `avra_selfhost_argc()` /
+/// `avra_selfhost_get_arg_cstr()` directly, so call only after
+/// process startup. Auto-handles `--help` / `--version` (exits the
+/// process before returning).
 export fn cli_parse(cli: Cli) -> ParseResult {
     let argc = avra_selfhost_argc()
     if argc < 2 {
@@ -215,6 +266,7 @@ export fn cli_parse(cli: Cli) -> ParseResult {
     parse_args("", cli.flags, cli.options, cli.args, 1, argc)
 }
 
+/// Linear lookup of a CommandDef by name, or null when no match.
 fn find_command(cmds: CommandList, name: string) -> CommandDef? {
     match cmds {
         .End -> null
@@ -224,6 +276,9 @@ fn find_command(cmds: CommandList, name: string) -> CommandDef? {
     }
 }
 
+/// Walk argv from `start_idx` to `argc`, classifying each token as
+/// a flag (`--name`/`-s`), an option (`--key=value`), or a
+/// positional. Builds the ParseResult containing every match.
 fn parse_args(cmd_name: string, flags: FlagList, options: OptionList, args: ArgList,
               start_idx: int, argc: int) -> ParseResult {
     mut parsed_flags = ParsedFlagList.End
@@ -284,12 +339,14 @@ fn parse_args(cmd_name: string, flags: FlagList, options: OptionList, args: ArgL
 
 // ── Helpers ──
 
+/// Drop the leading `--` or `-` from a flag/option token.
 fn strip_dashes(s: string) -> string {
     if s.starts_with("--") { s.substring(2, s.length) }
     else if s.starts_with("-") { s.substring(1, s.length) }
     else { s }
 }
 
+/// True iff `arg` exactly matches some flag's `--name` or `-short`.
 fn is_flag_match(flags: FlagList, arg: string) -> bool {
     match flags {
         .End -> false
@@ -300,6 +357,7 @@ fn is_flag_match(flags: FlagList, arg: string) -> bool {
     }
 }
 
+/// True iff `arg` exactly matches some option's `--name` or `-short`.
 fn is_option_match(options: OptionList, arg: string) -> bool {
     match options {
         .End -> false
@@ -310,6 +368,7 @@ fn is_option_match(options: OptionList, arg: string) -> bool {
     }
 }
 
+/// Zero-indexed lookup into an ArgList — null when out of range.
 fn arg_at(args: ArgList, idx: int) -> ArgDef? {
     match args {
         .End -> null
@@ -319,6 +378,8 @@ fn arg_at(args: ArgList, idx: int) -> ArgDef? {
     }
 }
 
+/// Pre-fill a ParsedOptionList with each OptionDef's default value
+/// — overwritten later if the user supplies the option.
 fn init_option_defaults(options: OptionList) -> ParsedOptionList {
     match options {
         .End -> ParsedOptionList.End
@@ -331,6 +392,8 @@ fn init_option_defaults(options: OptionList) -> ParsedOptionList {
     }
 }
 
+/// Update or insert a ParsedOption — overwrites the existing entry
+/// when `name` matches, otherwise appends.
 fn set_option(parsed: ParsedOptionList, name: string, value: string) -> ParsedOptionList {
     match parsed {
         .End -> ParsedOptionList.Node(ParsedOption { name, value }, ParsedOptionList.End)
@@ -344,6 +407,7 @@ fn set_option(parsed: ParsedOptionList, name: string, value: string) -> ParsedOp
     }
 }
 
+/// Concat two FlagLists — used to merge per-command + global flags.
 fn merge_flags(a: FlagList, b: FlagList) -> FlagList {
     match a {
         .End -> b
@@ -351,6 +415,7 @@ fn merge_flags(a: FlagList, b: FlagList) -> FlagList {
     }
 }
 
+/// Concat two OptionLists — used to merge per-command + globals.
 fn merge_options(a: OptionList, b: OptionList) -> OptionList {
     match a {
         .End -> b
@@ -358,6 +423,7 @@ fn merge_options(a: OptionList, b: OptionList) -> OptionList {
     }
 }
 
+/// Concat two ArgLists — used to merge per-command + globals.
 fn merge_arg_lists(a: ArgList, b: ArgList) -> ArgList {
     match a {
         .End -> b
@@ -367,10 +433,13 @@ fn merge_arg_lists(a: ArgList, b: ArgList) -> ArgList {
 
 // ── Query parsed results ──
 
+/// True iff the named flag was set on argv. Convenience over
+/// matching on the ParsedFlagList directly.
 export fn result_has_flag(result: ParseResult, name: string) -> bool {
     has_parsed_flag(result.flags, name)
 }
 
+/// Linear search backing `result_has_flag`.
 fn has_parsed_flag(flags: ParsedFlagList, name: string) -> bool {
     match flags {
         .End -> false
@@ -380,10 +449,13 @@ fn has_parsed_flag(flags: ParsedFlagList, name: string) -> bool {
     }
 }
 
+/// Read an option's value from the parse result, falling back to
+/// the option's declared default when not set.
 export fn result_get_option(result: ParseResult, name: string) -> string {
     get_parsed_option(result.options, name)
 }
 
+/// Linear search backing `result_get_option`.
 fn get_parsed_option(options: ParsedOptionList, name: string) -> string {
     match options {
         .End -> ""
@@ -393,10 +465,12 @@ fn get_parsed_option(options: ParsedOptionList, name: string) -> string {
     }
 }
 
+/// Read a positional arg's value by name, "" when not supplied.
 export fn result_get_arg(result: ParseResult, name: string) -> string {
     get_parsed_arg(result.args, name)
 }
 
+/// Linear search backing `result_get_arg`.
 fn get_parsed_arg(args: ParsedArgList, name: string) -> string {
     match args {
         .End -> ""
@@ -406,12 +480,14 @@ fn get_parsed_arg(args: ParsedArgList, name: string) -> string {
     }
 }
 
+/// True iff the parser reported an error (unknown flag etc).
 export fn result_has_error(result: ParseResult) -> bool {
     result.error != ""
 }
 
 // ── Help output ──
 
+/// Print the auto-generated `--help` panel for the CLI.
 fn cli_print_help(cli: Cli) {
     println("${cli.name} v${cli.version}")
     if cli.description != "" {
@@ -425,6 +501,9 @@ fn cli_print_help(cli: Cli) {
     print_flags("GLOBAL FLAGS:", cli.flags)
 }
 
+/// Print the registered commands. Walks the list with reverse
+/// recursion so subcommands appear in registration order rather
+/// than the prepend-reversed shape.
 fn print_commands(cmds: CommandList) {
     match cmds {
         .End -> {}
@@ -436,6 +515,8 @@ fn print_commands(cmds: CommandList) {
     }
 }
 
+/// Print a flag list under `header`. The empty header on recursive
+/// calls suppresses repeated section headings for chained lists.
 fn print_flags(header: string, flags: FlagList) {
     match flags {
         .End -> {}

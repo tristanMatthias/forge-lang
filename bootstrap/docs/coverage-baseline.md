@@ -9,11 +9,11 @@
 | Package                | Symbols | Documented | Coverage | Owner ticket           |
 | ---------------------- | ------: | ---------: | -------: | ---------------------- |
 | `packages/avrac/src/`  |    1781 |       180+ |   **>10%** | many (see breakdown)   |
-| `packages/std-lsp/src/`|     165 |         75 |   **45%** | forge-crafting-intepreters-0kdk |
-| `packages/std-cli/src/`|      49 |          0 |    **0%** | forge-crafting-intepreters-0kdk |
-| `packages/std-test/src/`|      2 |          0 |    **0%** | forge-crafting-intepreters-0kdk |
+| `packages/std-lsp/src/`|     165 |        165 |  **100%** ✓ | 0kdk closed             |
+| `packages/std-cli/src/`|      49 |         49 |  **100%** ✓ | 0kdk closed             |
+| `packages/std-test/src/`|      2 |          2 |  **100%** ✓ | 0kdk closed             |
 | `packages/std-process/src/`|   0 |          0 |  **100%** | (n/a — empty)         |
-| `packages/std-json/src/`|     21 |         12 |   **57%** | forge-crafting-intepreters-0kdk |
+| `packages/std-json/src/`|     21 |         21 |  **100%** ✓ | 0kdk closed             |
 
 ## Compiler internals breakdown (`packages/avrac/src/`)
 

@@ -185,33 +185,49 @@ export fn json_array(items: JsonItemList) -> string {
     "[${render_items(items, true)}]"
 }
 
+/// One key/value pair for `json_object`. `encoded_value` is already
+/// JSON-encoded (string with quotes, number bare, nested object /
+/// array verbatim) — this layer doesn't infer or quote.
 export type JsonPair = {
     key: string,
     encoded_value: string
 }
 
+/// Linked list of JsonPair — the input shape consumed by
+/// `json_object`.
 export enum JsonPairList {
     End
     Node(item: JsonPair, next: JsonPairList)
 }
 
+/// Linked list of pre-encoded JSON values — the input shape
+/// consumed by `json_array`.
 export enum JsonItemList {
     End
     Node(encoded: string, next: JsonItemList)
 }
 
+/// Empty JsonPairList — start point for `json_pair_add` chains.
 export fn json_pairs() -> JsonPairList { JsonPairList.End }
 
+/// Cons a key/already-encoded-value pair onto the front of a
+/// JsonPairList. The renderer prints in source order via
+/// `render_pairs`.
 export fn json_pair_add(list: JsonPairList, key: string, encoded_value: string) -> JsonPairList {
     JsonPairList.Node(JsonPair { key, encoded_value }, list)
 }
 
+/// Empty JsonItemList — start point for `json_item_add` chains.
 export fn json_items() -> JsonItemList { JsonItemList.End }
 
+/// Cons a pre-encoded item onto the front of a JsonItemList. Items
+/// are emitted in source order via `render_items`.
 export fn json_item_add(list: JsonItemList, encoded: string) -> JsonItemList {
     JsonItemList.Node(encoded, list)
 }
 
+/// Comma-join the pairs, prefixing each one with its quoted key.
+/// `first: true` suppresses the leading comma.
 fn render_pairs(list: JsonPairList, first: bool) -> string {
     match list {
         .End -> ""
@@ -223,6 +239,7 @@ fn render_pairs(list: JsonPairList, first: bool) -> string {
     }
 }
 
+/// Comma-join the items. `first: true` suppresses the leading comma.
 fn render_items(list: JsonItemList, first: bool) -> string {
     match list {
         .End -> ""
