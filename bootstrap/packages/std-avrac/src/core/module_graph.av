@@ -392,3 +392,10 @@ export fn module_graph_item_id(g: ModuleGraph, mod_id: int, name: string) -> int
         ID_NONE
     }
 }
+
+/// True iff `name` is declared in `mod_id`'s `items` strmap. O(1).
+export fn module_graph_item_exists(g: ModuleGraph, mod_id: int, name: string) -> bool {
+    let m = module_graph_get(g, mod_id)
+    if m == null { return false }
+    avra_map_has_cstr(m!.items, name) != 0
+}

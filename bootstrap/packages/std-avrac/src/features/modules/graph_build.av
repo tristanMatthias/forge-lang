@@ -419,19 +419,26 @@ fn alloc_and_register_item(g: ModuleGraph, parent_id: int, name: string) -> Modu
 
 /// Look up a module by canonical path with ancestor walk: tries
 /// the absolute path first, then walks up `current_module`'s
-/// ancestor chain looking for a sibling that matches. Mirrors
-/// `find_use_path` in resolve/names.av but uses graph lookups
-/// instead of AST traversal.
+/// ancestor chain (starting at `current_module` itself) looking
+/// for a match.
 ///
-/// Returns the resolved canonical path string (so the rest of the
-/// resolver, which is path-string-driven, doesn't need to know
-/// about ModuleId yet). Returns the input `path` unchanged when
-/// no match is found, matching find_use_path's contract.
+/// Starting at `current_module` lets `mod X / use X.{...}` resolve
+/// X to the just-declared sibling — the canonical pattern in test
+/// fixtures (`mod mathlib / use mathlib.{add}`). Disambiguation
+/// between an immediate child and a same-named ancestor sibling is
+/// the job of `qualify_uses_recursively` — it anchors internal use
+/// paths at the package root, turning `use codegen.X` (inside
+/// std-avrac) into `use @std.avrac.codegen.X` so the absolute
+/// lookup wins before the parent walk runs.
+///
+/// Returns the resolved canonical path string. Returns the input
+/// `path` unchanged when no match is found, so the caller's
+/// "import not found" diagnostic still has a useful path to report.
 export fn graph_find_use_path(g: ModuleGraph, current_module: string, path: string) -> string {
     if module_graph_find_by_canonical(g, path) != ID_NONE { return path }
     mut search = current_module
     while search != "" {
-        let scoped = if search == "" { path } else { "${search}::${path}" }
+        let scoped = "${search}::${path}"
         if scoped != current_module && module_graph_find_by_canonical(g, scoped) != ID_NONE {
             return scoped
         }
