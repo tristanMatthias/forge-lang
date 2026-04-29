@@ -193,6 +193,7 @@ export type ModuleGraph = {
     by_path: ptr,
     by_canonical: ptr,
     package_roots: ptr,
+    item_exports: ptr,
     next_module_id: int,
     next_item_id: int,
     next_package_id: int,
@@ -206,11 +207,28 @@ export fn module_graph_new() -> ModuleGraph {
         by_path: avra_map_new_cstr(),
         by_canonical: avra_map_new_cstr(),
         package_roots: avra_intmap_new(),
+        item_exports: avra_map_new_cstr(),
         next_module_id: 0,
         next_item_id: 0,
         next_package_id: 0,
         interner: interner_new(),
     }
+}
+
+/// Mark `canonical` (full path like `@std::avrac::typeck::tc_er`) as
+/// either exported (1) or private (0). Used during graph construction
+/// when an item is encountered with `@export`. Read by the resolver
+/// at use-resolution time to enforce visibility.
+export fn module_graph_set_export(g: ModuleGraph, canonical: string, exported: int) -> ModuleGraph {
+    avra_map_set_cstr(g.item_exports, canonical, exported)
+    g
+}
+
+/// Lookup an item's exported flag by full canonical path. Returns
+/// false when the item isn't registered (treats unknown as private).
+export fn module_graph_is_exported(g: ModuleGraph, canonical: string) -> bool {
+    if avra_map_has_cstr(g.item_exports, canonical) == 0 { return false }
+    avra_map_get_cstr(g.item_exports, canonical) != 0
 }
 
 /// Register `mod_id` under its canonical path (e.g. `"core::ast"` or
