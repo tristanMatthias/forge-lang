@@ -32,7 +32,7 @@ use core.module_graph.{
     module_graph_add_package_root, module_graph_package_root,
     module_graph_link_child, module_graph_child_id,
     module_graph_alloc_item, module_graph_add_item,
-    module_graph_set_canonical,
+    module_graph_set_canonical, module_graph_find_by_canonical,
     interner_intern,
     ID_NONE,
 }
@@ -338,6 +338,118 @@ fn ensure_package_loaded(g: ModuleGraph, use_path: string, dir: string) -> Ensur
         graph: walked.graph, pkg_id: pr.pkg_id,
         had_error: walked.had_error, error_message: walked.error_message,
     }
+}
+
+// ── Build from already-parsed AST ────────────────────────────────────
+//
+// `build_module_graph` reads files from disk. The compile pipeline,
+// however, has already parsed + wrapped the program (via
+// resolve_module_files) by the time name resolution runs. Building the
+// graph from those stmts directly avoids re-reading + re-parsing every
+// file. This is what name resolution actually consumes.
+
+/// Build a ModuleGraph from a fully-resolved AST statement list.
+/// `stmts` should be the output of `resolve_module_files` — every
+/// `mod X` body is already attached, every `@scope.pkg` import has
+/// been wrapped + hoisted.
+///
+/// Walks every `Stmt.Module(name, body)` and registers it as a
+/// ModuleGraphNode with its canonical path (e.g. `core::ast`,
+/// `@std::avrac::codegen::escape`). Top-level decls register as
+/// items. The result has the same structural information as the
+/// AST tree built by `resolve/names.av::build_module_tree` but
+/// indexed by ModuleId for O(1) lookup.
+///
+/// Returned graph is "anchored at the program root" — there's no
+/// package allocation here because the AST already encodes packages
+/// as wrapped Modules with `@`-prefixed names.
+export fn build_graph_from_stmts(stmts: StmtList) -> ModuleGraph {
+    let g0 = module_graph_new()
+    // Allocate the root module with file="" — it represents the
+    // program root, not any specific source file.
+    let root = module_graph_add(g0, "", ID_NONE, 0)
+    let g1 = module_graph_set_canonical(root.graph, "", root.id)
+    walk_ast_stmts(g1, stmts, root.id, "")
+}
+
+fn walk_ast_stmts(g: ModuleGraph, stmts: StmtList, parent_id: int, canon: string) -> ModuleGraph {
+    match stmts {
+        .End -> g
+        .Node(ss, next) -> {
+            let g_next = walk_ast_stmt(g, ss.node, parent_id, canon)
+            walk_ast_stmts(g_next, next, parent_id, canon)
+        }
+    }
+}
+
+fn walk_ast_stmt(g: ModuleGraph, stmt: Stmt, parent_id: int, canon: string) -> ModuleGraph {
+    match stmt {
+        .Module(name, body) -> {
+            let child_canon = if canon == "" { name } else { "${canon}::${name}" }
+            // Dedup against canonical path — wrapped packages can
+            // appear at multiple wrap levels but should resolve to
+            // the same node.
+            let existing = module_graph_find_by_canonical(g, child_canon)
+            if existing != ID_NONE {
+                walk_ast_stmts(g, body, existing, child_canon)
+            } else {
+                let added = module_graph_add(g, "", parent_id, 0)
+                let linked = module_graph_link_child(added.graph, parent_id, name, added.id)
+                let g_canon = module_graph_set_canonical(linked, child_canon, added.id)
+                walk_ast_stmts(g_canon, body, added.id, child_canon)
+            }
+        }
+        .Annotated(_, inner) -> walk_ast_stmt(g, inner, parent_id, canon)
+        .Function(name, _, _, _, _) -> alloc_and_register_item(g, parent_id, name)
+        .ExternFn(name, _, _) -> alloc_and_register_item(g, parent_id, name)
+        .TypeDecl(name, _, _) -> alloc_and_register_item(g, parent_id, name)
+        .NewtypeDecl(name, _) -> alloc_and_register_item(g, parent_id, name)
+        .UnionAliasDecl(name, _) -> alloc_and_register_item(g, parent_id, name)
+        .ShapeDecl(name, _) -> alloc_and_register_item(g, parent_id, name)
+        .EnumDecl(name, _, _) -> alloc_and_register_item(g, parent_id, name)
+        .TraitDecl(name, _) -> alloc_and_register_item(g, parent_id, name)
+        _ -> g
+    }
+}
+
+fn alloc_and_register_item(g: ModuleGraph, parent_id: int, name: string) -> ModuleGraph {
+    let alloc = module_graph_alloc_item(g)
+    module_graph_add_item(alloc.graph, parent_id, name, alloc.item_id)
+}
+
+/// Look up a module by canonical path with ancestor walk: tries
+/// the absolute path first, then walks up `current_module`'s
+/// ancestor chain looking for a sibling that matches. Mirrors
+/// `find_use_path` in resolve/names.av but uses graph lookups
+/// instead of AST traversal.
+///
+/// Returns the resolved canonical path string (so the rest of the
+/// resolver, which is path-string-driven, doesn't need to know
+/// about ModuleId yet). Returns the input `path` unchanged when
+/// no match is found, matching find_use_path's contract.
+export fn graph_find_use_path(g: ModuleGraph, current_module: string, path: string) -> string {
+    if module_graph_find_by_canonical(g, path) != ID_NONE { return path }
+    mut search = current_module
+    while search != "" {
+        let scoped = if search == "" { path } else { "${search}::${path}" }
+        if scoped != current_module && module_graph_find_by_canonical(g, scoped) != ID_NONE {
+            return scoped
+        }
+        search = strip_last_canonical_segment(search)
+    }
+    path
+}
+
+/// Drop the trailing `::name` from a canonical path. Returns "" if
+/// no `::` separator. Used by graph_find_use_path's ancestor walk.
+fn strip_last_canonical_segment(path: string) -> string {
+    mut last = -1
+    mut i = 0
+    while i < path.length - 1 {
+        if path[i] == ":" && path[i + 1] == ":" { last = i }
+        i = i + 1
+    }
+    if last < 0 { "" } else { path.substring(0, last) }
 }
 
 /// Convert `@std.avrac.foo` → `@std::avrac::foo`. Used to align the
