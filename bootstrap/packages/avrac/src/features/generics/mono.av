@@ -764,6 +764,12 @@ fn collect_inst_expr(expr: Expr, regs: GenRegs, st: CollectState) -> CollectStat
                 .Node(_, _, _, _) -> st with { insts: merge_partial(ename, TypeArgList.End, st.insts) }
                 .End -> collect_inst_expr(obj, regs, st)
             }
+            // Module-qualified bare variant access (resolver
+            // rewrote `RgmList.End` → `mod::RgmList.End`).
+            .QualifiedIdent(ename) -> match generic_enum_lookup(regs.enums, ename) {
+                .Node(_, _, _, _) -> st with { insts: merge_partial(ename, TypeArgList.End, st.insts) }
+                .End -> collect_inst_expr(obj, regs, st)
+            }
             _ -> collect_inst_expr(obj, regs, st)
         }
         .Binary(l, _, r) -> collect_inst_expr(r, regs, collect_inst_expr(l, regs, st))
@@ -1287,6 +1293,12 @@ fn rewrite_expr(expr: Expr, regs: GenRegs, insts: InstList) -> Expr {
         .FieldAccess(obj, f) -> match obj {
             .Ident(ename) -> match generic_enum_lookup(regs.enums, ename) {
                 .Node(_, _, _, _) -> .FieldAccess(.Ident(inst_mangled(insts, ename)), f)
+                .End -> .FieldAccess(rewrite_expr(obj, regs, insts), f)
+            }
+            // Module-qualified enum reference (resolver rewrote
+            // `RgmList` → `mod::RgmList`). Same mangling logic.
+            .QualifiedIdent(ename) -> match generic_enum_lookup(regs.enums, ename) {
+                .Node(_, _, _, _) -> .FieldAccess(.QualifiedIdent(inst_mangled(insts, ename)), f)
                 .End -> .FieldAccess(rewrite_expr(obj, regs, insts), f)
             }
             _ -> .FieldAccess(rewrite_expr(obj, regs, insts), f)

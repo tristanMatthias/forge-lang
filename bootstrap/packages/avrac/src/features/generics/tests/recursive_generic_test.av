@@ -1,7 +1,8 @@
 // Recursive generic enums are exercised by the bootstrap compiler's own
 // AST nodes (StmtList, ExprList, etc.). This test verifies the runtime
-// behavior of a list-like generic ADT via a non-generic concrete instance,
-// since the codegen has a Module-wrapped recursive-generic limitation.
+// behavior of a list-like recursive ADT via a non-generic concrete
+// instance; `recursive_generic_module_test.av` covers the
+// Module-wrapped generic form (forge-crafting-intepreters-uqay).
 
 enum RgIntList {
     End,
