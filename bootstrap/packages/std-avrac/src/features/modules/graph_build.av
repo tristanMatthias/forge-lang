@@ -34,6 +34,7 @@ use core.module_graph.{
     module_graph_alloc_item, module_graph_add_item,
     module_graph_set_canonical, module_graph_find_by_canonical,
     module_graph_set_export, module_graph_is_exported,
+    module_graph_append_item,
     interner_intern,
     ID_NONE,
 }
@@ -410,23 +411,31 @@ fn walk_ast_stmt_with_export(g: ModuleGraph, stmt: Stmt, parent_id: int, canon: 
             let merged = if is_export { 1 } else { exported }
             walk_ast_stmt_with_export(g, inner, parent_id, canon, merged)
         }
-        .Function(name, _, _, _, _) -> register_item_exported(g, parent_id, canon, name, exported)
-        .ExternFn(name, _, _) -> register_item_exported(g, parent_id, canon, name, 1)
-        .TypeDecl(name, _, _) -> register_item_exported(g, parent_id, canon, name, exported)
-        .NewtypeDecl(name, _) -> register_item_exported(g, parent_id, canon, name, exported)
-        .UnionAliasDecl(name, _) -> register_item_exported(g, parent_id, canon, name, exported)
-        .ShapeDecl(name, _) -> register_item_exported(g, parent_id, canon, name, exported)
-        .EnumDecl(name, _, _) -> register_item_exported(g, parent_id, canon, name, exported)
-        .TraitDecl(name, _) -> register_item_exported(g, parent_id, canon, name, exported)
+        .Function(name, _, _, _, _) -> register_item_typed(g, parent_id, canon, name, exported, false)
+        // Extern fn keeps its bare C ABI name as the alias canonical;
+        // is_extern=true short-circuits the qualification step below.
+        .ExternFn(name, _, _) -> register_item_typed(g, parent_id, canon, name, 1, true)
+        .TypeDecl(name, _, _) -> register_item_typed(g, parent_id, canon, name, exported, false)
+        .NewtypeDecl(name, _) -> register_item_typed(g, parent_id, canon, name, exported, false)
+        .UnionAliasDecl(name, _) -> register_item_typed(g, parent_id, canon, name, exported, false)
+        .ShapeDecl(name, _) -> register_item_typed(g, parent_id, canon, name, exported, false)
+        .EnumDecl(name, _, _) -> register_item_typed(g, parent_id, canon, name, exported, false)
+        .TraitDecl(name, _) -> register_item_typed(g, parent_id, canon, name, exported, false)
         _ -> g
     }
 }
 
-fn register_item_exported(g: ModuleGraph, parent_id: int, canon: string, name: string, exported: int) -> ModuleGraph {
+/// Register an item with explicit extern handling. Normal items get
+/// `mod::name` as their alias canonical; externs get the bare name
+/// (C ABI requirement). Both go into `all_items` for global-index
+/// construction and `item_exports` for visibility checks.
+fn register_item_typed(g: ModuleGraph, parent_id: int, canon: string, name: string, exported: int, is_extern: bool) -> ModuleGraph {
     let alloc = module_graph_alloc_item(g)
     let g1 = module_graph_add_item(alloc.graph, parent_id, name, alloc.item_id)
     let item_canon = if canon == "" { name } else { "${canon}::${name}" }
-    module_graph_set_export(g1, item_canon, exported)
+    let g2 = module_graph_set_export(g1, item_canon, exported)
+    let alias_canon = if is_extern { name } else { item_canon }
+    module_graph_append_item(g2, name, alias_canon, exported)
 }
 
 /// True iff `annots` contains the `@export` marker. Mirrors the

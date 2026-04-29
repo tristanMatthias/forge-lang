@@ -194,6 +194,7 @@ export type ModuleGraph = {
     by_canonical: ptr,
     package_roots: ptr,
     item_exports: ptr,
+    all_items: GraphItemList,
     next_module_id: int,
     next_item_id: int,
     next_package_id: int,
@@ -208,11 +209,26 @@ export fn module_graph_new() -> ModuleGraph {
         by_canonical: avra_map_new_cstr(),
         package_roots: avra_intmap_new(),
         item_exports: avra_map_new_cstr(),
+        all_items: GraphItemList.End,
         next_module_id: 0,
         next_item_id: 0,
         next_package_id: 0,
         interner: interner_new(),
     }
+}
+
+/// Append-only list of every top-level item registered in the graph.
+/// Lets the resolver walk all items in O(n) without needing strmap
+/// iteration FFI. Each entry carries the same fields the legacy
+/// `ModuleItem` chain in resolve/names.av carries — so the graph can
+/// supply a drop-in replacement for `build_global_index`.
+///
+/// `canonical` matches the actual qualified path used in aliases:
+/// `mod::name` for normal decls, bare `name` for extern fns (whose
+/// C ABI requires the unqualified symbol).
+export enum GraphItemList {
+    End
+    Node(short_name: string, canonical: string, exported: int, next: GraphItemList)
 }
 
 /// Mark `canonical` (full path like `@std::avrac::typeck::tc_er`) as
@@ -222,6 +238,14 @@ export fn module_graph_new() -> ModuleGraph {
 export fn module_graph_set_export(g: ModuleGraph, canonical: string, exported: int) -> ModuleGraph {
     avra_map_set_cstr(g.item_exports, canonical, exported)
     g
+}
+
+/// Append an item to the graph's running all-items list.
+/// `canonical` is what the alias chain stores — `mod::name` for normal
+/// decls, bare `name` for extern fns. The resolver consumes this list
+/// to build its global index.
+export fn module_graph_append_item(g: ModuleGraph, short_name: string, canonical: string, exported: int) -> ModuleGraph {
+    g with { all_items: GraphItemList.Node(short_name, canonical, exported, g.all_items) }
 }
 
 /// Lookup an item's exported flag by full canonical path. Returns

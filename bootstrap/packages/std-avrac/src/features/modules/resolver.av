@@ -331,34 +331,19 @@ fn qualify_uses_recursively(stmts: StmtList, pkg_qual: string) -> StmtList {
 
 /// Per-statement worker: rewrite `Use` (handling Annotated wrappers)
 /// and recurse into `Module` bodies. Other statements pass through.
+/// Annotated wrappers transparently delegate to the inner stmt's
+/// rewrite, then re-attach the annotation — `Use` and `Module`
+/// arms don't need to know about Annotated.
 fn qualify_use_in_stmt(ss: SStmt, pkg_qual: string) -> SStmt {
-    match ss.node {
-        .Use(up, names) -> {
-            let new_path = anchor_use_path(up, pkg_qual)
-            if new_path == up { ss } else { sstmt(Stmt.Use(new_path, names), ss.line, ss.col) }
-        }
-        .Annotated(annots, inner) -> {
-            match inner {
-                .Use(up, names) -> {
-                    let new_path = anchor_use_path(up, pkg_qual)
-                    if new_path == up {
-                        ss
-                    } else {
-                        sstmt(Stmt.Annotated(annots, Stmt.Use(new_path, names)), ss.line, ss.col)
-                    }
-                }
-                .Module(name, body) -> {
-                    let new_body = qualify_uses_recursively(body, pkg_qual)
-                    sstmt(Stmt.Annotated(annots, Stmt.Module(name, new_body)), ss.line, ss.col)
-                }
-                _ -> ss
-            }
-        }
-        .Module(name, body) -> {
-            let new_body = qualify_uses_recursively(body, pkg_qual)
-            sstmt(Stmt.Module(name, new_body), ss.line, ss.col)
-        }
-        _ -> ss
+    sstmt(qualify_inner_stmt(ss.node, pkg_qual), ss.line, ss.col)
+}
+
+fn qualify_inner_stmt(stmt: Stmt, pkg_qual: string) -> Stmt {
+    match stmt {
+        .Use(up, names) -> Stmt.Use(anchor_use_path(up, pkg_qual), names)
+        .Module(name, body) -> Stmt.Module(name, qualify_uses_recursively(body, pkg_qual))
+        .Annotated(annots, inner) -> Stmt.Annotated(annots, qualify_inner_stmt(inner, pkg_qual))
+        _ -> stmt
     }
 }
 
