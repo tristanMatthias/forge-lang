@@ -72,11 +72,15 @@ fn apply_overrides(ctx: Ctx, env: VarEnv, dst: ptr, struct_name: string, fields:
                 let st_ty = ctx.get_type(struct_name)
                 let gep = ctx.gep(st_ty, dst, idx, "with_ovr")
                 let fld_ty = ctx.resolve_field_type(fields, name)
+                // store_field truncates / casts to the field's LLVM type
+                // (e.g. i64 → i1 for bool fields). Plain ctx.store would
+                // write 8 bytes and clobber adjacent fields when the
+                // destination is i1 (forge-crafting-intepreters-14s7).
                 if needs_union_wrap(r.ty, fld_ty) {
                     let wrapped = emit_union_wrap(ctx, r.value, r.ty, fld_ty)?
-                    ctx.store(wrapped.value, gep)
+                    ctx.store_field(wrapped.value, gep, fld_ty)
                 } else {
-                    ctx.store(r.value, gep)
+                    ctx.store_field(r.value, gep, fld_ty)
                 }
             }
             apply_overrides(ctx, env, dst, struct_name, fields, next)

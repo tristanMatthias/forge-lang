@@ -1,0 +1,47 @@
+// Regression for forge-crafting-intepreters-14s7: `with { f1: true }`
+// stored an i64 into an i1 field, clobbering the seven adjacent bool
+// fields in the struct. apply_overrides now uses store_field so the
+// store respects the field's LLVM type.
+
+type Args = {
+    f1: bool, f2: bool, f3: bool, f4: bool, f5: bool, f6: bool, f7: bool, f8: bool, f9: bool,
+    s1: string, s2: string,
+}
+
+fn args_default() -> Args {
+    Args { f1: false, f2: false, f3: false, f4: false, f5: false, f6: false, f7: false, f8: false, f9: false,
+           s1: "", s2: "" }
+}
+
+spec "struct update preserves adjacent bool fields" {
+    given "an args struct with f8 set, then overriding f1 via with" {
+        then "f8 stays true (the i1 store no longer clobbers field 8)" {
+            mut a = args_default()
+            a = a with { f8: true }
+            a = a with { f1: true }
+            a.f8 == true && a.f1 == true
+        }
+        then "string fields are unaffected" {
+            mut a = args_default()
+            a = a with { s2: "hello" }
+            a = a with { f1: true }
+            a.s2 == "hello"
+        }
+    }
+
+    given "a chain of with overrides on bool fields only" {
+        then "every set bit survives the chain" {
+            mut a = args_default()
+            a = a with { f1: true }
+            a = a with { f2: true }
+            a = a with { f3: true }
+            a = a with { f4: true }
+            a = a with { f5: true }
+            a = a with { f6: true }
+            a = a with { f7: true }
+            a = a with { f8: true }
+            a = a with { f9: true }
+            a.f1 && a.f2 && a.f3 && a.f4 && a.f5 && a.f6 && a.f7 && a.f8 && a.f9
+        }
+    }
+}
