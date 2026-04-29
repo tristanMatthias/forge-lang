@@ -236,10 +236,242 @@ export fn graph_by_qualified(g: SymbolGraph, qualified: string) -> Sym? {
     sym_list_find_qualified(g.syms, qualified)
 }
 
-// Symbols whose qualified path begins with `prefix::`. Ticket .4
-/// uses this for hierarchical navigation.
+/// Every symbol whose qualified path is a (transitive) descendant of
+/// `prefix`. `graph_children(g, "core")` returns `core::ast::Expr`,
+/// `core::ast`, `core::ast::vtype_display`, etc. Use
+/// `graph_direct_children` for one-level navigation.
 export fn graph_children(g: SymbolGraph, prefix: string) -> SymList {
     collect_children(g.syms, prefix)
+}
+
+/// Direct (immediate) children only — one level below `prefix`. So
+/// `graph_direct_children(g, "core")` returns `core::ast` and
+/// `core::runtime` but not `core::ast::Expr`.
+///
+/// This is the navigation primitive for `avra docs <module>`: showing
+/// what's *inside* a module without flattening the tree.
+export fn graph_direct_children(g: SymbolGraph, prefix: string) -> SymList {
+    collect_direct_children(g.syms, prefix)
+}
+
+/// Top-level module roots — symbols whose qualified path has no
+/// `::` separator. Used by `avra docs` (no args) to show the
+/// project's top-level shape instead of dumping every symbol flat.
+export fn graph_module_roots(g: SymbolGraph) -> SymList {
+    collect_module_roots(g.syms)
+}
+
+/// Resolve a possibly-partial path to a Sym.
+///
+/// Accepts three forms:
+///   - fully qualified: "core::ast::Expr"   → exact lookup
+///   - anchored suffix: "ast::Expr"          → unique suffix match
+///   - bare name:       "Expr"               → first exact-name match
+///
+/// Returns the resolved Sym or null. Disambiguation when multiple
+/// matches exist is the caller's job — call `graph_resolve_all` to
+/// see every match.
+export fn graph_resolve(g: SymbolGraph, path: string) -> Sym? {
+    if path.contains("::") {
+        let exact = graph_by_qualified(g, path)
+        if exact != null {
+            return exact
+        }
+        // Anchored suffix: "ast::Expr" matches "core::ast::Expr".
+        let suffix = "::${path}"
+        let candidates = collect_qualified_suffix(g.syms, suffix)
+        return sym_list_first(candidates)
+    }
+    graph_by_name(g, path)
+}
+
+/// Every match for a partial path. Used by `avra docs Expr` to
+/// produce a disambiguation prompt when multiple symbols share a
+/// short name.
+export fn graph_resolve_all(g: SymbolGraph, path: string) -> SymList {
+    if path.contains("::") {
+        let exact = graph_by_qualified(g, path)
+        if exact != null {
+            return SymList.Node(exact!, SymList.End)
+        }
+        return collect_qualified_suffix(g.syms, "::${path}")
+    }
+    graph_all_by_name(g, path)
+}
+
+// ── Path utilities ──────────────────────────────────────────────────
+
+/// Drop the last `::`-separated segment, returning the parent path.
+/// `qualified_parent("core::ast::Expr")` → "core::ast".
+/// `qualified_parent("Expr")` → "".
+export fn qualified_parent(qualified: string) -> string {
+    let last = qualified_last_separator(qualified)
+    if last < 0 { return "" }
+    qualified.substring(0, last)
+}
+
+/// Return the leaf segment — the part after the final `::`.
+/// `qualified_leaf("core::ast::Expr")` → "Expr".
+export fn qualified_leaf(qualified: string) -> string {
+    let last = qualified_last_separator(qualified)
+    if last < 0 { return qualified }
+    qualified.substring(last + 2, qualified.length)
+}
+
+/// Depth of the path: number of `::` separators. Top-level = 0.
+export fn qualified_depth(qualified: string) -> int {
+    mut depth = 0
+    mut i = 0
+    while i + 1 < qualified.length {
+        if qualified.substring(i, i + 2) == "::" {
+            depth = depth + 1
+            i = i + 2
+        } else {
+            i = i + 1
+        }
+    }
+    depth
+}
+
+/// Render breadcrumbs: "core ▸ ast ▸ Expr". Used by detail views
+/// (`avra docs core::ast::Expr` shows the parent chain at the top).
+export fn qualified_breadcrumbs(qualified: string) -> string {
+    if qualified == "" { return "" }
+    mut acc = ""
+    mut start = 0
+    mut i = 0
+    while i + 1 < qualified.length {
+        if qualified.substring(i, i + 2) == "::" {
+            let seg = qualified.substring(start, i)
+            acc = if acc == "" { seg } else { "${acc} ▸ ${seg}" }
+            start = i + 2
+            i = i + 2
+        } else {
+            i = i + 1
+        }
+    }
+    let last = qualified.substring(start, qualified.length)
+    if acc == "" { last } else { "${acc} ▸ ${last}" }
+}
+
+fn qualified_last_separator(qualified: string) -> int {
+    mut i = qualified.length - 2
+    while i >= 0 {
+        if qualified.substring(i, i + 2) == "::" {
+            return i
+        }
+        i = i - 1
+    }
+    -1
+}
+
+// ── Tree rendering ──────────────────────────────────────────────────
+
+/// Render a hierarchy summary for `prefix` (or every top-level when
+/// `prefix == ""`). Each line shows: leaf name, child count.
+/// Lightweight — the docs CLI layers ANSI + truncation on top.
+export fn render_tree_summary(g: SymbolGraph, prefix: string) -> string {
+    let direct = if prefix == "" {
+        graph_module_roots(g)
+    } else {
+        graph_direct_children(g, prefix)
+    }
+    render_tree_lines(g, direct, "")
+}
+
+fn render_tree_lines(g: SymbolGraph, list: SymList, indent: string) -> string {
+    mut out = ""
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return out
+            }
+            .Node(s, next) -> {
+                let leaf = qualified_leaf(s.qualified)
+                let kid_count = sym_list_len(graph_direct_children(g, s.qualified))
+                let count_str = if kid_count > 0 { " (${string(kid_count)})" } else { "" }
+                let line = "${indent}${leaf}${count_str}\n"
+                out = "${out}${line}"
+                cur = next
+            }
+        }
+    }
+    out
+}
+
+// ── Hierarchy collection internals ──────────────────────────────────
+
+fn collect_direct_children(list: SymList, prefix: string) -> SymList {
+    let pfx_dot = "${prefix}::"
+    let pfx_depth = if prefix == "" { -1 } else { qualified_depth(prefix) }
+    mut acc = SymList.End
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return reverse_syms(acc)
+            }
+            .Node(item, next) -> {
+                let q = item.qualified
+                let matches = if prefix == "" {
+                    !q.contains("::")
+                } else {
+                    q.starts_with(pfx_dot) && qualified_depth(q) == pfx_depth + 1
+                }
+                if matches {
+                    acc = SymList.Node(item, acc)
+                }
+                cur = next
+            }
+        }
+    }
+    SymList.End
+}
+
+fn collect_module_roots(list: SymList) -> SymList {
+    mut acc = SymList.End
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return reverse_syms(acc)
+            }
+            .Node(item, next) -> {
+                if !item.qualified.contains("::") {
+                    acc = SymList.Node(item, acc)
+                }
+                cur = next
+            }
+        }
+    }
+    SymList.End
+}
+
+fn collect_qualified_suffix(list: SymList, suffix: string) -> SymList {
+    mut acc = SymList.End
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return reverse_syms(acc)
+            }
+            .Node(item, next) -> {
+                if item.qualified.ends_with(suffix) || item.qualified == suffix.substring(2, suffix.length) {
+                    acc = SymList.Node(item, acc)
+                }
+                cur = next
+            }
+        }
+    }
+    SymList.End
+}
+
+fn sym_list_first(list: SymList) -> Sym? {
+    match list {
+        .End -> null
+        .Node(item, _) -> item
+    }
 }
 
 // ── List helpers ────────────────────────────────────────────────────

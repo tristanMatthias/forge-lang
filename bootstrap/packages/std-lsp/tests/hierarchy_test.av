@@ -1,0 +1,197 @@
+// Hierarchical addressing primitives: direct children, module roots,
+// partial-path resolution, breadcrumbs, parent/leaf/depth.
+
+use @std.lsp.{lsp_pos,
+              SymKind, graph_new, graph_add, graph_count,
+              graph_direct_children, graph_children, graph_module_roots,
+              graph_resolve, graph_resolve_all,
+              qualified_parent, qualified_leaf, qualified_depth,
+              qualified_breadcrumbs,
+              render_tree_summary,
+              sym_new, SymbolGraph, SymList}
+
+fn hier_test_span() -> LspSpan {
+    LspSpan { start: lsp_pos(1, 1), end: lsp_pos(1, 1) }
+}
+
+fn hier_test_graph() -> SymbolGraph {
+    let sp = hier_test_span()
+    mut g = graph_new()
+    g = graph_add(g, sym_new("core", "core",
+        SymKind.Module, "", "core/mod.av", sp, true, ""))
+    g = graph_add(g, sym_new("ast", "core::ast",
+        SymKind.Module, "", "core/ast.av", sp, true, ""))
+    g = graph_add(g, sym_new("Expr", "core::ast::Expr",
+        SymKind.Type("type Expr"), "", "core/ast.av", sp, true, ""))
+    g = graph_add(g, sym_new("Stmt", "core::ast::Stmt",
+        SymKind.Type("type Stmt"), "", "core/ast.av", sp, true, ""))
+    g = graph_add(g, sym_new("runtime", "core::runtime",
+        SymKind.Module, "", "core/runtime.av", sp, true, ""))
+    g = graph_add(g, sym_new("parse", "parse",
+        SymKind.Module, "", "parse/mod.av", sp, true, ""))
+    g = graph_add(g, sym_new("parse_program", "parse::parse_program",
+        SymKind.Fn("fn parse_program() -> int", "int"), "", "parse/mod.av", sp, true, ""))
+    g
+}
+
+fn hier_test_count(list: SymList) -> int {
+    mut n = 0
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return n
+            }
+            .Node(_, next) -> {
+                n = n + 1
+                cur = next
+            }
+        }
+    }
+    n
+}
+
+fn hier_test_first_qual(list: SymList) -> string {
+    match list {
+        .End -> ""
+        .Node(item, _) -> item.qualified
+    }
+}
+
+spec "hierarchy: path utilities" {
+    given "qualified_parent" {
+        then "drops the last segment" {
+            qualified_parent("core::ast::Expr") == "core::ast"
+        }
+        then "returns empty for a top-level path" {
+            qualified_parent("core") == ""
+        }
+    }
+    given "qualified_leaf" {
+        then "returns the segment after the final ::" {
+            qualified_leaf("core::ast::Expr") == "Expr"
+        }
+        then "returns the whole string when no separator" {
+            qualified_leaf("Foo") == "Foo"
+        }
+    }
+    given "qualified_depth" {
+        then "is 0 at the top level" {
+            qualified_depth("core") == 0
+        }
+        then "counts :: separators" {
+            qualified_depth("core::ast::Expr") == 2
+        }
+    }
+    given "qualified_breadcrumbs" {
+        then "joins segments with ▸" {
+            qualified_breadcrumbs("core::ast::Expr") == "core ▸ ast ▸ Expr"
+        }
+        then "leaves a single segment unchanged" {
+            qualified_breadcrumbs("core") == "core"
+        }
+    }
+}
+
+spec "hierarchy: direct children vs transitive" {
+    given "graph_direct_children" {
+        then "for an empty prefix returns top-level roots" {
+            let g = hier_test_graph()
+            let direct = graph_direct_children(g, "")
+            // core, parse — runtime is at depth 1, not 0
+            hier_test_count(direct) == 2
+        }
+        then "returns only one-level descendants" {
+            let g = hier_test_graph()
+            let kids = graph_direct_children(g, "core")
+            // core::ast, core::runtime — NOT core::ast::Expr / Stmt
+            hier_test_count(kids) == 2
+        }
+        then "deeper queries reach deeper levels" {
+            let g = hier_test_graph()
+            let kids = graph_direct_children(g, "core::ast")
+            // Expr, Stmt
+            hier_test_count(kids) == 2
+        }
+    }
+    given "graph_children (transitive)" {
+        then "returns every descendant including grand-children" {
+            let g = hier_test_graph()
+            let all = graph_children(g, "core")
+            // core::ast, core::ast::Expr, core::ast::Stmt, core::runtime
+            hier_test_count(all) == 4
+        }
+    }
+    given "graph_module_roots" {
+        then "returns only top-level path entries" {
+            let g = hier_test_graph()
+            let roots = graph_module_roots(g)
+            // core, parse
+            hier_test_count(roots) == 2
+        }
+    }
+}
+
+spec "hierarchy: partial path resolution" {
+    given "a fully qualified path" {
+        then "graph_resolve hits the exact symbol" {
+            let g = hier_test_graph()
+            let s = graph_resolve(g, "core::ast::Expr")
+            s != null && s!.qualified == "core::ast::Expr"
+        }
+    }
+    given "a bare leaf name" {
+        then "graph_resolve finds the symbol by short name" {
+            let g = hier_test_graph()
+            let s = graph_resolve(g, "Expr")
+            s != null && s!.qualified == "core::ast::Expr"
+        }
+    }
+    given "an anchored suffix path" {
+        then "graph_resolve matches via suffix" {
+            let g = hier_test_graph()
+            let s = graph_resolve(g, "ast::Expr")
+            s != null && s!.qualified == "core::ast::Expr"
+        }
+    }
+    given "graph_resolve_all" {
+        then "returns every candidate for ambiguous names" {
+            let g = hier_test_graph()
+            // Only one Expr in our fixture, so 1 result
+            hier_test_count(graph_resolve_all(g, "Expr")) == 1
+        }
+    }
+    given "an unknown path" {
+        then "graph_resolve returns null" {
+            let g = hier_test_graph()
+            graph_resolve(g, "zzz_no_such_symbol") == null
+        }
+    }
+}
+
+spec "hierarchy: tree rendering" {
+    given "render_tree_summary with empty prefix" {
+        then "produces a non-empty string for a populated graph" {
+            let g = hier_test_graph()
+            render_tree_summary(g, "").length > 0
+        }
+        then "lists each top-level root once" {
+            let g = hier_test_graph()
+            let s = render_tree_summary(g, "")
+            s.contains("core") && s.contains("parse")
+        }
+    }
+    given "render_tree_summary scoped to a module" {
+        then "lists direct children of that module" {
+            let g = hier_test_graph()
+            let s = render_tree_summary(g, "core")
+            s.contains("ast") && s.contains("runtime")
+        }
+        then "indicates child counts for non-leaf nodes" {
+            let g = hier_test_graph()
+            let s = render_tree_summary(g, "core")
+            // ast has 2 children, runtime has 0
+            s.contains("(2)")
+        }
+    }
+}
