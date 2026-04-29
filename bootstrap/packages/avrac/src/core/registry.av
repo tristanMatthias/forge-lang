@@ -67,21 +67,33 @@ export type Feature = {
 //
 // Default handlers used by `feature_new` so a Feature only has to
 // override the callbacks it actually implements. The codegen and
-// eval no-ops emit a "no handler" error so bugs that route a node
-// to an unregistered feature surface loudly instead of silently.
+// eval no-ops return a "no handler" error so bugs that route a node
+// to an unregistered feature surface loudly instead of silently;
+// the resolver / typecheck no-ops pass through unchanged because
+// those passes have non-error fallback shapes.
 
+/// Codegen no-op for expressions — `err_emit("no expr handler")`.
 fn noop_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> { err_emit("no expr handler") }
+/// Codegen no-op for statements — `err_sr("no stmt handler")`.
 fn noop_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> { err_sr("no stmt handler") }
+/// Resolver no-op for expressions — pass-through.
 fn noop_resolve_expr(r: Resolver, expr: Expr) -> Resolver { r }
+/// Resolver no-op for statements — pass-through.
 fn noop_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver { r }
+/// Typecheck no-op for expressions — yields `Unknown`.
 fn noop_check_expr(tc: TC, expr: Expr) -> ExprResult { tc_er(tc, .Unknown) }
+/// Typecheck no-op for statements — pass-through.
 fn noop_check_stmt(tc: TC, stmt: Stmt) -> TC { tc }
+/// Eval no-op for expressions — error step ("no eval_expr handler").
 fn noop_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
     StepResult { runtime: rt, value: Value { kind: "null", number_text: "", text: "", bool_value: false }, had_error: true, is_return: false, error_message: "no eval_expr handler" }
 }
+/// Eval no-op for statements — error step ("no eval_stmt handler").
 fn noop_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
     StepResult { runtime: rt, value: Value { kind: "null", number_text: "", text: "", bool_value: false }, had_error: true, is_return: false, error_message: "no eval_stmt handler" }
 }
+/// Parser no-op — returns null so the parser falls back to the
+/// in-tree dispatch when no feature claims this keyword.
 fn noop_parse(p: Parser) -> Stmt? { null }
 
 /// Construct a Feature with no-op handlers. Each feature module

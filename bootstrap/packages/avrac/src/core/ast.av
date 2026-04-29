@@ -324,6 +324,8 @@ export fn type_expr_to_vtype(te: TypeExpr) -> ValueType {
     }
 }
 
+/// Lower a TypeExprList to its corresponding TypeList by recursing
+/// `type_expr_to_vtype` on each element.
 fn tel_to_type_list(tel: TypeExprList) -> TypeList {
     match tel {
         .End -> TypeList.End
@@ -331,10 +333,13 @@ fn tel_to_type_list(tel: TypeExprList) -> TypeList {
     }
 }
 
+/// Length of a TypeExprList. O(n).
 export fn type_expr_list_length(tel: TypeExprList) -> int {
     match tel { .End -> 0, .Node(_, next) -> 1 + type_expr_list_length(next) }
 }
 
+/// Append `ty` to the end of a TypeExprList. O(n) — the parser uses
+/// this when assembling generic argument lists left-to-right.
 export fn type_expr_list_append(list: TypeExprList, ty: TypeExpr) -> TypeExprList {
     match list {
         .End -> TypeExprList.Node(ty, TypeExprList.End)
@@ -342,16 +347,21 @@ export fn type_expr_list_append(list: TypeExprList, ty: TypeExpr) -> TypeExprLis
     }
 }
 
-// Compare two type names, accepting equality if their last `::`-segments
-// match — used as a fallback in vtype_eq when type IDs aren't both populated.
-// This handles cases where a Module-wrapped test file has a param annotated
-// with a qualified Enum name (e.g. `mymod::Foo`) but an inner EnumCtor
-// literal still carries the bare name (`Foo`).
+/// Compare two type names, accepting equality if their last
+/// `::`-segments match. Used as a fallback in `vtype_eq` when type
+/// ids aren't both populated — covers the case where a Module-
+/// wrapped test file has a param annotated with a qualified Enum
+/// name (`mymod::Foo`) but an inner EnumCtor literal still carries
+/// the bare name (`Foo`).
 fn vtype_names_match(a: string, b: string) -> bool {
     if a == b { return true }
     last_seg(a) == last_seg(b)
 }
 
+/// Strip the module prefix from a qualified path: `"mod::Foo" → "Foo"`.
+/// Local helper kept distinct from `type_short_name` because this one
+/// stays in core/ast.av's namespace (the type registry's copy lives
+/// at `core::type_registry::type_short_name`).
 fn last_seg(s: string) -> string {
     if !s.contains("::") { return s }
     let parts = s.split("::")
@@ -392,6 +402,7 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
     }
 }
 
+/// Pairwise `vtype_eq` over two TypeLists. False on length mismatch.
 fn type_lists_eq(a: TypeList, b: TypeList) -> bool {
     match a {
         .End -> b is .End
@@ -416,6 +427,8 @@ export fn vtype_assignable(src: ValueType, dst: ValueType) -> bool {
     }
 }
 
+/// True iff `src` is a NarrowedEnum form of `dst` (or vice-versa).
+/// A narrowed enum can always re-widen to its base enum.
 fn narrowed_assignable_to(src: ValueType, dst: ValueType) -> bool {
     let en = vtype_enum_name(src)
     let dn = vtype_enum_name(dst)
@@ -510,6 +523,8 @@ export fn vtype_display(t: ValueType) -> string {
     }
 }
 
+/// Display-form pipe-join over a union's TypeList, used by
+/// `vtype_display` for the `Union(types)` arm.
 fn render_union_display(tl: TypeList) -> string {
     match tl {
         .End -> ""
@@ -555,6 +570,8 @@ export fn vtype_render_full(t: ValueType) -> string {
     }
 }
 
+/// `vtype_render_full` over each element of a TypeList, comma-joined.
+/// Used by `vtype_render_full` for tuple / fn-param rendering.
 fn render_type_list_full(tl: TypeList) -> string {
     match tl {
         .End -> ""
@@ -569,6 +586,8 @@ fn render_type_list_full(tl: TypeList) -> string {
     }
 }
 
+/// `vtype_render_full` over each element of a TypeList, pipe-joined
+/// for union rendering (`int|string|bool`).
 fn render_union_full(tl: TypeList) -> string {
     match tl {
         .End -> ""
@@ -583,27 +602,34 @@ fn render_union_full(tl: TypeList) -> string {
     }
 }
 
+/// Trait name for a Trait ValueType, or "" otherwise.
 export fn vtype_trait_name(t: ValueType) -> string {
     match t { .Trait(n, _) -> n, _ -> "" }
 }
 
+/// True iff `t` is a Union type.
 export fn vtype_is_union(t: ValueType) -> bool { t is .Union }
 
+/// True iff `t` is a Newtype wrapper.
 export fn vtype_is_newtype(t: ValueType) -> bool { t is .Newtype }
 
+/// Inner (wrapped) type of a Newtype, or Unknown otherwise.
 export fn vtype_newtype_inner(t: ValueType) -> ValueType {
     match t { .Newtype(_, inner, _) -> inner, _ -> ValueType.Unknown }
 }
 
+/// Name of a Newtype, or "" otherwise.
 export fn vtype_newtype_name(t: ValueType) -> string {
     match t { .Newtype(n, _, _) -> n, _ -> "" }
 }
 
+/// Member TypeList of a Union, or empty list otherwise.
 export fn vtype_union_types(t: ValueType) -> TypeList {
     match t { .Union(tl) -> tl, _ -> TypeList.End }
 }
 
-// Check if a ValueType is a member of a union's TypeList
+/// Membership test for a union's TypeList — `vtype_eq` against each
+/// element. Used by `vtype_assignable` to widen concrete types.
 export fn union_contains(tl: TypeList, t: ValueType) -> bool {
     match tl {
         .End -> false
@@ -611,7 +637,9 @@ export fn union_contains(tl: TypeList, t: ValueType) -> bool {
     }
 }
 
-// Build a TypeList from two types, flattening nested unions
+/// Build a TypeList from two types, flattening nested unions. Used
+/// by the parser when reading `A | B | C` so the resulting Union is
+/// always one level deep, regardless of operator associativity.
 export fn union_type_list_merge(a: ValueType, b: ValueType) -> TypeList {
     let left = match a {
         .Union(tl) -> tl
@@ -624,6 +652,7 @@ export fn union_type_list_merge(a: ValueType, b: ValueType) -> TypeList {
     type_list_concat(left, right)
 }
 
+/// Concatenate two TypeLists. O(n) in `a`.
 fn type_list_concat(a: TypeList, b: TypeList) -> TypeList {
     match a {
         .End -> b
@@ -692,6 +721,7 @@ export fn vtype_tuple_at(t: ValueType, idx: int) -> ValueType {
     }
 }
 
+/// 0-indexed nth element of a TypeList, or Unknown out-of-range.
 fn typelist_at(list: TypeList, idx: int) -> ValueType {
     match list {
         .End -> ValueType.Unknown
@@ -1024,6 +1054,9 @@ export fn doc_string_for(s: Stmt) -> string {
     annotation_first_string(found!)
 }
 
+/// Linear scan for an annotation by name within a single
+/// AnnotationList layer. Used by `find_annotation` which walks
+/// nested Annotated wrappers via `stmt_unwrap`.
 fn annotation_list_find(annots: AnnotationList, name: string) -> AnnotationList? {
     match annots {
         .End -> null
@@ -1037,9 +1070,9 @@ fn annotation_list_find(annots: AnnotationList, name: string) -> AnnotationList?
     }
 }
 
-// Pull the first arg's string body out of an annotation. The parser
-// stores doc comments as Expr.String("\"…raw text…\"") — quotes are
-// part of the literal form, so we strip them here.
+/// Pull the first arg's string body out of an annotation. The parser
+/// stores doc comments as `Expr.String("\"…raw text…\"")` — quotes
+/// are part of the literal form, so we strip them here.
 fn annotation_first_string(annots: AnnotationList) -> string {
     match annots {
         .End -> ""
@@ -1057,6 +1090,8 @@ fn annotation_first_string(annots: AnnotationList) -> string {
     }
 }
 
+/// Drop matching `"…"` outer quotes if present. Returns input
+/// unchanged when there's nothing to strip.
 fn strip_quotes(s: string) -> string {
     if s.length < 2 { return s }
     let first = s.substring(0, 1)
@@ -1215,6 +1250,8 @@ export fn field_index_of(fields: FieldList, name: string) -> int {
     field_index_of_loop(fields, name, 0)
 }
 
+/// Tail-recursive search loop backing `field_index_of`. Threads the
+/// running counter through the recursion.
 fn field_index_of_loop(fields: FieldList, name: string, idx: int) -> int {
     match fields {
         .End -> -1
@@ -1247,6 +1284,8 @@ export fn variant_lookup(variants: VariantList, name: string) -> VariantLookup {
     variant_lookup_by_hash(variants, name)
 }
 
+/// Implementation of `variant_lookup`: walks the list and computes
+/// the djb2 tag hash for the matching variant.
 fn variant_lookup_by_hash(variants: VariantList, name: string) -> VariantLookup {
     match variants {
         .End -> VariantLookup { found: false, fields: FieldList.End, tag: -1 }
@@ -1331,6 +1370,7 @@ export fn render_expr(expr: Expr) -> string {
     }
 }
 
+/// Render the body of a `when` expression as `cond -> body, ...`.
 fn render_when_arm_list(arms: WhenArmList) -> string {
     match arms {
         .End -> ""
@@ -1353,6 +1393,8 @@ export fn render_field_init_list(inits: FieldInitList) -> string {
     }
 }
 
+/// Tail half of `render_field_init_list` — comma-prefixes each entry
+/// past the head so the head doesn't get a leading comma.
 fn render_field_init_tail(inits: FieldInitList) -> string {
     match inits {
         .End -> ""
@@ -1372,6 +1414,7 @@ export fn render_field_list(fields: FieldList) -> string {
     }
 }
 
+/// Tail half of `render_field_list` — see `render_field_init_tail`.
 fn render_field_list_tail(fields: FieldList) -> string {
     match fields {
         .End -> ""
@@ -1402,6 +1445,7 @@ export fn render_expr_list(exprs: ExprList) -> string {
     }
 }
 
+/// Tail half of `render_expr_list` — see `render_field_init_tail`.
 fn render_expr_list_tail(exprs: ExprList) -> string {
     match exprs {
         .End -> ""
@@ -1420,6 +1464,7 @@ export fn render_param_list(params: ParamList) -> string {
     }
 }
 
+/// Tail half of `render_param_list` — see `render_field_init_tail`.
 fn render_param_list_tail(params: ParamList) -> string {
     match params {
         .End -> ""
@@ -1511,6 +1556,7 @@ export fn render_variant_list(variants: VariantList) -> string {
     }
 }
 
+/// Tail half of `render_variant_list` — see `render_field_init_tail`.
 fn render_variant_tail(variants: VariantList) -> string {
     match variants {
         .End -> ""
@@ -1542,6 +1588,7 @@ export fn render_match_arm_list(arms: MatchArmList) -> string {
     }
 }
 
+/// Tail half of `render_match_arm_list` — see `render_field_init_tail`.
 fn render_match_arm_tail(arms: MatchArmList) -> string {
     match arms {
         .End -> ""

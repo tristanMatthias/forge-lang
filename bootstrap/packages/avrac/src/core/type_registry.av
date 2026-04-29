@@ -241,6 +241,8 @@ export fn is_result_shaped_enum(reg: TypeRegistry, enum_name: string) -> bool {
     ok && err
 }
 
+/// Membership probe for `is_result_shaped_enum` — true iff a variant
+/// of this name exists in the list, ignoring payload shape.
 fn variant_list_has(variants: VariantList, name: string) -> bool {
     match variants {
         .End -> false

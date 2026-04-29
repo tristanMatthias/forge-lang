@@ -8,7 +8,7 @@
 
 | Package                | Symbols | Documented | Coverage | Owner ticket           |
 | ---------------------- | ------: | ---------: | -------: | ---------------------- |
-| `packages/avrac/src/`  |    1781 |         18 |    **1%** | many (see breakdown)   |
+| `packages/avrac/src/`  |    1781 |       180+ |   **>10%** | many (see breakdown)   |
 | `packages/std-lsp/src/`|     165 |         75 |   **45%** | forge-crafting-intepreters-0kdk |
 | `packages/std-cli/src/`|      49 |          0 |    **0%** | forge-crafting-intepreters-0kdk |
 | `packages/std-test/src/`|      2 |          0 |    **0%** | forge-crafting-intepreters-0kdk |
@@ -19,9 +19,9 @@
 
 The bulk of work. Per-area sub-tickets carve up the surface:
 
-| Area                            | Ticket                              |
-| ------------------------------- | ----------------------------------- |
-| `core/` — ast, llvm, registry, runtime, type_registry | forge-crafting-intepreters-6i06 |
+| Area                            | Ticket                              | Status |
+| ------------------------------- | ----------------------------------- | ------ |
+| `core/` — ast, llvm, registry, runtime, type_registry | forge-crafting-intepreters-6i06 | **100%** ✓ |
 | `parse/` — lexer, parser        | forge-crafting-intepreters-b5x4     |
 | `resolve/` — names, scopes      | forge-crafting-intepreters-gr41     |
 | `typeck/` — type checker        | forge-crafting-intepreters-3kbk     |
