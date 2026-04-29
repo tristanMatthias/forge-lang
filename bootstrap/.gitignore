@@ -10,3 +10,6 @@
 **/*.profdata
 build/
 dogfood_progress.csv
+
+# Generated language reference (rebuild with 'avra lang')
+target/
