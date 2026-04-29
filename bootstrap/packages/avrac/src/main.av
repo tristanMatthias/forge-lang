@@ -16,10 +16,11 @@ mod codegen
 mod desugar
 mod cli
 mod coverage
+mod indexer
 mod docs
 use cli.{cli_new, cli_add_command, cli_command_add_flag, cli_command_add_option, cli_command_add_arg, cli_parse, result_has_flag, result_get_option}
 use coverage.{render_coverage}
-use docs.{extract_project_docs, show_overview, show_symbol, show_short, show_symbols, show_search, show_llm, validate_docs}
+use docs.{extract_project_docs, extract_project_docs_ast, show_overview, show_symbol, show_short, show_symbols, show_search, show_llm, validate_docs}
 
 use parse.{parse_expression_source, parse_program_source}
 use core.ast.{render_expr, render_stmt_list, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType}
@@ -630,7 +631,12 @@ fn main() {
                 return
             }
 
-            let docs_set = extract_project_docs(project_dir)
+            // AST-based extractor (rnb9.3) parses every .av and walks
+            // the typed AST through @std/lsp's indexer. The legacy
+            // line-based scanner (extract_project_docs) is kept in
+            // src/docs/mod.av for now — folding it together with the
+            // renderer is the cleanup tracked by ovm8.1.
+            let docs_set = extract_project_docs_ast(project_dir)
 
             if search_term != "" {
                 show_search(search_term, docs_set)

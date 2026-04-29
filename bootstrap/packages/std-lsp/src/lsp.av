@@ -16,7 +16,7 @@
 // `Stmt.Module` wrapper. The file is internally sectioned with thick
 // banners that map onto the originally-planned submodules:
 //
-//   ── Span ──     positions, ranges, locations
+//   ── LspSpan ──     positions, ranges, locations
 //   ── Graph ──    SymKind, Sym, SymList, SymbolGraph, queries
 //   ── Corpus ──   trait + IoError + EmptyCorpus default
 //   ── Query ──    Hover, CompletionItem, Scope, Query trait, free fns
@@ -30,50 +30,50 @@
 // ╚═══════════════════════════════════════════════════════════════════╝
 //
 // 1-based positions matching diagnostics + LSP convention.
-// Spans carry no file path — that lives on the enclosing Location, so
-// the same Span can be relativised across consumers.
+// Spans carry no file path — that lives on the enclosing LspLocation, so
+// the same LspSpan can be relativised across consumers.
 
 /// A 1-based file position. Line and column count from 1.
-export type Pos = {
+export type LspPos = {
     line: int,
     col: int
 }
 
 /// A half-open range within a single source file: [start, end).
-export type Span = {
-    start: Pos,
-    end: Pos
+export type LspSpan = {
+    start: LspPos,
+    end: LspPos
 }
 
 /// A span anchored to a specific file path.
-export type Location = {
+export type LspLocation = {
     file: string,
-    span: Span
+    span: LspSpan
 }
 
-export fn pos_new(line: int, col: int) -> Pos {
-    Pos { line, col }
+export fn lsp_pos(line: int, col: int) -> LspPos {
+    LspPos { line, col }
 }
 
-export fn pos_zero() -> Pos {
-    Pos { line: 1, col: 1 }
+export fn lsp_pos_zero() -> LspPos {
+    LspPos { line: 1, col: 1 }
 }
 
-export fn span_new(start: Pos, end: Pos) -> Span {
-    Span { start, end }
+export fn lsp_span(start: LspPos, end: LspPos) -> LspSpan {
+    LspSpan { start, end }
 }
 
 /// A single-point span, useful when only the start is known.
-export fn span_point(p: Pos) -> Span {
-    Span { start: p, end: p }
+export fn lsp_span_point(p: LspPos) -> LspSpan {
+    LspSpan { start: p, end: p }
 }
 
-export fn location_new(file: string, span: Span) -> Location {
-    Location { file, span }
+export fn lsp_location(file: string, span: LspSpan) -> LspLocation {
+    LspLocation { file, span }
 }
 
 /// True if `p` falls within `s` (inclusive of start, exclusive of end).
-export fn span_contains(s: Span, p: Pos) -> bool {
+export fn lsp_span_contains(s: LspSpan, p: LspPos) -> bool {
     let after_start = p.line > s.start.line
         || (p.line == s.start.line && p.col >= s.start.col)
     let before_end = p.line < s.end.line
@@ -129,7 +129,7 @@ export type Sym = {
     kind: SymKind,
     doc: string,
     file: string,
-    span: Span,
+    span: LspSpan,
     exported: bool,
     tags_csv: string
 }
@@ -182,7 +182,7 @@ fn djb2(s: string) -> int {
 
 /// Convenience: create a Sym with a derived id.
 export fn sym_new(name: string, qualified: string, kind: SymKind,
-                  doc: string, file: string, span: Span,
+                  doc: string, file: string, span: LspSpan,
                   exported: bool, tags_csv: string) -> Sym {
     Sym {
         id: sym_id_for(qualified),
@@ -518,18 +518,18 @@ export enum Scope {
 // exists so ticket .5 can plug in alternative backends (e.g. an
 /// indexed cache) without changing call sites.
 export trait Query {
-    fn hover(self, file: string, pos: Pos) -> Hover?
-    fn definition(self, file: string, pos: Pos) -> Location?
-    fn references(self, sym: SymId) -> List<Location>
+    fn hover(self, file: string, pos: LspPos) -> Hover?
+    fn definition(self, file: string, pos: LspPos) -> LspLocation?
+    fn references(self, sym: SymId) -> List<LspLocation>
     fn callers(self, sym: SymId) -> SymList
-    fn completion(self, file: string, pos: Pos, prefix: string) -> List<CompletionItem>
+    fn completion(self, file: string, pos: LspPos, prefix: string) -> List<CompletionItem>
     fn symbols(self, scope: Scope) -> SymList
 }
 
 // ── v1 query helpers (graph-only, no caching) ───────────────────────
 //
 // These satisfy ticket .1's acceptance criteria for graph access.
-// Position-aware queries (hover/definition by Pos) need span-indexed
+// Position-aware queries (hover/definition by LspPos) need span-indexed
 // lookup that lands in ticket .5.
 
 /// Look up a symbol by stable id.

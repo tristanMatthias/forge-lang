@@ -1,0 +1,252 @@
+// AST → SymList indexer.
+//
+// Walks a parsed StmtList, reads /// → @doc annotations, renders the
+// declaration shape into a string-typed SymKind, and produces std-lsp
+// Sym records ready for the SymbolGraph.
+//
+// This is the AST-based replacement for the line-based regex extractor
+// in src/docs/mod.av — every detail (parameter types, generics, field
+// types, exported-ness, span) is read from the parser's output rather
+// than re-parsed from source text.
+//
+// The indexer is compiler-internal because it consumes Stmt/StmtList
+// from src/core/ast.av. It produces std-lsp's portable Sym shape, so
+// downstream consumers (docs CLI, LSP server) only need @std.lsp's
+// types — they never import compiler internals.
+
+use core.ast.{Stmt, StmtList, SStmt,
+              AnnotationList, ParamList, FieldList,
+              VariantList, ValueType, TypeParamList,
+              vtype_display, vtype_render_full,
+              find_annotation, doc_string_for, stmt_unwrap}
+use @std.lsp.{LspPos, LspSpan, Sym, SymList, SymKind,
+              lsp_pos, lsp_span, sym_new}
+
+// ── Public API ──────────────────────────────────────────────────────
+
+// Walk `stmts`, returning every documentable declaration as a Sym in
+// source order. `file` is the relative path used to populate Sym.file;
+// the caller is responsible for normalising it (e.g. project-relative).
+//
+// Module nesting is preserved by qualifying every nested decl with the
+// module's name as a `module::name` prefix. So `mod core { fn foo() }`
+// produces a Sym with name="foo", qualified="core::foo".
+export fn extract_from_ast(stmts: StmtList, file: string) -> SymList {
+    extract_inner(stmts, file, "")
+}
+
+// ── Internals ───────────────────────────────────────────────────────
+
+// `qual_prefix` accumulates module path; "" at the top level, "core"
+// inside `mod core`, "core::ast" inside `mod core { mod ast { ... } }`.
+fn extract_inner(stmts: StmtList, file: string, qual_prefix: string) -> SymList {
+    mut acc = SymList.End
+    mut cur = stmts
+    while true {
+        match cur {
+            .End -> {
+                return reverse_syms(acc)
+            }
+            .Node(ss, next) -> {
+                let new_acc = process_stmt(ss, file, qual_prefix, acc)
+                acc = new_acc
+                cur = next
+            }
+        }
+    }
+    SymList.End
+}
+
+fn process_stmt(ss: SStmt, file: string, qual_prefix: string, acc: SymList) -> SymList {
+    let outer = ss.node
+    let inner = stmt_unwrap(outer)
+    let doc = doc_string_for(outer)
+    let exported = has_export_annotation(outer)
+    let sp = lsp_span(lsp_pos(ss.line, ss.col), lsp_pos(ss.line, ss.col))
+
+    match inner {
+        .Function(name, tp, params, ret, _) -> {
+            let sig = render_fn_signature(name, tp, params, ret)
+            let ret_str = vtype_display(ret)
+            let qual = qualify(qual_prefix, name)
+            let sym = sym_new(name, qual, SymKind.Fn(sig, ret_str), doc, file, sp, exported, "")
+            SymList.Node(sym, acc)
+        }
+        .TypeDecl(name, tp, fields) -> {
+            let rendered = render_type_decl(name, tp)
+            let qual = qualify(qual_prefix, name)
+            let sym = sym_new(name, qual, SymKind.Type(rendered), doc, file, sp, exported, "")
+            SymList.Node(sym, acc)
+        }
+        .NewtypeDecl(name, inner_vt) -> {
+            let rendered = "type ${name} = ${vtype_render_full(inner_vt)}"
+            let qual = qualify(qual_prefix, name)
+            let sym = sym_new(name, qual, SymKind.Type(rendered), doc, file, sp, exported, "")
+            SymList.Node(sym, acc)
+        }
+        .UnionAliasDecl(name, ty_vt) -> {
+            let rendered = "type ${name} = ${vtype_render_full(ty_vt)}"
+            let qual = qualify(qual_prefix, name)
+            let sym = sym_new(name, qual, SymKind.Type(rendered), doc, file, sp, exported, "")
+            SymList.Node(sym, acc)
+        }
+        .ShapeDecl(name, _) -> {
+            let qual = qualify(qual_prefix, name)
+            let sym = sym_new(name, qual, SymKind.Type("shape ${name}"), doc, file, sp, exported, "")
+            SymList.Node(sym, acc)
+        }
+        .EnumDecl(name, _, variants) -> {
+            let csv = render_variant_csv(variants)
+            let qual = qualify(qual_prefix, name)
+            let sym = sym_new(name, qual, SymKind.Enum(csv), doc, file, sp, exported, "")
+            SymList.Node(sym, acc)
+        }
+        .TraitDecl(name, _) -> {
+            let qual = qualify(qual_prefix, name)
+            let sym = sym_new(name, qual, SymKind.Trait("trait ${name}"), doc, file, sp, exported, "")
+            SymList.Node(sym, acc)
+        }
+        .Impl(type_name, _) -> {
+            // type_name is "Trait:Type" or "Type"; both rendered as a
+            // single Impl entry. The trait/type split lives in std-lsp
+            // SymKind.Impl(trait, type) but we encode unparsed text
+            // here and let the renderer split if needed.
+            let colon = type_name.index_of(":")
+            let pair = if colon >= 0 {
+                let t = type_name.substring(0, colon)
+                let on = type_name.substring(colon + 1, type_name.length)
+                SymKind.Impl(t, on)
+            } else {
+                SymKind.Impl("", type_name)
+            }
+            let qual = qualify(qual_prefix, type_name)
+            let display = if colon >= 0 { type_name.substring(0, colon) } else { type_name }
+            let sym = sym_new(display, qual, pair, doc, file, sp, exported, "")
+            SymList.Node(sym, acc)
+        }
+        .Const(name, vt, _) -> {
+            let ty_str = vtype_display(vt)
+            let qual = qualify(qual_prefix, name)
+            let sym = sym_new(name, qual, SymKind.Const(ty_str), doc, file, sp, exported, "")
+            SymList.Node(sym, acc)
+        }
+        .Mut(name, vt, _) -> {
+            let ty_str = vtype_display(vt)
+            let qual = qualify(qual_prefix, name)
+            let sym = sym_new(name, qual, SymKind.Mut(ty_str), doc, file, sp, exported, "")
+            SymList.Node(sym, acc)
+        }
+        .Let(name, vt, _) -> {
+            let ty_str = vtype_display(vt)
+            let qual = qualify(qual_prefix, name)
+            let sym = sym_new(name, qual, SymKind.Let(ty_str), doc, file, sp, exported, "")
+            SymList.Node(sym, acc)
+        }
+        .Module(name, body) -> {
+            let qual = qualify(qual_prefix, name)
+            let module_sym = sym_new(name, qual, SymKind.Module, doc, file, sp, exported, "")
+            // Recurse into the module body so nested decls land in the
+            // graph with the correct qualified prefix.
+            let inner_syms = extract_inner(body, file, qual)
+            sym_list_concat(inner_syms, SymList.Node(module_sym, acc))
+        }
+        _ -> acc
+    }
+}
+
+// ── Annotation helpers ──────────────────────────────────────────────
+
+fn has_export_annotation(s: Stmt) -> bool {
+    find_annotation(s, "export") != null
+}
+
+// ── Signature rendering ─────────────────────────────────────────────
+
+fn render_fn_signature(name: string, tp: TypeParamList, params: ParamList, ret: ValueType) -> string {
+    let tp_str = render_type_params(tp)
+    let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
+    let params_str = render_params_typed(params)
+    let ret_str = vtype_display(ret)
+    let ret_part = if ret_str == "" || ret_str == "void" { "" } else { " -> ${ret_str}" }
+    "fn ${name}${tp_part}(${params_str})${ret_part}"
+}
+
+fn render_type_decl(name: string, tp: TypeParamList) -> string {
+    let tp_str = render_type_params(tp)
+    let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
+    "type ${name}${tp_part}"
+}
+
+fn render_type_params(tp: TypeParamList) -> string {
+    match tp {
+        .End -> ""
+        .Node(name, bound, next) -> {
+            let bound_part = if bound == "" { "" } else { ": ${bound}" }
+            let rest = render_type_params(next)
+            if rest == "" { "${name}${bound_part}" } else { "${name}${bound_part}, ${rest}" }
+        }
+    }
+}
+
+fn render_params_typed(params: ParamList) -> string {
+    match params {
+        .End -> ""
+        .Node(name, vt, next) -> {
+            let head_ty = vtype_display(vt)
+            let head = if head_ty == "" || head_ty == "<unknown>" { name } else { "${name}: ${head_ty}" }
+            let tail = render_params_typed_tail(next)
+            "${head}${tail}"
+        }
+    }
+}
+
+fn render_params_typed_tail(params: ParamList) -> string {
+    match params {
+        .End -> ""
+        .Node(name, vt, next) -> {
+            let head_ty = vtype_display(vt)
+            let head = if head_ty == "" || head_ty == "<unknown>" { name } else { "${name}: ${head_ty}" }
+            ", ${head}${render_params_typed_tail(next)}"
+        }
+    }
+}
+
+fn render_variant_csv(vs: VariantList) -> string {
+    match vs {
+        .End -> ""
+        .Node(name, _, next) -> {
+            let rest = render_variant_csv(next)
+            if rest == "" { name } else { "${name}, ${rest}" }
+        }
+    }
+}
+
+// ── List helpers ────────────────────────────────────────────────────
+
+fn qualify(prefix: string, name: string) -> string {
+    if prefix == "" { name } else { "${prefix}::${name}" }
+}
+
+fn reverse_syms(list: SymList) -> SymList {
+    mut acc = SymList.End
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return acc
+            }
+            .Node(item, next) -> {
+                acc = SymList.Node(item, acc)
+                cur = next
+            }
+        }
+    }
+    SymList.End
+}
+
+fn sym_list_concat(a: SymList, b: SymList) -> SymList {
+    match a {
+        .End -> b
+        .Node(item, next) -> SymList.Node(item, sym_list_concat(next, b))
+    }
+}

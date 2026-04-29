@@ -1,6 +1,6 @@
 // Round-trip a hand-built SymbolGraph through every public query.
 
-use @std.lsp.{pos_new,
+use @std.lsp.{lsp_pos,
               SymKind, graph_new, graph_add, graph_count,
               graph_by_id, graph_by_name, graph_by_qualified,
               graph_children, graph_all,
@@ -8,8 +8,8 @@ use @std.lsp.{pos_new,
               empty_corpus_new, empty_corpus_id, empty_corpus_description,
               empty_corpus_extract}
 
-fn lsp_test_span() -> Span {
-    Span { start: pos_new(1, 1), end: pos_new(1, 10) }
+fn lsp_test_span() -> LspSpan {
+    LspSpan { start: lsp_pos(1, 1), end: lsp_pos(1, 10) }
 }
 
 fn lsp_test_graph() -> SymbolGraph {
