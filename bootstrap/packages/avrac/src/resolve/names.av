@@ -23,11 +23,16 @@ use core.type_registry.{TypeRegistry, TypeKind, type_registry_new, type_registry
 // contains the items (functions, types, enums) defined in that module
 // and links to child modules.
 
+/// One declaration registered inside a module: short name, fully
+/// qualified canonical path, export visibility flag.
 enum ModuleItem {
     End
     Node(short_name: string, canonical: string, exported: int, next: ModuleItem)
 }
 
+/// Hierarchical module tree built from `Stmt.Module` nodes. Each
+/// node holds its name, full path, the items declared at that
+/// level, child modules, and a sibling pointer.
 enum ModuleNode {
     End
     Node(name: string, path: string, items: ModuleItem, children: ModuleNode, next: ModuleNode)
@@ -38,11 +43,15 @@ enum ModuleNode {
 // Maps short names to canonical paths within a module scope.
 // Built from `use` declarations.
 
+/// `use mod.{name}` produces one AliasEntry per imported name —
+/// short name → canonical path inside the module.
 enum AliasEntry {
     End
     Node(short_name: string, canonical: string, next: AliasEntry)
 }
 
+/// Linear search for `name` in the alias chain. Returns the
+/// canonical path or "" when not aliased.
 fn alias_lookup(aliases: AliasEntry, name: string) -> string {
     match aliases {
         .End -> ""
@@ -53,6 +62,8 @@ fn alias_lookup(aliases: AliasEntry, name: string) -> string {
 
 // ── Module item lookup ──
 
+/// Linear search for `name` in a module's item list. Returns the
+/// canonical path or "" when not declared.
 fn item_lookup(items: ModuleItem, name: string) -> string {
     match items {
         .End -> ""
@@ -61,6 +72,7 @@ fn item_lookup(items: ModuleItem, name: string) -> string {
     }
 }
 
+/// True iff `name` is declared in `items` AND marked `export`.
 fn item_is_exported(items: ModuleItem, name: string) -> bool {
     match items {
         .End -> false
@@ -69,9 +81,9 @@ fn item_is_exported(items: ModuleItem, name: string) -> bool {
     }
 }
 
-// Build a flat index of ALL items across ALL modules. Called once
-// at the start of resolve_names. Turns the O(n*m) tree traversal
-// per identifier into an O(m) linked-list scan (same as alias_lookup).
+/// Build a flat index of ALL items across ALL modules. Called once
+/// at the start of `resolve_names`. Turns the O(n*m) tree traversal
+/// per identifier into an O(m) linked-list scan (same as alias_lookup).
 fn build_global_index(tree: ModuleNode, index: ModuleItem) -> ModuleItem {
     match tree {
         .End -> index
@@ -83,6 +95,8 @@ fn build_global_index(tree: ModuleNode, index: ModuleItem) -> ModuleItem {
     }
 }
 
+/// Concat two ModuleItem lists. Used by `build_global_index` to
+/// roll a module's items into the running flat index.
 fn append_items(items: ModuleItem, rest: ModuleItem) -> ModuleItem {
     match items {
         .End -> rest
@@ -92,7 +106,8 @@ fn append_items(items: ModuleItem, rest: ModuleItem) -> ModuleItem {
     }
 }
 
-// Find a module node by path (e.g. "helpers" or "core::ast")
+/// Find a ModuleNode by qualified path (e.g. `"helpers"` or
+/// `"core::ast"`). Returns ModuleNode.End when no match.
 fn module_find(tree: ModuleNode, path: string) -> ModuleNode {
     match tree {
         .End -> ModuleNode.End
@@ -112,6 +127,8 @@ fn module_find(tree: ModuleNode, path: string) -> ModuleNode {
 // Walk the AST and collect all module-level declarations (fn, type,
 // enum, trait, extern fn) into a hierarchical ModuleNode tree.
 
+/// Root entry for module tree construction. Recurses on every
+/// `Stmt.Module`, building children + sibling links.
 fn build_module_tree(stmts: StmtList, parent_path: string, tree: ModuleNode) -> ModuleNode {
     match stmts {
         .End -> tree
@@ -122,6 +139,9 @@ fn build_module_tree(stmts: StmtList, parent_path: string, tree: ModuleNode) -> 
     }
 }
 
+/// Per-stmt branch of `build_module_tree`. `Module` adds a node
+/// (and recurses for children); `Annotated` strips the wrapper;
+/// everything else passes through unchanged.
 fn build_tree_from_stmt(stmt: Stmt, parent_path: string, tree: ModuleNode) -> ModuleNode {
     match stmt {
         .Module(name, body) -> {
@@ -138,7 +158,8 @@ fn build_tree_from_stmt(stmt: Stmt, parent_path: string, tree: ModuleNode) -> Mo
     }
 }
 
-// Collect all declaration names in a module's body
+/// Collect every declaration name in a module's body — fn, type,
+/// enum, trait, newtype, etc. Wraps the per-stmt collector.
 fn collect_module_items(stmts: StmtList, mod_path: string) -> ModuleItem {
     match stmts {
         .End -> ModuleItem.End
@@ -149,6 +170,10 @@ fn collect_module_items(stmts: StmtList, mod_path: string) -> ModuleItem {
     }
 }
 
+/// Per-stmt branch of `collect_module_items` — produces a
+/// ModuleItem for each declaration variant (Function, TypeDecl,
+/// EnumDecl, TraitDecl, etc.). `exported` is threaded down from
+/// the enclosing `Annotated(@export, …)`.
 fn collect_item_from_stmt(stmt: Stmt, mod_path: string, exported: int, rest: ModuleItem) -> ModuleItem {
     match stmt {
         .Function(name, _, _, _, _) -> {
@@ -207,9 +232,9 @@ fn collect_item_from_stmt(stmt: Stmt, mod_path: string, exported: int, rest: Mod
     }
 }
 
-// Collect re-exported names from `export use path.{name1, name2}`.
-// Each imported name becomes an exported item in the current module,
-// with its canonical path pointing at the source module.
+/// Collect re-exported names from `export use path.{name1, name2}`.
+/// Each imported name becomes an exported item in the current
+/// module, with its canonical path pointing at the source module.
 fn collect_reexport_items(names: ParamList, source_mod: string, rest: ModuleItem) -> ModuleItem {
     match names {
         .End -> rest
@@ -220,6 +245,9 @@ fn collect_reexport_items(names: ParamList, source_mod: string, rest: ModuleItem
     }
 }
 
+/// Collect the methods of an impl block. Methods are stored under
+/// their pre-mangled `Type__method` name so dispatch can grep the
+/// global index directly.
 fn collect_impl_items(stmts: StmtList, mod_path: string, rest: ModuleItem) -> ModuleItem {
     match stmts {
         .End -> rest
@@ -237,6 +265,7 @@ fn collect_impl_items(stmts: StmtList, mod_path: string, rest: ModuleItem) -> Mo
     }
 }
 
+/// True iff the AnnotationList includes `@export`.
 fn annotation_has_export(annotations: AnnotationList) -> bool {
     match annotations {
         .End -> false
@@ -252,14 +281,17 @@ fn annotation_has_export(annotations: AnnotationList) -> bool {
 // Walk the AST and for each Stmt.Use, look up the imported names in
 // the module tree and build an alias table for the containing scope.
 
+/// Top-level entry for use-alias resolution: process every `use`
+/// statement, building an AliasEntry list keyed off short names.
 fn resolve_use_aliases(stmts: StmtList, tree: ModuleNode) -> UseResult {
     resolve_use_aliases_in(stmts, tree, "")
 }
 
-// Resolve `use` statements relative to a current module path.
-// If `current_module` is non-empty, lookup tries `current_module::path` first
-// before falling back to the absolute `path`. This lets a test file wrapped
-// in `Module foo { mod helpers; use helpers.{...} }` find the helpers child.
+/// Resolve `use` statements relative to a current module path.
+/// If `current_module` is non-empty, lookup tries
+/// `current_module::path` first before falling back to the absolute
+/// `path`. This lets a test file wrapped in `Module foo { mod
+/// helpers; use helpers.{...} }` find the helpers child.
 fn resolve_use_aliases_in(stmts: StmtList, tree: ModuleNode, current_module: string) -> UseResult {
     match stmts {
         .End -> UseResult { aliases: AliasEntry.End, bag: bag_new() }
@@ -301,12 +333,17 @@ fn resolve_use_aliases_in(stmts: StmtList, tree: ModuleNode, current_module: str
     }
 }
 
-// Use resolution result — carries aliases + diagnostics bag.
+/// Output of `resolve_use_aliases` — the alias chain plus any
+/// diagnostics encountered during use-resolution.
 type UseResult = {
     aliases: AliasEntry,
     bag: DiagnosticBag,
 }
 
+/// Per-name resolver inside a `use mod.{name1, name2}` clause.
+/// Looks each name up in `mod_path`'s items, emits ImportNotFound /
+/// ImportPrivate when missing or non-exported, and otherwise
+/// prepends an AliasEntry.
 fn resolve_use_names(mod_path: string, names: ParamList, tree: ModuleNode, result: UseResult, sp: Span) -> UseResult {
     match names {
         .End -> result
@@ -340,6 +377,9 @@ fn resolve_use_names(mod_path: string, names: ParamList, tree: ModuleNode, resul
     }
 }
 
+/// Convert a dotted module path (`a.b.c`) to its `::` form
+/// (`a::b::c`) — bridging the source syntax `use a.b.c` to the
+/// canonical-name representation used in the module tree.
 fn dots_to_colons(path: string) -> string {
     mut result = ""
     for i in 0..path.length {
@@ -362,11 +402,16 @@ fn dots_to_colons(path: string) -> string {
 // Local variables (let/mut/fn params/for/match bindings) are tracked
 // in a scope stack and are NOT rewritten — they stay as Expr.Ident.
 
+/// Scope stack for the name-resolution pass — tracks the local
+/// variables in scope at each point during the rewrite. Distinct
+/// from the resolver's ScopeEntry because this layer also threads
+/// `defined` for forward-reference handling.
 enum LocalScope {
     End
     Node(name: string, mutable: int, defined: int, depth: int, next: LocalScope)
 }
 
+/// Membership probe for the local scope chain.
 fn scope_has(scope: LocalScope, name: string) -> bool {
     match scope {
         .End -> false
@@ -375,34 +420,43 @@ fn scope_has(scope: LocalScope, name: string) -> bool {
     }
 }
 
-// Builtin functions that should never be qualified
+/// True for names the rewriter must NOT qualify even when a global
+/// item shadows them. `println`, `int`, `panic`, etc. always stay
+/// bare so user shadowing of those names doesn't accidentally
+/// trigger unintended dispatch.
 fn is_builtin_name(name: string) -> bool {
     name in ["println", "eprintln", "print", "eprint", "string", "int", "float", "panic", "exit", "self"]
 }
 
 // ── Name resolution context ──
 
+/// State threaded through the rewrite pass. Carries every lookup
+/// surface the rewriter needs: the module tree, current alias chain,
+/// active module path, the local scope stack, and the type registry.
+/// `global_index` is a flat, O(1)-lookup view of all module items —
+/// built once at the start of `resolve_names`.
 type NameCtx = {
     tree: ModuleNode,
     aliases: AliasEntry,
     current_module: string,
     locals: LocalScope,
-    // Flat index of ALL items across ALL modules — O(1) lookup
-    // by short name. Built once in resolve_names, used by the
-    // global search fallback in rewrite_ident.
     global_index: ModuleItem,
-    // Central type registry — assigns unique TypeIds to every type.
     type_reg: TypeRegistry,
 }
 
+/// Functional update: replace the `locals` field.
 fn ctx_with_locals(ctx: NameCtx, locals: LocalScope) -> NameCtx {
     ctx with { locals }
 }
 
+/// Functional update: enter a new module by swapping the active path
+/// and alias chain.
 fn ctx_with_module(ctx: NameCtx, current_module: string, aliases: AliasEntry) -> NameCtx {
     ctx with { aliases, current_module }
 }
 
+/// Push every parameter name onto the local scope as a defined
+/// variable. Used when entering a fn / lambda body.
 fn bind_params_ctx(ctx: NameCtx, params: ParamList) -> NameCtx {
     match params {
         .End -> ctx
@@ -410,16 +464,20 @@ fn bind_params_ctx(ctx: NameCtx, params: ParamList) -> NameCtx {
     }
 }
 
+/// Bind every binding in a pattern (e.g. `.Some(x, y)` adds `x` and
+/// `y` to the local scope) so the match arm body can reference them.
 fn bind_pattern_ctx(ctx: NameCtx, pattern: Pattern) -> NameCtx {
     match pattern {
         .Wildcard -> ctx
         .Variant(_, bindings) -> bind_params_ctx(ctx, bindings)
         .NestedVariant(_, sub_pats) -> bind_pattern_list(ctx, sub_pats)
         .TypePattern(_, binding) -> ctx_with_locals(ctx, LocalScope.Node(binding, false, true, 0, ctx.locals))
-        _ -> ctx  // LitString, LitInt, LitBool, LitFloat — no bindings
+        _ -> ctx
     }
 }
 
+/// Apply `bind_pattern_ctx` over a list of patterns — used by
+/// nested-variant destructuring.
 fn bind_pattern_list(ctx: NameCtx, pats: PatternList) -> NameCtx {
     match pats {
         .End -> ctx
@@ -427,6 +485,8 @@ fn bind_pattern_list(ctx: NameCtx, pats: PatternList) -> NameCtx {
     }
 }
 
+/// Concat two alias chains. Used to layer per-Module imports onto a
+/// parent's alias environment.
 fn merge_aliases(base: AliasEntry, extra: AliasEntry) -> AliasEntry {
     match extra {
         .End -> base
@@ -436,6 +496,8 @@ fn merge_aliases(base: AliasEntry, extra: AliasEntry) -> AliasEntry {
 
 // ── Public entry point ──
 
+/// Output of `resolve_names` — the rewritten statement tree, error
+/// flags, accumulated diagnostics, and the populated type registry.
 export type NameResolveResult = {
     stmts: StmtList,
     had_error: int,
@@ -444,6 +506,9 @@ export type NameResolveResult = {
     type_reg: TypeRegistry,
 }
 
+/// Top-level entry: build the module tree, resolve `use` aliases,
+/// flatten the global index, and rewrite every Ident / type name to
+/// its canonical qualified form.
 export fn resolve_names(stmts: StmtList) -> NameResolveResult {
     // Pass 1: Build module tree and qualify names
     let tree = build_module_tree(stmts, "", ModuleNode.End)
@@ -483,6 +548,7 @@ export fn resolve_names(stmts: StmtList) -> NameResolveResult {
 
 // ── Statement rewriting ──
 
+/// Rewrite every stmt in a list, threading the NameCtx through.
 fn rewrite_stmt_list(ctx: NameCtx, stmts: StmtList) -> StmtList {
     match stmts {
         .End -> .End
@@ -490,6 +556,9 @@ fn rewrite_stmt_list(ctx: NameCtx, stmts: StmtList) -> StmtList {
     }
 }
 
+/// Rewrite a single statement: qualify type names in declarations,
+/// register types in the registry, recurse into nested bodies. Each
+/// variant gets its own arm.
 fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
     match stmt {
         .Let(name, vt, init) -> .Let(name, rewrite_vtype(ctx, vt), rewrite_expr(ctx, init))
@@ -567,6 +636,8 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
     }
 }
 
+/// Rewrite each arm of a `select { ... }` block — the channel
+/// expression and the body are both walked.
 fn rewrite_select_arms(ctx: NameCtx, arms: SelectArmList) -> SelectArmList {
     match arms {
         .End -> SelectArmList.End
@@ -579,6 +650,9 @@ fn rewrite_select_arms(ctx: NameCtx, arms: SelectArmList) -> SelectArmList {
     }
 }
 
+/// Rewrite an `Impl` statement — qualify the type name (and the
+/// trait name when this is `impl Trait for Type`), then walk every
+/// method to mangle its name into `Type__method` form.
 fn rewrite_impl_stmt(ctx: NameCtx, type_name: string, methods: StmtList) -> Stmt {
     // Trait impl: "TraitName:TypeName" — qualify both parts separately
     let sep = find_single_colon(type_name)
@@ -595,6 +669,9 @@ fn rewrite_impl_stmt(ctx: NameCtx, type_name: string, methods: StmtList) -> Stmt
 }
 
 // Find single colon (trait:type separator) that isn't part of ::
+/// Find a standalone `:` (trait/type separator) that isn't part of
+/// `::`. Returns -1 when absent. Used by `rewrite_impl_stmt` to
+/// split `"Trait:Type"` into its two halves.
 fn find_single_colon(s: string) -> int {
     mut i = 0
     while i < s.length {
@@ -610,6 +687,11 @@ fn find_single_colon(s: string) -> int {
     -1
 }
 
+/// Qualify a bare type name to its canonical path. Tries (in order):
+/// already-qualified pass-through, primitives + single-uppercase
+/// type params, the global index, the alias table, and finally the
+/// current module path. The order encodes the precedence rules from
+/// spec Axis 28.
 fn resolve_type_in_ctx(ctx: NameCtx, type_name: string) -> string {
     if type_name.contains("::") { return type_name }
     // Primitives and type parameters (single uppercase letter) stay as-is
@@ -629,6 +711,8 @@ fn resolve_type_in_ctx(ctx: NameCtx, type_name: string) -> string {
 // Qualify all type names inside ValueType, ParamList, and TypeList.
 // After this pass, every Struct/Enum/Trait/Newtype name is fully qualified.
 
+/// Qualify every type name inside a ValueType. Recurses into
+/// compound shapes (List, Union, Tuple, FnTyped, ...).
 fn rewrite_vtype(ctx: NameCtx, vt: ValueType) -> ValueType {
     match vt {
         .Struct(name, _) if name != "" -> {
@@ -661,6 +745,7 @@ fn rewrite_vtype(ctx: NameCtx, vt: ValueType) -> ValueType {
     }
 }
 
+/// Map `rewrite_vtype` over a TypeList.
 fn rewrite_vtype_list(ctx: NameCtx, tl: TypeList) -> TypeList {
     match tl {
         .End -> .End
@@ -668,6 +753,7 @@ fn rewrite_vtype_list(ctx: NameCtx, tl: TypeList) -> TypeList {
     }
 }
 
+/// Map `rewrite_vtype` over each FieldList entry's type.
 fn rewrite_field_types(ctx: NameCtx, fields: FieldList) -> FieldList {
     match fields {
         .End -> .End
@@ -675,6 +761,7 @@ fn rewrite_field_types(ctx: NameCtx, fields: FieldList) -> FieldList {
     }
 }
 
+/// Map `rewrite_field_types` over each variant's payload list.
 fn rewrite_variant_types(ctx: NameCtx, variants: VariantList) -> VariantList {
     match variants {
         .End -> .End
@@ -682,6 +769,7 @@ fn rewrite_variant_types(ctx: NameCtx, variants: VariantList) -> VariantList {
     }
 }
 
+/// Map `rewrite_vtype` over each ParamList entry's type.
 fn rewrite_param_types(ctx: NameCtx, params: ParamList) -> ParamList {
     match params {
         .End -> .End
@@ -689,6 +777,8 @@ fn rewrite_param_types(ctx: NameCtx, params: ParamList) -> ParamList {
     }
 }
 
+/// Replace the `self` parameter's bare type with the impl's
+/// qualified type name. Other params pass through unchanged.
 fn qualify_self_param(ctx: NameCtx, params: ParamList, qualified_type: string) -> ParamList {
     match params {
         .End -> .End
@@ -703,6 +793,8 @@ fn qualify_self_param(ctx: NameCtx, params: ParamList, qualified_type: string) -
     }
 }
 
+/// Walk the methods of an impl block, mangling each fn name into
+/// `Type__method` and qualifying its self / param / return types.
 fn rewrite_impl_methods(ctx: NameCtx, qualified_type: string, stmts: StmtList) -> StmtList {
     match stmts {
         .End -> StmtList.End
@@ -723,6 +815,8 @@ fn rewrite_impl_methods(ctx: NameCtx, qualified_type: string, stmts: StmtList) -
 
 // ── Expression rewriting ──
 
+/// Rewrite an expression, qualifying name references to their
+/// canonical paths and recursing into sub-expressions.
 fn rewrite_expr(ctx: NameCtx, expr: Expr) -> Expr {
     if expr == null { return Expr.Null }
     match expr {
@@ -751,6 +845,9 @@ fn rewrite_expr(ctx: NameCtx, expr: Expr) -> Expr {
     }
 }
 
+/// Tail of `rewrite_expr` — handles the long list of compound /
+/// less-frequently-traversed Expr variants (StructLit, Lambda,
+/// Match, ListComp, etc.).
 fn rewrite_expr_compound(ctx: NameCtx, expr: Expr) -> Expr {
     if expr == null { return Expr.Null }
     match expr {
@@ -792,6 +889,10 @@ fn rewrite_expr_compound(ctx: NameCtx, expr: Expr) -> Expr {
     }
 }
 
+/// Rewrite `Expr.Ident(name)` — keep it as Ident when the name is
+/// in local scope or a builtin; otherwise replace with
+/// `QualifiedIdent(canonical_path)` resolved against the alias
+/// table or global index.
 fn rewrite_ident(ctx: NameCtx, name: string, original: Expr) -> Expr {
     // 1. Local variable — don't rewrite
     if scope_has(ctx.locals, name) { return original }
@@ -816,6 +917,7 @@ fn rewrite_ident(ctx: NameCtx, name: string, original: Expr) -> Expr {
     original
 }
 
+/// Map `rewrite_expr` over an ExprList.
 fn rewrite_expr_list(ctx: NameCtx, exprs: ExprList) -> ExprList {
     match exprs {
         .End -> .End
@@ -823,6 +925,8 @@ fn rewrite_expr_list(ctx: NameCtx, exprs: ExprList) -> ExprList {
     }
 }
 
+/// Walk a `Foo { f: v, ... }` initializer list, rewriting each
+/// value expression but leaving field names verbatim.
 fn rewrite_field_inits(ctx: NameCtx, inits: FieldInitList) -> FieldInitList {
     match inits {
         .End -> FieldInitList.End
@@ -830,6 +934,8 @@ fn rewrite_field_inits(ctx: NameCtx, inits: FieldInitList) -> FieldInitList {
     }
 }
 
+/// Walk a MatchArmList, binding pattern captures into the local
+/// scope before rewriting each arm body.
 fn rewrite_match_arms(ctx: NameCtx, arms: MatchArmList) -> MatchArmList {
     match arms {
         .End -> MatchArmList.End
@@ -843,10 +949,14 @@ fn rewrite_match_arms(ctx: NameCtx, arms: MatchArmList) -> MatchArmList {
 }
 
 // Qualify type names inside match patterns
+/// True for `int`, `string`, `bool`, `ptr`, `void`, `float` —
+/// the names that should never be qualified.
 fn is_primitive_type(name: string) -> bool {
     name in ["int", "string", "bool", "float", "ptr", "void"]
 }
 
+/// Qualify type names inside a Pattern (TypePattern's `type_name`,
+/// nested variant payloads). Bindings stay verbatim.
 fn rewrite_pattern(ctx: NameCtx, pattern: Pattern) -> Pattern {
     match pattern {
         .TypePattern(type_name, binding) -> {
@@ -859,6 +969,7 @@ fn rewrite_pattern(ctx: NameCtx, pattern: Pattern) -> Pattern {
     }
 }
 
+/// Map `rewrite_pattern` over a PatternList.
 fn rewrite_pattern_list(ctx: NameCtx, pats: PatternList) -> PatternList {
     match pats {
         .End -> PatternList.End
@@ -866,6 +977,7 @@ fn rewrite_pattern_list(ctx: NameCtx, pats: PatternList) -> PatternList {
     }
 }
 
+/// Walk a WhenArmList, rewriting each arm's cond + body.
 fn rewrite_when_arms(ctx: NameCtx, arms: WhenArmList) -> WhenArmList {
     match arms {
         .End -> WhenArmList.End
@@ -881,11 +993,16 @@ fn rewrite_when_arms(ctx: NameCtx, arms: WhenArmList) -> WhenArmList {
 // from the rewritten AST, then check each use-imported alias against
 // the used set. Emit warnings for imports that were never referenced.
 
+/// Set of canonical paths the rewrite pass actually emitted as
+/// QualifiedIdent. Built once per program; consulted by
+/// `check_unused_imports` to flag dead imports.
 enum UsedPathSet {
     End
     Node(path: string, next: UsedPathSet)
 }
 
+/// Membership probe for the UsedPathSet — backs the unused-import
+/// detection.
 fn used_has(set: UsedPathSet, path: string) -> bool {
     match set {
         .End -> false
@@ -895,6 +1012,8 @@ fn used_has(set: UsedPathSet, path: string) -> bool {
 }
 
 // Collect all QualifiedIdent paths from the rewritten AST.
+/// Walk a StmtList, accumulating every QualifiedIdent path the
+/// rewrite pass emitted.
 fn collect_used_paths_stmts(stmts: StmtList, acc: UsedPathSet) -> UsedPathSet {
     match stmts {
         .End -> acc
@@ -905,6 +1024,7 @@ fn collect_used_paths_stmts(stmts: StmtList, acc: UsedPathSet) -> UsedPathSet {
     }
 }
 
+/// Per-stmt branch of `collect_used_paths_stmts`.
 fn collect_used_paths_stmt(stmt: Stmt, acc: UsedPathSet) -> UsedPathSet {
     match stmt {
         .Expr(e) -> collect_used_paths_expr(e, acc)
@@ -936,6 +1056,8 @@ fn collect_used_paths_stmt(stmt: Stmt, acc: UsedPathSet) -> UsedPathSet {
     }
 }
 
+/// Per-expr branch of the unused-import sweep — recurses into
+/// every sub-expression to find QualifiedIdent references.
 fn collect_used_paths_expr(expr: Expr, acc: UsedPathSet) -> UsedPathSet {
     if expr == null { return acc }
     match expr {
@@ -980,6 +1102,7 @@ fn collect_used_paths_expr(expr: Expr, acc: UsedPathSet) -> UsedPathSet {
     }
 }
 
+/// Map `collect_used_paths_expr` over an ExprList.
 fn collect_used_paths_expr_list(exprs: ExprList, acc: UsedPathSet) -> UsedPathSet {
     match exprs {
         .End -> acc
@@ -987,6 +1110,7 @@ fn collect_used_paths_expr_list(exprs: ExprList, acc: UsedPathSet) -> UsedPathSe
     }
 }
 
+/// Walk a FieldInitList for the unused-import sweep.
 fn collect_used_paths_field_inits(inits: FieldInitList, acc: UsedPathSet) -> UsedPathSet {
     match inits {
         .End -> acc
@@ -994,6 +1118,8 @@ fn collect_used_paths_field_inits(inits: FieldInitList, acc: UsedPathSet) -> Use
     }
 }
 
+/// Walk a MatchArmList for the unused-import sweep — both guards
+/// and bodies contribute.
 fn collect_used_paths_match_arms(arms: MatchArmList, acc: UsedPathSet) -> UsedPathSet {
     match arms {
         .End -> acc
@@ -1007,11 +1133,16 @@ fn collect_used_paths_match_arms(arms: MatchArmList, acc: UsedPathSet) -> UsedPa
 
 // Check each alias in the use_result against the used paths set.
 // Returns a DiagnosticBag with warnings for unused imports.
+/// Compare the alias chain against the used-paths set, emitting
+/// `UnusedImport` warnings for every alias the rewrite never
+/// referenced.
 fn check_unused_imports(aliases: AliasEntry, used: UsedPathSet) -> DiagnosticBag {
     // Walk top-level Use stmts to match aliases to source spans
     check_unused_aliases(aliases, used, bag_new())
 }
 
+/// Implementation backing `check_unused_imports` — recurses through
+/// the alias chain, accumulating warnings into the bag.
 fn check_unused_aliases(aliases: AliasEntry, used: UsedPathSet, bag: DiagnosticBag) -> DiagnosticBag {
     match aliases {
         .End -> bag
