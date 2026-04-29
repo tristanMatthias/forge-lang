@@ -688,7 +688,7 @@ export fn suggest_similar(query: string, docs: SymList) -> string {
 export fn show_symbol(query: string, docs: SymList) -> bool {
     let direct = sym_by_path(docs, query)
     if direct != null {
-        show_one(direct!)
+        show_one(direct!, docs)
         return true
     }
     // Fallback: case-insensitive bare-name match.
@@ -698,7 +698,7 @@ export fn show_symbol(query: string, docs: SymList) -> bool {
             .End -> return false
             .Node(item, next) -> {
                 if is_renderable(item) && icase_eq(item.name, query) {
-                    show_one(item)
+                    show_one(item, docs)
                     return true
                 }
                 cur = next
@@ -708,7 +708,7 @@ export fn show_symbol(query: string, docs: SymList) -> bool {
     false
 }
 
-fn show_one(s: Sym) {
+fn show_one(s: Sym, docs: SymList) {
     let header = declaration_line(s)
     let rule_len = if header.length > 20 { header.length } else { 20 }
 
@@ -721,7 +721,7 @@ fn show_one(s: Sym) {
 
     if s.doc != "" {
         let doc = parse_doc(s.doc)
-        render_doc_block(doc)
+        render_doc_block(doc, docs)
     }
 
     print_variant_block(s)
@@ -1053,6 +1053,19 @@ fn collect_undocumented_names(list: SymList, want_bucket: int) -> string {
     acc
 }
 
+// Resolve an @see reference against the SymList. Found symbols
+// render in cyan with their file:line suffix; unresolved ones get a
+// dim ⚠ marker so doc rot is visible.
+fn render_see_ref(name: string, docs: SymList) -> string {
+    let target = sym_by_path(docs, name)
+    if target == null {
+        return "${dim(name)} ${red("⚠ unresolved")}"
+    }
+    let s = target!
+    let loc = "${s.file}:${string(s.span.start.line)}"
+    "${cyan(s.qualified)} ${dim(loc)}"
+}
+
 // ── DocBlock parser ─────────────────────────────────────────────────
 //
 // Parse a /// body into structured sections so renderers can show
@@ -1189,7 +1202,7 @@ export fn parse_doc(text: string) -> DocBlock {
     block
 }
 
-fn render_doc_block(block: DocBlock) {
+fn render_doc_block(block: DocBlock, docs: SymList) {
     if block.summary != "" {
         println("")
         println("  ${block.summary}")
@@ -1230,7 +1243,7 @@ fn render_doc_block(block: DocBlock) {
         println("  ${bold("See also")}")
         mut i = 0
         while i < block.see.length {
-            println("    ${cyan(block.see[i])}")
+            println("    ${render_see_ref(block.see[i], docs)}")
             i = i + 1
         }
     }
