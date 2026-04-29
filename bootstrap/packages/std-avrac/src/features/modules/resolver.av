@@ -109,7 +109,7 @@ fn render_cycle(stack: ImportStack, cycle_path: string) -> string {
 /// CWD, (3) walk upward looking for an ancestor `packages/`. The
 /// `std-cli` probe is the canonical sentinel — if it doesn't
 /// exist, the directory isn't a packages root.
-fn find_packages_dir(dir: string) -> string {
+export fn find_packages_dir(dir: string) -> string {
     // Strategy 1: look for `/packages/` in the path itself (when compiling from within packages/)
     let marker = "/packages/"
     let idx = dir.index_of(marker)
@@ -156,7 +156,7 @@ fn find_packages_dir(dir: string) -> string {
 /// file: `${packages_dir}/std-cli/src/cli.av` or, when that
 /// doesn't exist, `${packages_dir}/std-cli/src/mod.av`. Returns
 /// `""` when neither file exists or `packages_dir` is empty.
-fn resolve_package_path(pkg_path: string, packages_dir: string) -> string {
+export fn resolve_package_path(pkg_path: string, packages_dir: string) -> string {
     // pkg_path is like "@std.cli" — extract scope ("std") and name ("cli")
     if packages_dir == "" { return "" }
     // Skip the "@" prefix
@@ -190,7 +190,7 @@ export fn resolve_module_files(stmts: StmtList, dir: string, loaded: LoadedPaths
 
 /// True when the use path is a `@scope.pkg` package import
 /// (rather than a relative `mod.sub` reference).
-fn is_package_use(path: string) -> bool {
+export fn is_package_use(path: string) -> bool {
     path.length > 0 && path[0] == "@"
 }
 
@@ -198,7 +198,7 @@ fn is_package_use(path: string) -> bool {
 /// Examples: `@std.cli` → `@std.cli`,
 /// `@std.cli.sub` → `@std.cli`. Used to load each package once
 /// even when multiple sub-paths import from it.
-fn package_module_name(path: string) -> string {
+export fn package_module_name(path: string) -> string {
     // Skip "@" prefix, find scope.name
     let without_at = path.substring(1, path.length)
     let dot = without_at.index_of(".")
@@ -253,7 +253,7 @@ fn resolve_module_files_inner(stmts: StmtList, dir: string, loaded: LoadedPaths,
 /// Pull the use-path string out of a `Use` statement, peeling
 /// any `Annotated` wrappers (doc comments, attributes) along the
 /// way. Returns `""` when `stmt` isn't a Use.
-fn extract_use_path(stmt: Stmt) -> string {
+export fn extract_use_path(stmt: Stmt) -> string {
     match stmt {
         .Use(up, _) -> up
         .Annotated(_, inner) -> extract_use_path(inner)

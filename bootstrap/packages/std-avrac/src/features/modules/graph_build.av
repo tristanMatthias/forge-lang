@@ -1,0 +1,402 @@
+// WHY: Pass-1 of the new module-resolution architecture (epic y4n1.4).
+//
+// Today's resolver (resolver.av) walks the AST and produces a wrapped
+// AST with `Module("@scope") { Module(name) { ... } }` for every
+// imported package. Name resolution then hunts through that wrapped
+// AST at lookup time. The wrapping is what breaks multi-file packages
+// like @std.avrac: a `use codegen.escape.{X}` written inside the
+// package gets reinterpreted against the consumer's top-level scope,
+// because nothing told the resolver that the path is anchored at
+// std-avrac's package root.
+//
+// This file implements the structural pass: walk every `mod X` and
+// `use X.Y.{Z}` statement starting from `entry_file`, populate a
+// ModuleGraph, and rewrite each `use` path to a ResolvedPath whose
+// anchor is captured at parse time. After this, wrapping cannot
+// change a path's meaning — the anchor is fixed.
+//
+// y4n1.8 cuts name resolution over to consume this graph and deletes
+// the wrapped-AST path entirely. y4n1.4 (the cli/main.av split) then
+// becomes a one-line config change.
+//
+// This pass is intentionally additive: the legacy resolver still
+// runs, and `make test` still uses it. The graph builder is only
+// exercised by the diff-harness spec test in this ticket and by the
+// cutover in y4n1.8.
+
+use core.ast.{Stmt, StmtList, SStmt, SExpr, Expr, ExprList, ParamList, ValueType, AnnotationList}
+use core.module_graph.{
+    ModuleGraph, ModuleGraphNode, ResolvedPath, SymbolList,
+    StringInterner, InternResult,
+    module_graph_new, module_graph_add, module_graph_find_by_file,
+    module_graph_add_package_root, module_graph_package_root,
+    module_graph_link_child, module_graph_child_id,
+    interner_intern,
+    ID_NONE,
+}
+use core.runtime.{avra_selfhost_file_exists, avra_selfhost_read_file}
+use parse.{parse_program_source}
+use features.modules.resolver.{
+    modules_dirname, find_packages_dir, resolve_package_path,
+    is_package_use, package_module_name, extract_use_path,
+}
+
+// ── Public API ───────────────────────────────────────────────────────
+
+/// Result of `build_module_graph`.
+///
+/// @field graph         — populated ModuleGraph: every `mod X`
+///                         encountered (including transitive package
+///                         imports) is a node with a stable id.
+/// @field uses          — every `use X.Y.{Z}` rewritten to ResolvedPath
+///                         with its anchor captured. The list is
+///                         intentionally unordered; consumers index by
+///                         (origin_module, segments) when they need it.
+/// @field had_error     — 1 when the build hit a missing-file or
+///                         missing-package failure.
+/// @field error_message — first error encountered. Empty on success.
+export type BuildGraphResult = {
+    graph: ModuleGraph,
+    uses: UseEdgeList,
+    had_error: int,
+    error_message: string,
+}
+
+/// One resolved-and-anchored `use` edge. Used by name resolution
+/// (y4n1.8) to bind imported names against the graph.
+///
+/// @field origin    — ModuleId of the file that wrote the `use`.
+/// @field path      — anchored path. Variant tells the resolver
+///                     which root to walk from.
+/// @field bindings  — `{X, Y, Z}` in `use a.b.{X, Y, Z}` — interned.
+export type UseEdge = {
+    origin: int,
+    path: ResolvedPath,
+    bindings: SymbolList,
+}
+
+/// Linked list of UseEdge — append-only; iteration is by-statement
+/// during name resolution, not by parent module.
+export enum UseEdgeList {
+    End
+    Node(edge: UseEdge, next: UseEdgeList)
+}
+
+/// Build the module graph starting from `entry_file`. The entry file
+/// becomes package 0's root module. Every transitively-loaded `mod X`
+/// is a separate node; every transitively-loaded `@scope.name` package
+/// becomes a separate package with its own root.
+///
+/// Pure on the AST side — only file I/O is reading the .av files we
+/// resolve along the way. No exit() calls; failures surface via
+/// `had_error` + `error_message` so callers can decide.
+export fn build_module_graph(entry_file: string) -> BuildGraphResult {
+    if avra_selfhost_file_exists(entry_file) == 0 {
+        return BuildGraphResult {
+            graph: module_graph_new(),
+            uses: UseEdgeList.End,
+            had_error: 1,
+            error_message: "entry file not found: ${entry_file}",
+        }
+    }
+    // Allocate package + root module atomically. The chicken/egg
+    // (package needs a root id; root needs a package id) is solved by
+    // module_graph_add_package_root.
+    let pr = module_graph_add_package_root(module_graph_new(), entry_file)
+    let content = avra_selfhost_read_file(entry_file)
+    let parsed = parse_program_source(content)
+    if parsed.had_error || parsed.stmts == null {
+        return BuildGraphResult {
+            graph: pr.graph,
+            uses: UseEdgeList.End,
+            had_error: 1,
+            error_message: "parse error in ${entry_file}: ${parsed.error_message}",
+        }
+    }
+    let entry_dir = modules_dirname(entry_file)
+    walk_stmts(pr.graph, parsed.stmts!, pr.mod_id, pr.pkg_id, entry_dir, UseEdgeList.End)
+}
+
+// ── Internal walker ──────────────────────────────────────────────────
+
+/// Recursive walker. Visits each top-level statement of a parsed file
+/// in order. `mod X` declarations spawn child modules + recurse into
+/// the loaded file's statements. `use X.Y.{Z}` declarations are
+/// rewritten to ResolvedPath and accumulated.
+///
+/// `parent_id` is the ModuleId currently being populated (the file
+/// these stmts came from). `pkg_id` is its package. `dir` is the
+/// directory of `parent_id`'s source file — used for sibling lookup.
+fn walk_stmts(g: ModuleGraph, stmts: StmtList, parent_id: int, pkg_id: int, dir: string, uses: UseEdgeList) -> BuildGraphResult {
+    match stmts {
+        .End -> BuildGraphResult { graph: g, uses, had_error: 0, error_message: "" }
+        .Node(ss, next) -> {
+            let head = walk_stmt(g, ss, parent_id, pkg_id, dir, uses)
+            if head.had_error { return head }
+            walk_stmts(head.graph, next, parent_id, pkg_id, dir, head.uses)
+        }
+    }
+}
+
+/// Visit one statement. Dispatches on its kind:
+///   - `.Module(name, _)`  → load `name.av` or `name/mod.av` from
+///                            `dir`, register node, recurse into body.
+///   - `.Use(path, names)` → classify + record a UseEdge (and load
+///                            the package file if it's `@scope.name`).
+///   - `.Annotated(_, inner)` → unwrap and recurse — doc comments
+///                            and attributes don't affect resolution.
+///   - everything else     → no-op (decls become items at y4n1.8;
+///                            for now we only build structure).
+fn walk_stmt(g: ModuleGraph, ss: SStmt, parent_id: int, pkg_id: int, dir: string, uses: UseEdgeList) -> BuildGraphResult {
+    match ss.node {
+        .Module(name, body) -> walk_mod_decl(g, name, body, parent_id, pkg_id, dir, uses)
+        .Use(path, names) -> walk_use_stmt(g, path, names, parent_id, pkg_id, dir, uses)
+        .Annotated(_, inner) -> {
+            let wrapped = SStmt { node: inner, line: ss.line, col: ss.col }
+            walk_stmt(g, wrapped, parent_id, pkg_id, dir, uses)
+        }
+        _ -> BuildGraphResult { graph: g, uses, had_error: 0, error_message: "" }
+    }
+}
+
+/// Handle a `mod X` declaration. Locates `X.av` or `X/mod.av` as a
+/// sibling of `dir`, parses it, allocates a new ModuleGraphNode child
+/// of `parent_id`, and recurses into the loaded body.
+///
+/// Dedup: if the same file path has already been registered as a
+/// graph node, we skip re-parsing and just wire up the parent→child
+/// edge against the existing id. Cycles are impossible here because
+/// `mod X` always references a distinct file.
+fn walk_mod_decl(g: ModuleGraph, name: string, _body: StmtList, parent_id: int, pkg_id: int, dir: string, uses: UseEdgeList) -> BuildGraphResult {
+    let sibling = "${dir}${name}.av"
+    let dir_mod = "${dir}${name}/mod.av"
+    mut mod_path = ""
+    if avra_selfhost_file_exists(sibling) != 0 { mod_path = sibling }
+    if mod_path == "" && avra_selfhost_file_exists(dir_mod) != 0 { mod_path = dir_mod }
+    if mod_path == "" {
+        return BuildGraphResult {
+            graph: g, uses, had_error: 1,
+            error_message: "module `${name}` not found (looked for ${sibling} and ${dir_mod})",
+        }
+    }
+    // Dedup: already-loaded files just wire the parent→child edge.
+    let existing = module_graph_find_by_file(g, mod_path)
+    if existing != ID_NONE {
+        let g_linked = module_graph_link_child(g, parent_id, name, existing)
+        return BuildGraphResult { graph: g_linked, uses, had_error: 0, error_message: "" }
+    }
+    // Allocate a fresh node and register parent→child edge.
+    let added = module_graph_add(g, mod_path, parent_id, pkg_id)
+    let linked = module_graph_link_child(added.graph, parent_id, name, added.id)
+    // Parse + recurse.
+    let content = avra_selfhost_read_file(mod_path)
+    let parsed = parse_program_source(content)
+    if parsed.had_error || parsed.stmts == null {
+        return BuildGraphResult {
+            graph: linked, uses, had_error: 1,
+            error_message: "parse error in module `${name}` (${mod_path}): ${parsed.error_message}",
+        }
+    }
+    let mod_dir = modules_dirname(mod_path)
+    walk_stmts(linked, parsed.stmts!, added.id, pkg_id, mod_dir, uses)
+}
+
+/// Handle a `use X.Y.{Z}` statement. Classifies the path:
+///   - `@scope.name.X.Y` → PackageRoot(pkg_id, [X, Y])
+///                          and ensures the package is loaded.
+///   - `X.Y`            → SelfRelative(origin_pkg, [X, Y])
+///                          — anchor is the originating file's package
+///                          root, fixed at parse time.
+///
+/// Records a UseEdge so name resolution can later bind the imported
+/// names against the graph.
+fn walk_use_stmt(g: ModuleGraph, path: string, names: ParamList, parent_id: int, pkg_id: int, dir: string, uses: UseEdgeList) -> BuildGraphResult {
+    if is_package_use(path) {
+        // @scope.name.X.Y — load the package, build PackageRoot.
+        let pkg_load = ensure_package_loaded(g, path, dir)
+        if pkg_load.had_error {
+            return BuildGraphResult {
+                graph: pkg_load.graph, uses,
+                had_error: 1, error_message: pkg_load.error_message,
+            }
+        }
+        let interned = intern_path_segments_after_pkg(pkg_load.graph, path)
+        let bindings = intern_param_names(interned.graph, names)
+        let edge = UseEdge {
+            origin: parent_id,
+            path: ResolvedPath.PackageRoot(pkg_load.pkg_id, interned.segments),
+            bindings: bindings.list,
+        }
+        return BuildGraphResult {
+            graph: bindings.graph,
+            uses: UseEdgeList.Node(edge, uses),
+            had_error: 0, error_message: "",
+        }
+    }
+    // X.Y — SelfRelative against the originating file's package root.
+    let interned = intern_path_segments(g, path)
+    let bindings = intern_param_names(interned.graph, names)
+    let edge = UseEdge {
+        origin: parent_id,
+        path: ResolvedPath.SelfRelative(pkg_id, interned.segments),
+        bindings: bindings.list,
+    }
+    BuildGraphResult {
+        graph: bindings.graph,
+        uses: UseEdgeList.Node(edge, uses),
+        had_error: 0, error_message: "",
+    }
+}
+
+// ── Package loading ──────────────────────────────────────────────────
+
+type EnsurePackageResult = {
+    graph: ModuleGraph,
+    pkg_id: int,
+    had_error: int,
+    error_message: string,
+}
+
+/// Locate the file backing `@scope.name`, ensure it's registered as a
+/// package in the graph, and return the package id. Idempotent: if
+/// the package's entry file is already a node, reuse its package id.
+fn ensure_package_loaded(g: ModuleGraph, use_path: string, dir: string) -> EnsurePackageResult {
+    let pkg_mod_name = package_module_name(use_path)
+    let packages_dir = find_packages_dir(dir)
+    if packages_dir == "" {
+        return EnsurePackageResult {
+            graph: g, pkg_id: ID_NONE, had_error: 1,
+            error_message: "cannot resolve package `${pkg_mod_name}`: no packages/ directory found",
+        }
+    }
+    let pkg_file = resolve_package_path(pkg_mod_name, packages_dir)
+    if pkg_file == "" {
+        return EnsurePackageResult {
+            graph: g, pkg_id: ID_NONE, had_error: 1,
+            error_message: "package `${pkg_mod_name}` not found",
+        }
+    }
+    // Already loaded? Reuse.
+    let existing = module_graph_find_by_file(g, pkg_file)
+    if existing != ID_NONE {
+        // Find the package whose root is `existing`. Linear search
+        // through allocated package ids — packages count is tiny so
+        // this is fine.
+        let pid = find_package_for_root(g, existing)
+        return EnsurePackageResult {
+            graph: g, pkg_id: pid, had_error: 0, error_message: "",
+        }
+    }
+    // Allocate a new package + root module atomically, parse + walk.
+    let pr = module_graph_add_package_root(g, pkg_file)
+    let content = avra_selfhost_read_file(pkg_file)
+    let parsed = parse_program_source(content)
+    if parsed.had_error || parsed.stmts == null {
+        return EnsurePackageResult {
+            graph: pr.graph, pkg_id: pr.pkg_id,
+            had_error: 1,
+            error_message: "parse error in package `${pkg_mod_name}` (${pkg_file}): ${parsed.error_message}",
+        }
+    }
+    let pkg_dir = modules_dirname(pkg_file)
+    let walked = walk_stmts(pr.graph, parsed.stmts!, pr.mod_id, pr.pkg_id, pkg_dir, UseEdgeList.End)
+    EnsurePackageResult {
+        graph: walked.graph, pkg_id: pr.pkg_id,
+        had_error: walked.had_error, error_message: walked.error_message,
+    }
+}
+
+/// Linear search: which package id has its root set to `root_id`?
+/// Used by ensure_package_loaded for already-cached packages.
+fn find_package_for_root(g: ModuleGraph, root_id: int) -> int {
+    mut pid = 0
+    while pid < g.next_package_id {
+        if module_graph_package_root(g, pid) == root_id { return pid }
+        pid = pid + 1
+    }
+    ID_NONE
+}
+
+// ── Path / name interning ────────────────────────────────────────────
+
+type PathSegmentsResult = { graph: ModuleGraph, segments: SymbolList }
+
+/// Intern every dot-separated segment of `path` into the graph's
+/// interner. Used for SelfRelative paths (`X.Y.Z`).
+fn intern_path_segments(g: ModuleGraph, path: string) -> PathSegmentsResult {
+    intern_segments_inner(g, path, 0, SymbolList.End)
+}
+
+/// Intern every segment AFTER the `@scope.name.` prefix. Used for
+/// PackageRoot paths — the prefix identifies the package, the
+/// segments after identify the module path inside it.
+fn intern_path_segments_after_pkg(g: ModuleGraph, path: string) -> PathSegmentsResult {
+    // path looks like `@scope.name.X.Y` — strip up to and including
+    // the second `.` after the leading `@`.
+    let without_at = path.substring(1, path.length)
+    let dot1 = without_at.index_of(".")
+    if dot1 < 0 {
+        return PathSegmentsResult { graph: g, segments: SymbolList.End }
+    }
+    let after_scope = without_at.substring(dot1 + 1, without_at.length)
+    let dot2 = after_scope.index_of(".")
+    if dot2 < 0 {
+        // Path was just `@scope.name` — no segments after the package.
+        return PathSegmentsResult { graph: g, segments: SymbolList.End }
+    }
+    let after_pkg = after_scope.substring(dot2 + 1, after_scope.length)
+    intern_segments_inner(g, after_pkg, 0, SymbolList.End)
+}
+
+/// Recursive worker — splits on `.` and accumulates a SymbolList in
+/// reverse, then reverses at the end. Reverse-of-reverse keeps order
+/// without per-step list traversal.
+fn intern_segments_inner(g: ModuleGraph, path: string, start: int, acc: SymbolList) -> PathSegmentsResult {
+    let len = path.length
+    if start >= len {
+        return PathSegmentsResult { graph: g, segments: reverse_symbol_list(acc) }
+    }
+    let rest = path.substring(start, len)
+    let dot = rest.index_of(".")
+    let segment = if dot < 0 { rest } else { rest.substring(0, dot) }
+    let next_start = if dot < 0 { len } else { start + dot + 1 }
+    let r = interner_intern(g.interner, segment)
+    let g_next = g with { interner: r.interner }
+    intern_segments_inner(g_next, path, next_start, SymbolList.Node(r.sym, acc))
+}
+
+/// Reverse a SymbolList iteratively. cons-prepend accumulator pattern.
+fn reverse_symbol_list(list: SymbolList) -> SymbolList {
+    mut acc = SymbolList.End
+    mut cur = list
+    while true {
+        match cur {
+            .End -> { return acc }
+            .Node(s, next) -> {
+                acc = SymbolList.Node(s, acc)
+                cur = next
+            }
+        }
+    }
+    SymbolList.End
+}
+
+type ParamNamesResult = { graph: ModuleGraph, list: SymbolList }
+
+/// Intern every `name` from a ParamList — used for `use a.b.{X, Y, Z}`
+/// where each name in the braces becomes a binding in the importing
+/// module's scope.
+fn intern_param_names(g: ModuleGraph, params: ParamList) -> ParamNamesResult {
+    intern_param_names_inner(g, params, SymbolList.End)
+}
+
+fn intern_param_names_inner(g: ModuleGraph, params: ParamList, acc: SymbolList) -> ParamNamesResult {
+    match params {
+        .End -> ParamNamesResult { graph: g, list: reverse_symbol_list(acc) }
+        .Node(name, _, next) -> {
+            let r = interner_intern(g.interner, name)
+            let g_next = g with { interner: r.interner }
+            intern_param_names_inner(g_next, next, SymbolList.Node(r.sym, acc))
+        }
+    }
+}

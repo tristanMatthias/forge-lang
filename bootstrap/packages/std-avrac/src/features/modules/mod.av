@@ -4,6 +4,7 @@
 mod parser
 mod resolver
 mod package
+mod graph_build
 use features.eval.{ok_result, value_null}
 use core.registry.{feature_new, Feature}
 use resolve.{resolve_stmt_list}

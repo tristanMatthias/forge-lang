@@ -274,6 +274,61 @@ export fn module_graph_add_package(g: ModuleGraph, root_mod_id: int) -> AddPacka
     AddPackageResult { graph: updated, pkg_id }
 }
 
+/// Allocate both a fresh package and a root module for it in one
+/// step. Used by the graph builder when it encounters either the
+/// program entry or a `use @scope.pkg` stmt for a package not yet
+/// loaded — needs both a PackageId and the corresponding root
+/// ModuleId allocated atomically (otherwise the chicken/egg of
+/// `module_graph_add` requiring a pkg_id and `module_graph_add_package`
+/// requiring a mod_id forces awkward placeholder dance at every call
+/// site).
+export type AddPackageRootResult = { graph: ModuleGraph, mod_id: int, pkg_id: int }
+
+export fn module_graph_add_package_root(g: ModuleGraph, file: string) -> AddPackageRootResult {
+    let pkg_id = g.next_package_id
+    let mod_id = g.next_module_id
+    let node = ModuleGraphNode {
+        id: mod_id,
+        parent: ID_NONE,
+        package: pkg_id,
+        file,
+        children: avra_map_new_cstr(),
+        items: avra_map_new_cstr(),
+    }
+    avra_map_set_cstr(g.by_path, file, mod_id)
+    avra_intmap_set(g.package_roots, pkg_id, mod_id)
+    let updated = g with {
+        modules: ModuleGraphNodeList.Node(node, g.modules),
+        next_module_id: mod_id + 1,
+        next_package_id: pkg_id + 1,
+    }
+    AddPackageRootResult { graph: updated, mod_id, pkg_id }
+}
+
+/// Register a child module in the parent's `children` strmap so the
+/// pass-2 resolver can do an O(1) lookup of `mod_name → mod_id` when
+/// walking down a path. Returns the graph unchanged — the strmap is
+/// mutated in place (its `ptr` field holds the C handle).
+export fn module_graph_link_child(g: ModuleGraph, parent_id: int, child_name: string, child_id: int) -> ModuleGraph {
+    let parent = module_graph_get(g, parent_id)
+    if parent == null { return g }
+    avra_map_set_cstr(parent!.children, child_name, child_id)
+    g
+}
+
+/// Look up a child module by name in the parent's `children` strmap.
+/// Returns `ID_NONE` when no such child exists. O(1) on the strmap
+/// lookup.
+export fn module_graph_child_id(g: ModuleGraph, parent_id: int, child_name: string) -> int {
+    let parent = module_graph_get(g, parent_id)
+    if parent == null { return ID_NONE }
+    if avra_map_has_cstr(parent!.children, child_name) != 0 {
+        avra_map_get_cstr(parent!.children, child_name)
+    } else {
+        ID_NONE
+    }
+}
+
 /// Lookup the root ModuleId for a package. Returns ID_NONE if pkg_id
 /// is unknown.
 export fn module_graph_package_root(g: ModuleGraph, pkg_id: int) -> int {
