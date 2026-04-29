@@ -32,6 +32,9 @@ extern fn avra_toml_get_section_string(toml: string, section: string, key: strin
 extern fn avra_readdir(path: string) -> ptr
 extern fn avra_is_dir(path: string) -> int
 extern fn avra_file_mtime(path: string) -> int
+extern fn avra_stdin_read_bytes(n: int) -> string
+extern fn avra_stdin_read_line() -> string
+extern fn avra_stdout_write(s: string)
 extern fn avra_str_ends_with(s: string, suffix: string) -> int
 
 // ── Intmap extensions ──

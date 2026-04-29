@@ -1,0 +1,193 @@
+// JSON-RPC framing + JSON encode/decode + dispatch. Stdio loop and
+// real client integration are smoke-tested via `bs2 lsp` outside the
+// spec runner.
+
+use @std.lsp.{lsp_pos,
+              SymKind, SymbolGraph, SymList,
+              graph_new, graph_add, sym_new,
+              CallList, calls_new,
+              lsp_frame,
+              json_escape, json_str,
+              json_extract_string, json_extract_int,
+              jsonrpc_response, jsonrpc_error,
+              sym_to_json, symlist_to_json,
+              lsp_dispatch}
+
+fn pt_span() -> LspSpan {
+    LspSpan { start: lsp_pos(5, 1), end: lsp_pos(5, 1) }
+}
+
+fn pt_graph() -> SymbolGraph {
+    let sp = pt_span()
+    mut g = graph_new()
+    g = graph_add(g, sym_new("square", "math::square",
+        SymKind.Fn("fn square(x: int) -> int", "int"),
+        "Square a number.", "math.av", sp, true, ""))
+    g
+}
+
+spec "protocol: framing" {
+    given "lsp_frame" {
+        then "prepends Content-Length header" {
+            let f = lsp_frame("{\"x\":1}")
+            f.starts_with("Content-Length: 7\r\n\r\n") == true
+                && f.ends_with("{\"x\":1}") == true
+        }
+        then "the byte count is correct for ASCII bodies" {
+            let f = lsp_frame("hello world")
+            f.contains("Content-Length: 11") == true
+        }
+    }
+}
+
+spec "protocol: JSON escape and emit" {
+    given "json_escape" {
+        then "escapes embedded quotes and backslashes" {
+            json_escape("a\"b\\c") == "a\\\"b\\\\c"
+        }
+        then "escapes newlines and tabs" {
+            json_escape("line1\nline2\tpart") == "line1\\nline2\\tpart"
+        }
+        then "leaves plain ASCII alone" {
+            json_escape("hello world") == "hello world"
+        }
+    }
+    given "json_str" {
+        then "wraps in double quotes" {
+            json_str("hi") == "\"hi\""
+        }
+        then "escapes inside the wrapper" {
+            json_str("a\"b") == "\"a\\\"b\""
+        }
+    }
+}
+
+spec "protocol: JSON extraction" {
+    given "json_extract_string" {
+        then "pulls a string field by key" {
+            json_extract_string("{\"foo\":\"bar\"}", "foo") == "bar"
+        }
+        then "handles whitespace around the colon" {
+            json_extract_string("{ \"x\" :  \"y\" }", "x") == "y"
+        }
+        then "decodes inline escapes" {
+            json_extract_string("{\"k\":\"a\\\"b\"}", "k") == "a\"b"
+        }
+        then "returns empty for a missing key" {
+            json_extract_string("{\"a\":\"b\"}", "missing") == ""
+        }
+    }
+    given "json_extract_int" {
+        then "pulls an integer field" {
+            json_extract_int("{\"line\":42}", "line") == 42
+        }
+        then "handles negative numbers" {
+            json_extract_int("{\"col\":-3}", "col") == -3
+        }
+        then "returns 0 for a missing field" {
+            json_extract_int("{}", "x") == 0
+        }
+    }
+}
+
+spec "protocol: JSON-RPC envelopes" {
+    given "jsonrpc_response" {
+        then "embeds id and result" {
+            jsonrpc_response("42", "{\"x\":1}")
+                == "{\"jsonrpc\":\"2.0\",\"id\":42,\"result\":{\"x\":1}}"
+        }
+        then "handles a string id" {
+            jsonrpc_response("\"abc\"", "null")
+                == "{\"jsonrpc\":\"2.0\",\"id\":\"abc\",\"result\":null}"
+        }
+    }
+    given "jsonrpc_error" {
+        then "carries code and message" {
+            let e = jsonrpc_error("1", -32601, "Method not found")
+            e.contains("-32601") == true && e.contains("Method not found") == true
+        }
+    }
+}
+
+spec "protocol: Sym serialization" {
+    given "sym_to_json" {
+        then "embeds qualified path and detail" {
+            let g = pt_graph()
+            // pull the sym back out
+            mut found = ""
+            mut cur = graph_new().syms
+            // shortcut: use sym_to_json on a hand-built Sym from the graph
+            match g.syms {
+                .Node(item, _) -> {
+                    let j = sym_to_json(item)
+                    found = j
+                }
+                _ -> {}
+            }
+            found.contains("math::square") == true && found.contains("Square a number") == true
+        }
+    }
+    given "symlist_to_json" {
+        then "wraps the syms in a JSON array" {
+            let g = pt_graph()
+            let arr = symlist_to_json(g.syms)
+            arr.starts_with("[") == true && arr.ends_with("]") == true
+                && arr.contains("square") == true
+        }
+        then "empty list renders as []" {
+            symlist_to_json(SymList.End) == "[]"
+        }
+    }
+}
+
+spec "protocol: dispatch" {
+    given "initialize" {
+        then "advertises hover and definition capabilities" {
+            let g = pt_graph()
+            let resp = lsp_dispatch(g, calls_new(), "1", "initialize", "{}")
+            resp.contains("hoverProvider") == true
+                && resp.contains("definitionProvider") == true
+                && resp.contains("avra-lsp") == true
+        }
+    }
+    given "shutdown" {
+        then "responds with null result" {
+            let g = pt_graph()
+            let resp = lsp_dispatch(g, calls_new(), "9", "shutdown", "{}")
+            resp.contains("\"result\":null") == true
+        }
+    }
+    given "an unknown method" {
+        then "returns JSON-RPC -32601" {
+            let g = pt_graph()
+            let resp = lsp_dispatch(g, calls_new(), "5", "no/such/method", "{}")
+            resp.contains("-32601") == true
+        }
+    }
+    given "textDocument/hover for a known position" {
+        then "embeds the symbol's doc" {
+            let g = pt_graph()
+            let params = "{\"textDocument\":{\"uri\":\"file://math.av\"},\"position\":{\"line\":4,\"character\":0}}"
+            let resp = lsp_dispatch(g, calls_new(), "7", "textDocument/hover", params)
+            // line 5 (1-based) is line 4 in LSP's 0-based; uri must
+            // resolve to math.av
+            resp.contains("Square a number") == true
+        }
+    }
+    given "workspace/symbol fuzzy search" {
+        then "returns scored matches as JSON" {
+            let g = pt_graph()
+            let params = "{\"query\":\"squre\"}"
+            let resp = lsp_dispatch(g, calls_new(), "11", "workspace/symbol", params)
+            resp.contains("square") == true
+        }
+    }
+    given "documentSymbol for a file" {
+        then "lists the file's symbols" {
+            let g = pt_graph()
+            let params = "{\"textDocument\":{\"uri\":\"file://math.av\"}}"
+            let resp = lsp_dispatch(g, calls_new(), "13", "textDocument/documentSymbol", params)
+            resp.contains("math::square") == true
+        }
+    }
+}

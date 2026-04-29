@@ -21,6 +21,7 @@ mod docs
 use cli.{cli_new, cli_add_command, cli_command_add_flag, cli_command_add_option, cli_command_add_arg, cli_parse, result_has_flag, result_get_option}
 use coverage.{render_coverage}
 use docs.{extract_project_docs, extract_project_docs_ast, show_overview, show_symbol, show_short, show_symbols, show_search, show_llm, validate_docs}
+use indexer.{run_lsp_server}
 
 use parse.{parse_expression_source, parse_program_source}
 use core.ast.{render_expr, render_stmt_list, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType}
@@ -571,7 +572,11 @@ fn main() {
     if avra_selfhost_argc() >= 2 {
         let cmd0 = avra_selfhost_get_arg_cstr(1)
         if cmd0 == "lsp" {
-            println("LSP server not yet available — use `avra check` for diagnostics")
+            // Index the project once, then enter the JSON-RPC stdio
+            // loop. v1 serves a static graph; reindex-on-edit waits
+            // for the cache layer (rnb9.7) to grow a watch loop.
+            let project_dir = avra_process_env_get("PWD")
+            run_lsp_server(project_dir)
             return
         }
         if cmd0 == "docs" {

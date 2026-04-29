@@ -14,15 +14,20 @@
 // downstream consumers (docs CLI, LSP server) only need @std.lsp's
 // types — they never import compiler internals.
 
+use core.runtime.{avra_selfhost_read_file, avra_shell_exec}
 use core.ast.{Stmt, StmtList, SStmt,
               Expr, SExpr, ExprList,
               AnnotationList, ParamList, FieldList,
               VariantList, ValueType, TypeParamList,
               vtype_display, vtype_render_full,
               find_annotation, doc_string_for, stmt_unwrap}
+use parse.{parse_program_source}
 use @std.lsp.{LspPos, LspSpan, Sym, SymList, SymKind,
-              CallEdge, CallList, calls_new, calls_add,
-              lsp_pos, lsp_span, sym_new}
+              SymbolGraph, CallEdge, CallList,
+              calls_new, calls_add,
+              graph_new, graph_extend,
+              lsp_pos, lsp_span, sym_new,
+              lsp_serve}
 
 // ── Public API ──────────────────────────────────────────────────────
 
@@ -367,5 +372,48 @@ fn sym_list_concat(a: SymList, b: SymList) -> SymList {
     match a {
         .End -> b
         .Node(item, next) -> SymList.Node(item, sym_list_concat(next, b))
+    }
+}
+
+// ── LSP server entry point ─────────────────────────────────────────
+//
+// Indexes every .av in `project_dir` then enters @std/lsp's stdio
+// JSON-RPC loop. Lives here because the bootstrap module resolver
+// currently dedupes a second @std.lsp import — we centralize the
+// import in this module so the whole compiler reaches std-lsp via
+// indexer.
+
+export fn run_lsp_server(project_dir: string) {
+    let cmd = "find ${project_dir} -name '*.av' -type f -not -path '*/build/*' -not -path '*/.beads/*' -not -path '*/seed/*' 2>/dev/null | sort"
+    let files_text = avra_shell_exec(cmd)
+
+    mut g = graph_new()
+    mut calls = calls_new()
+    for path in files_text.split("\n") {
+        if path == "" { continue }
+        let content = avra_selfhost_read_file(path)
+        if content == "" { continue }
+        let parsed = parse_program_source(content)
+        if parsed.had_error || parsed.stmts == null { continue }
+        let rel = relativise_indexer_path(path, project_dir)
+        let file_syms = extract_from_ast(parsed.stmts!, rel)
+        let file_calls = extract_calls_from_ast(parsed.stmts!, rel)
+        g = graph_extend(g, file_syms)
+        calls = call_list_concat(file_calls, calls)
+    }
+
+    lsp_serve(g, calls)
+}
+
+fn relativise_indexer_path(path: string, dir: string) -> string {
+    if !path.starts_with(dir) { return path }
+    let after = path.substring(dir.length, path.length)
+    if after.starts_with("/") { after.substring(1, after.length) } else { after }
+}
+
+fn call_list_concat(a: CallList, b: CallList) -> CallList {
+    match a {
+        .End -> b
+        .Node(item, next) -> CallList.Node(item, call_list_concat(next, b))
     }
 }

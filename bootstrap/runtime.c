@@ -832,6 +832,59 @@ int64_t avra_is_dir(const char* path) {
     return S_ISDIR(st.st_mode) ? 1 : 0;
 }
 
+// Write a string to stdout exactly as-is — no trailing newline,
+// no buffering tricks. Used by @std/lsp's JSON-RPC writer where the
+// framing protocol requires precise byte counts.
+void avra_stdout_write(const char* s) {
+    if (!s) return;
+    fputs(s, stdout);
+    fflush(stdout);
+}
+
+// Read up to `n` bytes from stdin, blocking until data arrives or
+// EOF. Returns the bytes as a length-correct C string (NUL terminator
+// appended; embedded NULs are preserved as far as the runtime is
+// concerned, but Avra's string operations are NUL-bounded so callers
+// should avoid reading binary data this way). On EOF returns "".
+//
+// Used by @std/lsp's JSON-RPC stdio loop to consume LSP messages
+// (Content-Length: N\r\n\r\n<N bytes of JSON>).
+const char* avra_stdin_read_bytes(int64_t n) {
+    if (n <= 0) {
+        char* empty = (char*)malloc(1);
+        empty[0] = '\0';
+        return empty;
+    }
+    char* buf = (char*)malloc(n + 1);
+    int64_t got = 0;
+    while (got < n) {
+        ssize_t r = read(STDIN_FILENO, buf + got, n - got);
+        if (r <= 0) break;
+        got += r;
+    }
+    buf[got] = '\0';
+    return buf;
+}
+
+// Read one line from stdin (terminator stripped). Returns "" on EOF.
+// Used to parse LSP message headers ("Content-Length: 47\r\n").
+const char* avra_stdin_read_line(void) {
+    static char line_buf[8192];
+    size_t n = 0;
+    while (n + 1 < sizeof(line_buf)) {
+        char c;
+        ssize_t r = read(STDIN_FILENO, &c, 1);
+        if (r <= 0) break;
+        if (c == '\n') break;
+        if (c == '\r') continue;
+        line_buf[n++] = c;
+    }
+    line_buf[n] = '\0';
+    char* out = (char*)malloc(n + 1);
+    memcpy(out, line_buf, n + 1);
+    return out;
+}
+
 // File modification time as nanoseconds since unix epoch. Returns 0
 // if the path doesn't exist (caller treats 0 as "stale, re-extract").
 // Used by std-lsp's incremental cache to detect changed source files

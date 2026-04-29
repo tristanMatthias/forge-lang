@@ -1735,3 +1735,485 @@ export fn cache_load(path: string) -> CacheState {
 export fn cache_save(state: CacheState, path: string, version: string) -> int {
     avra_selfhost_write_file(path, cache_encode(state, version))
 }
+
+// ╔═══════════════════════════════════════════════════════════════════╗
+// ║                            PROTOCOL                               ║
+// ╚═══════════════════════════════════════════════════════════════════╝
+//
+// JSON-RPC 2.0 over stdio with LSP framing:
+//
+//   Content-Length: <N>\r\n
+//   \r\n
+//   <N bytes of JSON>
+//
+// Server loop reads one frame, parses minimal JSON to recover the
+// `method` name and the request `id`, dispatches to the query API,
+// and writes a framed JSON response. Responses keep the JSON minimal
+// — only the fields LSP clients actually consume.
+//
+// We hand-roll JSON because std-lsp shouldn't drag in a parser
+// library; LSP messages are well-shaped enough that a 200-line
+// extractor handles them. Methods we don't know about are answered
+// with a JSON-RPC `MethodNotFound` (-32601) so the client falls back
+// gracefully.
+
+extern fn avra_stdin_read_bytes(n: int) -> string
+extern fn avra_stdin_read_line() -> string
+extern fn avra_stdout_write(s: string)
+
+/// Wrap a JSON body in LSP framing. The byte-count header must be
+/// the *byte* length, not the char length — for ASCII bodies these
+/// are equal; for messages containing non-ASCII chars (rare in LSP
+/// requests but possible in symbol names), callers should ensure
+/// `body.length` reflects bytes.
+export fn lsp_frame(body: string) -> string {
+    "Content-Length: ${string(body.length)}\r\n\r\n${body}"
+}
+
+/// Read one framed message from stdin. Returns the JSON body, or ""
+/// on EOF / malformed header. The first line we don't recognise as
+/// `Content-Length:` is treated as EOF — clients are well-behaved
+/// in practice.
+export fn lsp_read_frame() -> string {
+    mut content_len = 0
+    while true {
+        let line = avra_stdin_read_line()
+        if line == "" {
+            // Either EOF or the blank header-terminator. If we've
+            // already seen a content-length header, this blank line
+            // means the body comes next.
+            if content_len > 0 {
+                return avra_stdin_read_bytes(content_len)
+            }
+            return ""
+        }
+        if line.starts_with("Content-Length:") {
+            let val = line.substring(16, line.length).trim()
+            content_len = int(val)
+        }
+        // Other headers (Content-Type) are ignored — we always speak
+        // utf-8 JSON.
+    }
+    ""
+}
+
+// ── JSON emit ───────────────────────────────────────────────────────
+//
+// Minimal builder. We never *parse* general JSON in this layer; the
+// dispatch layer does targeted field extraction (`json_extract_*`)
+// from the raw request body, which is more efficient and avoids a
+// full parser.
+
+/// Escape a string for JSON: `"`, `\`, `\n`, `\r`, `\t` get the
+/// canonical backslash forms. Non-ASCII passes through unchanged
+/// (LSP allows utf-8 directly inside JSON strings).
+export fn json_escape(s: string) -> string {
+    mut out = ""
+    mut i = 0
+    while i < s.length {
+        let ch = s.substring(i, i + 1)
+        if ch == "\"" {
+            out = "${out}\\\""
+        } else if ch == "\\" {
+            out = "${out}\\\\"
+        } else if ch == "\n" {
+            out = "${out}\\n"
+        } else if ch == "\r" {
+            out = "${out}\\r"
+        } else if ch == "\t" {
+            out = "${out}\\t"
+        } else {
+            out = "${out}${ch}"
+        }
+        i = i + 1
+    }
+    out
+}
+
+/// JSON string literal: surrounded by double quotes, body escaped.
+export fn json_str(s: string) -> string {
+    "\"${json_escape(s)}\""
+}
+
+/// Build a JSON-RPC success response: `{"jsonrpc":"2.0","id":<id>,"result":<body>}`.
+export fn jsonrpc_response(id: string, result_body: string) -> string {
+    "{\"jsonrpc\":\"2.0\",\"id\":${id},\"result\":${result_body}}"
+}
+
+/// JSON-RPC error response with code + message.
+export fn jsonrpc_error(id: string, code: int, message: string) -> string {
+    "{\"jsonrpc\":\"2.0\",\"id\":${id},\"error\":{\"code\":${string(code)},\"message\":${json_str(message)}}}"
+}
+
+// ── JSON field extraction ───────────────────────────────────────────
+//
+// Targeted `find this field, return its value` — enough for the LSP
+// fields we care about. Matches `"<key>":<value>` looking past
+// whitespace; doesn't handle deeply nested escaping but suffices for
+// well-formed LSP requests we see in practice.
+
+/// Pull a string-typed field's value out of a JSON blob. Returns ""
+/// if the field is missing or not a string.
+export fn json_extract_string(body: string, key: string) -> string {
+    let needle = "\"${key}\""
+    let pos = body.index_of(needle)
+    if pos < 0 { return "" }
+    // Skip past the colon following the key.
+    mut i = pos + needle.length
+    while i < body.length {
+        let ch = body.substring(i, i + 1)
+        if ch == ":" {
+            i = i + 1
+            break
+        }
+        i = i + 1
+    }
+    // Skip whitespace.
+    while i < body.length {
+        let ch = body.substring(i, i + 1)
+        if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" { break }
+        i = i + 1
+    }
+    if i >= body.length { return "" }
+    if body.substring(i, i + 1) != "\"" { return "" }
+    i = i + 1
+    // Read until the next unescaped quote.
+    mut out = ""
+    while i < body.length {
+        let ch = body.substring(i, i + 1)
+        if ch == "\\" && i + 1 < body.length {
+            let nxt = body.substring(i + 1, i + 2)
+            if nxt == "\"" {
+                out = "${out}\""
+                i = i + 2
+                continue
+            }
+            if nxt == "\\" {
+                out = "${out}\\"
+                i = i + 2
+                continue
+            }
+            if nxt == "n" {
+                out = "${out}\n"
+                i = i + 2
+                continue
+            }
+            if nxt == "r" {
+                out = "${out}\r"
+                i = i + 2
+                continue
+            }
+            if nxt == "t" {
+                out = "${out}\t"
+                i = i + 2
+                continue
+            }
+        }
+        if ch == "\"" { return out }
+        out = "${out}${ch}"
+        i = i + 1
+    }
+    out
+}
+
+/// Pull a numeric-typed field's value. Returns 0 if missing.
+export fn json_extract_int(body: string, key: string) -> int {
+    let needle = "\"${key}\""
+    let pos = body.index_of(needle)
+    if pos < 0 { return 0 }
+    mut i = pos + needle.length
+    while i < body.length {
+        let ch = body.substring(i, i + 1)
+        if ch == ":" {
+            i = i + 1
+            break
+        }
+        i = i + 1
+    }
+    while i < body.length {
+        let ch = body.substring(i, i + 1)
+        if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" { break }
+        i = i + 1
+    }
+    mut digits = ""
+    while i < body.length {
+        let ch = body.substring(i, i + 1)
+        if ch == "-" || (ch >= "0" && ch <= "9") {
+            digits = "${digits}${ch}"
+            i = i + 1
+        } else {
+            break
+        }
+    }
+    if digits == "" || digits == "-" { return 0 }
+    int(digits)
+}
+
+// ── Sym → JSON ──────────────────────────────────────────────────────
+
+/// Render a Sym as JSON-encoded record. Used by hover, definition,
+/// and search responses.
+export fn sym_to_json(s: Sym) -> string {
+    let kind_tag = sym_kind_tag(s.kind)
+    let detail = json_str(sym_kind_render(s.kind))
+    let name = json_str(s.name)
+    let qual = json_str(s.qualified)
+    let doc = json_str(s.doc)
+    let file = json_str(s.file)
+    let exp = if s.exported { "true" } else { "false" }
+    "{\"name\":${name},\"qualified\":${qual},\"kind\":${json_str(kind_tag)},\"detail\":${detail},\"doc\":${doc},\"file\":${file},\"line\":${string(s.span.start.line)},\"exported\":${exp}}"
+}
+
+/// Render a SymList as a JSON array.
+export fn symlist_to_json(list: SymList) -> string {
+    mut out = "["
+    mut first = true
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return "${out}]"
+            }
+            .Node(item, next) -> {
+                if first {
+                    out = "${out}${sym_to_json(item)}"
+                    first = false
+                } else {
+                    out = "${out},${sym_to_json(item)}"
+                }
+                cur = next
+            }
+        }
+    }
+    "${out}]"
+}
+
+// ── Method dispatch ─────────────────────────────────────────────────
+//
+// The dispatch table the server loop runs. `params` is the raw JSON
+// body of the request's `params` field (or, in our minimal extractor,
+// the full request body — `json_extract_*` doesn't care about depth).
+//
+// Methods served:
+//   initialize / initialized / shutdown / exit (lifecycle)
+//   textDocument/hover         → query_hover
+//   textDocument/definition    → query_at → location
+//   textDocument/documentSymbol → query_symbols(File)
+//   workspace/symbol           → query_search
+//   avra/callers (custom)      → query_callers
+//   avra/callees (custom)      → query_callees
+//
+// Unknown methods get JSON-RPC -32601 "MethodNotFound".
+
+/// Build a JSON-RPC response for `method`. `id` is the request id
+/// (already JSON-encoded — caller passes the raw string value).
+/// `g` and `calls` are the symbol graph and call-edge list.
+export fn lsp_dispatch(g: SymbolGraph, calls: CallList, id: string, method: string, params: string) -> string {
+    match method {
+        "initialize" -> jsonrpc_response(id, lsp_initialize_result())
+        "initialized" -> ""
+        "shutdown" -> jsonrpc_response(id, "null")
+        "exit" -> ""
+        "textDocument/hover" -> dispatch_hover(g, id, params)
+        "textDocument/definition" -> dispatch_definition(g, id, params)
+        "textDocument/documentSymbol" -> dispatch_document_symbol(g, id, params)
+        "workspace/symbol" -> dispatch_workspace_symbol(g, id, params)
+        "avra/callers" -> dispatch_callers(g, calls, id, params)
+        "avra/callees" -> dispatch_callees(calls, id, params)
+        _ -> jsonrpc_error(id, -32601, "Method not found: ${method}")
+    }
+}
+
+fn lsp_initialize_result() -> string {
+    // Capabilities the server actually implements. Keep the set
+    // honest — clients use this to enable/disable UI features.
+    "{\"capabilities\":{\"hoverProvider\":true,\"definitionProvider\":true,\"documentSymbolProvider\":true,\"workspaceSymbolProvider\":true},\"serverInfo\":{\"name\":\"avra-lsp\",\"version\":\"0.1.0\"}}"
+}
+
+fn dispatch_hover(g: SymbolGraph, id: string, params: string) -> string {
+    let uri = json_extract_string(params, "uri")
+    let line = json_extract_int(params, "line")
+    let file = uri_to_file(uri)
+    let h = query_hover(g, file, line + 1)  // LSP positions are 0-based, ours 1-based
+    if h == null {
+        return jsonrpc_response(id, "null")
+    }
+    let body = "{\"contents\":${json_str(h!.rendered)}}"
+    jsonrpc_response(id, body)
+}
+
+fn dispatch_definition(g: SymbolGraph, id: string, params: string) -> string {
+    let uri = json_extract_string(params, "uri")
+    let line = json_extract_int(params, "line")
+    let file = uri_to_file(uri)
+    let s = query_at(g, file, line + 1)
+    if s == null {
+        return jsonrpc_response(id, "null")
+    }
+    let body = sym_to_location_json(s!)
+    jsonrpc_response(id, body)
+}
+
+fn dispatch_document_symbol(g: SymbolGraph, id: string, params: string) -> string {
+    let uri = json_extract_string(params, "uri")
+    let file = uri_to_file(uri)
+    let syms = query_symbols(g, Scope.File(file))
+    jsonrpc_response(id, symlist_to_json(syms))
+}
+
+fn dispatch_workspace_symbol(g: SymbolGraph, id: string, params: string) -> string {
+    let q = json_extract_string(params, "query")
+    let scored = query_search(g, q, 50)
+    jsonrpc_response(id, scored_syms_to_json(scored))
+}
+
+fn dispatch_callers(g: SymbolGraph, calls: CallList, id: string, params: string) -> string {
+    let name = json_extract_string(params, "name")
+    let callers = query_callers(g, calls, name)
+    jsonrpc_response(id, symlist_to_json(callers))
+}
+
+fn dispatch_callees(calls: CallList, id: string, params: string) -> string {
+    let qualified = json_extract_string(params, "qualified")
+    let edges = query_callees(calls, qualified)
+    jsonrpc_response(id, calls_to_json(edges))
+}
+
+fn sym_to_location_json(s: Sym) -> string {
+    let uri = "file://${s.file}"
+    let line = string(s.span.start.line - 1)  // LSP 0-based
+    "{\"uri\":${json_str(uri)},\"range\":{\"start\":{\"line\":${line},\"character\":0},\"end\":{\"line\":${line},\"character\":0}}}"
+}
+
+fn uri_to_file(uri: string) -> string {
+    if uri.starts_with("file://") {
+        uri.substring(7, uri.length)
+    } else {
+        uri
+    }
+}
+
+fn scored_syms_to_json(list: ScoredSymList) -> string {
+    mut out = "["
+    mut first = true
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return "${out}]"
+            }
+            .Node(item, next) -> {
+                if first {
+                    out = "${out}${sym_to_json(item.sym)}"
+                    first = false
+                } else {
+                    out = "${out},${sym_to_json(item.sym)}"
+                }
+                cur = next
+            }
+        }
+    }
+    "${out}]"
+}
+
+fn calls_to_json(list: CallList) -> string {
+    mut out = "["
+    mut first = true
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return "${out}]"
+            }
+            .Node(edge, next) -> {
+                let row = "{\"caller\":${json_str(edge.caller)},\"callee\":${json_str(edge.callee)},\"file\":${json_str(edge.file)},\"line\":${string(edge.line)},\"col\":${string(edge.col)}}"
+                if first {
+                    out = "${out}${row}"
+                    first = false
+                } else {
+                    out = "${out},${row}"
+                }
+                cur = next
+            }
+        }
+    }
+    "${out}]"
+}
+
+// ── Server event loop ──────────────────────────────────────────────
+//
+// Block on stdin, frame messages, dispatch, write framed responses,
+// repeat. Caller passes the populated graph + call list. The loop
+// exits on EOF or after an `exit` notification.
+//
+// This is intentionally a thin shell — no async, no debouncing, no
+// did-change overlay. v1 serves a static graph; reindex-on-edit is
+// future work that ticket .7's incremental cache enables.
+
+export fn lsp_serve(g: SymbolGraph, calls: CallList) {
+    while true {
+        let body = lsp_read_frame()
+        if body == "" { return }
+        let method = json_extract_string(body, "method")
+        let id = extract_id_raw(body)
+        let response = lsp_dispatch(g, calls, id, method, body)
+        if response != "" {
+            avra_stdout_write(lsp_frame(response))
+        }
+        if method == "exit" { return }
+    }
+}
+
+// LSP request ids may be strings or integers. We extract the *raw*
+// JSON form (with quotes if it's a string, bare digits if int) so
+// the response echoes the same shape — JSON-RPC requires id
+// preservation, not normalisation.
+fn extract_id_raw(body: string) -> string {
+    let needle = "\"id\""
+    let pos = body.index_of(needle)
+    if pos < 0 { return "null" }
+    mut i = pos + needle.length
+    while i < body.length {
+        let ch = body.substring(i, i + 1)
+        if ch == ":" {
+            i = i + 1
+            break
+        }
+        i = i + 1
+    }
+    while i < body.length {
+        let ch = body.substring(i, i + 1)
+        if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" { break }
+        i = i + 1
+    }
+    if i >= body.length { return "null" }
+    let first = body.substring(i, i + 1)
+    if first == "\"" {
+        // Read full quoted string including the quotes.
+        mut end = i + 1
+        while end < body.length {
+            let ch = body.substring(end, end + 1)
+            if ch == "\\" {
+                end = end + 2
+                continue
+            }
+            if ch == "\"" {
+                return body.substring(i, end + 1)
+            }
+            end = end + 1
+        }
+        return "null"
+    }
+    // Numeric id: read digits + optional minus.
+    mut end = i
+    while end < body.length {
+        let ch = body.substring(end, end + 1)
+        if ch == "-" || (ch >= "0" && ch <= "9") {
+            end = end + 1
+        } else {
+            break
+        }
+    }
+    if end == i { return "null" }
+    body.substring(i, end)
+}
