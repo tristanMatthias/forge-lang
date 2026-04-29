@@ -16,8 +16,10 @@ mod codegen
 mod desugar
 mod cli
 mod coverage
+mod docs
 use cli.{cli_new, cli_add_command, cli_command_add_flag, cli_command_add_option, cli_command_add_arg, cli_parse, result_has_flag, result_get_option}
 use coverage.{render_coverage}
+use docs.{extract_project_docs, show_overview, show_symbol, show_short, show_symbols, show_search, show_llm, validate_docs}
 
 use parse.{parse_expression_source, parse_program_source}
 use core.ast.{render_expr, render_stmt_list, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType}
@@ -37,12 +39,17 @@ use features.generics.mono.{monomorphize}
 
 fn print_usage() {
     eprintln("forge-bootstrap v0.1.0")
-    eprintln("Usage: bootstrapc <expr|program|eval|check|compile|run|fix|fmt|lsp|test> <file.av>")
+    eprintln("Usage: bootstrapc <expr|program|eval|check|compile|run|fix|fmt|lsp|test|docs> <file.av>")
     eprintln("       bootstrapc compile --stop-after=<parse|resolve|names|check> [--json] <file.av>")
-    eprintln("       bootstrapc fix <file.av>   Apply high-confidence auto-fixes")
-    eprintln("       bootstrapc fmt <file.av>   Format a Avra source file")
-    eprintln("       bootstrapc lsp             Start language server")
-    eprintln("       bootstrapc test <file.av>  Run spec tests in a file")
+    eprintln("       bootstrapc fix <file.av>     Apply high-confidence auto-fixes")
+    eprintln("       bootstrapc fmt <file.av>     Format a Avra source file")
+    eprintln("       bootstrapc lsp               Start language server")
+    eprintln("       bootstrapc test <file.av>    Run spec tests in a file")
+    eprintln("       bootstrapc docs [name]       Project documentation from /// comments")
+    eprintln("       bootstrapc docs --symbols    List every project symbol with location")
+    eprintln("       bootstrapc docs --search Q   Search project docs by name or doc body")
+    eprintln("       bootstrapc docs --validate   Report documentation coverage")
+    eprintln("       bootstrapc docs --llm        Markdown-style dump for LLM context")
 }
 
 fn fail(message: string) {
@@ -547,6 +554,16 @@ fn main() {
         command features {
             description "List registered features"
         }
+
+        command docs {
+            description "Project documentation -- look up your project's functions, types, and enums"
+            flag symbols { description "Show symbol/type reference" }
+            flag short { description "Show just the one-liner for a symbol" }
+            flag llm { description "Compact LLM-friendly project documentation" }
+            flag validate { description "Validate documentation coverage for the project" }
+            option search { description "Search project docs (substring match)" }
+            arg query { description "Symbol to look up (function, type, enum name)" }
+        }
     }
 
     // Handle subcommands that don't require a file argument.
@@ -554,6 +571,99 @@ fn main() {
         let cmd0 = avra_selfhost_get_arg_cstr(1)
         if cmd0 == "lsp" {
             println("LSP server not yet available — use `avra check` for diagnostics")
+            return
+        }
+        if cmd0 == "docs" {
+            let project_dir = avra_process_env_get("PWD")
+
+            // Parse flags / option / positional from argv (cli_parse returns
+            // the option/flag set keyed off the matched command).
+            mut want_symbols = false
+            mut want_short = false
+            mut want_llm = false
+            mut want_validate = false
+            mut search_term = ""
+            mut query = ""
+            mut k = 2
+            while k < avra_selfhost_argc() {
+                let arg = avra_selfhost_get_arg_cstr(k)
+                if arg == "--symbols" {
+                    want_symbols = true
+                    k = k + 1
+                    continue
+                }
+                if arg == "--short" {
+                    want_short = true
+                    k = k + 1
+                    continue
+                }
+                if arg == "--llm" {
+                    want_llm = true
+                    k = k + 1
+                    continue
+                }
+                if arg == "--validate" {
+                    want_validate = true
+                    k = k + 1
+                    continue
+                }
+                if arg == "--search" {
+                    if k + 1 < avra_selfhost_argc() {
+                        search_term = avra_selfhost_get_arg_cstr(k + 1)
+                    }
+                    k = k + 2
+                    continue
+                }
+                if arg.starts_with("--search=") {
+                    search_term = arg.substring(9, arg.length)
+                    k = k + 1
+                    continue
+                }
+                if !arg.starts_with("-") && query == "" {
+                    query = arg
+                }
+                k = k + 1
+            }
+
+            if want_validate {
+                validate_docs(project_dir)
+                return
+            }
+
+            let docs_set = extract_project_docs(project_dir)
+
+            if search_term != "" {
+                show_search(search_term, docs_set)
+                return
+            }
+            if want_llm {
+                show_llm(docs_set)
+                return
+            }
+            if want_symbols {
+                show_symbols(docs_set)
+                return
+            }
+            if query != "" {
+                if want_short {
+                    if !show_short(query, docs_set) {
+                        eprintln("")
+                        eprintln("  No symbol '${query}' found in project.")
+                        eprintln("  Hint: try `avra docs` for an overview.")
+                        eprintln("")
+                        exit(1)
+                    }
+                } else if !show_symbol(query, docs_set) {
+                    eprintln("")
+                    eprintln("  No symbol '${query}' found in project.")
+                    eprintln("  Hint: try `avra docs` for an overview.")
+                    eprintln("")
+                    exit(1)
+                }
+                return
+            }
+
+            show_overview(docs_set)
             return
         }
         if cmd0 == "test" {
