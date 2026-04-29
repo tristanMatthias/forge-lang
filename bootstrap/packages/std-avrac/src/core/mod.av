@@ -5,3 +5,4 @@ mod llvm
 mod registry
 mod type_registry
 mod runtime
+mod module_graph

@@ -1,0 +1,295 @@
+// WHY: Foundational types for a real module graph that replaces today's
+// AST-walking resolver. Today the resolver conflates "build the module
+// tree" with "resolve names" by hunting through nested `Stmt.Module`
+// nodes at lookup time — that breaks the moment a multi-file package
+// (like @std.avrac) gets wrapped inside another package's module tree,
+// because string `use` paths get reinterpreted against the wrong root.
+//
+// Mature compilers fix this by separating the passes:
+//   Pass 1 (build_module_graph) — produce a ModuleGraph + per-file ASTs
+//                                 with `use` rewritten to ResolvedPath.
+//   Pass 2 (resolve names)      — look up identifiers against the graph.
+//
+// This file lands ONLY the data types — no graph builder, no resolver
+// changes. Subsequent tickets (y4n1.7 build_module_graph, y4n1.8 cutover)
+// fill in the behavior.
+//
+// Design notes:
+// - Symbol/ModuleId/ItemId/PackageId are dense int newtypes (logical;
+//   Avra newtype variants would force a seed-patch cycle, so we keep
+//   them as `int` and document the contract in comments).
+// - Children/items use C-runtime strmaps for O(1) lookup (consumed by
+//   the resolver hot loop).
+// - ResolvedPath captures a path's anchor at parse time. After this,
+//   wrapping the AST in `Module("@std") { Module("avrac") {...} }`
+//   cannot change the path's meaning — the anchor is fixed.
+
+use core.runtime.{avra_map_new_cstr, avra_map_set_cstr, avra_map_get_cstr,
+                  avra_map_has_cstr, avra_intmap_new, avra_intmap_set,
+                  avra_intmap_get, avra_intmap_has}
+
+// ── Logical newtypes (carried as int for bootstrap simplicity) ───────
+//
+// Symbol     — interned identifier; dense u32 from StringInterner
+// ModuleId   — index into ModuleGraph.modules
+// ItemId     — index identifying a top-level decl inside a module
+// PackageId  — package handle (one per `@scope.name` package)
+//
+// All four are plain ints. Use the type aliases below as documentation
+// only — bootstrap Avra newtypes would require seed-patching every
+// site that constructs an int.
+
+/// Sentinel "not assigned" — used when a ModuleGraphNode has no parent
+/// (it's a package root) or any ID hasn't been allocated yet.
+export const ID_NONE: int = -1
+
+/// Linked-list of Symbol (interned-string ids). Used as the segment
+/// list inside ResolvedPath.
+export enum SymbolList {
+    End
+    Node(sym: int, next: SymbolList)
+}
+
+/// Linked-list of strings — used by the interner to map id → name in
+/// O(n). Faster lookup direction (name → id) goes through `by_name`.
+export enum StringList {
+    End
+    Node(s: string, next: StringList)
+}
+
+/// Bidirectional string interner.
+///
+/// @field by_name — C strmap: name → id (O(1) lookup).
+/// @field names   — id → name in reverse cons order. Use
+///                  `interner_lookup` to navigate (O(n) but rarely hit
+///                  outside diagnostics).
+/// @field next_id — next id to assign on `interner_intern`.
+export type StringInterner = {
+    by_name: ptr,
+    names: StringList,
+    next_id: int,
+}
+
+/// Construct an empty interner.
+export fn interner_new() -> StringInterner {
+    StringInterner {
+        by_name: avra_map_new_cstr(),
+        names: StringList.End,
+        next_id: 0,
+    }
+}
+
+/// Intern a string. If the string is already known, return its
+/// existing id; otherwise allocate the next dense id and remember it.
+/// Returns the new (or existing) StringInterner alongside the id.
+///
+/// We have to thread the interner through the call site because Avra
+/// struct fields aren't `mut` from the outside — same pattern the
+/// rest of bootstrap uses for builders (cli_add_*, bag_report, etc).
+export type InternResult = { interner: StringInterner, sym: int }
+
+export fn interner_intern(itn: StringInterner, name: string) -> InternResult {
+    if avra_map_has_cstr(itn.by_name, name) != 0 {
+        let existing = avra_map_get_cstr(itn.by_name, name)
+        return InternResult { interner: itn, sym: existing }
+    }
+    let id = itn.next_id
+    avra_map_set_cstr(itn.by_name, name, id)
+    let updated = itn with {
+        names: StringList.Node(name, itn.names),
+        next_id: id + 1,
+    }
+    InternResult { interner: updated, sym: id }
+}
+
+/// Reverse lookup: id → name. Returns "" when id is unknown (out of
+/// range or never interned). O(n); used for diagnostics only.
+export fn interner_lookup(itn: StringInterner, sym: int) -> string {
+    interner_lookup_inner(itn.names, itn.next_id - 1, sym)
+}
+
+fn interner_lookup_inner(list: StringList, cursor: int, target: int) -> string {
+    match list {
+        .End -> ""
+        .Node(s, next) -> {
+            if cursor == target { s }
+            else { interner_lookup_inner(next, cursor - 1, target) }
+        }
+    }
+}
+
+// ── ResolvedPath ─────────────────────────────────────────────────────
+//
+// Captures the anchor of a `use` path at parse time. After this, the
+// only thing wrapping changes is the AST — paths know what they meant.
+
+/// One `use X.Y.{Z}` path with its anchor preserved.
+///
+/// .PackageRoot   — `@std.avrac.codegen.escape` resolved by walking
+///                  from the package root identified by `pkg_id`.
+/// .SelfRelative  — `codegen.escape` written inside std-avrac. Anchor
+///                  is the package root containing the originating file.
+///                  Stored as `pkg_id` so the resolver doesn't need to
+///                  remember which file the path came from.
+/// .Super         — `super::foo` — `hops` parents up from `origin_mod`,
+///                  then descend through `segments`. Reserved for
+///                  future use; bootstrap source doesn't use it yet.
+export enum ResolvedPath {
+    PackageRoot(pkg_id: int, segments: SymbolList)
+    SelfRelative(pkg_id: int, segments: SymbolList)
+    Super(origin_mod: int, hops: int, segments: SymbolList)
+}
+
+// ── ModuleGraphNode + ModuleGraph ─────────────────────────────────────────
+
+/// One node in the module graph.
+///
+/// @field id       — dense u32 (== index into ModuleGraph.modules).
+/// @field parent   — ModuleId of enclosing module, or ID_NONE for a
+///                   package root.
+/// @field package  — PackageId this module belongs to (every module
+///                   lives in exactly one package).
+/// @field file     — canonical absolute path to the source file
+///                   defining this module. Used for diagnostics and as
+///                   the dedup key in `ModuleGraph.by_path`.
+/// @field children — C strmap: child module name → ModuleId. The hot
+///                   lookup path during name resolution. O(1).
+/// @field items    — C strmap: top-level item name → ItemId. Looked up
+///                   when resolving identifiers in this module's scope.
+export type ModuleGraphNode = {
+    id: int,
+    parent: int,
+    package: int,
+    file: string,
+    children: ptr,
+    items: ptr,
+}
+
+/// Linked-list of ModuleGraphNode keyed by id. We could store nodes in a
+/// growable array, but Avra's bootstrap prefers linked lists for new
+/// data structures (matches existing idiom in registry.av, ast.av,
+/// std-lsp). A getter walks the list in O(n).
+export enum ModuleGraphNodeList {
+    End
+    Node(node: ModuleGraphNode, next: ModuleGraphNodeList)
+}
+
+/// The whole graph.
+///
+/// @field modules        — every ModuleGraphNode, indexed by id.
+/// @field by_path        — canonical-file-path → ModuleId. Ensures one
+///                         ModuleGraphNode per source file regardless of
+///                         how many consumers `use` it.
+/// @field package_roots  — PackageId → ModuleId of the package's root
+///                         module. Lookup target for ResolvedPath
+///                         variants `.PackageRoot` and `.SelfRelative`.
+/// @field next_module_id, next_item_id, next_package_id — dense
+///                         allocators for each id space.
+/// @field interner       — string interner for module/item names and
+///                         path segments. Single global interner so
+///                         all Symbols are comparable across the graph.
+export type ModuleGraph = {
+    modules: ModuleGraphNodeList,
+    by_path: ptr,
+    package_roots: ptr,
+    next_module_id: int,
+    next_item_id: int,
+    next_package_id: int,
+    interner: StringInterner,
+}
+
+/// Construct an empty graph.
+export fn module_graph_new() -> ModuleGraph {
+    ModuleGraph {
+        modules: ModuleGraphNodeList.End,
+        by_path: avra_map_new_cstr(),
+        package_roots: avra_intmap_new(),
+        next_module_id: 0,
+        next_item_id: 0,
+        next_package_id: 0,
+        interner: interner_new(),
+    }
+}
+
+/// Allocate a fresh ModuleGraphNode, append it to the graph, register its
+/// canonical file path (so subsequent lookups dedup), and return the
+/// updated graph + new id.
+///
+/// `file` is the canonical absolute path; callers must canonicalise
+/// before calling so dedup works.
+export type AddModuleResult = { graph: ModuleGraph, id: int }
+
+export fn module_graph_add(g: ModuleGraph, file: string, parent: int, package: int) -> AddModuleResult {
+    let id = g.next_module_id
+    let node = ModuleGraphNode {
+        id,
+        parent,
+        package,
+        file,
+        children: avra_map_new_cstr(),
+        items: avra_map_new_cstr(),
+    }
+    avra_map_set_cstr(g.by_path, file, id)
+    let updated = g with {
+        modules: ModuleGraphNodeList.Node(node, g.modules),
+        next_module_id: id + 1,
+    }
+    AddModuleResult { graph: updated, id }
+}
+
+/// Lookup by canonical file path. Returns ID_NONE when no such module
+/// is in the graph yet.
+export fn module_graph_find_by_file(g: ModuleGraph, file: string) -> int {
+    if avra_map_has_cstr(g.by_path, file) != 0 {
+        avra_map_get_cstr(g.by_path, file)
+    } else {
+        ID_NONE
+    }
+}
+
+/// Walk the linked list to find a module by id. O(n); used during
+/// graph construction (rare) and diagnostics. Hot lookups go through
+/// `children` / `items` strmaps on a node we already hold.
+export fn module_graph_get(g: ModuleGraph, id: int) -> ModuleGraphNode? {
+    mut cur = g.modules
+    while true {
+        match cur {
+            .End -> { return null }
+            .Node(n, next) -> {
+                if n.id == id { return n }
+                cur = next
+            }
+        }
+    }
+    null
+}
+
+/// Allocate a fresh PackageId and remember which module is its root.
+export type AddPackageResult = { graph: ModuleGraph, pkg_id: int }
+
+export fn module_graph_add_package(g: ModuleGraph, root_mod_id: int) -> AddPackageResult {
+    let pkg_id = g.next_package_id
+    avra_intmap_set(g.package_roots, pkg_id, root_mod_id)
+    let updated = g with { next_package_id: pkg_id + 1 }
+    AddPackageResult { graph: updated, pkg_id }
+}
+
+/// Lookup the root ModuleId for a package. Returns ID_NONE if pkg_id
+/// is unknown.
+export fn module_graph_package_root(g: ModuleGraph, pkg_id: int) -> int {
+    if avra_intmap_has(g.package_roots, pkg_id) != 0 {
+        avra_intmap_get(g.package_roots, pkg_id)
+    } else {
+        ID_NONE
+    }
+}
+
+/// Allocate the next ItemId. Items live inside a ModuleGraphNode's `items`
+/// strmap; this helper just manages the dense id space.
+export type AllocItemResult = { graph: ModuleGraph, item_id: int }
+
+export fn module_graph_alloc_item(g: ModuleGraph) -> AllocItemResult {
+    let id = g.next_item_id
+    let updated = g with { next_item_id: id + 1 }
+    AllocItemResult { graph: updated, item_id: id }
+}
