@@ -467,6 +467,13 @@ fn sym_list_concat(a: SymList, b: SymList) -> SymList {
 // import in this module so the whole compiler reaches std-lsp via
 // indexer.
 
+/// Entry point for the `bs2 lsp` subcommand. Walks every .av file in
+/// `project_dir`, builds a SymbolGraph + CallList, then enters
+/// `lsp_serve` to handle JSON-RPC requests over stdio. Blocks until
+/// the editor closes its end.
+///
+/// V1 serves a static graph — there's no reindex-on-edit yet (waits
+/// for a watch loop in std-lsp).
 export fn run_lsp_server(project_dir: string) {
     let cmd = "find ${project_dir} -name '*.av' -type f -not -path '*/build/*' -not -path '*/.beads/*' -not -path '*/seed/*' 2>/dev/null | sort"
     let files_text = avra_shell_exec(cmd)

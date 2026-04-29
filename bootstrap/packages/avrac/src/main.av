@@ -1,3 +1,31 @@
+// ╔═══════════════════════════════════════════════════════════════════╗
+// ║                              avra CLI                             ║
+// ╠═══════════════════════════════════════════════════════════════════╣
+// ║ Subcommand → handler dispatch table (see main() for the if-chain) ║
+// ║                                                                   ║
+// ║   compile  — emit LLVM IR; flags --coverage / --debug-null /      ║
+// ║              --json / --stop-after=<phase>.                       ║
+// ║   check    — type-check only; --json for tooling output.          ║
+// ║   run      — compile + execute. No flags.                         ║
+// ║   test     — discover *_test.av, wrap each in a Module, link, run ║
+// ║              the spec/given/then suite. -f filter, -c coverage.   ║
+// ║   docs     — runs run_docs_command() (see below). Many flags.     ║
+// ║   lsp      — runs run_lsp_server(project_dir) — JSON-RPC over     ║
+// ║              stdio against std-lsp's SymbolGraph.                 ║
+// ║   lang     — render target/lang.av from compiler internals        ║
+// ║              (DiagCode + p_keyword_kind). --print to stdout.      ║
+// ║   expr     — parse + render an expression as an S-expression.     ║
+// ║   program  — parse + render a whole program as an S-expression.   ║
+// ║   eval     — tree-walking interpreter over an Avra source file.   ║
+// ║   fix      — apply auto-fixable diagnostics in place.             ║
+// ║   fmt      — pretty-print Avra source.                            ║
+// ║   features — list registered features (parser/codegen).           ║
+// ║                                                                   ║
+// ║ Help text per command lives on the `cli app { command X { ... } }` ║
+// ║ block inside main(); validate the full surface via                ║
+// ║ `bs2 docs --scope=lang --validate`.                                ║
+// ╚═══════════════════════════════════════════════════════════════════╝
+
 use core.runtime.{avra_selfhost_argc, avra_selfhost_get_arg_cstr, avra_selfhost_file_exists, avra_selfhost_read_file, avra_selfhost_write_file, avra_shell_exec, avra_process_exit, avra_process_forward, avra_process_env_get, exit, avra_char_from_hex}
 
 // Convenience aliases so the rest of the bootstrap source can keep
