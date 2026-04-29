@@ -35,32 +35,37 @@ use @std.lsp.{LspPos, LspSpan, Sym, SymList, SymKind,
 
 // ── Public API ──────────────────────────────────────────────────────
 
-// Walk `stmts`, returning every documentable declaration as a Sym in
-// source order. `file` is the relative path used to populate Sym.file;
-// the caller is responsible for normalising it (e.g. project-relative).
-//
-// Module nesting is preserved by qualifying every nested decl with the
-// module's name as a `module::name` prefix. So `mod core { fn foo() }`
-// produces a Sym with name="foo", qualified="core::foo".
+/// Walk `stmts`, returning every documentable declaration as a Sym
+/// in source order. `file` is the relative path used to populate
+/// Sym.file; the caller is responsible for normalising it (e.g.
+/// project-relative).
+///
+/// Module nesting is preserved by qualifying every nested decl with
+/// the module's name as a `module::name` prefix. So
+/// `mod core { fn foo() }` produces `name="foo", qualified="core::foo"`.
 export fn extract_from_ast(stmts: StmtList, file: string) -> SymList {
     extract_inner(stmts, file, "")
 }
 
-// Same as extract_from_ast but seeds the qualified-name prefix from
-// the file's relative path. `core/ast.av` → "core::ast", so a fn
-// `Foo.foo` inside that file ends up qualified as `core::ast::Foo`.
-// `core/mod.av` → "core" (the `mod` filename collapses).
-// Used by `avra docs` so cross-file hierarchical addressing works.
+/// Same as `extract_from_ast` but seeds the qualified-name prefix
+/// from the file's relative path. `core/ast.av` → "core::ast", so
+/// a fn inside that file ends up qualified as `core::ast::foo`.
+/// `core/mod.av` → "core" (the `mod` filename collapses). Used by
+/// `avra docs` so cross-file hierarchical addressing works.
 export fn extract_from_ast_at(stmts: StmtList, file: string) -> SymList {
     extract_inner(stmts, file, file_to_module_prefix(file))
 }
 
+/// Like `extract_calls_from_ast` but seeds the caller's
+/// qualified-name prefix from the file path, mirroring
+/// `extract_from_ast_at`.
 export fn extract_calls_from_ast_at(stmts: StmtList, file: string) -> CallList {
     extract_calls_inner(stmts, file, file_to_module_prefix(file), calls_new())
 }
 
-// "core/ast.av" → "core::ast", "core/mod.av" → "core",
-// "main.av" → "" (root-level files don't get a prefix).
+/// Map a file path to its qualified-name prefix:
+/// `"core/ast.av" → "core::ast"`, `"core/mod.av" → "core"`,
+/// `"main.av" → ""` (root-level files don't get a prefix).
 fn file_to_module_prefix(file: string) -> string {
     if !file.contains("/") { return "" }
     let last_slash = last_index_of_slash(file)
@@ -79,6 +84,7 @@ fn file_to_module_prefix(file: string) -> string {
     else { "${dir_qual}::${stem}" }
 }
 
+/// Right-to-left search for `/` in `s`. Returns -1 when none.
 fn last_index_of_slash(s: string) -> int {
     mut i = s.length - 1
     while i >= 0 {
@@ -88,6 +94,8 @@ fn last_index_of_slash(s: string) -> int {
     -1
 }
 
+/// Convert a `/`-separated directory path into a `::`-separated
+/// qualifier. Skips empty segments and `.` (current-dir).
 fn path_to_qualifier(dir: string) -> string {
     mut out = ""
     for seg in dir.split("/") {
@@ -97,15 +105,19 @@ fn path_to_qualifier(dir: string) -> string {
     out
 }
 
-// Walk `stmts` again, this time collecting CallEdge records for every
-// `Expr.Call(Ident, _)` site we find inside a function body. Captures
-// the most common "X calls Y" relationship without recursing into
-// every nested expression — deeper coverage (calls inside match arms,
-// closures, lambdas) is layered on as needed.
+/// Walk `stmts` collecting CallEdge records for every
+/// `Expr.Call(Ident, _)` site found inside a function body.
+/// Captures the most common "X calls Y" relationship; deeper
+/// coverage (calls inside match arms, closures, lambdas) is
+/// layered on as needed.
 export fn extract_calls_from_ast(stmts: StmtList, file: string) -> CallList {
     extract_calls_inner(stmts, file, "", calls_new())
 }
 
+/// Recursive worker for `extract_calls_from_ast` and
+/// `extract_calls_from_ast_at`. Threads the qualified-name prefix
+/// through nested modules and impls; descends into function bodies
+/// via `walk_body_for_calls`.
 fn extract_calls_inner(stmts: StmtList, file: string, qual_prefix: string, acc: CallList) -> CallList {
     mut cur_acc = acc
     mut cur = stmts
@@ -135,8 +147,10 @@ fn extract_calls_inner(stmts: StmtList, file: string, qual_prefix: string, acc: 
     cur_acc
 }
 
-// One level deep into a function body — capture direct Expr.Call
-// sites whose callee is a bare identifier.
+/// One level deep into a function body — capture direct
+/// `Expr.Call` sites whose callee is a bare identifier. Deeper
+/// expression structure (lambdas, match arms) is reached through
+/// `scan_expr_for_calls`.
 fn walk_body_for_calls(stmts: StmtList, file: string, caller: string, acc: CallList) -> CallList {
     mut cur_acc = acc
     mut cur = stmts
@@ -154,6 +168,9 @@ fn walk_body_for_calls(stmts: StmtList, file: string, caller: string, acc: CallL
     cur_acc
 }
 
+/// Per-statement call scanner. Recurses into expression payloads
+/// for `let`/`mut`/`const`/`if`/`while`/`return`/`expr`; treats
+/// other statements as opaque.
 fn scan_stmt_for_calls(ss: SStmt, file: string, caller: string, acc: CallList) -> CallList {
     let inner = stmt_unwrap(ss.node)
     let scan_e = (e: Expr) -> scan_expr_for_calls(e, file, caller, ss.line, ss.col, acc)
@@ -176,6 +193,10 @@ fn scan_stmt_for_calls(ss: SStmt, file: string, caller: string, acc: CallList) -
     }
 }
 
+/// Per-expression call scanner. Records a CallEdge when the
+/// callee is a bare `Ident` and recurses into args + nested
+/// binary/logical/grouping operands. Other expression shapes are
+/// not traversed (would over-report on closure bodies and lambdas).
 fn scan_expr_for_calls(e: Expr, file: string, caller: string, line: int, col: int, acc: CallList) -> CallList {
     match e {
         .Call(callee, args) -> {
@@ -198,6 +219,8 @@ fn scan_expr_for_calls(e: Expr, file: string, caller: string, line: int, col: in
     }
 }
 
+/// Map `scan_expr_for_calls` over an ExprList — used to walk
+/// argument lists when the call site itself is recorded.
 fn scan_expr_list(es: ExprList, file: string, caller: string, line: int, col: int, acc: CallList) -> CallList {
     mut cur_acc = acc
     mut cur = es
@@ -217,8 +240,10 @@ fn scan_expr_list(es: ExprList, file: string, caller: string, line: int, col: in
 
 // ── Internals ───────────────────────────────────────────────────────
 
-// `qual_prefix` accumulates module path; "" at the top level, "core"
-// inside `mod core`, "core::ast" inside `mod core { mod ast { ... } }`.
+/// Recursive worker for `extract_from_ast`. `qual_prefix`
+/// accumulates the module path: "" at the top level, "core" inside
+/// `mod core`, "core::ast" inside `mod core { mod ast { ... } }`.
+/// Iterative + reverse to keep memory linear on big projects.
 fn extract_inner(stmts: StmtList, file: string, qual_prefix: string) -> SymList {
     mut acc = SymList.End
     mut cur = stmts
@@ -237,6 +262,11 @@ fn extract_inner(stmts: StmtList, file: string, qual_prefix: string) -> SymList 
     SymList.End
 }
 
+/// Convert a single statement into a Sym (or several, when the
+/// stmt is a Module containing nested decls). Pulls `///` doc text
+/// via `doc_string_for` and the export flag via the AST's
+/// annotation list. Statements that don't produce a doc symbol
+/// (Expr, Return, …) pass through with `acc` unchanged.
 fn process_stmt(ss: SStmt, file: string, qual_prefix: string, acc: SymList) -> SymList {
     let outer = ss.node
     let inner = stmt_unwrap(outer)
@@ -336,12 +366,17 @@ fn process_stmt(ss: SStmt, file: string, qual_prefix: string, acc: SymList) -> S
 
 // ── Annotation helpers ──────────────────────────────────────────────
 
+/// True when `s` carries an `@export` annotation. Used to populate
+/// `Sym.exported` so the doc renderer can dim non-exported items.
 fn has_export_annotation(s: Stmt) -> bool {
     find_annotation(s, "export") != null
 }
 
 // ── Signature rendering ─────────────────────────────────────────────
 
+/// Render a fn declaration as a single-line signature string used
+/// by the docs renderer header. Handles type params, fully typed
+/// params, and the `-> Ret` clause (suppressed when ret is void).
 fn render_fn_signature(name: string, tp: TypeParamList, params: ParamList, ret: ValueType) -> string {
     let tp_str = render_type_params(tp)
     let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
@@ -351,16 +386,19 @@ fn render_fn_signature(name: string, tp: TypeParamList, params: ParamList, ret: 
     "fn ${name}${tp_part}(${params_str})${ret_part}"
 }
 
+/// Render a `type Foo<T, U>` header without a body. Used as the
+/// prefix when `render_type_decl_with_fields` adds the body, and
+/// as the standalone header for shape decls.
 fn render_type_decl(name: string, tp: TypeParamList) -> string {
     let tp_str = render_type_params(tp)
     let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
     "type ${name}${tp_part}"
 }
 
-// Render a type declaration with its field list inline:
-//   type Point = { x: int, y: int }
-// Used by the indexer so docs --gen can recover field names without
-// re-parsing the source.
+/// Render a type declaration with its field list inline, e.g.
+/// `type Point = { x: int, y: int }`. Used by the indexer so
+/// `docs --gen` can recover field names without re-parsing the
+/// source.
 fn render_type_decl_with_fields(name: string, tp: TypeParamList, fields: FieldList) -> string {
     let header = render_type_decl(name, tp)
     let body = render_field_decls(fields)
@@ -368,6 +406,8 @@ fn render_type_decl_with_fields(name: string, tp: TypeParamList, fields: FieldLi
     "${header} = { ${body} }"
 }
 
+/// Render the head field of a comma-separated `name: ty, name: ty`
+/// list. Used by `render_type_decl_with_fields`.
 fn render_field_decls(fields: FieldList) -> string {
     match fields {
         .End -> ""
@@ -378,6 +418,8 @@ fn render_field_decls(fields: FieldList) -> string {
     }
 }
 
+/// Tail half of `render_field_decls`: prepend `, ` between items
+/// while keeping the head clean.
 fn render_field_decls_tail(fields: FieldList) -> string {
     match fields {
         .End -> ""
@@ -385,6 +427,9 @@ fn render_field_decls_tail(fields: FieldList) -> string {
     }
 }
 
+/// Render a TypeParamList as a comma-separated string with optional
+/// `: Bound` clauses. Empty input → empty string (caller decides
+/// whether to wrap in `<...>`).
 fn render_type_params(tp: TypeParamList) -> string {
     match tp {
         .End -> ""
@@ -396,6 +441,9 @@ fn render_type_params(tp: TypeParamList) -> string {
     }
 }
 
+/// Render the head element of a comma-separated `name: ty` param
+/// list. Suppresses `: ty` when the type is unknown / blank so
+/// untyped lambdas still render cleanly.
 fn render_params_typed(params: ParamList) -> string {
     match params {
         .End -> ""
@@ -408,6 +456,7 @@ fn render_params_typed(params: ParamList) -> string {
     }
 }
 
+/// Tail half of `render_params_typed`: prepend `, ` between items.
 fn render_params_typed_tail(params: ParamList) -> string {
     match params {
         .End -> ""
@@ -419,6 +468,9 @@ fn render_params_typed_tail(params: ParamList) -> string {
     }
 }
 
+/// Render an enum's VariantList as a comma-separated string of
+/// variant names. Used as the `SymKind.Enum` payload so the docs
+/// renderer can show variant lists without re-walking the AST.
 fn render_variant_csv(vs: VariantList) -> string {
     match vs {
         .End -> ""
@@ -431,10 +483,15 @@ fn render_variant_csv(vs: VariantList) -> string {
 
 // ── List helpers ────────────────────────────────────────────────────
 
+/// Concatenate `prefix::name` with a single `::` separator. When
+/// `prefix` is empty, returns `name` verbatim — used everywhere
+/// the indexer builds qualified symbol paths.
 fn qualify(prefix: string, name: string) -> string {
     if prefix == "" { name } else { "${prefix}::${name}" }
 }
 
+/// In-place reverse of a SymList — used by `extract_inner` to flip
+/// its prepend-built result back into source order.
 fn reverse_syms(list: SymList) -> SymList {
     mut acc = SymList.End
     mut cur = list
@@ -452,6 +509,8 @@ fn reverse_syms(list: SymList) -> SymList {
     SymList.End
 }
 
+/// Concatenate two SymLists. Used by `process_stmt` for Module
+/// decls so nested syms land in the parent's accumulator.
 fn sym_list_concat(a: SymList, b: SymList) -> SymList {
     match a {
         .End -> b
@@ -507,26 +566,33 @@ export fn run_lsp_server(project_dir: string) {
 // Compiler version is stamped into the cache header. A version bump
 // invalidates the whole cache via cache_decode's header check.
 
+/// Read a file's mtime as a Unix epoch second. Stamped into the
+/// cache so freshness checks can compare on-disk vs. cached mtime.
 extern fn avra_file_mtime(path: string) -> int
 
+/// `target/lsp` directory under the project root — where the doc
+/// cache files live. Created on demand by `extract_project_syms_cached`.
 fn cache_dir_path(project_dir: string) -> string {
     "${project_dir}/target/lsp"
 }
 
+/// Full path to `cache.tsv` inside the cache directory.
 fn cache_file_path(project_dir: string) -> string {
     "${cache_dir_path(project_dir)}/cache.tsv"
 }
 
-// Compiler version stamped into the cache. Bumping this invalidates
-// every cached entry on the next read.
+/// Compiler version stamped into the cache header. Bumping this
+/// invalidates every cached entry on the next read — the cache
+/// decoder rejects mismatching headers as stale.
 fn cache_version() -> string {
     "0.1.0"
 }
 
-// Read the cache, then walk every .av file. Files whose mtime is at
-// or below the cached stamp use cached Syms; stale files re-extract
-// + merge into the cache. New cache state written back to disk on
-// exit. `force_rebuild` skips the read and starts from empty.
+/// Cached version of `extract_from_ast_at` for the whole project.
+/// Reads `target/lsp/cache.tsv` (when not `force_rebuild`), walks
+/// every `.av` file, and only re-parses + re-extracts files whose
+/// mtime is newer than the cached stamp. Persists the updated
+/// state back to disk on exit (failure is non-fatal).
 export fn extract_project_syms_cached(project_dir: string, force_rebuild: bool) -> SymList {
     let cache_path = cache_file_path(project_dir)
     let initial = if force_rebuild { cache_empty() } else { cache_load(cache_path) }
@@ -557,6 +623,8 @@ export fn extract_project_syms_cached(project_dir: string, force_rebuild: bool) 
     state.syms
 }
 
+/// Concatenate two CallLists. Used by `run_lsp_server` to fold
+/// per-file CallList halves into the project-wide list.
 fn call_list_concat(a: CallList, b: CallList) -> CallList {
     match a {
         .End -> b

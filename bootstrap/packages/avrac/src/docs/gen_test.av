@@ -16,18 +16,26 @@ use core.runtime.{avra_selfhost_write_file}
 // @std.lsp; this test mirrors that constraint by avoiding the
 // re-import of helper fns and building literals directly instead.
 
+/// Test fixture: build an LspPos at the given (line, col).
 fn fixture_pos(line: int, col: int) -> LspPos {
     LspPos { line: line, col: col }
 }
 
+/// Test fixture: a zero-length span at line 1 col 1. Used when the
+/// real source location doesn't matter for the assertion.
 fn fixture_span() -> LspSpan {
     LspSpan { start: fixture_pos(1, 1), end: fixture_pos(1, 1) }
 }
 
+/// Test fixture: a deterministic placeholder SymId. The doc layer
+/// doesn't dedupe by id so a literal-zero is fine here.
 fn fixture_sym_id(name: string) -> SymId {
     SymId { value: 0 }
 }
 
+/// Test fixture: build a fully-populated Sym record from `name` +
+/// `kind`. All other fields default to neutral values so each test
+/// only has to specify what it cares about.
 fn fixture_sym(name: string, kind: SymKind) -> Sym {
     Sym {
         id: fixture_sym_id(name),
@@ -166,6 +174,9 @@ spec "docs --gen: already_documented detects /// above the decl" {
     }
 }
 
+/// Test fixture: a stable on-disk path used by the `gen_apply`
+/// idempotency tests. Lives under `/tmp` so the test can assert on
+/// real read/write behavior without polluting the source tree.
 fn fixture_path() -> string {
     "/tmp/avra_gen_test_fixture.av"
 }

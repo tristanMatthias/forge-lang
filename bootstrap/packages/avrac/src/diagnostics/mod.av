@@ -13,23 +13,36 @@ mod suggest
 
 // ── Source spans ──
 
+/// A byte-offset range into a source file plus a 1-based line/col
+/// pair. Drives the renderer's caret + underline.
+///
+/// @field start — inclusive byte offset.
+/// @field end   — exclusive byte offset.
+/// @field line  — 1-based line of the start byte.
+/// @field col   — 1-based column of the start byte.
 export type Span = {
-    start: int,    // byte offset into source
-    end: int,      // byte offset end
-    line: int,     // 1-based line number
-    col: int,      // 1-based column
+    start: int,
+    end: int,
+    line: int,
+    col: int,
 }
 
+/// Construct a Span from raw byte offsets and line/col coords.
 export fn span_new(start: int, end: int, line: int, col: int) -> Span {
     Span { start, end, line, col }
 }
 
+/// All-zero Span sentinel for diagnostics with no source attribution
+/// (e.g. ICE during AST manipulation). The renderer skips the
+/// caret/underline when it sees a dummy span.
 export fn span_dummy() -> Span {
     Span { start: 0, end: 0, line: 0, col: 0 }
 }
 
 // ── Severity ──
 
+/// Diagnostic severity levels. Drives exit code (errors fail the
+/// build), colour, and which diagnostics flow through `--fix`.
 export enum Severity {
     Error
     Warning
@@ -37,6 +50,8 @@ export enum Severity {
     Hint
 }
 
+/// Render a Severity as the lowercase tag used in CLI output and
+/// JSON diagnostic emission.
 export fn severity_str(s: Severity) -> string {
     match s {
         .Error -> "error"
@@ -48,17 +63,28 @@ export fn severity_str(s: Severity) -> string {
 
 // ── Labels ──
 
+/// Label primacy — one diagnostic can attach multiple Labels to
+/// different spans (e.g. mismatched-types points at both sides). The
+/// Primary label is the one underlined; Secondary labels show as
+/// dashed annotations.
 export enum LabelKind {
     Primary
     Secondary
 }
 
+/// A single annotated span attached to a Diagnostic.
+///
+/// @field span    — source range to underline.
+/// @field message — short note rendered next to the underline.
+/// @field kind    — Primary (one per diagnostic) vs. Secondary.
 export type Label = {
     span: Span,
     message: string,
     kind: LabelKind,
 }
 
+/// Linked list of Labels — kept in cons-list form so prepending
+/// extra context labels stays O(1).
 export enum LabelList {
     End
     Node(label: Label, next: LabelList)
@@ -397,6 +423,9 @@ export fn bag_merge(a: DiagnosticBag, b: DiagnosticBag) -> DiagnosticBag {
     merge_lists(a, b.diagnostics, b.error_count, b.warning_count)
 }
 
+/// Recursive worker for `bag_merge`. Prepends every node from
+/// `list` onto `bag.diagnostics`, then bumps the running counts in
+/// one final `with` update at the End sentinel.
 fn merge_lists(bag: DiagnosticBag, list: DiagnosticList, extra_errors: int, extra_warnings: int) -> DiagnosticBag {
     match list {
         .End -> bag with { error_count: bag.error_count + extra_errors, warning_count: bag.warning_count + extra_warnings }

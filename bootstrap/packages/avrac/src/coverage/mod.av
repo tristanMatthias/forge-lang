@@ -26,65 +26,108 @@ use core.runtime.{avra_selfhost_read_file, avra_selfhost_write_file, avra_shell_
 use core.registry.{avra_map_new_cstr, avra_map_set_cstr, avra_map_get_cstr, avra_map_has_cstr}
 use render.{color_pct, pad_right, pad_left}
 
-// ── Counter record from covmap.json ──
+/// One row of the `.covmap.tsv` written by codegen during an
+/// instrumented build. Identifies what each LLVM `instrprof.increment`
+/// counter slot stands for so we can attribute hit counts back to the
+/// right source location.
+///
+/// @field id      — counter slot index within the fn's counter array.
+/// @field ctype   — counter category: fn_entry | line | branch_then |
+///                   branch_else | match_arm | condition_true |
+///                   condition_false.
+/// @field fn_name — function the counter belongs to.
+/// @field line    — 1-based source line.
+/// @field col     — 1-based source column.
+/// @field branch  — opaque branch / decision id used to pair MC/DC
+///                   counters.
 export type CovEntry = {
     id: int,
-    ctype: string,    // fn_entry | line | branch_then | branch_else | match_arm | condition_true | condition_false
+    ctype: string,
     fn_name: string,
     line: int,
     col: int,
     branch: int,
 }
 
+/// Linked list of CovEntry — one per row of the covmap file.
 export enum CovEntryList {
     End
     Node(entry: CovEntry, next: CovEntryList)
 }
 
-// ── Per-fn counters from profdata text ──
-// fn_counts[i] = hit count for counter i. counter[0] is "Function count",
-// counters[1..N-1] are "Block counts".
+/// Per-fn counter array parsed out of the `llvm-profdata show
+/// --all-functions --counts` text dump. `counts[0]` is the "Function
+/// count" line; `counts[1..]` come from the "Block counts: [...]"
+/// array in profdata order.
 export type FnCounts = {
     name: string,
-    counts: IntList,    // counts[i] = hit count for counter i
+    counts: IntList,
 }
 
+/// Linked list of ints. Used both for per-fn counter arrays and for
+/// the IntListSet line-number set.
 export enum IntList {
     End
     Node(value: int, next: IntList)
 }
 
+/// Linked list of FnCounts — one per fn in the profdata dump.
 export enum FnCountsList {
     End
     Node(item: FnCounts, next: FnCountsList)
 }
 
-// ── Per-function aggregated stats ──
+/// Aggregated coverage stats for a single function, produced by
+/// folding `CovEntryList × FnCountsList`. Mirrors what the printed
+/// summary and LCOV exporter want.
+///
+/// @field name             — fully-qualified fn name.
+/// @field fn_entry_count   — entry counter (>0 ⇒ fn was called).
+/// @field total_lines      — distinct source lines instrumented.
+/// @field hit_lines        — lines that fired at least once.
+/// @field total_branches   — branch_then + branch_else + match_arm.
+/// @field hit_branches     — branches with count > 0.
+/// @field total_conditions — MC/DC condition pairs.
+/// @field hit_conditions   — pairs that fired both true and false.
+/// @field line_set         — unique line numbers seen.
+/// @field line_hit_set     — unique line numbers with hits.
 export type FnStats = {
     name: string,
-    fn_entry_count: int,         // entry counter; > 0 means fn was called
+    fn_entry_count: int,
     total_lines: int,
     hit_lines: int,
-    total_branches: int,         // branch_then + branch_else
+    total_branches: int,
     hit_branches: int,
-    total_conditions: int,       // MC/DC pair groups
+    total_conditions: int,
     hit_conditions: int,
-    line_set: IntListSet,        // unique line numbers seen for this fn
-    line_hit_set: IntListSet,    // unique line numbers with count > 0
+    line_set: IntListSet,
+    line_hit_set: IntListSet,
 }
 
-// Set-of-int implemented as a sorted-or-not linked list (small per fn).
+/// Set-of-int implemented as an unsorted linked list. Per-fn line
+/// counts stay small enough that O(n) membership is fine; switching
+/// to a hash set added cycles in micro-benchmarks for typical inputs.
 export enum IntListSet {
     End
     Node(value: int, next: IntListSet)
 }
 
+/// Linked list of FnStats produced by `aggregate`.
 export enum FnStatsList {
     End
     Node(item: FnStats, next: FnStatsList)
 }
 
-// ── Per-module rollup ──
+/// Module-level rollup of FnStats. Modules are derived from the fn
+/// name's `::`-separated path (see `module_of`).
+///
+/// @field module          — derived module path ("foo::bar").
+/// @field total_lines     — sum of `total_lines` across the module.
+/// @field hit_lines       — sum of `hit_lines`.
+/// @field total_branches  — sum of `total_branches`.
+/// @field hit_branches    — sum of `hit_branches`.
+/// @field total_fns       — number of fns in the module.
+/// @field entered_fns     — fns that were actually called.
 export type ModStats = {
     module: string,
     total_lines: int,
@@ -95,13 +138,22 @@ export type ModStats = {
     entered_fns: int,
 }
 
+/// Linked list of ModStats produced by `rollup_modules`.
 export enum ModStatsList {
     End
     Node(item: ModStats, next: ModStatsList)
 }
 
-// ── Decision (MC/DC) tracking ──
-// Pairs condition_true/condition_false counters by (fn_name, line, branch_id).
+/// MC/DC decision row. `condition_true` and `condition_false`
+/// counters arrive separately in the covmap; `decision_update` pairs
+/// them by `(fn_name, line, branch_id)` into one Decision so the
+/// final MC/DC tally knows whether both directions fired.
+///
+/// @field fn_name      — owning function.
+/// @field line         — source line of the compound condition.
+/// @field branch_id    — opaque MC/DC group id.
+/// @field true_count   — times the sub-condition evaluated true.
+/// @field false_count  — times the sub-condition evaluated false.
 export type Decision = {
     fn_name: string,
     line: int,
@@ -110,22 +162,24 @@ export type Decision = {
     false_count: int,
 }
 
+/// Linked list of Decision — accumulated across covmap parsing,
+/// then folded into FnStats.total_conditions / hit_conditions.
 export enum DecisionList {
     End
     Node(item: Decision, next: DecisionList)
 }
 
-// `color_pct` and `pad_*` come from `render`. Coverage's local `pct`
-// preserves "100% when total=0" (no work = trivially covered), which
-// differs from `render.pct`'s 0-on-empty default.
+/// Local percentage helper. Coverage treats "no work" as 100%
+/// covered so empty modules don't pollute the table; `render.pct`
+/// returns 0 in that case (more useful for general-purpose math).
 fn pct(hit: int, total: int) -> int {
     if total == 0 { 100 } else { hit * 100 / total }
 }
 
-// ── Public entry point ──
-//
-// Reads covmap_path + profdata_text_path, prints colored summary table,
-// optionally writes LCOV to lcov_path (empty string = no LCOV).
+/// Public entry point for the coverage report. Reads
+/// `covmap_path` + `profdata_text_path`, prints the colored summary
+/// table to stdout, and optionally writes LCOV to `lcov_path`
+/// (empty string = no LCOV emit).
 export fn render_coverage(covmap_path: string, profdata_text_path: string, lcov_path: string) {
     let covmap_src = avra_selfhost_read_file(covmap_path)
     if covmap_src == "" {
@@ -159,8 +213,9 @@ export fn render_coverage(covmap_path: string, profdata_text_path: string, lcov_
 // cheap — the previous JSON parser pathologically called strlen on the
 // 2 MB buffer per character compare.
 
+/// Pull the source-file path out of the covmap's `# file=...`
+/// header. Returns `""` when no header is present.
 fn covmap_file(src: string) -> string {
-    // Header: "# file=<path>"
     let key = "# file="
     let start = src.index_of(key)
     if start != 0 { return "" }
@@ -170,6 +225,9 @@ fn covmap_file(src: string) -> string {
     src.substring(after, nl)
 }
 
+/// Parse a covmap.tsv into a CovEntryList in declaration order.
+/// Skips comment lines (`#`) and empty lines. Iterative — a covmap
+/// can have tens of thousands of entries.
 fn parse_covmap(src: string) -> CovEntryList {
     let lines = src.split("\n")
     mut acc = CovEntryList.End
@@ -184,6 +242,8 @@ fn parse_covmap(src: string) -> CovEntryList {
     reverse_entries(acc)
 }
 
+/// In-place reverse of a CovEntryList. Used to flip the
+/// prepend-built list back into source order before aggregation.
 fn reverse_entries(list: CovEntryList) -> CovEntryList {
     mut out = CovEntryList.End
     mut cur = list
@@ -199,6 +259,9 @@ fn reverse_entries(list: CovEntryList) -> CovEntryList {
     out
 }
 
+/// Tab-split one covmap row into its 6 fields. Returns a zeroed
+/// CovEntry for malformed lines instead of erroring — covmap is
+/// best-effort input from a crashed test run.
 fn parse_cov_line(line: string) -> CovEntry {
     let parts = line.split("\t")
     if parts.length < 6 {
@@ -214,6 +277,10 @@ fn parse_cov_line(line: string) -> CovEntry {
     }
 }
 
+/// Local string→int parser. Doesn't allocate. Stops at the first
+/// non-digit character; signed via a leading `-`. Used by
+/// `parse_cov_line` so we don't pull in the full `int(s)` runtime
+/// path on the hot covmap loop.
 fn parse_int(s: string) -> int {
     let n = s.length
     mut i = 0
@@ -227,6 +294,8 @@ fn parse_int(s: string) -> int {
     if neg { 0 - value } else { value }
 }
 
+/// Map "0"–"9" to 0–9. Returns 0 for any other input — caller
+/// guarantees the char is a digit before calling.
 fn digit_value(ch: string) -> int {
     match ch {
         "0" -> 0
@@ -254,6 +323,11 @@ fn digit_value(ch: string) -> int {
 //
 // We extract: fn_name, Function count, Block counts.
 
+/// Parse a `llvm-profdata show --all-functions --counts` text dump
+/// into a FnCountsList. State machine: a bare line ending in `:` is
+/// a fn header; the next `Function count: K` and `Block counts:
+/// [...]` lines populate that fn's counter array. Iterative — the
+/// input can be thousands of lines long.
 fn parse_profdata(src: string) -> FnCountsList {
     // Iterative — profdata text dump can be thousands of lines.
     let lines = src.split("\n")
@@ -294,7 +368,10 @@ fn parse_profdata(src: string) -> FnCountsList {
     acc
 }
 
-// Parse "1, 2, 3" into IntList prepended with fn_count (counter[0]).
+/// Parse `"1, 2, 3"` (the body of a profdata `Block counts: [...]`
+/// line, with brackets already stripped) into an IntList. Prepends
+/// `fn_count` so `counter[0]` is the entry count and the rest are
+/// block counts in profdata order.
 fn parse_block_counts(s: string, fn_count: int) -> IntList {
     let parts = s.split(",")
     // Iterative head-build then reverse — N can be hundreds.
@@ -310,6 +387,9 @@ fn parse_block_counts(s: string, fn_count: int) -> IntList {
     IntList.Node(fn_count, acc)
 }
 
+/// Index into an IntList. Iterative — counter arrays can have
+/// hundreds of elements and recursion would risk the stack on
+/// degenerate input. Returns 0 when out-of-bounds.
 fn int_list_get(list: IntList, idx: int) -> int {
     // Iterative — counter arrays can have hundreds of elements.
     mut cur = list
@@ -336,6 +416,11 @@ fn int_list_get(list: IntList, idx: int) -> int {
 // We also collect names into FnStatsList in insertion order so the
 // final report has a stable iteration order.
 
+/// Fold the covmap × profdata pair into a per-fn FnStatsList. Hot
+/// path — the covmap can have tens of thousands of entries, so we
+/// build two cstr-maps for O(1) lookup of counter arrays and
+/// running stats. Decisions accumulate separately and roll into
+/// `total_conditions` / `hit_conditions` after the main pass.
 fn aggregate(covmap: CovEntryList, counts: FnCountsList) -> FnStatsList {
     // Build counts_map: fn_name → ptr to IntList (stored).
     let counts_map = avra_map_new_cstr()
@@ -435,6 +520,12 @@ fn aggregate(covmap: CovEntryList, counts: FnCountsList) -> FnStatsList {
     out
 }
 
+/// Update line counters when seeing a `line` covmap entry.
+/// Maintains `total_lines` / `hit_lines` as O(1) running counters
+/// and only mutates the IntListSet for genuinely-new lines.
+/// Without this guard, recomputing intset_size() per call made
+/// aggregation O(L²) per fn — a multi-minute hang on the full
+/// 1271-test suite (~5K unique lines × 1.3K fns).
 fn apply_line(s: FnStats, line: int, count: int) -> FnStats {
     // Maintain total_lines / hit_lines as O(1) counters and only update the
     // IntListSet when the line is genuinely new. Without this guard the
@@ -456,6 +547,9 @@ fn apply_line(s: FnStats, line: int, count: int) -> FnStats {
     }
 }
 
+/// Update branch counters. Each branch_then / branch_else /
+/// match_arm covmap entry contributes exactly one to total_branches
+/// and one to hit_branches when count > 0.
 fn apply_branch(s: FnStats, count: int) -> FnStats {
     s with {
         total_branches: s.total_branches + 1,
@@ -463,6 +557,9 @@ fn apply_branch(s: FnStats, count: int) -> FnStats {
     }
 }
 
+/// Look up the FnStats for `name` in the cstr-map; create + insert
+/// an empty one when missing. Used during aggregation so each fn
+/// gets exactly one running stats record.
 fn stats_get_or_create(map: ptr, name: string) -> FnStats {
     if avra_map_has_cstr(map, name) == 1 {
         let p = avra_map_get_cstr(map, name)
@@ -474,11 +571,16 @@ fn stats_get_or_create(map: ptr, name: string) -> FnStats {
     fresh
 }
 
+/// Linked list of fn names tracked during aggregation so the final
+/// FnStatsList preserves first-seen order. The cstr-map alone has
+/// no defined iteration order.
 enum FnNameList {
     End
     Node(name: string, next: FnNameList)
 }
 
+/// Build a zeroed FnStats. Used by `stats_get_or_create` on
+/// first-sight and by the LCOV exporter when synthesizing rows.
 fn empty_stats(name: string) -> FnStats {
     FnStats {
         name,
@@ -494,10 +596,14 @@ fn empty_stats(name: string) -> FnStats {
     }
 }
 
+/// Add `value` to an IntListSet, deduplicating. O(n) — fine for
+/// per-fn line sets (small) but hot-path consumers like
+/// `apply_line` should track size externally to stay O(1) overall.
 fn intset_add(set: IntListSet, value: int) -> IntListSet {
     if intset_has(set, value) { set } else { IntListSet.Node(value, set) }
 }
 
+/// O(n) membership test for IntListSet.
 fn intset_has(set: IntListSet, value: int) -> bool {
     match set {
         .End -> false
@@ -505,14 +611,21 @@ fn intset_has(set: IntListSet, value: int) -> bool {
     }
 }
 
+/// Record a `condition_true` hit. Looks up or creates the
+/// matching Decision row keyed on `(fn_name, line, branch)`.
 fn decision_add_true(decs: DecisionList, fn_name: string, line: int, branch: int, count: int) -> DecisionList {
     decision_update(decs, fn_name, line, branch, count, 0)
 }
 
+/// Record a `condition_false` hit. Mirror of `decision_add_true`.
 fn decision_add_false(decs: DecisionList, fn_name: string, line: int, branch: int, count: int) -> DecisionList {
     decision_update(decs, fn_name, line, branch, 0, count)
 }
 
+/// Upsert helper — find a Decision row by `(fn_name, line, branch)`
+/// and add the supplied true/false increments, or append a fresh
+/// row when no match. Used by `decision_add_true` /
+/// `decision_add_false` to merge sub-condition hits.
 fn decision_update(decs: DecisionList, fn_name: string, line: int, branch: int, t_inc: int, f_inc: int) -> DecisionList {
     match decs {
         .End -> DecisionList.Node(Decision { fn_name, line, branch_id: branch, true_count: t_inc, false_count: f_inc }, DecisionList.End)
@@ -528,6 +641,9 @@ fn decision_update(decs: DecisionList, fn_name: string, line: int, branch: int, 
 // "foo::bar::baz" → module "foo::bar". Top-level fns → "top-level".
 // Names starting with "__lambda" → "lambdas".
 
+/// Derive a module name from a fully-qualified fn name. Splits on
+/// `::` and drops the last segment; "foo::bar::baz" → "foo::bar".
+/// Top-level fns roll into `"top-level"`; lambdas into `"lambdas"`.
 fn module_of(fn_name: string) -> string {
     if fn_name.starts_with("__lambda") { return "lambdas" }
     let parts = fn_name.split("::")
@@ -541,10 +657,15 @@ fn module_of(fn_name: string) -> string {
     acc
 }
 
+/// Group an FnStatsList into a ModStatsList, summing counters by
+/// module. The public entry — internal recursion lives in
+/// `rollup_inner`.
 fn rollup_modules(stats: FnStatsList) -> ModStatsList {
     rollup_inner(stats, ModStatsList.End)
 }
 
+/// Recursive worker for `rollup_modules`. For each fn, derives its
+/// module via `module_of` and merges its counters via `mod_upsert`.
 fn rollup_inner(stats: FnStatsList, acc: ModStatsList) -> ModStatsList {
     match stats {
         .End -> acc
@@ -556,6 +677,9 @@ fn rollup_inner(stats: FnStatsList, acc: ModStatsList) -> ModStatsList {
     }
 }
 
+/// Upsert a per-module rollup row. Finds the existing ModStats by
+/// name and increments its counters, or appends a fresh row when no
+/// match. Used by `rollup_inner` to fold every fn into its module.
 fn mod_upsert(acc: ModStatsList, name: string, tl: int, hl: int, tb: int, hb: int, entered: int) -> ModStatsList {
     match acc {
         .End -> ModStatsList.Node(ModStats { module: name, total_lines: tl, hit_lines: hl, total_branches: tb, hit_branches: hb, total_fns: 1, entered_fns: entered }, ModStatsList.End)
@@ -577,10 +701,12 @@ fn mod_upsert(acc: ModStatsList, name: string, tl: int, hl: int, tb: int, hb: in
 // ── Reporting ──
 // `pad_right` / `pad_left` imported from `render`.
 
+/// Total number of fns in the report.
 fn count_stats(stats: FnStatsList) -> int {
     match stats { .End -> 0, .Node(_, next) -> 1 + count_stats(next) }
 }
 
+/// Number of fns that were actually called (entry count > 0).
 fn count_entered(stats: FnStatsList) -> int {
     match stats {
         .End -> 0
@@ -588,30 +714,38 @@ fn count_entered(stats: FnStatsList) -> int {
     }
 }
 
+/// Sum of `total_lines` across all fns.
 fn sum_total_lines(stats: FnStatsList) -> int {
     match stats { .End -> 0, .Node(s, next) -> s.total_lines + sum_total_lines(next) }
 }
 
+/// Sum of `hit_lines` across all fns.
 fn sum_hit_lines(stats: FnStatsList) -> int {
     match stats { .End -> 0, .Node(s, next) -> s.hit_lines + sum_hit_lines(next) }
 }
 
+/// Sum of `total_branches` across all fns.
 fn sum_total_branches(stats: FnStatsList) -> int {
     match stats { .End -> 0, .Node(s, next) -> s.total_branches + sum_total_branches(next) }
 }
 
+/// Sum of `hit_branches` across all fns.
 fn sum_hit_branches(stats: FnStatsList) -> int {
     match stats { .End -> 0, .Node(s, next) -> s.hit_branches + sum_hit_branches(next) }
 }
 
+/// Sum of `total_conditions` (MC/DC pair groups) across all fns.
 fn sum_total_conditions(stats: FnStatsList) -> int {
     match stats { .End -> 0, .Node(s, next) -> s.total_conditions + sum_total_conditions(next) }
 }
 
+/// Sum of `hit_conditions` (pairs that fired both true and false).
 fn sum_hit_conditions(stats: FnStatsList) -> int {
     match stats { .End -> 0, .Node(s, next) -> s.hit_conditions + sum_hit_conditions(next) }
 }
 
+/// Print the colored coverage summary table to stdout. Header + per-
+/// module rollup; MC/DC line only shown when any pair fired.
 fn print_summary(stats: FnStatsList) {
     let total_fns = count_stats(stats)
     let entered = count_entered(stats)
@@ -640,6 +774,8 @@ fn print_summary(stats: FnStatsList) {
     print_modules(modules)
 }
 
+/// Render every module's rollup as a single right-padded row, with
+/// per-stat colours from `color_pct`. Used by `print_summary`.
 fn print_modules(mods: ModStatsList) {
     match mods {
         .End -> {}
@@ -669,6 +805,10 @@ fn print_modules(mods: ModStatsList) {
 //   LH:<num lines hit>
 //   end_of_record
 
+/// Write the FnStatsList as an LCOV `.info` file consumable by
+/// `genhtml`, Codecov, etc. Sections per spec: TN/SF/FN/FNDA/FNF/
+/// FNH/DA/LF/LH/end_of_record. One DA row per unique line across
+/// all fns, with `1` when any fn hit it.
 fn write_lcov(stats: FnStatsList, source_file: string, out_path: string) {
     let mut s = "TN:\nSF:${source_file}\n"
     // FN: lines
@@ -685,6 +825,9 @@ fn write_lcov(stats: FnStatsList, source_file: string, out_path: string) {
     avra_selfhost_write_file(out_path, s)
 }
 
+/// Emit the `FN:line,name` block of an LCOV file. Line numbers are
+/// always 0 because we haven't tracked the original source line of
+/// each fn declaration here.
 fn write_lcov_fns(stats: FnStatsList) -> string {
     match stats {
         .End -> ""
@@ -692,6 +835,8 @@ fn write_lcov_fns(stats: FnStatsList) -> string {
     }
 }
 
+/// Emit the `FNDA:exec_count,name` block of an LCOV file. Mirrors
+/// `write_lcov_fns` but with the per-fn entry counts.
 fn write_lcov_fndas(stats: FnStatsList) -> string {
     match stats {
         .End -> ""
@@ -699,7 +844,9 @@ fn write_lcov_fndas(stats: FnStatsList) -> string {
     }
 }
 
-// Walk all fns, collecting line numbers (total) and hit lines (any-hit).
+/// Union the per-fn line sets into a single program-wide set of
+/// (total, hit-any) lines. Both arguments are accumulators so the
+/// caller can seed them empty and we stay tail-recursive.
 fn collect_all_lines(stats: FnStatsList, total: IntListSet, hit: IntListSet) -> IntListSet {
     match stats {
         .End -> total
@@ -707,6 +854,8 @@ fn collect_all_lines(stats: FnStatsList, total: IntListSet, hit: IntListSet) -> 
     }
 }
 
+/// Union two IntListSets. O(|a| × |b|) — fine for line-number sets
+/// from a single source file, won't scale to general use.
 fn intset_union(a: IntListSet, b: IntListSet) -> IntListSet {
     match b {
         .End -> a
@@ -714,6 +863,10 @@ fn intset_union(a: IntListSet, b: IntListSet) -> IntListSet {
     }
 }
 
+/// Emit the `DA:line,exec_count` block of an LCOV file — one row
+/// per unique line across all fns, with `1` if any fn hit the line
+/// or `0` otherwise. We intentionally don't expose per-fn counts
+/// here since the LCOV output is single-file.
 fn write_lcov_da(stats: FnStatsList, all_lines: IntListSet) -> string {
     match all_lines {
         .End -> ""
@@ -725,6 +878,8 @@ fn write_lcov_da(stats: FnStatsList, all_lines: IntListSet) -> string {
     }
 }
 
+/// True when at least one fn's `line_hit_set` contains `line`.
+/// Used by `write_lcov_da` to decide each DA row's flag.
 fn any_fn_hit_line(stats: FnStatsList, line: int) -> bool {
     match stats {
         .End -> false

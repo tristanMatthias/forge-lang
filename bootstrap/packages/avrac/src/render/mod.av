@@ -7,21 +7,36 @@
 
 // ── ANSI escapes ────────────────────────────────────────────────────
 
+/// ANSI escape that turns on bold rendering.
 export fn ansi_bold() -> string { "\x1b[1m" }
+/// ANSI escape that turns on dim rendering.
 export fn ansi_dim() -> string { "\x1b[2m" }
+/// ANSI escape for cyan foreground.
 export fn ansi_cyan() -> string { "\x1b[36m" }
+/// ANSI escape for green foreground.
 export fn ansi_green() -> string { "\x1b[32m" }
+/// ANSI escape for yellow foreground.
 export fn ansi_yellow() -> string { "\x1b[33m" }
+/// ANSI escape for red foreground.
 export fn ansi_red() -> string { "\x1b[31m" }
+/// ANSI escape that resets every active style. Always paired with
+/// the wrappers below to avoid bleeding into the rest of the line.
 export fn ansi_reset() -> string { "\x1b[0m" }
 
 // ── Wrappers (apply + reset) ────────────────────────────────────────
 
+/// Wrap `s` in bold + reset escapes. Use when the caller never
+/// wants downstream output to inherit the formatting.
 export fn bold(s: string) -> string { "${ansi_bold()}${s}${ansi_reset()}" }
+/// Wrap `s` in dim + reset escapes.
 export fn dim(s: string) -> string { "${ansi_dim()}${s}${ansi_reset()}" }
+/// Wrap `s` in cyan + reset escapes.
 export fn cyan(s: string) -> string { "${ansi_cyan()}${s}${ansi_reset()}" }
+/// Wrap `s` in green + reset escapes.
 export fn green(s: string) -> string { "${ansi_green()}${s}${ansi_reset()}" }
+/// Wrap `s` in yellow + reset escapes.
 export fn yellow(s: string) -> string { "${ansi_yellow()}${s}${ansi_reset()}" }
+/// Wrap `s` in red + reset escapes.
 export fn red(s: string) -> string { "${ansi_red()}${s}${ansi_reset()}" }
 
 // ── Text shaping ────────────────────────────────────────────────────

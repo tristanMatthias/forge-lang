@@ -33,15 +33,23 @@ use pathutil.{relativise, qualified_leaf, qualified_breadcrumbs, count_path_seps
 
 // ── Project walk ─────────────────────────────────────────────────────
 
-// Both pieces of the project corpus the renderers need: the symbol
-// graph (for documentation queries) and the call edges (for
-// `--callers` reverse-lookup). Walking once means we don't pay for
-// double parsing when callers are requested.
+/// Bundle of everything the doc renderers need from a project tree:
+/// the symbol graph for `avra docs <name>` queries and the call-edge
+/// list for `--callers` reverse-lookup. Walking once produces both,
+/// so requesting callers doesn't double-parse.
+///
+/// @field syms  — symbol graph extracted by `extract_from_ast_at`.
+/// @field calls — call edges extracted by `extract_calls_from_ast_at`.
 export type DocsCorpus = {
     syms: SymList,
     calls: CallList
 }
 
+/// Walk every `.av` file under `dir`, parse it, and build the
+/// project DocsCorpus. Skips `build/`, `.beads/`, `seed/` and any
+/// file that fails to parse — tooling shouldn't fail loudly on a
+/// half-edited source tree; the compiler's primary error path will
+/// surface parse errors when it runs.
 export fn extract_project_corpus(dir: string) -> DocsCorpus {
     let cmd = "find ${dir} -name '*.av' -type f -not -path '*/build/*' -not -path '*/.beads/*' -not -path '*/seed/*' 2>/dev/null | sort"
     let files_text = avra_shell_exec(cmd)
@@ -71,12 +79,14 @@ export fn extract_project_corpus(dir: string) -> DocsCorpus {
     DocsCorpus { syms, calls }
 }
 
-// Backwards-compat wrapper for callers that only want the SymList
-// half.
+/// Backwards-compat wrapper for callers that only need the SymList
+/// half of `extract_project_corpus`.
 export fn extract_project_docs_ast(dir: string) -> SymList {
     extract_project_corpus(dir).syms
 }
 
+/// Concatenate two CallLists. Used to fold per-file CallList halves
+/// into the project-wide list inside `extract_project_corpus`.
 fn call_list_append(a: CallList, b: CallList) -> CallList {
     match a {
         .End -> b
@@ -84,6 +94,7 @@ fn call_list_append(a: CallList, b: CallList) -> CallList {
     }
 }
 
+/// Concatenate two SymLists. Sister of `call_list_append`.
 fn sym_list_append(a: SymList, b: SymList) -> SymList {
     match a {
         .End -> b
@@ -99,6 +110,9 @@ fn sym_list_append(a: SymList, b: SymList) -> SymList {
 // A 0-bucket means "skip in the renderer" (Trait / Impl / ErrorCode /
 // Keyword / Module — surfaced by future flags).
 
+/// Map a Sym to its render bucket: 1=Functions, 2=Types, 3=Enums,
+/// 4=Constants/Muts/Lets. Returns 0 for kinds the CLI doesn't
+/// surface (Trait/Impl/ErrorCode/Keyword/Module).
 fn bucket_of(s: Sym) -> int {
     match s.kind {
         .Fn(_, _) -> 1
@@ -111,15 +125,25 @@ fn bucket_of(s: Sym) -> int {
     }
 }
 
+/// True when the Sym lives in the Functions bucket.
 fn is_fn(s: Sym) -> bool { bucket_of(s) == 1 }
+/// True when the Sym lives in the Types bucket.
 fn is_type(s: Sym) -> bool { bucket_of(s) == 2 }
+/// True when the Sym lives in the Enums bucket.
 fn is_enum(s: Sym) -> bool { bucket_of(s) == 3 }
+/// True when the Sym lives in the Constants bucket (const/mut/let).
 fn is_var(s: Sym) -> bool { bucket_of(s) == 4 }
+/// True when the Sym belongs to one of the renderable buckets — i.e.
+/// the renderers should consider it. False filters out Trait/Impl
+/// and friends that show up via dedicated flags.
 fn is_renderable(s: Sym) -> bool { bucket_of(s) != 0 }
+/// True when the Sym has any /// doc-comment attached.
 fn has_doc(s: Sym) -> bool { s.doc != "" }
 
 // ── List traversal ──────────────────────────────────────────────────
 
+/// Count how many Syms in `list` satisfy `pred`. Iterative so big
+/// projects don't blow the recursion stack.
 fn count_syms(list: SymList, pred: fn(Sym) -> bool) -> int {
     mut cur = list
     mut n = 0
@@ -135,26 +159,33 @@ fn count_syms(list: SymList, pred: fn(Sym) -> bool) -> int {
     n
 }
 
+/// Total renderable Syms in `list`.
 fn count_total(list: SymList) -> int {
     count_syms(list, is_renderable)
 }
 
+/// Number of renderable Syms in `list` that have a /// doc.
 fn count_documented(list: SymList) -> int {
     count_syms(list, (item: Sym) -> is_renderable(item) && has_doc(item))
 }
 
+/// Number of Syms in `list` belonging to `want_bucket` that have a
+/// /// doc.
 fn count_documented_in(list: SymList, want_bucket: int) -> int {
     count_syms(list, (item: Sym) -> bucket_of(item) == want_bucket && has_doc(item))
 }
 
+/// Number of Syms in `list` belonging to `want_bucket`.
 fn count_in_bucket(list: SymList, want_bucket: int) -> int {
     count_syms(list, (item: Sym) -> bucket_of(item) == want_bucket)
 }
 
 // ── Rendering ────────────────────────────────────────────────────────
 
-// Header for the summary view: signature for fns, "type Name" for
-// types, "name { variants }" for enums, "kind name: type" for vars.
+/// One-line header for the summary view: signature for fns,
+/// "type Name" for types, "Name { variants }" for enums, and
+/// "kind name: type" for vars. Used by the overview and search
+/// renderers so they share the same formatting.
 fn summary_head(s: Sym) -> string {
     match s.kind {
         .Fn(sig, _) -> sig
@@ -174,8 +205,9 @@ fn summary_head(s: Sym) -> string {
     }
 }
 
-// "type Foo" / "enum Bar" / fn signature — used by --symbols and the
-// detail view.
+/// Render a Sym's declaration line ("type Foo" / "enum Bar" / fn
+/// signature). Used by `--symbols` and the detail view as the
+/// header above the doc body.
 fn declaration_line(s: Sym) -> string {
     match s.kind {
         .Fn(sig, _) -> sig
@@ -188,6 +220,8 @@ fn declaration_line(s: Sym) -> string {
     }
 }
 
+/// Format a `<kind_str> <name>: <ty>` line for vars, suppressing
+/// `: <ty>` when the type is unknown / blank.
 fn var_signature(kind_str: string, name: string, ty: string) -> string {
     if ty == "" || ty == "<unknown>" {
         "${kind_str} ${name}"
@@ -196,10 +230,14 @@ fn var_signature(kind_str: string, name: string, ty: string) -> string {
     }
 }
 
+/// Render the trailing `[export]` tag in dim grey when `s` is
+/// exported. Empty string otherwise.
 fn export_tag(s: Sym) -> string {
     if s.exported { dim(" [export]") } else { "" }
 }
 
+/// Print a single Sym's summary row to stdout: header + first line
+/// of doc preview + export tag, padded for alignment.
 fn print_summary_row(s: Sym) {
     let head = summary_head(s)
     let preview = first_line(s.doc)
@@ -211,6 +249,8 @@ fn print_summary_row(s: Sym) {
     }
 }
 
+/// Walk the SymList, calling `print_summary_row` on every Sym
+/// whose bucket matches `want_bucket`. Iterative for big projects.
 fn print_summary_kind(list: SymList, want_bucket: int) {
     mut cur = list
     while true {
@@ -228,8 +268,9 @@ fn print_summary_kind(list: SymList, want_bucket: int) {
     }
 }
 
-// Label for each renderable bucket — used by show_overview and
-// show_symbols so the strings stay in lockstep across the renderers.
+/// Human-readable label for each renderable bucket. Used by every
+/// renderer so the strings stay in lockstep — bumping the bucket
+/// numbering here updates the entire CLI.
 fn kind_label(bucket: int) -> string {
     match bucket {
         1 -> "Functions"
@@ -242,6 +283,10 @@ fn kind_label(bucket: int) -> string {
 
 // ── Overview (`avra docs`) ──────────────────────────────────────────
 
+/// Top-level overview view (`avra docs` with no args). Prints a
+/// per-bucket symbol summary plus a coverage line. Empty projects
+/// get a friendly "no source files found" message instead of an
+/// empty table.
 export fn show_overview(docs: SymList) {
     println("")
     println("  ${bold("avra docs")} ${dim("—")} Project Documentation")
@@ -280,6 +325,9 @@ export fn show_overview(docs: SymList) {
 
 // ── --symbols (flat reference with locations) ───────────────────────
 
+/// Render the flat `--symbols` reference: every renderable Sym in
+/// every bucket, paired with its `file:line` location. Used by
+/// editors / users who want a project-wide symbol index.
 export fn show_symbols(docs: SymList) {
     println("")
     println("  ${bold("Symbol Reference")}")
@@ -300,6 +348,8 @@ export fn show_symbols(docs: SymList) {
     }
 }
 
+/// Worker for `show_symbols`: print every Sym in `want_bucket` as
+/// `<header>  <file>:<line>`. Iterative.
 fn print_with_loc_kind(list: SymList, want_bucket: int) {
     mut cur = list
     while true {
@@ -328,6 +378,10 @@ fn print_with_loc_kind(list: SymList, want_bucket: int) {
 // LSP `avra/callers` request — see protocol_test.av for the
 // equivalent end-to-end test.
 
+/// `--callers <name>` view. Looks up the target Sym, then walks the
+/// CallList for edges whose callee matches and renders their call
+/// sites. Returns false when the symbol isn't in the project (so
+/// the caller can show a "did you mean?" suggestion).
 export fn show_callers(query: string, corpus: DocsCorpus) -> bool {
     let target = sym_by_name(corpus.syms, query)
     if target == null { return false }
@@ -349,6 +403,8 @@ export fn show_callers(query: string, corpus: DocsCorpus) -> bool {
     true
 }
 
+/// Case-insensitive lookup of a Sym by bare name. Returns the
+/// first renderable match or `null`.
 fn sym_by_name(list: SymList, name: string) -> Sym? {
     let want = name.to_lower()
     mut cur = list
@@ -368,6 +424,9 @@ fn sym_by_name(list: SymList, name: string) -> Sym? {
     null
 }
 
+/// Filter the project-wide CallList to just the edges whose
+/// `callee` matches `target`. Used by `show_callers` to find every
+/// call site of a fn.
 fn call_edges_to(calls: CallList, target: string) -> CallList {
     mut acc = CallList.End
     mut cur = calls
@@ -387,6 +446,7 @@ fn call_edges_to(calls: CallList, target: string) -> CallList {
     CallList.End
 }
 
+/// Length of a CallList. Iterative.
 fn call_list_len(list: CallList) -> int {
     mut n = 0
     mut cur = list
@@ -404,6 +464,8 @@ fn call_list_len(list: CallList) -> int {
     n
 }
 
+/// Print each call edge in `edges` as `<caller>  <file>:<line>`.
+/// Worker for `show_callers`.
 fn print_call_edges(edges: CallList) {
     mut cur = edges
     while true {
@@ -426,9 +488,10 @@ fn print_call_edges(edges: CallList) {
 // from pathutil — they operate on `::`-separated paths and live with
 // the rest of the path-manipulation helpers.
 
-// Look up a sym by either bare name OR qualified path. When the
-// query contains `::`, fall back to suffix matching so partial paths
-// still resolve (`ast::Expr` finds `core::ast::Expr`).
+/// Look up a Sym by either bare name OR qualified path. When the
+/// query contains `::`, tries an exact qualified match first, then
+/// falls back to suffix matching so partial paths resolve
+/// (`ast::Expr` finds `core::ast::Expr`).
 fn sym_by_path(list: SymList, path: string) -> Sym? {
     if !path.contains("::") {
         return sym_by_name(list, path)
@@ -467,10 +530,10 @@ fn sym_by_path(list: SymList, path: string) -> Sym? {
     null
 }
 
-// Print every direct child of a module path. Direct = one level
-// deeper, not transitive. Returns false when no descendants exist
-// at any depth — distinguishes "real but childless prefix" from
-// "no such prefix anywhere".
+/// Print every direct child of a module path. Direct = one level
+/// deeper, not transitive. Returns false when no descendants exist
+/// at any depth — distinguishes "real but childless prefix" from
+/// "no such prefix anywhere".
 export fn show_module(prefix: string, docs: SymList) -> bool {
     let direct = direct_children(docs, prefix)
     if sym_count(direct) == 0 && !has_any_descendant(docs, prefix) {
@@ -492,6 +555,9 @@ export fn show_module(prefix: string, docs: SymList) -> bool {
     true
 }
 
+/// True when at least one Sym in `list` has a qualified path
+/// starting with `prefix::`. Used by `show_module` to distinguish
+/// real-but-childless modules from typos.
 fn has_any_descendant(list: SymList, prefix: string) -> bool {
     let pfx_dot = "${prefix}::"
     mut cur = list
@@ -509,6 +575,9 @@ fn has_any_descendant(list: SymList, prefix: string) -> bool {
     false
 }
 
+/// Filter `list` to just the Syms that are direct children of
+/// `prefix` — exactly one path segment deeper, not transitive
+/// descendants. The empty prefix matches top-level (no `::`) syms.
 fn direct_children(list: SymList, prefix: string) -> SymList {
     let pfx_dot = "${prefix}::"
     let pfx_depth = if prefix == "" { -1 } else { count_path_seps(prefix) }
@@ -516,6 +585,9 @@ fn direct_children(list: SymList, prefix: string) -> SymList {
         (item: Sym) -> is_direct_child_of(item, prefix, pfx_dot, pfx_depth))
 }
 
+/// Predicate used by `direct_children`: true when `item.qualified`
+/// is exactly one segment deeper than `prefix`. The depth check
+/// distinguishes children from grandchildren in transitive trees.
 fn is_direct_child_of(item: Sym, prefix: string, pfx_dot: string, pfx_depth: int) -> bool {
     let q = item.qualified
     if prefix == "" {
@@ -525,10 +597,13 @@ fn is_direct_child_of(item: Sym, prefix: string, pfx_dot: string, pfx_depth: int
     }
 }
 
+/// Length of a SymList — counts every entry, no filtering.
 fn sym_count(list: SymList) -> int {
     count_syms(list, (_: Sym) -> true)
 }
 
+/// Local SymList filter — produces a new SymList in the original
+/// source order. Iterative + reverse so big projects stay linear.
 fn sym_list_filter_local(list: SymList, pred: fn(Sym) -> bool) -> SymList {
     mut acc = SymList.End
     mut cur = list
@@ -548,6 +623,8 @@ fn sym_list_filter_local(list: SymList, pred: fn(Sym) -> bool) -> SymList {
     SymList.End
 }
 
+/// In-place SymList reverse. Used to flip prepend-built lists back
+/// into source order.
 fn reverse_sym_list_local(list: SymList) -> SymList {
     mut acc = SymList.End
     mut cur = list
@@ -565,6 +642,9 @@ fn reverse_sym_list_local(list: SymList) -> SymList {
     SymList.End
 }
 
+/// Worker for `show_module`: print one row per direct child with
+/// its leaf name, descendant count, and doc preview. `all` is
+/// passed in so each row's grandchildren count can be looked up.
 fn print_module_children(direct: SymList, all: SymList) {
     mut cur = direct
     while true {
@@ -588,9 +668,10 @@ fn print_module_children(direct: SymList, all: SymList) {
     }
 }
 
-// "Did you mean?" — best-scoring sym name above threshold, or "" if
-// no candidate is plausibly close. Threshold matches @std/lsp's
-// did_you_mean default: silence beats a misleading suggestion.
+/// "Did you mean?" — best-scoring sym name above threshold, or `""`
+/// when no candidate is plausibly close. Threshold matches
+/// `@std/lsp`'s `did_you_mean` default (200): silence beats a
+/// misleading suggestion.
 export fn suggest_similar(query: string, docs: SymList) -> string {
     mut best_score = 199
     mut best_name = ""
@@ -615,6 +696,9 @@ export fn suggest_similar(query: string, docs: SymList) -> string {
     best_name
 }
 
+/// Show full detail for a single symbol: header, doc body,
+/// variants (for enums), location, and exported flag. Used by
+/// `avra docs <name>`. Returns false when no matching Sym exists.
 export fn show_symbol(query: string, docs: SymList) -> bool {
     let direct = sym_by_path(docs, query)
     if direct != null {
@@ -638,6 +722,9 @@ export fn show_symbol(query: string, docs: SymList) -> bool {
     false
 }
 
+/// Worker for `show_symbol`: render the detail view for a single
+/// Sym. The full DocsCorpus is passed in so `@see` references can
+/// be resolved against it.
 fn show_one(s: Sym, docs: SymList) {
     let header = declaration_line(s)
     let rule_len = if header.length > 20 { header.length } else { 20 }
@@ -664,6 +751,8 @@ fn show_one(s: Sym, docs: SymList) {
     println("")
 }
 
+/// For enum Syms, render the variants list as a block under the
+/// detail view. No-op for other kinds.
 fn print_variant_block(s: Sym) {
     match s.kind {
         .Enum(csv) -> {
@@ -681,6 +770,9 @@ fn print_variant_block(s: Sym) {
 
 // ── Short one-liner (`--short`) ─────────────────────────────────────
 
+/// `--short` view: print one line — `name: first-line-of-doc` —
+/// for the matching Sym. Returns false when no match. Designed for
+/// shell tools and editors wanting a quick lookup.
 export fn show_short(query: string, docs: SymList) -> bool {
     let s = sym_by_path(docs, query)
     if s != null {
@@ -728,6 +820,10 @@ export fn show_short(query: string, docs: SymList) -> bool {
 // commit comment in 4df15e0e). Once the resolver bug is fixed, this
 // can become a one-line re-import.
 
+/// Score a Sym against a search query. Falls through `fuzzy_score`
+/// on the name first, then a tier-100 contains-match against the
+/// doc body so `--search` can still surface matches when the user
+/// only remembers a description, not the symbol name.
 fn score_match(name: string, doc: string, q: string) -> int {
     let s = fuzzy_score(q, name)
     if s > 0 { return s }
@@ -738,6 +834,10 @@ fn score_match(name: string, doc: string, q: string) -> int {
     0
 }
 
+/// Composed-tier scorer mirrored verbatim from `@std/lsp` (see the
+/// "Duplicates `@std/lsp`" comment above). Tiers (highest first):
+/// 1000 exact, 800 case-insensitive, 600 prefix, 400 subsequence,
+/// 300 substring, 200 Levenshtein ≤ 2, 0 otherwise.
 fn fuzzy_score(query: string, candidate: string) -> int {
     if query == candidate { return 1000 }
     let ql = query.to_lower()
@@ -761,6 +861,9 @@ fn fuzzy_score(query: string, candidate: string) -> int {
     0
 }
 
+/// True when every character of `needle` appears in order somewhere
+/// in `haystack` (the abbreviation-match heuristic — "iu" matches
+/// "init_user"). Powers tier 400 of `fuzzy_score`.
 fn is_subsequence(needle: string, haystack: string) -> bool {
     if needle.length == 0 { return true }
     mut ni = 0
@@ -775,6 +878,10 @@ fn is_subsequence(needle: string, haystack: string) -> bool {
     false
 }
 
+/// `--search <query>` view. Runs `score_match` over every
+/// renderable Sym and prints the matches grouped by bucket. Empty
+/// projects and zero-hit queries get a "No results" message instead
+/// of an empty table.
 export fn show_search(query: string, docs: SymList) {
     if count_total(docs) == 0 {
         println("")
@@ -814,11 +921,16 @@ export fn show_search(query: string, docs: SymList) {
     println("")
 }
 
+/// Count Syms in `list` that belong to `want_bucket` AND
+/// score-match `q` (any tier > 0). Used by `show_search` to decide
+/// whether to print each bucket header.
 fn count_search_in_bucket(list: SymList, q: string, want_bucket: int) -> int {
     count_syms(list, (item: Sym) ->
         bucket_of(item) == want_bucket && score_match(item.name, item.doc, q) > 0)
 }
 
+/// Worker for `show_search`: print one row per matching Sym in the
+/// requested bucket, with name + truncated doc preview.
 fn print_search_kind(list: SymList, q: string, want_bucket: int) {
     mut cur = list
     while true {
@@ -839,6 +951,9 @@ fn print_search_kind(list: SymList, q: string, want_bucket: int) {
 
 // ── LLM-friendly dump (`--llm`) ─────────────────────────────────────
 
+/// `--llm` view: render every symbol as plain markdown headings,
+/// suitable for piping into an LLM context. Used by AI tooling that
+/// wants a coherent summary of the project's exported surface.
 export fn show_llm(docs: SymList) {
     println("# Project Documentation (LLM-friendly)")
     println("")
@@ -852,6 +967,8 @@ export fn show_llm(docs: SymList) {
     }
 }
 
+/// Worker for `show_llm`: print one entry per Sym in the bucket
+/// with its declaration line and first doc line.
 fn print_llm_kind(list: SymList, want_bucket: int) {
     mut cur = list
     while true {
@@ -874,6 +991,9 @@ fn print_llm_kind(list: SymList, want_bucket: int) {
     }
 }
 
+/// LLM-rendering header: like `summary_head` but uses bare keyword
+/// prefixes (`type Foo`, `enum Bar`, etc.) so the markdown output
+/// reads like familiar Avra source.
 fn llm_head(s: Sym) -> string {
     match s.kind {
         .Fn(sig, _) -> sig
@@ -894,6 +1014,9 @@ fn llm_head(s: Sym) -> string {
 
 // ── Validation (`--validate`) ───────────────────────────────────────
 
+/// `--validate` view. Walks the project, prints per-bucket
+/// documented/total counts, and lists every undocumented symbol.
+/// CI uses the exit signal to enforce a coverage threshold.
 export fn validate_docs(dir: string) {
     let docs = extract_project_docs_ast(dir)
     let total = count_total(docs)
@@ -921,6 +1044,9 @@ export fn validate_docs(dir: string) {
     println("")
 }
 
+/// Worker for `validate_docs`: print one section per bucket with
+/// documented count, percentage, and the comma-separated list of
+/// undocumented names.
 fn print_validation_kind(list: SymList, want_bucket: int, label: string) {
     let total = count_in_bucket(list, want_bucket)
     if total == 0 { return }
@@ -938,6 +1064,9 @@ fn print_validation_kind(list: SymList, want_bucket: int, label: string) {
     }
 }
 
+/// Build a comma-separated string of every undocumented Sym name
+/// in `want_bucket`. Used by `print_validation_kind` so the output
+/// stays diff-friendly (one line per bucket).
 fn collect_undocumented_names(list: SymList, want_bucket: int) -> string {
     mut cur = list
     mut acc = ""
@@ -955,9 +1084,10 @@ fn collect_undocumented_names(list: SymList, want_bucket: int) -> string {
     acc
 }
 
-// Resolve an @see reference against the SymList. Found symbols
-// render in cyan with their file:line suffix; unresolved ones get a
-// dim ⚠ marker so doc rot is visible.
+/// Resolve an `@see` reference against the SymList. Found symbols
+/// render in cyan with their `file:line` suffix; unresolved ones
+/// get a red `⚠ unresolved` marker so doc rot is visible at a
+/// glance.
 fn render_see_ref(name: string, docs: SymList) -> string {
     let target = sym_by_path(docs, name)
     if target == null {
@@ -968,14 +1098,17 @@ fn render_see_ref(name: string, docs: SymList) -> string {
     "${cyan(s.qualified)} ${dim(loc)}"
 }
 
-// Mirrored from @std/json — bootstrap module-resolver dedupe bug
-// silently drops function imports when @std.json is already loaded
-// by another module. Once that fix lands these can become a one-line
-// re-import.
+/// Wrap a raw string in JSON-quoted form. Mirrored from
+/// `@std/json` because the bootstrap module-resolver dedupe bug
+/// silently drops function imports when `@std.json` is already
+/// loaded by another module — once that fix lands these can become
+/// a one-line re-import.
 fn json_str(s: string) -> string {
     "\"${json_escape_for_render(s)}\""
 }
 
+/// Walk a string char-by-char and JSON-escape every special. Hot
+/// path for `render_json` (every doc field flows through it).
 fn json_escape_for_render(s: string) -> string {
     mut out = ""
     mut i = 0
@@ -987,6 +1120,8 @@ fn json_escape_for_render(s: string) -> string {
     out
 }
 
+/// Per-character JSON escape table. Anything not in the special
+/// set passes through unchanged.
 fn json_escape_one(ch: string) -> string {
     match ch {
         "\"" -> "\\\""
@@ -1006,6 +1141,10 @@ fn json_escape_one(ch: string) -> string {
 // wants structured output. Schema is stable; bumping it is a
 // breaking change worth a major version.
 
+/// `--format=json` exporter. Walks the SymList and produces a
+/// JSON array — one record per renderable Sym with name /
+/// qualified / kind / detail / doc / file / line / exported.
+/// Schema is stable; bumping it is a breaking change.
 export fn render_json(docs: SymList) -> string {
     mut out = "["
     mut first = true
@@ -1032,6 +1171,9 @@ export fn render_json(docs: SymList) -> string {
     "${out}]"
 }
 
+/// Render a single Sym as one JSON object (no trailing comma).
+/// Used by `render_json` for both the array element and the
+/// MCP/LSP single-symbol responses that need the same shape.
 fn render_sym_json(s: Sym) -> string {
     let kind_tag = sym_kind_tag(s)
     let detail = json_str(declaration_line(s))
@@ -1043,6 +1185,9 @@ fn render_sym_json(s: Sym) -> string {
     "{\"name\":${name},\"qualified\":${qual},\"kind\":${json_str(kind_tag)},\"detail\":${detail},\"doc\":${doc},\"file\":${file},\"line\":${string(s.span.start.line)},\"exported\":${exp}}"
 }
 
+/// Map a SymKind to its lowercase tag used in JSON output ("fn",
+/// "type", "enum", …). Stable identifiers — clients can switch on
+/// them.
 fn sym_kind_tag(s: Sym) -> string {
     match s.kind {
         .Fn(_, _) -> "fn"
@@ -1065,6 +1210,9 @@ fn sym_kind_tag(s: Sym) -> string {
 // GitHub README or piping into `glow`. Mirrors show_llm's structure
 // but without the "LLM-friendly" framing.
 
+/// `--format=markdown` exporter. Plain markdown — no ANSI codes —
+/// suitable for pasting into a GitHub README or piping into `glow`.
+/// Mirrors `show_llm`'s structure but without the LLM framing.
 export fn render_markdown(docs: SymList) -> string {
     mut out = "# Project Documentation\n\n"
     for bucket in 1..5 {
@@ -1075,6 +1223,9 @@ export fn render_markdown(docs: SymList) -> string {
     out
 }
 
+/// Worker for `render_markdown`: emit one `### ...` block per Sym
+/// in the bucket, with code-fenced declaration, doc body, and
+/// italicised location footer.
 fn render_md_kind(list: SymList, want_bucket: int) -> string {
     mut out = ""
     mut cur = list
@@ -1106,6 +1257,10 @@ fn render_md_kind(list: SymList, want_bucket: int) -> string {
 // try to parse each as Avra source. Parse failures print as doctest
 // failures so stale examples get caught at CI time.
 
+/// `--doctest` view. Walk every Sym, extract fenced `avra` code
+/// blocks from its /// body, parse each, and report pass/fail. CI
+/// uses this to catch stale doc examples. Returns true when every
+/// block parsed cleanly.
 export fn run_doctests(docs: SymList) -> bool {
     mut total = 0
     mut passed = 0
@@ -1154,18 +1309,20 @@ export fn run_doctests(docs: SymList) -> bool {
     passed == total
 }
 
-// Try to parse `source` as a top-level Avra program. Wrapping in a
-// synthetic main keeps single-expression examples like `square(5)`
-// from triggering "expression at top level" errors. Multi-statement
-// examples that already declare top-level fns also work because we
-// only wrap when the source looks like a bare expression (no fn /
-// type / let at column 0).
+/// Parse-only check used by `run_doctests`. Wrapping bare-
+/// expression examples in a synthetic `__doctest_main` keeps things
+/// like `square(5)` from triggering "expression at top level"
+/// errors. Examples that declare their own top-level fns are left
+/// alone via `source_has_top_decl`.
 fn doctest_check(source: string) -> bool {
     let wrapped = wrap_doctest_source(source)
     let parsed = parse_program_source(wrapped)
     !parsed.had_error && parsed.stmts != null
 }
 
+/// Wrap a bare-expression doctest source in a synthetic main fn so
+/// the parser treats it as a valid program. No-op when `source`
+/// already contains a top-level decl.
 fn wrap_doctest_source(source: string) -> string {
     if source_has_top_decl(source) {
         return source
@@ -1173,9 +1330,9 @@ fn wrap_doctest_source(source: string) -> string {
     "fn __doctest_main() {\n${source}\n}\n"
 }
 
-// True if any non-comment line starts with a top-level decl keyword.
-// Cheap heuristic — false negatives just mean we wrap the example,
-// which is harmless for fn-only examples.
+/// True when any non-comment line starts with a top-level decl
+/// keyword. Cheap heuristic — false negatives just mean we wrap
+/// the example, which is harmless for fn-only examples.
 fn source_has_top_decl(source: string) -> bool {
     for raw in source.split("\n") {
         let line = raw.trim()
@@ -1215,6 +1372,19 @@ fn source_has_top_decl(source: string) -> bool {
 // First non-blank, non-directive paragraph becomes the summary. The
 // rest accumulates as the body for renderers that want the whole tail.
 
+/// Parsed structure of a `///` block. Renderers use this so they
+/// can format summary, params, returns, examples, and metadata
+/// distinctly. Free-form prose still works — anything not
+/// recognised as a directive rolls into `body`.
+///
+/// @field summary    — first non-blank, non-directive paragraph.
+/// @field body       — remaining prose after the summary.
+/// @field params     — `@param NAME DESC` lines.
+/// @field returns    — `@returns DESC` text.
+/// @field examples   — fenced ```avra``` example bodies.
+/// @field see        — `@see PATH` cross-references.
+/// @field since      — `@since VERSION` value.
+/// @field deprecated — `@deprecated REASON` value.
 export type DocBlock = {
     summary: string,
     body: string,
@@ -1226,6 +1396,8 @@ export type DocBlock = {
     deprecated: string
 }
 
+/// Build a zeroed DocBlock — the parser uses this as its starting
+/// point and fills in fields as it reads each directive line.
 export fn empty_doc_block() -> DocBlock {
     DocBlock {
         summary: "",
@@ -1239,6 +1411,10 @@ export fn empty_doc_block() -> DocBlock {
     }
 }
 
+/// Parse a /// body into a structured DocBlock. Recognises every
+/// directive listed in the section header above; everything else
+/// rolls into `summary` (until the first blank line) or `body`.
+/// Fenced code blocks open with ```` ``` ```` and close on the next ```` ``` ````.
 export fn parse_doc(text: string) -> DocBlock {
     if text == "" { return empty_doc_block() }
     mut block = empty_doc_block()
@@ -1328,6 +1504,10 @@ export fn parse_doc(text: string) -> DocBlock {
     block
 }
 
+/// Render a parsed DocBlock to stdout. Sections appear only when
+/// non-empty: summary, body, parameters, returns, examples, see-
+/// also, since, deprecated. The full DocsCorpus is passed in so
+/// `@see` references can be resolved.
 fn render_doc_block(block: DocBlock, docs: SymList) {
     if block.summary != "" {
         println("")

@@ -20,6 +20,12 @@
 use core.runtime.{avra_selfhost_read_file, avra_selfhost_write_file}
 use @std.lsp.{Sym, SymKind}
 
+/// Outcome of a `gen_apply` run.
+///
+/// @field stub    — the rendered stub that would have been inserted.
+/// @field skipped — true when the line above the decl already had `///`.
+/// @field reason  — human-readable why for `skipped == true`.
+/// @field error   — non-empty when read/write failed; otherwise "".
 export type GenStubResult = {
     stub: string,
     skipped: bool,
@@ -29,6 +35,10 @@ export type GenStubResult = {
 
 // ── Public formatter ─────────────────────────────────────────────────
 
+/// Render a /// stub for any `Sym`. Dispatches to per-kind helpers
+/// (`stub_for_fn`, `stub_for_type`, `stub_for_enum`); falls back to
+/// a single `/// summary` line for kinds that don't carry parsed
+/// metadata yet.
 export fn gen_stub_for_sym(s: Sym) -> string {
     match s.kind {
         .Fn(sig, ret) -> stub_for_fn(sig, ret)
@@ -47,6 +57,10 @@ export fn gen_stub_for_sym(s: Sym) -> string {
 
 // ── Per-kind formatters ──────────────────────────────────────────────
 
+/// Render a fn-shaped stub from its signature + return type.
+/// Always emits a leading `/// summary`; appends one `/// @param`
+/// line per declared param (skipping `self`) and a `/// @returns`
+/// line when the return type isn't void.
 fn stub_for_fn(sig: string, ret: string) -> string {
     mut out = "/// summary\n"
     let params = parse_param_names(sig)
@@ -57,6 +71,8 @@ fn stub_for_fn(sig: string, ret: string) -> string {
     out
 }
 
+/// Render a struct-shaped stub from a rendered `type` decl.
+/// Emits `/// summary` plus one `/// @field` line per field.
 fn stub_for_type(rendered: string) -> string {
     mut out = "/// summary\n"
     let fields = parse_field_names(rendered)
@@ -64,6 +80,9 @@ fn stub_for_type(rendered: string) -> string {
     out
 }
 
+/// Render an enum-shaped stub. Includes a `/// variants:` line
+/// listing the variant names, since they're typically discoverable
+/// only by reading the source.
 fn stub_for_enum(variants_csv: string) -> string {
     if variants_csv == "" { return "/// summary\n" }
     "/// summary\n/// variants: ${variants_csv}\n"
@@ -77,6 +96,10 @@ fn stub_for_enum(variants_csv: string) -> string {
 // inside angle brackets and parens are skipped via depth tracking so
 // `List<Map<K,V>>` inside a parameter type doesn't fool the splitter.
 
+/// Pull just the parameter names out of a rendered signature like
+/// `"fn process(events: List<Event>, retry: bool) -> Result<int, IoError>"`.
+/// Type-args inside `<...>`, `(...)`, `[...]` are skipped via depth
+/// tracking so `List<Map<K, V>>` doesn't fragment.
 fn parse_param_names(sig: string) -> StringList {
     let lparen = sig.index_of("(")
     if lparen < 0 { return StringList.End }
@@ -89,6 +112,8 @@ fn parse_param_names(sig: string) -> StringList {
         .filter((n) -> n != "" && n != "self")
 }
 
+/// Extract the name from a single `name: type` segment. Strips a
+/// leading `mut ` modifier so `mut count: int` returns `count`.
 fn param_name_of(seg: string) -> string {
     let trimmed = trim_str(seg)
     let colon = trimmed.index_of(":")
@@ -97,6 +122,8 @@ fn param_name_of(seg: string) -> string {
     if name.starts_with("mut ") { trim_str(name.substring(4, name.length)) } else { name }
 }
 
+/// Render `/// @param <name> description` for every name in
+/// `params`. Output ends with a trailing newline.
 fn render_param_lines(params: StringList) -> string {
     match params {
         .End -> ""
@@ -104,6 +131,8 @@ fn render_param_lines(params: StringList) -> string {
     }
 }
 
+/// Pull the field names out of a rendered `type Foo = { ... }`
+/// decl, using the same depth-aware splitter as `parse_param_names`.
 fn parse_field_names(rendered: string) -> StringList {
     let lbrace = rendered.index_of("{")
     if lbrace < 0 { return StringList.End }
@@ -116,6 +145,8 @@ fn parse_field_names(rendered: string) -> StringList {
         .filter((n) -> n != "")
 }
 
+/// Right-to-left substring search. Returns the byte index of the
+/// rightmost occurrence of `needle` in `s`, or `-1` when absent.
 fn last_index_of_str(s: string, needle: string) -> int {
     if needle.length == 0 || s.length == 0 { return -1 }
     mut i = s.length - needle.length
@@ -126,6 +157,8 @@ fn last_index_of_str(s: string, needle: string) -> int {
     -1
 }
 
+/// Render `/// @field <name> description` for every name in
+/// `fields`. Output ends with a trailing newline.
 fn render_field_lines(fields: StringList) -> string {
     match fields {
         .End -> ""
@@ -135,6 +168,8 @@ fn render_field_lines(fields: StringList) -> string {
 
 // ── Tiny string helpers ──────────────────────────────────────────────
 
+/// Local linked-list-of-string used by the gen helpers. Kept
+/// internal to avoid a polluting cross-module type.
 enum StringList {
     End
     Node(value: string, next: StringList)
@@ -159,9 +194,9 @@ impl StringList {
     }
 }
 
-// Split `s` on `sep` at depth-0 only — angle brackets `<...>` and
-// parens `(...)` are skipped over so generic type args don't fragment
-// a single param. Returns segments in source order.
+/// Split `s` on `sep` at depth-0 only — angle brackets `<...>` and
+/// parens `(...)` are skipped over so generic type args don't
+/// fragment a single param. Returns segments in source order.
 fn split_top_level(s: string, sep: string) -> StringList {
     mut segs = StringList.End
     mut start = 0
@@ -183,8 +218,9 @@ fn split_top_level(s: string, sep: string) -> StringList {
     reverse_string_list(segs)
 }
 
-// Find the index of the closing `)` matching the `(` at `open_idx`.
-// Counts angle/square nesting separately so `fn(x: List<int>)` works.
+/// Find the byte index of the closing `)` matching the `(` at
+/// `open_idx`. Tracks paren-only depth so `fn(x: List<int>)` works
+/// (the `>` doesn't affect paren depth).
 fn matching_close(s: string, open_idx: int) -> int {
     mut depth = 1
     mut i = open_idx + 1
@@ -200,10 +236,13 @@ fn matching_close(s: string, open_idx: int) -> int {
     -1
 }
 
+/// In-place reverse of a StringList. Used by `split_top_level` to
+/// flip its prepend-built result back into source order.
 fn reverse_string_list(list: StringList) -> StringList {
     reverse_string_list_acc(list, StringList.End)
 }
 
+/// Tail-recursive helper for `reverse_string_list`.
 fn reverse_string_list_acc(list: StringList, acc: StringList) -> StringList {
     match list {
         .End -> acc
@@ -211,6 +250,9 @@ fn reverse_string_list_acc(list: StringList, acc: StringList) -> StringList {
     }
 }
 
+/// Strip leading/trailing spaces and tabs. Local copy because
+/// `core` doesn't expose a `trim_str` and pulling in `@std/strings`
+/// would create an import cycle here.
 fn trim_str(s: string) -> string {
     mut start = 0
     while start < s.length && (s[start] == " " || s[start] == "\t") {
@@ -225,6 +267,10 @@ fn trim_str(s: string) -> string {
 
 // ── File I/O — read, insert, write ───────────────────────────────────
 
+/// Read `file`, insert `stub` immediately before `line`, write the
+/// file back. Idempotent: when the line above the decl already
+/// starts with `///`, returns `skipped: true` without touching the
+/// file. Errors propagate via `error: ...`.
 export fn gen_apply(file: string, line: int, stub: string) -> GenStubResult {
     let content = avra_selfhost_read_file(file)
     if content == "" {
@@ -240,8 +286,9 @@ export fn gen_apply(file: string, line: int, stub: string) -> GenStubResult {
     GenStubResult { stub, skipped: false, reason: "", error: "" }
 }
 
-// True when the line immediately preceding `line` (1-indexed) is
-// already a /// doc comment. Idempotent guard for repeat --gen runs.
+/// True when the line immediately preceding `line` (1-indexed) is
+/// already a `///` doc comment. Idempotent guard for repeat
+/// `--gen` runs and for editor batch invocations.
 export fn already_documented(content: string, line: int) -> bool {
     if line <= 1 { return false }
     let prior = line_at(content, line - 1)
@@ -249,8 +296,10 @@ export fn already_documented(content: string, line: int) -> bool {
     trimmed.starts_with("///")
 }
 
-// Insert `stub` so its first character lands at the start of `line`
-// (1-indexed). Existing content from that line onward shifts down.
+/// Insert `stub` so its first character lands at the start of
+/// `line` (1-indexed). Existing content from that line onward
+/// shifts down. Re-indents `stub` to match the leading whitespace
+/// of the existing line so the doc comment aligns with the decl.
 export fn insert_at_line(content: string, line: int, stub: string) -> string {
     if line <= 1 {
         return stub + content
@@ -262,9 +311,9 @@ export fn insert_at_line(content: string, line: int, stub: string) -> string {
     content.substring(0, pos) + indented + content.substring(pos, content.length)
 }
 
-// Indent every non-empty line of `stub` with `pad`. The trailing
-// newline of `stub` is preserved so the next line of source aligns
-// at the same indent as the decl we annotated.
+/// Indent every non-empty line of `stub` with `pad`. The trailing
+/// newline of `stub` is preserved so the next line of source
+/// aligns at the same indent as the decl we annotated.
 fn indent_stub(stub: string, pad: string) -> string {
     if pad == "" { return stub }
     mut out = ""
@@ -285,6 +334,9 @@ fn indent_stub(stub: string, pad: string) -> string {
     out
 }
 
+/// Return the run of spaces / tabs that starts at byte offset
+/// `pos`. Used to mirror the existing line's indent when inserting
+/// a doc-comment stub above it.
 fn leading_indent_of(content: string, pos: int) -> string {
     mut end = pos
     while end < content.length && (content[end] == " " || content[end] == "\t") {
@@ -293,6 +345,8 @@ fn leading_indent_of(content: string, pos: int) -> string {
     content.substring(pos, end)
 }
 
+/// Extract the contents of `line` (1-based) without the trailing
+/// newline. Returns "" for out-of-range line numbers.
 fn line_at(content: string, line: int) -> string {
     let start = byte_offset_of_line(content, line)
     if start < 0 { return "" }
@@ -301,6 +355,9 @@ fn line_at(content: string, line: int) -> string {
     content.substring(start, end)
 }
 
+/// Convert a 1-based line number to its byte offset in `content`.
+/// Returns -1 when `line` exceeds the file's line count, 0 when
+/// `line == 1`.
 fn byte_offset_of_line(content: string, line: int) -> int {
     if line <= 1 { return 0 }
     mut cur_line = 1
@@ -315,6 +372,8 @@ fn byte_offset_of_line(content: string, line: int) -> int {
     -1
 }
 
+/// Find the byte offset of the first `\n` at or after `from`.
+/// Returns -1 when none — the caller treats that as "rest of file".
 fn next_newline(content: string, from: int) -> int {
     mut i = from
     while i < content.length {

@@ -7,15 +7,26 @@ use @std.json.{json_escape}
 
 // ── ANSI colors ──
 
+/// Wrap `s` in bold-red ANSI escapes. Used for error severity.
 fn color_red(s: string) -> string { "\x1b[1;31m${s}\x1b[0m" }
+/// Wrap `s` in bold-yellow ANSI escapes. Used for warnings.
 fn color_yellow(s: string) -> string { "\x1b[1;33m${s}\x1b[0m" }
+/// Wrap `s` in bold-cyan ANSI escapes. Used for info severity.
 fn color_cyan(s: string) -> string { "\x1b[1;36m${s}\x1b[0m" }
+/// Wrap `s` in bold ANSI escapes. Used for header text.
 fn color_bold(s: string) -> string { "\x1b[1m${s}\x1b[0m" }
+/// Wrap `s` in dim ANSI escapes. Used for file path footers.
 fn color_dim(s: string) -> string { "\x1b[2m${s}\x1b[0m" }
+/// Wrap `s` in bold-blue ANSI escapes. Used for hint severity.
 fn color_blue(s: string) -> string { "\x1b[1;34m${s}\x1b[0m" }
+/// Wrap `s` in gray ANSI escapes. Used for box-drawing chrome.
 fn color_gray(s: string) -> string { "\x1b[90m${s}\x1b[0m" }
+/// Wrap `s` in bold-magenta ANSI escapes. Reserved for special accents.
 fn color_magenta(s: string) -> string { "\x1b[1;35m${s}\x1b[0m" }
 
+/// Wrap `text` in the colour matching `sev` — red errors, yellow
+/// warnings, cyan info, blue hints. The single dispatch point so
+/// adding a new severity only requires one new arm.
 fn severity_color(sev: Severity, text: string) -> string {
     match sev {
         .Error -> color_red(text)
@@ -25,6 +36,8 @@ fn severity_color(sev: Severity, text: string) -> string {
     }
 }
 
+/// Pick the leading severity glyph: × for errors, ⚠ for warnings,
+/// `i` for info, ☞ for hints. Returned already-coloured.
 fn severity_symbol(sev: Severity) -> string {
     match sev {
         .Error -> color_red("\xc3\x97")      // × (U+00D7)
@@ -36,16 +49,31 @@ fn severity_symbol(sev: Severity) -> string {
 
 // ── Unicode box drawing ──
 
-fn chr_vbar() -> string { "\xe2\x94\x82" }         // │ U+2502
-fn chr_hbar() -> string { "\xe2\x94\x80" }         // ─ U+2500
-fn chr_ltop() -> string { "\xe2\x95\xad" }         // ╭ U+256D
-fn chr_lbot() -> string { "\xe2\x95\xb0" }         // ╰ U+2570
-fn chr_rbot() -> string { "\xe2\x95\xaf" }         // ╯ U+256F
-fn chr_caret() -> string { "\xe2\x94\xac" }        // ┬ U+252C
-fn chr_dot() -> string { "\xc2\xb7" }              // · U+00B7
+/// Vertical bar `│` (U+2502). Gutter separator between line numbers
+/// and source.
+fn chr_vbar() -> string { "\xe2\x94\x82" }
+/// Horizontal bar `─` (U+2500). Frame top/bottom and underline
+/// segments.
+fn chr_hbar() -> string { "\xe2\x94\x80" }
+/// Left-top corner `╭` (U+256D). Opening corner of the diagnostic
+/// frame.
+fn chr_ltop() -> string { "\xe2\x95\xad" }
+/// Left-bottom corner `╰` (U+2570). Caret-to-message connector.
+fn chr_lbot() -> string { "\xe2\x95\xb0" }
+/// Right-bottom corner `╯` (U+256F). Closing corner of the frame.
+fn chr_rbot() -> string { "\xe2\x95\xaf" }
+/// Caret marker `┬` (U+252C). Centerpoint of the underline.
+fn chr_caret() -> string { "\xe2\x94\xac" }
+/// Middle-dot `·` (U+00B7). Used in the gutter for non-source
+/// annotation lines.
+fn chr_dot() -> string { "\xc2\xb7" }
 
 // ── Line extraction ──
 
+/// Pull the `target`-th line (1-based) out of `source`, excluding
+/// the trailing newline. Returns `""` when the file has fewer lines
+/// than `target` — the renderer treats that as "no source available"
+/// and skips the source frame.
 fn extract_line(source: string, target: int) -> string {
     if target <= 0 { return "" }
     mut line_num = 1
@@ -67,6 +95,8 @@ fn extract_line(source: string, target: int) -> string {
     ""
 }
 
+/// Repeat a string `n` times, concatenating. Returns `""` for
+/// non-positive `n`. Helper for padding and bar-drawing.
 fn repeat_char(ch: string, n: int) -> string {
     if n <= 0 { return "" }
     mut out = ""
@@ -76,16 +106,22 @@ fn repeat_char(ch: string, n: int) -> string {
     out
 }
 
+/// Sugar for `repeat_char(chr_hbar(), n)` — common enough to warrant
+/// its own name.
 fn repeat_hbar(n: int) -> string {
     repeat_char(chr_hbar(), n)
 }
 
+/// Right-align a line number into a `width`-wide field of spaces.
+/// Used to keep multi-line source listings cleanly aligned.
 fn gutter(line: int, width: int) -> string {
     let s = string(line)
     let pad = width - s.length
     repeat_char(" ", pad) + s
 }
 
+/// Pick the gutter field width: at least 3 chars (so single-digit
+/// lines stay visually consistent), or wider for big files.
 fn gutter_width(line: int) -> int {
     let s = string(line)
     if s.length < 3 { return 3 }
@@ -94,6 +130,11 @@ fn gutter_width(line: int) -> int {
 
 // ── Single diagnostic rendering ──
 
+/// Render one Diagnostic to stderr with full source context — header
+/// (`× error[F0010]: …`), Unicode box frame around the source line,
+/// caret + underline at the offending span, the help text, and any
+/// `caused by:` chain. Skips the source frame when span is dummy
+/// (`line == 0`) or extraction fails.
 export fn render_diagnostic(source: string, filename: string, diag: Diagnostic) {
     let line = diag.span.line
     let col = diag.span.col
@@ -186,6 +227,10 @@ export fn render_diagnostic(source: string, filename: string, diag: Diagnostic) 
 
 // ── Bag rendering ──
 
+/// Render every Diagnostic in a DiagnosticBag, then print a
+/// `Found N error(s) and M warning(s).` summary footer when the bag
+/// is non-empty. Errors print first, then up to 10 warnings (the
+/// rest are summarised in the footer count).
 export fn render_bag(source: string, filename: string, bag: DiagnosticBag) {
     eprintln("")
     render_list(source, filename, bag.diagnostics)
@@ -205,10 +250,17 @@ export fn render_bag(source: string, filename: string, bag: DiagnosticBag) {
     }
 }
 
+/// True when the linked list has hit its End sentinel. Used by the
+/// iterative renderer below to walk the list without recursion (so
+/// large bags don't risk a stack overflow).
 fn diag_list_is_end(list: DiagnosticList) -> bool {
     match list { .End -> true, _ -> false }
 }
 
+/// Render a DiagnosticList in two iterative passes: errors first,
+/// then warnings (capped at 10). Two passes — instead of one merged
+/// pass — so users see all hard errors above any noise from
+/// warnings when scrolling output.
 fn render_list(source: string, filename: string, list: DiagnosticList) {
     // Iterative two-pass rendering — no stack overflow regardless of count.
     // Pass 1: all errors
@@ -244,6 +296,10 @@ fn render_list(source: string, filename: string, list: DiagnosticList) {
 // `json_escape` is imported from @std/json — there's no longer a
 // local copy.
 
+/// Emit a single Diagnostic as a one-line JSON object on stderr.
+/// Schema: `{code, severity, message, file, line, col, help,
+/// confidence}`. Used by `--diagnostic-format=json` for machine-
+/// readable output (LSP, CI tooling).
 export fn render_diagnostic_json(filename: string, diag: Diagnostic) {
     let code_str = diag_code_str(diag.code)
     let sev = severity_str(diag.severity)
@@ -256,6 +312,8 @@ export fn render_diagnostic_json(filename: string, diag: Diagnostic) {
     eprintln("{\"code\":\"${code_str}\",\"severity\":\"${sev}\",\"message\":\"${msg}\",\"file\":\"${fname}\",\"line\":${line_s},\"col\":${col_s},\"help\":\"${hlp}\",\"confidence\":\"${conf}\"}")
 }
 
+/// Emit every Diagnostic in a bag as ND-JSON (one object per line).
+/// Iterative loop, no recursion — large bags don't blow the stack.
 export fn render_bag_json(filename: string, bag: DiagnosticBag) {
     mut cur = bag.diagnostics
     while !diag_list_is_end(cur) {

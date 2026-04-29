@@ -19,17 +19,25 @@
 
 use core.runtime.{avra_selfhost_levenshtein}
 
+/// Edit distance between two strings, computed by the C runtime.
+/// Used as the last-resort tier in `suggest_score` (≤ 2 edits scores
+/// 200; everything beyond doesn't suggest at all).
 export fn levenshtein(a: string, b: string) -> int {
     avra_selfhost_levenshtein(a, b, a.length, b.length)
 }
 
+/// Linked list of candidate names fed into `suggest_similar_from_list`.
+/// Caller-built; the suggester doesn't allocate.
 enum StringList {
     End
     Node(value: string, next: StringList)
 }
 
-// Score a single (query, candidate) pair using the same composed
-// scorer as @std/lsp. Pure: same inputs always produce the same int.
+/// Score a single `(query, candidate)` pair with the same composed
+/// scorer as `@std/lsp`. Pure: same inputs always produce the same
+/// int. Scoring tiers (highest first): 1000 exact, 800 case-
+/// insensitive, 600 prefix (penalised by length-diff), 400
+/// subsequence, 300 substring, 200 Levenshtein ≤ 2, 0 otherwise.
 fn suggest_score(query: string, candidate: string) -> int {
     if query == candidate {
         return 1000
@@ -59,6 +67,9 @@ fn suggest_score(query: string, candidate: string) -> int {
     0
 }
 
+/// True when every character of `needle` appears in order somewhere
+/// in `haystack` (e.g. "iu" is a subsequence of "init_user"). The
+/// classic abbreviation-match heuristic.
 fn suggest_is_subsequence(needle: string, haystack: string) -> bool {
     if needle.length == 0 { return true }
     mut ni = 0
@@ -75,12 +86,16 @@ fn suggest_is_subsequence(needle: string, haystack: string) -> bool {
     false
 }
 
-// Find the closest match to `name` among `candidates`, or empty
-// string if no candidate scores above the suggestion threshold.
+/// Find the closest match to `name` among `candidates`, or `""` if
+/// nothing scores above the suggestion threshold (199 — silence
+/// beats a misleading "did you mean?").
 export fn suggest_similar_from_list(name: string, candidates: StringList) -> string {
     find_best_scored(name, candidates, "", 199)
 }
 
+/// Recursive worker for `suggest_similar_from_list`. Tracks the
+/// best-scoring candidate so far, updating only when we strictly
+/// beat the previous score.
 fn find_best_scored(name: string, candidates: StringList, best: string, best_score: int) -> string {
     match candidates {
         .End -> best
