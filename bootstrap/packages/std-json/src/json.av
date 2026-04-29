@@ -55,10 +55,16 @@ export fn json_unescape_char(c: string) -> string {
 /// literal. Does NOT add the surrounding quotes — call `json_str` for
 /// that.
 export fn json_escape(s: string) -> string {
+    map_chars(s, json_escape_char)
+}
+
+/// Walk `s` char-by-char, applying `f` to each. Shared helper for any
+/// "encode every char with a substitution table" pass.
+export fn map_chars(s: string, f: fn(string) -> string) -> string {
     mut out = ""
     mut i = 0
     while i < s.length {
-        out = "${out}${json_escape_char(s.substring(i, i + 1))}"
+        out = "${out}${f(s.substring(i, i + 1))}"
         i = i + 1
     }
     out

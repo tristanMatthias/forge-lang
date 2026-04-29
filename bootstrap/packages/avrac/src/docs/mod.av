@@ -180,64 +180,39 @@ fn append_syms(a: DocSymList, b: DocSymList) -> DocSymList {
 
 // ── List helpers ────────────────────────────────────────────────────
 
-fn count_kind(list: DocSymList, kind: int) -> int {
+// One traversal helper for every "count items matching predicate"
+// case. Replaces four near-identical loops with four one-line
+// closures. Predicate is a closure so each call site states its
+// rule inline.
+fn count_doc_syms(list: DocSymList, pred: fn(DocSym) -> bool) -> int {
     mut cur = list
     mut n = 0
     while true {
         match cur {
             .End -> return n
             .Node(item, next) -> {
-                if item.kind == kind { n = n + 1 }
+                if pred(item) { n = n + 1 }
                 cur = next
             }
         }
     }
     n
+}
+
+fn count_kind(list: DocSymList, kind: int) -> int {
+    count_doc_syms(list, (item: DocSym) -> item.kind == kind)
 }
 
 fn count_total(list: DocSymList) -> int {
-    mut cur = list
-    mut n = 0
-    while true {
-        match cur {
-            .End -> return n
-            .Node(_, next) -> {
-                n = n + 1
-                cur = next
-            }
-        }
-    }
-    n
+    count_doc_syms(list, (_: DocSym) -> true)
 }
 
 fn count_documented(list: DocSymList) -> int {
-    mut cur = list
-    mut n = 0
-    while true {
-        match cur {
-            .End -> return n
-            .Node(item, next) -> {
-                if item.doc != "" { n = n + 1 }
-                cur = next
-            }
-        }
-    }
-    n
+    count_doc_syms(list, (item: DocSym) -> item.doc != "")
 }
 
 fn count_documented_kind(list: DocSymList, kind: int) -> int {
-    mut cur = list
-    mut n = 0
-    while true {
-        match cur {
-            .End -> return n
-            .Node(item, next) -> {
-                if item.kind == kind && item.doc != "" { n = n + 1 }
-                cur = next
-            }
-        }
-    }
-    n
+    count_doc_syms(list, (item: DocSym) -> item.kind == kind && item.doc != "")
 }
 
 // ── Overview ────────────────────────────────────────────────────────
@@ -537,20 +512,8 @@ export fn show_search(query: string, docs: DocSymList) {
 }
 
 fn count_search_hits(list: DocSymList, q: string, kind: int) -> int {
-    mut cur = list
-    mut n = 0
-    while true {
-        match cur {
-            .End -> return n
-            .Node(item, next) -> {
-                if item.kind == kind && score_match(item.name, item.doc, q) > 0 {
-                    n = n + 1
-                }
-                cur = next
-            }
-        }
-    }
-    n
+    count_doc_syms(list,
+        (item: DocSym) -> item.kind == kind && score_match(item.name, item.doc, q) > 0)
 }
 
 fn print_search_kind(list: DocSymList, q: string, kind: int) {

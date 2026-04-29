@@ -1583,40 +1583,55 @@ fn encode_sym(s: Sym) -> string {
 // Tabs and newlines inside doc/sig bodies break the TSV row format.
 // Replace them with literal `\t` and `\n` two-char sequences; the
 // loader does the inverse.
+fn tsv_escape_char(ch: string) -> string {
+    match ch {
+        "\t" -> "\\t"
+        "\n" -> "\\n"
+        _ -> ch
+    }
+}
+
 fn escape_field(s: string) -> string {
+    map_chars(s, tsv_escape_char)
+}
+
+// Walk `s` char-by-char, applying `f` to each. Shared helper for
+// json_escape, escape_field, and any other "encode every char with
+// a substitution table" pass.
+fn map_chars(s: string, f: fn(string) -> string) -> string {
     mut out = ""
     mut i = 0
     while i < s.length {
-        let ch = s.substring(i, i + 1)
-        if ch == "\t" {
-            out = "${out}\\t"
-        } else if ch == "\n" {
-            out = "${out}\\n"
-        } else {
-            out = "${out}${ch}"
-        }
+        out = "${out}${f(s.substring(i, i + 1))}"
         i = i + 1
     }
     out
 }
 
+fn tsv_unescape_char(c: string) -> string {
+    match c {
+        "t" -> "\t"
+        "n" -> "\n"
+        _ -> c
+    }
+}
+
 fn unescape_field(s: string) -> string {
+    decode_escaped(s, tsv_unescape_char)
+}
+
+// Walk `s`, copying chars literally except for `\X` pairs which are
+// passed through `decoder`. Shared with the JSON decoder below — the
+// only difference between TSV and JSON is which character maps where.
+fn decode_escaped(s: string, decoder: fn(string) -> string) -> string {
     mut out = ""
     mut i = 0
     while i < s.length {
         let ch = s.substring(i, i + 1)
         if ch == "\\" && i + 1 < s.length {
-            let nxt = s.substring(i + 1, i + 2)
-            if nxt == "t" {
-                out = "${out}\t"
-                i = i + 2
-                continue
-            }
-            if nxt == "n" {
-                out = "${out}\n"
-                i = i + 2
-                continue
-            }
+            out = "${out}${decoder(s.substring(i + 1, i + 2))}"
+            i = i + 2
+            continue
         }
         out = "${out}${ch}"
         i = i + 1
@@ -1837,13 +1852,7 @@ fn json_escape_char(ch: string) -> string {
 
 /// Escape a string for JSON. Mirrors @std/json.json_escape.
 export fn json_escape(s: string) -> string {
-    mut out = ""
-    mut i = 0
-    while i < s.length {
-        out = "${out}${json_escape_char(s.substring(i, i + 1))}"
-        i = i + 1
-    }
-    out
+    map_chars(s, json_escape_char)
 }
 
 /// JSON string literal: surrounded by double quotes, body escaped.
