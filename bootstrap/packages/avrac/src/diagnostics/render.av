@@ -3,6 +3,7 @@
 // symbols), Roc (Unicode separators), and codespan (connecting carets).
 
 use diagnostics.{Diagnostic, DiagnosticBag, DiagnosticList, DiagnosticCause, Span, Severity, severity_str, diag_code_str, confidence_str}
+use @std.json.{json_escape}
 
 // ── ANSI colors ──
 
@@ -240,24 +241,8 @@ fn render_list(source: string, filename: string, list: DiagnosticList) {
 
 // ── JSON diagnostic output (ticket d2e) ──
 // Outputs one JSON object per line to stderr.
-
-fn json_escape(s: string) -> string {
-    // Minimal JSON escaping: backslash and double-quote.
-    mut out = ""
-    for i in 0..s.length {
-        let ch = s[i]
-        if ch == "\\" {
-            out = out + "\\\\"
-        } else if ch == "\"" {
-            out = out + "\\\""
-        } else if ch == "\n" {
-            out = out + "\\n"
-        } else {
-            out = out + ch
-        }
-    }
-    out
-}
+// `json_escape` is imported from @std/json — there's no longer a
+// local copy.
 
 export fn render_diagnostic_json(filename: string, diag: Diagnostic) {
     let code_str = diag_code_str(diag.code)

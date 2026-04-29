@@ -25,6 +25,24 @@
 // back into span.av / graph.av / corpus.av / query.av — the section
 // boundaries are already aligned for that.
 
+// JSON helpers (json_escape, json_str, jsonrpc_response/error,
+// json_extract_string/int, json_value_start, json_escape_char,
+// json_unescape_char) live in this file. They duplicate the
+// canonical algorithm in @std/json deliberately:
+//
+// The bootstrap module resolver dedupes the second `use @std.json`
+// it encounters across packages — only the first importer gets the
+// bindings injected into its scope. Diagnostics/render.av imports
+// @std/json for the compiler-side json_escape; if @std.lsp also
+// imported @std.json, whichever loaded second would silently lose
+// every helper it asked for. Duplicating the algorithm side-steps
+// the bug. The two implementations are kept in sync by hand —
+// when one changes, update the other.
+//
+// User-facing consumers of JSON (any new code) should import
+// @std/json. @std.lsp's internal json_* are private to the LSP
+// protocol layer.
+
 // ╔═══════════════════════════════════════════════════════════════════╗
 // ║                              SPAN                                 ║
 // ╚═══════════════════════════════════════════════════════════════════╝
@@ -1817,9 +1835,7 @@ fn json_escape_char(ch: string) -> string {
     }
 }
 
-/// Escape a string for JSON: `"`, `\`, `\n`, `\r`, `\t` get the
-/// canonical backslash forms. Non-ASCII passes through unchanged
-/// (LSP allows utf-8 directly inside JSON strings).
+/// Escape a string for JSON. Mirrors @std/json.json_escape.
 export fn json_escape(s: string) -> string {
     mut out = ""
     mut i = 0
@@ -1831,37 +1847,28 @@ export fn json_escape(s: string) -> string {
 }
 
 /// JSON string literal: surrounded by double quotes, body escaped.
+/// Mirrors @std/json.json_str.
 export fn json_str(s: string) -> string {
     "\"${json_escape(s)}\""
 }
 
-/// Build a JSON-RPC success response: `{"jsonrpc":"2.0","id":<id>,"result":<body>}`.
+/// JSON-RPC success response. Mirrors @std/json.jsonrpc_response.
 export fn jsonrpc_response(id: string, result_body: string) -> string {
     "{\"jsonrpc\":\"2.0\",\"id\":${id},\"result\":${result_body}}"
 }
 
-/// JSON-RPC error response with code + message.
+/// JSON-RPC error response. Mirrors @std/json.jsonrpc_error.
 export fn jsonrpc_error(id: string, code: int, message: string) -> string {
     "{\"jsonrpc\":\"2.0\",\"id\":${id},\"error\":{\"code\":${string(code)},\"message\":${json_str(message)}}}"
 }
 
-// ── JSON field extraction ───────────────────────────────────────────
-//
-// Targeted `find this field, return its value` — enough for the LSP
-// fields we care about. Matches `"<key>":<value>` looking past
-// whitespace; doesn't handle deeply nested escaping but suffices for
-// well-formed LSP requests we see in practice.
-
 // Find the index of the first non-whitespace char of `key`'s value.
-// Returns -1 if the key is missing or has no `:` follow-up. Shared
-// preamble for json_extract_string and json_extract_int — neither
-// extractor should hand-roll this scan again.
+// Mirrors @std/json.json_value_start.
 fn json_value_start(body: string, key: string) -> int {
     let needle = "\"${key}\""
     let pos = body.index_of(needle)
     if pos < 0 { return -1 }
     mut i = pos + needle.length
-    // Skip to and past the colon.
     while i < body.length {
         let ch = body.substring(i, i + 1)
         if ch == ":" {
@@ -1870,7 +1877,6 @@ fn json_value_start(body: string, key: string) -> int {
         }
         i = i + 1
     }
-    // Skip whitespace.
     while i < body.length {
         let ch = body.substring(i, i + 1)
         if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" { break }
@@ -1880,9 +1886,6 @@ fn json_value_start(body: string, key: string) -> int {
     i
 }
 
-// Decode one JSON escape sequence (`\"`, `\\`, `\n`, `\r`, `\t`).
-// Returns the unescaped char, or the raw second char as a fallback —
-// matches what well-formed LSP requests we see in practice.
 fn json_unescape_char(c: string) -> string {
     match c {
         "\"" -> "\""
@@ -1894,8 +1897,7 @@ fn json_unescape_char(c: string) -> string {
     }
 }
 
-/// Pull a string-typed field's value out of a JSON blob. Returns ""
-/// if the field is missing or not a string.
+/// Mirrors @std/json.json_extract_string.
 export fn json_extract_string(body: string, key: string) -> string {
     mut i = json_value_start(body, key)
     if i < 0 { return "" }
@@ -1916,7 +1918,7 @@ export fn json_extract_string(body: string, key: string) -> string {
     out
 }
 
-/// Pull a numeric-typed field's value. Returns 0 if missing.
+/// Mirrors @std/json.json_extract_int.
 export fn json_extract_int(body: string, key: string) -> int {
     mut i = json_value_start(body, key)
     if i < 0 { return 0 }

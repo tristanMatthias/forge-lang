@@ -1,0 +1,138 @@
+// @std/json round-trip + envelope shape + extraction.
+
+use @std.json.{json_escape, json_str,
+               json_escape_char, json_unescape_char,
+               json_extract_string, json_extract_int,
+               jsonrpc_response, jsonrpc_error,
+               json_object, json_array,
+               json_pairs, json_pair_add,
+               json_items, json_item_add}
+
+spec "@std/json: per-char escape table" {
+    given "json_escape_char" {
+        then "double-quote becomes backslash-double-quote" {
+            json_escape_char("\"") == "\\\""
+        }
+        then "backslash becomes double-backslash" {
+            json_escape_char("\\") == "\\\\"
+        }
+        then "newline / carriage-return / tab get short escapes" {
+            json_escape_char("\n") == "\\n"
+                && json_escape_char("\r") == "\\r"
+                && json_escape_char("\t") == "\\t"
+        }
+        then "plain ASCII passes through" {
+            json_escape_char("a") == "a"
+        }
+    }
+    given "json_unescape_char" {
+        then "n decodes to newline; t to tab; r to carriage return" {
+            json_unescape_char("n") == "\n"
+                && json_unescape_char("t") == "\t"
+                && json_unescape_char("r") == "\r"
+        }
+        then "quote and backslash echo through" {
+            json_unescape_char("\"") == "\""
+                && json_unescape_char("\\") == "\\"
+        }
+    }
+}
+
+spec "@std/json: whole-string escape" {
+    given "json_escape" {
+        then "leaves plain ASCII alone" {
+            json_escape("hello world") == "hello world"
+        }
+        then "escapes mixed special chars" {
+            json_escape("a\"b\\c\nd") == "a\\\"b\\\\c\\nd"
+        }
+    }
+    given "json_str" {
+        then "wraps in quotes with escaped body" {
+            json_str("a\"b") == "\"a\\\"b\""
+        }
+        then "empty string round-trips as empty quoted" {
+            json_str("") == "\"\""
+        }
+    }
+}
+
+spec "@std/json: targeted field extraction" {
+    given "json_extract_string" {
+        then "pulls the first matching key" {
+            json_extract_string("{\"k\":\"v\"}", "k") == "v"
+        }
+        then "tolerates whitespace around the colon" {
+            json_extract_string("{ \"x\" :  \"y\" }", "x") == "y"
+        }
+        then "decodes inline escapes" {
+            json_extract_string("{\"k\":\"a\\\"b\\nc\"}", "k") == "a\"b\nc"
+        }
+        then "missing key returns empty" {
+            json_extract_string("{}", "missing") == ""
+        }
+    }
+    given "json_extract_int" {
+        then "pulls a positive integer" {
+            json_extract_int("{\"line\":42}", "line") == 42
+        }
+        then "pulls a negative integer" {
+            json_extract_int("{\"col\":-3}", "col") == -3
+        }
+        then "missing key returns 0" {
+            json_extract_int("{}", "x") == 0
+        }
+    }
+}
+
+spec "@std/json: JSON-RPC envelopes" {
+    given "jsonrpc_response" {
+        then "embeds id and pre-rendered result" {
+            jsonrpc_response("42", "{\"x\":1}")
+                == "{\"jsonrpc\":\"2.0\",\"id\":42,\"result\":{\"x\":1}}"
+        }
+        then "preserves a string id verbatim" {
+            jsonrpc_response("\"abc\"", "null")
+                == "{\"jsonrpc\":\"2.0\",\"id\":\"abc\",\"result\":null}"
+        }
+    }
+    given "jsonrpc_error" {
+        then "carries code and message" {
+            let e = jsonrpc_error("1", -32601, "Method not found")
+            e.contains("-32601") == true && e.contains("Method not found") == true
+        }
+        then "escapes the message body" {
+            let e = jsonrpc_error("1", -32602, "bad \"input\"")
+            e.contains("\\\"input\\\"") == true
+        }
+    }
+}
+
+spec "@std/json: document builders" {
+    given "json_object" {
+        then "renders an empty object as {}" {
+            json_object(json_pairs()) == "{}"
+        }
+        then "renders a single pair" {
+            let pairs = json_pair_add(json_pairs(), "k", json_str("v"))
+            json_object(pairs) == "{\"k\":\"v\"}"
+        }
+        then "joins multiple pairs with commas" {
+            let p1 = json_pair_add(json_pairs(), "second", "2")
+            let p2 = json_pair_add(p1, "first", "1")
+            // Insertion-prepended; render in insertion order
+            json_object(p2) == "{\"first\":1,\"second\":2}"
+        }
+    }
+    given "json_array" {
+        then "renders an empty array as []" {
+            json_array(json_items()) == "[]"
+        }
+        then "renders heterogeneous items as-is" {
+            let i1 = json_item_add(json_items(), "true")
+            let i2 = json_item_add(i1, "42")
+            let i3 = json_item_add(i2, json_str("s"))
+            json_array(i3) == "[\"s\",42,true]"
+        }
+    }
+}

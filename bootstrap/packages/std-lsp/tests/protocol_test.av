@@ -2,14 +2,14 @@
 // real client integration are smoke-tested via `bs2 lsp` outside the
 // spec runner.
 
+use @std.json.{json_escape, json_str,
+                json_extract_string, json_extract_int,
+                jsonrpc_response, jsonrpc_error}
 use @std.lsp.{lsp_pos,
               SymKind, SymbolGraph, SymList,
               graph_new, graph_add, sym_new,
               CallList, calls_new,
               lsp_frame,
-              json_escape, json_str,
-              json_extract_string, json_extract_int,
-              jsonrpc_response, jsonrpc_error,
               sym_to_json, symlist_to_json,
               lsp_dispatch}
 
