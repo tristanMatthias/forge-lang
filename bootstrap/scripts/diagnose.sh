@@ -26,7 +26,12 @@ BS2_O0="$BUILD_DIR/bs2_O0"
 BS2_ASAN="$BUILD_DIR/bs2_asan"
 BS2_DEBUG="$BUILD_DIR/bs2_debug"
 BS3="$BUILD_DIR/bs3"
-SRC_DIR="$BOOTSTRAP_DIR/packages/std-avrac/src"
+# `bs2` is built from the cli package (binary entry); the lib it
+# imports lives at LIB_SRC_DIR. source_newer_than watches both so
+# any change in either layer rebuilds the seed.
+CLI_SRC_DIR="$BOOTSTRAP_DIR/packages/cli/src"
+LIB_SRC_DIR="$BOOTSTRAP_DIR/packages/std-avrac/src"
+SRC_DIR="$CLI_SRC_DIR"
 
 LLVM_PREFIX="${LLVM_PREFIX:-/opt/homebrew/opt/llvm}"
 LLVM_CONFIG="$LLVM_PREFIX/bin/llvm-config"
@@ -56,7 +61,7 @@ source_newer_than() {
   local target="$1"
   [ ! -x "$target" ] && return 0
   # Find any .av file newer than target — exits as soon as one is found.
-  [ -n "$(find "$SRC_DIR" -name '*.av' -newer "$target" -print -quit 2>/dev/null)" ]
+  [ -n "$(find "$CLI_SRC_DIR" "$LIB_SRC_DIR" -name '*.av' -newer "$target" -print -quit 2>/dev/null)" ]
 }
 
 print_help() {
@@ -69,7 +74,7 @@ USAGE
 BUILD MODES
   --build              Rebuild stage1 (host → stage1 binary) + run all stage1 tests.
   --build-runtime      Compile avra/stdlib/runtime.c → build/runtime.o.
-  --build-bs2          Compile packages/std-avrac/src/main.av with stage1 → build/bs2.
+  --build-bs2          Compile packages/cli/src/main.av with stage1 → build/bs2.
   --build-O0           Build bs2 at -O0 (no optimization) for debuggability.
                        Makes lldb usable with breakpoints and variable inspection.
                        Output: build/bs2_O0.
@@ -78,13 +83,14 @@ BUILD MODES
                        parameters. Catches null propagation at the source.
                        Output: build/bs2_debug.
   --build-bs2-asan     Same as --build-bs2 but link with -fsanitize=address.
-  --build-bs3          Compile packages/std-avrac/src/main.av with bs2 → build/bs3.
+  --build-bs3          Compile packages/cli/src/main.av with bs2 → build/bs3.
                        (The fixed-point self-host check.)
   --check-fixedpoint   Verify bs2 and bs3 emit byte-identical IR for
-                       packages/std-avrac/src/main.av. The single most important
+                       packages/cli/src/main.av. The single most important
                        self-hosting invariant — if this fails, a recent
                        commit broke the bootstrap chain. Wired into the
-                       pre-commit hook when packages/std-avrac/src/ is touched.
+                       pre-commit hook when packages/cli/src/ or
+                       packages/std-avrac/src/ is touched.
 
 RUN MODES
   --run    <file.av>   Compile <file.av> with bs2, link, run. Prints stdout.
@@ -143,7 +149,8 @@ SEED MANAGEMENT
                          a full 'make update-seed' because it skips the
                          verify-seed rebuild. Use when iterating on source.
   --seed-sigs            Compare function signatures (parameter counts)
-                         between seed/seed.ll and packages/std-avrac/src/**/*.av. Reports
+                         between seed/seed.ll and the bootstrap source
+                         (packages/cli/src and packages/std-avrac/src). Reports
                          mismatches, new functions, and removed functions.
                          Catches the most common seed staleness issue:
                          parameter count changes that cause silent corruption.
@@ -264,7 +271,7 @@ ensure_bs2() {
   ensure_seed "${1:-}"
   if [ "${1:-}" = "force" ] || source_newer_than "$BS2" \
      || [ "$SEED_LL" -nt "$BS2" ]; then
-    log "compiling packages/std-avrac/src/main.av with seed compiler"
+    log "compiling packages/cli/src/main.av with seed compiler"
     if "$SEED_BIN" compile "$SRC_DIR/main.av" >"$BUILD_DIR/bs2.codegen.log" 2>&1; then
       log "linking $BS2"
       link_ll "$SRC_DIR/main.av.ll" "$BS2" "$BUILD_DIR/bs2.link.log"
@@ -315,7 +322,7 @@ ensure_bs2_O0() {
   ensure_seed
   if source_newer_than "$BS2_O0" \
      || [ "$SEED_LL" -nt "$BS2_O0" ]; then
-    log "compiling packages/std-avrac/src/main.av with seed compiler (for -O0 build)"
+    log "compiling packages/cli/src/main.av with seed compiler (for -O0 build)"
     if ! "$SEED_BIN" compile "$SRC_DIR/main.av" >"$BUILD_DIR/bs2_O0.codegen.log" 2>&1; then
       cat "$BUILD_DIR/bs2_O0.codegen.log" >&2
       die "bs2_O0 codegen failed"
@@ -330,7 +337,7 @@ ensure_bs2_debug() {
   ensure_seed
   if source_newer_than "$BS2_DEBUG" \
      || [ "$SEED_LL" -nt "$BS2_DEBUG" ]; then
-    log "compiling packages/std-avrac/src/main.av with seed compiler (--debug-null)"
+    log "compiling packages/cli/src/main.av with seed compiler (--debug-null)"
     if ! "$SEED_BIN" compile --debug-null "$SRC_DIR/main.av" >"$BUILD_DIR/bs2_debug.codegen.log" 2>&1; then
       cat "$BUILD_DIR/bs2_debug.codegen.log" >&2
       die "bs2_debug codegen failed"
@@ -345,7 +352,7 @@ ensure_bs2_asan() {
   ensure_seed
   ensure_runtime_asan
   if [ ! -x "$BS2_ASAN" ] || [ "$BS2" -nt "$BS2_ASAN" ]; then
-    log "compiling packages/std-avrac/src/main.av with seed (for ASan)"
+    log "compiling packages/cli/src/main.av with seed (for ASan)"
     "$SEED_BIN" compile "$SRC_DIR/main.av" >"$BUILD_DIR/bs2_asan.codegen.log" 2>&1 \
       || { cat "$BUILD_DIR/bs2_asan.codegen.log" >&2; die "bs2_asan codegen failed"; }
     log "linking $BS2_ASAN with -fsanitize=address"
@@ -359,7 +366,7 @@ ensure_bs2_asan() {
 
 ensure_bs3() {
   ensure_bs2
-  log "compiling packages/std-avrac/src/main.av with bs2 → $BS3"
+  log "compiling packages/cli/src/main.av with bs2 → $BS3"
   if ! "$BS2" compile "$SRC_DIR/main.av" >"$BUILD_DIR/bs3.codegen.log" 2>&1; then
     cat "$BUILD_DIR/bs3.codegen.log" >&2
     die "bs3 codegen failed (bs2 cannot self-compile)"
@@ -533,17 +540,17 @@ mode_build_bs2_asan() { ensure_bs2_asan; ok "$BS2_ASAN"; }
 mode_build_bs3()      { ensure_bs3;      ok "$BS3"; }
 
 # Verify bootstrap reaches its self-host fixed point: bs2 and bs3 must
-# emit byte-identical IR for the same input (packages/std-avrac/src/main.av).
+# emit byte-identical IR for the same input (packages/cli/src/main.av).
 # If this fails, self-hosting is broken — the bug is somewhere between
 # bs2 and bs3 (one generation diverged from the previous).
 mode_check_fixedpoint() {
   ensure_bs2
   ensure_bs3
-  log "compiling packages/std-avrac/src/main.av with bs2"
+  log "compiling packages/cli/src/main.av with bs2"
   "$BS2" compile "$SRC_DIR/main.av" >/dev/null 2>&1 \
     || die "bs2 failed to compile bootstrap source"
   cp "$SRC_DIR/main.av.ll" "$BUILD_DIR/fp_bs2.ll"
-  log "compiling packages/std-avrac/src/main.av with bs3"
+  log "compiling packages/cli/src/main.av with bs3"
   "$BS3" compile "$SRC_DIR/main.av" >/dev/null 2>&1 \
     || die "bs3 failed to compile bootstrap source"
   cp "$SRC_DIR/main.av.ll" "$BUILD_DIR/fp_bs3.ll"

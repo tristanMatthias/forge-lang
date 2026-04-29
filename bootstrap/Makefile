@@ -4,8 +4,13 @@
 # It builds from a checked-in LLVM IR seed (seed/seed.ll).
 #
 # Pipeline:
-#   seed/seed.ll → llc + cc → seed binary → compiles packages/std-avrac/src/ → bs2
-#   bs2 → compiles packages/std-avrac/src/ → bs3 (must match bs2 = fixed point)
+#   seed/seed.ll → llc + cc → seed binary → compiles packages/cli/src/main.av → bs2
+#   bs2 → compiles packages/cli/src/main.av → bs3 (must match bs2 = fixed point)
+#
+# `cli` is the binary entry; it imports `@std.avrac` (the compiler
+# library) and wires it to argv via `@std.cli`. LIB_SRC_DIR
+# (packages/std-avrac/src) is hashed into the seed alongside the
+# cli sources so the seed records both layers' provenance.
 #
 # Quick reference:
 #   make              build the bootstrap compiler
@@ -18,7 +23,13 @@
 .DEFAULT_GOAL := build
 .PHONY: build build-O0 build-debug test run selfhost clean help install-hooks score update-seed seed-patch verify-seed seed-sigs next work epic coverage
 
-SRC_DIR := packages/std-avrac/src
+# `bs2` is built from the cli package (the binary entry). The
+# library it consumes (@std.avrac) lives at LIB_SRC_DIR — used for
+# lint scans, source-hash provenance in the seed, and the per-file
+# IR cleanup glob in `make clean`.
+CLI_SRC_DIR := packages/cli/src
+LIB_SRC_DIR := packages/std-avrac/src
+SRC_DIR := $(CLI_SRC_DIR)
 BS2 := build/bs2
 DIAG := NO_AUTOCYCLE=1 bash scripts/diagnose.sh
 
@@ -51,7 +62,7 @@ lint:
 	@# Check for ValueType.Int in Stmt constructors outside parsers.
 	@# This catches the bug where pipeline stages (desugar, resolver, mono)
 	@# discard parser-resolved ValueType fields by writing ValueType.Int.
-	@HITS=$$(grep -rn 'ValueType\.Int' $(SRC_DIR)/ --include='*.av' \
+	@HITS=$$(grep -rn 'ValueType\.Int' $(LIB_SRC_DIR)/ --include='*.av' \
 		| grep -E '\.(Let|Mut|Const|Function|ExternFn)\(' \
 		| grep -v 'parser\.' | grep -v '// '); \
 	if [ -n "$$HITS" ]; then \
@@ -113,11 +124,13 @@ coverage-lcov:
 update-seed:
 	@$(DIAG) --build-bs2
 	@$(DIAG) --check-fixedpoint
-	@cp $(SRC_DIR)/main.av.ll seed/seed.ll
-	@# Prepend provenance comment (commit hash, timestamp, source hash)
+	@cp $(CLI_SRC_DIR)/main.av.ll seed/seed.ll
+	@# Prepend provenance comment (commit hash, timestamp, source hash).
+	@# Hash both the cli entry and the lib it compiles against so the
+	@# seed records exactly what produced it.
 	@COMMIT=$$(git rev-parse --short HEAD); \
 	 TIMESTAMP=$$(date -u +%Y-%m-%dT%H:%M:%SZ); \
-	 SRC_HASH=$$(find $(SRC_DIR)/ -name '*.av' -exec shasum -a 256 {} + | shasum -a 256 | cut -d' ' -f1); \
+	 SRC_HASH=$$(find $(CLI_SRC_DIR)/ $(LIB_SRC_DIR)/ -name '*.av' -exec shasum -a 256 {} + | shasum -a 256 | cut -d' ' -f1); \
 	 { printf '; seed built from commit %s at %s\n; source hash: %s\n' "$$COMMIT" "$$TIMESTAMP" "$$SRC_HASH"; cat seed/seed.ll; } > seed/seed.ll.tmp && \
 	 mv seed/seed.ll.tmp seed/seed.ll
 	@rm -f build/seed build/seed.o
@@ -167,9 +180,9 @@ clean:
 grammar:
 	@echo "# Avra Bootstrap Grammar" > GRAMMAR.md
 	@echo "" >> GRAMMAR.md
-	@echo "Assembled from \`$(SRC_DIR)/features/*/grammar.md\`." >> GRAMMAR.md
+	@echo "Assembled from \`$(LIB_SRC_DIR)/features/*/grammar.md\`." >> GRAMMAR.md
 	@echo "" >> GRAMMAR.md
-	@for f in $(SRC_DIR)/features/*/grammar.md; do echo "---" >> GRAMMAR.md; echo "" >> GRAMMAR.md; cat "$$f" >> GRAMMAR.md; echo "" >> GRAMMAR.md; done
+	@for f in $(LIB_SRC_DIR)/features/*/grammar.md; do echo "---" >> GRAMMAR.md; echo "" >> GRAMMAR.md; cat "$$f" >> GRAMMAR.md; echo "" >> GRAMMAR.md; done
 	@echo "assembled GRAMMAR.md ($$(wc -l < GRAMMAR.md | tr -d ' ') lines)"
 
 # ── Workflow commands ──
