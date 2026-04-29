@@ -10,26 +10,33 @@ use features.error_propagation.{Result}
 use core.runtime.{avra_tag_as_result}
 
 
+/// Wrap a successful block-as-expr emit (value + type + threaded
+/// ctx + env) as `Result.Ok`. Internal helper for this module only.
 fn ok_br(value: ptr, ty: ValueType, ctx: Ctx, env: VarEnv) -> Result<BlockResult, string> {
     let r = Result.Ok(BlockResult { value, ty, ctx, env })
     avra_tag_as_result(r)
     r
 }
 
+/// Wrap a block-emit failure as `Result.Err`. Pairs with `ok_br`.
 fn err_br(msg: string) -> Result<BlockResult, string> {
     let r = Result.Err(msg)
     avra_tag_as_result(r)
     r
 }
 
+/// Codegen for `{ stmt; stmt; expr }` used as an expression. The
+/// block's value is the value of the LAST statement when that stmt
+/// is a `.Expr`; everything else (return, let, while, ...) yields
+/// i64 0. Non-tail statements run for their side effects.
 export fn emit_block_expr(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<EmitValue, string> {
-    // A block expression's value is the value of the LAST
-    // statement, if that statement is a `Stmt.Expr`. Anything
-    // else (return, let, while, ...) yields i64 0. Each non-last
-    // statement is executed for its side effects.
     emit_block_loop(ctx, env, stmts, ctx.i64(0), .Unknown)
 }
 
+/// Emit a statement as a value-producing expression. For `.Expr`,
+/// `.Block`, `.Match`, `.If` we emit them inline with a result slot.
+/// Anything else falls back to plain `emit_stmt` and inherits the
+/// caller's `last_val` / `last_ty`.
 export fn emit_stmt_as_value(ctx: Ctx, env: VarEnv, stmt: Stmt, last_val: ptr, last_ty: ValueType) -> Result<EmitValue, string> {
     match stmt {
         .Expr(e) -> ctx.emit(env, e)
@@ -43,6 +50,9 @@ export fn emit_stmt_as_value(ctx: Ctx, env: VarEnv, stmt: Stmt, last_val: ptr, l
     }
 }
 
+/// Same as `emit_stmt_as_value` but threads ctx + env through and
+/// returns a BlockResult. Used by `emit_block_loop_ctx` so callers
+/// can recover defer state after evaluating a block.
 fn emit_stmt_as_value_ctx(ctx: Ctx, env: VarEnv, stmt: Stmt, last_val: ptr, last_ty: ValueType) -> Result<BlockResult, string> {
     ctx.cov_line()
     match stmt {
@@ -69,6 +79,11 @@ fn emit_stmt_as_value_ctx(ctx: Ctx, env: VarEnv, stmt: Stmt, last_val: ptr, last
     }
 }
 
+/// Codegen for an `if`-statement used in expression position. Emits
+/// the condition, both branches into separate basic blocks, stores
+/// each branch's tail value into a slot, and merges. `is`-narrowing
+/// runs on the then-branch via `narrow_env_for_is`. Branch coverage
+/// counters fire on each side.
 export fn emit_stmt_if_as_value(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> Result<EmitValue, string> {
     let branch_id = avra_covmap_next_branch_id()
     let cond = ctx.emit(env, condition)?
@@ -101,6 +116,10 @@ export fn emit_stmt_if_as_value(ctx: Ctx, env: VarEnv, condition: Expr, then_bra
     ok_emit(loaded, emit_value_ty(t))
 }
 
+/// Workhorse loop for `emit_block_expr`. Walks the statement list:
+/// every non-tail stmt runs via `emit_stmt`; the tail stmt runs via
+/// `emit_stmt_as_value` so the block produces a value. Tracks
+/// `source_line` for accurate diagnostics and coverage.
 export fn emit_block_loop(ctx: Ctx, env: VarEnv, stmts: StmtList, last_val: ptr, last_ty: ValueType) -> Result<EmitValue, string> {
     match stmts {
         .End -> ok_emit(last_val, last_ty)
@@ -117,8 +136,10 @@ export fn emit_block_loop(ctx: Ctx, env: VarEnv, stmts: StmtList, last_val: ptr,
     }
 }
 
-// Like emit_block_loop but returns BlockResult with the final Ctx,
-// so the caller can access accumulated defers.
+/// `emit_block_loop` but returns BlockResult so callers see the
+/// final `Ctx` (with accumulated defers). Used by features whose
+/// emission needs to react to ctx changes inside the block (defer
+/// stack mutations, RC pushes, etc.).
 export fn emit_block_loop_ctx(ctx: Ctx, env: VarEnv, stmts: StmtList, last_val: ptr, last_ty: ValueType) -> Result<BlockResult, string> {
     match stmts {
         .End -> ok_br(last_val, last_ty, ctx, VarEnv.End)

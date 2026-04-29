@@ -7,6 +7,11 @@ use codegen.strings.{emit_concat, emit_str_eq, emit_str_cmp}
 use codegen.helpers.{is_null_literal}
 use features.enum_decl.codegen.{emit_enum_tag_cmp}
 
+/// Codegen for unary operators (`-x`, `!x`, `~x`).
+///
+/// `Neg` chooses fneg on Float, integer subtraction-from-zero
+/// otherwise. `Not` is logical negation (returns Bool). `BitNot` is
+/// bitwise NOT on i64.
 export fn emit_unary(ctx: Ctx, env: VarEnv, op: UnOp, right: Expr) -> Result<EmitValue, string> {
     let r = ctx.emit(env, right)?
 
@@ -24,6 +29,15 @@ export fn emit_unary(ctx: Ctx, env: VarEnv, op: UnOp, right: Expr) -> Result<Emi
     }
 }
 
+/// Codegen for binary operators. Resolves both operands, normalizes
+/// ptr / i64 mismatches (`x == null`), then dispatches by operand
+/// type: floats route through `emit_float_binary`, strings to
+/// `emit_concat` / `emit_str_eq` / `emit_str_cmp`, enums to
+/// `emit_enum_tag_cmp`, pointers to integer arithmetic with
+/// re-cast, everything else to plain integer ops.
+///
+/// Division and modulo emit a `avra_div_by_zero_trap` guard at the
+/// call site (via `ctx.div_zero_trap`).
 export fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, op: BinOp, right: Expr) -> Result<EmitValue, string> {
     let left_result = ctx.emit(env, left)?
     mut lhs = left_result.value
@@ -116,11 +130,20 @@ export fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, op: BinOp, right: Expr)
     }
 }
 
+/// Coerce an LLVM value to f64. If it's already Float we just bit-
+/// cast through the type system; otherwise we run a signed-int-to-fp
+/// conversion. Used by `emit_float_binary` to widen integer operands
+/// in mixed Int+Float arithmetic.
 export fn coerce_to_f64(ctx: Ctx, val: ptr, ty: ValueType) -> ptr {
     if vtype_eq(ty, .Float) { return ctx.to_f64(val, "coerce_f64") }
     ctx.sitofp(val, "coerce_f64")
 }
 
+/// Codegen for binary ops where at least one operand is Float.
+/// Both sides are widened to f64, then arithmetic uses the LLVM
+/// float intrinsics. Comparisons return Bool via `fcmp_bool` with
+/// LLVM's ordered predicate codes (OEQ=1, OGT=2, OGE=3, OLT=4,
+/// OLE=5, ONE=6).
 export fn emit_float_binary(ctx: Ctx, lhs: ptr, rhs: ptr, op: BinOp, lty: ValueType, rty: ValueType) -> Result<EmitValue, string> {
     let fl = coerce_to_f64(ctx, lhs, lty)
     let fr = coerce_to_f64(ctx, rhs, rty)
@@ -141,6 +164,15 @@ export fn emit_float_binary(ctx: Ctx, lhs: ptr, rhs: ptr, op: BinOp, lty: ValueT
     }
 }
 
+/// Codegen for short-circuiting `&&` and `||`. Emits a phi-merge so
+/// the result is a single Bool SSA value, and threads MC/DC
+/// condition coverage counters through the true/false branches so
+/// `--coverage` produces accurate decision telemetry.
+///
+/// Branch shape: evaluate left → on early-exit go straight to merge
+/// with the short-circuit constant; on through-path evaluate right
+/// and phi the two block ends. Each side records its true/false
+/// condition via `ctx.cov_condition_*`.
 export fn emit_logical(ctx: Ctx, env: VarEnv, left: Expr, op: LogicOp, right: Expr) -> Result<EmitValue, string> {
     let decision_id = avra_covmap_next_decision_id()
     let left_result = ctx.emit(env, left)?

@@ -5,6 +5,10 @@ use codegen.types.{Ctx, EmitValue, ok_emit, err_emit}
 use codegen.strings.{emit_concat}
 use codegen.helpers.{strip_quotes}
 
+/// Codegen for `eprintln(value)`. Strings pass through; floats route
+/// to `avra_float_to_string`; everything else gets snprintf'd as a
+/// signed integer into a 32-byte buffer. Union-typed args are
+/// rejected — caller must `match` first.
 export fn emit_eprintln(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<EmitValue, string> {
     match args {
         .End -> err_emit("eprintln() expects 1 arg")
@@ -31,11 +35,12 @@ export fn emit_eprintln(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<EmitVal
     }
 }
 
+/// Codegen for `println(value)`. Mirrors `emit_eprintln` but writes
+/// to stdout via `puts`. Special-cases the `println("literal")`
+/// shape: pulls the string text out in the inner match arm directly,
+/// because re-binding `text` through any extra layer clobbers the
+/// payload (see TECH_DEBT.md #11 — host miscompilation).
 export fn emit_println(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<EmitValue, string> {
-    // Special-case the most common shape: `println("literal")`. We
-    // destructure straight to the inner string text in a single
-    // match — going through any extra binding clobbers the payload
-    // (host miscompilation, see TECH_DEBT.md #11).
     let print_ptr = match args {
         .Node(se, _) -> {
             match se.node {

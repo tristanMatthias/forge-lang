@@ -13,7 +13,8 @@ use features.fn_decl.codegen.{emit_function_bodies}
 use core.type_registry.{TypeRegistry, variant_payload_name}
 use core.llvm.{avra_coverage_declare, avra_covmap_begin, avra_covmap_end}
 
-// Declare an extern function from a list of parameter types.
+/// Declare a fixed-arity extern function in the current module.
+/// Workhorse for the long list of `decl(m, "avra_*", …)` calls below.
 fn decl(m: ptr, name: string, ret: ptr, params: [ptr]) {
     let count = params.length
     let arr = avra_llvm_type_array_new(count)
@@ -25,6 +26,8 @@ fn decl(m: ptr, name: string, ret: ptr, params: [ptr]) {
     avra_llvm_add_function(m, name, fn_type)
 }
 
+/// Variadic-flavored sibling of `decl`. The trailing `1` flag tells
+/// LLVM the C-side function takes `...`. Used for `snprintf`.
 fn decl_va(m: ptr, name: string, ret: ptr, params: [ptr]) {
     let count = params.length
     let arr = avra_llvm_type_array_new(count)
@@ -36,8 +39,12 @@ fn decl_va(m: ptr, name: string, ret: ptr, params: [ptr]) {
     avra_llvm_add_function(m, name, fn_type)
 }
 
-// Core codegen: produces an LLVM module from an AST. Returns the Ctx.
-// Callers decide what to do with it (write IR, JIT, emit object).
+/// Core codegen: produce an LLVM module from a fully resolved AST.
+/// Returns the populated `Ctx` so callers can decide what to do with
+/// the module (write IR, JIT, emit object). Wraps every declaration
+/// pass — extern decls, structs, enums, globals, functions, release
+/// fns — and finally emits user function bodies and top-level
+/// statements.
 fn codegen_program(stmts: StmtList, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry) -> Result<Ctx, string> {
     let lc = avra_llvm_context_create()
     let m = avra_llvm_module_create("bootstrap", lc)
@@ -389,7 +396,9 @@ fn codegen_program(stmts: StmtList, debug_null_checks: bool, coverage: bool, sou
     Result.Ok(ctx)
 }
 
-// Compile a program to LLVM IR and write to a file.
+/// Compile a program to LLVM IR and write the result to disk.
+/// Disposes the `Ctx` afterwards. Use `compile_and_jit` instead when
+/// you don't want a file on disk.
 export fn compile_program(stmts: StmtList, output_path: string, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry) -> Result<int, string> {
     match codegen_program(stmts, debug_null_checks, coverage, source_file, type_reg) {
         .Ok(ctx) -> {
@@ -404,7 +413,9 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     }
 }
 
-// Compile and JIT-execute a program in-process. No files, no external processes.
+/// Compile and JIT-execute a program in-process. The JIT engine
+/// takes ownership of the LLVM module, so we deliberately don't
+/// dispose `ctx`. Returns the program's exit code.
 export fn compile_and_jit(stmts: StmtList, type_reg: TypeRegistry) -> Result<int, string> {
     match codegen_program(stmts, false, false, "", type_reg) {
         .Ok(ctx) -> {
@@ -416,7 +427,9 @@ export fn compile_and_jit(stmts: StmtList, type_reg: TypeRegistry) -> Result<int
     }
 }
 
-// Compile and emit a native object file. No llc needed.
+/// Compile and emit a native object file directly. Skips the IR-on-
+/// disk step, so no `llc` invocation is needed downstream. Disposes
+/// `ctx` after the emit.
 export fn codegen_and_emit_object(stmts: StmtList, output_path: string, type_reg: TypeRegistry) -> Result<int, string> {
     match codegen_program(stmts, false, false, "", type_reg) {
         .Ok(ctx) -> {
@@ -431,13 +444,13 @@ export fn codegen_and_emit_object(stmts: StmtList, output_path: string, type_reg
     }
 }
 
-// Coverage variant: codegen to IR only. The in-process LLVM backend can't
-// emit a usable object directly when instrprof intrinsics are present —
-// they need to be lowered first by `opt -passes=instrprof`. Caller is
-// expected to run opt + llc on the emitted IR.
-//
-// `source_file` is recorded in the .covmap.tsv that the codegen pass
-// writes alongside the IR.
+/// Coverage variant: codegen to IR only. The in-process LLVM backend
+/// can't emit a usable object directly when instrprof intrinsics are
+/// present — they need to be lowered first by `opt -passes=instrprof`,
+/// so the caller is expected to run opt + llc on the emitted IR.
+///
+/// `source_file` is recorded in the `.covmap.tsv` that the codegen
+/// pass writes alongside the IR.
 export fn codegen_and_emit_ir_cov(stmts: StmtList, ir_path: string, type_reg: TypeRegistry, source_file: string) -> Result<int, string> {
     match codegen_program(stmts, false, true, source_file, type_reg) {
         .Ok(ctx) -> {
@@ -452,7 +465,10 @@ export fn codegen_and_emit_ir_cov(stmts: StmtList, ir_path: string, type_reg: Ty
     }
 }
 
-// Rebuild a FieldList with `resolved` populated from `resolve_type`.
+/// Walk a VariantList and rebuild it with each variant's FieldList
+/// resolved against the codegen TypeRegs. Used when registering an
+/// enum so the registry stores `Enum(name, …)` ValueTypes for fields
+/// that the parser left as `Struct(name, …)` placeholders.
 fn resolve_variant_fields(variants: VariantList, regs: TypeRegs) -> VariantList {
     match variants {
         .End -> .End
@@ -461,6 +477,9 @@ fn resolve_variant_fields(variants: VariantList, regs: TypeRegs) -> VariantList 
     }
 }
 
+/// Walk a FieldList and resolve each field's ValueType using the
+/// type registries. Mirrors `resolve_variant_fields` but for plain
+/// struct field lists.
 fn resolve_field_list(fields: FieldList, regs: TypeRegs) -> FieldList {
     match fields {
         .End -> .End
@@ -469,6 +488,9 @@ fn resolve_field_list(fields: FieldList, regs: TypeRegs) -> FieldList {
     }
 }
 
+/// Walk a ParamList and resolve each param's ValueType. Used during
+/// `declare_functions` so emitted LLVM types match the canonical
+/// registry-backed ValueType.
 fn resolve_param_list(params: ParamList, regs: TypeRegs) -> ParamList {
     match params {
         .End -> .End
@@ -477,6 +499,9 @@ fn resolve_param_list(params: ParamList, regs: TypeRegs) -> ParamList {
     }
 }
 
+/// Resolve a single field's ValueType. Returns the resolved type
+/// when known; falls back to `pv` unchanged when resolution couldn't
+/// improve it (Unknown stays Unknown).
 fn resolve_field_vt(regs: TypeRegs, pv: ValueType) -> ValueType {
     if !vtype_is_unknown(pv) {
         let resolved = resolve_setup_vt(regs, pv)
@@ -485,8 +510,11 @@ fn resolve_field_vt(regs: TypeRegs, pv: ValueType) -> ValueType {
     pv
 }
 
-// Resolve a parser-produced ValueType using setup registries.
-// Ensures Struct("EnumName") → Enum("EnumName", ...) consistency.
+/// Resolve a parser-produced ValueType against the codegen
+/// registries. Ensures `Struct("EnumName")` is rewritten to
+/// `Enum("EnumName", ...)`, recurses into List/Union/FnTyped, and
+/// leaves primitives untouched. Returns `Unknown` when a referenced
+/// name isn't registered.
 fn resolve_setup_vt(regs: TypeRegs, vt: ValueType) -> ValueType {
     match vt {
         .Struct(name, _) -> {
@@ -504,6 +532,7 @@ fn resolve_setup_vt(regs: TypeRegs, vt: ValueType) -> ValueType {
     }
 }
 
+/// Map `resolve_setup_vt` over every element of a TypeList.
 fn resolve_setup_vt_list(regs: TypeRegs, types: TypeList) -> TypeList {
     match types {
         .End -> .End
@@ -512,6 +541,8 @@ fn resolve_setup_vt_list(regs: TypeRegs, types: TypeList) -> TypeList {
 }
 
 
+/// Populate an LLVM type array with the lowered LLVM type of each
+/// field in `fields`. Used when calling `LLVMStructSetBody`.
 fn fill_struct_field_types(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, fields: FieldList, idx: int) {
     match fields {
         .End -> {}
@@ -522,22 +553,19 @@ fn fill_struct_field_types(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, fiel
     }
 }
 
-// Two-pass struct declaration:
-// Pass 1: create opaque LLVM types + collect names and raw fields into registry
-// Pass 2: resolve fields and set LLVM struct bodies
-// This handles forward references between module-qualified types.
-
-// Two-pass struct declaration for forward reference support:
-// Pass 1: create opaque LLVM struct types for ALL types
-// Pass 2: resolve fields, set LLVM bodies, build registry with resolved fields
-
+/// Two-pass declaration of every struct (and shape) in the AST.
+/// Pass 1 creates opaque LLVM struct types for every name; pass 2
+/// resolves each field's type (possibly referencing other structs),
+/// fills the LLVM body, and registers the resolved fields. The
+/// two-pass shape lets fields forward-reference any struct.
 fn declare_structs(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtList, nts: CgNewtypeReg, uas: CgUnionAliasReg, reg: StructReg) -> StructReg {
-    // Pass 1: forward-declare all struct types as opaque
     forward_declare_all_structs(ctx, stmts)
-    // Pass 2: resolve fields, fill bodies, build registry
     fill_and_register_structs(ctx, i64t, i1t, dt, pt, stmts, nts, uas, reg)
 }
 
+/// Pass 1 of `declare_structs`. Walks the AST and creates an opaque
+/// LLVM named struct type for every `type` and `shape` declaration.
+/// Recurses into modules.
 fn forward_declare_all_structs(ctx: ptr, stmts: StmtList) {
     match stmts {
         .End -> {}
@@ -553,6 +581,10 @@ fn forward_declare_all_structs(ctx: ptr, stmts: StmtList) {
     }
 }
 
+/// Pass 2 of `declare_structs`. For each struct/shape declaration,
+/// resolves field types via `resolve_field_list`, fills the LLVM
+/// body with the lowered types, and appends a registry entry. Also
+/// applies the `__without`/`__only` row operators on `type` decls.
 fn fill_and_register_structs(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtList, nts: CgNewtypeReg, uas: CgUnionAliasReg, reg: StructReg) -> StructReg {
     match stmts {
         .End -> reg
@@ -597,6 +629,9 @@ fn fill_and_register_structs(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, st
     }
 }
 
+/// Declare a single LLVM global for an `export let / mut / const`
+/// binding. Initializes to null/zero of the appropriate LLVM type;
+/// the actual init expression runs in `emit_top_level_init`.
 fn declare_one_global(m: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, structs: StructReg, enums: EnumReg, name: string, ty_vt: ValueType, reg: TopLevelVars) -> TopLevelVars {
     let vt = if !vtype_is_unknown(ty_vt) { ty_vt } else { ValueType.Int }
     let llvm_ty = llvm_type_for_full(i64t, i1t, dt, pt, vt)
@@ -605,6 +640,8 @@ fn declare_one_global(m: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, structs: St
     TopLevelVars.Node(name, g, vt, reg)
 }
 
+/// Walk the AST collecting every top-level `let` / `mut` / `const`
+/// and emit an LLVM global for it. Recurses into modules.
 fn declare_globals(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, structs: StructReg, enums: EnumReg, stmts: StmtList, reg: TopLevelVars) -> TopLevelVars {
     match stmts {
         .End -> reg
@@ -622,7 +659,10 @@ fn declare_globals(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stru
     }
 }
 
-// Declare per-variant payload struct types: %EnumName.VariantName = type { field_types... }
+/// Declare per-variant payload struct types for an enum:
+/// `%EnumName.VariantName = type { field_types... }`. Outer enum
+/// shape is `{i64 tag, ptr payload}`; the per-variant struct names
+/// what `payload` actually points at when that variant is active.
 fn declare_variant_payloads(lc: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, enum_name: string, variants: VariantList, structs: StructReg, nts: CgNewtypeReg, uas: CgUnionAliasReg, enums: EnumReg) {
     match variants {
         .End -> {}
@@ -643,6 +683,10 @@ fn declare_variant_payloads(lc: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, enum
     }
 }
 
+/// Walk the AST registering every enum declaration. For each enum
+/// it creates the outer `{tag, payload}` named struct, declares the
+/// per-variant payload structs via `declare_variant_payloads`, and
+/// appends the resolved variants to the enum registry.
 fn declare_enums(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtList, structs: StructReg, nts: CgNewtypeReg, uas: CgUnionAliasReg, reg: EnumReg) -> EnumReg {
     match stmts {
         .End -> reg
@@ -677,7 +721,9 @@ fn declare_enums(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtLis
 // emit_rc_release_typed to recursively release inner objects before
 // freeing the outer one.
 
-// Check if a FieldList contains any ptr-type fields.
+/// True when at least one field in `fields` lowers to an LLVM ptr
+/// (i.e. needs RC tracking). Used to decide whether a struct needs
+/// a `__release_TypeName` function.
 fn fields_have_rc(fields: FieldList) -> bool {
     match fields {
         .End -> false
@@ -688,7 +734,9 @@ fn fields_have_rc(fields: FieldList) -> bool {
     }
 }
 
-// Check if any variant in a VariantList has ptr-type payload fields.
+/// True when at least one variant of an enum has a ptr-type field
+/// (i.e. its payload contains an RC-managed value). Decides whether
+/// `__release_EnumName` is generated.
 fn variants_have_rc(variants: VariantList) -> bool {
     match variants {
         .End -> false
@@ -699,9 +747,12 @@ fn variants_have_rc(variants: VariantList) -> bool {
     }
 }
 
-// Declare __release_TypeName function signatures for all structs and enums
-// that have RC fields. Must happen before bodies are emitted so that
-// mutually-recursive types can reference each other's release functions.
+/// Declare `__release_TypeName(ptr) -> i64` for every struct that
+/// has RC fields OR a user-supplied `Drop::drop`. Phase 1 of release
+/// emission — phase 2 (bodies) is `emit_release_bodies_structs`.
+/// Two phases are needed because mutually-recursive types reference
+/// each other's release fns, so all signatures must exist before
+/// any body is emitted.
 fn declare_release_fns_structs(m: ptr, i64t: ptr, pt: ptr, reg: StructReg) {
     match reg {
         .End -> {}
@@ -716,6 +767,9 @@ fn declare_release_fns_structs(m: ptr, i64t: ptr, pt: ptr, reg: StructReg) {
     }
 }
 
+/// Declare `__release_EnumName(ptr) -> i64` for every enum whose
+/// variants carry RC payloads. Phase 1 of release emission for
+/// enums (mirror of `declare_release_fns_structs`).
 fn declare_release_fns_enums(m: ptr, i64t: ptr, pt: ptr, reg: EnumReg) {
     match reg {
         .End -> {}
@@ -728,9 +782,11 @@ fn declare_release_fns_enums(m: ptr, i64t: ptr, pt: ptr, reg: EnumReg) {
     }
 }
 
-// Emit a call to release a single field value based on its ValueType.
-// For Struct/Enum types: calls __release_TypeName if it exists, else avra_rc_release.
-// For other ptr types: calls avra_rc_release.
+/// Emit the call that releases a single field value, dispatching on
+/// its ValueType. For Struct/Enum types: calls the generated
+/// `__release_TypeName` when it exists (so RC traversal recurses),
+/// otherwise falls back to a plain `avra_rc_release`. For all other
+/// ptr-typed fields: plain `avra_rc_release`.
 fn emit_field_release(ctx: Ctx, val: ptr, ty: ValueType) {
     match ty {
         .Struct(sn, _) -> {
@@ -753,7 +809,9 @@ fn emit_field_release(ctx: Ctx, val: ptr, ty: ValueType) {
     }
 }
 
-// Emit release calls for each ptr-type field in a struct.
+/// Emit a release sequence for every ptr-typed field of a struct.
+/// Each field is GEP'd, loaded, null-checked (skip on null), then
+/// passed through `emit_field_release` so the right teardown runs.
 fn emit_struct_field_releases(ctx: Ctx, obj: ptr, type_name: string, fields: FieldList, idx: int) {
     match fields {
         .End -> {}
@@ -777,13 +835,23 @@ fn emit_struct_field_releases(ctx: Ctx, obj: ptr, type_name: string, fields: Fie
     }
 }
 
-// Emit the body of a __release_StructName function.
-// Shared scaffolding for __release_TypeName functions.
-// Sets up: entry → should_free check → free_bb / alive_bb / done_bb.
-// Returns (fctx, obj, free_bb, done_bb) positioned at free_bb.
-// Caller emits type-specific field releases, then calls emit_release_finish.
+/// Shared block layout for every `__release_TypeName` function body.
+/// `entry` does the `avra_rc_should_free` check, branching to
+/// `free_bb` (refcount hit zero) or `alive_bb` (still alive — emit
+/// suspect call when cyclic). Both edges merge at `done_bb`.
+///
+/// @field fctx — Ctx scoped to the release function.
+/// @field obj — the function's `ptr` parameter.
+/// @field free_bb — block where field cleanup + free runs.
+/// @field alive_bb — block for non-zero refcount path.
+/// @field done_bb — final block; release fn returns from here.
 type ReleaseScaffold = { fctx: Ctx, obj: ptr, free_bb: ptr, alive_bb: ptr, done_bb: ptr }
 
+/// Build the entry-block scaffolding for a `__release_TypeName`.
+/// Returns null when the function wasn't declared (caller should
+/// no-op). Builder is positioned after the entry's cond_br; the
+/// caller is responsible for re-positioning at `free_bb` to emit
+/// type-specific field cleanup, then calling `emit_release_finish`.
 fn emit_release_scaffold(ctx: Ctx, name: string) -> ReleaseScaffold? {
     let fn_val = ctx.get_fn("__release_${name}")
     if fn_val == null { return null }
@@ -801,6 +869,9 @@ fn emit_release_scaffold(ctx: Ctx, name: string) -> ReleaseScaffold? {
     ReleaseScaffold { fctx, obj, free_bb, alive_bb, done_bb }
 }
 
+/// Close out a `__release_TypeName` body. Positions at `alive_bb`,
+/// emits an `avra_rc_suspect` call when the type is cycle-capable
+/// (spec Axis 9.5), branches to `done_bb`, and returns 0.
 fn emit_release_finish(sc: ReleaseScaffold, is_cyclic: bool) {
     avra_llvm_position_at_end(sc.fctx.builder, sc.alive_bb)
     if is_cyclic {
@@ -811,6 +882,10 @@ fn emit_release_finish(sc: ReleaseScaffold, is_cyclic: bool) {
     avra_llvm_build_ret(sc.fctx.builder, avra_llvm_const_int(sc.fctx.i64_type, 0, 0))
 }
 
+/// Emit the body of a struct's `__release_TypeName`. Calls the
+/// user-supplied `Drop::drop` first when present (spec 9.4), then
+/// recursively releases every ptr-typed field, then `avra_rc_free`s
+/// the outer object.
 fn emit_release_body_struct(ctx: Ctx, name: string, fields: FieldList, is_cyclic: bool) {
     let sc = emit_release_scaffold(ctx, name)
     if sc == null { return }
@@ -827,7 +902,11 @@ fn emit_release_body_struct(ctx: Ctx, name: string, fields: FieldList, is_cyclic
     emit_release_finish(s, is_cyclic)
 }
 
-// Emit release calls for ptr-type fields in an enum variant payload.
+/// Emit release sequences for the ptr-typed fields of a single
+/// enum variant's payload struct. Mirror of
+/// `emit_struct_field_releases`, but the GEPs use the per-variant
+/// payload type (`%EnumName.VariantName`) rather than the outer
+/// enum struct.
 fn emit_variant_field_releases(ctx: Ctx, payload: ptr, enum_name: string, variant_name: string, fields: FieldList, idx: int) {
     match fields {
         .End -> {}
@@ -853,7 +932,11 @@ fn emit_variant_field_releases(ctx: Ctx, payload: ptr, enum_name: string, varian
     }
 }
 
-// Emit tag-check + field-release code for each enum variant.
+/// Emit the tag-dispatch chain that releases the right variant's
+/// payload. For each variant with RC fields, compares the loaded
+/// `tag_val` against the variant's djb2 hash; matching variants
+/// release their payload fields and branch to `done_bb`. Variants
+/// without RC fields are skipped entirely (no comparison emitted).
 fn emit_enum_variant_releases(ctx: Ctx, tag_val: ptr, payload: ptr, enum_name: string, variants: VariantList, done_bb: ptr) {
     match variants {
         .End -> {}
@@ -876,6 +959,10 @@ fn emit_enum_variant_releases(ctx: Ctx, tag_val: ptr, payload: ptr, enum_name: s
     }
 }
 
+/// Emit the body of an enum's `__release_EnumName`. Loads the tag
+/// and payload, dispatches via `emit_enum_variant_releases`, then
+/// frees the outer object. Cycle-capable enums get an
+/// `avra_rc_suspect` call in the alive path.
 fn emit_release_body_enum(ctx: Ctx, name: string, variants: VariantList, is_cyclic: bool) {
     let sc = emit_release_scaffold(ctx, name)
     if sc == null { return }
@@ -896,7 +983,9 @@ fn emit_release_body_enum(ctx: Ctx, name: string, variants: VariantList, is_cycl
     emit_release_finish(s, is_cyclic)
 }
 
-// Walk StructReg and emit release function bodies.
+/// Phase 2 for structs: walk StructReg and emit each release fn's
+/// body. Skips structs without RC fields and without a Drop impl —
+/// their release fn was never declared.
 fn emit_release_bodies_structs(ctx: Ctx, reg: StructReg, cycles: CycleSet) {
     match reg {
         .End -> {}
@@ -912,7 +1001,8 @@ fn emit_release_bodies_structs(ctx: Ctx, reg: StructReg, cycles: CycleSet) {
     }
 }
 
-// Walk EnumReg and emit release function bodies.
+/// Phase 2 for enums: walk EnumReg and emit each release fn's body
+/// when at least one variant carries an RC payload.
 fn emit_release_bodies_enums(ctx: Ctx, reg: EnumReg, cycles: CycleSet) {
     match reg {
         .End -> {}
@@ -926,7 +1016,10 @@ fn emit_release_bodies_enums(ctx: Ctx, reg: EnumReg, cycles: CycleSet) {
     }
 }
 
-// Top-level entry: declare + emit all release functions.
+/// Top-level orchestrator for release functions. Declares every
+/// signature first (so mutually-recursive types can call each
+/// other), then emits every body. Run once per module before user
+/// function bodies are emitted.
 fn emit_release_functions(ctx: Ctx, cycles: CycleSet) {
     // Phase 1: declare all signatures (needed for mutual recursion)
     declare_release_fns_structs(ctx.module, ctx.i64_type, ctx.ptr_type, ctx.structs)
@@ -936,6 +1029,9 @@ fn emit_release_functions(ctx: Ctx, cycles: CycleSet) {
     emit_release_bodies_enums(ctx, ctx.enums, cycles)
 }
 
+/// Walk the AST building the trait registry. Each `trait Foo {...}`
+/// adds a `(name, methods)` entry; trait methods are collected via
+/// `collect_trait_fn_names`. Recurses into modules.
 fn collect_trait_decls(stmts: StmtList, reg: TraitDeclReg) -> TraitDeclReg {
     match stmts {
         .End -> reg
@@ -950,6 +1046,9 @@ fn collect_trait_decls(stmts: StmtList, reg: TraitDeclReg) -> TraitDeclReg {
     }
 }
 
+/// Pull the method names + return ValueTypes out of a trait body.
+/// Both `extern fn` (signature only) and `fn` (default impl) count
+/// as trait methods.
 fn collect_trait_fn_names(stmts: StmtList) -> TraitMethodNames {
     match stmts {
         .End -> .End
@@ -963,6 +1062,8 @@ fn collect_trait_fn_names(stmts: StmtList) -> TraitMethodNames {
     }
 }
 
+/// Walk the AST collecting every `type Foo = Bar` newtype decl into
+/// the codegen newtype registry. Recurses into modules.
 fn collect_newtypes(stmts: StmtList, reg: CgNewtypeReg) -> CgNewtypeReg {
     match stmts {
         .End -> reg
@@ -977,6 +1078,8 @@ fn collect_newtypes(stmts: StmtList, reg: CgNewtypeReg) -> CgNewtypeReg {
     }
 }
 
+/// Walk the AST collecting every `type Foo = A | B | C` union alias
+/// into the codegen union-alias registry. Recurses into modules.
 fn collect_union_aliases(stmts: StmtList, reg: CgUnionAliasReg) -> CgUnionAliasReg {
     match stmts {
         .End -> reg
@@ -991,6 +1094,11 @@ fn collect_union_aliases(stmts: StmtList, reg: CgUnionAliasReg) -> CgUnionAliasR
     }
 }
 
+/// Apply a struct-row operator (`type Foo = Bar without { x }`,
+/// `type Foo = Bar only { x, y }`). When the FieldList starts with
+/// the parser's `__base` marker, expands it to the base struct's
+/// fields, then optionally filters via `__without`/`__only`. Plain
+/// field lists pass through unchanged.
 fn resolve_type_operator(fields: FieldList, reg: StructReg) -> FieldList {
     match fields {
         .Node(marker, base_vt, rest) if marker == "__base" -> {
@@ -1016,6 +1124,9 @@ fn resolve_type_operator(fields: FieldList, reg: StructReg) -> FieldList {
 
 // field_list_has, filter_fields_without, filter_fields_only now in core/ast.av
 
+/// Set `count` consecutive slots of an LLVM type array (starting at
+/// `base`) to `i64t`. Used when emitting a function whose params
+/// are all canonically i64.
 fn fill_i64_param_array_offset(arr: ptr, i64t: ptr, base: int, count: int) {
     if count <= 0 {
         return
@@ -1024,7 +1135,9 @@ fn fill_i64_param_array_offset(arr: ptr, i64t: ptr, base: int, count: int) {
     fill_i64_param_array_offset(arr, i64t, base + 1, count - 1)
 }
 
-// Fill a type array with the correct LLVM types for each parameter.
+/// Fill an LLVM type array with the lowered LLVM type of every
+/// parameter in `params`. Used when emitting a function declaration
+/// so each param gets the right alloca/load type downstream.
 fn fill_typed_param_array(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, params: ParamList, idx: int) {
     match params {
         .End -> {}
@@ -1035,6 +1148,11 @@ fn fill_typed_param_array(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, param
     }
 }
 
+/// Resolve a function's declared return type for codegen. Handles
+/// the unknown→Void default, struct→enum / struct→trait promotion,
+/// and the lambda special-case where a fn whose body's tail is a
+/// lambda yields a `Closure(...)` return type instead of the raw
+/// trait.
 fn resolve_fn_ret(regs: TypeRegs, traits: TraitDeclReg, rvt: ValueType, body: StmtList) -> ValueType {
     mut base = if vtype_is_unknown(rvt) {
         ValueType.Void
@@ -1058,6 +1176,11 @@ fn resolve_fn_ret(regs: TypeRegs, traits: TraitDeclReg, rvt: ValueType, body: St
     }
 }
 
+/// Walk the AST declaring every `fn` and `extern fn` as an LLVM
+/// function. Resolves param + return types via the codegen
+/// registries, builds the function-type, and registers the return
+/// ValueType in `FnRetTypes`. Aborts on duplicate function names.
+/// Recurses into impl blocks and modules.
 fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, regs: TypeRegs, traits: TraitDeclReg, stmts: StmtList, reg: FnRetTypes) -> FnRetTypes {
     match stmts {
         .End -> reg
@@ -1101,6 +1224,9 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, re
     }
 }
 
+/// Strip parameter names from a ParamList, returning only the
+/// resolved ValueTypes in declaration order. Used when registering
+/// `fn_params` so call sites can look up parameter types by index.
 fn params_to_type_list(params: ParamList) -> ParamTypeList {
     match params {
         .End -> .End
@@ -1108,6 +1234,9 @@ fn params_to_type_list(params: ParamList) -> ParamTypeList {
     }
 }
 
+/// Walk the AST collecting every function's parameter type list
+/// into a `FnParamTypes` registry. Used by call sites to coerce
+/// arguments to declared param types. Recurses into impls + modules.
 fn collect_fn_params(stmts: StmtList, reg: FnParamTypes) -> FnParamTypes {
     match stmts {
         .End -> reg
@@ -1126,6 +1255,12 @@ fn collect_fn_params(stmts: StmtList, reg: FnParamTypes) -> FnParamTypes {
     }
 }
 
+/// Emit every top-level statement into the wrapper function. Skips
+/// `fn` declarations (their bodies are emitted separately). For
+/// `module` declarations, synthesizes a `__init_<name>()` function
+/// that holds the module-body code, then injects a call to it from
+/// the wrapper so module-level effects (spec blocks, globals) run
+/// in declaration order.
 fn emit_top_level(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<VarEnv, string> {
     match stmts {
         .End -> ok_stmt(env)
@@ -1204,6 +1339,12 @@ fn emit_top_level(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<VarEnv, stri
     }
 }
 
+/// Emit the initializer expression for a top-level `let / mut /
+/// const` and store the result into the previously-declared LLVM
+/// global. Applies `emit_union_wrap` when storing a concrete value
+/// into a union-typed global. Updates the top-level registry with
+/// the resolved type so later references see the actual type, not
+/// the parser's placeholder.
 fn emit_top_level_init(ctx: Ctx, env: VarEnv, name: string, init: Expr) -> Result<StmtResult, string> {
     let g = ctx.lookup_toplevel(name)
     if !g.found {

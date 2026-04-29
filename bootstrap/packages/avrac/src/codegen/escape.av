@@ -9,10 +9,14 @@
 use core.ast.{Expr, ExprList, FieldList, FieldInitList, VariantList, ValueType, Stmt, StmtList, SExpr, SStmt, stmt_unwrap}
 use codegen.types.{ReleasableSet, releasable_has, StructReg, EnumReg, struct_reg_lookup, enum_reg_lookup, CopySet, copy_set_has}
 
+/// Add `name` to the releasable set, deduplicating. The set is the
+/// list of locals safe to RC-release at scope exit.
 fn releasable_add(set: ReleasableSet, name: string) -> ReleasableSet {
     if releasable_has(set, name) { set } else { ReleasableSet.Node(name, set) }
 }
 
+/// Remove `name` from the releasable set. Used when a use-site
+/// proves the local escapes (return, arg pass, etc.).
 fn releasable_remove(set: ReleasableSet, name: string) -> ReleasableSet {
     match set {
         .End -> .End
@@ -21,18 +25,25 @@ fn releasable_remove(set: ReleasableSet, name: string) -> ReleasableSet {
     }
 }
 
-// Analyze a function body in a single pass. A local is releasable only if:
-// 1. Its initializer is an allocation (struct lit, enum ctor, tuple, with-expr)
-// 2. Its only uses are field reads (not returned, passed as arg, etc.)
-//
-// Single-pass insight: declarations appear before uses in statement order.
-// When we see `let a = Point{...}`, add a. When we later see `f(a)`, remove a.
-// Uses can only REMOVE from the set, so forward references work naturally.
+/// Analyze a function body and return the set of locals whose values
+/// can safely be RC-released at scope exit. A local is releasable
+/// only when:
+/// 1. Its initializer is an allocation (struct lit, enum ctor,
+///    tuple, with-expr) — see `is_allocating_expr`.
+/// 2. Its only uses are field reads (not returned, passed as arg,
+///    captured in a closure, etc.).
+///
+/// Single-pass insight: declarations appear before uses in statement
+/// order, so the algorithm walks the list once — a `let` adds the
+/// name; later uses only ever remove. Forward references therefore
+/// work without a second pass.
 export fn analyze_releasable(body: StmtList) -> ReleasableSet {
     single_pass_escape(body, ReleasableSet.End)
 }
 
-// Analyze a single expression body (for lambdas).
+/// Lambda variant of `analyze_releasable`. Lambda bodies that aren't
+/// blocks have no bindings to release; otherwise descend into the
+/// inner StmtList.
 export fn analyze_releasable_expr(body: Expr) -> ReleasableSet {
     match body {
         .Block(stmts) -> analyze_releasable(stmts)
@@ -40,8 +51,8 @@ export fn analyze_releasable_expr(body: Expr) -> ReleasableSet {
     }
 }
 
-// Single-pass escape analysis: walks statements once, adding allocating
-// bindings and removing escaped ones as it encounters them in order.
+/// Single-pass escape analysis worker. Walks `stmts` left-to-right,
+/// folding `single_pass_stmt` over the running ReleasableSet.
 fn single_pass_escape(stmts: StmtList, set: ReleasableSet) -> ReleasableSet {
     match stmts {
         .End -> set
@@ -52,11 +63,18 @@ fn single_pass_escape(stmts: StmtList, set: ReleasableSet) -> ReleasableSet {
     }
 }
 
+/// Process a `let`/`mut`/`const` binding: add the name when its
+/// initializer is allocating, then sweep the initializer for any
+/// uses of names already in the set (which would mark them escaped).
 fn analyze_binding(name: string, init: Expr, set: ReleasableSet) -> ReleasableSet {
     let s1 = if is_allocating_expr(init) { releasable_add(set, name) } else { set }
     remove_escaped_expr(init, s1)
 }
 
+/// Per-statement worker. Bindings call `analyze_binding`; control-
+/// flow statements recurse into their bodies; everything else is
+/// only checked for escaping uses inside its expressions. Decl-only
+/// statements (TypeDecl, TraitDecl, …) are pass-through.
 fn single_pass_stmt(stmt: Stmt, set: ReleasableSet) -> ReleasableSet {
     let inner = stmt_unwrap(stmt)
     match inner {
@@ -112,9 +130,9 @@ fn single_pass_stmt(stmt: Stmt, set: ReleasableSet) -> ReleasableSet {
 }
 
 
-// An allocating expression creates a new heap object that the local owns.
-// Only these 4 forms allocate via arena_alloc/rc_alloc. If a new allocating
-// expression type is added (e.g. MapLit, ListComp), add it here.
+/// True when `expr` produces a freshly allocated heap object the
+/// binding owns. Currently: struct literal, enum constructor, tuple,
+/// with-expr. Add new allocating forms here when introduced.
 fn is_allocating_expr(expr: Expr) -> bool {
     match expr {
         .StructLit(_, _) -> true
@@ -125,8 +143,10 @@ fn is_allocating_expr(expr: Expr) -> bool {
     }
 }
 
-// Walk expressions checking for escaping uses. If a name is used in any
-// context OTHER than `.FieldAccess(Ident(name), _)`, remove from releasable set.
+/// Walk an expression and remove names from the releasable set when
+/// they're used in a way that escapes the local. The only safe
+/// pattern is `.FieldAccess(Ident(name), _)` (reading a field). Any
+/// other use of `Ident(name)` removes it.
 fn remove_escaped_expr(expr: Expr, set: ReleasableSet) -> ReleasableSet {
     match expr {
         // Field access is safe — reading a field doesn't escape the struct
@@ -187,6 +207,7 @@ fn remove_escaped_expr(expr: Expr, set: ReleasableSet) -> ReleasableSet {
     }
 }
 
+/// Apply `remove_escaped_expr` to every element of an ExprList.
 fn remove_escaped_args(args: ExprList, set: ReleasableSet) -> ReleasableSet {
     match args {
         .End -> set
@@ -194,6 +215,8 @@ fn remove_escaped_args(args: ExprList, set: ReleasableSet) -> ReleasableSet {
     }
 }
 
+/// Apply `remove_escaped_expr` to every value in a struct-literal
+/// FieldInitList. Used on `Foo { x: a, y: b }` and `with` exprs.
 fn remove_escaped_field_inits(inits: FieldInitList, set: ReleasableSet) -> ReleasableSet {
     match inits {
         .End -> set
@@ -209,6 +232,8 @@ fn remove_escaped_field_inits(inits: FieldInitList, set: ReleasableSet) -> Relea
 // in the loop iteration can safely live in a bump arena that is
 // freed in bulk at scope exit.
 
+/// True when the set has at least one entry. Used for arena
+/// eligibility — a body needs at least one releasable allocation.
 fn releasable_any(set: ReleasableSet) -> bool {
     match set {
         .End -> false
@@ -216,6 +241,7 @@ fn releasable_any(set: ReleasableSet) -> bool {
     }
 }
 
+/// Sum the count of allocating expressions across a statement list.
 fn count_allocating_in_stmts(stmts: StmtList) -> int {
     match stmts {
         .End -> 0
@@ -223,6 +249,9 @@ fn count_allocating_in_stmts(stmts: StmtList) -> int {
     }
 }
 
+/// How many allocating expressions one statement contributes — 1 for
+/// an allocating binding, recursive for control-flow statements,
+/// 0 otherwise.
 fn count_allocating_in_stmt_single(stmt: Stmt) -> int {
     match stmt_unwrap(stmt) {
         .Block(inner) -> count_allocating_in_stmts(inner)
@@ -266,9 +295,11 @@ fn count_allocating_in_stmt_single(stmt: Stmt) -> int {
     }
 }
 
-// Check if a for-loop body is arena-eligible:
-// - Has allocating bindings
-// - All allocating bindings are non-escaping (releasable)
+/// True when a for-loop body can be wrapped in a per-iteration
+/// bump arena (spec Axis 9.6). Eligibility: the body has at least
+/// one allocating binding AND every allocating binding is
+/// non-escaping. Bulk freeing the arena at scope exit then replaces
+/// per-allocation RC drops.
 export fn is_arena_eligible(body: Stmt) -> bool {
     let inner = stmt_unwrap(body)
     match inner {
@@ -331,13 +362,17 @@ export fn is_arena_eligible(body: Stmt) -> bool {
 // struct/enum names as Copy candidates, then repeatedly remove any
 // whose fields reference non-Copy types until stable.
 
+/// Compute the Copy auto-derivation set (spec 9.12). A type is Copy
+/// when every (recursive) field resolves to a Copy primitive.
+/// Seeds the candidate set with every named struct + enum and runs
+/// `fixpoint_copy` to remove anything that touches a non-Copy
+/// primitive (Str, List, Map, Ptr, Closure, Trait, Union, …).
 export fn analyze_copy_types(structs: StructReg, enums: EnumReg) -> CopySet {
-    // Seed: all struct and enum names are candidates
     let candidates = seed_struct_candidates(structs, seed_enum_candidates(enums, CopySet.End))
-    // Fixed-point: keep removing non-Copy types until stable
     fixpoint_copy(candidates, structs, enums)
 }
 
+/// Seed every struct name as a Copy candidate.
 fn seed_struct_candidates(reg: StructReg, set: CopySet) -> CopySet {
     match reg {
         .End -> set
@@ -345,6 +380,7 @@ fn seed_struct_candidates(reg: StructReg, set: CopySet) -> CopySet {
     }
 }
 
+/// Seed every enum name as a Copy candidate.
 fn seed_enum_candidates(reg: EnumReg, set: CopySet) -> CopySet {
     match reg {
         .End -> set
@@ -352,12 +388,17 @@ fn seed_enum_candidates(reg: EnumReg, set: CopySet) -> CopySet {
     }
 }
 
+/// Iterate `refine_copy` until the candidate set is stable. Every
+/// pass shrinks the set (or matches the prior pass), so this
+/// terminates after at most `len(candidates)` passes.
 fn fixpoint_copy(candidates: CopySet, structs: StructReg, enums: EnumReg) -> CopySet {
     let refined = refine_copy(candidates, structs, enums)
     if copy_set_eq(refined, candidates) { refined }
     else { fixpoint_copy(refined, structs, enums) }
 }
 
+/// One pass of the Copy fixpoint: keep only those candidates whose
+/// fields/variants are themselves Copy under the current set.
 fn refine_copy(candidates: CopySet, structs: StructReg, enums: EnumReg) -> CopySet {
     match candidates {
         .End -> .End
@@ -372,16 +413,18 @@ fn refine_copy(candidates: CopySet, structs: StructReg, enums: EnumReg) -> CopyS
     }
 }
 
+/// True when `name` is registered as a struct/enum and all of its
+/// fields/variants are Copy under the current candidate set.
 fn is_name_copy(name: string, candidates: CopySet, structs: StructReg, enums: EnumReg) -> bool {
-    // Check struct registry
     let sl = struct_reg_lookup(structs, name)
     if sl.found { return fields_all_copy(sl.fields, candidates) }
-    // Check enum registry
     let el = enum_reg_lookup(enums, name)
     if el.found { return variants_all_copy(el.variants, candidates) }
     false
 }
 
+/// True when every field in `fields` has a Copy ValueType under
+/// the current candidate set.
 fn fields_all_copy(fields: FieldList, candidates: CopySet) -> bool {
     match fields {
         .End -> true
@@ -392,6 +435,8 @@ fn fields_all_copy(fields: FieldList, candidates: CopySet) -> bool {
     }
 }
 
+/// True when every variant of an enum has Copy fields under the
+/// current candidate set.
 fn variants_all_copy(variants: VariantList, candidates: CopySet) -> bool {
     match variants {
         .End -> true
@@ -402,6 +447,10 @@ fn variants_all_copy(variants: VariantList, candidates: CopySet) -> bool {
     }
 }
 
+/// Local Copy classifier used during the fixpoint analysis. Differs
+/// from `types.av`'s `vtype_is_copy` by treating struct/enum/newtype
+/// names as Copy purely based on candidate-set membership (since the
+/// outer set isn't final yet).
 fn vtype_is_copy(vt: ValueType, candidates: CopySet) -> bool {
     match vt {
         .Int -> true
@@ -424,10 +473,14 @@ fn vtype_is_copy(vt: ValueType, candidates: CopySet) -> bool {
     }
 }
 
+/// CopySet equality used by `fixpoint_copy` to detect convergence.
+/// Two sets are equal when same length and one is a subset of the
+/// other — order doesn't matter.
 fn copy_set_eq(a: CopySet, b: CopySet) -> bool {
     copy_set_len(a) == copy_set_len(b) && copy_set_subset(a, b)
 }
 
+/// Length of a CopySet. O(n).
 fn copy_set_len(set: CopySet) -> int {
     match set {
         .End -> 0
@@ -435,6 +488,7 @@ fn copy_set_len(set: CopySet) -> int {
     }
 }
 
+/// True when every name in `a` also appears in `b`. O(|a| × |b|).
 fn copy_set_subset(a: CopySet, b: CopySet) -> bool {
     match a {
         .End -> true

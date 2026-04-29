@@ -26,6 +26,33 @@ use core.runtime.{avra_tag_as_result}
 // reach the LLVM C API: the context, module, builder, and the
 // function whose body the builder is currently positioned in.
 
+/// The codegen context — carries everything an emit function needs
+/// to reach the LLVM C API plus every type / scope registry built
+/// up during compilation. Threaded through every emit call.
+///
+/// @field lc / module / builder — LLVM C API handles.
+/// @field current_fn / current_fn_name — the fn the builder is
+///        currently positioned inside; needed by `bb` /
+///        `append_basic_block`.
+/// @field i64_type / i1_type / ptr_type / double_type — cached
+///        primitive LLVM types.
+/// @field structs / enums / fn_rets / fn_params / top_level_vars —
+///        type and binding registries built by the declaration pass.
+/// @field loops — `break` / `continue` target stack.
+/// @field defers / rc_cleanup / rc_releasable — RC + defer state.
+/// @field features — feature dispatch registry.
+/// @field trait_decls / newtypes / union_aliases — extra type tables.
+/// @field copy_types — set of types that satisfy Copy (no RC needed).
+/// @field debug_null_checks — emit avra_null_arg traps when true.
+/// @field coverage / source_file / source_line — LLVM source-based
+///        coverage instrumentation state.
+/// @field arena_ptr — per-scope arena handle when active (spec 9.6).
+/// @field copy_alloc_target — stack alloca to write into instead of
+///        heap-allocating (spec 9.12).
+/// @field task_group — structured-concurrency task handle stack
+///        (spec 18.7).
+/// @field bag — codegen-emitted warnings (spec Axis 20).
+/// @field type_reg — central TypeRegistry (O(1) id lookups).
 export type Ctx = {
     lc: ptr,
     module: ptr,
@@ -83,9 +110,9 @@ export type Ctx = {
     type_reg: TypeRegistry,
 }
 
-// ── Type registries bundle ──
-// All type registries needed for type resolution, bundled into one struct.
-// Eliminates scattered parameters and makes it easy to add new type kinds.
+/// Bundle of every type-resolution registry. Passed as a single
+/// parameter instead of four loose ones; makes it easy to add a
+/// new type kind without rippling through every call site.
 export type TypeRegs = {
     structs: StructReg,
     enums: EnumReg,
@@ -93,12 +120,15 @@ export type TypeRegs = {
     union_aliases: CgUnionAliasReg,
 }
 
-// Newtype registry — maps name to inner ValueType
+/// Newtype registry — maps a newtype name to its inner ValueType.
+/// Used by codegen to peel newtype wrappers when computing LLVM
+/// types.
 export enum CgNewtypeReg {
     End
     Node(name: string, inner_vt: ValueType, next: CgNewtypeReg)
 }
 
+/// Look up a newtype's inner type. Returns Unknown when not found.
 export fn cg_newtype_vtype_lookup(reg: CgNewtypeReg, name: string) -> ValueType {
     match reg {
         .End -> ValueType.Unknown
@@ -107,12 +137,14 @@ export fn cg_newtype_vtype_lookup(reg: CgNewtypeReg, name: string) -> ValueType 
     }
 }
 
-// Union alias registry — maps name to ValueType
+/// Union-alias registry — maps a name to its expanded Union
+/// ValueType. Mirror of CgNewtypeReg for `type Json = string | int`.
 export enum CgUnionAliasReg {
     End
     Node(name: string, type_vt: ValueType, next: CgUnionAliasReg)
 }
 
+/// Look up a union alias's expanded type. Unknown when absent.
 fn cg_union_alias_vtype_lookup(reg: CgUnionAliasReg, name: string) -> ValueType {
     match reg {
         .End -> ValueType.Unknown
@@ -121,7 +153,7 @@ fn cg_union_alias_vtype_lookup(reg: CgUnionAliasReg, name: string) -> ValueType 
     }
 }
 
-// Add ValueType lookup for param types
+/// Index into a ParamTypeList. Returns Unknown out-of-range.
 export fn param_type_vt_at(list: ParamTypeList, idx: int) -> ValueType {
     match list {
         .End -> ValueType.Unknown
@@ -130,17 +162,24 @@ export fn param_type_vt_at(list: ParamTypeList, idx: int) -> ValueType {
     }
 }
 
-// Trait declaration registry — maps trait name to method names + return vtypes.
+/// Linked list of method names + return ValueTypes belonging to a
+/// single trait declaration. Built by `collect_trait_decls`.
 export enum TraitMethodNames {
     End
     Node(name: string, ret_vt: ValueType, next: TraitMethodNames)
 }
 
+/// Trait declaration registry — maps trait name → its
+/// `TraitMethodNames`. Carried through `Ctx.trait_decls` and consulted
+/// by codegen to resolve method calls on `dyn Trait` and `impl Trait`
+/// receivers.
 export enum TraitDeclReg {
     End
     Node(trait_name: string, methods: TraitMethodNames, next: TraitDeclReg)
 }
 
+/// Look up a trait by name, returning its method list. `End` when
+/// the trait is not registered.
 export fn trait_decl_lookup(reg: TraitDeclReg, name: string) -> TraitMethodNames {
     match reg {
         .End -> .End
@@ -151,6 +190,9 @@ export fn trait_decl_lookup(reg: TraitDeclReg, name: string) -> TraitMethodNames
     }
 }
 
+/// True when `name` is a registered trait. Cheaper than
+/// `trait_decl_lookup` when only existence matters (e.g. resolving
+/// whether a type annotation refers to a trait or a struct).
 export fn trait_decl_has(reg: TraitDeclReg, name: string) -> bool {
     match reg {
         .End -> false
@@ -161,6 +203,9 @@ export fn trait_decl_has(reg: TraitDeclReg, name: string) -> bool {
     }
 }
 
+/// A typed null `ptr` constant. Used in struct-literal fields where
+/// the field is `ptr` but the AST builder needs a value before LLVM
+/// codegen runs.
 export fn null_ptr_val() -> ptr {
     let n: ptr = null
     n
@@ -174,24 +219,37 @@ export fn null_ptr_val() -> ptr {
 // Statement emitters return Result<VarEnv, string>.
 // Use ? to propagate errors: `let r = ctx.emit(env, expr)?`
 
+/// Result of every expression emit. Pairs the LLVM SSA value with
+/// its Avra ValueType so downstream consumers know how to cast,
+/// release, or branch on it. Every emit must produce a typed value.
+///
+/// @field value — the LLVM `ptr` SSA reference.
+/// @field ty — the Avra ValueType of `value`.
 export type EmitValue = { value: ptr, ty: ValueType }
 
+/// Extract the LLVM SSA value from an EmitValue.
 export fn emit_value_ptr(v: EmitValue) -> ptr {
     v.value
 }
 
+/// Extract the Avra ValueType from an EmitValue.
 export fn emit_value_ty(v: EmitValue) -> ValueType {
     v.ty
 }
 
 
-// Every emitted value MUST have an explicit type. No untyped emissions.
+/// Wrap a successfully emitted LLVM value into a typed `Result.Ok`.
+/// Every emitted value MUST carry an explicit ValueType — this is
+/// the only sanctioned constructor for that invariant.
 export fn ok_emit(value: ptr, ty: ValueType) -> Result<EmitValue, string> {
 
     let r = Result.Ok(EmitValue { value, ty })
     avra_tag_as_result(r)
     r
 }
+/// Wrap a codegen failure into `Result.Err` with a `codegen error:`
+/// prefix so callers can pattern-match on the layer that produced
+/// the diagnostic.
 export fn err_emit(message: string) -> Result<EmitValue, string> {
 
     let r = Result.Err("codegen error: ${message}")
@@ -199,12 +257,17 @@ export fn err_emit(message: string) -> Result<EmitValue, string> {
     r
 }
 
+/// Wrap a successful statement result (an updated VarEnv) into
+/// `Result.Ok`. The statement-level mirror of `ok_emit`.
 export fn ok_stmt(env: VarEnv) -> Result<VarEnv, string> {
 
     let r = Result.Ok(env)
     avra_tag_as_result(r)
     r
 }
+/// Wrap a statement-level codegen error. No `codegen error:` prefix
+/// here — statement errors are surfaced verbatim because callers
+/// embed them directly into diagnostics.
 export fn err_stmt(message: string) -> Result<VarEnv, string> {
 
     let r = Result.Err(message)
@@ -212,8 +275,9 @@ export fn err_stmt(message: string) -> Result<VarEnv, string> {
     r
 }
 
-// 0xDEADBEEF as signed i64 — sentinel tag in closure arrays to
-// distinguish closure values from plain function pointers.
+/// `0xDEADBEEF` as a signed i64. Sentinel head value placed in
+/// closure arrays so the runtime can distinguish closures (array of
+/// `[MARKER, fn_ptr, captures...]`) from raw function pointers.
 fn closure_marker() -> int { -559038737 }
 
 // ── Pure leaf helpers ──
@@ -224,6 +288,9 @@ fn closure_marker() -> int { -559038737 }
 // codegen.av unblocks feature-codegen extraction without dragging
 // the registry state along with them.
 
+/// Drop the head of a FieldList, returning the tail. `.End` when
+/// already empty. Convenience for callers walking field lists in
+/// step with index counters.
 export fn advance_field_list(fields: FieldList) -> FieldList {
     match fields {
         .End -> .End
@@ -231,7 +298,9 @@ export fn advance_field_list(fields: FieldList) -> FieldList {
     }
 }
 
-// Get the resolved ValueType of the Nth field (0-indexed).
+/// Get the resolved ValueType of the Nth field (0-indexed). Returns
+/// `Unknown` when `idx` is out of range — callers must be prepared
+/// for that.
 export fn field_resolved_at(fields: FieldList, idx: int) -> ValueType {
     match fields {
         .End -> .Unknown
@@ -249,23 +318,31 @@ export fn field_resolved_at(fields: FieldList, idx: int) -> ValueType {
 // function parameters.
 
 
+/// Function return-type registry — `name → ValueType`. Built once
+/// during the declaration pass; consulted everywhere a call site
+/// needs the typed result of `fn_name(...)`.
 export enum FnRetTypes {
     End
     Node(name: string, ret_ty: ValueType, next: FnRetTypes)
 }
 
-// Per-parameter type string list — one entry per parameter of a function.
+/// Linked list of parameter ValueTypes — one entry per param of a
+/// function. Order matters: index N of the list corresponds to the
+/// Nth declared parameter.
 export enum ParamTypeList {
     End
     Node(ty_vt: ValueType, next: ParamTypeList)
 }
 
-// Maps function name → parameter type list (type annotation strings).
+/// Function parameter-type registry — `name → ParamTypeList`. Used
+/// for typed argument coercion at call sites.
 export enum FnParamTypes {
     End
     Node(name: string, params: ParamTypeList, next: FnParamTypes)
 }
 
+/// Look up the parameter type list for a function. `End` when
+/// unknown — callers fall back to i64 coercion in that case.
 export fn fn_param_lookup(reg: FnParamTypes, name: string) -> ParamTypeList {
     match reg {
         .End -> .End
@@ -276,16 +353,26 @@ export fn fn_param_lookup(reg: FnParamTypes, name: string) -> ParamTypeList {
     }
 }
 
+/// Top-level variable registry — maps `name → (llvm_global, ty)` for
+/// every `export let` / `export mut` binding. Looked up by
+/// `emit_name_lookup` when a name resolves outside any local scope.
 export enum TopLevelVars {
     End
     Node(name: string, llvm_global: ptr, ty: ValueType, next: TopLevelVars)
 }
 
+/// Loop control-flow stack — one frame per enclosing `while` / `for`.
+/// `break` jumps to `exit_bb`, `continue` jumps to `cond_bb`. Pushed
+/// in `emit_block_loop`, popped on exit.
 export enum LoopStack {
     End
     Frame(cond_bb: ptr, exit_bb: ptr, next: LoopStack)
 }
 
+/// LIFO stack of deferred actions running at scope exit.
+/// `Frame` is a normal `defer`, `ErrFrame` is `errdefer` (only fires
+/// on early return / propagation), `Release` is an RC drop pushed by
+/// the binder so defer + RC observe the same LIFO order (spec 9.4).
 export enum DeferStack {
     End
     Frame(body: SExpr, next: DeferStack)
@@ -293,30 +380,33 @@ export enum DeferStack {
     Release(name: string, alloca: ptr, ty: ValueType, next: DeferStack)
 }
 
-// RC cleanup stack — tracks RC-managed locals for release at scope exit.
-// Each entry has the value alloca and a moved_flag (i1 alloca).
-// If moved_flag is true at scope exit, the value was consumed elsewhere
-// and should NOT be released.
+/// RC cleanup stack — tracks RC-managed locals for release at scope
+/// exit. Each entry holds the alloca and its ValueType. The cleanup
+/// emitter walks this list in LIFO order, calling `avra_rc_release`
+/// on every live entry that escape analysis didn't already drain.
 export enum RcCleanupStack {
     End
     Node(name: string, alloca: ptr, ty: ValueType, next: RcCleanupStack)
 }
 
-// Set of variable names that are safe to release at scope exit.
-// Moved here from escape.av to break circular imports — Ctx needs
-// this type for the rc_releasable field, and escape.av imports from types.av.
+/// Set of variable names that are safe to release at scope exit.
+/// Lives here (instead of `escape.av`) because `Ctx.rc_releasable`
+/// needs the type and escape.av already imports from types.av —
+/// keeping it here breaks the cycle.
 export enum ReleasableSet {
     End
     Node(name: string, next: ReleasableSet)
 }
 
-// Set of type names that are Copy (all-primitive fields, no heap references).
-// Built once by analyze_copy_types and threaded through Ctx.
+/// Set of type names that are Copy (all-primitive fields, no heap
+/// references). Built once by `analyze_copy_types` and threaded
+/// through `Ctx` so emit code can decide whether to RC-track a value.
 export enum CopySet {
     End
     Node(name: string, next: CopySet)
 }
 
+/// Membership test for the Copy-types set.
 export fn copy_set_has(set: CopySet, name: string) -> bool {
     match set {
         .End -> false
@@ -325,10 +415,12 @@ export fn copy_set_has(set: CopySet, name: string) -> bool {
     }
 }
 
-// Check if a ValueType is Copy given the computed CopySet.
-// Primitives (Int, Float, Bool) are always Copy.
-// Struct/Enum types are Copy if they're in the CopySet.
-// All other types (Str, List, Map, Ptr, Fn, Closure, Trait) are NOT Copy.
+/// Decide whether `vt` is a Copy type — i.e. cheap to duplicate and
+/// free of heap ownership. Primitives (Int, Float, Bool, Void) are
+/// always Copy; named types (Struct/Enum) are Copy only if they
+/// appear in `copies`; Newtype unwraps to its inner; everything else
+/// (Str, List, Map, Ptr, Fn, Closure, Trait, Tuple, Union, …) is
+/// non-Copy.
 export fn vtype_is_copy(vt: ValueType, copies: CopySet) -> bool {
     match vt {
         .Int -> true
@@ -342,6 +434,7 @@ export fn vtype_is_copy(vt: ValueType, copies: CopySet) -> bool {
     }
 }
 
+/// Membership test for the releasable set.
 export fn releasable_has(set: ReleasableSet, name: string) -> bool {
     match set {
         .End -> false
@@ -350,16 +443,25 @@ export fn releasable_has(set: ReleasableSet, name: string) -> bool {
     }
 }
 
+/// Registry of declared struct types — `name → FieldList`. Built by
+/// the declaration pass; carried as `Ctx.structs`. Fields are stored
+/// in declaration order so `field_resolved_at` can index by position.
 export enum StructReg {
     End
     Node(name: string, fields: FieldList, next: StructReg)
 }
 
+/// Result of a struct registry lookup. `found` is 1 when present.
+///
+/// @field found — 1 when the struct was registered, 0 otherwise.
+/// @field fields — the struct's declared FieldList (empty on miss).
 export type StructLookup = {
     found: int,
     fields: FieldList,
 }
 
+/// Look up a struct by name. Always returns a StructLookup — callers
+/// inspect `.found` to distinguish hit from miss.
 export fn struct_reg_lookup(reg: StructReg, name: string) -> StructLookup {
     match reg {
         .End -> StructLookup { found: false, fields: .End }
@@ -370,16 +472,25 @@ export fn struct_reg_lookup(reg: StructReg, name: string) -> StructLookup {
     }
 }
 
+/// Registry of declared enum types — `name → VariantList`. Variants
+/// remember their tag hashes (djb2-derived) and field lists so codegen
+/// can build constructor calls and pattern-match jump tables.
 export enum EnumReg {
     End
     Node(name: string, variants: VariantList, next: EnumReg)
 }
 
+/// Result of an enum registry lookup. `found` is 1 when present.
+///
+/// @field found — 1 when the enum was registered, 0 otherwise.
+/// @field variants — the enum's variants (empty on miss).
 export type EnumLookup = {
     found: int,
     variants: VariantList,
 }
 
+/// Look up an enum by name. Always returns an EnumLookup — callers
+/// inspect `.found` to distinguish hit from miss.
 export fn enum_reg_lookup(reg: EnumReg, name: string) -> EnumLookup {
     match reg {
         .End -> EnumLookup { found: false, variants: .End }
@@ -390,8 +501,13 @@ export fn enum_reg_lookup(reg: EnumReg, name: string) -> EnumLookup {
     }
 }
 
-// Find the enum type name that contains a given variant.
-// Used for contextual resolution: `.Variant` → `EnumName.Variant`.
+/// Find the enum type name that contains a given variant. Used to
+/// disambiguate the leading-dot shorthand `.Variant` — codegen needs
+/// the enum's name to build the right constructor.
+///
+/// Returns `""` when no enum claims the variant. When multiple enums
+/// share a variant name with different arity, prefer
+/// `enum_reg_find_by_variant_arity` instead.
 export fn enum_reg_find_by_variant(reg: EnumReg, variant: string) -> string {
     match reg {
         .End -> ""
@@ -400,8 +516,9 @@ export fn enum_reg_find_by_variant(reg: EnumReg, variant: string) -> string {
     }
 }
 
-// Find variant by name AND field count — prevents ambiguity when
-// multiple enums have the same variant name with different arities.
+/// Find an enum by variant name AND field count — prevents ambiguity
+/// when multiple enums declare the same variant name but with
+/// different field counts. Returns `""` when no match.
 export fn enum_reg_find_by_variant_arity(reg: EnumReg, variant: string, arity: int) -> string {
     match reg {
         .End -> ""
@@ -416,6 +533,8 @@ export fn enum_reg_find_by_variant_arity(reg: EnumReg, variant: string, arity: i
     }
 }
 
+/// Look up a function's return ValueType. Returns `.Unknown` when
+/// the function isn't registered (callers fall back to i64).
 export fn fn_ret_lookup(reg: FnRetTypes, name: string) -> ValueType {
     match reg {
         .End -> .Unknown
@@ -426,12 +545,20 @@ export fn fn_ret_lookup(reg: FnRetTypes, name: string) -> ValueType {
     }
 }
 
+/// Result of a top-level-var lookup.
+///
+/// @field found — 1 when the global was registered, 0 otherwise.
+/// @field llvm_global — the LLVM global value (null on miss).
+/// @field ty — the global's ValueType (Unknown on miss).
 export type TopLevelLookup = {
     found: int,
     llvm_global: ptr,
     ty: ValueType,
 }
 
+/// Look up an exported top-level binding. Always returns a
+/// TopLevelLookup — callers inspect `.found` to distinguish hit
+/// from miss.
 export fn toplevel_lookup(reg: TopLevelVars, name: string) -> TopLevelLookup {
     match reg {
         .End -> {
@@ -443,12 +570,20 @@ export fn toplevel_lookup(reg: TopLevelVars, name: string) -> TopLevelLookup {
     }
 }
 
+/// The top of the LoopStack, surfaced as a flat record so emit_break
+/// / emit_continue don't have to pattern-match the stack again.
+///
+/// @field found — 1 when at least one loop frame is active.
+/// @field cond_bb — block to branch to for `continue`.
+/// @field exit_bb — block to branch to for `break`.
 export type LoopFrame = {
     found: int,
     cond_bb: ptr,
     exit_bb: ptr,
 }
 
+/// Peek at the innermost loop frame. `found = 0` means the stack is
+/// empty (i.e. `break` / `continue` was used outside any loop).
 export fn loops_top(stack: LoopStack) -> LoopFrame {
     match stack {
         .End -> {
@@ -467,6 +602,14 @@ export fn loops_top(stack: LoopStack) -> LoopFrame {
 // Str, Ptr, Struct, Enum, List, Map, Fn, Closure, Trait, Union, Tuple → ptr
 // Newtype → recurse on inner type
 
+/// Canonical Avra ValueType → LLVM type mapping. The single source
+/// of truth used everywhere a value is allocated, loaded, stored or
+/// cast. Keeping this as a free function (not a method) lets pure
+/// helpers reach it without a Ctx.
+///
+/// Mapping: `Int → i64`, `Bool → i1`, `Float → double`,
+/// `Void / Unknown / Task → i64`, all other reference types → `ptr`,
+/// `Newtype` recurses into its inner type.
 export fn llvm_type_for_full(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, vt: ValueType) -> ptr {
     match vt {
         .Int -> i64t
@@ -492,7 +635,9 @@ export fn llvm_type_for_full(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, vt: ValueTyp
     }
 }
 
-// Returns true if the ValueType maps to a pointer LLVM type.
+/// True when `vt` lowers to an LLVM pointer (i.e. needs ptr alloca,
+/// rc tracking, null checks). False for primitives that map to
+/// integer / float types.
 export fn vtype_is_ptr_type(vt: ValueType) -> bool {
     match vt {
         .Int -> false
@@ -1163,5 +1308,20 @@ impl Ctx {
         }
     }
 }
+/// Carrier for a statement emit's threaded state. Instead of mutating
+/// `Ctx` in place (which would require globals — see CLAUDE.md rule
+/// 17), every stmt emitter returns the new ctx + env explicitly.
+///
+/// @field ctx — the updated codegen context (defers, rc state, …).
+/// @field env — the updated variable environment.
 export type StmtResult = { ctx: Ctx, env: VarEnv }
+
+/// Carrier for a block-as-expression emit. Same threaded state as
+/// StmtResult plus the block's terminal value and its ValueType, so
+/// callers can use the block as the RHS of an expression.
+///
+/// @field value — the block's terminal SSA value.
+/// @field ty — the block's terminal ValueType.
+/// @field ctx — the updated codegen context.
+/// @field env — the updated variable environment.
 export type BlockResult = { value: ptr, ty: ValueType, ctx: Ctx, env: VarEnv }

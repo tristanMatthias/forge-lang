@@ -4,6 +4,9 @@ use core.ast.{Expr, ExprList, VarEnv}
 use codegen.types.{Ctx, EmitValue, ok_emit, err_emit}
 use codegen.helpers.{strip_quotes}
 
+/// Codegen for the binary `+` operator on Strings. Allocates a
+/// `lhs.length + rhs.length + 1` RC buffer, memcpys both sides plus
+/// the trailing NUL from rhs, and returns it as `.Str`.
 export fn emit_concat(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr) -> Result<EmitValue, string> {
     let lhs_ptr = ctx.to_ptr(lhs_i64, "concat_l")
     let rhs_ptr = ctx.to_ptr(rhs_i64, "concat_r")
@@ -24,6 +27,10 @@ export fn emit_concat(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr) -> Result<EmitValue,
     ok_emit(buf, .Str)
 }
 
+/// Codegen for the `replace(self, from, to)` method on String. Emits
+/// both arg expressions, then defers actual replacement to the C
+/// runtime (`avra_str_replace`). Errors when the call site doesn't
+/// supply exactly two args.
 export fn emit_str_replace(ctx: Ctx, env: VarEnv, str_i64: ptr, args: ExprList) -> Result<EmitValue, string> {
     match args {
         .Node(se_from, rest) -> {
@@ -44,10 +51,13 @@ export fn emit_str_replace(ctx: Ctx, env: VarEnv, str_i64: ptr, args: ExprList) 
     }
 }
 
+/// Codegen for `substring(self, start, end)`. Validates the arg
+/// count and forwards to `emit_substring_inner`.
+///
+/// Why the single match: the host compiler had a bug where
+/// re-matching `args` in nested arms corrupted the inner payload.
+/// Destructuring exactly once dodges that.
 export fn emit_substring(ctx: Ctx, env: VarEnv, str_i64: ptr, args: ExprList) -> Result<EmitValue, string> {
-    // Expect exactly two integer args: start and end (exclusive).
-    // Destructure exactly once — repeated `match args` corrupts
-    // the inner payloads (host-compiler issue).
     match args {
         .End -> err_emit("substring expects 2 args, got 0")
         .Node(se_start, rest) -> {
@@ -59,6 +69,9 @@ export fn emit_substring(ctx: Ctx, env: VarEnv, str_i64: ptr, args: ExprList) ->
     }
 }
 
+/// Inner emitter for `substring`. Computes `len = end - start`,
+/// allocates `len + 1` bytes via RC, memcpys `[start..end)` into
+/// the buffer, and writes a trailing NUL so it's a valid C string.
 export fn emit_substring_inner(ctx: Ctx, env: VarEnv, str_i64: ptr, start_arg: Expr, end_arg: Expr) -> Result<EmitValue, string> {
     let start_r = ctx.emit(env, start_arg)?
     let end_r = ctx.emit(env, end_arg)?
@@ -81,14 +94,14 @@ export fn emit_substring_inner(ctx: Ctx, env: VarEnv, str_i64: ptr, start_arg: E
     ok_emit(buf, .Str)
 }
 
+/// Codegen for ordering comparisons on Strings (`<`, `<=`, `>`,
+/// `>=`). Lowers to libc `strcmp` followed by a signed icmp of the
+/// result against zero, with `pred` being the LLVM icmp predicate.
+///
+/// Why the manual sign-extend: `ctx.icmp` auto-zero-extends i32
+/// operands, which would turn a negative strcmp result into a huge
+/// positive i64 and break signed comparison. We sext to i64 first.
 export fn emit_str_cmp(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, pred: int) -> Result<EmitValue, string> {
-    // Lower string ordering ops (<, <=, >, >=) to a libc strcmp
-    // call followed by a signed comparison of the result against
-    // 0. We sign-extend strcmp's i32 result into i64 ourselves
-    // because the host's build_icmp wrapper auto-promotes i32
-    // operands via zero-extend, which would turn a negative
-    // strcmp result into a huge positive i64 and break signed
-    // comparison.
     let lhs_ptr = ctx.to_ptr(lhs_i64, "scmp_l")
     let rhs_ptr = ctx.to_ptr(rhs_i64, "scmp_r")
     let result32 = ctx.call("strcmp", [lhs_ptr, rhs_ptr])
@@ -98,6 +111,9 @@ export fn emit_str_cmp(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, pred: int) -> Resul
     ok_emit(ctx.zext(cmp, ctx.i64_type, "scmp_ext"), .Bool)
 }
 
+/// Codegen for String `==` / `!=`. Lowers to libc `strcmp == 0`
+/// (eq) or `strcmp != 0` (ne) via the LLVM predicate codes 32/33.
+/// `invert: true` selects `!=`.
 export fn emit_str_eq(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, invert: bool) -> Result<EmitValue, string> {
     let lhs_ptr = ctx.to_ptr(lhs_i64, "streq_l")
     let rhs_ptr = ctx.to_ptr(rhs_i64, "streq_r")

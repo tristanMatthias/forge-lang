@@ -54,12 +54,15 @@ use core.runtime.{avra_tag_as_result}
 // ── Public API ──
 
 
+/// Wrap a successful statement emit (ctx + env pair) as `Result.Ok`.
+/// The threaded-state mirror of `ok_emit`.
 export fn ok_sr(ctx: Ctx, env: VarEnv) -> Result<StmtResult, string> {
     let r = Result.Ok(StmtResult { ctx, env })
     avra_tag_as_result(r)
     r
 }
 
+/// Wrap a statement-emit failure as `Result.Err`. Pairs with `ok_sr`.
 export fn err_sr(msg: string) -> Result<StmtResult, string> {
     let r = Result.Err(msg)
     avra_tag_as_result(r)
@@ -68,6 +71,9 @@ export fn err_sr(msg: string) -> Result<StmtResult, string> {
 
 // ── Statement emission ──
 
+/// Emit a statement list left-to-right, threading ctx + env through
+/// each step. Tracks the source line on `ctx.source_line` so coverage
+/// and diagnostics get accurate line numbers.
 export fn emit_stmt_list(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<StmtResult, string> {
     match stmts {
         .End -> ok_sr(ctx, env)
@@ -79,12 +85,17 @@ export fn emit_stmt_list(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<StmtR
     }
 }
 
-// Release all RC-managed locals that were NOT moved.
-// Reads from ctx.rc_cleanup which tracks locals pushed via ctx.bind.
+/// Release every RC-managed local that wasn't moved out of scope.
+/// Walks `ctx.rc_cleanup` (built up by `ctx.bind`) in LIFO order.
+/// Called from every scope-exit emitter (return, function end,
+/// block end) so cleanup happens deterministically.
 export fn emit_rc_cleanup(ctx: Ctx) {
     emit_rc_stack(ctx, ctx.rc_cleanup)
 }
 
+/// Recursive worker for `emit_rc_cleanup`. Loads each entry's alloca
+/// and calls `emit_rc_release_typed` so type-aware deallocation runs
+/// (vs. plain `avra_rc_release`).
 fn emit_rc_stack(ctx: Ctx, stack: RcCleanupStack) {
     match stack {
         .End -> {}
@@ -96,10 +107,12 @@ fn emit_rc_stack(ctx: Ctx, stack: RcCleanupStack) {
     }
 }
 
-// Release a value with knowledge of its type. For struct/enum types that
-// have a generated __release_TypeName function, calls that function which
-// recursively releases RC-managed fields before freeing. For other types,
-// falls back to plain avra_rc_release.
+/// Release a value, dispatching on its ValueType. For struct/enum/
+/// newtype types with a generated `__release_TypeName` function, the
+/// generated function runs (it recursively releases RC-managed
+/// fields before freeing). All other RC types fall through to
+/// `avra_rc_release`. Non-RC types (Int, Bool, Float, Void,
+/// FnTyped, Unknown) are no-ops.
 export fn emit_rc_release_typed(ctx: Ctx, val: ptr, ty: ValueType) {
     match ty {
         .Struct(name, _) -> {
@@ -167,10 +180,14 @@ export fn emit_rc_release_typed(ctx: Ctx, val: ptr, ty: ValueType) {
     }
 }
 
-// Emit inline recursive release for a tuple.
-// 1. avra_rc_should_free(val) — decrements refcount, returns 1 if it hit 0
-// 2. If should free: load each ptr-typed element, null-check, release recursively, then avra_rc_free
-// 3. If not freeing: done (refcount was just decremented)
+/// Emit inline recursive release for a tuple. Tuples don't get a
+/// generated `__release_*` because their element types are
+/// structural (not nominal). Steps:
+/// 1. `avra_rc_should_free(val)` — decrements refcount; returns 1
+///    when it hit zero.
+/// 2. When freeing: walk each ptr-typed element, null-check, recurse
+///    into `emit_rc_release_typed`, then `avra_rc_free` the buffer.
+/// 3. Otherwise: nothing more to do (refcount was just decremented).
 fn emit_rc_release_tuple(ctx: Ctx, val: ptr, elements: TypeList) {
     let should = ctx.call("avra_rc_should_free", [val])
     let cond = ctx.icmp_ne(should, ctx.i64(0), "tup_should_free")
@@ -184,7 +201,9 @@ fn emit_rc_release_tuple(ctx: Ctx, val: ptr, elements: TypeList) {
     ctx.position(done_bb)
 }
 
-// Recursively emit release code for each ptr-typed element in a tuple.
+/// Recursive worker for `emit_rc_release_tuple`. For each
+/// ptr-typed element in `elements`, load slot N, null-check,
+/// release, and continue. Skips primitive elements.
 fn emit_tuple_elem_releases(ctx: Ctx, buf: ptr, elements: TypeList, idx: int) {
     match elements {
         .End -> {}
@@ -206,6 +225,13 @@ fn emit_tuple_elem_releases(ctx: Ctx, buf: ptr, elements: TypeList, idx: int) {
     }
 }
 
+/// The statement-emit dispatcher. Handles every built-in `Stmt`
+/// directly; unknown variants fall through to the feature registry
+/// so feature codegen modules can plug in new statement kinds via
+/// `register_stmt_emit`.
+///
+/// Coverage instrumentation runs before any branch — every statement
+/// gets a counter when `--coverage` is on.
 export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
     // Coverage: instrument each statement with its source line as region ID
     ctx.cov_line()
@@ -299,6 +325,10 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, str
 
 // ── Expression emission ──
 
+/// The expression-emit dispatcher. Mirrors `emit_stmt`: built-ins
+/// are inlined here, everything else dispatches to the feature
+/// registry. Returns a typed `EmitValue` so callers always know the
+/// resulting ValueType (for cleanup, casting, branching).
 export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
     ctx.cov_line()
     match expr {
@@ -368,8 +398,11 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, stri
     }
 }
 
-// Shared implementation for .Ident and .QualifiedIdent emission.
-// Checks local vars, top-level globals, then named LLVM functions.
+/// Shared lookup for `.Ident` and `.QualifiedIdent` emission.
+/// Resolution order: local var → top-level global → named LLVM
+/// function (wrapped as a closure value). Failure produces an
+/// `undefined ${label}` diagnostic — `label` differentiates
+/// "variable" vs. "name" in the message.
 fn emit_name_lookup(ctx: Ctx, env: VarEnv, name: string, label: string) -> Result<EmitValue, string> {
     let local = env_lookup(env, name)
     if local.found {

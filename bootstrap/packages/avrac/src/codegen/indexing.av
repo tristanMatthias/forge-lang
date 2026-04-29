@@ -3,6 +3,12 @@
 use core.ast.{Expr, ExprList, ValueType, VarEnv, vtype_display, vtype_eq, vtype_is_list, vtype_is_str, vtype_list_elem}
 use codegen.types.{Ctx, EmitValue, err_emit, ok_emit, ok_emit}
 
+/// Codegen for `obj[idx]`. Dispatches by container type:
+/// - `Ptr` → load byte at `ptr + idx`, zext to Int.
+/// - `List` → `avra_array_get`, returns the list's element type.
+/// - `Str` → allocate a 2-byte buffer (one char + NUL) and return
+///   the single-character substring.
+/// Anything else is a codegen error.
 export fn emit_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: Expr) -> Result<EmitValue, string> {
     let r = ctx.emit(env, obj)?
     // Ptr indexing: ptr[i] → load byte at (ptr + i), returns int (0-255)
@@ -40,6 +46,10 @@ export fn emit_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: Expr) -> Result<Emit
     ok_emit(buf, .Str)
 }
 
+/// Codegen for `obj[start..end]`. Forwards to `avra_str_substring`
+/// for Strings or `avra_array_slice` for Lists. Result keeps the
+/// input ValueType (a substring is still a Str, a sublist of `[T]`
+/// is still `[T]`).
 export fn emit_slice(ctx: Ctx, env: VarEnv, obj: Expr, start: Expr, end: Expr) -> Result<EmitValue, string> {
     let obj_r = ctx.emit(env, obj)?
     let start_r = ctx.emit(env, start)?
