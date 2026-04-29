@@ -25,10 +25,13 @@ use parse.{parse_program_source}
 use pathutil.{relativise}
 use @std.lsp.{LspPos, LspSpan, Sym, SymList, SymKind,
               SymbolGraph, CallEdge, CallList,
+              CacheState, CacheFileEntry, CacheFileList,
               calls_new, calls_add,
               graph_new, graph_extend,
               lsp_pos, lsp_span, sym_new,
-              lsp_serve}
+              lsp_serve,
+              cache_empty, cache_is_fresh, cache_evict_file,
+              cache_add_file, cache_load, cache_save}
 
 // ── Public API ──────────────────────────────────────────────────────
 
@@ -456,6 +459,67 @@ export fn run_lsp_server(project_dir: string) {
     }
 
     lsp_serve(g, calls)
+}
+
+// ── Doc cache ───────────────────────────────────────────────────────
+//
+// Persist the project's SymList between `avra docs` invocations so
+// repeated runs don't re-walk + re-parse every file. Cache lives at
+// target/lsp/cache.tsv (TSV format from @std/lsp.cache_encode);
+// freshness is mtime-based, so editing one file only re-extracts
+// that one file.
+//
+// Compiler version is stamped into the cache header. A version bump
+// invalidates the whole cache via cache_decode's header check.
+
+extern fn avra_file_mtime(path: string) -> int
+
+fn cache_dir_path(project_dir: string) -> string {
+    "${project_dir}/target/lsp"
+}
+
+fn cache_file_path(project_dir: string) -> string {
+    "${cache_dir_path(project_dir)}/cache.tsv"
+}
+
+// Compiler version stamped into the cache. Bumping this invalidates
+// every cached entry on the next read.
+fn cache_version() -> string {
+    "0.1.0"
+}
+
+// Read the cache, then walk every .av file. Files whose mtime is at
+// or below the cached stamp use cached Syms; stale files re-extract
+// + merge into the cache. New cache state written back to disk on
+// exit. `force_rebuild` skips the read and starts from empty.
+export fn extract_project_syms_cached(project_dir: string, force_rebuild: bool) -> SymList {
+    let cache_path = cache_file_path(project_dir)
+    let initial = if force_rebuild { cache_empty() } else { cache_load(cache_path) }
+    let cmd = "find ${project_dir} -name '*.av' -type f -not -path '*/build/*' -not -path '*/.beads/*' -not -path '*/seed/*' -not -path '*/target/*' 2>/dev/null | sort"
+    let files_text = avra_shell_exec(cmd)
+    if files_text == "" { return SymList.End }
+
+    mut state = initial
+    for path in files_text.split("\n") {
+        if path == "" { continue }
+        let rel = relativise(path, project_dir)
+        if cache_is_fresh(state, rel) { continue }
+        // Stale or new: evict any prior contribution and re-extract.
+        state = cache_evict_file(state, rel)
+        let content = avra_selfhost_read_file(path)
+        if content == "" { continue }
+        let parsed = parse_program_source(content)
+        if parsed.had_error || parsed.stmts == null { continue }
+        let file_syms = extract_from_ast_at(parsed.stmts!, rel)
+        let mtime = avra_file_mtime(path)
+        state = cache_add_file(state, rel, mtime, file_syms)
+    }
+
+    // Persist; failure is non-fatal (next run will re-extract).
+    avra_shell_exec("mkdir -p ${cache_dir_path(project_dir)}")
+    cache_save(state, cache_path, cache_version())
+
+    state.syms
 }
 
 fn call_list_concat(a: CallList, b: CallList) -> CallList {
