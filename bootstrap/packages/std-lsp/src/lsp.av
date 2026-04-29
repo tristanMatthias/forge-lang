@@ -551,3 +551,320 @@ export fn query_by_qualified(g: SymbolGraph, qualified: string) -> Sym? {
 export fn query_all(g: SymbolGraph) -> SymList {
     graph_all(g)
 }
+
+// ╔═══════════════════════════════════════════════════════════════════╗
+// ║                              FUZZY                                ║
+// ╚═══════════════════════════════════════════════════════════════════╝
+//
+// Composed string-match scoring used by every consumer that needs
+// "find the right thing among many" — search, did-you-mean, completion
+// ranking, import suggestions. Pure scoring; consumers wrap it for
+// their domain (Sym lists, error codes, CLI flag names).
+//
+// Scoring is layered so a pure substring beats a more-distant
+// Levenshtein match. Tiers, highest first:
+//
+//   1000  exact match
+//    800  exact case-insensitive match
+//    600  prefix match (lowercase), penalised by length difference
+//    400  subsequence match in order ("iu" matches "init_user")
+//    300  substring match (any case)
+//    200  Levenshtein distance ≤ 2, penalised by distance
+//      0  no match
+//
+// Ties break: higher score first, then shorter candidate, then lex.
+// `did_you_mean` rejects suggestions below 200 — anything weaker is
+// usually noise that misleads more than helps.
+
+extern fn avra_selfhost_levenshtein(a: string, b: string, len_a: int, len_b: int) -> int
+
+// Threshold below which `did_you_mean` returns the empty string.
+fn fuzzy_did_you_mean_threshold() -> int { 200 }
+
+// Composed score for a single (query, candidate) pair. Pure: same
+// inputs always yield the same int; safe to cache by (q,c) hash.
+export fn fuzzy_score(query: string, candidate: string) -> int {
+    if query == candidate {
+        return 1000
+    }
+    let ql = query.to_lower()
+    let cl = candidate.to_lower()
+    if ql == cl {
+        return 800
+    }
+    if cl.starts_with(ql) {
+        let len_diff = candidate.length - query.length
+        let pen = if len_diff > 0 { len_diff } else { 0 - len_diff }
+        return 600 - pen
+    }
+    if fuzzy_is_subsequence(ql, cl) {
+        let pen = candidate.length - query.length
+        return 400 - if pen > 0 { pen } else { 0 - pen }
+    }
+    if cl.contains(ql) {
+        let pos_pen = cl.index_of(ql)
+        return 300 - pos_pen
+    }
+    let dist = avra_selfhost_levenshtein(ql, cl, ql.length, cl.length)
+    if dist <= 2 {
+        return 200 - dist * 50
+    }
+    0
+}
+
+// Does `needle` occur in `haystack` with characters in order, allowing
+// gaps? "iu" matches "init_user" (i…u…), "uf" matches "use_fn" (u…f…),
+// but "fu" does not match "use_fn" (no f before u).
+fn fuzzy_is_subsequence(needle: string, haystack: string) -> bool {
+    if needle.length == 0 { return true }
+    mut ni = 0
+    mut hi = 0
+    while hi < haystack.length {
+        if needle.substring(ni, ni + 1) == haystack.substring(hi, hi + 1) {
+            ni = ni + 1
+            if ni == needle.length {
+                return true
+            }
+        }
+        hi = hi + 1
+    }
+    false
+}
+
+// String-keyed candidate list. Linked list because Avra collections
+// don't yet have rich vec semantics, and consumers pass either
+// hand-built lists (fixture tests, CLI flag enumerations) or lists
+// derived from a SymList walk.
+export enum StrList {
+    End
+    Node(value: string, next: StrList)
+}
+
+export fn strlist_cons(head: string, tail: StrList) -> StrList {
+    StrList.Node(head, tail)
+}
+
+// Scored candidate, paired with its score for sorting.
+export type Scored = {
+    value: string,
+    score: int
+}
+
+export enum ScoredList {
+    End
+    Node(item: Scored, next: ScoredList)
+}
+
+// Score every candidate, drop zeros, sort score-desc then lex-asc,
+// truncate to `limit`. Used by --search, completion ranking, and
+// every "find me the closest matches to X" UX.
+export fn fuzzy_search(query: string, candidates: StrList, limit: int) -> ScoredList {
+    let scored = score_all(query, candidates)
+    let sorted = scored_list_sort(scored)
+    scored_list_take(sorted, limit)
+}
+
+// Best single suggestion for `query` among `candidates`. Returns the
+// empty string when no candidate scores ≥ threshold — callers should
+// suppress the "did you mean" line in that case (silence beats a
+// misleading suggestion).
+export fn did_you_mean(query: string, candidates: StrList) -> string {
+    mut best_value = ""
+    mut best_score = fuzzy_did_you_mean_threshold() - 1
+    mut cur = candidates
+    while true {
+        match cur {
+            .End -> {
+                return best_value
+            }
+            .Node(c, next) -> {
+                let s = fuzzy_score(query, c)
+                if s > best_score {
+                    best_score = s
+                    best_value = c
+                }
+                cur = next
+            }
+        }
+    }
+    best_value
+}
+
+// Top-N suggestions for `query`, used by error renderers that show
+// up to three "did you mean" candidates instead of just one.
+export fn did_you_mean_n(query: string, candidates: StrList, n: int) -> StrList {
+    mut acc = StrList.End
+    mut cur = scored_take_threshold(score_all(query, candidates), fuzzy_did_you_mean_threshold())
+    let sorted = scored_list_sort(cur)
+    let topn = scored_list_take(sorted, n)
+    scored_to_strs(topn)
+}
+
+// ── internals ───────────────────────────────────────────────────────
+
+fn score_all(query: string, candidates: StrList) -> ScoredList {
+    mut acc = ScoredList.End
+    mut cur = candidates
+    while true {
+        match cur {
+            .End -> {
+                return acc
+            }
+            .Node(c, next) -> {
+                let s = fuzzy_score(query, c)
+                if s > 0 {
+                    acc = ScoredList.Node(Scored { value: c, score: s }, acc)
+                }
+                cur = next
+            }
+        }
+    }
+    acc
+}
+
+fn scored_take_threshold(list: ScoredList, threshold: int) -> ScoredList {
+    mut acc = ScoredList.End
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return acc
+            }
+            .Node(item, next) -> {
+                if item.score >= threshold {
+                    acc = ScoredList.Node(item, acc)
+                }
+                cur = next
+            }
+        }
+    }
+    acc
+}
+
+// Insertion sort by score-desc, then value-asc. Stable. Inputs are
+// typically small (≤ a few hundred); insertion sort is fine.
+fn scored_list_sort(list: ScoredList) -> ScoredList {
+    mut sorted = ScoredList.End
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return sorted
+            }
+            .Node(item, next) -> {
+                sorted = scored_insert(sorted, item)
+                cur = next
+            }
+        }
+    }
+    sorted
+}
+
+fn scored_insert(list: ScoredList, item: Scored) -> ScoredList {
+    match list {
+        .End -> ScoredList.Node(item, ScoredList.End)
+        .Node(head, tail) -> {
+            if item.score > head.score
+                || (item.score == head.score && item.value < head.value) {
+                ScoredList.Node(item, list)
+            } else {
+                ScoredList.Node(head, scored_insert(tail, item))
+            }
+        }
+    }
+}
+
+fn scored_list_take(list: ScoredList, n: int) -> ScoredList {
+    if n <= 0 { return ScoredList.End }
+    match list {
+        .End -> ScoredList.End
+        .Node(item, next) -> ScoredList.Node(item, scored_list_take(next, n - 1))
+    }
+}
+
+fn scored_to_strs(list: ScoredList) -> StrList {
+    match list {
+        .End -> StrList.End
+        .Node(item, next) -> StrList.Node(item.value, scored_to_strs(next))
+    }
+}
+
+// ── Sym-aware wrappers ──────────────────────────────────────────────
+//
+// Bridge fuzzy scoring to the SymbolGraph: search by Sym.name with
+// the same composed scorer. Returns SymList ranked by score.
+
+export type ScoredSym = {
+    sym: Sym,
+    score: int
+}
+
+export enum ScoredSymList {
+    End
+    Node(item: ScoredSym, next: ScoredSymList)
+}
+
+export fn fuzzy_search_syms(query: string, syms: SymList, limit: int) -> ScoredSymList {
+    let scored = score_syms(query, syms)
+    let sorted = scored_sym_sort(scored)
+    scored_sym_take(sorted, limit)
+}
+
+fn score_syms(query: string, syms: SymList) -> ScoredSymList {
+    mut acc = ScoredSymList.End
+    mut cur = syms
+    while true {
+        match cur {
+            .End -> {
+                return acc
+            }
+            .Node(s, next) -> {
+                let score = fuzzy_score(query, s.name)
+                if score > 0 {
+                    acc = ScoredSymList.Node(ScoredSym { sym: s, score }, acc)
+                }
+                cur = next
+            }
+        }
+    }
+    acc
+}
+
+fn scored_sym_sort(list: ScoredSymList) -> ScoredSymList {
+    mut sorted = ScoredSymList.End
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return sorted
+            }
+            .Node(item, next) -> {
+                sorted = scored_sym_insert(sorted, item)
+                cur = next
+            }
+        }
+    }
+    sorted
+}
+
+fn scored_sym_insert(list: ScoredSymList, item: ScoredSym) -> ScoredSymList {
+    match list {
+        .End -> ScoredSymList.Node(item, ScoredSymList.End)
+        .Node(head, tail) -> {
+            if item.score > head.score
+                || (item.score == head.score && item.sym.name < head.sym.name) {
+                ScoredSymList.Node(item, list)
+            } else {
+                ScoredSymList.Node(head, scored_sym_insert(tail, item))
+            }
+        }
+    }
+}
+
+fn scored_sym_take(list: ScoredSymList, n: int) -> ScoredSymList {
+    if n <= 0 { return ScoredSymList.End }
+    match list {
+        .End -> ScoredSymList.End
+        .Node(item, next) -> ScoredSymList.Node(item, scored_sym_take(next, n - 1))
+    }
+}

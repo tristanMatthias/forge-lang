@@ -1,12 +1,24 @@
-// WHY: "did you mean?" suggestions for undefined variables and fields.
-// Uses Levenshtein edit distance to find the closest match.
+// "Did you mean?" suggestions for undefined variables, fields, and
+// other resolver/typeck diagnostics.
+//
+// Algorithm mirrors @std/lsp's composed scorer in
+// packages/std-lsp/src/lsp.av — keep the two in sync. Eventual
+// deduplication is tracked in epic forge-crafting-intepreters-rnb9.2:
+// once avrac can `use @std.lsp.{did_you_mean}` (currently blocked on
+// the bootstrap import path requiring a seed cycle for any new
+// avrac-side @std import), this file becomes a one-line re-export.
+//
+// Scoring tiers (highest first):
+//   1000  exact         800  case-insensitive exact
+//    600  prefix         400  subsequence ("iu" matches "init_user")
+//    300  substring      200  Levenshtein ≤ 2
+//      0  no match
+//
+// Threshold for surfacing a suggestion: 200 (silence beats a
+// misleading suggestion).
 
 use core.runtime.{avra_selfhost_levenshtein}
 
-// Levenshtein distance between two strings.
-// Implemented in C (runtime.c) for performance — the bootstrap's
-// Avra
-// implementation O(n*m*n).
 export fn levenshtein(a: string, b: string) -> int {
     avra_selfhost_levenshtein(a, b, a.length, b.length)
 }
@@ -16,21 +28,68 @@ enum StringList {
     Node(value: string, next: StringList)
 }
 
-// Find the closest match to `name` among `candidates`.
-// Returns the best match if edit distance <= 2, otherwise empty string.
-export fn suggest_similar_from_list(name: string, candidates: StringList) -> string {
-    find_best(name, candidates, "", 3)
+// Score a single (query, candidate) pair using the same composed
+// scorer as @std/lsp. Pure: same inputs always produce the same int.
+fn suggest_score(query: string, candidate: string) -> int {
+    if query == candidate {
+        return 1000
+    }
+    let ql = query.to_lower()
+    let cl = candidate.to_lower()
+    if ql == cl {
+        return 800
+    }
+    if cl.starts_with(ql) {
+        let len_diff = candidate.length - query.length
+        let pen = if len_diff > 0 { len_diff } else { 0 - len_diff }
+        return 600 - pen
+    }
+    if suggest_is_subsequence(ql, cl) {
+        let pen = candidate.length - query.length
+        return 400 - if pen > 0 { pen } else { 0 - pen }
+    }
+    if cl.contains(ql) {
+        let pos_pen = cl.index_of(ql)
+        return 300 - pos_pen
+    }
+    let dist = avra_selfhost_levenshtein(ql, cl, ql.length, cl.length)
+    if dist <= 2 {
+        return 200 - dist * 50
+    }
+    0
 }
 
-fn find_best(name: string, candidates: StringList, best: string, best_dist: int) -> string {
+fn suggest_is_subsequence(needle: string, haystack: string) -> bool {
+    if needle.length == 0 { return true }
+    mut ni = 0
+    mut hi = 0
+    while hi < haystack.length {
+        if needle.substring(ni, ni + 1) == haystack.substring(hi, hi + 1) {
+            ni = ni + 1
+            if ni == needle.length {
+                return true
+            }
+        }
+        hi = hi + 1
+    }
+    false
+}
+
+// Find the closest match to `name` among `candidates`, or empty
+// string if no candidate scores above the suggestion threshold.
+export fn suggest_similar_from_list(name: string, candidates: StringList) -> string {
+    find_best_scored(name, candidates, "", 199)
+}
+
+fn find_best_scored(name: string, candidates: StringList, best: string, best_score: int) -> string {
     match candidates {
         .End -> best
         .Node(candidate, next) -> {
-            let dist = levenshtein(name, candidate)
-            if dist < best_dist {
-                find_best(name, next, candidate, dist)
+            let s = suggest_score(name, candidate)
+            if s > best_score {
+                find_best_scored(name, next, candidate, s)
             } else {
-                find_best(name, next, best, best_dist)
+                find_best_scored(name, next, best, best_score)
             }
         }
     }
