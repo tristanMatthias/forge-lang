@@ -19,11 +19,15 @@ use codegen.escape.{analyze_releasable_expr}
 
 // ── Capture detection ──
 
+/// List of captured variables for a lambda. Each entry tracks
+/// the binding's name, original alloca, type, and mutability so
+/// the lifted fn can reach back through the closure environment.
 enum CaptureList {
     End,
     Node(name: string, alloca: ptr, ty: ValueType, is_mut: bool, next: CaptureList),
 }
 
+/// Length of a CaptureList.
 fn capture_list_len(list: CaptureList) -> int {
     match list {
         .End -> 0
@@ -31,6 +35,9 @@ fn capture_list_len(list: CaptureList) -> int {
     }
 }
 
+/// True when `name` is one of the lambda's declared parameters.
+/// Used by capture detection to skip params (they're not
+/// captures of the enclosing scope).
 fn is_param(params: ParamList, name: string) -> bool {
     match params {
         .End -> false
@@ -39,6 +46,8 @@ fn is_param(params: ParamList, name: string) -> bool {
     }
 }
 
+/// Membership test for a CaptureList. Stops capture detection
+/// from re-adding the same name twice.
 fn is_captured(captures: CaptureList, name: string) -> bool {
     match captures {
         .End -> false
@@ -47,7 +56,10 @@ fn is_captured(captures: CaptureList, name: string) -> bool {
     }
 }
 
-// Check if an expression assigns to a given variable name.
+/// True when `expr` contains an assignment that targets `target`.
+/// Drives the mutability inference for captured bindings —
+/// captures that get assigned must be tracked as mutable so the
+/// closure write-back path runs.
 fn expr_assigns(expr: Expr, target: string) -> bool {
     match expr {
         .Assign(name, val) -> name == target || expr_assigns(val, target)
@@ -63,6 +75,7 @@ fn expr_assigns(expr: Expr, target: string) -> bool {
     }
 }
 
+/// True when any element of an ExprList assigns to `target`.
 fn expr_list_assigns(list: ExprList, target: string) -> bool {
     match list {
         .End -> false
@@ -70,6 +83,7 @@ fn expr_list_assigns(list: ExprList, target: string) -> bool {
     }
 }
 
+/// True when any statement in `stmts` assigns to `target`.
 fn stmt_list_assigns(stmts: StmtList, target: string) -> bool {
     match stmts {
         .End -> false
@@ -77,6 +91,9 @@ fn stmt_list_assigns(stmts: StmtList, target: string) -> bool {
     }
 }
 
+/// Per-statement assignment detector. Recognises `Assign`,
+/// `FieldAssign`, and recurses into containing expressions /
+/// nested bodies so deep mutations don't slip through.
 fn stmt_assigns(stmt: Stmt, target: string) -> bool {
     match stmt {
         .Expr(e) -> expr_assigns(e, target)
@@ -91,6 +108,9 @@ fn stmt_assigns(stmt: Stmt, target: string) -> bool {
 }
 
 // Mark captures as mutable if the lambda body assigns to them.
+/// Walk a CaptureList re-flagging any entry that gets assigned
+/// inside the lambda body. Mutable captures need a write-back
+/// path so the enclosing scope sees their updated values.
 fn mark_mutable_captures(captures: CaptureList, body: Expr) -> CaptureList {
     match captures {
         .End -> .End
@@ -101,6 +121,12 @@ fn mark_mutable_captures(captures: CaptureList, body: Expr) -> CaptureList {
     }
 }
 
+/// Walk an expression collecting captured names. A name is a
+/// capture when it's referenced in the body, isn't one of the
+/// declared params, isn't already in the capture list, and
+/// resolves to an entry in the enclosing env. Recurses into
+/// every compound expression form so nested calls and blocks
+/// work.
 fn find_captures(expr: Expr, params: ParamList, env: VarEnv, captures: CaptureList) -> CaptureList {
     match expr {
         .Ident(name) -> {
@@ -185,6 +211,7 @@ fn find_captures(expr: Expr, params: ParamList, env: VarEnv, captures: CaptureLi
     }
 }
 
+/// Recurse `find_captures` through every match-arm body.
 fn find_captures_arms(arms: MatchArmList, params: ParamList, env: VarEnv, captures: CaptureList) -> CaptureList {
     match arms {
         .End -> captures
@@ -196,6 +223,8 @@ fn find_captures_arms(arms: MatchArmList, params: ParamList, env: VarEnv, captur
     }
 }
 
+/// Recurse `find_captures` through every value in a struct
+/// literal / `with` override list.
 fn find_captures_field_inits(inits: FieldInitList, params: ParamList, env: VarEnv, captures: CaptureList) -> CaptureList {
     match inits {
         .End -> captures
@@ -206,6 +235,8 @@ fn find_captures_field_inits(inits: FieldInitList, params: ParamList, env: VarEn
     }
 }
 
+/// Recurse `find_captures` through every condition + body in a
+/// `when` arm list.
 fn find_captures_when_arms(arms: WhenArmList, params: ParamList, env: VarEnv, captures: CaptureList) -> CaptureList {
     match arms {
         .End -> captures
@@ -217,6 +248,8 @@ fn find_captures_when_arms(arms: WhenArmList, params: ParamList, env: VarEnv, ca
     }
 }
 
+/// Recurse `find_captures` across an ExprList — call args,
+/// list literals, etc.
 fn find_captures_list(exprs: ExprList, params: ParamList, env: VarEnv, captures: CaptureList) -> CaptureList {
     match exprs {
         .End -> captures
@@ -227,6 +260,8 @@ fn find_captures_list(exprs: ExprList, params: ParamList, env: VarEnv, captures:
     }
 }
 
+/// Per-statement capture finder. Recurses into expression
+/// payloads + nested bodies. Decl-only statements pass through.
 fn find_captures_stmt_body(stmt: Stmt, params: ParamList, env: VarEnv, captures: CaptureList) -> CaptureList {
     match stmt {
         .Block(stmts) -> find_captures_stmts(stmts, params, env, captures)
@@ -266,6 +301,8 @@ fn find_captures_stmt_body(stmt: Stmt, params: ParamList, env: VarEnv, captures:
     }
 }
 
+/// Walk a StmtList collecting captures via
+/// `find_captures_stmt_body`.
 fn find_captures_stmts(stmts: StmtList, params: ParamList, env: VarEnv, captures: CaptureList) -> CaptureList {
     match stmts {
         .End -> captures
@@ -296,6 +333,9 @@ fn find_captures_stmts(stmts: StmtList, params: ParamList, env: VarEnv, captures
 // treating float bits (passed as i64) as integer values and applying
 // sitofp instead of bitcast.
 
+/// Look up the declared type of a name in the enclosing env.
+/// Falls through to top-level globals when the local lookup
+/// misses. Returns `Unknown` if the name doesn't exist.
 fn env_type_of(ctx: Ctx, env: VarEnv, name: string) -> ValueType {
     let lookup = env_lookup(env, name)
     if lookup.found { return lookup.ty }
@@ -304,6 +344,8 @@ fn env_type_of(ctx: Ctx, env: VarEnv, name: string) -> ValueType {
     ValueType.Unknown
 }
 
+/// Look up a capture's declared type by name. Returns `Unknown`
+/// when not in the list — callers then fall back to env lookup.
 fn capture_type_of(captures: CaptureList, name: string) -> ValueType {
     match captures {
         .End -> ValueType.Unknown
@@ -313,6 +355,9 @@ fn capture_type_of(captures: CaptureList, name: string) -> ValueType {
 }
 
 // Check if an expression contains a Float-typed identifier (from captures, env, or globals).
+/// True when `expr` references at least one float-typed name —
+/// used by `infer_param_types` to widen otherwise-untyped lambda
+/// params to Float when they participate in float arithmetic.
 fn has_float_ident(expr: Expr, ctx: Ctx, env: VarEnv, captures: CaptureList, params: ParamList) -> bool {
     match expr {
         .Ident(name) -> {
@@ -341,6 +386,7 @@ fn has_float_ident(expr: Expr, ctx: Ctx, env: VarEnv, captures: CaptureList, par
     }
 }
 
+/// Map `has_float_ident` over an ExprList.
 fn has_float_ident_list(exprs: ExprList, ctx: Ctx, env: VarEnv, captures: CaptureList, params: ParamList) -> bool {
     match exprs {
         .End -> false
@@ -349,6 +395,10 @@ fn has_float_ident_list(exprs: ExprList, ctx: Ctx, env: VarEnv, captures: Captur
 }
 
 // Check if a parameter is used in a binary expression with a Float value.
+/// True when `param_name` appears alongside a float operand in
+/// an arithmetic expression. Drives the heuristic that promotes
+/// otherwise-untyped lambda params to Float so `(x) -> x + 1.5`
+/// works without explicit type annotations.
 fn param_used_with_float(param_name: string, expr: Expr, ctx: Ctx, env: VarEnv, captures: CaptureList, params: ParamList) -> bool {
     match expr {
         .Binary(left, _, right) -> {
@@ -371,6 +421,7 @@ fn param_used_with_float(param_name: string, expr: Expr, ctx: Ctx, env: VarEnv, 
     }
 }
 
+/// Map `param_used_with_float` over an ExprList.
 fn param_used_with_float_list(param_name: string, exprs: ExprList, ctx: Ctx, env: VarEnv, captures: CaptureList, params: ParamList) -> bool {
     match exprs {
         .End -> false
@@ -380,6 +431,8 @@ fn param_used_with_float_list(param_name: string, exprs: ExprList, ctx: Ctx, env
     }
 }
 
+/// Map `param_used_with_float` through a statement list,
+/// recursing into expression payloads + nested bodies.
 fn param_used_with_float_stmts(param_name: string, stmts: StmtList, ctx: Ctx, env: VarEnv, captures: CaptureList, params: ParamList) -> bool {
     match stmts {
         .End -> false
@@ -397,6 +450,10 @@ fn param_used_with_float_stmts(param_name: string, stmts: StmtList, ctx: Ctx, en
     }
 }
 
+/// Infer types for unannotated lambda params by scanning the
+/// body. Defaults to Int; promotes to Float when the param is
+/// used alongside another float operand. Result is a TypeList
+/// matched 1:1 to the input param list.
 fn infer_param_types(params: ParamList, body: Expr, ctx: Ctx, env: VarEnv, captures: CaptureList) -> TypeList {
     match params {
         .End -> TypeList.End
@@ -420,6 +477,9 @@ fn infer_param_types(params: ParamList, body: Expr, ctx: Ctx, env: VarEnv, captu
 extern fn avra_next_lambda_id() -> int
 
 // Compile a lambda with default parameter types (all Int).
+/// Public entry for lambda codegen. Forwards to
+/// `emit_lambda_typed` after letting the heuristic
+/// `infer_param_types` pick a default per param.
 export fn emit_lambda(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .Lambda(params, body) -> emit_lambda_typed(ctx, env, params, body, TypeList.End)
@@ -430,6 +490,12 @@ export fn emit_lambda(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, st
 // Compile a lambda with explicit parameter types.
 // Used by .map/.filter/.reduce to pass the list's element type
 // so that int(x) / x.length / etc. work correctly inside the lambda.
+/// Lambda codegen with explicit param types. Builds a lifted
+/// top-level `__lambda_N` function with a hidden env-pointer
+/// param prepended; emits the body inside; allocates a closure
+/// array `[TAG, fn_ptr, capture0, capture1, ...]` and returns
+/// it as the call's value. Non-capturing lambdas get a single-
+/// slot closure with the function pointer only.
 export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, raw_params: ParamList, body: Expr, param_types: TypeList) -> Result<EmitValue, string> {
     let id = avra_next_lambda_id()
     let name = "__lambda_${string(id)}"
@@ -500,6 +566,10 @@ export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, raw_params: ParamList, body: 
     ok_emit(closure_i64, ValueType.Closure(num_captures, result.ty))
 }
 
+/// Bind every captured value as an extra parameter in the
+/// lifted lambda's body env. Captures appear after the user-
+/// declared params in the LLVM signature, so the body can read
+/// them transparently via env lookup.
 fn bind_captures_as_params(ctx: Ctx, env: VarEnv, captures: CaptureList, fn_val: ptr, idx: int) -> VarEnv {
     match captures {
         .End -> env
@@ -518,6 +588,10 @@ fn bind_captures_as_params(ctx: Ctx, env: VarEnv, captures: CaptureList, fn_val:
     }
 }
 
+/// Walk the capture list pushing each captured value onto the
+/// closure's array (slots 2+ after the marker + fn pointer).
+/// Loads from each capture's alloca so the snapshot reflects
+/// the current value at closure-creation time.
 fn push_captured_values(ctx: Ctx, captures: CaptureList, arr: ptr) {
     match captures {
         .End -> {}
@@ -540,6 +614,11 @@ fn push_captured_values(ctx: Ctx, captures: CaptureList, arr: ptr) {
 // expression is a Lambda, compile it with explicit param types so
 // that type-dependent operations (int(x), x.length, x.upper())
 // work correctly inside the lambda body.
+/// Emit the first arg from `args`, but if it's a Lambda,
+/// compile it against the supplied `param_types` instead of
+/// using the heuristic. Used by higher-order list methods
+/// (`map`, `filter`, …) that know their callback's expected
+/// param types.
 export fn emit_typed_lambda_arg(ctx: Ctx, env: VarEnv, args: ExprList, param_types: TypeList) -> Result<EmitValue, string> {
     match args {
         .End -> err_emit("expected 1 argument, got 0")
@@ -554,6 +633,10 @@ export fn emit_typed_lambda_arg(ctx: Ctx, env: VarEnv, args: ExprList, param_typ
 
 // Call a function pointer stored in a local variable.
 // Load the pointer, cast to fn ptr, build indirect call.
+/// Codegen for calling a fn-typed local variable. Loads the
+/// closure pointer from the alloca and dispatches via
+/// `emit_closure_call` (which handles env-pointer prepend +
+/// arity coercion).
 export fn emit_indirect_call(ctx: Ctx, env: VarEnv, alloca: ptr, name: string, args: ExprList) -> Result<EmitValue, string> {
     let fn_i64 = ctx.load_i64(alloca, name)
     let local = env_lookup(env, name)
@@ -571,6 +654,9 @@ export fn emit_indirect_call(ctx: Ctx, env: VarEnv, alloca: ptr, name: string, a
     emit_indirect_call_typed(ctx, env, fn_i64, args, ret_ty)
 }
 
+/// Same as `emit_indirect_call` but loads the closure pointer
+/// from a top-level global instead of a local alloca. Used when
+/// a fn is exported as a `mut` global.
 export fn emit_indirect_call_from_global(ctx: Ctx, env: VarEnv, global: ptr, name: string, args: ExprList, ty: ValueType) -> Result<EmitValue, string> {
     let fn_i64 = ctx.load_i64(global, name)
     let ret_ty = vtype_fn_ret(ty)
@@ -586,6 +672,10 @@ export fn emit_indirect_call_from_global(ctx: Ctx, env: VarEnv, global: ptr, nam
 // AvraArray:
 // [0] = fn_ptr, [1..N] = captured values.
 // We unpack fn_ptr, evaluate user args, append captures, and call.
+/// Core indirect-call logic for closures. Reads the function
+/// pointer from slot 1 of the closure array, builds the arg
+/// array (prepending captured values when `num_captures > 0`),
+/// and calls via `avra_closure_call_N` for the right arity.
 fn emit_closure_call(ctx: Ctx, env: VarEnv, closure_val: ptr, args: ExprList, num_captures: int) -> Result<EmitValue, string> {
     // Closure array layout: [TAG, fn_ptr, cap1, cap2, ...]
     // TAG is at index 0, fn_ptr at index 1, captures start at index 2.
@@ -617,6 +707,9 @@ fn emit_closure_call(ctx: Ctx, env: VarEnv, closure_val: ptr, args: ExprList, nu
     ok_emit(result, .Int)
 }
 
+/// Copy `count` capture slots out of the closure array into
+/// the call's value array starting at `start_idx`. Used by
+/// `emit_closure_call` to materialise the env-pointer prepend.
 fn fill_closure_captures(ctx: Ctx, val_arr: ptr, closure_val: ptr, start_idx: int, count: int, i: int) {
     if i >= count { return }
     // Captures start at array index 2 (after TAG and fn_ptr)
@@ -625,16 +718,25 @@ fn fill_closure_captures(ctx: Ctx, val_arr: ptr, closure_val: ptr, start_idx: in
     fill_closure_captures(ctx, val_arr, closure_val, start_idx, count, i + 1)
 }
 
+/// Indirect call where the caller already has the closure as an
+/// SSA i64 and knows the expected return type. Skips the
+/// alloca-load step and dispatches straight through.
 export fn emit_indirect_call_typed(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: ExprList, ret_ty: ValueType) -> Result<EmitValue, string> {
     let r = emit_indirect_call_value(ctx, env, fn_i64, args)?
     ok_emit(r.value, ret_ty)
 }
 
+/// Variant of `emit_closure_call` for callers that already have
+/// the SSA i64 and know both the capture count and return type.
+/// Saves a load and types the result for the caller.
 export fn emit_closure_call_typed(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: ExprList, num_captures: int, ret_ty: ValueType) -> Result<EmitValue, string> {
     let r = emit_closure_call(ctx, env, fn_i64, args, num_captures)?
     ok_emit(r.value, ret_ty)
 }
 
+/// Indirect call against an i64-shaped closure value when the
+/// caller doesn't yet know the expected return type. Used in
+/// generic call paths where typing is deferred.
 export fn emit_indirect_call_value(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: ExprList) -> Result<EmitValue, string> {
     // Indirect call for values with unknown closure status at compile time.
     // This happens when a fn returns a closure but the return type says
@@ -697,6 +799,10 @@ export fn emit_indirect_call_value(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: Exp
     err_emit("indirect calls with ${string(user_arg_count)} args not yet supported")
 }
 
+/// Walk an ExprList emitting each arg into successive slots of
+/// `arr`. Lambda call paths use this to pack user-supplied
+/// arguments into the value array passed to
+/// `avra_closure_call_N`.
 fn fill_lambda_args(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, idx: int) -> Result<EmitValue, string> {
     match args {
         .End -> ok_emit(null_ptr_val(), .Void)
@@ -708,6 +814,10 @@ fn fill_lambda_args(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, idx: int) -
     }
 }
 
+/// Bind each lambda parameter as an alloca + env entry,
+/// pulling its declared type from the supplied `types` list (or
+/// falling back to the param's annotation when the type list is
+/// short). Mirror of `bind_params_inline` for closure bodies.
 fn bind_lambda_params_typed(ctx: Ctx, env: VarEnv, params: ParamList, fn_val: ptr, idx: int, types: TypeList) -> VarEnv {
     match params {
         .End -> env

@@ -2,6 +2,9 @@ mod parser
 mod expand
 use core.registry.{feature_new, Feature}
 
+/// Register the `component` declaration feature. Components
+/// expand into struct + impl + factory at the desugar pass —
+/// see `expand.av`. Spec Axis 28 (templates).
 export fn component_decl_feature() -> Feature {
     feature_new("component_decl") with {
         decl_keyword: "kw_component",

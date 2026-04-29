@@ -14,6 +14,9 @@ use core.ast.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, 
 
 // ── Public API ──
 
+/// Public entry: expand every `component` declaration + usage
+/// in `stmts`. Two-phase: collect every `ComponentDef` first,
+/// then walk the tree splicing in templates / instantiations.
 export fn expand_components(stmts: StmtList) -> StmtList {
     let reg = collect_component_defs(stmts)
     let root = CompNestCtx { parent_var: "", parent_name: "" }
@@ -22,17 +25,28 @@ export fn expand_components(stmts: StmtList) -> StmtList {
 
 // ── Component definition registry ──
 
+/// Per-program registry of `component` declarations. Each
+/// entry pairs a component name with its config schema + body
+/// AST. Built once by `collect_component_defs` and consulted by
+/// every `<comp>(...)` instantiation site.
 export enum CompDefRegistry {
     End
     Entry(name: string, config: CompConfigList, body: StmtList, next: CompDefRegistry)
 }
 
+/// Result of a component lookup. `found` distinguishes hit
+/// from miss; the schema + body are zeroed on miss.
+///
+/// @field found  — 1 when the component was registered.
+/// @field config — its config schema.
+/// @field body   — the body AST.
 type CompDefLookup = {
     found: bool,
     config: CompConfigList,
     body: StmtList,
 }
 
+/// Linear lookup of a component definition by name.
 export fn comp_reg_lookup(reg: CompDefRegistry, name: string) -> CompDefLookup {
     match reg {
         .End -> CompDefLookup { found: false, config: CompConfigList.End, body: StmtList.End }
@@ -41,7 +55,9 @@ export fn comp_reg_lookup(reg: CompDefRegistry, name: string) -> CompDefLookup {
     }
 }
 
-// Collect all ComponentDef nodes (unwrapping Annotated wrappers)
+/// Walk the AST once collecting every `ComponentDef` into a
+/// flat registry. Recurses into modules + function bodies and
+/// peels `Annotated` wrappers (doc comments) off each statement.
 export fn collect_component_defs(stmts: StmtList) -> CompDefRegistry {
     match stmts {
         .End -> CompDefRegistry.End
@@ -65,6 +81,9 @@ export fn collect_component_defs(stmts: StmtList) -> CompDefRegistry {
     }
 }
 
+/// Concatenate two component registries. Used by
+/// `collect_component_defs` to fold per-module / per-fn
+/// registries into the program-wide one.
 fn merge_registries(a: CompDefRegistry, b: CompDefRegistry) -> CompDefRegistry {
     match a {
         .End -> b
@@ -72,7 +91,9 @@ fn merge_registries(a: CompDefRegistry, b: CompDefRegistry) -> CompDefRegistry {
     }
 }
 
-// Extract list of component names for parser registration
+/// Extract the names of every registered component as a
+/// CompNameList. Used by the parser to recognise component
+/// instantiations like `<MyComp>(...)`.
 export fn comp_reg_names(reg: CompDefRegistry) -> CompNameList {
     match reg {
         .End -> CompNameList.End
@@ -80,11 +101,14 @@ export fn comp_reg_names(reg: CompDefRegistry) -> CompNameList {
     }
 }
 
+/// Linked list of component names. Used by the parser to
+/// distinguish `MyComp(...)` from a regular fn call.
 export enum CompNameList {
     End
     Node(name: string, next: CompNameList)
 }
 
+/// Membership test for `CompNameList`.
 export fn comp_name_has(list: CompNameList, name: string) -> bool {
     match list {
         .End -> false
@@ -93,6 +117,9 @@ export fn comp_name_has(list: CompNameList, name: string) -> bool {
     }
 }
 
+/// Strip every layer of `Annotated` wrappers from a statement.
+/// Component scanning needs the raw statement so doc comments
+/// + `@export` etc. don't hide a `ComponentDef` from collection.
 fn stmt_unwrap_deep(s: Stmt) -> Stmt {
     match s {
         .Annotated(_, inner) -> stmt_unwrap_deep(inner)
@@ -102,6 +129,10 @@ fn stmt_unwrap_deep(s: Stmt) -> Stmt {
 
 // ── Nesting context ──
 
+/// Nesting context for nested component blocks.
+///
+/// @field parent_var  — accumulator var of the enclosing block ("" at root).
+/// @field parent_name — instance name of the enclosing block ("" at root).
 export type CompNestCtx = {
     parent_var: string,    // parent accumulator variable ("" = root)
     parent_name: string,   // parent instance name ("" = root)
@@ -109,12 +140,18 @@ export type CompNestCtx = {
 
 // ── Self-rewriting ──
 
+/// Rewrite-time context threaded through the per-instance
+/// expansion. Carries the current instance name + parent
+/// accumulator so `@self` / `@parent` references resolve.
 type RewriteCtx = {
     inst: string,
     parent_var: string,
     parent_name: string,
 }
 
+/// Walk a body rewriting every `@self` / `@parent` reference
+/// to the right per-instance variable. The entry point for
+/// per-instance expansion of a component body.
 fn rewrite_self(stmts: StmtList, ctx: RewriteCtx) -> StmtList {
     match stmts {
         .End -> StmtList.End
@@ -125,6 +162,8 @@ fn rewrite_self(stmts: StmtList, ctx: RewriteCtx) -> StmtList {
     }
 }
 
+/// Per-statement self-rewrite. Recurses into expression
+/// payloads + nested bodies; preserves decl-only statements.
 fn rw_stmt(stmt: Stmt, ctx: RewriteCtx) -> Stmt {
     match stmt {
         .Expr(e) -> .Expr(rw_expr(e, ctx))
@@ -144,6 +183,9 @@ fn rw_stmt(stmt: Stmt, ctx: RewriteCtx) -> Stmt {
     }
 }
 
+/// Per-expression self-rewrite. `@self` and `@parent` Ident
+/// references rewrite to the matching per-instance var; other
+/// shapes recurse into their payloads.
 fn rw_expr(expr: Expr, ctx: RewriteCtx) -> Expr {
     match expr {
         .FieldAccess(obj, field) -> {
@@ -190,6 +232,7 @@ fn rw_expr(expr: Expr, ctx: RewriteCtx) -> Expr {
     }
 }
 
+/// Map `rw_expr` over an ExprList.
 fn rw_expr_list(list: ExprList, ctx: RewriteCtx) -> ExprList {
     match list {
         .End -> ExprList.End
@@ -199,6 +242,10 @@ fn rw_expr_list(list: ExprList, ctx: RewriteCtx) -> ExprList {
 
 // ── Template self-rewriting (inlines config values) ──
 
+/// Walk a template body substituting every `@cfg.field`
+/// reference with the user-supplied config value (falling back
+/// to the schema default). Threads the rewrite ctx so nested
+/// `@self` references still resolve.
 fn rw_template(stmts: StmtList, inst: string, uc: CompConfigPairList, schema: CompConfigList, ctx: RewriteCtx) -> StmtList {
     match stmts {
         .End -> StmtList.End
@@ -209,6 +256,8 @@ fn rw_template(stmts: StmtList, inst: string, uc: CompConfigPairList, schema: Co
     }
 }
 
+/// Per-statement template rewrite — same shape as `rw_stmt`
+/// but with the config substitution active.
 fn rw_tpl_stmt(stmt: Stmt, inst: string, uc: CompConfigPairList, schema: CompConfigList, ctx: RewriteCtx) -> Stmt {
     match stmt {
         .Expr(e) -> .Expr(rw_tpl_expr(e, inst, uc, schema, ctx))
@@ -227,6 +276,8 @@ fn rw_tpl_stmt(stmt: Stmt, inst: string, uc: CompConfigPairList, schema: CompCon
     }
 }
 
+/// Per-expression template rewrite. `@cfg.field` references
+/// resolve via `resolve_config_value`; other shapes recurse.
 fn rw_tpl_expr(expr: Expr, inst: string, uc: CompConfigPairList, schema: CompConfigList, ctx: RewriteCtx) -> Expr {
     match expr {
         .FieldAccess(obj, field) -> {
@@ -274,6 +325,8 @@ fn rw_tpl_expr(expr: Expr, inst: string, uc: CompConfigPairList, schema: CompCon
     }
 }
 
+/// Map `rw_tpl_expr` over every field initializer in a struct
+/// literal embedded in a template body.
 fn rw_tpl_field_inits(inits: FieldInitList, inst: string, uc: CompConfigPairList, schema: CompConfigList, ctx: RewriteCtx) -> FieldInitList {
     match inits {
         .End -> FieldInitList.End
@@ -284,6 +337,7 @@ fn rw_tpl_field_inits(inits: FieldInitList, inst: string, uc: CompConfigPairList
     }
 }
 
+/// Map `rw_tpl_expr` over an ExprList in a template body.
 fn rw_tpl_expr_list(list: ExprList, inst: string, uc: CompConfigPairList, schema: CompConfigList, ctx: RewriteCtx) -> ExprList {
     match list {
         .End -> ExprList.End
@@ -291,6 +345,9 @@ fn rw_tpl_expr_list(list: ExprList, inst: string, uc: CompConfigPairList, schema
     }
 }
 
+/// Resolve a `@cfg.field` reference: prefer the user's
+/// instantiation override, fall back to the schema's default,
+/// finally `Expr.Null` when neither exists.
 export fn resolve_config_value(field: string, user_config: CompConfigPairList, schema: CompConfigList) -> Expr {
     match user_config {
         .End -> {}
@@ -313,6 +370,9 @@ export fn resolve_config_value(field: string, user_config: CompConfigPairList, s
 
 // ── Helpers ──
 
+/// Upper-case the first character of `s` (ASCII only). Used to
+/// derive the synthesized struct's PascalCase name from a
+/// component's snake_case identifier.
 fn capitalize(s: string) -> string {
     if s.length == 0 { return "" }
     let first = s.substring(0, 1)
@@ -329,6 +389,9 @@ fn capitalize(s: string) -> string {
     "${upper}${rest}"
 }
 
+/// Convert a component's config schema into struct fields for
+/// the synthesized backing struct. Each schema entry's
+/// declared type becomes a field type.
 fn config_to_fields(config: CompConfigList) -> FieldList {
     match config {
         .End -> FieldList.End
@@ -336,6 +399,9 @@ fn config_to_fields(config: CompConfigList) -> FieldList {
     }
 }
 
+/// Convert a config schema to the `Foo { field: cfg.field, …}`
+/// FieldInitList used when instantiating the synthesized struct
+/// from inside the factory function.
 fn config_to_factory_inits(config: CompConfigList) -> FieldInitList {
     match config {
         .End -> FieldInitList.End
@@ -346,6 +412,9 @@ fn config_to_factory_inits(config: CompConfigList) -> FieldInitList {
     }
 }
 
+/// True when `stmts` contains a top-level function declaration
+/// named `fn_name`. Used to test whether a component body
+/// already provides a custom factory or method.
 fn has_fn(stmts: StmtList, fn_name: string) -> bool {
     match stmts {
         .End -> false
@@ -358,6 +427,8 @@ fn has_fn(stmts: StmtList, fn_name: string) -> bool {
     }
 }
 
+/// Look up a function declaration by name and return its body
+/// statement list. Returns `End` when not found.
 fn find_fn_body(stmts: StmtList, fn_name: string) -> StmtList {
     match stmts {
         .End -> StmtList.End
@@ -370,6 +441,9 @@ fn find_fn_body(stmts: StmtList, fn_name: string) -> StmtList {
     }
 }
 
+/// Walk a component body collecting every method-shaped fn
+/// (i.e. one whose first param is `self`) into a list suitable
+/// for inclusion in the synthesized `impl ComponentName { ... }`.
 fn extract_methods(body: StmtList, comp_name: string) -> StmtList {
     match body {
         .End -> StmtList.End
@@ -389,6 +463,8 @@ fn extract_methods(body: StmtList, comp_name: string) -> StmtList {
     }
 }
 
+/// Concatenate two StmtLists. Used to splice the synthesized
+/// struct + impl + factory into the surrounding scope.
 fn append_stmt_lists(a: StmtList, b: StmtList) -> StmtList {
     match a {
         .End -> b
@@ -396,10 +472,16 @@ fn append_stmt_lists(a: StmtList, b: StmtList) -> StmtList {
     }
 }
 
+/// Prepend a single statement onto `rest`, attaching the given
+/// line/col span info. Used by the splice helpers when emitting
+/// synthetic statements that don't have natural source spans.
 fn prepend_stmt(stmt: Stmt, line: int, col: int, rest: StmtList) -> StmtList {
     StmtList.Node(sstmt(stmt, line, col), rest)
 }
 
+/// Wrap a base expression in a struct-literal `with { ... }`
+/// override using the supplied config pairs. Used to pass an
+/// instance's user config to the factory.
 fn apply_config_pairs(base: Expr, config: CompConfigPairList) -> Expr {
     match config {
         .End -> base
@@ -407,6 +489,9 @@ fn apply_config_pairs(base: Expr, config: CompConfigPairList) -> Expr {
     }
 }
 
+/// Convert a CompConfigPairList (user instantiation config)
+/// into a FieldInitList for direct splicing into a struct
+/// literal.
 fn config_pairs_to_field_inits(pairs: CompConfigPairList) -> FieldInitList {
     match pairs {
         .End -> FieldInitList.End
@@ -416,6 +501,10 @@ fn config_pairs_to_field_inits(pairs: CompConfigPairList) -> FieldInitList {
 
 // ── ComponentDef splice ──
 
+/// Expand a `component Name { ... }` declaration into the
+/// triple `type Name`, `impl Name { … }`, and a factory
+/// `fn make_name(cfg) -> Name`. Spliced ahead of `rest` so the
+/// surrounding code sees the synthesized definitions.
 export fn splice_component_def(name: string, params: ParamList, config: CompConfigList, body: StmtList, line: int, col: int, rest: StmtList) -> StmtList {
     // Template components (with init hooks): no type/factory generation
     if has_fn(body, "init") {
@@ -446,6 +535,10 @@ export fn splice_component_def(name: string, params: ParamList, config: CompConf
 
 // ── ComponentBlock splice ──
 
+/// Expand a `<Component>(cfg) { children }` block. Looks up the
+/// component definition, then dispatches to either
+/// `splice_template_block` or `splice_data_block` based on the
+/// template-vs-data classification of the body.
 export fn splice_component_block(comp: string, inst: string, config: CompConfigPairList, body: StmtList, line: int, col: int, rest: StmtList, reg: CompDefRegistry, nest: CompNestCtx) -> StmtList {
     let def = comp_reg_lookup(reg, comp)
     let has_init = def.found && has_fn(def.body, "init")
@@ -456,6 +549,10 @@ export fn splice_component_block(comp: string, inst: string, config: CompConfigP
     splice_data_block(comp, inst, config, body, line, col, rest, reg, nest, def)
 }
 
+/// Splice the template-flavour expansion of a component block.
+/// The component's body is rewritten via `rw_template` (for
+/// `@cfg`) and `rewrite_self` (for `@self`), then the result
+/// inlines into the surrounding scope.
 fn splice_template_block(comp: string, inst: string, config: CompConfigPairList, body: StmtList, line: int, col: int, rest: StmtList, reg: CompDefRegistry, nest: CompNestCtx, def: CompDefLookup) -> StmtList {
     let is_root = nest.parent_var == ""
     let accum_var = if is_root { inst } else { nest.parent_var }
@@ -489,6 +586,10 @@ fn splice_template_block(comp: string, inst: string, config: CompConfigPairList,
     append_stmt_lists(stmts, rest)
 }
 
+/// Splice the data-flavour expansion of a component block.
+/// Emits a `let inst = <factory>(cfg)` binding plus any nested
+/// component blocks expanded recursively under the new
+/// nesting context.
 fn splice_data_block(comp: string, inst: string, config: CompConfigPairList, body: StmtList, line: int, col: int, rest: StmtList, reg: CompDefRegistry, nest: CompNestCtx, def: CompDefLookup) -> StmtList {
     let rw_ctx = RewriteCtx { inst, parent_var: nest.parent_var, parent_name: nest.parent_name }
 
@@ -525,6 +626,10 @@ fn splice_data_block(comp: string, inst: string, config: CompConfigPairList, bod
 
 // ── Statement list expansion (called by desugar) ──
 
+/// Recursive expansion driver: walk every statement,
+/// dispatching `ComponentDef` to `splice_component_def` and
+/// `ComponentBlock` to `splice_component_block`. Other
+/// statements pass through untouched.
 export fn expand_stmt_list(stmts: StmtList, reg: CompDefRegistry, nest: CompNestCtx) -> StmtList {
     match stmts {
         .End -> StmtList.End
@@ -548,6 +653,9 @@ export fn expand_stmt_list(stmts: StmtList, reg: CompDefRegistry, nest: CompNest
     }
 }
 
+/// Per-statement expansion. Recurses into module / fn / impl /
+/// block bodies so component blocks at any nesting depth are
+/// spliced in place.
 fn expand_stmt(stmt: Stmt, reg: CompDefRegistry, nest: CompNestCtx) -> Stmt {
     match stmt {
         .Function(name, tp, params, rvt, body) -> .Function(name, tp, params, rvt, expand_stmt_list(body, reg, nest))

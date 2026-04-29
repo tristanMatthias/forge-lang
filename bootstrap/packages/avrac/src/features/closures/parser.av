@@ -7,7 +7,9 @@ use core.ast.{Expr, ExprList, StmtList, ParamList}
 use parse.{Parser}
 use core.ast.{Tk}
 
-// Check if an expression tree references the identifier `it`.
+/// True when `expr` references the implicit `it` pronoun. Used
+/// by `wrap_in_it_lambda` to recognise method-call sugar like
+/// `xs.map(it * 2)` and rewrite it as `xs.map((it) -> it * 2)`.
 export fn expr_contains_it(expr: Expr) -> bool {
     match expr {
         .Ident(n) -> n == "it"
@@ -37,6 +39,7 @@ export fn expr_contains_it(expr: Expr) -> bool {
     }
 }
 
+/// Map `expr_contains_it` over an ExprList.
 export fn expr_list_contains_it(list: ExprList) -> bool {
     match list {
         .End -> false
@@ -44,6 +47,9 @@ export fn expr_list_contains_it(list: ExprList) -> bool {
     }
 }
 
+/// Map `expr_contains_it` over the expression payload of every
+/// statement. Block bodies need this so an `it` reference deep
+/// inside a `let`-init or `return` triggers the lambda wrap.
 export fn stmt_list_contains_it(list: StmtList) -> bool {
     match list {
         .End -> false
@@ -60,7 +66,9 @@ export fn stmt_list_contains_it(list: StmtList) -> bool {
     }
 }
 
-// Wrap an expression in an implicit `(it) -> { expr }` lambda.
+/// Wrap a body that mentions `it` in an implicit
+/// `(it) -> body` lambda. The parameter type is left as
+/// `Unknown` so the regular type-inference path picks it up.
 export fn wrap_in_it_lambda(expr: Expr) -> Expr {
     Expr.Lambda(ParamList.Node("it", ValueType.Unknown, ParamList.End), expr)
 }

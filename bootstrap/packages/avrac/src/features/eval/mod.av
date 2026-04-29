@@ -21,8 +21,22 @@ use core.registry.{Registry, build_registry, dispatch_stmt_eval, dispatch_expr_e
 // source keep using the short name.
 use core.runtime.{avra_selfhost_string_to_float}
 
+/// Wrapper around the C runtime's string→float parser. Re-
+/// exposed locally so the evaluator can keep using the short
+/// name `float` even though the actual C symbol takes
+/// `const char*`.
 fn float(s: string) -> int { avra_selfhost_string_to_float(s) }
 
+/// Tagged value used by the tree-walking evaluator. The `kind`
+/// field discriminates which other field holds the payload —
+/// `"number"`/`"string"`/`"bool"`/`"null"` cover the supported
+/// types. Codegen / runtime model is i64; this struct exists
+/// only inside the evaluator.
+///
+/// @field kind         — one of "number" | "string" | "bool" | "null".
+/// @field number_text  — decimal text when kind == "number".
+/// @field text         — string contents when kind == "string".
+/// @field bool_value   — 0/1 when kind == "bool".
 export type Value = {
     kind: string,
     number_text: string,
@@ -30,22 +44,39 @@ export type Value = {
     bool_value: int,
 }
 
+/// Final result of an evaluation. `value` is null on failure;
+/// otherwise it carries the produced Value.
+///
+/// @field value         — produced Value, null when an error was raised.
+/// @field had_error     — 1 when evaluation aborted.
+/// @field error_message — diagnostic when had_error is set.
 export type EvalResult = {
     value: Value?,
     had_error: int,
     error_message: string,
 }
 
+/// Local binding list for the evaluator. Each entry tracks
+/// whether it was declared `mut` and its scope depth so
+/// `pop_scope_bindings` can drop them on scope exit.
 enum BindingList {
     End
     Node(name: string, mutable_binding: int, depth: int, value: Value, next: BindingList)
 }
 
+/// Local function table for the evaluator. Maps name → AST so
+/// recursive + mutually-recursive calls can resolve at call time.
 enum FunctionList {
     End
     Node(name: string, params: ParamList, body: StmtList, next: FunctionList)
 }
 
+/// Tree-walk evaluator state. Threaded through every eval step.
+///
+/// @field bindings  — current local bindings (most-recent first).
+/// @field functions — declared functions reachable for calls.
+/// @field depth     — scope depth, used for `pop_scope_bindings`.
+/// @field features  — feature registry, for dispatched eval hooks.
 export type Runtime = {
     bindings: BindingList,
     functions: FunctionList,
@@ -53,6 +84,15 @@ export type Runtime = {
     features: Registry,
 }
 
+/// Per-step output: updated runtime, computed value, and
+/// error/return flags. Callers chain these together to walk the
+/// program.
+///
+/// @field runtime       — runtime after the step.
+/// @field value         — value produced by the step.
+/// @field had_error     — 1 when the step failed.
+/// @field is_return     — 1 when the step executed a `return`.
+/// @field error_message — diagnostic when had_error is set.
 export type StepResult = {
     runtime: Runtime,
     value: Value,
@@ -61,26 +101,42 @@ export type StepResult = {
     error_message: string,
 }
 
+/// Extract `runtime` from a StepResult. Convenience accessor for
+/// callers that only need the threaded state.
 export fn step_runtime(step: StepResult) -> Runtime {
     step.runtime
 }
 
+/// Extract `value` from a StepResult.
 export fn step_value(step: StepResult) -> Value {
     step.value
 }
 
+/// Extract `had_error` from a StepResult — true when evaluation
+/// aborted on this step.
 export fn step_had_error(step: StepResult) -> int {
     step.had_error
 }
 
+/// Extract `is_return` from a StepResult — true when this step
+/// executed a `return` statement.
 export fn step_is_return(step: StepResult) -> int {
     step.is_return
 }
 
+/// Extract `error_message` from a StepResult.
 export fn step_error_message(step: StepResult) -> string {
     step.error_message
 }
 
+/// Result of `assign_binding`. `found` distinguishes "binding
+/// existed and was updated" from "no such binding" so callers
+/// can choose between mutating and erroring.
+///
+/// @field bindings      — updated binding list.
+/// @field found         — 1 when the binding existed.
+/// @field had_error     — 1 when the assign failed (e.g. `let`).
+/// @field error_message — diagnostic when had_error is set.
 type AssignBindingsResult = {
     bindings: BindingList,
     found: int,
@@ -88,6 +144,9 @@ type AssignBindingsResult = {
     error_message: string,
 }
 
+/// Format a `Value` as a user-facing string. Numbers preserve
+/// their text representation, booleans render as `true`/`false`,
+/// strings pass through, and null renders as `"null"`.
 export fn render_value(value: Value) -> string {
     match value.kind {
         "number" -> value.number_text
@@ -97,6 +156,8 @@ export fn render_value(value: Value) -> string {
     }
 }
 
+/// Build a successful StepResult from a runtime + value pair.
+/// The error flags are zeroed.
 export fn ok_result(runtime: Runtime, value: Value) -> StepResult {
     StepResult {
         runtime,
@@ -107,6 +168,9 @@ export fn ok_result(runtime: Runtime, value: Value) -> StepResult {
     }
 }
 
+/// Build an error StepResult with the message prefixed by
+/// `eval error:` so diagnostics distinguish evaluator errors
+/// from compiler errors at a glance.
 export fn error_result(runtime: Runtime, message: string) -> StepResult {
     StepResult {
         runtime,
@@ -117,6 +181,9 @@ export fn error_result(runtime: Runtime, message: string) -> StepResult {
     }
 }
 
+/// Construct the canonical null Value. All other Value kinds
+/// have helpers to build them; null is the default for missing
+/// or absent results.
 export fn value_null() -> Value {
     Value {
         kind: "null",
@@ -126,6 +193,9 @@ export fn value_null() -> Value {
     }
 }
 
+/// Truthiness rules for the evaluator: bool returns its own
+/// flag, null is always falsy, every other kind is truthy
+/// (matches the codegen-side `truthy` semantics).
 export fn is_truthy(value: Value) -> bool {
     match value.kind {
         "bool" -> value.bool_value
@@ -139,6 +209,9 @@ export fn is_truthy(value: Value) -> bool {
 
 use features.eval.{Value, EvalResult, Runtime, StepResult, ok_result, error_result, value_null, is_truthy, render_value}
 
+/// Public entry point for evaluating a single expression.
+/// Parses + walks the resulting Expr, returning an EvalResult
+/// suitable for the `avra eval` CLI.
 export fn eval_expression_source(source: string) -> EvalResult {
     let parsed = parse_expression_source(source)
     if parsed.had_error || parsed.expr == null {
@@ -152,6 +225,9 @@ export fn eval_expression_source(source: string) -> EvalResult {
     finish_result(eval_expr(runtime_new(), parsed.expr!))
 }
 
+/// Public entry point for evaluating a full program. Parses
+/// the source, runs it through `execute_stmt_list`, and
+/// returns the final EvalResult.
 export fn execute_program_source(source: string) -> EvalResult {
     let parsed = parse_program_source(source)
     if parsed.had_error || parsed.stmts == null {
@@ -165,6 +241,8 @@ export fn execute_program_source(source: string) -> EvalResult {
     finish_result(execute_stmt_list(runtime_new(), parsed.stmts!))
 }
 
+/// Render an integer as its canonical decimal text. Strips a
+/// trailing `.0` so `42.0` becomes `42` for CLI output.
 fn render_number(value: int) -> string {
     let text = string(value)
     if text.length >= 2 {
@@ -176,6 +254,9 @@ fn render_number(value: int) -> string {
     text
 }
 
+/// Convert the per-step `StepResult` into the public
+/// `EvalResult` returned to CLI callers. Drops runtime + return
+/// flags — they don't matter once execution stops.
 fn finish_result(step: StepResult) -> EvalResult {
     EvalResult {
         value: step.value,
@@ -184,6 +265,8 @@ fn finish_result(step: StepResult) -> EvalResult {
     }
 }
 
+/// Construct a fresh evaluator runtime — empty bindings + fns,
+/// depth zero, full feature registry.
 fn runtime_new() -> Runtime {
     Runtime {
         bindings: BindingList.End,
@@ -193,6 +276,9 @@ fn runtime_new() -> Runtime {
     }
 }
 
+/// Build a StepResult that signals an early `return`. The body
+/// of an executing fn checks `is_return` after every step to
+/// short-circuit out.
 fn make_return(runtime: Runtime, value: Value) -> StepResult {
     StepResult {
         runtime,
@@ -203,6 +289,9 @@ fn make_return(runtime: Runtime, value: Value) -> StepResult {
     }
 }
 
+/// Construct a number Value carrying its decimal text. Numbers
+/// keep their text form so the evaluator can echo literals
+/// verbatim (e.g. `1.5` not `1.500000`).
 fn value_number(text: string) -> Value {
     Value {
         kind: "number",
@@ -212,6 +301,7 @@ fn value_number(text: string) -> Value {
     }
 }
 
+/// Construct a string Value.
 fn value_string(text: string) -> Value {
     Value {
         kind: "string",
@@ -221,6 +311,7 @@ fn value_string(text: string) -> Value {
     }
 }
 
+/// Construct a bool Value (`flag` is 0 or 1).
 fn value_bool(flag: int) -> Value {
     Value {
         kind: "bool",
@@ -230,14 +321,22 @@ fn value_bool(flag: int) -> Value {
     }
 }
 
+/// Open a new lexical scope by bumping the runtime's depth
+/// counter. New bindings created until `exit_scope` carry this
+/// depth so the cleanup pass knows what to drop.
 fn enter_scope(runtime: Runtime) -> Runtime {
     runtime with { depth: runtime.depth + 1 }
 }
 
+/// Close the current scope: drop every binding created at the
+/// active depth and decrement the depth counter.
 fn exit_scope(runtime: Runtime) -> Runtime {
     runtime with { bindings: pop_scope_bindings(runtime.bindings, runtime.depth), depth: runtime.depth - 1 }
 }
 
+/// Recursively walk the binding list, dropping every entry
+/// whose `binding_depth` matches the scope being closed.
+/// Older entries pass through untouched.
 fn pop_scope_bindings(bindings: BindingList, depth: int) -> BindingList {
     match bindings {
         .End -> BindingList.End
@@ -247,21 +346,39 @@ fn pop_scope_bindings(bindings: BindingList, depth: int) -> BindingList {
     }
 }
 
+/// Push a new local binding onto the runtime. `mutable_binding`
+/// is 1 for `mut`, 0 for `let`/`const`. The depth is recorded so
+/// `pop_scope_bindings` can drop it later.
 fn define_binding(runtime: Runtime, name: string, mutable_binding: int, value: Value) -> Runtime {
     runtime with { bindings: BindingList.Node(name, mutable_binding, runtime.depth, value, runtime.bindings) }
 }
 
+/// Result of a binding lookup. `found` distinguishes
+/// "binding existed" from "no such binding"; the value is null
+/// on miss.
+///
+/// @field value — the binding's current value (null when not found).
+/// @field found — 1 when the binding existed.
 type LookupResult = {
     value: Value,
     found: int,
 }
 
+/// Result of a function lookup. Same convention as
+/// `LookupResult` — empty params + body when not found.
+///
+/// @field params — declared params of the looked-up fn.
+/// @field body   — the fn's body statements.
+/// @field found  — 1 when the fn was registered.
 type FunctionLookupResult = {
     params: ParamList,
     body: StmtList,
     found: int,
 }
 
+/// Linear lookup of a binding by name. Returns the most-recent
+/// (top-of-stack) entry so inner-scope `let`s shadow outer
+/// ones.
 fn lookup_binding(bindings: BindingList, name: string) -> LookupResult {
     match bindings {
         .End -> LookupResult { value: value_null(), found: false }
@@ -270,6 +387,9 @@ fn lookup_binding(bindings: BindingList, name: string) -> LookupResult {
     }
 }
 
+/// Linear lookup of a function declaration by name. Most-recent
+/// definition wins so re-declared functions in tests behave
+/// predictably.
 fn lookup_function(functions: FunctionList, name: string) -> FunctionLookupResult {
     match functions {
         .End -> FunctionLookupResult { params: ParamList.End, body: StmtList.End, found: false }
@@ -278,10 +398,17 @@ fn lookup_function(functions: FunctionList, name: string) -> FunctionLookupResul
     }
 }
 
+/// Register a function declaration on the runtime. Functions
+/// don't track depth (they're effectively program-global from
+/// the evaluator's perspective).
 fn define_function(runtime: Runtime, name: string, params: ParamList, body: StmtList) -> Runtime {
     runtime with { functions: FunctionList.Node(name, params, body, runtime.functions) }
 }
 
+/// Mutate an existing binding by name. Errors when the
+/// matching entry is immutable (`let`/`const`); skips silently
+/// (returns `found: false`) when no such binding exists so the
+/// caller can fall back to global lookup.
 fn assign_binding(bindings: BindingList, name: string, value: Value) -> AssignBindingsResult {
     match bindings {
         .End -> {
@@ -340,6 +467,9 @@ fn assign_binding(bindings: BindingList, name: string, value: Value) -> AssignBi
     }
 }
 
+/// Walk a statement list. Stops as soon as any step errors or
+/// signals an early return. Returns the last step's result so
+/// the final value of a block flows out naturally.
 fn execute_stmt_list(runtime: Runtime, stmts: StmtList) -> StepResult {
     match stmts {
         .End -> ok_result(runtime, value_null())
@@ -357,6 +487,10 @@ fn execute_stmt_list(runtime: Runtime, stmts: StmtList) -> StepResult {
     }
 }
 
+/// Execute a single statement. Built-ins (let/mut/expr/block/
+/// fn-decl/return) are inlined here; declarative-only stmts
+/// (TypeDecl, ShapeDecl, …) are erased. Anything else dispatches
+/// to the feature registry's eval hooks.
 export fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
     match stmt {
         .Let(name, _, initializer) -> {
@@ -428,6 +562,9 @@ export fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
     }
 }
 
+/// Recursive `while` evaluator. Re-evaluates the condition each
+/// iteration; loops until the condition is falsy or the body
+/// errors / returns.
 export fn execute_while(runtime: Runtime, condition: Expr, body: Stmt) -> StepResult {
     let cond_result = eval_expr(runtime, condition)
     if cond_result.had_error {
@@ -446,6 +583,11 @@ export fn execute_while(runtime: Runtime, condition: Expr, body: Stmt) -> StepRe
     execute_while(body_result.runtime, condition, body)
 }
 
+/// Evaluate a single expression, returning a StepResult with the
+/// produced Value + any error / return state. Built-in expression
+/// shapes (literals, idents, assignment, grouping, unary/binary/
+/// logical, call, qualified) are inlined; anything else
+/// dispatches to feature eval hooks.
 export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
     match expr {
         .Number(text) -> ok_result(runtime, value_number(render_number(float(text))))
@@ -515,6 +657,13 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
     }
 }
 
+/// Result of evaluating an argument list. Threads runtime state
+/// through every arg evaluation so side effects accumulate.
+///
+/// @field runtime       — runtime after evaluating all args.
+/// @field values        — list of produced Values.
+/// @field had_error     — 1 when any arg evaluation failed.
+/// @field error_message — diagnostic when had_error is set.
 type EvalArgsResult = {
     runtime: Runtime,
     values: ValueList,
@@ -522,11 +671,15 @@ type EvalArgsResult = {
     error_message: string,
 }
 
+/// Linked list of Values produced by `eval_arg_list`. Used as
+/// scratch storage during call evaluation.
 enum ValueList {
     End
     Node(value: Value, next: ValueList)
 }
 
+/// Evaluate every expression in `args` left-to-right, threading
+/// the runtime through each call. Bails on first error.
 fn eval_arg_list(runtime: Runtime, args: ExprList) -> EvalArgsResult {
     match args {
         .End -> EvalArgsResult { runtime, values: ValueList.End, had_error: false, error_message: "" }
@@ -545,6 +698,10 @@ fn eval_arg_list(runtime: Runtime, args: ExprList) -> EvalArgsResult {
     }
 }
 
+/// Bind every entry in `args` to the corresponding name in
+/// `params`. Used by `eval_call` to set up the callee's scope.
+/// Bindings are immutable (`mut: false`) — params are not
+/// reassignable in the evaluator.
 fn bind_params(runtime: Runtime, params: ParamList, args: ValueList) -> Runtime {
     match params {
         .End -> runtime
@@ -560,6 +717,8 @@ fn bind_params(runtime: Runtime, params: ParamList, args: ValueList) -> Runtime 
     }
 }
 
+/// Number of declared parameters in a ParamList. Used to assert
+/// arity at call sites.
 fn count_params(params: ParamList) -> int {
     match params {
         .End -> 0
@@ -567,6 +726,8 @@ fn count_params(params: ParamList) -> int {
     }
 }
 
+/// Number of values in a ValueList. Pairs with `count_params`
+/// for the arity check.
 fn count_values(values: ValueList) -> int {
     match values {
         .End -> 0
@@ -574,6 +735,11 @@ fn count_values(values: ValueList) -> int {
     }
 }
 
+/// Evaluate a call site. Resolves the callee value first
+/// (function or builtin), then evaluates every arg, asserts
+/// arity, and dispatches: builtins go through `call_builtin`,
+/// user functions enter a fresh scope, bind params, run the
+/// body, and pop the scope on exit.
 fn eval_call(runtime: Runtime, callee: Expr, args: ExprList) -> StepResult {
     let callee_result = eval_expr(runtime, callee)
     if callee_result.had_error {
@@ -626,6 +792,9 @@ fn eval_call(runtime: Runtime, callee: Expr, args: ExprList) -> StepResult {
     ok_result(restored, body_result.value)
 }
 
+/// Construct a function-reference Value. `name` resolves to
+/// the matching FunctionList entry at call time. The kind tag
+/// distinguishes user functions from built-ins.
 fn value_function(name: string) -> Value {
     Value {
         kind: "function",
@@ -635,6 +804,8 @@ fn value_function(name: string) -> Value {
     }
 }
 
+/// Construct a builtin-reference Value (e.g. for `println`,
+/// `string`). Resolves to a `call_builtin` dispatch at call site.
 fn value_builtin(name: string) -> Value {
     Value {
         kind: "builtin",
@@ -644,6 +815,8 @@ fn value_builtin(name: string) -> Value {
     }
 }
 
+/// Dispatch a builtin call by name. Currently handles `println`
+/// and `string`; everything else errors as `unknown builtin`.
 fn call_builtin(runtime: Runtime, name: string, args: ValueList) -> StepResult {
     if name == "println" {
         match args {
@@ -670,6 +843,9 @@ fn call_builtin(runtime: Runtime, name: string, args: ValueList) -> StepResult {
     error_result(runtime, "unknown builtin `${name}`")
 }
 
+/// Evaluate a unary operator (`-x`, `!x`, `~x`). Negation
+/// requires a numeric operand; logical-not is universal;
+/// bitwise-not isn't supported by the tree-walk evaluator.
 fn eval_unary(runtime: Runtime, op: UnOp, right: Expr) -> StepResult {
     let right_result = eval_expr(runtime, right)
     if right_result.had_error {
@@ -690,6 +866,10 @@ fn eval_unary(runtime: Runtime, op: UnOp, right: Expr) -> StepResult {
     }
 }
 
+/// Evaluate a binary operator. `+` is the most overloaded —
+/// numeric addition, string concatenation. `==` / `!=` use
+/// `values_equal`. Numeric comparisons require both operands to
+/// parse as numbers.
 fn eval_binary(runtime: Runtime, left: Expr, op: BinOp, right: Expr) -> StepResult {
     let left_result = eval_expr(runtime, left)?
 
@@ -728,6 +908,9 @@ fn eval_binary(runtime: Runtime, left: Expr, op: BinOp, right: Expr) -> StepResu
     }
 }
 
+/// Evaluate a short-circuit logical operator (`||`, `&&`).
+/// Returns the first operand's value when it determines the
+/// outcome; otherwise evaluates and returns the second.
 fn eval_logical(runtime: Runtime, left: Expr, op: LogicOp, right: Expr) -> StepResult {
     let left_result = eval_expr(runtime, left)?
 
@@ -744,6 +927,9 @@ fn eval_logical(runtime: Runtime, left: Expr, op: LogicOp, right: Expr) -> StepR
     }
 }
 
+/// `+` is overloaded: numeric add when both sides are numbers,
+/// string concat when both are strings. Mixed types error so
+/// the user catches accidental coercion.
 fn eval_plus(runtime: Runtime, left: Value, right: Value) -> StepResult {
     let left_num_text = as_number_text(left)
     if left_num_text != null {
@@ -768,6 +954,9 @@ fn eval_plus(runtime: Runtime, left: Value, right: Value) -> StepResult {
     error_result(runtime, "operands to `+` must both be numbers or both be strings")
 }
 
+/// Returns a Value's number-text representation when its kind
+/// is `"number"`, otherwise null. Used by numeric operators to
+/// fail early on non-numeric operands.
 fn as_number_text(value: Value) -> string? {
     if value.kind == "number" {
         return value.number_text
@@ -775,6 +964,8 @@ fn as_number_text(value: Value) -> string? {
     null
 }
 
+/// Returns a Value's text when its kind is `"string"`, else
+/// null. Mirror of `as_number_text` for string operations.
 fn as_string(value: Value) -> string? {
     if value.kind == "string" {
         return value.text
@@ -782,6 +973,9 @@ fn as_string(value: Value) -> string? {
     null
 }
 
+/// Value equality: kinds must match, then payloads compare.
+/// Numbers compare as floats so `1` and `1.0` are equal.
+/// Null/null is true; everything else falls through.
 fn values_equal(left: Value, right: Value) -> bool {
     if left.kind != right.kind { return false }
     match left.kind {
@@ -792,6 +986,9 @@ fn values_equal(left: Value, right: Value) -> bool {
     }
 }
 
+/// Strip the leading + trailing `"` from a parsed string
+/// literal text. Returns the input unchanged when shorter than
+/// 2 chars (defensive: malformed input).
 fn unquote_string(text: string) -> string {
     if text.length < 2 {
         return text

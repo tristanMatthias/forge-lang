@@ -1,7 +1,11 @@
+/// Test fixture: returns a closure that multiplies by `n`.
+/// Verifies captures survive across the fn-return boundary.
 fn frf_make_multiplier(n: int) -> fn(int) -> int {
     (x) -> x * n
 }
 
+/// Test fixture: classic compose. Mirror of `ft_compose` from
+/// the fn-types test, kept here so this file is self-contained.
 fn frf_compose(f: fn(int) -> int, g: fn(int) -> int) -> fn(int) -> int {
     (x) -> f(g(x))
 }

@@ -5,6 +5,9 @@ use resolve.{declare_params, enter_resolve_scope, exit_resolve_scope, resolve_ex
 use features.closures.codegen.{emit_lambda}
 use typeck.{check_expr, tc_bind_params, tc_enter, tc_er, tc_exit}
 
+/// Register the `(x, y) -> body` lambda + closure feature.
+/// Captures referenced bindings from the enclosing scope; spec
+/// Axis 28.
 export fn closures_feature() -> Feature {
     feature_new("lambda") with {
         expr_tag: Expr.Lambda(ParamList.End, Expr.Null),
@@ -14,6 +17,10 @@ export fn closures_feature() -> Feature {
     }
 }
 
+/// Resolver hook for `Lambda`. Opens a fresh scope, declares
+/// every parameter, resolves the body inside that scope, then
+/// exits — captures of outer names work because the outer
+/// scope remains visible during body resolution.
 fn closure_resolve(r: Resolver, expr: Expr) -> Resolver {
     match expr {
         .Lambda(params, body) -> {
@@ -26,6 +33,9 @@ fn closure_resolve(r: Resolver, expr: Expr) -> Resolver {
     }
 }
 
+/// Type-check hook for `Lambda`. Type-checks the body in a
+/// fresh scope with each param bound to its declared type.
+/// Result type is `Fn<Ret>` where `Ret` is the body's type.
 fn closure_check(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .Lambda(params, body) -> {
