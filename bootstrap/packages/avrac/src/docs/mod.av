@@ -27,7 +27,7 @@ use indexer.{extract_from_ast_at, extract_calls_from_ast_at}
 use @std.lsp.{Sym, SymList, SymKind, CallEdge, CallList}
 use render.{bold, dim, cyan, green, yellow, red,
             pad_right, truncate_str, rule, first_line, icase_eq, pct}
-use pathutil.{relativise}
+use pathutil.{relativise, qualified_leaf, qualified_breadcrumbs, count_path_seps}
 
 // ── Project walk ─────────────────────────────────────────────────────
 
@@ -441,46 +441,9 @@ fn print_call_edges(edges: CallList) {
 
 // ── Hierarchical addressing (`avra docs core::ast::Expr`) ──────────
 //
-// Locally-mirrored qualified-path helpers — duplicated from
-// @std/lsp.qualified_* because function imports across @std packages
-// hit the resolver dedupe bug. Once that fix lands these can collapse
-// to re-imports.
-
-fn qualified_last_separator(q: string) -> int {
-    mut i = q.length - 2
-    while i >= 0 {
-        if q.substring(i, i + 2) == "::" {
-            return i
-        }
-        i = i - 1
-    }
-    -1
-}
-
-fn qualified_leaf(q: string) -> string {
-    let last = qualified_last_separator(q)
-    if last < 0 { return q }
-    q.substring(last + 2, q.length)
-}
-
-fn qualified_breadcrumbs(q: string) -> string {
-    if q == "" { return "" }
-    mut acc = ""
-    mut start = 0
-    mut i = 0
-    while i + 1 < q.length {
-        if q.substring(i, i + 2) == "::" {
-            let seg = q.substring(start, i)
-            acc = if acc == "" { seg } else { "${acc} ▸ ${seg}" }
-            start = i + 2
-            i = i + 2
-        } else {
-            i = i + 1
-        }
-    }
-    let last = q.substring(start, q.length)
-    if acc == "" { last } else { "${acc} ▸ ${last}" }
-}
+// qualified_leaf / qualified_breadcrumbs / count_path_seps imported
+// from pathutil — they operate on `::`-separated paths and live with
+// the rest of the path-manipulation helpers.
 
 // Look up a sym by either bare name OR qualified path. When the
 // query contains `::`, fall back to suffix matching so partial paths
@@ -579,20 +542,6 @@ fn is_direct_child_of(item: Sym, prefix: string, pfx_dot: string, pfx_depth: int
     } else {
         q.starts_with(pfx_dot) && count_path_seps(q) == pfx_depth + 1
     }
-}
-
-fn count_path_seps(q: string) -> int {
-    mut depth = 0
-    mut i = 0
-    while i + 1 < q.length {
-        if q.substring(i, i + 2) == "::" {
-            depth = depth + 1
-            i = i + 2
-        } else {
-            i = i + 1
-        }
-    }
-    depth
 }
 
 fn sym_count(list: SymList) -> int {
