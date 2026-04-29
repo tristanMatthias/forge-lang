@@ -423,66 +423,23 @@ fn render_tree_lines(g: SymbolGraph, list: SymList, indent: string) -> string {
 fn collect_direct_children(list: SymList, prefix: string) -> SymList {
     let pfx_dot = "${prefix}::"
     let pfx_depth = if prefix == "" { -1 } else { qualified_depth(prefix) }
-    mut acc = SymList.End
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return reverse_syms(acc)
-            }
-            .Node(item, next) -> {
-                let q = item.qualified
-                let matches = if prefix == "" {
-                    !q.contains("::")
-                } else {
-                    q.starts_with(pfx_dot) && qualified_depth(q) == pfx_depth + 1
-                }
-                if matches {
-                    acc = SymList.Node(item, acc)
-                }
-                cur = next
-            }
+    sym_list_filter(list, (item: Sym) -> {
+        let q = item.qualified
+        if prefix == "" {
+            !q.contains("::")
+        } else {
+            q.starts_with(pfx_dot) && qualified_depth(q) == pfx_depth + 1
         }
-    }
-    SymList.End
+    })
 }
 
 fn collect_module_roots(list: SymList) -> SymList {
-    mut acc = SymList.End
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return reverse_syms(acc)
-            }
-            .Node(item, next) -> {
-                if !item.qualified.contains("::") {
-                    acc = SymList.Node(item, acc)
-                }
-                cur = next
-            }
-        }
-    }
-    SymList.End
+    sym_list_filter(list, (item: Sym) -> !item.qualified.contains("::"))
 }
 
 fn collect_qualified_suffix(list: SymList, suffix: string) -> SymList {
-    mut acc = SymList.End
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return reverse_syms(acc)
-            }
-            .Node(item, next) -> {
-                if item.qualified.ends_with(suffix) || item.qualified == suffix.substring(2, suffix.length) {
-                    acc = SymList.Node(item, acc)
-                }
-                cur = next
-            }
-        }
-    }
-    SymList.End
+    let leaf = suffix.substring(2, suffix.length)
+    sym_list_filter(list, (item: Sym) -> item.qualified.ends_with(suffix) || item.qualified == leaf)
 }
 
 fn sym_list_first(list: SymList) -> Sym? {
@@ -511,7 +468,9 @@ fn sym_list_len(list: SymList) -> int {
     n
 }
 
-fn sym_list_find_id(list: SymList, id: SymId) -> Sym? {
+// Find the first sym matching a predicate. Closure form lets every
+// caller state its rule inline; the traversal lives in one place.
+fn sym_list_find(list: SymList, pred: fn(Sym) -> bool) -> Sym? {
     mut cur = list
     while true {
         match cur {
@@ -519,7 +478,7 @@ fn sym_list_find_id(list: SymList, id: SymId) -> Sym? {
                 return null
             }
             .Node(item, next) -> {
-                if item.id.value == id.value {
+                if pred(item) {
                     return item
                 }
                 cur = next
@@ -527,83 +486,50 @@ fn sym_list_find_id(list: SymList, id: SymId) -> Sym? {
         }
     }
     null
+}
+
+fn sym_list_find_id(list: SymList, id: SymId) -> Sym? {
+    sym_list_find(list, (item: Sym) -> item.id.value == id.value)
 }
 
 fn sym_list_find_name(list: SymList, name: string) -> Sym? {
     let want = name.to_lower()
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return null
-            }
-            .Node(item, next) -> {
-                if item.name.to_lower() == want {
-                    return item
-                }
-                cur = next
-            }
-        }
-    }
-    null
+    sym_list_find(list, (item: Sym) -> item.name.to_lower() == want)
 }
 
 fn sym_list_find_qualified(list: SymList, qualified: string) -> Sym? {
+    sym_list_find(list, (item: Sym) -> item.qualified == qualified)
+}
+
+// Filter a SymList by predicate, preserving original order. Closure
+// form replaces what used to be six near-identical accumulator loops.
+fn sym_list_filter(list: SymList, pred: fn(Sym) -> bool) -> SymList {
+    mut acc = SymList.End
     mut cur = list
     while true {
         match cur {
             .End -> {
-                return null
+                return reverse_syms(acc)
             }
             .Node(item, next) -> {
-                if item.qualified == qualified {
-                    return item
+                if pred(item) {
+                    acc = SymList.Node(item, acc)
                 }
                 cur = next
             }
         }
     }
-    null
+    SymList.End
 }
 
 fn collect_by_name(list: SymList, name: string) -> SymList {
     let want = name.to_lower()
-    mut acc = SymList.End
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return reverse_syms(acc)
-            }
-            .Node(item, next) -> {
-                if item.name.to_lower() == want {
-                    acc = SymList.Node(item, acc)
-                }
-                cur = next
-            }
-        }
-    }
-    SymList.End
+    sym_list_filter(list, (item: Sym) -> item.name.to_lower() == want)
 }
 
 fn collect_children(list: SymList, prefix: string) -> SymList {
     let pfx_dot = "${prefix}::"
-    mut acc = SymList.End
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return reverse_syms(acc)
-            }
-            .Node(item, next) -> {
-                if item.qualified.starts_with(pfx_dot) {
-                    acc = SymList.Node(item, acc)
-                }
-                cur = next
-            }
-        }
-    }
-    SymList.End
+    sym_list_filter(list, (item: Sym) -> item.qualified.starts_with(pfx_dot))
 }
 
 fn reverse_syms(list: SymList) -> SymList {
@@ -990,22 +916,7 @@ export fn query_completion(g: SymbolGraph, prefix: string, limit: int, exported_
 }
 
 fn filter_exported(list: SymList) -> SymList {
-    mut acc = SymList.End
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return reverse_syms(acc)
-            }
-            .Node(item, next) -> {
-                if item.exported {
-                    acc = SymList.Node(item, acc)
-                }
-                cur = next
-            }
-        }
-    }
-    SymList.End
+    sym_list_filter(list, (item: Sym) -> item.exported)
 }
 
 fn scored_syms_to_completion_items(list: ScoredSymList) -> List<CompletionItem> {
@@ -1037,22 +948,7 @@ export fn query_symbols(g: SymbolGraph, scope: Scope) -> SymList {
 }
 
 fn filter_by_file(list: SymList, file: string) -> SymList {
-    mut acc = SymList.End
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return reverse_syms(acc)
-            }
-            .Node(item, next) -> {
-                if item.file == file {
-                    acc = SymList.Node(item, acc)
-                }
-                cur = next
-            }
-        }
-    }
-    SymList.End
+    sym_list_filter(list, (item: Sym) -> item.file == file)
 }
 
 /// Project-wide search via the composed fuzzy scorer.
@@ -1483,22 +1379,7 @@ export fn cache_add_file(state: CacheState, path: string, mtime_ns: int, syms: S
 }
 
 fn sym_list_drop_by_file(list: SymList, path: string) -> SymList {
-    mut acc = SymList.End
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return reverse_syms(acc)
-            }
-            .Node(item, next) -> {
-                if item.file != path {
-                    acc = SymList.Node(item, acc)
-                }
-                cur = next
-            }
-        }
-    }
-    SymList.End
+    sym_list_filter(list, (item: Sym) -> item.file != path)
 }
 
 fn file_list_drop(list: CacheFileList, path: string) -> CacheFileList {

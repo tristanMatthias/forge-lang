@@ -111,50 +111,15 @@ fn count_total(list: SymList) -> int {
 }
 
 fn count_documented(list: SymList) -> int {
-    mut cur = list
-    mut n = 0
-    while true {
-        match cur {
-            .End -> return n
-            .Node(item, next) -> {
-                if is_renderable(item) && has_doc(item) { n = n + 1 }
-                cur = next
-            }
-        }
-    }
-    n
+    count_syms(list, (item: Sym) -> is_renderable(item) && has_doc(item))
 }
 
 fn count_documented_in(list: SymList, want_bucket: int) -> int {
-    mut cur = list
-    mut n = 0
-    while true {
-        match cur {
-            .End -> return n
-            .Node(item, next) -> {
-                if bucket_of(item) == want_bucket && has_doc(item) {
-                    n = n + 1
-                }
-                cur = next
-            }
-        }
-    }
-    n
+    count_syms(list, (item: Sym) -> bucket_of(item) == want_bucket && has_doc(item))
 }
 
 fn count_in_bucket(list: SymList, want_bucket: int) -> int {
-    mut cur = list
-    mut n = 0
-    while true {
-        match cur {
-            .End -> return n
-            .Node(item, next) -> {
-                if bucket_of(item) == want_bucket { n = n + 1 }
-                cur = next
-            }
-        }
-    }
-    n
+    count_syms(list, (item: Sym) -> bucket_of(item) == want_bucket)
 }
 
 // ── Rendering ────────────────────────────────────────────────────────
@@ -498,20 +463,8 @@ export fn show_search(query: string, docs: SymList) {
 }
 
 fn count_search_in_bucket(list: SymList, q: string, want_bucket: int) -> int {
-    mut cur = list
-    mut n = 0
-    while true {
-        match cur {
-            .End -> return n
-            .Node(item, next) -> {
-                if bucket_of(item) == want_bucket && score_match(item.name, item.doc, q) > 0 {
-                    n = n + 1
-                }
-                cur = next
-            }
-        }
-    }
-    n
+    count_syms(list, (item: Sym) ->
+        bucket_of(item) == want_bucket && score_match(item.name, item.doc, q) > 0)
 }
 
 fn print_search_kind(list: SymList, q: string, want_bucket: int) {
