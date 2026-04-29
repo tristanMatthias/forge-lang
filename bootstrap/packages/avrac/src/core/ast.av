@@ -124,6 +124,8 @@ export enum TypeParamList {
     Node(name: string, bounds: string, next: TypeParamList)
 }
 
+/// Membership test for a TypeParamList. True iff `name` appears as
+/// a parameter name (bounds ignored).
 export fn type_param_has(params: TypeParamList, name: string) -> bool {
     match params {
         .End -> false
@@ -132,6 +134,7 @@ export fn type_param_has(params: TypeParamList, name: string) -> bool {
     }
 }
 
+/// Render a TypeParamList back to source-form: `T, U: Display`.
 export fn render_type_param_list(params: TypeParamList) -> string {
     match params {
         .End -> ""
@@ -257,9 +260,12 @@ export enum TypeExprList {
 // Convert a TypeExpr to a ValueType at parse time. Only resolves primitives
 // and structural types (List, Union, Fn, Map). Named types that require
 // registry lookups (structs, enums, traits, newtypes) resolve to Int —
-// Map a concrete type name string to a ValueType. Handles primitives;
-// named types become Struct(name) for later registry resolution.
-// Used by type_expr_to_vtype and the monomorphizer's substitute_vtype.
+/// Map a concrete type-name string to a ValueType. Handles primitives
+/// (`int`, `string`, `bool`, `ptr`, `void`, `float`, `Map`, `List`),
+/// nullable suffix (`T?`), and pipe-unions (`A | B`). Named types
+/// fall through as `Struct(name, 0)` to be upgraded once the registry
+/// resolves the id. Used by `type_expr_to_vtype` and by the
+/// monomorphizer's `substitute_vtype`.
 export fn vtype_from_name(name: string) -> ValueType {
     // Handle nullable "T?"
     if name.ends_with("?") && name.length > 1 {
@@ -289,8 +295,10 @@ export fn vtype_from_name(name: string) -> ValueType {
     }
 }
 
-// Named types that require registry lookups (structs, enums, traits) resolve
-// to Struct(name) here. resolve_vtype/resolve_codegen_vtype upgrade them.
+/// Lower a parsed TypeExpr to a ValueType. Named types that require
+/// registry lookups (structs, enums, traits) become `Struct(name, 0)`
+/// here — `resolve_vtype` / `resolve_codegen_vtype` upgrade them once
+/// the canonical id is known.
 export fn type_expr_to_vtype(te: TypeExpr) -> ValueType {
     match te {
         .Named(name) -> vtype_from_name(name)
@@ -623,6 +631,7 @@ fn type_list_concat(a: TypeList, b: TypeList) -> TypeList {
     }
 }
 
+/// Length of a TypeList. O(n).
 export fn type_list_len(tl: TypeList) -> int {
     match tl {
         .End -> 0
@@ -630,6 +639,9 @@ export fn type_list_len(tl: TypeList) -> int {
     }
 }
 
+/// Get the type at position `idx` (0-based). Returns Unknown for
+/// out-of-range — typecheck callers branch on Unknown rather than
+/// pattern-matching on Option.
 export fn type_list_at(tl: TypeList, idx: int) -> ValueType {
     match tl {
         .End -> ValueType.Unknown
@@ -637,12 +649,10 @@ export fn type_list_at(tl: TypeList, idx: int) -> ValueType {
     }
 }
 
-// Find top-level | in a type string (not inside <>, (), or []).
-// Returns index of first top-level |, or -1 if none.
-// Check if a FieldList represents a union alias (marker field "__union")
-// Returns the union type string or "" if not a union alias.
-
-// Used by both typeck and codegen to parse "A|B" union type strings.
+/// Find a top-level `|` in a type string (not inside `<>`, `()`, or
+/// `[]`). Used by both typeck and codegen to parse union type
+/// strings like `int|string|bool`. Returns -1 when no top-level
+/// pipe is present.
 export fn find_type_pipe(s: string) -> int {
     mut depth = 0
     mut i = 0
@@ -656,6 +666,9 @@ export fn find_type_pipe(s: string) -> int {
     -1
 }
 
+/// Comma-separate the display names of every type in `tl`. Used by
+/// every renderer that prints a type sequence (tuple types, generic
+/// args, fn param lists).
 export fn render_type_list(tl: TypeList) -> string {
     match tl {
         .End -> ""
@@ -670,6 +683,8 @@ export fn render_type_list(tl: TypeList) -> string {
     }
 }
 
+/// Index into a Tuple ValueType. Returns Unknown for non-tuples or
+/// out-of-range — same convention as `type_list_at`.
 export fn vtype_tuple_at(t: ValueType, idx: int) -> ValueType {
     match t {
         .Tuple(types) -> typelist_at(types, idx)
@@ -710,6 +725,7 @@ export enum LogicOp {
     And, Or,
 }
 
+/// Render a BinOp as its source-form operator (`+`, `==`, `<<`, …).
 export fn binop_str(op: BinOp) -> string {
     match op {
         .Add -> "+"
@@ -731,6 +747,7 @@ export fn binop_str(op: BinOp) -> string {
     }
 }
 
+/// Render a UnOp as its source-form prefix (`-`, `!`, `~`).
 export fn unop_str(op: UnOp) -> string {
     match op {
         .Neg -> "-"
@@ -739,6 +756,7 @@ export fn unop_str(op: UnOp) -> string {
     }
 }
 
+/// Render a LogicOp as its source-form operator (`&&`, `||`).
 export fn logicop_str(op: LogicOp) -> string {
     match op {
         .And -> "&&"
@@ -1124,10 +1142,12 @@ export fn fn_env_lookup(env: FnEnv, name: string) -> FnLookup {
     }
 }
 
+/// Cons a fn binding at the head of an FnEnv.
 export fn fn_env_extend(env: FnEnv, name: string, fn_val: ptr, arity: int) -> FnEnv {
     FnEnv.Node(name, fn_val, arity, env)
 }
 
+/// Length of a ParamList. O(n).
 export fn param_list_length(params: ParamList) -> int {
     match params {
         .End -> 0
@@ -1135,6 +1155,7 @@ export fn param_list_length(params: ParamList) -> int {
     }
 }
 
+/// Length of an ExprList. O(n).
 export fn expr_list_length(exprs: ExprList) -> int {
     match exprs {
         .End -> 0
@@ -1142,6 +1163,7 @@ export fn expr_list_length(exprs: ExprList) -> int {
     }
 }
 
+/// Length of a FieldList. O(n).
 export fn field_list_length(fields: FieldList) -> int {
     match fields {
         .End -> 0
@@ -1149,6 +1171,8 @@ export fn field_list_length(fields: FieldList) -> int {
     }
 }
 
+/// Membership test for a FieldList. True iff `target` matches the
+/// name of any field.
 export fn field_list_has(list: FieldList, target: string) -> bool {
     match list {
         .End -> false
@@ -1157,6 +1181,8 @@ export fn field_list_has(list: FieldList, target: string) -> bool {
     }
 }
 
+/// Drop every entry of `base` whose name appears in `excluded`. Used
+/// by shape-coercion typecheck to compute the unmatched-field error.
 export fn filter_fields_without(base: FieldList, excluded: FieldList) -> FieldList {
     match base {
         .End -> FieldList.End
@@ -1165,6 +1191,8 @@ export fn filter_fields_without(base: FieldList, excluded: FieldList) -> FieldLi
     }
 }
 
+/// Keep only the entries of `base` whose name appears in `included`.
+/// The complement of `filter_fields_without`.
 export fn filter_fields_only(base: FieldList, included: FieldList) -> FieldList {
     match base {
         .End -> FieldList.End
@@ -1173,6 +1201,7 @@ export fn filter_fields_only(base: FieldList, included: FieldList) -> FieldList 
     }
 }
 
+/// Length of a FieldInitList. O(n).
 export fn field_init_length(inits: FieldInitList) -> int {
     match inits {
         .End -> 0
@@ -1180,7 +1209,8 @@ export fn field_init_length(inits: FieldInitList) -> int {
     }
 }
 
-// Returns the zero-based index of `name` in `fields`, or -1.
+/// Zero-based index of `name` in `fields`, or -1 if absent. Used by
+/// codegen for GEP offsets.
 export fn field_index_of(fields: FieldList, name: string) -> int {
     field_index_of_loop(fields, name, 0)
 }
@@ -1193,6 +1223,7 @@ fn field_index_of_loop(fields: FieldList, name: string, idx: int) -> int {
     }
 }
 
+/// Length of a VariantList. O(n).
 export fn variant_list_length(variants: VariantList) -> int {
     match variants {
         .End -> 0
@@ -1200,8 +1231,8 @@ export fn variant_list_length(variants: VariantList) -> int {
     }
 }
 
-// Find a variant by name in a VariantList. Returns the matching
-// FieldList plus its zero-based tag index, or (false, ...).
+/// Result of `variant_lookup`. `tag` is the djb2-style stable hash
+/// used as the LLVM tag value; -1 when not found.
 export type VariantLookup = {
     found: int,
     fields: FieldList,
@@ -1210,6 +1241,8 @@ export type VariantLookup = {
 
 extern fn avra_variant_hash(name: string) -> int
 
+/// Find a variant by name. Returns its FieldList plus the stable
+/// tag hash, or `found: false` when absent.
 export fn variant_lookup(variants: VariantList, name: string) -> VariantLookup {
     variant_lookup_by_hash(variants, name)
 }
@@ -1222,8 +1255,10 @@ fn variant_lookup_by_hash(variants: VariantList, name: string) -> VariantLookup 
     }
 }
 
-// Maximum number of i64 slots needed across all variants in this enum.
-// Determines the size of the payload union in the LLVM struct layout.
+/// Maximum number of i64 slots needed across all variants in an
+/// enum — determines the size of the payload union in the LLVM
+/// struct layout. Each variant's payload is `field_list_length(...)`
+/// slots; the enum's overall payload sizes to the largest.
 export fn variant_max_payload(variants: VariantList) -> int {
     match variants {
         .End -> 0
@@ -1239,7 +1274,8 @@ export fn variant_max_payload(variants: VariantList) -> int {
     }
 }
 
-// Returns the resolved ValueType for field `name`.
+/// Resolved ValueType for field `name`, or Unknown when the field
+/// isn't present.
 export fn field_vtype_of(fields: FieldList, name: string) -> ValueType {
     match fields {
         .End -> .Unknown
@@ -1248,6 +1284,10 @@ export fn field_vtype_of(fields: FieldList, name: string) -> ValueType {
     }
 }
 
+/// Render an Expr as an S-expression. Used by `bs2 expr` /
+/// `bs2 program` for AST inspection and by spec test failure
+/// messages — not a source-form pretty-printer (see fmt_* in main.av
+/// for that).
 export fn render_expr(expr: Expr) -> string {
     match expr {
         .Number(value) -> value
@@ -1301,6 +1341,7 @@ fn render_when_arm_list(arms: WhenArmList) -> string {
     }
 }
 
+/// Render a FieldInitList as an S-expression: `(k=v, k2=v2)`.
 export fn render_field_init_list(inits: FieldInitList) -> string {
     match inits {
         .End -> "()"
@@ -1319,6 +1360,7 @@ fn render_field_init_tail(inits: FieldInitList) -> string {
     }
 }
 
+/// Render a FieldList as an S-expression: `(name:Type, name2:Type)`.
 export fn render_field_list(fields: FieldList) -> string {
     match fields {
         .End -> "()"
@@ -1337,6 +1379,7 @@ fn render_field_list_tail(fields: FieldList) -> string {
     }
 }
 
+/// Render a TypeNameList as a comma-separated string.
 export fn render_type_name_list(names: TypeNameList) -> string {
     match names {
         .End -> ""
@@ -1347,6 +1390,7 @@ export fn render_type_name_list(names: TypeNameList) -> string {
     }
 }
 
+/// Render an ExprList as an S-expression: `(e1, e2, e3)`.
 export fn render_expr_list(exprs: ExprList) -> string {
     match exprs {
         .End -> "()"
@@ -1365,6 +1409,7 @@ fn render_expr_list_tail(exprs: ExprList) -> string {
     }
 }
 
+/// Render a ParamList as `(name:Type, name2:Type)`.
 export fn render_param_list(params: ParamList) -> string {
     match params {
         .End -> "()"
@@ -1382,6 +1427,8 @@ fn render_param_list_tail(params: ParamList) -> string {
     }
 }
 
+/// Render a Stmt as an S-expression. Mirror to `render_expr` —
+/// inspection-only, not source round-trip.
 export fn render_stmt(stmt: Stmt) -> string {
     match stmt {
         .Let(name, vt, initializer) -> "(let ${name}:${vtype_display(vt)} ${render_expr(initializer)})"
@@ -1444,6 +1491,7 @@ export fn render_stmt(stmt: Stmt) -> string {
     }
 }
 
+/// Render an AnnotationList in the source `@name @name2` form.
 export fn render_annotation_list(annots: AnnotationList) -> string {
     match annots {
         .End -> ""
@@ -1451,6 +1499,7 @@ export fn render_annotation_list(annots: AnnotationList) -> string {
     }
 }
 
+/// Render a VariantList as an S-expression: `(Ok(value:T), Err(error:E))`.
 export fn render_variant_list(variants: VariantList) -> string {
     match variants {
         .End -> "()"
@@ -1469,6 +1518,7 @@ fn render_variant_tail(variants: VariantList) -> string {
     }
 }
 
+/// Render a Pattern as an S-expression — used by render_match_arm.
 export fn render_pattern(p: Pattern) -> string {
     match p {
         .Wildcard -> "_"
@@ -1479,6 +1529,7 @@ export fn render_pattern(p: Pattern) -> string {
     }
 }
 
+/// Render a MatchArmList as a comma-separated list of `pat -> body`.
 export fn render_match_arm_list(arms: MatchArmList) -> string {
     match arms {
         .End -> "()"
@@ -1501,6 +1552,8 @@ fn render_match_arm_tail(arms: MatchArmList) -> string {
     }
 }
 
+/// Render a StmtList as an S-expression sequence — convenient for
+/// `render_stmt` recursion on Block bodies.
 export fn render_stmt_list(stmts: StmtList) -> string {
     match stmts {
         .End -> ""
@@ -1637,6 +1690,9 @@ export enum Tk {
 
 // Bridge: convert Tk keyword to the string used by the feature registry.
 // Returns "" for non-keyword tokens.
+/// Map a keyword Tk variant back to its source-form string. Used by
+/// the parser's stmt-keyword dispatch and by error rendering when
+/// the lexer's lexeme isn't directly accessible.
 export fn tk_keyword_str(tk: Tk) -> string {
     match tk {
         .KwAnd -> "kw_and"
