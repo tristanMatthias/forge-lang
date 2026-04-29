@@ -324,51 +324,6 @@ fn resolve_use_aliases_in(stmts: StmtList, tree: ModuleNode, graph: ModuleGraph,
     }
 }
 
-/// Resolve a use path against the module tree, walking up the
-/// ancestor chain of `current_module` after trying the absolute
-/// path. Returns the first matching qualified path, or
-/// `canonical_path` itself when nothing matched (so the caller's
-/// import-not-found diagnostic still has a useful path to report).
-///
-/// Skips matches that resolve back to `current_module` itself —
-/// the user can't reasonably mean "import myself", and at depths
-/// like `@std::avrac::features::select_stmt::codegen` the parent
-/// walk would otherwise pick the local file's path before reaching
-/// the intended top-level `@std::avrac::codegen` ancestor.
-fn find_use_path(tree: ModuleNode, current_module: string, canonical_path: string) -> string {
-    if module_node_exists(module_find(tree, canonical_path)) { return canonical_path }
-    mut search = current_module
-    while search != "" {
-        let scoped = type_qualified_name(search, canonical_path)
-        if scoped != current_module && module_node_exists(module_find(tree, scoped)) {
-            return scoped
-        }
-        search = strip_last_module_segment(search)
-    }
-    canonical_path
-}
-
-/// True iff a `module_find` lookup hit a real module node (i.e. not
-/// the End sentinel). Pulls the match out so callers stay readable.
-fn module_node_exists(node: ModuleNode) -> bool {
-    match node {
-        .End -> false
-        _ -> true
-    }
-}
-
-/// Drop the trailing `::name` from a module path. Returns `""`
-/// when the input has no `::` separator.
-fn strip_last_module_segment(path: string) -> string {
-    mut last = -1
-    mut i = 0
-    while i < path.length - 1 {
-        if path[i] == ":" && path[i + 1] == ":" { last = i }
-        i = i + 1
-    }
-    if last < 0 { "" } else { path.substring(0, last) }
-}
-
 /// Output of `resolve_use_aliases` — the alias chain plus any
 /// diagnostics encountered during use-resolution.
 type UseResult = {

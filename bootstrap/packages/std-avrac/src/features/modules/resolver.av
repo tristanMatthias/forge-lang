@@ -463,18 +463,14 @@ fn resolve_package_use_and_continue(ss: SStmt, next: StmtList, dir: string, load
     let dot = without_at.index_of(".")
     let scope_name = without_at.substring(0, dot)
     let pkg_name = without_at.substring(dot + 1, without_at.length)
-    // Anchor every internal `use X.Y` inside the loaded body to this
-    // package's root before wrapping. Otherwise a `use codegen.X`
-    // written inside the package would get reinterpreted against the
-    // consumer's top-level scope after wrapping (and the parent walk
-    // in `resolve_use_aliases_in` would happily pick a same-named
-    // local sub-module ancestor instead of the intended top-level
-    // package member). Walks recursively so nested modules' uses are
-    // qualified too. `@`-prefixed and already-qualified paths pass
-    // through unchanged.
-    let pkg_qual = "@${scope_name}.${pkg_name}"
-    let qualified_body = qualify_uses_recursively(resolved.stmts, pkg_qual)
-    let inner_mod = Stmt.Module(pkg_name, qualified_body)
+    // No upfront `use`-path qualification needed: the graph
+    // (build_graph_from_stmts in graph_build.av) captures each
+    // module's canonical path at construction, and
+    // `graph_find_use_path` walks ancestors lazily at lookup time.
+    // The package wrapping below is preserved only because typeck /
+    // codegen still walk Stmt.Module bodies; a follow-up pass can
+    // drop the wrapper once those consumers query the graph too.
+    let inner_mod = Stmt.Module(pkg_name, resolved.stmts)
     let outer_mod = Stmt.Module("@${scope_name}", StmtList.Node(sstmt(inner_mod, ss.line, ss.col), StmtList.End))
     // Continue processing rest of the statement list
     let rest = resolve_module_files_inner(next, dir, resolved.loaded, stack)
