@@ -31,6 +31,7 @@ use core.module_graph.{
     module_graph_new, module_graph_add, module_graph_find_by_file,
     module_graph_add_package_root, module_graph_package_root,
     module_graph_link_child, module_graph_child_id,
+    module_graph_alloc_item, module_graph_add_item,
     interner_intern,
     ID_NONE,
 }
@@ -155,8 +156,29 @@ fn walk_stmt(g: ModuleGraph, ss: SStmt, parent_id: int, pkg_id: int, dir: string
             let wrapped = SStmt { node: inner, line: ss.line, col: ss.col }
             walk_stmt(g, wrapped, parent_id, pkg_id, dir, uses)
         }
+        // Top-level decls register as items in this module so name
+        // resolution can look them up by ItemId. We only allocate ids;
+        // bodies aren't stored in the graph (the AST keeps them).
+        .Function(name, _, _, _, _) -> register_item(g, parent_id, name, uses)
+        .ExternFn(name, _, _) -> register_item(g, parent_id, name, uses)
+        .TypeDecl(name, _, _) -> register_item(g, parent_id, name, uses)
+        .NewtypeDecl(name, _) -> register_item(g, parent_id, name, uses)
+        .UnionAliasDecl(name, _) -> register_item(g, parent_id, name, uses)
+        .ShapeDecl(name, _) -> register_item(g, parent_id, name, uses)
+        .EnumDecl(name, _, _) -> register_item(g, parent_id, name, uses)
+        .TraitDecl(name, _) -> register_item(g, parent_id, name, uses)
         _ -> BuildGraphResult { graph: g, uses, had_error: 0, error_message: "" }
     }
+}
+
+/// Allocate an ItemId and store it under `name` in the parent
+/// module's items strmap. Used by every top-level decl arm in
+/// walk_stmt above. The ItemId itself is opaque — what matters for
+/// resolution is "this name exists in this module".
+fn register_item(g: ModuleGraph, parent_id: int, name: string, uses: UseEdgeList) -> BuildGraphResult {
+    let alloc = module_graph_alloc_item(g)
+    let g_with_item = module_graph_add_item(alloc.graph, parent_id, name, alloc.item_id)
+    BuildGraphResult { graph: g_with_item, uses, had_error: 0, error_message: "" }
 }
 
 /// Handle a `mod X` declaration. Locates `X.av` or `X/mod.av` as a

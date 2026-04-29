@@ -348,3 +348,26 @@ export fn module_graph_alloc_item(g: ModuleGraph) -> AllocItemResult {
     let updated = g with { next_item_id: id + 1 }
     AllocItemResult { graph: updated, item_id: id }
 }
+
+/// Register a top-level item (fn / type / enum / etc.) under `name`
+/// in the given module's `items` strmap. The ItemId is allocated
+/// separately via `module_graph_alloc_item`. Returns the graph
+/// unchanged — the strmap is mutated in place via its `ptr` handle.
+export fn module_graph_add_item(g: ModuleGraph, mod_id: int, name: string, item_id: int) -> ModuleGraph {
+    let m = module_graph_get(g, mod_id)
+    if m == null { return g }
+    avra_map_set_cstr(m!.items, name, item_id)
+    g
+}
+
+/// Look up an item by name in a module. Returns ID_NONE when the
+/// item isn't registered (or the module id is unknown).
+export fn module_graph_item_id(g: ModuleGraph, mod_id: int, name: string) -> int {
+    let m = module_graph_get(g, mod_id)
+    if m == null { return ID_NONE }
+    if avra_map_has_cstr(m!.items, name) != 0 {
+        avra_map_get_cstr(m!.items, name)
+    } else {
+        ID_NONE
+    }
+}
