@@ -1,3 +1,9 @@
+/// Test fixture: 2D integer point used by struct-mutation
+/// tests. Fields are mut-friendly so the test can verify
+/// `mut p = ...; p.x = ...` semantics end-to-end.
+///
+/// @field x — horizontal coordinate.
+/// @field y — vertical coordinate.
 type Point = {
     x: int,
     y: int,

@@ -10,6 +10,7 @@ use features.struct_decl.typeck.{check_field_access, check_field_inits}
 use typeck.{tc_enum_find_by_variant}
 use typeck.{check_expr, check_expr_list, tc_er}
 
+/// Register the `Foo { x: 1, y: 2 }` struct literal feature.
 export fn struct_lit_feature() -> Feature {
     feature_new("struct_lit") with {
         expr_tag: Expr.StructLit("", FieldInitList.End),
@@ -19,6 +20,9 @@ export fn struct_lit_feature() -> Feature {
     }
 }
 
+/// Register the `obj.field` field-access feature. Also handles
+/// the `Type.STATIC` shape when the receiver starts with an
+/// upper-case ident — that case skips name resolution.
 export fn field_access_feature() -> Feature {
     feature_new("field_access") with {
         expr_tag: Expr.FieldAccess(Expr.Null, ""),
@@ -28,6 +32,9 @@ export fn field_access_feature() -> Feature {
     }
 }
 
+/// Register the `EnumName.Variant(args)` (and leading-dot
+/// `.Variant(args)`) enum constructor feature. Lives next to
+/// struct_lit because the parsing/typeck shape is similar.
 export fn enum_ctor_feature() -> Feature {
     feature_new("enum_ctor") with {
         expr_tag: Expr.EnumCtor("", "", ExprList.End),
@@ -37,6 +44,10 @@ export fn enum_ctor_feature() -> Feature {
     }
 }
 
+/// Register the `obj.field = value` field-assign feature. The
+/// resolver-side mutability check (deep immutability) is handled
+/// directly in `resolve/mod.av`, so the resolver hook here is a
+/// pass-through.
 export fn field_assign_feature() -> Feature {
     feature_new("field_assign") with {
         expr_tag: Expr.FieldAssign(Expr.Null, "", Expr.Null),
@@ -47,6 +58,7 @@ export fn field_assign_feature() -> Feature {
     }
 }
 
+/// Register the `type Foo = { ... }` declaration feature.
 export fn type_decl_feature() -> Feature {
     feature_new("type_decl") with {
         decl_keyword: "kw_type",
@@ -54,6 +66,8 @@ export fn type_decl_feature() -> Feature {
     }
 }
 
+/// Register the structural-typing `shape Foo = { ... }`
+/// declaration feature. Shapes use width subtyping (spec Axis 1).
 export fn shape_decl_feature() -> Feature {
     feature_new("shape_decl") with {
         decl_keyword: "kw_shape",
@@ -61,6 +75,7 @@ export fn shape_decl_feature() -> Feature {
     }
 }
 
+/// Codegen hook for `StructLit`. Forwards to `emit_struct_lit`.
 fn struct_lit_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .StructLit(name, inits) -> emit_struct_lit(ctx, env, name, inits)
@@ -68,6 +83,9 @@ fn struct_lit_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, 
     }
 }
 
+/// Resolver hook for `StructLit`. Walks every field's value
+/// expression — the field names themselves don't go through the
+/// resolver.
 fn struct_lit_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     match expr {
         .StructLit(_, inits) -> resolve_field_init_list(r, inits)
@@ -75,6 +93,8 @@ fn struct_lit_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     }
 }
 
+/// Type-check hook for `StructLit`. Type-checks every field
+/// initializer and declares the result as `Struct(name)`.
 fn struct_lit_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .StructLit(name, inits) -> {
@@ -85,6 +105,7 @@ fn struct_lit_check_expr(tc: TC, expr: Expr) -> ExprResult {
     }
 }
 
+/// Codegen hook for `FieldAccess`. Forwards to `emit_field_access`.
 fn field_access_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .FieldAccess(obj, field) -> emit_field_access(ctx, env, obj, field)
@@ -92,6 +113,10 @@ fn field_access_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue
     }
 }
 
+/// Resolver hook for `FieldAccess`. Skips name resolution when
+/// the receiver is an upper-case identifier (to leave room for
+/// `Type.STATIC` / `EnumName.Variant` shorthand). Otherwise
+/// resolves the receiver normally.
 fn field_access_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     match expr {
         .FieldAccess(obj, _) -> {
@@ -109,6 +134,9 @@ fn field_access_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     }
 }
 
+/// Type-check hook for `FieldAccess`. Forwards to
+/// `check_field_access` which knows about narrowing + enum
+/// shorthand.
 fn field_access_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .FieldAccess(obj, field) -> check_field_access(tc, obj, field)
@@ -116,6 +144,7 @@ fn field_access_check_expr(tc: TC, expr: Expr) -> ExprResult {
     }
 }
 
+/// Codegen hook for `EnumCtor`. Forwards to `emit_enum_ctor`.
 fn enum_ctor_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .EnumCtor(type_name, variant, args) -> emit_enum_ctor(ctx, env, type_name, variant, args)
@@ -123,6 +152,7 @@ fn enum_ctor_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, s
     }
 }
 
+/// Resolver hook for `EnumCtor`. Walks the constructor args.
 fn enum_ctor_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     match expr {
         .EnumCtor(_, _, args) -> resolve_expr_list(r, args)
@@ -130,6 +160,10 @@ fn enum_ctor_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     }
 }
 
+/// Type-check hook for `EnumCtor`. Type-checks every arg and
+/// resolves the enum name (the leading-dot shorthand is rewritten
+/// to an explicit `EnumName.Variant` via the registry). Result
+/// type is the enum.
 fn enum_ctor_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .EnumCtor(type_name, variant, args) -> {
@@ -141,6 +175,8 @@ fn enum_ctor_check_expr(tc: TC, expr: Expr) -> ExprResult {
     }
 }
 
+/// Codegen hook for `FieldAssign`. Forwards to
+/// `emit_field_assign`.
 fn field_assign_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .FieldAssign(obj, field, value) -> emit_field_assign(ctx, env, obj, field, value)
@@ -148,10 +184,14 @@ fn field_assign_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue
     }
 }
 
+/// Resolver hook for `FieldAssign`. No-op — the deep-immutability
+/// check happens in `resolve/mod.av` via a dedicated path.
 fn field_assign_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     r
 }
 
+/// Type-check hook for `FieldAssign`. Checks the receiver and
+/// the new value; the result type is the value's type.
 fn field_assign_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .FieldAssign(obj, _, value) -> {

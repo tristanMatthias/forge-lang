@@ -5,6 +5,8 @@ use resolve.{resolve_expr, resolve_expr_list}
 use features.tuples.codegen.{emit_tuple, emit_tuple_index}
 use typeck.{check_expr, check_expr_list_types, tc_er}
 
+/// Register the `(a, b, c)` tuple literal feature. Wires up
+/// resolver, type-checker, and codegen.
 export fn tuple_feature() -> Feature {
     feature_new("tuple") with {
         expr_tag: Expr.Tuple(ExprList.End),
@@ -14,6 +16,9 @@ export fn tuple_feature() -> Feature {
     }
 }
 
+/// Register the `t.0`, `t.1`, ... tuple-indexing feature.
+/// Distinct AST tag from field access on structs because tuple
+/// elements are positional.
 export fn tuple_index_feature() -> Feature {
     feature_new("tuple_index") with {
         expr_tag: Expr.TupleIndex(Expr.Null, 0),
@@ -23,6 +28,7 @@ export fn tuple_index_feature() -> Feature {
     }
 }
 
+/// Resolver hook for `Tuple` literals. Walks every element.
 fn tuple_resolve(r: Resolver, expr: Expr) -> Resolver {
     match expr {
         .Tuple(elements) -> resolve_expr_list(r, elements)
@@ -30,6 +36,8 @@ fn tuple_resolve(r: Resolver, expr: Expr) -> Resolver {
     }
 }
 
+/// Type-check hook for `Tuple` literals. Type-checks each element
+/// and packs the resulting types into a `Tuple<T0, T1, ...>`.
 fn tuple_check(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .Tuple(elements) -> {
@@ -41,6 +49,8 @@ fn tuple_check(tc: TC, expr: Expr) -> ExprResult {
 }
 
 
+/// Resolver hook for `TupleIndex`. Only the receiver expression
+/// needs name resolution — the index is a literal.
 fn tuple_index_resolve(r: Resolver, expr: Expr) -> Resolver {
     match expr {
         .TupleIndex(obj, _) -> resolve_expr(r, obj)
@@ -48,6 +58,8 @@ fn tuple_index_resolve(r: Resolver, expr: Expr) -> Resolver {
     }
 }
 
+/// Type-check hook for `TupleIndex`. Pulls the element type out
+/// of the receiver's `Tuple<...>` type using the literal index.
 fn tuple_index_check(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .TupleIndex(obj, idx) -> {

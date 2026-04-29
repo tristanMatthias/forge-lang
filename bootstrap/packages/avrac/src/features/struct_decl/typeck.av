@@ -6,6 +6,11 @@ use core.ast.{Expr, ExprList, FieldList, FieldInitList, ValueType, SExpr, vtype_
 use typeck.{TC, ExprResult, tc_er, tc_report, check_expr, StructTypeReg, struct_type_lookup, resolve_vtype}
 use diagnostics.{DiagCode}
 
+/// Type-check a `obj.field` access. Recognises `.length` on Str
+/// / List as Int; everything else routes through the struct
+/// registry. Generic type parameters skip the field-existence
+/// check (no entry in the struct registry yet — monomorphization
+/// re-checks per instantiation).
 export fn check_field_access(tc: TC, obj: Expr, field: string) -> ExprResult {
     let o = check_expr(tc, obj)
     // String .length
@@ -36,6 +41,9 @@ export fn check_field_access(tc: TC, obj: Expr, field: string) -> ExprResult {
     tc_er(o.tc, .Unknown)
 }
 
+/// Type-check every value in a FieldInitList. Field names are
+/// validated separately (e.g. against the struct's declared
+/// fields); this function only walks the values for type errors.
 export fn check_field_inits(tc: TC, inits: FieldInitList) -> TC {
     match inits {
         .End -> tc
@@ -46,6 +54,8 @@ export fn check_field_inits(tc: TC, inits: FieldInitList) -> TC {
     }
 }
 
+/// Linear scan for a field by name. Used by `check_field_access`
+/// to surface "no field X on type Y" diagnostics.
 fn tc_field_exists(fields: FieldList, name: string) -> bool {
     match fields {
         .End -> false
@@ -54,6 +64,9 @@ fn tc_field_exists(fields: FieldList, name: string) -> bool {
     }
 }
 
+/// Return the resolved ValueType of a named field, or `.Unknown`
+/// when not found. Routes the raw field type through `resolve_vtype`
+/// so cross-module struct refs resolve to canonical names.
 fn field_type_in(tc: TC, fields: FieldList, name: string) -> ValueType {
     match fields {
         .End -> .Unknown

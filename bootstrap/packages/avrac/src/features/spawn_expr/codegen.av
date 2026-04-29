@@ -7,6 +7,8 @@ use codegen.types.{ok_emit, err_emit, EmitValue}
 use core.ast.{vtype_fn_ret, MatchArmList, ExprList}
 use features.closures.codegen.{emit_lambda}
 
+/// Codegen entry for `spawn { body }`. Pattern-matches the
+/// `Spawn` AST node and forwards to `emit_spawn`.
 export fn spawn_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .Spawn(body) -> emit_spawn(ctx, env, body)
@@ -14,6 +16,11 @@ export fn spawn_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue
     }
 }
 
+/// Wrap the body in a zero-arg lambda, hand the closure pointer
+/// to `avra_spawn`, and register the resulting handle with the
+/// active structured-concurrency task group (when one exists).
+/// Result type is `Task<RetTy>` inferred from the lambda's return
+/// type so `await` later sees the right type.
 fn emit_spawn(ctx: Ctx, env: VarEnv, body: Expr) -> Result<EmitValue, string> {
     // Wrap body in a zero-arg lambda: () -> { body }
     let closure = emit_lambda(ctx, env, Expr.Lambda(ParamList.End, body))?
@@ -35,6 +42,10 @@ fn emit_spawn(ctx: Ctx, env: VarEnv, body: Expr) -> Result<EmitValue, string> {
 // ── AST scan: does a statement list contain any Spawn expressions? ──
 // Used by emit_function_body to decide whether to create a task group.
 
+/// True when any statement in `stmts` (including nested control-
+/// flow + bodies) contains a `spawn` expression. Used by
+/// `emit_function_body` to decide whether to allocate a structured-
+/// concurrency task group up front.
 export fn stmts_has_spawn(stmts: StmtList) -> bool {
     match stmts {
         .End -> false
@@ -42,6 +53,8 @@ export fn stmts_has_spawn(stmts: StmtList) -> bool {
     }
 }
 
+/// Per-statement spawn-detector. Recurses into expression
+/// payloads and nested bodies; treats decl-only stmts as opaque.
 fn stmt_has_spawn(st: Stmt) -> bool {
     match st {
         .Expr(e) -> expr_has_spawn(e)
@@ -66,6 +79,7 @@ fn stmt_has_spawn(st: Stmt) -> bool {
     }
 }
 
+/// True when any `match` arm body contains a spawn.
 fn arms_have_spawn(arms: MatchArmList) -> bool {
     match arms {
         .End -> false
@@ -73,6 +87,9 @@ fn arms_have_spawn(arms: MatchArmList) -> bool {
     }
 }
 
+/// Per-expression spawn-detector. Returns true on a literal
+/// `Spawn` node and recurses into compound expressions (block,
+/// call, binary, unary, if-expr, match-expr, lambda).
 fn expr_has_spawn(ex: Expr) -> bool {
     match ex {
         .Spawn(_) -> true
@@ -87,6 +104,8 @@ fn expr_has_spawn(ex: Expr) -> bool {
     }
 }
 
+/// Map `expr_has_spawn` across an ExprList — used to walk call
+/// argument lists.
 fn exprs_have_spawn(args: ExprList) -> bool {
     match args {
         .End -> false

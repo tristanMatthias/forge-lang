@@ -8,6 +8,8 @@ use features.list_lit.codegen.{emit_list_lit}
 use features.list_lit.typeck.{check_list_lit}
 use typeck.{tc_er}
 
+/// Register the `[a, b, c]` list literal feature. Wires up
+/// resolver, type-checker, and codegen via the standard registry.
 export fn list_lit_feature() -> Feature {
     feature_new("list_lit") with {
         expr_tag: Expr.ListLit(ExprList.End),
@@ -17,6 +19,7 @@ export fn list_lit_feature() -> Feature {
     }
 }
 
+/// Resolver hook for `ListLit`. Walks every element expression.
 fn list_lit_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     match expr {
         .ListLit(elements) -> resolve_expr_list(r, elements)
@@ -24,6 +27,8 @@ fn list_lit_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     }
 }
 
+/// Type-check hook for `ListLit`. Forwards to `check_list_lit`,
+/// which infers the element type from the entries.
 fn list_lit_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .ListLit(elements) -> check_list_lit(tc, elements)
@@ -32,6 +37,8 @@ fn list_lit_check_expr(tc: TC, expr: Expr) -> ExprResult {
 }
 
 
+/// Codegen hook for `ListLit`. Pattern-matches the AST node and
+/// forwards to `emit_list_lit`.
 fn list_lit_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .ListLit(elements) -> emit_list_lit(ctx, env, elements)

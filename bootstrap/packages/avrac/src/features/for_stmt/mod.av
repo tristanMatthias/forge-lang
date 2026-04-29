@@ -6,6 +6,9 @@ use resolve.{declare_name, define_name, enter_resolve_scope, exit_resolve_scope,
 use features.for_stmt.codegen.{emit_for, emit_for_in}
 use typeck.{check_expr, check_stmt, tc_bind, tc_enter, tc_exit}
 
+/// Resolver hook for `for i in start..end { body }`. Resolves
+/// both bounds in the outer scope, opens a new scope for the
+/// loop variable, then resolves the body.
 fn for_resolve(r: Resolver, stmt: Stmt) -> Resolver {
     match stmt {
         .For(variable, start, end, body) -> {
@@ -21,6 +24,9 @@ fn for_resolve(r: Resolver, stmt: Stmt) -> Resolver {
     }
 }
 
+/// Resolver hook for `for x in collection { body }`. Resolves
+/// the collection in the outer scope, opens a fresh scope for
+/// the element binding, then resolves the body.
 fn for_in_resolve(r: Resolver, stmt: Stmt) -> Resolver {
     match stmt {
         .ForIn(variable, collection, body) -> {
@@ -35,6 +41,8 @@ fn for_in_resolve(r: Resolver, stmt: Stmt) -> Resolver {
     }
 }
 
+/// Type-check hook for the range form. Both bounds must be Int;
+/// the loop variable enters scope as Int.
 fn for_check(tc: TC, stmt: Stmt) -> TC {
     match stmt {
         .For(variable, start, end, body) -> {
@@ -49,6 +57,9 @@ fn for_check(tc: TC, stmt: Stmt) -> TC {
     }
 }
 
+/// Type-check hook for the iterator form. Pulls the element type
+/// from the collection's `List(elem)` type and binds it to the
+/// loop variable in a fresh scope.
 fn for_in_check(tc: TC, stmt: Stmt) -> TC {
     match stmt {
         .ForIn(variable, collection, body) -> {
@@ -63,6 +74,7 @@ fn for_in_check(tc: TC, stmt: Stmt) -> TC {
     }
 }
 
+/// Register the `for i in start..end { body }` range loop.
 export fn for_feature() -> Feature {
     feature_new("for") with {
         stmt_tag: Stmt.For("", Expr.Null, Expr.Null, Stmt.NoOp),
@@ -74,6 +86,9 @@ export fn for_feature() -> Feature {
     }
 }
 
+/// Register the `for x in collection { body }` iterator loop.
+/// Distinct AST tag from the range form so codegen / typeck pick
+/// the right hook.
 export fn for_in_feature() -> Feature {
     feature_new("for_in") with {
         stmt_tag: Stmt.ForIn("", Expr.Null, Stmt.NoOp),

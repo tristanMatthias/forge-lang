@@ -5,6 +5,10 @@ use diagnostics.{DiagCode}
 use typeck.{TC, tc_report, TraitRegistry, TraitMethodList, TraitAssocTypes, trait_lookup, trait_has, trait_assoc_types, tc_owns_type}
 use core.type_registry.{method_mangled_name}
 
+/// Find the byte offset of the single `:` that separates a
+/// `Trait:Type` impl name. Skips `::` (qualified paths) so
+/// `core::fmt::Display:Foo` is split at the colon before `Foo`.
+/// Returns -1 when there's no separator (inherent impl).
 export fn find_trait_separator(name: string) -> int {
     mut i = 0
     while i < name.length {
@@ -20,6 +24,12 @@ export fn find_trait_separator(name: string) -> int {
     -1
 }
 
+/// Verify an `impl Trait for Type` block. Enforces (a) the
+/// orphan rule from spec Axis 16.5 — at least one of the trait
+/// or the type must be defined locally; (b) every required
+/// method on the trait is implemented; (c) every required
+/// associated type is provided. Inherent impls (no `Trait:`
+/// prefix) bypass conformance checks.
 export fn check_trait_conformance(tc: TC, impl_name: string, methods: StmtList) -> TC {
     let colon_idx = find_trait_separator(impl_name)
     if colon_idx < 0 { return tc }
@@ -47,6 +57,10 @@ export fn check_trait_conformance(tc: TC, impl_name: string, methods: StmtList) 
     check_required_assoc_types(after_methods, trait_name, type_name, required_assoc, methods)
 }
 
+/// For every associated type the trait declares, verify the
+/// impl block defines a matching `type Name = ...` entry. Missing
+/// associated types surface as F1000 with a message that names
+/// both the trait and the implementing type.
 fn check_required_assoc_types(tc: TC, trait_name: string, type_name: string, required: TraitAssocTypes, impl_stmts: StmtList) -> TC {
     match required {
         .End -> tc
@@ -61,6 +75,8 @@ fn check_required_assoc_types(tc: TC, trait_name: string, type_name: string, req
     }
 }
 
+/// True when `stmts` contains an `AssocType(name, …)` entry with
+/// a resolved (non-Unknown) right-hand side.
 fn impl_has_assoc_type(stmts: StmtList, name: string) -> bool {
     match stmts {
         .End -> false
@@ -73,6 +89,10 @@ fn impl_has_assoc_type(stmts: StmtList, name: string) -> bool {
     }
 }
 
+/// For every method the trait requires, check that the impl
+/// supplies a function with the same name (after method-mangling)
+/// and matching arity. Each missing method or arity mismatch
+/// emits its own F1000 diagnostic so users see the full picture.
 fn check_required_methods(tc: TC, trait_name: string, type_name: string, required: TraitMethodList, impl_methods: StmtList) -> TC {
     match required {
         .End -> tc
@@ -93,6 +113,8 @@ fn check_required_methods(tc: TC, trait_name: string, type_name: string, require
     }
 }
 
+/// Look up a method by mangled name and return its parameter
+/// count, or -1 when not found.
 fn impl_method_param_count(methods: StmtList, name: string) -> int {
     match methods {
         .End -> -1
@@ -105,6 +127,8 @@ fn impl_method_param_count(methods: StmtList, name: string) -> int {
     }
 }
 
+/// True when `methods` contains a `Function` with the given
+/// (mangled) name.
 fn impl_has_method(methods: StmtList, name: string) -> bool {
     match methods {
         .End -> false
@@ -117,6 +141,9 @@ fn impl_has_method(methods: StmtList, name: string) -> bool {
     }
 }
 
+/// Walk a trait body and produce a TraitMethodList of every
+/// `extern fn` (the trait's required signatures). Default-
+/// implemented methods don't count — only the abstract ones.
 export fn collect_method_names_from_stmts(stmts: StmtList) -> TraitMethodList {
     match stmts {
         .End -> TraitMethodList.End
@@ -129,6 +156,8 @@ export fn collect_method_names_from_stmts(stmts: StmtList) -> TraitMethodList {
     }
 }
 
+/// Walk a trait body and produce a TraitAssocTypes list of every
+/// `type Name` declaration (associated types — spec Axis 2).
 export fn collect_assoc_types_from_stmts(stmts: StmtList) -> TraitAssocTypes {
     match stmts {
         .End -> TraitAssocTypes.End
@@ -141,6 +170,8 @@ export fn collect_assoc_types_from_stmts(stmts: StmtList) -> TraitAssocTypes {
     }
 }
 
+/// Membership test for `TraitMethodList`. Used during conformance
+/// to verify each required method exists.
 fn method_list_has(list: TraitMethodList, name: string) -> bool {
     match list {
         .End -> false

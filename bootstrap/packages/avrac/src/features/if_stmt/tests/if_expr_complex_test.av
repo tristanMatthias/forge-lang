@@ -1,3 +1,6 @@
+/// Test fixture: identity helper for the if-expression complex
+/// test — used as the body of one branch so the test asserts on
+/// observed string identity through the if-expr path.
 fn echo_msg(msg: string) -> string { msg }
 
 type Pair = { a: int, b: int }

@@ -5,9 +5,10 @@ use core.ast.{Stmt, ParamList, TypeParamList, ValueType, type_expr_to_vtype}
 use parse.{Parser}
 use core.ast.{Tk}
 
-// Merge a where-clause bound into an existing TypeParamList.
-// If the param already exists, append the bound (separated by " + ").
-// If it doesn't exist, add a new entry.
+/// Merge a where-clause bound into an existing TypeParamList.
+/// When the named param already exists, append the new bound
+/// separated by ` + ` (so `T: Display` + `T: Debug` becomes
+/// `Display + Debug`). Otherwise append a fresh entry.
 fn merge_type_param_bound(params: TypeParamList, name: string, bounds: string) -> TypeParamList {
     match params {
         .End -> TypeParamList.Node(name, bounds, TypeParamList.End)

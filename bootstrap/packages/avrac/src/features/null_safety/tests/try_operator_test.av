@@ -1,3 +1,5 @@
+/// Test fixture: returns a greeting string for `"alice"` and
+/// null otherwise. Used as the operand for `?`.
 fn nsto_find(name: string) -> string? {
     if name == "alice" {
         return "found alice"
@@ -5,6 +7,9 @@ fn nsto_find(name: string) -> string? {
     null
 }
 
+/// Test fixture: extract a value via `?` and concatenate with
+/// "hello " — verifies the extracted value flows naturally into
+/// further operations.
 fn nsto_greet(name: string) -> string? {
     let found = nsto_find(name)?
     "hello " + found

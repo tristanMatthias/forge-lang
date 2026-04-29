@@ -1,7 +1,12 @@
+/// Test fixture: three-arg int sum. Verifies that the codegen
+/// passes more than two arguments correctly through the calling
+/// convention.
 fn add3(a: int, b: int, c: int) -> int {
     a + b + c
 }
 
+/// Test fixture: three-string concatenation. Mirrors `add3` for
+/// pointer-typed (string) args.
 fn greet(prefix: string, name: string, suffix: string) -> string {
     prefix + name + suffix
 }

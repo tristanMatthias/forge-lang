@@ -1,13 +1,26 @@
+/// Test fixture: minimal Result-shaped enum used by the
+/// tuple-match test. Locally defined so the test stays
+/// self-contained from the standard `Result<T, E>`.
+///
+/// Variants:
+/// - Ok(value: int) — success carrying an int.
+/// - Err(code: int) — failure carrying an int code.
 enum TmResult {
     Ok(value: int),
     Err(code: int),
 }
 
+/// Test fixture: integer division that returns `TmResult.Err(0)`
+/// on divide-by-zero. Used to populate tuples whose elements are
+/// later destructured via match.
 fn tm_divide(a: int, b: int) -> TmResult {
     if b == 0 { return TmResult.Err(0) }
     TmResult.Ok(a / b)
 }
 
+/// Test fixture: pattern-match a TmResult, returning the inner
+/// int on success or the fallback on failure. Used to verify
+/// that match works on tuple-indexed enum values.
 fn tm_unwrap_or(r: TmResult, fallback: int) -> int {
     match r {
         .Ok(v) -> v

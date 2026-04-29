@@ -5,6 +5,13 @@ use core.ast.{ExprList, FieldList, VariantList, VarEnv, variant_lookup, field_li
 use codegen.types.{Ctx, EmitValue, ok_emit, err_emit, null_ptr_val, enum_reg_find_by_variant, enum_reg_find_by_variant_arity}
 use core.type_registry.{type_registry_id_for, variant_payload_name}
 
+/// Codegen for `EnumName.Variant(args)` and the leading-dot
+/// shorthand `.Variant(args)`. Allocates the outer
+/// `{tag, payload}` struct, writes the variant's djb2-hash tag,
+/// and (for variants with fields) allocates + fills the typed
+/// payload struct. The leading-dot form uses arity-aware lookup
+/// so two enums with same-named variants of different arity
+/// don't collide.
 export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: string, args: ExprList) -> Result<EmitValue, string> {
     // Contextual resolution: `.Variant` with empty type_name.
     // Use arity-aware lookup to disambiguate variants with the same
@@ -58,11 +65,18 @@ export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: stri
     ok_emit(as_i64, .Enum(resolved_name, TypeList.End, type_registry_id_for(ctx.type_reg, resolved_name)))
 }
 
+/// Allocate the fixed 16-byte `{tag, payload}` outer struct.
+/// `variants` parameter is unused — kept for symmetry with the
+/// struct-side `malloc_struct_bytes`.
 export fn malloc_enum_bytes(ctx: Ctx, variants: VariantList) -> ptr {
     // Fixed size: {i8 tag, ptr payload} = 16 bytes always
     ctx.arena_alloc(ctx.i64(16))
 }
 
+/// Untyped payload-fill: walks the args, emitting each and
+/// storing it at the right slot via `ctx.store_slot`. Used as
+/// the lightweight path; `fill_enum_payload_typed` is the GEP-
+/// based variant when the payload struct type is known.
 fn fill_enum_payload(ctx: Ctx, env: VarEnv, payload_ptr: ptr, fields: FieldList, args: ExprList, idx: int) -> Result<EmitValue, string> {
     match args {
         .End -> ok_emit(null_ptr_val(), .Void)
@@ -79,7 +93,10 @@ fn fill_enum_payload(ctx: Ctx, env: VarEnv, payload_ptr: ptr, fields: FieldList,
     }
 }
 
-// Type-safe payload fill: uses GEP into the per-variant struct type.
+/// Type-safe payload fill via GEP into the per-variant struct
+/// type. Lets `store_field` truncate / cast each value to its
+/// declared field type so packed bool / float fields don't get
+/// clobbered.
 fn fill_enum_payload_typed(ctx: Ctx, env: VarEnv, pay_ty: ptr, payload_ptr: ptr, fields: FieldList, args: ExprList, idx: int) -> Result<EmitValue, string> {
     match args {
         .End -> ok_emit(null_ptr_val(), .Void)
@@ -97,8 +114,9 @@ fn fill_enum_payload_typed(ctx: Ctx, env: VarEnv, pay_ty: ptr, payload_ptr: ptr,
     }
 }
 
-// Compare two enum values by their tag field (equality/inequality).
-// Used by emit_binary for Eq/Ne on enum types.
+/// Compare two enum values by their tag field. Returns Bool.
+/// Used by `emit_binary` for `==` / `!=` on enum types — `pred`
+/// is the LLVM icmp predicate (32 = EQ, 33 = NE).
 export fn emit_enum_tag_cmp(ctx: Ctx, lhs: ptr, rhs: ptr, ty: ValueType, pred: int) -> Result<EmitValue, string> {
     let enum_name = vtype_enum_name(ty)
     let st_ty = ctx.get_type(enum_name)

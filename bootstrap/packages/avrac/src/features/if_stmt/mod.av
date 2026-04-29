@@ -10,6 +10,9 @@ use resolve.{resolve_expr, resolve_stmt}
 use features.if_stmt.codegen.{emit_if, emit_if_expr}
 use typeck.{check_expr, check_stmt, tc_er, tc_report}
 
+/// Register the `if` feature for both statement (`if cond { ... }`)
+/// and expression (`let x = if cond a else b`) positions. Wires
+/// up resolver, type-checker, codegen, and eval hooks for each.
 export fn if_stmt_feature() -> Feature {
     feature_new("if") with {
         expr_tag: Expr.IfExpr(Expr.Null, Expr.Null, Expr.Null),
@@ -27,6 +30,7 @@ export fn if_stmt_feature() -> Feature {
     }
 }
 
+/// Resolver hook for `IfExpr`. Walks condition + both branches.
 fn if_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     match expr {
         .IfExpr(c, t, e) -> {
@@ -38,6 +42,8 @@ fn if_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     }
 }
 
+/// Tree-walk evaluator hook for `IfExpr`. Currently unsupported —
+/// the eval path doesn't model expression-position branching.
 fn if_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
     match expr {
         .IfExpr(_, _, _) -> error_result(rt, "if expressions are not supported by the tree-walk evaluator")
@@ -45,6 +51,8 @@ fn if_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
     }
 }
 
+/// Codegen hook for `IfExpr`. Forwards to `emit_if_expr` which
+/// emits both branches into a result-slot phi.
 fn if_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .IfExpr(condition, then_branch, else_branch) -> emit_if_expr(ctx, env, condition, then_branch, else_branch)
@@ -52,6 +60,8 @@ fn if_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> 
     }
 }
 
+/// Codegen hook for `If` statements. Forwards to `emit_if`
+/// which emits both branches into named basic blocks.
 fn if_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .If(condition, then_branch, else_branch) -> emit_if(ctx, env, condition, then_branch, else_branch)
@@ -59,6 +69,8 @@ fn if_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string>
     }
 }
 
+/// Resolver hook for `If` statements. Walks condition, then-branch,
+/// then else-branch (if present).
 fn if_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
     match stmt {
         .If(condition, then_branch, else_branch) -> {
@@ -73,6 +85,9 @@ fn if_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
     }
 }
 
+/// Type-check hook for `If` statements. Condition must be Bool
+/// (Int accepted for compat). Both branches are checked but no
+/// type-merging is needed since statements don't produce values.
 fn if_check_stmt(tc: TC, stmt: Stmt) -> TC {
     match stmt {
         .If(cond, then_branch, else_branch) -> {
@@ -90,6 +105,11 @@ fn if_check_stmt(tc: TC, stmt: Stmt) -> TC {
     }
 }
 
+/// Type-check hook for `IfExpr`. Both branches must agree on a
+/// type, otherwise the result is widened to a `Union<Then, Else>`
+/// so callers can disambiguate via `match`. Void branches are
+/// treated as "doesn't constrain", matching expectation that an
+/// expression-position if can degrade to an effect-only expression.
 fn if_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .IfExpr(cond, then_branch, else_branch) -> {
@@ -110,6 +130,9 @@ fn if_check_expr(tc: TC, expr: Expr) -> ExprResult {
     }
 }
 
+/// Tree-walk evaluator hook for `If` statements. Evaluates the
+/// condition, then dispatches to the matching branch (or returns
+/// null when no else-branch exists).
 fn if_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
     match stmt {
         .If(condition, then_branch, else_branch) -> {

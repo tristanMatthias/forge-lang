@@ -7,8 +7,11 @@ use core.ast.{ValueType, vtype_display, vtype_eq, union_contains}
 use codegen.types.{Ctx, EmitValue, ok_emit, err_emit}
 use features.error_propagation.{Result}
 
-// Wrap a value into a union-typed discriminated struct {i64 tag, ptr payload}.
-// The tag is the djb2 hash of the value's type name.
+/// Wrap a concrete value as a union-typed discriminated struct
+/// `{i64 tag, ptr payload}`. The tag is the djb2 hash of the
+/// value's display type name (so the runtime can recover which
+/// variant we wrapped). Payload lives in a heap slot referenced
+/// by the wrapper.
 export fn emit_union_wrap(ctx: Ctx, val: ptr, val_ty: ValueType, union_ty: ValueType) -> Result<EmitValue, string> {
     let type_name = vtype_display(val_ty)
     let tag = avra_variant_hash(type_name)
@@ -26,7 +29,8 @@ export fn emit_union_wrap(ctx: Ctx, val: ptr, val_ty: ValueType, union_ty: Value
     ok_emit(as_i64, union_ty)
 }
 
-// Extract the tag from a union value
+/// Load the i64 tag field from a union-wrapped value. Used by
+/// `match` codegen to dispatch on the wrapped variant.
 export fn emit_union_tag(ctx: Ctx, val: ptr) -> ptr {
     let obj = ctx.to_ptr(val, "union_obj")
     let st_ty = ctx.get_type("__union")
@@ -34,7 +38,9 @@ export fn emit_union_tag(ctx: Ctx, val: ptr) -> ptr {
     ctx.load_i64(tag_gep, "union_tag")
 }
 
-// Extract the payload pointer from a union value
+/// Load the payload pointer field from a union-wrapped value.
+/// Pairs with `emit_union_extract` which reads the actual value
+/// from the slot the payload points at.
 export fn emit_union_payload(ctx: Ctx, val: ptr) -> ptr {
     let obj = ctx.to_ptr(val, "union_pay_obj")
     let st_ty = ctx.get_type("__union")
@@ -42,15 +48,20 @@ export fn emit_union_payload(ctx: Ctx, val: ptr) -> ptr {
     ctx.load_typed(ValueType.Ptr, pay_gep, "union_payload")
 }
 
-// Load the actual value from a union payload given the expected type
+/// Load the actual value out of a union payload, typed as
+/// `expected_ty`. Caller is responsible for verifying the tag
+/// matches before calling — this fn does no type-checking.
 export fn emit_union_extract(ctx: Ctx, val: ptr, expected_ty: ValueType) -> EmitValue {
     let pay = emit_union_payload(ctx, val)
     let loaded = ctx.load_slot_typed(pay, 0, expected_ty, "union_val")
     EmitValue { value: loaded, ty: expected_ty }
 }
 
-// Check if a value needs union wrapping: the value type is a concrete type
-// and the target is a union containing that type.
+/// True when `val_ty` is a concrete type the target union
+/// `target_ty` accepts and isn't already a union — i.e. the
+/// caller needs to wrap before storing/passing. Used at every
+/// site where a concrete value flows into a union slot
+/// (assignments, returns, args, struct fields, with-overrides).
 export fn needs_union_wrap(val_ty: ValueType, target_ty: ValueType) -> bool {
     match target_ty {
         .Union(types) -> {

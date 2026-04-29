@@ -8,10 +8,15 @@ use features.eval.{ok_result, value_null}
 use core.registry.{feature_new, Feature}
 use resolve.{resolve_stmt_list}
 
+/// Resolver hook for `mod`. Recursively resolves the body — name
+/// resolution within the module is local to its scope.
 fn mod_resolve(r: Resolver, stmt: Stmt) -> Resolver {
     match stmt { .Module(_, body) -> resolve_stmt_list(r, body), _ -> r }
 }
 
+/// Tree-walk evaluator hook for `mod`. The evaluator doesn't yet
+/// model module scoping — return null and let body evaluation
+/// fall back to the surrounding scope.
 fn mod_eval(rt: Runtime, stmt: Stmt) -> StepResult {
     match stmt {
         .Module(_, _) -> ok_result(rt, value_null())
@@ -19,6 +24,8 @@ fn mod_eval(rt: Runtime, stmt: Stmt) -> StepResult {
     }
 }
 
+/// Tree-walk evaluator hook for `use`. `use` is a compile-time
+/// directive only — the evaluator returns null without effect.
 fn use_eval(rt: Runtime, stmt: Stmt) -> StepResult {
     match stmt {
         .Use(_, _) -> ok_result(rt, value_null())
@@ -26,6 +33,9 @@ fn use_eval(rt: Runtime, stmt: Stmt) -> StepResult {
     }
 }
 
+/// Register the `mod` declaration feature. Wires up the parser,
+/// resolver, and eval hooks. Codegen is provided implicitly by
+/// the codegen pipeline emitting `__init_<name>()` per module.
 export fn mod_feature() -> Feature {
     feature_new("mod") with {
         stmt_tag: Stmt.Module("", StmtList.End),
@@ -36,6 +46,9 @@ export fn mod_feature() -> Feature {
     }
 }
 
+/// Register the `use` import feature. Routes to the parser's
+/// `parse_use_declaration`. Resolution / linking happens in the
+/// resolver's name-rewriting pass.
 export fn use_feature() -> Feature {
     feature_new("use") with {
         stmt_tag: Stmt.Use("", ParamList.End),

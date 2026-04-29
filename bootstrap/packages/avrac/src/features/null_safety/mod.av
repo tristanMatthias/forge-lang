@@ -8,6 +8,8 @@ use features.null_safety.typeck.{check_catch, check_null_coalesce, check_try}
 use features.struct_decl.typeck.{check_field_access}
 use typeck.{check_expr, tc_er}
 
+/// Register the `??` null-coalesce expression feature
+/// (`x ?? fallback`).
 export fn null_coalesce_feature() -> Feature {
     feature_new("null_coalesce") with {
         expr_tag: Expr.NullCoalesce(Expr.Null, Expr.Null),
@@ -17,6 +19,9 @@ export fn null_coalesce_feature() -> Feature {
     }
 }
 
+/// Register the `?.` optional-chain feature (`obj?.field`).
+/// Short-circuits the field access to null when the receiver is
+/// null.
 export fn optional_chain_feature() -> Feature {
     feature_new("optional_chain") with {
         expr_tag: Expr.OptionalChain(Expr.Null, ""),
@@ -26,6 +31,8 @@ export fn optional_chain_feature() -> Feature {
     }
 }
 
+/// Register the `?` (try) operator feature. Unwraps `Ok(x)` to
+/// `x`; propagates `Err(e)` to the enclosing fn (spec Axis 12).
 export fn try_feature() -> Feature {
     feature_new("try") with {
         expr_tag: Expr.Try(Expr.Null),
@@ -35,6 +42,9 @@ export fn try_feature() -> Feature {
     }
 }
 
+/// Register the `catch` recovery feature
+/// (`expr() catch { default }`). Pairs with `Result`/`?` to
+/// recover an error path with a fallback value.
 export fn catch_feature() -> Feature {
     feature_new("catch") with {
         expr_tag: Expr.Catch(Expr.Null, "", Expr.Null, 0, 0),
@@ -44,6 +54,7 @@ export fn catch_feature() -> Feature {
     }
 }
 
+/// Resolver hook for `NullCoalesce`. Walks both sides.
 fn null_coalesce_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     match expr {
         .NullCoalesce(left, right) -> {
@@ -54,6 +65,8 @@ fn null_coalesce_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     }
 }
 
+/// Resolver hook for `OptionalChain`. Only the receiver needs
+/// name resolution.
 fn optional_chain_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     match expr {
         .OptionalChain(obj, _) -> resolve_expr(r, obj)
@@ -61,6 +74,10 @@ fn optional_chain_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     }
 }
 
+/// Type-check hook for `OptionalChain`. Same behaviour as
+/// `check_field_access` — the optional-ness widens the result
+/// to nullable downstream but the field lookup itself is the
+/// same.
 fn optional_chain_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .OptionalChain(obj, field) -> check_field_access(tc, obj, field)
@@ -68,6 +85,7 @@ fn optional_chain_check_expr(tc: TC, expr: Expr) -> ExprResult {
     }
 }
 
+/// Resolver hook for `Try`. Walks the inner expression.
 fn try_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     match expr {
         .Try(inner) -> resolve_expr(r, inner)
@@ -75,6 +93,9 @@ fn try_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     }
 }
 
+/// Resolver hook for `Catch`. Walks the inner expression, then
+/// (when an error binding name is given) opens a new scope with
+/// the binding visible inside the catch body.
 fn catch_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     match expr {
         .Catch(inner, binding, body, _, _) -> {
@@ -90,6 +111,7 @@ fn catch_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     }
 }
 
+/// Codegen hook for `Catch`. Forwards to `emit_catch`.
 fn catch_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .Catch(inner, binding, body, _, _) -> emit_catch(ctx, env, inner, binding, body)
@@ -97,6 +119,8 @@ fn catch_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, strin
     }
 }
 
+/// Codegen hook for `NullCoalesce`. Forwards to
+/// `emit_null_coalesce`.
 fn null_coalesce_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .NullCoalesce(left, right) -> emit_null_coalesce(ctx, env, left, right)
@@ -104,6 +128,8 @@ fn null_coalesce_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValu
     }
 }
 
+/// Codegen hook for `OptionalChain`. Forwards to
+/// `emit_optional_chain`.
 fn optional_chain_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .OptionalChain(obj, field) -> emit_optional_chain(ctx, env, obj, field)
@@ -111,6 +137,7 @@ fn optional_chain_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitVal
     }
 }
 
+/// Codegen hook for `Try`. Forwards to `emit_try`.
 fn try_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .Try(inner) -> emit_try(ctx, env, inner)

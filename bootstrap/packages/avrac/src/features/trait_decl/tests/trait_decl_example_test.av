@@ -2,6 +2,10 @@ trait ExTdPrintable {
     fn display(self) -> string
 }
 
+/// Test fixture: minimal struct used by the trait-decl example
+/// to verify a concrete `impl ExTdPrintable for ExTdDog`.
+///
+/// @field name — the dog's name; returned verbatim by `display`.
 type ExTdDog = { name: string }
 
 impl ExTdPrintable for ExTdDog {
@@ -10,6 +14,11 @@ impl ExTdPrintable for ExTdDog {
     }
 }
 
+/// Test fixture: a second `ExTdPrintable` implementer with a
+/// different `display` body — verifies trait dispatch picks the
+/// right concrete implementation.
+///
+/// @field name — the cat's name; wrapped in "meow from ..."
 type ExTdCat = { name: string }
 
 impl ExTdPrintable for ExTdCat {

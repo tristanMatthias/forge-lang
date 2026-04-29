@@ -5,17 +5,27 @@
 
 use core.runtime.{avra_selfhost_file_exists, avra_selfhost_read_file, avra_toml_get_section_string, avra_toml_has_section}
 
+/// Parsed `[package]` section of an `avra.toml` manifest. Spec
+/// Axis 16.4 / 16.8.
+///
+/// @field name    — `name = "..."` from the `[package]` table.
+/// @field version — `version = "..."` from the `[package]` table.
+/// @field found   — true when an `avra.toml` was actually loaded.
 export type PackageConfig = {
     name: string,
     version: string,
     found: bool,
 }
 
+/// Sentinel "no manifest" PackageConfig — used when no avra.toml
+/// is present or the file lacks a `[package]` section.
 fn default_config() -> PackageConfig {
     PackageConfig { name: "", version: "", found: false }
 }
 
-// Reads avra.toml from `dir` and extracts [package] name/version.
+/// Read `avra.toml` from `dir` and extract the `[package]`
+/// `name` / `version` keys. Returns the default config when the
+/// file is absent or has no `[package]` section.
 export fn load_package_config(dir: string) -> PackageConfig {
     let toml_path = "${dir}avra.toml"
     if !avra_selfhost_file_exists(toml_path) {

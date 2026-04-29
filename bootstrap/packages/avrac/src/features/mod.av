@@ -64,6 +64,11 @@ use features.with_expr.{with_expr_feature}
 use features.component_decl.{component_decl_feature}
 use core.registry.{register}
 
+/// Register every built-in language feature with the compiler's
+/// dispatch registry. Called once during compiler init; each
+/// feature module exposes a `<name>_feature()` builder. Order
+/// doesn't matter — features dispatch by AST tag, not declaration
+/// position.
 export fn init_features(reg: Registry) {
     // ── Statements ──
     register(reg, defer_feature())

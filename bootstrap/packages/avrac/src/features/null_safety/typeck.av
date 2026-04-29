@@ -5,6 +5,10 @@ use core.type_registry.{is_result_enum_name}
 use typeck.{check_expr, tc_er, tc_catch_ok_type, tc_report_at}
 use diagnostics.{DiagCode}
 
+/// Type-check a `expr() catch { fallback }`. The catch body must
+/// produce a value assignable to the fallible expression's `Ok`
+/// type — anything else surfaces as an F1000 mismatch with a
+/// span pointing at the catch keyword.
 export fn check_catch(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .Catch(inner, _, body, cl, cc) -> {
@@ -25,6 +29,11 @@ export fn check_catch(tc: TC, expr: Expr) -> ExprResult {
     }
 }
 
+/// Type-check a `expr?` try operator. Valid on `Result<T, E>`
+/// (unwraps to `T`, propagates `E`) and on `T?` nullable
+/// (unwraps to `T`, propagates null). Generic enums and Unknown
+/// types pass through unchanged so generic code that uses `?`
+/// type-checks at the use site.
 export fn check_try(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .Try(inner) -> {
@@ -47,6 +56,10 @@ export fn check_try(tc: TC, expr: Expr) -> ExprResult {
     }
 }
 
+/// Type-check `left ?? right`. Result type is the right side
+/// (the guaranteed non-null fallback) when both sides are known;
+/// falls back to whichever side has a non-Unknown type
+/// otherwise.
 export fn check_null_coalesce(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .NullCoalesce(left, right) -> {

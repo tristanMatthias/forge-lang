@@ -1,3 +1,5 @@
+/// Test fixture: extract the underlying value from an
+/// `int | string` union via exhaustive type-pattern match.
 fn ex_ut_show(val: int | string) -> string {
     match val {
         int(n) -> string(n)
@@ -5,6 +7,9 @@ fn ex_ut_show(val: int | string) -> string {
     }
 }
 
+/// Test fixture: variant of `ex_ut_show` that prepends a label
+/// to the unwrapped value — exercises the same union match with
+/// a non-trivial body in each arm.
 fn ex_ut_describe(val: int | string) -> string {
     match val {
         int(n) -> "int value: " + string(n)
@@ -12,6 +17,9 @@ fn ex_ut_describe(val: int | string) -> string {
     }
 }
 
+/// Test fixture: union-typed match with one explicit arm and a
+/// wildcard `_` catch-all. Verifies the exhaustiveness checker
+/// still considers the match complete with the wildcard present.
 fn ex_ut_with_wildcard(val: int | string) -> string {
     match val {
         int(n) -> "got int: " + string(n)

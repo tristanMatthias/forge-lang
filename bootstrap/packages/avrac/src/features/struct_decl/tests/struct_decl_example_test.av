@@ -1,3 +1,9 @@
+/// Test fixture: minimal 2D integer point used by the
+/// struct-decl example test. Verifies the basic
+/// `Point { x: 1, y: 2 }` literal + field-access path.
+///
+/// @field x — horizontal coordinate.
+/// @field y — vertical coordinate.
 type ExSdPoint = {
     x: int,
     y: int,

@@ -3,6 +3,11 @@
 use core.ast.{SelectArmList}
 use resolve.{Resolver, enter_resolve_scope, exit_resolve_scope, resolve_expr, resolve_stmt_list, declare_name, define_name}
 
+/// Resolve every arm of a `select { ... }` statement. For each
+/// arm, the channel expression resolves in the outer scope, then
+/// a fresh scope is entered to define the binding name (the
+/// received value), and finally the body resolves with that
+/// binding visible.
 export fn resolve_select_arms(r: Resolver, arms: SelectArmList) -> Resolver {
     match arms {
         .End -> r

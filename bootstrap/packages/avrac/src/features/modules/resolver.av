@@ -6,7 +6,9 @@
 use core.ast.{Stmt, StmtList, SStmt, sstmt, AnnotationList}
 use parse.{parse_program_source}
 
-// Returns the directory portion of a path (with trailing slash), or ""
+/// Return the directory portion of a path (including the trailing
+/// slash), or `""` when `path` has no directory part. Used to
+/// build sibling/child paths during module resolution.
 export fn modules_dirname(path: string) -> string {
     let len = path.length
     mut i = len
@@ -20,12 +22,14 @@ export fn modules_dirname(path: string) -> string {
     ""
 }
 
-// Set of loaded file paths — prevents double-parsing.
+/// Set of file paths the resolver has already loaded — prevents
+/// double-parsing when two modules import the same file.
 export enum LoadedPaths {
     End
     Node(path: string, next: LoadedPaths)
 }
 
+/// Membership test for `LoadedPaths`.
 fn loaded_has(paths: LoadedPaths, path: string) -> bool {
     match paths {
         .End -> false
@@ -34,6 +38,14 @@ fn loaded_has(paths: LoadedPaths, path: string) -> bool {
     }
 }
 
+/// Result of resolving a list of statements that may contain
+/// `Module`/`Use` items.
+///
+/// @field stmts         — the resolved statements (with module
+///                         bodies attached).
+/// @field loaded        — running set of already-loaded files.
+/// @field had_error     — 1 when resolution failed.
+/// @field error_message — diagnostic when `had_error` is set.
 export type ModListResult = {
     stmts: StmtList,
     loaded: LoadedPaths,
@@ -41,6 +53,13 @@ export type ModListResult = {
     error_message: string,
 }
 
+/// Result of resolving a single statement. Same shape as
+/// `ModListResult` but with one statement instead of a list.
+///
+/// @field stmt          — the resolved single statement.
+/// @field loaded        — running set of already-loaded files.
+/// @field had_error     — 1 when resolution failed.
+/// @field error_message — diagnostic when `had_error` is set.
 type ModStmtResult = {
     stmt: Stmt,
     loaded: LoadedPaths,
@@ -48,13 +67,15 @@ type ModStmtResult = {
     error_message: string,
 }
 
-// Import stack — tracks files currently being resolved to detect cycles.
-// Separate from LoadedPaths (which tracks ALL resolved files).
+/// Stack of files currently being resolved — for circular-import
+/// detection. Separate from LoadedPaths (which tracks ALL resolved
+/// files); this only tracks the active resolution chain.
 enum ImportStack {
     End
     Node(path: string, next: ImportStack)
 }
 
+/// Membership test for `ImportStack`. Used to detect cycles.
 fn stack_has(stack: ImportStack, path: string) -> bool {
     match stack {
         .End -> false
@@ -63,7 +84,9 @@ fn stack_has(stack: ImportStack, path: string) -> bool {
     }
 }
 
-// Render import stack for error messages: "a.av -> b.av -> a.av"
+/// Render the import stack as `a.av -> b.av -> a.av` for cycle-
+/// import error messages. Stops at the first occurrence of
+/// `cycle_path`, since that's where the cycle closes.
 fn render_cycle(stack: ImportStack, cycle_path: string) -> string {
     mut parts = cycle_path
     mut cur = stack
@@ -80,8 +103,12 @@ fn render_cycle(stack: ImportStack, cycle_path: string) -> string {
     parts
 }
 
-// Find the packages directory by searching upward from the given directory.
-// Looks for a sibling or ancestor `packages/` directory that contains std packages.
+/// Find the packages directory by searching upward from `dir`.
+/// Three strategies in order: (1) look for `/packages/` in the
+/// path itself, (2) probe `packages/std-cli/src/cli.av` from the
+/// CWD, (3) walk upward looking for an ancestor `packages/`. The
+/// `std-cli` probe is the canonical sentinel — if it doesn't
+/// exist, the directory isn't a packages root.
 fn find_packages_dir(dir: string) -> string {
     // Strategy 1: look for `/packages/` in the path itself (when compiling from within packages/)
     let marker = "/packages/"
@@ -125,8 +152,10 @@ fn find_packages_dir(dir: string) -> string {
     ""
 }
 
-// Resolve a @std package path to a file path.
-// "@std.cli" → "{packages_dir}/std-cli/src/cli.av"
+/// Map a @-scoped package path like `@std.cli` to its on-disk
+/// file: `${packages_dir}/std-cli/src/cli.av` or, when that
+/// doesn't exist, `${packages_dir}/std-cli/src/mod.av`. Returns
+/// `""` when neither file exists or `packages_dir` is empty.
 fn resolve_package_path(pkg_path: string, packages_dir: string) -> string {
     // pkg_path is like "@std.cli" — extract scope ("std") and name ("cli")
     if packages_dir == "" { return "" }
@@ -152,18 +181,23 @@ fn resolve_package_path(pkg_path: string, packages_dir: string) -> string {
     ""
 }
 
-// Resolve all Stmt.Module stubs in a StmtList.
+/// Resolve every `Stmt.Module` stub in `stmts` by reading the
+/// matching .av file, parsing it, and attaching the parsed body.
+/// Cycles are detected via an internal ImportStack.
 export fn resolve_module_files(stmts: StmtList, dir: string, loaded: LoadedPaths) -> ModListResult {
     resolve_module_files_inner(stmts, dir, loaded, ImportStack.End)
 }
 
-// Check if a use path is a package import (starts with "@")
+/// True when the use path is a `@scope.pkg` package import
+/// (rather than a relative `mod.sub` reference).
 fn is_package_use(path: string) -> bool {
     path.length > 0 && path[0] == "@"
 }
 
-// Extract the package module name from a use path.
-// "@std.cli" → "@std.cli", "@std.cli.sub" → "@std.cli"
+/// Reduce a use path to its top-level package module name.
+/// Examples: `@std.cli` → `@std.cli`,
+/// `@std.cli.sub` → `@std.cli`. Used to load each package once
+/// even when multiple sub-paths import from it.
 fn package_module_name(path: string) -> string {
     // Skip "@" prefix, find scope.name
     let without_at = path.substring(1, path.length)
@@ -179,6 +213,10 @@ fn package_module_name(path: string) -> string {
     path
 }
 
+/// Recursive worker for `resolve_module_files`. Walks each
+/// statement, resolving `Module` and `Use` stubs in place;
+/// non-import statements pass through unchanged. Threads the
+/// LoadedPaths set + ImportStack through every recursive call.
 fn resolve_module_files_inner(stmts: StmtList, dir: string, loaded: LoadedPaths, stack: ImportStack) -> ModListResult {
     match stmts {
         .End -> ModListResult { stmts: StmtList.End, loaded, had_error: false, error_message: "" }
@@ -212,7 +250,9 @@ fn resolve_module_files_inner(stmts: StmtList, dir: string, loaded: LoadedPaths,
     }
 }
 
-// Extract the use path from a statement, unwrapping Annotated wrappers
+/// Pull the use-path string out of a `Use` statement, peeling
+/// any `Annotated` wrappers (doc comments, attributes) along the
+/// way. Returns `""` when `stmt` isn't a Use.
 fn extract_use_path(stmt: Stmt) -> string {
     match stmt {
         .Use(up, _) -> up
@@ -221,6 +261,11 @@ fn extract_use_path(stmt: Stmt) -> string {
     }
 }
 
+/// Handle a `use @pkg` statement: locate the package source
+/// file, parse it, wrap the parsed body in nested
+/// `Module("@scope") { Module(name) { ... } }` so the resolver
+/// sees the package's symbols at their qualified path. Continue
+/// resolution on the rest of the input list.
 fn resolve_package_use_and_continue(ss: SStmt, next: StmtList, dir: string, loaded: LoadedPaths, stack: ImportStack) -> ModListResult {
     let use_path = extract_use_path(ss.node)
     let pkg_mod = package_module_name(use_path)
@@ -275,6 +320,11 @@ fn resolve_package_use_and_continue(ss: SStmt, next: StmtList, dir: string, load
     }
 }
 
+/// Resolve a single `mod name` statement: locate `name.av` or
+/// `name/mod.av` relative to `dir`, parse it, recursively resolve
+/// nested modules, and return a populated `Stmt.Module(name, body)`.
+/// Detects circular imports via `stack` and returns F3103 in that
+/// case. `Annotated` wrappers around the module decl pass through.
 fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths, stack: ImportStack) -> ModStmtResult {
     match stmt {
         .Module(name, _) -> {

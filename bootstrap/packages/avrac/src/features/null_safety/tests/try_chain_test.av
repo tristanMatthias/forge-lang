@@ -1,13 +1,20 @@
+/// Test fixture: doubles positive ints, returns null for
+/// non-positive — first step of a `?`-chained pipeline.
 fn nstc_step1(x: int) -> int? {
     if x > 0 { return x * 2 }
     null
 }
 
+/// Test fixture: increments small ints, returns null for ≥100
+/// — second step of the `?`-chained pipeline.
 fn nstc_step2(x: int) -> int? {
     if x < 100 { return x + 1 }
     null
 }
 
+/// Test fixture: chain `nstc_step1` and `nstc_step2` via `?`.
+/// Verifies that the unwrapped value from the first step flows
+/// directly into the second without manual null-checking.
 fn nstc_pipeline(x: int) -> int? {
     let a = nstc_step1(x)?
     let b = nstc_step2(a)?

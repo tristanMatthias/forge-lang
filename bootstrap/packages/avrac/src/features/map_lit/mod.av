@@ -7,6 +7,9 @@ use resolve.{resolve_expr_list}
 use features.map_lit.codegen.{emit_map_lit}
 use typeck.{check_expr_list, tc_er}
 
+/// Register the `{k: v, k: v}` map literal feature. Wires up
+/// resolver, typeck, and codegen via the standard feature
+/// registry. Spec axis 28.
 export fn map_lit_feature() -> Feature {
     feature_new("map_lit") with {
         expr_tag: Expr.MapLit(ExprList.End),
@@ -16,6 +19,8 @@ export fn map_lit_feature() -> Feature {
     }
 }
 
+/// Resolver hook for `MapLit`. Walks every key + value
+/// expression in the entries list.
 fn map_lit_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     match expr {
         .MapLit(entries) -> resolve_expr_list(r, entries)
@@ -23,6 +28,8 @@ fn map_lit_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     }
 }
 
+/// Type-check hook for `MapLit`. Walks every entry expression so
+/// errors are reported, then declares the result type Map.
 fn map_lit_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .MapLit(entries) -> {
@@ -33,6 +40,8 @@ fn map_lit_check_expr(tc: TC, expr: Expr) -> ExprResult {
     }
 }
 
+/// Codegen hook for `MapLit`. Pattern-matches the AST node and
+/// forwards to `emit_map_lit`.
 fn map_lit_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .MapLit(entries) -> emit_map_lit(ctx, env, entries)

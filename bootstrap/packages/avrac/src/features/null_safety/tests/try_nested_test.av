@@ -1,5 +1,11 @@
+/// Test fixture: always-null returning fn used as the deepest
+/// link in the `?` chain.
 fn nstn_inner() -> int? { null }
+/// Test fixture: middle layer that propagates the inner null
+/// via the `?` operator.
 fn nstn_middle() -> int? { nstn_inner()? }
+/// Test fixture: outer caller — verifies `?` propagation crosses
+/// multiple fn boundaries cleanly.
 fn nstn_outer() -> int? { nstn_middle()? }
 
 spec "try nested" {

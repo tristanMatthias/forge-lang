@@ -1,3 +1,6 @@
+/// Test fixture: classic three-way classification using an
+/// `if`/`else if`/`else` chain — verifies the basic
+/// `if`-statement code path end to end.
 fn ex_is_classify(n: int) -> string {
     if n < 0 {
         "negative"

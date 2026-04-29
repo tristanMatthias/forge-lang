@@ -1,8 +1,13 @@
+/// Test fixture: a single `defer` printing "cleanup!" — verifies
+/// the body runs after the function's main work even though it
+/// appears earlier in source order.
 fn defer_basic() {
     defer println("cleanup!")
     println("working...")
 }
 
+/// Test fixture: three stacked `defer`s — verifies LIFO ordering
+/// (last-deferred runs first at scope exit).
 fn defer_lifo() {
     defer println("third (first deferred)")
     defer println("second")
@@ -10,6 +15,9 @@ fn defer_lifo() {
     println("body")
 }
 
+/// Test fixture: `defer` followed by an early `return` —
+/// verifies the body runs on every exit path, not just normal
+/// fall-through.
 fn defer_early(x: int) -> string {
     defer println("always runs")
     if x > 0 { return "positive" }

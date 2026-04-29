@@ -3,6 +3,9 @@
 use core.ast.{Expr, ExprList, ParamList, ValueType, vtype_list_elem}
 use typeck.{TC, ExprResult, tc_er, tc_enter, tc_exit, tc_bind, check_expr, check_expr_list}
 
+/// Type-check a list literal. Empty literals get `List<Unknown>`
+/// (caller infers from context); non-empty literals pin the element
+/// type from the first element and check the rest against it.
 export fn check_list_lit(tc: TC, elements: ExprList) -> ExprResult {
     match elements {
         .End -> tc_er(tc, .List(.Unknown))
@@ -14,6 +17,10 @@ export fn check_list_lit(tc: TC, elements: ExprList) -> ExprResult {
     }
 }
 
+/// Map a List method name to its result ValueType. `map` is
+/// special-cased: result is `List<Ret>` where `Ret` is inferred
+/// from the lambda body. Unknown methods return `.Unknown` so the
+/// codegen path can surface them as errors.
 export fn check_list_method(tc: TC, elem: ValueType, method: string, args: ExprList) -> ExprResult {
     match method {
         "length" or "len"                          -> tc_er(tc, .Int)
@@ -26,6 +33,9 @@ export fn check_list_method(tc: TC, elem: ValueType, method: string, args: ExprL
     }
 }
 
+/// Walk into a `map(lambda)` argument and recover the lambda's
+/// return type by entering a fresh scope with its single param
+/// bound to the list's element type, then checking the body.
 fn tc_infer_lambda_ret(tc: TC, args: ExprList, elem_ty: ValueType) -> ValueType {
     match args {
         .End -> .Unknown

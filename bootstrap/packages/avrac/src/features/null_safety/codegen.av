@@ -15,6 +15,11 @@ use codegen.types.{Ctx, EmitValue, ok_emit, err_emit, field_resolved_at, vtype_i
 use features.defer_stmt.codegen.{emit_defers_on_error}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
 
+/// Codegen for `left ?? right`. Branch on whether `left` is
+/// null/zero, picking it when non-null or falling through to
+/// `right` otherwise. Phi-merges the two branches into a single
+/// SSA value. Result type widens Str when the left side is
+/// Unknown/Void and the right is Str.
 export fn emit_null_coalesce(ctx: Ctx, env: VarEnv, left: Expr, right: Expr) -> Result<EmitValue, string> {
     let l = ctx.emit(env, left)?
 
@@ -43,6 +48,10 @@ export fn emit_null_coalesce(ctx: Ctx, env: VarEnv, left: Expr, right: Expr) -> 
     ok_emit(loaded, merged_ty)
 }
 
+/// Codegen for `obj?.field`. Null-checks the receiver: when null,
+/// produces null without touching the field; otherwise GEPs into
+/// the struct and loads. Falls back to a passthrough on non-
+/// struct receivers (e.g. strings).
 export fn emit_optional_chain(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> Result<EmitValue, string> {
     let r = ctx.emit(env, obj)?
 
@@ -92,10 +101,17 @@ export fn emit_optional_chain(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -
     ok_emit(final_val, field_ty)
 }
 
+/// Codegen for the `?` try operator. Two modes based on the
+/// inner expression's type:
+/// - `Result<T, E>`: tag-check the wrapped value; on Ok, extract
+///   the payload and continue; on Err, run errdefers and return
+///   the Err verbatim from the enclosing fn.
+/// - Nullable `T?`: zero/null short-circuits to a null return;
+///   non-null falls through with the unwrapped value.
+/// Inner-codegen failures (a `Result.Err` from `ctx.emit`)
+/// propagate to the host normally — this only handles the
+/// runtime-level try semantics.
 export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> Result<EmitValue, string> {
-    // This is the compiler's implementation of the source-level `?`
-    // operator, but codegen failures from the inner expression should
-    // still propagate normally.
     let r = ctx.emit(env, inner)?
 
     // ── Mode 1: Result enum (including monomorphized Result__T__E) ──
@@ -213,6 +229,12 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> Result<EmitValue, stri
     ok_emit(r.value, r.ty)
 }
 
+/// Codegen for `expr() catch { fallback }`. Branches on the
+/// fallible expression's tag: on Ok, extract the payload and
+/// merge with the fallback path on a phi; on Err, evaluate
+/// `body` (with the optional error binding in scope) and merge.
+/// Both paths feed into a single result slot so the caller sees
+/// one SSA value typed as the `Ok` payload.
 export fn emit_catch(ctx: Ctx, env: VarEnv, inner: Expr, binding: string, body: Expr) -> Result<EmitValue, string> {
     let r = ctx.emit(env, inner)?
 

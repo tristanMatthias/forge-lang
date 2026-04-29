@@ -6,6 +6,9 @@ use codegen.types.{Ctx, EmitValue, TraitMethodNames, ok_emit, err_emit, trait_de
 use core.type_registry.{method_mangled_name, type_registry_id_for, type_registry_name_for}
 use features.fn_decl.codegen.{emit_first_arg}
 
+/// Find the position of `name` in a TraitMethodNames list. Used
+/// to convert a method name into a vtable slot index. Returns -1
+/// when the method isn't on the trait.
 export fn trait_method_idx(methods: TraitMethodNames, name: string, idx: int) -> int {
     match methods {
         .End -> 0 - 1
@@ -14,6 +17,8 @@ export fn trait_method_idx(methods: TraitMethodNames, name: string, idx: int) ->
     }
 }
 
+/// Look up a trait method's declared return type. Returns
+/// `Unknown` when the method isn't on the trait.
 fn trait_method_ret_vt(methods: TraitMethodNames, name: string) -> ValueType {
     match methods {
         .End -> ValueType.Unknown
@@ -22,6 +27,12 @@ fn trait_method_ret_vt(methods: TraitMethodNames, name: string) -> ValueType {
     }
 }
 
+/// Emit a `dyn Trait` method call. Loads the concrete value and
+/// vtable from the trait object, looks up the method's vtable
+/// slot, and dispatches via `avra_closure_call_N` for the right
+/// arity. Up to 4 user arguments (5 closure args including
+/// self) — beyond that, returns an error so the user sees the
+/// limit explicitly.
 export fn emit_trait_dispatch(ctx: Ctx, env: VarEnv, obj_val: ptr, trait_name: string, method: string, args: ExprList) -> Result<EmitValue, string> {
     let obj_ptr = ctx.to_ptr(obj_val, "tobj_ptr")
     let concrete = ctx.call("avra_trait_object_value", [obj_ptr])
@@ -68,6 +79,9 @@ export fn emit_trait_dispatch(ctx: Ctx, env: VarEnv, obj_val: ptr, trait_name: s
     err_emit("trait dispatch supports up to 4 user arguments (got ${string(user_count)})")
 }
 
+/// Emit the n-th argument from a trait-dispatch arg list.
+/// Used by `emit_trait_dispatch` to access positional args
+/// without having to destructure the list inline at each call.
 fn emit_trait_arg(ctx: Ctx, env: VarEnv, args: ExprList, n: int) -> Result<EmitValue, string> {
     match args {
         .End -> err_emit("trait dispatch: missing argument")
@@ -81,6 +95,9 @@ fn emit_trait_arg(ctx: Ctx, env: VarEnv, args: ExprList, n: int) -> Result<EmitV
     }
 }
 
+/// Extract the concrete type name from a `Struct` or `Enum`
+/// ValueType. Returns "" for everything else (Int, Bool, Trait,
+/// Union, …) — caller falls back to no-op boxing in that case.
 export fn resolve_concrete_type_name(ty: ValueType) -> string {
     let s = vtype_struct_name(ty)
     if s != "" { return s }
@@ -89,6 +106,11 @@ export fn resolve_concrete_type_name(ty: ValueType) -> string {
     ""
 }
 
+/// Box a concrete value into a `dyn Trait` trait object. Builds
+/// the per-type vtable on the spot via `push_vtable_entries_call`,
+/// then calls `avra_trait_object_new` to allocate the {value,
+/// vtable} pair. Result is a fresh `dyn Trait` pointer ready for
+/// dispatch.
 export fn box_for_trait(ctx: Ctx, value: ptr, trait_name: string, concrete_name: string) -> ptr {
     let methods = trait_decl_lookup(ctx.trait_decls, trait_name)
     let vtable = ctx.array_new()
@@ -97,12 +119,14 @@ export fn box_for_trait(ctx: Ctx, value: ptr, trait_name: string, concrete_name:
     ctx.to_i64(obj_val, "tobj_i64")
 }
 
-// Build an i64-returning wrapper for a float-returning vtable method.
-// The closure dispatch (avra_closure_call_N) casts all fn pointers to
-// int64_t (*)(int64_t, ...) — if the target actually returns double,
-// the ABI mismatch causes the float result to be lost (returned in d0
-// but read from x0). This wrapper calls the real method and bitcasts
-// the double return to i64.
+/// Build an i64-returning wrapper around a float-returning vtable
+/// method. `avra_closure_call_N` types every fn pointer as
+/// `int64_t(int64_t, ...)`; calling a `double`-returning function
+/// through that signature produces an ABI mismatch (result lands
+/// in `d0` but the caller reads `x0`). This wrapper bridges by
+/// invoking the real fn through its true signature and bitcasting
+/// the double result to i64. Memoised on `mangled` so repeat
+/// boxing of the same type doesn't re-emit the wrapper.
 fn build_float_vtable_wrapper(ctx: Ctx, mangled: string, real_fn: ptr, arity: int) -> ptr {
     let wrap_name = "${mangled}__vtable_wrap"
     // Check if wrapper already exists (e.g., multiple trait objects of same type)
@@ -138,6 +162,11 @@ fn build_float_vtable_wrapper(ctx: Ctx, mangled: string, real_fn: ptr, arity: in
     wrapper
 }
 
+/// Walk a TraitMethodNames list and append one closure-wrapped
+/// fn pointer per method to `vtable`. Float-returning methods
+/// route through `build_float_vtable_wrapper` to dodge the ABI
+/// mismatch. Falls back to TypeRegistry lookups when the
+/// directly-mangled name isn't found (handles renamed types).
 export fn push_vtable_entries_call(ctx: Ctx, vtable: ptr, methods: TraitMethodNames, concrete_name: string) {
     match methods {
         .End -> {}

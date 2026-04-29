@@ -3,6 +3,10 @@
 use core.ast.{ExprList, ValueType}
 use typeck.{TC, ExprResult, tc_er}
 
+/// Map a method name to its result ValueType for type-checking.
+/// Returns `.Unknown` for methods the typeck doesn't track yet —
+/// the codegen path will surface unknown methods as a runtime
+/// error there.
 export fn check_map_method(tc: TC, method: string) -> ExprResult {
     match method {
         "get"              -> tc_er(tc, .Str)

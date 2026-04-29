@@ -5,11 +5,18 @@ use core.ast.{Expr, ExprList, VarEnv, ValueType}
 use codegen.types.{Ctx, EmitValue, ok_emit, err_emit}
 use codegen.helpers.{emit_single_arg}
 
+/// Codegen for `{k: v, k: v, ...}`. Allocates a fresh
+/// `avra_map_new_cstr` and inserts every entry via
+/// `insert_map_entries`. Result type is `Map`.
 export fn emit_map_lit(ctx: Ctx, env: VarEnv, entries: ExprList) -> Result<EmitValue, string> {
     let map = ctx.call("avra_map_new_cstr", [])
     insert_map_entries(ctx, env, entries, map)
 }
 
+/// Walk the entries list pairwise, emitting each (key, value)
+/// pair and pushing it into `map` via `avra_map_set_cstr`. Errors
+/// on dangling keys (odd number of entries — means the parser
+/// produced malformed input).
 fn insert_map_entries(ctx: Ctx, env: VarEnv, entries: ExprList, map: ptr) -> Result<EmitValue, string> {
     match entries {
         .End -> ok_emit(map, .Map)
@@ -27,6 +34,9 @@ fn insert_map_entries(ctx: Ctx, env: VarEnv, entries: ExprList, map: ptr) -> Res
     }
 }
 
+/// Dispatch a method call on a Map value. Maps method names to
+/// the corresponding `avra_map_*_cstr` runtime call. Unknown
+/// methods produce a "not implemented" error.
 export fn emit_map_method_call(ctx: Ctx, env: VarEnv, map_ptr: ptr, method: string, args: ExprList) -> Result<EmitValue, string> {
     match method {
         "get" -> {
@@ -49,6 +59,9 @@ export fn emit_map_method_call(ctx: Ctx, env: VarEnv, map_ptr: ptr, method: stri
     }
 }
 
+/// Codegen for `map.set(key, val)`. Two-arg variant — emits
+/// both, casts the key to ptr, and forwards to `avra_map_set_cstr`.
+/// Returns the map unchanged so the call chains.
 fn emit_map_set(ctx: Ctx, env: VarEnv, map: ptr, args: ExprList) -> Result<EmitValue, string> {
     match args {
         .Node(se_key, rest) -> {

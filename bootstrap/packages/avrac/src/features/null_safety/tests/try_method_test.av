@@ -1,5 +1,12 @@
+/// Test fixture: minimal config struct used by the `?`-on-method
+/// test. One numeric field so the test can assert on a primitive
+/// value after extraction.
+///
+/// @field port — TCP port to listen on.
 type NstmConfig = { port: int }
 
+/// Test fixture: stub config loader. Returns a real config for
+/// `"prod"` and null for everything else.
 fn nstm_load_config(name: string) -> NstmConfig? {
     if name == "prod" {
         return NstmConfig { port: 8080 }
@@ -7,6 +14,9 @@ fn nstm_load_config(name: string) -> NstmConfig? {
     null
 }
 
+/// Test fixture: chain `?` with a field access — verifies that
+/// `cfg.port` can run after `nstm_load_config(name)?` unwraps
+/// the optional config.
 fn nstm_get_port(name: string) -> int? {
     let cfg = nstm_load_config(name)?
     cfg.port

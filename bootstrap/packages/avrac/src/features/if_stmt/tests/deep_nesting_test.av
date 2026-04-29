@@ -1,3 +1,5 @@
+/// Test fixture: deeply nested `if`/`else` chain — exercises
+/// the codegen's basic-block layout under multi-level branching.
 fn deep_if(n: int) -> int {
     if n > 10 {
         if n > 20 {

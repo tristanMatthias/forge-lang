@@ -8,7 +8,9 @@ use codegen.{emit_stmt, ok_sr}
 use core.llvm.{avra_covmap_next_branch_id}
 use features.union_type.codegen.{emit_union_wrap}
 
-// Extract narrowing info from an IsCheck condition.
+/// Pull the variable name out of an `IsCheck` condition (the
+/// thing being narrowed). Returns "" when the condition isn't an
+/// `is`-on-bare-ident shape.
 fn is_check_var_name(condition: Expr) -> string {
     match condition {
         .IsCheck(subj, _) -> match subj {
@@ -19,6 +21,8 @@ fn is_check_var_name(condition: Expr) -> string {
     }
 }
 
+/// Pull the variant name out of an `IsCheck` condition. Returns
+/// "" when the condition isn't an `is`-check.
 fn is_check_variant_name(condition: Expr) -> string {
     match condition {
         .IsCheck(_, vn) -> vn
@@ -26,8 +30,12 @@ fn is_check_variant_name(condition: Expr) -> string {
     }
 }
 
-// Build a narrowed VarEnv for the then-branch of `if x is .Variant`.
-// Checks both local VarEnv and top-level Ctx vars.
+/// Build a narrowed VarEnv for the then-branch of an
+/// `if x is .Variant` condition. The narrowed env rebinds `x`
+/// with `NarrowedEnum` so payload-extracting code in the body
+/// sees the more specific type. Falls back to the un-narrowed
+/// env when the condition isn't an `is`-on-ident or `x` isn't an
+/// enum-typed binding. Checks both local and top-level scopes.
 export fn narrow_env_for_is(ctx: Ctx, env: VarEnv, condition: Expr) -> VarEnv {
     let var_name = is_check_var_name(condition)
     if var_name == "" { return env }
@@ -53,6 +61,11 @@ export fn narrow_env_for_is(ctx: Ctx, env: VarEnv, condition: Expr) -> VarEnv {
     env
 }
 
+/// Codegen for `if cond { then } else { else }` as a statement.
+/// Emits both branches into named blocks, falls through to the
+/// merge block when neither branch terminated. Branch coverage
+/// counters fire on each side. The then-branch sees a narrowed
+/// env when the condition is an `is`-check.
 export fn emit_if(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> Result<StmtResult, string> {
     ctx.cov_line()
     let branch_id = avra_covmap_next_branch_id()
@@ -76,10 +89,10 @@ export fn emit_if(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Stmt, els
     ok_sr(ctx, env)
 }
 
-// A type is safe for automatic union inference when both branches
-// produce unambiguous user-facing types. Int is excluded because it
-// doubles as null (i64 0) and as the type checker's fallback for
-// unresolved expressions.
+/// True when a type is safe for automatic union inference at an
+/// expression-position `if`. Excludes Int because it doubles as
+/// null and the typeck's fallback for unresolved expressions —
+/// auto-unioning Int+something would generate spurious unions.
 fn is_union_safe_type(ty: ValueType) -> bool {
     match ty {
         .Str -> true
@@ -93,6 +106,11 @@ fn is_union_safe_type(ty: ValueType) -> bool {
     }
 }
 
+/// Codegen for `if cond { then } else { else }` in expression
+/// position. Emits both branches into a result slot, then merges.
+/// When both branches produce different but union-safe concrete
+/// types, re-emits a wrapping pass so the result is typed as
+/// `Union<Then, Else>`. Otherwise loads the raw value.
 export fn emit_if_expr(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Expr, else_branch: Expr) -> Result<EmitValue, string> {
     ctx.cov_line()
     let branch_id = avra_covmap_next_branch_id()

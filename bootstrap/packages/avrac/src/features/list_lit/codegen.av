@@ -6,6 +6,9 @@ use codegen.types.{Ctx, EmitValue, ok_emit, err_emit}
 use features.closures.codegen.{emit_lambda_typed, emit_typed_lambda_arg}
 use codegen.helpers.{emit_single_arg}
 
+/// Codegen for `[a, b, c]`. Allocates a fresh `avra_array_new` and
+/// pushes each element. The first element pins the inferred
+/// element type so the rest can be type-checked against it.
 export fn emit_list_lit(ctx: Ctx, env: VarEnv, elements: ExprList) -> Result<EmitValue, string> {
     let arr = ctx.array_new()
     match elements {
@@ -18,6 +21,9 @@ export fn emit_list_lit(ctx: Ctx, env: VarEnv, elements: ExprList) -> Result<Emi
     }
 }
 
+/// Walk the remaining elements, pushing each onto the array.
+/// `elem_ty` is the inferred element type from the first element;
+/// the result keeps it so callers see `List<T>` not `List<Unknown>`.
 fn push_list_elements(ctx: Ctx, env: VarEnv, elements: ExprList, arr: ptr, elem_ty: ValueType) -> Result<EmitValue, string> {
     match elements {
         .End -> ok_emit(arr, .List(elem_ty))
@@ -29,6 +35,10 @@ fn push_list_elements(ctx: Ctx, env: VarEnv, elements: ExprList, arr: ptr, elem_
     }
 }
 
+/// Codegen for `list.reduce(init, fn)`. Compiles the lambda
+/// against `(acc_ty, elem_ty)` so generic-typed reducers see the
+/// correct types inside the body. Hands the closure to
+/// `avra_array_reduce`.
 export fn emit_list_reduce_typed(ctx: Ctx, env: VarEnv, list_val: ptr, args: ExprList, elem_ty: ValueType) -> Result<EmitValue, string> {
     match args {
         .Node(se_init, rest) -> {
@@ -55,6 +65,10 @@ export fn emit_list_reduce_typed(ctx: Ctx, env: VarEnv, list_val: ptr, args: Exp
     }
 }
 
+/// Dispatch a method call on a List value. Maps method names
+/// to the appropriate `avra_array_*` runtime call (or, for
+/// higher-order methods, builds a typed lambda first). Unknown
+/// methods produce a "not implemented" error.
 export fn emit_list_method_call(ctx: Ctx, env: VarEnv, list_val: ptr, list_ty: ValueType, method: string, args: ExprList) -> Result<EmitValue, string> {
     match method {
         "length" or "len" -> return ok_emit(ctx.array_len(list_val), .Int)
@@ -115,6 +129,9 @@ export fn emit_list_method_call(ctx: Ctx, env: VarEnv, list_val: ptr, list_ty: V
     }
 }
 
+/// Codegen for `list.slice(start, end)`. Emits both bounds and
+/// hands them to `avra_array_slice`. Result type matches the
+/// input — slicing a `List<T>` produces a `List<T>`.
 fn emit_list_slice(ctx: Ctx, env: VarEnv, list: ptr, list_ty: ValueType, args: ExprList) -> Result<EmitValue, string> {
     match args {
         .Node(se_start, rest) -> {
@@ -131,6 +148,8 @@ fn emit_list_slice(ctx: Ctx, env: VarEnv, list: ptr, list_ty: ValueType, args: E
     }
 }
 
+/// Codegen for `list.set(idx, val)`. Emits both args and forwards
+/// to `avra_array_set`. Returns the list (so the call chains).
 fn emit_list_set(ctx: Ctx, env: VarEnv, list: ptr, args: ExprList) -> Result<EmitValue, string> {
     match args {
         .Node(se_idx, rest) -> {

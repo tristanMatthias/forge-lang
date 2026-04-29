@@ -8,17 +8,27 @@ use core.ast.{VarEnv}
 use codegen.types.{Ctx, DeferStack}
 use codegen.{emit_rc_release_typed}
 
-// Emit cleanup for a normal return — skip ErrFrame entries.
-// Handles defer + RC release in LIFO declaration order.
+/// Emit scope-exit cleanup for a normal return. Walks the
+/// DeferStack in LIFO order, running every `Frame` (defer body)
+/// and `Release` (RC drop) entry — but skipping `ErrFrame`
+/// (errdefer) entries which only fire on error returns.
 export fn emit_defers(ctx: Ctx, env: VarEnv) {
     emit_stack_filtered(ctx, env, ctx.defers, false)
 }
 
-// Emit cleanup for an error return — run ALL entries (Frame + ErrFrame + Release).
+/// Emit scope-exit cleanup for an error return. Walks the
+/// DeferStack in LIFO order running every entry (Frame +
+/// ErrFrame + Release) — `errdefer` is the only kind that this
+/// path activates beyond what `emit_defers` does.
 export fn emit_defers_on_error(ctx: Ctx, env: VarEnv) {
     emit_stack_filtered(ctx, env, ctx.defers, true)
 }
 
+/// Recursive worker shared by `emit_defers` and
+/// `emit_defers_on_error`. Pattern-matches each stack entry:
+/// `Frame` always emits, `ErrFrame` emits only when `is_error`,
+/// `Release` always loads + RC-releases. Recursion order
+/// produces the required LIFO behaviour.
 fn emit_stack_filtered(ctx: Ctx, env: VarEnv, stack: DeferStack, is_error: int) {
     match stack {
         .End -> {}

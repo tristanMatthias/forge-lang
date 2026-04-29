@@ -1,8 +1,13 @@
+/// Test fixture: classic even/odd mutual recursion. Verifies
+/// the codegen forward-declares both fns so each can call the
+/// other regardless of source order.
 fn is_even(n: int) -> int {
     if n == 0 { return 1 }
     is_odd(n - 1)
 }
 
+/// Test fixture: companion of `is_even` — together they form a
+/// bounded mutual recursion checked at runtime.
 fn is_odd(n: int) -> int {
     if n == 0 { return 0 }
     is_even(n - 1)

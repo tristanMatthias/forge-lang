@@ -8,6 +8,8 @@ use codegen.types.{Ctx, StmtResult, emit_value_ptr, emit_value_ty}
 use codegen.{emit_stmt, ok_sr, err_sr}
 use codegen.escape.{is_arena_eligible}
 
+/// Codegen entry for `for i in start..end { body }`. Pattern-
+/// matches the `For` AST node and forwards to `emit_for_inner`.
 export fn emit_for(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .For(variable, start, end, body) -> emit_for_inner(ctx, env, variable, start, end, body)
@@ -15,6 +17,11 @@ export fn emit_for(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, stri
     }
 }
 
+/// Lower a range-form `for` into LLVM blocks: cond / body / incr /
+/// exit. Pushes a LoopStack frame so `break` and `continue` resolve
+/// to the right targets. When the body is arena-eligible (every
+/// allocation non-escaping per spec Axis 9.6), wraps execution in
+/// a per-iteration bump arena destroyed at exit.
 fn emit_for_inner(ctx: Ctx, env: VarEnv, variable: string, start: Expr, end: Expr, body: Stmt) -> Result<StmtResult, string> {
     ctx.cov_line()
     let start_r = ctx.emit(env, start)?
@@ -82,12 +89,17 @@ fn emit_for_inner(ctx: Ctx, env: VarEnv, variable: string, start: Expr, end: Exp
     ok_sr(ctx, env)
 }
 
-// for x in collection { body } — desugars to index-based iteration:
-//   let __len = avra_array_len(collection)
-//   for __i in 0..__len {
-//       let x = avra_array_get(collection, __i)
-//       body
-//   }
+/// Codegen entry for `for x in coll { body }`. Lowers to the
+/// index-based form:
+/// ```
+/// let __len = avra_array_len(coll)
+/// for __i in 0..__len {
+///     let x = avra_array_get(coll, __i)
+///     body
+/// }
+/// ```
+/// Strings are special-cased to use `strlen` + `avra_str_char_at`
+/// so character iteration produces fresh single-char strings.
 export fn emit_for_in(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .ForIn(variable, collection, body) -> emit_for_in_inner(ctx, env, variable, collection, body)
@@ -95,6 +107,10 @@ export fn emit_for_in(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, s
     }
 }
 
+/// Inner emitter for the iterator form. Loads the collection,
+/// computes its length, then runs the same cond/body/incr/exit
+/// shape as `emit_for_inner` with the loop variable rebound to
+/// `array_get(coll, i)` each iteration.
 fn emit_for_in_inner(ctx: Ctx, env: VarEnv, variable: string, collection: Expr, body: Stmt) -> Result<StmtResult, string> {
     ctx.cov_line()
     let coll_r = ctx.emit(env, collection)?

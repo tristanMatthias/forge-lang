@@ -5,6 +5,10 @@ mod typeck
 mod codegen
 use core.registry.{feature_new, Feature}
 
+/// Register the `trait` declaration feature. Routes the `trait`
+/// keyword to the parser's `parse_trait_declaration`. Type-checking
+/// for `impl Trait for Type` and dyn dispatch live in `typeck.av`
+/// and `codegen.av`.
 export fn trait_decl_feature() -> Feature {
     feature_new("trait_decl") with {
         decl_keyword: "kw_trait",

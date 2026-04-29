@@ -1,7 +1,11 @@
+/// Test fixture: minimal int-returning fn used by the
+/// declaration example test.
 fn ex_fd_add(a: int, b: int) -> int {
     a + b
 }
 
+/// Test fixture: string-returning fn that exercises template
+/// interpolation at the same time.
 fn ex_fd_greet(name: string) -> string {
     "hello ${name}"
 }

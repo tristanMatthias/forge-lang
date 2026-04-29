@@ -2,6 +2,9 @@ mod parser
 mod codegen
 use core.registry.{feature_new, Feature}
 
+/// Register the `enum` declaration feature. Routes the `enum`
+/// keyword to the parser's `parse_enum_declaration`. Codegen for
+/// enum constructors / pattern matches lives in `codegen.av`.
 export fn enum_decl_feature() -> Feature {
     feature_new("enum_decl") with {
         decl_keyword: "kw_enum",

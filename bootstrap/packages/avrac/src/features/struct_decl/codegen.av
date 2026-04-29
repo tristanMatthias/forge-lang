@@ -6,6 +6,10 @@ use core.type_registry.{type_registry_id_for}
 use features.enum_decl.codegen.{emit_enum_ctor}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
 
+/// Codegen for `Foo { x: 1, y: 2 }`. Allocates the struct's
+/// LLVM type via the arena (or reuses a Copy-type stack slot when
+/// one is set), fills every field via `fill_struct_fields`, and
+/// returns the buffer typed as `Struct(name)`.
 export fn emit_struct_lit(ctx: Ctx, env: VarEnv, name: string, inits: FieldInitList) -> Result<EmitValue, string> {
     let lookup = ctx.lookup_struct(name)
     if !lookup.found {
@@ -21,6 +25,9 @@ export fn emit_struct_lit(ctx: Ctx, env: VarEnv, name: string, inits: FieldInitL
     ok_emit(as_i64, .Struct(name, type_registry_id_for(ctx.type_reg, name)))
 }
 
+/// Allocate `count * 8` bytes for a struct via the arena
+/// allocator. Reuses `ctx.copy_alloc_target` when set so Copy-type
+/// locals stay on the stack (spec 9.12) instead of heap-allocating.
 fn malloc_struct_bytes(ctx: Ctx, name: string, fields: FieldList) -> ptr {
     // Copy-type stack allocation (spec 9.12): if a pre-allocated stack
     // target exists (set by emit_var_decl), write directly into it.
@@ -31,6 +38,11 @@ fn malloc_struct_bytes(ctx: Ctx, name: string, fields: FieldList) -> ptr {
     ctx.arena_alloc(ctx.i64(count * 8))
 }
 
+/// Walk every field initializer in `inits`, GEP into the struct
+/// buffer at the field's index, and store the value via
+/// `store_field` (which casts to the field's declared LLVM type).
+/// Concrete values flowing into union-typed fields are
+/// auto-wrapped via `emit_union_wrap`.
 fn fill_struct_fields(ctx: Ctx, env: VarEnv, st_ty: ptr, alloca: ptr, inits: FieldInitList, fields: FieldList) -> Result<EmitValue, string> {
     match inits {
         .End -> ok_emit(null_ptr_val(), .Void)
@@ -52,6 +64,11 @@ fn fill_struct_fields(ctx: Ctx, env: VarEnv, st_ty: ptr, alloca: ptr, inits: Fie
     }
 }
 
+/// Codegen for `obj.field = value`. Looks up the field's index
+/// in the receiver's struct registry entry, GEPs into the
+/// underlying buffer, and stores the new value via `store_field`.
+/// Auto-wraps for union-typed fields. Returns the assigned value
+/// so chains like `a.b = c.d = ...` work.
 export fn emit_field_assign(ctx: Ctx, env: VarEnv, obj: Expr, field: string, value: Expr) -> Result<EmitValue, string> {
     let r = ctx.emit(env, obj)?
     let struct_name = vtype_struct_name(r.ty)
@@ -77,6 +94,12 @@ export fn emit_field_assign(ctx: Ctx, env: VarEnv, obj: Expr, field: string, val
     }
 }
 
+/// Codegen for `obj.field`. Recognises three shapes ahead of a
+/// regular field load: (1) `EnumName.Variant` — emits a
+/// zero-arg enum constructor; (2) `task.await` — joins the
+/// task and types the result as the Task's payload type;
+/// (3) `.length` on Str/List/Map — routes to the runtime helper.
+/// Otherwise emits a struct-field GEP + load.
 export fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> Result<EmitValue, string> {
     // Bare `EnumName.Variant` (zero-arg enum constructor)
     let head_name = match obj { .Ident(h) -> h, .QualifiedIdent(h) -> h, _ -> "" }
@@ -133,9 +156,11 @@ export fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> 
     ok_emit(loaded, field_ty)
 }
 
-// Extract a payload field from a narrowed enum value.
-// The value is a ptr to {i64 tag, ptr payload}. The payload is a
-// heap-allocated buffer with fields at payload[0], payload[1], etc.
+/// Extract a payload field from a narrowed enum value. The
+/// value is a `ptr` to `{i64 tag, ptr payload}`; the payload
+/// itself is a heap-allocated buffer with fields at slots 0, 1, …
+/// Used after `if x is .Variant` narrowing so `x.field` reads
+/// the variant's payload directly without re-checking the tag.
 fn emit_narrowed_field(ctx: Ctx, r: EmitValue, field: string, vname: string) -> Result<EmitValue, string> {
     let en = vtype_enum_name(r.ty)
     let lookup = ctx.lookup_enum(en)

@@ -4,6 +4,9 @@ use core.ast.{sstmt_dummy}
 use codegen.types.{err_stmt, ok_stmt, StmtResult}
 use codegen.blocks.{emit_block_loop}
 use codegen.{ok_sr, err_sr}
+/// Codegen entry for the test feature. Dispatches Spec / Given /
+/// Then blocks to the corresponding emitter; everything else is
+/// an internal mismatch.
 export fn spec_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .SpecBlock(name, body) -> emit_spec_block(ctx, env, name, body)
@@ -13,6 +16,9 @@ export fn spec_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult
     }
 }
 
+/// Wrap a `spec` body in `avra_test_start_spec` / `_end_spec`
+/// runtime calls and emit each child statement via
+/// `emit_spec_stmts`.
 fn emit_spec_block(ctx: Ctx, env: VarEnv, name: string, body: StmtList) -> Result<StmtResult, string> {
     let name_val = ctx.global_str(name, "spec_str")
     ctx.call("avra_test_start_spec", [name_val])
@@ -21,6 +27,9 @@ fn emit_spec_block(ctx: Ctx, env: VarEnv, name: string, body: StmtList) -> Resul
     ok_sr(ctx, env)
 }
 
+/// Wrap a `given` body in `avra_test_start_given` /
+/// `_end_given` runtime calls. Threads the env through the body
+/// so any locals declared inside survive into later `then` arms.
 fn emit_given_block(ctx: Ctx, env: VarEnv, name: string, body: StmtList) -> Result<StmtResult, string> {
     let name_val = ctx.global_str(name, "spec_str")
     ctx.call("avra_test_start_given", [name_val])
@@ -29,12 +38,17 @@ fn emit_given_block(ctx: Ctx, env: VarEnv, name: string, body: StmtList) -> Resu
     ok_sr(ctx, new_env)
 }
 
+/// Emit a `then` arm: evaluate the condition expression and
+/// hand its value to `avra_test_run_then` along with the arm's
+/// description string. The runtime decides PASS/FAIL.
 fn emit_then_block(ctx: Ctx, env: VarEnv, name: string, cond: Expr) -> Result<StmtResult, string> {
     let r = ctx.emit(env, cond)?
     ctx.call("avra_test_run_then", [ctx.global_str(name, "spec_str"), r.value])
     ok_sr(ctx, env)
 }
 
+/// Walk a spec/given body emitting each child statement. Threads
+/// the VarEnv through so `let` bindings flow into later arms.
 fn emit_spec_stmts(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<VarEnv, string> {
     match stmts {
         .End -> ok_stmt(env)
@@ -45,6 +59,10 @@ fn emit_spec_stmts(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<VarEnv, str
     }
 }
 
+/// Per-statement spec emitter. SpecBlock / GivenBlock / ThenBlock
+/// dispatch to their dedicated emitters; anything else (regular
+/// `let`, `mut`, function calls inside `given`) is wrapped and
+/// emitted as a normal block-loop statement.
 fn emit_spec_single(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<VarEnv, string> {
     match stmt {
         .SpecBlock(name, body) -> {

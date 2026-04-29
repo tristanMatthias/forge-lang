@@ -6,6 +6,8 @@ use features.error_propagation.{Result}
 use codegen.types.{StmtResult}
 use codegen.blocks.{emit_block_loop}
 use codegen.{ok_sr, err_sr}
+/// Codegen entry for `select { ... }`. Pattern-matches the
+/// `Select` AST node and forwards to `emit_select`.
 export fn select_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .Select(arms) -> emit_select(ctx, env, arms)
@@ -13,6 +15,9 @@ export fn select_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResu
     }
 }
 
+/// Build a channel array from each arm, call `avra_select` to
+/// block on whichever channel is ready first, then dispatch to
+/// the matching arm via `emit_select_dispatch`.
 fn emit_select(ctx: Ctx, env: VarEnv, arms: SelectArmList) -> Result<StmtResult, string> {
     let channels = ctx.array_new()
     let count = push_channels(ctx, env, arms, channels, 0)?
@@ -24,6 +29,9 @@ fn emit_select(ctx: Ctx, env: VarEnv, arms: SelectArmList) -> Result<StmtResult,
     emit_select_dispatch(ctx, env, arms, idx, val, 0)
 }
 
+/// Walk the arms, emitting each channel expression and pushing
+/// its value into `arr`. Returns the running count so the caller
+/// can pass it as the array length to `avra_select`.
 fn push_channels(ctx: Ctx, env: VarEnv, arms: SelectArmList, arr: ptr, count: int) -> Result<int, string> {
     match arms {
         .End -> Result.Ok(count)
@@ -35,6 +43,9 @@ fn push_channels(ctx: Ctx, env: VarEnv, arms: SelectArmList, arr: ptr, count: in
     }
 }
 
+/// Emit a chained-if dispatch: compare the runtime arm index
+/// against each arm's static index, branch into the matching
+/// body with the received value bound, fall through otherwise.
 fn emit_select_dispatch(ctx: Ctx, env: VarEnv, arms: SelectArmList, idx: ptr, val: ptr, arm_idx: int) -> Result<StmtResult, string> {
     match arms {
         .End -> ok_sr(ctx, env)
