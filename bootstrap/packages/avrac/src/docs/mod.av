@@ -720,10 +720,8 @@ fn show_one(s: Sym) {
     println("  ${dim(rule(rule_len))}")
 
     if s.doc != "" {
-        println("")
-        for line in s.doc.split("\n") {
-            println("  ${line}")
-        }
+        let doc = parse_doc(s.doc)
+        render_doc_block(doc)
     }
 
     print_variant_block(s)
@@ -1053,4 +1051,195 @@ fn collect_undocumented_names(list: SymList, want_bucket: int) -> string {
         }
     }
     acc
+}
+
+// ── DocBlock parser ─────────────────────────────────────────────────
+//
+// Parse a /// body into structured sections so renderers can show
+// summaries, params, returns, examples, and metadata distinctly. Free-
+// form prose still works — anything not recognised as a directive
+// rolls into the summary or `body` overflow.
+//
+// Supported directives (one per line):
+//   @param NAME DESC    parameter description
+//   @returns DESC       return-value description
+//   @see PATH           cross-reference (resolved by x35m.4)
+//   @since VERSION
+//   @deprecated REASON
+//   @example LANG       inline single-line example fence (rare)
+//
+// Plus fenced examples:
+//   ```avra
+//   ... body ...
+//   ```
+//
+// First non-blank, non-directive paragraph becomes the summary. The
+// rest accumulates as the body for renderers that want the whole tail.
+
+export type DocBlock = {
+    summary: string,
+    body: string,
+    params: List<string>,
+    returns: string,
+    examples: List<string>,
+    see: List<string>,
+    since: string,
+    deprecated: string
+}
+
+export fn empty_doc_block() -> DocBlock {
+    DocBlock {
+        summary: "",
+        body: "",
+        params: [],
+        returns: "",
+        examples: [],
+        see: [],
+        since: "",
+        deprecated: ""
+    }
+}
+
+export fn parse_doc(text: string) -> DocBlock {
+    if text == "" { return empty_doc_block() }
+    mut block = empty_doc_block()
+    mut summary_done = false
+    mut summary_buf = ""
+    mut body_buf = ""
+    mut in_fence = false
+    mut fence_buf = ""
+    let lines = text.split("\n")
+    mut i = 0
+    while i < lines.length {
+        let raw = lines[i]
+        i = i + 1
+        let line = raw.trim()
+
+        // Fenced code block: ```avra ... ```
+        if line.starts_with("```") {
+            if in_fence {
+                in_fence = false
+                block.examples.push(fence_buf)
+                fence_buf = ""
+            } else {
+                in_fence = true
+                fence_buf = ""
+                summary_done = true
+            }
+            continue
+        }
+        if in_fence {
+            fence_buf = if fence_buf == "" { raw } else { fence_buf + "\n" + raw }
+            continue
+        }
+
+        // Directives.
+        if line.starts_with("@param ") {
+            block.params.push(line.substring(7, line.length).trim())
+            summary_done = true
+            continue
+        }
+        if line.starts_with("@returns ") {
+            block.returns = line.substring(9, line.length).trim()
+            summary_done = true
+            continue
+        }
+        if line.starts_with("@return ") {
+            block.returns = line.substring(8, line.length).trim()
+            summary_done = true
+            continue
+        }
+        if line.starts_with("@see ") {
+            block.see.push(line.substring(5, line.length).trim())
+            summary_done = true
+            continue
+        }
+        if line.starts_with("@since ") {
+            block.since = line.substring(7, line.length).trim()
+            summary_done = true
+            continue
+        }
+        if line.starts_with("@deprecated ") {
+            block.deprecated = line.substring(12, line.length).trim()
+            summary_done = true
+            continue
+        }
+        if line == "@deprecated" {
+            block.deprecated = "(deprecated)"
+            summary_done = true
+            continue
+        }
+
+        // Plain prose. Empty line ends the summary section.
+        if line == "" {
+            if summary_buf != "" { summary_done = true }
+            if summary_done {
+                body_buf = if body_buf == "" { "" } else { body_buf + "\n" }
+            }
+            continue
+        }
+        if summary_done {
+            body_buf = if body_buf == "" { line } else { body_buf + "\n" + line }
+        } else {
+            summary_buf = if summary_buf == "" { line } else { summary_buf + " " + line }
+        }
+    }
+    block.summary = summary_buf
+    block.body = body_buf
+    block
+}
+
+fn render_doc_block(block: DocBlock) {
+    if block.summary != "" {
+        println("")
+        println("  ${block.summary}")
+    }
+    if block.body != "" {
+        println("")
+        for line in block.body.split("\n") {
+            println("  ${line}")
+        }
+    }
+    if block.params.length > 0 {
+        println("")
+        println("  ${bold("Parameters")}")
+        mut i = 0
+        while i < block.params.length {
+            println("    ${block.params[i]}")
+            i = i + 1
+        }
+    }
+    if block.returns != "" {
+        println("")
+        println("  ${bold("Returns")}")
+        println("    ${block.returns}")
+    }
+    if block.examples.length > 0 {
+        println("")
+        println("  ${bold("Examples")}")
+        mut i = 0
+        while i < block.examples.length {
+            for line in block.examples[i].split("\n") {
+                println("    ${line}")
+            }
+            i = i + 1
+        }
+    }
+    if block.see.length > 0 {
+        println("")
+        println("  ${bold("See also")}")
+        mut i = 0
+        while i < block.see.length {
+            println("    ${cyan(block.see[i])}")
+            i = i + 1
+        }
+    }
+    if block.since != "" {
+        println("")
+        println("  ${dim("since ${block.since}")}")
+    }
+    if block.deprecated != "" {
+        println("")
+        println("  ${red("⚠ deprecated:")} ${block.deprecated}")
+    }
 }
