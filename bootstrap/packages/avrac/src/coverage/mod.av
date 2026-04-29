@@ -1,11 +1,12 @@
 // WHY: post-test coverage report.
 //
 // Parses two inputs produced by the LLVM coverage pipeline:
-//   - covmap.json — written by codegen during instrumented build.
-//                   Maps each instrprof counter id to (function, type,
-//                   line, branch_id). Type is one of:
-//                     fn_entry, line, branch_then, branch_else,
-//                     match_arm, condition_true, condition_false.
+//   - covmap.tsv    — written by codegen during instrumented build.
+//                     Header line `# file=<source>` followed by
+//                     `<id>\t<type>\t<fn>\t<line>\t<col>\t<branch>` per
+//                     entry. Type is one of: fn_entry, line, branch_then,
+//                     branch_else, match_arm, condition_true,
+//                     condition_false.
 //   - profdata-text — output of `llvm-profdata show --all-functions
 //                     --counts`. One section per fn:
 //                       fn_name:
@@ -21,7 +22,7 @@
 // function and per module ("foo::bar::baz" → module "foo::bar"). Print
 // a colored table; optionally write LCOV.
 
-use core.runtime.{avra_selfhost_read_file, avra_selfhost_write_file}
+use core.runtime.{avra_selfhost_read_file, avra_selfhost_write_file, avra_shell_exec}
 use core.registry.{avra_map_new_cstr, avra_map_set_cstr, avra_map_get_cstr, avra_map_has_cstr}
 
 // ── Counter record from covmap.json ──
@@ -163,72 +164,37 @@ export fn render_coverage(covmap_path: string, profdata_text_path: string, lcov_
     }
 }
 
-// ── covmap.json parsing ──
-// The JSON shape is fixed. Top-level: {"file": "<path>", "counters": [<entry>+]}
-// Each entry: {"id":N, "type":"...", "fn":"...", "line":N, "col":N, "branch":N}.
-// Strings have no embedded quotes/escapes (we generate them ourselves).
+// ── covmap.tsv parsing ──
+// One entry per line; tab-separated. Header lines start with `#`.
+// Field order: id  type  fn  line  col  branch.
+//
+// Per-line strings are tiny (~50 bytes) so `s.length` and `s[i]` stay
+// cheap — the previous JSON parser pathologically called strlen on the
+// 2 MB buffer per character compare.
 
 fn covmap_file(src: string) -> string {
-    // Find "file":"..."
-    let key = "\"file\":\""
+    // Header: "# file=<path>"
+    let key = "# file="
     let start = src.index_of(key)
-    if start < 0 { return "" }
-    let after = start + key.length
-    let rest = src.substring(after, src.length)
-    let end = rest.index_of("\"")
-    if end < 0 { return "" }
-    rest.substring(0, end)
+    if start != 0 { return "" }
+    let after = key.length
+    let nl = src.index_of("\n")
+    if nl < 0 { return src.substring(after, src.length) }
+    src.substring(after, nl)
 }
 
 fn parse_covmap(src: string) -> CovEntryList {
-    // Find "counters":[ ... ]
-    let key = "\"counters\":["
-    let start = src.index_of(key)
-    if start < 0 { return CovEntryList.End }
-    let i = start + key.length
-    parse_cov_entries(src, i)
-}
-
-fn parse_cov_entries(src: string, idx: int) -> CovEntryList {
-    // Iterative — covmap.json typically has tens of thousands of entries
-    // so we can't afford recursion depth or substring copies of the remainder
-    // on every iteration (would be O(N^2) memory).
+    let lines = src.split("\n")
     mut acc = CovEntryList.End
-    mut i = idx
-    while i < src.length {
-        let j = skip_ws(src, i)
-        if j >= src.length {
-            i = j
-            continue
-        }
-        let ch = src[j]
-        if ch == "]" { return reverse_entries(acc) }
-        if ch == "," {
-            i = j + 1
-            continue
-        }
-        if ch != "{" { return reverse_entries(acc) }
-        let entry_end = scan_to(src, j, "}")
-        if entry_end < 0 { return reverse_entries(acc) }
-        let entry_src = src.substring(j, entry_end + 1)
-        let entry = parse_cov_entry(entry_src)
-        acc = CovEntryList.Node(entry, acc)
-        i = entry_end + 1
+    mut idx = 0
+    while idx < lines.length {
+        let line = lines[idx]
+        idx = idx + 1
+        if line.length == 0 { continue }
+        if line[0] == "#" { continue }
+        acc = CovEntryList.Node(parse_cov_line(line), acc)
     }
     reverse_entries(acc)
-}
-
-// Find the first occurrence of `target` (one-char string) in src starting at
-// offset `from`. Returns the absolute index, or -1 if not found. Avoids
-// allocating a substring of the remainder.
-fn scan_to(src: string, from: int, target: string) -> int {
-    let t = target[0]
-    mut i = from
-    while i < src.length {
-        if src[i] == t { return i }
-        i = i + 1
-    }
-    -1
 }
 
 fn reverse_entries(list: CovEntryList) -> CovEntryList {
@@ -246,52 +212,29 @@ fn reverse_entries(list: CovEntryList) -> CovEntryList {
     out
 }
 
-// Parses a single covmap entry by walking it left-to-right. Each field
-// appears in a fixed order — `{"id":N,"type":"...","fn":"...","line":N,
-// "col":N,"branch":N}` — so we don't need to search for keys by name;
-// we just walk past the next `:` for each field's value.
-fn parse_cov_entry(src: string) -> CovEntry {
+fn parse_cov_line(line: string) -> CovEntry {
+    let parts = line.split("\t")
+    if parts.length < 6 {
+        return CovEntry { id: 0, ctype: "", fn_name: "", line: 0, col: 0, branch: 0 }
+    }
+    CovEntry {
+        id: parse_int(parts[0]),
+        ctype: parts[1],
+        fn_name: parts[2],
+        line: parse_int(parts[3]),
+        col: parse_int(parts[4]),
+        branch: parse_int(parts[5]),
+    }
+}
+
+fn parse_int(s: string) -> int {
+    let n = s.length
     mut i = 0
-    let id = read_int_after_colon(src, i)
-    i = scan_to(src, i, ",") + 1
-    let ctype = read_str_after_colon(src, i)
-    i = scan_to(src, i, ",") + 1
-    let fn_name = read_str_after_colon(src, i)
-    i = scan_to(src, i, ",") + 1
-    let line = read_int_after_colon(src, i)
-    i = scan_to(src, i, ",") + 1
-    let col = read_int_after_colon(src, i)
-    i = scan_to(src, i, ",") + 1
-    let branch = read_int_after_colon(src, i)
-    CovEntry { id, ctype, fn_name, line, col, branch }
-}
-
-// Skip past the next `:` and read a JSON int. Returns 0 if malformed.
-fn read_int_after_colon(src: string, from: int) -> int {
-    let colon = scan_to(src, from, ":")
-    if colon < 0 { return 0 }
-    parse_int_at(src, colon + 1)
-}
-
-// Skip past the next `:`, then expect `"..."`, return the contents.
-fn read_str_after_colon(src: string, from: int) -> string {
-    let colon = scan_to(src, from, ":")
-    if colon < 0 { return "" }
-    let q1 = scan_to(src, colon + 1, "\"")
-    if q1 < 0 { return "" }
-    let q2 = scan_to(src, q1 + 1, "\"")
-    if q2 < 0 { return "" }
-    src.substring(q1 + 1, q2)
-}
-
-fn parse_int_at(src: string, idx: int) -> int {
-    let start = skip_ws(src, idx)
-    mut i = start
-    let neg = i < src.length && src[i] == "-"
+    let neg = i < n && s[i] == "-"
     if neg { i = i + 1 }
     mut value = 0
-    while i < src.length && src[i] >= "0" && src[i] <= "9" {
-        value = value * 10 + digit_value(src[i])
+    while i < n && s[i] >= "0" && s[i] <= "9" {
+        value = value * 10 + digit_value(s[i])
         i = i + 1
     }
     if neg { 0 - value } else { value }
@@ -311,14 +254,6 @@ fn digit_value(ch: string) -> int {
         "9" -> 9
         _ -> 0
     }
-}
-
-fn skip_ws(src: string, idx: int) -> int {
-    mut i = idx
-    while i < src.length && (src[i] == " " || src[i] == "\n" || src[i] == "\t" || src[i] == "\r") {
-        i = i + 1
-    }
-    i
 }
 
 // ── profdata-text parsing ──
@@ -514,14 +449,23 @@ fn aggregate(covmap: CovEntryList, counts: FnCountsList) -> FnStatsList {
 }
 
 fn apply_line(s: FnStats, line: int, count: int) -> FnStats {
+    // Maintain total_lines / hit_lines as O(1) counters and only update the
+    // IntListSet when the line is genuinely new. Without this guard the
+    // earlier intset_size() recomputation per call made aggregation O(L^2)
+    // per function — visible as a multi-minute hang on the full 1271-test
+    // suite (~5K unique lines across 1.3K fns).
     if line <= 0 { return s }
-    let new_set = intset_add(s.line_set, line)
-    let new_hit = if count > 0 { intset_add(s.line_hit_set, line) } else { s.line_hit_set }
+    let already = intset_has(s.line_set, line)
+    let new_set = if already { s.line_set } else { IntListSet.Node(line, s.line_set) }
+    let new_total = if already { s.total_lines } else { s.total_lines + 1 }
+    let was_hit = intset_has(s.line_hit_set, line)
+    let new_hit = if count > 0 && !was_hit { IntListSet.Node(line, s.line_hit_set) } else { s.line_hit_set }
+    let new_hit_total = if count > 0 && !was_hit { s.hit_lines + 1 } else { s.hit_lines }
     s with {
         line_set: new_set,
         line_hit_set: new_hit,
-        total_lines: intset_size(new_set),
-        hit_lines: intset_size(new_hit),
+        total_lines: new_total,
+        hit_lines: new_hit_total,
     }
 }
 
@@ -571,13 +515,6 @@ fn intset_has(set: IntListSet, value: int) -> bool {
     match set {
         .End -> false
         .Node(v, next) -> if v == value { true } else { intset_has(next, value) }
-    }
-}
-
-fn intset_size(set: IntListSet) -> int {
-    match set {
-        .End -> 0
-        .Node(_, next) -> 1 + intset_size(next)
     }
 }
 

@@ -756,12 +756,12 @@ fn main() {
 
             // Dump profdata to text and hand off to the Avra-side renderer
             // (coverage::render_coverage). The renderer joins our codegen-
-            // emitted covmap.json with the per-function counts to produce
+            // emitted covmap.tsv with the per-function counts to produce
             // line/branch/MC-DC stats and an optional LCOV file.
             let dump_path = "${cov_dir}/_test.profdata.txt"
             avra_shell_exec("${llvm_prefix}/bin/llvm-profdata show --all-functions --counts ${profdata} > ${dump_path} 2>/dev/null")
 
-            let covmap_path = "${cov_dir}/_test.av.covmap.json"
+            let covmap_path = "${cov_dir}/_test.av.covmap.tsv"
             println("")
             render_coverage(covmap_path, dump_path, lcov_path)
 

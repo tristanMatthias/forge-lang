@@ -45,7 +45,7 @@ fn codegen_program(stmts: StmtList, debug_null_checks: bool, coverage: bool, sou
     // Declare coverage intrinsic when instrumentation is enabled
     if coverage {
         avra_coverage_declare(m)
-        avra_covmap_begin(source_file, "${source_file}.covmap.json")
+        avra_covmap_begin(source_file, "${source_file}.covmap.tsv")
     }
 
     let i64t = avra_llvm_int64_type(lc)
@@ -436,7 +436,7 @@ export fn codegen_and_emit_object(stmts: StmtList, output_path: string, type_reg
 // they need to be lowered first by `opt -passes=instrprof`. Caller is
 // expected to run opt + llc on the emitted IR.
 //
-// `source_file` is recorded in the .covmap.json that the codegen pass
+// `source_file` is recorded in the .covmap.tsv that the codegen pass
 // writes alongside the IR.
 export fn codegen_and_emit_ir_cov(stmts: StmtList, ir_path: string, type_reg: TypeRegistry, source_file: string) -> Result<int, string> {
     match codegen_program(stmts, false, true, source_file, type_reg) {

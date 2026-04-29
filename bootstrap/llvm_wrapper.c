@@ -751,7 +751,16 @@ void avra_coverage_finalize_fn(LLVMValueRef fn_val, int32_t actual_count) {
     }
 }
 
-// ── Coverage mapping (counter allocation + JSON covmap) ──
+// ── Coverage mapping (counter allocation + TSV covmap) ──
+//
+// Output format (line-oriented, one entry per line, tab-separated):
+//   # file=<source_file>
+//   <id>\t<type>\t<fn>\t<line>\t<col>\t<branch>
+//   ...
+//
+// TSV (not JSON) because the Avra-side parser was previously hitting
+// O(N) `strlen` per character on a 2.4 MB JSON buffer. Splitting by `\n`
+// gives ~50-byte per-line strings whose `.length` is cheap.
 
 #include <stdio.h>
 
@@ -769,7 +778,6 @@ static CovCounterInfo cov_counters[COV_MAX_COUNTERS];
 static int32_t cov_next_id = 0;
 static int32_t cov_branch_id = 0;
 static int32_t cov_decision_id = 0;
-static int32_t cov_total_entries = 0;
 static const char* cov_source_file = NULL;
 static FILE* cov_map_file = NULL;
 
@@ -777,11 +785,10 @@ void avra_covmap_begin(const char* source_file, const char* covmap_path) {
     cov_next_id = 0;
     cov_branch_id = 0;
     cov_decision_id = 0;
-    cov_total_entries = 0;
     cov_source_file = source_file;
     cov_map_file = fopen(covmap_path, "w");
     if (cov_map_file) {
-        fprintf(cov_map_file, "{\"file\":\"%s\",\"counters\":[\n", source_file);
+        fprintf(cov_map_file, "# file=%s\n", source_file);
     }
 }
 
@@ -793,11 +800,9 @@ int32_t avra_covmap_alloc(const char* type, const char* fn_name, int32_t line, i
     cov_counters[id].line = line;
     cov_counters[id].col = col;
     cov_counters[id].branch_id = branch_id;
-    
+
     if (cov_map_file) {
-        if (cov_total_entries > 0) fprintf(cov_map_file, ",\n");
-        cov_total_entries++;
-        fprintf(cov_map_file, "  {\"id\":%d,\"type\":\"%s\",\"fn\":\"%s\",\"line\":%d,\"col\":%d,\"branch\":%d}",
+        fprintf(cov_map_file, "%d\t%s\t%s\t%d\t%d\t%d\n",
                 id, type, fn_name, line, col, branch_id);
     }
     return id;
@@ -822,7 +827,6 @@ int32_t avra_covmap_next_decision_id(void) {
 
 void avra_covmap_end(void) {
     if (cov_map_file) {
-        fprintf(cov_map_file, "\n]}\n");
         fclose(cov_map_file);
         cov_map_file = NULL;
     }
