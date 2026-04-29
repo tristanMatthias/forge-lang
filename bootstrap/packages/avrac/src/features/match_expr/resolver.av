@@ -3,6 +3,10 @@
 use core.ast.{Pattern, PatternList, MatchArmList, WhenArmList}
 use resolve.{Resolver, enter_resolve_scope, exit_resolve_scope, resolve_expr, declare_params, declare_name, define_name}
 
+/// Resolve every arm of a `match` expression. For each arm:
+/// open a fresh scope, declare the pattern's captured names,
+/// resolve the optional guard, then resolve the arm body —
+/// finally pop the scope. Stops on first resolver error.
 export fn resolve_match_arms(r: Resolver, arms: MatchArmList) -> Resolver {
     mut current = arms
     mut res = r
@@ -23,6 +27,10 @@ export fn resolve_match_arms(r: Resolver, arms: MatchArmList) -> Resolver {
     res
 }
 
+/// Walk a pattern declaring every captured name in the
+/// resolver. Variant patterns descend into payload bindings;
+/// `is`-patterns (TypePattern) declare the single binding;
+/// literals and wildcards bind nothing.
 fn declare_pattern_bindings(r: Resolver, pattern: Pattern) -> Resolver {
     match pattern {
         .Wildcard -> r
@@ -33,6 +41,7 @@ fn declare_pattern_bindings(r: Resolver, pattern: Pattern) -> Resolver {
     }
 }
 
+/// Walk a PatternList declaring captures from every sub-pattern.
 fn declare_pattern_list(r: Resolver, pats: PatternList) -> Resolver {
     match pats {
         .End -> r
@@ -40,6 +49,10 @@ fn declare_pattern_list(r: Resolver, pats: PatternList) -> Resolver {
     }
 }
 
+/// Resolve every arm of a `when` (subjectless `match`)
+/// expression. No pattern bindings — each arm has just an
+/// optional condition + body, both resolved in the outer
+/// scope.
 export fn resolve_when_arms(r: Resolver, arms: WhenArmList) -> Resolver {
     mut current = arms
     mut res = r

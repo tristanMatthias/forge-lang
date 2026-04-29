@@ -9,6 +9,14 @@ use features.trait_decl.codegen.{box_for_trait}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
 use diagnostics.{DiagCode}
 
+/// Codegen for `let / mut / const name = init`. Handles four
+/// orthogonal special cases on top of the bare alloca + store:
+/// (1) Copy-type stack allocation when the type qualifies and
+///     the local is non-escaping (spec 9.12);
+/// (2) trait boxing when the declared type is a `Trait`;
+/// (3) `List<Trait>` element-by-element boxing;
+/// (4) union-wrapping when the declared type is a Union and
+///     the value is a concrete member.
 export fn emit_var_decl(ctx: Ctx, env: VarEnv, name: string, ty_vt: ValueType, initializer: Expr) -> Result<VarEnv, string> {
     // Copy-type stack allocation (spec 9.12): if the initializer is
     // a struct literal, the type is Copy, and the local is releasable
@@ -69,8 +77,19 @@ export fn emit_var_decl(ctx: Ctx, env: VarEnv, name: string, ty_vt: ValueType, i
     ok_stmt(ctx.bind(env, name, r.value, var_ty))
 }
 
+/// Result of the Copy-type stack-allocation probe. `active`
+/// is true when the optimisation fires; `alloca_ptr` then holds
+/// the pre-allocated stack buffer that the struct/with emitter
+/// should write into directly.
+///
+/// @field active     — 1 when stack allocation should happen.
+/// @field alloca_ptr — pre-built stack buffer.
 type CopyTarget = { active: bool, alloca_ptr: ptr }
 
+/// Probe whether `let name = init` qualifies for Copy-type
+/// stack allocation. Returns an inactive CopyTarget unless
+/// `init` is a struct literal / `with` expr targeting a Copy
+/// type and `name` is non-escaping (releasable). Spec 9.12.
 fn try_copy_stack_target(ctx: Ctx, name: string, ty_vt: ValueType, init: Expr) -> CopyTarget {
     let n: ptr = null
     if !releasable_has(ctx.rc_releasable, name) {
@@ -90,6 +109,10 @@ fn try_copy_stack_target(ctx: Ctx, name: string, ty_vt: ValueType, init: Expr) -
     }
 }
 
+/// Decide whether a struct-typed binding gets Copy stack
+/// allocation. Skips when the struct has a custom `drop` impl
+/// (drops require heap so RC can release them), otherwise
+/// `alloca`s a fresh stack buffer of the struct's LLVM type.
 fn try_copy_for_struct(ctx: Ctx, name: string, ty_vt: ValueType, sname: string) -> CopyTarget {
     let n: ptr = null
     let drop_fn = ctx.get_fn(method_mangled_name(sname, "drop"))
@@ -105,7 +128,9 @@ fn try_copy_for_struct(ctx: Ctx, name: string, ty_vt: ValueType, sname: string) 
     CopyTarget { active: false, alloca_ptr: n }
 }
 
-// Resolve the concrete type name from a ValueType.
+/// Pull the concrete type name from a `Struct(name)` or
+/// `Enum(name)` ValueType. Returns "" for everything else —
+/// caller falls back to no-op boxing.
 fn resolve_concrete_name(ty: ValueType) -> string {
     let s = vtype_struct_name(ty)
     if s != "" { return s }
@@ -114,13 +139,18 @@ fn resolve_concrete_name(ty: ValueType) -> string {
     ""
 }
 
-// Emit a list literal where each element is trait-boxed.
-// Used for `let xs: List<Trait> = [concrete1, concrete2]`.
+/// Build a `List<Trait>` list-literal where each element gets
+/// boxed as a trait object before being pushed. Used for
+/// `let xs: List<Trait> = [c1, c2]` so callers see one type at
+/// runtime even when the elements have different concrete types.
 fn emit_trait_boxed_list(ctx: Ctx, env: VarEnv, elements: ExprList, trait_name: string) -> Result<ptr, string> {
     let arr = ctx.array_new()
     push_boxed_elements(ctx, env, arr, elements, trait_name)
 }
 
+/// Recursive worker for `emit_trait_boxed_list`. Emits each
+/// element, boxes it for the trait when its type is concrete,
+/// and pushes the result onto `arr`.
 fn push_boxed_elements(ctx: Ctx, env: VarEnv, arr: ptr, elements: ExprList, trait_name: string) -> Result<ptr, string> {
     match elements {
         .End -> .Ok(arr)

@@ -1,9 +1,14 @@
+/// Test fixture: three-variant enum used by the basic
+/// enum-match test. Mixes unit variants (Red, Green) with a
+/// payload-bearing variant (Blue) so the test exercises both.
 enum MatchColor {
     Red
     Green
     Blue(shade: int)
 }
 
+/// Test fixture: classify a `MatchColor` via match. Verifies
+/// pattern matching across mixed unit/payload variants.
 fn match_describe(c: MatchColor) -> string {
     match c {
         .Red -> "red"

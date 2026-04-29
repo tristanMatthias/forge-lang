@@ -3,10 +3,17 @@
 use core.ast.{Expr, ParamList, ValueType, vtype_tuple_at}
 use typeck.{TC, tc_bind}
 
+/// Bind a tuple-destructure's names into the type-check env,
+/// pulling each element type from `tuple_ty` via
+/// `vtype_tuple_at`. Public entry — internal recursion is
+/// `bind_destructure_idx`.
 export fn bind_destructure(tc: TC, names: ParamList, tuple_ty: ValueType) -> TC {
     bind_destructure_idx(tc, names, tuple_ty, 0)
 }
 
+/// Recursive worker for `bind_destructure`. Index-tracks the
+/// position within the tuple type so each name picks up the
+/// matching element type.
 fn bind_destructure_idx(tc: TC, names: ParamList, tuple_ty: ValueType, idx: int) -> TC {
     match names {
         .End -> tc
@@ -17,7 +24,10 @@ fn bind_destructure_idx(tc: TC, names: ParamList, tuple_ty: ValueType, idx: int)
     }
 }
 
-// A constant expression is one that can be evaluated at compile time.
+/// Compile-time-constant predicate used by `const x = ...`
+/// validation. Returns true for literals, idents (resolver
+/// has already verified the binding is itself a const), and
+/// trees built from those operands.
 export fn is_const_expr(expr: Expr) -> bool {
     match expr {
         .Number(_) -> true

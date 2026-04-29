@@ -12,6 +12,9 @@ use features.match_expr.resolver.{resolve_match_arms, resolve_when_arms}
 use features.match_expr.typeck.{check_match_arms, check_match_expr_infer, tc_check_exhaustive, check_when_expr}
 use typeck.{check_expr, tc_er}
 
+/// Register the `match` feature for both statement and
+/// expression positions. Wires up parser, resolver, type-checker,
+/// codegen, and eval hooks for each.
 export fn match_feature() -> Feature {
     feature_new("match") with {
         expr_tag: Expr.MatchExpr(Expr.Null, MatchArmList.End),
@@ -29,6 +32,9 @@ export fn match_feature() -> Feature {
     }
 }
 
+/// Register the subjectless `match { cond -> body, ... }` /
+/// `when` expression feature. Distinct AST tag — no subject,
+/// each arm carries its own boolean condition.
 export fn when_feature() -> Feature {
     feature_new("match_when") with {
         expr_tag: Expr.When(WhenArmList.End),
@@ -39,6 +45,8 @@ export fn when_feature() -> Feature {
     }
 }
 
+/// Resolver hook for `Match`. Resolves the subject in the
+/// current scope, then walks every arm via `resolve_match_arms`.
 fn match_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
     match stmt {
         .Match(subject, arms) -> {
@@ -49,6 +57,8 @@ fn match_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
     }
 }
 
+/// Resolver hook for `MatchExpr`. Mirror of
+/// `match_resolve_stmt` for expression-position matches.
 fn match_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     match expr {
         .MatchExpr(subject, arms) -> {
@@ -59,6 +69,8 @@ fn match_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     }
 }
 
+/// Tree-walk evaluator hook for `Match`. Currently unsupported
+/// — match's pattern semantics are codegen-only.
 fn match_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
     match stmt {
         .Match(_, _) -> error_result(rt, "match statements are not supported by the tree-walk evaluator")
@@ -66,6 +78,8 @@ fn match_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
     }
 }
 
+/// Tree-walk evaluator hook for `MatchExpr`. Mirror of
+/// `match_eval_stmt`.
 fn match_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
     match expr {
         .MatchExpr(_, _) -> error_result(rt, "match expressions are not supported by the tree-walk evaluator")
@@ -73,6 +87,8 @@ fn match_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
     }
 }
 
+/// Resolver hook for `When`. Walks every arm's condition + body
+/// through `resolve_when_arms`.
 fn when_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     match expr {
         .When(arms) -> resolve_when_arms(r, arms)
@@ -80,6 +96,8 @@ fn when_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     }
 }
 
+/// Type-check hook for `When`. Forwards to `check_when_expr`
+/// which infers a unifying result type across the arms.
 fn when_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .When(arms) -> check_when_expr(tc, arms)
@@ -87,6 +105,8 @@ fn when_check_expr(tc: TC, expr: Expr) -> ExprResult {
     }
 }
 
+/// Tree-walk evaluator hook for `When`. Currently unsupported
+/// — subjectless matching is codegen-only.
 fn when_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
     match expr {
         .When(_) -> error_result(rt, "subjectless match is not supported by the tree-walk evaluator")
@@ -94,6 +114,7 @@ fn when_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
     }
 }
 
+/// Codegen hook for `MatchExpr`. Forwards to `emit_match_expr`.
 fn match_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .MatchExpr(subject, arms) -> emit_match_expr(ctx, env, subject, arms)
@@ -101,6 +122,7 @@ fn match_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, strin
     }
 }
 
+/// Codegen hook for `Match`. Forwards to `emit_match`.
 fn match_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .Match(subject, arms) -> emit_match(ctx, env, subject, arms)
@@ -108,6 +130,7 @@ fn match_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, stri
     }
 }
 
+/// Codegen hook for `When`. Forwards to `emit_when_expr`.
 fn when_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .When(arms) -> emit_when_expr(ctx, env, arms)
@@ -115,6 +138,8 @@ fn when_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string
     }
 }
 
+/// Type-check hook for `Match`. Type-checks the subject, runs
+/// exhaustiveness analysis (spec Axis 4), then walks every arm.
 fn match_check_stmt(tc: TC, stmt: Stmt) -> TC {
     match stmt {
         .Match(subject, arms) -> {
@@ -126,6 +151,9 @@ fn match_check_stmt(tc: TC, stmt: Stmt) -> TC {
     }
 }
 
+/// Type-check hook for `MatchExpr`. Same exhaustiveness check
+/// as `match_check_stmt`, but also runs `check_match_expr_infer`
+/// to compute a unifying result type for the arms.
 fn match_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .MatchExpr(subject, arms) -> {

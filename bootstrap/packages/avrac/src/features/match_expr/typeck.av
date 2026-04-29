@@ -12,6 +12,9 @@ use core.ast.{vtype_from_name}
 // for the enclosing expression context and should not participate in
 // match arm type unification.
 
+/// True when a statement list ends in a divergent statement
+/// (`return` / `break` / `continue` / unreachable). Used to
+/// drop divergent arms from match-result type unification.
 fn stmts_diverges(stmts: StmtList) -> bool {
     match stmts {
         .End -> false
@@ -24,6 +27,9 @@ fn stmts_diverges(stmts: StmtList) -> bool {
     }
 }
 
+/// Per-statement divergence test. `if` is divergent only when
+/// both branches diverge — open-ended `if` without `else`
+/// always falls through.
 fn stmt_diverges(stmt: Stmt) -> bool {
     match stmt {
         .Return(_) -> true
@@ -40,6 +46,8 @@ fn stmt_diverges(stmt: Stmt) -> bool {
     }
 }
 
+/// True when an expression's evaluation always diverges
+/// (e.g. a `Block` ending in `return`).
 fn expr_diverges(body: Expr) -> bool {
     match body {
         .Block(stmts) -> stmts_diverges(stmts)
@@ -54,6 +62,9 @@ fn expr_diverges(body: Expr) -> bool {
 // - The arm's type is Unknown (type checker's sentinel for unresolved expressions)
 // - The arm's type is an unresolved named type (empty name from inference gaps)
 
+/// True when an arm should be skipped in type unification.
+/// Drops divergent / Void / Unknown / unresolved-named arms so
+/// the result type comes from the actually-producing arms.
 fn arm_type_skip(body: Expr, ty: ValueType) -> bool {
     if expr_diverges(body) { return true }
     if vtype_eq(ty, .Void) { return true }
@@ -67,6 +78,9 @@ fn arm_type_skip(body: Expr, ty: ValueType) -> bool {
 
 // ── Exhaustiveness checking ──
 
+/// Look up an enum's full variant list by name. Returns an
+/// empty list when the enum isn't registered (typeck's
+/// fallback for generic / unresolved enums).
 fn enum_type_variants(reg: EnumTypeReg, name: string) -> VariantList {
     match reg {
         .End -> VariantList.End
@@ -75,6 +89,10 @@ fn enum_type_variants(reg: EnumTypeReg, name: string) -> VariantList {
     }
 }
 
+/// True when any arm has a wildcard `_` pattern. Wildcards
+/// satisfy the exhaustiveness check on their own; the F9001
+/// "non-exhaustive match" lint fires when the wildcard hides
+/// more than two uncovered variants.
 fn arms_has_wildcard(arms: MatchArmList) -> bool {
     match arms {
         .End -> false
@@ -87,6 +105,9 @@ fn arms_has_wildcard(arms: MatchArmList) -> bool {
     }
 }
 
+/// Build a comma-separated list of variant names covered by
+/// the arms' patterns. Used by `find_missing_variants` to
+/// compute the difference against the enum's full set.
 fn arms_matched_variants(arms: MatchArmList) -> string {
     match arms {
         .End -> ""
@@ -100,6 +121,9 @@ fn arms_matched_variants(arms: MatchArmList) -> string {
 }
 
 // Collect all variant names covered by a pattern (handles Or chains).
+/// Extract the variant name(s) from a pattern as a CSV.
+/// Or-patterns expand to multiple names; struct/literal/
+/// wildcard patterns return "".
 fn pattern_variant_names(pattern: Pattern) -> string {
     match pattern {
         .Variant(name, _) -> name
@@ -114,6 +138,9 @@ fn pattern_variant_names(pattern: Pattern) -> string {
     }
 }
 
+/// Comma-separated CSV membership test. `matched` is built by
+/// `arms_matched_variants`; this checks whether a particular
+/// variant name appears in it.
 fn variant_in_matched(name: string, matched: string) -> bool {
     if matched == name { return true }
     if matched.contains("|${name}|") { return true }
@@ -128,6 +155,9 @@ fn variant_in_matched(name: string, matched: string) -> bool {
     false
 }
 
+/// Build a CSV of variants the user forgot to match. Used in
+/// the F9001 "non-exhaustive" diagnostic so the user sees
+/// exactly which variants need arms.
 fn find_missing_variants(variants: VariantList, matched: string) -> string {
     match variants {
         .End -> ""
@@ -142,6 +172,11 @@ fn find_missing_variants(variants: VariantList, matched: string) -> string {
     }
 }
 
+/// Run exhaustiveness analysis (spec Axis 4) for a `match`.
+/// Enums get a variant-by-variant check; unions check that
+/// every member type is matched. Wildcard `_` arms satisfy
+/// the check unconditionally but trigger the F9001 lint when
+/// they hide more than two missing variants.
 export fn tc_check_exhaustive(tc: TC, subject_ty: ValueType, arms: MatchArmList) -> TC {
     // Union exhaustiveness: check all member types are covered
     if vtype_is_union(subject_ty) {
@@ -171,6 +206,8 @@ export fn tc_check_exhaustive(tc: TC, subject_ty: ValueType, arms: MatchArmList)
     tc_report(tc, DiagCode.NonExhaustiveMatch, msg)
 }
 
+/// Count uncovered variants in the missing list. Drives the
+/// F9001 lint threshold (warn when >2 hidden variants).
 fn count_missing(variants: VariantList, matched: string) -> int {
     match variants {
         .End -> 0
@@ -186,6 +223,9 @@ fn count_missing(variants: VariantList, matched: string) -> int {
 
 // ── Union exhaustiveness ──
 
+/// Union-flavoured exhaustiveness check. Each member type of
+/// the union must be matched (or the match must have a
+/// wildcard). Reports F9001 with the missing types listed.
 fn tc_check_union_exhaustive(tc: TC, subject_ty: ValueType, arms: MatchArmList) -> TC {
     let types = vtype_union_types(subject_ty)
     let matched = arms_matched_variants(arms)
@@ -208,6 +248,8 @@ fn tc_check_union_exhaustive(tc: TC, subject_ty: ValueType, arms: MatchArmList) 
     tc_report(tc, DiagCode.NonExhaustiveMatch, msg)
 }
 
+/// CSV of union members the user forgot to match — companion
+/// of `find_missing_variants` for union types.
 fn find_missing_union_members(types: TypeList, matched: string) -> string {
     match types {
         .End -> ""
@@ -223,6 +265,8 @@ fn find_missing_union_members(types: TypeList, matched: string) -> string {
     }
 }
 
+/// Count uncovered union members. Mirror of `count_missing`
+/// for union exhaustiveness.
 fn count_missing_union_members(types: TypeList, matched: string) -> int {
     match types {
         .End -> 0
@@ -239,6 +283,9 @@ fn count_missing_union_members(types: TypeList, matched: string) -> int {
 
 // ── Pattern variable binding ──
 
+/// Walk a single pattern binding every captured name into the
+/// type environment. Or-patterns recurse into both sides;
+/// constructor patterns descend into payload patterns.
 fn tc_bind_pattern(tc: TC, pattern: Pattern) -> TC {
     match pattern {
         .Wildcard -> tc
@@ -249,10 +296,14 @@ fn tc_bind_pattern(tc: TC, pattern: Pattern) -> TC {
     }
 }
 
+/// Open a fresh type-check scope for a pattern arm and bind
+/// every capture. Pairs with `tc_exit` (caller exits after
+/// arm body checking).
 export fn tc_enter_pattern_scope(tc: TC, pattern: Pattern) -> TC {
     tc_bind_pattern(tc_enter(tc), pattern)
 }
 
+/// Walk a PatternList binding captures from every sub-pattern.
 fn tc_bind_pattern_list(tc: TC, pats: PatternList) -> TC {
     match pats {
         .End -> tc
@@ -260,6 +311,9 @@ fn tc_bind_pattern_list(tc: TC, pats: PatternList) -> TC {
     }
 }
 
+/// Bind every named param from a constructor pattern into the
+/// type environment. Wildcards pass through; the caller's
+/// resolver pass already validated each name's payload type.
 fn tc_bind_pattern_params(tc: TC, params: ParamList) -> TC {
     match params {
         .End -> tc
@@ -272,6 +326,9 @@ fn tc_bind_pattern_params(tc: TC, params: ParamList) -> TC {
 
 // ── Match arm checking ──
 
+/// Statement-position arm checker. Type-checks every arm's
+/// guard + body within a fresh pattern-scope; doesn't do type
+/// unification (statements don't produce values).
 export fn check_match_arms(tc: TC, arms: MatchArmList) -> TC {
     match arms {
         .End -> tc
@@ -290,6 +347,10 @@ export fn check_match_arms(tc: TC, arms: MatchArmList) -> TC {
 
 // ── Match expression type inference ──
 
+/// Expression-position arm checker. Type-checks each arm and
+/// unifies the result types — emitting F1000 when arms
+/// disagree on a non-skip type. Skips divergent / Void / Unknown
+/// arms via `arm_type_skip`.
 export fn check_match_expr_arms(tc: TC, arms: MatchArmList, first_ty: ValueType) -> ExprResult {
     match arms {
         .End -> tc_er(tc, first_ty)
@@ -313,6 +374,9 @@ export fn check_match_expr_arms(tc: TC, arms: MatchArmList, first_ty: ValueType)
     }
 }
 
+/// Wrapper around `check_match_expr_arms` that picks a seed
+/// type from the first non-skip arm. Used when the caller
+/// doesn't have an expected type to seed unification with.
 export fn check_match_expr_infer(tc: TC, arms: MatchArmList) -> ExprResult {
     match arms {
         .End -> tc_er(tc, .Unknown)
@@ -335,6 +399,9 @@ export fn check_match_expr_infer(tc: TC, arms: MatchArmList) -> ExprResult {
 
 // ── Return type checking in match arms ──
 
+/// For a fn whose body is a `match`, verify every arm's tail
+/// expression is assignable to the fn's declared return type.
+/// Used when the user writes `fn f() -> T = match x { ... }`.
 export fn tc_check_match_arm_returns(tc: TC, fn_name: string, declared: ValueType, arms: MatchArmList) -> TC {
     match arms {
         .End -> tc
@@ -351,6 +418,9 @@ export fn tc_check_match_arm_returns(tc: TC, fn_name: string, declared: ValueTyp
 // ── When expression type checking ──
 // Each condition must be bool-ish; return type unified across arms.
 
+/// Type-check a `when` (subjectless `match`) expression. Each
+/// arm's condition must be Bool; arm bodies unify in the same
+/// way as expression-position match arms.
 export fn check_when_expr(tc: TC, arms: WhenArmList) -> ExprResult {
     match arms {
         .End -> tc_er(tc, .Unknown)
@@ -362,6 +432,8 @@ export fn check_when_expr(tc: TC, arms: WhenArmList) -> ExprResult {
     }
 }
 
+/// Recursive worker for `check_when_expr` — unifies arm body
+/// types against `first_ty` exactly like `check_match_expr_arms`.
 fn check_when_arms(tc: TC, arms: WhenArmList, first_ty: ValueType) -> ExprResult {
     match arms {
         .End -> tc_er(tc, first_ty)

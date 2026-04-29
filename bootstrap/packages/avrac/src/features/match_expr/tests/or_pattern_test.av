@@ -1,5 +1,9 @@
+/// Test fixture: cardinal-directions enum used to exercise
+/// or-patterns combining multiple variant tags into one arm.
 enum OrDirection { North, South, East, West }
 
+/// Test fixture: or-pattern over enum variants. Verifies
+/// `.East or .West -> true` lowers to a multi-target tag check.
 fn or_is_horizontal(d: OrDirection) -> bool {
     match d {
         .East or .West -> true

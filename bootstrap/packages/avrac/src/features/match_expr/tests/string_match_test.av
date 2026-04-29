@@ -1,3 +1,6 @@
+/// Test fixture: classify a string via literal-pattern match.
+/// Verifies the codegen lowers string equality through
+/// `strcmp == 0` checks.
 fn strmatch_classify(s: string) -> string {
     match s {
         "hello" -> "greeting"
@@ -8,6 +11,8 @@ fn strmatch_classify(s: string) -> string {
     }
 }
 
+/// Test fixture: 2-arm string match plus wildcard. Same as
+/// `strmatch_classify` but exercises a smaller match set.
 fn strmatch_announce(cmd: string) -> string {
     match cmd {
         "start" -> "starting..."
@@ -16,6 +21,7 @@ fn strmatch_announce(cmd: string) -> string {
     }
 }
 
+/// Test fixture: grade-letter dispatch via string match.
 fn strmatch_grade(s: string) -> string {
     match s {
         "A" -> "excellent"
