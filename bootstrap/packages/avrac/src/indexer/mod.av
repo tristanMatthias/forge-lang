@@ -43,6 +43,57 @@ export fn extract_from_ast(stmts: StmtList, file: string) -> SymList {
     extract_inner(stmts, file, "")
 }
 
+// Same as extract_from_ast but seeds the qualified-name prefix from
+// the file's relative path. `core/ast.av` → "core::ast", so a fn
+// `Foo.foo` inside that file ends up qualified as `core::ast::Foo`.
+// `core/mod.av` → "core" (the `mod` filename collapses).
+// Used by `avra docs` so cross-file hierarchical addressing works.
+export fn extract_from_ast_at(stmts: StmtList, file: string) -> SymList {
+    extract_inner(stmts, file, file_to_module_prefix(file))
+}
+
+export fn extract_calls_from_ast_at(stmts: StmtList, file: string) -> CallList {
+    extract_calls_inner(stmts, file, file_to_module_prefix(file), calls_new())
+}
+
+// "core/ast.av" → "core::ast", "core/mod.av" → "core",
+// "main.av" → "" (root-level files don't get a prefix).
+fn file_to_module_prefix(file: string) -> string {
+    if !file.contains("/") { return "" }
+    let last_slash = last_index_of_slash(file)
+    let basename = file.substring(last_slash + 1, file.length)
+    let dir = file.substring(0, last_slash)
+    let stem = if basename == "mod.av" {
+        ""
+    } else if basename.ends_with(".av") {
+        basename.substring(0, basename.length - 3)
+    } else {
+        basename
+    }
+    let dir_qual = path_to_qualifier(dir)
+    if stem == "" { dir_qual }
+    else if dir_qual == "" { stem }
+    else { "${dir_qual}::${stem}" }
+}
+
+fn last_index_of_slash(s: string) -> int {
+    mut i = s.length - 1
+    while i >= 0 {
+        if s.substring(i, i + 1) == "/" { return i }
+        i = i - 1
+    }
+    -1
+}
+
+fn path_to_qualifier(dir: string) -> string {
+    mut out = ""
+    for seg in dir.split("/") {
+        if seg == "" || seg == "." { continue }
+        out = if out == "" { seg } else { "${out}::${seg}" }
+    }
+    out
+}
+
 // Walk `stmts` again, this time collecting CallEdge records for every
 // `Expr.Call(Ident, _)` site we find inside a function body. Captures
 // the most common "X calls Y" relationship without recursing into

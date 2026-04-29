@@ -24,7 +24,7 @@ use cli.{cli_new, cli_add_command, cli_command_add_flag, cli_command_add_option,
 use coverage.{render_coverage}
 use docs.{extract_project_docs_ast, extract_project_corpus,
           show_overview, show_symbol, show_short, show_symbols,
-          show_search, show_llm, show_callers,
+          show_search, show_llm, show_callers, show_module,
           validate_docs, suggest_similar}
 use indexer.{run_lsp_server}
 use pathutil.{basename_no_ext}
@@ -582,6 +582,7 @@ fn main() {
             mut search_term = ""
             mut query = ""
             mut want_callers = false
+            mut module_path = ""
             mut k = 2
             while k < avra_selfhost_argc() {
                 let arg = avra_selfhost_get_arg_cstr(k)
@@ -607,6 +608,18 @@ fn main() {
                 }
                 if arg == "--callers" || arg == "--used-by" {
                     want_callers = true
+                    k = k + 1
+                    continue
+                }
+                if arg == "--module" {
+                    if k + 1 < avra_selfhost_argc() {
+                        module_path = avra_selfhost_get_arg_cstr(k + 1)
+                    }
+                    k = k + 2
+                    continue
+                }
+                if arg.starts_with("--module=") {
+                    module_path = arg.substring(9, arg.length)
                     k = k + 1
                     continue
                 }
@@ -654,6 +667,15 @@ fn main() {
             // the typed AST through @std/lsp's indexer.
             let docs_set = extract_project_docs_ast(project_dir)
 
+            if module_path != "" {
+                if !show_module(module_path, docs_set) {
+                    eprintln("")
+                    eprintln("  No module '${module_path}' found in project.")
+                    eprintln("")
+                    exit(1)
+                }
+                return
+            }
             if search_term != "" {
                 show_search(search_term, docs_set)
                 return

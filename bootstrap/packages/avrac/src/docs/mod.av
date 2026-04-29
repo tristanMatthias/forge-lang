@@ -23,7 +23,7 @@
 
 use core.runtime.{avra_selfhost_read_file, avra_shell_exec, avra_selfhost_levenshtein}
 use parse.{parse_program_source}
-use indexer.{extract_from_ast, extract_calls_from_ast}
+use indexer.{extract_from_ast_at, extract_calls_from_ast_at}
 use @std.lsp.{Sym, SymList, SymKind, CallEdge, CallList}
 use render.{bold, dim, cyan, green, yellow, red,
             pad_right, truncate_str, rule, first_line, icase_eq, pct}
@@ -61,8 +61,8 @@ export fn extract_project_corpus(dir: string) -> DocsCorpus {
             continue
         }
         let rel = relativise(path, dir)
-        let file_syms = extract_from_ast(parsed.stmts!, rel)
-        let file_calls = extract_calls_from_ast(parsed.stmts!, rel)
+        let file_syms = extract_from_ast_at(parsed.stmts!, rel)
+        let file_calls = extract_calls_from_ast_at(parsed.stmts!, rel)
         syms = sym_list_append(file_syms, syms)
         calls = call_list_append(file_calls, calls)
     }
@@ -439,6 +439,225 @@ fn print_call_edges(edges: CallList) {
     }
 }
 
+// ── Hierarchical addressing (`avra docs core::ast::Expr`) ──────────
+//
+// Locally-mirrored qualified-path helpers — duplicated from
+// @std/lsp.qualified_* because function imports across @std packages
+// hit the resolver dedupe bug. Once that fix lands these can collapse
+// to re-imports.
+
+fn qualified_last_separator(q: string) -> int {
+    mut i = q.length - 2
+    while i >= 0 {
+        if q.substring(i, i + 2) == "::" {
+            return i
+        }
+        i = i - 1
+    }
+    -1
+}
+
+fn qualified_leaf(q: string) -> string {
+    let last = qualified_last_separator(q)
+    if last < 0 { return q }
+    q.substring(last + 2, q.length)
+}
+
+fn qualified_breadcrumbs(q: string) -> string {
+    if q == "" { return "" }
+    mut acc = ""
+    mut start = 0
+    mut i = 0
+    while i + 1 < q.length {
+        if q.substring(i, i + 2) == "::" {
+            let seg = q.substring(start, i)
+            acc = if acc == "" { seg } else { "${acc} ▸ ${seg}" }
+            start = i + 2
+            i = i + 2
+        } else {
+            i = i + 1
+        }
+    }
+    let last = q.substring(start, q.length)
+    if acc == "" { last } else { "${acc} ▸ ${last}" }
+}
+
+// Look up a sym by either bare name OR qualified path. When the
+// query contains `::`, fall back to suffix matching so partial paths
+// still resolve (`ast::Expr` finds `core::ast::Expr`).
+fn sym_by_path(list: SymList, path: string) -> Sym? {
+    if !path.contains("::") {
+        return sym_by_name(list, path)
+    }
+    // Exact qualified match first.
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                break
+            }
+            .Node(item, next) -> {
+                if is_renderable(item) && item.qualified == path {
+                    return item
+                }
+                cur = next
+            }
+        }
+    }
+    // Suffix match: `ast::Expr` matches `core::ast::Expr`.
+    let suffix = "::${path}"
+    mut cur2 = list
+    while true {
+        match cur2 {
+            .End -> {
+                return null
+            }
+            .Node(item, next) -> {
+                if is_renderable(item) && item.qualified.ends_with(suffix) {
+                    return item
+                }
+                cur2 = next
+            }
+        }
+    }
+    null
+}
+
+// Print every direct child of a module path. Direct = one level
+// deeper, not transitive. Returns false when no descendants exist
+// at any depth — distinguishes "real but childless prefix" from
+// "no such prefix anywhere".
+export fn show_module(prefix: string, docs: SymList) -> bool {
+    let direct = direct_children(docs, prefix)
+    if sym_count(direct) == 0 && !has_any_descendant(docs, prefix) {
+        return false
+    }
+
+    let header = if prefix == "" {
+        "${bold("avra docs")} ${dim("—")} project root"
+    } else {
+        "${bold(qualified_breadcrumbs(prefix))}"
+    }
+    println("")
+    println("  ${header}")
+    println("  ${dim(rule(prefix.length + 8))}")
+    println("")
+
+    print_module_children(direct, docs)
+    println("")
+    true
+}
+
+fn has_any_descendant(list: SymList, prefix: string) -> bool {
+    let pfx_dot = "${prefix}::"
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return false
+            }
+            .Node(item, next) -> {
+                if item.qualified.starts_with(pfx_dot) { return true }
+                cur = next
+            }
+        }
+    }
+    false
+}
+
+fn direct_children(list: SymList, prefix: string) -> SymList {
+    let pfx_dot = "${prefix}::"
+    let pfx_depth = if prefix == "" { -1 } else { count_path_seps(prefix) }
+    sym_list_filter_local(list,
+        (item: Sym) -> is_direct_child_of(item, prefix, pfx_dot, pfx_depth))
+}
+
+fn is_direct_child_of(item: Sym, prefix: string, pfx_dot: string, pfx_depth: int) -> bool {
+    let q = item.qualified
+    if prefix == "" {
+        !q.contains("::")
+    } else {
+        q.starts_with(pfx_dot) && count_path_seps(q) == pfx_depth + 1
+    }
+}
+
+fn count_path_seps(q: string) -> int {
+    mut depth = 0
+    mut i = 0
+    while i + 1 < q.length {
+        if q.substring(i, i + 2) == "::" {
+            depth = depth + 1
+            i = i + 2
+        } else {
+            i = i + 1
+        }
+    }
+    depth
+}
+
+fn sym_count(list: SymList) -> int {
+    count_syms(list, (_: Sym) -> true)
+}
+
+fn sym_list_filter_local(list: SymList, pred: fn(Sym) -> bool) -> SymList {
+    mut acc = SymList.End
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return reverse_sym_list_local(acc)
+            }
+            .Node(item, next) -> {
+                if pred(item) {
+                    acc = SymList.Node(item, acc)
+                }
+                cur = next
+            }
+        }
+    }
+    SymList.End
+}
+
+fn reverse_sym_list_local(list: SymList) -> SymList {
+    mut acc = SymList.End
+    mut cur = list
+    while true {
+        match cur {
+            .End -> {
+                return acc
+            }
+            .Node(item, next) -> {
+                acc = SymList.Node(item, acc)
+                cur = next
+            }
+        }
+    }
+    SymList.End
+}
+
+fn print_module_children(direct: SymList, all: SymList) {
+    mut cur = direct
+    while true {
+        match cur {
+            .End -> {
+                return
+            }
+            .Node(item, next) -> {
+                let leaf = qualified_leaf(item.qualified)
+                let kid_count = sym_count(direct_children(all, item.qualified))
+                let count_str = if kid_count > 0 { dim(" (${string(kid_count)})") } else { "" }
+                let preview = first_line(item.doc)
+                if preview == "" {
+                    println("    ${leaf}${count_str}")
+                } else {
+                    println("    ${pad_right(leaf, 36)}${count_str} ${dim(truncate_str(preview, 40))}")
+                }
+                cur = next
+            }
+        }
+    }
+}
+
 // "Did you mean?" — best-scoring sym name above threshold, or "" if
 // no candidate is plausibly close. Threshold matches @std/lsp's
 // did_you_mean default: silence beats a misleading suggestion.
@@ -467,6 +686,12 @@ export fn suggest_similar(query: string, docs: SymList) -> string {
 }
 
 export fn show_symbol(query: string, docs: SymList) -> bool {
+    let direct = sym_by_path(docs, query)
+    if direct != null {
+        show_one(direct!)
+        return true
+    }
+    // Fallback: case-insensitive bare-name match.
     mut cur = docs
     while true {
         match cur {
@@ -488,6 +713,9 @@ fn show_one(s: Sym) {
     let rule_len = if header.length > 20 { header.length } else { 20 }
 
     println("")
+    if s.qualified != s.name {
+        println("  ${dim(qualified_breadcrumbs(s.qualified))}")
+    }
     println("  ${bold(header)}")
     println("  ${dim(rule(rule_len))}")
 
@@ -526,6 +754,13 @@ fn print_variant_block(s: Sym) {
 // ── Short one-liner (`--short`) ─────────────────────────────────────
 
 export fn show_short(query: string, docs: SymList) -> bool {
+    let s = sym_by_path(docs, query)
+    if s != null {
+        let line = first_line(s!.doc)
+        let desc = if line == "" { "(undocumented)" } else { line }
+        println("  ${s!.name}: ${desc}")
+        return true
+    }
     mut cur = docs
     while true {
         match cur {
