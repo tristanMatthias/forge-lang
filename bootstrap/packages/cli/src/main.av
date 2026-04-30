@@ -183,13 +183,15 @@ fn matched_flag(a: DocsArgs) -> FlagApply { FlagApply { args: a, matched: true }
 
 // Read the value attached to a `--key` flag at argv[idx]: returns the
 // value plus the number of argv slots consumed (1 for `--key=value`,
-// 2 for `--key value`).
+// 2 for `--key value`). The prefix length is computed from `key`
+// rather than passed in — every caller would otherwise risk a
+// hand-counted off-by-one.
 type KvRead = { value: string, consumed: int }
 
-fn read_kv_value(idx: int, key: string, prefix_len: int) -> KvRead {
+fn read_kv_value(idx: int, key: string) -> KvRead {
     let arg = avra_selfhost_get_arg_cstr(idx)
     if arg.starts_with("${key}=") {
-        return KvRead { value: arg.substring(prefix_len + 1, arg.length), consumed: 1 }
+        return KvRead { value: arg.substring(key.length + 1, arg.length), consumed: 1 }
     }
     if idx + 1 < avra_selfhost_argc() {
         return KvRead { value: avra_selfhost_get_arg_cstr(idx + 1), consumed: 2 }
@@ -228,25 +230,25 @@ fn parse_docs_args() -> DocsArgs {
         }
         // --key value / --key=value pairs.
         if matches_kv_flag(arg, "--scope") {
-            let r = read_kv_value(k, "--scope", 7)
+            let r = read_kv_value(k, "--scope")
             a = a with { scope: r.value }
             k = k + r.consumed
             continue
         }
         if matches_kv_flag(arg, "--format") {
-            let r = read_kv_value(k, "--format", 8)
+            let r = read_kv_value(k, "--format")
             a = a with { format: r.value }
             k = k + r.consumed
             continue
         }
         if matches_kv_flag(arg, "--module") {
-            let r = read_kv_value(k, "--module", 8)
+            let r = read_kv_value(k, "--module")
             a = a with { module_path: r.value }
             k = k + r.consumed
             continue
         }
         if matches_kv_flag(arg, "--search") {
-            let r = read_kv_value(k, "--search", 8)
+            let r = read_kv_value(k, "--search")
             a = a with { search_term: r.value }
             k = k + r.consumed
             continue
