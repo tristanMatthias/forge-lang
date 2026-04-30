@@ -806,9 +806,12 @@ impl Ctx {
     fn sitofp(self, val: ptr, name: string) -> ptr { avra_llvm_build_si_to_fp(self.builder, val, self.double_type, name) }
     fn fptosi(self, val: ptr, name: string) -> ptr { avra_llvm_build_fp_to_si(self.builder, val, self.i64_type, name) }
 
-    // Map a ValueType to its LLVM type.
+    // Map a ValueType to its LLVM type. Routes through llvm_type_for
+    // so sized-integer variants pick up their narrow LLVM widths
+    // (Phase B of forge-crafting-intepreters-k5al). Falls back to
+    // llvm_type_for_full for everything else.
     fn type_for(self, vt: ValueType) -> ptr {
-        llvm_type_for_full(self.i64_type, self.i1_type, self.double_type, self.ptr_type, vt)
+        self.llvm_type_for(vt)
     }
 
     // Typed alloca/load: use the correct LLVM type for a ValueType.

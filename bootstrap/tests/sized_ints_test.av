@@ -1,0 +1,87 @@
+// Sized integer types — u8/u16/u32/u64 and i8/i16/i32 — covered
+// end-to-end. Phase A added the ValueType variants; Phase B routes
+// `ctx.type_for` through narrow LLVM widths so allocas, loads,
+// stores, and arithmetic operate at the declared width and wrap
+// correctly on overflow.
+//
+// Tracking ticket: forge-crafting-intepreters-k5al under language
+// epic forge-crafting-intepreters-ayq3.
+
+spec "sized ints: declarable as let-binding types" {
+    then "u8 binding" {
+        let x: u8 = 250
+        x == 250
+    }
+    then "u16 binding" {
+        let x: u16 = 65535
+        x == 65535
+    }
+    then "u32 binding" {
+        let x: u32 = 4000000000
+        x == 4000000000
+    }
+    then "u64 binding" {
+        let x: u64 = 1234567890
+        x == 1234567890
+    }
+    then "i8 binding" {
+        let x: i8 = 0 - 100
+        x == 0 - 100
+    }
+    then "i16 binding" {
+        let x: i16 = 30000
+        x == 30000
+    }
+    then "i32 binding" {
+        let x: i32 = 2147483647
+        x == 2147483647
+    }
+}
+
+spec "sized ints: arithmetic at native width" {
+    then "u8 wraps at 256: 200+100 = 44" {
+        let a: u8 = 200
+        let b: u8 = 100
+        let c: u8 = a + b
+        c == 44
+    }
+    then "u16 wraps at 65536: 65000+1000 = 464" {
+        let a: u16 = 65000
+        let b: u16 = 1000
+        let c: u16 = a + b
+        c == 464
+    }
+    then "u32 wraps at 2^32: 4e9 + 1e9 = 705032704" {
+        let a: u32 = 4000000000
+        let b: u32 = 1000000000
+        let c: u32 = a + b
+        c == 705032704
+    }
+    then "u32 add without wrap" {
+        let a: u32 = 100
+        let b: u32 = 200
+        let c: u32 = a + b
+        c == 300
+    }
+}
+
+spec "sized ints: usable as fn parameter and return types" {
+    then "fn taking u32 returns the same value" {
+        let result: u32 = id_u32(42)
+        result == 42
+    }
+    then "fn taking u8 returns the same value (255 fits)" {
+        let result: u8 = id_u8(255)
+        result == 255
+    }
+    then "fn returning u8 + arithmetic wraps correctly" {
+        let a: u8 = id_u8(100)
+        let b: u8 = id_u8(200)
+        let c: u8 = a + b      // 300 mod 256 = 44
+        c == 44
+    }
+}
+
+fn id_u32(x: u32) -> u32 { x }
+fn id_u8(x: u8) -> u8 { x }
+fn id_i16(x: i16) -> i16 { x }
