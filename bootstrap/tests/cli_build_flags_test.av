@@ -91,3 +91,31 @@ spec "bs2 build --timings: report is self-contained HTML" {
         head.contains("DOCTYPE") || head.contains("html")
     }
 }
+
+spec "bs2 build --release: dev and release profiles cache to different fingerprints" {
+    then "first dev build then release build both miss the cache" {
+        let project = setup_project()
+        // Dev build → first miss + entry into cache.
+        let dev = avra_shell_exec(
+            "cd " + project + " && " + bs2_path() + " build --explain 2>&1 || true")
+        // Release build with --release flag: opt_level/debug differ,
+        // so the fingerprint differs and this MUST also be a miss
+        // (i.e. cache the dev-build artifact does NOT satisfy a release
+        // build). If the release build hit the cache, profiles aren't
+        // contributing to the fingerprint.
+        let rel = avra_shell_exec(
+            "cd " + project + " && " + bs2_path() + " build --release --explain 2>&1 || true")
+        let _ = teardown_project(project)
+        dev.contains("rebuild ") && rel.contains("rebuild ")
+    }
+}
+
+spec "bs2 build --release: prints [pkg] line + builds successfully" {
+    then "release build emits the package banner and a fingerprint" {
+        let project = setup_project()
+        let out = avra_shell_exec(
+            "cd " + project + " && " + bs2_path() + " build --release 2>&1 || true")
+        let _ = teardown_project(project)
+        out.contains("[pkg]") && out.contains("Built ")
+    }
+}
