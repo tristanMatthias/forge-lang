@@ -457,6 +457,7 @@ fn vtype_is_copy(vt: ValueType, candidates: CopySet) -> bool {
         .Float -> true
         .Bool -> true
         .Str -> false
+        .Bytes -> false
         .Ptr -> false
         .List(_) -> false
         .Map -> false

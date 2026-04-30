@@ -183,8 +183,14 @@ export enum TypeList {
 export enum ValueType {
     /// `int` — i64 in LLVM.
     Int,
-    /// `string` — heap-allocated, ptr in LLVM.
+    /// `string` — heap-allocated, ptr in LLVM. UTF-8 byte sequence
+    /// with character semantics on top.
     Str,
+    /// `bytes` — heap-allocated, ptr in LLVM. Raw octet sequence
+    /// distinct from `string`. Used by crypto, binary protocols,
+    /// any byte-shaped parser. Tracked under ticket forge-crafting-intepreters-73wa
+    /// inside the in-language-crypto epic.
+    Bytes,
     /// `bool` — i1 in LLVM (1 byte storage).
     Bool,
     /// Opaque pointer — used for FFI and runtime handles.
@@ -387,6 +393,7 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
     match a {
         .Int -> b is .Int
         .Str -> b is .Str
+        .Bytes -> b is .Bytes
         .Bool -> b is .Bool
         .Ptr -> b is .Ptr
         .List -> b is .List
@@ -513,6 +520,7 @@ export fn vtype_display(t: ValueType) -> string {
     match t {
         .Int -> "int"
         .Str -> "string"
+        .Bytes -> "bytes"
         .Bool -> "bool"
         .Ptr -> "ptr"
         .Struct(n, _) -> n
@@ -557,6 +565,7 @@ export fn vtype_render_full(t: ValueType) -> string {
     match t {
         .Int -> "int"
         .Str -> "string"
+        .Bytes -> "bytes"
         .Bool -> "bool"
         .Ptr -> "ptr"
         .Struct(n, _) -> n

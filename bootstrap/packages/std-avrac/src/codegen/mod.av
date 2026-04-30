@@ -140,8 +140,9 @@ export fn emit_rc_release_typed(ctx: Ctx, val: ptr, ty: ValueType) {
                 ctx.rc_release(val)
             }
         }
-        // Str, Ptr, Fn: leaf RC types with no inner RC fields.
+        // Str, Bytes, Ptr, Fn: leaf RC types with no inner RC fields.
         .Str -> ctx.rc_release(val)
+        .Bytes -> ctx.rc_release(val)
         .Ptr -> ctx.rc_release(val)
         .Fn(_) -> ctx.rc_release(val)
         // Tuple: inline recursive release — check each ptr-typed element.
