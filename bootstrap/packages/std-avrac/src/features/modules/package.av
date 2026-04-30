@@ -77,6 +77,26 @@ export type BuildTarget = {
     present: bool,           // false when this target is not declared
 }
 
+/// One entry from `[dependencies]`. v1 supports path-based deps
+/// only — version-resolved (`"0.5"`) and git deps parse but stay
+/// unresolved until a registry / fetcher exists.
+///
+/// @field name  the dependency identifier as it appears in TOML
+///              (e.g. `"@std/avrac"`).
+/// @field path  resolved local filesystem path; "" when this is a
+///              version-only or git dep we can't resolve yet.
+export type Dep = {
+    name: string,
+    path: string,
+}
+
+/// Linked list of deps. Order preserved from the TOML source so
+/// the build driver can iterate deterministically.
+export enum DepList {
+    End,
+    Node(dep: Dep, next: DepList),
+}
+
 /// Full v1.0 manifest view. Mirrors docs/spec_build_manifest.md.
 /// Profile lookups are exposed via `profile_dev` / `profile_release`;
 /// future custom profiles will require an indexed list once the
@@ -94,6 +114,7 @@ export type Manifest = {
     lib: BuildTarget,
     profile_dev: BuildProfile,
     profile_release: BuildProfile,
+    deps: DepList,           // [dependencies] parsed in TOML order
 }
 
 fn default_target(kind: string) -> BuildTarget {
@@ -135,6 +156,7 @@ fn default_manifest() -> Manifest {
         lib: default_target("lib"),
         profile_dev: default_profile("dev"),
         profile_release: release_defaults(),
+        deps: DepList.End,
     }
 }
 
@@ -150,6 +172,122 @@ fn read_target(content: string, kind: string, pkg_name: string) -> BuildTarget {
         name: resolved_name,
         path: raw_path,
         present: true,
+    }
+}
+
+/// Parse the `[dependencies]` section into a DepList. Each TOML
+/// entry is one line of the form `key = value`. Supported value
+/// shapes:
+///
+///   "X.Y"                   → version-only (unresolved in v1)
+///   { path = "..." }        → path dep (the v1 supported form)
+///   { git = "..." }         → git dep (parses, unresolved in v1)
+///
+/// Walks the section text line-by-line (the TOML helpers can't
+/// iterate keys), extracts `key = value`, then pulls `path = "..."`
+/// out of the inline table when present. Quoted keys
+/// (`"@std/avrac" = ...`) are recognised by stripping the surrounding
+/// quotes after splitting on `=`.
+fn read_dependencies(content: string) -> DepList {
+    if !avra_toml_has_section(content, "dependencies") {
+        return DepList.End
+    }
+    let header = "[dependencies]"
+    let header_idx = content.index_of(header)
+    if header_idx < 0 { return DepList.End }
+    let body_start = header_idx + header.length
+    // Find the next [ at line start, or end of string. Section ends
+    // at the next [-prefixed line.
+    let body_end = find_next_section(content, body_start)
+    let section = content.substring(body_start, body_end)
+
+    parse_dep_lines(section, DepList.End)
+}
+
+/// Find the next `\n[` (next section header) starting from `from`.
+/// Returns content.length if none.
+fn find_next_section(content: string, from: int) -> int {
+    mut i = from
+    while i + 1 < content.length {
+        if content.byte(i) == 10 && content.byte(i + 1) == 91 {  // \n[
+            return i
+        }
+        i = i + 1
+    }
+    content.length
+}
+
+/// Walk `section` line by line, accumulating Dep entries onto `acc`.
+/// Returns `acc` reversed so order matches TOML source order.
+fn parse_dep_lines(section: string, acc: DepList) -> DepList {
+    mut result = acc
+    mut start = 0
+    mut i = 0
+    while i <= section.length {
+        let at_end = i == section.length
+        let is_nl = !at_end && section.byte(i) == 10
+        if at_end || is_nl {
+            let line = section.substring(start, i).trim()
+            if line.length > 0 && !line.starts_with("#") {
+                let dep = parse_dep_line(line)
+                if dep.name != "" {
+                    result = DepList.Node(dep, result)
+                }
+            }
+            start = i + 1
+        }
+        i = i + 1
+    }
+    reverse_dep_list(result, DepList.End)
+}
+
+/// Parse one `key = value` dep line. Quoted keys are unwrapped.
+/// Returns Dep{name="", path=""} when the line doesn't parse as a
+/// dependency entry — caller skips empty entries.
+fn parse_dep_line(line: string) -> Dep {
+    let eq = line.index_of("=")
+    if eq < 0 { return Dep { name: "", path: "" } }
+    let raw_key = line.substring(0, eq).trim()
+    let raw_val = line.substring(eq + 1, line.length).trim()
+    let key = if raw_key.starts_with("\"") && raw_key.ends_with("\"") && raw_key.length >= 2 {
+        raw_key.substring(1, raw_key.length - 1)
+    } else {
+        raw_key
+    }
+    // Pull `path = "..."` out of the value. The value is either a
+    // string literal (`"X.Y"` — version) or an inline table
+    // (`{ path = "..." }`, `{ git = "..." }`, etc.). For v1 we only
+    // resolve `path`.
+    let path_marker = "path"
+    let path_idx = raw_val.index_of(path_marker)
+    if path_idx < 0 {
+        return Dep { name: key, path: "" }
+    }
+    // Find the first `"` after `path`, then the matching closing `"`.
+    let q1 = find_char_after(raw_val, "\"", path_idx)
+    if q1 < 0 { return Dep { name: key, path: "" } }
+    let q2 = find_char_after(raw_val, "\"", q1 + 1)
+    if q2 < 0 { return Dep { name: key, path: "" } }
+    Dep {
+        name: key,
+        path: raw_val.substring(q1 + 1, q2),
+    }
+}
+
+/// Linear scan for `ch` in `s` starting at `from`. Returns -1 when
+/// not found. We don't have a string.index_of_from yet so we offset
+/// by hand.
+fn find_char_after(s: string, ch: string, from: int) -> int {
+    let rest = s.substring(from, s.length)
+    let idx = rest.index_of(ch)
+    if idx < 0 { return 0 - 1 }
+    from + idx
+}
+
+fn reverse_dep_list(xs: DepList, acc: DepList) -> DepList {
+    match xs {
+        .End -> acc
+        .Node(d, rest) -> reverse_dep_list(rest, DepList.Node(d, acc))
     }
 }
 
@@ -201,6 +339,7 @@ export fn load_manifest(dir: string) -> Manifest {
         version: pkg_version,
         edition: edition,
         description: description,
+        deps: read_dependencies(content),
         bin: read_target(content, "bin", pkg_name),
         lib: read_target(content, "lib", pkg_name),
         profile_dev: read_profile(content, "dev", default_profile("dev")),

@@ -1,0 +1,46 @@
+// End-to-end @std.avrac.build.graph tests.
+//
+// Compiles and runs tests/build_graph_fixtures/sample.av which
+// builds a synthetic diamond-shaped dep tree at /tmp and verifies
+// build_graph produces a correctly-counted, topologically-sorted
+// result with cycle detection. PROBE lines are asserted here.
+//
+// Tracking ticket: forge-crafting-intepreters-eh00.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn graph_run_fixture() -> string {
+    avra_shell_exec("if [ ! -f /tmp/avra_graph_probe.out ]; then bash scripts/diagnose.sh --run tests/build_graph_fixtures/sample.av > /tmp/avra_graph_probe.out 2>&1 || true; fi; cat /tmp/avra_graph_probe.out")
+}
+
+fn graph_wipe_fixture_cache() -> string {
+    avra_shell_exec("rm -f /tmp/avra_graph_probe.out")
+}
+
+spec "build graph: clear cached fixture output" {
+    then "wipe stale /tmp cache from any previous test run" {
+        let _ = graph_wipe_fixture_cache()
+        true
+    }
+}
+
+spec "build graph: end-to-end via bs2 compile+run" {
+    then "PROBE no_error — diamond resolves without error" {
+        graph_run_fixture().contains("PROBE no_error: ok")
+    }
+    then "PROBE four_units — diamond yields exactly 4 units" {
+        graph_run_fixture().contains("PROBE four_units: ok")
+    }
+    then "PROBE libc_first — leaf unit comes first in topo order" {
+        graph_run_fixture().contains("PROBE libc_first: ok")
+    }
+    then "PROBE root_last — root unit comes last in topo order" {
+        graph_run_fixture().contains("PROBE root_last: ok")
+    }
+    then "PROBE cycle_detected — cycle is reported, not silently looped" {
+        graph_run_fixture().contains("PROBE cycle_detected: ok")
+    }
+    then "no probe failed" {
+        !graph_run_fixture().contains(": FAIL")
+    }
+}
