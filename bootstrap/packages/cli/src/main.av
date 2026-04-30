@@ -1517,7 +1517,16 @@ fn main() {
             eprintln("[pkg] ${pkg.name} v${pkg.version}")
         }
 
+        // Per-stage wall-clock timings — emitted to stderr at the
+        // end when AVRA_TIMINGS=1 is set in the environment. Cheap
+        // enough to leave on always (eight i64 reads), and the
+        // first step toward forge-crafting-intepreters-kkgf's deeper
+        // perf work (we need numbers before we can rank optimisations).
+        let timings_on = avra_process_env_get("AVRA_TIMINGS") != ""
+        let t_start = avra_uptime_ms()
+
         let parsed = parse_program_source(csource)
+        let t_parse = avra_uptime_ms()
         if parsed.had_error || parsed.stmts == null {
             if bag_has_errors(parsed.bag) {
                 render_bag_either(json_output, csource, cpath, parsed.bag)
@@ -1530,10 +1539,12 @@ fn main() {
         }
         // Desugar pass: rewrite syntactic sugar to simpler AST forms.
         let desugared = desugar_program(parsed.stmts!)
+        let t_desugar = avra_uptime_ms()
         // Resolve module files: walk the AST, find `mod` stubs, read
         // and parse the referenced files, attach parsed bodies.
         let entry_dir = modules_dirname(cpath)
         let mod_resolved = resolve_module_files(desugared, entry_dir, LoadedPaths.End)
+        let t_resolve_mods = avra_uptime_ms()
         if mod_resolved.had_error {
             let mod_bag = bag_report(bag_new(), diag_error(DiagCode.ModuleNotFound, mod_resolved.error_message, span_dummy()))
             render_bag_either(json_output, csource, cpath, mod_bag)
@@ -1546,7 +1557,9 @@ fn main() {
         // Component expansion: runs AFTER module resolution so component
         // definitions in any module are visible to the expander.
         let expanded = expand_components(mod_resolved.stmts)
+        let t_expand = avra_uptime_ms()
         let named = resolve_names(expanded)
+        let t_names = avra_uptime_ms()
         if bag_has_errors(named.bag) || bag_has_warnings(named.bag) {
             render_bag_either(json_output, csource, cpath, named.bag)
         }
@@ -1557,6 +1570,7 @@ fn main() {
         }
         // Type check — gates compilation on errors
         let tc_result = typecheck_program(named.stmts)
+        let t_typeck = avra_uptime_ms()
         if bag_has_errors(tc_result.bag) || bag_has_warnings(tc_result.bag) {
             render_bag_either(json_output, csource, cpath, tc_result.bag)
         }
@@ -1568,6 +1582,7 @@ fn main() {
         // Monomorphize: replace generic declarations with concrete specializations.
         // Uses the type-annotated AST from typeck so inference reads SExpr.ty.
         let mono = monomorphize(tc_result.stmts, tc_result.trait_impls)
+        let t_mono = avra_uptime_ms()
         if bag_has_errors(mono.bag) {
             render_bag_either(json_output, csource, cpath, mono.bag)
             fail("monomorphization failed")
@@ -1581,6 +1596,10 @@ fn main() {
                 render_bag_either(json_output, csource, cpath, ice_bag)
                 fail(e)
             }
+        }
+        let t_codegen = avra_uptime_ms()
+        if timings_on {
+            eprintln("[timings] parse=${string(t_parse - t_start)}ms desugar=${string(t_desugar - t_parse)}ms resolve_mods=${string(t_resolve_mods - t_desugar)}ms expand=${string(t_expand - t_resolve_mods)}ms resolve_names=${string(t_names - t_expand)}ms typeck=${string(t_typeck - t_names)}ms monomorphize=${string(t_mono - t_typeck)}ms codegen=${string(t_codegen - t_mono)}ms total=${string(t_codegen - t_start)}ms")
         }
         println(output)
         return
