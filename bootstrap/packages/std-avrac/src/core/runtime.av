@@ -30,6 +30,12 @@ extern fn avra_toml_get_section_string(toml: string, section: string, key: strin
 extern fn avra_toml_get_section_int(toml: string, section: string, key: string, default_value: int) -> int
 extern fn avra_toml_get_section_bool(toml: string, section: string, key: string, default_value: int) -> int
 
+// Crypto externs live in packages/std-crypto/src/crypto.av — that
+// package's surface is the only entry point for sha256 etc. The
+// LLVM-IR `decl(...)` registrations for those symbols still happen
+// in codegen/setup.av so the bootstrap toolchain can link the runtime
+// when @std/crypto is in the import graph.
+
 // ── Filesystem ──
 extern fn avra_readdir(path: string) -> ptr
 extern fn avra_is_dir(path: string) -> int

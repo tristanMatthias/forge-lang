@@ -1,0 +1,18 @@
+# @std/crypto — cryptographic primitives.
+#
+# v1.0 surface: SHA-256. The implementation today calls into runtime.c
+# because Avra is missing sized unsigned integer types, wrapping
+# arithmetic, and direct byte access on strings. As soon as those
+# language features land, the body of every function in this package
+# moves to pure Avra without changing the surface.
+#
+# Tracking ticket: search beads for "in-language crypto".
+
+[package]
+name        = "std-crypto"
+version     = "0.1.0"
+description = "Cryptographic primitives (currently C-backed; will move to pure Avra)"
+
+[lib]
+name = "std-crypto"
+path = "src/crypto.av"

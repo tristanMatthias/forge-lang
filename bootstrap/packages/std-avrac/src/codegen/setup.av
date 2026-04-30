@@ -204,6 +204,10 @@ fn codegen_program(stmts: StmtList, debug_null_checks: bool, coverage: bool, sou
     decl(m, "avra_toml_get_section_bool", i64t, [pt, i64t, i64t, i64t])
     decl(m, "avra_toml_has_section", i64t, [pt, i64t])
 
+    // ── crypto ──
+    decl(m, "avra_sha256_hex", i64t, [pt])
+    decl(m, "avra_sha256_file", i64t, [pt])
+
     // ── concurrency ──
     decl(m, "avra_spawn", i64t, [pt])
     decl(m, "avra_task_await", i64t, [pt])
