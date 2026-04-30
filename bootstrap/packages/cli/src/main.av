@@ -66,6 +66,9 @@ use @std.avrac.build.driver.{
     decide_build, record_build_result,
 }
 use @std.avrac.build.fingerprint.{Fingerprint, fp_short}
+use @std.avrac.build.graph.{
+    DepGraph, Unit, UnitList, build_graph, unit_list_length,
+}
 use @std.avrac.typeck.{typecheck_program}
 use @std.avrac.diagnostics.{bag_has_errors, bag_has_warnings, bag_new, bag_report, diag_error, diag_ice, span_dummy, DiagCode, DiagnosticBag}
 use @std.avrac.diagnostics.render.{render_bag, render_bag_json}
@@ -361,6 +364,29 @@ fn parse_test_args() -> TestArgs {
     TestArgs { filter: filter_arg, coverage: coverage_flag, lcov_path }
 }
 
+/// Render a UnitList as "a → b → c". Used by --explain to summarise
+/// the project's dep graph in a single line. Topological order means
+/// leaves come first; we display in that order so the chain reads
+/// "what gets built first → ... → root".
+fn render_unit_chain(units: UnitList) -> string {
+    mut out = ""
+    mut cur = units
+    mut first = true
+    mut keep_going = true
+    while keep_going {
+        match cur {
+            .End -> keep_going = false,
+            .Node(u, rest) -> {
+                if !first { out = out + " → " }
+                out = out + u.name
+                first = false
+                cur = rest
+            }
+        }
+    }
+    out
+}
+
 /// Parsed view of `avra build ...` argv. `--release` selects the
 /// release profile; `--explain` reports rebuild reasons; `entry`
 /// (optional) overrides the manifest [bin].path.
@@ -442,6 +468,21 @@ fn run_build_command() {
         debug: profile.debug,
         overflow_checks: profile.overflow_checks,
         coverage: profile.coverage,
+    }
+
+    // When --explain is on, also surface the manifest's [dependencies]
+    // graph so the user sees what units would (under Phase 3) participate
+    // in the build. Today the build is single-unit, so the graph is
+    // informational; once 2f54+k21v ship, each dep_unit gets its own
+    // cache entry and per-unit Hit/Miss rendering replaces this summary.
+    if args.explain && manifest.found {
+        let g = build_graph("${project_dir}/")
+        if !g.had_error {
+            let n = unit_list_length(g.units)
+            if n > 1 {
+                println("graph: ${string(n)} units (${render_unit_chain(g.units)})")
+            }
+        }
     }
 
     let outcome = decide_build(inputs)

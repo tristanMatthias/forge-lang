@@ -1,0 +1,10 @@
+# @std/json — single canonical JSON encoder + targeted decoder.
+
+[package]
+name        = "@std/json"
+version     = "0.1.0"
+description = "JSON encoder + targeted extraction primitives"
+
+[lib]
+name = "std-json"
+path = "src/json.av"

@@ -1,0 +1,21 @@
+# @std/avrac — the Avra compiler library.
+#
+# Includes the build driver (build/), test runner, and every pipeline
+# stage (parse, typeck, codegen, etc). Consumed by the bootstrap's
+# cli package and by any downstream tool that wants to invoke
+# Avra's pipeline programmatically.
+
+[package]
+name        = "@std/avrac"
+version     = "0.1.0"
+description = "Avra compiler library + build system"
+
+[lib]
+name = "std-avrac"
+path = "src/avrac.av"
+
+[dependencies]
+"@std/cli"    = { path = "../std-cli" }
+"@std/lsp"    = { path = "../std-lsp" }
+"@std/json"   = { path = "../std-json" }
+"@std/crypto" = { path = "../std-crypto" }

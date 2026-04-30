@@ -1,0 +1,10 @@
+# @std/cli — declarative argv parser.
+
+[package]
+name        = "@std/cli"
+version     = "0.1.0"
+description = "Declarative argv parser used by the bootstrap CLI"
+
+[lib]
+name = "std-cli"
+path = "src/cli.av"

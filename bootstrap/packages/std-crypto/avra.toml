@@ -9,7 +9,7 @@
 # Tracking ticket: search beads for "in-language crypto".
 
 [package]
-name        = "std-crypto"
+name        = "@std/crypto"
 version     = "0.1.0"
 description = "Cryptographic primitives (currently C-backed; will move to pure Avra)"
 

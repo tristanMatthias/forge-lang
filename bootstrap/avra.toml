@@ -11,7 +11,11 @@ name = "bs2"
 path = "packages/cli/src/main.av"
 
 [dependencies]
-"@std/avrac" = { path = "packages/std-avrac" }
+"@std/avrac"  = { path = "packages/std-avrac" }
+"@std/cli"    = { path = "packages/std-cli" }
+"@std/lsp"    = { path = "packages/std-lsp" }
+"@std/json"   = { path = "packages/std-json" }
+"@std/crypto" = { path = "packages/std-crypto" }
 
 [profile.dev]
 opt_level       = 0
