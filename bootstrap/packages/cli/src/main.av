@@ -62,7 +62,7 @@ use @std.avrac.resolve.names.{resolve_names}
 use @std.avrac.features.modules.resolver.{resolve_module_files, modules_dirname, LoadedPaths}
 use @std.avrac.features.modules.package.{load_package_config}
 use @std.avrac.typeck.{typecheck_program}
-use @std.avrac.diagnostics.{bag_has_errors, bag_has_warnings, bag_new, bag_report, diag_error, diag_ice, span_dummy, DiagCode}
+use @std.avrac.diagnostics.{bag_has_errors, bag_has_warnings, bag_new, bag_report, diag_error, diag_ice, span_dummy, DiagCode, DiagnosticBag}
 use @std.avrac.diagnostics.render.{render_bag, render_bag_json}
 use @std.avrac.codegen.setup.{compile_program, codegen_and_emit_object, codegen_and_emit_ir_cov}
 use @std.avrac.features.generics.mono.{monomorphize}
@@ -85,6 +85,15 @@ fn print_usage() {
 fn fail(message: string) {
     eprintln(message)
     exit(1)
+}
+
+/// Render a diagnostic bag in either human or JSON form, picked
+/// by `json_output`. Both `compile` and `check` switch on the
+/// `--json` flag at every pipeline stage; this helper centralises
+/// the dispatch so each stage stays a one-liner.
+fn render_bag_either(json_output: bool, source: string, path: string, bag: DiagnosticBag) {
+    if json_output { render_bag_json(path, bag) }
+    else { render_bag(source, path, bag) }
 }
 
 // Module file resolution and name resolution live in features/modules/.
@@ -878,7 +887,7 @@ fn main() {
             let parsed = parse_program_source(check_source)
             if parsed.had_error || parsed.stmts == null {
                 if bag_has_errors(parsed.bag) {
-                    if check_json { render_bag_json(check_path, parsed.bag) } else { render_bag(check_source, check_path, parsed.bag) }
+                    render_bag_either(check_json, check_source, check_path, parsed.bag)
                 }
                 fail(parsed.error_message)
             }
@@ -892,18 +901,18 @@ fn main() {
             let mod_resolved = resolve_module_files(desugared, entry_dir, LoadedPaths.End)
             if mod_resolved.had_error {
                 let mod_bag = bag_report(bag_new(), diag_error(DiagCode.ModuleNotFound, mod_resolved.error_message, span_dummy()))
-                if check_json { render_bag_json(check_path, mod_bag) } else { render_bag(check_source, check_path, mod_bag) }
+                render_bag_either(check_json, check_source, check_path, mod_bag)
                 fail(mod_resolved.error_message)
             }
             let expanded = expand_components(mod_resolved.stmts)
             let named = resolve_names(expanded)
             if bag_has_errors(named.bag) || bag_has_warnings(named.bag) {
-                if check_json { render_bag_json(check_path, named.bag) } else { render_bag(check_source, check_path, named.bag) }
+                render_bag_either(check_json, check_source, check_path, named.bag)
             }
             if named.had_error { fail(named.error_message) }
             let tc_result = typecheck_program(named.stmts)
             if bag_has_errors(tc_result.bag) || bag_has_warnings(tc_result.bag) {
-                if check_json { render_bag_json(check_path, tc_result.bag) } else { render_bag(check_source, check_path, tc_result.bag) }
+                render_bag_either(check_json, check_source, check_path, tc_result.bag)
             }
             if bag_has_errors(tc_result.bag) { return }
             if !check_json { println("ok") }
@@ -1031,8 +1040,7 @@ fn main() {
         let parsed = parse_program_source(csource)
         if parsed.had_error || parsed.stmts == null {
             if bag_has_errors(parsed.bag) {
-                if json_output { render_bag_json(cpath, parsed.bag) }
-                else { render_bag(csource, cpath, parsed.bag) }
+                render_bag_either(json_output, csource, cpath, parsed.bag)
             }
             fail(parsed.error_message)
         }
@@ -1048,8 +1056,7 @@ fn main() {
         let mod_resolved = resolve_module_files(desugared, entry_dir, LoadedPaths.End)
         if mod_resolved.had_error {
             let mod_bag = bag_report(bag_new(), diag_error(DiagCode.ModuleNotFound, mod_resolved.error_message, span_dummy()))
-            if json_output { render_bag_json(cpath, mod_bag) }
-            else { render_bag(csource, cpath, mod_bag) }
+            render_bag_either(json_output, csource, cpath, mod_bag)
             fail(mod_resolved.error_message)
         }
         if stop_after == "resolve" {
@@ -1061,8 +1068,7 @@ fn main() {
         let expanded = expand_components(mod_resolved.stmts)
         let named = resolve_names(expanded)
         if bag_has_errors(named.bag) || bag_has_warnings(named.bag) {
-            if json_output { render_bag_json(cpath, named.bag) }
-            else { render_bag(csource, cpath, named.bag) }
+            render_bag_either(json_output, csource, cpath, named.bag)
         }
         if named.had_error { fail(named.error_message) }
         if stop_after == "names" {
@@ -1072,8 +1078,7 @@ fn main() {
         // Type check — gates compilation on errors
         let tc_result = typecheck_program(named.stmts)
         if bag_has_errors(tc_result.bag) || bag_has_warnings(tc_result.bag) {
-            if json_output { render_bag_json(cpath, tc_result.bag) }
-            else { render_bag(csource, cpath, tc_result.bag) }
+            render_bag_either(json_output, csource, cpath, tc_result.bag)
         }
         if bag_has_errors(tc_result.bag) { fail("type check failed") }
         if stop_after == "check" {
@@ -1084,8 +1089,7 @@ fn main() {
         // Uses the type-annotated AST from typeck so inference reads SExpr.ty.
         let mono = monomorphize(tc_result.stmts, tc_result.trait_impls)
         if bag_has_errors(mono.bag) {
-            if json_output { render_bag_json(cpath, mono.bag) }
-            else { render_bag(csource, cpath, mono.bag) }
+            render_bag_either(json_output, csource, cpath, mono.bag)
             fail("monomorphization failed")
         }
         let output = "${cpath}.ll"
@@ -1094,8 +1098,7 @@ fn main() {
             .Ok(_) -> {}
             .Err(e) -> {
                 let ice_bag = bag_report(bag_new(), diag_ice("internal compiler error during codegen: ${e}"))
-                if json_output { render_bag_json(cpath, ice_bag) }
-                else { render_bag(csource, cpath, ice_bag) }
+                render_bag_either(json_output, csource, cpath, ice_bag)
                 fail(e)
             }
         }

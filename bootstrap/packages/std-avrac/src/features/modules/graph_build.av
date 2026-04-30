@@ -421,7 +421,32 @@ fn walk_ast_stmt_with_export(g: ModuleGraph, stmt: Stmt, parent_id: int, canon: 
         .ShapeDecl(name, _) -> register_item_typed(g, parent_id, canon, name, exported, false)
         .EnumDecl(name, _, _) -> register_item_typed(g, parent_id, canon, name, exported, false)
         .TraitDecl(name, _) -> register_item_typed(g, parent_id, canon, name, exported, false)
+        // Impl methods register at the parent's scope with bare-name
+        // canonical (already mangled as `Type__method` by the parser).
+        // Treated as extern-style for graph purposes — alias chain
+        // stores the bare mangled name, not `mod::method`.
+        .Impl(_, methods) -> register_impl_methods(g, parent_id, canon, methods)
         _ -> g
+    }
+}
+
+/// Walk an Impl block's methods, registering each as a top-level
+/// item with bare-name canonical. Mirrors the legacy
+/// `collect_impl_items` in resolve/names.av.
+fn register_impl_methods(g: ModuleGraph, parent_id: int, canon: string, methods: StmtList) -> ModuleGraph {
+    match methods {
+        .End -> g
+        .Node(ss, next) -> {
+            let g_next = match ss.node {
+                .Function(name, _, _, _, _) -> register_item_typed(g, parent_id, canon, name, 1, true)
+                .Annotated(_, inner) -> match inner {
+                    .Function(name, _, _, _, _) -> register_item_typed(g, parent_id, canon, name, 1, true)
+                    _ -> g
+                }
+                _ -> g
+            }
+            register_impl_methods(g_next, parent_id, canon, next)
+        }
     }
 }
 
