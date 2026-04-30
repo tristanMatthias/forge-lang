@@ -350,6 +350,37 @@ spec "sized ints: int() conversion zero-extends unsigned, sign-extends signed" {
     }
 }
 
+spec "sized ints: string() conversion uses correct sign" {
+    // Pre-fix, string(i8 -50) printed "206" because the narrow value
+    // got auto-zero-extended to i64 before the variadic snprintf
+    // call. Now codegen emits explicit ZExt for unsigned and SExt
+    // for signed before the call.
+    then "string(u8 200) == \"200\"" {
+        let a: u8 = 200
+        string(a) == "200"
+    }
+    then "string(u16 65000) == \"65000\"" {
+        let a: u16 = 65000
+        string(a) == "65000"
+    }
+    then "string(u32 4000000000) == \"4000000000\"" {
+        let a: u32 = 4000000000
+        string(a) == "4000000000"
+    }
+    then "string(i8 -50) == \"-50\" (signed bug would say \"206\")" {
+        let a: i8 = 0 - 50
+        string(a) == "-50"
+    }
+    then "string(i16 -32000) == \"-32000\"" {
+        let a: i16 = 0 - 32000
+        string(a) == "-32000"
+    }
+    then "string(i32 -2000000000) == \"-2000000000\"" {
+        let a: i32 = 0 - 2000000000
+        string(a) == "-2000000000"
+    }
+}
+
 spec "sized ints: roundtrip through fn calls preserves wrapped value" {
     then "id_u8(300 % 256) == 44" {
         // 300 doesn't fit in u8 — let-binding would error.

@@ -539,10 +539,22 @@ export fn emit_int_to_string(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<Em
                 let str_ptr = ctx.call("avra_float_to_string", [r.value])
                 return ok_emit(str_ptr, .Str)
             }
+            // Sized integers must be explicitly widened to i64 before
+            // the variadic snprintf call. ZExt for unsigned (so the
+            // high bit doesn't propagate as sign), SExt for signed
+            // narrow types. Without this, string(i8 -50) reads as 206
+            // because the narrow value is zero-extended by default.
+            mut val = r.value
+            if r.ty is .U8 || r.ty is .U16 || r.ty is .U32 || r.ty is .U64 {
+                val = ctx.zext(r.value, ctx.i64_type, "u2i")
+            }
+            if r.ty is .I8 || r.ty is .I16 || r.ty is .I32 {
+                val = ctx.sext(r.value, ctx.i64_type, "i2i")
+            }
             // Int → string via snprintf into a 32-byte malloc'd buffer.
             let buf = ctx.rc_alloc(ctx.i64(32))
             let fmt = ctx.global_str("%lld", ".i2s_fmt")
-            ctx.call("snprintf", [buf, ctx.i64(32), fmt, r.value])
+            ctx.call("snprintf", [buf, ctx.i64(32), fmt, val])
             ok_emit(buf, .Str)
         }
     }
