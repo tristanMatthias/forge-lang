@@ -1,0 +1,88 @@
+// Spec test for `bs2 clean` and `bs2 cache prune|info`.
+//
+// Builds the bs2 invocation as a shell command against a temp project
+// dir, asserts the side effects via filesystem probes. We exercise:
+//   1. clean: removes build/ contents but keeps build/cache/
+//   2. clean --all: also removes build/cache/
+//   3. cache info: reports the cache path + entry count
+//   4. cache prune --dry-run: lists candidates without modifying state
+//   5. cache prune (live): removes stale entries
+//
+// Tracking ticket: forge-crafting-intepreters-g32c.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn setup_fixture() -> string {
+    let project = "/tmp/avra_clean_fixture/"
+    avra_shell_exec("rm -rf " + project)
+    avra_shell_exec("mkdir -p " + project + "build/cache/abc123")
+    avra_shell_exec("mkdir -p " + project + "build/cache/def456")
+    avra_shell_exec("printf 'fake' > " + project + "build/cache/abc123/unit.ll")
+    avra_shell_exec("printf 'fake' > " + project + "build/cache/def456/unit.ll")
+    avra_shell_exec("printf 'artifact' > " + project + "build/junk.bin")
+    avra_shell_exec("printf 'artifact' > " + project + "build/main.av.ll")
+    project
+}
+
+fn teardown_fixture(project: string) -> string {
+    avra_shell_exec("rm -rf " + project)
+}
+
+spec "bs2 clean: preserves cache by default" {
+    then "removes build/ artifacts but keeps build/cache/" {
+        let project = setup_fixture()
+        let bs2 = avra_shell_exec("pwd").trim() + "/build/bs2"
+        let _ = avra_shell_exec("cd " + project + " && " + bs2 + " clean 2>&1")
+        let cache_present = avra_shell_exec("[ -d " + project + "build/cache/abc123 ] && echo yes || echo no").trim()
+        let junk_gone = avra_shell_exec("[ ! -f " + project + "build/junk.bin ] && echo yes || echo no").trim()
+        let _ = teardown_fixture(project)
+        cache_present == "yes" && junk_gone == "yes"
+    }
+}
+
+spec "bs2 clean --all: removes everything" {
+    then "wipes build/cache/ along with the rest of build/" {
+        let project = setup_fixture()
+        let bs2 = avra_shell_exec("pwd").trim() + "/build/bs2"
+        let _ = avra_shell_exec("cd " + project + " && " + bs2 + " clean --all 2>&1")
+        let cache_gone = avra_shell_exec("[ ! -d " + project + "build/cache ] && echo yes || echo no").trim()
+        let _ = teardown_fixture(project)
+        cache_gone == "yes"
+    }
+}
+
+spec "bs2 cache info: reports the cache state" {
+    then "info output mentions the cache path and entry count" {
+        let project = setup_fixture()
+        let bs2 = avra_shell_exec("pwd").trim() + "/build/bs2"
+        let out = avra_shell_exec("cd " + project + " && " + bs2 + " cache info 2>&1")
+        let _ = teardown_fixture(project)
+        out.contains("cache info") && out.contains("entries:") && out.contains("2")
+    }
+}
+
+spec "bs2 cache prune --dry-run: lists without modifying" {
+    then "stale entries are reported but stay on disk" {
+        let project = setup_fixture()
+        // Backdate the cache entries so -mtime +0 picks them up.
+        avra_shell_exec("touch -t 202001010000 " + project + "build/cache/abc123 " + project + "build/cache/def456")
+        let bs2 = avra_shell_exec("pwd").trim() + "/build/bs2"
+        let out = avra_shell_exec("cd " + project + " && " + bs2 + " cache prune --max-age-days 0 --dry-run 2>&1")
+        let still_here = avra_shell_exec("[ -d " + project + "build/cache/abc123 ] && echo yes || echo no").trim()
+        let _ = teardown_fixture(project)
+        out.contains("would evict") && still_here == "yes"
+    }
+}
+
+spec "bs2 cache prune: actually evicts stale entries" {
+    then "post-prune the stale entry directories are gone" {
+        let project = setup_fixture()
+        avra_shell_exec("touch -t 202001010000 " + project + "build/cache/abc123 " + project + "build/cache/def456")
+        let bs2 = avra_shell_exec("pwd").trim() + "/build/bs2"
+        let _ = avra_shell_exec("cd " + project + " && " + bs2 + " cache prune --max-age-days 0 2>&1")
+        let abc_gone = avra_shell_exec("[ ! -d " + project + "build/cache/abc123 ] && echo yes || echo no").trim()
+        let def_gone = avra_shell_exec("[ ! -d " + project + "build/cache/def456 ] && echo yes || echo no").trim()
+        let _ = teardown_fixture(project)
+        abc_gone == "yes" && def_gone == "yes"
+    }
+}

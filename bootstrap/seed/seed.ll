@@ -1,5 +1,5 @@
-; seed built from commit 734074a9 at 2026-04-30T11:22:32Z
-; source hash: 9d0cd4a438ea7b4f3adcbc744f0c17867c9898cc9ff9e46a36aa01afa5a26b7e
+; seed built from commit 6545b449 at 2026-04-30T11:49:23Z
+; source hash: 6feff5040bf2b6caed743524b123232d026ea065eeac26301d120f6c32aa31cb
 ; ModuleID = 'bootstrap'
 source_filename = "bootstrap"
 
@@ -25801,908 +25801,1000 @@ source_filename = "bootstrap"
 @.match_fn.25354 = private unnamed_addr constant [18 x i8] c"run_build_command\00", align 1
 @mu_file.25355 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
 @.str.25356 = private unnamed_addr constant [4 x i8] c"PWD\00", align 1
-@.str.25357 = private unnamed_addr constant [6 x i8] c"find \00", align 1
-@.str.25358 = private unnamed_addr constant [12 x i8] c" \\( -path '\00", align 1
-@.str.25359 = private unnamed_addr constant [19 x i8] c"/build' -o -path '\00", align 1
-@.str.25360 = private unnamed_addr constant [75 x i8] c"/build/*' \\) -prune -o -name '*_test.av' -type f -print 2>/dev/null | sort\00", align 1
-@.str.25361 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25362 = private unnamed_addr constant [21 x i8] c"No test files found.\00", align 1
-@.str.25363 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
-@.str.25364 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25365 = private unnamed_addr constant [6 x i8] c"spec \00", align 1
-@.str.25366 = private unnamed_addr constant [10 x i8] c"fn main()\00", align 1
-@fld_name.25367 = private unnamed_addr constant [7 x i8] c"filter\00", align 1
-@sty_name.25368 = private unnamed_addr constant [9 x i8] c"TestArgs\00", align 1
-@src_file.25369 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25370 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25371 = private unnamed_addr constant [7 x i8] c"filter\00", align 1
-@sty_name.25372 = private unnamed_addr constant [9 x i8] c"TestArgs\00", align 1
-@src_file.25373 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25374 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
-@sty_name.25375 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
-@src_file.25376 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25377 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.25378 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
-@src_file.25379 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25380 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.25381 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
-@src_file.25382 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25383 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.25384 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
-@src_file.25385 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25386 = private unnamed_addr constant [15 x i8] c"error parsing \00", align 1
-@fld_name.25387 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.25388 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
-@src_file.25389 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25390 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
-@sty_name.25391 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
-@src_file.25392 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25393 = private unnamed_addr constant [25 x i8] c"module resolve error in \00", align 1
-@.str.25394 = private unnamed_addr constant [3 x i8] c": \00", align 1
-@fld_name.25395 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
-@sty_name.25396 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
-@src_file.25397 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25398 = private unnamed_addr constant [7 x i8] c"loaded\00", align 1
-@sty_name.25399 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
-@src_file.25400 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25401 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.25402 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
-@src_file.25403 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25404 = private unnamed_addr constant [9 x i8] c"packages\00", align 1
-@sty_name.25405 = private unnamed_addr constant [39 x i8] c"@std::avrac::test_runner::PackageSplit\00", align 1
-@src_file.25406 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25407 = private unnamed_addr constant [5 x i8] c"body\00", align 1
-@sty_name.25408 = private unnamed_addr constant [39 x i8] c"@std::avrac::test_runner::PackageSplit\00", align 1
-@src_file.25409 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25410 = private unnamed_addr constant [26 x i8] c"No spec test files found.\00", align 1
-@.str.25411 = private unnamed_addr constant [45 x i8] c"std-avrac/src/features/spec_test/reporter.av\00", align 1
-@fld_name.25412 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
-@sty_name.25413 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
-@src_file.25414 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25415 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.25416 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
-@src_file.25417 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25418 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.25419 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
-@src_file.25420 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25421 = private unnamed_addr constant [20 x i8] c"test_render_summary\00", align 1
-@.str.25422 = private unnamed_addr constant [5 x i8] c"main\00", align 1
-@fld_name.25423 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.25424 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
-@src_file.25425 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25426 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
-@sty_name.25427 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
-@src_file.25428 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25429 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25430 = private unnamed_addr constant [7 x i8] c"<test>\00", align 1
-@fld_name.25431 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.25432 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
-@src_file.25433 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25434 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
-@sty_name.25435 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
+@.str.25357 = private unnamed_addr constant [6 x i8] c"--all\00", align 1
+@.str.25358 = private unnamed_addr constant [7 x i8] c"/build\00", align 1
+@.str.25359 = private unnamed_addr constant [8 x i8] c"clean: \00", align 1
+@.str.25360 = private unnamed_addr constant [32 x i8] c" does not exist (nothing to do)\00", align 1
+@.str.25361 = private unnamed_addr constant [9 x i8] c"rm -rf '\00", align 1
+@.str.25362 = private unnamed_addr constant [2 x i8] c"'\00", align 1
+@.str.25363 = private unnamed_addr constant [22 x i8] c"clean --all: removed \00", align 1
+@.str.25364 = private unnamed_addr constant [18 x i8] c" (cache included)\00", align 1
+@.str.25365 = private unnamed_addr constant [7 x i8] c"/cache\00", align 1
+@.str.25366 = private unnamed_addr constant [19 x i8] c"/.avra_cache_stash\00", align 1
+@.str.25367 = private unnamed_addr constant [9 x i8] c"rm -rf '\00", align 1
+@.str.25368 = private unnamed_addr constant [2 x i8] c"'\00", align 1
+@.str.25369 = private unnamed_addr constant [5 x i8] c"mv '\00", align 1
+@.str.25370 = private unnamed_addr constant [4 x i8] c"' '\00", align 1
+@.str.25371 = private unnamed_addr constant [2 x i8] c"'\00", align 1
+@.str.25372 = private unnamed_addr constant [9 x i8] c"rm -rf '\00", align 1
+@.str.25373 = private unnamed_addr constant [2 x i8] c"'\00", align 1
+@.str.25374 = private unnamed_addr constant [11 x i8] c"mkdir -p '\00", align 1
+@.str.25375 = private unnamed_addr constant [2 x i8] c"'\00", align 1
+@.str.25376 = private unnamed_addr constant [5 x i8] c"mv '\00", align 1
+@.str.25377 = private unnamed_addr constant [4 x i8] c"' '\00", align 1
+@.str.25378 = private unnamed_addr constant [2 x i8] c"'\00", align 1
+@.str.25379 = private unnamed_addr constant [16 x i8] c"clean: removed \00", align 1
+@.str.25380 = private unnamed_addr constant [21 x i8] c"/* (cache preserved)\00", align 1
+@.str.25381 = private unnamed_addr constant [16 x i8] c"clean: removed \00", align 1
+@.str.25382 = private unnamed_addr constant [26 x i8] c"/* (no cache to preserve)\00", align 1
+@.str.25383 = private unnamed_addr constant [4 x i8] c"PWD\00", align 1
+@.str.25384 = private unnamed_addr constant [13 x i8] c"/build/cache\00", align 1
+@.str.25385 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25386 = private unnamed_addr constant [3 x i8] c"30\00", align 1
+@.str.25387 = private unnamed_addr constant [10 x i8] c"--dry-run\00", align 1
+@.str.25388 = private unnamed_addr constant [15 x i8] c"--max-age-days\00", align 1
+@.str.25389 = private unnamed_addr constant [2 x i8] c"-\00", align 1
+@.str.25390 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25391 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25392 = private unnamed_addr constant [61 x i8] c"usage: bs2 cache <prune|info> [--dry-run] [--max-age-days N]\00", align 1
+@.str.25393 = private unnamed_addr constant [8 x i8] c"cache: \00", align 1
+@.str.25394 = private unnamed_addr constant [31 x i8] c" does not exist (no cache yet)\00", align 1
+@.str.25395 = private unnamed_addr constant [5 x i8] c"info\00", align 1
+@.str.25396 = private unnamed_addr constant [7 x i8] c"find '\00", align 1
+@.str.25397 = private unnamed_addr constant [66 x i8] c"' -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' '\00", align 1
+@.str.25398 = private unnamed_addr constant [9 x i8] c"du -sh '\00", align 1
+@.str.25399 = private unnamed_addr constant [24 x i8] c"' 2>/dev/null | cut -f1\00", align 1
+@.str.25400 = private unnamed_addr constant [12 x i8] c"cache info:\00", align 1
+@.str.25401 = private unnamed_addr constant [12 x i8] c"  path:    \00", align 1
+@.str.25402 = private unnamed_addr constant [12 x i8] c"  entries: \00", align 1
+@.str.25403 = private unnamed_addr constant [12 x i8] c"  size:    \00", align 1
+@.str.25404 = private unnamed_addr constant [6 x i8] c"prune\00", align 1
+@.str.25405 = private unnamed_addr constant [7 x i8] c"find '\00", align 1
+@.str.25406 = private unnamed_addr constant [43 x i8] c"' -mindepth 1 -maxdepth 1 -type d -mtime +\00", align 1
+@.str.25407 = private unnamed_addr constant [13 x i8] c" 2>/dev/null\00", align 1
+@.str.25408 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25409 = private unnamed_addr constant [36 x i8] c"cache prune: no entries older than \00", align 1
+@.str.25410 = private unnamed_addr constant [6 x i8] c" days\00", align 1
+@.str.25411 = private unnamed_addr constant [16 x i8] c"printf '%s\\n' '\00", align 1
+@.str.25412 = private unnamed_addr constant [14 x i8] c"' | grep -c .\00", align 1
+@.str.25413 = private unnamed_addr constant [36 x i8] c"cache prune --dry-run: would evict \00", align 1
+@.str.25414 = private unnamed_addr constant [10 x i8] c" entries:\00", align 1
+@.str.25415 = private unnamed_addr constant [7 x i8] c"find '\00", align 1
+@.str.25416 = private unnamed_addr constant [43 x i8] c"' -mindepth 1 -maxdepth 1 -type d -mtime +\00", align 1
+@.str.25417 = private unnamed_addr constant [19 x i8] c" -exec rm -rf {} +\00", align 1
+@.str.25418 = private unnamed_addr constant [22 x i8] c"cache prune: evicted \00", align 1
+@.str.25419 = private unnamed_addr constant [21 x i8] c" entries older than \00", align 1
+@.str.25420 = private unnamed_addr constant [6 x i8] c" days\00", align 1
+@.str.25421 = private unnamed_addr constant [27 x i8] c"unknown cache subcommand `\00", align 1
+@.str.25422 = private unnamed_addr constant [27 x i8] c"` (expected: prune | info)\00", align 1
+@.str.25423 = private unnamed_addr constant [4 x i8] c"PWD\00", align 1
+@.str.25424 = private unnamed_addr constant [6 x i8] c"find \00", align 1
+@.str.25425 = private unnamed_addr constant [12 x i8] c" \\( -path '\00", align 1
+@.str.25426 = private unnamed_addr constant [19 x i8] c"/build' -o -path '\00", align 1
+@.str.25427 = private unnamed_addr constant [75 x i8] c"/build/*' \\) -prune -o -name '*_test.av' -type f -print 2>/dev/null | sort\00", align 1
+@.str.25428 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25429 = private unnamed_addr constant [21 x i8] c"No test files found.\00", align 1
+@.str.25430 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
+@.str.25431 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25432 = private unnamed_addr constant [6 x i8] c"spec \00", align 1
+@.str.25433 = private unnamed_addr constant [10 x i8] c"fn main()\00", align 1
+@fld_name.25434 = private unnamed_addr constant [7 x i8] c"filter\00", align 1
+@sty_name.25435 = private unnamed_addr constant [9 x i8] c"TestArgs\00", align 1
 @src_file.25436 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25437 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.25438 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
-@src_file.25439 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25440 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.25441 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
-@src_file.25442 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25443 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25444 = private unnamed_addr constant [7 x i8] c"<test>\00", align 1
-@fld_name.25445 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.25446 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
-@src_file.25447 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25448 = private unnamed_addr constant [18 x i8] c"type check failed\00", align 1
-@fld_name.25449 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.25450 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
-@src_file.25451 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25452 = private unnamed_addr constant [12 x i8] c"trait_impls\00", align 1
-@sty_name.25453 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
-@src_file.25454 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25455 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.25456 = private unnamed_addr constant [50 x i8] c"@std::avrac::features::generics::mono::MonoResult\00", align 1
-@src_file.25457 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25458 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25459 = private unnamed_addr constant [7 x i8] c"<test>\00", align 1
-@fld_name.25460 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.25461 = private unnamed_addr constant [50 x i8] c"@std::avrac::features::generics::mono::MonoResult\00", align 1
-@src_file.25462 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25463 = private unnamed_addr constant [24 x i8] c"monomorphization failed\00", align 1
-@.str.25464 = private unnamed_addr constant [7 x i8] c"/build\00", align 1
-@.str.25465 = private unnamed_addr constant [12 x i8] c"LLVM_PREFIX\00", align 1
-@.str.25466 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25467 = private unnamed_addr constant [23 x i8] c"/opt/homebrew/opt/llvm\00", align 1
-@.str.25468 = private unnamed_addr constant [5 x i8] c"/lib\00", align 1
-@fld_name.25469 = private unnamed_addr constant [9 x i8] c"coverage\00", align 1
-@sty_name.25470 = private unnamed_addr constant [9 x i8] c"TestArgs\00", align 1
-@src_file.25471 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25472 = private unnamed_addr constant [9 x i8] c"/_test.o\00", align 1
-@.str.25473 = private unnamed_addr constant [11 x i8] c"/_test.bin\00", align 1
-@fld_name.25474 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.25475 = private unnamed_addr constant [50 x i8] c"@std::avrac::features::generics::mono::MonoResult\00", align 1
+@.str.25437 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25438 = private unnamed_addr constant [7 x i8] c"filter\00", align 1
+@sty_name.25439 = private unnamed_addr constant [9 x i8] c"TestArgs\00", align 1
+@src_file.25440 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25441 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
+@sty_name.25442 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@src_file.25443 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25444 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.25445 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@src_file.25446 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25447 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.25448 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@src_file.25449 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25450 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.25451 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@src_file.25452 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25453 = private unnamed_addr constant [15 x i8] c"error parsing \00", align 1
+@fld_name.25454 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.25455 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@src_file.25456 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25457 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
+@sty_name.25458 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
+@src_file.25459 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25460 = private unnamed_addr constant [25 x i8] c"module resolve error in \00", align 1
+@.str.25461 = private unnamed_addr constant [3 x i8] c": \00", align 1
+@fld_name.25462 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
+@sty_name.25463 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
+@src_file.25464 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25465 = private unnamed_addr constant [7 x i8] c"loaded\00", align 1
+@sty_name.25466 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
+@src_file.25467 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25468 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.25469 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
+@src_file.25470 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25471 = private unnamed_addr constant [9 x i8] c"packages\00", align 1
+@sty_name.25472 = private unnamed_addr constant [39 x i8] c"@std::avrac::test_runner::PackageSplit\00", align 1
+@src_file.25473 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25474 = private unnamed_addr constant [5 x i8] c"body\00", align 1
+@sty_name.25475 = private unnamed_addr constant [39 x i8] c"@std::avrac::test_runner::PackageSplit\00", align 1
 @src_file.25476 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25477 = private unnamed_addr constant [9 x i8] c"type_reg\00", align 1
-@sty_name.25478 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
-@src_file.25479 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.match_fn.25480 = private unnamed_addr constant [17 x i8] c"run_test_command\00", align 1
-@mu_file.25481 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25482 = private unnamed_addr constant [3 x i8] c"[\22\00", align 1
-@.str.25483 = private unnamed_addr constant [5 x i8] c"\22, \22\00", align 1
-@.str.25484 = private unnamed_addr constant [15 x i8] c"/runtime.o\22, \22\00", align 1
-@.str.25485 = private unnamed_addr constant [26 x i8] c"/llvm_wrapper.o\22, \22-o\22, \22\00", align 1
-@.str.25486 = private unnamed_addr constant [36 x i8] c"\22, \22-Wl,-stack_size,0x2000000\22, \22-L\00", align 1
-@.str.25487 = private unnamed_addr constant [22 x i8] c"\22, \22-lLLVM\22, \22-lc++\22]\00", align 1
-@.str.25488 = private unnamed_addr constant [3 x i8] c"cc\00", align 1
-@.str.25489 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25490 = private unnamed_addr constant [12 x i8] c"link failed\00", align 1
-@.str.25491 = private unnamed_addr constant [3 x i8] c"[]\00", align 1
-@.str.25492 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25493 = private unnamed_addr constant [10 x i8] c"/coverage\00", align 1
-@.str.25494 = private unnamed_addr constant [10 x i8] c"mkdir -p \00", align 1
-@.str.25495 = private unnamed_addr constant [10 x i8] c"/_test.ll\00", align 1
-@.str.25496 = private unnamed_addr constant [14 x i8] c"/_test.cov.ll\00", align 1
-@.str.25497 = private unnamed_addr constant [9 x i8] c"/_test.o\00", align 1
-@.str.25498 = private unnamed_addr constant [11 x i8] c"/_test.bin\00", align 1
-@.str.25499 = private unnamed_addr constant [15 x i8] c"/_test.profraw\00", align 1
-@.str.25500 = private unnamed_addr constant [16 x i8] c"/_test.profdata\00", align 1
-@fld_name.25501 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.25502 = private unnamed_addr constant [50 x i8] c"@std::avrac::features::generics::mono::MonoResult\00", align 1
+@.str.25477 = private unnamed_addr constant [26 x i8] c"No spec test files found.\00", align 1
+@.str.25478 = private unnamed_addr constant [45 x i8] c"std-avrac/src/features/spec_test/reporter.av\00", align 1
+@fld_name.25479 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
+@sty_name.25480 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@src_file.25481 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25482 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.25483 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@src_file.25484 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25485 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.25486 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@src_file.25487 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25488 = private unnamed_addr constant [20 x i8] c"test_render_summary\00", align 1
+@.str.25489 = private unnamed_addr constant [5 x i8] c"main\00", align 1
+@fld_name.25490 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.25491 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
+@src_file.25492 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25493 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
+@sty_name.25494 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
+@src_file.25495 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25496 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25497 = private unnamed_addr constant [7 x i8] c"<test>\00", align 1
+@fld_name.25498 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.25499 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
+@src_file.25500 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25501 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
+@sty_name.25502 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
 @src_file.25503 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25504 = private unnamed_addr constant [9 x i8] c"type_reg\00", align 1
+@fld_name.25504 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
 @sty_name.25505 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
 @src_file.25506 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25507 = private unnamed_addr constant [10 x i8] c"/_test.av\00", align 1
-@.match_fn.25508 = private unnamed_addr constant [17 x i8] c"run_test_command\00", align 1
-@mu_file.25509 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25510 = private unnamed_addr constant [61 x i8] c"[\22-passes=instrprof\22, \22-mtriple=arm64-apple-macosx\22, \22-o\22, \22\00", align 1
-@.str.25511 = private unnamed_addr constant [11 x i8] c"\22, \22-S\22, \22\00", align 1
-@.str.25512 = private unnamed_addr constant [3 x i8] c"\22]\00", align 1
-@.str.25513 = private unnamed_addr constant [9 x i8] c"/bin/opt\00", align 1
-@.str.25514 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25515 = private unnamed_addr constant [30 x i8] c"opt instrprof lowering failed\00", align 1
-@.str.25516 = private unnamed_addr constant [27 x i8] c"[\22-O2\22, \22-filetype=obj\22, \22\00", align 1
-@.str.25517 = private unnamed_addr constant [11 x i8] c"\22, \22-o\22, \22\00", align 1
-@.str.25518 = private unnamed_addr constant [3 x i8] c"\22]\00", align 1
-@.str.25519 = private unnamed_addr constant [9 x i8] c"/bin/llc\00", align 1
-@.str.25520 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25521 = private unnamed_addr constant [11 x i8] c"llc failed\00", align 1
-@.str.25522 = private unnamed_addr constant [7 x i8] c"ls -1 \00", align 1
-@.str.25523 = private unnamed_addr constant [21 x i8] c"/lib/clang | head -1\00", align 1
-@.str.25524 = private unnamed_addr constant [12 x i8] c"/lib/clang/\00", align 1
-@.str.25525 = private unnamed_addr constant [12 x i8] c"/lib/darwin\00", align 1
-@.str.25526 = private unnamed_addr constant [143 x i8] c"\22-Wl,-sectalign,__DATA,__llvm_prf_cnts,0x4000\22, \22-Wl,-sectalign,__DATA,__llvm_prf_bits,0x4000\22, \22-Wl,-sectalign,__DATA,__llvm_prf_data,0x4000\22\00", align 1
-@.str.25527 = private unnamed_addr constant [3 x i8] c"[\22\00", align 1
-@.str.25528 = private unnamed_addr constant [5 x i8] c"\22, \22\00", align 1
-@.str.25529 = private unnamed_addr constant [15 x i8] c"/runtime.o\22, \22\00", align 1
-@.str.25530 = private unnamed_addr constant [26 x i8] c"/llvm_wrapper.o\22, \22-o\22, \22\00", align 1
-@.str.25531 = private unnamed_addr constant [36 x i8] c"\22, \22-Wl,-stack_size,0x2000000\22, \22-L\00", align 1
-@.str.25532 = private unnamed_addr constant [26 x i8] c"\22, \22-lLLVM\22, \22-lc++\22, \22-L\00", align 1
-@.str.25533 = private unnamed_addr constant [30 x i8] c"\22, \22-lclang_rt.profile_osx\22, \00", align 1
-@.str.25534 = private unnamed_addr constant [2 x i8] c"]\00", align 1
-@.str.25535 = private unnamed_addr constant [3 x i8] c"cc\00", align 1
-@.str.25536 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25537 = private unnamed_addr constant [12 x i8] c"link failed\00", align 1
-@.str.25538 = private unnamed_addr constant [7 x i8] c"rm -f \00", align 1
-@.str.25539 = private unnamed_addr constant [30 x i8] c"{\22env\22:{\22LLVM_PROFILE_FILE\22:\22\00", align 1
-@.str.25540 = private unnamed_addr constant [4 x i8] c"\22}}\00", align 1
-@.str.25541 = private unnamed_addr constant [3 x i8] c"[]\00", align 1
-@.str.25542 = private unnamed_addr constant [30 x i8] c"test binary exited with code \00", align 1
-@.i2s_fmt.25543 = private unnamed_addr constant [5 x i8] c"%lld\00", align 1
-@.str.25544 = private unnamed_addr constant [37 x i8] c"/bin/llvm-profdata merge -sparse -o \00", align 1
-@.str.25545 = private unnamed_addr constant [2 x i8] c" \00", align 1
-@.str.25546 = private unnamed_addr constant [6 x i8] c" 2>&1\00", align 1
-@.str.25547 = private unnamed_addr constant [20 x i8] c"/_test.profdata.txt\00", align 1
-@.str.25548 = private unnamed_addr constant [50 x i8] c"/bin/llvm-profdata show --all-functions --counts \00", align 1
-@.str.25549 = private unnamed_addr constant [4 x i8] c" > \00", align 1
-@.str.25550 = private unnamed_addr constant [13 x i8] c" 2>/dev/null\00", align 1
-@.str.25551 = private unnamed_addr constant [21 x i8] c"/_test.av.covmap.tsv\00", align 1
-@.str.25552 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25553 = private unnamed_addr constant [10 x i8] c"lcov_path\00", align 1
-@sty_name.25554 = private unnamed_addr constant [9 x i8] c"TestArgs\00", align 1
-@src_file.25555 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25556 = private unnamed_addr constant [4 x i8] c"PWD\00", align 1
-@fld_name.25557 = private unnamed_addr constant [14 x i8] c"want_validate\00", align 1
-@sty_name.25558 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
-@src_file.25559 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25560 = private unnamed_addr constant [13 x i8] c"want_callers\00", align 1
-@sty_name.25561 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
-@src_file.25562 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25563 = private unnamed_addr constant [6 x i8] c"query\00", align 1
-@sty_name.25564 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
-@src_file.25565 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25566 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25567 = private unnamed_addr constant [6 x i8] c"query\00", align 1
-@sty_name.25568 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
-@src_file.25569 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25570 = private unnamed_addr constant [6 x i8] c"query\00", align 1
-@sty_name.25571 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
-@src_file.25572 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25573 = private unnamed_addr constant [5 x i8] c"syms\00", align 1
-@sty_name.25574 = private unnamed_addr constant [30 x i8] c"@std::avrac::docs::DocsCorpus\00", align 1
-@src_file.25575 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25576 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25577 = private unnamed_addr constant [13 x i8] c"want_doctest\00", align 1
-@sty_name.25578 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
-@src_file.25579 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25580 = private unnamed_addr constant [9 x i8] c"want_gen\00", align 1
-@sty_name.25581 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
-@src_file.25582 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25583 = private unnamed_addr constant [6 x i8] c"query\00", align 1
-@sty_name.25584 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
-@src_file.25585 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25586 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25587 = private unnamed_addr constant [36 x i8] c"error: --gen requires a symbol name\00", align 1
-@fld_name.25588 = private unnamed_addr constant [6 x i8] c"query\00", align 1
-@sty_name.25589 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
-@src_file.25590 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25591 = private unnamed_addr constant [11 x i8] c"want_print\00", align 1
-@sty_name.25592 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
-@src_file.25593 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25594 = private unnamed_addr constant [6 x i8] c"query\00", align 1
-@sty_name.25595 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
-@src_file.25596 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25597 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25598 = private unnamed_addr constant [7 x i8] c"format\00", align 1
-@sty_name.25599 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
-@src_file.25600 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25601 = private unnamed_addr constant [5 x i8] c"json\00", align 1
-@fld_name.25602 = private unnamed_addr constant [7 x i8] c"format\00", align 1
-@sty_name.25603 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
-@src_file.25604 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25605 = private unnamed_addr constant [9 x i8] c"markdown\00", align 1
-@fld_name.25606 = private unnamed_addr constant [7 x i8] c"format\00", align 1
-@sty_name.25607 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
-@src_file.25608 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25609 = private unnamed_addr constant [6 x i8] c"human\00", align 1
-@.str.25610 = private unnamed_addr constant [24 x i8] c"error: unknown format '\00", align 1
-@fld_name.25611 = private unnamed_addr constant [7 x i8] c"format\00", align 1
-@sty_name.25612 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
-@src_file.25613 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25614 = private unnamed_addr constant [32 x i8] c"' (try human / markdown / json)\00", align 1
-@fld_name.25615 = private unnamed_addr constant [12 x i8] c"module_path\00", align 1
-@sty_name.25616 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
-@src_file.25617 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25618 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25619 = private unnamed_addr constant [12 x i8] c"module_path\00", align 1
-@sty_name.25620 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
-@src_file.25621 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25622 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25623 = private unnamed_addr constant [14 x i8] c"  No module '\00", align 1
-@fld_name.25624 = private unnamed_addr constant [12 x i8] c"module_path\00", align 1
+@fld_name.25507 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.25508 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
+@src_file.25509 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25510 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25511 = private unnamed_addr constant [7 x i8] c"<test>\00", align 1
+@fld_name.25512 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.25513 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
+@src_file.25514 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25515 = private unnamed_addr constant [18 x i8] c"type check failed\00", align 1
+@fld_name.25516 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.25517 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
+@src_file.25518 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25519 = private unnamed_addr constant [12 x i8] c"trait_impls\00", align 1
+@sty_name.25520 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
+@src_file.25521 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25522 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.25523 = private unnamed_addr constant [50 x i8] c"@std::avrac::features::generics::mono::MonoResult\00", align 1
+@src_file.25524 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25525 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25526 = private unnamed_addr constant [7 x i8] c"<test>\00", align 1
+@fld_name.25527 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.25528 = private unnamed_addr constant [50 x i8] c"@std::avrac::features::generics::mono::MonoResult\00", align 1
+@src_file.25529 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25530 = private unnamed_addr constant [24 x i8] c"monomorphization failed\00", align 1
+@.str.25531 = private unnamed_addr constant [7 x i8] c"/build\00", align 1
+@.str.25532 = private unnamed_addr constant [12 x i8] c"LLVM_PREFIX\00", align 1
+@.str.25533 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25534 = private unnamed_addr constant [23 x i8] c"/opt/homebrew/opt/llvm\00", align 1
+@.str.25535 = private unnamed_addr constant [5 x i8] c"/lib\00", align 1
+@fld_name.25536 = private unnamed_addr constant [9 x i8] c"coverage\00", align 1
+@sty_name.25537 = private unnamed_addr constant [9 x i8] c"TestArgs\00", align 1
+@src_file.25538 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25539 = private unnamed_addr constant [9 x i8] c"/_test.o\00", align 1
+@.str.25540 = private unnamed_addr constant [11 x i8] c"/_test.bin\00", align 1
+@fld_name.25541 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.25542 = private unnamed_addr constant [50 x i8] c"@std::avrac::features::generics::mono::MonoResult\00", align 1
+@src_file.25543 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25544 = private unnamed_addr constant [9 x i8] c"type_reg\00", align 1
+@sty_name.25545 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
+@src_file.25546 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.match_fn.25547 = private unnamed_addr constant [17 x i8] c"run_test_command\00", align 1
+@mu_file.25548 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25549 = private unnamed_addr constant [3 x i8] c"[\22\00", align 1
+@.str.25550 = private unnamed_addr constant [5 x i8] c"\22, \22\00", align 1
+@.str.25551 = private unnamed_addr constant [15 x i8] c"/runtime.o\22, \22\00", align 1
+@.str.25552 = private unnamed_addr constant [26 x i8] c"/llvm_wrapper.o\22, \22-o\22, \22\00", align 1
+@.str.25553 = private unnamed_addr constant [36 x i8] c"\22, \22-Wl,-stack_size,0x2000000\22, \22-L\00", align 1
+@.str.25554 = private unnamed_addr constant [22 x i8] c"\22, \22-lLLVM\22, \22-lc++\22]\00", align 1
+@.str.25555 = private unnamed_addr constant [3 x i8] c"cc\00", align 1
+@.str.25556 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25557 = private unnamed_addr constant [12 x i8] c"link failed\00", align 1
+@.str.25558 = private unnamed_addr constant [3 x i8] c"[]\00", align 1
+@.str.25559 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25560 = private unnamed_addr constant [10 x i8] c"/coverage\00", align 1
+@.str.25561 = private unnamed_addr constant [10 x i8] c"mkdir -p \00", align 1
+@.str.25562 = private unnamed_addr constant [10 x i8] c"/_test.ll\00", align 1
+@.str.25563 = private unnamed_addr constant [14 x i8] c"/_test.cov.ll\00", align 1
+@.str.25564 = private unnamed_addr constant [9 x i8] c"/_test.o\00", align 1
+@.str.25565 = private unnamed_addr constant [11 x i8] c"/_test.bin\00", align 1
+@.str.25566 = private unnamed_addr constant [15 x i8] c"/_test.profraw\00", align 1
+@.str.25567 = private unnamed_addr constant [16 x i8] c"/_test.profdata\00", align 1
+@fld_name.25568 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.25569 = private unnamed_addr constant [50 x i8] c"@std::avrac::features::generics::mono::MonoResult\00", align 1
+@src_file.25570 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25571 = private unnamed_addr constant [9 x i8] c"type_reg\00", align 1
+@sty_name.25572 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
+@src_file.25573 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25574 = private unnamed_addr constant [10 x i8] c"/_test.av\00", align 1
+@.match_fn.25575 = private unnamed_addr constant [17 x i8] c"run_test_command\00", align 1
+@mu_file.25576 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25577 = private unnamed_addr constant [61 x i8] c"[\22-passes=instrprof\22, \22-mtriple=arm64-apple-macosx\22, \22-o\22, \22\00", align 1
+@.str.25578 = private unnamed_addr constant [11 x i8] c"\22, \22-S\22, \22\00", align 1
+@.str.25579 = private unnamed_addr constant [3 x i8] c"\22]\00", align 1
+@.str.25580 = private unnamed_addr constant [9 x i8] c"/bin/opt\00", align 1
+@.str.25581 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25582 = private unnamed_addr constant [30 x i8] c"opt instrprof lowering failed\00", align 1
+@.str.25583 = private unnamed_addr constant [27 x i8] c"[\22-O2\22, \22-filetype=obj\22, \22\00", align 1
+@.str.25584 = private unnamed_addr constant [11 x i8] c"\22, \22-o\22, \22\00", align 1
+@.str.25585 = private unnamed_addr constant [3 x i8] c"\22]\00", align 1
+@.str.25586 = private unnamed_addr constant [9 x i8] c"/bin/llc\00", align 1
+@.str.25587 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25588 = private unnamed_addr constant [11 x i8] c"llc failed\00", align 1
+@.str.25589 = private unnamed_addr constant [7 x i8] c"ls -1 \00", align 1
+@.str.25590 = private unnamed_addr constant [21 x i8] c"/lib/clang | head -1\00", align 1
+@.str.25591 = private unnamed_addr constant [12 x i8] c"/lib/clang/\00", align 1
+@.str.25592 = private unnamed_addr constant [12 x i8] c"/lib/darwin\00", align 1
+@.str.25593 = private unnamed_addr constant [143 x i8] c"\22-Wl,-sectalign,__DATA,__llvm_prf_cnts,0x4000\22, \22-Wl,-sectalign,__DATA,__llvm_prf_bits,0x4000\22, \22-Wl,-sectalign,__DATA,__llvm_prf_data,0x4000\22\00", align 1
+@.str.25594 = private unnamed_addr constant [3 x i8] c"[\22\00", align 1
+@.str.25595 = private unnamed_addr constant [5 x i8] c"\22, \22\00", align 1
+@.str.25596 = private unnamed_addr constant [15 x i8] c"/runtime.o\22, \22\00", align 1
+@.str.25597 = private unnamed_addr constant [26 x i8] c"/llvm_wrapper.o\22, \22-o\22, \22\00", align 1
+@.str.25598 = private unnamed_addr constant [36 x i8] c"\22, \22-Wl,-stack_size,0x2000000\22, \22-L\00", align 1
+@.str.25599 = private unnamed_addr constant [26 x i8] c"\22, \22-lLLVM\22, \22-lc++\22, \22-L\00", align 1
+@.str.25600 = private unnamed_addr constant [30 x i8] c"\22, \22-lclang_rt.profile_osx\22, \00", align 1
+@.str.25601 = private unnamed_addr constant [2 x i8] c"]\00", align 1
+@.str.25602 = private unnamed_addr constant [3 x i8] c"cc\00", align 1
+@.str.25603 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25604 = private unnamed_addr constant [12 x i8] c"link failed\00", align 1
+@.str.25605 = private unnamed_addr constant [7 x i8] c"rm -f \00", align 1
+@.str.25606 = private unnamed_addr constant [30 x i8] c"{\22env\22:{\22LLVM_PROFILE_FILE\22:\22\00", align 1
+@.str.25607 = private unnamed_addr constant [4 x i8] c"\22}}\00", align 1
+@.str.25608 = private unnamed_addr constant [3 x i8] c"[]\00", align 1
+@.str.25609 = private unnamed_addr constant [30 x i8] c"test binary exited with code \00", align 1
+@.i2s_fmt.25610 = private unnamed_addr constant [5 x i8] c"%lld\00", align 1
+@.str.25611 = private unnamed_addr constant [37 x i8] c"/bin/llvm-profdata merge -sparse -o \00", align 1
+@.str.25612 = private unnamed_addr constant [2 x i8] c" \00", align 1
+@.str.25613 = private unnamed_addr constant [6 x i8] c" 2>&1\00", align 1
+@.str.25614 = private unnamed_addr constant [20 x i8] c"/_test.profdata.txt\00", align 1
+@.str.25615 = private unnamed_addr constant [50 x i8] c"/bin/llvm-profdata show --all-functions --counts \00", align 1
+@.str.25616 = private unnamed_addr constant [4 x i8] c" > \00", align 1
+@.str.25617 = private unnamed_addr constant [13 x i8] c" 2>/dev/null\00", align 1
+@.str.25618 = private unnamed_addr constant [21 x i8] c"/_test.av.covmap.tsv\00", align 1
+@.str.25619 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25620 = private unnamed_addr constant [10 x i8] c"lcov_path\00", align 1
+@sty_name.25621 = private unnamed_addr constant [9 x i8] c"TestArgs\00", align 1
+@src_file.25622 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25623 = private unnamed_addr constant [4 x i8] c"PWD\00", align 1
+@fld_name.25624 = private unnamed_addr constant [14 x i8] c"want_validate\00", align 1
 @sty_name.25625 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
 @src_file.25626 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25627 = private unnamed_addr constant [20 x i8] c"' found in project.\00", align 1
-@.str.25628 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25629 = private unnamed_addr constant [12 x i8] c"search_term\00", align 1
-@sty_name.25630 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
-@src_file.25631 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25632 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25633 = private unnamed_addr constant [12 x i8] c"search_term\00", align 1
-@sty_name.25634 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
-@src_file.25635 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25636 = private unnamed_addr constant [9 x i8] c"want_llm\00", align 1
-@sty_name.25637 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
-@src_file.25638 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25639 = private unnamed_addr constant [13 x i8] c"want_symbols\00", align 1
-@sty_name.25640 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
-@src_file.25641 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25642 = private unnamed_addr constant [6 x i8] c"query\00", align 1
-@sty_name.25643 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
-@src_file.25644 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25645 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25646 = private unnamed_addr constant [11 x i8] c"want_short\00", align 1
-@sty_name.25647 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
-@src_file.25648 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25649 = private unnamed_addr constant [6 x i8] c"query\00", align 1
-@sty_name.25650 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
-@src_file.25651 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25652 = private unnamed_addr constant [6 x i8] c"query\00", align 1
-@sty_name.25653 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
-@src_file.25654 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25627 = private unnamed_addr constant [13 x i8] c"want_callers\00", align 1
+@sty_name.25628 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
+@src_file.25629 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25630 = private unnamed_addr constant [6 x i8] c"query\00", align 1
+@sty_name.25631 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
+@src_file.25632 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25633 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25634 = private unnamed_addr constant [6 x i8] c"query\00", align 1
+@sty_name.25635 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
+@src_file.25636 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25637 = private unnamed_addr constant [6 x i8] c"query\00", align 1
+@sty_name.25638 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
+@src_file.25639 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25640 = private unnamed_addr constant [5 x i8] c"syms\00", align 1
+@sty_name.25641 = private unnamed_addr constant [30 x i8] c"@std::avrac::docs::DocsCorpus\00", align 1
+@src_file.25642 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25643 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25644 = private unnamed_addr constant [13 x i8] c"want_doctest\00", align 1
+@sty_name.25645 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
+@src_file.25646 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25647 = private unnamed_addr constant [9 x i8] c"want_gen\00", align 1
+@sty_name.25648 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
+@src_file.25649 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25650 = private unnamed_addr constant [6 x i8] c"query\00", align 1
+@sty_name.25651 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
+@src_file.25652 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25653 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25654 = private unnamed_addr constant [36 x i8] c"error: --gen requires a symbol name\00", align 1
 @fld_name.25655 = private unnamed_addr constant [6 x i8] c"query\00", align 1
 @sty_name.25656 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
 @src_file.25657 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25658 = private unnamed_addr constant [41 x i8] c"  Hint: try `avra docs` for an overview.\00", align 1
-@fld_name.25659 = private unnamed_addr constant [6 x i8] c"scope\00", align 1
-@sty_name.25660 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
-@src_file.25661 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.lit_str.25662 = private unnamed_addr constant [8 x i8] c"project\00", align 1
-@fld_name.25663 = private unnamed_addr constant [14 x i8] c"want_no_cache\00", align 1
-@sty_name.25664 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
-@src_file.25665 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.lit_str.25666 = private unnamed_addr constant [5 x i8] c"lang\00", align 1
-@.lit_str.25667 = private unnamed_addr constant [7 x i8] c"errors\00", align 1
-@.lit_str.25668 = private unnamed_addr constant [4 x i8] c"all\00", align 1
-@fld_name.25669 = private unnamed_addr constant [14 x i8] c"want_no_cache\00", align 1
+@fld_name.25658 = private unnamed_addr constant [11 x i8] c"want_print\00", align 1
+@sty_name.25659 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
+@src_file.25660 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25661 = private unnamed_addr constant [6 x i8] c"query\00", align 1
+@sty_name.25662 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
+@src_file.25663 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25664 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25665 = private unnamed_addr constant [7 x i8] c"format\00", align 1
+@sty_name.25666 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
+@src_file.25667 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25668 = private unnamed_addr constant [5 x i8] c"json\00", align 1
+@fld_name.25669 = private unnamed_addr constant [7 x i8] c"format\00", align 1
 @sty_name.25670 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
 @src_file.25671 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25672 = private unnamed_addr constant [23 x i8] c"error: unknown scope '\00", align 1
-@fld_name.25673 = private unnamed_addr constant [6 x i8] c"scope\00", align 1
+@.str.25672 = private unnamed_addr constant [9 x i8] c"markdown\00", align 1
+@fld_name.25673 = private unnamed_addr constant [7 x i8] c"format\00", align 1
 @sty_name.25674 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
 @src_file.25675 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25676 = private unnamed_addr constant [38 x i8] c"' (try project / lang / errors / all)\00", align 1
-@.match_fn.25677 = private unnamed_addr constant [17 x i8] c"load_docs_corpus\00", align 1
-@mu_file.25678 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25679 = private unnamed_addr constant [16 x i8] c"/target/lang.av\00", align 1
-@.str.25680 = private unnamed_addr constant [58 x i8] c"error: target/lang.av not found \E2\80\94 run `avra lang` first\00", align 1
-@fld_name.25681 = private unnamed_addr constant [4 x i8] c"doc\00", align 1
-@sty_name.25682 = private unnamed_addr constant [15 x i8] c"@std::lsp::Sym\00", align 1
-@src_file.25683 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25684 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25685 = private unnamed_addr constant [10 x i8] c"qualified\00", align 1
-@sty_name.25686 = private unnamed_addr constant [15 x i8] c"@std::lsp::Sym\00", align 1
-@src_file.25687 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25688 = private unnamed_addr constant [21 x i8] c": already documented\00", align 1
-@fld_name.25689 = private unnamed_addr constant [5 x i8] c"file\00", align 1
-@sty_name.25690 = private unnamed_addr constant [15 x i8] c"@std::lsp::Sym\00", align 1
-@src_file.25691 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25692 = private unnamed_addr constant [5 x i8] c"span\00", align 1
-@sty_name.25693 = private unnamed_addr constant [15 x i8] c"@std::lsp::Sym\00", align 1
-@src_file.25694 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25695 = private unnamed_addr constant [6 x i8] c"start\00", align 1
-@sty_name.25696 = private unnamed_addr constant [19 x i8] c"@std::lsp::LspSpan\00", align 1
-@src_file.25697 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25698 = private unnamed_addr constant [5 x i8] c"line\00", align 1
-@sty_name.25699 = private unnamed_addr constant [18 x i8] c"@std::lsp::LspPos\00", align 1
-@src_file.25700 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25701 = private unnamed_addr constant [6 x i8] c"error\00", align 1
-@sty_name.25702 = private unnamed_addr constant [38 x i8] c"@std::avrac::docs::gen::GenStubResult\00", align 1
-@src_file.25703 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25704 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25705 = private unnamed_addr constant [8 x i8] c"error: \00", align 1
-@fld_name.25706 = private unnamed_addr constant [6 x i8] c"error\00", align 1
-@sty_name.25707 = private unnamed_addr constant [38 x i8] c"@std::avrac::docs::gen::GenStubResult\00", align 1
+@.str.25676 = private unnamed_addr constant [6 x i8] c"human\00", align 1
+@.str.25677 = private unnamed_addr constant [24 x i8] c"error: unknown format '\00", align 1
+@fld_name.25678 = private unnamed_addr constant [7 x i8] c"format\00", align 1
+@sty_name.25679 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
+@src_file.25680 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25681 = private unnamed_addr constant [32 x i8] c"' (try human / markdown / json)\00", align 1
+@fld_name.25682 = private unnamed_addr constant [12 x i8] c"module_path\00", align 1
+@sty_name.25683 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
+@src_file.25684 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25685 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25686 = private unnamed_addr constant [12 x i8] c"module_path\00", align 1
+@sty_name.25687 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
+@src_file.25688 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25689 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25690 = private unnamed_addr constant [14 x i8] c"  No module '\00", align 1
+@fld_name.25691 = private unnamed_addr constant [12 x i8] c"module_path\00", align 1
+@sty_name.25692 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
+@src_file.25693 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25694 = private unnamed_addr constant [20 x i8] c"' found in project.\00", align 1
+@.str.25695 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25696 = private unnamed_addr constant [12 x i8] c"search_term\00", align 1
+@sty_name.25697 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
+@src_file.25698 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25699 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25700 = private unnamed_addr constant [12 x i8] c"search_term\00", align 1
+@sty_name.25701 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
+@src_file.25702 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25703 = private unnamed_addr constant [9 x i8] c"want_llm\00", align 1
+@sty_name.25704 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
+@src_file.25705 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25706 = private unnamed_addr constant [13 x i8] c"want_symbols\00", align 1
+@sty_name.25707 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
 @src_file.25708 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25709 = private unnamed_addr constant [8 x i8] c"skipped\00", align 1
-@sty_name.25710 = private unnamed_addr constant [38 x i8] c"@std::avrac::docs::gen::GenStubResult\00", align 1
+@fld_name.25709 = private unnamed_addr constant [6 x i8] c"query\00", align 1
+@sty_name.25710 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
 @src_file.25711 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25712 = private unnamed_addr constant [10 x i8] c"qualified\00", align 1
-@sty_name.25713 = private unnamed_addr constant [15 x i8] c"@std::lsp::Sym\00", align 1
-@src_file.25714 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25715 = private unnamed_addr constant [3 x i8] c": \00", align 1
-@fld_name.25716 = private unnamed_addr constant [7 x i8] c"reason\00", align 1
-@sty_name.25717 = private unnamed_addr constant [38 x i8] c"@std::avrac::docs::gen::GenStubResult\00", align 1
+@.str.25712 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25713 = private unnamed_addr constant [11 x i8] c"want_short\00", align 1
+@sty_name.25714 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
+@src_file.25715 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25716 = private unnamed_addr constant [6 x i8] c"query\00", align 1
+@sty_name.25717 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
 @src_file.25718 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25719 = private unnamed_addr constant [5 x i8] c"file\00", align 1
-@sty_name.25720 = private unnamed_addr constant [15 x i8] c"@std::lsp::Sym\00", align 1
+@fld_name.25719 = private unnamed_addr constant [6 x i8] c"query\00", align 1
+@sty_name.25720 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
 @src_file.25721 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25722 = private unnamed_addr constant [2 x i8] c":\00", align 1
-@fld_name.25723 = private unnamed_addr constant [5 x i8] c"span\00", align 1
-@sty_name.25724 = private unnamed_addr constant [15 x i8] c"@std::lsp::Sym\00", align 1
-@src_file.25725 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25726 = private unnamed_addr constant [6 x i8] c"start\00", align 1
-@sty_name.25727 = private unnamed_addr constant [19 x i8] c"@std::lsp::LspSpan\00", align 1
+@fld_name.25722 = private unnamed_addr constant [6 x i8] c"query\00", align 1
+@sty_name.25723 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
+@src_file.25724 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25725 = private unnamed_addr constant [41 x i8] c"  Hint: try `avra docs` for an overview.\00", align 1
+@fld_name.25726 = private unnamed_addr constant [6 x i8] c"scope\00", align 1
+@sty_name.25727 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
 @src_file.25728 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25729 = private unnamed_addr constant [5 x i8] c"line\00", align 1
-@sty_name.25730 = private unnamed_addr constant [18 x i8] c"@std::lsp::LspPos\00", align 1
-@src_file.25731 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.i2s_fmt.25732 = private unnamed_addr constant [5 x i8] c"%lld\00", align 1
-@.str.25733 = private unnamed_addr constant [25 x i8] c": inserted /// stub for \00", align 1
-@fld_name.25734 = private unnamed_addr constant [10 x i8] c"qualified\00", align 1
-@sty_name.25735 = private unnamed_addr constant [15 x i8] c"@std::lsp::Sym\00", align 1
-@src_file.25736 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25737 = private unnamed_addr constant [4 x i8] c"app\00", align 1
-@.str.25738 = private unnamed_addr constant [24 x i8] c"Avra bootstrap compiler\00", align 1
-@.str.25739 = private unnamed_addr constant [6 x i8] c"0.1.0\00", align 1
-@.str.25740 = private unnamed_addr constant [8 x i8] c"compile\00", align 1
-@.str.25741 = private unnamed_addr constant [31 x i8] c"Compile a Avra file to LLVM IR\00", align 1
-@.str.25742 = private unnamed_addr constant [8 x i8] c"compile\00", align 1
-@.str.25743 = private unnamed_addr constant [3 x i8] c"--\00", align 1
-@.str.25744 = private unnamed_addr constant [9 x i8] c"coverage\00", align 1
-@.str.25745 = private unnamed_addr constant [3 x i8] c"-c\00", align 1
-@.str.25746 = private unnamed_addr constant [32 x i8] c"Enable coverage instrumentation\00", align 1
-@.str.25747 = private unnamed_addr constant [8 x i8] c"compile\00", align 1
-@.str.25748 = private unnamed_addr constant [3 x i8] c"--\00", align 1
-@.str.25749 = private unnamed_addr constant [11 x i8] c"debug_null\00", align 1
-@.str.25750 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25751 = private unnamed_addr constant [28 x i8] c"Enable null argument checks\00", align 1
-@.str.25752 = private unnamed_addr constant [8 x i8] c"compile\00", align 1
-@.str.25753 = private unnamed_addr constant [3 x i8] c"--\00", align 1
-@.str.25754 = private unnamed_addr constant [5 x i8] c"json\00", align 1
-@.str.25755 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25756 = private unnamed_addr constant [27 x i8] c"Output diagnostics as JSON\00", align 1
-@.str.25757 = private unnamed_addr constant [8 x i8] c"compile\00", align 1
-@.str.25758 = private unnamed_addr constant [3 x i8] c"--\00", align 1
-@.str.25759 = private unnamed_addr constant [11 x i8] c"stop_after\00", align 1
-@.str.25760 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25761 = private unnamed_addr constant [45 x i8] c"Stop after phase (parse|resolve|names|check)\00", align 1
-@.str.25762 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25763 = private unnamed_addr constant [8 x i8] c"compile\00", align 1
-@.str.25764 = private unnamed_addr constant [5 x i8] c"file\00", align 1
-@.str.25765 = private unnamed_addr constant [12 x i8] c"Source file\00", align 1
-@.str.25766 = private unnamed_addr constant [6 x i8] c"check\00", align 1
-@.str.25767 = private unnamed_addr constant [23 x i8] c"Type-check a Avra file\00", align 1
-@.str.25768 = private unnamed_addr constant [6 x i8] c"check\00", align 1
-@.str.25769 = private unnamed_addr constant [3 x i8] c"--\00", align 1
-@.str.25770 = private unnamed_addr constant [5 x i8] c"json\00", align 1
+@.lit_str.25729 = private unnamed_addr constant [8 x i8] c"project\00", align 1
+@fld_name.25730 = private unnamed_addr constant [14 x i8] c"want_no_cache\00", align 1
+@sty_name.25731 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
+@src_file.25732 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.lit_str.25733 = private unnamed_addr constant [5 x i8] c"lang\00", align 1
+@.lit_str.25734 = private unnamed_addr constant [7 x i8] c"errors\00", align 1
+@.lit_str.25735 = private unnamed_addr constant [4 x i8] c"all\00", align 1
+@fld_name.25736 = private unnamed_addr constant [14 x i8] c"want_no_cache\00", align 1
+@sty_name.25737 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
+@src_file.25738 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25739 = private unnamed_addr constant [23 x i8] c"error: unknown scope '\00", align 1
+@fld_name.25740 = private unnamed_addr constant [6 x i8] c"scope\00", align 1
+@sty_name.25741 = private unnamed_addr constant [9 x i8] c"DocsArgs\00", align 1
+@src_file.25742 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25743 = private unnamed_addr constant [38 x i8] c"' (try project / lang / errors / all)\00", align 1
+@.match_fn.25744 = private unnamed_addr constant [17 x i8] c"load_docs_corpus\00", align 1
+@mu_file.25745 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25746 = private unnamed_addr constant [16 x i8] c"/target/lang.av\00", align 1
+@.str.25747 = private unnamed_addr constant [58 x i8] c"error: target/lang.av not found \E2\80\94 run `avra lang` first\00", align 1
+@fld_name.25748 = private unnamed_addr constant [4 x i8] c"doc\00", align 1
+@sty_name.25749 = private unnamed_addr constant [15 x i8] c"@std::lsp::Sym\00", align 1
+@src_file.25750 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25751 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25752 = private unnamed_addr constant [10 x i8] c"qualified\00", align 1
+@sty_name.25753 = private unnamed_addr constant [15 x i8] c"@std::lsp::Sym\00", align 1
+@src_file.25754 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25755 = private unnamed_addr constant [21 x i8] c": already documented\00", align 1
+@fld_name.25756 = private unnamed_addr constant [5 x i8] c"file\00", align 1
+@sty_name.25757 = private unnamed_addr constant [15 x i8] c"@std::lsp::Sym\00", align 1
+@src_file.25758 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25759 = private unnamed_addr constant [5 x i8] c"span\00", align 1
+@sty_name.25760 = private unnamed_addr constant [15 x i8] c"@std::lsp::Sym\00", align 1
+@src_file.25761 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25762 = private unnamed_addr constant [6 x i8] c"start\00", align 1
+@sty_name.25763 = private unnamed_addr constant [19 x i8] c"@std::lsp::LspSpan\00", align 1
+@src_file.25764 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25765 = private unnamed_addr constant [5 x i8] c"line\00", align 1
+@sty_name.25766 = private unnamed_addr constant [18 x i8] c"@std::lsp::LspPos\00", align 1
+@src_file.25767 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25768 = private unnamed_addr constant [6 x i8] c"error\00", align 1
+@sty_name.25769 = private unnamed_addr constant [38 x i8] c"@std::avrac::docs::gen::GenStubResult\00", align 1
+@src_file.25770 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
 @.str.25771 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25772 = private unnamed_addr constant [27 x i8] c"Output diagnostics as JSON\00", align 1
-@.str.25773 = private unnamed_addr constant [6 x i8] c"check\00", align 1
-@.str.25774 = private unnamed_addr constant [5 x i8] c"file\00", align 1
-@.str.25775 = private unnamed_addr constant [12 x i8] c"Source file\00", align 1
-@.str.25776 = private unnamed_addr constant [4 x i8] c"run\00", align 1
-@.str.25777 = private unnamed_addr constant [28 x i8] c"Compile and run a Avra file\00", align 1
-@.str.25778 = private unnamed_addr constant [4 x i8] c"run\00", align 1
-@.str.25779 = private unnamed_addr constant [5 x i8] c"file\00", align 1
-@.str.25780 = private unnamed_addr constant [12 x i8] c"Source file\00", align 1
-@.str.25781 = private unnamed_addr constant [6 x i8] c"build\00", align 1
-@.str.25782 = private unnamed_addr constant [72 x i8] c"Incremental build via the @std.avrac.build cache (Phase 1: single-unit)\00", align 1
-@.str.25783 = private unnamed_addr constant [6 x i8] c"build\00", align 1
-@.str.25784 = private unnamed_addr constant [3 x i8] c"--\00", align 1
-@.str.25785 = private unnamed_addr constant [8 x i8] c"release\00", align 1
-@.str.25786 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25787 = private unnamed_addr constant [47 x i8] c"Use [profile.release] instead of [profile.dev]\00", align 1
-@.str.25788 = private unnamed_addr constant [6 x i8] c"build\00", align 1
-@.str.25789 = private unnamed_addr constant [3 x i8] c"--\00", align 1
-@.str.25790 = private unnamed_addr constant [8 x i8] c"explain\00", align 1
-@.str.25791 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25792 = private unnamed_addr constant [60 x i8] c"Print why each unit will rebuild (cargo --explain analogue)\00", align 1
-@.str.25793 = private unnamed_addr constant [6 x i8] c"build\00", align 1
-@.str.25794 = private unnamed_addr constant [5 x i8] c"file\00", align 1
-@.str.25795 = private unnamed_addr constant [50 x i8] c"Entry source file (overrides manifest [bin].path)\00", align 1
-@.str.25796 = private unnamed_addr constant [5 x i8] c"test\00", align 1
-@.str.25797 = private unnamed_addr constant [10 x i8] c"Run tests\00", align 1
-@.str.25798 = private unnamed_addr constant [5 x i8] c"test\00", align 1
-@.str.25799 = private unnamed_addr constant [3 x i8] c"--\00", align 1
-@.str.25800 = private unnamed_addr constant [7 x i8] c"filter\00", align 1
-@.str.25801 = private unnamed_addr constant [3 x i8] c"-f\00", align 1
-@.str.25802 = private unnamed_addr constant [21 x i8] c"Filter tests by name\00", align 1
-@.str.25803 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25804 = private unnamed_addr constant [5 x i8] c"test\00", align 1
-@.str.25805 = private unnamed_addr constant [3 x i8] c"--\00", align 1
-@.str.25806 = private unnamed_addr constant [9 x i8] c"coverage\00", align 1
-@.str.25807 = private unnamed_addr constant [3 x i8] c"-c\00", align 1
-@.str.25808 = private unnamed_addr constant [32 x i8] c"Enable coverage instrumentation\00", align 1
-@.str.25809 = private unnamed_addr constant [5 x i8] c"test\00", align 1
-@.str.25810 = private unnamed_addr constant [5 x i8] c"file\00", align 1
-@.str.25811 = private unnamed_addr constant [21 x i8] c"Test file (optional)\00", align 1
-@.str.25812 = private unnamed_addr constant [5 x i8] c"expr\00", align 1
-@.str.25813 = private unnamed_addr constant [32 x i8] c"Parse and display an expression\00", align 1
-@.str.25814 = private unnamed_addr constant [5 x i8] c"expr\00", align 1
-@.str.25815 = private unnamed_addr constant [5 x i8] c"file\00", align 1
-@.str.25816 = private unnamed_addr constant [12 x i8] c"Source file\00", align 1
-@.str.25817 = private unnamed_addr constant [8 x i8] c"program\00", align 1
-@.str.25818 = private unnamed_addr constant [28 x i8] c"Parse and display a program\00", align 1
-@.str.25819 = private unnamed_addr constant [8 x i8] c"program\00", align 1
-@.str.25820 = private unnamed_addr constant [5 x i8] c"file\00", align 1
-@.str.25821 = private unnamed_addr constant [12 x i8] c"Source file\00", align 1
-@.str.25822 = private unnamed_addr constant [5 x i8] c"eval\00", align 1
-@.str.25823 = private unnamed_addr constant [27 x i8] c"Evaluate a Avra expression\00", align 1
-@.str.25824 = private unnamed_addr constant [5 x i8] c"eval\00", align 1
-@.str.25825 = private unnamed_addr constant [5 x i8] c"file\00", align 1
-@.str.25826 = private unnamed_addr constant [12 x i8] c"Source file\00", align 1
-@.str.25827 = private unnamed_addr constant [4 x i8] c"fix\00", align 1
-@.str.25828 = private unnamed_addr constant [32 x i8] c"Apply auto-fixes to a Avra file\00", align 1
-@.str.25829 = private unnamed_addr constant [4 x i8] c"fix\00", align 1
-@.str.25830 = private unnamed_addr constant [5 x i8] c"file\00", align 1
-@.str.25831 = private unnamed_addr constant [12 x i8] c"Source file\00", align 1
-@.str.25832 = private unnamed_addr constant [4 x i8] c"fmt\00", align 1
-@.str.25833 = private unnamed_addr constant [26 x i8] c"Format a Avra source file\00", align 1
-@.str.25834 = private unnamed_addr constant [4 x i8] c"fmt\00", align 1
-@.str.25835 = private unnamed_addr constant [5 x i8] c"file\00", align 1
-@.str.25836 = private unnamed_addr constant [12 x i8] c"Source file\00", align 1
-@.str.25837 = private unnamed_addr constant [4 x i8] c"lsp\00", align 1
-@.str.25838 = private unnamed_addr constant [22 x i8] c"Start language server\00", align 1
-@.str.25839 = private unnamed_addr constant [9 x i8] c"features\00", align 1
-@.str.25840 = private unnamed_addr constant [25 x i8] c"List registered features\00", align 1
-@.str.25841 = private unnamed_addr constant [5 x i8] c"docs\00", align 1
-@.str.25842 = private unnamed_addr constant [76 x i8] c"Project documentation -- look up your project's functions, types, and enums\00", align 1
-@.str.25843 = private unnamed_addr constant [5 x i8] c"docs\00", align 1
-@.str.25844 = private unnamed_addr constant [3 x i8] c"--\00", align 1
-@.str.25845 = private unnamed_addr constant [8 x i8] c"symbols\00", align 1
-@.str.25846 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25847 = private unnamed_addr constant [27 x i8] c"Show symbol/type reference\00", align 1
-@.str.25848 = private unnamed_addr constant [5 x i8] c"docs\00", align 1
-@.str.25849 = private unnamed_addr constant [3 x i8] c"--\00", align 1
-@.str.25850 = private unnamed_addr constant [6 x i8] c"short\00", align 1
-@.str.25851 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25852 = private unnamed_addr constant [37 x i8] c"Show just the one-liner for a symbol\00", align 1
-@.str.25853 = private unnamed_addr constant [5 x i8] c"docs\00", align 1
-@.str.25854 = private unnamed_addr constant [3 x i8] c"--\00", align 1
-@.str.25855 = private unnamed_addr constant [4 x i8] c"llm\00", align 1
-@.str.25856 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25857 = private unnamed_addr constant [43 x i8] c"Compact LLM-friendly project documentation\00", align 1
-@.str.25858 = private unnamed_addr constant [5 x i8] c"docs\00", align 1
-@.str.25859 = private unnamed_addr constant [3 x i8] c"--\00", align 1
-@.str.25860 = private unnamed_addr constant [9 x i8] c"validate\00", align 1
-@.str.25861 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25862 = private unnamed_addr constant [48 x i8] c"Validate documentation coverage for the project\00", align 1
-@.str.25863 = private unnamed_addr constant [5 x i8] c"docs\00", align 1
-@.str.25864 = private unnamed_addr constant [3 x i8] c"--\00", align 1
-@.str.25865 = private unnamed_addr constant [7 x i8] c"search\00", align 1
-@.str.25866 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25867 = private unnamed_addr constant [38 x i8] c"Search project docs (substring match)\00", align 1
+@.str.25772 = private unnamed_addr constant [8 x i8] c"error: \00", align 1
+@fld_name.25773 = private unnamed_addr constant [6 x i8] c"error\00", align 1
+@sty_name.25774 = private unnamed_addr constant [38 x i8] c"@std::avrac::docs::gen::GenStubResult\00", align 1
+@src_file.25775 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25776 = private unnamed_addr constant [8 x i8] c"skipped\00", align 1
+@sty_name.25777 = private unnamed_addr constant [38 x i8] c"@std::avrac::docs::gen::GenStubResult\00", align 1
+@src_file.25778 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25779 = private unnamed_addr constant [10 x i8] c"qualified\00", align 1
+@sty_name.25780 = private unnamed_addr constant [15 x i8] c"@std::lsp::Sym\00", align 1
+@src_file.25781 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25782 = private unnamed_addr constant [3 x i8] c": \00", align 1
+@fld_name.25783 = private unnamed_addr constant [7 x i8] c"reason\00", align 1
+@sty_name.25784 = private unnamed_addr constant [38 x i8] c"@std::avrac::docs::gen::GenStubResult\00", align 1
+@src_file.25785 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25786 = private unnamed_addr constant [5 x i8] c"file\00", align 1
+@sty_name.25787 = private unnamed_addr constant [15 x i8] c"@std::lsp::Sym\00", align 1
+@src_file.25788 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25789 = private unnamed_addr constant [2 x i8] c":\00", align 1
+@fld_name.25790 = private unnamed_addr constant [5 x i8] c"span\00", align 1
+@sty_name.25791 = private unnamed_addr constant [15 x i8] c"@std::lsp::Sym\00", align 1
+@src_file.25792 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25793 = private unnamed_addr constant [6 x i8] c"start\00", align 1
+@sty_name.25794 = private unnamed_addr constant [19 x i8] c"@std::lsp::LspSpan\00", align 1
+@src_file.25795 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25796 = private unnamed_addr constant [5 x i8] c"line\00", align 1
+@sty_name.25797 = private unnamed_addr constant [18 x i8] c"@std::lsp::LspPos\00", align 1
+@src_file.25798 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.i2s_fmt.25799 = private unnamed_addr constant [5 x i8] c"%lld\00", align 1
+@.str.25800 = private unnamed_addr constant [25 x i8] c": inserted /// stub for \00", align 1
+@fld_name.25801 = private unnamed_addr constant [10 x i8] c"qualified\00", align 1
+@sty_name.25802 = private unnamed_addr constant [15 x i8] c"@std::lsp::Sym\00", align 1
+@src_file.25803 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25804 = private unnamed_addr constant [4 x i8] c"app\00", align 1
+@.str.25805 = private unnamed_addr constant [24 x i8] c"Avra bootstrap compiler\00", align 1
+@.str.25806 = private unnamed_addr constant [6 x i8] c"0.1.0\00", align 1
+@.str.25807 = private unnamed_addr constant [8 x i8] c"compile\00", align 1
+@.str.25808 = private unnamed_addr constant [31 x i8] c"Compile a Avra file to LLVM IR\00", align 1
+@.str.25809 = private unnamed_addr constant [8 x i8] c"compile\00", align 1
+@.str.25810 = private unnamed_addr constant [3 x i8] c"--\00", align 1
+@.str.25811 = private unnamed_addr constant [9 x i8] c"coverage\00", align 1
+@.str.25812 = private unnamed_addr constant [3 x i8] c"-c\00", align 1
+@.str.25813 = private unnamed_addr constant [32 x i8] c"Enable coverage instrumentation\00", align 1
+@.str.25814 = private unnamed_addr constant [8 x i8] c"compile\00", align 1
+@.str.25815 = private unnamed_addr constant [3 x i8] c"--\00", align 1
+@.str.25816 = private unnamed_addr constant [11 x i8] c"debug_null\00", align 1
+@.str.25817 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25818 = private unnamed_addr constant [28 x i8] c"Enable null argument checks\00", align 1
+@.str.25819 = private unnamed_addr constant [8 x i8] c"compile\00", align 1
+@.str.25820 = private unnamed_addr constant [3 x i8] c"--\00", align 1
+@.str.25821 = private unnamed_addr constant [5 x i8] c"json\00", align 1
+@.str.25822 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25823 = private unnamed_addr constant [27 x i8] c"Output diagnostics as JSON\00", align 1
+@.str.25824 = private unnamed_addr constant [8 x i8] c"compile\00", align 1
+@.str.25825 = private unnamed_addr constant [3 x i8] c"--\00", align 1
+@.str.25826 = private unnamed_addr constant [11 x i8] c"stop_after\00", align 1
+@.str.25827 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25828 = private unnamed_addr constant [45 x i8] c"Stop after phase (parse|resolve|names|check)\00", align 1
+@.str.25829 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25830 = private unnamed_addr constant [8 x i8] c"compile\00", align 1
+@.str.25831 = private unnamed_addr constant [5 x i8] c"file\00", align 1
+@.str.25832 = private unnamed_addr constant [12 x i8] c"Source file\00", align 1
+@.str.25833 = private unnamed_addr constant [6 x i8] c"check\00", align 1
+@.str.25834 = private unnamed_addr constant [23 x i8] c"Type-check a Avra file\00", align 1
+@.str.25835 = private unnamed_addr constant [6 x i8] c"check\00", align 1
+@.str.25836 = private unnamed_addr constant [3 x i8] c"--\00", align 1
+@.str.25837 = private unnamed_addr constant [5 x i8] c"json\00", align 1
+@.str.25838 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25839 = private unnamed_addr constant [27 x i8] c"Output diagnostics as JSON\00", align 1
+@.str.25840 = private unnamed_addr constant [6 x i8] c"check\00", align 1
+@.str.25841 = private unnamed_addr constant [5 x i8] c"file\00", align 1
+@.str.25842 = private unnamed_addr constant [12 x i8] c"Source file\00", align 1
+@.str.25843 = private unnamed_addr constant [4 x i8] c"run\00", align 1
+@.str.25844 = private unnamed_addr constant [28 x i8] c"Compile and run a Avra file\00", align 1
+@.str.25845 = private unnamed_addr constant [4 x i8] c"run\00", align 1
+@.str.25846 = private unnamed_addr constant [5 x i8] c"file\00", align 1
+@.str.25847 = private unnamed_addr constant [12 x i8] c"Source file\00", align 1
+@.str.25848 = private unnamed_addr constant [6 x i8] c"build\00", align 1
+@.str.25849 = private unnamed_addr constant [72 x i8] c"Incremental build via the @std.avrac.build cache (Phase 1: single-unit)\00", align 1
+@.str.25850 = private unnamed_addr constant [6 x i8] c"build\00", align 1
+@.str.25851 = private unnamed_addr constant [3 x i8] c"--\00", align 1
+@.str.25852 = private unnamed_addr constant [8 x i8] c"release\00", align 1
+@.str.25853 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25854 = private unnamed_addr constant [47 x i8] c"Use [profile.release] instead of [profile.dev]\00", align 1
+@.str.25855 = private unnamed_addr constant [6 x i8] c"build\00", align 1
+@.str.25856 = private unnamed_addr constant [3 x i8] c"--\00", align 1
+@.str.25857 = private unnamed_addr constant [8 x i8] c"explain\00", align 1
+@.str.25858 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25859 = private unnamed_addr constant [60 x i8] c"Print why each unit will rebuild (cargo --explain analogue)\00", align 1
+@.str.25860 = private unnamed_addr constant [6 x i8] c"build\00", align 1
+@.str.25861 = private unnamed_addr constant [5 x i8] c"file\00", align 1
+@.str.25862 = private unnamed_addr constant [50 x i8] c"Entry source file (overrides manifest [bin].path)\00", align 1
+@.str.25863 = private unnamed_addr constant [6 x i8] c"clean\00", align 1
+@.str.25864 = private unnamed_addr constant [57 x i8] c"Remove build/ artifacts (preserves the cache by default)\00", align 1
+@.str.25865 = private unnamed_addr constant [6 x i8] c"clean\00", align 1
+@.str.25866 = private unnamed_addr constant [3 x i8] c"--\00", align 1
+@.str.25867 = private unnamed_addr constant [4 x i8] c"all\00", align 1
 @.str.25868 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25869 = private unnamed_addr constant [5 x i8] c"docs\00", align 1
-@.str.25870 = private unnamed_addr constant [6 x i8] c"query\00", align 1
-@.str.25871 = private unnamed_addr constant [46 x i8] c"Symbol to look up (function, type, enum name)\00", align 1
-@.str.25872 = private unnamed_addr constant [4 x i8] c"lsp\00", align 1
-@.str.25873 = private unnamed_addr constant [4 x i8] c"PWD\00", align 1
-@.str.25874 = private unnamed_addr constant [5 x i8] c"lang\00", align 1
-@.str.25875 = private unnamed_addr constant [5 x i8] c"docs\00", align 1
-@.str.25876 = private unnamed_addr constant [5 x i8] c"test\00", align 1
-@.str.25877 = private unnamed_addr constant [6 x i8] c"build\00", align 1
+@.str.25869 = private unnamed_addr constant [28 x i8] c"Remove build/cache/ as well\00", align 1
+@.str.25870 = private unnamed_addr constant [6 x i8] c"cache\00", align 1
+@.str.25871 = private unnamed_addr constant [37 x i8] c"Manage the build cache: prune | info\00", align 1
+@.str.25872 = private unnamed_addr constant [6 x i8] c"cache\00", align 1
+@.str.25873 = private unnamed_addr constant [3 x i8] c"--\00", align 1
+@.str.25874 = private unnamed_addr constant [8 x i8] c"dry_run\00", align 1
+@.str.25875 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25876 = private unnamed_addr constant [57 x i8] c"Print what would change but do not modify the filesystem\00", align 1
+@.str.25877 = private unnamed_addr constant [6 x i8] c"cache\00", align 1
 @.str.25878 = private unnamed_addr constant [3 x i8] c"--\00", align 1
-@.str.25879 = private unnamed_addr constant [24 x i8] c"error: file not found: \00", align 1
+@.str.25879 = private unnamed_addr constant [13 x i8] c"max_age_days\00", align 1
 @.str.25880 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.lit_str.25881 = private unnamed_addr constant [5 x i8] c"expr\00", align 1
-@fld_name.25882 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
-@sty_name.25883 = private unnamed_addr constant [32 x i8] c"@std::avrac::parse::ParseResult\00", align 1
-@src_file.25884 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25885 = private unnamed_addr constant [5 x i8] c"expr\00", align 1
-@sty_name.25886 = private unnamed_addr constant [32 x i8] c"@std::avrac::parse::ParseResult\00", align 1
-@src_file.25887 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25888 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
-@sty_name.25889 = private unnamed_addr constant [32 x i8] c"@std::avrac::parse::ParseResult\00", align 1
-@src_file.25890 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25891 = private unnamed_addr constant [5 x i8] c"expr\00", align 1
-@sty_name.25892 = private unnamed_addr constant [32 x i8] c"@std::avrac::parse::ParseResult\00", align 1
-@src_file.25893 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.lit_str.25894 = private unnamed_addr constant [8 x i8] c"program\00", align 1
-@fld_name.25895 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
-@sty_name.25896 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
-@src_file.25897 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25898 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.25899 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
-@src_file.25900 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25901 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
-@sty_name.25902 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
-@src_file.25903 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25904 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.25905 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
-@src_file.25906 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.lit_str.25907 = private unnamed_addr constant [5 x i8] c"eval\00", align 1
-@fld_name.25908 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
-@sty_name.25909 = private unnamed_addr constant [40 x i8] c"@std::avrac::features::eval::EvalResult\00", align 1
-@src_file.25910 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25911 = private unnamed_addr constant [6 x i8] c"value\00", align 1
-@sty_name.25912 = private unnamed_addr constant [40 x i8] c"@std::avrac::features::eval::EvalResult\00", align 1
-@src_file.25913 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25914 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
-@sty_name.25915 = private unnamed_addr constant [40 x i8] c"@std::avrac::features::eval::EvalResult\00", align 1
-@src_file.25916 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25917 = private unnamed_addr constant [6 x i8] c"value\00", align 1
-@sty_name.25918 = private unnamed_addr constant [40 x i8] c"@std::avrac::features::eval::EvalResult\00", align 1
-@src_file.25919 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.lit_str.25920 = private unnamed_addr constant [6 x i8] c"check\00", align 1
-@.str.25921 = private unnamed_addr constant [5 x i8] c"json\00", align 1
-@fld_name.25922 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
-@sty_name.25923 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
-@src_file.25924 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25925 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.25926 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
-@src_file.25927 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25928 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.25929 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
-@src_file.25930 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25931 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.25932 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
-@src_file.25933 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25934 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
-@sty_name.25935 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
-@src_file.25936 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25937 = private unnamed_addr constant [6 x i8] c"found\00", align 1
-@sty_name.25938 = private unnamed_addr constant [55 x i8] c"@std::avrac::features::modules::package::PackageConfig\00", align 1
-@src_file.25939 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25940 = private unnamed_addr constant [7 x i8] c"[pkg] \00", align 1
-@fld_name.25941 = private unnamed_addr constant [5 x i8] c"name\00", align 1
-@sty_name.25942 = private unnamed_addr constant [55 x i8] c"@std::avrac::features::modules::package::PackageConfig\00", align 1
-@src_file.25943 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25944 = private unnamed_addr constant [3 x i8] c" v\00", align 1
-@fld_name.25945 = private unnamed_addr constant [8 x i8] c"version\00", align 1
-@sty_name.25946 = private unnamed_addr constant [55 x i8] c"@std::avrac::features::modules::package::PackageConfig\00", align 1
-@src_file.25947 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25948 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.25949 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
-@src_file.25950 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25951 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
-@sty_name.25952 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
-@src_file.25953 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25954 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
-@sty_name.25955 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
-@src_file.25956 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25957 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
-@sty_name.25958 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
-@src_file.25959 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25960 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.25961 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
-@src_file.25962 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25963 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.25964 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
-@src_file.25965 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25966 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.25967 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
-@src_file.25968 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25969 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.25970 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
-@src_file.25971 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25972 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
-@sty_name.25973 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
-@src_file.25974 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25975 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
-@sty_name.25976 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
-@src_file.25977 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25978 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.25979 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
-@src_file.25980 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25981 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.25982 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
-@src_file.25983 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25984 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.25985 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
-@src_file.25986 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25987 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.25988 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
+@.str.25881 = private unnamed_addr constant [43 x i8] c"Evict entries with mtime older than N days\00", align 1
+@.str.25882 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25883 = private unnamed_addr constant [6 x i8] c"cache\00", align 1
+@.str.25884 = private unnamed_addr constant [11 x i8] c"subcommand\00", align 1
+@.str.25885 = private unnamed_addr constant [13 x i8] c"prune | info\00", align 1
+@.str.25886 = private unnamed_addr constant [5 x i8] c"test\00", align 1
+@.str.25887 = private unnamed_addr constant [10 x i8] c"Run tests\00", align 1
+@.str.25888 = private unnamed_addr constant [5 x i8] c"test\00", align 1
+@.str.25889 = private unnamed_addr constant [3 x i8] c"--\00", align 1
+@.str.25890 = private unnamed_addr constant [7 x i8] c"filter\00", align 1
+@.str.25891 = private unnamed_addr constant [3 x i8] c"-f\00", align 1
+@.str.25892 = private unnamed_addr constant [21 x i8] c"Filter tests by name\00", align 1
+@.str.25893 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25894 = private unnamed_addr constant [5 x i8] c"test\00", align 1
+@.str.25895 = private unnamed_addr constant [3 x i8] c"--\00", align 1
+@.str.25896 = private unnamed_addr constant [9 x i8] c"coverage\00", align 1
+@.str.25897 = private unnamed_addr constant [3 x i8] c"-c\00", align 1
+@.str.25898 = private unnamed_addr constant [32 x i8] c"Enable coverage instrumentation\00", align 1
+@.str.25899 = private unnamed_addr constant [5 x i8] c"test\00", align 1
+@.str.25900 = private unnamed_addr constant [5 x i8] c"file\00", align 1
+@.str.25901 = private unnamed_addr constant [21 x i8] c"Test file (optional)\00", align 1
+@.str.25902 = private unnamed_addr constant [5 x i8] c"expr\00", align 1
+@.str.25903 = private unnamed_addr constant [32 x i8] c"Parse and display an expression\00", align 1
+@.str.25904 = private unnamed_addr constant [5 x i8] c"expr\00", align 1
+@.str.25905 = private unnamed_addr constant [5 x i8] c"file\00", align 1
+@.str.25906 = private unnamed_addr constant [12 x i8] c"Source file\00", align 1
+@.str.25907 = private unnamed_addr constant [8 x i8] c"program\00", align 1
+@.str.25908 = private unnamed_addr constant [28 x i8] c"Parse and display a program\00", align 1
+@.str.25909 = private unnamed_addr constant [8 x i8] c"program\00", align 1
+@.str.25910 = private unnamed_addr constant [5 x i8] c"file\00", align 1
+@.str.25911 = private unnamed_addr constant [12 x i8] c"Source file\00", align 1
+@.str.25912 = private unnamed_addr constant [5 x i8] c"eval\00", align 1
+@.str.25913 = private unnamed_addr constant [27 x i8] c"Evaluate a Avra expression\00", align 1
+@.str.25914 = private unnamed_addr constant [5 x i8] c"eval\00", align 1
+@.str.25915 = private unnamed_addr constant [5 x i8] c"file\00", align 1
+@.str.25916 = private unnamed_addr constant [12 x i8] c"Source file\00", align 1
+@.str.25917 = private unnamed_addr constant [4 x i8] c"fix\00", align 1
+@.str.25918 = private unnamed_addr constant [32 x i8] c"Apply auto-fixes to a Avra file\00", align 1
+@.str.25919 = private unnamed_addr constant [4 x i8] c"fix\00", align 1
+@.str.25920 = private unnamed_addr constant [5 x i8] c"file\00", align 1
+@.str.25921 = private unnamed_addr constant [12 x i8] c"Source file\00", align 1
+@.str.25922 = private unnamed_addr constant [4 x i8] c"fmt\00", align 1
+@.str.25923 = private unnamed_addr constant [26 x i8] c"Format a Avra source file\00", align 1
+@.str.25924 = private unnamed_addr constant [4 x i8] c"fmt\00", align 1
+@.str.25925 = private unnamed_addr constant [5 x i8] c"file\00", align 1
+@.str.25926 = private unnamed_addr constant [12 x i8] c"Source file\00", align 1
+@.str.25927 = private unnamed_addr constant [4 x i8] c"lsp\00", align 1
+@.str.25928 = private unnamed_addr constant [22 x i8] c"Start language server\00", align 1
+@.str.25929 = private unnamed_addr constant [9 x i8] c"features\00", align 1
+@.str.25930 = private unnamed_addr constant [25 x i8] c"List registered features\00", align 1
+@.str.25931 = private unnamed_addr constant [5 x i8] c"docs\00", align 1
+@.str.25932 = private unnamed_addr constant [76 x i8] c"Project documentation -- look up your project's functions, types, and enums\00", align 1
+@.str.25933 = private unnamed_addr constant [5 x i8] c"docs\00", align 1
+@.str.25934 = private unnamed_addr constant [3 x i8] c"--\00", align 1
+@.str.25935 = private unnamed_addr constant [8 x i8] c"symbols\00", align 1
+@.str.25936 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25937 = private unnamed_addr constant [27 x i8] c"Show symbol/type reference\00", align 1
+@.str.25938 = private unnamed_addr constant [5 x i8] c"docs\00", align 1
+@.str.25939 = private unnamed_addr constant [3 x i8] c"--\00", align 1
+@.str.25940 = private unnamed_addr constant [6 x i8] c"short\00", align 1
+@.str.25941 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25942 = private unnamed_addr constant [37 x i8] c"Show just the one-liner for a symbol\00", align 1
+@.str.25943 = private unnamed_addr constant [5 x i8] c"docs\00", align 1
+@.str.25944 = private unnamed_addr constant [3 x i8] c"--\00", align 1
+@.str.25945 = private unnamed_addr constant [4 x i8] c"llm\00", align 1
+@.str.25946 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25947 = private unnamed_addr constant [43 x i8] c"Compact LLM-friendly project documentation\00", align 1
+@.str.25948 = private unnamed_addr constant [5 x i8] c"docs\00", align 1
+@.str.25949 = private unnamed_addr constant [3 x i8] c"--\00", align 1
+@.str.25950 = private unnamed_addr constant [9 x i8] c"validate\00", align 1
+@.str.25951 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25952 = private unnamed_addr constant [48 x i8] c"Validate documentation coverage for the project\00", align 1
+@.str.25953 = private unnamed_addr constant [5 x i8] c"docs\00", align 1
+@.str.25954 = private unnamed_addr constant [3 x i8] c"--\00", align 1
+@.str.25955 = private unnamed_addr constant [7 x i8] c"search\00", align 1
+@.str.25956 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25957 = private unnamed_addr constant [38 x i8] c"Search project docs (substring match)\00", align 1
+@.str.25958 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.25959 = private unnamed_addr constant [5 x i8] c"docs\00", align 1
+@.str.25960 = private unnamed_addr constant [6 x i8] c"query\00", align 1
+@.str.25961 = private unnamed_addr constant [46 x i8] c"Symbol to look up (function, type, enum name)\00", align 1
+@.str.25962 = private unnamed_addr constant [4 x i8] c"lsp\00", align 1
+@.str.25963 = private unnamed_addr constant [4 x i8] c"PWD\00", align 1
+@.str.25964 = private unnamed_addr constant [5 x i8] c"lang\00", align 1
+@.str.25965 = private unnamed_addr constant [5 x i8] c"docs\00", align 1
+@.str.25966 = private unnamed_addr constant [5 x i8] c"test\00", align 1
+@.str.25967 = private unnamed_addr constant [6 x i8] c"build\00", align 1
+@.str.25968 = private unnamed_addr constant [6 x i8] c"clean\00", align 1
+@.str.25969 = private unnamed_addr constant [6 x i8] c"cache\00", align 1
+@.str.25970 = private unnamed_addr constant [3 x i8] c"--\00", align 1
+@.str.25971 = private unnamed_addr constant [24 x i8] c"error: file not found: \00", align 1
+@.str.25972 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.lit_str.25973 = private unnamed_addr constant [5 x i8] c"expr\00", align 1
+@fld_name.25974 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
+@sty_name.25975 = private unnamed_addr constant [32 x i8] c"@std::avrac::parse::ParseResult\00", align 1
+@src_file.25976 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25977 = private unnamed_addr constant [5 x i8] c"expr\00", align 1
+@sty_name.25978 = private unnamed_addr constant [32 x i8] c"@std::avrac::parse::ParseResult\00", align 1
+@src_file.25979 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25980 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
+@sty_name.25981 = private unnamed_addr constant [32 x i8] c"@std::avrac::parse::ParseResult\00", align 1
+@src_file.25982 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25983 = private unnamed_addr constant [5 x i8] c"expr\00", align 1
+@sty_name.25984 = private unnamed_addr constant [32 x i8] c"@std::avrac::parse::ParseResult\00", align 1
+@src_file.25985 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.lit_str.25986 = private unnamed_addr constant [8 x i8] c"program\00", align 1
+@fld_name.25987 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
+@sty_name.25988 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
 @src_file.25989 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25990 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.25991 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
+@fld_name.25990 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.25991 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
 @src_file.25992 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.25993 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
-@.lit_str.25994 = private unnamed_addr constant [4 x i8] c"run\00", align 1
-@fld_name.25995 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
-@sty_name.25996 = private unnamed_addr constant [40 x i8] c"@std::avrac::features::eval::EvalResult\00", align 1
-@src_file.25997 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.25998 = private unnamed_addr constant [6 x i8] c"value\00", align 1
-@sty_name.25999 = private unnamed_addr constant [40 x i8] c"@std::avrac::features::eval::EvalResult\00", align 1
-@src_file.26000 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26001 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
-@sty_name.26002 = private unnamed_addr constant [40 x i8] c"@std::avrac::features::eval::EvalResult\00", align 1
-@src_file.26003 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26004 = private unnamed_addr constant [6 x i8] c"value\00", align 1
-@sty_name.26005 = private unnamed_addr constant [40 x i8] c"@std::avrac::features::eval::EvalResult\00", align 1
-@src_file.26006 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.lit_str.26007 = private unnamed_addr constant [4 x i8] c"fix\00", align 1
-@fld_name.26008 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
-@sty_name.26009 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
-@src_file.26010 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26011 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.26012 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
-@src_file.26013 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26014 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@fld_name.25993 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
+@sty_name.25994 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@src_file.25995 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.25996 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.25997 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@src_file.25998 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.lit_str.25999 = private unnamed_addr constant [5 x i8] c"eval\00", align 1
+@fld_name.26000 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
+@sty_name.26001 = private unnamed_addr constant [40 x i8] c"@std::avrac::features::eval::EvalResult\00", align 1
+@src_file.26002 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26003 = private unnamed_addr constant [6 x i8] c"value\00", align 1
+@sty_name.26004 = private unnamed_addr constant [40 x i8] c"@std::avrac::features::eval::EvalResult\00", align 1
+@src_file.26005 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26006 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
+@sty_name.26007 = private unnamed_addr constant [40 x i8] c"@std::avrac::features::eval::EvalResult\00", align 1
+@src_file.26008 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26009 = private unnamed_addr constant [6 x i8] c"value\00", align 1
+@sty_name.26010 = private unnamed_addr constant [40 x i8] c"@std::avrac::features::eval::EvalResult\00", align 1
+@src_file.26011 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.lit_str.26012 = private unnamed_addr constant [6 x i8] c"check\00", align 1
+@.str.26013 = private unnamed_addr constant [5 x i8] c"json\00", align 1
+@fld_name.26014 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
 @sty_name.26015 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
 @src_file.26016 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26017 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@fld_name.26017 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
 @sty_name.26018 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
 @src_file.26019 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26020 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
+@fld_name.26020 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
 @sty_name.26021 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
 @src_file.26022 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26023 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@fld_name.26023 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
 @sty_name.26024 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
 @src_file.26025 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26026 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
-@sty_name.26027 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
+@fld_name.26026 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
+@sty_name.26027 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
 @src_file.26028 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26029 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
-@sty_name.26030 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
+@fld_name.26029 = private unnamed_addr constant [6 x i8] c"found\00", align 1
+@sty_name.26030 = private unnamed_addr constant [55 x i8] c"@std::avrac::features::modules::package::PackageConfig\00", align 1
 @src_file.26031 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26032 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.26033 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
-@src_file.26034 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26035 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.26036 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
-@src_file.26037 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26038 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.26039 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
-@src_file.26040 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.26041 = private unnamed_addr constant [24 x i8] c"no auto-fixes available\00", align 1
-@.lit_str.26042 = private unnamed_addr constant [4 x i8] c"fmt\00", align 1
+@.str.26032 = private unnamed_addr constant [7 x i8] c"[pkg] \00", align 1
+@fld_name.26033 = private unnamed_addr constant [5 x i8] c"name\00", align 1
+@sty_name.26034 = private unnamed_addr constant [55 x i8] c"@std::avrac::features::modules::package::PackageConfig\00", align 1
+@src_file.26035 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.26036 = private unnamed_addr constant [3 x i8] c" v\00", align 1
+@fld_name.26037 = private unnamed_addr constant [8 x i8] c"version\00", align 1
+@sty_name.26038 = private unnamed_addr constant [55 x i8] c"@std::avrac::features::modules::package::PackageConfig\00", align 1
+@src_file.26039 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26040 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.26041 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@src_file.26042 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
 @fld_name.26043 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
-@sty_name.26044 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@sty_name.26044 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
 @src_file.26045 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26046 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.26047 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@fld_name.26046 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
+@sty_name.26047 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
 @src_file.26048 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26049 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.26050 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@fld_name.26049 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
+@sty_name.26050 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
 @src_file.26051 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26052 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.26053 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@fld_name.26052 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.26053 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
 @src_file.26054 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26055 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
-@sty_name.26056 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@fld_name.26055 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.26056 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
 @src_file.26057 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26058 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.26059 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@fld_name.26058 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.26059 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
 @src_file.26060 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.lit_str.26061 = private unnamed_addr constant [5 x i8] c"test\00", align 1
-@fld_name.26062 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
-@sty_name.26063 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
-@src_file.26064 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26065 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.26066 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
-@src_file.26067 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26068 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.26069 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
-@src_file.26070 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26071 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.26072 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
-@src_file.26073 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26074 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
-@sty_name.26075 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
-@src_file.26076 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26077 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.26078 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
-@src_file.26079 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26080 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
-@sty_name.26081 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
-@src_file.26082 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26083 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
-@sty_name.26084 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
-@src_file.26085 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26086 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
-@sty_name.26087 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
-@src_file.26088 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26089 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.26090 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
-@src_file.26091 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26092 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.26093 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
-@src_file.26094 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26095 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.26096 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
-@src_file.26097 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26098 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.26099 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
-@src_file.26100 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26101 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
-@sty_name.26102 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
-@src_file.26103 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26104 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
-@sty_name.26105 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
-@src_file.26106 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26107 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.26108 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
-@src_file.26109 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26110 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.26111 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
-@src_file.26112 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26113 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.26114 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
-@src_file.26115 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26116 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.26117 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
-@src_file.26118 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26119 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.26120 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
-@src_file.26121 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.26122 = private unnamed_addr constant [18 x i8] c"type check failed\00", align 1
-@fld_name.26123 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.26124 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
-@src_file.26125 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26126 = private unnamed_addr constant [12 x i8] c"trait_impls\00", align 1
-@sty_name.26127 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
-@src_file.26128 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26129 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.26130 = private unnamed_addr constant [50 x i8] c"@std::avrac::features::generics::mono::MonoResult\00", align 1
-@src_file.26131 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26132 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.26133 = private unnamed_addr constant [50 x i8] c"@std::avrac::features::generics::mono::MonoResult\00", align 1
-@src_file.26134 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.26135 = private unnamed_addr constant [24 x i8] c"monomorphization failed\00", align 1
-@.str.26136 = private unnamed_addr constant [4 x i8] c".ll\00", align 1
-@fld_name.26137 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.26138 = private unnamed_addr constant [50 x i8] c"@std::avrac::features::generics::mono::MonoResult\00", align 1
-@src_file.26139 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26140 = private unnamed_addr constant [9 x i8] c"type_reg\00", align 1
-@sty_name.26141 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
-@src_file.26142 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.26143 = private unnamed_addr constant [41 x i8] c"internal compiler error during codegen: \00", align 1
-@.match_fn.26144 = private unnamed_addr constant [5 x i8] c"main\00", align 1
-@mu_file.26145 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.match_fn.26146 = private unnamed_addr constant [5 x i8] c"main\00", align 1
-@mu_file.26147 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.26148 = private unnamed_addr constant [8 x i8] c"compile\00", align 1
-@.str.26149 = private unnamed_addr constant [11 x i8] c"stop-after\00", align 1
-@.str.26150 = private unnamed_addr constant [11 x i8] c"debug-null\00", align 1
-@.str.26151 = private unnamed_addr constant [9 x i8] c"coverage\00", align 1
-@.str.26152 = private unnamed_addr constant [5 x i8] c"json\00", align 1
-@.str.26153 = private unnamed_addr constant [2 x i8] c"-\00", align 1
-@.str.26154 = private unnamed_addr constant [45 x i8] c"error: compile requires a file path argument\00", align 1
-@.str.26155 = private unnamed_addr constant [24 x i8] c"error: file not found: \00", align 1
-@fld_name.26156 = private unnamed_addr constant [6 x i8] c"found\00", align 1
-@sty_name.26157 = private unnamed_addr constant [55 x i8] c"@std::avrac::features::modules::package::PackageConfig\00", align 1
-@src_file.26158 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.26159 = private unnamed_addr constant [7 x i8] c"[pkg] \00", align 1
-@fld_name.26160 = private unnamed_addr constant [5 x i8] c"name\00", align 1
-@sty_name.26161 = private unnamed_addr constant [55 x i8] c"@std::avrac::features::modules::package::PackageConfig\00", align 1
+@fld_name.26061 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.26062 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
+@src_file.26063 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26064 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
+@sty_name.26065 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
+@src_file.26066 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26067 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
+@sty_name.26068 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
+@src_file.26069 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26070 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.26071 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
+@src_file.26072 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26073 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.26074 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
+@src_file.26075 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26076 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.26077 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
+@src_file.26078 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26079 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.26080 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
+@src_file.26081 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26082 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.26083 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
+@src_file.26084 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.26085 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
+@.lit_str.26086 = private unnamed_addr constant [4 x i8] c"run\00", align 1
+@fld_name.26087 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
+@sty_name.26088 = private unnamed_addr constant [40 x i8] c"@std::avrac::features::eval::EvalResult\00", align 1
+@src_file.26089 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26090 = private unnamed_addr constant [6 x i8] c"value\00", align 1
+@sty_name.26091 = private unnamed_addr constant [40 x i8] c"@std::avrac::features::eval::EvalResult\00", align 1
+@src_file.26092 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26093 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
+@sty_name.26094 = private unnamed_addr constant [40 x i8] c"@std::avrac::features::eval::EvalResult\00", align 1
+@src_file.26095 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26096 = private unnamed_addr constant [6 x i8] c"value\00", align 1
+@sty_name.26097 = private unnamed_addr constant [40 x i8] c"@std::avrac::features::eval::EvalResult\00", align 1
+@src_file.26098 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.lit_str.26099 = private unnamed_addr constant [4 x i8] c"fix\00", align 1
+@fld_name.26100 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
+@sty_name.26101 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@src_file.26102 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26103 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.26104 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@src_file.26105 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26106 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.26107 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@src_file.26108 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26109 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.26110 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@src_file.26111 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26112 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
+@sty_name.26113 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@src_file.26114 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26115 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.26116 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@src_file.26117 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26118 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
+@sty_name.26119 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
+@src_file.26120 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26121 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
+@sty_name.26122 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
+@src_file.26123 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26124 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.26125 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
+@src_file.26126 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26127 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.26128 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
+@src_file.26129 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26130 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.26131 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
+@src_file.26132 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.26133 = private unnamed_addr constant [24 x i8] c"no auto-fixes available\00", align 1
+@.lit_str.26134 = private unnamed_addr constant [4 x i8] c"fmt\00", align 1
+@fld_name.26135 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
+@sty_name.26136 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@src_file.26137 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26138 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.26139 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@src_file.26140 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26141 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.26142 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@src_file.26143 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26144 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.26145 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@src_file.26146 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26147 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
+@sty_name.26148 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@src_file.26149 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26150 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.26151 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@src_file.26152 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.lit_str.26153 = private unnamed_addr constant [5 x i8] c"test\00", align 1
+@fld_name.26154 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
+@sty_name.26155 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@src_file.26156 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26157 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.26158 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@src_file.26159 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26160 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.26161 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
 @src_file.26162 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.26163 = private unnamed_addr constant [3 x i8] c" v\00", align 1
-@fld_name.26164 = private unnamed_addr constant [8 x i8] c"version\00", align 1
-@sty_name.26165 = private unnamed_addr constant [55 x i8] c"@std::avrac::features::modules::package::PackageConfig\00", align 1
-@src_file.26166 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26167 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
-@sty_name.26168 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
-@src_file.26169 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26170 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.26171 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
-@src_file.26172 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26173 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.26174 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
-@src_file.26175 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26176 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.26177 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
-@src_file.26178 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26179 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
-@sty_name.26180 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
-@src_file.26181 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.26182 = private unnamed_addr constant [6 x i8] c"parse\00", align 1
-@.str.26183 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
-@fld_name.26184 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.26185 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@fld_name.26163 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.26164 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@src_file.26165 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26166 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
+@sty_name.26167 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@src_file.26168 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26169 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.26170 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@src_file.26171 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26172 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
+@sty_name.26173 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
+@src_file.26174 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26175 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
+@sty_name.26176 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
+@src_file.26177 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26178 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
+@sty_name.26179 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
+@src_file.26180 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26181 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.26182 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
+@src_file.26183 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26184 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.26185 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
 @src_file.26186 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26187 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
-@sty_name.26188 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
+@fld_name.26187 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.26188 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
 @src_file.26189 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26190 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
-@sty_name.26191 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
+@fld_name.26190 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.26191 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
 @src_file.26192 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26193 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
-@sty_name.26194 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
+@fld_name.26193 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
+@sty_name.26194 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
 @src_file.26195 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.26196 = private unnamed_addr constant [8 x i8] c"resolve\00", align 1
-@.str.26197 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
-@fld_name.26198 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.26199 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
-@src_file.26200 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26201 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.26202 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
-@src_file.26203 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26204 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.26205 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
-@src_file.26206 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26207 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.26208 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
-@src_file.26209 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26210 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
-@sty_name.26211 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
-@src_file.26212 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26213 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
-@sty_name.26214 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
-@src_file.26215 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.26216 = private unnamed_addr constant [6 x i8] c"names\00", align 1
-@.str.26217 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
-@fld_name.26218 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.26219 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
+@fld_name.26196 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
+@sty_name.26197 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
+@src_file.26198 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26199 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.26200 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
+@src_file.26201 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26202 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.26203 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
+@src_file.26204 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26205 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.26206 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
+@src_file.26207 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26208 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.26209 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
+@src_file.26210 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26211 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.26212 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
+@src_file.26213 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.26214 = private unnamed_addr constant [18 x i8] c"type check failed\00", align 1
+@fld_name.26215 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.26216 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
+@src_file.26217 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26218 = private unnamed_addr constant [12 x i8] c"trait_impls\00", align 1
+@sty_name.26219 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
 @src_file.26220 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
 @fld_name.26221 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.26222 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
+@sty_name.26222 = private unnamed_addr constant [50 x i8] c"@std::avrac::features::generics::mono::MonoResult\00", align 1
 @src_file.26223 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
 @fld_name.26224 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.26225 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
+@sty_name.26225 = private unnamed_addr constant [50 x i8] c"@std::avrac::features::generics::mono::MonoResult\00", align 1
 @src_file.26226 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26227 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.26228 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
-@src_file.26229 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26230 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.26231 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
-@src_file.26232 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.26233 = private unnamed_addr constant [18 x i8] c"type check failed\00", align 1
-@.str.26234 = private unnamed_addr constant [6 x i8] c"check\00", align 1
-@.str.26235 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
-@fld_name.26236 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.26237 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
-@src_file.26238 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26239 = private unnamed_addr constant [12 x i8] c"trait_impls\00", align 1
-@sty_name.26240 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
-@src_file.26241 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26242 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.26243 = private unnamed_addr constant [50 x i8] c"@std::avrac::features::generics::mono::MonoResult\00", align 1
-@src_file.26244 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26245 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.26246 = private unnamed_addr constant [50 x i8] c"@std::avrac::features::generics::mono::MonoResult\00", align 1
-@src_file.26247 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.26248 = private unnamed_addr constant [24 x i8] c"monomorphization failed\00", align 1
-@.str.26249 = private unnamed_addr constant [4 x i8] c".ll\00", align 1
-@fld_name.26250 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.26251 = private unnamed_addr constant [50 x i8] c"@std::avrac::features::generics::mono::MonoResult\00", align 1
-@src_file.26252 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.26253 = private unnamed_addr constant [9 x i8] c"type_reg\00", align 1
-@sty_name.26254 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
-@src_file.26255 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.26256 = private unnamed_addr constant [41 x i8] c"internal compiler error during codegen: \00", align 1
-@.match_fn.26257 = private unnamed_addr constant [5 x i8] c"main\00", align 1
-@mu_file.26258 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.26227 = private unnamed_addr constant [24 x i8] c"monomorphization failed\00", align 1
+@.str.26228 = private unnamed_addr constant [4 x i8] c".ll\00", align 1
+@fld_name.26229 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.26230 = private unnamed_addr constant [50 x i8] c"@std::avrac::features::generics::mono::MonoResult\00", align 1
+@src_file.26231 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26232 = private unnamed_addr constant [9 x i8] c"type_reg\00", align 1
+@sty_name.26233 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
+@src_file.26234 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.26235 = private unnamed_addr constant [41 x i8] c"internal compiler error during codegen: \00", align 1
+@.match_fn.26236 = private unnamed_addr constant [5 x i8] c"main\00", align 1
+@mu_file.26237 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.match_fn.26238 = private unnamed_addr constant [5 x i8] c"main\00", align 1
+@mu_file.26239 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.26240 = private unnamed_addr constant [8 x i8] c"compile\00", align 1
+@.str.26241 = private unnamed_addr constant [11 x i8] c"stop-after\00", align 1
+@.str.26242 = private unnamed_addr constant [11 x i8] c"debug-null\00", align 1
+@.str.26243 = private unnamed_addr constant [9 x i8] c"coverage\00", align 1
+@.str.26244 = private unnamed_addr constant [5 x i8] c"json\00", align 1
+@.str.26245 = private unnamed_addr constant [2 x i8] c"-\00", align 1
+@.str.26246 = private unnamed_addr constant [45 x i8] c"error: compile requires a file path argument\00", align 1
+@.str.26247 = private unnamed_addr constant [24 x i8] c"error: file not found: \00", align 1
+@fld_name.26248 = private unnamed_addr constant [6 x i8] c"found\00", align 1
+@sty_name.26249 = private unnamed_addr constant [55 x i8] c"@std::avrac::features::modules::package::PackageConfig\00", align 1
+@src_file.26250 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.26251 = private unnamed_addr constant [7 x i8] c"[pkg] \00", align 1
+@fld_name.26252 = private unnamed_addr constant [5 x i8] c"name\00", align 1
+@sty_name.26253 = private unnamed_addr constant [55 x i8] c"@std::avrac::features::modules::package::PackageConfig\00", align 1
+@src_file.26254 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.26255 = private unnamed_addr constant [3 x i8] c" v\00", align 1
+@fld_name.26256 = private unnamed_addr constant [8 x i8] c"version\00", align 1
+@sty_name.26257 = private unnamed_addr constant [55 x i8] c"@std::avrac::features::modules::package::PackageConfig\00", align 1
+@src_file.26258 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26259 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
+@sty_name.26260 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@src_file.26261 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26262 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.26263 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@src_file.26264 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26265 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.26266 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@src_file.26267 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26268 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.26269 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@src_file.26270 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26271 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
+@sty_name.26272 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@src_file.26273 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.26274 = private unnamed_addr constant [6 x i8] c"parse\00", align 1
+@.str.26275 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
+@fld_name.26276 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.26277 = private unnamed_addr constant [39 x i8] c"@std::avrac::parse::ProgramParseResult\00", align 1
+@src_file.26278 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26279 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
+@sty_name.26280 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
+@src_file.26281 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26282 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
+@sty_name.26283 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
+@src_file.26284 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26285 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
+@sty_name.26286 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
+@src_file.26287 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.26288 = private unnamed_addr constant [8 x i8] c"resolve\00", align 1
+@.str.26289 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
+@fld_name.26290 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.26291 = private unnamed_addr constant [56 x i8] c"@std::avrac::features::modules::resolver::ModListResult\00", align 1
+@src_file.26292 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26293 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.26294 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
+@src_file.26295 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26296 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.26297 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
+@src_file.26298 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26299 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.26300 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
+@src_file.26301 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26302 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
+@sty_name.26303 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
+@src_file.26304 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26305 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
+@sty_name.26306 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
+@src_file.26307 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.26308 = private unnamed_addr constant [6 x i8] c"names\00", align 1
+@.str.26309 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
+@fld_name.26310 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.26311 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
+@src_file.26312 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26313 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.26314 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
+@src_file.26315 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26316 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.26317 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
+@src_file.26318 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26319 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.26320 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
+@src_file.26321 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26322 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.26323 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
+@src_file.26324 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.26325 = private unnamed_addr constant [18 x i8] c"type check failed\00", align 1
+@.str.26326 = private unnamed_addr constant [6 x i8] c"check\00", align 1
+@.str.26327 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
+@fld_name.26328 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.26329 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
+@src_file.26330 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26331 = private unnamed_addr constant [12 x i8] c"trait_impls\00", align 1
+@sty_name.26332 = private unnamed_addr constant [37 x i8] c"@std::avrac::typeck::TypeCheckResult\00", align 1
+@src_file.26333 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26334 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.26335 = private unnamed_addr constant [50 x i8] c"@std::avrac::features::generics::mono::MonoResult\00", align 1
+@src_file.26336 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26337 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.26338 = private unnamed_addr constant [50 x i8] c"@std::avrac::features::generics::mono::MonoResult\00", align 1
+@src_file.26339 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.26340 = private unnamed_addr constant [24 x i8] c"monomorphization failed\00", align 1
+@.str.26341 = private unnamed_addr constant [4 x i8] c".ll\00", align 1
+@fld_name.26342 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.26343 = private unnamed_addr constant [50 x i8] c"@std::avrac::features::generics::mono::MonoResult\00", align 1
+@src_file.26344 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.26345 = private unnamed_addr constant [9 x i8] c"type_reg\00", align 1
+@sty_name.26346 = private unnamed_addr constant [47 x i8] c"@std::avrac::resolve::names::NameResolveResult\00", align 1
+@src_file.26347 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.26348 = private unnamed_addr constant [41 x i8] c"internal compiler error during codegen: \00", align 1
+@.match_fn.26349 = private unnamed_addr constant [5 x i8] c"main\00", align 1
+@mu_file.26350 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
 
 declare i32 @puts(ptr)
 
@@ -331614,6 +331706,1042 @@ if_else357:                                       ; preds = %ifcont313
   br label %ifcont355
 }
 
+define i64 @run_clean_command() {
+entry:
+  %sif_result = alloca i64, align 8
+  %cache_stash = alloca ptr, align 8
+  %cache_dir = alloca ptr, align 8
+  %build_dir = alloca ptr, align 8
+  %arg = alloca ptr, align 8
+  %i = alloca i64, align 8
+  %all_flag = alloca i1, align 1
+  %project_dir = alloca ptr, align 8
+  %0 = call ptr @avra_process_env_get(ptr @.str.25356)
+  store ptr %0, ptr %project_dir, align 8
+  store i1 false, ptr %all_flag, align 8
+  store i64 2, ptr %i, align 8
+  br label %while.cond
+
+while.cond:                                       ; preds = %ifcont, %entry
+  %i1 = load i64, ptr %i, align 8
+  %1 = call i64 @avra_selfhost_argc()
+  %slt = icmp slt i64 %i1, %1
+  %slt_ext = zext i1 %slt to i64
+  %while_cond = icmp ne i64 %slt_ext, 0
+  br i1 %while_cond, label %while.body, label %while.exit
+
+while.body:                                       ; preds = %while.cond
+  %i2 = load i64, ptr %i, align 8
+  %2 = call ptr @avra_selfhost_get_arg_cstr(i64 %i2)
+  store ptr %2, ptr %arg, align 8
+  %arg3 = load ptr, ptr %arg, align 8
+  %3 = call i32 @strcmp(ptr %arg3, ptr @.str.25357)
+  %widen = sext i32 %3 to i64
+  %streq_cmp = icmp eq i64 %widen, 0
+  %streq_ext = zext i1 %streq_cmp to i64
+  %if_cond = icmp ne i64 %streq_ext, 0
+  br i1 %if_cond, label %if_then, label %if_else
+
+while.exit:                                       ; preds = %while.cond
+  %project_dir5 = load ptr, ptr %project_dir, align 8
+  %4 = call i64 @strlen(ptr %project_dir5)
+  %5 = call i64 @strlen(ptr @.str.25358)
+  %concat_total = add i64 %4, %5
+  %concat_size = add i64 %concat_total, 1
+  %6 = call ptr @avra_rc_alloc(i64 %concat_size)
+  %7 = call ptr @memcpy(ptr %6, ptr %project_dir5, i64 %4)
+  %cast = ptrtoint ptr %6 to i64
+  %dst2_int = add i64 %cast, %4
+  %cast6 = inttoptr i64 %dst2_int to ptr
+  %rhs_len_p1 = add i64 %5, 1
+  %8 = call ptr @memcpy(ptr %cast6, ptr @.str.25358, i64 %rhs_len_p1)
+  store ptr %6, ptr %build_dir, align 8
+  %build_dir7 = load ptr, ptr %build_dir, align 8
+  %9 = call i64 @avra_selfhost_file_exists(ptr %build_dir7)
+  %not_cmp = icmp eq i64 %9, 0
+  %not_cmp_ext = zext i1 %not_cmp to i64
+  %if_cond9 = icmp ne i64 %not_cmp_ext, 0
+  br i1 %if_cond9, label %if_then10, label %if_else11
+
+ifcont:                                           ; preds = %if_else, %if_then
+  %i4 = load i64, ptr %i, align 8
+  %add = add i64 %i4, 1
+  store i64 %add, ptr %i, align 8
+  br label %while.cond
+
+if_then:                                          ; preds = %while.body
+  store i1 true, ptr %all_flag, align 8
+  br label %ifcont
+
+if_else:                                          ; preds = %while.body
+  br label %ifcont
+
+ifcont8:                                          ; preds = %if_else11
+  %all_flag26 = load i1, ptr %all_flag, align 8
+  br i1 %all_flag26, label %if_then28, label %if_else29
+
+if_then10:                                        ; preds = %while.exit
+  %build_dir12 = load ptr, ptr %build_dir, align 8
+  %10 = call i64 @strlen(ptr @.str.25359)
+  %11 = call i64 @strlen(ptr %build_dir12)
+  %concat_total13 = add i64 %10, %11
+  %concat_size14 = add i64 %concat_total13, 1
+  %12 = call ptr @avra_rc_alloc(i64 %concat_size14)
+  %13 = call ptr @memcpy(ptr %12, ptr @.str.25359, i64 %10)
+  %cast15 = ptrtoint ptr %12 to i64
+  %dst2_int16 = add i64 %cast15, %10
+  %cast17 = inttoptr i64 %dst2_int16 to ptr
+  %rhs_len_p118 = add i64 %11, 1
+  %14 = call ptr @memcpy(ptr %cast17, ptr %build_dir12, i64 %rhs_len_p118)
+  %15 = call i64 @strlen(ptr %12)
+  %16 = call i64 @strlen(ptr @.str.25360)
+  %concat_total19 = add i64 %15, %16
+  %concat_size20 = add i64 %concat_total19, 1
+  %17 = call ptr @avra_rc_alloc(i64 %concat_size20)
+  %18 = call ptr @memcpy(ptr %17, ptr %12, i64 %15)
+  %cast21 = ptrtoint ptr %17 to i64
+  %dst2_int22 = add i64 %cast21, %15
+  %cast23 = inttoptr i64 %dst2_int22 to ptr
+  %rhs_len_p124 = add i64 %16, 1
+  %19 = call ptr @memcpy(ptr %cast23, ptr @.str.25360, i64 %rhs_len_p124)
+  %20 = call i32 @puts(ptr %17)
+  %widen25 = sext i32 %20 to i64
+  ret i64 0
+
+if_else11:                                        ; preds = %while.exit
+  br label %ifcont8
+
+ifcont27:                                         ; preds = %if_else29
+  %build_dir57 = load ptr, ptr %build_dir, align 8
+  %21 = call i64 @strlen(ptr %build_dir57)
+  %22 = call i64 @strlen(ptr @.str.25365)
+  %concat_total58 = add i64 %21, %22
+  %concat_size59 = add i64 %concat_total58, 1
+  %23 = call ptr @avra_rc_alloc(i64 %concat_size59)
+  %24 = call ptr @memcpy(ptr %23, ptr %build_dir57, i64 %21)
+  %cast60 = ptrtoint ptr %23 to i64
+  %dst2_int61 = add i64 %cast60, %21
+  %cast62 = inttoptr i64 %dst2_int61 to ptr
+  %rhs_len_p163 = add i64 %22, 1
+  %25 = call ptr @memcpy(ptr %cast62, ptr @.str.25365, i64 %rhs_len_p163)
+  store ptr %23, ptr %cache_dir, align 8
+  %project_dir64 = load ptr, ptr %project_dir, align 8
+  %26 = call i64 @strlen(ptr %project_dir64)
+  %27 = call i64 @strlen(ptr @.str.25366)
+  %concat_total65 = add i64 %26, %27
+  %concat_size66 = add i64 %concat_total65, 1
+  %28 = call ptr @avra_rc_alloc(i64 %concat_size66)
+  %29 = call ptr @memcpy(ptr %28, ptr %project_dir64, i64 %26)
+  %cast67 = ptrtoint ptr %28 to i64
+  %dst2_int68 = add i64 %cast67, %26
+  %cast69 = inttoptr i64 %dst2_int68 to ptr
+  %rhs_len_p170 = add i64 %27, 1
+  %30 = call ptr @memcpy(ptr %cast69, ptr @.str.25366, i64 %rhs_len_p170)
+  store ptr %28, ptr %cache_stash, align 8
+  %cache_dir71 = load ptr, ptr %cache_dir, align 8
+  %31 = call i64 @avra_selfhost_file_exists(ptr %cache_dir71)
+  %if_cond73 = icmp ne i64 %31, 0
+  br i1 %if_cond73, label %if_then74, label %if_else75
+
+if_then28:                                        ; preds = %ifcont8
+  %build_dir30 = load ptr, ptr %build_dir, align 8
+  %32 = call i64 @strlen(ptr @.str.25361)
+  %33 = call i64 @strlen(ptr %build_dir30)
+  %concat_total31 = add i64 %32, %33
+  %concat_size32 = add i64 %concat_total31, 1
+  %34 = call ptr @avra_rc_alloc(i64 %concat_size32)
+  %35 = call ptr @memcpy(ptr %34, ptr @.str.25361, i64 %32)
+  %cast33 = ptrtoint ptr %34 to i64
+  %dst2_int34 = add i64 %cast33, %32
+  %cast35 = inttoptr i64 %dst2_int34 to ptr
+  %rhs_len_p136 = add i64 %33, 1
+  %36 = call ptr @memcpy(ptr %cast35, ptr %build_dir30, i64 %rhs_len_p136)
+  %37 = call i64 @strlen(ptr %34)
+  %38 = call i64 @strlen(ptr @.str.25362)
+  %concat_total37 = add i64 %37, %38
+  %concat_size38 = add i64 %concat_total37, 1
+  %39 = call ptr @avra_rc_alloc(i64 %concat_size38)
+  %40 = call ptr @memcpy(ptr %39, ptr %34, i64 %37)
+  %cast39 = ptrtoint ptr %39 to i64
+  %dst2_int40 = add i64 %cast39, %37
+  %cast41 = inttoptr i64 %dst2_int40 to ptr
+  %rhs_len_p142 = add i64 %38, 1
+  %41 = call ptr @memcpy(ptr %cast41, ptr @.str.25362, i64 %rhs_len_p142)
+  %42 = call ptr @avra_shell_exec(ptr %39)
+  %build_dir43 = load ptr, ptr %build_dir, align 8
+  %43 = call i64 @strlen(ptr @.str.25363)
+  %44 = call i64 @strlen(ptr %build_dir43)
+  %concat_total44 = add i64 %43, %44
+  %concat_size45 = add i64 %concat_total44, 1
+  %45 = call ptr @avra_rc_alloc(i64 %concat_size45)
+  %46 = call ptr @memcpy(ptr %45, ptr @.str.25363, i64 %43)
+  %cast46 = ptrtoint ptr %45 to i64
+  %dst2_int47 = add i64 %cast46, %43
+  %cast48 = inttoptr i64 %dst2_int47 to ptr
+  %rhs_len_p149 = add i64 %44, 1
+  %47 = call ptr @memcpy(ptr %cast48, ptr %build_dir43, i64 %rhs_len_p149)
+  %48 = call i64 @strlen(ptr %45)
+  %49 = call i64 @strlen(ptr @.str.25364)
+  %concat_total50 = add i64 %48, %49
+  %concat_size51 = add i64 %concat_total50, 1
+  %50 = call ptr @avra_rc_alloc(i64 %concat_size51)
+  %51 = call ptr @memcpy(ptr %50, ptr %45, i64 %48)
+  %cast52 = ptrtoint ptr %50 to i64
+  %dst2_int53 = add i64 %cast52, %48
+  %cast54 = inttoptr i64 %dst2_int53 to ptr
+  %rhs_len_p155 = add i64 %49, 1
+  %52 = call ptr @memcpy(ptr %cast54, ptr @.str.25364, i64 %rhs_len_p155)
+  %53 = call i32 @puts(ptr %50)
+  %widen56 = sext i32 %53 to i64
+  ret i64 0
+
+if_else29:                                        ; preds = %ifcont8
+  br label %ifcont27
+
+ifcont72:                                         ; preds = %if_else75, %if_then74
+  %build_dir115 = load ptr, ptr %build_dir, align 8
+  %54 = call i64 @strlen(ptr @.str.25372)
+  %55 = call i64 @strlen(ptr %build_dir115)
+  %concat_total116 = add i64 %54, %55
+  %concat_size117 = add i64 %concat_total116, 1
+  %56 = call ptr @avra_rc_alloc(i64 %concat_size117)
+  %57 = call ptr @memcpy(ptr %56, ptr @.str.25372, i64 %54)
+  %cast118 = ptrtoint ptr %56 to i64
+  %dst2_int119 = add i64 %cast118, %54
+  %cast120 = inttoptr i64 %dst2_int119 to ptr
+  %rhs_len_p1121 = add i64 %55, 1
+  %58 = call ptr @memcpy(ptr %cast120, ptr %build_dir115, i64 %rhs_len_p1121)
+  %59 = call i64 @strlen(ptr %56)
+  %60 = call i64 @strlen(ptr @.str.25373)
+  %concat_total122 = add i64 %59, %60
+  %concat_size123 = add i64 %concat_total122, 1
+  %61 = call ptr @avra_rc_alloc(i64 %concat_size123)
+  %62 = call ptr @memcpy(ptr %61, ptr %56, i64 %59)
+  %cast124 = ptrtoint ptr %61 to i64
+  %dst2_int125 = add i64 %cast124, %59
+  %cast126 = inttoptr i64 %dst2_int125 to ptr
+  %rhs_len_p1127 = add i64 %60, 1
+  %63 = call ptr @memcpy(ptr %cast126, ptr @.str.25373, i64 %rhs_len_p1127)
+  %64 = call ptr @avra_shell_exec(ptr %61)
+  %build_dir128 = load ptr, ptr %build_dir, align 8
+  %65 = call i64 @strlen(ptr @.str.25374)
+  %66 = call i64 @strlen(ptr %build_dir128)
+  %concat_total129 = add i64 %65, %66
+  %concat_size130 = add i64 %concat_total129, 1
+  %67 = call ptr @avra_rc_alloc(i64 %concat_size130)
+  %68 = call ptr @memcpy(ptr %67, ptr @.str.25374, i64 %65)
+  %cast131 = ptrtoint ptr %67 to i64
+  %dst2_int132 = add i64 %cast131, %65
+  %cast133 = inttoptr i64 %dst2_int132 to ptr
+  %rhs_len_p1134 = add i64 %66, 1
+  %69 = call ptr @memcpy(ptr %cast133, ptr %build_dir128, i64 %rhs_len_p1134)
+  %70 = call i64 @strlen(ptr %67)
+  %71 = call i64 @strlen(ptr @.str.25375)
+  %concat_total135 = add i64 %70, %71
+  %concat_size136 = add i64 %concat_total135, 1
+  %72 = call ptr @avra_rc_alloc(i64 %concat_size136)
+  %73 = call ptr @memcpy(ptr %72, ptr %67, i64 %70)
+  %cast137 = ptrtoint ptr %72 to i64
+  %dst2_int138 = add i64 %cast137, %70
+  %cast139 = inttoptr i64 %dst2_int138 to ptr
+  %rhs_len_p1140 = add i64 %71, 1
+  %74 = call ptr @memcpy(ptr %cast139, ptr @.str.25375, i64 %rhs_len_p1140)
+  %75 = call ptr @avra_shell_exec(ptr %72)
+  %cache_stash141 = load ptr, ptr %cache_stash, align 8
+  %76 = call i64 @avra_selfhost_file_exists(ptr %cache_stash141)
+  %sif_cond = icmp ne i64 %76, 0
+  store i64 0, ptr %sif_result, align 8
+  br i1 %sif_cond, label %sif_then, label %sif_else
+
+if_then74:                                        ; preds = %ifcont27
+  %cache_stash76 = load ptr, ptr %cache_stash, align 8
+  %77 = call i64 @strlen(ptr @.str.25367)
+  %78 = call i64 @strlen(ptr %cache_stash76)
+  %concat_total77 = add i64 %77, %78
+  %concat_size78 = add i64 %concat_total77, 1
+  %79 = call ptr @avra_rc_alloc(i64 %concat_size78)
+  %80 = call ptr @memcpy(ptr %79, ptr @.str.25367, i64 %77)
+  %cast79 = ptrtoint ptr %79 to i64
+  %dst2_int80 = add i64 %cast79, %77
+  %cast81 = inttoptr i64 %dst2_int80 to ptr
+  %rhs_len_p182 = add i64 %78, 1
+  %81 = call ptr @memcpy(ptr %cast81, ptr %cache_stash76, i64 %rhs_len_p182)
+  %82 = call i64 @strlen(ptr %79)
+  %83 = call i64 @strlen(ptr @.str.25368)
+  %concat_total83 = add i64 %82, %83
+  %concat_size84 = add i64 %concat_total83, 1
+  %84 = call ptr @avra_rc_alloc(i64 %concat_size84)
+  %85 = call ptr @memcpy(ptr %84, ptr %79, i64 %82)
+  %cast85 = ptrtoint ptr %84 to i64
+  %dst2_int86 = add i64 %cast85, %82
+  %cast87 = inttoptr i64 %dst2_int86 to ptr
+  %rhs_len_p188 = add i64 %83, 1
+  %86 = call ptr @memcpy(ptr %cast87, ptr @.str.25368, i64 %rhs_len_p188)
+  %87 = call ptr @avra_shell_exec(ptr %84)
+  %cache_dir89 = load ptr, ptr %cache_dir, align 8
+  %88 = call i64 @strlen(ptr @.str.25369)
+  %89 = call i64 @strlen(ptr %cache_dir89)
+  %concat_total90 = add i64 %88, %89
+  %concat_size91 = add i64 %concat_total90, 1
+  %90 = call ptr @avra_rc_alloc(i64 %concat_size91)
+  %91 = call ptr @memcpy(ptr %90, ptr @.str.25369, i64 %88)
+  %cast92 = ptrtoint ptr %90 to i64
+  %dst2_int93 = add i64 %cast92, %88
+  %cast94 = inttoptr i64 %dst2_int93 to ptr
+  %rhs_len_p195 = add i64 %89, 1
+  %92 = call ptr @memcpy(ptr %cast94, ptr %cache_dir89, i64 %rhs_len_p195)
+  %93 = call i64 @strlen(ptr %90)
+  %94 = call i64 @strlen(ptr @.str.25370)
+  %concat_total96 = add i64 %93, %94
+  %concat_size97 = add i64 %concat_total96, 1
+  %95 = call ptr @avra_rc_alloc(i64 %concat_size97)
+  %96 = call ptr @memcpy(ptr %95, ptr %90, i64 %93)
+  %cast98 = ptrtoint ptr %95 to i64
+  %dst2_int99 = add i64 %cast98, %93
+  %cast100 = inttoptr i64 %dst2_int99 to ptr
+  %rhs_len_p1101 = add i64 %94, 1
+  %97 = call ptr @memcpy(ptr %cast100, ptr @.str.25370, i64 %rhs_len_p1101)
+  %cache_stash102 = load ptr, ptr %cache_stash, align 8
+  %98 = call i64 @strlen(ptr %95)
+  %99 = call i64 @strlen(ptr %cache_stash102)
+  %concat_total103 = add i64 %98, %99
+  %concat_size104 = add i64 %concat_total103, 1
+  %100 = call ptr @avra_rc_alloc(i64 %concat_size104)
+  %101 = call ptr @memcpy(ptr %100, ptr %95, i64 %98)
+  %cast105 = ptrtoint ptr %100 to i64
+  %dst2_int106 = add i64 %cast105, %98
+  %cast107 = inttoptr i64 %dst2_int106 to ptr
+  %rhs_len_p1108 = add i64 %99, 1
+  %102 = call ptr @memcpy(ptr %cast107, ptr %cache_stash102, i64 %rhs_len_p1108)
+  %103 = call i64 @strlen(ptr %100)
+  %104 = call i64 @strlen(ptr @.str.25371)
+  %concat_total109 = add i64 %103, %104
+  %concat_size110 = add i64 %concat_total109, 1
+  %105 = call ptr @avra_rc_alloc(i64 %concat_size110)
+  %106 = call ptr @memcpy(ptr %105, ptr %100, i64 %103)
+  %cast111 = ptrtoint ptr %105 to i64
+  %dst2_int112 = add i64 %cast111, %103
+  %cast113 = inttoptr i64 %dst2_int112 to ptr
+  %rhs_len_p1114 = add i64 %104, 1
+  %107 = call ptr @memcpy(ptr %cast113, ptr @.str.25371, i64 %rhs_len_p1114)
+  %108 = call ptr @avra_shell_exec(ptr %105)
+  br label %ifcont72
+
+if_else75:                                        ; preds = %ifcont27
+  br label %ifcont72
+
+sif_then:                                         ; preds = %ifcont72
+  %cache_stash142 = load ptr, ptr %cache_stash, align 8
+  %109 = call i64 @strlen(ptr @.str.25376)
+  %110 = call i64 @strlen(ptr %cache_stash142)
+  %concat_total143 = add i64 %109, %110
+  %concat_size144 = add i64 %concat_total143, 1
+  %111 = call ptr @avra_rc_alloc(i64 %concat_size144)
+  %112 = call ptr @memcpy(ptr %111, ptr @.str.25376, i64 %109)
+  %cast145 = ptrtoint ptr %111 to i64
+  %dst2_int146 = add i64 %cast145, %109
+  %cast147 = inttoptr i64 %dst2_int146 to ptr
+  %rhs_len_p1148 = add i64 %110, 1
+  %113 = call ptr @memcpy(ptr %cast147, ptr %cache_stash142, i64 %rhs_len_p1148)
+  %114 = call i64 @strlen(ptr %111)
+  %115 = call i64 @strlen(ptr @.str.25377)
+  %concat_total149 = add i64 %114, %115
+  %concat_size150 = add i64 %concat_total149, 1
+  %116 = call ptr @avra_rc_alloc(i64 %concat_size150)
+  %117 = call ptr @memcpy(ptr %116, ptr %111, i64 %114)
+  %cast151 = ptrtoint ptr %116 to i64
+  %dst2_int152 = add i64 %cast151, %114
+  %cast153 = inttoptr i64 %dst2_int152 to ptr
+  %rhs_len_p1154 = add i64 %115, 1
+  %118 = call ptr @memcpy(ptr %cast153, ptr @.str.25377, i64 %rhs_len_p1154)
+  %cache_dir155 = load ptr, ptr %cache_dir, align 8
+  %119 = call i64 @strlen(ptr %116)
+  %120 = call i64 @strlen(ptr %cache_dir155)
+  %concat_total156 = add i64 %119, %120
+  %concat_size157 = add i64 %concat_total156, 1
+  %121 = call ptr @avra_rc_alloc(i64 %concat_size157)
+  %122 = call ptr @memcpy(ptr %121, ptr %116, i64 %119)
+  %cast158 = ptrtoint ptr %121 to i64
+  %dst2_int159 = add i64 %cast158, %119
+  %cast160 = inttoptr i64 %dst2_int159 to ptr
+  %rhs_len_p1161 = add i64 %120, 1
+  %123 = call ptr @memcpy(ptr %cast160, ptr %cache_dir155, i64 %rhs_len_p1161)
+  %124 = call i64 @strlen(ptr %121)
+  %125 = call i64 @strlen(ptr @.str.25378)
+  %concat_total162 = add i64 %124, %125
+  %concat_size163 = add i64 %concat_total162, 1
+  %126 = call ptr @avra_rc_alloc(i64 %concat_size163)
+  %127 = call ptr @memcpy(ptr %126, ptr %121, i64 %124)
+  %cast164 = ptrtoint ptr %126 to i64
+  %dst2_int165 = add i64 %cast164, %124
+  %cast166 = inttoptr i64 %dst2_int165 to ptr
+  %rhs_len_p1167 = add i64 %125, 1
+  %128 = call ptr @memcpy(ptr %cast166, ptr @.str.25378, i64 %rhs_len_p1167)
+  %129 = call ptr @avra_shell_exec(ptr %126)
+  %build_dir168 = load ptr, ptr %build_dir, align 8
+  %130 = call i64 @strlen(ptr @.str.25379)
+  %131 = call i64 @strlen(ptr %build_dir168)
+  %concat_total169 = add i64 %130, %131
+  %concat_size170 = add i64 %concat_total169, 1
+  %132 = call ptr @avra_rc_alloc(i64 %concat_size170)
+  %133 = call ptr @memcpy(ptr %132, ptr @.str.25379, i64 %130)
+  %cast171 = ptrtoint ptr %132 to i64
+  %dst2_int172 = add i64 %cast171, %130
+  %cast173 = inttoptr i64 %dst2_int172 to ptr
+  %rhs_len_p1174 = add i64 %131, 1
+  %134 = call ptr @memcpy(ptr %cast173, ptr %build_dir168, i64 %rhs_len_p1174)
+  %135 = call i64 @strlen(ptr %132)
+  %136 = call i64 @strlen(ptr @.str.25380)
+  %concat_total175 = add i64 %135, %136
+  %concat_size176 = add i64 %concat_total175, 1
+  %137 = call ptr @avra_rc_alloc(i64 %concat_size176)
+  %138 = call ptr @memcpy(ptr %137, ptr %132, i64 %135)
+  %cast177 = ptrtoint ptr %137 to i64
+  %dst2_int178 = add i64 %cast177, %135
+  %cast179 = inttoptr i64 %dst2_int178 to ptr
+  %rhs_len_p1180 = add i64 %136, 1
+  %139 = call ptr @memcpy(ptr %cast179, ptr @.str.25380, i64 %rhs_len_p1180)
+  %140 = call i32 @puts(ptr %137)
+  %widen181 = sext i32 %140 to i64
+  store i64 0, ptr %sif_result, align 8
+  br label %sif_end
+
+sif_else:                                         ; preds = %ifcont72
+  %build_dir182 = load ptr, ptr %build_dir, align 8
+  %141 = call i64 @strlen(ptr @.str.25381)
+  %142 = call i64 @strlen(ptr %build_dir182)
+  %concat_total183 = add i64 %141, %142
+  %concat_size184 = add i64 %concat_total183, 1
+  %143 = call ptr @avra_rc_alloc(i64 %concat_size184)
+  %144 = call ptr @memcpy(ptr %143, ptr @.str.25381, i64 %141)
+  %cast185 = ptrtoint ptr %143 to i64
+  %dst2_int186 = add i64 %cast185, %141
+  %cast187 = inttoptr i64 %dst2_int186 to ptr
+  %rhs_len_p1188 = add i64 %142, 1
+  %145 = call ptr @memcpy(ptr %cast187, ptr %build_dir182, i64 %rhs_len_p1188)
+  %146 = call i64 @strlen(ptr %143)
+  %147 = call i64 @strlen(ptr @.str.25382)
+  %concat_total189 = add i64 %146, %147
+  %concat_size190 = add i64 %concat_total189, 1
+  %148 = call ptr @avra_rc_alloc(i64 %concat_size190)
+  %149 = call ptr @memcpy(ptr %148, ptr %143, i64 %146)
+  %cast191 = ptrtoint ptr %148 to i64
+  %dst2_int192 = add i64 %cast191, %146
+  %cast193 = inttoptr i64 %dst2_int192 to ptr
+  %rhs_len_p1194 = add i64 %147, 1
+  %150 = call ptr @memcpy(ptr %cast193, ptr @.str.25382, i64 %rhs_len_p1194)
+  %151 = call i32 @puts(ptr %148)
+  %widen195 = sext i32 %151 to i64
+  store i64 0, ptr %sif_result, align 8
+  br label %sif_end
+
+sif_end:                                          ; preds = %sif_else, %sif_then
+  %sif_val = load i64, ptr %sif_result, align 8
+  ret i64 %sif_val
+}
+
+define i64 @run_cache_command() {
+entry:
+  %_ = alloca ptr, align 8
+  %count_str = alloca ptr, align 8
+  %candidates = alloca ptr, align 8
+  %size = alloca ptr, align 8
+  %count = alloca ptr, align 8
+  %arg = alloca ptr, align 8
+  %i = alloca i64, align 8
+  %max_age_days_str = alloca ptr, align 8
+  %dry_run = alloca i1, align 1
+  %subcommand = alloca ptr, align 8
+  %cache_dir = alloca ptr, align 8
+  %project_dir = alloca ptr, align 8
+  %0 = call ptr @avra_process_env_get(ptr @.str.25383)
+  store ptr %0, ptr %project_dir, align 8
+  %project_dir1 = load ptr, ptr %project_dir, align 8
+  %1 = call i64 @strlen(ptr %project_dir1)
+  %2 = call i64 @strlen(ptr @.str.25384)
+  %concat_total = add i64 %1, %2
+  %concat_size = add i64 %concat_total, 1
+  %3 = call ptr @avra_rc_alloc(i64 %concat_size)
+  %4 = call ptr @memcpy(ptr %3, ptr %project_dir1, i64 %1)
+  %cast = ptrtoint ptr %3 to i64
+  %dst2_int = add i64 %cast, %1
+  %cast2 = inttoptr i64 %dst2_int to ptr
+  %rhs_len_p1 = add i64 %2, 1
+  %5 = call ptr @memcpy(ptr %cast2, ptr @.str.25384, i64 %rhs_len_p1)
+  store ptr %3, ptr %cache_dir, align 8
+  store ptr @.str.25385, ptr %subcommand, align 8
+  store i1 false, ptr %dry_run, align 8
+  store ptr @.str.25386, ptr %max_age_days_str, align 8
+  store i64 2, ptr %i, align 8
+  br label %while.cond
+
+while.cond:                                       ; preds = %ifcont, %entry
+  %i3 = load i64, ptr %i, align 8
+  %6 = call i64 @avra_selfhost_argc()
+  %slt = icmp slt i64 %i3, %6
+  %slt_ext = zext i1 %slt to i64
+  %while_cond = icmp ne i64 %slt_ext, 0
+  br i1 %while_cond, label %while.body, label %while.exit
+
+while.body:                                       ; preds = %while.cond
+  %i4 = load i64, ptr %i, align 8
+  %7 = call ptr @avra_selfhost_get_arg_cstr(i64 %i4)
+  store ptr %7, ptr %arg, align 8
+  %arg5 = load ptr, ptr %arg, align 8
+  %8 = call i32 @strcmp(ptr %arg5, ptr @.str.25387)
+  %widen = sext i32 %8 to i64
+  %streq_cmp = icmp eq i64 %widen, 0
+  %streq_ext = zext i1 %streq_cmp to i64
+  %if_cond = icmp ne i64 %streq_ext, 0
+  br i1 %if_cond, label %if_then, label %if_else
+
+while.exit:                                       ; preds = %while.cond
+  %subcommand37 = load ptr, ptr %subcommand, align 8
+  %9 = call i32 @strcmp(ptr %subcommand37, ptr @.str.25391)
+  %widen38 = sext i32 %9 to i64
+  %streq_cmp39 = icmp eq i64 %widen38, 0
+  %streq_ext40 = zext i1 %streq_cmp39 to i64
+  %if_cond42 = icmp ne i64 %streq_ext40, 0
+  br i1 %if_cond42, label %if_then43, label %if_else44
+
+ifcont:                                           ; preds = %ifcont10, %if_then
+  %i35 = load i64, ptr %i, align 8
+  %add36 = add i64 %i35, 1
+  store i64 %add36, ptr %i, align 8
+  br label %while.cond
+
+if_then:                                          ; preds = %while.body
+  store i1 true, ptr %dry_run, align 8
+  br label %ifcont
+
+if_else:                                          ; preds = %while.body
+  %arg6 = load ptr, ptr %arg, align 8
+  %10 = call i32 @strcmp(ptr %arg6, ptr @.str.25388)
+  %widen7 = sext i32 %10 to i64
+  %streq_cmp8 = icmp eq i64 %widen7, 0
+  %streq_ext9 = zext i1 %streq_cmp8 to i64
+  %if_cond11 = icmp ne i64 %streq_ext9, 0
+  br i1 %if_cond11, label %if_then12, label %if_else13
+
+ifcont10:                                         ; preds = %ifcont30, %ifcont17
+  br label %ifcont
+
+if_then12:                                        ; preds = %if_else
+  %i14 = load i64, ptr %i, align 8
+  %add = add i64 %i14, 1
+  %11 = call i64 @avra_selfhost_argc()
+  %slt15 = icmp slt i64 %add, %11
+  %slt_ext16 = zext i1 %slt15 to i64
+  %if_cond18 = icmp ne i64 %slt_ext16, 0
+  br i1 %if_cond18, label %if_then19, label %if_else20
+
+if_else13:                                        ; preds = %if_else
+  %arg25 = load ptr, ptr %arg, align 8
+  %12 = call i64 @avra_str_starts_with(ptr %arg25, ptr @.str.25389)
+  %not_cmp = icmp eq i64 %12, 0
+  %not_cmp_ext = zext i1 %not_cmp to i64
+  %l_bool = icmp ne i64 %not_cmp_ext, 0
+  br i1 %l_bool, label %sc_rhs, label %sc_short
+
+ifcont17:                                         ; preds = %if_else20, %if_then19
+  br label %ifcont10
+
+if_then19:                                        ; preds = %if_then12
+  %i21 = load i64, ptr %i, align 8
+  %add22 = add i64 %i21, 1
+  %13 = call ptr @avra_selfhost_get_arg_cstr(i64 %add22)
+  store ptr %13, ptr %max_age_days_str, align 8
+  %i23 = load i64, ptr %i, align 8
+  %add24 = add i64 %i23, 1
+  store i64 %add24, ptr %i, align 8
+  br label %ifcont17
+
+if_else20:                                        ; preds = %if_then12
+  br label %ifcont17
+
+sc_rhs:                                           ; preds = %if_else13
+  %subcommand26 = load ptr, ptr %subcommand, align 8
+  %14 = call i32 @strcmp(ptr %subcommand26, ptr @.str.25390)
+  %widen27 = sext i32 %14 to i64
+  %streq_cmp28 = icmp eq i64 %widen27, 0
+  %streq_ext29 = zext i1 %streq_cmp28 to i64
+  %r_bool = icmp ne i64 %streq_ext29, 0
+  br i1 %r_bool, label %sc_r_true, label %sc_r_false
+
+sc_short:                                         ; preds = %if_else13
+  br label %sc_merge
+
+sc_merge:                                         ; preds = %sc_r_merge, %sc_short
+  %sc_phi = phi i1 [ false, %sc_short ], [ %r_bool, %sc_r_merge ]
+  %sc_ext = zext i1 %sc_phi to i64
+  %if_cond31 = icmp ne i64 %sc_ext, 0
+  br i1 %if_cond31, label %if_then32, label %if_else33
+
+sc_r_true:                                        ; preds = %sc_rhs
+  br label %sc_r_merge
+
+sc_r_false:                                       ; preds = %sc_rhs
+  br label %sc_r_merge
+
+sc_r_merge:                                       ; preds = %sc_r_false, %sc_r_true
+  br label %sc_merge
+
+ifcont30:                                         ; preds = %if_else33, %if_then32
+  br label %ifcont10
+
+if_then32:                                        ; preds = %sc_merge
+  %arg34 = load ptr, ptr %arg, align 8
+  store ptr %arg34, ptr %subcommand, align 8
+  br label %ifcont30
+
+if_else33:                                        ; preds = %sc_merge
+  br label %ifcont30
+
+ifcont41:                                         ; preds = %if_else44, %if_then43
+  %cache_dir45 = load ptr, ptr %cache_dir, align 8
+  %15 = call i64 @avra_selfhost_file_exists(ptr %cache_dir45)
+  %not_cmp46 = icmp eq i64 %15, 0
+  %not_cmp_ext47 = zext i1 %not_cmp46 to i64
+  %if_cond49 = icmp ne i64 %not_cmp_ext47, 0
+  br i1 %if_cond49, label %if_then50, label %if_else51
+
+if_then43:                                        ; preds = %while.exit
+  %16 = call i64 @fail(ptr @.str.25392)
+  br label %ifcont41
+
+if_else44:                                        ; preds = %while.exit
+  br label %ifcont41
+
+ifcont48:                                         ; preds = %if_else51
+  %subcommand66 = load ptr, ptr %subcommand, align 8
+  %17 = call i32 @strcmp(ptr %subcommand66, ptr @.str.25395)
+  %widen67 = sext i32 %17 to i64
+  %streq_cmp68 = icmp eq i64 %widen67, 0
+  %streq_ext69 = zext i1 %streq_cmp68 to i64
+  %if_cond71 = icmp ne i64 %streq_ext69, 0
+  br i1 %if_cond71, label %if_then72, label %if_else73
+
+if_then50:                                        ; preds = %ifcont41
+  %cache_dir52 = load ptr, ptr %cache_dir, align 8
+  %18 = call i64 @strlen(ptr @.str.25393)
+  %19 = call i64 @strlen(ptr %cache_dir52)
+  %concat_total53 = add i64 %18, %19
+  %concat_size54 = add i64 %concat_total53, 1
+  %20 = call ptr @avra_rc_alloc(i64 %concat_size54)
+  %21 = call ptr @memcpy(ptr %20, ptr @.str.25393, i64 %18)
+  %cast55 = ptrtoint ptr %20 to i64
+  %dst2_int56 = add i64 %cast55, %18
+  %cast57 = inttoptr i64 %dst2_int56 to ptr
+  %rhs_len_p158 = add i64 %19, 1
+  %22 = call ptr @memcpy(ptr %cast57, ptr %cache_dir52, i64 %rhs_len_p158)
+  %23 = call i64 @strlen(ptr %20)
+  %24 = call i64 @strlen(ptr @.str.25394)
+  %concat_total59 = add i64 %23, %24
+  %concat_size60 = add i64 %concat_total59, 1
+  %25 = call ptr @avra_rc_alloc(i64 %concat_size60)
+  %26 = call ptr @memcpy(ptr %25, ptr %20, i64 %23)
+  %cast61 = ptrtoint ptr %25 to i64
+  %dst2_int62 = add i64 %cast61, %23
+  %cast63 = inttoptr i64 %dst2_int62 to ptr
+  %rhs_len_p164 = add i64 %24, 1
+  %27 = call ptr @memcpy(ptr %cast63, ptr @.str.25394, i64 %rhs_len_p164)
+  %28 = call i32 @puts(ptr %25)
+  %widen65 = sext i32 %28 to i64
+  ret i64 0
+
+if_else51:                                        ; preds = %ifcont41
+  br label %ifcont48
+
+ifcont70:                                         ; preds = %if_else73
+  %subcommand125 = load ptr, ptr %subcommand, align 8
+  %29 = call i32 @strcmp(ptr %subcommand125, ptr @.str.25404)
+  %widen126 = sext i32 %29 to i64
+  %streq_cmp127 = icmp eq i64 %widen126, 0
+  %streq_ext128 = zext i1 %streq_cmp127 to i64
+  %if_cond130 = icmp ne i64 %streq_ext128, 0
+  br i1 %if_cond130, label %if_then131, label %if_else132
+
+if_then72:                                        ; preds = %ifcont48
+  %cache_dir74 = load ptr, ptr %cache_dir, align 8
+  %30 = call i64 @strlen(ptr @.str.25396)
+  %31 = call i64 @strlen(ptr %cache_dir74)
+  %concat_total75 = add i64 %30, %31
+  %concat_size76 = add i64 %concat_total75, 1
+  %32 = call ptr @avra_rc_alloc(i64 %concat_size76)
+  %33 = call ptr @memcpy(ptr %32, ptr @.str.25396, i64 %30)
+  %cast77 = ptrtoint ptr %32 to i64
+  %dst2_int78 = add i64 %cast77, %30
+  %cast79 = inttoptr i64 %dst2_int78 to ptr
+  %rhs_len_p180 = add i64 %31, 1
+  %34 = call ptr @memcpy(ptr %cast79, ptr %cache_dir74, i64 %rhs_len_p180)
+  %35 = call i64 @strlen(ptr %32)
+  %36 = call i64 @strlen(ptr @.str.25397)
+  %concat_total81 = add i64 %35, %36
+  %concat_size82 = add i64 %concat_total81, 1
+  %37 = call ptr @avra_rc_alloc(i64 %concat_size82)
+  %38 = call ptr @memcpy(ptr %37, ptr %32, i64 %35)
+  %cast83 = ptrtoint ptr %37 to i64
+  %dst2_int84 = add i64 %cast83, %35
+  %cast85 = inttoptr i64 %dst2_int84 to ptr
+  %rhs_len_p186 = add i64 %36, 1
+  %39 = call ptr @memcpy(ptr %cast85, ptr @.str.25397, i64 %rhs_len_p186)
+  %40 = call ptr @avra_shell_exec(ptr %37)
+  store ptr %40, ptr %count, align 8
+  %cache_dir87 = load ptr, ptr %cache_dir, align 8
+  %41 = call i64 @strlen(ptr @.str.25398)
+  %42 = call i64 @strlen(ptr %cache_dir87)
+  %concat_total88 = add i64 %41, %42
+  %concat_size89 = add i64 %concat_total88, 1
+  %43 = call ptr @avra_rc_alloc(i64 %concat_size89)
+  %44 = call ptr @memcpy(ptr %43, ptr @.str.25398, i64 %41)
+  %cast90 = ptrtoint ptr %43 to i64
+  %dst2_int91 = add i64 %cast90, %41
+  %cast92 = inttoptr i64 %dst2_int91 to ptr
+  %rhs_len_p193 = add i64 %42, 1
+  %45 = call ptr @memcpy(ptr %cast92, ptr %cache_dir87, i64 %rhs_len_p193)
+  %46 = call i64 @strlen(ptr %43)
+  %47 = call i64 @strlen(ptr @.str.25399)
+  %concat_total94 = add i64 %46, %47
+  %concat_size95 = add i64 %concat_total94, 1
+  %48 = call ptr @avra_rc_alloc(i64 %concat_size95)
+  %49 = call ptr @memcpy(ptr %48, ptr %43, i64 %46)
+  %cast96 = ptrtoint ptr %48 to i64
+  %dst2_int97 = add i64 %cast96, %46
+  %cast98 = inttoptr i64 %dst2_int97 to ptr
+  %rhs_len_p199 = add i64 %47, 1
+  %50 = call ptr @memcpy(ptr %cast98, ptr @.str.25399, i64 %rhs_len_p199)
+  %51 = call ptr @avra_shell_exec(ptr %48)
+  store ptr %51, ptr %size, align 8
+  %52 = call i32 @puts(ptr @.str.25400)
+  %widen100 = sext i32 %52 to i64
+  %cache_dir101 = load ptr, ptr %cache_dir, align 8
+  %53 = call i64 @strlen(ptr @.str.25401)
+  %54 = call i64 @strlen(ptr %cache_dir101)
+  %concat_total102 = add i64 %53, %54
+  %concat_size103 = add i64 %concat_total102, 1
+  %55 = call ptr @avra_rc_alloc(i64 %concat_size103)
+  %56 = call ptr @memcpy(ptr %55, ptr @.str.25401, i64 %53)
+  %cast104 = ptrtoint ptr %55 to i64
+  %dst2_int105 = add i64 %cast104, %53
+  %cast106 = inttoptr i64 %dst2_int105 to ptr
+  %rhs_len_p1107 = add i64 %54, 1
+  %57 = call ptr @memcpy(ptr %cast106, ptr %cache_dir101, i64 %rhs_len_p1107)
+  %58 = call i32 @puts(ptr %55)
+  %widen108 = sext i32 %58 to i64
+  %count109 = load ptr, ptr %count, align 8
+  %59 = call i64 @strlen(ptr @.str.25402)
+  %60 = call i64 @strlen(ptr %count109)
+  %concat_total110 = add i64 %59, %60
+  %concat_size111 = add i64 %concat_total110, 1
+  %61 = call ptr @avra_rc_alloc(i64 %concat_size111)
+  %62 = call ptr @memcpy(ptr %61, ptr @.str.25402, i64 %59)
+  %cast112 = ptrtoint ptr %61 to i64
+  %dst2_int113 = add i64 %cast112, %59
+  %cast114 = inttoptr i64 %dst2_int113 to ptr
+  %rhs_len_p1115 = add i64 %60, 1
+  %63 = call ptr @memcpy(ptr %cast114, ptr %count109, i64 %rhs_len_p1115)
+  %64 = call i32 @puts(ptr %61)
+  %widen116 = sext i32 %64 to i64
+  %size117 = load ptr, ptr %size, align 8
+  %65 = call i64 @strlen(ptr @.str.25403)
+  %66 = call i64 @strlen(ptr %size117)
+  %concat_total118 = add i64 %65, %66
+  %concat_size119 = add i64 %concat_total118, 1
+  %67 = call ptr @avra_rc_alloc(i64 %concat_size119)
+  %68 = call ptr @memcpy(ptr %67, ptr @.str.25403, i64 %65)
+  %cast120 = ptrtoint ptr %67 to i64
+  %dst2_int121 = add i64 %cast120, %65
+  %cast122 = inttoptr i64 %dst2_int121 to ptr
+  %rhs_len_p1123 = add i64 %66, 1
+  %69 = call ptr @memcpy(ptr %cast122, ptr %size117, i64 %rhs_len_p1123)
+  %70 = call i32 @puts(ptr %67)
+  %widen124 = sext i32 %70 to i64
+  ret i64 0
+
+if_else73:                                        ; preds = %ifcont48
+  br label %ifcont70
+
+ifcont129:                                        ; preds = %if_else132
+  %subcommand267 = load ptr, ptr %subcommand, align 8
+  %71 = call i64 @strlen(ptr @.str.25421)
+  %72 = call i64 @strlen(ptr %subcommand267)
+  %concat_total268 = add i64 %71, %72
+  %concat_size269 = add i64 %concat_total268, 1
+  %73 = call ptr @avra_rc_alloc(i64 %concat_size269)
+  %74 = call ptr @memcpy(ptr %73, ptr @.str.25421, i64 %71)
+  %cast270 = ptrtoint ptr %73 to i64
+  %dst2_int271 = add i64 %cast270, %71
+  %cast272 = inttoptr i64 %dst2_int271 to ptr
+  %rhs_len_p1273 = add i64 %72, 1
+  %75 = call ptr @memcpy(ptr %cast272, ptr %subcommand267, i64 %rhs_len_p1273)
+  %76 = call i64 @strlen(ptr %73)
+  %77 = call i64 @strlen(ptr @.str.25422)
+  %concat_total274 = add i64 %76, %77
+  %concat_size275 = add i64 %concat_total274, 1
+  %78 = call ptr @avra_rc_alloc(i64 %concat_size275)
+  %79 = call ptr @memcpy(ptr %78, ptr %73, i64 %76)
+  %cast276 = ptrtoint ptr %78 to i64
+  %dst2_int277 = add i64 %cast276, %76
+  %cast278 = inttoptr i64 %dst2_int277 to ptr
+  %rhs_len_p1279 = add i64 %77, 1
+  %80 = call ptr @memcpy(ptr %cast278, ptr @.str.25422, i64 %rhs_len_p1279)
+  %81 = call i64 @fail(ptr %78)
+  ret i64 %81
+
+if_then131:                                       ; preds = %ifcont70
+  %cache_dir133 = load ptr, ptr %cache_dir, align 8
+  %82 = call i64 @strlen(ptr @.str.25405)
+  %83 = call i64 @strlen(ptr %cache_dir133)
+  %concat_total134 = add i64 %82, %83
+  %concat_size135 = add i64 %concat_total134, 1
+  %84 = call ptr @avra_rc_alloc(i64 %concat_size135)
+  %85 = call ptr @memcpy(ptr %84, ptr @.str.25405, i64 %82)
+  %cast136 = ptrtoint ptr %84 to i64
+  %dst2_int137 = add i64 %cast136, %82
+  %cast138 = inttoptr i64 %dst2_int137 to ptr
+  %rhs_len_p1139 = add i64 %83, 1
+  %86 = call ptr @memcpy(ptr %cast138, ptr %cache_dir133, i64 %rhs_len_p1139)
+  %87 = call i64 @strlen(ptr %84)
+  %88 = call i64 @strlen(ptr @.str.25406)
+  %concat_total140 = add i64 %87, %88
+  %concat_size141 = add i64 %concat_total140, 1
+  %89 = call ptr @avra_rc_alloc(i64 %concat_size141)
+  %90 = call ptr @memcpy(ptr %89, ptr %84, i64 %87)
+  %cast142 = ptrtoint ptr %89 to i64
+  %dst2_int143 = add i64 %cast142, %87
+  %cast144 = inttoptr i64 %dst2_int143 to ptr
+  %rhs_len_p1145 = add i64 %88, 1
+  %91 = call ptr @memcpy(ptr %cast144, ptr @.str.25406, i64 %rhs_len_p1145)
+  %max_age_days_str146 = load ptr, ptr %max_age_days_str, align 8
+  %92 = call i64 @strlen(ptr %89)
+  %93 = call i64 @strlen(ptr %max_age_days_str146)
+  %concat_total147 = add i64 %92, %93
+  %concat_size148 = add i64 %concat_total147, 1
+  %94 = call ptr @avra_rc_alloc(i64 %concat_size148)
+  %95 = call ptr @memcpy(ptr %94, ptr %89, i64 %92)
+  %cast149 = ptrtoint ptr %94 to i64
+  %dst2_int150 = add i64 %cast149, %92
+  %cast151 = inttoptr i64 %dst2_int150 to ptr
+  %rhs_len_p1152 = add i64 %93, 1
+  %96 = call ptr @memcpy(ptr %cast151, ptr %max_age_days_str146, i64 %rhs_len_p1152)
+  %97 = call i64 @strlen(ptr %94)
+  %98 = call i64 @strlen(ptr @.str.25407)
+  %concat_total153 = add i64 %97, %98
+  %concat_size154 = add i64 %concat_total153, 1
+  %99 = call ptr @avra_rc_alloc(i64 %concat_size154)
+  %100 = call ptr @memcpy(ptr %99, ptr %94, i64 %97)
+  %cast155 = ptrtoint ptr %99 to i64
+  %dst2_int156 = add i64 %cast155, %97
+  %cast157 = inttoptr i64 %dst2_int156 to ptr
+  %rhs_len_p1158 = add i64 %98, 1
+  %101 = call ptr @memcpy(ptr %cast157, ptr @.str.25407, i64 %rhs_len_p1158)
+  %102 = call ptr @avra_shell_exec(ptr %99)
+  store ptr %102, ptr %candidates, align 8
+  %candidates159 = load ptr, ptr %candidates, align 8
+  %103 = call i32 @strcmp(ptr %candidates159, ptr @.str.25408)
+  %widen160 = sext i32 %103 to i64
+  %streq_cmp161 = icmp eq i64 %widen160, 0
+  %streq_ext162 = zext i1 %streq_cmp161 to i64
+  %if_cond164 = icmp ne i64 %streq_ext162, 0
+  br i1 %if_cond164, label %if_then165, label %if_else166
+
+if_else132:                                       ; preds = %ifcont70
+  br label %ifcont129
+
+ifcont163:                                        ; preds = %if_else166
+  %candidates181 = load ptr, ptr %candidates, align 8
+  %104 = call i64 @strlen(ptr @.str.25411)
+  %105 = call i64 @strlen(ptr %candidates181)
+  %concat_total182 = add i64 %104, %105
+  %concat_size183 = add i64 %concat_total182, 1
+  %106 = call ptr @avra_rc_alloc(i64 %concat_size183)
+  %107 = call ptr @memcpy(ptr %106, ptr @.str.25411, i64 %104)
+  %cast184 = ptrtoint ptr %106 to i64
+  %dst2_int185 = add i64 %cast184, %104
+  %cast186 = inttoptr i64 %dst2_int185 to ptr
+  %rhs_len_p1187 = add i64 %105, 1
+  %108 = call ptr @memcpy(ptr %cast186, ptr %candidates181, i64 %rhs_len_p1187)
+  %109 = call i64 @strlen(ptr %106)
+  %110 = call i64 @strlen(ptr @.str.25412)
+  %concat_total188 = add i64 %109, %110
+  %concat_size189 = add i64 %concat_total188, 1
+  %111 = call ptr @avra_rc_alloc(i64 %concat_size189)
+  %112 = call ptr @memcpy(ptr %111, ptr %106, i64 %109)
+  %cast190 = ptrtoint ptr %111 to i64
+  %dst2_int191 = add i64 %cast190, %109
+  %cast192 = inttoptr i64 %dst2_int191 to ptr
+  %rhs_len_p1193 = add i64 %110, 1
+  %113 = call ptr @memcpy(ptr %cast192, ptr @.str.25412, i64 %rhs_len_p1193)
+  %114 = call ptr @avra_shell_exec(ptr %111)
+  store ptr %114, ptr %count_str, align 8
+  %dry_run194 = load i1, ptr %dry_run, align 8
+  br i1 %dry_run194, label %if_then196, label %if_else197
+
+if_then165:                                       ; preds = %if_then131
+  %max_age_days_str167 = load ptr, ptr %max_age_days_str, align 8
+  %115 = call i64 @strlen(ptr @.str.25409)
+  %116 = call i64 @strlen(ptr %max_age_days_str167)
+  %concat_total168 = add i64 %115, %116
+  %concat_size169 = add i64 %concat_total168, 1
+  %117 = call ptr @avra_rc_alloc(i64 %concat_size169)
+  %118 = call ptr @memcpy(ptr %117, ptr @.str.25409, i64 %115)
+  %cast170 = ptrtoint ptr %117 to i64
+  %dst2_int171 = add i64 %cast170, %115
+  %cast172 = inttoptr i64 %dst2_int171 to ptr
+  %rhs_len_p1173 = add i64 %116, 1
+  %119 = call ptr @memcpy(ptr %cast172, ptr %max_age_days_str167, i64 %rhs_len_p1173)
+  %120 = call i64 @strlen(ptr %117)
+  %121 = call i64 @strlen(ptr @.str.25410)
+  %concat_total174 = add i64 %120, %121
+  %concat_size175 = add i64 %concat_total174, 1
+  %122 = call ptr @avra_rc_alloc(i64 %concat_size175)
+  %123 = call ptr @memcpy(ptr %122, ptr %117, i64 %120)
+  %cast176 = ptrtoint ptr %122 to i64
+  %dst2_int177 = add i64 %cast176, %120
+  %cast178 = inttoptr i64 %dst2_int177 to ptr
+  %rhs_len_p1179 = add i64 %121, 1
+  %124 = call ptr @memcpy(ptr %cast178, ptr @.str.25410, i64 %rhs_len_p1179)
+  %125 = call i32 @puts(ptr %122)
+  %widen180 = sext i32 %125 to i64
+  ret i64 0
+
+if_else166:                                       ; preds = %if_then131
+  br label %ifcont163
+
+ifcont195:                                        ; preds = %if_else197
+  %cache_dir214 = load ptr, ptr %cache_dir, align 8
+  %126 = call i64 @strlen(ptr @.str.25415)
+  %127 = call i64 @strlen(ptr %cache_dir214)
+  %concat_total215 = add i64 %126, %127
+  %concat_size216 = add i64 %concat_total215, 1
+  %128 = call ptr @avra_rc_alloc(i64 %concat_size216)
+  %129 = call ptr @memcpy(ptr %128, ptr @.str.25415, i64 %126)
+  %cast217 = ptrtoint ptr %128 to i64
+  %dst2_int218 = add i64 %cast217, %126
+  %cast219 = inttoptr i64 %dst2_int218 to ptr
+  %rhs_len_p1220 = add i64 %127, 1
+  %130 = call ptr @memcpy(ptr %cast219, ptr %cache_dir214, i64 %rhs_len_p1220)
+  %131 = call i64 @strlen(ptr %128)
+  %132 = call i64 @strlen(ptr @.str.25416)
+  %concat_total221 = add i64 %131, %132
+  %concat_size222 = add i64 %concat_total221, 1
+  %133 = call ptr @avra_rc_alloc(i64 %concat_size222)
+  %134 = call ptr @memcpy(ptr %133, ptr %128, i64 %131)
+  %cast223 = ptrtoint ptr %133 to i64
+  %dst2_int224 = add i64 %cast223, %131
+  %cast225 = inttoptr i64 %dst2_int224 to ptr
+  %rhs_len_p1226 = add i64 %132, 1
+  %135 = call ptr @memcpy(ptr %cast225, ptr @.str.25416, i64 %rhs_len_p1226)
+  %max_age_days_str227 = load ptr, ptr %max_age_days_str, align 8
+  %136 = call i64 @strlen(ptr %133)
+  %137 = call i64 @strlen(ptr %max_age_days_str227)
+  %concat_total228 = add i64 %136, %137
+  %concat_size229 = add i64 %concat_total228, 1
+  %138 = call ptr @avra_rc_alloc(i64 %concat_size229)
+  %139 = call ptr @memcpy(ptr %138, ptr %133, i64 %136)
+  %cast230 = ptrtoint ptr %138 to i64
+  %dst2_int231 = add i64 %cast230, %136
+  %cast232 = inttoptr i64 %dst2_int231 to ptr
+  %rhs_len_p1233 = add i64 %137, 1
+  %140 = call ptr @memcpy(ptr %cast232, ptr %max_age_days_str227, i64 %rhs_len_p1233)
+  %141 = call i64 @strlen(ptr %138)
+  %142 = call i64 @strlen(ptr @.str.25417)
+  %concat_total234 = add i64 %141, %142
+  %concat_size235 = add i64 %concat_total234, 1
+  %143 = call ptr @avra_rc_alloc(i64 %concat_size235)
+  %144 = call ptr @memcpy(ptr %143, ptr %138, i64 %141)
+  %cast236 = ptrtoint ptr %143 to i64
+  %dst2_int237 = add i64 %cast236, %141
+  %cast238 = inttoptr i64 %dst2_int237 to ptr
+  %rhs_len_p1239 = add i64 %142, 1
+  %145 = call ptr @memcpy(ptr %cast238, ptr @.str.25417, i64 %rhs_len_p1239)
+  %146 = call ptr @avra_shell_exec(ptr %143)
+  store ptr %146, ptr %_, align 8
+  %count_str240 = load ptr, ptr %count_str, align 8
+  %147 = call i64 @strlen(ptr @.str.25418)
+  %148 = call i64 @strlen(ptr %count_str240)
+  %concat_total241 = add i64 %147, %148
+  %concat_size242 = add i64 %concat_total241, 1
+  %149 = call ptr @avra_rc_alloc(i64 %concat_size242)
+  %150 = call ptr @memcpy(ptr %149, ptr @.str.25418, i64 %147)
+  %cast243 = ptrtoint ptr %149 to i64
+  %dst2_int244 = add i64 %cast243, %147
+  %cast245 = inttoptr i64 %dst2_int244 to ptr
+  %rhs_len_p1246 = add i64 %148, 1
+  %151 = call ptr @memcpy(ptr %cast245, ptr %count_str240, i64 %rhs_len_p1246)
+  %152 = call i64 @strlen(ptr %149)
+  %153 = call i64 @strlen(ptr @.str.25419)
+  %concat_total247 = add i64 %152, %153
+  %concat_size248 = add i64 %concat_total247, 1
+  %154 = call ptr @avra_rc_alloc(i64 %concat_size248)
+  %155 = call ptr @memcpy(ptr %154, ptr %149, i64 %152)
+  %cast249 = ptrtoint ptr %154 to i64
+  %dst2_int250 = add i64 %cast249, %152
+  %cast251 = inttoptr i64 %dst2_int250 to ptr
+  %rhs_len_p1252 = add i64 %153, 1
+  %156 = call ptr @memcpy(ptr %cast251, ptr @.str.25419, i64 %rhs_len_p1252)
+  %max_age_days_str253 = load ptr, ptr %max_age_days_str, align 8
+  %157 = call i64 @strlen(ptr %154)
+  %158 = call i64 @strlen(ptr %max_age_days_str253)
+  %concat_total254 = add i64 %157, %158
+  %concat_size255 = add i64 %concat_total254, 1
+  %159 = call ptr @avra_rc_alloc(i64 %concat_size255)
+  %160 = call ptr @memcpy(ptr %159, ptr %154, i64 %157)
+  %cast256 = ptrtoint ptr %159 to i64
+  %dst2_int257 = add i64 %cast256, %157
+  %cast258 = inttoptr i64 %dst2_int257 to ptr
+  %rhs_len_p1259 = add i64 %158, 1
+  %161 = call ptr @memcpy(ptr %cast258, ptr %max_age_days_str253, i64 %rhs_len_p1259)
+  %162 = call i64 @strlen(ptr %159)
+  %163 = call i64 @strlen(ptr @.str.25420)
+  %concat_total260 = add i64 %162, %163
+  %concat_size261 = add i64 %concat_total260, 1
+  %164 = call ptr @avra_rc_alloc(i64 %concat_size261)
+  %165 = call ptr @memcpy(ptr %164, ptr %159, i64 %162)
+  %cast262 = ptrtoint ptr %164 to i64
+  %dst2_int263 = add i64 %cast262, %162
+  %cast264 = inttoptr i64 %dst2_int263 to ptr
+  %rhs_len_p1265 = add i64 %163, 1
+  %166 = call ptr @memcpy(ptr %cast264, ptr @.str.25420, i64 %rhs_len_p1265)
+  %167 = call i32 @puts(ptr %164)
+  %widen266 = sext i32 %167 to i64
+  ret i64 0
+
+if_then196:                                       ; preds = %ifcont163
+  %count_str198 = load ptr, ptr %count_str, align 8
+  %168 = call i64 @strlen(ptr @.str.25413)
+  %169 = call i64 @strlen(ptr %count_str198)
+  %concat_total199 = add i64 %168, %169
+  %concat_size200 = add i64 %concat_total199, 1
+  %170 = call ptr @avra_rc_alloc(i64 %concat_size200)
+  %171 = call ptr @memcpy(ptr %170, ptr @.str.25413, i64 %168)
+  %cast201 = ptrtoint ptr %170 to i64
+  %dst2_int202 = add i64 %cast201, %168
+  %cast203 = inttoptr i64 %dst2_int202 to ptr
+  %rhs_len_p1204 = add i64 %169, 1
+  %172 = call ptr @memcpy(ptr %cast203, ptr %count_str198, i64 %rhs_len_p1204)
+  %173 = call i64 @strlen(ptr %170)
+  %174 = call i64 @strlen(ptr @.str.25414)
+  %concat_total205 = add i64 %173, %174
+  %concat_size206 = add i64 %concat_total205, 1
+  %175 = call ptr @avra_rc_alloc(i64 %concat_size206)
+  %176 = call ptr @memcpy(ptr %175, ptr %170, i64 %173)
+  %cast207 = ptrtoint ptr %175 to i64
+  %dst2_int208 = add i64 %cast207, %173
+  %cast209 = inttoptr i64 %dst2_int208 to ptr
+  %rhs_len_p1210 = add i64 %174, 1
+  %177 = call ptr @memcpy(ptr %cast209, ptr @.str.25414, i64 %rhs_len_p1210)
+  %178 = call i32 @puts(ptr %175)
+  %widen211 = sext i32 %178 to i64
+  %candidates212 = load ptr, ptr %candidates, align 8
+  %179 = call i32 @puts(ptr %candidates212)
+  %widen213 = sext i32 %179 to i64
+  ret i64 0
+
+if_else197:                                       ; preds = %ifcont163
+  br label %ifcont195
+}
+
 define i64 @run_test_command() {
 entry:
   %covmap_path = alloca ptr, align 8
@@ -331676,24 +332804,24 @@ entry:
   %test_files = alloca ptr, align 8
   %args = alloca ptr, align 8
   %project_dir = alloca ptr, align 8
-  %0 = call ptr @avra_process_env_get(ptr @.str.25356)
+  %0 = call ptr @avra_process_env_get(ptr @.str.25423)
   store ptr %0, ptr %project_dir, align 8
   %1 = call ptr @parse_test_args()
   store ptr %1, ptr %args, align 8
   %project_dir1 = load ptr, ptr %project_dir, align 8
-  %2 = call i64 @strlen(ptr @.str.25357)
+  %2 = call i64 @strlen(ptr @.str.25424)
   %3 = call i64 @strlen(ptr %project_dir1)
   %concat_total = add i64 %2, %3
   %concat_size = add i64 %concat_total, 1
   %4 = call ptr @avra_rc_alloc(i64 %concat_size)
-  %5 = call ptr @memcpy(ptr %4, ptr @.str.25357, i64 %2)
+  %5 = call ptr @memcpy(ptr %4, ptr @.str.25424, i64 %2)
   %cast = ptrtoint ptr %4 to i64
   %dst2_int = add i64 %cast, %2
   %cast2 = inttoptr i64 %dst2_int to ptr
   %rhs_len_p1 = add i64 %3, 1
   %6 = call ptr @memcpy(ptr %cast2, ptr %project_dir1, i64 %rhs_len_p1)
   %7 = call i64 @strlen(ptr %4)
-  %8 = call i64 @strlen(ptr @.str.25358)
+  %8 = call i64 @strlen(ptr @.str.25425)
   %concat_total3 = add i64 %7, %8
   %concat_size4 = add i64 %concat_total3, 1
   %9 = call ptr @avra_rc_alloc(i64 %concat_size4)
@@ -331702,7 +332830,7 @@ entry:
   %dst2_int6 = add i64 %cast5, %7
   %cast7 = inttoptr i64 %dst2_int6 to ptr
   %rhs_len_p18 = add i64 %8, 1
-  %11 = call ptr @memcpy(ptr %cast7, ptr @.str.25358, i64 %rhs_len_p18)
+  %11 = call ptr @memcpy(ptr %cast7, ptr @.str.25425, i64 %rhs_len_p18)
   %project_dir9 = load ptr, ptr %project_dir, align 8
   %12 = call i64 @strlen(ptr %9)
   %13 = call i64 @strlen(ptr %project_dir9)
@@ -331716,7 +332844,7 @@ entry:
   %rhs_len_p115 = add i64 %13, 1
   %16 = call ptr @memcpy(ptr %cast14, ptr %project_dir9, i64 %rhs_len_p115)
   %17 = call i64 @strlen(ptr %14)
-  %18 = call i64 @strlen(ptr @.str.25359)
+  %18 = call i64 @strlen(ptr @.str.25426)
   %concat_total16 = add i64 %17, %18
   %concat_size17 = add i64 %concat_total16, 1
   %19 = call ptr @avra_rc_alloc(i64 %concat_size17)
@@ -331725,7 +332853,7 @@ entry:
   %dst2_int19 = add i64 %cast18, %17
   %cast20 = inttoptr i64 %dst2_int19 to ptr
   %rhs_len_p121 = add i64 %18, 1
-  %21 = call ptr @memcpy(ptr %cast20, ptr @.str.25359, i64 %rhs_len_p121)
+  %21 = call ptr @memcpy(ptr %cast20, ptr @.str.25426, i64 %rhs_len_p121)
   %project_dir22 = load ptr, ptr %project_dir, align 8
   %22 = call i64 @strlen(ptr %19)
   %23 = call i64 @strlen(ptr %project_dir22)
@@ -331739,7 +332867,7 @@ entry:
   %rhs_len_p128 = add i64 %23, 1
   %26 = call ptr @memcpy(ptr %cast27, ptr %project_dir22, i64 %rhs_len_p128)
   %27 = call i64 @strlen(ptr %24)
-  %28 = call i64 @strlen(ptr @.str.25360)
+  %28 = call i64 @strlen(ptr @.str.25427)
   %concat_total29 = add i64 %27, %28
   %concat_size30 = add i64 %concat_total29, 1
   %29 = call ptr @avra_rc_alloc(i64 %concat_size30)
@@ -331748,11 +332876,11 @@ entry:
   %dst2_int32 = add i64 %cast31, %27
   %cast33 = inttoptr i64 %dst2_int32 to ptr
   %rhs_len_p134 = add i64 %28, 1
-  %31 = call ptr @memcpy(ptr %cast33, ptr @.str.25360, i64 %rhs_len_p134)
+  %31 = call ptr @memcpy(ptr %cast33, ptr @.str.25427, i64 %rhs_len_p134)
   %32 = call ptr @avra_shell_exec(ptr %29)
   store ptr %32, ptr %test_files, align 8
   %test_files35 = load ptr, ptr %test_files, align 8
-  %33 = call i32 @strcmp(ptr %test_files35, ptr @.str.25361)
+  %33 = call i32 @strcmp(ptr %test_files35, ptr @.str.25428)
   %widen = sext i32 %33 to i64
   %streq_cmp = icmp eq i64 %widen, 0
   %streq_ext = zext i1 %streq_cmp to i64
@@ -331786,14 +332914,14 @@ ifcont:                                           ; preds = %if_else
   store ptr %cast46, ptr %shared_loaded, align 8
   store i64 0, ptr %count, align 8
   %test_files47 = load ptr, ptr %test_files, align 8
-  %37 = call ptr @avra_str_split(ptr %test_files47, ptr @.str.25363)
+  %37 = call ptr @avra_str_split(ptr %test_files47, ptr @.str.25430)
   %38 = call i64 @avra_array_len(ptr %37)
   store i64 %38, ptr %forin_len, align 8
   store i64 0, ptr %forin_i, align 8
   br label %forin.cond
 
 if_then:                                          ; preds = %entry
-  %39 = call i32 @puts(ptr @.str.25362)
+  %39 = call i32 @puts(ptr @.str.25429)
   %widen36 = sext i32 %39 to i64
   ret i64 0
 
@@ -331810,7 +332938,7 @@ forin.body:                                       ; preds = %forin.cond
   %40 = call i64 @avra_array_get(ptr %37, i64 %forin_i_val)
   store i64 %40, ptr %path, align 8
   %path48 = load ptr, ptr %path, align 8
-  %41 = call i32 @strcmp(ptr %path48, ptr @.str.25364)
+  %41 = call i32 @strcmp(ptr %path48, ptr @.str.25431)
   %widen49 = sext i32 %41 to i64
   %streq_cmp50 = icmp eq i64 %widen49, 0
   %streq_ext51 = zext i1 %streq_cmp50 to i64
@@ -331835,7 +332963,7 @@ ifcont52:                                         ; preds = %if_else55
   %42 = call ptr @read_file(ptr %path56)
   store ptr %42, ptr %content, align 8
   %content57 = load ptr, ptr %content, align 8
-  %43 = call i64 @avra_str_contains(ptr %content57, ptr @.str.25365)
+  %43 = call i64 @avra_str_contains(ptr %content57, ptr @.str.25432)
   %not_cmp = icmp eq i64 %43, 0
   %not_cmp_ext = zext i1 %not_cmp to i64
   %if_cond59 = icmp ne i64 %not_cmp_ext, 0
@@ -331849,7 +332977,7 @@ if_else55:                                        ; preds = %forin.body
 
 ifcont58:                                         ; preds = %if_else61
   %content62 = load ptr, ptr %content, align 8
-  %44 = call i64 @avra_str_contains(ptr %content62, ptr @.str.25366)
+  %44 = call i64 @avra_str_contains(ptr %content62, ptr @.str.25433)
   %if_cond64 = icmp ne i64 %44, 0
   br i1 %if_cond64, label %if_then65, label %if_else66
 
@@ -331867,10 +332995,10 @@ ifcont63:                                         ; preds = %if_else66
   %cast69 = ptrtoint ptr %args68 to i64
   %null_chk = icmp eq i64 %cast69, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25367, i64 6, ptr @sty_name.25368, i64 8, i64 %null_ext, ptr @src_file.25369, i64 0, i64 532)
+  call void @avra_null_deref_trap(ptr @fld_name.25434, i64 6, ptr @sty_name.25435, i64 8, i64 %null_ext, ptr @src_file.25436, i64 0, i64 652)
   %filter_ptr = getelementptr inbounds nuw %TestArgs, ptr %args68, i32 0, i32 0
   %filter = load ptr, ptr %filter_ptr, align 8
-  %46 = call i32 @strcmp(ptr %filter, ptr @.str.25370)
+  %46 = call i32 @strcmp(ptr %filter, ptr @.str.25437)
   %widen70 = sext i32 %46 to i64
   %streq_cmp71 = icmp ne i64 %widen70, 0
   %streq_ext72 = zext i1 %streq_cmp71 to i64
@@ -331889,7 +333017,7 @@ sc_rhs:                                           ; preds = %ifcont63
   %cast75 = ptrtoint ptr %args74 to i64
   %null_chk76 = icmp eq i64 %cast75, 0
   %null_ext77 = zext i1 %null_chk76 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25371, i64 6, ptr @sty_name.25372, i64 8, i64 %null_ext77, ptr @src_file.25373, i64 0, i64 532)
+  call void @avra_null_deref_trap(ptr @fld_name.25438, i64 6, ptr @sty_name.25439, i64 8, i64 %null_ext77, ptr @src_file.25440, i64 0, i64 652)
   %filter_ptr78 = getelementptr inbounds nuw %TestArgs, ptr %args74, i32 0, i32 0
   %filter79 = load ptr, ptr %filter_ptr78, align 8
   %47 = call i64 @avra_str_contains(ptr %mod_name73, ptr %filter79)
@@ -331925,7 +333053,7 @@ ifcont82:                                         ; preds = %if_else85
   %cast89 = ptrtoint ptr %parsed88 to i64
   %null_chk90 = icmp eq i64 %cast89, 0
   %null_ext91 = zext i1 %null_chk90 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25374, i64 9, ptr @sty_name.25375, i64 38, i64 %null_ext91, ptr @src_file.25376, i64 0, i64 540)
+  call void @avra_null_deref_trap(ptr @fld_name.25441, i64 9, ptr @sty_name.25442, i64 38, i64 %null_ext91, ptr @src_file.25443, i64 0, i64 660)
   %had_error_ptr = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed88, i32 0, i32 1
   %had_error = load i64, ptr %had_error_ptr, align 8
   %l_bool92 = icmp ne i64 %had_error, 0
@@ -331942,7 +333070,7 @@ sc_rhs93:                                         ; preds = %ifcont82
   %cast97 = ptrtoint ptr %parsed96 to i64
   %null_chk98 = icmp eq i64 %cast97, 0
   %null_ext99 = zext i1 %null_chk98 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25377, i64 5, ptr @sty_name.25378, i64 38, i64 %null_ext99, ptr @src_file.25379, i64 0, i64 540)
+  call void @avra_null_deref_trap(ptr @fld_name.25444, i64 5, ptr @sty_name.25445, i64 38, i64 %null_ext99, ptr @src_file.25446, i64 0, i64 660)
   %stmts_ptr = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed96, i32 0, i32 0
   %stmts = load ptr, ptr %stmts_ptr, align 8
   %eq = icmp eq ptr %stmts, null
@@ -331976,7 +333104,7 @@ ifcont106:                                        ; preds = %if_else109
   %cast136 = ptrtoint ptr %parsed135 to i64
   %null_chk137 = icmp eq i64 %cast136, 0
   %null_ext138 = zext i1 %null_chk137 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25387, i64 5, ptr @sty_name.25388, i64 38, i64 %null_ext138, ptr @src_file.25389, i64 0, i64 553)
+  call void @avra_null_deref_trap(ptr @fld_name.25454, i64 5, ptr @sty_name.25455, i64 38, i64 %null_ext138, ptr @src_file.25456, i64 0, i64 673)
   %stmts_ptr139 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed135, i32 0, i32 0
   %stmts140 = load ptr, ptr %stmts_ptr139, align 8
   %test_dir141 = load ptr, ptr %test_dir, align 8
@@ -331987,7 +333115,7 @@ ifcont106:                                        ; preds = %if_else109
   %cast144 = ptrtoint ptr %mod_resolved143 to i64
   %null_chk145 = icmp eq i64 %cast144, 0
   %null_ext146 = zext i1 %null_chk145 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25390, i64 9, ptr @sty_name.25391, i64 55, i64 %null_ext146, ptr @src_file.25392, i64 0, i64 554)
+  call void @avra_null_deref_trap(ptr @fld_name.25457, i64 9, ptr @sty_name.25458, i64 55, i64 %null_ext146, ptr @src_file.25459, i64 0, i64 674)
   %had_error_ptr147 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved143, i32 0, i32 2
   %had_error148 = load i64, ptr %had_error_ptr147, align 8
   %if_cond150 = icmp ne i64 %had_error148, 0
@@ -331998,7 +333126,7 @@ if_then108:                                       ; preds = %sc_merge95
   %cast111 = ptrtoint ptr %parsed110 to i64
   %null_chk112 = icmp eq i64 %cast111, 0
   %null_ext113 = zext i1 %null_chk112 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25380, i64 3, ptr @sty_name.25381, i64 38, i64 %null_ext113, ptr @src_file.25382, i64 0, i64 541)
+  call void @avra_null_deref_trap(ptr @fld_name.25447, i64 3, ptr @sty_name.25448, i64 38, i64 %null_ext113, ptr @src_file.25449, i64 0, i64 661)
   %bag_ptr = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed110, i32 0, i32 3
   %bag = load ptr, ptr %bag_ptr, align 8
   %51 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag)
@@ -332011,12 +333139,12 @@ if_else109:                                       ; preds = %sc_merge95
 
 ifcont115:                                        ; preds = %if_else118, %if_then117
   %path127 = load ptr, ptr %path, align 8
-  %52 = call i64 @strlen(ptr @.str.25386)
+  %52 = call i64 @strlen(ptr @.str.25453)
   %53 = call i64 @strlen(ptr %path127)
   %concat_total128 = add i64 %52, %53
   %concat_size129 = add i64 %concat_total128, 1
   %54 = call ptr @avra_rc_alloc(i64 %concat_size129)
-  %55 = call ptr @memcpy(ptr %54, ptr @.str.25386, i64 %52)
+  %55 = call ptr @memcpy(ptr %54, ptr @.str.25453, i64 %52)
   %cast130 = ptrtoint ptr %54 to i64
   %dst2_int131 = add i64 %cast130, %52
   %cast132 = inttoptr i64 %dst2_int131 to ptr
@@ -332032,7 +333160,7 @@ if_then117:                                       ; preds = %if_then108
   %cast122 = ptrtoint ptr %parsed121 to i64
   %null_chk123 = icmp eq i64 %cast122, 0
   %null_ext124 = zext i1 %null_chk123 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25383, i64 3, ptr @sty_name.25384, i64 38, i64 %null_ext124, ptr @src_file.25385, i64 0, i64 542)
+  call void @avra_null_deref_trap(ptr @fld_name.25450, i64 3, ptr @sty_name.25451, i64 38, i64 %null_ext124, ptr @src_file.25452, i64 0, i64 662)
   %bag_ptr125 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed121, i32 0, i32 3
   %bag126 = load ptr, ptr %bag_ptr125, align 8
   %57 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr %content119, ptr %path120, ptr %bag126)
@@ -332046,7 +333174,7 @@ ifcont149:                                        ; preds = %if_else152
   %cast177 = ptrtoint ptr %mod_resolved176 to i64
   %null_chk178 = icmp eq i64 %cast177, 0
   %null_ext179 = zext i1 %null_chk178 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25398, i64 6, ptr @sty_name.25399, i64 55, i64 %null_ext179, ptr @src_file.25400, i64 0, i64 558)
+  call void @avra_null_deref_trap(ptr @fld_name.25465, i64 6, ptr @sty_name.25466, i64 55, i64 %null_ext179, ptr @src_file.25467, i64 0, i64 678)
   %loaded_ptr = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved176, i32 0, i32 1
   %loaded = load ptr, ptr %loaded_ptr, align 8
   store ptr %loaded, ptr %shared_loaded, align 8
@@ -332054,7 +333182,7 @@ ifcont149:                                        ; preds = %if_else152
   %cast181 = ptrtoint ptr %mod_resolved180 to i64
   %null_chk182 = icmp eq i64 %cast181, 0
   %null_ext183 = zext i1 %null_chk182 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25401, i64 5, ptr @sty_name.25402, i64 55, i64 %null_ext183, ptr @src_file.25403, i64 0, i64 563)
+  call void @avra_null_deref_trap(ptr @fld_name.25468, i64 5, ptr @sty_name.25469, i64 55, i64 %null_ext183, ptr @src_file.25470, i64 0, i64 683)
   %stmts_ptr184 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved180, i32 0, i32 0
   %stmts185 = load ptr, ptr %stmts_ptr184, align 8
   %58 = call ptr @"@std::avrac::test_runner::split_package_modules"(ptr %stmts185)
@@ -332063,7 +333191,7 @@ ifcont149:                                        ; preds = %if_else152
   %cast187 = ptrtoint ptr %split186 to i64
   %null_chk188 = icmp eq i64 %cast187, 0
   %null_ext189 = zext i1 %null_chk188 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25404, i64 8, ptr @sty_name.25405, i64 38, i64 %null_ext189, ptr @src_file.25406, i64 0, i64 564)
+  call void @avra_null_deref_trap(ptr @fld_name.25471, i64 8, ptr @sty_name.25472, i64 38, i64 %null_ext189, ptr @src_file.25473, i64 0, i64 684)
   %packages_ptr = getelementptr inbounds nuw %"@std::avrac::test_runner::PackageSplit", ptr %split186, i32 0, i32 0
   %packages190 = load ptr, ptr %packages_ptr, align 8
   %packages191 = load ptr, ptr %packages, align 8
@@ -332090,7 +333218,7 @@ ifcont149:                                        ; preds = %if_else152
   %cast198 = ptrtoint ptr %split197 to i64
   %null_chk199 = icmp eq i64 %cast198, 0
   %null_ext200 = zext i1 %null_chk199 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25407, i64 4, ptr @sty_name.25408, i64 38, i64 %null_ext200, ptr @src_file.25409, i64 0, i64 565)
+  call void @avra_null_deref_trap(ptr @fld_name.25474, i64 4, ptr @sty_name.25475, i64 38, i64 %null_ext200, ptr @src_file.25476, i64 0, i64 685)
   %body_ptr = getelementptr inbounds nuw %"@std::avrac::test_runner::PackageSplit", ptr %split197, i32 0, i32 1
   %body = load ptr, ptr %body_ptr, align 8
   %slot_base201 = ptrtoint ptr %63 to i64
@@ -332119,19 +333247,19 @@ ifcont149:                                        ; preds = %if_else152
 
 if_then151:                                       ; preds = %ifcont106
   %path153 = load ptr, ptr %path, align 8
-  %65 = call i64 @strlen(ptr @.str.25393)
+  %65 = call i64 @strlen(ptr @.str.25460)
   %66 = call i64 @strlen(ptr %path153)
   %concat_total154 = add i64 %65, %66
   %concat_size155 = add i64 %concat_total154, 1
   %67 = call ptr @avra_rc_alloc(i64 %concat_size155)
-  %68 = call ptr @memcpy(ptr %67, ptr @.str.25393, i64 %65)
+  %68 = call ptr @memcpy(ptr %67, ptr @.str.25460, i64 %65)
   %cast156 = ptrtoint ptr %67 to i64
   %dst2_int157 = add i64 %cast156, %65
   %cast158 = inttoptr i64 %dst2_int157 to ptr
   %rhs_len_p1159 = add i64 %66, 1
   %69 = call ptr @memcpy(ptr %cast158, ptr %path153, i64 %rhs_len_p1159)
   %70 = call i64 @strlen(ptr %67)
-  %71 = call i64 @strlen(ptr @.str.25394)
+  %71 = call i64 @strlen(ptr @.str.25461)
   %concat_total160 = add i64 %70, %71
   %concat_size161 = add i64 %concat_total160, 1
   %72 = call ptr @avra_rc_alloc(i64 %concat_size161)
@@ -332140,12 +333268,12 @@ if_then151:                                       ; preds = %ifcont106
   %dst2_int163 = add i64 %cast162, %70
   %cast164 = inttoptr i64 %dst2_int163 to ptr
   %rhs_len_p1165 = add i64 %71, 1
-  %74 = call ptr @memcpy(ptr %cast164, ptr @.str.25394, i64 %rhs_len_p1165)
+  %74 = call ptr @memcpy(ptr %cast164, ptr @.str.25461, i64 %rhs_len_p1165)
   %mod_resolved166 = load ptr, ptr %mod_resolved, align 8
   %cast167 = ptrtoint ptr %mod_resolved166 to i64
   %null_chk168 = icmp eq i64 %cast167, 0
   %null_ext169 = zext i1 %null_chk168 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25395, i64 13, ptr @sty_name.25396, i64 55, i64 %null_ext169, ptr @src_file.25397, i64 0, i64 555)
+  call void @avra_null_deref_trap(ptr @fld_name.25462, i64 13, ptr @sty_name.25463, i64 55, i64 %null_ext169, ptr @src_file.25464, i64 0, i64 675)
   %error_message_ptr = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved166, i32 0, i32 3
   %error_message = load ptr, ptr %error_message_ptr, align 8
   %75 = call i64 @strlen(ptr %72)
@@ -332169,7 +333297,7 @@ ifcont219:                                        ; preds = %if_else222
   %project_dir224 = load ptr, ptr %project_dir, align 8
   %80 = call ptr @"@std::avrac::features::modules::resolver::find_packages_dir"(ptr %project_dir224)
   %81 = call i64 @strlen(ptr %80)
-  %82 = call i64 @strlen(ptr @.str.25411)
+  %82 = call i64 @strlen(ptr @.str.25478)
   %concat_total225 = add i64 %81, %82
   %concat_size226 = add i64 %concat_total225, 1
   %83 = call ptr @avra_rc_alloc(i64 %concat_size226)
@@ -332178,7 +333306,7 @@ ifcont219:                                        ; preds = %if_else222
   %dst2_int228 = add i64 %cast227, %81
   %cast229 = inttoptr i64 %dst2_int228 to ptr
   %rhs_len_p1230 = add i64 %82, 1
-  %85 = call ptr @memcpy(ptr %cast229, ptr @.str.25411, i64 %rhs_len_p1230)
+  %85 = call ptr @memcpy(ptr %cast229, ptr @.str.25478, i64 %rhs_len_p1230)
   store ptr %83, ptr %reporter_path, align 8
   %reporter_path231 = load ptr, ptr %reporter_path, align 8
   %86 = call i64 @avra_selfhost_file_exists(ptr %reporter_path231)
@@ -332188,7 +333316,7 @@ ifcont219:                                        ; preds = %if_else222
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 if_then221:                                       ; preds = %forin.exit
-  %87 = call i32 @puts(ptr @.str.25410)
+  %87 = call i32 @puts(ptr @.str.25477)
   %widen223 = sext i32 %87 to i64
   ret i64 0
 
@@ -332233,7 +333361,7 @@ ife_end:                                          ; preds = %ife_else, %sif_end
   %slot_base284 = ptrtoint ptr %98 to i64
   %slot_addr285 = add i64 %slot_base284, 0
   %slot286 = inttoptr i64 %slot_addr285 to ptr
-  store ptr @.str.25421, ptr %slot286, align 8
+  store ptr @.str.25488, ptr %slot286, align 8
   %cast287 = ptrtoint ptr %97 to i64
   %slot_base288 = ptrtoint ptr %96 to i64
   %slot_addr289 = add i64 %slot_base288, 0
@@ -332293,7 +333421,7 @@ ife_end:                                          ; preds = %ife_else, %sif_end
   %slot_base322 = ptrtoint ptr %105 to i64
   %slot_addr323 = add i64 %slot_base322, 0
   %slot324 = inttoptr i64 %slot_addr323 to ptr
-  store ptr @.str.25422, ptr %slot324, align 8
+  store ptr @.str.25489, ptr %slot324, align 8
   %106 = call ptr @avra_rc_alloc(i64 16)
   %tag_ptr325 = getelementptr inbounds nuw %"@std::avrac::core::ast::TypeParamList", ptr %106, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr325, align 8
@@ -332360,7 +333488,7 @@ ife_end:                                          ; preds = %ife_else, %sif_end
   %cast365 = ptrtoint ptr %named364 to i64
   %null_chk366 = icmp eq i64 %cast365, 0
   %null_ext367 = zext i1 %null_chk366 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25423, i64 3, ptr @sty_name.25424, i64 46, i64 %null_ext367, ptr @src_file.25425, i64 0, i64 617)
+  call void @avra_null_deref_trap(ptr @fld_name.25490, i64 3, ptr @sty_name.25491, i64 46, i64 %null_ext367, ptr @src_file.25492, i64 0, i64 737)
   %bag_ptr368 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named364, i32 0, i32 3
   %bag369 = load ptr, ptr %bag_ptr368, align 8
   %113 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag369)
@@ -332380,7 +333508,7 @@ ife_then:                                         ; preds = %ifcont219
   %cast236 = ptrtoint ptr %rparsed235 to i64
   %null_chk237 = icmp eq i64 %cast236, 0
   %null_ext238 = zext i1 %null_chk237 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25412, i64 9, ptr @sty_name.25413, i64 38, i64 %null_ext238, ptr @src_file.25414, i64 0, i64 595)
+  call void @avra_null_deref_trap(ptr @fld_name.25479, i64 9, ptr @sty_name.25480, i64 38, i64 %null_ext238, ptr @src_file.25481, i64 0, i64 715)
   %had_error_ptr239 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %rparsed235, i32 0, i32 1
   %had_error240 = load i64, ptr %had_error_ptr239, align 8
   %l_bool241 = icmp ne i64 %had_error240, 0
@@ -332401,7 +333529,7 @@ sc_rhs242:                                        ; preds = %ife_then
   %cast246 = ptrtoint ptr %rparsed245 to i64
   %null_chk247 = icmp eq i64 %cast246, 0
   %null_ext248 = zext i1 %null_chk247 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25415, i64 5, ptr @sty_name.25416, i64 38, i64 %null_ext248, ptr @src_file.25417, i64 0, i64 595)
+  call void @avra_null_deref_trap(ptr @fld_name.25482, i64 5, ptr @sty_name.25483, i64 38, i64 %null_ext248, ptr @src_file.25484, i64 0, i64 715)
   %stmts_ptr249 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %rparsed245, i32 0, i32 0
   %stmts250 = load ptr, ptr %stmts_ptr249, align 8
   %eq251 = icmp eq ptr %stmts250, null
@@ -332443,7 +333571,7 @@ sif_else:                                         ; preds = %sc_merge244
   %cast263 = ptrtoint ptr %rparsed262 to i64
   %null_chk264 = icmp eq i64 %cast263, 0
   %null_ext265 = zext i1 %null_chk264 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25418, i64 5, ptr @sty_name.25419, i64 38, i64 %null_ext265, ptr @src_file.25420, i64 0, i64 596)
+  call void @avra_null_deref_trap(ptr @fld_name.25485, i64 5, ptr @sty_name.25486, i64 38, i64 %null_ext265, ptr @src_file.25487, i64 0, i64 716)
   %stmts_ptr266 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %rparsed262, i32 0, i32 0
   %stmts267 = load ptr, ptr %stmts_ptr266, align 8
   %cast268 = ptrtoint ptr %stmts267 to i64
@@ -332460,7 +333588,7 @@ sc_rhs372:                                        ; preds = %ife_end
   %cast376 = ptrtoint ptr %named375 to i64
   %null_chk377 = icmp eq i64 %cast376, 0
   %null_ext378 = zext i1 %null_chk377 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25426, i64 9, ptr @sty_name.25427, i64 46, i64 %null_ext378, ptr @src_file.25428, i64 0, i64 617)
+  call void @avra_null_deref_trap(ptr @fld_name.25493, i64 9, ptr @sty_name.25494, i64 46, i64 %null_ext378, ptr @src_file.25495, i64 0, i64 737)
   %had_error_ptr379 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named375, i32 0, i32 1
   %had_error380 = load i64, ptr %had_error_ptr379, align 8
   %r_bool381 = icmp ne i64 %had_error380, 0
@@ -332489,7 +333617,7 @@ ifcont387:                                        ; preds = %if_else390, %if_the
   %cast404 = ptrtoint ptr %named403 to i64
   %null_chk405 = icmp eq i64 %cast404, 0
   %null_ext406 = zext i1 %null_chk405 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25437, i64 5, ptr @sty_name.25438, i64 46, i64 %null_ext406, ptr @src_file.25439, i64 0, i64 621)
+  call void @avra_null_deref_trap(ptr @fld_name.25504, i64 5, ptr @sty_name.25505, i64 46, i64 %null_ext406, ptr @src_file.25506, i64 0, i64 741)
   %stmts_ptr407 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named403, i32 0, i32 0
   %stmts408 = load ptr, ptr %stmts_ptr407, align 8
   %118 = call ptr @"@std::avrac::typeck::typecheck_program"(ptr %stmts408)
@@ -332498,7 +333626,7 @@ ifcont387:                                        ; preds = %if_else390, %if_the
   %cast410 = ptrtoint ptr %tc_result409 to i64
   %null_chk411 = icmp eq i64 %cast410, 0
   %null_ext412 = zext i1 %null_chk411 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25440, i64 3, ptr @sty_name.25441, i64 36, i64 %null_ext412, ptr @src_file.25442, i64 0, i64 622)
+  call void @avra_null_deref_trap(ptr @fld_name.25507, i64 3, ptr @sty_name.25508, i64 36, i64 %null_ext412, ptr @src_file.25509, i64 0, i64 742)
   %bag_ptr413 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result409, i32 0, i32 2
   %bag414 = load ptr, ptr %bag_ptr413, align 8
   %119 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag414)
@@ -332511,15 +333639,15 @@ if_then389:                                       ; preds = %sc_merge374
   %cast392 = ptrtoint ptr %named391 to i64
   %null_chk393 = icmp eq i64 %cast392, 0
   %null_ext394 = zext i1 %null_chk393 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25431, i64 3, ptr @sty_name.25432, i64 46, i64 %null_ext394, ptr @src_file.25433, i64 0, i64 618)
+  call void @avra_null_deref_trap(ptr @fld_name.25498, i64 3, ptr @sty_name.25499, i64 46, i64 %null_ext394, ptr @src_file.25500, i64 0, i64 738)
   %bag_ptr395 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named391, i32 0, i32 3
   %bag396 = load ptr, ptr %bag_ptr395, align 8
-  %120 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr @.str.25429, ptr @.str.25430, ptr %bag396)
+  %120 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr @.str.25496, ptr @.str.25497, ptr %bag396)
   %named397 = load ptr, ptr %named, align 8
   %cast398 = ptrtoint ptr %named397 to i64
   %null_chk399 = icmp eq i64 %cast398, 0
   %null_ext400 = zext i1 %null_chk399 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25434, i64 13, ptr @sty_name.25435, i64 46, i64 %null_ext400, ptr @src_file.25436, i64 0, i64 619)
+  call void @avra_null_deref_trap(ptr @fld_name.25501, i64 13, ptr @sty_name.25502, i64 46, i64 %null_ext400, ptr @src_file.25503, i64 0, i64 739)
   %error_message_ptr401 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named397, i32 0, i32 2
   %error_message402 = load ptr, ptr %error_message_ptr401, align 8
   %121 = call i64 @fail(ptr %error_message402)
@@ -332533,14 +333661,14 @@ ifcont416:                                        ; preds = %if_else419, %if_the
   %cast427 = ptrtoint ptr %tc_result426 to i64
   %null_chk428 = icmp eq i64 %cast427, 0
   %null_ext429 = zext i1 %null_chk428 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25449, i64 5, ptr @sty_name.25450, i64 36, i64 %null_ext429, ptr @src_file.25451, i64 0, i64 626)
+  call void @avra_null_deref_trap(ptr @fld_name.25516, i64 5, ptr @sty_name.25517, i64 36, i64 %null_ext429, ptr @src_file.25518, i64 0, i64 746)
   %stmts_ptr430 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result426, i32 0, i32 0
   %stmts431 = load ptr, ptr %stmts_ptr430, align 8
   %tc_result432 = load ptr, ptr %tc_result, align 8
   %cast433 = ptrtoint ptr %tc_result432 to i64
   %null_chk434 = icmp eq i64 %cast433, 0
   %null_ext435 = zext i1 %null_chk434 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25452, i64 11, ptr @sty_name.25453, i64 36, i64 %null_ext435, ptr @src_file.25454, i64 0, i64 626)
+  call void @avra_null_deref_trap(ptr @fld_name.25519, i64 11, ptr @sty_name.25520, i64 36, i64 %null_ext435, ptr @src_file.25521, i64 0, i64 746)
   %trait_impls_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result432, i32 0, i32 3
   %trait_impls = load ptr, ptr %trait_impls_ptr, align 8
   %122 = call ptr @"@std::avrac::features::generics::mono::monomorphize"(ptr %stmts431, ptr %trait_impls)
@@ -332549,7 +333677,7 @@ ifcont416:                                        ; preds = %if_else419, %if_the
   %cast437 = ptrtoint ptr %mono436 to i64
   %null_chk438 = icmp eq i64 %cast437, 0
   %null_ext439 = zext i1 %null_chk438 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25455, i64 3, ptr @sty_name.25456, i64 49, i64 %null_ext439, ptr @src_file.25457, i64 0, i64 627)
+  call void @avra_null_deref_trap(ptr @fld_name.25522, i64 3, ptr @sty_name.25523, i64 49, i64 %null_ext439, ptr @src_file.25524, i64 0, i64 747)
   %bag_ptr440 = getelementptr inbounds nuw %"@std::avrac::features::generics::mono::MonoResult", ptr %mono436, i32 0, i32 1
   %bag441 = load ptr, ptr %bag_ptr440, align 8
   %123 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag441)
@@ -332562,11 +333690,11 @@ if_then418:                                       ; preds = %ifcont387
   %cast421 = ptrtoint ptr %tc_result420 to i64
   %null_chk422 = icmp eq i64 %cast421, 0
   %null_ext423 = zext i1 %null_chk422 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25445, i64 3, ptr @sty_name.25446, i64 36, i64 %null_ext423, ptr @src_file.25447, i64 0, i64 623)
+  call void @avra_null_deref_trap(ptr @fld_name.25512, i64 3, ptr @sty_name.25513, i64 36, i64 %null_ext423, ptr @src_file.25514, i64 0, i64 743)
   %bag_ptr424 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result420, i32 0, i32 2
   %bag425 = load ptr, ptr %bag_ptr424, align 8
-  %124 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr @.str.25443, ptr @.str.25444, ptr %bag425)
-  %125 = call i64 @fail(ptr @.str.25448)
+  %124 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr @.str.25510, ptr @.str.25511, ptr %bag425)
+  %125 = call i64 @fail(ptr @.str.25515)
   br label %ifcont416
 
 if_else419:                                       ; preds = %ifcont387
@@ -332575,7 +333703,7 @@ if_else419:                                       ; preds = %ifcont387
 ifcont443:                                        ; preds = %if_else446, %if_then445
   %project_dir453 = load ptr, ptr %project_dir, align 8
   %126 = call i64 @strlen(ptr %project_dir453)
-  %127 = call i64 @strlen(ptr @.str.25464)
+  %127 = call i64 @strlen(ptr @.str.25531)
   %concat_total454 = add i64 %126, %127
   %concat_size455 = add i64 %concat_total454, 1
   %128 = call ptr @avra_rc_alloc(i64 %concat_size455)
@@ -332584,12 +333712,12 @@ ifcont443:                                        ; preds = %if_else446, %if_the
   %dst2_int457 = add i64 %cast456, %126
   %cast458 = inttoptr i64 %dst2_int457 to ptr
   %rhs_len_p1459 = add i64 %127, 1
-  %130 = call ptr @memcpy(ptr %cast458, ptr @.str.25464, i64 %rhs_len_p1459)
+  %130 = call ptr @memcpy(ptr %cast458, ptr @.str.25531, i64 %rhs_len_p1459)
   store ptr %128, ptr %build_dir, align 8
-  %131 = call ptr @avra_process_env_get(ptr @.str.25465)
+  %131 = call ptr @avra_process_env_get(ptr @.str.25532)
   store ptr %131, ptr %llvm_env, align 8
   %llvm_env460 = load ptr, ptr %llvm_env, align 8
-  %132 = call i32 @strcmp(ptr %llvm_env460, ptr @.str.25466)
+  %132 = call i32 @strcmp(ptr %llvm_env460, ptr @.str.25533)
   %widen461 = sext i32 %132 to i64
   %streq_cmp462 = icmp eq i64 %widen461, 0
   %streq_ext463 = zext i1 %streq_cmp462 to i64
@@ -332601,11 +333729,11 @@ if_then445:                                       ; preds = %ifcont416
   %cast448 = ptrtoint ptr %mono447 to i64
   %null_chk449 = icmp eq i64 %cast448, 0
   %null_ext450 = zext i1 %null_chk449 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25460, i64 3, ptr @sty_name.25461, i64 49, i64 %null_ext450, ptr @src_file.25462, i64 0, i64 628)
+  call void @avra_null_deref_trap(ptr @fld_name.25527, i64 3, ptr @sty_name.25528, i64 49, i64 %null_ext450, ptr @src_file.25529, i64 0, i64 748)
   %bag_ptr451 = getelementptr inbounds nuw %"@std::avrac::features::generics::mono::MonoResult", ptr %mono447, i32 0, i32 1
   %bag452 = load ptr, ptr %bag_ptr451, align 8
-  %133 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr @.str.25458, ptr @.str.25459, ptr %bag452)
-  %134 = call i64 @fail(ptr @.str.25463)
+  %133 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr @.str.25525, ptr @.str.25526, ptr %bag452)
+  %134 = call i64 @fail(ptr @.str.25530)
   br label %ifcont443
 
 if_else446:                                       ; preds = %ifcont416
@@ -332617,7 +333745,7 @@ ife_end465:                                       ; preds = %ife_else468, %ife_t
   store ptr %cast472, ptr %llvm_prefix, align 8
   %llvm_prefix473 = load ptr, ptr %llvm_prefix, align 8
   %135 = call i64 @strlen(ptr %llvm_prefix473)
-  %136 = call i64 @strlen(ptr @.str.25468)
+  %136 = call i64 @strlen(ptr @.str.25535)
   %concat_total474 = add i64 %135, %136
   %concat_size475 = add i64 %concat_total474, 1
   %137 = call ptr @avra_rc_alloc(i64 %concat_size475)
@@ -332626,13 +333754,13 @@ ife_end465:                                       ; preds = %ife_else468, %ife_t
   %dst2_int477 = add i64 %cast476, %135
   %cast478 = inttoptr i64 %dst2_int477 to ptr
   %rhs_len_p1479 = add i64 %136, 1
-  %139 = call ptr @memcpy(ptr %cast478, ptr @.str.25468, i64 %rhs_len_p1479)
+  %139 = call ptr @memcpy(ptr %cast478, ptr @.str.25535, i64 %rhs_len_p1479)
   store ptr %137, ptr %llvm_lib, align 8
   %args480 = load ptr, ptr %args, align 8
   %cast481 = ptrtoint ptr %args480 to i64
   %null_chk482 = icmp eq i64 %cast481, 0
   %null_ext483 = zext i1 %null_chk482 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25469, i64 8, ptr @sty_name.25470, i64 8, i64 %null_ext483, ptr @src_file.25471, i64 0, i64 644)
+  call void @avra_null_deref_trap(ptr @fld_name.25536, i64 8, ptr @sty_name.25537, i64 8, i64 %null_ext483, ptr @src_file.25538, i64 0, i64 764)
   %coverage_ptr = getelementptr inbounds nuw %TestArgs, ptr %args480, i32 0, i32 1
   %coverage = load i1, ptr %coverage_ptr, align 8
   %not_cmp484 = icmp eq i1 %coverage, false
@@ -332641,7 +333769,7 @@ ife_end465:                                       ; preds = %ife_else468, %ife_t
   br i1 %if_cond487, label %if_then488, label %if_else489
 
 ife_then467:                                      ; preds = %ifcont443
-  store i64 ptrtoint (ptr @.str.25467 to i64), ptr %ife_result464, align 8
+  store i64 ptrtoint (ptr @.str.25534 to i64), ptr %ife_result464, align 8
   br label %ife_end465
 
 ife_else468:                                      ; preds = %ifcont443
@@ -332653,7 +333781,7 @@ ife_else468:                                      ; preds = %ifcont443
 ifcont486:                                        ; preds = %if_else489
   %build_dir596 = load ptr, ptr %build_dir, align 8
   %140 = call i64 @strlen(ptr %build_dir596)
-  %141 = call i64 @strlen(ptr @.str.25493)
+  %141 = call i64 @strlen(ptr @.str.25560)
   %concat_total597 = add i64 %140, %141
   %concat_size598 = add i64 %concat_total597, 1
   %142 = call ptr @avra_rc_alloc(i64 %concat_size598)
@@ -332662,15 +333790,15 @@ ifcont486:                                        ; preds = %if_else489
   %dst2_int600 = add i64 %cast599, %140
   %cast601 = inttoptr i64 %dst2_int600 to ptr
   %rhs_len_p1602 = add i64 %141, 1
-  %144 = call ptr @memcpy(ptr %cast601, ptr @.str.25493, i64 %rhs_len_p1602)
+  %144 = call ptr @memcpy(ptr %cast601, ptr @.str.25560, i64 %rhs_len_p1602)
   store ptr %142, ptr %cov_dir, align 8
   %cov_dir603 = load ptr, ptr %cov_dir, align 8
-  %145 = call i64 @strlen(ptr @.str.25494)
+  %145 = call i64 @strlen(ptr @.str.25561)
   %146 = call i64 @strlen(ptr %cov_dir603)
   %concat_total604 = add i64 %145, %146
   %concat_size605 = add i64 %concat_total604, 1
   %147 = call ptr @avra_rc_alloc(i64 %concat_size605)
-  %148 = call ptr @memcpy(ptr %147, ptr @.str.25494, i64 %145)
+  %148 = call ptr @memcpy(ptr %147, ptr @.str.25561, i64 %145)
   %cast606 = ptrtoint ptr %147 to i64
   %dst2_int607 = add i64 %cast606, %145
   %cast608 = inttoptr i64 %dst2_int607 to ptr
@@ -332679,7 +333807,7 @@ ifcont486:                                        ; preds = %if_else489
   %150 = call ptr @avra_shell_exec(ptr %147)
   %cov_dir610 = load ptr, ptr %cov_dir, align 8
   %151 = call i64 @strlen(ptr %cov_dir610)
-  %152 = call i64 @strlen(ptr @.str.25495)
+  %152 = call i64 @strlen(ptr @.str.25562)
   %concat_total611 = add i64 %151, %152
   %concat_size612 = add i64 %concat_total611, 1
   %153 = call ptr @avra_rc_alloc(i64 %concat_size612)
@@ -332688,11 +333816,11 @@ ifcont486:                                        ; preds = %if_else489
   %dst2_int614 = add i64 %cast613, %151
   %cast615 = inttoptr i64 %dst2_int614 to ptr
   %rhs_len_p1616 = add i64 %152, 1
-  %155 = call ptr @memcpy(ptr %cast615, ptr @.str.25495, i64 %rhs_len_p1616)
+  %155 = call ptr @memcpy(ptr %cast615, ptr @.str.25562, i64 %rhs_len_p1616)
   store ptr %153, ptr %ir_path, align 8
   %cov_dir617 = load ptr, ptr %cov_dir, align 8
   %156 = call i64 @strlen(ptr %cov_dir617)
-  %157 = call i64 @strlen(ptr @.str.25496)
+  %157 = call i64 @strlen(ptr @.str.25563)
   %concat_total618 = add i64 %156, %157
   %concat_size619 = add i64 %concat_total618, 1
   %158 = call ptr @avra_rc_alloc(i64 %concat_size619)
@@ -332701,11 +333829,11 @@ ifcont486:                                        ; preds = %if_else489
   %dst2_int621 = add i64 %cast620, %156
   %cast622 = inttoptr i64 %dst2_int621 to ptr
   %rhs_len_p1623 = add i64 %157, 1
-  %160 = call ptr @memcpy(ptr %cast622, ptr @.str.25496, i64 %rhs_len_p1623)
+  %160 = call ptr @memcpy(ptr %cast622, ptr @.str.25563, i64 %rhs_len_p1623)
   store ptr %158, ptr %cov_ll, align 8
   %cov_dir624 = load ptr, ptr %cov_dir, align 8
   %161 = call i64 @strlen(ptr %cov_dir624)
-  %162 = call i64 @strlen(ptr @.str.25497)
+  %162 = call i64 @strlen(ptr @.str.25564)
   %concat_total625 = add i64 %161, %162
   %concat_size626 = add i64 %concat_total625, 1
   %163 = call ptr @avra_rc_alloc(i64 %concat_size626)
@@ -332714,11 +333842,11 @@ ifcont486:                                        ; preds = %if_else489
   %dst2_int628 = add i64 %cast627, %161
   %cast629 = inttoptr i64 %dst2_int628 to ptr
   %rhs_len_p1630 = add i64 %162, 1
-  %165 = call ptr @memcpy(ptr %cast629, ptr @.str.25497, i64 %rhs_len_p1630)
+  %165 = call ptr @memcpy(ptr %cast629, ptr @.str.25564, i64 %rhs_len_p1630)
   store ptr %163, ptr %obj_path631, align 8
   %cov_dir632 = load ptr, ptr %cov_dir, align 8
   %166 = call i64 @strlen(ptr %cov_dir632)
-  %167 = call i64 @strlen(ptr @.str.25498)
+  %167 = call i64 @strlen(ptr @.str.25565)
   %concat_total633 = add i64 %166, %167
   %concat_size634 = add i64 %concat_total633, 1
   %168 = call ptr @avra_rc_alloc(i64 %concat_size634)
@@ -332727,11 +333855,11 @@ ifcont486:                                        ; preds = %if_else489
   %dst2_int636 = add i64 %cast635, %166
   %cast637 = inttoptr i64 %dst2_int636 to ptr
   %rhs_len_p1638 = add i64 %167, 1
-  %170 = call ptr @memcpy(ptr %cast637, ptr @.str.25498, i64 %rhs_len_p1638)
+  %170 = call ptr @memcpy(ptr %cast637, ptr @.str.25565, i64 %rhs_len_p1638)
   store ptr %168, ptr %bin_path639, align 8
   %cov_dir640 = load ptr, ptr %cov_dir, align 8
   %171 = call i64 @strlen(ptr %cov_dir640)
-  %172 = call i64 @strlen(ptr @.str.25499)
+  %172 = call i64 @strlen(ptr @.str.25566)
   %concat_total641 = add i64 %171, %172
   %concat_size642 = add i64 %concat_total641, 1
   %173 = call ptr @avra_rc_alloc(i64 %concat_size642)
@@ -332740,11 +333868,11 @@ ifcont486:                                        ; preds = %if_else489
   %dst2_int644 = add i64 %cast643, %171
   %cast645 = inttoptr i64 %dst2_int644 to ptr
   %rhs_len_p1646 = add i64 %172, 1
-  %175 = call ptr @memcpy(ptr %cast645, ptr @.str.25499, i64 %rhs_len_p1646)
+  %175 = call ptr @memcpy(ptr %cast645, ptr @.str.25566, i64 %rhs_len_p1646)
   store ptr %173, ptr %profraw, align 8
   %cov_dir647 = load ptr, ptr %cov_dir, align 8
   %176 = call i64 @strlen(ptr %cov_dir647)
-  %177 = call i64 @strlen(ptr @.str.25500)
+  %177 = call i64 @strlen(ptr @.str.25567)
   %concat_total648 = add i64 %176, %177
   %concat_size649 = add i64 %concat_total648, 1
   %178 = call ptr @avra_rc_alloc(i64 %concat_size649)
@@ -332753,13 +333881,13 @@ ifcont486:                                        ; preds = %if_else489
   %dst2_int651 = add i64 %cast650, %176
   %cast652 = inttoptr i64 %dst2_int651 to ptr
   %rhs_len_p1653 = add i64 %177, 1
-  %180 = call ptr @memcpy(ptr %cast652, ptr @.str.25500, i64 %rhs_len_p1653)
+  %180 = call ptr @memcpy(ptr %cast652, ptr @.str.25567, i64 %rhs_len_p1653)
   store ptr %178, ptr %profdata, align 8
   %mono654 = load ptr, ptr %mono, align 8
   %cast655 = ptrtoint ptr %mono654 to i64
   %null_chk656 = icmp eq i64 %cast655, 0
   %null_ext657 = zext i1 %null_chk656 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25501, i64 5, ptr @sty_name.25502, i64 49, i64 %null_ext657, ptr @src_file.25503, i64 0, i64 668)
+  call void @avra_null_deref_trap(ptr @fld_name.25568, i64 5, ptr @sty_name.25569, i64 49, i64 %null_ext657, ptr @src_file.25570, i64 0, i64 788)
   %stmts_ptr658 = getelementptr inbounds nuw %"@std::avrac::features::generics::mono::MonoResult", ptr %mono654, i32 0, i32 0
   %stmts659 = load ptr, ptr %stmts_ptr658, align 8
   %ir_path660 = load ptr, ptr %ir_path, align 8
@@ -332767,12 +333895,12 @@ ifcont486:                                        ; preds = %if_else489
   %cast662 = ptrtoint ptr %named661 to i64
   %null_chk663 = icmp eq i64 %cast662, 0
   %null_ext664 = zext i1 %null_chk663 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25504, i64 8, ptr @sty_name.25505, i64 46, i64 %null_ext664, ptr @src_file.25506, i64 0, i64 668)
+  call void @avra_null_deref_trap(ptr @fld_name.25571, i64 8, ptr @sty_name.25572, i64 46, i64 %null_ext664, ptr @src_file.25573, i64 0, i64 788)
   %type_reg_ptr665 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named661, i32 0, i32 4
   %type_reg666 = load ptr, ptr %type_reg_ptr665, align 8
   %cov_dir667 = load ptr, ptr %cov_dir, align 8
   %181 = call i64 @strlen(ptr %cov_dir667)
-  %182 = call i64 @strlen(ptr @.str.25507)
+  %182 = call i64 @strlen(ptr @.str.25574)
   %concat_total668 = add i64 %181, %182
   %concat_size669 = add i64 %concat_total668, 1
   %183 = call ptr @avra_rc_alloc(i64 %concat_size669)
@@ -332781,7 +333909,7 @@ ifcont486:                                        ; preds = %if_else489
   %dst2_int671 = add i64 %cast670, %181
   %cast672 = inttoptr i64 %dst2_int671 to ptr
   %rhs_len_p1673 = add i64 %182, 1
-  %185 = call ptr @memcpy(ptr %cast672, ptr @.str.25507, i64 %rhs_len_p1673)
+  %185 = call ptr @memcpy(ptr %cast672, ptr @.str.25574, i64 %rhs_len_p1673)
   %186 = call ptr @"@std::avrac::codegen::setup::codegen_and_emit_ir_cov"(ptr %stmts659, ptr %ir_path660, ptr %type_reg666, ptr %183)
   %tag_ptr674 = getelementptr inbounds nuw %Result__int__string, ptr %186, i32 0, i32 0
   %tag675 = load i64, ptr %tag_ptr674, align 8
@@ -332791,7 +333919,7 @@ ifcont486:                                        ; preds = %if_else489
 if_then488:                                       ; preds = %ife_end465
   %build_dir490 = load ptr, ptr %build_dir, align 8
   %187 = call i64 @strlen(ptr %build_dir490)
-  %188 = call i64 @strlen(ptr @.str.25472)
+  %188 = call i64 @strlen(ptr @.str.25539)
   %concat_total491 = add i64 %187, %188
   %concat_size492 = add i64 %concat_total491, 1
   %189 = call ptr @avra_rc_alloc(i64 %concat_size492)
@@ -332800,11 +333928,11 @@ if_then488:                                       ; preds = %ife_end465
   %dst2_int494 = add i64 %cast493, %187
   %cast495 = inttoptr i64 %dst2_int494 to ptr
   %rhs_len_p1496 = add i64 %188, 1
-  %191 = call ptr @memcpy(ptr %cast495, ptr @.str.25472, i64 %rhs_len_p1496)
+  %191 = call ptr @memcpy(ptr %cast495, ptr @.str.25539, i64 %rhs_len_p1496)
   store ptr %189, ptr %obj_path, align 8
   %build_dir497 = load ptr, ptr %build_dir, align 8
   %192 = call i64 @strlen(ptr %build_dir497)
-  %193 = call i64 @strlen(ptr @.str.25473)
+  %193 = call i64 @strlen(ptr @.str.25540)
   %concat_total498 = add i64 %192, %193
   %concat_size499 = add i64 %concat_total498, 1
   %194 = call ptr @avra_rc_alloc(i64 %concat_size499)
@@ -332813,13 +333941,13 @@ if_then488:                                       ; preds = %ife_end465
   %dst2_int501 = add i64 %cast500, %192
   %cast502 = inttoptr i64 %dst2_int501 to ptr
   %rhs_len_p1503 = add i64 %193, 1
-  %196 = call ptr @memcpy(ptr %cast502, ptr @.str.25473, i64 %rhs_len_p1503)
+  %196 = call ptr @memcpy(ptr %cast502, ptr @.str.25540, i64 %rhs_len_p1503)
   store ptr %194, ptr %bin_path, align 8
   %mono504 = load ptr, ptr %mono, align 8
   %cast505 = ptrtoint ptr %mono504 to i64
   %null_chk506 = icmp eq i64 %cast505, 0
   %null_ext507 = zext i1 %null_chk506 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25474, i64 5, ptr @sty_name.25475, i64 49, i64 %null_ext507, ptr @src_file.25476, i64 0, i64 647)
+  call void @avra_null_deref_trap(ptr @fld_name.25541, i64 5, ptr @sty_name.25542, i64 49, i64 %null_ext507, ptr @src_file.25543, i64 0, i64 767)
   %stmts_ptr508 = getelementptr inbounds nuw %"@std::avrac::features::generics::mono::MonoResult", ptr %mono504, i32 0, i32 0
   %stmts509 = load ptr, ptr %stmts_ptr508, align 8
   %obj_path510 = load ptr, ptr %obj_path, align 8
@@ -332827,7 +333955,7 @@ if_then488:                                       ; preds = %ife_end465
   %cast512 = ptrtoint ptr %named511 to i64
   %null_chk513 = icmp eq i64 %cast512, 0
   %null_ext514 = zext i1 %null_chk513 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25477, i64 8, ptr @sty_name.25478, i64 46, i64 %null_ext514, ptr @src_file.25479, i64 0, i64 647)
+  call void @avra_null_deref_trap(ptr @fld_name.25544, i64 8, ptr @sty_name.25545, i64 46, i64 %null_ext514, ptr @src_file.25546, i64 0, i64 767)
   %type_reg_ptr = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named511, i32 0, i32 4
   %type_reg = load ptr, ptr %type_reg_ptr, align 8
   %197 = call ptr @"@std::avrac::codegen::setup::codegen_and_emit_object"(ptr %stmts509, ptr %obj_path510, ptr %type_reg)
@@ -332841,19 +333969,19 @@ if_else489:                                       ; preds = %ife_end465
 
 match_end:                                        ; preds = %march_arm517, %march_arm
   %obj_path522 = load ptr, ptr %obj_path, align 8
-  %198 = call i64 @strlen(ptr @.str.25482)
+  %198 = call i64 @strlen(ptr @.str.25549)
   %199 = call i64 @strlen(ptr %obj_path522)
   %concat_total523 = add i64 %198, %199
   %concat_size524 = add i64 %concat_total523, 1
   %200 = call ptr @avra_rc_alloc(i64 %concat_size524)
-  %201 = call ptr @memcpy(ptr %200, ptr @.str.25482, i64 %198)
+  %201 = call ptr @memcpy(ptr %200, ptr @.str.25549, i64 %198)
   %cast525 = ptrtoint ptr %200 to i64
   %dst2_int526 = add i64 %cast525, %198
   %cast527 = inttoptr i64 %dst2_int526 to ptr
   %rhs_len_p1528 = add i64 %199, 1
   %202 = call ptr @memcpy(ptr %cast527, ptr %obj_path522, i64 %rhs_len_p1528)
   %203 = call i64 @strlen(ptr %200)
-  %204 = call i64 @strlen(ptr @.str.25483)
+  %204 = call i64 @strlen(ptr @.str.25550)
   %concat_total529 = add i64 %203, %204
   %concat_size530 = add i64 %concat_total529, 1
   %205 = call ptr @avra_rc_alloc(i64 %concat_size530)
@@ -332862,7 +333990,7 @@ match_end:                                        ; preds = %march_arm517, %marc
   %dst2_int532 = add i64 %cast531, %203
   %cast533 = inttoptr i64 %dst2_int532 to ptr
   %rhs_len_p1534 = add i64 %204, 1
-  %207 = call ptr @memcpy(ptr %cast533, ptr @.str.25483, i64 %rhs_len_p1534)
+  %207 = call ptr @memcpy(ptr %cast533, ptr @.str.25550, i64 %rhs_len_p1534)
   %build_dir535 = load ptr, ptr %build_dir, align 8
   %208 = call i64 @strlen(ptr %205)
   %209 = call i64 @strlen(ptr %build_dir535)
@@ -332876,7 +334004,7 @@ match_end:                                        ; preds = %march_arm517, %marc
   %rhs_len_p1541 = add i64 %209, 1
   %212 = call ptr @memcpy(ptr %cast540, ptr %build_dir535, i64 %rhs_len_p1541)
   %213 = call i64 @strlen(ptr %210)
-  %214 = call i64 @strlen(ptr @.str.25484)
+  %214 = call i64 @strlen(ptr @.str.25551)
   %concat_total542 = add i64 %213, %214
   %concat_size543 = add i64 %concat_total542, 1
   %215 = call ptr @avra_rc_alloc(i64 %concat_size543)
@@ -332885,7 +334013,7 @@ match_end:                                        ; preds = %march_arm517, %marc
   %dst2_int545 = add i64 %cast544, %213
   %cast546 = inttoptr i64 %dst2_int545 to ptr
   %rhs_len_p1547 = add i64 %214, 1
-  %217 = call ptr @memcpy(ptr %cast546, ptr @.str.25484, i64 %rhs_len_p1547)
+  %217 = call ptr @memcpy(ptr %cast546, ptr @.str.25551, i64 %rhs_len_p1547)
   %build_dir548 = load ptr, ptr %build_dir, align 8
   %218 = call i64 @strlen(ptr %215)
   %219 = call i64 @strlen(ptr %build_dir548)
@@ -332899,7 +334027,7 @@ match_end:                                        ; preds = %march_arm517, %marc
   %rhs_len_p1554 = add i64 %219, 1
   %222 = call ptr @memcpy(ptr %cast553, ptr %build_dir548, i64 %rhs_len_p1554)
   %223 = call i64 @strlen(ptr %220)
-  %224 = call i64 @strlen(ptr @.str.25485)
+  %224 = call i64 @strlen(ptr @.str.25552)
   %concat_total555 = add i64 %223, %224
   %concat_size556 = add i64 %concat_total555, 1
   %225 = call ptr @avra_rc_alloc(i64 %concat_size556)
@@ -332908,7 +334036,7 @@ match_end:                                        ; preds = %march_arm517, %marc
   %dst2_int558 = add i64 %cast557, %223
   %cast559 = inttoptr i64 %dst2_int558 to ptr
   %rhs_len_p1560 = add i64 %224, 1
-  %227 = call ptr @memcpy(ptr %cast559, ptr @.str.25485, i64 %rhs_len_p1560)
+  %227 = call ptr @memcpy(ptr %cast559, ptr @.str.25552, i64 %rhs_len_p1560)
   %bin_path561 = load ptr, ptr %bin_path, align 8
   %228 = call i64 @strlen(ptr %225)
   %229 = call i64 @strlen(ptr %bin_path561)
@@ -332922,7 +334050,7 @@ match_end:                                        ; preds = %march_arm517, %marc
   %rhs_len_p1567 = add i64 %229, 1
   %232 = call ptr @memcpy(ptr %cast566, ptr %bin_path561, i64 %rhs_len_p1567)
   %233 = call i64 @strlen(ptr %230)
-  %234 = call i64 @strlen(ptr @.str.25486)
+  %234 = call i64 @strlen(ptr @.str.25553)
   %concat_total568 = add i64 %233, %234
   %concat_size569 = add i64 %concat_total568, 1
   %235 = call ptr @avra_rc_alloc(i64 %concat_size569)
@@ -332931,7 +334059,7 @@ match_end:                                        ; preds = %march_arm517, %marc
   %dst2_int571 = add i64 %cast570, %233
   %cast572 = inttoptr i64 %dst2_int571 to ptr
   %rhs_len_p1573 = add i64 %234, 1
-  %237 = call ptr @memcpy(ptr %cast572, ptr @.str.25486, i64 %rhs_len_p1573)
+  %237 = call ptr @memcpy(ptr %cast572, ptr @.str.25553, i64 %rhs_len_p1573)
   %llvm_lib574 = load ptr, ptr %llvm_lib, align 8
   %238 = call i64 @strlen(ptr %235)
   %239 = call i64 @strlen(ptr %llvm_lib574)
@@ -332945,7 +334073,7 @@ match_end:                                        ; preds = %march_arm517, %marc
   %rhs_len_p1580 = add i64 %239, 1
   %242 = call ptr @memcpy(ptr %cast579, ptr %llvm_lib574, i64 %rhs_len_p1580)
   %243 = call i64 @strlen(ptr %240)
-  %244 = call i64 @strlen(ptr @.str.25487)
+  %244 = call i64 @strlen(ptr @.str.25554)
   %concat_total581 = add i64 %243, %244
   %concat_size582 = add i64 %concat_total581, 1
   %245 = call ptr @avra_rc_alloc(i64 %concat_size582)
@@ -332954,10 +334082,10 @@ match_end:                                        ; preds = %march_arm517, %marc
   %dst2_int584 = add i64 %cast583, %243
   %cast585 = inttoptr i64 %dst2_int584 to ptr
   %rhs_len_p1586 = add i64 %244, 1
-  %247 = call ptr @memcpy(ptr %cast585, ptr @.str.25487, i64 %rhs_len_p1586)
+  %247 = call ptr @memcpy(ptr %cast585, ptr @.str.25554, i64 %rhs_len_p1586)
   store ptr %245, ptr %link_args, align 8
   %link_args587 = load ptr, ptr %link_args, align 8
-  %248 = call i64 @avra_process_forward(ptr @.str.25488, ptr %link_args587, ptr @.str.25489)
+  %248 = call i64 @avra_process_forward(ptr @.str.25555, ptr %link_args587, ptr @.str.25556)
   %ne588 = icmp ne i64 %248, 0
   %ne_ext589 = zext i1 %ne588 to i64
   %if_cond591 = icmp ne i64 %ne_ext589, 0
@@ -332988,19 +334116,19 @@ march_arm517:                                     ; preds = %march_next
   br label %match_end
 
 march_next518:                                    ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.25480, i64 %tag, ptr @mu_file.25481, i64 647)
+  call void @avra_match_unreachable(ptr @.match_fn.25547, i64 %tag, ptr @mu_file.25548, i64 767)
   unreachable
 
 ifcont590:                                        ; preds = %if_else593, %if_then592
   %bin_path594 = load ptr, ptr %bin_path, align 8
-  %251 = call i64 @avra_process_forward(ptr %bin_path594, ptr @.str.25491, ptr @.str.25492)
+  %251 = call i64 @avra_process_forward(ptr %bin_path594, ptr @.str.25558, ptr @.str.25559)
   store i64 %251, ptr %exit_code, align 8
   %exit_code595 = load i64, ptr %exit_code, align 8
   %252 = call i64 @avra_process_exit(i64 %exit_code595)
   ret i64 0
 
 if_then592:                                       ; preds = %match_end
-  %253 = call i64 @fail(ptr @.str.25490)
+  %253 = call i64 @fail(ptr @.str.25557)
   br label %ifcont590
 
 if_else593:                                       ; preds = %match_end
@@ -333008,19 +334136,19 @@ if_else593:                                       ; preds = %match_end
 
 match_end676:                                     ; preds = %march_arm682, %march_arm678
   %cov_ll693 = load ptr, ptr %cov_ll, align 8
-  %254 = call i64 @strlen(ptr @.str.25510)
+  %254 = call i64 @strlen(ptr @.str.25577)
   %255 = call i64 @strlen(ptr %cov_ll693)
   %concat_total694 = add i64 %254, %255
   %concat_size695 = add i64 %concat_total694, 1
   %256 = call ptr @avra_rc_alloc(i64 %concat_size695)
-  %257 = call ptr @memcpy(ptr %256, ptr @.str.25510, i64 %254)
+  %257 = call ptr @memcpy(ptr %256, ptr @.str.25577, i64 %254)
   %cast696 = ptrtoint ptr %256 to i64
   %dst2_int697 = add i64 %cast696, %254
   %cast698 = inttoptr i64 %dst2_int697 to ptr
   %rhs_len_p1699 = add i64 %255, 1
   %258 = call ptr @memcpy(ptr %cast698, ptr %cov_ll693, i64 %rhs_len_p1699)
   %259 = call i64 @strlen(ptr %256)
-  %260 = call i64 @strlen(ptr @.str.25511)
+  %260 = call i64 @strlen(ptr @.str.25578)
   %concat_total700 = add i64 %259, %260
   %concat_size701 = add i64 %concat_total700, 1
   %261 = call ptr @avra_rc_alloc(i64 %concat_size701)
@@ -333029,7 +334157,7 @@ match_end676:                                     ; preds = %march_arm682, %marc
   %dst2_int703 = add i64 %cast702, %259
   %cast704 = inttoptr i64 %dst2_int703 to ptr
   %rhs_len_p1705 = add i64 %260, 1
-  %263 = call ptr @memcpy(ptr %cast704, ptr @.str.25511, i64 %rhs_len_p1705)
+  %263 = call ptr @memcpy(ptr %cast704, ptr @.str.25578, i64 %rhs_len_p1705)
   %ir_path706 = load ptr, ptr %ir_path, align 8
   %264 = call i64 @strlen(ptr %261)
   %265 = call i64 @strlen(ptr %ir_path706)
@@ -333043,7 +334171,7 @@ match_end676:                                     ; preds = %march_arm682, %marc
   %rhs_len_p1712 = add i64 %265, 1
   %268 = call ptr @memcpy(ptr %cast711, ptr %ir_path706, i64 %rhs_len_p1712)
   %269 = call i64 @strlen(ptr %266)
-  %270 = call i64 @strlen(ptr @.str.25512)
+  %270 = call i64 @strlen(ptr @.str.25579)
   %concat_total713 = add i64 %269, %270
   %concat_size714 = add i64 %concat_total713, 1
   %271 = call ptr @avra_rc_alloc(i64 %concat_size714)
@@ -333052,11 +334180,11 @@ match_end676:                                     ; preds = %march_arm682, %marc
   %dst2_int716 = add i64 %cast715, %269
   %cast717 = inttoptr i64 %dst2_int716 to ptr
   %rhs_len_p1718 = add i64 %270, 1
-  %273 = call ptr @memcpy(ptr %cast717, ptr @.str.25512, i64 %rhs_len_p1718)
+  %273 = call ptr @memcpy(ptr %cast717, ptr @.str.25579, i64 %rhs_len_p1718)
   store ptr %271, ptr %opt_args, align 8
   %llvm_prefix719 = load ptr, ptr %llvm_prefix, align 8
   %274 = call i64 @strlen(ptr %llvm_prefix719)
-  %275 = call i64 @strlen(ptr @.str.25513)
+  %275 = call i64 @strlen(ptr @.str.25580)
   %concat_total720 = add i64 %274, %275
   %concat_size721 = add i64 %concat_total720, 1
   %276 = call ptr @avra_rc_alloc(i64 %concat_size721)
@@ -333065,9 +334193,9 @@ match_end676:                                     ; preds = %march_arm682, %marc
   %dst2_int723 = add i64 %cast722, %274
   %cast724 = inttoptr i64 %dst2_int723 to ptr
   %rhs_len_p1725 = add i64 %275, 1
-  %278 = call ptr @memcpy(ptr %cast724, ptr @.str.25513, i64 %rhs_len_p1725)
+  %278 = call ptr @memcpy(ptr %cast724, ptr @.str.25580, i64 %rhs_len_p1725)
   %opt_args726 = load ptr, ptr %opt_args, align 8
-  %279 = call i64 @avra_process_forward(ptr %276, ptr %opt_args726, ptr @.str.25514)
+  %279 = call i64 @avra_process_forward(ptr %276, ptr %opt_args726, ptr @.str.25581)
   %ne727 = icmp ne i64 %279, 0
   %ne_ext728 = zext i1 %ne727 to i64
   %if_cond730 = icmp ne i64 %ne_ext728, 0
@@ -333098,24 +334226,24 @@ march_arm682:                                     ; preds = %march_next679
   br label %match_end676
 
 march_next683:                                    ; preds = %march_next679
-  call void @avra_match_unreachable(ptr @.match_fn.25508, i64 %tag675, ptr @mu_file.25509, i64 668)
+  call void @avra_match_unreachable(ptr @.match_fn.25575, i64 %tag675, ptr @mu_file.25576, i64 788)
   unreachable
 
 ifcont729:                                        ; preds = %if_else732, %if_then731
   %cov_ll733 = load ptr, ptr %cov_ll, align 8
-  %282 = call i64 @strlen(ptr @.str.25516)
+  %282 = call i64 @strlen(ptr @.str.25583)
   %283 = call i64 @strlen(ptr %cov_ll733)
   %concat_total734 = add i64 %282, %283
   %concat_size735 = add i64 %concat_total734, 1
   %284 = call ptr @avra_rc_alloc(i64 %concat_size735)
-  %285 = call ptr @memcpy(ptr %284, ptr @.str.25516, i64 %282)
+  %285 = call ptr @memcpy(ptr %284, ptr @.str.25583, i64 %282)
   %cast736 = ptrtoint ptr %284 to i64
   %dst2_int737 = add i64 %cast736, %282
   %cast738 = inttoptr i64 %dst2_int737 to ptr
   %rhs_len_p1739 = add i64 %283, 1
   %286 = call ptr @memcpy(ptr %cast738, ptr %cov_ll733, i64 %rhs_len_p1739)
   %287 = call i64 @strlen(ptr %284)
-  %288 = call i64 @strlen(ptr @.str.25517)
+  %288 = call i64 @strlen(ptr @.str.25584)
   %concat_total740 = add i64 %287, %288
   %concat_size741 = add i64 %concat_total740, 1
   %289 = call ptr @avra_rc_alloc(i64 %concat_size741)
@@ -333124,7 +334252,7 @@ ifcont729:                                        ; preds = %if_else732, %if_the
   %dst2_int743 = add i64 %cast742, %287
   %cast744 = inttoptr i64 %dst2_int743 to ptr
   %rhs_len_p1745 = add i64 %288, 1
-  %291 = call ptr @memcpy(ptr %cast744, ptr @.str.25517, i64 %rhs_len_p1745)
+  %291 = call ptr @memcpy(ptr %cast744, ptr @.str.25584, i64 %rhs_len_p1745)
   %obj_path746 = load ptr, ptr %obj_path631, align 8
   %292 = call i64 @strlen(ptr %289)
   %293 = call i64 @strlen(ptr %obj_path746)
@@ -333138,7 +334266,7 @@ ifcont729:                                        ; preds = %if_else732, %if_the
   %rhs_len_p1752 = add i64 %293, 1
   %296 = call ptr @memcpy(ptr %cast751, ptr %obj_path746, i64 %rhs_len_p1752)
   %297 = call i64 @strlen(ptr %294)
-  %298 = call i64 @strlen(ptr @.str.25518)
+  %298 = call i64 @strlen(ptr @.str.25585)
   %concat_total753 = add i64 %297, %298
   %concat_size754 = add i64 %concat_total753, 1
   %299 = call ptr @avra_rc_alloc(i64 %concat_size754)
@@ -333147,11 +334275,11 @@ ifcont729:                                        ; preds = %if_else732, %if_the
   %dst2_int756 = add i64 %cast755, %297
   %cast757 = inttoptr i64 %dst2_int756 to ptr
   %rhs_len_p1758 = add i64 %298, 1
-  %301 = call ptr @memcpy(ptr %cast757, ptr @.str.25518, i64 %rhs_len_p1758)
+  %301 = call ptr @memcpy(ptr %cast757, ptr @.str.25585, i64 %rhs_len_p1758)
   store ptr %299, ptr %llc_args, align 8
   %llvm_prefix759 = load ptr, ptr %llvm_prefix, align 8
   %302 = call i64 @strlen(ptr %llvm_prefix759)
-  %303 = call i64 @strlen(ptr @.str.25519)
+  %303 = call i64 @strlen(ptr @.str.25586)
   %concat_total760 = add i64 %302, %303
   %concat_size761 = add i64 %concat_total760, 1
   %304 = call ptr @avra_rc_alloc(i64 %concat_size761)
@@ -333160,16 +334288,16 @@ ifcont729:                                        ; preds = %if_else732, %if_the
   %dst2_int763 = add i64 %cast762, %302
   %cast764 = inttoptr i64 %dst2_int763 to ptr
   %rhs_len_p1765 = add i64 %303, 1
-  %306 = call ptr @memcpy(ptr %cast764, ptr @.str.25519, i64 %rhs_len_p1765)
+  %306 = call ptr @memcpy(ptr %cast764, ptr @.str.25586, i64 %rhs_len_p1765)
   %llc_args766 = load ptr, ptr %llc_args, align 8
-  %307 = call i64 @avra_process_forward(ptr %304, ptr %llc_args766, ptr @.str.25520)
+  %307 = call i64 @avra_process_forward(ptr %304, ptr %llc_args766, ptr @.str.25587)
   %ne767 = icmp ne i64 %307, 0
   %ne_ext768 = zext i1 %ne767 to i64
   %if_cond770 = icmp ne i64 %ne_ext768, 0
   br i1 %if_cond770, label %if_then771, label %if_else772
 
 if_then731:                                       ; preds = %match_end676
-  %308 = call i64 @fail(ptr @.str.25515)
+  %308 = call i64 @fail(ptr @.str.25582)
   br label %ifcont729
 
 if_else732:                                       ; preds = %match_end676
@@ -333177,19 +334305,19 @@ if_else732:                                       ; preds = %match_end676
 
 ifcont769:                                        ; preds = %if_else772, %if_then771
   %llvm_prefix773 = load ptr, ptr %llvm_prefix, align 8
-  %309 = call i64 @strlen(ptr @.str.25522)
+  %309 = call i64 @strlen(ptr @.str.25589)
   %310 = call i64 @strlen(ptr %llvm_prefix773)
   %concat_total774 = add i64 %309, %310
   %concat_size775 = add i64 %concat_total774, 1
   %311 = call ptr @avra_rc_alloc(i64 %concat_size775)
-  %312 = call ptr @memcpy(ptr %311, ptr @.str.25522, i64 %309)
+  %312 = call ptr @memcpy(ptr %311, ptr @.str.25589, i64 %309)
   %cast776 = ptrtoint ptr %311 to i64
   %dst2_int777 = add i64 %cast776, %309
   %cast778 = inttoptr i64 %dst2_int777 to ptr
   %rhs_len_p1779 = add i64 %310, 1
   %313 = call ptr @memcpy(ptr %cast778, ptr %llvm_prefix773, i64 %rhs_len_p1779)
   %314 = call i64 @strlen(ptr %311)
-  %315 = call i64 @strlen(ptr @.str.25523)
+  %315 = call i64 @strlen(ptr @.str.25590)
   %concat_total780 = add i64 %314, %315
   %concat_size781 = add i64 %concat_total780, 1
   %316 = call ptr @avra_rc_alloc(i64 %concat_size781)
@@ -333198,13 +334326,13 @@ ifcont769:                                        ; preds = %if_else772, %if_the
   %dst2_int783 = add i64 %cast782, %314
   %cast784 = inttoptr i64 %dst2_int783 to ptr
   %rhs_len_p1785 = add i64 %315, 1
-  %318 = call ptr @memcpy(ptr %cast784, ptr @.str.25523, i64 %rhs_len_p1785)
+  %318 = call ptr @memcpy(ptr %cast784, ptr @.str.25590, i64 %rhs_len_p1785)
   %319 = call ptr @avra_shell_exec(ptr %316)
   %320 = call ptr @avra_str_trim(ptr %319)
   store ptr %320, ptr %darwin_dir, align 8
   %llvm_prefix786 = load ptr, ptr %llvm_prefix, align 8
   %321 = call i64 @strlen(ptr %llvm_prefix786)
-  %322 = call i64 @strlen(ptr @.str.25524)
+  %322 = call i64 @strlen(ptr @.str.25591)
   %concat_total787 = add i64 %321, %322
   %concat_size788 = add i64 %concat_total787, 1
   %323 = call ptr @avra_rc_alloc(i64 %concat_size788)
@@ -333213,7 +334341,7 @@ ifcont769:                                        ; preds = %if_else772, %if_the
   %dst2_int790 = add i64 %cast789, %321
   %cast791 = inttoptr i64 %dst2_int790 to ptr
   %rhs_len_p1792 = add i64 %322, 1
-  %325 = call ptr @memcpy(ptr %cast791, ptr @.str.25524, i64 %rhs_len_p1792)
+  %325 = call ptr @memcpy(ptr %cast791, ptr @.str.25591, i64 %rhs_len_p1792)
   %darwin_dir793 = load ptr, ptr %darwin_dir, align 8
   %326 = call i64 @strlen(ptr %323)
   %327 = call i64 @strlen(ptr %darwin_dir793)
@@ -333227,7 +334355,7 @@ ifcont769:                                        ; preds = %if_else772, %if_the
   %rhs_len_p1799 = add i64 %327, 1
   %330 = call ptr @memcpy(ptr %cast798, ptr %darwin_dir793, i64 %rhs_len_p1799)
   %331 = call i64 @strlen(ptr %328)
-  %332 = call i64 @strlen(ptr @.str.25525)
+  %332 = call i64 @strlen(ptr @.str.25592)
   %concat_total800 = add i64 %331, %332
   %concat_size801 = add i64 %concat_total800, 1
   %333 = call ptr @avra_rc_alloc(i64 %concat_size801)
@@ -333236,23 +334364,23 @@ ifcont769:                                        ; preds = %if_else772, %if_the
   %dst2_int803 = add i64 %cast802, %331
   %cast804 = inttoptr i64 %dst2_int803 to ptr
   %rhs_len_p1805 = add i64 %332, 1
-  %335 = call ptr @memcpy(ptr %cast804, ptr @.str.25525, i64 %rhs_len_p1805)
+  %335 = call ptr @memcpy(ptr %cast804, ptr @.str.25592, i64 %rhs_len_p1805)
   store ptr %333, ptr %prof_lib_dir, align 8
-  store ptr @.str.25526, ptr %sectalign, align 8
+  store ptr @.str.25593, ptr %sectalign, align 8
   %obj_path806 = load ptr, ptr %obj_path631, align 8
-  %336 = call i64 @strlen(ptr @.str.25527)
+  %336 = call i64 @strlen(ptr @.str.25594)
   %337 = call i64 @strlen(ptr %obj_path806)
   %concat_total807 = add i64 %336, %337
   %concat_size808 = add i64 %concat_total807, 1
   %338 = call ptr @avra_rc_alloc(i64 %concat_size808)
-  %339 = call ptr @memcpy(ptr %338, ptr @.str.25527, i64 %336)
+  %339 = call ptr @memcpy(ptr %338, ptr @.str.25594, i64 %336)
   %cast809 = ptrtoint ptr %338 to i64
   %dst2_int810 = add i64 %cast809, %336
   %cast811 = inttoptr i64 %dst2_int810 to ptr
   %rhs_len_p1812 = add i64 %337, 1
   %340 = call ptr @memcpy(ptr %cast811, ptr %obj_path806, i64 %rhs_len_p1812)
   %341 = call i64 @strlen(ptr %338)
-  %342 = call i64 @strlen(ptr @.str.25528)
+  %342 = call i64 @strlen(ptr @.str.25595)
   %concat_total813 = add i64 %341, %342
   %concat_size814 = add i64 %concat_total813, 1
   %343 = call ptr @avra_rc_alloc(i64 %concat_size814)
@@ -333261,7 +334389,7 @@ ifcont769:                                        ; preds = %if_else772, %if_the
   %dst2_int816 = add i64 %cast815, %341
   %cast817 = inttoptr i64 %dst2_int816 to ptr
   %rhs_len_p1818 = add i64 %342, 1
-  %345 = call ptr @memcpy(ptr %cast817, ptr @.str.25528, i64 %rhs_len_p1818)
+  %345 = call ptr @memcpy(ptr %cast817, ptr @.str.25595, i64 %rhs_len_p1818)
   %build_dir819 = load ptr, ptr %build_dir, align 8
   %346 = call i64 @strlen(ptr %343)
   %347 = call i64 @strlen(ptr %build_dir819)
@@ -333275,7 +334403,7 @@ ifcont769:                                        ; preds = %if_else772, %if_the
   %rhs_len_p1825 = add i64 %347, 1
   %350 = call ptr @memcpy(ptr %cast824, ptr %build_dir819, i64 %rhs_len_p1825)
   %351 = call i64 @strlen(ptr %348)
-  %352 = call i64 @strlen(ptr @.str.25529)
+  %352 = call i64 @strlen(ptr @.str.25596)
   %concat_total826 = add i64 %351, %352
   %concat_size827 = add i64 %concat_total826, 1
   %353 = call ptr @avra_rc_alloc(i64 %concat_size827)
@@ -333284,7 +334412,7 @@ ifcont769:                                        ; preds = %if_else772, %if_the
   %dst2_int829 = add i64 %cast828, %351
   %cast830 = inttoptr i64 %dst2_int829 to ptr
   %rhs_len_p1831 = add i64 %352, 1
-  %355 = call ptr @memcpy(ptr %cast830, ptr @.str.25529, i64 %rhs_len_p1831)
+  %355 = call ptr @memcpy(ptr %cast830, ptr @.str.25596, i64 %rhs_len_p1831)
   %build_dir832 = load ptr, ptr %build_dir, align 8
   %356 = call i64 @strlen(ptr %353)
   %357 = call i64 @strlen(ptr %build_dir832)
@@ -333298,7 +334426,7 @@ ifcont769:                                        ; preds = %if_else772, %if_the
   %rhs_len_p1838 = add i64 %357, 1
   %360 = call ptr @memcpy(ptr %cast837, ptr %build_dir832, i64 %rhs_len_p1838)
   %361 = call i64 @strlen(ptr %358)
-  %362 = call i64 @strlen(ptr @.str.25530)
+  %362 = call i64 @strlen(ptr @.str.25597)
   %concat_total839 = add i64 %361, %362
   %concat_size840 = add i64 %concat_total839, 1
   %363 = call ptr @avra_rc_alloc(i64 %concat_size840)
@@ -333307,7 +334435,7 @@ ifcont769:                                        ; preds = %if_else772, %if_the
   %dst2_int842 = add i64 %cast841, %361
   %cast843 = inttoptr i64 %dst2_int842 to ptr
   %rhs_len_p1844 = add i64 %362, 1
-  %365 = call ptr @memcpy(ptr %cast843, ptr @.str.25530, i64 %rhs_len_p1844)
+  %365 = call ptr @memcpy(ptr %cast843, ptr @.str.25597, i64 %rhs_len_p1844)
   %bin_path845 = load ptr, ptr %bin_path639, align 8
   %366 = call i64 @strlen(ptr %363)
   %367 = call i64 @strlen(ptr %bin_path845)
@@ -333321,7 +334449,7 @@ ifcont769:                                        ; preds = %if_else772, %if_the
   %rhs_len_p1851 = add i64 %367, 1
   %370 = call ptr @memcpy(ptr %cast850, ptr %bin_path845, i64 %rhs_len_p1851)
   %371 = call i64 @strlen(ptr %368)
-  %372 = call i64 @strlen(ptr @.str.25531)
+  %372 = call i64 @strlen(ptr @.str.25598)
   %concat_total852 = add i64 %371, %372
   %concat_size853 = add i64 %concat_total852, 1
   %373 = call ptr @avra_rc_alloc(i64 %concat_size853)
@@ -333330,7 +334458,7 @@ ifcont769:                                        ; preds = %if_else772, %if_the
   %dst2_int855 = add i64 %cast854, %371
   %cast856 = inttoptr i64 %dst2_int855 to ptr
   %rhs_len_p1857 = add i64 %372, 1
-  %375 = call ptr @memcpy(ptr %cast856, ptr @.str.25531, i64 %rhs_len_p1857)
+  %375 = call ptr @memcpy(ptr %cast856, ptr @.str.25598, i64 %rhs_len_p1857)
   %llvm_lib858 = load ptr, ptr %llvm_lib, align 8
   %376 = call i64 @strlen(ptr %373)
   %377 = call i64 @strlen(ptr %llvm_lib858)
@@ -333344,7 +334472,7 @@ ifcont769:                                        ; preds = %if_else772, %if_the
   %rhs_len_p1864 = add i64 %377, 1
   %380 = call ptr @memcpy(ptr %cast863, ptr %llvm_lib858, i64 %rhs_len_p1864)
   %381 = call i64 @strlen(ptr %378)
-  %382 = call i64 @strlen(ptr @.str.25532)
+  %382 = call i64 @strlen(ptr @.str.25599)
   %concat_total865 = add i64 %381, %382
   %concat_size866 = add i64 %concat_total865, 1
   %383 = call ptr @avra_rc_alloc(i64 %concat_size866)
@@ -333353,7 +334481,7 @@ ifcont769:                                        ; preds = %if_else772, %if_the
   %dst2_int868 = add i64 %cast867, %381
   %cast869 = inttoptr i64 %dst2_int868 to ptr
   %rhs_len_p1870 = add i64 %382, 1
-  %385 = call ptr @memcpy(ptr %cast869, ptr @.str.25532, i64 %rhs_len_p1870)
+  %385 = call ptr @memcpy(ptr %cast869, ptr @.str.25599, i64 %rhs_len_p1870)
   %prof_lib_dir871 = load ptr, ptr %prof_lib_dir, align 8
   %386 = call i64 @strlen(ptr %383)
   %387 = call i64 @strlen(ptr %prof_lib_dir871)
@@ -333367,7 +334495,7 @@ ifcont769:                                        ; preds = %if_else772, %if_the
   %rhs_len_p1877 = add i64 %387, 1
   %390 = call ptr @memcpy(ptr %cast876, ptr %prof_lib_dir871, i64 %rhs_len_p1877)
   %391 = call i64 @strlen(ptr %388)
-  %392 = call i64 @strlen(ptr @.str.25533)
+  %392 = call i64 @strlen(ptr @.str.25600)
   %concat_total878 = add i64 %391, %392
   %concat_size879 = add i64 %concat_total878, 1
   %393 = call ptr @avra_rc_alloc(i64 %concat_size879)
@@ -333376,7 +334504,7 @@ ifcont769:                                        ; preds = %if_else772, %if_the
   %dst2_int881 = add i64 %cast880, %391
   %cast882 = inttoptr i64 %dst2_int881 to ptr
   %rhs_len_p1883 = add i64 %392, 1
-  %395 = call ptr @memcpy(ptr %cast882, ptr @.str.25533, i64 %rhs_len_p1883)
+  %395 = call ptr @memcpy(ptr %cast882, ptr @.str.25600, i64 %rhs_len_p1883)
   %sectalign884 = load ptr, ptr %sectalign, align 8
   %396 = call i64 @strlen(ptr %393)
   %397 = call i64 @strlen(ptr %sectalign884)
@@ -333390,7 +334518,7 @@ ifcont769:                                        ; preds = %if_else772, %if_the
   %rhs_len_p1890 = add i64 %397, 1
   %400 = call ptr @memcpy(ptr %cast889, ptr %sectalign884, i64 %rhs_len_p1890)
   %401 = call i64 @strlen(ptr %398)
-  %402 = call i64 @strlen(ptr @.str.25534)
+  %402 = call i64 @strlen(ptr @.str.25601)
   %concat_total891 = add i64 %401, %402
   %concat_size892 = add i64 %concat_total891, 1
   %403 = call ptr @avra_rc_alloc(i64 %concat_size892)
@@ -333399,17 +334527,17 @@ ifcont769:                                        ; preds = %if_else772, %if_the
   %dst2_int894 = add i64 %cast893, %401
   %cast895 = inttoptr i64 %dst2_int894 to ptr
   %rhs_len_p1896 = add i64 %402, 1
-  %405 = call ptr @memcpy(ptr %cast895, ptr @.str.25534, i64 %rhs_len_p1896)
+  %405 = call ptr @memcpy(ptr %cast895, ptr @.str.25601, i64 %rhs_len_p1896)
   store ptr %403, ptr %link_args897, align 8
   %link_args898 = load ptr, ptr %link_args897, align 8
-  %406 = call i64 @avra_process_forward(ptr @.str.25535, ptr %link_args898, ptr @.str.25536)
+  %406 = call i64 @avra_process_forward(ptr @.str.25602, ptr %link_args898, ptr @.str.25603)
   %ne899 = icmp ne i64 %406, 0
   %ne_ext900 = zext i1 %ne899 to i64
   %if_cond902 = icmp ne i64 %ne_ext900, 0
   br i1 %if_cond902, label %if_then903, label %if_else904
 
 if_then771:                                       ; preds = %ifcont729
-  %407 = call i64 @fail(ptr @.str.25521)
+  %407 = call i64 @fail(ptr @.str.25588)
   br label %ifcont769
 
 if_else772:                                       ; preds = %ifcont729
@@ -333417,12 +334545,12 @@ if_else772:                                       ; preds = %ifcont729
 
 ifcont901:                                        ; preds = %if_else904, %if_then903
   %profraw905 = load ptr, ptr %profraw, align 8
-  %408 = call i64 @strlen(ptr @.str.25538)
+  %408 = call i64 @strlen(ptr @.str.25605)
   %409 = call i64 @strlen(ptr %profraw905)
   %concat_total906 = add i64 %408, %409
   %concat_size907 = add i64 %concat_total906, 1
   %410 = call ptr @avra_rc_alloc(i64 %concat_size907)
-  %411 = call ptr @memcpy(ptr %410, ptr @.str.25538, i64 %408)
+  %411 = call ptr @memcpy(ptr %410, ptr @.str.25605, i64 %408)
   %cast908 = ptrtoint ptr %410 to i64
   %dst2_int909 = add i64 %cast908, %408
   %cast910 = inttoptr i64 %dst2_int909 to ptr
@@ -333430,19 +334558,19 @@ ifcont901:                                        ; preds = %if_else904, %if_the
   %412 = call ptr @memcpy(ptr %cast910, ptr %profraw905, i64 %rhs_len_p1911)
   %413 = call ptr @avra_shell_exec(ptr %410)
   %profraw912 = load ptr, ptr %profraw, align 8
-  %414 = call i64 @strlen(ptr @.str.25539)
+  %414 = call i64 @strlen(ptr @.str.25606)
   %415 = call i64 @strlen(ptr %profraw912)
   %concat_total913 = add i64 %414, %415
   %concat_size914 = add i64 %concat_total913, 1
   %416 = call ptr @avra_rc_alloc(i64 %concat_size914)
-  %417 = call ptr @memcpy(ptr %416, ptr @.str.25539, i64 %414)
+  %417 = call ptr @memcpy(ptr %416, ptr @.str.25606, i64 %414)
   %cast915 = ptrtoint ptr %416 to i64
   %dst2_int916 = add i64 %cast915, %414
   %cast917 = inttoptr i64 %dst2_int916 to ptr
   %rhs_len_p1918 = add i64 %415, 1
   %418 = call ptr @memcpy(ptr %cast917, ptr %profraw912, i64 %rhs_len_p1918)
   %419 = call i64 @strlen(ptr %416)
-  %420 = call i64 @strlen(ptr @.str.25540)
+  %420 = call i64 @strlen(ptr @.str.25607)
   %concat_total919 = add i64 %419, %420
   %concat_size920 = add i64 %concat_total919, 1
   %421 = call ptr @avra_rc_alloc(i64 %concat_size920)
@@ -333451,11 +334579,11 @@ ifcont901:                                        ; preds = %if_else904, %if_the
   %dst2_int922 = add i64 %cast921, %419
   %cast923 = inttoptr i64 %dst2_int922 to ptr
   %rhs_len_p1924 = add i64 %420, 1
-  %423 = call ptr @memcpy(ptr %cast923, ptr @.str.25540, i64 %rhs_len_p1924)
+  %423 = call ptr @memcpy(ptr %cast923, ptr @.str.25607, i64 %rhs_len_p1924)
   store ptr %421, ptr %run_opts, align 8
   %bin_path925 = load ptr, ptr %bin_path639, align 8
   %run_opts926 = load ptr, ptr %run_opts, align 8
-  %424 = call i64 @avra_process_forward(ptr %bin_path925, ptr @.str.25541, ptr %run_opts926)
+  %424 = call i64 @avra_process_forward(ptr %bin_path925, ptr @.str.25608, ptr %run_opts926)
   store i64 %424, ptr %run_rc, align 8
   %run_rc927 = load i64, ptr %run_rc, align 8
   %ne928 = icmp ne i64 %run_rc927, 0
@@ -333464,7 +334592,7 @@ ifcont901:                                        ; preds = %if_else904, %if_the
   br i1 %if_cond931, label %if_then932, label %if_else933
 
 if_then903:                                       ; preds = %ifcont769
-  %425 = call i64 @fail(ptr @.str.25537)
+  %425 = call i64 @fail(ptr @.str.25604)
   br label %ifcont901
 
 if_else904:                                       ; preds = %ifcont769
@@ -333473,7 +334601,7 @@ if_else904:                                       ; preds = %ifcont769
 ifcont930:                                        ; preds = %if_else933, %if_then932
   %llvm_prefix942 = load ptr, ptr %llvm_prefix, align 8
   %426 = call i64 @strlen(ptr %llvm_prefix942)
-  %427 = call i64 @strlen(ptr @.str.25544)
+  %427 = call i64 @strlen(ptr @.str.25611)
   %concat_total943 = add i64 %426, %427
   %concat_size944 = add i64 %concat_total943, 1
   %428 = call ptr @avra_rc_alloc(i64 %concat_size944)
@@ -333482,7 +334610,7 @@ ifcont930:                                        ; preds = %if_else933, %if_the
   %dst2_int946 = add i64 %cast945, %426
   %cast947 = inttoptr i64 %dst2_int946 to ptr
   %rhs_len_p1948 = add i64 %427, 1
-  %430 = call ptr @memcpy(ptr %cast947, ptr @.str.25544, i64 %rhs_len_p1948)
+  %430 = call ptr @memcpy(ptr %cast947, ptr @.str.25611, i64 %rhs_len_p1948)
   %profdata949 = load ptr, ptr %profdata, align 8
   %431 = call i64 @strlen(ptr %428)
   %432 = call i64 @strlen(ptr %profdata949)
@@ -333496,7 +334624,7 @@ ifcont930:                                        ; preds = %if_else933, %if_the
   %rhs_len_p1955 = add i64 %432, 1
   %435 = call ptr @memcpy(ptr %cast954, ptr %profdata949, i64 %rhs_len_p1955)
   %436 = call i64 @strlen(ptr %433)
-  %437 = call i64 @strlen(ptr @.str.25545)
+  %437 = call i64 @strlen(ptr @.str.25612)
   %concat_total956 = add i64 %436, %437
   %concat_size957 = add i64 %concat_total956, 1
   %438 = call ptr @avra_rc_alloc(i64 %concat_size957)
@@ -333505,7 +334633,7 @@ ifcont930:                                        ; preds = %if_else933, %if_the
   %dst2_int959 = add i64 %cast958, %436
   %cast960 = inttoptr i64 %dst2_int959 to ptr
   %rhs_len_p1961 = add i64 %437, 1
-  %440 = call ptr @memcpy(ptr %cast960, ptr @.str.25545, i64 %rhs_len_p1961)
+  %440 = call ptr @memcpy(ptr %cast960, ptr @.str.25612, i64 %rhs_len_p1961)
   %profraw962 = load ptr, ptr %profraw, align 8
   %441 = call i64 @strlen(ptr %438)
   %442 = call i64 @strlen(ptr %profraw962)
@@ -333519,7 +334647,7 @@ ifcont930:                                        ; preds = %if_else933, %if_the
   %rhs_len_p1968 = add i64 %442, 1
   %445 = call ptr @memcpy(ptr %cast967, ptr %profraw962, i64 %rhs_len_p1968)
   %446 = call i64 @strlen(ptr %443)
-  %447 = call i64 @strlen(ptr @.str.25546)
+  %447 = call i64 @strlen(ptr @.str.25613)
   %concat_total969 = add i64 %446, %447
   %concat_size970 = add i64 %concat_total969, 1
   %448 = call ptr @avra_rc_alloc(i64 %concat_size970)
@@ -333528,7 +334656,7 @@ ifcont930:                                        ; preds = %if_else933, %if_the
   %dst2_int972 = add i64 %cast971, %446
   %cast973 = inttoptr i64 %dst2_int972 to ptr
   %rhs_len_p1974 = add i64 %447, 1
-  %450 = call ptr @memcpy(ptr %cast973, ptr @.str.25546, i64 %rhs_len_p1974)
+  %450 = call ptr @memcpy(ptr %cast973, ptr @.str.25613, i64 %rhs_len_p1974)
   %451 = call ptr @avra_shell_exec(ptr %448)
   store ptr %451, ptr %merge_out, align 8
   %merge_out975 = load ptr, ptr %merge_out, align 8
@@ -333541,14 +334669,14 @@ ifcont930:                                        ; preds = %if_else933, %if_the
 if_then932:                                       ; preds = %ifcont901
   %run_rc934 = load i64, ptr %run_rc, align 8
   %453 = call ptr @avra_rc_alloc(i64 32)
-  %454 = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %453, i64 32, ptr @.i2s_fmt.25543, i64 %run_rc934)
+  %454 = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %453, i64 32, ptr @.i2s_fmt.25610, i64 %run_rc934)
   %widen935 = sext i32 %454 to i64
-  %455 = call i64 @strlen(ptr @.str.25542)
+  %455 = call i64 @strlen(ptr @.str.25609)
   %456 = call i64 @strlen(ptr %453)
   %concat_total936 = add i64 %455, %456
   %concat_size937 = add i64 %concat_total936, 1
   %457 = call ptr @avra_rc_alloc(i64 %concat_size937)
-  %458 = call ptr @memcpy(ptr %457, ptr @.str.25542, i64 %455)
+  %458 = call ptr @memcpy(ptr %457, ptr @.str.25609, i64 %455)
   %cast938 = ptrtoint ptr %457 to i64
   %dst2_int939 = add i64 %cast938, %455
   %cast940 = inttoptr i64 %dst2_int939 to ptr
@@ -333563,7 +334691,7 @@ if_else933:                                       ; preds = %ifcont901
 ifcont976:                                        ; preds = %if_else979, %if_then978
   %cov_dir981 = load ptr, ptr %cov_dir, align 8
   %460 = call i64 @strlen(ptr %cov_dir981)
-  %461 = call i64 @strlen(ptr @.str.25547)
+  %461 = call i64 @strlen(ptr @.str.25614)
   %concat_total982 = add i64 %460, %461
   %concat_size983 = add i64 %concat_total982, 1
   %462 = call ptr @avra_rc_alloc(i64 %concat_size983)
@@ -333572,11 +334700,11 @@ ifcont976:                                        ; preds = %if_else979, %if_the
   %dst2_int985 = add i64 %cast984, %460
   %cast986 = inttoptr i64 %dst2_int985 to ptr
   %rhs_len_p1987 = add i64 %461, 1
-  %464 = call ptr @memcpy(ptr %cast986, ptr @.str.25547, i64 %rhs_len_p1987)
+  %464 = call ptr @memcpy(ptr %cast986, ptr @.str.25614, i64 %rhs_len_p1987)
   store ptr %462, ptr %dump_path, align 8
   %llvm_prefix988 = load ptr, ptr %llvm_prefix, align 8
   %465 = call i64 @strlen(ptr %llvm_prefix988)
-  %466 = call i64 @strlen(ptr @.str.25548)
+  %466 = call i64 @strlen(ptr @.str.25615)
   %concat_total989 = add i64 %465, %466
   %concat_size990 = add i64 %concat_total989, 1
   %467 = call ptr @avra_rc_alloc(i64 %concat_size990)
@@ -333585,7 +334713,7 @@ ifcont976:                                        ; preds = %if_else979, %if_the
   %dst2_int992 = add i64 %cast991, %465
   %cast993 = inttoptr i64 %dst2_int992 to ptr
   %rhs_len_p1994 = add i64 %466, 1
-  %469 = call ptr @memcpy(ptr %cast993, ptr @.str.25548, i64 %rhs_len_p1994)
+  %469 = call ptr @memcpy(ptr %cast993, ptr @.str.25615, i64 %rhs_len_p1994)
   %profdata995 = load ptr, ptr %profdata, align 8
   %470 = call i64 @strlen(ptr %467)
   %471 = call i64 @strlen(ptr %profdata995)
@@ -333599,7 +334727,7 @@ ifcont976:                                        ; preds = %if_else979, %if_the
   %rhs_len_p11001 = add i64 %471, 1
   %474 = call ptr @memcpy(ptr %cast1000, ptr %profdata995, i64 %rhs_len_p11001)
   %475 = call i64 @strlen(ptr %472)
-  %476 = call i64 @strlen(ptr @.str.25549)
+  %476 = call i64 @strlen(ptr @.str.25616)
   %concat_total1002 = add i64 %475, %476
   %concat_size1003 = add i64 %concat_total1002, 1
   %477 = call ptr @avra_rc_alloc(i64 %concat_size1003)
@@ -333608,7 +334736,7 @@ ifcont976:                                        ; preds = %if_else979, %if_the
   %dst2_int1005 = add i64 %cast1004, %475
   %cast1006 = inttoptr i64 %dst2_int1005 to ptr
   %rhs_len_p11007 = add i64 %476, 1
-  %479 = call ptr @memcpy(ptr %cast1006, ptr @.str.25549, i64 %rhs_len_p11007)
+  %479 = call ptr @memcpy(ptr %cast1006, ptr @.str.25616, i64 %rhs_len_p11007)
   %dump_path1008 = load ptr, ptr %dump_path, align 8
   %480 = call i64 @strlen(ptr %477)
   %481 = call i64 @strlen(ptr %dump_path1008)
@@ -333622,7 +334750,7 @@ ifcont976:                                        ; preds = %if_else979, %if_the
   %rhs_len_p11014 = add i64 %481, 1
   %484 = call ptr @memcpy(ptr %cast1013, ptr %dump_path1008, i64 %rhs_len_p11014)
   %485 = call i64 @strlen(ptr %482)
-  %486 = call i64 @strlen(ptr @.str.25550)
+  %486 = call i64 @strlen(ptr @.str.25617)
   %concat_total1015 = add i64 %485, %486
   %concat_size1016 = add i64 %concat_total1015, 1
   %487 = call ptr @avra_rc_alloc(i64 %concat_size1016)
@@ -333631,11 +334759,11 @@ ifcont976:                                        ; preds = %if_else979, %if_the
   %dst2_int1018 = add i64 %cast1017, %485
   %cast1019 = inttoptr i64 %dst2_int1018 to ptr
   %rhs_len_p11020 = add i64 %486, 1
-  %489 = call ptr @memcpy(ptr %cast1019, ptr @.str.25550, i64 %rhs_len_p11020)
+  %489 = call ptr @memcpy(ptr %cast1019, ptr @.str.25617, i64 %rhs_len_p11020)
   %490 = call ptr @avra_shell_exec(ptr %487)
   %cov_dir1021 = load ptr, ptr %cov_dir, align 8
   %491 = call i64 @strlen(ptr %cov_dir1021)
-  %492 = call i64 @strlen(ptr @.str.25551)
+  %492 = call i64 @strlen(ptr @.str.25618)
   %concat_total1022 = add i64 %491, %492
   %concat_size1023 = add i64 %concat_total1022, 1
   %493 = call ptr @avra_rc_alloc(i64 %concat_size1023)
@@ -333644,9 +334772,9 @@ ifcont976:                                        ; preds = %if_else979, %if_the
   %dst2_int1025 = add i64 %cast1024, %491
   %cast1026 = inttoptr i64 %dst2_int1025 to ptr
   %rhs_len_p11027 = add i64 %492, 1
-  %495 = call ptr @memcpy(ptr %cast1026, ptr @.str.25551, i64 %rhs_len_p11027)
+  %495 = call ptr @memcpy(ptr %cast1026, ptr @.str.25618, i64 %rhs_len_p11027)
   store ptr %493, ptr %covmap_path, align 8
-  %496 = call i32 @puts(ptr @.str.25552)
+  %496 = call i32 @puts(ptr @.str.25619)
   %widen1028 = sext i32 %496 to i64
   %covmap_path1029 = load ptr, ptr %covmap_path, align 8
   %dump_path1030 = load ptr, ptr %dump_path, align 8
@@ -333654,7 +334782,7 @@ ifcont976:                                        ; preds = %if_else979, %if_the
   %cast1032 = ptrtoint ptr %args1031 to i64
   %null_chk1033 = icmp eq i64 %cast1032, 0
   %null_ext1034 = zext i1 %null_chk1033 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25553, i64 9, ptr @sty_name.25554, i64 8, i64 %null_ext1034, ptr @src_file.25555, i64 0, i64 720)
+  call void @avra_null_deref_trap(ptr @fld_name.25620, i64 9, ptr @sty_name.25621, i64 8, i64 %null_ext1034, ptr @src_file.25622, i64 0, i64 840)
   %lcov_path_ptr = getelementptr inbounds nuw %TestArgs, ptr %args1031, i32 0, i32 2
   %lcov_path = load ptr, ptr %lcov_path_ptr, align 8
   %497 = call i64 @"@std::avrac::coverage::render_coverage"(ptr %covmap_path1029, ptr %dump_path1030, ptr %lcov_path)
@@ -333681,13 +334809,13 @@ entry:
   %args = alloca ptr, align 8
   %0 = call ptr @parse_docs_args()
   store ptr %0, ptr %args, align 8
-  %1 = call ptr @avra_process_env_get(ptr @.str.25556)
+  %1 = call ptr @avra_process_env_get(ptr @.str.25623)
   store ptr %1, ptr %project_dir, align 8
   %args1 = load ptr, ptr %args, align 8
   %cast = ptrtoint ptr %args1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25557, i64 13, ptr @sty_name.25558, i64 8, i64 %null_ext, ptr @src_file.25559, i64 0, i64 733)
+  call void @avra_null_deref_trap(ptr @fld_name.25624, i64 13, ptr @sty_name.25625, i64 8, i64 %null_ext, ptr @src_file.25626, i64 0, i64 853)
   %want_validate_ptr = getelementptr inbounds nuw %DocsArgs, ptr %args1, i32 0, i32 3
   %want_validate = load i1, ptr %want_validate_ptr, align 8
   br i1 %want_validate, label %if_then, label %if_else
@@ -333697,7 +334825,7 @@ ifcont:                                           ; preds = %if_else
   %cast4 = ptrtoint ptr %args3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25560, i64 12, ptr @sty_name.25561, i64 8, i64 %null_ext6, ptr @src_file.25562, i64 0, i64 740)
+  call void @avra_null_deref_trap(ptr @fld_name.25627, i64 12, ptr @sty_name.25628, i64 8, i64 %null_ext6, ptr @src_file.25629, i64 0, i64 860)
   %want_callers_ptr = getelementptr inbounds nuw %DocsArgs, ptr %args3, i32 0, i32 4
   %want_callers = load i1, ptr %want_callers_ptr, align 8
   br i1 %want_callers, label %sc_rhs, label %sc_short
@@ -333715,10 +334843,10 @@ sc_rhs:                                           ; preds = %ifcont
   %cast8 = ptrtoint ptr %args7 to i64
   %null_chk9 = icmp eq i64 %cast8, 0
   %null_ext10 = zext i1 %null_chk9 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25563, i64 5, ptr @sty_name.25564, i64 8, i64 %null_ext10, ptr @src_file.25565, i64 0, i64 740)
+  call void @avra_null_deref_trap(ptr @fld_name.25630, i64 5, ptr @sty_name.25631, i64 8, i64 %null_ext10, ptr @src_file.25632, i64 0, i64 860)
   %query_ptr = getelementptr inbounds nuw %DocsArgs, ptr %args7, i32 0, i32 13
   %query = load ptr, ptr %query_ptr, align 8
-  %3 = call i32 @strcmp(ptr %query, ptr @.str.25566)
+  %3 = call i32 @strcmp(ptr %query, ptr @.str.25633)
   %widen = sext i32 %3 to i64
   %streq_cmp = icmp ne i64 %widen, 0
   %streq_ext = zext i1 %streq_cmp to i64
@@ -333752,7 +334880,7 @@ ifcont11:                                         ; preds = %if_else13
   %cast40 = ptrtoint ptr %args39 to i64
   %null_chk41 = icmp eq i64 %cast40, 0
   %null_ext42 = zext i1 %null_chk41 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25577, i64 12, ptr @sty_name.25578, i64 8, i64 %null_ext42, ptr @src_file.25579, i64 0, i64 751)
+  call void @avra_null_deref_trap(ptr @fld_name.25644, i64 12, ptr @sty_name.25645, i64 8, i64 %null_ext42, ptr @src_file.25646, i64 0, i64 871)
   %want_doctest_ptr = getelementptr inbounds nuw %DocsArgs, ptr %args39, i32 0, i32 6
   %want_doctest = load i1, ptr %want_doctest_ptr, align 8
   br i1 %want_doctest, label %if_then44, label %if_else45
@@ -333765,7 +334893,7 @@ if_then12:                                        ; preds = %sc_merge
   %cast16 = ptrtoint ptr %args15 to i64
   %null_chk17 = icmp eq i64 %cast16, 0
   %null_ext18 = zext i1 %null_chk17 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25567, i64 5, ptr @sty_name.25568, i64 8, i64 %null_ext18, ptr @src_file.25569, i64 0, i64 742)
+  call void @avra_null_deref_trap(ptr @fld_name.25634, i64 5, ptr @sty_name.25635, i64 8, i64 %null_ext18, ptr @src_file.25636, i64 0, i64 862)
   %query_ptr19 = getelementptr inbounds nuw %DocsArgs, ptr %args15, i32 0, i32 13
   %query20 = load ptr, ptr %query_ptr19, align 8
   %corpus21 = load ptr, ptr %corpus, align 8
@@ -333787,17 +334915,17 @@ if_then25:                                        ; preds = %if_then12
   %cast28 = ptrtoint ptr %args27 to i64
   %null_chk29 = icmp eq i64 %cast28, 0
   %null_ext30 = zext i1 %null_chk29 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25570, i64 5, ptr @sty_name.25571, i64 8, i64 %null_ext30, ptr @src_file.25572, i64 0, i64 743)
+  call void @avra_null_deref_trap(ptr @fld_name.25637, i64 5, ptr @sty_name.25638, i64 8, i64 %null_ext30, ptr @src_file.25639, i64 0, i64 863)
   %query_ptr31 = getelementptr inbounds nuw %DocsArgs, ptr %args27, i32 0, i32 13
   %query32 = load ptr, ptr %query_ptr31, align 8
   %corpus33 = load ptr, ptr %corpus, align 8
   %cast34 = ptrtoint ptr %corpus33 to i64
   %null_chk35 = icmp eq i64 %cast34, 0
   %null_ext36 = zext i1 %null_chk35 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25573, i64 4, ptr @sty_name.25574, i64 29, i64 %null_ext36, ptr @src_file.25575, i64 0, i64 743)
+  call void @avra_null_deref_trap(ptr @fld_name.25640, i64 4, ptr @sty_name.25641, i64 29, i64 %null_ext36, ptr @src_file.25642, i64 0, i64 863)
   %syms_ptr = getelementptr inbounds nuw %"@std::avrac::docs::DocsCorpus", ptr %corpus33, i32 0, i32 0
   %syms = load ptr, ptr %syms_ptr, align 8
-  %7 = call i64 @print_no_symbol(ptr %query32, ptr %syms, ptr @.str.25576)
+  %7 = call i64 @print_no_symbol(ptr %query32, ptr %syms, ptr @.str.25643)
   call void @exit(i32 1)
   br label %ifcont23
 
@@ -333809,7 +334937,7 @@ ifcont43:                                         ; preds = %if_else45
   %cast55 = ptrtoint ptr %args54 to i64
   %null_chk56 = icmp eq i64 %cast55, 0
   %null_ext57 = zext i1 %null_chk56 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25580, i64 8, ptr @sty_name.25581, i64 8, i64 %null_ext57, ptr @src_file.25582, i64 0, i64 758)
+  call void @avra_null_deref_trap(ptr @fld_name.25647, i64 8, ptr @sty_name.25648, i64 8, i64 %null_ext57, ptr @src_file.25649, i64 0, i64 878)
   %want_gen_ptr = getelementptr inbounds nuw %DocsArgs, ptr %args54, i32 0, i32 7
   %want_gen = load i1, ptr %want_gen_ptr, align 8
   br i1 %want_gen, label %if_then59, label %if_else60
@@ -333841,10 +334969,10 @@ ifcont58:                                         ; preds = %if_else60
   %cast100 = ptrtoint ptr %args99 to i64
   %null_chk101 = icmp eq i64 %cast100, 0
   %null_ext102 = zext i1 %null_chk101 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25598, i64 6, ptr @sty_name.25599, i64 8, i64 %null_ext102, ptr @src_file.25600, i64 0, i64 772)
+  call void @avra_null_deref_trap(ptr @fld_name.25665, i64 6, ptr @sty_name.25666, i64 8, i64 %null_ext102, ptr @src_file.25667, i64 0, i64 892)
   %format_ptr = getelementptr inbounds nuw %DocsArgs, ptr %args99, i32 0, i32 12
   %format = load ptr, ptr %format_ptr, align 8
-  %9 = call i32 @strcmp(ptr %format, ptr @.str.25601)
+  %9 = call i32 @strcmp(ptr %format, ptr @.str.25668)
   %widen103 = sext i32 %9 to i64
   %streq_cmp104 = icmp eq i64 %widen103, 0
   %streq_ext105 = zext i1 %streq_cmp104 to i64
@@ -333856,10 +334984,10 @@ if_then59:                                        ; preds = %ifcont43
   %cast62 = ptrtoint ptr %args61 to i64
   %null_chk63 = icmp eq i64 %cast62, 0
   %null_ext64 = zext i1 %null_chk63 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25583, i64 5, ptr @sty_name.25584, i64 8, i64 %null_ext64, ptr @src_file.25585, i64 0, i64 759)
+  call void @avra_null_deref_trap(ptr @fld_name.25650, i64 5, ptr @sty_name.25651, i64 8, i64 %null_ext64, ptr @src_file.25652, i64 0, i64 879)
   %query_ptr65 = getelementptr inbounds nuw %DocsArgs, ptr %args61, i32 0, i32 13
   %query66 = load ptr, ptr %query_ptr65, align 8
-  %10 = call i32 @strcmp(ptr %query66, ptr @.str.25586)
+  %10 = call i32 @strcmp(ptr %query66, ptr @.str.25653)
   %widen67 = sext i32 %10 to i64
   %streq_cmp68 = icmp eq i64 %widen67, 0
   %streq_ext69 = zext i1 %streq_cmp68 to i64
@@ -333874,7 +335002,7 @@ ifcont70:                                         ; preds = %if_else73, %if_then
   %cast75 = ptrtoint ptr %args74 to i64
   %null_chk76 = icmp eq i64 %cast75, 0
   %null_ext77 = zext i1 %null_chk76 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25588, i64 5, ptr @sty_name.25589, i64 8, i64 %null_ext77, ptr @src_file.25590, i64 0, i64 763)
+  call void @avra_null_deref_trap(ptr @fld_name.25655, i64 5, ptr @sty_name.25656, i64 8, i64 %null_ext77, ptr @src_file.25657, i64 0, i64 883)
   %query_ptr78 = getelementptr inbounds nuw %DocsArgs, ptr %args74, i32 0, i32 13
   %query79 = load ptr, ptr %query_ptr78, align 8
   %docs_set80 = load ptr, ptr %docs_set, align 8
@@ -333882,7 +335010,7 @@ ifcont70:                                         ; preds = %if_else73, %if_then
   %cast82 = ptrtoint ptr %args81 to i64
   %null_chk83 = icmp eq i64 %cast82, 0
   %null_ext84 = zext i1 %null_chk83 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25591, i64 10, ptr @sty_name.25592, i64 8, i64 %null_ext84, ptr @src_file.25593, i64 0, i64 763)
+  call void @avra_null_deref_trap(ptr @fld_name.25658, i64 10, ptr @sty_name.25659, i64 8, i64 %null_ext84, ptr @src_file.25660, i64 0, i64 883)
   %want_print_ptr = getelementptr inbounds nuw %DocsArgs, ptr %args81, i32 0, i32 8
   %want_print = load i1, ptr %want_print_ptr, align 8
   %11 = call i1 @gen_for_symbol(ptr %query79, ptr %docs_set80, i1 %want_print)
@@ -333893,7 +335021,7 @@ ifcont70:                                         ; preds = %if_else73, %if_then
   br i1 %if_cond89, label %if_then90, label %if_else91
 
 if_then72:                                        ; preds = %if_then59
-  call void @avra_eprintln(ptr @.str.25587)
+  call void @avra_eprintln(ptr @.str.25654)
   call void @exit(i32 1)
   br label %ifcont70
 
@@ -333908,11 +335036,11 @@ if_then90:                                        ; preds = %ifcont70
   %cast93 = ptrtoint ptr %args92 to i64
   %null_chk94 = icmp eq i64 %cast93, 0
   %null_ext95 = zext i1 %null_chk94 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25594, i64 5, ptr @sty_name.25595, i64 8, i64 %null_ext95, ptr @src_file.25596, i64 0, i64 764)
+  call void @avra_null_deref_trap(ptr @fld_name.25661, i64 5, ptr @sty_name.25662, i64 8, i64 %null_ext95, ptr @src_file.25663, i64 0, i64 884)
   %query_ptr96 = getelementptr inbounds nuw %DocsArgs, ptr %args92, i32 0, i32 13
   %query97 = load ptr, ptr %query_ptr96, align 8
   %docs_set98 = load ptr, ptr %docs_set, align 8
-  %12 = call i64 @print_no_symbol(ptr %query97, ptr %docs_set98, ptr @.str.25597)
+  %12 = call i64 @print_no_symbol(ptr %query97, ptr %docs_set98, ptr @.str.25664)
   call void @exit(i32 1)
   br label %ifcont88
 
@@ -333924,10 +335052,10 @@ ifcont106:                                        ; preds = %if_else109
   %cast113 = ptrtoint ptr %args112 to i64
   %null_chk114 = icmp eq i64 %cast113, 0
   %null_ext115 = zext i1 %null_chk114 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25602, i64 6, ptr @sty_name.25603, i64 8, i64 %null_ext115, ptr @src_file.25604, i64 0, i64 776)
+  call void @avra_null_deref_trap(ptr @fld_name.25669, i64 6, ptr @sty_name.25670, i64 8, i64 %null_ext115, ptr @src_file.25671, i64 0, i64 896)
   %format_ptr116 = getelementptr inbounds nuw %DocsArgs, ptr %args112, i32 0, i32 12
   %format117 = load ptr, ptr %format_ptr116, align 8
-  %13 = call i32 @strcmp(ptr %format117, ptr @.str.25605)
+  %13 = call i32 @strcmp(ptr %format117, ptr @.str.25672)
   %widen118 = sext i32 %13 to i64
   %streq_cmp119 = icmp eq i64 %widen118, 0
   %streq_ext120 = zext i1 %streq_cmp119 to i64
@@ -333949,10 +335077,10 @@ ifcont121:                                        ; preds = %if_else124
   %cast128 = ptrtoint ptr %args127 to i64
   %null_chk129 = icmp eq i64 %cast128, 0
   %null_ext130 = zext i1 %null_chk129 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25606, i64 6, ptr @sty_name.25607, i64 8, i64 %null_ext130, ptr @src_file.25608, i64 0, i64 780)
+  call void @avra_null_deref_trap(ptr @fld_name.25673, i64 6, ptr @sty_name.25674, i64 8, i64 %null_ext130, ptr @src_file.25675, i64 0, i64 900)
   %format_ptr131 = getelementptr inbounds nuw %DocsArgs, ptr %args127, i32 0, i32 12
   %format132 = load ptr, ptr %format_ptr131, align 8
-  %16 = call i32 @strcmp(ptr %format132, ptr @.str.25609)
+  %16 = call i32 @strcmp(ptr %format132, ptr @.str.25676)
   %widen133 = sext i32 %16 to i64
   %streq_cmp134 = icmp ne i64 %widen133, 0
   %streq_ext135 = zext i1 %streq_cmp134 to i64
@@ -333974,10 +335102,10 @@ ifcont136:                                        ; preds = %if_else139, %if_the
   %cast155 = ptrtoint ptr %args154 to i64
   %null_chk156 = icmp eq i64 %cast155, 0
   %null_ext157 = zext i1 %null_chk156 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25615, i64 11, ptr @sty_name.25616, i64 8, i64 %null_ext157, ptr @src_file.25617, i64 0, i64 785)
+  call void @avra_null_deref_trap(ptr @fld_name.25682, i64 11, ptr @sty_name.25683, i64 8, i64 %null_ext157, ptr @src_file.25684, i64 0, i64 905)
   %module_path_ptr = getelementptr inbounds nuw %DocsArgs, ptr %args154, i32 0, i32 10
   %module_path = load ptr, ptr %module_path_ptr, align 8
-  %19 = call i32 @strcmp(ptr %module_path, ptr @.str.25618)
+  %19 = call i32 @strcmp(ptr %module_path, ptr @.str.25685)
   %widen158 = sext i32 %19 to i64
   %streq_cmp159 = icmp ne i64 %widen158, 0
   %streq_ext160 = zext i1 %streq_cmp159 to i64
@@ -333989,22 +335117,22 @@ if_then138:                                       ; preds = %ifcont121
   %cast141 = ptrtoint ptr %args140 to i64
   %null_chk142 = icmp eq i64 %cast141, 0
   %null_ext143 = zext i1 %null_chk142 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25611, i64 6, ptr @sty_name.25612, i64 8, i64 %null_ext143, ptr @src_file.25613, i64 0, i64 781)
+  call void @avra_null_deref_trap(ptr @fld_name.25678, i64 6, ptr @sty_name.25679, i64 8, i64 %null_ext143, ptr @src_file.25680, i64 0, i64 901)
   %format_ptr144 = getelementptr inbounds nuw %DocsArgs, ptr %args140, i32 0, i32 12
   %format145 = load ptr, ptr %format_ptr144, align 8
-  %20 = call i64 @strlen(ptr @.str.25610)
+  %20 = call i64 @strlen(ptr @.str.25677)
   %21 = call i64 @strlen(ptr %format145)
   %concat_total = add i64 %20, %21
   %concat_size = add i64 %concat_total, 1
   %22 = call ptr @avra_rc_alloc(i64 %concat_size)
-  %23 = call ptr @memcpy(ptr %22, ptr @.str.25610, i64 %20)
+  %23 = call ptr @memcpy(ptr %22, ptr @.str.25677, i64 %20)
   %cast146 = ptrtoint ptr %22 to i64
   %dst2_int = add i64 %cast146, %20
   %cast147 = inttoptr i64 %dst2_int to ptr
   %rhs_len_p1 = add i64 %21, 1
   %24 = call ptr @memcpy(ptr %cast147, ptr %format145, i64 %rhs_len_p1)
   %25 = call i64 @strlen(ptr %22)
-  %26 = call i64 @strlen(ptr @.str.25614)
+  %26 = call i64 @strlen(ptr @.str.25681)
   %concat_total148 = add i64 %25, %26
   %concat_size149 = add i64 %concat_total148, 1
   %27 = call ptr @avra_rc_alloc(i64 %concat_size149)
@@ -334013,7 +335141,7 @@ if_then138:                                       ; preds = %ifcont121
   %dst2_int151 = add i64 %cast150, %25
   %cast152 = inttoptr i64 %dst2_int151 to ptr
   %rhs_len_p1153 = add i64 %26, 1
-  %29 = call ptr @memcpy(ptr %cast152, ptr @.str.25614, i64 %rhs_len_p1153)
+  %29 = call ptr @memcpy(ptr %cast152, ptr @.str.25681, i64 %rhs_len_p1153)
   call void @avra_eprintln(ptr %27)
   call void @exit(i32 1)
   br label %ifcont136
@@ -334026,10 +335154,10 @@ ifcont161:                                        ; preds = %if_else164
   %cast198 = ptrtoint ptr %args197 to i64
   %null_chk199 = icmp eq i64 %cast198, 0
   %null_ext200 = zext i1 %null_chk199 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25629, i64 11, ptr @sty_name.25630, i64 8, i64 %null_ext200, ptr @src_file.25631, i64 0, i64 794)
+  call void @avra_null_deref_trap(ptr @fld_name.25696, i64 11, ptr @sty_name.25697, i64 8, i64 %null_ext200, ptr @src_file.25698, i64 0, i64 914)
   %search_term_ptr = getelementptr inbounds nuw %DocsArgs, ptr %args197, i32 0, i32 9
   %search_term = load ptr, ptr %search_term_ptr, align 8
-  %30 = call i32 @strcmp(ptr %search_term, ptr @.str.25632)
+  %30 = call i32 @strcmp(ptr %search_term, ptr @.str.25699)
   %widen201 = sext i32 %30 to i64
   %streq_cmp202 = icmp ne i64 %widen201, 0
   %streq_ext203 = zext i1 %streq_cmp202 to i64
@@ -334041,7 +335169,7 @@ if_then163:                                       ; preds = %ifcont136
   %cast166 = ptrtoint ptr %args165 to i64
   %null_chk167 = icmp eq i64 %cast166, 0
   %null_ext168 = zext i1 %null_chk167 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25619, i64 11, ptr @sty_name.25620, i64 8, i64 %null_ext168, ptr @src_file.25621, i64 0, i64 786)
+  call void @avra_null_deref_trap(ptr @fld_name.25686, i64 11, ptr @sty_name.25687, i64 8, i64 %null_ext168, ptr @src_file.25688, i64 0, i64 906)
   %module_path_ptr169 = getelementptr inbounds nuw %DocsArgs, ptr %args165, i32 0, i32 10
   %module_path170 = load ptr, ptr %module_path_ptr169, align 8
   %docs_set171 = load ptr, ptr %docs_set, align 8
@@ -334059,27 +335187,27 @@ ifcont175:                                        ; preds = %if_else178, %if_the
   ret i64 0
 
 if_then177:                                       ; preds = %if_then163
-  call void @avra_eprintln(ptr @.str.25622)
+  call void @avra_eprintln(ptr @.str.25689)
   %args179 = load ptr, ptr %args, align 8
   %cast180 = ptrtoint ptr %args179 to i64
   %null_chk181 = icmp eq i64 %cast180, 0
   %null_ext182 = zext i1 %null_chk181 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25624, i64 11, ptr @sty_name.25625, i64 8, i64 %null_ext182, ptr @src_file.25626, i64 0, i64 788)
+  call void @avra_null_deref_trap(ptr @fld_name.25691, i64 11, ptr @sty_name.25692, i64 8, i64 %null_ext182, ptr @src_file.25693, i64 0, i64 908)
   %module_path_ptr183 = getelementptr inbounds nuw %DocsArgs, ptr %args179, i32 0, i32 10
   %module_path184 = load ptr, ptr %module_path_ptr183, align 8
-  %32 = call i64 @strlen(ptr @.str.25623)
+  %32 = call i64 @strlen(ptr @.str.25690)
   %33 = call i64 @strlen(ptr %module_path184)
   %concat_total185 = add i64 %32, %33
   %concat_size186 = add i64 %concat_total185, 1
   %34 = call ptr @avra_rc_alloc(i64 %concat_size186)
-  %35 = call ptr @memcpy(ptr %34, ptr @.str.25623, i64 %32)
+  %35 = call ptr @memcpy(ptr %34, ptr @.str.25690, i64 %32)
   %cast187 = ptrtoint ptr %34 to i64
   %dst2_int188 = add i64 %cast187, %32
   %cast189 = inttoptr i64 %dst2_int188 to ptr
   %rhs_len_p1190 = add i64 %33, 1
   %36 = call ptr @memcpy(ptr %cast189, ptr %module_path184, i64 %rhs_len_p1190)
   %37 = call i64 @strlen(ptr %34)
-  %38 = call i64 @strlen(ptr @.str.25627)
+  %38 = call i64 @strlen(ptr @.str.25694)
   %concat_total191 = add i64 %37, %38
   %concat_size192 = add i64 %concat_total191, 1
   %39 = call ptr @avra_rc_alloc(i64 %concat_size192)
@@ -334088,9 +335216,9 @@ if_then177:                                       ; preds = %if_then163
   %dst2_int194 = add i64 %cast193, %37
   %cast195 = inttoptr i64 %dst2_int194 to ptr
   %rhs_len_p1196 = add i64 %38, 1
-  %41 = call ptr @memcpy(ptr %cast195, ptr @.str.25627, i64 %rhs_len_p1196)
+  %41 = call ptr @memcpy(ptr %cast195, ptr @.str.25694, i64 %rhs_len_p1196)
   call void @avra_eprintln(ptr %39)
-  call void @avra_eprintln(ptr @.str.25628)
+  call void @avra_eprintln(ptr @.str.25695)
   call void @exit(i32 1)
   br label %ifcont175
 
@@ -334102,7 +335230,7 @@ ifcont204:                                        ; preds = %if_else207
   %cast216 = ptrtoint ptr %args215 to i64
   %null_chk217 = icmp eq i64 %cast216, 0
   %null_ext218 = zext i1 %null_chk217 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25636, i64 8, ptr @sty_name.25637, i64 8, i64 %null_ext218, ptr @src_file.25638, i64 0, i64 798)
+  call void @avra_null_deref_trap(ptr @fld_name.25703, i64 8, ptr @sty_name.25704, i64 8, i64 %null_ext218, ptr @src_file.25705, i64 0, i64 918)
   %want_llm_ptr = getelementptr inbounds nuw %DocsArgs, ptr %args215, i32 0, i32 2
   %want_llm = load i1, ptr %want_llm_ptr, align 8
   br i1 %want_llm, label %if_then220, label %if_else221
@@ -334112,7 +335240,7 @@ if_then206:                                       ; preds = %ifcont161
   %cast209 = ptrtoint ptr %args208 to i64
   %null_chk210 = icmp eq i64 %cast209, 0
   %null_ext211 = zext i1 %null_chk210 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25633, i64 11, ptr @sty_name.25634, i64 8, i64 %null_ext211, ptr @src_file.25635, i64 0, i64 795)
+  call void @avra_null_deref_trap(ptr @fld_name.25700, i64 11, ptr @sty_name.25701, i64 8, i64 %null_ext211, ptr @src_file.25702, i64 0, i64 915)
   %search_term_ptr212 = getelementptr inbounds nuw %DocsArgs, ptr %args208, i32 0, i32 9
   %search_term213 = load ptr, ptr %search_term_ptr212, align 8
   %docs_set214 = load ptr, ptr %docs_set, align 8
@@ -334127,7 +335255,7 @@ ifcont219:                                        ; preds = %if_else221
   %cast224 = ptrtoint ptr %args223 to i64
   %null_chk225 = icmp eq i64 %cast224, 0
   %null_ext226 = zext i1 %null_chk225 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25639, i64 12, ptr @sty_name.25640, i64 8, i64 %null_ext226, ptr @src_file.25641, i64 0, i64 802)
+  call void @avra_null_deref_trap(ptr @fld_name.25706, i64 12, ptr @sty_name.25707, i64 8, i64 %null_ext226, ptr @src_file.25708, i64 0, i64 922)
   %want_symbols_ptr = getelementptr inbounds nuw %DocsArgs, ptr %args223, i32 0, i32 0
   %want_symbols = load i1, ptr %want_symbols_ptr, align 8
   br i1 %want_symbols, label %if_then228, label %if_else229
@@ -334145,10 +335273,10 @@ ifcont227:                                        ; preds = %if_else229
   %cast232 = ptrtoint ptr %args231 to i64
   %null_chk233 = icmp eq i64 %cast232, 0
   %null_ext234 = zext i1 %null_chk233 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25642, i64 5, ptr @sty_name.25643, i64 8, i64 %null_ext234, ptr @src_file.25644, i64 0, i64 806)
+  call void @avra_null_deref_trap(ptr @fld_name.25709, i64 5, ptr @sty_name.25710, i64 8, i64 %null_ext234, ptr @src_file.25711, i64 0, i64 926)
   %query_ptr235 = getelementptr inbounds nuw %DocsArgs, ptr %args231, i32 0, i32 13
   %query236 = load ptr, ptr %query_ptr235, align 8
-  %44 = call i32 @strcmp(ptr %query236, ptr @.str.25645)
+  %44 = call i32 @strcmp(ptr %query236, ptr @.str.25712)
   %widen237 = sext i32 %44 to i64
   %streq_cmp238 = icmp ne i64 %widen237, 0
   %streq_ext239 = zext i1 %streq_cmp238 to i64
@@ -334173,7 +335301,7 @@ if_then242:                                       ; preds = %ifcont227
   %cast245 = ptrtoint ptr %args244 to i64
   %null_chk246 = icmp eq i64 %cast245, 0
   %null_ext247 = zext i1 %null_chk246 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25646, i64 10, ptr @sty_name.25647, i64 8, i64 %null_ext247, ptr @src_file.25648, i64 0, i64 807)
+  call void @avra_null_deref_trap(ptr @fld_name.25713, i64 10, ptr @sty_name.25714, i64 8, i64 %null_ext247, ptr @src_file.25715, i64 0, i64 927)
   %want_short_ptr = getelementptr inbounds nuw %DocsArgs, ptr %args244, i32 0, i32 1
   %want_short = load i1, ptr %want_short_ptr, align 8
   br i1 %want_short, label %ife_then, label %ife_else
@@ -334196,7 +335324,7 @@ ife_then:                                         ; preds = %if_then242
   %cast249 = ptrtoint ptr %args248 to i64
   %null_chk250 = icmp eq i64 %cast249, 0
   %null_ext251 = zext i1 %null_chk250 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25649, i64 5, ptr @sty_name.25650, i64 8, i64 %null_ext251, ptr @src_file.25651, i64 0, i64 808)
+  call void @avra_null_deref_trap(ptr @fld_name.25716, i64 5, ptr @sty_name.25717, i64 8, i64 %null_ext251, ptr @src_file.25718, i64 0, i64 928)
   %query_ptr252 = getelementptr inbounds nuw %DocsArgs, ptr %args248, i32 0, i32 13
   %query253 = load ptr, ptr %query_ptr252, align 8
   %docs_set254 = load ptr, ptr %docs_set, align 8
@@ -334210,7 +335338,7 @@ ife_else:                                         ; preds = %if_then242
   %cast257 = ptrtoint ptr %args256 to i64
   %null_chk258 = icmp eq i64 %cast257, 0
   %null_ext259 = zext i1 %null_chk258 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25652, i64 5, ptr @sty_name.25653, i64 8, i64 %null_ext259, ptr @src_file.25654, i64 0, i64 810)
+  call void @avra_null_deref_trap(ptr @fld_name.25719, i64 5, ptr @sty_name.25720, i64 8, i64 %null_ext259, ptr @src_file.25721, i64 0, i64 930)
   %query_ptr260 = getelementptr inbounds nuw %DocsArgs, ptr %args256, i32 0, i32 13
   %query261 = load ptr, ptr %query_ptr260, align 8
   %docs_set262 = load ptr, ptr %docs_set, align 8
@@ -334227,11 +335355,11 @@ if_then270:                                       ; preds = %ife_end
   %cast273 = ptrtoint ptr %args272 to i64
   %null_chk274 = icmp eq i64 %cast273, 0
   %null_ext275 = zext i1 %null_chk274 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25655, i64 5, ptr @sty_name.25656, i64 8, i64 %null_ext275, ptr @src_file.25657, i64 0, i64 813)
+  call void @avra_null_deref_trap(ptr @fld_name.25722, i64 5, ptr @sty_name.25723, i64 8, i64 %null_ext275, ptr @src_file.25724, i64 0, i64 933)
   %query_ptr276 = getelementptr inbounds nuw %DocsArgs, ptr %args272, i32 0, i32 13
   %query277 = load ptr, ptr %query_ptr276, align 8
   %docs_set278 = load ptr, ptr %docs_set, align 8
-  %49 = call i64 @print_no_symbol(ptr %query277, ptr %docs_set278, ptr @.str.25658)
+  %49 = call i64 @print_no_symbol(ptr %query277, ptr %docs_set278, ptr @.str.25725)
   call void @exit(i32 1)
   br label %ifcont268
 
@@ -334250,11 +335378,11 @@ entry:
   %cast = ptrtoint ptr %args1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25659, i64 5, ptr @sty_name.25660, i64 8, i64 %null_ext, ptr @src_file.25661, i64 0, i64 831)
+  call void @avra_null_deref_trap(ptr @fld_name.25726, i64 5, ptr @sty_name.25727, i64 8, i64 %null_ext, ptr @src_file.25728, i64 0, i64 951)
   %scope_ptr = getelementptr inbounds nuw %DocsArgs, ptr %args1, i32 0, i32 11
   %scope = load ptr, ptr %scope_ptr, align 8
   store i64 0, ptr %pmatch_result, align 8
-  %2 = call i32 @strcmp(ptr %scope, ptr @.lit_str.25662)
+  %2 = call i32 @strcmp(ptr %scope, ptr @.lit_str.25729)
   %widen = sext i32 %2 to i64
   %str_eq = icmp eq i64 %widen, 0
   br i1 %str_eq, label %parm_body, label %parm_next
@@ -334270,7 +335398,7 @@ parm_body:                                        ; preds = %entry
   %cast4 = ptrtoint ptr %args3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25663, i64 13, ptr @sty_name.25664, i64 8, i64 %null_ext6, ptr @src_file.25665, i64 0, i64 831)
+  call void @avra_null_deref_trap(ptr @fld_name.25730, i64 13, ptr @sty_name.25731, i64 8, i64 %null_ext6, ptr @src_file.25732, i64 0, i64 951)
   %want_no_cache_ptr = getelementptr inbounds nuw %DocsArgs, ptr %args3, i32 0, i32 5
   %want_no_cache = load i1, ptr %want_no_cache_ptr, align 8
   %3 = call ptr @"@std::avrac::indexer::extract_project_syms_cached"(ptr %project_dir2, i1 %want_no_cache)
@@ -334279,7 +335407,7 @@ parm_body:                                        ; preds = %entry
   br label %pmatch_end
 
 parm_next:                                        ; preds = %entry
-  %4 = call i32 @strcmp(ptr %scope, ptr @.lit_str.25666)
+  %4 = call i32 @strcmp(ptr %scope, ptr @.lit_str.25733)
   %widen10 = sext i32 %4 to i64
   %str_eq11 = icmp eq i64 %widen10, 0
   br i1 %str_eq11, label %parm_body8, label %parm_next9
@@ -334294,7 +335422,7 @@ parm_body8:                                       ; preds = %parm_next
   br label %pmatch_end
 
 parm_next9:                                       ; preds = %parm_next
-  %7 = call i32 @strcmp(ptr %scope, ptr @.lit_str.25667)
+  %7 = call i32 @strcmp(ptr %scope, ptr @.lit_str.25734)
   %widen17 = sext i32 %7 to i64
   %str_eq18 = icmp eq i64 %widen17, 0
   br i1 %str_eq18, label %parm_body15, label %parm_next16
@@ -334309,7 +335437,7 @@ parm_body15:                                      ; preds = %parm_next9
   br label %pmatch_end
 
 parm_next16:                                      ; preds = %parm_next9
-  %10 = call i32 @strcmp(ptr %scope, ptr @.lit_str.25668)
+  %10 = call i32 @strcmp(ptr %scope, ptr @.lit_str.25735)
   %widen24 = sext i32 %10 to i64
   %str_eq25 = icmp eq i64 %widen24, 0
   br i1 %str_eq25, label %parm_body22, label %parm_next23
@@ -334320,7 +335448,7 @@ parm_body22:                                      ; preds = %parm_next16
   %cast28 = ptrtoint ptr %args27 to i64
   %null_chk29 = icmp eq i64 %cast28, 0
   %null_ext30 = zext i1 %null_chk29 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25669, i64 13, ptr @sty_name.25670, i64 8, i64 %null_ext30, ptr @src_file.25671, i64 0, i64 831)
+  call void @avra_null_deref_trap(ptr @fld_name.25736, i64 13, ptr @sty_name.25737, i64 8, i64 %null_ext30, ptr @src_file.25738, i64 0, i64 951)
   %want_no_cache_ptr31 = getelementptr inbounds nuw %DocsArgs, ptr %args27, i32 0, i32 5
   %want_no_cache32 = load i1, ptr %want_no_cache_ptr31, align 8
   %11 = call ptr @"@std::avrac::indexer::extract_project_syms_cached"(ptr %project_dir26, i1 %want_no_cache32)
@@ -334339,22 +335467,22 @@ parm_body35:                                      ; preds = %parm_next23
   %cast38 = ptrtoint ptr %args37 to i64
   %null_chk39 = icmp eq i64 %cast38, 0
   %null_ext40 = zext i1 %null_chk39 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25673, i64 5, ptr @sty_name.25674, i64 8, i64 %null_ext40, ptr @src_file.25675, i64 0, i64 848)
+  call void @avra_null_deref_trap(ptr @fld_name.25740, i64 5, ptr @sty_name.25741, i64 8, i64 %null_ext40, ptr @src_file.25742, i64 0, i64 968)
   %scope_ptr41 = getelementptr inbounds nuw %DocsArgs, ptr %args37, i32 0, i32 11
   %scope42 = load ptr, ptr %scope_ptr41, align 8
-  %14 = call i64 @strlen(ptr @.str.25672)
+  %14 = call i64 @strlen(ptr @.str.25739)
   %15 = call i64 @strlen(ptr %scope42)
   %concat_total = add i64 %14, %15
   %concat_size = add i64 %concat_total, 1
   %16 = call ptr @avra_rc_alloc(i64 %concat_size)
-  %17 = call ptr @memcpy(ptr %16, ptr @.str.25672, i64 %14)
+  %17 = call ptr @memcpy(ptr %16, ptr @.str.25739, i64 %14)
   %cast43 = ptrtoint ptr %16 to i64
   %dst2_int = add i64 %cast43, %14
   %cast44 = inttoptr i64 %dst2_int to ptr
   %rhs_len_p1 = add i64 %15, 1
   %18 = call ptr @memcpy(ptr %cast44, ptr %scope42, i64 %rhs_len_p1)
   %19 = call i64 @strlen(ptr %16)
-  %20 = call i64 @strlen(ptr @.str.25676)
+  %20 = call i64 @strlen(ptr @.str.25743)
   %concat_total45 = add i64 %19, %20
   %concat_size46 = add i64 %concat_total45, 1
   %21 = call ptr @avra_rc_alloc(i64 %concat_size46)
@@ -334363,7 +335491,7 @@ parm_body35:                                      ; preds = %parm_next23
   %dst2_int48 = add i64 %cast47, %19
   %cast49 = inttoptr i64 %dst2_int48 to ptr
   %rhs_len_p150 = add i64 %20, 1
-  %23 = call ptr @memcpy(ptr %cast49, ptr @.str.25676, i64 %rhs_len_p150)
+  %23 = call ptr @memcpy(ptr %cast49, ptr @.str.25743, i64 %rhs_len_p150)
   call void @avra_eprintln(ptr %21)
   call void @exit(i32 1)
   %24 = call ptr @avra_rc_alloc(i64 16)
@@ -334376,7 +335504,7 @@ parm_body35:                                      ; preds = %parm_next23
   br label %pmatch_end
 
 parm_next36:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.25677, i64 -1, ptr @mu_file.25678, i64 831)
+  call void @avra_match_unreachable(ptr @.match_fn.25744, i64 -1, ptr @mu_file.25745, i64 951)
   unreachable
 }
 
@@ -334387,7 +335515,7 @@ entry:
   store ptr %0, ptr %project_dir, align 8
   %project_dir1 = load ptr, ptr %project_dir, align 8
   %1 = call i64 @strlen(ptr %project_dir1)
-  %2 = call i64 @strlen(ptr @.str.25679)
+  %2 = call i64 @strlen(ptr @.str.25746)
   %concat_total = add i64 %1, %2
   %concat_size = add i64 %concat_total, 1
   %3 = call ptr @avra_rc_alloc(i64 %concat_size)
@@ -334396,7 +335524,7 @@ entry:
   %dst2_int = add i64 %cast, %1
   %cast2 = inttoptr i64 %dst2_int to ptr
   %rhs_len_p1 = add i64 %2, 1
-  %5 = call ptr @memcpy(ptr %cast2, ptr @.str.25679, i64 %rhs_len_p1)
+  %5 = call ptr @memcpy(ptr %cast2, ptr @.str.25746, i64 %rhs_len_p1)
   %6 = call i64 @avra_selfhost_file_exists(ptr %3)
   %eq = icmp eq i64 %6, 0
   %eq_ext = zext i1 %eq to i64
@@ -334405,7 +335533,7 @@ entry:
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 sif_then:                                         ; preds = %entry
-  call void @avra_eprintln(ptr @.str.25680)
+  call void @avra_eprintln(ptr @.str.25747)
   call void @exit(i32 1)
   store i64 0, ptr %sif_result, align 8
   br label %sif_end
@@ -334460,10 +335588,10 @@ ifcont7:                                          ; preds = %if_else9
   %cast = ptrtoint ptr %s11 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25681, i64 3, ptr @sty_name.25682, i64 14, i64 %null_ext, ptr @src_file.25683, i64 0, i64 881)
+  call void @avra_null_deref_trap(ptr @fld_name.25748, i64 3, ptr @sty_name.25749, i64 14, i64 %null_ext, ptr @src_file.25750, i64 0, i64 1001)
   %doc_ptr = getelementptr inbounds nuw %"@std::lsp::Sym", ptr %s11, i32 0, i32 4
   %doc = load ptr, ptr %doc_ptr, align 8
-  %5 = call i32 @strcmp(ptr %doc, ptr @.str.25684)
+  %5 = call i32 @strcmp(ptr %doc, ptr @.str.25751)
   %widen12 = sext i32 %5 to i64
   %streq_cmp = icmp ne i64 %widen12, 0
   %streq_ext = zext i1 %streq_cmp to i64
@@ -334484,26 +335612,26 @@ ifcont13:                                         ; preds = %if_else16
   %cast25 = ptrtoint ptr %s24 to i64
   %null_chk26 = icmp eq i64 %cast25, 0
   %null_ext27 = zext i1 %null_chk26 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25689, i64 4, ptr @sty_name.25690, i64 14, i64 %null_ext27, ptr @src_file.25691, i64 0, i64 885)
+  call void @avra_null_deref_trap(ptr @fld_name.25756, i64 4, ptr @sty_name.25757, i64 14, i64 %null_ext27, ptr @src_file.25758, i64 0, i64 1005)
   %file_ptr = getelementptr inbounds nuw %"@std::lsp::Sym", ptr %s24, i32 0, i32 5
   %file = load ptr, ptr %file_ptr, align 8
   %s28 = load ptr, ptr %s, align 8
   %cast29 = ptrtoint ptr %s28 to i64
   %null_chk30 = icmp eq i64 %cast29, 0
   %null_ext31 = zext i1 %null_chk30 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25692, i64 4, ptr @sty_name.25693, i64 14, i64 %null_ext31, ptr @src_file.25694, i64 0, i64 885)
+  call void @avra_null_deref_trap(ptr @fld_name.25759, i64 4, ptr @sty_name.25760, i64 14, i64 %null_ext31, ptr @src_file.25761, i64 0, i64 1005)
   %span_ptr = getelementptr inbounds nuw %"@std::lsp::Sym", ptr %s28, i32 0, i32 6
   %span = load ptr, ptr %span_ptr, align 8
   %cast32 = ptrtoint ptr %span to i64
   %null_chk33 = icmp eq i64 %cast32, 0
   %null_ext34 = zext i1 %null_chk33 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25695, i64 5, ptr @sty_name.25696, i64 18, i64 %null_ext34, ptr @src_file.25697, i64 0, i64 885)
+  call void @avra_null_deref_trap(ptr @fld_name.25762, i64 5, ptr @sty_name.25763, i64 18, i64 %null_ext34, ptr @src_file.25764, i64 0, i64 1005)
   %start_ptr = getelementptr inbounds nuw %"@std::lsp::LspSpan", ptr %span, i32 0, i32 0
   %start = load ptr, ptr %start_ptr, align 8
   %cast35 = ptrtoint ptr %start to i64
   %null_chk36 = icmp eq i64 %cast35, 0
   %null_ext37 = zext i1 %null_chk36 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25698, i64 4, ptr @sty_name.25699, i64 17, i64 %null_ext37, ptr @src_file.25700, i64 0, i64 885)
+  call void @avra_null_deref_trap(ptr @fld_name.25765, i64 4, ptr @sty_name.25766, i64 17, i64 %null_ext37, ptr @src_file.25767, i64 0, i64 1005)
   %line_ptr = getelementptr inbounds nuw %"@std::lsp::LspPos", ptr %start, i32 0, i32 0
   %line = load i64, ptr %line_ptr, align 8
   %stub38 = load ptr, ptr %stub, align 8
@@ -334513,10 +335641,10 @@ ifcont13:                                         ; preds = %if_else16
   %cast40 = ptrtoint ptr %r39 to i64
   %null_chk41 = icmp eq i64 %cast40, 0
   %null_ext42 = zext i1 %null_chk41 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25701, i64 5, ptr @sty_name.25702, i64 37, i64 %null_ext42, ptr @src_file.25703, i64 0, i64 886)
+  call void @avra_null_deref_trap(ptr @fld_name.25768, i64 5, ptr @sty_name.25769, i64 37, i64 %null_ext42, ptr @src_file.25770, i64 0, i64 1006)
   %error_ptr = getelementptr inbounds nuw %"@std::avrac::docs::gen::GenStubResult", ptr %r39, i32 0, i32 3
   %error = load ptr, ptr %error_ptr, align 8
-  %8 = call i32 @strcmp(ptr %error, ptr @.str.25704)
+  %8 = call i32 @strcmp(ptr %error, ptr @.str.25771)
   %widen43 = sext i32 %8 to i64
   %streq_cmp44 = icmp ne i64 %widen43, 0
   %streq_ext45 = zext i1 %streq_cmp44 to i64
@@ -334528,11 +335656,11 @@ if_then15:                                        ; preds = %ifcont7
   %cast18 = ptrtoint ptr %s17 to i64
   %null_chk19 = icmp eq i64 %cast18, 0
   %null_ext20 = zext i1 %null_chk19 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25685, i64 9, ptr @sty_name.25686, i64 14, i64 %null_ext20, ptr @src_file.25687, i64 0, i64 882)
+  call void @avra_null_deref_trap(ptr @fld_name.25752, i64 9, ptr @sty_name.25753, i64 14, i64 %null_ext20, ptr @src_file.25754, i64 0, i64 1002)
   %qualified_ptr = getelementptr inbounds nuw %"@std::lsp::Sym", ptr %s17, i32 0, i32 2
   %qualified = load ptr, ptr %qualified_ptr, align 8
   %9 = call i64 @strlen(ptr %qualified)
-  %10 = call i64 @strlen(ptr @.str.25688)
+  %10 = call i64 @strlen(ptr @.str.25755)
   %concat_total = add i64 %9, %10
   %concat_size = add i64 %concat_total, 1
   %11 = call ptr @avra_rc_alloc(i64 %concat_size)
@@ -334541,7 +335669,7 @@ if_then15:                                        ; preds = %ifcont7
   %dst2_int = add i64 %cast21, %9
   %cast22 = inttoptr i64 %dst2_int to ptr
   %rhs_len_p1 = add i64 %10, 1
-  %13 = call ptr @memcpy(ptr %cast22, ptr @.str.25688, i64 %rhs_len_p1)
+  %13 = call ptr @memcpy(ptr %cast22, ptr @.str.25755, i64 %rhs_len_p1)
   %14 = call i32 @puts(ptr %11)
   %widen23 = sext i32 %14 to i64
   ret i1 true
@@ -334554,7 +335682,7 @@ ifcont46:                                         ; preds = %if_else49
   %cast63 = ptrtoint ptr %r62 to i64
   %null_chk64 = icmp eq i64 %cast63, 0
   %null_ext65 = zext i1 %null_chk64 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25709, i64 7, ptr @sty_name.25710, i64 37, i64 %null_ext65, ptr @src_file.25711, i64 0, i64 890)
+  call void @avra_null_deref_trap(ptr @fld_name.25776, i64 7, ptr @sty_name.25777, i64 37, i64 %null_ext65, ptr @src_file.25778, i64 0, i64 1010)
   %skipped_ptr = getelementptr inbounds nuw %"@std::avrac::docs::gen::GenStubResult", ptr %r62, i32 0, i32 1
   %skipped = load i1, ptr %skipped_ptr, align 8
   br i1 %skipped, label %if_then67, label %if_else68
@@ -334564,15 +335692,15 @@ if_then48:                                        ; preds = %ifcont13
   %cast51 = ptrtoint ptr %r50 to i64
   %null_chk52 = icmp eq i64 %cast51, 0
   %null_ext53 = zext i1 %null_chk52 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25706, i64 5, ptr @sty_name.25707, i64 37, i64 %null_ext53, ptr @src_file.25708, i64 0, i64 887)
+  call void @avra_null_deref_trap(ptr @fld_name.25773, i64 5, ptr @sty_name.25774, i64 37, i64 %null_ext53, ptr @src_file.25775, i64 0, i64 1007)
   %error_ptr54 = getelementptr inbounds nuw %"@std::avrac::docs::gen::GenStubResult", ptr %r50, i32 0, i32 3
   %error55 = load ptr, ptr %error_ptr54, align 8
-  %15 = call i64 @strlen(ptr @.str.25705)
+  %15 = call i64 @strlen(ptr @.str.25772)
   %16 = call i64 @strlen(ptr %error55)
   %concat_total56 = add i64 %15, %16
   %concat_size57 = add i64 %concat_total56, 1
   %17 = call ptr @avra_rc_alloc(i64 %concat_size57)
-  %18 = call ptr @memcpy(ptr %17, ptr @.str.25705, i64 %15)
+  %18 = call ptr @memcpy(ptr %17, ptr @.str.25772, i64 %15)
   %cast58 = ptrtoint ptr %17 to i64
   %dst2_int59 = add i64 %cast58, %15
   %cast60 = inttoptr i64 %dst2_int59 to ptr
@@ -334592,11 +335720,11 @@ if_then67:                                        ; preds = %ifcont46
   %cast70 = ptrtoint ptr %s69 to i64
   %null_chk71 = icmp eq i64 %cast70, 0
   %null_ext72 = zext i1 %null_chk71 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25712, i64 9, ptr @sty_name.25713, i64 14, i64 %null_ext72, ptr @src_file.25714, i64 0, i64 891)
+  call void @avra_null_deref_trap(ptr @fld_name.25779, i64 9, ptr @sty_name.25780, i64 14, i64 %null_ext72, ptr @src_file.25781, i64 0, i64 1011)
   %qualified_ptr73 = getelementptr inbounds nuw %"@std::lsp::Sym", ptr %s69, i32 0, i32 2
   %qualified74 = load ptr, ptr %qualified_ptr73, align 8
   %20 = call i64 @strlen(ptr %qualified74)
-  %21 = call i64 @strlen(ptr @.str.25715)
+  %21 = call i64 @strlen(ptr @.str.25782)
   %concat_total75 = add i64 %20, %21
   %concat_size76 = add i64 %concat_total75, 1
   %22 = call ptr @avra_rc_alloc(i64 %concat_size76)
@@ -334605,12 +335733,12 @@ if_then67:                                        ; preds = %ifcont46
   %dst2_int78 = add i64 %cast77, %20
   %cast79 = inttoptr i64 %dst2_int78 to ptr
   %rhs_len_p180 = add i64 %21, 1
-  %24 = call ptr @memcpy(ptr %cast79, ptr @.str.25715, i64 %rhs_len_p180)
+  %24 = call ptr @memcpy(ptr %cast79, ptr @.str.25782, i64 %rhs_len_p180)
   %r81 = load ptr, ptr %r, align 8
   %cast82 = ptrtoint ptr %r81 to i64
   %null_chk83 = icmp eq i64 %cast82, 0
   %null_ext84 = zext i1 %null_chk83 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25716, i64 6, ptr @sty_name.25717, i64 37, i64 %null_ext84, ptr @src_file.25718, i64 0, i64 891)
+  call void @avra_null_deref_trap(ptr @fld_name.25783, i64 6, ptr @sty_name.25784, i64 37, i64 %null_ext84, ptr @src_file.25785, i64 0, i64 1011)
   %reason_ptr = getelementptr inbounds nuw %"@std::avrac::docs::gen::GenStubResult", ptr %r81, i32 0, i32 2
   %reason = load ptr, ptr %reason_ptr, align 8
   %25 = call i64 @strlen(ptr %22)
@@ -334633,11 +335761,11 @@ if_else68:                                        ; preds = %ifcont46
   %cast93 = ptrtoint ptr %s92 to i64
   %null_chk94 = icmp eq i64 %cast93, 0
   %null_ext95 = zext i1 %null_chk94 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25719, i64 4, ptr @sty_name.25720, i64 14, i64 %null_ext95, ptr @src_file.25721, i64 0, i64 893)
+  call void @avra_null_deref_trap(ptr @fld_name.25786, i64 4, ptr @sty_name.25787, i64 14, i64 %null_ext95, ptr @src_file.25788, i64 0, i64 1013)
   %file_ptr96 = getelementptr inbounds nuw %"@std::lsp::Sym", ptr %s92, i32 0, i32 5
   %file97 = load ptr, ptr %file_ptr96, align 8
   %31 = call i64 @strlen(ptr %file97)
-  %32 = call i64 @strlen(ptr @.str.25722)
+  %32 = call i64 @strlen(ptr @.str.25789)
   %concat_total98 = add i64 %31, %32
   %concat_size99 = add i64 %concat_total98, 1
   %33 = call ptr @avra_rc_alloc(i64 %concat_size99)
@@ -334646,28 +335774,28 @@ if_else68:                                        ; preds = %ifcont46
   %dst2_int101 = add i64 %cast100, %31
   %cast102 = inttoptr i64 %dst2_int101 to ptr
   %rhs_len_p1103 = add i64 %32, 1
-  %35 = call ptr @memcpy(ptr %cast102, ptr @.str.25722, i64 %rhs_len_p1103)
+  %35 = call ptr @memcpy(ptr %cast102, ptr @.str.25789, i64 %rhs_len_p1103)
   %s104 = load ptr, ptr %s, align 8
   %cast105 = ptrtoint ptr %s104 to i64
   %null_chk106 = icmp eq i64 %cast105, 0
   %null_ext107 = zext i1 %null_chk106 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25723, i64 4, ptr @sty_name.25724, i64 14, i64 %null_ext107, ptr @src_file.25725, i64 0, i64 893)
+  call void @avra_null_deref_trap(ptr @fld_name.25790, i64 4, ptr @sty_name.25791, i64 14, i64 %null_ext107, ptr @src_file.25792, i64 0, i64 1013)
   %span_ptr108 = getelementptr inbounds nuw %"@std::lsp::Sym", ptr %s104, i32 0, i32 6
   %span109 = load ptr, ptr %span_ptr108, align 8
   %cast110 = ptrtoint ptr %span109 to i64
   %null_chk111 = icmp eq i64 %cast110, 0
   %null_ext112 = zext i1 %null_chk111 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25726, i64 5, ptr @sty_name.25727, i64 18, i64 %null_ext112, ptr @src_file.25728, i64 0, i64 893)
+  call void @avra_null_deref_trap(ptr @fld_name.25793, i64 5, ptr @sty_name.25794, i64 18, i64 %null_ext112, ptr @src_file.25795, i64 0, i64 1013)
   %start_ptr113 = getelementptr inbounds nuw %"@std::lsp::LspSpan", ptr %span109, i32 0, i32 0
   %start114 = load ptr, ptr %start_ptr113, align 8
   %cast115 = ptrtoint ptr %start114 to i64
   %null_chk116 = icmp eq i64 %cast115, 0
   %null_ext117 = zext i1 %null_chk116 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25729, i64 4, ptr @sty_name.25730, i64 17, i64 %null_ext117, ptr @src_file.25731, i64 0, i64 893)
+  call void @avra_null_deref_trap(ptr @fld_name.25796, i64 4, ptr @sty_name.25797, i64 17, i64 %null_ext117, ptr @src_file.25798, i64 0, i64 1013)
   %line_ptr118 = getelementptr inbounds nuw %"@std::lsp::LspPos", ptr %start114, i32 0, i32 0
   %line119 = load i64, ptr %line_ptr118, align 8
   %36 = call ptr @avra_rc_alloc(i64 32)
-  %37 = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %36, i64 32, ptr @.i2s_fmt.25732, i64 %line119)
+  %37 = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %36, i64 32, ptr @.i2s_fmt.25799, i64 %line119)
   %widen120 = sext i32 %37 to i64
   %38 = call i64 @strlen(ptr %33)
   %39 = call i64 @strlen(ptr %36)
@@ -334681,7 +335809,7 @@ if_else68:                                        ; preds = %ifcont46
   %rhs_len_p1126 = add i64 %39, 1
   %42 = call ptr @memcpy(ptr %cast125, ptr %36, i64 %rhs_len_p1126)
   %43 = call i64 @strlen(ptr %40)
-  %44 = call i64 @strlen(ptr @.str.25733)
+  %44 = call i64 @strlen(ptr @.str.25800)
   %concat_total127 = add i64 %43, %44
   %concat_size128 = add i64 %concat_total127, 1
   %45 = call ptr @avra_rc_alloc(i64 %concat_size128)
@@ -334690,12 +335818,12 @@ if_else68:                                        ; preds = %ifcont46
   %dst2_int130 = add i64 %cast129, %43
   %cast131 = inttoptr i64 %dst2_int130 to ptr
   %rhs_len_p1132 = add i64 %44, 1
-  %47 = call ptr @memcpy(ptr %cast131, ptr @.str.25733, i64 %rhs_len_p1132)
+  %47 = call ptr @memcpy(ptr %cast131, ptr @.str.25800, i64 %rhs_len_p1132)
   %s133 = load ptr, ptr %s, align 8
   %cast134 = ptrtoint ptr %s133 to i64
   %null_chk135 = icmp eq i64 %cast134, 0
   %null_ext136 = zext i1 %null_chk135 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25734, i64 9, ptr @sty_name.25735, i64 14, i64 %null_ext136, ptr @src_file.25736, i64 0, i64 893)
+  call void @avra_null_deref_trap(ptr @fld_name.25801, i64 9, ptr @sty_name.25802, i64 14, i64 %null_ext136, ptr @src_file.25803, i64 0, i64 1013)
   %qualified_ptr137 = getelementptr inbounds nuw %"@std::lsp::Sym", ptr %s133, i32 0, i32 2
   %qualified138 = load ptr, ptr %qualified_ptr137, align 8
   %48 = call i64 @strlen(ptr %45)
@@ -334717,19 +335845,19 @@ if_else68:                                        ; preds = %ifcont46
 define i64 @main() {
 entry:
   %0 = call i64 @__bs_top_level()
-  %ice_bag1623 = alloca ptr, align 8
-  %e1615 = alloca ptr, align 8
-  %match_stmt_discard1601 = alloca i64, align 8
-  %output1581 = alloca ptr, align 8
-  %mono1553 = alloca ptr, align 8
-  %tc_result1483 = alloca ptr, align 8
-  %named1414 = alloca ptr, align 8
-  %expanded1412 = alloca ptr, align 8
-  %mod_bag1386 = alloca ptr, align 8
-  %mod_resolved1365 = alloca ptr, align 8
-  %entry_dir1358 = alloca ptr, align 8
-  %desugared1356 = alloca ptr, align 8
-  %parsed1286 = alloca ptr, align 8
+  %ice_bag1675 = alloca ptr, align 8
+  %e1667 = alloca ptr, align 8
+  %match_stmt_discard1653 = alloca i64, align 8
+  %output1633 = alloca ptr, align 8
+  %mono1605 = alloca ptr, align 8
+  %tc_result1535 = alloca ptr, align 8
+  %named1466 = alloca ptr, align 8
+  %expanded1464 = alloca ptr, align 8
+  %mod_bag1438 = alloca ptr, align 8
+  %mod_resolved1417 = alloca ptr, align 8
+  %entry_dir1410 = alloca ptr, align 8
+  %desugared1408 = alloca ptr, align 8
+  %parsed1338 = alloca ptr, align 8
   %pkg = alloca ptr, align 8
   %pkg_dir = alloca ptr, align 8
   %csource = alloca ptr, align 8
@@ -334739,26 +335867,26 @@ entry:
   %enable_coverage = alloca i1, align 1
   %debug_null = alloca i1, align 1
   %stop_after = alloca ptr, align 8
-  %parsed1211 = alloca ptr, align 8
+  %parsed1263 = alloca ptr, align 8
   %ice_bag = alloca ptr, align 8
-  %e1184 = alloca ptr, align 8
+  %e1236 = alloca ptr, align 8
   %match_stmt_discard = alloca i64, align 8
   %output = alloca ptr, align 8
   %mono = alloca ptr, align 8
-  %tc_result1083 = alloca ptr, align 8
-  %named1024 = alloca ptr, align 8
-  %expanded1022 = alloca ptr, align 8
-  %mod_bag1006 = alloca ptr, align 8
-  %mod_resolved985 = alloca ptr, align 8
-  %entry_dir978 = alloca ptr, align 8
-  %desugared976 = alloca ptr, align 8
-  %parsed916 = alloca ptr, align 8
-  %parsed850 = alloca ptr, align 8
-  %named824 = alloca ptr, align 8
-  %mod_resolved801 = alloca ptr, align 8
-  %entry_dir789 = alloca ptr, align 8
-  %parsed734 = alloca ptr, align 8
-  %result687 = alloca ptr, align 8
+  %tc_result1135 = alloca ptr, align 8
+  %named1076 = alloca ptr, align 8
+  %expanded1074 = alloca ptr, align 8
+  %mod_bag1058 = alloca ptr, align 8
+  %mod_resolved1037 = alloca ptr, align 8
+  %entry_dir1030 = alloca ptr, align 8
+  %desugared1028 = alloca ptr, align 8
+  %parsed968 = alloca ptr, align 8
+  %parsed902 = alloca ptr, align 8
+  %named876 = alloca ptr, align 8
+  %mod_resolved853 = alloca ptr, align 8
+  %entry_dir841 = alloca ptr, align 8
+  %parsed786 = alloca ptr, align 8
+  %result739 = alloca ptr, align 8
   %tc_result = alloca ptr, align 8
   %named = alloca ptr, align 8
   %expanded = alloca ptr, align 8
@@ -334770,14 +335898,14 @@ entry:
   %check_dir = alloca ptr, align 8
   %parsed = alloca ptr, align 8
   %check_source = alloca ptr, align 8
-  %ife_result407 = alloca i64, align 8
+  %ife_result459 = alloca i64, align 8
   %check_path = alloca ptr, align 8
-  %ife_result391 = alloca i64, align 8
+  %ife_result443 = alloca i64, align 8
   %check_argc = alloca i64, align 8
   %check_json = alloca i1, align 1
   %check_parsed = alloca ptr, align 8
-  %result341 = alloca ptr, align 8
-  %result296 = alloca ptr, align 8
+  %result393 = alloca ptr, align 8
+  %result348 = alloca ptr, align 8
   %result = alloca ptr, align 8
   %pmatch_stmt_discard = alloca i64, align 8
   %source = alloca ptr, align 8
@@ -334789,495 +335917,590 @@ entry:
   %cmd0 = alloca ptr, align 8
   %app = alloca i64, align 8
   store i64 0, ptr %app, align 8
-  %1 = call ptr @"@std::cli::cli_new"(ptr @.str.25737, ptr @.str.25738, ptr @.str.25739)
+  %1 = call ptr @"@std::cli::cli_new"(ptr @.str.25804, ptr @.str.25805, ptr @.str.25806)
   %cast = ptrtoint ptr %1 to i64
   store i64 %cast, ptr %app, align 8
   %app1 = load i64, ptr %app, align 8
   %cast2 = inttoptr i64 %app1 to ptr
-  %2 = call ptr @"@std::cli::cli_add_command"(ptr %cast2, ptr @.str.25740, ptr @.str.25741)
+  %2 = call ptr @"@std::cli::cli_add_command"(ptr %cast2, ptr @.str.25807, ptr @.str.25808)
   %cast3 = ptrtoint ptr %2 to i64
   store i64 %cast3, ptr %app, align 8
   %app4 = load i64, ptr %app, align 8
-  %3 = call i64 @strlen(ptr @.str.25743)
-  %4 = call i64 @strlen(ptr @.str.25744)
+  %3 = call i64 @strlen(ptr @.str.25810)
+  %4 = call i64 @strlen(ptr @.str.25811)
   %concat_total = add i64 %3, %4
   %concat_size = add i64 %concat_total, 1
   %5 = call ptr @avra_rc_alloc(i64 %concat_size)
-  %6 = call ptr @memcpy(ptr %5, ptr @.str.25743, i64 %3)
+  %6 = call ptr @memcpy(ptr %5, ptr @.str.25810, i64 %3)
   %cast5 = ptrtoint ptr %5 to i64
   %dst2_int = add i64 %cast5, %3
   %cast6 = inttoptr i64 %dst2_int to ptr
   %rhs_len_p1 = add i64 %4, 1
-  %7 = call ptr @memcpy(ptr %cast6, ptr @.str.25744, i64 %rhs_len_p1)
+  %7 = call ptr @memcpy(ptr %cast6, ptr @.str.25811, i64 %rhs_len_p1)
   %cast7 = inttoptr i64 %app4 to ptr
-  %8 = call ptr @"@std::cli::cli_command_add_flag"(ptr %cast7, ptr @.str.25742, ptr %5, ptr @.str.25745, ptr @.str.25746)
+  %8 = call ptr @"@std::cli::cli_command_add_flag"(ptr %cast7, ptr @.str.25809, ptr %5, ptr @.str.25812, ptr @.str.25813)
   %cast8 = ptrtoint ptr %8 to i64
   store i64 %cast8, ptr %app, align 8
   %app9 = load i64, ptr %app, align 8
-  %9 = call i64 @strlen(ptr @.str.25748)
-  %10 = call i64 @strlen(ptr @.str.25749)
+  %9 = call i64 @strlen(ptr @.str.25815)
+  %10 = call i64 @strlen(ptr @.str.25816)
   %concat_total10 = add i64 %9, %10
   %concat_size11 = add i64 %concat_total10, 1
   %11 = call ptr @avra_rc_alloc(i64 %concat_size11)
-  %12 = call ptr @memcpy(ptr %11, ptr @.str.25748, i64 %9)
+  %12 = call ptr @memcpy(ptr %11, ptr @.str.25815, i64 %9)
   %cast12 = ptrtoint ptr %11 to i64
   %dst2_int13 = add i64 %cast12, %9
   %cast14 = inttoptr i64 %dst2_int13 to ptr
   %rhs_len_p115 = add i64 %10, 1
-  %13 = call ptr @memcpy(ptr %cast14, ptr @.str.25749, i64 %rhs_len_p115)
+  %13 = call ptr @memcpy(ptr %cast14, ptr @.str.25816, i64 %rhs_len_p115)
   %cast16 = inttoptr i64 %app9 to ptr
-  %14 = call ptr @"@std::cli::cli_command_add_flag"(ptr %cast16, ptr @.str.25747, ptr %11, ptr @.str.25750, ptr @.str.25751)
+  %14 = call ptr @"@std::cli::cli_command_add_flag"(ptr %cast16, ptr @.str.25814, ptr %11, ptr @.str.25817, ptr @.str.25818)
   %cast17 = ptrtoint ptr %14 to i64
   store i64 %cast17, ptr %app, align 8
   %app18 = load i64, ptr %app, align 8
-  %15 = call i64 @strlen(ptr @.str.25753)
-  %16 = call i64 @strlen(ptr @.str.25754)
+  %15 = call i64 @strlen(ptr @.str.25820)
+  %16 = call i64 @strlen(ptr @.str.25821)
   %concat_total19 = add i64 %15, %16
   %concat_size20 = add i64 %concat_total19, 1
   %17 = call ptr @avra_rc_alloc(i64 %concat_size20)
-  %18 = call ptr @memcpy(ptr %17, ptr @.str.25753, i64 %15)
+  %18 = call ptr @memcpy(ptr %17, ptr @.str.25820, i64 %15)
   %cast21 = ptrtoint ptr %17 to i64
   %dst2_int22 = add i64 %cast21, %15
   %cast23 = inttoptr i64 %dst2_int22 to ptr
   %rhs_len_p124 = add i64 %16, 1
-  %19 = call ptr @memcpy(ptr %cast23, ptr @.str.25754, i64 %rhs_len_p124)
+  %19 = call ptr @memcpy(ptr %cast23, ptr @.str.25821, i64 %rhs_len_p124)
   %cast25 = inttoptr i64 %app18 to ptr
-  %20 = call ptr @"@std::cli::cli_command_add_flag"(ptr %cast25, ptr @.str.25752, ptr %17, ptr @.str.25755, ptr @.str.25756)
+  %20 = call ptr @"@std::cli::cli_command_add_flag"(ptr %cast25, ptr @.str.25819, ptr %17, ptr @.str.25822, ptr @.str.25823)
   %cast26 = ptrtoint ptr %20 to i64
   store i64 %cast26, ptr %app, align 8
   %app27 = load i64, ptr %app, align 8
-  %21 = call i64 @strlen(ptr @.str.25758)
-  %22 = call i64 @strlen(ptr @.str.25759)
+  %21 = call i64 @strlen(ptr @.str.25825)
+  %22 = call i64 @strlen(ptr @.str.25826)
   %concat_total28 = add i64 %21, %22
   %concat_size29 = add i64 %concat_total28, 1
   %23 = call ptr @avra_rc_alloc(i64 %concat_size29)
-  %24 = call ptr @memcpy(ptr %23, ptr @.str.25758, i64 %21)
+  %24 = call ptr @memcpy(ptr %23, ptr @.str.25825, i64 %21)
   %cast30 = ptrtoint ptr %23 to i64
   %dst2_int31 = add i64 %cast30, %21
   %cast32 = inttoptr i64 %dst2_int31 to ptr
   %rhs_len_p133 = add i64 %22, 1
-  %25 = call ptr @memcpy(ptr %cast32, ptr @.str.25759, i64 %rhs_len_p133)
+  %25 = call ptr @memcpy(ptr %cast32, ptr @.str.25826, i64 %rhs_len_p133)
   %cast34 = inttoptr i64 %app27 to ptr
-  %26 = call ptr @"@std::cli::cli_command_add_option"(ptr %cast34, ptr @.str.25757, ptr %23, ptr @.str.25760, ptr @.str.25761, ptr @.str.25762)
+  %26 = call ptr @"@std::cli::cli_command_add_option"(ptr %cast34, ptr @.str.25824, ptr %23, ptr @.str.25827, ptr @.str.25828, ptr @.str.25829)
   %cast35 = ptrtoint ptr %26 to i64
   store i64 %cast35, ptr %app, align 8
   %app36 = load i64, ptr %app, align 8
   %cast37 = inttoptr i64 %app36 to ptr
-  %27 = call ptr @"@std::cli::cli_command_add_arg"(ptr %cast37, ptr @.str.25763, ptr @.str.25764, ptr @.str.25765, i1 true)
+  %27 = call ptr @"@std::cli::cli_command_add_arg"(ptr %cast37, ptr @.str.25830, ptr @.str.25831, ptr @.str.25832, i1 true)
   %cast38 = ptrtoint ptr %27 to i64
   store i64 %cast38, ptr %app, align 8
   %app39 = load i64, ptr %app, align 8
   %cast40 = inttoptr i64 %app39 to ptr
-  %28 = call ptr @"@std::cli::cli_add_command"(ptr %cast40, ptr @.str.25766, ptr @.str.25767)
+  %28 = call ptr @"@std::cli::cli_add_command"(ptr %cast40, ptr @.str.25833, ptr @.str.25834)
   %cast41 = ptrtoint ptr %28 to i64
   store i64 %cast41, ptr %app, align 8
   %app42 = load i64, ptr %app, align 8
-  %29 = call i64 @strlen(ptr @.str.25769)
-  %30 = call i64 @strlen(ptr @.str.25770)
+  %29 = call i64 @strlen(ptr @.str.25836)
+  %30 = call i64 @strlen(ptr @.str.25837)
   %concat_total43 = add i64 %29, %30
   %concat_size44 = add i64 %concat_total43, 1
   %31 = call ptr @avra_rc_alloc(i64 %concat_size44)
-  %32 = call ptr @memcpy(ptr %31, ptr @.str.25769, i64 %29)
+  %32 = call ptr @memcpy(ptr %31, ptr @.str.25836, i64 %29)
   %cast45 = ptrtoint ptr %31 to i64
   %dst2_int46 = add i64 %cast45, %29
   %cast47 = inttoptr i64 %dst2_int46 to ptr
   %rhs_len_p148 = add i64 %30, 1
-  %33 = call ptr @memcpy(ptr %cast47, ptr @.str.25770, i64 %rhs_len_p148)
+  %33 = call ptr @memcpy(ptr %cast47, ptr @.str.25837, i64 %rhs_len_p148)
   %cast49 = inttoptr i64 %app42 to ptr
-  %34 = call ptr @"@std::cli::cli_command_add_flag"(ptr %cast49, ptr @.str.25768, ptr %31, ptr @.str.25771, ptr @.str.25772)
+  %34 = call ptr @"@std::cli::cli_command_add_flag"(ptr %cast49, ptr @.str.25835, ptr %31, ptr @.str.25838, ptr @.str.25839)
   %cast50 = ptrtoint ptr %34 to i64
   store i64 %cast50, ptr %app, align 8
   %app51 = load i64, ptr %app, align 8
   %cast52 = inttoptr i64 %app51 to ptr
-  %35 = call ptr @"@std::cli::cli_command_add_arg"(ptr %cast52, ptr @.str.25773, ptr @.str.25774, ptr @.str.25775, i1 true)
+  %35 = call ptr @"@std::cli::cli_command_add_arg"(ptr %cast52, ptr @.str.25840, ptr @.str.25841, ptr @.str.25842, i1 true)
   %cast53 = ptrtoint ptr %35 to i64
   store i64 %cast53, ptr %app, align 8
   %app54 = load i64, ptr %app, align 8
   %cast55 = inttoptr i64 %app54 to ptr
-  %36 = call ptr @"@std::cli::cli_add_command"(ptr %cast55, ptr @.str.25776, ptr @.str.25777)
+  %36 = call ptr @"@std::cli::cli_add_command"(ptr %cast55, ptr @.str.25843, ptr @.str.25844)
   %cast56 = ptrtoint ptr %36 to i64
   store i64 %cast56, ptr %app, align 8
   %app57 = load i64, ptr %app, align 8
   %cast58 = inttoptr i64 %app57 to ptr
-  %37 = call ptr @"@std::cli::cli_command_add_arg"(ptr %cast58, ptr @.str.25778, ptr @.str.25779, ptr @.str.25780, i1 true)
+  %37 = call ptr @"@std::cli::cli_command_add_arg"(ptr %cast58, ptr @.str.25845, ptr @.str.25846, ptr @.str.25847, i1 true)
   %cast59 = ptrtoint ptr %37 to i64
   store i64 %cast59, ptr %app, align 8
   %app60 = load i64, ptr %app, align 8
   %cast61 = inttoptr i64 %app60 to ptr
-  %38 = call ptr @"@std::cli::cli_add_command"(ptr %cast61, ptr @.str.25781, ptr @.str.25782)
+  %38 = call ptr @"@std::cli::cli_add_command"(ptr %cast61, ptr @.str.25848, ptr @.str.25849)
   %cast62 = ptrtoint ptr %38 to i64
   store i64 %cast62, ptr %app, align 8
   %app63 = load i64, ptr %app, align 8
-  %39 = call i64 @strlen(ptr @.str.25784)
-  %40 = call i64 @strlen(ptr @.str.25785)
+  %39 = call i64 @strlen(ptr @.str.25851)
+  %40 = call i64 @strlen(ptr @.str.25852)
   %concat_total64 = add i64 %39, %40
   %concat_size65 = add i64 %concat_total64, 1
   %41 = call ptr @avra_rc_alloc(i64 %concat_size65)
-  %42 = call ptr @memcpy(ptr %41, ptr @.str.25784, i64 %39)
+  %42 = call ptr @memcpy(ptr %41, ptr @.str.25851, i64 %39)
   %cast66 = ptrtoint ptr %41 to i64
   %dst2_int67 = add i64 %cast66, %39
   %cast68 = inttoptr i64 %dst2_int67 to ptr
   %rhs_len_p169 = add i64 %40, 1
-  %43 = call ptr @memcpy(ptr %cast68, ptr @.str.25785, i64 %rhs_len_p169)
+  %43 = call ptr @memcpy(ptr %cast68, ptr @.str.25852, i64 %rhs_len_p169)
   %cast70 = inttoptr i64 %app63 to ptr
-  %44 = call ptr @"@std::cli::cli_command_add_flag"(ptr %cast70, ptr @.str.25783, ptr %41, ptr @.str.25786, ptr @.str.25787)
+  %44 = call ptr @"@std::cli::cli_command_add_flag"(ptr %cast70, ptr @.str.25850, ptr %41, ptr @.str.25853, ptr @.str.25854)
   %cast71 = ptrtoint ptr %44 to i64
   store i64 %cast71, ptr %app, align 8
   %app72 = load i64, ptr %app, align 8
-  %45 = call i64 @strlen(ptr @.str.25789)
-  %46 = call i64 @strlen(ptr @.str.25790)
+  %45 = call i64 @strlen(ptr @.str.25856)
+  %46 = call i64 @strlen(ptr @.str.25857)
   %concat_total73 = add i64 %45, %46
   %concat_size74 = add i64 %concat_total73, 1
   %47 = call ptr @avra_rc_alloc(i64 %concat_size74)
-  %48 = call ptr @memcpy(ptr %47, ptr @.str.25789, i64 %45)
+  %48 = call ptr @memcpy(ptr %47, ptr @.str.25856, i64 %45)
   %cast75 = ptrtoint ptr %47 to i64
   %dst2_int76 = add i64 %cast75, %45
   %cast77 = inttoptr i64 %dst2_int76 to ptr
   %rhs_len_p178 = add i64 %46, 1
-  %49 = call ptr @memcpy(ptr %cast77, ptr @.str.25790, i64 %rhs_len_p178)
+  %49 = call ptr @memcpy(ptr %cast77, ptr @.str.25857, i64 %rhs_len_p178)
   %cast79 = inttoptr i64 %app72 to ptr
-  %50 = call ptr @"@std::cli::cli_command_add_flag"(ptr %cast79, ptr @.str.25788, ptr %47, ptr @.str.25791, ptr @.str.25792)
+  %50 = call ptr @"@std::cli::cli_command_add_flag"(ptr %cast79, ptr @.str.25855, ptr %47, ptr @.str.25858, ptr @.str.25859)
   %cast80 = ptrtoint ptr %50 to i64
   store i64 %cast80, ptr %app, align 8
   %app81 = load i64, ptr %app, align 8
   %cast82 = inttoptr i64 %app81 to ptr
-  %51 = call ptr @"@std::cli::cli_command_add_arg"(ptr %cast82, ptr @.str.25793, ptr @.str.25794, ptr @.str.25795, i1 false)
+  %51 = call ptr @"@std::cli::cli_command_add_arg"(ptr %cast82, ptr @.str.25860, ptr @.str.25861, ptr @.str.25862, i1 false)
   %cast83 = ptrtoint ptr %51 to i64
   store i64 %cast83, ptr %app, align 8
   %app84 = load i64, ptr %app, align 8
   %cast85 = inttoptr i64 %app84 to ptr
-  %52 = call ptr @"@std::cli::cli_add_command"(ptr %cast85, ptr @.str.25796, ptr @.str.25797)
+  %52 = call ptr @"@std::cli::cli_add_command"(ptr %cast85, ptr @.str.25863, ptr @.str.25864)
   %cast86 = ptrtoint ptr %52 to i64
   store i64 %cast86, ptr %app, align 8
   %app87 = load i64, ptr %app, align 8
-  %53 = call i64 @strlen(ptr @.str.25799)
-  %54 = call i64 @strlen(ptr @.str.25800)
+  %53 = call i64 @strlen(ptr @.str.25866)
+  %54 = call i64 @strlen(ptr @.str.25867)
   %concat_total88 = add i64 %53, %54
   %concat_size89 = add i64 %concat_total88, 1
   %55 = call ptr @avra_rc_alloc(i64 %concat_size89)
-  %56 = call ptr @memcpy(ptr %55, ptr @.str.25799, i64 %53)
+  %56 = call ptr @memcpy(ptr %55, ptr @.str.25866, i64 %53)
   %cast90 = ptrtoint ptr %55 to i64
   %dst2_int91 = add i64 %cast90, %53
   %cast92 = inttoptr i64 %dst2_int91 to ptr
   %rhs_len_p193 = add i64 %54, 1
-  %57 = call ptr @memcpy(ptr %cast92, ptr @.str.25800, i64 %rhs_len_p193)
+  %57 = call ptr @memcpy(ptr %cast92, ptr @.str.25867, i64 %rhs_len_p193)
   %cast94 = inttoptr i64 %app87 to ptr
-  %58 = call ptr @"@std::cli::cli_command_add_option"(ptr %cast94, ptr @.str.25798, ptr %55, ptr @.str.25801, ptr @.str.25802, ptr @.str.25803)
+  %58 = call ptr @"@std::cli::cli_command_add_flag"(ptr %cast94, ptr @.str.25865, ptr %55, ptr @.str.25868, ptr @.str.25869)
   %cast95 = ptrtoint ptr %58 to i64
   store i64 %cast95, ptr %app, align 8
   %app96 = load i64, ptr %app, align 8
-  %59 = call i64 @strlen(ptr @.str.25805)
-  %60 = call i64 @strlen(ptr @.str.25806)
-  %concat_total97 = add i64 %59, %60
-  %concat_size98 = add i64 %concat_total97, 1
-  %61 = call ptr @avra_rc_alloc(i64 %concat_size98)
-  %62 = call ptr @memcpy(ptr %61, ptr @.str.25805, i64 %59)
-  %cast99 = ptrtoint ptr %61 to i64
-  %dst2_int100 = add i64 %cast99, %59
-  %cast101 = inttoptr i64 %dst2_int100 to ptr
-  %rhs_len_p1102 = add i64 %60, 1
-  %63 = call ptr @memcpy(ptr %cast101, ptr @.str.25806, i64 %rhs_len_p1102)
-  %cast103 = inttoptr i64 %app96 to ptr
-  %64 = call ptr @"@std::cli::cli_command_add_flag"(ptr %cast103, ptr @.str.25804, ptr %61, ptr @.str.25807, ptr @.str.25808)
-  %cast104 = ptrtoint ptr %64 to i64
-  store i64 %cast104, ptr %app, align 8
-  %app105 = load i64, ptr %app, align 8
-  %cast106 = inttoptr i64 %app105 to ptr
-  %65 = call ptr @"@std::cli::cli_command_add_arg"(ptr %cast106, ptr @.str.25809, ptr @.str.25810, ptr @.str.25811, i1 false)
+  %cast97 = inttoptr i64 %app96 to ptr
+  %59 = call ptr @"@std::cli::cli_add_command"(ptr %cast97, ptr @.str.25870, ptr @.str.25871)
+  %cast98 = ptrtoint ptr %59 to i64
+  store i64 %cast98, ptr %app, align 8
+  %app99 = load i64, ptr %app, align 8
+  %60 = call i64 @strlen(ptr @.str.25873)
+  %61 = call i64 @strlen(ptr @.str.25874)
+  %concat_total100 = add i64 %60, %61
+  %concat_size101 = add i64 %concat_total100, 1
+  %62 = call ptr @avra_rc_alloc(i64 %concat_size101)
+  %63 = call ptr @memcpy(ptr %62, ptr @.str.25873, i64 %60)
+  %cast102 = ptrtoint ptr %62 to i64
+  %dst2_int103 = add i64 %cast102, %60
+  %cast104 = inttoptr i64 %dst2_int103 to ptr
+  %rhs_len_p1105 = add i64 %61, 1
+  %64 = call ptr @memcpy(ptr %cast104, ptr @.str.25874, i64 %rhs_len_p1105)
+  %cast106 = inttoptr i64 %app99 to ptr
+  %65 = call ptr @"@std::cli::cli_command_add_flag"(ptr %cast106, ptr @.str.25872, ptr %62, ptr @.str.25875, ptr @.str.25876)
   %cast107 = ptrtoint ptr %65 to i64
   store i64 %cast107, ptr %app, align 8
   %app108 = load i64, ptr %app, align 8
-  %cast109 = inttoptr i64 %app108 to ptr
-  %66 = call ptr @"@std::cli::cli_add_command"(ptr %cast109, ptr @.str.25812, ptr @.str.25813)
-  %cast110 = ptrtoint ptr %66 to i64
-  store i64 %cast110, ptr %app, align 8
-  %app111 = load i64, ptr %app, align 8
-  %cast112 = inttoptr i64 %app111 to ptr
-  %67 = call ptr @"@std::cli::cli_command_add_arg"(ptr %cast112, ptr @.str.25814, ptr @.str.25815, ptr @.str.25816, i1 true)
-  %cast113 = ptrtoint ptr %67 to i64
-  store i64 %cast113, ptr %app, align 8
-  %app114 = load i64, ptr %app, align 8
-  %cast115 = inttoptr i64 %app114 to ptr
-  %68 = call ptr @"@std::cli::cli_add_command"(ptr %cast115, ptr @.str.25817, ptr @.str.25818)
-  %cast116 = ptrtoint ptr %68 to i64
+  %66 = call i64 @strlen(ptr @.str.25878)
+  %67 = call i64 @strlen(ptr @.str.25879)
+  %concat_total109 = add i64 %66, %67
+  %concat_size110 = add i64 %concat_total109, 1
+  %68 = call ptr @avra_rc_alloc(i64 %concat_size110)
+  %69 = call ptr @memcpy(ptr %68, ptr @.str.25878, i64 %66)
+  %cast111 = ptrtoint ptr %68 to i64
+  %dst2_int112 = add i64 %cast111, %66
+  %cast113 = inttoptr i64 %dst2_int112 to ptr
+  %rhs_len_p1114 = add i64 %67, 1
+  %70 = call ptr @memcpy(ptr %cast113, ptr @.str.25879, i64 %rhs_len_p1114)
+  %cast115 = inttoptr i64 %app108 to ptr
+  %71 = call ptr @"@std::cli::cli_command_add_option"(ptr %cast115, ptr @.str.25877, ptr %68, ptr @.str.25880, ptr @.str.25881, ptr @.str.25882)
+  %cast116 = ptrtoint ptr %71 to i64
   store i64 %cast116, ptr %app, align 8
   %app117 = load i64, ptr %app, align 8
   %cast118 = inttoptr i64 %app117 to ptr
-  %69 = call ptr @"@std::cli::cli_command_add_arg"(ptr %cast118, ptr @.str.25819, ptr @.str.25820, ptr @.str.25821, i1 true)
-  %cast119 = ptrtoint ptr %69 to i64
+  %72 = call ptr @"@std::cli::cli_command_add_arg"(ptr %cast118, ptr @.str.25883, ptr @.str.25884, ptr @.str.25885, i1 true)
+  %cast119 = ptrtoint ptr %72 to i64
   store i64 %cast119, ptr %app, align 8
   %app120 = load i64, ptr %app, align 8
   %cast121 = inttoptr i64 %app120 to ptr
-  %70 = call ptr @"@std::cli::cli_add_command"(ptr %cast121, ptr @.str.25822, ptr @.str.25823)
-  %cast122 = ptrtoint ptr %70 to i64
+  %73 = call ptr @"@std::cli::cli_add_command"(ptr %cast121, ptr @.str.25886, ptr @.str.25887)
+  %cast122 = ptrtoint ptr %73 to i64
   store i64 %cast122, ptr %app, align 8
   %app123 = load i64, ptr %app, align 8
-  %cast124 = inttoptr i64 %app123 to ptr
-  %71 = call ptr @"@std::cli::cli_command_add_arg"(ptr %cast124, ptr @.str.25824, ptr @.str.25825, ptr @.str.25826, i1 true)
-  %cast125 = ptrtoint ptr %71 to i64
-  store i64 %cast125, ptr %app, align 8
-  %app126 = load i64, ptr %app, align 8
-  %cast127 = inttoptr i64 %app126 to ptr
-  %72 = call ptr @"@std::cli::cli_add_command"(ptr %cast127, ptr @.str.25827, ptr @.str.25828)
-  %cast128 = ptrtoint ptr %72 to i64
-  store i64 %cast128, ptr %app, align 8
-  %app129 = load i64, ptr %app, align 8
-  %cast130 = inttoptr i64 %app129 to ptr
-  %73 = call ptr @"@std::cli::cli_command_add_arg"(ptr %cast130, ptr @.str.25829, ptr @.str.25830, ptr @.str.25831, i1 true)
-  %cast131 = ptrtoint ptr %73 to i64
+  %74 = call i64 @strlen(ptr @.str.25889)
+  %75 = call i64 @strlen(ptr @.str.25890)
+  %concat_total124 = add i64 %74, %75
+  %concat_size125 = add i64 %concat_total124, 1
+  %76 = call ptr @avra_rc_alloc(i64 %concat_size125)
+  %77 = call ptr @memcpy(ptr %76, ptr @.str.25889, i64 %74)
+  %cast126 = ptrtoint ptr %76 to i64
+  %dst2_int127 = add i64 %cast126, %74
+  %cast128 = inttoptr i64 %dst2_int127 to ptr
+  %rhs_len_p1129 = add i64 %75, 1
+  %78 = call ptr @memcpy(ptr %cast128, ptr @.str.25890, i64 %rhs_len_p1129)
+  %cast130 = inttoptr i64 %app123 to ptr
+  %79 = call ptr @"@std::cli::cli_command_add_option"(ptr %cast130, ptr @.str.25888, ptr %76, ptr @.str.25891, ptr @.str.25892, ptr @.str.25893)
+  %cast131 = ptrtoint ptr %79 to i64
   store i64 %cast131, ptr %app, align 8
   %app132 = load i64, ptr %app, align 8
-  %cast133 = inttoptr i64 %app132 to ptr
-  %74 = call ptr @"@std::cli::cli_add_command"(ptr %cast133, ptr @.str.25832, ptr @.str.25833)
-  %cast134 = ptrtoint ptr %74 to i64
-  store i64 %cast134, ptr %app, align 8
-  %app135 = load i64, ptr %app, align 8
-  %cast136 = inttoptr i64 %app135 to ptr
-  %75 = call ptr @"@std::cli::cli_command_add_arg"(ptr %cast136, ptr @.str.25834, ptr @.str.25835, ptr @.str.25836, i1 true)
-  %cast137 = ptrtoint ptr %75 to i64
-  store i64 %cast137, ptr %app, align 8
-  %app138 = load i64, ptr %app, align 8
-  %cast139 = inttoptr i64 %app138 to ptr
-  %76 = call ptr @"@std::cli::cli_add_command"(ptr %cast139, ptr @.str.25837, ptr @.str.25838)
-  %cast140 = ptrtoint ptr %76 to i64
+  %80 = call i64 @strlen(ptr @.str.25895)
+  %81 = call i64 @strlen(ptr @.str.25896)
+  %concat_total133 = add i64 %80, %81
+  %concat_size134 = add i64 %concat_total133, 1
+  %82 = call ptr @avra_rc_alloc(i64 %concat_size134)
+  %83 = call ptr @memcpy(ptr %82, ptr @.str.25895, i64 %80)
+  %cast135 = ptrtoint ptr %82 to i64
+  %dst2_int136 = add i64 %cast135, %80
+  %cast137 = inttoptr i64 %dst2_int136 to ptr
+  %rhs_len_p1138 = add i64 %81, 1
+  %84 = call ptr @memcpy(ptr %cast137, ptr @.str.25896, i64 %rhs_len_p1138)
+  %cast139 = inttoptr i64 %app132 to ptr
+  %85 = call ptr @"@std::cli::cli_command_add_flag"(ptr %cast139, ptr @.str.25894, ptr %82, ptr @.str.25897, ptr @.str.25898)
+  %cast140 = ptrtoint ptr %85 to i64
   store i64 %cast140, ptr %app, align 8
   %app141 = load i64, ptr %app, align 8
   %cast142 = inttoptr i64 %app141 to ptr
-  %77 = call ptr @"@std::cli::cli_add_command"(ptr %cast142, ptr @.str.25839, ptr @.str.25840)
-  %cast143 = ptrtoint ptr %77 to i64
+  %86 = call ptr @"@std::cli::cli_command_add_arg"(ptr %cast142, ptr @.str.25899, ptr @.str.25900, ptr @.str.25901, i1 false)
+  %cast143 = ptrtoint ptr %86 to i64
   store i64 %cast143, ptr %app, align 8
   %app144 = load i64, ptr %app, align 8
   %cast145 = inttoptr i64 %app144 to ptr
-  %78 = call ptr @"@std::cli::cli_add_command"(ptr %cast145, ptr @.str.25841, ptr @.str.25842)
-  %cast146 = ptrtoint ptr %78 to i64
+  %87 = call ptr @"@std::cli::cli_add_command"(ptr %cast145, ptr @.str.25902, ptr @.str.25903)
+  %cast146 = ptrtoint ptr %87 to i64
   store i64 %cast146, ptr %app, align 8
   %app147 = load i64, ptr %app, align 8
-  %79 = call i64 @strlen(ptr @.str.25844)
-  %80 = call i64 @strlen(ptr @.str.25845)
-  %concat_total148 = add i64 %79, %80
-  %concat_size149 = add i64 %concat_total148, 1
-  %81 = call ptr @avra_rc_alloc(i64 %concat_size149)
-  %82 = call ptr @memcpy(ptr %81, ptr @.str.25844, i64 %79)
-  %cast150 = ptrtoint ptr %81 to i64
-  %dst2_int151 = add i64 %cast150, %79
-  %cast152 = inttoptr i64 %dst2_int151 to ptr
-  %rhs_len_p1153 = add i64 %80, 1
-  %83 = call ptr @memcpy(ptr %cast152, ptr @.str.25845, i64 %rhs_len_p1153)
-  %cast154 = inttoptr i64 %app147 to ptr
-  %84 = call ptr @"@std::cli::cli_command_add_flag"(ptr %cast154, ptr @.str.25843, ptr %81, ptr @.str.25846, ptr @.str.25847)
-  %cast155 = ptrtoint ptr %84 to i64
+  %cast148 = inttoptr i64 %app147 to ptr
+  %88 = call ptr @"@std::cli::cli_command_add_arg"(ptr %cast148, ptr @.str.25904, ptr @.str.25905, ptr @.str.25906, i1 true)
+  %cast149 = ptrtoint ptr %88 to i64
+  store i64 %cast149, ptr %app, align 8
+  %app150 = load i64, ptr %app, align 8
+  %cast151 = inttoptr i64 %app150 to ptr
+  %89 = call ptr @"@std::cli::cli_add_command"(ptr %cast151, ptr @.str.25907, ptr @.str.25908)
+  %cast152 = ptrtoint ptr %89 to i64
+  store i64 %cast152, ptr %app, align 8
+  %app153 = load i64, ptr %app, align 8
+  %cast154 = inttoptr i64 %app153 to ptr
+  %90 = call ptr @"@std::cli::cli_command_add_arg"(ptr %cast154, ptr @.str.25909, ptr @.str.25910, ptr @.str.25911, i1 true)
+  %cast155 = ptrtoint ptr %90 to i64
   store i64 %cast155, ptr %app, align 8
   %app156 = load i64, ptr %app, align 8
-  %85 = call i64 @strlen(ptr @.str.25849)
-  %86 = call i64 @strlen(ptr @.str.25850)
-  %concat_total157 = add i64 %85, %86
-  %concat_size158 = add i64 %concat_total157, 1
-  %87 = call ptr @avra_rc_alloc(i64 %concat_size158)
-  %88 = call ptr @memcpy(ptr %87, ptr @.str.25849, i64 %85)
-  %cast159 = ptrtoint ptr %87 to i64
-  %dst2_int160 = add i64 %cast159, %85
-  %cast161 = inttoptr i64 %dst2_int160 to ptr
-  %rhs_len_p1162 = add i64 %86, 1
-  %89 = call ptr @memcpy(ptr %cast161, ptr @.str.25850, i64 %rhs_len_p1162)
-  %cast163 = inttoptr i64 %app156 to ptr
-  %90 = call ptr @"@std::cli::cli_command_add_flag"(ptr %cast163, ptr @.str.25848, ptr %87, ptr @.str.25851, ptr @.str.25852)
-  %cast164 = ptrtoint ptr %90 to i64
+  %cast157 = inttoptr i64 %app156 to ptr
+  %91 = call ptr @"@std::cli::cli_add_command"(ptr %cast157, ptr @.str.25912, ptr @.str.25913)
+  %cast158 = ptrtoint ptr %91 to i64
+  store i64 %cast158, ptr %app, align 8
+  %app159 = load i64, ptr %app, align 8
+  %cast160 = inttoptr i64 %app159 to ptr
+  %92 = call ptr @"@std::cli::cli_command_add_arg"(ptr %cast160, ptr @.str.25914, ptr @.str.25915, ptr @.str.25916, i1 true)
+  %cast161 = ptrtoint ptr %92 to i64
+  store i64 %cast161, ptr %app, align 8
+  %app162 = load i64, ptr %app, align 8
+  %cast163 = inttoptr i64 %app162 to ptr
+  %93 = call ptr @"@std::cli::cli_add_command"(ptr %cast163, ptr @.str.25917, ptr @.str.25918)
+  %cast164 = ptrtoint ptr %93 to i64
   store i64 %cast164, ptr %app, align 8
   %app165 = load i64, ptr %app, align 8
-  %91 = call i64 @strlen(ptr @.str.25854)
-  %92 = call i64 @strlen(ptr @.str.25855)
-  %concat_total166 = add i64 %91, %92
-  %concat_size167 = add i64 %concat_total166, 1
-  %93 = call ptr @avra_rc_alloc(i64 %concat_size167)
-  %94 = call ptr @memcpy(ptr %93, ptr @.str.25854, i64 %91)
-  %cast168 = ptrtoint ptr %93 to i64
-  %dst2_int169 = add i64 %cast168, %91
-  %cast170 = inttoptr i64 %dst2_int169 to ptr
-  %rhs_len_p1171 = add i64 %92, 1
-  %95 = call ptr @memcpy(ptr %cast170, ptr @.str.25855, i64 %rhs_len_p1171)
-  %cast172 = inttoptr i64 %app165 to ptr
-  %96 = call ptr @"@std::cli::cli_command_add_flag"(ptr %cast172, ptr @.str.25853, ptr %93, ptr @.str.25856, ptr @.str.25857)
+  %cast166 = inttoptr i64 %app165 to ptr
+  %94 = call ptr @"@std::cli::cli_command_add_arg"(ptr %cast166, ptr @.str.25919, ptr @.str.25920, ptr @.str.25921, i1 true)
+  %cast167 = ptrtoint ptr %94 to i64
+  store i64 %cast167, ptr %app, align 8
+  %app168 = load i64, ptr %app, align 8
+  %cast169 = inttoptr i64 %app168 to ptr
+  %95 = call ptr @"@std::cli::cli_add_command"(ptr %cast169, ptr @.str.25922, ptr @.str.25923)
+  %cast170 = ptrtoint ptr %95 to i64
+  store i64 %cast170, ptr %app, align 8
+  %app171 = load i64, ptr %app, align 8
+  %cast172 = inttoptr i64 %app171 to ptr
+  %96 = call ptr @"@std::cli::cli_command_add_arg"(ptr %cast172, ptr @.str.25924, ptr @.str.25925, ptr @.str.25926, i1 true)
   %cast173 = ptrtoint ptr %96 to i64
   store i64 %cast173, ptr %app, align 8
   %app174 = load i64, ptr %app, align 8
-  %97 = call i64 @strlen(ptr @.str.25859)
-  %98 = call i64 @strlen(ptr @.str.25860)
-  %concat_total175 = add i64 %97, %98
-  %concat_size176 = add i64 %concat_total175, 1
-  %99 = call ptr @avra_rc_alloc(i64 %concat_size176)
-  %100 = call ptr @memcpy(ptr %99, ptr @.str.25859, i64 %97)
-  %cast177 = ptrtoint ptr %99 to i64
-  %dst2_int178 = add i64 %cast177, %97
-  %cast179 = inttoptr i64 %dst2_int178 to ptr
-  %rhs_len_p1180 = add i64 %98, 1
-  %101 = call ptr @memcpy(ptr %cast179, ptr @.str.25860, i64 %rhs_len_p1180)
-  %cast181 = inttoptr i64 %app174 to ptr
-  %102 = call ptr @"@std::cli::cli_command_add_flag"(ptr %cast181, ptr @.str.25858, ptr %99, ptr @.str.25861, ptr @.str.25862)
-  %cast182 = ptrtoint ptr %102 to i64
+  %cast175 = inttoptr i64 %app174 to ptr
+  %97 = call ptr @"@std::cli::cli_add_command"(ptr %cast175, ptr @.str.25927, ptr @.str.25928)
+  %cast176 = ptrtoint ptr %97 to i64
+  store i64 %cast176, ptr %app, align 8
+  %app177 = load i64, ptr %app, align 8
+  %cast178 = inttoptr i64 %app177 to ptr
+  %98 = call ptr @"@std::cli::cli_add_command"(ptr %cast178, ptr @.str.25929, ptr @.str.25930)
+  %cast179 = ptrtoint ptr %98 to i64
+  store i64 %cast179, ptr %app, align 8
+  %app180 = load i64, ptr %app, align 8
+  %cast181 = inttoptr i64 %app180 to ptr
+  %99 = call ptr @"@std::cli::cli_add_command"(ptr %cast181, ptr @.str.25931, ptr @.str.25932)
+  %cast182 = ptrtoint ptr %99 to i64
   store i64 %cast182, ptr %app, align 8
   %app183 = load i64, ptr %app, align 8
-  %103 = call i64 @strlen(ptr @.str.25864)
-  %104 = call i64 @strlen(ptr @.str.25865)
-  %concat_total184 = add i64 %103, %104
+  %100 = call i64 @strlen(ptr @.str.25934)
+  %101 = call i64 @strlen(ptr @.str.25935)
+  %concat_total184 = add i64 %100, %101
   %concat_size185 = add i64 %concat_total184, 1
-  %105 = call ptr @avra_rc_alloc(i64 %concat_size185)
-  %106 = call ptr @memcpy(ptr %105, ptr @.str.25864, i64 %103)
-  %cast186 = ptrtoint ptr %105 to i64
-  %dst2_int187 = add i64 %cast186, %103
+  %102 = call ptr @avra_rc_alloc(i64 %concat_size185)
+  %103 = call ptr @memcpy(ptr %102, ptr @.str.25934, i64 %100)
+  %cast186 = ptrtoint ptr %102 to i64
+  %dst2_int187 = add i64 %cast186, %100
   %cast188 = inttoptr i64 %dst2_int187 to ptr
-  %rhs_len_p1189 = add i64 %104, 1
-  %107 = call ptr @memcpy(ptr %cast188, ptr @.str.25865, i64 %rhs_len_p1189)
+  %rhs_len_p1189 = add i64 %101, 1
+  %104 = call ptr @memcpy(ptr %cast188, ptr @.str.25935, i64 %rhs_len_p1189)
   %cast190 = inttoptr i64 %app183 to ptr
-  %108 = call ptr @"@std::cli::cli_command_add_option"(ptr %cast190, ptr @.str.25863, ptr %105, ptr @.str.25866, ptr @.str.25867, ptr @.str.25868)
-  %cast191 = ptrtoint ptr %108 to i64
+  %105 = call ptr @"@std::cli::cli_command_add_flag"(ptr %cast190, ptr @.str.25933, ptr %102, ptr @.str.25936, ptr @.str.25937)
+  %cast191 = ptrtoint ptr %105 to i64
   store i64 %cast191, ptr %app, align 8
   %app192 = load i64, ptr %app, align 8
-  %cast193 = inttoptr i64 %app192 to ptr
-  %109 = call ptr @"@std::cli::cli_command_add_arg"(ptr %cast193, ptr @.str.25869, ptr @.str.25870, ptr @.str.25871, i1 false)
-  %cast194 = ptrtoint ptr %109 to i64
-  store i64 %cast194, ptr %app, align 8
-  %110 = call i64 @avra_selfhost_argc()
-  %sge = icmp sge i64 %110, 2
+  %106 = call i64 @strlen(ptr @.str.25939)
+  %107 = call i64 @strlen(ptr @.str.25940)
+  %concat_total193 = add i64 %106, %107
+  %concat_size194 = add i64 %concat_total193, 1
+  %108 = call ptr @avra_rc_alloc(i64 %concat_size194)
+  %109 = call ptr @memcpy(ptr %108, ptr @.str.25939, i64 %106)
+  %cast195 = ptrtoint ptr %108 to i64
+  %dst2_int196 = add i64 %cast195, %106
+  %cast197 = inttoptr i64 %dst2_int196 to ptr
+  %rhs_len_p1198 = add i64 %107, 1
+  %110 = call ptr @memcpy(ptr %cast197, ptr @.str.25940, i64 %rhs_len_p1198)
+  %cast199 = inttoptr i64 %app192 to ptr
+  %111 = call ptr @"@std::cli::cli_command_add_flag"(ptr %cast199, ptr @.str.25938, ptr %108, ptr @.str.25941, ptr @.str.25942)
+  %cast200 = ptrtoint ptr %111 to i64
+  store i64 %cast200, ptr %app, align 8
+  %app201 = load i64, ptr %app, align 8
+  %112 = call i64 @strlen(ptr @.str.25944)
+  %113 = call i64 @strlen(ptr @.str.25945)
+  %concat_total202 = add i64 %112, %113
+  %concat_size203 = add i64 %concat_total202, 1
+  %114 = call ptr @avra_rc_alloc(i64 %concat_size203)
+  %115 = call ptr @memcpy(ptr %114, ptr @.str.25944, i64 %112)
+  %cast204 = ptrtoint ptr %114 to i64
+  %dst2_int205 = add i64 %cast204, %112
+  %cast206 = inttoptr i64 %dst2_int205 to ptr
+  %rhs_len_p1207 = add i64 %113, 1
+  %116 = call ptr @memcpy(ptr %cast206, ptr @.str.25945, i64 %rhs_len_p1207)
+  %cast208 = inttoptr i64 %app201 to ptr
+  %117 = call ptr @"@std::cli::cli_command_add_flag"(ptr %cast208, ptr @.str.25943, ptr %114, ptr @.str.25946, ptr @.str.25947)
+  %cast209 = ptrtoint ptr %117 to i64
+  store i64 %cast209, ptr %app, align 8
+  %app210 = load i64, ptr %app, align 8
+  %118 = call i64 @strlen(ptr @.str.25949)
+  %119 = call i64 @strlen(ptr @.str.25950)
+  %concat_total211 = add i64 %118, %119
+  %concat_size212 = add i64 %concat_total211, 1
+  %120 = call ptr @avra_rc_alloc(i64 %concat_size212)
+  %121 = call ptr @memcpy(ptr %120, ptr @.str.25949, i64 %118)
+  %cast213 = ptrtoint ptr %120 to i64
+  %dst2_int214 = add i64 %cast213, %118
+  %cast215 = inttoptr i64 %dst2_int214 to ptr
+  %rhs_len_p1216 = add i64 %119, 1
+  %122 = call ptr @memcpy(ptr %cast215, ptr @.str.25950, i64 %rhs_len_p1216)
+  %cast217 = inttoptr i64 %app210 to ptr
+  %123 = call ptr @"@std::cli::cli_command_add_flag"(ptr %cast217, ptr @.str.25948, ptr %120, ptr @.str.25951, ptr @.str.25952)
+  %cast218 = ptrtoint ptr %123 to i64
+  store i64 %cast218, ptr %app, align 8
+  %app219 = load i64, ptr %app, align 8
+  %124 = call i64 @strlen(ptr @.str.25954)
+  %125 = call i64 @strlen(ptr @.str.25955)
+  %concat_total220 = add i64 %124, %125
+  %concat_size221 = add i64 %concat_total220, 1
+  %126 = call ptr @avra_rc_alloc(i64 %concat_size221)
+  %127 = call ptr @memcpy(ptr %126, ptr @.str.25954, i64 %124)
+  %cast222 = ptrtoint ptr %126 to i64
+  %dst2_int223 = add i64 %cast222, %124
+  %cast224 = inttoptr i64 %dst2_int223 to ptr
+  %rhs_len_p1225 = add i64 %125, 1
+  %128 = call ptr @memcpy(ptr %cast224, ptr @.str.25955, i64 %rhs_len_p1225)
+  %cast226 = inttoptr i64 %app219 to ptr
+  %129 = call ptr @"@std::cli::cli_command_add_option"(ptr %cast226, ptr @.str.25953, ptr %126, ptr @.str.25956, ptr @.str.25957, ptr @.str.25958)
+  %cast227 = ptrtoint ptr %129 to i64
+  store i64 %cast227, ptr %app, align 8
+  %app228 = load i64, ptr %app, align 8
+  %cast229 = inttoptr i64 %app228 to ptr
+  %130 = call ptr @"@std::cli::cli_command_add_arg"(ptr %cast229, ptr @.str.25959, ptr @.str.25960, ptr @.str.25961, i1 false)
+  %cast230 = ptrtoint ptr %130 to i64
+  store i64 %cast230, ptr %app, align 8
+  %131 = call i64 @avra_selfhost_argc()
+  %sge = icmp sge i64 %131, 2
   %sge_ext = zext i1 %sge to i64
   %if_cond = icmp ne i64 %sge_ext, 0
   br i1 %if_cond, label %if_then, label %if_else
 
-ifcont:                                           ; preds = %if_else, %ifcont229
-  %111 = call i64 @avra_selfhost_argc()
-  %slt = icmp slt i64 %111, 3
+ifcont:                                           ; preds = %if_else, %ifcont281
+  %132 = call i64 @avra_selfhost_argc()
+  %slt = icmp slt i64 %132, 3
   %slt_ext = zext i1 %slt to i64
-  %if_cond234 = icmp ne i64 %slt_ext, 0
-  br i1 %if_cond234, label %if_then235, label %if_else236
+  %if_cond286 = icmp ne i64 %slt_ext, 0
+  br i1 %if_cond286, label %if_then287, label %if_else288
 
 if_then:                                          ; preds = %entry
-  %112 = call ptr @avra_selfhost_get_arg_cstr(i64 1)
-  store ptr %112, ptr %cmd0, align 8
-  %cmd0195 = load ptr, ptr %cmd0, align 8
-  %113 = call i32 @strcmp(ptr %cmd0195, ptr @.str.25872)
-  %widen = sext i32 %113 to i64
+  %133 = call ptr @avra_selfhost_get_arg_cstr(i64 1)
+  store ptr %133, ptr %cmd0, align 8
+  %cmd0231 = load ptr, ptr %cmd0, align 8
+  %134 = call i32 @strcmp(ptr %cmd0231, ptr @.str.25962)
+  %widen = sext i32 %134 to i64
   %streq_cmp = icmp eq i64 %widen, 0
   %streq_ext = zext i1 %streq_cmp to i64
-  %if_cond197 = icmp ne i64 %streq_ext, 0
-  br i1 %if_cond197, label %if_then198, label %if_else199
+  %if_cond233 = icmp ne i64 %streq_ext, 0
+  br i1 %if_cond233, label %if_then234, label %if_else235
 
 if_else:                                          ; preds = %entry
   br label %ifcont
 
-ifcont196:                                        ; preds = %if_else199
-  %cmd0201 = load ptr, ptr %cmd0, align 8
-  %114 = call i32 @strcmp(ptr %cmd0201, ptr @.str.25874)
-  %widen202 = sext i32 %114 to i64
-  %streq_cmp203 = icmp eq i64 %widen202, 0
-  %streq_ext204 = zext i1 %streq_cmp203 to i64
-  %if_cond206 = icmp ne i64 %streq_ext204, 0
-  br i1 %if_cond206, label %if_then207, label %if_else208
+ifcont232:                                        ; preds = %if_else235
+  %cmd0237 = load ptr, ptr %cmd0, align 8
+  %135 = call i32 @strcmp(ptr %cmd0237, ptr @.str.25964)
+  %widen238 = sext i32 %135 to i64
+  %streq_cmp239 = icmp eq i64 %widen238, 0
+  %streq_ext240 = zext i1 %streq_cmp239 to i64
+  %if_cond242 = icmp ne i64 %streq_ext240, 0
+  br i1 %if_cond242, label %if_then243, label %if_else244
 
-if_then198:                                       ; preds = %if_then
-  %115 = call ptr @avra_process_env_get(ptr @.str.25873)
-  store ptr %115, ptr %project_dir, align 8
-  %project_dir200 = load ptr, ptr %project_dir, align 8
-  %116 = call i64 @"@std::avrac::indexer::run_lsp_server"(ptr %project_dir200)
+if_then234:                                       ; preds = %if_then
+  %136 = call ptr @avra_process_env_get(ptr @.str.25963)
+  store ptr %136, ptr %project_dir, align 8
+  %project_dir236 = load ptr, ptr %project_dir, align 8
+  %137 = call i64 @"@std::avrac::indexer::run_lsp_server"(ptr %project_dir236)
   ret i64 0
 
-if_else199:                                       ; preds = %if_then
-  br label %ifcont196
+if_else235:                                       ; preds = %if_then
+  br label %ifcont232
 
-ifcont205:                                        ; preds = %if_else208
-  %cmd0209 = load ptr, ptr %cmd0, align 8
-  %117 = call i32 @strcmp(ptr %cmd0209, ptr @.str.25875)
-  %widen210 = sext i32 %117 to i64
-  %streq_cmp211 = icmp eq i64 %widen210, 0
-  %streq_ext212 = zext i1 %streq_cmp211 to i64
-  %if_cond214 = icmp ne i64 %streq_ext212, 0
-  br i1 %if_cond214, label %if_then215, label %if_else216
+ifcont241:                                        ; preds = %if_else244
+  %cmd0245 = load ptr, ptr %cmd0, align 8
+  %138 = call i32 @strcmp(ptr %cmd0245, ptr @.str.25965)
+  %widen246 = sext i32 %138 to i64
+  %streq_cmp247 = icmp eq i64 %widen246, 0
+  %streq_ext248 = zext i1 %streq_cmp247 to i64
+  %if_cond250 = icmp ne i64 %streq_ext248, 0
+  br i1 %if_cond250, label %if_then251, label %if_else252
 
-if_then207:                                       ; preds = %ifcont196
-  %118 = call i64 @run_lang_command()
+if_then243:                                       ; preds = %ifcont232
+  %139 = call i64 @run_lang_command()
   ret i64 0
 
-if_else208:                                       ; preds = %ifcont196
-  br label %ifcont205
+if_else244:                                       ; preds = %ifcont232
+  br label %ifcont241
 
-ifcont213:                                        ; preds = %if_else216
-  %cmd0217 = load ptr, ptr %cmd0, align 8
-  %119 = call i32 @strcmp(ptr %cmd0217, ptr @.str.25876)
-  %widen218 = sext i32 %119 to i64
-  %streq_cmp219 = icmp eq i64 %widen218, 0
-  %streq_ext220 = zext i1 %streq_cmp219 to i64
-  %if_cond222 = icmp ne i64 %streq_ext220, 0
-  br i1 %if_cond222, label %if_then223, label %if_else224
+ifcont249:                                        ; preds = %if_else252
+  %cmd0253 = load ptr, ptr %cmd0, align 8
+  %140 = call i32 @strcmp(ptr %cmd0253, ptr @.str.25966)
+  %widen254 = sext i32 %140 to i64
+  %streq_cmp255 = icmp eq i64 %widen254, 0
+  %streq_ext256 = zext i1 %streq_cmp255 to i64
+  %if_cond258 = icmp ne i64 %streq_ext256, 0
+  br i1 %if_cond258, label %if_then259, label %if_else260
 
-if_then215:                                       ; preds = %ifcont205
-  %120 = call i64 @run_docs_command()
+if_then251:                                       ; preds = %ifcont241
+  %141 = call i64 @run_docs_command()
   ret i64 0
 
-if_else216:                                       ; preds = %ifcont205
-  br label %ifcont213
+if_else252:                                       ; preds = %ifcont241
+  br label %ifcont249
 
-ifcont221:                                        ; preds = %if_else224
-  %cmd0225 = load ptr, ptr %cmd0, align 8
-  %121 = call i32 @strcmp(ptr %cmd0225, ptr @.str.25877)
-  %widen226 = sext i32 %121 to i64
-  %streq_cmp227 = icmp eq i64 %widen226, 0
-  %streq_ext228 = zext i1 %streq_cmp227 to i64
-  %if_cond230 = icmp ne i64 %streq_ext228, 0
-  br i1 %if_cond230, label %if_then231, label %if_else232
+ifcont257:                                        ; preds = %if_else260
+  %cmd0261 = load ptr, ptr %cmd0, align 8
+  %142 = call i32 @strcmp(ptr %cmd0261, ptr @.str.25967)
+  %widen262 = sext i32 %142 to i64
+  %streq_cmp263 = icmp eq i64 %widen262, 0
+  %streq_ext264 = zext i1 %streq_cmp263 to i64
+  %if_cond266 = icmp ne i64 %streq_ext264, 0
+  br i1 %if_cond266, label %if_then267, label %if_else268
 
-if_then223:                                       ; preds = %ifcont213
-  %122 = call i64 @run_test_command()
+if_then259:                                       ; preds = %ifcont249
+  %143 = call i64 @run_test_command()
   ret i64 0
 
-if_else224:                                       ; preds = %ifcont213
-  br label %ifcont221
+if_else260:                                       ; preds = %ifcont249
+  br label %ifcont257
 
-ifcont229:                                        ; preds = %if_else232
+ifcont265:                                        ; preds = %if_else268
+  %cmd0269 = load ptr, ptr %cmd0, align 8
+  %144 = call i32 @strcmp(ptr %cmd0269, ptr @.str.25968)
+  %widen270 = sext i32 %144 to i64
+  %streq_cmp271 = icmp eq i64 %widen270, 0
+  %streq_ext272 = zext i1 %streq_cmp271 to i64
+  %if_cond274 = icmp ne i64 %streq_ext272, 0
+  br i1 %if_cond274, label %if_then275, label %if_else276
+
+if_then267:                                       ; preds = %ifcont257
+  %145 = call i64 @run_build_command()
+  ret i64 0
+
+if_else268:                                       ; preds = %ifcont257
+  br label %ifcont265
+
+ifcont273:                                        ; preds = %if_else276
+  %cmd0277 = load ptr, ptr %cmd0, align 8
+  %146 = call i32 @strcmp(ptr %cmd0277, ptr @.str.25969)
+  %widen278 = sext i32 %146 to i64
+  %streq_cmp279 = icmp eq i64 %widen278, 0
+  %streq_ext280 = zext i1 %streq_cmp279 to i64
+  %if_cond282 = icmp ne i64 %streq_ext280, 0
+  br i1 %if_cond282, label %if_then283, label %if_else284
+
+if_then275:                                       ; preds = %ifcont265
+  %147 = call i64 @run_clean_command()
+  ret i64 0
+
+if_else276:                                       ; preds = %ifcont265
+  br label %ifcont273
+
+ifcont281:                                        ; preds = %if_else284
   br label %ifcont
 
-if_then231:                                       ; preds = %ifcont221
-  %123 = call i64 @run_build_command()
+if_then283:                                       ; preds = %ifcont273
+  %148 = call i64 @run_cache_command()
   ret i64 0
 
-if_else232:                                       ; preds = %ifcont221
-  br label %ifcont229
+if_else284:                                       ; preds = %ifcont273
+  br label %ifcont281
 
-ifcont233:                                        ; preds = %if_else236, %if_then235
-  %124 = call ptr @avra_selfhost_get_arg_cstr(i64 1)
-  store ptr %124, ptr %command, align 8
-  %125 = call ptr @avra_selfhost_get_arg_cstr(i64 2)
-  store ptr %125, ptr %path, align 8
-  %path237 = load ptr, ptr %path, align 8
-  %126 = call i64 @avra_str_starts_with(ptr %path237, ptr @.str.25878)
-  store i64 %126, ptr %is_flag, align 8
-  %is_flag238 = load i64, ptr %is_flag, align 8
-  %not_cmp = icmp eq i64 %is_flag238, 0
+ifcont285:                                        ; preds = %if_else288, %if_then287
+  %149 = call ptr @avra_selfhost_get_arg_cstr(i64 1)
+  store ptr %149, ptr %command, align 8
+  %150 = call ptr @avra_selfhost_get_arg_cstr(i64 2)
+  store ptr %150, ptr %path, align 8
+  %path289 = load ptr, ptr %path, align 8
+  %151 = call i64 @avra_str_starts_with(ptr %path289, ptr @.str.25970)
+  store i64 %151, ptr %is_flag, align 8
+  %is_flag290 = load i64, ptr %is_flag, align 8
+  %not_cmp = icmp eq i64 %is_flag290, 0
   %not_cmp_ext = zext i1 %not_cmp to i64
   %l_bool = icmp ne i64 %not_cmp_ext, 0
   br i1 %l_bool, label %sc_rhs, label %sc_short
 
-if_then235:                                       ; preds = %ifcont
-  %127 = call i64 @print_usage()
+if_then287:                                       ; preds = %ifcont
+  %152 = call i64 @print_usage()
   call void @exit(i32 1)
-  br label %ifcont233
+  br label %ifcont285
 
-if_else236:                                       ; preds = %ifcont
-  br label %ifcont233
+if_else288:                                       ; preds = %ifcont
+  br label %ifcont285
 
-sc_rhs:                                           ; preds = %ifcont233
-  %path239 = load ptr, ptr %path, align 8
-  %128 = call i64 @file_exists(ptr %path239)
-  %not_cmp240 = icmp eq i64 %128, 0
-  %not_cmp_ext241 = zext i1 %not_cmp240 to i64
-  %r_bool = icmp ne i64 %not_cmp_ext241, 0
+sc_rhs:                                           ; preds = %ifcont285
+  %path291 = load ptr, ptr %path, align 8
+  %153 = call i64 @file_exists(ptr %path291)
+  %not_cmp292 = icmp eq i64 %153, 0
+  %not_cmp_ext293 = zext i1 %not_cmp292 to i64
+  %r_bool = icmp ne i64 %not_cmp_ext293, 0
   br i1 %r_bool, label %sc_r_true, label %sc_r_false
 
-sc_short:                                         ; preds = %ifcont233
+sc_short:                                         ; preds = %ifcont285
   br label %sc_merge
 
 sc_merge:                                         ; preds = %sc_r_merge, %sc_short
   %sc_phi = phi i1 [ false, %sc_short ], [ %r_bool, %sc_r_merge ]
   %sc_ext = zext i1 %sc_phi to i64
-  %if_cond243 = icmp ne i64 %sc_ext, 0
-  br i1 %if_cond243, label %if_then244, label %if_else245
+  %if_cond295 = icmp ne i64 %sc_ext, 0
+  br i1 %if_cond295, label %if_then296, label %if_else297
 
 sc_r_true:                                        ; preds = %sc_rhs
   br label %sc_r_merge
@@ -335288,2387 +336511,2387 @@ sc_r_false:                                       ; preds = %sc_rhs
 sc_r_merge:                                       ; preds = %sc_r_false, %sc_r_true
   br label %sc_merge
 
-ifcont242:                                        ; preds = %if_else245, %if_then244
-  %is_flag253 = load i64, ptr %is_flag, align 8
-  %ife_cond = icmp ne i64 %is_flag253, 0
+ifcont294:                                        ; preds = %if_else297, %if_then296
+  %is_flag305 = load i64, ptr %is_flag, align 8
+  %ife_cond = icmp ne i64 %is_flag305, 0
   br i1 %ife_cond, label %ife_then, label %ife_else
 
-if_then244:                                       ; preds = %sc_merge
-  %path246 = load ptr, ptr %path, align 8
-  %129 = call i64 @strlen(ptr @.str.25879)
-  %130 = call i64 @strlen(ptr %path246)
-  %concat_total247 = add i64 %129, %130
-  %concat_size248 = add i64 %concat_total247, 1
-  %131 = call ptr @avra_rc_alloc(i64 %concat_size248)
-  %132 = call ptr @memcpy(ptr %131, ptr @.str.25879, i64 %129)
-  %cast249 = ptrtoint ptr %131 to i64
-  %dst2_int250 = add i64 %cast249, %129
-  %cast251 = inttoptr i64 %dst2_int250 to ptr
-  %rhs_len_p1252 = add i64 %130, 1
-  %133 = call ptr @memcpy(ptr %cast251, ptr %path246, i64 %rhs_len_p1252)
-  %134 = call i64 @fail(ptr %131)
-  br label %ifcont242
+if_then296:                                       ; preds = %sc_merge
+  %path298 = load ptr, ptr %path, align 8
+  %154 = call i64 @strlen(ptr @.str.25971)
+  %155 = call i64 @strlen(ptr %path298)
+  %concat_total299 = add i64 %154, %155
+  %concat_size300 = add i64 %concat_total299, 1
+  %156 = call ptr @avra_rc_alloc(i64 %concat_size300)
+  %157 = call ptr @memcpy(ptr %156, ptr @.str.25971, i64 %154)
+  %cast301 = ptrtoint ptr %156 to i64
+  %dst2_int302 = add i64 %cast301, %154
+  %cast303 = inttoptr i64 %dst2_int302 to ptr
+  %rhs_len_p1304 = add i64 %155, 1
+  %158 = call ptr @memcpy(ptr %cast303, ptr %path298, i64 %rhs_len_p1304)
+  %159 = call i64 @fail(ptr %156)
+  br label %ifcont294
 
-if_else245:                                       ; preds = %sc_merge
-  br label %ifcont242
+if_else297:                                       ; preds = %sc_merge
+  br label %ifcont294
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
-  %cast256 = inttoptr i64 %ife_val to ptr
-  store ptr %cast256, ptr %source, align 8
-  %command257 = load ptr, ptr %command, align 8
-  %135 = call i32 @strcmp(ptr %command257, ptr @.lit_str.25881)
-  %widen258 = sext i32 %135 to i64
-  %str_eq = icmp eq i64 %widen258, 0
+  %cast308 = inttoptr i64 %ife_val to ptr
+  store ptr %cast308, ptr %source, align 8
+  %command309 = load ptr, ptr %command, align 8
+  %160 = call i32 @strcmp(ptr %command309, ptr @.lit_str.25973)
+  %widen310 = sext i32 %160 to i64
+  %str_eq = icmp eq i64 %widen310, 0
   br i1 %str_eq, label %parm_body, label %parm_next
 
-ife_then:                                         ; preds = %ifcont242
-  store i64 ptrtoint (ptr @.str.25880 to i64), ptr %ife_result, align 8
+ife_then:                                         ; preds = %ifcont294
+  store i64 ptrtoint (ptr @.str.25972 to i64), ptr %ife_result, align 8
   br label %ife_end
 
-ife_else:                                         ; preds = %ifcont242
-  %path254 = load ptr, ptr %path, align 8
-  %136 = call ptr @read_file(ptr %path254)
-  %cast255 = ptrtoint ptr %136 to i64
-  store i64 %cast255, ptr %ife_result, align 8
+ife_else:                                         ; preds = %ifcont294
+  %path306 = load ptr, ptr %path, align 8
+  %161 = call ptr @read_file(ptr %path306)
+  %cast307 = ptrtoint ptr %161 to i64
+  store i64 %cast307, ptr %ife_result, align 8
   br label %ife_end
 
-pmatch_end:                                       ; preds = %parm_body1198
-  %command1201 = load ptr, ptr %command, align 8
-  %137 = call i32 @strcmp(ptr %command1201, ptr @.str.26148)
-  %widen1202 = sext i32 %137 to i64
-  %streq_cmp1203 = icmp eq i64 %widen1202, 0
-  %streq_ext1204 = zext i1 %streq_cmp1203 to i64
-  %if_cond1206 = icmp ne i64 %streq_ext1204, 0
-  br i1 %if_cond1206, label %if_then1207, label %if_else1208
+pmatch_end:                                       ; preds = %parm_body1250
+  %command1253 = load ptr, ptr %command, align 8
+  %162 = call i32 @strcmp(ptr %command1253, ptr @.str.26240)
+  %widen1254 = sext i32 %162 to i64
+  %streq_cmp1255 = icmp eq i64 %widen1254, 0
+  %streq_ext1256 = zext i1 %streq_cmp1255 to i64
+  %if_cond1258 = icmp ne i64 %streq_ext1256, 0
+  br i1 %if_cond1258, label %if_then1259, label %if_else1260
 
 parm_body:                                        ; preds = %ife_end
-  %source259 = load ptr, ptr %source, align 8
-  %138 = call ptr @"@std::avrac::parse::parse_expression_source"(ptr %source259)
-  store ptr %138, ptr %result, align 8
-  %result260 = load ptr, ptr %result, align 8
-  %cast261 = ptrtoint ptr %result260 to i64
-  %null_chk = icmp eq i64 %cast261, 0
+  %source311 = load ptr, ptr %source, align 8
+  %163 = call ptr @"@std::avrac::parse::parse_expression_source"(ptr %source311)
+  store ptr %163, ptr %result, align 8
+  %result312 = load ptr, ptr %result, align 8
+  %cast313 = ptrtoint ptr %result312 to i64
+  %null_chk = icmp eq i64 %cast313, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25882, i64 9, ptr @sty_name.25883, i64 31, i64 %null_ext, ptr @src_file.25884, i64 0, i64 1029)
-  %had_error_ptr = getelementptr inbounds nuw %"@std::avrac::parse::ParseResult", ptr %result260, i32 0, i32 1
+  call void @avra_null_deref_trap(ptr @fld_name.25974, i64 9, ptr @sty_name.25975, i64 31, i64 %null_ext, ptr @src_file.25976, i64 0, i64 1169)
+  %had_error_ptr = getelementptr inbounds nuw %"@std::avrac::parse::ParseResult", ptr %result312, i32 0, i32 1
   %had_error = load i64, ptr %had_error_ptr, align 8
-  %l_bool262 = icmp ne i64 %had_error, 0
-  br i1 %l_bool262, label %sc_short264, label %sc_rhs263
+  %l_bool314 = icmp ne i64 %had_error, 0
+  br i1 %l_bool314, label %sc_short316, label %sc_rhs315
 
 parm_next:                                        ; preds = %ife_end
-  %139 = call i32 @strcmp(ptr %command257, ptr @.lit_str.25894)
-  %widen293 = sext i32 %139 to i64
-  %str_eq294 = icmp eq i64 %widen293, 0
-  br i1 %str_eq294, label %parm_body291, label %parm_next292
+  %164 = call i32 @strcmp(ptr %command309, ptr @.lit_str.25986)
+  %widen345 = sext i32 %164 to i64
+  %str_eq346 = icmp eq i64 %widen345, 0
+  br i1 %str_eq346, label %parm_body343, label %parm_next344
 
-sc_rhs263:                                        ; preds = %parm_body
-  %result266 = load ptr, ptr %result, align 8
-  %cast267 = ptrtoint ptr %result266 to i64
-  %null_chk268 = icmp eq i64 %cast267, 0
-  %null_ext269 = zext i1 %null_chk268 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25885, i64 4, ptr @sty_name.25886, i64 31, i64 %null_ext269, ptr @src_file.25887, i64 0, i64 1029)
-  %expr_ptr = getelementptr inbounds nuw %"@std::avrac::parse::ParseResult", ptr %result266, i32 0, i32 0
+sc_rhs315:                                        ; preds = %parm_body
+  %result318 = load ptr, ptr %result, align 8
+  %cast319 = ptrtoint ptr %result318 to i64
+  %null_chk320 = icmp eq i64 %cast319, 0
+  %null_ext321 = zext i1 %null_chk320 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.25977, i64 4, ptr @sty_name.25978, i64 31, i64 %null_ext321, ptr @src_file.25979, i64 0, i64 1169)
+  %expr_ptr = getelementptr inbounds nuw %"@std::avrac::parse::ParseResult", ptr %result318, i32 0, i32 0
   %expr = load ptr, ptr %expr_ptr, align 8
   %eq = icmp eq ptr %expr, null
   %eq_ext = zext i1 %eq to i64
-  %r_bool270 = icmp ne i64 %eq_ext, 0
-  br i1 %r_bool270, label %sc_r_true271, label %sc_r_false272
+  %r_bool322 = icmp ne i64 %eq_ext, 0
+  br i1 %r_bool322, label %sc_r_true323, label %sc_r_false324
 
-sc_short264:                                      ; preds = %parm_body
-  br label %sc_merge265
+sc_short316:                                      ; preds = %parm_body
+  br label %sc_merge317
 
-sc_merge265:                                      ; preds = %sc_r_merge273, %sc_short264
-  %sc_phi274 = phi i1 [ true, %sc_short264 ], [ %r_bool270, %sc_r_merge273 ]
-  %sc_ext275 = zext i1 %sc_phi274 to i64
-  %if_cond277 = icmp ne i64 %sc_ext275, 0
-  br i1 %if_cond277, label %if_then278, label %if_else279
+sc_merge317:                                      ; preds = %sc_r_merge325, %sc_short316
+  %sc_phi326 = phi i1 [ true, %sc_short316 ], [ %r_bool322, %sc_r_merge325 ]
+  %sc_ext327 = zext i1 %sc_phi326 to i64
+  %if_cond329 = icmp ne i64 %sc_ext327, 0
+  br i1 %if_cond329, label %if_then330, label %if_else331
 
-sc_r_true271:                                     ; preds = %sc_rhs263
-  br label %sc_r_merge273
+sc_r_true323:                                     ; preds = %sc_rhs315
+  br label %sc_r_merge325
 
-sc_r_false272:                                    ; preds = %sc_rhs263
-  br label %sc_r_merge273
+sc_r_false324:                                    ; preds = %sc_rhs315
+  br label %sc_r_merge325
 
-sc_r_merge273:                                    ; preds = %sc_r_false272, %sc_r_true271
-  br label %sc_merge265
+sc_r_merge325:                                    ; preds = %sc_r_false324, %sc_r_true323
+  br label %sc_merge317
 
-ifcont276:                                        ; preds = %if_else279, %if_then278
-  %result284 = load ptr, ptr %result, align 8
-  %cast285 = ptrtoint ptr %result284 to i64
-  %null_chk286 = icmp eq i64 %cast285, 0
-  %null_ext287 = zext i1 %null_chk286 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25891, i64 4, ptr @sty_name.25892, i64 31, i64 %null_ext287, ptr @src_file.25893, i64 0, i64 1032)
-  %expr_ptr288 = getelementptr inbounds nuw %"@std::avrac::parse::ParseResult", ptr %result284, i32 0, i32 0
-  %expr289 = load ptr, ptr %expr_ptr288, align 8
-  %140 = call ptr @"@std::avrac::core::ast::render_expr"(ptr %expr289)
-  %141 = call i32 @puts(ptr %140)
-  %widen290 = sext i32 %141 to i64
+ifcont328:                                        ; preds = %if_else331, %if_then330
+  %result336 = load ptr, ptr %result, align 8
+  %cast337 = ptrtoint ptr %result336 to i64
+  %null_chk338 = icmp eq i64 %cast337, 0
+  %null_ext339 = zext i1 %null_chk338 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.25983, i64 4, ptr @sty_name.25984, i64 31, i64 %null_ext339, ptr @src_file.25985, i64 0, i64 1172)
+  %expr_ptr340 = getelementptr inbounds nuw %"@std::avrac::parse::ParseResult", ptr %result336, i32 0, i32 0
+  %expr341 = load ptr, ptr %expr_ptr340, align 8
+  %165 = call ptr @"@std::avrac::core::ast::render_expr"(ptr %expr341)
+  %166 = call i32 @puts(ptr %165)
+  %widen342 = sext i32 %166 to i64
   ret i64 0
 
-if_then278:                                       ; preds = %sc_merge265
-  %result280 = load ptr, ptr %result, align 8
-  %cast281 = ptrtoint ptr %result280 to i64
-  %null_chk282 = icmp eq i64 %cast281, 0
-  %null_ext283 = zext i1 %null_chk282 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25888, i64 13, ptr @sty_name.25889, i64 31, i64 %null_ext283, ptr @src_file.25890, i64 0, i64 1030)
-  %error_message_ptr = getelementptr inbounds nuw %"@std::avrac::parse::ParseResult", ptr %result280, i32 0, i32 2
+if_then330:                                       ; preds = %sc_merge317
+  %result332 = load ptr, ptr %result, align 8
+  %cast333 = ptrtoint ptr %result332 to i64
+  %null_chk334 = icmp eq i64 %cast333, 0
+  %null_ext335 = zext i1 %null_chk334 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.25980, i64 13, ptr @sty_name.25981, i64 31, i64 %null_ext335, ptr @src_file.25982, i64 0, i64 1170)
+  %error_message_ptr = getelementptr inbounds nuw %"@std::avrac::parse::ParseResult", ptr %result332, i32 0, i32 2
   %error_message = load ptr, ptr %error_message_ptr, align 8
-  %142 = call i64 @fail(ptr %error_message)
-  br label %ifcont276
+  %167 = call i64 @fail(ptr %error_message)
+  br label %ifcont328
 
-if_else279:                                       ; preds = %sc_merge265
-  br label %ifcont276
+if_else331:                                       ; preds = %sc_merge317
+  br label %ifcont328
 
-parm_body291:                                     ; preds = %parm_next
-  %source295 = load ptr, ptr %source, align 8
-  %143 = call ptr @"@std::avrac::parse::parse_program_source"(ptr %source295)
-  store ptr %143, ptr %result296, align 8
-  %result297 = load ptr, ptr %result296, align 8
-  %cast298 = ptrtoint ptr %result297 to i64
-  %null_chk299 = icmp eq i64 %cast298, 0
-  %null_ext300 = zext i1 %null_chk299 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25895, i64 9, ptr @sty_name.25896, i64 38, i64 %null_ext300, ptr @src_file.25897, i64 0, i64 1038)
-  %had_error_ptr301 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %result297, i32 0, i32 1
-  %had_error302 = load i64, ptr %had_error_ptr301, align 8
-  %l_bool303 = icmp ne i64 %had_error302, 0
-  br i1 %l_bool303, label %sc_short305, label %sc_rhs304
+parm_body343:                                     ; preds = %parm_next
+  %source347 = load ptr, ptr %source, align 8
+  %168 = call ptr @"@std::avrac::parse::parse_program_source"(ptr %source347)
+  store ptr %168, ptr %result348, align 8
+  %result349 = load ptr, ptr %result348, align 8
+  %cast350 = ptrtoint ptr %result349 to i64
+  %null_chk351 = icmp eq i64 %cast350, 0
+  %null_ext352 = zext i1 %null_chk351 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.25987, i64 9, ptr @sty_name.25988, i64 38, i64 %null_ext352, ptr @src_file.25989, i64 0, i64 1178)
+  %had_error_ptr353 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %result349, i32 0, i32 1
+  %had_error354 = load i64, ptr %had_error_ptr353, align 8
+  %l_bool355 = icmp ne i64 %had_error354, 0
+  br i1 %l_bool355, label %sc_short357, label %sc_rhs356
 
-parm_next292:                                     ; preds = %parm_next
-  %144 = call i32 @strcmp(ptr %command257, ptr @.lit_str.25907)
-  %widen338 = sext i32 %144 to i64
-  %str_eq339 = icmp eq i64 %widen338, 0
-  br i1 %str_eq339, label %parm_body336, label %parm_next337
+parm_next344:                                     ; preds = %parm_next
+  %169 = call i32 @strcmp(ptr %command309, ptr @.lit_str.25999)
+  %widen390 = sext i32 %169 to i64
+  %str_eq391 = icmp eq i64 %widen390, 0
+  br i1 %str_eq391, label %parm_body388, label %parm_next389
 
-sc_rhs304:                                        ; preds = %parm_body291
-  %result307 = load ptr, ptr %result296, align 8
-  %cast308 = ptrtoint ptr %result307 to i64
-  %null_chk309 = icmp eq i64 %cast308, 0
-  %null_ext310 = zext i1 %null_chk309 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25898, i64 5, ptr @sty_name.25899, i64 38, i64 %null_ext310, ptr @src_file.25900, i64 0, i64 1038)
-  %stmts_ptr = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %result307, i32 0, i32 0
+sc_rhs356:                                        ; preds = %parm_body343
+  %result359 = load ptr, ptr %result348, align 8
+  %cast360 = ptrtoint ptr %result359 to i64
+  %null_chk361 = icmp eq i64 %cast360, 0
+  %null_ext362 = zext i1 %null_chk361 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.25990, i64 5, ptr @sty_name.25991, i64 38, i64 %null_ext362, ptr @src_file.25992, i64 0, i64 1178)
+  %stmts_ptr = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %result359, i32 0, i32 0
   %stmts = load ptr, ptr %stmts_ptr, align 8
-  %eq311 = icmp eq ptr %stmts, null
-  %eq_ext312 = zext i1 %eq311 to i64
-  %r_bool313 = icmp ne i64 %eq_ext312, 0
-  br i1 %r_bool313, label %sc_r_true314, label %sc_r_false315
+  %eq363 = icmp eq ptr %stmts, null
+  %eq_ext364 = zext i1 %eq363 to i64
+  %r_bool365 = icmp ne i64 %eq_ext364, 0
+  br i1 %r_bool365, label %sc_r_true366, label %sc_r_false367
 
-sc_short305:                                      ; preds = %parm_body291
-  br label %sc_merge306
+sc_short357:                                      ; preds = %parm_body343
+  br label %sc_merge358
 
-sc_merge306:                                      ; preds = %sc_r_merge316, %sc_short305
-  %sc_phi317 = phi i1 [ true, %sc_short305 ], [ %r_bool313, %sc_r_merge316 ]
-  %sc_ext318 = zext i1 %sc_phi317 to i64
-  %if_cond320 = icmp ne i64 %sc_ext318, 0
-  br i1 %if_cond320, label %if_then321, label %if_else322
+sc_merge358:                                      ; preds = %sc_r_merge368, %sc_short357
+  %sc_phi369 = phi i1 [ true, %sc_short357 ], [ %r_bool365, %sc_r_merge368 ]
+  %sc_ext370 = zext i1 %sc_phi369 to i64
+  %if_cond372 = icmp ne i64 %sc_ext370, 0
+  br i1 %if_cond372, label %if_then373, label %if_else374
 
-sc_r_true314:                                     ; preds = %sc_rhs304
-  br label %sc_r_merge316
+sc_r_true366:                                     ; preds = %sc_rhs356
+  br label %sc_r_merge368
 
-sc_r_false315:                                    ; preds = %sc_rhs304
-  br label %sc_r_merge316
+sc_r_false367:                                    ; preds = %sc_rhs356
+  br label %sc_r_merge368
 
-sc_r_merge316:                                    ; preds = %sc_r_false315, %sc_r_true314
-  br label %sc_merge306
+sc_r_merge368:                                    ; preds = %sc_r_false367, %sc_r_true366
+  br label %sc_merge358
 
-ifcont319:                                        ; preds = %if_else322, %if_then321
-  %result329 = load ptr, ptr %result296, align 8
-  %cast330 = ptrtoint ptr %result329 to i64
-  %null_chk331 = icmp eq i64 %cast330, 0
-  %null_ext332 = zext i1 %null_chk331 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25904, i64 5, ptr @sty_name.25905, i64 38, i64 %null_ext332, ptr @src_file.25906, i64 0, i64 1041)
-  %stmts_ptr333 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %result329, i32 0, i32 0
-  %stmts334 = load ptr, ptr %stmts_ptr333, align 8
-  %145 = call ptr @"@std::avrac::core::ast::render_stmt_list"(ptr %stmts334)
-  %146 = call i32 @puts(ptr %145)
-  %widen335 = sext i32 %146 to i64
+ifcont371:                                        ; preds = %if_else374, %if_then373
+  %result381 = load ptr, ptr %result348, align 8
+  %cast382 = ptrtoint ptr %result381 to i64
+  %null_chk383 = icmp eq i64 %cast382, 0
+  %null_ext384 = zext i1 %null_chk383 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.25996, i64 5, ptr @sty_name.25997, i64 38, i64 %null_ext384, ptr @src_file.25998, i64 0, i64 1181)
+  %stmts_ptr385 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %result381, i32 0, i32 0
+  %stmts386 = load ptr, ptr %stmts_ptr385, align 8
+  %170 = call ptr @"@std::avrac::core::ast::render_stmt_list"(ptr %stmts386)
+  %171 = call i32 @puts(ptr %170)
+  %widen387 = sext i32 %171 to i64
   ret i64 0
 
-if_then321:                                       ; preds = %sc_merge306
-  %result323 = load ptr, ptr %result296, align 8
-  %cast324 = ptrtoint ptr %result323 to i64
-  %null_chk325 = icmp eq i64 %cast324, 0
-  %null_ext326 = zext i1 %null_chk325 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25901, i64 13, ptr @sty_name.25902, i64 38, i64 %null_ext326, ptr @src_file.25903, i64 0, i64 1039)
-  %error_message_ptr327 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %result323, i32 0, i32 2
-  %error_message328 = load ptr, ptr %error_message_ptr327, align 8
-  %147 = call i64 @fail(ptr %error_message328)
-  br label %ifcont319
+if_then373:                                       ; preds = %sc_merge358
+  %result375 = load ptr, ptr %result348, align 8
+  %cast376 = ptrtoint ptr %result375 to i64
+  %null_chk377 = icmp eq i64 %cast376, 0
+  %null_ext378 = zext i1 %null_chk377 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.25993, i64 13, ptr @sty_name.25994, i64 38, i64 %null_ext378, ptr @src_file.25995, i64 0, i64 1179)
+  %error_message_ptr379 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %result375, i32 0, i32 2
+  %error_message380 = load ptr, ptr %error_message_ptr379, align 8
+  %172 = call i64 @fail(ptr %error_message380)
+  br label %ifcont371
 
-if_else322:                                       ; preds = %sc_merge306
-  br label %ifcont319
+if_else374:                                       ; preds = %sc_merge358
+  br label %ifcont371
 
-parm_body336:                                     ; preds = %parm_next292
-  %source340 = load ptr, ptr %source, align 8
-  %148 = call ptr @"@std::avrac::features::eval::eval_expression_source"(ptr %source340)
-  store ptr %148, ptr %result341, align 8
-  %result342 = load ptr, ptr %result341, align 8
-  %cast343 = ptrtoint ptr %result342 to i64
-  %null_chk344 = icmp eq i64 %cast343, 0
-  %null_ext345 = zext i1 %null_chk344 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25908, i64 9, ptr @sty_name.25909, i64 39, i64 %null_ext345, ptr @src_file.25910, i64 0, i64 1047)
-  %had_error_ptr346 = getelementptr inbounds nuw %"@std::avrac::features::eval::EvalResult", ptr %result342, i32 0, i32 1
-  %had_error347 = load i64, ptr %had_error_ptr346, align 8
-  %l_bool348 = icmp ne i64 %had_error347, 0
-  br i1 %l_bool348, label %sc_short350, label %sc_rhs349
+parm_body388:                                     ; preds = %parm_next344
+  %source392 = load ptr, ptr %source, align 8
+  %173 = call ptr @"@std::avrac::features::eval::eval_expression_source"(ptr %source392)
+  store ptr %173, ptr %result393, align 8
+  %result394 = load ptr, ptr %result393, align 8
+  %cast395 = ptrtoint ptr %result394 to i64
+  %null_chk396 = icmp eq i64 %cast395, 0
+  %null_ext397 = zext i1 %null_chk396 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26000, i64 9, ptr @sty_name.26001, i64 39, i64 %null_ext397, ptr @src_file.26002, i64 0, i64 1187)
+  %had_error_ptr398 = getelementptr inbounds nuw %"@std::avrac::features::eval::EvalResult", ptr %result394, i32 0, i32 1
+  %had_error399 = load i64, ptr %had_error_ptr398, align 8
+  %l_bool400 = icmp ne i64 %had_error399, 0
+  br i1 %l_bool400, label %sc_short402, label %sc_rhs401
 
-parm_next337:                                     ; preds = %parm_next292
-  %149 = call i32 @strcmp(ptr %command257, ptr @.lit_str.25920)
-  %widen383 = sext i32 %149 to i64
-  %str_eq384 = icmp eq i64 %widen383, 0
-  br i1 %str_eq384, label %parm_body381, label %parm_next382
+parm_next389:                                     ; preds = %parm_next344
+  %174 = call i32 @strcmp(ptr %command309, ptr @.lit_str.26012)
+  %widen435 = sext i32 %174 to i64
+  %str_eq436 = icmp eq i64 %widen435, 0
+  br i1 %str_eq436, label %parm_body433, label %parm_next434
 
-sc_rhs349:                                        ; preds = %parm_body336
-  %result352 = load ptr, ptr %result341, align 8
-  %cast353 = ptrtoint ptr %result352 to i64
-  %null_chk354 = icmp eq i64 %cast353, 0
-  %null_ext355 = zext i1 %null_chk354 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25911, i64 5, ptr @sty_name.25912, i64 39, i64 %null_ext355, ptr @src_file.25913, i64 0, i64 1047)
-  %value_ptr = getelementptr inbounds nuw %"@std::avrac::features::eval::EvalResult", ptr %result352, i32 0, i32 0
+sc_rhs401:                                        ; preds = %parm_body388
+  %result404 = load ptr, ptr %result393, align 8
+  %cast405 = ptrtoint ptr %result404 to i64
+  %null_chk406 = icmp eq i64 %cast405, 0
+  %null_ext407 = zext i1 %null_chk406 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26003, i64 5, ptr @sty_name.26004, i64 39, i64 %null_ext407, ptr @src_file.26005, i64 0, i64 1187)
+  %value_ptr = getelementptr inbounds nuw %"@std::avrac::features::eval::EvalResult", ptr %result404, i32 0, i32 0
   %value = load ptr, ptr %value_ptr, align 8
-  %eq356 = icmp eq ptr %value, null
-  %eq_ext357 = zext i1 %eq356 to i64
-  %r_bool358 = icmp ne i64 %eq_ext357, 0
-  br i1 %r_bool358, label %sc_r_true359, label %sc_r_false360
+  %eq408 = icmp eq ptr %value, null
+  %eq_ext409 = zext i1 %eq408 to i64
+  %r_bool410 = icmp ne i64 %eq_ext409, 0
+  br i1 %r_bool410, label %sc_r_true411, label %sc_r_false412
 
-sc_short350:                                      ; preds = %parm_body336
-  br label %sc_merge351
+sc_short402:                                      ; preds = %parm_body388
+  br label %sc_merge403
 
-sc_merge351:                                      ; preds = %sc_r_merge361, %sc_short350
-  %sc_phi362 = phi i1 [ true, %sc_short350 ], [ %r_bool358, %sc_r_merge361 ]
-  %sc_ext363 = zext i1 %sc_phi362 to i64
-  %if_cond365 = icmp ne i64 %sc_ext363, 0
-  br i1 %if_cond365, label %if_then366, label %if_else367
+sc_merge403:                                      ; preds = %sc_r_merge413, %sc_short402
+  %sc_phi414 = phi i1 [ true, %sc_short402 ], [ %r_bool410, %sc_r_merge413 ]
+  %sc_ext415 = zext i1 %sc_phi414 to i64
+  %if_cond417 = icmp ne i64 %sc_ext415, 0
+  br i1 %if_cond417, label %if_then418, label %if_else419
 
-sc_r_true359:                                     ; preds = %sc_rhs349
-  br label %sc_r_merge361
+sc_r_true411:                                     ; preds = %sc_rhs401
+  br label %sc_r_merge413
 
-sc_r_false360:                                    ; preds = %sc_rhs349
-  br label %sc_r_merge361
+sc_r_false412:                                    ; preds = %sc_rhs401
+  br label %sc_r_merge413
 
-sc_r_merge361:                                    ; preds = %sc_r_false360, %sc_r_true359
-  br label %sc_merge351
+sc_r_merge413:                                    ; preds = %sc_r_false412, %sc_r_true411
+  br label %sc_merge403
 
-ifcont364:                                        ; preds = %if_else367, %if_then366
-  %result374 = load ptr, ptr %result341, align 8
-  %cast375 = ptrtoint ptr %result374 to i64
-  %null_chk376 = icmp eq i64 %cast375, 0
-  %null_ext377 = zext i1 %null_chk376 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25917, i64 5, ptr @sty_name.25918, i64 39, i64 %null_ext377, ptr @src_file.25919, i64 0, i64 1050)
-  %value_ptr378 = getelementptr inbounds nuw %"@std::avrac::features::eval::EvalResult", ptr %result374, i32 0, i32 0
-  %value379 = load ptr, ptr %value_ptr378, align 8
-  %150 = call ptr @"@std::avrac::features::eval::render_value"(ptr %value379)
-  %151 = call i32 @puts(ptr %150)
-  %widen380 = sext i32 %151 to i64
+ifcont416:                                        ; preds = %if_else419, %if_then418
+  %result426 = load ptr, ptr %result393, align 8
+  %cast427 = ptrtoint ptr %result426 to i64
+  %null_chk428 = icmp eq i64 %cast427, 0
+  %null_ext429 = zext i1 %null_chk428 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26009, i64 5, ptr @sty_name.26010, i64 39, i64 %null_ext429, ptr @src_file.26011, i64 0, i64 1190)
+  %value_ptr430 = getelementptr inbounds nuw %"@std::avrac::features::eval::EvalResult", ptr %result426, i32 0, i32 0
+  %value431 = load ptr, ptr %value_ptr430, align 8
+  %175 = call ptr @"@std::avrac::features::eval::render_value"(ptr %value431)
+  %176 = call i32 @puts(ptr %175)
+  %widen432 = sext i32 %176 to i64
   ret i64 0
 
-if_then366:                                       ; preds = %sc_merge351
-  %result368 = load ptr, ptr %result341, align 8
-  %cast369 = ptrtoint ptr %result368 to i64
-  %null_chk370 = icmp eq i64 %cast369, 0
-  %null_ext371 = zext i1 %null_chk370 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25914, i64 13, ptr @sty_name.25915, i64 39, i64 %null_ext371, ptr @src_file.25916, i64 0, i64 1048)
-  %error_message_ptr372 = getelementptr inbounds nuw %"@std::avrac::features::eval::EvalResult", ptr %result368, i32 0, i32 2
-  %error_message373 = load ptr, ptr %error_message_ptr372, align 8
-  %152 = call i64 @fail(ptr %error_message373)
-  br label %ifcont364
+if_then418:                                       ; preds = %sc_merge403
+  %result420 = load ptr, ptr %result393, align 8
+  %cast421 = ptrtoint ptr %result420 to i64
+  %null_chk422 = icmp eq i64 %cast421, 0
+  %null_ext423 = zext i1 %null_chk422 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26006, i64 13, ptr @sty_name.26007, i64 39, i64 %null_ext423, ptr @src_file.26008, i64 0, i64 1188)
+  %error_message_ptr424 = getelementptr inbounds nuw %"@std::avrac::features::eval::EvalResult", ptr %result420, i32 0, i32 2
+  %error_message425 = load ptr, ptr %error_message_ptr424, align 8
+  %177 = call i64 @fail(ptr %error_message425)
+  br label %ifcont416
 
-if_else367:                                       ; preds = %sc_merge351
-  br label %ifcont364
+if_else419:                                       ; preds = %sc_merge403
+  br label %ifcont416
 
-parm_body381:                                     ; preds = %parm_next337
-  %app385 = load i64, ptr %app, align 8
-  %cast386 = inttoptr i64 %app385 to ptr
-  %153 = call ptr @"@std::cli::cli_parse"(ptr %cast386)
-  store ptr %153, ptr %check_parsed, align 8
-  %check_parsed387 = load ptr, ptr %check_parsed, align 8
-  %154 = call i1 @"@std::cli::result_has_flag"(ptr %check_parsed387, ptr @.str.25921)
-  %widen388 = zext i1 %154 to i64
-  %cast389 = trunc i64 %widen388 to i1
-  store i1 %cast389, ptr %check_json, align 8
-  %155 = call i64 @avra_selfhost_argc()
-  store i64 %155, ptr %check_argc, align 8
-  %check_argc390 = load i64, ptr %check_argc, align 8
-  %sgt = icmp sgt i64 %check_argc390, 3
+parm_body433:                                     ; preds = %parm_next389
+  %app437 = load i64, ptr %app, align 8
+  %cast438 = inttoptr i64 %app437 to ptr
+  %178 = call ptr @"@std::cli::cli_parse"(ptr %cast438)
+  store ptr %178, ptr %check_parsed, align 8
+  %check_parsed439 = load ptr, ptr %check_parsed, align 8
+  %179 = call i1 @"@std::cli::result_has_flag"(ptr %check_parsed439, ptr @.str.26013)
+  %widen440 = zext i1 %179 to i64
+  %cast441 = trunc i64 %widen440 to i1
+  store i1 %cast441, ptr %check_json, align 8
+  %180 = call i64 @avra_selfhost_argc()
+  store i64 %180, ptr %check_argc, align 8
+  %check_argc442 = load i64, ptr %check_argc, align 8
+  %sgt = icmp sgt i64 %check_argc442, 3
   %sgt_ext = zext i1 %sgt to i64
-  %ife_cond393 = icmp ne i64 %sgt_ext, 0
-  br i1 %ife_cond393, label %ife_then394, label %ife_else395
+  %ife_cond445 = icmp ne i64 %sgt_ext, 0
+  br i1 %ife_cond445, label %ife_then446, label %ife_else447
 
-parm_next382:                                     ; preds = %parm_next337
-  %156 = call i32 @strcmp(ptr %command257, ptr @.lit_str.25994)
-  %widen684 = sext i32 %156 to i64
-  %str_eq685 = icmp eq i64 %widen684, 0
-  br i1 %str_eq685, label %parm_body682, label %parm_next683
+parm_next434:                                     ; preds = %parm_next389
+  %181 = call i32 @strcmp(ptr %command309, ptr @.lit_str.26086)
+  %widen736 = sext i32 %181 to i64
+  %str_eq737 = icmp eq i64 %widen736, 0
+  br i1 %str_eq737, label %parm_body734, label %parm_next735
 
-ife_end392:                                       ; preds = %ife_else395, %ife_then394
-  %ife_val400 = load i64, ptr %ife_result391, align 8
-  %cast401 = inttoptr i64 %ife_val400 to ptr
-  store ptr %cast401, ptr %check_path, align 8
-  %check_path402 = load ptr, ptr %check_path, align 8
-  %path403 = load ptr, ptr %path, align 8
-  %157 = call i32 @strcmp(ptr %check_path402, ptr %path403)
-  %widen404 = sext i32 %157 to i64
-  %streq_cmp405 = icmp ne i64 %widen404, 0
-  %streq_ext406 = zext i1 %streq_cmp405 to i64
-  %ife_cond409 = icmp ne i64 %streq_ext406, 0
-  br i1 %ife_cond409, label %ife_then410, label %ife_else411
+ife_end444:                                       ; preds = %ife_else447, %ife_then446
+  %ife_val452 = load i64, ptr %ife_result443, align 8
+  %cast453 = inttoptr i64 %ife_val452 to ptr
+  store ptr %cast453, ptr %check_path, align 8
+  %check_path454 = load ptr, ptr %check_path, align 8
+  %path455 = load ptr, ptr %path, align 8
+  %182 = call i32 @strcmp(ptr %check_path454, ptr %path455)
+  %widen456 = sext i32 %182 to i64
+  %streq_cmp457 = icmp ne i64 %widen456, 0
+  %streq_ext458 = zext i1 %streq_cmp457 to i64
+  %ife_cond461 = icmp ne i64 %streq_ext458, 0
+  br i1 %ife_cond461, label %ife_then462, label %ife_else463
 
-ife_then394:                                      ; preds = %parm_body381
-  %check_argc396 = load i64, ptr %check_argc, align 8
-  %sub = sub i64 %check_argc396, 1
-  %158 = call ptr @avra_selfhost_get_arg_cstr(i64 %sub)
-  %cast397 = ptrtoint ptr %158 to i64
-  store i64 %cast397, ptr %ife_result391, align 8
-  br label %ife_end392
+ife_then446:                                      ; preds = %parm_body433
+  %check_argc448 = load i64, ptr %check_argc, align 8
+  %sub = sub i64 %check_argc448, 1
+  %183 = call ptr @avra_selfhost_get_arg_cstr(i64 %sub)
+  %cast449 = ptrtoint ptr %183 to i64
+  store i64 %cast449, ptr %ife_result443, align 8
+  br label %ife_end444
 
-ife_else395:                                      ; preds = %parm_body381
-  %path398 = load ptr, ptr %path, align 8
-  %cast399 = ptrtoint ptr %path398 to i64
-  store i64 %cast399, ptr %ife_result391, align 8
-  br label %ife_end392
+ife_else447:                                      ; preds = %parm_body433
+  %path450 = load ptr, ptr %path, align 8
+  %cast451 = ptrtoint ptr %path450 to i64
+  store i64 %cast451, ptr %ife_result443, align 8
+  br label %ife_end444
 
-ife_end408:                                       ; preds = %ife_else411, %ife_then410
-  %ife_val416 = load i64, ptr %ife_result407, align 8
-  %cast417 = inttoptr i64 %ife_val416 to ptr
-  store ptr %cast417, ptr %check_source, align 8
-  %check_source418 = load ptr, ptr %check_source, align 8
-  %159 = call ptr @"@std::avrac::parse::parse_program_source"(ptr %check_source418)
-  store ptr %159, ptr %parsed, align 8
-  %parsed419 = load ptr, ptr %parsed, align 8
-  %cast420 = ptrtoint ptr %parsed419 to i64
-  %null_chk421 = icmp eq i64 %cast420, 0
-  %null_ext422 = zext i1 %null_chk421 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25922, i64 9, ptr @sty_name.25923, i64 38, i64 %null_ext422, ptr @src_file.25924, i64 0, i64 1064)
-  %had_error_ptr423 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed419, i32 0, i32 1
-  %had_error424 = load i64, ptr %had_error_ptr423, align 8
-  %l_bool425 = icmp ne i64 %had_error424, 0
-  br i1 %l_bool425, label %sc_short427, label %sc_rhs426
+ife_end460:                                       ; preds = %ife_else463, %ife_then462
+  %ife_val468 = load i64, ptr %ife_result459, align 8
+  %cast469 = inttoptr i64 %ife_val468 to ptr
+  store ptr %cast469, ptr %check_source, align 8
+  %check_source470 = load ptr, ptr %check_source, align 8
+  %184 = call ptr @"@std::avrac::parse::parse_program_source"(ptr %check_source470)
+  store ptr %184, ptr %parsed, align 8
+  %parsed471 = load ptr, ptr %parsed, align 8
+  %cast472 = ptrtoint ptr %parsed471 to i64
+  %null_chk473 = icmp eq i64 %cast472, 0
+  %null_ext474 = zext i1 %null_chk473 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26014, i64 9, ptr @sty_name.26015, i64 38, i64 %null_ext474, ptr @src_file.26016, i64 0, i64 1204)
+  %had_error_ptr475 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed471, i32 0, i32 1
+  %had_error476 = load i64, ptr %had_error_ptr475, align 8
+  %l_bool477 = icmp ne i64 %had_error476, 0
+  br i1 %l_bool477, label %sc_short479, label %sc_rhs478
 
-ife_then410:                                      ; preds = %ife_end392
-  %check_path412 = load ptr, ptr %check_path, align 8
-  %160 = call ptr @read_file(ptr %check_path412)
-  %cast413 = ptrtoint ptr %160 to i64
-  store i64 %cast413, ptr %ife_result407, align 8
-  br label %ife_end408
+ife_then462:                                      ; preds = %ife_end444
+  %check_path464 = load ptr, ptr %check_path, align 8
+  %185 = call ptr @read_file(ptr %check_path464)
+  %cast465 = ptrtoint ptr %185 to i64
+  store i64 %cast465, ptr %ife_result459, align 8
+  br label %ife_end460
 
-ife_else411:                                      ; preds = %ife_end392
-  %source414 = load ptr, ptr %source, align 8
-  %cast415 = ptrtoint ptr %source414 to i64
-  store i64 %cast415, ptr %ife_result407, align 8
-  br label %ife_end408
+ife_else463:                                      ; preds = %ife_end444
+  %source466 = load ptr, ptr %source, align 8
+  %cast467 = ptrtoint ptr %source466 to i64
+  store i64 %cast467, ptr %ife_result459, align 8
+  br label %ife_end460
 
-sc_rhs426:                                        ; preds = %ife_end408
-  %parsed429 = load ptr, ptr %parsed, align 8
-  %cast430 = ptrtoint ptr %parsed429 to i64
-  %null_chk431 = icmp eq i64 %cast430, 0
-  %null_ext432 = zext i1 %null_chk431 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25925, i64 5, ptr @sty_name.25926, i64 38, i64 %null_ext432, ptr @src_file.25927, i64 0, i64 1064)
-  %stmts_ptr433 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed429, i32 0, i32 0
-  %stmts434 = load ptr, ptr %stmts_ptr433, align 8
-  %eq435 = icmp eq ptr %stmts434, null
-  %eq_ext436 = zext i1 %eq435 to i64
-  %r_bool437 = icmp ne i64 %eq_ext436, 0
-  br i1 %r_bool437, label %sc_r_true438, label %sc_r_false439
+sc_rhs478:                                        ; preds = %ife_end460
+  %parsed481 = load ptr, ptr %parsed, align 8
+  %cast482 = ptrtoint ptr %parsed481 to i64
+  %null_chk483 = icmp eq i64 %cast482, 0
+  %null_ext484 = zext i1 %null_chk483 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26017, i64 5, ptr @sty_name.26018, i64 38, i64 %null_ext484, ptr @src_file.26019, i64 0, i64 1204)
+  %stmts_ptr485 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed481, i32 0, i32 0
+  %stmts486 = load ptr, ptr %stmts_ptr485, align 8
+  %eq487 = icmp eq ptr %stmts486, null
+  %eq_ext488 = zext i1 %eq487 to i64
+  %r_bool489 = icmp ne i64 %eq_ext488, 0
+  br i1 %r_bool489, label %sc_r_true490, label %sc_r_false491
 
-sc_short427:                                      ; preds = %ife_end408
-  br label %sc_merge428
+sc_short479:                                      ; preds = %ife_end460
+  br label %sc_merge480
 
-sc_merge428:                                      ; preds = %sc_r_merge440, %sc_short427
-  %sc_phi441 = phi i1 [ true, %sc_short427 ], [ %r_bool437, %sc_r_merge440 ]
-  %sc_ext442 = zext i1 %sc_phi441 to i64
-  %if_cond444 = icmp ne i64 %sc_ext442, 0
-  br i1 %if_cond444, label %if_then445, label %if_else446
+sc_merge480:                                      ; preds = %sc_r_merge492, %sc_short479
+  %sc_phi493 = phi i1 [ true, %sc_short479 ], [ %r_bool489, %sc_r_merge492 ]
+  %sc_ext494 = zext i1 %sc_phi493 to i64
+  %if_cond496 = icmp ne i64 %sc_ext494, 0
+  br i1 %if_cond496, label %if_then497, label %if_else498
 
-sc_r_true438:                                     ; preds = %sc_rhs426
-  br label %sc_r_merge440
+sc_r_true490:                                     ; preds = %sc_rhs478
+  br label %sc_r_merge492
 
-sc_r_false439:                                    ; preds = %sc_rhs426
-  br label %sc_r_merge440
+sc_r_false491:                                    ; preds = %sc_rhs478
+  br label %sc_r_merge492
 
-sc_r_merge440:                                    ; preds = %sc_r_false439, %sc_r_true438
-  br label %sc_merge428
+sc_r_merge492:                                    ; preds = %sc_r_false491, %sc_r_true490
+  br label %sc_merge480
 
-ifcont443:                                        ; preds = %if_else446, %ifcont452
-  %check_path471 = load ptr, ptr %check_path, align 8
-  %161 = call ptr @"@std::avrac::features::modules::resolver::modules_dirname"(ptr %check_path471)
-  store ptr %161, ptr %check_dir, align 8
-  %check_dir472 = load ptr, ptr %check_dir, align 8
-  %162 = call ptr @"@std::avrac::features::modules::package::load_package_config"(ptr %check_dir472)
-  store ptr %162, ptr %check_pkg, align 8
-  %check_pkg473 = load ptr, ptr %check_pkg, align 8
-  %cast474 = ptrtoint ptr %check_pkg473 to i64
-  %null_chk475 = icmp eq i64 %cast474, 0
-  %null_ext476 = zext i1 %null_chk475 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25937, i64 5, ptr @sty_name.25938, i64 54, i64 %null_ext476, ptr @src_file.25939, i64 0, i64 1072)
-  %found_ptr = getelementptr inbounds nuw %"@std::avrac::features::modules::package::PackageConfig", ptr %check_pkg473, i32 0, i32 2
+ifcont495:                                        ; preds = %if_else498, %ifcont504
+  %check_path523 = load ptr, ptr %check_path, align 8
+  %186 = call ptr @"@std::avrac::features::modules::resolver::modules_dirname"(ptr %check_path523)
+  store ptr %186, ptr %check_dir, align 8
+  %check_dir524 = load ptr, ptr %check_dir, align 8
+  %187 = call ptr @"@std::avrac::features::modules::package::load_package_config"(ptr %check_dir524)
+  store ptr %187, ptr %check_pkg, align 8
+  %check_pkg525 = load ptr, ptr %check_pkg, align 8
+  %cast526 = ptrtoint ptr %check_pkg525 to i64
+  %null_chk527 = icmp eq i64 %cast526, 0
+  %null_ext528 = zext i1 %null_chk527 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26029, i64 5, ptr @sty_name.26030, i64 54, i64 %null_ext528, ptr @src_file.26031, i64 0, i64 1212)
+  %found_ptr = getelementptr inbounds nuw %"@std::avrac::features::modules::package::PackageConfig", ptr %check_pkg525, i32 0, i32 2
   %found = load i1, ptr %found_ptr, align 8
-  br i1 %found, label %sc_rhs477, label %sc_short478
+  br i1 %found, label %sc_rhs529, label %sc_short530
 
-if_then445:                                       ; preds = %sc_merge428
-  %parsed447 = load ptr, ptr %parsed, align 8
-  %cast448 = ptrtoint ptr %parsed447 to i64
-  %null_chk449 = icmp eq i64 %cast448, 0
-  %null_ext450 = zext i1 %null_chk449 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25928, i64 3, ptr @sty_name.25929, i64 38, i64 %null_ext450, ptr @src_file.25930, i64 0, i64 1065)
-  %bag_ptr = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed447, i32 0, i32 3
+if_then497:                                       ; preds = %sc_merge480
+  %parsed499 = load ptr, ptr %parsed, align 8
+  %cast500 = ptrtoint ptr %parsed499 to i64
+  %null_chk501 = icmp eq i64 %cast500, 0
+  %null_ext502 = zext i1 %null_chk501 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26020, i64 3, ptr @sty_name.26021, i64 38, i64 %null_ext502, ptr @src_file.26022, i64 0, i64 1205)
+  %bag_ptr = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed499, i32 0, i32 3
   %bag = load ptr, ptr %bag_ptr, align 8
-  %163 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag)
-  %widen451 = zext i1 %163 to i64
-  %if_cond453 = icmp ne i64 %widen451, 0
-  br i1 %if_cond453, label %if_then454, label %if_else455
+  %188 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag)
+  %widen503 = zext i1 %188 to i64
+  %if_cond505 = icmp ne i64 %widen503, 0
+  br i1 %if_cond505, label %if_then506, label %if_else507
 
-if_else446:                                       ; preds = %sc_merge428
-  br label %ifcont443
+if_else498:                                       ; preds = %sc_merge480
+  br label %ifcont495
 
-ifcont452:                                        ; preds = %if_else455, %if_then454
-  %parsed465 = load ptr, ptr %parsed, align 8
-  %cast466 = ptrtoint ptr %parsed465 to i64
-  %null_chk467 = icmp eq i64 %cast466, 0
-  %null_ext468 = zext i1 %null_chk467 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25934, i64 13, ptr @sty_name.25935, i64 38, i64 %null_ext468, ptr @src_file.25936, i64 0, i64 1068)
-  %error_message_ptr469 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed465, i32 0, i32 2
-  %error_message470 = load ptr, ptr %error_message_ptr469, align 8
-  %164 = call i64 @fail(ptr %error_message470)
-  br label %ifcont443
+ifcont504:                                        ; preds = %if_else507, %if_then506
+  %parsed517 = load ptr, ptr %parsed, align 8
+  %cast518 = ptrtoint ptr %parsed517 to i64
+  %null_chk519 = icmp eq i64 %cast518, 0
+  %null_ext520 = zext i1 %null_chk519 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26026, i64 13, ptr @sty_name.26027, i64 38, i64 %null_ext520, ptr @src_file.26028, i64 0, i64 1208)
+  %error_message_ptr521 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed517, i32 0, i32 2
+  %error_message522 = load ptr, ptr %error_message_ptr521, align 8
+  %189 = call i64 @fail(ptr %error_message522)
+  br label %ifcont495
 
-if_then454:                                       ; preds = %if_then445
-  %check_json456 = load i1, ptr %check_json, align 8
-  %check_source457 = load ptr, ptr %check_source, align 8
-  %check_path458 = load ptr, ptr %check_path, align 8
-  %parsed459 = load ptr, ptr %parsed, align 8
-  %cast460 = ptrtoint ptr %parsed459 to i64
-  %null_chk461 = icmp eq i64 %cast460, 0
-  %null_ext462 = zext i1 %null_chk461 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25931, i64 3, ptr @sty_name.25932, i64 38, i64 %null_ext462, ptr @src_file.25933, i64 0, i64 1066)
-  %bag_ptr463 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed459, i32 0, i32 3
-  %bag464 = load ptr, ptr %bag_ptr463, align 8
-  %165 = call i64 @render_bag_either(i1 %check_json456, ptr %check_source457, ptr %check_path458, ptr %bag464)
-  br label %ifcont452
+if_then506:                                       ; preds = %if_then497
+  %check_json508 = load i1, ptr %check_json, align 8
+  %check_source509 = load ptr, ptr %check_source, align 8
+  %check_path510 = load ptr, ptr %check_path, align 8
+  %parsed511 = load ptr, ptr %parsed, align 8
+  %cast512 = ptrtoint ptr %parsed511 to i64
+  %null_chk513 = icmp eq i64 %cast512, 0
+  %null_ext514 = zext i1 %null_chk513 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26023, i64 3, ptr @sty_name.26024, i64 38, i64 %null_ext514, ptr @src_file.26025, i64 0, i64 1206)
+  %bag_ptr515 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed511, i32 0, i32 3
+  %bag516 = load ptr, ptr %bag_ptr515, align 8
+  %190 = call i64 @render_bag_either(i1 %check_json508, ptr %check_source509, ptr %check_path510, ptr %bag516)
+  br label %ifcont504
 
-if_else455:                                       ; preds = %if_then445
-  br label %ifcont452
+if_else507:                                       ; preds = %if_then497
+  br label %ifcont504
 
-sc_rhs477:                                        ; preds = %ifcont443
-  %check_json480 = load i1, ptr %check_json, align 8
-  %not_cmp481 = icmp eq i1 %check_json480, false
-  %not_cmp_ext482 = zext i1 %not_cmp481 to i64
-  %r_bool483 = icmp ne i64 %not_cmp_ext482, 0
-  br i1 %r_bool483, label %sc_r_true484, label %sc_r_false485
+sc_rhs529:                                        ; preds = %ifcont495
+  %check_json532 = load i1, ptr %check_json, align 8
+  %not_cmp533 = icmp eq i1 %check_json532, false
+  %not_cmp_ext534 = zext i1 %not_cmp533 to i64
+  %r_bool535 = icmp ne i64 %not_cmp_ext534, 0
+  br i1 %r_bool535, label %sc_r_true536, label %sc_r_false537
 
-sc_short478:                                      ; preds = %ifcont443
-  br label %sc_merge479
+sc_short530:                                      ; preds = %ifcont495
+  br label %sc_merge531
 
-sc_merge479:                                      ; preds = %sc_r_merge486, %sc_short478
-  %sc_phi487 = phi i1 [ false, %sc_short478 ], [ %r_bool483, %sc_r_merge486 ]
-  %sc_ext488 = zext i1 %sc_phi487 to i64
-  %if_cond490 = icmp ne i64 %sc_ext488, 0
-  br i1 %if_cond490, label %if_then491, label %if_else492
+sc_merge531:                                      ; preds = %sc_r_merge538, %sc_short530
+  %sc_phi539 = phi i1 [ false, %sc_short530 ], [ %r_bool535, %sc_r_merge538 ]
+  %sc_ext540 = zext i1 %sc_phi539 to i64
+  %if_cond542 = icmp ne i64 %sc_ext540, 0
+  br i1 %if_cond542, label %if_then543, label %if_else544
 
-sc_r_true484:                                     ; preds = %sc_rhs477
-  br label %sc_r_merge486
+sc_r_true536:                                     ; preds = %sc_rhs529
+  br label %sc_r_merge538
 
-sc_r_false485:                                    ; preds = %sc_rhs477
-  br label %sc_r_merge486
+sc_r_false537:                                    ; preds = %sc_rhs529
+  br label %sc_r_merge538
 
-sc_r_merge486:                                    ; preds = %sc_r_false485, %sc_r_true484
-  br label %sc_merge479
+sc_r_merge538:                                    ; preds = %sc_r_false537, %sc_r_true536
+  br label %sc_merge531
 
-ifcont489:                                        ; preds = %if_else492, %if_then491
-  %parsed519 = load ptr, ptr %parsed, align 8
-  %cast520 = ptrtoint ptr %parsed519 to i64
-  %null_chk521 = icmp eq i64 %cast520, 0
-  %null_ext522 = zext i1 %null_chk521 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25948, i64 5, ptr @sty_name.25949, i64 38, i64 %null_ext522, ptr @src_file.25950, i64 0, i64 1075)
-  %stmts_ptr523 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed519, i32 0, i32 0
-  %stmts524 = load ptr, ptr %stmts_ptr523, align 8
-  %166 = call ptr @"@std::avrac::desugar::desugar_program"(ptr %stmts524)
-  store ptr %166, ptr %desugared, align 8
-  %check_path525 = load ptr, ptr %check_path, align 8
-  %167 = call ptr @"@std::avrac::features::modules::resolver::modules_dirname"(ptr %check_path525)
-  store ptr %167, ptr %entry_dir, align 8
-  %desugared526 = load ptr, ptr %desugared, align 8
-  %entry_dir527 = load ptr, ptr %entry_dir, align 8
-  %168 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::LoadedPaths", ptr %168, i32 0, i32 0
+ifcont541:                                        ; preds = %if_else544, %if_then543
+  %parsed571 = load ptr, ptr %parsed, align 8
+  %cast572 = ptrtoint ptr %parsed571 to i64
+  %null_chk573 = icmp eq i64 %cast572, 0
+  %null_ext574 = zext i1 %null_chk573 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26040, i64 5, ptr @sty_name.26041, i64 38, i64 %null_ext574, ptr @src_file.26042, i64 0, i64 1215)
+  %stmts_ptr575 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed571, i32 0, i32 0
+  %stmts576 = load ptr, ptr %stmts_ptr575, align 8
+  %191 = call ptr @"@std::avrac::desugar::desugar_program"(ptr %stmts576)
+  store ptr %191, ptr %desugared, align 8
+  %check_path577 = load ptr, ptr %check_path, align 8
+  %192 = call ptr @"@std::avrac::features::modules::resolver::modules_dirname"(ptr %check_path577)
+  store ptr %192, ptr %entry_dir, align 8
+  %desugared578 = load ptr, ptr %desugared, align 8
+  %entry_dir579 = load ptr, ptr %entry_dir, align 8
+  %193 = call ptr @avra_rc_alloc(i64 16)
+  %tag_ptr = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::LoadedPaths", ptr %193, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::LoadedPaths", ptr %168, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::LoadedPaths", ptr %193, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
-  %cast528 = ptrtoint ptr %168 to i64
-  %cast529 = inttoptr i64 %cast528 to ptr
-  %169 = call ptr @"@std::avrac::features::modules::resolver::resolve_module_files"(ptr %desugared526, ptr %entry_dir527, ptr %cast529)
-  store ptr %169, ptr %mod_resolved, align 8
-  %mod_resolved530 = load ptr, ptr %mod_resolved, align 8
-  %cast531 = ptrtoint ptr %mod_resolved530 to i64
-  %null_chk532 = icmp eq i64 %cast531, 0
-  %null_ext533 = zext i1 %null_chk532 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25951, i64 9, ptr @sty_name.25952, i64 55, i64 %null_ext533, ptr @src_file.25953, i64 0, i64 1078)
-  %had_error_ptr534 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved530, i32 0, i32 2
-  %had_error535 = load i64, ptr %had_error_ptr534, align 8
-  %if_cond537 = icmp ne i64 %had_error535, 0
-  br i1 %if_cond537, label %if_then538, label %if_else539
+  %cast580 = ptrtoint ptr %193 to i64
+  %cast581 = inttoptr i64 %cast580 to ptr
+  %194 = call ptr @"@std::avrac::features::modules::resolver::resolve_module_files"(ptr %desugared578, ptr %entry_dir579, ptr %cast581)
+  store ptr %194, ptr %mod_resolved, align 8
+  %mod_resolved582 = load ptr, ptr %mod_resolved, align 8
+  %cast583 = ptrtoint ptr %mod_resolved582 to i64
+  %null_chk584 = icmp eq i64 %cast583, 0
+  %null_ext585 = zext i1 %null_chk584 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26043, i64 9, ptr @sty_name.26044, i64 55, i64 %null_ext585, ptr @src_file.26045, i64 0, i64 1218)
+  %had_error_ptr586 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved582, i32 0, i32 2
+  %had_error587 = load i64, ptr %had_error_ptr586, align 8
+  %if_cond589 = icmp ne i64 %had_error587, 0
+  br i1 %if_cond589, label %if_then590, label %if_else591
 
-if_then491:                                       ; preds = %sc_merge479
-  %check_pkg493 = load ptr, ptr %check_pkg, align 8
-  %cast494 = ptrtoint ptr %check_pkg493 to i64
-  %null_chk495 = icmp eq i64 %cast494, 0
-  %null_ext496 = zext i1 %null_chk495 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25941, i64 4, ptr @sty_name.25942, i64 54, i64 %null_ext496, ptr @src_file.25943, i64 0, i64 1073)
-  %name_ptr = getelementptr inbounds nuw %"@std::avrac::features::modules::package::PackageConfig", ptr %check_pkg493, i32 0, i32 0
+if_then543:                                       ; preds = %sc_merge531
+  %check_pkg545 = load ptr, ptr %check_pkg, align 8
+  %cast546 = ptrtoint ptr %check_pkg545 to i64
+  %null_chk547 = icmp eq i64 %cast546, 0
+  %null_ext548 = zext i1 %null_chk547 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26033, i64 4, ptr @sty_name.26034, i64 54, i64 %null_ext548, ptr @src_file.26035, i64 0, i64 1213)
+  %name_ptr = getelementptr inbounds nuw %"@std::avrac::features::modules::package::PackageConfig", ptr %check_pkg545, i32 0, i32 0
   %name = load ptr, ptr %name_ptr, align 8
-  %170 = call i64 @strlen(ptr @.str.25940)
-  %171 = call i64 @strlen(ptr %name)
-  %concat_total497 = add i64 %170, %171
-  %concat_size498 = add i64 %concat_total497, 1
-  %172 = call ptr @avra_rc_alloc(i64 %concat_size498)
-  %173 = call ptr @memcpy(ptr %172, ptr @.str.25940, i64 %170)
-  %cast499 = ptrtoint ptr %172 to i64
-  %dst2_int500 = add i64 %cast499, %170
-  %cast501 = inttoptr i64 %dst2_int500 to ptr
-  %rhs_len_p1502 = add i64 %171, 1
-  %174 = call ptr @memcpy(ptr %cast501, ptr %name, i64 %rhs_len_p1502)
-  %175 = call i64 @strlen(ptr %172)
-  %176 = call i64 @strlen(ptr @.str.25944)
-  %concat_total503 = add i64 %175, %176
-  %concat_size504 = add i64 %concat_total503, 1
-  %177 = call ptr @avra_rc_alloc(i64 %concat_size504)
-  %178 = call ptr @memcpy(ptr %177, ptr %172, i64 %175)
-  %cast505 = ptrtoint ptr %177 to i64
-  %dst2_int506 = add i64 %cast505, %175
-  %cast507 = inttoptr i64 %dst2_int506 to ptr
-  %rhs_len_p1508 = add i64 %176, 1
-  %179 = call ptr @memcpy(ptr %cast507, ptr @.str.25944, i64 %rhs_len_p1508)
-  %check_pkg509 = load ptr, ptr %check_pkg, align 8
-  %cast510 = ptrtoint ptr %check_pkg509 to i64
-  %null_chk511 = icmp eq i64 %cast510, 0
-  %null_ext512 = zext i1 %null_chk511 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25945, i64 7, ptr @sty_name.25946, i64 54, i64 %null_ext512, ptr @src_file.25947, i64 0, i64 1073)
-  %version_ptr = getelementptr inbounds nuw %"@std::avrac::features::modules::package::PackageConfig", ptr %check_pkg509, i32 0, i32 1
+  %195 = call i64 @strlen(ptr @.str.26032)
+  %196 = call i64 @strlen(ptr %name)
+  %concat_total549 = add i64 %195, %196
+  %concat_size550 = add i64 %concat_total549, 1
+  %197 = call ptr @avra_rc_alloc(i64 %concat_size550)
+  %198 = call ptr @memcpy(ptr %197, ptr @.str.26032, i64 %195)
+  %cast551 = ptrtoint ptr %197 to i64
+  %dst2_int552 = add i64 %cast551, %195
+  %cast553 = inttoptr i64 %dst2_int552 to ptr
+  %rhs_len_p1554 = add i64 %196, 1
+  %199 = call ptr @memcpy(ptr %cast553, ptr %name, i64 %rhs_len_p1554)
+  %200 = call i64 @strlen(ptr %197)
+  %201 = call i64 @strlen(ptr @.str.26036)
+  %concat_total555 = add i64 %200, %201
+  %concat_size556 = add i64 %concat_total555, 1
+  %202 = call ptr @avra_rc_alloc(i64 %concat_size556)
+  %203 = call ptr @memcpy(ptr %202, ptr %197, i64 %200)
+  %cast557 = ptrtoint ptr %202 to i64
+  %dst2_int558 = add i64 %cast557, %200
+  %cast559 = inttoptr i64 %dst2_int558 to ptr
+  %rhs_len_p1560 = add i64 %201, 1
+  %204 = call ptr @memcpy(ptr %cast559, ptr @.str.26036, i64 %rhs_len_p1560)
+  %check_pkg561 = load ptr, ptr %check_pkg, align 8
+  %cast562 = ptrtoint ptr %check_pkg561 to i64
+  %null_chk563 = icmp eq i64 %cast562, 0
+  %null_ext564 = zext i1 %null_chk563 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26037, i64 7, ptr @sty_name.26038, i64 54, i64 %null_ext564, ptr @src_file.26039, i64 0, i64 1213)
+  %version_ptr = getelementptr inbounds nuw %"@std::avrac::features::modules::package::PackageConfig", ptr %check_pkg561, i32 0, i32 1
   %version = load ptr, ptr %version_ptr, align 8
-  %180 = call i64 @strlen(ptr %177)
-  %181 = call i64 @strlen(ptr %version)
-  %concat_total513 = add i64 %180, %181
-  %concat_size514 = add i64 %concat_total513, 1
-  %182 = call ptr @avra_rc_alloc(i64 %concat_size514)
-  %183 = call ptr @memcpy(ptr %182, ptr %177, i64 %180)
-  %cast515 = ptrtoint ptr %182 to i64
-  %dst2_int516 = add i64 %cast515, %180
-  %cast517 = inttoptr i64 %dst2_int516 to ptr
-  %rhs_len_p1518 = add i64 %181, 1
-  %184 = call ptr @memcpy(ptr %cast517, ptr %version, i64 %rhs_len_p1518)
-  call void @avra_eprintln(ptr %182)
-  br label %ifcont489
+  %205 = call i64 @strlen(ptr %202)
+  %206 = call i64 @strlen(ptr %version)
+  %concat_total565 = add i64 %205, %206
+  %concat_size566 = add i64 %concat_total565, 1
+  %207 = call ptr @avra_rc_alloc(i64 %concat_size566)
+  %208 = call ptr @memcpy(ptr %207, ptr %202, i64 %205)
+  %cast567 = ptrtoint ptr %207 to i64
+  %dst2_int568 = add i64 %cast567, %205
+  %cast569 = inttoptr i64 %dst2_int568 to ptr
+  %rhs_len_p1570 = add i64 %206, 1
+  %209 = call ptr @memcpy(ptr %cast569, ptr %version, i64 %rhs_len_p1570)
+  call void @avra_eprintln(ptr %207)
+  br label %ifcont541
 
-if_else492:                                       ; preds = %sc_merge479
-  br label %ifcont489
+if_else544:                                       ; preds = %sc_merge531
+  br label %ifcont541
 
-ifcont536:                                        ; preds = %if_else539, %if_then538
-  %mod_resolved560 = load ptr, ptr %mod_resolved, align 8
-  %cast561 = ptrtoint ptr %mod_resolved560 to i64
-  %null_chk562 = icmp eq i64 %cast561, 0
-  %null_ext563 = zext i1 %null_chk562 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25960, i64 5, ptr @sty_name.25961, i64 55, i64 %null_ext563, ptr @src_file.25962, i64 0, i64 1083)
-  %stmts_ptr564 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved560, i32 0, i32 0
-  %stmts565 = load ptr, ptr %stmts_ptr564, align 8
-  %185 = call ptr @"@std::avrac::features::component_decl::expand::expand_components"(ptr %stmts565)
-  store ptr %185, ptr %expanded, align 8
-  %expanded566 = load ptr, ptr %expanded, align 8
-  %186 = call ptr @"@std::avrac::resolve::names::resolve_names"(ptr %expanded566)
-  store ptr %186, ptr %named, align 8
-  %named567 = load ptr, ptr %named, align 8
-  %cast568 = ptrtoint ptr %named567 to i64
-  %null_chk569 = icmp eq i64 %cast568, 0
-  %null_ext570 = zext i1 %null_chk569 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25963, i64 3, ptr @sty_name.25964, i64 46, i64 %null_ext570, ptr @src_file.25965, i64 0, i64 1085)
-  %bag_ptr571 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named567, i32 0, i32 3
-  %bag572 = load ptr, ptr %bag_ptr571, align 8
-  %187 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag572)
-  %widen573 = zext i1 %187 to i64
-  %l_bool574 = icmp ne i64 %widen573, 0
-  br i1 %l_bool574, label %sc_short576, label %sc_rhs575
+ifcont588:                                        ; preds = %if_else591, %if_then590
+  %mod_resolved612 = load ptr, ptr %mod_resolved, align 8
+  %cast613 = ptrtoint ptr %mod_resolved612 to i64
+  %null_chk614 = icmp eq i64 %cast613, 0
+  %null_ext615 = zext i1 %null_chk614 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26052, i64 5, ptr @sty_name.26053, i64 55, i64 %null_ext615, ptr @src_file.26054, i64 0, i64 1223)
+  %stmts_ptr616 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved612, i32 0, i32 0
+  %stmts617 = load ptr, ptr %stmts_ptr616, align 8
+  %210 = call ptr @"@std::avrac::features::component_decl::expand::expand_components"(ptr %stmts617)
+  store ptr %210, ptr %expanded, align 8
+  %expanded618 = load ptr, ptr %expanded, align 8
+  %211 = call ptr @"@std::avrac::resolve::names::resolve_names"(ptr %expanded618)
+  store ptr %211, ptr %named, align 8
+  %named619 = load ptr, ptr %named, align 8
+  %cast620 = ptrtoint ptr %named619 to i64
+  %null_chk621 = icmp eq i64 %cast620, 0
+  %null_ext622 = zext i1 %null_chk621 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26055, i64 3, ptr @sty_name.26056, i64 46, i64 %null_ext622, ptr @src_file.26057, i64 0, i64 1225)
+  %bag_ptr623 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named619, i32 0, i32 3
+  %bag624 = load ptr, ptr %bag_ptr623, align 8
+  %212 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag624)
+  %widen625 = zext i1 %212 to i64
+  %l_bool626 = icmp ne i64 %widen625, 0
+  br i1 %l_bool626, label %sc_short628, label %sc_rhs627
 
-if_then538:                                       ; preds = %ifcont489
-  %188 = call ptr @"@std::avrac::diagnostics::bag_new"()
-  %189 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr540 = getelementptr inbounds nuw %"@std::avrac::diagnostics::DiagCode", ptr %189, i32 0, i32 0
-  store i64 6736596269474561240, ptr %tag_ptr540, align 8
-  %pay_ptr541 = getelementptr inbounds nuw %"@std::avrac::diagnostics::DiagCode", ptr %189, i32 0, i32 1
-  store ptr null, ptr %pay_ptr541, align 8
-  %cast542 = ptrtoint ptr %189 to i64
-  %mod_resolved543 = load ptr, ptr %mod_resolved, align 8
-  %cast544 = ptrtoint ptr %mod_resolved543 to i64
-  %null_chk545 = icmp eq i64 %cast544, 0
-  %null_ext546 = zext i1 %null_chk545 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25954, i64 13, ptr @sty_name.25955, i64 55, i64 %null_ext546, ptr @src_file.25956, i64 0, i64 1079)
-  %error_message_ptr547 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved543, i32 0, i32 3
-  %error_message548 = load ptr, ptr %error_message_ptr547, align 8
-  %190 = call ptr @"@std::avrac::diagnostics::span_dummy"()
-  %cast549 = inttoptr i64 %cast542 to ptr
-  %191 = call ptr @"@std::avrac::diagnostics::diag_error"(ptr %cast549, ptr %error_message548, ptr %190)
-  %192 = call ptr @"@std::avrac::diagnostics::bag_report"(ptr %188, ptr %191)
-  store ptr %192, ptr %mod_bag, align 8
-  %check_json550 = load i1, ptr %check_json, align 8
-  %check_source551 = load ptr, ptr %check_source, align 8
-  %check_path552 = load ptr, ptr %check_path, align 8
-  %mod_bag553 = load ptr, ptr %mod_bag, align 8
-  %193 = call i64 @render_bag_either(i1 %check_json550, ptr %check_source551, ptr %check_path552, ptr %mod_bag553)
-  %mod_resolved554 = load ptr, ptr %mod_resolved, align 8
-  %cast555 = ptrtoint ptr %mod_resolved554 to i64
-  %null_chk556 = icmp eq i64 %cast555, 0
-  %null_ext557 = zext i1 %null_chk556 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25957, i64 13, ptr @sty_name.25958, i64 55, i64 %null_ext557, ptr @src_file.25959, i64 0, i64 1081)
-  %error_message_ptr558 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved554, i32 0, i32 3
-  %error_message559 = load ptr, ptr %error_message_ptr558, align 8
-  %194 = call i64 @fail(ptr %error_message559)
-  br label %ifcont536
+if_then590:                                       ; preds = %ifcont541
+  %213 = call ptr @"@std::avrac::diagnostics::bag_new"()
+  %214 = call ptr @avra_rc_alloc(i64 16)
+  %tag_ptr592 = getelementptr inbounds nuw %"@std::avrac::diagnostics::DiagCode", ptr %214, i32 0, i32 0
+  store i64 6736596269474561240, ptr %tag_ptr592, align 8
+  %pay_ptr593 = getelementptr inbounds nuw %"@std::avrac::diagnostics::DiagCode", ptr %214, i32 0, i32 1
+  store ptr null, ptr %pay_ptr593, align 8
+  %cast594 = ptrtoint ptr %214 to i64
+  %mod_resolved595 = load ptr, ptr %mod_resolved, align 8
+  %cast596 = ptrtoint ptr %mod_resolved595 to i64
+  %null_chk597 = icmp eq i64 %cast596, 0
+  %null_ext598 = zext i1 %null_chk597 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26046, i64 13, ptr @sty_name.26047, i64 55, i64 %null_ext598, ptr @src_file.26048, i64 0, i64 1219)
+  %error_message_ptr599 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved595, i32 0, i32 3
+  %error_message600 = load ptr, ptr %error_message_ptr599, align 8
+  %215 = call ptr @"@std::avrac::diagnostics::span_dummy"()
+  %cast601 = inttoptr i64 %cast594 to ptr
+  %216 = call ptr @"@std::avrac::diagnostics::diag_error"(ptr %cast601, ptr %error_message600, ptr %215)
+  %217 = call ptr @"@std::avrac::diagnostics::bag_report"(ptr %213, ptr %216)
+  store ptr %217, ptr %mod_bag, align 8
+  %check_json602 = load i1, ptr %check_json, align 8
+  %check_source603 = load ptr, ptr %check_source, align 8
+  %check_path604 = load ptr, ptr %check_path, align 8
+  %mod_bag605 = load ptr, ptr %mod_bag, align 8
+  %218 = call i64 @render_bag_either(i1 %check_json602, ptr %check_source603, ptr %check_path604, ptr %mod_bag605)
+  %mod_resolved606 = load ptr, ptr %mod_resolved, align 8
+  %cast607 = ptrtoint ptr %mod_resolved606 to i64
+  %null_chk608 = icmp eq i64 %cast607, 0
+  %null_ext609 = zext i1 %null_chk608 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26049, i64 13, ptr @sty_name.26050, i64 55, i64 %null_ext609, ptr @src_file.26051, i64 0, i64 1221)
+  %error_message_ptr610 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved606, i32 0, i32 3
+  %error_message611 = load ptr, ptr %error_message_ptr610, align 8
+  %219 = call i64 @fail(ptr %error_message611)
+  br label %ifcont588
 
-if_else539:                                       ; preds = %ifcont489
-  br label %ifcont536
+if_else591:                                       ; preds = %ifcont541
+  br label %ifcont588
 
-sc_rhs575:                                        ; preds = %ifcont536
-  %named578 = load ptr, ptr %named, align 8
-  %cast579 = ptrtoint ptr %named578 to i64
-  %null_chk580 = icmp eq i64 %cast579, 0
-  %null_ext581 = zext i1 %null_chk580 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25966, i64 3, ptr @sty_name.25967, i64 46, i64 %null_ext581, ptr @src_file.25968, i64 0, i64 1085)
-  %bag_ptr582 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named578, i32 0, i32 3
-  %bag583 = load ptr, ptr %bag_ptr582, align 8
-  %195 = call i1 @"@std::avrac::diagnostics::bag_has_warnings"(ptr %bag583)
-  %widen584 = zext i1 %195 to i64
-  %r_bool585 = icmp ne i64 %widen584, 0
-  br i1 %r_bool585, label %sc_r_true586, label %sc_r_false587
+sc_rhs627:                                        ; preds = %ifcont588
+  %named630 = load ptr, ptr %named, align 8
+  %cast631 = ptrtoint ptr %named630 to i64
+  %null_chk632 = icmp eq i64 %cast631, 0
+  %null_ext633 = zext i1 %null_chk632 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26058, i64 3, ptr @sty_name.26059, i64 46, i64 %null_ext633, ptr @src_file.26060, i64 0, i64 1225)
+  %bag_ptr634 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named630, i32 0, i32 3
+  %bag635 = load ptr, ptr %bag_ptr634, align 8
+  %220 = call i1 @"@std::avrac::diagnostics::bag_has_warnings"(ptr %bag635)
+  %widen636 = zext i1 %220 to i64
+  %r_bool637 = icmp ne i64 %widen636, 0
+  br i1 %r_bool637, label %sc_r_true638, label %sc_r_false639
 
-sc_short576:                                      ; preds = %ifcont536
-  br label %sc_merge577
+sc_short628:                                      ; preds = %ifcont588
+  br label %sc_merge629
 
-sc_merge577:                                      ; preds = %sc_r_merge588, %sc_short576
-  %sc_phi589 = phi i1 [ true, %sc_short576 ], [ %r_bool585, %sc_r_merge588 ]
-  %sc_ext590 = zext i1 %sc_phi589 to i64
-  %if_cond592 = icmp ne i64 %sc_ext590, 0
-  br i1 %if_cond592, label %if_then593, label %if_else594
+sc_merge629:                                      ; preds = %sc_r_merge640, %sc_short628
+  %sc_phi641 = phi i1 [ true, %sc_short628 ], [ %r_bool637, %sc_r_merge640 ]
+  %sc_ext642 = zext i1 %sc_phi641 to i64
+  %if_cond644 = icmp ne i64 %sc_ext642, 0
+  br i1 %if_cond644, label %if_then645, label %if_else646
 
-sc_r_true586:                                     ; preds = %sc_rhs575
-  br label %sc_r_merge588
+sc_r_true638:                                     ; preds = %sc_rhs627
+  br label %sc_r_merge640
 
-sc_r_false587:                                    ; preds = %sc_rhs575
-  br label %sc_r_merge588
+sc_r_false639:                                    ; preds = %sc_rhs627
+  br label %sc_r_merge640
 
-sc_r_merge588:                                    ; preds = %sc_r_false587, %sc_r_true586
-  br label %sc_merge577
+sc_r_merge640:                                    ; preds = %sc_r_false639, %sc_r_true638
+  br label %sc_merge629
 
-ifcont591:                                        ; preds = %if_else594, %if_then593
-  %named604 = load ptr, ptr %named, align 8
-  %cast605 = ptrtoint ptr %named604 to i64
-  %null_chk606 = icmp eq i64 %cast605, 0
-  %null_ext607 = zext i1 %null_chk606 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25972, i64 9, ptr @sty_name.25973, i64 46, i64 %null_ext607, ptr @src_file.25974, i64 0, i64 1088)
-  %had_error_ptr608 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named604, i32 0, i32 1
-  %had_error609 = load i64, ptr %had_error_ptr608, align 8
-  %if_cond611 = icmp ne i64 %had_error609, 0
-  br i1 %if_cond611, label %if_then612, label %if_else613
+ifcont643:                                        ; preds = %if_else646, %if_then645
+  %named656 = load ptr, ptr %named, align 8
+  %cast657 = ptrtoint ptr %named656 to i64
+  %null_chk658 = icmp eq i64 %cast657, 0
+  %null_ext659 = zext i1 %null_chk658 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26064, i64 9, ptr @sty_name.26065, i64 46, i64 %null_ext659, ptr @src_file.26066, i64 0, i64 1228)
+  %had_error_ptr660 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named656, i32 0, i32 1
+  %had_error661 = load i64, ptr %had_error_ptr660, align 8
+  %if_cond663 = icmp ne i64 %had_error661, 0
+  br i1 %if_cond663, label %if_then664, label %if_else665
 
-if_then593:                                       ; preds = %sc_merge577
-  %check_json595 = load i1, ptr %check_json, align 8
-  %check_source596 = load ptr, ptr %check_source, align 8
-  %check_path597 = load ptr, ptr %check_path, align 8
-  %named598 = load ptr, ptr %named, align 8
-  %cast599 = ptrtoint ptr %named598 to i64
-  %null_chk600 = icmp eq i64 %cast599, 0
-  %null_ext601 = zext i1 %null_chk600 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25969, i64 3, ptr @sty_name.25970, i64 46, i64 %null_ext601, ptr @src_file.25971, i64 0, i64 1086)
-  %bag_ptr602 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named598, i32 0, i32 3
-  %bag603 = load ptr, ptr %bag_ptr602, align 8
-  %196 = call i64 @render_bag_either(i1 %check_json595, ptr %check_source596, ptr %check_path597, ptr %bag603)
-  br label %ifcont591
+if_then645:                                       ; preds = %sc_merge629
+  %check_json647 = load i1, ptr %check_json, align 8
+  %check_source648 = load ptr, ptr %check_source, align 8
+  %check_path649 = load ptr, ptr %check_path, align 8
+  %named650 = load ptr, ptr %named, align 8
+  %cast651 = ptrtoint ptr %named650 to i64
+  %null_chk652 = icmp eq i64 %cast651, 0
+  %null_ext653 = zext i1 %null_chk652 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26061, i64 3, ptr @sty_name.26062, i64 46, i64 %null_ext653, ptr @src_file.26063, i64 0, i64 1226)
+  %bag_ptr654 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named650, i32 0, i32 3
+  %bag655 = load ptr, ptr %bag_ptr654, align 8
+  %221 = call i64 @render_bag_either(i1 %check_json647, ptr %check_source648, ptr %check_path649, ptr %bag655)
+  br label %ifcont643
 
-if_else594:                                       ; preds = %sc_merge577
-  br label %ifcont591
+if_else646:                                       ; preds = %sc_merge629
+  br label %ifcont643
 
-ifcont610:                                        ; preds = %if_else613, %if_then612
-  %named620 = load ptr, ptr %named, align 8
-  %cast621 = ptrtoint ptr %named620 to i64
-  %null_chk622 = icmp eq i64 %cast621, 0
-  %null_ext623 = zext i1 %null_chk622 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25978, i64 5, ptr @sty_name.25979, i64 46, i64 %null_ext623, ptr @src_file.25980, i64 0, i64 1089)
-  %stmts_ptr624 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named620, i32 0, i32 0
-  %stmts625 = load ptr, ptr %stmts_ptr624, align 8
-  %197 = call ptr @"@std::avrac::typeck::typecheck_program"(ptr %stmts625)
-  store ptr %197, ptr %tc_result, align 8
-  %tc_result626 = load ptr, ptr %tc_result, align 8
-  %cast627 = ptrtoint ptr %tc_result626 to i64
-  %null_chk628 = icmp eq i64 %cast627, 0
-  %null_ext629 = zext i1 %null_chk628 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25981, i64 3, ptr @sty_name.25982, i64 36, i64 %null_ext629, ptr @src_file.25983, i64 0, i64 1090)
-  %bag_ptr630 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result626, i32 0, i32 2
-  %bag631 = load ptr, ptr %bag_ptr630, align 8
-  %198 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag631)
-  %widen632 = zext i1 %198 to i64
-  %l_bool633 = icmp ne i64 %widen632, 0
-  br i1 %l_bool633, label %sc_short635, label %sc_rhs634
+ifcont662:                                        ; preds = %if_else665, %if_then664
+  %named672 = load ptr, ptr %named, align 8
+  %cast673 = ptrtoint ptr %named672 to i64
+  %null_chk674 = icmp eq i64 %cast673, 0
+  %null_ext675 = zext i1 %null_chk674 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26070, i64 5, ptr @sty_name.26071, i64 46, i64 %null_ext675, ptr @src_file.26072, i64 0, i64 1229)
+  %stmts_ptr676 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named672, i32 0, i32 0
+  %stmts677 = load ptr, ptr %stmts_ptr676, align 8
+  %222 = call ptr @"@std::avrac::typeck::typecheck_program"(ptr %stmts677)
+  store ptr %222, ptr %tc_result, align 8
+  %tc_result678 = load ptr, ptr %tc_result, align 8
+  %cast679 = ptrtoint ptr %tc_result678 to i64
+  %null_chk680 = icmp eq i64 %cast679, 0
+  %null_ext681 = zext i1 %null_chk680 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26073, i64 3, ptr @sty_name.26074, i64 36, i64 %null_ext681, ptr @src_file.26075, i64 0, i64 1230)
+  %bag_ptr682 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result678, i32 0, i32 2
+  %bag683 = load ptr, ptr %bag_ptr682, align 8
+  %223 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag683)
+  %widen684 = zext i1 %223 to i64
+  %l_bool685 = icmp ne i64 %widen684, 0
+  br i1 %l_bool685, label %sc_short687, label %sc_rhs686
 
-if_then612:                                       ; preds = %ifcont591
-  %named614 = load ptr, ptr %named, align 8
-  %cast615 = ptrtoint ptr %named614 to i64
-  %null_chk616 = icmp eq i64 %cast615, 0
-  %null_ext617 = zext i1 %null_chk616 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25975, i64 13, ptr @sty_name.25976, i64 46, i64 %null_ext617, ptr @src_file.25977, i64 0, i64 1088)
-  %error_message_ptr618 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named614, i32 0, i32 2
-  %error_message619 = load ptr, ptr %error_message_ptr618, align 8
-  %199 = call i64 @fail(ptr %error_message619)
-  br label %ifcont610
+if_then664:                                       ; preds = %ifcont643
+  %named666 = load ptr, ptr %named, align 8
+  %cast667 = ptrtoint ptr %named666 to i64
+  %null_chk668 = icmp eq i64 %cast667, 0
+  %null_ext669 = zext i1 %null_chk668 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26067, i64 13, ptr @sty_name.26068, i64 46, i64 %null_ext669, ptr @src_file.26069, i64 0, i64 1228)
+  %error_message_ptr670 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named666, i32 0, i32 2
+  %error_message671 = load ptr, ptr %error_message_ptr670, align 8
+  %224 = call i64 @fail(ptr %error_message671)
+  br label %ifcont662
 
-if_else613:                                       ; preds = %ifcont591
-  br label %ifcont610
+if_else665:                                       ; preds = %ifcont643
+  br label %ifcont662
 
-sc_rhs634:                                        ; preds = %ifcont610
-  %tc_result637 = load ptr, ptr %tc_result, align 8
-  %cast638 = ptrtoint ptr %tc_result637 to i64
-  %null_chk639 = icmp eq i64 %cast638, 0
-  %null_ext640 = zext i1 %null_chk639 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25984, i64 3, ptr @sty_name.25985, i64 36, i64 %null_ext640, ptr @src_file.25986, i64 0, i64 1090)
-  %bag_ptr641 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result637, i32 0, i32 2
-  %bag642 = load ptr, ptr %bag_ptr641, align 8
-  %200 = call i1 @"@std::avrac::diagnostics::bag_has_warnings"(ptr %bag642)
-  %widen643 = zext i1 %200 to i64
-  %r_bool644 = icmp ne i64 %widen643, 0
-  br i1 %r_bool644, label %sc_r_true645, label %sc_r_false646
+sc_rhs686:                                        ; preds = %ifcont662
+  %tc_result689 = load ptr, ptr %tc_result, align 8
+  %cast690 = ptrtoint ptr %tc_result689 to i64
+  %null_chk691 = icmp eq i64 %cast690, 0
+  %null_ext692 = zext i1 %null_chk691 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26076, i64 3, ptr @sty_name.26077, i64 36, i64 %null_ext692, ptr @src_file.26078, i64 0, i64 1230)
+  %bag_ptr693 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result689, i32 0, i32 2
+  %bag694 = load ptr, ptr %bag_ptr693, align 8
+  %225 = call i1 @"@std::avrac::diagnostics::bag_has_warnings"(ptr %bag694)
+  %widen695 = zext i1 %225 to i64
+  %r_bool696 = icmp ne i64 %widen695, 0
+  br i1 %r_bool696, label %sc_r_true697, label %sc_r_false698
 
-sc_short635:                                      ; preds = %ifcont610
-  br label %sc_merge636
+sc_short687:                                      ; preds = %ifcont662
+  br label %sc_merge688
 
-sc_merge636:                                      ; preds = %sc_r_merge647, %sc_short635
-  %sc_phi648 = phi i1 [ true, %sc_short635 ], [ %r_bool644, %sc_r_merge647 ]
-  %sc_ext649 = zext i1 %sc_phi648 to i64
-  %if_cond651 = icmp ne i64 %sc_ext649, 0
-  br i1 %if_cond651, label %if_then652, label %if_else653
+sc_merge688:                                      ; preds = %sc_r_merge699, %sc_short687
+  %sc_phi700 = phi i1 [ true, %sc_short687 ], [ %r_bool696, %sc_r_merge699 ]
+  %sc_ext701 = zext i1 %sc_phi700 to i64
+  %if_cond703 = icmp ne i64 %sc_ext701, 0
+  br i1 %if_cond703, label %if_then704, label %if_else705
 
-sc_r_true645:                                     ; preds = %sc_rhs634
-  br label %sc_r_merge647
+sc_r_true697:                                     ; preds = %sc_rhs686
+  br label %sc_r_merge699
 
-sc_r_false646:                                    ; preds = %sc_rhs634
-  br label %sc_r_merge647
+sc_r_false698:                                    ; preds = %sc_rhs686
+  br label %sc_r_merge699
 
-sc_r_merge647:                                    ; preds = %sc_r_false646, %sc_r_true645
-  br label %sc_merge636
+sc_r_merge699:                                    ; preds = %sc_r_false698, %sc_r_true697
+  br label %sc_merge688
 
-ifcont650:                                        ; preds = %if_else653, %if_then652
-  %tc_result663 = load ptr, ptr %tc_result, align 8
-  %cast664 = ptrtoint ptr %tc_result663 to i64
-  %null_chk665 = icmp eq i64 %cast664, 0
-  %null_ext666 = zext i1 %null_chk665 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25990, i64 3, ptr @sty_name.25991, i64 36, i64 %null_ext666, ptr @src_file.25992, i64 0, i64 1093)
-  %bag_ptr667 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result663, i32 0, i32 2
-  %bag668 = load ptr, ptr %bag_ptr667, align 8
-  %201 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag668)
-  %widen669 = zext i1 %201 to i64
-  %if_cond671 = icmp ne i64 %widen669, 0
-  br i1 %if_cond671, label %if_then672, label %if_else673
+ifcont702:                                        ; preds = %if_else705, %if_then704
+  %tc_result715 = load ptr, ptr %tc_result, align 8
+  %cast716 = ptrtoint ptr %tc_result715 to i64
+  %null_chk717 = icmp eq i64 %cast716, 0
+  %null_ext718 = zext i1 %null_chk717 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26082, i64 3, ptr @sty_name.26083, i64 36, i64 %null_ext718, ptr @src_file.26084, i64 0, i64 1233)
+  %bag_ptr719 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result715, i32 0, i32 2
+  %bag720 = load ptr, ptr %bag_ptr719, align 8
+  %226 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag720)
+  %widen721 = zext i1 %226 to i64
+  %if_cond723 = icmp ne i64 %widen721, 0
+  br i1 %if_cond723, label %if_then724, label %if_else725
 
-if_then652:                                       ; preds = %sc_merge636
-  %check_json654 = load i1, ptr %check_json, align 8
-  %check_source655 = load ptr, ptr %check_source, align 8
-  %check_path656 = load ptr, ptr %check_path, align 8
-  %tc_result657 = load ptr, ptr %tc_result, align 8
-  %cast658 = ptrtoint ptr %tc_result657 to i64
-  %null_chk659 = icmp eq i64 %cast658, 0
-  %null_ext660 = zext i1 %null_chk659 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25987, i64 3, ptr @sty_name.25988, i64 36, i64 %null_ext660, ptr @src_file.25989, i64 0, i64 1091)
-  %bag_ptr661 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result657, i32 0, i32 2
-  %bag662 = load ptr, ptr %bag_ptr661, align 8
-  %202 = call i64 @render_bag_either(i1 %check_json654, ptr %check_source655, ptr %check_path656, ptr %bag662)
-  br label %ifcont650
+if_then704:                                       ; preds = %sc_merge688
+  %check_json706 = load i1, ptr %check_json, align 8
+  %check_source707 = load ptr, ptr %check_source, align 8
+  %check_path708 = load ptr, ptr %check_path, align 8
+  %tc_result709 = load ptr, ptr %tc_result, align 8
+  %cast710 = ptrtoint ptr %tc_result709 to i64
+  %null_chk711 = icmp eq i64 %cast710, 0
+  %null_ext712 = zext i1 %null_chk711 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26079, i64 3, ptr @sty_name.26080, i64 36, i64 %null_ext712, ptr @src_file.26081, i64 0, i64 1231)
+  %bag_ptr713 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result709, i32 0, i32 2
+  %bag714 = load ptr, ptr %bag_ptr713, align 8
+  %227 = call i64 @render_bag_either(i1 %check_json706, ptr %check_source707, ptr %check_path708, ptr %bag714)
+  br label %ifcont702
 
-if_else653:                                       ; preds = %sc_merge636
-  br label %ifcont650
+if_else705:                                       ; preds = %sc_merge688
+  br label %ifcont702
 
-ifcont670:                                        ; preds = %if_else673
-  %check_json674 = load i1, ptr %check_json, align 8
-  %not_cmp675 = icmp eq i1 %check_json674, false
-  %not_cmp_ext676 = zext i1 %not_cmp675 to i64
-  %if_cond678 = icmp ne i64 %not_cmp_ext676, 0
-  br i1 %if_cond678, label %if_then679, label %if_else680
+ifcont722:                                        ; preds = %if_else725
+  %check_json726 = load i1, ptr %check_json, align 8
+  %not_cmp727 = icmp eq i1 %check_json726, false
+  %not_cmp_ext728 = zext i1 %not_cmp727 to i64
+  %if_cond730 = icmp ne i64 %not_cmp_ext728, 0
+  br i1 %if_cond730, label %if_then731, label %if_else732
 
-if_then672:                                       ; preds = %ifcont650
+if_then724:                                       ; preds = %ifcont702
   ret i64 0
 
-if_else673:                                       ; preds = %ifcont650
-  br label %ifcont670
+if_else725:                                       ; preds = %ifcont702
+  br label %ifcont722
 
-ifcont677:                                        ; preds = %if_else680, %if_then679
+ifcont729:                                        ; preds = %if_else732, %if_then731
   ret i64 0
 
-if_then679:                                       ; preds = %ifcont670
-  %203 = call i32 @puts(ptr @.str.25993)
-  %widen681 = sext i32 %203 to i64
-  br label %ifcont677
+if_then731:                                       ; preds = %ifcont722
+  %228 = call i32 @puts(ptr @.str.26085)
+  %widen733 = sext i32 %228 to i64
+  br label %ifcont729
 
-if_else680:                                       ; preds = %ifcont670
-  br label %ifcont677
+if_else732:                                       ; preds = %ifcont722
+  br label %ifcont729
 
-parm_body682:                                     ; preds = %parm_next382
-  %source686 = load ptr, ptr %source, align 8
-  %204 = call ptr @"@std::avrac::features::eval::execute_program_source"(ptr %source686)
-  store ptr %204, ptr %result687, align 8
-  %result688 = load ptr, ptr %result687, align 8
-  %cast689 = ptrtoint ptr %result688 to i64
-  %null_chk690 = icmp eq i64 %cast689, 0
-  %null_ext691 = zext i1 %null_chk690 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25995, i64 9, ptr @sty_name.25996, i64 39, i64 %null_ext691, ptr @src_file.25997, i64 0, i64 1100)
-  %had_error_ptr692 = getelementptr inbounds nuw %"@std::avrac::features::eval::EvalResult", ptr %result688, i32 0, i32 1
-  %had_error693 = load i64, ptr %had_error_ptr692, align 8
-  %l_bool694 = icmp ne i64 %had_error693, 0
-  br i1 %l_bool694, label %sc_short696, label %sc_rhs695
+parm_body734:                                     ; preds = %parm_next434
+  %source738 = load ptr, ptr %source, align 8
+  %229 = call ptr @"@std::avrac::features::eval::execute_program_source"(ptr %source738)
+  store ptr %229, ptr %result739, align 8
+  %result740 = load ptr, ptr %result739, align 8
+  %cast741 = ptrtoint ptr %result740 to i64
+  %null_chk742 = icmp eq i64 %cast741, 0
+  %null_ext743 = zext i1 %null_chk742 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26087, i64 9, ptr @sty_name.26088, i64 39, i64 %null_ext743, ptr @src_file.26089, i64 0, i64 1240)
+  %had_error_ptr744 = getelementptr inbounds nuw %"@std::avrac::features::eval::EvalResult", ptr %result740, i32 0, i32 1
+  %had_error745 = load i64, ptr %had_error_ptr744, align 8
+  %l_bool746 = icmp ne i64 %had_error745, 0
+  br i1 %l_bool746, label %sc_short748, label %sc_rhs747
 
-parm_next683:                                     ; preds = %parm_next382
-  %205 = call i32 @strcmp(ptr %command257, ptr @.lit_str.26007)
-  %widen731 = sext i32 %205 to i64
-  %str_eq732 = icmp eq i64 %widen731, 0
-  br i1 %str_eq732, label %parm_body729, label %parm_next730
+parm_next735:                                     ; preds = %parm_next434
+  %230 = call i32 @strcmp(ptr %command309, ptr @.lit_str.26099)
+  %widen783 = sext i32 %230 to i64
+  %str_eq784 = icmp eq i64 %widen783, 0
+  br i1 %str_eq784, label %parm_body781, label %parm_next782
 
-sc_rhs695:                                        ; preds = %parm_body682
-  %result698 = load ptr, ptr %result687, align 8
-  %cast699 = ptrtoint ptr %result698 to i64
-  %null_chk700 = icmp eq i64 %cast699, 0
-  %null_ext701 = zext i1 %null_chk700 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25998, i64 5, ptr @sty_name.25999, i64 39, i64 %null_ext701, ptr @src_file.26000, i64 0, i64 1100)
-  %value_ptr702 = getelementptr inbounds nuw %"@std::avrac::features::eval::EvalResult", ptr %result698, i32 0, i32 0
-  %value703 = load ptr, ptr %value_ptr702, align 8
-  %eq704 = icmp eq ptr %value703, null
-  %eq_ext705 = zext i1 %eq704 to i64
-  %r_bool706 = icmp ne i64 %eq_ext705, 0
-  br i1 %r_bool706, label %sc_r_true707, label %sc_r_false708
+sc_rhs747:                                        ; preds = %parm_body734
+  %result750 = load ptr, ptr %result739, align 8
+  %cast751 = ptrtoint ptr %result750 to i64
+  %null_chk752 = icmp eq i64 %cast751, 0
+  %null_ext753 = zext i1 %null_chk752 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26090, i64 5, ptr @sty_name.26091, i64 39, i64 %null_ext753, ptr @src_file.26092, i64 0, i64 1240)
+  %value_ptr754 = getelementptr inbounds nuw %"@std::avrac::features::eval::EvalResult", ptr %result750, i32 0, i32 0
+  %value755 = load ptr, ptr %value_ptr754, align 8
+  %eq756 = icmp eq ptr %value755, null
+  %eq_ext757 = zext i1 %eq756 to i64
+  %r_bool758 = icmp ne i64 %eq_ext757, 0
+  br i1 %r_bool758, label %sc_r_true759, label %sc_r_false760
 
-sc_short696:                                      ; preds = %parm_body682
-  br label %sc_merge697
+sc_short748:                                      ; preds = %parm_body734
+  br label %sc_merge749
 
-sc_merge697:                                      ; preds = %sc_r_merge709, %sc_short696
-  %sc_phi710 = phi i1 [ true, %sc_short696 ], [ %r_bool706, %sc_r_merge709 ]
-  %sc_ext711 = zext i1 %sc_phi710 to i64
-  %if_cond713 = icmp ne i64 %sc_ext711, 0
-  br i1 %if_cond713, label %if_then714, label %if_else715
+sc_merge749:                                      ; preds = %sc_r_merge761, %sc_short748
+  %sc_phi762 = phi i1 [ true, %sc_short748 ], [ %r_bool758, %sc_r_merge761 ]
+  %sc_ext763 = zext i1 %sc_phi762 to i64
+  %if_cond765 = icmp ne i64 %sc_ext763, 0
+  br i1 %if_cond765, label %if_then766, label %if_else767
 
-sc_r_true707:                                     ; preds = %sc_rhs695
-  br label %sc_r_merge709
+sc_r_true759:                                     ; preds = %sc_rhs747
+  br label %sc_r_merge761
 
-sc_r_false708:                                    ; preds = %sc_rhs695
-  br label %sc_r_merge709
+sc_r_false760:                                    ; preds = %sc_rhs747
+  br label %sc_r_merge761
 
-sc_r_merge709:                                    ; preds = %sc_r_false708, %sc_r_true707
-  br label %sc_merge697
+sc_r_merge761:                                    ; preds = %sc_r_false760, %sc_r_true759
+  br label %sc_merge749
 
-ifcont712:                                        ; preds = %if_else715, %if_then714
-  %result722 = load ptr, ptr %result687, align 8
-  %cast723 = ptrtoint ptr %result722 to i64
-  %null_chk724 = icmp eq i64 %cast723, 0
-  %null_ext725 = zext i1 %null_chk724 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26004, i64 5, ptr @sty_name.26005, i64 39, i64 %null_ext725, ptr @src_file.26006, i64 0, i64 1103)
-  %value_ptr726 = getelementptr inbounds nuw %"@std::avrac::features::eval::EvalResult", ptr %result722, i32 0, i32 0
-  %value727 = load ptr, ptr %value_ptr726, align 8
-  %206 = call ptr @"@std::avrac::features::eval::render_value"(ptr %value727)
-  %207 = call i32 @puts(ptr %206)
-  %widen728 = sext i32 %207 to i64
+ifcont764:                                        ; preds = %if_else767, %if_then766
+  %result774 = load ptr, ptr %result739, align 8
+  %cast775 = ptrtoint ptr %result774 to i64
+  %null_chk776 = icmp eq i64 %cast775, 0
+  %null_ext777 = zext i1 %null_chk776 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26096, i64 5, ptr @sty_name.26097, i64 39, i64 %null_ext777, ptr @src_file.26098, i64 0, i64 1243)
+  %value_ptr778 = getelementptr inbounds nuw %"@std::avrac::features::eval::EvalResult", ptr %result774, i32 0, i32 0
+  %value779 = load ptr, ptr %value_ptr778, align 8
+  %231 = call ptr @"@std::avrac::features::eval::render_value"(ptr %value779)
+  %232 = call i32 @puts(ptr %231)
+  %widen780 = sext i32 %232 to i64
   ret i64 0
 
-if_then714:                                       ; preds = %sc_merge697
-  %result716 = load ptr, ptr %result687, align 8
-  %cast717 = ptrtoint ptr %result716 to i64
-  %null_chk718 = icmp eq i64 %cast717, 0
-  %null_ext719 = zext i1 %null_chk718 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26001, i64 13, ptr @sty_name.26002, i64 39, i64 %null_ext719, ptr @src_file.26003, i64 0, i64 1101)
-  %error_message_ptr720 = getelementptr inbounds nuw %"@std::avrac::features::eval::EvalResult", ptr %result716, i32 0, i32 2
-  %error_message721 = load ptr, ptr %error_message_ptr720, align 8
-  %208 = call i64 @fail(ptr %error_message721)
-  br label %ifcont712
+if_then766:                                       ; preds = %sc_merge749
+  %result768 = load ptr, ptr %result739, align 8
+  %cast769 = ptrtoint ptr %result768 to i64
+  %null_chk770 = icmp eq i64 %cast769, 0
+  %null_ext771 = zext i1 %null_chk770 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26093, i64 13, ptr @sty_name.26094, i64 39, i64 %null_ext771, ptr @src_file.26095, i64 0, i64 1241)
+  %error_message_ptr772 = getelementptr inbounds nuw %"@std::avrac::features::eval::EvalResult", ptr %result768, i32 0, i32 2
+  %error_message773 = load ptr, ptr %error_message_ptr772, align 8
+  %233 = call i64 @fail(ptr %error_message773)
+  br label %ifcont764
 
-if_else715:                                       ; preds = %sc_merge697
-  br label %ifcont712
+if_else767:                                       ; preds = %sc_merge749
+  br label %ifcont764
 
-parm_body729:                                     ; preds = %parm_next683
-  %source733 = load ptr, ptr %source, align 8
-  %209 = call ptr @"@std::avrac::parse::parse_program_source"(ptr %source733)
-  store ptr %209, ptr %parsed734, align 8
-  %parsed735 = load ptr, ptr %parsed734, align 8
-  %cast736 = ptrtoint ptr %parsed735 to i64
-  %null_chk737 = icmp eq i64 %cast736, 0
-  %null_ext738 = zext i1 %null_chk737 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26008, i64 9, ptr @sty_name.26009, i64 38, i64 %null_ext738, ptr @src_file.26010, i64 0, i64 1115)
-  %had_error_ptr739 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed735, i32 0, i32 1
-  %had_error740 = load i64, ptr %had_error_ptr739, align 8
-  %l_bool741 = icmp ne i64 %had_error740, 0
-  br i1 %l_bool741, label %sc_short743, label %sc_rhs742
+parm_body781:                                     ; preds = %parm_next735
+  %source785 = load ptr, ptr %source, align 8
+  %234 = call ptr @"@std::avrac::parse::parse_program_source"(ptr %source785)
+  store ptr %234, ptr %parsed786, align 8
+  %parsed787 = load ptr, ptr %parsed786, align 8
+  %cast788 = ptrtoint ptr %parsed787 to i64
+  %null_chk789 = icmp eq i64 %cast788, 0
+  %null_ext790 = zext i1 %null_chk789 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26100, i64 9, ptr @sty_name.26101, i64 38, i64 %null_ext790, ptr @src_file.26102, i64 0, i64 1255)
+  %had_error_ptr791 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed787, i32 0, i32 1
+  %had_error792 = load i64, ptr %had_error_ptr791, align 8
+  %l_bool793 = icmp ne i64 %had_error792, 0
+  br i1 %l_bool793, label %sc_short795, label %sc_rhs794
 
-parm_next730:                                     ; preds = %parm_next683
-  %210 = call i32 @strcmp(ptr %command257, ptr @.lit_str.26042)
-  %widen847 = sext i32 %210 to i64
-  %str_eq848 = icmp eq i64 %widen847, 0
-  br i1 %str_eq848, label %parm_body845, label %parm_next846
+parm_next782:                                     ; preds = %parm_next735
+  %235 = call i32 @strcmp(ptr %command309, ptr @.lit_str.26134)
+  %widen899 = sext i32 %235 to i64
+  %str_eq900 = icmp eq i64 %widen899, 0
+  br i1 %str_eq900, label %parm_body897, label %parm_next898
 
-sc_rhs742:                                        ; preds = %parm_body729
-  %parsed745 = load ptr, ptr %parsed734, align 8
-  %cast746 = ptrtoint ptr %parsed745 to i64
-  %null_chk747 = icmp eq i64 %cast746, 0
-  %null_ext748 = zext i1 %null_chk747 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26011, i64 5, ptr @sty_name.26012, i64 38, i64 %null_ext748, ptr @src_file.26013, i64 0, i64 1115)
-  %stmts_ptr749 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed745, i32 0, i32 0
-  %stmts750 = load ptr, ptr %stmts_ptr749, align 8
-  %eq751 = icmp eq ptr %stmts750, null
-  %eq_ext752 = zext i1 %eq751 to i64
-  %r_bool753 = icmp ne i64 %eq_ext752, 0
-  br i1 %r_bool753, label %sc_r_true754, label %sc_r_false755
+sc_rhs794:                                        ; preds = %parm_body781
+  %parsed797 = load ptr, ptr %parsed786, align 8
+  %cast798 = ptrtoint ptr %parsed797 to i64
+  %null_chk799 = icmp eq i64 %cast798, 0
+  %null_ext800 = zext i1 %null_chk799 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26103, i64 5, ptr @sty_name.26104, i64 38, i64 %null_ext800, ptr @src_file.26105, i64 0, i64 1255)
+  %stmts_ptr801 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed797, i32 0, i32 0
+  %stmts802 = load ptr, ptr %stmts_ptr801, align 8
+  %eq803 = icmp eq ptr %stmts802, null
+  %eq_ext804 = zext i1 %eq803 to i64
+  %r_bool805 = icmp ne i64 %eq_ext804, 0
+  br i1 %r_bool805, label %sc_r_true806, label %sc_r_false807
 
-sc_short743:                                      ; preds = %parm_body729
-  br label %sc_merge744
+sc_short795:                                      ; preds = %parm_body781
+  br label %sc_merge796
 
-sc_merge744:                                      ; preds = %sc_r_merge756, %sc_short743
-  %sc_phi757 = phi i1 [ true, %sc_short743 ], [ %r_bool753, %sc_r_merge756 ]
-  %sc_ext758 = zext i1 %sc_phi757 to i64
-  %if_cond760 = icmp ne i64 %sc_ext758, 0
-  br i1 %if_cond760, label %if_then761, label %if_else762
+sc_merge796:                                      ; preds = %sc_r_merge808, %sc_short795
+  %sc_phi809 = phi i1 [ true, %sc_short795 ], [ %r_bool805, %sc_r_merge808 ]
+  %sc_ext810 = zext i1 %sc_phi809 to i64
+  %if_cond812 = icmp ne i64 %sc_ext810, 0
+  br i1 %if_cond812, label %if_then813, label %if_else814
 
-sc_r_true754:                                     ; preds = %sc_rhs742
-  br label %sc_r_merge756
+sc_r_true806:                                     ; preds = %sc_rhs794
+  br label %sc_r_merge808
 
-sc_r_false755:                                    ; preds = %sc_rhs742
-  br label %sc_r_merge756
+sc_r_false807:                                    ; preds = %sc_rhs794
+  br label %sc_r_merge808
 
-sc_r_merge756:                                    ; preds = %sc_r_false755, %sc_r_true754
-  br label %sc_merge744
+sc_r_merge808:                                    ; preds = %sc_r_false807, %sc_r_true806
+  br label %sc_merge796
 
-ifcont759:                                        ; preds = %if_else762, %ifcont770
-  %path788 = load ptr, ptr %path, align 8
-  %211 = call ptr @"@std::avrac::features::modules::resolver::modules_dirname"(ptr %path788)
-  store ptr %211, ptr %entry_dir789, align 8
-  %parsed790 = load ptr, ptr %parsed734, align 8
-  %cast791 = ptrtoint ptr %parsed790 to i64
-  %null_chk792 = icmp eq i64 %cast791, 0
-  %null_ext793 = zext i1 %null_chk792 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26023, i64 5, ptr @sty_name.26024, i64 38, i64 %null_ext793, ptr @src_file.26025, i64 0, i64 1122)
-  %stmts_ptr794 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed790, i32 0, i32 0
-  %stmts795 = load ptr, ptr %stmts_ptr794, align 8
-  %entry_dir796 = load ptr, ptr %entry_dir789, align 8
-  %212 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr797 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::LoadedPaths", ptr %212, i32 0, i32 0
-  store i64 193455868, ptr %tag_ptr797, align 8
-  %pay_ptr798 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::LoadedPaths", ptr %212, i32 0, i32 1
-  store ptr null, ptr %pay_ptr798, align 8
-  %cast799 = ptrtoint ptr %212 to i64
-  %cast800 = inttoptr i64 %cast799 to ptr
-  %213 = call ptr @"@std::avrac::features::modules::resolver::resolve_module_files"(ptr %stmts795, ptr %entry_dir796, ptr %cast800)
-  store ptr %213, ptr %mod_resolved801, align 8
-  %mod_resolved802 = load ptr, ptr %mod_resolved801, align 8
-  %cast803 = ptrtoint ptr %mod_resolved802 to i64
-  %null_chk804 = icmp eq i64 %cast803, 0
-  %null_ext805 = zext i1 %null_chk804 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26026, i64 9, ptr @sty_name.26027, i64 55, i64 %null_ext805, ptr @src_file.26028, i64 0, i64 1123)
-  %had_error_ptr806 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved802, i32 0, i32 2
-  %had_error807 = load i64, ptr %had_error_ptr806, align 8
-  %if_cond809 = icmp ne i64 %had_error807, 0
-  br i1 %if_cond809, label %if_then810, label %if_else811
+ifcont811:                                        ; preds = %if_else814, %ifcont822
+  %path840 = load ptr, ptr %path, align 8
+  %236 = call ptr @"@std::avrac::features::modules::resolver::modules_dirname"(ptr %path840)
+  store ptr %236, ptr %entry_dir841, align 8
+  %parsed842 = load ptr, ptr %parsed786, align 8
+  %cast843 = ptrtoint ptr %parsed842 to i64
+  %null_chk844 = icmp eq i64 %cast843, 0
+  %null_ext845 = zext i1 %null_chk844 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26115, i64 5, ptr @sty_name.26116, i64 38, i64 %null_ext845, ptr @src_file.26117, i64 0, i64 1262)
+  %stmts_ptr846 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed842, i32 0, i32 0
+  %stmts847 = load ptr, ptr %stmts_ptr846, align 8
+  %entry_dir848 = load ptr, ptr %entry_dir841, align 8
+  %237 = call ptr @avra_rc_alloc(i64 16)
+  %tag_ptr849 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::LoadedPaths", ptr %237, i32 0, i32 0
+  store i64 193455868, ptr %tag_ptr849, align 8
+  %pay_ptr850 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::LoadedPaths", ptr %237, i32 0, i32 1
+  store ptr null, ptr %pay_ptr850, align 8
+  %cast851 = ptrtoint ptr %237 to i64
+  %cast852 = inttoptr i64 %cast851 to ptr
+  %238 = call ptr @"@std::avrac::features::modules::resolver::resolve_module_files"(ptr %stmts847, ptr %entry_dir848, ptr %cast852)
+  store ptr %238, ptr %mod_resolved853, align 8
+  %mod_resolved854 = load ptr, ptr %mod_resolved853, align 8
+  %cast855 = ptrtoint ptr %mod_resolved854 to i64
+  %null_chk856 = icmp eq i64 %cast855, 0
+  %null_ext857 = zext i1 %null_chk856 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26118, i64 9, ptr @sty_name.26119, i64 55, i64 %null_ext857, ptr @src_file.26120, i64 0, i64 1263)
+  %had_error_ptr858 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved854, i32 0, i32 2
+  %had_error859 = load i64, ptr %had_error_ptr858, align 8
+  %if_cond861 = icmp ne i64 %had_error859, 0
+  br i1 %if_cond861, label %if_then862, label %if_else863
 
-if_then761:                                       ; preds = %sc_merge744
-  %parsed763 = load ptr, ptr %parsed734, align 8
-  %cast764 = ptrtoint ptr %parsed763 to i64
-  %null_chk765 = icmp eq i64 %cast764, 0
-  %null_ext766 = zext i1 %null_chk765 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26014, i64 3, ptr @sty_name.26015, i64 38, i64 %null_ext766, ptr @src_file.26016, i64 0, i64 1116)
-  %bag_ptr767 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed763, i32 0, i32 3
-  %bag768 = load ptr, ptr %bag_ptr767, align 8
-  %214 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag768)
-  %widen769 = zext i1 %214 to i64
-  %if_cond771 = icmp ne i64 %widen769, 0
-  br i1 %if_cond771, label %if_then772, label %if_else773
+if_then813:                                       ; preds = %sc_merge796
+  %parsed815 = load ptr, ptr %parsed786, align 8
+  %cast816 = ptrtoint ptr %parsed815 to i64
+  %null_chk817 = icmp eq i64 %cast816, 0
+  %null_ext818 = zext i1 %null_chk817 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26106, i64 3, ptr @sty_name.26107, i64 38, i64 %null_ext818, ptr @src_file.26108, i64 0, i64 1256)
+  %bag_ptr819 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed815, i32 0, i32 3
+  %bag820 = load ptr, ptr %bag_ptr819, align 8
+  %239 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag820)
+  %widen821 = zext i1 %239 to i64
+  %if_cond823 = icmp ne i64 %widen821, 0
+  br i1 %if_cond823, label %if_then824, label %if_else825
 
-if_else762:                                       ; preds = %sc_merge744
-  br label %ifcont759
+if_else814:                                       ; preds = %sc_merge796
+  br label %ifcont811
 
-ifcont770:                                        ; preds = %if_else773, %if_then772
-  %parsed782 = load ptr, ptr %parsed734, align 8
-  %cast783 = ptrtoint ptr %parsed782 to i64
-  %null_chk784 = icmp eq i64 %cast783, 0
-  %null_ext785 = zext i1 %null_chk784 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26020, i64 13, ptr @sty_name.26021, i64 38, i64 %null_ext785, ptr @src_file.26022, i64 0, i64 1119)
-  %error_message_ptr786 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed782, i32 0, i32 2
-  %error_message787 = load ptr, ptr %error_message_ptr786, align 8
-  %215 = call i64 @fail(ptr %error_message787)
-  br label %ifcont759
+ifcont822:                                        ; preds = %if_else825, %if_then824
+  %parsed834 = load ptr, ptr %parsed786, align 8
+  %cast835 = ptrtoint ptr %parsed834 to i64
+  %null_chk836 = icmp eq i64 %cast835, 0
+  %null_ext837 = zext i1 %null_chk836 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26112, i64 13, ptr @sty_name.26113, i64 38, i64 %null_ext837, ptr @src_file.26114, i64 0, i64 1259)
+  %error_message_ptr838 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed834, i32 0, i32 2
+  %error_message839 = load ptr, ptr %error_message_ptr838, align 8
+  %240 = call i64 @fail(ptr %error_message839)
+  br label %ifcont811
 
-if_then772:                                       ; preds = %if_then761
-  %source774 = load ptr, ptr %source, align 8
-  %path775 = load ptr, ptr %path, align 8
-  %parsed776 = load ptr, ptr %parsed734, align 8
-  %cast777 = ptrtoint ptr %parsed776 to i64
-  %null_chk778 = icmp eq i64 %cast777, 0
-  %null_ext779 = zext i1 %null_chk778 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26017, i64 3, ptr @sty_name.26018, i64 38, i64 %null_ext779, ptr @src_file.26019, i64 0, i64 1117)
-  %bag_ptr780 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed776, i32 0, i32 3
-  %bag781 = load ptr, ptr %bag_ptr780, align 8
-  %216 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr %source774, ptr %path775, ptr %bag781)
-  br label %ifcont770
+if_then824:                                       ; preds = %if_then813
+  %source826 = load ptr, ptr %source, align 8
+  %path827 = load ptr, ptr %path, align 8
+  %parsed828 = load ptr, ptr %parsed786, align 8
+  %cast829 = ptrtoint ptr %parsed828 to i64
+  %null_chk830 = icmp eq i64 %cast829, 0
+  %null_ext831 = zext i1 %null_chk830 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26109, i64 3, ptr @sty_name.26110, i64 38, i64 %null_ext831, ptr @src_file.26111, i64 0, i64 1257)
+  %bag_ptr832 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed828, i32 0, i32 3
+  %bag833 = load ptr, ptr %bag_ptr832, align 8
+  %241 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr %source826, ptr %path827, ptr %bag833)
+  br label %ifcont822
 
-if_else773:                                       ; preds = %if_then761
-  br label %ifcont770
+if_else825:                                       ; preds = %if_then813
+  br label %ifcont822
 
-ifcont808:                                        ; preds = %if_else811, %if_then810
-  %mod_resolved818 = load ptr, ptr %mod_resolved801, align 8
-  %cast819 = ptrtoint ptr %mod_resolved818 to i64
-  %null_chk820 = icmp eq i64 %cast819, 0
-  %null_ext821 = zext i1 %null_chk820 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26032, i64 5, ptr @sty_name.26033, i64 55, i64 %null_ext821, ptr @src_file.26034, i64 0, i64 1126)
-  %stmts_ptr822 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved818, i32 0, i32 0
-  %stmts823 = load ptr, ptr %stmts_ptr822, align 8
-  %217 = call ptr @"@std::avrac::resolve::names::resolve_names"(ptr %stmts823)
-  store ptr %217, ptr %named824, align 8
-  %named825 = load ptr, ptr %named824, align 8
-  %cast826 = ptrtoint ptr %named825 to i64
-  %null_chk827 = icmp eq i64 %cast826, 0
-  %null_ext828 = zext i1 %null_chk827 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26035, i64 3, ptr @sty_name.26036, i64 46, i64 %null_ext828, ptr @src_file.26037, i64 0, i64 1127)
-  %bag_ptr829 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named825, i32 0, i32 3
-  %bag830 = load ptr, ptr %bag_ptr829, align 8
-  %218 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag830)
-  %widen831 = zext i1 %218 to i64
-  %if_cond833 = icmp ne i64 %widen831, 0
-  br i1 %if_cond833, label %if_then834, label %if_else835
+ifcont860:                                        ; preds = %if_else863, %if_then862
+  %mod_resolved870 = load ptr, ptr %mod_resolved853, align 8
+  %cast871 = ptrtoint ptr %mod_resolved870 to i64
+  %null_chk872 = icmp eq i64 %cast871, 0
+  %null_ext873 = zext i1 %null_chk872 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26124, i64 5, ptr @sty_name.26125, i64 55, i64 %null_ext873, ptr @src_file.26126, i64 0, i64 1266)
+  %stmts_ptr874 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved870, i32 0, i32 0
+  %stmts875 = load ptr, ptr %stmts_ptr874, align 8
+  %242 = call ptr @"@std::avrac::resolve::names::resolve_names"(ptr %stmts875)
+  store ptr %242, ptr %named876, align 8
+  %named877 = load ptr, ptr %named876, align 8
+  %cast878 = ptrtoint ptr %named877 to i64
+  %null_chk879 = icmp eq i64 %cast878, 0
+  %null_ext880 = zext i1 %null_chk879 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26127, i64 3, ptr @sty_name.26128, i64 46, i64 %null_ext880, ptr @src_file.26129, i64 0, i64 1267)
+  %bag_ptr881 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named877, i32 0, i32 3
+  %bag882 = load ptr, ptr %bag_ptr881, align 8
+  %243 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag882)
+  %widen883 = zext i1 %243 to i64
+  %if_cond885 = icmp ne i64 %widen883, 0
+  br i1 %if_cond885, label %if_then886, label %if_else887
 
-if_then810:                                       ; preds = %ifcont759
-  %mod_resolved812 = load ptr, ptr %mod_resolved801, align 8
-  %cast813 = ptrtoint ptr %mod_resolved812 to i64
-  %null_chk814 = icmp eq i64 %cast813, 0
-  %null_ext815 = zext i1 %null_chk814 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26029, i64 13, ptr @sty_name.26030, i64 55, i64 %null_ext815, ptr @src_file.26031, i64 0, i64 1124)
-  %error_message_ptr816 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved812, i32 0, i32 3
-  %error_message817 = load ptr, ptr %error_message_ptr816, align 8
-  %219 = call i64 @fail(ptr %error_message817)
-  br label %ifcont808
+if_then862:                                       ; preds = %ifcont811
+  %mod_resolved864 = load ptr, ptr %mod_resolved853, align 8
+  %cast865 = ptrtoint ptr %mod_resolved864 to i64
+  %null_chk866 = icmp eq i64 %cast865, 0
+  %null_ext867 = zext i1 %null_chk866 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26121, i64 13, ptr @sty_name.26122, i64 55, i64 %null_ext867, ptr @src_file.26123, i64 0, i64 1264)
+  %error_message_ptr868 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved864, i32 0, i32 3
+  %error_message869 = load ptr, ptr %error_message_ptr868, align 8
+  %244 = call i64 @fail(ptr %error_message869)
+  br label %ifcont860
 
-if_else811:                                       ; preds = %ifcont759
-  br label %ifcont808
+if_else863:                                       ; preds = %ifcont811
+  br label %ifcont860
 
-ifcont832:                                        ; preds = %if_else835, %if_then834
-  %220 = call i32 @puts(ptr @.str.26041)
-  %widen844 = sext i32 %220 to i64
+ifcont884:                                        ; preds = %if_else887, %if_then886
+  %245 = call i32 @puts(ptr @.str.26133)
+  %widen896 = sext i32 %245 to i64
   ret i64 0
 
-if_then834:                                       ; preds = %ifcont808
-  %source836 = load ptr, ptr %source, align 8
-  %path837 = load ptr, ptr %path, align 8
-  %named838 = load ptr, ptr %named824, align 8
-  %cast839 = ptrtoint ptr %named838 to i64
-  %null_chk840 = icmp eq i64 %cast839, 0
-  %null_ext841 = zext i1 %null_chk840 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26038, i64 3, ptr @sty_name.26039, i64 46, i64 %null_ext841, ptr @src_file.26040, i64 0, i64 1128)
-  %bag_ptr842 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named838, i32 0, i32 3
-  %bag843 = load ptr, ptr %bag_ptr842, align 8
-  %221 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr %source836, ptr %path837, ptr %bag843)
-  br label %ifcont832
+if_then886:                                       ; preds = %ifcont860
+  %source888 = load ptr, ptr %source, align 8
+  %path889 = load ptr, ptr %path, align 8
+  %named890 = load ptr, ptr %named876, align 8
+  %cast891 = ptrtoint ptr %named890 to i64
+  %null_chk892 = icmp eq i64 %cast891, 0
+  %null_ext893 = zext i1 %null_chk892 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26130, i64 3, ptr @sty_name.26131, i64 46, i64 %null_ext893, ptr @src_file.26132, i64 0, i64 1268)
+  %bag_ptr894 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named890, i32 0, i32 3
+  %bag895 = load ptr, ptr %bag_ptr894, align 8
+  %246 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr %source888, ptr %path889, ptr %bag895)
+  br label %ifcont884
 
-if_else835:                                       ; preds = %ifcont808
-  br label %ifcont832
+if_else887:                                       ; preds = %ifcont860
+  br label %ifcont884
 
-parm_body845:                                     ; preds = %parm_next730
-  %source849 = load ptr, ptr %source, align 8
-  %222 = call ptr @"@std::avrac::parse::parse_program_source"(ptr %source849)
-  store ptr %222, ptr %parsed850, align 8
-  %parsed851 = load ptr, ptr %parsed850, align 8
-  %cast852 = ptrtoint ptr %parsed851 to i64
-  %null_chk853 = icmp eq i64 %cast852, 0
-  %null_ext854 = zext i1 %null_chk853 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26043, i64 9, ptr @sty_name.26044, i64 38, i64 %null_ext854, ptr @src_file.26045, i64 0, i64 1140)
-  %had_error_ptr855 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed851, i32 0, i32 1
-  %had_error856 = load i64, ptr %had_error_ptr855, align 8
-  %l_bool857 = icmp ne i64 %had_error856, 0
-  br i1 %l_bool857, label %sc_short859, label %sc_rhs858
+parm_body897:                                     ; preds = %parm_next782
+  %source901 = load ptr, ptr %source, align 8
+  %247 = call ptr @"@std::avrac::parse::parse_program_source"(ptr %source901)
+  store ptr %247, ptr %parsed902, align 8
+  %parsed903 = load ptr, ptr %parsed902, align 8
+  %cast904 = ptrtoint ptr %parsed903 to i64
+  %null_chk905 = icmp eq i64 %cast904, 0
+  %null_ext906 = zext i1 %null_chk905 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26135, i64 9, ptr @sty_name.26136, i64 38, i64 %null_ext906, ptr @src_file.26137, i64 0, i64 1280)
+  %had_error_ptr907 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed903, i32 0, i32 1
+  %had_error908 = load i64, ptr %had_error_ptr907, align 8
+  %l_bool909 = icmp ne i64 %had_error908, 0
+  br i1 %l_bool909, label %sc_short911, label %sc_rhs910
 
-parm_next846:                                     ; preds = %parm_next730
-  %223 = call i32 @strcmp(ptr %command257, ptr @.lit_str.26061)
-  %widen913 = sext i32 %223 to i64
-  %str_eq914 = icmp eq i64 %widen913, 0
-  br i1 %str_eq914, label %parm_body911, label %parm_next912
+parm_next898:                                     ; preds = %parm_next782
+  %248 = call i32 @strcmp(ptr %command309, ptr @.lit_str.26153)
+  %widen965 = sext i32 %248 to i64
+  %str_eq966 = icmp eq i64 %widen965, 0
+  br i1 %str_eq966, label %parm_body963, label %parm_next964
 
-sc_rhs858:                                        ; preds = %parm_body845
-  %parsed861 = load ptr, ptr %parsed850, align 8
-  %cast862 = ptrtoint ptr %parsed861 to i64
-  %null_chk863 = icmp eq i64 %cast862, 0
-  %null_ext864 = zext i1 %null_chk863 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26046, i64 5, ptr @sty_name.26047, i64 38, i64 %null_ext864, ptr @src_file.26048, i64 0, i64 1140)
-  %stmts_ptr865 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed861, i32 0, i32 0
-  %stmts866 = load ptr, ptr %stmts_ptr865, align 8
-  %eq867 = icmp eq ptr %stmts866, null
-  %eq_ext868 = zext i1 %eq867 to i64
-  %r_bool869 = icmp ne i64 %eq_ext868, 0
-  br i1 %r_bool869, label %sc_r_true870, label %sc_r_false871
+sc_rhs910:                                        ; preds = %parm_body897
+  %parsed913 = load ptr, ptr %parsed902, align 8
+  %cast914 = ptrtoint ptr %parsed913 to i64
+  %null_chk915 = icmp eq i64 %cast914, 0
+  %null_ext916 = zext i1 %null_chk915 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26138, i64 5, ptr @sty_name.26139, i64 38, i64 %null_ext916, ptr @src_file.26140, i64 0, i64 1280)
+  %stmts_ptr917 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed913, i32 0, i32 0
+  %stmts918 = load ptr, ptr %stmts_ptr917, align 8
+  %eq919 = icmp eq ptr %stmts918, null
+  %eq_ext920 = zext i1 %eq919 to i64
+  %r_bool921 = icmp ne i64 %eq_ext920, 0
+  br i1 %r_bool921, label %sc_r_true922, label %sc_r_false923
 
-sc_short859:                                      ; preds = %parm_body845
-  br label %sc_merge860
+sc_short911:                                      ; preds = %parm_body897
+  br label %sc_merge912
 
-sc_merge860:                                      ; preds = %sc_r_merge872, %sc_short859
-  %sc_phi873 = phi i1 [ true, %sc_short859 ], [ %r_bool869, %sc_r_merge872 ]
-  %sc_ext874 = zext i1 %sc_phi873 to i64
-  %if_cond876 = icmp ne i64 %sc_ext874, 0
-  br i1 %if_cond876, label %if_then877, label %if_else878
+sc_merge912:                                      ; preds = %sc_r_merge924, %sc_short911
+  %sc_phi925 = phi i1 [ true, %sc_short911 ], [ %r_bool921, %sc_r_merge924 ]
+  %sc_ext926 = zext i1 %sc_phi925 to i64
+  %if_cond928 = icmp ne i64 %sc_ext926, 0
+  br i1 %if_cond928, label %if_then929, label %if_else930
 
-sc_r_true870:                                     ; preds = %sc_rhs858
-  br label %sc_r_merge872
+sc_r_true922:                                     ; preds = %sc_rhs910
+  br label %sc_r_merge924
 
-sc_r_false871:                                    ; preds = %sc_rhs858
-  br label %sc_r_merge872
+sc_r_false923:                                    ; preds = %sc_rhs910
+  br label %sc_r_merge924
 
-sc_r_merge872:                                    ; preds = %sc_r_false871, %sc_r_true870
-  br label %sc_merge860
+sc_r_merge924:                                    ; preds = %sc_r_false923, %sc_r_true922
+  br label %sc_merge912
 
-ifcont875:                                        ; preds = %if_else878, %ifcont886
-  %parsed904 = load ptr, ptr %parsed850, align 8
-  %cast905 = ptrtoint ptr %parsed904 to i64
-  %null_chk906 = icmp eq i64 %cast905, 0
-  %null_ext907 = zext i1 %null_chk906 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26058, i64 5, ptr @sty_name.26059, i64 38, i64 %null_ext907, ptr @src_file.26060, i64 0, i64 1146)
-  %stmts_ptr908 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed904, i32 0, i32 0
-  %stmts909 = load ptr, ptr %stmts_ptr908, align 8
-  %224 = call ptr @"@std::avrac::fmt::fmt_stmt_list"(ptr %stmts909, i64 0)
-  %225 = call i32 @puts(ptr %224)
-  %widen910 = sext i32 %225 to i64
+ifcont927:                                        ; preds = %if_else930, %ifcont938
+  %parsed956 = load ptr, ptr %parsed902, align 8
+  %cast957 = ptrtoint ptr %parsed956 to i64
+  %null_chk958 = icmp eq i64 %cast957, 0
+  %null_ext959 = zext i1 %null_chk958 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26150, i64 5, ptr @sty_name.26151, i64 38, i64 %null_ext959, ptr @src_file.26152, i64 0, i64 1286)
+  %stmts_ptr960 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed956, i32 0, i32 0
+  %stmts961 = load ptr, ptr %stmts_ptr960, align 8
+  %249 = call ptr @"@std::avrac::fmt::fmt_stmt_list"(ptr %stmts961, i64 0)
+  %250 = call i32 @puts(ptr %249)
+  %widen962 = sext i32 %250 to i64
   ret i64 0
 
-if_then877:                                       ; preds = %sc_merge860
-  %parsed879 = load ptr, ptr %parsed850, align 8
-  %cast880 = ptrtoint ptr %parsed879 to i64
-  %null_chk881 = icmp eq i64 %cast880, 0
-  %null_ext882 = zext i1 %null_chk881 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26049, i64 3, ptr @sty_name.26050, i64 38, i64 %null_ext882, ptr @src_file.26051, i64 0, i64 1141)
-  %bag_ptr883 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed879, i32 0, i32 3
-  %bag884 = load ptr, ptr %bag_ptr883, align 8
-  %226 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag884)
-  %widen885 = zext i1 %226 to i64
-  %if_cond887 = icmp ne i64 %widen885, 0
-  br i1 %if_cond887, label %if_then888, label %if_else889
+if_then929:                                       ; preds = %sc_merge912
+  %parsed931 = load ptr, ptr %parsed902, align 8
+  %cast932 = ptrtoint ptr %parsed931 to i64
+  %null_chk933 = icmp eq i64 %cast932, 0
+  %null_ext934 = zext i1 %null_chk933 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26141, i64 3, ptr @sty_name.26142, i64 38, i64 %null_ext934, ptr @src_file.26143, i64 0, i64 1281)
+  %bag_ptr935 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed931, i32 0, i32 3
+  %bag936 = load ptr, ptr %bag_ptr935, align 8
+  %251 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag936)
+  %widen937 = zext i1 %251 to i64
+  %if_cond939 = icmp ne i64 %widen937, 0
+  br i1 %if_cond939, label %if_then940, label %if_else941
 
-if_else878:                                       ; preds = %sc_merge860
-  br label %ifcont875
+if_else930:                                       ; preds = %sc_merge912
+  br label %ifcont927
 
-ifcont886:                                        ; preds = %if_else889, %if_then888
-  %parsed898 = load ptr, ptr %parsed850, align 8
-  %cast899 = ptrtoint ptr %parsed898 to i64
-  %null_chk900 = icmp eq i64 %cast899, 0
-  %null_ext901 = zext i1 %null_chk900 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26055, i64 13, ptr @sty_name.26056, i64 38, i64 %null_ext901, ptr @src_file.26057, i64 0, i64 1144)
-  %error_message_ptr902 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed898, i32 0, i32 2
-  %error_message903 = load ptr, ptr %error_message_ptr902, align 8
-  %227 = call i64 @fail(ptr %error_message903)
-  br label %ifcont875
+ifcont938:                                        ; preds = %if_else941, %if_then940
+  %parsed950 = load ptr, ptr %parsed902, align 8
+  %cast951 = ptrtoint ptr %parsed950 to i64
+  %null_chk952 = icmp eq i64 %cast951, 0
+  %null_ext953 = zext i1 %null_chk952 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26147, i64 13, ptr @sty_name.26148, i64 38, i64 %null_ext953, ptr @src_file.26149, i64 0, i64 1284)
+  %error_message_ptr954 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed950, i32 0, i32 2
+  %error_message955 = load ptr, ptr %error_message_ptr954, align 8
+  %252 = call i64 @fail(ptr %error_message955)
+  br label %ifcont927
 
-if_then888:                                       ; preds = %if_then877
-  %source890 = load ptr, ptr %source, align 8
-  %path891 = load ptr, ptr %path, align 8
-  %parsed892 = load ptr, ptr %parsed850, align 8
-  %cast893 = ptrtoint ptr %parsed892 to i64
-  %null_chk894 = icmp eq i64 %cast893, 0
-  %null_ext895 = zext i1 %null_chk894 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26052, i64 3, ptr @sty_name.26053, i64 38, i64 %null_ext895, ptr @src_file.26054, i64 0, i64 1142)
-  %bag_ptr896 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed892, i32 0, i32 3
-  %bag897 = load ptr, ptr %bag_ptr896, align 8
-  %228 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr %source890, ptr %path891, ptr %bag897)
-  br label %ifcont886
+if_then940:                                       ; preds = %if_then929
+  %source942 = load ptr, ptr %source, align 8
+  %path943 = load ptr, ptr %path, align 8
+  %parsed944 = load ptr, ptr %parsed902, align 8
+  %cast945 = ptrtoint ptr %parsed944 to i64
+  %null_chk946 = icmp eq i64 %cast945, 0
+  %null_ext947 = zext i1 %null_chk946 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26144, i64 3, ptr @sty_name.26145, i64 38, i64 %null_ext947, ptr @src_file.26146, i64 0, i64 1282)
+  %bag_ptr948 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed944, i32 0, i32 3
+  %bag949 = load ptr, ptr %bag_ptr948, align 8
+  %253 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr %source942, ptr %path943, ptr %bag949)
+  br label %ifcont938
 
-if_else889:                                       ; preds = %if_then877
-  br label %ifcont886
+if_else941:                                       ; preds = %if_then929
+  br label %ifcont938
 
-parm_body911:                                     ; preds = %parm_next846
-  %source915 = load ptr, ptr %source, align 8
-  %229 = call ptr @"@std::avrac::parse::parse_program_source"(ptr %source915)
-  store ptr %229, ptr %parsed916, align 8
-  %parsed917 = load ptr, ptr %parsed916, align 8
-  %cast918 = ptrtoint ptr %parsed917 to i64
-  %null_chk919 = icmp eq i64 %cast918, 0
-  %null_ext920 = zext i1 %null_chk919 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26062, i64 9, ptr @sty_name.26063, i64 38, i64 %null_ext920, ptr @src_file.26064, i64 0, i64 1158)
-  %had_error_ptr921 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed917, i32 0, i32 1
-  %had_error922 = load i64, ptr %had_error_ptr921, align 8
-  %l_bool923 = icmp ne i64 %had_error922, 0
-  br i1 %l_bool923, label %sc_short925, label %sc_rhs924
+parm_body963:                                     ; preds = %parm_next898
+  %source967 = load ptr, ptr %source, align 8
+  %254 = call ptr @"@std::avrac::parse::parse_program_source"(ptr %source967)
+  store ptr %254, ptr %parsed968, align 8
+  %parsed969 = load ptr, ptr %parsed968, align 8
+  %cast970 = ptrtoint ptr %parsed969 to i64
+  %null_chk971 = icmp eq i64 %cast970, 0
+  %null_ext972 = zext i1 %null_chk971 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26154, i64 9, ptr @sty_name.26155, i64 38, i64 %null_ext972, ptr @src_file.26156, i64 0, i64 1298)
+  %had_error_ptr973 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed969, i32 0, i32 1
+  %had_error974 = load i64, ptr %had_error_ptr973, align 8
+  %l_bool975 = icmp ne i64 %had_error974, 0
+  br i1 %l_bool975, label %sc_short977, label %sc_rhs976
 
-parm_next912:                                     ; preds = %parm_next846
-  br label %parm_body1198
+parm_next964:                                     ; preds = %parm_next898
+  br label %parm_body1250
 
-sc_rhs924:                                        ; preds = %parm_body911
-  %parsed927 = load ptr, ptr %parsed916, align 8
-  %cast928 = ptrtoint ptr %parsed927 to i64
-  %null_chk929 = icmp eq i64 %cast928, 0
-  %null_ext930 = zext i1 %null_chk929 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26065, i64 5, ptr @sty_name.26066, i64 38, i64 %null_ext930, ptr @src_file.26067, i64 0, i64 1158)
-  %stmts_ptr931 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed927, i32 0, i32 0
-  %stmts932 = load ptr, ptr %stmts_ptr931, align 8
-  %eq933 = icmp eq ptr %stmts932, null
-  %eq_ext934 = zext i1 %eq933 to i64
-  %r_bool935 = icmp ne i64 %eq_ext934, 0
-  br i1 %r_bool935, label %sc_r_true936, label %sc_r_false937
+sc_rhs976:                                        ; preds = %parm_body963
+  %parsed979 = load ptr, ptr %parsed968, align 8
+  %cast980 = ptrtoint ptr %parsed979 to i64
+  %null_chk981 = icmp eq i64 %cast980, 0
+  %null_ext982 = zext i1 %null_chk981 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26157, i64 5, ptr @sty_name.26158, i64 38, i64 %null_ext982, ptr @src_file.26159, i64 0, i64 1298)
+  %stmts_ptr983 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed979, i32 0, i32 0
+  %stmts984 = load ptr, ptr %stmts_ptr983, align 8
+  %eq985 = icmp eq ptr %stmts984, null
+  %eq_ext986 = zext i1 %eq985 to i64
+  %r_bool987 = icmp ne i64 %eq_ext986, 0
+  br i1 %r_bool987, label %sc_r_true988, label %sc_r_false989
 
-sc_short925:                                      ; preds = %parm_body911
-  br label %sc_merge926
+sc_short977:                                      ; preds = %parm_body963
+  br label %sc_merge978
 
-sc_merge926:                                      ; preds = %sc_r_merge938, %sc_short925
-  %sc_phi939 = phi i1 [ true, %sc_short925 ], [ %r_bool935, %sc_r_merge938 ]
-  %sc_ext940 = zext i1 %sc_phi939 to i64
-  %if_cond942 = icmp ne i64 %sc_ext940, 0
-  br i1 %if_cond942, label %if_then943, label %if_else944
+sc_merge978:                                      ; preds = %sc_r_merge990, %sc_short977
+  %sc_phi991 = phi i1 [ true, %sc_short977 ], [ %r_bool987, %sc_r_merge990 ]
+  %sc_ext992 = zext i1 %sc_phi991 to i64
+  %if_cond994 = icmp ne i64 %sc_ext992, 0
+  br i1 %if_cond994, label %if_then995, label %if_else996
 
-sc_r_true936:                                     ; preds = %sc_rhs924
-  br label %sc_r_merge938
+sc_r_true988:                                     ; preds = %sc_rhs976
+  br label %sc_r_merge990
 
-sc_r_false937:                                    ; preds = %sc_rhs924
-  br label %sc_r_merge938
+sc_r_false989:                                    ; preds = %sc_rhs976
+  br label %sc_r_merge990
 
-sc_r_merge938:                                    ; preds = %sc_r_false937, %sc_r_true936
-  br label %sc_merge926
+sc_r_merge990:                                    ; preds = %sc_r_false989, %sc_r_true988
+  br label %sc_merge978
 
-ifcont941:                                        ; preds = %if_else944, %ifcont952
-  %parsed970 = load ptr, ptr %parsed916, align 8
-  %cast971 = ptrtoint ptr %parsed970 to i64
-  %null_chk972 = icmp eq i64 %cast971, 0
-  %null_ext973 = zext i1 %null_chk972 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26077, i64 5, ptr @sty_name.26078, i64 38, i64 %null_ext973, ptr @src_file.26079, i64 0, i64 1164)
-  %stmts_ptr974 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed970, i32 0, i32 0
-  %stmts975 = load ptr, ptr %stmts_ptr974, align 8
-  %230 = call ptr @"@std::avrac::desugar::desugar_program"(ptr %stmts975)
-  store ptr %230, ptr %desugared976, align 8
-  %path977 = load ptr, ptr %path, align 8
-  %231 = call ptr @"@std::avrac::features::modules::resolver::modules_dirname"(ptr %path977)
-  store ptr %231, ptr %entry_dir978, align 8
-  %desugared979 = load ptr, ptr %desugared976, align 8
-  %entry_dir980 = load ptr, ptr %entry_dir978, align 8
-  %232 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr981 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::LoadedPaths", ptr %232, i32 0, i32 0
-  store i64 193455868, ptr %tag_ptr981, align 8
-  %pay_ptr982 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::LoadedPaths", ptr %232, i32 0, i32 1
-  store ptr null, ptr %pay_ptr982, align 8
-  %cast983 = ptrtoint ptr %232 to i64
-  %cast984 = inttoptr i64 %cast983 to ptr
-  %233 = call ptr @"@std::avrac::features::modules::resolver::resolve_module_files"(ptr %desugared979, ptr %entry_dir980, ptr %cast984)
-  store ptr %233, ptr %mod_resolved985, align 8
-  %mod_resolved986 = load ptr, ptr %mod_resolved985, align 8
-  %cast987 = ptrtoint ptr %mod_resolved986 to i64
-  %null_chk988 = icmp eq i64 %cast987, 0
-  %null_ext989 = zext i1 %null_chk988 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26080, i64 9, ptr @sty_name.26081, i64 55, i64 %null_ext989, ptr @src_file.26082, i64 0, i64 1167)
-  %had_error_ptr990 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved986, i32 0, i32 2
-  %had_error991 = load i64, ptr %had_error_ptr990, align 8
-  %if_cond993 = icmp ne i64 %had_error991, 0
-  br i1 %if_cond993, label %if_then994, label %if_else995
+ifcont993:                                        ; preds = %if_else996, %ifcont1004
+  %parsed1022 = load ptr, ptr %parsed968, align 8
+  %cast1023 = ptrtoint ptr %parsed1022 to i64
+  %null_chk1024 = icmp eq i64 %cast1023, 0
+  %null_ext1025 = zext i1 %null_chk1024 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26169, i64 5, ptr @sty_name.26170, i64 38, i64 %null_ext1025, ptr @src_file.26171, i64 0, i64 1304)
+  %stmts_ptr1026 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed1022, i32 0, i32 0
+  %stmts1027 = load ptr, ptr %stmts_ptr1026, align 8
+  %255 = call ptr @"@std::avrac::desugar::desugar_program"(ptr %stmts1027)
+  store ptr %255, ptr %desugared1028, align 8
+  %path1029 = load ptr, ptr %path, align 8
+  %256 = call ptr @"@std::avrac::features::modules::resolver::modules_dirname"(ptr %path1029)
+  store ptr %256, ptr %entry_dir1030, align 8
+  %desugared1031 = load ptr, ptr %desugared1028, align 8
+  %entry_dir1032 = load ptr, ptr %entry_dir1030, align 8
+  %257 = call ptr @avra_rc_alloc(i64 16)
+  %tag_ptr1033 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::LoadedPaths", ptr %257, i32 0, i32 0
+  store i64 193455868, ptr %tag_ptr1033, align 8
+  %pay_ptr1034 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::LoadedPaths", ptr %257, i32 0, i32 1
+  store ptr null, ptr %pay_ptr1034, align 8
+  %cast1035 = ptrtoint ptr %257 to i64
+  %cast1036 = inttoptr i64 %cast1035 to ptr
+  %258 = call ptr @"@std::avrac::features::modules::resolver::resolve_module_files"(ptr %desugared1031, ptr %entry_dir1032, ptr %cast1036)
+  store ptr %258, ptr %mod_resolved1037, align 8
+  %mod_resolved1038 = load ptr, ptr %mod_resolved1037, align 8
+  %cast1039 = ptrtoint ptr %mod_resolved1038 to i64
+  %null_chk1040 = icmp eq i64 %cast1039, 0
+  %null_ext1041 = zext i1 %null_chk1040 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26172, i64 9, ptr @sty_name.26173, i64 55, i64 %null_ext1041, ptr @src_file.26174, i64 0, i64 1307)
+  %had_error_ptr1042 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved1038, i32 0, i32 2
+  %had_error1043 = load i64, ptr %had_error_ptr1042, align 8
+  %if_cond1045 = icmp ne i64 %had_error1043, 0
+  br i1 %if_cond1045, label %if_then1046, label %if_else1047
 
-if_then943:                                       ; preds = %sc_merge926
-  %parsed945 = load ptr, ptr %parsed916, align 8
-  %cast946 = ptrtoint ptr %parsed945 to i64
-  %null_chk947 = icmp eq i64 %cast946, 0
-  %null_ext948 = zext i1 %null_chk947 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26068, i64 3, ptr @sty_name.26069, i64 38, i64 %null_ext948, ptr @src_file.26070, i64 0, i64 1159)
-  %bag_ptr949 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed945, i32 0, i32 3
-  %bag950 = load ptr, ptr %bag_ptr949, align 8
-  %234 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag950)
-  %widen951 = zext i1 %234 to i64
-  %if_cond953 = icmp ne i64 %widen951, 0
-  br i1 %if_cond953, label %if_then954, label %if_else955
+if_then995:                                       ; preds = %sc_merge978
+  %parsed997 = load ptr, ptr %parsed968, align 8
+  %cast998 = ptrtoint ptr %parsed997 to i64
+  %null_chk999 = icmp eq i64 %cast998, 0
+  %null_ext1000 = zext i1 %null_chk999 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26160, i64 3, ptr @sty_name.26161, i64 38, i64 %null_ext1000, ptr @src_file.26162, i64 0, i64 1299)
+  %bag_ptr1001 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed997, i32 0, i32 3
+  %bag1002 = load ptr, ptr %bag_ptr1001, align 8
+  %259 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag1002)
+  %widen1003 = zext i1 %259 to i64
+  %if_cond1005 = icmp ne i64 %widen1003, 0
+  br i1 %if_cond1005, label %if_then1006, label %if_else1007
 
-if_else944:                                       ; preds = %sc_merge926
-  br label %ifcont941
+if_else996:                                       ; preds = %sc_merge978
+  br label %ifcont993
 
-ifcont952:                                        ; preds = %if_else955, %if_then954
-  %parsed964 = load ptr, ptr %parsed916, align 8
-  %cast965 = ptrtoint ptr %parsed964 to i64
-  %null_chk966 = icmp eq i64 %cast965, 0
-  %null_ext967 = zext i1 %null_chk966 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26074, i64 13, ptr @sty_name.26075, i64 38, i64 %null_ext967, ptr @src_file.26076, i64 0, i64 1162)
-  %error_message_ptr968 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed964, i32 0, i32 2
-  %error_message969 = load ptr, ptr %error_message_ptr968, align 8
-  %235 = call i64 @fail(ptr %error_message969)
-  br label %ifcont941
-
-if_then954:                                       ; preds = %if_then943
-  %source956 = load ptr, ptr %source, align 8
-  %path957 = load ptr, ptr %path, align 8
-  %parsed958 = load ptr, ptr %parsed916, align 8
-  %cast959 = ptrtoint ptr %parsed958 to i64
-  %null_chk960 = icmp eq i64 %cast959, 0
-  %null_ext961 = zext i1 %null_chk960 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26071, i64 3, ptr @sty_name.26072, i64 38, i64 %null_ext961, ptr @src_file.26073, i64 0, i64 1160)
-  %bag_ptr962 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed958, i32 0, i32 3
-  %bag963 = load ptr, ptr %bag_ptr962, align 8
-  %236 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr %source956, ptr %path957, ptr %bag963)
-  br label %ifcont952
-
-if_else955:                                       ; preds = %if_then943
-  br label %ifcont952
-
-ifcont992:                                        ; preds = %if_else995, %if_then994
-  %mod_resolved1016 = load ptr, ptr %mod_resolved985, align 8
-  %cast1017 = ptrtoint ptr %mod_resolved1016 to i64
+ifcont1004:                                       ; preds = %if_else1007, %if_then1006
+  %parsed1016 = load ptr, ptr %parsed968, align 8
+  %cast1017 = ptrtoint ptr %parsed1016 to i64
   %null_chk1018 = icmp eq i64 %cast1017, 0
   %null_ext1019 = zext i1 %null_chk1018 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26089, i64 5, ptr @sty_name.26090, i64 55, i64 %null_ext1019, ptr @src_file.26091, i64 0, i64 1172)
-  %stmts_ptr1020 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved1016, i32 0, i32 0
-  %stmts1021 = load ptr, ptr %stmts_ptr1020, align 8
-  %237 = call ptr @"@std::avrac::features::component_decl::expand::expand_components"(ptr %stmts1021)
-  store ptr %237, ptr %expanded1022, align 8
-  %expanded1023 = load ptr, ptr %expanded1022, align 8
-  %238 = call ptr @"@std::avrac::resolve::names::resolve_names"(ptr %expanded1023)
-  store ptr %238, ptr %named1024, align 8
-  %named1025 = load ptr, ptr %named1024, align 8
-  %cast1026 = ptrtoint ptr %named1025 to i64
-  %null_chk1027 = icmp eq i64 %cast1026, 0
-  %null_ext1028 = zext i1 %null_chk1027 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26092, i64 3, ptr @sty_name.26093, i64 46, i64 %null_ext1028, ptr @src_file.26094, i64 0, i64 1174)
-  %bag_ptr1029 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1025, i32 0, i32 3
-  %bag1030 = load ptr, ptr %bag_ptr1029, align 8
-  %239 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag1030)
-  %widen1031 = zext i1 %239 to i64
-  %l_bool1032 = icmp ne i64 %widen1031, 0
-  br i1 %l_bool1032, label %sc_short1034, label %sc_rhs1033
+  call void @avra_null_deref_trap(ptr @fld_name.26166, i64 13, ptr @sty_name.26167, i64 38, i64 %null_ext1019, ptr @src_file.26168, i64 0, i64 1302)
+  %error_message_ptr1020 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed1016, i32 0, i32 2
+  %error_message1021 = load ptr, ptr %error_message_ptr1020, align 8
+  %260 = call i64 @fail(ptr %error_message1021)
+  br label %ifcont993
 
-if_then994:                                       ; preds = %ifcont941
-  %240 = call ptr @"@std::avrac::diagnostics::bag_new"()
-  %241 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr996 = getelementptr inbounds nuw %"@std::avrac::diagnostics::DiagCode", ptr %241, i32 0, i32 0
-  store i64 6736596269474561240, ptr %tag_ptr996, align 8
-  %pay_ptr997 = getelementptr inbounds nuw %"@std::avrac::diagnostics::DiagCode", ptr %241, i32 0, i32 1
-  store ptr null, ptr %pay_ptr997, align 8
-  %cast998 = ptrtoint ptr %241 to i64
-  %mod_resolved999 = load ptr, ptr %mod_resolved985, align 8
-  %cast1000 = ptrtoint ptr %mod_resolved999 to i64
-  %null_chk1001 = icmp eq i64 %cast1000, 0
-  %null_ext1002 = zext i1 %null_chk1001 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26083, i64 13, ptr @sty_name.26084, i64 55, i64 %null_ext1002, ptr @src_file.26085, i64 0, i64 1168)
-  %error_message_ptr1003 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved999, i32 0, i32 3
-  %error_message1004 = load ptr, ptr %error_message_ptr1003, align 8
-  %242 = call ptr @"@std::avrac::diagnostics::span_dummy"()
-  %cast1005 = inttoptr i64 %cast998 to ptr
-  %243 = call ptr @"@std::avrac::diagnostics::diag_error"(ptr %cast1005, ptr %error_message1004, ptr %242)
-  %244 = call ptr @"@std::avrac::diagnostics::bag_report"(ptr %240, ptr %243)
-  store ptr %244, ptr %mod_bag1006, align 8
-  %source1007 = load ptr, ptr %source, align 8
-  %path1008 = load ptr, ptr %path, align 8
-  %mod_bag1009 = load ptr, ptr %mod_bag1006, align 8
-  %245 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr %source1007, ptr %path1008, ptr %mod_bag1009)
-  %mod_resolved1010 = load ptr, ptr %mod_resolved985, align 8
-  %cast1011 = ptrtoint ptr %mod_resolved1010 to i64
+if_then1006:                                      ; preds = %if_then995
+  %source1008 = load ptr, ptr %source, align 8
+  %path1009 = load ptr, ptr %path, align 8
+  %parsed1010 = load ptr, ptr %parsed968, align 8
+  %cast1011 = ptrtoint ptr %parsed1010 to i64
   %null_chk1012 = icmp eq i64 %cast1011, 0
   %null_ext1013 = zext i1 %null_chk1012 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26086, i64 13, ptr @sty_name.26087, i64 55, i64 %null_ext1013, ptr @src_file.26088, i64 0, i64 1170)
-  %error_message_ptr1014 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved1010, i32 0, i32 3
-  %error_message1015 = load ptr, ptr %error_message_ptr1014, align 8
-  %246 = call i64 @fail(ptr %error_message1015)
-  br label %ifcont992
+  call void @avra_null_deref_trap(ptr @fld_name.26163, i64 3, ptr @sty_name.26164, i64 38, i64 %null_ext1013, ptr @src_file.26165, i64 0, i64 1300)
+  %bag_ptr1014 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed1010, i32 0, i32 3
+  %bag1015 = load ptr, ptr %bag_ptr1014, align 8
+  %261 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr %source1008, ptr %path1009, ptr %bag1015)
+  br label %ifcont1004
 
-if_else995:                                       ; preds = %ifcont941
-  br label %ifcont992
+if_else1007:                                      ; preds = %if_then995
+  br label %ifcont1004
 
-sc_rhs1033:                                       ; preds = %ifcont992
-  %named1036 = load ptr, ptr %named1024, align 8
-  %cast1037 = ptrtoint ptr %named1036 to i64
-  %null_chk1038 = icmp eq i64 %cast1037, 0
-  %null_ext1039 = zext i1 %null_chk1038 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26095, i64 3, ptr @sty_name.26096, i64 46, i64 %null_ext1039, ptr @src_file.26097, i64 0, i64 1174)
-  %bag_ptr1040 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1036, i32 0, i32 3
-  %bag1041 = load ptr, ptr %bag_ptr1040, align 8
-  %247 = call i1 @"@std::avrac::diagnostics::bag_has_warnings"(ptr %bag1041)
-  %widen1042 = zext i1 %247 to i64
-  %r_bool1043 = icmp ne i64 %widen1042, 0
-  br i1 %r_bool1043, label %sc_r_true1044, label %sc_r_false1045
-
-sc_short1034:                                     ; preds = %ifcont992
-  br label %sc_merge1035
-
-sc_merge1035:                                     ; preds = %sc_r_merge1046, %sc_short1034
-  %sc_phi1047 = phi i1 [ true, %sc_short1034 ], [ %r_bool1043, %sc_r_merge1046 ]
-  %sc_ext1048 = zext i1 %sc_phi1047 to i64
-  %if_cond1050 = icmp ne i64 %sc_ext1048, 0
-  br i1 %if_cond1050, label %if_then1051, label %if_else1052
-
-sc_r_true1044:                                    ; preds = %sc_rhs1033
-  br label %sc_r_merge1046
-
-sc_r_false1045:                                   ; preds = %sc_rhs1033
-  br label %sc_r_merge1046
-
-sc_r_merge1046:                                   ; preds = %sc_r_false1045, %sc_r_true1044
-  br label %sc_merge1035
-
-ifcont1049:                                       ; preds = %if_else1052, %if_then1051
-  %named1061 = load ptr, ptr %named1024, align 8
-  %cast1062 = ptrtoint ptr %named1061 to i64
-  %null_chk1063 = icmp eq i64 %cast1062, 0
-  %null_ext1064 = zext i1 %null_chk1063 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26101, i64 9, ptr @sty_name.26102, i64 46, i64 %null_ext1064, ptr @src_file.26103, i64 0, i64 1177)
-  %had_error_ptr1065 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1061, i32 0, i32 1
-  %had_error1066 = load i64, ptr %had_error_ptr1065, align 8
-  %if_cond1068 = icmp ne i64 %had_error1066, 0
-  br i1 %if_cond1068, label %if_then1069, label %if_else1070
-
-if_then1051:                                      ; preds = %sc_merge1035
-  %source1053 = load ptr, ptr %source, align 8
-  %path1054 = load ptr, ptr %path, align 8
-  %named1055 = load ptr, ptr %named1024, align 8
-  %cast1056 = ptrtoint ptr %named1055 to i64
-  %null_chk1057 = icmp eq i64 %cast1056, 0
-  %null_ext1058 = zext i1 %null_chk1057 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26098, i64 3, ptr @sty_name.26099, i64 46, i64 %null_ext1058, ptr @src_file.26100, i64 0, i64 1175)
-  %bag_ptr1059 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1055, i32 0, i32 3
-  %bag1060 = load ptr, ptr %bag_ptr1059, align 8
-  %248 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr %source1053, ptr %path1054, ptr %bag1060)
-  br label %ifcont1049
-
-if_else1052:                                      ; preds = %sc_merge1035
-  br label %ifcont1049
-
-ifcont1067:                                       ; preds = %if_else1070, %if_then1069
-  %named1077 = load ptr, ptr %named1024, align 8
+ifcont1044:                                       ; preds = %if_else1047, %if_then1046
+  %mod_resolved1068 = load ptr, ptr %mod_resolved1037, align 8
+  %cast1069 = ptrtoint ptr %mod_resolved1068 to i64
+  %null_chk1070 = icmp eq i64 %cast1069, 0
+  %null_ext1071 = zext i1 %null_chk1070 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26181, i64 5, ptr @sty_name.26182, i64 55, i64 %null_ext1071, ptr @src_file.26183, i64 0, i64 1312)
+  %stmts_ptr1072 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved1068, i32 0, i32 0
+  %stmts1073 = load ptr, ptr %stmts_ptr1072, align 8
+  %262 = call ptr @"@std::avrac::features::component_decl::expand::expand_components"(ptr %stmts1073)
+  store ptr %262, ptr %expanded1074, align 8
+  %expanded1075 = load ptr, ptr %expanded1074, align 8
+  %263 = call ptr @"@std::avrac::resolve::names::resolve_names"(ptr %expanded1075)
+  store ptr %263, ptr %named1076, align 8
+  %named1077 = load ptr, ptr %named1076, align 8
   %cast1078 = ptrtoint ptr %named1077 to i64
   %null_chk1079 = icmp eq i64 %cast1078, 0
   %null_ext1080 = zext i1 %null_chk1079 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26107, i64 5, ptr @sty_name.26108, i64 46, i64 %null_ext1080, ptr @src_file.26109, i64 0, i64 1178)
-  %stmts_ptr1081 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1077, i32 0, i32 0
-  %stmts1082 = load ptr, ptr %stmts_ptr1081, align 8
-  %249 = call ptr @"@std::avrac::typeck::typecheck_program"(ptr %stmts1082)
-  store ptr %249, ptr %tc_result1083, align 8
-  %tc_result1084 = load ptr, ptr %tc_result1083, align 8
-  %cast1085 = ptrtoint ptr %tc_result1084 to i64
-  %null_chk1086 = icmp eq i64 %cast1085, 0
-  %null_ext1087 = zext i1 %null_chk1086 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26110, i64 3, ptr @sty_name.26111, i64 36, i64 %null_ext1087, ptr @src_file.26112, i64 0, i64 1179)
-  %bag_ptr1088 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result1084, i32 0, i32 2
-  %bag1089 = load ptr, ptr %bag_ptr1088, align 8
-  %250 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag1089)
-  %widen1090 = zext i1 %250 to i64
-  %l_bool1091 = icmp ne i64 %widen1090, 0
-  br i1 %l_bool1091, label %sc_short1093, label %sc_rhs1092
+  call void @avra_null_deref_trap(ptr @fld_name.26184, i64 3, ptr @sty_name.26185, i64 46, i64 %null_ext1080, ptr @src_file.26186, i64 0, i64 1314)
+  %bag_ptr1081 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1077, i32 0, i32 3
+  %bag1082 = load ptr, ptr %bag_ptr1081, align 8
+  %264 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag1082)
+  %widen1083 = zext i1 %264 to i64
+  %l_bool1084 = icmp ne i64 %widen1083, 0
+  br i1 %l_bool1084, label %sc_short1086, label %sc_rhs1085
 
-if_then1069:                                      ; preds = %ifcont1049
-  %named1071 = load ptr, ptr %named1024, align 8
-  %cast1072 = ptrtoint ptr %named1071 to i64
-  %null_chk1073 = icmp eq i64 %cast1072, 0
-  %null_ext1074 = zext i1 %null_chk1073 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26104, i64 13, ptr @sty_name.26105, i64 46, i64 %null_ext1074, ptr @src_file.26106, i64 0, i64 1177)
-  %error_message_ptr1075 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1071, i32 0, i32 2
-  %error_message1076 = load ptr, ptr %error_message_ptr1075, align 8
-  %251 = call i64 @fail(ptr %error_message1076)
-  br label %ifcont1067
+if_then1046:                                      ; preds = %ifcont993
+  %265 = call ptr @"@std::avrac::diagnostics::bag_new"()
+  %266 = call ptr @avra_rc_alloc(i64 16)
+  %tag_ptr1048 = getelementptr inbounds nuw %"@std::avrac::diagnostics::DiagCode", ptr %266, i32 0, i32 0
+  store i64 6736596269474561240, ptr %tag_ptr1048, align 8
+  %pay_ptr1049 = getelementptr inbounds nuw %"@std::avrac::diagnostics::DiagCode", ptr %266, i32 0, i32 1
+  store ptr null, ptr %pay_ptr1049, align 8
+  %cast1050 = ptrtoint ptr %266 to i64
+  %mod_resolved1051 = load ptr, ptr %mod_resolved1037, align 8
+  %cast1052 = ptrtoint ptr %mod_resolved1051 to i64
+  %null_chk1053 = icmp eq i64 %cast1052, 0
+  %null_ext1054 = zext i1 %null_chk1053 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26175, i64 13, ptr @sty_name.26176, i64 55, i64 %null_ext1054, ptr @src_file.26177, i64 0, i64 1308)
+  %error_message_ptr1055 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved1051, i32 0, i32 3
+  %error_message1056 = load ptr, ptr %error_message_ptr1055, align 8
+  %267 = call ptr @"@std::avrac::diagnostics::span_dummy"()
+  %cast1057 = inttoptr i64 %cast1050 to ptr
+  %268 = call ptr @"@std::avrac::diagnostics::diag_error"(ptr %cast1057, ptr %error_message1056, ptr %267)
+  %269 = call ptr @"@std::avrac::diagnostics::bag_report"(ptr %265, ptr %268)
+  store ptr %269, ptr %mod_bag1058, align 8
+  %source1059 = load ptr, ptr %source, align 8
+  %path1060 = load ptr, ptr %path, align 8
+  %mod_bag1061 = load ptr, ptr %mod_bag1058, align 8
+  %270 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr %source1059, ptr %path1060, ptr %mod_bag1061)
+  %mod_resolved1062 = load ptr, ptr %mod_resolved1037, align 8
+  %cast1063 = ptrtoint ptr %mod_resolved1062 to i64
+  %null_chk1064 = icmp eq i64 %cast1063, 0
+  %null_ext1065 = zext i1 %null_chk1064 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26178, i64 13, ptr @sty_name.26179, i64 55, i64 %null_ext1065, ptr @src_file.26180, i64 0, i64 1310)
+  %error_message_ptr1066 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved1062, i32 0, i32 3
+  %error_message1067 = load ptr, ptr %error_message_ptr1066, align 8
+  %271 = call i64 @fail(ptr %error_message1067)
+  br label %ifcont1044
 
-if_else1070:                                      ; preds = %ifcont1049
-  br label %ifcont1067
+if_else1047:                                      ; preds = %ifcont993
+  br label %ifcont1044
 
-sc_rhs1092:                                       ; preds = %ifcont1067
-  %tc_result1095 = load ptr, ptr %tc_result1083, align 8
-  %cast1096 = ptrtoint ptr %tc_result1095 to i64
-  %null_chk1097 = icmp eq i64 %cast1096, 0
-  %null_ext1098 = zext i1 %null_chk1097 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26113, i64 3, ptr @sty_name.26114, i64 36, i64 %null_ext1098, ptr @src_file.26115, i64 0, i64 1179)
-  %bag_ptr1099 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result1095, i32 0, i32 2
-  %bag1100 = load ptr, ptr %bag_ptr1099, align 8
-  %252 = call i1 @"@std::avrac::diagnostics::bag_has_warnings"(ptr %bag1100)
-  %widen1101 = zext i1 %252 to i64
-  %r_bool1102 = icmp ne i64 %widen1101, 0
-  br i1 %r_bool1102, label %sc_r_true1103, label %sc_r_false1104
+sc_rhs1085:                                       ; preds = %ifcont1044
+  %named1088 = load ptr, ptr %named1076, align 8
+  %cast1089 = ptrtoint ptr %named1088 to i64
+  %null_chk1090 = icmp eq i64 %cast1089, 0
+  %null_ext1091 = zext i1 %null_chk1090 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26187, i64 3, ptr @sty_name.26188, i64 46, i64 %null_ext1091, ptr @src_file.26189, i64 0, i64 1314)
+  %bag_ptr1092 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1088, i32 0, i32 3
+  %bag1093 = load ptr, ptr %bag_ptr1092, align 8
+  %272 = call i1 @"@std::avrac::diagnostics::bag_has_warnings"(ptr %bag1093)
+  %widen1094 = zext i1 %272 to i64
+  %r_bool1095 = icmp ne i64 %widen1094, 0
+  br i1 %r_bool1095, label %sc_r_true1096, label %sc_r_false1097
 
-sc_short1093:                                     ; preds = %ifcont1067
-  br label %sc_merge1094
+sc_short1086:                                     ; preds = %ifcont1044
+  br label %sc_merge1087
 
-sc_merge1094:                                     ; preds = %sc_r_merge1105, %sc_short1093
-  %sc_phi1106 = phi i1 [ true, %sc_short1093 ], [ %r_bool1102, %sc_r_merge1105 ]
-  %sc_ext1107 = zext i1 %sc_phi1106 to i64
-  %if_cond1109 = icmp ne i64 %sc_ext1107, 0
-  br i1 %if_cond1109, label %if_then1110, label %if_else1111
+sc_merge1087:                                     ; preds = %sc_r_merge1098, %sc_short1086
+  %sc_phi1099 = phi i1 [ true, %sc_short1086 ], [ %r_bool1095, %sc_r_merge1098 ]
+  %sc_ext1100 = zext i1 %sc_phi1099 to i64
+  %if_cond1102 = icmp ne i64 %sc_ext1100, 0
+  br i1 %if_cond1102, label %if_then1103, label %if_else1104
 
-sc_r_true1103:                                    ; preds = %sc_rhs1092
-  br label %sc_r_merge1105
+sc_r_true1096:                                    ; preds = %sc_rhs1085
+  br label %sc_r_merge1098
 
-sc_r_false1104:                                   ; preds = %sc_rhs1092
-  br label %sc_r_merge1105
+sc_r_false1097:                                   ; preds = %sc_rhs1085
+  br label %sc_r_merge1098
 
-sc_r_merge1105:                                   ; preds = %sc_r_false1104, %sc_r_true1103
-  br label %sc_merge1094
+sc_r_merge1098:                                   ; preds = %sc_r_false1097, %sc_r_true1096
+  br label %sc_merge1087
 
-ifcont1108:                                       ; preds = %if_else1111, %if_then1110
-  %tc_result1120 = load ptr, ptr %tc_result1083, align 8
-  %cast1121 = ptrtoint ptr %tc_result1120 to i64
-  %null_chk1122 = icmp eq i64 %cast1121, 0
-  %null_ext1123 = zext i1 %null_chk1122 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26119, i64 3, ptr @sty_name.26120, i64 36, i64 %null_ext1123, ptr @src_file.26121, i64 0, i64 1182)
-  %bag_ptr1124 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result1120, i32 0, i32 2
-  %bag1125 = load ptr, ptr %bag_ptr1124, align 8
-  %253 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag1125)
-  %widen1126 = zext i1 %253 to i64
-  %if_cond1128 = icmp ne i64 %widen1126, 0
-  br i1 %if_cond1128, label %if_then1129, label %if_else1130
+ifcont1101:                                       ; preds = %if_else1104, %if_then1103
+  %named1113 = load ptr, ptr %named1076, align 8
+  %cast1114 = ptrtoint ptr %named1113 to i64
+  %null_chk1115 = icmp eq i64 %cast1114, 0
+  %null_ext1116 = zext i1 %null_chk1115 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26193, i64 9, ptr @sty_name.26194, i64 46, i64 %null_ext1116, ptr @src_file.26195, i64 0, i64 1317)
+  %had_error_ptr1117 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1113, i32 0, i32 1
+  %had_error1118 = load i64, ptr %had_error_ptr1117, align 8
+  %if_cond1120 = icmp ne i64 %had_error1118, 0
+  br i1 %if_cond1120, label %if_then1121, label %if_else1122
 
-if_then1110:                                      ; preds = %sc_merge1094
-  %source1112 = load ptr, ptr %source, align 8
-  %path1113 = load ptr, ptr %path, align 8
-  %tc_result1114 = load ptr, ptr %tc_result1083, align 8
-  %cast1115 = ptrtoint ptr %tc_result1114 to i64
-  %null_chk1116 = icmp eq i64 %cast1115, 0
-  %null_ext1117 = zext i1 %null_chk1116 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26116, i64 3, ptr @sty_name.26117, i64 36, i64 %null_ext1117, ptr @src_file.26118, i64 0, i64 1180)
-  %bag_ptr1118 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result1114, i32 0, i32 2
-  %bag1119 = load ptr, ptr %bag_ptr1118, align 8
-  %254 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr %source1112, ptr %path1113, ptr %bag1119)
-  br label %ifcont1108
+if_then1103:                                      ; preds = %sc_merge1087
+  %source1105 = load ptr, ptr %source, align 8
+  %path1106 = load ptr, ptr %path, align 8
+  %named1107 = load ptr, ptr %named1076, align 8
+  %cast1108 = ptrtoint ptr %named1107 to i64
+  %null_chk1109 = icmp eq i64 %cast1108, 0
+  %null_ext1110 = zext i1 %null_chk1109 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26190, i64 3, ptr @sty_name.26191, i64 46, i64 %null_ext1110, ptr @src_file.26192, i64 0, i64 1315)
+  %bag_ptr1111 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1107, i32 0, i32 3
+  %bag1112 = load ptr, ptr %bag_ptr1111, align 8
+  %273 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr %source1105, ptr %path1106, ptr %bag1112)
+  br label %ifcont1101
 
-if_else1111:                                      ; preds = %sc_merge1094
-  br label %ifcont1108
+if_else1104:                                      ; preds = %sc_merge1087
+  br label %ifcont1101
 
-ifcont1127:                                       ; preds = %if_else1130, %if_then1129
-  %tc_result1131 = load ptr, ptr %tc_result1083, align 8
-  %cast1132 = ptrtoint ptr %tc_result1131 to i64
-  %null_chk1133 = icmp eq i64 %cast1132, 0
-  %null_ext1134 = zext i1 %null_chk1133 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26123, i64 5, ptr @sty_name.26124, i64 36, i64 %null_ext1134, ptr @src_file.26125, i64 0, i64 1183)
-  %stmts_ptr1135 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result1131, i32 0, i32 0
-  %stmts1136 = load ptr, ptr %stmts_ptr1135, align 8
-  %tc_result1137 = load ptr, ptr %tc_result1083, align 8
-  %cast1138 = ptrtoint ptr %tc_result1137 to i64
-  %null_chk1139 = icmp eq i64 %cast1138, 0
-  %null_ext1140 = zext i1 %null_chk1139 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26126, i64 11, ptr @sty_name.26127, i64 36, i64 %null_ext1140, ptr @src_file.26128, i64 0, i64 1183)
-  %trait_impls_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result1137, i32 0, i32 3
+ifcont1119:                                       ; preds = %if_else1122, %if_then1121
+  %named1129 = load ptr, ptr %named1076, align 8
+  %cast1130 = ptrtoint ptr %named1129 to i64
+  %null_chk1131 = icmp eq i64 %cast1130, 0
+  %null_ext1132 = zext i1 %null_chk1131 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26199, i64 5, ptr @sty_name.26200, i64 46, i64 %null_ext1132, ptr @src_file.26201, i64 0, i64 1318)
+  %stmts_ptr1133 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1129, i32 0, i32 0
+  %stmts1134 = load ptr, ptr %stmts_ptr1133, align 8
+  %274 = call ptr @"@std::avrac::typeck::typecheck_program"(ptr %stmts1134)
+  store ptr %274, ptr %tc_result1135, align 8
+  %tc_result1136 = load ptr, ptr %tc_result1135, align 8
+  %cast1137 = ptrtoint ptr %tc_result1136 to i64
+  %null_chk1138 = icmp eq i64 %cast1137, 0
+  %null_ext1139 = zext i1 %null_chk1138 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26202, i64 3, ptr @sty_name.26203, i64 36, i64 %null_ext1139, ptr @src_file.26204, i64 0, i64 1319)
+  %bag_ptr1140 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result1136, i32 0, i32 2
+  %bag1141 = load ptr, ptr %bag_ptr1140, align 8
+  %275 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag1141)
+  %widen1142 = zext i1 %275 to i64
+  %l_bool1143 = icmp ne i64 %widen1142, 0
+  br i1 %l_bool1143, label %sc_short1145, label %sc_rhs1144
+
+if_then1121:                                      ; preds = %ifcont1101
+  %named1123 = load ptr, ptr %named1076, align 8
+  %cast1124 = ptrtoint ptr %named1123 to i64
+  %null_chk1125 = icmp eq i64 %cast1124, 0
+  %null_ext1126 = zext i1 %null_chk1125 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26196, i64 13, ptr @sty_name.26197, i64 46, i64 %null_ext1126, ptr @src_file.26198, i64 0, i64 1317)
+  %error_message_ptr1127 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1123, i32 0, i32 2
+  %error_message1128 = load ptr, ptr %error_message_ptr1127, align 8
+  %276 = call i64 @fail(ptr %error_message1128)
+  br label %ifcont1119
+
+if_else1122:                                      ; preds = %ifcont1101
+  br label %ifcont1119
+
+sc_rhs1144:                                       ; preds = %ifcont1119
+  %tc_result1147 = load ptr, ptr %tc_result1135, align 8
+  %cast1148 = ptrtoint ptr %tc_result1147 to i64
+  %null_chk1149 = icmp eq i64 %cast1148, 0
+  %null_ext1150 = zext i1 %null_chk1149 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26205, i64 3, ptr @sty_name.26206, i64 36, i64 %null_ext1150, ptr @src_file.26207, i64 0, i64 1319)
+  %bag_ptr1151 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result1147, i32 0, i32 2
+  %bag1152 = load ptr, ptr %bag_ptr1151, align 8
+  %277 = call i1 @"@std::avrac::diagnostics::bag_has_warnings"(ptr %bag1152)
+  %widen1153 = zext i1 %277 to i64
+  %r_bool1154 = icmp ne i64 %widen1153, 0
+  br i1 %r_bool1154, label %sc_r_true1155, label %sc_r_false1156
+
+sc_short1145:                                     ; preds = %ifcont1119
+  br label %sc_merge1146
+
+sc_merge1146:                                     ; preds = %sc_r_merge1157, %sc_short1145
+  %sc_phi1158 = phi i1 [ true, %sc_short1145 ], [ %r_bool1154, %sc_r_merge1157 ]
+  %sc_ext1159 = zext i1 %sc_phi1158 to i64
+  %if_cond1161 = icmp ne i64 %sc_ext1159, 0
+  br i1 %if_cond1161, label %if_then1162, label %if_else1163
+
+sc_r_true1155:                                    ; preds = %sc_rhs1144
+  br label %sc_r_merge1157
+
+sc_r_false1156:                                   ; preds = %sc_rhs1144
+  br label %sc_r_merge1157
+
+sc_r_merge1157:                                   ; preds = %sc_r_false1156, %sc_r_true1155
+  br label %sc_merge1146
+
+ifcont1160:                                       ; preds = %if_else1163, %if_then1162
+  %tc_result1172 = load ptr, ptr %tc_result1135, align 8
+  %cast1173 = ptrtoint ptr %tc_result1172 to i64
+  %null_chk1174 = icmp eq i64 %cast1173, 0
+  %null_ext1175 = zext i1 %null_chk1174 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26211, i64 3, ptr @sty_name.26212, i64 36, i64 %null_ext1175, ptr @src_file.26213, i64 0, i64 1322)
+  %bag_ptr1176 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result1172, i32 0, i32 2
+  %bag1177 = load ptr, ptr %bag_ptr1176, align 8
+  %278 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag1177)
+  %widen1178 = zext i1 %278 to i64
+  %if_cond1180 = icmp ne i64 %widen1178, 0
+  br i1 %if_cond1180, label %if_then1181, label %if_else1182
+
+if_then1162:                                      ; preds = %sc_merge1146
+  %source1164 = load ptr, ptr %source, align 8
+  %path1165 = load ptr, ptr %path, align 8
+  %tc_result1166 = load ptr, ptr %tc_result1135, align 8
+  %cast1167 = ptrtoint ptr %tc_result1166 to i64
+  %null_chk1168 = icmp eq i64 %cast1167, 0
+  %null_ext1169 = zext i1 %null_chk1168 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26208, i64 3, ptr @sty_name.26209, i64 36, i64 %null_ext1169, ptr @src_file.26210, i64 0, i64 1320)
+  %bag_ptr1170 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result1166, i32 0, i32 2
+  %bag1171 = load ptr, ptr %bag_ptr1170, align 8
+  %279 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr %source1164, ptr %path1165, ptr %bag1171)
+  br label %ifcont1160
+
+if_else1163:                                      ; preds = %sc_merge1146
+  br label %ifcont1160
+
+ifcont1179:                                       ; preds = %if_else1182, %if_then1181
+  %tc_result1183 = load ptr, ptr %tc_result1135, align 8
+  %cast1184 = ptrtoint ptr %tc_result1183 to i64
+  %null_chk1185 = icmp eq i64 %cast1184, 0
+  %null_ext1186 = zext i1 %null_chk1185 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26215, i64 5, ptr @sty_name.26216, i64 36, i64 %null_ext1186, ptr @src_file.26217, i64 0, i64 1323)
+  %stmts_ptr1187 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result1183, i32 0, i32 0
+  %stmts1188 = load ptr, ptr %stmts_ptr1187, align 8
+  %tc_result1189 = load ptr, ptr %tc_result1135, align 8
+  %cast1190 = ptrtoint ptr %tc_result1189 to i64
+  %null_chk1191 = icmp eq i64 %cast1190, 0
+  %null_ext1192 = zext i1 %null_chk1191 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26218, i64 11, ptr @sty_name.26219, i64 36, i64 %null_ext1192, ptr @src_file.26220, i64 0, i64 1323)
+  %trait_impls_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result1189, i32 0, i32 3
   %trait_impls = load ptr, ptr %trait_impls_ptr, align 8
-  %255 = call ptr @"@std::avrac::features::generics::mono::monomorphize"(ptr %stmts1136, ptr %trait_impls)
-  store ptr %255, ptr %mono, align 8
-  %mono1141 = load ptr, ptr %mono, align 8
-  %cast1142 = ptrtoint ptr %mono1141 to i64
-  %null_chk1143 = icmp eq i64 %cast1142, 0
-  %null_ext1144 = zext i1 %null_chk1143 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26129, i64 3, ptr @sty_name.26130, i64 49, i64 %null_ext1144, ptr @src_file.26131, i64 0, i64 1184)
-  %bag_ptr1145 = getelementptr inbounds nuw %"@std::avrac::features::generics::mono::MonoResult", ptr %mono1141, i32 0, i32 1
-  %bag1146 = load ptr, ptr %bag_ptr1145, align 8
-  %256 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag1146)
-  %widen1147 = zext i1 %256 to i64
-  %if_cond1149 = icmp ne i64 %widen1147, 0
-  br i1 %if_cond1149, label %if_then1150, label %if_else1151
+  %280 = call ptr @"@std::avrac::features::generics::mono::monomorphize"(ptr %stmts1188, ptr %trait_impls)
+  store ptr %280, ptr %mono, align 8
+  %mono1193 = load ptr, ptr %mono, align 8
+  %cast1194 = ptrtoint ptr %mono1193 to i64
+  %null_chk1195 = icmp eq i64 %cast1194, 0
+  %null_ext1196 = zext i1 %null_chk1195 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26221, i64 3, ptr @sty_name.26222, i64 49, i64 %null_ext1196, ptr @src_file.26223, i64 0, i64 1324)
+  %bag_ptr1197 = getelementptr inbounds nuw %"@std::avrac::features::generics::mono::MonoResult", ptr %mono1193, i32 0, i32 1
+  %bag1198 = load ptr, ptr %bag_ptr1197, align 8
+  %281 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag1198)
+  %widen1199 = zext i1 %281 to i64
+  %if_cond1201 = icmp ne i64 %widen1199, 0
+  br i1 %if_cond1201, label %if_then1202, label %if_else1203
 
-if_then1129:                                      ; preds = %ifcont1108
-  %257 = call i64 @fail(ptr @.str.26122)
-  br label %ifcont1127
+if_then1181:                                      ; preds = %ifcont1160
+  %282 = call i64 @fail(ptr @.str.26214)
+  br label %ifcont1179
 
-if_else1130:                                      ; preds = %ifcont1108
-  br label %ifcont1127
+if_else1182:                                      ; preds = %ifcont1160
+  br label %ifcont1179
 
-ifcont1148:                                       ; preds = %if_else1151, %if_then1150
-  %path1160 = load ptr, ptr %path, align 8
-  %258 = call i64 @strlen(ptr %path1160)
-  %259 = call i64 @strlen(ptr @.str.26136)
-  %concat_total1161 = add i64 %258, %259
-  %concat_size1162 = add i64 %concat_total1161, 1
-  %260 = call ptr @avra_rc_alloc(i64 %concat_size1162)
-  %261 = call ptr @memcpy(ptr %260, ptr %path1160, i64 %258)
-  %cast1163 = ptrtoint ptr %260 to i64
-  %dst2_int1164 = add i64 %cast1163, %258
-  %cast1165 = inttoptr i64 %dst2_int1164 to ptr
-  %rhs_len_p11166 = add i64 %259, 1
-  %262 = call ptr @memcpy(ptr %cast1165, ptr @.str.26136, i64 %rhs_len_p11166)
-  store ptr %260, ptr %output, align 8
-  %mono1167 = load ptr, ptr %mono, align 8
-  %cast1168 = ptrtoint ptr %mono1167 to i64
-  %null_chk1169 = icmp eq i64 %cast1168, 0
-  %null_ext1170 = zext i1 %null_chk1169 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26137, i64 5, ptr @sty_name.26138, i64 49, i64 %null_ext1170, ptr @src_file.26139, i64 0, i64 1189)
-  %stmts_ptr1171 = getelementptr inbounds nuw %"@std::avrac::features::generics::mono::MonoResult", ptr %mono1167, i32 0, i32 0
-  %stmts1172 = load ptr, ptr %stmts_ptr1171, align 8
-  %output1173 = load ptr, ptr %output, align 8
-  %path1174 = load ptr, ptr %path, align 8
-  %named1175 = load ptr, ptr %named1024, align 8
-  %cast1176 = ptrtoint ptr %named1175 to i64
-  %null_chk1177 = icmp eq i64 %cast1176, 0
-  %null_ext1178 = zext i1 %null_chk1177 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26140, i64 8, ptr @sty_name.26141, i64 46, i64 %null_ext1178, ptr @src_file.26142, i64 0, i64 1189)
-  %type_reg_ptr = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1175, i32 0, i32 4
+ifcont1200:                                       ; preds = %if_else1203, %if_then1202
+  %path1212 = load ptr, ptr %path, align 8
+  %283 = call i64 @strlen(ptr %path1212)
+  %284 = call i64 @strlen(ptr @.str.26228)
+  %concat_total1213 = add i64 %283, %284
+  %concat_size1214 = add i64 %concat_total1213, 1
+  %285 = call ptr @avra_rc_alloc(i64 %concat_size1214)
+  %286 = call ptr @memcpy(ptr %285, ptr %path1212, i64 %283)
+  %cast1215 = ptrtoint ptr %285 to i64
+  %dst2_int1216 = add i64 %cast1215, %283
+  %cast1217 = inttoptr i64 %dst2_int1216 to ptr
+  %rhs_len_p11218 = add i64 %284, 1
+  %287 = call ptr @memcpy(ptr %cast1217, ptr @.str.26228, i64 %rhs_len_p11218)
+  store ptr %285, ptr %output, align 8
+  %mono1219 = load ptr, ptr %mono, align 8
+  %cast1220 = ptrtoint ptr %mono1219 to i64
+  %null_chk1221 = icmp eq i64 %cast1220, 0
+  %null_ext1222 = zext i1 %null_chk1221 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26229, i64 5, ptr @sty_name.26230, i64 49, i64 %null_ext1222, ptr @src_file.26231, i64 0, i64 1329)
+  %stmts_ptr1223 = getelementptr inbounds nuw %"@std::avrac::features::generics::mono::MonoResult", ptr %mono1219, i32 0, i32 0
+  %stmts1224 = load ptr, ptr %stmts_ptr1223, align 8
+  %output1225 = load ptr, ptr %output, align 8
+  %path1226 = load ptr, ptr %path, align 8
+  %named1227 = load ptr, ptr %named1076, align 8
+  %cast1228 = ptrtoint ptr %named1227 to i64
+  %null_chk1229 = icmp eq i64 %cast1228, 0
+  %null_ext1230 = zext i1 %null_chk1229 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26232, i64 8, ptr @sty_name.26233, i64 46, i64 %null_ext1230, ptr @src_file.26234, i64 0, i64 1329)
+  %type_reg_ptr = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1227, i32 0, i32 4
   %type_reg = load ptr, ptr %type_reg_ptr, align 8
-  %263 = call ptr @"@std::avrac::codegen::setup::compile_program"(ptr %stmts1172, ptr %output1173, i1 false, i1 false, ptr %path1174, ptr %type_reg)
-  %tag_ptr1179 = getelementptr inbounds nuw %Result__int__string, ptr %263, i32 0, i32 0
-  %tag = load i64, ptr %tag_ptr1179, align 8
+  %288 = call ptr @"@std::avrac::codegen::setup::compile_program"(ptr %stmts1224, ptr %output1225, i1 false, i1 false, ptr %path1226, ptr %type_reg)
+  %tag_ptr1231 = getelementptr inbounds nuw %Result__int__string, ptr %288, i32 0, i32 0
+  %tag = load i64, ptr %tag_ptr1231, align 8
   %tag_eq = icmp eq i64 %tag, 5862623
   br i1 %tag_eq, label %march_arm, label %march_next
 
-if_then1150:                                      ; preds = %ifcont1127
-  %source1152 = load ptr, ptr %source, align 8
-  %path1153 = load ptr, ptr %path, align 8
-  %mono1154 = load ptr, ptr %mono, align 8
-  %cast1155 = ptrtoint ptr %mono1154 to i64
-  %null_chk1156 = icmp eq i64 %cast1155, 0
-  %null_ext1157 = zext i1 %null_chk1156 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26132, i64 3, ptr @sty_name.26133, i64 49, i64 %null_ext1157, ptr @src_file.26134, i64 0, i64 1185)
-  %bag_ptr1158 = getelementptr inbounds nuw %"@std::avrac::features::generics::mono::MonoResult", ptr %mono1154, i32 0, i32 1
-  %bag1159 = load ptr, ptr %bag_ptr1158, align 8
-  %264 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr %source1152, ptr %path1153, ptr %bag1159)
-  %265 = call i64 @fail(ptr @.str.26135)
-  br label %ifcont1148
+if_then1202:                                      ; preds = %ifcont1179
+  %source1204 = load ptr, ptr %source, align 8
+  %path1205 = load ptr, ptr %path, align 8
+  %mono1206 = load ptr, ptr %mono, align 8
+  %cast1207 = ptrtoint ptr %mono1206 to i64
+  %null_chk1208 = icmp eq i64 %cast1207, 0
+  %null_ext1209 = zext i1 %null_chk1208 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26224, i64 3, ptr @sty_name.26225, i64 49, i64 %null_ext1209, ptr @src_file.26226, i64 0, i64 1325)
+  %bag_ptr1210 = getelementptr inbounds nuw %"@std::avrac::features::generics::mono::MonoResult", ptr %mono1206, i32 0, i32 1
+  %bag1211 = load ptr, ptr %bag_ptr1210, align 8
+  %289 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr %source1204, ptr %path1205, ptr %bag1211)
+  %290 = call i64 @fail(ptr @.str.26227)
+  br label %ifcont1200
 
-if_else1151:                                      ; preds = %ifcont1127
-  br label %ifcont1148
+if_else1203:                                      ; preds = %ifcont1179
+  br label %ifcont1200
 
-match_end:                                        ; preds = %march_arm1181, %march_arm
-  %output1196 = load ptr, ptr %output, align 8
-  %266 = call i32 @puts(ptr %output1196)
-  %widen1197 = sext i32 %266 to i64
+match_end:                                        ; preds = %march_arm1233, %march_arm
+  %output1248 = load ptr, ptr %output, align 8
+  %291 = call i32 @puts(ptr %output1248)
+  %widen1249 = sext i32 %291 to i64
   ret i64 0
 
-march_arm:                                        ; preds = %ifcont1148
-  %267 = call ptr @avra_map_new_cstr()
-  %cast1180 = ptrtoint ptr %267 to i64
-  store i64 %cast1180, ptr %match_stmt_discard, align 8
+march_arm:                                        ; preds = %ifcont1200
+  %292 = call ptr @avra_map_new_cstr()
+  %cast1232 = ptrtoint ptr %292 to i64
+  store i64 %cast1232, ptr %match_stmt_discard, align 8
   br label %match_end
 
-march_next:                                       ; preds = %ifcont1148
-  %tag_eq1183 = icmp eq i64 %tag, 193456014
-  br i1 %tag_eq1183, label %march_arm1181, label %march_next1182
+march_next:                                       ; preds = %ifcont1200
+  %tag_eq1235 = icmp eq i64 %tag, 193456014
+  br i1 %tag_eq1235, label %march_arm1233, label %march_next1234
 
-march_arm1181:                                    ; preds = %march_next
-  %pay_slot = getelementptr inbounds nuw %Result__int__string, ptr %263, i32 0, i32 1
+march_arm1233:                                    ; preds = %march_next
+  %pay_slot = getelementptr inbounds nuw %Result__int__string, ptr %288, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %e_slot_base = ptrtoint ptr %payload to i64
   %e_slot_addr = add i64 %e_slot_base, 0
   %e_slot = inttoptr i64 %e_slot_addr to ptr
   %e = load ptr, ptr %e_slot, align 8
   call void @avra_rc_retain(ptr %e)
-  store ptr %e, ptr %e1184, align 8
-  %268 = call ptr @"@std::avrac::diagnostics::bag_new"()
-  %e1185 = load ptr, ptr %e1184, align 8
-  %269 = call i64 @strlen(ptr @.str.26143)
-  %270 = call i64 @strlen(ptr %e1185)
-  %concat_total1186 = add i64 %269, %270
-  %concat_size1187 = add i64 %concat_total1186, 1
-  %271 = call ptr @avra_rc_alloc(i64 %concat_size1187)
-  %272 = call ptr @memcpy(ptr %271, ptr @.str.26143, i64 %269)
-  %cast1188 = ptrtoint ptr %271 to i64
-  %dst2_int1189 = add i64 %cast1188, %269
-  %cast1190 = inttoptr i64 %dst2_int1189 to ptr
-  %rhs_len_p11191 = add i64 %270, 1
-  %273 = call ptr @memcpy(ptr %cast1190, ptr %e1185, i64 %rhs_len_p11191)
-  %274 = call ptr @"@std::avrac::diagnostics::diag_ice"(ptr %271)
-  %275 = call ptr @"@std::avrac::diagnostics::bag_report"(ptr %268, ptr %274)
-  store ptr %275, ptr %ice_bag, align 8
-  %source1192 = load ptr, ptr %source, align 8
-  %path1193 = load ptr, ptr %path, align 8
-  %ice_bag1194 = load ptr, ptr %ice_bag, align 8
-  %276 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr %source1192, ptr %path1193, ptr %ice_bag1194)
-  %e1195 = load ptr, ptr %e1184, align 8
-  %277 = call i64 @fail(ptr %e1195)
-  store i64 %277, ptr %match_stmt_discard, align 8
+  store ptr %e, ptr %e1236, align 8
+  %293 = call ptr @"@std::avrac::diagnostics::bag_new"()
+  %e1237 = load ptr, ptr %e1236, align 8
+  %294 = call i64 @strlen(ptr @.str.26235)
+  %295 = call i64 @strlen(ptr %e1237)
+  %concat_total1238 = add i64 %294, %295
+  %concat_size1239 = add i64 %concat_total1238, 1
+  %296 = call ptr @avra_rc_alloc(i64 %concat_size1239)
+  %297 = call ptr @memcpy(ptr %296, ptr @.str.26235, i64 %294)
+  %cast1240 = ptrtoint ptr %296 to i64
+  %dst2_int1241 = add i64 %cast1240, %294
+  %cast1242 = inttoptr i64 %dst2_int1241 to ptr
+  %rhs_len_p11243 = add i64 %295, 1
+  %298 = call ptr @memcpy(ptr %cast1242, ptr %e1237, i64 %rhs_len_p11243)
+  %299 = call ptr @"@std::avrac::diagnostics::diag_ice"(ptr %296)
+  %300 = call ptr @"@std::avrac::diagnostics::bag_report"(ptr %293, ptr %299)
+  store ptr %300, ptr %ice_bag, align 8
+  %source1244 = load ptr, ptr %source, align 8
+  %path1245 = load ptr, ptr %path, align 8
+  %ice_bag1246 = load ptr, ptr %ice_bag, align 8
+  %301 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr %source1244, ptr %path1245, ptr %ice_bag1246)
+  %e1247 = load ptr, ptr %e1236, align 8
+  %302 = call i64 @fail(ptr %e1247)
+  store i64 %302, ptr %match_stmt_discard, align 8
   br label %match_end
 
-march_next1182:                                   ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.26144, i64 %tag, ptr @mu_file.26145, i64 1189)
+march_next1234:                                   ; preds = %march_next
+  call void @avra_match_unreachable(ptr @.match_fn.26236, i64 %tag, ptr @mu_file.26237, i64 1329)
   unreachable
 
-parm_body1198:                                    ; preds = %parm_next912
-  %278 = call ptr @avra_map_new_cstr()
-  %cast1200 = ptrtoint ptr %278 to i64
-  store i64 %cast1200, ptr %pmatch_stmt_discard, align 8
+parm_body1250:                                    ; preds = %parm_next964
+  %303 = call ptr @avra_map_new_cstr()
+  %cast1252 = ptrtoint ptr %303 to i64
+  store i64 %cast1252, ptr %pmatch_stmt_discard, align 8
   br label %pmatch_end
 
-parm_next1199:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.26146, i64 -1, ptr @mu_file.26147, i64 1025)
+parm_next1251:                                    ; No predecessors!
+  call void @avra_match_unreachable(ptr @.match_fn.26238, i64 -1, ptr @mu_file.26239, i64 1165)
   unreachable
 
-ifcont1205:                                       ; preds = %if_else1208
-  %279 = call i64 @print_usage()
+ifcont1257:                                       ; preds = %if_else1260
+  %304 = call i64 @print_usage()
   call void @exit(i32 1)
   ret i64 0
 
-if_then1207:                                      ; preds = %pmatch_end
-  %app1209 = load i64, ptr %app, align 8
-  %cast1210 = inttoptr i64 %app1209 to ptr
-  %280 = call ptr @"@std::cli::cli_parse"(ptr %cast1210)
-  store ptr %280, ptr %parsed1211, align 8
-  %parsed1212 = load ptr, ptr %parsed1211, align 8
-  %281 = call ptr @"@std::cli::result_get_option"(ptr %parsed1212, ptr @.str.26149)
-  store ptr %281, ptr %stop_after, align 8
-  %parsed1213 = load ptr, ptr %parsed1211, align 8
-  %282 = call i1 @"@std::cli::result_has_flag"(ptr %parsed1213, ptr @.str.26150)
-  %widen1214 = zext i1 %282 to i64
-  %cast1215 = trunc i64 %widen1214 to i1
-  store i1 %cast1215, ptr %debug_null, align 8
-  %parsed1216 = load ptr, ptr %parsed1211, align 8
-  %283 = call i1 @"@std::cli::result_has_flag"(ptr %parsed1216, ptr @.str.26151)
-  %widen1217 = zext i1 %283 to i64
-  %cast1218 = trunc i64 %widen1217 to i1
-  store i1 %cast1218, ptr %enable_coverage, align 8
-  %parsed1219 = load ptr, ptr %parsed1211, align 8
-  %284 = call i1 @"@std::cli::result_has_flag"(ptr %parsed1219, ptr @.str.26152)
-  %widen1220 = zext i1 %284 to i64
-  %cast1221 = trunc i64 %widen1220 to i1
-  store i1 %cast1221, ptr %json_output, align 8
-  %285 = call i64 @avra_selfhost_argc()
-  store i64 %285, ptr %argc, align 8
-  %argc1222 = load i64, ptr %argc, align 8
-  %sub1223 = sub i64 %argc1222, 1
-  %286 = call ptr @avra_selfhost_get_arg_cstr(i64 %sub1223)
-  store ptr %286, ptr %cpath, align 8
-  %cpath1224 = load ptr, ptr %cpath, align 8
-  %287 = call i64 @avra_str_starts_with(ptr %cpath1224, ptr @.str.26153)
-  %if_cond1226 = icmp ne i64 %287, 0
-  br i1 %if_cond1226, label %if_then1227, label %if_else1228
+if_then1259:                                      ; preds = %pmatch_end
+  %app1261 = load i64, ptr %app, align 8
+  %cast1262 = inttoptr i64 %app1261 to ptr
+  %305 = call ptr @"@std::cli::cli_parse"(ptr %cast1262)
+  store ptr %305, ptr %parsed1263, align 8
+  %parsed1264 = load ptr, ptr %parsed1263, align 8
+  %306 = call ptr @"@std::cli::result_get_option"(ptr %parsed1264, ptr @.str.26241)
+  store ptr %306, ptr %stop_after, align 8
+  %parsed1265 = load ptr, ptr %parsed1263, align 8
+  %307 = call i1 @"@std::cli::result_has_flag"(ptr %parsed1265, ptr @.str.26242)
+  %widen1266 = zext i1 %307 to i64
+  %cast1267 = trunc i64 %widen1266 to i1
+  store i1 %cast1267, ptr %debug_null, align 8
+  %parsed1268 = load ptr, ptr %parsed1263, align 8
+  %308 = call i1 @"@std::cli::result_has_flag"(ptr %parsed1268, ptr @.str.26243)
+  %widen1269 = zext i1 %308 to i64
+  %cast1270 = trunc i64 %widen1269 to i1
+  store i1 %cast1270, ptr %enable_coverage, align 8
+  %parsed1271 = load ptr, ptr %parsed1263, align 8
+  %309 = call i1 @"@std::cli::result_has_flag"(ptr %parsed1271, ptr @.str.26244)
+  %widen1272 = zext i1 %309 to i64
+  %cast1273 = trunc i64 %widen1272 to i1
+  store i1 %cast1273, ptr %json_output, align 8
+  %310 = call i64 @avra_selfhost_argc()
+  store i64 %310, ptr %argc, align 8
+  %argc1274 = load i64, ptr %argc, align 8
+  %sub1275 = sub i64 %argc1274, 1
+  %311 = call ptr @avra_selfhost_get_arg_cstr(i64 %sub1275)
+  store ptr %311, ptr %cpath, align 8
+  %cpath1276 = load ptr, ptr %cpath, align 8
+  %312 = call i64 @avra_str_starts_with(ptr %cpath1276, ptr @.str.26245)
+  %if_cond1278 = icmp ne i64 %312, 0
+  br i1 %if_cond1278, label %if_then1279, label %if_else1280
 
-if_else1208:                                      ; preds = %pmatch_end
-  br label %ifcont1205
+if_else1260:                                      ; preds = %pmatch_end
+  br label %ifcont1257
 
-ifcont1225:                                       ; preds = %if_else1228, %if_then1227
-  %cpath1229 = load ptr, ptr %cpath, align 8
-  %288 = call i64 @file_exists(ptr %cpath1229)
-  %not_cmp1230 = icmp eq i64 %288, 0
-  %not_cmp_ext1231 = zext i1 %not_cmp1230 to i64
-  %if_cond1233 = icmp ne i64 %not_cmp_ext1231, 0
-  br i1 %if_cond1233, label %if_then1234, label %if_else1235
+ifcont1277:                                       ; preds = %if_else1280, %if_then1279
+  %cpath1281 = load ptr, ptr %cpath, align 8
+  %313 = call i64 @file_exists(ptr %cpath1281)
+  %not_cmp1282 = icmp eq i64 %313, 0
+  %not_cmp_ext1283 = zext i1 %not_cmp1282 to i64
+  %if_cond1285 = icmp ne i64 %not_cmp_ext1283, 0
+  br i1 %if_cond1285, label %if_then1286, label %if_else1287
 
-if_then1227:                                      ; preds = %if_then1207
-  %289 = call i64 @fail(ptr @.str.26154)
-  br label %ifcont1225
+if_then1279:                                      ; preds = %if_then1259
+  %314 = call i64 @fail(ptr @.str.26246)
+  br label %ifcont1277
 
-if_else1228:                                      ; preds = %if_then1207
-  br label %ifcont1225
+if_else1280:                                      ; preds = %if_then1259
+  br label %ifcont1277
 
-ifcont1232:                                       ; preds = %if_else1235, %if_then1234
-  %cpath1243 = load ptr, ptr %cpath, align 8
-  %290 = call ptr @read_file(ptr %cpath1243)
-  store ptr %290, ptr %csource, align 8
-  %cpath1244 = load ptr, ptr %cpath, align 8
-  %291 = call ptr @"@std::avrac::features::modules::resolver::modules_dirname"(ptr %cpath1244)
-  store ptr %291, ptr %pkg_dir, align 8
-  %pkg_dir1245 = load ptr, ptr %pkg_dir, align 8
-  %292 = call ptr @"@std::avrac::features::modules::package::load_package_config"(ptr %pkg_dir1245)
-  store ptr %292, ptr %pkg, align 8
-  %pkg1246 = load ptr, ptr %pkg, align 8
-  %cast1247 = ptrtoint ptr %pkg1246 to i64
-  %null_chk1248 = icmp eq i64 %cast1247, 0
-  %null_ext1249 = zext i1 %null_chk1248 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26156, i64 5, ptr @sty_name.26157, i64 54, i64 %null_ext1249, ptr @src_file.26158, i64 0, i64 1225)
-  %found_ptr1250 = getelementptr inbounds nuw %"@std::avrac::features::modules::package::PackageConfig", ptr %pkg1246, i32 0, i32 2
-  %found1251 = load i1, ptr %found_ptr1250, align 8
-  br i1 %found1251, label %if_then1253, label %if_else1254
+ifcont1284:                                       ; preds = %if_else1287, %if_then1286
+  %cpath1295 = load ptr, ptr %cpath, align 8
+  %315 = call ptr @read_file(ptr %cpath1295)
+  store ptr %315, ptr %csource, align 8
+  %cpath1296 = load ptr, ptr %cpath, align 8
+  %316 = call ptr @"@std::avrac::features::modules::resolver::modules_dirname"(ptr %cpath1296)
+  store ptr %316, ptr %pkg_dir, align 8
+  %pkg_dir1297 = load ptr, ptr %pkg_dir, align 8
+  %317 = call ptr @"@std::avrac::features::modules::package::load_package_config"(ptr %pkg_dir1297)
+  store ptr %317, ptr %pkg, align 8
+  %pkg1298 = load ptr, ptr %pkg, align 8
+  %cast1299 = ptrtoint ptr %pkg1298 to i64
+  %null_chk1300 = icmp eq i64 %cast1299, 0
+  %null_ext1301 = zext i1 %null_chk1300 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26248, i64 5, ptr @sty_name.26249, i64 54, i64 %null_ext1301, ptr @src_file.26250, i64 0, i64 1365)
+  %found_ptr1302 = getelementptr inbounds nuw %"@std::avrac::features::modules::package::PackageConfig", ptr %pkg1298, i32 0, i32 2
+  %found1303 = load i1, ptr %found_ptr1302, align 8
+  br i1 %found1303, label %if_then1305, label %if_else1306
 
-if_then1234:                                      ; preds = %ifcont1225
-  %cpath1236 = load ptr, ptr %cpath, align 8
-  %293 = call i64 @strlen(ptr @.str.26155)
-  %294 = call i64 @strlen(ptr %cpath1236)
-  %concat_total1237 = add i64 %293, %294
-  %concat_size1238 = add i64 %concat_total1237, 1
-  %295 = call ptr @avra_rc_alloc(i64 %concat_size1238)
-  %296 = call ptr @memcpy(ptr %295, ptr @.str.26155, i64 %293)
-  %cast1239 = ptrtoint ptr %295 to i64
-  %dst2_int1240 = add i64 %cast1239, %293
-  %cast1241 = inttoptr i64 %dst2_int1240 to ptr
-  %rhs_len_p11242 = add i64 %294, 1
-  %297 = call ptr @memcpy(ptr %cast1241, ptr %cpath1236, i64 %rhs_len_p11242)
-  %298 = call i64 @fail(ptr %295)
-  br label %ifcont1232
+if_then1286:                                      ; preds = %ifcont1277
+  %cpath1288 = load ptr, ptr %cpath, align 8
+  %318 = call i64 @strlen(ptr @.str.26247)
+  %319 = call i64 @strlen(ptr %cpath1288)
+  %concat_total1289 = add i64 %318, %319
+  %concat_size1290 = add i64 %concat_total1289, 1
+  %320 = call ptr @avra_rc_alloc(i64 %concat_size1290)
+  %321 = call ptr @memcpy(ptr %320, ptr @.str.26247, i64 %318)
+  %cast1291 = ptrtoint ptr %320 to i64
+  %dst2_int1292 = add i64 %cast1291, %318
+  %cast1293 = inttoptr i64 %dst2_int1292 to ptr
+  %rhs_len_p11294 = add i64 %319, 1
+  %322 = call ptr @memcpy(ptr %cast1293, ptr %cpath1288, i64 %rhs_len_p11294)
+  %323 = call i64 @fail(ptr %320)
+  br label %ifcont1284
 
-if_else1235:                                      ; preds = %ifcont1225
-  br label %ifcont1232
+if_else1287:                                      ; preds = %ifcont1277
+  br label %ifcont1284
 
-ifcont1252:                                       ; preds = %if_else1254, %if_then1253
-  %csource1285 = load ptr, ptr %csource, align 8
-  %299 = call ptr @"@std::avrac::parse::parse_program_source"(ptr %csource1285)
-  store ptr %299, ptr %parsed1286, align 8
-  %parsed1287 = load ptr, ptr %parsed1286, align 8
-  %cast1288 = ptrtoint ptr %parsed1287 to i64
-  %null_chk1289 = icmp eq i64 %cast1288, 0
-  %null_ext1290 = zext i1 %null_chk1289 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26167, i64 9, ptr @sty_name.26168, i64 38, i64 %null_ext1290, ptr @src_file.26169, i64 0, i64 1230)
-  %had_error_ptr1291 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed1287, i32 0, i32 1
-  %had_error1292 = load i64, ptr %had_error_ptr1291, align 8
-  %l_bool1293 = icmp ne i64 %had_error1292, 0
-  br i1 %l_bool1293, label %sc_short1295, label %sc_rhs1294
+ifcont1304:                                       ; preds = %if_else1306, %if_then1305
+  %csource1337 = load ptr, ptr %csource, align 8
+  %324 = call ptr @"@std::avrac::parse::parse_program_source"(ptr %csource1337)
+  store ptr %324, ptr %parsed1338, align 8
+  %parsed1339 = load ptr, ptr %parsed1338, align 8
+  %cast1340 = ptrtoint ptr %parsed1339 to i64
+  %null_chk1341 = icmp eq i64 %cast1340, 0
+  %null_ext1342 = zext i1 %null_chk1341 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26259, i64 9, ptr @sty_name.26260, i64 38, i64 %null_ext1342, ptr @src_file.26261, i64 0, i64 1370)
+  %had_error_ptr1343 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed1339, i32 0, i32 1
+  %had_error1344 = load i64, ptr %had_error_ptr1343, align 8
+  %l_bool1345 = icmp ne i64 %had_error1344, 0
+  br i1 %l_bool1345, label %sc_short1347, label %sc_rhs1346
 
-if_then1253:                                      ; preds = %ifcont1232
-  %pkg1255 = load ptr, ptr %pkg, align 8
-  %cast1256 = ptrtoint ptr %pkg1255 to i64
-  %null_chk1257 = icmp eq i64 %cast1256, 0
-  %null_ext1258 = zext i1 %null_chk1257 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26160, i64 4, ptr @sty_name.26161, i64 54, i64 %null_ext1258, ptr @src_file.26162, i64 0, i64 1226)
-  %name_ptr1259 = getelementptr inbounds nuw %"@std::avrac::features::modules::package::PackageConfig", ptr %pkg1255, i32 0, i32 0
-  %name1260 = load ptr, ptr %name_ptr1259, align 8
-  %300 = call i64 @strlen(ptr @.str.26159)
-  %301 = call i64 @strlen(ptr %name1260)
-  %concat_total1261 = add i64 %300, %301
-  %concat_size1262 = add i64 %concat_total1261, 1
-  %302 = call ptr @avra_rc_alloc(i64 %concat_size1262)
-  %303 = call ptr @memcpy(ptr %302, ptr @.str.26159, i64 %300)
-  %cast1263 = ptrtoint ptr %302 to i64
-  %dst2_int1264 = add i64 %cast1263, %300
-  %cast1265 = inttoptr i64 %dst2_int1264 to ptr
-  %rhs_len_p11266 = add i64 %301, 1
-  %304 = call ptr @memcpy(ptr %cast1265, ptr %name1260, i64 %rhs_len_p11266)
-  %305 = call i64 @strlen(ptr %302)
-  %306 = call i64 @strlen(ptr @.str.26163)
-  %concat_total1267 = add i64 %305, %306
-  %concat_size1268 = add i64 %concat_total1267, 1
-  %307 = call ptr @avra_rc_alloc(i64 %concat_size1268)
-  %308 = call ptr @memcpy(ptr %307, ptr %302, i64 %305)
-  %cast1269 = ptrtoint ptr %307 to i64
-  %dst2_int1270 = add i64 %cast1269, %305
-  %cast1271 = inttoptr i64 %dst2_int1270 to ptr
-  %rhs_len_p11272 = add i64 %306, 1
-  %309 = call ptr @memcpy(ptr %cast1271, ptr @.str.26163, i64 %rhs_len_p11272)
-  %pkg1273 = load ptr, ptr %pkg, align 8
-  %cast1274 = ptrtoint ptr %pkg1273 to i64
-  %null_chk1275 = icmp eq i64 %cast1274, 0
-  %null_ext1276 = zext i1 %null_chk1275 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26164, i64 7, ptr @sty_name.26165, i64 54, i64 %null_ext1276, ptr @src_file.26166, i64 0, i64 1226)
-  %version_ptr1277 = getelementptr inbounds nuw %"@std::avrac::features::modules::package::PackageConfig", ptr %pkg1273, i32 0, i32 1
-  %version1278 = load ptr, ptr %version_ptr1277, align 8
-  %310 = call i64 @strlen(ptr %307)
-  %311 = call i64 @strlen(ptr %version1278)
-  %concat_total1279 = add i64 %310, %311
-  %concat_size1280 = add i64 %concat_total1279, 1
-  %312 = call ptr @avra_rc_alloc(i64 %concat_size1280)
-  %313 = call ptr @memcpy(ptr %312, ptr %307, i64 %310)
-  %cast1281 = ptrtoint ptr %312 to i64
-  %dst2_int1282 = add i64 %cast1281, %310
-  %cast1283 = inttoptr i64 %dst2_int1282 to ptr
-  %rhs_len_p11284 = add i64 %311, 1
-  %314 = call ptr @memcpy(ptr %cast1283, ptr %version1278, i64 %rhs_len_p11284)
-  call void @avra_eprintln(ptr %312)
-  br label %ifcont1252
+if_then1305:                                      ; preds = %ifcont1284
+  %pkg1307 = load ptr, ptr %pkg, align 8
+  %cast1308 = ptrtoint ptr %pkg1307 to i64
+  %null_chk1309 = icmp eq i64 %cast1308, 0
+  %null_ext1310 = zext i1 %null_chk1309 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26252, i64 4, ptr @sty_name.26253, i64 54, i64 %null_ext1310, ptr @src_file.26254, i64 0, i64 1366)
+  %name_ptr1311 = getelementptr inbounds nuw %"@std::avrac::features::modules::package::PackageConfig", ptr %pkg1307, i32 0, i32 0
+  %name1312 = load ptr, ptr %name_ptr1311, align 8
+  %325 = call i64 @strlen(ptr @.str.26251)
+  %326 = call i64 @strlen(ptr %name1312)
+  %concat_total1313 = add i64 %325, %326
+  %concat_size1314 = add i64 %concat_total1313, 1
+  %327 = call ptr @avra_rc_alloc(i64 %concat_size1314)
+  %328 = call ptr @memcpy(ptr %327, ptr @.str.26251, i64 %325)
+  %cast1315 = ptrtoint ptr %327 to i64
+  %dst2_int1316 = add i64 %cast1315, %325
+  %cast1317 = inttoptr i64 %dst2_int1316 to ptr
+  %rhs_len_p11318 = add i64 %326, 1
+  %329 = call ptr @memcpy(ptr %cast1317, ptr %name1312, i64 %rhs_len_p11318)
+  %330 = call i64 @strlen(ptr %327)
+  %331 = call i64 @strlen(ptr @.str.26255)
+  %concat_total1319 = add i64 %330, %331
+  %concat_size1320 = add i64 %concat_total1319, 1
+  %332 = call ptr @avra_rc_alloc(i64 %concat_size1320)
+  %333 = call ptr @memcpy(ptr %332, ptr %327, i64 %330)
+  %cast1321 = ptrtoint ptr %332 to i64
+  %dst2_int1322 = add i64 %cast1321, %330
+  %cast1323 = inttoptr i64 %dst2_int1322 to ptr
+  %rhs_len_p11324 = add i64 %331, 1
+  %334 = call ptr @memcpy(ptr %cast1323, ptr @.str.26255, i64 %rhs_len_p11324)
+  %pkg1325 = load ptr, ptr %pkg, align 8
+  %cast1326 = ptrtoint ptr %pkg1325 to i64
+  %null_chk1327 = icmp eq i64 %cast1326, 0
+  %null_ext1328 = zext i1 %null_chk1327 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26256, i64 7, ptr @sty_name.26257, i64 54, i64 %null_ext1328, ptr @src_file.26258, i64 0, i64 1366)
+  %version_ptr1329 = getelementptr inbounds nuw %"@std::avrac::features::modules::package::PackageConfig", ptr %pkg1325, i32 0, i32 1
+  %version1330 = load ptr, ptr %version_ptr1329, align 8
+  %335 = call i64 @strlen(ptr %332)
+  %336 = call i64 @strlen(ptr %version1330)
+  %concat_total1331 = add i64 %335, %336
+  %concat_size1332 = add i64 %concat_total1331, 1
+  %337 = call ptr @avra_rc_alloc(i64 %concat_size1332)
+  %338 = call ptr @memcpy(ptr %337, ptr %332, i64 %335)
+  %cast1333 = ptrtoint ptr %337 to i64
+  %dst2_int1334 = add i64 %cast1333, %335
+  %cast1335 = inttoptr i64 %dst2_int1334 to ptr
+  %rhs_len_p11336 = add i64 %336, 1
+  %339 = call ptr @memcpy(ptr %cast1335, ptr %version1330, i64 %rhs_len_p11336)
+  call void @avra_eprintln(ptr %337)
+  br label %ifcont1304
 
-if_else1254:                                      ; preds = %ifcont1232
-  br label %ifcont1252
+if_else1306:                                      ; preds = %ifcont1284
+  br label %ifcont1304
 
-sc_rhs1294:                                       ; preds = %ifcont1252
-  %parsed1297 = load ptr, ptr %parsed1286, align 8
-  %cast1298 = ptrtoint ptr %parsed1297 to i64
-  %null_chk1299 = icmp eq i64 %cast1298, 0
-  %null_ext1300 = zext i1 %null_chk1299 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26170, i64 5, ptr @sty_name.26171, i64 38, i64 %null_ext1300, ptr @src_file.26172, i64 0, i64 1230)
-  %stmts_ptr1301 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed1297, i32 0, i32 0
-  %stmts1302 = load ptr, ptr %stmts_ptr1301, align 8
-  %eq1303 = icmp eq ptr %stmts1302, null
-  %eq_ext1304 = zext i1 %eq1303 to i64
-  %r_bool1305 = icmp ne i64 %eq_ext1304, 0
-  br i1 %r_bool1305, label %sc_r_true1306, label %sc_r_false1307
+sc_rhs1346:                                       ; preds = %ifcont1304
+  %parsed1349 = load ptr, ptr %parsed1338, align 8
+  %cast1350 = ptrtoint ptr %parsed1349 to i64
+  %null_chk1351 = icmp eq i64 %cast1350, 0
+  %null_ext1352 = zext i1 %null_chk1351 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26262, i64 5, ptr @sty_name.26263, i64 38, i64 %null_ext1352, ptr @src_file.26264, i64 0, i64 1370)
+  %stmts_ptr1353 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed1349, i32 0, i32 0
+  %stmts1354 = load ptr, ptr %stmts_ptr1353, align 8
+  %eq1355 = icmp eq ptr %stmts1354, null
+  %eq_ext1356 = zext i1 %eq1355 to i64
+  %r_bool1357 = icmp ne i64 %eq_ext1356, 0
+  br i1 %r_bool1357, label %sc_r_true1358, label %sc_r_false1359
 
-sc_short1295:                                     ; preds = %ifcont1252
-  br label %sc_merge1296
+sc_short1347:                                     ; preds = %ifcont1304
+  br label %sc_merge1348
 
-sc_merge1296:                                     ; preds = %sc_r_merge1308, %sc_short1295
-  %sc_phi1309 = phi i1 [ true, %sc_short1295 ], [ %r_bool1305, %sc_r_merge1308 ]
-  %sc_ext1310 = zext i1 %sc_phi1309 to i64
-  %if_cond1312 = icmp ne i64 %sc_ext1310, 0
-  br i1 %if_cond1312, label %if_then1313, label %if_else1314
+sc_merge1348:                                     ; preds = %sc_r_merge1360, %sc_short1347
+  %sc_phi1361 = phi i1 [ true, %sc_short1347 ], [ %r_bool1357, %sc_r_merge1360 ]
+  %sc_ext1362 = zext i1 %sc_phi1361 to i64
+  %if_cond1364 = icmp ne i64 %sc_ext1362, 0
+  br i1 %if_cond1364, label %if_then1365, label %if_else1366
 
-sc_r_true1306:                                    ; preds = %sc_rhs1294
-  br label %sc_r_merge1308
+sc_r_true1358:                                    ; preds = %sc_rhs1346
+  br label %sc_r_merge1360
 
-sc_r_false1307:                                   ; preds = %sc_rhs1294
-  br label %sc_r_merge1308
+sc_r_false1359:                                   ; preds = %sc_rhs1346
+  br label %sc_r_merge1360
 
-sc_r_merge1308:                                   ; preds = %sc_r_false1307, %sc_r_true1306
-  br label %sc_merge1296
+sc_r_merge1360:                                   ; preds = %sc_r_false1359, %sc_r_true1358
+  br label %sc_merge1348
 
-ifcont1311:                                       ; preds = %if_else1314, %ifcont1322
-  %stop_after1341 = load ptr, ptr %stop_after, align 8
-  %315 = call i32 @strcmp(ptr %stop_after1341, ptr @.str.26182)
-  %widen1342 = sext i32 %315 to i64
-  %streq_cmp1343 = icmp eq i64 %widen1342, 0
-  %streq_ext1344 = zext i1 %streq_cmp1343 to i64
-  %if_cond1346 = icmp ne i64 %streq_ext1344, 0
-  br i1 %if_cond1346, label %if_then1347, label %if_else1348
+ifcont1363:                                       ; preds = %if_else1366, %ifcont1374
+  %stop_after1393 = load ptr, ptr %stop_after, align 8
+  %340 = call i32 @strcmp(ptr %stop_after1393, ptr @.str.26274)
+  %widen1394 = sext i32 %340 to i64
+  %streq_cmp1395 = icmp eq i64 %widen1394, 0
+  %streq_ext1396 = zext i1 %streq_cmp1395 to i64
+  %if_cond1398 = icmp ne i64 %streq_ext1396, 0
+  br i1 %if_cond1398, label %if_then1399, label %if_else1400
 
-if_then1313:                                      ; preds = %sc_merge1296
-  %parsed1315 = load ptr, ptr %parsed1286, align 8
-  %cast1316 = ptrtoint ptr %parsed1315 to i64
-  %null_chk1317 = icmp eq i64 %cast1316, 0
-  %null_ext1318 = zext i1 %null_chk1317 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26173, i64 3, ptr @sty_name.26174, i64 38, i64 %null_ext1318, ptr @src_file.26175, i64 0, i64 1231)
-  %bag_ptr1319 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed1315, i32 0, i32 3
-  %bag1320 = load ptr, ptr %bag_ptr1319, align 8
-  %316 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag1320)
-  %widen1321 = zext i1 %316 to i64
-  %if_cond1323 = icmp ne i64 %widen1321, 0
-  br i1 %if_cond1323, label %if_then1324, label %if_else1325
+if_then1365:                                      ; preds = %sc_merge1348
+  %parsed1367 = load ptr, ptr %parsed1338, align 8
+  %cast1368 = ptrtoint ptr %parsed1367 to i64
+  %null_chk1369 = icmp eq i64 %cast1368, 0
+  %null_ext1370 = zext i1 %null_chk1369 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26265, i64 3, ptr @sty_name.26266, i64 38, i64 %null_ext1370, ptr @src_file.26267, i64 0, i64 1371)
+  %bag_ptr1371 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed1367, i32 0, i32 3
+  %bag1372 = load ptr, ptr %bag_ptr1371, align 8
+  %341 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag1372)
+  %widen1373 = zext i1 %341 to i64
+  %if_cond1375 = icmp ne i64 %widen1373, 0
+  br i1 %if_cond1375, label %if_then1376, label %if_else1377
 
-if_else1314:                                      ; preds = %sc_merge1296
-  br label %ifcont1311
+if_else1366:                                      ; preds = %sc_merge1348
+  br label %ifcont1363
 
-ifcont1322:                                       ; preds = %if_else1325, %if_then1324
-  %parsed1335 = load ptr, ptr %parsed1286, align 8
-  %cast1336 = ptrtoint ptr %parsed1335 to i64
-  %null_chk1337 = icmp eq i64 %cast1336, 0
-  %null_ext1338 = zext i1 %null_chk1337 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26179, i64 13, ptr @sty_name.26180, i64 38, i64 %null_ext1338, ptr @src_file.26181, i64 0, i64 1234)
-  %error_message_ptr1339 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed1335, i32 0, i32 2
-  %error_message1340 = load ptr, ptr %error_message_ptr1339, align 8
-  %317 = call i64 @fail(ptr %error_message1340)
-  br label %ifcont1311
+ifcont1374:                                       ; preds = %if_else1377, %if_then1376
+  %parsed1387 = load ptr, ptr %parsed1338, align 8
+  %cast1388 = ptrtoint ptr %parsed1387 to i64
+  %null_chk1389 = icmp eq i64 %cast1388, 0
+  %null_ext1390 = zext i1 %null_chk1389 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26271, i64 13, ptr @sty_name.26272, i64 38, i64 %null_ext1390, ptr @src_file.26273, i64 0, i64 1374)
+  %error_message_ptr1391 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed1387, i32 0, i32 2
+  %error_message1392 = load ptr, ptr %error_message_ptr1391, align 8
+  %342 = call i64 @fail(ptr %error_message1392)
+  br label %ifcont1363
 
-if_then1324:                                      ; preds = %if_then1313
-  %json_output1326 = load i1, ptr %json_output, align 8
-  %csource1327 = load ptr, ptr %csource, align 8
-  %cpath1328 = load ptr, ptr %cpath, align 8
-  %parsed1329 = load ptr, ptr %parsed1286, align 8
-  %cast1330 = ptrtoint ptr %parsed1329 to i64
-  %null_chk1331 = icmp eq i64 %cast1330, 0
-  %null_ext1332 = zext i1 %null_chk1331 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26176, i64 3, ptr @sty_name.26177, i64 38, i64 %null_ext1332, ptr @src_file.26178, i64 0, i64 1232)
-  %bag_ptr1333 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed1329, i32 0, i32 3
-  %bag1334 = load ptr, ptr %bag_ptr1333, align 8
-  %318 = call i64 @render_bag_either(i1 %json_output1326, ptr %csource1327, ptr %cpath1328, ptr %bag1334)
-  br label %ifcont1322
+if_then1376:                                      ; preds = %if_then1365
+  %json_output1378 = load i1, ptr %json_output, align 8
+  %csource1379 = load ptr, ptr %csource, align 8
+  %cpath1380 = load ptr, ptr %cpath, align 8
+  %parsed1381 = load ptr, ptr %parsed1338, align 8
+  %cast1382 = ptrtoint ptr %parsed1381 to i64
+  %null_chk1383 = icmp eq i64 %cast1382, 0
+  %null_ext1384 = zext i1 %null_chk1383 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26268, i64 3, ptr @sty_name.26269, i64 38, i64 %null_ext1384, ptr @src_file.26270, i64 0, i64 1372)
+  %bag_ptr1385 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed1381, i32 0, i32 3
+  %bag1386 = load ptr, ptr %bag_ptr1385, align 8
+  %343 = call i64 @render_bag_either(i1 %json_output1378, ptr %csource1379, ptr %cpath1380, ptr %bag1386)
+  br label %ifcont1374
 
-if_else1325:                                      ; preds = %if_then1313
-  br label %ifcont1322
+if_else1377:                                      ; preds = %if_then1365
+  br label %ifcont1374
 
-ifcont1345:                                       ; preds = %if_else1348
-  %parsed1350 = load ptr, ptr %parsed1286, align 8
-  %cast1351 = ptrtoint ptr %parsed1350 to i64
-  %null_chk1352 = icmp eq i64 %cast1351, 0
-  %null_ext1353 = zext i1 %null_chk1352 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26184, i64 5, ptr @sty_name.26185, i64 38, i64 %null_ext1353, ptr @src_file.26186, i64 0, i64 1241)
-  %stmts_ptr1354 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed1350, i32 0, i32 0
-  %stmts1355 = load ptr, ptr %stmts_ptr1354, align 8
-  %319 = call ptr @"@std::avrac::desugar::desugar_program"(ptr %stmts1355)
-  store ptr %319, ptr %desugared1356, align 8
-  %cpath1357 = load ptr, ptr %cpath, align 8
-  %320 = call ptr @"@std::avrac::features::modules::resolver::modules_dirname"(ptr %cpath1357)
-  store ptr %320, ptr %entry_dir1358, align 8
-  %desugared1359 = load ptr, ptr %desugared1356, align 8
-  %entry_dir1360 = load ptr, ptr %entry_dir1358, align 8
-  %321 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr1361 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::LoadedPaths", ptr %321, i32 0, i32 0
-  store i64 193455868, ptr %tag_ptr1361, align 8
-  %pay_ptr1362 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::LoadedPaths", ptr %321, i32 0, i32 1
-  store ptr null, ptr %pay_ptr1362, align 8
-  %cast1363 = ptrtoint ptr %321 to i64
-  %cast1364 = inttoptr i64 %cast1363 to ptr
-  %322 = call ptr @"@std::avrac::features::modules::resolver::resolve_module_files"(ptr %desugared1359, ptr %entry_dir1360, ptr %cast1364)
-  store ptr %322, ptr %mod_resolved1365, align 8
-  %mod_resolved1366 = load ptr, ptr %mod_resolved1365, align 8
-  %cast1367 = ptrtoint ptr %mod_resolved1366 to i64
-  %null_chk1368 = icmp eq i64 %cast1367, 0
-  %null_ext1369 = zext i1 %null_chk1368 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26187, i64 9, ptr @sty_name.26188, i64 55, i64 %null_ext1369, ptr @src_file.26189, i64 0, i64 1246)
-  %had_error_ptr1370 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved1366, i32 0, i32 2
-  %had_error1371 = load i64, ptr %had_error_ptr1370, align 8
-  %if_cond1373 = icmp ne i64 %had_error1371, 0
-  br i1 %if_cond1373, label %if_then1374, label %if_else1375
+ifcont1397:                                       ; preds = %if_else1400
+  %parsed1402 = load ptr, ptr %parsed1338, align 8
+  %cast1403 = ptrtoint ptr %parsed1402 to i64
+  %null_chk1404 = icmp eq i64 %cast1403, 0
+  %null_ext1405 = zext i1 %null_chk1404 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26276, i64 5, ptr @sty_name.26277, i64 38, i64 %null_ext1405, ptr @src_file.26278, i64 0, i64 1381)
+  %stmts_ptr1406 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed1402, i32 0, i32 0
+  %stmts1407 = load ptr, ptr %stmts_ptr1406, align 8
+  %344 = call ptr @"@std::avrac::desugar::desugar_program"(ptr %stmts1407)
+  store ptr %344, ptr %desugared1408, align 8
+  %cpath1409 = load ptr, ptr %cpath, align 8
+  %345 = call ptr @"@std::avrac::features::modules::resolver::modules_dirname"(ptr %cpath1409)
+  store ptr %345, ptr %entry_dir1410, align 8
+  %desugared1411 = load ptr, ptr %desugared1408, align 8
+  %entry_dir1412 = load ptr, ptr %entry_dir1410, align 8
+  %346 = call ptr @avra_rc_alloc(i64 16)
+  %tag_ptr1413 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::LoadedPaths", ptr %346, i32 0, i32 0
+  store i64 193455868, ptr %tag_ptr1413, align 8
+  %pay_ptr1414 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::LoadedPaths", ptr %346, i32 0, i32 1
+  store ptr null, ptr %pay_ptr1414, align 8
+  %cast1415 = ptrtoint ptr %346 to i64
+  %cast1416 = inttoptr i64 %cast1415 to ptr
+  %347 = call ptr @"@std::avrac::features::modules::resolver::resolve_module_files"(ptr %desugared1411, ptr %entry_dir1412, ptr %cast1416)
+  store ptr %347, ptr %mod_resolved1417, align 8
+  %mod_resolved1418 = load ptr, ptr %mod_resolved1417, align 8
+  %cast1419 = ptrtoint ptr %mod_resolved1418 to i64
+  %null_chk1420 = icmp eq i64 %cast1419, 0
+  %null_ext1421 = zext i1 %null_chk1420 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26279, i64 9, ptr @sty_name.26280, i64 55, i64 %null_ext1421, ptr @src_file.26281, i64 0, i64 1386)
+  %had_error_ptr1422 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved1418, i32 0, i32 2
+  %had_error1423 = load i64, ptr %had_error_ptr1422, align 8
+  %if_cond1425 = icmp ne i64 %had_error1423, 0
+  br i1 %if_cond1425, label %if_then1426, label %if_else1427
 
-if_then1347:                                      ; preds = %ifcont1311
-  %323 = call i32 @puts(ptr @.str.26183)
-  %widen1349 = sext i32 %323 to i64
+if_then1399:                                      ; preds = %ifcont1363
+  %348 = call i32 @puts(ptr @.str.26275)
+  %widen1401 = sext i32 %348 to i64
   ret i64 0
 
-if_else1348:                                      ; preds = %ifcont1311
-  br label %ifcont1345
+if_else1400:                                      ; preds = %ifcont1363
+  br label %ifcont1397
 
-ifcont1372:                                       ; preds = %if_else1375, %if_then1374
-  %stop_after1397 = load ptr, ptr %stop_after, align 8
-  %324 = call i32 @strcmp(ptr %stop_after1397, ptr @.str.26196)
-  %widen1398 = sext i32 %324 to i64
-  %streq_cmp1399 = icmp eq i64 %widen1398, 0
-  %streq_ext1400 = zext i1 %streq_cmp1399 to i64
-  %if_cond1402 = icmp ne i64 %streq_ext1400, 0
-  br i1 %if_cond1402, label %if_then1403, label %if_else1404
+ifcont1424:                                       ; preds = %if_else1427, %if_then1426
+  %stop_after1449 = load ptr, ptr %stop_after, align 8
+  %349 = call i32 @strcmp(ptr %stop_after1449, ptr @.str.26288)
+  %widen1450 = sext i32 %349 to i64
+  %streq_cmp1451 = icmp eq i64 %widen1450, 0
+  %streq_ext1452 = zext i1 %streq_cmp1451 to i64
+  %if_cond1454 = icmp ne i64 %streq_ext1452, 0
+  br i1 %if_cond1454, label %if_then1455, label %if_else1456
 
-if_then1374:                                      ; preds = %ifcont1345
-  %325 = call ptr @"@std::avrac::diagnostics::bag_new"()
-  %326 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr1376 = getelementptr inbounds nuw %"@std::avrac::diagnostics::DiagCode", ptr %326, i32 0, i32 0
-  store i64 6736596269474561240, ptr %tag_ptr1376, align 8
-  %pay_ptr1377 = getelementptr inbounds nuw %"@std::avrac::diagnostics::DiagCode", ptr %326, i32 0, i32 1
-  store ptr null, ptr %pay_ptr1377, align 8
-  %cast1378 = ptrtoint ptr %326 to i64
-  %mod_resolved1379 = load ptr, ptr %mod_resolved1365, align 8
-  %cast1380 = ptrtoint ptr %mod_resolved1379 to i64
-  %null_chk1381 = icmp eq i64 %cast1380, 0
-  %null_ext1382 = zext i1 %null_chk1381 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26190, i64 13, ptr @sty_name.26191, i64 55, i64 %null_ext1382, ptr @src_file.26192, i64 0, i64 1247)
-  %error_message_ptr1383 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved1379, i32 0, i32 3
-  %error_message1384 = load ptr, ptr %error_message_ptr1383, align 8
-  %327 = call ptr @"@std::avrac::diagnostics::span_dummy"()
-  %cast1385 = inttoptr i64 %cast1378 to ptr
-  %328 = call ptr @"@std::avrac::diagnostics::diag_error"(ptr %cast1385, ptr %error_message1384, ptr %327)
-  %329 = call ptr @"@std::avrac::diagnostics::bag_report"(ptr %325, ptr %328)
-  store ptr %329, ptr %mod_bag1386, align 8
-  %json_output1387 = load i1, ptr %json_output, align 8
-  %csource1388 = load ptr, ptr %csource, align 8
-  %cpath1389 = load ptr, ptr %cpath, align 8
-  %mod_bag1390 = load ptr, ptr %mod_bag1386, align 8
-  %330 = call i64 @render_bag_either(i1 %json_output1387, ptr %csource1388, ptr %cpath1389, ptr %mod_bag1390)
-  %mod_resolved1391 = load ptr, ptr %mod_resolved1365, align 8
-  %cast1392 = ptrtoint ptr %mod_resolved1391 to i64
-  %null_chk1393 = icmp eq i64 %cast1392, 0
-  %null_ext1394 = zext i1 %null_chk1393 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26193, i64 13, ptr @sty_name.26194, i64 55, i64 %null_ext1394, ptr @src_file.26195, i64 0, i64 1249)
-  %error_message_ptr1395 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved1391, i32 0, i32 3
-  %error_message1396 = load ptr, ptr %error_message_ptr1395, align 8
-  %331 = call i64 @fail(ptr %error_message1396)
-  br label %ifcont1372
+if_then1426:                                      ; preds = %ifcont1397
+  %350 = call ptr @"@std::avrac::diagnostics::bag_new"()
+  %351 = call ptr @avra_rc_alloc(i64 16)
+  %tag_ptr1428 = getelementptr inbounds nuw %"@std::avrac::diagnostics::DiagCode", ptr %351, i32 0, i32 0
+  store i64 6736596269474561240, ptr %tag_ptr1428, align 8
+  %pay_ptr1429 = getelementptr inbounds nuw %"@std::avrac::diagnostics::DiagCode", ptr %351, i32 0, i32 1
+  store ptr null, ptr %pay_ptr1429, align 8
+  %cast1430 = ptrtoint ptr %351 to i64
+  %mod_resolved1431 = load ptr, ptr %mod_resolved1417, align 8
+  %cast1432 = ptrtoint ptr %mod_resolved1431 to i64
+  %null_chk1433 = icmp eq i64 %cast1432, 0
+  %null_ext1434 = zext i1 %null_chk1433 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26282, i64 13, ptr @sty_name.26283, i64 55, i64 %null_ext1434, ptr @src_file.26284, i64 0, i64 1387)
+  %error_message_ptr1435 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved1431, i32 0, i32 3
+  %error_message1436 = load ptr, ptr %error_message_ptr1435, align 8
+  %352 = call ptr @"@std::avrac::diagnostics::span_dummy"()
+  %cast1437 = inttoptr i64 %cast1430 to ptr
+  %353 = call ptr @"@std::avrac::diagnostics::diag_error"(ptr %cast1437, ptr %error_message1436, ptr %352)
+  %354 = call ptr @"@std::avrac::diagnostics::bag_report"(ptr %350, ptr %353)
+  store ptr %354, ptr %mod_bag1438, align 8
+  %json_output1439 = load i1, ptr %json_output, align 8
+  %csource1440 = load ptr, ptr %csource, align 8
+  %cpath1441 = load ptr, ptr %cpath, align 8
+  %mod_bag1442 = load ptr, ptr %mod_bag1438, align 8
+  %355 = call i64 @render_bag_either(i1 %json_output1439, ptr %csource1440, ptr %cpath1441, ptr %mod_bag1442)
+  %mod_resolved1443 = load ptr, ptr %mod_resolved1417, align 8
+  %cast1444 = ptrtoint ptr %mod_resolved1443 to i64
+  %null_chk1445 = icmp eq i64 %cast1444, 0
+  %null_ext1446 = zext i1 %null_chk1445 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26285, i64 13, ptr @sty_name.26286, i64 55, i64 %null_ext1446, ptr @src_file.26287, i64 0, i64 1389)
+  %error_message_ptr1447 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved1443, i32 0, i32 3
+  %error_message1448 = load ptr, ptr %error_message_ptr1447, align 8
+  %356 = call i64 @fail(ptr %error_message1448)
+  br label %ifcont1424
 
-if_else1375:                                      ; preds = %ifcont1345
-  br label %ifcont1372
+if_else1427:                                      ; preds = %ifcont1397
+  br label %ifcont1424
 
-ifcont1401:                                       ; preds = %if_else1404
-  %mod_resolved1406 = load ptr, ptr %mod_resolved1365, align 8
-  %cast1407 = ptrtoint ptr %mod_resolved1406 to i64
-  %null_chk1408 = icmp eq i64 %cast1407, 0
-  %null_ext1409 = zext i1 %null_chk1408 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26198, i64 5, ptr @sty_name.26199, i64 55, i64 %null_ext1409, ptr @src_file.26200, i64 0, i64 1257)
-  %stmts_ptr1410 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved1406, i32 0, i32 0
-  %stmts1411 = load ptr, ptr %stmts_ptr1410, align 8
-  %332 = call ptr @"@std::avrac::features::component_decl::expand::expand_components"(ptr %stmts1411)
-  store ptr %332, ptr %expanded1412, align 8
-  %expanded1413 = load ptr, ptr %expanded1412, align 8
-  %333 = call ptr @"@std::avrac::resolve::names::resolve_names"(ptr %expanded1413)
-  store ptr %333, ptr %named1414, align 8
-  %named1415 = load ptr, ptr %named1414, align 8
-  %cast1416 = ptrtoint ptr %named1415 to i64
-  %null_chk1417 = icmp eq i64 %cast1416, 0
-  %null_ext1418 = zext i1 %null_chk1417 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26201, i64 3, ptr @sty_name.26202, i64 46, i64 %null_ext1418, ptr @src_file.26203, i64 0, i64 1259)
-  %bag_ptr1419 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1415, i32 0, i32 3
-  %bag1420 = load ptr, ptr %bag_ptr1419, align 8
-  %334 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag1420)
-  %widen1421 = zext i1 %334 to i64
-  %l_bool1422 = icmp ne i64 %widen1421, 0
-  br i1 %l_bool1422, label %sc_short1424, label %sc_rhs1423
+ifcont1453:                                       ; preds = %if_else1456
+  %mod_resolved1458 = load ptr, ptr %mod_resolved1417, align 8
+  %cast1459 = ptrtoint ptr %mod_resolved1458 to i64
+  %null_chk1460 = icmp eq i64 %cast1459, 0
+  %null_ext1461 = zext i1 %null_chk1460 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26290, i64 5, ptr @sty_name.26291, i64 55, i64 %null_ext1461, ptr @src_file.26292, i64 0, i64 1397)
+  %stmts_ptr1462 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved1458, i32 0, i32 0
+  %stmts1463 = load ptr, ptr %stmts_ptr1462, align 8
+  %357 = call ptr @"@std::avrac::features::component_decl::expand::expand_components"(ptr %stmts1463)
+  store ptr %357, ptr %expanded1464, align 8
+  %expanded1465 = load ptr, ptr %expanded1464, align 8
+  %358 = call ptr @"@std::avrac::resolve::names::resolve_names"(ptr %expanded1465)
+  store ptr %358, ptr %named1466, align 8
+  %named1467 = load ptr, ptr %named1466, align 8
+  %cast1468 = ptrtoint ptr %named1467 to i64
+  %null_chk1469 = icmp eq i64 %cast1468, 0
+  %null_ext1470 = zext i1 %null_chk1469 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26293, i64 3, ptr @sty_name.26294, i64 46, i64 %null_ext1470, ptr @src_file.26295, i64 0, i64 1399)
+  %bag_ptr1471 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1467, i32 0, i32 3
+  %bag1472 = load ptr, ptr %bag_ptr1471, align 8
+  %359 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag1472)
+  %widen1473 = zext i1 %359 to i64
+  %l_bool1474 = icmp ne i64 %widen1473, 0
+  br i1 %l_bool1474, label %sc_short1476, label %sc_rhs1475
 
-if_then1403:                                      ; preds = %ifcont1372
-  %335 = call i32 @puts(ptr @.str.26197)
-  %widen1405 = sext i32 %335 to i64
+if_then1455:                                      ; preds = %ifcont1424
+  %360 = call i32 @puts(ptr @.str.26289)
+  %widen1457 = sext i32 %360 to i64
   ret i64 0
 
-if_else1404:                                      ; preds = %ifcont1372
-  br label %ifcont1401
+if_else1456:                                      ; preds = %ifcont1424
+  br label %ifcont1453
 
-sc_rhs1423:                                       ; preds = %ifcont1401
-  %named1426 = load ptr, ptr %named1414, align 8
-  %cast1427 = ptrtoint ptr %named1426 to i64
-  %null_chk1428 = icmp eq i64 %cast1427, 0
-  %null_ext1429 = zext i1 %null_chk1428 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26204, i64 3, ptr @sty_name.26205, i64 46, i64 %null_ext1429, ptr @src_file.26206, i64 0, i64 1259)
-  %bag_ptr1430 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1426, i32 0, i32 3
-  %bag1431 = load ptr, ptr %bag_ptr1430, align 8
-  %336 = call i1 @"@std::avrac::diagnostics::bag_has_warnings"(ptr %bag1431)
-  %widen1432 = zext i1 %336 to i64
-  %r_bool1433 = icmp ne i64 %widen1432, 0
-  br i1 %r_bool1433, label %sc_r_true1434, label %sc_r_false1435
+sc_rhs1475:                                       ; preds = %ifcont1453
+  %named1478 = load ptr, ptr %named1466, align 8
+  %cast1479 = ptrtoint ptr %named1478 to i64
+  %null_chk1480 = icmp eq i64 %cast1479, 0
+  %null_ext1481 = zext i1 %null_chk1480 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26296, i64 3, ptr @sty_name.26297, i64 46, i64 %null_ext1481, ptr @src_file.26298, i64 0, i64 1399)
+  %bag_ptr1482 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1478, i32 0, i32 3
+  %bag1483 = load ptr, ptr %bag_ptr1482, align 8
+  %361 = call i1 @"@std::avrac::diagnostics::bag_has_warnings"(ptr %bag1483)
+  %widen1484 = zext i1 %361 to i64
+  %r_bool1485 = icmp ne i64 %widen1484, 0
+  br i1 %r_bool1485, label %sc_r_true1486, label %sc_r_false1487
 
-sc_short1424:                                     ; preds = %ifcont1401
-  br label %sc_merge1425
+sc_short1476:                                     ; preds = %ifcont1453
+  br label %sc_merge1477
 
-sc_merge1425:                                     ; preds = %sc_r_merge1436, %sc_short1424
-  %sc_phi1437 = phi i1 [ true, %sc_short1424 ], [ %r_bool1433, %sc_r_merge1436 ]
-  %sc_ext1438 = zext i1 %sc_phi1437 to i64
-  %if_cond1440 = icmp ne i64 %sc_ext1438, 0
-  br i1 %if_cond1440, label %if_then1441, label %if_else1442
+sc_merge1477:                                     ; preds = %sc_r_merge1488, %sc_short1476
+  %sc_phi1489 = phi i1 [ true, %sc_short1476 ], [ %r_bool1485, %sc_r_merge1488 ]
+  %sc_ext1490 = zext i1 %sc_phi1489 to i64
+  %if_cond1492 = icmp ne i64 %sc_ext1490, 0
+  br i1 %if_cond1492, label %if_then1493, label %if_else1494
 
-sc_r_true1434:                                    ; preds = %sc_rhs1423
-  br label %sc_r_merge1436
+sc_r_true1486:                                    ; preds = %sc_rhs1475
+  br label %sc_r_merge1488
 
-sc_r_false1435:                                   ; preds = %sc_rhs1423
-  br label %sc_r_merge1436
+sc_r_false1487:                                   ; preds = %sc_rhs1475
+  br label %sc_r_merge1488
 
-sc_r_merge1436:                                   ; preds = %sc_r_false1435, %sc_r_true1434
-  br label %sc_merge1425
+sc_r_merge1488:                                   ; preds = %sc_r_false1487, %sc_r_true1486
+  br label %sc_merge1477
 
-ifcont1439:                                       ; preds = %if_else1442, %if_then1441
-  %named1452 = load ptr, ptr %named1414, align 8
-  %cast1453 = ptrtoint ptr %named1452 to i64
-  %null_chk1454 = icmp eq i64 %cast1453, 0
-  %null_ext1455 = zext i1 %null_chk1454 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26210, i64 9, ptr @sty_name.26211, i64 46, i64 %null_ext1455, ptr @src_file.26212, i64 0, i64 1262)
-  %had_error_ptr1456 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1452, i32 0, i32 1
-  %had_error1457 = load i64, ptr %had_error_ptr1456, align 8
-  %if_cond1459 = icmp ne i64 %had_error1457, 0
-  br i1 %if_cond1459, label %if_then1460, label %if_else1461
+ifcont1491:                                       ; preds = %if_else1494, %if_then1493
+  %named1504 = load ptr, ptr %named1466, align 8
+  %cast1505 = ptrtoint ptr %named1504 to i64
+  %null_chk1506 = icmp eq i64 %cast1505, 0
+  %null_ext1507 = zext i1 %null_chk1506 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26302, i64 9, ptr @sty_name.26303, i64 46, i64 %null_ext1507, ptr @src_file.26304, i64 0, i64 1402)
+  %had_error_ptr1508 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1504, i32 0, i32 1
+  %had_error1509 = load i64, ptr %had_error_ptr1508, align 8
+  %if_cond1511 = icmp ne i64 %had_error1509, 0
+  br i1 %if_cond1511, label %if_then1512, label %if_else1513
 
-if_then1441:                                      ; preds = %sc_merge1425
-  %json_output1443 = load i1, ptr %json_output, align 8
-  %csource1444 = load ptr, ptr %csource, align 8
-  %cpath1445 = load ptr, ptr %cpath, align 8
-  %named1446 = load ptr, ptr %named1414, align 8
-  %cast1447 = ptrtoint ptr %named1446 to i64
-  %null_chk1448 = icmp eq i64 %cast1447, 0
-  %null_ext1449 = zext i1 %null_chk1448 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26207, i64 3, ptr @sty_name.26208, i64 46, i64 %null_ext1449, ptr @src_file.26209, i64 0, i64 1260)
-  %bag_ptr1450 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1446, i32 0, i32 3
-  %bag1451 = load ptr, ptr %bag_ptr1450, align 8
-  %337 = call i64 @render_bag_either(i1 %json_output1443, ptr %csource1444, ptr %cpath1445, ptr %bag1451)
-  br label %ifcont1439
+if_then1493:                                      ; preds = %sc_merge1477
+  %json_output1495 = load i1, ptr %json_output, align 8
+  %csource1496 = load ptr, ptr %csource, align 8
+  %cpath1497 = load ptr, ptr %cpath, align 8
+  %named1498 = load ptr, ptr %named1466, align 8
+  %cast1499 = ptrtoint ptr %named1498 to i64
+  %null_chk1500 = icmp eq i64 %cast1499, 0
+  %null_ext1501 = zext i1 %null_chk1500 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26299, i64 3, ptr @sty_name.26300, i64 46, i64 %null_ext1501, ptr @src_file.26301, i64 0, i64 1400)
+  %bag_ptr1502 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1498, i32 0, i32 3
+  %bag1503 = load ptr, ptr %bag_ptr1502, align 8
+  %362 = call i64 @render_bag_either(i1 %json_output1495, ptr %csource1496, ptr %cpath1497, ptr %bag1503)
+  br label %ifcont1491
 
-if_else1442:                                      ; preds = %sc_merge1425
-  br label %ifcont1439
+if_else1494:                                      ; preds = %sc_merge1477
+  br label %ifcont1491
 
-ifcont1458:                                       ; preds = %if_else1461, %if_then1460
-  %stop_after1468 = load ptr, ptr %stop_after, align 8
-  %338 = call i32 @strcmp(ptr %stop_after1468, ptr @.str.26216)
-  %widen1469 = sext i32 %338 to i64
-  %streq_cmp1470 = icmp eq i64 %widen1469, 0
-  %streq_ext1471 = zext i1 %streq_cmp1470 to i64
-  %if_cond1473 = icmp ne i64 %streq_ext1471, 0
-  br i1 %if_cond1473, label %if_then1474, label %if_else1475
+ifcont1510:                                       ; preds = %if_else1513, %if_then1512
+  %stop_after1520 = load ptr, ptr %stop_after, align 8
+  %363 = call i32 @strcmp(ptr %stop_after1520, ptr @.str.26308)
+  %widen1521 = sext i32 %363 to i64
+  %streq_cmp1522 = icmp eq i64 %widen1521, 0
+  %streq_ext1523 = zext i1 %streq_cmp1522 to i64
+  %if_cond1525 = icmp ne i64 %streq_ext1523, 0
+  br i1 %if_cond1525, label %if_then1526, label %if_else1527
 
-if_then1460:                                      ; preds = %ifcont1439
-  %named1462 = load ptr, ptr %named1414, align 8
-  %cast1463 = ptrtoint ptr %named1462 to i64
-  %null_chk1464 = icmp eq i64 %cast1463, 0
-  %null_ext1465 = zext i1 %null_chk1464 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26213, i64 13, ptr @sty_name.26214, i64 46, i64 %null_ext1465, ptr @src_file.26215, i64 0, i64 1262)
-  %error_message_ptr1466 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1462, i32 0, i32 2
-  %error_message1467 = load ptr, ptr %error_message_ptr1466, align 8
-  %339 = call i64 @fail(ptr %error_message1467)
-  br label %ifcont1458
+if_then1512:                                      ; preds = %ifcont1491
+  %named1514 = load ptr, ptr %named1466, align 8
+  %cast1515 = ptrtoint ptr %named1514 to i64
+  %null_chk1516 = icmp eq i64 %cast1515, 0
+  %null_ext1517 = zext i1 %null_chk1516 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26305, i64 13, ptr @sty_name.26306, i64 46, i64 %null_ext1517, ptr @src_file.26307, i64 0, i64 1402)
+  %error_message_ptr1518 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1514, i32 0, i32 2
+  %error_message1519 = load ptr, ptr %error_message_ptr1518, align 8
+  %364 = call i64 @fail(ptr %error_message1519)
+  br label %ifcont1510
 
-if_else1461:                                      ; preds = %ifcont1439
-  br label %ifcont1458
+if_else1513:                                      ; preds = %ifcont1491
+  br label %ifcont1510
 
-ifcont1472:                                       ; preds = %if_else1475
-  %named1477 = load ptr, ptr %named1414, align 8
-  %cast1478 = ptrtoint ptr %named1477 to i64
-  %null_chk1479 = icmp eq i64 %cast1478, 0
-  %null_ext1480 = zext i1 %null_chk1479 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26218, i64 5, ptr @sty_name.26219, i64 46, i64 %null_ext1480, ptr @src_file.26220, i64 0, i64 1268)
-  %stmts_ptr1481 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1477, i32 0, i32 0
-  %stmts1482 = load ptr, ptr %stmts_ptr1481, align 8
-  %340 = call ptr @"@std::avrac::typeck::typecheck_program"(ptr %stmts1482)
-  store ptr %340, ptr %tc_result1483, align 8
-  %tc_result1484 = load ptr, ptr %tc_result1483, align 8
-  %cast1485 = ptrtoint ptr %tc_result1484 to i64
-  %null_chk1486 = icmp eq i64 %cast1485, 0
-  %null_ext1487 = zext i1 %null_chk1486 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26221, i64 3, ptr @sty_name.26222, i64 36, i64 %null_ext1487, ptr @src_file.26223, i64 0, i64 1269)
-  %bag_ptr1488 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result1484, i32 0, i32 2
-  %bag1489 = load ptr, ptr %bag_ptr1488, align 8
-  %341 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag1489)
-  %widen1490 = zext i1 %341 to i64
-  %l_bool1491 = icmp ne i64 %widen1490, 0
-  br i1 %l_bool1491, label %sc_short1493, label %sc_rhs1492
+ifcont1524:                                       ; preds = %if_else1527
+  %named1529 = load ptr, ptr %named1466, align 8
+  %cast1530 = ptrtoint ptr %named1529 to i64
+  %null_chk1531 = icmp eq i64 %cast1530, 0
+  %null_ext1532 = zext i1 %null_chk1531 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26310, i64 5, ptr @sty_name.26311, i64 46, i64 %null_ext1532, ptr @src_file.26312, i64 0, i64 1408)
+  %stmts_ptr1533 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1529, i32 0, i32 0
+  %stmts1534 = load ptr, ptr %stmts_ptr1533, align 8
+  %365 = call ptr @"@std::avrac::typeck::typecheck_program"(ptr %stmts1534)
+  store ptr %365, ptr %tc_result1535, align 8
+  %tc_result1536 = load ptr, ptr %tc_result1535, align 8
+  %cast1537 = ptrtoint ptr %tc_result1536 to i64
+  %null_chk1538 = icmp eq i64 %cast1537, 0
+  %null_ext1539 = zext i1 %null_chk1538 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26313, i64 3, ptr @sty_name.26314, i64 36, i64 %null_ext1539, ptr @src_file.26315, i64 0, i64 1409)
+  %bag_ptr1540 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result1536, i32 0, i32 2
+  %bag1541 = load ptr, ptr %bag_ptr1540, align 8
+  %366 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag1541)
+  %widen1542 = zext i1 %366 to i64
+  %l_bool1543 = icmp ne i64 %widen1542, 0
+  br i1 %l_bool1543, label %sc_short1545, label %sc_rhs1544
 
-if_then1474:                                      ; preds = %ifcont1458
-  %342 = call i32 @puts(ptr @.str.26217)
-  %widen1476 = sext i32 %342 to i64
+if_then1526:                                      ; preds = %ifcont1510
+  %367 = call i32 @puts(ptr @.str.26309)
+  %widen1528 = sext i32 %367 to i64
   ret i64 0
 
-if_else1475:                                      ; preds = %ifcont1458
-  br label %ifcont1472
+if_else1527:                                      ; preds = %ifcont1510
+  br label %ifcont1524
 
-sc_rhs1492:                                       ; preds = %ifcont1472
-  %tc_result1495 = load ptr, ptr %tc_result1483, align 8
-  %cast1496 = ptrtoint ptr %tc_result1495 to i64
-  %null_chk1497 = icmp eq i64 %cast1496, 0
-  %null_ext1498 = zext i1 %null_chk1497 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26224, i64 3, ptr @sty_name.26225, i64 36, i64 %null_ext1498, ptr @src_file.26226, i64 0, i64 1269)
-  %bag_ptr1499 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result1495, i32 0, i32 2
-  %bag1500 = load ptr, ptr %bag_ptr1499, align 8
-  %343 = call i1 @"@std::avrac::diagnostics::bag_has_warnings"(ptr %bag1500)
-  %widen1501 = zext i1 %343 to i64
-  %r_bool1502 = icmp ne i64 %widen1501, 0
-  br i1 %r_bool1502, label %sc_r_true1503, label %sc_r_false1504
-
-sc_short1493:                                     ; preds = %ifcont1472
-  br label %sc_merge1494
-
-sc_merge1494:                                     ; preds = %sc_r_merge1505, %sc_short1493
-  %sc_phi1506 = phi i1 [ true, %sc_short1493 ], [ %r_bool1502, %sc_r_merge1505 ]
-  %sc_ext1507 = zext i1 %sc_phi1506 to i64
-  %if_cond1509 = icmp ne i64 %sc_ext1507, 0
-  br i1 %if_cond1509, label %if_then1510, label %if_else1511
-
-sc_r_true1503:                                    ; preds = %sc_rhs1492
-  br label %sc_r_merge1505
-
-sc_r_false1504:                                   ; preds = %sc_rhs1492
-  br label %sc_r_merge1505
-
-sc_r_merge1505:                                   ; preds = %sc_r_false1504, %sc_r_true1503
-  br label %sc_merge1494
-
-ifcont1508:                                       ; preds = %if_else1511, %if_then1510
-  %tc_result1521 = load ptr, ptr %tc_result1483, align 8
-  %cast1522 = ptrtoint ptr %tc_result1521 to i64
-  %null_chk1523 = icmp eq i64 %cast1522, 0
-  %null_ext1524 = zext i1 %null_chk1523 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26230, i64 3, ptr @sty_name.26231, i64 36, i64 %null_ext1524, ptr @src_file.26232, i64 0, i64 1272)
-  %bag_ptr1525 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result1521, i32 0, i32 2
-  %bag1526 = load ptr, ptr %bag_ptr1525, align 8
-  %344 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag1526)
-  %widen1527 = zext i1 %344 to i64
-  %if_cond1529 = icmp ne i64 %widen1527, 0
-  br i1 %if_cond1529, label %if_then1530, label %if_else1531
-
-if_then1510:                                      ; preds = %sc_merge1494
-  %json_output1512 = load i1, ptr %json_output, align 8
-  %csource1513 = load ptr, ptr %csource, align 8
-  %cpath1514 = load ptr, ptr %cpath, align 8
-  %tc_result1515 = load ptr, ptr %tc_result1483, align 8
-  %cast1516 = ptrtoint ptr %tc_result1515 to i64
-  %null_chk1517 = icmp eq i64 %cast1516, 0
-  %null_ext1518 = zext i1 %null_chk1517 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26227, i64 3, ptr @sty_name.26228, i64 36, i64 %null_ext1518, ptr @src_file.26229, i64 0, i64 1270)
-  %bag_ptr1519 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result1515, i32 0, i32 2
-  %bag1520 = load ptr, ptr %bag_ptr1519, align 8
-  %345 = call i64 @render_bag_either(i1 %json_output1512, ptr %csource1513, ptr %cpath1514, ptr %bag1520)
-  br label %ifcont1508
-
-if_else1511:                                      ; preds = %sc_merge1494
-  br label %ifcont1508
-
-ifcont1528:                                       ; preds = %if_else1531, %if_then1530
-  %stop_after1532 = load ptr, ptr %stop_after, align 8
-  %346 = call i32 @strcmp(ptr %stop_after1532, ptr @.str.26234)
-  %widen1533 = sext i32 %346 to i64
-  %streq_cmp1534 = icmp eq i64 %widen1533, 0
-  %streq_ext1535 = zext i1 %streq_cmp1534 to i64
-  %if_cond1537 = icmp ne i64 %streq_ext1535, 0
-  br i1 %if_cond1537, label %if_then1538, label %if_else1539
-
-if_then1530:                                      ; preds = %ifcont1508
-  %347 = call i64 @fail(ptr @.str.26233)
-  br label %ifcont1528
-
-if_else1531:                                      ; preds = %ifcont1508
-  br label %ifcont1528
-
-ifcont1536:                                       ; preds = %if_else1539
-  %tc_result1541 = load ptr, ptr %tc_result1483, align 8
-  %cast1542 = ptrtoint ptr %tc_result1541 to i64
-  %null_chk1543 = icmp eq i64 %cast1542, 0
-  %null_ext1544 = zext i1 %null_chk1543 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26236, i64 5, ptr @sty_name.26237, i64 36, i64 %null_ext1544, ptr @src_file.26238, i64 0, i64 1279)
-  %stmts_ptr1545 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result1541, i32 0, i32 0
-  %stmts1546 = load ptr, ptr %stmts_ptr1545, align 8
-  %tc_result1547 = load ptr, ptr %tc_result1483, align 8
+sc_rhs1544:                                       ; preds = %ifcont1524
+  %tc_result1547 = load ptr, ptr %tc_result1535, align 8
   %cast1548 = ptrtoint ptr %tc_result1547 to i64
   %null_chk1549 = icmp eq i64 %cast1548, 0
   %null_ext1550 = zext i1 %null_chk1549 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26239, i64 11, ptr @sty_name.26240, i64 36, i64 %null_ext1550, ptr @src_file.26241, i64 0, i64 1279)
-  %trait_impls_ptr1551 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result1547, i32 0, i32 3
-  %trait_impls1552 = load ptr, ptr %trait_impls_ptr1551, align 8
-  %348 = call ptr @"@std::avrac::features::generics::mono::monomorphize"(ptr %stmts1546, ptr %trait_impls1552)
-  store ptr %348, ptr %mono1553, align 8
-  %mono1554 = load ptr, ptr %mono1553, align 8
-  %cast1555 = ptrtoint ptr %mono1554 to i64
-  %null_chk1556 = icmp eq i64 %cast1555, 0
-  %null_ext1557 = zext i1 %null_chk1556 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26242, i64 3, ptr @sty_name.26243, i64 49, i64 %null_ext1557, ptr @src_file.26244, i64 0, i64 1280)
-  %bag_ptr1558 = getelementptr inbounds nuw %"@std::avrac::features::generics::mono::MonoResult", ptr %mono1554, i32 0, i32 1
-  %bag1559 = load ptr, ptr %bag_ptr1558, align 8
-  %349 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag1559)
-  %widen1560 = zext i1 %349 to i64
-  %if_cond1562 = icmp ne i64 %widen1560, 0
-  br i1 %if_cond1562, label %if_then1563, label %if_else1564
+  call void @avra_null_deref_trap(ptr @fld_name.26316, i64 3, ptr @sty_name.26317, i64 36, i64 %null_ext1550, ptr @src_file.26318, i64 0, i64 1409)
+  %bag_ptr1551 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result1547, i32 0, i32 2
+  %bag1552 = load ptr, ptr %bag_ptr1551, align 8
+  %368 = call i1 @"@std::avrac::diagnostics::bag_has_warnings"(ptr %bag1552)
+  %widen1553 = zext i1 %368 to i64
+  %r_bool1554 = icmp ne i64 %widen1553, 0
+  br i1 %r_bool1554, label %sc_r_true1555, label %sc_r_false1556
 
-if_then1538:                                      ; preds = %ifcont1528
-  %350 = call i32 @puts(ptr @.str.26235)
-  %widen1540 = sext i32 %350 to i64
+sc_short1545:                                     ; preds = %ifcont1524
+  br label %sc_merge1546
+
+sc_merge1546:                                     ; preds = %sc_r_merge1557, %sc_short1545
+  %sc_phi1558 = phi i1 [ true, %sc_short1545 ], [ %r_bool1554, %sc_r_merge1557 ]
+  %sc_ext1559 = zext i1 %sc_phi1558 to i64
+  %if_cond1561 = icmp ne i64 %sc_ext1559, 0
+  br i1 %if_cond1561, label %if_then1562, label %if_else1563
+
+sc_r_true1555:                                    ; preds = %sc_rhs1544
+  br label %sc_r_merge1557
+
+sc_r_false1556:                                   ; preds = %sc_rhs1544
+  br label %sc_r_merge1557
+
+sc_r_merge1557:                                   ; preds = %sc_r_false1556, %sc_r_true1555
+  br label %sc_merge1546
+
+ifcont1560:                                       ; preds = %if_else1563, %if_then1562
+  %tc_result1573 = load ptr, ptr %tc_result1535, align 8
+  %cast1574 = ptrtoint ptr %tc_result1573 to i64
+  %null_chk1575 = icmp eq i64 %cast1574, 0
+  %null_ext1576 = zext i1 %null_chk1575 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26322, i64 3, ptr @sty_name.26323, i64 36, i64 %null_ext1576, ptr @src_file.26324, i64 0, i64 1412)
+  %bag_ptr1577 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result1573, i32 0, i32 2
+  %bag1578 = load ptr, ptr %bag_ptr1577, align 8
+  %369 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag1578)
+  %widen1579 = zext i1 %369 to i64
+  %if_cond1581 = icmp ne i64 %widen1579, 0
+  br i1 %if_cond1581, label %if_then1582, label %if_else1583
+
+if_then1562:                                      ; preds = %sc_merge1546
+  %json_output1564 = load i1, ptr %json_output, align 8
+  %csource1565 = load ptr, ptr %csource, align 8
+  %cpath1566 = load ptr, ptr %cpath, align 8
+  %tc_result1567 = load ptr, ptr %tc_result1535, align 8
+  %cast1568 = ptrtoint ptr %tc_result1567 to i64
+  %null_chk1569 = icmp eq i64 %cast1568, 0
+  %null_ext1570 = zext i1 %null_chk1569 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26319, i64 3, ptr @sty_name.26320, i64 36, i64 %null_ext1570, ptr @src_file.26321, i64 0, i64 1410)
+  %bag_ptr1571 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result1567, i32 0, i32 2
+  %bag1572 = load ptr, ptr %bag_ptr1571, align 8
+  %370 = call i64 @render_bag_either(i1 %json_output1564, ptr %csource1565, ptr %cpath1566, ptr %bag1572)
+  br label %ifcont1560
+
+if_else1563:                                      ; preds = %sc_merge1546
+  br label %ifcont1560
+
+ifcont1580:                                       ; preds = %if_else1583, %if_then1582
+  %stop_after1584 = load ptr, ptr %stop_after, align 8
+  %371 = call i32 @strcmp(ptr %stop_after1584, ptr @.str.26326)
+  %widen1585 = sext i32 %371 to i64
+  %streq_cmp1586 = icmp eq i64 %widen1585, 0
+  %streq_ext1587 = zext i1 %streq_cmp1586 to i64
+  %if_cond1589 = icmp ne i64 %streq_ext1587, 0
+  br i1 %if_cond1589, label %if_then1590, label %if_else1591
+
+if_then1582:                                      ; preds = %ifcont1560
+  %372 = call i64 @fail(ptr @.str.26325)
+  br label %ifcont1580
+
+if_else1583:                                      ; preds = %ifcont1560
+  br label %ifcont1580
+
+ifcont1588:                                       ; preds = %if_else1591
+  %tc_result1593 = load ptr, ptr %tc_result1535, align 8
+  %cast1594 = ptrtoint ptr %tc_result1593 to i64
+  %null_chk1595 = icmp eq i64 %cast1594, 0
+  %null_ext1596 = zext i1 %null_chk1595 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26328, i64 5, ptr @sty_name.26329, i64 36, i64 %null_ext1596, ptr @src_file.26330, i64 0, i64 1419)
+  %stmts_ptr1597 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result1593, i32 0, i32 0
+  %stmts1598 = load ptr, ptr %stmts_ptr1597, align 8
+  %tc_result1599 = load ptr, ptr %tc_result1535, align 8
+  %cast1600 = ptrtoint ptr %tc_result1599 to i64
+  %null_chk1601 = icmp eq i64 %cast1600, 0
+  %null_ext1602 = zext i1 %null_chk1601 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26331, i64 11, ptr @sty_name.26332, i64 36, i64 %null_ext1602, ptr @src_file.26333, i64 0, i64 1419)
+  %trait_impls_ptr1603 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result1599, i32 0, i32 3
+  %trait_impls1604 = load ptr, ptr %trait_impls_ptr1603, align 8
+  %373 = call ptr @"@std::avrac::features::generics::mono::monomorphize"(ptr %stmts1598, ptr %trait_impls1604)
+  store ptr %373, ptr %mono1605, align 8
+  %mono1606 = load ptr, ptr %mono1605, align 8
+  %cast1607 = ptrtoint ptr %mono1606 to i64
+  %null_chk1608 = icmp eq i64 %cast1607, 0
+  %null_ext1609 = zext i1 %null_chk1608 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26334, i64 3, ptr @sty_name.26335, i64 49, i64 %null_ext1609, ptr @src_file.26336, i64 0, i64 1420)
+  %bag_ptr1610 = getelementptr inbounds nuw %"@std::avrac::features::generics::mono::MonoResult", ptr %mono1606, i32 0, i32 1
+  %bag1611 = load ptr, ptr %bag_ptr1610, align 8
+  %374 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag1611)
+  %widen1612 = zext i1 %374 to i64
+  %if_cond1614 = icmp ne i64 %widen1612, 0
+  br i1 %if_cond1614, label %if_then1615, label %if_else1616
+
+if_then1590:                                      ; preds = %ifcont1580
+  %375 = call i32 @puts(ptr @.str.26327)
+  %widen1592 = sext i32 %375 to i64
   ret i64 0
 
-if_else1539:                                      ; preds = %ifcont1528
-  br label %ifcont1536
+if_else1591:                                      ; preds = %ifcont1580
+  br label %ifcont1588
 
-ifcont1561:                                       ; preds = %if_else1564, %if_then1563
-  %cpath1574 = load ptr, ptr %cpath, align 8
-  %351 = call i64 @strlen(ptr %cpath1574)
-  %352 = call i64 @strlen(ptr @.str.26249)
-  %concat_total1575 = add i64 %351, %352
-  %concat_size1576 = add i64 %concat_total1575, 1
-  %353 = call ptr @avra_rc_alloc(i64 %concat_size1576)
-  %354 = call ptr @memcpy(ptr %353, ptr %cpath1574, i64 %351)
-  %cast1577 = ptrtoint ptr %353 to i64
-  %dst2_int1578 = add i64 %cast1577, %351
-  %cast1579 = inttoptr i64 %dst2_int1578 to ptr
-  %rhs_len_p11580 = add i64 %352, 1
-  %355 = call ptr @memcpy(ptr %cast1579, ptr @.str.26249, i64 %rhs_len_p11580)
-  store ptr %353, ptr %output1581, align 8
-  %mono1582 = load ptr, ptr %mono1553, align 8
-  %cast1583 = ptrtoint ptr %mono1582 to i64
-  %null_chk1584 = icmp eq i64 %cast1583, 0
-  %null_ext1585 = zext i1 %null_chk1584 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26250, i64 5, ptr @sty_name.26251, i64 49, i64 %null_ext1585, ptr @src_file.26252, i64 0, i64 1286)
-  %stmts_ptr1586 = getelementptr inbounds nuw %"@std::avrac::features::generics::mono::MonoResult", ptr %mono1582, i32 0, i32 0
-  %stmts1587 = load ptr, ptr %stmts_ptr1586, align 8
-  %output1588 = load ptr, ptr %output1581, align 8
-  %debug_null1589 = load i1, ptr %debug_null, align 8
-  %enable_coverage1590 = load i1, ptr %enable_coverage, align 8
-  %cpath1591 = load ptr, ptr %cpath, align 8
-  %named1592 = load ptr, ptr %named1414, align 8
-  %cast1593 = ptrtoint ptr %named1592 to i64
-  %null_chk1594 = icmp eq i64 %cast1593, 0
-  %null_ext1595 = zext i1 %null_chk1594 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26253, i64 8, ptr @sty_name.26254, i64 46, i64 %null_ext1595, ptr @src_file.26255, i64 0, i64 1286)
-  %type_reg_ptr1596 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1592, i32 0, i32 4
-  %type_reg1597 = load ptr, ptr %type_reg_ptr1596, align 8
-  %356 = call ptr @"@std::avrac::codegen::setup::compile_program"(ptr %stmts1587, ptr %output1588, i1 %debug_null1589, i1 %enable_coverage1590, ptr %cpath1591, ptr %type_reg1597)
-  %tag_ptr1598 = getelementptr inbounds nuw %Result__int__string, ptr %356, i32 0, i32 0
-  %tag1599 = load i64, ptr %tag_ptr1598, align 8
-  %tag_eq1604 = icmp eq i64 %tag1599, 5862623
-  br i1 %tag_eq1604, label %march_arm1602, label %march_next1603
-
-if_then1563:                                      ; preds = %ifcont1536
-  %json_output1565 = load i1, ptr %json_output, align 8
-  %csource1566 = load ptr, ptr %csource, align 8
-  %cpath1567 = load ptr, ptr %cpath, align 8
-  %mono1568 = load ptr, ptr %mono1553, align 8
-  %cast1569 = ptrtoint ptr %mono1568 to i64
-  %null_chk1570 = icmp eq i64 %cast1569, 0
-  %null_ext1571 = zext i1 %null_chk1570 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.26245, i64 3, ptr @sty_name.26246, i64 49, i64 %null_ext1571, ptr @src_file.26247, i64 0, i64 1281)
-  %bag_ptr1572 = getelementptr inbounds nuw %"@std::avrac::features::generics::mono::MonoResult", ptr %mono1568, i32 0, i32 1
-  %bag1573 = load ptr, ptr %bag_ptr1572, align 8
-  %357 = call i64 @render_bag_either(i1 %json_output1565, ptr %csource1566, ptr %cpath1567, ptr %bag1573)
-  %358 = call i64 @fail(ptr @.str.26248)
-  br label %ifcont1561
-
-if_else1564:                                      ; preds = %ifcont1536
-  br label %ifcont1561
-
-match_end1600:                                    ; preds = %march_arm1606, %march_arm1602
-  %output1629 = load ptr, ptr %output1581, align 8
-  %359 = call i32 @puts(ptr %output1629)
-  %widen1630 = sext i32 %359 to i64
-  ret i64 0
-
-march_arm1602:                                    ; preds = %ifcont1561
-  %360 = call ptr @avra_map_new_cstr()
-  %cast1605 = ptrtoint ptr %360 to i64
-  store i64 %cast1605, ptr %match_stmt_discard1601, align 8
-  br label %match_end1600
-
-march_next1603:                                   ; preds = %ifcont1561
-  %tag_eq1608 = icmp eq i64 %tag1599, 193456014
-  br i1 %tag_eq1608, label %march_arm1606, label %march_next1607
-
-march_arm1606:                                    ; preds = %march_next1603
-  %pay_slot1609 = getelementptr inbounds nuw %Result__int__string, ptr %356, i32 0, i32 1
-  %payload1610 = load ptr, ptr %pay_slot1609, align 8
-  %e_slot_base1611 = ptrtoint ptr %payload1610 to i64
-  %e_slot_addr1612 = add i64 %e_slot_base1611, 0
-  %e_slot1613 = inttoptr i64 %e_slot_addr1612 to ptr
-  %e1614 = load ptr, ptr %e_slot1613, align 8
-  call void @avra_rc_retain(ptr %e1614)
-  store ptr %e1614, ptr %e1615, align 8
-  %361 = call ptr @"@std::avrac::diagnostics::bag_new"()
-  %e1616 = load ptr, ptr %e1615, align 8
-  %362 = call i64 @strlen(ptr @.str.26256)
-  %363 = call i64 @strlen(ptr %e1616)
-  %concat_total1617 = add i64 %362, %363
-  %concat_size1618 = add i64 %concat_total1617, 1
-  %364 = call ptr @avra_rc_alloc(i64 %concat_size1618)
-  %365 = call ptr @memcpy(ptr %364, ptr @.str.26256, i64 %362)
-  %cast1619 = ptrtoint ptr %364 to i64
-  %dst2_int1620 = add i64 %cast1619, %362
-  %cast1621 = inttoptr i64 %dst2_int1620 to ptr
-  %rhs_len_p11622 = add i64 %363, 1
-  %366 = call ptr @memcpy(ptr %cast1621, ptr %e1616, i64 %rhs_len_p11622)
-  %367 = call ptr @"@std::avrac::diagnostics::diag_ice"(ptr %364)
-  %368 = call ptr @"@std::avrac::diagnostics::bag_report"(ptr %361, ptr %367)
-  store ptr %368, ptr %ice_bag1623, align 8
-  %json_output1624 = load i1, ptr %json_output, align 8
-  %csource1625 = load ptr, ptr %csource, align 8
+ifcont1613:                                       ; preds = %if_else1616, %if_then1615
   %cpath1626 = load ptr, ptr %cpath, align 8
-  %ice_bag1627 = load ptr, ptr %ice_bag1623, align 8
-  %369 = call i64 @render_bag_either(i1 %json_output1624, ptr %csource1625, ptr %cpath1626, ptr %ice_bag1627)
-  %e1628 = load ptr, ptr %e1615, align 8
-  %370 = call i64 @fail(ptr %e1628)
-  store i64 %370, ptr %match_stmt_discard1601, align 8
-  br label %match_end1600
+  %376 = call i64 @strlen(ptr %cpath1626)
+  %377 = call i64 @strlen(ptr @.str.26341)
+  %concat_total1627 = add i64 %376, %377
+  %concat_size1628 = add i64 %concat_total1627, 1
+  %378 = call ptr @avra_rc_alloc(i64 %concat_size1628)
+  %379 = call ptr @memcpy(ptr %378, ptr %cpath1626, i64 %376)
+  %cast1629 = ptrtoint ptr %378 to i64
+  %dst2_int1630 = add i64 %cast1629, %376
+  %cast1631 = inttoptr i64 %dst2_int1630 to ptr
+  %rhs_len_p11632 = add i64 %377, 1
+  %380 = call ptr @memcpy(ptr %cast1631, ptr @.str.26341, i64 %rhs_len_p11632)
+  store ptr %378, ptr %output1633, align 8
+  %mono1634 = load ptr, ptr %mono1605, align 8
+  %cast1635 = ptrtoint ptr %mono1634 to i64
+  %null_chk1636 = icmp eq i64 %cast1635, 0
+  %null_ext1637 = zext i1 %null_chk1636 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26342, i64 5, ptr @sty_name.26343, i64 49, i64 %null_ext1637, ptr @src_file.26344, i64 0, i64 1426)
+  %stmts_ptr1638 = getelementptr inbounds nuw %"@std::avrac::features::generics::mono::MonoResult", ptr %mono1634, i32 0, i32 0
+  %stmts1639 = load ptr, ptr %stmts_ptr1638, align 8
+  %output1640 = load ptr, ptr %output1633, align 8
+  %debug_null1641 = load i1, ptr %debug_null, align 8
+  %enable_coverage1642 = load i1, ptr %enable_coverage, align 8
+  %cpath1643 = load ptr, ptr %cpath, align 8
+  %named1644 = load ptr, ptr %named1466, align 8
+  %cast1645 = ptrtoint ptr %named1644 to i64
+  %null_chk1646 = icmp eq i64 %cast1645, 0
+  %null_ext1647 = zext i1 %null_chk1646 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26345, i64 8, ptr @sty_name.26346, i64 46, i64 %null_ext1647, ptr @src_file.26347, i64 0, i64 1426)
+  %type_reg_ptr1648 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1644, i32 0, i32 4
+  %type_reg1649 = load ptr, ptr %type_reg_ptr1648, align 8
+  %381 = call ptr @"@std::avrac::codegen::setup::compile_program"(ptr %stmts1639, ptr %output1640, i1 %debug_null1641, i1 %enable_coverage1642, ptr %cpath1643, ptr %type_reg1649)
+  %tag_ptr1650 = getelementptr inbounds nuw %Result__int__string, ptr %381, i32 0, i32 0
+  %tag1651 = load i64, ptr %tag_ptr1650, align 8
+  %tag_eq1656 = icmp eq i64 %tag1651, 5862623
+  br i1 %tag_eq1656, label %march_arm1654, label %march_next1655
 
-march_next1607:                                   ; preds = %march_next1603
-  call void @avra_match_unreachable(ptr @.match_fn.26257, i64 %tag1599, ptr @mu_file.26258, i64 1286)
+if_then1615:                                      ; preds = %ifcont1588
+  %json_output1617 = load i1, ptr %json_output, align 8
+  %csource1618 = load ptr, ptr %csource, align 8
+  %cpath1619 = load ptr, ptr %cpath, align 8
+  %mono1620 = load ptr, ptr %mono1605, align 8
+  %cast1621 = ptrtoint ptr %mono1620 to i64
+  %null_chk1622 = icmp eq i64 %cast1621, 0
+  %null_ext1623 = zext i1 %null_chk1622 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.26337, i64 3, ptr @sty_name.26338, i64 49, i64 %null_ext1623, ptr @src_file.26339, i64 0, i64 1421)
+  %bag_ptr1624 = getelementptr inbounds nuw %"@std::avrac::features::generics::mono::MonoResult", ptr %mono1620, i32 0, i32 1
+  %bag1625 = load ptr, ptr %bag_ptr1624, align 8
+  %382 = call i64 @render_bag_either(i1 %json_output1617, ptr %csource1618, ptr %cpath1619, ptr %bag1625)
+  %383 = call i64 @fail(ptr @.str.26340)
+  br label %ifcont1613
+
+if_else1616:                                      ; preds = %ifcont1588
+  br label %ifcont1613
+
+match_end1652:                                    ; preds = %march_arm1658, %march_arm1654
+  %output1681 = load ptr, ptr %output1633, align 8
+  %384 = call i32 @puts(ptr %output1681)
+  %widen1682 = sext i32 %384 to i64
+  ret i64 0
+
+march_arm1654:                                    ; preds = %ifcont1613
+  %385 = call ptr @avra_map_new_cstr()
+  %cast1657 = ptrtoint ptr %385 to i64
+  store i64 %cast1657, ptr %match_stmt_discard1653, align 8
+  br label %match_end1652
+
+march_next1655:                                   ; preds = %ifcont1613
+  %tag_eq1660 = icmp eq i64 %tag1651, 193456014
+  br i1 %tag_eq1660, label %march_arm1658, label %march_next1659
+
+march_arm1658:                                    ; preds = %march_next1655
+  %pay_slot1661 = getelementptr inbounds nuw %Result__int__string, ptr %381, i32 0, i32 1
+  %payload1662 = load ptr, ptr %pay_slot1661, align 8
+  %e_slot_base1663 = ptrtoint ptr %payload1662 to i64
+  %e_slot_addr1664 = add i64 %e_slot_base1663, 0
+  %e_slot1665 = inttoptr i64 %e_slot_addr1664 to ptr
+  %e1666 = load ptr, ptr %e_slot1665, align 8
+  call void @avra_rc_retain(ptr %e1666)
+  store ptr %e1666, ptr %e1667, align 8
+  %386 = call ptr @"@std::avrac::diagnostics::bag_new"()
+  %e1668 = load ptr, ptr %e1667, align 8
+  %387 = call i64 @strlen(ptr @.str.26348)
+  %388 = call i64 @strlen(ptr %e1668)
+  %concat_total1669 = add i64 %387, %388
+  %concat_size1670 = add i64 %concat_total1669, 1
+  %389 = call ptr @avra_rc_alloc(i64 %concat_size1670)
+  %390 = call ptr @memcpy(ptr %389, ptr @.str.26348, i64 %387)
+  %cast1671 = ptrtoint ptr %389 to i64
+  %dst2_int1672 = add i64 %cast1671, %387
+  %cast1673 = inttoptr i64 %dst2_int1672 to ptr
+  %rhs_len_p11674 = add i64 %388, 1
+  %391 = call ptr @memcpy(ptr %cast1673, ptr %e1668, i64 %rhs_len_p11674)
+  %392 = call ptr @"@std::avrac::diagnostics::diag_ice"(ptr %389)
+  %393 = call ptr @"@std::avrac::diagnostics::bag_report"(ptr %386, ptr %392)
+  store ptr %393, ptr %ice_bag1675, align 8
+  %json_output1676 = load i1, ptr %json_output, align 8
+  %csource1677 = load ptr, ptr %csource, align 8
+  %cpath1678 = load ptr, ptr %cpath, align 8
+  %ice_bag1679 = load ptr, ptr %ice_bag1675, align 8
+  %394 = call i64 @render_bag_either(i1 %json_output1676, ptr %csource1677, ptr %cpath1678, ptr %ice_bag1679)
+  %e1680 = load ptr, ptr %e1667, align 8
+  %395 = call i64 @fail(ptr %e1680)
+  store i64 %395, ptr %match_stmt_discard1653, align 8
+  br label %match_end1652
+
+march_next1659:                                   ; preds = %march_next1655
+  call void @avra_match_unreachable(ptr @.match_fn.26349, i64 %tag1651, ptr @mu_file.26350, i64 1426)
   unreachable
 }
 
@@ -353857,7 +355080,7 @@ entry:
   ret i64 0
 }
 
-define i64 @"__init_@std.26259"() {
+define i64 @"__init_@std.26351"() {
 entry:
   %0 = call i64 @__init_lsp()
   call void @avra_test_flush()
@@ -353870,7 +355093,7 @@ entry:
   ret i64 0
 }
 
-define i64 @"__init_@std.26260"() {
+define i64 @"__init_@std.26352"() {
 entry:
   %0 = call i64 @__init_crypto()
   call void @avra_test_flush()
@@ -353883,7 +355106,7 @@ entry:
   ret i64 0
 }
 
-define i64 @"__init_@std.26261"() {
+define i64 @"__init_@std.26353"() {
 entry:
   %0 = call i64 @__init_avrac()
   call void @avra_test_flush()
@@ -354073,7 +355296,7 @@ entry:
   ret i64 0
 }
 
-define i64 @__init_parser.26262() {
+define i64 @__init_parser.26354() {
 entry:
   call void @avra_test_flush()
   ret i64 0
@@ -354087,13 +355310,13 @@ entry:
   ret i64 0
 }
 
-define i64 @__init_parser.26263() {
+define i64 @__init_parser.26355() {
 entry:
   call void @avra_test_flush()
   ret i64 0
 }
 
-define i64 @__init_codegen.26264() {
+define i64 @__init_codegen.26356() {
 entry:
   call void @avra_test_flush()
   ret i64 0
@@ -354107,13 +355330,13 @@ entry:
   ret i64 0
 }
 
-define i64 @__init_parser.26265() {
+define i64 @__init_parser.26357() {
 entry:
   call void @avra_test_flush()
   ret i64 0
 }
 
-define i64 @__init_codegen.26266() {
+define i64 @__init_codegen.26358() {
 entry:
   call void @avra_test_flush()
   ret i64 0
@@ -354127,13 +355350,13 @@ entry:
   ret i64 0
 }
 
-define i64 @__init_parser.26267() {
+define i64 @__init_parser.26359() {
 entry:
   call void @avra_test_flush()
   ret i64 0
 }
 
-define i64 @__init_codegen.26268() {
+define i64 @__init_codegen.26360() {
 entry:
   call void @avra_test_flush()
   ret i64 0
@@ -354146,7 +355369,7 @@ entry:
   ret i64 0
 }
 
-define i64 @__init_parser.26269() {
+define i64 @__init_parser.26361() {
 entry:
   call void @avra_test_flush()
   ret i64 0
@@ -354161,19 +355384,19 @@ entry:
   ret i64 0
 }
 
-define i64 @__init_parser.26270() {
+define i64 @__init_parser.26362() {
 entry:
   call void @avra_test_flush()
   ret i64 0
 }
 
-define i64 @__init_codegen.26271() {
+define i64 @__init_codegen.26363() {
 entry:
   call void @avra_test_flush()
   ret i64 0
 }
 
-define i64 @__init_typeck.26272() {
+define i64 @__init_typeck.26364() {
 entry:
   call void @avra_test_flush()
   ret i64 0
@@ -354187,13 +355410,13 @@ entry:
   ret i64 0
 }
 
-define i64 @__init_parser.26273() {
+define i64 @__init_parser.26365() {
 entry:
   call void @avra_test_flush()
   ret i64 0
 }
 
-define i64 @__init_codegen.26274() {
+define i64 @__init_codegen.26366() {
 entry:
   call void @avra_test_flush()
   ret i64 0
@@ -354208,19 +355431,19 @@ entry:
   ret i64 0
 }
 
-define i64 @__init_parser.26275() {
+define i64 @__init_parser.26367() {
 entry:
   call void @avra_test_flush()
   ret i64 0
 }
 
-define i64 @__init_codegen.26276() {
+define i64 @__init_codegen.26368() {
 entry:
   call void @avra_test_flush()
   ret i64 0
 }
 
-define i64 @__init_typeck.26277() {
+define i64 @__init_typeck.26369() {
 entry:
   call void @avra_test_flush()
   ret i64 0
@@ -354234,13 +355457,13 @@ entry:
   ret i64 0
 }
 
-define i64 @__init_parser.26278() {
+define i64 @__init_parser.26370() {
 entry:
   call void @avra_test_flush()
   ret i64 0
 }
 
-define i64 @__init_codegen.26279() {
+define i64 @__init_codegen.26371() {
 entry:
   call void @avra_test_flush()
   ret i64 0
@@ -354253,7 +355476,7 @@ entry:
   ret i64 0
 }
 
-define i64 @__init_parser.26280() {
+define i64 @__init_parser.26372() {
 entry:
   call void @avra_test_flush()
   ret i64 0
@@ -354267,7 +355490,7 @@ entry:
   ret i64 0
 }
 
-define i64 @__init_parser.26281() {
+define i64 @__init_parser.26373() {
 entry:
   call void @avra_test_flush()
   ret i64 0
@@ -354293,13 +355516,13 @@ entry:
   ret i64 0
 }
 
-define i64 @__init_codegen.26282() {
+define i64 @__init_codegen.26374() {
 entry:
   call void @avra_test_flush()
   ret i64 0
 }
 
-define i64 @__init_typeck.26283() {
+define i64 @__init_typeck.26375() {
 entry:
   call void @avra_test_flush()
   ret i64 0
@@ -354314,19 +355537,19 @@ entry:
   ret i64 0
 }
 
-define i64 @__init_parser.26284() {
+define i64 @__init_parser.26376() {
 entry:
   call void @avra_test_flush()
   ret i64 0
 }
 
-define i64 @__init_typeck.26285() {
+define i64 @__init_typeck.26377() {
 entry:
   call void @avra_test_flush()
   ret i64 0
 }
 
-define i64 @__init_codegen.26286() {
+define i64 @__init_codegen.26378() {
 entry:
   call void @avra_test_flush()
   ret i64 0
@@ -354339,7 +355562,7 @@ entry:
   ret i64 0
 }
 
-define i64 @__init_codegen.26287() {
+define i64 @__init_codegen.26379() {
 entry:
   call void @avra_test_flush()
   ret i64 0
@@ -354352,7 +355575,7 @@ entry:
   ret i64 0
 }
 
-define i64 @__init_codegen.26288() {
+define i64 @__init_codegen.26380() {
 entry:
   call void @avra_test_flush()
   ret i64 0
@@ -354367,19 +355590,19 @@ entry:
   ret i64 0
 }
 
-define i64 @__init_codegen.26289() {
+define i64 @__init_codegen.26381() {
 entry:
   call void @avra_test_flush()
   ret i64 0
 }
 
-define i64 @__init_parser.26290() {
+define i64 @__init_parser.26382() {
 entry:
   call void @avra_test_flush()
   ret i64 0
 }
 
-define i64 @__init_typeck.26291() {
+define i64 @__init_typeck.26383() {
 entry:
   call void @avra_test_flush()
   ret i64 0
@@ -354393,13 +355616,13 @@ entry:
   ret i64 0
 }
 
-define i64 @__init_codegen.26292() {
+define i64 @__init_codegen.26384() {
 entry:
   call void @avra_test_flush()
   ret i64 0
 }
 
-define i64 @__init_parser.26293() {
+define i64 @__init_parser.26385() {
 entry:
   call void @avra_test_flush()
   ret i64 0
@@ -354414,19 +355637,19 @@ entry:
   ret i64 0
 }
 
-define i64 @__init_codegen.26294() {
+define i64 @__init_codegen.26386() {
 entry:
   call void @avra_test_flush()
   ret i64 0
 }
 
-define i64 @__init_parser.26295() {
+define i64 @__init_parser.26387() {
 entry:
   call void @avra_test_flush()
   ret i64 0
 }
 
-define i64 @__init_typeck.26296() {
+define i64 @__init_typeck.26388() {
 entry:
   call void @avra_test_flush()
   ret i64 0
@@ -354440,13 +355663,13 @@ entry:
   ret i64 0
 }
 
-define i64 @__init_parser.26297() {
+define i64 @__init_parser.26389() {
 entry:
   call void @avra_test_flush()
   ret i64 0
 }
 
-define i64 @__init_codegen.26298() {
+define i64 @__init_codegen.26390() {
 entry:
   call void @avra_test_flush()
   ret i64 0
@@ -354459,7 +355682,7 @@ entry:
   ret i64 0
 }
 
-define i64 @__init_codegen.26299() {
+define i64 @__init_codegen.26391() {
 entry:
   call void @avra_test_flush()
   ret i64 0
@@ -354472,7 +355695,7 @@ entry:
   ret i64 0
 }
 
-define i64 @__init_codegen.26300() {
+define i64 @__init_codegen.26392() {
 entry:
   call void @avra_test_flush()
   ret i64 0
@@ -354487,13 +355710,13 @@ entry:
   ret i64 0
 }
 
-define i64 @__init_parser.26301() {
+define i64 @__init_parser.26393() {
 entry:
   call void @avra_test_flush()
   ret i64 0
 }
 
-define i64 @__init_codegen.26302() {
+define i64 @__init_codegen.26394() {
 entry:
   call void @avra_test_flush()
   ret i64 0
@@ -354514,19 +355737,19 @@ entry:
   ret i64 0
 }
 
-define i64 @__init_codegen.26303() {
+define i64 @__init_codegen.26395() {
 entry:
   call void @avra_test_flush()
   ret i64 0
 }
 
-define i64 @__init_parser.26304() {
+define i64 @__init_parser.26396() {
 entry:
   call void @avra_test_flush()
   ret i64 0
 }
 
-define i64 @__init_resolver.26305() {
+define i64 @__init_resolver.26397() {
 entry:
   call void @avra_test_flush()
   ret i64 0
@@ -354540,13 +355763,13 @@ entry:
   ret i64 0
 }
 
-define i64 @__init_codegen.26306() {
+define i64 @__init_codegen.26398() {
 entry:
   call void @avra_test_flush()
   ret i64 0
 }
 
-define i64 @__init_parser.26307() {
+define i64 @__init_parser.26399() {
 entry:
   call void @avra_test_flush()
   ret i64 0
@@ -354560,13 +355783,13 @@ entry:
   ret i64 0
 }
 
-define i64 @__init_codegen.26308() {
+define i64 @__init_codegen.26400() {
 entry:
   call void @avra_test_flush()
   ret i64 0
 }
 
-define i64 @__init_parser.26309() {
+define i64 @__init_parser.26401() {
 entry:
   call void @avra_test_flush()
   ret i64 0
@@ -354582,13 +355805,13 @@ entry:
   ret i64 0
 }
 
-define i64 @__init_parser.26310() {
+define i64 @__init_parser.26402() {
 entry:
   call void @avra_test_flush()
   ret i64 0
 }
 
-define i64 @__init_resolver.26311() {
+define i64 @__init_resolver.26403() {
 entry:
   call void @avra_test_flush()
   ret i64 0
@@ -354619,7 +355842,7 @@ entry:
   ret i64 0
 }
 
-define i64 @__init_codegen.26312() {
+define i64 @__init_codegen.26404() {
 entry:
   call void @avra_test_flush()
   ret i64 0
@@ -354633,7 +355856,7 @@ entry:
   ret i64 0
 }
 
-define i64 @__init_parser.26313() {
+define i64 @__init_parser.26405() {
 entry:
   call void @avra_test_flush()
   ret i64 0
@@ -354645,7 +355868,7 @@ entry:
   ret i64 0
 }
 
-define i64 @__init_typeck.26314() {
+define i64 @__init_typeck.26406() {
 entry:
   call void @avra_test_flush()
   ret i64 0
@@ -354664,7 +355887,7 @@ entry:
   ret i64 0
 }
 
-define i64 @__init_codegen.26315() {
+define i64 @__init_codegen.26407() {
 entry:
   %0 = call i64 @__init_types()
   %1 = call i64 @__init_setup()
@@ -354746,7 +355969,7 @@ entry:
   ret i64 0
 }
 
-define i64 @__init_render.26316() {
+define i64 @__init_render.26408() {
 entry:
   call void @avra_test_flush()
   ret i64 0
@@ -354835,7 +356058,7 @@ entry:
   ret i64 0
 }
 
-define i64 @"__init_@std.26317"() {
+define i64 @"__init_@std.26409"() {
 entry:
   %0 = call i64 @__init_cli()
   call void @avra_test_flush()
