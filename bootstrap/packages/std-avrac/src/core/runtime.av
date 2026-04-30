@@ -27,6 +27,8 @@ extern fn avra_char_from_hex(hi: string, lo: string) -> string
 // ── TOML ──
 extern fn avra_toml_has_section(toml: string, section: string) -> int
 extern fn avra_toml_get_section_string(toml: string, section: string, key: string) -> string
+extern fn avra_toml_get_section_int(toml: string, section: string, key: string, default_value: int) -> int
+extern fn avra_toml_get_section_bool(toml: string, section: string, key: string, default_value: int) -> int
 
 // ── Filesystem ──
 extern fn avra_readdir(path: string) -> ptr

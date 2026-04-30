@@ -1,4 +1,26 @@
-[project]
-name = "bootstrap"
-version = "0.1.0"
-entry = "src/main.av"
+# Bootstrap compiler manifest.
+# Schema: docs/spec_build_manifest.md (v1.0).
+
+[package]
+name        = "bootstrap"
+version     = "0.1.0"
+description = "Self-hosting Avra bootstrap compiler"
+
+[bin]
+name = "bs2"
+path = "packages/cli/src/main.av"
+
+[dependencies]
+"@std/avrac" = { path = "packages/std-avrac" }
+
+[profile.dev]
+opt_level       = 0
+debug           = true
+overflow_checks = true
+incremental     = true
+
+[profile.release]
+opt_level       = 2
+debug           = false
+overflow_checks = false
+incremental     = true

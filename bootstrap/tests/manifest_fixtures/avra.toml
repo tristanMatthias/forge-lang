@@ -1,0 +1,27 @@
+# Loadable copy of full.toml — the loader expects the file to be
+# literally named avra.toml, so this is a sibling that the test points
+# load_manifest() at via its parent directory.
+
+[package]
+name        = "fixture-full"
+version     = "0.7.3"
+edition     = "2026"
+description = "fixture covering every v1.0 manifest section"
+
+[bin]
+name = "fixturebin"
+path = "src/main.av"
+
+[profile.dev]
+opt_level       = 0
+debug           = true
+overflow_checks = true
+incremental     = true
+coverage        = false
+
+[profile.release]
+opt_level       = 3
+debug           = false
+overflow_checks = false
+incremental     = true
+coverage        = false

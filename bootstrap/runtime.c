@@ -2069,6 +2069,85 @@ int64_t avra_toml_has_section(const char* toml, const char* section) {
     return strstr(toml, header) != NULL ? 1 : 0;
 }
 
+// Locate the bounds of a [section] in `toml`. Sets *out_start to the
+// first byte after the header line and *out_end to the byte before the
+// next [section] header (or end of string). Returns 1 on success, 0 if
+// the section is absent. Used by the section-aware getters below to
+// avoid duplicating the boundary search across types.
+static int avra_toml_section_bounds(const char* toml, const char* section,
+                                    const char** out_start, const char** out_end) {
+    if (!toml || !section) return 0;
+    char header[256];
+    snprintf(header, sizeof(header), "[%s]", section);
+    const char* sec_start = strstr(toml, header);
+    if (!sec_start) return 0;
+    sec_start = strchr(sec_start, '\n');
+    if (!sec_start) return 0;
+    sec_start++;
+    const char* sec_end = sec_start;
+    while (*sec_end) {
+        if (*sec_end == '[' && (sec_end == sec_start || sec_end[-1] == '\n')) break;
+        sec_end++;
+    }
+    *out_start = sec_start;
+    *out_end = sec_end;
+    return 1;
+}
+
+// Section-aware int read: returns the int value of `key` inside
+// [section], or `default_value` if missing. Recognizes plain decimal
+// integers; rejects floats and booleans.
+int64_t avra_toml_get_section_int(const char* toml, const char* section,
+                                  const char* key, int64_t default_value) {
+    const char* sec_start;
+    const char* sec_end;
+    if (!avra_toml_section_bounds(toml, section, &sec_start, &sec_end)) {
+        return default_value;
+    }
+    if (!key) return default_value;
+    size_t klen = strlen(key);
+    const char* pos = sec_start;
+    while (pos < sec_end && (pos = strstr(pos, key)) != NULL && pos < sec_end) {
+        if (pos != sec_start && pos[-1] != '\n' && pos[-1] != ' ') { pos++; continue; }
+        const char* after = pos + klen;
+        while (*after == ' ' || *after == '\t') after++;
+        if (*after != '=') { pos++; continue; }
+        after++;
+        while (*after == ' ' || *after == '\t') after++;
+        if (after >= sec_end) return default_value;
+        // Reject if the value looks like a string or bool — caller asked for int.
+        if (*after == '"' || *after == 't' || *after == 'f') return default_value;
+        return (int64_t)strtoll(after, NULL, 10);
+    }
+    return default_value;
+}
+
+// Section-aware bool read: returns 1 for `true`, 0 for `false`, and
+// `default_value` when the key is missing or the value is unrecognized.
+int64_t avra_toml_get_section_bool(const char* toml, const char* section,
+                                   const char* key, int64_t default_value) {
+    const char* sec_start;
+    const char* sec_end;
+    if (!avra_toml_section_bounds(toml, section, &sec_start, &sec_end)) {
+        return default_value;
+    }
+    if (!key) return default_value;
+    size_t klen = strlen(key);
+    const char* pos = sec_start;
+    while (pos < sec_end && (pos = strstr(pos, key)) != NULL && pos < sec_end) {
+        if (pos != sec_start && pos[-1] != '\n' && pos[-1] != ' ') { pos++; continue; }
+        const char* after = pos + klen;
+        while (*after == ' ' || *after == '\t') after++;
+        if (*after != '=') { pos++; continue; }
+        after++;
+        while (*after == ' ' || *after == '\t') after++;
+        if (after + 4 <= sec_end && strncmp(after, "true", 4) == 0) return 1;
+        if (after + 5 <= sec_end && strncmp(after, "false", 5) == 0) return 0;
+        return default_value;
+    }
+    return default_value;
+}
+
 // ── Validation ──
 // Basic runtime validation: assert conditions, check non-null.
 int64_t avra_validate_not_null(int64_t value, const char* name) {

@@ -200,6 +200,8 @@ fn codegen_program(stmts: StmtList, debug_null_checks: bool, coverage: bool, sou
     decl(m, "avra_toml_get_int", i64t, [pt, i64t])
     decl(m, "avra_toml_get_bool", i64t, [pt, i64t])
     decl(m, "avra_toml_get_section_string", i64t, [pt, i64t, i64t])
+    decl(m, "avra_toml_get_section_int", i64t, [pt, i64t, i64t, i64t])
+    decl(m, "avra_toml_get_section_bool", i64t, [pt, i64t, i64t, i64t])
     decl(m, "avra_toml_has_section", i64t, [pt, i64t])
 
     // ── concurrency ──

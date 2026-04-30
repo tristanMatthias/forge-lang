@@ -1,12 +1,27 @@
-// WHY: parses avra.toml package manifests per spec Axis 16.4/16.8.
-// Extracts [package] name/version and [dependencies] for module
-// resolution. Used by the compile pipeline to know what package
-// we're building and what standard library modules are available.
+// WHY: parses avra.toml build manifests per docs/spec_build_manifest.md.
+// Extracts [package] identity, [bin]/[lib] targets, and [profile.*]
+// sections. Read by the compile pipeline (to know what package we are
+// building) and by the new build system (to fingerprint inputs and
+// resolve deps).
+//
+// The previous version of this file only read [package] name/version
+// and silently ignored manifests that used [project] instead. Both
+// readers exist now: load_package_config() is the legacy compatible
+// view; load_manifest() is the full v1.0 schema.
 
-use core.runtime.{avra_selfhost_file_exists, avra_selfhost_read_file, avra_toml_get_section_string, avra_toml_has_section}
+use core.runtime.{
+    avra_selfhost_file_exists,
+    avra_selfhost_read_file,
+    avra_toml_get_section_string,
+    avra_toml_get_section_int,
+    avra_toml_get_section_bool,
+    avra_toml_has_section,
+}
 
-/// Parsed `[package]` section of an `avra.toml` manifest. Spec
-/// Axis 16.4 / 16.8.
+/// Legacy view of an `avra.toml` — name + version + found flag.
+/// Retained for backwards compatibility with existing consumers
+/// (cli/main.av compile + check pipelines). New code should use
+/// `load_manifest` instead.
 ///
 /// @field name    — `name = "..."` from the `[package]` table.
 /// @field version — `version = "..."` from the `[package]` table.
@@ -17,8 +32,6 @@ export type PackageConfig = {
     found: bool,
 }
 
-/// Sentinel "no manifest" PackageConfig — used when no avra.toml
-/// is present or the file lacks a `[package]` section.
 fn default_config() -> PackageConfig {
     PackageConfig { name: "", version: "", found: false }
 }
@@ -38,4 +51,159 @@ export fn load_package_config(dir: string) -> PackageConfig {
     let pkg_name = avra_toml_get_section_string(content, "package", "name")
     let pkg_version = avra_toml_get_section_string(content, "package", "version")
     PackageConfig { name: pkg_name, version: pkg_version, found: true }
+}
+
+/// Build profile (`[profile.dev]` / `[profile.release]` / custom).
+/// Profile flags participate in the build fingerprint; switching
+/// profiles forces a rebuild of every unit.
+///
+/// Defaults match docs/spec_build_manifest.md.
+export type BuildProfile = {
+    name: string,            // profile name (e.g. "dev", "release")
+    opt_level: int,          // 0..3
+    debug: bool,             // emit debug info
+    overflow_checks: bool,
+    incremental: bool,
+    coverage: bool,
+}
+
+/// Compile target: a binary entry (`[bin]`) or library root (`[lib]`).
+/// At least one of these must be present (or defaultable from
+/// `src/main.av` / `src/lib.av`) for a manifest to be buildable.
+export type BuildTarget = {
+    kind: string,            // "bin" or "lib"
+    name: string,            // defaults to package name
+    path: string,            // resolved relative to project root
+    present: bool,           // false when this target is not declared
+}
+
+/// Full v1.0 manifest view. Mirrors docs/spec_build_manifest.md.
+/// Profile lookups are exposed via `profile_dev` / `profile_release`;
+/// future custom profiles will require an indexed list once the
+/// language has it (the bootstrap currently lacks String->T map
+/// support in stable codegen, so we keep the two named profiles
+/// explicit for v1.0).
+export type Manifest = {
+    found: bool,
+    path: string,            // absolute path to the avra.toml that was read
+    name: string,
+    version: string,
+    edition: string,
+    description: string,
+    bin: BuildTarget,
+    lib: BuildTarget,
+    profile_dev: BuildProfile,
+    profile_release: BuildProfile,
+}
+
+fn default_target(kind: string) -> BuildTarget {
+    BuildTarget { kind: kind, name: "", path: "", present: false }
+}
+
+fn default_profile(name: string) -> BuildProfile {
+    // dev defaults from docs/spec_build_manifest.md.
+    BuildProfile {
+        name: name,
+        opt_level: 0,
+        debug: true,
+        overflow_checks: true,
+        incremental: true,
+        coverage: false,
+    }
+}
+
+fn release_defaults() -> BuildProfile {
+    BuildProfile {
+        name: "release",
+        opt_level: 2,
+        debug: false,
+        overflow_checks: false,
+        incremental: true,
+        coverage: false,
+    }
+}
+
+fn default_manifest() -> Manifest {
+    Manifest {
+        found: false,
+        path: "",
+        name: "",
+        version: "",
+        edition: "",
+        description: "",
+        bin: default_target("bin"),
+        lib: default_target("lib"),
+        profile_dev: default_profile("dev"),
+        profile_release: release_defaults(),
+    }
+}
+
+fn read_target(content: string, kind: string, pkg_name: string) -> BuildTarget {
+    if !avra_toml_has_section(content, kind) {
+        return default_target(kind)
+    }
+    let raw_name = avra_toml_get_section_string(content, kind, "name")
+    let raw_path = avra_toml_get_section_string(content, kind, "path")
+    let resolved_name = if raw_name == "" { pkg_name } else { raw_name }
+    BuildTarget {
+        kind: kind,
+        name: resolved_name,
+        path: raw_path,
+        present: true,
+    }
+}
+
+fn read_profile(content: string, name: string, defaults: BuildProfile) -> BuildProfile {
+    let section = "profile.${name}"
+    if !avra_toml_has_section(content, section) {
+        return defaults
+    }
+    let opt = avra_toml_get_section_int(content, section, "opt_level", defaults.opt_level)
+    let dbg = avra_toml_get_section_bool(content, section, "debug", if defaults.debug { 1 } else { 0 }) != 0
+    let oflow = avra_toml_get_section_bool(content, section, "overflow_checks",
+        if defaults.overflow_checks { 1 } else { 0 }) != 0
+    let incr = avra_toml_get_section_bool(content, section, "incremental",
+        if defaults.incremental { 1 } else { 0 }) != 0
+    let cov = avra_toml_get_section_bool(content, section, "coverage",
+        if defaults.coverage { 1 } else { 0 }) != 0
+    BuildProfile {
+        name: name,
+        opt_level: opt,
+        debug: dbg,
+        overflow_checks: oflow,
+        incremental: incr,
+        coverage: cov,
+    }
+}
+
+/// Read and parse `avra.toml` from `dir`. Returns a default-valued
+/// Manifest with `found = false` when the file is absent or missing
+/// a `[package]` section. Validation errors (per docs/spec_build_manifest.md
+/// rules) surface as F4xxx codes via the diagnostic bag — this loader
+/// itself is permissive and returns a Manifest the caller can inspect.
+export fn load_manifest(dir: string) -> Manifest {
+    let toml_path = "${dir}avra.toml"
+    if !avra_selfhost_file_exists(toml_path) {
+        return default_manifest()
+    }
+    let content = avra_selfhost_read_file(toml_path)
+    if !avra_toml_has_section(content, "package") {
+        return default_manifest()
+    }
+    let pkg_name = avra_toml_get_section_string(content, "package", "name")
+    let pkg_version = avra_toml_get_section_string(content, "package", "version")
+    let edition = avra_toml_get_section_string(content, "package", "edition")
+    let description = avra_toml_get_section_string(content, "package", "description")
+    Manifest {
+        found: true,
+        path: toml_path,
+        name: pkg_name,
+        version: pkg_version,
+        edition: edition,
+        description: description,
+        bin: read_target(content, "bin", pkg_name),
+        lib: read_target(content, "lib", pkg_name),
+        profile_dev: read_profile(content, "dev", default_profile("dev")),
+        profile_release: read_profile(content, "release", release_defaults()),
+    }
 }
