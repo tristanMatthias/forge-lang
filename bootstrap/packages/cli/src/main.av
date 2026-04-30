@@ -53,7 +53,7 @@ use @std.avrac.docs.gen.{gen_stub_for_sym, gen_apply, GenStubResult}
 use @std.avrac.lang_gen.{render_lang_av, write_lang_av}
 use @std.avrac.indexer.{run_lsp_server, extract_project_syms_cached}
 use @std.avrac.pathutil.{basename_no_ext}
-use @std.avrac.parse.{parse_expression_source, parse_program_source}
+use @std.avrac.parse.{parse_expression_source, parse_program_source, parse_program_source_at}
 use @std.avrac.core.ast.{render_expr, render_stmt_list, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType, Stmt, StmtList, ParamList, Expr, sstmt_dummy, TypeParamList, ExprList}
 use @std.avrac.features.eval.{render_value, eval_expression_source, execute_program_source}
 use @std.avrac.desugar.{desugar_program}
@@ -397,7 +397,12 @@ fn run_test_command() {
         let mod_name = basename_no_ext(path)
         if args.filter != "" && !mod_name.contains(args.filter) { continue }
 
-        let parsed = parse_program_source(content)
+        // Stamp every parsed AST node with `path` so post-bundle
+        // diagnostics cite the originating *_test.av — without
+        // this the renderer renders the bundle placeholder
+        // `<test>:N:N` and shows no source snippet (the bundle
+        // never lands on disk).
+        let parsed = parse_program_source_at(content, path)
         if parsed.had_error || parsed.stmts == null {
             if bag_has_errors(parsed.bag) {
                 render_bag(content, path, parsed.bag)

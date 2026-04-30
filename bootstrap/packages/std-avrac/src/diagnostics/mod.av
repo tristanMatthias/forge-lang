@@ -25,18 +25,27 @@ export type Span = {
     end: int,
     line: int,
     col: int,
+    file: string,
 }
 
 /// Construct a Span from raw byte offsets and line/col coords.
+/// File defaults to ""; use `span_at` when the originating file
+/// path is known so the renderer can show a real snippet from
+/// that file even in multi-file bundles.
 export fn span_new(start: int, end: int, line: int, col: int) -> Span {
-    Span { start, end, line, col }
+    Span { start, end, line, col, file: "" }
+}
+
+/// Construct a Span with explicit file attribution.
+export fn span_at(start: int, end: int, line: int, col: int, file: string) -> Span {
+    Span { start, end, line, col, file }
 }
 
 /// All-zero Span sentinel for diagnostics with no source attribution
 /// (e.g. ICE during AST manipulation). The renderer skips the
 /// caret/underline when it sees a dummy span.
 export fn span_dummy() -> Span {
-    Span { start: 0, end: 0, line: 0, col: 0 }
+    Span { start: 0, end: 0, line: 0, col: 0, file: "" }
 }
 
 // ── Severity ──

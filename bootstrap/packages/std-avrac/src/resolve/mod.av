@@ -6,7 +6,7 @@
 mod names
 
 use core.ast.{Expr, ExprList, FieldInitList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeParamList, stmt_unwrap}
-use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_with_help, span_dummy, span_new}
+use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_with_help, span_dummy, span_new, span_at}
 use core.registry.{Registry, build_registry, dispatch_stmt_resolve, dispatch_expr_resolve, avra_stmt_tag, avra_expr_tag}
 
 /// Outcome of `resolve_program`. `had_error` mirrors
@@ -46,6 +46,10 @@ enum FnEntry {
 /// @field features      — feature registry (per-feature resolve hooks).
 /// @field source_line   — line of the stmt currently being walked.
 /// @field source_col    — column of the stmt currently being walked.
+/// @field source_file   — originating source file path (empty when
+///                         not available). Threaded into diagnostic
+///                         spans so multi-file bundles (test runner)
+///                         can render snippets from the right file.
 type Resolver = {
     scopes: ScopeEntry,
     functions: FnEntry,
@@ -56,6 +60,7 @@ type Resolver = {
     features: Registry,
     source_line: int,
     source_col: int,
+    source_file: string,
 }
 
 /// Top-level entry: resolve every name reference in `stmts`. Pre-
@@ -142,6 +147,7 @@ fn resolver_new() -> Resolver {
         features: build_registry(),
         source_line: 0,
         source_col: 0,
+        source_file: "",
     }
 }
 
@@ -156,7 +162,7 @@ fn set_resolve_error(r: Resolver, message: string) -> Resolver {
 /// the first.
 fn resolve_report(r: Resolver, code: DiagCode, message: string) -> Resolver {
     let loc = if r.source_line > 0 { " (line ${string(r.source_line)})" } else { "" }
-    let span = span_new(0, 0, r.source_line, r.source_col)
+    let span = span_at(0, 0, r.source_line, r.source_col, r.source_file)
     let diag = diag_error(code, "${message}${loc}", span)
     r with {
         had_error: true,
@@ -296,7 +302,7 @@ export fn resolve_stmt_list(r: Resolver, stmts: StmtList) -> Resolver {
         match current {
             .End -> { return res }
             .Node(ss, next) -> {
-                res = resolve_stmt(res with { source_line: ss.line, source_col: ss.col }, ss.node)
+                res = resolve_stmt(res with { source_line: ss.line, source_col: ss.col, source_file: ss.file }, ss.node)
                 current = next
             }
         }

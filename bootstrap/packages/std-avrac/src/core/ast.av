@@ -11,32 +11,42 @@
 // annotation layer.
 
 /// Spanned expression. `line`/`col` are 1-based source coordinates;
-/// `ty` is the inferred ValueType (Unknown until typecheck runs).
-export type SExpr = { node: Expr, line: int, col: int, ty: ValueType }
+/// `ty` is the inferred ValueType (Unknown until typecheck runs);
+/// `file` is the source file path (empty for synthesised nodes).
+/// Carrying `file` per-node lets diagnostics in multi-file bundles
+/// (test runner, future incremental compilation) cite the
+/// originating file rather than a `<bundle>` placeholder.
+export type SExpr = { node: Expr, line: int, col: int, ty: ValueType, file: string }
 
 /// Spanned statement. Mirrors SExpr but without the cached type —
 /// statements have no result value to track.
-export type SStmt = { node: Stmt, line: int, col: int }
+export type SStmt = { node: Stmt, line: int, col: int, file: string }
 
-/// Build an SExpr at a known source position. Type field defaults to
-/// Unknown — typecheck fills it in.
-export fn sexpr(e: Expr, line: int, col: int) -> SExpr { SExpr { node: e, line, col, ty: ValueType.Unknown } }
+/// Build an SExpr at a known source position. File defaults to "" —
+/// use `sexpr_at` when the source file is known.
+export fn sexpr(e: Expr, line: int, col: int) -> SExpr { SExpr { node: e, line, col, ty: ValueType.Unknown, file: "" } }
+
+/// Build an SExpr at a known source position with explicit file.
+export fn sexpr_at(e: Expr, line: int, col: int, file: string) -> SExpr { SExpr { node: e, line, col, ty: ValueType.Unknown, file } }
 
 /// Build an SExpr with no source position. Used by passes that
 /// synthesise nodes (desugar, monomorphizer) where line/col would be
 /// misleading.
-export fn sexpr_dummy(e: Expr) -> SExpr { SExpr { node: e, line: 0, col: 0, ty: ValueType.Unknown } }
+export fn sexpr_dummy(e: Expr) -> SExpr { SExpr { node: e, line: 0, col: 0, ty: ValueType.Unknown, file: "" } }
 
 /// Build a fully-annotated SExpr. Used by the typechecker to attach
 /// a known type without mutating the existing wrapper.
-export fn sexpr_typed(e: Expr, line: int, col: int, ty: ValueType) -> SExpr { SExpr { node: e, line, col, ty } }
+export fn sexpr_typed(e: Expr, line: int, col: int, ty: ValueType) -> SExpr { SExpr { node: e, line, col, ty, file: "" } }
 
-/// Build an SStmt at a known source position.
-export fn sstmt(s: Stmt, line: int, col: int) -> SStmt { SStmt { node: s, line, col } }
+/// Build an SStmt at a known source position. File defaults to "".
+export fn sstmt(s: Stmt, line: int, col: int) -> SStmt { SStmt { node: s, line, col, file: "" } }
+
+/// Build an SStmt at a known source position with explicit file.
+export fn sstmt_at(s: Stmt, line: int, col: int, file: string) -> SStmt { SStmt { node: s, line, col, file } }
 
 /// Build an SStmt with no source position. Same caveats as
 /// `sexpr_dummy` — synthesised nodes only.
-export fn sstmt_dummy(s: Stmt) -> SStmt { SStmt { node: s, line: 0, col: 0 } }
+export fn sstmt_dummy(s: Stmt) -> SStmt { SStmt { node: s, line: 0, col: 0, file: "" } }
 
 /// Linked list of expressions. Used for call args, list literals,
 /// and any other comma-separated expression sequence.

@@ -10,7 +10,7 @@
 // dispatch, and token consumption helpers.
 
 mod lexer
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, WhenArmList, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, AnnotationList, Tk, tk_keyword_str, TypeExpr, TypeExprList, type_expr_list_append, type_expr_list_length}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, WhenArmList, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, AnnotationList, Tk, tk_keyword_str, TypeExpr, TypeExprList, type_expr_list_append, type_expr_list_length}
 use parse.lexer.{p_is_alpha, p_is_alpha_numeric, p_is_digit}
 use core.registry.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser}
 use features.closures.parser.{expr_contains_it, wrap_in_it_lambda}
@@ -81,6 +81,7 @@ export type ParserState = {
 /// @field features           — feature registry for parser dispatch.
 export type Parser = {
     source: string,
+    file: string,
     mut start: int,
     mut current: int,
     mut line: int,
@@ -121,7 +122,15 @@ export fn parse_expression_source(source: string) -> ParseResult {
 /// Top-level entry consumed by every CLI subcommand that ingests
 /// source.
 export fn parse_program_source(source: string) -> ProgramParseResult {
-    mut parser = parser_new(source)
+    parse_program_source_at(source, "")
+}
+
+/// Parse a whole program with explicit file attribution. Used by
+/// the test runner so each test's parsed AST nodes know which file
+/// they came from — diagnostics in the bundled program can then
+/// cite the originating *_test.av rather than a `<test>` placeholder.
+export fn parse_program_source_at(source: string, file: string) -> ProgramParseResult {
+    mut parser = parser_new_with_file(source, file)
     parser.parse_file_program()
 }
 
@@ -353,8 +362,16 @@ export fn p_keyword_kind(text: string) -> Tk {
 /// All mode flags default to permissive; feature parsers may flip
 /// them transiently for context-sensitive parses.
 export fn parser_new(source: string) -> Parser {
+    parser_new_with_file(source, "")
+}
+
+/// Construct a Parser with explicit source-file attribution. Stamps
+/// every SStmt/SExpr emitted by this parser with `file` so downstream
+/// diagnostics can cite the originating file even after bundling.
+export fn parser_new_with_file(source: string, file: string) -> Parser {
     mut parser = Parser {
         source,
+        file,
         start: 0,
         current: 0,
         line: 1,
@@ -461,7 +478,7 @@ impl Parser {
 
         let next = self.parse_statement_list(stop_at_right_brace)?
 
-        StmtList.Node(sstmt(stmt!, stmt_line, stmt_col), next)
+        StmtList.Node(sstmt_at(stmt!, stmt_line, stmt_col, self.file), next)
     }
 
     fn parse_declaration(self) -> Stmt? {
@@ -586,7 +603,7 @@ impl Parser {
                 let col = self.current_lexeme
                 self.advance()
                 let quoted_col = "\"${col}\""
-                headers = ExprList.Node(sexpr(Expr.String(quoted_col), self.current_line, self.current_column), headers)
+                headers = ExprList.Node(sexpr_at(Expr.String(quoted_col), self.current_line, self.current_column, self.file), headers)
                 header_count = header_count + 1
                 if self.check(Tk.Pipe) {
                     self.advance()
@@ -609,7 +626,7 @@ impl Parser {
                 if self.check(Tk.RightBrace) { break }
                 // Use parse_bitwise_xor which stops before `|`
                 let val = self.parse_bitwise_xor()?
-                vals = ExprList.Node(sexpr(val, self.current_line, self.current_column), vals)
+                vals = ExprList.Node(sexpr_at(val, self.current_line, self.current_column, self.file), vals)
                 col_idx = col_idx + 1
                 if self.check(Tk.Pipe) {
                     self.advance()
@@ -618,7 +635,7 @@ impl Parser {
             if col_idx == header_count {
                 let map_entries = table_zip_entries(header_names, reverse_expr_list(vals))
                 let row_map = Expr.MapLit(map_entries)
-                rows = ExprList.Node(sexpr(row_map, self.current_line, self.current_column), rows)
+                rows = ExprList.Node(sexpr_at(row_map, self.current_line, self.current_column, self.file), rows)
             }
         }
         if !self.consume(Tk.RightBrace, "expected `}` to close table") {
@@ -698,7 +715,7 @@ impl Parser {
             self.allow_it_sugar = true
             let rhs = self.parse_or()?
             self.allow_it_sugar = saved_it
-            let se = sexpr(expr, self.current_line, self.current_column)
+            let se = sexpr_at(expr, self.current_line, self.current_column, self.file)
             // Desugar: `a |> f` → `f(a)`, `a |> f(b)` → `f(a, b)`
             // If any arg is `_`, replace it with the piped value (spec Axis 28.7)
             expr = match rhs {
@@ -1162,10 +1179,10 @@ impl Parser {
         if self.check(Tk.Comma) {
             self.advance()
             let rest = self.parse_arg_list_inner()?
-            return ExprList.Node(sexpr(expr, self.current_line, self.current_column), rest)
+            return ExprList.Node(sexpr_at(expr, self.current_line, self.current_column, self.file), rest)
         }
 
-        ExprList.Node(sexpr(expr, self.current_line, self.current_column), ExprList.End)
+        ExprList.Node(sexpr_at(expr, self.current_line, self.current_column, self.file), ExprList.End)
     }
 
     fn parse_primary(self) -> Expr? {
@@ -1245,7 +1262,7 @@ impl Parser {
                 let raw = self.current_lexeme
                 self.advance()
                 let template_expr = self.desugar_template(raw)?
-                let args = ExprList.Node(sexpr(template_expr, self.current_line, self.current_column), ExprList.End)
+                let args = ExprList.Node(sexpr_at(template_expr, self.current_line, self.current_column, self.file), ExprList.End)
                 return Expr.Call(Expr.Ident(name), args)
             }
             return Expr.Ident(name)
@@ -1294,11 +1311,11 @@ impl Parser {
                 // (a, b) -> expr  is a lambda
                 if self.check(Tk.Arrow) {
                     self.advance()
-                    let params = exprs_to_params(ExprList.Node(sexpr(expr!, self.current_line, self.current_column), rest))
+                    let params = exprs_to_params(ExprList.Node(sexpr_at(expr!, self.current_line, self.current_column, self.file), rest))
                     let body = self.parse_lambda_body()?
                     return Expr.Lambda(params, body)
                 }
-                return Expr.Tuple(ExprList.Node(sexpr(expr!, self.current_line, self.current_column), rest))
+                return Expr.Tuple(ExprList.Node(sexpr_at(expr!, self.current_line, self.current_column, self.file), rest))
             }
             if !self.consume(Tk.RightParen, "expected `)` after expression") {
                 return null
@@ -1306,7 +1323,7 @@ impl Parser {
             // (x) -> expr  is a single-param lambda
             if self.check(Tk.Arrow) {
                 self.advance()
-                let params = exprs_to_params(ExprList.Node(sexpr(expr!, self.current_line, self.current_column), ExprList.End))
+                let params = exprs_to_params(ExprList.Node(sexpr_at(expr!, self.current_line, self.current_column, self.file), ExprList.End))
                 let body = self.parse_lambda_body()?
                 return Expr.Lambda(params, body)
             }
@@ -1478,9 +1495,9 @@ impl Parser {
         if self.check(Tk.Comma) {
             self.advance()
             let rest = self.parse_tuple_rest()?
-            return ExprList.Node(sexpr(expr, self.current_line, self.current_column), rest)
+            return ExprList.Node(sexpr_at(expr, self.current_line, self.current_column, self.file), rest)
         }
-        ExprList.Node(sexpr(expr, self.current_line, self.current_column), ExprList.End)
+        ExprList.Node(sexpr_at(expr, self.current_line, self.current_column, self.file), ExprList.End)
     }
 
     fn parse_block_expression(self) -> Expr? {
@@ -1752,13 +1769,13 @@ impl Parser {
             null
         } else {
             let c = self.parse_expression()?
-            sexpr(c, line, col)
+            sexpr_at(c, line, col, self.file)
         }
         if !self.consume(Tk.Arrow, "expected `->` after when condition") { return null }
         let body_line = self.current_line
         let body_col = self.current_column
         let body = self.parse_expression()?
-        let body_se = sexpr(body, body_line, body_col)
+        let body_se = sexpr_at(body, body_line, body_col, self.file)
         let next = self.parse_when_arms()?
         WhenArmList.Node(cond, body_se, next)
     }

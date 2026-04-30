@@ -7,7 +7,7 @@
 // Component expansion is a SEPARATE pass that runs before desugar.
 // See features/component_decl/expand.av.
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_dummy, stmt_unwrap, FieldList, FieldInitList, MatchArmList, WhenArmList, PatternList, ParamList, Pattern, BinOp, UnOp, ValueType, VariantList, TypeParamList}
+use core.ast.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, sstmt_dummy, stmt_unwrap, FieldList, FieldInitList, MatchArmList, WhenArmList, PatternList, ParamList, Pattern, BinOp, UnOp, ValueType, VariantList, TypeParamList}
 
 // ── Public API ──
 
@@ -90,7 +90,7 @@ fn desugar_stmt_list(stmts: StmtList) -> StmtList {
         .End -> StmtList.End
         .Node(ss, next) -> {
             let new_stmt = desugar_stmt(ss.node)
-            StmtList.Node(sstmt(new_stmt, ss.line, ss.col), desugar_stmt_list(next))
+            StmtList.Node(sstmt_at(new_stmt, ss.line, ss.col, ss.file), desugar_stmt_list(next))
         }
     }
 }

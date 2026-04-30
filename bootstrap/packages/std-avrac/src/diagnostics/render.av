@@ -4,6 +4,7 @@
 
 use diagnostics.{Diagnostic, DiagnosticBag, DiagnosticList, DiagnosticCause, Span, Severity, severity_str, diag_code_str, confidence_str}
 use @std.json.{json_escape}
+use core.runtime.{avra_selfhost_file_exists, avra_selfhost_read_file}
 
 // ── ANSI colors ──
 
@@ -136,6 +137,15 @@ fn gutter_width(line: int) -> int {
 /// `caused by:` chain. Skips the source frame when span is dummy
 /// (`line == 0`) or extraction fails.
 export fn render_diagnostic(source: string, filename: string, diag: Diagnostic) {
+    // When the span carries an originating file path (set by the
+    // parser's `parse_program_source_at`), prefer it over the
+    // caller-supplied filename + source. This is what lets test-
+    // bundle errors point at the actual *_test.av rather than
+    // `<test>` with no snippet.
+    let span_file = diag.span.file
+    let use_span_file = span_file != "" && span_file != filename && avra_selfhost_file_exists(span_file) != 0
+    let eff_filename = if use_span_file { span_file } else { filename }
+    let eff_source = if use_span_file { avra_selfhost_read_file(span_file) } else { source }
     let line = diag.span.line
     let col = diag.span.col
     let w = gutter_width(line)
@@ -151,14 +161,14 @@ export fn render_diagnostic(source: string, filename: string, diag: Diagnostic) 
 
     if line > 0 && col > 0 {
         // Box top: ╭─[file.av:2:5]
-        let loc = `${filename}:${string(line)}:${string(col)}`
+        let loc = `${eff_filename}:${string(line)}:${string(col)}`
         eprintln(`  ${pad} ${color_gray(chr_ltop() + chr_hbar())}[${color_dim(loc)}]`)
 
         // Blank gutter
         eprintln(`  ${pad} ${vbar}`)
 
         // Source line — highlight the error span in the severity color
-        let src_line = extract_line(source, line)
+        let src_line = extract_line(eff_source, line)
         // Guard: if source line not found (global line number from
         // multi-module compilation), skip the source display.
         if src_line.length == 0 {
