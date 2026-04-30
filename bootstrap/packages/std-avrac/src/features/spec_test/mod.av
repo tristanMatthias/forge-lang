@@ -1,5 +1,6 @@
 mod parser
 mod codegen
+mod reporter
 use features.eval.{error_result, ok_result, value_null}
 use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr, resolve_stmt_list}

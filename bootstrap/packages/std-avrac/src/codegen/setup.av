@@ -1267,7 +1267,7 @@ fn emit_top_level(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<VarEnv, stri
     match stmts {
         .End -> ok_stmt(env)
         .Node(ss, next) -> {
-            let tl_ctx = ctx with { source_line: ss.line }
+            let tl_ctx = ctx with { source_line: ss.line, source_file: ss.file }
             let stmt = stmt_unwrap(ss.node)
             match stmt {
                 .Function(_, _, _, _, _) -> emit_top_level(ctx, env, next)

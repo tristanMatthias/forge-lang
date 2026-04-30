@@ -10,7 +10,7 @@
 // self.__parent → parent accumulator variable
 // self.__parent_name → parent instance name string
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, FieldList, FieldInitList, ParamList, ValueType, CompConfigList, CompConfigPairList, TypeParamList}
+use core.ast.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, FieldList, FieldInitList, ParamList, ValueType, CompConfigList, CompConfigPairList, TypeParamList}
 
 // ── Public API ──
 
@@ -157,7 +157,7 @@ fn rewrite_self(stmts: StmtList, ctx: RewriteCtx) -> StmtList {
         .End -> StmtList.End
         .Node(ss, next) -> {
             let new_stmt = rw_stmt(ss.node, ctx)
-            StmtList.Node(sstmt(new_stmt, ss.line, ss.col), rewrite_self(next, ctx))
+            StmtList.Node(sstmt_at(new_stmt, ss.line, ss.col, ss.file), rewrite_self(next, ctx))
         }
     }
 }

@@ -3,7 +3,7 @@
 
 // Imports resolved by bootstrap's module-qualified name resolution.
 
-use core.ast.{sstmt}
+use core.ast.{sstmt, sstmt_at}
 use core.ast.{Tk}
 impl Parser {
     fn parse_spec_block(self) -> Stmt? {
@@ -35,7 +35,7 @@ impl Parser {
             _                      -> self.parse_declaration()
         }
         if stmt == null { return StmtList.End }
-        StmtList.Node(sstmt(stmt!, line, col), self.parse_spec_body())
+        StmtList.Node(sstmt_at(stmt!, line, col, self.file), self.parse_spec_body())
     }
 
     fn parse_given_block(self) -> Stmt? {

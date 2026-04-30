@@ -11,49 +11,66 @@ export fn spec_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult
     match stmt {
         .SpecBlock(name, body) -> emit_spec_block(ctx, env, name, body)
         .GivenBlock(name, body) -> emit_given_block(ctx, env, name, body)
-        .ThenBlock(name, cond) -> emit_then_block(ctx, env, name, cond)
+        // file/line come from `ctx` (set per-stmt by the codegen
+        // walkers); the reporter uses them to record failure
+        // locations for the summary block.
+        .ThenBlock(name, cond) -> emit_then_block(ctx, env, name, cond, ctx.source_file, ctx.source_line)
         _ -> err_sr("spec_emit_stmt: unexpected statement")
     }
 }
 
-/// Wrap a `spec` body in `avra_test_start_spec` / `_end_spec`
-/// runtime calls and emit each child statement via
-/// `emit_spec_stmts`.
+/// Emit a `spec` block: call into the Avra reporter's
+/// `test_render_spec_start` (which prints the colored header and
+/// records the current spec name in C state for later failure
+/// attribution), then walk the body. No `_end_spec` call — the
+/// reporter doesn't need a close marker.
 fn emit_spec_block(ctx: Ctx, env: VarEnv, name: string, body: StmtList) -> Result<StmtResult, string> {
     let name_val = ctx.global_str(name, "spec_str")
-    ctx.call("avra_test_start_spec", [name_val])
+    ctx.call("test_render_spec_start", [name_val])
     let r = emit_spec_stmts(ctx, env, body)?
-    ctx.call("avra_test_end_spec", [name_val])
     ok_sr(ctx, env)
 }
 
-/// Wrap a `given` body in `avra_test_start_given` /
-/// `_end_given` runtime calls. Threads the env through the body
-/// so any locals declared inside survive into later `then` arms.
+/// Emit a `given` block: call `test_render_given_start` and walk
+/// the body. Threads the env so `let` bindings flow into later
+/// `then` arms.
 fn emit_given_block(ctx: Ctx, env: VarEnv, name: string, body: StmtList) -> Result<StmtResult, string> {
     let name_val = ctx.global_str(name, "spec_str")
-    ctx.call("avra_test_start_given", [name_val])
+    ctx.call("test_render_given_start", [name_val])
     let new_env = emit_spec_stmts(ctx, env, body)?
-    ctx.call("avra_test_end_given", [name_val])
     ok_sr(ctx, new_env)
 }
 
-/// Emit a `then` arm: evaluate the condition expression and
-/// hand its value to `avra_test_run_then` along with the arm's
-/// description string. The runtime decides PASS/FAIL.
-fn emit_then_block(ctx: Ctx, env: VarEnv, name: string, cond: Expr) -> Result<StmtResult, string> {
+/// Emit a `then` arm: evaluate the condition expression, hand
+/// the boolean result + name + file/line to the Avra reporter's
+/// `test_render_then`. File/line lets the reporter record
+/// failures with their source location for the summary block.
+fn emit_then_block(ctx: Ctx, env: VarEnv, name: string, cond: Expr, file: string, line: int) -> Result<StmtResult, string> {
     let r = ctx.emit(env, cond)?
-    ctx.call("avra_test_run_then", [ctx.global_str(name, "spec_str"), r.value])
+    // Coerce cond to i1: tests historically relied on nonzero/non-null
+    // == truthy because the original C-side runner took an int. Without
+    // this, LLVM's call coerce truncates ints/ptrs to i1 (LSB), which
+    // miscounts non-bool results (e.g. `?? 0 == 8080` parses as
+    // `?? (0 == 8080)` and yields the int 8080, whose LSB is 0 → FAIL).
+    let cond_bool = ctx.truthy(r.value, "then_truthy")
+    let file_val = ctx.global_str(file, "spec_file")
+    ctx.call("test_render_then", [ctx.global_str(name, "spec_str"), cond_bool, file_val, ctx.i64(line)])
     ok_sr(ctx, env)
 }
 
 /// Walk a spec/given body emitting each child statement. Threads
 /// the VarEnv through so `let` bindings flow into later arms.
+/// Updates `ctx.source_file` / `ctx.source_line` from each SStmt
+/// so the reporter records the correct location for each `then`
+/// arm — the outer codegen walker only updates ctx at top-level
+/// stmt boundaries, but `then` arms are nested inside `spec` /
+/// `given` bodies and need their own per-stmt update.
 fn emit_spec_stmts(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<VarEnv, string> {
     match stmts {
         .End -> ok_stmt(env)
         .Node(ss, next) -> {
-            let new_env = emit_spec_single(ctx, env, ss.node)?
+            let line_ctx = ctx with { source_line: ss.line, source_file: ss.file }
+            let new_env = emit_spec_single(line_ctx, env, ss.node)?
             emit_spec_stmts(ctx, new_env, next)
         }
     }
@@ -74,7 +91,7 @@ fn emit_spec_single(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<VarEnv, string>
             ok_stmt(sr.env)
         }
         .ThenBlock(name, cond) -> {
-            let sr = emit_then_block(ctx, env, name, cond)?
+            let sr = emit_then_block(ctx, env, name, cond, ctx.source_file, ctx.source_line)?
             ok_stmt(sr.env)
         }
         _ -> {

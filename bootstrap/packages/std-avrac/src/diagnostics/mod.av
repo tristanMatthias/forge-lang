@@ -188,6 +188,12 @@ export enum DiagCode {
     /// orphan rule for trait-impl coherence.
     OrphanImpl
     // ── Warnings (F9000-9998) ───────────────────────────────────────
+    // ── Spec-test failures (F0900-0999) ─────────────────────────────
+    /// F0900 — a spec/given/then assertion evaluated to false at run
+    /// time. Reported once per failing `then` arm, attached to the
+    /// assertion's source span so the renderer can show the failing
+    /// expression.
+    SpecTestFailed
     /// F9001 — `match` whose wildcard `_` arm hides more than two
     /// uncovered variants. Style nudge — add explicit arms or
     /// acknowledge with a comment.
@@ -261,6 +267,7 @@ export fn error_def(d: DiagCode) -> ErrorDef {
         .ImportPrivate       -> ErrorDef { code: "F3102", help: "add `export` before the declaration to make it importable" }
         .CircularImport      -> ErrorDef { code: "F3103", help: "break the cycle by moving shared types to a common module" }
         .OrphanImpl          -> ErrorDef { code: "F3104", help: "move the `impl` to the module that defines either the trait or the type" }
+        .SpecTestFailed      -> ErrorDef { code: "F0900", help: "the assertion expression evaluated to false — fix the implementation or update the expectation" }
         .NonExhaustiveMatch  -> ErrorDef { code: "F9001", help: "add missing match arms or use a wildcard `_` pattern" }
         .UnusedImport        -> ErrorDef { code: "F9002", help: "remove unused imports to keep code clean" }
         .NamingConvention    -> ErrorDef { code: "F9003", help: "use PascalCase for types, snake_case for functions/variables, SCREAMING_SNAKE for constants" }

@@ -2718,95 +2718,144 @@ const char* avra_format_location(const char* file, int64_t line) {
 static pthread_mutex_t _capture_mutex = PTHREAD_MUTEX_INITIALIZER;
 static int _capture_fd_backup = -1;
 
-// ── Spec test runtime (thread-safe) ──
-// Atomic counters for parallel test execution.
-// Per-thread output buffering prevents interleaved spec results.
+// ── Spec test runtime: state primitives ──
+// Rendering moved to Avra (features/spec_test/reporter.av) — this
+// file only owns thread-safe counters + a failure-record linked list
+// + capture machinery. Everything user-visible (PASS/FAIL lines, the
+// failures summary, exit code) is rendered Avra-side via the
+// diagnostics framework.
+//
+// TODO(forge-crafting-intepreters-3uy9): once Avra has a typed
+// `Mutex<T>` / `OnceCell<T>` singleton primitive, move the failure
+// list and counters into an Avra `Mutex<TestReporter>` and delete
+// every `avra_test_*` symbol below except the capture machinery.
+// The current C primitives exist only because Avra forbids mut
+// globals (rule 17) and singletons need somewhere to live — same
+// pragmatic split Rust uses for the panic hook / global allocator.
 
 #include <stdatomic.h>
 
 static _Atomic int64_t avra_test_pass_count = 0;
 static _Atomic int64_t avra_test_fail_count = 0;
 
-// Per-thread output buffer — each thread accumulates output here,
-// then flushes atomically when the module completes.
-static __thread char* _test_buf = NULL;
-static __thread size_t _test_buf_len = 0;
-static __thread size_t _test_buf_cap = 0;
-static pthread_mutex_t _test_output_mutex = PTHREAD_MUTEX_INITIALIZER;
+// One failed assertion's metadata. Strings are rc-allocated copies
+// so they survive past the call site (the Avra reporter reads them
+// at summary time).
+typedef struct AvraTestFailure {
+    const char* spec;
+    const char* given;
+    const char* then_name;
+    const char* file;
+    int64_t line;
+    struct AvraTestFailure* next;
+} AvraTestFailure;
 
-static void test_buf_ensure(size_t needed) {
-    if (!_test_buf) {
-        _test_buf_cap = 4096;
-        _test_buf = (char*)malloc(_test_buf_cap);
-        _test_buf_len = 0;
-    }
-    while (_test_buf_len + needed >= _test_buf_cap) {
-        _test_buf_cap *= 2;
-        _test_buf = (char*)realloc(_test_buf, _test_buf_cap);
-    }
+static AvraTestFailure* _failures_head = NULL;
+static AvraTestFailure* _failures_tail = NULL;
+static _Atomic int64_t _failures_count = 0;
+static pthread_mutex_t _failures_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+// Simple rc-allocated string copy — outlives the C call so the Avra
+// reporter can read it later. Re-uses avra_rc_alloc so refcount works.
+static const char* test_str_dup(const char* s) {
+    if (!s) return "";
+    size_t len = strlen(s);
+    char* out = (char*)avra_rc_alloc(len + 1);
+    memcpy(out, s, len + 1);
+    return out;
 }
 
-static void test_printf(const char* fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-    char tmp[1024];
-    int n = vsnprintf(tmp, sizeof(tmp), fmt, args);
-    va_end(args);
-    if (n > 0) {
-        test_buf_ensure(n + 1);
-        memcpy(_test_buf + _test_buf_len, tmp, n);
-        _test_buf_len += n;
-        _test_buf[_test_buf_len] = '\0';
-    }
+void avra_test_pass_inc(void) {
+    atomic_fetch_add(&avra_test_pass_count, 1);
 }
 
-// Flush buffered output atomically (called at end of each module's init).
-// Uses stderr if stdout is currently captured (avoids writing into the capture pipe).
-void avra_test_flush(void) {
-    if (_test_buf && _test_buf_len > 0) {
-        pthread_mutex_lock(&_test_output_mutex);
-        // If another thread is capturing stdout, write to stderr instead
-        // so our output doesn't contaminate the capture buffer.
-        FILE* out = (_capture_fd_backup >= 0) ? stderr : stdout;
-        fwrite(_test_buf, 1, _test_buf_len, out);
-        fflush(out);
-        pthread_mutex_unlock(&_test_output_mutex);
-        _test_buf_len = 0;
-    }
+void avra_test_fail_inc(void) {
+    atomic_fetch_add(&avra_test_fail_count, 1);
 }
 
-void avra_test_start_spec(const char* name) {
-    test_printf("spec %s\n", name);
+int64_t avra_test_get_pass(void) {
+    return atomic_load(&avra_test_pass_count);
 }
 
-void avra_test_end_spec(void) {
-    avra_test_flush();
+int64_t avra_test_get_fail(void) {
+    return atomic_load(&avra_test_fail_count);
 }
 
-void avra_test_start_given(const char* name) {
-    test_printf("  given %s\n", name);
+void avra_test_record_failure(const char* spec, const char* given,
+                              const char* then_name, const char* file,
+                              int64_t line) {
+    AvraTestFailure* f = (AvraTestFailure*)malloc(sizeof(AvraTestFailure));
+    f->spec = test_str_dup(spec);
+    f->given = test_str_dup(given);
+    f->then_name = test_str_dup(then_name);
+    f->file = test_str_dup(file);
+    f->line = line;
+    f->next = NULL;
+    pthread_mutex_lock(&_failures_mutex);
+    if (_failures_tail) _failures_tail->next = f;
+    else _failures_head = f;
+    _failures_tail = f;
+    atomic_fetch_add(&_failures_count, 1);
+    pthread_mutex_unlock(&_failures_mutex);
 }
 
-void avra_test_end_given(void) {
+int64_t avra_test_failure_count(void) {
+    return atomic_load(&_failures_count);
 }
 
-void avra_test_run_then(const char* name, int64_t result) {
-    if (result) {
-        test_printf("    then %s: PASS\n", name);
-        atomic_fetch_add(&avra_test_pass_count, 1);
-    } else {
-        test_printf("    then %s: FAIL\n", name);
-        atomic_fetch_add(&avra_test_fail_count, 1);
-    }
+// O(idx) walk — failure counts are small (typically <50) so this is
+// fine; the alternative is a vector with realloc which adds complexity
+// for marginal gain.
+static AvraTestFailure* test_failure_at(int64_t idx) {
+    AvraTestFailure* f = _failures_head;
+    while (f && idx > 0) { f = f->next; idx--; }
+    return f;
 }
 
-void avra_test_skip(const char* name) {
-    test_printf("    then %s: SKIP\n", name);
+const char* avra_test_failure_spec(int64_t idx) {
+    AvraTestFailure* f = test_failure_at(idx);
+    return f ? f->spec : "";
 }
 
-void avra_test_todo(const char* name) {
-    test_printf("    then %s: TODO\n", name);
+const char* avra_test_failure_given(int64_t idx) {
+    AvraTestFailure* f = test_failure_at(idx);
+    return f ? f->given : "";
 }
+
+const char* avra_test_failure_then(int64_t idx) {
+    AvraTestFailure* f = test_failure_at(idx);
+    return f ? f->then_name : "";
+}
+
+const char* avra_test_failure_file(int64_t idx) {
+    AvraTestFailure* f = test_failure_at(idx);
+    return f ? f->file : "";
+}
+
+int64_t avra_test_failure_line(int64_t idx) {
+    AvraTestFailure* f = test_failure_at(idx);
+    return f ? f->line : 0;
+}
+
+// Current spec/given "context" — set by the codegen-emitted
+// `test_render_spec_start` / `test_render_given_start` calls so
+// the next `test_render_then` knows which spec/given it belongs
+// to without threading state through every assertion. Single-
+// threaded test execution today; if parallel test runners land
+// these become per-thread or per-context refs.
+static const char* _current_spec = "";
+static const char* _current_given = "";
+
+void avra_test_set_current_spec(const char* name) {
+    _current_spec = test_str_dup(name);
+}
+
+void avra_test_set_current_given(const char* name) {
+    _current_given = test_str_dup(name);
+}
+
+const char* avra_test_get_current_spec(void) { return _current_spec; }
+const char* avra_test_get_current_given(void) { return _current_given; }
 
 int64_t avra_test_roughly(double actual, double expected, double tolerance) {
     double diff = actual - expected;
@@ -2814,15 +2863,37 @@ int64_t avra_test_roughly(double actual, double expected, double tolerance) {
     return diff <= tolerance ? 1 : 0;
 }
 
+// ── Backward-compat shims ──
+// Older test binaries (and the seed) call these — keep them as
+// thin wrappers around the new primitives so the seed continues
+// to compile until it cycles forward. Once the seed is updated,
+// these can be deleted.
+
+void avra_test_flush(void) { /* no-op: rendering moved to Avra */ }
+void avra_test_start_spec(const char* name) { (void)name; }
+void avra_test_end_spec(void) { }
+void avra_test_start_given(const char* name) { (void)name; }
+void avra_test_end_given(void) { }
+
+void avra_test_run_then(const char* name, int64_t result) {
+    (void)name;
+    if (result) avra_test_pass_inc();
+    else avra_test_fail_inc();
+}
+
+void avra_test_skip(const char* name) { (void)name; }
+void avra_test_todo(const char* name) { (void)name; }
+
+// Legacy entry — main() in old test bundles calls this. New bundles
+// route through the Avra reporter's `test_render_summary`. Kept here
+// so seed cycle stays buildable.
 int64_t avra_test_summary(void) {
     int64_t pass = atomic_load(&avra_test_pass_count);
     int64_t fail = atomic_load(&avra_test_fail_count);
     int64_t total = pass + fail;
     if (total == 0) return 0;
     printf("\n%lld/%lld tests passed", pass, total);
-    if (fail > 0) {
-        printf(" (%lld failed)", fail);
-    }
+    if (fail > 0) printf(" (%lld failed)", fail);
     printf("\n");
     return fail > 0 ? 1 : 0;
 }

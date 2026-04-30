@@ -124,7 +124,7 @@ export fn emit_block_loop(ctx: Ctx, env: VarEnv, stmts: StmtList, last_val: ptr,
     match stmts {
         .End -> ok_emit(last_val, last_ty)
         .Node(ss, next) -> {
-            let line_ctx = ctx with { source_line: ss.line }
+            let line_ctx = ctx with { source_line: ss.line, source_file: ss.file }
             match next {
                 .End -> emit_stmt_as_value(line_ctx, env, ss.node, last_val, last_ty)
                 _ -> {
@@ -144,7 +144,7 @@ export fn emit_block_loop_ctx(ctx: Ctx, env: VarEnv, stmts: StmtList, last_val: 
     match stmts {
         .End -> ok_br(last_val, last_ty, ctx, VarEnv.End)
         .Node(ss, next) -> {
-            let line_ctx = ctx with { source_line: ss.line }
+            let line_ctx = ctx with { source_line: ss.line, source_file: ss.file }
             match next {
                 .End -> emit_stmt_as_value_ctx(line_ctx, env, ss.node, last_val, last_ty)
                 _ -> {

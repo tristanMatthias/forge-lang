@@ -78,7 +78,7 @@ export fn emit_stmt_list(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<StmtR
     match stmts {
         .End -> ok_sr(ctx, env)
         .Node(ss, next) -> {
-            let line_ctx = ctx with { source_line: ss.line }
+            let line_ctx = ctx with { source_line: ss.line, source_file: ss.file }
             let sr = emit_stmt(line_ctx, env, ss.node)?
             emit_stmt_list(sr.ctx, sr.env, next)
         }

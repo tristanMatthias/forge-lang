@@ -3,7 +3,7 @@
 // checking and before codegen. After this pass, the AST contains no
 // generic declarations — codegen sees only concrete code.
 
-use core.ast.{Expr, ExprList, sexpr, sstmt, Stmt, StmtList, ParamList, FieldList, FieldInitList, TypeList, VariantList, MatchArmList, TypeParamList, TypeNameList, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge, SelectArmList}
+use core.ast.{Expr, ExprList, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, StmtList, ParamList, FieldList, FieldInitList, TypeList, VariantList, MatchArmList, TypeParamList, TypeNameList, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge, SelectArmList}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_warning, span_new}
 use typeck.{TraitImplReg, type_implements_trait}
 use core.type_registry.{mangle_join, type_short_name}
@@ -961,11 +961,11 @@ fn substitute_variants(variants: VariantList, ta: TypeArgList) -> VariantList {
 }
 /// Map `substitute_stmt` over a StmtList.
 fn substitute_stmts(stmts: StmtList, ta: TypeArgList) -> StmtList {
-    match stmts { .End -> .End, .Node(ss, next) -> StmtList.Node(sstmt(substitute_stmt(ss.node, ta), ss.line, ss.col), substitute_stmts(next, ta)) }
+    match stmts { .End -> .End, .Node(ss, next) -> StmtList.Node(sstmt_at(substitute_stmt(ss.node, ta), ss.line, ss.col, ss.file), substitute_stmts(next, ta)) }
 }
 /// Map `substitute_expr` over an ExprList.
 fn substitute_expr_list(exprs: ExprList, ta: TypeArgList) -> ExprList {
-    match exprs { .End -> .End, .Node(se, next) -> ExprList.Node(sexpr(substitute_expr(se.node, ta), se.line, se.col), substitute_expr_list(next, ta)) }
+    match exprs { .End -> .End, .Node(se, next) -> ExprList.Node(sexpr_at(substitute_expr(se.node, ta), se.line, se.col, se.file), substitute_expr_list(next, ta)) }
 }
 
 /// Substitute type-args into a single statement. Recurses into
@@ -1036,9 +1036,9 @@ fn substitute_match_arms(arms: MatchArmList, ta: TypeArgList) -> MatchArmList {
         .Node(pat, guard, body, next) -> {
             let new_guard = if guard != null {
                 let g = guard!
-                sexpr(substitute_expr(g.node, ta), g.line, g.col)
+                sexpr_at(substitute_expr(g.node, ta), g.line, g.col, g.file)
             } else { null }
-            MatchArmList.Node(pat, new_guard, sexpr(substitute_expr(body.node, ta), body.line, body.col), substitute_match_arms(next, ta))
+            MatchArmList.Node(pat, new_guard, sexpr_at(substitute_expr(body.node, ta), body.line, body.col, body.file), substitute_match_arms(next, ta))
         }
     }
 }
@@ -1181,7 +1181,7 @@ fn rewrite_stmts(stmts: StmtList, regs: GenRegs, insts: InstList) -> StmtList {
         .End -> .End
         .Node(ss, next) -> {
             if is_generic_decl(ss.node) { return rewrite_stmts(next, regs, insts) }
-            StmtList.Node(sstmt(rewrite_stmt(ss.node, regs, insts), ss.line, ss.col), rewrite_stmts(next, regs, insts))
+            StmtList.Node(sstmt_at(rewrite_stmt(ss.node, regs, insts), ss.line, ss.col, ss.file), rewrite_stmts(next, regs, insts))
         }
     }
 }
@@ -1334,7 +1334,7 @@ fn rewrite_expr(expr: Expr, regs: GenRegs, insts: InstList) -> Expr {
 
 /// Map `rewrite_expr` over an ExprList.
 fn rewrite_expr_list(exprs: ExprList, regs: GenRegs, insts: InstList) -> ExprList {
-    match exprs { .End -> .End, .Node(se, next) -> ExprList.Node(sexpr(rewrite_expr(se.node, regs, insts), se.line, se.col), rewrite_expr_list(next, regs, insts)) }
+    match exprs { .End -> .End, .Node(se, next) -> ExprList.Node(sexpr_at(rewrite_expr(se.node, regs, insts), se.line, se.col, se.file), rewrite_expr_list(next, regs, insts)) }
 }
 
 /// Map `rewrite_expr` over each guard + body in a match-arm
@@ -1345,9 +1345,9 @@ fn rewrite_arms(arms: MatchArmList, regs: GenRegs, insts: InstList) -> MatchArmL
         .Node(pat, guard, body, next) -> {
             let new_guard = if guard != null {
                 let g = guard!
-                sexpr(rewrite_expr(g.node, regs, insts), g.line, g.col)
+                sexpr_at(rewrite_expr(g.node, regs, insts), g.line, g.col, g.file)
             } else { null }
-            MatchArmList.Node(pat, new_guard, sexpr(rewrite_expr(body.node, regs, insts), body.line, body.col), rewrite_arms(next, regs, insts))
+            MatchArmList.Node(pat, new_guard, sexpr_at(rewrite_expr(body.node, regs, insts), body.line, body.col, body.file), rewrite_arms(next, regs, insts))
         }
     }
 }
@@ -1355,7 +1355,7 @@ fn rewrite_arms(arms: MatchArmList, regs: GenRegs, insts: InstList) -> MatchArmL
 /// Map `rewrite_expr` over every value in a struct-literal /
 /// `with` field-init list.
 fn rewrite_field_inits(inits: FieldInitList, regs: GenRegs, insts: InstList) -> FieldInitList {
-    match inits { .End -> .End, .Node(n, val, next) -> FieldInitList.Node(n, sexpr(rewrite_expr(val.node, regs, insts), val.line, val.col), rewrite_field_inits(next, regs, insts)) }
+    match inits { .End -> .End, .Node(n, val, next) -> FieldInitList.Node(n, sexpr_at(rewrite_expr(val.node, regs, insts), val.line, val.col, val.file), rewrite_field_inits(next, regs, insts)) }
 }
 
 /// Compute the mangled enum name for a constructor call site

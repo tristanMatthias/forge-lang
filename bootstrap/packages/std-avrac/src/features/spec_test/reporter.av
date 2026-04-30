@@ -1,0 +1,107 @@
+// WHY: spec/given/then test rendering. State (counters, failure
+// list, current spec/given) lives in runtime.c — see TODO in
+// runtime.c referencing forge-crafting-intepreters-3uy9.
+//
+// This file is inlined into the test program at the bundle's top
+// level (test runner reads + parses + prepends), so its `use`
+// imports must resolve at that scope — not via @std.avrac. Until
+// the test runner can guarantee @std.avrac is loaded, the failure
+// summary uses plain ANSI rendering rather than the diagnostics
+// framework (which would give us source snippets per failure).
+// Future: switch to diagnostics::render_bag once the bundle
+// always loads @std.avrac.
+
+extern fn avra_test_pass_inc() -> int
+extern fn avra_test_fail_inc() -> int
+extern fn avra_test_get_pass() -> int
+extern fn avra_test_get_fail() -> int
+extern fn avra_test_record_failure(spec_name: string, given_name: string, then_name: string, file: string, ln: int) -> int
+extern fn avra_test_failure_count() -> int
+extern fn avra_test_failure_spec(idx: int) -> string
+extern fn avra_test_failure_given(idx: int) -> string
+extern fn avra_test_failure_then(idx: int) -> string
+extern fn avra_test_failure_file(idx: int) -> string
+extern fn avra_test_failure_line(idx: int) -> int
+extern fn avra_test_set_current_spec(name: string) -> int
+extern fn avra_test_set_current_given(name: string) -> int
+extern fn avra_test_get_current_spec() -> string
+extern fn avra_test_get_current_given() -> string
+
+fn ansi_green(s: string) -> string { "\x1b[32m${s}\x1b[0m" }
+fn ansi_red(s: string) -> string { "\x1b[31m${s}\x1b[0m" }
+fn ansi_yellow(s: string) -> string { "\x1b[33m${s}\x1b[0m" }
+fn ansi_dim(s: string) -> string { "\x1b[2m${s}\x1b[0m" }
+fn ansi_bold(s: string) -> string { "\x1b[1m${s}\x1b[0m" }
+fn ansi_cyan(s: string) -> string { "\x1b[36m${s}\x1b[0m" }
+
+export fn test_render_spec_start(name: string) {
+    avra_test_set_current_spec(name)
+    avra_test_set_current_given("")
+    println("${ansi_bold("spec")} ${ansi_cyan(name)}")
+}
+
+export fn test_render_given_start(name: string) {
+    avra_test_set_current_given(name)
+    println("  ${ansi_dim("given")} ${name}")
+}
+
+export fn test_render_then(name: string, result: bool, file: string, ln: int) {
+    if result {
+        avra_test_pass_inc()
+        println("    ${ansi_green("PASS")} ${name}")
+    } else {
+        avra_test_fail_inc()
+        let cur_spec = avra_test_get_current_spec()
+        let cur_given = avra_test_get_current_given()
+        avra_test_record_failure(cur_spec, cur_given, name, file, ln)
+        println("    ${ansi_red("FAIL")} ${name} ${ansi_dim("(${file}:${string(ln)})")}")
+    }
+}
+
+export fn test_render_summary() -> int {
+    let pass = avra_test_get_pass()
+    let fail = avra_test_get_fail()
+    let total = pass + fail
+    if total == 0 {
+        println("${ansi_yellow("No tests ran.")}")
+        return 0
+    }
+    if fail > 0 {
+        println("")
+        println("${ansi_bold(ansi_red("Failures:"))}")
+        let count = avra_test_failure_count()
+        render_failure_list(count, 0)
+    }
+    println("")
+    let summary = "${string(pass)}/${string(total)} tests passed"
+    if fail > 0 {
+        println("${ansi_red(ansi_bold(summary))} ${ansi_red("(${string(fail)} failed)")}")
+        return 1
+    }
+    println("${ansi_green(ansi_bold(summary))}")
+    0
+}
+
+/// Walk the C-side failure list, printing each one's spec/given/
+/// then names + source location. Plain-text rendering — no source
+/// snippet (which would require the diagnostics framework). Future:
+/// upgrade to render_bag once the test bundle always loads
+/// @std.avrac so `use diagnostics.{...}` resolves cleanly.
+fn render_failure_list(count: int, idx: int) {
+    if idx >= count { return }
+    let s = avra_test_failure_spec(idx)
+    let g = avra_test_failure_given(idx)
+    let t = avra_test_failure_then(idx)
+    let f = avra_test_failure_file(idx)
+    let l = avra_test_failure_line(idx)
+    let chain = if g != "" {
+        "${s} / ${ansi_dim("given")} ${g} / ${ansi_dim("then")} ${t}"
+    } else {
+        "${s} / ${ansi_dim("then")} ${t}"
+    }
+    println("  ${ansi_red("✗")} ${chain}")
+    if f != "" {
+        println("    ${ansi_dim("at ${f}:${string(l)}")}")
+    }
+    render_failure_list(count, idx + 1)
+}

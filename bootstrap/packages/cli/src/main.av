@@ -59,7 +59,7 @@ use @std.avrac.features.eval.{render_value, eval_expression_source, execute_prog
 use @std.avrac.desugar.{desugar_program}
 use @std.avrac.features.component_decl.expand.{expand_components}
 use @std.avrac.resolve.names.{resolve_names}
-use @std.avrac.features.modules.resolver.{resolve_module_files, modules_dirname, LoadedPaths}
+use @std.avrac.features.modules.resolver.{resolve_module_files, modules_dirname, find_packages_dir, LoadedPaths}
 use @std.avrac.features.modules.package.{load_package_config}
 use @std.avrac.typeck.{typecheck_program}
 use @std.avrac.diagnostics.{bag_has_errors, bag_has_warnings, bag_new, bag_report, diag_error, diag_ice, span_dummy, DiagCode, DiagnosticBag}
@@ -440,17 +440,35 @@ fn run_test_command() {
         return
     }
 
-    // Step 3: Build program — externs + packages + modules + main
+    // Step 3: Build program — externs + reporter + packages + modules + main
     //
     // Hoisted package modules sit at the program root so the
     // resolver's module tree contains exactly one copy of each
     // @std::pkg, regardless of how many tests imported it.
-    mut program = prepend_test_externs(append_stmt_list(packages, modules))
+    //
+    // The reporter (features/spec_test/reporter.av) provides the
+    // Avra-side rendering for spec/given/then progress lines and
+    // the failure-summary block. Inlining its body at the top of
+    // the test program puts `test_render_*` fns at module-root
+    // scope so spec codegen's bare `ctx.call("test_render_then", ...)`
+    // resolves directly. State (counters, failure list, current
+    // spec/given context) lives in runtime.c — see TODO referencing
+    // forge-crafting-intepreters-3uy9.
+    let reporter_path = find_packages_dir(project_dir) + "std-avrac/src/features/spec_test/reporter.av"
+    let reporter_stmts = if avra_selfhost_file_exists(reporter_path) != 0 {
+        let rsrc = read_file(reporter_path)
+        let rparsed = parse_program_source_at(rsrc, reporter_path)
+        if rparsed.had_error || rparsed.stmts == null { StmtList.End }
+        else { rparsed.stmts! }
+    } else {
+        StmtList.End
+    }
+    mut program = prepend_test_externs(append_stmt_list(reporter_stmts, append_stmt_list(packages, modules)))
 
-    // main() just calls avra_test_summary().
+    // main() calls test_render_summary() from the inlined reporter.
     // Module-level spec blocks run via __bs_top_level (codegen patches main to call it).
     let main_body = StmtList.Node(
-        sstmt_dummy(Stmt.Expr(Expr.Call(Expr.Ident("avra_test_summary"), ExprList.End))),
+        sstmt_dummy(Stmt.Return(Expr.Call(Expr.Ident("test_render_summary"), ExprList.End))),
         StmtList.End
     )
     program = StmtList.Node(
