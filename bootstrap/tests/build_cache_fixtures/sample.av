@@ -1,0 +1,94 @@
+// Fixture program exercising the @std.avrac.build.cache module
+// end-to-end. Compiled and linked by tests/cache_test.av; the parent
+// test asserts on PROBE lines.
+
+use @std.avrac.build.cache.{
+    Cache, PublishResult,
+    cache_for, cache_init, cache_has, cache_publish,
+    cache_read_ll, cache_evict,
+    entry_dir_for, entry_ll_path,
+}
+use @std.avrac.build.fingerprint.{Fingerprint}
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn main() -> int {
+    // Use a fixed temp dir; rm -rf clears it before each test run so
+    // previous artifacts don't interfere. /tmp is writable on macOS
+    // and Linux.
+    let project = "/tmp/avra_cache_fixture/"
+    avra_shell_exec("rm -rf " + project)
+    avra_shell_exec("mkdir -p " + project)
+
+    let c = cache_for(project)
+
+    // Probe 1: cache_init creates the directory tree.
+    if cache_init(c) {
+        println("PROBE init: ok")
+    } else {
+        println("PROBE init: FAIL")
+    }
+
+    let fp = Fingerprint { hex: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" }
+
+    // Probe 2: cache miss before publish.
+    if !cache_has(c, fp) {
+        println("PROBE miss_before_publish: ok")
+    } else {
+        println("PROBE miss_before_publish: FAIL")
+    }
+
+    // Probe 3: publish writes the entry atomically.
+    avra_shell_exec("printf 'pretend object bytes' > /tmp/avra_cache_test_obj.o")
+    let pr = cache_publish(c, fp, "; pretend IR\n", "/tmp/avra_cache_test_obj.o", "metadata-blob", "1")
+    avra_shell_exec("rm -f /tmp/avra_cache_test_obj.o")
+    if pr.success {
+        println("PROBE publish: ok")
+    } else {
+        println("PROBE publish: FAIL " + pr.error)
+    }
+
+    // Probe 4: hit after publish.
+    if cache_has(c, fp) {
+        println("PROBE hit_after_publish: ok")
+    } else {
+        println("PROBE hit_after_publish: FAIL")
+    }
+
+    // Probe 5: read returns the IR we wrote.
+    if cache_read_ll(c, fp) == "; pretend IR\n" {
+        println("PROBE read_roundtrip: ok")
+    } else {
+        println("PROBE read_roundtrip: FAIL")
+    }
+
+    // Probe 6: entry path layout is stable.
+    let dir = entry_dir_for(c, fp)
+    let ll = entry_ll_path(c, fp)
+    if dir + "/unit.ll" == ll {
+        println("PROBE path_layout: ok")
+    } else {
+        println("PROBE path_layout: FAIL")
+    }
+
+    // Probe 7: evict makes cache_has go back to false.
+    let _ = cache_evict(c, fp)
+    if !cache_has(c, fp) {
+        println("PROBE evict: ok")
+    } else {
+        println("PROBE evict: FAIL")
+    }
+
+    // Probe 8: re-publish after evict succeeds (no leftover state).
+    avra_shell_exec("printf 'pretend object bytes 2' > /tmp/avra_cache_test_obj.o")
+    let pr2 = cache_publish(c, fp, "; pretend IR 2\n", "/tmp/avra_cache_test_obj.o", "meta2", "2")
+    avra_shell_exec("rm -f /tmp/avra_cache_test_obj.o")
+    if pr2.success && cache_read_ll(c, fp) == "; pretend IR 2\n" {
+        println("PROBE republish: ok")
+    } else {
+        println("PROBE republish: FAIL")
+    }
+
+    avra_shell_exec("rm -rf " + project)
+    0
+}

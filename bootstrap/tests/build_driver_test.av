@@ -1,0 +1,55 @@
+// End-to-end @std.avrac.build.driver tests.
+//
+// Compiles and runs tests/build_driver_fixtures/sample.av to exercise
+// the decide_build / record_build_result loop. Probes:
+//   1. First decide() against an empty cache returns Miss.
+//   2. record_build_result publishes the artifact.
+//   3. Second decide() returns Hit with the same fingerprint.
+//   4. Hit's ll_path resolves to the cached IR content.
+//   5. Changing the source forces a Miss.
+//   6. Changing the profile forces a Miss.
+//   7. Changing the unit name forces a Miss.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn driver_run_fixture() -> string {
+    avra_shell_exec("if [ ! -f /tmp/avra_driver_probe.out ]; then bash scripts/diagnose.sh --run tests/build_driver_fixtures/sample.av > /tmp/avra_driver_probe.out 2>&1 || true; fi; cat /tmp/avra_driver_probe.out")
+}
+
+fn driver_wipe_fixture_cache() -> string {
+    avra_shell_exec("rm -f /tmp/avra_driver_probe.out")
+}
+
+spec "build driver: clear cached fixture output before probes" {
+    then "wipe stale /tmp cache from any previous test run" {
+        let _ = driver_wipe_fixture_cache()
+        true
+    }
+}
+
+spec "build driver: end-to-end via bs2 compile+run" {
+    then "PROBE first_miss — empty cache returns Miss" {
+        driver_run_fixture().contains("PROBE first_miss: ok")
+    }
+    then "PROBE publish — record_build_result populates the cache" {
+        driver_run_fixture().contains("PROBE publish: ok")
+    }
+    then "PROBE second_hit — populated cache returns Hit" {
+        driver_run_fixture().contains("PROBE second_hit: ok")
+    }
+    then "PROBE cached_read — Hit exposes the cached IR" {
+        driver_run_fixture().contains("PROBE cached_read: ok")
+    }
+    then "PROBE source_change_miss — content change invalidates" {
+        driver_run_fixture().contains("PROBE source_change_miss: ok")
+    }
+    then "PROBE profile_change_miss — flags change invalidates" {
+        driver_run_fixture().contains("PROBE profile_change_miss: ok")
+    }
+    then "PROBE unit_change_miss — unit name change invalidates" {
+        driver_run_fixture().contains("PROBE unit_change_miss: ok")
+    }
+    then "no probe failed" {
+        !driver_run_fixture().contains(": FAIL")
+    }
+}

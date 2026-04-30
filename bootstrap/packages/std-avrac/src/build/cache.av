@@ -1,0 +1,197 @@
+// WHY: content-addressed cache for the Avra build system.
+//
+// Each build unit's compile output (LLVM IR + object file + metadata)
+// is keyed by its 64-char hex fingerprint and stored at
+// `<root>/cache/<fp>/{unit.ll, unit.o, metadata.bin}`. A fingerprint
+// match means we already have the artifact — copy/symlink it back
+// into the active build dir and skip the compile.
+//
+// Atomic publishing: writes go to a `<root>/cache/_tmp/<fp>.<pid>/`
+// staging directory, then `avra_rename` moves the whole directory
+// into place when complete. Concurrent readers see either the fully
+// populated entry or none — never a half-written one.
+//
+// The module is filesystem-shaped, not process-shaped: it owns paths
+// and read/write/rename calls, not orchestration. Higher layers
+// (the build driver) decide WHEN to consult the cache; this module
+// answers WHAT is cached and HOW to publish.
+
+use core.runtime.{
+    avra_selfhost_file_exists,
+    avra_selfhost_read_file,
+    avra_selfhost_write_file,
+    avra_mkdir_p,
+    avra_rename,
+    avra_remove_file,
+    avra_is_dir,
+}
+use build.fingerprint.{Fingerprint}
+
+/// Logical layout of the cache directory tree under a project's
+/// `<root>/build/`. The build driver passes the root path; the cache
+/// module derives the per-fingerprint sub-paths.
+///
+/// Conventions:
+///   * `root` always ends with a trailing slash so path concatenation
+///     stays string-only (no platform separator handling). The
+///     filesystem accepts this on macOS and Linux uniformly.
+///   * Tmp staging lives at `<root>cache/_tmp/` so a sibling rename
+///     into `<root>cache/<fp>/` is atomic on the same filesystem.
+export type Cache = {
+    root: string,           // <project>/build/
+    cache_dir: string,      // <root>cache/
+    tmp_dir: string,        // <root>cache/_tmp/
+}
+
+/// Build a Cache view over `<project>/build/`. Idempotent — calling
+/// it many times produces the same record. Does not touch the
+/// filesystem; use `cache_init` to materialise the directory tree.
+export fn cache_for(project_root: string) -> Cache {
+    let root = ensure_trailing_slash(project_root) + "build/"
+    let cache_dir = root + "cache/"
+    Cache {
+        root: root,
+        cache_dir: cache_dir,
+        tmp_dir: cache_dir + "_tmp/",
+    }
+}
+
+/// Materialise the cache directory tree on disk. Creates `cache/` and
+/// `cache/_tmp/` and any missing parents. Returns true on success;
+/// false (with no other side effect) if the system call fails.
+export fn cache_init(c: Cache) -> bool {
+    if avra_mkdir_p(c.cache_dir) == 0 { return false }
+    if avra_mkdir_p(c.tmp_dir) == 0 { return false }
+    true
+}
+
+/// Path to the per-fingerprint entry directory. Note: returned path
+/// does NOT have a trailing slash, since callers usually need to
+/// build sibling paths (`<entry>/unit.ll`, `<entry>/unit.o`, etc.).
+export fn entry_dir_for(c: Cache, fp: Fingerprint) -> string {
+    c.cache_dir + fp.hex
+}
+
+/// Per-artifact paths inside an entry directory. Centralised so
+/// every consumer agrees on the file names — a typo in either side
+/// silently misses the cache.
+export fn entry_ll_path(c: Cache, fp: Fingerprint) -> string {
+    entry_dir_for(c, fp) + "/unit.ll"
+}
+export fn entry_o_path(c: Cache, fp: Fingerprint) -> string {
+    entry_dir_for(c, fp) + "/unit.o"
+}
+export fn entry_metadata_path(c: Cache, fp: Fingerprint) -> string {
+    entry_dir_for(c, fp) + "/metadata.bin"
+}
+
+/// True when this cache has a complete entry for `fp`. We probe the
+/// `.ll` file as the existence sentinel — cache writes use atomic
+/// rename, so the entry directory either contains everything we
+/// need or doesn't exist at all. Probing `unit.ll` (rather than the
+/// directory itself) avoids any race where the directory is created
+/// but `unit.ll` was not yet written.
+export fn cache_has(c: Cache, fp: Fingerprint) -> bool {
+    avra_selfhost_file_exists(entry_ll_path(c, fp)) == 1
+}
+
+/// Outcome of a publish attempt. The build driver inspects this to
+/// decide whether to continue or surface a diagnostic.
+export type PublishResult = {
+    success: bool,
+    error: string,           // human-readable failure reason
+}
+
+/// Publish a freshly-compiled unit into the cache.
+///
+/// Writes the artifacts to a staging directory, then renames the
+/// whole directory into the canonical entry path. The rename is
+/// atomic on the same filesystem so concurrent readers cannot
+/// observe a partially-populated entry.
+///
+/// `staging_id` is a per-build-process discriminator (e.g. PID) so
+/// concurrent build drivers do not collide on the same staging path.
+export fn cache_publish(
+    c: Cache,
+    fp: Fingerprint,
+    ll_content: string,
+    o_path_src: string,         // path to the .o file produced by llc
+    metadata_content: string,
+    staging_id: string,
+) -> PublishResult {
+    let staging = c.tmp_dir + fp.hex + "." + staging_id
+    if avra_mkdir_p(staging) == 0 {
+        return PublishResult { success: false, error: "mkdir failed: " + staging }
+    }
+    let staged_ll = staging + "/unit.ll"
+    let staged_o = staging + "/unit.o"
+    let staged_meta = staging + "/metadata.bin"
+
+    if avra_selfhost_write_file(staged_ll, ll_content) == 0 {
+        return PublishResult { success: false, error: "write failed: " + staged_ll }
+    }
+    let o_content = avra_selfhost_read_file(o_path_src)
+    if avra_selfhost_write_file(staged_o, o_content) == 0 {
+        return PublishResult { success: false, error: "write failed: " + staged_o }
+    }
+    if avra_selfhost_write_file(staged_meta, metadata_content) == 0 {
+        return PublishResult { success: false, error: "write failed: " + staged_meta }
+    }
+
+    let final_dir = entry_dir_for(c, fp)
+    if avra_rename(staging, final_dir) == 0 {
+        // Most likely cause: another process won the race and
+        // already published this fingerprint. Treat that as success
+        // — both ended up with byte-identical content (cache is
+        // content-addressed). Only flag a real failure if neither
+        // path got the entry into place.
+        if cache_has(c, fp) {
+            return PublishResult { success: true, error: "" }
+        }
+        return PublishResult { success: false, error: "rename failed: " + staging + " -> " + final_dir }
+    }
+    PublishResult { success: true, error: "" }
+}
+
+/// Read a cached unit's IR back. Caller is responsible for checking
+/// `cache_has` first — this returns the empty string when the entry
+/// is missing, which is also the legitimate value of an empty
+/// compile (e.g. an empty unit). Distinguishing those is the
+/// caller's job.
+export fn cache_read_ll(c: Cache, fp: Fingerprint) -> string {
+    avra_selfhost_read_file(entry_ll_path(c, fp))
+}
+
+/// Read a cached unit's metadata blob. See `cache_read_ll` re:
+/// missing-vs-empty distinction.
+export fn cache_read_metadata(c: Cache, fp: Fingerprint) -> string {
+    avra_selfhost_read_file(entry_metadata_path(c, fp))
+}
+
+/// Evict a cache entry. Used by `avra cache prune` to GC stale
+/// entries. Returns true if the entry is gone after the call (either
+/// because we removed it or it was already absent).
+export fn cache_evict(c: Cache, fp: Fingerprint) -> bool {
+    let entry = entry_dir_for(c, fp)
+    let ll = entry + "/unit.ll"
+    let o = entry + "/unit.o"
+    let meta = entry + "/metadata.bin"
+    // Best-effort: remove individual files first, ignore individual
+    // failures (the directory rmdir is what determines overall
+    // success). Error reporting belongs at the GC driver level.
+    let _l = avra_remove_file(ll)
+    let _o = avra_remove_file(o)
+    let _m = avra_remove_file(meta)
+    // Directory removal is currently best-effort via the runtime —
+    // we model success as "the entry's sentinel file no longer
+    // exists." When a runtime hook for rmdir lands, evolve this.
+    !cache_has(c, fp)
+}
+
+/// Path string ends-with helper. The cache module avoids depending
+/// on @std/avrac's string utilities so it stays self-contained.
+fn ensure_trailing_slash(s: string) -> string {
+    if s.length == 0 { return "/" }
+    let last = s.substring(s.length - 1, s.length)
+    if last == "/" { s } else { s + "/" }
+}

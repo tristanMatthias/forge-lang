@@ -275,6 +275,18 @@ fn emit_string_method(ctx: Ctx, env: VarEnv, str_val: ptr, method: string, args:
             let byte_val = ctx.load_i8(str_ptr, "char_byte")
             ok_emit(ctx.zext(byte_val, ctx.i64_type, "char_code"), .Int)
         }
+        // string.byte(i) — return the i-th UTF-8 byte as an int 0..255.
+        // NOT the i-th codepoint; this is the byte-level accessor that
+        // crypto code, binary protocol decoders, and any byte-shaped
+        // parser needs. char_code() above is the zero-arg variant that
+        // peeks byte 0 (kept for backward compat with existing
+        // lexer/parser usage). Both go through the same avra_str_char_code
+        // runtime hook.
+        "byte" -> {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            let str_ptr = ctx.to_ptr(str_val, "str_self")
+            ok_emit(ctx.call("avra_str_char_code", [str_ptr, arg_r.value]), .Int)
+        }
         "repeat" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
             ok_emit(ctx.call("avra_str_repeat", [ctx.to_ptr(str_val, "str_self"), arg_r.value]), .Str)

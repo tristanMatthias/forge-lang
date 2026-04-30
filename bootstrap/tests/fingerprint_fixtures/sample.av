@@ -1,0 +1,85 @@
+// Fixture program exercising the fingerprint module end-to-end.
+// Compiled and run by tests/fingerprint_test.av; the parent test
+// asserts on the printed output.
+//
+// Each println line is a probe of one fingerprint property. Every
+// probe prints a stable label so the test can match without depending
+// on field order or hex-digest values that would have to be hard-coded.
+
+use @std.avrac.build.fingerprint.{
+    Fingerprint, StrList, fp_for_unit, fp_eq, fp_short, profile_key_of,
+}
+use @std.crypto.{sha256_hex}
+
+fn empty_strs() -> StrList { StrList.End }
+
+fn one(a: string) -> StrList {
+    StrList.Node(a, StrList.End)
+}
+
+fn main() -> int {
+    let key = profile_key_of("dev", 0, true, true, false)
+
+    // Probe 1: deterministic across calls.
+    let a = fp_for_unit("u", empty_strs(), "h", key, "t", empty_strs())
+    let b = fp_for_unit("u", empty_strs(), "h", key, "t", empty_strs())
+    if fp_eq(a, b) {
+        println("PROBE deterministic: ok")
+    } else {
+        println("PROBE deterministic: FAIL")
+    }
+
+    // Probe 2: every input axis perturbs the digest. We change just
+    // the unit name and confirm the digest moves.
+    let c = fp_for_unit("OTHER", empty_strs(), "h", key, "t", empty_strs())
+    if !fp_eq(a, c) {
+        println("PROBE sensitive_unit: ok")
+    } else {
+        println("PROBE sensitive_unit: FAIL")
+    }
+
+    // Probe 3: digest length is 64 hex chars.
+    if a.hex.length == 64 {
+        println("PROBE length: ok")
+    } else {
+        println("PROBE length: FAIL")
+    }
+
+    // Probe 4: fp_short is exactly 12 chars and is the prefix of hex.
+    let s = fp_short(a)
+    if s.length == 12 && a.hex.substring(0, 12) == s {
+        println("PROBE short: ok")
+    } else {
+        println("PROBE short: FAIL")
+    }
+
+    // Probe 5: SHA-256 reference vector for "abc" — proves @std/crypto
+    // is correctly wired into the fingerprint module's call graph.
+    let abc = sha256_hex("abc")
+    if abc == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" {
+        println("PROBE sha256_abc: ok")
+    } else {
+        println("PROBE sha256_abc: FAIL")
+    }
+
+    // Probe 6: profile_key shows release vs dev are distinct keys.
+    let dev_key = profile_key_of("dev", 0, true, true, false)
+    let rel_key = profile_key_of("release", 2, false, false, false)
+    if dev_key != rel_key {
+        println("PROBE profile_keys_differ: ok")
+    } else {
+        println("PROBE profile_keys_differ: FAIL")
+    }
+
+    // Probe 7: dep fingerprints participate. Two units differ only in
+    // dep_fps and must produce different digests.
+    let with_dep_a = fp_for_unit("u", empty_strs(), "h", key, "t", one("dep_a"))
+    let with_dep_b = fp_for_unit("u", empty_strs(), "h", key, "t", one("dep_b"))
+    if !fp_eq(with_dep_a, with_dep_b) {
+        println("PROBE dep_sensitive: ok")
+    } else {
+        println("PROBE dep_sensitive: FAIL")
+    }
+
+    0
+}

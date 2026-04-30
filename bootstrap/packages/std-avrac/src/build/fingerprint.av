@@ -1,0 +1,187 @@
+// WHY: per-unit fingerprint computation.
+//
+// A fingerprint is a deterministic, collision-resistant 64-char hex
+// digest derived from every input that, if changed, should force the
+// unit to rebuild. The build cache uses fingerprints as keys: hit =>
+// reuse the cached .ll/.o; miss => recompile.
+//
+// Inputs that participate in the fingerprint, per
+// docs/spec_build_manifest.md:
+//
+//   1. All source files in the unit (each file's contents)
+//   2. The compiler binary's own hash (so a new bs2 invalidates)
+//   3. Profile flags (opt_level, debug, overflow_checks, coverage)
+//   4. Target triple (e.g. arm64-apple-darwin)
+//   5. Transitive dep fingerprints (a dep's rebuild forces ours)
+//
+// The function is pure: same inputs => same digest. No timestamps,
+// no PIDs, no machine-specific paths. That property is what makes the
+// cache shareable across machines and reproducible across runs.
+
+use @std.crypto.{sha256_hex, sha256_file}
+use core.runtime.{avra_selfhost_file_exists}
+
+/// A computed fingerprint. Wraps the raw 64-char hex string so the
+/// type signature surfaces "this is a fingerprint, not just any hash"
+/// and so equality / display behave consistently.
+export type Fingerprint = {
+    hex: string,
+}
+
+/// Build the fingerprint for a unit.
+///
+/// `sources` is the list of source-file paths that belong to the
+/// unit, in canonical (stable) order — typically sorted alphabetically
+/// by the caller. Order matters: a different order produces a
+/// different fingerprint, even with identical contents. Callers are
+/// responsible for sorting if they want a path-order-insensitive key.
+///
+/// `compiler_hash` is the hex digest of the compiler binary that
+/// will produce the artifact. Use `compiler_hash_for(path)` to compute
+/// it once per build.
+///
+/// `profile_key` is a canonical, deterministic string capture of the
+/// build profile (e.g. "dev|opt=0|dbg=1|ovf=1|cov=0"). Use
+/// `profile_key_of(...)` to produce it.
+///
+/// `target_triple` is the build target (e.g. "arm64-apple-darwin").
+///
+/// `dep_fps` is the list of transitive dep fingerprints, in canonical
+/// (typically dependency-sorted) order.
+export fn fp_for_unit(
+    unit_name: string,
+    sources: StrList,
+    compiler_hash: string,
+    profile_key: string,
+    target_triple: string,
+    dep_fps: StrList,
+) -> Fingerprint {
+    // Compose a canonical input. Each section is prefixed with its
+    // role so two distinct inputs cannot accidentally hash the same:
+    // e.g. an empty `sources` list and an empty `dep_fps` list must
+    // not collide. Length prefixes on each entry close the canonical-
+    // join hole where "ab|c" and "a|bc" hash the same.
+    mut composed = "avra/build/fp v1\n"
+    composed = composed + "unit:" + unit_name + "\n"
+    composed = composed + "compiler:" + compiler_hash + "\n"
+    composed = composed + "profile:" + profile_key + "\n"
+    composed = composed + "target:" + target_triple + "\n"
+
+    composed = composed + "sources:\n"
+    composed = composed + each_with_count(sources, "src")
+    composed = composed + "deps:\n"
+    composed = composed + each_with_count(dep_fps, "dep")
+
+    Fingerprint { hex: sha256_hex(composed) }
+}
+
+/// Hash a list of paths-or-strings into a length-prefixed canonical
+/// form. Used for both source files (where the entry is the file's
+/// content hash) and transitive dep fingerprints (where the entry is
+/// the dep's already-computed hex digest).
+///
+/// Iteration uses a mutable cursor + while loop rather than recursion
+/// because real projects can hit thousands of source files and the
+/// bootstrap has no guaranteed TCO at -O0 (see the render_list
+/// stack-overflow note in CLAUDE.md). Recursion-on-linked-lists is
+/// common in this codebase by historical accident — it was inherited
+/// from the Rust port, not validated as the right shape for Avra.
+fn each_with_count(items: StrList, kind: string) -> string {
+    mut out = "  count=" + string(strlist_length(items)) + "\n"
+    mut cur = items
+    mut idx = 0
+    mut keep_going = true
+    while keep_going {
+        match cur {
+            .End -> keep_going = false,
+            .Node(s, rest) -> {
+                let entry = if kind == "src" { hash_source_entry(s) } else { s }
+                out = out + "  [" + string(idx) + "]" + string(entry.length) + ":" + entry + "\n"
+                cur = rest
+                idx = idx + 1
+            }
+        }
+    }
+    out
+}
+
+
+/// For a source entry: hash the file's content (so we don't bake the
+/// raw content into the canonical-input string, which would balloon
+/// the hash payload to whole-source-tree sizes). Missing files hash
+/// as empty input — same digest as any other empty file. The build
+/// driver should fail before this point if a declared source is
+/// missing; this function is permissive so fingerprints stay
+/// computable even mid-edit.
+fn hash_source_entry(path: string) -> string {
+    if !avra_selfhost_file_exists(path) {
+        return sha256_file("/__missing__")
+    }
+    sha256_file(path)
+}
+
+/// Compute the compiler-binary fingerprint. Read once per build and
+/// reuse for every unit. Pulling this out makes the build driver
+/// loop cheap (we do not re-hash the bs2 binary 50 times for 50
+/// units — just once).
+export fn compiler_hash_for(binary_path: string) -> string {
+    sha256_file(binary_path)
+}
+
+/// Canonical profile key. Order-stable and human-readable so that:
+///   1. A different opt_level forces a rebuild.
+///   2. Two equivalent profiles hash to the same key (e.g. order
+///      of fields cannot matter — we lay them out fixed here).
+///   3. A developer can paste the key into a debug log and see at
+///      a glance which profile produced the digest.
+export fn profile_key_of(
+    name: string,
+    opt_level: int,
+    debug: bool,
+    overflow_checks: bool,
+    coverage: bool,
+) -> string {
+    let dbg = if debug { "1" } else { "0" }
+    let ovf = if overflow_checks { "1" } else { "0" }
+    let cov = if coverage { "1" } else { "0" }
+    name + "|opt=" + string(opt_level) + "|dbg=" + dbg + "|ovf=" + ovf + "|cov=" + cov
+}
+
+/// True when two fingerprints match. The cache uses this for the
+/// hit / miss decision — if `fp_eq(stored, computed)` we have a hit.
+export fn fp_eq(a: Fingerprint, b: Fingerprint) -> bool {
+    a.hex == b.hex
+}
+
+/// Display-friendly short form for log lines. The full 64-char hex
+/// is too long to put in progress UI; the first 12 chars are enough
+/// for human disambiguation in any realistic project.
+export fn fp_short(fp: Fingerprint) -> string {
+    fp.hex.substring(0, 12)
+}
+
+/// Linked list of strings — fingerprint inputs (source paths and dep
+/// fingerprint hex strings) are passed as StrList so the public API
+/// stays stable as the underlying collection types evolve.
+export enum StrList {
+    End,
+    Node(s: string, next: StrList),
+}
+
+/// Length of a StrList. Iterative to avoid stack growth on long
+/// lists (see the iteration note on each_with_count).
+export fn strlist_length(xs: StrList) -> int {
+    mut count = 0
+    mut cur = xs
+    mut keep_going = true
+    while keep_going {
+        match cur {
+            .End -> keep_going = false,
+            .Node(_, rest) -> {
+                count = count + 1
+                cur = rest
+            }
+        }
+    }
+    count
+}

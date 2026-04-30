@@ -1231,7 +1231,7 @@ fn check_method_call(tc: TC, obj: Expr, method: string, args: ExprList) -> ExprR
     // String methods
     if vtype_eq(o.ty, .Str) {
         match method {
-            "length" or "index_of" or "char_code" -> return tc_er(checked_args, .Int)
+            "length" or "index_of" or "char_code" or "byte" -> return tc_er(checked_args, .Int)
             "substring" or "trim" or "upper" or "lower" or "replace"
             or "to_upper" or "to_lower" -> return tc_er(checked_args, .Str)
             "contains" or "starts_with" or "ends_with" -> return tc_er(checked_args, .Bool)

@@ -28,3 +28,4 @@ mod docs
 mod lang_gen
 mod fmt
 mod test_runner
+mod build

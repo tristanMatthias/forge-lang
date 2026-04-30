@@ -368,7 +368,11 @@ fn run_test_command() {
 
     // Step 1: Discover _test.av files
     // TODO(bead wcrm): replace with proper FS walk
-    let test_files = avra_shell_exec("find ${project_dir} -name '*_test.av' -type f -not -path '*/build/*' 2>/dev/null | sort")
+    // Anchor the build-artifacts exclusion to the project root so a
+    // legitimate src tree containing a `build/` subdirectory (e.g.
+    // packages/std-avrac/src/build/, the build-driver module) is NOT
+    // skipped — only the top-level compile-output dir is.
+    let test_files = avra_shell_exec("find ${project_dir} \\( -path '${project_dir}/build' -o -path '${project_dir}/build/*' \\) -prune -o -name '*_test.av' -type f -print 2>/dev/null | sort")
     if test_files == "" {
         println("No test files found.")
         return

@@ -902,6 +902,56 @@ int64_t avra_file_mtime(const char* path) {
 #endif
 }
 
+// Create a directory and every missing parent (mkdir -p semantics).
+// Returns 1 on success or when the directory already exists, 0 on
+// failure. The build system uses this to lay out the cache directory
+// tree without having to shell out to mkdir.
+int64_t avra_mkdir_p(const char* path) {
+    if (!path || !*path) return 0;
+    size_t len = strlen(path);
+    if (len >= 4096) return 0;
+    char buf[4096];
+    memcpy(buf, path, len + 1);
+    // Walk forward, replacing each '/' with '\0' to mkdir progressive
+    // prefixes. Skip the leading '/' on absolute paths.
+    size_t start = (buf[0] == '/') ? 1 : 0;
+    for (size_t i = start; i < len; i++) {
+        if (buf[i] == '/') {
+            buf[i] = '\0';
+            if (mkdir(buf, 0755) != 0) {
+                struct stat st;
+                if (stat(buf, &st) != 0 || !S_ISDIR(st.st_mode)) return 0;
+            }
+            buf[i] = '/';
+        }
+    }
+    if (mkdir(buf, 0755) != 0) {
+        struct stat st;
+        if (stat(buf, &st) != 0 || !S_ISDIR(st.st_mode)) return 0;
+    }
+    return 1;
+}
+
+// Atomic rename (POSIX rename). Used to publish a cache entry: write
+// to a tmp path under the cache dir, then rename into place so any
+// concurrent reader sees either the old or the new entry, never a
+// half-written one. Returns 1 on success, 0 on failure.
+int64_t avra_rename(const char* src, const char* dst) {
+    if (!src || !dst) return 0;
+    return rename(src, dst) == 0 ? 1 : 0;
+}
+
+// Remove a file. Returns 1 on success or when the file is already
+// absent, 0 on failure for any other reason. The cache GC needs
+// this to evict stale entries.
+int64_t avra_remove_file(const char* path) {
+    if (!path) return 0;
+    if (unlink(path) == 0) return 1;
+    struct stat st;
+    if (stat(path, &st) != 0) return 1;
+    return 0;
+}
+
 
 // ─── Hash Map ─────────────────────────────────────────────────────
 // String-keyed, i64-valued hash map. Linear probing for simplicity.

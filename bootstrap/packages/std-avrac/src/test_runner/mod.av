@@ -77,3 +77,4 @@ export fn append_stmt_list(a: StmtList, b: StmtList) -> StmtList {
         .Node(ss, next) -> StmtList.Node(ss, append_stmt_list(next, b))
     }
 }
+

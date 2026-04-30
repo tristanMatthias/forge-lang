@@ -1,0 +1,152 @@
+// WHY: Phase 1 build-driver wrapper — compose fingerprint + cache
+// over the existing single-unit compile.
+//
+// The CLI's `bs2 build` subcommand calls into `decide_build` to learn
+// whether the cache already has the artifact for the given source +
+// flags; if so, the CLI uses the cached IR and skips the compile +
+// codegen pipeline entirely (the slow path). On a miss, the CLI
+// runs the compile as it does today and then `record_build_result`
+// publishes the artifact into the cache so the next no-op rebuild
+// is sub-second.
+//
+// Phase 1 deliberately treats the entire cli/main.av input as a
+// single unit. The dep-graph extractor in Phase 2 carves this into
+// per-package or per-module units; the driver's surface (decide /
+// record) does not need to change for that.
+//
+// Layering:
+//   * fingerprint.av    — hash inputs to a stable digest
+//   * cache.av          — content-addressed disk layout
+//   * driver.av (this)  — orchestrate the decision
+//   * cli/main.av       — actually run compile / link / report
+
+use build.fingerprint.{
+    Fingerprint, StrList, fp_for_unit, fp_eq, fp_short,
+    compiler_hash_for, profile_key_of, strlist_length,
+}
+use build.cache.{
+    Cache, PublishResult, cache_for, cache_init, cache_has,
+    cache_publish, cache_read_ll,
+    entry_dir_for, entry_ll_path,
+}
+
+/// Inputs the driver needs to decide a build outcome. The CLI fills
+/// this in from avra.toml + argv + the bs2 binary's own path.
+///
+/// `unit_name` distinguishes targets within the same project (e.g.
+/// the bin vs the lib). Callers commonly use the manifest's [bin]
+/// or [lib] name. This participates in the fingerprint so two
+/// targets with identical sources do not stomp on each other's
+/// cache entries.
+///
+/// `entry_path` is the entry source file (today: a single .av; later
+/// when we have dep graphs, it expands to a list of paths).
+///
+/// `compiler_path` is the bs2 binary that will (or did) produce
+/// the artifact. Hashed to invalidate the cache when bs2 changes.
+///
+/// `profile_name` selects [profile.<name>] from the manifest;
+/// `opt_level` / `debug` / `overflow_checks` / `coverage` are the
+/// resolved flags from that profile.
+export type BuildInputs = {
+    project_root: string,
+    unit_name: string,
+    entry_path: string,
+    compiler_path: string,
+    target_triple: string,
+    profile_name: string,
+    opt_level: int,
+    debug: bool,
+    overflow_checks: bool,
+    coverage: bool,
+}
+
+/// Outcome of consulting the cache for a unit.
+///
+/// `Hit(fp, ll_path)`: a complete entry already exists; the CLI
+/// should bypass compile + codegen and use `ll_path` directly.
+///
+/// `Miss(fp, profile_key, reason)`: no cached entry. The CLI runs
+/// the compile pipeline; on success it calls `record_build_result`
+/// with the produced .ll + .o to publish into the cache. `reason`
+/// is a one-line human description so `--explain` can surface it
+/// without re-deriving.
+export enum BuildOutcome {
+    Hit(fp: Fingerprint, ll_path: string),
+    Miss(fp: Fingerprint, profile_key: string, reason: string),
+}
+
+/// Compute the fingerprint and check the cache.
+///
+/// Side effects: ensures the cache directory tree exists (a missing
+/// /build/cache/ on the first build is created here, not on publish
+/// — keeps `record_build_result` idempotent and fast).
+///
+/// Returns `Miss` with a populated `reason` when:
+///   * the cache directory was just created (first build),
+///   * the entry file's content has changed since the last build,
+///   * the compiler binary was rebuilt,
+///   * the profile flags differ from the cached fingerprint.
+///
+/// Today the reason is a coarse summary because the driver does not
+/// retain the previous fingerprint. The `--explain` work in
+/// forge-crafting-intepreters-5udq tightens this to per-axis attribution
+/// once we record the prior fingerprint alongside the artifact.
+export fn decide_build(inputs: BuildInputs) -> BuildOutcome {
+    let cache = cache_for(inputs.project_root)
+    let _ = cache_init(cache)
+
+    let profile_key = profile_key_of(
+        inputs.profile_name,
+        inputs.opt_level,
+        inputs.debug,
+        inputs.overflow_checks,
+        inputs.coverage,
+    )
+    let compiler_hash = compiler_hash_for(inputs.compiler_path)
+    let sources = StrList.Node(inputs.entry_path, StrList.End)
+    let fp = fp_for_unit(
+        inputs.unit_name,
+        sources,
+        compiler_hash,
+        profile_key,
+        inputs.target_triple,
+        StrList.End,
+    )
+
+    if cache_has(cache, fp) {
+        return BuildOutcome.Hit(fp, entry_ll_path(cache, fp))
+    }
+    BuildOutcome.Miss(fp, profile_key, "no cached entry for fp=" + fp_short(fp))
+}
+
+/// Publish a freshly-compiled unit into the cache. Called by the CLI
+/// after a successful compile + codegen. `staging_id` is a
+/// per-build-invocation discriminator so concurrent builds do not
+/// collide on the same staging path (typically the bs2 PID rendered
+/// as a string by the caller).
+///
+/// Returns the cache.PublishResult — the CLI surfaces failures as
+/// diagnostics rather than swallowing them; a publish failure is
+/// recoverable (the build itself succeeded), but the no-op rebuild
+/// optimisation is lost until the next successful publish.
+export fn record_build_result(
+    inputs: BuildInputs,
+    fp: Fingerprint,
+    ll_content: string,
+    o_path: string,
+    metadata: string,
+    staging_id: string,
+) -> PublishResult {
+    let cache = cache_for(inputs.project_root)
+    cache_publish(cache, fp, ll_content, o_path, metadata, staging_id)
+}
+
+/// Helper for tooling and tests: read the cached IR for a fingerprint
+/// directly. Returns the empty string when the entry is missing.
+/// Wraps cache.cache_read_ll so callers don't need to reach for the
+/// cache module independently.
+export fn cached_ll_for(inputs: BuildInputs, fp: Fingerprint) -> string {
+    let cache = cache_for(inputs.project_root)
+    cache_read_ll(cache, fp)
+}

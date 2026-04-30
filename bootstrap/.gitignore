@@ -8,7 +8,13 @@
 **/*.bin.o
 **/*.profraw
 **/*.profdata
-build/
+# Ignore any directory named `build/` (catches the top-level artifact
+# dir AND any per-package build/ such as packages/std-lsp/build/),
+# but RE-INCLUDE the legitimate build-driver source module that lives
+# at packages/std-avrac/src/build/.
+**/build/
+!packages/std-avrac/src/build/
+!packages/std-avrac/src/build/**
 dogfood_progress.csv
 
 # Generated language reference (rebuild with 'avra lang')
