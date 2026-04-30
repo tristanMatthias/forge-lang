@@ -60,7 +60,12 @@ use @std.avrac.desugar.{desugar_program}
 use @std.avrac.features.component_decl.expand.{expand_components}
 use @std.avrac.resolve.names.{resolve_names}
 use @std.avrac.features.modules.resolver.{resolve_module_files, modules_dirname, find_packages_dir, LoadedPaths}
-use @std.avrac.features.modules.package.{load_package_config}
+use @std.avrac.features.modules.package.{load_package_config, load_manifest}
+use @std.avrac.build.driver.{
+    BuildInputs, BuildOutcome,
+    decide_build, record_build_result,
+}
+use @std.avrac.build.fingerprint.{Fingerprint, fp_short}
 use @std.avrac.typeck.{typecheck_program}
 use @std.avrac.diagnostics.{bag_has_errors, bag_has_warnings, bag_new, bag_report, diag_error, diag_ice, span_dummy, DiagCode, DiagnosticBag}
 use @std.avrac.diagnostics.render.{render_bag, render_bag_json}
@@ -354,6 +359,129 @@ fn parse_test_args() -> TestArgs {
         i = i + 1
     }
     TestArgs { filter: filter_arg, coverage: coverage_flag, lcov_path }
+}
+
+/// Parsed view of `avra build ...` argv. `--release` selects the
+/// release profile; `--explain` reports rebuild reasons; `entry`
+/// (optional) overrides the manifest [bin].path.
+type BuildArgs = {
+    release: bool,
+    explain: bool,
+    entry: string,
+}
+
+fn parse_build_args() -> BuildArgs {
+    mut release = false
+    mut explain = false
+    mut entry = ""
+    mut i = 2
+    while i < avra_selfhost_argc() {
+        let arg = avra_selfhost_get_arg_cstr(i)
+        if arg == "--release" {
+            release = true
+            i = i + 1
+            continue
+        }
+        if arg == "--explain" {
+            explain = true
+            i = i + 1
+            continue
+        }
+        if !arg.starts_with("-") && entry == "" {
+            entry = arg
+        }
+        i = i + 1
+    }
+    BuildArgs { release: release, explain: explain, entry: entry }
+}
+
+// `avra build` — Phase 1 incremental wrapper around `avra compile`.
+// Reads the project's avra.toml, computes the per-unit fingerprint,
+// consults the @std.avrac.build cache, and:
+//   * on a Hit, copies the cached IR to where compile would write it
+//     and skips the codegen pipeline entirely
+//   * on a Miss, exec's the existing `bs2 compile` flow (subprocess so
+//     we get proven codegen behaviour for free), then publishes the
+//     produced .ll into the cache for the next invocation
+//
+// Phase 1 treats the entry source as a single unit. Phase 2 (dep
+// graph extractor, see ticket eh00) carves it into per-package /
+// per-module units; the driver's surface (decide / record) does
+// not need to change for that step.
+fn run_build_command() {
+    let project_dir = avra_process_env_get("PWD")
+    let args = parse_build_args()
+
+    let manifest = load_manifest("${project_dir}/")
+    let manifest_entry = if manifest.bin.present { manifest.bin.path } else { "" }
+    let entry_path = if args.entry != "" { args.entry } else { manifest_entry }
+    if entry_path == "" {
+        fail("error: bs2 build requires either a file argument or [bin].path in avra.toml")
+    }
+    if !file_exists(entry_path) {
+        fail("error: file not found: ${entry_path}")
+    }
+
+    let profile = if args.release { manifest.profile_release } else { manifest.profile_dev }
+    let unit_name = if manifest.found && manifest.bin.present { manifest.bin.name } else { "main" }
+
+    // bs2's own binary is the proxy for "the compiler". The bs3
+    // verify path uses build/bs2; production via `make build`
+    // produces the same binary. Downstream consumers will pass an
+    // explicit path once the bootstrap is no longer the only consumer.
+    let compiler_path = "${project_dir}/build/bs2"
+
+    let inputs = BuildInputs {
+        project_root: project_dir,
+        unit_name: unit_name,
+        entry_path: entry_path,
+        compiler_path: compiler_path,
+        target_triple: "host",
+        profile_name: profile.name,
+        opt_level: profile.opt_level,
+        debug: profile.debug,
+        overflow_checks: profile.overflow_checks,
+        coverage: profile.coverage,
+    }
+
+    let outcome = decide_build(inputs)
+    match outcome {
+        .Hit(fp, cached_ll) -> {
+            let dst = "${entry_path}.ll"
+            avra_shell_exec("cp '${cached_ll}' '${dst}'")
+            if args.explain {
+                println("cached ${fp_short(fp)} — ${entry_path}")
+            } else {
+                println("Cached ${fp_short(fp)}: ${dst}")
+            }
+            return
+        }
+        .Miss(fp, _, reason) -> {
+            if args.explain {
+                println("rebuild ${fp_short(fp)} — ${reason}")
+            }
+            // Re-exec the existing compile pipeline as a subprocess.
+            // Use `bs2 compile` so codegen behaviour is identical
+            // to a non-build flow; no surprises from a parallel impl.
+            let compile_cmd = "${compiler_path} compile '${entry_path}'"
+            let _ = avra_shell_exec(compile_cmd)
+            let ll_path = "${entry_path}.ll"
+            if !file_exists(ll_path) {
+                fail("error: compile produced no IR (looked for ${ll_path})")
+            }
+            let ll_content = read_file(ll_path)
+            let metadata = ""
+            let staging_id = "${unit_name}.${fp_short(fp)}"
+            let pr = record_build_result(inputs, fp, ll_content, ll_path, metadata, staging_id)
+            if pr.success {
+                println("Built ${fp_short(fp)}: ${ll_path}")
+            } else {
+                eprintln("warning: cache publish failed: ${pr.error}")
+                println("Built (uncached): ${ll_path}")
+            }
+            return
+        }
+    }
 }
 
 // `avra test` — discover every `*_test.av` under PWD, parse each as
@@ -789,6 +917,13 @@ fn main() {
             arg file { description "Source file", required true }
         }
 
+        command build {
+            description "Incremental build via the @std.avrac.build cache (Phase 1: single-unit)"
+            flag release { description "Use [profile.release] instead of [profile.dev]" }
+            flag explain { description "Print why each unit will rebuild (cargo --explain analogue)" }
+            arg file { description "Entry source file (overrides manifest [bin].path)" }
+        }
+
         command test {
             description "Run tests"
             option filter { short "-f", description "Filter tests by name" }
@@ -861,6 +996,10 @@ fn main() {
         }
         if cmd0 == "test" {
             run_test_command()
+            return
+        }
+        if cmd0 == "build" {
+            run_build_command()
             return
         }
     }
