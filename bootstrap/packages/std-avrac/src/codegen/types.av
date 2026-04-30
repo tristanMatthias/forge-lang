@@ -66,6 +66,14 @@ export type Ctx = {
     i1_type: ptr,
     ptr_type: ptr,
     double_type: ptr,
+    // Sized integer LLVM types (forge-crafting-intepreters-k5al
+    // Phase B). Cached on Ctx so codegen sites can look them up
+    // without re-creating per call. Phase A mapped every sized
+    // ValueType to i64; Phase B switches each width to its native
+    // LLVM primitive via llvm_type_for_full.
+    i8_type: ptr,
+    i16_type: ptr,
+    i32_type: ptr,
     // Type registries — built once by the declaration passes and
     // then threaded through every emit function via the Codegen
     // struct. No mutable globals needed.
@@ -617,6 +625,14 @@ export fn loops_top(stack: LoopStack) -> LoopFrame {
 /// Mapping: `Int → i64`, `Bool → i1`, `Float → double`,
 /// `Void / Unknown / Task → i64`, all other reference types → `ptr`,
 /// `Newtype` recurses into its inner type.
+///
+/// Sized integer variants (U8/U16/U32/U64/I8/I16/I32) currently map
+/// to i64 here so Phase A behaviour is preserved (sized ints declared
+/// in source compile but runtime-equivalent to int). For per-width
+/// LLVM lowering, use `Ctx.llvm_type_for(vt)` which dispatches to the
+/// proper i8/i16/i32 type via the cached type pointers on Ctx —
+/// rolled out incrementally per-codegen-site under
+/// forge-crafting-intepreters-k5al Phase B.
 export fn llvm_type_for_full(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, vt: ValueType) -> ptr {
     match vt {
         .Int -> i64t
@@ -733,6 +749,30 @@ impl Ctx {
         avra_llvm_type_array_set(arr, idx, llvm_ty)
         let rest = match types { .Node(_, next) -> next, .End -> TypeList.End }
         self.fill_typed_lambda_params(arr, rest, idx + 1, total)
+    }
+
+    // ── Sized-integer LLVM type dispatch ──
+    //
+    // Returns the LLVM type for a sized-integer ValueType using the
+    // narrow types cached on Ctx. For every other ValueType, falls
+    // back to the standard llvm_type_for_full mapping. Codegen sites
+    // that want true narrow lowering (struct field layouts, fn
+    // signatures, alloca widths) should call this method instead of
+    // llvm_type_for_full directly. Phase B rollout
+    // (forge-crafting-intepreters-k5al) is incremental — each site
+    // moves to this dispatch as its arithmetic / cast logic is
+    // proven against the new types.
+    fn llvm_type_for(self, vt: ValueType) -> ptr {
+        match vt {
+            .U8 -> self.i8_type
+            .I8 -> self.i8_type
+            .U16 -> self.i16_type
+            .I16 -> self.i16_type
+            .U32 -> self.i32_type
+            .I32 -> self.i32_type
+            .U64 -> self.i64_type
+            _ -> llvm_type_for_full(self.i64_type, self.i1_type, self.double_type, self.ptr_type, vt)
+        }
     }
 
     // ── Function creation ──

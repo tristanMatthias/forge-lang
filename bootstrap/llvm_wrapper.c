@@ -50,6 +50,10 @@ LLVMTypeRef avra_llvm_int8_type(LLVMContextRef ctx) {
     return LLVMInt8TypeInContext(ctx);
 }
 
+LLVMTypeRef avra_llvm_int16_type(LLVMContextRef ctx) {
+    return LLVMInt16TypeInContext(ctx);
+}
+
 LLVMTypeRef avra_llvm_int32_type(LLVMContextRef ctx) {
     return LLVMInt32TypeInContext(ctx);
 }

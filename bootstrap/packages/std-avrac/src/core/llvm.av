@@ -16,6 +16,7 @@ extern fn avra_llvm_dispose_builder(b: ptr)
 // ── Types ──
 extern fn avra_llvm_int1_type(ctx: ptr) -> ptr
 extern fn avra_llvm_int8_type(ctx: ptr) -> ptr
+extern fn avra_llvm_int16_type(ctx: ptr) -> ptr
 extern fn avra_llvm_int32_type(ctx: ptr) -> ptr
 extern fn avra_llvm_int64_type(ctx: ptr) -> ptr
 extern fn avra_llvm_pointer_type(ctx: ptr) -> ptr
