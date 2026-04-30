@@ -37,6 +37,7 @@ fn read_file(path: string) -> string { avra_selfhost_read_file(path) }
 fn write_file(path: string, content: string) -> int { avra_selfhost_write_file(path, content) }
 
 use @std.cli.{cli_new, cli_add_command, cli_command_add_flag, cli_command_add_option, cli_command_add_arg, cli_parse, result_has_flag, result_get_option}
+use @std.json.{json_str, json_object, json_pairs, json_pair_add}
 use @std.lsp.{Sym, SymList}
 use @std.avrac.fmt.{fmt_stmt_list}
 use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, append_stmt_list}
@@ -364,6 +365,28 @@ fn parse_test_args() -> TestArgs {
     TestArgs { filter: filter_arg, coverage: coverage_flag, lcov_path }
 }
 
+/// Render a single build event as a one-line JSON object for IDE /
+/// tooling consumption (`bs2 build --json` / `--message-format=json`).
+/// Each call yields a complete document on its own line so consumers
+/// can parse the stream as JSONL. Strings are escaped via @std/json
+/// so embedded quotes / backslashes / control bytes survive intact.
+///
+/// Event kinds:
+///   "hit"            cache hit; `path` is the .ll, `reason` is empty
+///   "miss"           cache miss; `path` is the source, `reason` is the
+///                    --explain attribution
+///   "built"          successful publish after a Miss
+///   "publish_failed" cache publish failed AFTER successful build
+fn build_event_json(kind: string, unit: string, fp: string, path: string, reason: string) -> string {
+    mut p = json_pairs()
+    p = json_pair_add(p, "event", json_str(kind))
+    p = json_pair_add(p, "unit", json_str(unit))
+    p = json_pair_add(p, "fp", json_str(fp))
+    p = json_pair_add(p, "path", json_str(path))
+    p = json_pair_add(p, "reason", json_str(reason))
+    json_object(p)
+}
+
 /// Render a UnitList as "a → b → c". Used by --explain to summarise
 /// the project's dep graph in a single line. Topological order means
 /// leaves come first; we display in that order so the chain reads
@@ -387,18 +410,23 @@ fn render_unit_chain(units: UnitList) -> string {
     out
 }
 
-/// Parsed view of `avra build ...` argv. `--release` selects the
-/// release profile; `--explain` reports rebuild reasons; `entry`
-/// (optional) overrides the manifest [bin].path.
+/// Parsed view of `avra build ...` argv.
+///   --release             select [profile.release] over [profile.dev]
+///   --explain             cargo-style rebuild attribution
+///   --json                emit one JSON event per line (for IDE tooling)
+///                         in lieu of human-readable output
+///   entry (positional)    override the manifest [bin].path
 type BuildArgs = {
     release: bool,
     explain: bool,
+    json: bool,
     entry: string,
 }
 
 fn parse_build_args() -> BuildArgs {
     mut release = false
     mut explain = false
+    mut json = false
     mut entry = ""
     mut i = 2
     while i < avra_selfhost_argc() {
@@ -413,12 +441,17 @@ fn parse_build_args() -> BuildArgs {
             i = i + 1
             continue
         }
+        if arg == "--json" || arg == "--message-format=json" {
+            json = true
+            i = i + 1
+            continue
+        }
         if !arg.starts_with("-") && entry == "" {
             entry = arg
         }
         i = i + 1
     }
-    BuildArgs { release: release, explain: explain, entry: entry }
+    BuildArgs { release: release, explain: explain, json: json, entry: entry }
 }
 
 // `avra build` — Phase 1 incremental wrapper around `avra compile`.
@@ -475,7 +508,7 @@ fn run_build_command() {
     // in the build. Today the build is single-unit, so the graph is
     // informational; once 2f54+k21v ship, each dep_unit gets its own
     // cache entry and per-unit Hit/Miss rendering replaces this summary.
-    if args.explain && manifest.found {
+    if args.explain && manifest.found && !args.json {
         let g = build_graph("${project_dir}/")
         if !g.had_error {
             let n = unit_list_length(g.units)
@@ -490,7 +523,9 @@ fn run_build_command() {
         .Hit(fp, cached_ll) -> {
             let dst = "${entry_path}.ll"
             avra_shell_exec("cp '${cached_ll}' '${dst}'")
-            if args.explain {
+            if args.json {
+                println(build_event_json("hit", unit_name, fp_short(fp), dst, ""))
+            } else if args.explain {
                 println("cached ${fp_short(fp)} — ${entry_path}")
             } else {
                 println("Cached ${fp_short(fp)}: ${dst}")
@@ -498,7 +533,9 @@ fn run_build_command() {
             return
         }
         .Miss(fp, _, reason) -> {
-            if args.explain {
+            if args.json {
+                println(build_event_json("miss", unit_name, fp_short(fp), entry_path, reason))
+            } else if args.explain {
                 println("rebuild ${fp_short(fp)} — ${reason}")
             }
             // Re-exec the existing compile pipeline as a subprocess.
@@ -523,10 +560,18 @@ fn run_build_command() {
             let staging_id = "${unit_name}.${fp_short(fp)}"
             let pr = record_build_result(inputs, fp, ll_content, ll_path, metadata, staging_id)
             if pr.success {
-                println("Built ${fp_short(fp)}: ${ll_path}")
+                if args.json {
+                    println(build_event_json("built", unit_name, fp_short(fp), ll_path, ""))
+                } else {
+                    println("Built ${fp_short(fp)}: ${ll_path}")
+                }
             } else {
-                eprintln("warning: cache publish failed: ${pr.error}")
-                println("Built (uncached): ${ll_path}")
+                if args.json {
+                    println(build_event_json("publish_failed", unit_name, fp_short(fp), ll_path, pr.error))
+                } else {
+                    eprintln("warning: cache publish failed: ${pr.error}")
+                    println("Built (uncached): ${ll_path}")
+                }
             }
             return
         }
