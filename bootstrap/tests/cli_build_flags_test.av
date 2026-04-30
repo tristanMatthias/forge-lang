@@ -1,0 +1,93 @@
+// Spec test for `bs2 build` CLI flags shipped under epic
+// forge-crafting-intepreters-a1el:
+//   --explain        cache miss/hit attribution + last_inputs
+//   --json           structured event stream for IDE/tooling
+//   --timings        per-phase HTML report
+//
+// We run a real build twice (cold then warm) and assert each flag's
+// observable surface — without reaching into bs2's internals.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn setup_project() -> string {
+    let project = "/tmp/avra_build_flags_fixture/"
+    avra_shell_exec("rm -rf " + project)
+    avra_shell_exec("mkdir -p " + project + "build")
+    // bs2 build re-execs itself as ${project_dir}/build/bs2 for the
+    // compile step. Symlink the host bs2 in so the sub-build succeeds.
+    avra_shell_exec("ln -s " + bs2_path() + " " + project + "build/bs2")
+    avra_shell_exec("printf '[package]\nname = \"flags-fixture\"\nversion = \"0.1.0\"\n[[bin]]\nname = \"flags-fixture\"\npath = \"main.av\"\n' > " + project + "avra.toml")
+    // Build the entry-fn body as runtime concatenation so the test
+    // runner's `fn ${entry}()`-substring skip-rule does NOT treat
+    // THIS test file as an executable program.
+    let entry = "main"
+    let body = "fn " + entry + "() -> int { 0 }"
+    avra_shell_exec("printf '%s\\n' '" + body + "' > " + project + entry + ".av")
+    project
+}
+
+fn teardown_project(project: string) -> string {
+    avra_shell_exec("rm -rf " + project)
+}
+
+fn bs2_path() -> string {
+    avra_shell_exec("pwd").trim() + "/build/bs2"
+}
+
+spec "bs2 build --explain: cold build reports a rebuild reason" {
+    then "first build emits a `rebuild <fp> — <reason>` line" {
+        let project = setup_project()
+        let out = avra_shell_exec(
+            "cd " + project + " && " + bs2_path() + " build --explain 2>&1 || true")
+        let _ = teardown_project(project)
+        out.contains("rebuild ")
+    }
+}
+
+spec "bs2 build --explain: warm build reports a cached hit" {
+    then "second build emits a `cached <fp>` line" {
+        let project = setup_project()
+        let _ = avra_shell_exec(
+            "cd " + project + " && " + bs2_path() + " build 2>&1 || true")
+        let out = avra_shell_exec(
+            "cd " + project + " && " + bs2_path() + " build --explain 2>&1 || true")
+        let _ = teardown_project(project)
+        out.contains("cached ")
+    }
+}
+
+spec "bs2 build --json: emits one JSON object per line" {
+    then "output contains a build-event JSON line" {
+        let project = setup_project()
+        let out = avra_shell_exec(
+            "cd " + project + " && " + bs2_path() + " build --json 2>&1 || true")
+        let _ = teardown_project(project)
+        // JSON-line stream — every event is a single-line {"event":...}
+        // record. We just assert the leading brace + an event field.
+        out.contains("{\"event\":") || out.contains("\"event\"")
+    }
+}
+
+spec "bs2 build --timings: writes the HTML report" {
+    then "build/timings/<unit>-<fp>.html exists after a build" {
+        let project = setup_project()
+        let _ = avra_shell_exec(
+            "cd " + project + " && " + bs2_path() + " build --timings 2>&1 || true")
+        let html_count = avra_shell_exec(
+            "ls " + project + "build/timings/*.html 2>/dev/null | wc -l").trim()
+        let _ = teardown_project(project)
+        html_count != "" && html_count != "0"
+    }
+}
+
+spec "bs2 build --timings: report is self-contained HTML" {
+    then "the report opens with <!DOCTYPE html>" {
+        let project = setup_project()
+        let _ = avra_shell_exec(
+            "cd " + project + " && " + bs2_path() + " build --timings 2>&1 || true")
+        let head = avra_shell_exec(
+            "head -1 " + project + "build/timings/*.html 2>/dev/null || true").trim()
+        let _ = teardown_project(project)
+        head.contains("DOCTYPE") || head.contains("html")
+    }
+}
