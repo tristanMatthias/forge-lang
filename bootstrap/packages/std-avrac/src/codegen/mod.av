@@ -162,6 +162,13 @@ export fn emit_rc_release_typed(ctx: Ctx, val: ptr, ty: ValueType) {
         .Trait(_, _) -> ctx.rc_release(val)
         // Value types — not RC-managed, no-op (rc_release checks magic).
         .Int -> {}
+        .U8 -> {}
+        .U16 -> {}
+        .U32 -> {}
+        .U64 -> {}
+        .I8 -> {}
+        .I16 -> {}
+        .I32 -> {}
         .Bool -> {}
         .Float -> {}
         .Void -> {}

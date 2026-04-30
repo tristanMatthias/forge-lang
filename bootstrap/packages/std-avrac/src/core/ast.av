@@ -183,6 +183,19 @@ export enum TypeList {
 export enum ValueType {
     /// `int` — i64 in LLVM.
     Int,
+    /// Sized integer types (forge-crafting-intepreters-k5al). `int`
+    /// remains the default 64-bit signed integer; these narrower
+    /// variants exist for crypto, binary protocols, FFI struct
+    /// layouts, and any code that needs precise width control.
+    /// All lower to the corresponding LLVM primitive (i8, i16, i32,
+    /// i64) and use wrapping arithmetic for unsigned variants.
+    U8,
+    U16,
+    U32,
+    U64,
+    I8,
+    I16,
+    I32,
     /// `string` — heap-allocated, ptr in LLVM. UTF-8 byte sequence
     /// with character semantics on top.
     Str,
@@ -297,6 +310,13 @@ export fn vtype_from_name(name: string) -> ValueType {
     match name {
         "int" -> ValueType.Int
         "i64" -> ValueType.Int
+        "u8"  -> ValueType.U8
+        "u16" -> ValueType.U16
+        "u32" -> ValueType.U32
+        "u64" -> ValueType.U64
+        "i8"  -> ValueType.I8
+        "i16" -> ValueType.I16
+        "i32" -> ValueType.I32
         "string" -> ValueType.Str
         "str" -> ValueType.Str
         "bytes" -> ValueType.Bytes
@@ -393,6 +413,13 @@ fn last_seg(s: string) -> string {
 export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
     match a {
         .Int -> b is .Int
+        .U8 -> b is .U8
+        .U16 -> b is .U16
+        .U32 -> b is .U32
+        .U64 -> b is .U64
+        .I8 -> b is .I8
+        .I16 -> b is .I16
+        .I32 -> b is .I32
         .Str -> b is .Str
         .Bytes -> b is .Bytes
         .Bool -> b is .Bool
@@ -523,6 +550,13 @@ export fn vtype_narrowed_variant(t: ValueType) -> string {
 export fn vtype_display(t: ValueType) -> string {
     match t {
         .Int -> "int"
+        .U8 -> "u8"
+        .U16 -> "u16"
+        .U32 -> "u32"
+        .U64 -> "u64"
+        .I8 -> "i8"
+        .I16 -> "i16"
+        .I32 -> "i32"
         .Str -> "string"
         .Bytes -> "bytes"
         .Bool -> "bool"
@@ -568,6 +602,13 @@ fn render_union_display(tl: TypeList) -> string {
 export fn vtype_render_full(t: ValueType) -> string {
     match t {
         .Int -> "int"
+        .U8 -> "u8"
+        .U16 -> "u16"
+        .U32 -> "u32"
+        .U64 -> "u64"
+        .I8 -> "i8"
+        .I16 -> "i16"
+        .I32 -> "i32"
         .Str -> "string"
         .Bytes -> "bytes"
         .Bool -> "bool"

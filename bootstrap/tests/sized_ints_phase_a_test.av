@@ -1,0 +1,67 @@
+// Phase A acceptance: the sized integer type names parse and resolve
+// to their respective ValueType variants. Phase A maps every sized
+// int to LLVM i64 under the hood (same as `int`) so existing
+// arithmetic Just Works while we ship the type-only addition. Phase
+// B will swap each variant to its native LLVM width and add proper
+// truncate / wrap semantics.
+//
+// Tracking ticket: forge-crafting-intepreters-k5al under language
+// epic forge-crafting-intepreters-ayq3.
+
+spec "sized ints: declarable as let-binding types (lowering to i64)" {
+    then "u8 binding" {
+        let x: u8 = 250
+        x == 250
+    }
+    then "u16 binding" {
+        let x: u16 = 65535
+        x == 65535
+    }
+    then "u32 binding" {
+        let x: u32 = 4000000000
+        x == 4000000000
+    }
+    then "u64 binding" {
+        let x: u64 = 1234567890
+        x == 1234567890
+    }
+    then "i8 binding" {
+        let x: i8 = 0 - 100
+        x == 0 - 100
+    }
+    then "i16 binding" {
+        let x: i16 = 30000
+        x == 30000
+    }
+    then "i32 binding" {
+        let x: i32 = 2147483647
+        x == 2147483647
+    }
+}
+
+spec "sized ints: arithmetic works (Phase A: same as int)" {
+    then "u32 add and compare" {
+        let a: u32 = 100
+        let b: u32 = 200
+        a + b == 300
+    }
+    then "i32 negative arithmetic" {
+        let a: i32 = 0 - 50
+        let b: i32 = 0 - 50
+        a + b == 0 - 100
+    }
+}
+
+spec "sized ints: usable as fn parameter types" {
+    then "fn taking u32 returns the same value" {
+        let result = id_u32(42)
+        result == 42
+    }
+    then "fn taking i16 returns the same value" {
+        let result = id_i16(0 - 7)
+        result == 0 - 7
+    }
+}
+
+fn id_u32(x: u32) -> u32 { x }
+fn id_i16(x: i16) -> i16 { x }

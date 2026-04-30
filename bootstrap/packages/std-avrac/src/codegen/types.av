@@ -424,6 +424,13 @@ export fn copy_set_has(set: CopySet, name: string) -> bool {
 export fn vtype_is_copy(vt: ValueType, copies: CopySet) -> bool {
     match vt {
         .Int -> true
+        .U8 -> true
+        .U16 -> true
+        .U32 -> true
+        .U64 -> true
+        .I8 -> true
+        .I16 -> true
+        .I32 -> true
         .Float -> true
         .Bool -> true
         .Void -> true
@@ -613,6 +620,18 @@ export fn loops_top(stack: LoopStack) -> LoopFrame {
 export fn llvm_type_for_full(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, vt: ValueType) -> ptr {
     match vt {
         .Int -> i64t
+        // Sized integer variants — Phase A maps them all to i64 since
+        // they should not appear in compiled code yet (forge-crafting-intepreters-k5al
+        // Phase A is variants-only). Phase B will swap to i8/i16/i32
+        // LLVM primitives by extending llvm_type_for_full's caller
+        // signature with narrow type pointers.
+        .U8 -> i64t
+        .U16 -> i64t
+        .U32 -> i64t
+        .U64 -> i64t
+        .I8 -> i64t
+        .I16 -> i64t
+        .I32 -> i64t
         .Bool -> i1t
         .Float -> dt
         .Str -> pt
