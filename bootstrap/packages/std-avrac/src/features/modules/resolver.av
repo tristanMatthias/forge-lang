@@ -207,7 +207,12 @@ export fn resolve_module_files(stmts: StmtList, dir: string, loaded: LoadedPaths
 /// Buckets produced by `hoist_package_modules`: every `@`-prefixed
 /// `Module` lives in `packages`, the rest in `body`. The two get
 /// concatenated to put package wrappers at the program root.
-type HoistSplit = {
+/// Exported because the test runner needs the same partitioning to
+/// accumulate package wrappers across separately-resolved test
+/// files (each test file resolves independently, then the runner
+/// stitches a single program from all their bodies plus a deduped
+/// packages list).
+export type HoistSplit = {
     packages: StmtList,
     body: StmtList,
 }
@@ -220,7 +225,7 @@ type HoistSplit = {
 /// Recurses into both `@`-prefixed and regular Module bodies so a
 /// sub-package wrapper that landed inside another package (e.g.
 /// `@std.lsp` inside `@std.avrac.indexer`) also reaches the root.
-fn hoist_package_modules(stmts: StmtList) -> HoistSplit {
+export fn hoist_package_modules(stmts: StmtList) -> HoistSplit {
     match stmts {
         .End -> HoistSplit { packages: StmtList.End, body: StmtList.End }
         .Node(ss, next) -> {

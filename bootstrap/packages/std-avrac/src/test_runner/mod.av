@@ -12,6 +12,7 @@ use core.ast.{
     Stmt, StmtList, ParamList, ValueType,
     SStmt, sstmt_dummy,
 }
+use features.modules.resolver.{hoist_package_modules, HoistSplit}
 
 /// Drop every `extern fn` declaration from the list.
 ///
@@ -51,47 +52,21 @@ export fn prepend_test_externs(stmts: StmtList) -> StmtList {
 
 /// Outcome of splitting a stmt list into hoistable package modules
 /// and the per-test body. The runner uses this to keep each
-/// `@std::pkg` module unique across the assembled program — see
-/// `split_package_modules` for the rationale.
+/// `@std::pkg` module unique across the assembled program.
 export type PackageSplit = {
     packages: StmtList,
     body: StmtList,
 }
 
-/// Collect every `@`-prefixed `Module` (a package wrapper) from the
-/// statement list and return the residue with those wrappers stripped.
-///
-/// Recurses through nested `Module` bodies because when a `mod foo`
-/// stub resolves a sibling file that itself imports an `@std`
-/// package, the package wrapper lands one level deep. The shared
-/// `LoadedPaths` set in `resolve_module_files` already de-dupes by
-/// file path, so each package appears at most once across the whole
-/// list — we just need to lift them out of wherever they showed up.
+/// Collect every `@`-prefixed `Module` from the stmt list and
+/// return the residue. Thin wrapper over the resolver's
+/// `hoist_package_modules` so the cli's `test` handler doesn't
+/// need to import `features.modules.resolver` directly. Both
+/// implementations agreed on the recursive walk — sharing the
+/// canonical one removes a second copy that would have drifted.
 export fn split_package_modules(stmts: StmtList) -> PackageSplit {
-    match stmts {
-        .End -> PackageSplit { packages: StmtList.End, body: StmtList.End }
-        .Node(ss, next) -> {
-            let rest = split_package_modules(next)
-            match ss.node {
-                .Module(name, _) if name.length > 0 && name[0] == "@" -> PackageSplit {
-                    packages: StmtList.Node(ss, rest.packages),
-                    body: rest.body,
-                }
-                .Module(name, body) -> {
-                    let inner = split_package_modules(body)
-                    let cleaned = sstmt_dummy(Stmt.Module(name, inner.body))
-                    PackageSplit {
-                        packages: append_stmt_list(inner.packages, rest.packages),
-                        body: StmtList.Node(cleaned, rest.body),
-                    }
-                }
-                _ -> PackageSplit {
-                    packages: rest.packages,
-                    body: StmtList.Node(ss, rest.body),
-                }
-            }
-        }
-    }
+    let h = hoist_package_modules(stmts)
+    PackageSplit { packages: h.packages, body: h.body }
 }
 
 /// Concatenate two statement lists. Order-preserving: every node
