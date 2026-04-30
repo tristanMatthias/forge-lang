@@ -299,6 +299,7 @@ export fn vtype_from_name(name: string) -> ValueType {
         "i64" -> ValueType.Int
         "string" -> ValueType.Str
         "str" -> ValueType.Str
+        "bytes" -> ValueType.Bytes
         "float" -> ValueType.Float
         "f64" -> ValueType.Float
         "bool" -> ValueType.Bool
@@ -460,6 +461,9 @@ export fn vtype_is_unknown(t: ValueType) -> bool { t is .Unknown }
 
 /// True iff `t` is the `string` type.
 export fn vtype_is_str(t: ValueType) -> bool { t is .Str }
+
+/// True iff `t` is the `bytes` type.
+export fn vtype_is_bytes(t: ValueType) -> bool { t is .Bytes }
 
 /// True iff `t` is a `List<…>`.
 export fn vtype_is_list(t: ValueType) -> bool { t is .List }

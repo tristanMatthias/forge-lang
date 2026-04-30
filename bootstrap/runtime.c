@@ -2199,6 +2199,80 @@ int64_t avra_toml_get_section_bool(const char* toml, const char* section,
     return default_value;
 }
 
+// ── Bytes ──
+// Raw octet sequences distinct from strings. Phase B v1 uses
+// NUL-terminated heap buffers under the hood — same lowering as
+// string — so length comes from strlen and existing rc machinery
+// applies. The TYPE distinction is enforced by typeck (bytes !=
+// string), not by the runtime layout. A future v2 swap to
+// length-prefixed storage is non-breaking at the surface.
+//
+// Tracked under forge-crafting-intepreters-73wa (in the
+// in-language-crypto epic ayq3).
+
+const char* avra_bytes_from_string(const char* s) {
+    if (!s) return "";
+    size_t len = strlen(s);
+    char* r = (char*)avra_rc_alloc(len + 1);
+    memcpy(r, s, len);
+    r[len] = '\0';
+    return r;
+}
+
+const char* avra_string_from_bytes(const char* b) {
+    if (!b) return "";
+    size_t len = strlen(b);
+    char* r = (char*)avra_rc_alloc(len + 1);
+    memcpy(r, b, len);
+    r[len] = '\0';
+    return r;
+}
+
+int64_t avra_bytes_length(const char* b) {
+    if (!b) return 0;
+    return (int64_t)strlen(b);
+}
+
+int64_t avra_bytes_byte(const char* b, int64_t idx) {
+    if (!b) return 0;
+    size_t len = strlen(b);
+    if (idx < 0 || (size_t)idx >= len) return 0;
+    return (int64_t)(unsigned char)b[idx];
+}
+
+const char* avra_bytes_concat(const char* a, const char* b) {
+    if (!a) a = "";
+    if (!b) b = "";
+    size_t la = strlen(a);
+    size_t lb = strlen(b);
+    char* r = (char*)avra_rc_alloc(la + lb + 1);
+    memcpy(r, a, la);
+    memcpy(r + la, b, lb);
+    r[la + lb] = '\0';
+    return r;
+}
+
+const char* avra_bytes_slice(const char* b, int64_t start, int64_t end) {
+    if (!b) return "";
+    size_t len = strlen(b);
+    if (start < 0) start = 0;
+    if (end < 0) end = 0;
+    if ((size_t)start > len) start = (int64_t)len;
+    if ((size_t)end > len) end = (int64_t)len;
+    if (end < start) end = start;
+    size_t out = (size_t)(end - start);
+    char* r = (char*)avra_rc_alloc(out + 1);
+    memcpy(r, b + start, out);
+    r[out] = '\0';
+    return r;
+}
+
+const char* avra_bytes_empty(void) {
+    char* r = (char*)avra_rc_alloc(1);
+    r[0] = '\0';
+    return r;
+}
+
 // ── SHA-256 ──
 // Public-domain reference implementation. Used by the build system for
 // fingerprint cache keys (see docs/spec_build_manifest.md and the

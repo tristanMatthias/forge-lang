@@ -1240,6 +1240,18 @@ fn check_method_call(tc: TC, obj: Expr, method: string, args: ExprList) -> ExprR
         }
     }
 
+    // Bytes methods. Surface mirrors string's where it makes sense
+    // (length, byte access) but bytes-returning ops yield ValueType.Bytes
+    // so the type system enforces the nominal distinction.
+    if vtype_eq(o.ty, .Bytes) {
+        match method {
+            "length" or "byte" -> return tc_er(checked_args, .Int)
+            "concat" or "slice" -> return tc_er(checked_args, .Bytes)
+            "to_string" -> return tc_er(checked_args, .Str)
+            _ -> {}
+        }
+    }
+
     // List methods — dispatched to features/list_lit/typeck.av
     if o.ty is .List {
         return check_list_method(checked_args, vtype_list_elem(o.ty), method, args)

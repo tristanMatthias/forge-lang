@@ -1,6 +1,6 @@
 // WHY: emits struct literal construction and field-filling.
 
-use core.ast.{Expr, ExprList, FieldList, FieldInitList, VarEnv, field_index_of, field_list_length, ValueType, vtype_struct_name, vtype_display, vtype_is_str, vtype_is_list, vtype_is_map, vtype_narrowed_variant, vtype_enum_name, variant_lookup}
+use core.ast.{Expr, ExprList, FieldList, FieldInitList, VarEnv, field_index_of, field_list_length, ValueType, vtype_struct_name, vtype_display, vtype_is_str, vtype_is_bytes, vtype_is_list, vtype_is_map, vtype_narrowed_variant, vtype_enum_name, variant_lookup}
 use codegen.types.{Ctx, EmitValue, ok_emit, err_emit, null_ptr_val}
 use core.type_registry.{type_registry_id_for}
 use features.enum_decl.codegen.{emit_enum_ctor}
@@ -119,10 +119,14 @@ export fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> 
         return ok_emit(result, result_ty)
     }
 
-    // String/List/Map .length
+    // String/Bytes/List/Map .length
     if vtype_is_str(r.ty) && field == "length" {
         let str_ptr = ctx.to_ptr(r.value, "len_arg")
         return ok_emit(ctx.call("strlen", [str_ptr]), .Int)
+    }
+    if vtype_is_bytes(r.ty) && field == "length" {
+        let bp = ctx.to_ptr(r.value, "bytes_len_arg")
+        return ok_emit(ctx.call("avra_bytes_length", [bp]), .Int)
     }
     if vtype_is_list(r.ty) && field == "length" {
         return ok_emit(ctx.array_len(r.value), .Int)

@@ -1,7 +1,7 @@
 // WHY: emits function bodies and binds parameters into the body scope.
 // Also emits null-argument checks when debug_null_checks is enabled on Ctx.
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, VarEnv, env_lookup, ValueType, stmt_unwrap, expr_list_length, field_index_of, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_is_newtype, vtype_newtype_inner, vtype_newtype_name, vtype_struct_name, vtype_trait_name, vtype_is_unknown}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, VarEnv, env_lookup, ValueType, stmt_unwrap, expr_list_length, field_index_of, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_is_bytes, vtype_is_newtype, vtype_newtype_inner, vtype_newtype_name, vtype_struct_name, vtype_trait_name, vtype_is_unknown}
 use codegen.types.{cg_newtype_vtype_lookup}
 use core.type_registry.{method_mangled_name, type_registry_id_for, type_registry_name_for, is_result_enum_name, is_result_shaped_enum}
 use codegen.types.{Ctx, EmitValue, ok_emit, ok_emit, ok_stmt, err_emit, err_stmt, trait_decl_has}
@@ -296,15 +296,63 @@ fn emit_string_method(ctx: Ctx, env: VarEnv, str_val: ptr, method: string, args:
     }
 }
 
+/// Dispatch a method call on a bytes receiver. Mirrors emit_string_method
+/// but routes to the avra_bytes_* runtime helpers and types the result
+/// as ValueType.Bytes / .Int / .Str as appropriate.
+fn emit_bytes_method(ctx: Ctx, env: VarEnv, bytes_val: ptr, method: string, args: ExprList) -> Result<EmitValue, string> {
+    match method {
+        "length" -> {
+            let bp = ctx.to_ptr(bytes_val, "bytes_self")
+            ok_emit(ctx.call("avra_bytes_length", [bp]), .Int)
+        }
+        "byte" -> {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            let bp = ctx.to_ptr(bytes_val, "bytes_self")
+            ok_emit(ctx.call("avra_bytes_byte", [bp, arg_r.value]), .Int)
+        }
+        "concat" -> {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            let bp = ctx.to_ptr(bytes_val, "bytes_self")
+            let other = ctx.to_ptr(arg_r.value, "bytes_arg")
+            ok_emit(ctx.call("avra_bytes_concat", [bp, other]), .Bytes)
+        }
+        "slice" -> {
+            // slice(start, end) — emit each arg, then forward both
+            // i64 indices to the runtime helper.
+            let bp = ctx.to_ptr(bytes_val, "bytes_self")
+            match args {
+                .Node(start_e, rest) -> match rest {
+                    .Node(end_e, _) -> {
+                        let s_r = ctx.emit(env, start_e.node)?
+                        let e_r = ctx.emit(env, end_e.node)?
+                        ok_emit(ctx.call("avra_bytes_slice", [bp, s_r.value, e_r.value]), .Bytes)
+                    }
+                    _ -> err_emit("bytes.slice expects 2 args, got 1")
+                }
+                _ -> err_emit("bytes.slice expects 2 args, got 0")
+            }
+        }
+        "to_string" -> {
+            let bp = ctx.to_ptr(bytes_val, "bytes_self")
+            ok_emit(ctx.call("avra_string_from_bytes", [bp]), .Str)
+        }
+        _ -> err_emit("bytes method `${method}` not implemented")
+    }
+}
+
 /// Codegen entry for `obj.method(args)`. Type-aware dispatch:
-/// strings → `emit_string_method`, lists → `emit_list_method_call`,
-/// maps → `emit_map_method_call`, traits → trait-vtable
-/// dispatch, structs/enums → mangled inherent-method call.
-/// Falls back to plain by-name call for unknown receivers.
+/// strings → `emit_string_method`, bytes → `emit_bytes_method`,
+/// lists → `emit_list_method_call`, maps → `emit_map_method_call`,
+/// traits → trait-vtable dispatch, structs/enums → mangled
+/// inherent-method call. Falls back to plain by-name call for
+/// unknown receivers.
 export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, args: ExprList) -> Result<EmitValue, string> {
     let r = ctx.emit(env, obj)?
     if vtype_is_str(r.ty) {
         return emit_string_method(ctx, env, r.value, method, args)
+    }
+    if vtype_is_bytes(r.ty) {
+        return emit_bytes_method(ctx, env, r.value, method, args)
     }
     // List methods — dispatched to features/list_lit/codegen.av
     if vtype_is_list(r.ty) {

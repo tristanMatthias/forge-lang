@@ -209,6 +209,15 @@ fn codegen_program(stmts: StmtList, debug_null_checks: bool, coverage: bool, sou
     decl(m, "avra_sha256_hex", i64t, [pt])
     decl(m, "avra_sha256_file", i64t, [pt])
 
+    // ── bytes ──
+    decl(m, "avra_bytes_from_string", i64t, [pt])
+    decl(m, "avra_string_from_bytes", i64t, [pt])
+    decl(m, "avra_bytes_length", i64t, [pt])
+    decl(m, "avra_bytes_byte", i64t, [pt, i64t])
+    decl(m, "avra_bytes_concat", i64t, [pt, pt])
+    decl(m, "avra_bytes_slice", i64t, [pt, i64t, i64t])
+    decl(m, "avra_bytes_empty", i64t, [])
+
     // ── concurrency ──
     decl(m, "avra_spawn", i64t, [pt])
     decl(m, "avra_task_await", i64t, [pt])

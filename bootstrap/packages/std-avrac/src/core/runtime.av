@@ -36,6 +36,18 @@ extern fn avra_toml_get_section_bool(toml: string, section: string, key: string,
 // in codegen/setup.av so the bootstrap toolchain can link the runtime
 // when @std/crypto is in the import graph.
 
+// ── Bytes ──
+// Raw octet sequences. Bytes type is nominally distinct from string
+// (typeck enforces) but uses identical heap layout. See ticket
+// forge-crafting-intepreters-73wa.
+extern fn avra_bytes_from_string(s: string) -> bytes
+extern fn avra_string_from_bytes(b: bytes) -> string
+extern fn avra_bytes_length(b: bytes) -> int
+extern fn avra_bytes_byte(b: bytes, idx: int) -> int
+extern fn avra_bytes_concat(a: bytes, b: bytes) -> bytes
+extern fn avra_bytes_slice(b: bytes, start: int, end: int) -> bytes
+extern fn avra_bytes_empty() -> bytes
+
 // ── Filesystem ──
 extern fn avra_readdir(path: string) -> ptr
 extern fn avra_is_dir(path: string) -> int
