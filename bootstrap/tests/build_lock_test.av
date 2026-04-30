@@ -1,0 +1,50 @@
+// End-to-end @std.avrac.build.lock tests. Verifies the avra.lock
+// reproducible-build primitive: build_graph → lockfile_from_graph →
+// write_lock → read_lock round-trips, and lock_is_fresh correctly
+// flags content drift.
+//
+// Tracking ticket: forge-crafting-intepreters-8tts.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn lock_run_fixture() -> string {
+    avra_shell_exec("if [ ! -f /tmp/avra_lock_probe.out ]; then bash scripts/diagnose.sh --run tests/build_lock_fixtures/sample.av > /tmp/avra_lock_probe.out 2>&1 || true; fi; cat /tmp/avra_lock_probe.out")
+}
+
+fn lock_wipe_fixture_cache() -> string {
+    avra_shell_exec("rm -f /tmp/avra_lock_probe.out")
+}
+
+spec "build lock: clear cached fixture output" {
+    then "wipe stale /tmp cache from any previous test run" {
+        let _ = lock_wipe_fixture_cache()
+        true
+    }
+}
+
+spec "build lock: end-to-end via bs2 compile+run" {
+    then "PROBE graph — dep graph for synthetic project resolves" {
+        lock_run_fixture().contains("PROBE graph: ok")
+    }
+    then "PROBE three_entries — lockfile_from_graph captures all units" {
+        lock_run_fixture().contains("PROBE three_entries: ok")
+    }
+    then "PROBE write — write_lock emits the file" {
+        lock_run_fixture().contains("PROBE write: ok")
+    }
+    then "PROBE read_found — read_lock loads the file back" {
+        lock_run_fixture().contains("PROBE read_found: ok")
+    }
+    then "PROBE read_three — round-trip preserves all 3 entries" {
+        lock_run_fixture().contains("PROBE read_three: ok")
+    }
+    then "PROBE fresh_unchanged — lock_is_fresh true on stable manifests" {
+        lock_run_fixture().contains("PROBE fresh_unchanged: ok")
+    }
+    then "PROBE fresh_after_change — lock_is_fresh flips to false on mutation" {
+        lock_run_fixture().contains("PROBE fresh_after_change: ok")
+    }
+    then "no probe failed" {
+        !lock_run_fixture().contains(": FAIL")
+    }
+}
