@@ -365,6 +365,46 @@ fn parse_test_args() -> TestArgs {
     TestArgs { filter: filter_arg, coverage: coverage_flag, lcov_path }
 }
 
+extern fn avra_uptime_ms() -> int
+
+/// Write a self-contained HTML timings report to `<root>/build/timings/<unit>-<fp>.html`.
+/// Each phase row shows its start, end, and duration in ms; the page
+/// header summarises total wall time. cargo --timings is the model;
+/// we keep the body minimal (no external CSS / JS) so the file
+/// renders in any browser without a network round trip.
+fn write_timings_html(project_root: string, unit_name: string, fp_short_str: string,
+                      decide_ms: int, compile_ms: int, publish_ms: int, total_ms: int,
+                      outcome_label: string) -> string {
+    let dir = "${project_root}/build/timings"
+    avra_shell_exec("mkdir -p '${dir}'")
+    let path = "${dir}/${unit_name}-${fp_short_str}.html"
+    let scale_max = if total_ms == 0 { 1 } else { total_ms }
+    let body = "<!doctype html>\n"
+        + "<html><head><meta charset=\"utf-8\">"
+        + "<title>bs2 build timings — ${unit_name} ${fp_short_str}</title>"
+        + "<style>body{font-family:system-ui,sans-serif;margin:2em;color:#111}"
+        + "h1{margin:0 0 .5em 0}.meta{color:#666;margin-bottom:1em}"
+        + "table{border-collapse:collapse}td,th{padding:.4em 1em;text-align:left}"
+        + "th{border-bottom:2px solid #333}.bar{background:#4a90e2;height:14px;display:inline-block;vertical-align:middle}"
+        + ".total{font-weight:bold;border-top:1px solid #999}"
+        + "</style></head><body>"
+        + "<h1>bs2 build — ${unit_name}</h1>"
+        + "<div class=\"meta\">fingerprint: ${fp_short_str} · outcome: ${outcome_label} · total: ${string(total_ms)}ms</div>"
+        + "<table><tr><th>phase</th><th>duration</th><th></th></tr>"
+        + render_timing_row("decide", decide_ms, scale_max)
+        + render_timing_row("compile", compile_ms, scale_max)
+        + render_timing_row("publish", publish_ms, scale_max)
+        + "<tr class=\"total\"><td>total</td><td>${string(total_ms)}ms</td><td></td></tr>"
+        + "</table></body></html>\n"
+    avra_selfhost_write_file(path, body)
+    path
+}
+
+fn render_timing_row(label: string, ms: int, scale_max: int) -> string {
+    let width = if scale_max == 0 { 0 } else { (ms * 400) / scale_max }
+    "<tr><td>${label}</td><td>${string(ms)}ms</td><td><span class=\"bar\" style=\"width:${string(width)}px\"></span></td></tr>"
+}
+
 /// Render a single build event as a one-line JSON object for IDE /
 /// tooling consumption (`bs2 build --json` / `--message-format=json`).
 /// Each call yields a complete document on its own line so consumers
@@ -415,11 +455,14 @@ fn render_unit_chain(units: UnitList) -> string {
 ///   --explain             cargo-style rebuild attribution
 ///   --json                emit one JSON event per line (for IDE tooling)
 ///                         in lieu of human-readable output
+///   --timings             write build/timings/<unit>-<fp>.html with
+///                         per-phase wall times (cargo --timings analogue)
 ///   entry (positional)    override the manifest [bin].path
 type BuildArgs = {
     release: bool,
     explain: bool,
     json: bool,
+    timings: bool,
     entry: string,
 }
 
@@ -427,6 +470,7 @@ fn parse_build_args() -> BuildArgs {
     mut release = false
     mut explain = false
     mut json = false
+    mut timings = false
     mut entry = ""
     mut i = 2
     while i < avra_selfhost_argc() {
@@ -446,12 +490,23 @@ fn parse_build_args() -> BuildArgs {
             i = i + 1
             continue
         }
+        if arg == "--timings" {
+            timings = true
+            i = i + 1
+            continue
+        }
         if !arg.starts_with("-") && entry == "" {
             entry = arg
         }
         i = i + 1
     }
-    BuildArgs { release: release, explain: explain, json: json, entry: entry }
+    BuildArgs {
+        release: release,
+        explain: explain,
+        json: json,
+        timings: timings,
+        entry: entry,
+    }
 }
 
 // `avra build` — Phase 1 incremental wrapper around `avra compile`.
@@ -518,11 +573,18 @@ fn run_build_command() {
         }
     }
 
+    let t_start = avra_uptime_ms()
     let outcome = decide_build(inputs)
+    let t_after_decide = avra_uptime_ms()
     match outcome {
         .Hit(fp, cached_ll) -> {
             let dst = "${entry_path}.ll"
             avra_shell_exec("cp '${cached_ll}' '${dst}'")
+            if args.timings {
+                let total = avra_uptime_ms() - t_start
+                let _ = write_timings_html(project_dir, unit_name, fp_short(fp),
+                    t_after_decide - t_start, 0, 0, total, "hit")
+            }
             if args.json {
                 println(build_event_json("hit", unit_name, fp_short(fp), dst, ""))
             } else if args.explain {
@@ -550,7 +612,9 @@ fn run_build_command() {
                 compile_cmd = compile_cmd + " --coverage"
             }
             compile_cmd = compile_cmd + " '${entry_path}'"
+            let t_before_compile = avra_uptime_ms()
             let _ = avra_shell_exec(compile_cmd)
+            let t_after_compile = avra_uptime_ms()
             let ll_path = "${entry_path}.ll"
             if !file_exists(ll_path) {
                 fail("error: compile produced no IR (looked for ${ll_path})")
@@ -559,6 +623,15 @@ fn run_build_command() {
             let metadata = ""
             let staging_id = "${unit_name}.${fp_short(fp)}"
             let pr = record_build_result(inputs, fp, ll_content, ll_path, metadata, staging_id)
+            let t_after_publish = avra_uptime_ms()
+            if args.timings {
+                let _ = write_timings_html(project_dir, unit_name, fp_short(fp),
+                    t_after_decide - t_start,
+                    t_after_compile - t_before_compile,
+                    t_after_publish - t_after_compile,
+                    t_after_publish - t_start,
+                    if pr.success { "miss-built" } else { "miss-publish-failed" })
+            }
             if pr.success {
                 if args.json {
                     println(build_event_json("built", unit_name, fp_short(fp), ll_path, ""))
