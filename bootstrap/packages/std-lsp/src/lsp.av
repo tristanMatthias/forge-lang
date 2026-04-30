@@ -588,8 +588,10 @@ fn reverse_syms(list: SymList) -> SymList {
     SymList.End
 }
 
-/// Append `b` after `a`. O(n) in `a` — used by `graph_extend`.
-fn sym_list_concat(a: SymList, b: SymList) -> SymList {
+/// Append `b` after `a`. O(n) in `a` — used by `graph_extend`,
+/// the indexer's per-file concatenation, and the docs corpus
+/// scope-merging path.
+export fn sym_list_concat(a: SymList, b: SymList) -> SymList {
     match a {
         .End -> b
         .Node(item, next) -> SymList.Node(item, sym_list_concat(next, b))

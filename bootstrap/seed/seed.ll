@@ -323439,49 +323439,48 @@ entry:
   ret ptr %cast3
 }
 
-define ptr @read_kv_value(i64 %0, ptr %1, i64 %2) {
+define ptr @read_kv_value(i64 %0, ptr %1) {
 entry:
   %arg = alloca ptr, align 8
-  %prefix_len = alloca i64, align 8
   %key = alloca ptr, align 8
   %idx = alloca i64, align 8
   store i64 %0, ptr %idx, align 8
   store ptr %1, ptr %key, align 8
-  store i64 %2, ptr %prefix_len, align 8
   %idx1 = load i64, ptr %idx, align 8
-  %3 = call ptr @avra_selfhost_get_arg_cstr(i64 %idx1)
-  store ptr %3, ptr %arg, align 8
+  %2 = call ptr @avra_selfhost_get_arg_cstr(i64 %idx1)
+  store ptr %2, ptr %arg, align 8
   %arg2 = load ptr, ptr %arg, align 8
   %key3 = load ptr, ptr %key, align 8
-  %4 = call i64 @strlen(ptr %key3)
-  %5 = call i64 @strlen(ptr @.str.24611)
-  %concat_total = add i64 %4, %5
+  %3 = call i64 @strlen(ptr %key3)
+  %4 = call i64 @strlen(ptr @.str.24611)
+  %concat_total = add i64 %3, %4
   %concat_size = add i64 %concat_total, 1
-  %6 = call ptr @avra_rc_alloc(i64 %concat_size)
-  %7 = call ptr @memcpy(ptr %6, ptr %key3, i64 %4)
-  %cast = ptrtoint ptr %6 to i64
-  %dst2_int = add i64 %cast, %4
+  %5 = call ptr @avra_rc_alloc(i64 %concat_size)
+  %6 = call ptr @memcpy(ptr %5, ptr %key3, i64 %3)
+  %cast = ptrtoint ptr %5 to i64
+  %dst2_int = add i64 %cast, %3
   %cast4 = inttoptr i64 %dst2_int to ptr
-  %rhs_len_p1 = add i64 %5, 1
-  %8 = call ptr @memcpy(ptr %cast4, ptr @.str.24611, i64 %rhs_len_p1)
-  %9 = call i64 @avra_str_starts_with(ptr %arg2, ptr %6)
-  %if_cond = icmp ne i64 %9, 0
+  %rhs_len_p1 = add i64 %4, 1
+  %7 = call ptr @memcpy(ptr %cast4, ptr @.str.24611, i64 %rhs_len_p1)
+  %8 = call i64 @avra_str_starts_with(ptr %arg2, ptr %5)
+  %if_cond = icmp ne i64 %8, 0
   br i1 %if_cond, label %if_then, label %if_else
 
 ifcont:                                           ; preds = %if_else
   %idx15 = load i64, ptr %idx, align 8
   %add16 = add i64 %idx15, 1
-  %10 = call i64 @avra_selfhost_argc()
-  %slt = icmp slt i64 %add16, %10
+  %9 = call i64 @avra_selfhost_argc()
+  %slt = icmp slt i64 %add16, %9
   %slt_ext = zext i1 %slt to i64
   %if_cond18 = icmp ne i64 %slt_ext, 0
   br i1 %if_cond18, label %if_then19, label %if_else20
 
 if_then:                                          ; preds = %entry
-  %11 = call ptr @avra_rc_alloc(i64 16)
+  %10 = call ptr @avra_rc_alloc(i64 16)
   %arg5 = load ptr, ptr %arg, align 8
-  %prefix_len6 = load i64, ptr %prefix_len, align 8
-  %add = add i64 %prefix_len6, 1
+  %key6 = load ptr, ptr %key, align 8
+  %11 = call i64 @strlen(ptr %key6)
+  %add = add i64 %11, 1
   %arg7 = load ptr, ptr %arg, align 8
   %12 = call i64 @strlen(ptr %arg7)
   %sub_len = sub i64 %12, %add
@@ -323495,11 +323494,11 @@ if_then:                                          ; preds = %entry
   %sub_nul_int = add i64 %cast10, %sub_len
   %cast11 = inttoptr i64 %sub_nul_int to ptr
   store i8 0, ptr %cast11, align 8
-  %fld_ptr = getelementptr inbounds nuw %KvRead, ptr %11, i32 0, i32 0
+  %fld_ptr = getelementptr inbounds nuw %KvRead, ptr %10, i32 0, i32 0
   store ptr %13, ptr %fld_ptr, align 8
-  %fld_ptr12 = getelementptr inbounds nuw %KvRead, ptr %11, i32 0, i32 1
+  %fld_ptr12 = getelementptr inbounds nuw %KvRead, ptr %10, i32 0, i32 1
   store i64 1, ptr %fld_ptr12, align 8
-  %cast13 = ptrtoint ptr %11 to i64
+  %cast13 = ptrtoint ptr %10 to i64
   %cast14 = inttoptr i64 %cast13 to ptr
   ret ptr %cast14
 
@@ -323621,7 +323620,7 @@ while.body:                                       ; preds = %while.cond
   %cast = ptrtoint ptr %pure5 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24614, i64 7, ptr @sty_name.24615, i64 9, i64 %null_ext, ptr @src_file.24616, i64 101, i64 210)
+  call void @avra_null_deref_trap(ptr @fld_name.24614, i64 7, ptr @sty_name.24615, i64 9, i64 %null_ext, ptr @src_file.24616, i64 101, i64 212)
   %matched_ptr = getelementptr inbounds nuw %FlagApply, ptr %pure5, i32 0, i32 1
   %matched = load i1, ptr %matched_ptr, align 8
   br i1 %matched, label %if_then, label %if_else
@@ -323644,7 +323643,7 @@ if_then:                                          ; preds = %while.body
   %cast7 = ptrtoint ptr %pure6 to i64
   %null_chk8 = icmp eq i64 %cast7, 0
   %null_ext9 = zext i1 %null_chk8 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24617, i64 4, ptr @sty_name.24618, i64 9, i64 %null_ext9, ptr @src_file.24619, i64 101, i64 211)
+  call void @avra_null_deref_trap(ptr @fld_name.24617, i64 4, ptr @sty_name.24618, i64 9, i64 %null_ext9, ptr @src_file.24619, i64 101, i64 213)
   %args_ptr = getelementptr inbounds nuw %FlagApply, ptr %pure6, i32 0, i32 0
   %args = load ptr, ptr %args_ptr, align 8
   store ptr %args, ptr %a, align 8
@@ -323844,7 +323843,7 @@ ifcont125:                                        ; preds = %if_else128
 
 if_then127:                                       ; preds = %ifcont12
   %k129 = load i64, ptr %k, align 8
-  %12 = call ptr @read_kv_value(i64 %k129, ptr @.str.24623, i64 7)
+  %12 = call ptr @read_kv_value(i64 %k129, ptr @.str.24623)
   store ptr %12, ptr %r, align 8
   %a130 = load ptr, ptr %a, align 8
   %13 = call ptr @avra_rc_alloc(i64 112)
@@ -323908,7 +323907,7 @@ if_then127:                                       ; preds = %ifcont12
   %cast174 = ptrtoint ptr %r173 to i64
   %null_chk175 = icmp eq i64 %cast174, 0
   %null_ext176 = zext i1 %null_chk175 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24624, i64 5, ptr @sty_name.24625, i64 6, i64 %null_ext176, ptr @src_file.24626, i64 101, i64 232)
+  call void @avra_null_deref_trap(ptr @fld_name.24624, i64 5, ptr @sty_name.24625, i64 6, i64 %null_ext176, ptr @src_file.24626, i64 101, i64 234)
   %value_ptr = getelementptr inbounds nuw %KvRead, ptr %r173, i32 0, i32 0
   %value = load ptr, ptr %value_ptr, align 8
   %with_ovr177 = getelementptr inbounds nuw %DocsArgs, ptr %13, i32 0, i32 11
@@ -323921,7 +323920,7 @@ if_then127:                                       ; preds = %ifcont12
   %cast182 = ptrtoint ptr %r181 to i64
   %null_chk183 = icmp eq i64 %cast182, 0
   %null_ext184 = zext i1 %null_chk183 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24627, i64 8, ptr @sty_name.24628, i64 6, i64 %null_ext184, ptr @src_file.24629, i64 101, i64 233)
+  call void @avra_null_deref_trap(ptr @fld_name.24627, i64 8, ptr @sty_name.24628, i64 6, i64 %null_ext184, ptr @src_file.24629, i64 101, i64 235)
   %consumed_ptr = getelementptr inbounds nuw %KvRead, ptr %r181, i32 0, i32 1
   %consumed = load i64, ptr %consumed_ptr, align 8
   %add185 = add i64 %k180, %consumed
@@ -323940,7 +323939,7 @@ ifcont188:                                        ; preds = %if_else191
 
 if_then190:                                       ; preds = %ifcont125
   %k192 = load i64, ptr %k, align 8
-  %15 = call ptr @read_kv_value(i64 %k192, ptr @.str.24631, i64 8)
+  %15 = call ptr @read_kv_value(i64 %k192, ptr @.str.24631)
   store ptr %15, ptr %r193, align 8
   %a194 = load ptr, ptr %a, align 8
   %16 = call ptr @avra_rc_alloc(i64 112)
@@ -324004,7 +324003,7 @@ if_then190:                                       ; preds = %ifcont125
   %cast238 = ptrtoint ptr %r237 to i64
   %null_chk239 = icmp eq i64 %cast238, 0
   %null_ext240 = zext i1 %null_chk239 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24632, i64 5, ptr @sty_name.24633, i64 6, i64 %null_ext240, ptr @src_file.24634, i64 101, i64 238)
+  call void @avra_null_deref_trap(ptr @fld_name.24632, i64 5, ptr @sty_name.24633, i64 6, i64 %null_ext240, ptr @src_file.24634, i64 101, i64 240)
   %value_ptr241 = getelementptr inbounds nuw %KvRead, ptr %r237, i32 0, i32 0
   %value242 = load ptr, ptr %value_ptr241, align 8
   %with_ovr243 = getelementptr inbounds nuw %DocsArgs, ptr %16, i32 0, i32 12
@@ -324017,7 +324016,7 @@ if_then190:                                       ; preds = %ifcont125
   %cast248 = ptrtoint ptr %r247 to i64
   %null_chk249 = icmp eq i64 %cast248, 0
   %null_ext250 = zext i1 %null_chk249 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24635, i64 8, ptr @sty_name.24636, i64 6, i64 %null_ext250, ptr @src_file.24637, i64 101, i64 239)
+  call void @avra_null_deref_trap(ptr @fld_name.24635, i64 8, ptr @sty_name.24636, i64 6, i64 %null_ext250, ptr @src_file.24637, i64 101, i64 241)
   %consumed_ptr251 = getelementptr inbounds nuw %KvRead, ptr %r247, i32 0, i32 1
   %consumed252 = load i64, ptr %consumed_ptr251, align 8
   %add253 = add i64 %k246, %consumed252
@@ -324036,7 +324035,7 @@ ifcont256:                                        ; preds = %if_else259
 
 if_then258:                                       ; preds = %ifcont188
   %k260 = load i64, ptr %k, align 8
-  %18 = call ptr @read_kv_value(i64 %k260, ptr @.str.24639, i64 8)
+  %18 = call ptr @read_kv_value(i64 %k260, ptr @.str.24639)
   store ptr %18, ptr %r261, align 8
   %a262 = load ptr, ptr %a, align 8
   %19 = call ptr @avra_rc_alloc(i64 112)
@@ -324100,7 +324099,7 @@ if_then258:                                       ; preds = %ifcont188
   %cast306 = ptrtoint ptr %r305 to i64
   %null_chk307 = icmp eq i64 %cast306, 0
   %null_ext308 = zext i1 %null_chk307 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24640, i64 5, ptr @sty_name.24641, i64 6, i64 %null_ext308, ptr @src_file.24642, i64 101, i64 244)
+  call void @avra_null_deref_trap(ptr @fld_name.24640, i64 5, ptr @sty_name.24641, i64 6, i64 %null_ext308, ptr @src_file.24642, i64 101, i64 246)
   %value_ptr309 = getelementptr inbounds nuw %KvRead, ptr %r305, i32 0, i32 0
   %value310 = load ptr, ptr %value_ptr309, align 8
   %with_ovr311 = getelementptr inbounds nuw %DocsArgs, ptr %19, i32 0, i32 10
@@ -324113,7 +324112,7 @@ if_then258:                                       ; preds = %ifcont188
   %cast316 = ptrtoint ptr %r315 to i64
   %null_chk317 = icmp eq i64 %cast316, 0
   %null_ext318 = zext i1 %null_chk317 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24643, i64 8, ptr @sty_name.24644, i64 6, i64 %null_ext318, ptr @src_file.24645, i64 101, i64 245)
+  call void @avra_null_deref_trap(ptr @fld_name.24643, i64 8, ptr @sty_name.24644, i64 6, i64 %null_ext318, ptr @src_file.24645, i64 101, i64 247)
   %consumed_ptr319 = getelementptr inbounds nuw %KvRead, ptr %r315, i32 0, i32 1
   %consumed320 = load i64, ptr %consumed_ptr319, align 8
   %add321 = add i64 %k314, %consumed320
@@ -324133,7 +324132,7 @@ ifcont324:                                        ; preds = %if_else327
 
 if_then326:                                       ; preds = %ifcont256
   %k328 = load i64, ptr %k, align 8
-  %21 = call ptr @read_kv_value(i64 %k328, ptr @.str.24647, i64 8)
+  %21 = call ptr @read_kv_value(i64 %k328, ptr @.str.24647)
   store ptr %21, ptr %r329, align 8
   %a330 = load ptr, ptr %a, align 8
   %22 = call ptr @avra_rc_alloc(i64 112)
@@ -324197,7 +324196,7 @@ if_then326:                                       ; preds = %ifcont256
   %cast374 = ptrtoint ptr %r373 to i64
   %null_chk375 = icmp eq i64 %cast374, 0
   %null_ext376 = zext i1 %null_chk375 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24648, i64 5, ptr @sty_name.24649, i64 6, i64 %null_ext376, ptr @src_file.24650, i64 101, i64 250)
+  call void @avra_null_deref_trap(ptr @fld_name.24648, i64 5, ptr @sty_name.24649, i64 6, i64 %null_ext376, ptr @src_file.24650, i64 101, i64 252)
   %value_ptr377 = getelementptr inbounds nuw %KvRead, ptr %r373, i32 0, i32 0
   %value378 = load ptr, ptr %value_ptr377, align 8
   %with_ovr379 = getelementptr inbounds nuw %DocsArgs, ptr %22, i32 0, i32 9
@@ -324210,7 +324209,7 @@ if_then326:                                       ; preds = %ifcont256
   %cast384 = ptrtoint ptr %r383 to i64
   %null_chk385 = icmp eq i64 %cast384, 0
   %null_ext386 = zext i1 %null_chk385 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24651, i64 8, ptr @sty_name.24652, i64 6, i64 %null_ext386, ptr @src_file.24653, i64 101, i64 251)
+  call void @avra_null_deref_trap(ptr @fld_name.24651, i64 8, ptr @sty_name.24652, i64 6, i64 %null_ext386, ptr @src_file.24653, i64 101, i64 253)
   %consumed_ptr387 = getelementptr inbounds nuw %KvRead, ptr %r383, i32 0, i32 1
   %consumed388 = load i64, ptr %consumed_ptr387, align 8
   %add389 = add i64 %k382, %consumed388
@@ -324225,7 +324224,7 @@ sc_rhs:                                           ; preds = %ifcont324
   %cast394 = ptrtoint ptr %a393 to i64
   %null_chk395 = icmp eq i64 %cast394, 0
   %null_ext396 = zext i1 %null_chk395 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24655, i64 5, ptr @sty_name.24656, i64 8, i64 %null_ext396, ptr @src_file.24657, i64 101, i64 255)
+  call void @avra_null_deref_trap(ptr @fld_name.24655, i64 5, ptr @sty_name.24656, i64 8, i64 %null_ext396, ptr @src_file.24657, i64 101, i64 257)
   %query_ptr = getelementptr inbounds nuw %DocsArgs, ptr %a393, i32 0, i32 13
   %query = load ptr, ptr %query_ptr, align 8
   %23 = call i32 @strcmp(ptr %query, ptr @.str.24658)
@@ -324444,7 +324443,7 @@ entry:
   %cast = ptrtoint ptr %args1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24668, i64 13, ptr @sty_name.24669, i64 8, i64 %null_ext, ptr @src_file.24670, i64 101, i64 287)
+  call void @avra_null_deref_trap(ptr @fld_name.24668, i64 13, ptr @sty_name.24669, i64 8, i64 %null_ext, ptr @src_file.24670, i64 101, i64 289)
   %want_validate_ptr = getelementptr inbounds nuw %DocsArgs, ptr %args1, i32 0, i32 3
   %want_validate = load i1, ptr %want_validate_ptr, align 8
   br i1 %want_validate, label %if_then, label %if_else
@@ -324454,7 +324453,7 @@ ifcont:                                           ; preds = %if_else
   %cast4 = ptrtoint ptr %args3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24671, i64 12, ptr @sty_name.24672, i64 8, i64 %null_ext6, ptr @src_file.24673, i64 101, i64 294)
+  call void @avra_null_deref_trap(ptr @fld_name.24671, i64 12, ptr @sty_name.24672, i64 8, i64 %null_ext6, ptr @src_file.24673, i64 101, i64 296)
   %want_callers_ptr = getelementptr inbounds nuw %DocsArgs, ptr %args3, i32 0, i32 4
   %want_callers = load i1, ptr %want_callers_ptr, align 8
   br i1 %want_callers, label %sc_rhs, label %sc_short
@@ -324472,7 +324471,7 @@ sc_rhs:                                           ; preds = %ifcont
   %cast8 = ptrtoint ptr %args7 to i64
   %null_chk9 = icmp eq i64 %cast8, 0
   %null_ext10 = zext i1 %null_chk9 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24674, i64 5, ptr @sty_name.24675, i64 8, i64 %null_ext10, ptr @src_file.24676, i64 101, i64 294)
+  call void @avra_null_deref_trap(ptr @fld_name.24674, i64 5, ptr @sty_name.24675, i64 8, i64 %null_ext10, ptr @src_file.24676, i64 101, i64 296)
   %query_ptr = getelementptr inbounds nuw %DocsArgs, ptr %args7, i32 0, i32 13
   %query = load ptr, ptr %query_ptr, align 8
   %3 = call i32 @strcmp(ptr %query, ptr @.str.24677)
@@ -324509,7 +324508,7 @@ ifcont11:                                         ; preds = %if_else13
   %cast40 = ptrtoint ptr %args39 to i64
   %null_chk41 = icmp eq i64 %cast40, 0
   %null_ext42 = zext i1 %null_chk41 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24688, i64 12, ptr @sty_name.24689, i64 8, i64 %null_ext42, ptr @src_file.24690, i64 101, i64 305)
+  call void @avra_null_deref_trap(ptr @fld_name.24688, i64 12, ptr @sty_name.24689, i64 8, i64 %null_ext42, ptr @src_file.24690, i64 101, i64 307)
   %want_doctest_ptr = getelementptr inbounds nuw %DocsArgs, ptr %args39, i32 0, i32 6
   %want_doctest = load i1, ptr %want_doctest_ptr, align 8
   br i1 %want_doctest, label %if_then44, label %if_else45
@@ -324522,7 +324521,7 @@ if_then12:                                        ; preds = %sc_merge
   %cast16 = ptrtoint ptr %args15 to i64
   %null_chk17 = icmp eq i64 %cast16, 0
   %null_ext18 = zext i1 %null_chk17 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24678, i64 5, ptr @sty_name.24679, i64 8, i64 %null_ext18, ptr @src_file.24680, i64 101, i64 296)
+  call void @avra_null_deref_trap(ptr @fld_name.24678, i64 5, ptr @sty_name.24679, i64 8, i64 %null_ext18, ptr @src_file.24680, i64 101, i64 298)
   %query_ptr19 = getelementptr inbounds nuw %DocsArgs, ptr %args15, i32 0, i32 13
   %query20 = load ptr, ptr %query_ptr19, align 8
   %corpus21 = load ptr, ptr %corpus, align 8
@@ -324544,14 +324543,14 @@ if_then25:                                        ; preds = %if_then12
   %cast28 = ptrtoint ptr %args27 to i64
   %null_chk29 = icmp eq i64 %cast28, 0
   %null_ext30 = zext i1 %null_chk29 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24681, i64 5, ptr @sty_name.24682, i64 8, i64 %null_ext30, ptr @src_file.24683, i64 101, i64 297)
+  call void @avra_null_deref_trap(ptr @fld_name.24681, i64 5, ptr @sty_name.24682, i64 8, i64 %null_ext30, ptr @src_file.24683, i64 101, i64 299)
   %query_ptr31 = getelementptr inbounds nuw %DocsArgs, ptr %args27, i32 0, i32 13
   %query32 = load ptr, ptr %query_ptr31, align 8
   %corpus33 = load ptr, ptr %corpus, align 8
   %cast34 = ptrtoint ptr %corpus33 to i64
   %null_chk35 = icmp eq i64 %cast34, 0
   %null_ext36 = zext i1 %null_chk35 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24684, i64 4, ptr @sty_name.24685, i64 29, i64 %null_ext36, ptr @src_file.24686, i64 101, i64 297)
+  call void @avra_null_deref_trap(ptr @fld_name.24684, i64 4, ptr @sty_name.24685, i64 29, i64 %null_ext36, ptr @src_file.24686, i64 101, i64 299)
   %syms_ptr = getelementptr inbounds nuw %"@std::avrac::docs::DocsCorpus", ptr %corpus33, i32 0, i32 0
   %syms = load ptr, ptr %syms_ptr, align 8
   %7 = call i64 @print_no_symbol(ptr %query32, ptr %syms, ptr @.str.24687)
@@ -324566,7 +324565,7 @@ ifcont43:                                         ; preds = %if_else45
   %cast55 = ptrtoint ptr %args54 to i64
   %null_chk56 = icmp eq i64 %cast55, 0
   %null_ext57 = zext i1 %null_chk56 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24691, i64 8, ptr @sty_name.24692, i64 8, i64 %null_ext57, ptr @src_file.24693, i64 101, i64 312)
+  call void @avra_null_deref_trap(ptr @fld_name.24691, i64 8, ptr @sty_name.24692, i64 8, i64 %null_ext57, ptr @src_file.24693, i64 101, i64 314)
   %want_gen_ptr = getelementptr inbounds nuw %DocsArgs, ptr %args54, i32 0, i32 7
   %want_gen = load i1, ptr %want_gen_ptr, align 8
   br i1 %want_gen, label %if_then59, label %if_else60
@@ -324598,7 +324597,7 @@ ifcont58:                                         ; preds = %if_else60
   %cast100 = ptrtoint ptr %args99 to i64
   %null_chk101 = icmp eq i64 %cast100, 0
   %null_ext102 = zext i1 %null_chk101 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24709, i64 6, ptr @sty_name.24710, i64 8, i64 %null_ext102, ptr @src_file.24711, i64 101, i64 326)
+  call void @avra_null_deref_trap(ptr @fld_name.24709, i64 6, ptr @sty_name.24710, i64 8, i64 %null_ext102, ptr @src_file.24711, i64 101, i64 328)
   %format_ptr = getelementptr inbounds nuw %DocsArgs, ptr %args99, i32 0, i32 12
   %format = load ptr, ptr %format_ptr, align 8
   %9 = call i32 @strcmp(ptr %format, ptr @.str.24712)
@@ -324613,7 +324612,7 @@ if_then59:                                        ; preds = %ifcont43
   %cast62 = ptrtoint ptr %args61 to i64
   %null_chk63 = icmp eq i64 %cast62, 0
   %null_ext64 = zext i1 %null_chk63 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24694, i64 5, ptr @sty_name.24695, i64 8, i64 %null_ext64, ptr @src_file.24696, i64 101, i64 313)
+  call void @avra_null_deref_trap(ptr @fld_name.24694, i64 5, ptr @sty_name.24695, i64 8, i64 %null_ext64, ptr @src_file.24696, i64 101, i64 315)
   %query_ptr65 = getelementptr inbounds nuw %DocsArgs, ptr %args61, i32 0, i32 13
   %query66 = load ptr, ptr %query_ptr65, align 8
   %10 = call i32 @strcmp(ptr %query66, ptr @.str.24697)
@@ -324631,7 +324630,7 @@ ifcont70:                                         ; preds = %if_else73, %if_then
   %cast75 = ptrtoint ptr %args74 to i64
   %null_chk76 = icmp eq i64 %cast75, 0
   %null_ext77 = zext i1 %null_chk76 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24699, i64 5, ptr @sty_name.24700, i64 8, i64 %null_ext77, ptr @src_file.24701, i64 101, i64 317)
+  call void @avra_null_deref_trap(ptr @fld_name.24699, i64 5, ptr @sty_name.24700, i64 8, i64 %null_ext77, ptr @src_file.24701, i64 101, i64 319)
   %query_ptr78 = getelementptr inbounds nuw %DocsArgs, ptr %args74, i32 0, i32 13
   %query79 = load ptr, ptr %query_ptr78, align 8
   %docs_set80 = load ptr, ptr %docs_set, align 8
@@ -324639,7 +324638,7 @@ ifcont70:                                         ; preds = %if_else73, %if_then
   %cast82 = ptrtoint ptr %args81 to i64
   %null_chk83 = icmp eq i64 %cast82, 0
   %null_ext84 = zext i1 %null_chk83 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24702, i64 10, ptr @sty_name.24703, i64 8, i64 %null_ext84, ptr @src_file.24704, i64 101, i64 317)
+  call void @avra_null_deref_trap(ptr @fld_name.24702, i64 10, ptr @sty_name.24703, i64 8, i64 %null_ext84, ptr @src_file.24704, i64 101, i64 319)
   %want_print_ptr = getelementptr inbounds nuw %DocsArgs, ptr %args81, i32 0, i32 8
   %want_print = load i1, ptr %want_print_ptr, align 8
   %11 = call i1 @gen_for_symbol(ptr %query79, ptr %docs_set80, i1 %want_print)
@@ -324665,7 +324664,7 @@ if_then90:                                        ; preds = %ifcont70
   %cast93 = ptrtoint ptr %args92 to i64
   %null_chk94 = icmp eq i64 %cast93, 0
   %null_ext95 = zext i1 %null_chk94 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24705, i64 5, ptr @sty_name.24706, i64 8, i64 %null_ext95, ptr @src_file.24707, i64 101, i64 318)
+  call void @avra_null_deref_trap(ptr @fld_name.24705, i64 5, ptr @sty_name.24706, i64 8, i64 %null_ext95, ptr @src_file.24707, i64 101, i64 320)
   %query_ptr96 = getelementptr inbounds nuw %DocsArgs, ptr %args92, i32 0, i32 13
   %query97 = load ptr, ptr %query_ptr96, align 8
   %docs_set98 = load ptr, ptr %docs_set, align 8
@@ -324681,7 +324680,7 @@ ifcont106:                                        ; preds = %if_else109
   %cast113 = ptrtoint ptr %args112 to i64
   %null_chk114 = icmp eq i64 %cast113, 0
   %null_ext115 = zext i1 %null_chk114 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24713, i64 6, ptr @sty_name.24714, i64 8, i64 %null_ext115, ptr @src_file.24715, i64 101, i64 330)
+  call void @avra_null_deref_trap(ptr @fld_name.24713, i64 6, ptr @sty_name.24714, i64 8, i64 %null_ext115, ptr @src_file.24715, i64 101, i64 332)
   %format_ptr116 = getelementptr inbounds nuw %DocsArgs, ptr %args112, i32 0, i32 12
   %format117 = load ptr, ptr %format_ptr116, align 8
   %13 = call i32 @strcmp(ptr %format117, ptr @.str.24716)
@@ -324706,7 +324705,7 @@ ifcont121:                                        ; preds = %if_else124
   %cast128 = ptrtoint ptr %args127 to i64
   %null_chk129 = icmp eq i64 %cast128, 0
   %null_ext130 = zext i1 %null_chk129 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24717, i64 6, ptr @sty_name.24718, i64 8, i64 %null_ext130, ptr @src_file.24719, i64 101, i64 334)
+  call void @avra_null_deref_trap(ptr @fld_name.24717, i64 6, ptr @sty_name.24718, i64 8, i64 %null_ext130, ptr @src_file.24719, i64 101, i64 336)
   %format_ptr131 = getelementptr inbounds nuw %DocsArgs, ptr %args127, i32 0, i32 12
   %format132 = load ptr, ptr %format_ptr131, align 8
   %16 = call i32 @strcmp(ptr %format132, ptr @.str.24720)
@@ -324731,7 +324730,7 @@ ifcont136:                                        ; preds = %if_else139, %if_the
   %cast155 = ptrtoint ptr %args154 to i64
   %null_chk156 = icmp eq i64 %cast155, 0
   %null_ext157 = zext i1 %null_chk156 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24726, i64 11, ptr @sty_name.24727, i64 8, i64 %null_ext157, ptr @src_file.24728, i64 101, i64 339)
+  call void @avra_null_deref_trap(ptr @fld_name.24726, i64 11, ptr @sty_name.24727, i64 8, i64 %null_ext157, ptr @src_file.24728, i64 101, i64 341)
   %module_path_ptr = getelementptr inbounds nuw %DocsArgs, ptr %args154, i32 0, i32 10
   %module_path = load ptr, ptr %module_path_ptr, align 8
   %19 = call i32 @strcmp(ptr %module_path, ptr @.str.24729)
@@ -324746,7 +324745,7 @@ if_then138:                                       ; preds = %ifcont121
   %cast141 = ptrtoint ptr %args140 to i64
   %null_chk142 = icmp eq i64 %cast141, 0
   %null_ext143 = zext i1 %null_chk142 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24722, i64 6, ptr @sty_name.24723, i64 8, i64 %null_ext143, ptr @src_file.24724, i64 101, i64 335)
+  call void @avra_null_deref_trap(ptr @fld_name.24722, i64 6, ptr @sty_name.24723, i64 8, i64 %null_ext143, ptr @src_file.24724, i64 101, i64 337)
   %format_ptr144 = getelementptr inbounds nuw %DocsArgs, ptr %args140, i32 0, i32 12
   %format145 = load ptr, ptr %format_ptr144, align 8
   %20 = call i64 @strlen(ptr @.str.24721)
@@ -324783,7 +324782,7 @@ ifcont161:                                        ; preds = %if_else164
   %cast198 = ptrtoint ptr %args197 to i64
   %null_chk199 = icmp eq i64 %cast198, 0
   %null_ext200 = zext i1 %null_chk199 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24740, i64 11, ptr @sty_name.24741, i64 8, i64 %null_ext200, ptr @src_file.24742, i64 101, i64 348)
+  call void @avra_null_deref_trap(ptr @fld_name.24740, i64 11, ptr @sty_name.24741, i64 8, i64 %null_ext200, ptr @src_file.24742, i64 101, i64 350)
   %search_term_ptr = getelementptr inbounds nuw %DocsArgs, ptr %args197, i32 0, i32 9
   %search_term = load ptr, ptr %search_term_ptr, align 8
   %30 = call i32 @strcmp(ptr %search_term, ptr @.str.24743)
@@ -324798,7 +324797,7 @@ if_then163:                                       ; preds = %ifcont136
   %cast166 = ptrtoint ptr %args165 to i64
   %null_chk167 = icmp eq i64 %cast166, 0
   %null_ext168 = zext i1 %null_chk167 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24730, i64 11, ptr @sty_name.24731, i64 8, i64 %null_ext168, ptr @src_file.24732, i64 101, i64 340)
+  call void @avra_null_deref_trap(ptr @fld_name.24730, i64 11, ptr @sty_name.24731, i64 8, i64 %null_ext168, ptr @src_file.24732, i64 101, i64 342)
   %module_path_ptr169 = getelementptr inbounds nuw %DocsArgs, ptr %args165, i32 0, i32 10
   %module_path170 = load ptr, ptr %module_path_ptr169, align 8
   %docs_set171 = load ptr, ptr %docs_set, align 8
@@ -324821,7 +324820,7 @@ if_then177:                                       ; preds = %if_then163
   %cast180 = ptrtoint ptr %args179 to i64
   %null_chk181 = icmp eq i64 %cast180, 0
   %null_ext182 = zext i1 %null_chk181 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24735, i64 11, ptr @sty_name.24736, i64 8, i64 %null_ext182, ptr @src_file.24737, i64 101, i64 342)
+  call void @avra_null_deref_trap(ptr @fld_name.24735, i64 11, ptr @sty_name.24736, i64 8, i64 %null_ext182, ptr @src_file.24737, i64 101, i64 344)
   %module_path_ptr183 = getelementptr inbounds nuw %DocsArgs, ptr %args179, i32 0, i32 10
   %module_path184 = load ptr, ptr %module_path_ptr183, align 8
   %32 = call i64 @strlen(ptr @.str.24734)
@@ -324859,7 +324858,7 @@ ifcont204:                                        ; preds = %if_else207
   %cast216 = ptrtoint ptr %args215 to i64
   %null_chk217 = icmp eq i64 %cast216, 0
   %null_ext218 = zext i1 %null_chk217 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24747, i64 8, ptr @sty_name.24748, i64 8, i64 %null_ext218, ptr @src_file.24749, i64 101, i64 352)
+  call void @avra_null_deref_trap(ptr @fld_name.24747, i64 8, ptr @sty_name.24748, i64 8, i64 %null_ext218, ptr @src_file.24749, i64 101, i64 354)
   %want_llm_ptr = getelementptr inbounds nuw %DocsArgs, ptr %args215, i32 0, i32 2
   %want_llm = load i1, ptr %want_llm_ptr, align 8
   br i1 %want_llm, label %if_then220, label %if_else221
@@ -324869,7 +324868,7 @@ if_then206:                                       ; preds = %ifcont161
   %cast209 = ptrtoint ptr %args208 to i64
   %null_chk210 = icmp eq i64 %cast209, 0
   %null_ext211 = zext i1 %null_chk210 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24744, i64 11, ptr @sty_name.24745, i64 8, i64 %null_ext211, ptr @src_file.24746, i64 101, i64 349)
+  call void @avra_null_deref_trap(ptr @fld_name.24744, i64 11, ptr @sty_name.24745, i64 8, i64 %null_ext211, ptr @src_file.24746, i64 101, i64 351)
   %search_term_ptr212 = getelementptr inbounds nuw %DocsArgs, ptr %args208, i32 0, i32 9
   %search_term213 = load ptr, ptr %search_term_ptr212, align 8
   %docs_set214 = load ptr, ptr %docs_set, align 8
@@ -324884,7 +324883,7 @@ ifcont219:                                        ; preds = %if_else221
   %cast224 = ptrtoint ptr %args223 to i64
   %null_chk225 = icmp eq i64 %cast224, 0
   %null_ext226 = zext i1 %null_chk225 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24750, i64 12, ptr @sty_name.24751, i64 8, i64 %null_ext226, ptr @src_file.24752, i64 101, i64 356)
+  call void @avra_null_deref_trap(ptr @fld_name.24750, i64 12, ptr @sty_name.24751, i64 8, i64 %null_ext226, ptr @src_file.24752, i64 101, i64 358)
   %want_symbols_ptr = getelementptr inbounds nuw %DocsArgs, ptr %args223, i32 0, i32 0
   %want_symbols = load i1, ptr %want_symbols_ptr, align 8
   br i1 %want_symbols, label %if_then228, label %if_else229
@@ -324902,7 +324901,7 @@ ifcont227:                                        ; preds = %if_else229
   %cast232 = ptrtoint ptr %args231 to i64
   %null_chk233 = icmp eq i64 %cast232, 0
   %null_ext234 = zext i1 %null_chk233 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24753, i64 5, ptr @sty_name.24754, i64 8, i64 %null_ext234, ptr @src_file.24755, i64 101, i64 360)
+  call void @avra_null_deref_trap(ptr @fld_name.24753, i64 5, ptr @sty_name.24754, i64 8, i64 %null_ext234, ptr @src_file.24755, i64 101, i64 362)
   %query_ptr235 = getelementptr inbounds nuw %DocsArgs, ptr %args231, i32 0, i32 13
   %query236 = load ptr, ptr %query_ptr235, align 8
   %44 = call i32 @strcmp(ptr %query236, ptr @.str.24756)
@@ -324930,7 +324929,7 @@ if_then242:                                       ; preds = %ifcont227
   %cast245 = ptrtoint ptr %args244 to i64
   %null_chk246 = icmp eq i64 %cast245, 0
   %null_ext247 = zext i1 %null_chk246 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24757, i64 10, ptr @sty_name.24758, i64 8, i64 %null_ext247, ptr @src_file.24759, i64 101, i64 361)
+  call void @avra_null_deref_trap(ptr @fld_name.24757, i64 10, ptr @sty_name.24758, i64 8, i64 %null_ext247, ptr @src_file.24759, i64 101, i64 363)
   %want_short_ptr = getelementptr inbounds nuw %DocsArgs, ptr %args244, i32 0, i32 1
   %want_short = load i1, ptr %want_short_ptr, align 8
   br i1 %want_short, label %ife_then, label %ife_else
@@ -324953,7 +324952,7 @@ ife_then:                                         ; preds = %if_then242
   %cast249 = ptrtoint ptr %args248 to i64
   %null_chk250 = icmp eq i64 %cast249, 0
   %null_ext251 = zext i1 %null_chk250 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24760, i64 5, ptr @sty_name.24761, i64 8, i64 %null_ext251, ptr @src_file.24762, i64 101, i64 362)
+  call void @avra_null_deref_trap(ptr @fld_name.24760, i64 5, ptr @sty_name.24761, i64 8, i64 %null_ext251, ptr @src_file.24762, i64 101, i64 364)
   %query_ptr252 = getelementptr inbounds nuw %DocsArgs, ptr %args248, i32 0, i32 13
   %query253 = load ptr, ptr %query_ptr252, align 8
   %docs_set254 = load ptr, ptr %docs_set, align 8
@@ -324967,7 +324966,7 @@ ife_else:                                         ; preds = %if_then242
   %cast257 = ptrtoint ptr %args256 to i64
   %null_chk258 = icmp eq i64 %cast257, 0
   %null_ext259 = zext i1 %null_chk258 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24763, i64 5, ptr @sty_name.24764, i64 8, i64 %null_ext259, ptr @src_file.24765, i64 101, i64 364)
+  call void @avra_null_deref_trap(ptr @fld_name.24763, i64 5, ptr @sty_name.24764, i64 8, i64 %null_ext259, ptr @src_file.24765, i64 101, i64 366)
   %query_ptr260 = getelementptr inbounds nuw %DocsArgs, ptr %args256, i32 0, i32 13
   %query261 = load ptr, ptr %query_ptr260, align 8
   %docs_set262 = load ptr, ptr %docs_set, align 8
@@ -324984,7 +324983,7 @@ if_then270:                                       ; preds = %ife_end
   %cast273 = ptrtoint ptr %args272 to i64
   %null_chk274 = icmp eq i64 %cast273, 0
   %null_ext275 = zext i1 %null_chk274 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24766, i64 5, ptr @sty_name.24767, i64 8, i64 %null_ext275, ptr @src_file.24768, i64 101, i64 367)
+  call void @avra_null_deref_trap(ptr @fld_name.24766, i64 5, ptr @sty_name.24767, i64 8, i64 %null_ext275, ptr @src_file.24768, i64 101, i64 369)
   %query_ptr276 = getelementptr inbounds nuw %DocsArgs, ptr %args272, i32 0, i32 13
   %query277 = load ptr, ptr %query_ptr276, align 8
   %docs_set278 = load ptr, ptr %docs_set, align 8
@@ -325007,7 +325006,7 @@ entry:
   %cast = ptrtoint ptr %args1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24770, i64 5, ptr @sty_name.24771, i64 8, i64 %null_ext, ptr @src_file.24772, i64 101, i64 385)
+  call void @avra_null_deref_trap(ptr @fld_name.24770, i64 5, ptr @sty_name.24771, i64 8, i64 %null_ext, ptr @src_file.24772, i64 101, i64 387)
   %scope_ptr = getelementptr inbounds nuw %DocsArgs, ptr %args1, i32 0, i32 11
   %scope = load ptr, ptr %scope_ptr, align 8
   store i64 0, ptr %pmatch_result, align 8
@@ -325027,7 +325026,7 @@ parm_body:                                        ; preds = %entry
   %cast4 = ptrtoint ptr %args3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24774, i64 13, ptr @sty_name.24775, i64 8, i64 %null_ext6, ptr @src_file.24776, i64 101, i64 385)
+  call void @avra_null_deref_trap(ptr @fld_name.24774, i64 13, ptr @sty_name.24775, i64 8, i64 %null_ext6, ptr @src_file.24776, i64 101, i64 387)
   %want_no_cache_ptr = getelementptr inbounds nuw %DocsArgs, ptr %args3, i32 0, i32 5
   %want_no_cache = load i1, ptr %want_no_cache_ptr, align 8
   %3 = call ptr @"@std::avrac::indexer::extract_project_syms_cached"(ptr %project_dir2, i1 %want_no_cache)
@@ -325077,7 +325076,7 @@ parm_body22:                                      ; preds = %parm_next16
   %cast28 = ptrtoint ptr %args27 to i64
   %null_chk29 = icmp eq i64 %cast28, 0
   %null_ext30 = zext i1 %null_chk29 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24780, i64 13, ptr @sty_name.24781, i64 8, i64 %null_ext30, ptr @src_file.24782, i64 101, i64 385)
+  call void @avra_null_deref_trap(ptr @fld_name.24780, i64 13, ptr @sty_name.24781, i64 8, i64 %null_ext30, ptr @src_file.24782, i64 101, i64 387)
   %want_no_cache_ptr31 = getelementptr inbounds nuw %DocsArgs, ptr %args27, i32 0, i32 5
   %want_no_cache32 = load i1, ptr %want_no_cache_ptr31, align 8
   %11 = call ptr @"@std::avrac::indexer::extract_project_syms_cached"(ptr %project_dir26, i1 %want_no_cache32)
@@ -325096,7 +325095,7 @@ parm_body35:                                      ; preds = %parm_next23
   %cast38 = ptrtoint ptr %args37 to i64
   %null_chk39 = icmp eq i64 %cast38, 0
   %null_ext40 = zext i1 %null_chk39 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24784, i64 5, ptr @sty_name.24785, i64 8, i64 %null_ext40, ptr @src_file.24786, i64 101, i64 402)
+  call void @avra_null_deref_trap(ptr @fld_name.24784, i64 5, ptr @sty_name.24785, i64 8, i64 %null_ext40, ptr @src_file.24786, i64 101, i64 404)
   %scope_ptr41 = getelementptr inbounds nuw %DocsArgs, ptr %args37, i32 0, i32 11
   %scope42 = load ptr, ptr %scope_ptr41, align 8
   %14 = call i64 @strlen(ptr @.str.24783)
@@ -325133,7 +325132,7 @@ parm_body35:                                      ; preds = %parm_next23
   br label %pmatch_end
 
 parm_next36:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.24788, i64 -1, ptr @mu_file.24789, i64 385)
+  call void @avra_match_unreachable(ptr @.match_fn.24788, i64 -1, ptr @mu_file.24789, i64 387)
   unreachable
 }
 
@@ -325217,7 +325216,7 @@ ifcont7:                                          ; preds = %if_else9
   %cast = ptrtoint ptr %s11 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24792, i64 3, ptr @sty_name.24793, i64 14, i64 %null_ext, ptr @src_file.24794, i64 101, i64 435)
+  call void @avra_null_deref_trap(ptr @fld_name.24792, i64 3, ptr @sty_name.24793, i64 14, i64 %null_ext, ptr @src_file.24794, i64 101, i64 437)
   %doc_ptr = getelementptr inbounds nuw %"@std::lsp::Sym", ptr %s11, i32 0, i32 4
   %doc = load ptr, ptr %doc_ptr, align 8
   %5 = call i32 @strcmp(ptr %doc, ptr @.str.24795)
@@ -325241,26 +325240,26 @@ ifcont13:                                         ; preds = %if_else16
   %cast25 = ptrtoint ptr %s24 to i64
   %null_chk26 = icmp eq i64 %cast25, 0
   %null_ext27 = zext i1 %null_chk26 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24800, i64 4, ptr @sty_name.24801, i64 14, i64 %null_ext27, ptr @src_file.24802, i64 101, i64 439)
+  call void @avra_null_deref_trap(ptr @fld_name.24800, i64 4, ptr @sty_name.24801, i64 14, i64 %null_ext27, ptr @src_file.24802, i64 101, i64 441)
   %file_ptr = getelementptr inbounds nuw %"@std::lsp::Sym", ptr %s24, i32 0, i32 5
   %file = load ptr, ptr %file_ptr, align 8
   %s28 = load ptr, ptr %s, align 8
   %cast29 = ptrtoint ptr %s28 to i64
   %null_chk30 = icmp eq i64 %cast29, 0
   %null_ext31 = zext i1 %null_chk30 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24803, i64 4, ptr @sty_name.24804, i64 14, i64 %null_ext31, ptr @src_file.24805, i64 101, i64 439)
+  call void @avra_null_deref_trap(ptr @fld_name.24803, i64 4, ptr @sty_name.24804, i64 14, i64 %null_ext31, ptr @src_file.24805, i64 101, i64 441)
   %span_ptr = getelementptr inbounds nuw %"@std::lsp::Sym", ptr %s28, i32 0, i32 6
   %span = load ptr, ptr %span_ptr, align 8
   %cast32 = ptrtoint ptr %span to i64
   %null_chk33 = icmp eq i64 %cast32, 0
   %null_ext34 = zext i1 %null_chk33 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24806, i64 5, ptr @sty_name.24807, i64 18, i64 %null_ext34, ptr @src_file.24808, i64 101, i64 439)
+  call void @avra_null_deref_trap(ptr @fld_name.24806, i64 5, ptr @sty_name.24807, i64 18, i64 %null_ext34, ptr @src_file.24808, i64 101, i64 441)
   %start_ptr = getelementptr inbounds nuw %"@std::lsp::LspSpan", ptr %span, i32 0, i32 0
   %start = load ptr, ptr %start_ptr, align 8
   %cast35 = ptrtoint ptr %start to i64
   %null_chk36 = icmp eq i64 %cast35, 0
   %null_ext37 = zext i1 %null_chk36 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24809, i64 4, ptr @sty_name.24810, i64 17, i64 %null_ext37, ptr @src_file.24811, i64 101, i64 439)
+  call void @avra_null_deref_trap(ptr @fld_name.24809, i64 4, ptr @sty_name.24810, i64 17, i64 %null_ext37, ptr @src_file.24811, i64 101, i64 441)
   %line_ptr = getelementptr inbounds nuw %"@std::lsp::LspPos", ptr %start, i32 0, i32 0
   %line = load i64, ptr %line_ptr, align 8
   %stub38 = load ptr, ptr %stub, align 8
@@ -325270,7 +325269,7 @@ ifcont13:                                         ; preds = %if_else16
   %cast40 = ptrtoint ptr %r39 to i64
   %null_chk41 = icmp eq i64 %cast40, 0
   %null_ext42 = zext i1 %null_chk41 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24812, i64 5, ptr @sty_name.24813, i64 37, i64 %null_ext42, ptr @src_file.24814, i64 101, i64 440)
+  call void @avra_null_deref_trap(ptr @fld_name.24812, i64 5, ptr @sty_name.24813, i64 37, i64 %null_ext42, ptr @src_file.24814, i64 101, i64 442)
   %error_ptr = getelementptr inbounds nuw %"@std::avrac::docs::gen::GenStubResult", ptr %r39, i32 0, i32 3
   %error = load ptr, ptr %error_ptr, align 8
   %8 = call i32 @strcmp(ptr %error, ptr @.str.24815)
@@ -325285,7 +325284,7 @@ if_then15:                                        ; preds = %ifcont7
   %cast18 = ptrtoint ptr %s17 to i64
   %null_chk19 = icmp eq i64 %cast18, 0
   %null_ext20 = zext i1 %null_chk19 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24796, i64 9, ptr @sty_name.24797, i64 14, i64 %null_ext20, ptr @src_file.24798, i64 101, i64 436)
+  call void @avra_null_deref_trap(ptr @fld_name.24796, i64 9, ptr @sty_name.24797, i64 14, i64 %null_ext20, ptr @src_file.24798, i64 101, i64 438)
   %qualified_ptr = getelementptr inbounds nuw %"@std::lsp::Sym", ptr %s17, i32 0, i32 2
   %qualified = load ptr, ptr %qualified_ptr, align 8
   %9 = call i64 @strlen(ptr %qualified)
@@ -325311,7 +325310,7 @@ ifcont46:                                         ; preds = %if_else49
   %cast63 = ptrtoint ptr %r62 to i64
   %null_chk64 = icmp eq i64 %cast63, 0
   %null_ext65 = zext i1 %null_chk64 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24820, i64 7, ptr @sty_name.24821, i64 37, i64 %null_ext65, ptr @src_file.24822, i64 101, i64 444)
+  call void @avra_null_deref_trap(ptr @fld_name.24820, i64 7, ptr @sty_name.24821, i64 37, i64 %null_ext65, ptr @src_file.24822, i64 101, i64 446)
   %skipped_ptr = getelementptr inbounds nuw %"@std::avrac::docs::gen::GenStubResult", ptr %r62, i32 0, i32 1
   %skipped = load i1, ptr %skipped_ptr, align 8
   br i1 %skipped, label %if_then67, label %if_else68
@@ -325321,7 +325320,7 @@ if_then48:                                        ; preds = %ifcont13
   %cast51 = ptrtoint ptr %r50 to i64
   %null_chk52 = icmp eq i64 %cast51, 0
   %null_ext53 = zext i1 %null_chk52 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24817, i64 5, ptr @sty_name.24818, i64 37, i64 %null_ext53, ptr @src_file.24819, i64 101, i64 441)
+  call void @avra_null_deref_trap(ptr @fld_name.24817, i64 5, ptr @sty_name.24818, i64 37, i64 %null_ext53, ptr @src_file.24819, i64 101, i64 443)
   %error_ptr54 = getelementptr inbounds nuw %"@std::avrac::docs::gen::GenStubResult", ptr %r50, i32 0, i32 3
   %error55 = load ptr, ptr %error_ptr54, align 8
   %15 = call i64 @strlen(ptr @.str.24816)
@@ -325349,7 +325348,7 @@ if_then67:                                        ; preds = %ifcont46
   %cast70 = ptrtoint ptr %s69 to i64
   %null_chk71 = icmp eq i64 %cast70, 0
   %null_ext72 = zext i1 %null_chk71 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24823, i64 9, ptr @sty_name.24824, i64 14, i64 %null_ext72, ptr @src_file.24825, i64 101, i64 445)
+  call void @avra_null_deref_trap(ptr @fld_name.24823, i64 9, ptr @sty_name.24824, i64 14, i64 %null_ext72, ptr @src_file.24825, i64 101, i64 447)
   %qualified_ptr73 = getelementptr inbounds nuw %"@std::lsp::Sym", ptr %s69, i32 0, i32 2
   %qualified74 = load ptr, ptr %qualified_ptr73, align 8
   %20 = call i64 @strlen(ptr %qualified74)
@@ -325367,7 +325366,7 @@ if_then67:                                        ; preds = %ifcont46
   %cast82 = ptrtoint ptr %r81 to i64
   %null_chk83 = icmp eq i64 %cast82, 0
   %null_ext84 = zext i1 %null_chk83 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24827, i64 6, ptr @sty_name.24828, i64 37, i64 %null_ext84, ptr @src_file.24829, i64 101, i64 445)
+  call void @avra_null_deref_trap(ptr @fld_name.24827, i64 6, ptr @sty_name.24828, i64 37, i64 %null_ext84, ptr @src_file.24829, i64 101, i64 447)
   %reason_ptr = getelementptr inbounds nuw %"@std::avrac::docs::gen::GenStubResult", ptr %r81, i32 0, i32 2
   %reason = load ptr, ptr %reason_ptr, align 8
   %25 = call i64 @strlen(ptr %22)
@@ -325390,7 +325389,7 @@ if_else68:                                        ; preds = %ifcont46
   %cast93 = ptrtoint ptr %s92 to i64
   %null_chk94 = icmp eq i64 %cast93, 0
   %null_ext95 = zext i1 %null_chk94 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24830, i64 4, ptr @sty_name.24831, i64 14, i64 %null_ext95, ptr @src_file.24832, i64 101, i64 447)
+  call void @avra_null_deref_trap(ptr @fld_name.24830, i64 4, ptr @sty_name.24831, i64 14, i64 %null_ext95, ptr @src_file.24832, i64 101, i64 449)
   %file_ptr96 = getelementptr inbounds nuw %"@std::lsp::Sym", ptr %s92, i32 0, i32 5
   %file97 = load ptr, ptr %file_ptr96, align 8
   %31 = call i64 @strlen(ptr %file97)
@@ -325408,19 +325407,19 @@ if_else68:                                        ; preds = %ifcont46
   %cast105 = ptrtoint ptr %s104 to i64
   %null_chk106 = icmp eq i64 %cast105, 0
   %null_ext107 = zext i1 %null_chk106 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24834, i64 4, ptr @sty_name.24835, i64 14, i64 %null_ext107, ptr @src_file.24836, i64 101, i64 447)
+  call void @avra_null_deref_trap(ptr @fld_name.24834, i64 4, ptr @sty_name.24835, i64 14, i64 %null_ext107, ptr @src_file.24836, i64 101, i64 449)
   %span_ptr108 = getelementptr inbounds nuw %"@std::lsp::Sym", ptr %s104, i32 0, i32 6
   %span109 = load ptr, ptr %span_ptr108, align 8
   %cast110 = ptrtoint ptr %span109 to i64
   %null_chk111 = icmp eq i64 %cast110, 0
   %null_ext112 = zext i1 %null_chk111 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24837, i64 5, ptr @sty_name.24838, i64 18, i64 %null_ext112, ptr @src_file.24839, i64 101, i64 447)
+  call void @avra_null_deref_trap(ptr @fld_name.24837, i64 5, ptr @sty_name.24838, i64 18, i64 %null_ext112, ptr @src_file.24839, i64 101, i64 449)
   %start_ptr113 = getelementptr inbounds nuw %"@std::lsp::LspSpan", ptr %span109, i32 0, i32 0
   %start114 = load ptr, ptr %start_ptr113, align 8
   %cast115 = ptrtoint ptr %start114 to i64
   %null_chk116 = icmp eq i64 %cast115, 0
   %null_ext117 = zext i1 %null_chk116 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24840, i64 4, ptr @sty_name.24841, i64 17, i64 %null_ext117, ptr @src_file.24842, i64 101, i64 447)
+  call void @avra_null_deref_trap(ptr @fld_name.24840, i64 4, ptr @sty_name.24841, i64 17, i64 %null_ext117, ptr @src_file.24842, i64 101, i64 449)
   %line_ptr118 = getelementptr inbounds nuw %"@std::lsp::LspPos", ptr %start114, i32 0, i32 0
   %line119 = load i64, ptr %line_ptr118, align 8
   %36 = call ptr @avra_rc_alloc(i64 32)
@@ -325452,7 +325451,7 @@ if_else68:                                        ; preds = %ifcont46
   %cast134 = ptrtoint ptr %s133 to i64
   %null_chk135 = icmp eq i64 %cast134, 0
   %null_ext136 = zext i1 %null_chk135 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24845, i64 9, ptr @sty_name.24846, i64 14, i64 %null_ext136, ptr @src_file.24847, i64 101, i64 447)
+  call void @avra_null_deref_trap(ptr @fld_name.24845, i64 9, ptr @sty_name.24846, i64 14, i64 %null_ext136, ptr @src_file.24847, i64 101, i64 449)
   %qualified_ptr137 = getelementptr inbounds nuw %"@std::lsp::Sym", ptr %s133, i32 0, i32 2
   %qualified138 = load ptr, ptr %qualified_ptr137, align 8
   %48 = call i64 @strlen(ptr %45)
@@ -326449,7 +326448,7 @@ ifcont387:                                        ; preds = %if_else390
   %cast393 = ptrtoint ptr %parsed392 to i64
   %null_chk = icmp eq i64 %cast393, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24995, i64 9, ptr @sty_name.24996, i64 38, i64 %null_ext, ptr @src_file.24997, i64 101, i64 635)
+  call void @avra_null_deref_trap(ptr @fld_name.24995, i64 9, ptr @sty_name.24996, i64 38, i64 %null_ext, ptr @src_file.24997, i64 101, i64 637)
   %had_error_ptr = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed392, i32 0, i32 1
   %had_error = load i64, ptr %had_error_ptr, align 8
   %l_bool394 = icmp ne i64 %had_error, 0
@@ -326466,7 +326465,7 @@ sc_rhs395:                                        ; preds = %ifcont387
   %cast399 = ptrtoint ptr %parsed398 to i64
   %null_chk400 = icmp eq i64 %cast399, 0
   %null_ext401 = zext i1 %null_chk400 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.24998, i64 5, ptr @sty_name.24999, i64 38, i64 %null_ext401, ptr @src_file.25000, i64 101, i64 635)
+  call void @avra_null_deref_trap(ptr @fld_name.24998, i64 5, ptr @sty_name.24999, i64 38, i64 %null_ext401, ptr @src_file.25000, i64 101, i64 637)
   %stmts_ptr = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed398, i32 0, i32 0
   %stmts = load ptr, ptr %stmts_ptr, align 8
   %eq402 = icmp eq ptr %stmts, null
@@ -326500,7 +326499,7 @@ ifcont410:                                        ; preds = %if_else413
   %cast440 = ptrtoint ptr %parsed439 to i64
   %null_chk441 = icmp eq i64 %cast440, 0
   %null_ext442 = zext i1 %null_chk441 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25008, i64 5, ptr @sty_name.25009, i64 38, i64 %null_ext442, ptr @src_file.25010, i64 101, i64 648)
+  call void @avra_null_deref_trap(ptr @fld_name.25008, i64 5, ptr @sty_name.25009, i64 38, i64 %null_ext442, ptr @src_file.25010, i64 101, i64 650)
   %stmts_ptr443 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed439, i32 0, i32 0
   %stmts444 = load ptr, ptr %stmts_ptr443, align 8
   %test_dir445 = load ptr, ptr %test_dir, align 8
@@ -326511,7 +326510,7 @@ ifcont410:                                        ; preds = %if_else413
   %cast448 = ptrtoint ptr %mod_resolved447 to i64
   %null_chk449 = icmp eq i64 %cast448, 0
   %null_ext450 = zext i1 %null_chk449 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25011, i64 9, ptr @sty_name.25012, i64 55, i64 %null_ext450, ptr @src_file.25013, i64 101, i64 649)
+  call void @avra_null_deref_trap(ptr @fld_name.25011, i64 9, ptr @sty_name.25012, i64 55, i64 %null_ext450, ptr @src_file.25013, i64 101, i64 651)
   %had_error_ptr451 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved447, i32 0, i32 2
   %had_error452 = load i64, ptr %had_error_ptr451, align 8
   %if_cond454 = icmp ne i64 %had_error452, 0
@@ -326522,7 +326521,7 @@ if_then412:                                       ; preds = %sc_merge397
   %cast415 = ptrtoint ptr %parsed414 to i64
   %null_chk416 = icmp eq i64 %cast415, 0
   %null_ext417 = zext i1 %null_chk416 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25001, i64 3, ptr @sty_name.25002, i64 38, i64 %null_ext417, ptr @src_file.25003, i64 101, i64 636)
+  call void @avra_null_deref_trap(ptr @fld_name.25001, i64 3, ptr @sty_name.25002, i64 38, i64 %null_ext417, ptr @src_file.25003, i64 101, i64 638)
   %bag_ptr = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed414, i32 0, i32 3
   %bag = load ptr, ptr %bag_ptr, align 8
   %165 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag)
@@ -326556,7 +326555,7 @@ if_then421:                                       ; preds = %if_then412
   %cast426 = ptrtoint ptr %parsed425 to i64
   %null_chk427 = icmp eq i64 %cast426, 0
   %null_ext428 = zext i1 %null_chk427 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25004, i64 3, ptr @sty_name.25005, i64 38, i64 %null_ext428, ptr @src_file.25006, i64 101, i64 637)
+  call void @avra_null_deref_trap(ptr @fld_name.25004, i64 3, ptr @sty_name.25005, i64 38, i64 %null_ext428, ptr @src_file.25006, i64 101, i64 639)
   %bag_ptr429 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed425, i32 0, i32 3
   %bag430 = load ptr, ptr %bag_ptr429, align 8
   %171 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr %content423, ptr %path424, ptr %bag430)
@@ -326570,7 +326569,7 @@ ifcont453:                                        ; preds = %if_else456
   %cast481 = ptrtoint ptr %mod_resolved480 to i64
   %null_chk482 = icmp eq i64 %cast481, 0
   %null_ext483 = zext i1 %null_chk482 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25019, i64 6, ptr @sty_name.25020, i64 55, i64 %null_ext483, ptr @src_file.25021, i64 101, i64 653)
+  call void @avra_null_deref_trap(ptr @fld_name.25019, i64 6, ptr @sty_name.25020, i64 55, i64 %null_ext483, ptr @src_file.25021, i64 101, i64 655)
   %loaded_ptr = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved480, i32 0, i32 1
   %loaded = load ptr, ptr %loaded_ptr, align 8
   store ptr %loaded, ptr %shared_loaded, align 8
@@ -326578,7 +326577,7 @@ ifcont453:                                        ; preds = %if_else456
   %cast485 = ptrtoint ptr %mod_resolved484 to i64
   %null_chk486 = icmp eq i64 %cast485, 0
   %null_ext487 = zext i1 %null_chk486 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25022, i64 5, ptr @sty_name.25023, i64 55, i64 %null_ext487, ptr @src_file.25024, i64 101, i64 658)
+  call void @avra_null_deref_trap(ptr @fld_name.25022, i64 5, ptr @sty_name.25023, i64 55, i64 %null_ext487, ptr @src_file.25024, i64 101, i64 660)
   %stmts_ptr488 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved484, i32 0, i32 0
   %stmts489 = load ptr, ptr %stmts_ptr488, align 8
   %172 = call ptr @"@std::avrac::test_runner::split_package_modules"(ptr %stmts489)
@@ -326587,7 +326586,7 @@ ifcont453:                                        ; preds = %if_else456
   %cast491 = ptrtoint ptr %split490 to i64
   %null_chk492 = icmp eq i64 %cast491, 0
   %null_ext493 = zext i1 %null_chk492 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25025, i64 8, ptr @sty_name.25026, i64 38, i64 %null_ext493, ptr @src_file.25027, i64 101, i64 659)
+  call void @avra_null_deref_trap(ptr @fld_name.25025, i64 8, ptr @sty_name.25026, i64 38, i64 %null_ext493, ptr @src_file.25027, i64 101, i64 661)
   %packages_ptr = getelementptr inbounds nuw %"@std::avrac::test_runner::PackageSplit", ptr %split490, i32 0, i32 0
   %packages494 = load ptr, ptr %packages_ptr, align 8
   %packages495 = load ptr, ptr %packages, align 8
@@ -326614,7 +326613,7 @@ ifcont453:                                        ; preds = %if_else456
   %cast502 = ptrtoint ptr %split501 to i64
   %null_chk503 = icmp eq i64 %cast502, 0
   %null_ext504 = zext i1 %null_chk503 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25028, i64 4, ptr @sty_name.25029, i64 38, i64 %null_ext504, ptr @src_file.25030, i64 101, i64 660)
+  call void @avra_null_deref_trap(ptr @fld_name.25028, i64 4, ptr @sty_name.25029, i64 38, i64 %null_ext504, ptr @src_file.25030, i64 101, i64 662)
   %body_ptr = getelementptr inbounds nuw %"@std::avrac::test_runner::PackageSplit", ptr %split501, i32 0, i32 1
   %body = load ptr, ptr %body_ptr, align 8
   %slot_base505 = ptrtoint ptr %177 to i64
@@ -326669,7 +326668,7 @@ if_then455:                                       ; preds = %ifcont410
   %cast471 = ptrtoint ptr %mod_resolved470 to i64
   %null_chk472 = icmp eq i64 %cast471, 0
   %null_ext473 = zext i1 %null_chk472 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25016, i64 13, ptr @sty_name.25017, i64 55, i64 %null_ext473, ptr @src_file.25018, i64 101, i64 650)
+  call void @avra_null_deref_trap(ptr @fld_name.25016, i64 13, ptr @sty_name.25017, i64 55, i64 %null_ext473, ptr @src_file.25018, i64 101, i64 652)
   %error_message_ptr = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved470, i32 0, i32 3
   %error_message = load ptr, ptr %error_message_ptr, align 8
   %189 = call i64 @strlen(ptr %186)
@@ -326849,7 +326848,7 @@ ifcont524:                                        ; preds = %if_else527
   %cast620 = ptrtoint ptr %named619 to i64
   %null_chk621 = icmp eq i64 %cast620, 0
   %null_ext622 = zext i1 %null_chk621 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25034, i64 3, ptr @sty_name.25035, i64 46, i64 %null_ext622, ptr @src_file.25036, i64 101, i64 694)
+  call void @avra_null_deref_trap(ptr @fld_name.25034, i64 3, ptr @sty_name.25035, i64 46, i64 %null_ext622, ptr @src_file.25036, i64 101, i64 696)
   %bag_ptr623 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named619, i32 0, i32 3
   %bag624 = load ptr, ptr %bag_ptr623, align 8
   %218 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag624)
@@ -326870,7 +326869,7 @@ sc_rhs627:                                        ; preds = %ifcont524
   %cast631 = ptrtoint ptr %named630 to i64
   %null_chk632 = icmp eq i64 %cast631, 0
   %null_ext633 = zext i1 %null_chk632 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25037, i64 9, ptr @sty_name.25038, i64 46, i64 %null_ext633, ptr @src_file.25039, i64 101, i64 694)
+  call void @avra_null_deref_trap(ptr @fld_name.25037, i64 9, ptr @sty_name.25038, i64 46, i64 %null_ext633, ptr @src_file.25039, i64 101, i64 696)
   %had_error_ptr634 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named630, i32 0, i32 1
   %had_error635 = load i64, ptr %had_error_ptr634, align 8
   %r_bool636 = icmp ne i64 %had_error635, 0
@@ -326899,7 +326898,7 @@ ifcont642:                                        ; preds = %if_else645, %if_the
   %cast659 = ptrtoint ptr %named658 to i64
   %null_chk660 = icmp eq i64 %cast659, 0
   %null_ext661 = zext i1 %null_chk660 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25048, i64 5, ptr @sty_name.25049, i64 46, i64 %null_ext661, ptr @src_file.25050, i64 101, i64 698)
+  call void @avra_null_deref_trap(ptr @fld_name.25048, i64 5, ptr @sty_name.25049, i64 46, i64 %null_ext661, ptr @src_file.25050, i64 101, i64 700)
   %stmts_ptr662 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named658, i32 0, i32 0
   %stmts663 = load ptr, ptr %stmts_ptr662, align 8
   %220 = call ptr @"@std::avrac::typeck::typecheck_program"(ptr %stmts663)
@@ -326908,7 +326907,7 @@ ifcont642:                                        ; preds = %if_else645, %if_the
   %cast665 = ptrtoint ptr %tc_result664 to i64
   %null_chk666 = icmp eq i64 %cast665, 0
   %null_ext667 = zext i1 %null_chk666 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25051, i64 3, ptr @sty_name.25052, i64 36, i64 %null_ext667, ptr @src_file.25053, i64 101, i64 699)
+  call void @avra_null_deref_trap(ptr @fld_name.25051, i64 3, ptr @sty_name.25052, i64 36, i64 %null_ext667, ptr @src_file.25053, i64 101, i64 701)
   %bag_ptr668 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result664, i32 0, i32 2
   %bag669 = load ptr, ptr %bag_ptr668, align 8
   %221 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag669)
@@ -326921,7 +326920,7 @@ if_then644:                                       ; preds = %sc_merge629
   %cast647 = ptrtoint ptr %named646 to i64
   %null_chk648 = icmp eq i64 %cast647, 0
   %null_ext649 = zext i1 %null_chk648 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25042, i64 3, ptr @sty_name.25043, i64 46, i64 %null_ext649, ptr @src_file.25044, i64 101, i64 695)
+  call void @avra_null_deref_trap(ptr @fld_name.25042, i64 3, ptr @sty_name.25043, i64 46, i64 %null_ext649, ptr @src_file.25044, i64 101, i64 697)
   %bag_ptr650 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named646, i32 0, i32 3
   %bag651 = load ptr, ptr %bag_ptr650, align 8
   %222 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr @.str.25040, ptr @.str.25041, ptr %bag651)
@@ -326929,7 +326928,7 @@ if_then644:                                       ; preds = %sc_merge629
   %cast653 = ptrtoint ptr %named652 to i64
   %null_chk654 = icmp eq i64 %cast653, 0
   %null_ext655 = zext i1 %null_chk654 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25045, i64 13, ptr @sty_name.25046, i64 46, i64 %null_ext655, ptr @src_file.25047, i64 101, i64 696)
+  call void @avra_null_deref_trap(ptr @fld_name.25045, i64 13, ptr @sty_name.25046, i64 46, i64 %null_ext655, ptr @src_file.25047, i64 101, i64 698)
   %error_message_ptr656 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named652, i32 0, i32 2
   %error_message657 = load ptr, ptr %error_message_ptr656, align 8
   %223 = call i64 @fail(ptr %error_message657)
@@ -326943,14 +326942,14 @@ ifcont671:                                        ; preds = %if_else674, %if_the
   %cast682 = ptrtoint ptr %tc_result681 to i64
   %null_chk683 = icmp eq i64 %cast682, 0
   %null_ext684 = zext i1 %null_chk683 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25060, i64 5, ptr @sty_name.25061, i64 36, i64 %null_ext684, ptr @src_file.25062, i64 101, i64 703)
+  call void @avra_null_deref_trap(ptr @fld_name.25060, i64 5, ptr @sty_name.25061, i64 36, i64 %null_ext684, ptr @src_file.25062, i64 101, i64 705)
   %stmts_ptr685 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result681, i32 0, i32 0
   %stmts686 = load ptr, ptr %stmts_ptr685, align 8
   %tc_result687 = load ptr, ptr %tc_result, align 8
   %cast688 = ptrtoint ptr %tc_result687 to i64
   %null_chk689 = icmp eq i64 %cast688, 0
   %null_ext690 = zext i1 %null_chk689 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25063, i64 11, ptr @sty_name.25064, i64 36, i64 %null_ext690, ptr @src_file.25065, i64 101, i64 703)
+  call void @avra_null_deref_trap(ptr @fld_name.25063, i64 11, ptr @sty_name.25064, i64 36, i64 %null_ext690, ptr @src_file.25065, i64 101, i64 705)
   %trait_impls_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result687, i32 0, i32 3
   %trait_impls = load ptr, ptr %trait_impls_ptr, align 8
   %224 = call ptr @"@std::avrac::features::generics::mono::monomorphize"(ptr %stmts686, ptr %trait_impls)
@@ -326959,7 +326958,7 @@ ifcont671:                                        ; preds = %if_else674, %if_the
   %cast692 = ptrtoint ptr %mono691 to i64
   %null_chk693 = icmp eq i64 %cast692, 0
   %null_ext694 = zext i1 %null_chk693 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25066, i64 3, ptr @sty_name.25067, i64 49, i64 %null_ext694, ptr @src_file.25068, i64 101, i64 704)
+  call void @avra_null_deref_trap(ptr @fld_name.25066, i64 3, ptr @sty_name.25067, i64 49, i64 %null_ext694, ptr @src_file.25068, i64 101, i64 706)
   %bag_ptr695 = getelementptr inbounds nuw %"@std::avrac::features::generics::mono::MonoResult", ptr %mono691, i32 0, i32 1
   %bag696 = load ptr, ptr %bag_ptr695, align 8
   %225 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag696)
@@ -326972,7 +326971,7 @@ if_then673:                                       ; preds = %ifcont642
   %cast676 = ptrtoint ptr %tc_result675 to i64
   %null_chk677 = icmp eq i64 %cast676, 0
   %null_ext678 = zext i1 %null_chk677 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25056, i64 3, ptr @sty_name.25057, i64 36, i64 %null_ext678, ptr @src_file.25058, i64 101, i64 700)
+  call void @avra_null_deref_trap(ptr @fld_name.25056, i64 3, ptr @sty_name.25057, i64 36, i64 %null_ext678, ptr @src_file.25058, i64 101, i64 702)
   %bag_ptr679 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result675, i32 0, i32 2
   %bag680 = load ptr, ptr %bag_ptr679, align 8
   %226 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr @.str.25054, ptr @.str.25055, ptr %bag680)
@@ -327011,7 +327010,7 @@ if_then700:                                       ; preds = %ifcont671
   %cast703 = ptrtoint ptr %mono702 to i64
   %null_chk704 = icmp eq i64 %cast703, 0
   %null_ext705 = zext i1 %null_chk704 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25071, i64 3, ptr @sty_name.25072, i64 49, i64 %null_ext705, ptr @src_file.25073, i64 101, i64 705)
+  call void @avra_null_deref_trap(ptr @fld_name.25071, i64 3, ptr @sty_name.25072, i64 49, i64 %null_ext705, ptr @src_file.25073, i64 101, i64 707)
   %bag_ptr706 = getelementptr inbounds nuw %"@std::avrac::features::generics::mono::MonoResult", ptr %mono702, i32 0, i32 1
   %bag707 = load ptr, ptr %bag_ptr706, align 8
   %235 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr @.str.25069, ptr @.str.25070, ptr %bag707)
@@ -327163,7 +327162,7 @@ ifcont732:                                        ; preds = %if_else735
   %cast899 = ptrtoint ptr %mono898 to i64
   %null_chk900 = icmp eq i64 %cast899, 0
   %null_ext901 = zext i1 %null_chk900 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25109, i64 5, ptr @sty_name.25110, i64 49, i64 %null_ext901, ptr @src_file.25111, i64 101, i64 745)
+  call void @avra_null_deref_trap(ptr @fld_name.25109, i64 5, ptr @sty_name.25110, i64 49, i64 %null_ext901, ptr @src_file.25111, i64 101, i64 747)
   %stmts_ptr902 = getelementptr inbounds nuw %"@std::avrac::features::generics::mono::MonoResult", ptr %mono898, i32 0, i32 0
   %stmts903 = load ptr, ptr %stmts_ptr902, align 8
   %ir_path904 = load ptr, ptr %ir_path, align 8
@@ -327171,7 +327170,7 @@ ifcont732:                                        ; preds = %if_else735
   %cast906 = ptrtoint ptr %named905 to i64
   %null_chk907 = icmp eq i64 %cast906, 0
   %null_ext908 = zext i1 %null_chk907 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25112, i64 8, ptr @sty_name.25113, i64 46, i64 %null_ext908, ptr @src_file.25114, i64 101, i64 745)
+  call void @avra_null_deref_trap(ptr @fld_name.25112, i64 8, ptr @sty_name.25113, i64 46, i64 %null_ext908, ptr @src_file.25114, i64 101, i64 747)
   %type_reg_ptr909 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named905, i32 0, i32 4
   %type_reg910 = load ptr, ptr %type_reg_ptr909, align 8
   %cov_dir911 = load ptr, ptr %cov_dir, align 8
@@ -327223,7 +327222,7 @@ if_then734:                                       ; preds = %ife_end
   %cast751 = ptrtoint ptr %mono750 to i64
   %null_chk752 = icmp eq i64 %cast751, 0
   %null_ext753 = zext i1 %null_chk752 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25082, i64 5, ptr @sty_name.25083, i64 49, i64 %null_ext753, ptr @src_file.25084, i64 101, i64 724)
+  call void @avra_null_deref_trap(ptr @fld_name.25082, i64 5, ptr @sty_name.25083, i64 49, i64 %null_ext753, ptr @src_file.25084, i64 101, i64 726)
   %stmts_ptr754 = getelementptr inbounds nuw %"@std::avrac::features::generics::mono::MonoResult", ptr %mono750, i32 0, i32 0
   %stmts755 = load ptr, ptr %stmts_ptr754, align 8
   %obj_path756 = load ptr, ptr %obj_path, align 8
@@ -327231,7 +327230,7 @@ if_then734:                                       ; preds = %ife_end
   %cast758 = ptrtoint ptr %named757 to i64
   %null_chk759 = icmp eq i64 %cast758, 0
   %null_ext760 = zext i1 %null_chk759 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25085, i64 8, ptr @sty_name.25086, i64 46, i64 %null_ext760, ptr @src_file.25087, i64 101, i64 724)
+  call void @avra_null_deref_trap(ptr @fld_name.25085, i64 8, ptr @sty_name.25086, i64 46, i64 %null_ext760, ptr @src_file.25087, i64 101, i64 726)
   %type_reg_ptr = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named757, i32 0, i32 4
   %type_reg = load ptr, ptr %type_reg_ptr, align 8
   %299 = call ptr @"@std::avrac::codegen::setup::codegen_and_emit_object"(ptr %stmts755, ptr %obj_path756, ptr %type_reg)
@@ -327392,7 +327391,7 @@ march_arm763:                                     ; preds = %march_next
   br label %match_end
 
 march_next764:                                    ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.25088, i64 %tag, ptr @mu_file.25089, i64 724)
+  call void @avra_match_unreachable(ptr @.match_fn.25088, i64 %tag, ptr @mu_file.25089, i64 726)
   unreachable
 
 ifcont834:                                        ; preds = %if_else837, %if_then836
@@ -327502,7 +327501,7 @@ march_arm926:                                     ; preds = %march_next923
   br label %match_end920
 
 march_next927:                                    ; preds = %march_next923
-  call void @avra_match_unreachable(ptr @.match_fn.25116, i64 %tag919, ptr @mu_file.25117, i64 745)
+  call void @avra_match_unreachable(ptr @.match_fn.25116, i64 %tag919, ptr @mu_file.25117, i64 747)
   unreachable
 
 ifcont973:                                        ; preds = %if_else976, %if_then975
@@ -328178,7 +328177,7 @@ parm_body:                                        ; preds = %ife_end1313
   %cast1325 = ptrtoint ptr %result1324 to i64
   %null_chk1326 = icmp eq i64 %cast1325, 0
   %null_ext1327 = zext i1 %null_chk1326 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25165, i64 9, ptr @sty_name.25166, i64 31, i64 %null_ext1327, ptr @src_file.25167, i64 101, i64 821)
+  call void @avra_null_deref_trap(ptr @fld_name.25165, i64 9, ptr @sty_name.25166, i64 31, i64 %null_ext1327, ptr @src_file.25167, i64 101, i64 823)
   %had_error_ptr1328 = getelementptr inbounds nuw %"@std::avrac::parse::ParseResult", ptr %result1324, i32 0, i32 1
   %had_error1329 = load i64, ptr %had_error_ptr1328, align 8
   %l_bool1330 = icmp ne i64 %had_error1329, 0
@@ -328195,7 +328194,7 @@ sc_rhs1331:                                       ; preds = %parm_body
   %cast1335 = ptrtoint ptr %result1334 to i64
   %null_chk1336 = icmp eq i64 %cast1335, 0
   %null_ext1337 = zext i1 %null_chk1336 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25168, i64 4, ptr @sty_name.25169, i64 31, i64 %null_ext1337, ptr @src_file.25170, i64 101, i64 821)
+  call void @avra_null_deref_trap(ptr @fld_name.25168, i64 4, ptr @sty_name.25169, i64 31, i64 %null_ext1337, ptr @src_file.25170, i64 101, i64 823)
   %expr_ptr = getelementptr inbounds nuw %"@std::avrac::parse::ParseResult", ptr %result1334, i32 0, i32 0
   %expr = load ptr, ptr %expr_ptr, align 8
   %eq1338 = icmp eq ptr %expr, null
@@ -328226,7 +328225,7 @@ ifcont1346:                                       ; preds = %if_else1349, %if_th
   %cast1357 = ptrtoint ptr %result1356 to i64
   %null_chk1358 = icmp eq i64 %cast1357, 0
   %null_ext1359 = zext i1 %null_chk1358 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25174, i64 4, ptr @sty_name.25175, i64 31, i64 %null_ext1359, ptr @src_file.25176, i64 101, i64 824)
+  call void @avra_null_deref_trap(ptr @fld_name.25174, i64 4, ptr @sty_name.25175, i64 31, i64 %null_ext1359, ptr @src_file.25176, i64 101, i64 826)
   %expr_ptr1360 = getelementptr inbounds nuw %"@std::avrac::parse::ParseResult", ptr %result1356, i32 0, i32 0
   %expr1361 = load ptr, ptr %expr_ptr1360, align 8
   %618 = call ptr @"@std::avrac::core::ast::render_expr"(ptr %expr1361)
@@ -328239,7 +328238,7 @@ if_then1348:                                      ; preds = %sc_merge1333
   %cast1351 = ptrtoint ptr %result1350 to i64
   %null_chk1352 = icmp eq i64 %cast1351, 0
   %null_ext1353 = zext i1 %null_chk1352 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25171, i64 13, ptr @sty_name.25172, i64 31, i64 %null_ext1353, ptr @src_file.25173, i64 101, i64 822)
+  call void @avra_null_deref_trap(ptr @fld_name.25171, i64 13, ptr @sty_name.25172, i64 31, i64 %null_ext1353, ptr @src_file.25173, i64 101, i64 824)
   %error_message_ptr1354 = getelementptr inbounds nuw %"@std::avrac::parse::ParseResult", ptr %result1350, i32 0, i32 2
   %error_message1355 = load ptr, ptr %error_message_ptr1354, align 8
   %620 = call i64 @fail(ptr %error_message1355)
@@ -328256,7 +328255,7 @@ parm_body1363:                                    ; preds = %parm_next
   %cast1370 = ptrtoint ptr %result1369 to i64
   %null_chk1371 = icmp eq i64 %cast1370, 0
   %null_ext1372 = zext i1 %null_chk1371 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25178, i64 9, ptr @sty_name.25179, i64 38, i64 %null_ext1372, ptr @src_file.25180, i64 101, i64 830)
+  call void @avra_null_deref_trap(ptr @fld_name.25178, i64 9, ptr @sty_name.25179, i64 38, i64 %null_ext1372, ptr @src_file.25180, i64 101, i64 832)
   %had_error_ptr1373 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %result1369, i32 0, i32 1
   %had_error1374 = load i64, ptr %had_error_ptr1373, align 8
   %l_bool1375 = icmp ne i64 %had_error1374, 0
@@ -328273,7 +328272,7 @@ sc_rhs1376:                                       ; preds = %parm_body1363
   %cast1380 = ptrtoint ptr %result1379 to i64
   %null_chk1381 = icmp eq i64 %cast1380, 0
   %null_ext1382 = zext i1 %null_chk1381 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25181, i64 5, ptr @sty_name.25182, i64 38, i64 %null_ext1382, ptr @src_file.25183, i64 101, i64 830)
+  call void @avra_null_deref_trap(ptr @fld_name.25181, i64 5, ptr @sty_name.25182, i64 38, i64 %null_ext1382, ptr @src_file.25183, i64 101, i64 832)
   %stmts_ptr1383 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %result1379, i32 0, i32 0
   %stmts1384 = load ptr, ptr %stmts_ptr1383, align 8
   %eq1385 = icmp eq ptr %stmts1384, null
@@ -328304,7 +328303,7 @@ ifcont1393:                                       ; preds = %if_else1396, %if_th
   %cast1404 = ptrtoint ptr %result1403 to i64
   %null_chk1405 = icmp eq i64 %cast1404, 0
   %null_ext1406 = zext i1 %null_chk1405 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25187, i64 5, ptr @sty_name.25188, i64 38, i64 %null_ext1406, ptr @src_file.25189, i64 101, i64 833)
+  call void @avra_null_deref_trap(ptr @fld_name.25187, i64 5, ptr @sty_name.25188, i64 38, i64 %null_ext1406, ptr @src_file.25189, i64 101, i64 835)
   %stmts_ptr1407 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %result1403, i32 0, i32 0
   %stmts1408 = load ptr, ptr %stmts_ptr1407, align 8
   %623 = call ptr @"@std::avrac::core::ast::render_stmt_list"(ptr %stmts1408)
@@ -328317,7 +328316,7 @@ if_then1395:                                      ; preds = %sc_merge1378
   %cast1398 = ptrtoint ptr %result1397 to i64
   %null_chk1399 = icmp eq i64 %cast1398, 0
   %null_ext1400 = zext i1 %null_chk1399 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25184, i64 13, ptr @sty_name.25185, i64 38, i64 %null_ext1400, ptr @src_file.25186, i64 101, i64 831)
+  call void @avra_null_deref_trap(ptr @fld_name.25184, i64 13, ptr @sty_name.25185, i64 38, i64 %null_ext1400, ptr @src_file.25186, i64 101, i64 833)
   %error_message_ptr1401 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %result1397, i32 0, i32 2
   %error_message1402 = load ptr, ptr %error_message_ptr1401, align 8
   %625 = call i64 @fail(ptr %error_message1402)
@@ -328334,7 +328333,7 @@ parm_body1410:                                    ; preds = %parm_next1364
   %cast1417 = ptrtoint ptr %result1416 to i64
   %null_chk1418 = icmp eq i64 %cast1417, 0
   %null_ext1419 = zext i1 %null_chk1418 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25191, i64 9, ptr @sty_name.25192, i64 39, i64 %null_ext1419, ptr @src_file.25193, i64 101, i64 839)
+  call void @avra_null_deref_trap(ptr @fld_name.25191, i64 9, ptr @sty_name.25192, i64 39, i64 %null_ext1419, ptr @src_file.25193, i64 101, i64 841)
   %had_error_ptr1420 = getelementptr inbounds nuw %"@std::avrac::features::eval::EvalResult", ptr %result1416, i32 0, i32 1
   %had_error1421 = load i64, ptr %had_error_ptr1420, align 8
   %l_bool1422 = icmp ne i64 %had_error1421, 0
@@ -328351,7 +328350,7 @@ sc_rhs1423:                                       ; preds = %parm_body1410
   %cast1427 = ptrtoint ptr %result1426 to i64
   %null_chk1428 = icmp eq i64 %cast1427, 0
   %null_ext1429 = zext i1 %null_chk1428 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25194, i64 5, ptr @sty_name.25195, i64 39, i64 %null_ext1429, ptr @src_file.25196, i64 101, i64 839)
+  call void @avra_null_deref_trap(ptr @fld_name.25194, i64 5, ptr @sty_name.25195, i64 39, i64 %null_ext1429, ptr @src_file.25196, i64 101, i64 841)
   %value_ptr = getelementptr inbounds nuw %"@std::avrac::features::eval::EvalResult", ptr %result1426, i32 0, i32 0
   %value = load ptr, ptr %value_ptr, align 8
   %eq1430 = icmp eq ptr %value, null
@@ -328382,7 +328381,7 @@ ifcont1438:                                       ; preds = %if_else1441, %if_th
   %cast1449 = ptrtoint ptr %result1448 to i64
   %null_chk1450 = icmp eq i64 %cast1449, 0
   %null_ext1451 = zext i1 %null_chk1450 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25200, i64 5, ptr @sty_name.25201, i64 39, i64 %null_ext1451, ptr @src_file.25202, i64 101, i64 842)
+  call void @avra_null_deref_trap(ptr @fld_name.25200, i64 5, ptr @sty_name.25201, i64 39, i64 %null_ext1451, ptr @src_file.25202, i64 101, i64 844)
   %value_ptr1452 = getelementptr inbounds nuw %"@std::avrac::features::eval::EvalResult", ptr %result1448, i32 0, i32 0
   %value1453 = load ptr, ptr %value_ptr1452, align 8
   %628 = call ptr @"@std::avrac::features::eval::render_value"(ptr %value1453)
@@ -328395,7 +328394,7 @@ if_then1440:                                      ; preds = %sc_merge1425
   %cast1443 = ptrtoint ptr %result1442 to i64
   %null_chk1444 = icmp eq i64 %cast1443, 0
   %null_ext1445 = zext i1 %null_chk1444 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25197, i64 13, ptr @sty_name.25198, i64 39, i64 %null_ext1445, ptr @src_file.25199, i64 101, i64 840)
+  call void @avra_null_deref_trap(ptr @fld_name.25197, i64 13, ptr @sty_name.25198, i64 39, i64 %null_ext1445, ptr @src_file.25199, i64 101, i64 842)
   %error_message_ptr1446 = getelementptr inbounds nuw %"@std::avrac::features::eval::EvalResult", ptr %result1442, i32 0, i32 2
   %error_message1447 = load ptr, ptr %error_message_ptr1446, align 8
   %630 = call i64 @fail(ptr %error_message1447)
@@ -328466,7 +328465,7 @@ ife_end1484:                                      ; preds = %ife_else1487, %ife_
   %cast1497 = ptrtoint ptr %parsed1496 to i64
   %null_chk1498 = icmp eq i64 %cast1497, 0
   %null_ext1499 = zext i1 %null_chk1498 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25205, i64 9, ptr @sty_name.25206, i64 38, i64 %null_ext1499, ptr @src_file.25207, i64 101, i64 856)
+  call void @avra_null_deref_trap(ptr @fld_name.25205, i64 9, ptr @sty_name.25206, i64 38, i64 %null_ext1499, ptr @src_file.25207, i64 101, i64 858)
   %had_error_ptr1500 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed1496, i32 0, i32 1
   %had_error1501 = load i64, ptr %had_error_ptr1500, align 8
   %l_bool1502 = icmp ne i64 %had_error1501, 0
@@ -328490,7 +328489,7 @@ sc_rhs1503:                                       ; preds = %ife_end1484
   %cast1507 = ptrtoint ptr %parsed1506 to i64
   %null_chk1508 = icmp eq i64 %cast1507, 0
   %null_ext1509 = zext i1 %null_chk1508 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25208, i64 5, ptr @sty_name.25209, i64 38, i64 %null_ext1509, ptr @src_file.25210, i64 101, i64 856)
+  call void @avra_null_deref_trap(ptr @fld_name.25208, i64 5, ptr @sty_name.25209, i64 38, i64 %null_ext1509, ptr @src_file.25210, i64 101, i64 858)
   %stmts_ptr1510 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed1506, i32 0, i32 0
   %stmts1511 = load ptr, ptr %stmts_ptr1510, align 8
   %eq1512 = icmp eq ptr %stmts1511, null
@@ -328527,7 +328526,7 @@ ifcont1520:                                       ; preds = %if_else1523, %ifcon
   %cast1563 = ptrtoint ptr %check_pkg1562 to i64
   %null_chk1564 = icmp eq i64 %cast1563, 0
   %null_ext1565 = zext i1 %null_chk1564 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25223, i64 5, ptr @sty_name.25224, i64 54, i64 %null_ext1565, ptr @src_file.25225, i64 101, i64 864)
+  call void @avra_null_deref_trap(ptr @fld_name.25223, i64 5, ptr @sty_name.25224, i64 54, i64 %null_ext1565, ptr @src_file.25225, i64 101, i64 866)
   %found_ptr = getelementptr inbounds nuw %"@std::avrac::features::modules::package::PackageConfig", ptr %check_pkg1562, i32 0, i32 2
   %found = load i1, ptr %found_ptr, align 8
   br i1 %found, label %sc_rhs1566, label %sc_short1567
@@ -328537,7 +328536,7 @@ if_then1522:                                      ; preds = %sc_merge1505
   %cast1525 = ptrtoint ptr %parsed1524 to i64
   %null_chk1526 = icmp eq i64 %cast1525, 0
   %null_ext1527 = zext i1 %null_chk1526 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25211, i64 3, ptr @sty_name.25212, i64 38, i64 %null_ext1527, ptr @src_file.25213, i64 101, i64 857)
+  call void @avra_null_deref_trap(ptr @fld_name.25211, i64 3, ptr @sty_name.25212, i64 38, i64 %null_ext1527, ptr @src_file.25213, i64 101, i64 859)
   %bag_ptr1528 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed1524, i32 0, i32 3
   %bag1529 = load ptr, ptr %bag_ptr1528, align 8
   %641 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag1529)
@@ -328553,7 +328552,7 @@ ifcont1531:                                       ; preds = %if_else1534, %ifcon
   %cast1555 = ptrtoint ptr %parsed1554 to i64
   %null_chk1556 = icmp eq i64 %cast1555, 0
   %null_ext1557 = zext i1 %null_chk1556 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25220, i64 13, ptr @sty_name.25221, i64 38, i64 %null_ext1557, ptr @src_file.25222, i64 101, i64 860)
+  call void @avra_null_deref_trap(ptr @fld_name.25220, i64 13, ptr @sty_name.25221, i64 38, i64 %null_ext1557, ptr @src_file.25222, i64 101, i64 862)
   %error_message_ptr1558 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed1554, i32 0, i32 2
   %error_message1559 = load ptr, ptr %error_message_ptr1558, align 8
   %642 = call i64 @fail(ptr %error_message1559)
@@ -328575,7 +328574,7 @@ if_then1537:                                      ; preds = %if_then1533
   %cast1541 = ptrtoint ptr %parsed1540 to i64
   %null_chk1542 = icmp eq i64 %cast1541, 0
   %null_ext1543 = zext i1 %null_chk1542 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25214, i64 3, ptr @sty_name.25215, i64 38, i64 %null_ext1543, ptr @src_file.25216, i64 101, i64 858)
+  call void @avra_null_deref_trap(ptr @fld_name.25214, i64 3, ptr @sty_name.25215, i64 38, i64 %null_ext1543, ptr @src_file.25216, i64 101, i64 860)
   %bag_ptr1544 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed1540, i32 0, i32 3
   %bag1545 = load ptr, ptr %bag_ptr1544, align 8
   %643 = call i64 @"@std::avrac::diagnostics::render::render_bag_json"(ptr %check_path1539, ptr %bag1545)
@@ -328588,7 +328587,7 @@ if_else1538:                                      ; preds = %if_then1533
   %cast1549 = ptrtoint ptr %parsed1548 to i64
   %null_chk1550 = icmp eq i64 %cast1549, 0
   %null_ext1551 = zext i1 %null_chk1550 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25217, i64 3, ptr @sty_name.25218, i64 38, i64 %null_ext1551, ptr @src_file.25219, i64 101, i64 858)
+  call void @avra_null_deref_trap(ptr @fld_name.25217, i64 3, ptr @sty_name.25218, i64 38, i64 %null_ext1551, ptr @src_file.25219, i64 101, i64 860)
   %bag_ptr1552 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed1548, i32 0, i32 3
   %bag1553 = load ptr, ptr %bag_ptr1552, align 8
   %644 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr %check_source1546, ptr %check_path1547, ptr %bag1553)
@@ -328624,7 +328623,7 @@ ifcont1578:                                       ; preds = %if_else1581, %if_th
   %cast1609 = ptrtoint ptr %parsed1608 to i64
   %null_chk1610 = icmp eq i64 %cast1609, 0
   %null_ext1611 = zext i1 %null_chk1610 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25234, i64 5, ptr @sty_name.25235, i64 38, i64 %null_ext1611, ptr @src_file.25236, i64 101, i64 867)
+  call void @avra_null_deref_trap(ptr @fld_name.25234, i64 5, ptr @sty_name.25235, i64 38, i64 %null_ext1611, ptr @src_file.25236, i64 101, i64 869)
   %stmts_ptr1612 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed1608, i32 0, i32 0
   %stmts1613 = load ptr, ptr %stmts_ptr1612, align 8
   %645 = call ptr @"@std::avrac::desugar::desugar_program"(ptr %stmts1613)
@@ -328647,7 +328646,7 @@ ifcont1578:                                       ; preds = %if_else1581, %if_th
   %cast1624 = ptrtoint ptr %mod_resolved1623 to i64
   %null_chk1625 = icmp eq i64 %cast1624, 0
   %null_ext1626 = zext i1 %null_chk1625 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25237, i64 9, ptr @sty_name.25238, i64 55, i64 %null_ext1626, ptr @src_file.25239, i64 101, i64 870)
+  call void @avra_null_deref_trap(ptr @fld_name.25237, i64 9, ptr @sty_name.25238, i64 55, i64 %null_ext1626, ptr @src_file.25239, i64 101, i64 872)
   %had_error_ptr1627 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved1623, i32 0, i32 2
   %had_error1628 = load i64, ptr %had_error_ptr1627, align 8
   %if_cond1630 = icmp ne i64 %had_error1628, 0
@@ -328658,7 +328657,7 @@ if_then1580:                                      ; preds = %sc_merge1568
   %cast1583 = ptrtoint ptr %check_pkg1582 to i64
   %null_chk1584 = icmp eq i64 %cast1583, 0
   %null_ext1585 = zext i1 %null_chk1584 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25227, i64 4, ptr @sty_name.25228, i64 54, i64 %null_ext1585, ptr @src_file.25229, i64 101, i64 865)
+  call void @avra_null_deref_trap(ptr @fld_name.25227, i64 4, ptr @sty_name.25228, i64 54, i64 %null_ext1585, ptr @src_file.25229, i64 101, i64 867)
   %name_ptr = getelementptr inbounds nuw %"@std::avrac::features::modules::package::PackageConfig", ptr %check_pkg1582, i32 0, i32 0
   %name = load ptr, ptr %name_ptr, align 8
   %649 = call i64 @strlen(ptr @.str.25226)
@@ -328687,7 +328686,7 @@ if_then1580:                                      ; preds = %sc_merge1568
   %cast1599 = ptrtoint ptr %check_pkg1598 to i64
   %null_chk1600 = icmp eq i64 %cast1599, 0
   %null_ext1601 = zext i1 %null_chk1600 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25231, i64 7, ptr @sty_name.25232, i64 54, i64 %null_ext1601, ptr @src_file.25233, i64 101, i64 865)
+  call void @avra_null_deref_trap(ptr @fld_name.25231, i64 7, ptr @sty_name.25232, i64 54, i64 %null_ext1601, ptr @src_file.25233, i64 101, i64 867)
   %version_ptr = getelementptr inbounds nuw %"@std::avrac::features::modules::package::PackageConfig", ptr %check_pkg1598, i32 0, i32 1
   %version = load ptr, ptr %version_ptr, align 8
   %659 = call i64 @strlen(ptr %656)
@@ -328712,7 +328711,7 @@ ifcont1629:                                       ; preds = %if_else1632, %ifcon
   %cast1659 = ptrtoint ptr %mod_resolved1658 to i64
   %null_chk1660 = icmp eq i64 %cast1659, 0
   %null_ext1661 = zext i1 %null_chk1660 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25246, i64 5, ptr @sty_name.25247, i64 55, i64 %null_ext1661, ptr @src_file.25248, i64 101, i64 875)
+  call void @avra_null_deref_trap(ptr @fld_name.25246, i64 5, ptr @sty_name.25247, i64 55, i64 %null_ext1661, ptr @src_file.25248, i64 101, i64 877)
   %stmts_ptr1662 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved1658, i32 0, i32 0
   %stmts1663 = load ptr, ptr %stmts_ptr1662, align 8
   %664 = call ptr @"@std::avrac::features::component_decl::expand::expand_components"(ptr %stmts1663)
@@ -328724,7 +328723,7 @@ ifcont1629:                                       ; preds = %if_else1632, %ifcon
   %cast1668 = ptrtoint ptr %named1667 to i64
   %null_chk1669 = icmp eq i64 %cast1668, 0
   %null_ext1670 = zext i1 %null_chk1669 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25249, i64 3, ptr @sty_name.25250, i64 46, i64 %null_ext1670, ptr @src_file.25251, i64 101, i64 877)
+  call void @avra_null_deref_trap(ptr @fld_name.25249, i64 3, ptr @sty_name.25250, i64 46, i64 %null_ext1670, ptr @src_file.25251, i64 101, i64 879)
   %bag_ptr1671 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1667, i32 0, i32 3
   %bag1672 = load ptr, ptr %bag_ptr1671, align 8
   %666 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag1672)
@@ -328744,7 +328743,7 @@ if_then1631:                                      ; preds = %ifcont1578
   %cast1637 = ptrtoint ptr %mod_resolved1636 to i64
   %null_chk1638 = icmp eq i64 %cast1637, 0
   %null_ext1639 = zext i1 %null_chk1638 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25240, i64 13, ptr @sty_name.25241, i64 55, i64 %null_ext1639, ptr @src_file.25242, i64 101, i64 871)
+  call void @avra_null_deref_trap(ptr @fld_name.25240, i64 13, ptr @sty_name.25241, i64 55, i64 %null_ext1639, ptr @src_file.25242, i64 101, i64 873)
   %error_message_ptr1640 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved1636, i32 0, i32 3
   %error_message1641 = load ptr, ptr %error_message_ptr1640, align 8
   %669 = call ptr @"@std::avrac::diagnostics::span_dummy"()
@@ -328763,7 +328762,7 @@ ifcont1644:                                       ; preds = %if_else1646, %if_th
   %cast1653 = ptrtoint ptr %mod_resolved1652 to i64
   %null_chk1654 = icmp eq i64 %cast1653, 0
   %null_ext1655 = zext i1 %null_chk1654 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25243, i64 13, ptr @sty_name.25244, i64 55, i64 %null_ext1655, ptr @src_file.25245, i64 101, i64 873)
+  call void @avra_null_deref_trap(ptr @fld_name.25243, i64 13, ptr @sty_name.25244, i64 55, i64 %null_ext1655, ptr @src_file.25245, i64 101, i64 875)
   %error_message_ptr1656 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved1652, i32 0, i32 3
   %error_message1657 = load ptr, ptr %error_message_ptr1656, align 8
   %672 = call i64 @fail(ptr %error_message1657)
@@ -328787,7 +328786,7 @@ sc_rhs1675:                                       ; preds = %ifcont1629
   %cast1679 = ptrtoint ptr %named1678 to i64
   %null_chk1680 = icmp eq i64 %cast1679, 0
   %null_ext1681 = zext i1 %null_chk1680 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25252, i64 3, ptr @sty_name.25253, i64 46, i64 %null_ext1681, ptr @src_file.25254, i64 101, i64 877)
+  call void @avra_null_deref_trap(ptr @fld_name.25252, i64 3, ptr @sty_name.25253, i64 46, i64 %null_ext1681, ptr @src_file.25254, i64 101, i64 879)
   %bag_ptr1682 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1678, i32 0, i32 3
   %bag1683 = load ptr, ptr %bag_ptr1682, align 8
   %675 = call i1 @"@std::avrac::diagnostics::bag_has_warnings"(ptr %bag1683)
@@ -328818,7 +328817,7 @@ ifcont1691:                                       ; preds = %if_else1694, %ifcon
   %cast1715 = ptrtoint ptr %named1714 to i64
   %null_chk1716 = icmp eq i64 %cast1715, 0
   %null_ext1717 = zext i1 %null_chk1716 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25261, i64 9, ptr @sty_name.25262, i64 46, i64 %null_ext1717, ptr @src_file.25263, i64 101, i64 880)
+  call void @avra_null_deref_trap(ptr @fld_name.25261, i64 9, ptr @sty_name.25262, i64 46, i64 %null_ext1717, ptr @src_file.25263, i64 101, i64 882)
   %had_error_ptr1718 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1714, i32 0, i32 1
   %had_error1719 = load i64, ptr %had_error_ptr1718, align 8
   %if_cond1721 = icmp ne i64 %had_error1719, 0
@@ -328840,7 +328839,7 @@ if_then1697:                                      ; preds = %if_then1693
   %cast1701 = ptrtoint ptr %named1700 to i64
   %null_chk1702 = icmp eq i64 %cast1701, 0
   %null_ext1703 = zext i1 %null_chk1702 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25255, i64 3, ptr @sty_name.25256, i64 46, i64 %null_ext1703, ptr @src_file.25257, i64 101, i64 878)
+  call void @avra_null_deref_trap(ptr @fld_name.25255, i64 3, ptr @sty_name.25256, i64 46, i64 %null_ext1703, ptr @src_file.25257, i64 101, i64 880)
   %bag_ptr1704 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1700, i32 0, i32 3
   %bag1705 = load ptr, ptr %bag_ptr1704, align 8
   %676 = call i64 @"@std::avrac::diagnostics::render::render_bag_json"(ptr %check_path1699, ptr %bag1705)
@@ -328853,7 +328852,7 @@ if_else1698:                                      ; preds = %if_then1693
   %cast1709 = ptrtoint ptr %named1708 to i64
   %null_chk1710 = icmp eq i64 %cast1709, 0
   %null_ext1711 = zext i1 %null_chk1710 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25258, i64 3, ptr @sty_name.25259, i64 46, i64 %null_ext1711, ptr @src_file.25260, i64 101, i64 878)
+  call void @avra_null_deref_trap(ptr @fld_name.25258, i64 3, ptr @sty_name.25259, i64 46, i64 %null_ext1711, ptr @src_file.25260, i64 101, i64 880)
   %bag_ptr1712 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1708, i32 0, i32 3
   %bag1713 = load ptr, ptr %bag_ptr1712, align 8
   %677 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr %check_source1706, ptr %check_path1707, ptr %bag1713)
@@ -328864,7 +328863,7 @@ ifcont1720:                                       ; preds = %if_else1723, %if_th
   %cast1731 = ptrtoint ptr %named1730 to i64
   %null_chk1732 = icmp eq i64 %cast1731, 0
   %null_ext1733 = zext i1 %null_chk1732 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25267, i64 5, ptr @sty_name.25268, i64 46, i64 %null_ext1733, ptr @src_file.25269, i64 101, i64 881)
+  call void @avra_null_deref_trap(ptr @fld_name.25267, i64 5, ptr @sty_name.25268, i64 46, i64 %null_ext1733, ptr @src_file.25269, i64 101, i64 883)
   %stmts_ptr1734 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1730, i32 0, i32 0
   %stmts1735 = load ptr, ptr %stmts_ptr1734, align 8
   %678 = call ptr @"@std::avrac::typeck::typecheck_program"(ptr %stmts1735)
@@ -328873,7 +328872,7 @@ ifcont1720:                                       ; preds = %if_else1723, %if_th
   %cast1738 = ptrtoint ptr %tc_result1737 to i64
   %null_chk1739 = icmp eq i64 %cast1738, 0
   %null_ext1740 = zext i1 %null_chk1739 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25270, i64 3, ptr @sty_name.25271, i64 36, i64 %null_ext1740, ptr @src_file.25272, i64 101, i64 882)
+  call void @avra_null_deref_trap(ptr @fld_name.25270, i64 3, ptr @sty_name.25271, i64 36, i64 %null_ext1740, ptr @src_file.25272, i64 101, i64 884)
   %bag_ptr1741 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result1737, i32 0, i32 2
   %bag1742 = load ptr, ptr %bag_ptr1741, align 8
   %679 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag1742)
@@ -328886,7 +328885,7 @@ if_then1722:                                      ; preds = %ifcont1691
   %cast1725 = ptrtoint ptr %named1724 to i64
   %null_chk1726 = icmp eq i64 %cast1725, 0
   %null_ext1727 = zext i1 %null_chk1726 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25264, i64 13, ptr @sty_name.25265, i64 46, i64 %null_ext1727, ptr @src_file.25266, i64 101, i64 880)
+  call void @avra_null_deref_trap(ptr @fld_name.25264, i64 13, ptr @sty_name.25265, i64 46, i64 %null_ext1727, ptr @src_file.25266, i64 101, i64 882)
   %error_message_ptr1728 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1724, i32 0, i32 2
   %error_message1729 = load ptr, ptr %error_message_ptr1728, align 8
   %680 = call i64 @fail(ptr %error_message1729)
@@ -328900,7 +328899,7 @@ sc_rhs1745:                                       ; preds = %ifcont1720
   %cast1749 = ptrtoint ptr %tc_result1748 to i64
   %null_chk1750 = icmp eq i64 %cast1749, 0
   %null_ext1751 = zext i1 %null_chk1750 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25273, i64 3, ptr @sty_name.25274, i64 36, i64 %null_ext1751, ptr @src_file.25275, i64 101, i64 882)
+  call void @avra_null_deref_trap(ptr @fld_name.25273, i64 3, ptr @sty_name.25274, i64 36, i64 %null_ext1751, ptr @src_file.25275, i64 101, i64 884)
   %bag_ptr1752 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result1748, i32 0, i32 2
   %bag1753 = load ptr, ptr %bag_ptr1752, align 8
   %681 = call i1 @"@std::avrac::diagnostics::bag_has_warnings"(ptr %bag1753)
@@ -328931,7 +328930,7 @@ ifcont1761:                                       ; preds = %if_else1764, %ifcon
   %cast1785 = ptrtoint ptr %tc_result1784 to i64
   %null_chk1786 = icmp eq i64 %cast1785, 0
   %null_ext1787 = zext i1 %null_chk1786 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25282, i64 3, ptr @sty_name.25283, i64 36, i64 %null_ext1787, ptr @src_file.25284, i64 101, i64 885)
+  call void @avra_null_deref_trap(ptr @fld_name.25282, i64 3, ptr @sty_name.25283, i64 36, i64 %null_ext1787, ptr @src_file.25284, i64 101, i64 887)
   %bag_ptr1788 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result1784, i32 0, i32 2
   %bag1789 = load ptr, ptr %bag_ptr1788, align 8
   %682 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag1789)
@@ -328955,7 +328954,7 @@ if_then1767:                                      ; preds = %if_then1763
   %cast1771 = ptrtoint ptr %tc_result1770 to i64
   %null_chk1772 = icmp eq i64 %cast1771, 0
   %null_ext1773 = zext i1 %null_chk1772 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25276, i64 3, ptr @sty_name.25277, i64 36, i64 %null_ext1773, ptr @src_file.25278, i64 101, i64 883)
+  call void @avra_null_deref_trap(ptr @fld_name.25276, i64 3, ptr @sty_name.25277, i64 36, i64 %null_ext1773, ptr @src_file.25278, i64 101, i64 885)
   %bag_ptr1774 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result1770, i32 0, i32 2
   %bag1775 = load ptr, ptr %bag_ptr1774, align 8
   %683 = call i64 @"@std::avrac::diagnostics::render::render_bag_json"(ptr %check_path1769, ptr %bag1775)
@@ -328968,7 +328967,7 @@ if_else1768:                                      ; preds = %if_then1763
   %cast1779 = ptrtoint ptr %tc_result1778 to i64
   %null_chk1780 = icmp eq i64 %cast1779, 0
   %null_ext1781 = zext i1 %null_chk1780 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25279, i64 3, ptr @sty_name.25280, i64 36, i64 %null_ext1781, ptr @src_file.25281, i64 101, i64 883)
+  call void @avra_null_deref_trap(ptr @fld_name.25279, i64 3, ptr @sty_name.25280, i64 36, i64 %null_ext1781, ptr @src_file.25281, i64 101, i64 885)
   %bag_ptr1782 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result1778, i32 0, i32 2
   %bag1783 = load ptr, ptr %bag_ptr1782, align 8
   %684 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr %check_source1776, ptr %check_path1777, ptr %bag1783)
@@ -329006,7 +329005,7 @@ parm_body1803:                                    ; preds = %parm_next1456
   %cast1810 = ptrtoint ptr %result1809 to i64
   %null_chk1811 = icmp eq i64 %cast1810, 0
   %null_ext1812 = zext i1 %null_chk1811 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25287, i64 9, ptr @sty_name.25288, i64 39, i64 %null_ext1812, ptr @src_file.25289, i64 101, i64 892)
+  call void @avra_null_deref_trap(ptr @fld_name.25287, i64 9, ptr @sty_name.25288, i64 39, i64 %null_ext1812, ptr @src_file.25289, i64 101, i64 894)
   %had_error_ptr1813 = getelementptr inbounds nuw %"@std::avrac::features::eval::EvalResult", ptr %result1809, i32 0, i32 1
   %had_error1814 = load i64, ptr %had_error_ptr1813, align 8
   %l_bool1815 = icmp ne i64 %had_error1814, 0
@@ -329023,7 +329022,7 @@ sc_rhs1816:                                       ; preds = %parm_body1803
   %cast1820 = ptrtoint ptr %result1819 to i64
   %null_chk1821 = icmp eq i64 %cast1820, 0
   %null_ext1822 = zext i1 %null_chk1821 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25290, i64 5, ptr @sty_name.25291, i64 39, i64 %null_ext1822, ptr @src_file.25292, i64 101, i64 892)
+  call void @avra_null_deref_trap(ptr @fld_name.25290, i64 5, ptr @sty_name.25291, i64 39, i64 %null_ext1822, ptr @src_file.25292, i64 101, i64 894)
   %value_ptr1823 = getelementptr inbounds nuw %"@std::avrac::features::eval::EvalResult", ptr %result1819, i32 0, i32 0
   %value1824 = load ptr, ptr %value_ptr1823, align 8
   %eq1825 = icmp eq ptr %value1824, null
@@ -329054,7 +329053,7 @@ ifcont1833:                                       ; preds = %if_else1836, %if_th
   %cast1844 = ptrtoint ptr %result1843 to i64
   %null_chk1845 = icmp eq i64 %cast1844, 0
   %null_ext1846 = zext i1 %null_chk1845 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25296, i64 5, ptr @sty_name.25297, i64 39, i64 %null_ext1846, ptr @src_file.25298, i64 101, i64 895)
+  call void @avra_null_deref_trap(ptr @fld_name.25296, i64 5, ptr @sty_name.25297, i64 39, i64 %null_ext1846, ptr @src_file.25298, i64 101, i64 897)
   %value_ptr1847 = getelementptr inbounds nuw %"@std::avrac::features::eval::EvalResult", ptr %result1843, i32 0, i32 0
   %value1848 = load ptr, ptr %value_ptr1847, align 8
   %688 = call ptr @"@std::avrac::features::eval::render_value"(ptr %value1848)
@@ -329067,7 +329066,7 @@ if_then1835:                                      ; preds = %sc_merge1818
   %cast1838 = ptrtoint ptr %result1837 to i64
   %null_chk1839 = icmp eq i64 %cast1838, 0
   %null_ext1840 = zext i1 %null_chk1839 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25293, i64 13, ptr @sty_name.25294, i64 39, i64 %null_ext1840, ptr @src_file.25295, i64 101, i64 893)
+  call void @avra_null_deref_trap(ptr @fld_name.25293, i64 13, ptr @sty_name.25294, i64 39, i64 %null_ext1840, ptr @src_file.25295, i64 101, i64 895)
   %error_message_ptr1841 = getelementptr inbounds nuw %"@std::avrac::features::eval::EvalResult", ptr %result1837, i32 0, i32 2
   %error_message1842 = load ptr, ptr %error_message_ptr1841, align 8
   %690 = call i64 @fail(ptr %error_message1842)
@@ -329084,7 +329083,7 @@ parm_body1850:                                    ; preds = %parm_next1804
   %cast1857 = ptrtoint ptr %parsed1856 to i64
   %null_chk1858 = icmp eq i64 %cast1857, 0
   %null_ext1859 = zext i1 %null_chk1858 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25300, i64 9, ptr @sty_name.25301, i64 38, i64 %null_ext1859, ptr @src_file.25302, i64 101, i64 907)
+  call void @avra_null_deref_trap(ptr @fld_name.25300, i64 9, ptr @sty_name.25301, i64 38, i64 %null_ext1859, ptr @src_file.25302, i64 101, i64 909)
   %had_error_ptr1860 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed1856, i32 0, i32 1
   %had_error1861 = load i64, ptr %had_error_ptr1860, align 8
   %l_bool1862 = icmp ne i64 %had_error1861, 0
@@ -329101,7 +329100,7 @@ sc_rhs1863:                                       ; preds = %parm_body1850
   %cast1867 = ptrtoint ptr %parsed1866 to i64
   %null_chk1868 = icmp eq i64 %cast1867, 0
   %null_ext1869 = zext i1 %null_chk1868 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25303, i64 5, ptr @sty_name.25304, i64 38, i64 %null_ext1869, ptr @src_file.25305, i64 101, i64 907)
+  call void @avra_null_deref_trap(ptr @fld_name.25303, i64 5, ptr @sty_name.25304, i64 38, i64 %null_ext1869, ptr @src_file.25305, i64 101, i64 909)
   %stmts_ptr1870 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed1866, i32 0, i32 0
   %stmts1871 = load ptr, ptr %stmts_ptr1870, align 8
   %eq1872 = icmp eq ptr %stmts1871, null
@@ -329135,7 +329134,7 @@ ifcont1880:                                       ; preds = %if_else1883, %ifcon
   %cast1912 = ptrtoint ptr %parsed1911 to i64
   %null_chk1913 = icmp eq i64 %cast1912, 0
   %null_ext1914 = zext i1 %null_chk1913 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25315, i64 5, ptr @sty_name.25316, i64 38, i64 %null_ext1914, ptr @src_file.25317, i64 101, i64 914)
+  call void @avra_null_deref_trap(ptr @fld_name.25315, i64 5, ptr @sty_name.25316, i64 38, i64 %null_ext1914, ptr @src_file.25317, i64 101, i64 916)
   %stmts_ptr1915 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed1911, i32 0, i32 0
   %stmts1916 = load ptr, ptr %stmts_ptr1915, align 8
   %entry_dir1917 = load ptr, ptr %entry_dir1910, align 8
@@ -329152,7 +329151,7 @@ ifcont1880:                                       ; preds = %if_else1883, %ifcon
   %cast1924 = ptrtoint ptr %mod_resolved1923 to i64
   %null_chk1925 = icmp eq i64 %cast1924, 0
   %null_ext1926 = zext i1 %null_chk1925 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25318, i64 9, ptr @sty_name.25319, i64 55, i64 %null_ext1926, ptr @src_file.25320, i64 101, i64 915)
+  call void @avra_null_deref_trap(ptr @fld_name.25318, i64 9, ptr @sty_name.25319, i64 55, i64 %null_ext1926, ptr @src_file.25320, i64 101, i64 917)
   %had_error_ptr1927 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved1923, i32 0, i32 2
   %had_error1928 = load i64, ptr %had_error_ptr1927, align 8
   %if_cond1930 = icmp ne i64 %had_error1928, 0
@@ -329163,7 +329162,7 @@ if_then1882:                                      ; preds = %sc_merge1865
   %cast1885 = ptrtoint ptr %parsed1884 to i64
   %null_chk1886 = icmp eq i64 %cast1885, 0
   %null_ext1887 = zext i1 %null_chk1886 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25306, i64 3, ptr @sty_name.25307, i64 38, i64 %null_ext1887, ptr @src_file.25308, i64 101, i64 908)
+  call void @avra_null_deref_trap(ptr @fld_name.25306, i64 3, ptr @sty_name.25307, i64 38, i64 %null_ext1887, ptr @src_file.25308, i64 101, i64 910)
   %bag_ptr1888 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed1884, i32 0, i32 3
   %bag1889 = load ptr, ptr %bag_ptr1888, align 8
   %696 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag1889)
@@ -329179,7 +329178,7 @@ ifcont1891:                                       ; preds = %if_else1894, %if_th
   %cast1904 = ptrtoint ptr %parsed1903 to i64
   %null_chk1905 = icmp eq i64 %cast1904, 0
   %null_ext1906 = zext i1 %null_chk1905 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25312, i64 13, ptr @sty_name.25313, i64 38, i64 %null_ext1906, ptr @src_file.25314, i64 101, i64 911)
+  call void @avra_null_deref_trap(ptr @fld_name.25312, i64 13, ptr @sty_name.25313, i64 38, i64 %null_ext1906, ptr @src_file.25314, i64 101, i64 913)
   %error_message_ptr1907 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed1903, i32 0, i32 2
   %error_message1908 = load ptr, ptr %error_message_ptr1907, align 8
   %697 = call i64 @fail(ptr %error_message1908)
@@ -329192,7 +329191,7 @@ if_then1893:                                      ; preds = %if_then1882
   %cast1898 = ptrtoint ptr %parsed1897 to i64
   %null_chk1899 = icmp eq i64 %cast1898, 0
   %null_ext1900 = zext i1 %null_chk1899 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25309, i64 3, ptr @sty_name.25310, i64 38, i64 %null_ext1900, ptr @src_file.25311, i64 101, i64 909)
+  call void @avra_null_deref_trap(ptr @fld_name.25309, i64 3, ptr @sty_name.25310, i64 38, i64 %null_ext1900, ptr @src_file.25311, i64 101, i64 911)
   %bag_ptr1901 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed1897, i32 0, i32 3
   %bag1902 = load ptr, ptr %bag_ptr1901, align 8
   %698 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr %source1895, ptr %path1896, ptr %bag1902)
@@ -329206,7 +329205,7 @@ ifcont1929:                                       ; preds = %if_else1932, %if_th
   %cast1940 = ptrtoint ptr %mod_resolved1939 to i64
   %null_chk1941 = icmp eq i64 %cast1940, 0
   %null_ext1942 = zext i1 %null_chk1941 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25324, i64 5, ptr @sty_name.25325, i64 55, i64 %null_ext1942, ptr @src_file.25326, i64 101, i64 918)
+  call void @avra_null_deref_trap(ptr @fld_name.25324, i64 5, ptr @sty_name.25325, i64 55, i64 %null_ext1942, ptr @src_file.25326, i64 101, i64 920)
   %stmts_ptr1943 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved1939, i32 0, i32 0
   %stmts1944 = load ptr, ptr %stmts_ptr1943, align 8
   %699 = call ptr @"@std::avrac::resolve::names::resolve_names"(ptr %stmts1944)
@@ -329215,7 +329214,7 @@ ifcont1929:                                       ; preds = %if_else1932, %if_th
   %cast1947 = ptrtoint ptr %named1946 to i64
   %null_chk1948 = icmp eq i64 %cast1947, 0
   %null_ext1949 = zext i1 %null_chk1948 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25327, i64 3, ptr @sty_name.25328, i64 46, i64 %null_ext1949, ptr @src_file.25329, i64 101, i64 919)
+  call void @avra_null_deref_trap(ptr @fld_name.25327, i64 3, ptr @sty_name.25328, i64 46, i64 %null_ext1949, ptr @src_file.25329, i64 101, i64 921)
   %bag_ptr1950 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1946, i32 0, i32 3
   %bag1951 = load ptr, ptr %bag_ptr1950, align 8
   %700 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag1951)
@@ -329228,7 +329227,7 @@ if_then1931:                                      ; preds = %ifcont1880
   %cast1934 = ptrtoint ptr %mod_resolved1933 to i64
   %null_chk1935 = icmp eq i64 %cast1934, 0
   %null_ext1936 = zext i1 %null_chk1935 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25321, i64 13, ptr @sty_name.25322, i64 55, i64 %null_ext1936, ptr @src_file.25323, i64 101, i64 916)
+  call void @avra_null_deref_trap(ptr @fld_name.25321, i64 13, ptr @sty_name.25322, i64 55, i64 %null_ext1936, ptr @src_file.25323, i64 101, i64 918)
   %error_message_ptr1937 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved1933, i32 0, i32 3
   %error_message1938 = load ptr, ptr %error_message_ptr1937, align 8
   %701 = call i64 @fail(ptr %error_message1938)
@@ -329249,7 +329248,7 @@ if_then1955:                                      ; preds = %ifcont1929
   %cast1960 = ptrtoint ptr %named1959 to i64
   %null_chk1961 = icmp eq i64 %cast1960, 0
   %null_ext1962 = zext i1 %null_chk1961 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25330, i64 3, ptr @sty_name.25331, i64 46, i64 %null_ext1962, ptr @src_file.25332, i64 101, i64 920)
+  call void @avra_null_deref_trap(ptr @fld_name.25330, i64 3, ptr @sty_name.25331, i64 46, i64 %null_ext1962, ptr @src_file.25332, i64 101, i64 922)
   %bag_ptr1963 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named1959, i32 0, i32 3
   %bag1964 = load ptr, ptr %bag_ptr1963, align 8
   %703 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr %source1957, ptr %path1958, ptr %bag1964)
@@ -329266,7 +329265,7 @@ parm_body1966:                                    ; preds = %parm_next1851
   %cast1973 = ptrtoint ptr %parsed1972 to i64
   %null_chk1974 = icmp eq i64 %cast1973, 0
   %null_ext1975 = zext i1 %null_chk1974 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25335, i64 9, ptr @sty_name.25336, i64 38, i64 %null_ext1975, ptr @src_file.25337, i64 101, i64 932)
+  call void @avra_null_deref_trap(ptr @fld_name.25335, i64 9, ptr @sty_name.25336, i64 38, i64 %null_ext1975, ptr @src_file.25337, i64 101, i64 934)
   %had_error_ptr1976 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed1972, i32 0, i32 1
   %had_error1977 = load i64, ptr %had_error_ptr1976, align 8
   %l_bool1978 = icmp ne i64 %had_error1977, 0
@@ -329283,7 +329282,7 @@ sc_rhs1979:                                       ; preds = %parm_body1966
   %cast1983 = ptrtoint ptr %parsed1982 to i64
   %null_chk1984 = icmp eq i64 %cast1983, 0
   %null_ext1985 = zext i1 %null_chk1984 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25338, i64 5, ptr @sty_name.25339, i64 38, i64 %null_ext1985, ptr @src_file.25340, i64 101, i64 932)
+  call void @avra_null_deref_trap(ptr @fld_name.25338, i64 5, ptr @sty_name.25339, i64 38, i64 %null_ext1985, ptr @src_file.25340, i64 101, i64 934)
   %stmts_ptr1986 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed1982, i32 0, i32 0
   %stmts1987 = load ptr, ptr %stmts_ptr1986, align 8
   %eq1988 = icmp eq ptr %stmts1987, null
@@ -329314,7 +329313,7 @@ ifcont1996:                                       ; preds = %if_else1999, %ifcon
   %cast2026 = ptrtoint ptr %parsed2025 to i64
   %null_chk2027 = icmp eq i64 %cast2026, 0
   %null_ext2028 = zext i1 %null_chk2027 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25350, i64 5, ptr @sty_name.25351, i64 38, i64 %null_ext2028, ptr @src_file.25352, i64 101, i64 938)
+  call void @avra_null_deref_trap(ptr @fld_name.25350, i64 5, ptr @sty_name.25351, i64 38, i64 %null_ext2028, ptr @src_file.25352, i64 101, i64 940)
   %stmts_ptr2029 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed2025, i32 0, i32 0
   %stmts2030 = load ptr, ptr %stmts_ptr2029, align 8
   %706 = call ptr @"@std::avrac::fmt::fmt_stmt_list"(ptr %stmts2030, i64 0)
@@ -329327,7 +329326,7 @@ if_then1998:                                      ; preds = %sc_merge1981
   %cast2001 = ptrtoint ptr %parsed2000 to i64
   %null_chk2002 = icmp eq i64 %cast2001, 0
   %null_ext2003 = zext i1 %null_chk2002 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25341, i64 3, ptr @sty_name.25342, i64 38, i64 %null_ext2003, ptr @src_file.25343, i64 101, i64 933)
+  call void @avra_null_deref_trap(ptr @fld_name.25341, i64 3, ptr @sty_name.25342, i64 38, i64 %null_ext2003, ptr @src_file.25343, i64 101, i64 935)
   %bag_ptr2004 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed2000, i32 0, i32 3
   %bag2005 = load ptr, ptr %bag_ptr2004, align 8
   %708 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag2005)
@@ -329343,7 +329342,7 @@ ifcont2007:                                       ; preds = %if_else2010, %if_th
   %cast2020 = ptrtoint ptr %parsed2019 to i64
   %null_chk2021 = icmp eq i64 %cast2020, 0
   %null_ext2022 = zext i1 %null_chk2021 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25347, i64 13, ptr @sty_name.25348, i64 38, i64 %null_ext2022, ptr @src_file.25349, i64 101, i64 936)
+  call void @avra_null_deref_trap(ptr @fld_name.25347, i64 13, ptr @sty_name.25348, i64 38, i64 %null_ext2022, ptr @src_file.25349, i64 101, i64 938)
   %error_message_ptr2023 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed2019, i32 0, i32 2
   %error_message2024 = load ptr, ptr %error_message_ptr2023, align 8
   %709 = call i64 @fail(ptr %error_message2024)
@@ -329356,7 +329355,7 @@ if_then2009:                                      ; preds = %if_then1998
   %cast2014 = ptrtoint ptr %parsed2013 to i64
   %null_chk2015 = icmp eq i64 %cast2014, 0
   %null_ext2016 = zext i1 %null_chk2015 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25344, i64 3, ptr @sty_name.25345, i64 38, i64 %null_ext2016, ptr @src_file.25346, i64 101, i64 934)
+  call void @avra_null_deref_trap(ptr @fld_name.25344, i64 3, ptr @sty_name.25345, i64 38, i64 %null_ext2016, ptr @src_file.25346, i64 101, i64 936)
   %bag_ptr2017 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed2013, i32 0, i32 3
   %bag2018 = load ptr, ptr %bag_ptr2017, align 8
   %710 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr %source2011, ptr %path2012, ptr %bag2018)
@@ -329373,7 +329372,7 @@ parm_body2032:                                    ; preds = %parm_next1967
   %cast2039 = ptrtoint ptr %parsed2038 to i64
   %null_chk2040 = icmp eq i64 %cast2039, 0
   %null_ext2041 = zext i1 %null_chk2040 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25354, i64 9, ptr @sty_name.25355, i64 38, i64 %null_ext2041, ptr @src_file.25356, i64 101, i64 950)
+  call void @avra_null_deref_trap(ptr @fld_name.25354, i64 9, ptr @sty_name.25355, i64 38, i64 %null_ext2041, ptr @src_file.25356, i64 101, i64 952)
   %had_error_ptr2042 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed2038, i32 0, i32 1
   %had_error2043 = load i64, ptr %had_error_ptr2042, align 8
   %l_bool2044 = icmp ne i64 %had_error2043, 0
@@ -329387,7 +329386,7 @@ sc_rhs2045:                                       ; preds = %parm_body2032
   %cast2049 = ptrtoint ptr %parsed2048 to i64
   %null_chk2050 = icmp eq i64 %cast2049, 0
   %null_ext2051 = zext i1 %null_chk2050 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25357, i64 5, ptr @sty_name.25358, i64 38, i64 %null_ext2051, ptr @src_file.25359, i64 101, i64 950)
+  call void @avra_null_deref_trap(ptr @fld_name.25357, i64 5, ptr @sty_name.25358, i64 38, i64 %null_ext2051, ptr @src_file.25359, i64 101, i64 952)
   %stmts_ptr2052 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed2048, i32 0, i32 0
   %stmts2053 = load ptr, ptr %stmts_ptr2052, align 8
   %eq2054 = icmp eq ptr %stmts2053, null
@@ -329418,7 +329417,7 @@ ifcont2062:                                       ; preds = %if_else2065, %ifcon
   %cast2092 = ptrtoint ptr %parsed2091 to i64
   %null_chk2093 = icmp eq i64 %cast2092, 0
   %null_ext2094 = zext i1 %null_chk2093 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25369, i64 5, ptr @sty_name.25370, i64 38, i64 %null_ext2094, ptr @src_file.25371, i64 101, i64 956)
+  call void @avra_null_deref_trap(ptr @fld_name.25369, i64 5, ptr @sty_name.25370, i64 38, i64 %null_ext2094, ptr @src_file.25371, i64 101, i64 958)
   %stmts_ptr2095 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed2091, i32 0, i32 0
   %stmts2096 = load ptr, ptr %stmts_ptr2095, align 8
   %712 = call ptr @"@std::avrac::desugar::desugar_program"(ptr %stmts2096)
@@ -329441,7 +329440,7 @@ ifcont2062:                                       ; preds = %if_else2065, %ifcon
   %cast2108 = ptrtoint ptr %mod_resolved2107 to i64
   %null_chk2109 = icmp eq i64 %cast2108, 0
   %null_ext2110 = zext i1 %null_chk2109 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25372, i64 9, ptr @sty_name.25373, i64 55, i64 %null_ext2110, ptr @src_file.25374, i64 101, i64 959)
+  call void @avra_null_deref_trap(ptr @fld_name.25372, i64 9, ptr @sty_name.25373, i64 55, i64 %null_ext2110, ptr @src_file.25374, i64 101, i64 961)
   %had_error_ptr2111 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved2107, i32 0, i32 2
   %had_error2112 = load i64, ptr %had_error_ptr2111, align 8
   %if_cond2114 = icmp ne i64 %had_error2112, 0
@@ -329452,7 +329451,7 @@ if_then2064:                                      ; preds = %sc_merge2047
   %cast2067 = ptrtoint ptr %parsed2066 to i64
   %null_chk2068 = icmp eq i64 %cast2067, 0
   %null_ext2069 = zext i1 %null_chk2068 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25360, i64 3, ptr @sty_name.25361, i64 38, i64 %null_ext2069, ptr @src_file.25362, i64 101, i64 951)
+  call void @avra_null_deref_trap(ptr @fld_name.25360, i64 3, ptr @sty_name.25361, i64 38, i64 %null_ext2069, ptr @src_file.25362, i64 101, i64 953)
   %bag_ptr2070 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed2066, i32 0, i32 3
   %bag2071 = load ptr, ptr %bag_ptr2070, align 8
   %716 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag2071)
@@ -329468,7 +329467,7 @@ ifcont2073:                                       ; preds = %if_else2076, %if_th
   %cast2086 = ptrtoint ptr %parsed2085 to i64
   %null_chk2087 = icmp eq i64 %cast2086, 0
   %null_ext2088 = zext i1 %null_chk2087 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25366, i64 13, ptr @sty_name.25367, i64 38, i64 %null_ext2088, ptr @src_file.25368, i64 101, i64 954)
+  call void @avra_null_deref_trap(ptr @fld_name.25366, i64 13, ptr @sty_name.25367, i64 38, i64 %null_ext2088, ptr @src_file.25368, i64 101, i64 956)
   %error_message_ptr2089 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed2085, i32 0, i32 2
   %error_message2090 = load ptr, ptr %error_message_ptr2089, align 8
   %717 = call i64 @fail(ptr %error_message2090)
@@ -329481,7 +329480,7 @@ if_then2075:                                      ; preds = %if_then2064
   %cast2080 = ptrtoint ptr %parsed2079 to i64
   %null_chk2081 = icmp eq i64 %cast2080, 0
   %null_ext2082 = zext i1 %null_chk2081 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25363, i64 3, ptr @sty_name.25364, i64 38, i64 %null_ext2082, ptr @src_file.25365, i64 101, i64 952)
+  call void @avra_null_deref_trap(ptr @fld_name.25363, i64 3, ptr @sty_name.25364, i64 38, i64 %null_ext2082, ptr @src_file.25365, i64 101, i64 954)
   %bag_ptr2083 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed2079, i32 0, i32 3
   %bag2084 = load ptr, ptr %bag_ptr2083, align 8
   %718 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr %source2077, ptr %path2078, ptr %bag2084)
@@ -329495,7 +329494,7 @@ ifcont2113:                                       ; preds = %if_else2116, %if_th
   %cast2138 = ptrtoint ptr %mod_resolved2137 to i64
   %null_chk2139 = icmp eq i64 %cast2138, 0
   %null_ext2140 = zext i1 %null_chk2139 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25381, i64 5, ptr @sty_name.25382, i64 55, i64 %null_ext2140, ptr @src_file.25383, i64 101, i64 964)
+  call void @avra_null_deref_trap(ptr @fld_name.25381, i64 5, ptr @sty_name.25382, i64 55, i64 %null_ext2140, ptr @src_file.25383, i64 101, i64 966)
   %stmts_ptr2141 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved2137, i32 0, i32 0
   %stmts2142 = load ptr, ptr %stmts_ptr2141, align 8
   %719 = call ptr @"@std::avrac::features::component_decl::expand::expand_components"(ptr %stmts2142)
@@ -329507,7 +329506,7 @@ ifcont2113:                                       ; preds = %if_else2116, %if_th
   %cast2147 = ptrtoint ptr %named2146 to i64
   %null_chk2148 = icmp eq i64 %cast2147, 0
   %null_ext2149 = zext i1 %null_chk2148 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25384, i64 3, ptr @sty_name.25385, i64 46, i64 %null_ext2149, ptr @src_file.25386, i64 101, i64 966)
+  call void @avra_null_deref_trap(ptr @fld_name.25384, i64 3, ptr @sty_name.25385, i64 46, i64 %null_ext2149, ptr @src_file.25386, i64 101, i64 968)
   %bag_ptr2150 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named2146, i32 0, i32 3
   %bag2151 = load ptr, ptr %bag_ptr2150, align 8
   %721 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag2151)
@@ -329527,7 +329526,7 @@ if_then2115:                                      ; preds = %ifcont2062
   %cast2121 = ptrtoint ptr %mod_resolved2120 to i64
   %null_chk2122 = icmp eq i64 %cast2121, 0
   %null_ext2123 = zext i1 %null_chk2122 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25375, i64 13, ptr @sty_name.25376, i64 55, i64 %null_ext2123, ptr @src_file.25377, i64 101, i64 960)
+  call void @avra_null_deref_trap(ptr @fld_name.25375, i64 13, ptr @sty_name.25376, i64 55, i64 %null_ext2123, ptr @src_file.25377, i64 101, i64 962)
   %error_message_ptr2124 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved2120, i32 0, i32 3
   %error_message2125 = load ptr, ptr %error_message_ptr2124, align 8
   %724 = call ptr @"@std::avrac::diagnostics::span_dummy"()
@@ -329543,7 +329542,7 @@ if_then2115:                                      ; preds = %ifcont2062
   %cast2132 = ptrtoint ptr %mod_resolved2131 to i64
   %null_chk2133 = icmp eq i64 %cast2132, 0
   %null_ext2134 = zext i1 %null_chk2133 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25378, i64 13, ptr @sty_name.25379, i64 55, i64 %null_ext2134, ptr @src_file.25380, i64 101, i64 962)
+  call void @avra_null_deref_trap(ptr @fld_name.25378, i64 13, ptr @sty_name.25379, i64 55, i64 %null_ext2134, ptr @src_file.25380, i64 101, i64 964)
   %error_message_ptr2135 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved2131, i32 0, i32 3
   %error_message2136 = load ptr, ptr %error_message_ptr2135, align 8
   %728 = call i64 @fail(ptr %error_message2136)
@@ -329557,7 +329556,7 @@ sc_rhs2154:                                       ; preds = %ifcont2113
   %cast2158 = ptrtoint ptr %named2157 to i64
   %null_chk2159 = icmp eq i64 %cast2158, 0
   %null_ext2160 = zext i1 %null_chk2159 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25387, i64 3, ptr @sty_name.25388, i64 46, i64 %null_ext2160, ptr @src_file.25389, i64 101, i64 966)
+  call void @avra_null_deref_trap(ptr @fld_name.25387, i64 3, ptr @sty_name.25388, i64 46, i64 %null_ext2160, ptr @src_file.25389, i64 101, i64 968)
   %bag_ptr2161 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named2157, i32 0, i32 3
   %bag2162 = load ptr, ptr %bag_ptr2161, align 8
   %729 = call i1 @"@std::avrac::diagnostics::bag_has_warnings"(ptr %bag2162)
@@ -329588,7 +329587,7 @@ ifcont2170:                                       ; preds = %if_else2173, %if_th
   %cast2183 = ptrtoint ptr %named2182 to i64
   %null_chk2184 = icmp eq i64 %cast2183, 0
   %null_ext2185 = zext i1 %null_chk2184 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25393, i64 9, ptr @sty_name.25394, i64 46, i64 %null_ext2185, ptr @src_file.25395, i64 101, i64 969)
+  call void @avra_null_deref_trap(ptr @fld_name.25393, i64 9, ptr @sty_name.25394, i64 46, i64 %null_ext2185, ptr @src_file.25395, i64 101, i64 971)
   %had_error_ptr2186 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named2182, i32 0, i32 1
   %had_error2187 = load i64, ptr %had_error_ptr2186, align 8
   %if_cond2189 = icmp ne i64 %had_error2187, 0
@@ -329601,7 +329600,7 @@ if_then2172:                                      ; preds = %sc_merge2156
   %cast2177 = ptrtoint ptr %named2176 to i64
   %null_chk2178 = icmp eq i64 %cast2177, 0
   %null_ext2179 = zext i1 %null_chk2178 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25390, i64 3, ptr @sty_name.25391, i64 46, i64 %null_ext2179, ptr @src_file.25392, i64 101, i64 967)
+  call void @avra_null_deref_trap(ptr @fld_name.25390, i64 3, ptr @sty_name.25391, i64 46, i64 %null_ext2179, ptr @src_file.25392, i64 101, i64 969)
   %bag_ptr2180 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named2176, i32 0, i32 3
   %bag2181 = load ptr, ptr %bag_ptr2180, align 8
   %730 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr %source2174, ptr %path2175, ptr %bag2181)
@@ -329615,7 +329614,7 @@ ifcont2188:                                       ; preds = %if_else2191, %if_th
   %cast2199 = ptrtoint ptr %named2198 to i64
   %null_chk2200 = icmp eq i64 %cast2199, 0
   %null_ext2201 = zext i1 %null_chk2200 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25399, i64 5, ptr @sty_name.25400, i64 46, i64 %null_ext2201, ptr @src_file.25401, i64 101, i64 970)
+  call void @avra_null_deref_trap(ptr @fld_name.25399, i64 5, ptr @sty_name.25400, i64 46, i64 %null_ext2201, ptr @src_file.25401, i64 101, i64 972)
   %stmts_ptr2202 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named2198, i32 0, i32 0
   %stmts2203 = load ptr, ptr %stmts_ptr2202, align 8
   %731 = call ptr @"@std::avrac::typeck::typecheck_program"(ptr %stmts2203)
@@ -329624,7 +329623,7 @@ ifcont2188:                                       ; preds = %if_else2191, %if_th
   %cast2206 = ptrtoint ptr %tc_result2205 to i64
   %null_chk2207 = icmp eq i64 %cast2206, 0
   %null_ext2208 = zext i1 %null_chk2207 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25402, i64 3, ptr @sty_name.25403, i64 36, i64 %null_ext2208, ptr @src_file.25404, i64 101, i64 971)
+  call void @avra_null_deref_trap(ptr @fld_name.25402, i64 3, ptr @sty_name.25403, i64 36, i64 %null_ext2208, ptr @src_file.25404, i64 101, i64 973)
   %bag_ptr2209 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result2205, i32 0, i32 2
   %bag2210 = load ptr, ptr %bag_ptr2209, align 8
   %732 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag2210)
@@ -329637,7 +329636,7 @@ if_then2190:                                      ; preds = %ifcont2170
   %cast2193 = ptrtoint ptr %named2192 to i64
   %null_chk2194 = icmp eq i64 %cast2193, 0
   %null_ext2195 = zext i1 %null_chk2194 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25396, i64 13, ptr @sty_name.25397, i64 46, i64 %null_ext2195, ptr @src_file.25398, i64 101, i64 969)
+  call void @avra_null_deref_trap(ptr @fld_name.25396, i64 13, ptr @sty_name.25397, i64 46, i64 %null_ext2195, ptr @src_file.25398, i64 101, i64 971)
   %error_message_ptr2196 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named2192, i32 0, i32 2
   %error_message2197 = load ptr, ptr %error_message_ptr2196, align 8
   %733 = call i64 @fail(ptr %error_message2197)
@@ -329651,7 +329650,7 @@ sc_rhs2213:                                       ; preds = %ifcont2188
   %cast2217 = ptrtoint ptr %tc_result2216 to i64
   %null_chk2218 = icmp eq i64 %cast2217, 0
   %null_ext2219 = zext i1 %null_chk2218 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25405, i64 3, ptr @sty_name.25406, i64 36, i64 %null_ext2219, ptr @src_file.25407, i64 101, i64 971)
+  call void @avra_null_deref_trap(ptr @fld_name.25405, i64 3, ptr @sty_name.25406, i64 36, i64 %null_ext2219, ptr @src_file.25407, i64 101, i64 973)
   %bag_ptr2220 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result2216, i32 0, i32 2
   %bag2221 = load ptr, ptr %bag_ptr2220, align 8
   %734 = call i1 @"@std::avrac::diagnostics::bag_has_warnings"(ptr %bag2221)
@@ -329682,7 +329681,7 @@ ifcont2229:                                       ; preds = %if_else2232, %if_th
   %cast2242 = ptrtoint ptr %tc_result2241 to i64
   %null_chk2243 = icmp eq i64 %cast2242, 0
   %null_ext2244 = zext i1 %null_chk2243 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25411, i64 3, ptr @sty_name.25412, i64 36, i64 %null_ext2244, ptr @src_file.25413, i64 101, i64 974)
+  call void @avra_null_deref_trap(ptr @fld_name.25411, i64 3, ptr @sty_name.25412, i64 36, i64 %null_ext2244, ptr @src_file.25413, i64 101, i64 976)
   %bag_ptr2245 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result2241, i32 0, i32 2
   %bag2246 = load ptr, ptr %bag_ptr2245, align 8
   %735 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag2246)
@@ -329697,7 +329696,7 @@ if_then2231:                                      ; preds = %sc_merge2215
   %cast2236 = ptrtoint ptr %tc_result2235 to i64
   %null_chk2237 = icmp eq i64 %cast2236, 0
   %null_ext2238 = zext i1 %null_chk2237 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25408, i64 3, ptr @sty_name.25409, i64 36, i64 %null_ext2238, ptr @src_file.25410, i64 101, i64 972)
+  call void @avra_null_deref_trap(ptr @fld_name.25408, i64 3, ptr @sty_name.25409, i64 36, i64 %null_ext2238, ptr @src_file.25410, i64 101, i64 974)
   %bag_ptr2239 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result2235, i32 0, i32 2
   %bag2240 = load ptr, ptr %bag_ptr2239, align 8
   %736 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr %source2233, ptr %path2234, ptr %bag2240)
@@ -329711,14 +329710,14 @@ ifcont2248:                                       ; preds = %if_else2251, %if_th
   %cast2253 = ptrtoint ptr %tc_result2252 to i64
   %null_chk2254 = icmp eq i64 %cast2253, 0
   %null_ext2255 = zext i1 %null_chk2254 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25415, i64 5, ptr @sty_name.25416, i64 36, i64 %null_ext2255, ptr @src_file.25417, i64 101, i64 975)
+  call void @avra_null_deref_trap(ptr @fld_name.25415, i64 5, ptr @sty_name.25416, i64 36, i64 %null_ext2255, ptr @src_file.25417, i64 101, i64 977)
   %stmts_ptr2256 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result2252, i32 0, i32 0
   %stmts2257 = load ptr, ptr %stmts_ptr2256, align 8
   %tc_result2258 = load ptr, ptr %tc_result2204, align 8
   %cast2259 = ptrtoint ptr %tc_result2258 to i64
   %null_chk2260 = icmp eq i64 %cast2259, 0
   %null_ext2261 = zext i1 %null_chk2260 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25418, i64 11, ptr @sty_name.25419, i64 36, i64 %null_ext2261, ptr @src_file.25420, i64 101, i64 975)
+  call void @avra_null_deref_trap(ptr @fld_name.25418, i64 11, ptr @sty_name.25419, i64 36, i64 %null_ext2261, ptr @src_file.25420, i64 101, i64 977)
   %trait_impls_ptr2262 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result2258, i32 0, i32 3
   %trait_impls2263 = load ptr, ptr %trait_impls_ptr2262, align 8
   %737 = call ptr @"@std::avrac::features::generics::mono::monomorphize"(ptr %stmts2257, ptr %trait_impls2263)
@@ -329727,7 +329726,7 @@ ifcont2248:                                       ; preds = %if_else2251, %if_th
   %cast2266 = ptrtoint ptr %mono2265 to i64
   %null_chk2267 = icmp eq i64 %cast2266, 0
   %null_ext2268 = zext i1 %null_chk2267 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25421, i64 3, ptr @sty_name.25422, i64 49, i64 %null_ext2268, ptr @src_file.25423, i64 101, i64 976)
+  call void @avra_null_deref_trap(ptr @fld_name.25421, i64 3, ptr @sty_name.25422, i64 49, i64 %null_ext2268, ptr @src_file.25423, i64 101, i64 978)
   %bag_ptr2269 = getelementptr inbounds nuw %"@std::avrac::features::generics::mono::MonoResult", ptr %mono2265, i32 0, i32 1
   %bag2270 = load ptr, ptr %bag_ptr2269, align 8
   %738 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag2270)
@@ -329760,7 +329759,7 @@ ifcont2272:                                       ; preds = %if_else2275, %if_th
   %cast2292 = ptrtoint ptr %mono2291 to i64
   %null_chk2293 = icmp eq i64 %cast2292, 0
   %null_ext2294 = zext i1 %null_chk2293 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25429, i64 5, ptr @sty_name.25430, i64 49, i64 %null_ext2294, ptr @src_file.25431, i64 101, i64 981)
+  call void @avra_null_deref_trap(ptr @fld_name.25429, i64 5, ptr @sty_name.25430, i64 49, i64 %null_ext2294, ptr @src_file.25431, i64 101, i64 983)
   %stmts_ptr2295 = getelementptr inbounds nuw %"@std::avrac::features::generics::mono::MonoResult", ptr %mono2291, i32 0, i32 0
   %stmts2296 = load ptr, ptr %stmts_ptr2295, align 8
   %output2297 = load ptr, ptr %output, align 8
@@ -329769,7 +329768,7 @@ ifcont2272:                                       ; preds = %if_else2275, %if_th
   %cast2300 = ptrtoint ptr %named2299 to i64
   %null_chk2301 = icmp eq i64 %cast2300, 0
   %null_ext2302 = zext i1 %null_chk2301 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25432, i64 8, ptr @sty_name.25433, i64 46, i64 %null_ext2302, ptr @src_file.25434, i64 101, i64 981)
+  call void @avra_null_deref_trap(ptr @fld_name.25432, i64 8, ptr @sty_name.25433, i64 46, i64 %null_ext2302, ptr @src_file.25434, i64 101, i64 983)
   %type_reg_ptr2303 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named2299, i32 0, i32 4
   %type_reg2304 = load ptr, ptr %type_reg_ptr2303, align 8
   %745 = call ptr @"@std::avrac::codegen::setup::compile_program"(ptr %stmts2296, ptr %output2297, i1 false, i1 false, ptr %path2298, ptr %type_reg2304)
@@ -329785,7 +329784,7 @@ if_then2274:                                      ; preds = %ifcont2248
   %cast2279 = ptrtoint ptr %mono2278 to i64
   %null_chk2280 = icmp eq i64 %cast2279, 0
   %null_ext2281 = zext i1 %null_chk2280 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25424, i64 3, ptr @sty_name.25425, i64 49, i64 %null_ext2281, ptr @src_file.25426, i64 101, i64 977)
+  call void @avra_null_deref_trap(ptr @fld_name.25424, i64 3, ptr @sty_name.25425, i64 49, i64 %null_ext2281, ptr @src_file.25426, i64 101, i64 979)
   %bag_ptr2282 = getelementptr inbounds nuw %"@std::avrac::features::generics::mono::MonoResult", ptr %mono2278, i32 0, i32 1
   %bag2283 = load ptr, ptr %bag_ptr2282, align 8
   %746 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr %source2276, ptr %path2277, ptr %bag2283)
@@ -329846,7 +329845,7 @@ march_arm2313:                                    ; preds = %march_next2310
   br label %match_end2307
 
 march_next2314:                                   ; preds = %march_next2310
-  call void @avra_match_unreachable(ptr @.match_fn.25436, i64 %tag2306, ptr @mu_file.25437, i64 981)
+  call void @avra_match_unreachable(ptr @.match_fn.25436, i64 %tag2306, ptr @mu_file.25437, i64 983)
   unreachable
 
 parm_body2336:                                    ; preds = %parm_next2033
@@ -329856,7 +329855,7 @@ parm_body2336:                                    ; preds = %parm_next2033
   br label %pmatch_end
 
 parm_next2337:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.25438, i64 -1, ptr @mu_file.25439, i64 817)
+  call void @avra_match_unreachable(ptr @.match_fn.25438, i64 -1, ptr @mu_file.25439, i64 819)
   unreachable
 
 ifcont2343:                                       ; preds = %if_else2346
@@ -329930,7 +329929,7 @@ ifcont2370:                                       ; preds = %if_else2373, %if_th
   %cast2385 = ptrtoint ptr %pkg2384 to i64
   %null_chk2386 = icmp eq i64 %cast2385, 0
   %null_ext2387 = zext i1 %null_chk2386 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25448, i64 5, ptr @sty_name.25449, i64 54, i64 %null_ext2387, ptr @src_file.25450, i64 101, i64 1017)
+  call void @avra_null_deref_trap(ptr @fld_name.25448, i64 5, ptr @sty_name.25449, i64 54, i64 %null_ext2387, ptr @src_file.25450, i64 101, i64 1019)
   %found_ptr2388 = getelementptr inbounds nuw %"@std::avrac::features::modules::package::PackageConfig", ptr %pkg2384, i32 0, i32 2
   %found2389 = load i1, ptr %found_ptr2388, align 8
   br i1 %found2389, label %if_then2391, label %if_else2392
@@ -329962,7 +329961,7 @@ ifcont2390:                                       ; preds = %if_else2392, %if_th
   %cast2426 = ptrtoint ptr %parsed2425 to i64
   %null_chk2427 = icmp eq i64 %cast2426, 0
   %null_ext2428 = zext i1 %null_chk2427 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25459, i64 9, ptr @sty_name.25460, i64 38, i64 %null_ext2428, ptr @src_file.25461, i64 101, i64 1022)
+  call void @avra_null_deref_trap(ptr @fld_name.25459, i64 9, ptr @sty_name.25460, i64 38, i64 %null_ext2428, ptr @src_file.25461, i64 101, i64 1024)
   %had_error_ptr2429 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed2425, i32 0, i32 1
   %had_error2430 = load i64, ptr %had_error_ptr2429, align 8
   %l_bool2431 = icmp ne i64 %had_error2430, 0
@@ -329973,7 +329972,7 @@ if_then2391:                                      ; preds = %ifcont2370
   %cast2394 = ptrtoint ptr %pkg2393 to i64
   %null_chk2395 = icmp eq i64 %cast2394, 0
   %null_ext2396 = zext i1 %null_chk2395 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25452, i64 4, ptr @sty_name.25453, i64 54, i64 %null_ext2396, ptr @src_file.25454, i64 101, i64 1018)
+  call void @avra_null_deref_trap(ptr @fld_name.25452, i64 4, ptr @sty_name.25453, i64 54, i64 %null_ext2396, ptr @src_file.25454, i64 101, i64 1020)
   %name_ptr2397 = getelementptr inbounds nuw %"@std::avrac::features::modules::package::PackageConfig", ptr %pkg2393, i32 0, i32 0
   %name2398 = load ptr, ptr %name_ptr2397, align 8
   %782 = call i64 @strlen(ptr @.str.25451)
@@ -330002,7 +330001,7 @@ if_then2391:                                      ; preds = %ifcont2370
   %cast2412 = ptrtoint ptr %pkg2411 to i64
   %null_chk2413 = icmp eq i64 %cast2412, 0
   %null_ext2414 = zext i1 %null_chk2413 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25456, i64 7, ptr @sty_name.25457, i64 54, i64 %null_ext2414, ptr @src_file.25458, i64 101, i64 1018)
+  call void @avra_null_deref_trap(ptr @fld_name.25456, i64 7, ptr @sty_name.25457, i64 54, i64 %null_ext2414, ptr @src_file.25458, i64 101, i64 1020)
   %version_ptr2415 = getelementptr inbounds nuw %"@std::avrac::features::modules::package::PackageConfig", ptr %pkg2411, i32 0, i32 1
   %version2416 = load ptr, ptr %version_ptr2415, align 8
   %792 = call i64 @strlen(ptr %789)
@@ -330027,7 +330026,7 @@ sc_rhs2432:                                       ; preds = %ifcont2390
   %cast2436 = ptrtoint ptr %parsed2435 to i64
   %null_chk2437 = icmp eq i64 %cast2436, 0
   %null_ext2438 = zext i1 %null_chk2437 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25462, i64 5, ptr @sty_name.25463, i64 38, i64 %null_ext2438, ptr @src_file.25464, i64 101, i64 1022)
+  call void @avra_null_deref_trap(ptr @fld_name.25462, i64 5, ptr @sty_name.25463, i64 38, i64 %null_ext2438, ptr @src_file.25464, i64 101, i64 1024)
   %stmts_ptr2439 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed2435, i32 0, i32 0
   %stmts2440 = load ptr, ptr %stmts_ptr2439, align 8
   %eq2441 = icmp eq ptr %stmts2440, null
@@ -330067,7 +330066,7 @@ if_then2451:                                      ; preds = %sc_merge2434
   %cast2454 = ptrtoint ptr %parsed2453 to i64
   %null_chk2455 = icmp eq i64 %cast2454, 0
   %null_ext2456 = zext i1 %null_chk2455 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25465, i64 3, ptr @sty_name.25466, i64 38, i64 %null_ext2456, ptr @src_file.25467, i64 101, i64 1023)
+  call void @avra_null_deref_trap(ptr @fld_name.25465, i64 3, ptr @sty_name.25466, i64 38, i64 %null_ext2456, ptr @src_file.25467, i64 101, i64 1025)
   %bag_ptr2457 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed2453, i32 0, i32 3
   %bag2458 = load ptr, ptr %bag_ptr2457, align 8
   %798 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag2458)
@@ -330083,7 +330082,7 @@ ifcont2460:                                       ; preds = %if_else2463, %ifcon
   %cast2484 = ptrtoint ptr %parsed2483 to i64
   %null_chk2485 = icmp eq i64 %cast2484, 0
   %null_ext2486 = zext i1 %null_chk2485 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25474, i64 13, ptr @sty_name.25475, i64 38, i64 %null_ext2486, ptr @src_file.25476, i64 101, i64 1027)
+  call void @avra_null_deref_trap(ptr @fld_name.25474, i64 13, ptr @sty_name.25475, i64 38, i64 %null_ext2486, ptr @src_file.25476, i64 101, i64 1029)
   %error_message_ptr2487 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed2483, i32 0, i32 2
   %error_message2488 = load ptr, ptr %error_message_ptr2487, align 8
   %799 = call i64 @fail(ptr %error_message2488)
@@ -330105,7 +330104,7 @@ if_then2466:                                      ; preds = %if_then2462
   %cast2470 = ptrtoint ptr %parsed2469 to i64
   %null_chk2471 = icmp eq i64 %cast2470, 0
   %null_ext2472 = zext i1 %null_chk2471 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25468, i64 3, ptr @sty_name.25469, i64 38, i64 %null_ext2472, ptr @src_file.25470, i64 101, i64 1024)
+  call void @avra_null_deref_trap(ptr @fld_name.25468, i64 3, ptr @sty_name.25469, i64 38, i64 %null_ext2472, ptr @src_file.25470, i64 101, i64 1026)
   %bag_ptr2473 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed2469, i32 0, i32 3
   %bag2474 = load ptr, ptr %bag_ptr2473, align 8
   %800 = call i64 @"@std::avrac::diagnostics::render::render_bag_json"(ptr %cpath2468, ptr %bag2474)
@@ -330118,7 +330117,7 @@ if_else2467:                                      ; preds = %if_then2462
   %cast2478 = ptrtoint ptr %parsed2477 to i64
   %null_chk2479 = icmp eq i64 %cast2478, 0
   %null_ext2480 = zext i1 %null_chk2479 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25471, i64 3, ptr @sty_name.25472, i64 38, i64 %null_ext2480, ptr @src_file.25473, i64 101, i64 1025)
+  call void @avra_null_deref_trap(ptr @fld_name.25471, i64 3, ptr @sty_name.25472, i64 38, i64 %null_ext2480, ptr @src_file.25473, i64 101, i64 1027)
   %bag_ptr2481 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed2477, i32 0, i32 3
   %bag2482 = load ptr, ptr %bag_ptr2481, align 8
   %801 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr %csource2475, ptr %cpath2476, ptr %bag2482)
@@ -330129,7 +330128,7 @@ ifcont2493:                                       ; preds = %if_else2496
   %cast2499 = ptrtoint ptr %parsed2498 to i64
   %null_chk2500 = icmp eq i64 %cast2499, 0
   %null_ext2501 = zext i1 %null_chk2500 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25479, i64 5, ptr @sty_name.25480, i64 38, i64 %null_ext2501, ptr @src_file.25481, i64 101, i64 1034)
+  call void @avra_null_deref_trap(ptr @fld_name.25479, i64 5, ptr @sty_name.25480, i64 38, i64 %null_ext2501, ptr @src_file.25481, i64 101, i64 1036)
   %stmts_ptr2502 = getelementptr inbounds nuw %"@std::avrac::parse::ProgramParseResult", ptr %parsed2498, i32 0, i32 0
   %stmts2503 = load ptr, ptr %stmts_ptr2502, align 8
   %802 = call ptr @"@std::avrac::desugar::desugar_program"(ptr %stmts2503)
@@ -330152,7 +330151,7 @@ ifcont2493:                                       ; preds = %if_else2496
   %cast2515 = ptrtoint ptr %mod_resolved2514 to i64
   %null_chk2516 = icmp eq i64 %cast2515, 0
   %null_ext2517 = zext i1 %null_chk2516 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25482, i64 9, ptr @sty_name.25483, i64 55, i64 %null_ext2517, ptr @src_file.25484, i64 101, i64 1039)
+  call void @avra_null_deref_trap(ptr @fld_name.25482, i64 9, ptr @sty_name.25483, i64 55, i64 %null_ext2517, ptr @src_file.25484, i64 101, i64 1041)
   %had_error_ptr2518 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved2514, i32 0, i32 2
   %had_error2519 = load i64, ptr %had_error_ptr2518, align 8
   %if_cond2521 = icmp ne i64 %had_error2519, 0
@@ -330187,7 +330186,7 @@ if_then2522:                                      ; preds = %ifcont2493
   %cast2528 = ptrtoint ptr %mod_resolved2527 to i64
   %null_chk2529 = icmp eq i64 %cast2528, 0
   %null_ext2530 = zext i1 %null_chk2529 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25485, i64 13, ptr @sty_name.25486, i64 55, i64 %null_ext2530, ptr @src_file.25487, i64 101, i64 1040)
+  call void @avra_null_deref_trap(ptr @fld_name.25485, i64 13, ptr @sty_name.25486, i64 55, i64 %null_ext2530, ptr @src_file.25487, i64 101, i64 1042)
   %error_message_ptr2531 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved2527, i32 0, i32 3
   %error_message2532 = load ptr, ptr %error_message_ptr2531, align 8
   %810 = call ptr @"@std::avrac::diagnostics::span_dummy"()
@@ -330206,7 +330205,7 @@ ifcont2536:                                       ; preds = %if_else2538, %if_th
   %cast2545 = ptrtoint ptr %mod_resolved2544 to i64
   %null_chk2546 = icmp eq i64 %cast2545, 0
   %null_ext2547 = zext i1 %null_chk2546 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25488, i64 13, ptr @sty_name.25489, i64 55, i64 %null_ext2547, ptr @src_file.25490, i64 101, i64 1043)
+  call void @avra_null_deref_trap(ptr @fld_name.25488, i64 13, ptr @sty_name.25489, i64 55, i64 %null_ext2547, ptr @src_file.25490, i64 101, i64 1045)
   %error_message_ptr2548 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved2544, i32 0, i32 3
   %error_message2549 = load ptr, ptr %error_message_ptr2548, align 8
   %813 = call i64 @fail(ptr %error_message2549)
@@ -330230,7 +330229,7 @@ ifcont2554:                                       ; preds = %if_else2557
   %cast2560 = ptrtoint ptr %mod_resolved2559 to i64
   %null_chk2561 = icmp eq i64 %cast2560, 0
   %null_ext2562 = zext i1 %null_chk2561 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25493, i64 5, ptr @sty_name.25494, i64 55, i64 %null_ext2562, ptr @src_file.25495, i64 101, i64 1051)
+  call void @avra_null_deref_trap(ptr @fld_name.25493, i64 5, ptr @sty_name.25494, i64 55, i64 %null_ext2562, ptr @src_file.25495, i64 101, i64 1053)
   %stmts_ptr2563 = getelementptr inbounds nuw %"@std::avrac::features::modules::resolver::ModListResult", ptr %mod_resolved2559, i32 0, i32 0
   %stmts2564 = load ptr, ptr %stmts_ptr2563, align 8
   %816 = call ptr @"@std::avrac::features::component_decl::expand::expand_components"(ptr %stmts2564)
@@ -330242,7 +330241,7 @@ ifcont2554:                                       ; preds = %if_else2557
   %cast2569 = ptrtoint ptr %named2568 to i64
   %null_chk2570 = icmp eq i64 %cast2569, 0
   %null_ext2571 = zext i1 %null_chk2570 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25496, i64 3, ptr @sty_name.25497, i64 46, i64 %null_ext2571, ptr @src_file.25498, i64 101, i64 1053)
+  call void @avra_null_deref_trap(ptr @fld_name.25496, i64 3, ptr @sty_name.25497, i64 46, i64 %null_ext2571, ptr @src_file.25498, i64 101, i64 1055)
   %bag_ptr2572 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named2568, i32 0, i32 3
   %bag2573 = load ptr, ptr %bag_ptr2572, align 8
   %818 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag2573)
@@ -330263,7 +330262,7 @@ sc_rhs2576:                                       ; preds = %ifcont2554
   %cast2580 = ptrtoint ptr %named2579 to i64
   %null_chk2581 = icmp eq i64 %cast2580, 0
   %null_ext2582 = zext i1 %null_chk2581 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25499, i64 3, ptr @sty_name.25500, i64 46, i64 %null_ext2582, ptr @src_file.25501, i64 101, i64 1053)
+  call void @avra_null_deref_trap(ptr @fld_name.25499, i64 3, ptr @sty_name.25500, i64 46, i64 %null_ext2582, ptr @src_file.25501, i64 101, i64 1055)
   %bag_ptr2583 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named2579, i32 0, i32 3
   %bag2584 = load ptr, ptr %bag_ptr2583, align 8
   %820 = call i1 @"@std::avrac::diagnostics::bag_has_warnings"(ptr %bag2584)
@@ -330294,7 +330293,7 @@ ifcont2592:                                       ; preds = %if_else2595, %ifcon
   %cast2616 = ptrtoint ptr %named2615 to i64
   %null_chk2617 = icmp eq i64 %cast2616, 0
   %null_ext2618 = zext i1 %null_chk2617 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25508, i64 9, ptr @sty_name.25509, i64 46, i64 %null_ext2618, ptr @src_file.25510, i64 101, i64 1057)
+  call void @avra_null_deref_trap(ptr @fld_name.25508, i64 9, ptr @sty_name.25509, i64 46, i64 %null_ext2618, ptr @src_file.25510, i64 101, i64 1059)
   %had_error_ptr2619 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named2615, i32 0, i32 1
   %had_error2620 = load i64, ptr %had_error_ptr2619, align 8
   %if_cond2622 = icmp ne i64 %had_error2620, 0
@@ -330316,7 +330315,7 @@ if_then2598:                                      ; preds = %if_then2594
   %cast2602 = ptrtoint ptr %named2601 to i64
   %null_chk2603 = icmp eq i64 %cast2602, 0
   %null_ext2604 = zext i1 %null_chk2603 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25502, i64 3, ptr @sty_name.25503, i64 46, i64 %null_ext2604, ptr @src_file.25504, i64 101, i64 1054)
+  call void @avra_null_deref_trap(ptr @fld_name.25502, i64 3, ptr @sty_name.25503, i64 46, i64 %null_ext2604, ptr @src_file.25504, i64 101, i64 1056)
   %bag_ptr2605 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named2601, i32 0, i32 3
   %bag2606 = load ptr, ptr %bag_ptr2605, align 8
   %821 = call i64 @"@std::avrac::diagnostics::render::render_bag_json"(ptr %cpath2600, ptr %bag2606)
@@ -330329,7 +330328,7 @@ if_else2599:                                      ; preds = %if_then2594
   %cast2610 = ptrtoint ptr %named2609 to i64
   %null_chk2611 = icmp eq i64 %cast2610, 0
   %null_ext2612 = zext i1 %null_chk2611 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25505, i64 3, ptr @sty_name.25506, i64 46, i64 %null_ext2612, ptr @src_file.25507, i64 101, i64 1055)
+  call void @avra_null_deref_trap(ptr @fld_name.25505, i64 3, ptr @sty_name.25506, i64 46, i64 %null_ext2612, ptr @src_file.25507, i64 101, i64 1057)
   %bag_ptr2613 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named2609, i32 0, i32 3
   %bag2614 = load ptr, ptr %bag_ptr2613, align 8
   %822 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr %csource2607, ptr %cpath2608, ptr %bag2614)
@@ -330349,7 +330348,7 @@ if_then2623:                                      ; preds = %ifcont2592
   %cast2626 = ptrtoint ptr %named2625 to i64
   %null_chk2627 = icmp eq i64 %cast2626, 0
   %null_ext2628 = zext i1 %null_chk2627 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25511, i64 13, ptr @sty_name.25512, i64 46, i64 %null_ext2628, ptr @src_file.25513, i64 101, i64 1057)
+  call void @avra_null_deref_trap(ptr @fld_name.25511, i64 13, ptr @sty_name.25512, i64 46, i64 %null_ext2628, ptr @src_file.25513, i64 101, i64 1059)
   %error_message_ptr2629 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named2625, i32 0, i32 2
   %error_message2630 = load ptr, ptr %error_message_ptr2629, align 8
   %824 = call i64 @fail(ptr %error_message2630)
@@ -330363,7 +330362,7 @@ ifcont2635:                                       ; preds = %if_else2638
   %cast2641 = ptrtoint ptr %named2640 to i64
   %null_chk2642 = icmp eq i64 %cast2641, 0
   %null_ext2643 = zext i1 %null_chk2642 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25516, i64 5, ptr @sty_name.25517, i64 46, i64 %null_ext2643, ptr @src_file.25518, i64 101, i64 1063)
+  call void @avra_null_deref_trap(ptr @fld_name.25516, i64 5, ptr @sty_name.25517, i64 46, i64 %null_ext2643, ptr @src_file.25518, i64 101, i64 1065)
   %stmts_ptr2644 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named2640, i32 0, i32 0
   %stmts2645 = load ptr, ptr %stmts_ptr2644, align 8
   %825 = call ptr @"@std::avrac::typeck::typecheck_program"(ptr %stmts2645)
@@ -330372,7 +330371,7 @@ ifcont2635:                                       ; preds = %if_else2638
   %cast2648 = ptrtoint ptr %tc_result2647 to i64
   %null_chk2649 = icmp eq i64 %cast2648, 0
   %null_ext2650 = zext i1 %null_chk2649 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25519, i64 3, ptr @sty_name.25520, i64 36, i64 %null_ext2650, ptr @src_file.25521, i64 101, i64 1064)
+  call void @avra_null_deref_trap(ptr @fld_name.25519, i64 3, ptr @sty_name.25520, i64 36, i64 %null_ext2650, ptr @src_file.25521, i64 101, i64 1066)
   %bag_ptr2651 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result2647, i32 0, i32 2
   %bag2652 = load ptr, ptr %bag_ptr2651, align 8
   %826 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag2652)
@@ -330393,7 +330392,7 @@ sc_rhs2655:                                       ; preds = %ifcont2635
   %cast2659 = ptrtoint ptr %tc_result2658 to i64
   %null_chk2660 = icmp eq i64 %cast2659, 0
   %null_ext2661 = zext i1 %null_chk2660 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25522, i64 3, ptr @sty_name.25523, i64 36, i64 %null_ext2661, ptr @src_file.25524, i64 101, i64 1064)
+  call void @avra_null_deref_trap(ptr @fld_name.25522, i64 3, ptr @sty_name.25523, i64 36, i64 %null_ext2661, ptr @src_file.25524, i64 101, i64 1066)
   %bag_ptr2662 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result2658, i32 0, i32 2
   %bag2663 = load ptr, ptr %bag_ptr2662, align 8
   %828 = call i1 @"@std::avrac::diagnostics::bag_has_warnings"(ptr %bag2663)
@@ -330424,7 +330423,7 @@ ifcont2671:                                       ; preds = %if_else2674, %ifcon
   %cast2695 = ptrtoint ptr %tc_result2694 to i64
   %null_chk2696 = icmp eq i64 %cast2695, 0
   %null_ext2697 = zext i1 %null_chk2696 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25531, i64 3, ptr @sty_name.25532, i64 36, i64 %null_ext2697, ptr @src_file.25533, i64 101, i64 1068)
+  call void @avra_null_deref_trap(ptr @fld_name.25531, i64 3, ptr @sty_name.25532, i64 36, i64 %null_ext2697, ptr @src_file.25533, i64 101, i64 1070)
   %bag_ptr2698 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result2694, i32 0, i32 2
   %bag2699 = load ptr, ptr %bag_ptr2698, align 8
   %829 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag2699)
@@ -330448,7 +330447,7 @@ if_then2677:                                      ; preds = %if_then2673
   %cast2681 = ptrtoint ptr %tc_result2680 to i64
   %null_chk2682 = icmp eq i64 %cast2681, 0
   %null_ext2683 = zext i1 %null_chk2682 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25525, i64 3, ptr @sty_name.25526, i64 36, i64 %null_ext2683, ptr @src_file.25527, i64 101, i64 1065)
+  call void @avra_null_deref_trap(ptr @fld_name.25525, i64 3, ptr @sty_name.25526, i64 36, i64 %null_ext2683, ptr @src_file.25527, i64 101, i64 1067)
   %bag_ptr2684 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result2680, i32 0, i32 2
   %bag2685 = load ptr, ptr %bag_ptr2684, align 8
   %830 = call i64 @"@std::avrac::diagnostics::render::render_bag_json"(ptr %cpath2679, ptr %bag2685)
@@ -330461,7 +330460,7 @@ if_else2678:                                      ; preds = %if_then2673
   %cast2689 = ptrtoint ptr %tc_result2688 to i64
   %null_chk2690 = icmp eq i64 %cast2689, 0
   %null_ext2691 = zext i1 %null_chk2690 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25528, i64 3, ptr @sty_name.25529, i64 36, i64 %null_ext2691, ptr @src_file.25530, i64 101, i64 1066)
+  call void @avra_null_deref_trap(ptr @fld_name.25528, i64 3, ptr @sty_name.25529, i64 36, i64 %null_ext2691, ptr @src_file.25530, i64 101, i64 1068)
   %bag_ptr2692 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result2688, i32 0, i32 2
   %bag2693 = load ptr, ptr %bag_ptr2692, align 8
   %831 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr %csource2686, ptr %cpath2687, ptr %bag2693)
@@ -330488,14 +330487,14 @@ ifcont2709:                                       ; preds = %if_else2712
   %cast2715 = ptrtoint ptr %tc_result2714 to i64
   %null_chk2716 = icmp eq i64 %cast2715, 0
   %null_ext2717 = zext i1 %null_chk2716 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25537, i64 5, ptr @sty_name.25538, i64 36, i64 %null_ext2717, ptr @src_file.25539, i64 101, i64 1075)
+  call void @avra_null_deref_trap(ptr @fld_name.25537, i64 5, ptr @sty_name.25538, i64 36, i64 %null_ext2717, ptr @src_file.25539, i64 101, i64 1077)
   %stmts_ptr2718 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result2714, i32 0, i32 0
   %stmts2719 = load ptr, ptr %stmts_ptr2718, align 8
   %tc_result2720 = load ptr, ptr %tc_result2646, align 8
   %cast2721 = ptrtoint ptr %tc_result2720 to i64
   %null_chk2722 = icmp eq i64 %cast2721, 0
   %null_ext2723 = zext i1 %null_chk2722 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25540, i64 11, ptr @sty_name.25541, i64 36, i64 %null_ext2723, ptr @src_file.25542, i64 101, i64 1075)
+  call void @avra_null_deref_trap(ptr @fld_name.25540, i64 11, ptr @sty_name.25541, i64 36, i64 %null_ext2723, ptr @src_file.25542, i64 101, i64 1077)
   %trait_impls_ptr2724 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %tc_result2720, i32 0, i32 3
   %trait_impls2725 = load ptr, ptr %trait_impls_ptr2724, align 8
   %834 = call ptr @"@std::avrac::features::generics::mono::monomorphize"(ptr %stmts2719, ptr %trait_impls2725)
@@ -330504,7 +330503,7 @@ ifcont2709:                                       ; preds = %if_else2712
   %cast2728 = ptrtoint ptr %mono2727 to i64
   %null_chk2729 = icmp eq i64 %cast2728, 0
   %null_ext2730 = zext i1 %null_chk2729 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25543, i64 3, ptr @sty_name.25544, i64 49, i64 %null_ext2730, ptr @src_file.25545, i64 101, i64 1076)
+  call void @avra_null_deref_trap(ptr @fld_name.25543, i64 3, ptr @sty_name.25544, i64 49, i64 %null_ext2730, ptr @src_file.25545, i64 101, i64 1078)
   %bag_ptr2731 = getelementptr inbounds nuw %"@std::avrac::features::generics::mono::MonoResult", ptr %mono2727, i32 0, i32 1
   %bag2732 = load ptr, ptr %bag_ptr2731, align 8
   %835 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag2732)
@@ -330538,7 +330537,7 @@ ifcont2734:                                       ; preds = %if_else2737, %ifcon
   %cast2766 = ptrtoint ptr %mono2765 to i64
   %null_chk2767 = icmp eq i64 %cast2766, 0
   %null_ext2768 = zext i1 %null_chk2767 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25554, i64 5, ptr @sty_name.25555, i64 49, i64 %null_ext2768, ptr @src_file.25556, i64 101, i64 1083)
+  call void @avra_null_deref_trap(ptr @fld_name.25554, i64 5, ptr @sty_name.25555, i64 49, i64 %null_ext2768, ptr @src_file.25556, i64 101, i64 1085)
   %stmts_ptr2769 = getelementptr inbounds nuw %"@std::avrac::features::generics::mono::MonoResult", ptr %mono2765, i32 0, i32 0
   %stmts2770 = load ptr, ptr %stmts_ptr2769, align 8
   %output2771 = load ptr, ptr %output2764, align 8
@@ -330549,7 +330548,7 @@ ifcont2734:                                       ; preds = %if_else2737, %ifcon
   %cast2776 = ptrtoint ptr %named2775 to i64
   %null_chk2777 = icmp eq i64 %cast2776, 0
   %null_ext2778 = zext i1 %null_chk2777 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25557, i64 8, ptr @sty_name.25558, i64 46, i64 %null_ext2778, ptr @src_file.25559, i64 101, i64 1083)
+  call void @avra_null_deref_trap(ptr @fld_name.25557, i64 8, ptr @sty_name.25558, i64 46, i64 %null_ext2778, ptr @src_file.25559, i64 101, i64 1085)
   %type_reg_ptr2779 = getelementptr inbounds nuw %"@std::avrac::resolve::names::NameResolveResult", ptr %named2775, i32 0, i32 4
   %type_reg2780 = load ptr, ptr %type_reg_ptr2779, align 8
   %842 = call ptr @"@std::avrac::codegen::setup::compile_program"(ptr %stmts2770, ptr %output2771, i1 %debug_null2772, i1 %enable_coverage2773, ptr %cpath2774, ptr %type_reg2780)
@@ -330575,7 +330574,7 @@ if_then2740:                                      ; preds = %if_then2736
   %cast2744 = ptrtoint ptr %mono2743 to i64
   %null_chk2745 = icmp eq i64 %cast2744, 0
   %null_ext2746 = zext i1 %null_chk2745 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25546, i64 3, ptr @sty_name.25547, i64 49, i64 %null_ext2746, ptr @src_file.25548, i64 101, i64 1077)
+  call void @avra_null_deref_trap(ptr @fld_name.25546, i64 3, ptr @sty_name.25547, i64 49, i64 %null_ext2746, ptr @src_file.25548, i64 101, i64 1079)
   %bag_ptr2747 = getelementptr inbounds nuw %"@std::avrac::features::generics::mono::MonoResult", ptr %mono2743, i32 0, i32 1
   %bag2748 = load ptr, ptr %bag_ptr2747, align 8
   %844 = call i64 @"@std::avrac::diagnostics::render::render_bag_json"(ptr %cpath2742, ptr %bag2748)
@@ -330588,7 +330587,7 @@ if_else2741:                                      ; preds = %if_then2736
   %cast2752 = ptrtoint ptr %mono2751 to i64
   %null_chk2753 = icmp eq i64 %cast2752, 0
   %null_ext2754 = zext i1 %null_chk2753 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.25549, i64 3, ptr @sty_name.25550, i64 49, i64 %null_ext2754, ptr @src_file.25551, i64 101, i64 1078)
+  call void @avra_null_deref_trap(ptr @fld_name.25549, i64 3, ptr @sty_name.25550, i64 49, i64 %null_ext2754, ptr @src_file.25551, i64 101, i64 1080)
   %bag_ptr2755 = getelementptr inbounds nuw %"@std::avrac::features::generics::mono::MonoResult", ptr %mono2751, i32 0, i32 1
   %bag2756 = load ptr, ptr %bag_ptr2755, align 8
   %845 = call i64 @"@std::avrac::diagnostics::render::render_bag"(ptr %csource2749, ptr %cpath2750, ptr %bag2756)
@@ -330639,7 +330638,7 @@ march_arm2789:                                    ; preds = %march_next2786
   br i1 %json_output2807, label %if_then2809, label %if_else2810
 
 march_next2790:                                   ; preds = %march_next2786
-  call void @avra_match_unreachable(ptr @.match_fn.25561, i64 %tag2782, ptr @mu_file.25562, i64 1083)
+  call void @avra_match_unreachable(ptr @.match_fn.25561, i64 %tag2782, ptr @mu_file.25562, i64 1085)
   unreachable
 
 ifcont2808:                                       ; preds = %if_else2810, %if_then2809

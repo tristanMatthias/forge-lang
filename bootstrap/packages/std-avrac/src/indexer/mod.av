@@ -31,7 +31,8 @@ use @std.lsp.{LspPos, LspSpan, Sym, SymList, SymKind,
               lsp_pos, lsp_span, sym_new,
               lsp_serve,
               cache_empty, cache_is_fresh, cache_evict_file,
-              cache_add_file, cache_load, cache_save}
+              cache_add_file, cache_load, cache_save,
+              sym_list_concat}
 
 // ── Public API ──────────────────────────────────────────────────────
 
@@ -507,15 +508,6 @@ fn reverse_syms(list: SymList) -> SymList {
         }
     }
     SymList.End
-}
-
-/// Concatenate two SymLists. Used by `process_stmt` for Module
-/// decls so nested syms land in the parent's accumulator.
-fn sym_list_concat(a: SymList, b: SymList) -> SymList {
-    match a {
-        .End -> b
-        .Node(item, next) -> SymList.Node(item, sym_list_concat(next, b))
-    }
 }
 
 // ── LSP server entry point ─────────────────────────────────────────
