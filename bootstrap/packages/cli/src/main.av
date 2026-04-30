@@ -310,6 +310,252 @@ fn has_argv_flag(flag: string) -> bool {
     false
 }
 
+// Parsed view of `avra test ...` argv. -f/--filter narrows tests
+// by file-name substring; -c/--coverage enables instrumentation;
+// --lcov path turns on coverage AND writes an LCOV report there.
+type TestArgs = { filter: string, coverage: bool, lcov_path: string }
+
+fn parse_test_args() -> TestArgs {
+    mut filter_arg = ""
+    mut coverage_flag = false
+    mut lcov_path = ""
+    mut i = 2
+    while i < avra_selfhost_argc() {
+        let arg = avra_selfhost_get_arg_cstr(i)
+        if arg == "-f" || arg == "--filter" {
+            if i + 1 < avra_selfhost_argc() {
+                filter_arg = avra_selfhost_get_arg_cstr(i + 1)
+            }
+            i = i + 2
+            continue
+        }
+        if arg == "-c" || arg == "--coverage" {
+            coverage_flag = true
+            i = i + 1
+            continue
+        }
+        if arg == "--lcov" {
+            coverage_flag = true
+            if i + 1 < avra_selfhost_argc() {
+                lcov_path = avra_selfhost_get_arg_cstr(i + 1)
+            }
+            i = i + 2
+            continue
+        }
+        i = i + 1
+    }
+    TestArgs { filter: filter_arg, coverage: coverage_flag, lcov_path }
+}
+
+// `avra test` — discover every `*_test.av` under PWD, parse each as
+// a Module, hoist shared @std packages to the program root, link
+// the assembled program, and run the spec/given/then suite.
+// Coverage path lowers `llvm.instrprof.increment` intrinsics, links
+// with clang_rt.profile, then feeds profdata to the Avra-side
+// renderer (`coverage::render_coverage`).
+fn run_test_command() {
+    let project_dir = avra_process_env_get("PWD")
+    let args = parse_test_args()
+
+    // Step 1: Discover _test.av files
+    // TODO(bead wcrm): replace with proper FS walk
+    let test_files = avra_shell_exec("find ${project_dir} -name '*_test.av' -type f -not -path '*/build/*' 2>/dev/null | sort")
+    if test_files == "" {
+        println("No test files found.")
+        return
+    }
+
+    // Step 2: Parse each test file as a Module
+    // Each file becomes Stmt.Module(name, body) — proper namespacing.
+    // Module-level code (spec blocks) executes via __bs_top_level patching.
+    //
+    // @std packages are loaded once and HOISTED to the top level of the
+    // program. Without hoisting, every test file would carry its own
+    // copy of each @std package; the resolver's global index would then
+    // contain N copies of every package-defined type and `item_lookup`
+    // returns the first match, mis-qualifying types and producing
+    // duplicate impl-method names (forge-crafting-intepreters-xks4).
+    mut modules = StmtList.End
+    mut packages = StmtList.End
+    mut shared_loaded = LoadedPaths.End
+    mut count = 0
+    for path in test_files.split("\n") {
+        if path == "" { continue }
+        let content = read_file(path)
+        if !content.contains("spec ") { continue }
+        if content.contains("fn main()") { continue }
+
+        let mod_name = basename_no_ext(path)
+        if args.filter != "" && !mod_name.contains(args.filter) { continue }
+
+        let parsed = parse_program_source(content)
+        if parsed.had_error || parsed.stmts == null {
+            if bag_has_errors(parsed.bag) {
+                render_bag(content, path, parsed.bag)
+            }
+            eprintln("error parsing ${path}")
+            continue
+        }
+
+        // Resolve any `mod foo` stubs against the test file's
+        // directory so sibling .av files are pulled in. Share
+        // LoadedPaths across tests so each @std package is only
+        // inlined the first time any test imports it.
+        let test_dir = modules_dirname(path)
+        let mod_resolved = resolve_module_files(parsed.stmts!, test_dir, shared_loaded)
+        if mod_resolved.had_error {
+            eprintln("module resolve error in ${path}: ${mod_resolved.error_message}")
+            continue
+        }
+        shared_loaded = mod_resolved.loaded
+
+        // Hoist @-prefixed package modules out of the test body and
+        // into a single top-level group. Per-test bodies keep `use`
+        // statements, which still resolve against the hoisted modules.
+        let split = split_package_modules(mod_resolved.stmts)
+        packages = append_stmt_list(split.packages, packages)
+        modules = StmtList.Node(
+            sstmt_dummy(Stmt.Module(mod_name, split.body)),
+            modules
+        )
+        count = count + 1
+    }
+
+    if count == 0 {
+        println("No spec test files found.")
+        return
+    }
+
+    // Step 3: Build program — externs + packages + modules + main
+    //
+    // Hoisted package modules sit at the program root so the
+    // resolver's module tree contains exactly one copy of each
+    // @std::pkg, regardless of how many tests imported it.
+    mut program = prepend_test_externs(append_stmt_list(packages, modules))
+
+    // main() just calls avra_test_summary().
+    // Module-level spec blocks run via __bs_top_level (codegen patches main to call it).
+    let main_body = StmtList.Node(
+        sstmt_dummy(Stmt.Expr(Expr.Call(Expr.Ident("avra_test_summary"), ExprList.End))),
+        StmtList.End
+    )
+    program = StmtList.Node(
+        sstmt_dummy(Stmt.Function("main", TypeParamList.End, ParamList.End, ValueType.Int, main_body)),
+        program
+    )
+
+    // Step 4: Full pipeline
+    let desugared = desugar_program(program)
+    let expanded = expand_components(desugared)
+    let named = resolve_names(expanded)
+    if bag_has_errors(named.bag) || named.had_error {
+        render_bag("", "<test>", named.bag)
+        fail(named.error_message)
+    }
+    let tc_result = typecheck_program(named.stmts)
+    if bag_has_errors(tc_result.bag) {
+        render_bag("", "<test>", tc_result.bag)
+        fail("type check failed")
+    }
+    let mono = monomorphize(tc_result.stmts, tc_result.trait_impls)
+    if bag_has_errors(mono.bag) {
+        render_bag("", "<test>", mono.bag)
+        fail("monomorphization failed")
+    }
+
+    // Step 5: emit object + link + run.
+    // Non-coverage: codegen straight to .o, link, exec.
+    // Coverage: codegen IR, lower instrprof via opt, llc to .o, link
+    // with profile runtime + 16K-page-aligned profile sections, exec
+    // with LLVM_PROFILE_FILE set, then call llvm-cov for the report.
+    // All coverage intermediates live under build/coverage/ so the
+    // regular build tree stays clean.
+    let build_dir = "${project_dir}/build"
+    let llvm_env = avra_process_env_get("LLVM_PREFIX")
+    let llvm_prefix = if llvm_env == "" { "/opt/homebrew/opt/llvm" } else { llvm_env }
+    let llvm_lib = "${llvm_prefix}/lib"
+
+    if !args.coverage {
+        let obj_path = "${build_dir}/_test.o"
+        let bin_path = "${build_dir}/_test.bin"
+        match codegen_and_emit_object(mono.stmts, obj_path, named.type_reg) {
+            .Ok(_) -> {}
+            .Err(e) -> { fail(e) }
+        }
+        let link_args = "[\"${obj_path}\", \"${build_dir}/runtime.o\", \"${build_dir}/llvm_wrapper.o\", \"-o\", \"${bin_path}\", \"-Wl,-stack_size,0x2000000\", \"-L${llvm_lib}\", \"-lLLVM\", \"-lc++\"]"
+        if avra_process_forward("cc", link_args, "") != 0 { fail("link failed") }
+        let exit_code = avra_process_forward(bin_path, "[]", "")
+        avra_process_exit(exit_code)
+        return
+    }
+
+    // ── Coverage path ──
+    let cov_dir = "${build_dir}/coverage"
+    avra_shell_exec("mkdir -p ${cov_dir}")
+    let ir_path = "${cov_dir}/_test.ll"
+    let cov_ll = "${cov_dir}/_test.cov.ll"
+    let obj_path = "${cov_dir}/_test.o"
+    let bin_path = "${cov_dir}/_test.bin"
+    let profraw = "${cov_dir}/_test.profraw"
+    let profdata = "${cov_dir}/_test.profdata"
+
+    match codegen_and_emit_ir_cov(mono.stmts, ir_path, named.type_reg, "${cov_dir}/_test.av") {
+        .Ok(_) -> {}
+        .Err(e) -> { fail(e) }
+    }
+
+    // Lower llvm.instrprof.increment intrinsics to runtime counter updates.
+    let opt_args = "[\"-passes=instrprof\", \"-mtriple=arm64-apple-macosx\", \"-o\", \"${cov_ll}\", \"-S\", \"${ir_path}\"]"
+    if avra_process_forward("${llvm_prefix}/bin/opt", opt_args, "") != 0 {
+        fail("opt instrprof lowering failed")
+    }
+
+    // Lowered IR → object.
+    let llc_args = "[\"-O2\", \"-filetype=obj\", \"${cov_ll}\", \"-o\", \"${obj_path}\"]"
+    if avra_process_forward("${llvm_prefix}/bin/llc", llc_args, "") != 0 {
+        fail("llc failed")
+    }
+
+    // Locate clang_rt.profile_osx (path varies by LLVM version).
+    let darwin_dir = avra_shell_exec("ls -1 ${llvm_prefix}/lib/clang | head -1").trim()
+    let prof_lib_dir = "${llvm_prefix}/lib/clang/${darwin_dir}/lib/darwin"
+    // Page-align the profile sections — clang_rt's profile runtime
+    // computes counter array bounds from section addresses and
+    // expects 16K alignment on Darwin/arm64. Without these flags
+    // llvm-profdata reports "number of counters is zero".
+    let sectalign = "\"-Wl,-sectalign,__DATA,__llvm_prf_cnts,0x4000\", \"-Wl,-sectalign,__DATA,__llvm_prf_bits,0x4000\", \"-Wl,-sectalign,__DATA,__llvm_prf_data,0x4000\""
+    let link_args = "[\"${obj_path}\", \"${build_dir}/runtime.o\", \"${build_dir}/llvm_wrapper.o\", \"-o\", \"${bin_path}\", \"-Wl,-stack_size,0x2000000\", \"-L${llvm_lib}\", \"-lLLVM\", \"-lc++\", \"-L${prof_lib_dir}\", \"-lclang_rt.profile_osx\", ${sectalign}]"
+    if avra_process_forward("cc", link_args, "") != 0 {
+        fail("link failed")
+    }
+
+    // Run the instrumented binary directly so its stdout streams to
+    // the user. We pass LLVM_PROFILE_FILE through the env-options
+    // payload of avra_process_forward (avra_shell_exec would buffer
+    // the entire output and can lose lines on very large suites).
+    avra_shell_exec("rm -f ${profraw}")
+    let run_opts = "{\"env\":{\"LLVM_PROFILE_FILE\":\"${profraw}\"}}"
+    let run_rc = avra_process_forward(bin_path, "[]", run_opts)
+    if run_rc != 0 { eprintln("test binary exited with code ${string(run_rc)}") }
+
+    // Merge profraw → profdata.
+    let merge_out = avra_shell_exec("${llvm_prefix}/bin/llvm-profdata merge -sparse -o ${profdata} ${profraw} 2>&1")
+    if merge_out.length > 0 { eprintln(merge_out.trim()) }
+
+    // Dump profdata to text and hand off to the Avra-side renderer
+    // (coverage::render_coverage). The renderer joins our codegen-
+    // emitted covmap.tsv with the per-function counts to produce
+    // line/branch/MC-DC stats and an optional LCOV file.
+    let dump_path = "${cov_dir}/_test.profdata.txt"
+    avra_shell_exec("${llvm_prefix}/bin/llvm-profdata show --all-functions --counts ${profdata} > ${dump_path} 2>/dev/null")
+
+    let covmap_path = "${cov_dir}/_test.av.covmap.tsv"
+    println("")
+    render_coverage(covmap_path, dump_path, args.lcov_path)
+
+    avra_process_exit(0)
+}
+
 // Top-level dispatch for `avra docs`. Pulls argv via parse_docs_args,
 // loads the requested corpus, then routes to the matching renderer.
 // Used to live inline in main(); split out so main()'s body stays
@@ -578,235 +824,7 @@ fn main() {
             return
         }
         if cmd0 == "test" {
-            let project_dir = avra_process_env_get("PWD")
-
-            // Parse args
-            mut filter_arg = ""
-            mut coverage_flag = false
-            mut lcov_path = ""
-            mut i = 2
-            while i < avra_selfhost_argc() {
-                let arg = avra_selfhost_get_arg_cstr(i)
-                if arg == "-f" || arg == "--filter" {
-                    if i + 1 < avra_selfhost_argc() {
-                        filter_arg = avra_selfhost_get_arg_cstr(i + 1)
-                    }
-                    i = i + 2
-                    continue
-                }
-                if arg == "-c" || arg == "--coverage" {
-                    coverage_flag = true
-                    i = i + 1
-                    continue
-                }
-                if arg == "--lcov" {
-                    coverage_flag = true
-                    if i + 1 < avra_selfhost_argc() {
-                        lcov_path = avra_selfhost_get_arg_cstr(i + 1)
-                    }
-                    i = i + 2
-                    continue
-                }
-                i = i + 1
-            }
-
-            // Step 1: Discover _test.av files
-            // TODO(bead wcrm): replace with proper FS walk
-            let test_files = avra_shell_exec("find ${project_dir} -name '*_test.av' -type f -not -path '*/build/*' 2>/dev/null | sort")
-            if test_files == "" {
-                println("No test files found.")
-                return
-            }
-
-            // Step 2: Parse each test file as a Module
-            // Each file becomes Stmt.Module(name, body) — proper namespacing.
-            // Module-level code (spec blocks) executes via __bs_top_level patching.
-            //
-            // @std packages are loaded once and HOISTED to the top level of the
-            // program. Without hoisting, every test file would carry its own
-            // copy of each @std package; the resolver's global index would then
-            // contain N copies of every package-defined type and `item_lookup`
-            // returns the first match, mis-qualifying types and producing
-            // duplicate impl-method names (forge-crafting-intepreters-xks4).
-            mut modules = StmtList.End
-            mut packages = StmtList.End
-            mut shared_loaded = LoadedPaths.End
-            mut count = 0
-            for path in test_files.split("\n") {
-                if path == "" { continue }
-                let content = read_file(path)
-                if !content.contains("spec ") { continue }
-                if content.contains("fn main()") { continue }
-
-                let mod_name = basename_no_ext(path)
-                if filter_arg != "" && !mod_name.contains(filter_arg) { continue }
-
-                let parsed = parse_program_source(content)
-                if parsed.had_error || parsed.stmts == null {
-                    if bag_has_errors(parsed.bag) {
-                        render_bag(content, path, parsed.bag)
-                    }
-                    eprintln("error parsing ${path}")
-                    continue
-                }
-
-                // Resolve any `mod foo` stubs against the test file's
-                // directory so sibling .av files are pulled in. Share
-                // LoadedPaths across tests so each @std package is only
-                // inlined the first time any test imports it.
-                let test_dir = modules_dirname(path)
-                let mod_resolved = resolve_module_files(parsed.stmts!, test_dir, shared_loaded)
-                if mod_resolved.had_error {
-                    eprintln("module resolve error in ${path}: ${mod_resolved.error_message}")
-                    continue
-                }
-                shared_loaded = mod_resolved.loaded
-
-                // Hoist @-prefixed package modules out of the test body and
-                // into a single top-level group. Per-test bodies keep `use`
-                // statements, which still resolve against the hoisted modules.
-                let split = split_package_modules(mod_resolved.stmts)
-                packages = append_stmt_list(split.packages, packages)
-                modules = StmtList.Node(
-                    sstmt_dummy(Stmt.Module(mod_name, split.body)),
-                    modules
-                )
-                count = count + 1
-            }
-
-            if count == 0 {
-                println("No spec test files found.")
-                return
-            }
-
-            // Step 3: Build program — externs + packages + modules + main
-            //
-            // Hoisted package modules sit at the program root so the
-            // resolver's module tree contains exactly one copy of each
-            // @std::pkg, regardless of how many tests imported it.
-            mut program = prepend_test_externs(append_stmt_list(packages, modules))
-
-            // main() just calls avra_test_summary().
-            // Module-level spec blocks run via __bs_top_level (codegen patches main to call it).
-            let main_body = StmtList.Node(
-                sstmt_dummy(Stmt.Expr(Expr.Call(Expr.Ident("avra_test_summary"), ExprList.End))),
-                StmtList.End
-            )
-            program = StmtList.Node(
-                sstmt_dummy(Stmt.Function("main", TypeParamList.End, ParamList.End, ValueType.Int, main_body)),
-                program
-            )
-
-            // Step 4: Full pipeline
-            let desugared = desugar_program(program)
-            let expanded = expand_components(desugared)
-            let named = resolve_names(expanded)
-            if bag_has_errors(named.bag) || named.had_error {
-                render_bag("", "<test>", named.bag)
-                fail(named.error_message)
-            }
-            let tc_result = typecheck_program(named.stmts)
-            if bag_has_errors(tc_result.bag) {
-                render_bag("", "<test>", tc_result.bag)
-                fail("type check failed")
-            }
-            let mono = monomorphize(tc_result.stmts, tc_result.trait_impls)
-            if bag_has_errors(mono.bag) {
-                render_bag("", "<test>", mono.bag)
-                fail("monomorphization failed")
-            }
-
-            // Step 5: emit object + link + run.
-            // Non-coverage: codegen straight to .o, link, exec.
-            // Coverage: codegen IR, lower instrprof via opt, llc to .o, link
-            // with profile runtime + 16K-page-aligned profile sections, exec
-            // with LLVM_PROFILE_FILE set, then call llvm-cov for the report.
-            // All coverage intermediates live under build/coverage/ so the
-            // regular build tree stays clean.
-            let build_dir = "${project_dir}/build"
-            let llvm_env = avra_process_env_get("LLVM_PREFIX")
-            let llvm_prefix = if llvm_env == "" { "/opt/homebrew/opt/llvm" } else { llvm_env }
-            let llvm_lib = "${llvm_prefix}/lib"
-
-            if !coverage_flag {
-                let obj_path = "${build_dir}/_test.o"
-                let bin_path = "${build_dir}/_test.bin"
-                match codegen_and_emit_object(mono.stmts, obj_path, named.type_reg) {
-                    .Ok(_) -> {}
-                    .Err(e) -> { fail(e) }
-                }
-                let link_args = "[\"${obj_path}\", \"${build_dir}/runtime.o\", \"${build_dir}/llvm_wrapper.o\", \"-o\", \"${bin_path}\", \"-Wl,-stack_size,0x2000000\", \"-L${llvm_lib}\", \"-lLLVM\", \"-lc++\"]"
-                if avra_process_forward("cc", link_args, "") != 0 { fail("link failed") }
-                let exit_code = avra_process_forward(bin_path, "[]", "")
-                avra_process_exit(exit_code)
-                return
-            }
-
-            // ── Coverage path ──
-            let cov_dir = "${build_dir}/coverage"
-            avra_shell_exec("mkdir -p ${cov_dir}")
-            let ir_path = "${cov_dir}/_test.ll"
-            let cov_ll = "${cov_dir}/_test.cov.ll"
-            let obj_path = "${cov_dir}/_test.o"
-            let bin_path = "${cov_dir}/_test.bin"
-            let profraw = "${cov_dir}/_test.profraw"
-            let profdata = "${cov_dir}/_test.profdata"
-
-            match codegen_and_emit_ir_cov(mono.stmts, ir_path, named.type_reg, "${cov_dir}/_test.av") {
-                .Ok(_) -> {}
-                .Err(e) -> { fail(e) }
-            }
-
-            // Lower llvm.instrprof.increment intrinsics to runtime counter updates.
-            let opt_args = "[\"-passes=instrprof\", \"-mtriple=arm64-apple-macosx\", \"-o\", \"${cov_ll}\", \"-S\", \"${ir_path}\"]"
-            if avra_process_forward("${llvm_prefix}/bin/opt", opt_args, "") != 0 {
-                fail("opt instrprof lowering failed")
-            }
-
-            // Lowered IR → object.
-            let llc_args = "[\"-O2\", \"-filetype=obj\", \"${cov_ll}\", \"-o\", \"${obj_path}\"]"
-            if avra_process_forward("${llvm_prefix}/bin/llc", llc_args, "") != 0 {
-                fail("llc failed")
-            }
-
-            // Locate clang_rt.profile_osx (path varies by LLVM version).
-            let darwin_dir = avra_shell_exec("ls -1 ${llvm_prefix}/lib/clang | head -1").trim()
-            let prof_lib_dir = "${llvm_prefix}/lib/clang/${darwin_dir}/lib/darwin"
-            // Page-align the profile sections — clang_rt's profile runtime
-            // computes counter array bounds from section addresses and
-            // expects 16K alignment on Darwin/arm64. Without these flags
-            // llvm-profdata reports "number of counters is zero".
-            let sectalign = "\"-Wl,-sectalign,__DATA,__llvm_prf_cnts,0x4000\", \"-Wl,-sectalign,__DATA,__llvm_prf_bits,0x4000\", \"-Wl,-sectalign,__DATA,__llvm_prf_data,0x4000\""
-            let link_args = "[\"${obj_path}\", \"${build_dir}/runtime.o\", \"${build_dir}/llvm_wrapper.o\", \"-o\", \"${bin_path}\", \"-Wl,-stack_size,0x2000000\", \"-L${llvm_lib}\", \"-lLLVM\", \"-lc++\", \"-L${prof_lib_dir}\", \"-lclang_rt.profile_osx\", ${sectalign}]"
-            if avra_process_forward("cc", link_args, "") != 0 {
-                fail("link failed")
-            }
-
-            // Run the instrumented binary directly so its stdout streams to
-            // the user. We pass LLVM_PROFILE_FILE through the env-options
-            // payload of avra_process_forward (avra_shell_exec would buffer
-            // the entire output and can lose lines on very large suites).
-            avra_shell_exec("rm -f ${profraw}")
-            let run_opts = "{\"env\":{\"LLVM_PROFILE_FILE\":\"${profraw}\"}}"
-            let run_rc = avra_process_forward(bin_path, "[]", run_opts)
-            if run_rc != 0 { eprintln("test binary exited with code ${string(run_rc)}") }
-
-            // Merge profraw → profdata.
-            let merge_out = avra_shell_exec("${llvm_prefix}/bin/llvm-profdata merge -sparse -o ${profdata} ${profraw} 2>&1")
-            if merge_out.length > 0 { eprintln(merge_out.trim()) }
-
-            // Dump profdata to text and hand off to the Avra-side renderer
-            // (coverage::render_coverage). The renderer joins our codegen-
-            // emitted covmap.tsv with the per-function counts to produce
-            // line/branch/MC-DC stats and an optional LCOV file.
-            let dump_path = "${cov_dir}/_test.profdata.txt"
-            avra_shell_exec("${llvm_prefix}/bin/llvm-profdata show --all-functions --counts ${profdata} > ${dump_path} 2>/dev/null")
-
-            let covmap_path = "${cov_dir}/_test.av.covmap.tsv"
-            println("")
-            render_coverage(covmap_path, dump_path, lcov_path)
-
-            avra_process_exit(0)
+            run_test_command()
             return
         }
     }

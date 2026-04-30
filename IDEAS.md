@@ -13,7 +13,11 @@ Based on the ideas that:
 4. Escape hatches built in to everything when you don't want magic
 5. DX/Ergonomics is a feature, not an afterthought (errors, docs, tooling, etc) and optmized for LLMs
 
+## Things to build
 - Layers of abstracted intent: Notebook like document that starts with goals and ends in code (tree like structure)
+- Netface
+- TUI game
+- Simple ERP for Avanci
 
 # TODO
 - Move "provider" naming to "package"
@@ -54,6 +58,7 @@ std/mobile
 - What could be done with control flow graphs? Vizualize? Deployment analytics? 
 - Remove "self" in components
 - Read up more on https://martinfowler.com/articles/mechanical-sympathy-principles.html and this entire website
+
 ### New compiler (forgec)
 - new_thing/thing_new is an antipattern, we need a better init/constructor story
 
@@ -71,7 +76,8 @@ std/mobile
   - Take 2/3 features of the Language and generate an inspiring example. expose this as a dropdown on the homepage 
 - Package registry (install from registry or github like go)
 - Version management and changelogs
-
+- avra learn:
+  - Interactive REPL / book with chapters for learning Avra
 # Deployment targets:
 - Fly.io 
 - Render

@@ -248,6 +248,29 @@ export fn module_graph_append_item(g: ModuleGraph, short_name: string, canonical
     g with { all_items: GraphItemList.Node(short_name, canonical, exported, g.all_items) }
 }
 
+/// Walk the graph's all_items list looking for an entry whose
+/// `short_name` matches `name` AND whose canonical is anchored at
+/// `mod_path` (either `mod_path::name`, or the bare `name` for
+/// extern fns at any module). Returns the canonical string the
+/// alias chain should record, or "" if no such item exists.
+export fn module_graph_find_item_canonical(g: ModuleGraph, mod_path: string, name: string) -> string {
+    let qual = if mod_path == "" { name } else { "${mod_path}::${name}" }
+    find_item_canonical_inner(g.all_items, name, qual)
+}
+
+fn find_item_canonical_inner(items: GraphItemList, name: string, qual: string) -> string {
+    match items {
+        .End -> ""
+        .Node(short, canonical, _, next) -> {
+            if short == name && (canonical == qual || canonical == name) {
+                canonical
+            } else {
+                find_item_canonical_inner(next, name, qual)
+            }
+        }
+    }
+}
+
 /// Lookup an item's exported flag by full canonical path. Returns
 /// false when the item isn't registered (treats unknown as private).
 export fn module_graph_is_exported(g: ModuleGraph, canonical: string) -> bool {
