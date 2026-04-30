@@ -12,6 +12,9 @@ use features.list_lit.typeck.{check_list_method}
 use features.map_lit.typeck.{check_map_method}
 use features.let_stmt.typeck.{is_const_expr}
 use core.type_registry.{method_mangled_name, type_short_name, is_result_enum_name}
+use core.runtime.{avra_process_env_get}
+
+extern fn avra_uptime_ms() -> int
 
 // ── Type environment ──
 
@@ -544,19 +547,33 @@ export type TypeCheckResult = {
 /// `check_stmts` walks the AST inferring + checking types;
 /// `annotate_*` writes the inferred types back into SExpr.ty.
 export fn typecheck_program(stmts: StmtList) -> TypeCheckResult {
+    // Per-pass wall-clock timings — emitted to stderr at the end
+    // when AVRA_TIMINGS_TYPECK=1 is set, so kkgf can rank the
+    // four typeck passes (collect / check / naming / annotate)
+    // before optimising any one of them.
+    let timings_on = avra_process_env_get("AVRA_TIMINGS_TYPECK") != ""
+    let t_start = avra_uptime_ms()
+
     let tc0 = tc_new()
     // Pass 1: collect declarations (types, enums, functions)
     let tc1 = collect_decls(tc0, stmts)
+    let t_collect = avra_uptime_ms()
     // Pass 2: check + annotate in one traversal.
     // check_stmts validates types and accumulates errors in TC.bag.
     // annotate_stmts stamps resolved types onto SExpr.ty (calls check_expr
     // internally for annotation, but since check_stmts already caught errors,
     // the annotation pass just extracts types without re-reporting).
     let tc2 = check_stmts(tc1, stmts)
+    let t_check = avra_uptime_ms()
     // Pass 2.5: naming convention warnings
     let tc3 = check_naming_conventions(tc2, stmts)
+    let t_naming = avra_uptime_ms()
     // Pass 3: annotate AST — uses fast paths for leaf expressions
     let annotated = annotate_stmts(tc3, stmts)
+    let t_annotate = avra_uptime_ms()
+    if timings_on {
+        eprintln("[timings:typeck] collect=${string(t_collect - t_start)}ms check=${string(t_check - t_collect)}ms naming=${string(t_naming - t_check)}ms annotate=${string(t_annotate - t_naming)}ms total=${string(t_annotate - t_start)}ms")
+    }
     TypeCheckResult { stmts: annotated, had_error: bag_has_errors(tc3.bag), bag: tc3.bag, trait_impls: tc3.trait_impls }
 }
 
