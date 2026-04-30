@@ -626,21 +626,16 @@ export fn loops_top(stack: LoopStack) -> LoopFrame {
 /// `Void / Unknown / Task → i64`, all other reference types → `ptr`,
 /// `Newtype` recurses into its inner type.
 ///
-/// Sized integer variants (U8/U16/U32/U64/I8/I16/I32) currently map
-/// to i64 here so Phase A behaviour is preserved (sized ints declared
-/// in source compile but runtime-equivalent to int). For per-width
-/// LLVM lowering, use `Ctx.llvm_type_for(vt)` which dispatches to the
-/// proper i8/i16/i32 type via the cached type pointers on Ctx —
-/// rolled out incrementally per-codegen-site under
-/// forge-crafting-intepreters-k5al Phase B.
+/// Sized integer variants (U8/U16/U32/U64/I8/I16/I32) map to i64
+/// here when the caller only has the four base type pointers
+/// (i64/i1/double/ptr). Callers with access to narrow types should
+/// use `llvm_type_for_full_sized` (this fn's superset) or
+/// `Ctx.llvm_type_for(vt)`. The declare-functions pass in
+/// codegen/setup.av MUST use the narrow path so fn declarations
+/// match the alloca-side widths produced by ctx.type_for.
 export fn llvm_type_for_full(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, vt: ValueType) -> ptr {
     match vt {
         .Int -> i64t
-        // Sized integer variants — Phase A maps them all to i64 since
-        // they should not appear in compiled code yet (forge-crafting-intepreters-k5al
-        // Phase A is variants-only). Phase B will swap to i8/i16/i32
-        // LLVM primitives by extending llvm_type_for_full's caller
-        // signature with narrow type pointers.
         .U8 -> i64t
         .U16 -> i64t
         .U32 -> i64t
@@ -668,6 +663,28 @@ export fn llvm_type_for_full(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, vt: ValueTyp
         .Void -> i64t
         .Unknown -> i64t
         .Task(_) -> i64t
+    }
+}
+
+/// Narrow-aware variant: takes i8/i16/i32 type pointers in addition
+/// to the four base widths. Sized integer ValueTypes resolve to
+/// their native LLVM widths (e.g. u32 → i32) so fn declarations and
+/// alloca sites agree. Callers without narrow type pointers use
+/// `llvm_type_for_full` (which falls back to i64 for sized ints);
+/// the declare-functions pass and other places that emit fn-type
+/// signatures should always use this variant — Ctx.type_for already
+/// does for runtime-side lookups.
+export fn llvm_type_for_full_sized(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, i8t: ptr, i16t: ptr, i32t: ptr, vt: ValueType) -> ptr {
+    match vt {
+        .U8 -> i8t
+        .I8 -> i8t
+        .U16 -> i16t
+        .I16 -> i16t
+        .U32 -> i32t
+        .I32 -> i32t
+        .U64 -> i64t
+        .Newtype(_, inner, _) -> llvm_type_for_full_sized(i64t, i1t, dt, pt, i8t, i16t, i32t, inner)
+        _ -> llvm_type_for_full(i64t, i1t, dt, pt, vt)
     }
 }
 
