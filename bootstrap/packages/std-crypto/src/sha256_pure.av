@@ -309,9 +309,14 @@ fn list_slice(xs: List<int>, start: int, count: int) -> List<int> {
 /// pure Avra rather than calling into the C runtime.
 export fn sha256_hex_pure(input: string) -> string {
     let padded = pad_message(input)
-    // Compute the padded length analytically rather than calling
-    // .length on the List — works around a typeck loss-of-precision
-    // when chaining .push() through a mut binding.
+    // Compute padded length analytically. Calling padded.length
+    // here trips the typeck loss bug
+    // (forge-crafting-intepreters-gvq3): the cross-module fn-return
+    // type doesn't propagate to the let binding's inferred ValueType,
+    // so by codegen time `padded` is .List(.Unknown)-shaped enough
+    // to break the .length lookup. The typeck fix for
+    // `xs.push()` returning `.List(elem)` (this commit) unblocks
+    // the WITHIN-FN case but not the cross-fn case.
     let raw = input.length
     let after_0x80 = raw + 1
     let mod56 = after_0x80 % 64

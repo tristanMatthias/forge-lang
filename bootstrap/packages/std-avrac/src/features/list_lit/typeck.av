@@ -25,7 +25,14 @@ export fn check_list_method(tc: TC, elem: ValueType, method: string, args: ExprL
     match method {
         "length" or "len"                          -> tc_er(tc, .Int)
         "reduce"                                   -> tc_er(tc, .Unknown)
-        "push" or "foreach"                      -> tc_er(tc, .Void)
+        // `push` and `set` return the list itself per codegen
+        // (features/list_lit/codegen.av: ok_emit(list_val, list_ty)).
+        // Returning .List(elem) here lets callers chain or re-assign
+        // (`mut xs: List<T> = ...; xs = xs.push(v); xs.length`)
+        // without losing the element type. `foreach` is genuinely
+        // void — it returns nothing useful.
+        "push" or "set"                          -> tc_er(tc, .List(elem))
+        "foreach"                                -> tc_er(tc, .Void)
         "pop" or "get"                           -> tc_er(tc, elem)
         "filter"                                 -> tc_er(tc, .List(elem))
         "map"                                    -> tc_er(tc, .List(tc_infer_lambda_ret(tc, args, elem)))

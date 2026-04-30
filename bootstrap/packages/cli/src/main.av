@@ -504,7 +504,15 @@ fn run_build_command() {
             // Re-exec the existing compile pipeline as a subprocess.
             // Use `bs2 compile` so codegen behaviour is identical
             // to a non-build flow; no surprises from a parallel impl.
-            let compile_cmd = "${compiler_path} compile '${entry_path}'"
+            // Propagate profile flags that map to `bs2 compile` flags.
+            // opt_level affects the downstream llc invocation (link
+            // step), not bs2's IR emission, so it stays in the
+            // fingerprint but isn't passed here.
+            mut compile_cmd = "${compiler_path} compile"
+            if profile.coverage {
+                compile_cmd = compile_cmd + " --coverage"
+            }
+            compile_cmd = compile_cmd + " '${entry_path}'"
             let _ = avra_shell_exec(compile_cmd)
             let ll_path = "${entry_path}.ll"
             if !file_exists(ll_path) {
