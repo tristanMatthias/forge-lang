@@ -61,6 +61,8 @@ extern fn avra_llvm_build_sub(b: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
 extern fn avra_llvm_build_mul(b: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
 extern fn avra_llvm_build_sdiv(b: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
 extern fn avra_llvm_build_srem(b: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
+extern fn avra_llvm_build_udiv(b: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
+extern fn avra_llvm_build_urem(b: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
 extern fn avra_llvm_build_and(b: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
 extern fn avra_llvm_build_or(b: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
 extern fn avra_llvm_build_xor(b: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr

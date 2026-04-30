@@ -201,6 +201,56 @@ spec "sized ints: comparison operators work at native width" {
     }
 }
 
+spec "sized ints: division uses unsigned semantics for unsigned types" {
+    // Companion to forge-crafting-intepreters-kxvn. Pre-fix, SDiv on
+    // u8 250 / 4 read 250 as -6, returned -2 = 254 in u8 instead of 62.
+    then "u8: 200 / 4 = 50 (signed bug would yield 242)" {
+        let a: u8 = 200
+        let b: u8 = 4
+        let c: u8 = a / b
+        c == 50
+    }
+    then "u8: 250 / 5 = 50" {
+        let a: u8 = 250
+        let b: u8 = 5
+        let c: u8 = a / b
+        c == 50
+    }
+    then "u16: 50000 / 250 = 200" {
+        let a: u16 = 50000
+        let b: u16 = 250
+        let c: u16 = a / b
+        c == 200
+    }
+    then "u32: 4 billion / 2 = 2 billion" {
+        let a: u32 = 4000000000
+        let b: u32 = 2
+        let c: u32 = a / b
+        c == 2000000000
+    }
+    then "u8: 200 % 7 = 4 (signed bug would yield -2 = 254)" {
+        let a: u8 = 200
+        let b: u8 = 7
+        let c: u8 = a % b
+        c == 4
+    }
+}
+
+spec "sized ints: signed division still works for i8/i16/i32" {
+    then "i8: -10 / 3 = -3 (signed truncation toward zero)" {
+        let a: i8 = 0 - 10
+        let b: i8 = 3
+        let c: i8 = a / b
+        c == 0 - 3
+    }
+    then "i16: -100 / 5 = -20" {
+        let a: i16 = 0 - 100
+        let b: i16 = 5
+        let c: i16 = a / b
+        c == 0 - 20
+    }
+}
+
 spec "sized ints: roundtrip through fn calls preserves wrapped value" {
     then "id_u8(300 % 256) == 44" {
         // 300 doesn't fit in u8 — let-binding would error.

@@ -246,6 +246,14 @@ LLVMValueRef avra_llvm_build_srem(LLVMBuilderRef b, LLVMValueRef lhs, LLVMValueR
     return LLVMBuildSRem(b, lhs, rhs, name);
 }
 
+LLVMValueRef avra_llvm_build_udiv(LLVMBuilderRef b, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
+    return LLVMBuildUDiv(b, lhs, rhs, name);
+}
+
+LLVMValueRef avra_llvm_build_urem(LLVMBuilderRef b, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {
+    return LLVMBuildURem(b, lhs, rhs, name);
+}
+
 // ── Bitwise ──
 
 LLVMValueRef avra_llvm_build_and(LLVMBuilderRef b, LLVMValueRef lhs, LLVMValueRef rhs, const char* name) {

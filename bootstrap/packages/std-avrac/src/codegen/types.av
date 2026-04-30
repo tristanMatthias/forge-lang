@@ -973,6 +973,8 @@ impl Ctx {
     fn mul(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_mul(self.builder, a, b, name) }
     fn sdiv(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_sdiv(self.builder, a, b, name) }
     fn srem(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_srem(self.builder, a, b, name) }
+    fn udiv(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_udiv(self.builder, a, b, name) }
+    fn urem(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_urem(self.builder, a, b, name) }
     fn bit_and(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_and(self.builder, a, b, name) }
     fn bit_or(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_or(self.builder, a, b, name) }
     fn bit_xor(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_xor(self.builder, a, b, name) }

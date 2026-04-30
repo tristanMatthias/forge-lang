@@ -88,11 +88,24 @@ export fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, op: BinOp, right: Expr)
         .Mul -> ok_emit(ctx.mul(lhs, rhs, "mul"), .Int)
         .Div -> {
             ctx.div_zero_trap(rhs)
-            ok_emit(ctx.sdiv(lhs, rhs, "div"), .Int)
+            // Pick UDiv when either operand is unsigned (kxvn): SDiv
+            // would interpret the high bit as sign, so a u8 value of
+            // 200 / 4 reads as -56 / 4 = -14 = 242 instead of 50.
+            let v = if is_unsigned_compare(left_result.ty, right_result.ty) {
+                ctx.udiv(lhs, rhs, "udiv")
+            } else {
+                ctx.sdiv(lhs, rhs, "div")
+            }
+            ok_emit(v, .Int)
         }
         .Mod -> {
             ctx.div_zero_trap(rhs)
-            ok_emit(ctx.srem(lhs, rhs, "mod"), .Int)
+            let v = if is_unsigned_compare(left_result.ty, right_result.ty) {
+                ctx.urem(lhs, rhs, "urem")
+            } else {
+                ctx.srem(lhs, rhs, "mod")
+            }
+            ok_emit(v, .Int)
         }
         .BitAnd -> ok_emit(ctx.bit_and(lhs, rhs, "band"), .Int)
         .BitOr -> ok_emit(ctx.bit_or(lhs, rhs, "bor"), .Int)
