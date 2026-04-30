@@ -1,0 +1,340 @@
+// WHY: pure-Avra SHA-256.
+//
+// First non-trivial cryptographic primitive written in Avra source
+// rather than as a runtime extern. Validates that the language
+// surface (bitwise ops on int, `bytes` type, `string.byte()` access)
+// is sufficient to express byte-level binary code.
+//
+// Implements FIPS PUB 180-2 §6.2 verbatim, simulating the spec's
+// 32-bit unsigned arithmetic on Avra's i64 by masking every result
+// to 32 bits via `& 0xffffffff`. When sized integer types
+// (forge-crafting-intepreters-k5al) land, the body changes from
+// i64-with-mask to u32-native; the surface and tests do not.
+//
+// Reference impl in runtime.c (avra_sha256_hex) is kept for now —
+// the build-system fingerprint cache hashes thousands of files and
+// is performance-critical, so we leave the C path as the default
+// for hot consumers and expose the pure-Avra path for validation
+// + future-proofing.
+
+// This module operates on List<int> + string rather than the bytes
+// type. Reason: the v1 bytes runtime layout uses NUL-terminated
+// storage (strlen-based length), so embedded NUL bytes from SHA-256
+// padding would truncate. List<int> stores each byte explicitly
+// and survives the round trip. Once length-prefixed bytes lands
+// (see ticket forge-crafting-intepreters-73wa follow-up), this can
+// switch to operate on bytes directly.
+
+// ── 32-bit arithmetic primitives over i64 ──
+
+/// Right rotate `x` (treated as a 32-bit value) by `n` bits.
+fn rotr32(x: int, n: int) -> int {
+    let m = x & 0xffffffff
+    let r = (m >> n) | ((m << (32 - n)) & 0xffffffff)
+    r & 0xffffffff
+}
+
+/// Right shift, masked to 32 bits.
+fn shr32(x: int, n: int) -> int {
+    (x & 0xffffffff) >> n
+}
+
+/// Add modulo 2^32.
+fn add32(a: int, b: int) -> int {
+    (a + b) & 0xffffffff
+}
+
+// ── SHA-256 round helpers (FIPS 180-2 §4.1.2) ──
+
+fn ch(x: int, y: int, z: int) -> int {
+    ((x & y) ^ ((~x) & z)) & 0xffffffff
+}
+
+fn maj(x: int, y: int, z: int) -> int {
+    ((x & y) ^ (x & z) ^ (y & z)) & 0xffffffff
+}
+
+fn big_sigma0(x: int) -> int {
+    rotr32(x, 2) ^ rotr32(x, 13) ^ rotr32(x, 22)
+}
+
+fn big_sigma1(x: int) -> int {
+    rotr32(x, 6) ^ rotr32(x, 11) ^ rotr32(x, 25)
+}
+
+fn small_sigma0(x: int) -> int {
+    rotr32(x, 7) ^ rotr32(x, 18) ^ shr32(x, 3)
+}
+
+fn small_sigma1(x: int) -> int {
+    rotr32(x, 17) ^ rotr32(x, 19) ^ shr32(x, 10)
+}
+
+// ── Round constants K[0..63] (FIPS 180-2 §4.2.2) ──
+
+fn sha256_k(i: int) -> int {
+    if i == 0  { return 0x428a2f98 }
+    if i == 1  { return 0x71374491 }
+    if i == 2  { return 0xb5c0fbcf }
+    if i == 3  { return 0xe9b5dba5 }
+    if i == 4  { return 0x3956c25b }
+    if i == 5  { return 0x59f111f1 }
+    if i == 6  { return 0x923f82a4 }
+    if i == 7  { return 0xab1c5ed5 }
+    if i == 8  { return 0xd807aa98 }
+    if i == 9  { return 0x12835b01 }
+    if i == 10 { return 0x243185be }
+    if i == 11 { return 0x550c7dc3 }
+    if i == 12 { return 0x72be5d74 }
+    if i == 13 { return 0x80deb1fe }
+    if i == 14 { return 0x9bdc06a7 }
+    if i == 15 { return 0xc19bf174 }
+    if i == 16 { return 0xe49b69c1 }
+    if i == 17 { return 0xefbe4786 }
+    if i == 18 { return 0x0fc19dc6 }
+    if i == 19 { return 0x240ca1cc }
+    if i == 20 { return 0x2de92c6f }
+    if i == 21 { return 0x4a7484aa }
+    if i == 22 { return 0x5cb0a9dc }
+    if i == 23 { return 0x76f988da }
+    if i == 24 { return 0x983e5152 }
+    if i == 25 { return 0xa831c66d }
+    if i == 26 { return 0xb00327c8 }
+    if i == 27 { return 0xbf597fc7 }
+    if i == 28 { return 0xc6e00bf3 }
+    if i == 29 { return 0xd5a79147 }
+    if i == 30 { return 0x06ca6351 }
+    if i == 31 { return 0x14292967 }
+    if i == 32 { return 0x27b70a85 }
+    if i == 33 { return 0x2e1b2138 }
+    if i == 34 { return 0x4d2c6dfc }
+    if i == 35 { return 0x53380d13 }
+    if i == 36 { return 0x650a7354 }
+    if i == 37 { return 0x766a0abb }
+    if i == 38 { return 0x81c2c92e }
+    if i == 39 { return 0x92722c85 }
+    if i == 40 { return 0xa2bfe8a1 }
+    if i == 41 { return 0xa81a664b }
+    if i == 42 { return 0xc24b8b70 }
+    if i == 43 { return 0xc76c51a3 }
+    if i == 44 { return 0xd192e819 }
+    if i == 45 { return 0xd6990624 }
+    if i == 46 { return 0xf40e3585 }
+    if i == 47 { return 0x106aa070 }
+    if i == 48 { return 0x19a4c116 }
+    if i == 49 { return 0x1e376c08 }
+    if i == 50 { return 0x2748774c }
+    if i == 51 { return 0x34b0bcb5 }
+    if i == 52 { return 0x391c0cb3 }
+    if i == 53 { return 0x4ed8aa4a }
+    if i == 54 { return 0x5b9cca4f }
+    if i == 55 { return 0x682e6ff3 }
+    if i == 56 { return 0x748f82ee }
+    if i == 57 { return 0x78a5636f }
+    if i == 58 { return 0x84c87814 }
+    if i == 59 { return 0x8cc70208 }
+    if i == 60 { return 0x90befffa }
+    if i == 61 { return 0xa4506ceb }
+    if i == 62 { return 0xbef9a3f7 }
+    if i == 63 { return 0xc67178f2 }
+    0
+}
+
+// ── Block compression ──
+
+/// Read a big-endian 32-bit word from byte list `b` at byte offset `off`.
+/// Operates on a List<int> rather than bytes because the padding step
+/// produces NUL bytes that the strlen-based bytes layout would
+/// truncate at. Once length-prefixed bytes lands, this can switch.
+fn read_word_be(b: List<int>, off: int) -> int {
+    let b0 = b.get(off) & 0xff
+    let b1 = b.get(off + 1) & 0xff
+    let b2 = b.get(off + 2) & 0xff
+    let b3 = b.get(off + 3) & 0xff
+    ((b0 << 24) | (b1 << 16) | (b2 << 8) | b3) & 0xffffffff
+}
+
+/// Compress one 64-byte block into the 8-int hash state.
+/// Returns the updated state as a list [h0, ..., h7].
+fn compress_block(state: List<int>, block: List<int>) -> List<int> {
+    // W[0..63] — message schedule. Allocate as a list of 64 ints.
+    mut w: List<int> = []
+    mut wi = 0
+    while wi < 64 {
+        w.push(0)
+        wi = wi + 1
+    }
+
+    // First 16 words come straight from the block in big-endian form.
+    mut i = 0
+    while i < 16 {
+        w.set(i,read_word_be(block, i * 4))
+        i = i + 1
+    }
+    // Expand 16..63.
+    i = 16
+    while i < 64 {
+        let s0 = small_sigma0(w.get(i - 15))
+        let s1 = small_sigma1(w.get(i - 2))
+        let v = add32(add32(w.get(i - 16), s0), add32(w.get(i - 7), s1))
+        w.set(i,v)
+        i = i + 1
+    }
+
+    // Round loop. Use locals rather than indexing the state list per
+    // round — hot path.
+    mut a = state.get(0)
+    mut b = state.get(1)
+    mut c = state.get(2)
+    mut d = state.get(3)
+    mut e = state.get(4)
+    mut f = state.get(5)
+    mut g = state.get(6)
+    mut h = state.get(7)
+    i = 0
+    while i < 64 {
+        let t1 = add32(add32(add32(h, big_sigma1(e)), add32(ch(e, f, g), sha256_k(i))), w.get(i))
+        let t2 = add32(big_sigma0(a), maj(a, b, c))
+        h = g
+        g = f
+        f = e
+        e = add32(d, t1)
+        d = c
+        c = b
+        b = a
+        a = add32(t1, t2)
+        i = i + 1
+    }
+
+    // Fold local registers back into a fresh state list.
+    [
+        add32(state.get(0), a),
+        add32(state.get(1), b),
+        add32(state.get(2), c),
+        add32(state.get(3), d),
+        add32(state.get(4), e),
+        add32(state.get(5), f),
+        add32(state.get(6), g),
+        add32(state.get(7), h),
+    ]
+}
+
+// ── Padding ──
+
+/// Build the padded message as a List<int> of bytes:
+///   input || 0x80 || zeros || length-in-bits-be-64
+/// We use List<int> rather than `bytes` because the padding contains
+/// NUL bytes and the current bytes runtime layout uses strlen, which
+/// would truncate. List<int> stores each byte explicitly so embedded
+/// zeros are preserved.
+fn pad_message(input: string) -> List<int> {
+    mut out: List<int> = []
+    let total = input.length
+    let bitlen = total * 8
+
+    // Copy input bytes.
+    mut i = 0
+    while i < total {
+        out.push(input.byte(i))
+        i = i + 1
+    }
+    // 0x80 mark.
+    out.push(0x80)
+
+    // Zero pad to (mod 64) == 56.
+    let mod56 = (total + 1) % 64
+    let zeros = if mod56 <= 56 { 56 - mod56 } else { 56 + 64 - mod56 }
+    mut zi = 0
+    while zi < zeros {
+        out.push(0)
+        zi = zi + 1
+    }
+
+    // 8-byte big-endian length.
+    mut shift = 56
+    while shift >= 0 {
+        out.push((bitlen >> shift) & 0xff)
+        shift = shift - 8
+    }
+    out
+}
+
+// ── Hex encoding ──
+
+fn hex_digit(n: int) -> string {
+    if n == 0 { return "0" }
+    if n == 1 { return "1" }
+    if n == 2 { return "2" }
+    if n == 3 { return "3" }
+    if n == 4 { return "4" }
+    if n == 5 { return "5" }
+    if n == 6 { return "6" }
+    if n == 7 { return "7" }
+    if n == 8 { return "8" }
+    if n == 9 { return "9" }
+    if n == 10 { return "a" }
+    if n == 11 { return "b" }
+    if n == 12 { return "c" }
+    if n == 13 { return "d" }
+    if n == 14 { return "e" }
+    "f"
+}
+
+fn byte_to_hex(b: int) -> string {
+    hex_digit((b >> 4) & 0xf) + hex_digit(b & 0xf)
+}
+
+fn word_to_hex(w: int) -> string {
+    byte_to_hex((w >> 24) & 0xff) + byte_to_hex((w >> 16) & 0xff)
+        + byte_to_hex((w >> 8) & 0xff) + byte_to_hex(w & 0xff)
+}
+
+/// Slice a byte-list into a fresh sub-list of `count` bytes
+/// starting at `start`. Used to extract each 64-byte block from the
+/// padded message.
+fn list_slice(xs: List<int>, start: int, count: int) -> List<int> {
+    mut out: List<int> = []
+    mut i = 0
+    while i < count {
+        out.push(xs.get(start + i))
+        i = i + 1
+    }
+    out
+}
+
+// ── Public surface ──
+
+/// Pure-Avra SHA-256 of a string. Output: 64-char lowercase hex.
+/// Equivalent to @std.crypto.sha256_hex; this implementation is in
+/// pure Avra rather than calling into the C runtime.
+export fn sha256_hex_pure(input: string) -> string {
+    let padded = pad_message(input)
+    // Compute the padded length analytically rather than calling
+    // .length on the List — works around a typeck loss-of-precision
+    // when chaining .push() through a mut binding.
+    let raw = input.length
+    let after_0x80 = raw + 1
+    let mod56 = after_0x80 % 64
+    let zeros = if mod56 <= 56 { 56 - mod56 } else { 56 + 64 - mod56 }
+    let total_bytes = raw + 1 + zeros + 8
+    let nblocks = total_bytes / 64
+
+    // Initial hash values (FIPS 180-2 §5.3.3).
+    mut state: List<int> = [
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+        0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+    ]
+
+    mut blk = 0
+    while blk < nblocks {
+        let block = list_slice(padded, blk * 64, 64)
+        state = compress_block(state, block)
+        blk = blk + 1
+    }
+
+    // Hex-encode the 8 state words.
+    word_to_hex(state.get(0)) + word_to_hex(state.get(1))
+        + word_to_hex(state.get(2)) + word_to_hex(state.get(3))
+        + word_to_hex(state.get(4)) + word_to_hex(state.get(5))
+        + word_to_hex(state.get(6)) + word_to_hex(state.get(7))
+}

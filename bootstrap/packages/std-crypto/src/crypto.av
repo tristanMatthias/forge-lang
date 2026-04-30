@@ -12,7 +12,17 @@
 // Used by @std/avrac's build system (fingerprint computation) and by
 // any downstream consumer that needs deterministic content hashing.
 
-// ── runtime hooks (port to pure Avra once language allows) ──
+// Pure-Avra SHA-256 lives in the sibling sha256_pure module — see
+// the WHY comment there. Default behaviour stays C-backed for the
+// hot fingerprint path; the pure variant is exposed for validation
+// and so consumers can opt into a no-FFI implementation.
+mod sha256_pure
+
+// ── runtime hooks ──
+// avra_sha256_hex / avra_sha256_file remain the default fast path
+// (used by the build-system fingerprint cache). They will be
+// retired in favour of sha256_hex_pure once benchmarks confirm the
+// pure path is fast enough for thousands-of-files-per-build use.
 extern fn avra_sha256_hex(input: string) -> string
 extern fn avra_sha256_file(path: string) -> string
 

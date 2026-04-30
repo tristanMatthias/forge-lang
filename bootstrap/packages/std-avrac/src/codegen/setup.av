@@ -132,6 +132,7 @@ fn codegen_program(stmts: StmtList, debug_null_checks: bool, coverage: bool, sou
     decl(m, "avra_str_repeat", pt, [pt, i64t])
     decl(m, "avra_str_reverse", pt, [pt])
     decl(m, "avra_str_char_code", i64t, [pt, i64t])
+    decl(m, "avra_str_from_char_code", i64t, [i64t])
 
     // ── maps ──
     decl(m, "avra_map_new_cstr", pt, [])
