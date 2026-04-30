@@ -196,11 +196,109 @@ export fn resolve_module_files(stmts: StmtList, dir: string, loaded: LoadedPaths
     let inner = resolve_module_files_inner(stmts, dir, loaded, ImportStack.End)
     if inner.had_error { return inner }
     let split = hoist_package_modules(inner.stmts)
+    // Dedup hoisted package wrappers by qualified name. Without this,
+    // a program that imports two sibling sub-packages of the same
+    // scope (e.g. cli/main imports @std.json directly while @std.avrac
+    // also imports @std.json internally) ends up with two
+    // Module("@std", ...) wrappers — registered as two distinct nominal
+    // scopes, which causes F1000 type-identity collisions and duplicate
+    // function definitions at codegen. Tracking ticket
+    // forge-crafting-intepreters-dnq4.
+    let deduped = dedup_modules(split.packages)
     ModListResult {
-        stmts: append_stmt_list(split.packages, split.body),
+        stmts: append_stmt_list(deduped, split.body),
         loaded: inner.loaded,
         had_error: false,
         error_message: "",
+    }
+}
+
+/// Merge duplicate `Module(name, body)` nodes by qualified name.
+/// Two import paths leading to the same package both produce a
+/// nested Module wrapper, and after `hoist_package_modules` lifts
+/// them to the program root we end up with multiple Modules of the
+/// same name. The resolver registers each as a distinct nominal
+/// scope, so leaving duplicates causes F1000 type-identity
+/// collisions and duplicate function definitions at codegen.
+///
+/// This pass walks the list, groups Modules by name (preserving
+/// first-occurrence order), recursively dedupes each merged inner
+/// body, and emits one Module per unique name. Non-Module statements
+/// pass through in place.
+///
+/// Tracking ticket: forge-crafting-intepreters-dnq4.
+export fn dedup_modules(stmts: StmtList) -> StmtList {
+    flatten_groups(group_by_module_name(stmts, ModGroupList.End))
+}
+
+/// Linked-list of (name, accumulated body, span line+col) groups
+/// produced by `group_by_module_name`. The first SStmt to emit a
+/// given Module name owns the line/col fields so diagnostics still
+/// reference a real source location after merging.
+enum ModGroupList {
+    End
+    Node(name: string, body: StmtList, line: int, col: int, next: ModGroupList)
+    /// Pass-through node for non-Module statements that must keep
+    /// their original list position relative to neighbouring Modules
+    /// (e.g. an extern declaration sitting between two package
+    /// wrappers should not be reordered after dedup).
+    Pass(stmt: SStmt, next: ModGroupList)
+}
+
+/// Walk `stmts`, accumulating a `ModGroupList` that merges every
+/// repeated `Module(name)` and preserves non-Module statements as
+/// `Pass` entries. Used by `dedup_modules`.
+fn group_by_module_name(stmts: StmtList, acc: ModGroupList) -> ModGroupList {
+    match stmts {
+        .End -> acc
+        .Node(ss, next) -> {
+            let updated = match ss.node {
+                .Module(name, body) -> mod_group_merge(acc, name, body, ss.line, ss.col)
+                _ -> mod_group_append_pass(acc, ss)
+            }
+            group_by_module_name(next, updated)
+        }
+    }
+}
+
+/// Append `ss` as a Pass node at the tail of `acc`. Pure-functional
+/// rebuild; used so non-Module statements don't get reordered when
+/// surrounding Modules merge.
+fn mod_group_append_pass(acc: ModGroupList, ss: SStmt) -> ModGroupList {
+    match acc {
+        .End -> ModGroupList.Pass(ss, ModGroupList.End)
+        .Node(n, b, l, c, next) -> ModGroupList.Node(n, b, l, c, mod_group_append_pass(next, ss))
+        .Pass(s, next) -> ModGroupList.Pass(s, mod_group_append_pass(next, ss))
+    }
+}
+
+/// Either append a fresh group at the tail or merge `body` into the
+/// existing group's accumulated body when `name` already appears.
+/// The first occurrence's `line`/`col` win — later merges keep their
+/// content but lose their span identity (which is fine: diagnostics
+/// inside the merged body still carry their own SStmt spans).
+fn mod_group_merge(acc: ModGroupList, name: string, body: StmtList, line: int, col: int) -> ModGroupList {
+    match acc {
+        .End -> ModGroupList.Node(name, body, line, col, ModGroupList.End)
+        .Node(n, b, l, c, next) if n == name -> ModGroupList.Node(n, append_stmt_list(b, body), l, c, next)
+        .Node(n, b, l, c, next) -> ModGroupList.Node(n, b, l, c, mod_group_merge(next, name, body, line, col))
+        .Pass(s, next) -> ModGroupList.Pass(s, mod_group_merge(next, name, body, line, col))
+    }
+}
+
+/// Emit one `Module(name, dedup_modules(body))` per group, keeping
+/// non-Module statements in their original position. Recursive
+/// dedup on each merged body deals with nested duplicates like
+/// `@std → avrac → indexer` showing up under both `@std → avrac`
+/// instances.
+fn flatten_groups(g: ModGroupList) -> StmtList {
+    match g {
+        .End -> StmtList.End
+        .Node(name, body, line, col, next) -> {
+            let merged = sstmt(Stmt.Module(name, dedup_modules(body)), line, col)
+            StmtList.Node(merged, flatten_groups(next))
+        }
+        .Pass(ss, next) -> StmtList.Node(ss, flatten_groups(next))
     }
 }
 

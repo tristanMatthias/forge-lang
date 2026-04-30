@@ -10,7 +10,7 @@
 
 use core.ast.{
     Stmt, StmtList, ParamList, ValueType,
-    SStmt, sstmt_dummy,
+    sstmt_dummy,
 }
 use features.modules.resolver.{hoist_package_modules, HoistSplit}
 
@@ -77,4 +77,5 @@ export fn append_stmt_list(a: StmtList, b: StmtList) -> StmtList {
         .Node(ss, next) -> StmtList.Node(ss, append_stmt_list(next, b))
     }
 }
+
 

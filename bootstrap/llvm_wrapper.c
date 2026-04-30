@@ -134,6 +134,10 @@ void avra_llvm_value_array_set(LLVMValueRef* arr, int idx, LLVMValueRef val) {
     arr[idx] = val;
 }
 
+LLVMValueRef avra_llvm_value_array_get(LLVMValueRef* arr, int idx) {
+    return arr[idx];
+}
+
 void avra_llvm_value_array_free(LLVMValueRef* arr) {
     free(arr);
 }

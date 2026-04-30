@@ -687,10 +687,12 @@ fn emit_closure_call(ctx: Ctx, env: VarEnv, closure_val: ptr, args: ExprList, nu
     let user_arg_count = expr_list_length(args)
     let total_args = user_arg_count + num_captures
 
-    let param_arr = ctx.i64_type_array(total_args)
-    let fn_type = ctx.fn_type(ctx.i64_type, param_arr, total_args)
-    ctx.type_array_free(param_arr)
-
+    // Fill the value array first so we can read each emitted value's
+    // actual LLVM type. The lambda was declared with typed declared
+    // params + i64 captures (see fill_typed_lambda_params); the call
+    // site fn_type must mirror that signature or LLVM's verifier
+    // flags every closure invocation as a parameter-type mismatch.
+    // Tracking ticket: forge-crafting-intepreters-og68.
     let val_arr = ctx.value_array(total_args)
     match fill_lambda_args(ctx, env, val_arr, args, 0) {
         .Ok(_) -> {}
@@ -701,6 +703,14 @@ fn emit_closure_call(ctx: Ctx, env: VarEnv, closure_val: ptr, args: ExprList, nu
     }
     // Fill captures from closure array (start at index 2)
     fill_closure_captures(ctx, val_arr, closure_ptr, user_arg_count, num_captures, 0)
+
+    // Build the param-type array: declared params take whatever LLVM
+    // type their emitted value carries (ptr for Expr/string/struct,
+    // i64 for int/bool, double for float); captures are always i64
+    // because that's what closure_array stores them as.
+    let param_arr = ctx.value_array_param_types(val_arr, user_arg_count, num_captures)
+    let fn_type = ctx.fn_type(ctx.i64_type, param_arr, total_args)
+    ctx.type_array_free(param_arr)
 
     let result = ctx.build_call(fn_type, fn_ptr, val_arr, total_args, "closure_call")
     ctx.value_array_free(val_arr)

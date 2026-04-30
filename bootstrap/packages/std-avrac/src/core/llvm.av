@@ -33,6 +33,7 @@ extern fn avra_llvm_type_array_set(arr: ptr, idx: int, ty: ptr)
 extern fn avra_llvm_type_array_free(arr: ptr)
 extern fn avra_llvm_value_array_new(count: int) -> ptr
 extern fn avra_llvm_value_array_set(arr: ptr, idx: int, val: ptr)
+extern fn avra_llvm_value_array_get(arr: ptr, idx: int) -> ptr
 extern fn avra_llvm_value_array_free(arr: ptr)
 
 // ── Constants ──

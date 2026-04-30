@@ -60,7 +60,7 @@ use @std.avrac.features.eval.{render_value, eval_expression_source, execute_prog
 use @std.avrac.desugar.{desugar_program}
 use @std.avrac.features.component_decl.expand.{expand_components}
 use @std.avrac.resolve.names.{resolve_names}
-use @std.avrac.features.modules.resolver.{resolve_module_files, modules_dirname, find_packages_dir, LoadedPaths}
+use @std.avrac.features.modules.resolver.{resolve_module_files, modules_dirname, find_packages_dir, LoadedPaths, dedup_modules}
 use @std.avrac.features.modules.package.{load_package_config, load_manifest}
 use @std.avrac.build.driver.{
     BuildInputs, BuildOutcome,
@@ -882,7 +882,14 @@ fn run_test_command() {
     } else {
         StmtList.End
     }
-    mut program = prepend_test_externs(append_stmt_list(reporter_stmts, append_stmt_list(packages, modules)))
+    // Dedup hoisted package wrappers by qualified name. Each test
+    // file's `use @std.X` produces its own Module("@std", [Module("X", body)])
+    // wrapper; without merging, the resolver registers two distinct
+    // nominal scopes for `@std`, which causes F1000 type-identity
+    // collisions and duplicate function definitions at codegen.
+    // Tracking ticket: forge-crafting-intepreters-dnq4.
+    let deduped_packages = dedup_modules(packages)
+    mut program = prepend_test_externs(append_stmt_list(reporter_stmts, append_stmt_list(deduped_packages, modules)))
 
     // main() calls test_render_summary() from the inlined reporter.
     // Module-level spec blocks run via __bs_top_level (codegen patches main to call it).

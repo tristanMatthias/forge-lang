@@ -756,6 +756,34 @@ impl Ctx {
         self.fill_i64_types(arr, idx + 1, count)
     }
 
+    // Build a type array matching a closure call's value array:
+    // declared args take their emitted value's actual LLVM type
+    // (avra_llvm_typeof), captures are always i64. Used by
+    // emit_closure_call so the call-site fn_type matches the
+    // typed-declared-params + i64-captures layout that
+    // fill_typed_lambda_params imposes on the lambda's actual
+    // signature. Without this match, LLVM's verifier flags every
+    // closure invocation as a parameter-type mismatch
+    // (forge-crafting-intepreters-og68).
+    fn value_array_param_types(self, val_arr: ptr, declared_count: int, capture_count: int) -> ptr {
+        let total = declared_count + capture_count
+        let arr = avra_llvm_type_array_new(total)
+        self.fill_value_array_param_types(arr, val_arr, 0, declared_count, total)
+        arr
+    }
+
+    fn fill_value_array_param_types(self, arr: ptr, val_arr: ptr, idx: int, declared_count: int, total: int) {
+        if idx >= total { return }
+        let llvm_ty = if idx < declared_count {
+            let v = avra_llvm_value_array_get(val_arr, idx)
+            avra_llvm_typeof(v)
+        } else {
+            self.i64_type
+        }
+        avra_llvm_type_array_set(arr, idx, llvm_ty)
+        self.fill_value_array_param_types(arr, val_arr, idx + 1, declared_count, total)
+    }
+
     // Fill type array from TypeList for declared params, then i64 for captures.
     fn fill_typed_lambda_params(self, arr: ptr, types: TypeList, idx: int, total: int) {
         if idx >= total { return }
