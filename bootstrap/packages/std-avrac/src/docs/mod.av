@@ -28,6 +28,7 @@ use core.runtime.{avra_selfhost_read_file, avra_shell_exec, avra_selfhost_levens
 use parse.{parse_program_source}
 use indexer.{extract_from_ast_at, extract_calls_from_ast_at}
 use @std.lsp.{Sym, SymList, SymKind, CallEdge, CallList}
+use @std.json.{json_str}
 use render.{bold, dim, cyan, green, yellow, red,
             pad_right, truncate_str, rule, first_line, icase_eq, pct}
 use pathutil.{relativise, qualified_leaf, qualified_breadcrumbs, count_path_seps}
@@ -1097,41 +1098,6 @@ fn render_see_ref(name: string, docs: SymList) -> string {
     let s = target!
     let loc = "${s.file}:${string(s.span.start.line)}"
     "${cyan(s.qualified)} ${dim(loc)}"
-}
-
-/// Wrap a raw string in JSON-quoted form. Mirrored from
-/// `@std/json` because the bootstrap module-resolver dedupe bug
-/// silently drops function imports when `@std.json` is already
-/// loaded by another module — once that fix lands these can become
-/// a one-line re-import.
-fn json_str(s: string) -> string {
-    "\"${json_escape_for_render(s)}\""
-}
-
-/// Walk a string char-by-char and JSON-escape every special. Hot
-/// path for `render_json` (every doc field flows through it).
-fn json_escape_for_render(s: string) -> string {
-    mut out = ""
-    mut i = 0
-    while i < s.length {
-        let ch = s.substring(i, i + 1)
-        out = out + json_escape_one(ch)
-        i = i + 1
-    }
-    out
-}
-
-/// Per-character JSON escape table. Anything not in the special
-/// set passes through unchanged.
-fn json_escape_one(ch: string) -> string {
-    match ch {
-        "\"" -> "\\\""
-        "\\" -> "\\\\"
-        "\n" -> "\\n"
-        "\r" -> "\\r"
-        "\t" -> "\\t"
-        _ -> ch
-    }
 }
 
 // ── Format-as-JSON (`--format=json`) ────────────────────────────────
