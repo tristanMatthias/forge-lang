@@ -82,6 +82,142 @@ spec "sized ints: usable as fn parameter and return types" {
     }
 }
 
+spec "sized ints: subtraction wraps unsigned" {
+    then "u8: 0 - 1 wraps to 255" {
+        let a: u8 = 0
+        let b: u8 = 1
+        let c: u8 = a - b
+        c == 255
+    }
+    then "u16: 0 - 1 wraps to 65535" {
+        let a: u16 = 0
+        let b: u16 = 1
+        let c: u16 = a - b
+        c == 65535
+    }
+    then "u8: 5 - 200 wraps to 61 (5 - 200 + 256)" {
+        let a: u8 = 5
+        let b: u8 = 200
+        let c: u8 = a - b
+        c == 61
+    }
+}
+
+spec "sized ints: multiplication wraps at native width" {
+    then "u8: 16 * 16 = 0 (256 mod 256)" {
+        let a: u8 = 16
+        let b: u8 = 16
+        let c: u8 = a * b
+        c == 0
+    }
+    then "u8: 17 * 16 = 16 (272 mod 256)" {
+        let a: u8 = 17
+        let b: u8 = 16
+        let c: u8 = a * b
+        c == 16
+    }
+    then "u16: 256 * 256 = 0 (65536 mod 65536)" {
+        let a: u16 = 256
+        let b: u16 = 256
+        let c: u16 = a * b
+        c == 0
+    }
+    then "u32: 65536 * 65536 = 0 (2^32 mod 2^32)" {
+        let a: u32 = 65536
+        let b: u32 = 65536
+        let c: u32 = a * b
+        c == 0
+    }
+}
+
+spec "sized ints: signed wraps at native width" {
+    then "i8: 127 + 1 wraps to -128" {
+        let a: i8 = 127
+        let b: i8 = 1
+        let c: i8 = a + b
+        c == 0 - 128
+    }
+    then "i16: 32767 + 1 wraps to -32768" {
+        let a: i16 = 32767
+        let b: i16 = 1
+        let c: i16 = a + b
+        c == 0 - 32768
+    }
+    then "i32: 2147483647 + 1 wraps to -2147483648" {
+        let a: i32 = 2147483647
+        let b: i32 = 1
+        let c: i32 = a + b
+        c == 0 - 2147483648
+    }
+}
+
+spec "sized ints: comparison operators work at native width" {
+    then "u8 less-than" {
+        let a: u8 = 5
+        let b: u8 = 10
+        a < b
+    }
+    then "u16 equality" {
+        let a: u16 = 1024
+        let b: u16 = 1024
+        a == b
+    }
+    then "i8 negative less-than positive" {
+        let a: i8 = 0 - 50
+        let b: i8 = 10
+        a < b
+    }
+    // forge-crafting-intepreters-kxvn regression: prior to the fix,
+    // u8 comparison used signed ICmp, so 127 < 255 read as 127 < -1
+    // and returned false. Now uses ULT and the full sorted sequence
+    // 0 < 127 < 255 holds as expected.
+    then "u8 sorted-comparison sequence (0 < 127 < 255)" {
+        let a: u8 = 0
+        let b: u8 = 127
+        let c: u8 = 255
+        a < b && b < c
+    }
+    then "u16 sorted-comparison crossing the signed boundary" {
+        let a: u16 = 0
+        let b: u16 = 32767
+        let c: u16 = 65535
+        a < b && b < c
+    }
+    then "u32 sorted-comparison crossing the signed boundary" {
+        let a: u32 = 0
+        let b: u32 = 2147483647
+        let c: u32 = 4000000000
+        a < b && b < c
+    }
+    then "u8 not greater than: 5 > 200 is false (signed bug would say true)" {
+        let a: u8 = 5
+        let b: u8 = 200
+        !(a > b)
+    }
+    then "u8 less-than-or-equal at the high boundary" {
+        let a: u8 = 254
+        let b: u8 = 255
+        a <= b
+    }
+}
+
+spec "sized ints: roundtrip through fn calls preserves wrapped value" {
+    then "id_u8(300 % 256) == 44" {
+        // 300 doesn't fit in u8 — let-binding would error.
+        // Use arithmetic to land at a wrapped value first.
+        let a: u8 = 200
+        let b: u8 = 100
+        let c: u8 = a + b   // 44
+        let r: u8 = id_u8(c)
+        r == 44
+    }
+    then "id_i16(0 - 32768) preserves sign" {
+        let a: i16 = 0 - 32768
+        let r: i16 = id_i16(a)
+        r == 0 - 32768
+    }
+}
+
 fn id_u32(x: u32) -> u32 { x }
 fn id_u8(x: u8) -> u8 { x }
 fn id_i16(x: i16) -> i16 { x }

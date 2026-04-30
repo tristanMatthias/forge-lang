@@ -111,23 +111,48 @@ export fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, op: BinOp, right: Expr)
             if is_enum { return emit_enum_tag_cmp(ctx, lhs, rhs, left_result.ty, 33) }
             ok_emit(ctx.icmp_ne(lhs, rhs, "ne"), .Bool)
         }
+        // Pick unsigned ICmp predicates when either operand is a u8/
+        // u16/u32/u64. Without this, a `let a:u8=255; a<200` reads
+        // 255 as -1 under the default signed compare and returns the
+        // wrong answer. Tracking ticket: forge-crafting-intepreters-kxvn.
+        // LLVMIntPredicate values: U{LT,LE,GT,GE}=36/37/34/35,
+        // S{LT,LE,GT,GE}=40/41/38/39.
         .Lt -> {
             if is_str { return emit_str_cmp(ctx, lhs, rhs, 40) }
-            ctx.icmp_bool(40, lhs, rhs, "slt")
+            let pred = if is_unsigned_compare(left_result.ty, right_result.ty) { 36 } else { 40 }
+            ctx.icmp_bool(pred, lhs, rhs, "lt")
         }
         .Le -> {
             if is_str { return emit_str_cmp(ctx, lhs, rhs, 41) }
-            ctx.icmp_bool(41, lhs, rhs, "sle")
+            let pred = if is_unsigned_compare(left_result.ty, right_result.ty) { 37 } else { 41 }
+            ctx.icmp_bool(pred, lhs, rhs, "le")
         }
         .Gt -> {
             if is_str { return emit_str_cmp(ctx, lhs, rhs, 38) }
-            ctx.icmp_bool(38, lhs, rhs, "sgt")
+            let pred = if is_unsigned_compare(left_result.ty, right_result.ty) { 34 } else { 38 }
+            ctx.icmp_bool(pred, lhs, rhs, "gt")
         }
         .Ge -> {
             if is_str { return emit_str_cmp(ctx, lhs, rhs, 39) }
-            ctx.icmp_bool(39, lhs, rhs, "sge")
+            let pred = if is_unsigned_compare(left_result.ty, right_result.ty) { 35 } else { 39 }
+            ctx.icmp_bool(pred, lhs, rhs, "ge")
         }
     }
+}
+
+/// True iff `ty` is one of the unsigned sized-integer ValueType
+/// variants. Used by the comparison codegen to pick LLVM's unsigned
+/// ICmp predicate (ULT/ULE/UGT/UGE) instead of the signed default.
+fn vtype_is_unsigned(ty: ValueType) -> bool {
+    ty is .U8 || ty is .U16 || ty is .U32 || ty is .U64
+}
+
+/// True iff a binary comparison should use unsigned ICmp. Either
+/// operand being unsigned forces unsigned semantics (mixing
+/// unsigned with `int` should never happen post-typeck, but the
+/// branch is cheap and keeps the codegen robust).
+fn is_unsigned_compare(lty: ValueType, rty: ValueType) -> bool {
+    vtype_is_unsigned(lty) || vtype_is_unsigned(rty)
 }
 
 /// Coerce an LLVM value to f64. If it's already Float we just bit-
