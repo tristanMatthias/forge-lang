@@ -251,6 +251,75 @@ spec "sized ints: signed division still works for i8/i16/i32" {
     }
 }
 
+spec "sized ints: shift left at native width" {
+    // forge-crafting-intepreters-1pte5 (the shift-bug ticket): pre-fix,
+    // `let c:u8 = a << 4` failed at LLVM-verifier with mismatched
+    // operand widths (`shl i8 %a, i64 4`). Shift codegen now casts
+    // rhs to lhs's narrow width.
+    then "u8: 1 << 4 = 16" {
+        let a: u8 = 1
+        let c: u8 = a << 4
+        c == 16
+    }
+    then "u8: 1 << 7 = 128 (high bit set)" {
+        let a: u8 = 1
+        let c: u8 = a << 7
+        c == 128
+    }
+    // Note: shifting by >= bitwidth is LLVM UB, so we don't test
+    // `1 << 8` here. Spec axis 6 should formalise the behaviour
+    // (wrap to zero vs trap) before we add a regression for it.
+    then "u16: 1 << 15 = 32768" {
+        let a: u16 = 1
+        let c: u16 = a << 15
+        c == 32768
+    }
+    then "u32: 1 << 31 = 2147483648" {
+        let a: u32 = 1
+        let c: u32 = a << 31
+        c == 2147483648
+    }
+}
+
+spec "sized ints: shift right uses unsigned for unsigned types" {
+    // u8 arithmetic shift would sign-extend the high bit:
+    //   200 >> 1 with ASHR reads as -56 >> 1 = -28 = 228
+    // Logical shift gives the right answer (100).
+    then "u8: 200 >> 1 = 100 (signed bug would yield 228)" {
+        let a: u8 = 200
+        let c: u8 = a >> 1
+        c == 100
+    }
+    then "u8: 255 >> 4 = 15 (signed bug would yield 255)" {
+        let a: u8 = 255
+        let c: u8 = a >> 4
+        c == 15
+    }
+    then "u16: 50000 >> 1 = 25000" {
+        let a: u16 = 50000
+        let c: u16 = a >> 1
+        c == 25000
+    }
+    then "u32: 4 billion >> 16 = 61035 (4e9 / 65536)" {
+        let a: u32 = 4000000000
+        let c: u32 = a >> 16
+        c == 61035
+    }
+}
+
+spec "sized ints: signed shift right keeps sign-extension" {
+    then "i8: -8 >> 1 = -4 (arithmetic, sign-fill)" {
+        let a: i8 = 0 - 8
+        let c: i8 = a >> 1
+        c == 0 - 4
+    }
+    then "i16: -100 >> 2 = -25" {
+        let a: i16 = 0 - 100
+        let c: i16 = a >> 2
+        c == 0 - 25
+    }
+}
+
 spec "sized ints: roundtrip through fn calls preserves wrapped value" {
     then "id_u8(300 % 256) == 44" {
         // 300 doesn't fit in u8 — let-binding would error.

@@ -110,8 +110,24 @@ export fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, op: BinOp, right: Expr)
         .BitAnd -> ok_emit(ctx.bit_and(lhs, rhs, "band"), .Int)
         .BitOr -> ok_emit(ctx.bit_or(lhs, rhs, "bor"), .Int)
         .BitXor -> ok_emit(ctx.bit_xor(lhs, rhs, "bxor"), .Int)
-        .Shl -> ok_emit(ctx.shl(lhs, rhs, "shl"), .Int)
-        .Shr -> ok_emit(ctx.shr(lhs, rhs, "shr"), .Int)
+        // Shift codegen for sized ints requires both operands at the
+        // same LLVM width; cast rhs to lhs's type first. For >>, pick
+        // LSHR (logical, zero-fill) when either operand is unsigned;
+        // ASHR (arithmetic, sign-fill) otherwise. Bare `int` keeps
+        // ASHR which matches signed semantics.
+        .Shl -> {
+            let rhs_cast = ctx.cast_to(rhs, left_result.ty)
+            ok_emit(ctx.shl(lhs, rhs_cast, "shl"), .Int)
+        }
+        .Shr -> {
+            let rhs_cast = ctx.cast_to(rhs, left_result.ty)
+            let v = if is_unsigned_compare(left_result.ty, right_result.ty) {
+                ctx.lshr(lhs, rhs_cast, "lshr")
+            } else {
+                ctx.ashr(lhs, rhs_cast, "ashr")
+            }
+            ok_emit(v, .Int)
+        }
         .Eq -> {
             if !null_cmp && is_str { return emit_str_eq(ctx, lhs, rhs, false) }
             let is_enum = vtype_enum_name(left_result.ty) != "" && vtype_enum_name(right_result.ty) != ""

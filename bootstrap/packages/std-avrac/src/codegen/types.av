@@ -980,6 +980,8 @@ impl Ctx {
     fn bit_xor(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_xor(self.builder, a, b, name) }
     fn shl(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_shl(self.builder, a, b, name) }
     fn shr(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_ashr(self.builder, a, b, name) }
+    fn lshr(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_lshr(self.builder, a, b, name) }
+    fn ashr(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_ashr(self.builder, a, b, name) }
     fn bit_not(self, val: ptr, name: string) -> ptr { avra_llvm_build_not(self.builder, val, name) }
 
     // ── Comparisons ──
