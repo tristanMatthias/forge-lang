@@ -29,6 +29,13 @@ use build.cache.{
     cache_publish, cache_read_ll,
     entry_dir_for, entry_ll_path,
 }
+use core.runtime.{
+    avra_selfhost_file_exists,
+    avra_selfhost_read_file,
+    avra_selfhost_write_file,
+    avra_mkdir_p,
+}
+use @std.crypto.{sha256_file}
 
 /// Inputs the driver needs to decide a build outcome. The CLI fills
 /// this in from avra.toml + argv + the bs2 binary's own path.
@@ -82,16 +89,13 @@ export enum BuildOutcome {
 /// /build/cache/ on the first build is created here, not on publish
 /// — keeps `record_build_result` idempotent and fast).
 ///
-/// Returns `Miss` with a populated `reason` when:
-///   * the cache directory was just created (first build),
-///   * the entry file's content has changed since the last build,
-///   * the compiler binary was rebuilt,
-///   * the profile flags differ from the cached fingerprint.
-///
-/// Today the reason is a coarse summary because the driver does not
-/// retain the previous fingerprint. The `--explain` work in
-/// forge-crafting-intepreters-5udq tightens this to per-axis attribution
-/// once we record the prior fingerprint alongside the artifact.
+/// Returns `Miss` with a populated `reason` attributing the rebuild
+/// to the first input axis that differs from the previous successful
+/// build's recorded inputs (compiler, profile, target, source).
+/// Returns "no previous build" when there is no record to diff
+/// against. The previous inputs are read from
+/// `<root>/build/cache/last/<unit_name>.txt`, written by
+/// `record_build_result`.
 export fn decide_build(inputs: BuildInputs) -> BuildOutcome {
     let cache = cache_for(inputs.project_root)
     let _ = cache_init(cache)
@@ -104,6 +108,7 @@ export fn decide_build(inputs: BuildInputs) -> BuildOutcome {
         inputs.coverage,
     )
     let compiler_hash = compiler_hash_for(inputs.compiler_path)
+    let entry_digest = sha256_file(inputs.entry_path)
     let sources = StrList.Node(inputs.entry_path, StrList.End)
     let fp = fp_for_unit(
         inputs.unit_name,
@@ -117,7 +122,69 @@ export fn decide_build(inputs: BuildInputs) -> BuildOutcome {
     if cache_has(cache, fp) {
         return BuildOutcome.Hit(fp, entry_ll_path(cache, fp))
     }
-    BuildOutcome.Miss(fp, profile_key, "no cached entry for fp=" + fp_short(fp))
+    let reason = miss_reason(cache, inputs.unit_name, compiler_hash,
+        profile_key, inputs.target_triple, inputs.entry_path, entry_digest)
+    BuildOutcome.Miss(fp, profile_key, reason)
+}
+
+/// Diff the current fingerprint inputs against the recorded previous
+/// inputs (if any) and return the most specific attribution. Used by
+/// decide_build to populate Miss.reason for `bs2 build --explain`.
+fn miss_reason(c: Cache, unit_name: string, compiler_hash: string,
+               profile_key: string, target_triple: string,
+               entry_path: string, entry_digest: string) -> string {
+    let path = last_inputs_path(c, unit_name)
+    if !avra_selfhost_file_exists(path) {
+        return "no previous build for unit `" + unit_name + "`"
+    }
+    let prior = avra_selfhost_read_file(path)
+    let prev_compiler = read_field(prior, "compiler:")
+    if prev_compiler != "" && prev_compiler != compiler_hash {
+        return "compiler binary changed"
+    }
+    let prev_profile = read_field(prior, "profile:")
+    if prev_profile != "" && prev_profile != profile_key {
+        return "profile flags changed (" + prev_profile + " → " + profile_key + ")"
+    }
+    let prev_target = read_field(prior, "target:")
+    if prev_target != "" && prev_target != target_triple {
+        return "target triple changed (" + prev_target + " → " + target_triple + ")"
+    }
+    let prev_entry_digest = read_field(prior, "src_digest:")
+    if prev_entry_digest != "" && prev_entry_digest != entry_digest {
+        return "source changed: " + entry_path
+    }
+    "inputs changed (no specific axis matched — check transitive deps)"
+}
+
+fn last_inputs_path(c: Cache, unit_name: string) -> string {
+    c.cache_dir + "last/" + unit_name + ".txt"
+}
+
+/// Pull a single value from the prior-inputs text file. Format is
+/// `key:value` per line. We do a simple substring search rather than
+/// a tokenised parse — values are themselves keyword-free hex /
+/// path strings, so collisions are not a concern. Returns "" when
+/// the key is absent so callers can treat that as "no prior data
+/// for this axis."
+fn read_field(text: string, key: string) -> string {
+    let idx = text.index_of(key)
+    if idx < 0 { return "" }
+    let after = idx + key.length
+    let nl = find_newline(text, after)
+    let end = if nl < 0 { text.length } else { nl }
+    text.substring(after, end)
+}
+
+/// Linear scan for the next \n at or after `from`. Returns -1 when
+/// there is no newline in the rest of the string.
+fn find_newline(s: string, from: int) -> int {
+    mut i = from
+    while i < s.length {
+        if s.byte(i) == 10 { return i }
+        i = i + 1
+    }
+    0 - 1
 }
 
 /// Publish a freshly-compiled unit into the cache. Called by the CLI
@@ -139,7 +206,37 @@ export fn record_build_result(
     staging_id: string,
 ) -> PublishResult {
     let cache = cache_for(inputs.project_root)
-    cache_publish(cache, fp, ll_content, o_path, metadata, staging_id)
+    let pr = cache_publish(cache, fp, ll_content, o_path, metadata, staging_id)
+    if pr.success {
+        // Write the per-unit "last inputs" sidecar used by --explain
+        // attribution. Best-effort: a write failure here doesn't
+        // negate the publish — it just costs us specific axis
+        // diagnostics on the next miss.
+        let _ = write_last_inputs(cache, inputs, fp)
+    }
+    pr
+}
+
+fn write_last_inputs(c: Cache, inputs: BuildInputs, fp: Fingerprint) -> bool {
+    let last_dir = c.cache_dir + "last/"
+    if avra_mkdir_p(last_dir) == 0 { return false }
+    let profile_key = profile_key_of(
+        inputs.profile_name,
+        inputs.opt_level,
+        inputs.debug,
+        inputs.overflow_checks,
+        inputs.coverage,
+    )
+    let compiler_hash = compiler_hash_for(inputs.compiler_path)
+    let entry_digest = sha256_file(inputs.entry_path)
+    let body = "fp:" + fp.hex + "\n"
+        + "compiler:" + compiler_hash + "\n"
+        + "profile:" + profile_key + "\n"
+        + "target:" + inputs.target_triple + "\n"
+        + "src:" + inputs.entry_path + "\n"
+        + "src_digest:" + entry_digest + "\n"
+    let path = last_inputs_path(c, inputs.unit_name)
+    avra_selfhost_write_file(path, body) != 0
 }
 
 /// Helper for tooling and tests: read the cached IR for a fingerprint
