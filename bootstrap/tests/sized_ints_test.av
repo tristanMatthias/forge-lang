@@ -381,6 +381,51 @@ spec "sized ints: string() conversion uses correct sign" {
     }
 }
 
+spec "sized ints: mixed-width binary ops normalise to the narrow type" {
+    // Pre-fix, `let a:u8=200; a + 50` emitted `add i8 %a, i64 50` and
+    // LLVM's verifier rejected the width mismatch. The same applied
+    // to comparisons (icmp i8, i64) and bitwise ops. The codegen now
+    // truncates the i64 literal to lhs's narrow width before the op.
+    then "u8 + literal: 200 + 50 = 250 (no overflow)" {
+        let a: u8 = 200
+        let b: u8 = a + 50
+        b == 250
+    }
+    then "u8 + literal wraps: 200 + 100 = 44" {
+        let a: u8 = 200
+        let b: u8 = a + 100
+        b == 44
+    }
+    then "u8 > literal works on the high half: 200 > 127" {
+        let a: u8 = 200
+        a > 127
+    }
+    then "u8 == literal: 255 == 255" {
+        let a: u8 = 255
+        a == 255
+    }
+    then "u8 bitwise & literal: 0xCE & 0x0F = 0x0E" {
+        let a: u8 = 206
+        let b: u8 = a & 15
+        b == 14
+    }
+    then "u8 bitwise | literal: 0x80 | 0x0F = 0x8F" {
+        let a: u8 = 128
+        let b: u8 = a | 15
+        b == 143
+    }
+    then "i16 - literal: 100 - 200 = -100" {
+        let a: i16 = 100
+        let b: i16 = a - 200
+        b == 0 - 100
+    }
+    then "u32 + literal at the high end: 4_000_000_000 + 1 = 4_000_000_001" {
+        let a: u32 = 4000000000
+        let b: u32 = a + 1
+        b == 4000000001
+    }
+}
+
 spec "sized ints: roundtrip through fn calls preserves wrapped value" {
     then "id_u8(300 % 256) == 44" {
         // 300 doesn't fit in u8 — let-binding would error.

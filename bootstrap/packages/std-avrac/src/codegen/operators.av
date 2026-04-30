@@ -64,6 +64,22 @@ export fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, op: BinOp, right: Expr)
         return emit_float_binary(ctx, lhs, rhs, op, left_result.ty, right_result.ty)
     }
 
+    // Sized-int width normalisation: when one side is a narrow sized
+    // int (u8/u16/u32/i8/i16/i32) and the other is bare i64 (an
+    // integer literal post-typeck), cast both to the narrow side's
+    // width. Without this, `let a:u8=200; a + 50` emits
+    // `add i8 %a, i64 50` and LLVM's verifier rejects mismatched
+    // widths. The same applies to comparisons (icmp i8, i64).
+    if is_unsigned_compare(left_result.ty, right_result.ty) || is_signed_narrow(left_result.ty, right_result.ty) {
+        let narrow_ty = if is_narrow(left_result.ty) { left_result.ty } else { right_result.ty }
+        if !vtype_eq(left_result.ty, narrow_ty) {
+            lhs = ctx.cast_to(lhs, narrow_ty)
+        }
+        if !vtype_eq(right_result.ty, narrow_ty) {
+            rhs = ctx.cast_to(rhs, narrow_ty)
+        }
+    }
+
     let is_ptr = vtype_eq(left_result.ty, .Ptr) || vtype_eq(right_result.ty, .Ptr)
 
     match op {
@@ -110,21 +126,16 @@ export fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, op: BinOp, right: Expr)
         .BitAnd -> ok_emit(ctx.bit_and(lhs, rhs, "band"), .Int)
         .BitOr -> ok_emit(ctx.bit_or(lhs, rhs, "bor"), .Int)
         .BitXor -> ok_emit(ctx.bit_xor(lhs, rhs, "bxor"), .Int)
-        // Shift codegen for sized ints requires both operands at the
-        // same LLVM width; cast rhs to lhs's type first. For >>, pick
-        // LSHR (logical, zero-fill) when either operand is unsigned;
-        // ASHR (arithmetic, sign-fill) otherwise. Bare `int` keeps
-        // ASHR which matches signed semantics.
-        .Shl -> {
-            let rhs_cast = ctx.cast_to(rhs, left_result.ty)
-            ok_emit(ctx.shl(lhs, rhs_cast, "shl"), .Int)
-        }
+        // Shift codegen for sized ints. The width-normalisation pass
+        // at the top already casts rhs to lhs's type when either is
+        // narrow; here we just pick LShr (logical, zero-fill) for
+        // unsigned and ASHR (arithmetic, sign-fill) for signed.
+        .Shl -> ok_emit(ctx.shl(lhs, rhs, "shl"), .Int)
         .Shr -> {
-            let rhs_cast = ctx.cast_to(rhs, left_result.ty)
             let v = if is_unsigned_compare(left_result.ty, right_result.ty) {
-                ctx.lshr(lhs, rhs_cast, "lshr")
+                ctx.lshr(lhs, rhs, "lshr")
             } else {
-                ctx.ashr(lhs, rhs_cast, "ashr")
+                ctx.ashr(lhs, rhs, "ashr")
             }
             ok_emit(v, .Int)
         }
@@ -176,12 +187,32 @@ fn vtype_is_unsigned(ty: ValueType) -> bool {
     ty is .U8 || ty is .U16 || ty is .U32 || ty is .U64
 }
 
+/// True iff `ty` is one of the signed narrow sized-integer
+/// ValueType variants (i8/i16/i32). i64 is the default `int` and
+/// not considered narrow.
+fn vtype_is_signed_narrow(ty: ValueType) -> bool {
+    ty is .I8 || ty is .I16 || ty is .I32
+}
+
+/// True iff `ty` is any narrow sized-integer variant — used to
+/// detect when a binary op needs width normalisation.
+fn is_narrow(ty: ValueType) -> bool {
+    vtype_is_unsigned(ty) || vtype_is_signed_narrow(ty)
+}
+
 /// True iff a binary comparison should use unsigned ICmp. Either
 /// operand being unsigned forces unsigned semantics (mixing
 /// unsigned with `int` should never happen post-typeck, but the
 /// branch is cheap and keeps the codegen robust).
 fn is_unsigned_compare(lty: ValueType, rty: ValueType) -> bool {
     vtype_is_unsigned(lty) || vtype_is_unsigned(rty)
+}
+
+/// True iff at least one operand is a signed narrow type. Used
+/// alongside `is_unsigned_compare` to gate the width-normalisation
+/// pre-pass — both signed and unsigned narrow types need rhs casting.
+fn is_signed_narrow(lty: ValueType, rty: ValueType) -> bool {
+    vtype_is_signed_narrow(lty) || vtype_is_signed_narrow(rty)
 }
 
 /// Coerce an LLVM value to f64. If it's already Float we just bit-
