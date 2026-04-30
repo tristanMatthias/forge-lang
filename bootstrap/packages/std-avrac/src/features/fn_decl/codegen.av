@@ -614,6 +614,16 @@ export fn emit_string_to_int(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<Em
             if vtype_eq(r.ty, .Int) || vtype_eq(r.ty, .Bool) {
                 return ok_emit(r.value, .Int)
             }
+            // Sized integers: zero-extend unsigned, sign-extend signed
+            // narrow types to i64. Without this, int(u8) and int(i8)
+            // would fall through to avra_parse_int (treating the
+            // narrow value as a string pointer) and segfault.
+            if r.ty is .U8 || r.ty is .U16 || r.ty is .U32 || r.ty is .U64 {
+                return ok_emit(ctx.zext(r.value, ctx.i64_type, "u2i"), .Int)
+            }
+            if r.ty is .I8 || r.ty is .I16 || r.ty is .I32 {
+                return ok_emit(ctx.sext(r.value, ctx.i64_type, "i2i"), .Int)
+            }
             // String or Unknown → parse via avra_parse_int (handles both)
             let str_ptr = ctx.to_ptr(r.value, "parseInt_arg")
             ok_emit(ctx.call("avra_parse_int", [str_ptr]), .Int)

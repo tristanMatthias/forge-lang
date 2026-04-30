@@ -320,6 +320,36 @@ spec "sized ints: signed shift right keeps sign-extension" {
     }
 }
 
+spec "sized ints: int() conversion zero-extends unsigned, sign-extends signed" {
+    // Pre-fix, int(u8) fell through to avra_parse_int and treated
+    // the narrow value as a string pointer → segfault. Now uses ZExt
+    // for unsigned variants and SExt for signed.
+    then "int(u8) zero-extends across the signed boundary" {
+        let a: u8 = 200
+        int(a) == 200
+    }
+    then "int(u16) preserves full unsigned range" {
+        let a: u16 = 65000
+        int(a) == 65000
+    }
+    then "int(u32) preserves the high-bit value" {
+        let a: u32 = 4000000000
+        int(a) == 4000000000
+    }
+    then "int(i8) sign-extends negative" {
+        let a: i8 = 0 - 50
+        int(a) == 0 - 50
+    }
+    then "int(i16) sign-extends negative across boundary" {
+        let a: i16 = 0 - 32000
+        int(a) == 0 - 32000
+    }
+    then "int(i32) sign-extends large negative" {
+        let a: i32 = 0 - 2000000000
+        int(a) == 0 - 2000000000
+    }
+}
+
 spec "sized ints: roundtrip through fn calls preserves wrapped value" {
     then "id_u8(300 % 256) == 44" {
         // 300 doesn't fit in u8 — let-binding would error.
