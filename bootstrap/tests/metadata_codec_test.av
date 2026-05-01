@@ -256,6 +256,42 @@ spec "metadata codec: FNS section per-entry round-trips" {
     }
 }
 
+spec "metadata codec: end-to-end multi-section file" {
+    then "header magic round-trips through a full file" {
+        metadata_run_fixture().contains("PROBE e2e_magic: ok")
+    }
+    then "unit name survives the round trip" {
+        metadata_run_fixture().contains("PROBE e2e_unit_name: ok")
+    }
+    then "section count survives" {
+        metadata_run_fixture().contains("PROBE e2e_section_count: ok")
+    }
+    then "TYPES section header decodes correctly" {
+        metadata_run_fixture().contains("PROBE e2e_types_kind: ok")
+    }
+    then "TYPES entry count decodes" {
+        metadata_run_fixture().contains("PROBE e2e_types_count: ok")
+    }
+    then "Decoded struct's name round-trips" {
+        metadata_run_fixture().contains("PROBE e2e_struct_name: ok")
+    }
+    then "Decoded struct's first field name round-trips" {
+        metadata_run_fixture().contains("PROBE e2e_struct_field0: ok")
+    }
+    then "FNS section follows TYPES section in the same file" {
+        metadata_run_fixture().contains("PROBE e2e_fns_kind: ok")
+    }
+    then "Decoded fn name round-trips" {
+        metadata_run_fixture().contains("PROBE e2e_fn_name: ok")
+    }
+    then "Decoded fn exported flag round-trips" {
+        metadata_run_fixture().contains("PROBE e2e_fn_exported: ok")
+    }
+    then "Reader is exhausted at end of file (no extra bytes)" {
+        metadata_run_fixture().contains("PROBE e2e_remaining_zero: ok")
+    }
+}
+
 spec "metadata codec: TYPES section per-entry round-trips" {
     then "StructDecl: name survives the round trip" {
         metadata_run_fixture().contains("PROBE type_struct_name: ok")

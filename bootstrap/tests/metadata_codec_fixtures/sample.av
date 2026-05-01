@@ -353,6 +353,66 @@ fn main() -> int {
     probe("fn_compound_param", vtype_eq(proc_decoded.ret, ValueType.Enum("Result", proc_ret_args, 0)))
     probe("fn_not_exported", !proc_decoded.exported)
 
+    // End-to-end: header + TYPES section + FNS section
+    let e2e_w = writer_new()
+    let e2e_fp = avra_bytes_make(32)
+    e2e_w.header("@test::e2e", e2e_fp, 2)
+
+    // Encode TYPES body containing one struct entry
+    let e2e_struct_fields = FieldList.Node("x", ValueType.Int, FieldList.End)
+    let e2e_struct_entry = TypeDeclEntry {
+        sym_id: sym_id_for("@test::e2e::Cell"),
+        kind: TypeDeclKind.StructDecl,
+        name: "@test::e2e::Cell",
+        fields: e2e_struct_fields,
+        variants: VariantList.End,
+        inner_vt: ValueType.Unknown,
+    }
+    let e2e_types_body_w = writer_new()
+    e2e_types_body_w.type_decl(e2e_struct_entry)
+    e2e_w.section(SectionKind.Types, 1, e2e_types_body_w.finish())
+
+    // Encode FNS body containing one fn entry
+    let e2e_fn_entry = FnDeclEntry {
+        sym_id: sym_id_for("@test::e2e::cell_x"),
+        name: "@test::e2e::cell_x",
+        exported: true,
+        is_extern: false,
+        params: ParamList.Node("c", ValueType.Struct("@test::e2e::Cell", 0), ParamList.End),
+        ret: ValueType.Int,
+    }
+    let e2e_fns_body_w = writer_new()
+    e2e_fns_body_w.fn_decl(e2e_fn_entry)
+    e2e_w.section(SectionKind.Fns, 1, e2e_fns_body_w.finish())
+
+    // Decode: header, then both sections, then per-entry within each
+    let e2e_buf = e2e_w.finish()
+    let e2e_r = reader_new(e2e_buf)
+    let e2e_hdr = e2e_r.header()
+    probe("e2e_magic", e2e_hdr.magic == METADATA_MAGIC)
+    probe("e2e_unit_name", e2e_hdr.unit_name == "@test::e2e")
+    probe("e2e_section_count", e2e_hdr.section_count == 2)
+
+    let types_frame = e2e_r.section()
+    probe("e2e_types_kind", types_frame.kind is .Types)
+    probe("e2e_types_count", types_frame.entry_count == 1)
+    let types_body_r = reader_new(types_frame.body)
+    let decoded_struct = types_body_r.type_decl()
+    probe("e2e_struct_name", decoded_struct.name == "@test::e2e::Cell")
+    probe("e2e_struct_field0",
+        match decoded_struct.fields {
+            .Node(n, _, _) -> n == "x"
+            .End -> false
+        })
+
+    let fns_frame = e2e_r.section()
+    probe("e2e_fns_kind", fns_frame.kind is .Fns)
+    let fns_body_r = reader_new(fns_frame.body)
+    let decoded_fn = fns_body_r.fn_decl()
+    probe("e2e_fn_name", decoded_fn.name == "@test::e2e::cell_x")
+    probe("e2e_fn_exported", decoded_fn.exported)
+    probe("e2e_remaining_zero", e2e_r.remaining() == 0)
+
     // Many small writes (chunk concat correctness)
     let wm = writer_new()
     mut i = 0
