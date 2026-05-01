@@ -476,6 +476,7 @@ type BuildArgs = {
     json: bool,
     timings: bool,
     lib: bool,
+    emit_metadata: bool,
     entry: string,
 }
 
@@ -485,6 +486,7 @@ fn parse_build_args() -> BuildArgs {
     mut json = false
     mut timings = false
     mut lib = false
+    mut emit_metadata = false
     mut entry = ""
     mut i = 2
     while i < avra_selfhost_argc() {
@@ -514,6 +516,11 @@ fn parse_build_args() -> BuildArgs {
             i = i + 1
             continue
         }
+        if arg == "--emit-metadata" || arg == "--emit_metadata" {
+            emit_metadata = true
+            i = i + 1
+            continue
+        }
         if !arg.starts_with("-") && entry == "" {
             entry = arg
         }
@@ -525,6 +532,7 @@ fn parse_build_args() -> BuildArgs {
         json: json,
         timings: timings,
         lib: lib,
+        emit_metadata: emit_metadata,
         entry: entry,
     }
 }
@@ -662,6 +670,9 @@ fn run_build_command() {
             mut compile_cmd = "${compiler_path} compile"
             if profile.coverage {
                 compile_cmd = compile_cmd + " --coverage"
+            }
+            if args.emit_metadata {
+                compile_cmd = compile_cmd + " --emit_metadata"
             }
             compile_cmd = compile_cmd + " '${entry_path}'"
             let t_before_compile = avra_uptime_ms()

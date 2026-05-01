@@ -1,0 +1,54 @@
+// Fixture: scaffold a minimal package directory with avra.toml [lib],
+// run `bs2 build --lib --emit_metadata`, and verify the .meta.bin
+// lands next to the source. Validates 2f54's producer side: a unit
+// can be built standalone with both a cached .ll AND a metadata.bin
+// describing its public surface.
+//
+// Tracking ticket: forge-crafting-intepreters-2f54.
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
+extern fn avra_process_env_get(name: string) -> string
+
+fn probe(name: string, ok: bool) {
+    let tag = if ok { "ok" } else { "FAIL" }
+    println("PROBE ${name}: ${tag}")
+}
+
+fn main() -> int {
+    let pkg = "/tmp/avra_2f54_pkg"
+    avra_shell_exec("rm -rf ${pkg}")
+    avra_shell_exec("mkdir -p ${pkg}/src")
+
+    // Minimal avra.toml: a [lib] section pointing at src/lib.av so
+    // the build picks the lib target without --lib being explicit.
+    let toml = "${pkg}/avra.toml"
+    avra_shell_exec("printf '[package]\\nname = \"@test/widget\"\\nversion = \"0.1.0\"\\n\\n[lib]\\nname = \"widget\"\\npath = \"src/lib.av\"\\n' > ${toml}")
+
+    // The lib source: a few exported decls so each metadata section
+    // gets at least one entry.
+    let src = "${pkg}/src/lib.av"
+    avra_shell_exec("printf 'export type Widget = { id: int, name: string }\\n\\nexport fn widget_id(w: Widget) -> int { w.id }\\n\\nexport const WIDGET_VERSION: int = 1\\n' > ${src}")
+
+    let pwd = avra_process_env_get("PWD")
+    let bs2_abs = "${pwd}/build/bs2"
+
+    // Run from inside the package dir so avra.toml is auto-discovered.
+    let rc = avra_shell_exec_status("cd ${pkg} && ${bs2_abs} build --lib --emit_metadata")
+    probe("build_rc_zero", rc == 0)
+
+    // The produced .meta.bin lands next to the entry source.
+    let meta = "${pkg}/src/lib.av.meta.bin"
+    let exists_status = avra_shell_exec_status("test -s ${meta}")
+    probe("meta_bin_present_and_nonempty", exists_status == 0)
+
+    // Round-trip: bs2 metadata_show should print the public surface
+    // including the names we put in the source.
+    let show_out = avra_shell_exec("${bs2_abs} metadata_show ${meta}")
+    probe("show_has_widget_type", show_out.contains("Widget"))
+    probe("show_has_widget_id_fn", show_out.contains("widget_id"))
+    probe("show_has_const_name", show_out.contains("WIDGET_VERSION"))
+    probe("show_has_const_value", show_out.contains("1"))
+
+    0
+}

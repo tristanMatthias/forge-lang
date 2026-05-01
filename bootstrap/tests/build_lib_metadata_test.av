@@ -1,0 +1,47 @@
+// End-to-end `bs2 build --lib --emit_metadata` tests.
+//
+// Validates that a package with a `[lib]` section in avra.toml can
+// be built standalone and produces both the cached IR (.ll) AND a
+// metadata.bin describing its public surface — the producer half of
+// 2f54.
+//
+// Memoised at the shell level so each `then` does not re-build.
+// Tracking ticket: forge-crafting-intepreters-2f54.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn lib_run_fixture() -> string {
+    avra_shell_exec("if [ ! -f /tmp/avra_2f54_test.out ]; then bash scripts/diagnose.sh --run tests/build_lib_metadata_fixtures/sample.av > /tmp/avra_2f54_test.out 2>&1 || true; fi; cat /tmp/avra_2f54_test.out")
+}
+
+fn lib_wipe() -> string {
+    avra_shell_exec("rm -f /tmp/avra_2f54_test.out")
+}
+
+spec "build --lib --emit_metadata: clear cached output" {
+    then "wipe stale /tmp output from any prior run" {
+        let _ = lib_wipe()
+        true
+    }
+}
+
+spec "build --lib --emit_metadata: scaffolds + builds + emits a meta.bin" {
+    then "build returns rc=0 from a freshly-scaffolded [lib] package" {
+        lib_run_fixture().contains("PROBE build_rc_zero: ok")
+    }
+    then "the .meta.bin file is non-empty next to the entry source" {
+        lib_run_fixture().contains("PROBE meta_bin_present_and_nonempty: ok")
+    }
+    then "metadata_show finds the exported type" {
+        lib_run_fixture().contains("PROBE show_has_widget_type: ok")
+    }
+    then "metadata_show finds the exported fn" {
+        lib_run_fixture().contains("PROBE show_has_widget_id_fn: ok")
+    }
+    then "metadata_show finds the exported const name" {
+        lib_run_fixture().contains("PROBE show_has_const_name: ok")
+    }
+    then "metadata_show preserves the const literal value" {
+        lib_run_fixture().contains("PROBE show_has_const_value: ok")
+    }
+}
