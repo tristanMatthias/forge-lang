@@ -599,6 +599,17 @@ run_fg() {
   local ll bin
   ll="$fg.ll"
   bin="${fg%.av}.bin"
+  # Skip recompile when the fixture's bin is up-to-date relative to
+  # both its source and the bs2 compiler — every test run was
+  # otherwise re-spending ~90s per fixture (forge-crafting-intepreters-kkgf).
+  # `make test` aggregates 6+ fixtures, so the cache savings is on the
+  # order of minutes per `make test`. The freshness check is the same
+  # rule make would apply: bin must exist and be newer than every
+  # input it depends on.
+  if [ -f "$bin" ] && [ "$bin" -nt "$fg" ] && [ "$bin" -nt "$BS2" ]; then
+    "$bin"
+    return
+  fi
   if ! "$BS2" compile "$fg" >"$BUILD_DIR/last_run.log" 2>&1; then
     cat "$BUILD_DIR/last_run.log" >&2
     die "bs2 codegen failed"
