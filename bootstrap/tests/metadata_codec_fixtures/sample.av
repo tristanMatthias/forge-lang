@@ -16,6 +16,7 @@ use @std.avrac.build.metadata.{
     TypeDeclKind, TypeDeclEntry, FnDeclEntry,
     ConstValueKind, ConstDeclEntry,
     MetaTraitMethodList,
+    ImplDeclEntry, ImplMethodRefList,
 }
 use @std.avrac.core.ast.{ValueType, TypeList, FieldList, VariantList, ParamList, vtype_eq}
 
@@ -520,6 +521,65 @@ fn main() -> int {
         match disp_decoded.methods {
             .Node(_, _, ret, _) -> vtype_eq(ret, ValueType.Str)
             .End -> false
+        })
+
+    // IMPLS section per-entry round-trips.
+    // impl Display for Point { fn show(self) -> string; fn debug(self) -> string }
+    let imp_methods =
+        ImplMethodRefList.Node("show", sym_id_for("@test::Point__show"),
+        ImplMethodRefList.Node("debug", sym_id_for("@test::Point__debug"),
+        ImplMethodRefList.End))
+    let imp_entry = ImplDeclEntry {
+        trait_sym_id: sym_id_for("@test::Display"),
+        trait_name: "@test::Display",
+        type_sym_id: sym_id_for("@test::Point"),
+        type_name: "@test::Point",
+        methods: imp_methods,
+    }
+    let wimp = writer_new()
+    wimp.impl_decl(imp_entry)
+    let rimp = reader_new(wimp.finish())
+    let imp_decoded = rimp.impl_decl()
+    probe("impl_trait_name", imp_decoded.trait_name == "@test::Display")
+    probe("impl_trait_sym_id", imp_decoded.trait_sym_id == sym_id_for("@test::Display"))
+    probe("impl_type_name", imp_decoded.type_name == "@test::Point")
+    probe("impl_type_sym_id", imp_decoded.type_sym_id == sym_id_for("@test::Point"))
+    probe("impl_method0_name",
+        match imp_decoded.methods {
+            .Node(n, _, _) -> n == "show"
+            .End -> false
+        })
+    probe("impl_method0_fn_id",
+        match imp_decoded.methods {
+            .Node(_, fid, _) -> fid == sym_id_for("@test::Point__show")
+            .End -> false
+        })
+    let imp_tail = match imp_decoded.methods {
+        .Node(_, _, t) -> t
+        .End -> ImplMethodRefList.End
+    }
+    probe("impl_method1_name",
+        match imp_tail {
+            .Node(n, _, _) -> n == "debug"
+            .End -> false
+        })
+
+    // Empty impl (no methods) — also legal: e.g. marker traits
+    let marker_entry = ImplDeclEntry {
+        trait_sym_id: sym_id_for("@test::Marker"),
+        trait_name: "@test::Marker",
+        type_sym_id: sym_id_for("@test::Point"),
+        type_name: "@test::Point",
+        methods: ImplMethodRefList.End,
+    }
+    let wmrk = writer_new()
+    wmrk.impl_decl(marker_entry)
+    let rmrk = reader_new(wmrk.finish())
+    let mrk_decoded = rmrk.impl_decl()
+    probe("impl_marker_no_methods",
+        match mrk_decoded.methods {
+            .End -> true
+            _ -> false
         })
 
     // Many small writes (chunk concat correctness)

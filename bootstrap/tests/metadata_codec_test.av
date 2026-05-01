@@ -295,6 +295,33 @@ spec "metadata codec: CONSTS section per-entry round-trips" {
     }
 }
 
+spec "metadata codec: IMPLS section per-entry round-trips" {
+    then "trait name (impl Trait for Type) round-trips" {
+        metadata_run_fixture().contains("PROBE impl_trait_name: ok")
+    }
+    then "trait sym_id round-trips" {
+        metadata_run_fixture().contains("PROBE impl_trait_sym_id: ok")
+    }
+    then "type name (target of the impl) round-trips" {
+        metadata_run_fixture().contains("PROBE impl_type_name: ok")
+    }
+    then "type sym_id round-trips" {
+        metadata_run_fixture().contains("PROBE impl_type_sym_id: ok")
+    }
+    then "first method's name round-trips" {
+        metadata_run_fixture().contains("PROBE impl_method0_name: ok")
+    }
+    then "first method's fn_sym_id (FNS section ref) round-trips" {
+        metadata_run_fixture().contains("PROBE impl_method0_fn_id: ok")
+    }
+    then "second method's name (cross-arm decode) round-trips" {
+        metadata_run_fixture().contains("PROBE impl_method1_name: ok")
+    }
+    then "marker impl with no methods encodes empty list" {
+        metadata_run_fixture().contains("PROBE impl_marker_no_methods: ok")
+    }
+}
+
 spec "metadata codec: end-to-end multi-section file" {
     then "header magic round-trips through a full file" {
         metadata_run_fixture().contains("PROBE e2e_magic: ok")
