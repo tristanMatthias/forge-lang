@@ -1,6 +1,6 @@
 // WHY: compilation setup — declaration passes and top-level emission.
 
-use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_has, field_list_length, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, variant_max_payload, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_unknown, vtype_enum_name, vtype_struct_name, env_extend}
+use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_has, field_list_length, filter_fields_only, filter_fields_without, find_annotation, param_list_length, stmt_unwrap, variant_max_payload, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_unknown, vtype_enum_name, vtype_struct_name, env_extend}
 use parse.lexer.{parse_int_literal}
 use core.llvm.{avra_llvm_const_int}
 use codegen.types.{Ctx, CgNewtypeReg, CgUnionAliasReg, CopySet, TypeRegs, DeferStack, RcCleanupStack, ReleasableSet, EmitValue, EnumReg, EnumLookup, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for_full, llvm_type_for_full_sized, ok_emit, ok_stmt, struct_reg_lookup, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup}
@@ -48,7 +48,7 @@ fn decl_va(m: ptr, name: string, ret: ptr, params: [ptr]) {
 /// pass — extern decls, structs, enums, globals, functions, release
 /// fns — and finally emits user function bodies and top-level
 /// statements.
-fn codegen_program(stmts: StmtList, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry) -> Result<Ctx, string> {
+fn codegen_program(stmts: StmtList, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool) -> Result<Ctx, string> {
     let lc = avra_llvm_context_create()
     let m = avra_llvm_module_create("bootstrap", lc)
     let builder = avra_llvm_create_builder(lc)
@@ -302,8 +302,23 @@ fn codegen_program(stmts: StmtList, debug_null_checks: bool, coverage: bool, sou
     // use a different name (`__bs_top_level`) so we don't collide
     // — the user's main becomes the program entry point. Otherwise
     // we name the wrapper `main` so it serves as the entry.
+    //
+    // Library mode (forge-crafting-intepreters-2f54): the wrapper
+    // is named `__avra_lib_top_level` instead of `main`. Multiple
+    // library .o files can then link together without duplicate
+    // _main symbols. The per-module __init_<mod> chain is already
+    // emitted independently of this wrapper, so consumer init still
+    // runs the producer's init via the linked .o (cross-unit init
+    // dispatches through ordinary call instructions, not through
+    // the wrapper).
     let user_main = avra_llvm_get_named_function(m, "main")
-    let main_name = if user_main == null { "main" } else { "__bs_top_level" }
+    let main_name = if library {
+        "__avra_lib_top_level"
+    } else if user_main == null {
+        "main"
+    } else {
+        "__bs_top_level"
+    }
     let main_params = avra_llvm_type_array_new(0)
     let main_type = avra_llvm_function_type(i64t, main_params, 0, 0)
     avra_llvm_type_array_free(main_params)
@@ -427,8 +442,8 @@ fn codegen_program(stmts: StmtList, debug_null_checks: bool, coverage: bool, sou
 /// Compile a program to LLVM IR and write the result to disk.
 /// Disposes the `Ctx` afterwards. Use `compile_and_jit` instead when
 /// you don't want a file on disk.
-export fn compile_program(stmts: StmtList, output_path: string, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry) -> Result<int, string> {
-    match codegen_program(stmts, debug_null_checks, coverage, source_file, type_reg) {
+export fn compile_program(stmts: StmtList, output_path: string, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool) -> Result<int, string> {
+    match codegen_program(stmts, debug_null_checks, coverage, source_file, type_reg, library) {
         .Ok(ctx) -> {
             let write_result = ctx.write_ir(output_path)
             ctx.dispose()
@@ -445,7 +460,7 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
 /// takes ownership of the LLVM module, so we deliberately don't
 /// dispose `ctx`. Returns the program's exit code.
 export fn compile_and_jit(stmts: StmtList, type_reg: TypeRegistry) -> Result<int, string> {
-    match codegen_program(stmts, false, false, "", type_reg) {
+    match codegen_program(stmts, false, false, "", type_reg, false) {
         .Ok(ctx) -> {
             // JIT engine takes ownership of the module — don't dispose ctx
             let exit_code = avra_llvm_jit_run(ctx.module)
@@ -459,7 +474,7 @@ export fn compile_and_jit(stmts: StmtList, type_reg: TypeRegistry) -> Result<int
 /// disk step, so no `llc` invocation is needed downstream. Disposes
 /// `ctx` after the emit.
 export fn codegen_and_emit_object(stmts: StmtList, output_path: string, type_reg: TypeRegistry) -> Result<int, string> {
-    match codegen_program(stmts, false, false, "", type_reg) {
+    match codegen_program(stmts, false, false, "", type_reg, false) {
         .Ok(ctx) -> {
             let result = avra_llvm_emit_object(ctx.module, output_path)
             ctx.dispose()
@@ -480,7 +495,7 @@ export fn codegen_and_emit_object(stmts: StmtList, output_path: string, type_reg
 /// `source_file` is recorded in the `.covmap.tsv` that the codegen
 /// pass writes alongside the IR.
 export fn codegen_and_emit_ir_cov(stmts: StmtList, ir_path: string, type_reg: TypeRegistry, source_file: string) -> Result<int, string> {
-    match codegen_program(stmts, false, true, source_file, type_reg) {
+    match codegen_program(stmts, false, true, source_file, type_reg, false) {
         .Ok(ctx) -> {
             let write_result = ctx.write_ir(ir_path)
             ctx.dispose()
@@ -1364,8 +1379,20 @@ fn emit_top_level(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<VarEnv, stri
             match stmt {
                 .Function(_, _, _, _, _) -> emit_top_level(ctx, env, next)
                 .Module(name, body) -> {
-                    // Create a per-module init function: __init_<name>()
+                    // 2f54: when the module wrapper carries @external_unit,
+                    // its __init_<name> body lives in the producer's
+                    // compiled .o. Declare the init fn (so the call
+                    // resolves at link time) but skip body emit.
+                    let is_external = find_annotation(ss.node, "external_unit") != null
                     let init_name = "__init_${name}"
+                    if is_external {
+                        let init_params = avra_llvm_type_array_new(0)
+                        let init_type = avra_llvm_function_type(ctx.i64_type, init_params, 0, 0)
+                        avra_llvm_type_array_free(init_params)
+                        avra_llvm_add_function(ctx.module, init_name, init_type)
+                        ctx.call(init_name, [])
+                        return emit_top_level(ctx, env, next)
+                    }
                     let init_params = avra_llvm_type_array_new(0)
                     let init_type = avra_llvm_function_type(ctx.i64_type, init_params, 0, 0)
                     avra_llvm_type_array_free(init_params)

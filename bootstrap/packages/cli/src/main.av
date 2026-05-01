@@ -1567,7 +1567,7 @@ fn main() {
                 fail("monomorphization failed")
             }
             let output = "${path}.ll"
-            match compile_program(mono.stmts, output, false, false, path, named.type_reg) {
+            match compile_program(mono.stmts, output, false, false, path, named.type_reg, false) {
                 .Ok(_) -> {}
                 .Err(e) -> {
                     let ice_bag = bag_report(bag_new(), diag_ice("internal compiler error during codegen: ${e}"))
@@ -1691,8 +1691,12 @@ fn main() {
             fail("monomorphization failed")
         }
         let output = "${cpath}.ll"
+        // 2f54: when --module_path is set we treat this as a library
+        // build — skip the synthetic main() wrapper so multiple
+        // unit .o files can link together without _main collisions.
+        let library_mode = module_path != ""
         // Ticket t2w: ICE handler — wrap codegen errors in F9999.
-        match compile_program(mono.stmts, output, debug_null, enable_coverage, cpath, named.type_reg) {
+        match compile_program(mono.stmts, output, debug_null, enable_coverage, cpath, named.type_reg, library_mode) {
             .Ok(_) -> {}
             .Err(e) -> {
                 let ice_bag = bag_report(bag_new(), diag_ice("internal compiler error during codegen: ${e}"))
