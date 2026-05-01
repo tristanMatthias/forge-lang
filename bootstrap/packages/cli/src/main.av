@@ -69,8 +69,10 @@ use @std.avrac.build.driver.{
 use @std.avrac.build.fingerprint.{Fingerprint, fp_short}
 use @std.avrac.build.link.{LinkOptions, default_link_options, link_objects, link_objects_with_coverage}
 use @std.avrac.build.metadata_extract.{extract_unit_metadata}
-use @std.avrac.build.metadata.{metadata_write, bytes_from_hex}
+use @std.avrac.build.metadata.{metadata_write, metadata_read, bytes_from_hex}
+use @std.avrac.build.metadata_synthesize.{synthesize_unit_stmts}
 use @std.crypto.{sha256_hex}
+extern fn avra_bytes_to_hex(b: bytes) -> string
 use @std.avrac.build.graph.{
     DepGraph, Unit, UnitList, build_graph, unit_list_length,
 }
@@ -1298,6 +1300,11 @@ fn main() {
             arg file { description "Source file", required true }
         }
 
+        command metadata_show {
+            description "Decode a .meta.bin file and print its public surface (xtvc)"
+            arg file { description "Path to a .meta.bin", required true }
+        }
+
         command program {
             description "Parse and display a program"
             arg file { description "Source file", required true }
@@ -1402,6 +1409,20 @@ fn main() {
                 fail(result.error_message)
             }
             println(render_stmt_list(result.stmts!))
+            return
+        }
+        "metadata_show" -> {
+            // xtvc consumer-side smoke: read a .meta.bin from disk,
+            // synthesize the StmtList, and print it. Same renderer
+            // `program` uses — round-trippable through the eyes.
+            if !file_exists(path) { fail("error: file not found: ${path}") }
+            let m = metadata_read(path)
+            if m.unit_name == "" {
+                fail("error: ${path} is empty or unreadable")
+            }
+            println("// metadata for unit `${m.unit_name}`")
+            println("// fingerprint: ${avra_bytes_to_hex(m.fingerprint)}")
+            println(render_stmt_list(synthesize_unit_stmts(m)))
             return
         }
         "eval" -> {

@@ -1,0 +1,58 @@
+// End-to-end `bs2 metadata_show` tests via fixture program.
+//
+// Compiles tests/metadata_show_fixtures/sample.av which: writes a
+// small source file, runs `bs2 compile --emit_metadata` to produce
+// .meta.bin, then runs `bs2 metadata_show` against that .meta.bin
+// and asserts the rendered surface contains expected names.
+// Validates the round trip:
+//   source → extract → write → read → synthesize → render
+//
+// Memoised at the shell level so each `then` does not re-compile.
+// Tracking ticket: forge-crafting-intepreters-xtvc.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn show_run_fixture() -> string {
+    avra_shell_exec("if [ ! -f /tmp/avra_xtvc_show_test.out ]; then bash scripts/diagnose.sh --run tests/metadata_show_fixtures/sample.av > /tmp/avra_xtvc_show_test.out 2>&1 || true; fi; cat /tmp/avra_xtvc_show_test.out")
+}
+
+fn show_wipe() -> string {
+    avra_shell_exec("rm -f /tmp/avra_xtvc_show_test.out")
+}
+
+spec "metadata_show: clear cached fixture output" {
+    then "wipe stale /tmp output from any prior run" {
+        let _ = show_wipe()
+        true
+    }
+}
+
+spec "metadata_show: round trip through producer + consumer paths" {
+    then "bs2 compile --emit_metadata succeeds" {
+        show_run_fixture().contains("PROBE emit_rc_zero: ok")
+    }
+    then "metadata_show output starts with the unit-marker comment" {
+        show_run_fixture().contains("PROBE show_has_unit_marker: ok")
+    }
+    then "synthesised stmts are wrapped in a Module node" {
+        show_run_fixture().contains("PROBE show_has_module_node: ok")
+    }
+    then "TypeDecl `Pair` round-trips through the synthesizer" {
+        show_run_fixture().contains("PROBE show_has_pair_type: ok")
+    }
+    then "Function `add` round-trips" {
+        show_run_fixture().contains("PROBE show_has_add_fn: ok")
+    }
+    then "param types preserved (int)" {
+        show_run_fixture().contains("PROBE show_has_int_param: ok")
+    }
+    then "Const name `KEY` survives" {
+        show_run_fixture().contains("PROBE show_has_const_key: ok")
+    }
+    then "Const integer literal `7` survives" {
+        show_run_fixture().contains("PROBE show_has_const_value_7: ok")
+    }
+    then "fingerprint comment is present (sha256 hex of source)" {
+        show_run_fixture().contains("PROBE show_has_fingerprint_marker: ok")
+    }
+}
