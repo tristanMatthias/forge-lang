@@ -1,0 +1,62 @@
+// End-to-end @std.avrac.build.link tests via fixture program.
+//
+// Compiles tests/link_objects_fixtures/sample.av which exercises the
+// N-file link path: builds 3+ .o files via cc, hands them to
+// `link_objects`, and verifies the resulting binary runs and
+// produces expected output.
+//
+// Memoised at the shell level so each `then` does not re-compile.
+// Tracking ticket: forge-crafting-intepreters-k21v.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn link_run_fixture() -> string {
+    avra_shell_exec("if [ ! -f /tmp/avra_link_objects.out ]; then bash scripts/diagnose.sh --run tests/link_objects_fixtures/sample.av > /tmp/avra_link_objects.out 2>&1 || true; fi; cat /tmp/avra_link_objects.out")
+}
+
+fn link_wipe() -> string {
+    avra_shell_exec("rm -f /tmp/avra_link_objects.out")
+}
+
+spec "link: clear cached fixture output" {
+    then "wipe stale /tmp output from any prior run" {
+        let _ = link_wipe()
+        true
+    }
+}
+
+spec "link: helper builds the fixture's C objects" {
+    then "cc compiles part_a" {
+        link_run_fixture().contains("PROBE cc_a: ok")
+    }
+    then "cc compiles part_b that references part_a" {
+        link_run_fixture().contains("PROBE cc_b: ok")
+    }
+    then "cc compiles main that references part_b" {
+        link_run_fixture().contains("PROBE cc_main: ok")
+    }
+    then "cc compiles a stub object for the runtime/wrapper slots" {
+        link_run_fixture().contains("PROBE cc_stub: ok")
+    }
+}
+
+spec "link: N-file link via link_objects" {
+    then "link returns 0 on a 3-object input" {
+        link_run_fixture().contains("PROBE link_rc_zero: ok")
+    }
+    then "the resulting binary file exists on disk" {
+        link_run_fixture().contains("PROBE bin_exists: ok")
+    }
+    then "the binary runs and reaches symbols across all 3 objects" {
+        link_run_fixture().contains("PROBE link_runs_and_outputs_42: ok")
+    }
+}
+
+spec "link: single-object compatibility" {
+    then "cc compiles a single-source program" {
+        link_run_fixture().contains("PROBE cc_solo: ok")
+    }
+    then "link_objects still works with one .o (regression for cli/main.av path)" {
+        link_run_fixture().contains("PROBE link_single_obj: ok")
+    }
+}

@@ -67,6 +67,7 @@ use @std.avrac.build.driver.{
     decide_build, record_build_result,
 }
 use @std.avrac.build.fingerprint.{Fingerprint, fp_short}
+use @std.avrac.build.link.{LinkOptions, default_link_options, link_objects, link_objects_with_coverage}
 use @std.avrac.build.graph.{
     DepGraph, Unit, UnitList, build_graph, unit_list_length,
 }
@@ -986,8 +987,13 @@ fn run_test_command() {
             .Ok(_) -> {}
             .Err(e) -> { fail(e) }
         }
-        let link_args = "[\"${obj_path}\", \"${build_dir}/runtime.o\", \"${build_dir}/llvm_wrapper.o\", \"-o\", \"${bin_path}\", \"-Wl,-stack_size,0x2000000\", \"-L${llvm_lib}\", \"-lLLVM\", \"-lc++\"]"
-        if avra_process_forward("cc", link_args, "") != 0 { fail("link failed") }
+        // k21v: route through link_objects so the same code path
+        // handles 1 or N input .o files. Today the test runner only
+        // emits one (_test.o); the future per-module build will pass
+        // the full topo-sorted list of cached .o paths.
+        let link_objs = [obj_path]
+        if link_objects(link_objs, "${build_dir}/runtime.o", "${build_dir}/llvm_wrapper.o",
+                        bin_path, default_link_options()) != 0 { fail("link failed") }
         let exit_code = avra_process_forward(bin_path, "[]", "")
         avra_process_exit(exit_code)
         return

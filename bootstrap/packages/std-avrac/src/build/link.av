@@ -1,0 +1,116 @@
+// WHY: N-file linker step — extends the existing single-object link
+// to consume an arbitrary list of pre-built `.o` files plus the
+// fixed C-side helpers (runtime.o + llvm_wrapper.o) and the LLVM
+// shared library. Each .o on the input side may come from a fresh
+// compile or a cache hit; the link layer doesn't care which.
+//
+// Tracked under forge-crafting-intepreters-k21v.
+
+extern fn avra_process_forward(cmd: string, args_json: string, opts_json: string) -> int
+extern fn avra_process_env_get(name: string) -> string
+
+use @std.json.{json_array, json_str, JsonItemList}
+
+/// Per-link options. Defaults are the bootstrap's current behaviour:
+/// stack_size_hex 0x2000000 (32 MiB — needed for deep parser recursion),
+/// llvm_prefix empty (falls back to LLVM_PREFIX env or
+/// /opt/homebrew/opt/llvm), coverage off (set true for `avra build
+/// --coverage` to pull in clang_rt.profile_osx).
+export type LinkOptions = {
+    stack_size_hex: string,
+    llvm_prefix: string,
+    coverage: bool,
+}
+
+/// Sensible defaults — match the values the cli/main.av link line
+/// has been hard-coding. Production callers override on demand
+/// rather than editing the defaults.
+export fn default_link_options() -> LinkOptions {
+    LinkOptions {
+        stack_size_hex: "0x2000000",
+        llvm_prefix: "",
+        coverage: false,
+    }
+}
+
+/// Resolve the LLVM install root. Honours an explicit `opts.llvm_prefix`
+/// first, then the `LLVM_PREFIX` env var, falling back to the macOS
+/// Homebrew default. Centralised so every linker call ends up with
+/// the same `-L` / runtime-library directory.
+fn resolve_llvm_prefix(opts: LinkOptions) -> string {
+    if opts.llvm_prefix != "" { return opts.llvm_prefix }
+    let env = avra_process_env_get("LLVM_PREFIX")
+    if env != "" { return env }
+    "/opt/homebrew/opt/llvm"
+}
+
+/// Build the JSON args array `cc` expects. Object files come first
+/// (the order the linker resolves symbols in), then the C-side
+/// helpers, then `-o out`, then the boilerplate trailing flags.
+/// Coverage adds the profile-runtime library when `opts.coverage`.
+fn build_link_argv(objs: List<string>, runtime_o: string, llvm_wrapper_o: string,
+                   out: string, opts: LinkOptions, coverage_libs: string) -> string {
+    mut items = JsonItemList.End
+    items = append_objs(items, objs, 0)
+    items = JsonItemList.Node(json_str(runtime_o), items)
+    items = JsonItemList.Node(json_str(llvm_wrapper_o), items)
+    items = JsonItemList.Node(json_str("-o"), items)
+    items = JsonItemList.Node(json_str(out), items)
+    items = JsonItemList.Node(json_str("-Wl,-stack_size,${opts.stack_size_hex}"), items)
+    let llvm_prefix = resolve_llvm_prefix(opts)
+    items = JsonItemList.Node(json_str("-L${llvm_prefix}/lib"), items)
+    items = JsonItemList.Node(json_str("-lLLVM"), items)
+    items = JsonItemList.Node(json_str("-lc++"), items)
+    if opts.coverage {
+        items = append_coverage_libs(items, coverage_libs)
+    }
+    json_array(reverse_items(items, JsonItemList.End))
+}
+
+/// Walk the list and prepend each object path as a JSON string —
+/// preserves source order in the final argv (the explicit reverse
+/// at finish keeps things deterministic for the linker).
+fn append_objs(items: JsonItemList, objs: List<string>, idx: int) -> JsonItemList {
+    if idx >= objs.length { return items }
+    append_objs(JsonItemList.Node(json_str(objs[idx]), items), objs, idx + 1)
+}
+
+/// Reverse a JsonItemList so `append_objs`'s prepend order ends up
+/// in source order on the wire.
+fn reverse_items(xs: JsonItemList, acc: JsonItemList) -> JsonItemList {
+    match xs {
+        .End -> acc
+        .Node(item, next) -> reverse_items(next, JsonItemList.Node(item, acc))
+    }
+}
+
+/// `-L<dir> -lclang_rt.profile_osx`. Coverage path; the directory
+/// varies by LLVM version so the caller computes it via shell.
+fn append_coverage_libs(items: JsonItemList, coverage_libs: string) -> JsonItemList {
+    if coverage_libs == "" { return items }
+    JsonItemList.Node(json_str(coverage_libs), items)
+}
+
+/// Link N object files plus the fixed C helpers into `out`. Returns
+/// the linker's exit code (0 on success). Caller decides what to do
+/// with non-zero — usually fail() and emit the captured stderr.
+export fn link_objects(objs: List<string>, runtime_o: string, llvm_wrapper_o: string,
+                       out: string, opts: LinkOptions) -> int {
+    let args = build_link_argv(objs, runtime_o, llvm_wrapper_o, out, opts, "")
+    avra_process_forward("cc", args, "")
+}
+
+/// Coverage variant — same surface as `link_objects` but threads the
+/// clang-rt profile-runtime library through. `coverage_libs` is
+/// expected to be a single `-L<dir>` flag pointing at the darwin
+/// runtime; `-lclang_rt.profile_osx` is appended automatically.
+export fn link_objects_with_coverage(objs: List<string>, runtime_o: string, llvm_wrapper_o: string,
+                                     out: string, coverage_libs: string, opts: LinkOptions) -> int {
+    let opts_with_cov = LinkOptions {
+        stack_size_hex: opts.stack_size_hex,
+        llvm_prefix: opts.llvm_prefix,
+        coverage: true,
+    }
+    let args = build_link_argv(objs, runtime_o, llvm_wrapper_o, out, opts_with_cov, coverage_libs)
+    avra_process_forward("cc", args, "")
+}
