@@ -117,11 +117,21 @@ export fn find_packages_dir(dir: string) -> string {
     if idx >= 0 {
         return dir.substring(0, idx + marker.length)
     }
-    // Strategy 2: check common relative locations from the working directory
+    // Strategy 2: check common relative locations from the working directory.
     // This handles relative paths like "regress/foo/" where walking up
-    // from the relative path can't find the repo root.
+    // from the relative path can't find the repo root. Returns an
+    // ABSOLUTE path (PWD-prefixed) so loaded_has() comparisons stay
+    // consistent with Strategy 1 — under dnq4 a mix of absolute and
+    // relative pkg_file strings caused @std.json to be loaded twice
+    // and emitted duplicate function definitions at codegen.
     let cwd_probe = "packages/std-cli/src/cli.av"
     if avra_selfhost_file_exists(cwd_probe) {
+        let pwd_canonical = avra_process_env_get("PWD")
+        if pwd_canonical != "" {
+            mut prefix = pwd_canonical
+            if prefix[prefix.length - 1] != "/" { prefix = "${prefix}/" }
+            return "${prefix}packages/"
+        }
         return "packages/"
     }
     // Strategy 2b: walk up from $PWD looking for sibling packages/. Lets
