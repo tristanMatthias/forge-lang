@@ -71,7 +71,8 @@ export fn synthesize_unit_stmts(m: UnitMetadata) -> StmtList {
     if m.unit_name == "" {
         body
     } else {
-        StmtList.Node(sstmt_dummy(Stmt.Module(m.unit_name, body)), StmtList.End)
+        let module_node = Stmt.Module(m.unit_name, body)
+        StmtList.Node(sstmt_dummy(wrap_external_unit(module_node)), StmtList.End)
     }
 }
 
