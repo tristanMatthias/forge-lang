@@ -6,6 +6,8 @@
 use core.ast.{Stmt, StmtList, SStmt, sstmt, AnnotationList}
 use parse.{parse_program_source}
 use core.runtime.{avra_process_env_get}
+use build.metadata.{metadata_read, metadata_file_exists}
+use build.metadata_synthesize.{synthesize_unit_body}
 
 /// Return the directory portion of a path (including the trailing
 /// slash), or `""` when `path` has no directory part. Used to
@@ -575,15 +577,31 @@ fn resolve_package_use_and_continue(ss: SStmt, next: StmtList, dir: string, load
             error_message: "",
         }
     }
-    // Load and parse the package file
+    // Load the package's stmts. xtvc fast-path: when AVRA_USE_METADATA
+    // is set AND <pkg_file>.meta.bin exists, decode that and synthesise
+    // stubs in place of re-parsing the source. Skips the parse / type
+    // / mono / codegen-bodies cost for unchanged dependencies — the
+    // producing unit's compiled .o supplies bodies at link time
+    // (forge-crafting-intepreters-2f54). Source-on-disk path remains
+    // the default; opt-in keeps the existing behaviour intact while
+    // the multi-unit cache plumbing matures.
     let new_loaded = LoadedPaths.Node(pkg_file, loaded)
-    let pkg_source = avra_selfhost_read_file(pkg_file)
-    let parsed = parse_program_source(pkg_source)
-    if parsed.had_error || parsed.stmts == null {
-        return ModListResult { stmts: StmtList.End, loaded: new_loaded, had_error: true, error_message: "error in package `${pkg_mod}`: ${parsed.error_message}" }
-    }
     let pkg_dir = modules_dirname(pkg_file)
-    let resolved = resolve_module_files_inner(parsed.stmts!, pkg_dir, new_loaded, stack)
+    let use_meta = avra_process_env_get("AVRA_USE_METADATA") != ""
+    let meta_path = "${pkg_file}.meta.bin"
+    let take_meta_fast_path = use_meta && metadata_file_exists(meta_path)
+    let pkg_stmts = if take_meta_fast_path {
+        let m = metadata_read(meta_path)
+        synthesize_unit_body(m)
+    } else {
+        let pkg_source = avra_selfhost_read_file(pkg_file)
+        let parsed = parse_program_source(pkg_source)
+        if parsed.had_error || parsed.stmts == null {
+            return ModListResult { stmts: StmtList.End, loaded: new_loaded, had_error: true, error_message: "error in package `${pkg_mod}`: ${parsed.error_message}" }
+        }
+        parsed.stmts!
+    }
+    let resolved = resolve_module_files_inner(pkg_stmts, pkg_dir, new_loaded, stack)
     if resolved.had_error { return resolved }
     // Create a nested module structure: @std → cli → {body}
     let without_at = pkg_mod.substring(1, pkg_mod.length)

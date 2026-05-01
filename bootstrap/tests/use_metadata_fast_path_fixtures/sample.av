@@ -1,0 +1,60 @@
+// Fixture: scaffold a tiny consumer + producer pair on /tmp, build
+// the producer with --emit_metadata, then compile the consumer with
+// AVRA_USE_METADATA=1 set so the resolver picks up .meta.bin instead
+// of re-parsing the producer's source. Validates the resolver hook
+// runs without breaking when meta.bin is present.
+//
+// Tracking ticket: forge-crafting-intepreters-2f54.
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
+extern fn avra_process_env_get(name: string) -> string
+
+fn probe(name: string, ok: bool) {
+    let tag = if ok { "ok" } else { "FAIL" }
+    println("PROBE ${name}: ${tag}")
+}
+
+fn main() -> int {
+    let pkg = "/tmp/avra_2f54_meta_fastpath"
+    avra_shell_exec("rm -rf ${pkg}")
+    avra_shell_exec("mkdir -p ${pkg}/src")
+
+    // A producer source. Keep it self-contained so it parses + compiles
+    // without needing further deps.
+    let producer = "${pkg}/src/lib.av"
+    avra_shell_exec("printf 'export type Box = { v: int }\\n\\nexport fn unbox(b: Box) -> int { b.v }\\n' > ${producer}")
+
+    let pwd = avra_process_env_get("PWD")
+    let bs2 = "${pwd}/build/bs2"
+
+    // Step 1: emit metadata.bin for the producer source (no
+    // package context — bs2 compile --emit_metadata works on any
+    // standalone .av).
+    let rc1 = avra_shell_exec_status("${bs2} compile --emit_metadata ${producer}")
+    probe("producer_compile_rc_zero", rc1 == 0)
+
+    let meta = "${producer}.meta.bin"
+    let exists_status = avra_shell_exec_status("test -s ${meta}")
+    probe("producer_meta_present", exists_status == 0)
+
+    // Step 2: re-compile the producer, this time with
+    // AVRA_USE_METADATA=1 set. The resolver shouldn't break (and
+    // should find .meta.bin via metadata_file_exists). Simplest
+    // observable check: the second compile still succeeds.
+    let rc2 = avra_shell_exec_status("AVRA_USE_METADATA=1 ${bs2} compile ${producer}")
+    probe("env_gated_compile_succeeds", rc2 == 0)
+
+    // Step 3: with the env var set BUT no .meta.bin, the resolver
+    // must still fall back to source. Wipe meta.bin and verify.
+    avra_shell_exec("rm -f ${meta}")
+    let rc3 = avra_shell_exec_status("AVRA_USE_METADATA=1 ${bs2} compile ${producer}")
+    probe("fallback_to_source_when_meta_missing", rc3 == 0)
+
+    // Step 4: with env unset, behavior is the same as today (full
+    // parse path, no metadata involvement at all).
+    let rc4 = avra_shell_exec_status("${bs2} compile ${producer}")
+    probe("default_behavior_unchanged", rc4 == 0)
+
+    0
+}

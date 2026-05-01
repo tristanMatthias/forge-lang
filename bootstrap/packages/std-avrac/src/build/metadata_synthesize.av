@@ -42,11 +42,14 @@ use build.metadata.{
     MetaTraitMethodList, ImplMethodRefList,
 }
 
-/// Top-level entry. Walks every section list, builds the matching
-/// Stmt for each entry, and wraps the whole thing in a Module so the
-/// items land at their original qualified paths.
-export fn synthesize_unit_stmts(m: UnitMetadata) -> StmtList {
-    let body = append_stmts(
+/// Synthesise just the body — the StmtList of all public-surface
+/// items, with no surrounding Module wrap. Resolver-side callers that
+/// already wrap the loaded body in a package-qualified Module use
+/// this so they don't end up with double-wrapped namespaces (the
+/// existing parse-source path returns un-wrapped stmts; this matches
+/// that contract).
+export fn synthesize_unit_body(m: UnitMetadata) -> StmtList {
+    append_stmts(
         synth_types(m.types),
         append_stmts(
             synth_fns(m.fns),
@@ -56,6 +59,15 @@ export fn synthesize_unit_stmts(m: UnitMetadata) -> StmtList {
             ),
         ),
     )
+}
+
+/// Top-level entry. Walks every section list, builds the matching
+/// Stmt for each entry, and wraps the whole thing in a Module so the
+/// items land at their original qualified paths. Used by inspection
+/// tools (`bs2 metadata_show`); production resolver flows want
+/// `synthesize_unit_body` and supply their own Module wrap.
+export fn synthesize_unit_stmts(m: UnitMetadata) -> StmtList {
+    let body = synthesize_unit_body(m)
     if m.unit_name == "" {
         body
     } else {
