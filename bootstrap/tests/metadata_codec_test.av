@@ -225,3 +225,36 @@ spec "metadata codec: ValueType function types" {
         metadata_run_fixture().contains("PROBE vt_fn_typed: ok")
     }
 }
+
+spec "metadata codec: TYPES section per-entry round-trips" {
+    then "StructDecl: name survives the round trip" {
+        metadata_run_fixture().contains("PROBE type_struct_name: ok")
+    }
+    then "StructDecl: kind tag decodes back to .StructDecl" {
+        metadata_run_fixture().contains("PROBE type_struct_kind: ok")
+    }
+    then "StructDecl: sym_id (FNV-1a-64) survives" {
+        metadata_run_fixture().contains("PROBE type_struct_sym_id: ok")
+    }
+    then "StructDecl: field count survives" {
+        metadata_run_fixture().contains("PROBE type_struct_field_count: ok")
+    }
+    then "NewtypeDecl: name survives" {
+        metadata_run_fixture().contains("PROBE type_newtype_name: ok")
+    }
+    then "NewtypeDecl: kind tag decodes back to .NewtypeDecl" {
+        metadata_run_fixture().contains("PROBE type_newtype_kind: ok")
+    }
+    then "NewtypeDecl: inner ValueType survives" {
+        metadata_run_fixture().contains("PROBE type_newtype_inner: ok")
+    }
+    then "EnumDecl: name survives" {
+        metadata_run_fixture().contains("PROBE type_enum_name: ok")
+    }
+    then "EnumDecl: kind tag decodes back to .EnumDecl" {
+        metadata_run_fixture().contains("PROBE type_enum_kind: ok")
+    }
+    then "EnumDecl: variant count survives" {
+        metadata_run_fixture().contains("PROBE type_enum_variant_count: ok")
+    }
+}

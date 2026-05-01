@@ -13,8 +13,9 @@ use @std.avrac.build.metadata.{
     BytesWriter, BytesReader, writer_new, reader_new, sym_id_for,
     SectionKind, MetadataHeader, SectionFrame,
     METADATA_MAGIC, METADATA_VERSION_MAJOR, METADATA_VERSION_MINOR,
+    TypeDeclKind, TypeDeclEntry,
 }
-use @std.avrac.core.ast.{ValueType, TypeList, vtype_eq}
+use @std.avrac.core.ast.{ValueType, TypeList, FieldList, VariantList, vtype_eq}
 
 extern fn avra_bytes_make(len: int) -> bytes
 extern fn avra_bytes_set(b: bytes, idx: int, val: int)
@@ -30,6 +31,20 @@ fn vt_roundtrip(name: string, vt: ValueType) {
     let r = reader_new(w.finish())
     let decoded = r.vtype()
     probe("vt_${name}", vtype_eq(vt, decoded))
+}
+
+fn field_list_count(fs: FieldList) -> int {
+    match fs {
+        .End -> 0
+        .Node(_, _, next) -> 1 + field_list_count(next)
+    }
+}
+
+fn variant_list_count(vs: VariantList) -> int {
+    match vs {
+        .End -> 0
+        .Node(_, _, next) -> 1 + variant_list_count(next)
+    }
 }
 
 fn main() -> int {
@@ -224,6 +239,63 @@ fn main() -> int {
 
     let fn_params = TypeList.Node(ValueType.Int, TypeList.Node(ValueType.Str, TypeList.End))
     vt_roundtrip("fn_typed", ValueType.FnTyped(fn_params, ValueType.Bool))
+
+    // TYPES section per-entry round-trips.
+    // Struct: type Point = { x: int, y: int }
+    let pt_fields = FieldList.Node("x", ValueType.Int, FieldList.Node("y", ValueType.Int, FieldList.End))
+    let pt_entry = TypeDeclEntry {
+        sym_id: sym_id_for("@test::Point"),
+        kind: TypeDeclKind.StructDecl,
+        name: "@test::Point",
+        fields: pt_fields,
+        variants: VariantList.End,
+        inner_vt: ValueType.Unknown,
+    }
+    let wpt = writer_new()
+    wpt.type_decl(pt_entry)
+    let rpt = reader_new(wpt.finish())
+    let pt_decoded = rpt.type_decl()
+    probe("type_struct_name", pt_decoded.name == "@test::Point")
+    probe("type_struct_kind", pt_decoded.kind is .StructDecl)
+    probe("type_struct_sym_id", pt_decoded.sym_id == sym_id_for("@test::Point"))
+    probe("type_struct_field_count", field_list_count(pt_decoded.fields) == 2)
+
+    // Newtype: type UserId = int
+    let uid_entry = TypeDeclEntry {
+        sym_id: sym_id_for("@test::UserId"),
+        kind: TypeDeclKind.NewtypeDecl,
+        name: "@test::UserId",
+        fields: FieldList.End,
+        variants: VariantList.End,
+        inner_vt: ValueType.Int,
+    }
+    let wuid = writer_new()
+    wuid.type_decl(uid_entry)
+    let ruid = reader_new(wuid.finish())
+    let uid_decoded = ruid.type_decl()
+    probe("type_newtype_name", uid_decoded.name == "@test::UserId")
+    probe("type_newtype_kind", uid_decoded.kind is .NewtypeDecl)
+    probe("type_newtype_inner", vtype_eq(uid_decoded.inner_vt, ValueType.Int))
+
+    // Enum: enum Color { Red, Green, Blue }
+    let col_variants = VariantList.Node("Red", FieldList.End,
+        VariantList.Node("Green", FieldList.End,
+        VariantList.Node("Blue", FieldList.End, VariantList.End)))
+    let col_entry = TypeDeclEntry {
+        sym_id: sym_id_for("@test::Color"),
+        kind: TypeDeclKind.EnumDecl,
+        name: "@test::Color",
+        fields: FieldList.End,
+        variants: col_variants,
+        inner_vt: ValueType.Unknown,
+    }
+    let wcol = writer_new()
+    wcol.type_decl(col_entry)
+    let rcol = reader_new(wcol.finish())
+    let col_decoded = rcol.type_decl()
+    probe("type_enum_name", col_decoded.name == "@test::Color")
+    probe("type_enum_kind", col_decoded.kind is .EnumDecl)
+    probe("type_enum_variant_count", variant_list_count(col_decoded.variants) == 3)
 
     // Many small writes (chunk concat correctness)
     let wm = writer_new()

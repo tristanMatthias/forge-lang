@@ -16,7 +16,7 @@
 // Tracked under forge-crafting-intepreters-iinq (epic
 // forge-crafting-intepreters-a1el — the build system).
 
-use core.ast.{ValueType, TypeList}
+use core.ast.{ValueType, TypeList, FieldList, VariantList, ParamList}
 
 extern fn avra_bytes_make(len: int) -> bytes
 extern fn avra_bytes_set(b: bytes, idx: int, val: int)
@@ -472,6 +472,124 @@ fn type_list_length(types: TypeList) -> int {
     }
 }
 
+fn field_list_length(fields: FieldList) -> int {
+    match fields {
+        .End -> 0
+        .Node(_, _, next) -> 1 + field_list_length(next)
+    }
+}
+
+fn variant_list_length(variants: VariantList) -> int {
+    match variants {
+        .End -> 0
+        .Node(_, _, next) -> 1 + variant_list_length(next)
+    }
+}
+
+fn param_list_length(params: ParamList) -> int {
+    match params {
+        .End -> 0
+        .Node(_, _, next) -> 1 + param_list_length(next)
+    }
+}
+
+// ── Composite list encoders ──
+//
+// FieldList / VariantList / ParamList are the building blocks of the
+// per-section bodies. Each list encodes as `[u32 count][entries]`,
+// where each entry is `[string name][per-element body]`.
+
+impl BytesWriter {
+    fn field_list(self, fields: FieldList) {
+        self.u32_le(field_list_length(fields))
+        self.field_list_body(fields)
+    }
+
+    fn field_list_body(self, fields: FieldList) {
+        match fields {
+            .End -> {}
+            .Node(name, vt, next) -> {
+                self.string(name)
+                self.vtype(vt)
+                self.field_list_body(next)
+            }
+        }
+    }
+
+    fn param_list(self, params: ParamList) {
+        self.u32_le(param_list_length(params))
+        self.param_list_body(params)
+    }
+
+    fn param_list_body(self, params: ParamList) {
+        match params {
+            .End -> {}
+            .Node(name, vt, next) -> {
+                self.string(name)
+                self.vtype(vt)
+                self.param_list_body(next)
+            }
+        }
+    }
+
+    fn variant_list(self, variants: VariantList) {
+        self.u32_le(variant_list_length(variants))
+        self.variant_list_body(variants)
+    }
+
+    fn variant_list_body(self, variants: VariantList) {
+        match variants {
+            .End -> {}
+            .Node(name, fields, next) -> {
+                self.string(name)
+                self.field_list(fields)
+                self.variant_list_body(next)
+            }
+        }
+    }
+}
+
+impl BytesReader {
+    fn field_list(self) -> FieldList {
+        let count = self.u32_le()
+        self.field_list_body(count)
+    }
+
+    fn field_list_body(self, count: int) -> FieldList {
+        if count == 0 { return FieldList.End }
+        let name = self.string()
+        let vt = self.vtype()
+        let tail = self.field_list_body(count - 1)
+        FieldList.Node(name, vt, tail)
+    }
+
+    fn param_list(self) -> ParamList {
+        let count = self.u32_le()
+        self.param_list_body(count)
+    }
+
+    fn param_list_body(self, count: int) -> ParamList {
+        if count == 0 { return ParamList.End }
+        let name = self.string()
+        let vt = self.vtype()
+        let tail = self.param_list_body(count - 1)
+        ParamList.Node(name, vt, tail)
+    }
+
+    fn variant_list(self) -> VariantList {
+        let count = self.u32_le()
+        self.variant_list_body(count)
+    }
+
+    fn variant_list_body(self, count: int) -> VariantList {
+        if count == 0 { return VariantList.End }
+        let name = self.string()
+        let fields = self.field_list()
+        let tail = self.variant_list_body(count - 1)
+        VariantList.Node(name, fields, tail)
+    }
+}
+
 // File-header + section-frame readers. Mirror the BytesWriter impls
 // above. Caller validates `.magic == METADATA_MAGIC` before trusting
 // the rest of the header.
@@ -579,5 +697,100 @@ impl BytesReader {
         let len = self.u32_le()
         let body = self.raw(len)
         SectionFrame { kind: byte_to_section_kind(k), entry_count: n, body: body }
+    }
+}
+
+// ── TYPES section: declarations of nominal types ──
+//
+// Each entry in the TYPES section body:
+//
+//   [u64 sym_id]                — stable cross-unit reference
+//   [u8  type_decl_kind]        — pinned tag (see TypeDeclKind)
+//   [string canonical_name]
+//   [body]                      — kind-specific
+//
+// Bodies:
+//   StructDecl / ShapeDecl  → field_list
+//   EnumDecl                → variant_list
+//   NewtypeDecl             → vtype inner
+//   UnionAliasDecl          → vtype unioned_type
+//
+// TraitDecl encoding deferred to a follow-up commit (the trait
+// method list is a separate sub-record and lands cleaner on its own).
+
+const TYPE_DECL_STRUCT: int = 1
+const TYPE_DECL_ENUM: int = 2
+const TYPE_DECL_NEWTYPE: int = 4
+const TYPE_DECL_UNION_ALIAS: int = 5
+const TYPE_DECL_SHAPE: int = 6
+
+export enum TypeDeclKind {
+    StructDecl
+    EnumDecl
+    NewtypeDecl
+    UnionAliasDecl
+    ShapeDecl
+}
+
+fn type_decl_kind_to_byte(k: TypeDeclKind) -> int {
+    if k is .StructDecl { return TYPE_DECL_STRUCT }
+    if k is .EnumDecl { return TYPE_DECL_ENUM }
+    if k is .NewtypeDecl { return TYPE_DECL_NEWTYPE }
+    if k is .UnionAliasDecl { return TYPE_DECL_UNION_ALIAS }
+    if k is .ShapeDecl { return TYPE_DECL_SHAPE }
+    return TYPE_DECL_STRUCT
+}
+
+fn byte_to_type_decl_kind(b: int) -> TypeDeclKind {
+    if b == TYPE_DECL_ENUM { return TypeDeclKind.EnumDecl }
+    if b == TYPE_DECL_NEWTYPE { return TypeDeclKind.NewtypeDecl }
+    if b == TYPE_DECL_UNION_ALIAS { return TypeDeclKind.UnionAliasDecl }
+    if b == TYPE_DECL_SHAPE { return TypeDeclKind.ShapeDecl }
+    return TypeDeclKind.StructDecl
+}
+
+export type TypeDeclEntry = {
+    sym_id: int,
+    kind: TypeDeclKind,
+    name: string,
+    fields: FieldList,
+    variants: VariantList,
+    inner_vt: ValueType,
+}
+
+impl BytesWriter {
+    fn type_decl(self, e: TypeDeclEntry) {
+        self.u64_le(e.sym_id)
+        self.u8(type_decl_kind_to_byte(e.kind))
+        self.string(e.name)
+        if e.kind is .StructDecl { self.field_list(e.fields) }
+        if e.kind is .ShapeDecl { self.field_list(e.fields) }
+        if e.kind is .EnumDecl { self.variant_list(e.variants) }
+        if e.kind is .NewtypeDecl { self.vtype(e.inner_vt) }
+        if e.kind is .UnionAliasDecl { self.vtype(e.inner_vt) }
+    }
+}
+
+impl BytesReader {
+    fn type_decl(self) -> TypeDeclEntry {
+        let sid = self.u64_le()
+        let kind = byte_to_type_decl_kind(self.u8())
+        let name = self.string()
+        mut fields = FieldList.End
+        mut variants = VariantList.End
+        mut inner = ValueType.Unknown
+        if kind is .StructDecl { fields = self.field_list() }
+        if kind is .ShapeDecl { fields = self.field_list() }
+        if kind is .EnumDecl { variants = self.variant_list() }
+        if kind is .NewtypeDecl { inner = self.vtype() }
+        if kind is .UnionAliasDecl { inner = self.vtype() }
+        TypeDeclEntry {
+            sym_id: sid,
+            kind: kind,
+            name: name,
+            fields: fields,
+            variants: variants,
+            inner_vt: inner,
+        }
     }
 }
