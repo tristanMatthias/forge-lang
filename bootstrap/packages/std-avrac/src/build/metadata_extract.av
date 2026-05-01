@@ -1,0 +1,366 @@
+// WHY: Walk a parsed StmtList and produce a UnitMetadata for it.
+// Bridge from the in-memory AST to the metadata.bin codec — every
+// exported public-surface item (type, fn, const, impl) becomes one
+// entry in the corresponding section list.
+//
+// Tracked under forge-crafting-intepreters-iinq.
+
+use core.ast.{
+    Stmt, StmtList, Expr, ParamList, FieldList, VariantList, ValueType,
+    AnnotationList, stmt_unwrap,
+}
+use build.metadata.{
+    UnitMetadata, TypeDeclList, FnDeclList, ConstDeclList, ImplDeclList,
+    TypeDeclEntry, FnDeclEntry, ConstDeclEntry, ImplDeclEntry,
+    TypeDeclKind, ConstValueKind,
+    MetaTraitMethodList, ImplMethodRefList,
+    sym_id_for, unit_metadata_new,
+}
+use parse.lexer.{parse_int_literal}
+
+// Internal accumulator — each walk step folds into this and returns
+// the updated record. Lists grow via prepend so traversal stays
+// O(stmts); a final reverse pass restores source order.
+type ExtractAcc = {
+    types: TypeDeclList,
+    fns: FnDeclList,
+    consts: ConstDeclList,
+    impls: ImplDeclList,
+}
+
+fn empty_acc() -> ExtractAcc {
+    ExtractAcc {
+        types: TypeDeclList.End,
+        fns: FnDeclList.End,
+        consts: ConstDeclList.End,
+        impls: ImplDeclList.End,
+    }
+}
+
+// Public entry. `unit_name` becomes the module prefix used to
+// qualify every symbol (so the same fn `add` in a different module
+// gets a distinct sym_id). `fingerprint` is the 32-byte sha256 of
+// the source set, computed by the build driver upstream.
+export fn extract_unit_metadata(unit_name: string, fingerprint: bytes, stmts: StmtList) -> UnitMetadata {
+    let acc = walk_stmts(empty_acc(), stmts, unit_name, false)
+    UnitMetadata {
+        unit_name: unit_name,
+        fingerprint: fingerprint,
+        types: reverse_type_list(acc.types, TypeDeclList.End),
+        fns: reverse_fn_list(acc.fns, FnDeclList.End),
+        consts: reverse_const_list(acc.consts, ConstDeclList.End),
+        impls: reverse_impl_list(acc.impls, ImplDeclList.End),
+    }
+}
+
+fn reverse_type_list(xs: TypeDeclList, acc: TypeDeclList) -> TypeDeclList {
+    match xs {
+        .End -> acc
+        .Node(e, next) -> reverse_type_list(next, TypeDeclList.Node(e, acc))
+    }
+}
+
+fn reverse_fn_list(xs: FnDeclList, acc: FnDeclList) -> FnDeclList {
+    match xs {
+        .End -> acc
+        .Node(e, next) -> reverse_fn_list(next, FnDeclList.Node(e, acc))
+    }
+}
+
+fn reverse_const_list(xs: ConstDeclList, acc: ConstDeclList) -> ConstDeclList {
+    match xs {
+        .End -> acc
+        .Node(e, next) -> reverse_const_list(next, ConstDeclList.Node(e, acc))
+    }
+}
+
+fn reverse_impl_list(xs: ImplDeclList, acc: ImplDeclList) -> ImplDeclList {
+    match xs {
+        .End -> acc
+        .Node(e, next) -> reverse_impl_list(next, ImplDeclList.Node(e, acc))
+    }
+}
+
+fn walk_stmts(acc: ExtractAcc, stmts: StmtList, current_module: string, exported: bool) -> ExtractAcc {
+    match stmts {
+        .End -> acc
+        .Node(ss, next) -> {
+            let after = walk_stmt(acc, ss.node, current_module, exported)
+            walk_stmts(after, next, current_module, exported)
+        }
+    }
+}
+
+fn qualify(current_module: string, name: string) -> string {
+    if current_module == "" { name } else { "${current_module}::${name}" }
+}
+
+fn annotation_has_export(annots: AnnotationList) -> bool {
+    match annots {
+        .End -> false
+        .Node(name, _, next) -> {
+            if name == "export" { return true }
+            annotation_has_export(next)
+        }
+    }
+}
+
+fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool) -> ExtractAcc {
+    match stmt {
+        .Annotated(annots, inner) -> {
+            let is_export = exported || annotation_has_export(annots)
+            walk_stmt(acc, inner, current_module, is_export)
+        }
+        .Module(name, body) -> {
+            let sub_path = qualify(current_module, name)
+            walk_stmts(acc, body, sub_path, false)
+        }
+        .TypeDecl(name, _, fields) -> {
+            let qn = qualify(current_module, name)
+            let entry = TypeDeclEntry {
+                sym_id: sym_id_for(qn),
+                kind: TypeDeclKind.StructDecl,
+                name: qn,
+                fields: fields,
+                variants: VariantList.End,
+                inner_vt: ValueType.Unknown,
+                methods: MetaTraitMethodList.End,
+            }
+            ExtractAcc { types: TypeDeclList.Node(entry, acc.types), fns: acc.fns, consts: acc.consts, impls: acc.impls }
+        }
+        .ShapeDecl(name, fields) -> {
+            let qn = qualify(current_module, name)
+            let entry = TypeDeclEntry {
+                sym_id: sym_id_for(qn),
+                kind: TypeDeclKind.ShapeDecl,
+                name: qn,
+                fields: fields,
+                variants: VariantList.End,
+                inner_vt: ValueType.Unknown,
+                methods: MetaTraitMethodList.End,
+            }
+            ExtractAcc { types: TypeDeclList.Node(entry, acc.types), fns: acc.fns, consts: acc.consts, impls: acc.impls }
+        }
+        .EnumDecl(name, _, variants) -> {
+            let qn = qualify(current_module, name)
+            let entry = TypeDeclEntry {
+                sym_id: sym_id_for(qn),
+                kind: TypeDeclKind.EnumDecl,
+                name: qn,
+                fields: FieldList.End,
+                variants: variants,
+                inner_vt: ValueType.Unknown,
+                methods: MetaTraitMethodList.End,
+            }
+            ExtractAcc { types: TypeDeclList.Node(entry, acc.types), fns: acc.fns, consts: acc.consts, impls: acc.impls }
+        }
+        .NewtypeDecl(name, inner_vt) -> {
+            let qn = qualify(current_module, name)
+            let entry = TypeDeclEntry {
+                sym_id: sym_id_for(qn),
+                kind: TypeDeclKind.NewtypeDecl,
+                name: qn,
+                fields: FieldList.End,
+                variants: VariantList.End,
+                inner_vt: inner_vt,
+                methods: MetaTraitMethodList.End,
+            }
+            ExtractAcc { types: TypeDeclList.Node(entry, acc.types), fns: acc.fns, consts: acc.consts, impls: acc.impls }
+        }
+        .UnionAliasDecl(name, type_vt) -> {
+            let qn = qualify(current_module, name)
+            let entry = TypeDeclEntry {
+                sym_id: sym_id_for(qn),
+                kind: TypeDeclKind.UnionAliasDecl,
+                name: qn,
+                fields: FieldList.End,
+                variants: VariantList.End,
+                inner_vt: type_vt,
+                methods: MetaTraitMethodList.End,
+            }
+            ExtractAcc { types: TypeDeclList.Node(entry, acc.types), fns: acc.fns, consts: acc.consts, impls: acc.impls }
+        }
+        .TraitDecl(name, methods) -> {
+            let qn = qualify(current_module, name)
+            let entry = TypeDeclEntry {
+                sym_id: sym_id_for(qn),
+                kind: TypeDeclKind.TraitDecl,
+                name: qn,
+                fields: FieldList.End,
+                variants: VariantList.End,
+                inner_vt: ValueType.Unknown,
+                methods: extract_trait_methods(methods),
+            }
+            ExtractAcc { types: TypeDeclList.Node(entry, acc.types), fns: acc.fns, consts: acc.consts, impls: acc.impls }
+        }
+        .Function(name, _, params, ret_vt, _) -> {
+            let qn = qualify(current_module, name)
+            let entry = FnDeclEntry {
+                sym_id: sym_id_for(qn),
+                name: qn,
+                exported: exported,
+                is_extern: false,
+                params: params,
+                ret: ret_vt,
+            }
+            ExtractAcc { types: acc.types, fns: FnDeclList.Node(entry, acc.fns), consts: acc.consts, impls: acc.impls }
+        }
+        .ExternFn(name, params, ret_vt) -> {
+            let entry = FnDeclEntry {
+                sym_id: sym_id_for(name),
+                name: name,
+                exported: true,
+                is_extern: true,
+                params: params,
+                ret: ret_vt,
+            }
+            ExtractAcc { types: acc.types, fns: FnDeclList.Node(entry, acc.fns), consts: acc.consts, impls: acc.impls }
+        }
+        .Const(name, ty_vt, init) -> {
+            let qn = qualify(current_module, name)
+            let parts = extract_const_value(init)
+            let entry = ConstDeclEntry {
+                sym_id: sym_id_for(qn),
+                name: qn,
+                exported: exported,
+                ty: ty_vt,
+                value_kind: parts.kind,
+                int_value: parts.int_val,
+                str_value: parts.str_val,
+            }
+            ExtractAcc { types: acc.types, fns: acc.fns, consts: ConstDeclList.Node(entry, acc.consts), impls: acc.impls }
+        }
+        .Impl(impl_name, methods) -> {
+            let pair = split_impl_name(impl_name)
+            if pair.has_trait {
+                let trait_qn = qualify(current_module, pair.trait_name)
+                let type_qn = qualify(current_module, pair.type_name)
+                let entry = ImplDeclEntry {
+                    trait_sym_id: sym_id_for(trait_qn),
+                    trait_name: trait_qn,
+                    type_sym_id: sym_id_for(type_qn),
+                    type_name: type_qn,
+                    methods: extract_impl_methods(methods, type_qn),
+                }
+                ExtractAcc { types: acc.types, fns: acc.fns, consts: acc.consts, impls: ImplDeclList.Node(entry, acc.impls) }
+            } else {
+                acc
+            }
+        }
+        _ -> acc
+    }
+}
+
+// "Trait:Type" → (trait, type, has_trait=true); "Type" → (Type, Type, has_trait=false).
+// Used to recover the impl_decl shape from the mangled stmt name.
+type ImplNamePair = {
+    trait_name: string,
+    type_name: string,
+    has_trait: bool,
+}
+
+fn split_impl_name(impl_name: string) -> ImplNamePair {
+    let idx = impl_name.index_of(":")
+    if idx < 0 {
+        return ImplNamePair { trait_name: impl_name, type_name: impl_name, has_trait: false }
+    }
+    let t = impl_name.substring(0, idx)
+    let ty = impl_name.substring(idx + 1, impl_name.length)
+    ImplNamePair { trait_name: t, type_name: ty, has_trait: true }
+}
+
+fn extract_trait_methods(stmts: StmtList) -> MetaTraitMethodList {
+    match stmts {
+        .End -> MetaTraitMethodList.End
+        .Node(ss, next) -> {
+            let inner = stmt_unwrap(ss.node)
+            match inner {
+                .Function(name, _, params, ret_vt, _) -> {
+                    MetaTraitMethodList.Node(name, params, ret_vt, extract_trait_methods(next))
+                }
+                .ExternFn(name, params, ret_vt) -> {
+                    MetaTraitMethodList.Node(name, params, ret_vt, extract_trait_methods(next))
+                }
+                _ -> extract_trait_methods(next)
+            }
+        }
+    }
+}
+
+fn extract_impl_methods(stmts: StmtList, type_qn: string) -> ImplMethodRefList {
+    match stmts {
+        .End -> ImplMethodRefList.End
+        .Node(ss, next) -> {
+            let inner = stmt_unwrap(ss.node)
+            match inner {
+                // Impl-method names parse to mangled "Type__method"
+                // form via features::impl_decl::parser. The
+                // post-mangle method name is everything after the
+                // final "__".
+                .Function(mangled, _, _, _, _) -> {
+                    let method_name = strip_mangle(mangled)
+                    let fn_qn = qualify(type_qn, method_name)
+                    ImplMethodRefList.Node(method_name, sym_id_for(fn_qn), extract_impl_methods(next, type_qn))
+                }
+                _ -> extract_impl_methods(next, type_qn)
+            }
+        }
+    }
+}
+
+fn strip_mangle(name: string) -> string {
+    let parts = name.split("__")
+    if parts.length > 1 {
+        parts[parts.length - 1]
+    } else {
+        name
+    }
+}
+
+// Extract the literal value from a const initializer expression.
+// Anything that isn't a bare literal falls through to UnknownValue
+// — same opacity guarantee an imported fn signature gives.
+type ConstValueParts = {
+    kind: ConstValueKind,
+    int_val: int,
+    str_val: string,
+}
+
+fn extract_const_value(e: Expr) -> ConstValueParts {
+    match e {
+        .Number(text) -> ConstValueParts {
+            kind: ConstValueKind.IntValue,
+            int_val: parse_int_literal(text),
+            str_val: "",
+        }
+        .Bool(text) -> ConstValueParts {
+            kind: ConstValueKind.BoolValue,
+            int_val: if text == "true" { 1 } else { 0 },
+            str_val: "",
+        }
+        .String(text) -> ConstValueParts {
+            kind: ConstValueKind.StrValue,
+            int_val: 0,
+            str_val: strip_quotes(text),
+        }
+        .Grouping(inner) -> extract_const_value(inner)
+        .Unary(_, inner) -> extract_const_value(inner)
+        _ -> ConstValueParts {
+            kind: ConstValueKind.UnknownValue,
+            int_val: 0,
+            str_val: "",
+        }
+    }
+}
+
+// `Expr.String` keeps the surrounding quotes so the renderer can
+// round-trip; the metadata wire form stores just the body.
+fn strip_quotes(quoted: string) -> string {
+    if quoted.length < 2 { return quoted }
+    let first = quoted.byte(0)
+    let last = quoted.byte(quoted.length - 1)
+    if first == 0x22 && last == 0x22 {
+        return quoted.substring(1, quoted.length - 1)
+    }
+    quoted
+}

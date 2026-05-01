@@ -26,3 +26,4 @@ mod driver
 mod graph
 mod lock
 mod metadata
+mod metadata_extract

@@ -20,7 +20,12 @@ use @std.avrac.build.metadata.{
     UnitMetadata, TypeDeclList, FnDeclList, ConstDeclList, ImplDeclList,
     unit_metadata_new,
 }
-use @std.avrac.core.ast.{ValueType, TypeList, FieldList, VariantList, ParamList, vtype_eq}
+use @std.avrac.core.ast.{
+    Stmt, StmtList, Expr, ExprList, TypeParamList,
+    ValueType, TypeList, FieldList, VariantList, ParamList,
+    AnnotationList, vtype_eq, sstmt_dummy,
+}
+use @std.avrac.build.metadata_extract.{extract_unit_metadata}
 
 extern fn avra_bytes_make(len: int) -> bytes
 extern fn avra_bytes_set(b: bytes, idx: int, val: int)
@@ -665,6 +670,82 @@ fn main() -> int {
             .End -> false
         })
     probe("unit_reader_exhausted", unit_r.remaining() == 0)
+
+    // AST → UnitMetadata extractor: hand-build a small StmtList that
+    // covers each handled stmt kind, run extract_unit_metadata, and
+    // verify the produced lists match.
+    let ext_fp = avra_bytes_make(32)
+
+    // type Pt = { x: int }
+    let pt_fields_ast = FieldList.Node("x", ValueType.Int, FieldList.End)
+    let s_type = sstmt_dummy(Stmt.TypeDecl("Pt", TypeParamList.End, pt_fields_ast))
+
+    // export fn add(a: int, b: int) -> int { ... }  (body irrelevant for extraction)
+    let add_params_ast = ParamList.Node("a", ValueType.Int, ParamList.Node("b", ValueType.Int, ParamList.End))
+    let s_fn_inner = Stmt.Function("add", TypeParamList.End, add_params_ast, ValueType.Int, StmtList.End)
+    let s_fn = sstmt_dummy(Stmt.Annotated(
+        AnnotationList.Node("export", ExprList.End, AnnotationList.End),
+        s_fn_inner,
+    ))
+
+    // const VERSION: string = "1.0"
+    let s_const = sstmt_dummy(Stmt.Const("VERSION", ValueType.Str, Expr.String("\"1.0\"")))
+
+    // const N: int = 42
+    let s_const_int = sstmt_dummy(Stmt.Const("N", ValueType.Int, Expr.Number("42")))
+
+    // extern fn host_now() -> int
+    let s_extern = sstmt_dummy(Stmt.ExternFn("host_now", ParamList.End, ValueType.Int))
+
+    let ext_stmts =
+        StmtList.Node(s_type,
+        StmtList.Node(s_fn,
+        StmtList.Node(s_const,
+        StmtList.Node(s_const_int,
+        StmtList.Node(s_extern, StmtList.End)))))
+
+    let extracted = extract_unit_metadata("@ext", ext_fp, ext_stmts)
+    probe("extract_unit_name", extracted.unit_name == "@ext")
+    probe("extract_type_qualified",
+        match extracted.types {
+            .Node(e, _) -> e.name == "@ext::Pt"
+            .End -> false
+        })
+    probe("extract_fn_qualified",
+        match extracted.fns {
+            .Node(e, _) -> e.name == "@ext::add"
+            .End -> false
+        })
+    probe("extract_fn_exported",
+        match extracted.fns {
+            .Node(e, _) -> e.exported
+            .End -> false
+        })
+    probe("extract_const_str_value",
+        match extracted.consts {
+            .Node(e, _) -> e.str_value == "1.0" && e.value_kind is .StrValue
+            .End -> false
+        })
+    let consts_tail = match extracted.consts {
+        .Node(_, t) -> t
+        .End -> ConstDeclList.End
+    }
+    probe("extract_const_int_value",
+        match consts_tail {
+            .Node(e, _) -> e.int_value == 42 && e.value_kind is .IntValue
+            .End -> false
+        })
+
+    // Find the extern fn in the fns list (which has the exported fn first).
+    let fns_tail = match extracted.fns {
+        .Node(_, t) -> t
+        .End -> FnDeclList.End
+    }
+    probe("extract_extern_is_extern",
+        match fns_tail {
+            .Node(e, _) -> e.is_extern && e.name == "host_now"
+            .End -> false
+        })
 
     // Many small writes (chunk concat correctness)
     let wm = writer_new()

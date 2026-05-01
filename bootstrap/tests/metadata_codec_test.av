@@ -322,6 +322,30 @@ spec "metadata codec: IMPLS section per-entry round-trips" {
     }
 }
 
+spec "metadata codec: AST → UnitMetadata extractor" {
+    then "unit_name passes through" {
+        metadata_run_fixture().contains("PROBE extract_unit_name: ok")
+    }
+    then "TypeDecl gets qualified with the unit name" {
+        metadata_run_fixture().contains("PROBE extract_type_qualified: ok")
+    }
+    then "Function gets qualified" {
+        metadata_run_fixture().contains("PROBE extract_fn_qualified: ok")
+    }
+    then "@export annotation lifts to FnDeclEntry.exported = true" {
+        metadata_run_fixture().contains("PROBE extract_fn_exported: ok")
+    }
+    then "Const string literal extracts to .StrValue with body" {
+        metadata_run_fixture().contains("PROBE extract_const_str_value: ok")
+    }
+    then "Const int literal extracts to .IntValue with parsed value" {
+        metadata_run_fixture().contains("PROBE extract_const_int_value: ok")
+    }
+    then "ExternFn gets is_extern=true and bare (un-qualified) name" {
+        metadata_run_fixture().contains("PROBE extract_extern_is_extern: ok")
+    }
+}
+
 spec "metadata codec: unit-level write+read orchestration" {
     then "unit_name (header) round-trips" {
         metadata_run_fixture().contains("PROBE unit_name: ok")
