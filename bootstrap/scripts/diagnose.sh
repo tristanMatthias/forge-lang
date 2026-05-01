@@ -366,6 +366,12 @@ ensure_bs2_asan() {
 
 ensure_bs3() {
   ensure_bs2
+  # Skip the 90-second bs3 rebuild when bs3 is already newer than
+  # both bs2 (which compiled it) and the cli/main.av source. Same
+  # mtime-based freshness rule make uses internally.
+  if [ -f "$BS3" ] && [ "$BS3" -nt "$BS2" ] && [ "$BS3" -nt "$SRC_DIR/main.av" ]; then
+    return
+  fi
   log "compiling packages/cli/src/main.av with bs2 → $BS3"
   if ! "$BS2" compile "$SRC_DIR/main.av" >"$BUILD_DIR/bs3.codegen.log" 2>&1; then
     cat "$BUILD_DIR/bs3.codegen.log" >&2
@@ -546,6 +552,21 @@ mode_build_bs3()      { ensure_bs3;      ok "$BS3"; }
 mode_check_fixedpoint() {
   ensure_bs2
   ensure_bs3
+  # Skip the 3-minute verify when neither bs2/bs3 nor any compiler
+  # source has changed since the last passing verify. Hashes both
+  # binaries + the cli/main.av source to a single fingerprint and
+  # short-circuits when the prior cached value matches. First commit
+  # pays the cost; subsequent commits with no compiler-side changes
+  # skip it. Bypass with `AVRA_FORCE_FP=1` if you suspect drift.
+  local fp_marker="$BUILD_DIR/.fp_verified"
+  local fp_input
+  fp_input=$(shasum -a 256 "$BS2" "$BS3" "$SRC_DIR/main.av" 2>/dev/null \
+    | awk '{print $1}' | shasum -a 256 | awk '{print $1}')
+  if [ "${AVRA_FORCE_FP:-0}" != "1" ] && [ -f "$fp_marker" ] \
+     && [ "$(cat "$fp_marker" 2>/dev/null)" = "$fp_input" ]; then
+    ok "fixed point cached — bs2 + bs3 + source unchanged since last verify"
+    return 0
+  fi
   log "compiling packages/cli/src/main.av with bs2"
   "$BS2" compile "$SRC_DIR/main.av" >/dev/null 2>&1 \
     || die "bs2 failed to compile bootstrap source"
@@ -557,6 +578,7 @@ mode_check_fixedpoint() {
   if diff -q "$BUILD_DIR/fp_bs2.ll" "$BUILD_DIR/fp_bs3.ll" >/dev/null; then
     local lines; lines=$(wc -l <"$BUILD_DIR/fp_bs2.ll" | tr -d ' ')
     ok "fixed point holds — bs2 and bs3 emit byte-identical $lines-line IR"
+    echo "$fp_input" > "$fp_marker"
   else
     # Auto-converge: cycle the seed up to 3 times to reach equilibrium.
     # This handles cases where adding new functions shifts allocator state.
@@ -580,6 +602,11 @@ mode_check_fixedpoint() {
         cp "$BUILD_DIR/fp_bs2.ll" "$BOOTSTRAP_DIR/seed/seed.ll"
         local lines; lines=$(wc -l <"$BUILD_DIR/fp_bs2.ll" | tr -d ' ')
         ok "fixed point holds — bs2 and bs3 emit byte-identical $lines-line IR (after $cycle auto-cycle(s))"
+        # Recompute fingerprint after cycle (bs2 was rebuilt) and cache.
+        local fp_post
+        fp_post=$(shasum -a 256 "$BS2" "$BS3" "$SRC_DIR/main.av" 2>/dev/null \
+          | awk '{print $1}' | shasum -a 256 | awk '{print $1}')
+        echo "$fp_post" > "$fp_marker"
         return 0
       fi
     done
