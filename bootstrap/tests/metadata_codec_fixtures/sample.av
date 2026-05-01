@@ -24,7 +24,7 @@ use @std.avrac.build.metadata.{
 use @std.avrac.core.ast.{
     Stmt, StmtList, Expr, ExprList, TypeParamList,
     ValueType, TypeList, FieldList, VariantList, ParamList,
-    AnnotationList, vtype_eq, sstmt_dummy, stmt_unwrap,
+    AnnotationList, vtype_eq, sstmt_dummy, stmt_unwrap, find_annotation,
 }
 use @std.avrac.build.metadata_extract.{extract_unit_metadata}
 use @std.avrac.build.metadata_synthesize.{synthesize_unit_stmts}
@@ -924,17 +924,23 @@ fn main() -> int {
     probe("synth_body_second_is_exported_fn",
         match synth_body_tail {
             .Node(ss, _) -> {
-                // ss.node here is Annotated(.. export ..) wrapping Function.
-                match ss.node {
-                    .Annotated(_, inner) -> {
-                        match inner {
-                            .Function(name, _, _, _, _) -> name == "greet"
-                            _ -> false
-                        }
-                    }
+                // ss.node here is Annotated(@export, Annotated(@external_unit, Function)).
+                // stmt_unwrap walks every Annotated layer down to the bare Function.
+                match stmt_unwrap(ss.node) {
+                    .Function(name, _, _, _, _) -> name == "greet"
                     _ -> false
                 }
             }
+            .End -> false
+        })
+
+    // The synthesizer must stamp every Avra fn with @external_unit so
+    // the consumer's codegen skips body emission (the body lives in
+    // the producing unit's compiled .o). find_annotation walks every
+    // Annotated layer.
+    probe("synth_body_second_has_external_unit",
+        match synth_body_tail {
+            .Node(ss, _) -> find_annotation(ss.node, "external_unit") != null
             .End -> false
         })
 

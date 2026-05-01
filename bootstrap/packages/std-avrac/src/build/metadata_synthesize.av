@@ -102,6 +102,19 @@ fn wrap_export(s: Stmt, exported: bool) -> Stmt {
     }
 }
 
+// Stamp `@external_unit` on a synthesized fn so codegen knows to
+// skip body emission — the real code lives in the producing unit's
+// already-compiled .o which the linker resolves at the final link
+// step. Only applied to Function stmts; types / consts / impl-method
+// references don't need it (consts inline values; impl methods route
+// through the same Function gate).
+fn wrap_external_unit(s: Stmt) -> Stmt {
+    Stmt.Annotated(
+        AnnotationList.Node("external_unit", ExprList.End, AnnotationList.End),
+        s,
+    )
+}
+
 // Recover the bare local name from a qualified name. The qualified
 // form already lands inside the synth'd Module, so the inner
 // declaration uses just the local component. e.g.
@@ -166,12 +179,15 @@ fn synth_fns(xs: FnDeclList) -> StmtList {
 
 fn synth_fn_decl(e: FnDeclEntry) -> SStmt {
     let n = local_name(e.name)
-    let inner = if e.is_extern {
-        Stmt.ExternFn(n, e.params, e.ret)
-    } else {
-        Stmt.Function(n, e.type_params, e.params, e.ret, StmtList.End)
+    if e.is_extern {
+        // ExternFn is C ABI; codegen treats it as a forward decl
+        // already, so no extra @external_unit wrapping needed.
+        return sstmt_dummy(wrap_export(Stmt.ExternFn(n, e.params, e.ret), e.exported))
     }
-    sstmt_dummy(wrap_export(inner, e.exported))
+    // Avra Function with @external_unit: declare-only at the
+    // consumer; the producer's .o supplies the body at link time.
+    let fn_decl = Stmt.Function(n, e.type_params, e.params, e.ret, StmtList.End)
+    sstmt_dummy(wrap_export(wrap_external_unit(fn_decl), e.exported))
 }
 
 // ── CONSTS ──
@@ -236,11 +252,13 @@ fn synth_impl_method_stmts(ms: ImplMethodRefList) -> StmtList {
     match ms {
         .End -> StmtList.End
         .Node(name, _fn_id, next) -> {
-            // Synth'd impl methods get an empty Function body — the
-            // real body lives in the producing unit's compiled .o.
-            // Consumer codegen skips emit because the impl belongs
-            // to an externally-compiled unit (handled at integration).
-            let head = sstmt_dummy(Stmt.Function(name, TypeParamList.End, ParamList.End, ValueType.Unknown, StmtList.End))
+            // Synth'd impl methods get an empty Function body wrapped
+            // in @external_unit — the real body lives in the producing
+            // unit's compiled .o, and codegen's emit_function_bodies
+            // honours the annotation by skipping body emission while
+            // keeping the forward decl in scope.
+            let fn_decl = Stmt.Function(name, TypeParamList.End, ParamList.End, ValueType.Unknown, StmtList.End)
+            let head = sstmt_dummy(wrap_external_unit(fn_decl))
             StmtList.Node(head, synth_impl_method_stmts(next))
         }
     }

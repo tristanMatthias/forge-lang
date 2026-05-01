@@ -332,6 +332,9 @@ spec "metadata codec: UnitMetadata → StmtList synthesizer (xtvc)" {
     then "exported fn round-trips with @export annotation + local name" {
         metadata_run_fixture().contains("PROBE synth_body_second_is_exported_fn: ok")
     }
+    then "Avra fns gain @external_unit so consumer codegen skips body emit (2f54)" {
+        metadata_run_fixture().contains("PROBE synth_body_second_has_external_unit: ok")
+    }
     then "Const decl round-trips with name + literal initializer" {
         metadata_run_fixture().contains("PROBE synth_body_third_is_const: ok")
     }

@@ -1,7 +1,7 @@
 // WHY: emits function bodies and binds parameters into the body scope.
 // Also emits null-argument checks when debug_null_checks is enabled on Ctx.
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, VarEnv, env_lookup, ValueType, stmt_unwrap, expr_list_length, field_index_of, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_is_bytes, vtype_is_newtype, vtype_newtype_inner, vtype_newtype_name, vtype_struct_name, vtype_trait_name, vtype_is_unknown}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, VarEnv, env_lookup, ValueType, stmt_unwrap, expr_list_length, field_index_of, find_annotation, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_is_bytes, vtype_is_newtype, vtype_newtype_inner, vtype_newtype_name, vtype_struct_name, vtype_trait_name, vtype_is_unknown}
 use codegen.types.{cg_newtype_vtype_lookup}
 use core.type_registry.{method_mangled_name, type_registry_id_for, type_registry_name_for, is_result_enum_name, is_result_shaped_enum}
 use codegen.types.{Ctx, EmitValue, ok_emit, ok_emit, ok_stmt, err_emit, err_stmt, trait_decl_has}
@@ -23,8 +23,22 @@ export fn emit_function_bodies(ctx: Ctx, stmts: StmtList) -> Result<VarEnv, stri
     match stmts {
         .End -> ok_stmt(VarEnv.End)
         .Node(ss, next) -> {
+            // Skip body emission for fns marked `@external_unit` —
+            // their compiled code lives in another unit's .o that the
+            // linker resolves at final link time. The function decl
+            // already exists (from declare_functions), so call sites
+            // emit a normal call instruction; we just don't reproduce
+            // the body here. Driven by xtvc's metadata-synthesised
+            // stubs (forge-crafting-intepreters-2f54).
+            let is_external = find_annotation(ss.node, "external_unit") != null
             let inner = match stmt_unwrap(ss.node) {
-                .Function(name, _, params, _, body) -> emit_function_body(ctx, name, params, body)
+                .Function(name, _, params, _, body) -> {
+                    if is_external {
+                        ok_stmt(VarEnv.End)
+                    } else {
+                        emit_function_body(ctx, name, params, body)
+                    }
+                }
                 .Impl(_, methods) -> emit_function_bodies(ctx, methods)
                 .Module(_, body) -> emit_function_bodies(ctx, body)
                 _ -> ok_stmt(VarEnv.End)
