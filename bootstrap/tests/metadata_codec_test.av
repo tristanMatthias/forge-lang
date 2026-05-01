@@ -97,3 +97,63 @@ spec "metadata codec: stable symbol IDs (FNV-1a-64)" {
         metadata_run_fixture().contains("PROBE sym_id_a: ok")
     }
 }
+
+spec "metadata codec: file header" {
+    then "magic field round-trips as 'AVMD'" {
+        metadata_run_fixture().contains("PROBE header_magic: ok")
+    }
+    then "version major.minor pair survives" {
+        metadata_run_fixture().contains("PROBE header_version: ok")
+    }
+    then "unit name (length-prefixed UTF-8) round-trips" {
+        metadata_run_fixture().contains("PROBE header_unit_name: ok")
+    }
+    then "32-byte fingerprint preserves length even with embedded NULs" {
+        metadata_run_fixture().contains("PROBE header_fingerprint_len: ok")
+    }
+    then "fingerprint byte 0 reads back unchanged" {
+        metadata_run_fixture().contains("PROBE header_fingerprint_byte0: ok")
+    }
+    then "fingerprint byte 31 (last) reads back unchanged" {
+        metadata_run_fixture().contains("PROBE header_fingerprint_byte31: ok")
+    }
+    then "section count round-trips" {
+        metadata_run_fixture().contains("PROBE header_section_count: ok")
+    }
+}
+
+spec "metadata codec: section framing" {
+    then "section kind tag decodes back to the right SectionKind variant" {
+        metadata_run_fixture().contains("PROBE section_kind: ok")
+    }
+    then "entry count round-trips" {
+        metadata_run_fixture().contains("PROBE section_entry_count: ok")
+    }
+    then "body length round-trips" {
+        metadata_run_fixture().contains("PROBE section_body_len: ok")
+    }
+    then "section body byte 0 round-trips" {
+        metadata_run_fixture().contains("PROBE section_body_byte0: ok")
+    }
+    then "section body last byte round-trips" {
+        metadata_run_fixture().contains("PROBE section_body_byte4: ok")
+    }
+}
+
+spec "metadata codec: multi-section file" {
+    then "decoded header reports both sections" {
+        metadata_run_fixture().contains("PROBE multi_header_count: ok")
+    }
+    then "section 1 kind round-trips (Types)" {
+        metadata_run_fixture().contains("PROBE multi_section1_kind: ok")
+    }
+    then "section 1 body byte 0 reads correctly" {
+        metadata_run_fixture().contains("PROBE multi_section1_body0: ok")
+    }
+    then "section 2 kind round-trips (Consts)" {
+        metadata_run_fixture().contains("PROBE multi_section2_kind: ok")
+    }
+    then "section 2 body last byte reads correctly" {
+        metadata_run_fixture().contains("PROBE multi_section2_body2: ok")
+    }
+}

@@ -220,3 +220,128 @@ export fn sym_id_for(qualified_name: string) -> int {
     }
     h
 }
+
+// ── File header + section framing ──
+//
+// Top-level metadata.bin layout:
+//
+//     [u32 magic = 'AVMD' = 0x444D5641 (LE) ]
+//     [u16 version_major]
+//     [u16 version_minor]
+//     [string unit_name           ]   length-prefixed UTF-8
+//     [bytes fingerprint = 32B    ]   sha256 of the unit's source set
+//     [u32 section_count          ]
+//     [ section_0, section_1, ... ]
+//
+// Each section is framed identically:
+//
+//     [u8  section_kind          ]   1=TYPES 2=FNS 3=TRAITS 4=IMPLS 5=CONSTS
+//     [u32 entry_count           ]
+//     [u32 section_body_length   ]
+//     [body...]                       opaque to the framer; per-kind format
+//
+// `entry_count` lets readers skip an entire section when they need
+// to seek past it; `section_body_length` lets readers skip without
+// parsing entries when an unknown section kind appears (forward-compat).
+
+// Magic bytes: ASCII "AVMD" in little-endian u32.
+export const METADATA_MAGIC: int = 0x444D5641
+export const METADATA_VERSION_MAJOR: int = 1
+export const METADATA_VERSION_MINOR: int = 0
+
+/// Stable section IDs. Kept in this enum so the byte values are
+/// pinned — adding a new section appends; never reorder or reuse a
+/// retired number, otherwise old metadata.bin files mis-route their
+/// sections to the wrong reader.
+export enum SectionKind {
+    Types,    // tag 1: type declarations (struct / enum / shape / newtype / union alias)
+    Fns,      // tag 2: fn signatures (params + return type + visibility)
+    Traits,   // tag 3: trait declarations
+    Impls,    // tag 4: impl table — (Trait,Type) → method list
+    Consts,   // tag 5: const declarations (name + type + value bytes)
+}
+
+fn section_kind_to_byte(k: SectionKind) -> int {
+    match k {
+        .Types -> 1
+        .Fns -> 2
+        .Traits -> 3
+        .Impls -> 4
+        .Consts -> 5
+    }
+}
+
+fn byte_to_section_kind(b: int) -> SectionKind {
+    match b {
+        2 -> .Fns
+        3 -> .Traits
+        4 -> .Impls
+        5 -> .Consts
+        _ -> .Types
+    }
+}
+
+// File-header + section-frame writers.
+//   .header(unit, fp, n)   — fixed-prefix file layout (magic, version,
+//                            unit name, 32-byte fingerprint, section_count).
+//   .section(kind, n, body) — single section frame; body is opaque, so
+//                            per-kind encoders can evolve without
+//                            touching the framer.
+impl BytesWriter {
+    fn header(self, unit_name: string, fingerprint: bytes, section_count: int) {
+        self.u32_le(METADATA_MAGIC)
+        self.u16_le(METADATA_VERSION_MAJOR)
+        self.u16_le(METADATA_VERSION_MINOR)
+        self.string(unit_name)
+        self.raw(fingerprint)
+        self.u32_le(section_count)
+    }
+
+    fn section(self, kind: SectionKind, entry_count: int, body: bytes) {
+        self.u8(section_kind_to_byte(kind))
+        self.u32_le(entry_count)
+        self.u32_le(body.length)
+        self.raw(body)
+    }
+}
+
+/// Decoded file header. Mirrors `BytesWriter.header`.
+export type MetadataHeader = {
+    magic: int,
+    version_major: int,
+    version_minor: int,
+    unit_name: string,
+    fingerprint: bytes,
+    section_count: int,
+}
+
+/// Decoded section frame (header + body); the body is left raw for
+/// per-kind decoders to consume separately.
+export type SectionFrame = {
+    kind: SectionKind,
+    entry_count: int,
+    body: bytes,
+}
+
+// File-header + section-frame readers. Mirror the BytesWriter impls
+// above. Caller validates `.magic == METADATA_MAGIC` before trusting
+// the rest of the header.
+impl BytesReader {
+    fn header(self) -> MetadataHeader {
+        let m = self.u32_le()
+        let vmaj = self.u16_le()
+        let vmin = self.u16_le()
+        let name = self.string()
+        let fp = self.raw(32)
+        let n = self.u32_le()
+        MetadataHeader { magic: m, version_major: vmaj, version_minor: vmin, unit_name: name, fingerprint: fp, section_count: n }
+    }
+
+    fn section(self) -> SectionFrame {
+        let k = self.u8()
+        let n = self.u32_le()
+        let len = self.u32_le()
+        let body = self.raw(len)
+        SectionFrame { kind: byte_to_section_kind(k), entry_count: n, body: body }
+    }
+}

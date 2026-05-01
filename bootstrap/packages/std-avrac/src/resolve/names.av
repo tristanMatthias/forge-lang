@@ -225,6 +225,12 @@ fn collect_item_from_stmt(stmt: Stmt, mod_path: string, exported: int, rest: Mod
             let canonical = type_qualified_name(mod_path, name)
             ModuleItem.Node(name, canonical, exported, rest)
         }
+        // Module-level consts are visible to `use mod.{NAME}` callers
+        // exactly like fns and types.
+        .Const(name, _, _) -> {
+            let canonical = type_qualified_name(mod_path, name)
+            ModuleItem.Node(name, canonical, exported, rest)
+        }
         .Impl(_, methods) -> collect_impl_items(methods, mod_path, rest)
         .Annotated(annotations, inner) -> {
             let is_export = annotation_has_export(annotations)

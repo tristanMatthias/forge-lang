@@ -172,6 +172,7 @@ fn walk_stmt(g: ModuleGraph, ss: SStmt, parent_id: int, pkg_id: int, canon: stri
         .ShapeDecl(name, _) -> register_item(g, parent_id, name, uses)
         .EnumDecl(name, _, _) -> register_item(g, parent_id, name, uses)
         .TraitDecl(name, _) -> register_item(g, parent_id, name, uses)
+        .Const(name, _, _) -> register_item(g, parent_id, name, uses)
         _ -> BuildGraphResult { graph: g, uses, had_error: 0, error_message: "" }
     }
 }
@@ -421,6 +422,10 @@ fn walk_ast_stmt_with_export(g: ModuleGraph, stmt: Stmt, parent_id: int, canon: 
         .ShapeDecl(name, _) -> register_item_typed(g, parent_id, canon, name, exported, false)
         .EnumDecl(name, _, _) -> register_item_typed(g, parent_id, canon, name, exported, false)
         .TraitDecl(name, _) -> register_item_typed(g, parent_id, canon, name, exported, false)
+        // Module-level consts get the same registration treatment as
+        // fns so `use mod.{CONST_NAME}` resolves the name. Without this
+        // arm an `export const` is silently invisible at import sites.
+        .Const(name, _, _) -> register_item_typed(g, parent_id, canon, name, exported, false)
         _ -> g
     }
 }

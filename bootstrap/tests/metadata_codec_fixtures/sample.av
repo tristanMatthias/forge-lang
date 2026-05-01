@@ -9,7 +9,11 @@
 // pool imports them (forge-crafting-intepreters-dnq4). The fixture
 // is a single-program compile, so there's only ever one copy.
 
-use @std.avrac.build.metadata.{BytesWriter, BytesReader, writer_new, reader_new, sym_id_for}
+use @std.avrac.build.metadata.{
+    BytesWriter, BytesReader, writer_new, reader_new, sym_id_for,
+    SectionKind, MetadataHeader, SectionFrame,
+    METADATA_MAGIC, METADATA_VERSION_MAJOR, METADATA_VERSION_MINOR,
+}
 
 extern fn avra_bytes_make(len: int) -> bytes
 extern fn avra_bytes_set(b: bytes, idx: int, val: int)
@@ -116,6 +120,64 @@ fn main() -> int {
 
     // Known FNV-1a-64 vector: "" → 0xCBF29CE484222325 (above), "a" → 0xAF63DC4C8601EC8C
     probe("sym_id_a", sym_id_for("a") == 0xAF63DC4C8601EC8C)
+
+    // File header round-trip
+    let fp = avra_bytes_make(32)
+    mut fi = 0
+    while fi < 32 {
+        avra_bytes_set(fp, fi, fi)
+        fi = fi + 1
+    }
+    let wh2 = writer_new()
+    wh2.header("@std::avrac::build", fp, 3)
+    let rh2 = reader_new(wh2.finish())
+    let hdr = rh2.header()
+    probe("header_magic", hdr.magic == METADATA_MAGIC)
+    probe("header_version", hdr.version_major == METADATA_VERSION_MAJOR && hdr.version_minor == METADATA_VERSION_MINOR)
+    probe("header_unit_name", hdr.unit_name == "@std::avrac::build")
+    probe("header_fingerprint_len", hdr.fingerprint.length == 32)
+    probe("header_fingerprint_byte0", hdr.fingerprint.byte(0) == 0)
+    probe("header_fingerprint_byte31", hdr.fingerprint.byte(31) == 31)
+    probe("header_section_count", hdr.section_count == 3)
+
+    // Section framing round-trip
+    let body = avra_bytes_make(5)
+    avra_bytes_set(body, 0, 0xAA)
+    avra_bytes_set(body, 1, 0xBB)
+    avra_bytes_set(body, 2, 0xCC)
+    avra_bytes_set(body, 3, 0xDD)
+    avra_bytes_set(body, 4, 0xEE)
+    let ws2 = writer_new()
+    ws2.section(SectionKind.Fns, 7, body)
+    let rs2 = reader_new(ws2.finish())
+    let frame = rs2.section()
+    probe("section_kind", frame.kind is .Fns)
+    probe("section_entry_count", frame.entry_count == 7)
+    probe("section_body_len", frame.body.length == 5)
+    probe("section_body_byte0", frame.body.byte(0) == 0xAA)
+    probe("section_body_byte4", frame.body.byte(4) == 0xEE)
+
+    // Multi-section file: header + 2 sections decoded in order
+    let bod1 = avra_bytes_make(2)
+    avra_bytes_set(bod1, 0, 1)
+    avra_bytes_set(bod1, 1, 2)
+    let bod2 = avra_bytes_make(3)
+    avra_bytes_set(bod2, 0, 9)
+    avra_bytes_set(bod2, 1, 8)
+    avra_bytes_set(bod2, 2, 7)
+    let wm2 = writer_new()
+    wm2.header("@std::test::two_sections", fp, 2)
+    wm2.section(SectionKind.Types, 1, bod1)
+    wm2.section(SectionKind.Consts, 1, bod2)
+    let rm2 = reader_new(wm2.finish())
+    let h2 = rm2.header()
+    let f1 = rm2.section()
+    let f2 = rm2.section()
+    probe("multi_header_count", h2.section_count == 2)
+    probe("multi_section1_kind", f1.kind is .Types)
+    probe("multi_section1_body0", f1.body.byte(0) == 1)
+    probe("multi_section2_kind", f2.kind is .Consts)
+    probe("multi_section2_body2", f2.body.byte(2) == 7)
 
     // Many small writes (chunk concat correctness)
     let wm = writer_new()
