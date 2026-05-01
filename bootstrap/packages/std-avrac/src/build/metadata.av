@@ -181,3 +181,42 @@ impl BytesReader {
         slice
     }
 }
+
+// ── Stable symbol IDs ──
+//
+// Every cross-unit reference in metadata.bin (a fn calling a type
+// declared in another unit, a trait impl pointing at a foreign type)
+// is recorded as a 64-bit hash of the symbol's fully qualified name.
+// The hash MUST be deterministic across builds — two compiles of the
+// same unit on the same day on the same machine must produce the
+// same id, otherwise downstream units fail to resolve their
+// references after a recompile.
+//
+// FNV-1a-64 is used: simple, well-distributed for short ASCII names,
+// fits in a single u64 without external state. Crypto strength is
+// not a goal — collision probability across a project's symbol set
+// is the only constraint, and FNV-1a is fine for that scale.
+//
+// The constants below are the canonical FNV-1a-64 values. They are
+// fixed and must not be changed; doing so would invalidate every
+// cached metadata.bin in the wild.
+
+const FNV64_OFFSET: int = 0xCBF29CE484222325
+const FNV64_PRIME: int = 0x100000001B3
+
+/// Hash a fully qualified symbol name (e.g. `@std::avrac::build::cache::Cache`)
+/// to a stable u64. Determined by FNV-1a — see the section header above.
+/// Empty input hashes to the FNV offset (the standard "empty input"
+/// behaviour); collisions on real qualified names are vanishingly
+/// unlikely for any realistic project's symbol count.
+export fn sym_id_for(qualified_name: string) -> int {
+    mut h = FNV64_OFFSET
+    let b = avra_bytes_from_string(qualified_name)
+    let n = b.length
+    mut i = 0
+    while i < n {
+        h = (h ^ b.byte(i)) * FNV64_PRIME
+        i = i + 1
+    }
+    h
+}

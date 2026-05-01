@@ -9,7 +9,7 @@
 // pool imports them (forge-crafting-intepreters-dnq4). The fixture
 // is a single-program compile, so there's only ever one copy.
 
-use @std.avrac.build.metadata.{BytesWriter, BytesReader, writer_new, reader_new}
+use @std.avrac.build.metadata.{BytesWriter, BytesReader, writer_new, reader_new, sym_id_for}
 
 extern fn avra_bytes_make(len: int) -> bytes
 extern fn avra_bytes_set(b: bytes, idx: int, val: int)
@@ -101,6 +101,21 @@ fn main() -> int {
     let out = rr.raw(4)
     probe("raw_with_nul",
         out.length == 4 && out.byte(0) == 0xAA && out.byte(1) == 0 && out.byte(2) == 0xBB && out.byte(3) == 0)
+
+    // Stable symbol IDs — deterministic FNV-1a-64
+    let id1 = sym_id_for("@std::avrac::build::cache::Cache")
+    let id2 = sym_id_for("@std::avrac::build::cache::Cache")
+    probe("sym_id_deterministic", id1 == id2)
+
+    let id_a = sym_id_for("@std::avrac::build::cache::Cache")
+    let id_b = sym_id_for("@std::avrac::build::cache::CacheKey")
+    probe("sym_id_distinct_for_distinct_input", id_a != id_b)
+
+    // Empty string hashes to the FNV-1a-64 offset basis
+    probe("sym_id_empty_is_offset", sym_id_for("") == 0xCBF29CE484222325)
+
+    // Known FNV-1a-64 vector: "" → 0xCBF29CE484222325 (above), "a" → 0xAF63DC4C8601EC8C
+    probe("sym_id_a", sym_id_for("a") == 0xAF63DC4C8601EC8C)
 
     // Many small writes (chunk concat correctness)
     let wm = writer_new()

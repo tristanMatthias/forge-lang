@@ -82,3 +82,18 @@ spec "metadata codec: raw + bulk" {
         metadata_run_fixture().contains("PROBE many_writes: ok")
     }
 }
+
+spec "metadata codec: stable symbol IDs (FNV-1a-64)" {
+    then "same qualified name hashes the same twice" {
+        metadata_run_fixture().contains("PROBE sym_id_deterministic: ok")
+    }
+    then "different names hash to different ids" {
+        metadata_run_fixture().contains("PROBE sym_id_distinct_for_distinct_input: ok")
+    }
+    then "empty input matches the FNV-1a-64 offset basis (canonical vector)" {
+        metadata_run_fixture().contains("PROBE sym_id_empty_is_offset: ok")
+    }
+    then "single-byte 'a' matches the canonical FNV-1a-64 vector" {
+        metadata_run_fixture().contains("PROBE sym_id_a: ok")
+    }
+}
