@@ -1390,6 +1390,29 @@ fn read_impl_decl_list_loop(r: BytesReader, count: int) -> ImplDeclList {
     ImplDeclList.Node(head, tail)
 }
 
+// Decode a hex string to a `bytes` value. Two hex chars → one octet.
+// Used to convert `Fingerprint.hex` (64 chars from sha256_hex) into
+// the 32-byte raw fingerprint metadata.bin's header expects.
+export fn bytes_from_hex(hex: string) -> bytes {
+    let pairs = hex.length / 2
+    let out = avra_bytes_make(pairs)
+    mut i = 0
+    while i < pairs {
+        let hi = hex_digit_value(hex.byte(i * 2))
+        let lo = hex_digit_value(hex.byte(i * 2 + 1))
+        avra_bytes_set(out, i, hi * 16 + lo)
+        i = i + 1
+    }
+    out
+}
+
+fn hex_digit_value(b: int) -> int {
+    if b >= 0x30 && b <= 0x39 { return b - 0x30 }
+    if b >= 0x61 && b <= 0x66 { return b - 0x61 + 10 }
+    if b >= 0x41 && b <= 0x46 { return b - 0x41 + 10 }
+    0
+}
+
 // ── File IO ──
 //
 // `metadata_write` and `metadata_read` are the disk surface for the

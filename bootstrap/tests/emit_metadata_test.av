@@ -1,0 +1,49 @@
+// End-to-end `bs2 compile --emit_metadata` tests via fixture program.
+//
+// Compiles tests/emit_metadata_fixtures/sample.av which shells out to
+// `bs2 compile --emit_metadata` on a small input file, reads back the
+// produced .meta.bin, and verifies each section is populated.
+//
+// Memoised at the shell level so each `then` does not re-compile.
+// Tracking ticket: forge-crafting-intepreters-xtvc.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn emit_run_fixture() -> string {
+    avra_shell_exec("if [ ! -f /tmp/avra_xtvc_emit_test.out ]; then bash scripts/diagnose.sh --run tests/emit_metadata_fixtures/sample.av > /tmp/avra_xtvc_emit_test.out 2>&1 || true; fi; cat /tmp/avra_xtvc_emit_test.out")
+}
+
+fn emit_wipe() -> string {
+    avra_shell_exec("rm -f /tmp/avra_xtvc_emit_test.out")
+}
+
+spec "emit_metadata: clear cached fixture output" {
+    then "wipe stale /tmp output from any prior run" {
+        let _ = emit_wipe()
+        true
+    }
+}
+
+spec "emit_metadata: pipeline produces a populated metadata.bin" {
+    then "bs2 compile --emit_metadata succeeds (rc=0)" {
+        emit_run_fixture().contains("PROBE compile_rc_zero: ok")
+    }
+    then "the .meta.bin file lands on disk next to the source" {
+        emit_run_fixture().contains("PROBE meta_file_written: ok")
+    }
+    then "decoded unit_name is non-empty (sourced from package or basename)" {
+        emit_run_fixture().contains("PROBE unit_name_present: ok")
+    }
+    then "TYPES section is populated when source has a type decl" {
+        emit_run_fixture().contains("PROBE types_section_present: ok")
+    }
+    then "FNS section is populated when source has a fn decl" {
+        emit_run_fixture().contains("PROBE fns_section_present: ok")
+    }
+    then "CONSTS section preserves the literal value (regression for j7ly)" {
+        emit_run_fixture().contains("PROBE consts_section_present: ok")
+    }
+    then "IMPLS section is populated when source has an impl block" {
+        emit_run_fixture().contains("PROBE impls_section_present: ok")
+    }
+}

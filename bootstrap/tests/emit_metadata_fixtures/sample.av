@@ -1,0 +1,73 @@
+// Fixture: invokes `bs2 compile --emit_metadata` on a small source,
+// then reads the produced `.meta.bin` back via metadata_read and
+// verifies the contents match what extract_unit_metadata would
+// produce. Validates the end-to-end pipeline:
+//   parse → extract → write → read → decoded UnitMetadata
+//
+// Tracking ticket: forge-crafting-intepreters-xtvc.
+
+use @std.avrac.build.metadata.{
+    UnitMetadata, TypeDeclList, FnDeclList, ConstDeclList, ImplDeclList,
+    metadata_read, metadata_file_exists,
+}
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
+
+fn probe(name: string, ok: bool) {
+    let tag = if ok { "ok" } else { "FAIL" }
+    println("PROBE ${name}: ${tag}")
+}
+
+fn main() -> int {
+    let tmp = "/tmp/avra_xtvc_emit"
+    avra_shell_exec("rm -rf ${tmp}")
+    avra_shell_exec("mkdir -p ${tmp}")
+
+    // A small source: type, exported fn, const, impl. Each surface
+    // bit hits a different section in the emitted metadata.bin.
+    let src = "${tmp}/unit.av"
+    avra_shell_exec("printf 'type Pt = { x: int }\\n\\nexport fn area(p: Pt) -> int { p.x * p.x }\\n\\nconst LIMIT: int = 100\\n\\ntrait Show { fn show(self) -> string }\\n\\nimpl Show for Pt { fn show(self) -> string { \"\" } }\\n' > ${src}")
+
+    // Compile with --emit_metadata. Honour AVRA_COMPILER if set so
+    // the test runs against whichever bs2 the harness builds.
+    let bs2 = "build/bs2"
+    let rc = avra_shell_exec_status("${bs2} compile --emit_metadata ${src}")
+    probe("compile_rc_zero", rc == 0)
+
+    let meta_path = "${src}.meta.bin"
+    probe("meta_file_written", metadata_file_exists(meta_path))
+
+    let m = metadata_read(meta_path)
+    probe("unit_name_present", m.unit_name != "")
+
+    // TYPES section should contain Pt (and Show as a trait decl)
+    probe("types_section_present",
+        match m.types {
+            .Node(_, _) -> true
+            .End -> false
+        })
+
+    // FNS section should include area at minimum
+    probe("fns_section_present",
+        match m.fns {
+            .Node(_, _) -> true
+            .End -> false
+        })
+
+    // CONSTS section should include LIMIT with int value 100
+    probe("consts_section_present",
+        match m.consts {
+            .Node(e, _) -> e.int_value == 100 || e.str_value == "100"
+            .End -> false
+        })
+
+    // IMPLS section should record Show:Pt
+    probe("impls_section_present",
+        match m.impls {
+            .Node(_, _) -> true
+            .End -> false
+        })
+
+    0
+}

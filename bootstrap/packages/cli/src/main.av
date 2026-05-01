@@ -68,6 +68,9 @@ use @std.avrac.build.driver.{
 }
 use @std.avrac.build.fingerprint.{Fingerprint, fp_short}
 use @std.avrac.build.link.{LinkOptions, default_link_options, link_objects, link_objects_with_coverage}
+use @std.avrac.build.metadata_extract.{extract_unit_metadata}
+use @std.avrac.build.metadata.{metadata_write, bytes_from_hex}
+use @std.crypto.{sha256_hex}
 use @std.avrac.build.graph.{
     DepGraph, Unit, UnitList, build_graph, unit_list_length,
 }
@@ -1248,6 +1251,7 @@ fn main() {
             flag coverage { short "-c", description "Enable coverage instrumentation" }
             flag debug_null { description "Enable null argument checks" }
             flag json { description "Output diagnostics as JSON" }
+            flag emit_metadata { description "Also write <file>.meta.bin (xtvc)" }
             option stop_after { description "Stop after phase (parse|resolve|names|check)" }
             arg file { description "Source file", required true }
         }
@@ -1551,6 +1555,7 @@ fn main() {
         let debug_null = result_has_flag(parsed, "debug-null")
         let enable_coverage = result_has_flag(parsed, "coverage")
         let json_output = result_has_flag(parsed, "json")
+        let emit_metadata = result_has_flag(parsed, "emit_metadata")
         // File path: last positional arg
         let argc = avra_selfhost_argc()
         let cpath = avra_selfhost_get_arg_cstr(argc - 1)
@@ -1650,6 +1655,19 @@ fn main() {
             }
         }
         let t_codegen = avra_uptime_ms()
+        // xtvc: emit metadata.bin alongside the .ll when --emit_metadata
+        // is set. Walks the post-resolve StmtList so qualified names
+        // are canonical; fingerprint is sha256 of the source (same key
+        // the cache uses for content addressing).
+        if emit_metadata {
+            let unit_name = if pkg.found { pkg.name } else { basename_no_ext(cpath) }
+            let fp = bytes_from_hex(sha256_hex(csource))
+            let unit_meta = extract_unit_metadata(unit_name, fp, named.stmts)
+            let meta_path = "${cpath}.meta.bin"
+            if metadata_write(meta_path, unit_meta) != 1 {
+                fail("metadata write failed for ${meta_path}")
+            }
+        }
         if timings_on {
             eprintln("[timings] parse=${string(t_parse - t_start)}ms desugar=${string(t_desugar - t_parse)}ms resolve_mods=${string(t_resolve_mods - t_desugar)}ms expand=${string(t_expand - t_resolve_mods)}ms resolve_names=${string(t_names - t_expand)}ms typeck=${string(t_typeck - t_names)}ms monomorphize=${string(t_mono - t_typeck)}ms codegen=${string(t_codegen - t_mono)}ms total=${string(t_codegen - t_start)}ms")
         }

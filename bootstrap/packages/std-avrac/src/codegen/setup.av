@@ -1,6 +1,8 @@
 // WHY: compilation setup — declaration passes and top-level emission.
 
 use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_has, field_list_length, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, variant_max_payload, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_unknown, vtype_enum_name, vtype_struct_name, env_extend}
+use parse.lexer.{parse_int_literal}
+use core.llvm.{avra_llvm_const_int}
 use codegen.types.{Ctx, CgNewtypeReg, CgUnionAliasReg, CopySet, TypeRegs, DeferStack, RcCleanupStack, ReleasableSet, EmitValue, EnumReg, EnumLookup, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for_full, llvm_type_for_full_sized, ok_emit, ok_stmt, struct_reg_lookup, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup}
 use codegen.escape.{analyze_releasable, analyze_copy_types}
 use codegen.cycles.{CycleSet, analyze_cycles, cycle_set_has}
@@ -666,6 +668,49 @@ fn declare_one_global(m: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, structs: St
     TopLevelVars.Node(name, g, vt, reg)
 }
 
+/// Declare a global for a `const` binding. When the initializer is
+/// a literal that LLVM accepts in a global's static initializer
+/// (Number, Bool — i1/i64-shaped), inline it as the global's actual
+/// initial value. The runtime store from emit_top_level_init then
+/// becomes a redundant overwrite at -O0, dead-store-eliminated at
+/// -O2 — but in EITHER mode the global's value at any read site is
+/// the literal. This sidesteps j7ly: at -O2 the linker's dedup of
+/// duplicate __init_@std symbols was previously stripping the only
+/// store path, leaving consts at zero.
+fn declare_one_const_global(m: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, structs: StructReg, enums: EnumReg, name: string, ty_vt: ValueType, init: Expr, reg: TopLevelVars) -> TopLevelVars {
+    let vt = if !vtype_is_unknown(ty_vt) { ty_vt } else { ValueType.Int }
+    let llvm_ty = llvm_type_for_full(i64t, i1t, dt, pt, vt)
+    let g = avra_llvm_add_global(m, llvm_ty, name)
+    let initial = const_initializer_for(init, llvm_ty, i64t, i1t)
+    avra_llvm_set_initializer(g, initial)
+    TopLevelVars.Node(name, g, vt, reg)
+}
+
+/// Best-effort folding of a const initializer expression to an LLVM
+/// constant. Recognises `Expr.Number(text)` → ConstInt at the
+/// declared LLVM type, `Expr.Bool` → 0/1 ConstInt at i1. Anything
+/// else falls back to `const_null` — the runtime store path then
+/// fills it in (and is correct at -O0 where store paths survive).
+fn const_initializer_for(init: Expr, llvm_ty: ptr, i64t: ptr, i1t: ptr) -> ptr {
+    match init {
+        .Number(text) -> avra_llvm_const_int(llvm_ty, parse_int_literal(text), 1)
+        .Bool(text) -> avra_llvm_const_int(i1t, if text == "true" { 1 } else { 0 }, 0)
+        .Unary(op, inner) -> {
+            // Negative literals: -42 parses as Unary(Negate, Number("42")).
+            // Fold the inner number then negate at compile-time so the
+            // global's init value comes out signed-correct.
+            match inner {
+                .Number(text) -> {
+                    let n = parse_int_literal(text)
+                    avra_llvm_const_int(llvm_ty, 0 - n, 1)
+                }
+                _ -> avra_llvm_const_null(llvm_ty)
+            }
+        }
+        _ -> avra_llvm_const_null(llvm_ty)
+    }
+}
+
 /// Walk the AST collecting every top-level `let` / `mut` / `const`
 /// and emit an LLVM global for it. Recurses into modules.
 fn declare_globals(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, structs: StructReg, enums: EnumReg, stmts: StmtList, reg: TopLevelVars) -> TopLevelVars {
@@ -676,7 +721,13 @@ fn declare_globals(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stru
             let updated = match stmt {
                 .Let(name, ty_vt, _) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty_vt, reg)
                 .Mut(name, ty_vt, _) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty_vt, reg)
-                .Const(name, ty_vt, _) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty_vt, reg)
+                // Const: try to fold a literal int initializer directly
+                // into the global's static initial value. Sidesteps the
+                // -O2 dead-store elimination of runtime const stores
+                // (forge-crafting-intepreters-j7ly) and matches what a
+                // C `const int` does — value is in .data at load time,
+                // no init function needed.
+                .Const(name, ty_vt, init) -> declare_one_const_global(m, i64t, i1t, dt, pt, structs, enums, name, ty_vt, init, reg)
                 .Module(_, body) -> declare_globals(m, ctx, i64t, i1t, dt, pt, structs, enums, body, reg)
                 _ -> reg
             }
