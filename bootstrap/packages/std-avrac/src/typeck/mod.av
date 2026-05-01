@@ -1523,10 +1523,41 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
         .MapLit(_) -> ValueType.Map
         .Tuple(_) -> ValueType.Tuple(TypeList.End)
         .Lambda(_, _) -> ValueType.Fn(ValueType.Unknown)
+        // Grouping forwards its inner expression's type. Used heavily
+        // by parser-emitted parenthesised forms; falling through to
+        // check_expr was a needless re-walk.
+        .Grouping(inner) -> annotate_sexpr_ty(tc, inner)
+        // Range forms always produce an Int range (codegen doesn't
+        // distinguish further). Avoids check_expr on every range-for.
+        .Range(_, _) -> ValueType.Int
+        .RangeIncl(_, _) -> ValueType.Int
+        // Index/FieldAccess/Unary still need check_expr because the
+        // type depends on registry/operand state — but field/method
+        // calls inside InterpString are usually leaf-ish, so do them
+        // directly. InterpString itself is always a string.
+        .InterpString(_) -> ValueType.Str
         // Fallback: re-run check_expr for complex expressions
         _ -> check_expr(tc, se.node).ty
     }
     sexpr_typed(annotated_node, se.line, se.col, ty)
+}
+
+/// Cheap one-step type lookup on a bare Expr that mirrors the
+/// fast-path table in annotate_sexpr but without recursing into
+/// sub-expressions. Used by leaves that just forward (Grouping).
+fn annotate_sexpr_ty(tc: TC, e: Expr) -> ValueType {
+    match e {
+        .Number(_) -> ValueType.Int
+        .FloatLit(_) -> ValueType.Float
+        .String(_) -> ValueType.Str
+        .Bool(_) -> ValueType.Bool
+        .Null -> ValueType.Void
+        .Ident(name) -> type_lookup(tc.types, name)
+        .InterpString(_) -> ValueType.Str
+        .Range(_, _) -> ValueType.Int
+        .RangeIncl(_, _) -> ValueType.Int
+        _ -> check_expr(tc, e).ty
+    }
 }
 
 /// Map `annotate_sexpr` over an ExprList.
