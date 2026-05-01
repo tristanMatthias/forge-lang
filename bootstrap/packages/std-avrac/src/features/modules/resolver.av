@@ -5,6 +5,7 @@
 
 use core.ast.{Stmt, StmtList, SStmt, sstmt, AnnotationList}
 use parse.{parse_program_source}
+use core.runtime.{avra_process_env_get}
 
 /// Return the directory portion of a path (including the trailing
 /// slash), or `""` when `path` has no directory part. Used to
@@ -122,6 +123,34 @@ export fn find_packages_dir(dir: string) -> string {
     let cwd_probe = "packages/std-cli/src/cli.av"
     if avra_selfhost_file_exists(cwd_probe) {
         return "packages/"
+    }
+    // Strategy 2b: walk up from $PWD looking for sibling packages/. Lets
+    // `bs2 build --lib` work from inside packages/std-avrac/ where the
+    // local cwd-relative probe fails (no packages/std-avrac/packages/)
+    // but the parent does have packages/std-cli/. Step toward 2f54.
+    let cwd = avra_process_env_get("PWD")
+    if cwd != "" {
+        mut walk = cwd
+        if walk[walk.length - 1] != "/" { walk = "${walk}/" }
+        while walk.length > 1 {
+            let cand = "${walk}packages/"
+            if avra_selfhost_file_exists("${cand}std-cli/src/cli.av") {
+                return cand
+            }
+            // Strip trailing slash, then drop last segment.
+            let trimmed = walk.substring(0, walk.length - 1)
+            mut last = -1
+            mut wi = trimmed.length - 1
+            while wi >= 0 {
+                if trimmed[wi] == "/" {
+                    last = wi
+                    break
+                }
+                wi = wi - 1
+            }
+            if last < 0 { break }
+            walk = trimmed.substring(0, last + 1)
+        }
     }
     // Strategy 3: walk upward from dir looking for a sibling `packages/` directory
     mut search = dir
