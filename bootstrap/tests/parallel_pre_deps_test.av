@@ -1,0 +1,40 @@
+// `bs2 build --emit_metadata` parallelizes path-dep pre-builds via
+// xargs -P. AVRA_JOBS controls the worker count (default 4). All
+// three deps in the fixture build concurrently when N≥3.
+//
+// Tracking ticket: forge-crafting-intepreters-e20h.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn pp_run() -> string {
+    avra_shell_exec("if [ ! -f /tmp/avra_e20h_par_test.out ]; then bash scripts/diagnose.sh --run tests/parallel_pre_deps_fixtures/sample.av > /tmp/avra_e20h_par_test.out 2>&1 || true; fi; cat /tmp/avra_e20h_par_test.out")
+}
+
+fn pp_wipe() -> string {
+    avra_shell_exec("rm -f /tmp/avra_e20h_par_test.out")
+}
+
+spec "parallel pre-deps: clear cached output" {
+    then "wipe stale /tmp output from any prior run" {
+        let _ = pp_wipe()
+        true
+    }
+}
+
+spec "parallel pre-deps: AVRA_JOBS=N runs path-dep builds concurrently" {
+    then "AVRA_JOBS=3 build with three independent deps succeeds" {
+        pp_run().contains("PROBE parallel_build_rc_zero: ok")
+    }
+    then "dep a's meta.bin lands" {
+        pp_run().contains("PROBE a_meta_present: ok")
+    }
+    then "dep b's meta.bin lands" {
+        pp_run().contains("PROBE b_meta_present: ok")
+    }
+    then "dep c's meta.bin lands" {
+        pp_run().contains("PROBE c_meta_present: ok")
+    }
+    then "sequential AVRA_JOBS=1 also exits clean (cache hit)" {
+        pp_run().contains("PROBE sequential_build_rc_zero: ok")
+    }
+}
