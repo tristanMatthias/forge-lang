@@ -1,0 +1,117 @@
+// Fixture program exercising @std.avrac.build.metadata's BytesWriter /
+// BytesReader end-to-end. Compiled + run by tests/metadata_codec_test.av;
+// each round-trip prints `PROBE <name>: ok` (or `: FAIL`) so the
+// parent test asserts on the lines.
+//
+// Why a fixture rather than a direct import: same reason as
+// build_cache_test.av and fingerprint_test.av — the resolver
+// currently duplicates @std.avrac.X module wrappers when a test
+// pool imports them (forge-crafting-intepreters-dnq4). The fixture
+// is a single-program compile, so there's only ever one copy.
+
+use @std.avrac.build.metadata.{BytesWriter, BytesReader, writer_new, reader_new}
+
+extern fn avra_bytes_make(len: int) -> bytes
+extern fn avra_bytes_set(b: bytes, idx: int, val: int)
+
+fn probe(name: string, ok: bool) {
+    let tag = if ok { "ok" } else { "FAIL" }
+    println("PROBE ${name}: ${tag}")
+}
+
+fn main() -> int {
+    // Scalar round-trips
+    let w1 = writer_new()
+    w1.u8(0x42)
+    let r1 = reader_new(w1.finish())
+    probe("u8_low", r1.u8() == 0x42)
+
+    let w0 = writer_new()
+    w0.u8(0)
+    let buf0 = w0.finish()
+    probe("u8_zero", buf0.length == 1 && reader_new(buf0).u8() == 0)
+
+    let w16 = writer_new()
+    w16.u16_le(0x1234)
+    probe("u16", reader_new(w16.finish()).u16_le() == 0x1234)
+
+    let w32 = writer_new()
+    w32.u32_le(0xDEADBEEF)
+    probe("u32", reader_new(w32.finish()).u32_le() == 0xDEADBEEF)
+
+    let w64 = writer_new()
+    w64.u64_le(0x1122334455667788)
+    probe("u64", reader_new(w64.finish()).u64_le() == 0x1122334455667788)
+
+    // Byte order
+    let wbo = writer_new()
+    wbo.u32_le(0x04030201)
+    let bbo = wbo.finish()
+    probe("u32_le_byte_order",
+        bbo.byte(0) == 0x01 && bbo.byte(1) == 0x02 && bbo.byte(2) == 0x03 && bbo.byte(3) == 0x04)
+
+    // Strings
+    let ws = writer_new()
+    ws.string("hello")
+    probe("string", reader_new(ws.finish()).string() == "hello")
+
+    let wse = writer_new()
+    wse.string("")
+    let bse = wse.finish()
+    probe("string_empty", bse.length == 4 && reader_new(bse).string() == "")
+
+    let wss = writer_new()
+    wss.string("first")
+    wss.string("second")
+    let rss = reader_new(wss.finish())
+    let s1 = rss.string()
+    let s2 = rss.string()
+    probe("string_pair", s1 == "first" && s2 == "second")
+
+    // Mixed header-style record
+    let wh = writer_new()
+    wh.u32_le(0x41564D44)
+    wh.string("@std::avrac::build")
+    wh.u64_le(0xCAFEBABEDEADBEEF)
+    let rh = reader_new(wh.finish())
+    let m = rh.u32_le()
+    let n = rh.string()
+    let id = rh.u64_le()
+    probe("header_record",
+        m == 0x41564D44 && n == "@std::avrac::build" && id == 0xCAFEBABEDEADBEEF)
+
+    // Cursor exhaustion
+    let we = writer_new()
+    we.u32_le(1)
+    we.u32_le(2)
+    let re = reader_new(we.finish())
+    re.u32_le()
+    re.u32_le()
+    probe("remaining_zero", re.remaining() == 0)
+
+    // Raw passthrough preserves embedded NUL
+    let payload = avra_bytes_make(4)
+    avra_bytes_set(payload, 0, 0xAA)
+    avra_bytes_set(payload, 1, 0x00)
+    avra_bytes_set(payload, 2, 0xBB)
+    avra_bytes_set(payload, 3, 0x00)
+    let wr = writer_new()
+    wr.raw(payload)
+    let rr = reader_new(wr.finish())
+    let out = rr.raw(4)
+    probe("raw_with_nul",
+        out.length == 4 && out.byte(0) == 0xAA && out.byte(1) == 0 && out.byte(2) == 0xBB && out.byte(3) == 0)
+
+    // Many small writes (chunk concat correctness)
+    let wm = writer_new()
+    mut i = 0
+    while i < 100 {
+        wm.u8(i)
+        i = i + 1
+    }
+    let bm = wm.finish()
+    probe("many_writes",
+        bm.length == 100 && bm.byte(0) == 0 && bm.byte(50) == 50 && bm.byte(99) == 99)
+
+    0
+}

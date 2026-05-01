@@ -1,0 +1,183 @@
+// WHY: metadata.bin format — a compact binary record of one
+// compile-unit's *public surface* (exported types, fn signatures,
+// trait/impl tables, generics, constants). Downstream units consume
+// metadata.bin to typecheck against this unit's API without
+// re-parsing or re-typechecking the implementation.
+//
+// Layered build:
+//   - BytesWriter / BytesReader     ← byte-level binary IO (pure Avra)
+//   - encode_u32_le / decode_u32_le ← scalar encoders
+//   - encode_string / decode_string ← length-prefixed UTF-8
+//   - the per-section formats        ← built on top
+//
+// The first three layers are this file. Per-section formats are
+// added as iinq's per-symbol-kind work lands.
+//
+// Tracked under forge-crafting-intepreters-iinq (epic
+// forge-crafting-intepreters-a1el — the build system).
+
+extern fn avra_bytes_make(len: int) -> bytes
+extern fn avra_bytes_set(b: bytes, idx: int, val: int)
+extern fn avra_bytes_to_hex(b: bytes) -> string
+extern fn avra_bytes_from_string(s: string) -> bytes
+extern fn avra_string_from_bytes(b: bytes) -> string
+
+/// Append-only byte builder. Internally accumulates a list of
+/// chunks and concatenates on `finish()`. Linear in total output
+/// size — fine for metadata.bin (typical unit ~tens of kilobytes).
+///
+/// All write methods mutate via `self.chunks.push(...)`; the chunk
+/// list is heap-allocated, so ownership of the BytesWriter value
+/// can be shared between scopes without breaking the encoding.
+export type BytesWriter = {
+    chunks: List<bytes>,
+}
+
+/// Construct an empty writer ready for `.u8`, `.u32_le`, `.string`,
+/// etc. Idiomatic call site: `let w = writer_new(); w.u32_le(42)`.
+export fn writer_new() -> BytesWriter {
+    BytesWriter { chunks: [] }
+}
+
+// BytesWriter methods. Each `.u*_le(val)` writes one fixed-width
+// scalar in little-endian order; `.string(s)` writes a u32 length
+// prefix followed by the UTF-8 bytes; `.raw(b)` appends without
+// framing. `.finish()` concatenates accumulated chunks into one
+// bytes value.
+impl BytesWriter {
+    fn u8(self, val: int) {
+        let b = avra_bytes_make(1)
+        avra_bytes_set(b, 0, val)
+        self.chunks.push(b)
+    }
+
+    fn u16_le(self, val: int) {
+        let b = avra_bytes_make(2)
+        // `>>` is arithmetic-shift on Avra's signed `int`, but `& 0xFF`
+        // discards the sign-extended high bits — so the bit pattern of
+        // `val` is reproduced byte-for-byte regardless of sign. Plain
+        // `/256` would truncate toward zero on negative values and
+        // disagree with shift on the high bytes.
+        avra_bytes_set(b, 0, val & 0xFF)
+        avra_bytes_set(b, 1, (val >> 8) & 0xFF)
+        self.chunks.push(b)
+    }
+
+    fn u32_le(self, val: int) {
+        let b = avra_bytes_make(4)
+        avra_bytes_set(b, 0, val & 0xFF)
+        avra_bytes_set(b, 1, (val >> 8) & 0xFF)
+        avra_bytes_set(b, 2, (val >> 16) & 0xFF)
+        avra_bytes_set(b, 3, (val >> 24) & 0xFF)
+        self.chunks.push(b)
+    }
+
+    fn u64_le(self, val: int) {
+        let b = avra_bytes_make(8)
+        mut i = 0
+        while i < 8 {
+            avra_bytes_set(b, i, (val >> (i * 8)) & 0xFF)
+            i = i + 1
+        }
+        self.chunks.push(b)
+    }
+
+    fn string(self, s: string) {
+        let b = avra_bytes_from_string(s)
+        self.u32_le(b.length)
+        self.chunks.push(b)
+    }
+
+    fn raw(self, b: bytes) {
+        self.chunks.push(b)
+    }
+
+    fn finish(self) -> bytes {
+        finish_loop(self.chunks, 0, avra_bytes_make(0))
+    }
+}
+
+fn finish_loop(chunks: List<bytes>, idx: int, acc: bytes) -> bytes {
+    if idx >= chunks.length { return acc }
+    finish_loop(chunks, idx + 1, acc.concat(chunks[idx]))
+}
+
+// ── Reader ──
+//
+// Cursor over a frozen `bytes` buffer. Each `read_*` advances the
+// cursor in-place. Out-of-bounds reads return 0 (sentinel) — callers
+// gate on `.remaining()` when correctness matters.
+
+/// Cursor over a bytes buffer. The cursor lives in a one-element
+/// List<int> so `.u8()` etc. can advance it without the reader
+/// itself needing to be `mut` (Avra params are immutable). `pos[0]`
+/// is the next byte to read.
+export type BytesReader = {
+    buf: bytes,
+    pos: List<int>,
+}
+
+/// Create a reader positioned at offset 0 of `buf`. Idiomatic call:
+/// `let r = reader_new(buf); let n = r.u32_le()`.
+export fn reader_new(buf: bytes) -> BytesReader {
+    BytesReader { buf: buf, pos: [0] }
+}
+
+// BytesReader methods. Each `.u*_le()` returns one fixed-width
+// scalar and advances the cursor; `.string()` reads a u32 length
+// prefix and the following UTF-8 bytes; `.raw(n)` reads n unframed
+// bytes; `.remaining()` reports the number of unread bytes left.
+impl BytesReader {
+    fn remaining(self) -> int {
+        let rem = self.buf.length - self.pos[0]
+        if rem < 0 { 0 } else { rem }
+    }
+
+    fn u8(self) -> int {
+        let p = self.pos[0]
+        let v = self.buf.byte(p)
+        self.pos.set(0, p + 1)
+        v
+    }
+
+    fn u16_le(self) -> int {
+        let lo = self.u8()
+        let hi = self.u8()
+        lo + hi * 256
+    }
+
+    fn u32_le(self) -> int {
+        let b0 = self.u8()
+        let b1 = self.u8()
+        let b2 = self.u8()
+        let b3 = self.u8()
+        b0 + b1 * 256 + b2 * 65536 + b3 * 16777216
+    }
+
+    fn u64_le(self) -> int {
+        mut v = 0
+        mut shift = 1
+        mut i = 0
+        while i < 8 {
+            v = v + self.u8() * shift
+            shift = shift * 256
+            i = i + 1
+        }
+        v
+    }
+
+    fn string(self) -> string {
+        let len = self.u32_le()
+        let start = self.pos[0]
+        let slice = self.buf.slice(start, start + len)
+        self.pos.set(0, start + len)
+        avra_string_from_bytes(slice)
+    }
+
+    fn raw(self, n: int) -> bytes {
+        let start = self.pos[0]
+        let slice = self.buf.slice(start, start + n)
+        self.pos.set(0, start + n)
+        slice
+    }
+}

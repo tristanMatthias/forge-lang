@@ -25,3 +25,4 @@ mod cache
 mod driver
 mod graph
 mod lock
+mod metadata

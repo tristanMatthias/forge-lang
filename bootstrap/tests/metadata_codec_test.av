@@ -1,0 +1,84 @@
+// End-to-end @std.avrac.build.metadata tests.
+//
+// Compiles and runs tests/metadata_codec_fixtures/sample.av which
+// exercises every public method on BytesWriter / BytesReader. Each
+// round-trip prints a PROBE line; this test asserts on those lines.
+//
+// Why a fixture program rather than a direct import: the resolver
+// currently duplicates @std.avrac.X Module wrappers when a test
+// pool aggregates files importing inside @std (forge-crafting-
+// intepreters-dnq4). Until the dedup at the resolver level lands,
+// shelling out keeps each metadata import in its own program scope
+// — same workaround used by build_cache_test, fingerprint_test, etc.
+//
+// Memoised at the shell level so each `then` does not re-compile.
+//
+// Tracking ticket: forge-crafting-intepreters-iinq.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn metadata_run_fixture() -> string {
+    avra_shell_exec("if [ ! -f /tmp/avra_metadata_codec.out ]; then bash scripts/diagnose.sh --run tests/metadata_codec_fixtures/sample.av > /tmp/avra_metadata_codec.out 2>&1 || true; fi; cat /tmp/avra_metadata_codec.out")
+}
+
+fn metadata_wipe() -> string {
+    avra_shell_exec("rm -f /tmp/avra_metadata_codec.out")
+}
+
+spec "metadata codec: clear cached fixture output" {
+    then "wipe stale /tmp output from any prior run" {
+        let _ = metadata_wipe()
+        true
+    }
+}
+
+spec "metadata codec: scalar round-trips" {
+    then "u8 round-trips a low value" {
+        metadata_run_fixture().contains("PROBE u8_low: ok")
+    }
+    then "u8 zero survives (no strlen truncation in the bytes layer)" {
+        metadata_run_fixture().contains("PROBE u8_zero: ok")
+    }
+    then "u16_le round-trips" {
+        metadata_run_fixture().contains("PROBE u16: ok")
+    }
+    then "u32_le round-trips" {
+        metadata_run_fixture().contains("PROBE u32: ok")
+    }
+    then "u64_le round-trips above the 32-bit boundary" {
+        metadata_run_fixture().contains("PROBE u64: ok")
+    }
+    then "u32_le emits little-endian byte order" {
+        metadata_run_fixture().contains("PROBE u32_le_byte_order: ok")
+    }
+}
+
+spec "metadata codec: strings" {
+    then "non-empty string round-trips" {
+        metadata_run_fixture().contains("PROBE string: ok")
+    }
+    then "empty string encodes as a u32 zero" {
+        metadata_run_fixture().contains("PROBE string_empty: ok")
+    }
+    then "two consecutive strings decode in order" {
+        metadata_run_fixture().contains("PROBE string_pair: ok")
+    }
+}
+
+spec "metadata codec: mixed records" {
+    then "header-style record (u32 magic + string + u64 id) round-trips" {
+        metadata_run_fixture().contains("PROBE header_record: ok")
+    }
+    then "remaining() drops to zero after the last read" {
+        metadata_run_fixture().contains("PROBE remaining_zero: ok")
+    }
+}
+
+spec "metadata codec: raw + bulk" {
+    then "raw passthrough preserves embedded NULs" {
+        metadata_run_fixture().contains("PROBE raw_with_nul: ok")
+    }
+    then "100 small writes concatenate correctly on finish" {
+        metadata_run_fixture().contains("PROBE many_writes: ok")
+    }
+}
