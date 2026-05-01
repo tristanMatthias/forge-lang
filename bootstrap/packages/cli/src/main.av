@@ -458,11 +458,18 @@ fn render_unit_chain(units: UnitList) -> string {
 ///   --timings             write build/timings/<unit>-<fp>.html with
 ///                         per-phase wall times (cargo --timings analogue)
 ///   entry (positional)    override the manifest [bin].path
+// `--lib` (the BuildArgs.lib field below) selects the manifest's
+// [lib] target instead of [bin]. Foundational for
+// forge-crafting-intepreters-2f54 (split @std.avrac as a separately-
+// cached unit): a library is just a build target whose entry is an
+// avrac.av / lib.av root; the cache key and outputs work the same
+// as for a binary.
 type BuildArgs = {
     release: bool,
     explain: bool,
     json: bool,
     timings: bool,
+    lib: bool,
     entry: string,
 }
 
@@ -471,6 +478,7 @@ fn parse_build_args() -> BuildArgs {
     mut explain = false
     mut json = false
     mut timings = false
+    mut lib = false
     mut entry = ""
     mut i = 2
     while i < avra_selfhost_argc() {
@@ -495,6 +503,11 @@ fn parse_build_args() -> BuildArgs {
             i = i + 1
             continue
         }
+        if arg == "--lib" {
+            lib = true
+            i = i + 1
+            continue
+        }
         if !arg.starts_with("-") && entry == "" {
             entry = arg
         }
@@ -505,6 +518,7 @@ fn parse_build_args() -> BuildArgs {
         explain: explain,
         json: json,
         timings: timings,
+        lib: lib,
         entry: entry,
     }
 }
@@ -527,17 +541,35 @@ fn run_build_command() {
     let args = parse_build_args()
 
     let manifest = load_manifest("${project_dir}/")
-    let manifest_entry = if manifest.bin.present { manifest.bin.path } else { "" }
+    // --lib picks [lib] over [bin]. Without --lib, [bin] is the
+    // default; if [bin] is absent but [lib] is present, fall through
+    // to the lib target so `bs2 build` works in library-only packages
+    // (foundational for forge-crafting-intepreters-2f54).
+    let prefer_lib = args.lib || (!manifest.bin.present && manifest.lib.present)
+    let manifest_entry = if prefer_lib && manifest.lib.present {
+        manifest.lib.path
+    } else if manifest.bin.present {
+        manifest.bin.path
+    } else {
+        ""
+    }
     let entry_path = if args.entry != "" { args.entry } else { manifest_entry }
     if entry_path == "" {
-        fail("error: bs2 build requires either a file argument or [bin].path in avra.toml")
+        let needed = if args.lib { "[lib].path" } else { "[bin].path" }
+        fail("error: bs2 build requires either a file argument or ${needed} in avra.toml")
     }
     if !file_exists(entry_path) {
         fail("error: file not found: ${entry_path}")
     }
 
     let profile = if args.release { manifest.profile_release } else { manifest.profile_dev }
-    let unit_name = if manifest.found && manifest.bin.present { manifest.bin.name } else { "main" }
+    let unit_name = if manifest.found && prefer_lib && manifest.lib.present {
+        manifest.lib.name
+    } else if manifest.found && manifest.bin.present {
+        manifest.bin.name
+    } else {
+        "main"
+    }
 
     // bs2's own binary is the proxy for "the compiler". The bs3
     // verify path uses build/bs2; production via `make build`
