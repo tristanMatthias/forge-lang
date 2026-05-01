@@ -700,18 +700,37 @@ fn collect_impl_assoc_types(tc: TC, type_name: string, stmts: StmtList) -> TC {
     }
 }
 
-/// Re-resolve every FnTypeEntry's ret_ty against the now-complete
-/// `tc.enums` / `tc.structs` registries. Used as the second collect
-/// pass to upgrade ValueType.Struct residue from the first walk into
-/// the proper ValueType.Enum / .Newtype / .Trait variant when an
-/// enum/newtype declaration came AFTER the fn that referenced it.
+/// Re-resolve every FnTypeEntry's ret_ty AND param types against the
+/// now-complete `tc.enums` / `tc.structs` / `tc.traits` registries.
+/// Used as the second collect pass to upgrade ValueType.Struct
+/// residue from the first walk into the proper ValueType.Enum /
+/// .Newtype / .Trait variant when the trait/enum/newtype declaration
+/// came AFTER the fn that referenced it.
+///
+/// Both ret_ty and params need this — params are seen on every method
+/// dispatch (`e: TraitName` won't dispatch as a trait until upgraded)
+/// and ret_ty is seen at every call site (F1000 type-identity
+/// errors).
+///
 /// Tracked under forge-crafting-intepreters-dnq4.
 fn rewrite_fn_ret_tys(tc: TC, fns: FnTypeEntry) -> FnTypeEntry {
     match fns {
         .End -> .End
         .Node(name, params, ret_ty, next) -> {
-            let upgraded = if vtype_eq(ret_ty, .Void) { ret_ty } else { resolve_vtype(tc, ret_ty) }
-            FnTypeEntry.Node(name, params, upgraded, rewrite_fn_ret_tys(tc, next))
+            let upgraded_ret = if vtype_eq(ret_ty, .Void) { ret_ty } else { resolve_vtype(tc, ret_ty) }
+            let upgraded_params = rewrite_param_list_vts(tc, params)
+            FnTypeEntry.Node(name, upgraded_params, upgraded_ret, rewrite_fn_ret_tys(tc, next))
+        }
+    }
+}
+
+/// Map `resolve_vtype` over each ParamList entry's declared type.
+fn rewrite_param_list_vts(tc: TC, params: ParamList) -> ParamList {
+    match params {
+        .End -> .End
+        .Node(name, ty, next) -> {
+            let upgraded = if vtype_is_unknown(ty) { ty } else { resolve_vtype(tc, ty) }
+            ParamList.Node(name, upgraded, rewrite_param_list_vts(tc, next))
         }
     }
 }
