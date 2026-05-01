@@ -741,6 +741,17 @@ fn run_build_command() {
             if args.emit_metadata {
                 compile_cmd = compile_cmd + " --emit_metadata"
             }
+            // 2f54: when building a [lib] with metadata, auto-derive
+            // --module_path from the manifest's [package].name so the
+            // emitted symbols use the qualified namespace consumers
+            // reference via `use @<scope>.<pkg>...`. Maps `/` → `::`
+            // (e.g. `@std/avrac` → `@std::avrac`).
+            if prefer_lib && args.emit_metadata && manifest.found {
+                let derived_path = manifest.name.replace("/", "::")
+                if derived_path != "" {
+                    compile_cmd = compile_cmd + " --module_path='${derived_path}'"
+                }
+            }
             compile_cmd = compile_cmd + " '${entry_path}'"
             let t_before_compile = avra_uptime_ms()
             let _ = avra_shell_exec(compile_cmd)
@@ -1697,8 +1708,20 @@ fn main() {
             println("ok")
             return
         }
+        // 2f54: when --module_path is set, wrap the parsed body in a
+        // virtual Module BEFORE resolve_module_files. The resolver
+        // sees Module-with-body and recurses into it (skipping its
+        // file-load path), so internal `mod core` stubs inside still
+        // get loaded relative to the source dir AND nest under the
+        // outer namespace. Result: top-level fns end up qualified
+        // with `<module_path>::<inner_mod>::<name>`.
+        let pre_desugar_stmts = if module_path != "" {
+            StmtList.Node(sstmt_dummy(Stmt.Module(module_path, parsed.stmts!)), StmtList.End)
+        } else {
+            parsed.stmts!
+        }
         // Desugar pass: rewrite syntactic sugar to simpler AST forms.
-        let desugared = desugar_program(parsed.stmts!)
+        let desugared = desugar_program(pre_desugar_stmts)
         let t_desugar = avra_uptime_ms()
         // Resolve module files: walk the AST, find `mod` stubs, read
         // and parse the referenced files, attach parsed bodies.
@@ -1714,20 +1737,9 @@ fn main() {
             println("ok")
             return
         }
-        // 2f54: when --module_path is set, wrap the resolved body in
-        // a virtual Module so name resolution + codegen qualify every
-        // top-level symbol with `<module_path>::`. Wraps AFTER
-        // resolve_module_files so the resolver doesn't try to load
-        // `<module_path>.av` from disk (it ignores the body of bare
-        // Stmt.Module variants and reads the file pattern instead).
-        let post_resolve_stmts = if module_path != "" {
-            StmtList.Node(sstmt_dummy(Stmt.Module(module_path, mod_resolved.stmts)), StmtList.End)
-        } else {
-            mod_resolved.stmts
-        }
         // Component expansion: runs AFTER module resolution so component
         // definitions in any module are visible to the expander.
-        let expanded = expand_components(post_resolve_stmts)
+        let expanded = expand_components(mod_resolved.stmts)
         let t_expand = avra_uptime_ms()
         let named = resolve_names(expanded)
         let t_names = avra_uptime_ms()

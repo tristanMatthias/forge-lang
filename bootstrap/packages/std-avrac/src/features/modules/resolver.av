@@ -41,6 +41,17 @@ fn record_meta_dep(producer_path: string) {
     let _ = avra_selfhost_append_file(deps_out, line)
 }
 
+// True iff the StmtList has no elements. Used by resolve_module_stmt
+// to distinguish a parser-emitted bare `mod foo` stub (empty body,
+// needs file load) from a pre-populated Module wrapper produced by
+// cli's --module_path (body already resolved, just recurse).
+fn stmt_list_is_empty(stmts: StmtList) -> bool {
+    match stmts {
+        .End -> true
+        _ -> false
+    }
+}
+
 /// Set of file paths the resolver has already loaded — prevents
 /// double-parsing when two modules import the same file.
 export enum LoadedPaths {
@@ -659,6 +670,18 @@ fn resolve_package_use_and_continue(ss: SStmt, next: StmtList, dir: string, load
 /// case. `Annotated` wrappers around the module decl pass through.
 fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths, stack: ImportStack) -> ModStmtResult {
     match stmt {
+        // Pre-populated Module wrapper: cli's --module_path produces
+        // `Stmt.Module(name, body)` with body already filled in (the
+        // resolved source). Skip the file-load path and just recurse
+        // into the body so its inner `mod foo` stubs get resolved.
+        // Bare `mod foo` (no body) hits the file-load branch below.
+        .Module(name, body) if !stmt_list_is_empty(body) -> {
+            let resolved = resolve_module_files_inner(body, dir, loaded, stack)
+            if resolved.had_error {
+                return ModStmtResult { stmt, loaded: resolved.loaded, had_error: true, error_message: resolved.error_message }
+            }
+            ModStmtResult { stmt: Stmt.Module(name, resolved.stmts), loaded: resolved.loaded, had_error: false, error_message: "" }
+        }
         .Module(name, _) -> {
             let sibling = "${dir}${name}.av"
             let dir_mod = "${dir}${name}/mod.av"
