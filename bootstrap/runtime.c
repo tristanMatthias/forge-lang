@@ -708,6 +708,19 @@ int64_t avra_selfhost_write_file(const char* path, const char* content) {
     return 1;
 }
 
+// Append-mode write — text-only, no embedded NULs. Used by the
+// resolver's xtvc fast-path to record each substituted producer
+// path into a sidecar deps file so downstream linkers can pick up
+// the matching .o without coordination.
+int64_t avra_selfhost_append_file(const char* path, const char* content) {
+    FILE* f = fopen(path, "ab");
+    if (!f) return 0;
+    size_t len = strlen(content);
+    fwrite(content, 1, len, f);
+    fclose(f);
+    return 1;
+}
+
 // Binary-safe read/write for `bytes` values (length-prefixed buffers,
 // see the bytes-layout block earlier in this file). Plain
 // avra_selfhost_{read,write}_file use strlen and silently truncate

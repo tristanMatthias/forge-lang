@@ -1,0 +1,72 @@
+// Fixture: validates the deps sidecar that the resolver writes when
+// the metadata fast-path triggers. This is the linker-side plumbing
+// for 2f54: a downstream linker reads the sidecar to know which
+// producer .o files to pull into the final binary.
+//
+// Probes:
+//   1. The deps file lands when AVRA_USE_METADATA + AVRA_DEPS_OUT
+//      are both set AND a substitution actually happens.
+//   2. Each substituted producer's `.o` path appears as a line.
+//   3. The deps file is absent when AVRA_USE_METADATA is off, even
+//      with AVRA_DEPS_OUT pointing somewhere — the resolver only
+//      appends inside the fast-path branch.
+//   4. The sidecar is append-only (re-running adds duplicates) so
+//      the build driver, not the resolver, is responsible for dedup.
+//
+// (The actual link + run is left to a follow-up — symbol mangling
+// across separately-compiled units is its own design problem.)
+//
+// Tracking ticket: forge-crafting-intepreters-2f54.
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
+extern fn avra_process_env_get(name: string) -> string
+extern fn avra_selfhost_read_file(path: string) -> string
+extern fn avra_selfhost_file_exists(path: string) -> int
+
+fn probe(name: string, ok: bool) {
+    let tag = if ok { "ok" } else { "FAIL" }
+    println("PROBE ${name}: ${tag}")
+}
+
+fn main() -> int {
+    let dir = "/tmp/avra_2f54_deps_demo"
+    avra_shell_exec("rm -rf ${dir}")
+    avra_shell_exec("mkdir -p ${dir}")
+
+    avra_shell_exec("printf 'export fn alpha_v() -> int { 1 }\\n' > ${dir}/alpha.av")
+    avra_shell_exec("printf 'export fn beta_v() -> int { 2 }\\n' > ${dir}/beta.av")
+    avra_shell_exec("printf 'mod alpha\\nmod beta\\nuse alpha.{alpha_v}\\nuse beta.{beta_v}\\n\\nfn main() -> int { alpha_v() + beta_v() }\\n' > ${dir}/consumer.av")
+
+    let pwd = avra_process_env_get("PWD")
+    let bs2 = "${pwd}/build/bs2"
+
+    let rc_a = avra_shell_exec_status("${bs2} compile --emit_metadata ${dir}/alpha.av")
+    let rc_b = avra_shell_exec_status("${bs2} compile --emit_metadata ${dir}/beta.av")
+    probe("producers_emit_rc_zero", rc_a == 0 && rc_b == 0)
+
+    let deps_path = "${dir}/consumer.av.deps"
+    let rc_c = avra_shell_exec_status("AVRA_USE_METADATA=1 AVRA_DEPS_OUT=${deps_path} ${bs2} compile ${dir}/consumer.av")
+    probe("consumer_meta_compile_rc_zero", rc_c == 0)
+
+    let deps = avra_selfhost_read_file(deps_path)
+    probe("deps_lists_alpha_o", deps.contains("alpha.av.o"))
+    probe("deps_lists_beta_o", deps.contains("beta.av.o"))
+
+    let deps_off = "${dir}/consumer.av.deps_off"
+    avra_shell_exec("rm -f ${deps_off}")
+    let rc_off = avra_shell_exec_status("AVRA_DEPS_OUT=${deps_off} ${bs2} compile ${dir}/consumer.av")
+    probe("env_off_compile_rc_zero", rc_off == 0)
+    probe("env_off_no_deps_file", avra_selfhost_file_exists(deps_off) == 0)
+
+    let deps_two = "${dir}/consumer.av.deps_two"
+    avra_shell_exec("rm -f ${deps_two}")
+    let _r1 = avra_shell_exec_status("AVRA_USE_METADATA=1 AVRA_DEPS_OUT=${deps_two} ${bs2} compile ${dir}/consumer.av")
+    let lines_after_1 = avra_shell_exec("wc -l < ${deps_two}").trim()
+    probe("first_run_two_lines", lines_after_1 == "2")
+    let _r2 = avra_shell_exec_status("AVRA_USE_METADATA=1 AVRA_DEPS_OUT=${deps_two} ${bs2} compile ${dir}/consumer.av")
+    let lines_after_2 = avra_shell_exec("wc -l < ${deps_two}").trim()
+    probe("second_run_appends_to_four", lines_after_2 == "4")
+
+    0
+}

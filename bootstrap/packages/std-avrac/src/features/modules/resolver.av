@@ -5,7 +5,7 @@
 
 use core.ast.{Stmt, StmtList, SStmt, sstmt, AnnotationList}
 use parse.{parse_program_source}
-use core.runtime.{avra_process_env_get}
+use core.runtime.{avra_process_env_get, avra_selfhost_append_file}
 use build.metadata.{metadata_read, metadata_file_exists}
 use build.metadata_synthesize.{synthesize_unit_body}
 
@@ -23,6 +23,22 @@ export fn modules_dirname(path: string) -> string {
         i = prev
     }
     ""
+}
+
+// Record a producer source path that the metadata fast-path
+// substituted for. When `AVRA_DEPS_OUT=<path>` is set, append
+// `<source>.av.o\n` to the file so a downstream linker can pick
+// up the right cached object without re-implementing the resolver's
+// substitution logic.
+//
+// Convention: `<consumer.av.ll>` is co-located with `<producer.av.ll>`
+// and llc produces `<source>.av.o` from each, so the linker just
+// needs the list. No content beyond paths.
+fn record_meta_dep(producer_path: string) {
+    let deps_out = avra_process_env_get("AVRA_DEPS_OUT")
+    if deps_out == "" { return }
+    let line = "${producer_path}.o\n"
+    let _ = avra_selfhost_append_file(deps_out, line)
 }
 
 /// Set of file paths the resolver has already loaded — prevents
@@ -591,6 +607,7 @@ fn resolve_package_use_and_continue(ss: SStmt, next: StmtList, dir: string, load
     let meta_path = "${pkg_file}.meta.bin"
     let take_meta_fast_path = use_meta && metadata_file_exists(meta_path)
     let pkg_stmts = if take_meta_fast_path {
+        record_meta_dep(pkg_file)
         let m = metadata_read(meta_path)
         synthesize_unit_body(m)
     } else {
@@ -672,6 +689,7 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths, stack: Impo
             let meta_path = "${mod_path}.meta.bin"
             let take_meta = use_meta && metadata_file_exists(meta_path)
             let mod_stmts = if take_meta {
+                record_meta_dep(mod_path)
                 let m = metadata_read(meta_path)
                 synthesize_unit_body(m)
             } else {
