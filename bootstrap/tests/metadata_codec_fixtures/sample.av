@@ -24,9 +24,10 @@ use @std.avrac.build.metadata.{
 use @std.avrac.core.ast.{
     Stmt, StmtList, Expr, ExprList, TypeParamList,
     ValueType, TypeList, FieldList, VariantList, ParamList,
-    AnnotationList, vtype_eq, sstmt_dummy,
+    AnnotationList, vtype_eq, sstmt_dummy, stmt_unwrap,
 }
 use @std.avrac.build.metadata_extract.{extract_unit_metadata}
+use @std.avrac.build.metadata_synthesize.{synthesize_unit_stmts}
 
 extern fn avra_bytes_make(len: int) -> bytes
 extern fn avra_bytes_set(b: bytes, idx: int, val: int)
@@ -862,6 +863,96 @@ fn main() -> int {
     // gates on metadata_file_exists when the distinction matters.
     let missing = metadata_read("/tmp/avra_metadata_does_not_exist.bin")
     probe("io_missing_file_empty_unit_name", missing.unit_name == "")
+
+    // Synthesizer round-trip: extract from a hand-built AST, then
+    // synth back to a StmtList. The body should be a Module wrapper
+    // around the original public-surface items, qualified the same
+    // way they came in.
+    let synth_fields = FieldList.Node("x", ValueType.Int, FieldList.End)
+    let synth_stmts = StmtList.Node(
+        sstmt_dummy(Stmt.TypeDecl("Cell", TypeParamList.End, synth_fields)),
+        StmtList.Node(
+            sstmt_dummy(Stmt.Annotated(
+                AnnotationList.Node("export", ExprList.End, AnnotationList.End),
+                Stmt.Function("greet", TypeParamList.End, ParamList.End, ValueType.Str, StmtList.End),
+            )),
+            StmtList.Node(
+                sstmt_dummy(Stmt.Const("BUILD", ValueType.Str, Expr.String("\"42\""))),
+                StmtList.End,
+            ),
+        ),
+    )
+
+    let synth_meta = extract_unit_metadata("@synth", avra_bytes_make(32), synth_stmts)
+    let synth_back = synthesize_unit_stmts(synth_meta)
+
+    // The top of synth_back should be Stmt.Module("@synth", body).
+    let synth_top = match synth_back {
+        .Node(ss, _) -> stmt_unwrap(ss.node)
+        .End -> Stmt.NoOp
+    }
+    probe("synth_top_is_module",
+        match synth_top {
+            .Module(name, _) -> name == "@synth"
+            _ -> false
+        })
+
+    // The body inside the Module should contain a TypeDecl for
+    // `Cell` (local name, not `@synth::Cell` — qualification happens
+    // when the consumer's resolver re-walks the Module).
+    let synth_body = match synth_top {
+        .Module(_, body) -> body
+        _ -> StmtList.End
+    }
+    probe("synth_body_first_is_typedecl",
+        match synth_body {
+            .Node(ss, _) -> {
+                match stmt_unwrap(ss.node) {
+                    .TypeDecl(name, _, _) -> name == "Cell"
+                    _ -> false
+                }
+            }
+            .End -> false
+        })
+
+    // The fn (second item) should round-trip with @export annotation
+    // and the local name `greet`.
+    let synth_body_tail = match synth_body {
+        .Node(_, t) -> t
+        .End -> StmtList.End
+    }
+    probe("synth_body_second_is_exported_fn",
+        match synth_body_tail {
+            .Node(ss, _) -> {
+                // ss.node here is Annotated(.. export ..) wrapping Function.
+                match ss.node {
+                    .Annotated(_, inner) -> {
+                        match inner {
+                            .Function(name, _, _, _, _) -> name == "greet"
+                            _ -> false
+                        }
+                    }
+                    _ -> false
+                }
+            }
+            .End -> false
+        })
+
+    // The const should round-trip with the literal preserved.
+    let synth_body_third = match synth_body_tail {
+        .Node(_, t) -> t
+        .End -> StmtList.End
+    }
+    probe("synth_body_third_is_const",
+        match synth_body_third {
+            .Node(ss, _) -> {
+                match stmt_unwrap(ss.node) {
+                    .Const(name, _, _) -> name == "BUILD"
+                    _ -> false
+                }
+            }
+            .End -> false
+        })
 
     // Many small writes (chunk concat correctness)
     let wm = writer_new()

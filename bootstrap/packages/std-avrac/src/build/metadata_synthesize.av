@@ -1,0 +1,247 @@
+// WHY: Inverse of metadata_extract — given a UnitMetadata loaded
+// from disk, synthesize a StmtList that the resolver and typeck can
+// consume in place of the producer's source. Lets a downstream unit
+// import a peer's public surface without ever touching the impl
+// (the Phase 3 unlock — see forge-crafting-intepreters-xtvc).
+//
+// Design:
+//   * Each TypeDeclEntry becomes the matching Stmt variant
+//     (TypeDecl / EnumDecl / TraitDecl / NewtypeDecl / UnionAliasDecl
+//     / ShapeDecl). Bodies are reconstructed from the (fields,
+//     variants, inner_vt, methods) pulled out of the entry — same
+//     shape the parser would produce.
+//   * Each FnDeclEntry becomes Stmt.Function with an empty body —
+//     the body is opaque to consumers; they only ever read the
+//     signature for typecheck. Emitting them at codegen time is
+//     skipped by the consumer-integration layer (later xtvc work).
+//   * Each ConstDeclEntry becomes Stmt.Const with the literal
+//     reconstructed from value_kind + the int_value / str_value
+//     stash. Unknown-valued consts come back as `null`-initialized
+//     (the consumer never folds them, so the value is irrelevant).
+//   * Each ImplDeclEntry becomes Stmt.Impl with one ExternFn-shaped
+//     stub per method (signature only, no body).
+//   * Top-level wrap is Stmt.Module(unit_name, ...) so the synth'd
+//     items end up at the same canonical paths their `qualify` step
+//     in metadata_extract produced.
+//
+// Each item gets an @export annotation when the source side was
+// exported — the resolver's `use` lookup gates on this same flag.
+//
+// Tracked under forge-crafting-intepreters-xtvc.
+
+use core.ast.{
+    Stmt, StmtList, SStmt, sstmt_dummy,
+    Expr, ExprList,
+    AnnotationList, ParamList, ValueType, FieldList, VariantList, TypeParamList,
+    sexpr_dummy,
+}
+use build.metadata.{
+    UnitMetadata, TypeDeclList, FnDeclList, ConstDeclList, ImplDeclList,
+    TypeDeclEntry, FnDeclEntry, ConstDeclEntry, ImplDeclEntry,
+    TypeDeclKind, ConstValueKind,
+    MetaTraitMethodList, ImplMethodRefList,
+}
+
+/// Top-level entry. Walks every section list, builds the matching
+/// Stmt for each entry, and wraps the whole thing in a Module so the
+/// items land at their original qualified paths.
+export fn synthesize_unit_stmts(m: UnitMetadata) -> StmtList {
+    let body = append_stmts(
+        synth_types(m.types),
+        append_stmts(
+            synth_fns(m.fns),
+            append_stmts(
+                synth_consts(m.consts),
+                synth_impls(m.impls),
+            ),
+        ),
+    )
+    if m.unit_name == "" {
+        body
+    } else {
+        StmtList.Node(sstmt_dummy(Stmt.Module(m.unit_name, body)), StmtList.End)
+    }
+}
+
+fn append_stmts(a: StmtList, b: StmtList) -> StmtList {
+    match a {
+        .End -> b
+        .Node(s, next) -> StmtList.Node(s, append_stmts(next, b))
+    }
+}
+
+// ── TYPES ──
+
+fn synth_types(xs: TypeDeclList) -> StmtList {
+    match xs {
+        .End -> StmtList.End
+        .Node(e, next) -> {
+            let head = synth_type_decl(e)
+            StmtList.Node(head, synth_types(next))
+        }
+    }
+}
+
+fn synth_type_decl(e: TypeDeclEntry) -> SStmt {
+    let inner = type_decl_inner_stmt(e)
+    sstmt_dummy(wrap_export(inner, true))
+}
+
+// Always export — types from another unit are public-surface-only;
+// non-exported types never make it into metadata.bin. This keeps
+// the synthesized Stmt round-trippable through the resolver's
+// `use foo::Bar` lookup, which gates on @export.
+fn wrap_export(s: Stmt, exported: bool) -> Stmt {
+    if exported {
+        Stmt.Annotated(
+            AnnotationList.Node("export", ExprList.End, AnnotationList.End),
+            s,
+        )
+    } else {
+        s
+    }
+}
+
+// Recover the bare local name from a qualified name. The qualified
+// form already lands inside the synth'd Module, so the inner
+// declaration uses just the local component. e.g.
+//   "@io::build::Cache" → "Cache"
+fn local_name(qn: string) -> string {
+    let idx = last_index_of_double_colon(qn)
+    if idx < 0 { return qn }
+    qn.substring(idx + 2, qn.length)
+}
+
+// Avra's string.index_of returns the FIRST hit; metadata names
+// have many `::` so we walk forward to find the last.
+fn last_index_of_double_colon(s: string) -> int {
+    mut last = 0 - 1
+    mut i = 0
+    while i < s.length - 1 {
+        if s.byte(i) == 0x3A && s.byte(i + 1) == 0x3A {
+            last = i
+            i = i + 2
+        } else {
+            i = i + 1
+        }
+    }
+    last
+}
+
+fn type_decl_inner_stmt(e: TypeDeclEntry) -> Stmt {
+    let n = local_name(e.name)
+    if e.kind is .StructDecl { return Stmt.TypeDecl(n, e.type_params, e.fields) }
+    if e.kind is .ShapeDecl { return Stmt.ShapeDecl(n, e.fields) }
+    if e.kind is .EnumDecl { return Stmt.EnumDecl(n, e.type_params, e.variants) }
+    if e.kind is .NewtypeDecl { return Stmt.NewtypeDecl(n, e.inner_vt) }
+    if e.kind is .UnionAliasDecl { return Stmt.UnionAliasDecl(n, e.inner_vt) }
+    if e.kind is .TraitDecl {
+        let methods = synth_trait_method_stmts(e.methods)
+        return Stmt.TraitDecl(n, methods)
+    }
+    Stmt.NoOp
+}
+
+fn synth_trait_method_stmts(ms: MetaTraitMethodList) -> StmtList {
+    match ms {
+        .End -> StmtList.End
+        .Node(name, params, ret, next) -> {
+            let head = sstmt_dummy(Stmt.ExternFn(name, params, ret))
+            StmtList.Node(head, synth_trait_method_stmts(next))
+        }
+    }
+}
+
+// ── FNS ──
+
+fn synth_fns(xs: FnDeclList) -> StmtList {
+    match xs {
+        .End -> StmtList.End
+        .Node(e, next) -> {
+            let head = synth_fn_decl(e)
+            StmtList.Node(head, synth_fns(next))
+        }
+    }
+}
+
+fn synth_fn_decl(e: FnDeclEntry) -> SStmt {
+    let n = local_name(e.name)
+    let inner = if e.is_extern {
+        Stmt.ExternFn(n, e.params, e.ret)
+    } else {
+        Stmt.Function(n, e.type_params, e.params, e.ret, StmtList.End)
+    }
+    sstmt_dummy(wrap_export(inner, e.exported))
+}
+
+// ── CONSTS ──
+
+fn synth_consts(xs: ConstDeclList) -> StmtList {
+    match xs {
+        .End -> StmtList.End
+        .Node(e, next) -> {
+            let head = synth_const_decl(e)
+            StmtList.Node(head, synth_consts(next))
+        }
+    }
+}
+
+fn synth_const_decl(e: ConstDeclEntry) -> SStmt {
+    let n = local_name(e.name)
+    let init = const_value_to_expr(e)
+    let inner = Stmt.Const(n, e.ty, init)
+    sstmt_dummy(wrap_export(inner, e.exported))
+}
+
+fn const_value_to_expr(e: ConstDeclEntry) -> Expr {
+    if e.value_kind is .IntValue { return Expr.Number(int_to_text(e.int_value)) }
+    if e.value_kind is .StrValue { return Expr.String("\"${e.str_value}\"") }
+    if e.value_kind is .BoolValue {
+        return Expr.Bool(if e.int_value != 0 { "true" } else { "false" })
+    }
+    if e.value_kind is .FloatValue {
+        // Float literals carry source text rather than bits in the AST;
+        // the bit-precise round-trip would need a printf %.17g layer.
+        // For now consumers see Null — the type still flows through.
+        return Expr.Null
+    }
+    Expr.Null
+}
+
+fn int_to_text(n: int) -> string {
+    "${n}"
+}
+
+// ── IMPLS ──
+
+fn synth_impls(xs: ImplDeclList) -> StmtList {
+    match xs {
+        .End -> StmtList.End
+        .Node(e, next) -> {
+            let head = synth_impl_decl(e)
+            StmtList.Node(head, synth_impls(next))
+        }
+    }
+}
+
+fn synth_impl_decl(e: ImplDeclEntry) -> SStmt {
+    let trait_local = local_name(e.trait_name)
+    let type_local = local_name(e.type_name)
+    let impl_name = "${trait_local}:${type_local}"
+    let methods = synth_impl_method_stmts(e.methods)
+    sstmt_dummy(Stmt.Impl(impl_name, methods))
+}
+
+fn synth_impl_method_stmts(ms: ImplMethodRefList) -> StmtList {
+    match ms {
+        .End -> StmtList.End
+        .Node(name, _fn_id, next) -> {
+            // Synth'd impl methods get an empty Function body — the
+            // real body lives in the producing unit's compiled .o.
+            // Consumer codegen skips emit because the impl belongs
+            // to an externally-compiled unit (handled at integration).
+            let head = sstmt_dummy(Stmt.Function(name, TypeParamList.End, ParamList.End, ValueType.Unknown, StmtList.End))
+            StmtList.Node(head, synth_impl_method_stmts(next))
+        }
+    }
+}

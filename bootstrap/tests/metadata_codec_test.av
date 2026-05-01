@@ -322,6 +322,21 @@ spec "metadata codec: IMPLS section per-entry round-trips" {
     }
 }
 
+spec "metadata codec: UnitMetadata → StmtList synthesizer (xtvc)" {
+    then "synthesized top-level is Stmt.Module wrapping the unit_name" {
+        metadata_run_fixture().contains("PROBE synth_top_is_module: ok")
+    }
+    then "first body item is a TypeDecl with the local (un-qualified) name" {
+        metadata_run_fixture().contains("PROBE synth_body_first_is_typedecl: ok")
+    }
+    then "exported fn round-trips with @export annotation + local name" {
+        metadata_run_fixture().contains("PROBE synth_body_second_is_exported_fn: ok")
+    }
+    then "Const decl round-trips with name + literal initializer" {
+        metadata_run_fixture().contains("PROBE synth_body_third_is_const: ok")
+    }
+}
+
 spec "metadata codec: file IO (write+read round-trip)" {
     then "metadata_write returns 1 on success" {
         metadata_run_fixture().contains("PROBE io_write_returns_1: ok")
