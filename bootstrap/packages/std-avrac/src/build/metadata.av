@@ -16,7 +16,7 @@
 // Tracked under forge-crafting-intepreters-iinq (epic
 // forge-crafting-intepreters-a1el — the build system).
 
-use core.ast.{ValueType, TypeList, FieldList, VariantList, ParamList}
+use core.ast.{ValueType, TypeList, FieldList, VariantList, ParamList, TypeParamList}
 
 extern fn avra_bytes_make(len: int) -> bytes
 extern fn avra_bytes_set(b: bytes, idx: int, val: int)
@@ -493,6 +493,13 @@ fn param_list_length(params: ParamList) -> int {
     }
 }
 
+fn type_param_list_length(params: TypeParamList) -> int {
+    match params {
+        .End -> 0
+        .Node(_, _, next) -> 1 + type_param_list_length(next)
+    }
+}
+
 // ── Composite list encoders ──
 //
 // FieldList / VariantList / ParamList are the building blocks of the
@@ -528,6 +535,22 @@ impl BytesWriter {
                 self.string(name)
                 self.vtype(vt)
                 self.param_list_body(next)
+            }
+        }
+    }
+
+    fn type_param_list(self, params: TypeParamList) {
+        self.u32_le(type_param_list_length(params))
+        self.type_param_list_body(params)
+    }
+
+    fn type_param_list_body(self, params: TypeParamList) {
+        match params {
+            .End -> {}
+            .Node(name, bounds, next) -> {
+                self.string(name)
+                self.string(bounds)
+                self.type_param_list_body(next)
             }
         }
     }
@@ -587,6 +610,19 @@ impl BytesReader {
         let fields = self.field_list()
         let tail = self.variant_list_body(count - 1)
         VariantList.Node(name, fields, tail)
+    }
+
+    fn type_param_list(self) -> TypeParamList {
+        let count = self.u32_le()
+        self.type_param_list_body(count)
+    }
+
+    fn type_param_list_body(self, count: int) -> TypeParamList {
+        if count == 0 { return TypeParamList.End }
+        let name = self.string()
+        let bounds = self.string()
+        let tail = self.type_param_list_body(count - 1)
+        TypeParamList.Node(name, bounds, tail)
     }
 }
 
@@ -757,6 +793,7 @@ export type TypeDeclEntry = {
     sym_id: int,
     kind: TypeDeclKind,
     name: string,
+    type_params: TypeParamList,
     fields: FieldList,
     variants: VariantList,
     inner_vt: ValueType,
@@ -768,6 +805,7 @@ impl BytesWriter {
         self.u64_le(e.sym_id)
         self.u8(type_decl_kind_to_byte(e.kind))
         self.string(e.name)
+        self.type_param_list(e.type_params)
         if e.kind is .StructDecl { self.field_list(e.fields) }
         if e.kind is .ShapeDecl { self.field_list(e.fields) }
         if e.kind is .EnumDecl { self.variant_list(e.variants) }
@@ -782,6 +820,7 @@ impl BytesReader {
         let sid = self.u64_le()
         let kind = byte_to_type_decl_kind(self.u8())
         let name = self.string()
+        let tps = self.type_param_list()
         mut fields = FieldList.End
         mut variants = VariantList.End
         mut inner = ValueType.Unknown
@@ -796,6 +835,7 @@ impl BytesReader {
             sym_id: sid,
             kind: kind,
             name: name,
+            type_params: tps,
             fields: fields,
             variants: variants,
             inner_vt: inner,
@@ -825,6 +865,7 @@ export type FnDeclEntry = {
     name: string,
     exported: bool,
     is_extern: bool,
+    type_params: TypeParamList,
     params: ParamList,
     ret: ValueType,
 }
@@ -835,6 +876,7 @@ impl BytesWriter {
         self.string(e.name)
         self.u8(if e.exported { 1 } else { 0 })
         self.u8(if e.is_extern { 1 } else { 0 })
+        self.type_param_list(e.type_params)
         self.param_list(e.params)
         self.vtype(e.ret)
     }
@@ -846,6 +888,7 @@ impl BytesReader {
         let name = self.string()
         let exp = self.u8()
         let ext = self.u8()
+        let tps = self.type_param_list()
         let params = self.param_list()
         let ret = self.vtype()
         FnDeclEntry {
@@ -853,6 +896,7 @@ impl BytesReader {
             name: name,
             exported: exp == 1,
             is_extern: ext == 1,
+            type_params: tps,
             params: params,
             ret: ret,
         }

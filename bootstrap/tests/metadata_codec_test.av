@@ -322,6 +322,18 @@ spec "metadata codec: IMPLS section per-entry round-trips" {
     }
 }
 
+spec "metadata codec: generics (type_params)" {
+    then "FnDeclEntry: 1-element type_params list round-trips" {
+        metadata_run_fixture().contains("PROBE generic_fn_tparam_count: ok")
+    }
+    then "FnDeclEntry: type_param name survives" {
+        metadata_run_fixture().contains("PROBE generic_fn_tparam_name: ok")
+    }
+    then "TypeDeclEntry: 2nd type_param's bounds string survives" {
+        metadata_run_fixture().contains("PROBE generic_struct_tparam_2nd_bound: ok")
+    }
+}
+
 spec "metadata codec: AST → UnitMetadata extractor" {
     then "unit_name passes through" {
         metadata_run_fixture().contains("PROBE extract_unit_name: ok")

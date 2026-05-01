@@ -257,6 +257,7 @@ fn main() -> int {
         sym_id: sym_id_for("@test::Point"),
         kind: TypeDeclKind.StructDecl,
         name: "@test::Point",
+        type_params: TypeParamList.End,
         fields: pt_fields,
         variants: VariantList.End,
         inner_vt: ValueType.Unknown,
@@ -276,6 +277,7 @@ fn main() -> int {
         sym_id: sym_id_for("@test::UserId"),
         kind: TypeDeclKind.NewtypeDecl,
         name: "@test::UserId",
+        type_params: TypeParamList.End,
         fields: FieldList.End,
         variants: VariantList.End,
         inner_vt: ValueType.Int,
@@ -297,6 +299,7 @@ fn main() -> int {
         sym_id: sym_id_for("@test::Color"),
         kind: TypeDeclKind.EnumDecl,
         name: "@test::Color",
+        type_params: TypeParamList.End,
         fields: FieldList.End,
         variants: col_variants,
         inner_vt: ValueType.Unknown,
@@ -316,6 +319,7 @@ fn main() -> int {
     let add_entry = FnDeclEntry {
         sym_id: sym_id_for("@test::add"),
         name: "@test::add",
+        type_params: TypeParamList.End,
         exported: true,
         is_extern: false,
         params: add_params,
@@ -335,6 +339,7 @@ fn main() -> int {
     let now_entry = FnDeclEntry {
         sym_id: sym_id_for("avra_now"),
         name: "avra_now",
+        type_params: TypeParamList.End,
         exported: true,
         is_extern: true,
         params: ParamList.End,
@@ -354,6 +359,7 @@ fn main() -> int {
     let proc_entry = FnDeclEntry {
         sym_id: sym_id_for("@test::process"),
         name: "@test::process",
+        type_params: TypeParamList.End,
         exported: false,
         is_extern: false,
         params: proc_params,
@@ -377,6 +383,7 @@ fn main() -> int {
         sym_id: sym_id_for("@test::e2e::Cell"),
         kind: TypeDeclKind.StructDecl,
         name: "@test::e2e::Cell",
+        type_params: TypeParamList.End,
         fields: e2e_struct_fields,
         variants: VariantList.End,
         inner_vt: ValueType.Unknown,
@@ -390,6 +397,7 @@ fn main() -> int {
     let e2e_fn_entry = FnDeclEntry {
         sym_id: sym_id_for("@test::e2e::cell_x"),
         name: "@test::e2e::cell_x",
+        type_params: TypeParamList.End,
         exported: true,
         is_extern: false,
         params: ParamList.Node("c", ValueType.Struct("@test::e2e::Cell", 0), ParamList.End),
@@ -508,6 +516,7 @@ fn main() -> int {
         sym_id: sym_id_for("@test::Display"),
         kind: TypeDeclKind.TraitDecl,
         name: "@test::Display",
+        type_params: TypeParamList.End,
         fields: FieldList.End,
         variants: VariantList.End,
         inner_vt: ValueType.Unknown,
@@ -601,6 +610,7 @@ fn main() -> int {
         sym_id: sym_id_for("@unit::User"),
         kind: TypeDeclKind.StructDecl,
         name: "@unit::User",
+        type_params: TypeParamList.End,
         fields: unit_struct_fields,
         variants: VariantList.End,
         inner_vt: ValueType.Unknown,
@@ -609,6 +619,7 @@ fn main() -> int {
     let unit_fn_entry = FnDeclEntry {
         sym_id: sym_id_for("@unit::greet"),
         name: "@unit::greet",
+        type_params: TypeParamList.End,
         exported: true,
         is_extern: false,
         params: ParamList.Node("u", ValueType.Struct("@unit::User", 0), ParamList.End),
@@ -744,6 +755,61 @@ fn main() -> int {
     probe("extract_extern_is_extern",
         match fns_tail {
             .Node(e, _) -> e.is_extern && e.name == "host_now"
+            .End -> false
+        })
+
+    // Generics: a fn with type_params + a struct with type_params
+    let gen_fn_tps = TypeParamList.Node("T", "", TypeParamList.End)
+    let gen_fn_entry = FnDeclEntry {
+        sym_id: sym_id_for("@gen::id"),
+        name: "@gen::id",
+        exported: true,
+        is_extern: false,
+        type_params: gen_fn_tps,
+        params: ParamList.Node("x", ValueType.Struct("T", 0), ParamList.End),
+        ret: ValueType.Struct("T", 0),
+    }
+    let wgen = writer_new()
+    wgen.fn_decl(gen_fn_entry)
+    let rgen = reader_new(wgen.finish())
+    let gen_decoded = rgen.fn_decl()
+    let gen_tail = match gen_decoded.type_params {
+        .Node(_, _, t) -> t
+        .End -> TypeParamList.End
+    }
+    probe("generic_fn_tparam_count",
+        match gen_tail {
+            .End -> true
+            _ -> false
+        })
+    probe("generic_fn_tparam_name",
+        match gen_decoded.type_params {
+            .Node(n, _, _) -> n == "T"
+            .End -> false
+        })
+
+    let gen_type_tps = TypeParamList.Node("K", "", TypeParamList.Node("V", "Display", TypeParamList.End))
+    let gen_type_entry = TypeDeclEntry {
+        sym_id: sym_id_for("@gen::Pair"),
+        kind: TypeDeclKind.StructDecl,
+        name: "@gen::Pair",
+        type_params: gen_type_tps,
+        fields: FieldList.Node("k", ValueType.Struct("K", 0), FieldList.Node("v", ValueType.Struct("V", 0), FieldList.End)),
+        variants: VariantList.End,
+        inner_vt: ValueType.Unknown,
+        methods: MetaTraitMethodList.End,
+    }
+    let wgt = writer_new()
+    wgt.type_decl(gen_type_entry)
+    let rgt = reader_new(wgt.finish())
+    let gt_decoded = rgt.type_decl()
+    let gt_tail = match gt_decoded.type_params {
+        .Node(_, _, t) -> t
+        .End -> TypeParamList.End
+    }
+    probe("generic_struct_tparam_2nd_bound",
+        match gt_tail {
+            .Node(_, b, _) -> b == "Display"
             .End -> false
         })
 
