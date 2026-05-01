@@ -571,11 +571,25 @@ fn run_build_command() {
         "main"
     }
 
-    // bs2's own binary is the proxy for "the compiler". The bs3
-    // verify path uses build/bs2; production via `make build`
-    // produces the same binary. Downstream consumers will pass an
-    // explicit path once the bootstrap is no longer the only consumer.
-    let compiler_path = "${project_dir}/build/bs2"
+    // Resolve the compiler binary used for the sub-compile step.
+    // Resolution order, first-match wins:
+    //   1. AVRA_COMPILER env var (explicit override)
+    //   2. ${project_dir}/build/bs2 (in-tree convention used by the
+    //      bootstrap and by `bs2 test` fixtures)
+    //   3. argv[0] (the currently-running bs2 — guaranteed to exist
+    //      since we're already executing inside it)
+    // Without (3) the build command failed in any project that doesn't
+    // ship a local build/bs2 — e.g. running `bs2 build --lib` from
+    // packages/std-avrac/. Step toward 2f54.
+    let env_compiler = avra_process_env_get("AVRA_COMPILER")
+    let local_compiler = "${project_dir}/build/bs2"
+    let compiler_path = if env_compiler != "" {
+        env_compiler
+    } else if file_exists(local_compiler) {
+        local_compiler
+    } else {
+        avra_selfhost_get_arg_cstr(0)
+    }
 
     let inputs = BuildInputs {
         project_root: project_dir,
