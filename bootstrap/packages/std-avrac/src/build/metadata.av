@@ -1389,3 +1389,46 @@ fn read_impl_decl_list_loop(r: BytesReader, count: int) -> ImplDeclList {
     let tail = read_impl_decl_list_loop(r, count - 1)
     ImplDeclList.Node(head, tail)
 }
+
+// ── File IO ──
+//
+// `metadata_write` and `metadata_read` are the disk surface for the
+// metadata.bin format. They use the binary-safe selfhost file IO so
+// embedded 0x00 octets (which the codec produces all over —
+// length-prefix bytes, sym_id high zeros, …) survive the round trip
+// to disk. The normal selfhost_read_file / selfhost_write_file path
+// uses strlen and would silently truncate.
+
+extern fn avra_selfhost_read_file_bytes(path: string) -> bytes
+extern fn avra_selfhost_write_file_bytes(path: string, b: bytes) -> int
+extern fn avra_selfhost_file_exists(path: string) -> int
+
+/// Write a UnitMetadata to `path`. Returns 1 on success, 0 on
+/// failure (path not writable / parent dir missing / disk full).
+/// Caller decides what to do with a 0 — usually fail() and bail.
+export fn metadata_write(path: string, m: UnitMetadata) -> int {
+    let w = writer_new()
+    w.unit(m)
+    avra_selfhost_write_file_bytes(path, w.finish())
+}
+
+/// Read a UnitMetadata back from `path`. Returns an empty bundle
+/// (unit_name="", every section list empty) when the file is missing
+/// or unreadable — call `metadata_file_exists` first when the
+/// distinction matters.
+export fn metadata_read(path: string) -> UnitMetadata {
+    let buf = avra_selfhost_read_file_bytes(path)
+    if buf.length == 0 {
+        let empty_fp = avra_bytes_make(0)
+        return unit_metadata_new("", empty_fp)
+    }
+    let r = reader_new(buf)
+    r.unit()
+}
+
+/// True iff `path` exists and is readable. Wraps the selfhost
+/// existence check so consumers don't reach for the runtime layer
+/// independently.
+export fn metadata_file_exists(path: string) -> bool {
+    avra_selfhost_file_exists(path) != 0
+}

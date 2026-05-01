@@ -708,6 +708,41 @@ int64_t avra_selfhost_write_file(const char* path, const char* content) {
     return 1;
 }
 
+// Binary-safe read/write for `bytes` values (length-prefixed buffers,
+// see the bytes-layout block earlier in this file). Plain
+// avra_selfhost_{read,write}_file use strlen and silently truncate
+// at the first 0x00 — fine for source files, fatal for metadata.bin
+// or any other binary artifact.
+
+const char* avra_selfhost_read_file_bytes(const char* path) {
+    FILE* f = fopen(path, "rb");
+    if (!f) {
+        char* empty = (char*)avra_rc_alloc(8);
+        *(int64_t*)empty = 0;
+        return empty;
+    }
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (size < 0) size = 0;
+    char* buf = (char*)avra_rc_alloc(8 + (size_t)size);
+    *(int64_t*)buf = (int64_t)size;
+    if (size > 0) fread(buf + 8, 1, (size_t)size, f);
+    fclose(f);
+    return buf;
+}
+
+int64_t avra_selfhost_write_file_bytes(const char* path, const char* b) {
+    if (!b) return 0;
+    FILE* f = fopen(path, "wb");
+    if (!f) return 0;
+    int64_t len = *(int64_t*)b;
+    if (len < 0) len = 0;
+    if (len > 0) fwrite(b + 8, 1, (size_t)len, f);
+    fclose(f);
+    return 1;
+}
+
 // avra_selfhost_string_to_float is used by the bootstrap's float() builtin.
 double avra_selfhost_string_to_float(const char* s) { return strtod(s, NULL); }
 

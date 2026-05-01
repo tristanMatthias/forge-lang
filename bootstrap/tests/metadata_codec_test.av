@@ -322,6 +322,30 @@ spec "metadata codec: IMPLS section per-entry round-trips" {
     }
 }
 
+spec "metadata codec: file IO (write+read round-trip)" {
+    then "metadata_write returns 1 on success" {
+        metadata_run_fixture().contains("PROBE io_write_returns_1: ok")
+    }
+    then "the file exists on disk after write" {
+        metadata_run_fixture().contains("PROBE io_file_exists_after_write: ok")
+    }
+    then "metadata_read recovers the unit name from disk" {
+        metadata_run_fixture().contains("PROBE io_read_unit_name: ok")
+    }
+    then "fingerprint byte 0 round-trips through disk" {
+        metadata_run_fixture().contains("PROBE io_read_fp_byte0: ok")
+    }
+    then "fingerprint byte 31 (last) round-trips through disk" {
+        metadata_run_fixture().contains("PROBE io_read_fp_byte31: ok")
+    }
+    then "TYPES section entries survive disk round-trip" {
+        metadata_run_fixture().contains("PROBE io_read_struct_name: ok")
+    }
+    then "missing file returns an empty UnitMetadata sentinel" {
+        metadata_run_fixture().contains("PROBE io_missing_file_empty_unit_name: ok")
+    }
+}
+
 spec "metadata codec: generics (type_params)" {
     then "FnDeclEntry: 1-element type_params list round-trips" {
         metadata_run_fixture().contains("PROBE generic_fn_tparam_count: ok")

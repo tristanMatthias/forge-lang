@@ -8,6 +8,11 @@ extern fn avra_selfhost_get_arg_cstr(idx: int) -> string
 extern fn avra_selfhost_file_exists(path: string) -> int
 extern fn avra_selfhost_read_file(path: string) -> string
 extern fn avra_selfhost_write_file(path: string, content: string) -> int
+// Binary-safe variants — read/write `bytes` so embedded 0x00 octets
+// survive (metadata.bin, image data, hash output, …). The plain
+// _file variants strlen-truncate at the first NUL.
+extern fn avra_selfhost_read_file_bytes(path: string) -> bytes
+extern fn avra_selfhost_write_file_bytes(path: string, b: bytes) -> int
 extern fn avra_selfhost_string_to_float(s: string) -> int
 extern fn avra_selfhost_levenshtein(a: string, b: string, len_a: int, len_b: int) -> int
 

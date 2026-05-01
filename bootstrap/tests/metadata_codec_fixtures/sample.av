@@ -19,6 +19,7 @@ use @std.avrac.build.metadata.{
     ImplDeclEntry, ImplMethodRefList,
     UnitMetadata, TypeDeclList, FnDeclList, ConstDeclList, ImplDeclList,
     unit_metadata_new,
+    metadata_write, metadata_read, metadata_file_exists,
 }
 use @std.avrac.core.ast.{
     Stmt, StmtList, Expr, ExprList, TypeParamList,
@@ -29,6 +30,7 @@ use @std.avrac.build.metadata_extract.{extract_unit_metadata}
 
 extern fn avra_bytes_make(len: int) -> bytes
 extern fn avra_bytes_set(b: bytes, idx: int, val: int)
+extern fn avra_shell_exec(cmd: string) -> string
 
 fn probe(name: string, ok: bool) {
     let tag = if ok { "ok" } else { "FAIL" }
@@ -812,6 +814,54 @@ fn main() -> int {
             .Node(_, b, _) -> b == "Display"
             .End -> false
         })
+
+    // File IO: write a UnitMetadata to disk, read it back, verify
+    // the structure survives the round trip. Uses /tmp so the test
+    // doesn't pollute the project tree; rm beforehand so a stale file
+    // from a previous run doesn't mask a regression.
+    let io_path = "/tmp/avra_metadata_io_probe.bin"
+    avra_shell_exec("rm -f ${io_path}")
+    let io_fp = avra_bytes_make(32)
+    avra_bytes_set(io_fp, 0, 0x77)
+    avra_bytes_set(io_fp, 31, 0x88)
+
+    let io_struct = TypeDeclEntry {
+        sym_id: sym_id_for("@io::Pt"),
+        kind: TypeDeclKind.StructDecl,
+        name: "@io::Pt",
+        type_params: TypeParamList.End,
+        fields: FieldList.Node("x", ValueType.Int, FieldList.End),
+        variants: VariantList.End,
+        inner_vt: ValueType.Unknown,
+        methods: MetaTraitMethodList.End,
+    }
+    let io_unit = UnitMetadata {
+        unit_name: "@io",
+        fingerprint: io_fp,
+        types: TypeDeclList.Node(io_struct, TypeDeclList.End),
+        fns: FnDeclList.End,
+        consts: ConstDeclList.End,
+        impls: ImplDeclList.End,
+    }
+
+    let write_rc = metadata_write(io_path, io_unit)
+    probe("io_write_returns_1", write_rc == 1)
+    probe("io_file_exists_after_write", metadata_file_exists(io_path))
+
+    let loaded = metadata_read(io_path)
+    probe("io_read_unit_name", loaded.unit_name == "@io")
+    probe("io_read_fp_byte0", loaded.fingerprint.byte(0) == 0x77)
+    probe("io_read_fp_byte31", loaded.fingerprint.byte(31) == 0x88)
+    probe("io_read_struct_name",
+        match loaded.types {
+            .Node(e, _) -> e.name == "@io::Pt"
+            .End -> false
+        })
+
+    // Missing file path returns an empty UnitMetadata sentinel — caller
+    // gates on metadata_file_exists when the distinction matters.
+    let missing = metadata_read("/tmp/avra_metadata_does_not_exist.bin")
+    probe("io_missing_file_empty_unit_name", missing.unit_name == "")
 
     // Many small writes (chunk concat correctness)
     let wm = writer_new()
