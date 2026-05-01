@@ -555,8 +555,15 @@ export fn typecheck_program(stmts: StmtList) -> TypeCheckResult {
     let t_start = avra_uptime_ms()
 
     let tc0 = tc_new()
-    // Pass 1: collect declarations (types, enums, functions)
-    let tc1 = collect_decls(tc0, stmts)
+    // Pass 1: collect declarations (types, enums, functions). The
+    // single walk is order-sensitive — a Function whose return type
+    // references an enum declared later in the AST will be registered
+    // with the un-upgraded ValueType.Struct(name) instead of the
+    // proper ValueType.Enum(name). Run a SECOND collect pass against
+    // the now-complete registry to upgrade ret-type residue from the
+    // first walk. Tracked under forge-crafting-intepreters-dnq4.
+    let tc_first = collect_decls(tc0, stmts)
+    let tc1 = tc_first with { fns: rewrite_fn_ret_tys(tc_first, tc_first.fns) }
     let t_collect = avra_uptime_ms()
     // Pass 2: check + annotate in one traversal.
     // check_stmts validates types and accumulates errors in TC.bag.
@@ -689,6 +696,22 @@ fn collect_impl_assoc_types(tc: TC, type_name: string, stmts: StmtList) -> TC {
                 _ -> tc
             }
             collect_impl_assoc_types(updated, type_name, next)
+        }
+    }
+}
+
+/// Re-resolve every FnTypeEntry's ret_ty against the now-complete
+/// `tc.enums` / `tc.structs` registries. Used as the second collect
+/// pass to upgrade ValueType.Struct residue from the first walk into
+/// the proper ValueType.Enum / .Newtype / .Trait variant when an
+/// enum/newtype declaration came AFTER the fn that referenced it.
+/// Tracked under forge-crafting-intepreters-dnq4.
+fn rewrite_fn_ret_tys(tc: TC, fns: FnTypeEntry) -> FnTypeEntry {
+    match fns {
+        .End -> .End
+        .Node(name, params, ret_ty, next) -> {
+            let upgraded = if vtype_eq(ret_ty, .Void) { ret_ty } else { resolve_vtype(tc, ret_ty) }
+            FnTypeEntry.Node(name, params, upgraded, rewrite_fn_ret_tys(tc, next))
         }
     }
 }
