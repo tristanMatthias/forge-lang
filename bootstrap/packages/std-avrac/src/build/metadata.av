@@ -720,6 +720,7 @@ impl BytesReader {
 
 const TYPE_DECL_STRUCT: int = 1
 const TYPE_DECL_ENUM: int = 2
+const TYPE_DECL_TRAIT: int = 3
 const TYPE_DECL_NEWTYPE: int = 4
 const TYPE_DECL_UNION_ALIAS: int = 5
 const TYPE_DECL_SHAPE: int = 6
@@ -727,6 +728,7 @@ const TYPE_DECL_SHAPE: int = 6
 export enum TypeDeclKind {
     StructDecl
     EnumDecl
+    TraitDecl
     NewtypeDecl
     UnionAliasDecl
     ShapeDecl
@@ -735,6 +737,7 @@ export enum TypeDeclKind {
 fn type_decl_kind_to_byte(k: TypeDeclKind) -> int {
     if k is .StructDecl { return TYPE_DECL_STRUCT }
     if k is .EnumDecl { return TYPE_DECL_ENUM }
+    if k is .TraitDecl { return TYPE_DECL_TRAIT }
     if k is .NewtypeDecl { return TYPE_DECL_NEWTYPE }
     if k is .UnionAliasDecl { return TYPE_DECL_UNION_ALIAS }
     if k is .ShapeDecl { return TYPE_DECL_SHAPE }
@@ -743,6 +746,7 @@ fn type_decl_kind_to_byte(k: TypeDeclKind) -> int {
 
 fn byte_to_type_decl_kind(b: int) -> TypeDeclKind {
     if b == TYPE_DECL_ENUM { return TypeDeclKind.EnumDecl }
+    if b == TYPE_DECL_TRAIT { return TypeDeclKind.TraitDecl }
     if b == TYPE_DECL_NEWTYPE { return TypeDeclKind.NewtypeDecl }
     if b == TYPE_DECL_UNION_ALIAS { return TypeDeclKind.UnionAliasDecl }
     if b == TYPE_DECL_SHAPE { return TypeDeclKind.ShapeDecl }
@@ -756,6 +760,7 @@ export type TypeDeclEntry = {
     fields: FieldList,
     variants: VariantList,
     inner_vt: ValueType,
+    methods: MetaTraitMethodList,
 }
 
 impl BytesWriter {
@@ -768,6 +773,7 @@ impl BytesWriter {
         if e.kind is .EnumDecl { self.variant_list(e.variants) }
         if e.kind is .NewtypeDecl { self.vtype(e.inner_vt) }
         if e.kind is .UnionAliasDecl { self.vtype(e.inner_vt) }
+        if e.kind is .TraitDecl { self.meta_trait_method_list(e.methods) }
     }
 }
 
@@ -779,11 +785,13 @@ impl BytesReader {
         mut fields = FieldList.End
         mut variants = VariantList.End
         mut inner = ValueType.Unknown
+        mut methods = MetaTraitMethodList.End
         if kind is .StructDecl { fields = self.field_list() }
         if kind is .ShapeDecl { fields = self.field_list() }
         if kind is .EnumDecl { variants = self.variant_list() }
         if kind is .NewtypeDecl { inner = self.vtype() }
         if kind is .UnionAliasDecl { inner = self.vtype() }
+        if kind is .TraitDecl { methods = self.meta_trait_method_list() }
         TypeDeclEntry {
             sym_id: sid,
             kind: kind,
@@ -791,6 +799,7 @@ impl BytesReader {
             fields: fields,
             variants: variants,
             inner_vt: inner,
+            methods: methods,
         }
     }
 }
@@ -950,5 +959,55 @@ impl BytesReader {
             int_value: iv,
             str_value: sv,
         }
+    }
+}
+
+// Trait method list — recursive linked list mirroring the
+// FieldList / VariantList / ParamList shape from core::ast. Used
+// to encode TraitDecl bodies in the TYPES section.
+export enum MetaTraitMethodList {
+    End
+    Node(name: string, params: ParamList, ret: ValueType, next: MetaTraitMethodList)
+}
+
+fn meta_trait_method_list_length(ms: MetaTraitMethodList) -> int {
+    match ms {
+        .End -> 0
+        .Node(_, _, _, next) -> 1 + meta_trait_method_list_length(next)
+    }
+}
+
+impl BytesWriter {
+    fn meta_trait_method_list(self, ms: MetaTraitMethodList) {
+        self.u32_le(meta_trait_method_list_length(ms))
+        self.meta_trait_method_list_body(ms)
+    }
+
+    fn meta_trait_method_list_body(self, ms: MetaTraitMethodList) {
+        match ms {
+            .End -> {}
+            .Node(name, params, ret, next) -> {
+                self.string(name)
+                self.param_list(params)
+                self.vtype(ret)
+                self.meta_trait_method_list_body(next)
+            }
+        }
+    }
+}
+
+impl BytesReader {
+    fn meta_trait_method_list(self) -> MetaTraitMethodList {
+        let count = self.u32_le()
+        self.meta_trait_method_list_body(count)
+    }
+
+    fn meta_trait_method_list_body(self, count: int) -> MetaTraitMethodList {
+        if count == 0 { return MetaTraitMethodList.End }
+        let name = self.string()
+        let params = self.param_list()
+        let ret = self.vtype()
+        let tail = self.meta_trait_method_list_body(count - 1)
+        MetaTraitMethodList.Node(name, params, ret, tail)
     }
 }

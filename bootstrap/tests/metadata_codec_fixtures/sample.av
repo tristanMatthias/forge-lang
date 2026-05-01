@@ -15,6 +15,7 @@ use @std.avrac.build.metadata.{
     METADATA_MAGIC, METADATA_VERSION_MAJOR, METADATA_VERSION_MINOR,
     TypeDeclKind, TypeDeclEntry, FnDeclEntry,
     ConstValueKind, ConstDeclEntry,
+    MetaTraitMethodList,
 }
 use @std.avrac.core.ast.{ValueType, TypeList, FieldList, VariantList, ParamList, vtype_eq}
 
@@ -251,6 +252,7 @@ fn main() -> int {
         fields: pt_fields,
         variants: VariantList.End,
         inner_vt: ValueType.Unknown,
+        methods: MetaTraitMethodList.End,
     }
     let wpt = writer_new()
     wpt.type_decl(pt_entry)
@@ -269,6 +271,7 @@ fn main() -> int {
         fields: FieldList.End,
         variants: VariantList.End,
         inner_vt: ValueType.Int,
+        methods: MetaTraitMethodList.End,
     }
     let wuid = writer_new()
     wuid.type_decl(uid_entry)
@@ -289,6 +292,7 @@ fn main() -> int {
         fields: FieldList.End,
         variants: col_variants,
         inner_vt: ValueType.Unknown,
+        methods: MetaTraitMethodList.End,
     }
     let wcol = writer_new()
     wcol.type_decl(col_entry)
@@ -368,6 +372,7 @@ fn main() -> int {
         fields: e2e_struct_fields,
         variants: VariantList.End,
         inner_vt: ValueType.Unknown,
+        methods: MetaTraitMethodList.End,
     }
     let e2e_types_body_w = writer_new()
     e2e_types_body_w.type_decl(e2e_struct_entry)
@@ -486,6 +491,36 @@ fn main() -> int {
     let mr_decoded = rmr.const_decl()
     probe("const_int_kind", mr_decoded.value_kind is .IntValue)
     probe("const_int_value", mr_decoded.int_value == 42)
+
+    // TraitDecl: trait Display { fn show(self) -> string }
+    let show_method_params = ParamList.Node("self", ValueType.Struct("Self", 0), ParamList.End)
+    let display_methods =
+        MetaTraitMethodList.Node("show", show_method_params, ValueType.Str, MetaTraitMethodList.End)
+    let display_entry = TypeDeclEntry {
+        sym_id: sym_id_for("@test::Display"),
+        kind: TypeDeclKind.TraitDecl,
+        name: "@test::Display",
+        fields: FieldList.End,
+        variants: VariantList.End,
+        inner_vt: ValueType.Unknown,
+        methods: display_methods,
+    }
+    let wdisp = writer_new()
+    wdisp.type_decl(display_entry)
+    let rdisp = reader_new(wdisp.finish())
+    let disp_decoded = rdisp.type_decl()
+    probe("type_trait_name", disp_decoded.name == "@test::Display")
+    probe("type_trait_kind", disp_decoded.kind is .TraitDecl)
+    probe("type_trait_method_present",
+        match disp_decoded.methods {
+            .Node(name, _, _, _) -> name == "show"
+            .End -> false
+        })
+    probe("type_trait_method_ret",
+        match disp_decoded.methods {
+            .Node(_, _, ret, _) -> vtype_eq(ret, ValueType.Str)
+            .End -> false
+        })
 
     // Many small writes (chunk concat correctness)
     let wm = writer_new()

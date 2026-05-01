@@ -362,4 +362,16 @@ spec "metadata codec: TYPES section per-entry round-trips" {
     then "EnumDecl: variant count survives" {
         metadata_run_fixture().contains("PROBE type_enum_variant_count: ok")
     }
+    then "TraitDecl: name survives" {
+        metadata_run_fixture().contains("PROBE type_trait_name: ok")
+    }
+    then "TraitDecl: kind tag decodes back to .TraitDecl" {
+        metadata_run_fixture().contains("PROBE type_trait_kind: ok")
+    }
+    then "TraitDecl: method list head's name survives" {
+        metadata_run_fixture().contains("PROBE type_trait_method_present: ok")
+    }
+    then "TraitDecl: method return type survives" {
+        metadata_run_fixture().contains("PROBE type_trait_method_ret: ok")
+    }
 }
