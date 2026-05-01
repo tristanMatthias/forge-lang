@@ -226,6 +226,36 @@ spec "metadata codec: ValueType function types" {
     }
 }
 
+spec "metadata codec: FNS section per-entry round-trips" {
+    then "fn name survives" {
+        metadata_run_fixture().contains("PROBE fn_name: ok")
+    }
+    then "fn sym_id survives" {
+        metadata_run_fixture().contains("PROBE fn_sym_id: ok")
+    }
+    then "exported flag survives (true)" {
+        metadata_run_fixture().contains("PROBE fn_exported: ok")
+    }
+    then "is_extern false survives" {
+        metadata_run_fixture().contains("PROBE fn_not_extern: ok")
+    }
+    then "Int return type survives" {
+        metadata_run_fixture().contains("PROBE fn_ret_int: ok")
+    }
+    then "extern fn flag survives" {
+        metadata_run_fixture().contains("PROBE fn_extern: ok")
+    }
+    then "zero-param fn round-trips" {
+        metadata_run_fixture().contains("PROBE fn_no_params: ok")
+    }
+    then "compound return type (Enum with type args) survives" {
+        metadata_run_fixture().contains("PROBE fn_compound_param: ok")
+    }
+    then "non-exported flag survives" {
+        metadata_run_fixture().contains("PROBE fn_not_exported: ok")
+    }
+}
+
 spec "metadata codec: TYPES section per-entry round-trips" {
     then "StructDecl: name survives the round trip" {
         metadata_run_fixture().contains("PROBE type_struct_name: ok")

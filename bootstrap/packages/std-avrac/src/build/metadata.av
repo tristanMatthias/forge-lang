@@ -794,3 +794,58 @@ impl BytesReader {
         }
     }
 }
+
+// ── FNS section: fn signatures ──
+//
+// Each entry in the FNS section body:
+//
+//   [u64 sym_id]
+//   [string canonical_name]
+//   [u8  exported]                  — 1 if `export fn`, else 0
+//   [u8  is_extern]                 — 1 for `extern fn`, else 0
+//   [param_list]
+//   [vtype ret]
+//
+// `exported` and `is_extern` are independent flags: an extern fn is
+// always callable from outside (C ABI), while a regular fn is only
+// reachable to consumers if `export fn`. Both bits are kept so the
+// downstream visibility filter doesn't have to re-derive them.
+
+export type FnDeclEntry = {
+    sym_id: int,
+    name: string,
+    exported: bool,
+    is_extern: bool,
+    params: ParamList,
+    ret: ValueType,
+}
+
+impl BytesWriter {
+    fn fn_decl(self, e: FnDeclEntry) {
+        self.u64_le(e.sym_id)
+        self.string(e.name)
+        self.u8(if e.exported { 1 } else { 0 })
+        self.u8(if e.is_extern { 1 } else { 0 })
+        self.param_list(e.params)
+        self.vtype(e.ret)
+    }
+}
+
+impl BytesReader {
+    fn fn_decl(self) -> FnDeclEntry {
+        let sid = self.u64_le()
+        let name = self.string()
+        let exp = self.u8()
+        let ext = self.u8()
+        let params = self.param_list()
+        let ret = self.vtype()
+        FnDeclEntry {
+            sym_id: sid,
+            name: name,
+            exported: exp == 1,
+            is_extern: ext == 1,
+            params: params,
+            ret: ret,
+        }
+    }
+}

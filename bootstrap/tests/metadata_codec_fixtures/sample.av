@@ -13,9 +13,9 @@ use @std.avrac.build.metadata.{
     BytesWriter, BytesReader, writer_new, reader_new, sym_id_for,
     SectionKind, MetadataHeader, SectionFrame,
     METADATA_MAGIC, METADATA_VERSION_MAJOR, METADATA_VERSION_MINOR,
-    TypeDeclKind, TypeDeclEntry,
+    TypeDeclKind, TypeDeclEntry, FnDeclEntry,
 }
-use @std.avrac.core.ast.{ValueType, TypeList, FieldList, VariantList, vtype_eq}
+use @std.avrac.core.ast.{ValueType, TypeList, FieldList, VariantList, ParamList, vtype_eq}
 
 extern fn avra_bytes_make(len: int) -> bytes
 extern fn avra_bytes_set(b: bytes, idx: int, val: int)
@@ -296,6 +296,62 @@ fn main() -> int {
     probe("type_enum_name", col_decoded.name == "@test::Color")
     probe("type_enum_kind", col_decoded.kind is .EnumDecl)
     probe("type_enum_variant_count", variant_list_count(col_decoded.variants) == 3)
+
+    // FNS section per-entry round-trips.
+    // fn add(a: int, b: int) -> int  (exported)
+    let add_params = ParamList.Node("a", ValueType.Int, ParamList.Node("b", ValueType.Int, ParamList.End))
+    let add_entry = FnDeclEntry {
+        sym_id: sym_id_for("@test::add"),
+        name: "@test::add",
+        exported: true,
+        is_extern: false,
+        params: add_params,
+        ret: ValueType.Int,
+    }
+    let wfn = writer_new()
+    wfn.fn_decl(add_entry)
+    let rfn = reader_new(wfn.finish())
+    let add_decoded = rfn.fn_decl()
+    probe("fn_name", add_decoded.name == "@test::add")
+    probe("fn_sym_id", add_decoded.sym_id == sym_id_for("@test::add"))
+    probe("fn_exported", add_decoded.exported)
+    probe("fn_not_extern", !add_decoded.is_extern)
+    probe("fn_ret_int", vtype_eq(add_decoded.ret, ValueType.Int))
+
+    // extern fn avra_now() -> int  (extern, no params)
+    let now_entry = FnDeclEntry {
+        sym_id: sym_id_for("avra_now"),
+        name: "avra_now",
+        exported: true,
+        is_extern: true,
+        params: ParamList.End,
+        ret: ValueType.Int,
+    }
+    let wext = writer_new()
+    wext.fn_decl(now_entry)
+    let rext = reader_new(wext.finish())
+    let now_decoded = rext.fn_decl()
+    probe("fn_extern", now_decoded.is_extern)
+    probe("fn_no_params", match now_decoded.params { .End -> true, _ -> false })
+
+    // fn process(items: List<int>, label: string) -> Result<int, string>
+    let proc_params = ParamList.Node("items", ValueType.List(ValueType.Int),
+        ParamList.Node("label", ValueType.Str, ParamList.End))
+    let proc_ret_args = TypeList.Node(ValueType.Int, TypeList.Node(ValueType.Str, TypeList.End))
+    let proc_entry = FnDeclEntry {
+        sym_id: sym_id_for("@test::process"),
+        name: "@test::process",
+        exported: false,
+        is_extern: false,
+        params: proc_params,
+        ret: ValueType.Enum("Result", proc_ret_args, 0),
+    }
+    let wproc = writer_new()
+    wproc.fn_decl(proc_entry)
+    let rproc = reader_new(wproc.finish())
+    let proc_decoded = rproc.fn_decl()
+    probe("fn_compound_param", vtype_eq(proc_decoded.ret, ValueType.Enum("Result", proc_ret_args, 0)))
+    probe("fn_not_exported", !proc_decoded.exported)
 
     // Many small writes (chunk concat correctness)
     let wm = writer_new()
