@@ -2634,6 +2634,23 @@ int64_t avra_shell_exec_status(const char* cmd) {
     return (int64_t)((status >> 8) & 0xff);
 }
 
+// Stdout TTY check — gates the build progress bar so CI logs (which
+// pipe stdout) don't get polluted with \r-rewriting escape codes.
+// 1 if interactive, 0 if pipe/file. Mirrors POSIX isatty(STDOUT_FILENO).
+int64_t avra_isatty_stdout(void) {
+    return isatty(STDOUT_FILENO) ? 1 : 0;
+}
+
+// Coarse-grained sleep, used by the progress-bar poll loop to render
+// at ~10Hz without busy-waiting. Negative or zero is a no-op.
+void avra_sleep_ms(int64_t ms) {
+    if (ms <= 0) return;
+    struct timespec ts;
+    ts.tv_sec = ms / 1000;
+    ts.tv_nsec = (ms % 1000) * 1000000;
+    nanosleep(&ts, NULL);
+}
+
 // ── Process management (@std/process port) ──
 // Full port of the Rust std-process package. Provides:
 // - avra_process_run: synchronous exec with stdout/stderr capture + timeout

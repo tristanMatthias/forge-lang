@@ -575,12 +575,215 @@ fn pre_build_path_deps(deps: DepList, compiler_path: string, args: BuildArgs) ->
     write_dep_paths(deps, paths_file)
     let env_jobs = avra_process_env_get("AVRA_JOBS")
     let jobs = if env_jobs != "" { env_jobs } else { "4" }
-    // xargs -I{} -P N: substitute each path into the command, run N
-    // in parallel. -e '' disables xargs's default EOF marker. The
-    // sub-shell ensures cd is local to each worker. xargs returns
-    // non-zero when any worker exits non-zero.
-    let cmd = "xargs -I {} -P ${jobs} sh -c 'cd \"{}\" && \"${compiler_path}\" build --lib --emit_metadata' < ${paths_file}"
-    avra_shell_exec_status(cmd)
+    // TTY-aware split (5gvp): pipe-redirected stdout takes the original
+    // sync xargs path so CI logs stay byte-identical to before. An
+    // interactive terminal gets a multi-line progress bar tracking
+    // running unit names + completion count.
+    if progress_should_render() && !args.json {
+        return run_pre_deps_with_progress(paths_file, jobs, compiler_path, path_count)
+    } else {
+        let cmd = "xargs -I {} -P ${jobs} sh -c 'cd \"{}\" && \"${compiler_path}\" build --lib --emit_metadata' < ${paths_file}"
+        avra_shell_exec_status(cmd)
+    }
+}
+
+// ── 5gvp: TTY progress bar for parallel path-dep pre-build ─────────────
+//
+// The xargs workers each `touch ${marker_dir}/${slug}.{running,done}` so
+// a polling watcher can read job state without parsing xargs's output.
+// Slug = path-tail with non-alphanum collapsed to `_`. Markers live in
+// /tmp under a session-unique dir (uptime-ms suffix) so concurrent
+// `bs2 build` invocations don't clobber each other.
+//
+// Render layout (one parallel job per running line):
+//   building 5 deps · 4/5 done · 3.2s
+//   ⠋ std-json
+//   ⠋ std-cli
+// On each tick we emit `\033[<N>A\r\033[J` to wipe the previous N lines
+// then re-print the current state. Suppressed when stdout isn't a TTY
+// (CI logs stay clean) or when --json is on (machine-parseable contract
+// trumps progress).
+
+extern fn avra_isatty_stdout() -> int
+extern fn avra_process_spawn_bg(cmd: string, args_json: string, opts_json: string) -> int
+extern fn avra_process_is_alive(handle: int) -> int
+extern fn avra_process_wait(handle: int) -> string
+extern fn avra_sleep_ms(ms: int)
+extern fn avra_parse_int(s: string) -> int
+extern fn avra_stdout_write(s: string)
+
+fn progress_should_render() -> bool {
+    avra_isatty_stdout() != 0
+}
+
+fn progress_marker_dir() -> string {
+    "/tmp/avra_progress_${string(avra_uptime_ms())}"
+}
+
+// Last path component with `/` stripped — keeps display short (e.g.
+// `../packages/std-json` → `std-json`). Used both as user-visible name
+// and as the per-job marker filename.
+fn dep_unit_slug(path: string) -> string {
+    mut end = path.length
+    while end > 0 && path.byte(end - 1) == 0x2F { end = end - 1 }
+    mut start = end
+    while start > 0 && path.byte(start - 1) != 0x2F { start = start - 1 }
+    path.substring(start, end)
+}
+
+fn count_done_markers(marker_dir: string) -> int {
+    let raw = avra_shell_exec("ls -1 ${marker_dir}/ 2>/dev/null | grep -c '\\.done$' || echo 0")
+    avra_parse_int(raw.trim())
+}
+
+// Newline-separated list of currently-running unit slugs. Returns "" if
+// none — caller handles that case so we don't emit a stray empty line.
+fn list_running_slugs(marker_dir: string) -> string {
+    avra_shell_exec("ls -1 ${marker_dir}/ 2>/dev/null | grep '\\.running$' | sed 's/\\.running$//' || true")
+}
+
+fn render_running_lines(running: string) -> string {
+    if running == "" { return "" }
+    mut out = ""
+    mut i = 0
+    let len = running.length
+    mut start = 0
+    while i <= len {
+        if i == len || running.byte(i) == 0x0A {
+            if i > start {
+                let slug = running.substring(start, i)
+                out = out + "  • ${slug}\n"
+            }
+            start = i + 1
+        }
+        i = i + 1
+    }
+    out
+}
+
+// Emit \x1b[<n>A to move cursor up, then \x1b[J to clear from cursor to
+// end of screen. Skipped when n == 0 — first-render avoids a stray
+// upward jump that would scroll the previous shell output.
+fn progress_clear(prev_lines: int) {
+    if prev_lines <= 0 { return }
+    avra_stdout_write("\x1b[${string(prev_lines)}A\r\x1b[J")
+}
+
+// Returns the line count just printed so the next tick can wipe it.
+fn progress_render(prev_lines: int, total: int, done: int, running: string, elapsed_ms: int) -> int {
+    progress_clear(prev_lines)
+    let elapsed_s = elapsed_ms / 1000
+    let elapsed_tenths = (elapsed_ms / 100) - (elapsed_s * 10)
+    let header = "building ${string(total)} deps · ${string(done)}/${string(total)} done · ${string(elapsed_s)}.${string(elapsed_tenths)}s\n"
+    avra_stdout_write(header)
+    let lines = render_running_lines(running)
+    avra_stdout_write(lines)
+    1 + count_lines(lines)
+}
+
+fn count_lines(s: string) -> int {
+    mut n = 0
+    mut i = 0
+    while i < s.length {
+        if s.byte(i) == 0x0A { n = n + 1 }
+        i = i + 1
+    }
+    n
+}
+
+fn run_pre_deps_with_progress(paths_file: string, jobs: string, compiler_path: string, total: int) -> int {
+    let marker_dir = progress_marker_dir()
+    avra_shell_exec("rm -rf ${marker_dir} && mkdir -p ${marker_dir}")
+    // Worker as a separate sh script keeps xargs's per-line argv tiny
+    // (BSD xargs caps the assembled command at ~5 KB; inlining the
+    // bs2 path + marker dir blows that budget). The script takes:
+    //   $1 = dep path  $2 = marker dir  $3 = compiler path
+    let worker_path = "${marker_dir}/worker.sh"
+    let worker = "#!/bin/sh\n" +
+        "slug=$(printf %s \"$1\" | sed 's|.*/||; s|/\\$||')\n" +
+        "touch \"$2/$slug.running\"\n" +
+        "(cd \"$1\" && \"$3\" build --lib --emit_metadata) > \"$2/$slug.log\" 2>&1\n" +
+        "rc=$?\n" +
+        "rm -f \"$2/$slug.running\"\n" +
+        "touch \"$2/$slug.done\"\n" +
+        "exit $rc\n"
+    let _ = avra_selfhost_write_file(worker_path, worker)
+    avra_shell_exec("chmod +x ${worker_path}")
+    let cmd = "xargs -I {} -P ${jobs} sh ${worker_path} \"{}\" \"${marker_dir}\" \"${compiler_path}\" < ${paths_file}; echo __avra_xargs_rc:$?"
+    let handle = avra_process_spawn_bg("/bin/sh", "[\"-c\", ${json_str(cmd)}]", "")
+    if handle < 0 {
+        // Spawn failed — fall back to sync path so the build still proceeds.
+        avra_shell_exec("rm -rf ${marker_dir}")
+        let fallback = "xargs -I {} -P ${jobs} sh -c 'cd \"{}\" && \"${compiler_path}\" build --lib --emit_metadata' < ${paths_file}"
+        return avra_shell_exec_status(fallback)
+    }
+    let t_start = avra_uptime_ms()
+    mut prev_lines = 0
+    while avra_process_is_alive(handle) != 0 {
+        let done = count_done_markers(marker_dir)
+        let running = list_running_slugs(marker_dir)
+        let elapsed = avra_uptime_ms() - t_start
+        prev_lines = progress_render(prev_lines, total, done, running, elapsed)
+        avra_sleep_ms(100)
+    }
+    let final_json = avra_process_wait(handle)
+    let exit_code = extract_xargs_rc(final_json)
+    let final_done = count_done_markers(marker_dir)
+    let final_elapsed = avra_uptime_ms() - t_start
+    progress_clear(prev_lines)
+    let elapsed_s = final_elapsed / 1000
+    let elapsed_tenths = (final_elapsed / 100) - (elapsed_s * 10)
+    if exit_code == 0 {
+        println("built ${string(final_done)} deps in ${string(elapsed_s)}.${string(elapsed_tenths)}s")
+    } else {
+        println("build failed for at least one dep (rc=${string(exit_code)} after ${string(elapsed_s)}.${string(elapsed_tenths)}s) — see logs in ${marker_dir}/")
+        dump_failed_logs(marker_dir)
+    }
+    if exit_code == 0 {
+        avra_shell_exec("rm -rf ${marker_dir}")
+    }
+    exit_code
+}
+
+// xargs's exit code is buried in stdout (we appended `__avra_xargs_rc:N`
+// because avra_process_wait gives us combined output, not exit status).
+fn extract_xargs_rc(wait_json: string) -> int {
+    let key = "__avra_xargs_rc:"
+    let idx = wait_json.index_of(key)
+    if idx < 0 { return 0 }
+    let from = idx + key.length
+    mut to = from
+    while to < wait_json.length {
+        let c = wait_json.byte(to)
+        if c < 0x30 || c > 0x39 { break }
+        to = to + 1
+    }
+    if to == from { return 0 }
+    avra_parse_int(wait_json.substring(from, to))
+}
+
+// On failure we surface every per-worker log so the user sees what
+// went wrong — the progress bar suppressed real-time stderr.
+fn dump_failed_logs(marker_dir: string) {
+    let logs = avra_shell_exec("ls -1 ${marker_dir}/*.log 2>/dev/null || true")
+    if logs == "" { return }
+    mut i = 0
+    let len = logs.length
+    mut start = 0
+    while i <= len {
+        if i == len || logs.byte(i) == 0x0A {
+            if i > start {
+                let path = logs.substring(start, i)
+                let content = avra_shell_exec("cat '${path}' 2>/dev/null")
+                if content != "" {
+                    println("─── ${path} ───")
+                    println(content)
+                }
+            }
+            start = i + 1
+        }
+        i = i + 1
+    }
 }
 
 fn count_path_deps(deps: DepList) -> int {
@@ -707,6 +910,19 @@ fn run_build_command() {
         .Hit(fp, cached_ll) -> {
             let dst = "${entry_path}.ll"
             avra_shell_exec("cp '${cached_ll}' '${dst}'")
+            // 5gvp-adjacent fix: also restore metadata.bin alongside the
+            // .ll when --emit_metadata is on. Without this, a cache hit
+            // copies the IR but leaves consumers without their .meta.bin
+            // sidecar — the same flag landing meta on Miss should land
+            // it on Hit too. Cache layout colocates them under <fp>/.
+            if args.emit_metadata {
+                let suffix_len = 8  // "/unit.ll"
+                let cache_dir = cached_ll.substring(0, cached_ll.length - suffix_len)
+                let cached_meta = "${cache_dir}/metadata.bin"
+                if file_exists(cached_meta) != 0 {
+                    avra_shell_exec("cp '${cached_meta}' '${entry_path}.meta.bin'")
+                }
+            }
             if args.timings {
                 let total = avra_uptime_ms() - t_start
                 let _ = write_timings_html(project_dir, unit_name, fp_short(fp),
