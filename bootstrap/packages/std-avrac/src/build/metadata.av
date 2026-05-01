@@ -1101,3 +1101,247 @@ impl BytesReader {
         ImplMethodRefList.Node(name, fn_id, tail)
     }
 }
+
+// ── Unit-level orchestration ──
+//
+// `UnitMetadata` aggregates everything that goes into metadata.bin
+// for one compile unit: header fields plus per-section entry lists.
+// `write_unit` and `read_unit` compose the per-section codec into a
+// complete file. Higher-level callers (the build driver, downstream
+// consumers) work in terms of UnitMetadata, not raw bytes.
+
+// Linked-list container types — one per section. Matches the shape
+// already used for FieldList / VariantList in core::ast so encoding
+// is straight recursion through the writer's `match`.
+
+export enum TypeDeclList {
+    End
+    Node(entry: TypeDeclEntry, next: TypeDeclList)
+}
+
+export enum FnDeclList {
+    End
+    Node(entry: FnDeclEntry, next: FnDeclList)
+}
+
+export enum ConstDeclList {
+    End
+    Node(entry: ConstDeclEntry, next: ConstDeclList)
+}
+
+export enum ImplDeclList {
+    End
+    Node(entry: ImplDeclEntry, next: ImplDeclList)
+}
+
+fn type_decl_list_length(xs: TypeDeclList) -> int {
+    match xs {
+        .End -> 0
+        .Node(_, next) -> 1 + type_decl_list_length(next)
+    }
+}
+
+fn fn_decl_list_length(xs: FnDeclList) -> int {
+    match xs {
+        .End -> 0
+        .Node(_, next) -> 1 + fn_decl_list_length(next)
+    }
+}
+
+fn const_decl_list_length(xs: ConstDeclList) -> int {
+    match xs {
+        .End -> 0
+        .Node(_, next) -> 1 + const_decl_list_length(next)
+    }
+}
+
+fn impl_decl_list_length(xs: ImplDeclList) -> int {
+    match xs {
+        .End -> 0
+        .Node(_, next) -> 1 + impl_decl_list_length(next)
+    }
+}
+
+/// Everything that goes into one unit's metadata.bin. The
+/// `unit_name` is the canonical module path (e.g. `@std::avrac::build`);
+/// `fingerprint` is the 32-byte SHA-256 of the unit's source set,
+/// matching what the cache uses today.
+export type UnitMetadata = {
+    unit_name: string,
+    fingerprint: bytes,
+    types: TypeDeclList,
+    fns: FnDeclList,
+    consts: ConstDeclList,
+    impls: ImplDeclList,
+}
+
+/// Build an empty metadata bundle. Convenience for incremental
+/// callers that build the lists up step by step.
+export fn unit_metadata_new(unit_name: string, fingerprint: bytes) -> UnitMetadata {
+    UnitMetadata {
+        unit_name: unit_name,
+        fingerprint: fingerprint,
+        types: TypeDeclList.End,
+        fns: FnDeclList.End,
+        consts: ConstDeclList.End,
+        impls: ImplDeclList.End,
+    }
+}
+
+// `BytesWriter.unit(m)` serializes a complete UnitMetadata to bytes
+// — header + every section. Empty sections still consume their
+// frame (section_count is fixed at 4, not the count of non-empty
+// sections), keeping the file layout predictable for downstream
+// iteration.
+impl BytesWriter {
+    fn unit(self, m: UnitMetadata) {
+        // Always write all four sections, even when empty, so the
+        // section_count field stays predictable and downstream tools
+        // can iterate without skipping unrecognised tags.
+        self.header(m.unit_name, m.fingerprint, 4)
+        self.write_types_section(m.types)
+        self.write_fns_section(m.fns)
+        self.write_consts_section(m.consts)
+        self.write_impls_section(m.impls)
+    }
+
+    fn write_types_section(self, xs: TypeDeclList) {
+        let body_w = writer_new()
+        body_w.write_type_decl_list(xs)
+        self.section(SectionKind.Types, type_decl_list_length(xs), body_w.finish())
+    }
+
+    fn write_type_decl_list(self, xs: TypeDeclList) {
+        match xs {
+            .End -> {}
+            .Node(e, next) -> {
+                self.type_decl(e)
+                self.write_type_decl_list(next)
+            }
+        }
+    }
+
+    fn write_fns_section(self, xs: FnDeclList) {
+        let body_w = writer_new()
+        body_w.write_fn_decl_list(xs)
+        self.section(SectionKind.Fns, fn_decl_list_length(xs), body_w.finish())
+    }
+
+    fn write_fn_decl_list(self, xs: FnDeclList) {
+        match xs {
+            .End -> {}
+            .Node(e, next) -> {
+                self.fn_decl(e)
+                self.write_fn_decl_list(next)
+            }
+        }
+    }
+
+    fn write_consts_section(self, xs: ConstDeclList) {
+        let body_w = writer_new()
+        body_w.write_const_decl_list(xs)
+        self.section(SectionKind.Consts, const_decl_list_length(xs), body_w.finish())
+    }
+
+    fn write_const_decl_list(self, xs: ConstDeclList) {
+        match xs {
+            .End -> {}
+            .Node(e, next) -> {
+                self.const_decl(e)
+                self.write_const_decl_list(next)
+            }
+        }
+    }
+
+    fn write_impls_section(self, xs: ImplDeclList) {
+        let body_w = writer_new()
+        body_w.write_impl_decl_list(xs)
+        self.section(SectionKind.Impls, impl_decl_list_length(xs), body_w.finish())
+    }
+
+    fn write_impl_decl_list(self, xs: ImplDeclList) {
+        match xs {
+            .End -> {}
+            .Node(e, next) -> {
+                self.impl_decl(e)
+                self.write_impl_decl_list(next)
+            }
+        }
+    }
+}
+
+// `BytesReader.unit()` decodes a complete metadata.bin — inverse
+// of `BytesWriter.unit`. Section order is fixed (Types, Fns, Consts,
+// Impls) and matches the writer; magic validation is the caller's
+// responsibility (this is the structural decode, not the policy gate).
+impl BytesReader {
+    fn unit(self) -> UnitMetadata {
+        let hdr = self.header()
+        // Decode each of the four sections. Section order is fixed
+        // (Types, Fns, Consts, Impls) — assumes the writer side
+        // emitted them in this order. A generic skip-by-kind loop is
+        // straightforward to layer on later when the format gains
+        // optional sections, but pinning order keeps the decoder
+        // simple while the format is still 1.0.
+        let types_frame = self.section()
+        let fns_frame = self.section()
+        let consts_frame = self.section()
+        let impls_frame = self.section()
+        UnitMetadata {
+            unit_name: hdr.unit_name,
+            fingerprint: hdr.fingerprint,
+            types: read_type_decl_list(types_frame.body, types_frame.entry_count),
+            fns: read_fn_decl_list(fns_frame.body, fns_frame.entry_count),
+            consts: read_const_decl_list(consts_frame.body, consts_frame.entry_count),
+            impls: read_impl_decl_list(impls_frame.body, impls_frame.entry_count),
+        }
+    }
+}
+
+fn read_type_decl_list(body: bytes, count: int) -> TypeDeclList {
+    let r = reader_new(body)
+    read_type_decl_list_loop(r, count)
+}
+
+fn read_type_decl_list_loop(r: BytesReader, count: int) -> TypeDeclList {
+    if count == 0 { return TypeDeclList.End }
+    let head = r.type_decl()
+    let tail = read_type_decl_list_loop(r, count - 1)
+    TypeDeclList.Node(head, tail)
+}
+
+fn read_fn_decl_list(body: bytes, count: int) -> FnDeclList {
+    let r = reader_new(body)
+    read_fn_decl_list_loop(r, count)
+}
+
+fn read_fn_decl_list_loop(r: BytesReader, count: int) -> FnDeclList {
+    if count == 0 { return FnDeclList.End }
+    let head = r.fn_decl()
+    let tail = read_fn_decl_list_loop(r, count - 1)
+    FnDeclList.Node(head, tail)
+}
+
+fn read_const_decl_list(body: bytes, count: int) -> ConstDeclList {
+    let r = reader_new(body)
+    read_const_decl_list_loop(r, count)
+}
+
+fn read_const_decl_list_loop(r: BytesReader, count: int) -> ConstDeclList {
+    if count == 0 { return ConstDeclList.End }
+    let head = r.const_decl()
+    let tail = read_const_decl_list_loop(r, count - 1)
+    ConstDeclList.Node(head, tail)
+}
+
+fn read_impl_decl_list(body: bytes, count: int) -> ImplDeclList {
+    let r = reader_new(body)
+    read_impl_decl_list_loop(r, count)
+}
+
+fn read_impl_decl_list_loop(r: BytesReader, count: int) -> ImplDeclList {
+    if count == 0 { return ImplDeclList.End }
+    let head = r.impl_decl()
+    let tail = read_impl_decl_list_loop(r, count - 1)
+    ImplDeclList.Node(head, tail)
+}

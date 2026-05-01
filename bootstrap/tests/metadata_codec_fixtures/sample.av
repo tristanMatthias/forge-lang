@@ -17,6 +17,8 @@ use @std.avrac.build.metadata.{
     ConstValueKind, ConstDeclEntry,
     MetaTraitMethodList,
     ImplDeclEntry, ImplMethodRefList,
+    UnitMetadata, TypeDeclList, FnDeclList, ConstDeclList, ImplDeclList,
+    unit_metadata_new,
 }
 use @std.avrac.core.ast.{ValueType, TypeList, FieldList, VariantList, ParamList, vtype_eq}
 
@@ -581,6 +583,88 @@ fn main() -> int {
             .End -> true
             _ -> false
         })
+
+    // Unit-level orchestration: build a UnitMetadata with one entry
+    // in each of the four sections, write+read it as a complete file,
+    // verify every entry survives.
+    let unit_fp = avra_bytes_make(32)
+    avra_bytes_set(unit_fp, 0, 0xAB)
+    avra_bytes_set(unit_fp, 31, 0xCD)
+
+    let unit_struct_fields = FieldList.Node("name", ValueType.Str, FieldList.End)
+    let unit_struct_entry = TypeDeclEntry {
+        sym_id: sym_id_for("@unit::User"),
+        kind: TypeDeclKind.StructDecl,
+        name: "@unit::User",
+        fields: unit_struct_fields,
+        variants: VariantList.End,
+        inner_vt: ValueType.Unknown,
+        methods: MetaTraitMethodList.End,
+    }
+    let unit_fn_entry = FnDeclEntry {
+        sym_id: sym_id_for("@unit::greet"),
+        name: "@unit::greet",
+        exported: true,
+        is_extern: false,
+        params: ParamList.Node("u", ValueType.Struct("@unit::User", 0), ParamList.End),
+        ret: ValueType.Str,
+    }
+    let unit_const_entry = ConstDeclEntry {
+        sym_id: sym_id_for("@unit::DEFAULT_NAME"),
+        name: "@unit::DEFAULT_NAME",
+        exported: true,
+        ty: ValueType.Str,
+        value_kind: ConstValueKind.StrValue,
+        int_value: 0,
+        str_value: "anonymous",
+    }
+    let unit_impl_entry = ImplDeclEntry {
+        trait_sym_id: sym_id_for("@unit::Display"),
+        trait_name: "@unit::Display",
+        type_sym_id: sym_id_for("@unit::User"),
+        type_name: "@unit::User",
+        methods: ImplMethodRefList.Node("show", sym_id_for("@unit::User__show"), ImplMethodRefList.End),
+    }
+
+    let mut unit = unit_metadata_new("@unit", unit_fp)
+    unit = UnitMetadata {
+        unit_name: unit.unit_name,
+        fingerprint: unit.fingerprint,
+        types: TypeDeclList.Node(unit_struct_entry, TypeDeclList.End),
+        fns: FnDeclList.Node(unit_fn_entry, FnDeclList.End),
+        consts: ConstDeclList.Node(unit_const_entry, ConstDeclList.End),
+        impls: ImplDeclList.Node(unit_impl_entry, ImplDeclList.End),
+    }
+
+    let unit_w = writer_new()
+    unit_w.unit(unit)
+    let unit_buf = unit_w.finish()
+    let unit_r = reader_new(unit_buf)
+    let decoded = unit_r.unit()
+    probe("unit_name", decoded.unit_name == "@unit")
+    probe("unit_fp_byte0", decoded.fingerprint.byte(0) == 0xAB)
+    probe("unit_fp_byte31", decoded.fingerprint.byte(31) == 0xCD)
+    probe("unit_types_present",
+        match decoded.types {
+            .Node(e, _) -> e.name == "@unit::User"
+            .End -> false
+        })
+    probe("unit_fns_present",
+        match decoded.fns {
+            .Node(e, _) -> e.name == "@unit::greet"
+            .End -> false
+        })
+    probe("unit_consts_present",
+        match decoded.consts {
+            .Node(e, _) -> e.str_value == "anonymous"
+            .End -> false
+        })
+    probe("unit_impls_present",
+        match decoded.impls {
+            .Node(e, _) -> e.trait_name == "@unit::Display" && e.type_name == "@unit::User"
+            .End -> false
+        })
+    probe("unit_reader_exhausted", unit_r.remaining() == 0)
 
     // Many small writes (chunk concat correctness)
     let wm = writer_new()

@@ -322,6 +322,33 @@ spec "metadata codec: IMPLS section per-entry round-trips" {
     }
 }
 
+spec "metadata codec: unit-level write+read orchestration" {
+    then "unit_name (header) round-trips" {
+        metadata_run_fixture().contains("PROBE unit_name: ok")
+    }
+    then "fingerprint byte 0 round-trips through full file" {
+        metadata_run_fixture().contains("PROBE unit_fp_byte0: ok")
+    }
+    then "fingerprint byte 31 (last) round-trips" {
+        metadata_run_fixture().contains("PROBE unit_fp_byte31: ok")
+    }
+    then "TYPES section: decoded entry name matches the input" {
+        metadata_run_fixture().contains("PROBE unit_types_present: ok")
+    }
+    then "FNS section: decoded entry name matches" {
+        metadata_run_fixture().contains("PROBE unit_fns_present: ok")
+    }
+    then "CONSTS section: decoded const value matches" {
+        metadata_run_fixture().contains("PROBE unit_consts_present: ok")
+    }
+    then "IMPLS section: decoded trait+type names match" {
+        metadata_run_fixture().contains("PROBE unit_impls_present: ok")
+    }
+    then "Reader exhausted at end of file (clean encode)" {
+        metadata_run_fixture().contains("PROBE unit_reader_exhausted: ok")
+    }
+}
+
 spec "metadata codec: end-to-end multi-section file" {
     then "header magic round-trips through a full file" {
         metadata_run_fixture().contains("PROBE e2e_magic: ok")
