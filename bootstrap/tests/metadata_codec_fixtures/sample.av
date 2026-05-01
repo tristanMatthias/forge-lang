@@ -14,6 +14,7 @@ use @std.avrac.build.metadata.{
     SectionKind, MetadataHeader, SectionFrame,
     METADATA_MAGIC, METADATA_VERSION_MAJOR, METADATA_VERSION_MINOR,
 }
+use @std.avrac.core.ast.{ValueType, TypeList, vtype_eq}
 
 extern fn avra_bytes_make(len: int) -> bytes
 extern fn avra_bytes_set(b: bytes, idx: int, val: int)
@@ -21,6 +22,14 @@ extern fn avra_bytes_set(b: bytes, idx: int, val: int)
 fn probe(name: string, ok: bool) {
     let tag = if ok { "ok" } else { "FAIL" }
     println("PROBE ${name}: ${tag}")
+}
+
+fn vt_roundtrip(name: string, vt: ValueType) {
+    let w = writer_new()
+    w.vtype(vt)
+    let r = reader_new(w.finish())
+    let decoded = r.vtype()
+    probe("vt_${name}", vtype_eq(vt, decoded))
 }
 
 fn main() -> int {
@@ -178,6 +187,43 @@ fn main() -> int {
     probe("multi_section1_body0", f1.body.byte(0) == 1)
     probe("multi_section2_kind", f2.kind is .Consts)
     probe("multi_section2_body2", f2.body.byte(2) == 7)
+
+    // ValueType encoding round-trips
+    vt_roundtrip("int", ValueType.Int)
+    vt_roundtrip("bool", ValueType.Bool)
+    vt_roundtrip("float", ValueType.Float)
+    vt_roundtrip("str", ValueType.Str)
+    vt_roundtrip("bytes", ValueType.Bytes)
+    vt_roundtrip("void", ValueType.Void)
+    vt_roundtrip("unknown", ValueType.Unknown)
+    vt_roundtrip("u8", ValueType.U8)
+    vt_roundtrip("u16", ValueType.U16)
+    vt_roundtrip("u32", ValueType.U32)
+    vt_roundtrip("u64", ValueType.U64)
+    vt_roundtrip("i8", ValueType.I8)
+    vt_roundtrip("i16", ValueType.I16)
+    vt_roundtrip("i32", ValueType.I32)
+    vt_roundtrip("struct", ValueType.Struct("@std::cache::Cache", 0))
+    vt_roundtrip("trait", ValueType.Trait("@std::io::Reader", 0))
+    vt_roundtrip("list_int", ValueType.List(ValueType.Int))
+    vt_roundtrip("list_str", ValueType.List(ValueType.Str))
+    vt_roundtrip("nested_list", ValueType.List(ValueType.List(ValueType.Int)))
+    vt_roundtrip("newtype", ValueType.Newtype("UserId", ValueType.Int, 0))
+    vt_roundtrip("task_int", ValueType.Task(ValueType.Int))
+    vt_roundtrip("closure", ValueType.Closure(3, ValueType.Bool))
+    vt_roundtrip("fn_ret_str", ValueType.Fn(ValueType.Str))
+
+    let enum_args = TypeList.Node(ValueType.Int, TypeList.Node(ValueType.Str, TypeList.End))
+    vt_roundtrip("enum_with_args", ValueType.Enum("Result", enum_args, 0))
+
+    let tuple_types = TypeList.Node(ValueType.Int, TypeList.Node(ValueType.Bool, TypeList.End))
+    vt_roundtrip("tuple", ValueType.Tuple(tuple_types))
+
+    let union_types = TypeList.Node(ValueType.Int, TypeList.Node(ValueType.Str, TypeList.Node(ValueType.Bool, TypeList.End)))
+    vt_roundtrip("union", ValueType.Union(union_types))
+
+    let fn_params = TypeList.Node(ValueType.Int, TypeList.Node(ValueType.Str, TypeList.End))
+    vt_roundtrip("fn_typed", ValueType.FnTyped(fn_params, ValueType.Bool))
 
     // Many small writes (chunk concat correctness)
     let wm = writer_new()

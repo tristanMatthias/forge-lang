@@ -157,3 +157,71 @@ spec "metadata codec: multi-section file" {
         metadata_run_fixture().contains("PROBE multi_section2_body2: ok")
     }
 }
+
+spec "metadata codec: ValueType primitive round-trips" {
+    then "Int round-trips" { metadata_run_fixture().contains("PROBE vt_int: ok") }
+    then "Bool round-trips" { metadata_run_fixture().contains("PROBE vt_bool: ok") }
+    then "Float round-trips" { metadata_run_fixture().contains("PROBE vt_float: ok") }
+    then "Str round-trips" { metadata_run_fixture().contains("PROBE vt_str: ok") }
+    then "Bytes round-trips" { metadata_run_fixture().contains("PROBE vt_bytes: ok") }
+    then "Void round-trips" { metadata_run_fixture().contains("PROBE vt_void: ok") }
+    then "Unknown round-trips" { metadata_run_fixture().contains("PROBE vt_unknown: ok") }
+}
+
+spec "metadata codec: ValueType sized integer round-trips" {
+    then "U8 round-trips" { metadata_run_fixture().contains("PROBE vt_u8: ok") }
+    then "U16 round-trips" { metadata_run_fixture().contains("PROBE vt_u16: ok") }
+    then "U32 round-trips" { metadata_run_fixture().contains("PROBE vt_u32: ok") }
+    then "U64 round-trips" { metadata_run_fixture().contains("PROBE vt_u64: ok") }
+    then "I8 round-trips" { metadata_run_fixture().contains("PROBE vt_i8: ok") }
+    then "I16 round-trips" { metadata_run_fixture().contains("PROBE vt_i16: ok") }
+    then "I32 round-trips" { metadata_run_fixture().contains("PROBE vt_i32: ok") }
+}
+
+spec "metadata codec: ValueType nominal types" {
+    then "Struct(name) round-trips with sym_id" {
+        metadata_run_fixture().contains("PROBE vt_struct: ok")
+    }
+    then "Trait(name) round-trips with sym_id" {
+        metadata_run_fixture().contains("PROBE vt_trait: ok")
+    }
+    then "Newtype wraps an inner ValueType correctly" {
+        metadata_run_fixture().contains("PROBE vt_newtype: ok")
+    }
+    then "Enum with type_args (e.g. Result<int, str>) round-trips" {
+        metadata_run_fixture().contains("PROBE vt_enum_with_args: ok")
+    }
+}
+
+spec "metadata codec: ValueType compound types" {
+    then "List<int> round-trips" {
+        metadata_run_fixture().contains("PROBE vt_list_int: ok")
+    }
+    then "List<str> round-trips" {
+        metadata_run_fixture().contains("PROBE vt_list_str: ok")
+    }
+    then "List<List<int>> nested round-trips" {
+        metadata_run_fixture().contains("PROBE vt_nested_list: ok")
+    }
+    then "Tuple of mixed types round-trips" {
+        metadata_run_fixture().contains("PROBE vt_tuple: ok")
+    }
+    then "Union of three types round-trips" {
+        metadata_run_fixture().contains("PROBE vt_union: ok")
+    }
+    then "Task<int> round-trips" {
+        metadata_run_fixture().contains("PROBE vt_task_int: ok")
+    }
+    then "Closure with capture count + return type round-trips" {
+        metadata_run_fixture().contains("PROBE vt_closure: ok")
+    }
+}
+
+spec "metadata codec: ValueType function types" {
+    then "Fn(ret) round-trips" {
+        metadata_run_fixture().contains("PROBE vt_fn_ret_str: ok")
+    }
+    then "FnTyped(params, ret) round-trips" {
+        metadata_run_fixture().contains("PROBE vt_fn_typed: ok")
+    }
+}

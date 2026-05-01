@@ -16,6 +16,8 @@
 // Tracked under forge-crafting-intepreters-iinq (epic
 // forge-crafting-intepreters-a1el — the build system).
 
+use core.ast.{ValueType, TypeList}
+
 extern fn avra_bytes_make(len: int) -> bytes
 extern fn avra_bytes_set(b: bytes, idx: int, val: int)
 extern fn avra_bytes_to_hex(b: bytes) -> string
@@ -323,9 +325,243 @@ export type SectionFrame = {
     body: bytes,
 }
 
+// ── ValueType encoding ──
+//
+// Every fn signature, every field, every variant payload, every
+// generic argument inside metadata.bin is a ValueType. The encoding
+// is a single tag byte plus variant-specific payload.
+//
+// Tag bytes are pinned. New variants append; never reorder or
+// reuse a retired number, otherwise existing metadata.bin files
+// route to the wrong decoder.
+
+const VT_UNKNOWN: int = 0x00
+const VT_INT: int = 0x01
+const VT_BOOL: int = 0x02
+const VT_FLOAT: int = 0x03
+const VT_STR: int = 0x04
+const VT_BYTES: int = 0x05
+const VT_PTR: int = 0x06
+const VT_MAP: int = 0x07
+const VT_VOID: int = 0x08
+const VT_U8: int = 0x10
+const VT_U16: int = 0x11
+const VT_U32: int = 0x12
+const VT_U64: int = 0x13
+const VT_I8: int = 0x14
+const VT_I16: int = 0x15
+const VT_I32: int = 0x16
+const VT_STRUCT: int = 0x20
+const VT_ENUM: int = 0x21
+const VT_TRAIT: int = 0x22
+const VT_NEWTYPE: int = 0x23
+const VT_NARROWED_ENUM: int = 0x24
+const VT_LIST: int = 0x30
+const VT_TUPLE: int = 0x31
+const VT_UNION: int = 0x32
+const VT_FN: int = 0x33
+const VT_FN_TYPED: int = 0x34
+const VT_CLOSURE: int = 0x35
+const VT_TASK: int = 0x36
+
+impl BytesWriter {
+    fn vtype(self, vt: ValueType) {
+        match vt {
+            .Unknown -> self.u8(VT_UNKNOWN)
+            .Int -> self.u8(VT_INT)
+            .Bool -> self.u8(VT_BOOL)
+            .Float -> self.u8(VT_FLOAT)
+            .Str -> self.u8(VT_STR)
+            .Bytes -> self.u8(VT_BYTES)
+            .Ptr -> self.u8(VT_PTR)
+            .Map -> self.u8(VT_MAP)
+            .Void -> self.u8(VT_VOID)
+            .U8 -> self.u8(VT_U8)
+            .U16 -> self.u8(VT_U16)
+            .U32 -> self.u8(VT_U32)
+            .U64 -> self.u8(VT_U64)
+            .I8 -> self.u8(VT_I8)
+            .I16 -> self.u8(VT_I16)
+            .I32 -> self.u8(VT_I32)
+            // Nominal types carry both name and sym_id. Decoders that
+            // already have the local TypeRegistry can rebuild id from
+            // the name; cross-unit decoders use sym_id to follow the
+            // cross-reference.
+            .Struct(name, _) -> {
+                self.u8(VT_STRUCT)
+                self.string(name)
+                self.u64_le(sym_id_for(name))
+            }
+            .Enum(name, args, _) -> {
+                self.u8(VT_ENUM)
+                self.string(name)
+                self.u64_le(sym_id_for(name))
+                self.vtype_list(args)
+            }
+            .Trait(name, _) -> {
+                self.u8(VT_TRAIT)
+                self.string(name)
+                self.u64_le(sym_id_for(name))
+            }
+            .Newtype(name, inner, _) -> {
+                self.u8(VT_NEWTYPE)
+                self.string(name)
+                self.u64_le(sym_id_for(name))
+                self.vtype(inner)
+            }
+            .NarrowedEnum(en, v, _) -> {
+                self.u8(VT_NARROWED_ENUM)
+                self.string(en)
+                self.string(v)
+                self.u64_le(sym_id_for(en))
+            }
+            .List(elem) -> {
+                self.u8(VT_LIST)
+                self.vtype(elem)
+            }
+            .Tuple(elements) -> {
+                self.u8(VT_TUPLE)
+                self.vtype_list(elements)
+            }
+            .Union(types) -> {
+                self.u8(VT_UNION)
+                self.vtype_list(types)
+            }
+            .Fn(ret) -> {
+                self.u8(VT_FN)
+                self.vtype(ret)
+            }
+            .FnTyped(params, ret) -> {
+                self.u8(VT_FN_TYPED)
+                self.vtype_list(params)
+                self.vtype(ret)
+            }
+            .Closure(n, ret) -> {
+                self.u8(VT_CLOSURE)
+                self.u32_le(n)
+                self.vtype(ret)
+            }
+            .Task(rt) -> {
+                self.u8(VT_TASK)
+                self.vtype(rt)
+            }
+        }
+    }
+
+    fn vtype_list(self, types: TypeList) {
+        let count = type_list_length(types)
+        self.u32_le(count)
+        self.vtype_list_body(types)
+    }
+
+    fn vtype_list_body(self, types: TypeList) {
+        match types {
+            .End -> {}
+            .Node(t, next) -> {
+                self.vtype(t)
+                self.vtype_list_body(next)
+            }
+        }
+    }
+}
+
+fn type_list_length(types: TypeList) -> int {
+    match types {
+        .End -> 0
+        .Node(_, next) -> 1 + type_list_length(next)
+    }
+}
+
 // File-header + section-frame readers. Mirror the BytesWriter impls
 // above. Caller validates `.magic == METADATA_MAGIC` before trusting
 // the rest of the header.
+impl BytesReader {
+    fn vtype(self) -> ValueType {
+        let tag = self.u8()
+        if tag == VT_UNKNOWN { return ValueType.Unknown }
+        if tag == VT_INT { return ValueType.Int }
+        if tag == VT_BOOL { return ValueType.Bool }
+        if tag == VT_FLOAT { return ValueType.Float }
+        if tag == VT_STR { return ValueType.Str }
+        if tag == VT_BYTES { return ValueType.Bytes }
+        if tag == VT_PTR { return ValueType.Ptr }
+        if tag == VT_MAP { return ValueType.Map }
+        if tag == VT_VOID { return ValueType.Void }
+        if tag == VT_U8 { return ValueType.U8 }
+        if tag == VT_U16 { return ValueType.U16 }
+        if tag == VT_U32 { return ValueType.U32 }
+        if tag == VT_U64 { return ValueType.U64 }
+        if tag == VT_I8 { return ValueType.I8 }
+        if tag == VT_I16 { return ValueType.I16 }
+        if tag == VT_I32 { return ValueType.I32 }
+        if tag == VT_STRUCT {
+            let name = self.string()
+            let _id = self.u64_le()
+            return ValueType.Struct(name, 0)
+        }
+        if tag == VT_ENUM {
+            let name = self.string()
+            let _id = self.u64_le()
+            let args = self.vtype_list()
+            return ValueType.Enum(name, args, 0)
+        }
+        if tag == VT_TRAIT {
+            let name = self.string()
+            let _id = self.u64_le()
+            return ValueType.Trait(name, 0)
+        }
+        if tag == VT_NEWTYPE {
+            let name = self.string()
+            let _id = self.u64_le()
+            let inner = self.vtype()
+            return ValueType.Newtype(name, inner, 0)
+        }
+        if tag == VT_NARROWED_ENUM {
+            let en = self.string()
+            let v = self.string()
+            let _id = self.u64_le()
+            return ValueType.NarrowedEnum(en, v, 0)
+        }
+        if tag == VT_LIST {
+            return ValueType.List(self.vtype())
+        }
+        if tag == VT_TUPLE {
+            return ValueType.Tuple(self.vtype_list())
+        }
+        if tag == VT_UNION {
+            return ValueType.Union(self.vtype_list())
+        }
+        if tag == VT_FN {
+            return ValueType.Fn(self.vtype())
+        }
+        if tag == VT_FN_TYPED {
+            let params = self.vtype_list()
+            let ret = self.vtype()
+            return ValueType.FnTyped(params, ret)
+        }
+        if tag == VT_CLOSURE {
+            let n = self.u32_le()
+            return ValueType.Closure(n, self.vtype())
+        }
+        if tag == VT_TASK {
+            return ValueType.Task(self.vtype())
+        }
+        ValueType.Unknown
+    }
+
+    fn vtype_list(self) -> TypeList {
+        let count = self.u32_le()
+        self.vtype_list_body(count)
+    }
+
+    fn vtype_list_body(self, count: int) -> TypeList {
+        if count == 0 { return TypeList.End }
+        let head = self.vtype()
+        let tail = self.vtype_list_body(count - 1)
+        TypeList.Node(head, tail)
+    }
+}
+
 impl BytesReader {
     fn header(self) -> MetadataHeader {
         let m = self.u32_le()
