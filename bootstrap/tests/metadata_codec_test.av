@@ -256,6 +256,45 @@ spec "metadata codec: FNS section per-entry round-trips" {
     }
 }
 
+spec "metadata codec: CONSTS section per-entry round-trips" {
+    then "Float const: name survives" {
+        metadata_run_fixture().contains("PROBE const_float_name: ok")
+    }
+    then "Float const: exported flag survives" {
+        metadata_run_fixture().contains("PROBE const_float_exported: ok")
+    }
+    then "Float const: value_kind decodes back to .FloatValue" {
+        metadata_run_fixture().contains("PROBE const_float_kind: ok")
+    }
+    then "Float const: raw bit pattern (3.14 IEEE 754) survives" {
+        metadata_run_fixture().contains("PROBE const_float_bits: ok")
+    }
+    then "String const: name survives" {
+        metadata_run_fixture().contains("PROBE const_str_name: ok")
+    }
+    then "String const: value_kind decodes back to .StrValue" {
+        metadata_run_fixture().contains("PROBE const_str_kind: ok")
+    }
+    then "String const: literal value survives" {
+        metadata_run_fixture().contains("PROBE const_str_value: ok")
+    }
+    then "Bool const: value_kind decodes back to .BoolValue" {
+        metadata_run_fixture().contains("PROBE const_bool_kind: ok")
+    }
+    then "Bool const: false bit survives as 0" {
+        metadata_run_fixture().contains("PROBE const_bool_false: ok")
+    }
+    then "Bool const: non-exported flag survives" {
+        metadata_run_fixture().contains("PROBE const_bool_not_exported: ok")
+    }
+    then "Int const: value_kind decodes back to .IntValue" {
+        metadata_run_fixture().contains("PROBE const_int_kind: ok")
+    }
+    then "Int const: literal value survives" {
+        metadata_run_fixture().contains("PROBE const_int_value: ok")
+    }
+}
+
 spec "metadata codec: end-to-end multi-section file" {
     then "header magic round-trips through a full file" {
         metadata_run_fixture().contains("PROBE e2e_magic: ok")

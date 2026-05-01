@@ -14,6 +14,7 @@ use @std.avrac.build.metadata.{
     SectionKind, MetadataHeader, SectionFrame,
     METADATA_MAGIC, METADATA_VERSION_MAJOR, METADATA_VERSION_MINOR,
     TypeDeclKind, TypeDeclEntry, FnDeclEntry,
+    ConstValueKind, ConstDeclEntry,
 }
 use @std.avrac.core.ast.{ValueType, TypeList, FieldList, VariantList, ParamList, vtype_eq}
 
@@ -412,6 +413,79 @@ fn main() -> int {
     probe("e2e_fn_name", decoded_fn.name == "@test::e2e::cell_x")
     probe("e2e_fn_exported", decoded_fn.exported)
     probe("e2e_remaining_zero", e2e_r.remaining() == 0)
+
+    // CONSTS section per-entry round-trips.
+    // const PI: float = 3.14
+    let pi_entry = ConstDeclEntry {
+        sym_id: sym_id_for("@test::PI"),
+        name: "@test::PI",
+        exported: true,
+        ty: ValueType.Float,
+        value_kind: ConstValueKind.FloatValue,
+        int_value: 0x4009_1EB8_51EB_851F,  // canonical bits for 3.14
+        str_value: "",
+    }
+    let wpi = writer_new()
+    wpi.const_decl(pi_entry)
+    let rpi = reader_new(wpi.finish())
+    let pi_decoded = rpi.const_decl()
+    probe("const_float_name", pi_decoded.name == "@test::PI")
+    probe("const_float_exported", pi_decoded.exported)
+    probe("const_float_kind", pi_decoded.value_kind is .FloatValue)
+    probe("const_float_bits", pi_decoded.int_value == 0x4009_1EB8_51EB_851F)
+
+    // const VERSION: string = "1.0.0"
+    let ver_entry = ConstDeclEntry {
+        sym_id: sym_id_for("@test::VERSION"),
+        name: "@test::VERSION",
+        exported: true,
+        ty: ValueType.Str,
+        value_kind: ConstValueKind.StrValue,
+        int_value: 0,
+        str_value: "1.0.0",
+    }
+    let wver = writer_new()
+    wver.const_decl(ver_entry)
+    let rver = reader_new(wver.finish())
+    let ver_decoded = rver.const_decl()
+    probe("const_str_name", ver_decoded.name == "@test::VERSION")
+    probe("const_str_kind", ver_decoded.value_kind is .StrValue)
+    probe("const_str_value", ver_decoded.str_value == "1.0.0")
+
+    // const DEBUG: bool = false  (non-exported)
+    let dbg_entry = ConstDeclEntry {
+        sym_id: sym_id_for("@test::DEBUG"),
+        name: "@test::DEBUG",
+        exported: false,
+        ty: ValueType.Bool,
+        value_kind: ConstValueKind.BoolValue,
+        int_value: 0,
+        str_value: "",
+    }
+    let wdbg = writer_new()
+    wdbg.const_decl(dbg_entry)
+    let rdbg = reader_new(wdbg.finish())
+    let dbg_decoded = rdbg.const_decl()
+    probe("const_bool_kind", dbg_decoded.value_kind is .BoolValue)
+    probe("const_bool_false", dbg_decoded.int_value == 0)
+    probe("const_bool_not_exported", !dbg_decoded.exported)
+
+    // const MAX_RETRIES: int = 42
+    let mr_entry = ConstDeclEntry {
+        sym_id: sym_id_for("@test::MAX_RETRIES"),
+        name: "@test::MAX_RETRIES",
+        exported: true,
+        ty: ValueType.Int,
+        value_kind: ConstValueKind.IntValue,
+        int_value: 42,
+        str_value: "",
+    }
+    let wmr = writer_new()
+    wmr.const_decl(mr_entry)
+    let rmr = reader_new(wmr.finish())
+    let mr_decoded = rmr.const_decl()
+    probe("const_int_kind", mr_decoded.value_kind is .IntValue)
+    probe("const_int_value", mr_decoded.int_value == 42)
 
     // Many small writes (chunk concat correctness)
     let wm = writer_new()

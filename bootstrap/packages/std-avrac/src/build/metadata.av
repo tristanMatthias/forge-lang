@@ -849,3 +849,106 @@ impl BytesReader {
         }
     }
 }
+
+// ── CONSTS section: const declarations ──
+//
+// Each entry in the CONSTS section body:
+//
+//   [u64 sym_id]
+//   [string canonical_name]
+//   [u8  exported]
+//   [vtype type]
+//   [u8  value_kind]              — pinned tag (see ConstValueKind)
+//   [value_payload]               — kind-specific
+//
+// Value payloads (cover every literal a const initializer can produce
+// at parse time):
+//   IntValue   → [u64 raw_int_bits]
+//   StrValue   → [string body]
+//   BoolValue  → [u8 0_or_1]
+//   FloatValue → [u64 raw double bits]
+//   Unknown    → no payload (consumer treats as opaque)
+//
+// Anything more complex (a const initialized from an expression that
+// can't be folded to a literal) is encoded as Unknown — the typeck
+// in downstream units sees only the type, not the value, which is
+// the same as today's "import a fn" guarantee.
+
+const CONST_VAL_UNKNOWN: int = 0
+const CONST_VAL_INT: int = 1
+const CONST_VAL_STR: int = 2
+const CONST_VAL_BOOL: int = 3
+const CONST_VAL_FLOAT: int = 4
+
+export enum ConstValueKind {
+    UnknownValue
+    IntValue
+    StrValue
+    BoolValue
+    FloatValue
+}
+
+fn const_value_kind_to_byte(k: ConstValueKind) -> int {
+    if k is .IntValue { return CONST_VAL_INT }
+    if k is .StrValue { return CONST_VAL_STR }
+    if k is .BoolValue { return CONST_VAL_BOOL }
+    if k is .FloatValue { return CONST_VAL_FLOAT }
+    return CONST_VAL_UNKNOWN
+}
+
+fn byte_to_const_value_kind(b: int) -> ConstValueKind {
+    if b == CONST_VAL_INT { return ConstValueKind.IntValue }
+    if b == CONST_VAL_STR { return ConstValueKind.StrValue }
+    if b == CONST_VAL_BOOL { return ConstValueKind.BoolValue }
+    if b == CONST_VAL_FLOAT { return ConstValueKind.FloatValue }
+    return ConstValueKind.UnknownValue
+}
+
+export type ConstDeclEntry = {
+    sym_id: int,
+    name: string,
+    exported: bool,
+    ty: ValueType,
+    value_kind: ConstValueKind,
+    int_value: int,           // populated when value_kind is IntValue / FloatValue (raw bits) / BoolValue (0/1)
+    str_value: string,        // populated when value_kind is StrValue
+}
+
+impl BytesWriter {
+    fn const_decl(self, e: ConstDeclEntry) {
+        self.u64_le(e.sym_id)
+        self.string(e.name)
+        self.u8(if e.exported { 1 } else { 0 })
+        self.vtype(e.ty)
+        self.u8(const_value_kind_to_byte(e.value_kind))
+        if e.value_kind is .IntValue { self.u64_le(e.int_value) }
+        if e.value_kind is .FloatValue { self.u64_le(e.int_value) }
+        if e.value_kind is .BoolValue { self.u8(e.int_value & 1) }
+        if e.value_kind is .StrValue { self.string(e.str_value) }
+    }
+}
+
+impl BytesReader {
+    fn const_decl(self) -> ConstDeclEntry {
+        let sid = self.u64_le()
+        let name = self.string()
+        let exp = self.u8()
+        let ty = self.vtype()
+        let kind = byte_to_const_value_kind(self.u8())
+        mut iv = 0
+        mut sv = ""
+        if kind is .IntValue { iv = self.u64_le() }
+        if kind is .FloatValue { iv = self.u64_le() }
+        if kind is .BoolValue { iv = self.u8() }
+        if kind is .StrValue { sv = self.string() }
+        ConstDeclEntry {
+            sym_id: sid,
+            name: name,
+            exported: exp == 1,
+            ty: ty,
+            value_kind: kind,
+            int_value: iv,
+            str_value: sv,
+        }
+    }
+}
