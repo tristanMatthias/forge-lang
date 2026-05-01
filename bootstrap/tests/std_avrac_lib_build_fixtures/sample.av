@@ -1,0 +1,44 @@
+// Fixture: validates @std/avrac builds cleanly as a separately-
+// cached unit. This is the bootstrap-CLI consumption case for 2f54
+// — proves the multi-mod use-anchor wiring (resolve_module_stmt's
+// pre-populated body branch + qualify_uses_recursively at the
+// --module_path wrap) handles the bootstrap's own source.
+//
+// Tracking ticket: forge-crafting-intepreters-2f54.
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
+extern fn avra_process_env_get(name: string) -> string
+extern fn avra_selfhost_file_exists(path: string) -> int
+
+fn probe(name: string, ok: bool) {
+    let tag = if ok { "ok" } else { "FAIL" }
+    println("PROBE ${name}: ${tag}")
+}
+
+fn main() -> int {
+    let pwd = avra_process_env_get("PWD")
+    let bs2 = "${pwd}/build/bs2"
+    let std_avrac = "${pwd}/packages/std-avrac"
+
+    // Wipe cache + meta to force a fresh build.
+    avra_shell_exec("rm -rf ${std_avrac}/build/cache ${std_avrac}/src/avrac.av.meta.bin ${std_avrac}/src/avrac.av.ll")
+
+    let rc = avra_shell_exec_status("cd ${std_avrac} && ${bs2} build --lib --emit_metadata")
+    probe("std_avrac_build_rc_zero", rc == 0)
+
+    probe("avrac_meta_bin_present", avra_selfhost_file_exists("${std_avrac}/src/avrac.av.meta.bin") != 0)
+    probe("avrac_ll_present", avra_selfhost_file_exists("${std_avrac}/src/avrac.av.ll") != 0)
+
+    // Symbols should be qualified with @std::avrac:: — verify by
+    // grepping for one canonical fn that exists in @std/avrac/codegen.
+    let qualified_grep = avra_shell_exec("grep -c '@\"@std::avrac::codegen' ${std_avrac}/src/avrac.av.ll").trim()
+    probe("symbols_qualified_under_at_std_avrac", int(qualified_grep) > 100)
+
+    // Unqualified `codegen::` should NOT appear at the start of any
+    // define line (those would mean the wrap didn't reach those fns).
+    let unq = avra_shell_exec("grep -c '^define [a-z0-9]* @\"codegen::' ${std_avrac}/src/avrac.av.ll").trim()
+    probe("no_unqualified_codegen_fns", int(unq) == 0)
+
+    0
+}

@@ -671,16 +671,21 @@ fn resolve_package_use_and_continue(ss: SStmt, next: StmtList, dir: string, load
 fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths, stack: ImportStack) -> ModStmtResult {
     match stmt {
         // Pre-populated Module wrapper: cli's --module_path produces
-        // `Stmt.Module(name, body)` with body already filled in (the
-        // resolved source). Skip the file-load path and just recurse
-        // into the body so its inner `mod foo` stubs get resolved.
-        // Bare `mod foo` (no body) hits the file-load branch below.
+        // `Stmt.Module(name, body)` with body already filled in.
+        // Recurse into the body to resolve internal `mod foo` stubs,
+        // then anchor cross-mod `use foo.X` paths to the wrap's
+        // namespace so they resolve under <name>.foo.X. Mirrors
+        // qualify_uses_recursively in the package-load path; the
+        // dotted form (e.g. `@std.avrac`) is what use-paths use, while
+        // the Module name itself stays in `::` form for codegen.
         .Module(name, body) if !stmt_list_is_empty(body) -> {
             let resolved = resolve_module_files_inner(body, dir, loaded, stack)
             if resolved.had_error {
                 return ModStmtResult { stmt, loaded: resolved.loaded, had_error: true, error_message: resolved.error_message }
             }
-            ModStmtResult { stmt: Stmt.Module(name, resolved.stmts), loaded: resolved.loaded, had_error: false, error_message: "" }
+            let pkg_qual_dot = name.replace("::", ".")
+            let qualified_body = qualify_uses_recursively(resolved.stmts, pkg_qual_dot)
+            ModStmtResult { stmt: Stmt.Module(name, qualified_body), loaded: resolved.loaded, had_error: false, error_message: "" }
         }
         .Module(name, _) -> {
             let sibling = "${dir}${name}.av"
