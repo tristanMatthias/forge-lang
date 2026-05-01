@@ -1266,6 +1266,7 @@ fn main() {
             flag json { description "Output diagnostics as JSON" }
             flag emit_metadata { description "Also write <file>.meta.bin (xtvc)" }
             option stop_after { description "Stop after phase (parse|resolve|names|check)" }
+            option module_path { description "Wrap parsed stmts in Module(<name>) — pre-qualifies symbols for cross-unit linking (2f54)" }
             arg file { description "Source file", required true }
         }
 
@@ -1588,6 +1589,9 @@ fn main() {
         let enable_coverage = result_has_flag(parsed, "coverage")
         let json_output = result_has_flag(parsed, "json")
         let emit_metadata = result_has_flag(parsed, "emit_metadata")
+        let module_path_dash = result_get_option(parsed, "module-path")
+        let module_path_under = result_get_option(parsed, "module_path")
+        let module_path = if module_path_dash != "" { module_path_dash } else { module_path_under }
         // File path: last positional arg
         let argc = avra_selfhost_argc()
         let cpath = avra_selfhost_get_arg_cstr(argc - 1)
@@ -1626,8 +1630,18 @@ fn main() {
             println("ok")
             return
         }
+        // 2f54: when --module-path is set, wrap the parsed body in a
+        // virtual Module so the resulting symbols carry the same
+        // namespace prefix the consumer's `mod <name>` import will
+        // qualify with. Sidesteps the cross-unit symbol-mangling
+        // mismatch (forge-crafting-intepreters-mlmw).
+        let pre_desugar_stmts = if module_path != "" {
+            StmtList.Node(sstmt_dummy(Stmt.Module(module_path, parsed.stmts!)), StmtList.End)
+        } else {
+            parsed.stmts!
+        }
         // Desugar pass: rewrite syntactic sugar to simpler AST forms.
-        let desugared = desugar_program(parsed.stmts!)
+        let desugared = desugar_program(pre_desugar_stmts)
         let t_desugar = avra_uptime_ms()
         // Resolve module files: walk the AST, find `mod` stubs, read
         // and parse the referenced files, attach parsed bodies.

@@ -1,0 +1,43 @@
+// `bs2 compile --module_path=<name>` qualifies top-level symbols.
+//
+// Without the flag, an exported fn `widget_make()` ends up at LLVM
+// symbol `@widget_make`. With the flag, it ends up at
+// `@"widget::widget_make"` — the same prefix the consumer's
+// `mod widget` import would reference, so cross-unit linking matches.
+//
+// Memoised at the shell level. Tracking ticket: forge-crafting-intepreters-2f54.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn mp_run_fixture() -> string {
+    avra_shell_exec("if [ ! -f /tmp/avra_2f54_mp_test.out ]; then bash scripts/diagnose.sh --run tests/module_path_fixtures/sample.av > /tmp/avra_2f54_mp_test.out 2>&1 || true; fi; cat /tmp/avra_2f54_mp_test.out")
+}
+
+fn mp_wipe() -> string {
+    avra_shell_exec("rm -f /tmp/avra_2f54_mp_test.out")
+}
+
+spec "compile --module_path: clear cached output" {
+    then "wipe stale /tmp output from any prior run" {
+        let _ = mp_wipe()
+        true
+    }
+}
+
+spec "compile --module_path: qualifies top-level fn symbols" {
+    then "compile without --module_path succeeds" {
+        mp_run_fixture().contains("PROBE compile_without_module_path: ok")
+    }
+    then "without --module_path the IR has the unqualified fn name" {
+        mp_run_fixture().contains("PROBE unqualified_widget_make_present: ok")
+    }
+    then "compile with --module_path succeeds" {
+        mp_run_fixture().contains("PROBE compile_with_module_path: ok")
+    }
+    then "with --module_path the IR has the qualified `widget::widget_make` symbol" {
+        mp_run_fixture().contains("PROBE qualified_widget_make_present: ok")
+    }
+    then "with --module_path the unqualified form does not appear (only one canonical name)" {
+        mp_run_fixture().contains("PROBE no_unqualified_form_when_module_path_set: ok")
+    }
+}
