@@ -1,0 +1,46 @@
+// Regression test: AVRA_USE_METADATA=1 actually shrinks the
+// consumer's emitted IR by skipping bodies of imported fns. This
+// is the smoking gun for 2f54 — proves the resolver fast-path +
+// codegen @external_unit gate compose correctly on a real producer
+// + consumer pair, not just unit-tested individually.
+//
+// Memoised at the shell level so each `then` does not re-build.
+// Tracking ticket: forge-crafting-intepreters-2f54.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn size_run_fixture() -> string {
+    avra_shell_exec("if [ ! -f /tmp/avra_2f54_size_test.out ]; then bash scripts/diagnose.sh --run tests/metadata_fast_path_size_fixtures/sample.av > /tmp/avra_2f54_size_test.out 2>&1 || true; fi; cat /tmp/avra_2f54_size_test.out")
+}
+
+fn size_wipe() -> string {
+    avra_shell_exec("rm -f /tmp/avra_2f54_size_test.out")
+}
+
+spec "metadata fast-path size: clear cached output" {
+    then "wipe stale /tmp output from any prior run" {
+        let _ = size_wipe()
+        true
+    }
+}
+
+spec "metadata fast-path size: end-to-end producer + consumer demonstrates IR shrink" {
+    then "producer compile --emit_metadata succeeds" {
+        size_run_fixture().contains("PROBE producer_emit_rc_zero: ok")
+    }
+    then "consumer source-path compile succeeds (baseline)" {
+        size_run_fixture().contains("PROBE consumer_source_compile_rc_zero: ok")
+    }
+    then "consumer metadata-path compile succeeds" {
+        size_run_fixture().contains("PROBE consumer_metadata_compile_rc_zero: ok")
+    }
+    then "metadata path emits fewer fn definitions than source path" {
+        size_run_fixture().contains("PROBE metadata_path_emits_fewer_fn_definitions: ok")
+    }
+    then "metadata path emits a smaller IR file overall" {
+        size_run_fixture().contains("PROBE metadata_path_emits_smaller_ir: ok")
+    }
+    then "at least two of the producer's three fns are dropped from consumer IR" {
+        size_run_fixture().contains("PROBE metadata_path_drops_at_least_two_fns: ok")
+    }
+}
