@@ -218,6 +218,9 @@ fn codegen_program(stmts: StmtList, debug_null_checks: bool, coverage: bool, sou
     decl(m, "avra_bytes_concat", i64t, [pt, pt])
     decl(m, "avra_bytes_slice", i64t, [pt, i64t, i64t])
     decl(m, "avra_bytes_empty", i64t, [])
+    decl(m, "avra_bytes_make", i64t, [i64t])
+    decl(m, "avra_bytes_set", vt, [pt, i64t, i64t])
+    decl(m, "avra_bytes_to_hex", i64t, [pt])
 
     // ── concurrency ──
     decl(m, "avra_spawn", i64t, [pt])

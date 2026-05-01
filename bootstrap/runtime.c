@@ -2210,66 +2210,124 @@ int64_t avra_toml_get_section_bool(const char* toml, const char* section,
 // Tracked under forge-crafting-intepreters-73wa (in the
 // in-language-crypto epic ayq3).
 
+// `bytes` is a length-prefixed buffer: `[u64 length][data...]`. The
+// pointer returned to Avra-land points at the length header so
+// b.byte(i) reads `data[i]` at offset 8+i. This lets bytes hold raw
+// octets including embedded NUL — the previous layout used strlen(),
+// which truncated at the first 0x00 and silently corrupted any binary
+// payload (metadata.bin, image data, hash output, …).
+//
+// Tracked under forge-crafting-intepreters-73wa (sub-ticket of ayq3).
+
+static inline char* avra_bytes_alloc(int64_t len) {
+    char* r = (char*)avra_rc_alloc(8 + (size_t)len);
+    *(int64_t*)r = len;
+    return r;
+}
+
+static inline char* avra_bytes_data(const char* b) {
+    return (char*)b + 8;
+}
+
 const char* avra_bytes_from_string(const char* s) {
-    if (!s) return "";
+    if (!s) {
+        char* r = avra_bytes_alloc(0);
+        return r;
+    }
     size_t len = strlen(s);
-    char* r = (char*)avra_rc_alloc(len + 1);
-    memcpy(r, s, len);
-    r[len] = '\0';
+    char* r = avra_bytes_alloc((int64_t)len);
+    memcpy(avra_bytes_data(r), s, len);
     return r;
 }
 
 const char* avra_string_from_bytes(const char* b) {
     if (!b) return "";
-    size_t len = strlen(b);
-    char* r = (char*)avra_rc_alloc(len + 1);
-    memcpy(r, b, len);
+    int64_t len = *(int64_t*)b;
+    if (len < 0) len = 0;
+    char* r = (char*)avra_rc_alloc((size_t)len + 1);
+    memcpy(r, avra_bytes_data(b), (size_t)len);
     r[len] = '\0';
     return r;
 }
 
 int64_t avra_bytes_length(const char* b) {
     if (!b) return 0;
-    return (int64_t)strlen(b);
+    return *(int64_t*)b;
 }
 
 int64_t avra_bytes_byte(const char* b, int64_t idx) {
     if (!b) return 0;
-    size_t len = strlen(b);
-    if (idx < 0 || (size_t)idx >= len) return 0;
-    return (int64_t)(unsigned char)b[idx];
+    int64_t len = *(int64_t*)b;
+    if (idx < 0 || idx >= len) return 0;
+    return (int64_t)(unsigned char)avra_bytes_data(b)[idx];
 }
 
 const char* avra_bytes_concat(const char* a, const char* b) {
-    if (!a) a = "";
-    if (!b) b = "";
-    size_t la = strlen(a);
-    size_t lb = strlen(b);
-    char* r = (char*)avra_rc_alloc(la + lb + 1);
-    memcpy(r, a, la);
-    memcpy(r + la, b, lb);
-    r[la + lb] = '\0';
+    int64_t la = a ? *(int64_t*)a : 0;
+    int64_t lb = b ? *(int64_t*)b : 0;
+    char* r = avra_bytes_alloc(la + lb);
+    if (la > 0) memcpy(avra_bytes_data(r), avra_bytes_data(a), (size_t)la);
+    if (lb > 0) memcpy(avra_bytes_data(r) + la, avra_bytes_data(b), (size_t)lb);
     return r;
 }
 
 const char* avra_bytes_slice(const char* b, int64_t start, int64_t end) {
-    if (!b) return "";
-    size_t len = strlen(b);
+    if (!b) {
+        char* r = avra_bytes_alloc(0);
+        return r;
+    }
+    int64_t len = *(int64_t*)b;
     if (start < 0) start = 0;
     if (end < 0) end = 0;
-    if ((size_t)start > len) start = (int64_t)len;
-    if ((size_t)end > len) end = (int64_t)len;
+    if (start > len) start = len;
+    if (end > len) end = len;
     if (end < start) end = start;
-    size_t out = (size_t)(end - start);
-    char* r = (char*)avra_rc_alloc(out + 1);
-    memcpy(r, b + start, out);
-    r[out] = '\0';
+    int64_t out = end - start;
+    char* r = avra_bytes_alloc(out);
+    if (out > 0) memcpy(avra_bytes_data(r), avra_bytes_data(b) + start, (size_t)out);
     return r;
 }
 
 const char* avra_bytes_empty(void) {
-    char* r = (char*)avra_rc_alloc(1);
-    r[0] = '\0';
+    return avra_bytes_alloc(0);
+}
+
+// ── Bytes builder primitives ──
+//
+// Writers for in-language binary serialization. `avra_bytes_make`
+// allocates a fresh (uniquely-owned) buffer of the requested size,
+// zero-initialized; `avra_bytes_set` mutates one octet of that
+// buffer. The combination is the building block for length-prefixed
+// records, fixed-size headers, and any little-endian / big-endian
+// scalar encoding written in pure Avra. These are the minimum
+// primitives that close the gap left by 73wa.
+
+const char* avra_bytes_make(int64_t len) {
+    if (len < 0) len = 0;
+    char* r = avra_bytes_alloc(len);
+    if (len > 0) memset(avra_bytes_data(r), 0, (size_t)len);
+    return r;
+}
+
+void avra_bytes_set(const char* b, int64_t idx, int64_t val) {
+    if (!b) return;
+    int64_t len = *(int64_t*)b;
+    if (idx < 0 || idx >= len) return;
+    avra_bytes_data((char*)b)[idx] = (char)(unsigned char)(val & 0xFF);
+}
+
+const char* avra_bytes_to_hex(const char* b) {
+    if (!b) return "";
+    int64_t len = *(int64_t*)b;
+    if (len < 0) len = 0;
+    char* r = (char*)avra_rc_alloc((size_t)(len * 2) + 1);
+    static const char hex[] = "0123456789abcdef";
+    const unsigned char* data = (const unsigned char*)avra_bytes_data(b);
+    for (int64_t i = 0; i < len; i++) {
+        r[i * 2]     = hex[(data[i] >> 4) & 0xF];
+        r[i * 2 + 1] = hex[data[i] & 0xF];
+    }
+    r[len * 2] = '\0';
     return r;
 }
 
