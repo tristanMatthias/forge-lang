@@ -1,0 +1,58 @@
+// Fixture: validates `bs2 build --emit_metadata` pre-builds each
+// path-dep as a lib before the root build. Confirms multi-unit
+// orchestration via run_build_command's pre_build_path_deps loop.
+//
+// Tracking ticket: forge-crafting-intepreters-2f54.
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
+extern fn avra_process_env_get(name: string) -> string
+extern fn avra_selfhost_file_exists(path: string) -> int
+
+fn probe(name: string, ok: bool) {
+    let tag = if ok { "ok" } else { "FAIL" }
+    println("PROBE ${name}: ${tag}")
+}
+
+fn main() -> int {
+    let root = "/tmp/avra_2f54_orch"
+    avra_shell_exec("rm -rf ${root}")
+
+    // Two packages: @test/dep (a lib) and @test/app (depends on dep).
+    let dep_dir = "${root}/dep"
+    let app_dir = "${root}/app"
+    avra_shell_exec("mkdir -p ${dep_dir}/src ${app_dir}/src")
+
+    // Dep: simple lib package
+    avra_shell_exec("printf '[package]\\nname = \"@test/dep\"\\nversion = \"0.1.0\"\\n\\n[lib]\\nname = \"dep\"\\npath = \"src/lib.av\"\\n' > ${dep_dir}/avra.toml")
+    avra_shell_exec("printf 'export fn dep_add(a: int, b: int) -> int { a + b }\\n' > ${dep_dir}/src/lib.av")
+
+    // App: bin package with [dependencies] pointing at dep via path
+    avra_shell_exec("printf '[package]\\nname = \"@test/app\"\\nversion = \"0.1.0\"\\n\\n[bin]\\nname = \"app\"\\npath = \"src/main.av\"\\n\\n[dependencies]\\n\"@test/dep\" = { path = \"../dep\" }\\n' > ${app_dir}/avra.toml")
+    avra_shell_exec("printf 'fn main() -> int { 0 }\\n' > ${app_dir}/src/main.av")
+
+    let pwd = avra_process_env_get("PWD")
+    let bs2 = "${pwd}/build/bs2"
+
+    // bs2 build --emit_metadata from app/ should pre-build dep/ first.
+    let rc = avra_shell_exec_status("cd ${app_dir} && ${bs2} build --emit_metadata")
+    probe("orchestrated_build_rc_zero", rc == 0)
+
+    // Dep's lib.av.meta.bin should exist (proof the dep was pre-built
+    // with --emit_metadata).
+    probe("dep_meta_bin_present", avra_selfhost_file_exists("${dep_dir}/src/lib.av.meta.bin") != 0)
+
+    // Dep's lib.av.ll should exist (proof of compile).
+    probe("dep_ll_present", avra_selfhost_file_exists("${dep_dir}/src/lib.av.ll") != 0)
+
+    // App's main.av.ll should also exist (root built after dep).
+    probe("app_ll_present", avra_selfhost_file_exists("${app_dir}/src/main.av.ll") != 0)
+
+    // Without --emit_metadata, dep is NOT pre-built (single-unit cycle preserved).
+    avra_shell_exec("rm -f ${dep_dir}/src/lib.av.meta.bin")
+    let rc2 = avra_shell_exec_status("cd ${app_dir} && ${bs2} build")
+    probe("default_build_rc_zero", rc2 == 0)
+    probe("dep_meta_NOT_present_without_flag", avra_selfhost_file_exists("${dep_dir}/src/lib.av.meta.bin") == 0)
+
+    0
+}

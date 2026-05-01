@@ -22,6 +22,7 @@ extern fn avra_process_exit(code: int)
 extern fn avra_process_forward(cmd: string, args_json: string, opts_json: string) -> int
 extern fn avra_process_env_get(key: string) -> string
 extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
 extern fn exit(code: int)
 
 // ── Result tagging ──

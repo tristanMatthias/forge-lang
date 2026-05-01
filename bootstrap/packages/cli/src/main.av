@@ -29,7 +29,7 @@
 // Pull every compiler-pipeline symbol from the @std.avrac library.
 // This file owns no compiler logic — it only orchestrates argv
 // parsing and dispatches to the lib's pure entry points.
-use @std.avrac.core.runtime.{avra_selfhost_argc, avra_selfhost_get_arg_cstr, avra_selfhost_file_exists, avra_selfhost_read_file, avra_selfhost_write_file, avra_shell_exec, avra_process_exit, avra_process_forward, avra_process_env_get, exit, avra_char_from_hex}
+use @std.avrac.core.runtime.{avra_selfhost_argc, avra_selfhost_get_arg_cstr, avra_selfhost_file_exists, avra_selfhost_read_file, avra_selfhost_write_file, avra_shell_exec, avra_shell_exec_status, avra_process_exit, avra_process_forward, avra_process_env_get, exit, avra_char_from_hex}
 
 // Convenience aliases so handler bodies stay readable.
 fn file_exists(path: string) -> int { avra_selfhost_file_exists(path) }
@@ -61,7 +61,7 @@ use @std.avrac.desugar.{desugar_program}
 use @std.avrac.features.component_decl.expand.{expand_components}
 use @std.avrac.resolve.names.{resolve_names}
 use @std.avrac.features.modules.resolver.{resolve_module_files, modules_dirname, find_packages_dir, LoadedPaths, dedup_modules}
-use @std.avrac.features.modules.package.{load_package_config, load_manifest}
+use @std.avrac.features.modules.package.{load_package_config, load_manifest, Dep, DepList}
 use @std.avrac.build.driver.{
     BuildInputs, BuildOutcome,
     decide_build, record_build_result,
@@ -550,6 +550,32 @@ fn parse_build_args() -> BuildArgs {
 // graph extractor, see ticket eh00) carves it into per-package /
 // per-module units; the driver's surface (decide / record) does
 // not need to change for that step.
+// Walk the manifest's [dependencies] list and, for each dep with a
+// resolved local `path`, recursively invoke `bs2 build --lib
+// --emit_metadata` from the dep's project root. The dep produces
+// its .meta.bin + cache entry before the root build runs, so the
+// root's resolver fast-path finds them. Path-less deps (registry
+// versions, git refs) are skipped — they'll come back when
+// resolution actually pulls them locally.
+//
+// Returns 0 on success; non-zero is the first failed dep's rc.
+//
+// Tracking ticket: forge-crafting-intepreters-2f54.
+fn pre_build_path_deps(deps: DepList, compiler_path: string, args: BuildArgs) -> int {
+    match deps {
+        .End -> 0
+        .Node(dep, next) -> {
+            if dep.path == "" {
+                return pre_build_path_deps(next, compiler_path, args)
+            }
+            let cmd = "(cd '${dep.path}' && '${compiler_path}' build --lib --emit_metadata)"
+            let rc = avra_shell_exec_status(cmd)
+            if rc != 0 { return rc }
+            pre_build_path_deps(next, compiler_path, args)
+        }
+    }
+}
+
 fn run_build_command() {
     let project_dir = avra_process_env_get("PWD")
     let args = parse_build_args()
@@ -616,6 +642,18 @@ fn run_build_command() {
         debug: profile.debug,
         overflow_checks: profile.overflow_checks,
         coverage: profile.coverage,
+    }
+
+    // 2f54: pre-build each [dependencies] path-dep as a lib BEFORE
+    // the root build so the dep's .meta.bin and cache entries land
+    // first. The root then consumes them via the metadata fast-path.
+    // Skipped when --emit_metadata is off — the existing
+    // single-unit cycle stays the default.
+    if args.emit_metadata && manifest.found {
+        let dep_rc = pre_build_path_deps(manifest.deps, compiler_path, args)
+        if dep_rc != 0 {
+            fail("error: failed to pre-build a path-dep — see output above")
+        }
     }
 
     // When --explain is on, also surface the manifest's [dependencies]
@@ -1630,18 +1668,8 @@ fn main() {
             println("ok")
             return
         }
-        // 2f54: when --module-path is set, wrap the parsed body in a
-        // virtual Module so the resulting symbols carry the same
-        // namespace prefix the consumer's `mod <name>` import will
-        // qualify with. Sidesteps the cross-unit symbol-mangling
-        // mismatch (forge-crafting-intepreters-mlmw).
-        let pre_desugar_stmts = if module_path != "" {
-            StmtList.Node(sstmt_dummy(Stmt.Module(module_path, parsed.stmts!)), StmtList.End)
-        } else {
-            parsed.stmts!
-        }
         // Desugar pass: rewrite syntactic sugar to simpler AST forms.
-        let desugared = desugar_program(pre_desugar_stmts)
+        let desugared = desugar_program(parsed.stmts!)
         let t_desugar = avra_uptime_ms()
         // Resolve module files: walk the AST, find `mod` stubs, read
         // and parse the referenced files, attach parsed bodies.
@@ -1657,9 +1685,20 @@ fn main() {
             println("ok")
             return
         }
+        // 2f54: when --module_path is set, wrap the resolved body in
+        // a virtual Module so name resolution + codegen qualify every
+        // top-level symbol with `<module_path>::`. Wraps AFTER
+        // resolve_module_files so the resolver doesn't try to load
+        // `<module_path>.av` from disk (it ignores the body of bare
+        // Stmt.Module variants and reads the file pattern instead).
+        let post_resolve_stmts = if module_path != "" {
+            StmtList.Node(sstmt_dummy(Stmt.Module(module_path, mod_resolved.stmts)), StmtList.End)
+        } else {
+            mod_resolved.stmts
+        }
         // Component expansion: runs AFTER module resolution so component
         // definitions in any module are visible to the expander.
-        let expanded = expand_components(mod_resolved.stmts)
+        let expanded = expand_components(post_resolve_stmts)
         let t_expand = avra_uptime_ms()
         let named = resolve_names(expanded)
         let t_names = avra_uptime_ms()
