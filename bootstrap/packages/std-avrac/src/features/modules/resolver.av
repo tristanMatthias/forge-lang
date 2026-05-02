@@ -9,6 +9,27 @@ use core.runtime.{avra_process_env_get, avra_selfhost_append_file}
 use build.metadata.{metadata_read, metadata_file_exists}
 use build.metadata_synthesize.{synthesize_unit_body}
 
+extern fn avra_bytes_to_hex(b: bytes) -> string
+extern fn avra_sha256_file(path: string) -> string
+
+/// Compare the fingerprint stored in `<src>.meta.bin` with the
+/// current sha256 of `src`. Returns true only when they match —
+/// i.e. the source hasn't changed since the metadata was emitted,
+/// so stubs synthesised from the .meta.bin are safe to substitute
+/// for a fresh parse. The fast path is gated on this so an edit
+/// to a .av file (without re-running the producer) doesn't silently
+/// load stale stubs that elide the user's changes (g2eo).
+///
+/// Uses `avra_bytes_to_hex` to avoid bytes-vs-string comparison
+/// quirks: metadata stores the fp as 32 raw bytes; sha256_file
+/// returns 64-char hex. Both round-trip through hex equality.
+fn meta_fingerprint_matches_source(meta_path: string, src_path: string) -> bool {
+    let m = metadata_read(meta_path)
+    let stored_hex = avra_bytes_to_hex(m.fingerprint)
+    let current_hex = avra_sha256_file(src_path)
+    stored_hex == current_hex
+}
+
 /// Return the directory portion of a path (including the trailing
 /// slash), or `""` when `path` has no directory part. Used to
 /// build sibling/child paths during module resolution.
@@ -619,7 +640,11 @@ fn resolve_package_use_and_continue(ss: SStmt, next: StmtList, dir: string, load
     let pkg_dir = modules_dirname(pkg_file)
     let use_meta = avra_process_env_get("AVRA_USE_METADATA") != ""
     let meta_path = "${pkg_file}.meta.bin"
-    let take_meta_fast_path = use_meta && metadata_file_exists(meta_path)
+    let meta_exists = use_meta && metadata_file_exists(meta_path)
+    // g2eo: gate on fingerprint match too — a stale .meta.bin from
+    // before a source edit would otherwise silently elide the user's
+    // changes from the consumer's compile.
+    let take_meta_fast_path = meta_exists && meta_fingerprint_matches_source(meta_path, pkg_file)
     let pkg_stmts = if take_meta_fast_path {
         record_meta_dep(pkg_file)
         let m = metadata_read(meta_path)
@@ -716,12 +741,18 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths, stack: Impo
             let mod_dir = modules_dirname(mod_path)
             // xtvc fast-path (mirrors the package-load path): when
             // AVRA_USE_METADATA is set AND `<mod_path>.meta.bin`
-            // exists, substitute synthesised stubs for the source
+            // exists AND its fingerprint matches the source's current
+            // sha256, substitute synthesised stubs for the source
             // parse. Producer's compiled .o is expected at link time
-            // (forge-crafting-intepreters-2f54).
+            // (forge-crafting-intepreters-2f54). The fingerprint check
+            // (g2eo) ensures we don't load stale metadata when the
+            // .av source has been edited since the .meta.bin was
+            // produced — a stale hit would silently elide the user's
+            // most recent changes from the consumer's compile.
             let use_meta = avra_process_env_get("AVRA_USE_METADATA") != ""
             let meta_path = "${mod_path}.meta.bin"
-            let take_meta = use_meta && metadata_file_exists(meta_path)
+            let meta_exists = use_meta && metadata_file_exists(meta_path)
+            let take_meta = meta_exists && meta_fingerprint_matches_source(meta_path, mod_path)
             let mod_stmts = if take_meta {
                 record_meta_dep(mod_path)
                 let m = metadata_read(meta_path)

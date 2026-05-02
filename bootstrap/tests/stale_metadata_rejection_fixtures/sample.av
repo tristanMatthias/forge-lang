@@ -1,0 +1,82 @@
+// Fixture: validates the resolver's metadata fingerprint check on
+// the `mod foo` fast-path. When AVRA_USE_METADATA=1 is set, the
+// resolver consumes a sub-mod's `.meta.bin` ONLY when its stored
+// fingerprint matches the source file's current sha256. A stale
+// .meta.bin (one whose source has been edited since the metadata
+// was emitted) must NOT be taken; otherwise the consumer compiles
+// against a phantom older API.
+//
+// Mechanism: scaffold top.av + foo.av, run --per_file_metadata to
+// land foo.av.meta.bin, edit foo.av WITHOUT regenerating metadata,
+// then compile with AVRA_USE_METADATA=1 and check that the deps
+// sidecar does NOT record foo.av (proof the fast-path was bypassed).
+//
+// Tracking ticket: forge-crafting-intepreters-g2eo.
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
+extern fn avra_process_env_get(name: string) -> string
+extern fn avra_selfhost_file_exists(path: string) -> int
+
+fn probe(name: string, ok: bool) {
+    let tag = if ok { "ok" } else { "FAIL" }
+    println("PROBE ${name}: ${tag}")
+}
+
+fn main() -> int {
+    let root = "/tmp/avra_g2eo_stale"
+    avra_shell_exec("rm -rf ${root}")
+    avra_shell_exec("mkdir -p ${root}")
+
+    // Scaffold a two-file unit: top.av declares `mod foo` + a free
+    // fn that references foo.helper; foo.av provides helper.
+    avra_shell_exec("printf 'mod foo\\nfn entry() -> int { 0 }\\n' > ${root}/top.av")
+    avra_shell_exec("printf 'export fn helper() -> int { 11 }\\n' > ${root}/foo.av")
+
+    let pwd = avra_process_env_get("PWD")
+    let bs2 = "${pwd}/build/bs2"
+
+    // Step 1: produce per-file metadata. After this, foo.av.meta.bin
+    // exists with a fingerprint matching foo.av's current contents.
+    let rc1 = avra_shell_exec_status("${bs2} compile --emit_metadata --per_file_metadata --module_path=@test::pkg ${root}/top.av > /tmp/avra_g2eo_stale_p1.log 2>&1")
+    probe("initial_compile_rc_zero", rc1 == 0)
+    probe("foo_meta_present", avra_selfhost_file_exists("${root}/foo.av.meta.bin") != 0)
+
+    // Step 2: confirm the fast-path consumes foo.av.meta.bin when
+    // fingerprints match. Re-compile with AVRA_USE_METADATA=1 and
+    // AVRA_DEPS_OUT — the deps sidecar should record foo.av as a
+    // metadata dep (it's only stamped via record_meta_dep on a
+    // successful fast-path hit).
+    avra_shell_exec("rm -f /tmp/avra_g2eo_stale_deps.txt")
+    let rc2 = avra_shell_exec_status("AVRA_USE_METADATA=1 AVRA_DEPS_OUT=/tmp/avra_g2eo_stale_deps.txt ${bs2} compile --module_path=@test::pkg ${root}/top.av > /tmp/avra_g2eo_stale_c1.log 2>&1")
+    probe("matching_compile_rc_zero", rc2 == 0)
+    let matching_taken = avra_shell_exec_status("test -s /tmp/avra_g2eo_stale_deps.txt && grep -q foo.av /tmp/avra_g2eo_stale_deps.txt")
+    probe("matching_meta_WAS_taken", matching_taken == 0)
+
+    // Step 3: edit foo.av without rebuilding metadata. The .meta.bin
+    // still records the old fingerprint; the source has a new sha256.
+    avra_shell_exec("printf 'export fn helper() -> int { 999 }\\n' > ${root}/foo.av")
+
+    // Re-compile — fingerprint mismatch should bypass the fast-path
+    // and force a fresh parse. The deps sidecar should NOT contain
+    // foo.av this time (record_meta_dep doesn't fire on the
+    // source-parse fall-back).
+    avra_shell_exec("rm -f /tmp/avra_g2eo_stale_deps.txt")
+    let rc3 = avra_shell_exec_status("AVRA_USE_METADATA=1 AVRA_DEPS_OUT=/tmp/avra_g2eo_stale_deps.txt ${bs2} compile --module_path=@test::pkg ${root}/top.av > /tmp/avra_g2eo_stale_c2.log 2>&1")
+    probe("stale_compile_rc_zero", rc3 == 0)
+    let stale_taken = avra_shell_exec_status("test -s /tmp/avra_g2eo_stale_deps.txt && grep -q foo.av /tmp/avra_g2eo_stale_deps.txt")
+    probe("stale_meta_was_NOT_taken", stale_taken != 0)
+
+    // Step 4: regenerate metadata to match the new source, confirm
+    // the fast-path is taken again.
+    let rc4 = avra_shell_exec_status("${bs2} compile --emit_metadata --per_file_metadata --module_path=@test::pkg ${root}/top.av > /tmp/avra_g2eo_stale_p2.log 2>&1")
+    probe("regen_compile_rc_zero", rc4 == 0)
+
+    avra_shell_exec("rm -f /tmp/avra_g2eo_stale_deps.txt")
+    let rc5 = avra_shell_exec_status("AVRA_USE_METADATA=1 AVRA_DEPS_OUT=/tmp/avra_g2eo_stale_deps.txt ${bs2} compile --module_path=@test::pkg ${root}/top.av > /tmp/avra_g2eo_stale_c3.log 2>&1")
+    probe("fresh_compile_rc_zero", rc5 == 0)
+    let fresh_taken = avra_shell_exec_status("test -s /tmp/avra_g2eo_stale_deps.txt && grep -q foo.av /tmp/avra_g2eo_stale_deps.txt")
+    probe("fresh_meta_WAS_taken", fresh_taken == 0)
+
+    0
+}
