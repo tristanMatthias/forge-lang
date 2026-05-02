@@ -16,7 +16,14 @@ use build.metadata.{
     MetaTraitMethodList, ImplMethodRefList,
     sym_id_for, unit_metadata_new,
 }
-use build.fingerprint.{StrList}
+// Per-file source-path list. Distinct nominal type (not @std/lsp's
+// StrList nor @std/avrac/build/fingerprint's StrList) so the per-file
+// metadata API stays unambiguous when downstream consumers also have
+// other StrList variants in scope from transitively-imported packages.
+export enum SrcFileList {
+    End,
+    Node(path: string, next: SrcFileList),
+}
 use parse.lexer.{parse_int_literal}
 
 // Internal accumulator — each walk step folds into this and returns
@@ -528,17 +535,17 @@ fn strip_quotes(quoted: string) -> string {
 //
 // Used today only by tests; the build driver picks it up under g2eo.
 
-export fn collect_source_files(stmts: StmtList) -> StrList {
-    let acc = walk_files(stmts, StrList.End)
+export fn collect_source_files(stmts: StmtList) -> SrcFileList {
+    let acc = walk_files(stmts, SrcFileList.End)
     acc
 }
 
-fn walk_files(stmts: StmtList, acc: StrList) -> StrList {
+fn walk_files(stmts: StmtList, acc: SrcFileList) -> SrcFileList {
     match stmts {
         .End -> acc
         .Node(ss, next) -> {
             let after_self = if ss.file != "" && !str_list_contains(acc, ss.file) {
-                StrList.Node(ss.file, acc)
+                SrcFileList.Node(ss.file, acc)
             } else {
                 acc
             }
@@ -556,7 +563,7 @@ fn walk_files(stmts: StmtList, acc: StrList) -> StrList {
 // redundant and slow. The trade-off: declarations are what the
 // metadata extractor cares about, so Module + Annotated cover the
 // public-surface walk.
-fn walk_files_in_stmt(stmt: Stmt, acc: StrList) -> StrList {
+fn walk_files_in_stmt(stmt: Stmt, acc: SrcFileList) -> SrcFileList {
     match stmt {
         .Module(_, body) -> walk_files(body, acc)
         .Annotated(_, inner) -> walk_files_in_stmt(inner, acc)
@@ -564,11 +571,11 @@ fn walk_files_in_stmt(stmt: Stmt, acc: StrList) -> StrList {
     }
 }
 
-fn str_list_contains(xs: StrList, target: string) -> bool {
+fn str_list_contains(xs: SrcFileList, target: string) -> bool {
     match xs {
         .End -> false
-        .Node(s, next) -> {
-            if s == target { true } else { str_list_contains(next, target) }
+        .Node(p, next) -> {
+            if p == target { true } else { str_list_contains(next, target) }
         }
     }
 }

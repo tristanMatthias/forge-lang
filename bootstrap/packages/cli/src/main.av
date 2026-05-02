@@ -68,7 +68,7 @@ use @std.avrac.build.driver.{
 }
 use @std.avrac.build.fingerprint.{Fingerprint, fp_short}
 use @std.avrac.build.link.{LinkOptions, default_link_options, link_objects, link_objects_with_coverage}
-use @std.avrac.build.metadata_extract.{extract_unit_metadata}
+use @std.avrac.build.metadata_extract.{extract_unit_metadata, extract_per_file_metadata, collect_source_files, SrcFileList}
 use @std.avrac.build.metadata.{metadata_write, metadata_read, bytes_from_hex}
 use @std.avrac.build.metadata_synthesize.{synthesize_unit_stmts}
 use @std.crypto.{sha256_hex}
@@ -465,6 +465,33 @@ fn render_unit_chain(units: UnitList) -> string {
 ///                         per-phase wall times (cargo --timings analogue)
 ///   entry (positional)    override the manifest [bin].path
 // `--lib` (the BuildArgs.lib field below) selects the manifest's
+// g2eo level-1: emit per-file metadata sidecars. Walks the discovered
+// source-file list, computes a per-file fingerprint (sha256 of file
+// contents), extracts a per-file UnitMetadata slice, and writes it to
+// `<file>.meta.bin`. Entry-point file is skipped — its sidecar is
+// the whole-unit slice consumers expect, written upstream.
+fn emit_per_file_metas(files: SrcFileList, stmts: StmtList, unit_name: string, entry_path: string) {
+    match files {
+        .End -> {}
+        .Node(file_path, next) -> {
+            // Skip the entry — its sidecar is the whole-unit slice
+            // (consumers read that). Skip "" too: a stmt the resolver
+            // synthesised mid-pipeline (no source location) shouldn't
+            // produce a phantom .meta.bin.
+            if file_path != entry_path && file_path != "" {
+                let src = avra_selfhost_read_file(file_path)
+                let fp = bytes_from_hex(sha256_hex(src))
+                let m = extract_per_file_metadata(unit_name, file_path, fp, stmts)
+                let path = "${file_path}.meta.bin"
+                if metadata_write(path, m) != 1 {
+                    fail("per-file metadata write failed for ${path}")
+                }
+            }
+            emit_per_file_metas(next, stmts, unit_name, entry_path)
+        }
+    }
+}
+
 // [lib] target instead of [bin]. Foundational for
 // forge-crafting-intepreters-2f54 (split @std.avrac as a separately-
 // cached unit): a library is just a build target whose entry is an
@@ -1578,6 +1605,7 @@ fn main() {
             flag debug_null { description "Enable null argument checks" }
             flag json { description "Output diagnostics as JSON" }
             flag emit_metadata { description "Also write <file>.meta.bin (xtvc)" }
+            flag per_file_metadata { description "Also emit per-file <src>.meta.bin sidecars (g2eo, level-1 incremental)" }
             option stop_after { description "Stop after phase (parse|resolve|names|check)" }
             option module_path { description "Wrap parsed stmts in Module(<name>) — pre-qualifies symbols for cross-unit linking (2f54)" }
             arg file { description "Source file", required true }
@@ -1902,6 +1930,7 @@ fn main() {
         let enable_coverage = result_has_flag(parsed, "coverage")
         let json_output = result_has_flag(parsed, "json")
         let emit_metadata = result_has_flag(parsed, "emit_metadata")
+        let per_file_metadata = result_has_flag(parsed, "per_file_metadata")
         let module_path_dash = result_get_option(parsed, "module-path")
         let module_path_under = result_get_option(parsed, "module_path")
         let module_path = if module_path_dash != "" { module_path_dash } else { module_path_under }
@@ -2043,6 +2072,16 @@ fn main() {
             let meta_path = "${cpath}.meta.bin"
             if metadata_write(meta_path, unit_meta) != 1 {
                 fail("metadata write failed for ${meta_path}")
+            }
+            // g2eo level-1: emit per-file metadata sidecars too.
+            // Each contributing .av file gets its own <src>.meta.bin
+            // containing only that file's decls. Editing one mod
+            // invalidates one sidecar, not the whole package's meta.
+            // Entry-point file is skipped (its meta.bin is the
+            // whole-unit slice consumers expect).
+            if per_file_metadata {
+                let files = collect_source_files(named.stmts)
+                emit_per_file_metas(files, named.stmts, unit_name, cpath)
             }
         }
         if timings_on {

@@ -644,9 +644,11 @@ export fn expand_stmt_list(stmts: StmtList, reg: CompDefRegistry, nest: CompNest
                     splice_component_block(comp, inst, config, body, ss.line, ss.col, expanded_next, reg, nest)
                 }
                 _ -> {
-                    // Recurse into nested statement lists
+                    // Recurse into nested statement lists. Preserve
+                    // SStmt.file so g2eo's per-file metadata path can
+                    // attribute decls to their origin file.
                     let expanded_stmt = expand_stmt(ss.node, reg, nest)
-                    StmtList.Node(sstmt(expanded_stmt, ss.line, ss.col), expanded_next)
+                    StmtList.Node(sstmt_at(expanded_stmt, ss.line, ss.col, ss.file), expanded_next)
                 }
             }
         }
