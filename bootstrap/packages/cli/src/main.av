@@ -71,6 +71,7 @@ use @std.avrac.build.link.{LinkOptions, default_link_options, link_objects, link
 use @std.avrac.build.metadata_extract.{extract_unit_metadata, extract_per_file_metadata, collect_source_files, SrcFileList}
 use @std.avrac.build.metadata.{metadata_write, metadata_read, bytes_from_hex}
 use @std.avrac.build.metadata_synthesize.{synthesize_unit_stmts}
+use @std.avrac.build.pool.{pool_run, PoolCmds}
 use @std.crypto.{sha256_hex}
 extern fn avra_bytes_to_hex(b: bytes) -> string
 use @std.avrac.build.graph.{
@@ -464,6 +465,7 @@ fn build_event_json(kind: string, unit: string, fp: string, path: string, reason
     json_object(p)
 }
 
+
 /// Render a UnitList as "a → b → c". Used by --explain to summarise
 /// the project's dep graph in a single line. Topological order means
 /// leaves come first; we display in that order so the chain reads
@@ -632,16 +634,40 @@ fn pre_build_path_deps(deps: DepList, compiler_path: string, args: BuildArgs) ->
     avra_shell_exec("rm -f ${paths_file}")
     write_dep_paths(deps, paths_file)
     let env_jobs = avra_process_env_get("AVRA_JOBS")
-    let jobs = if env_jobs != "" { env_jobs } else { "4" }
-    // TTY-aware split (5gvp): pipe-redirected stdout takes the original
-    // sync xargs path so CI logs stay byte-identical to before. An
-    // interactive terminal gets a multi-line progress bar tracking
-    // running unit names + completion count.
+    let jobs_str = if env_jobs != "" { env_jobs } else { "4" }
+    let jobs = avra_parse_int(jobs_str)
+    // TTY-aware split (5gvp): pipe-redirected stdout takes the
+    // pure-Avra worker pool path so CI logs stay byte-identical to
+    // before. An interactive terminal gets a multi-line progress bar
+    // tracking running unit names + completion count (still uses the
+    // marker-file approach since the pool primitive doesn't surface
+    // per-job state).
     if progress_should_render() && !args.json {
-        return run_pre_deps_with_progress(paths_file, jobs, compiler_path, path_count)
-    } else {
-        let cmd = "xargs -I {} -P ${jobs} sh -c 'cd \"{}\" && \"${compiler_path}\" build --lib --emit_metadata' < ${paths_file}"
-        avra_shell_exec_status(cmd)
+        return run_pre_deps_with_progress(paths_file, jobs_str, compiler_path, path_count)
+    }
+    // Pure-Avra worker pool replaces the prior xargs -P invocation
+    // (e20h Phase 2). Same parallelism semantics, no shell xargs
+    // dependency, hermetic isolation per cmd. Foundation for future
+    // topo-aware scheduling (g2eo level-2 per-mod build dispatch).
+    let cmds = build_pre_dep_cmds(deps, compiler_path)
+    pool_run(cmds, jobs)
+}
+
+// Build the queue of `cd <path> && bs2 build --lib --emit_metadata`
+// commands the pool will dispatch — one per path-dep. Skips deps
+// whose `path` is empty (registry/git-ref deps not yet resolved
+// locally).
+fn build_pre_dep_cmds(deps: DepList, compiler_path: string) -> PoolCmds {
+    match deps {
+        .End -> PoolCmds.End
+        .Node(dep, next) -> {
+            if dep.path == "" {
+                build_pre_dep_cmds(next, compiler_path)
+            } else {
+                let cmd = "cd \"${dep.path}\" && \"${compiler_path}\" build --lib --emit_metadata > /dev/null 2>&1"
+                PoolCmds.Node(cmd, build_pre_dep_cmds(next, compiler_path))
+            }
+        }
     }
 }
 
