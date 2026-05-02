@@ -295,16 +295,6 @@ fn append_stmts(a: StmtList, b: StmtList) -> StmtList {
 
 // ── TYPES ──
 
-fn synth_types(xs: TypeDeclList) -> StmtList {
-    match xs {
-        .End -> StmtList.End
-        .Node(e, next) -> {
-            let head = synth_type_decl(e)
-            StmtList.Node(head, synth_types(next))
-        }
-    }
-}
-
 fn synth_type_decl(e: TypeDeclEntry) -> SStmt {
     let inner = type_decl_inner_stmt(e)
     sstmt_dummy(wrap_export(inner, true))
@@ -390,16 +380,6 @@ fn synth_trait_method_stmts(ms: MetaTraitMethodList) -> StmtList {
 
 // ── FNS ──
 
-fn synth_fns(xs: FnDeclList) -> StmtList {
-    match xs {
-        .End -> StmtList.End
-        .Node(e, next) -> {
-            let head = synth_fn_decl(e)
-            StmtList.Node(head, synth_fns(next))
-        }
-    }
-}
-
 fn synth_fn_decl(e: FnDeclEntry) -> SStmt {
     let n = local_name(e.name)
     if e.is_extern {
@@ -414,16 +394,6 @@ fn synth_fn_decl(e: FnDeclEntry) -> SStmt {
 }
 
 // ── CONSTS ──
-
-fn synth_consts(xs: ConstDeclList) -> StmtList {
-    match xs {
-        .End -> StmtList.End
-        .Node(e, next) -> {
-            let head = synth_const_decl(e)
-            StmtList.Node(head, synth_consts(next))
-        }
-    }
-}
 
 fn synth_const_decl(e: ConstDeclEntry) -> SStmt {
     let n = local_name(e.name)
@@ -452,16 +422,6 @@ fn int_to_text(n: int) -> string {
 }
 
 // ── IMPLS ──
-
-fn synth_impls(xs: ImplDeclList) -> StmtList {
-    match xs {
-        .End -> StmtList.End
-        .Node(e, next) -> {
-            let head = synth_impl_decl(e)
-            StmtList.Node(head, synth_impls(next))
-        }
-    }
-}
 
 fn synth_impl_decl(e: ImplDeclEntry, types: TypeDeclList) -> SStmt {
     let trait_local = local_name(e.trait_name)
