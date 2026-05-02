@@ -16,6 +16,7 @@
 #include <string.h>
 #include <stdarg.h>
 #include <stdint.h>
+#include <limits.h>
 #include <signal.h>
 #include <execinfo.h>
 #include <unistd.h>
@@ -2832,6 +2833,14 @@ typedef struct ProcessEntry {
     int stdout_fd;
     int stderr_fd;
     int alive;
+    // Cached exit code so a wait() following an is_alive() that
+    // already reaped the child via WNOHANG can still return the
+    // real status. Without this, wait()'s second waitpid() finds
+    // no zombie and returns -1, silently losing the exit code
+    // (e20h: pool_extract_rc was always seeing -1 on workers
+    // that completed between is_alive polls). Initialised to
+    // INT_MIN as a sentinel for "not yet reaped".
+    int cached_exit_code;
 } ProcessEntry;
 
 #define MAX_PROCESSES 256
@@ -2845,6 +2854,7 @@ static int64_t registry_add(pid_t pid, int stdout_fd, int stderr_fd) {
     process_registry[slot].stdout_fd = stdout_fd;
     process_registry[slot].stderr_fd = stderr_fd;
     process_registry[slot].alive = 1;
+    process_registry[slot].cached_exit_code = INT_MIN;
     return id;
 }
 
@@ -3032,6 +3042,12 @@ int64_t avra_process_kill(int64_t handle) {
 }
 
 /// Wait for a spawned process. Returns JSON result.
+/// When avra_process_is_alive already reaped the child, prefer the
+/// cached exit code (the second waitpid would otherwise return -1
+/// because the zombie has been collected and we'd lose the real
+/// status). cached_exit_code is INT_MIN until is_alive's WNOHANG
+/// reap fires; if still INT_MIN here, do the canonical blocking
+/// waitpid as before.
 const char* avra_process_wait(int64_t handle) {
     ProcessEntry* e = registry_get(handle);
     if (!e) return make_result_json("", "process not found", -1);
@@ -3039,9 +3055,14 @@ const char* avra_process_wait(int64_t handle) {
     char* err_str = read_fd_all(e->stderr_fd);
     close(e->stdout_fd);
     close(e->stderr_fd);
-    int status;
-    waitpid(e->pid, &status, 0);
-    int code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+    int code;
+    if (e->cached_exit_code != INT_MIN) {
+        code = e->cached_exit_code;
+    } else {
+        int status;
+        waitpid(e->pid, &status, 0);
+        code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+    }
     registry_remove(handle);
     const char* result = make_result_json(out_str, err_str, code);
     free(out_str); free(err_str);
@@ -3105,6 +3126,11 @@ int64_t avra_process_wait_for_output(int64_t handle, const char* pattern, int64_
 }
 
 /// Check if process is alive. Returns 1 if running, 0 if exited.
+/// When the child is reaped here, cache its exit code so a follow-up
+/// avra_process_wait() can still return the real status (otherwise
+/// the second waitpid would find no zombie and the code would
+/// silently come back as -1 — broke pool_extract_rc on completed
+/// workers in e20h's worker pool).
 int64_t avra_process_is_alive(int64_t handle) {
     ProcessEntry* e = registry_get(handle);
     if (!e || !e->alive) return 0;
@@ -3112,6 +3138,7 @@ int64_t avra_process_is_alive(int64_t handle) {
     pid_t result = waitpid(e->pid, &status, WNOHANG);
     if (result == 0) return 1; // still running
     e->alive = 0;
+    e->cached_exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
     return 0;
 }
 

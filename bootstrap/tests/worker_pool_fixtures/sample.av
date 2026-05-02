@@ -1,0 +1,94 @@
+// Fixture: validates @std.avrac.build.pool — the in-Avra worker pool
+// that future iterations use to replace `xargs -P` parallel runs.
+// The pool spawns up to N concurrent /bin/sh workers, each running
+// one queued command, reaps completed workers, and dispatches the
+// next pending command until the queue drains.
+//
+// Tracking ticket: forge-crafting-intepreters-e20h.
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
+extern fn avra_process_env_get(name: string) -> string
+extern fn avra_selfhost_file_exists(path: string) -> int
+extern fn avra_uptime_ms() -> int
+
+use @std.avrac.build.pool.{pool_run, pool_cmds_length, PoolCmds}
+
+fn probe(name: string, ok: bool) {
+    let tag = if ok { "ok" } else { "FAIL" }
+    println("PROBE ${name}: ${tag}")
+}
+
+// Build a queue of N sentinel commands. Each command writes a marker
+// file so we can verify (a) every command ran and (b) the rc folds
+// correctly when one fails.
+fn cmds_with_markers(n: int, marker_dir: string) -> PoolCmds {
+    cmds_with_markers_helper(0, n, marker_dir)
+}
+
+fn cmds_with_markers_helper(i: int, n: int, dir: string) -> PoolCmds {
+    if i >= n {
+        return PoolCmds.End
+    }
+    let cmd = "touch ${dir}/job${string(i)}.done; sleep 0.05; exit 0"
+    PoolCmds.Node(cmd, cmds_with_markers_helper(i + 1, n, dir))
+}
+
+// Mix successful + failing commands to verify rc propagation.
+fn cmds_mixed_rc(dir: string) -> PoolCmds {
+    PoolCmds.Node("touch ${dir}/ok1.done; exit 0",
+    PoolCmds.Node("touch ${dir}/ok2.done; exit 0",
+    PoolCmds.Node("touch ${dir}/fail.done; exit 7",
+    PoolCmds.Node("touch ${dir}/ok3.done; exit 0",
+    PoolCmds.End))))
+}
+
+fn count_files(dir: string, glob: string) -> int {
+    let raw = avra_shell_exec("ls ${dir}/${glob} 2>/dev/null | wc -l | tr -d ' '")
+    avra_parse_int(raw)
+}
+
+extern fn avra_parse_int(s: string) -> int
+
+fn main() -> int {
+    let dir = "/tmp/avra_e20h_pool"
+    avra_shell_exec("rm -rf ${dir} && mkdir -p ${dir}")
+
+    // Case 1: empty queue. pool_run returns 0, no-op.
+    let rc_empty = pool_run(PoolCmds.End, 4)
+    probe("empty_queue_rc_zero", rc_empty == 0)
+
+    // Case 2: 8 successful commands, jobs=4. Wall time should be
+    // roughly 2 sleep-windows (~100ms), not 8 (~400ms). Each worker
+    // gets reused twice.
+    avra_shell_exec("rm -f ${dir}/job*.done")
+    let cmds_ok = cmds_with_markers(8, dir)
+    probe("queue_length_eight", pool_cmds_length(cmds_ok) == 8)
+    let t0 = avra_uptime_ms()
+    let rc_ok = pool_run(cmds_ok, 4)
+    let elapsed = avra_uptime_ms() - t0
+    probe("eight_success_rc_zero", rc_ok == 0)
+    probe("all_eight_markers_landed", count_files(dir, "job*.done") == 8)
+    // 8 jobs × 50ms each, 4 concurrent → ~100ms theoretical minimum.
+    // Allow generous slack for spawn overhead + system noise but
+    // assert it's WAY under 8 × 50 = 400ms (which would imply
+    // sequential execution — pool isn't actually parallelizing).
+    probe("parallel_under_serial_baseline", elapsed < 350)
+
+    // Case 3: a failing command folds into max_rc. Pool still
+    // drains every job (no early-exit on failure). Wipe the WHOLE
+    // dir so leftover markers from case 2 don't pollute the count.
+    avra_shell_exec("rm -rf ${dir} && mkdir -p ${dir}")
+    let rc_mixed = pool_run(cmds_mixed_rc(dir), 2)
+    probe("mixed_rc_returns_worst_code", rc_mixed == 7)
+    probe("all_four_markers_landed_despite_failure", count_files(dir, "*.done") == 4)
+
+    // Case 4: jobs=1 falls back to serial — still correct.
+    avra_shell_exec("rm -f ${dir}/job*.done")
+    let cmds_serial = cmds_with_markers(3, dir)
+    let rc_serial = pool_run(cmds_serial, 1)
+    probe("serial_rc_zero", rc_serial == 0)
+    probe("serial_all_markers", count_files(dir, "job*.done") == 3)
+
+    0
+}

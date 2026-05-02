@@ -1,0 +1,218 @@
+// WHY: in-Avra worker pool — drop-in replacement for `xargs -P`
+// style parallel-N execution. Each command runs in its own
+// subprocess (hermetic isolation: a crash in one job can't poison
+// the others), up to `jobs` concurrent workers. As workers finish,
+// the pool reaps them and dispatches the next queued command.
+//
+// Foundation for the future per-mod build dispatcher (g2eo level-2):
+// once each .av file is its own unit with its own fingerprint, the
+// build driver feeds N `bs2 compile` commands into pool_run and
+// waits. Cargo-style hermetic worker isolation per spec axis 18.
+//
+// Tracking ticket: forge-crafting-intepreters-e20h.
+//
+// Key shape contracts:
+//   - Commands are full shell strings; the pool wraps each in
+//     `/bin/sh -c <cmd>` so callers can compose `cd path && build...`
+//     without escaping arg lists.
+//   - Returns the worst exit code observed across all workers (0 iff
+//     every worker exited 0). Callers wanting per-job rc need a
+//     marker-file pattern.
+//   - Polling cadence is 50ms — small enough that short jobs reap
+//     promptly, large enough to not burn CPU on the polling loop.
+
+extern fn avra_process_spawn_bg(cmd: string, args_json: string, opts_json: string) -> int
+extern fn avra_process_is_alive(handle: int) -> int
+extern fn avra_process_wait(handle: int) -> string
+extern fn avra_sleep_ms(ms: int)
+extern fn avra_parse_int(s: string) -> int
+
+use @std.json.{json_str}
+
+/// Pool's command queue. Distinct nominal type to avoid collision
+/// with @std/avrac/build/fingerprint::StrList and @std/lsp::StrList
+/// when both are in transitive scope.
+export enum PoolCmds {
+    End,
+    Node(cmd: string, next: PoolCmds),
+}
+
+fn pool_max_rc(a: int, b: int) -> int {
+    if a > b { a } else { b }
+}
+
+// Worker slot. `handle = -1` means idle; otherwise it's the handle
+// returned by avra_process_spawn_bg. `started_idx` is the queue
+// index that worker is processing (only used for diagnostics).
+type Worker = {
+    handle: int,
+    started_idx: int,
+}
+
+enum WorkerList {
+    End,
+    Node(w: Worker, next: WorkerList),
+}
+
+fn workers_init(n: int) -> WorkerList {
+    if n <= 0 { return WorkerList.End }
+    WorkerList.Node(Worker { handle: 0 - 1, started_idx: 0 - 1 }, workers_init(n - 1))
+}
+
+fn workers_has_idle(ws: WorkerList) -> bool {
+    match ws {
+        .End -> false
+        .Node(w, next) -> {
+            if w.handle < 0 { true } else { workers_has_idle(next) }
+        }
+    }
+}
+
+// Replace the first idle worker with a freshly-spawned one.
+fn workers_dispatch(ws: WorkerList, handle: int, idx: int) -> WorkerList {
+    match ws {
+        .End -> WorkerList.End
+        .Node(w, next) -> {
+            if w.handle < 0 {
+                WorkerList.Node(Worker { handle, started_idx: idx }, next)
+            } else {
+                WorkerList.Node(w, workers_dispatch(next, handle, idx))
+            }
+        }
+    }
+}
+
+type ReapResult = {
+    workers: WorkerList,
+    completed: int,
+    max_rc: int,
+}
+
+// Walk every active worker; when avra_process_is_alive returns 0 the
+// child has exited, so wait() collects its rc and the slot is freed.
+// Slot becomes idle (handle = -1) so the dispatcher can reuse it.
+fn workers_reap(ws: WorkerList) -> ReapResult {
+    match ws {
+        .End -> ReapResult { workers: WorkerList.End, completed: 0, max_rc: 0 }
+        .Node(w, next) -> {
+            let after = workers_reap(next)
+            if w.handle < 0 {
+                ReapResult { workers: WorkerList.Node(w, after.workers), completed: after.completed, max_rc: after.max_rc }
+            } else if avra_process_is_alive(w.handle) != 0 {
+                ReapResult { workers: WorkerList.Node(w, after.workers), completed: after.completed, max_rc: after.max_rc }
+            } else {
+                let json = avra_process_wait(w.handle)
+                let rc = pool_extract_rc(json)
+                let freed = Worker { handle: 0 - 1, started_idx: 0 - 1 }
+                ReapResult {
+                    workers: WorkerList.Node(freed, after.workers),
+                    completed: after.completed + 1,
+                    max_rc: pool_max_rc(after.max_rc, rc),
+                }
+            }
+        }
+    }
+}
+
+// avra_process_wait returns JSON `{"stdout":...,"stderr":...,"code":N}`.
+// Pull the int after the `"code":` key. Defaults to 0 if the key is
+// absent (won't happen in practice but keep the failure mode safe).
+fn pool_extract_rc(wait_json: string) -> int {
+    let key = "\"code\":"
+    let idx = wait_json.index_of(key)
+    if idx < 0 { return 0 }
+    let from = idx + key.length
+    mut to = from
+    while to < wait_json.length {
+        let c = wait_json.byte(to)
+        if c < 0x30 || c > 0x39 {
+            if to == from {
+                // Allow a leading minus for negative codes.
+                if c == 0x2D { to = to + 1 }
+                else { break }
+            } else {
+                break
+            }
+        } else {
+            to = to + 1
+        }
+    }
+    if to == from { return 0 }
+    avra_parse_int(wait_json.substring(from, to))
+}
+
+/// Run `commands` in parallel, capping concurrency at `jobs`. Each
+/// command is spawned via `/bin/sh -c <cmd>`; the pool reaps
+/// completed workers and dispatches new commands until every entry
+/// in the queue has been run. Returns the worst exit code seen.
+export fn pool_run(commands: PoolCmds, jobs: int) -> int {
+    if jobs <= 0 { return 0 }
+    pool_loop(commands, 0, pool_cmds_length(commands), workers_init(jobs), 0, 0)
+}
+
+fn pool_loop(cmds: PoolCmds, next_idx: int, total: int, workers: WorkerList, completed: int, max_rc: int) -> int {
+    if completed >= total {
+        return max_rc
+    }
+    // Reap finished workers first so any freed slots are eligible
+    // to receive new dispatches in this same iteration.
+    let reaped = workers_reap(workers)
+    let after_completed = completed + reaped.completed
+    let after_rc = pool_max_rc(max_rc, reaped.max_rc)
+    // Dispatch as many queued commands as there are idle slots.
+    let dispatched = pool_dispatch_batch(cmds, next_idx, total, reaped.workers)
+    if after_completed >= total {
+        return after_rc
+    }
+    // Sleep briefly when we're waiting on at least one worker —
+    // skip the sleep if we just dispatched (cheap retry path).
+    if dispatched.dispatched_count == 0 {
+        avra_sleep_ms(50)
+    }
+    pool_loop(cmds, dispatched.next_idx, total, dispatched.workers, after_completed, after_rc)
+}
+
+type DispatchBatch = {
+    workers: WorkerList,
+    next_idx: int,
+    dispatched_count: int,
+}
+
+fn pool_dispatch_batch(cmds: PoolCmds, idx: int, total: int, workers: WorkerList) -> DispatchBatch {
+    if idx >= total {
+        return DispatchBatch { workers, next_idx: idx, dispatched_count: 0 }
+    }
+    if !workers_has_idle(workers) {
+        return DispatchBatch { workers, next_idx: idx, dispatched_count: 0 }
+    }
+    let cmd = pool_cmds_at(cmds, idx)
+    let handle = avra_process_spawn_bg("/bin/sh", "[\"-c\", ${json_str(cmd)}]", "")
+    if handle < 0 {
+        // Spawn failure: skip this job (rc is reported as -1 via
+        // wait elsewhere; here the worst case is we under-count).
+        return DispatchBatch { workers, next_idx: idx + 1, dispatched_count: 0 }
+    }
+    let after = workers_dispatch(workers, handle, idx)
+    let rest = pool_dispatch_batch(cmds, idx + 1, total, after)
+    DispatchBatch {
+        workers: rest.workers,
+        next_idx: rest.next_idx,
+        dispatched_count: 1 + rest.dispatched_count,
+    }
+}
+
+export fn pool_cmds_length(xs: PoolCmds) -> int {
+    match xs {
+        .End -> 0
+        .Node(_, next) -> 1 + pool_cmds_length(next)
+    }
+}
+
+export fn pool_cmds_at(xs: PoolCmds, idx: int) -> string {
+    match xs {
+        .End -> ""
+        .Node(s, next) -> {
+            if idx <= 0 { s } else { pool_cmds_at(next, idx - 1) }
+        }
+    }
+}

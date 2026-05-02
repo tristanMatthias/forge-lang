@@ -1,0 +1,67 @@
+// In-Avra worker pool primitive (@std.avrac.build.pool) — drop-in
+// replacement for `xargs -P` style parallel-N execution. Each
+// command runs hermetically in its own /bin/sh subprocess; the pool
+// reaps completed workers and dispatches the next queued command
+// until everything's drained. Returns the worst exit code seen.
+//
+// Foundation for g2eo level-2 (per-mod build dispatch) and the
+// e20h Phase 2 worker pool that replaces pre_build_path_deps's
+// xargs runner.
+//
+// Tracking ticket: forge-crafting-intepreters-e20h.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn wp_run() -> string {
+    avra_shell_exec("if [ ! -f /tmp/avra_e20h_pool_test.out ]; then bash scripts/diagnose.sh --run tests/worker_pool_fixtures/sample.av > /tmp/avra_e20h_pool_test.out 2>&1 || true; fi; cat /tmp/avra_e20h_pool_test.out")
+}
+
+fn wp_wipe() -> string {
+    avra_shell_exec("rm -f /tmp/avra_e20h_pool_test.out")
+}
+
+spec "e20h worker pool: clear cached output" {
+    then "wipe stale /tmp output" {
+        let _ = wp_wipe()
+        true
+    }
+}
+
+spec "e20h worker pool: empty queue is a no-op" {
+    then "empty queue returns rc 0" {
+        wp_run().contains("PROBE empty_queue_rc_zero: ok")
+    }
+}
+
+spec "e20h worker pool: 8 commands at jobs=4 run in parallel" {
+    then "queue counts as 8 entries" {
+        wp_run().contains("PROBE queue_length_eight: ok")
+    }
+    then "all 8 commands exit zero, pool returns rc 0" {
+        wp_run().contains("PROBE eight_success_rc_zero: ok")
+    }
+    then "all 8 marker files land" {
+        wp_run().contains("PROBE all_eight_markers_landed: ok")
+    }
+    then "wall time stays well under serial baseline (proves real parallelism)" {
+        wp_run().contains("PROBE parallel_under_serial_baseline: ok")
+    }
+}
+
+spec "e20h worker pool: failure rc folds into worst-code return" {
+    then "mixed-rc queue returns worst exit code" {
+        wp_run().contains("PROBE mixed_rc_returns_worst_code: ok")
+    }
+    then "every command runs even after one fails (no early-exit)" {
+        wp_run().contains("PROBE all_four_markers_landed_despite_failure: ok")
+    }
+}
+
+spec "e20h worker pool: jobs=1 still correct (serial fallback)" {
+    then "serial run rc is zero" {
+        wp_run().contains("PROBE serial_rc_zero: ok")
+    }
+    then "serial run lands all markers" {
+        wp_run().contains("PROBE serial_all_markers: ok")
+    }
+}
