@@ -163,6 +163,18 @@ enum StructTypeReg {
     Node(name: string, fields: FieldList, next: StructTypeReg)
 }
 
+/// Look up a single field's resolved type within a FieldList. Returns
+/// ValueType.Unknown when the field name isn't found. Used by the
+/// kkgf annotate fast-path to skip a redundant check_expr re-walk
+/// for `obj.field` reads when obj is a bare identifier.
+export fn field_type_lookup(fields: FieldList, name: string) -> ValueType {
+    match fields {
+        .End -> ValueType.Unknown
+        .Node(fname, fty, _) if fname == name -> fty
+        .Node(_, _, next) -> field_type_lookup(next, name)
+    }
+}
+
 /// Look up a struct's FieldList by name. Empty list when not found.
 export fn struct_type_lookup(reg: StructTypeReg, name: string) -> FieldList {
     match reg {
@@ -1588,6 +1600,44 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
         // above, looking it up via annotate_sexpr_ty is one
         // tag-dispatch instead of a full check_expr re-walk.
         .Assign(_, val) -> annotate_sexpr_ty(tc, val)
+        // kkgf: FieldAccess on a bare ident is the dominant pattern
+        // in the bootstrap (self.x, ctx.foo, e.name, ...). When the
+        // base is an Ident we know its type from tc.types; the field
+        // type comes from the struct registry. Falls back to
+        // check_expr only when the base is a more complex expression
+        // (chained field accesses, calls returning structs, etc.).
+        .FieldAccess(base, fname) -> match base {
+            .Ident(obj_name) -> {
+                let base_ty = type_lookup(tc.types, obj_name)
+                let sname = vtype_struct_name(base_ty)
+                if sname == "" {
+                    check_expr(tc, se.node).ty
+                } else {
+                    let field_ty = field_type_lookup(struct_type_lookup(tc.structs, sname), fname)
+                    if vtype_is_unknown(field_ty) {
+                        check_expr(tc, se.node).ty
+                    } else {
+                        field_ty
+                    }
+                }
+            }
+            _ -> check_expr(tc, se.node).ty
+        }
+        // kkgf: Index on a bare ident — common pattern is `xs[i]`
+        // where xs is a List. Falls back when base type isn't a
+        // List (string indexing, map indexing, custom Index impls).
+        .Index(base, _) -> match base {
+            .Ident(obj_name) -> {
+                let base_ty = type_lookup(tc.types, obj_name)
+                let elem_ty = vtype_list_elem(base_ty)
+                if vtype_is_unknown(elem_ty) {
+                    check_expr(tc, se.node).ty
+                } else {
+                    elem_ty
+                }
+            }
+            _ -> check_expr(tc, se.node).ty
+        }
         // Try unwraps a Result; the unwrapped success type matches
         // the inner expression's type only when the parser desugar
         // pass has already lowered it. For now this stays in the
