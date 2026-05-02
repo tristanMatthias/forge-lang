@@ -1,0 +1,68 @@
+// Fixture: locks in 9ixv's deliverable. Runs the bootstrap CLI's own
+// source through the multi-unit cached metadata path:
+//
+//   1. Pre-build @std/avrac as a lib (--lib --emit_metadata).
+//   2. Compile packages/cli/src/main.av with AVRA_USE_METADATA=1 set.
+//
+// Step 2 must succeed with zero diagnostics and produce main.av.ll.
+// Before 9ixv this path produced 188 errors because the synthesizer
+// flattened sub-module structure; if the synthesizer regresses we
+// catch it here.
+//
+// Tracking ticket: forge-crafting-intepreters-9ixv (closed, 2026-05-01).
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
+extern fn avra_process_env_get(name: string) -> string
+extern fn avra_selfhost_file_exists(path: string) -> int
+
+fn probe(name: string, ok: bool) {
+    let tag = if ok { "ok" } else { "FAIL" }
+    println("PROBE ${name}: ${tag}")
+}
+
+fn main() -> int {
+    let pwd = avra_process_env_get("PWD")
+    let bs2 = "${pwd}/build/bs2"
+    let avrac_dir = "${pwd}/packages/std-avrac"
+    let cli_main = "${pwd}/packages/cli/src/main.av"
+
+    // Wipe metadata for every @std/* dep so the test exercises the
+    // full produce-then-consume cycle, not a stale cache hit.
+    avra_shell_exec("rm -f ${pwd}/packages/std-avrac/src/avrac.av.meta.bin ${pwd}/packages/std-cli/src/cli.av.meta.bin ${pwd}/packages/std-crypto/src/crypto.av.meta.bin ${pwd}/packages/std-json/src/json.av.meta.bin ${pwd}/packages/std-lsp/src/lsp.av.meta.bin")
+    avra_shell_exec("rm -rf ${pwd}/packages/std-avrac/build/cache ${pwd}/packages/std-cli/build/cache ${pwd}/packages/std-crypto/build/cache ${pwd}/packages/std-json/build/cache ${pwd}/packages/std-lsp/build/cache")
+    avra_shell_exec("rm -f /tmp/cli_metadata_compile_deps.txt")
+    avra_shell_exec("rm -f ${cli_main}.ll")
+
+    // Step 1: pre-build @std/avrac as a lib. This recursively pre-builds
+    // its path-deps (@std/cli, @std/lsp, @std/json, @std/crypto), so
+    // every meta.bin a downstream consumer might want lands on disk.
+    let rc_lib = avra_shell_exec_status("cd ${avrac_dir} && ${bs2} build --lib --emit_metadata > /tmp/cli_meta_lib.log 2>&1")
+    probe("avrac_lib_build_rc_zero", rc_lib == 0)
+    probe("avrac_meta_present", avra_selfhost_file_exists("${avrac_dir}/src/avrac.av.meta.bin") != 0)
+    probe("std_lsp_meta_present", avra_selfhost_file_exists("${pwd}/packages/std-lsp/src/lsp.av.meta.bin") != 0)
+    probe("std_json_meta_present", avra_selfhost_file_exists("${pwd}/packages/std-json/src/json.av.meta.bin") != 0)
+    probe("std_cli_meta_present", avra_selfhost_file_exists("${pwd}/packages/std-cli/src/cli.av.meta.bin") != 0)
+    probe("std_crypto_meta_present", avra_selfhost_file_exists("${pwd}/packages/std-crypto/src/crypto.av.meta.bin") != 0)
+
+    // Step 2: compile cli/main.av with AVRA_USE_METADATA=1. Resolver
+    // takes the metadata fast-path on every `use @std.<pkg>` import
+    // and synthesises stubs from the on-disk .meta.bin files instead
+    // of re-parsing each package's sources. AVRA_DEPS_OUT records
+    // the producer .o paths a final link step would consume.
+    let rc_compile = avra_shell_exec_status("cd ${pwd} && AVRA_USE_METADATA=1 AVRA_DEPS_OUT=/tmp/cli_metadata_compile_deps.txt ${bs2} compile ${cli_main} > /tmp/cli_meta_compile.log 2>&1")
+    probe("cli_compile_rc_zero", rc_compile == 0)
+    probe("cli_main_ll_present", avra_selfhost_file_exists("${cli_main}.ll") != 0)
+    probe("cli_deps_sidecar_present", avra_selfhost_file_exists("/tmp/cli_metadata_compile_deps.txt") != 0)
+
+    // The deps sidecar should record at least one producer .o per
+    // package the cli imports. Five @std/* packages → at least 5
+    // entries (the line count is exactly the unique-producer count).
+    let deps_count_str = avra_shell_exec("wc -l < /tmp/cli_metadata_compile_deps.txt 2>/dev/null | tr -d ' '")
+    let deps_count = avra_parse_int(deps_count_str)
+    probe("cli_deps_at_least_five_producers", deps_count >= 5)
+
+    0
+}
+
+extern fn avra_parse_int(s: string) -> int
