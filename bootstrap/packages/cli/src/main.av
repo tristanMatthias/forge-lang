@@ -1003,8 +1003,23 @@ fn run_build_command() {
                 }
             }
             compile_cmd = compile_cmd + " '${entry_path}'"
+            // g2eo: when --emit_metadata is on AND a path-dep was
+            // pre-built by pre_build_path_deps above, its `.meta.bin`
+            // sits next to the dep source. Setting AVRA_USE_METADATA=1
+            // for the root compile lets the resolver's metadata
+            // fast-path consume those — skipping a full re-parse of
+            // every dep package. Safe because the fingerprint check
+            // (resolver's meta_fingerprint_matches_source) rejects
+            // any stale .meta.bin and falls back to a fresh source
+            // parse; a meta absent or out-of-date never produces
+            // wrong code, just the slower path.
+            let env_prefix = if args.emit_metadata && manifest.found && count_path_deps(manifest.deps) > 0 {
+                "AVRA_USE_METADATA=1 "
+            } else {
+                ""
+            }
             let t_before_compile = avra_uptime_ms()
-            let _ = avra_shell_exec(compile_cmd)
+            let _ = avra_shell_exec("${env_prefix}${compile_cmd}")
             let t_after_compile = avra_uptime_ms()
             let ll_path = "${entry_path}.ll"
             if !file_exists(ll_path) {

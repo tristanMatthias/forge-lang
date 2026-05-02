@@ -1,0 +1,68 @@
+// Fixture: validates that `bs2 build --emit_metadata` automatically
+// activates the resolver's metadata fast-path for the root compile.
+// Without this, users had to manually set AVRA_USE_METADATA=1 every
+// build invocation to consume the .meta.bin pre_build_path_deps
+// produced — the path-dep pre-build was effectively wasted unless
+// the env var was also set.
+//
+// Mechanism: build a tiny app whose only dep is a path-dep, then
+// observe AVRA_DEPS_OUT — the env var is plumbed through to the
+// root compile (because AVRA_USE_METADATA=1 was set inline) so
+// record_meta_dep stamps the dep's .o path into the sidecar. Absent
+// from the sidecar = fast-path not taken.
+//
+// Tracking ticket: forge-crafting-intepreters-g2eo.
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
+extern fn avra_process_env_get(name: string) -> string
+extern fn avra_selfhost_file_exists(path: string) -> int
+
+fn probe(name: string, ok: bool) {
+    let tag = if ok { "ok" } else { "FAIL" }
+    println("PROBE ${name}: ${tag}")
+}
+
+fn main() -> int {
+    let root = "/tmp/avra_g2eo_auto_meta"
+    avra_shell_exec("rm -rf ${root}")
+    // Layout under packages/ so find_packages_dir's `/packages/`
+    // strategy-1 succeeds. The std-cli sentinel keeps the cwd-relative
+    // probe (strategy-2) happy if compiled from the packages root.
+    avra_shell_exec("mkdir -p ${root}/packages/test-dep/src ${root}/packages/test-app/src ${root}/packages/std-cli/src")
+    avra_shell_exec("printf 'export fn _placeholder() -> int { 0 }\\n' > ${root}/packages/std-cli/src/cli.av")
+
+    // Filename must be `dep.av` (matching the package name) — the
+    // resolver's package-load path probes `<pkg>/src/<name>.av` first.
+    avra_shell_exec("printf '[package]\\nname = \"@test/dep\"\\nversion = \"0.1.0\"\\n[lib]\\nname = \"dep\"\\npath = \"src/dep.av\"\\n' > ${root}/packages/test-dep/avra.toml")
+    avra_shell_exec("printf 'export fn dep_value() -> int { 17 }\\n' > ${root}/packages/test-dep/src/dep.av")
+
+    avra_shell_exec("printf '[package]\\nname = \"@test/app\"\\nversion = \"0.1.0\"\\n[bin]\\nname = \"app\"\\npath = \"src/main.av\"\\n[dependencies]\\n\"@test/dep\" = { path = \"../test-dep\" }\\n' > ${root}/packages/test-app/avra.toml")
+    avra_shell_exec("printf 'use @test.dep.{dep_value}\\nfn main() -> int { dep_value() }\\n' > ${root}/packages/test-app/src/main.av")
+
+    let pwd = avra_process_env_get("PWD")
+    let bs2 = "${pwd}/build/bs2"
+
+    // Step 1: bs2 build --emit_metadata. This should:
+    //   a) pre-build the dep with --emit_metadata (lands dep.av.meta.bin)
+    //   b) auto-set AVRA_USE_METADATA=1 for the root compile
+    //   c) the root compile's resolver sees the dep's meta + accepts it
+    avra_shell_exec("rm -f /tmp/avra_g2eo_auto_deps.txt")
+    let rc1 = avra_shell_exec_status("cd ${root}/packages/test-app && AVRA_DEPS_OUT=/tmp/avra_g2eo_auto_deps.txt ${bs2} build --emit_metadata > /tmp/avra_g2eo_auto.log 2>&1")
+    probe("build_rc_zero", rc1 == 0)
+    probe("dep_meta_pre_built", avra_selfhost_file_exists("${root}/packages/test-dep/src/dep.av.meta.bin") != 0)
+    let auto_taken = avra_shell_exec_status("test -s /tmp/avra_g2eo_auto_deps.txt && grep -q dep /tmp/avra_g2eo_auto_deps.txt")
+    probe("fast_path_taken_by_default", auto_taken == 0)
+
+    // Step 2: negative control — build WITHOUT --emit_metadata. No
+    // pre-build runs, no meta is generated, AVRA_USE_METADATA stays
+    // off. The deps sidecar should NOT contain dep.
+    avra_shell_exec("rm -rf ${root}/packages/test-dep/src/dep.av.meta.bin ${root}/packages/test-dep/build")
+    avra_shell_exec("rm -f /tmp/avra_g2eo_auto_deps.txt")
+    let rc2 = avra_shell_exec_status("cd ${root}/packages/test-app && AVRA_DEPS_OUT=/tmp/avra_g2eo_auto_deps.txt ${bs2} build > /tmp/avra_g2eo_auto2.log 2>&1")
+    probe("plain_build_rc_zero", rc2 == 0)
+    let plain_taken = avra_shell_exec_status("test -s /tmp/avra_g2eo_auto_deps.txt && grep -q dep /tmp/avra_g2eo_auto_deps.txt")
+    probe("plain_build_no_fast_path", plain_taken != 0)
+
+    0
+}
