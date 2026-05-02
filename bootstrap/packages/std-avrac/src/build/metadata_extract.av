@@ -6,7 +6,7 @@
 // Tracked under forge-crafting-intepreters-iinq.
 
 use core.ast.{
-    Stmt, StmtList, Expr, ParamList, FieldList, VariantList, TypeParamList, ValueType,
+    Stmt, StmtList, SStmt, Expr, ParamList, FieldList, VariantList, TypeParamList, ValueType,
     AnnotationList, stmt_unwrap,
 }
 use build.metadata.{
@@ -16,6 +16,7 @@ use build.metadata.{
     MetaTraitMethodList, ImplMethodRefList,
     sym_id_for, unit_metadata_new,
 }
+use build.fingerprint.{StrList}
 use parse.lexer.{parse_int_literal}
 
 // Internal accumulator — each walk step folds into this and returns
@@ -446,4 +447,62 @@ fn strip_quotes(quoted: string) -> string {
         return quoted.substring(1, quoted.length - 1)
     }
     quoted
+}
+
+// ── 9ixv-followup / g2eo prep: per-file source discovery ─────────────
+//
+// Walks a resolved StmtList and collects every distinct `SStmt.file`
+// value it encounters. The parser stamps each statement with the path
+// of the .av file it was parsed from (parse/mod.av:481 sstmt_at), and
+// resolve_module_files preserves that stamp when inlining sub-mod
+// bodies. The result is the canonical list of source files contributing
+// to the unit — the foundation for emitting per-file metadata sidecars
+// (each gets its own .meta.bin so editing one mod doesn't invalidate
+// every other mod's parse cache).
+//
+// Used today only by tests; the build driver picks it up under g2eo.
+
+export fn collect_source_files(stmts: StmtList) -> StrList {
+    let acc = walk_files(stmts, StrList.End)
+    acc
+}
+
+fn walk_files(stmts: StmtList, acc: StrList) -> StrList {
+    match stmts {
+        .End -> acc
+        .Node(ss, next) -> {
+            let after_self = if ss.file != "" && !str_list_contains(acc, ss.file) {
+                StrList.Node(ss.file, acc)
+            } else {
+                acc
+            }
+            let after_inner = walk_files_in_stmt(ss.node, after_self)
+            walk_files(next, after_inner)
+        }
+    }
+}
+
+// Recurse into Module bodies (and Annotated wrappers) so files
+// reached only through nested `mod` decls still get picked up.
+// Other Stmt variants don't carry sub-statement lists with their
+// own file stamps — function bodies / blocks do, but those stamps
+// match the enclosing fn's file, so re-collecting from there is
+// redundant and slow. The trade-off: declarations are what the
+// metadata extractor cares about, so Module + Annotated cover the
+// public-surface walk.
+fn walk_files_in_stmt(stmt: Stmt, acc: StrList) -> StrList {
+    match stmt {
+        .Module(_, body) -> walk_files(body, acc)
+        .Annotated(_, inner) -> walk_files_in_stmt(inner, acc)
+        _ -> acc
+    }
+}
+
+fn str_list_contains(xs: StrList, target: string) -> bool {
+    match xs {
+        .End -> false
+        .Node(s, next) -> {
+            if s == target { true } else { str_list_contains(next, target) }
+        }
+    }
 }

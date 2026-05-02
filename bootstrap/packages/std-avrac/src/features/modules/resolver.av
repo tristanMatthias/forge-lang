@@ -3,8 +3,8 @@
 // them, and attaches the parsed bodies. This is the bridge between
 // the pure parser (no I/O) and the file system.
 
-use core.ast.{Stmt, StmtList, SStmt, sstmt, AnnotationList, ExprList}
-use parse.{parse_program_source}
+use core.ast.{Stmt, StmtList, SStmt, sstmt, sstmt_at, AnnotationList, ExprList}
+use parse.{parse_program_source, parse_program_source_at}
 use core.runtime.{avra_process_env_get, avra_selfhost_append_file}
 use build.metadata.{metadata_read, metadata_file_exists}
 use build.metadata_synthesize.{synthesize_unit_body}
@@ -363,6 +363,9 @@ fn flatten_groups(g: ModGroupList) -> StmtList {
     match g {
         .End -> StmtList.End
         .Node(name, body, line, col, next) -> {
+            // Hoisted package wrappers are virtual scopes — no source
+            // file owns them — so file="" is correct here. Body stmts
+            // retain their own SStmt.file from the original parse.
             let merged = sstmt(Stmt.Module(name, dedup_modules(body)), line, col)
             StmtList.Node(merged, flatten_groups(next))
         }
@@ -399,7 +402,7 @@ export fn hoist_package_modules(stmts: StmtList) -> HoistSplit {
             match ss.node {
                 .Module(name, body) if name.length > 0 && name[0] == "@" -> {
                     let inner = hoist_package_modules(body)
-                    let cleaned = sstmt(Stmt.Module(name, inner.body), ss.line, ss.col)
+                    let cleaned = sstmt_at(Stmt.Module(name, inner.body), ss.line, ss.col, ss.file)
                     HoistSplit {
                         packages: append_stmt_list(inner.packages, StmtList.Node(cleaned, rest.packages)),
                         body: rest.body,
@@ -413,7 +416,7 @@ export fn hoist_package_modules(stmts: StmtList) -> HoistSplit {
                             body: StmtList.Node(ss, rest.body),
                         }
                     } else {
-                        let cleaned = sstmt(Stmt.Module(name, inner.body), ss.line, ss.col)
+                        let cleaned = sstmt_at(Stmt.Module(name, inner.body), ss.line, ss.col, ss.file)
                         HoistSplit {
                             packages: append_stmt_list(inner.packages, rest.packages),
                             body: StmtList.Node(cleaned, rest.body),
@@ -506,7 +509,7 @@ fn qualify_uses_recursively(stmts: StmtList, pkg_qual: string) -> StmtList {
 /// rewrite, then re-attach the annotation — `Use` and `Module`
 /// arms don't need to know about Annotated.
 fn qualify_use_in_stmt(ss: SStmt, pkg_qual: string) -> SStmt {
-    sstmt(qualify_inner_stmt(ss.node, pkg_qual), ss.line, ss.col)
+    sstmt_at(qualify_inner_stmt(ss.node, pkg_qual), ss.line, ss.col, ss.file)
 }
 
 fn qualify_inner_stmt(stmt: Stmt, pkg_qual: string) -> Stmt {
@@ -557,7 +560,7 @@ fn resolve_module_files_inner(stmts: StmtList, dir: string, loaded: LoadedPaths,
             let rest = resolve_module_files_inner(next, dir, head.loaded, stack)
             if rest.had_error { return rest }
             ModListResult {
-                stmts: StmtList.Node(sstmt(head.stmt, ss.line, ss.col), rest.stmts),
+                stmts: StmtList.Node(sstmt_at(head.stmt, ss.line, ss.col, ss.file), rest.stmts),
                 loaded: rest.loaded,
                 had_error: false,
                 error_message: "",
@@ -623,7 +626,10 @@ fn resolve_package_use_and_continue(ss: SStmt, next: StmtList, dir: string, load
         synthesize_unit_body(m)
     } else {
         let pkg_source = avra_selfhost_read_file(pkg_file)
-        let parsed = parse_program_source(pkg_source)
+        // _at keeps SStmt.file pointed at the package's entry-point
+        // path so cross-package diagnostics + per-file metadata
+        // discovery (g2eo) attribute decls correctly.
+        let parsed = parse_program_source_at(pkg_source, pkg_file)
         if parsed.had_error || parsed.stmts == null {
             return ModListResult { stmts: StmtList.End, loaded: new_loaded, had_error: true, error_message: "error in package `${pkg_mod}`: ${parsed.error_message}" }
         }
@@ -647,14 +653,14 @@ fn resolve_package_use_and_continue(ss: SStmt, next: StmtList, dir: string, load
     let pkg_qual = "@${scope_name}.${pkg_name}"
     let qualified_body = qualify_uses_recursively(resolved.stmts, pkg_qual)
     let inner_mod = Stmt.Module(pkg_name, qualified_body)
-    let outer_mod = Stmt.Module("@${scope_name}", StmtList.Node(sstmt(inner_mod, ss.line, ss.col), StmtList.End))
+    let outer_mod = Stmt.Module("@${scope_name}", StmtList.Node(sstmt_at(inner_mod, ss.line, ss.col, ss.file), StmtList.End))
     // Continue processing rest of the statement list
     let rest = resolve_module_files_inner(next, dir, resolved.loaded, stack)
     if rest.had_error { return rest }
     // Emit: [module_decl, use_stmt, ...rest]
     ModListResult {
         stmts: StmtList.Node(
-            sstmt(outer_mod, ss.line, ss.col),
+            sstmt_at(outer_mod, ss.line, ss.col, ss.file),
             StmtList.Node(ss, rest.stmts)
         ),
         loaded: rest.loaded,
@@ -722,7 +728,12 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths, stack: Impo
                 synthesize_unit_body(m)
             } else {
                 let mod_source = avra_selfhost_read_file(mod_path)
-                let parsed = parse_program_source(mod_source)
+                // Use _at so every parsed stmt carries `mod_path` in
+                // SStmt.file. Without it, sub-mod stmts would land
+                // with file="" — diagnostics lose their origin and
+                // the per-file source-discovery path (g2eo) can't
+                // attribute decls to the file they came from.
+                let parsed = parse_program_source_at(mod_source, mod_path)
                 if parsed.had_error || parsed.stmts == null {
                     return ModStmtResult { stmt, loaded: new_loaded, had_error: true, error_message: "error in module `${name}`: ${parsed.error_message}" }
                 }
