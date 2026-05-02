@@ -373,6 +373,37 @@ fn parse_test_args() -> TestArgs {
 
 extern fn avra_uptime_ms() -> int
 
+/// Render per-phase compile timings as a single JSON object (one
+/// line, no trailing newline added — println handles that). Stable
+/// schema so CI / profiling tools can track regressions:
+///   {"file":"<path>","total_ms":N,
+///    "parse_ms":N,"desugar_ms":N,"resolve_mods_ms":N,
+///    "expand_ms":N,"resolve_names_ms":N,"typeck_ms":N,
+///    "monomorphize_ms":N,"codegen_ms":N}
+/// Phase deltas are computed inline so callers don't need to know
+/// the t_start / t_phase ordering. Tracked under
+/// forge-crafting-intepreters-kkgf.
+fn timings_json(t_start: int, t_parse: int, t_desugar: int, t_resolve_mods: int,
+                t_expand: int, t_names: int, t_typeck: int, t_mono: int,
+                t_codegen: int, file_path: string) -> string {
+    // No string-interpolation `${X}` after `let X = …` — the resolver's
+    // self-init check trips when a let-bound name is referenced from
+    // a later `${…}` template within the same expression chain.
+    // Inlining the deltas into each interpolation keeps the let
+    // bindings out of the binding-name lookup space.
+    "{\"file\":\"" + file_path + "\"" +
+    ",\"total_ms\":" + string(t_codegen - t_start) +
+    ",\"parse_ms\":" + string(t_parse - t_start) +
+    ",\"desugar_ms\":" + string(t_desugar - t_parse) +
+    ",\"resolve_mods_ms\":" + string(t_resolve_mods - t_desugar) +
+    ",\"expand_ms\":" + string(t_expand - t_resolve_mods) +
+    ",\"resolve_names_ms\":" + string(t_names - t_expand) +
+    ",\"typeck_ms\":" + string(t_typeck - t_names) +
+    ",\"monomorphize_ms\":" + string(t_mono - t_typeck) +
+    ",\"codegen_ms\":" + string(t_codegen - t_mono) +
+    "}"
+}
+
 /// Write a self-contained HTML timings report to `<root>/build/timings/<unit>-<fp>.html`.
 /// Each phase row shows its start, end, and duration in ms; the page
 /// header summarises total wall time. cargo --timings is the model;
@@ -2101,6 +2132,16 @@ fn main() {
         }
         if timings_on {
             eprintln("[timings] parse=${string(t_parse - t_start)}ms desugar=${string(t_desugar - t_parse)}ms resolve_mods=${string(t_resolve_mods - t_desugar)}ms expand=${string(t_expand - t_resolve_mods)}ms resolve_names=${string(t_names - t_expand)}ms typeck=${string(t_typeck - t_names)}ms monomorphize=${string(t_mono - t_typeck)}ms codegen=${string(t_codegen - t_mono)}ms total=${string(t_codegen - t_start)}ms")
+        }
+        // kkgf: structured JSON variant of the per-phase timings.
+        // Tooling (CI regression trackers, profiling harnesses) reads
+        // a single JSON object per compile instead of parsing the
+        // human-readable line. AVRA_TIMINGS_JSON gates output to
+        // stderr to keep stdout clean for pipe-friendly callers.
+        if avra_process_env_get("AVRA_TIMINGS_JSON") != "" {
+            eprintln(timings_json(
+                t_start, t_parse, t_desugar, t_resolve_mods, t_expand,
+                t_names, t_typeck, t_mono, t_codegen, cpath))
         }
         println(output)
         return

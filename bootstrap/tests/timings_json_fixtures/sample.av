@@ -1,0 +1,68 @@
+// Fixture: validates AVRA_TIMINGS_JSON emits a single-line JSON object
+// with stable per-phase keys. CI regression trackers + profiling
+// harnesses parse this; the schema must stay byte-stable so dashboards
+// don't silently break when the format drifts.
+//
+// Tracking ticket: forge-crafting-intepreters-kkgf.
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
+extern fn avra_process_env_get(name: string) -> string
+
+fn probe(name: string, ok: bool) {
+    let tag = if ok { "ok" } else { "FAIL" }
+    println("PROBE ${name}: ${tag}")
+}
+
+fn main() -> int {
+    let root = "/tmp/avra_kkgf_timings"
+    avra_shell_exec("rm -rf ${root}")
+    avra_shell_exec("mkdir -p ${root}")
+    avra_shell_exec("printf 'fn main() -> int { 0 }\\n' > ${root}/sample.av")
+
+    let pwd = avra_process_env_get("PWD")
+    let bs2 = "${pwd}/build/bs2"
+
+    // Without AVRA_TIMINGS_JSON: stderr should NOT contain a JSON
+    // timings object. Default behaviour stays clean.
+    let rc1 = avra_shell_exec_status("${bs2} compile ${root}/sample.av > /tmp/avra_kkgf_t1.stdout 2> /tmp/avra_kkgf_t1.stderr")
+    probe("default_compile_rc_zero", rc1 == 0)
+    let default_has_json = avra_shell_exec_status("grep -q '\"total_ms\":' /tmp/avra_kkgf_t1.stderr")
+    probe("default_no_json_in_stderr", default_has_json != 0)
+
+    // With AVRA_TIMINGS_JSON=1: stderr contains a single-line JSON
+    // object with the expected stable keys.
+    let rc2 = avra_shell_exec_status("AVRA_TIMINGS_JSON=1 ${bs2} compile ${root}/sample.av > /tmp/avra_kkgf_t2.stdout 2> /tmp/avra_kkgf_t2.stderr")
+    probe("json_compile_rc_zero", rc2 == 0)
+
+    // Verify each required key appears (one grep per key — easier
+    // to attribute a regression to a specific dropped field).
+    let has_file = avra_shell_exec_status("grep -q '\"file\":' /tmp/avra_kkgf_t2.stderr")
+    probe("json_has_file_key", has_file == 0)
+    let has_total = avra_shell_exec_status("grep -q '\"total_ms\":' /tmp/avra_kkgf_t2.stderr")
+    probe("json_has_total_ms", has_total == 0)
+    let has_parse = avra_shell_exec_status("grep -q '\"parse_ms\":' /tmp/avra_kkgf_t2.stderr")
+    probe("json_has_parse_ms", has_parse == 0)
+    let has_desugar = avra_shell_exec_status("grep -q '\"desugar_ms\":' /tmp/avra_kkgf_t2.stderr")
+    probe("json_has_desugar_ms", has_desugar == 0)
+    let has_resolve_mods = avra_shell_exec_status("grep -q '\"resolve_mods_ms\":' /tmp/avra_kkgf_t2.stderr")
+    probe("json_has_resolve_mods_ms", has_resolve_mods == 0)
+    let has_expand = avra_shell_exec_status("grep -q '\"expand_ms\":' /tmp/avra_kkgf_t2.stderr")
+    probe("json_has_expand_ms", has_expand == 0)
+    let has_resolve_names = avra_shell_exec_status("grep -q '\"resolve_names_ms\":' /tmp/avra_kkgf_t2.stderr")
+    probe("json_has_resolve_names_ms", has_resolve_names == 0)
+    let has_typeck = avra_shell_exec_status("grep -q '\"typeck_ms\":' /tmp/avra_kkgf_t2.stderr")
+    probe("json_has_typeck_ms", has_typeck == 0)
+    let has_mono = avra_shell_exec_status("grep -q '\"monomorphize_ms\":' /tmp/avra_kkgf_t2.stderr")
+    probe("json_has_monomorphize_ms", has_mono == 0)
+    let has_codegen = avra_shell_exec_status("grep -q '\"codegen_ms\":' /tmp/avra_kkgf_t2.stderr")
+    probe("json_has_codegen_ms", has_codegen == 0)
+
+    // The JSON line must NOT span multiple lines (single-line
+    // output is part of the schema contract — line-buffered tools
+    // assume one event per line).
+    let lines = avra_shell_exec("grep -c 'total_ms' /tmp/avra_kkgf_t2.stderr | tr -d ' '")
+    probe("json_emitted_exactly_once", lines == "1")
+
+    0
+}
