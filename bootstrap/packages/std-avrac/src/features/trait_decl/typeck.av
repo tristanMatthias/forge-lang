@@ -1,6 +1,6 @@
 // WHY: trait conformance checking — verifies impl blocks provide all required methods.
 
-use core.ast.{Stmt, StmtList, SStmt, ParamList, param_list_length, vtype_is_unknown}
+use core.ast.{Stmt, StmtList, SStmt, ParamList, param_list_length, vtype_is_unknown, stmt_unwrap}
 use diagnostics.{DiagCode}
 use typeck.{TC, tc_report, TraitRegistry, TraitMethodList, TraitAssocTypes, trait_lookup, trait_has, trait_assoc_types, tc_owns_type}
 use core.type_registry.{method_mangled_name}
@@ -119,7 +119,7 @@ fn impl_method_param_count(methods: StmtList, name: string) -> int {
     match methods {
         .End -> -1
         .Node(ss, next) -> {
-            match ss.node {
+            match stmt_unwrap(ss.node) {
                 .Function(fn_name, _, params, _, _) if fn_name == name -> param_list_length(params)
                 _ -> impl_method_param_count(next, name)
             }
@@ -128,12 +128,14 @@ fn impl_method_param_count(methods: StmtList, name: string) -> int {
 }
 
 /// True when `methods` contains a `Function` with the given
-/// (mangled) name.
+/// (mangled) name. Walks `Annotated` wrappers transparently so
+/// methods carrying `@external_unit` (synthesised from metadata.bin
+/// for cross-unit impls — 9ixv) still register as present.
 fn impl_has_method(methods: StmtList, name: string) -> bool {
     match methods {
         .End -> false
         .Node(ss, next) -> {
-            match ss.node {
+            match stmt_unwrap(ss.node) {
                 .Function(fn_name, _, _, _, _) if fn_name == name -> true
                 _ -> impl_has_method(next, name)
             }

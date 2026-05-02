@@ -395,7 +395,7 @@ spec "metadata codec: AST → UnitMetadata extractor" {
     then "Const int literal extracts to .IntValue with parsed value" {
         metadata_run_fixture().contains("PROBE extract_const_int_value: ok")
     }
-    then "ExternFn gets is_extern=true and bare (un-qualified) name" {
+    then "ExternFn gets is_extern=true and module-qualified name (9ixv)" {
         metadata_run_fixture().contains("PROBE extract_extern_is_extern: ok")
     }
 }

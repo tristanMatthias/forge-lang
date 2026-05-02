@@ -757,7 +757,11 @@ fn main() -> int {
     }
     probe("extract_extern_is_extern",
         match fns_tail {
-            .Node(e, _) -> e.is_extern && e.name == "host_now"
+            // 9ixv: externs are now qualified by their declaring module
+            // (was bare-name only) so the synthesizer can re-emit them
+            // at the original nested-mod path. Fixture's unit_name is
+            // "@ext" (see extract_unit_metadata call upstream).
+            .Node(e, _) -> e.is_extern && e.name == "@ext::host_now"
             .End -> false
         })
 

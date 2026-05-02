@@ -48,17 +48,227 @@ use build.metadata.{
 /// this so they don't end up with double-wrapped namespaces (the
 /// existing parse-source path returns un-wrapped stmts; this matches
 /// that contract).
+///
+/// 9ixv: entries are emitted under nested `Module(seg)` wrappers
+/// reconstructed from their qualified-name path (after stripping the
+/// unit prefix). A consumer's `use @std.avrac.diagnostics.render.X`
+/// then resolves through the same `diagnostics → render → X` chain
+/// the source-parse path would produce, instead of a flat dump.
 export fn synthesize_unit_body(m: UnitMetadata) -> StmtList {
-    append_stmts(
-        synth_types(m.types),
-        append_stmts(
-            synth_fns(m.fns),
-            append_stmts(
-                synth_consts(m.consts),
-                synth_impls(m.impls),
-            ),
-        ),
-    )
+    let empty = SubMod { name: "", direct: StmtList.End, children: SubModList.End }
+    let after_types = insert_types(empty, m.types, m.unit_name)
+    let after_fns = insert_fns(after_types, m.fns, m.unit_name)
+    let after_consts = insert_consts(after_fns, m.consts, m.unit_name)
+    let after_impls = insert_impls(after_consts, m.impls, m.unit_name, m.types)
+    trie_to_stmtlist(after_impls)
+}
+
+// ── 9ixv: nested-module reconstruction trie ────────────────────────────
+//
+// Each metadata entry carries a fully-qualified name like
+// `@std::avrac::diagnostics::render::render_bag_json`. The producer
+// emitted it from a nested `mod` tree; reconstructing that tree at the
+// consumer is what makes nested `use a.b.c.X` paths resolve correctly.
+//
+// Algorithm:
+//   1. For each entry, strip the unit-name prefix from the qn.
+//   2. Split the remainder by `::`. The last segment is the leaf name
+//      (already used by `local_name` for the inner Stmt); everything
+//      before it is the path of nested Modules to wrap the leaf in.
+//   3. Insert into a trie keyed by path segment. Direct decls land at
+//      their respective level; siblings reuse the same Module(seg).
+//   4. Render the trie back to a StmtList: at each node, emit the
+//      direct decls followed by Module wrappers for each child.
+
+type SubMod = {
+    name: string,
+    direct: StmtList,
+    children: SubModList,
+}
+
+enum SubModList {
+    End(),
+    Node(item: SubMod, next: SubModList),
+}
+
+enum Segs {
+    SEnd(),
+    SNode(item: string, next: Segs),
+}
+
+// Returns the path-segments-inside-unit, OR `belongs_to_unit=false` to
+// signal "skip this entry — it doesn't belong here." Cross-package
+// decls leak into a unit's metadata when the producer's resolver had
+// transitive dep bodies inlined at compile time; re-emitting them
+// under THIS unit's namespace would create phantom paths and orphan
+// impls. The producer's own metadata.bin will own those entries.
+type RelPath = {
+    belongs_to_unit: bool,
+    segs: Segs,
+}
+
+fn relative_path(qn: string, unit_name: string) -> RelPath {
+    if unit_name == "" {
+        // No unit boundary — every entry is "ours" for synthesis
+        // (this happens for inspection-tool dumps with no module wrap).
+        let parts = split_by_double_colon(qn)
+        return RelPath { belongs_to_unit: true, segs: drop_last_seg(parts) }
+    }
+    let prefix = "${unit_name}::"
+    if !string_starts_with(qn, prefix) {
+        return RelPath { belongs_to_unit: false, segs: Segs.SEnd }
+    }
+    let stripped = qn.substring(prefix.length, qn.length)
+    let parts = split_by_double_colon(stripped)
+    RelPath { belongs_to_unit: true, segs: drop_last_seg(parts) }
+}
+
+fn string_starts_with(s: string, prefix: string) -> bool {
+    if prefix.length > s.length { return false }
+    s.substring(0, prefix.length) == prefix
+}
+
+fn split_by_double_colon(s: string) -> Segs {
+    if s == "" { return Segs.SEnd }
+    mut acc = Segs.SEnd
+    mut start = s.length
+    mut i = s.length - 1
+    while i >= 0 {
+        // Detect "::" by looking back from i
+        if i + 1 < s.length && s.byte(i) == 0x3A && s.byte(i + 1) == 0x3A {
+            let seg = s.substring(i + 2, start)
+            acc = Segs.SNode(seg, acc)
+            start = i
+            i = i - 2
+        } else {
+            i = i - 1
+        }
+    }
+    let head = s.substring(0, start)
+    Segs.SNode(head, acc)
+}
+
+fn drop_last_seg(xs: Segs) -> Segs {
+    match xs {
+        .SEnd -> Segs.SEnd
+        .SNode(item, next) -> {
+            match next {
+                .SEnd -> Segs.SEnd
+                .SNode(nh, nt) -> Segs.SNode(item, drop_last_seg(Segs.SNode(nh, nt)))
+            }
+        }
+    }
+}
+
+fn trie_insert_decl(node: SubMod, path: Segs, decl: SStmt) -> SubMod {
+    match path {
+        .SEnd -> {
+            SubMod {
+                name: node.name,
+                direct: append_stmts(node.direct, StmtList.Node(decl, StmtList.End)),
+                children: node.children,
+            }
+        }
+        .SNode(seg, rest) -> {
+            SubMod {
+                name: node.name,
+                direct: node.direct,
+                children: ensure_child(node.children, seg, rest, decl),
+            }
+        }
+    }
+}
+
+fn ensure_child(list: SubModList, seg: string, rest: Segs, decl: SStmt) -> SubModList {
+    match list {
+        .End -> {
+            let empty = SubMod { name: seg, direct: StmtList.End, children: SubModList.End }
+            let updated = trie_insert_decl(empty, rest, decl)
+            SubModList.Node(updated, SubModList.End)
+        }
+        .Node(item, next) -> {
+            if item.name == seg {
+                let updated = trie_insert_decl(item, rest, decl)
+                SubModList.Node(updated, next)
+            } else {
+                SubModList.Node(item, ensure_child(next, seg, rest, decl))
+            }
+        }
+    }
+}
+
+fn trie_to_stmtlist(node: SubMod) -> StmtList {
+    let kid_stmts = children_to_stmts(node.children)
+    append_stmts(node.direct, kid_stmts)
+}
+
+fn children_to_stmts(list: SubModList) -> StmtList {
+    match list {
+        .End -> StmtList.End
+        .Node(item, next) -> {
+            let inner = trie_to_stmtlist(item)
+            let mod_stmt = sstmt_dummy(Stmt.Module(item.name, inner))
+            StmtList.Node(mod_stmt, children_to_stmts(next))
+        }
+    }
+}
+
+fn insert_types(trie: SubMod, xs: TypeDeclList, unit_name: string) -> SubMod {
+    match xs {
+        .End -> trie
+        .Node(e, next) -> {
+            let rp = relative_path(e.name, unit_name)
+            if !rp.belongs_to_unit {
+                return insert_types(trie, next, unit_name)
+            }
+            let decl = synth_type_decl(e)
+            insert_types(trie_insert_decl(trie, rp.segs, decl), next, unit_name)
+        }
+    }
+}
+
+fn insert_fns(trie: SubMod, xs: FnDeclList, unit_name: string) -> SubMod {
+    match xs {
+        .End -> trie
+        .Node(e, next) -> {
+            let rp = relative_path(e.name, unit_name)
+            if !rp.belongs_to_unit {
+                return insert_fns(trie, next, unit_name)
+            }
+            let decl = synth_fn_decl(e)
+            insert_fns(trie_insert_decl(trie, rp.segs, decl), next, unit_name)
+        }
+    }
+}
+
+fn insert_consts(trie: SubMod, xs: ConstDeclList, unit_name: string) -> SubMod {
+    match xs {
+        .End -> trie
+        .Node(e, next) -> {
+            let rp = relative_path(e.name, unit_name)
+            if !rp.belongs_to_unit {
+                return insert_consts(trie, next, unit_name)
+            }
+            let decl = synth_const_decl(e)
+            insert_consts(trie_insert_decl(trie, rp.segs, decl), next, unit_name)
+        }
+    }
+}
+
+fn insert_impls(trie: SubMod, xs: ImplDeclList, unit_name: string, types: TypeDeclList) -> SubMod {
+    match xs {
+        .End -> trie
+        .Node(e, next) -> {
+            // Impls live in the same module as the type they implement,
+            // so use the type's qualified name to derive the path.
+            let rp = relative_path(e.type_name, unit_name)
+            if !rp.belongs_to_unit {
+                return insert_impls(trie, next, unit_name, types)
+            }
+            let decl = synth_impl_decl(e, types)
+            insert_impls(trie_insert_decl(trie, rp.segs, decl), next, unit_name, types)
+        }
+    }
 }
 
 /// Top-level entry. Walks every section list, builds the matching
@@ -253,26 +463,73 @@ fn synth_impls(xs: ImplDeclList) -> StmtList {
     }
 }
 
-fn synth_impl_decl(e: ImplDeclEntry) -> SStmt {
+fn synth_impl_decl(e: ImplDeclEntry, types: TypeDeclList) -> SStmt {
     let trait_local = local_name(e.trait_name)
     let type_local = local_name(e.type_name)
     let impl_name = "${trait_local}:${type_local}"
-    let methods = synth_impl_method_stmts(e.methods)
+    // For trait impls, recover the per-method signatures from the
+    // trait declaration's MetaTraitMethodList — impl methods must
+    // match the trait's signature for typeck conformance, so this
+    // is also the right answer. Inherent impls (no trait) have no
+    // entry here (extractor skips them). Falls back to Unknown sig
+    // when the trait isn't in this unit's metadata (cross-package
+    // impls — those won't pass typeck anyway).
+    let trait_methods = lookup_trait_methods(types, e.trait_name)
+    let methods = synth_impl_method_stmts(e.methods, trait_methods, e.type_name)
     sstmt_dummy(Stmt.Impl(impl_name, methods))
 }
 
-fn synth_impl_method_stmts(ms: ImplMethodRefList) -> StmtList {
+// Walk the synth'd impl-method-ref list, looking up each method's
+// signature in the trait's MetaTraitMethodList (matched by name)
+// and applying the `<qualified-Type>__<method>` mangling the
+// resolver would produce on the source-parse path. The typeck's
+// conformance check builds the same mangled name from the trait's
+// type binding, so the impl methods MUST be qualified-mangled or
+// every method is reported as missing (9ixv F1000s on Corpus.extract
+// etc.). Avoiding this step also prevents resolve_names from falling
+// into the `is_mangled_method` branch and skipping qualification —
+// the synth impl methods carry an `@external_unit` Annotated wrapper
+// which short-circuits rewrite_impl_methods's Function arm.
+fn synth_impl_method_stmts(ms: ImplMethodRefList, trait_methods: MetaTraitMethodList, qualified_type: string) -> StmtList {
     match ms {
         .End -> StmtList.End
         .Node(name, _fn_id, next) -> {
-            // Synth'd impl methods get an empty Function body wrapped
-            // in @external_unit — the real body lives in the producing
-            // unit's compiled .o, and codegen's emit_function_bodies
-            // honours the annotation by skipping body emission while
-            // keeping the forward decl in scope.
-            let fn_decl = Stmt.Function(name, TypeParamList.End, ParamList.End, ValueType.Unknown, StmtList.End)
+            let sig = lookup_trait_method_sig(trait_methods, name)
+            let mangled = "${qualified_type}__${name}"
+            let fn_decl = Stmt.Function(mangled, TypeParamList.End, sig.params, sig.ret, StmtList.End)
             let head = sstmt_dummy(wrap_external_unit(fn_decl))
-            StmtList.Node(head, synth_impl_method_stmts(next))
+            StmtList.Node(head, synth_impl_method_stmts(next, trait_methods, qualified_type))
+        }
+    }
+}
+
+type FnSig = {
+    params: ParamList,
+    ret: ValueType,
+}
+
+fn lookup_trait_methods(types: TypeDeclList, trait_qn: string) -> MetaTraitMethodList {
+    match types {
+        .End -> MetaTraitMethodList.End
+        .Node(e, next) -> {
+            if e.kind is .TraitDecl && e.name == trait_qn {
+                e.methods
+            } else {
+                lookup_trait_methods(next, trait_qn)
+            }
+        }
+    }
+}
+
+fn lookup_trait_method_sig(ms: MetaTraitMethodList, name: string) -> FnSig {
+    match ms {
+        .End -> FnSig { params: ParamList.End, ret: ValueType.Unknown }
+        .Node(mname, params, ret, next) -> {
+            if mname == name {
+                FnSig { params: params, ret: ret }
+            } else {
+                lookup_trait_method_sig(next, name)
+            }
         }
     }
 }

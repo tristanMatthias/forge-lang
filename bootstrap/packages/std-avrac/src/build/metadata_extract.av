@@ -42,7 +42,13 @@ fn empty_acc() -> ExtractAcc {
 // gets a distinct sym_id). `fingerprint` is the 32-byte sha256 of
 // the source set, computed by the build driver upstream.
 export fn extract_unit_metadata(unit_name: string, fingerprint: bytes, stmts: StmtList) -> UnitMetadata {
-    let acc = walk_stmts(empty_acc(), stmts, unit_name, false)
+    // When the source is already wrapped in `Module(unit_name, body)`
+    // (the lib path with --module_path), descend into body to avoid
+    // double-prefixing qns (e.g. `@std::avrac::@std::avrac::core::X`).
+    // Otherwise walk all stmts with current_module=unit_name so bare
+    // decls still get qualified against the unit they belong to.
+    let inner = unwrap_outer_unit_module(stmts, unit_name)
+    let acc = walk_stmts(empty_acc(), inner, unit_name, false)
     UnitMetadata {
         unit_name: unit_name,
         fingerprint: fingerprint,
@@ -50,6 +56,39 @@ export fn extract_unit_metadata(unit_name: string, fingerprint: bytes, stmts: St
         fns: reverse_fn_list(acc.fns, FnDeclList.End),
         consts: reverse_const_list(acc.consts, ConstDeclList.End),
         impls: reverse_impl_list(acc.impls, ImplDeclList.End),
+    }
+}
+
+// Find the `Module(unit_name, body)` wrap in `stmts` and return its
+// body — the unit's own decls, separate from any sibling Module wraps
+// the resolver prepended for `use @pkg` paths. When no such wrap
+// exists the source is treated as a flat unit, returning `stmts`
+// unchanged so the legacy single-file path still works.
+fn unwrap_outer_unit_module(stmts: StmtList, unit_name: string) -> StmtList {
+    if unit_name == "" { return stmts }
+    let body = find_unit_module_body(stmts, unit_name)
+    match body {
+        .End -> stmts
+        _ -> body
+    }
+}
+
+fn find_unit_module_body(stmts: StmtList, unit_name: string) -> StmtList {
+    match stmts {
+        .End -> StmtList.End
+        .Node(ss, rest) -> {
+            let inner = stmt_unwrap(ss.node)
+            match inner {
+                .Module(name, body) -> {
+                    if name == unit_name {
+                        body
+                    } else {
+                        find_unit_module_body(rest, unit_name)
+                    }
+                }
+                _ -> find_unit_module_body(rest, unit_name)
+            }
+        }
     }
 }
 
@@ -92,7 +131,15 @@ fn walk_stmts(acc: ExtractAcc, stmts: StmtList, current_module: string, exported
 }
 
 fn qualify(current_module: string, name: string) -> string {
-    if current_module == "" { name } else { "${current_module}::${name}" }
+    if current_module == "" { return name }
+    // resolve_names rewrites TypeDecl/EnumDecl/etc. names to their
+    // fully-qualified form (e.g. `@std::lsp::LspPos`) BEFORE the
+    // metadata extractor runs. Re-qualifying would double the prefix
+    // — `@std::lsp::@std::lsp::LspPos` — which downstream synthesise
+    // can't dedup. Detect already-qualified names by the presence of
+    // `::` and return them unchanged.
+    if name.index_of("::") >= 0 { return name }
+    "${current_module}::${name}"
 }
 
 fn annotation_has_export(annots: AnnotationList) -> bool {
@@ -213,9 +260,17 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
             ExtractAcc { types: acc.types, fns: FnDeclList.Node(entry, acc.fns), consts: acc.consts, impls: acc.impls }
         }
         .ExternFn(name, params, ret_vt) -> {
+            // Qualify the extern by its declaring module so the
+            // synthesizer can re-emit it at the same nested-module
+            // path the source-parse path resolves through. The local
+            // name (used at C ABI emit time) is recovered via
+            // local_name() at synthesis time. Without this, every
+            // extern lands flat at the unit's root and consumer
+            // `use @pkg.sub.X` paths fail (9ixv).
+            let qn = qualify(current_module, name)
             let entry = FnDeclEntry {
-                sym_id: sym_id_for(name),
-                name: name,
+                sym_id: sym_id_for(qn),
+                name: qn,
                 exported: true,
                 is_extern: true,
                 type_params: TypeParamList.End,
@@ -268,13 +323,33 @@ type ImplNamePair = {
 }
 
 fn split_impl_name(impl_name: string) -> ImplNamePair {
-    let idx = impl_name.index_of(":")
+    // Skip past `::` so qualified type names like
+    // `@std::avrac::build::metadata::BytesWriter` (an inherent impl
+    // post-resolver) aren't mis-parsed as `@std:avrac::…`. Mirrors
+    // resolve.names.find_single_colon, kept inline to avoid a
+    // cross-feature dependency.
+    let idx = find_single_colon_after_qualification(impl_name)
     if idx < 0 {
         return ImplNamePair { trait_name: impl_name, type_name: impl_name, has_trait: false }
     }
     let t = impl_name.substring(0, idx)
     let ty = impl_name.substring(idx + 1, impl_name.length)
     ImplNamePair { trait_name: t, type_name: ty, has_trait: true }
+}
+
+fn find_single_colon_after_qualification(s: string) -> int {
+    mut i = 0
+    while i < s.length {
+        if s.byte(i) == 0x3A {
+            if i + 1 < s.length && s.byte(i + 1) == 0x3A {
+                i = i + 2
+                continue
+            }
+            return i
+        }
+        i = i + 1
+    }
+    0 - 1
 }
 
 fn extract_trait_methods(stmts: StmtList) -> MetaTraitMethodList {

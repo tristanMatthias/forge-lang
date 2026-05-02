@@ -915,12 +915,19 @@ fn run_build_command() {
             // copies the IR but leaves consumers without their .meta.bin
             // sidecar — the same flag landing meta on Miss should land
             // it on Hit too. Cache layout colocates them under <fp>/.
+            // Guard on size > 0: the cache's metadata.bin is binary
+            // and earlier builds wrote it as an empty placeholder
+            // (string-truncates at first NUL); a zero-byte copy would
+            // nuke a good sidecar produced by the prior compile step.
             if args.emit_metadata {
                 let suffix_len = 8  // "/unit.ll"
                 let cache_dir = cached_ll.substring(0, cached_ll.length - suffix_len)
                 let cached_meta = "${cache_dir}/metadata.bin"
                 if file_exists(cached_meta) != 0 {
-                    avra_shell_exec("cp '${cached_meta}' '${entry_path}.meta.bin'")
+                    let size_str = avra_shell_exec("wc -c < '${cached_meta}' 2>/dev/null | tr -d ' '")
+                    if size_str != "" && size_str != "0" {
+                        avra_shell_exec("cp '${cached_meta}' '${entry_path}.meta.bin'")
+                    }
                 }
             }
             if args.timings {
@@ -980,6 +987,18 @@ fn run_build_command() {
             let metadata = ""
             let staging_id = "${unit_name}.${fp_short(fp)}"
             let pr = record_build_result(inputs, fp, ll_content, ll_path, metadata, staging_id)
+            // 9ixv-companion: cache_publish takes metadata as a string,
+            // which truncates at the first NUL — fine for empty payload
+            // but not for the actual binary metadata.bin. After publish
+            // succeeds, copy the on-disk sidecar (binary-safe via
+            // shell cp) into the cache so a future Hit can restore it.
+            if pr.success && args.emit_metadata {
+                let sidecar = "${entry_path}.meta.bin"
+                if file_exists(sidecar) != 0 {
+                    let cache_meta_dir = "${project_dir}/build/cache/${fp.hex}"
+                    avra_shell_exec("cp '${sidecar}' '${cache_meta_dir}/metadata.bin'")
+                }
+            }
             let t_after_publish = avra_uptime_ms()
             if args.timings {
                 let _ = write_timings_html(project_dir, unit_name, fp_short(fp),
@@ -2006,7 +2025,19 @@ fn main() {
         // are canonical; fingerprint is sha256 of the source (same key
         // the cache uses for content addressing).
         if emit_metadata {
-            let unit_name = if pkg.found { pkg.name } else { basename_no_ext(cpath) }
+            // unit_name has to be the canonical `::`-form (matching the
+            // module_path the resolver wrapped the body in) — not the
+            // manifest's `@scope/pkg` slash form. Otherwise the
+            // extractor walks current_module="@scope/pkg" then descends
+            // into Module("@scope::pkg") and triple-wraps every qn.
+            // 9ixv-companion fix.
+            let unit_name = if module_path != "" {
+                module_path
+            } else if pkg.found {
+                pkg.name.replace("/", "::")
+            } else {
+                basename_no_ext(cpath)
+            }
             let fp = bytes_from_hex(sha256_hex(csource))
             let unit_meta = extract_unit_metadata(unit_name, fp, named.stmts)
             let meta_path = "${cpath}.meta.bin"
