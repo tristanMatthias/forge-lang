@@ -1578,6 +1578,20 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
         // calls inside InterpString are usually leaf-ish, so do them
         // directly. InterpString itself is always a string.
         .InterpString(_) -> ValueType.Str
+        // kkgf: type-test variants always evaluate to Bool — no
+        // operand inspection needed. These are very common in match
+        // guards and conditional flows in the bootstrap source.
+        .IsCheck(_, _) -> ValueType.Bool
+        .InCheck(_, _) -> ValueType.Bool
+        // Assign expressions return the assigned RHS type. Since
+        // the RHS sub-expression was annotated by annotate_expr
+        // above, looking it up via annotate_sexpr_ty is one
+        // tag-dispatch instead of a full check_expr re-walk.
+        .Assign(_, val) -> annotate_sexpr_ty(tc, val)
+        // Try unwraps a Result; the unwrapped success type matches
+        // the inner expression's type only when the parser desugar
+        // pass has already lowered it. For now this stays in the
+        // fallback so we don't regress error-propagation typeck.
         // Fallback: re-run check_expr for complex expressions
         _ -> check_expr(tc, se.node).ty
     }
