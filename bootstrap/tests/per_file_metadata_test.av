@@ -1,0 +1,65 @@
+// extract_per_file_metadata returns a UnitMetadata containing only
+// the decls whose enclosing SStmt.file matches the requested path.
+// Cross-file leakage in either direction would silently break the
+// per-file invalidation contract g2eo's incremental build relies on.
+//
+// Tracking ticket: forge-crafting-intepreters-g2eo.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn pfm_run() -> string {
+    avra_shell_exec("if [ ! -f /tmp/avra_g2eo_perfile_test.out ]; then bash scripts/diagnose.sh --run tests/per_file_metadata_fixtures/sample.av > /tmp/avra_g2eo_perfile_test.out 2>&1 || true; fi; cat /tmp/avra_g2eo_perfile_test.out")
+}
+
+fn pfm_wipe() -> string {
+    avra_shell_exec("rm -f /tmp/avra_g2eo_perfile_test.out")
+}
+
+spec "g2eo per-file metadata: clear cached output" {
+    then "wipe stale /tmp output" {
+        let _ = pfm_wipe()
+        true
+    }
+}
+
+spec "g2eo per-file metadata: whole-package extract sees decls from every file" {
+    then "fixture parses cleanly" {
+        pfm_run().contains("PROBE parse_succeeded: ok")
+    }
+    then "resolver runs without error" {
+        pfm_run().contains("PROBE resolver_succeeded: ok")
+    }
+    then "whole-package metadata sees top.av's `entry` fn" {
+        pfm_run().contains("PROBE whole_has_entry_fn: ok")
+    }
+    then "whole-package metadata sees foo.av's `foo_helper` fn" {
+        pfm_run().contains("PROBE whole_has_foo_helper_fn: ok")
+    }
+    then "whole-package metadata sees foo.av's `Foo` type" {
+        pfm_run().contains("PROBE whole_has_foo_type: ok")
+    }
+}
+
+spec "g2eo per-file metadata: top.av slice contains only top.av's decls" {
+    then "top slice has entry fn" {
+        pfm_run().contains("PROBE top_slice_has_entry: ok")
+    }
+    then "top slice does NOT have foo_helper" {
+        pfm_run().contains("PROBE top_slice_no_foo_helper: ok")
+    }
+    then "top slice does NOT have Foo type" {
+        pfm_run().contains("PROBE top_slice_no_foo_type: ok")
+    }
+}
+
+spec "g2eo per-file metadata: foo.av slice contains only foo.av's decls" {
+    then "foo slice has foo_helper" {
+        pfm_run().contains("PROBE foo_slice_has_foo_helper: ok")
+    }
+    then "foo slice has Foo type" {
+        pfm_run().contains("PROBE foo_slice_has_foo_type: ok")
+    }
+    then "foo slice does NOT have entry fn" {
+        pfm_run().contains("PROBE foo_slice_no_entry: ok")
+    }
+}

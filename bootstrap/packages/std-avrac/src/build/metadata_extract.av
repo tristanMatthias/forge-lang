@@ -6,7 +6,7 @@
 // Tracked under forge-crafting-intepreters-iinq.
 
 use core.ast.{
-    Stmt, StmtList, SStmt, Expr, ParamList, FieldList, VariantList, TypeParamList, ValueType,
+    Stmt, StmtList, SStmt, sstmt_at, Expr, ParamList, FieldList, VariantList, TypeParamList, ValueType,
     AnnotationList, stmt_unwrap,
 }
 use build.metadata.{
@@ -57,6 +57,72 @@ export fn extract_unit_metadata(unit_name: string, fingerprint: bytes, stmts: St
         fns: reverse_fn_list(acc.fns, FnDeclList.End),
         consts: reverse_const_list(acc.consts, ConstDeclList.End),
         impls: reverse_impl_list(acc.impls, ImplDeclList.End),
+    }
+}
+
+/// Extract metadata for ONLY the decls that came from `target_file`.
+/// Walks the same resolved StmtList that `extract_unit_metadata` does
+/// but accumulates a TypeDecl / FnDecl / ConstDecl / ImplDecl only
+/// when its enclosing SStmt.file matches the target. Module wraps and
+/// Annotated wrappers are always traversed (so a target file's decls
+/// reachable through nested mod boundaries still land), but their
+/// own SStmt.file is ignored — only the leaf decl's file gates
+/// accumulation.
+///
+/// This is the per-file granularity foundation for g2eo: editing
+/// one .av file invalidates only that file's metadata sidecar, not
+/// the whole package's. unit_name keeps the qualified-name prefix
+/// stable across all per-file slices so consumers see byte-identical
+/// qns whether they load the package's whole-unit metadata or the
+/// per-file slice.
+export fn extract_per_file_metadata(unit_name: string, target_file: string, fingerprint: bytes, stmts: StmtList) -> UnitMetadata {
+    let inner = unwrap_outer_unit_module(stmts, unit_name)
+    let acc = walk_stmts_for_file(empty_acc(), inner, unit_name, false, target_file)
+    UnitMetadata {
+        unit_name: unit_name,
+        fingerprint: fingerprint,
+        types: reverse_type_list(acc.types, TypeDeclList.End),
+        fns: reverse_fn_list(acc.fns, FnDeclList.End),
+        consts: reverse_const_list(acc.consts, ConstDeclList.End),
+        impls: reverse_impl_list(acc.impls, ImplDeclList.End),
+    }
+}
+
+fn walk_stmts_for_file(acc: ExtractAcc, stmts: StmtList, current_module: string, exported: bool, target_file: string) -> ExtractAcc {
+    match stmts {
+        .End -> acc
+        .Node(ss, next) -> {
+            let after = walk_ss_for_file(acc, ss, current_module, exported, target_file)
+            walk_stmts_for_file(after, next, current_module, exported, target_file)
+        }
+    }
+}
+
+fn walk_ss_for_file(acc: ExtractAcc, ss: SStmt, current_module: string, exported: bool, target_file: string) -> ExtractAcc {
+    match ss.node {
+        // Module wraps are structural — always recurse, regardless of
+        // SStmt.file. The wrap's file marks where the `mod foo` decl
+        // lived; the body's own SStmts carry foo.av's path.
+        .Module(name, body) -> {
+            let sub_path = qualify(current_module, name)
+            walk_stmts_for_file(acc, body, sub_path, false, target_file)
+        }
+        // Annotated transparently delegates. The Annotated SStmt's
+        // file matches the inner stmt's file (parser stamps both),
+        // so the gating happens at the inner stmt's recursion.
+        .Annotated(annots, inner) -> {
+            let is_export = exported || annotation_has_export(annots)
+            let inner_ss = sstmt_at(inner, ss.line, ss.col, ss.file)
+            walk_ss_for_file(acc, inner_ss, current_module, is_export, target_file)
+        }
+        // Leaf decl: gate on file match.
+        _ -> {
+            if ss.file == target_file {
+                walk_stmt(acc, ss.node, current_module, exported)
+            } else {
+                acc
+            }
+        }
     }
 }
 
