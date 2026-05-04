@@ -663,55 +663,64 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
 /// @field error_message — diagnostic when had_error is set.
 type EvalArgsResult = {
     runtime: Runtime,
-    values: ValueList,
+    values: List<Value>,
     had_error: int,
     error_message: string,
 }
 
-/// Linked list of Values produced by `eval_arg_list`. Used as
-/// scratch storage during call evaluation.
-enum ValueList {
-    End
-    Node(value: Value, next: ValueList)
-}
-
 /// Evaluate every expression in `args` left-to-right, threading
-/// the runtime through each call. Bails on first error.
+/// the runtime through each call. Bails on first error. Source
+/// order is preserved by .push — no reverse pass needed.
 fn eval_arg_list(runtime: Runtime, args: ExprList) -> EvalArgsResult {
-    match args {
-        .End -> EvalArgsResult { runtime, values: ValueList.End, had_error: false, error_message: "" }
-        .Node(se, next) -> {
-            let result = eval_expr(runtime, se.node)
-            if result.had_error {
-                return EvalArgsResult { runtime: result.runtime, values: ValueList.End, had_error: true, error_message: result.error_message }
+    mut current = runtime
+    mut values: List<Value> = []
+    mut cur = args
+    mut keep_going = true
+    while keep_going {
+        match cur {
+            .End -> { keep_going = false }
+            .Node(se, next) -> {
+                let result = eval_expr(current, se.node)
+                if result.had_error {
+                    return EvalArgsResult {
+                        runtime: result.runtime,
+                        values: [],
+                        had_error: true,
+                        error_message: result.error_message,
+                    }
+                }
+                values.push(result.value)
+                current = result.runtime
+                cur = next
             }
-            let arg_value = result.value
-            let rest = eval_arg_list(result.runtime, next)
-            if rest.had_error {
-                return rest
-            }
-            EvalArgsResult { runtime: rest.runtime, values: ValueList.Node(arg_value, rest.values), had_error: false, error_message: "" }
         }
     }
+    EvalArgsResult { runtime: current, values: values, had_error: false, error_message: "" }
 }
 
 /// Bind every entry in `args` to the corresponding name in
 /// `params`. Used by `eval_call` to set up the callee's scope.
 /// Bindings are immutable (`mut: false`) — params are not
 /// reassignable in the evaluator.
-fn bind_params(runtime: Runtime, params: ParamList, args: ValueList) -> Runtime {
-    match params {
-        .End -> runtime
-        .Node(name, _, next_params) -> {
-            match args {
-                .End -> runtime
-                .Node(value, next_args) -> {
-                    let next_runtime = define_binding(runtime, name, false, value)
-                    bind_params(next_runtime, next_params, next_args)
+fn bind_params(runtime: Runtime, params: ParamList, args: List<Value>) -> Runtime {
+    mut current = runtime
+    mut p = params
+    mut idx = 0
+    mut keep_going = true
+    while keep_going {
+        match p {
+            .End -> { keep_going = false }
+            .Node(name, _, next_params) -> {
+                if idx >= args.length { keep_going = false }
+                else {
+                    current = define_binding(current, name, false, args[idx])
+                    p = next_params
+                    idx = idx + 1
                 }
             }
         }
     }
+    current
 }
 
 /// Number of declared parameters in a ParamList. Used to assert
@@ -720,15 +729,6 @@ fn count_params(params: ParamList) -> int {
     match params {
         .End -> 0
         .Node(_, _, next) -> 1 + count_params(next)
-    }
-}
-
-/// Number of values in a ValueList. Pairs with `count_params`
-/// for the arity check.
-fn count_values(values: ValueList) -> int {
-    match values {
-        .End -> 0
-        .Node(_, next) -> 1 + count_values(next)
     }
 }
 
@@ -766,7 +766,7 @@ fn eval_call(runtime: Runtime, callee: Expr, args: ExprList) -> StepResult {
     }
 
     let param_count = count_params(fn_lookup.params)
-    let arg_count = count_values(args_result.values)
+    let arg_count = args_result.values.length
     if param_count != arg_count {
         return error_result(args_result.runtime, "expected ${string(param_count)} arguments but got ${string(arg_count)}")
     }
@@ -814,27 +814,21 @@ fn value_builtin(name: string) -> Value {
 
 /// Dispatch a builtin call by name. Currently handles `println`
 /// and `string`; everything else errors as `unknown builtin`.
-fn call_builtin(runtime: Runtime, name: string, args: ValueList) -> StepResult {
+fn call_builtin(runtime: Runtime, name: string, args: List<Value>) -> StepResult {
     if name == "println" {
-        match args {
-            .End -> {
-                println("")
-                return ok_result(runtime, value_null())
-            }
-            .Node(value, _) -> {
-                println(render_value(value))
-                return ok_result(runtime, value_null())
-            }
+        if args.length == 0 {
+            println("")
+        } else {
+            println(render_value(args[0]))
         }
+        return ok_result(runtime, value_null())
     }
 
     if name == "string" {
-        match args {
-            .Node(value, _) -> {
-                return ok_result(runtime, value_string(render_value(value)))
-            }
-            _ -> { return error_result(runtime, "string() expects 1 argument") }
+        if args.length == 0 {
+            return error_result(runtime, "string() expects 1 argument")
         }
+        return ok_result(runtime, value_string(render_value(args[0])))
     }
 
     error_result(runtime, "unknown builtin `${name}`")
