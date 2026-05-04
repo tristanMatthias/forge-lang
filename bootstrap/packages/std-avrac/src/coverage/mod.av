@@ -61,15 +61,9 @@ export enum CovEntryList {
 /// array in profdata order.
 export type FnCounts = {
     name: string,
-    counts: IntList,
+    counts: List<int>,
 }
 
-/// Linked list of ints. Used both for per-fn counter arrays and for
-/// the IntListSet line-number set.
-export enum IntList {
-    End
-    Node(value: int, next: IntList)
-}
 
 /// Linked list of FnCounts — one per fn in the profdata dump.
 export enum FnCountsList {
@@ -369,42 +363,31 @@ fn parse_profdata(src: string) -> FnCountsList {
 }
 
 /// Parse `"1, 2, 3"` (the body of a profdata `Block counts: [...]`
-/// line, with brackets already stripped) into an IntList. Prepends
+/// line, with brackets already stripped) into a List<int>. Prepends
 /// `fn_count` so `counter[0]` is the entry count and the rest are
-/// block counts in profdata order.
-fn parse_block_counts(s: string, fn_count: int) -> IntList {
+/// block counts in profdata order. Source-order via .push, no reverse
+/// pass needed.
+fn parse_block_counts(s: string, fn_count: int) -> List<int> {
     let parts = s.split(",")
-    // Iterative head-build then reverse — N can be hundreds.
-    mut acc = IntList.End
-    mut idx = parts.length - 1
-    while idx >= 0 {
-        let part = parts[idx].trim()
+    mut out = []
+    out.push(fn_count)
+    mut i = 0
+    while i < parts.length {
+        let part = parts[i].trim()
         if part.length > 0 {
-            acc = IntList.Node(int(part), acc)
+            out.push(int(part))
         }
-        idx = idx - 1
+        i = i + 1
     }
-    IntList.Node(fn_count, acc)
+    out
 }
 
-/// Index into an IntList. Iterative — counter arrays can have
-/// hundreds of elements and recursion would risk the stack on
-/// degenerate input. Returns 0 when out-of-bounds.
-fn int_list_get(list: IntList, idx: int) -> int {
-    // Iterative — counter arrays can have hundreds of elements.
-    mut cur = list
-    mut k = idx
-    while true {
-        match cur {
-            .End -> return 0
-            .Node(v, next) -> {
-                if k == 0 { return v }
-                cur = next
-                k = k - 1
-            }
-        }
-    }
-    0
+/// Index into a counter list. O(1) random access — no walk needed
+/// now that the storage is List<int>. Returns 0 when out-of-bounds
+/// (matches the prior linked-list helper's sentinel).
+fn int_list_get(list: List<int>, idx: int) -> int {
+    if idx < 0 || idx >= list.length { return 0 }
+    list[idx]
 }
 
 // ── Aggregate covmap × counters into FnStats ──
@@ -448,7 +431,7 @@ fn aggregate(covmap: CovEntryList, counts: FnCountsList) -> FnStatsList {
                 mut count = 0
                 if avra_map_has_cstr(counts_map, e.fn_name) == 1 {
                     let il_ptr = avra_map_get_cstr(counts_map, e.fn_name)
-                    let il: IntList = il_ptr
+                    let il: List<int> = il_ptr
                     count = int_list_get(il, e.id)
                 }
 
