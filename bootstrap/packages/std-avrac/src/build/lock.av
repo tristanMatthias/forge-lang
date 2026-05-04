@@ -35,7 +35,7 @@ use core.runtime.{
     avra_selfhost_read_file,
     avra_selfhost_write_file,
 }
-use build.graph.{Unit, UnitList, build_graph, DepGraph, unit_list_length}
+use build.graph.{Unit, build_graph, DepGraph}
 use build.fingerprint.{Fingerprint}
 use @std.crypto.{sha256_file}
 
@@ -139,23 +139,18 @@ export fn lockfile_from_graph(dir: string, graph: DepGraph) -> Lockfile {
     }
 }
 
-fn collect_entries(units: UnitList) -> List<LockEntry> {
+fn collect_entries(units: List<Unit>) -> List<LockEntry> {
     mut acc = []
-    mut cur = units
-    mut keep_going = true
-    while keep_going {
-        match cur {
-            .End -> keep_going = false,
-            .Node(u, rest) -> {
-                let manifest_path = ensure_trailing_slash(u.project_root) + "avra.toml"
-                acc.push(LockEntry {
-                    name: u.name,
-                    path: u.project_root,
-                    fp: sha256_file(manifest_path),
-                })
-                cur = rest
-            }
-        }
+    mut i = 0
+    while i < units.length {
+        let u = units[i]
+        let manifest_path = ensure_trailing_slash(u.project_root) + "avra.toml"
+        acc.push(LockEntry {
+            name: u.name,
+            path: u.project_root,
+            fp: sha256_file(manifest_path),
+        })
+        i = i + 1
     }
     acc
 }

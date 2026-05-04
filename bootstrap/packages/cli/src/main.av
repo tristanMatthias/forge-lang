@@ -75,7 +75,7 @@ use @std.avrac.build.pool.{pool_run}
 use @std.crypto.{sha256_hex}
 extern fn avra_bytes_to_hex(b: bytes) -> string
 use @std.avrac.build.graph.{
-    DepGraph, Unit, UnitList, build_graph, unit_list_length,
+    DepGraph, Unit, build_graph,
 }
 use @std.avrac.typeck.{typecheck_program}
 use @std.avrac.diagnostics.{bag_has_errors, bag_has_warnings, bag_new, bag_report, diag_error, diag_ice, span_dummy, DiagCode, DiagnosticBag}
@@ -466,25 +466,17 @@ fn build_event_json(kind: string, unit: string, fp: string, path: string, reason
 }
 
 
-/// Render a UnitList as "a → b → c". Used by --explain to summarise
+/// Render a List<Unit> as "a → b → c". Used by --explain to summarise
 /// the project's dep graph in a single line. Topological order means
 /// leaves come first; we display in that order so the chain reads
 /// "what gets built first → ... → root".
-fn render_unit_chain(units: UnitList) -> string {
+fn render_unit_chain(units: List<Unit>) -> string {
     mut out = ""
-    mut cur = units
-    mut first = true
-    mut keep_going = true
-    while keep_going {
-        match cur {
-            .End -> keep_going = false,
-            .Node(u, rest) -> {
-                if !first { out = out + " → " }
-                out = out + u.name
-                first = false
-                cur = rest
-            }
-        }
+    mut i = 0
+    while i < units.length {
+        if i > 0 { out = out + " → " }
+        out = out + units[i].name
+        i = i + 1
     }
     out
 }
@@ -983,7 +975,7 @@ fn run_build_command() {
     if args.explain && manifest.found && !args.json {
         let g = build_graph("${project_dir}/")
         if !g.had_error {
-            let n = unit_list_length(g.units)
+            let n = g.units.length
             if n > 1 {
                 println("graph: ${string(n)} units (${render_unit_chain(g.units)})")
             }

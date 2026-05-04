@@ -9,7 +9,7 @@
 //
 // Tracking ticket: forge-crafting-intepreters-8tts.
 
-use @std.avrac.build.graph.{build_graph, unit_list_length}
+use @std.avrac.build.graph.{build_graph}
 use @std.avrac.build.lock.{
     Lockfile, LockEntry,
     read_lock, write_lock, lockfile_from_graph, render_lock, lock_is_fresh,

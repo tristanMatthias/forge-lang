@@ -45,47 +45,16 @@ export type Unit = {
     dep_names: List<string>,
 }
 
-/// Linked list of units. The build driver iterates this in topo
-/// order (deps before dependents) when scheduling compile work.
-export enum UnitList {
-    End,
-    Node(unit: Unit, next: UnitList),
-}
-
-export fn unit_list_length(xs: UnitList) -> int {
-    mut count = 0
-    mut cur = xs
-    mut keep_going = true
-    while keep_going {
-        match cur {
-            .End -> keep_going = false,
-            .Node(_, rest) -> {
-                count = count + 1
-                cur = rest
-            }
-        }
+/// Free helper for "does `xs` contain a unit with name == target?".
+/// List<Unit> doesn't ship a built-in `.contains_by(predicate)` so
+/// every site that needs name-based membership uses this one walker.
+export fn unit_list_contains_name(xs: List<Unit>, target: string) -> bool {
+    mut i = 0
+    while i < xs.length {
+        if xs[i].name == target { return true }
+        i = i + 1
     }
-    count
-}
-
-export fn unit_list_contains_name(xs: UnitList, target: string) -> bool {
-    mut cur = xs
-    mut found = false
-    mut keep_going = true
-    while keep_going {
-        match cur {
-            .End -> keep_going = false,
-            .Node(u, rest) -> {
-                if u.name == target {
-                    found = true
-                    keep_going = false
-                } else {
-                    cur = rest
-                }
-            }
-        }
-    }
-    found
+    false
 }
 
 /// Result of `build_graph`. `units` is in topological order (a unit
@@ -93,7 +62,7 @@ export fn unit_list_contains_name(xs: UnitList, target: string) -> bool {
 /// detection or missing-manifest failures; `error` carries a human
 /// description suitable for surfacing as a build diagnostic.
 export type DepGraph = {
-    units: UnitList,
+    units: List<Unit>,
     had_error: bool,
     error: string,
 }
@@ -111,7 +80,7 @@ export fn build_graph(project_root: string) -> DepGraph {
     let root_manifest = load_manifest(project_root)
     if !root_manifest.found {
         return DepGraph {
-            units: UnitList.End,
+            units: [],
             had_error: true,
             error: "no avra.toml found at " + project_root,
         }
@@ -121,10 +90,10 @@ export fn build_graph(project_root: string) -> DepGraph {
     // a separate "visited" name list so the DFS doesn't re-enter a
     // unit that's already loaded (the dep list itself is the spine
     // of the iteration; visited tracks both pending and complete).
-    let collected = collect_units(project_root, root_manifest, UnitList.End, [])
+    let collected = collect_units(project_root, root_manifest, [], [])
     if collected.had_error {
         return DepGraph {
-            units: UnitList.End,
+            units: [],
             had_error: true,
             error: collected.error,
         }
@@ -136,7 +105,7 @@ export fn build_graph(project_root: string) -> DepGraph {
     let sorted = topological_sort(collected.units)
     if sorted.had_error {
         return DepGraph {
-            units: UnitList.End,
+            units: [],
             had_error: true,
             error: sorted.error,
         }
@@ -148,23 +117,22 @@ export fn build_graph(project_root: string) -> DepGraph {
     }
 }
 
-/// Internal accumulator for collect_units / topological_sort. Wraps
-/// a UnitList with had_error / error so the recursive DFS can
-/// surface cycle / missing-manifest errors without a Result type
-/// the bootstrap doesn't yet generate cleanly.
+/// Internal accumulator for collect_units / topological_sort. The
+/// recursive DFS surfaces cycle / missing-manifest errors via
+/// had_error / error rather than a Result type.
 ///
 /// `visited` is threaded through the result so sibling recursions
 /// inherit the names already loaded by their predecessors. Without
 /// that propagation the diamond pattern (a → b, a → c, b → d, c → d)
 /// would visit `d` twice and emit two units for it.
 type CollectResult = {
-    units: UnitList,
+    units: List<Unit>,
     visited: List<string>,
     had_error: bool,
     error: string,
 }
 
-fn collect_units(project_root: string, manifest: Manifest, acc: UnitList, visited: List<string>) -> CollectResult {
+fn collect_units(project_root: string, manifest: Manifest, acc: List<Unit>, visited: List<string>) -> CollectResult {
     // Already loaded — short-circuit.
     if name_list_contains(visited, manifest.name) {
         return CollectResult { units: acc, visited: visited, had_error: false, error: "" }
@@ -177,20 +145,21 @@ fn collect_units(project_root: string, manifest: Manifest, acc: UnitList, visite
     if after_deps.had_error {
         return after_deps
     }
-    let unit = Unit {
+    mut units_now = after_deps.units
+    units_now.push(Unit {
         name: manifest.name,
         project_root: project_root,
         dep_names: dep_names,
-    }
+    })
     CollectResult {
-        units: UnitList.Node(unit, after_deps.units),
+        units: units_now,
         visited: after_deps.visited,
         had_error: false,
         error: "",
     }
 }
 
-fn recurse_deps(parent_root: string, deps: DepList, acc: UnitList, visited: List<string>) -> CollectResult {
+fn recurse_deps(parent_root: string, deps: DepList, acc: List<Unit>, visited: List<string>) -> CollectResult {
     mut result = CollectResult { units: acc, visited: visited, had_error: false, error: "" }
     mut cur = deps
     mut keep_going = true
@@ -260,77 +229,69 @@ fn ensure_trailing_slash(s: string) -> string {
 /// already in the output, output it, mark its name in the resolved
 /// set. Stop when no unit can be picked. If output count < input
 /// count, there's a cycle.
-fn topological_sort(units: UnitList) -> CollectResult {
-    let total = unit_list_length(units)
-    mut output = UnitList.End
+fn topological_sort(units: List<Unit>) -> CollectResult {
+    let total = units.length
+    mut output = []
     mut resolved = []
     mut remaining = units
-    mut output_count = 0
     mut progress = true
 
     while progress {
         progress = false
-        let scan = scan_for_ready(remaining, resolved, UnitList.End, UnitList.End)
+        let scan = scan_for_ready(remaining, resolved)
         // scan.ready: units whose deps are satisfied
         // scan.rest:  units still pending
-        let ready = scan.ready
-        if !is_empty_unit_list(ready) {
+        if scan.ready.length > 0 {
             progress = true
             // Append `ready` to output (in their original order).
-            output = append_unit_list(output, ready)
-            // Add their names to resolved.
-            mut rcur = ready
-            mut keep = true
-            while keep {
-                match rcur {
-                    .End -> keep = false,
-                    .Node(u, rest) -> {
-                        resolved.push(u.name)
-                        output_count = output_count + 1
-                        rcur = rest
-                    }
-                }
+            mut ri = 0
+            while ri < scan.ready.length {
+                let u = scan.ready[ri]
+                output.push(u)
+                resolved.push(u.name)
+                ri = ri + 1
             }
             remaining = scan.rest
         }
     }
 
-    if output_count < total {
+    if output.length < total {
         // Cycle in the residue. Surface the names involved so the
         // diagnostic is actionable.
         let cycle_names = unit_names(remaining)
         return CollectResult {
-            units: UnitList.End,
+            units: [],
+            visited: [],
             had_error: true,
             error: "dep cycle in: " + cycle_names,
         }
     }
 
-    CollectResult { units: output, had_error: false, error: "" }
+    CollectResult { units: output, visited: [], had_error: false, error: "" }
 }
 
 type ScanResult = {
-    ready: UnitList,
-    rest: UnitList,
+    ready: List<Unit>,
+    rest: List<Unit>,
 }
 
 /// One Kahn pass: split `units` into "ready" (every dep_name is in
 /// `resolved`) and "rest" (something not yet resolved). Both lists
-/// are returned in original order.
-fn scan_for_ready(units: UnitList, resolved: List<string>, ready_acc: UnitList, rest_acc: UnitList) -> ScanResult {
-    match units {
-        .End -> ScanResult {
-            ready: reverse_unit_list(ready_acc, UnitList.End),
-            rest: reverse_unit_list(rest_acc, UnitList.End),
+/// preserve original order.
+fn scan_for_ready(units: List<Unit>, resolved: List<string>) -> ScanResult {
+    mut ready = []
+    mut rest = []
+    mut i = 0
+    while i < units.length {
+        let u = units[i]
+        if all_deps_resolved(u.dep_names, resolved) {
+            ready.push(u)
+        } else {
+            rest.push(u)
         }
-        .Node(u, next) -> {
-            if all_deps_resolved(u.dep_names, resolved) {
-                scan_for_ready(next, resolved, UnitList.Node(u, ready_acc), rest_acc)
-            } else {
-                scan_for_ready(next, resolved, ready_acc, UnitList.Node(u, rest_acc))
-            }
-        }
+        i = i + 1
     }
+    ScanResult { ready, rest }
 }
 
 fn all_deps_resolved(deps: List<string>, resolved: List<string>) -> bool {
@@ -344,42 +305,13 @@ fn all_deps_resolved(deps: List<string>, resolved: List<string>) -> bool {
     true
 }
 
-fn is_empty_unit_list(xs: UnitList) -> bool {
-    match xs {
-        .End -> true
-        _ -> false
-    }
-}
-
-fn append_unit_list(a: UnitList, b: UnitList) -> UnitList {
-    match a {
-        .End -> b
-        .Node(u, rest) -> UnitList.Node(u, append_unit_list(rest, b))
-    }
-}
-
-fn reverse_unit_list(xs: UnitList, acc: UnitList) -> UnitList {
-    match xs {
-        .End -> acc
-        .Node(u, rest) -> reverse_unit_list(rest, UnitList.Node(u, acc))
-    }
-}
-
-fn unit_names(xs: UnitList) -> string {
+fn unit_names(xs: List<Unit>) -> string {
     mut out = ""
-    mut cur = xs
-    mut first = true
-    mut keep_going = true
-    while keep_going {
-        match cur {
-            .End -> keep_going = false,
-            .Node(u, rest) -> {
-                if !first { out = out + ", " }
-                out = out + u.name
-                first = false
-                cur = rest
-            }
-        }
+    mut i = 0
+    while i < xs.length {
+        if i > 0 { out = out + ", " }
+        out = out + xs[i].name
+        i = i + 1
     }
     out
 }

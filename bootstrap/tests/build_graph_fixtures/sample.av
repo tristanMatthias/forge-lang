@@ -10,8 +10,8 @@
 // Diamond shape. Topo order must put libc before liba/libb before root.
 
 use @std.avrac.build.graph.{
-    DepGraph, Unit, UnitList,
-    build_graph, unit_list_length,
+    DepGraph, Unit,
+    build_graph,
 }
 
 extern fn avra_shell_exec(cmd: string) -> string
@@ -23,32 +23,13 @@ fn write_manifest(dir: string, name: string, deps: string) -> string {
 }
 
 fn first_unit(g: DepGraph) -> string {
-    match g.units {
-        .Node(u, _) -> u.name,
-        .End -> "<empty>",
-    }
+    if g.units.length == 0 { return "<empty>" }
+    g.units[0].name
 }
 
-fn nth_unit(units: UnitList, idx: int) -> string {
-    mut cur = units
-    mut i = 0
-    mut result = "<oob>"
-    mut keep_going = true
-    while keep_going {
-        match cur {
-            .End -> keep_going = false,
-            .Node(u, rest) -> {
-                if i == idx {
-                    result = u.name
-                    keep_going = false
-                } else {
-                    i = i + 1
-                    cur = rest
-                }
-            }
-        }
-    }
-    result
+fn nth_unit(units: List<Unit>, idx: int) -> string {
+    if idx < 0 || idx >= units.length { return "<oob>" }
+    units[idx].name
 }
 
 fn main() -> int {
@@ -73,10 +54,10 @@ fn main() -> int {
     }
 
     // 4 units total: root, liba, libb, libc.
-    if unit_list_length(g.units) == 4 {
+    if g.units.length == 4 {
         println("PROBE four_units: ok")
     } else {
-        println("PROBE four_units: FAIL count=" + string(unit_list_length(g.units)))
+        println("PROBE four_units: FAIL count=" + string(g.units.length))
     }
 
     // libc must come first (only leaf with no deps).
@@ -87,7 +68,7 @@ fn main() -> int {
     }
 
     // root must come LAST (depends on liba + libb).
-    let last = nth_unit(g.units, unit_list_length(g.units) - 1)
+    let last = nth_unit(g.units, g.units.length - 1)
     if last == "root" {
         println("PROBE root_last: ok")
     } else {
