@@ -22,57 +22,27 @@ use features.modules.package.{
     Manifest, Dep, DepList, load_manifest,
 }
 
-/// Linked list of names. Used for transitive dep lists.
-export enum NameList {
-    End,
-    Node(name: string, next: NameList),
-}
-
-export fn name_list_length(xs: NameList) -> int {
-    mut count = 0
-    mut cur = xs
-    mut keep_going = true
-    while keep_going {
-        match cur {
-            .End -> keep_going = false,
-            .Node(_, rest) -> {
-                count = count + 1
-                cur = rest
-            }
-        }
+/// `name_list_contains` lifted into a free helper since List<string>
+/// doesn't ship a built-in `.contains(x)` method yet. Used to dedup
+/// transitive dep names during the graph walk so a diamond
+/// (a→b, a→c, b→d, c→d) doesn't emit `d` twice.
+fn name_list_contains(xs: List<string>, target: string) -> bool {
+    mut i = 0
+    while i < xs.length {
+        if xs[i] == target { return true }
+        i = i + 1
     }
-    count
-}
-
-export fn name_list_contains(xs: NameList, target: string) -> bool {
-    mut cur = xs
-    mut found = false
-    mut keep_going = true
-    while keep_going {
-        match cur {
-            .End -> keep_going = false,
-            .Node(n, rest) -> {
-                if n == target {
-                    found = true
-                    keep_going = false
-                } else {
-                    cur = rest
-                }
-            }
-        }
-    }
-    found
+    false
 }
 
 /// One node in the dependency graph. `name` is the manifest's
 /// [package].name; `project_root` is the absolute filesystem path
 /// to the project (where avra.toml lives); `dep_names` is the
-/// direct dependencies (NameList of the form
-/// `["@std/cli", "@std/lsp", ...]`).
+/// direct dependencies, e.g. `["@std/cli", "@std/lsp", ...]`.
 export type Unit = {
     name: string,
     project_root: string,
-    dep_names: NameList,
+    dep_names: List<string>,
 }
 
 /// Linked list of units. The build driver iterates this in topo
@@ -151,7 +121,7 @@ export fn build_graph(project_root: string) -> DepGraph {
     // a separate "visited" name list so the DFS doesn't re-enter a
     // unit that's already loaded (the dep list itself is the spine
     // of the iteration; visited tracks both pending and complete).
-    let collected = collect_units(project_root, root_manifest, UnitList.End, NameList.End)
+    let collected = collect_units(project_root, root_manifest, UnitList.End, [])
     if collected.had_error {
         return DepGraph {
             units: UnitList.End,
@@ -189,17 +159,18 @@ export fn build_graph(project_root: string) -> DepGraph {
 /// would visit `d` twice and emit two units for it.
 type CollectResult = {
     units: UnitList,
-    visited: NameList,
+    visited: List<string>,
     had_error: bool,
     error: string,
 }
 
-fn collect_units(project_root: string, manifest: Manifest, acc: UnitList, visited: NameList) -> CollectResult {
+fn collect_units(project_root: string, manifest: Manifest, acc: UnitList, visited: List<string>) -> CollectResult {
     // Already loaded — short-circuit.
     if name_list_contains(visited, manifest.name) {
         return CollectResult { units: acc, visited: visited, had_error: false, error: "" }
     }
-    let visited_now = NameList.Node(manifest.name, visited)
+    mut visited_now = visited
+    visited_now.push(manifest.name)
     let dep_names = collect_dep_names(manifest.deps)
 
     let after_deps = recurse_deps(project_root, manifest.deps, acc, visited_now)
@@ -219,7 +190,7 @@ fn collect_units(project_root: string, manifest: Manifest, acc: UnitList, visite
     }
 }
 
-fn recurse_deps(parent_root: string, deps: DepList, acc: UnitList, visited: NameList) -> CollectResult {
+fn recurse_deps(parent_root: string, deps: DepList, acc: UnitList, visited: List<string>) -> CollectResult {
     mut result = CollectResult { units: acc, visited: visited, had_error: false, error: "" }
     mut cur = deps
     mut keep_going = true
@@ -263,27 +234,20 @@ fn recurse_deps(parent_root: string, deps: DepList, acc: UnitList, visited: Name
     result
 }
 
-fn collect_dep_names(deps: DepList) -> NameList {
-    mut acc = NameList.End
+fn collect_dep_names(deps: DepList) -> List<string> {
+    mut acc = []
     mut cur = deps
     mut keep_going = true
     while keep_going {
         match cur {
             .End -> keep_going = false,
             .Node(d, rest) -> {
-                acc = NameList.Node(d.name, acc)
+                acc.push(d.name)
                 cur = rest
             }
         }
     }
-    reverse_name_list(acc, NameList.End)
-}
-
-fn reverse_name_list(xs: NameList, acc: NameList) -> NameList {
-    match xs {
-        .End -> acc
-        .Node(n, rest) -> reverse_name_list(rest, NameList.Node(n, acc))
-    }
+    acc
 }
 
 fn ensure_trailing_slash(s: string) -> string {
@@ -299,7 +263,7 @@ fn ensure_trailing_slash(s: string) -> string {
 fn topological_sort(units: UnitList) -> CollectResult {
     let total = unit_list_length(units)
     mut output = UnitList.End
-    mut resolved = NameList.End
+    mut resolved = []
     mut remaining = units
     mut output_count = 0
     mut progress = true
@@ -321,7 +285,7 @@ fn topological_sort(units: UnitList) -> CollectResult {
                 match rcur {
                     .End -> keep = false,
                     .Node(u, rest) -> {
-                        resolved = NameList.Node(u.name, resolved)
+                        resolved.push(u.name)
                         output_count = output_count + 1
                         rcur = rest
                     }
@@ -353,7 +317,7 @@ type ScanResult = {
 /// One Kahn pass: split `units` into "ready" (every dep_name is in
 /// `resolved`) and "rest" (something not yet resolved). Both lists
 /// are returned in original order.
-fn scan_for_ready(units: UnitList, resolved: NameList, ready_acc: UnitList, rest_acc: UnitList) -> ScanResult {
+fn scan_for_ready(units: UnitList, resolved: List<string>, ready_acc: UnitList, rest_acc: UnitList) -> ScanResult {
     match units {
         .End -> ScanResult {
             ready: reverse_unit_list(ready_acc, UnitList.End),
@@ -369,24 +333,15 @@ fn scan_for_ready(units: UnitList, resolved: NameList, ready_acc: UnitList, rest
     }
 }
 
-fn all_deps_resolved(deps: NameList, resolved: NameList) -> bool {
-    mut cur = deps
-    mut all = true
-    mut keep_going = true
-    while keep_going {
-        match cur {
-            .End -> keep_going = false,
-            .Node(n, rest) -> {
-                if !name_list_contains(resolved, n) {
-                    all = false
-                    keep_going = false
-                } else {
-                    cur = rest
-                }
-            }
+fn all_deps_resolved(deps: List<string>, resolved: List<string>) -> bool {
+    mut i = 0
+    while i < deps.length {
+        if !name_list_contains(resolved, deps[i]) {
+            return false
         }
+        i = i + 1
     }
-    all
+    true
 }
 
 fn is_empty_unit_list(xs: UnitList) -> bool {
