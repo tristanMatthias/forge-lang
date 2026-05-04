@@ -43,13 +43,6 @@ use core.runtime.{avra_map_new_cstr, avra_map_set_cstr, avra_map_get_cstr,
 /// (it's a package root) or any ID hasn't been allocated yet.
 export const ID_NONE: int = -1
 
-/// Linked-list of Symbol (interned-string ids). Used as the segment
-/// list inside ResolvedPath.
-export enum SymbolList {
-    End
-    Node(sym: int, next: SymbolList)
-}
-
 /// Bidirectional string interner.
 ///
 /// @field by_name — C strmap: name → id (O(1) lookup).
@@ -123,9 +116,9 @@ export fn interner_lookup(itn: StringInterner, sym: int) -> string {
 ///                  then descend through `segments`. Reserved for
 ///                  future use; bootstrap source doesn't use it yet.
 export enum ResolvedPath {
-    PackageRoot(pkg_id: int, segments: SymbolList)
-    SelfRelative(pkg_id: int, segments: SymbolList)
-    Super(origin_mod: int, hops: int, segments: SymbolList)
+    PackageRoot(pkg_id: int, segments: List<int>)
+    SelfRelative(pkg_id: int, segments: List<int>)
+    Super(origin_mod: int, hops: int, segments: List<int>)
 }
 
 // ── ModuleGraphNode + ModuleGraph ─────────────────────────────────────────

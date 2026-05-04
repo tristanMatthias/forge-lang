@@ -26,7 +26,7 @@
 
 use core.ast.{Stmt, StmtList, SStmt, SExpr, Expr, ExprList, ParamList, ValueType, AnnotationList}
 use core.module_graph.{
-    ModuleGraph, ModuleGraphNode, ResolvedPath, SymbolList,
+    ModuleGraph, ModuleGraphNode, ResolvedPath,
     StringInterner, InternResult,
     module_graph_new, module_graph_add, module_graph_find_by_file,
     module_graph_add_package_root, module_graph_package_root,
@@ -76,7 +76,7 @@ export type BuildGraphResult = {
 export type UseEdge = {
     origin: int,
     path: ResolvedPath,
-    bindings: SymbolList,
+    bindings: List<int>,
 }
 
 /// Linked list of UseEdge — append-only; iteration is by-statement
@@ -526,12 +526,12 @@ fn find_package_for_root(g: ModuleGraph, root_id: int) -> int {
 
 // ── Path / name interning ────────────────────────────────────────────
 
-type PathSegmentsResult = { graph: ModuleGraph, segments: SymbolList }
+type PathSegmentsResult = { graph: ModuleGraph, segments: List<int> }
 
 /// Intern every dot-separated segment of `path` into the graph's
 /// interner. Used for SelfRelative paths (`X.Y.Z`).
 fn intern_path_segments(g: ModuleGraph, path: string) -> PathSegmentsResult {
-    intern_segments_inner(g, path, 0, SymbolList.End)
+    intern_segments_iter(g, path, 0)
 }
 
 /// Intern every segment AFTER the `@scope.name.` prefix. Used for
@@ -543,67 +543,60 @@ fn intern_path_segments_after_pkg(g: ModuleGraph, path: string) -> PathSegmentsR
     let without_at = path.substring(1, path.length)
     let dot1 = without_at.index_of(".")
     if dot1 < 0 {
-        return PathSegmentsResult { graph: g, segments: SymbolList.End }
+        return PathSegmentsResult { graph: g, segments: [] }
     }
     let after_scope = without_at.substring(dot1 + 1, without_at.length)
     let dot2 = after_scope.index_of(".")
     if dot2 < 0 {
         // Path was just `@scope.name` — no segments after the package.
-        return PathSegmentsResult { graph: g, segments: SymbolList.End }
+        return PathSegmentsResult { graph: g, segments: [] }
     }
     let after_pkg = after_scope.substring(dot2 + 1, after_scope.length)
-    intern_segments_inner(g, after_pkg, 0, SymbolList.End)
+    intern_segments_iter(g, after_pkg, 0)
 }
 
-/// Recursive worker — splits on `.` and accumulates a SymbolList in
-/// reverse, then reverses at the end. Reverse-of-reverse keeps order
-/// without per-step list traversal.
-fn intern_segments_inner(g: ModuleGraph, path: string, start: int, acc: SymbolList) -> PathSegmentsResult {
+/// Iterative segment interner. Splits `path` on `.` starting at
+/// `start`, interns each segment, and pushes the resulting sym ids
+/// into a List<int> in source order. The previous version used a
+/// recursive prepend + reverse_symbol_list dance; .push gives the
+/// same result with one walk.
+fn intern_segments_iter(g: ModuleGraph, path: string, start: int) -> PathSegmentsResult {
+    mut graph = g
+    mut segments = []
+    mut cursor = start
     let len = path.length
-    if start >= len {
-        return PathSegmentsResult { graph: g, segments: reverse_symbol_list(acc) }
+    while cursor < len {
+        let rest = path.substring(cursor, len)
+        let dot = rest.index_of(".")
+        let segment = if dot < 0 { rest } else { rest.substring(0, dot) }
+        let r = interner_intern(graph.interner, segment)
+        graph = graph with { interner: r.interner }
+        segments.push(r.sym)
+        cursor = if dot < 0 { len } else { cursor + dot + 1 }
     }
-    let rest = path.substring(start, len)
-    let dot = rest.index_of(".")
-    let segment = if dot < 0 { rest } else { rest.substring(0, dot) }
-    let next_start = if dot < 0 { len } else { start + dot + 1 }
-    let r = interner_intern(g.interner, segment)
-    let g_next = g with { interner: r.interner }
-    intern_segments_inner(g_next, path, next_start, SymbolList.Node(r.sym, acc))
+    PathSegmentsResult { graph: graph, segments: segments }
 }
 
-/// Reverse a SymbolList iteratively. cons-prepend accumulator pattern.
-fn reverse_symbol_list(list: SymbolList) -> SymbolList {
-    mut acc = SymbolList.End
-    mut cur = list
-    while true {
+type ParamNamesResult = { graph: ModuleGraph, list: List<int> }
+
+/// Intern every `name` from a ParamList — used for `use a.b.{X, Y, Z}`
+/// where each name in the braces becomes a binding in the importing
+/// module's scope. Source-order via .push.
+fn intern_param_names(g: ModuleGraph, params: ParamList) -> ParamNamesResult {
+    mut graph = g
+    mut out = []
+    mut cur = params
+    mut keep_going = true
+    while keep_going {
         match cur {
-            .End -> { return acc }
-            .Node(s, next) -> {
-                acc = SymbolList.Node(s, acc)
+            .End -> { keep_going = false }
+            .Node(name, _, next) -> {
+                let r = interner_intern(graph.interner, name)
+                graph = graph with { interner: r.interner }
+                out.push(r.sym)
                 cur = next
             }
         }
     }
-    SymbolList.End
-}
-
-type ParamNamesResult = { graph: ModuleGraph, list: SymbolList }
-
-/// Intern every `name` from a ParamList — used for `use a.b.{X, Y, Z}`
-/// where each name in the braces becomes a binding in the importing
-/// module's scope.
-fn intern_param_names(g: ModuleGraph, params: ParamList) -> ParamNamesResult {
-    intern_param_names_inner(g, params, SymbolList.End)
-}
-
-fn intern_param_names_inner(g: ModuleGraph, params: ParamList, acc: SymbolList) -> ParamNamesResult {
-    match params {
-        .End -> ParamNamesResult { graph: g, list: reverse_symbol_list(acc) }
-        .Node(name, _, next) -> {
-            let r = interner_intern(g.interner, name)
-            let g_next = g with { interner: r.interner }
-            intern_param_names_inner(g_next, next, SymbolList.Node(r.sym, acc))
-        }
-    }
+    ParamNamesResult { graph: graph, list: out }
 }
