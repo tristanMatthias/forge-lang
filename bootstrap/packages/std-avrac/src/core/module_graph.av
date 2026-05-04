@@ -50,23 +50,17 @@ export enum SymbolList {
     Node(sym: int, next: SymbolList)
 }
 
-/// Linked-list of strings — used by the interner to map id → name in
-/// O(n). Faster lookup direction (name → id) goes through `by_name`.
-export enum StringList {
-    End
-    Node(s: string, next: StringList)
-}
-
 /// Bidirectional string interner.
 ///
 /// @field by_name — C strmap: name → id (O(1) lookup).
-/// @field names   — id → name in reverse cons order. Use
-///                  `interner_lookup` to navigate (O(n) but rarely hit
-///                  outside diagnostics).
-/// @field next_id — next id to assign on `interner_intern`.
+/// @field names   — id → name; `names[id]` is the interned name. With
+///                  the move from a prepend-cons-list to List<string>
+///                  the reverse lookup is now O(1) too.
+/// @field next_id — next id to assign on `interner_intern`. Always
+///                  equal to `names.length` after every intern call.
 export type StringInterner = {
     by_name: ptr,
-    names: StringList,
+    names: List<string>,
     next_id: int,
 }
 
@@ -74,7 +68,7 @@ export type StringInterner = {
 export fn interner_new() -> StringInterner {
     StringInterner {
         by_name: avra_map_new_cstr(),
-        names: StringList.End,
+        names: [],
         next_id: 0,
     }
 }
@@ -95,27 +89,21 @@ export fn interner_intern(itn: StringInterner, name: string) -> InternResult {
     }
     let id = itn.next_id
     avra_map_set_cstr(itn.by_name, name, id)
+    mut new_names = itn.names
+    new_names.push(name)
     let updated = itn with {
-        names: StringList.Node(name, itn.names),
+        names: new_names,
         next_id: id + 1,
     }
     InternResult { interner: updated, sym: id }
 }
 
 /// Reverse lookup: id → name. Returns "" when id is unknown (out of
-/// range or never interned). O(n); used for diagnostics only.
+/// range or never interned). O(1) — direct index now that the names
+/// list is a built-in List rather than a prepend-cons-list.
 export fn interner_lookup(itn: StringInterner, sym: int) -> string {
-    interner_lookup_inner(itn.names, itn.next_id - 1, sym)
-}
-
-fn interner_lookup_inner(list: StringList, cursor: int, target: int) -> string {
-    match list {
-        .End -> ""
-        .Node(s, next) -> {
-            if cursor == target { s }
-            else { interner_lookup_inner(next, cursor - 1, target) }
-        }
-    }
+    if sym < 0 || sym >= itn.names.length { return "" }
+    itn.names[sym]
 }
 
 // ── ResolvedPath ─────────────────────────────────────────────────────
