@@ -419,7 +419,7 @@ fn aggregate(covmap: CovEntryList, counts: FnCountsList) -> FnStatsList {
     }
 
     let stats_map = avra_map_new_cstr()
-    mut name_list = FnNameList.End
+    mut name_list: List<string> = []
     mut decisions = DecisionList.End
 
     mut cur = covmap
@@ -439,7 +439,7 @@ fn aggregate(covmap: CovEntryList, counts: FnCountsList) -> FnStatsList {
                 let was_new = avra_map_has_cstr(stats_map, e.fn_name) == 0
                 let s = stats_get_or_create(stats_map, e.fn_name)
                 if was_new {
-                    name_list = FnNameList.Node(e.fn_name, name_list)
+                    name_list.push(e.fn_name)
                 }
 
                 let updated = match e.ctype {
@@ -472,7 +472,7 @@ fn aggregate(covmap: CovEntryList, counts: FnCountsList) -> FnStatsList {
                 let was_new = avra_map_has_cstr(stats_map, d.fn_name) == 0
                 let s = stats_get_or_create(stats_map, d.fn_name)
                 if was_new {
-                    name_list = FnNameList.Node(d.fn_name, name_list)
+                    name_list.push(d.fn_name)
                 }
                 let hit = if d.true_count > 0 && d.false_count > 0 { 1 } else { 0 }
                 let updated = s with {
@@ -485,20 +485,18 @@ fn aggregate(covmap: CovEntryList, counts: FnCountsList) -> FnStatsList {
         }
     }
 
-    // Build the FnStatsList in insertion order from name_list (which is
-    // currently reversed — newest first — so reverse it as we build).
+    // Build the FnStatsList in insertion order. name_list now holds
+    // names in source order (push-append), so walk forward and prepend
+    // onto the cons-list result so the head is the LAST processed name
+    // — that matches the prior "newest first → reversed-into-output"
+    // semantic exactly.
     mut out = FnStatsList.End
-    mut nl = name_list
-    while true {
-        match nl {
-            .End -> { break }
-            .Node(name, nnext) -> {
-                let sptr = avra_map_get_cstr(stats_map, name)
-                let s: FnStats = sptr
-                out = FnStatsList.Node(s, out)
-                nl = nnext
-            }
-        }
+    mut i = 0
+    while i < name_list.length {
+        let sptr = avra_map_get_cstr(stats_map, name_list[i])
+        let s: FnStats = sptr
+        out = FnStatsList.Node(s, out)
+        i = i + 1
     }
     out
 }
@@ -557,10 +555,6 @@ fn stats_get_or_create(map: ptr, name: string) -> FnStats {
 /// Linked list of fn names tracked during aggregation so the final
 /// FnStatsList preserves first-seen order. The cstr-map alone has
 /// no defined iteration order.
-enum FnNameList {
-    End
-    Node(name: string, next: FnNameList)
-}
 
 /// Build a zeroed FnStats. Used by `stats_get_or_create` on
 /// first-sight and by the LCOV exporter when synthesizing rows.
