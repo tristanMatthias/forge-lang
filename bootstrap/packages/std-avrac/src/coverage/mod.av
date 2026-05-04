@@ -65,14 +65,9 @@ export type FnCounts = {
 }
 
 
-/// Linked list of FnCounts — one per fn in the profdata dump.
-export enum FnCountsList {
-    End
-    Node(item: FnCounts, next: FnCountsList)
-}
 
 /// Aggregated coverage stats for a single function, produced by
-/// folding `CovEntryList × FnCountsList`. Mirrors what the printed
+/// folding `CovEntryList × List<FnCounts>`. Mirrors what the printed
 /// summary and LCOV exporter want.
 ///
 /// @field name             — fully-qualified fn name.
@@ -318,14 +313,13 @@ fn digit_value(ch: string) -> int {
 // We extract: fn_name, Function count, Block counts.
 
 /// Parse a `llvm-profdata show --all-functions --counts` text dump
-/// into a FnCountsList. State machine: a bare line ending in `:` is
+/// into a List<FnCounts>. State machine: a bare line ending in `:` is
 /// a fn header; the next `Function count: K` and `Block counts:
 /// [...]` lines populate that fn's counter array. Iterative — the
 /// input can be thousands of lines long.
-fn parse_profdata(src: string) -> FnCountsList {
-    // Iterative — profdata text dump can be thousands of lines.
+fn parse_profdata(src: string) -> List<FnCounts> {
     let lines = src.split("\n")
-    mut acc = FnCountsList.End
+    mut acc = []
     mut cur_fn = ""
     mut cur_fn_count = 0
     mut idx = 0
@@ -348,7 +342,7 @@ fn parse_profdata(src: string) -> FnCountsList {
             let inside = if after.starts_with("[") { after.substring(1, after.length) } else { after }
             let inside2 = if inside.ends_with("]") { inside.substring(0, inside.length - 1) } else { inside }
             let counts = parse_block_counts(inside2, cur_fn_count)
-            acc = FnCountsList.Node(FnCounts { name: cur_fn, counts }, acc)
+            acc.push(FnCounts { name: cur_fn, counts })
             cur_fn = ""
             cur_fn_count = 0
             continue
@@ -404,18 +398,14 @@ fn int_list_get(list: List<int>, idx: int) -> int {
 /// build two cstr-maps for O(1) lookup of counter arrays and
 /// running stats. Decisions accumulate separately and roll into
 /// `total_conditions` / `hit_conditions` after the main pass.
-fn aggregate(covmap: CovEntryList, counts: FnCountsList) -> FnStatsList {
-    // Build counts_map: fn_name → ptr to IntList (stored).
+fn aggregate(covmap: CovEntryList, counts: List<FnCounts>) -> FnStatsList {
+    // Build counts_map: fn_name → ptr to List<int> (stored).
     let counts_map = avra_map_new_cstr()
-    mut cc = counts
-    while true {
-        match cc {
-            .End -> { break }
-            .Node(item, next) -> {
-                avra_map_set_cstr(counts_map, item.name, item.counts)
-                cc = next
-            }
-        }
+    mut ci = 0
+    while ci < counts.length {
+        let item = counts[ci]
+        avra_map_set_cstr(counts_map, item.name, item.counts)
+        ci = ci + 1
     }
 
     let stats_map = avra_map_new_cstr()
