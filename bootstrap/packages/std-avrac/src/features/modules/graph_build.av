@@ -61,7 +61,7 @@ use features.modules.resolver.{
 /// @field error_message — first error encountered. Empty on success.
 export type BuildGraphResult = {
     graph: ModuleGraph,
-    uses: UseEdgeList,
+    uses: List<UseEdge>,
     had_error: int,
     error_message: string,
 }
@@ -79,13 +79,6 @@ export type UseEdge = {
     bindings: List<int>,
 }
 
-/// Linked list of UseEdge — append-only; iteration is by-statement
-/// during name resolution, not by parent module.
-export enum UseEdgeList {
-    End
-    Node(edge: UseEdge, next: UseEdgeList)
-}
-
 /// Build the module graph starting from `entry_file`. The entry file
 /// becomes package 0's root module. Every transitively-loaded `mod X`
 /// is a separate node; every transitively-loaded `@scope.name` package
@@ -98,7 +91,7 @@ export fn build_module_graph(entry_file: string) -> BuildGraphResult {
     if avra_selfhost_file_exists(entry_file) == 0 {
         return BuildGraphResult {
             graph: module_graph_new(),
-            uses: UseEdgeList.End,
+            uses: [],
             had_error: 1,
             error_message: "entry file not found: ${entry_file}",
         }
@@ -112,7 +105,7 @@ export fn build_module_graph(entry_file: string) -> BuildGraphResult {
     if parsed.had_error || parsed.stmts == null {
         return BuildGraphResult {
             graph: pr.graph,
-            uses: UseEdgeList.End,
+            uses: [],
             had_error: 1,
             error_message: "parse error in ${entry_file}: ${parsed.error_message}",
         }
@@ -120,7 +113,7 @@ export fn build_module_graph(entry_file: string) -> BuildGraphResult {
     let entry_dir = modules_dirname(entry_file)
     // The entry file is the program root — canonical path "".
     let g_canon = module_graph_set_canonical(pr.graph, "", pr.mod_id)
-    walk_stmts(g_canon, parsed.stmts!, pr.mod_id, pr.pkg_id, "", entry_dir, UseEdgeList.End)
+    walk_stmts(g_canon, parsed.stmts!, pr.mod_id, pr.pkg_id, "", entry_dir, [])
 }
 
 // ── Internal walker ──────────────────────────────────────────────────
@@ -133,7 +126,7 @@ export fn build_module_graph(entry_file: string) -> BuildGraphResult {
 /// `parent_id` is the ModuleId currently being populated (the file
 /// these stmts came from). `pkg_id` is its package. `dir` is the
 /// directory of `parent_id`'s source file — used for sibling lookup.
-fn walk_stmts(g: ModuleGraph, stmts: StmtList, parent_id: int, pkg_id: int, canon: string, dir: string, uses: UseEdgeList) -> BuildGraphResult {
+fn walk_stmts(g: ModuleGraph, stmts: StmtList, parent_id: int, pkg_id: int, canon: string, dir: string, uses: List<UseEdge>) -> BuildGraphResult {
     match stmts {
         .End -> BuildGraphResult { graph: g, uses, had_error: 0, error_message: "" }
         .Node(ss, next) -> {
@@ -153,7 +146,7 @@ fn walk_stmts(g: ModuleGraph, stmts: StmtList, parent_id: int, pkg_id: int, cano
 ///                            and attributes don't affect resolution.
 ///   - everything else     → no-op (decls become items at y4n1.8;
 ///                            for now we only build structure).
-fn walk_stmt(g: ModuleGraph, ss: SStmt, parent_id: int, pkg_id: int, canon: string, dir: string, uses: UseEdgeList) -> BuildGraphResult {
+fn walk_stmt(g: ModuleGraph, ss: SStmt, parent_id: int, pkg_id: int, canon: string, dir: string, uses: List<UseEdge>) -> BuildGraphResult {
     match ss.node {
         .Module(name, body) -> walk_mod_decl(g, name, body, parent_id, pkg_id, canon, dir, uses)
         .Use(path, names) -> walk_use_stmt(g, path, names, parent_id, pkg_id, dir, uses)
@@ -181,7 +174,7 @@ fn walk_stmt(g: ModuleGraph, ss: SStmt, parent_id: int, pkg_id: int, canon: stri
 /// module's items strmap. Used by every top-level decl arm in
 /// walk_stmt above. The ItemId itself is opaque — what matters for
 /// resolution is "this name exists in this module".
-fn register_item(g: ModuleGraph, parent_id: int, name: string, uses: UseEdgeList) -> BuildGraphResult {
+fn register_item(g: ModuleGraph, parent_id: int, name: string, uses: List<UseEdge>) -> BuildGraphResult {
     let alloc = module_graph_alloc_item(g)
     let g_with_item = module_graph_add_item(alloc.graph, parent_id, name, alloc.item_id)
     BuildGraphResult { graph: g_with_item, uses, had_error: 0, error_message: "" }
@@ -195,7 +188,7 @@ fn register_item(g: ModuleGraph, parent_id: int, name: string, uses: UseEdgeList
 /// graph node, we skip re-parsing and just wire up the parent→child
 /// edge against the existing id. Cycles are impossible here because
 /// `mod X` always references a distinct file.
-fn walk_mod_decl(g: ModuleGraph, name: string, _body: StmtList, parent_id: int, pkg_id: int, canon: string, dir: string, uses: UseEdgeList) -> BuildGraphResult {
+fn walk_mod_decl(g: ModuleGraph, name: string, _body: StmtList, parent_id: int, pkg_id: int, canon: string, dir: string, uses: List<UseEdge>) -> BuildGraphResult {
     let sibling = "${dir}${name}.av"
     let dir_mod = "${dir}${name}/mod.av"
     mut mod_path = ""
@@ -242,7 +235,7 @@ fn walk_mod_decl(g: ModuleGraph, name: string, _body: StmtList, parent_id: int, 
 ///
 /// Records a UseEdge so name resolution can later bind the imported
 /// names against the graph.
-fn walk_use_stmt(g: ModuleGraph, path: string, names: ParamList, parent_id: int, pkg_id: int, dir: string, uses: UseEdgeList) -> BuildGraphResult {
+fn walk_use_stmt(g: ModuleGraph, path: string, names: ParamList, parent_id: int, pkg_id: int, dir: string, uses: List<UseEdge>) -> BuildGraphResult {
     if is_package_use(path) {
         // @scope.name.X.Y — load the package, build PackageRoot.
         let pkg_load = ensure_package_loaded(g, path, dir)
@@ -259,9 +252,11 @@ fn walk_use_stmt(g: ModuleGraph, path: string, names: ParamList, parent_id: int,
             path: ResolvedPath.PackageRoot(pkg_load.pkg_id, interned.segments),
             bindings: bindings.list,
         }
+        mut new_uses = uses
+        new_uses.push(edge)
         return BuildGraphResult {
             graph: bindings.graph,
-            uses: UseEdgeList.Node(edge, uses),
+            uses: new_uses,
             had_error: 0, error_message: "",
         }
     }
@@ -273,9 +268,11 @@ fn walk_use_stmt(g: ModuleGraph, path: string, names: ParamList, parent_id: int,
         path: ResolvedPath.SelfRelative(pkg_id, interned.segments),
         bindings: bindings.list,
     }
+    mut new_uses = uses
+    new_uses.push(edge)
     BuildGraphResult {
         graph: bindings.graph,
-        uses: UseEdgeList.Node(edge, uses),
+        uses: new_uses,
         had_error: 0, error_message: "",
     }
 }
@@ -336,7 +333,7 @@ fn ensure_package_loaded(g: ModuleGraph, use_path: string, dir: string) -> Ensur
         }
     }
     let pkg_dir = modules_dirname(pkg_file)
-    let walked = walk_stmts(g_canon, parsed.stmts!, pr.mod_id, pr.pkg_id, pkg_canon, pkg_dir, UseEdgeList.End)
+    let walked = walk_stmts(g_canon, parsed.stmts!, pr.mod_id, pr.pkg_id, pkg_canon, pkg_dir, [])
     EnsurePackageResult {
         graph: walked.graph, pkg_id: pr.pkg_id,
         had_error: walked.had_error, error_message: walked.error_message,
