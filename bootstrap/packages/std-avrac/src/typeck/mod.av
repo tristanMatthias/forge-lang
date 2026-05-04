@@ -243,40 +243,34 @@ enum TraitRegistry {
     Node(trait_name: string, methods: TraitMethodList, assoc_types: TraitAssocTypes, next: TraitRegistry)
 }
 
-/// Look up a trait's method list. Empty list when not registered —
-/// pair with `trait_has` to distinguish "trait with no methods" vs
-/// "no such trait".
-export fn trait_lookup(reg: TraitRegistry, name: string) -> TraitMethodList {
+/// Single-walk lookup result for the trait registry — same pattern
+/// as `FnTypeFound`. `found=false` means the trait isn't registered;
+/// `methods` and `assoc_types` carry safe sentinels in that case.
+/// Hot-path consumers prefer `trait_get` over the legacy split
+/// `trait_has` + `trait_lookup` + `trait_assoc_types` trio so each
+/// call site walks the registry exactly once.
+export type TraitFound = {
+    found: bool,
+    methods: TraitMethodList,
+    assoc_types: TraitAssocTypes,
+}
+
+/// One-walk lookup. Returns a record with `found=false` when the
+/// trait is not in the registry.
+export fn trait_get(reg: TraitRegistry, name: string) -> TraitFound {
     match reg {
-        .End -> TraitMethodList.End
-        .Node(n, methods, _, _) if n == name -> methods
-        .Node(n, methods, _, next) -> {
-            trait_lookup(next, name)
-        }
+        .End -> TraitFound { found: false, methods: TraitMethodList.End, assoc_types: TraitAssocTypes.End }
+        .Node(n, methods, at, _) if n == name ->
+            TraitFound { found: true, methods: methods, assoc_types: at }
+        .Node(_, _, _, next) -> trait_get(next, name)
     }
 }
 
-/// Membership probe for the trait registry.
+/// Membership probe for the trait registry. Convenience wrapper
+/// over `trait_get` — prefer the latter when also reading methods
+/// or assoc_types in the same code path.
 export fn trait_has(reg: TraitRegistry, name: string) -> bool {
-    match reg {
-        .End -> false
-        .Node(n, _, _, _) if n == name -> true
-        .Node(n, _, _, next) -> {
-            trait_has(next, name)
-        }
-    }
-}
-
-/// Look up a trait's associated types. Empty list when the trait
-/// has none (or isn't registered).
-export fn trait_assoc_types(reg: TraitRegistry, name: string) -> TraitAssocTypes {
-    match reg {
-        .End -> TraitAssocTypes.End
-        .Node(n, _, at, _) if n == name -> at
-        .Node(n, _, at, next) -> {
-            trait_assoc_types(next, name)
-        }
-    }
+    trait_get(reg, name).found
 }
 
 /// Orphan-rule helper — true iff `name` is a type declared in this

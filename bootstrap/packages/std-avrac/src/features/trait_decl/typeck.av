@@ -2,7 +2,7 @@
 
 use core.ast.{Stmt, StmtList, SStmt, ParamList, param_list_length, vtype_is_unknown, stmt_unwrap}
 use diagnostics.{DiagCode}
-use typeck.{TC, tc_report, TraitRegistry, TraitMethodList, TraitAssocTypes, trait_lookup, trait_has, trait_assoc_types, tc_owns_type}
+use typeck.{TC, tc_report, TraitRegistry, TraitMethodList, TraitAssocTypes, trait_get, tc_owns_type}
 use core.type_registry.{method_mangled_name}
 
 /// Find the byte offset of the single `:` that separates a
@@ -40,21 +40,21 @@ export fn check_trait_conformance(tc: TC, impl_name: string, methods: StmtList) 
     // Orphan rule (spec Axis 16.5): you can only `impl Trait for Type`
     // if you own either the Trait or the Type. In practice this means
     // at least one must be defined in the current compilation unit.
-    let owns_trait = trait_has(tc.traits, trait_name)
+    // Single-walk lookup: trait_get returns found + methods + assoc_types
+    // together so we don't re-traverse the registry three times.
+    let trait_rec = trait_get(tc.traits, trait_name)
     let owns_type = tc_owns_type(tc, type_name)
-    if !owns_trait && !owns_type {
+    if !trait_rec.found && !owns_type {
         return tc_report(tc, DiagCode.OrphanImpl, "orphan impl: neither trait `${trait_name}` nor type `${type_name}` is defined in this compilation unit")
     }
 
-    if !owns_trait {
+    if !trait_rec.found {
         return tc_report(tc, DiagCode.TypeMismatch, "unknown trait `${trait_name}`")
     }
 
-    let required = trait_lookup(tc.traits, trait_name)
-    let after_methods = check_required_methods(tc, trait_name, type_name, required, methods)
+    let after_methods = check_required_methods(tc, trait_name, type_name, trait_rec.methods, methods)
     // Check associated types are provided
-    let required_assoc = trait_assoc_types(tc.traits, trait_name)
-    check_required_assoc_types(after_methods, trait_name, type_name, required_assoc, methods)
+    check_required_assoc_types(after_methods, trait_name, type_name, trait_rec.assoc_types, methods)
 }
 
 /// For every associated type the trait declares, verify the
