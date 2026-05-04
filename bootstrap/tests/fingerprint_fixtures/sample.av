@@ -7,14 +7,14 @@
 // on field order or hex-digest values that would have to be hard-coded.
 
 use @std.avrac.build.fingerprint.{
-    Fingerprint, StrList, fp_for_unit, fp_eq, fp_short, profile_key_of,
+    Fingerprint, fp_for_unit, fp_eq, fp_short, profile_key_of,
 }
 use @std.crypto.{sha256_hex}
 
-fn empty_strs() -> StrList { StrList.End }
+fn empty_strs() -> List<string> { [] }
 
-fn one(a: string) -> StrList {
-    StrList.Node(a, StrList.End)
+fn one(a: string) -> List<string> {
+    [a]
 }
 
 fn main() -> int {

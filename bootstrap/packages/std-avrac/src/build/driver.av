@@ -21,7 +21,7 @@
 //   * cli/main.av       — actually run compile / link / report
 
 use build.fingerprint.{
-    Fingerprint, StrList, fp_for_unit, fp_eq, fp_short,
+    Fingerprint, fp_for_unit, fp_eq, fp_short,
     compiler_hash_for, profile_key_of, strlist_length,
 }
 use build.cache.{
@@ -109,14 +109,14 @@ export fn decide_build(inputs: BuildInputs) -> BuildOutcome {
     )
     let compiler_hash = compiler_hash_for(inputs.compiler_path)
     let entry_digest = sha256_file(inputs.entry_path)
-    let sources = StrList.Node(inputs.entry_path, StrList.End)
+    let sources = [inputs.entry_path]
     let fp = fp_for_unit(
         inputs.unit_name,
         sources,
         compiler_hash,
         profile_key,
         inputs.target_triple,
-        StrList.End,
+        [],
     )
 
     if cache_has(cache, fp) {

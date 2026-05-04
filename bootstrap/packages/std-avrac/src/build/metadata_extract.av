@@ -17,9 +17,10 @@ use build.metadata.{
     sym_id_for, unit_metadata_new,
 }
 // Per-file source-path list. Distinct nominal type (not @std/lsp's
-// StrList nor @std/avrac/build/fingerprint's StrList) so the per-file
-// metadata API stays unambiguous when downstream consumers also have
-// other StrList variants in scope from transitively-imported packages.
+// StrList) so the per-file metadata API stays unambiguous when
+// downstream consumers also have @std/lsp::StrList in scope from
+// transitively-imported packages. fingerprint::StrList itself was
+// retired in favour of List<string> (commit history).
 export enum SrcFileList {
     End,
     Node(path: string, next: SrcFileList),
