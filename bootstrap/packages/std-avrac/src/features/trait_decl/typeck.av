@@ -2,7 +2,7 @@
 
 use core.ast.{Stmt, StmtList, SStmt, ParamList, param_list_length, vtype_is_unknown, stmt_unwrap}
 use diagnostics.{DiagCode}
-use typeck.{TC, tc_report, TraitRegistry, TraitMethodList, TraitAssocTypes, trait_get, tc_owns_type}
+use typeck.{TC, tc_report, TraitRegistry, TraitMethod, trait_get, tc_owns_type}
 use core.type_registry.{method_mangled_name}
 
 /// Find the byte offset of the single `:` that separates a
@@ -61,18 +61,17 @@ export fn check_trait_conformance(tc: TC, impl_name: string, methods: StmtList) 
 /// impl block defines a matching `type Name = ...` entry. Missing
 /// associated types surface as F1000 with a message that names
 /// both the trait and the implementing type.
-fn check_required_assoc_types(tc: TC, trait_name: string, type_name: string, required: TraitAssocTypes, impl_stmts: StmtList) -> TC {
-    match required {
-        .End -> tc
-        .Node(name, next) -> {
-            if !impl_has_assoc_type(impl_stmts, name) {
-                let after = tc_report(tc, DiagCode.TypeMismatch, "trait `${trait_name}` requires associated type `${name}` but `${type_name}` does not define it")
-                check_required_assoc_types(after, trait_name, type_name, next, impl_stmts)
-            } else {
-                check_required_assoc_types(tc, trait_name, type_name, next, impl_stmts)
-            }
+fn check_required_assoc_types(tc: TC, trait_name: string, type_name: string, required: List<string>, impl_stmts: StmtList) -> TC {
+    mut current = tc
+    mut i = 0
+    while i < required.length {
+        let name = required[i]
+        if !impl_has_assoc_type(impl_stmts, name) {
+            current = tc_report(current, DiagCode.TypeMismatch, "trait `${trait_name}` requires associated type `${name}` but `${type_name}` does not define it")
         }
+        i = i + 1
     }
+    current
 }
 
 /// True when `stmts` contains an `AssocType(name, …)` entry with
@@ -93,24 +92,24 @@ fn impl_has_assoc_type(stmts: StmtList, name: string) -> bool {
 /// supplies a function with the same name (after method-mangling)
 /// and matching arity. Each missing method or arity mismatch
 /// emits its own F1000 diagnostic so users see the full picture.
-fn check_required_methods(tc: TC, trait_name: string, type_name: string, required: TraitMethodList, impl_methods: StmtList) -> TC {
-    match required {
-        .End -> tc
-        .Node(name, expected_params, next) -> {
-            let mangled = method_mangled_name(type_name, name)
-            if !impl_has_method(impl_methods, mangled) {
-                let after = tc_report(tc, DiagCode.TypeMismatch, "trait `${trait_name}` requires method `${name}` but `${type_name}` does not implement it")
-                check_required_methods(after, trait_name, type_name, next, impl_methods)
-            } else {
-                // Check parameter count matches (including self)
-                let actual_params = impl_method_param_count(impl_methods, mangled)
-                let after = if actual_params >= 0 && actual_params != expected_params {
-                    tc_report(tc, DiagCode.TypeMismatch, "method `${name}` in `impl ${trait_name} for ${type_name}` has ${string(actual_params)} parameters but trait requires ${string(expected_params)}")
-                } else { tc }
-                check_required_methods(after, trait_name, type_name, next, impl_methods)
+fn check_required_methods(tc: TC, trait_name: string, type_name: string, required: List<TraitMethod>, impl_methods: StmtList) -> TC {
+    mut current = tc
+    mut i = 0
+    while i < required.length {
+        let m = required[i]
+        let mangled = method_mangled_name(type_name, m.name)
+        if !impl_has_method(impl_methods, mangled) {
+            current = tc_report(current, DiagCode.TypeMismatch, "trait `${trait_name}` requires method `${m.name}` but `${type_name}` does not implement it")
+        } else {
+            // Check parameter count matches (including self)
+            let actual_params = impl_method_param_count(impl_methods, mangled)
+            if actual_params >= 0 && actual_params != m.param_count {
+                current = tc_report(current, DiagCode.TypeMismatch, "method `${m.name}` in `impl ${trait_name} for ${type_name}` has ${string(actual_params)} parameters but trait requires ${string(m.param_count)}")
             }
         }
+        i = i + 1
     }
+    current
 }
 
 /// Look up a method by mangled name and return its parameter
@@ -143,41 +142,47 @@ fn impl_has_method(methods: StmtList, name: string) -> bool {
     }
 }
 
-/// Walk a trait body and produce a TraitMethodList of every
+/// Walk a trait body and produce the method-signature list of every
 /// `extern fn` (the trait's required signatures). Default-
 /// implemented methods don't count — only the abstract ones.
-export fn collect_method_names_from_stmts(stmts: StmtList) -> TraitMethodList {
-    match stmts {
-        .End -> TraitMethodList.End
-        .Node(ss, next) -> {
-            match ss.node {
-                .ExternFn(name, params, _) -> TraitMethodList.Node(name, param_list_length(params), collect_method_names_from_stmts(next))
-                _ -> collect_method_names_from_stmts(next)
+export fn collect_method_names_from_stmts(stmts: StmtList) -> List<TraitMethod> {
+    mut out = []
+    mut cur = stmts
+    mut keep_going = true
+    while keep_going {
+        match cur {
+            .End -> { keep_going = false }
+            .Node(ss, next) -> {
+                match ss.node {
+                    .ExternFn(name, params, _) -> {
+                        out.push(TraitMethod { name: name, param_count: param_list_length(params) })
+                    }
+                    _ -> {}
+                }
+                cur = next
             }
         }
     }
+    out
 }
 
-/// Walk a trait body and produce a TraitAssocTypes list of every
-/// `type Name` declaration (associated types — spec Axis 2).
-export fn collect_assoc_types_from_stmts(stmts: StmtList) -> TraitAssocTypes {
-    match stmts {
-        .End -> TraitAssocTypes.End
-        .Node(ss, next) -> {
-            match ss.node {
-                .AssocType(name, _) -> TraitAssocTypes.Node(name, collect_assoc_types_from_stmts(next))
-                _ -> collect_assoc_types_from_stmts(next)
+/// Walk a trait body and produce the list of every `type Name`
+/// declaration (associated types — spec Axis 2).
+export fn collect_assoc_types_from_stmts(stmts: StmtList) -> List<string> {
+    mut out = []
+    mut cur = stmts
+    mut keep_going = true
+    while keep_going {
+        match cur {
+            .End -> { keep_going = false }
+            .Node(ss, next) -> {
+                match ss.node {
+                    .AssocType(name, _) -> { out.push(name) }
+                    _ -> {}
+                }
+                cur = next
             }
         }
     }
-}
-
-/// Membership test for `TraitMethodList`. Used during conformance
-/// to verify each required method exists.
-fn method_list_has(list: TraitMethodList, name: string) -> bool {
-    match list {
-        .End -> false
-        .Node(n, _, _) if n == name -> true
-        .Node(_, _, next) -> method_list_has(next, name)
-    }
+    out
 }

@@ -220,19 +220,12 @@ fn variant_has(variants: VariantList, name: string) -> bool {
 
 // ── Checker state ──
 
-/// Method-signatures of one trait — name + param count per method.
-/// Used by `check_trait_conformance` to verify impl methods have
-/// matching arity.
-enum TraitMethodList {
-    End
-    Node(name: string, param_count: int, next: TraitMethodList)
-}
-
-/// Associated types declared on a trait (`type Item` inside the
-/// trait body).
-enum TraitAssocTypes {
-    End
-    Node(name: string, next: TraitAssocTypes)
+/// One method signature within a trait — name + parameter count
+/// (including `self`). Used by `check_trait_conformance` to verify
+/// impl methods have matching arity.
+export type TraitMethod = {
+    name: string,
+    param_count: int,
 }
 
 /// Trait-name → (methods, assoc types) table. Populated by the
@@ -240,7 +233,7 @@ enum TraitAssocTypes {
 /// `dyn Trait` appears.
 enum TraitRegistry {
     End
-    Node(trait_name: string, methods: TraitMethodList, assoc_types: TraitAssocTypes, next: TraitRegistry)
+    Node(trait_name: string, methods: List<TraitMethod>, assoc_types: List<string>, next: TraitRegistry)
 }
 
 /// Single-walk lookup result for the trait registry — same pattern
@@ -251,15 +244,15 @@ enum TraitRegistry {
 /// call site walks the registry exactly once.
 export type TraitFound = {
     found: bool,
-    methods: TraitMethodList,
-    assoc_types: TraitAssocTypes,
+    methods: List<TraitMethod>,
+    assoc_types: List<string>,
 }
 
 /// One-walk lookup. Returns a record with `found=false` when the
 /// trait is not in the registry.
 export fn trait_get(reg: TraitRegistry, name: string) -> TraitFound {
     match reg {
-        .End -> TraitFound { found: false, methods: TraitMethodList.End, assoc_types: TraitAssocTypes.End }
+        .End -> TraitFound { found: false, methods: [], assoc_types: [] }
         .Node(n, methods, at, _) if n == name ->
             TraitFound { found: true, methods: methods, assoc_types: at }
         .Node(_, _, _, next) -> trait_get(next, name)
