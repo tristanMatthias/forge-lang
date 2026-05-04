@@ -61,7 +61,7 @@ use @std.avrac.desugar.{desugar_program}
 use @std.avrac.features.component_decl.expand.{expand_components}
 use @std.avrac.resolve.names.{resolve_names}
 use @std.avrac.features.modules.resolver.{resolve_module_files, modules_dirname, find_packages_dir, LoadedPaths, dedup_modules}
-use @std.avrac.features.modules.package.{load_package_config, load_manifest, Dep, DepList}
+use @std.avrac.features.modules.package.{load_package_config, load_manifest, Dep}
 use @std.avrac.build.driver.{
     BuildInputs, BuildOutcome,
     decide_build, record_build_result,
@@ -618,7 +618,7 @@ fn parse_build_args() -> BuildArgs {
 // Returns 0 on success; non-zero is xargs's failure exit code.
 //
 // Tracking ticket: forge-crafting-intepreters-2f54 + e20h.
-fn pre_build_path_deps(deps: DepList, compiler_path: string, args: BuildArgs) -> int {
+fn pre_build_path_deps(deps: List<Dep>, compiler_path: string, args: BuildArgs) -> int {
     let path_count = count_path_deps(deps)
     if path_count == 0 { return 0 }
     let paths_file = "/tmp/avra_pre_deps.${path_count}.list"
@@ -648,20 +648,15 @@ fn pre_build_path_deps(deps: DepList, compiler_path: string, args: BuildArgs) ->
 // commands the pool will dispatch — one per path-dep. Skips deps
 // whose `path` is empty (registry/git-ref deps not yet resolved
 // locally).
-fn build_pre_dep_cmds(deps: DepList, compiler_path: string) -> List<string> {
+fn build_pre_dep_cmds(deps: List<Dep>, compiler_path: string) -> List<string> {
     mut cmds = []
-    mut cur = deps
-    mut keep_going = true
-    while keep_going {
-        match cur {
-            .End -> keep_going = false,
-            .Node(dep, next) -> {
-                if dep.path != "" {
-                    cmds.push("cd \"${dep.path}\" && \"${compiler_path}\" build --lib --emit_metadata > /dev/null 2>&1")
-                }
-                cur = next
-            }
+    mut i = 0
+    while i < deps.length {
+        let dep = deps[i]
+        if dep.path != "" {
+            cmds.push("cd \"${dep.path}\" && \"${compiler_path}\" build --lib --emit_metadata > /dev/null 2>&1")
         }
+        i = i + 1
     }
     cmds
 }
@@ -865,25 +860,24 @@ fn dump_failed_logs(marker_dir: string) {
     }
 }
 
-fn count_path_deps(deps: DepList) -> int {
-    match deps {
-        .End -> 0
-        .Node(dep, next) -> {
-            let here = if dep.path != "" { 1 } else { 0 }
-            here + count_path_deps(next)
-        }
+fn count_path_deps(deps: List<Dep>) -> int {
+    mut n = 0
+    mut i = 0
+    while i < deps.length {
+        if deps[i].path != "" { n = n + 1 }
+        i = i + 1
     }
+    n
 }
 
-fn write_dep_paths(deps: DepList, out_path: string) {
-    match deps {
-        .End -> {}
-        .Node(dep, next) -> {
-            if dep.path != "" {
-                let _ = avra_selfhost_append_file(out_path, "${dep.path}\n")
-            }
-            write_dep_paths(next, out_path)
+fn write_dep_paths(deps: List<Dep>, out_path: string) {
+    mut i = 0
+    while i < deps.length {
+        let dep = deps[i]
+        if dep.path != "" {
+            let _ = avra_selfhost_append_file(out_path, "${dep.path}\n")
         }
+        i = i + 1
     }
 }
 

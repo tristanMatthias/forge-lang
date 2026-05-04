@@ -90,12 +90,6 @@ export type Dep = {
     path: string,
 }
 
-/// Linked list of deps. Order preserved from the TOML source so
-/// the build driver can iterate deterministically.
-export enum DepList {
-    End,
-    Node(dep: Dep, next: DepList),
-}
 
 /// Full v1.0 manifest view. Mirrors docs/spec_build_manifest.md.
 /// Profile lookups are exposed via `profile_dev` / `profile_release`;
@@ -114,7 +108,7 @@ export type Manifest = {
     lib: BuildTarget,
     profile_dev: BuildProfile,
     profile_release: BuildProfile,
-    deps: DepList,           // [dependencies] parsed in TOML order
+    deps: List<Dep>,         // [dependencies] parsed in TOML order
 }
 
 fn default_target(kind: string) -> BuildTarget {
@@ -156,7 +150,7 @@ fn default_manifest() -> Manifest {
         lib: default_target("lib"),
         profile_dev: default_profile("dev"),
         profile_release: release_defaults(),
-        deps: DepList.End,
+        deps: [],
     }
 }
 
@@ -175,7 +169,7 @@ fn read_target(content: string, kind: string, pkg_name: string) -> BuildTarget {
     }
 }
 
-/// Parse the `[dependencies]` section into a DepList. Each TOML
+/// Parse the `[dependencies]` section into a List<Dep>. Each TOML
 /// entry is one line of the form `key = value`. Supported value
 /// shapes:
 ///
@@ -188,20 +182,20 @@ fn read_target(content: string, kind: string, pkg_name: string) -> BuildTarget {
 /// out of the inline table when present. Quoted keys
 /// (`"@std/avrac" = ...`) are recognised by stripping the surrounding
 /// quotes after splitting on `=`.
-fn read_dependencies(content: string) -> DepList {
+fn read_dependencies(content: string) -> List<Dep> {
     if !avra_toml_has_section(content, "dependencies") {
-        return DepList.End
+        return []
     }
     let header = "[dependencies]"
     let header_idx = content.index_of(header)
-    if header_idx < 0 { return DepList.End }
+    if header_idx < 0 { return [] }
     let body_start = header_idx + header.length
     // Find the next [ at line start, or end of string. Section ends
     // at the next [-prefixed line.
     let body_end = find_next_section(content, body_start)
     let section = content.substring(body_start, body_end)
 
-    parse_dep_lines(section, DepList.End)
+    parse_dep_lines(section)
 }
 
 /// Find the next `\n[` (next section header) starting from `from`.
@@ -217,10 +211,10 @@ fn find_next_section(content: string, from: int) -> int {
     content.length
 }
 
-/// Walk `section` line by line, accumulating Dep entries onto `acc`.
-/// Returns `acc` reversed so order matches TOML source order.
-fn parse_dep_lines(section: string, acc: DepList) -> DepList {
-    mut result = acc
+/// Walk `section` line by line, pushing Dep entries onto a List<Dep>.
+/// Source order falls out of .push directly — no reverse pass needed.
+fn parse_dep_lines(section: string) -> List<Dep> {
+    mut result = []
     mut start = 0
     mut i = 0
     while i <= section.length {
@@ -231,14 +225,14 @@ fn parse_dep_lines(section: string, acc: DepList) -> DepList {
             if line.length > 0 && !line.starts_with("#") {
                 let dep = parse_dep_line(line)
                 if dep.name != "" {
-                    result = DepList.Node(dep, result)
+                    result.push(dep)
                 }
             }
             start = i + 1
         }
         i = i + 1
     }
-    reverse_dep_list(result, DepList.End)
+    result
 }
 
 /// Parse one `key = value` dep line. Quoted keys are unwrapped.
@@ -282,13 +276,6 @@ fn find_char_after(s: string, ch: string, from: int) -> int {
     let idx = rest.index_of(ch)
     if idx < 0 { return 0 - 1 }
     from + idx
-}
-
-fn reverse_dep_list(xs: DepList, acc: DepList) -> DepList {
-    match xs {
-        .End -> acc
-        .Node(d, rest) -> reverse_dep_list(rest, DepList.Node(d, acc))
-    }
 }
 
 fn read_profile(content: string, name: string, defaults: BuildProfile) -> BuildProfile {

@@ -19,7 +19,7 @@ use core.runtime.{
     avra_selfhost_file_exists,
 }
 use features.modules.package.{
-    Manifest, Dep, DepList, load_manifest,
+    Manifest, Dep, load_manifest,
 }
 
 /// `name_list_contains` lifted into a free helper since List<string>
@@ -159,58 +159,39 @@ fn collect_units(project_root: string, manifest: Manifest, acc: List<Unit>, visi
     }
 }
 
-fn recurse_deps(parent_root: string, deps: DepList, acc: List<Unit>, visited: List<string>) -> CollectResult {
+fn recurse_deps(parent_root: string, deps: List<Dep>, acc: List<Unit>, visited: List<string>) -> CollectResult {
     mut result = CollectResult { units: acc, visited: visited, had_error: false, error: "" }
-    mut cur = deps
-    mut keep_going = true
-    while keep_going {
-        match cur {
-            .End -> keep_going = false,
-            .Node(d, rest) -> {
-                if d.path == "" {
-                    result = result with {
-                        had_error: true,
-                        error: "dep `" + d.name + "` has no path (registry not implemented)",
-                    }
-                    keep_going = false
-                } else {
-                    let dep_root = ensure_trailing_slash(parent_root + d.path)
-                    if !avra_selfhost_file_exists(dep_root + "avra.toml") {
-                        result = result with {
-                            had_error: true,
-                            error: "dep `" + d.name + "` at `" + dep_root + "` is missing avra.toml",
-                        }
-                        keep_going = false
-                    } else {
-                        let dep_manifest = load_manifest(dep_root)
-                        let nested = collect_units(dep_root, dep_manifest, result.units, result.visited)
-                        if nested.had_error {
-                            result = nested
-                            keep_going = false
-                        } else {
-                            result = nested
-                            cur = rest
-                        }
-                    }
-                }
+    mut i = 0
+    while i < deps.length {
+        let d = deps[i]
+        if d.path == "" {
+            return result with {
+                had_error: true,
+                error: "dep `" + d.name + "` has no path (registry not implemented)",
             }
         }
+        let dep_root = ensure_trailing_slash(parent_root + d.path)
+        if !avra_selfhost_file_exists(dep_root + "avra.toml") {
+            return result with {
+                had_error: true,
+                error: "dep `" + d.name + "` at `" + dep_root + "` is missing avra.toml",
+            }
+        }
+        let dep_manifest = load_manifest(dep_root)
+        let nested = collect_units(dep_root, dep_manifest, result.units, result.visited)
+        if nested.had_error { return nested }
+        result = nested
+        i = i + 1
     }
     result
 }
 
-fn collect_dep_names(deps: DepList) -> List<string> {
+fn collect_dep_names(deps: List<Dep>) -> List<string> {
     mut acc = []
-    mut cur = deps
-    mut keep_going = true
-    while keep_going {
-        match cur {
-            .End -> keep_going = false,
-            .Node(d, rest) -> {
-                acc.push(d.name)
-                cur = rest
-            }
-        }
+    mut i = 0
+    while i < deps.length {
+        acc.push(deps[i].name)
+        i = i + 1
     }
     acc
 }
