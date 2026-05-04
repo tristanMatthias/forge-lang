@@ -26,13 +26,6 @@ export fn levenshtein(a: string, b: string) -> int {
     avra_selfhost_levenshtein(a, b, a.length, b.length)
 }
 
-/// Linked list of candidate names fed into `suggest_similar_from_list`.
-/// Caller-built; the suggester doesn't allocate.
-enum StringList {
-    End
-    Node(value: string, next: StringList)
-}
-
 /// Score a single `(query, candidate)` pair with the same composed
 /// scorer as `@std/lsp`. Pure: same inputs always produce the same
 /// int. Scoring tiers (highest first): 1000 exact, 800 case-
@@ -89,23 +82,18 @@ fn suggest_is_subsequence(needle: string, haystack: string) -> bool {
 /// Find the closest match to `name` among `candidates`, or `""` if
 /// nothing scores above the suggestion threshold (199 — silence
 /// beats a misleading "did you mean?").
-export fn suggest_similar_from_list(name: string, candidates: StringList) -> string {
-    find_best_scored(name, candidates, "", 199)
-}
-
-/// Recursive worker for `suggest_similar_from_list`. Tracks the
-/// best-scoring candidate so far, updating only when we strictly
-/// beat the previous score.
-fn find_best_scored(name: string, candidates: StringList, best: string, best_score: int) -> string {
-    match candidates {
-        .End -> best
-        .Node(candidate, next) -> {
-            let s = suggest_score(name, candidate)
-            if s > best_score {
-                find_best_scored(name, next, candidate, s)
-            } else {
-                find_best_scored(name, next, best, best_score)
-            }
+export fn suggest_similar_from_list(name: string, candidates: List<string>) -> string {
+    mut best = ""
+    mut best_score = 199
+    mut i = 0
+    while i < candidates.length {
+        let candidate = candidates[i]
+        let s = suggest_score(name, candidate)
+        if s > best_score {
+            best = candidate
+            best_score = s
         }
+        i = i + 1
     }
+    best
 }

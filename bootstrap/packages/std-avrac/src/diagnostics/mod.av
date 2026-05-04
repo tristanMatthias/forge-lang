@@ -92,13 +92,6 @@ export type Label = {
     kind: LabelKind,
 }
 
-/// Linked list of Labels — kept in cons-list form so prepending
-/// extra context labels stays O(1).
-export enum LabelList {
-    End
-    Node(label: Label, next: LabelList)
-}
-
 /// Compiler-emitted diagnostic code. Each variant maps to a stable
 /// F-code (string) and a help-text suggestion via `error_def`. New
 /// errors are added in three places — the variant here, the match

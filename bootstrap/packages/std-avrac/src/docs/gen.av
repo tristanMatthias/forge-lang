@@ -100,16 +100,24 @@ fn stub_for_enum(variants_csv: string) -> string {
 /// `"fn process(events: List<Event>, retry: bool) -> Result<int, IoError>"`.
 /// Type-args inside `<...>`, `(...)`, `[...]` are skipped via depth
 /// tracking so `List<Map<K, V>>` doesn't fragment.
-fn parse_param_names(sig: string) -> StringList {
+fn parse_param_names(sig: string) -> List<string> {
     let lparen = sig.index_of("(")
-    if lparen < 0 { return StringList.End }
+    if lparen < 0 { return [] }
     let body_end = matching_close(sig, lparen)
-    if body_end < 0 { return StringList.End }
+    if body_end < 0 { return [] }
     let body = sig.substring(lparen + 1, body_end)
-    if body == "" { return StringList.End }
-    split_top_level(body, ",")
-        .map((seg) -> param_name_of(seg))
-        .filter((n) -> n != "" && n != "self")
+    if body == "" { return [] }
+    let segs = split_top_level(body, ",")
+    mut out = []
+    mut i = 0
+    while i < segs.length {
+        let n = param_name_of(segs[i])
+        if n != "" && n != "self" {
+            out.push(n)
+        }
+        i = i + 1
+    }
+    out
 }
 
 /// Extract the name from a single `name: type` segment. Strips a
@@ -124,25 +132,36 @@ fn param_name_of(seg: string) -> string {
 
 /// Render `/// @param <name> description` for every name in
 /// `params`. Output ends with a trailing newline.
-fn render_param_lines(params: StringList) -> string {
-    match params {
-        .End -> ""
-        .Node(p, rest) -> "/// @param ${p} description\n${render_param_lines(rest)}"
+fn render_param_lines(params: List<string>) -> string {
+    mut out = ""
+    mut i = 0
+    while i < params.length {
+        out = "${out}/// @param ${params[i]} description\n"
+        i = i + 1
     }
+    out
 }
 
 /// Pull the field names out of a rendered `type Foo = { ... }`
 /// decl, using the same depth-aware splitter as `parse_param_names`.
-fn parse_field_names(rendered: string) -> StringList {
+fn parse_field_names(rendered: string) -> List<string> {
     let lbrace = rendered.index_of("{")
-    if lbrace < 0 { return StringList.End }
+    if lbrace < 0 { return [] }
     let rbrace = last_index_of_str(rendered, "}")
-    if rbrace < 0 || rbrace <= lbrace { return StringList.End }
+    if rbrace < 0 || rbrace <= lbrace { return [] }
     let body = rendered.substring(lbrace + 1, rbrace)
-    if trim_str(body) == "" { return StringList.End }
-    split_top_level(body, ",")
-        .map((seg) -> param_name_of(seg))
-        .filter((n) -> n != "")
+    if trim_str(body) == "" { return [] }
+    let segs = split_top_level(body, ",")
+    mut out = []
+    mut i = 0
+    while i < segs.length {
+        let n = param_name_of(segs[i])
+        if n != "" {
+            out.push(n)
+        }
+        i = i + 1
+    }
+    out
 }
 
 /// Right-to-left substring search. Returns the byte index of the
@@ -159,46 +178,24 @@ fn last_index_of_str(s: string, needle: string) -> int {
 
 /// Render `/// @field <name> description` for every name in
 /// `fields`. Output ends with a trailing newline.
-fn render_field_lines(fields: StringList) -> string {
-    match fields {
-        .End -> ""
-        .Node(f, rest) -> "/// @field ${f} description\n${render_field_lines(rest)}"
+fn render_field_lines(fields: List<string>) -> string {
+    mut out = ""
+    mut i = 0
+    while i < fields.length {
+        out = "${out}/// @field ${fields[i]} description\n"
+        i = i + 1
     }
+    out
 }
 
 // ── Tiny string helpers ──────────────────────────────────────────────
 
-/// Local linked-list-of-string used by the gen helpers. Kept
-/// internal to avoid a polluting cross-module type.
-enum StringList {
-    End
-    Node(value: string, next: StringList)
-}
-
-impl StringList {
-    fn map(self, f: fn(string) -> string) -> StringList {
-        match self {
-            .End -> .End
-            .Node(v, next) -> .Node(f(v), next.map(f))
-        }
-    }
-
-    fn filter(self, pred: fn(string) -> bool) -> StringList {
-        match self {
-            .End -> .End
-            .Node(v, next) -> {
-                let rest = next.filter(pred)
-                if pred(v) { StringList.Node(v, rest) } else { rest }
-            }
-        }
-    }
-}
-
 /// Split `s` on `sep` at depth-0 only — angle brackets `<...>` and
 /// parens `(...)` are skipped over so generic type args don't
-/// fragment a single param. Returns segments in source order.
-fn split_top_level(s: string, sep: string) -> StringList {
-    mut segs = StringList.End
+/// fragment a single param. Returns segments in source order via
+/// .push — no reverse pass needed.
+fn split_top_level(s: string, sep: string) -> List<string> {
+    mut segs = []
     mut start = 0
     mut depth = 0
     mut i = 0
@@ -209,13 +206,13 @@ fn split_top_level(s: string, sep: string) -> StringList {
         } else if ch == ">" || ch == ")" || ch == "]" {
             depth = depth - 1
         } else if depth == 0 && ch == sep {
-            segs = StringList.Node(s.substring(start, i), segs)
+            segs.push(s.substring(start, i))
             start = i + 1
         }
         i = i + 1
     }
-    segs = StringList.Node(s.substring(start, s.length), segs)
-    reverse_string_list(segs)
+    segs.push(s.substring(start, s.length))
+    segs
 }
 
 /// Find the byte index of the closing `)` matching the `(` at
@@ -234,20 +231,6 @@ fn matching_close(s: string, open_idx: int) -> int {
         i = i + 1
     }
     -1
-}
-
-/// In-place reverse of a StringList. Used by `split_top_level` to
-/// flip its prepend-built result back into source order.
-fn reverse_string_list(list: StringList) -> StringList {
-    reverse_string_list_acc(list, StringList.End)
-}
-
-/// Tail-recursive helper for `reverse_string_list`.
-fn reverse_string_list_acc(list: StringList, acc: StringList) -> StringList {
-    match list {
-        .End -> acc
-        .Node(v, next) -> reverse_string_list_acc(next, StringList.Node(v, acc))
-    }
 }
 
 /// Strip leading/trailing spaces and tabs. Local copy because
