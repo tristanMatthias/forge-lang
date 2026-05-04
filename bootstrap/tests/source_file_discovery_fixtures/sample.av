@@ -12,31 +12,24 @@ extern fn avra_process_env_get(name: string) -> string
 
 use @std.avrac.parse.{parse_program_source, parse_program_source_at}
 use @std.avrac.features.modules.resolver.{resolve_module_files, modules_dirname, LoadedPaths}
-use @std.avrac.build.metadata_extract.{collect_source_files, SrcFileList}
+use @std.avrac.build.metadata_extract.{collect_source_files}
 
 fn probe(name: string, ok: bool) {
     let tag = if ok { "ok" } else { "FAIL" }
     println("PROBE ${name}: ${tag}")
 }
 
-fn str_list_length(xs: SrcFileList) -> int {
-    match xs {
-        .End -> 0
-        .Node(_, next) -> 1 + str_list_length(next)
-    }
-}
-
-fn str_list_contains(xs: SrcFileList, target_suffix: string) -> bool {
-    match xs {
-        .End -> false
-        .Node(s, next) -> {
-            if s.length >= target_suffix.length {
-                let tail = s.substring(s.length - target_suffix.length, s.length)
-                if tail == target_suffix { return true }
-            }
-            str_list_contains(next, target_suffix)
+fn str_list_contains(xs: List<string>, target_suffix: string) -> bool {
+    mut i = 0
+    while i < xs.length {
+        let s = xs[i]
+        if s.length >= target_suffix.length {
+            let tail = s.substring(s.length - target_suffix.length, s.length)
+            if tail == target_suffix { return true }
         }
+        i = i + 1
     }
+    false
 }
 
 fn main() -> int {
@@ -86,7 +79,7 @@ fn main() -> int {
     probe("resolver_succeeded", !mod_resolved.had_error)
 
     let files = collect_source_files(mod_resolved.stmts)
-    let count = str_list_length(files)
+    let count = files.length
     // We expect both top.av AND foo.av in the discovered list — top
     // was parsed via parse_program_source_at, foo via the resolver's
     // mod-load path which now also stamps SStmt.file (g2eo prep).

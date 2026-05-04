@@ -68,7 +68,7 @@ use @std.avrac.build.driver.{
 }
 use @std.avrac.build.fingerprint.{Fingerprint, fp_short}
 use @std.avrac.build.link.{LinkOptions, default_link_options, link_objects, link_objects_with_coverage}
-use @std.avrac.build.metadata_extract.{extract_unit_metadata, extract_per_file_metadata, collect_source_files, SrcFileList}
+use @std.avrac.build.metadata_extract.{extract_unit_metadata, extract_per_file_metadata, collect_source_files}
 use @std.avrac.build.metadata.{metadata_write, metadata_read, bytes_from_hex}
 use @std.avrac.build.metadata_synthesize.{synthesize_unit_stmts}
 use @std.avrac.build.pool.{pool_run}
@@ -503,25 +503,24 @@ fn render_unit_chain(units: UnitList) -> string {
 // contents), extracts a per-file UnitMetadata slice, and writes it to
 // `<file>.meta.bin`. Entry-point file is skipped — its sidecar is
 // the whole-unit slice consumers expect, written upstream.
-fn emit_per_file_metas(files: SrcFileList, stmts: StmtList, unit_name: string, entry_path: string) {
-    match files {
-        .End -> {}
-        .Node(file_path, next) -> {
-            // Skip the entry — its sidecar is the whole-unit slice
-            // (consumers read that). Skip "" too: a stmt the resolver
-            // synthesised mid-pipeline (no source location) shouldn't
-            // produce a phantom .meta.bin.
-            if file_path != entry_path && file_path != "" {
-                let src = avra_selfhost_read_file(file_path)
-                let fp = bytes_from_hex(sha256_hex(src))
-                let m = extract_per_file_metadata(unit_name, file_path, fp, stmts)
-                let path = "${file_path}.meta.bin"
-                if metadata_write(path, m) != 1 {
-                    fail("per-file metadata write failed for ${path}")
-                }
+fn emit_per_file_metas(files: List<string>, stmts: StmtList, unit_name: string, entry_path: string) {
+    mut i = 0
+    while i < files.length {
+        let file_path = files[i]
+        // Skip the entry — its sidecar is the whole-unit slice
+        // (consumers read that). Skip "" too: a stmt the resolver
+        // synthesised mid-pipeline (no source location) shouldn't
+        // produce a phantom .meta.bin.
+        if file_path != entry_path && file_path != "" {
+            let src = avra_selfhost_read_file(file_path)
+            let fp = bytes_from_hex(sha256_hex(src))
+            let m = extract_per_file_metadata(unit_name, file_path, fp, stmts)
+            let path = "${file_path}.meta.bin"
+            if metadata_write(path, m) != 1 {
+                fail("per-file metadata write failed for ${path}")
             }
-            emit_per_file_metas(next, stmts, unit_name, entry_path)
         }
+        i = i + 1
     }
 }
 
