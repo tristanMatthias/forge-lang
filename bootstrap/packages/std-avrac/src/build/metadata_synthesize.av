@@ -91,11 +91,6 @@ enum SubModList {
     Node(item: SubMod, next: SubModList),
 }
 
-enum Segs {
-    SEnd(),
-    SNode(item: string, next: Segs),
-}
-
 // Returns the path-segments-inside-unit, OR `belongs_to_unit=false` to
 // signal "skip this entry — it doesn't belong here." Cross-package
 // decls leak into a unit's metadata when the producer's resolver had
@@ -104,7 +99,7 @@ enum Segs {
 // impls. The producer's own metadata.bin will own those entries.
 type RelPath = {
     belongs_to_unit: bool,
-    segs: Segs,
+    segs: List<string>,
 }
 
 fn relative_path(qn: string, unit_name: string) -> RelPath {
@@ -116,7 +111,7 @@ fn relative_path(qn: string, unit_name: string) -> RelPath {
     }
     let prefix = "${unit_name}::"
     if !string_starts_with(qn, prefix) {
-        return RelPath { belongs_to_unit: false, segs: Segs.SEnd }
+        return RelPath { belongs_to_unit: false, segs: [] }
     }
     let stripped = qn.substring(prefix.length, qn.length)
     let parts = split_by_double_colon(stripped)
@@ -128,70 +123,73 @@ fn string_starts_with(s: string, prefix: string) -> bool {
     s.substring(0, prefix.length) == prefix
 }
 
-fn split_by_double_colon(s: string) -> Segs {
-    if s == "" { return Segs.SEnd }
-    mut acc = Segs.SEnd
-    mut start = s.length
-    mut i = s.length - 1
-    while i >= 0 {
-        // Detect "::" by looking back from i
+// Forward walk that pushes each segment as it's discovered — cleaner
+// than the prior backward walk which prepended onto a linked list.
+fn split_by_double_colon(s: string) -> List<string> {
+    mut out = []
+    if s == "" { return out }
+    mut start = 0
+    mut i = 0
+    while i < s.length {
         if i + 1 < s.length && s.byte(i) == 0x3A && s.byte(i + 1) == 0x3A {
-            let seg = s.substring(i + 2, start)
-            acc = Segs.SNode(seg, acc)
-            start = i
-            i = i - 2
+            out.push(s.substring(start, i))
+            start = i + 2
+            i = i + 2
         } else {
-            i = i - 1
+            i = i + 1
         }
     }
-    let head = s.substring(0, start)
-    Segs.SNode(head, acc)
+    out.push(s.substring(start, s.length))
+    out
 }
 
-fn drop_last_seg(xs: Segs) -> Segs {
-    match xs {
-        .SEnd -> Segs.SEnd
-        .SNode(item, next) -> {
-            match next {
-                .SEnd -> Segs.SEnd
-                .SNode(nh, nt) -> Segs.SNode(item, drop_last_seg(Segs.SNode(nh, nt)))
-            }
+// Return all segments except the final one. Single-element lists
+// produce an empty list (the leaf is dropped); empty input passes
+// through.
+fn drop_last_seg(xs: List<string>) -> List<string> {
+    if xs.length <= 1 { return [] }
+    mut out = []
+    mut i = 0
+    let last = xs.length - 1
+    while i < last {
+        out.push(xs[i])
+        i = i + 1
+    }
+    out
+}
+
+// Walk `path` segment-by-segment via depth index. Each level either
+// drops the decl into `node.direct` (when depth == path.length) or
+// recurses through `ensure_child` with depth + 1.
+fn trie_insert_decl(node: SubMod, path: List<string>, depth: int, decl: SStmt) -> SubMod {
+    if depth >= path.length {
+        return SubMod {
+            name: node.name,
+            direct: append_stmts(node.direct, StmtList.Node(decl, StmtList.End)),
+            children: node.children,
         }
+    }
+    let seg = path[depth]
+    SubMod {
+        name: node.name,
+        direct: node.direct,
+        children: ensure_child(node.children, seg, path, depth + 1, decl),
     }
 }
 
-fn trie_insert_decl(node: SubMod, path: Segs, decl: SStmt) -> SubMod {
-    match path {
-        .SEnd -> {
-            SubMod {
-                name: node.name,
-                direct: append_stmts(node.direct, StmtList.Node(decl, StmtList.End)),
-                children: node.children,
-            }
-        }
-        .SNode(seg, rest) -> {
-            SubMod {
-                name: node.name,
-                direct: node.direct,
-                children: ensure_child(node.children, seg, rest, decl),
-            }
-        }
-    }
-}
-
-fn ensure_child(list: SubModList, seg: string, rest: Segs, decl: SStmt) -> SubModList {
+fn ensure_child(list: SubModList, seg: string, path: List<string>, depth: int, decl: SStmt) -> SubModList {
     match list {
         .End -> {
             let empty = SubMod { name: seg, direct: StmtList.End, children: SubModList.End }
-            let updated = trie_insert_decl(empty, rest, decl)
+            let updated = trie_insert_decl(empty, path, depth, decl)
             SubModList.Node(updated, SubModList.End)
         }
         .Node(item, next) -> {
             if item.name == seg {
-                let updated = trie_insert_decl(item, rest, decl)
+                let updated = trie_insert_decl(item, path, depth, decl)
                 SubModList.Node(updated, next)
             } else {
-                SubModList.Node(item, ensure_child(next, seg, rest, decl))
+                SubModList.Node(item, ensure_child(next, seg, path, depth, decl))
             }
         }
     }
@@ -222,7 +220,7 @@ fn insert_types(trie: SubMod, xs: TypeDeclList, unit_name: string) -> SubMod {
                 return insert_types(trie, next, unit_name)
             }
             let decl = synth_type_decl(e)
-            insert_types(trie_insert_decl(trie, rp.segs, decl), next, unit_name)
+            insert_types(trie_insert_decl(trie, rp.segs, 0, decl), next, unit_name)
         }
     }
 }
@@ -236,7 +234,7 @@ fn insert_fns(trie: SubMod, xs: FnDeclList, unit_name: string) -> SubMod {
                 return insert_fns(trie, next, unit_name)
             }
             let decl = synth_fn_decl(e)
-            insert_fns(trie_insert_decl(trie, rp.segs, decl), next, unit_name)
+            insert_fns(trie_insert_decl(trie, rp.segs, 0, decl), next, unit_name)
         }
     }
 }
@@ -250,7 +248,7 @@ fn insert_consts(trie: SubMod, xs: ConstDeclList, unit_name: string) -> SubMod {
                 return insert_consts(trie, next, unit_name)
             }
             let decl = synth_const_decl(e)
-            insert_consts(trie_insert_decl(trie, rp.segs, decl), next, unit_name)
+            insert_consts(trie_insert_decl(trie, rp.segs, 0, decl), next, unit_name)
         }
     }
 }
@@ -266,7 +264,7 @@ fn insert_impls(trie: SubMod, xs: ImplDeclList, unit_name: string, types: TypeDe
                 return insert_impls(trie, next, unit_name, types)
             }
             let decl = synth_impl_decl(e, types)
-            insert_impls(trie_insert_decl(trie, rp.segs, decl), next, unit_name, types)
+            insert_impls(trie_insert_decl(trie, rp.segs, 0, decl), next, unit_name, types)
         }
     }
 }
