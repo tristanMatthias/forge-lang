@@ -84,11 +84,28 @@ fn main() -> int {
     probe("all_four_markers_landed_despite_failure", count_files(dir, "*.done") == 4)
 
     // Case 4: jobs=1 falls back to serial — still correct.
-    avra_shell_exec("rm -f ${dir}/job*.done")
+    avra_shell_exec("rm -rf ${dir} && mkdir -p ${dir}")
     let cmds_serial = cmds_with_markers(3, dir)
     let rc_serial = pool_run(cmds_serial, 1)
     probe("serial_rc_zero", rc_serial == 0)
     probe("serial_all_markers", count_files(dir, "job*.done") == 3)
+
+    // Case 5: more workers than jobs (jobs=8, cmds=2). Pool must
+    // not block on idle workers waiting for nonexistent extra work.
+    // Wall time should be ~one sleep window since both run
+    // concurrently; the 6 idle workers stay idle and don't burn CPU.
+    avra_shell_exec("rm -rf ${dir} && mkdir -p ${dir}")
+    let cmds_two = cmds_with_markers(2, dir)
+    let t_oversubscribed_start = avra_uptime_ms()
+    let rc_oversubscribed = pool_run(cmds_two, 8)
+    let elapsed_oversubscribed = avra_uptime_ms() - t_oversubscribed_start
+    probe("oversubscribed_rc_zero", rc_oversubscribed == 0)
+    probe("oversubscribed_both_markers", count_files(dir, "job*.done") == 2)
+    // 2 jobs × 50ms each = 50ms theoretical floor; allow 250ms
+    // for overhead. Way under what would happen if workers blocked
+    // (the pool's poll loop would burn 50ms per tick × however many
+    // ticks — could easily exceed 1s on a buggy implementation).
+    probe("oversubscribed_finishes_quickly", elapsed_oversubscribed < 250)
 
     0
 }

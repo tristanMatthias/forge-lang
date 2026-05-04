@@ -65,3 +65,15 @@ spec "e20h worker pool: jobs=1 still correct (serial fallback)" {
         wp_run().contains("PROBE serial_all_markers: ok")
     }
 }
+
+spec "e20h worker pool: oversubscribed (jobs > cmds) doesn't block" {
+    then "oversubscribed run rc is zero" {
+        wp_run().contains("PROBE oversubscribed_rc_zero: ok")
+    }
+    then "both jobs land their markers" {
+        wp_run().contains("PROBE oversubscribed_both_markers: ok")
+    }
+    then "wall time stays bounded (idle workers don't waste cycles)" {
+        wp_run().contains("PROBE oversubscribed_finishes_quickly: ok")
+    }
+}
