@@ -158,17 +158,12 @@ fn drop_last_seg(xs: List<string>) -> List<string> {
 // recurses through `ensure_child` with depth + 1.
 fn trie_insert_decl(node: SubMod, path: List<string>, depth: int, decl: SStmt) -> SubMod {
     if depth >= path.length {
-        return SubMod {
-            name: node.name,
+        return node with {
             direct: append_stmts(node.direct, StmtList.Node(decl, StmtList.End)),
-            children: node.children,
         }
     }
-    let seg = path[depth]
-    SubMod {
-        name: node.name,
-        direct: node.direct,
-        children: ensure_child(node.children, seg, path, depth + 1, decl),
+    node with {
+        children: ensure_child(node.children, path[depth], path, depth + 1, decl),
     }
 }
 

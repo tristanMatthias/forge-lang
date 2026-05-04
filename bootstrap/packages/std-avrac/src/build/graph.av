@@ -168,9 +168,7 @@ fn recurse_deps(parent_root: string, deps: DepList, acc: List<Unit>, visited: Li
             .End -> keep_going = false,
             .Node(d, rest) -> {
                 if d.path == "" {
-                    result = CollectResult {
-                        units: result.units,
-                        visited: result.visited,
+                    result = result with {
                         had_error: true,
                         error: "dep `" + d.name + "` has no path (registry not implemented)",
                     }
@@ -178,9 +176,7 @@ fn recurse_deps(parent_root: string, deps: DepList, acc: List<Unit>, visited: Li
                 } else {
                     let dep_root = ensure_trailing_slash(parent_root + d.path)
                     if !avra_selfhost_file_exists(dep_root + "avra.toml") {
-                        result = CollectResult {
-                            units: result.units,
-                            visited: result.visited,
+                        result = result with {
                             had_error: true,
                             error: "dep `" + d.name + "` at `" + dep_root + "` is missing avra.toml",
                         }
