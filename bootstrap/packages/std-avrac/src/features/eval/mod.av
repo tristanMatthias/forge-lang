@@ -56,12 +56,15 @@ export type EvalResult = {
     error_message: string,
 }
 
-/// Local binding list for the evaluator. Each entry tracks
-/// whether it was declared `mut` and its scope depth so
-/// `pop_scope_bindings` can drop them on scope exit.
-enum BindingList {
-    End
-    Node(name: string, mutable_binding: int, depth: int, value: Value, next: BindingList)
+/// One local binding for the evaluator. `mutable_binding` is 1
+/// for `mut`, 0 for `let`/`const`. `depth` is the scope depth at
+/// which it was created so `pop_scope_bindings` can drop the
+/// inner-scope entries on scope exit.
+type Binding = {
+    name: string,
+    mutable_binding: int,
+    depth: int,
+    value: Value,
 }
 
 /// One function declaration registered on the evaluator's runtime.
@@ -80,7 +83,7 @@ type FunctionDef = {
 /// @field depth     — scope depth, used for `pop_scope_bindings`.
 /// @field features  — feature registry, for dispatched eval hooks.
 export type Runtime = {
-    bindings: BindingList,
+    bindings: List<Binding>,
     functions: List<FunctionDef>,
     depth: int,
     features: Registry,
@@ -140,7 +143,7 @@ export fn step_error_message(step: StepResult) -> string {
 /// @field had_error     — 1 when the assign failed (e.g. `let`).
 /// @field error_message — diagnostic when had_error is set.
 type AssignBindingsResult = {
-    bindings: BindingList,
+    bindings: List<Binding>,
     found: int,
     had_error: int,
     error_message: string,
@@ -271,7 +274,7 @@ fn finish_result(step: StepResult) -> EvalResult {
 /// depth zero, full feature registry.
 fn runtime_new() -> Runtime {
     Runtime {
-        bindings: BindingList.End,
+        bindings: [],
         functions: [],
         depth: 0,
         features: build_registry(),
@@ -336,23 +339,31 @@ fn exit_scope(runtime: Runtime) -> Runtime {
     runtime with { bindings: pop_scope_bindings(runtime.bindings, runtime.depth), depth: runtime.depth - 1 }
 }
 
-/// Recursively walk the binding list, dropping every entry
-/// whose `binding_depth` matches the scope being closed.
-/// Older entries pass through untouched.
-fn pop_scope_bindings(bindings: BindingList, depth: int) -> BindingList {
-    match bindings {
-        .End -> BindingList.End
-        .Node(_, _, binding_depth, _, next) if binding_depth == depth -> pop_scope_bindings(next, depth)
-        .Node(name, mutable_binding, binding_depth, value, next) ->
-            BindingList.Node(name, mutable_binding, binding_depth, value, next)
+/// Drop every binding whose depth matches the scope being closed.
+/// With push-append storage the inner-scope entries are at the
+/// tail, so popping is just shrinking the list from the right —
+/// no walk needed. The previous recursive form rebuilt the entire
+/// list on every pop; this version shrinks in place.
+fn pop_scope_bindings(bindings: List<Binding>, depth: int) -> List<Binding> {
+    mut local = bindings
+    while local.length > 0 && local[local.length - 1].depth == depth {
+        local.pop()
     }
+    local
 }
 
 /// Push a new local binding onto the runtime. `mutable_binding`
 /// is 1 for `mut`, 0 for `let`/`const`. The depth is recorded so
 /// `pop_scope_bindings` can drop it later.
 fn define_binding(runtime: Runtime, name: string, mutable_binding: int, value: Value) -> Runtime {
-    runtime with { bindings: BindingList.Node(name, mutable_binding, runtime.depth, value, runtime.bindings) }
+    mut new_bindings = runtime.bindings
+    new_bindings.push(Binding {
+        name: name,
+        mutable_binding: mutable_binding,
+        depth: runtime.depth,
+        value: value,
+    })
+    runtime with { bindings: new_bindings }
 }
 
 /// Result of a binding lookup. `found` distinguishes
@@ -379,14 +390,17 @@ type FunctionLookupResult = {
 }
 
 /// Linear lookup of a binding by name. Returns the most-recent
-/// (top-of-stack) entry so inner-scope `let`s shadow outer
-/// ones.
-fn lookup_binding(bindings: BindingList, name: string) -> LookupResult {
-    match bindings {
-        .End -> LookupResult { value: value_null(), found: false }
-        .Node(binding_name, _, _, value, _) if binding_name == name -> LookupResult { value, found: true }
-        .Node(_, _, _, _, next) -> lookup_binding(next, name)
+/// (top-of-stack) entry so inner-scope `let`s shadow outer ones.
+/// Push-append storage means the most-recent entry is at the tail
+/// — scan back-to-front to preserve the shadowing semantic.
+fn lookup_binding(bindings: List<Binding>, name: string) -> LookupResult {
+    mut i = bindings.length - 1
+    while i >= 0 {
+        let b = bindings[i]
+        if b.name == name { return LookupResult { value: b.value, found: true } }
+        i = i - 1
     }
+    LookupResult { value: value_null(), found: false }
 }
 
 /// Linear lookup of a function declaration by name. Most-recent
@@ -413,65 +427,40 @@ fn define_function(runtime: Runtime, name: string, params: ParamList, body: Stmt
     runtime with { functions: new_functions }
 }
 
-/// Mutate an existing binding by name. Errors when the
-/// matching entry is immutable (`let`/`const`); skips silently
-/// (returns `found: false`) when no such binding exists so the
-/// caller can fall back to global lookup.
-fn assign_binding(bindings: BindingList, name: string, value: Value) -> AssignBindingsResult {
-    match bindings {
-        .End -> {
-            return AssignBindingsResult {
-                bindings: BindingList.End,
-                found: false,
-                had_error: false,
-                error_message: "",
-            }
-        }
-        .Node(binding_name, mutable_binding, depth, current_value, next) -> {
-            if binding_name == name {
-                if !mutable_binding {
-                    return AssignBindingsResult {
-                        bindings,
-                        found: true,
-                        had_error: true,
-                        error_message: "eval error: cannot assign to immutable variable `${name}`",
-                    }
-                }
-
+/// Mutate an existing binding by name. Errors when the matching
+/// entry is immutable (`let`/`const`); returns `found: false`
+/// when no such binding exists so the caller can fall back to
+/// global lookup. Walks back-to-front to honour shadowing — the
+/// innermost binding wins on collision.
+fn assign_binding(bindings: List<Binding>, name: string, value: Value) -> AssignBindingsResult {
+    mut local = bindings
+    mut i = local.length - 1
+    while i >= 0 {
+        let b = local[i]
+        if b.name == name {
+            if b.mutable_binding == 0 {
                 return AssignBindingsResult {
-                    bindings: BindingList.Node(binding_name, mutable_binding, depth, value, next),
-                    found: true,
-                    had_error: false,
-                    error_message: "",
-                }
-            }
-
-            let assigned = assign_binding(next, name, value)
-            if assigned.had_error {
-                return AssignBindingsResult {
-                    bindings,
+                    bindings: local,
                     found: true,
                     had_error: true,
-                    error_message: assigned.error_message,
+                    error_message: "eval error: cannot assign to immutable variable `${name}`",
                 }
             }
-
-            if !assigned.found {
-                return AssignBindingsResult {
-                    bindings,
-                    found: false,
-                    had_error: false,
-                    error_message: "",
-                }
-            }
-
-            AssignBindingsResult {
-                bindings: BindingList.Node(binding_name, mutable_binding, depth, current_value, assigned.bindings),
+            local.set(i, b with { value: value })
+            return AssignBindingsResult {
+                bindings: local,
                 found: true,
                 had_error: false,
                 error_message: "",
             }
         }
+        i = i - 1
+    }
+    AssignBindingsResult {
+        bindings: local,
+        found: false,
+        had_error: false,
+        error_message: "",
     }
 }
 
