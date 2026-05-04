@@ -19,20 +19,16 @@ use codegen.escape.{analyze_releasable_expr}
 
 // ── Capture detection ──
 
-/// List of captured variables for a lambda. Each entry tracks
-/// the binding's name, original alloca, type, and mutability so
-/// the lifted fn can reach back through the closure environment.
-enum CaptureList {
-    End,
-    Node(name: string, alloca: ptr, ty: ValueType, is_mut: bool, next: CaptureList),
-}
-
-/// Length of a CaptureList.
-fn capture_list_len(list: CaptureList) -> int {
-    match list {
-        .End -> 0
-        .Node(_, _, _, _, next) -> 1 + capture_list_len(next)
-    }
+/// One captured variable for a lambda. The lifted fn reaches back
+/// to the enclosing scope via this record: `alloca` is the original
+/// binding's storage, `ty` carries its type into the lifted fn's
+/// signature, and `is_mut` flips on after `mark_mutable_captures`
+/// when the lambda body assigns to the capture.
+type Capture = {
+    name: string,
+    alloca: ptr,
+    ty: ValueType,
+    is_mut: bool,
 }
 
 /// True when `name` is one of the lambda's declared parameters.
@@ -46,14 +42,15 @@ fn is_param(params: ParamList, name: string) -> bool {
     }
 }
 
-/// Membership test for a CaptureList. Stops capture detection
+/// Membership test for the capture list. Stops capture detection
 /// from re-adding the same name twice.
-fn is_captured(captures: CaptureList, name: string) -> bool {
-    match captures {
-        .End -> false
-        .Node(cname, _, _, _, _) if cname == name -> true
-        .Node(_, _, _, _, next) -> is_captured(next, name)
+fn is_captured(captures: List<Capture>, name: string) -> bool {
+    mut i = 0
+    while i < captures.length {
+        if captures[i].name == name { return true }
+        i = i + 1
     }
+    false
 }
 
 /// True when `expr` contains an assignment that targets `target`.
@@ -108,16 +105,20 @@ fn stmt_assigns(stmt: Stmt, target: string) -> bool {
 }
 
 // Mark captures as mutable if the lambda body assigns to them.
-/// Walk a CaptureList re-flagging any entry that gets assigned
-/// inside the lambda body. Mutable captures need a write-back
-/// path so the enclosing scope sees their updated values.
-fn mark_mutable_captures(captures: CaptureList, body: Expr) -> CaptureList {
-    match captures {
-        .End -> .End
-        .Node(name, alloca, ty, _, next) -> {
-            let is_mut = expr_assigns(body, name)
-            CaptureList.Node(name, alloca, ty, is_mut, mark_mutable_captures(next, body))
+/// Walk the capture list re-flagging any entry that gets assigned
+/// inside the lambda body. Mutable captures need a write-back path
+/// so the enclosing scope sees their updated values. Mutates the
+/// list in place via .set — there's no need for a fresh copy.
+fn mark_mutable_captures(captures: List<Capture>, body: Expr) {
+    mut local = captures
+    mut i = 0
+    while i < local.length {
+        let c = local[i]
+        let is_mut = expr_assigns(body, c.name)
+        if is_mut != c.is_mut {
+            local.set(i, c with { is_mut: is_mut })
         }
+        i = i + 1
     }
 }
 
@@ -126,55 +127,57 @@ fn mark_mutable_captures(captures: CaptureList, body: Expr) -> CaptureList {
 /// declared params, isn't already in the capture list, and
 /// resolves to an entry in the enclosing env. Recurses into
 /// every compound expression form so nested calls and blocks
-/// work.
-fn find_captures(expr: Expr, params: ParamList, env: VarEnv, captures: CaptureList) -> CaptureList {
+/// work. Mutates `captures` in place — no `c1`/`c2` thread-state
+/// dance, just one shared list reference.
+fn find_captures(expr: Expr, params: ParamList, env: VarEnv, captures: List<Capture>) {
     match expr {
         .Ident(name) -> {
-            if is_param(params, name) { return captures }
-            if is_captured(captures, name) { return captures }
+            if is_param(params, name) { return }
+            if is_captured(captures, name) { return }
             let lookup = env_lookup(env, name)
-            if !lookup.found { return captures }
-            CaptureList.Node(name, lookup.alloca, lookup.ty, false, captures)
+            if !lookup.found { return }
+            mut local = captures
+            local.push(Capture { name: name, alloca: lookup.alloca, ty: lookup.ty, is_mut: false })
         }
         .Binary(left, _, right) -> {
-            let c1 = find_captures(left, params, env, captures)
-            find_captures(right, params, env, c1)
+            find_captures(left, params, env, captures)
+            find_captures(right, params, env, captures)
         }
         .Unary(_, right) -> find_captures(right, params, env, captures)
         .Logical(left, _, right) -> {
-            let c1 = find_captures(left, params, env, captures)
-            find_captures(right, params, env, c1)
+            find_captures(left, params, env, captures)
+            find_captures(right, params, env, captures)
         }
         .Call(callee, args) -> {
-            let c1 = find_captures(callee, params, env, captures)
-            find_captures_list(args, params, env, c1)
+            find_captures(callee, params, env, captures)
+            find_captures_list(args, params, env, captures)
         }
         .Grouping(inner) -> find_captures(inner, params, env, captures)
         .IfExpr(c, t, e) -> {
-            let c1 = find_captures(c, params, env, captures)
-            let c2 = find_captures(t, params, env, c1)
-            find_captures(e, params, env, c2)
+            find_captures(c, params, env, captures)
+            find_captures(t, params, env, captures)
+            find_captures(e, params, env, captures)
         }
         .Block(stmts) -> find_captures_stmts(stmts, params, env, captures)
         .Assign(_, value) -> find_captures(value, params, env, captures)
         .Index(obj, idx) -> {
-            let c1 = find_captures(obj, params, env, captures)
-            find_captures(idx, params, env, c1)
+            find_captures(obj, params, env, captures)
+            find_captures(idx, params, env, captures)
         }
         .MatchExpr(subj, arms) -> {
-            let c1 = find_captures(subj, params, env, captures)
-            find_captures_arms(arms, params, env, c1)
+            find_captures(subj, params, env, captures)
+            find_captures_arms(arms, params, env, captures)
         }
         .EnumCtor(_, _, args) -> find_captures_list(args, params, env, captures)
         .StructLit(_, inits) -> find_captures_field_inits(inits, params, env, captures)
         .FieldAccess(obj, _) -> find_captures(obj, params, env, captures)
         .FieldAssign(obj, _, val) -> {
-            let c1 = find_captures(obj, params, env, captures)
-            find_captures(val, params, env, c1)
+            find_captures(obj, params, env, captures)
+            find_captures(val, params, env, captures)
         }
         .NullCoalesce(l, r) -> {
-            let c1 = find_captures(l, params, env, captures)
-            find_captures(r, params, env, c1)
+            find_captures(l, params, env, captures)
+            find_captures(r, params, env, captures)
         }
         .Try(inner) -> find_captures(inner, params, env, captures)
         .ListLit(elems) -> find_captures_list(elems, params, env, captures)
@@ -182,87 +185,87 @@ fn find_captures(expr: Expr, params: ParamList, env: VarEnv, captures: CaptureLi
         .MapLit(entries) -> find_captures_list(entries, params, env, captures)
         .With(obj, _) -> find_captures(obj, params, env, captures)
         .Slice(obj, s, e) -> {
-            let c1 = find_captures(obj, params, env, captures)
-            let c2 = find_captures(s, params, env, c1)
-            find_captures(e, params, env, c2)
+            find_captures(obj, params, env, captures)
+            find_captures(s, params, env, captures)
+            find_captures(e, params, env, captures)
         }
         .IsCheck(subj, _) -> find_captures(subj, params, env, captures)
         .InCheck(needle, items) -> {
-            let c1 = find_captures(needle, params, env, captures)
-            find_captures_list(items, params, env, c1)
+            find_captures(needle, params, env, captures)
+            find_captures_list(items, params, env, captures)
         }
         .OptionalChain(obj, _) -> find_captures(obj, params, env, captures)
         .TupleIndex(obj, _) -> find_captures(obj, params, env, captures)
         .ListComp(body, _, coll, filter) -> {
-            let c1 = find_captures(body, params, env, captures)
-            let c2 = find_captures(coll, params, env, c1)
-            if filter != null { find_captures(filter!, params, env, c2) } else { c2 }
+            find_captures(body, params, env, captures)
+            find_captures(coll, params, env, captures)
+            if filter != null { find_captures(filter!, params, env, captures) }
         }
         .Catch(inner, _, body, _, _) -> {
-            let c1 = find_captures(inner, params, env, captures)
-            find_captures(body, params, env, c1)
+            find_captures(inner, params, env, captures)
+            find_captures(body, params, env, captures)
         }
         .When(arms) -> find_captures_when_arms(arms, params, env, captures)
         .GenericCall(callee, _, args) -> {
-            let c1 = find_captures(callee, params, env, captures)
-            find_captures_list(args, params, env, c1)
+            find_captures(callee, params, env, captures)
+            find_captures_list(args, params, env, captures)
         }
-        _ -> captures  // Number, String, Bool, FloatLit, Null, QualifiedIdent — leaf nodes
+        _ -> {}  // Number, String, Bool, FloatLit, Null, QualifiedIdent — leaf nodes
     }
 }
 
 /// Recurse `find_captures` through every match-arm body.
-fn find_captures_arms(arms: MatchArmList, params: ParamList, env: VarEnv, captures: CaptureList) -> CaptureList {
+fn find_captures_arms(arms: MatchArmList, params: ParamList, env: VarEnv, captures: List<Capture>) {
     match arms {
-        .End -> captures
+        .End -> {}
         .Node(_, guard, body, next) -> {
-            let c1 = if guard != null { find_captures(guard!.node, params, env, captures) } else { captures }
-            let c2 = find_captures(body.node, params, env, c1)
-            find_captures_arms(next, params, env, c2)
+            if guard != null { find_captures(guard!.node, params, env, captures) }
+            find_captures(body.node, params, env, captures)
+            find_captures_arms(next, params, env, captures)
         }
     }
 }
 
 /// Recurse `find_captures` through every value in a struct
 /// literal / `with` override list.
-fn find_captures_field_inits(inits: FieldInitList, params: ParamList, env: VarEnv, captures: CaptureList) -> CaptureList {
+fn find_captures_field_inits(inits: FieldInitList, params: ParamList, env: VarEnv, captures: List<Capture>) {
     match inits {
-        .End -> captures
+        .End -> {}
         .Node(_, val, next) -> {
-            let c1 = find_captures(val.node, params, env, captures)
-            find_captures_field_inits(next, params, env, c1)
+            find_captures(val.node, params, env, captures)
+            find_captures_field_inits(next, params, env, captures)
         }
     }
 }
 
 /// Recurse `find_captures` through every condition + body in a
 /// `when` arm list.
-fn find_captures_when_arms(arms: WhenArmList, params: ParamList, env: VarEnv, captures: CaptureList) -> CaptureList {
+fn find_captures_when_arms(arms: WhenArmList, params: ParamList, env: VarEnv, captures: List<Capture>) {
     match arms {
-        .End -> captures
+        .End -> {}
         .Node(cond, body, next) -> {
-            let c1 = if cond != null { find_captures(cond!.node, params, env, captures) } else { captures }
-            let c2 = find_captures(body.node, params, env, c1)
-            find_captures_when_arms(next, params, env, c2)
+            if cond != null { find_captures(cond!.node, params, env, captures) }
+            find_captures(body.node, params, env, captures)
+            find_captures_when_arms(next, params, env, captures)
         }
     }
 }
 
 /// Recurse `find_captures` across an ExprList — call args,
 /// list literals, etc.
-fn find_captures_list(exprs: ExprList, params: ParamList, env: VarEnv, captures: CaptureList) -> CaptureList {
+fn find_captures_list(exprs: ExprList, params: ParamList, env: VarEnv, captures: List<Capture>) {
     match exprs {
-        .End -> captures
+        .End -> {}
         .Node(se, next) -> {
-            let c1 = find_captures(se.node, params, env, captures)
-            find_captures_list(next, params, env, c1)
+            find_captures(se.node, params, env, captures)
+            find_captures_list(next, params, env, captures)
         }
     }
 }
 
 /// Per-statement capture finder. Recurses into expression
 /// payloads + nested bodies. Decl-only statements pass through.
-fn find_captures_stmt_body(stmt: Stmt, params: ParamList, env: VarEnv, captures: CaptureList) -> CaptureList {
+fn find_captures_stmt_body(stmt: Stmt, params: ParamList, env: VarEnv, captures: List<Capture>) {
     match stmt {
         .Block(stmts) -> find_captures_stmts(stmts, params, env, captures)
         .Expr(e) -> find_captures(e, params, env, captures)
@@ -270,26 +273,26 @@ fn find_captures_stmt_body(stmt: Stmt, params: ParamList, env: VarEnv, captures:
         .Let(_, _, init) -> find_captures(init, params, env, captures)
         .Mut(_, _, init) -> find_captures(init, params, env, captures)
         .If(cond, then_b, else_b) -> {
-            let c1 = find_captures(cond, params, env, captures)
-            let c2 = find_captures_stmt_body(then_b, params, env, c1)
-            if else_b != null { find_captures_stmt_body(else_b!, params, env, c2) } else { c2 }
+            find_captures(cond, params, env, captures)
+            find_captures_stmt_body(then_b, params, env, captures)
+            if else_b != null { find_captures_stmt_body(else_b!, params, env, captures) }
         }
         .While(cond, body) -> {
-            let c1 = find_captures(cond, params, env, captures)
-            find_captures_stmt_body(body, params, env, c1)
+            find_captures(cond, params, env, captures)
+            find_captures_stmt_body(body, params, env, captures)
         }
         .For(_, start, end, body) -> {
-            let c1 = find_captures(start, params, env, captures)
-            let c2 = find_captures(end, params, env, c1)
-            find_captures_stmt_body(body, params, env, c2)
+            find_captures(start, params, env, captures)
+            find_captures(end, params, env, captures)
+            find_captures_stmt_body(body, params, env, captures)
         }
         .ForIn(_, coll, body) -> {
-            let c1 = find_captures(coll, params, env, captures)
-            find_captures_stmt_body(body, params, env, c1)
+            find_captures(coll, params, env, captures)
+            find_captures_stmt_body(body, params, env, captures)
         }
         .Match(subj, arms) -> {
-            let c1 = find_captures(subj, params, env, captures)
-            find_captures_arms(arms, params, env, c1)
+            find_captures(subj, params, env, captures)
+            find_captures_arms(arms, params, env, captures)
         }
         .Defer(body) -> find_captures(body, params, env, captures)
         .Errdefer(body) -> find_captures(body, params, env, captures)
@@ -297,18 +300,18 @@ fn find_captures_stmt_body(stmt: Stmt, params: ParamList, env: VarEnv, captures:
         .LetDestructure(_, init) -> find_captures(init, params, env, captures)
         .Annotated(_, inner) -> find_captures_stmt_body(inner, params, env, captures)
         .Parallel(body) -> find_captures_stmts(body, params, env, captures)
-        _ -> captures  // NoOp, Break, Continue, ExternFn, TypeDecl, EnumDecl, etc.
+        _ -> {}  // NoOp, Break, Continue, ExternFn, TypeDecl, EnumDecl, etc.
     }
 }
 
 /// Walk a StmtList collecting captures via
 /// `find_captures_stmt_body`.
-fn find_captures_stmts(stmts: StmtList, params: ParamList, env: VarEnv, captures: CaptureList) -> CaptureList {
+fn find_captures_stmts(stmts: StmtList, params: ParamList, env: VarEnv, captures: List<Capture>) {
     match stmts {
-        .End -> captures
+        .End -> {}
         .Node(ss, next) -> {
             // Process this statement for captures using the shared handler.
-            let c1 = find_captures_stmt_body(ss.node, params, env, captures)
+            find_captures_stmt_body(ss.node, params, env, captures)
             // If this statement binds a local name, add it to params so subsequent
             // uses of the name won't be treated as captures from the outer scope.
             let updated_params = match ss.node {
@@ -319,7 +322,7 @@ fn find_captures_stmts(stmts: StmtList, params: ParamList, env: VarEnv, captures
                 .ForIn(vname, _, _) -> ParamList.Node(vname, ValueType.Unknown, params)
                 _ -> params
             }
-            find_captures_stmts(next, updated_params, env, c1)
+            find_captures_stmts(next, updated_params, env, captures)
         }
     }
 }
@@ -346,19 +349,21 @@ fn env_type_of(ctx: Ctx, env: VarEnv, name: string) -> ValueType {
 
 /// Look up a capture's declared type by name. Returns `Unknown`
 /// when not in the list — callers then fall back to env lookup.
-fn capture_type_of(captures: CaptureList, name: string) -> ValueType {
-    match captures {
-        .End -> ValueType.Unknown
-        .Node(cname, _, ty, _, _) if cname == name -> ty
-        .Node(_, _, _, _, next) -> capture_type_of(next, name)
+fn capture_type_of(captures: List<Capture>, name: string) -> ValueType {
+    mut i = 0
+    while i < captures.length {
+        let c = captures[i]
+        if c.name == name { return c.ty }
+        i = i + 1
     }
+    ValueType.Unknown
 }
 
 // Check if an expression contains a Float-typed identifier (from captures, env, or globals).
 /// True when `expr` references at least one float-typed name —
 /// used by `infer_param_types` to widen otherwise-untyped lambda
 /// params to Float when they participate in float arithmetic.
-fn has_float_ident(expr: Expr, ctx: Ctx, env: VarEnv, captures: CaptureList, params: ParamList) -> bool {
+fn has_float_ident(expr: Expr, ctx: Ctx, env: VarEnv, captures: List<Capture>, params: ParamList) -> bool {
     match expr {
         .Ident(name) -> {
             if is_param(params, name) { return false }
@@ -387,7 +392,7 @@ fn has_float_ident(expr: Expr, ctx: Ctx, env: VarEnv, captures: CaptureList, par
 }
 
 /// Map `has_float_ident` over an ExprList.
-fn has_float_ident_list(exprs: ExprList, ctx: Ctx, env: VarEnv, captures: CaptureList, params: ParamList) -> bool {
+fn has_float_ident_list(exprs: ExprList, ctx: Ctx, env: VarEnv, captures: List<Capture>, params: ParamList) -> bool {
     match exprs {
         .End -> false
         .Node(se, next) -> has_float_ident(se.node, ctx, env, captures, params) || has_float_ident_list(next, ctx, env, captures, params)
@@ -399,7 +404,7 @@ fn has_float_ident_list(exprs: ExprList, ctx: Ctx, env: VarEnv, captures: Captur
 /// an arithmetic expression. Drives the heuristic that promotes
 /// otherwise-untyped lambda params to Float so `(x) -> x + 1.5`
 /// works without explicit type annotations.
-fn param_used_with_float(param_name: string, expr: Expr, ctx: Ctx, env: VarEnv, captures: CaptureList, params: ParamList) -> bool {
+fn param_used_with_float(param_name: string, expr: Expr, ctx: Ctx, env: VarEnv, captures: List<Capture>, params: ParamList) -> bool {
     match expr {
         .Binary(left, _, right) -> {
             let left_is_param = match left { .Ident(n) -> n == param_name, _ -> false }
@@ -422,7 +427,7 @@ fn param_used_with_float(param_name: string, expr: Expr, ctx: Ctx, env: VarEnv, 
 }
 
 /// Map `param_used_with_float` over an ExprList.
-fn param_used_with_float_list(param_name: string, exprs: ExprList, ctx: Ctx, env: VarEnv, captures: CaptureList, params: ParamList) -> bool {
+fn param_used_with_float_list(param_name: string, exprs: ExprList, ctx: Ctx, env: VarEnv, captures: List<Capture>, params: ParamList) -> bool {
     match exprs {
         .End -> false
         .Node(se, next) -> {
@@ -433,7 +438,7 @@ fn param_used_with_float_list(param_name: string, exprs: ExprList, ctx: Ctx, env
 
 /// Map `param_used_with_float` through a statement list,
 /// recursing into expression payloads + nested bodies.
-fn param_used_with_float_stmts(param_name: string, stmts: StmtList, ctx: Ctx, env: VarEnv, captures: CaptureList, params: ParamList) -> bool {
+fn param_used_with_float_stmts(param_name: string, stmts: StmtList, ctx: Ctx, env: VarEnv, captures: List<Capture>, params: ParamList) -> bool {
     match stmts {
         .End -> false
         .Node(ss, next) -> {
@@ -454,7 +459,7 @@ fn param_used_with_float_stmts(param_name: string, stmts: StmtList, ctx: Ctx, en
 /// body. Defaults to Int; promotes to Float when the param is
 /// used alongside another float operand. Result is a TypeList
 /// matched 1:1 to the input param list.
-fn infer_param_types(params: ParamList, body: Expr, ctx: Ctx, env: VarEnv, captures: CaptureList) -> TypeList {
+fn infer_param_types(params: ParamList, body: Expr, ctx: Ctx, env: VarEnv, captures: List<Capture>) -> TypeList {
     match params {
         .End -> TypeList.End
         .Node(name, raw_vt, next) -> {
@@ -503,9 +508,10 @@ export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, raw_params: ParamList, body: 
 
     // Detect captured variables from the enclosing scope.
     // Mark captures as mutable if the lambda body assigns to them.
-    let raw_captures = find_captures(body, params, env, CaptureList.End)
-    let captures = mark_mutable_captures(raw_captures, body)
-    let num_captures = capture_list_len(captures)
+    mut captures: List<Capture> = []
+    find_captures(body, params, env, captures)
+    mark_mutable_captures(captures, body)
+    let num_captures = captures.length
     let num_declared = param_list_length(params)
     let arity = num_declared + num_captures
 
@@ -569,44 +575,45 @@ export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, raw_params: ParamList, body: 
 /// Bind every captured value as an extra parameter in the
 /// lifted lambda's body env. Captures appear after the user-
 /// declared params in the LLVM signature, so the body can read
-/// them transparently via env lookup.
-fn bind_captures_as_params(ctx: Ctx, env: VarEnv, captures: CaptureList, fn_val: ptr, idx: int) -> VarEnv {
-    match captures {
-        .End -> env
-        .Node(name, _, ty, is_mut_cap, next) -> {
-            let param_val = ctx.get_param(fn_val, idx)
-            let new_env = if is_mut_cap {
-                // Mutable capture: param is an alloca POINTER — use directly
-                let alloca = ctx.int_to_ptr(param_val, "cap_alloca")
-                env_extend(env, name, alloca, ty)
-            } else {
-                // Immutable capture: param is a value — create local alloca
-                ctx.bind(env, name, param_val, ty)
-            }
-            bind_captures_as_params(ctx, new_env, next, fn_val, idx + 1)
+/// them transparently via env lookup. `start_idx` is the LLVM
+/// param slot where captures begin.
+fn bind_captures_as_params(ctx: Ctx, env: VarEnv, captures: List<Capture>, fn_val: ptr, start_idx: int) -> VarEnv {
+    mut current_env = env
+    mut i = 0
+    while i < captures.length {
+        let c = captures[i]
+        let param_val = ctx.get_param(fn_val, start_idx + i)
+        current_env = if c.is_mut {
+            // Mutable capture: param is an alloca POINTER — use directly
+            let alloca = ctx.int_to_ptr(param_val, "cap_alloca")
+            env_extend(current_env, c.name, alloca, c.ty)
+        } else {
+            // Immutable capture: param is a value — create local alloca
+            ctx.bind(current_env, c.name, param_val, c.ty)
         }
+        i = i + 1
     }
+    current_env
 }
 
 /// Walk the capture list pushing each captured value onto the
 /// closure's array (slots 2+ after the marker + fn pointer).
 /// Loads from each capture's alloca so the snapshot reflects
 /// the current value at closure-creation time.
-fn push_captured_values(ctx: Ctx, captures: CaptureList, arr: ptr) {
-    match captures {
-        .End -> {}
-        .Node(_, alloca, _, is_mut, next) -> {
-            if is_mut {
-                // Mutable capture: pass alloca POINTER so writes propagate
-                let ptr_val = ctx.to_i64(alloca, "cap_ptr")
-                ctx.array_push(arr, ptr_val)
-            } else {
-                // Immutable capture: pass current VALUE (copy)
-                let val = ctx.load_i64(alloca, "cap_val")
-                ctx.array_push(arr, val)
-            }
-            push_captured_values(ctx, next, arr)
+fn push_captured_values(ctx: Ctx, captures: List<Capture>, arr: ptr) {
+    mut i = 0
+    while i < captures.length {
+        let c = captures[i]
+        if c.is_mut {
+            // Mutable capture: pass alloca POINTER so writes propagate
+            let ptr_val = ctx.to_i64(c.alloca, "cap_ptr")
+            ctx.array_push(arr, ptr_val)
+        } else {
+            // Immutable capture: pass current VALUE (copy)
+            let val = ctx.load_i64(c.alloca, "cap_val")
+            ctx.array_push(arr, val)
         }
+        i = i + 1
     }
 }
 
