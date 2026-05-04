@@ -91,30 +91,35 @@ fn merge_registries(a: CompDefRegistry, b: CompDefRegistry) -> CompDefRegistry {
     }
 }
 
-/// Extract the names of every registered component as a
-/// CompNameList. Used by the parser to recognise component
-/// instantiations like `<MyComp>(...)`.
-export fn comp_reg_names(reg: CompDefRegistry) -> CompNameList {
-    match reg {
-        .End -> CompNameList.End
-        .Entry(name, _, _, next) -> CompNameList.Node(name, comp_reg_names(next))
+/// Extract the names of every registered component. Used by the
+/// parser to recognise component instantiations like
+/// `<MyComp>(...)`. Walks the registry iteratively via a moving
+/// cursor so the implementation stays linked-list-source-shaped
+/// without recursion.
+export fn comp_reg_names(reg: CompDefRegistry) -> List<string> {
+    mut acc = []
+    mut cur = reg
+    mut keep_going = true
+    while keep_going {
+        match cur {
+            .End -> { keep_going = false }
+            .Entry(name, _, _, next) -> {
+                acc.push(name)
+                cur = next
+            }
+        }
     }
+    acc
 }
 
-/// Linked list of component names. Used by the parser to
-/// distinguish `MyComp(...)` from a regular fn call.
-export enum CompNameList {
-    End
-    Node(name: string, next: CompNameList)
-}
-
-/// Membership test for `CompNameList`.
-export fn comp_name_has(list: CompNameList, name: string) -> bool {
-    match list {
-        .End -> false
-        .Node(n, _) if n == name -> true
-        .Node(_, next) -> comp_name_has(next, name)
+/// Membership test for the comp-name list.
+export fn comp_name_has(list: List<string>, name: string) -> bool {
+    mut i = 0
+    while i < list.length {
+        if list[i] == name { return true }
+        i = i + 1
     }
+    false
 }
 
 /// Strip every layer of `Annotated` wrappers from a statement.
