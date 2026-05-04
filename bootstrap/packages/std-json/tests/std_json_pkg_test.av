@@ -118,9 +118,9 @@ spec "@std/json: document builders" {
             json_object(pairs) == "{\"k\":\"v\"}"
         }
         then "joins multiple pairs with commas" {
-            let p1 = json_pair_add(json_pairs(), "second", "2")
-            let p2 = json_pair_add(p1, "first", "1")
-            // Insertion-prepended; render in insertion order
+            let p1 = json_pair_add(json_pairs(), "first", "1")
+            let p2 = json_pair_add(p1, "second", "2")
+            // Source-order: first add prints first.
             json_object(p2) == "{\"first\":1,\"second\":2}"
         }
     }
@@ -129,9 +129,9 @@ spec "@std/json: document builders" {
             json_array(json_items()) == "[]"
         }
         then "renders heterogeneous items as-is" {
-            let i1 = json_item_add(json_items(), "true")
+            let i1 = json_item_add(json_items(), json_str("s"))
             let i2 = json_item_add(i1, "42")
-            let i3 = json_item_add(i2, json_str("s"))
+            let i3 = json_item_add(i2, "true")
             json_array(i3) == "[\"s\",42,true]"
         }
     }

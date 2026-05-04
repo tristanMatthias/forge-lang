@@ -9,7 +9,7 @@
 extern fn avra_process_forward(cmd: string, args_json: string, opts_json: string) -> int
 extern fn avra_process_env_get(name: string) -> string
 
-use @std.json.{json_array, json_str, JsonItemList}
+use @std.json.{json_array, json_str}
 
 /// Per-link options. Defaults are the bootstrap's current behaviour:
 /// stack_size_hex 0x2000000 (32 MiB — needed for deep parser recursion),
@@ -50,45 +50,25 @@ fn resolve_llvm_prefix(opts: LinkOptions) -> string {
 /// Coverage adds the profile-runtime library when `opts.coverage`.
 fn build_link_argv(objs: List<string>, runtime_o: string, llvm_wrapper_o: string,
                    out: string, opts: LinkOptions, coverage_libs: string) -> string {
-    mut items = JsonItemList.End
-    items = append_objs(items, objs, 0)
-    items = JsonItemList.Node(json_str(runtime_o), items)
-    items = JsonItemList.Node(json_str(llvm_wrapper_o), items)
-    items = JsonItemList.Node(json_str("-o"), items)
-    items = JsonItemList.Node(json_str(out), items)
-    items = JsonItemList.Node(json_str("-Wl,-stack_size,${opts.stack_size_hex}"), items)
+    mut items = []
+    mut i = 0
+    while i < objs.length {
+        items.push(json_str(objs[i]))
+        i = i + 1
+    }
+    items.push(json_str(runtime_o))
+    items.push(json_str(llvm_wrapper_o))
+    items.push(json_str("-o"))
+    items.push(json_str(out))
+    items.push(json_str("-Wl,-stack_size,${opts.stack_size_hex}"))
     let llvm_prefix = resolve_llvm_prefix(opts)
-    items = JsonItemList.Node(json_str("-L${llvm_prefix}/lib"), items)
-    items = JsonItemList.Node(json_str("-lLLVM"), items)
-    items = JsonItemList.Node(json_str("-lc++"), items)
-    if opts.coverage {
-        items = append_coverage_libs(items, coverage_libs)
+    items.push(json_str("-L${llvm_prefix}/lib"))
+    items.push(json_str("-lLLVM"))
+    items.push(json_str("-lc++"))
+    if opts.coverage && coverage_libs != "" {
+        items.push(json_str(coverage_libs))
     }
-    json_array(reverse_items(items, JsonItemList.End))
-}
-
-/// Walk the list and prepend each object path as a JSON string —
-/// preserves source order in the final argv (the explicit reverse
-/// at finish keeps things deterministic for the linker).
-fn append_objs(items: JsonItemList, objs: List<string>, idx: int) -> JsonItemList {
-    if idx >= objs.length { return items }
-    append_objs(JsonItemList.Node(json_str(objs[idx]), items), objs, idx + 1)
-}
-
-/// Reverse a JsonItemList so `append_objs`'s prepend order ends up
-/// in source order on the wire.
-fn reverse_items(xs: JsonItemList, acc: JsonItemList) -> JsonItemList {
-    match xs {
-        .End -> acc
-        .Node(item, next) -> reverse_items(next, JsonItemList.Node(item, acc))
-    }
-}
-
-/// `-L<dir> -lclang_rt.profile_osx`. Coverage path; the directory
-/// varies by LLVM version so the caller computes it via shell.
-fn append_coverage_libs(items: JsonItemList, coverage_libs: string) -> JsonItemList {
-    if coverage_libs == "" { return items }
-    JsonItemList.Node(json_str(coverage_libs), items)
+    json_array(items)
 }
 
 /// Link N object files plus the fixed C helpers into `out`. Returns

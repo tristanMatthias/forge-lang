@@ -175,14 +175,16 @@ export fn json_extract_int(body: string, key: string) -> int {
 
 /// Build a `{}` object from a list of (key, encoded_value) pairs.
 /// Each pair's value is inserted *as-is* — caller is responsible for
-/// json_str-quoting strings and string-encoding numbers.
-export fn json_object(pairs: JsonPairList) -> string {
-    "{${render_pairs(pairs, true)}}"
+/// json_str-quoting strings and string-encoding numbers. Pairs render
+/// in the order they were added — `json_pair_add` appends.
+export fn json_object(pairs: List<JsonPair>) -> string {
+    "{${render_pairs(pairs)}}"
 }
 
 /// Build a `[]` array from a list of pre-rendered element strings.
-export fn json_array(items: JsonItemList) -> string {
-    "[${render_items(items, true)}]"
+/// Items render in the order they were added — `json_item_add` appends.
+export fn json_array(items: List<string>) -> string {
+    "[${render_items(items)}]"
 }
 
 /// One key/value pair for `json_object`. `encoded_value` is already
@@ -193,59 +195,52 @@ export type JsonPair = {
     encoded_value: string
 }
 
-/// Linked list of JsonPair — the input shape consumed by
-/// `json_object`.
-export enum JsonPairList {
-    End
-    Node(item: JsonPair, next: JsonPairList)
+/// Empty pair list — start point for `json_pair_add` chains.
+export fn json_pairs() -> List<JsonPair> { [] }
+
+/// Append a key/already-encoded-value pair to a List<JsonPair>.
+/// Source-order semantics: the first add prints first. The previous
+/// linked-list shape with `Node(item, list)` was a prepend, so the
+/// historical render order was reverse-add — this version matches
+/// what the doc strings always claimed.
+export fn json_pair_add(list: List<JsonPair>, key: string, encoded_value: string) -> List<JsonPair> {
+    mut out = list
+    out.push(JsonPair { key, encoded_value })
+    out
 }
 
-/// Linked list of pre-encoded JSON values — the input shape
-/// consumed by `json_array`.
-export enum JsonItemList {
-    End
-    Node(encoded: string, next: JsonItemList)
-}
+/// Empty item list — start point for `json_item_add` chains.
+export fn json_items() -> List<string> { [] }
 
-/// Empty JsonPairList — start point for `json_pair_add` chains.
-export fn json_pairs() -> JsonPairList { JsonPairList.End }
-
-/// Cons a key/already-encoded-value pair onto the front of a
-/// JsonPairList. The renderer prints in source order via
-/// `render_pairs`.
-export fn json_pair_add(list: JsonPairList, key: string, encoded_value: string) -> JsonPairList {
-    JsonPairList.Node(JsonPair { key, encoded_value }, list)
-}
-
-/// Empty JsonItemList — start point for `json_item_add` chains.
-export fn json_items() -> JsonItemList { JsonItemList.End }
-
-/// Cons a pre-encoded item onto the front of a JsonItemList. Items
-/// are emitted in source order via `render_items`.
-export fn json_item_add(list: JsonItemList, encoded: string) -> JsonItemList {
-    JsonItemList.Node(encoded, list)
+/// Append a pre-encoded item to a List<string>. Source-order
+/// semantics — see `json_pair_add`.
+export fn json_item_add(list: List<string>, encoded: string) -> List<string> {
+    mut out = list
+    out.push(encoded)
+    out
 }
 
 /// Comma-join the pairs, prefixing each one with its quoted key.
-/// `first: true` suppresses the leading comma.
-fn render_pairs(list: JsonPairList, first: bool) -> string {
-    match list {
-        .End -> ""
-        .Node(pair, next) -> {
-            let entry = "${json_str(pair.key)}:${pair.encoded_value}"
-            let head = if first { entry } else { ",${entry}" }
-            "${head}${render_pairs(next, false)}"
-        }
+fn render_pairs(list: List<JsonPair>) -> string {
+    mut out = ""
+    mut i = 0
+    while i < list.length {
+        let pair = list[i]
+        let entry = "${json_str(pair.key)}:${pair.encoded_value}"
+        out = if i == 0 { entry } else { "${out},${entry}" }
+        i = i + 1
     }
+    out
 }
 
-/// Comma-join the items. `first: true` suppresses the leading comma.
-fn render_items(list: JsonItemList, first: bool) -> string {
-    match list {
-        .End -> ""
-        .Node(encoded, next) -> {
-            let head = if first { encoded } else { ",${encoded}" }
-            "${head}${render_items(next, false)}"
-        }
+/// Comma-join the items.
+fn render_items(list: List<string>) -> string {
+    mut out = ""
+    mut i = 0
+    while i < list.length {
+        let encoded = list[i]
+        out = if i == 0 { encoded } else { "${out},${encoded}" }
+        i = i + 1
     }
+    out
 }
