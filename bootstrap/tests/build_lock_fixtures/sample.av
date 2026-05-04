@@ -11,7 +11,7 @@
 
 use @std.avrac.build.graph.{build_graph, unit_list_length}
 use @std.avrac.build.lock.{
-    Lockfile, LockEntryList,
+    Lockfile, LockEntry,
     read_lock, write_lock, lockfile_from_graph, render_lock, lock_is_fresh,
 }
 
@@ -23,20 +23,8 @@ fn write_manifest(dir: string, name: string, deps: string) -> string {
     avra_shell_exec("printf '%s' '" + body + "' > " + dir + "/avra.toml")
 }
 
-fn count_entries(xs: LockEntryList) -> int {
-    mut count = 0
-    mut cur = xs
-    mut keep_going = true
-    while keep_going {
-        match cur {
-            .End -> keep_going = false,
-            .Node(_, rest) -> {
-                count = count + 1
-                cur = rest
-            }
-        }
-    }
-    count
+fn count_entries(xs: List<LockEntry>) -> int {
+    xs.length
 }
 
 fn main() -> int {
