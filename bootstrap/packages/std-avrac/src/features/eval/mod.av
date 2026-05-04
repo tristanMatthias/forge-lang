@@ -64,11 +64,13 @@ enum BindingList {
     Node(name: string, mutable_binding: int, depth: int, value: Value, next: BindingList)
 }
 
-/// Local function table for the evaluator. Maps name → AST so
-/// recursive + mutually-recursive calls can resolve at call time.
-enum FunctionList {
-    End
-    Node(name: string, params: ParamList, body: StmtList, next: FunctionList)
+/// One function declaration registered on the evaluator's runtime.
+/// Maps a name to its AST so recursive + mutually-recursive calls
+/// can resolve at call time.
+type FunctionDef = {
+    name: string,
+    params: ParamList,
+    body: StmtList,
 }
 
 /// Tree-walk evaluator state. Threaded through every eval step.
@@ -79,7 +81,7 @@ enum FunctionList {
 /// @field features  — feature registry, for dispatched eval hooks.
 export type Runtime = {
     bindings: BindingList,
-    functions: FunctionList,
+    functions: List<FunctionDef>,
     depth: int,
     features: Registry,
 }
@@ -270,7 +272,7 @@ fn finish_result(step: StepResult) -> EvalResult {
 fn runtime_new() -> Runtime {
     Runtime {
         bindings: BindingList.End,
-        functions: FunctionList.End,
+        functions: [],
         depth: 0,
         features: build_registry(),
     }
@@ -389,20 +391,26 @@ fn lookup_binding(bindings: BindingList, name: string) -> LookupResult {
 
 /// Linear lookup of a function declaration by name. Most-recent
 /// definition wins so re-declared functions in tests behave
-/// predictably.
-fn lookup_function(functions: FunctionList, name: string) -> FunctionLookupResult {
-    match functions {
-        .End -> FunctionLookupResult { params: ParamList.End, body: StmtList.End, found: false }
-        .Node(fn_name, params, body, _) if fn_name == name -> FunctionLookupResult { params, body, found: true }
-        .Node(_, _, _, next) -> lookup_function(next, name)
+/// predictably — the list is push-appended, so we scan back-to-front.
+fn lookup_function(functions: List<FunctionDef>, name: string) -> FunctionLookupResult {
+    mut i = functions.length - 1
+    while i >= 0 {
+        let f = functions[i]
+        if f.name == name {
+            return FunctionLookupResult { params: f.params, body: f.body, found: true }
+        }
+        i = i - 1
     }
+    FunctionLookupResult { params: ParamList.End, body: StmtList.End, found: false }
 }
 
 /// Register a function declaration on the runtime. Functions
 /// don't track depth (they're effectively program-global from
 /// the evaluator's perspective).
 fn define_function(runtime: Runtime, name: string, params: ParamList, body: StmtList) -> Runtime {
-    runtime with { functions: FunctionList.Node(name, params, body, runtime.functions) }
+    mut new_functions = runtime.functions
+    new_functions.push(FunctionDef { name: name, params: params, body: body })
+    runtime with { functions: new_functions }
 }
 
 /// Mutate an existing binding by name. Errors when the
@@ -793,7 +801,7 @@ fn eval_call(runtime: Runtime, callee: Expr, args: ExprList) -> StepResult {
 }
 
 /// Construct a function-reference Value. `name` resolves to
-/// the matching FunctionList entry at call time. The kind tag
+/// the matching FunctionDef on the runtime at call time. The kind tag
 /// distinguishes user functions from built-ins.
 fn value_function(name: string) -> Value {
     Value {
