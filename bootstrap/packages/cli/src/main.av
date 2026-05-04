@@ -71,7 +71,7 @@ use @std.avrac.build.link.{LinkOptions, default_link_options, link_objects, link
 use @std.avrac.build.metadata_extract.{extract_unit_metadata, extract_per_file_metadata, collect_source_files, SrcFileList}
 use @std.avrac.build.metadata.{metadata_write, metadata_read, bytes_from_hex}
 use @std.avrac.build.metadata_synthesize.{synthesize_unit_stmts}
-use @std.avrac.build.pool.{pool_run, PoolCmds}
+use @std.avrac.build.pool.{pool_run}
 use @std.crypto.{sha256_hex}
 extern fn avra_bytes_to_hex(b: bytes) -> string
 use @std.avrac.build.graph.{
@@ -657,18 +657,22 @@ fn pre_build_path_deps(deps: DepList, compiler_path: string, args: BuildArgs) ->
 // commands the pool will dispatch — one per path-dep. Skips deps
 // whose `path` is empty (registry/git-ref deps not yet resolved
 // locally).
-fn build_pre_dep_cmds(deps: DepList, compiler_path: string) -> PoolCmds {
-    match deps {
-        .End -> PoolCmds.End
-        .Node(dep, next) -> {
-            if dep.path == "" {
-                build_pre_dep_cmds(next, compiler_path)
-            } else {
-                let cmd = "cd \"${dep.path}\" && \"${compiler_path}\" build --lib --emit_metadata > /dev/null 2>&1"
-                PoolCmds.Node(cmd, build_pre_dep_cmds(next, compiler_path))
+fn build_pre_dep_cmds(deps: DepList, compiler_path: string) -> List<string> {
+    mut cmds = []
+    mut cur = deps
+    mut keep_going = true
+    while keep_going {
+        match cur {
+            .End -> keep_going = false,
+            .Node(dep, next) -> {
+                if dep.path != "" {
+                    cmds.push("cd \"${dep.path}\" && \"${compiler_path}\" build --lib --emit_metadata > /dev/null 2>&1")
+                }
+                cur = next
             }
         }
     }
+    cmds
 }
 
 // ── 5gvp: TTY progress bar for parallel path-dep pre-build ─────────────

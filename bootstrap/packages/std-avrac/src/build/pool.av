@@ -29,14 +29,6 @@ extern fn avra_parse_int(s: string) -> int
 
 use @std.json.{json_str}
 
-/// Pool's command queue. Distinct nominal type to avoid collision
-/// with @std/avrac/build/fingerprint::StrList and @std/lsp::StrList
-/// when both are in transitive scope.
-export enum PoolCmds {
-    End,
-    Node(cmd: string, next: PoolCmds),
-}
-
 fn pool_max_rc(a: int, b: int) -> int {
     if a > b { a } else { b }
 }
@@ -145,12 +137,18 @@ fn pool_extract_rc(wait_json: string) -> int {
 /// command is spawned via `/bin/sh -c <cmd>`; the pool reaps
 /// completed workers and dispatches new commands until every entry
 /// in the queue has been run. Returns the worst exit code seen.
-export fn pool_run(commands: PoolCmds, jobs: int) -> int {
+///
+/// Takes a built-in `List<string>` (Avra's standard generic list)
+/// so callers can pass any string list shape — list-literals,
+/// builders, results from comprehensions — without wrapping in a
+/// custom enum. `.length` and `[idx]` give O(1) random access for
+/// the dispatcher's index walk.
+export fn pool_run(commands: List<string>, jobs: int) -> int {
     if jobs <= 0 { return 0 }
-    pool_loop(commands, 0, pool_cmds_length(commands), workers_init(jobs), 0, 0)
+    pool_loop(commands, 0, commands.length, workers_init(jobs), 0, 0)
 }
 
-fn pool_loop(cmds: PoolCmds, next_idx: int, total: int, workers: WorkerList, completed: int, max_rc: int) -> int {
+fn pool_loop(cmds: List<string>, next_idx: int, total: int, workers: WorkerList, completed: int, max_rc: int) -> int {
     if completed >= total {
         return max_rc
     }
@@ -178,14 +176,14 @@ type DispatchBatch = {
     dispatched_count: int,
 }
 
-fn pool_dispatch_batch(cmds: PoolCmds, idx: int, total: int, workers: WorkerList) -> DispatchBatch {
+fn pool_dispatch_batch(cmds: List<string>, idx: int, total: int, workers: WorkerList) -> DispatchBatch {
     if idx >= total {
         return DispatchBatch { workers, next_idx: idx, dispatched_count: 0 }
     }
     if !workers_has_idle(workers) {
         return DispatchBatch { workers, next_idx: idx, dispatched_count: 0 }
     }
-    let cmd = pool_cmds_at(cmds, idx)
+    let cmd = cmds[idx]
     let handle = avra_process_spawn_bg("/bin/sh", "[\"-c\", ${json_str(cmd)}]", "")
     if handle < 0 {
         // Spawn failure: skip this job (rc is reported as -1 via
@@ -201,18 +199,3 @@ fn pool_dispatch_batch(cmds: PoolCmds, idx: int, total: int, workers: WorkerList
     }
 }
 
-export fn pool_cmds_length(xs: PoolCmds) -> int {
-    match xs {
-        .End -> 0
-        .Node(_, next) -> 1 + pool_cmds_length(next)
-    }
-}
-
-export fn pool_cmds_at(xs: PoolCmds, idx: int) -> string {
-    match xs {
-        .End -> ""
-        .Node(s, next) -> {
-            if idx <= 0 { s } else { pool_cmds_at(next, idx - 1) }
-        }
-    }
-}
