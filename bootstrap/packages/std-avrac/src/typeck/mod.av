@@ -61,42 +61,29 @@ enum FnTypeEntry {
     Node(name: string, params: ParamList, ret_ty: ValueType, next: FnTypeEntry)
 }
 
-/// Get the return type of a registered fn. Returns Unknown when not
-/// found — `fn_type_has` distinguishes "void return" from "missing".
-fn fn_type_lookup(fns: FnTypeEntry, name: string) -> ValueType {
-    match fns {
-        .End -> ValueType.Unknown
-        .Node(n, _, ret, _) if n == name -> ret
-        .Node(_, _, _, next) -> fn_type_lookup(next, name)
-    }
+/// Single-walk lookup result: `found=false` means the name is not
+/// registered (params/ret_ty hold safe sentinels); `found=true`
+/// means callers can read params/ret_ty directly without re-walking.
+///
+/// Replaces the prior fn_type_has + fn_type_lookup + tc_fn_arity +
+/// tc_fn_params quartet; folding all four into one walk is the
+/// dominant kkgf typeck win because every fn-call site previously
+/// re-traversed the registry 4–5 times.
+type FnTypeFound = {
+    found: bool,
+    params: ParamList,
+    ret_ty: ValueType,
 }
 
-/// Membership probe for the FnTypeEntry chain.
-fn fn_type_has(fns: FnTypeEntry, name: string) -> bool {
+/// One-walk lookup. Returns a record with `found=false` when name is
+/// missing from the registry. All hot-path consumers prefer this over
+/// the legacy split helpers.
+fn fn_type_get(fns: FnTypeEntry, name: string) -> FnTypeFound {
     match fns {
-        .End -> false
-        .Node(n, _, _, _) if n == name -> true
-        .Node(_, _, _, next) -> fn_type_has(next, name)
-    }
-}
-
-/// Number of parameters a registered fn accepts. -1 when not
-/// registered, signalling the caller to skip arity-check.
-fn tc_fn_arity(fns: FnTypeEntry, name: string) -> int {
-    match fns {
-        .End -> 0
-        .Node(n, params, _, _) if n == name -> param_list_length(params)
-        .Node(_, _, _, next) -> tc_fn_arity(next, name)
-    }
-}
-
-/// Parameter list of a registered fn. Empty list when not found —
-/// the typecheck caller should have gated with `fn_type_has`.
-fn tc_fn_params(fns: FnTypeEntry, name: string) -> ParamList {
-    match fns {
-        .End -> ParamList.End
-        .Node(n, params, _, _) if n == name -> params
-        .Node(_, _, _, next) -> tc_fn_params(next, name)
+        .End -> FnTypeFound { found: false, params: ParamList.End, ret_ty: ValueType.Unknown }
+        .Node(n, params, ret, _) if n == name ->
+            FnTypeFound { found: true, params: params, ret_ty: ret }
+        .Node(_, _, _, next) -> fn_type_get(next, name)
     }
 }
 
@@ -138,7 +125,7 @@ export fn tc_catch_ok_type(tc: TC, inner: Expr) -> ValueType? {
     }
     if fn_name == "" { return null }
     // Look up the function's return type from the typed registry
-    let ret_ty = fn_type_lookup(tc.fns, fn_name)
+    let ret_ty = fn_type_get(tc.fns, fn_name).ret_ty
     // Check if it's Result (Enum with type_args)
     match ret_ty {
         .Enum(name, args, _) -> {
@@ -1028,8 +1015,9 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
         .Ident(name) -> {
             let ty = type_lookup(tc.types, name)
             // If not found in locals, check function registry
-            if vtype_is_unknown(ty) && fn_type_has(tc.fns, name) {
-                return tc_er(tc, .Fn(fn_type_lookup(tc.fns, name)))
+            if vtype_is_unknown(ty) {
+                let r = fn_type_get(tc.fns, name)
+                if r.found { return tc_er(tc, .Fn(r.ret_ty)) }
             }
             tc_er(tc, ty)
         }
@@ -1072,7 +1060,7 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             tc_er(v.tc, v.ty)
         }
         .QualifiedIdent(path) -> {
-            let fn_ty = fn_type_lookup(tc.fns, path)
+            let fn_ty = fn_type_get(tc.fns, path).ret_ty
             tc_er(tc, fn_ty)
         }
         _ -> {
@@ -1231,26 +1219,29 @@ fn check_binary_type(tc: TC, left: ValueType, op: BinOp, right: ValueType) -> Ex
 /// against its declared param type, and return the fn's declared
 /// return type. Caller has already type-checked args via
 /// `check_expr_list_types`.
-fn tc_check_fn_call(checked: TC, name: string, args: ExprList) -> ExprResult {
-    let expected = tc_fn_arity(checked.fns, name)
+/// Type-check a fn call given a pre-resolved registry record. The
+/// caller is expected to have already gated on `rec.found` (or to
+/// pass a `found=true` record in its happy path), so this body never
+/// re-walks the FnTypeEntry chain — that's the kkgf hot-path saving.
+fn tc_check_fn_call_with(checked: TC, name: string, args: ExprList, rec: FnTypeFound) -> ExprResult {
+    let expected = param_list_length(rec.params)
     let actual = tc_count_args(args)
     if expected != actual {
         let s = if expected != 1 { "s" } else { "" }
         let msg = "`${name}` expects ${string(expected)} argument${s}, got ${string(actual)}"
-        return tc_er(tc_report(checked, DiagCode.WrongArgCount, msg), fn_type_lookup(checked.fns, name))
+        return tc_er(tc_report(checked, DiagCode.WrongArgCount, msg), rec.ret_ty)
     }
     // Check shape and newtype compatibility
-    let shape_checked = tc_check_shape_args(checked, tc_fn_params(checked.fns, name), args)
-    let newtype_checked = tc_check_newtype_args(shape_checked, name, tc_fn_params(shape_checked.fns, name), args)
-    let ret_ty = fn_type_lookup(newtype_checked.fns, name)
+    let shape_checked = tc_check_shape_args(checked, rec.params, args)
+    let newtype_checked = tc_check_newtype_args(shape_checked, name, rec.params, args)
     let first_arg_ty = tc_first_arg_type(newtype_checked, args)
-    let ctor_checked = tc_check_newtype_ctor(newtype_checked, name, ret_ty, first_arg_ty)
-    tc_er(ctor_checked, ret_ty)
+    let ctor_checked = tc_check_newtype_ctor(newtype_checked, name, rec.ret_ty, first_arg_ty)
+    tc_er(ctor_checked, rec.ret_ty)
 }
 
 /// Type-check a `Call` expression. Routes to `check_method_call`
 /// for `obj.method(args)`, otherwise falls through to
-/// `tc_check_fn_call` after resolving the callee name.
+/// `tc_check_fn_call_with` after resolving the callee name.
 fn check_call(tc: TC, callee: Expr, args: ExprList) -> ExprResult {
     match callee {
         .Ident(name) -> {
@@ -1263,8 +1254,9 @@ fn check_call(tc: TC, callee: Expr, args: ExprList) -> ExprResult {
                 _ -> {}
             }
             // User-defined function
-            if fn_type_has(checked.fns, name) {
-                return tc_check_fn_call(checked, name, args)
+            let r = fn_type_get(checked.fns, name)
+            if r.found {
+                return tc_check_fn_call_with(checked, name, args, r)
             }
             // Variable holding a closure
             let var_ty = type_lookup(checked.types, name)
@@ -1275,8 +1267,9 @@ fn check_call(tc: TC, callee: Expr, args: ExprList) -> ExprResult {
         }
         .QualifiedIdent(path) -> {
             let checked = check_expr_list(tc, args)
-            if fn_type_has(checked.fns, path) {
-                return tc_check_fn_call(checked, path, args)
+            let r = fn_type_get(checked.fns, path)
+            if r.found {
+                return tc_check_fn_call_with(checked, path, args, r)
             }
             tc_er(checked, .Unknown)
         }
@@ -1344,8 +1337,9 @@ fn check_method_call(tc: TC, obj: Expr, method: string, args: ExprList) -> ExprR
     }
     if type_name.length > 0 {
         let qualified = method_mangled_name(type_name, method)
-        if fn_type_has(checked_args.fns, qualified) {
-            return tc_er(checked_args, fn_type_lookup(checked_args.fns, qualified))
+        let r = fn_type_get(checked_args.fns, qualified)
+        if r.found {
+            return tc_er(checked_args, r.ret_ty)
         }
     }
 
@@ -1565,7 +1559,7 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
         // Unary: falls through to check_expr for correct float handling
         // Call: look up return type from function registry
         .Call(callee, _) -> match callee {
-            .Ident(name) -> fn_type_lookup(tc.fns, name)
+            .Ident(name) -> fn_type_get(tc.fns, name).ret_ty
             _ -> check_expr(tc, se.node).ty
         }
         // Struct/Enum constructors
