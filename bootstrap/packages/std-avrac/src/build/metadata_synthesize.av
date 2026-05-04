@@ -55,7 +55,7 @@ use build.metadata.{
 /// then resolves through the same `diagnostics → render → X` chain
 /// the source-parse path would produce, instead of a flat dump.
 export fn synthesize_unit_body(m: UnitMetadata) -> StmtList {
-    let empty = SubMod { name: "", direct: StmtList.End, children: SubModList.End }
+    let empty = SubMod { name: "", direct: StmtList.End, children: [] }
     let after_types = insert_types(empty, m.types, m.unit_name)
     let after_fns = insert_fns(after_types, m.fns, m.unit_name)
     let after_consts = insert_consts(after_fns, m.consts, m.unit_name)
@@ -83,12 +83,7 @@ export fn synthesize_unit_body(m: UnitMetadata) -> StmtList {
 type SubMod = {
     name: string,
     direct: StmtList,
-    children: SubModList,
-}
-
-enum SubModList {
-    End(),
-    Node(item: SubMod, next: SubModList),
+    children: List<SubMod>,
 }
 
 // Returns the path-segments-inside-unit, OR `belongs_to_unit=false` to
@@ -177,22 +172,23 @@ fn trie_insert_decl(node: SubMod, path: List<string>, depth: int, decl: SStmt) -
     }
 }
 
-fn ensure_child(list: SubModList, seg: string, path: List<string>, depth: int, decl: SStmt) -> SubModList {
-    match list {
-        .End -> {
-            let empty = SubMod { name: seg, direct: StmtList.End, children: SubModList.End }
-            let updated = trie_insert_decl(empty, path, depth, decl)
-            SubModList.Node(updated, SubModList.End)
+// Find the child whose name matches `seg` and recurse insert into it.
+// If no matching child exists, append a fresh one. Mutates the list
+// in-place via .set / .push so we don't rebuild the whole list per
+// trie level the way the prior linked-list shape required.
+fn ensure_child(list: List<SubMod>, seg: string, path: List<string>, depth: int, decl: SStmt) -> List<SubMod> {
+    mut local = list
+    mut i = 0
+    while i < local.length {
+        if local[i].name == seg {
+            local.set(i, trie_insert_decl(local[i], path, depth, decl))
+            return local
         }
-        .Node(item, next) -> {
-            if item.name == seg {
-                let updated = trie_insert_decl(item, path, depth, decl)
-                SubModList.Node(updated, next)
-            } else {
-                SubModList.Node(item, ensure_child(next, seg, path, depth, decl))
-            }
-        }
+        i = i + 1
     }
+    let empty = SubMod { name: seg, direct: StmtList.End, children: [] }
+    local.push(trie_insert_decl(empty, path, depth, decl))
+    local
 }
 
 fn trie_to_stmtlist(node: SubMod) -> StmtList {
@@ -200,15 +196,19 @@ fn trie_to_stmtlist(node: SubMod) -> StmtList {
     append_stmts(node.direct, kid_stmts)
 }
 
-fn children_to_stmts(list: SubModList) -> StmtList {
-    match list {
-        .End -> StmtList.End
-        .Node(item, next) -> {
-            let inner = trie_to_stmtlist(item)
-            let mod_stmt = sstmt_dummy(Stmt.Module(item.name, inner))
-            StmtList.Node(mod_stmt, children_to_stmts(next))
-        }
-    }
+// Walk children in source order, emit a Module(name, body) wrap per
+// child. children_to_stmts_at threads `idx` so the recursion-free
+// shape preserves order without an extra reverse pass.
+fn children_to_stmts(list: List<SubMod>) -> StmtList {
+    children_to_stmts_at(list, 0)
+}
+
+fn children_to_stmts_at(list: List<SubMod>, idx: int) -> StmtList {
+    if idx >= list.length { return StmtList.End }
+    let item = list[idx]
+    let inner = trie_to_stmtlist(item)
+    let mod_stmt = sstmt_dummy(Stmt.Module(item.name, inner))
+    StmtList.Node(mod_stmt, children_to_stmts_at(list, idx + 1))
 }
 
 fn insert_types(trie: SubMod, xs: TypeDeclList, unit_name: string) -> SubMod {
