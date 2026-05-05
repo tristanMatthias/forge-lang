@@ -1,0 +1,50 @@
+// g2eo.1 Phase 3 — AVRA_DIR_MODULE=1 wires resolve_dir_module_body
+// into the resolver's `mod foo` path: when a module's mod.av lives
+// under `<dir>/foo/mod.av`, the resolver auto-loads every sibling
+// `.av` in that subdir as part of the module's flat body. The
+// fixture proves this end-to-end:
+//   - Without the flag, `mod calc` with no `mod add`/`mod mul`
+//     decls in calc/mod.av leaves add/mul unresolved, compile fails.
+//   - With the flag, add.av and mul.av are auto-included into
+//     calc's body, the compile succeeds, and the binary runs.
+//
+// This is the first user-facing slice of dir-as-module: a real
+// compile pipeline using the new semantics, gated behind an env
+// flag so existing packages keep working.
+//
+// Tracking ticket: forge-crafting-intepreters-g2eo.1.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn dme_run() -> string {
+    avra_shell_exec("if [ ! -f /tmp/avra_dirmod_e2e_test.out ]; then bash scripts/diagnose.sh --run tests/dir_module_e2e_fixtures/sample.av > /tmp/avra_dirmod_e2e_test.out 2>&1 || true; fi; cat /tmp/avra_dirmod_e2e_test.out")
+}
+
+fn dme_wipe() -> string {
+    avra_shell_exec("rm -f /tmp/avra_dirmod_e2e_test.out")
+}
+
+spec "AVRA_DIR_MODULE: clear cached output" {
+    then "wipe stale /tmp output" {
+        let _ = dme_wipe()
+        true
+    }
+}
+
+spec "AVRA_DIR_MODULE=0 (default): legacy `mod foo` semantics still apply" {
+    then "compile fails when sibling .av files aren't reached via `mod` decls" {
+        dme_run().contains("PROBE flag_off_compile_fails: ok")
+    }
+}
+
+spec "AVRA_DIR_MODULE=1: directory-as-module semantics kick in" {
+    then "compile succeeds — sibling .av files auto-load into calc's body" {
+        dme_run().contains("PROBE flag_on_compile_succeeds: ok")
+    }
+    then ".ll file emitted to disk" {
+        dme_run().contains("PROBE ll_emitted: ok")
+    }
+    then "linked binary runs with correct output (s=5, p=20)" {
+        dme_run().contains("PROBE runtime_output_correct: ok")
+    }
+}

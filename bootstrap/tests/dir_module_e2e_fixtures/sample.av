@@ -1,0 +1,98 @@
+// End-to-end fixture for AVRA_DIR_MODULE=1 (g2eo.1, Phase 3).
+//
+// Builds a /tmp project layout:
+//   sample/
+//     main.av       (entry — imports `mod calc`, calls calc::add + calc::mul)
+//     calc/
+//       mod.av      (empty body — no `mod` declarations)
+//       add.av      (export fn add(a,b))
+//       mul.av      (export fn mul(a,b))
+//
+// Then compiles + runs `main.av` with AVRA_DIR_MODULE=1 set. The
+// resolver should auto-load add.av and mul.av into calc's flat
+// namespace WITHOUT requiring any `mod add` / `mod mul` decls in
+// calc/mod.av. Without the flag, the same compile fails (those
+// fns are unreferenced and unresolved) — that asymmetry is the
+// proof the wiring works.
+//
+// Probes echo from this fixture; the parent test asserts on them.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn probe(name: string, ok: bool) {
+    let tag = if ok { "ok" } else { "FAIL" }
+    println("PROBE ${name}: ${tag}")
+}
+
+fn write_file(path: string, content: string) {
+    avra_shell_exec("printf '%s' " + shell_escape(content) + " > " + path)
+}
+
+// Quote a string for safe shell use — wrap in single quotes and
+// escape any embedded single quotes via the standard `'\''` trick.
+// Avoids printf %s mangling on backslashes by routing the body
+// through unprintable-safe single-quote literal syntax.
+fn shell_escape(s: string) -> string {
+    "'" + s.replace("'", "'\\''") + "'"
+}
+
+fn main() -> int {
+    let root = "/tmp/avra_dirmod_e2e"
+    avra_shell_exec("rm -rf " + root)
+    avra_shell_exec("mkdir -p " + root + "/calc")
+
+    // calc/mod.av — empty file, no `mod foo` decls inside.
+    write_file(root + "/calc/mod.av", "// directory-as-module: this file is intentionally empty\n")
+
+    // calc/add.av — exports `add`.
+    write_file(root + "/calc/add.av", "export fn add(a: int, b: int) -> int { a + b }\n")
+
+    // calc/mul.av — exports `mul`.
+    write_file(root + "/calc/mul.av", "export fn mul(a: int, b: int) -> int { a * b }\n")
+
+    // main.av — imports `mod calc`, then references calc::add and calc::mul.
+    let main_src =
+        "mod calc\n" +
+        "use calc.{add, mul}\n" +
+        "fn main() {\n" +
+        "    let s = add(2, 3)\n" +
+        "    let p = mul(4, 5)\n" +
+        "    println(\"s=\" + string(s) + \" p=\" + string(p))\n" +
+        "}\n"
+    write_file(root + "/main.av", main_src)
+
+    let bs2 = avra_shell_exec("which bs2 2>/dev/null").trim()
+    let bin = if bs2 == "" {
+        avra_shell_exec("pwd").trim() + "/build/bs2"
+    } else {
+        bs2
+    }
+
+    // Probe 1 — without AVRA_DIR_MODULE: the compile FAILS because
+    // add/mul are unreachable from `mod calc` (no `mod add`/`mod mul`
+    // in calc/mod.av).
+    let off_rc_str = avra_shell_exec("'" + bin + "' compile '" + root + "/main.av' > /dev/null 2>&1; echo $?").trim()
+    let off_rc = avra_parse_int(off_rc_str)
+    probe("flag_off_compile_fails", off_rc != 0)
+
+    // Probe 2 — with AVRA_DIR_MODULE=1: the compile succeeds.
+    let on_rc_str = avra_shell_exec("AVRA_DIR_MODULE=1 '" + bin + "' compile '" + root + "/main.av' > /dev/null 2>&1; echo $?").trim()
+    let on_rc = avra_parse_int(on_rc_str)
+    probe("flag_on_compile_succeeds", on_rc == 0)
+
+    // Probe 3 — the produced .ll file exists.
+    let ll_exists = avra_shell_exec("test -f '" + root + "/main.av.ll' && echo yes || echo no").trim()
+    probe("ll_emitted", ll_exists == "yes")
+
+    // Probe 4 — link + run, expect "s=5 p=20".
+    let llvm_prefix = avra_shell_exec("test -d /opt/homebrew/opt/llvm && echo /opt/homebrew/opt/llvm || which llc | xargs dirname | xargs dirname").trim()
+    avra_shell_exec("'" + llvm_prefix + "/bin/llc' -filetype=obj '" + root + "/main.av.ll' -o '" + root + "/main.o' 2>/dev/null")
+    avra_shell_exec("clang '" + root + "/main.o' build/runtime.o build/llvm_wrapper.o -o '" + root + "/main.bin' -L'" + llvm_prefix + "/lib' -lLLVM 2>/dev/null")
+    let output = avra_shell_exec("'" + root + "/main.bin' 2>&1").trim()
+    probe("runtime_output_correct", output == "s=5 p=20")
+
+    avra_shell_exec("rm -rf " + root)
+    0
+}
+
+extern fn avra_parse_int(s: string) -> int

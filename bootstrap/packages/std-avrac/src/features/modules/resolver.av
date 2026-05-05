@@ -866,7 +866,36 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths, stack: Impo
                 parsed.stmts!
             }
             emit_progress_done(mod_path, mod_t_start)
-            let resolved = resolve_module_files_inner(mod_stmts, mod_dir, new_loaded, new_stack)
+            // g2eo.1 directory-as-module opt-in: when AVRA_DIR_MODULE
+            // is set AND mod_path is the subdir form (`<dir>/<name>/mod.av`),
+            // ALSO auto-load every sibling `.av` file in that subdir as
+            // part of the module's body. This collapses the legacy
+            // two-step (`mod foo` declares + `mod.av` body declares
+            // children) into one filesystem walk: every file in the
+            // dir contributes to the module's flat namespace.
+            //
+            // Already-loaded paths are skipped (the loader threads
+            // LoadedPaths the same way the rest of the resolver does),
+            // so an explicit `mod foo` decl inside mod.av that races
+            // with auto-load just produces an empty Module wrapper —
+            // no duplicate decls.
+            //
+            // Gated on the env var so existing packages that rely on
+            // the nested `<mod>::<sub>::Foo` namespacing keep working
+            // until they migrate.
+            let dir_mode = avra_process_env_get("AVRA_DIR_MODULE") != ""
+            let is_subdir_form = mod_path == dir_mod
+            let dir_load = if dir_mode && is_subdir_form && !take_meta {
+                resolve_dir_module_body(mod_dir, new_loaded)
+            } else {
+                ModListResult { stmts: StmtList.End, loaded: new_loaded, had_error: false, error_message: "" }
+            }
+            if dir_load.had_error {
+                return ModStmtResult { stmt, loaded: dir_load.loaded, had_error: true, error_message: dir_load.error_message }
+            }
+            let combined_stmts = stmt_list_concat(mod_stmts, dir_load.stmts)
+            let post_dir_loaded = dir_load.loaded
+            let resolved = resolve_module_files_inner(combined_stmts, mod_dir, post_dir_loaded, new_stack)
             if resolved.had_error {
                 return ModStmtResult { stmt, loaded: resolved.loaded, had_error: true, error_message: resolved.error_message }
             }
