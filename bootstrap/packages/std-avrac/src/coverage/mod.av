@@ -146,12 +146,6 @@ export type Decision = {
     false_count: int,
 }
 
-/// Linked list of Decision — accumulated across covmap parsing,
-/// then folded into FnStats.total_conditions / hit_conditions.
-export enum DecisionList {
-    End
-    Node(item: Decision, next: DecisionList)
-}
 
 /// Local percentage helper. Coverage treats "no work" as 100%
 /// covered so empty modules don't pollute the table; `render.pct`
@@ -389,7 +383,7 @@ fn aggregate(covmap: List<CovEntry>, counts: List<FnCounts>) -> FnStatsList {
 
     let stats_map = avra_map_new_cstr()
     mut name_list: List<string> = []
-    mut decisions = DecisionList.End
+    mut decisions: List<Decision> = []
 
     mut ei = 0
     while ei < covmap.length {
@@ -420,34 +414,30 @@ fn aggregate(covmap: List<CovEntry>, counts: List<FnCounts>) -> FnStatsList {
         avra_map_set_cstr(stats_map, e.fn_name, updated)
 
         if e.ctype == "condition_true" {
-            decisions = decision_add_true(decisions, e.fn_name, e.line, e.branch, count)
+            decision_add_true(decisions, e.fn_name, e.line, e.branch, count)
         }
         if e.ctype == "condition_false" {
-            decisions = decision_add_false(decisions, e.fn_name, e.line, e.branch, count)
+            decision_add_false(decisions, e.fn_name, e.line, e.branch, count)
         }
         ei = ei + 1
     }
 
     // Apply finalized MC/DC decisions to the stats map.
-    mut dcur = decisions
-    while true {
-        match dcur {
-            .End -> { break }
-            .Node(d, dnext) -> {
-                let was_new = avra_map_has_cstr(stats_map, d.fn_name) == 0
-                let s = stats_get_or_create(stats_map, d.fn_name)
-                if was_new {
-                    name_list.push(d.fn_name)
-                }
-                let hit = if d.true_count > 0 && d.false_count > 0 { 1 } else { 0 }
-                let updated = s with {
-                    total_conditions: s.total_conditions + 1,
-                    hit_conditions: s.hit_conditions + hit,
-                }
-                avra_map_set_cstr(stats_map, d.fn_name, updated)
-                dcur = dnext
-            }
+    mut di = 0
+    while di < decisions.length {
+        let d = decisions[di]
+        let was_new = avra_map_has_cstr(stats_map, d.fn_name) == 0
+        let s = stats_get_or_create(stats_map, d.fn_name)
+        if was_new {
+            name_list.push(d.fn_name)
         }
+        let hit = if d.true_count > 0 && d.false_count > 0 { 1 } else { 0 }
+        let updated = s with {
+            total_conditions: s.total_conditions + 1,
+            hit_conditions: s.hit_conditions + hit,
+        }
+        avra_map_set_cstr(stats_map, d.fn_name, updated)
+        di = di + 1
     }
 
     // Build the FnStatsList in insertion order. name_list now holds
@@ -555,28 +545,33 @@ fn intset_has(set: IntListSet, value: int) -> bool {
 
 /// Record a `condition_true` hit. Looks up or creates the
 /// matching Decision row keyed on `(fn_name, line, branch)`.
-fn decision_add_true(decs: DecisionList, fn_name: string, line: int, branch: int, count: int) -> DecisionList {
+/// Mutates `decs` in place — caller passes the same list each time.
+fn decision_add_true(decs: List<Decision>, fn_name: string, line: int, branch: int, count: int) {
     decision_update(decs, fn_name, line, branch, count, 0)
 }
 
 /// Record a `condition_false` hit. Mirror of `decision_add_true`.
-fn decision_add_false(decs: DecisionList, fn_name: string, line: int, branch: int, count: int) -> DecisionList {
+fn decision_add_false(decs: List<Decision>, fn_name: string, line: int, branch: int, count: int) {
     decision_update(decs, fn_name, line, branch, 0, count)
 }
 
 /// Upsert helper — find a Decision row by `(fn_name, line, branch)`
-/// and add the supplied true/false increments, or append a fresh
-/// row when no match. Used by `decision_add_true` /
-/// `decision_add_false` to merge sub-condition hits.
-fn decision_update(decs: DecisionList, fn_name: string, line: int, branch: int, t_inc: int, f_inc: int) -> DecisionList {
-    match decs {
-        .End -> DecisionList.Node(Decision { fn_name, line, branch_id: branch, true_count: t_inc, false_count: f_inc }, DecisionList.End)
-        .Node(d, next) -> if d.fn_name == fn_name && d.line == line && d.branch_id == branch {
-            DecisionList.Node(d with { true_count: d.true_count + t_inc, false_count: d.false_count + f_inc }, next)
-        } else {
-            DecisionList.Node(d, decision_update(next, fn_name, line, branch, t_inc, f_inc))
+/// and add the supplied true/false increments, or push a fresh row
+/// when no match. Mutates `decs` directly via .set / .push so the
+/// previous recursive cons-rebuild collapses to one walk + maybe a
+/// single update.
+fn decision_update(decs: List<Decision>, fn_name: string, line: int, branch: int, t_inc: int, f_inc: int) {
+    mut local = decs
+    mut i = 0
+    while i < local.length {
+        let d = local[i]
+        if d.fn_name == fn_name && d.line == line && d.branch_id == branch {
+            local.set(i, d with { true_count: d.true_count + t_inc, false_count: d.false_count + f_inc })
+            return
         }
+        i = i + 1
     }
+    local.push(Decision { fn_name, line, branch_id: branch, true_count: t_inc, false_count: f_inc })
 }
 
 // ── Per-module rollup ──
