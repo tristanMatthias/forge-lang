@@ -1,6 +1,6 @@
 // dir-as-module (g2eo.1): no `mod` decls — parser.av + expand.av
 // auto-load as siblings, surface flat at `features.component_decl.{...}`.
-use core.registry.{feature_new, Feature}
+use core.{feature_new, Feature}
 
 /// Register the `component` declaration feature. Components
 /// expand into struct + impl + factory at the desugar pass —

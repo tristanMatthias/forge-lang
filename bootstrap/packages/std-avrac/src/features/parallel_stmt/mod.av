@@ -2,7 +2,7 @@
 // auto-load as siblings and surface flat at `features.parallel_stmt.{...}`.
 // Sibling exports (parallel_emit_stmt, parse_parallel_statement) are in
 // scope here without an explicit self-import.
-use core.registry.{feature_new, Feature}
+use core.{feature_new, Feature}
 use resolve.{resolve_stmt_list}
 
 /// Resolver hook for `parallel { ... }`. Walks the body's statement

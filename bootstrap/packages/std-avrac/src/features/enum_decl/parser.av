@@ -1,9 +1,9 @@
 // WHY: parses `enum Foo { ... }` declarations and the variant
 // list syntax (with optional payload fields).
 
-use core.ast.{Stmt, FieldList, VariantList, TypeParamList, ValueType, type_expr_to_vtype}
+use core.{Stmt, FieldList, VariantList, TypeParamList, ValueType, type_expr_to_vtype}
 use parse.{Parser}
-use core.ast.{Tk}
+use core.{Tk}
 
 impl Parser {
     fn parse_enum_declaration(self) -> Stmt? {

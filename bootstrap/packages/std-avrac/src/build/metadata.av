@@ -16,7 +16,7 @@
 // Tracked under forge-crafting-intepreters-iinq (epic
 // forge-crafting-intepreters-a1el — the build system).
 
-use core.ast.{ValueType, TypeList, FieldList, VariantList, ParamList, TypeParamList}
+use core.{ValueType, TypeList, FieldList, VariantList, ParamList, TypeParamList}
 
 extern fn avra_bytes_make(len: int) -> bytes
 extern fn avra_bytes_set(b: bytes, idx: int, val: int)

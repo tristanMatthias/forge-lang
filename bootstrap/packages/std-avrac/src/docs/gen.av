@@ -17,7 +17,7 @@
 //         /// variants: A, B, C
 //   other: /// summary
 
-use core.runtime.{avra_selfhost_read_file, avra_selfhost_write_file}
+use core.{avra_selfhost_read_file, avra_selfhost_write_file}
 use @std.lsp.{Sym, SymKind}
 
 /// Outcome of a `gen_apply` run.

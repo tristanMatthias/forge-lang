@@ -8,7 +8,7 @@ mod gen
 use gen.{gen_stub_for_sym, gen_apply, GenStubResult,
          already_documented, insert_at_line}
 use @std.lsp.{Sym, SymKind, SymId, LspSpan, LspPos}
-use core.runtime.{avra_selfhost_write_file}
+use core.{avra_selfhost_write_file}
 
 // Construct fixtures inline: the second `use @std.lsp.{fn}` import in
 // any program currently silently drops function bindings (resolver

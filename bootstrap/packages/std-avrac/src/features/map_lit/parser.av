@@ -1,9 +1,9 @@
 // WHY: parses map literal expressions `{ "key": value, ... }`.
 // is_map_literal does lookahead to disambiguate map literals from blocks.
 
-use core.ast.{Expr, ExprList, SExpr, sexpr}
+use core.{Expr, ExprList, SExpr, sexpr}
 use parse.{Parser}
-use core.ast.{Tk}
+use core.{Tk}
 
 impl Parser {
     // Lookahead: is the current `{` the start of a map literal?

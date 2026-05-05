@@ -1,6 +1,6 @@
 // WHY: codegen for println/eprintln builtins.
 
-use core.ast.{Expr, ExprList, VarEnv, ValueType, vtype_is_str, vtype_eq}
+use core.{Expr, ExprList, VarEnv, ValueType, vtype_is_str, vtype_eq}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit}
 use codegen.{emit_concat}
 use codegen.{strip_quotes}

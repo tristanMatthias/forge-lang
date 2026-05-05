@@ -1,7 +1,7 @@
 // dir-as-module (g2eo.1): codegen.av auto-loads as a sibling, surfaces
 // flat at `features.tuples.{...}`.
-use core.ast.{vtype_tuple_at}
-use core.registry.{feature_new, Feature}
+use core.{vtype_tuple_at}
+use core.{feature_new, Feature}
 use resolve.{resolve_expr, resolve_expr_list}
 use typeck.{check_expr, check_expr_list_types, tc_er}
 

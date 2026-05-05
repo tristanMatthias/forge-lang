@@ -4,7 +4,7 @@
 use codegen.{err_stmt, StmtResult}
 use codegen.{ok_sr, err_sr}
 use features.eval.{error_result}
-use core.registry.{feature_new, Feature}
+use core.{feature_new, Feature}
 use resolve.{define_param_names, resolve_expr}
 use features.tuples.{emit_let_destructure}
 use typeck.{check_expr}

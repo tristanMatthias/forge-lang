@@ -1,8 +1,8 @@
 // WHY: parses `parallel { body }` blocks.
 
 use parse.{Parser}
-use core.ast.{Stmt}
-use core.ast.{Tk}
+use core.{Stmt}
+use core.{Tk}
 
 impl Parser {
     fn parse_parallel_statement(self) -> Stmt? {

@@ -4,7 +4,7 @@
 // entry as a /// documented Avra const. The CLI's docs command (after
 // x35m.6's --scope=lang) reads this file via the AST extractor.
 
-use core.runtime.{avra_selfhost_write_file}
+use core.{avra_selfhost_write_file}
 use diagnostics.{DiagCode, error_def}
 
 // Mirrored from p_keyword_kind in src/parse/mod.av. CI verifies the

@@ -24,8 +24,8 @@
 // exercised by the diff-harness spec test in this ticket and by the
 // cutover in y4n1.8.
 
-use core.ast.{Stmt, StmtList, SStmt, SExpr, Expr, ExprList, ParamList, ValueType, AnnotationList}
-use core.module_graph.{
+use core.{Stmt, StmtList, SStmt, SExpr, Expr, ExprList, ParamList, ValueType, AnnotationList}
+use core.{
     ModuleGraph, ModuleGraphNode, ResolvedPath,
     StringInterner, InternResult,
     module_graph_new, module_graph_add, module_graph_find_by_file,
@@ -38,9 +38,9 @@ use core.module_graph.{
     interner_intern,
     ID_NONE,
 }
-use core.runtime.{avra_selfhost_file_exists, avra_selfhost_read_file}
+use core.{avra_selfhost_file_exists, avra_selfhost_read_file}
 use parse.{parse_program_source}
-use features.modules.resolver.{
+use features.modules.{
     modules_dirname, find_packages_dir, resolve_package_path,
     is_package_use, package_module_name, extract_use_path,
 }

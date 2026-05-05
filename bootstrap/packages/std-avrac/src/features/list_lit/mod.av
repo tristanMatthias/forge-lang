@@ -2,7 +2,7 @@
 // as siblings, surface flat at `features.list_lit.{...}`. emit_list_lit
 // + check_list_lit are in scope without self-imports.
 use codegen.{err_emit}
-use core.registry.{feature_new, Feature}
+use core.{feature_new, Feature}
 use resolve.{resolve_expr_list}
 use typeck.{tc_er}
 

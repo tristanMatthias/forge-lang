@@ -29,7 +29,7 @@
 //
 // Tracked under forge-crafting-intepreters-xtvc.
 
-use core.ast.{
+use core.{
     Stmt, StmtList, SStmt, sstmt_dummy,
     Expr, ExprList,
     AnnotationList, ParamList, ValueType, FieldList, VariantList, TypeParamList,

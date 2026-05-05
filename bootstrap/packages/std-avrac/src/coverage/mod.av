@@ -22,8 +22,8 @@
 // function and per module ("foo::bar::baz" → module "foo::bar"). Print
 // a colored table; optionally write LCOV.
 
-use core.runtime.{avra_selfhost_read_file, avra_selfhost_write_file, avra_shell_exec}
-use core.registry.{avra_map_new_cstr, avra_map_set_cstr, avra_map_get_cstr, avra_map_has_cstr}
+use core.{avra_selfhost_read_file, avra_selfhost_write_file, avra_shell_exec}
+use core.{avra_map_new_cstr, avra_map_set_cstr, avra_map_get_cstr, avra_map_has_cstr}
 use render.{color_pct, pad_right, pad_left}
 
 /// One row of the `.covmap.tsv` written by codegen during an

@@ -8,11 +8,11 @@
 // process exit. Any caller (CLI driver, IDE plugin, fuzz harness) can
 // reuse them to build a test program.
 
-use core.ast.{
+use core.{
     Stmt, StmtList, ParamList, ValueType,
     sstmt_dummy,
 }
-use features.modules.resolver.{hoist_package_modules, HoistSplit}
+use features.modules.{hoist_package_modules, HoistSplit}
 
 /// Drop every `extern fn` declaration from the list.
 ///

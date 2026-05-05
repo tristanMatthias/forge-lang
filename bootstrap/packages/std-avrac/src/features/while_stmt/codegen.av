@@ -1,7 +1,7 @@
 // WHY: emits LLVM IR for `while cond { body }` with break/continue
 // support via the scoped loop stack in Ctx.
 
-use core.ast.{Expr, Stmt, VarEnv}
+use core.{Expr, Stmt, VarEnv}
 use codegen.{Ctx, LoopStack, StmtResult,  ok_stmt, emit_value_ptr}
 use codegen.{emit_expr, emit_stmt, ok_sr, err_sr}
 

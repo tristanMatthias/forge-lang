@@ -4,7 +4,7 @@
 // to the enclosing scope and auto-awaited at scope exit.
 
 use codegen.{ok_emit, err_emit, EmitValue}
-use core.ast.{vtype_fn_ret, MatchArmList, ExprList}
+use core.{vtype_fn_ret, MatchArmList, ExprList}
 use features.closures.{emit_lambda}
 
 /// Codegen entry for `spawn { body }`. Pattern-matches the

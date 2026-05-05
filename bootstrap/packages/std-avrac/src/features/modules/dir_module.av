@@ -16,7 +16,7 @@
 //
 // Tracking ticket: forge-crafting-intepreters-g2eo.1.
 
-use core.runtime.{avra_readdir, avra_is_dir, avra_str_ends_with}
+use core.{avra_readdir, avra_is_dir, avra_str_ends_with}
 
 /// True iff `name` looks like an Avra source file we want to
 /// include in a directory's module body. Excludes:

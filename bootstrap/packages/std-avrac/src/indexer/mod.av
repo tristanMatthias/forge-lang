@@ -14,8 +14,8 @@
 // downstream consumers (docs CLI, LSP server) only need @std.lsp's
 // types — they never import compiler internals.
 
-use core.runtime.{avra_selfhost_read_file, avra_shell_exec}
-use core.ast.{Stmt, StmtList, SStmt,
+use core.{avra_selfhost_read_file, avra_shell_exec}
+use core.{Stmt, StmtList, SStmt,
               Expr, SExpr, ExprList,
               AnnotationList, ParamList, FieldList,
               VariantList, ValueType, TypeParamList,

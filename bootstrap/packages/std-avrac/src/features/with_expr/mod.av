@@ -1,6 +1,6 @@
 // dir-as-module (g2eo.1): codegen.av auto-loads as a sibling, surfaces
 // flat at `features.with_expr.{...}`.
-use core.registry.{feature_new, Feature}
+use core.{feature_new, Feature}
 use resolve.{resolve_expr, resolve_field_init_list}
 use features.struct_decl.{check_field_inits}
 use typeck.{check_expr, tc_er}

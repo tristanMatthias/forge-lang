@@ -3,9 +3,9 @@
 //   `list.map(it * 2)` → `list.map((it) -> { it * 2 })`
 // `parse_lambda_body` handles lambda body parsing (block or single expression).
 
-use core.ast.{Expr, ExprList, StmtList, ParamList}
+use core.{Expr, ExprList, StmtList, ParamList}
 use parse.{Parser}
-use core.ast.{Tk}
+use core.{Tk}
 
 /// True when `expr` references the implicit `it` pronoun. Used
 /// by `wrap_in_it_lambda` to recognise method-call sugar like

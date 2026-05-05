@@ -24,7 +24,7 @@
 // dir-as-module (g2eo.1): gen.av + corpus.av auto-load as siblings,
 // surface flat at `docs.{...}`.
 
-use core.runtime.{avra_selfhost_read_file, avra_shell_exec, avra_selfhost_levenshtein}
+use core.{avra_selfhost_read_file, avra_shell_exec, avra_selfhost_levenshtein}
 use parse.{parse_program_source}
 use indexer.{extract_from_ast_at, extract_calls_from_ast_at}
 use @std.lsp.{Sym, SymList, SymKind, CallEdge, CallList}

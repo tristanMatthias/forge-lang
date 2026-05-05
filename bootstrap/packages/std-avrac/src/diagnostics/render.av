@@ -4,7 +4,7 @@
 
 use diagnostics.{Diagnostic, DiagnosticBag, DiagnosticList, DiagnosticCause, Span, Severity, severity_str, diag_code_str, confidence_str}
 use @std.json.{json_escape}
-use core.runtime.{avra_selfhost_file_exists, avra_selfhost_read_file}
+use core.{avra_selfhost_file_exists, avra_selfhost_read_file}
 
 // ── ANSI colors ──
 

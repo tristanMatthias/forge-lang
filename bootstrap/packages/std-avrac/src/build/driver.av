@@ -29,7 +29,7 @@ use build.cache.{
     cache_publish, cache_read_ll,
     entry_dir_for, entry_ll_path,
 }
-use core.runtime.{
+use core.{
     avra_selfhost_file_exists,
     avra_selfhost_read_file,
     avra_selfhost_write_file,

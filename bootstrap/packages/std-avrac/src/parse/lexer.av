@@ -1,7 +1,7 @@
 // WHY: integrated lexer for the recursive-descent parser.
 // Scans source characters one at a time, producing Tk-typed tokens.
 
-use core.ast.{Tk}
+use core.{Tk}
 use diagnostics.{DiagCode}
 use parse.{p_keyword_kind}
 

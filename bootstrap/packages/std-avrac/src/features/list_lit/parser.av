@@ -2,9 +2,9 @@
 // `[expr for x in collection if? filter]`.
 // Comprehensions produce Expr.ListComp — desugared by desugar/mod.av.
 
-use core.ast.{Expr, ExprList, SExpr, sexpr}
+use core.{Expr, ExprList, SExpr, sexpr}
 use parse.{Parser}
-use core.ast.{Tk}
+use core.{Tk}
 
 impl Parser {
     fn parse_list_elements(self) -> ExprList? {

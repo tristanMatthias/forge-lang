@@ -1,6 +1,6 @@
 // WHY: resolves names in match arms — binds pattern variables into scope.
 
-use core.ast.{Pattern, PatternList, MatchArmList, WhenArmList}
+use core.{Pattern, PatternList, MatchArmList, WhenArmList}
 use resolve.{Resolver, enter_resolve_scope, exit_resolve_scope, resolve_expr, declare_params, declare_name, define_name}
 
 /// Resolve every arm of a `match` expression. For each arm:

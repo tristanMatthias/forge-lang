@@ -1,6 +1,6 @@
 // WHY: codegen for string operations — concat, comparison, replace, substring.
 
-use core.ast.{Expr, ExprList, VarEnv}
+use core.{Expr, ExprList, VarEnv}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit}
 use codegen.{strip_quotes}
 

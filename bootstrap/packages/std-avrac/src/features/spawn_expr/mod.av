@@ -3,7 +3,7 @@
 //
 // dir-as-module (g2eo.1): codegen.av + parser.av auto-load as siblings,
 // surface flat at `features.spawn_expr.{...}`.
-use core.registry.{feature_new, Feature}
+use core.{feature_new, Feature}
 use resolve.{resolve_expr}
 use typeck.{check_expr, tc_er}
 

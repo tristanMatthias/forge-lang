@@ -1,9 +1,9 @@
 // WHY: trait conformance checking — verifies impl blocks provide all required methods.
 
-use core.ast.{Stmt, StmtList, SStmt, ParamList, param_list_length, vtype_is_unknown, stmt_unwrap}
+use core.{Stmt, StmtList, SStmt, ParamList, param_list_length, vtype_is_unknown, stmt_unwrap}
 use diagnostics.{DiagCode}
 use typeck.{TC, tc_report, TraitRegistry, TraitMethod, trait_get, tc_owns_type}
-use core.type_registry.{method_mangled_name}
+use core.{method_mangled_name}
 
 /// Find the byte offset of the single `:` that separates a
 /// `Trait:Type` impl name. Skips `::` (qualified paths) so

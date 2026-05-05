@@ -10,7 +10,7 @@
 // `target/lang.av` is missing or unparseable; callers (CLI, IDE
 // plugins) decide how to surface the absence.
 
-use core.runtime.{avra_selfhost_file_exists, avra_selfhost_read_file}
+use core.{avra_selfhost_file_exists, avra_selfhost_read_file}
 use parse.{parse_program_source}
 use indexer.{extract_from_ast}
 use @std.lsp.{Sym, SymList, sym_list_concat}

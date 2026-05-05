@@ -1,6 +1,6 @@
 // WHY: resolves names in select arms — binds channel binding variables into scope.
 
-use core.ast.{SelectArmList}
+use core.{SelectArmList}
 use resolve.{Resolver, enter_resolve_scope, exit_resolve_scope, resolve_expr, resolve_stmt_list, declare_name, define_name}
 
 /// Resolve every arm of a `select { ... }` statement. For each

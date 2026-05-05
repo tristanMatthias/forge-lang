@@ -1,8 +1,8 @@
 // WHY: parses `let`, `mut`, and `const` variable bindings.
 
-use core.ast.{Stmt, ParamList, ValueType, type_expr_to_vtype}
+use core.{Stmt, ParamList, ValueType, type_expr_to_vtype}
 use parse.{Parser}
-use core.ast.{Tk}
+use core.{Tk}
 
 impl Parser {
     fn parse_let_statement(self) -> Stmt? {

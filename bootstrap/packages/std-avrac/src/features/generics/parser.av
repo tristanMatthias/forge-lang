@@ -2,7 +2,7 @@
 // parse_type_params: called from fn_decl/struct_decl/enum_decl for `<T, U>` declarations.
 // try_parse_generic_call: called from the postfix loop for `f<int, string>(x)` calls.
 
-use core.ast.{TypeParamList, TypeNameList, Expr, ExprList, Tk}
+use core.{TypeParamList, TypeNameList, Expr, ExprList, Tk}
 use parse.{Parser}
 
 impl Parser {

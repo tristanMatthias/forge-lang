@@ -1,7 +1,7 @@
 // dir-as-module (g2eo.1): parser.av + codegen.av + reporter.av auto-load
 // as siblings, surface flat at `features.spec_test.{...}`.
 use features.eval.{error_result, ok_result, value_null}
-use core.registry.{feature_new, Feature}
+use core.{feature_new, Feature}
 use resolve.{resolve_expr, resolve_stmt_list}
 use typeck.{check_expr, check_stmt}
 

@@ -3,7 +3,7 @@
 
 use codegen.{Ctx, EmitValue, ok_emit, err_emit}
 use codegen.{emit_binary}
-use core.ast.{Expr, ExprList, BinOp, VarEnv}
+use core.{Expr, ExprList, BinOp, VarEnv}
 
 /// Codegen entry for `x in [a, b, c]`. Pattern-matches the
 /// `InCheck` AST node and forwards to `emit_in_items`.

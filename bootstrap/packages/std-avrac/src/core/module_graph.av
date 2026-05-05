@@ -24,7 +24,7 @@
 //   wrapping the AST in `Module("@std") { Module("avrac") {...} }`
 //   cannot change the path's meaning — the anchor is fixed.
 
-use core.runtime.{avra_map_new_cstr, avra_map_set_cstr, avra_map_get_cstr,
+use core.{avra_map_new_cstr, avra_map_set_cstr, avra_map_get_cstr,
                   avra_map_has_cstr, avra_intmap_new, avra_intmap_set,
                   avra_intmap_get, avra_intmap_has}
 

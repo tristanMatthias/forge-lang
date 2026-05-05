@@ -17,7 +17,7 @@
 // Threshold for surfacing a suggestion: 200 (silence beats a
 // misleading suggestion).
 
-use core.runtime.{avra_selfhost_levenshtein}
+use core.{avra_selfhost_levenshtein}
 
 /// Edit distance between two strings, computed by the C runtime.
 /// Used as the last-resort tier in `suggest_score` (≤ 2 edits scores

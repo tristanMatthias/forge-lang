@@ -1,20 +1,20 @@
 // WHY: compilation setup — declaration passes and top-level emission.
 
-use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_has, field_list_length, filter_fields_only, filter_fields_without, find_annotation, param_list_length, stmt_unwrap, variant_max_payload, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_unknown, vtype_enum_name, vtype_struct_name, env_extend}
+use core.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_has, field_list_length, filter_fields_only, filter_fields_without, find_annotation, param_list_length, stmt_unwrap, variant_max_payload, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_unknown, vtype_enum_name, vtype_struct_name, env_extend}
 use parse.{parse_int_literal}
-use core.llvm.{avra_llvm_const_int}
+use core.{avra_llvm_const_int}
 use codegen.{Ctx, CgNewtypeReg, CgUnionAliasReg, CopySet, TypeRegs, DeferStack, RcCleanupStack, ReleasableSet, EmitValue, EnumReg, EnumLookup, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for_full, llvm_type_for_full_sized, ok_emit, ok_stmt, struct_reg_lookup, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup}
 use codegen.{analyze_releasable, analyze_copy_types}
 use codegen.{CycleSet, analyze_cycles, cycle_set_has}
-use core.registry.{build_registry}
+use core.{build_registry}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
 use codegen.{emit_expr, emit_stmt, emit_stmt_list}
 use codegen.{stmts_last_expr}
 use diagnostics.{bag_new}
 use features.fn_decl.{emit_function_bodies}
-use core.type_registry.{TypeRegistry, variant_payload_name}
-use core.llvm.{avra_coverage_declare, avra_covmap_begin, avra_covmap_end}
-use core.runtime.{exit}
+use core.{TypeRegistry, variant_payload_name}
+use core.{avra_coverage_declare, avra_covmap_begin, avra_covmap_end}
+use core.{exit}
 
 /// Declare a fixed-arity extern function in the current module.
 /// Workhorse for the long list of `decl(m, "avra_*", …)` calls below.

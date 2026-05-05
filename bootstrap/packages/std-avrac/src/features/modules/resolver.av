@@ -3,12 +3,12 @@
 // them, and attaches the parsed bodies. This is the bridge between
 // the pure parser (no I/O) and the file system.
 
-use core.ast.{Stmt, StmtList, SStmt, sstmt, sstmt_at, AnnotationList, ExprList}
+use core.{Stmt, StmtList, SStmt, sstmt, sstmt_at, AnnotationList, ExprList}
 use parse.{parse_program_source, parse_program_source_at}
-use core.runtime.{avra_process_env_get, avra_selfhost_append_file, avra_selfhost_read_file}
+use core.{avra_process_env_get, avra_selfhost_append_file, avra_selfhost_read_file}
 use build.metadata.{metadata_read, metadata_file_exists}
 use build.metadata_synthesize.{synthesize_unit_body}
-use features.modules.dir_module.{list_avra_module_files}
+use features.modules.{list_avra_module_files}
 
 extern fn avra_bytes_to_hex(b: bytes) -> string
 extern fn avra_sha256_file(path: string) -> string

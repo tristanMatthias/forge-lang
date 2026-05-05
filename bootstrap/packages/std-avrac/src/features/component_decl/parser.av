@@ -7,10 +7,10 @@
 // in the parser's feature registry. Subsequent code can use `name instance { ... }`
 // without the `component` keyword — single-pass, no ambiguity.
 
-use core.ast.{Stmt, Expr, ExprList, SExpr, sexpr_dummy, StmtList, SStmt, sstmt, CompConfigList, CompConfigPairList, ParamList, FieldList, TypeParamList, ValueType, type_expr_to_vtype}
+use core.{Stmt, Expr, ExprList, SExpr, sexpr_dummy, StmtList, SStmt, sstmt, CompConfigList, CompConfigPairList, ParamList, FieldList, TypeParamList, ValueType, type_expr_to_vtype}
 use parse.{Parser}
-use core.ast.{Tk}
-use core.registry.{register_component_name}
+use core.{Tk}
+use core.{register_component_name}
 
 impl Parser {
     // Keyword-free instantiation: `comp_name inst_name { ... }`

@@ -5,7 +5,7 @@
 //
 // Tracked under forge-crafting-intepreters-iinq.
 
-use core.ast.{
+use core.{
     Stmt, StmtList, SStmt, sstmt_at, Expr, ParamList, FieldList, VariantList, TypeParamList, ValueType,
     AnnotationList, stmt_unwrap,
 }

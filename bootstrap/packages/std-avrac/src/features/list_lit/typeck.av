@@ -1,6 +1,6 @@
 // WHY: type checking for list literals and list method calls.
 
-use core.ast.{Expr, ExprList, ParamList, ValueType, vtype_list_elem}
+use core.{Expr, ExprList, ParamList, ValueType, vtype_list_elem}
 use typeck.{TC, ExprResult, tc_er, tc_enter, tc_exit, tc_bind, check_expr, check_expr_list}
 
 /// Type-check a list literal. Empty literals get `List<Unknown>`

@@ -2,7 +2,7 @@
 // Per spec Axis 18: spawn creates a green-thread task.
 
 use parse.{Parser}
-use core.ast.{Expr, Tk}
+use core.{Expr, Tk}
 
 impl Parser {
     fn parse_spawn_expression(self) -> Expr? {

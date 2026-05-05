@@ -1,8 +1,8 @@
 // WHY: parses `select { binding <- channel -> { body } }` statements.
 
 use parse.{Parser}
-use core.ast.{Stmt, SelectArmList}
-use core.ast.{Tk}
+use core.{Stmt, SelectArmList}
+use core.{Tk}
 
 impl Parser {
     fn parse_select_statement(self) -> Stmt? {

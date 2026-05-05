@@ -1,9 +1,9 @@
 // WHY: parses top-level `fn` declarations and the parameter list
 // they introduce.
 
-use core.ast.{Stmt, ParamList, TypeParamList, ValueType, type_expr_to_vtype}
+use core.{Stmt, ParamList, TypeParamList, ValueType, type_expr_to_vtype}
 use parse.{Parser}
-use core.ast.{Tk}
+use core.{Tk}
 
 /// Merge a where-clause bound into an existing TypeParamList.
 /// When the named param already exists, append the new bound

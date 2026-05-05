@@ -62,7 +62,7 @@ use features.tuples.{tuple_feature, tuple_index_feature}
 use features.while_stmt.{while_feature}
 use features.with_expr.{with_expr_feature}
 use features.component_decl.{component_decl_feature}
-use core.registry.{register}
+use core.{register}
 
 /// Register every built-in language feature with the compiler's
 /// dispatch registry. Called once during compiler init; each

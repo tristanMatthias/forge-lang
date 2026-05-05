@@ -1,7 +1,7 @@
 // WHY: type checking for null-safety features (catch, null coalesce).
 
-use core.ast.{Expr, ValueType, vtype_eq, vtype_display, vtype_assignable}
-use core.type_registry.{is_result_enum_name}
+use core.{Expr, ValueType, vtype_eq, vtype_display, vtype_assignable}
+use core.{is_result_enum_name}
 use typeck.{check_expr, tc_er, tc_catch_ok_type, tc_report_at}
 use diagnostics.{DiagCode}
 

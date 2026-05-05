@@ -1,6 +1,6 @@
 // WHY: type checking for let/mut/const bindings and tuple destructuring.
 
-use core.ast.{Expr, ParamList, ValueType, vtype_tuple_at}
+use core.{Expr, ParamList, ValueType, vtype_tuple_at}
 use typeck.{TC, tc_bind}
 
 /// Bind a tuple-destructure's names into the type-check env,

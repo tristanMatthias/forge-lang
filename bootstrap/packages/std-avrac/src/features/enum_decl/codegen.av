@@ -1,9 +1,9 @@
 // WHY: emits enum constructors (heap-allocated tagged unions) and
 // enum value comparison (tag equality via struct GEP).
 
-use core.ast.{ExprList, FieldList, VariantList, VarEnv, variant_lookup, field_list_length, expr_list_length, ValueType, vtype_enum_name}
+use core.{ExprList, FieldList, VariantList, VarEnv, variant_lookup, field_list_length, expr_list_length, ValueType, vtype_enum_name}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, null_ptr_val, enum_reg_find_by_variant, enum_reg_find_by_variant_arity}
-use core.type_registry.{type_registry_id_for, variant_payload_name}
+use core.{type_registry_id_for, variant_payload_name}
 
 /// Codegen for `EnumName.Variant(args)` and the leading-dot
 /// shorthand `.Variant(args)`. Allocates the outer

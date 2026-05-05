@@ -1,9 +1,9 @@
 // dir-as-module (g2eo.1): parser.av + codegen.av auto-load as siblings,
 // surface flat at `features.while_stmt.{...}`.
-use core.ast.{vtype_display, vtype_eq, vtype_is_unknown}
+use core.{vtype_display, vtype_eq, vtype_is_unknown}
 use features.eval.{error_result}
 use features.eval.{execute_while}
-use core.registry.{feature_new, Feature}
+use core.{feature_new, Feature}
 use resolve.{resolve_expr, resolve_stmt}
 use typeck.{check_expr, check_stmt, tc_report}
 

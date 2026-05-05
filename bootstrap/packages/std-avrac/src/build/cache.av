@@ -16,7 +16,7 @@
 // (the build driver) decide WHEN to consult the cache; this module
 // answers WHAT is cached and HOW to publish.
 
-use core.runtime.{
+use core.{
     avra_selfhost_file_exists,
     avra_selfhost_read_file,
     avra_selfhost_write_file,

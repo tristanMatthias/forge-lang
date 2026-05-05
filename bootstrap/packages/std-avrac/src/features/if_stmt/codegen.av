@@ -2,10 +2,10 @@
 // Also handles flow-sensitive type narrowing: when condition is
 // `x is .Variant`, the then-branch sees `x` as NarrowedEnum.
 
-use core.ast.{Expr, Stmt, TypeList, ValueType, VarEnv, vtype_eq, env_lookup, env_extend, vtype_enum_name}
+use core.{Expr, Stmt, TypeList, ValueType, VarEnv, vtype_eq, env_lookup, env_extend, vtype_enum_name}
 use codegen.{Ctx, EmitValue, StmtResult, ok_emit, emit_value_ptr, emit_value_ty}
 use codegen.{emit_stmt, ok_sr}
-use core.llvm.{avra_covmap_next_branch_id}
+use core.{avra_covmap_next_branch_id}
 use features.union_type.{emit_union_wrap}
 
 /// Pull the variable name out of an `IsCheck` condition (the

@@ -1,6 +1,6 @@
 // WHY: emits spec test runtime calls for spec/given/then blocks.
 
-use core.ast.{sstmt_dummy}
+use core.{sstmt_dummy}
 use codegen.{err_stmt, ok_stmt, StmtResult}
 use codegen.{emit_block_loop}
 use codegen.{ok_sr, err_sr}

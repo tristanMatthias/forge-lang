@@ -1,13 +1,13 @@
 // WHY: block expression codegen — evaluating statement blocks as values.
 
-use core.ast.{Expr, Stmt, StmtList, ValueType, VarEnv, SStmt, stmt_unwrap}
+use core.{Expr, Stmt, StmtList, ValueType, VarEnv, SStmt, stmt_unwrap}
 use codegen.{BlockResult, Ctx, EmitValue, StmtResult,  err_emit, ok_emit, ok_stmt, emit_value_ptr, emit_value_ty}
 use codegen.{emit_expr, emit_stmt, emit_stmt_list}
 use features.match_expr.{emit_match_expr}
 use features.if_stmt.{narrow_env_for_is}
-use core.llvm.{avra_covmap_next_branch_id}
+use core.{avra_covmap_next_branch_id}
 use features.error_propagation.{Result}
-use core.runtime.{avra_tag_as_result}
+use core.{avra_tag_as_result}
 
 
 /// Wrap a successful block-as-expr emit (value + type + threaded

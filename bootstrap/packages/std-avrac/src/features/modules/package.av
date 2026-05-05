@@ -9,7 +9,7 @@
 // readers exist now: load_package_config() is the legacy compatible
 // view; load_manifest() is the full v1.0 schema.
 
-use core.runtime.{
+use core.{
     avra_selfhost_file_exists,
     avra_selfhost_read_file,
     avra_toml_get_section_string,

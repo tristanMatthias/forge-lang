@@ -1,9 +1,9 @@
 // WHY: parses module declarations (`mod name`) and use imports
 // (`use path.{name1, name2}`). Part of the modules feature.
 
-use core.ast.{Stmt, StmtList, ParamList}
+use core.{Stmt, StmtList, ParamList}
 use parse.{Parser}
-use core.ast.{Tk}
+use core.{Tk}
 
 impl Parser {
     // Parse `mod name` — produces an unresolved Stmt.Module with an

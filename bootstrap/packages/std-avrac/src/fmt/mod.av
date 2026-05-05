@@ -6,7 +6,7 @@
 // Pure: no argv, no I/O, no globals. Takes an AST node, returns a string.
 // Public entry point is `fmt_stmt_list(stmts, 0)`.
 
-use core.ast.{
+use core.{
     Expr, Stmt, StmtList, ExprList, ParamList,
     TypeParamList, TypeNameList, FieldInitList, FieldList,
     VariantList, Pattern, MatchArmList, WhenArmList, AnnotationList,

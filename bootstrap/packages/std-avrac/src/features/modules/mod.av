@@ -1,13 +1,11 @@
 // WHY: module system feature — mod declarations, use imports, export
 // visibility.
-
-mod parser
-mod resolver
-mod package
-mod graph_build
-mod dir_module
+//
+// dir-as-module (g2eo.1): parser.av + resolver.av + package.av +
+// graph_build.av + dir_module.av auto-load as siblings, surface flat
+// at `features.modules.{...}`.
 use features.eval.{ok_result, value_null}
-use core.registry.{feature_new, Feature}
+use core.{feature_new, Feature}
 use resolve.{resolve_stmt_list}
 
 /// Resolver hook for `mod`. Recursively resolves the body — name

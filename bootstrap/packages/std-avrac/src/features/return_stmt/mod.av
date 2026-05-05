@@ -1,5 +1,5 @@
 // dir-as-module (g2eo.1): parser.av auto-loads as a sibling, surfaces flat at `features.return_stmt.{...}`
-use core.registry.{feature_new, Feature}
+use core.{feature_new, Feature}
 
 /// Register the `return` statement feature with the compiler.
 /// Picks up the `return` keyword and routes to the parser's

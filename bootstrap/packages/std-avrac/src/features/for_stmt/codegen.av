@@ -3,7 +3,7 @@
 // Arena-eligible loops (non-escaping allocations only) use per-scope
 // bump arenas for O(1) allocation and O(1) bulk free (spec Axis 9.6).
 
-use core.ast.{Expr, Stmt, VarEnv, env_extend, ValueType, vtype_list_elem, vtype_is_str}
+use core.{Expr, Stmt, VarEnv, env_extend, ValueType, vtype_list_elem, vtype_is_str}
 use codegen.{Ctx, StmtResult, emit_value_ptr, emit_value_ty}
 use codegen.{emit_stmt, ok_sr, err_sr}
 use codegen.{is_arena_eligible}

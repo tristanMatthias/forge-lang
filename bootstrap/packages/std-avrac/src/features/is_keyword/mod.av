@@ -1,5 +1,5 @@
 // dir-as-module (g2eo.1): codegen.av auto-loads as a sibling, surfaces flat at `features.is_keyword.{...}`
-use core.registry.{feature_new, Feature}
+use core.{feature_new, Feature}
 use resolve.{resolve_expr}
 use features.is_keyword.codegen.{emit_is_check}
 use typeck.{check_expr, tc_er}

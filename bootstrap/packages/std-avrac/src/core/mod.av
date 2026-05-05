@@ -1,8 +1,5 @@
 // Core types: AST definitions, LLVM externs, feature registry.
-
-mod ast
-mod llvm
-mod registry
-mod type_registry
-mod runtime
-mod module_graph
+//
+// dir-as-module (g2eo.1): ast.av + llvm.av + registry.av +
+// type_registry.av + runtime.av + module_graph.av auto-load as
+// siblings, surface flat at `core.{...}`.

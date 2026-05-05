@@ -1,6 +1,6 @@
 // WHY: Single source of truth for ALL runtime C extern declarations.
 // Every extern fn from runtime.c is declared HERE and nowhere else.
-// Other files import via `use core.runtime.{fn_name}`.
+// Other files import via `use core.{fn_name}`.
 
 // ── Selfhost (compiler CLI) ──
 extern fn avra_selfhost_argc() -> int

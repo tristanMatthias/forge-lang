@@ -15,10 +15,10 @@
 //
 // Tracking ticket: forge-crafting-intepreters-eh00.
 
-use core.runtime.{
+use core.{
     avra_selfhost_file_exists,
 }
-use features.modules.package.{
+use features.modules.{
     Manifest, Dep, load_manifest,
 }
 

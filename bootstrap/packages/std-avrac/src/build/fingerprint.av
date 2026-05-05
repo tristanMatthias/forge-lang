@@ -19,7 +19,7 @@
 // cache shareable across machines and reproducible across runs.
 
 use @std.crypto.{sha256_hex, sha256_file}
-use core.runtime.{avra_selfhost_file_exists}
+use core.{avra_selfhost_file_exists}
 
 /// A computed fingerprint. Wraps the raw 64-char hex string so the
 /// type signature surfaces "this is a fingerprint, not just any hash"
