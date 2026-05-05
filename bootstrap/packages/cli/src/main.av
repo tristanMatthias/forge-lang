@@ -1677,6 +1677,7 @@ fn main() {
             flag per_file_metadata { description "Also emit per-file <src>.meta.bin sidecars (g2eo, level-1 incremental)" }
             option stop_after { description "Stop after phase (parse|resolve|names|check)" }
             option module_path { description "Wrap parsed stmts in Module(<name>) — pre-qualifies symbols for cross-unit linking (2f54)" }
+            option list_files { description "Write the resolved source-file list (one path per line) to this path — used by per-file build drivers (g2eo)" }
             arg file { description "Source file", required true }
         }
 
@@ -2000,6 +2001,12 @@ fn main() {
         let json_output = result_has_flag(parsed, "json")
         let emit_metadata = result_has_flag(parsed, "emit_metadata")
         let per_file_metadata = result_has_flag(parsed, "per_file_metadata")
+        // g2eo: when --list-files=<path> is set, write the resolved
+        // source-file list (the same data per_file_metadata already
+        // walks) to <path>, one path per line. Build drivers consume
+        // this to enumerate compile units honestly without an
+        // out-of-band filesystem walk that picks up unreachable files.
+        let list_files_path = result_get_option(parsed, "list_files")
         let module_path_dash = result_get_option(parsed, "module-path")
         let module_path_under = result_get_option(parsed, "module_path")
         let module_path = if module_path_dash != "" { module_path_dash } else { module_path_under }
@@ -2152,6 +2159,22 @@ fn main() {
                 let files = collect_source_files(named.stmts)
                 emit_per_file_metas(files, named.stmts, unit_name, cpath)
             }
+        }
+        // g2eo: optionally write the resolved file list to a sidecar
+        // so build drivers can enumerate compile units by
+        // import-graph reachability instead of filesystem find.
+        // Decoupled from --emit_metadata so it's usable on its own.
+        if list_files_path != "" {
+            let files = collect_source_files(named.stmts)
+            mut buf = ""
+            mut fi = 0
+            while fi < files.length {
+                if files[fi] != "" {
+                    buf = buf + files[fi] + "\n"
+                }
+                fi = fi + 1
+            }
+            let _ = avra_selfhost_write_file(list_files_path, buf)
         }
         if timings_on {
             eprintln("[timings] parse=${string(t_parse - t_start)}ms desugar=${string(t_desugar - t_parse)}ms resolve_mods=${string(t_resolve_mods - t_desugar)}ms expand=${string(t_expand - t_resolve_mods)}ms resolve_names=${string(t_names - t_expand)}ms typeck=${string(t_typeck - t_names)}ms monomorphize=${string(t_mono - t_typeck)}ms codegen=${string(t_codegen - t_mono)}ms total=${string(t_codegen - t_start)}ms")
