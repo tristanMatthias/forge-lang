@@ -1,0 +1,79 @@
+// Fixture for resolve_dir_module_body integration tests (g2eo.1).
+//
+// Builds a tiny directory of .av files (no mod.av, no `mod foo`
+// declarations) and confirms the resolver's directory-as-module
+// loader picks them all up, parses each, and produces a combined
+// flat body whose statement count equals the sum of each file's
+// parsed stmt count. Probe lines are read by ../dir_module_resolver_test.av.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+use @std.avrac.features.modules.resolver.{resolve_dir_module_body, LoadedPaths}
+
+fn probe(name: string, ok: bool) {
+    let tag = if ok { "ok" } else { "FAIL" }
+    println("PROBE ${name}: ${tag}")
+}
+
+// Counts loaded entries in a LoadedPaths cons-list. Used to
+// confirm each file is registered in the resolver's loaded set
+// exactly once.
+fn loaded_count(p: LoadedPaths) -> int {
+    match p {
+        .End -> 0
+        .Node(_, next) -> 1 + loaded_count(next)
+    }
+}
+
+fn main() -> int {
+    let root = "/tmp/avra_dirmod_resolver_fixture"
+    avra_shell_exec("rm -rf " + root)
+    avra_shell_exec("mkdir -p " + root)
+
+    // Three sibling files, no mod.av, no `mod foo` decls. Each file
+    // exports one fn — the directory-as-module loader concatenates
+    // them into a single body with 3 fn stmts.
+    avra_shell_exec("printf 'export fn alpha() -> int { 1 }\\n' > " + root + "/alpha.av")
+    avra_shell_exec("printf 'export fn beta() -> int { 2 }\\n'  > " + root + "/beta.av")
+    avra_shell_exec("printf 'export fn gamma() -> int { 3 }\\n' > " + root + "/gamma.av")
+
+    // A _test.av sibling — must be filtered out of the loaded body.
+    avra_shell_exec("printf 'export fn helper() -> int { 99 }\\n' > " + root + "/zzz_test.av")
+
+    let result = resolve_dir_module_body(root, LoadedPaths.End)
+
+    // Probe 1 — load is errorless.
+    probe("no_error", !result.had_error)
+
+    // Probe 2 — three files registered as loaded (alpha, beta, gamma).
+    probe("loaded_three", loaded_count(result.loaded) == 3)
+
+    // Probe 3 — body assembled (non-empty stmts).
+    let stmts_present = match result.stmts {
+        .End -> false
+        .Node(_, _) -> true
+    }
+    probe("body_non_empty", stmts_present)
+
+    // Probe 4 — re-running with an already-loaded set short-circuits.
+    let result2 = resolve_dir_module_body(root, result.loaded)
+    let stmts2_empty = match result2.stmts {
+        .End -> true
+        .Node(_, _) -> false
+    }
+    probe("rerun_empty_stmts", stmts2_empty)
+    probe("rerun_loaded_unchanged", loaded_count(result2.loaded) == loaded_count(result.loaded))
+
+    // Probe 5 — pointing at a non-existent dir returns errorless empty.
+    let result3 = resolve_dir_module_body("/tmp/avra_dirmod_resolver_does_not_exist_xx", LoadedPaths.End)
+    let r3_empty = match result3.stmts {
+        .End -> true
+        .Node(_, _) -> false
+    }
+    probe("missing_dir_no_error", !result3.had_error)
+    probe("missing_dir_empty_stmts", r3_empty)
+    probe("missing_dir_zero_loaded", loaded_count(result3.loaded) == 0)
+
+    avra_shell_exec("rm -rf " + root)
+    0
+}

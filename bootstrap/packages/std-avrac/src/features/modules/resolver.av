@@ -5,9 +5,10 @@
 
 use core.ast.{Stmt, StmtList, SStmt, sstmt, sstmt_at, AnnotationList, ExprList}
 use parse.{parse_program_source, parse_program_source_at}
-use core.runtime.{avra_process_env_get, avra_selfhost_append_file}
+use core.runtime.{avra_process_env_get, avra_selfhost_append_file, avra_selfhost_read_file}
 use build.metadata.{metadata_read, metadata_file_exists}
 use build.metadata_synthesize.{synthesize_unit_body}
+use features.modules.dir_module.{list_avra_module_files}
 
 extern fn avra_bytes_to_hex(b: bytes) -> string
 extern fn avra_sha256_file(path: string) -> string
@@ -323,6 +324,71 @@ export fn resolve_module_files(stmts: StmtList, dir: string, loaded: LoadedPaths
         loaded: inner.loaded,
         had_error: false,
         error_message: "",
+    }
+}
+
+/// Directory-as-module loader (g2eo.1).
+///
+/// Walks every `.av` file in `dir` (per `list_avra_module_files`'s
+/// filtering: skip `mod.av`, `_test.av`, dotfiles, non-.av), parses
+/// each one, and concatenates their statement lists into a single
+/// flat body. Files already present in `loaded` are skipped — same
+/// dedup contract the rest of the resolver follows so two imports
+/// of the same dir don't produce duplicate decls.
+///
+/// This is the directory-as-module primitive: callers wrap the
+/// returned body in their own `Stmt.Module(name, body)` (or use
+/// it as the implicit body of one) so the directory's `.av` files
+/// share one flat namespace, no `mod foo` declarations required.
+///
+/// The body is **not recursively resolved** — `Module` and `Use`
+/// stubs remain intact. The caller threads the body through
+/// `resolve_module_files_inner` (or equivalent) to finish the job.
+/// Splitting parse-and-stitch from resolve keeps the loader pure
+/// w.r.t. the resolver's environment + import-stack state, so it
+/// can be exercised standalone in fixtures.
+///
+/// Errors short-circuit on the first parse failure: the stmts
+/// field returns whatever was assembled so far (so partial output
+/// is still introspectable in tools), and `had_error` flips to
+/// true with a diagnostic.
+export fn resolve_dir_module_body(dir: string, loaded: LoadedPaths) -> ModListResult {
+    let files = list_avra_module_files(dir)
+    mut acc: StmtList = StmtList.End
+    mut acc_loaded = loaded
+    mut i = 0
+    while i < files.length {
+        let path = files[i]
+        if loaded_has(acc_loaded, path) {
+            i = i + 1
+            continue
+        }
+        let source = avra_selfhost_read_file(path)
+        let parsed = parse_program_source_at(source, path)
+        if parsed.had_error || parsed.stmts == null {
+            return ModListResult {
+                stmts: acc,
+                loaded: acc_loaded,
+                had_error: true,
+                error_message: "error in `${path}`: ${parsed.error_message}",
+            }
+        }
+        acc_loaded = LoadedPaths.Node(path, acc_loaded)
+        acc = stmt_list_concat(acc, parsed.stmts!)
+        i = i + 1
+    }
+    ModListResult { stmts: acc, loaded: acc_loaded, had_error: false, error_message: "" }
+}
+
+// Append `right` to the end of `left`, returning a fresh list
+// whose nodes are `left`'s followed by `right`'s. Used by
+// `resolve_dir_module_body` to fold each file's parsed stmts onto
+// the running accumulator. Linear in `left`'s length — fine here
+// because the per-directory file count is small (typically <30).
+fn stmt_list_concat(left: StmtList, right: StmtList) -> StmtList {
+    match left {
+        .End -> right
+        .Node(ss, next) -> StmtList.Node(ss, stmt_list_concat(next, right))
     }
 }
 

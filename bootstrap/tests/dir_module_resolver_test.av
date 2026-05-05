@@ -1,0 +1,57 @@
+// g2eo.1 — resolve_dir_module_body parses every .av in a dir as
+// one flat body, threads the resolver's LoadedPaths set, and
+// short-circuits on already-loaded paths.
+//
+// The companion fixture builds a 3-file directory + 1 _test.av
+// sibling, runs the loader, and prints PROBE lines this test
+// asserts on. Same fixture pattern as build_cache_test.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn dmr_run() -> string {
+    avra_shell_exec("if [ ! -f /tmp/avra_dirmod_resolver_test.out ]; then bash scripts/diagnose.sh --run tests/dir_module_resolver_fixtures/sample.av > /tmp/avra_dirmod_resolver_test.out 2>&1 || true; fi; cat /tmp/avra_dirmod_resolver_test.out")
+}
+
+fn dmr_wipe() -> string {
+    avra_shell_exec("rm -f /tmp/avra_dirmod_resolver_test.out")
+}
+
+spec "resolve_dir_module_body: clear cached output" {
+    then "wipe stale /tmp output" {
+        let _ = dmr_wipe()
+        true
+    }
+}
+
+spec "resolve_dir_module_body: happy path" {
+    then "no error on a 3-file dir" {
+        dmr_run().contains("PROBE no_error: ok")
+    }
+    then "all three files registered as loaded" {
+        dmr_run().contains("PROBE loaded_three: ok")
+    }
+    then "assembled body is non-empty" {
+        dmr_run().contains("PROBE body_non_empty: ok")
+    }
+}
+
+spec "resolve_dir_module_body: idempotent on re-run" {
+    then "second call short-circuits with empty stmts" {
+        dmr_run().contains("PROBE rerun_empty_stmts: ok")
+    }
+    then "loaded set unchanged after second call" {
+        dmr_run().contains("PROBE rerun_loaded_unchanged: ok")
+    }
+}
+
+spec "resolve_dir_module_body: missing-dir is silent" {
+    then "missing dir returns no error" {
+        dmr_run().contains("PROBE missing_dir_no_error: ok")
+    }
+    then "missing dir returns empty stmts" {
+        dmr_run().contains("PROBE missing_dir_empty_stmts: ok")
+    }
+    then "missing dir contributes zero loaded entries" {
+        dmr_run().contains("PROBE missing_dir_zero_loaded: ok")
+    }
+}
