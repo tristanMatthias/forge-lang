@@ -49,11 +49,6 @@ export type CovEntry = {
     branch: int,
 }
 
-/// Linked list of CovEntry — one per row of the covmap file.
-export enum CovEntryList {
-    End
-    Node(entry: CovEntry, next: CovEntryList)
-}
 
 /// Per-fn counter array parsed out of the `llvm-profdata show
 /// --all-functions --counts` text dump. `counts[0]` is the "Function
@@ -67,7 +62,7 @@ export type FnCounts = {
 
 
 /// Aggregated coverage stats for a single function, produced by
-/// folding `CovEntryList × List<FnCounts>`. Mirrors what the printed
+/// folding `List<CovEntry> × List<FnCounts>`. Mirrors what the printed
 /// summary and LCOV exporter want.
 ///
 /// @field name             — fully-qualified fn name.
@@ -214,38 +209,22 @@ fn covmap_file(src: string) -> string {
     src.substring(after, nl)
 }
 
-/// Parse a covmap.tsv into a CovEntryList in declaration order.
+/// Parse a covmap.tsv into a List<CovEntry> in declaration order.
 /// Skips comment lines (`#`) and empty lines. Iterative — a covmap
-/// can have tens of thousands of entries.
-fn parse_covmap(src: string) -> CovEntryList {
+/// can have tens of thousands of entries. Source-order via .push,
+/// no reverse pass needed.
+fn parse_covmap(src: string) -> List<CovEntry> {
     let lines = src.split("\n")
-    mut acc = CovEntryList.End
+    mut acc = []
     mut idx = 0
     while idx < lines.length {
         let line = lines[idx]
         idx = idx + 1
         if line.length == 0 { continue }
         if line[0] == "#" { continue }
-        acc = CovEntryList.Node(parse_cov_line(line), acc)
+        acc.push(parse_cov_line(line))
     }
-    reverse_entries(acc)
-}
-
-/// In-place reverse of a CovEntryList. Used to flip the
-/// prepend-built list back into source order before aggregation.
-fn reverse_entries(list: CovEntryList) -> CovEntryList {
-    mut out = CovEntryList.End
-    mut cur = list
-    while true {
-        match cur {
-            .End -> return out
-            .Node(e, next) -> {
-                out = CovEntryList.Node(e, out)
-                cur = next
-            }
-        }
-    }
-    out
+    acc
 }
 
 /// Tab-split one covmap row into its 6 fields. Returns a zeroed
@@ -398,7 +377,7 @@ fn int_list_get(list: List<int>, idx: int) -> int {
 /// build two cstr-maps for O(1) lookup of counter arrays and
 /// running stats. Decisions accumulate separately and roll into
 /// `total_conditions` / `hit_conditions` after the main pass.
-fn aggregate(covmap: CovEntryList, counts: List<FnCounts>) -> FnStatsList {
+fn aggregate(covmap: List<CovEntry>, counts: List<FnCounts>) -> FnStatsList {
     // Build counts_map: fn_name → ptr to List<int> (stored).
     let counts_map = avra_map_new_cstr()
     mut ci = 0
@@ -412,45 +391,41 @@ fn aggregate(covmap: CovEntryList, counts: List<FnCounts>) -> FnStatsList {
     mut name_list: List<string> = []
     mut decisions = DecisionList.End
 
-    mut cur = covmap
-    while true {
-        match cur {
-            .End -> { break }
-            .Node(e, next) -> {
-                // Resolve count
-                mut count = 0
-                if avra_map_has_cstr(counts_map, e.fn_name) == 1 {
-                    let il_ptr = avra_map_get_cstr(counts_map, e.fn_name)
-                    let il: List<int> = il_ptr
-                    count = int_list_get(il, e.id)
-                }
-
-                // Look up or create stats; track name on first sight.
-                let was_new = avra_map_has_cstr(stats_map, e.fn_name) == 0
-                let s = stats_get_or_create(stats_map, e.fn_name)
-                if was_new {
-                    name_list.push(e.fn_name)
-                }
-
-                let updated = match e.ctype {
-                    "fn_entry" -> s with { fn_entry_count: count }
-                    "line" -> apply_line(s, e.line, count)
-                    "branch_then" -> apply_branch(s, count)
-                    "branch_else" -> apply_branch(s, count)
-                    "match_arm" -> apply_branch(s, count)
-                    _ -> s
-                }
-                avra_map_set_cstr(stats_map, e.fn_name, updated)
-
-                if e.ctype == "condition_true" {
-                    decisions = decision_add_true(decisions, e.fn_name, e.line, e.branch, count)
-                }
-                if e.ctype == "condition_false" {
-                    decisions = decision_add_false(decisions, e.fn_name, e.line, e.branch, count)
-                }
-                cur = next
-            }
+    mut ei = 0
+    while ei < covmap.length {
+        let e = covmap[ei]
+        // Resolve count
+        mut count = 0
+        if avra_map_has_cstr(counts_map, e.fn_name) == 1 {
+            let il_ptr = avra_map_get_cstr(counts_map, e.fn_name)
+            let il: List<int> = il_ptr
+            count = int_list_get(il, e.id)
         }
+
+        // Look up or create stats; track name on first sight.
+        let was_new = avra_map_has_cstr(stats_map, e.fn_name) == 0
+        let s = stats_get_or_create(stats_map, e.fn_name)
+        if was_new {
+            name_list.push(e.fn_name)
+        }
+
+        let updated = match e.ctype {
+            "fn_entry" -> s with { fn_entry_count: count }
+            "line" -> apply_line(s, e.line, count)
+            "branch_then" -> apply_branch(s, count)
+            "branch_else" -> apply_branch(s, count)
+            "match_arm" -> apply_branch(s, count)
+            _ -> s
+        }
+        avra_map_set_cstr(stats_map, e.fn_name, updated)
+
+        if e.ctype == "condition_true" {
+            decisions = decision_add_true(decisions, e.fn_name, e.line, e.branch, count)
+        }
+        if e.ctype == "condition_false" {
+            decisions = decision_add_false(decisions, e.fn_name, e.line, e.branch, count)
+        }
+        ei = ei + 1
     }
 
     // Apply finalized MC/DC decisions to the stats map.
