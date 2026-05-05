@@ -11,6 +11,30 @@ use build.metadata_synthesize.{synthesize_unit_body}
 
 extern fn avra_bytes_to_hex(b: bytes) -> string
 extern fn avra_sha256_file(path: string) -> string
+extern fn avra_uptime_ms() -> int
+
+/// Emit per-module timing events to AVRA_BUILD_PROGRESS_FILE for
+/// the parent's build-progress UI to consume. No-op unless the env
+/// var is set — keeps the standard compile output byte-clean for CI.
+///
+/// File-based instead of stdout-based because bs2's stdout is fully
+/// buffered when piped to a parent (4 KB blocks), which would freeze
+/// the live progress display until each block fills. Appending to a
+/// regular file flushes per-call, so the parent's 100 ms poll sees
+/// events promptly regardless of how fast or slow individual modules
+/// parse.
+fn emit_progress_start(path: string) {
+    let pf = avra_process_env_get("AVRA_BUILD_PROGRESS_FILE")
+    if pf == "" { return }
+    let _ = avra_selfhost_append_file(pf, "start ${path}\n")
+}
+
+fn emit_progress_done(path: string, t_start_ms: int) {
+    let pf = avra_process_env_get("AVRA_BUILD_PROGRESS_FILE")
+    if pf == "" { return }
+    let elapsed = avra_uptime_ms() - t_start_ms
+    let _ = avra_selfhost_append_file(pf, "done ${path} ${string(elapsed)}\n")
+}
 
 /// Compare the fingerprint stored in `<src>.meta.bin` with the
 /// current sha256 of `src`. Returns true only when they match —
@@ -645,6 +669,8 @@ fn resolve_package_use_and_continue(ss: SStmt, next: StmtList, dir: string, load
     // before a source edit would otherwise silently elide the user's
     // changes from the consumer's compile.
     let take_meta_fast_path = meta_exists && meta_fingerprint_matches_source(meta_path, pkg_file)
+    emit_progress_start(pkg_file)
+    let pkg_t_start = avra_uptime_ms()
     let pkg_stmts = if take_meta_fast_path {
         record_meta_dep(pkg_file)
         let m = metadata_read(meta_path)
@@ -660,6 +686,7 @@ fn resolve_package_use_and_continue(ss: SStmt, next: StmtList, dir: string, load
         }
         parsed.stmts!
     }
+    emit_progress_done(pkg_file, pkg_t_start)
     let resolved = resolve_module_files_inner(pkg_stmts, pkg_dir, new_loaded, stack)
     if resolved.had_error { return resolved }
     // Create a nested module structure: @std → cli → {body}
@@ -753,6 +780,8 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths, stack: Impo
             let meta_path = "${mod_path}.meta.bin"
             let meta_exists = use_meta && metadata_file_exists(meta_path)
             let take_meta = meta_exists && meta_fingerprint_matches_source(meta_path, mod_path)
+            emit_progress_start(mod_path)
+            let mod_t_start = avra_uptime_ms()
             let mod_stmts = if take_meta {
                 record_meta_dep(mod_path)
                 let m = metadata_read(meta_path)
@@ -770,6 +799,7 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths, stack: Impo
                 }
                 parsed.stmts!
             }
+            emit_progress_done(mod_path, mod_t_start)
             let resolved = resolve_module_files_inner(mod_stmts, mod_dir, new_loaded, new_stack)
             if resolved.had_error {
                 return ModStmtResult { stmt, loaded: resolved.loaded, had_error: true, error_message: resolved.error_message }

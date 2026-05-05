@@ -108,7 +108,7 @@ fn workers_reap(ws: List<Worker>) -> ReapResult {
 // avra_process_wait returns JSON `{"stdout":...,"stderr":...,"code":N}`.
 // Pull the int after the `"code":` key. Defaults to 0 if the key is
 // absent (won't happen in practice but keep the failure mode safe).
-fn pool_extract_rc(wait_json: string) -> int {
+export fn pool_extract_rc(wait_json: string) -> int {
     let key = "\"code\":"
     let idx = wait_json.index_of(key)
     if idx < 0 { return 0 }

@@ -37,6 +37,7 @@ fn read_file(path: string) -> string { avra_selfhost_read_file(path) }
 fn write_file(path: string, content: string) -> int { avra_selfhost_write_file(path, content) }
 
 use @std.cli.{cli_new, cli_add_command, cli_command_add_flag, cli_command_add_option, cli_command_add_arg, cli_parse, result_has_flag, result_get_option}
+use @std.cli.ui.spinner.{run_with_spinner, run_with_progress}
 use @std.json.{json_str, json_object, json_pairs, json_pair_add}
 use @std.lsp.{Sym, SymList}
 use @std.avrac.fmt.{fmt_stmt_list}
@@ -1065,7 +1066,14 @@ fn run_build_command() {
                 ""
             }
             let t_before_compile = avra_uptime_ms()
-            let _ = avra_shell_exec("${env_prefix}${compile_cmd}")
+            // Renders a multi-line sticky progress UI on a TTY:
+            // resolver appends per-module timing events to a /tmp file,
+            // run_with_progress polls it and shows scrollback (✓ done
+            // lines per module) + sticky spinner + progress bar. Pipes
+            // / CI fall through to silent shell-exec.
+            let count_raw = avra_shell_exec("find . -name '*.av' -not -path '*/build/*' -not -path '*/tests/*_fixtures/*' 2>/dev/null | wc -l").trim()
+            let total_estimate = avra_parse_int(count_raw)
+            let _ = run_with_progress("${env_prefix}${compile_cmd}", "compiling ${unit_name}", total_estimate)
             let t_after_compile = avra_uptime_ms()
             let ll_path = "${entry_path}.ll"
             if !file_exists(ll_path) {

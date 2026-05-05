@@ -1,0 +1,5 @@
+// WHY: terminal UI primitives for CLI tools — currently just the
+// shell-command spinner. Future home for any other shared
+// rendering helpers (progress bars, colour palettes, prompts).
+
+mod spinner
