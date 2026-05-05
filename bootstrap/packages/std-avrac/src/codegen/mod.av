@@ -21,18 +21,18 @@ use features.closures.{emit_closure_call_typed, emit_indirect_call, emit_indirec
 use features.defer_stmt.{emit_defers, emit_defers_on_error}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
 use features.fn_decl.{emit_function_bodies}
-use features.let_stmt.codegen.{emit_var_decl}
+use features.let_stmt.{emit_var_decl}
 use features.if_stmt.{emit_if}
-use features.list_lit.codegen.{emit_list_reduce_typed, emit_list_method_call}
-use features.map_lit.codegen.{emit_map_method_call}
-use features.match_expr.codegen.{emit_match_expr}
+use features.list_lit.{emit_list_reduce_typed, emit_list_method_call}
+use features.map_lit.{emit_map_method_call}
+use features.match_expr.{emit_match_expr}
 use codegen.operators.{emit_unary, emit_binary, emit_logical}
 use codegen.blocks.{emit_block_expr, emit_block_loop}
 use codegen.indexing.{emit_index, emit_slice}
 use codegen.helpers.{strip_quotes, is_null_literal, stmts_last_expr}
 use codegen.strings.{emit_concat, emit_str_eq, emit_str_cmp, emit_str_replace, emit_substring}
 use codegen.printing.{emit_println, emit_eprintln}
-use features.trait_decl.codegen.{emit_trait_dispatch, box_for_trait, resolve_concrete_type_name, push_vtable_entries_call}
+use features.trait_decl.{emit_trait_dispatch, box_for_trait, resolve_concrete_type_name, push_vtable_entries_call}
 use features.fn_decl.{emit_call, emit_call_named, emit_method_call}
 use features.error_propagation.{Result}
 use parse.lexer.{parse_int_literal}

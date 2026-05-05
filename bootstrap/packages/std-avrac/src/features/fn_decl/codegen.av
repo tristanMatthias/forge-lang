@@ -9,11 +9,11 @@ use features.closures.{emit_closure_call_typed, emit_indirect_call, emit_indirec
 use features.defer_stmt.{emit_defers, emit_defers_on_error}
 use core.ast.{avra_variant_hash}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
-use features.trait_decl.codegen.{box_for_trait, resolve_concrete_type_name}
+use features.trait_decl.{box_for_trait, resolve_concrete_type_name}
 use codegen.{emit_rc_cleanup}
 use codegen.types.{ReleasableSet}
 use codegen.escape.{analyze_releasable}
-use features.spawn_expr.codegen.{stmts_has_spawn}
+use features.spawn_expr.{stmts_has_spawn}
 
 /// Walk `stmts` emitting the body of every `fn` declaration —
 /// recursively descends into impls, modules, and nested decls.
@@ -221,9 +221,9 @@ fn emit_one_null_check(ctx: Ctx, fn_name: string, param_name: string, env: VarEn
 
 use codegen.strings.{emit_concat, emit_substring, emit_str_replace}
 use codegen.printing.{emit_println, emit_eprintln}
-use features.list_lit.codegen.{emit_list_method_call}
-use features.map_lit.codegen.{emit_map_method_call}
-use features.trait_decl.codegen.{emit_trait_dispatch}
+use features.list_lit.{emit_list_method_call}
+use features.map_lit.{emit_map_method_call}
+use features.trait_decl.{emit_trait_dispatch}
 use codegen.blocks.{emit_block_loop, emit_block_loop_ctx}
 use codegen.helpers.{emit_single_arg, fill_arg_array, fill_arg_array_boxing, strip_quotes}
 

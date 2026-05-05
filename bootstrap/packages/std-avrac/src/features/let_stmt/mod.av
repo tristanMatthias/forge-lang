@@ -1,13 +1,12 @@
-mod parser
-mod codegen
-mod typeck
+// dir-as-module (g2eo.1): parser.av + codegen.av + typeck.av auto-load
+// as siblings, surface flat at `features.let_stmt.{...}`. bind_destructure
+// is in scope without a self-import.
 use codegen.types.{err_stmt, StmtResult}
 use codegen.{ok_sr, err_sr}
 use features.eval.{error_result}
 use core.registry.{feature_new, Feature}
 use resolve.{define_param_names, resolve_expr}
-use features.let_stmt.typeck.{bind_destructure}
-use features.tuples.codegen.{emit_let_destructure}
+use features.tuples.{emit_let_destructure}
 use typeck.{check_expr}
 
 /// Register the `let (a, b, c) = tuple` destructuring feature.

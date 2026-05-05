@@ -1,8 +1,8 @@
-mod codegen
+// dir-as-module (g2eo.1): codegen.av auto-loads as a sibling, surfaces
+// flat at `features.tuples.{...}`.
 use core.ast.{vtype_tuple_at}
 use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr, resolve_expr_list}
-use features.tuples.codegen.{emit_tuple, emit_tuple_index}
 use typeck.{check_expr, check_expr_list_types, tc_er}
 
 /// Register the `(a, b, c)` tuple literal feature. Wires up

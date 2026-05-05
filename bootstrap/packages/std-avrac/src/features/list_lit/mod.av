@@ -1,11 +1,9 @@
-mod codegen
-mod parser
-mod typeck
+// dir-as-module (g2eo.1): codegen.av + parser.av + typeck.av auto-load
+// as siblings, surface flat at `features.list_lit.{...}`. emit_list_lit
+// + check_list_lit are in scope without self-imports.
 use codegen.types.{err_emit}
 use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr_list}
-use features.list_lit.codegen.{emit_list_lit}
-use features.list_lit.typeck.{check_list_lit}
 use typeck.{tc_er}
 
 /// Register the `[a, b, c]` list literal feature. Wires up

@@ -1,15 +1,12 @@
-mod parser
-mod codegen
-mod resolver
-mod typeck
+// dir-as-module (g2eo.1): parser.av + codegen.av + resolver.av +
+// typeck.av auto-load as siblings, surface flat at `features.match_expr.{...}`.
+// emit_match*, resolve_match_arms*, check_match_* are in scope without
+// self-imports.
 use codegen.types.{err_emit, err_stmt, StmtResult}
 use codegen.{err_sr}
 use features.eval.{error_result}
 use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr}
-use features.match_expr.codegen.{emit_match, emit_match_expr, emit_when_expr}
-use features.match_expr.resolver.{resolve_match_arms, resolve_when_arms}
-use features.match_expr.typeck.{check_match_arms, check_match_expr_infer, tc_check_exhaustive, check_when_expr}
 use typeck.{check_expr, tc_er}
 
 /// Register the `match` feature for both statement and

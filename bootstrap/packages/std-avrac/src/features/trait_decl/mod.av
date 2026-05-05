@@ -1,8 +1,7 @@
 // WHY: trait declarations — `trait Name { fn method(self) -> Type }`.
-
-mod parser
-mod typeck
-mod codegen
+//
+// dir-as-module (g2eo.1): parser.av + typeck.av + codegen.av auto-load
+// as siblings, surface flat at `features.trait_decl.{...}`.
 use core.registry.{feature_new, Feature}
 
 /// Register the `trait` declaration feature. Routes the `trait`

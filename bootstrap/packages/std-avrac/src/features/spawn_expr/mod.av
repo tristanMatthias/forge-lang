@@ -1,11 +1,10 @@
 // WHY: feature registration for `spawn { body }` expression.
 // Per spec Axis 18: green-thread task spawning.
-
-mod codegen
-mod parser
+//
+// dir-as-module (g2eo.1): codegen.av + parser.av auto-load as siblings,
+// surface flat at `features.spawn_expr.{...}`.
 use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr}
-use features.spawn_expr.codegen.{spawn_emit_expr}
 use typeck.{check_expr, tc_er}
 
 /// Register the `spawn { body }` expression feature. Returns an

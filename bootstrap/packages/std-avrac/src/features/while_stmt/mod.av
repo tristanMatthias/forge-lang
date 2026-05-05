@@ -1,11 +1,10 @@
-mod parser
-mod codegen
+// dir-as-module (g2eo.1): parser.av + codegen.av auto-load as siblings,
+// surface flat at `features.while_stmt.{...}`.
 use core.ast.{vtype_display, vtype_eq, vtype_is_unknown}
 use features.eval.{error_result}
 use features.eval.{execute_while}
 use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr, resolve_stmt}
-use features.while_stmt.codegen.{emit_while}
 use typeck.{check_expr, check_stmt, tc_report}
 
 /// Resolver hook for `while`. Resolves the condition first, then

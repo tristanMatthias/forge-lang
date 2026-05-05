@@ -5,7 +5,7 @@
 use codegen.types.{err_emit}
 use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr, enter_resolve_scope, exit_resolve_scope, declare_name, define_name}
-use features.struct_decl.typeck.{check_field_access}
+use features.struct_decl.{check_field_access}
 use typeck.{check_expr, tc_er}
 
 /// Register the `??` null-coalesce expression feature

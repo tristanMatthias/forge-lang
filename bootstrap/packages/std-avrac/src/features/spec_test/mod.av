@@ -1,11 +1,9 @@
-mod parser
-mod codegen
-mod reporter
+// dir-as-module (g2eo.1): parser.av + codegen.av + reporter.av auto-load
+// as siblings, surface flat at `features.spec_test.{...}`.
 use features.eval.{error_result, ok_result, value_null}
 use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr, resolve_stmt_list}
 use typeck.{check_expr, check_stmt}
-use features.spec_test.codegen.{spec_emit_stmt}
 
 /// Register the `spec "name" { ... }` BDD-style test block
 /// feature. Spec blocks contain `given` / `then` arms; the
