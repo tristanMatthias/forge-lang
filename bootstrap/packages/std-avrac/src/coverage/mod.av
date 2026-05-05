@@ -96,11 +96,6 @@ export enum IntListSet {
     Node(value: int, next: IntListSet)
 }
 
-/// Linked list of FnStats produced by `aggregate`.
-export enum FnStatsList {
-    End
-    Node(item: FnStats, next: FnStatsList)
-}
 
 /// Module-level rollup of FnStats. Modules are derived from the fn
 /// name's `::`-separated path (see `module_of`).
@@ -363,15 +358,15 @@ fn int_list_get(list: List<int>, idx: int) -> int {
 // build two cstr-maps for O(1) lookup:
 //   - counts_map[fn_name] → IntList (the per-counter hits)
 //   - stats_map[fn_name]  → FnStats (mutable per-iteration via .set())
-// We also collect names into FnStatsList in insertion order so the
+// We also collect names into List<FnStats> in insertion order so the
 // final report has a stable iteration order.
 
-/// Fold the covmap × profdata pair into a per-fn FnStatsList. Hot
+/// Fold the covmap × profdata pair into a per-fn List<FnStats>. Hot
 /// path — the covmap can have tens of thousands of entries, so we
 /// build two cstr-maps for O(1) lookup of counter arrays and
 /// running stats. Decisions accumulate separately and roll into
 /// `total_conditions` / `hit_conditions` after the main pass.
-fn aggregate(covmap: List<CovEntry>, counts: List<FnCounts>) -> FnStatsList {
+fn aggregate(covmap: List<CovEntry>, counts: List<FnCounts>) -> List<FnStats> {
     // Build counts_map: fn_name → ptr to List<int> (stored).
     let counts_map = avra_map_new_cstr()
     mut ci = 0
@@ -440,18 +435,17 @@ fn aggregate(covmap: List<CovEntry>, counts: List<FnCounts>) -> FnStatsList {
         di = di + 1
     }
 
-    // Build the FnStatsList in insertion order. name_list now holds
-    // names in source order (push-append), so walk forward and prepend
-    // onto the cons-list result so the head is the LAST processed name
-    // — that matches the prior "newest first → reversed-into-output"
-    // semantic exactly.
-    mut out = FnStatsList.End
-    mut i = 0
-    while i < name_list.length {
+    // Build the result list. The pre-refactor cons-prepend pattern
+    // walked name_list forward and prepended onto `out` — net result
+    // was reverse-of-name_list order. Preserve that byte-identical
+    // output by walking name_list backward and .pushing.
+    mut out: List<FnStats> = []
+    mut i = name_list.length - 1
+    while i >= 0 {
         let sptr = avra_map_get_cstr(stats_map, name_list[i])
         let s: FnStats = sptr
-        out = FnStatsList.Node(s, out)
-        i = i + 1
+        out.push(s)
+        i = i - 1
     }
     out
 }
@@ -508,7 +502,7 @@ fn stats_get_or_create(map: ptr, name: string) -> FnStats {
 }
 
 /// Linked list of fn names tracked during aggregation so the final
-/// FnStatsList preserves first-seen order. The cstr-map alone has
+/// List<FnStats> preserves first-seen order. The cstr-map alone has
 /// no defined iteration order.
 
 /// Build a zeroed FnStats. Used by `stats_get_or_create` on
@@ -594,24 +588,20 @@ fn module_of(fn_name: string) -> string {
     acc
 }
 
-/// Group an FnStatsList into a ModStatsList, summing counters by
+/// Group an List<FnStats> into a ModStatsList, summing counters by
 /// module. The public entry — internal recursion lives in
 /// `rollup_inner`.
-fn rollup_modules(stats: FnStatsList) -> ModStatsList {
-    rollup_inner(stats, ModStatsList.End)
-}
-
-/// Recursive worker for `rollup_modules`. For each fn, derives its
-/// module via `module_of` and merges its counters via `mod_upsert`.
-fn rollup_inner(stats: FnStatsList, acc: ModStatsList) -> ModStatsList {
-    match stats {
-        .End -> acc
-        .Node(s, next) -> {
-            let mod_name = module_of(s.name)
-            let entered = if s.fn_entry_count > 0 { 1 } else { 0 }
-            rollup_inner(next, mod_upsert(acc, mod_name, s.total_lines, s.hit_lines, s.total_branches, s.hit_branches, entered))
-        }
+fn rollup_modules(stats: List<FnStats>) -> ModStatsList {
+    mut acc = ModStatsList.End
+    mut i = 0
+    while i < stats.length {
+        let s = stats[i]
+        let mod_name = module_of(s.name)
+        let entered = if s.fn_entry_count > 0 { 1 } else { 0 }
+        acc = mod_upsert(acc, mod_name, s.total_lines, s.hit_lines, s.total_branches, s.hit_branches, entered)
+        i = i + 1
     }
+    acc
 }
 
 /// Upsert a per-module rollup row. Finds the existing ModStats by
@@ -639,51 +629,88 @@ fn mod_upsert(acc: ModStatsList, name: string, tl: int, hl: int, tb: int, hb: in
 // `pad_right` / `pad_left` imported from `render`.
 
 /// Total number of fns in the report.
-fn count_stats(stats: FnStatsList) -> int {
-    match stats { .End -> 0, .Node(_, next) -> 1 + count_stats(next) }
-}
+fn count_stats(stats: List<FnStats>) -> int { stats.length }
 
 /// Number of fns that were actually called (entry count > 0).
-fn count_entered(stats: FnStatsList) -> int {
-    match stats {
-        .End -> 0
-        .Node(s, next) -> (if s.fn_entry_count > 0 { 1 } else { 0 }) + count_entered(next)
+fn count_entered(stats: List<FnStats>) -> int {
+    mut n = 0
+    mut i = 0
+    while i < stats.length {
+        if stats[i].fn_entry_count > 0 { n = n + 1 }
+        i = i + 1
     }
+    n
 }
 
 /// Sum of `total_lines` across all fns.
-fn sum_total_lines(stats: FnStatsList) -> int {
-    match stats { .End -> 0, .Node(s, next) -> s.total_lines + sum_total_lines(next) }
+fn sum_total_lines(stats: List<FnStats>) -> int {
+    mut n = 0
+    mut i = 0
+    while i < stats.length {
+        n = n + stats[i].total_lines
+        i = i + 1
+    }
+    n
 }
 
 /// Sum of `hit_lines` across all fns.
-fn sum_hit_lines(stats: FnStatsList) -> int {
-    match stats { .End -> 0, .Node(s, next) -> s.hit_lines + sum_hit_lines(next) }
+fn sum_hit_lines(stats: List<FnStats>) -> int {
+    mut n = 0
+    mut i = 0
+    while i < stats.length {
+        n = n + stats[i].hit_lines
+        i = i + 1
+    }
+    n
 }
 
 /// Sum of `total_branches` across all fns.
-fn sum_total_branches(stats: FnStatsList) -> int {
-    match stats { .End -> 0, .Node(s, next) -> s.total_branches + sum_total_branches(next) }
+fn sum_total_branches(stats: List<FnStats>) -> int {
+    mut n = 0
+    mut i = 0
+    while i < stats.length {
+        n = n + stats[i].total_branches
+        i = i + 1
+    }
+    n
 }
 
 /// Sum of `hit_branches` across all fns.
-fn sum_hit_branches(stats: FnStatsList) -> int {
-    match stats { .End -> 0, .Node(s, next) -> s.hit_branches + sum_hit_branches(next) }
+fn sum_hit_branches(stats: List<FnStats>) -> int {
+    mut n = 0
+    mut i = 0
+    while i < stats.length {
+        n = n + stats[i].hit_branches
+        i = i + 1
+    }
+    n
 }
 
 /// Sum of `total_conditions` (MC/DC pair groups) across all fns.
-fn sum_total_conditions(stats: FnStatsList) -> int {
-    match stats { .End -> 0, .Node(s, next) -> s.total_conditions + sum_total_conditions(next) }
+fn sum_total_conditions(stats: List<FnStats>) -> int {
+    mut n = 0
+    mut i = 0
+    while i < stats.length {
+        n = n + stats[i].total_conditions
+        i = i + 1
+    }
+    n
 }
 
 /// Sum of `hit_conditions` (pairs that fired both true and false).
-fn sum_hit_conditions(stats: FnStatsList) -> int {
-    match stats { .End -> 0, .Node(s, next) -> s.hit_conditions + sum_hit_conditions(next) }
+fn sum_hit_conditions(stats: List<FnStats>) -> int {
+    mut n = 0
+    mut i = 0
+    while i < stats.length {
+        n = n + stats[i].hit_conditions
+        i = i + 1
+    }
+    n
 }
 
 /// Print the colored coverage summary table to stdout. Header + per-
 /// module rollup; MC/DC line only shown when any pair fired.
-fn print_summary(stats: FnStatsList) {
+fn print_summary(stats: List<FnStats>) {
     let total_fns = count_stats(stats)
     let entered = count_entered(stats)
     let tl = sum_total_lines(stats)
@@ -742,11 +769,11 @@ fn print_modules(mods: ModStatsList) {
 //   LH:<num lines hit>
 //   end_of_record
 
-/// Write the FnStatsList as an LCOV `.info` file consumable by
+/// Write the List<FnStats> as an LCOV `.info` file consumable by
 /// `genhtml`, Codecov, etc. Sections per spec: TN/SF/FN/FNDA/FNF/
 /// FNH/DA/LF/LH/end_of_record. One DA row per unique line across
 /// all fns, with `1` when any fn hit it.
-fn write_lcov(stats: FnStatsList, source_file: string, out_path: string) {
+fn write_lcov(stats: List<FnStats>, source_file: string, out_path: string) {
     let mut s = "TN:\nSF:${source_file}\n"
     // FN: lines
     s = s + write_lcov_fns(stats)
@@ -754,7 +781,7 @@ fn write_lcov(stats: FnStatsList, source_file: string, out_path: string) {
     s = s + "FNF:${string(count_stats(stats))}\n"
     s = s + "FNH:${string(count_entered(stats))}\n"
     // DA: per-line hits — collapse all fn line sets into one
-    let all_lines = collect_all_lines(stats, IntListSet.End, IntListSet.End)
+    let all_lines = collect_all_lines(stats)
     s = s + write_lcov_da(stats, all_lines)
     s = s + "LF:${string(sum_total_lines(stats))}\n"
     s = s + "LH:${string(sum_hit_lines(stats))}\n"
@@ -765,30 +792,39 @@ fn write_lcov(stats: FnStatsList, source_file: string, out_path: string) {
 /// Emit the `FN:line,name` block of an LCOV file. Line numbers are
 /// always 0 because we haven't tracked the original source line of
 /// each fn declaration here.
-fn write_lcov_fns(stats: FnStatsList) -> string {
-    match stats {
-        .End -> ""
-        .Node(s, next) -> "FN:0,${s.name}\n" + write_lcov_fns(next)
+fn write_lcov_fns(stats: List<FnStats>) -> string {
+    mut out = ""
+    mut i = 0
+    while i < stats.length {
+        out = out + "FN:0,${stats[i].name}\n"
+        i = i + 1
     }
+    out
 }
 
 /// Emit the `FNDA:exec_count,name` block of an LCOV file. Mirrors
 /// `write_lcov_fns` but with the per-fn entry counts.
-fn write_lcov_fndas(stats: FnStatsList) -> string {
-    match stats {
-        .End -> ""
-        .Node(s, next) -> "FNDA:${string(s.fn_entry_count)},${s.name}\n" + write_lcov_fndas(next)
+fn write_lcov_fndas(stats: List<FnStats>) -> string {
+    mut out = ""
+    mut i = 0
+    while i < stats.length {
+        out = out + "FNDA:${string(stats[i].fn_entry_count)},${stats[i].name}\n"
+        i = i + 1
     }
+    out
 }
 
 /// Union the per-fn line sets into a single program-wide set of
-/// (total, hit-any) lines. Both arguments are accumulators so the
-/// caller can seed them empty and we stay tail-recursive.
-fn collect_all_lines(stats: FnStatsList, total: IntListSet, hit: IntListSet) -> IntListSet {
-    match stats {
-        .End -> total
-        .Node(s, next) -> collect_all_lines(next, intset_union(total, s.line_set), intset_union(hit, s.line_hit_set))
+/// total lines. Iterative — random-access stats lets us drop the
+/// recursion while keeping the same union semantics.
+fn collect_all_lines(stats: List<FnStats>) -> IntListSet {
+    mut total = IntListSet.End
+    mut i = 0
+    while i < stats.length {
+        total = intset_union(total, stats[i].line_set)
+        i = i + 1
     }
+    total
 }
 
 /// Union two IntListSets. O(|a| × |b|) — fine for line-number sets
@@ -804,22 +840,30 @@ fn intset_union(a: IntListSet, b: IntListSet) -> IntListSet {
 /// per unique line across all fns, with `1` if any fn hit the line
 /// or `0` otherwise. We intentionally don't expose per-fn counts
 /// here since the LCOV output is single-file.
-fn write_lcov_da(stats: FnStatsList, all_lines: IntListSet) -> string {
-    match all_lines {
-        .End -> ""
-        .Node(line, next) -> {
-            let was_hit = any_fn_hit_line(stats, line)
-            let hit_str = if was_hit { "1" } else { "0" }
-            "DA:${string(line)},${hit_str}\n" + write_lcov_da(stats, next)
+fn write_lcov_da(stats: List<FnStats>, all_lines: IntListSet) -> string {
+    mut out = ""
+    mut cur = all_lines
+    while true {
+        match cur {
+            .End -> { return out }
+            .Node(line, next) -> {
+                let was_hit = any_fn_hit_line(stats, line)
+                let hit_str = if was_hit { "1" } else { "0" }
+                out = out + "DA:${string(line)},${hit_str}\n"
+                cur = next
+            }
         }
     }
+    out
 }
 
 /// True when at least one fn's `line_hit_set` contains `line`.
 /// Used by `write_lcov_da` to decide each DA row's flag.
-fn any_fn_hit_line(stats: FnStatsList, line: int) -> bool {
-    match stats {
-        .End -> false
-        .Node(s, next) -> if intset_has(s.line_hit_set, line) { true } else { any_fn_hit_line(next, line) }
+fn any_fn_hit_line(stats: List<FnStats>, line: int) -> bool {
+    mut i = 0
+    while i < stats.length {
+        if intset_has(stats[i].line_hit_set, line) { return true }
+        i = i + 1
     }
+    false
 }
