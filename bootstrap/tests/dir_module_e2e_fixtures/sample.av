@@ -68,15 +68,16 @@ fn main() -> int {
         bs2
     }
 
-    // Probe 1 — without AVRA_DIR_MODULE: the compile FAILS because
-    // add/mul are unreachable from `mod calc` (no `mod add`/`mod mul`
-    // in calc/mod.av).
-    let off_rc_str = avra_shell_exec("'" + bin + "' compile '" + root + "/main.av' > /dev/null 2>&1; echo $?").trim()
+    // Probe 1 — AVRA_DIR_MODULE=0 forces auto-load OFF: the compile
+    // FAILS because add/mul are unreachable from `mod calc` (no
+    // `mod add`/`mod mul` in calc/mod.av).
+    let off_rc_str = avra_shell_exec("AVRA_DIR_MODULE=0 '" + bin + "' compile '" + root + "/main.av' > /dev/null 2>&1; echo $?").trim()
     let off_rc = avra_parse_int(off_rc_str)
     probe("flag_off_compile_fails", off_rc != 0)
 
-    // Probe 2 — with AVRA_DIR_MODULE=1: the compile succeeds.
-    let on_rc_str = avra_shell_exec("AVRA_DIR_MODULE=1 '" + bin + "' compile '" + root + "/main.av' > /dev/null 2>&1; echo $?").trim()
+    // Probe 2 — default (AVRA_DIR_MODULE unset → auto-load ON): the
+    // compile succeeds, sibling .av files auto-load into calc's body.
+    let on_rc_str = avra_shell_exec("'" + bin + "' compile '" + root + "/main.av' > /dev/null 2>&1; echo $?").trim()
     let on_rc = avra_parse_int(on_rc_str)
     probe("flag_on_compile_succeeds", on_rc == 0)
 
@@ -97,13 +98,13 @@ fn main() -> int {
     // the sibling files would surface BOTH at the flat path AND
     // inside the legacy `mod foo` wrapper, which produces duplicate
     // decls + F1000 collisions. Re-purpose the same fixture but
-    // re-write mod.av to declare `mod add` explicitly. The flag
-    // is on, but auto-load should back off because mod.av's body
-    // has a Module decl. With auto-load off, mul.av is unreachable
-    // (no `mod mul` decl → unresolved). The compile must FAIL.
+    // re-write mod.av to declare `mod add` explicitly. Auto-load
+    // should back off because mod.av's body has a Module decl. With
+    // auto-load off, mul.av is unreachable (no `mod mul` decl →
+    // unresolved). The compile must FAIL.
     avra_shell_exec("rm -f " + root + "/main.av.ll")
     write_file(root + "/calc/mod.av", "mod add\n")
-    let mixed_rc_str = avra_shell_exec("AVRA_DIR_MODULE=1 '" + bin + "' compile '" + root + "/main.av' > /dev/null 2>&1; echo $?").trim()
+    let mixed_rc_str = avra_shell_exec("'" + bin + "' compile '" + root + "/main.av' > /dev/null 2>&1; echo $?").trim()
     let mixed_rc = avra_parse_int(mixed_rc_str)
     probe("mod_decls_disable_autoload", mixed_rc != 0)
 

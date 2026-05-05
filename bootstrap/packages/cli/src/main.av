@@ -37,7 +37,9 @@ fn read_file(path: string) -> string { avra_selfhost_read_file(path) }
 fn write_file(path: string, content: string) -> int { avra_selfhost_write_file(path, content) }
 
 use @std.cli.{cli_new, cli_add_command, cli_command_add_flag, cli_command_add_option, cli_command_add_arg, cli_parse, result_has_flag, result_get_option}
-use @std.cli.ui.spinner.{run_with_spinner, run_with_progress}
+// dir-as-module (g2eo.1): ui is a flat directory module, exports
+// surface at `@std.cli.ui.{...}` directly (not `.ui.spinner.{...}`).
+use @std.cli.ui.{run_with_spinner, run_with_progress}
 use @std.json.{json_str, json_object, json_pairs, json_pair_add}
 use @std.lsp.{Sym, SymList}
 use @std.avrac.fmt.{fmt_stmt_list}

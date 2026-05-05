@@ -890,14 +890,14 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths, stack: Impo
                 parsed.stmts!
             }
             emit_progress_done(mod_path, mod_t_start)
-            // g2eo.1 directory-as-module opt-in: when AVRA_DIR_MODULE
-            // is set AND mod_path is the subdir form (`<dir>/<name>/mod.av`)
-            // AND mod.av does NOT itself declare any `mod foo` children,
-            // ALSO auto-load every sibling `.av` file in that subdir as
-            // part of the module's body. This collapses the legacy
-            // two-step (`mod foo` declares + `mod.av` body declares
-            // children) into one filesystem walk: every file in the
-            // dir contributes to the module's flat namespace.
+            // g2eo.1 directory-as-module: when mod_path is the subdir
+            // form (`<dir>/<name>/mod.av`) AND mod.av does NOT itself
+            // declare any `mod foo` children, ALSO auto-load every
+            // sibling `.av` file in that subdir as part of the module's
+            // body. This collapses the legacy two-step (`mod foo`
+            // declares + `mod.av` body declares children) into one
+            // filesystem walk: every file in the dir contributes to
+            // the module's flat namespace.
             //
             // The "no mod decls" gate makes migration per-directory:
             // a package author drops the `mod foo` lines from mod.av
@@ -906,10 +906,15 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths, stack: Impo
             // enumerate children stay nested, directories with empty
             // mod.av flatten. No global flag-day required.
             //
+            // Always-on (no env-flag gate): the per-directory mod-decl
+            // detection is the only gate. AVRA_DIR_MODULE=0 still
+            // forces auto-load OFF for users who need to bisect a
+            // regression to the new behaviour, but the default is on.
+            //
             // Skipped on the metadata fast-path: when `<mod>.meta.bin`
             // is being substituted for a fresh parse, sibling auto-load
             // would produce extra decls the metadata doesn't have.
-            let dir_mode = avra_process_env_get("AVRA_DIR_MODULE") != ""
+            let dir_mode = avra_process_env_get("AVRA_DIR_MODULE") != "0"
             let is_subdir_form = mod_path == dir_mod
             let mod_decls_present = stmts_have_mod_decl(mod_stmts)
             let dir_load = if dir_mode && is_subdir_form && !take_meta && !mod_decls_present {
