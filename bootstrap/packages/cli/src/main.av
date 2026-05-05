@@ -50,10 +50,10 @@ use @std.avrac.docs.{extract_project_docs_ast, extract_project_corpus,
           show_search, show_llm, show_callers, show_module,
           validate_docs, suggest_similar, run_doctests,
           render_json, render_markdown}
-use @std.avrac.docs.corpus.{extract_lang_corpus, extract_errors_corpus,
+use @std.avrac.docs.{extract_lang_corpus, extract_errors_corpus,
                  find_sym_for_gen}
 use @std.lsp.{sym_list_concat}
-use @std.avrac.docs.gen.{gen_stub_for_sym, gen_apply, GenStubResult}
+use @std.avrac.docs.{gen_stub_for_sym, gen_apply, GenStubResult}
 use @std.avrac.lang_gen.{render_lang_av, write_lang_av}
 use @std.avrac.indexer.{run_lsp_server, extract_project_syms_cached}
 use @std.avrac.pathutil.{basename_no_ext}
@@ -62,7 +62,7 @@ use @std.avrac.core.ast.{render_expr, render_stmt_list, binop_str, unop_str, log
 use @std.avrac.features.eval.{render_value, eval_expression_source, execute_program_source}
 use @std.avrac.desugar.{desugar_program}
 use @std.avrac.features.component_decl.{expand_components}
-use @std.avrac.resolve.names.{resolve_names}
+use @std.avrac.resolve.{resolve_names}
 use @std.avrac.features.modules.resolver.{resolve_module_files, modules_dirname, find_packages_dir, LoadedPaths, dedup_modules}
 use @std.avrac.features.modules.package.{load_package_config, load_manifest, Dep}
 use @std.avrac.build.driver.{
@@ -82,8 +82,8 @@ use @std.avrac.build.graph.{
 }
 use @std.avrac.typeck.{typecheck_program}
 use @std.avrac.diagnostics.{bag_has_errors, bag_has_warnings, bag_new, bag_report, diag_error, diag_ice, span_dummy, DiagCode, DiagnosticBag}
-use @std.avrac.diagnostics.render.{render_bag, render_bag_json}
-use @std.avrac.codegen.setup.{compile_program, codegen_and_emit_object, codegen_and_emit_ir_cov}
+use @std.avrac.diagnostics.{render_bag, render_bag_json}
+use @std.avrac.codegen.{compile_program, codegen_and_emit_object, codegen_and_emit_ir_cov}
 use @std.avrac.features.generics.{monomorphize}
 
 fn print_usage() {

@@ -1,8 +1,8 @@
 // WHY: codegen for string operations — concat, comparison, replace, substring.
 
 use core.ast.{Expr, ExprList, VarEnv}
-use codegen.types.{Ctx, EmitValue, ok_emit, err_emit}
-use codegen.helpers.{strip_quotes}
+use codegen.{Ctx, EmitValue, ok_emit, err_emit}
+use codegen.{strip_quotes}
 
 /// Codegen for the binary `+` operator on Strings. Allocates a
 /// `lhs.length + rhs.length + 1` RC buffer, memcpys both sides plus

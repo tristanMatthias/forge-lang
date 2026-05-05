@@ -8,7 +8,7 @@
 //   3. Call register_feature() with a dummy Expr/Stmt value
 //   4. One line in build_registry()
 
-use codegen.types.{err_emit, err_stmt, StmtResult}
+use codegen.{err_emit, err_stmt, StmtResult}
 use codegen.{err_sr}
 use features.{init_features}
 use typeck.{tc_er}

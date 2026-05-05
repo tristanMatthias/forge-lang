@@ -1,7 +1,7 @@
 // dir-as-module (g2eo.1): codegen.av + parser.av + typeck.av auto-load
 // as siblings, surface flat at `features.map_lit.{...}`. emit_map_lit
 // is in scope without a self-import.
-use codegen.types.{err_emit}
+use codegen.{err_emit}
 use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr_list}
 use typeck.{check_expr_list, tc_er}

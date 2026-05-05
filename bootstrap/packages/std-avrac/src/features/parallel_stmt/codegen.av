@@ -1,6 +1,6 @@
 // WHY: codegen for `parallel { fn1(); fn2(); fn3() }`.
 
-use codegen.types.{ok_stmt, StmtResult}
+use codegen.{ok_stmt, StmtResult}
 use codegen.{ok_sr, err_sr}
 /// Codegen entry for `parallel { ... }`. Pattern-matches the
 /// `Parallel` AST node and forwards to `emit_parallel`.

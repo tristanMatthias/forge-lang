@@ -2,7 +2,7 @@
 // auto-load as siblings, surface flat at `features.null_safety.{...}`.
 // Sibling exports (emit_null_coalesce, check_catch, etc.) are in scope
 // without explicit self-imports.
-use codegen.types.{err_emit}
+use codegen.{err_emit}
 use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr, enter_resolve_scope, exit_resolve_scope, declare_name, define_name}
 use features.struct_decl.{check_field_access}

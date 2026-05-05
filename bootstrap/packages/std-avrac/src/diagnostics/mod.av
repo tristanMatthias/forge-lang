@@ -1,6 +1,6 @@
-mod render
-mod suggest
-
+// dir-as-module (g2eo.1): render.av + suggest.av auto-load as siblings,
+// surface flat at `diagnostics.{...}`.
+//
 // WHY: structured diagnostic types for compiler error reporting.
 // Every error is a Diagnostic record with error code, severity,
 // source span, help text, and labels. DiagnosticBag collects

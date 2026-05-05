@@ -9,7 +9,7 @@
 // (critical for match on enum tuple elements).
 
 use core.ast.{Expr, ExprList, ParamList, VarEnv, env_extend, expr_list_length, ValueType, TypeList, vtype_tuple_at}
-use codegen.types.{Ctx, EmitValue,  ok_emit, err_emit, ok_stmt}
+use codegen.{Ctx, EmitValue,  ok_emit, err_emit, ok_stmt}
 
 /// Sugar for an i64-typed tuple slot load — wraps `ctx.load_slot`
 /// so tuple-specific call sites read more naturally.

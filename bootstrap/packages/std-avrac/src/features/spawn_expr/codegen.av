@@ -3,7 +3,7 @@
 // Per spec Axis 18.7: structured concurrency — spawned tasks are bound
 // to the enclosing scope and auto-awaited at scope exit.
 
-use codegen.types.{ok_emit, err_emit, EmitValue}
+use codegen.{ok_emit, err_emit, EmitValue}
 use core.ast.{vtype_fn_ret, MatchArmList, ExprList}
 use features.closures.{emit_lambda}
 

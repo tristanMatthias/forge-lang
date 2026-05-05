@@ -1,8 +1,8 @@
 // WHY: emits spec test runtime calls for spec/given/then blocks.
 
 use core.ast.{sstmt_dummy}
-use codegen.types.{err_stmt, ok_stmt, StmtResult}
-use codegen.blocks.{emit_block_loop}
+use codegen.{err_stmt, ok_stmt, StmtResult}
+use codegen.{emit_block_loop}
 use codegen.{ok_sr, err_sr}
 /// Codegen entry for the test feature. Dispatches Spec / Given /
 /// Then blocks to the corresponding emitter; everything else is

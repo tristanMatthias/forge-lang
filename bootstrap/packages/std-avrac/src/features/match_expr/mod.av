@@ -2,7 +2,7 @@
 // typeck.av auto-load as siblings, surface flat at `features.match_expr.{...}`.
 // emit_match*, resolve_match_arms*, check_match_* are in scope without
 // self-imports.
-use codegen.types.{err_emit, err_stmt, StmtResult}
+use codegen.{err_emit, err_stmt, StmtResult}
 use codegen.{err_sr}
 use features.eval.{error_result}
 use core.registry.{feature_new, Feature}

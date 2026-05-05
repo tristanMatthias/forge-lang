@@ -2,8 +2,8 @@
 // Maps are backed by the C-runtime avra_map_*_cstr functions.
 
 use core.ast.{Expr, ExprList, VarEnv, ValueType}
-use codegen.types.{Ctx, EmitValue, ok_emit, err_emit}
-use codegen.helpers.{emit_single_arg}
+use codegen.{Ctx, EmitValue, ok_emit, err_emit}
+use codegen.{emit_single_arg}
 
 /// Codegen for `{k: v, k: v, ...}`. Allocates a fresh
 /// `avra_map_new_cstr` and inserts every entry via

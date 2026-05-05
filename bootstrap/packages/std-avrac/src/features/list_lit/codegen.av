@@ -2,9 +2,9 @@
 // Lists are backed by the C-runtime avra_array_* functions.
 
 use core.ast.{Expr, ExprList, VarEnv, ValueType, TypeList, vtype_list_elem, vtype_fn_ret}
-use codegen.types.{Ctx, EmitValue, ok_emit, err_emit}
+use codegen.{Ctx, EmitValue, ok_emit, err_emit}
 use features.closures.{emit_lambda_typed, emit_typed_lambda_arg}
-use codegen.helpers.{emit_single_arg}
+use codegen.{emit_single_arg}
 
 /// Codegen for `[a, b, c]`. Allocates a fresh `avra_array_new` and
 /// pushes each element. The first element pins the inferred

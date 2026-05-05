@@ -4,7 +4,7 @@
 // AST with `Module("@scope") { Module(name) { ... } }` for every
 // imported package. Name resolution then hunts through that wrapped
 // AST at lookup time. The wrapping is what breaks multi-file packages
-// like @std.avrac: a `use codegen.escape.{X}` written inside the
+// like @std.avrac: a `use codegen.{X}` written inside the
 // package gets reinterpreted against the consumer's top-level scope,
 // because nothing told the resolver that the path is anchored at
 // std-avrac's package root.

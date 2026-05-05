@@ -1,20 +1,12 @@
 // WHY: LLVM IR emission — declaration passes, dispatch, and top-level setup.
 // Feature-specific codegen lives in features/*/codegen.av.
 // Operators in codegen/operators.av, strings in codegen/strings.av, etc.
-
-mod types
-mod setup
-mod operators
-mod strings
-mod printing
-mod blocks
-mod indexing
-mod helpers
-mod escape
-mod cycles
+//
+// dir-as-module (g2eo.1): types/setup/operators/strings/printing/blocks/
+// indexing/helpers/escape/cycles auto-load as siblings, surface flat at
+// `codegen.{...}`.
 
 use core.ast.{Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, SExpr, SStmt, Stmt, StmtList, TypeList, ValueType, VarEnv, VariantList, env_extend, env_lookup, expr_list_length, field_index_of, field_init_length, field_list_length, param_list_length, sexpr_dummy, stmt_unwrap, variant_lookup, variant_max_payload, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_list_elem, vtype_struct_name, vtype_trait_name}
-use codegen.types.{Ctx, DeferStack, EmitValue, EnumLookup, EnumReg, FnParamTypes, FnRetTypes, LoopFrame, LoopStack, ParamTypeList, RcCleanupStack, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, advance_field_list, err_emit, err_stmt, loops_top, null_ptr_val, ok_emit, ok_emit, ok_stmt, trait_decl_has, trait_decl_lookup, vtype_is_ptr_type}
 
 use core.registry.{build_registry, dispatch_expr_emit, dispatch_stmt_emit, avra_expr_tag, avra_stmt_tag, has_expr_emit, has_stmt_emit, registry_new}
 use features.closures.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value, emit_typed_lambda_arg}
@@ -26,16 +18,10 @@ use features.if_stmt.{emit_if}
 use features.list_lit.{emit_list_reduce_typed, emit_list_method_call}
 use features.map_lit.{emit_map_method_call}
 use features.match_expr.{emit_match_expr}
-use codegen.operators.{emit_unary, emit_binary, emit_logical}
-use codegen.blocks.{emit_block_expr, emit_block_loop}
-use codegen.indexing.{emit_index, emit_slice}
-use codegen.helpers.{strip_quotes, is_null_literal, stmts_last_expr}
-use codegen.strings.{emit_concat, emit_str_eq, emit_str_cmp, emit_str_replace, emit_substring}
-use codegen.printing.{emit_println, emit_eprintln}
 use features.trait_decl.{emit_trait_dispatch, box_for_trait, resolve_concrete_type_name, push_vtable_entries_call}
 use features.fn_decl.{emit_call, emit_call_named, emit_method_call}
 use features.error_propagation.{Result}
-use parse.lexer.{parse_int_literal}
+use parse.{parse_int_literal}
 use core.runtime.{avra_tag_as_result}
 
 //

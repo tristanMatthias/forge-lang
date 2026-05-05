@@ -1,12 +1,12 @@
 // dir-as-module (g2eo.1): parser.av + codegen.av auto-load as siblings,
 // surface flat at `features.defer_stmt.{...}`.
 use core.ast.{sexpr_dummy}
-use codegen.types.{StmtResult}
+use codegen.{StmtResult}
 use codegen.{ok_sr, err_sr}
 use features.eval.{error_result, ok_result, value_null}
 use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr}
-use codegen.types.{DeferStack}
+use codegen.{DeferStack}
 use typeck.{check_expr}
 
 // All handlers are private.

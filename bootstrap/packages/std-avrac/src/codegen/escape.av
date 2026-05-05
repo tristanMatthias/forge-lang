@@ -7,7 +7,7 @@
 // Conservative: if in doubt, mark as escaped (don't release).
 
 use core.ast.{Expr, ExprList, FieldList, FieldInitList, VariantList, ValueType, Stmt, StmtList, SExpr, SStmt, stmt_unwrap}
-use codegen.types.{ReleasableSet, releasable_has, StructReg, EnumReg, struct_reg_lookup, enum_reg_lookup, CopySet, copy_set_has}
+use codegen.{ReleasableSet, releasable_has, StructReg, EnumReg, struct_reg_lookup, enum_reg_lookup, CopySet, copy_set_has}
 
 /// Add `name` to the releasable set, deduplicating. The set is the
 /// list of locals safe to RC-release at scope exit.
@@ -429,7 +429,7 @@ fn fields_all_copy(fields: FieldList, candidates: CopySet) -> bool {
     match fields {
         .End -> true
         .Node(_, vt, next) -> {
-            if !vtype_is_copy(vt, candidates) { false }
+            if !vtype_is_copy_in_set(vt, candidates) { false }
             else { fields_all_copy(next, candidates) }
         }
     }
@@ -450,8 +450,10 @@ fn variants_all_copy(variants: VariantList, candidates: CopySet) -> bool {
 /// Local Copy classifier used during the fixpoint analysis. Differs
 /// from `types.av`'s `vtype_is_copy` by treating struct/enum/newtype
 /// names as Copy purely based on candidate-set membership (since the
-/// outer set isn't final yet).
-fn vtype_is_copy(vt: ValueType, candidates: CopySet) -> bool {
+/// outer set isn't final yet). Renamed `*_in_set` to avoid colliding
+/// with `vtype_is_copy` from types.av now that codegen/ is a flat
+/// dir-as-module namespace (g2eo.1).
+fn vtype_is_copy_in_set(vt: ValueType, candidates: CopySet) -> bool {
     match vt {
         .Int -> true
         .U8 -> true

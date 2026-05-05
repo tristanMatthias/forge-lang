@@ -1,6 +1,6 @@
 // dir-as-module (g2eo.1): parser.av + codegen.av + typeck.av auto-load
 // as siblings, surface flat at `features.struct_decl.{...}`.
-use codegen.types.{err_emit}
+use codegen.{err_emit}
 use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr, resolve_expr_list, resolve_field_init_list, starts_with_upper}
 use features.enum_decl.{emit_enum_ctor}

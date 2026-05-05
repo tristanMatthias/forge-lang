@@ -5,7 +5,7 @@
 // The stack lives on Ctx.defers — no mutable global needed.
 
 use core.ast.{VarEnv}
-use codegen.types.{Ctx, DeferStack}
+use codegen.{Ctx, DeferStack}
 use codegen.{emit_rc_release_typed}
 
 /// Emit scope-exit cleanup for a normal return. Walks the

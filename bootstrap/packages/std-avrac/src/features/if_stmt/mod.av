@@ -2,7 +2,7 @@
 // surface flat at `features.if_stmt.{...}`. emit_if + emit_if_expr are
 // in scope without a self-import.
 use core.ast.{TypeList, ValueType, vtype_display, vtype_eq, vtype_is_unknown}
-use codegen.types.{err_emit, err_stmt, StmtResult}
+use codegen.{err_emit, err_stmt, StmtResult}
 use codegen.{err_sr}
 use features.eval.{error_result, is_truthy, ok_result, value_null, step_had_error, step_value, step_runtime}
 use features.eval.{eval_expr, execute_stmt}

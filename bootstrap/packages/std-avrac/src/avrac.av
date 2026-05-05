@@ -5,7 +5,7 @@
 //
 // All public symbols are accessible by their submodule path, e.g.
 // `use @std.avrac.parse.{parse_program_source}`,
-// `use @std.avrac.codegen.setup.{compile_program}`,
+// `use @std.avrac.codegen.{compile_program}`,
 // `use @std.avrac.diagnostics.{bag_has_errors}`.
 //
 // The bootstrap module resolver wraps this file's contents in

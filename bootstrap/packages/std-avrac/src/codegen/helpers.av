@@ -1,7 +1,7 @@
 // WHY: shared codegen utilities used across features.
 
 use core.ast.{Expr, ExprList, StmtList, ParamList, VarEnv, ValueType, TypeList, SStmt, stmt_unwrap, vtype_fn_params, vtype_trait_name}
-use codegen.types.{Ctx, EmitValue, ParamTypeList, err_emit, null_ptr_val, ok_emit, param_type_vt_at, trait_decl_has}
+use codegen.{Ctx, EmitValue, ParamTypeList, err_emit, null_ptr_val, ok_emit, param_type_vt_at, trait_decl_has}
 use core.ast.{vtype_is_unknown}
 use features.trait_decl.{box_for_trait, resolve_concrete_type_name}
 use features.closures.{emit_lambda_typed}

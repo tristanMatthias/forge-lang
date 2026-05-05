@@ -1,7 +1,7 @@
 // WHY: codegen for `expr is .Variant` — checks enum tag at runtime.
 
 use core.ast.{Expr, VarEnv, variant_lookup, vtype_display, vtype_enum_name}
-use codegen.types.{Ctx, EmitValue, err_emit, ok_emit}
+use codegen.{Ctx, EmitValue, err_emit, ok_emit}
 
 /// Codegen entry for the `is` operator. Pattern-matches the
 /// `IsCheck` AST node and forwards to `emit_is_check_inner`.

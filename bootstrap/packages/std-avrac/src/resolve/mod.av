@@ -2,8 +2,9 @@
 // has a visible declaration before codegen runs. Tracks scopes via
 // a linked-list stack; functions are pre-declared so mutual
 // recursion works.
-
-mod names
+//
+// dir-as-module (g2eo.1): names.av auto-loads as a sibling, surfaces
+// flat at `resolve.{...}`.
 
 use core.ast.{Expr, ExprList, FieldInitList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeParamList, stmt_unwrap}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_with_help, span_dummy, span_new, span_at}

@@ -6,7 +6,7 @@
 // functions when refcount decrements to non-zero.
 
 use core.ast.{FieldList, ValueType, VariantList}
-use codegen.types.{StructReg, EnumReg, struct_reg_lookup, enum_reg_lookup, vtype_is_ptr_type}
+use codegen.{StructReg, EnumReg, struct_reg_lookup, enum_reg_lookup, vtype_is_ptr_type}
 
 /// Set of type names whose layout can reach back to itself through
 /// some chain of pointer-typed fields. Built once by `analyze_cycles`

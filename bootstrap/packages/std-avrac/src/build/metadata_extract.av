@@ -16,7 +16,7 @@ use build.metadata.{
     MetaTraitMethodList, ImplMethodRefList,
     sym_id_for, unit_metadata_new,
 }
-use parse.lexer.{parse_int_literal}
+use parse.{parse_int_literal}
 
 // Internal accumulator — each walk step folds into this and returns
 // the updated record. Lists grow via prepend so traversal stays

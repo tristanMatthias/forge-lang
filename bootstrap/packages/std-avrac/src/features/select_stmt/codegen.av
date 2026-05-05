@@ -3,8 +3,8 @@
 // until one has data, then dispatches to the matching arm.
 
 use features.error_propagation.{Result}
-use codegen.types.{StmtResult}
-use codegen.blocks.{emit_block_loop}
+use codegen.{StmtResult}
+use codegen.{emit_block_loop}
 use codegen.{ok_sr, err_sr}
 /// Codegen entry for `select { ... }`. Pattern-matches the
 /// `Select` AST node and forwards to `emit_select`.
