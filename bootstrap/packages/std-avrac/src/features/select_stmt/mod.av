@@ -1,9 +1,8 @@
-mod codegen
-mod parser
-mod resolver
+// dir-as-module (g2eo.1): no `mod` decls — codegen.av + parser.av +
+// resolver.av auto-load as siblings, surface flat at
+// `features.select_stmt.{...}`. Sibling exports are in scope without
+// explicit self-imports.
 use core.registry.{feature_new, Feature}
-use features.select_stmt.codegen.{select_emit_stmt}
-use features.select_stmt.resolver.{resolve_select_arms}
 
 /// Resolver hook for `select`. Forwards to `resolve_select_arms`
 /// which walks each channel expression and arm body.

@@ -61,7 +61,7 @@ use @std.avrac.parse.{parse_expression_source, parse_program_source, parse_progr
 use @std.avrac.core.ast.{render_expr, render_stmt_list, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType, Stmt, StmtList, ParamList, Expr, sstmt_dummy, TypeParamList, ExprList}
 use @std.avrac.features.eval.{render_value, eval_expression_source, execute_program_source}
 use @std.avrac.desugar.{desugar_program}
-use @std.avrac.features.component_decl.expand.{expand_components}
+use @std.avrac.features.component_decl.{expand_components}
 use @std.avrac.resolve.names.{resolve_names}
 use @std.avrac.features.modules.resolver.{resolve_module_files, modules_dirname, find_packages_dir, LoadedPaths, dedup_modules}
 use @std.avrac.features.modules.package.{load_package_config, load_manifest, Dep}

@@ -1,8 +1,9 @@
-mod codegen
-mod parser
+// dir-as-module (g2eo.1): no `mod` decls — codegen.av + parser.av
+// auto-load as siblings and surface flat at `features.parallel_stmt.{...}`.
+// Sibling exports (parallel_emit_stmt, parse_parallel_statement) are in
+// scope here without an explicit self-import.
 use core.registry.{feature_new, Feature}
 use resolve.{resolve_stmt_list}
-use features.parallel_stmt.codegen.{parallel_emit_stmt}
 
 /// Resolver hook for `parallel { ... }`. Walks the body's statement
 /// list so name resolution still happens inside the parallel block.

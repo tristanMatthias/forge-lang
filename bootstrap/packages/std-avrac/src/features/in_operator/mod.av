@@ -1,4 +1,4 @@
-mod codegen
+// dir-as-module (g2eo.1): codegen.av auto-loads as a sibling, surfaces flat at `features.in_operator.{...}`
 use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr, resolve_expr_list}
 use features.in_operator.codegen.{emit_in_check}
