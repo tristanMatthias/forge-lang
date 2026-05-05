@@ -1,5 +1,5 @@
-mod parser
-mod codegen
+// dir-as-module (g2eo.1): parser.av + codegen.av auto-load as siblings,
+// surface flat at `features.defer_stmt.{...}`.
 use core.ast.{sexpr_dummy}
 use codegen.types.{StmtResult}
 use codegen.{ok_sr, err_sr}

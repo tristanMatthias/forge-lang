@@ -5,8 +5,8 @@ use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, VarEnv, env_lookup, Val
 use codegen.types.{cg_newtype_vtype_lookup}
 use core.type_registry.{method_mangled_name, type_registry_id_for, type_registry_name_for, is_result_enum_name, is_result_shaped_enum}
 use codegen.types.{Ctx, EmitValue, ok_emit, ok_emit, ok_stmt, err_emit, err_stmt, trait_decl_has}
-use features.closures.codegen.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value}
-use features.defer_stmt.codegen.{emit_defers, emit_defers_on_error}
+use features.closures.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value}
+use features.defer_stmt.{emit_defers, emit_defers_on_error}
 use core.ast.{avra_variant_hash}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
 use features.trait_decl.codegen.{box_for_trait, resolve_concrete_type_name}

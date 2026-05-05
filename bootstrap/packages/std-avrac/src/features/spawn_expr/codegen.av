@@ -5,7 +5,7 @@
 
 use codegen.types.{ok_emit, err_emit, EmitValue}
 use core.ast.{vtype_fn_ret, MatchArmList, ExprList}
-use features.closures.codegen.{emit_lambda}
+use features.closures.{emit_lambda}
 
 /// Codegen entry for `spawn { body }`. Pattern-matches the
 /// `Spawn` AST node and forwards to `emit_spawn`.

@@ -1,5 +1,5 @@
-mod parser
-mod codegen
+// dir-as-module (g2eo.1): parser.av + codegen.av auto-load as siblings,
+// surface flat at `features.fn_decl.{...}`.
 use core.registry.{feature_new, Feature}
 
 /// Register the `fn` declaration feature. Routes the `fn`

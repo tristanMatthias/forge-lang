@@ -5,7 +5,7 @@ use codegen.types.{Ctx, EmitValue, ok_emit, err_emit}
 use core.llvm.{avra_covmap_next_decision_id}
 use codegen.strings.{emit_concat, emit_str_eq, emit_str_cmp}
 use codegen.helpers.{is_null_literal}
-use features.enum_decl.codegen.{emit_enum_tag_cmp}
+use features.enum_decl.{emit_enum_tag_cmp}
 
 /// Codegen for unary operators (`-x`, `!x`, `~x`).
 ///

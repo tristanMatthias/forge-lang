@@ -11,7 +11,7 @@ use features.union_type.{emit_union_wrap, needs_union_wrap}
 use codegen.{emit_expr, emit_stmt, emit_stmt_list}
 use codegen.helpers.{stmts_last_expr}
 use diagnostics.{bag_new}
-use features.fn_decl.codegen.{emit_function_bodies}
+use features.fn_decl.{emit_function_bodies}
 use core.type_registry.{TypeRegistry, variant_payload_name}
 use core.llvm.{avra_coverage_declare, avra_covmap_begin, avra_covmap_end}
 use core.runtime.{exit}

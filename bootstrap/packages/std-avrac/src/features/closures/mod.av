@@ -1,8 +1,8 @@
-mod codegen
-mod parser
+// dir-as-module (g2eo.1): no `mod` decls — codegen.av + parser.av
+// auto-load as siblings, surface flat at `features.closures.{...}`.
+// `emit_lambda` and parser helpers are in scope without self-imports.
 use core.registry.{feature_new, Feature}
 use resolve.{declare_params, enter_resolve_scope, exit_resolve_scope, resolve_expr}
-use features.closures.codegen.{emit_lambda}
 use typeck.{check_expr, tc_bind_params, tc_enter, tc_er, tc_exit}
 
 /// Register the `(x, y) -> body` lambda + closure feature.

@@ -1,10 +1,10 @@
-mod codegen
-mod typeck
+// dir-as-module (g2eo.1): no `mod` decls — codegen.av + typeck.av
+// auto-load as siblings, surface flat at `features.null_safety.{...}`.
+// Sibling exports (emit_null_coalesce, check_catch, etc.) are in scope
+// without explicit self-imports.
 use codegen.types.{err_emit}
 use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr, enter_resolve_scope, exit_resolve_scope, declare_name, define_name}
-use features.null_safety.codegen.{emit_null_coalesce, emit_optional_chain, emit_try, emit_catch}
-use features.null_safety.typeck.{check_catch, check_null_coalesce, check_try}
 use features.struct_decl.typeck.{check_field_access}
 use typeck.{check_expr, tc_er}
 

@@ -4,7 +4,7 @@ mod typeck
 use codegen.types.{err_emit}
 use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr, resolve_expr_list, resolve_field_init_list, starts_with_upper}
-use features.enum_decl.codegen.{emit_enum_ctor}
+use features.enum_decl.{emit_enum_ctor}
 use features.struct_decl.codegen.{emit_field_access, emit_field_assign, emit_struct_lit}
 use features.struct_decl.typeck.{check_field_access, check_field_inits}
 use typeck.{tc_enum_find_by_variant}

@@ -1,9 +1,10 @@
-mod parser
-mod codegen
+// dir-as-module (g2eo.1): no `mod` decls — parser.av + codegen.av
+// auto-load as siblings, surface flat at `features.for_stmt.{...}`.
+// Sibling exports (emit_for, emit_for_in, parse helpers) are in scope
+// without explicit self-imports.
 use core.ast.{vtype_list_elem}
 use core.registry.{feature_new, Feature}
 use resolve.{declare_name, define_name, enter_resolve_scope, exit_resolve_scope, resolve_expr, resolve_stmt}
-use features.for_stmt.codegen.{emit_for, emit_for_in}
 use typeck.{check_expr, check_stmt, tc_bind, tc_enter, tc_exit}
 
 /// Resolver hook for `for i in start..end { body }`. Resolves
