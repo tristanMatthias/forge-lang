@@ -1,8 +1,9 @@
 // WHY: Pure-Avra CLI argument parsing library.
 // Provides a builder-style API for defining commands, flags, options, and args.
 // Uses avra_selfhost_argc/get_arg_cstr for raw argument access.
-
-mod ui
+//
+// dir-as-module Phase D (g2eo.1.2): no `mod ui` decl — the resolver
+// auto-discovers the ui/ subdirectory as a module.
 
 extern fn avra_selfhost_argc() -> int
 extern fn avra_selfhost_get_arg_cstr(idx: int) -> string

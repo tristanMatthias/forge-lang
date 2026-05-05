@@ -3,12 +3,12 @@
 // them, and attaches the parsed bodies. This is the bridge between
 // the pure parser (no I/O) and the file system.
 
-use core.{Stmt, StmtList, SStmt, sstmt, sstmt_at, AnnotationList, ExprList}
+use core.{Stmt, StmtList, SStmt, sstmt, sstmt_at, sstmt_dummy, AnnotationList, ExprList}
 use parse.{parse_program_source, parse_program_source_at}
-use core.{avra_process_env_get, avra_selfhost_append_file, avra_selfhost_read_file}
+use core.{avra_process_env_get, avra_selfhost_append_file, avra_selfhost_read_file, avra_is_dir, avra_selfhost_file_exists}
 use build.metadata.{metadata_read, metadata_file_exists}
 use build.metadata_synthesize.{synthesize_unit_body}
-use features.modules.{list_avra_module_files}
+use features.modules.{list_avra_module_files, list_avra_module_subdirs}
 
 extern fn avra_bytes_to_hex(b: bytes) -> string
 extern fn avra_sha256_file(path: string) -> string
@@ -377,7 +377,42 @@ export fn resolve_dir_module_body(dir: string, loaded: LoadedPaths) -> ModListRe
         acc = stmt_list_concat(acc, parsed.stmts!)
         i = i + 1
     }
+    // g2eo.1 Phase D: also synthesize `Stmt.Module(<subdir>, [])` decls
+    // for every immediate child directory. This drives the resolver to
+    // descend into subdirs without an explicit `mod foo` line in mod.av,
+    // so a parent directory that lists its subdirs solely through the
+    // filesystem stays valid. The dedup_modules pass at program scope
+    // handles any double-decl that comes from a transition mod.av still
+    // listing some children explicitly.
+    let subdirs = list_avra_module_subdirs(dir)
+    mut j = 0
+    while j < subdirs.length {
+        let sd = subdirs[j]
+        let name = path_basename(sd)
+        if name != "" {
+            acc = stmt_list_concat(acc, StmtList.Node(sstmt_dummy(Stmt.Module(name, StmtList.End)), StmtList.End))
+        }
+        j = j + 1
+    }
     ModListResult { stmts: acc, loaded: acc_loaded, had_error: false, error_message: "" }
+}
+
+// Trailing-segment of a path (after the last '/'). Returns the input
+// when there's no slash, "" when the input is empty. Used to derive
+// the bare directory name from a path like `packages/std-cli/src/ui`.
+fn path_basename(p: string) -> string {
+    if p.length == 0 { return "" }
+    let trimmed = if p.byte(p.length - 1) == 0x2F { p.substring(0, p.length - 1) } else { p }
+    let len = trimmed.length
+    mut i = len
+    while i > 0 {
+        let prev = i - 1
+        if trimmed.byte(prev) == 0x2F {
+            return trimmed.substring(i, len)
+        }
+        i = prev
+    }
+    trimmed
 }
 
 // Append `right` to the end of `left`, returning a fresh list
@@ -855,9 +890,28 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths, stack: Impo
         .Module(name, _) -> {
             let sibling = "${dir}${name}.av"
             let dir_mod = "${dir}${name}/mod.av"
+            let dir_only = "${dir}${name}/"
             mut mod_path = ""
             if avra_selfhost_file_exists(sibling) { mod_path = sibling }
             if mod_path == "" && avra_selfhost_file_exists(dir_mod) { mod_path = dir_mod }
+            // g2eo.1 Phase D: when neither `name.av` nor `name/mod.av`
+            // exists but `name/` IS a directory, treat the directory
+            // itself as the module — auto-load its .av siblings flat
+            // into a synthesized body. Lets parents drop `mod foo`
+            // decls for subdirectories that don't have their own
+            // mod.av.
+            if mod_path == "" && avra_is_dir(dir_only) != 0 {
+                let dir_load = resolve_dir_module_body(dir_only, loaded)
+                if dir_load.had_error {
+                    return ModStmtResult { stmt, loaded: dir_load.loaded, had_error: true, error_message: dir_load.error_message }
+                }
+                let new_stack = ImportStack.Node(dir_only, stack)
+                let resolved = resolve_module_files_inner(dir_load.stmts, dir_only, dir_load.loaded, new_stack)
+                if resolved.had_error {
+                    return ModStmtResult { stmt, loaded: resolved.loaded, had_error: true, error_message: resolved.error_message }
+                }
+                return ModStmtResult { stmt: Stmt.Module(name, resolved.stmts), loaded: resolved.loaded, had_error: false, error_message: "" }
+            }
             if mod_path == "" {
                 return ModStmtResult { stmt, loaded, had_error: true, error_message: "module `${name}` not found (looked for ${sibling} and ${dir_mod})" }
             }
