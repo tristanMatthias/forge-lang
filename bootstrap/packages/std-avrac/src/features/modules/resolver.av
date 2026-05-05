@@ -392,6 +392,30 @@ fn stmt_list_concat(left: StmtList, right: StmtList) -> StmtList {
     }
 }
 
+// True iff `stmts` contains at least one `mod foo` declaration with
+// an empty body — the parser-emitted shape that triggers a
+// filesystem load. Used by the AVRA_DIR_MODULE wiring to back off
+// from auto-load when mod.av already enumerates its children
+// explicitly: mixing the two would either duplicate decls or hide
+// children behind a now-empty Module wrapper. Annotated wrappers
+// pass through.
+fn stmts_have_mod_decl(stmts: StmtList) -> bool {
+    match stmts {
+        .End -> false
+        .Node(ss, next) -> {
+            let is_mod = match ss.node {
+                .Module(_, body) -> stmt_list_is_empty(body)
+                .Annotated(_, inner) -> match inner {
+                    .Module(_, body) -> stmt_list_is_empty(body)
+                    _ -> false
+                }
+                _ -> false
+            }
+            if is_mod { true } else { stmts_have_mod_decl(next) }
+        }
+    }
+}
+
 /// Merge duplicate `Module(name, body)` nodes by qualified name.
 /// Two import paths leading to the same package both produce a
 /// nested Module wrapper, and after `hoist_package_modules` lifts
@@ -867,25 +891,28 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths, stack: Impo
             }
             emit_progress_done(mod_path, mod_t_start)
             // g2eo.1 directory-as-module opt-in: when AVRA_DIR_MODULE
-            // is set AND mod_path is the subdir form (`<dir>/<name>/mod.av`),
+            // is set AND mod_path is the subdir form (`<dir>/<name>/mod.av`)
+            // AND mod.av does NOT itself declare any `mod foo` children,
             // ALSO auto-load every sibling `.av` file in that subdir as
             // part of the module's body. This collapses the legacy
             // two-step (`mod foo` declares + `mod.av` body declares
             // children) into one filesystem walk: every file in the
             // dir contributes to the module's flat namespace.
             //
-            // Already-loaded paths are skipped (the loader threads
-            // LoadedPaths the same way the rest of the resolver does),
-            // so an explicit `mod foo` decl inside mod.av that races
-            // with auto-load just produces an empty Module wrapper —
-            // no duplicate decls.
+            // The "no mod decls" gate makes migration per-directory:
+            // a package author drops the `mod foo` lines from mod.av
+            // (often emptying it entirely) to opt that directory in.
+            // Mixed packages keep working — directories that still
+            // enumerate children stay nested, directories with empty
+            // mod.av flatten. No global flag-day required.
             //
-            // Gated on the env var so existing packages that rely on
-            // the nested `<mod>::<sub>::Foo` namespacing keep working
-            // until they migrate.
+            // Skipped on the metadata fast-path: when `<mod>.meta.bin`
+            // is being substituted for a fresh parse, sibling auto-load
+            // would produce extra decls the metadata doesn't have.
             let dir_mode = avra_process_env_get("AVRA_DIR_MODULE") != ""
             let is_subdir_form = mod_path == dir_mod
-            let dir_load = if dir_mode && is_subdir_form && !take_meta {
+            let mod_decls_present = stmts_have_mod_decl(mod_stmts)
+            let dir_load = if dir_mode && is_subdir_form && !take_meta && !mod_decls_present {
                 resolve_dir_module_body(mod_dir, new_loaded)
             } else {
                 ModListResult { stmts: StmtList.End, loaded: new_loaded, had_error: false, error_message: "" }

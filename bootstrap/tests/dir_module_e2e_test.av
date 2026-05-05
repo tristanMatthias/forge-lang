@@ -48,3 +48,9 @@ spec "AVRA_DIR_MODULE=1: directory-as-module semantics kick in" {
         dme_run().contains("PROBE runtime_output_correct: ok")
     }
 }
+
+spec "AVRA_DIR_MODULE=1: mod-decls in mod.av back off auto-load" {
+    then "explicit `mod foo` decls keep legacy nested behaviour, no double-loading" {
+        dme_run().contains("PROBE mod_decls_disable_autoload: ok")
+    }
+}
