@@ -7,7 +7,7 @@ use codegen.types.{Ctx, CgNewtypeReg, CgUnionAliasReg, CopySet, TypeRegs, DeferS
 use codegen.escape.{analyze_releasable, analyze_copy_types}
 use codegen.cycles.{CycleSet, analyze_cycles, cycle_set_has}
 use core.registry.{build_registry}
-use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
+use features.union_type.{emit_union_wrap, needs_union_wrap}
 use codegen.{emit_expr, emit_stmt, emit_stmt_list}
 use codegen.helpers.{stmts_last_expr}
 use diagnostics.{bag_new}

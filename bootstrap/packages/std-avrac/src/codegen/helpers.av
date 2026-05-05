@@ -5,7 +5,7 @@ use codegen.types.{Ctx, EmitValue, ParamTypeList, err_emit, null_ptr_val, ok_emi
 use core.ast.{vtype_is_unknown}
 use features.trait_decl.codegen.{box_for_trait, resolve_concrete_type_name}
 use features.closures.codegen.{emit_lambda_typed}
-use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
+use features.union_type.{emit_union_wrap, needs_union_wrap}
 
 /// Emit a single-argument call helper. Returns the first argument's
 /// EmitValue or an error when the list is empty. Used by built-in

@@ -4,7 +4,7 @@ use core.ast.{Expr, ExprList, FieldList, FieldInitList, VarEnv, field_index_of, 
 use codegen.types.{Ctx, EmitValue, ok_emit, err_emit, null_ptr_val}
 use core.type_registry.{type_registry_id_for}
 use features.enum_decl.codegen.{emit_enum_ctor}
-use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
+use features.union_type.{emit_union_wrap, needs_union_wrap}
 
 /// Codegen for `Foo { x: 1, y: 2 }`. Allocates the struct's
 /// LLVM type via the arena (or reuses a Copy-type stack slot when

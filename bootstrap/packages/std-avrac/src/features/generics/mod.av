@@ -4,6 +4,7 @@
 // parse_type_params when they see `<` after the declaration name.
 // The monomorphization pass (mono.av) consumes TypeParamList to generate
 // concrete specializations before codegen.
-
-mod parser
-mod mono
+//
+// dir-as-module (g2eo.1): no `mod` decls — sibling .av files
+// (parser.av + mono.av) auto-load and surface flat at
+// `features.generics.{...}`.

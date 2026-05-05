@@ -84,7 +84,7 @@ use @std.avrac.typeck.{typecheck_program}
 use @std.avrac.diagnostics.{bag_has_errors, bag_has_warnings, bag_new, bag_report, diag_error, diag_ice, span_dummy, DiagCode, DiagnosticBag}
 use @std.avrac.diagnostics.render.{render_bag, render_bag_json}
 use @std.avrac.codegen.setup.{compile_program, codegen_and_emit_object, codegen_and_emit_ir_cov}
-use @std.avrac.features.generics.mono.{monomorphize}
+use @std.avrac.features.generics.{monomorphize}
 
 fn print_usage() {
     eprintln("forge-bootstrap v0.1.0")

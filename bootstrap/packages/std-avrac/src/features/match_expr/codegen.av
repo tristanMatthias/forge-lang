@@ -4,7 +4,7 @@ use core.ast.{Expr, Pattern, PatternList, MatchArmList, WhenArmList, ParamList, 
 use codegen.types.{Ctx, EmitValue, StmtResult, err_emit, ok_emit, field_resolved_at, advance_field_list, emit_value_ptr, emit_value_ty, enum_reg_find_by_variant, vtype_is_ptr_type}
 use core.ast.{vtype_from_name}
 use codegen.{ok_sr, err_sr}
-use features.union_type.codegen.{emit_union_tag, emit_union_extract}
+use features.union_type.{emit_union_tag, emit_union_extract}
 use diagnostics.{DiagCode}
 
 /// Wrap a unified arm type as a successful Result. Codegen-side
