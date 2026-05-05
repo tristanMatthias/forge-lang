@@ -777,7 +777,24 @@ fn resolve_package_use_and_continue(ss: SStmt, next: StmtList, dir: string, load
         parsed.stmts!
     }
     emit_progress_done(pkg_file, pkg_t_start)
-    let resolved = resolve_module_files_inner(pkg_stmts, pkg_dir, new_loaded, stack)
+    // g2eo.1: when the package entry's body has no `mod foo` decls,
+    // auto-load every sibling `.av` in the same `src/` directory as
+    // part of the package body. This collapses one-package-per-mod
+    // shape (std-crypto's `mod sha256_pure`) into pure dir-as-module
+    // — the package's surface = entry exports + every sibling's
+    // exports, flat. Same gate the per-mod path uses (modules_decl
+    // present → keep legacy nested behaviour).
+    let pkg_decls_present = stmts_have_mod_decl(pkg_stmts)
+    let pkg_dir_load = if !take_meta_fast_path && !pkg_decls_present {
+        resolve_dir_module_body(pkg_dir, new_loaded)
+    } else {
+        ModListResult { stmts: StmtList.End, loaded: new_loaded, had_error: false, error_message: "" }
+    }
+    if pkg_dir_load.had_error {
+        return pkg_dir_load
+    }
+    let pkg_combined_stmts = stmt_list_concat(pkg_stmts, pkg_dir_load.stmts)
+    let resolved = resolve_module_files_inner(pkg_combined_stmts, pkg_dir, pkg_dir_load.loaded, stack)
     if resolved.had_error { return resolved }
     // Create a nested module structure: @std → cli → {body}
     let without_at = pkg_mod.substring(1, pkg_mod.length)

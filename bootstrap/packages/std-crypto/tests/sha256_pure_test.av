@@ -5,8 +5,7 @@
 // Tracking ticket: forge-crafting-intepreters-nfkn (Port @std/crypto.sha256
 // from C-extern to pure Avra).
 
-use @std.crypto.{sha256_hex}
-use @std.crypto.sha256_pure.{sha256_hex_pure}
+use @std.crypto.{sha256_hex, sha256_hex_pure}
 
 spec "sha256_hex_pure: FIPS 180-2 reference vectors" {
     then "empty string vector" {
