@@ -56,7 +56,11 @@ extern fn avra_bytes_slice(b: bytes, start: int, end: int) -> bytes
 extern fn avra_bytes_empty() -> bytes
 
 // ── Filesystem ──
-extern fn avra_readdir(path: string) -> ptr
+// avra_readdir returns the directory's entries as a List<string>
+// (AvraArray of string pointers — the runtime layout matches
+// List<string>). Hidden + parent entries (`.`, `..`) are filtered
+// inside the C runtime so callers never see them.
+extern fn avra_readdir(path: string) -> List<string>
 extern fn avra_is_dir(path: string) -> int
 extern fn avra_file_mtime(path: string) -> int
 extern fn avra_mkdir_p(path: string) -> int
