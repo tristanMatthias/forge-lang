@@ -920,8 +920,32 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths, stack: Impo
         // qualify_uses_recursively in the package-load path; the
         // dotted form (e.g. `@std.avrac`) is what use-paths use, while
         // the Module name itself stays in `::` form for codegen.
+        //
+        // g2eo.1.2: when this is the package-root wrapper (name starts
+        // with `@`), also synthesize Module decls for subdirs of `dir`
+        // that aren't already declared in body — same partial-migration
+        // semantics as the package-load path. This is how `bs2 build
+        // --lib --emit_metadata` picks up subdirs the entry file no
+        // longer enumerates explicitly (e.g. avrac.av dropping
+        // `mod build`). Without this branch, the lib-build path
+        // diverges from the `use @scope.pkg` path: an external
+        // consumer sees the build subsystem via auto-discovery, but
+        // the package's own --module_path compile doesn't.
+        //
+        // The `@` prefix gate matters: this branch ALSO fires for
+        // inner-module wrappers whose body came from metadata (e.g.
+        // a fast-path `Module("core", core_decls_from_unit_meta)`).
+        // Synthesizing into those would inject every sibling subdir
+        // inside one inner module, producing phantom paths like
+        // `@std::avrac::core::features::eval`. Top-level package
+        // wrappers are uniquely identifiable by the `@` they carry.
         .Module(name, body) if !stmt_list_is_empty(body) -> {
-            let resolved = resolve_module_files_inner(body, dir, loaded, stack)
+            let combined = if name.length > 0 && name[0] == "@" {
+                stmt_list_concat(body, synthesize_subdir_module_decls_filtered(dir, body))
+            } else {
+                body
+            }
+            let resolved = resolve_module_files_inner(combined, dir, loaded, stack)
             if resolved.had_error {
                 return ModStmtResult { stmt, loaded: resolved.loaded, had_error: true, error_message: resolved.error_message }
             }

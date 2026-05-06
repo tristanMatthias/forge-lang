@@ -71,9 +71,20 @@ export fn list_avra_module_files(dir: string) -> List<string> {
 /// joined paths. Used by the build driver to enumerate sub-modules
 /// of a parent module's directory.
 ///
-/// Subdirectories whose name starts with `.` (e.g. `.git`, `.cache`)
-/// are skipped, as are `tests` (held under a separate test-runner
-/// pipeline) and `build` (build artefact output).
+/// Skipped:
+///   - dotfiles (`.git`, `.cache`, …) — readdir already filters
+///     `.` and `..`, but third-party dotfiles still appear
+///   - `tests` — fixtures compile through the spec/given/then test
+///     harness, not as part of their parent module
+///
+/// We deliberately do NOT filter out `build` even though some
+/// projects use a top-level `build/` dir for artifact output: the
+/// callers of this function only ever walk `<pkg>/src/` (or one
+/// level below), and a `build/` directory at that depth is
+/// legitimate source — `@std/avrac` ships its build system at
+/// `packages/std-avrac/src/build/`. Filtering by name was the
+/// g2eo.1.2.1 bug: dropping `mod build` from avrac.av silently
+/// elided the entire build subsystem.
 export fn list_avra_module_subdirs(dir: string) -> List<string> {
     if avra_is_dir(dir) == 0 { return [] }
     let entries = avra_readdir(dir)
@@ -90,7 +101,7 @@ export fn list_avra_module_subdirs(dir: string) -> List<string> {
             i = i + 1
             continue
         }
-        if name == "tests" || name == "build" {
+        if name == "tests" {
             i = i + 1
             continue
         }

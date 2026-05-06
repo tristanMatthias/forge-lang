@@ -68,8 +68,8 @@ spec "dir_module: list_avra_module_subdirs filters correctly" {
     then "tests dir excluded" {
         dirmod_run().contains("PROBE tests_dir_excluded: ok")
     }
-    then "build dir excluded" {
-        dirmod_run().contains("PROBE build_dir_excluded: ok")
+    then "build dir included (g2eo.1.2.1: legitimate source subdir name)" {
+        dirmod_run().contains("PROBE build_dir_included: ok")
     }
 }
 

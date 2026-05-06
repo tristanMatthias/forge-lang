@@ -86,11 +86,15 @@ fn main() -> int {
     let without_slash = list_avra_module_files(root)
     probe("trailing_slash_agnostic", with_slash.length == without_slash.length)
 
-    // Probe 13 — `tests` and `build` dirs are excluded from subdirs.
+    // Probe 13 — `tests` is excluded from subdirs (test harness owns
+    // it). `build` is INCLUDED — it's a legitimate source subdir name
+    // (e.g. `@std/avrac` ships its build system at `src/build/`); the
+    // artifact-output `build/` dir lives one level above `src/`, so
+    // it's never reached by these scans. Tracking g2eo.1.2.1.
     avra_shell_exec("mkdir -p " + root + "/tests " + root + "/build")
     let dirs_after = list_avra_module_subdirs(root)
     probe("tests_dir_excluded", !list_contains_suffix(dirs_after, "/tests"))
-    probe("build_dir_excluded", !list_contains_suffix(dirs_after, "/build"))
+    probe("build_dir_included", list_contains_suffix(dirs_after, "/build"))
 
     avra_shell_exec("rm -rf " + root)
     0
