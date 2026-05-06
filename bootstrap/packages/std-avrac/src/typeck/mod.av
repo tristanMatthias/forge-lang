@@ -292,12 +292,32 @@ export type TraitMethod = {
     param_count: int,
 }
 
+/// One trait's metadata in TraitRegistry's `ord` list.
+type TraitRegMeta = {
+    name: string,
+    methods: List<TraitMethod>,
+    assoc_types: List<string>,
+}
+
 /// Trait-name → (methods, assoc types) table. Populated by the
 /// pre-pass `collect_decls`; consulted whenever an impl block or
-/// `dyn Trait` appears.
-enum TraitRegistry {
-    End
-    Node(trait_name: string, methods: List<TraitMethod>, assoc_types: List<string>, next: TraitRegistry)
+/// `dyn Trait` appears. Hashmap-backed for O(1) lookup, same pattern
+/// as FnTypeReg / StructTypeReg / EnumTypeReg.
+type TraitRegistry = {
+    ord: List<TraitRegMeta>,
+    idx: ptr,
+}
+
+fn trait_registry_new() -> TraitRegistry {
+    TraitRegistry { ord: [], idx: avra_map_new_cstr() }
+}
+
+fn trait_registry_register(reg: TraitRegistry, name: string, methods: List<TraitMethod>, assoc_types: List<string>) -> TraitRegistry {
+    mut ord = reg.ord
+    let new_idx = ord.length
+    ord.push(TraitRegMeta { name, methods, assoc_types })
+    avra_map_set_cstr(reg.idx, name, new_idx)
+    TraitRegistry { ord, idx: reg.idx }
 }
 
 /// Single-walk lookup result for the trait registry — same pattern
@@ -313,14 +333,14 @@ export type TraitFound = {
 }
 
 /// One-walk lookup. Returns a record with `found=false` when the
-/// trait is not in the registry.
+/// trait is not in the registry. O(1) via the index map.
 export fn trait_get(reg: TraitRegistry, name: string) -> TraitFound {
-    match reg {
-        .End -> TraitFound { found: false, methods: [], assoc_types: [] }
-        .Node(n, methods, at, _) if n == name ->
-            TraitFound { found: true, methods: methods, assoc_types: at }
-        .Node(_, _, _, next) -> trait_get(next, name)
+    if avra_map_has_cstr(reg.idx, name) == 0 {
+        return TraitFound { found: false, methods: [], assoc_types: [] }
     }
+    let i = avra_map_get_cstr(reg.idx, name)
+    let m = reg.ord[i]
+    TraitFound { found: true, methods: m.methods, assoc_types: m.assoc_types }
 }
 
 /// Membership probe for the trait registry. Convenience wrapper
@@ -357,37 +377,64 @@ fn is_shape(set: ShapeSet, name: string) -> bool {
     }
 }
 
+/// One newtype's metadata in NewtypeReg's `ord` list.
+type NewtypeMeta = { name: string, inner_vt: ValueType }
+
 /// Newtype-name → inner-type table. Populated by `collect_decls`,
 /// consulted by `resolve_vtype` to peel newtype wrappers when
-/// matching types.
-enum NewtypeReg {
-    End
-    Node(name: string, inner_vt: ValueType, next: NewtypeReg)
+/// matching types. Hashmap-backed for O(1) lookup.
+type NewtypeReg = {
+    ord: List<NewtypeMeta>,
+    idx: ptr,
+}
+
+fn newtype_reg_new() -> NewtypeReg {
+    NewtypeReg { ord: [], idx: avra_map_new_cstr() }
+}
+
+fn newtype_reg_register(reg: NewtypeReg, name: string, inner_vt: ValueType) -> NewtypeReg {
+    mut ord = reg.ord
+    let new_idx = ord.length
+    ord.push(NewtypeMeta { name, inner_vt })
+    avra_map_set_cstr(reg.idx, name, new_idx)
+    NewtypeReg { ord, idx: reg.idx }
 }
 
 /// Look up a newtype's inner type. Unknown when not found.
 fn newtype_vtype_lookup(reg: NewtypeReg, name: string) -> ValueType {
-    match reg {
-        .End -> ValueType.Unknown
-        .Node(n, vt, _) if n == name -> vt
-        .Node(_, _, next) -> newtype_vtype_lookup(next, name)
-    }
+    if avra_map_has_cstr(reg.idx, name) == 0 { return ValueType.Unknown }
+    let i = avra_map_get_cstr(reg.idx, name)
+    reg.ord[i].inner_vt
 }
+
+/// One union-alias's metadata in UnionAliasReg's `ord` list.
+type UnionAliasMeta = { name: string, type_vt: ValueType }
 
 /// Union-alias table: `type Json = string | int | bool` → name
 /// → Union ValueType. Used to expand the alias when typechecking.
-enum UnionAliasReg {
-    End
-    Node(name: string, type_vt: ValueType, next: UnionAliasReg)
+/// Hashmap-backed for O(1) lookup.
+type UnionAliasReg = {
+    ord: List<UnionAliasMeta>,
+    idx: ptr,
+}
+
+fn union_alias_reg_new() -> UnionAliasReg {
+    UnionAliasReg { ord: [], idx: avra_map_new_cstr() }
+}
+
+fn union_alias_reg_register(reg: UnionAliasReg, name: string, type_vt: ValueType) -> UnionAliasReg {
+    mut ord = reg.ord
+    let new_idx = ord.length
+    ord.push(UnionAliasMeta { name, type_vt })
+    avra_map_set_cstr(reg.idx, name, new_idx)
+    UnionAliasReg { ord, idx: reg.idx }
 }
 
 /// Look up a union alias's expanded type. Unknown when not registered.
 fn union_alias_vtype_lookup(reg: UnionAliasReg, name: string) -> ValueType {
-    match reg {
-        .End -> ValueType.Unknown
-        .Node(n, vt, _) if n == name -> vt
-        .Node(_, _, next) -> union_alias_vtype_lookup(next, name)
-    }
+    if avra_map_has_cstr(reg.idx, name) == 0 { return ValueType.Unknown }
+    let i = avra_map_get_cstr(reg.idx, name)
+    reg.ord[i].type_vt
 }
 
 /// Associated-type definitions from `impl Trait for Type { type
@@ -475,14 +522,14 @@ fn tc_new() -> TC {
         structs: struct_type_reg_new(),
         shapes: ShapeSet.End,
         enums: enum_type_reg_new(),
-        newtypes: NewtypeReg.End,
-        union_aliases: UnionAliasReg.End,
+        newtypes: newtype_reg_new(),
+        union_aliases: union_alias_reg_new(),
         depth: 0,
         bag: bag_new(),
         current_fn: "",
         current_line: 0,
         current_col: 0,
-        traits: TraitRegistry.End,
+        traits: trait_registry_new(),
         trait_impls: TraitImplReg.End,
         assoc_type_defs: AssocTypeDefs.End,
         features: build_registry(),
@@ -678,12 +725,12 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
                     let inner_ty = resolve_vtype(tc, inner_vt)
                     let ctor_params = ParamList.Node("value", inner_ty, ParamList.End)
                     tc with {
-                        newtypes: NewtypeReg.Node(name, inner_vt, tc.newtypes),
+                        newtypes: newtype_reg_register(tc.newtypes, name, inner_vt),
                         fns: fn_type_reg_register(tc.fns, name, ctor_params, ValueType.Newtype(name, inner_ty, 0)),
                     }
                 }
                 .UnionAliasDecl(name, type_vt) -> {
-                    tc with { union_aliases: UnionAliasReg.Node(name, type_vt, tc.union_aliases) }
+                    tc with { union_aliases: union_alias_reg_register(tc.union_aliases, name, type_vt) }
                 }
                 .ShapeDecl(name, fields) -> tc with {
                     structs: struct_type_reg_register(tc.structs, name, fields),
@@ -713,7 +760,7 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
                 }
                 .Module(_, body) -> collect_decls(tc, body)
                 .TraitDecl(name, methods) -> tc with {
-                    traits: TraitRegistry.Node(name, collect_method_names_from_stmts(methods), collect_assoc_types_from_stmts(methods), tc.traits)
+                    traits: trait_registry_register(tc.traits, name, collect_method_names_from_stmts(methods), collect_assoc_types_from_stmts(methods))
                 }
                 _ -> tc
             }
