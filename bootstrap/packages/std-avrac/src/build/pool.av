@@ -143,25 +143,43 @@ export fn pool_extract_rc(wait_json: string) -> int {
 /// custom enum. `.length` and `[idx]` give O(1) random access for
 /// the dispatcher's index walk.
 export fn pool_run(commands: List<string>, jobs: int) -> int {
+    pool_run_with_progress(commands, [], jobs, "")
+}
+
+/// Variant of `pool_run` that also writes per-job progress markers
+/// into `marker_dir`. Each entry in `slugs` corresponds 1:1 with
+/// `commands`; before a command spawns, the dispatcher touches
+/// `<marker_dir>/<slug>.running`, and after the worker reaps it
+/// touches `<marker_dir>/<slug>.done` (and removes `.running`).
+/// A separate UI loop in another thread/process can poll these
+/// markers to render a TTY progress bar without coupling to the
+/// pool's internal state — this is how `run_pre_deps_with_progress`
+/// (TTY branch of pre_build_path_deps) hooks into the pool without
+/// the marker-protocol being baked into the pool's API surface.
+///
+/// Pass `marker_dir == ""` (or empty `slugs`) to disable markers —
+/// callers that don't need progress just call `pool_run` directly.
+/// When markers are enabled, `slugs.length` MUST equal
+/// `commands.length`; mismatched shapes fall back to the no-marker
+/// path so a one-off bug doesn't leak truncated state to the UI.
+///
+/// Tracking: forge-crafting-intepreters-e20h Phase 2 unification.
+export fn pool_run_with_progress(commands: List<string>, slugs: List<string>, jobs: int, marker_dir: string) -> int {
     if jobs <= 0 { return 0 }
+    let want_markers = marker_dir != "" && slugs.length == commands.length
     let workers = workers_init(jobs)
+    let started_slugs = workers_started_slugs_init(jobs)
     let total = commands.length
     mut next_idx = 0
     mut completed = 0
     mut max_rc = 0
     while completed < total {
-        // Reap finished workers first so any freed slots are eligible
-        // to receive new dispatches in this same iteration.
-        let reaped = workers_reap(workers)
+        let reaped = workers_reap_with_markers(workers, started_slugs, marker_dir, want_markers)
         completed = completed + reaped.completed
         max_rc = pool_max_rc(max_rc, reaped.max_rc)
         if completed >= total { return max_rc }
-        // Dispatch as many queued commands as there are idle slots.
-        // Mutates `workers` in place.
-        let dispatched_count = dispatch_batch(commands, next_idx, total, workers)
+        let dispatched_count = dispatch_batch(commands, slugs, next_idx, total, workers, started_slugs, marker_dir, want_markers)
         next_idx = next_idx + dispatched_count
-        // Sleep briefly when we're waiting on at least one worker —
-        // skip the sleep if we just dispatched (cheap retry path).
         if dispatched_count == 0 && completed < total {
             avra_sleep_ms(50)
         }
@@ -169,10 +187,24 @@ export fn pool_run(commands: List<string>, jobs: int) -> int {
     max_rc
 }
 
+// Per-worker slug list, mirrors workers[]. Empty string means the
+// worker is idle (no slug currently in flight). Used so the reap
+// path knows which slug to flip from .running → .done — without
+// this, the pool would have to re-derive the slug from the cmd
+// string, which is brittle.
+fn workers_started_slugs_init(n: int) -> List<string> {
+    mut ss = []
+    mut i = 0
+    while i < n { ss.push("") i = i + 1 }
+    ss
+}
+
 // Dispatch up to `total - idx` queued commands into `workers`'s idle
 // slots. Returns the number of slots filled this call so the caller
-// advances `next_idx` accordingly.
-fn dispatch_batch(cmds: List<string>, idx: int, total: int, workers: List<Worker>) -> int {
+// advances `next_idx` accordingly. When markers are enabled, also
+// touches `<marker_dir>/<slug>.running` per dispatched job and
+// stashes the slug in `slugs_state` so the reap can find it.
+fn dispatch_batch(cmds: List<string>, slugs: List<string>, idx: int, total: int, workers: List<Worker>, slugs_state: List<string>, marker_dir: string, want_markers: bool) -> int {
     mut filled = 0
     mut i = idx
     while i < total && workers_has_idle(workers) {
@@ -186,9 +218,61 @@ fn dispatch_batch(cmds: List<string>, idx: int, total: int, workers: List<Worker
             continue
         }
         workers_dispatch(workers, handle, i)
+        if want_markers {
+            let slug = slugs[i]
+            workers_record_slug(workers, slugs_state, handle, slug)
+            avra_shell_exec("touch ${marker_dir}/${slug}.running")
+        }
         filled = filled + 1
         i = i + 1
     }
     filled
+}
+
+// Set the slug in slugs_state at the slot whose handle just got
+// dispatched. Linear scan because `workers_dispatch` returns nothing
+// — we re-find by handle. Tiny lists (jobs typically 4-16) so the
+// O(N) cost is irrelevant.
+fn workers_record_slug(ws: List<Worker>, slugs_state: List<string>, handle: int, slug: string) {
+    mut local = slugs_state
+    mut i = 0
+    while i < ws.length {
+        if ws[i].handle == handle {
+            local.set(i, slug)
+            return
+        }
+        i = i + 1
+    }
+}
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+// Marker-aware reap: for each completed worker, flip its slug
+// from .running → .done. Falls back to the plain reap when markers
+// aren't requested.
+fn workers_reap_with_markers(ws: List<Worker>, slugs_state: List<string>, marker_dir: string, want_markers: bool) -> ReapResult {
+    if !want_markers { return workers_reap(ws) }
+    mut local = ws
+    mut state = slugs_state
+    mut completed = 0
+    mut max_rc = 0
+    mut i = 0
+    while i < local.length {
+        let w = local[i]
+        if w.handle >= 0 && avra_process_is_alive(w.handle) == 0 {
+            let json = avra_process_wait(w.handle)
+            let rc = pool_extract_rc(json)
+            let slug = state[i]
+            if slug != "" {
+                avra_shell_exec("rm -f ${marker_dir}/${slug}.running && touch ${marker_dir}/${slug}.done")
+                state.set(i, "")
+            }
+            local.set(i, idle_worker())
+            completed = completed + 1
+            max_rc = pool_max_rc(max_rc, rc)
+        }
+        i = i + 1
+    }
+    ReapResult { completed, max_rc }
 }
 

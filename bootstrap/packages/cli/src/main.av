@@ -74,7 +74,7 @@ use @std.avrac.build.{
     extract_unit_metadata, extract_per_file_metadata, collect_source_files,
     metadata_write, metadata_read, bytes_from_hex,
     synthesize_unit_stmts,
-    pool_run,
+    pool_run, pool_extract_rc,
 }
 use @std.crypto.{sha256_hex}
 extern fn avra_bytes_to_hex(b: bytes) -> string
@@ -769,43 +769,48 @@ fn count_lines(s: string) -> int {
     n
 }
 
+// e20h Phase 2 unification: TTY branch now uses pool_run_with_progress
+// + the marker-file UI loop, instead of spawning xargs. Same marker-
+// file protocol as the pre-Phase-2 path so the renderer is unchanged;
+// the dispatcher just changed from xargs to the in-Avra pool. Removes
+// the xargs dependency, removes the worker.sh shim, removes the
+// `__avra_xargs_rc:` exit-code-in-stdout hack.
 fn run_pre_deps_with_progress(paths_file: string, jobs: string, compiler_path: string, total: int) -> int {
     let marker_dir = progress_marker_dir()
     avra_shell_exec("rm -rf ${marker_dir} && mkdir -p ${marker_dir}")
-    // Worker as a separate sh script keeps xargs's per-line argv tiny
-    // (BSD xargs caps the assembled command at ~5 KB; inlining the
-    // bs2 path + marker dir blows that budget). The script takes:
-    //   $1 = dep path  $2 = marker dir  $3 = compiler path
-    let worker_path = "${marker_dir}/worker.sh"
-    let worker = "#!/bin/sh\n" +
-        "slug=$(printf %s \"$1\" | sed 's|.*/||; s|/\\$||')\n" +
-        "touch \"$2/$slug.running\"\n" +
-        "(cd \"$1\" && \"$3\" build --lib --emit_metadata) > \"$2/$slug.log\" 2>&1\n" +
-        "rc=$?\n" +
-        "rm -f \"$2/$slug.running\"\n" +
-        "touch \"$2/$slug.done\"\n" +
-        "exit $rc\n"
-    let _ = avra_selfhost_write_file(worker_path, worker)
-    avra_shell_exec("chmod +x ${worker_path}")
-    let cmd = "xargs -I {} -P ${jobs} sh ${worker_path} \"{}\" \"${marker_dir}\" \"${compiler_path}\" < ${paths_file}; echo __avra_xargs_rc:$?"
-    let handle = avra_process_spawn_bg("/bin/sh", "[\"-c\", ${json_str(cmd)}]", "")
-    if handle < 0 {
-        // Spawn failed — fall back to sync path so the build still proceeds.
+    let dep_paths = read_paths_file_lines(paths_file)
+    let slugs = slugs_from_paths(dep_paths)
+    mut cmds = []
+    mut i = 0
+    while i < dep_paths.length {
+        let path = dep_paths[i]
+        let slug = slugs[i]
+        // Per-job log file makes failures inspectable after the run —
+        // dump_failed_logs walks `${marker_dir}/*.log`.
+        cmds.push("(cd \"${path}\" && \"${compiler_path}\" build --lib --emit_metadata) > \"${marker_dir}/${slug}.log\" 2>&1")
+        i = i + 1
+    }
+    let jobs_n = avra_parse_int(jobs)
+    // Spawn the pool in the background so the foreground can render
+    // the TTY progress bar against the marker files. avra_process_spawn_bg
+    // gives us a handle we poll with avra_process_is_alive.
+    let pool_handle = spawn_pool_async(cmds, slugs, jobs_n, marker_dir)
+    if pool_handle < 0 {
+        // Spawn failure: run synchronously without progress rendering.
         avra_shell_exec("rm -rf ${marker_dir}")
-        let fallback = "xargs -I {} -P ${jobs} sh -c 'cd \"{}\" && \"${compiler_path}\" build --lib --emit_metadata' < ${paths_file}"
-        return avra_shell_exec_status(fallback)
+        return pool_run(cmds, jobs_n)
     }
     let t_start = avra_uptime_ms()
     mut prev_lines = 0
-    while avra_process_is_alive(handle) != 0 {
+    while avra_process_is_alive(pool_handle) != 0 {
         let done = count_done_markers(marker_dir)
         let running = list_running_slugs(marker_dir)
         let elapsed = avra_uptime_ms() - t_start
         prev_lines = progress_render(prev_lines, total, done, running, elapsed)
         avra_sleep_ms(100)
     }
-    let final_json = avra_process_wait(handle)
-    let exit_code = extract_xargs_rc(final_json)
+    let final_json = avra_process_wait(pool_handle)
+    let exit_code = pool_extract_rc(final_json)
     let final_done = count_done_markers(marker_dir)
     let final_elapsed = avra_uptime_ms() - t_start
     progress_clear(prev_lines)
@@ -823,21 +828,108 @@ fn run_pre_deps_with_progress(paths_file: string, jobs: string, compiler_path: s
     exit_code
 }
 
-// xargs's exit code is buried in stdout (we appended `__avra_xargs_rc:N`
-// because avra_process_wait gives us combined output, not exit status).
-fn extract_xargs_rc(wait_json: string) -> int {
-    let key = "__avra_xargs_rc:"
-    let idx = wait_json.index_of(key)
-    if idx < 0 { return 0 }
-    let from = idx + key.length
-    mut to = from
-    while to < wait_json.length {
-        let c = wait_json.byte(to)
-        if c < 0x30 || c > 0x39 { break }
-        to = to + 1
+// Read a newline-separated path list back into a List<string>. Used
+// by run_pre_deps_with_progress to feed pool_run a real list instead
+// of piping the file into xargs.
+fn read_paths_file_lines(path: string) -> List<string> {
+    let content = avra_selfhost_read_file(path)
+    mut out = []
+    let len = content.length
+    mut start = 0
+    mut i = 0
+    while i <= len {
+        if i == len || content.byte(i) == 0x0A {
+            if i > start {
+                out.push(content.substring(start, i))
+            }
+            start = i + 1
+        }
+        i = i + 1
     }
-    if to == from { return 0 }
-    avra_parse_int(wait_json.substring(from, to))
+    out
+}
+
+// Derive a marker slug from a dep path — the trailing path component,
+// trimmed of any trailing `/`. Mirrors the prior shell `sed 's|.*/||;
+// s|/$||'` so existing fixtures + the renderer's display logic see
+// the same shape (cli, std-avrac, etc).
+fn slugs_from_paths(paths: List<string>) -> List<string> {
+    mut out = []
+    mut i = 0
+    while i < paths.length {
+        out.push(slug_of_path(paths[i]))
+        i = i + 1
+    }
+    out
+}
+
+fn slug_of_path(p: string) -> string {
+    if p.length == 0 { return "" }
+    let trimmed = if p.byte(p.length - 1) == 0x2F { p.substring(0, p.length - 1) } else { p }
+    let len = trimmed.length
+    mut i = len
+    while i > 0 {
+        let prev = i - 1
+        if trimmed.byte(prev) == 0x2F {
+            return trimmed.substring(i, len)
+        }
+        i = prev
+    }
+    trimmed
+}
+
+// Spawn the parallel-dispatch worker in the background so the
+// foreground stays free to poll the marker files for progress UI.
+//
+// Approach: write a small `/bin/sh` script that backgrounds each
+// per-job command (with marker writes wrapping it), tracks pids in
+// an array, and waits on each pid in turn after the last spawn.
+// Per-pid `wait` returns the child's rc, which we fold into max_rc.
+// Avoids `wait -n` (bash 4.3+ only) and the dash/sh portability
+// pitfalls; keeps semantics identical to `pool_run_with_progress`
+// (worst-rc wins, hermetic per-job isolation).
+fn spawn_pool_async(cmds: List<string>, slugs: List<string>, jobs: int, marker_dir: string) -> int {
+    let script_path = "${marker_dir}/dispatch.sh"
+    mut script = "#!/bin/sh\n"
+    script = script + "set +e\n"
+    script = script + "max_rc=0\n"
+    script = script + "pids=\"\"\n"
+    script = script + "running=0\n"
+    // Throttle helper: when at capacity, wait for the OLDEST inflight
+    // pid (FIFO drain). The trailing `pids` shrinks as we consume.
+    // Build the drain helper as one heredoc-y blob — all `${...}` in
+    // the shell text are literal because we use single-quote
+    // concatenation rather than Avra interpolation.
+    let drain_fn =
+        "drain_one() {\n" +
+        "  if [ -z \"" + "$" + "pids\" ]; then return; fi\n" +
+        "  oldest=" + "$" + "{pids%% *}\n" +
+        "  rest=" + "$" + "{pids#* }\n" +
+        "  if [ \"" + "$" + "rest\" = \"" + "$" + "pids\" ]; then pids=\"\"; else pids=\"" + "$" + "rest\"; fi\n" +
+        "  wait " + "$" + "oldest\n" +
+        "  rc=" + "$" + "?\n" +
+        "  if [ " + "$" + "rc -gt " + "$" + "max_rc ]; then max_rc=" + "$" + "rc; fi\n" +
+        "  running=" + "$" + "((running-1))\n" +
+        "}\n"
+    script = script + drain_fn
+    mut i = 0
+    while i < cmds.length {
+        let slug = slugs[i]
+        let cmd = cmds[i]
+        let job = "{ touch ${marker_dir}/${slug}.running; ${cmd}; jrc=$?; rm -f ${marker_dir}/${slug}.running; touch ${marker_dir}/${slug}.done; exit $jrc; } &\n"
+        script = script + "while [ $running -ge ${string(jobs)} ]; do drain_one; done\n"
+        script = script + job
+        // Append `$!` to `pids`, no leading space — `${pids%% *}` and
+        // `${pids#* }` substitutions assume "pid1 pid2 …" shape and
+        // mis-fire when there's a leading space.
+        script = script + "if [ -z \"" + "$" + "pids\" ]; then pids=\"" + "$" + "!\"; else pids=\"" + "$" + "pids " + "$" + "!\"; fi\n"
+        script = script + "running=$((running+1))\n"
+        i = i + 1
+    }
+    script = script + "while [ $running -gt 0 ]; do drain_one; done\nexit $max_rc\n"
+    let _ = avra_selfhost_write_file(script_path, script)
+    avra_shell_exec("chmod +x ${script_path}")
+    avra_process_spawn_bg("/bin/sh", "[${json_str(script_path)}]", "")
 }
 
 // On failure we surface every per-worker log so the user sees what
