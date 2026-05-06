@@ -629,6 +629,15 @@ fn forward_declare_all_structs(ctx: ptr, stmts: StmtList) {
 /// body with the lowered types, and appends a registry entry. Also
 /// applies the `__without`/`__only` row operators on `type` decls.
 fn fill_and_register_structs(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtList, nts: CgNewtypeReg, uas: CgUnionAliasReg, reg: StructReg) -> StructReg {
+    fill_and_register_structs_ext(ctx, i64t, i1t, dt, pt, stmts, nts, uas, reg, false)
+}
+
+/// Inner walker carrying an `external` flag — set to true when
+/// recursing inside an `@external_unit` Module wrapper. Types
+/// registered with `external=true` get a `__release_TypeName` decl
+/// (so call sites still link) but no body is emitted in this unit
+/// (g2eo Phase A: per-module compile filter).
+fn fill_and_register_structs_ext(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtList, nts: CgNewtypeReg, uas: CgUnionAliasReg, reg: StructReg, external: bool) -> StructReg {
     match stmts {
         .End -> reg
         .Node(ss, next) -> {
@@ -649,7 +658,7 @@ fn fill_and_register_structs(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, st
                         avra_llvm_struct_set_body(st, field_arr, count, 0)
                     }
                     avra_llvm_type_array_free(field_arr)
-                    struct_reg_register(reg, name, resolved_fields)
+                    struct_reg_register_full(reg, name, resolved_fields, external)
                 }
                 .ShapeDecl(name, fields) -> {
                     let base_regs = TypeRegs { structs: reg, enums: enum_reg_new(), newtypes: nts, union_aliases: uas }
@@ -660,14 +669,17 @@ fn fill_and_register_structs(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, st
                     let st = avra_llvm_get_type_by_name(ctx, name)
                     avra_llvm_struct_set_body(st, field_arr, count, 0)
                     avra_llvm_type_array_free(field_arr)
-                    struct_reg_register(reg, name, resolved_fields)
+                    struct_reg_register_full(reg, name, resolved_fields, external)
                 }
                 .UnionAliasDecl(_, _) -> reg
                 .NewtypeDecl(_, _) -> reg
-                .Module(_, body) -> fill_and_register_structs(ctx, i64t, i1t, dt, pt, body, nts, uas, reg)
+                .Module(_, body) -> {
+                    let mod_external = external || (find_annotation(ss.node, "external_unit") != null)
+                    fill_and_register_structs_ext(ctx, i64t, i1t, dt, pt, body, nts, uas, reg, mod_external)
+                }
                 _ -> reg
             }
-            fill_and_register_structs(ctx, i64t, i1t, dt, pt, next, nts, uas, updated)
+            fill_and_register_structs_ext(ctx, i64t, i1t, dt, pt, next, nts, uas, updated, external)
         }
     }
 }
@@ -780,6 +792,15 @@ fn declare_variant_payloads(lc: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, enum
 /// per-variant payload structs via `declare_variant_payloads`, and
 /// appends the resolved variants to the enum registry.
 fn declare_enums(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtList, structs: StructReg, nts: CgNewtypeReg, uas: CgUnionAliasReg, reg: EnumReg) -> EnumReg {
+    declare_enums_ext(ctx, i64t, i1t, dt, pt, stmts, structs, nts, uas, reg, false)
+}
+
+/// Inner walker carrying the `external` flag — mirror of
+/// `fill_and_register_structs_ext`. Enums declared inside an
+/// `@external_unit` Module are registered with `external=true` so
+/// their `__release_EnumName` body is skipped during emit (g2eo
+/// Phase A: per-module compile filter).
+fn declare_enums_ext(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtList, structs: StructReg, nts: CgNewtypeReg, uas: CgUnionAliasReg, reg: EnumReg, external: bool) -> EnumReg {
     match stmts {
         .End -> reg
         .Node(ss, next) -> {
@@ -797,12 +818,15 @@ fn declare_enums(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtLis
                     declare_variant_payloads(ctx, i64t, i1t, dt, pt, name, variants, structs, nts, uas, reg)
                     let ev_regs = TypeRegs { structs, enums: reg, newtypes: nts, union_aliases: uas }
                     let resolved_variants = resolve_variant_fields(variants, ev_regs)
-                    enum_reg_register(reg, name, resolved_variants)
+                    enum_reg_register_full(reg, name, resolved_variants, external)
                 }
-                .Module(_, body) -> declare_enums(ctx, i64t, i1t, dt, pt, body, structs, nts, uas, reg)
+                .Module(_, body) -> {
+                    let mod_external = external || (find_annotation(ss.node, "external_unit") != null)
+                    declare_enums_ext(ctx, i64t, i1t, dt, pt, body, structs, nts, uas, reg, mod_external)
+                }
                 _ -> reg
             }
-            declare_enums(ctx, i64t, i1t, dt, pt, next, structs, nts, uas, updated)
+            declare_enums_ext(ctx, i64t, i1t, dt, pt, next, structs, nts, uas, updated, external)
         }
     }
 }
@@ -1074,11 +1098,18 @@ fn emit_release_body_enum(ctx: Ctx, name: string, variants: VariantList, is_cycl
 
 /// Phase 2 for structs: walk StructReg and emit each release fn's
 /// body. Skips structs without RC fields and without a Drop impl —
-/// their release fn was never declared.
+/// their release fn was never declared. Also skips entries marked
+/// `external` (g2eo Phase A: per-module compile filter) — their
+/// release body lives in the producer's `.o`, the declaration alone
+/// links us to it.
 fn emit_release_bodies_structs(ctx: Ctx, reg: StructReg, cycles: CycleSet) {
     mut i = 0
     while i < reg.ord.length {
         let s = reg.ord[i]
+        if s.external {
+            i = i + 1
+            continue
+        }
         let has_drop = ctx.get_fn("${s.name}__drop") != null
         if fields_have_rc(s.fields) || has_drop {
             let is_cyclic = cycle_set_has(cycles, s.name)
@@ -1089,11 +1120,16 @@ fn emit_release_bodies_structs(ctx: Ctx, reg: StructReg, cycles: CycleSet) {
 }
 
 /// Phase 2 for enums: walk EnumReg and emit each release fn's body
-/// when at least one variant carries an RC payload.
+/// when at least one variant carries an RC payload. External entries
+/// (g2eo Phase A) are skipped — their body lives in the producer.
 fn emit_release_bodies_enums(ctx: Ctx, reg: EnumReg, cycles: CycleSet) {
     mut i = 0
     while i < reg.ord.length {
         let e = reg.ord[i]
+        if e.external {
+            i = i + 1
+            continue
+        }
         if variants_have_rc(e.variants) {
             let is_cyclic = cycle_set_has(cycles, e.name)
             emit_release_body_enum(ctx, e.name, e.variants, is_cyclic)

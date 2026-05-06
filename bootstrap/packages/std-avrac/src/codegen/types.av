@@ -509,8 +509,12 @@ export fn releasable_has(set: ReleasableSet, name: string) -> bool {
     }
 }
 
-/// One struct decl entry in StructReg's `ord` list.
-export type StructRegMeta = { name: string, fields: FieldList }
+/// One struct decl entry in StructReg's `ord` list. `external` is
+/// set when the type comes from an `@external_unit` Module — its
+/// `__release_TypeName` body lives in the producer's `.o` and we
+/// must emit only the declaration here, not a duplicate body
+/// (g2eo Phase A: per-module compile filter).
+export type StructRegMeta = { name: string, fields: FieldList, external: bool }
 
 /// Registry of declared struct types — `name → FieldList`. Built by
 /// the declaration pass; carried as `Ctx.structs`. Hashmap-backed
@@ -525,9 +529,17 @@ export fn struct_reg_new() -> StructReg {
 }
 
 export fn struct_reg_register(reg: StructReg, name: string, fields: FieldList) -> StructReg {
+    struct_reg_register_full(reg, name, fields, false)
+}
+
+/// Variant of `struct_reg_register` that records whether the struct
+/// originates from an `@external_unit` module. Used by per-module
+/// compile (g2eo Phase A) to skip emitting `__release_TypeName`
+/// bodies for types defined elsewhere.
+export fn struct_reg_register_full(reg: StructReg, name: string, fields: FieldList, external: bool) -> StructReg {
     mut ord = reg.ord
     let new_idx = ord.length
-    ord.push(StructRegMeta { name, fields })
+    ord.push(StructRegMeta { name, fields, external })
     avra_map_set_cstr(reg.idx, name, new_idx)
     StructReg { ord, idx: reg.idx }
 }
@@ -546,8 +558,11 @@ export fn struct_reg_lookup(reg: StructReg, name: string) -> StructLookup {
     StructLookup { found: true, fields: reg.ord[i].fields }
 }
 
-/// One enum decl entry in EnumReg's `ord` list.
-export type EnumRegMeta = { name: string, variants: VariantList }
+/// One enum decl entry in EnumReg's `ord` list. `external` mirrors
+/// `StructRegMeta.external` — set when the enum belongs to an
+/// `@external_unit` module so per-module compile skips emitting its
+/// `__release_EnumName` body (g2eo Phase A).
+export type EnumRegMeta = { name: string, variants: VariantList, external: bool }
 
 /// Registry of declared enum types — `name → VariantList`. Hashmap-
 /// backed for O(1) lookup, same pattern as StructReg.
@@ -561,9 +576,16 @@ export fn enum_reg_new() -> EnumReg {
 }
 
 export fn enum_reg_register(reg: EnumReg, name: string, variants: VariantList) -> EnumReg {
+    enum_reg_register_full(reg, name, variants, false)
+}
+
+/// Variant of `enum_reg_register` that records whether the enum
+/// originates from an `@external_unit` module — see
+/// `struct_reg_register_full`.
+export fn enum_reg_register_full(reg: EnumReg, name: string, variants: VariantList, external: bool) -> EnumReg {
     mut ord = reg.ord
     let new_idx = ord.length
-    ord.push(EnumRegMeta { name, variants })
+    ord.push(EnumRegMeta { name, variants, external })
     avra_map_set_cstr(reg.idx, name, new_idx)
     EnumReg { ord, idx: reg.idx }
 }
