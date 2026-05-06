@@ -54,11 +54,52 @@ fn type_pop_scope(env: TypeEntry, depth: int) -> TypeEntry {
 
 // ── Function type registry ──
 
+/// Per-fn metadata stored in FnTypeReg's `ord` list. Insertion order
+/// is preserved so rewrite_fn_ret_tys can re-resolve every entry's
+/// param/ret types deterministically.
+type FnTypeMeta = {
+    name: string,
+    params: ParamList,
+    ret_ty: ValueType,
+}
+
 /// Function-name → (params, return type) table. Looked up by call
 /// expressions to typecheck arity + per-arg compatibility.
-enum FnTypeEntry {
-    End
-    Node(name: string, params: ParamList, ret_ty: ValueType, next: FnTypeEntry)
+///
+/// Implementation: parallel pair of an insertion-ordered list and a
+/// cstr-keyed hash map. The map's int payload holds the index into
+/// `ord` so lookups are O(1). Replaces the prior cons-list `FnTypeEntry`
+/// which was O(n) per lookup — bootstrap source has ~5000 fns and
+/// every typecheck operation that touched a fn name paid the linear
+/// walk. See forge-crafting-intepreters-kkgf.X for the perf rationale.
+///
+/// The `idx` map is mutable (heap-allocated cstr_map). Every `tc with
+/// { fns: <reg> }` update reuses the same ptr — the `ord` list is the
+/// only piece that grows immutably across `with`-updates.
+type FnTypeReg = {
+    ord: List<FnTypeMeta>,
+    idx: ptr,
+}
+
+extern fn avra_map_new_cstr() -> ptr
+extern fn avra_map_set_cstr(map: ptr, key: string, value: int)
+extern fn avra_map_get_cstr(map: ptr, key: string) -> int
+extern fn avra_map_has_cstr(map: ptr, key: string) -> int
+
+/// Fresh empty registry — empty `ord`, fresh hash map.
+fn fn_type_reg_new() -> FnTypeReg {
+    FnTypeReg { ord: [], idx: avra_map_new_cstr() }
+}
+
+/// Append (name, params, ret_ty) to `reg`. Mutates the map in place;
+/// returns a new FnTypeReg with the extended list. Map ptr is shared
+/// with the prior reg — see the `idx` field doc above.
+fn fn_type_reg_register(reg: FnTypeReg, name: string, params: ParamList, ret_ty: ValueType) -> FnTypeReg {
+    mut ord = reg.ord
+    let new_idx = ord.length
+    ord.push(FnTypeMeta { name, params, ret_ty })
+    avra_map_set_cstr(reg.idx, name, new_idx)
+    FnTypeReg { ord, idx: reg.idx }
 }
 
 /// Single-walk lookup result: `found=false` means the name is not
@@ -75,16 +116,15 @@ type FnTypeFound = {
     ret_ty: ValueType,
 }
 
-/// One-walk lookup. Returns a record with `found=false` when name is
-/// missing from the registry. All hot-path consumers prefer this over
-/// the legacy split helpers.
-fn fn_type_get(fns: FnTypeEntry, name: string) -> FnTypeFound {
-    match fns {
-        .End -> FnTypeFound { found: false, params: ParamList.End, ret_ty: ValueType.Unknown }
-        .Node(n, params, ret, _) if n == name ->
-            FnTypeFound { found: true, params: params, ret_ty: ret }
-        .Node(_, _, _, next) -> fn_type_get(next, name)
+/// O(1) lookup via the FnTypeReg's index map. Returns `found=false`
+/// when the name is unregistered (params/ret_ty hold safe sentinels).
+fn fn_type_get(fns: FnTypeReg, name: string) -> FnTypeFound {
+    if avra_map_has_cstr(fns.idx, name) == 0 {
+        return FnTypeFound { found: false, params: ParamList.End, ret_ty: ValueType.Unknown }
     }
+    let i = avra_map_get_cstr(fns.idx, name)
+    let m = fns.ord[i]
+    FnTypeFound { found: true, params: m.params, ret_ty: m.ret_ty }
 }
 
 
@@ -351,7 +391,7 @@ fn assoc_type_vt_lookup(reg: AssocTypeDefs, key: string) -> ValueType {
 /// functionally despite the imperative-looking call sites.
 type TC = {
     types: TypeEntry,
-    fns: FnTypeEntry,
+    fns: FnTypeReg,
     structs: StructTypeReg,
     shapes: ShapeSet,
     enums: EnumTypeReg,
@@ -407,7 +447,7 @@ type ExprResult = {
 fn tc_new() -> TC {
     TC {
         types: TypeEntry.End,
-        fns: FnTypeEntry.End,
+        fns: fn_type_reg_new(),
         structs: StructTypeReg.End,
         shapes: ShapeSet.End,
         enums: EnumTypeReg.End,
@@ -615,7 +655,7 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
                     let ctor_params = ParamList.Node("value", inner_ty, ParamList.End)
                     tc with {
                         newtypes: NewtypeReg.Node(name, inner_vt, tc.newtypes),
-                        fns: FnTypeEntry.Node(name, ctor_params, ValueType.Newtype(name, inner_ty, 0), tc.fns),
+                        fns: fn_type_reg_register(tc.fns, name, ctor_params, ValueType.Newtype(name, inner_ty, 0)),
                     }
                 }
                 .UnionAliasDecl(name, type_vt) -> {
@@ -630,15 +670,11 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
                 }
                 .Function(name, _, params, ret_vt, _) -> {
                     let final_ret = if vtype_eq(ret_vt, .Void) { ValueType.Void } else { resolve_vtype(tc, ret_vt) }
-                    tc with {
-                        fns: FnTypeEntry.Node(name, params, final_ret, tc.fns),
-                    }
+                    tc with { fns: fn_type_reg_register(tc.fns, name, params, final_ret) }
                 }
                 .ExternFn(name, params, ret_vt) -> {
                     let final_ret = if vtype_eq(ret_vt, .Void) { ValueType.Void } else { resolve_vtype(tc, ret_vt) }
-                    tc with {
-                        fns: FnTypeEntry.Node(name, params, final_ret, tc.fns),
-                    }
+                    tc with { fns: fn_type_reg_register(tc.fns, name, params, final_ret) }
                 }
                 .Impl(impl_name, methods) -> {
                     let colon_idx = find_trait_separator(impl_name)
@@ -699,15 +735,17 @@ fn collect_impl_assoc_types(tc: TC, type_name: string, stmts: StmtList) -> TC {
 /// errors).
 ///
 /// Tracked under forge-crafting-intepreters-dnq4.
-fn rewrite_fn_ret_tys(tc: TC, fns: FnTypeEntry) -> FnTypeEntry {
-    match fns {
-        .End -> .End
-        .Node(name, params, ret_ty, next) -> {
-            let upgraded_ret = if vtype_eq(ret_ty, .Void) { ret_ty } else { resolve_vtype(tc, ret_ty) }
-            let upgraded_params = rewrite_param_list_vts(tc, params)
-            FnTypeEntry.Node(name, upgraded_params, upgraded_ret, rewrite_fn_ret_tys(tc, next))
-        }
+fn rewrite_fn_ret_tys(tc: TC, fns: FnTypeReg) -> FnTypeReg {
+    mut out = fn_type_reg_new()
+    mut i = 0
+    while i < fns.ord.length {
+        let m = fns.ord[i]
+        let upgraded_ret = if vtype_eq(m.ret_ty, .Void) { m.ret_ty } else { resolve_vtype(tc, m.ret_ty) }
+        let upgraded_params = rewrite_param_list_vts(tc, m.params)
+        out = fn_type_reg_register(out, m.name, upgraded_params, upgraded_ret)
+        i = i + 1
     }
+    out
 }
 
 /// Map `resolve_vtype` over each ParamList entry's declared type.
