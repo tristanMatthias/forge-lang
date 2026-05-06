@@ -8,7 +8,7 @@
 
 extern fn avra_shell_exec(cmd: string) -> string
 
-use @std.avrac.features.modules.resolver.{resolve_dir_module_body, LoadedPaths}
+use @std.avrac.features.modules.{resolve_dir_module_body, LoadedPaths}
 
 fn probe(name: string, ok: bool) {
     let tag = if ok { "ok" } else { "FAIL" }

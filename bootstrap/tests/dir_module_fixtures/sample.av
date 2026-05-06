@@ -6,7 +6,7 @@
 
 extern fn avra_shell_exec(cmd: string) -> string
 
-use @std.avrac.features.modules.dir_module.{
+use @std.avrac.features.modules.{
     list_avra_module_files,
     list_avra_module_subdirs,
 }

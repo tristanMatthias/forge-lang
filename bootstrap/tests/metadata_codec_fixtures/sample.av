@@ -21,7 +21,7 @@ use @std.avrac.build.metadata.{
     unit_metadata_new,
     metadata_write, metadata_read, metadata_file_exists,
 }
-use @std.avrac.core.ast.{
+use @std.avrac.core.{
     Stmt, StmtList, Expr, ExprList, TypeParamList,
     ValueType, TypeList, FieldList, VariantList, ParamList,
     AnnotationList, vtype_eq, sstmt_dummy, stmt_unwrap, find_annotation,
