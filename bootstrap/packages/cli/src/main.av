@@ -65,6 +65,7 @@ use @std.avrac.features.component_decl.{expand_components}
 use @std.avrac.resolve.{resolve_names}
 use @std.avrac.features.modules.{resolve_module_files, modules_dirname, find_packages_dir, LoadedPaths, dedup_modules}
 use @std.avrac.features.modules.{load_package_config, load_manifest, Dep}
+use @std.avrac.features.modules.{filter_to_target_unit}
 use @std.avrac.build.{
     BuildInputs, BuildOutcome,
     decide_build, record_build_result,
@@ -1680,6 +1681,7 @@ fn main() {
             option stop_after { description "Stop after phase (parse|resolve|names|check)" }
             option module_path { description "Wrap parsed stmts in Module(<name>) — pre-qualifies symbols for cross-unit linking (2f54)" }
             option list_files { description "Write the resolved source-file list (one path per line) to this path — used by per-file build drivers (g2eo)" }
+            option target_module { description "Per-module compile (g2eo Phase A): emit only decls whose source path starts with this prefix; mark every other Module wrapper @external_unit" }
             arg file { description "Source file", required true }
         }
 
@@ -2012,6 +2014,15 @@ fn main() {
         let module_path_dash = result_get_option(parsed, "module-path")
         let module_path_under = result_get_option(parsed, "module_path")
         let module_path = if module_path_dash != "" { module_path_dash } else { module_path_under }
+        // g2eo Phase A: per-module compile filter. When --target_module
+        // is set, every Module wrapper whose body has no decls under
+        // this source-path prefix gets `@external_unit` after resolve,
+        // so codegen emits stubs only. The .ll then carries the target
+        // module's bodies and forward-refs every other module's
+        // __init_<name>; multiple .o files link cleanly via k21v.
+        let target_module_dash = result_get_option(parsed, "target-module")
+        let target_module_under = result_get_option(parsed, "target_module")
+        let target_module = if target_module_dash != "" { target_module_dash } else { target_module_under }
         // File path: last positional arg
         let argc = avra_selfhost_argc()
         let cpath = avra_selfhost_get_arg_cstr(argc - 1)
@@ -2079,9 +2090,18 @@ fn main() {
             println("ok")
             return
         }
+        // g2eo Phase A: per-module compile filter. Marks every Module
+        // wrapper outside `target_module` as @external_unit so codegen
+        // emits forward-refs, not bodies. Runs after resolve so the
+        // filter has the full module tree to inspect.
+        let post_filter_stmts = if target_module != "" {
+            filter_to_target_unit(mod_resolved.stmts, target_module)
+        } else {
+            mod_resolved.stmts
+        }
         // Component expansion: runs AFTER module resolution so component
         // definitions in any module are visible to the expander.
-        let expanded = expand_components(mod_resolved.stmts)
+        let expanded = expand_components(post_filter_stmts)
         let t_expand = avra_uptime_ms()
         let named = resolve_names(expanded)
         let t_names = avra_uptime_ms()
