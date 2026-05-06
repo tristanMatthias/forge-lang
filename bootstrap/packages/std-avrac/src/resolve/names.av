@@ -74,6 +74,51 @@ fn item_lookup(items: ModuleItem, name: string) -> string {
     }
 }
 
+// ── Global-index hashmap ──
+//
+// The global index — every item across every module, used by the
+// rewriter to qualify every Ident — was a cons-list searched O(n) per
+// identifier. Bootstrap source has ~5000 items and ~280k identifier
+// references, so item_lookup was nearly quadratic. The reg below
+// caches a cstr_map alongside the cons-list: build once at the top of
+// resolve_names, then every Ident lookup is O(1).
+
+extern fn avra_map_new_cstr() -> ptr
+extern fn avra_map_set_cstr(map: ptr, key: string, value: int)
+extern fn avra_map_get_cstr(map: ptr, key: string) -> int
+extern fn avra_map_has_cstr(map: ptr, key: string) -> int
+
+type GlobalItemReg = {
+    canonicals: List<string>,
+    idx: ptr,
+}
+
+fn global_item_reg_build(items: ModuleItem) -> GlobalItemReg {
+    let idx = avra_map_new_cstr()
+    mut canonicals: List<string> = []
+    mut cur = items
+    while true {
+        match cur {
+            .End -> { return GlobalItemReg { canonicals, idx } }
+            .Node(short, canonical, _, next) -> {
+                if avra_map_has_cstr(idx, short) == 0 {
+                    let i = canonicals.length
+                    canonicals.push(canonical)
+                    avra_map_set_cstr(idx, short, i)
+                }
+                cur = next
+            }
+        }
+    }
+    GlobalItemReg { canonicals, idx }
+}
+
+fn global_item_lookup(reg: GlobalItemReg, name: string) -> string {
+    if avra_map_has_cstr(reg.idx, name) == 0 { return "" }
+    let i = avra_map_get_cstr(reg.idx, name)
+    reg.canonicals[i]
+}
+
 /// True iff `name` is declared in `items` AND marked `export`.
 fn item_is_exported(items: ModuleItem, name: string) -> bool {
     match items {
@@ -479,7 +524,7 @@ type NameCtx = {
     aliases: AliasEntry,
     current_module: string,
     locals: LocalScope,
-    global_index: ModuleItem,
+    global_index: GlobalItemReg,
     type_reg: TypeRegistry,
 }
 
@@ -560,7 +605,8 @@ export fn resolve_names(stmts: StmtList) -> NameResolveResult {
     // O(item-count) walk instead of the legacy O(modules * items) tree
     // traversal + extra collect_module_items pass for top-level items
     // (the graph builder already walked them).
-    let global_index = build_global_index_from_graph(graph.all_items, ModuleItem.End)
+    let global_index_list = build_global_index_from_graph(graph.all_items, ModuleItem.End)
+    let global_index = global_item_reg_build(global_index_list)
     let reg = type_registry_new()
     let ctx = NameCtx { tree, graph, aliases: use_result.aliases, current_module: "", locals: LocalScope.End, global_index, type_reg: reg }
     let rewritten = rewrite_stmt_list(ctx, stmts)
@@ -738,7 +784,7 @@ fn resolve_type_in_ctx(ctx: NameCtx, type_name: string) -> string {
     // Primitives and type parameters (single uppercase letter) stay as-is
     if type_name in ["int", "string", "bool", "float", "ptr", "void"] { return type_name }
     if type_name.length == 1 && type_name[0] in "A".."Z" { return type_name }
-    let canonical = item_lookup(ctx.global_index, type_name)
+    let canonical = global_item_lookup(ctx.global_index, type_name)
     if canonical != "" { return canonical }
     let alias = alias_lookup(ctx.aliases, type_name)
     if alias != "" { return alias }
