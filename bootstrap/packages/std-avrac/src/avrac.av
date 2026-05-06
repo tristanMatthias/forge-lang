@@ -10,21 +10,11 @@
 //
 // The bootstrap module resolver wraps this file's contents in
 // `Module("@std") { Module("avrac") { ... } }` so every submodule
-// declared below becomes addressable at `@std.avrac.<sub>`.
+// reachable from this directory is addressable at `@std.avrac.<sub>`.
+//
+// Submodules are auto-discovered from sibling subdirectories — no
+// `mod foo` declarations required (g2eo.1 directory-as-module).
+// Each subdirectory of `src/` (core/, parse/, codegen/, build/, etc.)
+// is its own module. Add a new subdirectory and its public surface
+// shows up at `@std.avrac.<dirname>.*` automatically.
 
-mod core
-mod diagnostics
-mod parse
-mod features
-mod typeck
-mod resolve
-mod codegen
-mod desugar
-mod render
-mod pathutil
-mod coverage
-mod indexer
-mod docs
-mod lang_gen
-mod fmt
-mod test_runner

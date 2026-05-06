@@ -939,7 +939,14 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths, stack: Impo
         // inside one inner module, producing phantom paths like
         // `@std::avrac::core::features::eval`. Top-level package
         // wrappers are uniquely identifiable by the `@` they carry.
-        .Module(name, body) if !stmt_list_is_empty(body) -> {
+        //
+        // The @-prefixed wrapper also fires the synthesis when body
+        // is EMPTY — that's the all-mod-decls-dropped case. Without
+        // this branch, the empty-body fall-through below would search
+        // for `<dir>/@std.avrac.av` (which doesn't exist) and fail.
+        // The package's content comes entirely from auto-discovered
+        // subdirs in `dir`.
+        .Module(name, body) if (name.length > 0 && name[0] == "@") || !stmt_list_is_empty(body) -> {
             let combined = if name.length > 0 && name[0] == "@" {
                 stmt_list_concat(body, synthesize_subdir_module_decls_filtered(dir, body))
             } else {
