@@ -278,8 +278,8 @@ fn codegen_program(stmts: StmtList, debug_null_checks: bool, coverage: bool, sou
     let dt = avra_llvm_double_type(lc)
     decl(m, "avra_test_roughly", i64t, [dt, dt, dt])
     // Collect newtype/union alias registries first — needed for field type resolution
-    let cg_newtypes = collect_newtypes(stmts, CgNewtypeReg.End)
-    let cg_union_aliases = collect_union_aliases(stmts, CgUnionAliasReg.End)
+    let cg_newtypes = collect_newtypes(stmts, cg_newtype_reg_new())
+    let cg_union_aliases = collect_union_aliases(stmts, cg_union_alias_reg_new())
     let structs = declare_structs(lc, i64t, i1t, dt, pt, stmts, cg_newtypes, cg_union_aliases, struct_reg_new())
     let enums = declare_enums(lc, i64t, i1t, dt, pt, stmts, structs, cg_newtypes, cg_union_aliases, enum_reg_new())
     // Union type layout: {i64 tag, ptr payload} — same as enums
@@ -289,7 +289,7 @@ fn codegen_program(stmts: StmtList, debug_null_checks: bool, coverage: bool, sou
     let union_st = avra_llvm_struct_create_named(lc, "__union")
     avra_llvm_struct_set_body(union_st, union_arr, 2, 0)
     avra_llvm_type_array_free(union_arr)
-    let trait_decls = collect_trait_decls(stmts, TraitDeclReg.End)
+    let trait_decls = collect_trait_decls(stmts, trait_decl_reg_new())
     let top_level_vars = declare_globals(m, lc, i64t, i1t, dt, pt, structs, enums, stmts, TopLevelVars.End)
     let type_regs = TypeRegs { structs, enums, newtypes: cg_newtypes, union_aliases: cg_union_aliases }
     let i8t = avra_llvm_int8_type(lc)
@@ -1123,7 +1123,7 @@ fn collect_trait_decls(stmts: StmtList, reg: TraitDeclReg) -> TraitDeclReg {
         .End -> reg
         .Node(ss, next) -> {
             let updated = match stmt_unwrap(ss.node) {
-                .TraitDecl(name, methods) -> .Node(name, collect_trait_fn_names(methods), reg)
+                .TraitDecl(name, methods) -> trait_decl_reg_register(reg, name, collect_trait_fn_names(methods))
                 .Module(_, body) -> collect_trait_decls(body, reg)
                 _ -> reg
             }
@@ -1155,7 +1155,7 @@ fn collect_newtypes(stmts: StmtList, reg: CgNewtypeReg) -> CgNewtypeReg {
         .End -> reg
         .Node(ss, next) -> {
             let updated = match stmt_unwrap(ss.node) {
-                .NewtypeDecl(name, inner_vt) -> CgNewtypeReg.Node(name, inner_vt, reg)
+                .NewtypeDecl(name, inner_vt) -> cg_newtype_reg_register(reg, name, inner_vt)
                 .Module(_, body) -> collect_newtypes(body, reg)
                 _ -> reg
             }
@@ -1171,7 +1171,7 @@ fn collect_union_aliases(stmts: StmtList, reg: CgUnionAliasReg) -> CgUnionAliasR
         .End -> reg
         .Node(ss, next) -> {
             let updated = match stmt_unwrap(ss.node) {
-                .UnionAliasDecl(name, type_vt) -> CgUnionAliasReg.Node(name, type_vt, reg)
+                .UnionAliasDecl(name, type_vt) -> cg_union_alias_reg_register(reg, name, type_vt)
                 .Module(_, body) -> collect_union_aliases(body, reg)
                 _ -> reg
             }

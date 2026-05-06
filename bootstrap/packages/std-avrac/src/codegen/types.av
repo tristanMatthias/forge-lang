@@ -128,37 +128,62 @@ export type TypeRegs = {
     union_aliases: CgUnionAliasReg,
 }
 
-/// Newtype registry — maps a newtype name to its inner ValueType.
-/// Used by codegen to peel newtype wrappers when computing LLVM
-/// types.
-export enum CgNewtypeReg {
-    End
-    Node(name: string, inner_vt: ValueType, next: CgNewtypeReg)
+/// One newtype in CgNewtypeReg's `ord` list.
+export type CgNewtypeMeta = { name: string, inner_vt: ValueType }
+
+/// Newtype registry — name → inner ValueType. Hashmap-backed for
+/// O(1) lookup, same pattern as the other codegen registries.
+export type CgNewtypeReg = {
+    ord: List<CgNewtypeMeta>,
+    idx: ptr,
+}
+
+export fn cg_newtype_reg_new() -> CgNewtypeReg {
+    CgNewtypeReg { ord: [], idx: avra_map_new_cstr() }
+}
+
+export fn cg_newtype_reg_register(reg: CgNewtypeReg, name: string, inner_vt: ValueType) -> CgNewtypeReg {
+    mut ord = reg.ord
+    let new_idx = ord.length
+    ord.push(CgNewtypeMeta { name, inner_vt })
+    avra_map_set_cstr(reg.idx, name, new_idx)
+    CgNewtypeReg { ord, idx: reg.idx }
 }
 
 /// Look up a newtype's inner type. Returns Unknown when not found.
 export fn cg_newtype_vtype_lookup(reg: CgNewtypeReg, name: string) -> ValueType {
-    match reg {
-        .End -> ValueType.Unknown
-        .Node(n, vt, _) if n == name -> vt
-        .Node(_, _, next) -> cg_newtype_vtype_lookup(next, name)
-    }
+    if avra_map_has_cstr(reg.idx, name) == 0 { return ValueType.Unknown }
+    let i = avra_map_get_cstr(reg.idx, name)
+    reg.ord[i].inner_vt
 }
 
-/// Union-alias registry — maps a name to its expanded Union
-/// ValueType. Mirror of CgNewtypeReg for `type Json = string | int`.
-export enum CgUnionAliasReg {
-    End
-    Node(name: string, type_vt: ValueType, next: CgUnionAliasReg)
+/// One union-alias entry in CgUnionAliasReg's `ord` list.
+export type CgUnionAliasMeta = { name: string, type_vt: ValueType }
+
+/// Union-alias registry — name → expanded Union ValueType. Hashmap-
+/// backed for O(1) lookup.
+export type CgUnionAliasReg = {
+    ord: List<CgUnionAliasMeta>,
+    idx: ptr,
+}
+
+export fn cg_union_alias_reg_new() -> CgUnionAliasReg {
+    CgUnionAliasReg { ord: [], idx: avra_map_new_cstr() }
+}
+
+export fn cg_union_alias_reg_register(reg: CgUnionAliasReg, name: string, type_vt: ValueType) -> CgUnionAliasReg {
+    mut ord = reg.ord
+    let new_idx = ord.length
+    ord.push(CgUnionAliasMeta { name, type_vt })
+    avra_map_set_cstr(reg.idx, name, new_idx)
+    CgUnionAliasReg { ord, idx: reg.idx }
 }
 
 /// Look up a union alias's expanded type. Unknown when absent.
 fn cg_union_alias_vtype_lookup(reg: CgUnionAliasReg, name: string) -> ValueType {
-    match reg {
-        .End -> ValueType.Unknown
-        .Node(n, vt, _) if n == name -> vt
-        .Node(_, _, next) -> cg_union_alias_vtype_lookup(next, name)
-    }
+    if avra_map_has_cstr(reg.idx, name) == 0 { return ValueType.Unknown }
+    let i = avra_map_get_cstr(reg.idx, name)
+    reg.ord[i].type_vt
 }
 
 /// Index into a ParamTypeList. Returns Unknown out-of-range.
@@ -177,38 +202,43 @@ export enum TraitMethodNames {
     Node(name: string, ret_vt: ValueType, next: TraitMethodNames)
 }
 
+/// One trait decl entry in TraitDeclReg's `ord` list.
+export type TraitDeclMeta = { trait_name: string, methods: TraitMethodNames }
+
 /// Trait declaration registry — maps trait name → its
 /// `TraitMethodNames`. Carried through `Ctx.trait_decls` and consulted
 /// by codegen to resolve method calls on `dyn Trait` and `impl Trait`
-/// receivers.
-export enum TraitDeclReg {
-    End
-    Node(trait_name: string, methods: TraitMethodNames, next: TraitDeclReg)
+/// receivers. Hashmap-backed for O(1) lookup.
+export type TraitDeclReg = {
+    ord: List<TraitDeclMeta>,
+    idx: ptr,
+}
+
+export fn trait_decl_reg_new() -> TraitDeclReg {
+    TraitDeclReg { ord: [], idx: avra_map_new_cstr() }
+}
+
+export fn trait_decl_reg_register(reg: TraitDeclReg, trait_name: string, methods: TraitMethodNames) -> TraitDeclReg {
+    mut ord = reg.ord
+    let new_idx = ord.length
+    ord.push(TraitDeclMeta { trait_name, methods })
+    avra_map_set_cstr(reg.idx, trait_name, new_idx)
+    TraitDeclReg { ord, idx: reg.idx }
 }
 
 /// Look up a trait by name, returning its method list. `End` when
 /// the trait is not registered.
 export fn trait_decl_lookup(reg: TraitDeclReg, name: string) -> TraitMethodNames {
-    match reg {
-        .End -> .End
-        .Node(n, methods, _) if n == name -> methods
-        .Node(n, methods, next) -> {
-            trait_decl_lookup(next, name)
-        }
-    }
+    if avra_map_has_cstr(reg.idx, name) == 0 { return TraitMethodNames.End }
+    let i = avra_map_get_cstr(reg.idx, name)
+    reg.ord[i].methods
 }
 
 /// True when `name` is a registered trait. Cheaper than
 /// `trait_decl_lookup` when only existence matters (e.g. resolving
 /// whether a type annotation refers to a trait or a struct).
 export fn trait_decl_has(reg: TraitDeclReg, name: string) -> bool {
-    match reg {
-        .End -> false
-        .Node(n, _, _) if n == name -> true
-        .Node(n, _, next) -> {
-            trait_decl_has(next, name)
-        }
-    }
+    avra_map_has_cstr(reg.idx, name) != 0
 }
 
 /// A typed null `ptr` constant. Used in struct-literal fields where
