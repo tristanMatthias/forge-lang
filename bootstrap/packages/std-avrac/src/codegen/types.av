@@ -326,12 +326,33 @@ export fn field_resolved_at(fields: FieldList, idx: int) -> ValueType {
 // function parameters.
 
 
+/// One fn's return-type entry in FnRetTypes' `ord` list.
+export type FnRetMeta = { name: string, ret_ty: ValueType }
+
 /// Function return-type registry — `name → ValueType`. Built once
 /// during the declaration pass; consulted everywhere a call site
-/// needs the typed result of `fn_name(...)`.
-export enum FnRetTypes {
-    End
-    Node(name: string, ret_ty: ValueType, next: FnRetTypes)
+/// needs the typed result of `fn_name(...)`. Hashmap-backed for O(1)
+/// lookup, same pattern as the typeck registries (FnTypeReg, etc.).
+export type FnRetTypes = {
+    ord: List<FnRetMeta>,
+    idx: ptr,
+}
+
+extern fn avra_map_new_cstr() -> ptr
+extern fn avra_map_set_cstr(map: ptr, key: string, value: int)
+extern fn avra_map_get_cstr(map: ptr, key: string) -> int
+extern fn avra_map_has_cstr(map: ptr, key: string) -> int
+
+export fn fn_ret_types_new() -> FnRetTypes {
+    FnRetTypes { ord: [], idx: avra_map_new_cstr() }
+}
+
+export fn fn_ret_types_register(reg: FnRetTypes, name: string, ret_ty: ValueType) -> FnRetTypes {
+    mut ord = reg.ord
+    let new_idx = ord.length
+    ord.push(FnRetMeta { name, ret_ty })
+    avra_map_set_cstr(reg.idx, name, new_idx)
+    FnRetTypes { ord, idx: reg.idx }
 }
 
 /// Linked list of parameter ValueTypes — one entry per param of a
@@ -551,13 +572,9 @@ export fn enum_reg_find_by_variant_arity(reg: EnumReg, variant: string, arity: i
 /// Look up a function's return ValueType. Returns `.Unknown` when
 /// the function isn't registered (callers fall back to i64).
 export fn fn_ret_lookup(reg: FnRetTypes, name: string) -> ValueType {
-    match reg {
-        .End -> .Unknown
-        .Node(n, ty, _) if n == name -> ty
-        .Node(n, ty, next) -> {
-            fn_ret_lookup(next, name)
-        }
-    }
+    if avra_map_has_cstr(reg.idx, name) == 0 { return .Unknown }
+    let i = avra_map_get_cstr(reg.idx, name)
+    reg.ord[i].ret_ty
 }
 
 /// Result of a top-level-var lookup.

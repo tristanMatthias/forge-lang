@@ -294,7 +294,7 @@ fn codegen_program(stmts: StmtList, debug_null_checks: bool, coverage: bool, sou
     let type_regs = TypeRegs { structs, enums, newtypes: cg_newtypes, union_aliases: cg_union_aliases }
     let i8t = avra_llvm_int8_type(lc)
     let i16t = avra_llvm_int16_type(lc)
-    let fn_rets = declare_functions(m, lc, i64t, i1t, dt, pt, i8t, i16t, i32t, type_regs, trait_decls, stmts, FnRetTypes.End)
+    let fn_rets = declare_functions(m, lc, i64t, i1t, dt, pt, i8t, i16t, i32t, type_regs, trait_decls, stmts, fn_ret_types_new())
     let fn_params = collect_fn_params(stmts, FnParamTypes.End)
 
     // Synthesize a wrapper function for the top-level non-function
@@ -1310,7 +1310,7 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, i8
                     let fn_type = avra_llvm_function_type(ret_llvm, param_arr, arity, 0)
                     avra_llvm_type_array_free(param_arr)
                     avra_llvm_add_function(m, name, fn_type)
-                    FnRetTypes.Node(name, ret_vt, reg)
+                    fn_ret_types_register(reg, name, ret_vt)
                 }
                 .ExternFn(name, params, ext_rvt) -> {
                     let resolved_params = resolve_param_list(params, regs)
@@ -1322,7 +1322,7 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, i8
                     let fn_type = avra_llvm_function_type(ret_llvm, param_arr, arity, 0)
                     avra_llvm_type_array_free(param_arr)
                     avra_llvm_add_function(m, name, fn_type)
-                    FnRetTypes.Node(name, ret_vt, reg)
+                    fn_ret_types_register(reg, name, ret_vt)
                 }
                 .Impl(_, methods) -> declare_functions(m, ctx, i64t, i1t, dt, pt, i8t, i16t, i32t, regs, traits, methods, reg)
                 .Module(_, body) -> declare_functions(m, ctx, i64t, i1t, dt, pt, i8t, i16t, i32t, regs, traits, body, reg)
