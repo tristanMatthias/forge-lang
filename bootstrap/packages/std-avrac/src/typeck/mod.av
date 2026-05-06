@@ -182,12 +182,29 @@ export fn tc_catch_ok_type(tc: TC, inner: Expr) -> ValueType? {
 
 // ── Struct/Enum registries ──
 
-/// Struct-name → FieldList table. Populated during the
-/// `collect_decls` pre-pass; consulted by struct-literal and field-
-/// access typecheck.
-enum StructTypeReg {
-    End
-    Node(name: string, fields: FieldList, next: StructTypeReg)
+/// One struct's metadata in StructTypeReg's `ord` list.
+type StructTypeMeta = { name: string, fields: FieldList }
+
+/// Struct-name → FieldList table. Populated during the `collect_decls`
+/// pre-pass; consulted by struct-literal and field-access typecheck.
+/// Same hashmap-backed shape as FnTypeReg — O(1) lookup via cstr_map
+/// index into the insertion-ordered list. Replaces a cons-list that
+/// was O(n) per lookup.
+type StructTypeReg = {
+    ord: List<StructTypeMeta>,
+    idx: ptr,
+}
+
+fn struct_type_reg_new() -> StructTypeReg {
+    StructTypeReg { ord: [], idx: avra_map_new_cstr() }
+}
+
+fn struct_type_reg_register(reg: StructTypeReg, name: string, fields: FieldList) -> StructTypeReg {
+    mut ord = reg.ord
+    let new_idx = ord.length
+    ord.push(StructTypeMeta { name, fields })
+    avra_map_set_cstr(reg.idx, name, new_idx)
+    StructTypeReg { ord, idx: reg.idx }
 }
 
 /// Look up a single field's resolved type within a FieldList. Returns
@@ -204,49 +221,56 @@ export fn field_type_lookup(fields: FieldList, name: string) -> ValueType {
 
 /// Look up a struct's FieldList by name. Empty list when not found.
 export fn struct_type_lookup(reg: StructTypeReg, name: string) -> FieldList {
-    match reg {
-        .End -> FieldList.End
-        .Node(n, fields, _) if n == name -> fields
-        .Node(n, fields, next) -> {
-            struct_type_lookup(next, name)
-        }
-    }
+    if avra_map_has_cstr(reg.idx, name) == 0 { return FieldList.End }
+    let i = avra_map_get_cstr(reg.idx, name)
+    reg.ord[i].fields
 }
 
 /// Membership probe for the struct registry.
 fn struct_type_has(reg: StructTypeReg, name: string) -> bool {
-    match reg {
-        .End -> false
-        .Node(n, _, _) if n == name -> true
-        .Node(_, _, next) -> struct_type_has(next, name)
-    }
+    avra_map_has_cstr(reg.idx, name) != 0
 }
 
-/// Enum-name → VariantList table. Mirror of StructTypeReg for enums.
-enum EnumTypeReg {
-    End
-    Node(name: string, variants: VariantList, next: EnumTypeReg)
+/// One enum's metadata in EnumTypeReg's `ord` list.
+type EnumTypeMeta = { name: string, variants: VariantList }
+
+/// Enum-name → VariantList table. Mirror of StructTypeReg for enums —
+/// hashmap-backed for O(1) lookup.
+type EnumTypeReg = {
+    ord: List<EnumTypeMeta>,
+    idx: ptr,
+}
+
+fn enum_type_reg_new() -> EnumTypeReg {
+    EnumTypeReg { ord: [], idx: avra_map_new_cstr() }
+}
+
+fn enum_type_reg_register(reg: EnumTypeReg, name: string, variants: VariantList) -> EnumTypeReg {
+    mut ord = reg.ord
+    let new_idx = ord.length
+    ord.push(EnumTypeMeta { name, variants })
+    avra_map_set_cstr(reg.idx, name, new_idx)
+    EnumTypeReg { ord, idx: reg.idx }
 }
 
 /// Membership probe for the enum registry.
 fn enum_type_has(reg: EnumTypeReg, name: string) -> bool {
-    match reg {
-        .End -> false
-        .Node(n, _, _) if n == name -> true
-        .Node(_, _, next) -> enum_type_has(next, name)
-    }
+    avra_map_has_cstr(reg.idx, name) != 0
 }
 
 /// Reverse lookup: which enum declares `variant`? Returns "" when
 /// the variant isn't registered. Used to type bare `.Variant`
 /// expressions where the enum name is implicit from context.
+/// Stays linear over `ord` — variant→enum reverse lookup doesn't
+/// benefit from a name-keyed index without a parallel variant→enum map.
 export fn tc_enum_find_by_variant(reg: EnumTypeReg, variant: string) -> string {
-    match reg {
-        .End -> ""
-        .Node(name, variants, next) -> {
-            if variant_has(variants, variant) { name } else { tc_enum_find_by_variant(next, variant) }
-        }
+    mut i = 0
+    while i < reg.ord.length {
+        let m = reg.ord[i]
+        if variant_has(m.variants, variant) { return m.name }
+        i = i + 1
     }
+    ""
 }
 
 /// True iff `name` matches any variant in the list.
@@ -448,9 +472,9 @@ fn tc_new() -> TC {
     TC {
         types: TypeEntry.End,
         fns: fn_type_reg_new(),
-        structs: StructTypeReg.End,
+        structs: struct_type_reg_new(),
         shapes: ShapeSet.End,
-        enums: EnumTypeReg.End,
+        enums: enum_type_reg_new(),
         newtypes: NewtypeReg.End,
         union_aliases: UnionAliasReg.End,
         depth: 0,
@@ -648,7 +672,7 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
             let updated = match stmt_unwrap(ss.node) {
                 .TypeDecl(name, _, fields) -> {
                     let resolved = tc_resolve_type_operator(fields, tc.structs)
-                    tc with { structs: StructTypeReg.Node(name, resolved, tc.structs) }
+                    tc with { structs: struct_type_reg_register(tc.structs, name, resolved) }
                 }
                 .NewtypeDecl(name, inner_vt) -> {
                     let inner_ty = resolve_vtype(tc, inner_vt)
@@ -662,11 +686,11 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
                     tc with { union_aliases: UnionAliasReg.Node(name, type_vt, tc.union_aliases) }
                 }
                 .ShapeDecl(name, fields) -> tc with {
-                    structs: StructTypeReg.Node(name, fields, tc.structs),
+                    structs: struct_type_reg_register(tc.structs, name, fields),
                     shapes: ShapeSet.Node(name, tc.shapes),
                 }
                 .EnumDecl(name, _, variants) -> tc with {
-                    enums: EnumTypeReg.Node(name, variants, tc.enums)
+                    enums: enum_type_reg_register(tc.enums, name, variants)
                 }
                 .Function(name, _, params, ret_vt, _) -> {
                     let final_ret = if vtype_eq(ret_vt, .Void) { ValueType.Void } else { resolve_vtype(tc, ret_vt) }

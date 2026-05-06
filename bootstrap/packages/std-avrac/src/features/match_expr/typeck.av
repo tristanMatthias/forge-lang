@@ -82,12 +82,13 @@ fn arm_type_skip(body: Expr, ty: ValueType) -> bool {
 /// empty list when the enum isn't registered (typeck's
 /// fallback for generic / unresolved enums).
 fn enum_type_variants(reg: EnumTypeReg, name: string) -> VariantList {
-    match reg {
-        .End -> VariantList.End
-        .Node(n, variants, _) if n == name -> variants
-        .Node(_, _, next) -> enum_type_variants(next, name)
-    }
+    if avra_map_has_cstr(reg.idx, name) == 0 { return VariantList.End }
+    let i = avra_map_get_cstr(reg.idx, name)
+    reg.ord[i].variants
 }
+
+extern fn avra_map_get_cstr(map: ptr, key: string) -> int
+extern fn avra_map_has_cstr(map: ptr, key: string) -> int
 
 /// True when any arm has a wildcard `_` pattern. Wildcards
 /// satisfy the exhaustiveness check on their own; the F9001
