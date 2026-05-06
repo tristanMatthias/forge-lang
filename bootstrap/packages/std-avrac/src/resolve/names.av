@@ -687,7 +687,15 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
         .TraitDecl(name, body) -> {
             let qn = resolve_type_in_ctx(ctx, name)
             type_registry_register(ctx.type_reg, qn, TypeKind.TraitKind, FieldList.End, VariantList.End, ValueType.Unknown)
-            Stmt.TraitDecl(qn, body)
+            // Rewrite the body's method signatures so each method's
+            // params/ret_ty pick up the surrounding module's qualifier.
+            // Without this, `fn cause(self) -> EctError` inside
+            // `Module(test) { trait EctError { ... } }` keeps EctError
+            // bare, so the codegen-side lookup of `c.message()` (where
+            // `c = e.cause()`) misses the qualified trait registration
+            // and falls through to the type-name dispatch
+            // (forge-crafting-intepreters-q3gp).
+            Stmt.TraitDecl(qn, rewrite_stmt_list(ctx, body))
         }
         .ShapeDecl(name, fields) -> {
             let qn = resolve_type_in_ctx(ctx, name)

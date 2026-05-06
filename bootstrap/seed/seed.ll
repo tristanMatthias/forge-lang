@@ -1,5 +1,5 @@
-; seed built from commit faddb513 at 2026-05-06T05:20:19Z
-; source hash: 6179a56e6b9668e6f7f2edce11ba3fe04a609283c4b6b1655ca4b4efb0dd7dfe
+; seed built from commit c0cfd330 at 2026-05-06T05:47:09Z
+; source hash: 94d6ef3d015a15cc087d1b9e859a40080ab16c5e9840a036c2a2b30b48e013f1
 ; ModuleID = 'bootstrap'
 source_filename = "bootstrap"
 
@@ -108,6 +108,7 @@ source_filename = "bootstrap"
 %"@std::avrac::codegen::BlockResult" = type { ptr, ptr, ptr, ptr }
 %"@std::avrac::codegen::StructLookup" = type { i64, ptr }
 %"@std::avrac::features::generics::GenericFnReg" = type { i64, ptr }
+%"@std::avrac::build::metadata::ImplDeclList" = type { i64, ptr }
 %"@std::avrac::features::generics::GenericEnumReg" = type { i64, ptr }
 %"@std::avrac::features::generics::GenericStructReg" = type { i64, ptr }
 %"@std::avrac::features::generics::TypeArgList" = type { i64, ptr }
@@ -186,6 +187,7 @@ source_filename = "bootstrap"
 %"@std::avrac::resolve::NameCtx" = type { ptr, ptr, ptr, ptr, ptr, ptr, ptr }
 %"@std::avrac::resolve::UsedPathSet" = type { i64, ptr }
 %"@std::avrac::resolve::NameResolveResult" = type { ptr, i64, ptr, ptr, ptr }
+%"@std::avrac::build::metadata::ImplMethodRefList" = type { i64, ptr }
 %"@std::avrac::codegen::RcCleanupStack" = type { i64, ptr }
 %"@std::avrac::codegen::LoopFrame" = type { i64, ptr, ptr }
 %"@std::avrac::codegen::ReleasableSet" = type { i64, ptr }
@@ -243,12 +245,10 @@ source_filename = "bootstrap"
 %"@std::avrac::build::metadata::FnDeclEntry" = type { i64, ptr, i1, i1, ptr, ptr, ptr }
 %"@std::avrac::build::metadata::ConstValueKind" = type { i64, ptr }
 %"@std::avrac::build::metadata::ConstDeclEntry" = type { i64, ptr, i1, ptr, ptr, i64, ptr }
-%"@std::avrac::build::metadata::ImplMethodRefList" = type { i64, ptr }
 %"@std::avrac::build::metadata::ImplDeclEntry" = type { i64, ptr, i64, ptr, ptr }
 %"@std::avrac::build::metadata::TypeDeclList" = type { i64, ptr }
 %"@std::avrac::build::metadata::FnDeclList" = type { i64, ptr }
 %"@std::avrac::build::metadata::ConstDeclList" = type { i64, ptr }
-%"@std::avrac::build::metadata::ImplDeclList" = type { i64, ptr }
 %"@std::avrac::build::metadata_extract::ExtractAcc" = type { ptr, ptr, ptr, ptr }
 %"@std::avrac::build::metadata_extract::ConstValueParts" = type { ptr, i64, ptr }
 %"@std::avrac::build::metadata_extract::ImplNamePair" = type { ptr, ptr, i1 }
@@ -119723,9 +119723,9 @@ match_end:                                        ; preds = %ife_end, %march_arm
 
 march_arm:                                        ; preds = %entry
   %5 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %Result__SymList__IoError, ptr %5, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %Result__BlockResult__string, ptr %5, i32 0, i32 0
   store i64 5862623, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %Result__SymList__IoError, ptr %5, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %Result__BlockResult__string, ptr %5, i32 0, i32 1
   %6 = call ptr @avra_rc_alloc(i64 8)
   store ptr %6, ptr %pay_ptr, align 8
   %arr3 = load ptr, ptr %arr, align 8
@@ -125667,9 +125667,9 @@ ifcont74:                                         ; preds = %if_else77
   %ty_ptr82 = getelementptr inbounds nuw %"@std::avrac::codegen::EmitValue", ptr %r78, i32 0, i32 1
   %ty83 = load ptr, ptr %ty_ptr82, align 8
   %14 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr84 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %14, i32 0, i32 0
+  %tag_ptr84 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %14, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr84, align 8
-  %pay_ptr85 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %14, i32 0, i32 1
+  %pay_ptr85 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %14, i32 0, i32 1
   store ptr null, ptr %pay_ptr85, align 8
   %cast86 = ptrtoint ptr %14 to i64
   %cast87 = inttoptr i64 %cast86 to ptr
@@ -126056,9 +126056,9 @@ entry:
   store ptr %2, ptr %ty, align 8
   %ty1 = load ptr, ptr %ty, align 8
   %3 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %3, i32 0, i32 0
+  %tag_ptr = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %3, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %3, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %3, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %3 to i64
   %cast2 = inttoptr i64 %cast to ptr
@@ -126679,9 +126679,9 @@ try_ok:                                           ; preds = %march_arm2
   %ty_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::EmitValue", ptr %r14, i32 0, i32 1
   %ty = load ptr, ptr %ty_ptr, align 8
   %5 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr18 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %5, i32 0, i32 0
+  %tag_ptr18 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %5, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr18, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %5, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %5, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast19 = ptrtoint ptr %5 to i64
   %cast20 = inttoptr i64 %cast19 to ptr
@@ -127196,9 +127196,9 @@ try_ok:                                           ; preds = %march_arm2
   %ty_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::EmitValue", ptr %r14, i32 0, i32 1
   %ty = load ptr, ptr %ty_ptr, align 8
   %5 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr18 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %5, i32 0, i32 0
+  %tag_ptr18 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %5, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr18, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %5, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %5, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast19 = ptrtoint ptr %5 to i64
   %cast20 = inttoptr i64 %cast19 to ptr
@@ -127232,9 +127232,9 @@ if_then:                                          ; preds = %try_ok
   %value_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::EmitValue", ptr %r21, i32 0, i32 0
   %value = load ptr, ptr %value_ptr, align 8
   %8 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr25 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %8, i32 0, i32 0
+  %tag_ptr25 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %8, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr25, align 8
-  %pay_ptr26 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %8, i32 0, i32 1
+  %pay_ptr26 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %8, i32 0, i32 1
   store ptr null, ptr %pay_ptr26, align 8
   %cast27 = ptrtoint ptr %8 to i64
   %cast28 = inttoptr i64 %cast27 to ptr
@@ -127264,17 +127264,17 @@ ifcont36:                                         ; preds = %if_else39
   %value82 = load ptr, ptr %value_ptr81, align 8
   %10 = call ptr @"@std::avrac::codegen::Ctx__sitofp"(ptr %ctx73, ptr %value82, ptr @.str.9778)
   %11 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr83 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %11, i32 0, i32 0
+  %tag_ptr83 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %11, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr83, align 8
-  %pay_ptr84 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %11, i32 0, i32 1
+  %pay_ptr84 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %11, i32 0, i32 1
   store ptr null, ptr %pay_ptr84, align 8
   %cast85 = ptrtoint ptr %11 to i64
   %cast86 = inttoptr i64 %cast85 to ptr
   %12 = call ptr @"@std::avrac::codegen::Ctx__cast_to"(ptr %ctx69, ptr %10, ptr %cast86)
   %13 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr87 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %13, i32 0, i32 0
+  %tag_ptr87 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %13, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr87, align 8
-  %pay_ptr88 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %13, i32 0, i32 1
+  %pay_ptr88 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %13, i32 0, i32 1
   store ptr null, ptr %pay_ptr88, align 8
   %cast89 = ptrtoint ptr %13 to i64
   %cast90 = inttoptr i64 %cast89 to ptr
@@ -127316,17 +127316,17 @@ if_then38:                                        ; preds = %ifcont
   call void @avra_null_deref_trap(ptr @fld_name.9766, i64 7, ptr @sty_name.9767, i64 25, i64 %null_ext59, ptr @src_file.9768, i64 0, i64 712)
   %bits60 = load ptr, ptr %bits, align 8
   %18 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr61 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %18, i32 0, i32 0
+  %tag_ptr61 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %18, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr61, align 8
-  %pay_ptr62 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %18, i32 0, i32 1
+  %pay_ptr62 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %18, i32 0, i32 1
   store ptr null, ptr %pay_ptr62, align 8
   %cast63 = ptrtoint ptr %18 to i64
   %cast64 = inttoptr i64 %cast63 to ptr
   %19 = call ptr @"@std::avrac::codegen::Ctx__cast_to"(ptr %ctx56, ptr %bits60, ptr %cast64)
   %20 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr65 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %20, i32 0, i32 0
+  %tag_ptr65 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %20, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr65, align 8
-  %pay_ptr66 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %20, i32 0, i32 1
+  %pay_ptr66 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %20, i32 0, i32 1
   store ptr null, ptr %pay_ptr66, align 8
   %cast67 = ptrtoint ptr %20 to i64
   %cast68 = inttoptr i64 %cast67 to ptr
@@ -137049,9 +137049,9 @@ match_end:                                        ; preds = %march_arm11, %guard
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -137142,9 +137142,9 @@ match_end:                                        ; preds = %march_arm11, %guard
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -137235,9 +137235,9 @@ match_end:                                        ; preds = %march_arm11, %guard
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -137952,9 +137952,9 @@ match_end:                                        ; preds = %march_arm53, %guard
 
 march_arm:                                        ; preds = %entry
   %3 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %3, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %3, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %3, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %3, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %3 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -138682,9 +138682,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %1 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %1, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %1, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %1, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %1, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %1 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -142231,9 +142231,9 @@ match_end:                                        ; preds = %ife_end, %march_arm
 
 march_arm:                                        ; preds = %entry
   %3 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %3, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %3, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %3, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %3, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %3 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -146085,9 +146085,9 @@ match_end:                                        ; preds = %match_end24, %march
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -146760,9 +146760,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -146843,9 +146843,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -146941,9 +146941,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -147038,9 +147038,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -147132,9 +147132,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -147241,9 +147241,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -147567,9 +147567,9 @@ march_arm95:                                      ; preds = %march_next91
   call void @avra_rc_retain(ptr %body)
   store ptr %body, ptr %body100, align 8
   %16 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr101 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %16, i32 0, i32 0
+  %tag_ptr101 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %16, i32 0, i32 0
   store i64 210669825968, ptr %tag_ptr101, align 8
-  %pay_ptr102 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %16, i32 0, i32 1
+  %pay_ptr102 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %16, i32 0, i32 1
   %17 = call ptr @avra_rc_alloc(i64 8)
   store ptr %17, ptr %pay_ptr102, align 8
   %body103 = load ptr, ptr %body100, align 8
@@ -148320,9 +148320,9 @@ march_arm164:                                     ; preds = %march_next147
   call void @avra_rc_retain(ptr %body)
   store ptr %body, ptr %body169, align 8
   %24 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr170 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %24, i32 0, i32 0
+  %tag_ptr170 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %24, i32 0, i32 0
   store i64 210669825968, ptr %tag_ptr170, align 8
-  %pay_ptr171 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %24, i32 0, i32 1
+  %pay_ptr171 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %24, i32 0, i32 1
   %25 = call ptr @avra_rc_alloc(i64 8)
   store ptr %25, ptr %pay_ptr171, align 8
   %body172 = load ptr, ptr %body169, align 8
@@ -148674,9 +148674,9 @@ march_arm357:                                     ; preds = %march_next344
   call void @avra_rc_retain(ptr %elems365)
   store ptr %elems365, ptr %elems366, align 8
   %53 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr367 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %53, i32 0, i32 0
+  %tag_ptr367 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %53, i32 0, i32 0
   store i64 210691497359, ptr %tag_ptr367, align 8
-  %pay_ptr368 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %53, i32 0, i32 1
+  %pay_ptr368 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %53, i32 0, i32 1
   %54 = call ptr @avra_rc_alloc(i64 8)
   store ptr %54, ptr %pay_ptr368, align 8
   %elems369 = load ptr, ptr %elems366, align 8
@@ -149127,9 +149127,9 @@ match_end:                                        ; preds = %ife_end, %march_arm
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -149520,9 +149520,9 @@ match_end:                                        ; preds = %march_arm15, %guard
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -150477,9 +150477,9 @@ match_end:                                        ; preds = %ifcont, %march_arm
 
 march_arm:                                        ; preds = %entry
   %3 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %3, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %3, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %3, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %3, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %3 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -150931,9 +150931,9 @@ march_arm70:                                      ; preds = %march_next56
   call void @avra_rc_retain(ptr %body)
   store ptr %body, ptr %body75, align 8
   %11 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr76 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %11, i32 0, i32 0
+  %tag_ptr76 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %11, i32 0, i32 0
   store i64 210669825968, ptr %tag_ptr76, align 8
-  %pay_ptr77 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %11, i32 0, i32 1
+  %pay_ptr77 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %11, i32 0, i32 1
   %12 = call ptr @avra_rc_alloc(i64 8)
   store ptr %12, ptr %pay_ptr77, align 8
   %body78 = load ptr, ptr %body75, align 8
@@ -151514,9 +151514,9 @@ march_arm409:                                     ; preds = %march_next388
   call void @avra_rc_retain(ptr %methods)
   store ptr %methods, ptr %methods421, align 8
   %53 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr422 = getelementptr inbounds nuw %"@std::lsp::SymKind", ptr %53, i32 0, i32 0
+  %tag_ptr422 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %53, i32 0, i32 0
   store i64 6384186807, ptr %tag_ptr422, align 8
-  %pay_ptr423 = getelementptr inbounds nuw %"@std::lsp::SymKind", ptr %53, i32 0, i32 1
+  %pay_ptr423 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %53, i32 0, i32 1
   %54 = call ptr @avra_rc_alloc(i64 16)
   store ptr %54, ptr %pay_ptr423, align 8
   %name424 = load ptr, ptr %name418, align 8
@@ -153213,9 +153213,9 @@ march_arm648:                                     ; preds = %march_next630
   call void @avra_rc_retain(ptr %body)
   store ptr %body, ptr %body653, align 8
   %86 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr654 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %86, i32 0, i32 0
+  %tag_ptr654 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %86, i32 0, i32 0
   store i64 210669825968, ptr %tag_ptr654, align 8
-  %pay_ptr655 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %86, i32 0, i32 1
+  %pay_ptr655 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %86, i32 0, i32 1
   %87 = call ptr @avra_rc_alloc(i64 8)
   store ptr %87, ptr %pay_ptr655, align 8
   %body656 = load ptr, ptr %body653, align 8
@@ -153536,9 +153536,9 @@ march_arm836:                                     ; preds = %march_next822
   call void @avra_rc_retain(ptr %elems844)
   store ptr %elems844, ptr %elems845, align 8
   %112 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr846 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %112, i32 0, i32 0
+  %tag_ptr846 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %112, i32 0, i32 0
   store i64 210691497359, ptr %tag_ptr846, align 8
-  %pay_ptr847 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %112, i32 0, i32 1
+  %pay_ptr847 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %112, i32 0, i32 1
   %113 = call ptr @avra_rc_alloc(i64 8)
   store ptr %113, ptr %pay_ptr847, align 8
   %elems848 = load ptr, ptr %elems845, align 8
@@ -153998,9 +153998,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %3 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %3, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %3, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %3, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %3, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %3 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -154116,9 +154116,9 @@ match_end:                                        ; preds = %ife_end, %march_arm
 
 march_arm:                                        ; preds = %entry
   %3 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %3, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %3, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %3, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %3, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %3 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -154309,9 +154309,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %3 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %3, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %3, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %3, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %3, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %3 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -164384,9 +164384,9 @@ march_arm:                                        ; preds = %entry
   %tc_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::ExprListResult", ptr %pair5, i32 0, i32 0
   %tc6 = load ptr, ptr %tc_ptr, align 8
   %3 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr7 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %3, i32 0, i32 0
+  %tag_ptr7 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %3, i32 0, i32 0
   store i64 210691497359, ptr %tag_ptr7, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %3, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %3, i32 0, i32 1
   %4 = call ptr @avra_rc_alloc(i64 8)
   store ptr %4, ptr %pay_ptr, align 8
   %pair8 = load ptr, ptr %pair, align 8
@@ -164714,9 +164714,9 @@ entry:
   %elements10 = load ptr, ptr %elements, align 8
   %buf11 = load ptr, ptr %buf, align 8
   %6 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %6, i32 0, i32 0
+  %tag_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %6, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %6, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %6, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast12 = ptrtoint ptr %6 to i64
   %cast13 = inttoptr i64 %cast12 to ptr
@@ -164773,16 +164773,16 @@ match_end:                                        ; preds = %try_ok, %march_arm
 
 march_arm:                                        ; preds = %entry
   %6 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %6, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %6, i32 0, i32 0
   store i64 210691497359, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %6, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %6, i32 0, i32 1
   %7 = call ptr @avra_rc_alloc(i64 8)
   store ptr %7, ptr %pay_ptr, align 8
   %types_acc3 = load ptr, ptr %types_acc, align 8
   %8 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr4 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %8, i32 0, i32 0
+  %tag_ptr4 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %8, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr4, align 8
-  %pay_ptr5 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %8, i32 0, i32 1
+  %pay_ptr5 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %8, i32 0, i32 1
   store ptr null, ptr %pay_ptr5, align 8
   %cast = ptrtoint ptr %8 to i64
   %cast6 = inttoptr i64 %cast to ptr
@@ -164971,9 +164971,9 @@ march_arm3:                                       ; preds = %march_next
   store ptr %next, ptr %next9, align 8
   %next10 = load ptr, ptr %next9, align 8
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr11 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr11 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 6384368267, ptr %tag_ptr11, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   %3 = call ptr @avra_rc_alloc(i64 16)
   store ptr %3, ptr %pay_ptr, align 8
   %ty12 = load ptr, ptr %ty6, align 8
@@ -166154,9 +166154,9 @@ match_end:                                        ; preds = %ifcont, %march_arm
 
 march_arm:                                        ; preds = %entry
   %6 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %Result__SymList__IoError, ptr %6, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %Result__BlockResult__string, ptr %6, i32 0, i32 0
   store i64 5862623, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %Result__SymList__IoError, ptr %6, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %Result__BlockResult__string, ptr %6, i32 0, i32 1
   %7 = call ptr @avra_rc_alloc(i64 8)
   store ptr %7, ptr %pay_ptr, align 8
   %slot_base = ptrtoint ptr %7 to i64
@@ -174585,9 +174585,9 @@ ifcont:                                           ; preds = %if_else
   store ptr %6, ptr %ty, align 8
   %ty7 = load ptr, ptr %ty, align 8
   %7 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr8 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %7, i32 0, i32 0
+  %tag_ptr8 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %7, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr8, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %7, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %7, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %7 to i64
   %cast9 = inttoptr i64 %cast to ptr
@@ -174610,9 +174610,9 @@ ifcont11:                                         ; preds = %if_else14
   store ptr %9, ptr %ety, align 8
   %ety18 = load ptr, ptr %ety, align 8
   %10 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr19 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %10, i32 0, i32 0
+  %tag_ptr19 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %10, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr19, align 8
-  %pay_ptr20 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %10, i32 0, i32 1
+  %pay_ptr20 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %10, i32 0, i32 1
   store ptr null, ptr %pay_ptr20, align 8
   %cast21 = ptrtoint ptr %10 to i64
   %cast22 = inttoptr i64 %cast21 to ptr
@@ -215010,9 +215010,9 @@ march_arm139:                                     ; preds = %march_next93
   call void @avra_rc_retain(ptr %body)
   store ptr %body, ptr %body144, align 8
   %23 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr145 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %23, i32 0, i32 0
+  %tag_ptr145 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %23, i32 0, i32 0
   store i64 210669825968, ptr %tag_ptr145, align 8
-  %pay_ptr146 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %23, i32 0, i32 1
+  %pay_ptr146 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %23, i32 0, i32 1
   %24 = call ptr @avra_rc_alloc(i64 8)
   store ptr %24, ptr %pay_ptr146, align 8
   %body147 = load ptr, ptr %body144, align 8
@@ -216590,9 +216590,9 @@ march_arm104:                                     ; preds = %march_next84
   call void @avra_rc_retain(ptr %body)
   store ptr %body, ptr %body109, align 8
   %17 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr110 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %17, i32 0, i32 0
+  %tag_ptr110 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %17, i32 0, i32 0
   store i64 210669825968, ptr %tag_ptr110, align 8
-  %pay_ptr111 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %17, i32 0, i32 1
+  %pay_ptr111 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %17, i32 0, i32 1
   %18 = call ptr @avra_rc_alloc(i64 8)
   store ptr %18, ptr %pay_ptr111, align 8
   %body112 = load ptr, ptr %body109, align 8
@@ -221148,9 +221148,9 @@ march_arm35:                                      ; preds = %march_next
   call void @avra_rc_retain(ptr %body43)
   store ptr %body43, ptr %body44, align 8
   %6 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr45 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %6, i32 0, i32 0
+  %tag_ptr45 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %6, i32 0, i32 0
   store i64 210669825968, ptr %tag_ptr45, align 8
-  %pay_ptr46 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %6, i32 0, i32 1
+  %pay_ptr46 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %6, i32 0, i32 1
   %7 = call ptr @avra_rc_alloc(i64 8)
   store ptr %7, ptr %pay_ptr46, align 8
   %body47 = load ptr, ptr %body44, align 8
@@ -222781,22 +222781,23 @@ entry:
   %reg = alloca ptr, align 8
   store ptr %0, ptr %reg, align 8
   store ptr %1, ptr %variant, align 8
-  store i64 0, ptr %i, align 8
-  br label %while.cond
-
-while.cond:                                       ; preds = %ifcont, %entry
-  %i1 = load i64, ptr %i, align 8
-  %reg2 = load ptr, ptr %reg, align 8
-  %cast = ptrtoint ptr %reg2 to i64
+  %reg1 = load ptr, ptr %reg, align 8
+  %cast = ptrtoint ptr %reg1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
   call void @avra_null_deref_trap(ptr @fld_name.17666, i64 3, ptr @sty_name.17667, i64 32, i64 %null_ext, ptr @src_file.17668, i64 0, i64 269)
-  %ord_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::EnumTypeReg", ptr %reg2, i32 0, i32 0
+  %ord_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::EnumTypeReg", ptr %reg1, i32 0, i32 0
   %ord = load ptr, ptr %ord_ptr, align 8
   %2 = call i64 @avra_array_len(ptr %ord)
-  %lt = icmp slt i64 %i1, %2
-  %lt_ext = zext i1 %lt to i64
-  %while_cond = icmp ne i64 %lt_ext, 0
+  %sub = sub i64 %2, 1
+  store i64 %sub, ptr %i, align 8
+  br label %while.cond
+
+while.cond:                                       ; preds = %ifcont, %entry
+  %i2 = load i64, ptr %i, align 8
+  %ge = icmp sge i64 %i2, 0
+  %ge_ext = zext i1 %ge to i64
+  %while_cond = icmp ne i64 %ge_ext, 0
   br i1 %while_cond, label %while.body, label %while.exit
 
 while.body:                                       ; preds = %while.cond
@@ -222804,7 +222805,7 @@ while.body:                                       ; preds = %while.cond
   %cast4 = ptrtoint ptr %reg3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17669, i64 3, ptr @sty_name.17670, i64 32, i64 %null_ext6, ptr @src_file.17671, i64 0, i64 270)
+  call void @avra_null_deref_trap(ptr @fld_name.17669, i64 3, ptr @sty_name.17670, i64 32, i64 %null_ext6, ptr @src_file.17671, i64 0, i64 271)
   %ord_ptr7 = getelementptr inbounds nuw %"@std::avrac::typeck::EnumTypeReg", ptr %reg3, i32 0, i32 0
   %ord8 = load ptr, ptr %ord_ptr7, align 8
   %i9 = load i64, ptr %i, align 8
@@ -222815,7 +222816,7 @@ while.body:                                       ; preds = %while.cond
   %cast12 = ptrtoint ptr %m11 to i64
   %null_chk13 = icmp eq i64 %cast12, 0
   %null_ext14 = zext i1 %null_chk13 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17672, i64 8, ptr @sty_name.17673, i64 33, i64 %null_ext14, ptr @src_file.17674, i64 0, i64 271)
+  call void @avra_null_deref_trap(ptr @fld_name.17672, i64 8, ptr @sty_name.17673, i64 33, i64 %null_ext14, ptr @src_file.17674, i64 0, i64 272)
   %variants_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::EnumTypeMeta", ptr %m11, i32 0, i32 1
   %variants = load ptr, ptr %variants_ptr, align 8
   %variant15 = load ptr, ptr %variant, align 8
@@ -222829,8 +222830,8 @@ while.exit:                                       ; preds = %while.cond
 
 ifcont:                                           ; preds = %if_else
   %i20 = load i64, ptr %i, align 8
-  %add = add i64 %i20, 1
-  store i64 %add, ptr %i, align 8
+  %sub21 = sub i64 %i20, 1
+  store i64 %sub21, ptr %i, align 8
   br label %while.cond
 
 if_then:                                          ; preds = %while.body
@@ -222838,7 +222839,7 @@ if_then:                                          ; preds = %while.body
   %cast17 = ptrtoint ptr %m16 to i64
   %null_chk18 = icmp eq i64 %cast17, 0
   %null_ext19 = zext i1 %null_chk18 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17675, i64 4, ptr @sty_name.17676, i64 33, i64 %null_ext19, ptr @src_file.17677, i64 0, i64 271)
+  call void @avra_null_deref_trap(ptr @fld_name.17675, i64 4, ptr @sty_name.17676, i64 33, i64 %null_ext19, ptr @src_file.17677, i64 0, i64 272)
   %name_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::EnumTypeMeta", ptr %m16, i32 0, i32 0
   %name = load ptr, ptr %name_ptr, align 8
   ret ptr %name
@@ -222919,7 +222920,7 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @avra_match_unreachable(ptr @.match_fn.17679, i64 %tag, ptr @mu_file.17680, i64 279)
+  call void @avra_match_unreachable(ptr @.match_fn.17679, i64 %tag, ptr @mu_file.17680, i64 280)
   unreachable
 }
 
@@ -222953,7 +222954,7 @@ entry:
   %cast = ptrtoint ptr %reg1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17681, i64 3, ptr @sty_name.17682, i64 34, i64 %null_ext, ptr @src_file.17683, i64 0, i64 317)
+  call void @avra_null_deref_trap(ptr @fld_name.17681, i64 3, ptr @sty_name.17682, i64 34, i64 %null_ext, ptr @src_file.17683, i64 0, i64 318)
   %ord_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TraitRegistry", ptr %reg1, i32 0, i32 0
   %ord = load ptr, ptr %ord_ptr, align 8
   store ptr %ord, ptr %ord2, align 8
@@ -222977,7 +222978,7 @@ entry:
   %cast12 = ptrtoint ptr %reg11 to i64
   %null_chk13 = icmp eq i64 %cast12, 0
   %null_ext14 = zext i1 %null_chk13 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17684, i64 3, ptr @sty_name.17685, i64 34, i64 %null_ext14, ptr @src_file.17686, i64 0, i64 320)
+  call void @avra_null_deref_trap(ptr @fld_name.17684, i64 3, ptr @sty_name.17685, i64 34, i64 %null_ext14, ptr @src_file.17686, i64 0, i64 321)
   %idx_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TraitRegistry", ptr %reg11, i32 0, i32 1
   %idx = load ptr, ptr %idx_ptr, align 8
   %name15 = load ptr, ptr %name, align 8
@@ -222991,7 +222992,7 @@ entry:
   %cast20 = ptrtoint ptr %reg19 to i64
   %null_chk21 = icmp eq i64 %cast20, 0
   %null_ext22 = zext i1 %null_chk21 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17687, i64 3, ptr @sty_name.17688, i64 34, i64 %null_ext22, ptr @src_file.17689, i64 0, i64 321)
+  call void @avra_null_deref_trap(ptr @fld_name.17687, i64 3, ptr @sty_name.17688, i64 34, i64 %null_ext22, ptr @src_file.17689, i64 0, i64 322)
   %idx_ptr23 = getelementptr inbounds nuw %"@std::avrac::typeck::TraitRegistry", ptr %reg19, i32 0, i32 1
   %idx24 = load ptr, ptr %idx_ptr23, align 8
   %fld_ptr25 = getelementptr inbounds nuw %"@std::avrac::typeck::TraitRegistry", ptr %6, i32 0, i32 1
@@ -223013,7 +223014,7 @@ entry:
   %cast = ptrtoint ptr %reg1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17690, i64 3, ptr @sty_name.17691, i64 34, i64 %null_ext, ptr @src_file.17692, i64 0, i64 339)
+  call void @avra_null_deref_trap(ptr @fld_name.17690, i64 3, ptr @sty_name.17691, i64 34, i64 %null_ext, ptr @src_file.17692, i64 0, i64 340)
   %idx_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TraitRegistry", ptr %reg1, i32 0, i32 1
   %idx = load ptr, ptr %idx_ptr, align 8
   %name2 = load ptr, ptr %name, align 8
@@ -223028,7 +223029,7 @@ ifcont:                                           ; preds = %if_else
   %cast8 = ptrtoint ptr %reg7 to i64
   %null_chk9 = icmp eq i64 %cast8, 0
   %null_ext10 = zext i1 %null_chk9 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17693, i64 3, ptr @sty_name.17694, i64 34, i64 %null_ext10, ptr @src_file.17695, i64 0, i64 342)
+  call void @avra_null_deref_trap(ptr @fld_name.17693, i64 3, ptr @sty_name.17694, i64 34, i64 %null_ext10, ptr @src_file.17695, i64 0, i64 343)
   %idx_ptr11 = getelementptr inbounds nuw %"@std::avrac::typeck::TraitRegistry", ptr %reg7, i32 0, i32 1
   %idx12 = load ptr, ptr %idx_ptr11, align 8
   %name13 = load ptr, ptr %name, align 8
@@ -223038,7 +223039,7 @@ ifcont:                                           ; preds = %if_else
   %cast15 = ptrtoint ptr %reg14 to i64
   %null_chk16 = icmp eq i64 %cast15, 0
   %null_ext17 = zext i1 %null_chk16 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17696, i64 3, ptr @sty_name.17697, i64 34, i64 %null_ext17, ptr @src_file.17698, i64 0, i64 343)
+  call void @avra_null_deref_trap(ptr @fld_name.17696, i64 3, ptr @sty_name.17697, i64 34, i64 %null_ext17, ptr @src_file.17698, i64 0, i64 344)
   %ord_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TraitRegistry", ptr %reg14, i32 0, i32 0
   %ord = load ptr, ptr %ord_ptr, align 8
   %i18 = load i64, ptr %i, align 8
@@ -223052,7 +223053,7 @@ ifcont:                                           ; preds = %if_else
   %cast22 = ptrtoint ptr %m21 to i64
   %null_chk23 = icmp eq i64 %cast22, 0
   %null_ext24 = zext i1 %null_chk23 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17699, i64 7, ptr @sty_name.17700, i64 33, i64 %null_ext24, ptr @src_file.17701, i64 0, i64 344)
+  call void @avra_null_deref_trap(ptr @fld_name.17699, i64 7, ptr @sty_name.17700, i64 33, i64 %null_ext24, ptr @src_file.17701, i64 0, i64 345)
   %methods_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TraitRegMeta", ptr %m21, i32 0, i32 1
   %methods = load ptr, ptr %methods_ptr, align 8
   %fld_ptr25 = getelementptr inbounds nuw %"@std::avrac::typeck::TraitFound", ptr %5, i32 0, i32 1
@@ -223061,7 +223062,7 @@ ifcont:                                           ; preds = %if_else
   %cast27 = ptrtoint ptr %m26 to i64
   %null_chk28 = icmp eq i64 %cast27, 0
   %null_ext29 = zext i1 %null_chk28 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17702, i64 11, ptr @sty_name.17703, i64 33, i64 %null_ext29, ptr @src_file.17704, i64 0, i64 344)
+  call void @avra_null_deref_trap(ptr @fld_name.17702, i64 11, ptr @sty_name.17703, i64 33, i64 %null_ext29, ptr @src_file.17704, i64 0, i64 345)
   %assoc_types_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TraitRegMeta", ptr %m26, i32 0, i32 2
   %assoc_types = load ptr, ptr %assoc_types_ptr, align 8
   %fld_ptr30 = getelementptr inbounds nuw %"@std::avrac::typeck::TraitFound", ptr %5, i32 0, i32 2
@@ -223100,7 +223101,7 @@ entry:
   %cast = ptrtoint ptr %2 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17705, i64 5, ptr @sty_name.17706, i64 31, i64 %null_ext, ptr @src_file.17707, i64 0, i64 351)
+  call void @avra_null_deref_trap(ptr @fld_name.17705, i64 5, ptr @sty_name.17706, i64 31, i64 %null_ext, ptr @src_file.17707, i64 0, i64 352)
   %found_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TraitFound", ptr %2, i32 0, i32 0
   %found = load i1, ptr %found_ptr, align 8
   ret i1 %found
@@ -223116,7 +223117,7 @@ entry:
   %cast = ptrtoint ptr %tc1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17708, i64 7, ptr @sty_name.17709, i64 23, i64 %null_ext, ptr @src_file.17710, i64 0, i64 358)
+  call void @avra_null_deref_trap(ptr @fld_name.17708, i64 7, ptr @sty_name.17709, i64 23, i64 %null_ext, ptr @src_file.17710, i64 0, i64 359)
   %structs_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc1, i32 0, i32 2
   %structs = load ptr, ptr %structs_ptr, align 8
   %name2 = load ptr, ptr %name, align 8
@@ -223130,7 +223131,7 @@ ifcont:                                           ; preds = %if_else
   %cast4 = ptrtoint ptr %tc3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17711, i64 5, ptr @sty_name.17712, i64 23, i64 %null_ext6, ptr @src_file.17713, i64 0, i64 359)
+  call void @avra_null_deref_trap(ptr @fld_name.17711, i64 5, ptr @sty_name.17712, i64 23, i64 %null_ext6, ptr @src_file.17713, i64 0, i64 360)
   %enums_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc3, i32 0, i32 4
   %enums = load ptr, ptr %enums_ptr, align 8
   %name7 = load ptr, ptr %name, align 8
@@ -223267,7 +223268,7 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @avra_match_unreachable(ptr @.match_fn.17719, i64 %tag, ptr @mu_file.17720, i64 374)
+  call void @avra_match_unreachable(ptr @.match_fn.17719, i64 %tag, ptr @mu_file.17720, i64 375)
   unreachable
 }
 
@@ -223299,7 +223300,7 @@ entry:
   %cast = ptrtoint ptr %reg1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17721, i64 3, ptr @sty_name.17722, i64 31, i64 %null_ext, ptr @src_file.17723, i64 0, i64 397)
+  call void @avra_null_deref_trap(ptr @fld_name.17721, i64 3, ptr @sty_name.17722, i64 31, i64 %null_ext, ptr @src_file.17723, i64 0, i64 398)
   %ord_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::NewtypeReg", ptr %reg1, i32 0, i32 0
   %ord = load ptr, ptr %ord_ptr, align 8
   store ptr %ord, ptr %ord2, align 8
@@ -223320,7 +223321,7 @@ entry:
   %cast10 = ptrtoint ptr %reg9 to i64
   %null_chk11 = icmp eq i64 %cast10, 0
   %null_ext12 = zext i1 %null_chk11 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17724, i64 3, ptr @sty_name.17725, i64 31, i64 %null_ext12, ptr @src_file.17726, i64 0, i64 400)
+  call void @avra_null_deref_trap(ptr @fld_name.17724, i64 3, ptr @sty_name.17725, i64 31, i64 %null_ext12, ptr @src_file.17726, i64 0, i64 401)
   %idx_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::NewtypeReg", ptr %reg9, i32 0, i32 1
   %idx = load ptr, ptr %idx_ptr, align 8
   %name13 = load ptr, ptr %name, align 8
@@ -223334,7 +223335,7 @@ entry:
   %cast18 = ptrtoint ptr %reg17 to i64
   %null_chk19 = icmp eq i64 %cast18, 0
   %null_ext20 = zext i1 %null_chk19 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17727, i64 3, ptr @sty_name.17728, i64 31, i64 %null_ext20, ptr @src_file.17729, i64 0, i64 401)
+  call void @avra_null_deref_trap(ptr @fld_name.17727, i64 3, ptr @sty_name.17728, i64 31, i64 %null_ext20, ptr @src_file.17729, i64 0, i64 402)
   %idx_ptr21 = getelementptr inbounds nuw %"@std::avrac::typeck::NewtypeReg", ptr %reg17, i32 0, i32 1
   %idx22 = load ptr, ptr %idx_ptr21, align 8
   %fld_ptr23 = getelementptr inbounds nuw %"@std::avrac::typeck::NewtypeReg", ptr %5, i32 0, i32 1
@@ -223355,7 +223356,7 @@ entry:
   %cast = ptrtoint ptr %reg1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17730, i64 3, ptr @sty_name.17731, i64 31, i64 %null_ext, ptr @src_file.17732, i64 0, i64 406)
+  call void @avra_null_deref_trap(ptr @fld_name.17730, i64 3, ptr @sty_name.17731, i64 31, i64 %null_ext, ptr @src_file.17732, i64 0, i64 407)
   %idx_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::NewtypeReg", ptr %reg1, i32 0, i32 1
   %idx = load ptr, ptr %idx_ptr, align 8
   %name2 = load ptr, ptr %name, align 8
@@ -223370,7 +223371,7 @@ ifcont:                                           ; preds = %if_else
   %cast6 = ptrtoint ptr %reg5 to i64
   %null_chk7 = icmp eq i64 %cast6, 0
   %null_ext8 = zext i1 %null_chk7 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17733, i64 3, ptr @sty_name.17734, i64 31, i64 %null_ext8, ptr @src_file.17735, i64 0, i64 407)
+  call void @avra_null_deref_trap(ptr @fld_name.17733, i64 3, ptr @sty_name.17734, i64 31, i64 %null_ext8, ptr @src_file.17735, i64 0, i64 408)
   %idx_ptr9 = getelementptr inbounds nuw %"@std::avrac::typeck::NewtypeReg", ptr %reg5, i32 0, i32 1
   %idx10 = load ptr, ptr %idx_ptr9, align 8
   %name11 = load ptr, ptr %name, align 8
@@ -223380,7 +223381,7 @@ ifcont:                                           ; preds = %if_else
   %cast13 = ptrtoint ptr %reg12 to i64
   %null_chk14 = icmp eq i64 %cast13, 0
   %null_ext15 = zext i1 %null_chk14 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17736, i64 3, ptr @sty_name.17737, i64 31, i64 %null_ext15, ptr @src_file.17738, i64 0, i64 408)
+  call void @avra_null_deref_trap(ptr @fld_name.17736, i64 3, ptr @sty_name.17737, i64 31, i64 %null_ext15, ptr @src_file.17738, i64 0, i64 409)
   %ord_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::NewtypeReg", ptr %reg12, i32 0, i32 0
   %ord = load ptr, ptr %ord_ptr, align 8
   %i16 = load i64, ptr %i, align 8
@@ -223388,7 +223389,7 @@ ifcont:                                           ; preds = %if_else
   %cast17 = inttoptr i64 %4 to ptr
   %null_chk18 = icmp eq i64 %4, 0
   %null_ext19 = zext i1 %null_chk18 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17739, i64 8, ptr @sty_name.17740, i64 32, i64 %null_ext19, ptr @src_file.17741, i64 0, i64 408)
+  call void @avra_null_deref_trap(ptr @fld_name.17739, i64 8, ptr @sty_name.17740, i64 32, i64 %null_ext19, ptr @src_file.17741, i64 0, i64 409)
   %cast20 = inttoptr i64 %4 to ptr
   %inner_vt_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::NewtypeMeta", ptr %cast20, i32 0, i32 1
   %inner_vt = load ptr, ptr %inner_vt_ptr, align 8
@@ -223436,7 +223437,7 @@ entry:
   %cast = ptrtoint ptr %reg1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17742, i64 3, ptr @sty_name.17743, i64 34, i64 %null_ext, ptr @src_file.17744, i64 0, i64 427)
+  call void @avra_null_deref_trap(ptr @fld_name.17742, i64 3, ptr @sty_name.17743, i64 34, i64 %null_ext, ptr @src_file.17744, i64 0, i64 428)
   %ord_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::UnionAliasReg", ptr %reg1, i32 0, i32 0
   %ord = load ptr, ptr %ord_ptr, align 8
   store ptr %ord, ptr %ord2, align 8
@@ -223457,7 +223458,7 @@ entry:
   %cast10 = ptrtoint ptr %reg9 to i64
   %null_chk11 = icmp eq i64 %cast10, 0
   %null_ext12 = zext i1 %null_chk11 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17745, i64 3, ptr @sty_name.17746, i64 34, i64 %null_ext12, ptr @src_file.17747, i64 0, i64 430)
+  call void @avra_null_deref_trap(ptr @fld_name.17745, i64 3, ptr @sty_name.17746, i64 34, i64 %null_ext12, ptr @src_file.17747, i64 0, i64 431)
   %idx_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::UnionAliasReg", ptr %reg9, i32 0, i32 1
   %idx = load ptr, ptr %idx_ptr, align 8
   %name13 = load ptr, ptr %name, align 8
@@ -223471,7 +223472,7 @@ entry:
   %cast18 = ptrtoint ptr %reg17 to i64
   %null_chk19 = icmp eq i64 %cast18, 0
   %null_ext20 = zext i1 %null_chk19 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17748, i64 3, ptr @sty_name.17749, i64 34, i64 %null_ext20, ptr @src_file.17750, i64 0, i64 431)
+  call void @avra_null_deref_trap(ptr @fld_name.17748, i64 3, ptr @sty_name.17749, i64 34, i64 %null_ext20, ptr @src_file.17750, i64 0, i64 432)
   %idx_ptr21 = getelementptr inbounds nuw %"@std::avrac::typeck::UnionAliasReg", ptr %reg17, i32 0, i32 1
   %idx22 = load ptr, ptr %idx_ptr21, align 8
   %fld_ptr23 = getelementptr inbounds nuw %"@std::avrac::typeck::UnionAliasReg", ptr %5, i32 0, i32 1
@@ -223492,7 +223493,7 @@ entry:
   %cast = ptrtoint ptr %reg1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17751, i64 3, ptr @sty_name.17752, i64 34, i64 %null_ext, ptr @src_file.17753, i64 0, i64 436)
+  call void @avra_null_deref_trap(ptr @fld_name.17751, i64 3, ptr @sty_name.17752, i64 34, i64 %null_ext, ptr @src_file.17753, i64 0, i64 437)
   %idx_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::UnionAliasReg", ptr %reg1, i32 0, i32 1
   %idx = load ptr, ptr %idx_ptr, align 8
   %name2 = load ptr, ptr %name, align 8
@@ -223507,7 +223508,7 @@ ifcont:                                           ; preds = %if_else
   %cast6 = ptrtoint ptr %reg5 to i64
   %null_chk7 = icmp eq i64 %cast6, 0
   %null_ext8 = zext i1 %null_chk7 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17754, i64 3, ptr @sty_name.17755, i64 34, i64 %null_ext8, ptr @src_file.17756, i64 0, i64 437)
+  call void @avra_null_deref_trap(ptr @fld_name.17754, i64 3, ptr @sty_name.17755, i64 34, i64 %null_ext8, ptr @src_file.17756, i64 0, i64 438)
   %idx_ptr9 = getelementptr inbounds nuw %"@std::avrac::typeck::UnionAliasReg", ptr %reg5, i32 0, i32 1
   %idx10 = load ptr, ptr %idx_ptr9, align 8
   %name11 = load ptr, ptr %name, align 8
@@ -223517,7 +223518,7 @@ ifcont:                                           ; preds = %if_else
   %cast13 = ptrtoint ptr %reg12 to i64
   %null_chk14 = icmp eq i64 %cast13, 0
   %null_ext15 = zext i1 %null_chk14 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17757, i64 3, ptr @sty_name.17758, i64 34, i64 %null_ext15, ptr @src_file.17759, i64 0, i64 438)
+  call void @avra_null_deref_trap(ptr @fld_name.17757, i64 3, ptr @sty_name.17758, i64 34, i64 %null_ext15, ptr @src_file.17759, i64 0, i64 439)
   %ord_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::UnionAliasReg", ptr %reg12, i32 0, i32 0
   %ord = load ptr, ptr %ord_ptr, align 8
   %i16 = load i64, ptr %i, align 8
@@ -223525,7 +223526,7 @@ ifcont:                                           ; preds = %if_else
   %cast17 = inttoptr i64 %4 to ptr
   %null_chk18 = icmp eq i64 %4, 0
   %null_ext19 = zext i1 %null_chk18 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17760, i64 7, ptr @sty_name.17761, i64 35, i64 %null_ext19, ptr @src_file.17762, i64 0, i64 438)
+  call void @avra_null_deref_trap(ptr @fld_name.17760, i64 7, ptr @sty_name.17761, i64 35, i64 %null_ext19, ptr @src_file.17762, i64 0, i64 439)
   %cast20 = inttoptr i64 %4 to ptr
   %type_vt_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::UnionAliasMeta", ptr %cast20, i32 0, i32 1
   %type_vt = load ptr, ptr %type_vt_ptr, align 8
@@ -223634,7 +223635,7 @@ march_arm14:                                      ; preds = %march_next4
   br label %match_end
 
 march_next15:                                     ; preds = %march_next4
-  call void @avra_match_unreachable(ptr @.match_fn.17763, i64 %tag, ptr @mu_file.17764, i64 453)
+  call void @avra_match_unreachable(ptr @.match_fn.17763, i64 %tag, ptr @mu_file.17764, i64 454)
   unreachable
 }
 
@@ -223777,7 +223778,7 @@ march_arm16:                                      ; preds = %march_next3
   br label %match_end
 
 march_next17:                                     ; preds = %march_next3
-  call void @avra_match_unreachable(ptr @.match_fn.17765, i64 %tag, ptr @mu_file.17766, i64 504)
+  call void @avra_match_unreachable(ptr @.match_fn.17765, i64 %tag, ptr @mu_file.17766, i64 505)
   unreachable
 }
 
@@ -223931,7 +223932,7 @@ entry:
   %cast = ptrtoint ptr %tc47 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17768, i64 5, ptr @sty_name.17769, i64 23, i64 %null_ext, ptr @src_file.17770, i64 0, i64 541)
+  call void @avra_null_deref_trap(ptr @fld_name.17768, i64 5, ptr @sty_name.17769, i64 23, i64 %null_ext, ptr @src_file.17770, i64 0, i64 542)
   %depth_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc47, i32 0, i32 7
   %depth = load i64, ptr %depth_ptr, align 8
   %add = add i64 %depth, 1
@@ -224016,14 +224017,14 @@ entry:
   %cast = ptrtoint ptr %tc47 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17771, i64 5, ptr @sty_name.17772, i64 23, i64 %null_ext, ptr @src_file.17773, i64 0, i64 544)
+  call void @avra_null_deref_trap(ptr @fld_name.17771, i64 5, ptr @sty_name.17772, i64 23, i64 %null_ext, ptr @src_file.17773, i64 0, i64 545)
   %types_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc47, i32 0, i32 0
   %types = load ptr, ptr %types_ptr, align 8
   %tc48 = load ptr, ptr %tc, align 8
   %cast49 = ptrtoint ptr %tc48 to i64
   %null_chk50 = icmp eq i64 %cast49, 0
   %null_ext51 = zext i1 %null_chk50 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17774, i64 5, ptr @sty_name.17775, i64 23, i64 %null_ext51, ptr @src_file.17776, i64 0, i64 544)
+  call void @avra_null_deref_trap(ptr @fld_name.17774, i64 5, ptr @sty_name.17775, i64 23, i64 %null_ext51, ptr @src_file.17776, i64 0, i64 545)
   %depth_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc48, i32 0, i32 7
   %depth = load i64, ptr %depth_ptr, align 8
   %2 = call ptr @"@std::avrac::typeck::type_pop_scope"(ptr %types, i64 %depth)
@@ -224033,7 +224034,7 @@ entry:
   %cast53 = ptrtoint ptr %tc52 to i64
   %null_chk54 = icmp eq i64 %cast53, 0
   %null_ext55 = zext i1 %null_chk54 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17777, i64 5, ptr @sty_name.17778, i64 23, i64 %null_ext55, ptr @src_file.17779, i64 0, i64 544)
+  call void @avra_null_deref_trap(ptr @fld_name.17777, i64 5, ptr @sty_name.17778, i64 23, i64 %null_ext55, ptr @src_file.17779, i64 0, i64 545)
   %depth_ptr56 = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc52, i32 0, i32 7
   %depth57 = load i64, ptr %depth_ptr56, align 8
   %sub = sub i64 %depth57, 1
@@ -224122,7 +224123,7 @@ entry:
   %cast = ptrtoint ptr %tc47 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17780, i64 5, ptr @sty_name.17781, i64 23, i64 %null_ext, ptr @src_file.17782, i64 0, i64 549)
+  call void @avra_null_deref_trap(ptr @fld_name.17780, i64 5, ptr @sty_name.17781, i64 23, i64 %null_ext, ptr @src_file.17782, i64 0, i64 550)
   %types_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc47, i32 0, i32 0
   %types = load ptr, ptr %types_ptr, align 8
   %name48 = load ptr, ptr %name, align 8
@@ -224131,7 +224132,7 @@ entry:
   %cast51 = ptrtoint ptr %tc50 to i64
   %null_chk52 = icmp eq i64 %cast51, 0
   %null_ext53 = zext i1 %null_chk52 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17783, i64 5, ptr @sty_name.17784, i64 23, i64 %null_ext53, ptr @src_file.17785, i64 0, i64 549)
+  call void @avra_null_deref_trap(ptr @fld_name.17783, i64 5, ptr @sty_name.17784, i64 23, i64 %null_ext53, ptr @src_file.17785, i64 0, i64 550)
   %depth_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc50, i32 0, i32 7
   %depth = load i64, ptr %depth_ptr, align 8
   %4 = call ptr @"@std::avrac::typeck::type_bind"(ptr %types, ptr %name48, ptr %ty49, i64 %depth)
@@ -224157,14 +224158,14 @@ entry:
   %cast = ptrtoint ptr %tc4 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17786, i64 12, ptr @sty_name.17787, i64 23, i64 %null_ext, ptr @src_file.17788, i64 0, i64 555)
+  call void @avra_null_deref_trap(ptr @fld_name.17786, i64 12, ptr @sty_name.17787, i64 23, i64 %null_ext, ptr @src_file.17788, i64 0, i64 556)
   %current_line_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc4, i32 0, i32 10
   %current_line = load i64, ptr %current_line_ptr, align 8
   %tc5 = load ptr, ptr %tc, align 8
   %cast6 = ptrtoint ptr %tc5 to i64
   %null_chk7 = icmp eq i64 %cast6, 0
   %null_ext8 = zext i1 %null_chk7 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17789, i64 11, ptr @sty_name.17790, i64 23, i64 %null_ext8, ptr @src_file.17791, i64 0, i64 555)
+  call void @avra_null_deref_trap(ptr @fld_name.17789, i64 11, ptr @sty_name.17790, i64 23, i64 %null_ext8, ptr @src_file.17791, i64 0, i64 556)
   %current_col_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc5, i32 0, i32 11
   %current_col = load i64, ptr %current_col_ptr, align 8
   %3 = call ptr @"@std::avrac::typeck::tc_report_at"(ptr %tc1, ptr %code2, ptr %msg3, i64 %current_line, i64 %current_col, i64 0)
@@ -224193,7 +224194,7 @@ entry:
   %cast = ptrtoint ptr %tc1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17792, i64 10, ptr @sty_name.17793, i64 23, i64 %null_ext, ptr @src_file.17794, i64 0, i64 562)
+  call void @avra_null_deref_trap(ptr @fld_name.17792, i64 10, ptr @sty_name.17793, i64 23, i64 %null_ext, ptr @src_file.17794, i64 0, i64 563)
   %current_fn_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc1, i32 0, i32 9
   %current_fn = load ptr, ptr %current_fn_ptr, align 8
   %6 = call i64 @strlen(ptr %current_fn)
@@ -224229,7 +224230,7 @@ ife_then:                                         ; preds = %entry
   %cast6 = ptrtoint ptr %tc5 to i64
   %null_chk7 = icmp eq i64 %cast6, 0
   %null_ext8 = zext i1 %null_chk7 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17796, i64 10, ptr @sty_name.17797, i64 23, i64 %null_ext8, ptr @src_file.17798, i64 0, i64 563)
+  call void @avra_null_deref_trap(ptr @fld_name.17796, i64 10, ptr @sty_name.17797, i64 23, i64 %null_ext8, ptr @src_file.17798, i64 0, i64 564)
   %current_fn_ptr9 = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc5, i32 0, i32 9
   %current_fn10 = load ptr, ptr %current_fn_ptr9, align 8
   %12 = call i64 @strlen(ptr %9)
@@ -224338,7 +224339,7 @@ ife_end31:                                        ; preds = %ife_else34, %ife_th
   %cast89 = ptrtoint ptr %tc88 to i64
   %null_chk90 = icmp eq i64 %cast89, 0
   %null_ext91 = zext i1 %null_chk90 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17800, i64 3, ptr @sty_name.17801, i64 23, i64 %null_ext91, ptr @src_file.17802, i64 0, i64 566)
+  call void @avra_null_deref_trap(ptr @fld_name.17800, i64 3, ptr @sty_name.17801, i64 23, i64 %null_ext91, ptr @src_file.17802, i64 0, i64 567)
   %bag_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc88, i32 0, i32 8
   %bag = load ptr, ptr %bag_ptr, align 8
   %code92 = load ptr, ptr %code, align 8
@@ -224388,7 +224389,7 @@ entry:
   %cast = ptrtoint ptr %tc1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17803, i64 10, ptr @sty_name.17804, i64 23, i64 %null_ext, ptr @src_file.17805, i64 0, i64 572)
+  call void @avra_null_deref_trap(ptr @fld_name.17803, i64 10, ptr @sty_name.17804, i64 23, i64 %null_ext, ptr @src_file.17805, i64 0, i64 573)
   %current_fn_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc1, i32 0, i32 9
   %current_fn = load ptr, ptr %current_fn_ptr, align 8
   %4 = call i64 @strlen(ptr %current_fn)
@@ -224405,7 +224406,7 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %cast28 = ptrtoint ptr %tc27 to i64
   %null_chk29 = icmp eq i64 %cast28, 0
   %null_ext30 = zext i1 %null_chk29 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17811, i64 12, ptr @sty_name.17812, i64 23, i64 %null_ext30, ptr @src_file.17813, i64 0, i64 575)
+  call void @avra_null_deref_trap(ptr @fld_name.17811, i64 12, ptr @sty_name.17812, i64 23, i64 %null_ext30, ptr @src_file.17813, i64 0, i64 576)
   %current_line_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc27, i32 0, i32 10
   %current_line = load i64, ptr %current_line_ptr, align 8
   %gt31 = icmp sgt i64 %current_line, 0
@@ -224430,7 +224431,7 @@ ife_then:                                         ; preds = %entry
   %cast6 = ptrtoint ptr %tc5 to i64
   %null_chk7 = icmp eq i64 %cast6, 0
   %null_ext8 = zext i1 %null_chk7 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17807, i64 10, ptr @sty_name.17808, i64 23, i64 %null_ext8, ptr @src_file.17809, i64 0, i64 573)
+  call void @avra_null_deref_trap(ptr @fld_name.17807, i64 10, ptr @sty_name.17808, i64 23, i64 %null_ext8, ptr @src_file.17809, i64 0, i64 574)
   %current_fn_ptr9 = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc5, i32 0, i32 9
   %current_fn10 = load ptr, ptr %current_fn_ptr9, align 8
   %10 = call i64 @strlen(ptr %7)
@@ -224549,7 +224550,7 @@ ife_end34:                                        ; preds = %ife_else37, %ife_th
   %cast104 = ptrtoint ptr %tc103 to i64
   %null_chk105 = icmp eq i64 %cast104, 0
   %null_ext106 = zext i1 %null_chk105 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17820, i64 3, ptr @sty_name.17821, i64 23, i64 %null_ext106, ptr @src_file.17822, i64 0, i64 578)
+  call void @avra_null_deref_trap(ptr @fld_name.17820, i64 3, ptr @sty_name.17821, i64 23, i64 %null_ext106, ptr @src_file.17822, i64 0, i64 579)
   %bag_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc103, i32 0, i32 8
   %bag = load ptr, ptr %bag_ptr, align 8
   %primary107 = load ptr, ptr %primary, align 8
@@ -224567,14 +224568,14 @@ ife_then36:                                       ; preds = %ife_end
   %cast39 = ptrtoint ptr %tc38 to i64
   %null_chk40 = icmp eq i64 %cast39, 0
   %null_ext41 = zext i1 %null_chk40 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17814, i64 12, ptr @sty_name.17815, i64 23, i64 %null_ext41, ptr @src_file.17816, i64 0, i64 575)
+  call void @avra_null_deref_trap(ptr @fld_name.17814, i64 12, ptr @sty_name.17815, i64 23, i64 %null_ext41, ptr @src_file.17816, i64 0, i64 576)
   %current_line_ptr42 = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc38, i32 0, i32 10
   %current_line43 = load i64, ptr %current_line_ptr42, align 8
   %tc44 = load ptr, ptr %tc, align 8
   %cast45 = ptrtoint ptr %tc44 to i64
   %null_chk46 = icmp eq i64 %cast45, 0
   %null_ext47 = zext i1 %null_chk46 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17817, i64 11, ptr @sty_name.17818, i64 23, i64 %null_ext47, ptr @src_file.17819, i64 0, i64 575)
+  call void @avra_null_deref_trap(ptr @fld_name.17817, i64 11, ptr @sty_name.17818, i64 23, i64 %null_ext47, ptr @src_file.17819, i64 0, i64 576)
   %current_col_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc44, i32 0, i32 11
   %current_col = load i64, ptr %current_col_ptr, align 8
   %26 = call ptr @"@std::avrac::diagnostics::span_new"(i64 0, i64 0, i64 %current_line43, i64 %current_col)
@@ -224666,7 +224667,7 @@ ifcont:                                           ; preds = %if_else, %ifcont9
   %cast16 = ptrtoint ptr %tc15 to i64
   %null_chk17 = icmp eq i64 %cast16, 0
   %null_ext18 = zext i1 %null_chk17 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17827, i64 5, ptr @sty_name.17828, i64 23, i64 %null_ext18, ptr @src_file.17829, i64 0, i64 603)
+  call void @avra_null_deref_trap(ptr @fld_name.17827, i64 5, ptr @sty_name.17828, i64 23, i64 %null_ext18, ptr @src_file.17829, i64 0, i64 604)
   %enums_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc15, i32 0, i32 4
   %enums = load ptr, ptr %enums_ptr, align 8
   %name19 = load ptr, ptr %name2, align 8
@@ -224682,7 +224683,7 @@ if_then:                                          ; preds = %march_arm
   %cast = ptrtoint ptr %tc6 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17824, i64 15, ptr @sty_name.17825, i64 23, i64 %null_ext, ptr @src_file.17826, i64 0, i64 598)
+  call void @avra_null_deref_trap(ptr @fld_name.17824, i64 15, ptr @sty_name.17825, i64 23, i64 %null_ext, ptr @src_file.17826, i64 0, i64 599)
   %assoc_type_defs_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc6, i32 0, i32 14
   %assoc_type_defs = load ptr, ptr %assoc_type_defs_ptr, align 8
   %assoc_key7 = load ptr, ptr %assoc_key, align 8
@@ -224716,7 +224717,7 @@ ifcont21:                                         ; preds = %if_else24
   %cast40 = ptrtoint ptr %tc39 to i64
   %null_chk41 = icmp eq i64 %cast40, 0
   %null_ext42 = zext i1 %null_chk41 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17830, i64 13, ptr @sty_name.17831, i64 23, i64 %null_ext42, ptr @src_file.17832, i64 0, i64 604)
+  call void @avra_null_deref_trap(ptr @fld_name.17830, i64 13, ptr @sty_name.17831, i64 23, i64 %null_ext42, ptr @src_file.17832, i64 0, i64 605)
   %union_aliases_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc39, i32 0, i32 6
   %union_aliases = load ptr, ptr %union_aliases_ptr, align 8
   %name43 = load ptr, ptr %name2, align 8
@@ -224769,7 +224770,7 @@ ifcont48:                                         ; preds = %if_else51
   %cast55 = ptrtoint ptr %tc54 to i64
   %null_chk56 = icmp eq i64 %cast55, 0
   %null_ext57 = zext i1 %null_chk56 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17833, i64 8, ptr @sty_name.17834, i64 23, i64 %null_ext57, ptr @src_file.17835, i64 0, i64 606)
+  call void @avra_null_deref_trap(ptr @fld_name.17833, i64 8, ptr @sty_name.17834, i64 23, i64 %null_ext57, ptr @src_file.17835, i64 0, i64 607)
   %newtypes_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc54, i32 0, i32 5
   %newtypes = load ptr, ptr %newtypes_ptr, align 8
   %name58 = load ptr, ptr %name2, align 8
@@ -224797,7 +224798,7 @@ ifcont63:                                         ; preds = %if_else66
   %cast84 = ptrtoint ptr %tc83 to i64
   %null_chk85 = icmp eq i64 %cast84, 0
   %null_ext86 = zext i1 %null_chk85 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17836, i64 7, ptr @sty_name.17837, i64 23, i64 %null_ext86, ptr @src_file.17838, i64 0, i64 608)
+  call void @avra_null_deref_trap(ptr @fld_name.17836, i64 7, ptr @sty_name.17837, i64 23, i64 %null_ext86, ptr @src_file.17838, i64 0, i64 609)
   %structs_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc83, i32 0, i32 2
   %structs = load ptr, ptr %structs_ptr, align 8
   %name87 = load ptr, ptr %name2, align 8
@@ -224841,7 +224842,7 @@ ifcont89:                                         ; preds = %if_else92
   %cast105 = ptrtoint ptr %tc104 to i64
   %null_chk106 = icmp eq i64 %cast105, 0
   %null_ext107 = zext i1 %null_chk106 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17839, i64 6, ptr @sty_name.17840, i64 23, i64 %null_ext107, ptr @src_file.17841, i64 0, i64 609)
+  call void @avra_null_deref_trap(ptr @fld_name.17839, i64 6, ptr @sty_name.17840, i64 23, i64 %null_ext107, ptr @src_file.17841, i64 0, i64 610)
   %traits_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc104, i32 0, i32 12
   %traits = load ptr, ptr %traits_ptr, align 8
   %name108 = load ptr, ptr %name2, align 8
@@ -224927,7 +224928,7 @@ march_arm127:                                     ; preds = %march_next
   %cast143 = ptrtoint ptr %tc142 to i64
   %null_chk144 = icmp eq i64 %cast143, 0
   %null_ext145 = zext i1 %null_chk144 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17842, i64 5, ptr @sty_name.17843, i64 23, i64 %null_ext145, ptr @src_file.17844, i64 0, i64 615)
+  call void @avra_null_deref_trap(ptr @fld_name.17842, i64 5, ptr @sty_name.17843, i64 23, i64 %null_ext145, ptr @src_file.17844, i64 0, i64 616)
   %enums_ptr146 = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc142, i32 0, i32 4
   %enums147 = load ptr, ptr %enums_ptr146, align 8
   %name148 = load ptr, ptr %name136, align 8
@@ -224945,7 +224946,7 @@ ifcont150:                                        ; preds = %if_else153
   %cast170 = ptrtoint ptr %tc169 to i64
   %null_chk171 = icmp eq i64 %cast170, 0
   %null_ext172 = zext i1 %null_chk171 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17845, i64 7, ptr @sty_name.17846, i64 23, i64 %null_ext172, ptr @src_file.17847, i64 0, i64 616)
+  call void @avra_null_deref_trap(ptr @fld_name.17845, i64 7, ptr @sty_name.17846, i64 23, i64 %null_ext172, ptr @src_file.17847, i64 0, i64 617)
   %structs_ptr173 = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc169, i32 0, i32 2
   %structs174 = load ptr, ptr %structs_ptr173, align 8
   %name175 = load ptr, ptr %name136, align 8
@@ -225141,7 +225142,7 @@ march_arm256:                                     ; preds = %march_next235
   br label %match_end
 
 march_next257:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.17848, i64 %tag, ptr @mu_file.17849, i64 590)
+  call void @avra_match_unreachable(ptr @.match_fn.17848, i64 %tag, ptr @mu_file.17849, i64 591)
   unreachable
 }
 
@@ -225168,9 +225169,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -225222,7 +225223,7 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.17850, i64 %tag, ptr @mu_file.17851, i64 628)
+  call void @avra_match_unreachable(ptr @.match_fn.17850, i64 %tag, ptr @mu_file.17851, i64 629)
   unreachable
 }
 
@@ -225328,7 +225329,7 @@ entry:
   %cast51 = ptrtoint ptr %tc_first50 to i64
   %null_chk = icmp eq i64 %cast51, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17854, i64 3, ptr @sty_name.17855, i64 23, i64 %null_ext, ptr @src_file.17856, i64 0, i64 667)
+  call void @avra_null_deref_trap(ptr @fld_name.17854, i64 3, ptr @sty_name.17855, i64 23, i64 %null_ext, ptr @src_file.17856, i64 0, i64 668)
   %fns_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc_first50, i32 0, i32 1
   %fns = load ptr, ptr %fns_ptr, align 8
   %7 = call ptr @"@std::avrac::typeck::rewrite_fn_ret_tys"(ptr %tc_first49, ptr %fns)
@@ -225369,7 +225370,7 @@ ifcont:                                           ; preds = %if_else, %if_then
   %cast138 = ptrtoint ptr %tc3137 to i64
   %null_chk139 = icmp eq i64 %cast138, 0
   %null_ext140 = zext i1 %null_chk139 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17868, i64 3, ptr @sty_name.17869, i64 23, i64 %null_ext140, ptr @src_file.17870, i64 0, i64 685)
+  call void @avra_null_deref_trap(ptr @fld_name.17868, i64 3, ptr @sty_name.17869, i64 23, i64 %null_ext140, ptr @src_file.17870, i64 0, i64 686)
   %bag_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc3137, i32 0, i32 8
   %bag = load ptr, ptr %bag_ptr, align 8
   %16 = call i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %bag)
@@ -225380,7 +225381,7 @@ ifcont:                                           ; preds = %if_else, %if_then
   %cast144 = ptrtoint ptr %tc3143 to i64
   %null_chk145 = icmp eq i64 %cast144, 0
   %null_ext146 = zext i1 %null_chk145 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17871, i64 3, ptr @sty_name.17872, i64 23, i64 %null_ext146, ptr @src_file.17873, i64 0, i64 685)
+  call void @avra_null_deref_trap(ptr @fld_name.17871, i64 3, ptr @sty_name.17872, i64 23, i64 %null_ext146, ptr @src_file.17873, i64 0, i64 686)
   %bag_ptr147 = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc3143, i32 0, i32 8
   %bag148 = load ptr, ptr %bag_ptr147, align 8
   %fld_ptr149 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %15, i32 0, i32 2
@@ -225389,7 +225390,7 @@ ifcont:                                           ; preds = %if_else, %if_then
   %cast151 = ptrtoint ptr %tc3150 to i64
   %null_chk152 = icmp eq i64 %cast151, 0
   %null_ext153 = zext i1 %null_chk152 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17874, i64 11, ptr @sty_name.17875, i64 23, i64 %null_ext153, ptr @src_file.17876, i64 0, i64 685)
+  call void @avra_null_deref_trap(ptr @fld_name.17874, i64 11, ptr @sty_name.17875, i64 23, i64 %null_ext153, ptr @src_file.17876, i64 0, i64 686)
   %trait_impls_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc3150, i32 0, i32 13
   %trait_impls = load ptr, ptr %trait_impls_ptr, align 8
   %fld_ptr154 = getelementptr inbounds nuw %"@std::avrac::typeck::TypeCheckResult", ptr %15, i32 0, i32 3
@@ -225697,7 +225698,7 @@ march_arm44:                                      ; preds = %march_next17
   br label %match_end15
 
 march_next45:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.17880, i64 %tag13, ptr @mu_file.17881, i64 700)
+  call void @avra_match_unreachable(ptr @.match_fn.17880, i64 %tag13, ptr @mu_file.17881, i64 701)
   unreachable
 
 march_arm48:                                      ; preds = %march_next
@@ -225707,7 +225708,7 @@ march_arm48:                                      ; preds = %march_next
   br label %match_end
 
 march_next49:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.17882, i64 %tag, ptr @mu_file.17883, i64 696)
+  call void @avra_match_unreachable(ptr @.match_fn.17882, i64 %tag, ptr @mu_file.17883, i64 697)
   unreachable
 }
 
@@ -225799,7 +225800,7 @@ march_arm3:                                       ; preds = %march_next
   %cast11 = ptrtoint ptr %ss10 to i64
   %null_chk = icmp eq i64 %cast11, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17884, i64 4, ptr @sty_name.17885, i64 24, i64 %null_ext, ptr @src_file.17886, i64 0, i64 726)
+  call void @avra_null_deref_trap(ptr @fld_name.17884, i64 4, ptr @sty_name.17885, i64 24, i64 %null_ext, ptr @src_file.17886, i64 0, i64 727)
   %node_ptr = getelementptr inbounds nuw %"@std::avrac::core::SStmt", ptr %ss10, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %2 = call ptr @"@std::avrac::core::stmt_unwrap"(ptr %node)
@@ -225810,7 +225811,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.17926, i64 %tag, ptr @mu_file.17927, i64 722)
+  call void @avra_match_unreachable(ptr @.match_fn.17926, i64 %tag, ptr @mu_file.17927, i64 723)
   unreachable
 
 match_end15:                                      ; preds = %march_arm816, %march_arm741, %march_arm732, %ife_end629, %ife_end544, %ife_end, %march_arm355, %march_arm263, %march_arm193, %march_arm85, %march_arm16
@@ -225846,7 +225847,7 @@ march_arm16:                                      ; preds = %march_arm3
   %cast27 = ptrtoint ptr %tc26 to i64
   %null_chk28 = icmp eq i64 %cast27, 0
   %null_ext29 = zext i1 %null_chk28 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17887, i64 7, ptr @sty_name.17888, i64 23, i64 %null_ext29, ptr @src_file.17889, i64 0, i64 729)
+  call void @avra_null_deref_trap(ptr @fld_name.17887, i64 7, ptr @sty_name.17888, i64 23, i64 %null_ext29, ptr @src_file.17889, i64 0, i64 730)
   %structs_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc26, i32 0, i32 2
   %structs = load ptr, ptr %structs_ptr, align 8
   %4 = call ptr @"@std::avrac::typeck::tc_resolve_type_operator"(ptr %fields25, ptr %structs)
@@ -225921,7 +225922,7 @@ march_arm16:                                      ; preds = %march_arm3
   %cast77 = ptrtoint ptr %tc76 to i64
   %null_chk78 = icmp eq i64 %cast77, 0
   %null_ext79 = zext i1 %null_chk78 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17890, i64 7, ptr @sty_name.17891, i64 23, i64 %null_ext79, ptr @src_file.17892, i64 0, i64 730)
+  call void @avra_null_deref_trap(ptr @fld_name.17890, i64 7, ptr @sty_name.17891, i64 23, i64 %null_ext79, ptr @src_file.17892, i64 0, i64 731)
   %structs_ptr80 = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc76, i32 0, i32 2
   %structs81 = load ptr, ptr %structs_ptr80, align 8
   %name82 = load ptr, ptr %name21, align 8
@@ -226057,7 +226058,7 @@ march_arm85:                                      ; preds = %march_next17
   %cast164 = ptrtoint ptr %tc163 to i64
   %null_chk165 = icmp eq i64 %cast164, 0
   %null_ext166 = zext i1 %null_chk165 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17894, i64 8, ptr @sty_name.17895, i64 23, i64 %null_ext166, ptr @src_file.17896, i64 0, i64 736)
+  call void @avra_null_deref_trap(ptr @fld_name.17894, i64 8, ptr @sty_name.17895, i64 23, i64 %null_ext166, ptr @src_file.17896, i64 0, i64 737)
   %newtypes_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc163, i32 0, i32 5
   %newtypes = load ptr, ptr %newtypes_ptr, align 8
   %name167 = load ptr, ptr %name94, align 8
@@ -226069,7 +226070,7 @@ march_arm85:                                      ; preds = %march_next17
   %cast171 = ptrtoint ptr %tc170 to i64
   %null_chk172 = icmp eq i64 %cast171, 0
   %null_ext173 = zext i1 %null_chk172 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17897, i64 3, ptr @sty_name.17898, i64 23, i64 %null_ext173, ptr @src_file.17899, i64 0, i64 736)
+  call void @avra_null_deref_trap(ptr @fld_name.17897, i64 3, ptr @sty_name.17898, i64 23, i64 %null_ext173, ptr @src_file.17899, i64 0, i64 737)
   %fns_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc170, i32 0, i32 1
   %fns = load ptr, ptr %fns_ptr, align 8
   %name174 = load ptr, ptr %name94, align 8
@@ -226194,7 +226195,7 @@ march_arm193:                                     ; preds = %march_next86
   %cast256 = ptrtoint ptr %tc255 to i64
   %null_chk257 = icmp eq i64 %cast256, 0
   %null_ext258 = zext i1 %null_chk257 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17900, i64 13, ptr @sty_name.17901, i64 23, i64 %null_ext258, ptr @src_file.17902, i64 0, i64 743)
+  call void @avra_null_deref_trap(ptr @fld_name.17900, i64 13, ptr @sty_name.17901, i64 23, i64 %null_ext258, ptr @src_file.17902, i64 0, i64 744)
   %union_aliases_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc255, i32 0, i32 6
   %union_aliases = load ptr, ptr %union_aliases_ptr, align 8
   %name259 = load ptr, ptr %name202, align 8
@@ -226297,7 +226298,7 @@ march_arm263:                                     ; preds = %march_next194
   %cast330 = ptrtoint ptr %tc329 to i64
   %null_chk331 = icmp eq i64 %cast330, 0
   %null_ext332 = zext i1 %null_chk331 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17903, i64 7, ptr @sty_name.17904, i64 23, i64 %null_ext332, ptr @src_file.17905, i64 0, i64 726)
+  call void @avra_null_deref_trap(ptr @fld_name.17903, i64 7, ptr @sty_name.17904, i64 23, i64 %null_ext332, ptr @src_file.17905, i64 0, i64 727)
   %structs_ptr333 = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc329, i32 0, i32 2
   %structs334 = load ptr, ptr %structs_ptr333, align 8
   %name335 = load ptr, ptr %name272, align 8
@@ -226320,7 +226321,7 @@ march_arm263:                                     ; preds = %march_next194
   %cast345 = ptrtoint ptr %tc344 to i64
   %null_chk346 = icmp eq i64 %cast345, 0
   %null_ext347 = zext i1 %null_chk346 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17906, i64 6, ptr @sty_name.17907, i64 23, i64 %null_ext347, ptr @src_file.17908, i64 0, i64 726)
+  call void @avra_null_deref_trap(ptr @fld_name.17906, i64 6, ptr @sty_name.17907, i64 23, i64 %null_ext347, ptr @src_file.17908, i64 0, i64 727)
   %shapes_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc344, i32 0, i32 3
   %shapes = load ptr, ptr %shapes_ptr, align 8
   %slot_base348 = ptrtoint ptr %21 to i64
@@ -226426,7 +226427,7 @@ march_arm355:                                     ; preds = %march_next264
   %cast418 = ptrtoint ptr %tc417 to i64
   %null_chk419 = icmp eq i64 %cast418, 0
   %null_ext420 = zext i1 %null_chk419 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17909, i64 5, ptr @sty_name.17910, i64 23, i64 %null_ext420, ptr @src_file.17911, i64 0, i64 726)
+  call void @avra_null_deref_trap(ptr @fld_name.17909, i64 5, ptr @sty_name.17910, i64 23, i64 %null_ext420, ptr @src_file.17911, i64 0, i64 727)
   %enums_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc417, i32 0, i32 4
   %enums = load ptr, ptr %enums_ptr, align 8
   %name421 = load ptr, ptr %name364, align 8
@@ -226558,7 +226559,7 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %cast503 = ptrtoint ptr %tc502 to i64
   %null_chk504 = icmp eq i64 %cast503, 0
   %null_ext505 = zext i1 %null_chk504 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17912, i64 3, ptr @sty_name.17913, i64 23, i64 %null_ext505, ptr @src_file.17914, i64 0, i64 755)
+  call void @avra_null_deref_trap(ptr @fld_name.17912, i64 3, ptr @sty_name.17913, i64 23, i64 %null_ext505, ptr @src_file.17914, i64 0, i64 756)
   %fns_ptr506 = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc502, i32 0, i32 1
   %fns507 = load ptr, ptr %fns_ptr506, align 8
   %name508 = load ptr, ptr %name434, align 8
@@ -226705,7 +226706,7 @@ ife_end544:                                       ; preds = %ife_else547, %ife_t
   %cast607 = ptrtoint ptr %tc606 to i64
   %null_chk608 = icmp eq i64 %cast607, 0
   %null_ext609 = zext i1 %null_chk608 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17915, i64 3, ptr @sty_name.17916, i64 23, i64 %null_ext609, ptr @src_file.17917, i64 0, i64 760)
+  call void @avra_null_deref_trap(ptr @fld_name.17915, i64 3, ptr @sty_name.17916, i64 23, i64 %null_ext609, ptr @src_file.17917, i64 0, i64 761)
   %fns_ptr610 = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc606, i32 0, i32 1
   %fns611 = load ptr, ptr %fns_ptr610, align 8
   %name612 = load ptr, ptr %name522, align 8
@@ -226895,7 +226896,7 @@ ife_then631:                                      ; preds = %march_arm617
   %cast710 = ptrtoint ptr %tc709 to i64
   %null_chk711 = icmp eq i64 %cast710, 0
   %null_ext712 = zext i1 %null_chk711 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17918, i64 11, ptr @sty_name.17919, i64 23, i64 %null_ext712, ptr @src_file.17920, i64 0, i64 768)
+  call void @avra_null_deref_trap(ptr @fld_name.17918, i64 11, ptr @sty_name.17919, i64 23, i64 %null_ext712, ptr @src_file.17920, i64 0, i64 769)
   %trait_impls_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc709, i32 0, i32 13
   %trait_impls = load ptr, ptr %trait_impls_ptr, align 8
   %slot_base713 = ptrtoint ptr %45 to i64
@@ -227030,7 +227031,7 @@ march_arm741:                                     ; preds = %march_next733
   %cast808 = ptrtoint ptr %tc807 to i64
   %null_chk809 = icmp eq i64 %cast808, 0
   %null_ext810 = zext i1 %null_chk809 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17921, i64 6, ptr @sty_name.17922, i64 23, i64 %null_ext810, ptr @src_file.17923, i64 0, i64 726)
+  call void @avra_null_deref_trap(ptr @fld_name.17921, i64 6, ptr @sty_name.17922, i64 23, i64 %null_ext810, ptr @src_file.17923, i64 0, i64 727)
   %traits_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc807, i32 0, i32 12
   %traits = load ptr, ptr %traits_ptr, align 8
   %name811 = load ptr, ptr %name750, align 8
@@ -227055,7 +227056,7 @@ march_arm816:                                     ; preds = %march_next742
   br label %match_end15
 
 march_next817:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.17924, i64 %tag13, ptr @mu_file.17925, i64 726)
+  call void @avra_match_unreachable(ptr @.match_fn.17924, i64 %tag13, ptr @mu_file.17925, i64 727)
   unreachable
 }
 
@@ -227121,7 +227122,7 @@ march_arm3:                                       ; preds = %march_next
   %cast11 = ptrtoint ptr %ss10 to i64
   %null_chk = icmp eq i64 %cast11, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17928, i64 4, ptr @sty_name.17929, i64 24, i64 %null_ext, ptr @src_file.17930, i64 0, i64 794)
+  call void @avra_null_deref_trap(ptr @fld_name.17928, i64 4, ptr @sty_name.17929, i64 24, i64 %null_ext, ptr @src_file.17930, i64 0, i64 795)
   %node_ptr = getelementptr inbounds nuw %"@std::avrac::core::SStmt", ptr %ss10, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %tag_ptr12 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %node, i32 0, i32 0
@@ -227131,7 +227132,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.17941, i64 %tag, ptr @mu_file.17942, i64 790)
+  call void @avra_match_unreachable(ptr @.match_fn.17941, i64 %tag, ptr @mu_file.17942, i64 791)
   unreachable
 
 match_end15:                                      ; preds = %march_arm180, %sif_end
@@ -227300,7 +227301,7 @@ sif_then:                                         ; preds = %march_arm16
   %cast96 = ptrtoint ptr %tc95 to i64
   %null_chk97 = icmp eq i64 %cast96, 0
   %null_ext98 = zext i1 %null_chk97 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17933, i64 15, ptr @sty_name.17934, i64 23, i64 %null_ext98, ptr @src_file.17935, i64 0, i64 800)
+  call void @avra_null_deref_trap(ptr @fld_name.17933, i64 15, ptr @sty_name.17934, i64 23, i64 %null_ext98, ptr @src_file.17935, i64 0, i64 801)
   %assoc_type_defs_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc95, i32 0, i32 14
   %assoc_type_defs = load ptr, ptr %assoc_type_defs_ptr, align 8
   %slot_base99 = ptrtoint ptr %22 to i64
@@ -227400,7 +227401,7 @@ sif_then:                                         ; preds = %march_arm16
   %cast166 = ptrtoint ptr %with_type165 to i64
   %null_chk167 = icmp eq i64 %cast166, 0
   %null_ext168 = zext i1 %null_chk167 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17936, i64 15, ptr @sty_name.17937, i64 23, i64 %null_ext168, ptr @src_file.17938, i64 0, i64 801)
+  call void @avra_null_deref_trap(ptr @fld_name.17936, i64 15, ptr @sty_name.17937, i64 23, i64 %null_ext168, ptr @src_file.17938, i64 0, i64 802)
   %assoc_type_defs_ptr169 = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %with_type165, i32 0, i32 14
   %assoc_type_defs170 = load ptr, ptr %assoc_type_defs_ptr169, align 8
   %slot_base171 = ptrtoint ptr %25 to i64
@@ -227433,7 +227434,7 @@ march_arm180:                                     ; preds = %march_next17
   br label %match_end15
 
 march_next181:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.17939, i64 %tag13, ptr @mu_file.17940, i64 794)
+  call void @avra_match_unreachable(ptr @.match_fn.17939, i64 %tag13, ptr @mu_file.17940, i64 795)
   unreachable
 }
 
@@ -227460,7 +227461,7 @@ while.cond:                                       ; preds = %ife_end, %entry
   %cast = ptrtoint ptr %fns2 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17943, i64 3, ptr @sty_name.17944, i64 30, i64 %null_ext, ptr @src_file.17945, i64 0, i64 827)
+  call void @avra_null_deref_trap(ptr @fld_name.17943, i64 3, ptr @sty_name.17944, i64 30, i64 %null_ext, ptr @src_file.17945, i64 0, i64 828)
   %ord_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::FnTypeReg", ptr %fns2, i32 0, i32 0
   %ord = load ptr, ptr %ord_ptr, align 8
   %3 = call i64 @avra_array_len(ptr %ord)
@@ -227474,7 +227475,7 @@ while.body:                                       ; preds = %while.cond
   %cast4 = ptrtoint ptr %fns3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17946, i64 3, ptr @sty_name.17947, i64 30, i64 %null_ext6, ptr @src_file.17948, i64 0, i64 828)
+  call void @avra_null_deref_trap(ptr @fld_name.17946, i64 3, ptr @sty_name.17947, i64 30, i64 %null_ext6, ptr @src_file.17948, i64 0, i64 829)
   %ord_ptr7 = getelementptr inbounds nuw %"@std::avrac::typeck::FnTypeReg", ptr %fns3, i32 0, i32 0
   %ord8 = load ptr, ptr %ord_ptr7, align 8
   %i9 = load i64, ptr %i, align 8
@@ -227485,7 +227486,7 @@ while.body:                                       ; preds = %while.cond
   %cast12 = ptrtoint ptr %m11 to i64
   %null_chk13 = icmp eq i64 %cast12, 0
   %null_ext14 = zext i1 %null_chk13 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17949, i64 6, ptr @sty_name.17950, i64 31, i64 %null_ext14, ptr @src_file.17951, i64 0, i64 829)
+  call void @avra_null_deref_trap(ptr @fld_name.17949, i64 6, ptr @sty_name.17950, i64 31, i64 %null_ext14, ptr @src_file.17951, i64 0, i64 830)
   %ret_ty_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::FnTypeMeta", ptr %m11, i32 0, i32 2
   %ret_ty = load ptr, ptr %ret_ty_ptr, align 8
   %5 = call ptr @avra_rc_alloc(i64 16)
@@ -227513,7 +227514,7 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %cast35 = ptrtoint ptr %m34 to i64
   %null_chk36 = icmp eq i64 %cast35, 0
   %null_ext37 = zext i1 %null_chk36 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17958, i64 6, ptr @sty_name.17959, i64 31, i64 %null_ext37, ptr @src_file.17960, i64 0, i64 830)
+  call void @avra_null_deref_trap(ptr @fld_name.17958, i64 6, ptr @sty_name.17959, i64 31, i64 %null_ext37, ptr @src_file.17960, i64 0, i64 831)
   %params_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::FnTypeMeta", ptr %m34, i32 0, i32 1
   %params = load ptr, ptr %params_ptr, align 8
   %7 = call ptr @"@std::avrac::typeck::rewrite_param_list_vts"(ptr %tc33, ptr %params)
@@ -227523,7 +227524,7 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %cast40 = ptrtoint ptr %m39 to i64
   %null_chk41 = icmp eq i64 %cast40, 0
   %null_ext42 = zext i1 %null_chk41 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17961, i64 4, ptr @sty_name.17962, i64 31, i64 %null_ext42, ptr @src_file.17963, i64 0, i64 831)
+  call void @avra_null_deref_trap(ptr @fld_name.17961, i64 4, ptr @sty_name.17962, i64 31, i64 %null_ext42, ptr @src_file.17963, i64 0, i64 832)
   %name_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::FnTypeMeta", ptr %m39, i32 0, i32 0
   %name = load ptr, ptr %name_ptr, align 8
   %upgraded_params43 = load ptr, ptr %upgraded_params, align 8
@@ -227540,7 +227541,7 @@ ife_then:                                         ; preds = %while.body
   %cast18 = ptrtoint ptr %m17 to i64
   %null_chk19 = icmp eq i64 %cast18, 0
   %null_ext20 = zext i1 %null_chk19 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17952, i64 6, ptr @sty_name.17953, i64 31, i64 %null_ext20, ptr @src_file.17954, i64 0, i64 829)
+  call void @avra_null_deref_trap(ptr @fld_name.17952, i64 6, ptr @sty_name.17953, i64 31, i64 %null_ext20, ptr @src_file.17954, i64 0, i64 830)
   %ret_ty_ptr21 = getelementptr inbounds nuw %"@std::avrac::typeck::FnTypeMeta", ptr %m17, i32 0, i32 2
   %ret_ty22 = load ptr, ptr %ret_ty_ptr21, align 8
   %cast23 = ptrtoint ptr %ret_ty22 to i64
@@ -227553,7 +227554,7 @@ ife_else:                                         ; preds = %while.body
   %cast26 = ptrtoint ptr %m25 to i64
   %null_chk27 = icmp eq i64 %cast26, 0
   %null_ext28 = zext i1 %null_chk27 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17955, i64 6, ptr @sty_name.17956, i64 31, i64 %null_ext28, ptr @src_file.17957, i64 0, i64 829)
+  call void @avra_null_deref_trap(ptr @fld_name.17955, i64 6, ptr @sty_name.17956, i64 31, i64 %null_ext28, ptr @src_file.17957, i64 0, i64 830)
   %ret_ty_ptr29 = getelementptr inbounds nuw %"@std::avrac::typeck::FnTypeMeta", ptr %m25, i32 0, i32 2
   %ret_ty30 = load ptr, ptr %ret_ty_ptr29, align 8
   %9 = call ptr @"@std::avrac::typeck::resolve_vtype"(ptr %tc24, ptr %ret_ty30)
@@ -227588,9 +227589,9 @@ match_end:                                        ; preds = %ife_end, %march_arm
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -227632,7 +227633,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.17964, i64 %tag, ptr @mu_file.17965, i64 839)
+  call void @avra_match_unreachable(ptr @.match_fn.17964, i64 %tag, ptr @mu_file.17965, i64 840)
   unreachable
 
 ife_end:                                          ; preds = %ife_else, %ife_then
@@ -227801,7 +227802,7 @@ march_arm3:                                       ; preds = %march_next
   %cast57 = ptrtoint ptr %ss56 to i64
   %null_chk = icmp eq i64 %cast57, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17966, i64 4, ptr @sty_name.17967, i64 24, i64 %null_ext, ptr @src_file.17968, i64 0, i64 857)
+  call void @avra_null_deref_trap(ptr @fld_name.17966, i64 4, ptr @sty_name.17967, i64 24, i64 %null_ext, ptr @src_file.17968, i64 0, i64 858)
   %line_ptr = getelementptr inbounds nuw %"@std::avrac::core::SStmt", ptr %ss56, i32 0, i32 1
   %line = load i64, ptr %line_ptr, align 8
   %with_ovr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %2, i32 0, i32 10
@@ -227810,7 +227811,7 @@ march_arm3:                                       ; preds = %march_next
   %cast59 = ptrtoint ptr %ss58 to i64
   %null_chk60 = icmp eq i64 %cast59, 0
   %null_ext61 = zext i1 %null_chk60 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17969, i64 3, ptr @sty_name.17970, i64 24, i64 %null_ext61, ptr @src_file.17971, i64 0, i64 857)
+  call void @avra_null_deref_trap(ptr @fld_name.17969, i64 3, ptr @sty_name.17970, i64 24, i64 %null_ext61, ptr @src_file.17971, i64 0, i64 858)
   %col_ptr = getelementptr inbounds nuw %"@std::avrac::core::SStmt", ptr %ss58, i32 0, i32 2
   %col = load i64, ptr %col_ptr, align 8
   %with_ovr62 = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %2, i32 0, i32 11
@@ -227823,7 +227824,7 @@ march_arm3:                                       ; preds = %march_next
   %cast67 = ptrtoint ptr %ss66 to i64
   %null_chk68 = icmp eq i64 %cast67, 0
   %null_ext69 = zext i1 %null_chk68 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17972, i64 4, ptr @sty_name.17973, i64 24, i64 %null_ext69, ptr @src_file.17974, i64 0, i64 858)
+  call void @avra_null_deref_trap(ptr @fld_name.17972, i64 4, ptr @sty_name.17973, i64 24, i64 %null_ext69, ptr @src_file.17974, i64 0, i64 859)
   %node_ptr = getelementptr inbounds nuw %"@std::avrac::core::SStmt", ptr %ss66, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %3 = call ptr @"@std::avrac::typeck::check_stmt"(ptr %with_pos65, ptr %node)
@@ -227836,7 +227837,7 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.17975, i64 %tag, ptr @mu_file.17976, i64 853)
+  call void @avra_match_unreachable(ptr @.match_fn.17975, i64 %tag, ptr @mu_file.17976, i64 854)
   unreachable
 }
 
@@ -227889,7 +227890,7 @@ ife_then:                                         ; preds = %entry
   %cast6 = ptrtoint ptr %r5 to i64
   %null_chk = icmp eq i64 %cast6, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17977, i64 2, ptr @sty_name.17978, i64 31, i64 %null_ext, ptr @src_file.17979, i64 0, i64 870)
+  call void @avra_null_deref_trap(ptr @fld_name.17977, i64 2, ptr @sty_name.17978, i64 31, i64 %null_ext, ptr @src_file.17979, i64 0, i64 871)
   %tc_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r5, i32 0, i32 0
   %tc7 = load ptr, ptr %tc_ptr, align 8
   %ty_vt8 = load ptr, ptr %ty_vt, align 8
@@ -227903,7 +227904,7 @@ ife_else:                                         ; preds = %entry
   %cast11 = ptrtoint ptr %r10 to i64
   %null_chk12 = icmp eq i64 %cast11, 0
   %null_ext13 = zext i1 %null_chk12 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17980, i64 2, ptr @sty_name.17981, i64 31, i64 %null_ext13, ptr @src_file.17982, i64 0, i64 870)
+  call void @avra_null_deref_trap(ptr @fld_name.17980, i64 2, ptr @sty_name.17981, i64 31, i64 %null_ext13, ptr @src_file.17982, i64 0, i64 871)
   %ty_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r10, i32 0, i32 1
   %ty = load ptr, ptr %ty_ptr, align 8
   %cast14 = ptrtoint ptr %ty to i64
@@ -227915,7 +227916,7 @@ sc_rhs:                                           ; preds = %ife_end
   %cast18 = ptrtoint ptr %r17 to i64
   %null_chk19 = icmp eq i64 %cast18, 0
   %null_ext20 = zext i1 %null_chk19 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17983, i64 2, ptr @sty_name.17984, i64 31, i64 %null_ext20, ptr @src_file.17985, i64 0, i64 873)
+  call void @avra_null_deref_trap(ptr @fld_name.17983, i64 2, ptr @sty_name.17984, i64 31, i64 %null_ext20, ptr @src_file.17985, i64 0, i64 874)
   %ty_ptr21 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r17, i32 0, i32 1
   %ty22 = load ptr, ptr %ty_ptr21, align 8
   %8 = call i1 @"@std::avrac::core::vtype_is_unknown"(ptr %ty22)
@@ -227975,7 +227976,7 @@ sc_rhs40:                                         ; preds = %sc_merge28
   %cast44 = ptrtoint ptr %r43 to i64
   %null_chk45 = icmp eq i64 %cast44, 0
   %null_ext46 = zext i1 %null_chk45 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17986, i64 2, ptr @sty_name.17987, i64 31, i64 %null_ext46, ptr @src_file.17988, i64 0, i64 873)
+  call void @avra_null_deref_trap(ptr @fld_name.17986, i64 2, ptr @sty_name.17987, i64 31, i64 %null_ext46, ptr @src_file.17988, i64 0, i64 874)
   %ty_ptr47 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r43, i32 0, i32 1
   %ty48 = load ptr, ptr %ty_ptr47, align 8
   %tag_ptr = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %ty48, i32 0, i32 0
@@ -228010,7 +228011,7 @@ sc_rhs58:                                         ; preds = %sc_merge42
   %cast62 = ptrtoint ptr %r61 to i64
   %null_chk63 = icmp eq i64 %cast62, 0
   %null_ext64 = zext i1 %null_chk63 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17989, i64 2, ptr @sty_name.17990, i64 31, i64 %null_ext64, ptr @src_file.17991, i64 0, i64 873)
+  call void @avra_null_deref_trap(ptr @fld_name.17989, i64 2, ptr @sty_name.17990, i64 31, i64 %null_ext64, ptr @src_file.17991, i64 0, i64 874)
   %ty_ptr65 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r61, i32 0, i32 1
   %ty66 = load ptr, ptr %ty_ptr65, align 8
   %tag_ptr67 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %ty66, i32 0, i32 0
@@ -228072,7 +228073,7 @@ march_arm:                                        ; preds = %if_then
   %cast83 = ptrtoint ptr %r82 to i64
   %null_chk84 = icmp eq i64 %cast83, 0
   %null_ext85 = zext i1 %null_chk84 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17992, i64 2, ptr @sty_name.17993, i64 31, i64 %null_ext85, ptr @src_file.17994, i64 0, i64 874)
+  call void @avra_null_deref_trap(ptr @fld_name.17992, i64 2, ptr @sty_name.17993, i64 31, i64 %null_ext85, ptr @src_file.17994, i64 0, i64 875)
   %ty_ptr86 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r82, i32 0, i32 1
   %ty87 = load ptr, ptr %ty_ptr86, align 8
   %tag_ptr88 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %ty87, i32 0, i32 0
@@ -228091,7 +228092,7 @@ sc_rhs93:                                         ; preds = %march_arm
   %cast97 = ptrtoint ptr %r96 to i64
   %null_chk98 = icmp eq i64 %cast97, 0
   %null_ext99 = zext i1 %null_chk98 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17995, i64 2, ptr @sty_name.17996, i64 31, i64 %null_ext99, ptr @src_file.17997, i64 0, i64 874)
+  call void @avra_null_deref_trap(ptr @fld_name.17995, i64 2, ptr @sty_name.17996, i64 31, i64 %null_ext99, ptr @src_file.17997, i64 0, i64 875)
   %ty_ptr100 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r96, i32 0, i32 1
   %ty101 = load ptr, ptr %ty_ptr100, align 8
   %tag_ptr102 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %ty101, i32 0, i32 0
@@ -228124,7 +228125,7 @@ sc_rhs113:                                        ; preds = %sc_merge95
   %cast117 = ptrtoint ptr %r116 to i64
   %null_chk118 = icmp eq i64 %cast117, 0
   %null_ext119 = zext i1 %null_chk118 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.17998, i64 2, ptr @sty_name.17999, i64 31, i64 %null_ext119, ptr @src_file.18000, i64 0, i64 874)
+  call void @avra_null_deref_trap(ptr @fld_name.17998, i64 2, ptr @sty_name.17999, i64 31, i64 %null_ext119, ptr @src_file.18000, i64 0, i64 875)
   %ty_ptr120 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r116, i32 0, i32 1
   %ty121 = load ptr, ptr %ty_ptr120, align 8
   %tag_ptr122 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %ty121, i32 0, i32 0
@@ -228157,7 +228158,7 @@ march_arm132:                                     ; preds = %march_next
   %cast136 = ptrtoint ptr %r135 to i64
   %null_chk137 = icmp eq i64 %cast136, 0
   %null_ext138 = zext i1 %null_chk137 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18001, i64 2, ptr @sty_name.18002, i64 31, i64 %null_ext138, ptr @src_file.18003, i64 0, i64 874)
+  call void @avra_null_deref_trap(ptr @fld_name.18001, i64 2, ptr @sty_name.18002, i64 31, i64 %null_ext138, ptr @src_file.18003, i64 0, i64 875)
   %ty_ptr139 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r135, i32 0, i32 1
   %ty140 = load ptr, ptr %ty_ptr139, align 8
   %tag_ptr141 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %ty140, i32 0, i32 0
@@ -228176,7 +228177,7 @@ sc_rhs146:                                        ; preds = %march_arm132
   %cast150 = ptrtoint ptr %r149 to i64
   %null_chk151 = icmp eq i64 %cast150, 0
   %null_ext152 = zext i1 %null_chk151 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18004, i64 2, ptr @sty_name.18005, i64 31, i64 %null_ext152, ptr @src_file.18006, i64 0, i64 874)
+  call void @avra_null_deref_trap(ptr @fld_name.18004, i64 2, ptr @sty_name.18005, i64 31, i64 %null_ext152, ptr @src_file.18006, i64 0, i64 875)
   %ty_ptr153 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r149, i32 0, i32 1
   %ty154 = load ptr, ptr %ty_ptr153, align 8
   %tag_ptr155 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %ty154, i32 0, i32 0
@@ -228209,7 +228210,7 @@ sc_rhs166:                                        ; preds = %sc_merge148
   %cast170 = ptrtoint ptr %r169 to i64
   %null_chk171 = icmp eq i64 %cast170, 0
   %null_ext172 = zext i1 %null_chk171 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18007, i64 2, ptr @sty_name.18008, i64 31, i64 %null_ext172, ptr @src_file.18009, i64 0, i64 874)
+  call void @avra_null_deref_trap(ptr @fld_name.18007, i64 2, ptr @sty_name.18008, i64 31, i64 %null_ext172, ptr @src_file.18009, i64 0, i64 875)
   %ty_ptr173 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r169, i32 0, i32 1
   %ty174 = load ptr, ptr %ty_ptr173, align 8
   %tag_ptr175 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %ty174, i32 0, i32 0
@@ -228242,7 +228243,7 @@ march_arm185:                                     ; preds = %march_next133
   %cast189 = ptrtoint ptr %r188 to i64
   %null_chk190 = icmp eq i64 %cast189, 0
   %null_ext191 = zext i1 %null_chk190 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18010, i64 2, ptr @sty_name.18011, i64 31, i64 %null_ext191, ptr @src_file.18012, i64 0, i64 874)
+  call void @avra_null_deref_trap(ptr @fld_name.18010, i64 2, ptr @sty_name.18011, i64 31, i64 %null_ext191, ptr @src_file.18012, i64 0, i64 875)
   %ty_ptr192 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r188, i32 0, i32 1
   %ty193 = load ptr, ptr %ty_ptr192, align 8
   %tag_ptr194 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %ty193, i32 0, i32 0
@@ -228261,7 +228262,7 @@ sc_rhs199:                                        ; preds = %march_arm185
   %cast203 = ptrtoint ptr %r202 to i64
   %null_chk204 = icmp eq i64 %cast203, 0
   %null_ext205 = zext i1 %null_chk204 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18013, i64 2, ptr @sty_name.18014, i64 31, i64 %null_ext205, ptr @src_file.18015, i64 0, i64 874)
+  call void @avra_null_deref_trap(ptr @fld_name.18013, i64 2, ptr @sty_name.18014, i64 31, i64 %null_ext205, ptr @src_file.18015, i64 0, i64 875)
   %ty_ptr206 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r202, i32 0, i32 1
   %ty207 = load ptr, ptr %ty_ptr206, align 8
   %tag_ptr208 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %ty207, i32 0, i32 0
@@ -228294,7 +228295,7 @@ march_arm218:                                     ; preds = %march_next186
   %cast222 = ptrtoint ptr %r221 to i64
   %null_chk223 = icmp eq i64 %cast222, 0
   %null_ext224 = zext i1 %null_chk223 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18016, i64 2, ptr @sty_name.18017, i64 31, i64 %null_ext224, ptr @src_file.18018, i64 0, i64 874)
+  call void @avra_null_deref_trap(ptr @fld_name.18016, i64 2, ptr @sty_name.18017, i64 31, i64 %null_ext224, ptr @src_file.18018, i64 0, i64 875)
   %ty_ptr225 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r221, i32 0, i32 1
   %ty226 = load ptr, ptr %ty_ptr225, align 8
   %tag_ptr227 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %ty226, i32 0, i32 0
@@ -228312,7 +228313,7 @@ sc_rhs232:                                        ; preds = %march_arm218
   %cast236 = ptrtoint ptr %r235 to i64
   %null_chk237 = icmp eq i64 %cast236, 0
   %null_ext238 = zext i1 %null_chk237 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18019, i64 2, ptr @sty_name.18020, i64 31, i64 %null_ext238, ptr @src_file.18021, i64 0, i64 874)
+  call void @avra_null_deref_trap(ptr @fld_name.18019, i64 2, ptr @sty_name.18020, i64 31, i64 %null_ext238, ptr @src_file.18021, i64 0, i64 875)
   %ty_ptr239 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r235, i32 0, i32 1
   %ty240 = load ptr, ptr %ty_ptr239, align 8
   %tag_ptr241 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %ty240, i32 0, i32 0
@@ -228345,7 +228346,7 @@ march_arm251:                                     ; preds = %march_next219
   br label %match_end
 
 march_next252:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18022, i64 %tag81, ptr @mu_file.18023, i64 874)
+  call void @avra_match_unreachable(ptr @.match_fn.18022, i64 %tag81, ptr @mu_file.18023, i64 875)
   unreachable
 
 ifcont255:                                        ; preds = %if_else257
@@ -228380,7 +228381,7 @@ if_then256:                                       ; preds = %match_end
   %cast268 = ptrtoint ptr %r267 to i64
   %null_chk269 = icmp eq i64 %cast268, 0
   %null_ext270 = zext i1 %null_chk269 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18026, i64 2, ptr @sty_name.18027, i64 31, i64 %null_ext270, ptr @src_file.18028, i64 0, i64 882)
+  call void @avra_null_deref_trap(ptr @fld_name.18026, i64 2, ptr @sty_name.18027, i64 31, i64 %null_ext270, ptr @src_file.18028, i64 0, i64 883)
   %ty_ptr271 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r267, i32 0, i32 1
   %ty272 = load ptr, ptr %ty_ptr271, align 8
   %21 = call ptr @"@std::avrac::core::vtype_display"(ptr %ty272)
@@ -228411,7 +228412,7 @@ if_then256:                                       ; preds = %match_end
   %cast286 = ptrtoint ptr %r285 to i64
   %null_chk287 = icmp eq i64 %cast286, 0
   %null_ext288 = zext i1 %null_chk287 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18030, i64 2, ptr @sty_name.18031, i64 31, i64 %null_ext288, ptr @src_file.18032, i64 0, i64 883)
+  call void @avra_null_deref_trap(ptr @fld_name.18030, i64 2, ptr @sty_name.18031, i64 31, i64 %null_ext288, ptr @src_file.18032, i64 0, i64 884)
   %tc_ptr289 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r285, i32 0, i32 0
   %tc290 = load ptr, ptr %tc_ptr289, align 8
   %32 = call ptr @avra_rc_alloc(i64 16)
@@ -228436,7 +228437,7 @@ sc_rhs303:                                        ; preds = %ifcont
   %cast307 = ptrtoint ptr %r306 to i64
   %null_chk308 = icmp eq i64 %cast307, 0
   %null_ext309 = zext i1 %null_chk308 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18033, i64 2, ptr @sty_name.18034, i64 31, i64 %null_ext309, ptr @src_file.18035, i64 0, i64 886)
+  call void @avra_null_deref_trap(ptr @fld_name.18033, i64 2, ptr @sty_name.18034, i64 31, i64 %null_ext309, ptr @src_file.18035, i64 0, i64 887)
   %ty_ptr310 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r306, i32 0, i32 1
   %ty311 = load ptr, ptr %ty_ptr310, align 8
   %tag_ptr312 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %ty311, i32 0, i32 0
@@ -228471,7 +228472,7 @@ sc_rhs325:                                        ; preds = %sc_merge305
   %cast329 = ptrtoint ptr %r328 to i64
   %null_chk330 = icmp eq i64 %cast329, 0
   %null_ext331 = zext i1 %null_chk330 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18036, i64 2, ptr @sty_name.18037, i64 31, i64 %null_ext331, ptr @src_file.18038, i64 0, i64 886)
+  call void @avra_null_deref_trap(ptr @fld_name.18036, i64 2, ptr @sty_name.18037, i64 31, i64 %null_ext331, ptr @src_file.18038, i64 0, i64 887)
   %ty_ptr332 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r328, i32 0, i32 1
   %ty333 = load ptr, ptr %ty_ptr332, align 8
   %tag_ptr334 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %ty333, i32 0, i32 0
@@ -228510,7 +228511,7 @@ if_then348:                                       ; preds = %sc_merge327
   %cast351 = ptrtoint ptr %r350 to i64
   %null_chk352 = icmp eq i64 %cast351, 0
   %null_ext353 = zext i1 %null_chk352 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18040, i64 2, ptr @sty_name.18041, i64 31, i64 %null_ext353, ptr @src_file.18042, i64 0, i64 887)
+  call void @avra_null_deref_trap(ptr @fld_name.18040, i64 2, ptr @sty_name.18041, i64 31, i64 %null_ext353, ptr @src_file.18042, i64 0, i64 888)
   %ty_ptr354 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r350, i32 0, i32 1
   %ty355 = load ptr, ptr %ty_ptr354, align 8
   %35 = call ptr @"@std::avrac::core::vtype_display"(ptr %ty355)
@@ -228589,7 +228590,7 @@ if_then348:                                       ; preds = %sc_merge327
   %cast396 = ptrtoint ptr %r395 to i64
   %null_chk397 = icmp eq i64 %cast396, 0
   %null_ext398 = zext i1 %null_chk397 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18046, i64 2, ptr @sty_name.18047, i64 31, i64 %null_ext398, ptr @src_file.18048, i64 0, i64 888)
+  call void @avra_null_deref_trap(ptr @fld_name.18046, i64 2, ptr @sty_name.18047, i64 31, i64 %null_ext398, ptr @src_file.18048, i64 0, i64 889)
   %tc_ptr399 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r395, i32 0, i32 0
   %tc400 = load ptr, ptr %tc_ptr399, align 8
   %68 = call ptr @avra_rc_alloc(i64 16)
@@ -228646,7 +228647,7 @@ if_then424:                                       ; preds = %sc_merge411
   %cast428 = ptrtoint ptr %r427 to i64
   %null_chk429 = icmp eq i64 %cast428, 0
   %null_ext430 = zext i1 %null_chk429 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18050, i64 2, ptr @sty_name.18051, i64 31, i64 %null_ext430, ptr @src_file.18052, i64 0, i64 892)
+  call void @avra_null_deref_trap(ptr @fld_name.18050, i64 2, ptr @sty_name.18051, i64 31, i64 %null_ext430, ptr @src_file.18052, i64 0, i64 893)
   %tc_ptr431 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r427, i32 0, i32 0
   %tc432 = load ptr, ptr %tc_ptr431, align 8
   %72 = call ptr @avra_rc_alloc(i64 16)
@@ -228681,7 +228682,7 @@ ife_then443:                                      ; preds = %ifcont422
   %cast446 = ptrtoint ptr %r445 to i64
   %null_chk447 = icmp eq i64 %cast446, 0
   %null_ext448 = zext i1 %null_chk447 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18053, i64 2, ptr @sty_name.18054, i64 31, i64 %null_ext448, ptr @src_file.18055, i64 0, i64 896)
+  call void @avra_null_deref_trap(ptr @fld_name.18053, i64 2, ptr @sty_name.18054, i64 31, i64 %null_ext448, ptr @src_file.18055, i64 0, i64 897)
   %tc_ptr449 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r445, i32 0, i32 0
   %tc450 = load ptr, ptr %tc_ptr449, align 8
   %ty_vt451 = load ptr, ptr %ty_vt, align 8
@@ -228690,7 +228691,7 @@ ife_then443:                                      ; preds = %ifcont422
   %cast453 = ptrtoint ptr %r452 to i64
   %null_chk454 = icmp eq i64 %cast453, 0
   %null_ext455 = zext i1 %null_chk454 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18056, i64 2, ptr @sty_name.18057, i64 31, i64 %null_ext455, ptr @src_file.18058, i64 0, i64 896)
+  call void @avra_null_deref_trap(ptr @fld_name.18056, i64 2, ptr @sty_name.18057, i64 31, i64 %null_ext455, ptr @src_file.18058, i64 0, i64 897)
   %ty_ptr456 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r452, i32 0, i32 1
   %ty457 = load ptr, ptr %ty_ptr456, align 8
   %77 = call ptr @"@std::avrac::typeck::tc_check_shape_compat"(ptr %tc450, ptr %76, ptr %ty457)
@@ -228703,7 +228704,7 @@ ife_else444:                                      ; preds = %ifcont422
   %cast460 = ptrtoint ptr %r459 to i64
   %null_chk461 = icmp eq i64 %cast460, 0
   %null_ext462 = zext i1 %null_chk461 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18059, i64 2, ptr @sty_name.18060, i64 31, i64 %null_ext462, ptr @src_file.18061, i64 0, i64 897)
+  call void @avra_null_deref_trap(ptr @fld_name.18059, i64 2, ptr @sty_name.18060, i64 31, i64 %null_ext462, ptr @src_file.18061, i64 0, i64 898)
   %tc_ptr463 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r459, i32 0, i32 0
   %tc464 = load ptr, ptr %tc_ptr463, align 8
   %cast465 = ptrtoint ptr %tc464 to i64
@@ -228924,7 +228925,7 @@ march_arm71:                                      ; preds = %march_next43
   %cast80 = ptrtoint ptr %r79 to i64
   %null_chk = icmp eq i64 %cast80, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18062, i64 2, ptr @sty_name.18063, i64 31, i64 %null_ext, ptr @src_file.18064, i64 0, i64 912)
+  call void @avra_null_deref_trap(ptr @fld_name.18062, i64 2, ptr @sty_name.18063, i64 31, i64 %null_ext, ptr @src_file.18064, i64 0, i64 913)
   %tc_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r79, i32 0, i32 0
   %tc81 = load ptr, ptr %tc_ptr, align 8
   %cast82 = ptrtoint ptr %tc81 to i64
@@ -228952,7 +228953,7 @@ march_arm83:                                      ; preds = %march_next72
   %cast93 = ptrtoint ptr %r92 to i64
   %null_chk94 = icmp eq i64 %cast93, 0
   %null_ext95 = zext i1 %null_chk94 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18065, i64 2, ptr @sty_name.18066, i64 31, i64 %null_ext95, ptr @src_file.18067, i64 0, i64 917)
+  call void @avra_null_deref_trap(ptr @fld_name.18065, i64 2, ptr @sty_name.18066, i64 31, i64 %null_ext95, ptr @src_file.18067, i64 0, i64 918)
   %tc_ptr96 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r92, i32 0, i32 0
   %tc97 = load ptr, ptr %tc_ptr96, align 8
   %cast98 = ptrtoint ptr %tc97 to i64
@@ -229231,7 +229232,7 @@ march_arm235:                                     ; preds = %march_next226
   %cast250 = ptrtoint ptr %c1249 to i64
   %null_chk251 = icmp eq i64 %cast250, 0
   %null_ext252 = zext i1 %null_chk251 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18068, i64 2, ptr @sty_name.18069, i64 31, i64 %null_ext252, ptr @src_file.18070, i64 0, i64 945)
+  call void @avra_null_deref_trap(ptr @fld_name.18068, i64 2, ptr @sty_name.18069, i64 31, i64 %null_ext252, ptr @src_file.18070, i64 0, i64 946)
   %tc_ptr253 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %c1249, i32 0, i32 0
   %tc254 = load ptr, ptr %tc_ptr253, align 8
   %then_b255 = load ptr, ptr %then_b243, align 8
@@ -229292,7 +229293,7 @@ march_arm262:                                     ; preds = %march_next236
   %cast283 = ptrtoint ptr %c1282 to i64
   %null_chk284 = icmp eq i64 %cast283, 0
   %null_ext285 = zext i1 %null_chk284 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18071, i64 2, ptr @sty_name.18072, i64 31, i64 %null_ext285, ptr @src_file.18073, i64 0, i64 951)
+  call void @avra_null_deref_trap(ptr @fld_name.18071, i64 2, ptr @sty_name.18072, i64 31, i64 %null_ext285, ptr @src_file.18073, i64 0, i64 952)
   %tc_ptr286 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %c1282, i32 0, i32 0
   %tc287 = load ptr, ptr %tc_ptr286, align 8
   %body288 = load ptr, ptr %body278, align 8
@@ -229346,7 +229347,7 @@ march_arm290:                                     ; preds = %march_next263
   %cast313 = ptrtoint ptr %c1312 to i64
   %null_chk314 = icmp eq i64 %cast313, 0
   %null_ext315 = zext i1 %null_chk314 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18074, i64 2, ptr @sty_name.18075, i64 31, i64 %null_ext315, ptr @src_file.18076, i64 0, i64 956)
+  call void @avra_null_deref_trap(ptr @fld_name.18074, i64 2, ptr @sty_name.18075, i64 31, i64 %null_ext315, ptr @src_file.18076, i64 0, i64 957)
   %tc_ptr316 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %c1312, i32 0, i32 0
   %tc317 = load ptr, ptr %tc_ptr316, align 8
   %end318 = load ptr, ptr %end301, align 8
@@ -229356,7 +229357,7 @@ march_arm290:                                     ; preds = %march_next263
   %cast321 = ptrtoint ptr %c2320 to i64
   %null_chk322 = icmp eq i64 %cast321, 0
   %null_ext323 = zext i1 %null_chk322 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18077, i64 2, ptr @sty_name.18078, i64 31, i64 %null_ext323, ptr @src_file.18079, i64 0, i64 957)
+  call void @avra_null_deref_trap(ptr @fld_name.18077, i64 2, ptr @sty_name.18078, i64 31, i64 %null_ext323, ptr @src_file.18079, i64 0, i64 958)
   %tc_ptr324 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %c2320, i32 0, i32 0
   %tc325 = load ptr, ptr %tc_ptr324, align 8
   %26 = call ptr @"@std::avrac::typeck::tc_enter"(ptr %tc325)
@@ -229419,7 +229420,7 @@ march_arm337:                                     ; preds = %march_next291
   %cast361 = ptrtoint ptr %c1360 to i64
   %null_chk362 = icmp eq i64 %cast361, 0
   %null_ext363 = zext i1 %null_chk362 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18080, i64 2, ptr @sty_name.18081, i64 31, i64 %null_ext363, ptr @src_file.18082, i64 0, i64 965)
+  call void @avra_null_deref_trap(ptr @fld_name.18080, i64 2, ptr @sty_name.18081, i64 31, i64 %null_ext363, ptr @src_file.18082, i64 0, i64 966)
   %ty_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %c1360, i32 0, i32 1
   %ty = load ptr, ptr %ty_ptr, align 8
   %32 = call ptr @"@std::avrac::core::vtype_list_elem"(ptr %ty)
@@ -229428,7 +229429,7 @@ march_arm337:                                     ; preds = %march_next291
   %cast365 = ptrtoint ptr %c1364 to i64
   %null_chk366 = icmp eq i64 %cast365, 0
   %null_ext367 = zext i1 %null_chk366 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18083, i64 2, ptr @sty_name.18084, i64 31, i64 %null_ext367, ptr @src_file.18085, i64 0, i64 966)
+  call void @avra_null_deref_trap(ptr @fld_name.18083, i64 2, ptr @sty_name.18084, i64 31, i64 %null_ext367, ptr @src_file.18085, i64 0, i64 967)
   %tc_ptr368 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %c1364, i32 0, i32 0
   %tc369 = load ptr, ptr %tc_ptr368, align 8
   %33 = call ptr @"@std::avrac::typeck::tc_enter"(ptr %tc369)
@@ -229477,14 +229478,14 @@ march_arm380:                                     ; preds = %march_next338
   %cast392 = ptrtoint ptr %s391 to i64
   %null_chk393 = icmp eq i64 %cast392, 0
   %null_ext394 = zext i1 %null_chk393 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18086, i64 2, ptr @sty_name.18087, i64 31, i64 %null_ext394, ptr @src_file.18088, i64 0, i64 974)
+  call void @avra_null_deref_trap(ptr @fld_name.18086, i64 2, ptr @sty_name.18087, i64 31, i64 %null_ext394, ptr @src_file.18088, i64 0, i64 975)
   %tc_ptr395 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %s391, i32 0, i32 0
   %tc396 = load ptr, ptr %tc_ptr395, align 8
   %s397 = load ptr, ptr %s, align 8
   %cast398 = ptrtoint ptr %s397 to i64
   %null_chk399 = icmp eq i64 %cast398, 0
   %null_ext400 = zext i1 %null_chk399 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18089, i64 2, ptr @sty_name.18090, i64 31, i64 %null_ext400, ptr @src_file.18091, i64 0, i64 974)
+  call void @avra_null_deref_trap(ptr @fld_name.18089, i64 2, ptr @sty_name.18090, i64 31, i64 %null_ext400, ptr @src_file.18091, i64 0, i64 975)
   %ty_ptr401 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %s397, i32 0, i32 1
   %ty402 = load ptr, ptr %ty_ptr401, align 8
   %arms403 = load ptr, ptr %arms388, align 8
@@ -229514,7 +229515,7 @@ march_arm405:                                     ; preds = %march_next381
   %cast419 = ptrtoint ptr %r418 to i64
   %null_chk420 = icmp eq i64 %cast419, 0
   %null_ext421 = zext i1 %null_chk420 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18092, i64 2, ptr @sty_name.18093, i64 31, i64 %null_ext421, ptr @src_file.18094, i64 0, i64 979)
+  call void @avra_null_deref_trap(ptr @fld_name.18092, i64 2, ptr @sty_name.18093, i64 31, i64 %null_ext421, ptr @src_file.18094, i64 0, i64 980)
   %tc_ptr422 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r418, i32 0, i32 0
   %tc423 = load ptr, ptr %tc_ptr422, align 8
   %cast424 = ptrtoint ptr %tc423 to i64
@@ -229542,7 +229543,7 @@ march_arm425:                                     ; preds = %march_next406
   %cast439 = ptrtoint ptr %r438 to i64
   %null_chk440 = icmp eq i64 %cast439, 0
   %null_ext441 = zext i1 %null_chk440 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18095, i64 2, ptr @sty_name.18096, i64 31, i64 %null_ext441, ptr @src_file.18097, i64 0, i64 984)
+  call void @avra_null_deref_trap(ptr @fld_name.18095, i64 2, ptr @sty_name.18096, i64 31, i64 %null_ext441, ptr @src_file.18097, i64 0, i64 985)
   %tc_ptr442 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r438, i32 0, i32 0
   %tc443 = load ptr, ptr %tc_ptr442, align 8
   %cast444 = ptrtoint ptr %tc443 to i64
@@ -229561,7 +229562,7 @@ march_arm445:                                     ; preds = %march_next426
   %cast451 = ptrtoint ptr %tc450 to i64
   %null_chk452 = icmp eq i64 %cast451, 0
   %null_ext453 = zext i1 %null_chk452 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18098, i64 8, ptr @sty_name.18099, i64 23, i64 %null_ext453, ptr @src_file.18100, i64 0, i64 989)
+  call void @avra_null_deref_trap(ptr @fld_name.18098, i64 8, ptr @sty_name.18099, i64 23, i64 %null_ext453, ptr @src_file.18100, i64 0, i64 990)
   %features_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc450, i32 0, i32 15
   %features = load ptr, ptr %features_ptr, align 8
   %tag454 = load i64, ptr %tag449, align 8
@@ -229576,7 +229577,7 @@ march_arm445:                                     ; preds = %march_next426
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next446:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18101, i64 %tag, ptr @mu_file.18102, i64 905)
+  call void @avra_match_unreachable(ptr @.match_fn.18101, i64 %tag, ptr @mu_file.18102, i64 906)
   unreachable
 
 ifcont:                                           ; preds = %if_else
@@ -229716,7 +229717,7 @@ march_arm8:                                       ; preds = %march_next
   br i1 %if_cond14, label %if_then15, label %if_else16
 
 march_next9:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18109, i64 %tag, ptr @mu_file.18110, i64 1025)
+  call void @avra_match_unreachable(ptr @.match_fn.18109, i64 %tag, ptr @mu_file.18110, i64 1026)
   unreachable
 
 ifcont13:                                         ; preds = %if_else16
@@ -229949,7 +229950,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq17, label %march_arm15, label %march_next16
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.18121, i64 %tag, ptr @mu_file.18122, i64 1048)
+  call void @avra_match_unreachable(ptr @.match_fn.18121, i64 %tag, ptr @mu_file.18122, i64 1049)
   unreachable
 
 match_end14:                                      ; preds = %march_arm54, %match_end23
@@ -229962,7 +229963,7 @@ march_arm15:                                      ; preds = %march_arm3
   %cast19 = ptrtoint ptr %ss18 to i64
   %null_chk = icmp eq i64 %cast19, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18111, i64 4, ptr @sty_name.18112, i64 24, i64 %null_ext, ptr @src_file.18113, i64 0, i64 1055)
+  call void @avra_null_deref_trap(ptr @fld_name.18111, i64 4, ptr @sty_name.18112, i64 24, i64 %null_ext, ptr @src_file.18113, i64 0, i64 1056)
   %node_ptr = getelementptr inbounds nuw %"@std::avrac::core::SStmt", ptr %ss18, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %tag_ptr20 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %node, i32 0, i32 0
@@ -229996,7 +229997,7 @@ march_arm24:                                      ; preds = %march_arm15
   %cast33 = ptrtoint ptr %r32 to i64
   %null_chk34 = icmp eq i64 %cast33, 0
   %null_ext35 = zext i1 %null_chk34 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18114, i64 2, ptr @sty_name.18115, i64 31, i64 %null_ext35, ptr @src_file.18116, i64 0, i64 1059)
+  call void @avra_null_deref_trap(ptr @fld_name.18114, i64 2, ptr @sty_name.18115, i64 31, i64 %null_ext35, ptr @src_file.18116, i64 0, i64 1060)
   %ty_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r32, i32 0, i32 1
   %ty = load ptr, ptr %ty_ptr, align 8
   %cast36 = ptrtoint ptr %ty to i64
@@ -230045,7 +230046,7 @@ march_arm49:                                      ; preds = %march_next44
   br label %match_end23
 
 march_next50:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18117, i64 %tag21, ptr @mu_file.18118, i64 1055)
+  call void @avra_match_unreachable(ptr @.match_fn.18117, i64 %tag21, ptr @mu_file.18118, i64 1056)
   unreachable
 
 march_arm54:                                      ; preds = %march_next16
@@ -230057,7 +230058,7 @@ march_arm54:                                      ; preds = %march_next16
   br label %match_end14
 
 march_next55:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18119, i64 %tag12, ptr @mu_file.18120, i64 1052)
+  call void @avra_match_unreachable(ptr @.match_fn.18119, i64 %tag12, ptr @mu_file.18120, i64 1053)
   unreachable
 }
 
@@ -230121,7 +230122,7 @@ march_arm3:                                       ; preds = %march_next
   %cast14 = ptrtoint ptr %ss13 to i64
   %null_chk = icmp eq i64 %cast14, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18123, i64 4, ptr @sty_name.18124, i64 24, i64 %null_ext, ptr @src_file.18125, i64 0, i64 1084)
+  call void @avra_null_deref_trap(ptr @fld_name.18123, i64 4, ptr @sty_name.18124, i64 24, i64 %null_ext, ptr @src_file.18125, i64 0, i64 1085)
   %node_ptr = getelementptr inbounds nuw %"@std::avrac::core::SStmt", ptr %ss13, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %4 = call ptr @"@std::avrac::typeck::tc_check_stmt_returns"(ptr %tc10, ptr %fn_name11, ptr %declared12, ptr %node)
@@ -230136,7 +230137,7 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.18126, i64 %tag, ptr @mu_file.18127, i64 1080)
+  call void @avra_match_unreachable(ptr @.match_fn.18126, i64 %tag, ptr @mu_file.18127, i64 1081)
   unreachable
 }
 
@@ -230195,7 +230196,7 @@ march_arm:                                        ; preds = %entry
   %cast = ptrtoint ptr %r6 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18128, i64 2, ptr @sty_name.18129, i64 31, i64 %null_ext, ptr @src_file.18130, i64 0, i64 1097)
+  call void @avra_null_deref_trap(ptr @fld_name.18128, i64 2, ptr @sty_name.18129, i64 31, i64 %null_ext, ptr @src_file.18130, i64 0, i64 1098)
   %ty_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r6, i32 0, i32 1
   %ty = load ptr, ptr %ty_ptr, align 8
   %5 = call i1 @"@std::avrac::core::vtype_eq"(ptr %declared5, ptr %ty)
@@ -230214,7 +230215,7 @@ sc_rhs:                                           ; preds = %march_arm
   %cast8 = ptrtoint ptr %r7 to i64
   %null_chk9 = icmp eq i64 %cast8, 0
   %null_ext10 = zext i1 %null_chk9 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18131, i64 2, ptr @sty_name.18132, i64 31, i64 %null_ext10, ptr @src_file.18133, i64 0, i64 1097)
+  call void @avra_null_deref_trap(ptr @fld_name.18131, i64 2, ptr @sty_name.18132, i64 31, i64 %null_ext10, ptr @src_file.18133, i64 0, i64 1098)
   %ty_ptr11 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r7, i32 0, i32 1
   %ty12 = load ptr, ptr %ty_ptr11, align 8
   %declared13 = load ptr, ptr %declared, align 8
@@ -230248,7 +230249,7 @@ sc_rhs18:                                         ; preds = %sc_merge
   %cast22 = ptrtoint ptr %r21 to i64
   %null_chk23 = icmp eq i64 %cast22, 0
   %null_ext24 = zext i1 %null_chk23 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18134, i64 2, ptr @sty_name.18135, i64 31, i64 %null_ext24, ptr @src_file.18136, i64 0, i64 1097)
+  call void @avra_null_deref_trap(ptr @fld_name.18134, i64 2, ptr @sty_name.18135, i64 31, i64 %null_ext24, ptr @src_file.18136, i64 0, i64 1098)
   %ty_ptr25 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r21, i32 0, i32 1
   %ty26 = load ptr, ptr %ty_ptr25, align 8
   %7 = call i1 @"@std::avrac::core::vtype_is_unknown"(ptr %ty26)
@@ -230281,7 +230282,7 @@ sc_rhs37:                                         ; preds = %sc_merge20
   %cast41 = ptrtoint ptr %r40 to i64
   %null_chk42 = icmp eq i64 %cast41, 0
   %null_ext43 = zext i1 %null_chk42 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18137, i64 2, ptr @sty_name.18138, i64 31, i64 %null_ext43, ptr @src_file.18139, i64 0, i64 1097)
+  call void @avra_null_deref_trap(ptr @fld_name.18137, i64 2, ptr @sty_name.18138, i64 31, i64 %null_ext43, ptr @src_file.18139, i64 0, i64 1098)
   %ty_ptr44 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r40, i32 0, i32 1
   %ty45 = load ptr, ptr %ty_ptr44, align 8
   %8 = call ptr @avra_rc_alloc(i64 16)
@@ -230321,7 +230322,7 @@ ifcont:                                           ; preds = %if_else
   %cast123 = ptrtoint ptr %r122 to i64
   %null_chk124 = icmp eq i64 %cast123, 0
   %null_ext125 = zext i1 %null_chk124 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18152, i64 2, ptr @sty_name.18153, i64 31, i64 %null_ext125, ptr @src_file.18154, i64 0, i64 1102)
+  call void @avra_null_deref_trap(ptr @fld_name.18152, i64 2, ptr @sty_name.18153, i64 31, i64 %null_ext125, ptr @src_file.18154, i64 0, i64 1103)
   %tc_ptr126 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r122, i32 0, i32 0
   %tc127 = load ptr, ptr %tc_ptr126, align 8
   %cast128 = ptrtoint ptr %tc127 to i64
@@ -230380,7 +230381,7 @@ if_then:                                          ; preds = %sc_merge39
   %cast81 = ptrtoint ptr %r80 to i64
   %null_chk82 = icmp eq i64 %cast81, 0
   %null_ext83 = zext i1 %null_chk82 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18143, i64 2, ptr @sty_name.18144, i64 31, i64 %null_ext83, ptr @src_file.18145, i64 0, i64 1098)
+  call void @avra_null_deref_trap(ptr @fld_name.18143, i64 2, ptr @sty_name.18144, i64 31, i64 %null_ext83, ptr @src_file.18145, i64 0, i64 1099)
   %ty_ptr84 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r80, i32 0, i32 1
   %ty85 = load ptr, ptr %ty_ptr84, align 8
   %31 = call ptr @"@std::avrac::core::vtype_display"(ptr %ty85)
@@ -230436,7 +230437,7 @@ if_then:                                          ; preds = %sc_merge39
   %cast112 = ptrtoint ptr %r111 to i64
   %null_chk113 = icmp eq i64 %cast112, 0
   %null_ext114 = zext i1 %null_chk113 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18149, i64 2, ptr @sty_name.18150, i64 31, i64 %null_ext114, ptr @src_file.18151, i64 0, i64 1100)
+  call void @avra_null_deref_trap(ptr @fld_name.18149, i64 2, ptr @sty_name.18150, i64 31, i64 %null_ext114, ptr @src_file.18151, i64 0, i64 1101)
   %tc_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r111, i32 0, i32 0
   %tc115 = load ptr, ptr %tc_ptr, align 8
   %53 = call ptr @avra_rc_alloc(i64 16)
@@ -230684,7 +230685,7 @@ march_arm256:                                     ; preds = %march_next242
   br label %match_end
 
 march_next257:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18155, i64 %tag, ptr @mu_file.18156, i64 1093)
+  call void @avra_match_unreachable(ptr @.match_fn.18155, i64 %tag, ptr @mu_file.18156, i64 1094)
   unreachable
 }
 
@@ -230761,7 +230762,7 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.18157, i64 %tag, ptr @mu_file.18158, i64 1128)
+  call void @avra_match_unreachable(ptr @.match_fn.18157, i64 %tag, ptr @mu_file.18158, i64 1129)
   unreachable
 }
 
@@ -230843,9 +230844,9 @@ march_next:                                       ; preds = %entry
 march_arm6:                                       ; preds = %march_next
   %tc9 = load ptr, ptr %tc, align 8
   %4 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr10 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %4, i32 0, i32 0
+  %tag_ptr10 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %4, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr10, align 8
-  %pay_ptr11 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %4, i32 0, i32 1
+  %pay_ptr11 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %4, i32 0, i32 1
   store ptr null, ptr %pay_ptr11, align 8
   %cast12 = ptrtoint ptr %4 to i64
   %cast13 = inttoptr i64 %cast12 to ptr
@@ -230925,7 +230926,7 @@ march_arm42:                                      ; preds = %march_next34
   %cast47 = ptrtoint ptr %tc46 to i64
   %null_chk = icmp eq i64 %cast47, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18159, i64 5, ptr @sty_name.18160, i64 23, i64 %null_ext, ptr @src_file.18161, i64 0, i64 1152)
+  call void @avra_null_deref_trap(ptr @fld_name.18159, i64 5, ptr @sty_name.18160, i64 23, i64 %null_ext, ptr @src_file.18161, i64 0, i64 1153)
   %types_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc46, i32 0, i32 0
   %types = load ptr, ptr %types_ptr, align 8
   %name48 = load ptr, ptr %name45, align 8
@@ -230954,7 +230955,7 @@ if_then:                                          ; preds = %march_arm42
   %cast51 = ptrtoint ptr %tc50 to i64
   %null_chk52 = icmp eq i64 %cast51, 0
   %null_ext53 = zext i1 %null_chk52 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18162, i64 3, ptr @sty_name.18163, i64 23, i64 %null_ext53, ptr @src_file.18164, i64 0, i64 1155)
+  call void @avra_null_deref_trap(ptr @fld_name.18162, i64 3, ptr @sty_name.18163, i64 23, i64 %null_ext53, ptr @src_file.18164, i64 0, i64 1156)
   %fns_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc50, i32 0, i32 1
   %fns = load ptr, ptr %fns_ptr, align 8
   %name54 = load ptr, ptr %name45, align 8
@@ -230964,7 +230965,7 @@ if_then:                                          ; preds = %march_arm42
   %cast56 = ptrtoint ptr %r55 to i64
   %null_chk57 = icmp eq i64 %cast56, 0
   %null_ext58 = zext i1 %null_chk57 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18165, i64 5, ptr @sty_name.18166, i64 32, i64 %null_ext58, ptr @src_file.18167, i64 0, i64 1156)
+  call void @avra_null_deref_trap(ptr @fld_name.18165, i64 5, ptr @sty_name.18166, i64 32, i64 %null_ext58, ptr @src_file.18167, i64 0, i64 1157)
   %found_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::FnTypeFound", ptr %r55, i32 0, i32 0
   %found = load i1, ptr %found_ptr, align 8
   br i1 %found, label %if_then60, label %if_else61
@@ -230987,7 +230988,7 @@ if_then60:                                        ; preds = %if_then
   %cast66 = ptrtoint ptr %r65 to i64
   %null_chk67 = icmp eq i64 %cast66, 0
   %null_ext68 = zext i1 %null_chk67 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18168, i64 6, ptr @sty_name.18169, i64 32, i64 %null_ext68, ptr @src_file.18170, i64 0, i64 1156)
+  call void @avra_null_deref_trap(ptr @fld_name.18168, i64 6, ptr @sty_name.18169, i64 32, i64 %null_ext68, ptr @src_file.18170, i64 0, i64 1157)
   %ret_ty_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::FnTypeFound", ptr %r65, i32 0, i32 2
   %ret_ty = load ptr, ptr %ret_ty_ptr, align 8
   %slot_base = ptrtoint ptr %17 to i64
@@ -231035,7 +231036,7 @@ march_arm74:                                      ; preds = %march_next43
   %cast89 = ptrtoint ptr %l88 to i64
   %null_chk90 = icmp eq i64 %cast89, 0
   %null_ext91 = zext i1 %null_chk90 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18171, i64 2, ptr @sty_name.18172, i64 31, i64 %null_ext91, ptr @src_file.18173, i64 0, i64 1163)
+  call void @avra_null_deref_trap(ptr @fld_name.18171, i64 2, ptr @sty_name.18172, i64 31, i64 %null_ext91, ptr @src_file.18173, i64 0, i64 1164)
   %tc_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %l88, i32 0, i32 0
   %tc92 = load ptr, ptr %tc_ptr, align 8
   %right93 = load ptr, ptr %right85, align 8
@@ -231045,14 +231046,14 @@ march_arm74:                                      ; preds = %march_next43
   %cast96 = ptrtoint ptr %r95 to i64
   %null_chk97 = icmp eq i64 %cast96, 0
   %null_ext98 = zext i1 %null_chk97 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18174, i64 2, ptr @sty_name.18175, i64 31, i64 %null_ext98, ptr @src_file.18176, i64 0, i64 1164)
+  call void @avra_null_deref_trap(ptr @fld_name.18174, i64 2, ptr @sty_name.18175, i64 31, i64 %null_ext98, ptr @src_file.18176, i64 0, i64 1165)
   %tc_ptr99 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r95, i32 0, i32 0
   %tc100 = load ptr, ptr %tc_ptr99, align 8
   %l101 = load ptr, ptr %l, align 8
   %cast102 = ptrtoint ptr %l101 to i64
   %null_chk103 = icmp eq i64 %cast102, 0
   %null_ext104 = zext i1 %null_chk103 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18177, i64 2, ptr @sty_name.18178, i64 31, i64 %null_ext104, ptr @src_file.18179, i64 0, i64 1164)
+  call void @avra_null_deref_trap(ptr @fld_name.18177, i64 2, ptr @sty_name.18178, i64 31, i64 %null_ext104, ptr @src_file.18179, i64 0, i64 1165)
   %ty_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %l101, i32 0, i32 1
   %ty105 = load ptr, ptr %ty_ptr, align 8
   %op106 = load ptr, ptr %op82, align 8
@@ -231060,7 +231061,7 @@ march_arm74:                                      ; preds = %march_next43
   %cast108 = ptrtoint ptr %r107 to i64
   %null_chk109 = icmp eq i64 %cast108, 0
   %null_ext110 = zext i1 %null_chk109 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18180, i64 2, ptr @sty_name.18181, i64 31, i64 %null_ext110, ptr @src_file.18182, i64 0, i64 1164)
+  call void @avra_null_deref_trap(ptr @fld_name.18180, i64 2, ptr @sty_name.18181, i64 31, i64 %null_ext110, ptr @src_file.18182, i64 0, i64 1165)
   %ty_ptr111 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r107, i32 0, i32 1
   %ty112 = load ptr, ptr %ty_ptr111, align 8
   %21 = call ptr @"@std::avrac::typeck::check_binary_type"(ptr %tc100, ptr %ty105, ptr %op106, ptr %ty112)
@@ -231089,14 +231090,14 @@ march_arm114:                                     ; preds = %march_next75
   %cast128 = ptrtoint ptr %r127 to i64
   %null_chk129 = icmp eq i64 %cast128, 0
   %null_ext130 = zext i1 %null_chk129 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18183, i64 2, ptr @sty_name.18184, i64 31, i64 %null_ext130, ptr @src_file.18185, i64 0, i64 1169)
+  call void @avra_null_deref_trap(ptr @fld_name.18183, i64 2, ptr @sty_name.18184, i64 31, i64 %null_ext130, ptr @src_file.18185, i64 0, i64 1170)
   %tc_ptr131 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r127, i32 0, i32 0
   %tc132 = load ptr, ptr %tc_ptr131, align 8
   %r133 = load ptr, ptr %r126, align 8
   %cast134 = ptrtoint ptr %r133 to i64
   %null_chk135 = icmp eq i64 %cast134, 0
   %null_ext136 = zext i1 %null_chk135 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18186, i64 2, ptr @sty_name.18187, i64 31, i64 %null_ext136, ptr @src_file.18188, i64 0, i64 1169)
+  call void @avra_null_deref_trap(ptr @fld_name.18186, i64 2, ptr @sty_name.18187, i64 31, i64 %null_ext136, ptr @src_file.18188, i64 0, i64 1170)
   %ty_ptr137 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r133, i32 0, i32 1
   %ty138 = load ptr, ptr %ty_ptr137, align 8
   %23 = call ptr @"@std::avrac::typeck::tc_er"(ptr %tc132, ptr %ty138)
@@ -231133,7 +231134,7 @@ march_arm140:                                     ; preds = %march_next115
   %cast161 = ptrtoint ptr %l160 to i64
   %null_chk162 = icmp eq i64 %cast161, 0
   %null_ext163 = zext i1 %null_chk162 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18189, i64 2, ptr @sty_name.18190, i64 31, i64 %null_ext163, ptr @src_file.18191, i64 0, i64 1174)
+  call void @avra_null_deref_trap(ptr @fld_name.18189, i64 2, ptr @sty_name.18190, i64 31, i64 %null_ext163, ptr @src_file.18191, i64 0, i64 1175)
   %tc_ptr164 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %l160, i32 0, i32 0
   %tc165 = load ptr, ptr %tc_ptr164, align 8
   %right166 = load ptr, ptr %right156, align 8
@@ -231143,7 +231144,7 @@ march_arm140:                                     ; preds = %march_next115
   %cast169 = ptrtoint ptr %r168 to i64
   %null_chk170 = icmp eq i64 %cast169, 0
   %null_ext171 = zext i1 %null_chk170 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18192, i64 2, ptr @sty_name.18193, i64 31, i64 %null_ext171, ptr @src_file.18194, i64 0, i64 1175)
+  call void @avra_null_deref_trap(ptr @fld_name.18192, i64 2, ptr @sty_name.18193, i64 31, i64 %null_ext171, ptr @src_file.18194, i64 0, i64 1176)
   %tc_ptr172 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r168, i32 0, i32 0
   %tc173 = load ptr, ptr %tc_ptr172, align 8
   %26 = call ptr @avra_rc_alloc(i64 16)
@@ -231265,7 +231266,7 @@ march_arm222:                                     ; preds = %march_next202
   %cast234 = ptrtoint ptr %o233 to i64
   %null_chk235 = icmp eq i64 %cast234, 0
   %null_ext236 = zext i1 %null_chk235 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18195, i64 2, ptr @sty_name.18196, i64 31, i64 %null_ext236, ptr @src_file.18197, i64 0, i64 1183)
+  call void @avra_null_deref_trap(ptr @fld_name.18195, i64 2, ptr @sty_name.18196, i64 31, i64 %null_ext236, ptr @src_file.18197, i64 0, i64 1184)
   %tc_ptr237 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %o233, i32 0, i32 0
   %tc238 = load ptr, ptr %tc_ptr237, align 8
   %idx239 = load ptr, ptr %idx230, align 8
@@ -231275,7 +231276,7 @@ march_arm222:                                     ; preds = %march_next202
   %cast241 = ptrtoint ptr %o240 to i64
   %null_chk242 = icmp eq i64 %cast241, 0
   %null_ext243 = zext i1 %null_chk242 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18198, i64 2, ptr @sty_name.18199, i64 31, i64 %null_ext243, ptr @src_file.18200, i64 0, i64 1185)
+  call void @avra_null_deref_trap(ptr @fld_name.18198, i64 2, ptr @sty_name.18199, i64 31, i64 %null_ext243, ptr @src_file.18200, i64 0, i64 1186)
   %ty_ptr244 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %o240, i32 0, i32 1
   %ty245 = load ptr, ptr %ty_ptr244, align 8
   %33 = call ptr @avra_rc_alloc(i64 16)
@@ -231299,7 +231300,7 @@ ifcont251:                                        ; preds = %if_else254
   %cast266 = ptrtoint ptr %o265 to i64
   %null_chk267 = icmp eq i64 %cast266, 0
   %null_ext268 = zext i1 %null_chk267 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18204, i64 2, ptr @sty_name.18205, i64 31, i64 %null_ext268, ptr @src_file.18206, i64 0, i64 1188)
+  call void @avra_null_deref_trap(ptr @fld_name.18204, i64 2, ptr @sty_name.18205, i64 31, i64 %null_ext268, ptr @src_file.18206, i64 0, i64 1189)
   %ty_ptr269 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %o265, i32 0, i32 1
   %ty270 = load ptr, ptr %ty_ptr269, align 8
   %35 = call ptr @"@std::avrac::core::vtype_list_elem"(ptr %ty270)
@@ -231308,7 +231309,7 @@ ifcont251:                                        ; preds = %if_else254
   %cast272 = ptrtoint ptr %i271 to i64
   %null_chk273 = icmp eq i64 %cast272, 0
   %null_ext274 = zext i1 %null_chk273 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18207, i64 2, ptr @sty_name.18208, i64 31, i64 %null_ext274, ptr @src_file.18209, i64 0, i64 1189)
+  call void @avra_null_deref_trap(ptr @fld_name.18207, i64 2, ptr @sty_name.18208, i64 31, i64 %null_ext274, ptr @src_file.18209, i64 0, i64 1190)
   %tc_ptr275 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %i271, i32 0, i32 0
   %tc276 = load ptr, ptr %tc_ptr275, align 8
   %elem_ty277 = load ptr, ptr %elem_ty, align 8
@@ -231322,7 +231323,7 @@ if_then253:                                       ; preds = %march_arm222
   %cast256 = ptrtoint ptr %i255 to i64
   %null_chk257 = icmp eq i64 %cast256, 0
   %null_ext258 = zext i1 %null_chk257 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18201, i64 2, ptr @sty_name.18202, i64 31, i64 %null_ext258, ptr @src_file.18203, i64 0, i64 1186)
+  call void @avra_null_deref_trap(ptr @fld_name.18201, i64 2, ptr @sty_name.18202, i64 31, i64 %null_ext258, ptr @src_file.18203, i64 0, i64 1187)
   %tc_ptr259 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %i255, i32 0, i32 0
   %tc260 = load ptr, ptr %tc_ptr259, align 8
   %37 = call ptr @avra_rc_alloc(i64 16)
@@ -231391,7 +231392,7 @@ march_arm288:                                     ; preds = %march_next280
   %cast308 = ptrtoint ptr %o307 to i64
   %null_chk309 = icmp eq i64 %cast308, 0
   %null_ext310 = zext i1 %null_chk309 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18210, i64 2, ptr @sty_name.18211, i64 31, i64 %null_ext310, ptr @src_file.18212, i64 0, i64 1195)
+  call void @avra_null_deref_trap(ptr @fld_name.18210, i64 2, ptr @sty_name.18211, i64 31, i64 %null_ext310, ptr @src_file.18212, i64 0, i64 1196)
   %tc_ptr311 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %o307, i32 0, i32 0
   %tc312 = load ptr, ptr %tc_ptr311, align 8
   %start313 = load ptr, ptr %start300, align 8
@@ -231401,7 +231402,7 @@ march_arm288:                                     ; preds = %march_next280
   %cast315 = ptrtoint ptr %s314 to i64
   %null_chk316 = icmp eq i64 %cast315, 0
   %null_ext317 = zext i1 %null_chk316 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18213, i64 2, ptr @sty_name.18214, i64 31, i64 %null_ext317, ptr @src_file.18215, i64 0, i64 1196)
+  call void @avra_null_deref_trap(ptr @fld_name.18213, i64 2, ptr @sty_name.18214, i64 31, i64 %null_ext317, ptr @src_file.18215, i64 0, i64 1197)
   %tc_ptr318 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %s314, i32 0, i32 0
   %tc319 = load ptr, ptr %tc_ptr318, align 8
   %end320 = load ptr, ptr %end303, align 8
@@ -231411,14 +231412,14 @@ march_arm288:                                     ; preds = %march_next280
   %cast322 = ptrtoint ptr %e321 to i64
   %null_chk323 = icmp eq i64 %cast322, 0
   %null_ext324 = zext i1 %null_chk323 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18216, i64 2, ptr @sty_name.18217, i64 31, i64 %null_ext324, ptr @src_file.18218, i64 0, i64 1197)
+  call void @avra_null_deref_trap(ptr @fld_name.18216, i64 2, ptr @sty_name.18217, i64 31, i64 %null_ext324, ptr @src_file.18218, i64 0, i64 1198)
   %tc_ptr325 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %e321, i32 0, i32 0
   %tc326 = load ptr, ptr %tc_ptr325, align 8
   %o327 = load ptr, ptr %o306, align 8
   %cast328 = ptrtoint ptr %o327 to i64
   %null_chk329 = icmp eq i64 %cast328, 0
   %null_ext330 = zext i1 %null_chk329 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18219, i64 2, ptr @sty_name.18220, i64 31, i64 %null_ext330, ptr @src_file.18221, i64 0, i64 1197)
+  call void @avra_null_deref_trap(ptr @fld_name.18219, i64 2, ptr @sty_name.18220, i64 31, i64 %null_ext330, ptr @src_file.18221, i64 0, i64 1198)
   %ty_ptr331 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %o327, i32 0, i32 1
   %ty332 = load ptr, ptr %ty_ptr331, align 8
   %43 = call ptr @"@std::avrac::typeck::tc_er"(ptr %tc326, ptr %ty332)
@@ -231455,14 +231456,14 @@ march_arm334:                                     ; preds = %march_next289
   %cast350 = ptrtoint ptr %v349 to i64
   %null_chk351 = icmp eq i64 %cast350, 0
   %null_ext352 = zext i1 %null_chk351 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18222, i64 2, ptr @sty_name.18223, i64 31, i64 %null_ext352, ptr @src_file.18224, i64 0, i64 1202)
+  call void @avra_null_deref_trap(ptr @fld_name.18222, i64 2, ptr @sty_name.18223, i64 31, i64 %null_ext352, ptr @src_file.18224, i64 0, i64 1203)
   %tc_ptr353 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %v349, i32 0, i32 0
   %tc354 = load ptr, ptr %tc_ptr353, align 8
   %v355 = load ptr, ptr %v, align 8
   %cast356 = ptrtoint ptr %v355 to i64
   %null_chk357 = icmp eq i64 %cast356, 0
   %null_ext358 = zext i1 %null_chk357 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18225, i64 2, ptr @sty_name.18226, i64 31, i64 %null_ext358, ptr @src_file.18227, i64 0, i64 1202)
+  call void @avra_null_deref_trap(ptr @fld_name.18225, i64 2, ptr @sty_name.18226, i64 31, i64 %null_ext358, ptr @src_file.18227, i64 0, i64 1203)
   %ty_ptr359 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %v355, i32 0, i32 1
   %ty360 = load ptr, ptr %ty_ptr359, align 8
   %45 = call ptr @"@std::avrac::typeck::tc_er"(ptr %tc354, ptr %ty360)
@@ -231487,7 +231488,7 @@ march_arm362:                                     ; preds = %march_next335
   %cast369 = ptrtoint ptr %tc368 to i64
   %null_chk370 = icmp eq i64 %cast369, 0
   %null_ext371 = zext i1 %null_chk370 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18228, i64 3, ptr @sty_name.18229, i64 23, i64 %null_ext371, ptr @src_file.18230, i64 0, i64 1206)
+  call void @avra_null_deref_trap(ptr @fld_name.18228, i64 3, ptr @sty_name.18229, i64 23, i64 %null_ext371, ptr @src_file.18230, i64 0, i64 1207)
   %fns_ptr372 = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc368, i32 0, i32 1
   %fns373 = load ptr, ptr %fns_ptr372, align 8
   %path374 = load ptr, ptr %path367, align 8
@@ -231495,7 +231496,7 @@ march_arm362:                                     ; preds = %march_next335
   %cast375 = ptrtoint ptr %46 to i64
   %null_chk376 = icmp eq i64 %cast375, 0
   %null_ext377 = zext i1 %null_chk376 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18231, i64 6, ptr @sty_name.18232, i64 32, i64 %null_ext377, ptr @src_file.18233, i64 0, i64 1206)
+  call void @avra_null_deref_trap(ptr @fld_name.18231, i64 6, ptr @sty_name.18232, i64 32, i64 %null_ext377, ptr @src_file.18233, i64 0, i64 1207)
   %ret_ty_ptr378 = getelementptr inbounds nuw %"@std::avrac::typeck::FnTypeFound", ptr %46, i32 0, i32 2
   %ret_ty379 = load ptr, ptr %ret_ty_ptr378, align 8
   store ptr %ret_ty379, ptr %fn_ty, align 8
@@ -231518,7 +231519,7 @@ march_arm383:                                     ; preds = %march_next363
   %cast389 = ptrtoint ptr %tc388 to i64
   %null_chk390 = icmp eq i64 %cast389, 0
   %null_ext391 = zext i1 %null_chk390 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18234, i64 8, ptr @sty_name.18235, i64 23, i64 %null_ext391, ptr @src_file.18236, i64 0, i64 1212)
+  call void @avra_null_deref_trap(ptr @fld_name.18234, i64 8, ptr @sty_name.18235, i64 23, i64 %null_ext391, ptr @src_file.18236, i64 0, i64 1213)
   %features_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc388, i32 0, i32 15
   %features = load ptr, ptr %features_ptr, align 8
   %tag392 = load i64, ptr %tag387, align 8
@@ -231533,7 +231534,7 @@ march_arm383:                                     ; preds = %march_next363
   br i1 %if_cond397, label %if_then398, label %if_else399
 
 march_next384:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18237, i64 %tag, ptr @mu_file.18238, i64 1144)
+  call void @avra_match_unreachable(ptr @.match_fn.18237, i64 %tag, ptr @mu_file.18238, i64 1145)
   unreachable
 
 ifcont396:                                        ; preds = %if_else399
@@ -231621,7 +231622,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq17, label %march_arm15, label %march_next16
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.18247, i64 %tag, ptr @mu_file.18248, i64 1226)
+  call void @avra_match_unreachable(ptr @.match_fn.18247, i64 %tag, ptr @mu_file.18248, i64 1227)
   unreachable
 
 match_end14:                                      ; preds = %march_arm20, %march_arm15
@@ -231661,14 +231662,14 @@ march_arm20:                                      ; preds = %march_next16
   %cast31 = ptrtoint ptr %arg_se30 to i64
   %null_chk = icmp eq i64 %cast31, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18239, i64 4, ptr @sty_name.18240, i64 24, i64 %null_ext, ptr @src_file.18241, i64 0, i64 1232)
+  call void @avra_null_deref_trap(ptr @fld_name.18239, i64 4, ptr @sty_name.18240, i64 24, i64 %null_ext, ptr @src_file.18241, i64 0, i64 1233)
   %node_ptr = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %arg_se30, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %3 = call ptr @"@std::avrac::typeck::check_expr"(ptr %tc29, ptr %node)
   %cast32 = ptrtoint ptr %3 to i64
   %null_chk33 = icmp eq i64 %cast32, 0
   %null_ext34 = zext i1 %null_chk33 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18242, i64 2, ptr @sty_name.18243, i64 31, i64 %null_ext34, ptr @src_file.18244, i64 0, i64 1232)
+  call void @avra_null_deref_trap(ptr @fld_name.18242, i64 2, ptr @sty_name.18243, i64 31, i64 %null_ext34, ptr @src_file.18244, i64 0, i64 1233)
   %ty_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %3, i32 0, i32 1
   %ty = load ptr, ptr %ty_ptr, align 8
   store ptr %ty, ptr %arg_ty, align 8
@@ -231687,7 +231688,7 @@ march_arm20:                                      ; preds = %march_next16
   br label %match_end14
 
 march_next21:                                     ; preds = %march_next16
-  call void @avra_match_unreachable(ptr @.match_fn.18245, i64 %tag12, ptr @mu_file.18246, i64 1226)
+  call void @avra_match_unreachable(ptr @.match_fn.18245, i64 %tag12, ptr @mu_file.18246, i64 1227)
   unreachable
 }
 
@@ -231766,7 +231767,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq20, label %march_arm18, label %march_next19
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.18262, i64 %tag, ptr @mu_file.18263, i64 1245)
+  call void @avra_match_unreachable(ptr @.match_fn.18262, i64 %tag, ptr @mu_file.18263, i64 1246)
   unreachable
 
 match_end17:                                      ; preds = %ifcont, %march_arm18
@@ -231810,14 +231811,14 @@ march_arm23:                                      ; preds = %march_next19
   %cast36 = ptrtoint ptr %arg_se35 to i64
   %null_chk = icmp eq i64 %cast36, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18249, i64 4, ptr @sty_name.18250, i64 24, i64 %null_ext, ptr @src_file.18251, i64 0, i64 1252)
+  call void @avra_null_deref_trap(ptr @fld_name.18249, i64 4, ptr @sty_name.18250, i64 24, i64 %null_ext, ptr @src_file.18251, i64 0, i64 1253)
   %node_ptr = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %arg_se35, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %5 = call ptr @"@std::avrac::typeck::check_expr"(ptr %tc34, ptr %node)
   %cast37 = ptrtoint ptr %5 to i64
   %null_chk38 = icmp eq i64 %cast37, 0
   %null_ext39 = zext i1 %null_chk38 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18252, i64 2, ptr @sty_name.18253, i64 31, i64 %null_ext39, ptr @src_file.18254, i64 0, i64 1252)
+  call void @avra_null_deref_trap(ptr @fld_name.18252, i64 2, ptr @sty_name.18253, i64 31, i64 %null_ext39, ptr @src_file.18254, i64 0, i64 1253)
   %ty_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %5, i32 0, i32 1
   %ty = load ptr, ptr %ty_ptr, align 8
   store ptr %ty, ptr %arg_ty, align 8
@@ -231830,7 +231831,7 @@ march_arm23:                                      ; preds = %march_next19
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next24:                                     ; preds = %march_next19
-  call void @avra_match_unreachable(ptr @.match_fn.18260, i64 %tag15, ptr @mu_file.18261, i64 1245)
+  call void @avra_match_unreachable(ptr @.match_fn.18260, i64 %tag15, ptr @mu_file.18261, i64 1246)
   unreachable
 
 ifcont:                                           ; preds = %if_else, %ifcont67
@@ -232080,14 +232081,14 @@ march_arm3:                                       ; preds = %march_next
   %cast9 = ptrtoint ptr %arg_se8 to i64
   %null_chk = icmp eq i64 %cast9, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18264, i64 4, ptr @sty_name.18265, i64 24, i64 %null_ext, ptr @src_file.18266, i64 0, i64 1271)
+  call void @avra_null_deref_trap(ptr @fld_name.18264, i64 4, ptr @sty_name.18265, i64 24, i64 %null_ext, ptr @src_file.18266, i64 0, i64 1272)
   %node_ptr = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %arg_se8, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %3 = call ptr @"@std::avrac::typeck::check_expr"(ptr %tc7, ptr %node)
   %cast10 = ptrtoint ptr %3 to i64
   %null_chk11 = icmp eq i64 %cast10, 0
   %null_ext12 = zext i1 %null_chk11 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18267, i64 2, ptr @sty_name.18268, i64 31, i64 %null_ext12, ptr @src_file.18269, i64 0, i64 1271)
+  call void @avra_null_deref_trap(ptr @fld_name.18267, i64 2, ptr @sty_name.18268, i64 31, i64 %null_ext12, ptr @src_file.18269, i64 0, i64 1272)
   %ty_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %3, i32 0, i32 1
   %ty = load ptr, ptr %ty_ptr, align 8
   %cast13 = ptrtoint ptr %ty to i64
@@ -232095,7 +232096,7 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.18270, i64 %tag, ptr @mu_file.18271, i64 1271)
+  call void @avra_match_unreachable(ptr @.match_fn.18270, i64 %tag, ptr @mu_file.18271, i64 1272)
   unreachable
 }
 
@@ -232330,7 +232331,7 @@ march_arm81:                                      ; preds = %march_next
   br label %match_end
 
 march_next82:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18276, i64 %tag, ptr @mu_file.18277, i64 1281)
+  call void @avra_match_unreachable(ptr @.match_fn.18276, i64 %tag, ptr @mu_file.18277, i64 1282)
   unreachable
 }
 
@@ -232351,7 +232352,7 @@ entry:
   %cast = ptrtoint ptr %tc1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18278, i64 6, ptr @sty_name.18279, i64 23, i64 %null_ext, ptr @src_file.18280, i64 0, i64 1299)
+  call void @avra_null_deref_trap(ptr @fld_name.18278, i64 6, ptr @sty_name.18279, i64 23, i64 %null_ext, ptr @src_file.18280, i64 0, i64 1300)
   %shapes_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc1, i32 0, i32 3
   %shapes = load ptr, ptr %shapes_ptr, align 8
   %param_ty_str2 = load ptr, ptr %param_ty_str, align 8
@@ -232367,7 +232368,7 @@ ifcont:                                           ; preds = %if_else
   %cast5 = ptrtoint ptr %tc4 to i64
   %null_chk6 = icmp eq i64 %cast5, 0
   %null_ext7 = zext i1 %null_chk6 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18281, i64 7, ptr @sty_name.18282, i64 23, i64 %null_ext7, ptr @src_file.18283, i64 0, i64 1301)
+  call void @avra_null_deref_trap(ptr @fld_name.18281, i64 7, ptr @sty_name.18282, i64 23, i64 %null_ext7, ptr @src_file.18283, i64 0, i64 1302)
   %structs_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc4, i32 0, i32 2
   %structs = load ptr, ptr %structs_ptr, align 8
   %param_ty_str8 = load ptr, ptr %param_ty_str, align 8
@@ -232421,7 +232422,7 @@ march_arm13:                                      ; preds = %march_next
   br label %match_end
 
 march_next14:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18285, i64 %tag, ptr @mu_file.18286, i64 1303)
+  call void @avra_match_unreachable(ptr @.match_fn.18285, i64 %tag, ptr @mu_file.18286, i64 1304)
   unreachable
 
 ifcont18:                                         ; preds = %if_else21
@@ -232429,7 +232430,7 @@ ifcont18:                                         ; preds = %if_else21
   %cast24 = ptrtoint ptr %tc23 to i64
   %null_chk25 = icmp eq i64 %cast24, 0
   %null_ext26 = zext i1 %null_chk25 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18288, i64 7, ptr @sty_name.18289, i64 23, i64 %null_ext26, ptr @src_file.18290, i64 0, i64 1308)
+  call void @avra_null_deref_trap(ptr @fld_name.18288, i64 7, ptr @sty_name.18289, i64 23, i64 %null_ext26, ptr @src_file.18290, i64 0, i64 1309)
   %structs_ptr27 = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc23, i32 0, i32 2
   %structs28 = load ptr, ptr %structs_ptr27, align 8
   %arg_name29 = load ptr, ptr %arg_name, align 8
@@ -232532,7 +232533,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.18301, i64 %tag, ptr @mu_file.18302, i64 1316)
+  call void @avra_match_unreachable(ptr @.match_fn.18301, i64 %tag, ptr @mu_file.18302, i64 1317)
   unreachable
 
 sif_then:                                         ; preds = %march_arm3
@@ -232901,9 +232902,9 @@ entry:
   store ptr %3, ptr %right, align 8
   %left1 = load ptr, ptr %left, align 8
   %4 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %4, i32 0, i32 0
+  %tag_ptr = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %4, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %4, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %4, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %4 to i64
   %cast2 = inttoptr i64 %cast to ptr
@@ -232915,9 +232916,9 @@ entry:
 sc_rhs:                                           ; preds = %entry
   %right3 = load ptr, ptr %right, align 8
   %6 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr4 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %6, i32 0, i32 0
+  %tag_ptr4 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %6, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr4, align 8
-  %pay_ptr5 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %6, i32 0, i32 1
+  %pay_ptr5 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %6, i32 0, i32 1
   store ptr null, ptr %pay_ptr5, align 8
   %cast6 = ptrtoint ptr %6 to i64
   %cast7 = inttoptr i64 %cast6 to ptr
@@ -233223,7 +233224,7 @@ march_arm126:                                     ; preds = %march_next118
   br label %match_end
 
 march_next127:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18303, i64 %tag, ptr @mu_file.18304, i64 1344)
+  call void @avra_match_unreachable(ptr @.match_fn.18303, i64 %tag, ptr @mu_file.18304, i64 1345)
   unreachable
 }
 
@@ -233250,7 +233251,7 @@ entry:
   %cast = ptrtoint ptr %rec1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18305, i64 6, ptr @sty_name.18306, i64 32, i64 %null_ext, ptr @src_file.18307, i64 0, i64 1376)
+  call void @avra_null_deref_trap(ptr @fld_name.18305, i64 6, ptr @sty_name.18306, i64 32, i64 %null_ext, ptr @src_file.18307, i64 0, i64 1377)
   %params_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::FnTypeFound", ptr %rec1, i32 0, i32 1
   %params = load ptr, ptr %params_ptr, align 8
   %4 = call i64 @"@std::avrac::core::param_list_length"(ptr %params)
@@ -233271,7 +233272,7 @@ ifcont:                                           ; preds = %if_else
   %cast62 = ptrtoint ptr %rec61 to i64
   %null_chk63 = icmp eq i64 %cast62, 0
   %null_ext64 = zext i1 %null_chk63 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18319, i64 6, ptr @sty_name.18320, i64 32, i64 %null_ext64, ptr @src_file.18321, i64 0, i64 1384)
+  call void @avra_null_deref_trap(ptr @fld_name.18319, i64 6, ptr @sty_name.18320, i64 32, i64 %null_ext64, ptr @src_file.18321, i64 0, i64 1385)
   %params_ptr65 = getelementptr inbounds nuw %"@std::avrac::typeck::FnTypeFound", ptr %rec61, i32 0, i32 1
   %params66 = load ptr, ptr %params_ptr65, align 8
   %args67 = load ptr, ptr %args, align 8
@@ -233283,7 +233284,7 @@ ifcont:                                           ; preds = %if_else
   %cast71 = ptrtoint ptr %rec70 to i64
   %null_chk72 = icmp eq i64 %cast71, 0
   %null_ext73 = zext i1 %null_chk72 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18322, i64 6, ptr @sty_name.18323, i64 32, i64 %null_ext73, ptr @src_file.18324, i64 0, i64 1385)
+  call void @avra_null_deref_trap(ptr @fld_name.18322, i64 6, ptr @sty_name.18323, i64 32, i64 %null_ext73, ptr @src_file.18324, i64 0, i64 1386)
   %params_ptr74 = getelementptr inbounds nuw %"@std::avrac::typeck::FnTypeFound", ptr %rec70, i32 0, i32 1
   %params75 = load ptr, ptr %params_ptr74, align 8
   %args76 = load ptr, ptr %args, align 8
@@ -233299,7 +233300,7 @@ ifcont:                                           ; preds = %if_else
   %cast82 = ptrtoint ptr %rec81 to i64
   %null_chk83 = icmp eq i64 %cast82, 0
   %null_ext84 = zext i1 %null_chk83 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18325, i64 6, ptr @sty_name.18326, i64 32, i64 %null_ext84, ptr @src_file.18327, i64 0, i64 1387)
+  call void @avra_null_deref_trap(ptr @fld_name.18325, i64 6, ptr @sty_name.18326, i64 32, i64 %null_ext84, ptr @src_file.18327, i64 0, i64 1388)
   %ret_ty_ptr85 = getelementptr inbounds nuw %"@std::avrac::typeck::FnTypeFound", ptr %rec81, i32 0, i32 2
   %ret_ty86 = load ptr, ptr %ret_ty_ptr85, align 8
   %first_arg_ty87 = load ptr, ptr %first_arg_ty, align 8
@@ -233310,7 +233311,7 @@ ifcont:                                           ; preds = %if_else
   %cast90 = ptrtoint ptr %rec89 to i64
   %null_chk91 = icmp eq i64 %cast90, 0
   %null_ext92 = zext i1 %null_chk91 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18328, i64 6, ptr @sty_name.18329, i64 32, i64 %null_ext92, ptr @src_file.18330, i64 0, i64 1388)
+  call void @avra_null_deref_trap(ptr @fld_name.18328, i64 6, ptr @sty_name.18329, i64 32, i64 %null_ext92, ptr @src_file.18330, i64 0, i64 1389)
   %ret_ty_ptr93 = getelementptr inbounds nuw %"@std::avrac::typeck::FnTypeFound", ptr %rec89, i32 0, i32 2
   %ret_ty94 = load ptr, ptr %ret_ty_ptr93, align 8
   %10 = call ptr @"@std::avrac::typeck::tc_er"(ptr %ctor_checked88, ptr %ret_ty94)
@@ -233432,7 +233433,7 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %cast57 = ptrtoint ptr %rec56 to i64
   %null_chk58 = icmp eq i64 %cast57, 0
   %null_ext59 = zext i1 %null_chk58 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18316, i64 6, ptr @sty_name.18317, i64 32, i64 %null_ext59, ptr @src_file.18318, i64 0, i64 1381)
+  call void @avra_null_deref_trap(ptr @fld_name.18316, i64 6, ptr @sty_name.18317, i64 32, i64 %null_ext59, ptr @src_file.18318, i64 0, i64 1382)
   %ret_ty_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::FnTypeFound", ptr %rec56, i32 0, i32 2
   %ret_ty = load ptr, ptr %ret_ty_ptr, align 8
   %52 = call ptr @"@std::avrac::typeck::tc_er"(ptr %51, ptr %ret_ty)
@@ -233508,7 +233509,7 @@ pmatch_end:                                       ; preds = %parm_body35
   %cast39 = ptrtoint ptr %checked38 to i64
   %null_chk = icmp eq i64 %cast39, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18339, i64 3, ptr @sty_name.18340, i64 23, i64 %null_ext, ptr @src_file.18341, i64 0, i64 1407)
+  call void @avra_null_deref_trap(ptr @fld_name.18339, i64 3, ptr @sty_name.18340, i64 23, i64 %null_ext, ptr @src_file.18341, i64 0, i64 1408)
   %fns_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %checked38, i32 0, i32 1
   %fns = load ptr, ptr %fns_ptr, align 8
   %name40 = load ptr, ptr %name2, align 8
@@ -233518,7 +233519,7 @@ pmatch_end:                                       ; preds = %parm_body35
   %cast42 = ptrtoint ptr %r41 to i64
   %null_chk43 = icmp eq i64 %cast42, 0
   %null_ext44 = zext i1 %null_chk43 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18342, i64 5, ptr @sty_name.18343, i64 32, i64 %null_ext44, ptr @src_file.18344, i64 0, i64 1408)
+  call void @avra_null_deref_trap(ptr @fld_name.18342, i64 5, ptr @sty_name.18343, i64 32, i64 %null_ext44, ptr @src_file.18344, i64 0, i64 1409)
   %found_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::FnTypeFound", ptr %r41, i32 0, i32 0
   %found = load i1, ptr %found_ptr, align 8
   br i1 %found, label %if_then, label %if_else
@@ -233593,7 +233594,7 @@ parm_body35:                                      ; preds = %parm_next19
   br label %pmatch_end
 
 parm_next36:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18337, i64 -1, ptr @mu_file.18338, i64 1400)
+  call void @avra_match_unreachable(ptr @.match_fn.18337, i64 -1, ptr @mu_file.18338, i64 1401)
   unreachable
 
 ifcont:                                           ; preds = %if_else
@@ -233601,7 +233602,7 @@ ifcont:                                           ; preds = %if_else
   %cast50 = ptrtoint ptr %checked49 to i64
   %null_chk51 = icmp eq i64 %cast50, 0
   %null_ext52 = zext i1 %null_chk51 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18345, i64 5, ptr @sty_name.18346, i64 23, i64 %null_ext52, ptr @src_file.18347, i64 0, i64 1412)
+  call void @avra_null_deref_trap(ptr @fld_name.18345, i64 5, ptr @sty_name.18346, i64 23, i64 %null_ext52, ptr @src_file.18347, i64 0, i64 1413)
   %types_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %checked49, i32 0, i32 0
   %types = load ptr, ptr %types_ptr, align 8
   %name53 = load ptr, ptr %name2, align 8
@@ -233665,7 +233666,7 @@ march_arm67:                                      ; preds = %march_next
   %cast77 = ptrtoint ptr %checked76 to i64
   %null_chk78 = icmp eq i64 %cast77, 0
   %null_ext79 = zext i1 %null_chk78 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18348, i64 3, ptr @sty_name.18349, i64 23, i64 %null_ext79, ptr @src_file.18350, i64 0, i64 1421)
+  call void @avra_null_deref_trap(ptr @fld_name.18348, i64 3, ptr @sty_name.18349, i64 23, i64 %null_ext79, ptr @src_file.18350, i64 0, i64 1422)
   %fns_ptr80 = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %checked76, i32 0, i32 1
   %fns81 = load ptr, ptr %fns_ptr80, align 8
   %path82 = load ptr, ptr %path72, align 8
@@ -233675,7 +233676,7 @@ march_arm67:                                      ; preds = %march_next
   %cast85 = ptrtoint ptr %r84 to i64
   %null_chk86 = icmp eq i64 %cast85, 0
   %null_ext87 = zext i1 %null_chk86 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18351, i64 5, ptr @sty_name.18352, i64 32, i64 %null_ext87, ptr @src_file.18353, i64 0, i64 1422)
+  call void @avra_null_deref_trap(ptr @fld_name.18351, i64 5, ptr @sty_name.18352, i64 32, i64 %null_ext87, ptr @src_file.18353, i64 0, i64 1423)
   %found_ptr88 = getelementptr inbounds nuw %"@std::avrac::typeck::FnTypeFound", ptr %r84, i32 0, i32 0
   %found89 = load i1, ptr %found_ptr88, align 8
   br i1 %found89, label %if_then91, label %if_else92
@@ -233747,7 +233748,7 @@ march_arm117:                                     ; preds = %march_next104
   %cast122 = ptrtoint ptr %c121 to i64
   %null_chk123 = icmp eq i64 %cast122, 0
   %null_ext124 = zext i1 %null_chk123 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18354, i64 2, ptr @sty_name.18355, i64 31, i64 %null_ext124, ptr @src_file.18356, i64 0, i64 1433)
+  call void @avra_null_deref_trap(ptr @fld_name.18354, i64 2, ptr @sty_name.18355, i64 31, i64 %null_ext124, ptr @src_file.18356, i64 0, i64 1434)
   %tc_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %c121, i32 0, i32 0
   %tc125 = load ptr, ptr %tc_ptr, align 8
   %args126 = load ptr, ptr %args, align 8
@@ -233758,7 +233759,7 @@ march_arm117:                                     ; preds = %march_next104
   %cast130 = ptrtoint ptr %c129 to i64
   %null_chk131 = icmp eq i64 %cast130, 0
   %null_ext132 = zext i1 %null_chk131 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18357, i64 2, ptr @sty_name.18358, i64 31, i64 %null_ext132, ptr @src_file.18359, i64 0, i64 1434)
+  call void @avra_null_deref_trap(ptr @fld_name.18357, i64 2, ptr @sty_name.18358, i64 31, i64 %null_ext132, ptr @src_file.18359, i64 0, i64 1435)
   %ty_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %c129, i32 0, i32 1
   %ty = load ptr, ptr %ty_ptr, align 8
   %33 = call ptr @"@std::avrac::core::vtype_fn_ret"(ptr %ty)
@@ -233768,7 +233769,7 @@ march_arm117:                                     ; preds = %march_next104
   br label %match_end
 
 march_next118:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18360, i64 %tag, ptr @mu_file.18361, i64 1395)
+  call void @avra_match_unreachable(ptr @.match_fn.18360, i64 %tag, ptr @mu_file.18361, i64 1396)
   unreachable
 }
 
@@ -233802,7 +233803,7 @@ entry:
   %cast = ptrtoint ptr %o3 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18362, i64 2, ptr @sty_name.18363, i64 31, i64 %null_ext, ptr @src_file.18364, i64 0, i64 1446)
+  call void @avra_null_deref_trap(ptr @fld_name.18362, i64 2, ptr @sty_name.18363, i64 31, i64 %null_ext, ptr @src_file.18364, i64 0, i64 1447)
   %tc_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %o3, i32 0, i32 0
   %tc4 = load ptr, ptr %tc_ptr, align 8
   %args5 = load ptr, ptr %args, align 8
@@ -233812,7 +233813,7 @@ entry:
   %cast7 = ptrtoint ptr %o6 to i64
   %null_chk8 = icmp eq i64 %cast7, 0
   %null_ext9 = zext i1 %null_chk8 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18365, i64 2, ptr @sty_name.18366, i64 31, i64 %null_ext9, ptr @src_file.18367, i64 0, i64 1449)
+  call void @avra_null_deref_trap(ptr @fld_name.18365, i64 2, ptr @sty_name.18366, i64 31, i64 %null_ext9, ptr @src_file.18367, i64 0, i64 1450)
   %ty_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %o6, i32 0, i32 1
   %ty = load ptr, ptr %ty_ptr, align 8
   %6 = call ptr @avra_rc_alloc(i64 16)
@@ -233832,7 +233833,7 @@ ifcont:                                           ; preds = %if_else, %pmatch_en
   %cast86 = ptrtoint ptr %o85 to i64
   %null_chk87 = icmp eq i64 %cast86, 0
   %null_ext88 = zext i1 %null_chk87 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18385, i64 2, ptr @sty_name.18386, i64 31, i64 %null_ext88, ptr @src_file.18387, i64 0, i64 1463)
+  call void @avra_null_deref_trap(ptr @fld_name.18385, i64 2, ptr @sty_name.18386, i64 31, i64 %null_ext88, ptr @src_file.18387, i64 0, i64 1464)
   %ty_ptr89 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %o85, i32 0, i32 1
   %ty90 = load ptr, ptr %ty_ptr89, align 8
   %8 = call ptr @avra_rc_alloc(i64 16)
@@ -233992,7 +233993,7 @@ parm_body82:                                      ; preds = %parm_next70
   br label %pmatch_end
 
 parm_next83:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18383, i64 -1, ptr @mu_file.18384, i64 1450)
+  call void @avra_match_unreachable(ptr @.match_fn.18383, i64 -1, ptr @mu_file.18384, i64 1451)
   unreachable
 
 ifcont96:                                         ; preds = %if_else99, %pmatch_end101
@@ -234000,7 +234001,7 @@ ifcont96:                                         ; preds = %if_else99, %pmatch_
   %cast140 = ptrtoint ptr %o139 to i64
   %null_chk141 = icmp eq i64 %cast140, 0
   %null_ext142 = zext i1 %null_chk141 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18395, i64 2, ptr @sty_name.18396, i64 31, i64 %null_ext142, ptr @src_file.18397, i64 0, i64 1473)
+  call void @avra_null_deref_trap(ptr @fld_name.18395, i64 2, ptr @sty_name.18396, i64 31, i64 %null_ext142, ptr @src_file.18397, i64 0, i64 1474)
   %ty_ptr143 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %o139, i32 0, i32 1
   %ty144 = load ptr, ptr %ty_ptr143, align 8
   %tag_ptr145 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %ty144, i32 0, i32 0
@@ -234089,7 +234090,7 @@ parm_body136:                                     ; preds = %parm_next128
   br label %pmatch_end101
 
 parm_next137:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18393, i64 -1, ptr @mu_file.18394, i64 1464)
+  call void @avra_match_unreachable(ptr @.match_fn.18393, i64 -1, ptr @mu_file.18394, i64 1465)
   unreachable
 
 ifcont146:                                        ; preds = %if_else149
@@ -234097,7 +234098,7 @@ ifcont146:                                        ; preds = %if_else149
   %cast160 = ptrtoint ptr %o159 to i64
   %null_chk161 = icmp eq i64 %cast160, 0
   %null_ext162 = zext i1 %null_chk161 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18401, i64 2, ptr @sty_name.18402, i64 31, i64 %null_ext162, ptr @src_file.18403, i64 0, i64 1478)
+  call void @avra_null_deref_trap(ptr @fld_name.18401, i64 2, ptr @sty_name.18402, i64 31, i64 %null_ext162, ptr @src_file.18403, i64 0, i64 1479)
   %ty_ptr163 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %o159, i32 0, i32 1
   %ty164 = load ptr, ptr %ty_ptr163, align 8
   %48 = call ptr @avra_rc_alloc(i64 16)
@@ -234118,7 +234119,7 @@ if_then148:                                       ; preds = %ifcont96
   %cast152 = ptrtoint ptr %o151 to i64
   %null_chk153 = icmp eq i64 %cast152, 0
   %null_ext154 = zext i1 %null_chk153 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18398, i64 2, ptr @sty_name.18399, i64 31, i64 %null_ext154, ptr @src_file.18400, i64 0, i64 1474)
+  call void @avra_null_deref_trap(ptr @fld_name.18398, i64 2, ptr @sty_name.18399, i64 31, i64 %null_ext154, ptr @src_file.18400, i64 0, i64 1475)
   %ty_ptr155 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %o151, i32 0, i32 1
   %ty156 = load ptr, ptr %ty_ptr155, align 8
   %50 = call ptr @"@std::avrac::core::vtype_list_elem"(ptr %ty156)
@@ -234135,7 +234136,7 @@ ifcont170:                                        ; preds = %if_else173
   %cast177 = ptrtoint ptr %o176 to i64
   %null_chk178 = icmp eq i64 %cast177, 0
   %null_ext179 = zext i1 %null_chk178 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18404, i64 2, ptr @sty_name.18405, i64 31, i64 %null_ext179, ptr @src_file.18406, i64 0, i64 1484)
+  call void @avra_null_deref_trap(ptr @fld_name.18404, i64 2, ptr @sty_name.18405, i64 31, i64 %null_ext179, ptr @src_file.18406, i64 0, i64 1485)
   %ty_ptr180 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %o176, i32 0, i32 1
   %ty181 = load ptr, ptr %ty_ptr180, align 8
   %tag_ptr182 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %ty181, i32 0, i32 0
@@ -234240,7 +234241,7 @@ march_arm223:                                     ; preds = %march_next212
   br label %match_end
 
 march_next224:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18408, i64 %tag183, ptr @mu_file.18409, i64 1484)
+  call void @avra_match_unreachable(ptr @.match_fn.18408, i64 %tag183, ptr @mu_file.18409, i64 1485)
   unreachable
 
 ifcont227:                                        ; preds = %if_else230, %ifcont242
@@ -234264,7 +234265,7 @@ if_then229:                                       ; preds = %match_end
   %cast234 = ptrtoint ptr %checked_args233 to i64
   %null_chk235 = icmp eq i64 %cast234, 0
   %null_ext236 = zext i1 %null_chk235 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18410, i64 3, ptr @sty_name.18411, i64 23, i64 %null_ext236, ptr @src_file.18412, i64 0, i64 1493)
+  call void @avra_null_deref_trap(ptr @fld_name.18410, i64 3, ptr @sty_name.18411, i64 23, i64 %null_ext236, ptr @src_file.18412, i64 0, i64 1494)
   %fns_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %checked_args233, i32 0, i32 1
   %fns = load ptr, ptr %fns_ptr, align 8
   %qualified237 = load ptr, ptr %qualified, align 8
@@ -234274,7 +234275,7 @@ if_then229:                                       ; preds = %match_end
   %cast239 = ptrtoint ptr %r238 to i64
   %null_chk240 = icmp eq i64 %cast239, 0
   %null_ext241 = zext i1 %null_chk240 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18413, i64 5, ptr @sty_name.18414, i64 32, i64 %null_ext241, ptr @src_file.18415, i64 0, i64 1494)
+  call void @avra_null_deref_trap(ptr @fld_name.18413, i64 5, ptr @sty_name.18414, i64 32, i64 %null_ext241, ptr @src_file.18415, i64 0, i64 1495)
   %found_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::FnTypeFound", ptr %r238, i32 0, i32 0
   %found = load i1, ptr %found_ptr, align 8
   br i1 %found, label %if_then243, label %if_else244
@@ -234291,7 +234292,7 @@ if_then243:                                       ; preds = %if_then229
   %cast247 = ptrtoint ptr %r246 to i64
   %null_chk248 = icmp eq i64 %cast247, 0
   %null_ext249 = zext i1 %null_chk248 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18416, i64 6, ptr @sty_name.18417, i64 32, i64 %null_ext249, ptr @src_file.18418, i64 0, i64 1495)
+  call void @avra_null_deref_trap(ptr @fld_name.18416, i64 6, ptr @sty_name.18417, i64 32, i64 %null_ext249, ptr @src_file.18418, i64 0, i64 1496)
   %ret_ty_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::FnTypeFound", ptr %r246, i32 0, i32 2
   %ret_ty = load ptr, ptr %ret_ty_ptr, align 8
   %58 = call ptr @"@std::avrac::typeck::tc_er"(ptr %checked_args245, ptr %ret_ty)
@@ -234321,7 +234322,7 @@ entry:
   %cast = ptrtoint ptr %pair4 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18419, i64 2, ptr @sty_name.18420, i64 31, i64 %null_ext, ptr @src_file.18421, i64 0, i64 1511)
+  call void @avra_null_deref_trap(ptr @fld_name.18419, i64 2, ptr @sty_name.18420, i64 31, i64 %null_ext, ptr @src_file.18421, i64 0, i64 1512)
   %tc_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %pair4, i32 0, i32 0
   %tc5 = load ptr, ptr %tc_ptr, align 8
   %4 = call ptr @"@std::avrac::typeck::tc_exit"(ptr %tc5)
@@ -234331,7 +234332,7 @@ entry:
   %cast8 = ptrtoint ptr %pair7 to i64
   %null_chk9 = icmp eq i64 %cast8, 0
   %null_ext10 = zext i1 %null_chk9 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18422, i64 2, ptr @sty_name.18423, i64 31, i64 %null_ext10, ptr @src_file.18424, i64 0, i64 1512)
+  call void @avra_null_deref_trap(ptr @fld_name.18422, i64 2, ptr @sty_name.18423, i64 31, i64 %null_ext10, ptr @src_file.18424, i64 0, i64 1513)
   %ty_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %pair7, i32 0, i32 1
   %ty = load ptr, ptr %ty_ptr, align 8
   %5 = call ptr @"@std::avrac::typeck::tc_er"(ptr %after6, ptr %ty)
@@ -234407,7 +234408,7 @@ march_arm6:                                       ; preds = %march_next
   br i1 %tag_eq20, label %march_arm18, label %march_next19
 
 march_next7:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.18438, i64 %tag, ptr @mu_file.18439, i64 1518)
+  call void @avra_match_unreachable(ptr @.match_fn.18438, i64 %tag, ptr @mu_file.18439, i64 1519)
   unreachable
 
 match_end17:                                      ; preds = %march_arm51, %match_end26
@@ -234420,7 +234421,7 @@ march_arm18:                                      ; preds = %march_arm6
   %cast22 = ptrtoint ptr %ss21 to i64
   %null_chk = icmp eq i64 %cast22, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18425, i64 4, ptr @sty_name.18426, i64 24, i64 %null_ext, ptr @src_file.18427, i64 0, i64 1527)
+  call void @avra_null_deref_trap(ptr @fld_name.18425, i64 4, ptr @sty_name.18426, i64 24, i64 %null_ext, ptr @src_file.18427, i64 0, i64 1528)
   %node_ptr = getelementptr inbounds nuw %"@std::avrac::core::SStmt", ptr %ss21, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %tag_ptr23 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %node, i32 0, i32 0
@@ -234462,7 +234463,7 @@ march_arm36:                                      ; preds = %march_next28
   %cast40 = ptrtoint ptr %ss39 to i64
   %null_chk41 = icmp eq i64 %cast40, 0
   %null_ext42 = zext i1 %null_chk41 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18428, i64 4, ptr @sty_name.18429, i64 24, i64 %null_ext42, ptr @src_file.18430, i64 0, i64 1531)
+  call void @avra_null_deref_trap(ptr @fld_name.18428, i64 4, ptr @sty_name.18429, i64 24, i64 %null_ext42, ptr @src_file.18430, i64 0, i64 1532)
   %node_ptr43 = getelementptr inbounds nuw %"@std::avrac::core::SStmt", ptr %ss39, i32 0, i32 0
   %node44 = load ptr, ptr %node_ptr43, align 8
   %5 = call ptr @"@std::avrac::typeck::check_stmt"(ptr %tc38, ptr %node44)
@@ -234481,7 +234482,7 @@ march_arm36:                                      ; preds = %march_next28
   br label %match_end26
 
 march_next37:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18431, i64 %tag24, ptr @mu_file.18432, i64 1527)
+  call void @avra_match_unreachable(ptr @.match_fn.18431, i64 %tag24, ptr @mu_file.18432, i64 1528)
   unreachable
 
 march_arm51:                                      ; preds = %march_next19
@@ -234490,7 +234491,7 @@ march_arm51:                                      ; preds = %march_next19
   %cast55 = ptrtoint ptr %ss54 to i64
   %null_chk56 = icmp eq i64 %cast55, 0
   %null_ext57 = zext i1 %null_chk56 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18433, i64 4, ptr @sty_name.18434, i64 24, i64 %null_ext57, ptr @src_file.18435, i64 0, i64 1538)
+  call void @avra_null_deref_trap(ptr @fld_name.18433, i64 4, ptr @sty_name.18434, i64 24, i64 %null_ext57, ptr @src_file.18435, i64 0, i64 1539)
   %node_ptr58 = getelementptr inbounds nuw %"@std::avrac::core::SStmt", ptr %ss54, i32 0, i32 0
   %node59 = load ptr, ptr %node_ptr58, align 8
   %8 = call ptr @"@std::avrac::typeck::check_stmt"(ptr %tc53, ptr %node59)
@@ -234503,7 +234504,7 @@ march_arm51:                                      ; preds = %march_next19
   br label %match_end17
 
 march_next52:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18436, i64 %tag15, ptr @mu_file.18437, i64 1522)
+  call void @avra_match_unreachable(ptr @.match_fn.18436, i64 %tag15, ptr @mu_file.18437, i64 1523)
   unreachable
 }
 
@@ -234561,7 +234562,7 @@ march_arm3:                                       ; preds = %march_next
   %cast12 = ptrtoint ptr %se11 to i64
   %null_chk = icmp eq i64 %cast12, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18440, i64 4, ptr @sty_name.18441, i64 24, i64 %null_ext, ptr @src_file.18442, i64 0, i64 1556)
+  call void @avra_null_deref_trap(ptr @fld_name.18440, i64 4, ptr @sty_name.18441, i64 24, i64 %null_ext, ptr @src_file.18442, i64 0, i64 1557)
   %node_ptr = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %se11, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %2 = call ptr @"@std::avrac::typeck::check_expr"(ptr %tc10, ptr %node)
@@ -234570,7 +234571,7 @@ march_arm3:                                       ; preds = %march_next
   %cast14 = ptrtoint ptr %r13 to i64
   %null_chk15 = icmp eq i64 %cast14, 0
   %null_ext16 = zext i1 %null_chk15 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18443, i64 2, ptr @sty_name.18444, i64 31, i64 %null_ext16, ptr @src_file.18445, i64 0, i64 1557)
+  call void @avra_null_deref_trap(ptr @fld_name.18443, i64 2, ptr @sty_name.18444, i64 31, i64 %null_ext16, ptr @src_file.18445, i64 0, i64 1558)
   %tc_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r13, i32 0, i32 0
   %tc17 = load ptr, ptr %tc_ptr, align 8
   %next18 = load ptr, ptr %next9, align 8
@@ -234580,7 +234581,7 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.18446, i64 %tag, ptr @mu_file.18447, i64 1552)
+  call void @avra_match_unreachable(ptr @.match_fn.18446, i64 %tag, ptr @mu_file.18447, i64 1553)
   unreachable
 }
 
@@ -234651,7 +234652,7 @@ march_arm7:                                       ; preds = %march_next
   %cast16 = ptrtoint ptr %se15 to i64
   %null_chk = icmp eq i64 %cast16, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18448, i64 4, ptr @sty_name.18449, i64 24, i64 %null_ext, ptr @src_file.18450, i64 0, i64 1577)
+  call void @avra_null_deref_trap(ptr @fld_name.18448, i64 4, ptr @sty_name.18449, i64 24, i64 %null_ext, ptr @src_file.18450, i64 0, i64 1578)
   %node_ptr = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %se15, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %4 = call ptr @"@std::avrac::typeck::check_expr"(ptr %tc14, ptr %node)
@@ -234660,7 +234661,7 @@ march_arm7:                                       ; preds = %march_next
   %cast18 = ptrtoint ptr %r17 to i64
   %null_chk19 = icmp eq i64 %cast18, 0
   %null_ext20 = zext i1 %null_chk19 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18451, i64 2, ptr @sty_name.18452, i64 31, i64 %null_ext20, ptr @src_file.18453, i64 0, i64 1578)
+  call void @avra_null_deref_trap(ptr @fld_name.18451, i64 2, ptr @sty_name.18452, i64 31, i64 %null_ext20, ptr @src_file.18453, i64 0, i64 1579)
   %tc_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r17, i32 0, i32 0
   %tc21 = load ptr, ptr %tc_ptr, align 8
   %next22 = load ptr, ptr %next13, align 8
@@ -234671,7 +234672,7 @@ march_arm7:                                       ; preds = %march_next
   %cast24 = ptrtoint ptr %rest23 to i64
   %null_chk25 = icmp eq i64 %cast24, 0
   %null_ext26 = zext i1 %null_chk25 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18454, i64 2, ptr @sty_name.18455, i64 35, i64 %null_ext26, ptr @src_file.18456, i64 0, i64 1579)
+  call void @avra_null_deref_trap(ptr @fld_name.18454, i64 2, ptr @sty_name.18455, i64 35, i64 %null_ext26, ptr @src_file.18456, i64 0, i64 1580)
   %tc_ptr27 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprListResult", ptr %rest23, i32 0, i32 0
   %tc28 = load ptr, ptr %tc_ptr27, align 8
   %fld_ptr29 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprListResult", ptr %6, i32 0, i32 0
@@ -234686,7 +234687,7 @@ march_arm7:                                       ; preds = %march_next
   %cast33 = ptrtoint ptr %r32 to i64
   %null_chk34 = icmp eq i64 %cast33, 0
   %null_ext35 = zext i1 %null_chk34 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18457, i64 2, ptr @sty_name.18458, i64 31, i64 %null_ext35, ptr @src_file.18459, i64 0, i64 1579)
+  call void @avra_null_deref_trap(ptr @fld_name.18457, i64 2, ptr @sty_name.18458, i64 31, i64 %null_ext35, ptr @src_file.18459, i64 0, i64 1580)
   %ty_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r32, i32 0, i32 1
   %ty = load ptr, ptr %ty_ptr, align 8
   %slot_base = ptrtoint ptr %8 to i64
@@ -234697,7 +234698,7 @@ march_arm7:                                       ; preds = %march_next
   %cast37 = ptrtoint ptr %rest36 to i64
   %null_chk38 = icmp eq i64 %cast37, 0
   %null_ext39 = zext i1 %null_chk38 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18460, i64 5, ptr @sty_name.18461, i64 35, i64 %null_ext39, ptr @src_file.18462, i64 0, i64 1579)
+  call void @avra_null_deref_trap(ptr @fld_name.18460, i64 5, ptr @sty_name.18461, i64 35, i64 %null_ext39, ptr @src_file.18462, i64 0, i64 1580)
   %types_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::ExprListResult", ptr %rest36, i32 0, i32 1
   %types = load ptr, ptr %types_ptr, align 8
   %slot_base40 = ptrtoint ptr %8 to i64
@@ -234713,7 +234714,7 @@ march_arm7:                                       ; preds = %march_next
   br label %match_end
 
 march_next8:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.18463, i64 %tag, ptr @mu_file.18464, i64 1573)
+  call void @avra_match_unreachable(ptr @.match_fn.18463, i64 %tag, ptr @mu_file.18464, i64 1574)
   unreachable
 }
 
@@ -234778,7 +234779,7 @@ ife_else:                                         ; preds = %entry
   %cast7 = ptrtoint ptr %r6 to i64
   %null_chk = icmp eq i64 %cast7, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18465, i64 2, ptr @sty_name.18466, i64 31, i64 %null_ext, ptr @src_file.18467, i64 0, i64 1600)
+  call void @avra_null_deref_trap(ptr @fld_name.18465, i64 2, ptr @sty_name.18466, i64 31, i64 %null_ext, ptr @src_file.18467, i64 0, i64 1601)
   %ty_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %r6, i32 0, i32 1
   %ty = load ptr, ptr %ty_ptr, align 8
   %cast8 = ptrtoint ptr %ty to i64
@@ -234821,9 +234822,9 @@ match_end:                                        ; preds = %match_end22, %march
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -234855,7 +234856,7 @@ march_arm3:                                       ; preds = %march_next
   %cast12 = ptrtoint ptr %ss11 to i64
   %null_chk = icmp eq i64 %cast12, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18468, i64 4, ptr @sty_name.18469, i64 24, i64 %null_ext, ptr @src_file.18470, i64 0, i64 1611)
+  call void @avra_null_deref_trap(ptr @fld_name.18468, i64 4, ptr @sty_name.18469, i64 24, i64 %null_ext, ptr @src_file.18470, i64 0, i64 1612)
   %node_ptr = getelementptr inbounds nuw %"@std::avrac::core::SStmt", ptr %ss11, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %3 = call ptr @"@std::avrac::typeck::annotate_stmt"(ptr %tc10, ptr %node)
@@ -234864,7 +234865,7 @@ march_arm3:                                       ; preds = %march_next
   %cast14 = ptrtoint ptr %ss13 to i64
   %null_chk15 = icmp eq i64 %cast14, 0
   %null_ext16 = zext i1 %null_chk15 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18471, i64 4, ptr @sty_name.18472, i64 24, i64 %null_ext16, ptr @src_file.18473, i64 0, i64 1612)
+  call void @avra_null_deref_trap(ptr @fld_name.18471, i64 4, ptr @sty_name.18472, i64 24, i64 %null_ext16, ptr @src_file.18473, i64 0, i64 1613)
   %node_ptr17 = getelementptr inbounds nuw %"@std::avrac::core::SStmt", ptr %ss13, i32 0, i32 0
   %node18 = load ptr, ptr %node_ptr17, align 8
   %tag_ptr19 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %node18, i32 0, i32 0
@@ -234874,7 +234875,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq25, label %march_arm23, label %march_next24
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.18482, i64 %tag, ptr @mu_file.18483, i64 1607)
+  call void @avra_match_unreachable(ptr @.match_fn.18482, i64 %tag, ptr @mu_file.18483, i64 1608)
   unreachable
 
 match_end22:                                      ; preds = %march_arm98, %march_arm69, %march_arm40, %march_arm23
@@ -234892,14 +234893,14 @@ match_end22:                                      ; preds = %march_arm98, %march
   %cast107 = ptrtoint ptr %ss106 to i64
   %null_chk108 = icmp eq i64 %cast107, 0
   %null_ext109 = zext i1 %null_chk108 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18476, i64 4, ptr @sty_name.18477, i64 24, i64 %null_ext109, ptr @src_file.18478, i64 0, i64 1618)
+  call void @avra_null_deref_trap(ptr @fld_name.18476, i64 4, ptr @sty_name.18477, i64 24, i64 %null_ext109, ptr @src_file.18478, i64 0, i64 1619)
   %line_ptr = getelementptr inbounds nuw %"@std::avrac::core::SStmt", ptr %ss106, i32 0, i32 1
   %line = load i64, ptr %line_ptr, align 8
   %ss110 = load ptr, ptr %ss6, align 8
   %cast111 = ptrtoint ptr %ss110 to i64
   %null_chk112 = icmp eq i64 %cast111, 0
   %null_ext113 = zext i1 %null_chk112 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18479, i64 3, ptr @sty_name.18480, i64 24, i64 %null_ext113, ptr @src_file.18481, i64 0, i64 1618)
+  call void @avra_null_deref_trap(ptr @fld_name.18479, i64 3, ptr @sty_name.18480, i64 24, i64 %null_ext113, ptr @src_file.18481, i64 0, i64 1619)
   %col_ptr = getelementptr inbounds nuw %"@std::avrac::core::SStmt", ptr %ss110, i32 0, i32 2
   %col = load i64, ptr %col_ptr, align 8
   %6 = call ptr @"@std::avrac::core::sstmt"(ptr %new_stmt105, i64 %line, i64 %col)
@@ -235038,7 +235039,7 @@ march_arm98:                                      ; preds = %march_next70
   br label %match_end22
 
 march_next99:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18474, i64 %tag20, ptr @mu_file.18475, i64 1612)
+  call void @avra_match_unreachable(ptr @.match_fn.18474, i64 %tag20, ptr @mu_file.18475, i64 1613)
   unreachable
 }
 
@@ -235343,9 +235344,9 @@ march_arm128:                                     ; preds = %march_next115
   call void @avra_rc_retain(ptr %body)
   store ptr %body, ptr %body133, align 8
   %17 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr134 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %17, i32 0, i32 0
+  %tag_ptr134 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %17, i32 0, i32 0
   store i64 210669825968, ptr %tag_ptr134, align 8
-  %pay_ptr135 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %17, i32 0, i32 1
+  %pay_ptr135 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %17, i32 0, i32 1
   %18 = call ptr @avra_rc_alloc(i64 8)
   store ptr %18, ptr %pay_ptr135, align 8
   %tc136 = load ptr, ptr %tc, align 8
@@ -235874,9 +235875,9 @@ march_arm420:                                     ; preds = %march_next400
   call void @avra_rc_retain(ptr %methods)
   store ptr %methods, ptr %methods432, align 8
   %56 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr433 = getelementptr inbounds nuw %"@std::lsp::SymKind", ptr %56, i32 0, i32 0
+  %tag_ptr433 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %56, i32 0, i32 0
   store i64 6384186807, ptr %tag_ptr433, align 8
-  %pay_ptr434 = getelementptr inbounds nuw %"@std::lsp::SymKind", ptr %56, i32 0, i32 1
+  %pay_ptr434 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %56, i32 0, i32 1
   %57 = call ptr @avra_rc_alloc(i64 16)
   store ptr %57, ptr %pay_ptr434, align 8
   %name435 = load ptr, ptr %name429, align 8
@@ -236051,7 +236052,7 @@ march_arm535:                                     ; preds = %march_next518
   br label %match_end
 
 march_next536:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18484, i64 %tag, ptr @mu_file.18485, i64 1625)
+  call void @avra_match_unreachable(ptr @.match_fn.18484, i64 %tag, ptr @mu_file.18485, i64 1626)
   unreachable
 }
 
@@ -236428,9 +236429,9 @@ march_arm140:                                     ; preds = %march_next127
   call void @avra_rc_retain(ptr %elems148)
   store ptr %elems148, ptr %elems149, align 8
   %23 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr150 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %23, i32 0, i32 0
+  %tag_ptr150 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %23, i32 0, i32 0
   store i64 210691497359, ptr %tag_ptr150, align 8
-  %pay_ptr151 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %23, i32 0, i32 1
+  %pay_ptr151 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %23, i32 0, i32 1
   %24 = call ptr @avra_rc_alloc(i64 8)
   store ptr %24, ptr %pay_ptr151, align 8
   %tc152 = load ptr, ptr %tc, align 8
@@ -236533,9 +236534,9 @@ march_arm198:                                     ; preds = %march_next173
   call void @avra_rc_retain(ptr %body)
   store ptr %body, ptr %body203, align 8
   %33 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr204 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %33, i32 0, i32 0
+  %tag_ptr204 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %33, i32 0, i32 0
   store i64 210669825968, ptr %tag_ptr204, align 8
-  %pay_ptr205 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %33, i32 0, i32 1
+  %pay_ptr205 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %33, i32 0, i32 1
   %34 = call ptr @avra_rc_alloc(i64 8)
   store ptr %34, ptr %pay_ptr205, align 8
   %tc206 = load ptr, ptr %tc, align 8
@@ -237610,7 +237611,7 @@ march_arm833:                                     ; preds = %march_next816
   br label %match_end
 
 march_next834:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18486, i64 %tag, ptr @mu_file.18487, i64 1661)
+  call void @avra_match_unreachable(ptr @.match_fn.18486, i64 %tag, ptr @mu_file.18487, i64 1662)
   unreachable
 }
 
@@ -237653,7 +237654,7 @@ entry:
   %cast = ptrtoint ptr %se2 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18488, i64 4, ptr @sty_name.18489, i64 24, i64 %null_ext, ptr @src_file.18490, i64 0, i64 1708)
+  call void @avra_null_deref_trap(ptr @fld_name.18488, i64 4, ptr @sty_name.18489, i64 24, i64 %null_ext, ptr @src_file.18490, i64 0, i64 1709)
   %node_ptr = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %se2, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %2 = call ptr @"@std::avrac::typeck::annotate_expr"(ptr %tc1, ptr %node)
@@ -237674,14 +237675,14 @@ match_end:                                        ; preds = %march_arm483, %matc
   %cast503 = ptrtoint ptr %se502 to i64
   %null_chk504 = icmp eq i64 %cast503, 0
   %null_ext505 = zext i1 %null_chk504 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18567, i64 4, ptr @sty_name.18568, i64 24, i64 %null_ext505, ptr @src_file.18569, i64 0, i64 1808)
+  call void @avra_null_deref_trap(ptr @fld_name.18567, i64 4, ptr @sty_name.18568, i64 24, i64 %null_ext505, ptr @src_file.18569, i64 0, i64 1809)
   %line_ptr = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %se502, i32 0, i32 1
   %line = load i64, ptr %line_ptr, align 8
   %se506 = load ptr, ptr %se, align 8
   %cast507 = ptrtoint ptr %se506 to i64
   %null_chk508 = icmp eq i64 %cast507, 0
   %null_ext509 = zext i1 %null_chk508 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18570, i64 3, ptr @sty_name.18571, i64 24, i64 %null_ext509, ptr @src_file.18572, i64 0, i64 1808)
+  call void @avra_null_deref_trap(ptr @fld_name.18570, i64 3, ptr @sty_name.18571, i64 24, i64 %null_ext509, ptr @src_file.18572, i64 0, i64 1809)
   %col_ptr = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %se506, i32 0, i32 2
   %col = load i64, ptr %col_ptr, align 8
   %ty510 = load ptr, ptr %ty499, align 8
@@ -237771,7 +237772,7 @@ march_arm30:                                      ; preds = %march_next25
   %cast35 = ptrtoint ptr %tc34 to i64
   %null_chk36 = icmp eq i64 %cast35, 0
   %null_ext37 = zext i1 %null_chk36 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18491, i64 5, ptr @sty_name.18492, i64 23, i64 %null_ext37, ptr @src_file.18493, i64 0, i64 1711)
+  call void @avra_null_deref_trap(ptr @fld_name.18491, i64 5, ptr @sty_name.18492, i64 23, i64 %null_ext37, ptr @src_file.18493, i64 0, i64 1712)
   %types_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc34, i32 0, i32 0
   %types = load ptr, ptr %types_ptr, align 8
   %name38 = load ptr, ptr %name33, align 8
@@ -238002,7 +238003,7 @@ march_arm134:                                     ; preds = %march_arm123
   %cast145 = ptrtoint ptr %tc144 to i64
   %null_chk146 = icmp eq i64 %cast145, 0
   %null_ext147 = zext i1 %null_chk146 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18494, i64 3, ptr @sty_name.18495, i64 23, i64 %null_ext147, ptr @src_file.18496, i64 0, i64 1711)
+  call void @avra_null_deref_trap(ptr @fld_name.18494, i64 3, ptr @sty_name.18495, i64 23, i64 %null_ext147, ptr @src_file.18496, i64 0, i64 1712)
   %fns_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc144, i32 0, i32 1
   %fns = load ptr, ptr %fns_ptr, align 8
   %name148 = load ptr, ptr %name143, align 8
@@ -238010,7 +238011,7 @@ march_arm134:                                     ; preds = %march_arm123
   %cast149 = ptrtoint ptr %12 to i64
   %null_chk150 = icmp eq i64 %cast149, 0
   %null_ext151 = zext i1 %null_chk150 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18497, i64 6, ptr @sty_name.18498, i64 32, i64 %null_ext151, ptr @src_file.18499, i64 0, i64 1711)
+  call void @avra_null_deref_trap(ptr @fld_name.18497, i64 6, ptr @sty_name.18498, i64 32, i64 %null_ext151, ptr @src_file.18499, i64 0, i64 1712)
   %ret_ty_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::FnTypeFound", ptr %12, i32 0, i32 2
   %ret_ty = load ptr, ptr %ret_ty_ptr, align 8
   %cast152 = ptrtoint ptr %ret_ty to i64
@@ -238026,14 +238027,14 @@ march_arm153:                                     ; preds = %march_next135
   %cast157 = ptrtoint ptr %se156 to i64
   %null_chk158 = icmp eq i64 %cast157, 0
   %null_ext159 = zext i1 %null_chk158 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18500, i64 4, ptr @sty_name.18501, i64 24, i64 %null_ext159, ptr @src_file.18502, i64 0, i64 1711)
+  call void @avra_null_deref_trap(ptr @fld_name.18500, i64 4, ptr @sty_name.18501, i64 24, i64 %null_ext159, ptr @src_file.18502, i64 0, i64 1712)
   %node_ptr160 = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %se156, i32 0, i32 0
   %node161 = load ptr, ptr %node_ptr160, align 8
   %13 = call ptr @"@std::avrac::typeck::check_expr"(ptr %tc155, ptr %node161)
   %cast162 = ptrtoint ptr %13 to i64
   %null_chk163 = icmp eq i64 %cast162, 0
   %null_ext164 = zext i1 %null_chk163 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18503, i64 2, ptr @sty_name.18504, i64 31, i64 %null_ext164, ptr @src_file.18505, i64 0, i64 1711)
+  call void @avra_null_deref_trap(ptr @fld_name.18503, i64 2, ptr @sty_name.18504, i64 31, i64 %null_ext164, ptr @src_file.18505, i64 0, i64 1712)
   %ty_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %13, i32 0, i32 1
   %ty = load ptr, ptr %ty_ptr, align 8
   %cast165 = ptrtoint ptr %ty to i64
@@ -238041,7 +238042,7 @@ march_arm153:                                     ; preds = %march_next135
   br label %match_end133
 
 march_next154:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18506, i64 %tag131, ptr @mu_file.18507, i64 1711)
+  call void @avra_match_unreachable(ptr @.match_fn.18506, i64 %tag131, ptr @mu_file.18507, i64 1712)
   unreachable
 
 march_arm166:                                     ; preds = %march_next124
@@ -238135,14 +238136,14 @@ sif_else:                                         ; preds = %march_arm183
   %cast213 = ptrtoint ptr %se212 to i64
   %null_chk214 = icmp eq i64 %cast213, 0
   %null_ext215 = zext i1 %null_chk214 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18509, i64 4, ptr @sty_name.18510, i64 24, i64 %null_ext215, ptr @src_file.18511, i64 0, i64 1732)
+  call void @avra_null_deref_trap(ptr @fld_name.18509, i64 4, ptr @sty_name.18510, i64 24, i64 %null_ext215, ptr @src_file.18511, i64 0, i64 1733)
   %node_ptr216 = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %se212, i32 0, i32 0
   %node217 = load ptr, ptr %node_ptr216, align 8
   %20 = call ptr @"@std::avrac::typeck::check_expr"(ptr %tc211, ptr %node217)
   %cast218 = ptrtoint ptr %20 to i64
   %null_chk219 = icmp eq i64 %cast218, 0
   %null_ext220 = zext i1 %null_chk219 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18512, i64 2, ptr @sty_name.18513, i64 31, i64 %null_ext220, ptr @src_file.18514, i64 0, i64 1732)
+  call void @avra_null_deref_trap(ptr @fld_name.18512, i64 2, ptr @sty_name.18513, i64 31, i64 %null_ext220, ptr @src_file.18514, i64 0, i64 1733)
   %ty_ptr221 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %20, i32 0, i32 1
   %ty222 = load ptr, ptr %ty_ptr221, align 8
   %cast223 = ptrtoint ptr %ty222 to i64
@@ -238399,7 +238400,7 @@ march_arm328:                                     ; preds = %march_arm314
   %cast335 = ptrtoint ptr %tc334 to i64
   %null_chk336 = icmp eq i64 %cast335, 0
   %null_ext337 = zext i1 %null_chk336 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18515, i64 5, ptr @sty_name.18516, i64 23, i64 %null_ext337, ptr @src_file.18517, i64 0, i64 1770)
+  call void @avra_null_deref_trap(ptr @fld_name.18515, i64 5, ptr @sty_name.18516, i64 23, i64 %null_ext337, ptr @src_file.18517, i64 0, i64 1771)
   %types_ptr338 = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc334, i32 0, i32 0
   %types339 = load ptr, ptr %types_ptr338, align 8
   %obj_name340 = load ptr, ptr %obj_name333, align 8
@@ -238426,14 +238427,14 @@ sif_then347:                                      ; preds = %march_arm328
   %cast353 = ptrtoint ptr %se352 to i64
   %null_chk354 = icmp eq i64 %cast353, 0
   %null_ext355 = zext i1 %null_chk354 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18519, i64 4, ptr @sty_name.18520, i64 24, i64 %null_ext355, ptr @src_file.18521, i64 0, i64 1773)
+  call void @avra_null_deref_trap(ptr @fld_name.18519, i64 4, ptr @sty_name.18520, i64 24, i64 %null_ext355, ptr @src_file.18521, i64 0, i64 1774)
   %node_ptr356 = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %se352, i32 0, i32 0
   %node357 = load ptr, ptr %node_ptr356, align 8
   %41 = call ptr @"@std::avrac::typeck::check_expr"(ptr %tc351, ptr %node357)
   %cast358 = ptrtoint ptr %41 to i64
   %null_chk359 = icmp eq i64 %cast358, 0
   %null_ext360 = zext i1 %null_chk359 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18522, i64 2, ptr @sty_name.18523, i64 31, i64 %null_ext360, ptr @src_file.18524, i64 0, i64 1773)
+  call void @avra_null_deref_trap(ptr @fld_name.18522, i64 2, ptr @sty_name.18523, i64 31, i64 %null_ext360, ptr @src_file.18524, i64 0, i64 1774)
   %ty_ptr361 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %41, i32 0, i32 1
   %ty362 = load ptr, ptr %ty_ptr361, align 8
   %cast363 = ptrtoint ptr %ty362 to i64
@@ -238445,7 +238446,7 @@ sif_else348:                                      ; preds = %march_arm328
   %cast365 = ptrtoint ptr %tc364 to i64
   %null_chk366 = icmp eq i64 %cast365, 0
   %null_ext367 = zext i1 %null_chk366 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18525, i64 7, ptr @sty_name.18526, i64 23, i64 %null_ext367, ptr @src_file.18527, i64 0, i64 1775)
+  call void @avra_null_deref_trap(ptr @fld_name.18525, i64 7, ptr @sty_name.18526, i64 23, i64 %null_ext367, ptr @src_file.18527, i64 0, i64 1776)
   %structs_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc364, i32 0, i32 2
   %structs = load ptr, ptr %structs_ptr, align 8
   %sname368 = load ptr, ptr %sname, align 8
@@ -238471,14 +238472,14 @@ sif_then373:                                      ; preds = %sif_else348
   %cast379 = ptrtoint ptr %se378 to i64
   %null_chk380 = icmp eq i64 %cast379, 0
   %null_ext381 = zext i1 %null_chk380 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18528, i64 4, ptr @sty_name.18529, i64 24, i64 %null_ext381, ptr @src_file.18530, i64 0, i64 1777)
+  call void @avra_null_deref_trap(ptr @fld_name.18528, i64 4, ptr @sty_name.18529, i64 24, i64 %null_ext381, ptr @src_file.18530, i64 0, i64 1778)
   %node_ptr382 = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %se378, i32 0, i32 0
   %node383 = load ptr, ptr %node_ptr382, align 8
   %45 = call ptr @"@std::avrac::typeck::check_expr"(ptr %tc377, ptr %node383)
   %cast384 = ptrtoint ptr %45 to i64
   %null_chk385 = icmp eq i64 %cast384, 0
   %null_ext386 = zext i1 %null_chk385 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18531, i64 2, ptr @sty_name.18532, i64 31, i64 %null_ext386, ptr @src_file.18533, i64 0, i64 1777)
+  call void @avra_null_deref_trap(ptr @fld_name.18531, i64 2, ptr @sty_name.18532, i64 31, i64 %null_ext386, ptr @src_file.18533, i64 0, i64 1778)
   %ty_ptr387 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %45, i32 0, i32 1
   %ty388 = load ptr, ptr %ty_ptr387, align 8
   %cast389 = ptrtoint ptr %ty388 to i64
@@ -238502,14 +238503,14 @@ march_arm394:                                     ; preds = %march_next329
   %cast398 = ptrtoint ptr %se397 to i64
   %null_chk399 = icmp eq i64 %cast398, 0
   %null_ext400 = zext i1 %null_chk399 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18534, i64 4, ptr @sty_name.18535, i64 24, i64 %null_ext400, ptr @src_file.18536, i64 0, i64 1711)
+  call void @avra_null_deref_trap(ptr @fld_name.18534, i64 4, ptr @sty_name.18535, i64 24, i64 %null_ext400, ptr @src_file.18536, i64 0, i64 1712)
   %node_ptr401 = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %se397, i32 0, i32 0
   %node402 = load ptr, ptr %node_ptr401, align 8
   %46 = call ptr @"@std::avrac::typeck::check_expr"(ptr %tc396, ptr %node402)
   %cast403 = ptrtoint ptr %46 to i64
   %null_chk404 = icmp eq i64 %cast403, 0
   %null_ext405 = zext i1 %null_chk404 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18537, i64 2, ptr @sty_name.18538, i64 31, i64 %null_ext405, ptr @src_file.18539, i64 0, i64 1711)
+  call void @avra_null_deref_trap(ptr @fld_name.18537, i64 2, ptr @sty_name.18538, i64 31, i64 %null_ext405, ptr @src_file.18539, i64 0, i64 1712)
   %ty_ptr406 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %46, i32 0, i32 1
   %ty407 = load ptr, ptr %ty_ptr406, align 8
   %cast408 = ptrtoint ptr %ty407 to i64
@@ -238517,7 +238518,7 @@ march_arm394:                                     ; preds = %march_next329
   br label %match_end327
 
 march_next395:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18540, i64 %tag325, ptr @mu_file.18541, i64 1711)
+  call void @avra_match_unreachable(ptr @.match_fn.18540, i64 %tag325, ptr @mu_file.18541, i64 1712)
   unreachable
 
 march_arm410:                                     ; preds = %march_next315
@@ -238557,7 +238558,7 @@ march_arm425:                                     ; preds = %march_arm410
   %cast436 = ptrtoint ptr %tc435 to i64
   %null_chk437 = icmp eq i64 %cast436, 0
   %null_ext438 = zext i1 %null_chk437 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18542, i64 5, ptr @sty_name.18543, i64 23, i64 %null_ext438, ptr @src_file.18544, i64 0, i64 1791)
+  call void @avra_null_deref_trap(ptr @fld_name.18542, i64 5, ptr @sty_name.18543, i64 23, i64 %null_ext438, ptr @src_file.18544, i64 0, i64 1792)
   %types_ptr439 = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc435, i32 0, i32 0
   %types440 = load ptr, ptr %types_ptr439, align 8
   %obj_name441 = load ptr, ptr %obj_name434, align 8
@@ -238582,14 +238583,14 @@ sif_then447:                                      ; preds = %march_arm425
   %cast453 = ptrtoint ptr %se452 to i64
   %null_chk454 = icmp eq i64 %cast453, 0
   %null_ext455 = zext i1 %null_chk454 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18545, i64 4, ptr @sty_name.18546, i64 24, i64 %null_ext455, ptr @src_file.18547, i64 0, i64 1794)
+  call void @avra_null_deref_trap(ptr @fld_name.18545, i64 4, ptr @sty_name.18546, i64 24, i64 %null_ext455, ptr @src_file.18547, i64 0, i64 1795)
   %node_ptr456 = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %se452, i32 0, i32 0
   %node457 = load ptr, ptr %node_ptr456, align 8
   %50 = call ptr @"@std::avrac::typeck::check_expr"(ptr %tc451, ptr %node457)
   %cast458 = ptrtoint ptr %50 to i64
   %null_chk459 = icmp eq i64 %cast458, 0
   %null_ext460 = zext i1 %null_chk459 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18548, i64 2, ptr @sty_name.18549, i64 31, i64 %null_ext460, ptr @src_file.18550, i64 0, i64 1794)
+  call void @avra_null_deref_trap(ptr @fld_name.18548, i64 2, ptr @sty_name.18549, i64 31, i64 %null_ext460, ptr @src_file.18550, i64 0, i64 1795)
   %ty_ptr461 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %50, i32 0, i32 1
   %ty462 = load ptr, ptr %ty_ptr461, align 8
   %cast463 = ptrtoint ptr %ty462 to i64
@@ -238613,14 +238614,14 @@ march_arm467:                                     ; preds = %march_next426
   %cast471 = ptrtoint ptr %se470 to i64
   %null_chk472 = icmp eq i64 %cast471, 0
   %null_ext473 = zext i1 %null_chk472 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18551, i64 4, ptr @sty_name.18552, i64 24, i64 %null_ext473, ptr @src_file.18553, i64 0, i64 1711)
+  call void @avra_null_deref_trap(ptr @fld_name.18551, i64 4, ptr @sty_name.18552, i64 24, i64 %null_ext473, ptr @src_file.18553, i64 0, i64 1712)
   %node_ptr474 = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %se470, i32 0, i32 0
   %node475 = load ptr, ptr %node_ptr474, align 8
   %51 = call ptr @"@std::avrac::typeck::check_expr"(ptr %tc469, ptr %node475)
   %cast476 = ptrtoint ptr %51 to i64
   %null_chk477 = icmp eq i64 %cast476, 0
   %null_ext478 = zext i1 %null_chk477 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18554, i64 2, ptr @sty_name.18555, i64 31, i64 %null_ext478, ptr @src_file.18556, i64 0, i64 1711)
+  call void @avra_null_deref_trap(ptr @fld_name.18554, i64 2, ptr @sty_name.18555, i64 31, i64 %null_ext478, ptr @src_file.18556, i64 0, i64 1712)
   %ty_ptr479 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %51, i32 0, i32 1
   %ty480 = load ptr, ptr %ty_ptr479, align 8
   %cast481 = ptrtoint ptr %ty480 to i64
@@ -238628,7 +238629,7 @@ march_arm467:                                     ; preds = %march_next426
   br label %match_end424
 
 march_next468:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18557, i64 %tag422, ptr @mu_file.18558, i64 1711)
+  call void @avra_match_unreachable(ptr @.match_fn.18557, i64 %tag422, ptr @mu_file.18558, i64 1712)
   unreachable
 
 march_arm483:                                     ; preds = %march_next411
@@ -238637,14 +238638,14 @@ march_arm483:                                     ; preds = %march_next411
   %cast487 = ptrtoint ptr %se486 to i64
   %null_chk488 = icmp eq i64 %cast487, 0
   %null_ext489 = zext i1 %null_chk488 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18559, i64 4, ptr @sty_name.18560, i64 24, i64 %null_ext489, ptr @src_file.18561, i64 0, i64 1711)
+  call void @avra_null_deref_trap(ptr @fld_name.18559, i64 4, ptr @sty_name.18560, i64 24, i64 %null_ext489, ptr @src_file.18561, i64 0, i64 1712)
   %node_ptr490 = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %se486, i32 0, i32 0
   %node491 = load ptr, ptr %node_ptr490, align 8
   %52 = call ptr @"@std::avrac::typeck::check_expr"(ptr %tc485, ptr %node491)
   %cast492 = ptrtoint ptr %52 to i64
   %null_chk493 = icmp eq i64 %cast492, 0
   %null_ext494 = zext i1 %null_chk493 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18562, i64 2, ptr @sty_name.18563, i64 31, i64 %null_ext494, ptr @src_file.18564, i64 0, i64 1711)
+  call void @avra_null_deref_trap(ptr @fld_name.18562, i64 2, ptr @sty_name.18563, i64 31, i64 %null_ext494, ptr @src_file.18564, i64 0, i64 1712)
   %ty_ptr495 = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %52, i32 0, i32 1
   %ty496 = load ptr, ptr %ty_ptr495, align 8
   %cast497 = ptrtoint ptr %ty496 to i64
@@ -238652,7 +238653,7 @@ march_arm483:                                     ; preds = %march_next411
   br label %match_end
 
 march_next484:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18565, i64 %tag, ptr @mu_file.18566, i64 1711)
+  call void @avra_match_unreachable(ptr @.match_fn.18565, i64 %tag, ptr @mu_file.18566, i64 1712)
   unreachable
 }
 
@@ -238759,7 +238760,7 @@ march_arm27:                                      ; preds = %march_next22
   %cast32 = ptrtoint ptr %tc31 to i64
   %null_chk = icmp eq i64 %cast32, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18573, i64 5, ptr @sty_name.18574, i64 23, i64 %null_ext, ptr @src_file.18575, i64 0, i64 1815)
+  call void @avra_null_deref_trap(ptr @fld_name.18573, i64 5, ptr @sty_name.18574, i64 23, i64 %null_ext, ptr @src_file.18575, i64 0, i64 1816)
   %types_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc31, i32 0, i32 0
   %types = load ptr, ptr %types_ptr, align 8
   %name33 = load ptr, ptr %name30, align 8
@@ -238817,7 +238818,7 @@ march_arm50:                                      ; preds = %march_next46
   %cast54 = ptrtoint ptr %11 to i64
   %null_chk55 = icmp eq i64 %cast54, 0
   %null_ext56 = zext i1 %null_chk55 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18576, i64 2, ptr @sty_name.18577, i64 31, i64 %null_ext56, ptr @src_file.18578, i64 0, i64 1815)
+  call void @avra_null_deref_trap(ptr @fld_name.18576, i64 2, ptr @sty_name.18577, i64 31, i64 %null_ext56, ptr @src_file.18578, i64 0, i64 1816)
   %ty_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::ExprResult", ptr %11, i32 0, i32 1
   %ty = load ptr, ptr %ty_ptr, align 8
   %cast57 = ptrtoint ptr %ty to i64
@@ -238825,7 +238826,7 @@ march_arm50:                                      ; preds = %march_next46
   br label %match_end
 
 march_next51:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18579, i64 %tag, ptr @mu_file.18580, i64 1815)
+  call void @avra_match_unreachable(ptr @.match_fn.18579, i64 %tag, ptr @mu_file.18580, i64 1816)
   unreachable
 }
 
@@ -238852,9 +238853,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -238906,7 +238907,7 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.18581, i64 %tag, ptr @mu_file.18582, i64 1831)
+  call void @avra_match_unreachable(ptr @.match_fn.18581, i64 %tag, ptr @mu_file.18582, i64 1832)
   unreachable
 }
 
@@ -238937,9 +238938,9 @@ match_end:                                        ; preds = %ife_end, %march_arm
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -238989,7 +238990,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.18583, i64 %tag, ptr @mu_file.18584, i64 1840)
+  call void @avra_match_unreachable(ptr @.match_fn.18583, i64 %tag, ptr @mu_file.18584, i64 1841)
   unreachable
 
 ife_end:                                          ; preds = %ife_else, %ife_then
@@ -239067,9 +239068,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -239134,7 +239135,7 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.18585, i64 %tag, ptr @mu_file.18586, i64 1852)
+  call void @avra_match_unreachable(ptr @.match_fn.18585, i64 %tag, ptr @mu_file.18586, i64 1853)
   unreachable
 }
 
@@ -239164,9 +239165,9 @@ match_end:                                        ; preds = %ife_end, %march_arm
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -239208,7 +239209,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.18587, i64 %tag, ptr @mu_file.18588, i64 1860)
+  call void @avra_match_unreachable(ptr @.match_fn.18587, i64 %tag, ptr @mu_file.18588, i64 1861)
   unreachable
 
 ife_end:                                          ; preds = %ife_else, %ife_then
@@ -239944,7 +239945,7 @@ entry:
   %cast55 = ptrtoint ptr %tc54 to i64
   %null_chk = icmp eq i64 %cast55, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18603, i64 3, ptr @sty_name.18604, i64 23, i64 %null_ext, ptr @src_file.18605, i64 0, i64 1943)
+  call void @avra_null_deref_trap(ptr @fld_name.18603, i64 3, ptr @sty_name.18604, i64 23, i64 %null_ext, ptr @src_file.18605, i64 0, i64 1944)
   %bag_ptr = getelementptr inbounds nuw %"@std::avrac::typeck::TC", ptr %tc54, i32 0, i32 8
   %bag = load ptr, ptr %bag_ptr, align 8
   %d56 = load ptr, ptr %d, align 8
@@ -240010,7 +240011,7 @@ march_arm3:                                       ; preds = %march_next
   %cast12 = ptrtoint ptr %ss11 to i64
   %null_chk = icmp eq i64 %cast12, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.18606, i64 4, ptr @sty_name.18607, i64 24, i64 %null_ext, ptr @src_file.18608, i64 0, i64 1953)
+  call void @avra_null_deref_trap(ptr @fld_name.18606, i64 4, ptr @sty_name.18607, i64 24, i64 %null_ext, ptr @src_file.18608, i64 0, i64 1954)
   %node_ptr = getelementptr inbounds nuw %"@std::avrac::core::SStmt", ptr %ss11, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %2 = call ptr @"@std::avrac::typeck::check_naming_stmt"(ptr %tc10, ptr %node)
@@ -240023,7 +240024,7 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.18609, i64 %tag, ptr @mu_file.18610, i64 1949)
+  call void @avra_match_unreachable(ptr @.match_fn.18609, i64 %tag, ptr @mu_file.18610, i64 1950)
   unreachable
 }
 
@@ -240727,7 +240728,7 @@ march_arm329:                                     ; preds = %march_next321
   br label %match_end
 
 march_next330:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18626, i64 %tag, ptr @mu_file.18627, i64 1963)
+  call void @avra_match_unreachable(ptr @.match_fn.18626, i64 %tag, ptr @mu_file.18627, i64 1964)
   unreachable
 }
 
@@ -248412,9 +248413,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -248442,9 +248443,9 @@ march_arm3:                                       ; preds = %march_next
   call void @avra_rc_retain(ptr %next)
   store ptr %next, ptr %next9, align 8
   %3 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr10 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %3, i32 0, i32 0
+  %tag_ptr10 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %3, i32 0, i32 0
   store i64 6384368267, ptr %tag_ptr10, align 8
-  %pay_ptr11 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %3, i32 0, i32 1
+  %pay_ptr11 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %3, i32 0, i32 1
   %4 = call ptr @avra_rc_alloc(i64 16)
   store ptr %4, ptr %pay_ptr11, align 8
   %ctx12 = load ptr, ptr %ctx, align 8
@@ -248500,40 +248501,40 @@ march_next4:                                      ; preds = %march_next
 
 define ptr @"@std::avrac::resolve::rewrite_stmt"(ptr %0, ptr %1) {
 entry:
-  %rvt1020 = alloca ptr, align 8
-  %qn1017 = alloca ptr, align 8
-  %vt1014 = alloca ptr, align 8
-  %name1007 = alloca ptr, align 8
-  %init980 = alloca ptr, align 8
-  %vt973 = alloca ptr, align 8
-  %name966 = alloca ptr, align 8
-  %arms948 = alloca ptr, align 8
-  %body930 = alloca ptr, align 8
-  %cond908 = alloca ptr, align 8
-  %name901 = alloca ptr, align 8
-  %body879 = alloca ptr, align 8
-  %name872 = alloca ptr, align 8
-  %body850 = alloca ptr, align 8
-  %name843 = alloca ptr, align 8
-  %rvt816 = alloca ptr, align 8
-  %params809 = alloca ptr, align 8
-  %name802 = alloca ptr, align 8
-  %init780 = alloca ptr, align 8
-  %names773 = alloca ptr, align 8
-  %body759 = alloca ptr, align 8
-  %body741 = alloca ptr, align 8
-  %inner719 = alloca ptr, align 8
-  %annotations712 = alloca ptr, align 8
-  %methods702 = alloca ptr, align 8
-  %type_name699 = alloca ptr, align 8
+  %rvt1021 = alloca ptr, align 8
+  %qn1018 = alloca ptr, align 8
+  %vt1015 = alloca ptr, align 8
+  %name1008 = alloca ptr, align 8
+  %init981 = alloca ptr, align 8
+  %vt974 = alloca ptr, align 8
+  %name967 = alloca ptr, align 8
+  %arms949 = alloca ptr, align 8
+  %body931 = alloca ptr, align 8
+  %cond909 = alloca ptr, align 8
+  %name902 = alloca ptr, align 8
+  %body880 = alloca ptr, align 8
+  %name873 = alloca ptr, align 8
+  %body851 = alloca ptr, align 8
+  %name844 = alloca ptr, align 8
+  %rvt817 = alloca ptr, align 8
+  %params810 = alloca ptr, align 8
+  %name803 = alloca ptr, align 8
+  %init781 = alloca ptr, align 8
+  %names774 = alloca ptr, align 8
+  %body760 = alloca ptr, align 8
+  %body742 = alloca ptr, align 8
+  %inner720 = alloca ptr, align 8
+  %annotations713 = alloca ptr, align 8
+  %methods703 = alloca ptr, align 8
+  %type_name700 = alloca ptr, align 8
   %ri = alloca ptr, align 8
-  %qn660 = alloca ptr, align 8
-  %inner657 = alloca ptr, align 8
-  %name654 = alloca ptr, align 8
-  %rf613 = alloca ptr, align 8
-  %qn610 = alloca ptr, align 8
-  %fields607 = alloca ptr, align 8
-  %name600 = alloca ptr, align 8
+  %qn661 = alloca ptr, align 8
+  %inner658 = alloca ptr, align 8
+  %name655 = alloca ptr, align 8
+  %rf614 = alloca ptr, align 8
+  %qn611 = alloca ptr, align 8
+  %fields608 = alloca ptr, align 8
+  %name601 = alloca ptr, align 8
   %qn556 = alloca ptr, align 8
   %body553 = alloca ptr, align 8
   %name546 = alloca ptr, align 8
@@ -248597,10 +248598,10 @@ entry:
   %tag_eq = icmp eq i64 %tag, 193463210
   br i1 %tag_eq, label %march_arm, label %march_next
 
-match_end:                                        ; preds = %march_arm1052, %march_arm998, %march_arm957, %march_arm939, %march_arm921, %march_arm892, %march_arm863, %march_arm834, %march_arm793, %march_arm768, %march_arm750, %march_arm732, %march_arm707, %march_arm694, %march_arm645, %march_arm591, %march_arm537, %march_arm477, %march_arm420, %march_arm363, %march_arm341, %ife_end297, %march_arm213, %march_arm172, %march_arm142, %ife_end, %march_arm94, %march_arm76, %march_arm62, %march_arm21, %march_arm
+match_end:                                        ; preds = %march_arm1053, %march_arm999, %march_arm958, %march_arm940, %march_arm922, %march_arm893, %march_arm864, %march_arm835, %march_arm794, %march_arm769, %march_arm751, %march_arm733, %march_arm708, %march_arm695, %march_arm646, %march_arm592, %march_arm537, %march_arm477, %march_arm420, %march_arm363, %march_arm341, %ife_end297, %march_arm213, %march_arm172, %march_arm142, %ife_end, %march_arm94, %march_arm76, %march_arm62, %march_arm21, %march_arm
   %match_val = load i64, ptr %match_result, align 8
-  %cast1056 = inttoptr i64 %match_val to ptr
-  ret ptr %cast1056
+  %cast1057 = inttoptr i64 %match_val to ptr
+  ret ptr %cast1057
 
 march_arm:                                        ; preds = %entry
   %pay_slot = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
@@ -248788,9 +248789,9 @@ march_arm94:                                      ; preds = %march_next77
   call void @avra_rc_retain(ptr %body)
   store ptr %body, ptr %body99, align 8
   %16 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr100 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %16, i32 0, i32 0
+  %tag_ptr100 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %16, i32 0, i32 0
   store i64 210669825968, ptr %tag_ptr100, align 8
-  %pay_ptr101 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %16, i32 0, i32 1
+  %pay_ptr101 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %16, i32 0, i32 1
   %17 = call ptr @avra_rc_alloc(i64 8)
   store ptr %17, ptr %pay_ptr101, align 8
   %ctx102 = load ptr, ptr %ctx, align 8
@@ -249637,745 +249638,747 @@ march_arm537:                                     ; preds = %march_next478
   %slot_addr584 = add i64 %slot_base583, 0
   %slot585 = inttoptr i64 %slot_addr584 to ptr
   store ptr %qn582, ptr %slot585, align 8
-  %body586 = load ptr, ptr %body553, align 8
-  %slot_base587 = ptrtoint ptr %81 to i64
-  %slot_addr588 = add i64 %slot_base587, 8
-  %slot589 = inttoptr i64 %slot_addr588 to ptr
-  store ptr %body586, ptr %slot589, align 8
-  %cast590 = ptrtoint ptr %80 to i64
-  store i64 %cast590, ptr %match_result, align 8
+  %ctx586 = load ptr, ptr %ctx, align 8
+  %body587 = load ptr, ptr %body553, align 8
+  %82 = call ptr @"@std::avrac::resolve::rewrite_stmt_list"(ptr %ctx586, ptr %body587)
+  %slot_base588 = ptrtoint ptr %81 to i64
+  %slot_addr589 = add i64 %slot_base588, 8
+  %slot590 = inttoptr i64 %slot_addr589 to ptr
+  store ptr %82, ptr %slot590, align 8
+  %cast591 = ptrtoint ptr %80 to i64
+  store i64 %cast591, ptr %match_result, align 8
   br label %match_end
 
 march_next538:                                    ; preds = %march_next478
-  %tag_eq593 = icmp eq i64 %tag, 249861491578184814
-  br i1 %tag_eq593, label %march_arm591, label %march_next592
+  %tag_eq594 = icmp eq i64 %tag, 249861491578184814
+  br i1 %tag_eq594, label %march_arm592, label %march_next593
 
-march_arm591:                                     ; preds = %march_next538
-  %pay_slot594 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
-  %payload595 = load ptr, ptr %pay_slot594, align 8
-  %name_slot_base596 = ptrtoint ptr %payload595 to i64
-  %name_slot_addr597 = add i64 %name_slot_base596, 0
-  %name_slot598 = inttoptr i64 %name_slot_addr597 to ptr
-  %name599 = load ptr, ptr %name_slot598, align 8
-  call void @avra_rc_retain(ptr %name599)
-  store ptr %name599, ptr %name600, align 8
-  %pay_slot601 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
-  %payload602 = load ptr, ptr %pay_slot601, align 8
-  %fields_slot_base603 = ptrtoint ptr %payload602 to i64
-  %fields_slot_addr604 = add i64 %fields_slot_base603, 8
-  %fields_slot605 = inttoptr i64 %fields_slot_addr604 to ptr
-  %fields606 = load ptr, ptr %fields_slot605, align 8
-  call void @avra_rc_retain(ptr %fields606)
-  store ptr %fields606, ptr %fields607, align 8
-  %ctx608 = load ptr, ptr %ctx, align 8
-  %name609 = load ptr, ptr %name600, align 8
-  %82 = call ptr @"@std::avrac::resolve::resolve_type_in_ctx"(ptr %ctx608, ptr %name609)
-  store ptr %82, ptr %qn610, align 8
-  %ctx611 = load ptr, ptr %ctx, align 8
-  %fields612 = load ptr, ptr %fields607, align 8
-  %83 = call ptr @"@std::avrac::resolve::rewrite_field_types"(ptr %ctx611, ptr %fields612)
-  store ptr %83, ptr %rf613, align 8
-  %ctx614 = load ptr, ptr %ctx, align 8
-  %cast615 = ptrtoint ptr %ctx614 to i64
-  %null_chk616 = icmp eq i64 %cast615, 0
-  %null_ext617 = zext i1 %null_chk616 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19059, i64 8, ptr @sty_name.19060, i64 29, i64 %null_ext617, ptr @src_file.19061, i64 0, i64 738)
-  %type_reg_ptr618 = getelementptr inbounds nuw %"@std::avrac::resolve::NameCtx", ptr %ctx614, i32 0, i32 6
-  %type_reg619 = load ptr, ptr %type_reg_ptr618, align 8
-  %qn620 = load ptr, ptr %qn610, align 8
-  %84 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr621 = getelementptr inbounds nuw %"@std::avrac::core::TypeKind", ptr %84, i32 0, i32 0
-  store i64 249861491578441084, ptr %tag_ptr621, align 8
-  %pay_ptr622 = getelementptr inbounds nuw %"@std::avrac::core::TypeKind", ptr %84, i32 0, i32 1
-  store ptr null, ptr %pay_ptr622, align 8
-  %cast623 = ptrtoint ptr %84 to i64
-  %rf624 = load ptr, ptr %rf613, align 8
+march_arm592:                                     ; preds = %march_next538
+  %pay_slot595 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
+  %payload596 = load ptr, ptr %pay_slot595, align 8
+  %name_slot_base597 = ptrtoint ptr %payload596 to i64
+  %name_slot_addr598 = add i64 %name_slot_base597, 0
+  %name_slot599 = inttoptr i64 %name_slot_addr598 to ptr
+  %name600 = load ptr, ptr %name_slot599, align 8
+  call void @avra_rc_retain(ptr %name600)
+  store ptr %name600, ptr %name601, align 8
+  %pay_slot602 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
+  %payload603 = load ptr, ptr %pay_slot602, align 8
+  %fields_slot_base604 = ptrtoint ptr %payload603 to i64
+  %fields_slot_addr605 = add i64 %fields_slot_base604, 8
+  %fields_slot606 = inttoptr i64 %fields_slot_addr605 to ptr
+  %fields607 = load ptr, ptr %fields_slot606, align 8
+  call void @avra_rc_retain(ptr %fields607)
+  store ptr %fields607, ptr %fields608, align 8
+  %ctx609 = load ptr, ptr %ctx, align 8
+  %name610 = load ptr, ptr %name601, align 8
+  %83 = call ptr @"@std::avrac::resolve::resolve_type_in_ctx"(ptr %ctx609, ptr %name610)
+  store ptr %83, ptr %qn611, align 8
+  %ctx612 = load ptr, ptr %ctx, align 8
+  %fields613 = load ptr, ptr %fields608, align 8
+  %84 = call ptr @"@std::avrac::resolve::rewrite_field_types"(ptr %ctx612, ptr %fields613)
+  store ptr %84, ptr %rf614, align 8
+  %ctx615 = load ptr, ptr %ctx, align 8
+  %cast616 = ptrtoint ptr %ctx615 to i64
+  %null_chk617 = icmp eq i64 %cast616, 0
+  %null_ext618 = zext i1 %null_chk617 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.19059, i64 8, ptr @sty_name.19060, i64 29, i64 %null_ext618, ptr @src_file.19061, i64 0, i64 746)
+  %type_reg_ptr619 = getelementptr inbounds nuw %"@std::avrac::resolve::NameCtx", ptr %ctx615, i32 0, i32 6
+  %type_reg620 = load ptr, ptr %type_reg_ptr619, align 8
+  %qn621 = load ptr, ptr %qn611, align 8
   %85 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr625 = getelementptr inbounds nuw %"@std::avrac::core::VariantList", ptr %85, i32 0, i32 0
-  store i64 193455868, ptr %tag_ptr625, align 8
-  %pay_ptr626 = getelementptr inbounds nuw %"@std::avrac::core::VariantList", ptr %85, i32 0, i32 1
-  store ptr null, ptr %pay_ptr626, align 8
-  %cast627 = ptrtoint ptr %85 to i64
+  %tag_ptr622 = getelementptr inbounds nuw %"@std::avrac::core::TypeKind", ptr %85, i32 0, i32 0
+  store i64 249861491578441084, ptr %tag_ptr622, align 8
+  %pay_ptr623 = getelementptr inbounds nuw %"@std::avrac::core::TypeKind", ptr %85, i32 0, i32 1
+  store ptr null, ptr %pay_ptr623, align 8
+  %cast624 = ptrtoint ptr %85 to i64
+  %rf625 = load ptr, ptr %rf614, align 8
   %86 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr628 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %86, i32 0, i32 0
-  store i64 229444052301365, ptr %tag_ptr628, align 8
-  %pay_ptr629 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %86, i32 0, i32 1
-  store ptr null, ptr %pay_ptr629, align 8
-  %cast630 = ptrtoint ptr %86 to i64
-  %cast631 = inttoptr i64 %cast623 to ptr
-  %cast632 = inttoptr i64 %cast627 to ptr
-  %cast633 = inttoptr i64 %cast630 to ptr
-  %87 = call i64 @"@std::avrac::core::type_registry_register"(ptr %type_reg619, ptr %qn620, ptr %cast631, ptr %rf624, ptr %cast632, ptr %cast633)
-  %88 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr634 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %88, i32 0, i32 0
-  store i64 249861491578184814, ptr %tag_ptr634, align 8
-  %pay_ptr635 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %88, i32 0, i32 1
+  %tag_ptr626 = getelementptr inbounds nuw %"@std::avrac::core::VariantList", ptr %86, i32 0, i32 0
+  store i64 193455868, ptr %tag_ptr626, align 8
+  %pay_ptr627 = getelementptr inbounds nuw %"@std::avrac::core::VariantList", ptr %86, i32 0, i32 1
+  store ptr null, ptr %pay_ptr627, align 8
+  %cast628 = ptrtoint ptr %86 to i64
+  %87 = call ptr @avra_rc_alloc(i64 16)
+  %tag_ptr629 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %87, i32 0, i32 0
+  store i64 229444052301365, ptr %tag_ptr629, align 8
+  %pay_ptr630 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %87, i32 0, i32 1
+  store ptr null, ptr %pay_ptr630, align 8
+  %cast631 = ptrtoint ptr %87 to i64
+  %cast632 = inttoptr i64 %cast624 to ptr
+  %cast633 = inttoptr i64 %cast628 to ptr
+  %cast634 = inttoptr i64 %cast631 to ptr
+  %88 = call i64 @"@std::avrac::core::type_registry_register"(ptr %type_reg620, ptr %qn621, ptr %cast632, ptr %rf625, ptr %cast633, ptr %cast634)
   %89 = call ptr @avra_rc_alloc(i64 16)
-  store ptr %89, ptr %pay_ptr635, align 8
-  %qn636 = load ptr, ptr %qn610, align 8
-  %slot_base637 = ptrtoint ptr %89 to i64
-  %slot_addr638 = add i64 %slot_base637, 0
-  %slot639 = inttoptr i64 %slot_addr638 to ptr
-  store ptr %qn636, ptr %slot639, align 8
-  %rf640 = load ptr, ptr %rf613, align 8
-  %slot_base641 = ptrtoint ptr %89 to i64
-  %slot_addr642 = add i64 %slot_base641, 8
-  %slot643 = inttoptr i64 %slot_addr642 to ptr
-  store ptr %rf640, ptr %slot643, align 8
-  %cast644 = ptrtoint ptr %88 to i64
-  store i64 %cast644, ptr %match_result, align 8
+  %tag_ptr635 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %89, i32 0, i32 0
+  store i64 249861491578184814, ptr %tag_ptr635, align 8
+  %pay_ptr636 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %89, i32 0, i32 1
+  %90 = call ptr @avra_rc_alloc(i64 16)
+  store ptr %90, ptr %pay_ptr636, align 8
+  %qn637 = load ptr, ptr %qn611, align 8
+  %slot_base638 = ptrtoint ptr %90 to i64
+  %slot_addr639 = add i64 %slot_base638, 0
+  %slot640 = inttoptr i64 %slot_addr639 to ptr
+  store ptr %qn637, ptr %slot640, align 8
+  %rf641 = load ptr, ptr %rf614, align 8
+  %slot_base642 = ptrtoint ptr %90 to i64
+  %slot_addr643 = add i64 %slot_base642, 8
+  %slot644 = inttoptr i64 %slot_addr643 to ptr
+  store ptr %rf641, ptr %slot644, align 8
+  %cast645 = ptrtoint ptr %89 to i64
+  store i64 %cast645, ptr %match_result, align 8
   br label %match_end
 
-march_next592:                                    ; preds = %march_next538
-  %tag_eq647 = icmp eq i64 %tag, -4609762767365968311
-  br i1 %tag_eq647, label %march_arm645, label %march_next646
+march_next593:                                    ; preds = %march_next538
+  %tag_eq648 = icmp eq i64 %tag, -4609762767365968311
+  br i1 %tag_eq648, label %march_arm646, label %march_next647
 
-march_arm645:                                     ; preds = %march_next592
-  %pay_slot648 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
-  %payload649 = load ptr, ptr %pay_slot648, align 8
-  %name_slot_base650 = ptrtoint ptr %payload649 to i64
-  %name_slot_addr651 = add i64 %name_slot_base650, 0
-  %name_slot652 = inttoptr i64 %name_slot_addr651 to ptr
-  %name653 = load ptr, ptr %name_slot652, align 8
-  call void @avra_rc_retain(ptr %name653)
-  store ptr %name653, ptr %name654, align 8
-  %pay_slot655 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
-  %payload656 = load ptr, ptr %pay_slot655, align 8
-  %inner_slot_base = ptrtoint ptr %payload656 to i64
+march_arm646:                                     ; preds = %march_next593
+  %pay_slot649 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
+  %payload650 = load ptr, ptr %pay_slot649, align 8
+  %name_slot_base651 = ptrtoint ptr %payload650 to i64
+  %name_slot_addr652 = add i64 %name_slot_base651, 0
+  %name_slot653 = inttoptr i64 %name_slot_addr652 to ptr
+  %name654 = load ptr, ptr %name_slot653, align 8
+  call void @avra_rc_retain(ptr %name654)
+  store ptr %name654, ptr %name655, align 8
+  %pay_slot656 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
+  %payload657 = load ptr, ptr %pay_slot656, align 8
+  %inner_slot_base = ptrtoint ptr %payload657 to i64
   %inner_slot_addr = add i64 %inner_slot_base, 8
   %inner_slot = inttoptr i64 %inner_slot_addr to ptr
   %inner = load ptr, ptr %inner_slot, align 8
   call void @avra_rc_retain(ptr %inner)
-  store ptr %inner, ptr %inner657, align 8
-  %ctx658 = load ptr, ptr %ctx, align 8
-  %name659 = load ptr, ptr %name654, align 8
-  %90 = call ptr @"@std::avrac::resolve::resolve_type_in_ctx"(ptr %ctx658, ptr %name659)
-  store ptr %90, ptr %qn660, align 8
-  %ctx661 = load ptr, ptr %ctx, align 8
-  %inner662 = load ptr, ptr %inner657, align 8
-  %91 = call ptr @"@std::avrac::resolve::rewrite_vtype"(ptr %ctx661, ptr %inner662)
-  store ptr %91, ptr %ri, align 8
-  %ctx663 = load ptr, ptr %ctx, align 8
-  %cast664 = ptrtoint ptr %ctx663 to i64
-  %null_chk665 = icmp eq i64 %cast664, 0
-  %null_ext666 = zext i1 %null_chk665 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19062, i64 8, ptr @sty_name.19063, i64 29, i64 %null_ext666, ptr @src_file.19064, i64 0, i64 745)
-  %type_reg_ptr667 = getelementptr inbounds nuw %"@std::avrac::resolve::NameCtx", ptr %ctx663, i32 0, i32 6
-  %type_reg668 = load ptr, ptr %type_reg_ptr667, align 8
-  %qn669 = load ptr, ptr %qn660, align 8
-  %92 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr670 = getelementptr inbounds nuw %"@std::avrac::core::TypeKind", ptr %92, i32 0, i32 0
-  store i64 -4609762767365712041, ptr %tag_ptr670, align 8
-  %pay_ptr671 = getelementptr inbounds nuw %"@std::avrac::core::TypeKind", ptr %92, i32 0, i32 1
-  store ptr null, ptr %pay_ptr671, align 8
-  %cast672 = ptrtoint ptr %92 to i64
+  store ptr %inner, ptr %inner658, align 8
+  %ctx659 = load ptr, ptr %ctx, align 8
+  %name660 = load ptr, ptr %name655, align 8
+  %91 = call ptr @"@std::avrac::resolve::resolve_type_in_ctx"(ptr %ctx659, ptr %name660)
+  store ptr %91, ptr %qn661, align 8
+  %ctx662 = load ptr, ptr %ctx, align 8
+  %inner663 = load ptr, ptr %inner658, align 8
+  %92 = call ptr @"@std::avrac::resolve::rewrite_vtype"(ptr %ctx662, ptr %inner663)
+  store ptr %92, ptr %ri, align 8
+  %ctx664 = load ptr, ptr %ctx, align 8
+  %cast665 = ptrtoint ptr %ctx664 to i64
+  %null_chk666 = icmp eq i64 %cast665, 0
+  %null_ext667 = zext i1 %null_chk666 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.19062, i64 8, ptr @sty_name.19063, i64 29, i64 %null_ext667, ptr @src_file.19064, i64 0, i64 753)
+  %type_reg_ptr668 = getelementptr inbounds nuw %"@std::avrac::resolve::NameCtx", ptr %ctx664, i32 0, i32 6
+  %type_reg669 = load ptr, ptr %type_reg_ptr668, align 8
+  %qn670 = load ptr, ptr %qn661, align 8
   %93 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr673 = getelementptr inbounds nuw %"@std::avrac::core::FieldList", ptr %93, i32 0, i32 0
-  store i64 193455868, ptr %tag_ptr673, align 8
-  %pay_ptr674 = getelementptr inbounds nuw %"@std::avrac::core::FieldList", ptr %93, i32 0, i32 1
-  store ptr null, ptr %pay_ptr674, align 8
-  %cast675 = ptrtoint ptr %93 to i64
+  %tag_ptr671 = getelementptr inbounds nuw %"@std::avrac::core::TypeKind", ptr %93, i32 0, i32 0
+  store i64 -4609762767365712041, ptr %tag_ptr671, align 8
+  %pay_ptr672 = getelementptr inbounds nuw %"@std::avrac::core::TypeKind", ptr %93, i32 0, i32 1
+  store ptr null, ptr %pay_ptr672, align 8
+  %cast673 = ptrtoint ptr %93 to i64
   %94 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr676 = getelementptr inbounds nuw %"@std::avrac::core::VariantList", ptr %94, i32 0, i32 0
-  store i64 193455868, ptr %tag_ptr676, align 8
-  %pay_ptr677 = getelementptr inbounds nuw %"@std::avrac::core::VariantList", ptr %94, i32 0, i32 1
-  store ptr null, ptr %pay_ptr677, align 8
-  %cast678 = ptrtoint ptr %94 to i64
-  %ri679 = load ptr, ptr %ri, align 8
-  %cast680 = inttoptr i64 %cast672 to ptr
-  %cast681 = inttoptr i64 %cast675 to ptr
-  %cast682 = inttoptr i64 %cast678 to ptr
-  %95 = call i64 @"@std::avrac::core::type_registry_register"(ptr %type_reg668, ptr %qn669, ptr %cast680, ptr %cast681, ptr %cast682, ptr %ri679)
-  %96 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr683 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %96, i32 0, i32 0
-  store i64 -4609762767365968311, ptr %tag_ptr683, align 8
-  %pay_ptr684 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %96, i32 0, i32 1
+  %tag_ptr674 = getelementptr inbounds nuw %"@std::avrac::core::FieldList", ptr %94, i32 0, i32 0
+  store i64 193455868, ptr %tag_ptr674, align 8
+  %pay_ptr675 = getelementptr inbounds nuw %"@std::avrac::core::FieldList", ptr %94, i32 0, i32 1
+  store ptr null, ptr %pay_ptr675, align 8
+  %cast676 = ptrtoint ptr %94 to i64
+  %95 = call ptr @avra_rc_alloc(i64 16)
+  %tag_ptr677 = getelementptr inbounds nuw %"@std::avrac::core::VariantList", ptr %95, i32 0, i32 0
+  store i64 193455868, ptr %tag_ptr677, align 8
+  %pay_ptr678 = getelementptr inbounds nuw %"@std::avrac::core::VariantList", ptr %95, i32 0, i32 1
+  store ptr null, ptr %pay_ptr678, align 8
+  %cast679 = ptrtoint ptr %95 to i64
+  %ri680 = load ptr, ptr %ri, align 8
+  %cast681 = inttoptr i64 %cast673 to ptr
+  %cast682 = inttoptr i64 %cast676 to ptr
+  %cast683 = inttoptr i64 %cast679 to ptr
+  %96 = call i64 @"@std::avrac::core::type_registry_register"(ptr %type_reg669, ptr %qn670, ptr %cast681, ptr %cast682, ptr %cast683, ptr %ri680)
   %97 = call ptr @avra_rc_alloc(i64 16)
-  store ptr %97, ptr %pay_ptr684, align 8
-  %qn685 = load ptr, ptr %qn660, align 8
-  %slot_base686 = ptrtoint ptr %97 to i64
-  %slot_addr687 = add i64 %slot_base686, 0
-  %slot688 = inttoptr i64 %slot_addr687 to ptr
-  store ptr %qn685, ptr %slot688, align 8
-  %ri689 = load ptr, ptr %ri, align 8
-  %slot_base690 = ptrtoint ptr %97 to i64
-  %slot_addr691 = add i64 %slot_base690, 8
-  %slot692 = inttoptr i64 %slot_addr691 to ptr
-  store ptr %ri689, ptr %slot692, align 8
-  %cast693 = ptrtoint ptr %96 to i64
-  store i64 %cast693, ptr %match_result, align 8
+  %tag_ptr684 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %97, i32 0, i32 0
+  store i64 -4609762767365968311, ptr %tag_ptr684, align 8
+  %pay_ptr685 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %97, i32 0, i32 1
+  %98 = call ptr @avra_rc_alloc(i64 16)
+  store ptr %98, ptr %pay_ptr685, align 8
+  %qn686 = load ptr, ptr %qn661, align 8
+  %slot_base687 = ptrtoint ptr %98 to i64
+  %slot_addr688 = add i64 %slot_base687, 0
+  %slot689 = inttoptr i64 %slot_addr688 to ptr
+  store ptr %qn686, ptr %slot689, align 8
+  %ri690 = load ptr, ptr %ri, align 8
+  %slot_base691 = ptrtoint ptr %98 to i64
+  %slot_addr692 = add i64 %slot_base691, 8
+  %slot693 = inttoptr i64 %slot_addr692 to ptr
+  store ptr %ri690, ptr %slot693, align 8
+  %cast694 = ptrtoint ptr %97 to i64
+  store i64 %cast694, ptr %match_result, align 8
   br label %match_end
 
-march_next646:                                    ; preds = %march_next592
-  %tag_eq696 = icmp eq i64 %tag, 6384186807
-  br i1 %tag_eq696, label %march_arm694, label %march_next695
+march_next647:                                    ; preds = %march_next593
+  %tag_eq697 = icmp eq i64 %tag, 6384186807
+  br i1 %tag_eq697, label %march_arm695, label %march_next696
 
-march_arm694:                                     ; preds = %march_next646
-  %pay_slot697 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
-  %payload698 = load ptr, ptr %pay_slot697, align 8
-  %type_name_slot_base = ptrtoint ptr %payload698 to i64
+march_arm695:                                     ; preds = %march_next647
+  %pay_slot698 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
+  %payload699 = load ptr, ptr %pay_slot698, align 8
+  %type_name_slot_base = ptrtoint ptr %payload699 to i64
   %type_name_slot_addr = add i64 %type_name_slot_base, 0
   %type_name_slot = inttoptr i64 %type_name_slot_addr to ptr
   %type_name = load ptr, ptr %type_name_slot, align 8
   call void @avra_rc_retain(ptr %type_name)
-  store ptr %type_name, ptr %type_name699, align 8
-  %pay_slot700 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
-  %payload701 = load ptr, ptr %pay_slot700, align 8
-  %methods_slot_base = ptrtoint ptr %payload701 to i64
+  store ptr %type_name, ptr %type_name700, align 8
+  %pay_slot701 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
+  %payload702 = load ptr, ptr %pay_slot701, align 8
+  %methods_slot_base = ptrtoint ptr %payload702 to i64
   %methods_slot_addr = add i64 %methods_slot_base, 8
   %methods_slot = inttoptr i64 %methods_slot_addr to ptr
   %methods = load ptr, ptr %methods_slot, align 8
   call void @avra_rc_retain(ptr %methods)
-  store ptr %methods, ptr %methods702, align 8
-  %ctx703 = load ptr, ptr %ctx, align 8
-  %type_name704 = load ptr, ptr %type_name699, align 8
-  %methods705 = load ptr, ptr %methods702, align 8
-  %98 = call ptr @"@std::avrac::resolve::rewrite_impl_stmt"(ptr %ctx703, ptr %type_name704, ptr %methods705)
-  %cast706 = ptrtoint ptr %98 to i64
-  store i64 %cast706, ptr %match_result, align 8
+  store ptr %methods, ptr %methods703, align 8
+  %ctx704 = load ptr, ptr %ctx, align 8
+  %type_name705 = load ptr, ptr %type_name700, align 8
+  %methods706 = load ptr, ptr %methods703, align 8
+  %99 = call ptr @"@std::avrac::resolve::rewrite_impl_stmt"(ptr %ctx704, ptr %type_name705, ptr %methods706)
+  %cast707 = ptrtoint ptr %99 to i64
+  store i64 %cast707, ptr %match_result, align 8
   br label %match_end
 
-march_next695:                                    ; preds = %march_next646
-  %tag_eq709 = icmp eq i64 %tag, 249836448702509923
-  br i1 %tag_eq709, label %march_arm707, label %march_next708
+march_next696:                                    ; preds = %march_next647
+  %tag_eq710 = icmp eq i64 %tag, 249836448702509923
+  br i1 %tag_eq710, label %march_arm708, label %march_next709
 
-march_arm707:                                     ; preds = %march_next695
-  %pay_slot710 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
-  %payload711 = load ptr, ptr %pay_slot710, align 8
-  %annotations_slot_base = ptrtoint ptr %payload711 to i64
+march_arm708:                                     ; preds = %march_next696
+  %pay_slot711 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
+  %payload712 = load ptr, ptr %pay_slot711, align 8
+  %annotations_slot_base = ptrtoint ptr %payload712 to i64
   %annotations_slot_addr = add i64 %annotations_slot_base, 0
   %annotations_slot = inttoptr i64 %annotations_slot_addr to ptr
   %annotations = load ptr, ptr %annotations_slot, align 8
   call void @avra_rc_retain(ptr %annotations)
-  store ptr %annotations, ptr %annotations712, align 8
-  %pay_slot713 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
-  %payload714 = load ptr, ptr %pay_slot713, align 8
-  %inner_slot_base715 = ptrtoint ptr %payload714 to i64
-  %inner_slot_addr716 = add i64 %inner_slot_base715, 8
-  %inner_slot717 = inttoptr i64 %inner_slot_addr716 to ptr
-  %inner718 = load ptr, ptr %inner_slot717, align 8
-  call void @avra_rc_retain(ptr %inner718)
-  store ptr %inner718, ptr %inner719, align 8
-  %99 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr720 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %99, i32 0, i32 0
-  store i64 249836448702509923, ptr %tag_ptr720, align 8
-  %pay_ptr721 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %99, i32 0, i32 1
+  store ptr %annotations, ptr %annotations713, align 8
+  %pay_slot714 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
+  %payload715 = load ptr, ptr %pay_slot714, align 8
+  %inner_slot_base716 = ptrtoint ptr %payload715 to i64
+  %inner_slot_addr717 = add i64 %inner_slot_base716, 8
+  %inner_slot718 = inttoptr i64 %inner_slot_addr717 to ptr
+  %inner719 = load ptr, ptr %inner_slot718, align 8
+  call void @avra_rc_retain(ptr %inner719)
+  store ptr %inner719, ptr %inner720, align 8
   %100 = call ptr @avra_rc_alloc(i64 16)
-  store ptr %100, ptr %pay_ptr721, align 8
-  %annotations722 = load ptr, ptr %annotations712, align 8
-  %slot_base723 = ptrtoint ptr %100 to i64
-  %slot_addr724 = add i64 %slot_base723, 0
-  %slot725 = inttoptr i64 %slot_addr724 to ptr
-  store ptr %annotations722, ptr %slot725, align 8
-  %ctx726 = load ptr, ptr %ctx, align 8
-  %inner727 = load ptr, ptr %inner719, align 8
-  %101 = call ptr @"@std::avrac::resolve::rewrite_stmt"(ptr %ctx726, ptr %inner727)
-  %slot_base728 = ptrtoint ptr %100 to i64
-  %slot_addr729 = add i64 %slot_base728, 8
-  %slot730 = inttoptr i64 %slot_addr729 to ptr
-  store ptr %101, ptr %slot730, align 8
-  %cast731 = ptrtoint ptr %99 to i64
-  store i64 %cast731, ptr %match_result, align 8
+  %tag_ptr721 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %100, i32 0, i32 0
+  store i64 249836448702509923, ptr %tag_ptr721, align 8
+  %pay_ptr722 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %100, i32 0, i32 1
+  %101 = call ptr @avra_rc_alloc(i64 16)
+  store ptr %101, ptr %pay_ptr722, align 8
+  %annotations723 = load ptr, ptr %annotations713, align 8
+  %slot_base724 = ptrtoint ptr %101 to i64
+  %slot_addr725 = add i64 %slot_base724, 0
+  %slot726 = inttoptr i64 %slot_addr725 to ptr
+  store ptr %annotations723, ptr %slot726, align 8
+  %ctx727 = load ptr, ptr %ctx, align 8
+  %inner728 = load ptr, ptr %inner720, align 8
+  %102 = call ptr @"@std::avrac::resolve::rewrite_stmt"(ptr %ctx727, ptr %inner728)
+  %slot_base729 = ptrtoint ptr %101 to i64
+  %slot_addr730 = add i64 %slot_base729, 8
+  %slot731 = inttoptr i64 %slot_addr730 to ptr
+  store ptr %102, ptr %slot731, align 8
+  %cast732 = ptrtoint ptr %100 to i64
+  store i64 %cast732, ptr %match_result, align 8
   br label %match_end
 
-march_next708:                                    ; preds = %march_next695
-  %tag_eq734 = icmp eq i64 %tag, 210671936523
-  br i1 %tag_eq734, label %march_arm732, label %march_next733
+march_next709:                                    ; preds = %march_next696
+  %tag_eq735 = icmp eq i64 %tag, 210671936523
+  br i1 %tag_eq735, label %march_arm733, label %march_next734
 
-march_arm732:                                     ; preds = %march_next708
-  %pay_slot735 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
-  %payload736 = load ptr, ptr %pay_slot735, align 8
-  %body_slot_base737 = ptrtoint ptr %payload736 to i64
-  %body_slot_addr738 = add i64 %body_slot_base737, 0
-  %body_slot739 = inttoptr i64 %body_slot_addr738 to ptr
-  %body740 = load ptr, ptr %body_slot739, align 8
-  call void @avra_rc_retain(ptr %body740)
-  store ptr %body740, ptr %body741, align 8
-  %102 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr742 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %102, i32 0, i32 0
-  store i64 210671936523, ptr %tag_ptr742, align 8
-  %pay_ptr743 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %102, i32 0, i32 1
-  %103 = call ptr @avra_rc_alloc(i64 8)
-  store ptr %103, ptr %pay_ptr743, align 8
-  %ctx744 = load ptr, ptr %ctx, align 8
-  %body745 = load ptr, ptr %body741, align 8
-  %104 = call ptr @"@std::avrac::resolve::rewrite_expr"(ptr %ctx744, ptr %body745)
-  %slot_base746 = ptrtoint ptr %103 to i64
-  %slot_addr747 = add i64 %slot_base746, 0
-  %slot748 = inttoptr i64 %slot_addr747 to ptr
-  store ptr %104, ptr %slot748, align 8
-  %cast749 = ptrtoint ptr %102 to i64
-  store i64 %cast749, ptr %match_result, align 8
+march_arm733:                                     ; preds = %march_next709
+  %pay_slot736 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
+  %payload737 = load ptr, ptr %pay_slot736, align 8
+  %body_slot_base738 = ptrtoint ptr %payload737 to i64
+  %body_slot_addr739 = add i64 %body_slot_base738, 0
+  %body_slot740 = inttoptr i64 %body_slot_addr739 to ptr
+  %body741 = load ptr, ptr %body_slot740, align 8
+  call void @avra_rc_retain(ptr %body741)
+  store ptr %body741, ptr %body742, align 8
+  %103 = call ptr @avra_rc_alloc(i64 16)
+  %tag_ptr743 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %103, i32 0, i32 0
+  store i64 210671936523, ptr %tag_ptr743, align 8
+  %pay_ptr744 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %103, i32 0, i32 1
+  %104 = call ptr @avra_rc_alloc(i64 8)
+  store ptr %104, ptr %pay_ptr744, align 8
+  %ctx745 = load ptr, ptr %ctx, align 8
+  %body746 = load ptr, ptr %body742, align 8
+  %105 = call ptr @"@std::avrac::resolve::rewrite_expr"(ptr %ctx745, ptr %body746)
+  %slot_base747 = ptrtoint ptr %104 to i64
+  %slot_addr748 = add i64 %slot_base747, 0
+  %slot749 = inttoptr i64 %slot_addr748 to ptr
+  store ptr %105, ptr %slot749, align 8
+  %cast750 = ptrtoint ptr %103 to i64
+  store i64 %cast750, ptr %match_result, align 8
   br label %match_end
 
-march_next733:                                    ; preds = %march_next708
-  %tag_eq752 = icmp eq i64 %tag, 7570977258439764
-  br i1 %tag_eq752, label %march_arm750, label %march_next751
+march_next734:                                    ; preds = %march_next709
+  %tag_eq753 = icmp eq i64 %tag, 7570977258439764
+  br i1 %tag_eq753, label %march_arm751, label %march_next752
 
-march_arm750:                                     ; preds = %march_next733
-  %pay_slot753 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
-  %payload754 = load ptr, ptr %pay_slot753, align 8
-  %body_slot_base755 = ptrtoint ptr %payload754 to i64
-  %body_slot_addr756 = add i64 %body_slot_base755, 0
-  %body_slot757 = inttoptr i64 %body_slot_addr756 to ptr
-  %body758 = load ptr, ptr %body_slot757, align 8
-  call void @avra_rc_retain(ptr %body758)
-  store ptr %body758, ptr %body759, align 8
-  %105 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr760 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %105, i32 0, i32 0
-  store i64 7570977258439764, ptr %tag_ptr760, align 8
-  %pay_ptr761 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %105, i32 0, i32 1
-  %106 = call ptr @avra_rc_alloc(i64 8)
-  store ptr %106, ptr %pay_ptr761, align 8
-  %ctx762 = load ptr, ptr %ctx, align 8
-  %body763 = load ptr, ptr %body759, align 8
-  %107 = call ptr @"@std::avrac::resolve::rewrite_expr"(ptr %ctx762, ptr %body763)
-  %slot_base764 = ptrtoint ptr %106 to i64
-  %slot_addr765 = add i64 %slot_base764, 0
-  %slot766 = inttoptr i64 %slot_addr765 to ptr
-  store ptr %107, ptr %slot766, align 8
-  %cast767 = ptrtoint ptr %105 to i64
-  store i64 %cast767, ptr %match_result, align 8
+march_arm751:                                     ; preds = %march_next734
+  %pay_slot754 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
+  %payload755 = load ptr, ptr %pay_slot754, align 8
+  %body_slot_base756 = ptrtoint ptr %payload755 to i64
+  %body_slot_addr757 = add i64 %body_slot_base756, 0
+  %body_slot758 = inttoptr i64 %body_slot_addr757 to ptr
+  %body759 = load ptr, ptr %body_slot758, align 8
+  call void @avra_rc_retain(ptr %body759)
+  store ptr %body759, ptr %body760, align 8
+  %106 = call ptr @avra_rc_alloc(i64 16)
+  %tag_ptr761 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %106, i32 0, i32 0
+  store i64 7570977258439764, ptr %tag_ptr761, align 8
+  %pay_ptr762 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %106, i32 0, i32 1
+  %107 = call ptr @avra_rc_alloc(i64 8)
+  store ptr %107, ptr %pay_ptr762, align 8
+  %ctx763 = load ptr, ptr %ctx, align 8
+  %body764 = load ptr, ptr %body760, align 8
+  %108 = call ptr @"@std::avrac::resolve::rewrite_expr"(ptr %ctx763, ptr %body764)
+  %slot_base765 = ptrtoint ptr %107 to i64
+  %slot_addr766 = add i64 %slot_base765, 0
+  %slot767 = inttoptr i64 %slot_addr766 to ptr
+  store ptr %108, ptr %slot767, align 8
+  %cast768 = ptrtoint ptr %106 to i64
+  store i64 %cast768, ptr %match_result, align 8
   br label %match_end
 
-march_next751:                                    ; preds = %march_next733
-  %tag_eq770 = icmp eq i64 %tag, -8909097885654680508
-  br i1 %tag_eq770, label %march_arm768, label %march_next769
+march_next752:                                    ; preds = %march_next734
+  %tag_eq771 = icmp eq i64 %tag, -8909097885654680508
+  br i1 %tag_eq771, label %march_arm769, label %march_next770
 
-march_arm768:                                     ; preds = %march_next751
-  %pay_slot771 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
-  %payload772 = load ptr, ptr %pay_slot771, align 8
-  %names_slot_base = ptrtoint ptr %payload772 to i64
+march_arm769:                                     ; preds = %march_next752
+  %pay_slot772 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
+  %payload773 = load ptr, ptr %pay_slot772, align 8
+  %names_slot_base = ptrtoint ptr %payload773 to i64
   %names_slot_addr = add i64 %names_slot_base, 0
   %names_slot = inttoptr i64 %names_slot_addr to ptr
   %names = load ptr, ptr %names_slot, align 8
   call void @avra_rc_retain(ptr %names)
-  store ptr %names, ptr %names773, align 8
-  %pay_slot774 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
-  %payload775 = load ptr, ptr %pay_slot774, align 8
-  %init_slot_base776 = ptrtoint ptr %payload775 to i64
-  %init_slot_addr777 = add i64 %init_slot_base776, 8
-  %init_slot778 = inttoptr i64 %init_slot_addr777 to ptr
-  %init779 = load ptr, ptr %init_slot778, align 8
-  call void @avra_rc_retain(ptr %init779)
-  store ptr %init779, ptr %init780, align 8
-  %108 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr781 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %108, i32 0, i32 0
-  store i64 -8909097885654680508, ptr %tag_ptr781, align 8
-  %pay_ptr782 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %108, i32 0, i32 1
+  store ptr %names, ptr %names774, align 8
+  %pay_slot775 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
+  %payload776 = load ptr, ptr %pay_slot775, align 8
+  %init_slot_base777 = ptrtoint ptr %payload776 to i64
+  %init_slot_addr778 = add i64 %init_slot_base777, 8
+  %init_slot779 = inttoptr i64 %init_slot_addr778 to ptr
+  %init780 = load ptr, ptr %init_slot779, align 8
+  call void @avra_rc_retain(ptr %init780)
+  store ptr %init780, ptr %init781, align 8
   %109 = call ptr @avra_rc_alloc(i64 16)
-  store ptr %109, ptr %pay_ptr782, align 8
-  %names783 = load ptr, ptr %names773, align 8
-  %slot_base784 = ptrtoint ptr %109 to i64
-  %slot_addr785 = add i64 %slot_base784, 0
-  %slot786 = inttoptr i64 %slot_addr785 to ptr
-  store ptr %names783, ptr %slot786, align 8
-  %ctx787 = load ptr, ptr %ctx, align 8
-  %init788 = load ptr, ptr %init780, align 8
-  %110 = call ptr @"@std::avrac::resolve::rewrite_expr"(ptr %ctx787, ptr %init788)
-  %slot_base789 = ptrtoint ptr %109 to i64
-  %slot_addr790 = add i64 %slot_base789, 8
-  %slot791 = inttoptr i64 %slot_addr790 to ptr
-  store ptr %110, ptr %slot791, align 8
-  %cast792 = ptrtoint ptr %108 to i64
-  store i64 %cast792, ptr %match_result, align 8
+  %tag_ptr782 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %109, i32 0, i32 0
+  store i64 -8909097885654680508, ptr %tag_ptr782, align 8
+  %pay_ptr783 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %109, i32 0, i32 1
+  %110 = call ptr @avra_rc_alloc(i64 16)
+  store ptr %110, ptr %pay_ptr783, align 8
+  %names784 = load ptr, ptr %names774, align 8
+  %slot_base785 = ptrtoint ptr %110 to i64
+  %slot_addr786 = add i64 %slot_base785, 0
+  %slot787 = inttoptr i64 %slot_addr786 to ptr
+  store ptr %names784, ptr %slot787, align 8
+  %ctx788 = load ptr, ptr %ctx, align 8
+  %init789 = load ptr, ptr %init781, align 8
+  %111 = call ptr @"@std::avrac::resolve::rewrite_expr"(ptr %ctx788, ptr %init789)
+  %slot_base790 = ptrtoint ptr %110 to i64
+  %slot_addr791 = add i64 %slot_base790, 8
+  %slot792 = inttoptr i64 %slot_addr791 to ptr
+  store ptr %111, ptr %slot792, align 8
+  %cast793 = ptrtoint ptr %109 to i64
+  store i64 %cast793, ptr %match_result, align 8
   br label %match_end
 
-march_next769:                                    ; preds = %march_next751
-  %tag_eq795 = icmp eq i64 %tag, 7570985087179151
-  br i1 %tag_eq795, label %march_arm793, label %march_next794
+march_next770:                                    ; preds = %march_next752
+  %tag_eq796 = icmp eq i64 %tag, 7570985087179151
+  br i1 %tag_eq796, label %march_arm794, label %march_next795
 
-march_arm793:                                     ; preds = %march_next769
-  %pay_slot796 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
-  %payload797 = load ptr, ptr %pay_slot796, align 8
-  %name_slot_base798 = ptrtoint ptr %payload797 to i64
-  %name_slot_addr799 = add i64 %name_slot_base798, 0
-  %name_slot800 = inttoptr i64 %name_slot_addr799 to ptr
-  %name801 = load ptr, ptr %name_slot800, align 8
-  call void @avra_rc_retain(ptr %name801)
-  store ptr %name801, ptr %name802, align 8
-  %pay_slot803 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
-  %payload804 = load ptr, ptr %pay_slot803, align 8
-  %params_slot_base805 = ptrtoint ptr %payload804 to i64
-  %params_slot_addr806 = add i64 %params_slot_base805, 8
-  %params_slot807 = inttoptr i64 %params_slot_addr806 to ptr
-  %params808 = load ptr, ptr %params_slot807, align 8
-  call void @avra_rc_retain(ptr %params808)
-  store ptr %params808, ptr %params809, align 8
-  %pay_slot810 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
-  %payload811 = load ptr, ptr %pay_slot810, align 8
-  %rvt_slot_base812 = ptrtoint ptr %payload811 to i64
-  %rvt_slot_addr813 = add i64 %rvt_slot_base812, 16
-  %rvt_slot814 = inttoptr i64 %rvt_slot_addr813 to ptr
-  %rvt815 = load ptr, ptr %rvt_slot814, align 8
-  call void @avra_rc_retain(ptr %rvt815)
-  store ptr %rvt815, ptr %rvt816, align 8
-  %111 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr817 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %111, i32 0, i32 0
-  store i64 7570985087179151, ptr %tag_ptr817, align 8
-  %pay_ptr818 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %111, i32 0, i32 1
-  %112 = call ptr @avra_rc_alloc(i64 24)
-  store ptr %112, ptr %pay_ptr818, align 8
-  %name819 = load ptr, ptr %name802, align 8
-  %slot_base820 = ptrtoint ptr %112 to i64
-  %slot_addr821 = add i64 %slot_base820, 0
-  %slot822 = inttoptr i64 %slot_addr821 to ptr
-  store ptr %name819, ptr %slot822, align 8
-  %ctx823 = load ptr, ptr %ctx, align 8
-  %params824 = load ptr, ptr %params809, align 8
-  %113 = call ptr @"@std::avrac::resolve::rewrite_param_types"(ptr %ctx823, ptr %params824)
-  %slot_base825 = ptrtoint ptr %112 to i64
-  %slot_addr826 = add i64 %slot_base825, 8
-  %slot827 = inttoptr i64 %slot_addr826 to ptr
-  store ptr %113, ptr %slot827, align 8
-  %ctx828 = load ptr, ptr %ctx, align 8
-  %rvt829 = load ptr, ptr %rvt816, align 8
-  %114 = call ptr @"@std::avrac::resolve::rewrite_vtype"(ptr %ctx828, ptr %rvt829)
-  %slot_base830 = ptrtoint ptr %112 to i64
-  %slot_addr831 = add i64 %slot_base830, 16
-  %slot832 = inttoptr i64 %slot_addr831 to ptr
-  store ptr %114, ptr %slot832, align 8
-  %cast833 = ptrtoint ptr %111 to i64
-  store i64 %cast833, ptr %match_result, align 8
+march_arm794:                                     ; preds = %march_next770
+  %pay_slot797 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
+  %payload798 = load ptr, ptr %pay_slot797, align 8
+  %name_slot_base799 = ptrtoint ptr %payload798 to i64
+  %name_slot_addr800 = add i64 %name_slot_base799, 0
+  %name_slot801 = inttoptr i64 %name_slot_addr800 to ptr
+  %name802 = load ptr, ptr %name_slot801, align 8
+  call void @avra_rc_retain(ptr %name802)
+  store ptr %name802, ptr %name803, align 8
+  %pay_slot804 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
+  %payload805 = load ptr, ptr %pay_slot804, align 8
+  %params_slot_base806 = ptrtoint ptr %payload805 to i64
+  %params_slot_addr807 = add i64 %params_slot_base806, 8
+  %params_slot808 = inttoptr i64 %params_slot_addr807 to ptr
+  %params809 = load ptr, ptr %params_slot808, align 8
+  call void @avra_rc_retain(ptr %params809)
+  store ptr %params809, ptr %params810, align 8
+  %pay_slot811 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
+  %payload812 = load ptr, ptr %pay_slot811, align 8
+  %rvt_slot_base813 = ptrtoint ptr %payload812 to i64
+  %rvt_slot_addr814 = add i64 %rvt_slot_base813, 16
+  %rvt_slot815 = inttoptr i64 %rvt_slot_addr814 to ptr
+  %rvt816 = load ptr, ptr %rvt_slot815, align 8
+  call void @avra_rc_retain(ptr %rvt816)
+  store ptr %rvt816, ptr %rvt817, align 8
+  %112 = call ptr @avra_rc_alloc(i64 16)
+  %tag_ptr818 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %112, i32 0, i32 0
+  store i64 7570985087179151, ptr %tag_ptr818, align 8
+  %pay_ptr819 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %112, i32 0, i32 1
+  %113 = call ptr @avra_rc_alloc(i64 24)
+  store ptr %113, ptr %pay_ptr819, align 8
+  %name820 = load ptr, ptr %name803, align 8
+  %slot_base821 = ptrtoint ptr %113 to i64
+  %slot_addr822 = add i64 %slot_base821, 0
+  %slot823 = inttoptr i64 %slot_addr822 to ptr
+  store ptr %name820, ptr %slot823, align 8
+  %ctx824 = load ptr, ptr %ctx, align 8
+  %params825 = load ptr, ptr %params810, align 8
+  %114 = call ptr @"@std::avrac::resolve::rewrite_param_types"(ptr %ctx824, ptr %params825)
+  %slot_base826 = ptrtoint ptr %113 to i64
+  %slot_addr827 = add i64 %slot_base826, 8
+  %slot828 = inttoptr i64 %slot_addr827 to ptr
+  store ptr %114, ptr %slot828, align 8
+  %ctx829 = load ptr, ptr %ctx, align 8
+  %rvt830 = load ptr, ptr %rvt817, align 8
+  %115 = call ptr @"@std::avrac::resolve::rewrite_vtype"(ptr %ctx829, ptr %rvt830)
+  %slot_base831 = ptrtoint ptr %113 to i64
+  %slot_addr832 = add i64 %slot_base831, 16
+  %slot833 = inttoptr i64 %slot_addr832 to ptr
+  store ptr %115, ptr %slot833, align 8
+  %cast834 = ptrtoint ptr %112 to i64
+  store i64 %cast834, ptr %match_result, align 8
   br label %match_end
 
-march_next794:                                    ; preds = %march_next769
-  %tag_eq836 = icmp eq i64 %tag, 249861837142781531
-  br i1 %tag_eq836, label %march_arm834, label %march_next835
+march_next795:                                    ; preds = %march_next770
+  %tag_eq837 = icmp eq i64 %tag, 249861837142781531
+  br i1 %tag_eq837, label %march_arm835, label %march_next836
 
-march_arm834:                                     ; preds = %march_next794
-  %pay_slot837 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
-  %payload838 = load ptr, ptr %pay_slot837, align 8
-  %name_slot_base839 = ptrtoint ptr %payload838 to i64
-  %name_slot_addr840 = add i64 %name_slot_base839, 0
-  %name_slot841 = inttoptr i64 %name_slot_addr840 to ptr
-  %name842 = load ptr, ptr %name_slot841, align 8
-  call void @avra_rc_retain(ptr %name842)
-  store ptr %name842, ptr %name843, align 8
-  %pay_slot844 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
-  %payload845 = load ptr, ptr %pay_slot844, align 8
-  %body_slot_base846 = ptrtoint ptr %payload845 to i64
-  %body_slot_addr847 = add i64 %body_slot_base846, 8
-  %body_slot848 = inttoptr i64 %body_slot_addr847 to ptr
-  %body849 = load ptr, ptr %body_slot848, align 8
-  call void @avra_rc_retain(ptr %body849)
-  store ptr %body849, ptr %body850, align 8
-  %115 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr851 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %115, i32 0, i32 0
-  store i64 249861837142781531, ptr %tag_ptr851, align 8
-  %pay_ptr852 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %115, i32 0, i32 1
+march_arm835:                                     ; preds = %march_next795
+  %pay_slot838 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
+  %payload839 = load ptr, ptr %pay_slot838, align 8
+  %name_slot_base840 = ptrtoint ptr %payload839 to i64
+  %name_slot_addr841 = add i64 %name_slot_base840, 0
+  %name_slot842 = inttoptr i64 %name_slot_addr841 to ptr
+  %name843 = load ptr, ptr %name_slot842, align 8
+  call void @avra_rc_retain(ptr %name843)
+  store ptr %name843, ptr %name844, align 8
+  %pay_slot845 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
+  %payload846 = load ptr, ptr %pay_slot845, align 8
+  %body_slot_base847 = ptrtoint ptr %payload846 to i64
+  %body_slot_addr848 = add i64 %body_slot_base847, 8
+  %body_slot849 = inttoptr i64 %body_slot_addr848 to ptr
+  %body850 = load ptr, ptr %body_slot849, align 8
+  call void @avra_rc_retain(ptr %body850)
+  store ptr %body850, ptr %body851, align 8
   %116 = call ptr @avra_rc_alloc(i64 16)
-  store ptr %116, ptr %pay_ptr852, align 8
-  %name853 = load ptr, ptr %name843, align 8
-  %slot_base854 = ptrtoint ptr %116 to i64
-  %slot_addr855 = add i64 %slot_base854, 0
-  %slot856 = inttoptr i64 %slot_addr855 to ptr
-  store ptr %name853, ptr %slot856, align 8
-  %ctx857 = load ptr, ptr %ctx, align 8
-  %body858 = load ptr, ptr %body850, align 8
-  %117 = call ptr @"@std::avrac::resolve::rewrite_stmt_list"(ptr %ctx857, ptr %body858)
-  %slot_base859 = ptrtoint ptr %116 to i64
-  %slot_addr860 = add i64 %slot_base859, 8
-  %slot861 = inttoptr i64 %slot_addr860 to ptr
-  store ptr %117, ptr %slot861, align 8
-  %cast862 = ptrtoint ptr %115 to i64
-  store i64 %cast862, ptr %match_result, align 8
+  %tag_ptr852 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %116, i32 0, i32 0
+  store i64 249861837142781531, ptr %tag_ptr852, align 8
+  %pay_ptr853 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %116, i32 0, i32 1
+  %117 = call ptr @avra_rc_alloc(i64 16)
+  store ptr %117, ptr %pay_ptr853, align 8
+  %name854 = load ptr, ptr %name844, align 8
+  %slot_base855 = ptrtoint ptr %117 to i64
+  %slot_addr856 = add i64 %slot_base855, 0
+  %slot857 = inttoptr i64 %slot_addr856 to ptr
+  store ptr %name854, ptr %slot857, align 8
+  %ctx858 = load ptr, ptr %ctx, align 8
+  %body859 = load ptr, ptr %body851, align 8
+  %118 = call ptr @"@std::avrac::resolve::rewrite_stmt_list"(ptr %ctx858, ptr %body859)
+  %slot_base860 = ptrtoint ptr %117 to i64
+  %slot_addr861 = add i64 %slot_base860, 8
+  %slot862 = inttoptr i64 %slot_addr861 to ptr
+  store ptr %118, ptr %slot862, align 8
+  %cast863 = ptrtoint ptr %116 to i64
+  store i64 %cast863, ptr %match_result, align 8
   br label %match_end
 
-march_next835:                                    ; preds = %march_next794
-  %tag_eq865 = icmp eq i64 %tag, 8244874571807159657
-  br i1 %tag_eq865, label %march_arm863, label %march_next864
+march_next836:                                    ; preds = %march_next795
+  %tag_eq866 = icmp eq i64 %tag, 8244874571807159657
+  br i1 %tag_eq866, label %march_arm864, label %march_next865
 
-march_arm863:                                     ; preds = %march_next835
-  %pay_slot866 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
-  %payload867 = load ptr, ptr %pay_slot866, align 8
-  %name_slot_base868 = ptrtoint ptr %payload867 to i64
-  %name_slot_addr869 = add i64 %name_slot_base868, 0
-  %name_slot870 = inttoptr i64 %name_slot_addr869 to ptr
-  %name871 = load ptr, ptr %name_slot870, align 8
-  call void @avra_rc_retain(ptr %name871)
-  store ptr %name871, ptr %name872, align 8
-  %pay_slot873 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
-  %payload874 = load ptr, ptr %pay_slot873, align 8
-  %body_slot_base875 = ptrtoint ptr %payload874 to i64
-  %body_slot_addr876 = add i64 %body_slot_base875, 8
-  %body_slot877 = inttoptr i64 %body_slot_addr876 to ptr
-  %body878 = load ptr, ptr %body_slot877, align 8
-  call void @avra_rc_retain(ptr %body878)
-  store ptr %body878, ptr %body879, align 8
-  %118 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr880 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %118, i32 0, i32 0
-  store i64 8244874571807159657, ptr %tag_ptr880, align 8
-  %pay_ptr881 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %118, i32 0, i32 1
+march_arm864:                                     ; preds = %march_next836
+  %pay_slot867 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
+  %payload868 = load ptr, ptr %pay_slot867, align 8
+  %name_slot_base869 = ptrtoint ptr %payload868 to i64
+  %name_slot_addr870 = add i64 %name_slot_base869, 0
+  %name_slot871 = inttoptr i64 %name_slot_addr870 to ptr
+  %name872 = load ptr, ptr %name_slot871, align 8
+  call void @avra_rc_retain(ptr %name872)
+  store ptr %name872, ptr %name873, align 8
+  %pay_slot874 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
+  %payload875 = load ptr, ptr %pay_slot874, align 8
+  %body_slot_base876 = ptrtoint ptr %payload875 to i64
+  %body_slot_addr877 = add i64 %body_slot_base876, 8
+  %body_slot878 = inttoptr i64 %body_slot_addr877 to ptr
+  %body879 = load ptr, ptr %body_slot878, align 8
+  call void @avra_rc_retain(ptr %body879)
+  store ptr %body879, ptr %body880, align 8
   %119 = call ptr @avra_rc_alloc(i64 16)
-  store ptr %119, ptr %pay_ptr881, align 8
-  %name882 = load ptr, ptr %name872, align 8
-  %slot_base883 = ptrtoint ptr %119 to i64
-  %slot_addr884 = add i64 %slot_base883, 0
-  %slot885 = inttoptr i64 %slot_addr884 to ptr
-  store ptr %name882, ptr %slot885, align 8
-  %ctx886 = load ptr, ptr %ctx, align 8
-  %body887 = load ptr, ptr %body879, align 8
-  %120 = call ptr @"@std::avrac::resolve::rewrite_stmt_list"(ptr %ctx886, ptr %body887)
-  %slot_base888 = ptrtoint ptr %119 to i64
-  %slot_addr889 = add i64 %slot_base888, 8
-  %slot890 = inttoptr i64 %slot_addr889 to ptr
-  store ptr %120, ptr %slot890, align 8
-  %cast891 = ptrtoint ptr %118 to i64
-  store i64 %cast891, ptr %match_result, align 8
+  %tag_ptr881 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %119, i32 0, i32 0
+  store i64 8244874571807159657, ptr %tag_ptr881, align 8
+  %pay_ptr882 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %119, i32 0, i32 1
+  %120 = call ptr @avra_rc_alloc(i64 16)
+  store ptr %120, ptr %pay_ptr882, align 8
+  %name883 = load ptr, ptr %name873, align 8
+  %slot_base884 = ptrtoint ptr %120 to i64
+  %slot_addr885 = add i64 %slot_base884, 0
+  %slot886 = inttoptr i64 %slot_addr885 to ptr
+  store ptr %name883, ptr %slot886, align 8
+  %ctx887 = load ptr, ptr %ctx, align 8
+  %body888 = load ptr, ptr %body880, align 8
+  %121 = call ptr @"@std::avrac::resolve::rewrite_stmt_list"(ptr %ctx887, ptr %body888)
+  %slot_base889 = ptrtoint ptr %120 to i64
+  %slot_addr890 = add i64 %slot_base889, 8
+  %slot891 = inttoptr i64 %slot_addr890 to ptr
+  store ptr %121, ptr %slot891, align 8
+  %cast892 = ptrtoint ptr %119 to i64
+  store i64 %cast892, ptr %match_result, align 8
   br label %match_end
 
-march_next864:                                    ; preds = %march_next835
-  %tag_eq894 = icmp eq i64 %tag, 249862903034345279
-  br i1 %tag_eq894, label %march_arm892, label %march_next893
+march_next865:                                    ; preds = %march_next836
+  %tag_eq895 = icmp eq i64 %tag, 249862903034345279
+  br i1 %tag_eq895, label %march_arm893, label %march_next894
 
-march_arm892:                                     ; preds = %march_next864
-  %pay_slot895 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
-  %payload896 = load ptr, ptr %pay_slot895, align 8
-  %name_slot_base897 = ptrtoint ptr %payload896 to i64
-  %name_slot_addr898 = add i64 %name_slot_base897, 0
-  %name_slot899 = inttoptr i64 %name_slot_addr898 to ptr
-  %name900 = load ptr, ptr %name_slot899, align 8
-  call void @avra_rc_retain(ptr %name900)
-  store ptr %name900, ptr %name901, align 8
-  %pay_slot902 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
-  %payload903 = load ptr, ptr %pay_slot902, align 8
-  %cond_slot_base904 = ptrtoint ptr %payload903 to i64
-  %cond_slot_addr905 = add i64 %cond_slot_base904, 8
-  %cond_slot906 = inttoptr i64 %cond_slot_addr905 to ptr
-  %cond907 = load ptr, ptr %cond_slot906, align 8
-  call void @avra_rc_retain(ptr %cond907)
-  store ptr %cond907, ptr %cond908, align 8
-  %121 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr909 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %121, i32 0, i32 0
-  store i64 249862903034345279, ptr %tag_ptr909, align 8
-  %pay_ptr910 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %121, i32 0, i32 1
+march_arm893:                                     ; preds = %march_next865
+  %pay_slot896 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
+  %payload897 = load ptr, ptr %pay_slot896, align 8
+  %name_slot_base898 = ptrtoint ptr %payload897 to i64
+  %name_slot_addr899 = add i64 %name_slot_base898, 0
+  %name_slot900 = inttoptr i64 %name_slot_addr899 to ptr
+  %name901 = load ptr, ptr %name_slot900, align 8
+  call void @avra_rc_retain(ptr %name901)
+  store ptr %name901, ptr %name902, align 8
+  %pay_slot903 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
+  %payload904 = load ptr, ptr %pay_slot903, align 8
+  %cond_slot_base905 = ptrtoint ptr %payload904 to i64
+  %cond_slot_addr906 = add i64 %cond_slot_base905, 8
+  %cond_slot907 = inttoptr i64 %cond_slot_addr906 to ptr
+  %cond908 = load ptr, ptr %cond_slot907, align 8
+  call void @avra_rc_retain(ptr %cond908)
+  store ptr %cond908, ptr %cond909, align 8
   %122 = call ptr @avra_rc_alloc(i64 16)
-  store ptr %122, ptr %pay_ptr910, align 8
-  %name911 = load ptr, ptr %name901, align 8
-  %slot_base912 = ptrtoint ptr %122 to i64
-  %slot_addr913 = add i64 %slot_base912, 0
-  %slot914 = inttoptr i64 %slot_addr913 to ptr
-  store ptr %name911, ptr %slot914, align 8
-  %ctx915 = load ptr, ptr %ctx, align 8
-  %cond916 = load ptr, ptr %cond908, align 8
-  %123 = call ptr @"@std::avrac::resolve::rewrite_expr"(ptr %ctx915, ptr %cond916)
-  %slot_base917 = ptrtoint ptr %122 to i64
-  %slot_addr918 = add i64 %slot_base917, 8
-  %slot919 = inttoptr i64 %slot_addr918 to ptr
-  store ptr %123, ptr %slot919, align 8
-  %cast920 = ptrtoint ptr %121 to i64
-  store i64 %cast920, ptr %match_result, align 8
+  %tag_ptr910 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %122, i32 0, i32 0
+  store i64 249862903034345279, ptr %tag_ptr910, align 8
+  %pay_ptr911 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %122, i32 0, i32 1
+  %123 = call ptr @avra_rc_alloc(i64 16)
+  store ptr %123, ptr %pay_ptr911, align 8
+  %name912 = load ptr, ptr %name902, align 8
+  %slot_base913 = ptrtoint ptr %123 to i64
+  %slot_addr914 = add i64 %slot_base913, 0
+  %slot915 = inttoptr i64 %slot_addr914 to ptr
+  store ptr %name912, ptr %slot915, align 8
+  %ctx916 = load ptr, ptr %ctx, align 8
+  %cond917 = load ptr, ptr %cond909, align 8
+  %124 = call ptr @"@std::avrac::resolve::rewrite_expr"(ptr %ctx916, ptr %cond917)
+  %slot_base918 = ptrtoint ptr %123 to i64
+  %slot_addr919 = add i64 %slot_base918, 8
+  %slot920 = inttoptr i64 %slot_addr919 to ptr
+  store ptr %124, ptr %slot920, align 8
+  %cast921 = ptrtoint ptr %122 to i64
+  store i64 %cast921, ptr %match_result, align 8
   br label %match_end
 
-march_next893:                                    ; preds = %march_next864
-  %tag_eq923 = icmp eq i64 %tag, 7571424103057362
-  br i1 %tag_eq923, label %march_arm921, label %march_next922
+march_next894:                                    ; preds = %march_next865
+  %tag_eq924 = icmp eq i64 %tag, 7571424103057362
+  br i1 %tag_eq924, label %march_arm922, label %march_next923
 
-march_arm921:                                     ; preds = %march_next893
-  %pay_slot924 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
-  %payload925 = load ptr, ptr %pay_slot924, align 8
-  %body_slot_base926 = ptrtoint ptr %payload925 to i64
-  %body_slot_addr927 = add i64 %body_slot_base926, 0
-  %body_slot928 = inttoptr i64 %body_slot_addr927 to ptr
-  %body929 = load ptr, ptr %body_slot928, align 8
-  call void @avra_rc_retain(ptr %body929)
-  store ptr %body929, ptr %body930, align 8
-  %124 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr931 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %124, i32 0, i32 0
-  store i64 7571424103057362, ptr %tag_ptr931, align 8
-  %pay_ptr932 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %124, i32 0, i32 1
-  %125 = call ptr @avra_rc_alloc(i64 8)
-  store ptr %125, ptr %pay_ptr932, align 8
-  %ctx933 = load ptr, ptr %ctx, align 8
-  %body934 = load ptr, ptr %body930, align 8
-  %126 = call ptr @"@std::avrac::resolve::rewrite_stmt_list"(ptr %ctx933, ptr %body934)
-  %slot_base935 = ptrtoint ptr %125 to i64
-  %slot_addr936 = add i64 %slot_base935, 0
-  %slot937 = inttoptr i64 %slot_addr936 to ptr
-  store ptr %126, ptr %slot937, align 8
-  %cast938 = ptrtoint ptr %124 to i64
-  store i64 %cast938, ptr %match_result, align 8
+march_arm922:                                     ; preds = %march_next894
+  %pay_slot925 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
+  %payload926 = load ptr, ptr %pay_slot925, align 8
+  %body_slot_base927 = ptrtoint ptr %payload926 to i64
+  %body_slot_addr928 = add i64 %body_slot_base927, 0
+  %body_slot929 = inttoptr i64 %body_slot_addr928 to ptr
+  %body930 = load ptr, ptr %body_slot929, align 8
+  call void @avra_rc_retain(ptr %body930)
+  store ptr %body930, ptr %body931, align 8
+  %125 = call ptr @avra_rc_alloc(i64 16)
+  %tag_ptr932 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %125, i32 0, i32 0
+  store i64 7571424103057362, ptr %tag_ptr932, align 8
+  %pay_ptr933 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %125, i32 0, i32 1
+  %126 = call ptr @avra_rc_alloc(i64 8)
+  store ptr %126, ptr %pay_ptr933, align 8
+  %ctx934 = load ptr, ptr %ctx, align 8
+  %body935 = load ptr, ptr %body931, align 8
+  %127 = call ptr @"@std::avrac::resolve::rewrite_stmt_list"(ptr %ctx934, ptr %body935)
+  %slot_base936 = ptrtoint ptr %126 to i64
+  %slot_addr937 = add i64 %slot_base936, 0
+  %slot938 = inttoptr i64 %slot_addr937 to ptr
+  store ptr %127, ptr %slot938, align 8
+  %cast939 = ptrtoint ptr %125 to i64
+  store i64 %cast939, ptr %match_result, align 8
   br label %match_end
 
-march_next922:                                    ; preds = %march_next893
-  %tag_eq941 = icmp eq i64 %tag, 6952761151397
-  br i1 %tag_eq941, label %march_arm939, label %march_next940
+march_next923:                                    ; preds = %march_next894
+  %tag_eq942 = icmp eq i64 %tag, 6952761151397
+  br i1 %tag_eq942, label %march_arm940, label %march_next941
 
-march_arm939:                                     ; preds = %march_next922
-  %pay_slot942 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
-  %payload943 = load ptr, ptr %pay_slot942, align 8
-  %arms_slot_base944 = ptrtoint ptr %payload943 to i64
-  %arms_slot_addr945 = add i64 %arms_slot_base944, 0
-  %arms_slot946 = inttoptr i64 %arms_slot_addr945 to ptr
-  %arms947 = load ptr, ptr %arms_slot946, align 8
-  call void @avra_rc_retain(ptr %arms947)
-  store ptr %arms947, ptr %arms948, align 8
-  %127 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr949 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %127, i32 0, i32 0
-  store i64 6952761151397, ptr %tag_ptr949, align 8
-  %pay_ptr950 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %127, i32 0, i32 1
-  %128 = call ptr @avra_rc_alloc(i64 8)
-  store ptr %128, ptr %pay_ptr950, align 8
-  %ctx951 = load ptr, ptr %ctx, align 8
-  %arms952 = load ptr, ptr %arms948, align 8
-  %129 = call ptr @"@std::avrac::resolve::rewrite_select_arms"(ptr %ctx951, ptr %arms952)
-  %slot_base953 = ptrtoint ptr %128 to i64
-  %slot_addr954 = add i64 %slot_base953, 0
-  %slot955 = inttoptr i64 %slot_addr954 to ptr
-  store ptr %129, ptr %slot955, align 8
-  %cast956 = ptrtoint ptr %127 to i64
-  store i64 %cast956, ptr %match_result, align 8
+march_arm940:                                     ; preds = %march_next923
+  %pay_slot943 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
+  %payload944 = load ptr, ptr %pay_slot943, align 8
+  %arms_slot_base945 = ptrtoint ptr %payload944 to i64
+  %arms_slot_addr946 = add i64 %arms_slot_base945, 0
+  %arms_slot947 = inttoptr i64 %arms_slot_addr946 to ptr
+  %arms948 = load ptr, ptr %arms_slot947, align 8
+  call void @avra_rc_retain(ptr %arms948)
+  store ptr %arms948, ptr %arms949, align 8
+  %128 = call ptr @avra_rc_alloc(i64 16)
+  %tag_ptr950 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %128, i32 0, i32 0
+  store i64 6952761151397, ptr %tag_ptr950, align 8
+  %pay_ptr951 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %128, i32 0, i32 1
+  %129 = call ptr @avra_rc_alloc(i64 8)
+  store ptr %129, ptr %pay_ptr951, align 8
+  %ctx952 = load ptr, ptr %ctx, align 8
+  %arms953 = load ptr, ptr %arms949, align 8
+  %130 = call ptr @"@std::avrac::resolve::rewrite_select_arms"(ptr %ctx952, ptr %arms953)
+  %slot_base954 = ptrtoint ptr %129 to i64
+  %slot_addr955 = add i64 %slot_base954, 0
+  %slot956 = inttoptr i64 %slot_addr955 to ptr
+  store ptr %130, ptr %slot956, align 8
+  %cast957 = ptrtoint ptr %128 to i64
+  store i64 %cast957, ptr %match_result, align 8
   br label %match_end
 
-march_next940:                                    ; preds = %march_next922
-  %tag_eq959 = icmp eq i64 %tag, 210671119148
-  br i1 %tag_eq959, label %march_arm957, label %march_next958
+march_next941:                                    ; preds = %march_next923
+  %tag_eq960 = icmp eq i64 %tag, 210671119148
+  br i1 %tag_eq960, label %march_arm958, label %march_next959
 
-march_arm957:                                     ; preds = %march_next940
-  %pay_slot960 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
-  %payload961 = load ptr, ptr %pay_slot960, align 8
-  %name_slot_base962 = ptrtoint ptr %payload961 to i64
-  %name_slot_addr963 = add i64 %name_slot_base962, 0
-  %name_slot964 = inttoptr i64 %name_slot_addr963 to ptr
-  %name965 = load ptr, ptr %name_slot964, align 8
-  call void @avra_rc_retain(ptr %name965)
-  store ptr %name965, ptr %name966, align 8
-  %pay_slot967 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
-  %payload968 = load ptr, ptr %pay_slot967, align 8
-  %vt_slot_base969 = ptrtoint ptr %payload968 to i64
-  %vt_slot_addr970 = add i64 %vt_slot_base969, 8
-  %vt_slot971 = inttoptr i64 %vt_slot_addr970 to ptr
-  %vt972 = load ptr, ptr %vt_slot971, align 8
-  call void @avra_rc_retain(ptr %vt972)
-  store ptr %vt972, ptr %vt973, align 8
-  %pay_slot974 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
-  %payload975 = load ptr, ptr %pay_slot974, align 8
-  %init_slot_base976 = ptrtoint ptr %payload975 to i64
-  %init_slot_addr977 = add i64 %init_slot_base976, 16
-  %init_slot978 = inttoptr i64 %init_slot_addr977 to ptr
-  %init979 = load ptr, ptr %init_slot978, align 8
-  call void @avra_rc_retain(ptr %init979)
-  store ptr %init979, ptr %init980, align 8
-  %130 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr981 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %130, i32 0, i32 0
-  store i64 210671119148, ptr %tag_ptr981, align 8
-  %pay_ptr982 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %130, i32 0, i32 1
-  %131 = call ptr @avra_rc_alloc(i64 24)
-  store ptr %131, ptr %pay_ptr982, align 8
-  %name983 = load ptr, ptr %name966, align 8
-  %slot_base984 = ptrtoint ptr %131 to i64
-  %slot_addr985 = add i64 %slot_base984, 0
-  %slot986 = inttoptr i64 %slot_addr985 to ptr
-  store ptr %name983, ptr %slot986, align 8
-  %ctx987 = load ptr, ptr %ctx, align 8
-  %vt988 = load ptr, ptr %vt973, align 8
-  %132 = call ptr @"@std::avrac::resolve::rewrite_vtype"(ptr %ctx987, ptr %vt988)
-  %slot_base989 = ptrtoint ptr %131 to i64
-  %slot_addr990 = add i64 %slot_base989, 8
-  %slot991 = inttoptr i64 %slot_addr990 to ptr
-  store ptr %132, ptr %slot991, align 8
-  %ctx992 = load ptr, ptr %ctx, align 8
-  %init993 = load ptr, ptr %init980, align 8
-  %133 = call ptr @"@std::avrac::resolve::rewrite_expr"(ptr %ctx992, ptr %init993)
-  %slot_base994 = ptrtoint ptr %131 to i64
-  %slot_addr995 = add i64 %slot_base994, 16
-  %slot996 = inttoptr i64 %slot_addr995 to ptr
-  store ptr %133, ptr %slot996, align 8
-  %cast997 = ptrtoint ptr %130 to i64
-  store i64 %cast997, ptr %match_result, align 8
+march_arm958:                                     ; preds = %march_next941
+  %pay_slot961 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
+  %payload962 = load ptr, ptr %pay_slot961, align 8
+  %name_slot_base963 = ptrtoint ptr %payload962 to i64
+  %name_slot_addr964 = add i64 %name_slot_base963, 0
+  %name_slot965 = inttoptr i64 %name_slot_addr964 to ptr
+  %name966 = load ptr, ptr %name_slot965, align 8
+  call void @avra_rc_retain(ptr %name966)
+  store ptr %name966, ptr %name967, align 8
+  %pay_slot968 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
+  %payload969 = load ptr, ptr %pay_slot968, align 8
+  %vt_slot_base970 = ptrtoint ptr %payload969 to i64
+  %vt_slot_addr971 = add i64 %vt_slot_base970, 8
+  %vt_slot972 = inttoptr i64 %vt_slot_addr971 to ptr
+  %vt973 = load ptr, ptr %vt_slot972, align 8
+  call void @avra_rc_retain(ptr %vt973)
+  store ptr %vt973, ptr %vt974, align 8
+  %pay_slot975 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
+  %payload976 = load ptr, ptr %pay_slot975, align 8
+  %init_slot_base977 = ptrtoint ptr %payload976 to i64
+  %init_slot_addr978 = add i64 %init_slot_base977, 16
+  %init_slot979 = inttoptr i64 %init_slot_addr978 to ptr
+  %init980 = load ptr, ptr %init_slot979, align 8
+  call void @avra_rc_retain(ptr %init980)
+  store ptr %init980, ptr %init981, align 8
+  %131 = call ptr @avra_rc_alloc(i64 16)
+  %tag_ptr982 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %131, i32 0, i32 0
+  store i64 210671119148, ptr %tag_ptr982, align 8
+  %pay_ptr983 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %131, i32 0, i32 1
+  %132 = call ptr @avra_rc_alloc(i64 24)
+  store ptr %132, ptr %pay_ptr983, align 8
+  %name984 = load ptr, ptr %name967, align 8
+  %slot_base985 = ptrtoint ptr %132 to i64
+  %slot_addr986 = add i64 %slot_base985, 0
+  %slot987 = inttoptr i64 %slot_addr986 to ptr
+  store ptr %name984, ptr %slot987, align 8
+  %ctx988 = load ptr, ptr %ctx, align 8
+  %vt989 = load ptr, ptr %vt974, align 8
+  %133 = call ptr @"@std::avrac::resolve::rewrite_vtype"(ptr %ctx988, ptr %vt989)
+  %slot_base990 = ptrtoint ptr %132 to i64
+  %slot_addr991 = add i64 %slot_base990, 8
+  %slot992 = inttoptr i64 %slot_addr991 to ptr
+  store ptr %133, ptr %slot992, align 8
+  %ctx993 = load ptr, ptr %ctx, align 8
+  %init994 = load ptr, ptr %init981, align 8
+  %134 = call ptr @"@std::avrac::resolve::rewrite_expr"(ptr %ctx993, ptr %init994)
+  %slot_base995 = ptrtoint ptr %132 to i64
+  %slot_addr996 = add i64 %slot_base995, 16
+  %slot997 = inttoptr i64 %slot_addr996 to ptr
+  store ptr %134, ptr %slot997, align 8
+  %cast998 = ptrtoint ptr %131 to i64
+  store i64 %cast998, ptr %match_result, align 8
   br label %match_end
 
-march_next958:                                    ; preds = %march_next940
-  %tag_eq1000 = icmp eq i64 %tag, 2913245454108674224
-  br i1 %tag_eq1000, label %march_arm998, label %march_next999
+march_next959:                                    ; preds = %march_next941
+  %tag_eq1001 = icmp eq i64 %tag, 2913245454108674224
+  br i1 %tag_eq1001, label %march_arm999, label %march_next1000
 
-march_arm998:                                     ; preds = %march_next958
-  %pay_slot1001 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
-  %payload1002 = load ptr, ptr %pay_slot1001, align 8
-  %name_slot_base1003 = ptrtoint ptr %payload1002 to i64
-  %name_slot_addr1004 = add i64 %name_slot_base1003, 0
-  %name_slot1005 = inttoptr i64 %name_slot_addr1004 to ptr
-  %name1006 = load ptr, ptr %name_slot1005, align 8
-  call void @avra_rc_retain(ptr %name1006)
-  store ptr %name1006, ptr %name1007, align 8
-  %pay_slot1008 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
-  %payload1009 = load ptr, ptr %pay_slot1008, align 8
-  %vt_slot_base1010 = ptrtoint ptr %payload1009 to i64
-  %vt_slot_addr1011 = add i64 %vt_slot_base1010, 8
-  %vt_slot1012 = inttoptr i64 %vt_slot_addr1011 to ptr
-  %vt1013 = load ptr, ptr %vt_slot1012, align 8
-  call void @avra_rc_retain(ptr %vt1013)
-  store ptr %vt1013, ptr %vt1014, align 8
-  %ctx1015 = load ptr, ptr %ctx, align 8
-  %name1016 = load ptr, ptr %name1007, align 8
-  %134 = call ptr @"@std::avrac::resolve::resolve_type_in_ctx"(ptr %ctx1015, ptr %name1016)
-  store ptr %134, ptr %qn1017, align 8
-  %ctx1018 = load ptr, ptr %ctx, align 8
-  %vt1019 = load ptr, ptr %vt1014, align 8
-  %135 = call ptr @"@std::avrac::resolve::rewrite_vtype"(ptr %ctx1018, ptr %vt1019)
-  store ptr %135, ptr %rvt1020, align 8
-  %ctx1021 = load ptr, ptr %ctx, align 8
-  %cast1022 = ptrtoint ptr %ctx1021 to i64
-  %null_chk1023 = icmp eq i64 %cast1022, 0
-  %null_ext1024 = zext i1 %null_chk1023 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19065, i64 8, ptr @sty_name.19066, i64 29, i64 %null_ext1024, ptr @src_file.19067, i64 0, i64 764)
-  %type_reg_ptr1025 = getelementptr inbounds nuw %"@std::avrac::resolve::NameCtx", ptr %ctx1021, i32 0, i32 6
-  %type_reg1026 = load ptr, ptr %type_reg_ptr1025, align 8
-  %qn1027 = load ptr, ptr %qn1017, align 8
-  %136 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr1028 = getelementptr inbounds nuw %"@std::avrac::core::TypeKind", ptr %136, i32 0, i32 0
-  store i64 -4609762767365712041, ptr %tag_ptr1028, align 8
-  %pay_ptr1029 = getelementptr inbounds nuw %"@std::avrac::core::TypeKind", ptr %136, i32 0, i32 1
-  store ptr null, ptr %pay_ptr1029, align 8
-  %cast1030 = ptrtoint ptr %136 to i64
+march_arm999:                                     ; preds = %march_next959
+  %pay_slot1002 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
+  %payload1003 = load ptr, ptr %pay_slot1002, align 8
+  %name_slot_base1004 = ptrtoint ptr %payload1003 to i64
+  %name_slot_addr1005 = add i64 %name_slot_base1004, 0
+  %name_slot1006 = inttoptr i64 %name_slot_addr1005 to ptr
+  %name1007 = load ptr, ptr %name_slot1006, align 8
+  call void @avra_rc_retain(ptr %name1007)
+  store ptr %name1007, ptr %name1008, align 8
+  %pay_slot1009 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt1, i32 0, i32 1
+  %payload1010 = load ptr, ptr %pay_slot1009, align 8
+  %vt_slot_base1011 = ptrtoint ptr %payload1010 to i64
+  %vt_slot_addr1012 = add i64 %vt_slot_base1011, 8
+  %vt_slot1013 = inttoptr i64 %vt_slot_addr1012 to ptr
+  %vt1014 = load ptr, ptr %vt_slot1013, align 8
+  call void @avra_rc_retain(ptr %vt1014)
+  store ptr %vt1014, ptr %vt1015, align 8
+  %ctx1016 = load ptr, ptr %ctx, align 8
+  %name1017 = load ptr, ptr %name1008, align 8
+  %135 = call ptr @"@std::avrac::resolve::resolve_type_in_ctx"(ptr %ctx1016, ptr %name1017)
+  store ptr %135, ptr %qn1018, align 8
+  %ctx1019 = load ptr, ptr %ctx, align 8
+  %vt1020 = load ptr, ptr %vt1015, align 8
+  %136 = call ptr @"@std::avrac::resolve::rewrite_vtype"(ptr %ctx1019, ptr %vt1020)
+  store ptr %136, ptr %rvt1021, align 8
+  %ctx1022 = load ptr, ptr %ctx, align 8
+  %cast1023 = ptrtoint ptr %ctx1022 to i64
+  %null_chk1024 = icmp eq i64 %cast1023, 0
+  %null_ext1025 = zext i1 %null_chk1024 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.19065, i64 8, ptr @sty_name.19066, i64 29, i64 %null_ext1025, ptr @src_file.19067, i64 0, i64 772)
+  %type_reg_ptr1026 = getelementptr inbounds nuw %"@std::avrac::resolve::NameCtx", ptr %ctx1022, i32 0, i32 6
+  %type_reg1027 = load ptr, ptr %type_reg_ptr1026, align 8
+  %qn1028 = load ptr, ptr %qn1018, align 8
   %137 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr1031 = getelementptr inbounds nuw %"@std::avrac::core::FieldList", ptr %137, i32 0, i32 0
-  store i64 193455868, ptr %tag_ptr1031, align 8
-  %pay_ptr1032 = getelementptr inbounds nuw %"@std::avrac::core::FieldList", ptr %137, i32 0, i32 1
-  store ptr null, ptr %pay_ptr1032, align 8
-  %cast1033 = ptrtoint ptr %137 to i64
+  %tag_ptr1029 = getelementptr inbounds nuw %"@std::avrac::core::TypeKind", ptr %137, i32 0, i32 0
+  store i64 -4609762767365712041, ptr %tag_ptr1029, align 8
+  %pay_ptr1030 = getelementptr inbounds nuw %"@std::avrac::core::TypeKind", ptr %137, i32 0, i32 1
+  store ptr null, ptr %pay_ptr1030, align 8
+  %cast1031 = ptrtoint ptr %137 to i64
   %138 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr1034 = getelementptr inbounds nuw %"@std::avrac::core::VariantList", ptr %138, i32 0, i32 0
-  store i64 193455868, ptr %tag_ptr1034, align 8
-  %pay_ptr1035 = getelementptr inbounds nuw %"@std::avrac::core::VariantList", ptr %138, i32 0, i32 1
-  store ptr null, ptr %pay_ptr1035, align 8
-  %cast1036 = ptrtoint ptr %138 to i64
-  %rvt1037 = load ptr, ptr %rvt1020, align 8
-  %cast1038 = inttoptr i64 %cast1030 to ptr
-  %cast1039 = inttoptr i64 %cast1033 to ptr
-  %cast1040 = inttoptr i64 %cast1036 to ptr
-  %139 = call i64 @"@std::avrac::core::type_registry_register"(ptr %type_reg1026, ptr %qn1027, ptr %cast1038, ptr %cast1039, ptr %cast1040, ptr %rvt1037)
-  %140 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr1041 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %140, i32 0, i32 0
-  store i64 2913245454108674224, ptr %tag_ptr1041, align 8
-  %pay_ptr1042 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %140, i32 0, i32 1
+  %tag_ptr1032 = getelementptr inbounds nuw %"@std::avrac::core::FieldList", ptr %138, i32 0, i32 0
+  store i64 193455868, ptr %tag_ptr1032, align 8
+  %pay_ptr1033 = getelementptr inbounds nuw %"@std::avrac::core::FieldList", ptr %138, i32 0, i32 1
+  store ptr null, ptr %pay_ptr1033, align 8
+  %cast1034 = ptrtoint ptr %138 to i64
+  %139 = call ptr @avra_rc_alloc(i64 16)
+  %tag_ptr1035 = getelementptr inbounds nuw %"@std::avrac::core::VariantList", ptr %139, i32 0, i32 0
+  store i64 193455868, ptr %tag_ptr1035, align 8
+  %pay_ptr1036 = getelementptr inbounds nuw %"@std::avrac::core::VariantList", ptr %139, i32 0, i32 1
+  store ptr null, ptr %pay_ptr1036, align 8
+  %cast1037 = ptrtoint ptr %139 to i64
+  %rvt1038 = load ptr, ptr %rvt1021, align 8
+  %cast1039 = inttoptr i64 %cast1031 to ptr
+  %cast1040 = inttoptr i64 %cast1034 to ptr
+  %cast1041 = inttoptr i64 %cast1037 to ptr
+  %140 = call i64 @"@std::avrac::core::type_registry_register"(ptr %type_reg1027, ptr %qn1028, ptr %cast1039, ptr %cast1040, ptr %cast1041, ptr %rvt1038)
   %141 = call ptr @avra_rc_alloc(i64 16)
-  store ptr %141, ptr %pay_ptr1042, align 8
-  %qn1043 = load ptr, ptr %qn1017, align 8
-  %slot_base1044 = ptrtoint ptr %141 to i64
-  %slot_addr1045 = add i64 %slot_base1044, 0
-  %slot1046 = inttoptr i64 %slot_addr1045 to ptr
-  store ptr %qn1043, ptr %slot1046, align 8
-  %rvt1047 = load ptr, ptr %rvt1020, align 8
-  %slot_base1048 = ptrtoint ptr %141 to i64
-  %slot_addr1049 = add i64 %slot_base1048, 8
-  %slot1050 = inttoptr i64 %slot_addr1049 to ptr
-  store ptr %rvt1047, ptr %slot1050, align 8
-  %cast1051 = ptrtoint ptr %140 to i64
-  store i64 %cast1051, ptr %match_result, align 8
+  %tag_ptr1042 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %141, i32 0, i32 0
+  store i64 2913245454108674224, ptr %tag_ptr1042, align 8
+  %pay_ptr1043 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %141, i32 0, i32 1
+  %142 = call ptr @avra_rc_alloc(i64 16)
+  store ptr %142, ptr %pay_ptr1043, align 8
+  %qn1044 = load ptr, ptr %qn1018, align 8
+  %slot_base1045 = ptrtoint ptr %142 to i64
+  %slot_addr1046 = add i64 %slot_base1045, 0
+  %slot1047 = inttoptr i64 %slot_addr1046 to ptr
+  store ptr %qn1044, ptr %slot1047, align 8
+  %rvt1048 = load ptr, ptr %rvt1021, align 8
+  %slot_base1049 = ptrtoint ptr %142 to i64
+  %slot_addr1050 = add i64 %slot_base1049, 8
+  %slot1051 = inttoptr i64 %slot_addr1050 to ptr
+  store ptr %rvt1048, ptr %slot1051, align 8
+  %cast1052 = ptrtoint ptr %141 to i64
+  store i64 %cast1052, ptr %match_result, align 8
   br label %match_end
 
-march_next999:                                    ; preds = %march_next958
-  br label %march_arm1052
+march_next1000:                                   ; preds = %march_next959
+  br label %march_arm1053
 
-march_arm1052:                                    ; preds = %march_next999
-  %stmt1054 = load ptr, ptr %stmt, align 8
-  %cast1055 = ptrtoint ptr %stmt1054 to i64
-  store i64 %cast1055, ptr %match_result, align 8
+march_arm1053:                                    ; preds = %march_next1000
+  %stmt1055 = load ptr, ptr %stmt, align 8
+  %cast1056 = ptrtoint ptr %stmt1055 to i64
+  store i64 %cast1056, ptr %match_result, align 8
   br label %match_end
 
-march_next1053:                                   ; No predecessors!
+march_next1054:                                   ; No predecessors!
   call void @avra_match_unreachable(ptr @.match_fn.19068, i64 %tag, ptr @mu_file.19069, i64 686)
   unreachable
 }
@@ -250487,7 +250490,7 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.19070, i64 %tag, ptr @mu_file.19071, i64 774)
+  call void @avra_match_unreachable(ptr @.match_fn.19070, i64 %tag, ptr @mu_file.19071, i64 782)
   unreachable
 }
 
@@ -250881,7 +250884,7 @@ ifcont61:                                         ; preds = %if_else64
   %cast67 = ptrtoint ptr %ctx66 to i64
   %null_chk = icmp eq i64 %cast67, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19083, i64 12, ptr @sty_name.19084, i64 29, i64 %null_ext, ptr @src_file.19085, i64 0, i64 832)
+  call void @avra_null_deref_trap(ptr @fld_name.19083, i64 12, ptr @sty_name.19084, i64 29, i64 %null_ext, ptr @src_file.19085, i64 0, i64 840)
   %global_index_ptr = getelementptr inbounds nuw %"@std::avrac::resolve::NameCtx", ptr %ctx66, i32 0, i32 5
   %global_index = load ptr, ptr %global_index_ptr, align 8
   %type_name68 = load ptr, ptr %type_name, align 8
@@ -250907,7 +250910,7 @@ ifcont73:                                         ; preds = %if_else76
   %cast79 = ptrtoint ptr %ctx78 to i64
   %null_chk80 = icmp eq i64 %cast79, 0
   %null_ext81 = zext i1 %null_chk80 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19087, i64 7, ptr @sty_name.19088, i64 29, i64 %null_ext81, ptr @src_file.19089, i64 0, i64 834)
+  call void @avra_null_deref_trap(ptr @fld_name.19087, i64 7, ptr @sty_name.19088, i64 29, i64 %null_ext81, ptr @src_file.19089, i64 0, i64 842)
   %aliases_ptr = getelementptr inbounds nuw %"@std::avrac::resolve::NameCtx", ptr %ctx78, i32 0, i32 2
   %aliases = load ptr, ptr %aliases_ptr, align 8
   %type_name82 = load ptr, ptr %type_name, align 8
@@ -250933,7 +250936,7 @@ ifcont87:                                         ; preds = %if_else90
   %cast93 = ptrtoint ptr %ctx92 to i64
   %null_chk94 = icmp eq i64 %cast93, 0
   %null_ext95 = zext i1 %null_chk94 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19091, i64 14, ptr @sty_name.19092, i64 29, i64 %null_ext95, ptr @src_file.19093, i64 0, i64 836)
+  call void @avra_null_deref_trap(ptr @fld_name.19091, i64 14, ptr @sty_name.19092, i64 29, i64 %null_ext95, ptr @src_file.19093, i64 0, i64 844)
   %current_module_ptr = getelementptr inbounds nuw %"@std::avrac::resolve::NameCtx", ptr %ctx92, i32 0, i32 3
   %current_module = load ptr, ptr %current_module_ptr, align 8
   %18 = call i32 @strcmp(ptr %current_module, ptr @.str.19094)
@@ -250959,7 +250962,7 @@ if_then101:                                       ; preds = %ifcont87
   %cast104 = ptrtoint ptr %ctx103 to i64
   %null_chk105 = icmp eq i64 %cast104, 0
   %null_ext106 = zext i1 %null_chk105 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19095, i64 14, ptr @sty_name.19096, i64 29, i64 %null_ext106, ptr @src_file.19097, i64 0, i64 837)
+  call void @avra_null_deref_trap(ptr @fld_name.19095, i64 14, ptr @sty_name.19096, i64 29, i64 %null_ext106, ptr @src_file.19097, i64 0, i64 845)
   %current_module_ptr107 = getelementptr inbounds nuw %"@std::avrac::resolve::NameCtx", ptr %ctx103, i32 0, i32 3
   %current_module108 = load ptr, ptr %current_module_ptr107, align 8
   %type_name109 = load ptr, ptr %type_name, align 8
@@ -251051,7 +251054,7 @@ guard_pass:                                       ; preds = %march_arm
   %cast = ptrtoint ptr %ctx8 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19099, i64 8, ptr @sty_name.19100, i64 29, i64 %null_ext, ptr @src_file.19101, i64 0, i64 853)
+  call void @avra_null_deref_trap(ptr @fld_name.19099, i64 8, ptr @sty_name.19100, i64 29, i64 %null_ext, ptr @src_file.19101, i64 0, i64 861)
   %type_reg_ptr = getelementptr inbounds nuw %"@std::avrac::resolve::NameCtx", ptr %ctx8, i32 0, i32 6
   %type_reg = load ptr, ptr %type_reg_ptr, align 8
   %qn9 = load ptr, ptr %qn, align 8
@@ -251120,7 +251123,7 @@ guard_pass32:                                     ; preds = %march_arm14
   %cast48 = ptrtoint ptr %ctx47 to i64
   %null_chk49 = icmp eq i64 %cast48, 0
   %null_ext50 = zext i1 %null_chk49 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19103, i64 8, ptr @sty_name.19104, i64 29, i64 %null_ext50, ptr @src_file.19105, i64 0, i64 858)
+  call void @avra_null_deref_trap(ptr @fld_name.19103, i64 8, ptr @sty_name.19104, i64 29, i64 %null_ext50, ptr @src_file.19105, i64 0, i64 866)
   %type_reg_ptr51 = getelementptr inbounds nuw %"@std::avrac::resolve::NameCtx", ptr %ctx47, i32 0, i32 6
   %type_reg52 = load ptr, ptr %type_reg_ptr51, align 8
   %qn53 = load ptr, ptr %qn35, align 8
@@ -251174,7 +251177,7 @@ guard_pass73:                                     ; preds = %march_arm58
   %cast84 = ptrtoint ptr %ctx83 to i64
   %null_chk85 = icmp eq i64 %cast84, 0
   %null_ext86 = zext i1 %null_chk85 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19107, i64 8, ptr @sty_name.19108, i64 29, i64 %null_ext86, ptr @src_file.19109, i64 0, i64 863)
+  call void @avra_null_deref_trap(ptr @fld_name.19107, i64 8, ptr @sty_name.19108, i64 29, i64 %null_ext86, ptr @src_file.19109, i64 0, i64 871)
   %type_reg_ptr87 = getelementptr inbounds nuw %"@std::avrac::resolve::NameCtx", ptr %ctx83, i32 0, i32 6
   %type_reg88 = load ptr, ptr %type_reg_ptr87, align 8
   %qn89 = load ptr, ptr %qn76, align 8
@@ -251243,7 +251246,7 @@ guard_pass112:                                    ; preds = %march_arm94
   %cast128 = ptrtoint ptr %ctx127 to i64
   %null_chk129 = icmp eq i64 %cast128, 0
   %null_ext130 = zext i1 %null_chk129 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19111, i64 8, ptr @sty_name.19112, i64 29, i64 %null_ext130, ptr @src_file.19113, i64 0, i64 868)
+  call void @avra_null_deref_trap(ptr @fld_name.19111, i64 8, ptr @sty_name.19112, i64 29, i64 %null_ext130, ptr @src_file.19113, i64 0, i64 876)
   %type_reg_ptr131 = getelementptr inbounds nuw %"@std::avrac::resolve::NameCtx", ptr %ctx127, i32 0, i32 6
   %type_reg132 = load ptr, ptr %type_reg_ptr131, align 8
   %qn133 = load ptr, ptr %qn115, align 8
@@ -251310,7 +251313,7 @@ guard_pass152:                                    ; preds = %march_arm138
   %cast167 = ptrtoint ptr %ctx166 to i64
   %null_chk168 = icmp eq i64 %cast167, 0
   %null_ext169 = zext i1 %null_chk168 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19115, i64 8, ptr @sty_name.19116, i64 29, i64 %null_ext169, ptr @src_file.19117, i64 0, i64 873)
+  call void @avra_null_deref_trap(ptr @fld_name.19115, i64 8, ptr @sty_name.19116, i64 29, i64 %null_ext169, ptr @src_file.19117, i64 0, i64 881)
   %type_reg_ptr170 = getelementptr inbounds nuw %"@std::avrac::resolve::NameCtx", ptr %ctx166, i32 0, i32 6
   %type_reg171 = load ptr, ptr %type_reg_ptr170, align 8
   %qn172 = load ptr, ptr %qn155, align 8
@@ -251536,7 +251539,7 @@ march_arm284:                                     ; preds = %march_next271
   br label %match_end
 
 march_next285:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.19118, i64 %tag, ptr @mu_file.19119, i64 849)
+  call void @avra_match_unreachable(ptr @.match_fn.19118, i64 %tag, ptr @mu_file.19119, i64 857)
   unreachable
 }
 
@@ -251563,9 +251566,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -251593,9 +251596,9 @@ march_arm3:                                       ; preds = %march_next
   call void @avra_rc_retain(ptr %next)
   store ptr %next, ptr %next9, align 8
   %3 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr10 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %3, i32 0, i32 0
+  %tag_ptr10 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %3, i32 0, i32 0
   store i64 6384368267, ptr %tag_ptr10, align 8
-  %pay_ptr11 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %3, i32 0, i32 1
+  %pay_ptr11 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %3, i32 0, i32 1
   %4 = call ptr @avra_rc_alloc(i64 16)
   store ptr %4, ptr %pay_ptr11, align 8
   %ctx12 = load ptr, ptr %ctx, align 8
@@ -251617,7 +251620,7 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.19120, i64 %tag, ptr @mu_file.19121, i64 887)
+  call void @avra_match_unreachable(ptr @.match_fn.19120, i64 %tag, ptr @mu_file.19121, i64 895)
   unreachable
 }
 
@@ -251640,14 +251643,14 @@ entry:
 
 match_end:                                        ; preds = %march_arm3, %march_arm
   %match_val = load i64, ptr %match_result, align 8
-  %cast27 = inttoptr i64 %match_val to ptr
-  ret ptr %cast27
+  %cast28 = inttoptr i64 %match_val to ptr
+  ret ptr %cast28
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -251683,9 +251686,9 @@ march_arm3:                                       ; preds = %march_next
   call void @avra_rc_retain(ptr %next)
   store ptr %next, ptr %next12, align 8
   %3 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr13 = getelementptr inbounds nuw %"@std::avrac::core::ParamList", ptr %3, i32 0, i32 0
+  %tag_ptr13 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplMethodRefList", ptr %3, i32 0, i32 0
   store i64 6384368267, ptr %tag_ptr13, align 8
-  %pay_ptr14 = getelementptr inbounds nuw %"@std::avrac::core::ParamList", ptr %3, i32 0, i32 1
+  %pay_ptr14 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplMethodRefList", ptr %3, i32 0, i32 1
   %4 = call ptr @avra_rc_alloc(i64 24)
   store ptr %4, ptr %pay_ptr14, align 8
   %name15 = load ptr, ptr %name6, align 8
@@ -251699,20 +251702,21 @@ march_arm3:                                       ; preds = %march_next
   %slot_base18 = ptrtoint ptr %4 to i64
   %slot_addr19 = add i64 %slot_base18, 8
   %slot20 = inttoptr i64 %slot_addr19 to ptr
-  store ptr %5, ptr %slot20, align 8
-  %ctx21 = load ptr, ptr %ctx, align 8
-  %next22 = load ptr, ptr %next12, align 8
-  %6 = call ptr @"@std::avrac::resolve::rewrite_field_types"(ptr %ctx21, ptr %next22)
-  %slot_base23 = ptrtoint ptr %4 to i64
-  %slot_addr24 = add i64 %slot_base23, 16
-  %slot25 = inttoptr i64 %slot_addr24 to ptr
-  store ptr %6, ptr %slot25, align 8
-  %cast26 = ptrtoint ptr %3 to i64
-  store i64 %cast26, ptr %match_result, align 8
+  %cast21 = ptrtoint ptr %5 to i64
+  store i64 %cast21, ptr %slot20, align 8
+  %ctx22 = load ptr, ptr %ctx, align 8
+  %next23 = load ptr, ptr %next12, align 8
+  %6 = call ptr @"@std::avrac::resolve::rewrite_field_types"(ptr %ctx22, ptr %next23)
+  %slot_base24 = ptrtoint ptr %4 to i64
+  %slot_addr25 = add i64 %slot_base24, 16
+  %slot26 = inttoptr i64 %slot_addr25 to ptr
+  store ptr %6, ptr %slot26, align 8
+  %cast27 = ptrtoint ptr %3 to i64
+  store i64 %cast27, ptr %match_result, align 8
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.19122, i64 %tag, ptr @mu_file.19123, i64 895)
+  call void @avra_match_unreachable(ptr @.match_fn.19122, i64 %tag, ptr @mu_file.19123, i64 903)
   unreachable
 }
 
@@ -251735,14 +251739,14 @@ entry:
 
 match_end:                                        ; preds = %march_arm3, %march_arm
   %match_val = load i64, ptr %match_result, align 8
-  %cast27 = inttoptr i64 %match_val to ptr
-  ret ptr %cast27
+  %cast28 = inttoptr i64 %match_val to ptr
+  ret ptr %cast28
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -251778,9 +251782,9 @@ march_arm3:                                       ; preds = %march_next
   call void @avra_rc_retain(ptr %next)
   store ptr %next, ptr %next12, align 8
   %3 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr13 = getelementptr inbounds nuw %"@std::avrac::core::ParamList", ptr %3, i32 0, i32 0
+  %tag_ptr13 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplMethodRefList", ptr %3, i32 0, i32 0
   store i64 6384368267, ptr %tag_ptr13, align 8
-  %pay_ptr14 = getelementptr inbounds nuw %"@std::avrac::core::ParamList", ptr %3, i32 0, i32 1
+  %pay_ptr14 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplMethodRefList", ptr %3, i32 0, i32 1
   %4 = call ptr @avra_rc_alloc(i64 24)
   store ptr %4, ptr %pay_ptr14, align 8
   %name15 = load ptr, ptr %name6, align 8
@@ -251794,20 +251798,21 @@ march_arm3:                                       ; preds = %march_next
   %slot_base18 = ptrtoint ptr %4 to i64
   %slot_addr19 = add i64 %slot_base18, 8
   %slot20 = inttoptr i64 %slot_addr19 to ptr
-  store ptr %5, ptr %slot20, align 8
-  %ctx21 = load ptr, ptr %ctx, align 8
-  %next22 = load ptr, ptr %next12, align 8
-  %6 = call ptr @"@std::avrac::resolve::rewrite_variant_types"(ptr %ctx21, ptr %next22)
-  %slot_base23 = ptrtoint ptr %4 to i64
-  %slot_addr24 = add i64 %slot_base23, 16
-  %slot25 = inttoptr i64 %slot_addr24 to ptr
-  store ptr %6, ptr %slot25, align 8
-  %cast26 = ptrtoint ptr %3 to i64
-  store i64 %cast26, ptr %match_result, align 8
+  %cast21 = ptrtoint ptr %5 to i64
+  store i64 %cast21, ptr %slot20, align 8
+  %ctx22 = load ptr, ptr %ctx, align 8
+  %next23 = load ptr, ptr %next12, align 8
+  %6 = call ptr @"@std::avrac::resolve::rewrite_variant_types"(ptr %ctx22, ptr %next23)
+  %slot_base24 = ptrtoint ptr %4 to i64
+  %slot_addr25 = add i64 %slot_base24, 16
+  %slot26 = inttoptr i64 %slot_addr25 to ptr
+  store ptr %6, ptr %slot26, align 8
+  %cast27 = ptrtoint ptr %3 to i64
+  store i64 %cast27, ptr %match_result, align 8
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.19124, i64 %tag, ptr @mu_file.19125, i64 903)
+  call void @avra_match_unreachable(ptr @.match_fn.19124, i64 %tag, ptr @mu_file.19125, i64 911)
   unreachable
 }
 
@@ -251830,14 +251835,14 @@ entry:
 
 match_end:                                        ; preds = %march_arm3, %march_arm
   %match_val = load i64, ptr %match_result, align 8
-  %cast27 = inttoptr i64 %match_val to ptr
-  ret ptr %cast27
+  %cast28 = inttoptr i64 %match_val to ptr
+  ret ptr %cast28
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -251873,9 +251878,9 @@ march_arm3:                                       ; preds = %march_next
   call void @avra_rc_retain(ptr %next)
   store ptr %next, ptr %next12, align 8
   %3 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr13 = getelementptr inbounds nuw %"@std::avrac::core::ParamList", ptr %3, i32 0, i32 0
+  %tag_ptr13 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplMethodRefList", ptr %3, i32 0, i32 0
   store i64 6384368267, ptr %tag_ptr13, align 8
-  %pay_ptr14 = getelementptr inbounds nuw %"@std::avrac::core::ParamList", ptr %3, i32 0, i32 1
+  %pay_ptr14 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplMethodRefList", ptr %3, i32 0, i32 1
   %4 = call ptr @avra_rc_alloc(i64 24)
   store ptr %4, ptr %pay_ptr14, align 8
   %name15 = load ptr, ptr %name6, align 8
@@ -251889,20 +251894,21 @@ march_arm3:                                       ; preds = %march_next
   %slot_base18 = ptrtoint ptr %4 to i64
   %slot_addr19 = add i64 %slot_base18, 8
   %slot20 = inttoptr i64 %slot_addr19 to ptr
-  store ptr %5, ptr %slot20, align 8
-  %ctx21 = load ptr, ptr %ctx, align 8
-  %next22 = load ptr, ptr %next12, align 8
-  %6 = call ptr @"@std::avrac::resolve::rewrite_param_types"(ptr %ctx21, ptr %next22)
-  %slot_base23 = ptrtoint ptr %4 to i64
-  %slot_addr24 = add i64 %slot_base23, 16
-  %slot25 = inttoptr i64 %slot_addr24 to ptr
-  store ptr %6, ptr %slot25, align 8
-  %cast26 = ptrtoint ptr %3 to i64
-  store i64 %cast26, ptr %match_result, align 8
+  %cast21 = ptrtoint ptr %5 to i64
+  store i64 %cast21, ptr %slot20, align 8
+  %ctx22 = load ptr, ptr %ctx, align 8
+  %next23 = load ptr, ptr %next12, align 8
+  %6 = call ptr @"@std::avrac::resolve::rewrite_param_types"(ptr %ctx22, ptr %next23)
+  %slot_base24 = ptrtoint ptr %4 to i64
+  %slot_addr25 = add i64 %slot_base24, 16
+  %slot26 = inttoptr i64 %slot_addr25 to ptr
+  store ptr %6, ptr %slot26, align 8
+  %cast27 = ptrtoint ptr %3 to i64
+  store i64 %cast27, ptr %match_result, align 8
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.19126, i64 %tag, ptr @mu_file.19127, i64 911)
+  call void @avra_match_unreachable(ptr @.match_fn.19126, i64 %tag, ptr @mu_file.19127, i64 919)
   unreachable
 }
 
@@ -251934,9 +251940,9 @@ match_end:                                        ; preds = %sif_end, %march_arm
 
 march_arm:                                        ; preds = %entry
   %3 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %3, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %3, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %3, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %3, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %3 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -251981,7 +251987,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.19133, i64 %tag, ptr @mu_file.19134, i64 920)
+  call void @avra_match_unreachable(ptr @.match_fn.19133, i64 %tag, ptr @mu_file.19134, i64 928)
   unreachable
 
 sif_then:                                         ; preds = %march_arm3
@@ -251989,7 +251995,7 @@ sif_then:                                         ; preds = %march_arm3
   %cast15 = ptrtoint ptr %ctx14 to i64
   %null_chk = icmp eq i64 %cast15, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19129, i64 8, ptr @sty_name.19130, i64 29, i64 %null_ext, ptr @src_file.19131, i64 0, i64 925)
+  call void @avra_null_deref_trap(ptr @fld_name.19129, i64 8, ptr @sty_name.19130, i64 29, i64 %null_ext, ptr @src_file.19131, i64 0, i64 933)
   %type_reg_ptr = getelementptr inbounds nuw %"@std::avrac::resolve::NameCtx", ptr %ctx14, i32 0, i32 6
   %type_reg = load ptr, ptr %type_reg_ptr, align 8
   %qualified_type16 = load ptr, ptr %qualified_type, align 8
@@ -252139,7 +252145,7 @@ march_arm3:                                       ; preds = %march_next
   %cast11 = ptrtoint ptr %ss10 to i64
   %null_chk = icmp eq i64 %cast11, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19135, i64 4, ptr @sty_name.19136, i64 24, i64 %null_ext, ptr @src_file.19137, i64 0, i64 941)
+  call void @avra_null_deref_trap(ptr @fld_name.19135, i64 4, ptr @sty_name.19136, i64 24, i64 %null_ext, ptr @src_file.19137, i64 0, i64 949)
   %node_ptr = getelementptr inbounds nuw %"@std::avrac::core::SStmt", ptr %ss10, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %tag_ptr12 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %node, i32 0, i32 0
@@ -252149,7 +252155,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.19152, i64 %tag, ptr @mu_file.19153, i64 937)
+  call void @avra_match_unreachable(ptr @.match_fn.19152, i64 %tag, ptr @mu_file.19153, i64 945)
   unreachable
 
 match_end15:                                      ; preds = %march_arm64, %march_arm16
@@ -252167,21 +252173,21 @@ match_end15:                                      ; preds = %march_arm64, %march
   %cast79 = ptrtoint ptr %ss78 to i64
   %null_chk80 = icmp eq i64 %cast79, 0
   %null_ext81 = zext i1 %null_chk80 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19143, i64 4, ptr @sty_name.19144, i64 24, i64 %null_ext81, ptr @src_file.19145, i64 0, i64 951)
+  call void @avra_null_deref_trap(ptr @fld_name.19143, i64 4, ptr @sty_name.19144, i64 24, i64 %null_ext81, ptr @src_file.19145, i64 0, i64 959)
   %line_ptr = getelementptr inbounds nuw %"@std::avrac::core::SStmt", ptr %ss78, i32 0, i32 1
   %line = load i64, ptr %line_ptr, align 8
   %ss82 = load ptr, ptr %ss6, align 8
   %cast83 = ptrtoint ptr %ss82 to i64
   %null_chk84 = icmp eq i64 %cast83, 0
   %null_ext85 = zext i1 %null_chk84 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19146, i64 3, ptr @sty_name.19147, i64 24, i64 %null_ext85, ptr @src_file.19148, i64 0, i64 951)
+  call void @avra_null_deref_trap(ptr @fld_name.19146, i64 3, ptr @sty_name.19147, i64 24, i64 %null_ext85, ptr @src_file.19148, i64 0, i64 959)
   %col_ptr = getelementptr inbounds nuw %"@std::avrac::core::SStmt", ptr %ss82, i32 0, i32 2
   %col = load i64, ptr %col_ptr, align 8
   %ss86 = load ptr, ptr %ss6, align 8
   %cast87 = ptrtoint ptr %ss86 to i64
   %null_chk88 = icmp eq i64 %cast87, 0
   %null_ext89 = zext i1 %null_chk88 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19149, i64 4, ptr @sty_name.19150, i64 24, i64 %null_ext89, ptr @src_file.19151, i64 0, i64 951)
+  call void @avra_null_deref_trap(ptr @fld_name.19149, i64 4, ptr @sty_name.19150, i64 24, i64 %null_ext89, ptr @src_file.19151, i64 0, i64 959)
   %file_ptr = getelementptr inbounds nuw %"@std::avrac::core::SStmt", ptr %ss86, i32 0, i32 3
   %file = load ptr, ptr %file_ptr, align 8
   %6 = call ptr @"@std::avrac::core::sstmt_at"(ptr %new_stmt77, i64 %line, i64 %col, ptr %file)
@@ -252306,7 +252312,7 @@ march_arm64:                                      ; preds = %march_next17
   %cast68 = ptrtoint ptr %ss67 to i64
   %null_chk69 = icmp eq i64 %cast68, 0
   %null_ext70 = zext i1 %null_chk69 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19138, i64 4, ptr @sty_name.19139, i64 24, i64 %null_ext70, ptr @src_file.19140, i64 0, i64 941)
+  call void @avra_null_deref_trap(ptr @fld_name.19138, i64 4, ptr @sty_name.19139, i64 24, i64 %null_ext70, ptr @src_file.19140, i64 0, i64 949)
   %node_ptr71 = getelementptr inbounds nuw %"@std::avrac::core::SStmt", ptr %ss67, i32 0, i32 0
   %node72 = load ptr, ptr %node_ptr71, align 8
   %17 = call ptr @"@std::avrac::resolve::rewrite_stmt"(ptr %ctx66, ptr %node72)
@@ -252315,7 +252321,7 @@ march_arm64:                                      ; preds = %march_next17
   br label %match_end15
 
 march_next65:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.19141, i64 %tag13, ptr @mu_file.19142, i64 941)
+  call void @avra_match_unreachable(ptr @.match_fn.19141, i64 %tag13, ptr @mu_file.19142, i64 949)
   unreachable
 }
 
@@ -252606,7 +252612,7 @@ march_arm74:                                      ; preds = %march_next25
   br label %match_end23
 
 march_next75:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.19156, i64 %tag21, ptr @mu_file.19157, i64 968)
+  call void @avra_match_unreachable(ptr @.match_fn.19156, i64 %tag21, ptr @mu_file.19157, i64 976)
   unreachable
 
 march_arm92:                                      ; preds = %march_next11
@@ -252984,9 +252990,9 @@ march_arm307:                                     ; preds = %march_next290
   call void @avra_rc_retain(ptr %body)
   store ptr %body, ptr %body312, align 8
   %46 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr313 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %46, i32 0, i32 0
+  %tag_ptr313 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %46, i32 0, i32 0
   store i64 210669825968, ptr %tag_ptr313, align 8
-  %pay_ptr314 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %46, i32 0, i32 1
+  %pay_ptr314 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %46, i32 0, i32 1
   %47 = call ptr @avra_rc_alloc(i64 8)
   store ptr %47, ptr %pay_ptr314, align 8
   %ctx315 = load ptr, ptr %ctx, align 8
@@ -253012,7 +253018,7 @@ march_arm321:                                     ; preds = %march_next308
   br label %match_end
 
 march_next322:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.19158, i64 %tag, ptr @mu_file.19159, i64 962)
+  call void @avra_match_unreachable(ptr @.match_fn.19158, i64 %tag, ptr @mu_file.19159, i64 970)
   unreachable
 }
 
@@ -253299,7 +253305,7 @@ march_arm60:                                      ; preds = %march_next15
   br label %match_end13
 
 march_next61:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.19162, i64 %tag11, ptr @mu_file.19163, i64 1001)
+  call void @avra_match_unreachable(ptr @.match_fn.19162, i64 %tag11, ptr @mu_file.19163, i64 1009)
   unreachable
 
 march_arm77:                                      ; preds = %march_next
@@ -253518,9 +253524,9 @@ march_arm195:                                     ; preds = %march_next167
   call void @avra_rc_retain(ptr %elems)
   store ptr %elems, ptr %elems200, align 8
   %32 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr201 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %32, i32 0, i32 0
+  %tag_ptr201 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %32, i32 0, i32 0
   store i64 210691497359, ptr %tag_ptr201, align 8
-  %pay_ptr202 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %32, i32 0, i32 1
+  %pay_ptr202 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %32, i32 0, i32 1
   %33 = call ptr @avra_rc_alloc(i64 8)
   store ptr %33, ptr %pay_ptr202, align 8
   %ctx203 = load ptr, ptr %ctx, align 8
@@ -254110,7 +254116,7 @@ march_arm522:                                     ; preds = %march_next505
   br label %match_end
 
 march_next523:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.19166, i64 %tag, ptr @mu_file.19167, i64 996)
+  call void @avra_match_unreachable(ptr @.match_fn.19166, i64 %tag, ptr @mu_file.19167, i64 1004)
   unreachable
 }
 
@@ -254131,7 +254137,7 @@ entry:
   %cast = ptrtoint ptr %ctx1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19168, i64 6, ptr @sty_name.19169, i64 29, i64 %null_ext, ptr @src_file.19170, i64 0, i64 1046)
+  call void @avra_null_deref_trap(ptr @fld_name.19168, i64 6, ptr @sty_name.19169, i64 29, i64 %null_ext, ptr @src_file.19170, i64 0, i64 1054)
   %locals_ptr = getelementptr inbounds nuw %"@std::avrac::resolve::NameCtx", ptr %ctx1, i32 0, i32 4
   %locals = load ptr, ptr %locals_ptr, align 8
   %name2 = load ptr, ptr %name, align 8
@@ -254248,7 +254254,7 @@ ifcont39:                                         ; preds = %if_else42
   %cast45 = ptrtoint ptr %ctx44 to i64
   %null_chk46 = icmp eq i64 %cast45, 0
   %null_ext47 = zext i1 %null_chk46 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19173, i64 7, ptr @sty_name.19174, i64 29, i64 %null_ext47, ptr @src_file.19175, i64 0, i64 1052)
+  call void @avra_null_deref_trap(ptr @fld_name.19173, i64 7, ptr @sty_name.19174, i64 29, i64 %null_ext47, ptr @src_file.19175, i64 0, i64 1060)
   %aliases_ptr = getelementptr inbounds nuw %"@std::avrac::resolve::NameCtx", ptr %ctx44, i32 0, i32 2
   %aliases = load ptr, ptr %aliases_ptr, align 8
   %name48 = load ptr, ptr %name, align 8
@@ -254274,7 +254280,7 @@ ifcont51:                                         ; preds = %if_else54
   %cast59 = ptrtoint ptr %ctx58 to i64
   %null_chk60 = icmp eq i64 %cast59, 0
   %null_ext61 = zext i1 %null_chk60 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19177, i64 14, ptr @sty_name.19178, i64 29, i64 %null_ext61, ptr @src_file.19179, i64 0, i64 1055)
+  call void @avra_null_deref_trap(ptr @fld_name.19177, i64 14, ptr @sty_name.19178, i64 29, i64 %null_ext61, ptr @src_file.19179, i64 0, i64 1063)
   %current_module_ptr = getelementptr inbounds nuw %"@std::avrac::resolve::NameCtx", ptr %ctx58, i32 0, i32 3
   %current_module = load ptr, ptr %current_module_ptr, align 8
   %12 = call i32 @strcmp(ptr %current_module, ptr @.str.19180)
@@ -254312,14 +254318,14 @@ if_then67:                                        ; preds = %ifcont51
   %cast70 = ptrtoint ptr %ctx69 to i64
   %null_chk71 = icmp eq i64 %cast70, 0
   %null_ext72 = zext i1 %null_chk71 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19181, i64 4, ptr @sty_name.19182, i64 29, i64 %null_ext72, ptr @src_file.19183, i64 0, i64 1056)
+  call void @avra_null_deref_trap(ptr @fld_name.19181, i64 4, ptr @sty_name.19182, i64 29, i64 %null_ext72, ptr @src_file.19183, i64 0, i64 1064)
   %tree_ptr = getelementptr inbounds nuw %"@std::avrac::resolve::NameCtx", ptr %ctx69, i32 0, i32 0
   %tree = load ptr, ptr %tree_ptr, align 8
   %ctx73 = load ptr, ptr %ctx, align 8
   %cast74 = ptrtoint ptr %ctx73 to i64
   %null_chk75 = icmp eq i64 %cast74, 0
   %null_ext76 = zext i1 %null_chk75 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19184, i64 14, ptr @sty_name.19185, i64 29, i64 %null_ext76, ptr @src_file.19186, i64 0, i64 1056)
+  call void @avra_null_deref_trap(ptr @fld_name.19184, i64 14, ptr @sty_name.19185, i64 29, i64 %null_ext76, ptr @src_file.19186, i64 0, i64 1064)
   %current_module_ptr77 = getelementptr inbounds nuw %"@std::avrac::resolve::NameCtx", ptr %ctx73, i32 0, i32 3
   %current_module78 = load ptr, ptr %current_module_ptr77, align 8
   %15 = call ptr @"@std::avrac::resolve::module_find"(ptr %tree, ptr %current_module78)
@@ -254371,7 +254377,7 @@ march_arm81:                                      ; preds = %march_next
   br label %match_end
 
 march_next82:                                     ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.19188, i64 %tag, ptr @mu_file.19189, i64 1057)
+  call void @avra_match_unreachable(ptr @.match_fn.19188, i64 %tag, ptr @mu_file.19189, i64 1065)
   unreachable
 
 ifcont93:                                         ; preds = %if_else96
@@ -254420,9 +254426,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -254460,7 +254466,7 @@ march_arm3:                                       ; preds = %march_next
   %cast14 = ptrtoint ptr %se13 to i64
   %null_chk = icmp eq i64 %cast14, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19191, i64 4, ptr @sty_name.19192, i64 24, i64 %null_ext, ptr @src_file.19193, i64 0, i64 1070)
+  call void @avra_null_deref_trap(ptr @fld_name.19191, i64 4, ptr @sty_name.19192, i64 24, i64 %null_ext, ptr @src_file.19193, i64 0, i64 1078)
   %node_ptr = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %se13, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %5 = call ptr @"@std::avrac::resolve::rewrite_expr"(ptr %ctx12, ptr %node)
@@ -254468,21 +254474,21 @@ march_arm3:                                       ; preds = %march_next
   %cast16 = ptrtoint ptr %se15 to i64
   %null_chk17 = icmp eq i64 %cast16, 0
   %null_ext18 = zext i1 %null_chk17 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19194, i64 4, ptr @sty_name.19195, i64 24, i64 %null_ext18, ptr @src_file.19196, i64 0, i64 1070)
+  call void @avra_null_deref_trap(ptr @fld_name.19194, i64 4, ptr @sty_name.19195, i64 24, i64 %null_ext18, ptr @src_file.19196, i64 0, i64 1078)
   %line_ptr = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %se15, i32 0, i32 1
   %line = load i64, ptr %line_ptr, align 8
   %se19 = load ptr, ptr %se6, align 8
   %cast20 = ptrtoint ptr %se19 to i64
   %null_chk21 = icmp eq i64 %cast20, 0
   %null_ext22 = zext i1 %null_chk21 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19197, i64 3, ptr @sty_name.19198, i64 24, i64 %null_ext22, ptr @src_file.19199, i64 0, i64 1070)
+  call void @avra_null_deref_trap(ptr @fld_name.19197, i64 3, ptr @sty_name.19198, i64 24, i64 %null_ext22, ptr @src_file.19199, i64 0, i64 1078)
   %col_ptr = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %se19, i32 0, i32 2
   %col = load i64, ptr %col_ptr, align 8
   %se23 = load ptr, ptr %se6, align 8
   %cast24 = ptrtoint ptr %se23 to i64
   %null_chk25 = icmp eq i64 %cast24, 0
   %null_ext26 = zext i1 %null_chk25 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19200, i64 4, ptr @sty_name.19201, i64 24, i64 %null_ext26, ptr @src_file.19202, i64 0, i64 1070)
+  call void @avra_null_deref_trap(ptr @fld_name.19200, i64 4, ptr @sty_name.19201, i64 24, i64 %null_ext26, ptr @src_file.19202, i64 0, i64 1078)
   %file_ptr = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %se23, i32 0, i32 4
   %file = load ptr, ptr %file_ptr, align 8
   %6 = call ptr @"@std::avrac::core::sexpr_at"(ptr %5, i64 %line, i64 %col, ptr %file)
@@ -254502,7 +254508,7 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.19203, i64 %tag, ptr @mu_file.19204, i64 1070)
+  call void @avra_match_unreachable(ptr @.match_fn.19203, i64 %tag, ptr @mu_file.19204, i64 1078)
   unreachable
 }
 
@@ -254583,7 +254589,7 @@ march_arm3:                                       ; preds = %march_next
   %cast18 = ptrtoint ptr %se17 to i64
   %null_chk = icmp eq i64 %cast18, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19205, i64 4, ptr @sty_name.19206, i64 24, i64 %null_ext, ptr @src_file.19207, i64 0, i64 1079)
+  call void @avra_null_deref_trap(ptr @fld_name.19205, i64 4, ptr @sty_name.19206, i64 24, i64 %null_ext, ptr @src_file.19207, i64 0, i64 1087)
   %node_ptr = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %se17, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %5 = call ptr @"@std::avrac::resolve::rewrite_expr"(ptr %ctx16, ptr %node)
@@ -254591,21 +254597,21 @@ march_arm3:                                       ; preds = %march_next
   %cast20 = ptrtoint ptr %se19 to i64
   %null_chk21 = icmp eq i64 %cast20, 0
   %null_ext22 = zext i1 %null_chk21 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19208, i64 4, ptr @sty_name.19209, i64 24, i64 %null_ext22, ptr @src_file.19210, i64 0, i64 1079)
+  call void @avra_null_deref_trap(ptr @fld_name.19208, i64 4, ptr @sty_name.19209, i64 24, i64 %null_ext22, ptr @src_file.19210, i64 0, i64 1087)
   %line_ptr = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %se19, i32 0, i32 1
   %line = load i64, ptr %line_ptr, align 8
   %se23 = load ptr, ptr %se9, align 8
   %cast24 = ptrtoint ptr %se23 to i64
   %null_chk25 = icmp eq i64 %cast24, 0
   %null_ext26 = zext i1 %null_chk25 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19211, i64 3, ptr @sty_name.19212, i64 24, i64 %null_ext26, ptr @src_file.19213, i64 0, i64 1079)
+  call void @avra_null_deref_trap(ptr @fld_name.19211, i64 3, ptr @sty_name.19212, i64 24, i64 %null_ext26, ptr @src_file.19213, i64 0, i64 1087)
   %col_ptr = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %se23, i32 0, i32 2
   %col = load i64, ptr %col_ptr, align 8
   %se27 = load ptr, ptr %se9, align 8
   %cast28 = ptrtoint ptr %se27 to i64
   %null_chk29 = icmp eq i64 %cast28, 0
   %null_ext30 = zext i1 %null_chk29 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19214, i64 4, ptr @sty_name.19215, i64 24, i64 %null_ext30, ptr @src_file.19216, i64 0, i64 1079)
+  call void @avra_null_deref_trap(ptr @fld_name.19214, i64 4, ptr @sty_name.19215, i64 24, i64 %null_ext30, ptr @src_file.19216, i64 0, i64 1087)
   %file_ptr = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %se27, i32 0, i32 4
   %file = load ptr, ptr %file_ptr, align 8
   %6 = call ptr @"@std::avrac::core::sexpr_at"(ptr %5, i64 %line, i64 %col, ptr %file)
@@ -254625,7 +254631,7 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.19217, i64 %tag, ptr @mu_file.19218, i64 1079)
+  call void @avra_match_unreachable(ptr @.match_fn.19217, i64 %tag, ptr @mu_file.19218, i64 1087)
   unreachable
 }
 
@@ -254718,7 +254724,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.19243, i64 %tag, ptr @mu_file.19244, i64 1088)
+  call void @avra_match_unreachable(ptr @.match_fn.19243, i64 %tag, ptr @mu_file.19244, i64 1096)
   unreachable
 
 ife_end:                                          ; preds = %ife_else, %ife_then
@@ -254746,7 +254752,7 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %cast47 = ptrtoint ptr %body46 to i64
   %null_chk48 = icmp eq i64 %cast47, 0
   %null_ext49 = zext i1 %null_chk48 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19231, i64 4, ptr @sty_name.19232, i64 24, i64 %null_ext49, ptr @src_file.19233, i64 0, i64 1095)
+  call void @avra_null_deref_trap(ptr @fld_name.19231, i64 4, ptr @sty_name.19232, i64 24, i64 %null_ext49, ptr @src_file.19233, i64 0, i64 1103)
   %node_ptr50 = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %body46, i32 0, i32 0
   %node51 = load ptr, ptr %node_ptr50, align 8
   %7 = call ptr @"@std::avrac::resolve::rewrite_expr"(ptr %arm_ctx45, ptr %node51)
@@ -254754,21 +254760,21 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %cast53 = ptrtoint ptr %body52 to i64
   %null_chk54 = icmp eq i64 %cast53, 0
   %null_ext55 = zext i1 %null_chk54 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19234, i64 4, ptr @sty_name.19235, i64 24, i64 %null_ext55, ptr @src_file.19236, i64 0, i64 1095)
+  call void @avra_null_deref_trap(ptr @fld_name.19234, i64 4, ptr @sty_name.19235, i64 24, i64 %null_ext55, ptr @src_file.19236, i64 0, i64 1103)
   %line_ptr56 = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %body52, i32 0, i32 1
   %line57 = load i64, ptr %line_ptr56, align 8
   %body58 = load ptr, ptr %body12, align 8
   %cast59 = ptrtoint ptr %body58 to i64
   %null_chk60 = icmp eq i64 %cast59, 0
   %null_ext61 = zext i1 %null_chk60 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19237, i64 3, ptr @sty_name.19238, i64 24, i64 %null_ext61, ptr @src_file.19239, i64 0, i64 1095)
+  call void @avra_null_deref_trap(ptr @fld_name.19237, i64 3, ptr @sty_name.19238, i64 24, i64 %null_ext61, ptr @src_file.19239, i64 0, i64 1103)
   %col_ptr62 = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %body58, i32 0, i32 2
   %col63 = load i64, ptr %col_ptr62, align 8
   %body64 = load ptr, ptr %body12, align 8
   %cast65 = ptrtoint ptr %body64 to i64
   %null_chk66 = icmp eq i64 %cast65, 0
   %null_ext67 = zext i1 %null_chk66 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19240, i64 4, ptr @sty_name.19241, i64 24, i64 %null_ext67, ptr @src_file.19242, i64 0, i64 1095)
+  call void @avra_null_deref_trap(ptr @fld_name.19240, i64 4, ptr @sty_name.19241, i64 24, i64 %null_ext67, ptr @src_file.19242, i64 0, i64 1103)
   %file_ptr68 = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %body64, i32 0, i32 4
   %file69 = load ptr, ptr %file_ptr68, align 8
   %8 = call ptr @"@std::avrac::core::sexpr_at"(ptr %7, i64 %line57, i64 %col63, ptr %file69)
@@ -254793,7 +254799,7 @@ ife_then:                                         ; preds = %march_arm3
   %cast23 = ptrtoint ptr %guard22 to i64
   %null_chk = icmp eq i64 %cast23, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19219, i64 4, ptr @sty_name.19220, i64 24, i64 %null_ext, ptr @src_file.19221, i64 0, i64 1094)
+  call void @avra_null_deref_trap(ptr @fld_name.19219, i64 4, ptr @sty_name.19220, i64 24, i64 %null_ext, ptr @src_file.19221, i64 0, i64 1102)
   %node_ptr = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %guard22, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %10 = call ptr @"@std::avrac::resolve::rewrite_expr"(ptr %arm_ctx21, ptr %node)
@@ -254801,21 +254807,21 @@ ife_then:                                         ; preds = %march_arm3
   %cast25 = ptrtoint ptr %guard24 to i64
   %null_chk26 = icmp eq i64 %cast25, 0
   %null_ext27 = zext i1 %null_chk26 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19222, i64 4, ptr @sty_name.19223, i64 24, i64 %null_ext27, ptr @src_file.19224, i64 0, i64 1094)
+  call void @avra_null_deref_trap(ptr @fld_name.19222, i64 4, ptr @sty_name.19223, i64 24, i64 %null_ext27, ptr @src_file.19224, i64 0, i64 1102)
   %line_ptr = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %guard24, i32 0, i32 1
   %line = load i64, ptr %line_ptr, align 8
   %guard28 = load ptr, ptr %guard9, align 8
   %cast29 = ptrtoint ptr %guard28 to i64
   %null_chk30 = icmp eq i64 %cast29, 0
   %null_ext31 = zext i1 %null_chk30 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19225, i64 3, ptr @sty_name.19226, i64 24, i64 %null_ext31, ptr @src_file.19227, i64 0, i64 1094)
+  call void @avra_null_deref_trap(ptr @fld_name.19225, i64 3, ptr @sty_name.19226, i64 24, i64 %null_ext31, ptr @src_file.19227, i64 0, i64 1102)
   %col_ptr = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %guard28, i32 0, i32 2
   %col = load i64, ptr %col_ptr, align 8
   %guard32 = load ptr, ptr %guard9, align 8
   %cast33 = ptrtoint ptr %guard32 to i64
   %null_chk34 = icmp eq i64 %cast33, 0
   %null_ext35 = zext i1 %null_chk34 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19228, i64 4, ptr @sty_name.19229, i64 24, i64 %null_ext35, ptr @src_file.19230, i64 0, i64 1094)
+  call void @avra_null_deref_trap(ptr @fld_name.19228, i64 4, ptr @sty_name.19229, i64 24, i64 %null_ext35, ptr @src_file.19230, i64 0, i64 1102)
   %file_ptr = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %guard32, i32 0, i32 4
   %file = load ptr, ptr %file_ptr, align 8
   %11 = call ptr @"@std::avrac::core::sexpr_at"(ptr %10, i64 %line, i64 %col, ptr %file)
@@ -255004,7 +255010,7 @@ march_arm37:                                      ; preds = %march_next17
   br label %match_end
 
 march_next38:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.19251, i64 %tag, ptr @mu_file.19252, i64 1110)
+  call void @avra_match_unreachable(ptr @.match_fn.19251, i64 %tag, ptr @mu_file.19252, i64 1118)
   unreachable
 }
 
@@ -255085,7 +255091,7 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.19253, i64 %tag, ptr @mu_file.19254, i64 1124)
+  call void @avra_match_unreachable(ptr @.match_fn.19253, i64 %tag, ptr @mu_file.19254, i64 1132)
   unreachable
 }
 
@@ -255159,7 +255165,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.19279, i64 %tag, ptr @mu_file.19280, i64 1132)
+  call void @avra_match_unreachable(ptr @.match_fn.19279, i64 %tag, ptr @mu_file.19280, i64 1140)
   unreachable
 
 ife_end:                                          ; preds = %ife_else, %ife_then
@@ -255182,7 +255188,7 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %cast36 = ptrtoint ptr %body35 to i64
   %null_chk37 = icmp eq i64 %cast36, 0
   %null_ext38 = zext i1 %null_chk37 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19267, i64 4, ptr @sty_name.19268, i64 24, i64 %null_ext38, ptr @src_file.19269, i64 0, i64 1137)
+  call void @avra_null_deref_trap(ptr @fld_name.19267, i64 4, ptr @sty_name.19268, i64 24, i64 %null_ext38, ptr @src_file.19269, i64 0, i64 1145)
   %node_ptr39 = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %body35, i32 0, i32 0
   %node40 = load ptr, ptr %node_ptr39, align 8
   %5 = call ptr @"@std::avrac::resolve::rewrite_expr"(ptr %ctx34, ptr %node40)
@@ -255190,21 +255196,21 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %cast42 = ptrtoint ptr %body41 to i64
   %null_chk43 = icmp eq i64 %cast42, 0
   %null_ext44 = zext i1 %null_chk43 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19270, i64 4, ptr @sty_name.19271, i64 24, i64 %null_ext44, ptr @src_file.19272, i64 0, i64 1137)
+  call void @avra_null_deref_trap(ptr @fld_name.19270, i64 4, ptr @sty_name.19271, i64 24, i64 %null_ext44, ptr @src_file.19272, i64 0, i64 1145)
   %line_ptr45 = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %body41, i32 0, i32 1
   %line46 = load i64, ptr %line_ptr45, align 8
   %body47 = load ptr, ptr %body9, align 8
   %cast48 = ptrtoint ptr %body47 to i64
   %null_chk49 = icmp eq i64 %cast48, 0
   %null_ext50 = zext i1 %null_chk49 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19273, i64 3, ptr @sty_name.19274, i64 24, i64 %null_ext50, ptr @src_file.19275, i64 0, i64 1137)
+  call void @avra_null_deref_trap(ptr @fld_name.19273, i64 3, ptr @sty_name.19274, i64 24, i64 %null_ext50, ptr @src_file.19275, i64 0, i64 1145)
   %col_ptr51 = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %body47, i32 0, i32 2
   %col52 = load i64, ptr %col_ptr51, align 8
   %body53 = load ptr, ptr %body9, align 8
   %cast54 = ptrtoint ptr %body53 to i64
   %null_chk55 = icmp eq i64 %cast54, 0
   %null_ext56 = zext i1 %null_chk55 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19276, i64 4, ptr @sty_name.19277, i64 24, i64 %null_ext56, ptr @src_file.19278, i64 0, i64 1137)
+  call void @avra_null_deref_trap(ptr @fld_name.19276, i64 4, ptr @sty_name.19277, i64 24, i64 %null_ext56, ptr @src_file.19278, i64 0, i64 1145)
   %file_ptr57 = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %body53, i32 0, i32 4
   %file58 = load ptr, ptr %file_ptr57, align 8
   %6 = call ptr @"@std::avrac::core::sexpr_at"(ptr %5, i64 %line46, i64 %col52, ptr %file58)
@@ -255233,7 +255239,7 @@ ife_else:                                         ; preds = %march_arm3
   %cast16 = ptrtoint ptr %cond15 to i64
   %null_chk = icmp eq i64 %cast16, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19255, i64 4, ptr @sty_name.19256, i64 24, i64 %null_ext, ptr @src_file.19257, i64 0, i64 1136)
+  call void @avra_null_deref_trap(ptr @fld_name.19255, i64 4, ptr @sty_name.19256, i64 24, i64 %null_ext, ptr @src_file.19257, i64 0, i64 1144)
   %node_ptr = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %cond15, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %8 = call ptr @"@std::avrac::resolve::rewrite_expr"(ptr %ctx14, ptr %node)
@@ -255241,21 +255247,21 @@ ife_else:                                         ; preds = %march_arm3
   %cast18 = ptrtoint ptr %cond17 to i64
   %null_chk19 = icmp eq i64 %cast18, 0
   %null_ext20 = zext i1 %null_chk19 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19258, i64 4, ptr @sty_name.19259, i64 24, i64 %null_ext20, ptr @src_file.19260, i64 0, i64 1136)
+  call void @avra_null_deref_trap(ptr @fld_name.19258, i64 4, ptr @sty_name.19259, i64 24, i64 %null_ext20, ptr @src_file.19260, i64 0, i64 1144)
   %line_ptr = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %cond17, i32 0, i32 1
   %line = load i64, ptr %line_ptr, align 8
   %cond21 = load ptr, ptr %cond6, align 8
   %cast22 = ptrtoint ptr %cond21 to i64
   %null_chk23 = icmp eq i64 %cast22, 0
   %null_ext24 = zext i1 %null_chk23 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19261, i64 3, ptr @sty_name.19262, i64 24, i64 %null_ext24, ptr @src_file.19263, i64 0, i64 1136)
+  call void @avra_null_deref_trap(ptr @fld_name.19261, i64 3, ptr @sty_name.19262, i64 24, i64 %null_ext24, ptr @src_file.19263, i64 0, i64 1144)
   %col_ptr = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %cond21, i32 0, i32 2
   %col = load i64, ptr %col_ptr, align 8
   %cond25 = load ptr, ptr %cond6, align 8
   %cast26 = ptrtoint ptr %cond25 to i64
   %null_chk27 = icmp eq i64 %cast26, 0
   %null_ext28 = zext i1 %null_chk27 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19264, i64 4, ptr @sty_name.19265, i64 24, i64 %null_ext28, ptr @src_file.19266, i64 0, i64 1136)
+  call void @avra_null_deref_trap(ptr @fld_name.19264, i64 4, ptr @sty_name.19265, i64 24, i64 %null_ext28, ptr @src_file.19266, i64 0, i64 1144)
   %file_ptr = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %cond25, i32 0, i32 4
   %file = load ptr, ptr %file_ptr, align 8
   %9 = call ptr @"@std::avrac::core::sexpr_at"(ptr %8, i64 %line, i64 %col, ptr %file)
@@ -255336,7 +255342,7 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @avra_match_unreachable(ptr @.match_fn.19281, i64 %tag, ptr @mu_file.19282, i64 1158)
+  call void @avra_match_unreachable(ptr @.match_fn.19281, i64 %tag, ptr @mu_file.19282, i64 1166)
   unreachable
 }
 
@@ -255393,7 +255399,7 @@ march_arm3:                                       ; preds = %march_next
   %cast11 = ptrtoint ptr %ss10 to i64
   %null_chk = icmp eq i64 %cast11, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19283, i64 4, ptr @sty_name.19284, i64 24, i64 %null_ext, ptr @src_file.19285, i64 0, i64 1173)
+  call void @avra_null_deref_trap(ptr @fld_name.19283, i64 4, ptr @sty_name.19284, i64 24, i64 %null_ext, ptr @src_file.19285, i64 0, i64 1181)
   %node_ptr = getelementptr inbounds nuw %"@std::avrac::core::SStmt", ptr %ss10, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %acc12 = load ptr, ptr %acc, align 8
@@ -255407,7 +255413,7 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.19286, i64 %tag, ptr @mu_file.19287, i64 1169)
+  call void @avra_match_unreachable(ptr @.match_fn.19286, i64 %tag, ptr @mu_file.19287, i64 1177)
   unreachable
 }
 
@@ -255902,7 +255908,7 @@ march_arm230:                                     ; preds = %march_next218
   br label %match_end
 
 march_next231:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.19288, i64 %tag, ptr @mu_file.19289, i64 1181)
+  call void @avra_match_unreachable(ptr @.match_fn.19288, i64 %tag, ptr @mu_file.19289, i64 1189)
   unreachable
 }
 
@@ -256909,7 +256915,7 @@ march_arm490:                                     ; preds = %march_next440
   br label %match_end
 
 march_next491:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.19292, i64 %tag, ptr @mu_file.19293, i64 1217)
+  call void @avra_match_unreachable(ptr @.match_fn.19292, i64 %tag, ptr @mu_file.19293, i64 1225)
   unreachable
 }
 
@@ -256966,7 +256972,7 @@ march_arm3:                                       ; preds = %march_next
   %cast12 = ptrtoint ptr %se11 to i64
   %null_chk = icmp eq i64 %cast12, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19294, i64 4, ptr @sty_name.19295, i64 24, i64 %null_ext, ptr @src_file.19296, i64 0, i64 1264)
+  call void @avra_null_deref_trap(ptr @fld_name.19294, i64 4, ptr @sty_name.19295, i64 24, i64 %null_ext, ptr @src_file.19296, i64 0, i64 1272)
   %node_ptr = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %se11, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %acc13 = load ptr, ptr %acc, align 8
@@ -256977,7 +256983,7 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.19297, i64 %tag, ptr @mu_file.19298, i64 1264)
+  call void @avra_match_unreachable(ptr @.match_fn.19297, i64 %tag, ptr @mu_file.19298, i64 1272)
   unreachable
 }
 
@@ -257034,7 +257040,7 @@ march_arm3:                                       ; preds = %march_next
   %cast12 = ptrtoint ptr %sv11 to i64
   %null_chk = icmp eq i64 %cast12, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19299, i64 4, ptr @sty_name.19300, i64 24, i64 %null_ext, ptr @src_file.19301, i64 0, i64 1272)
+  call void @avra_null_deref_trap(ptr @fld_name.19299, i64 4, ptr @sty_name.19300, i64 24, i64 %null_ext, ptr @src_file.19301, i64 0, i64 1280)
   %node_ptr = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %sv11, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %acc13 = load ptr, ptr %acc, align 8
@@ -257045,7 +257051,7 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.19302, i64 %tag, ptr @mu_file.19303, i64 1272)
+  call void @avra_match_unreachable(ptr @.match_fn.19302, i64 %tag, ptr @mu_file.19303, i64 1280)
   unreachable
 }
 
@@ -257116,7 +257122,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.19310, i64 %tag, ptr @mu_file.19311, i64 1281)
+  call void @avra_match_unreachable(ptr @.match_fn.19310, i64 %tag, ptr @mu_file.19311, i64 1289)
   unreachable
 
 ife_end:                                          ; preds = %ife_else, %ife_then
@@ -257127,7 +257133,7 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %cast22 = ptrtoint ptr %body21 to i64
   %null_chk23 = icmp eq i64 %cast22, 0
   %null_ext24 = zext i1 %null_chk23 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19307, i64 4, ptr @sty_name.19308, i64 24, i64 %null_ext24, ptr @src_file.19309, i64 0, i64 1286)
+  call void @avra_null_deref_trap(ptr @fld_name.19307, i64 4, ptr @sty_name.19308, i64 24, i64 %null_ext24, ptr @src_file.19309, i64 0, i64 1294)
   %node_ptr25 = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %body21, i32 0, i32 0
   %node26 = load ptr, ptr %node_ptr25, align 8
   %with_guard27 = load ptr, ptr %with_guard, align 8
@@ -257145,7 +257151,7 @@ ife_then:                                         ; preds = %march_arm3
   %cast15 = ptrtoint ptr %guard14 to i64
   %null_chk = icmp eq i64 %cast15, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.19304, i64 4, ptr @sty_name.19305, i64 24, i64 %null_ext, ptr @src_file.19306, i64 0, i64 1285)
+  call void @avra_null_deref_trap(ptr @fld_name.19304, i64 4, ptr @sty_name.19305, i64 24, i64 %null_ext, ptr @src_file.19306, i64 0, i64 1293)
   %node_ptr = getelementptr inbounds nuw %"@std::avrac::core::SExpr", ptr %guard14, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %acc16 = load ptr, ptr %acc, align 8
@@ -257246,7 +257252,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_rhs, label %sc_short
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.19314, i64 %tag, ptr @mu_file.19315, i64 1305)
+  call void @avra_match_unreachable(ptr @.match_fn.19314, i64 %tag, ptr @mu_file.19315, i64 1313)
   unreachable
 
 sc_rhs:                                           ; preds = %march_arm3
@@ -259864,17 +259870,17 @@ march_arm14:                                      ; preds = %march_next
   call void @avra_null_deref_trap(ptr @fld_name.19605, i64 7, ptr @sty_name.19606, i64 25, i64 %null_ext38, ptr @src_file.19607, i64 0, i64 357)
   %bits39 = load ptr, ptr %bits, align 8
   %11 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr40 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %11, i32 0, i32 0
+  %tag_ptr40 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %11, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr40, align 8
-  %pay_ptr41 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %11, i32 0, i32 1
+  %pay_ptr41 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %11, i32 0, i32 1
   store ptr null, ptr %pay_ptr41, align 8
   %cast42 = ptrtoint ptr %11 to i64
   %cast43 = inttoptr i64 %cast42 to ptr
   %12 = call ptr @"@std::avrac::codegen::Ctx__cast_to"(ptr %ctx35, ptr %bits39, ptr %cast43)
   %13 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr44 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %13, i32 0, i32 0
+  %tag_ptr44 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %13, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr44, align 8
-  %pay_ptr45 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %13, i32 0, i32 1
+  %pay_ptr45 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %13, i32 0, i32 1
   store ptr null, ptr %pay_ptr45, align 8
   %cast46 = ptrtoint ptr %13 to i64
   %cast47 = inttoptr i64 %cast46 to ptr
@@ -261155,9 +261161,9 @@ match_end:                                        ; preds = %march_arm15, %guard
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -264489,9 +264495,9 @@ match_end:                                        ; preds = %sif_end, %march_arm
 
 march_arm:                                        ; preds = %entry
   %3 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %3, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %3, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %3, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %3, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %3 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -265975,9 +265981,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %1 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %1, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %1, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %1, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %1, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %1 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -266195,9 +266201,9 @@ match_end:                                        ; preds = %march_arm14, %guard
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -266745,9 +266751,9 @@ if_then:                                          ; preds = %entry
   %fld_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::StructLookup", ptr %6, i32 0, i32 0
   store i64 0, ptr %fld_ptr, align 8
   %7 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %7, i32 0, i32 0
+  %tag_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %7, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %7, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %7, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast3 = ptrtoint ptr %7 to i64
   %fld_ptr4 = getelementptr inbounds nuw %"@std::avrac::codegen::StructLookup", ptr %6, i32 0, i32 1
@@ -266896,9 +266902,9 @@ if_then:                                          ; preds = %entry
   %fld_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::EnumLookup", ptr %6, i32 0, i32 0
   store i64 0, ptr %fld_ptr, align 8
   %7 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %7, i32 0, i32 0
+  %tag_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %7, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %7, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %7, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast3 = ptrtoint ptr %7 to i64
   %fld_ptr4 = getelementptr inbounds nuw %"@std::avrac::codegen::EnumLookup", ptr %6, i32 0, i32 1
@@ -266920,22 +266926,23 @@ entry:
   %reg = alloca ptr, align 8
   store ptr %0, ptr %reg, align 8
   store ptr %1, ptr %variant, align 8
-  store i64 0, ptr %i, align 8
+  %reg1 = load ptr, ptr %reg, align 8
+  %cast = ptrtoint ptr %reg1 to i64
+  %null_chk = icmp eq i64 %cast, 0
+  %null_ext = zext i1 %null_chk to i64
+  call void @avra_null_deref_trap(ptr @fld_name.20011, i64 3, ptr @sty_name.20012, i64 29, i64 %null_ext, ptr @src_file.20013, i64 0, i64 592)
+  %ord_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::EnumReg", ptr %reg1, i32 0, i32 0
+  %ord = load ptr, ptr %ord_ptr, align 8
+  %2 = call i64 @avra_array_len(ptr %ord)
+  %sub = sub i64 %2, 1
+  store i64 %sub, ptr %i, align 8
   br label %while.cond
 
 while.cond:                                       ; preds = %ifcont, %entry
-  %i1 = load i64, ptr %i, align 8
-  %reg2 = load ptr, ptr %reg, align 8
-  %cast = ptrtoint ptr %reg2 to i64
-  %null_chk = icmp eq i64 %cast, 0
-  %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20011, i64 3, ptr @sty_name.20012, i64 29, i64 %null_ext, ptr @src_file.20013, i64 0, i64 593)
-  %ord_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::EnumReg", ptr %reg2, i32 0, i32 0
-  %ord = load ptr, ptr %ord_ptr, align 8
-  %2 = call i64 @avra_array_len(ptr %ord)
-  %lt = icmp slt i64 %i1, %2
-  %lt_ext = zext i1 %lt to i64
-  %while_cond = icmp ne i64 %lt_ext, 0
+  %i2 = load i64, ptr %i, align 8
+  %ge = icmp sge i64 %i2, 0
+  %ge_ext = zext i1 %ge to i64
+  %while_cond = icmp ne i64 %ge_ext, 0
   br i1 %while_cond, label %while.body, label %while.exit
 
 while.body:                                       ; preds = %while.cond
@@ -266973,8 +266980,8 @@ while.exit:                                       ; preds = %while.cond
 
 ifcont:                                           ; preds = %if_else
   %i23 = load i64, ptr %i, align 8
-  %add = add i64 %i23, 1
-  store i64 %add, ptr %i, align 8
+  %sub24 = sub i64 %i23, 1
+  store i64 %sub24, ptr %i, align 8
   br label %while.cond
 
 if_then:                                          ; preds = %while.body
@@ -267002,22 +267009,23 @@ entry:
   store ptr %0, ptr %reg, align 8
   store ptr %1, ptr %variant, align 8
   store i64 %2, ptr %arity, align 8
-  store i64 0, ptr %i, align 8
-  br label %while.cond
-
-while.cond:                                       ; preds = %ifcont, %entry
-  %i1 = load i64, ptr %i, align 8
-  %reg2 = load ptr, ptr %reg, align 8
-  %cast = ptrtoint ptr %reg2 to i64
+  %reg1 = load ptr, ptr %reg, align 8
+  %cast = ptrtoint ptr %reg1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
   call void @avra_null_deref_trap(ptr @fld_name.20027, i64 3, ptr @sty_name.20028, i64 29, i64 %null_ext, ptr @src_file.20029, i64 0, i64 606)
-  %ord_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::EnumReg", ptr %reg2, i32 0, i32 0
+  %ord_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::EnumReg", ptr %reg1, i32 0, i32 0
   %ord = load ptr, ptr %ord_ptr, align 8
   %3 = call i64 @avra_array_len(ptr %ord)
-  %lt = icmp slt i64 %i1, %3
-  %lt_ext = zext i1 %lt to i64
-  %while_cond = icmp ne i64 %lt_ext, 0
+  %sub = sub i64 %3, 1
+  store i64 %sub, ptr %i, align 8
+  br label %while.cond
+
+while.cond:                                       ; preds = %ifcont, %entry
+  %i2 = load i64, ptr %i, align 8
+  %ge = icmp sge i64 %i2, 0
+  %ge_ext = zext i1 %ge to i64
+  %while_cond = icmp ne i64 %ge_ext, 0
   br i1 %while_cond, label %while.body, label %while.exit
 
 while.body:                                       ; preds = %while.cond
@@ -267025,7 +267033,7 @@ while.body:                                       ; preds = %while.cond
   %cast4 = ptrtoint ptr %reg3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20030, i64 3, ptr @sty_name.20031, i64 29, i64 %null_ext6, ptr @src_file.20032, i64 0, i64 607)
+  call void @avra_null_deref_trap(ptr @fld_name.20030, i64 3, ptr @sty_name.20031, i64 29, i64 %null_ext6, ptr @src_file.20032, i64 0, i64 608)
   %ord_ptr7 = getelementptr inbounds nuw %"@std::avrac::codegen::EnumReg", ptr %reg3, i32 0, i32 0
   %ord8 = load ptr, ptr %ord_ptr7, align 8
   %i9 = load i64, ptr %i, align 8
@@ -267036,7 +267044,7 @@ while.body:                                       ; preds = %while.cond
   %cast12 = ptrtoint ptr %m11 to i64
   %null_chk13 = icmp eq i64 %cast12, 0
   %null_ext14 = zext i1 %null_chk13 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20033, i64 8, ptr @sty_name.20034, i64 33, i64 %null_ext14, ptr @src_file.20035, i64 0, i64 608)
+  call void @avra_null_deref_trap(ptr @fld_name.20033, i64 8, ptr @sty_name.20034, i64 33, i64 %null_ext14, ptr @src_file.20035, i64 0, i64 609)
   %variants_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::EnumRegMeta", ptr %m11, i32 0, i32 1
   %variants = load ptr, ptr %variants_ptr, align 8
   %variant15 = load ptr, ptr %variant, align 8
@@ -267046,7 +267054,7 @@ while.body:                                       ; preds = %while.cond
   %cast17 = ptrtoint ptr %v16 to i64
   %null_chk18 = icmp eq i64 %cast17, 0
   %null_ext19 = zext i1 %null_chk18 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20036, i64 5, ptr @sty_name.20037, i64 32, i64 %null_ext19, ptr @src_file.20038, i64 0, i64 609)
+  call void @avra_null_deref_trap(ptr @fld_name.20036, i64 5, ptr @sty_name.20037, i64 32, i64 %null_ext19, ptr @src_file.20038, i64 0, i64 610)
   %found_ptr = getelementptr inbounds nuw %"@std::avrac::core::VariantLookup", ptr %v16, i32 0, i32 0
   %found = load i64, ptr %found_ptr, align 8
   %l_bool = icmp ne i64 %found, 0
@@ -267060,7 +267068,7 @@ sc_rhs:                                           ; preds = %while.body
   %cast21 = ptrtoint ptr %v20 to i64
   %null_chk22 = icmp eq i64 %cast21, 0
   %null_ext23 = zext i1 %null_chk22 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20039, i64 6, ptr @sty_name.20040, i64 32, i64 %null_ext23, ptr @src_file.20041, i64 0, i64 609)
+  call void @avra_null_deref_trap(ptr @fld_name.20039, i64 6, ptr @sty_name.20040, i64 32, i64 %null_ext23, ptr @src_file.20041, i64 0, i64 610)
   %fields_ptr = getelementptr inbounds nuw %"@std::avrac::core::VariantLookup", ptr %v20, i32 0, i32 1
   %fields = load ptr, ptr %fields_ptr, align 8
   %6 = call i64 @"@std::avrac::core::field_list_length"(ptr %fields)
@@ -267090,8 +267098,8 @@ sc_r_merge:                                       ; preds = %sc_r_false, %sc_r_t
 
 ifcont:                                           ; preds = %if_else
   %i29 = load i64, ptr %i, align 8
-  %add = add i64 %i29, 1
-  store i64 %add, ptr %i, align 8
+  %sub30 = sub i64 %i29, 1
+  store i64 %sub30, ptr %i, align 8
   br label %while.cond
 
 if_then:                                          ; preds = %sc_merge
@@ -267099,7 +267107,7 @@ if_then:                                          ; preds = %sc_merge
   %cast26 = ptrtoint ptr %m25 to i64
   %null_chk27 = icmp eq i64 %cast26, 0
   %null_ext28 = zext i1 %null_chk27 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20042, i64 4, ptr @sty_name.20043, i64 33, i64 %null_ext28, ptr @src_file.20044, i64 0, i64 609)
+  call void @avra_null_deref_trap(ptr @fld_name.20042, i64 4, ptr @sty_name.20043, i64 33, i64 %null_ext28, ptr @src_file.20044, i64 0, i64 610)
   %name_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::EnumRegMeta", ptr %m25, i32 0, i32 0
   %name = load ptr, ptr %name_ptr, align 8
   ret ptr %name
@@ -267119,7 +267127,7 @@ entry:
   %cast = ptrtoint ptr %reg1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20046, i64 3, ptr @sty_name.20047, i64 32, i64 %null_ext, ptr @src_file.20048, i64 0, i64 618)
+  call void @avra_null_deref_trap(ptr @fld_name.20046, i64 3, ptr @sty_name.20047, i64 32, i64 %null_ext, ptr @src_file.20048, i64 0, i64 619)
   %idx_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::FnRetTypes", ptr %reg1, i32 0, i32 1
   %idx = load ptr, ptr %idx_ptr, align 8
   %name2 = load ptr, ptr %name, align 8
@@ -267134,7 +267142,7 @@ ifcont:                                           ; preds = %if_else
   %cast6 = ptrtoint ptr %reg5 to i64
   %null_chk7 = icmp eq i64 %cast6, 0
   %null_ext8 = zext i1 %null_chk7 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20049, i64 3, ptr @sty_name.20050, i64 32, i64 %null_ext8, ptr @src_file.20051, i64 0, i64 619)
+  call void @avra_null_deref_trap(ptr @fld_name.20049, i64 3, ptr @sty_name.20050, i64 32, i64 %null_ext8, ptr @src_file.20051, i64 0, i64 620)
   %idx_ptr9 = getelementptr inbounds nuw %"@std::avrac::codegen::FnRetTypes", ptr %reg5, i32 0, i32 1
   %idx10 = load ptr, ptr %idx_ptr9, align 8
   %name11 = load ptr, ptr %name, align 8
@@ -267144,7 +267152,7 @@ ifcont:                                           ; preds = %if_else
   %cast13 = ptrtoint ptr %reg12 to i64
   %null_chk14 = icmp eq i64 %cast13, 0
   %null_ext15 = zext i1 %null_chk14 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20052, i64 3, ptr @sty_name.20053, i64 32, i64 %null_ext15, ptr @src_file.20054, i64 0, i64 620)
+  call void @avra_null_deref_trap(ptr @fld_name.20052, i64 3, ptr @sty_name.20053, i64 32, i64 %null_ext15, ptr @src_file.20054, i64 0, i64 621)
   %ord_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::FnRetTypes", ptr %reg12, i32 0, i32 0
   %ord = load ptr, ptr %ord_ptr, align 8
   %i16 = load i64, ptr %i, align 8
@@ -267152,7 +267160,7 @@ ifcont:                                           ; preds = %if_else
   %cast17 = inttoptr i64 %4 to ptr
   %null_chk18 = icmp eq i64 %4, 0
   %null_ext19 = zext i1 %null_chk18 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20055, i64 6, ptr @sty_name.20056, i64 31, i64 %null_ext19, ptr @src_file.20057, i64 0, i64 620)
+  call void @avra_null_deref_trap(ptr @fld_name.20055, i64 6, ptr @sty_name.20056, i64 31, i64 %null_ext19, ptr @src_file.20057, i64 0, i64 621)
   %cast20 = inttoptr i64 %4 to ptr
   %ret_ty_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::FnRetMeta", ptr %cast20, i32 0, i32 1
   %ret_ty = load ptr, ptr %ret_ty_ptr, align 8
@@ -267290,7 +267298,7 @@ march_arm27:                                      ; preds = %march_next9
   br label %match_end
 
 march_next28:                                     ; preds = %march_next9
-  call void @avra_match_unreachable(ptr @.match_fn.20058, i64 %tag, ptr @mu_file.20059, i64 638)
+  call void @avra_match_unreachable(ptr @.match_fn.20058, i64 %tag, ptr @mu_file.20059, i64 639)
   unreachable
 }
 
@@ -267364,7 +267372,7 @@ march_arm6:                                       ; preds = %march_next
   br label %match_end
 
 march_next7:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.20060, i64 %tag, ptr @mu_file.20061, i64 664)
+  call void @avra_match_unreachable(ptr @.match_fn.20060, i64 %tag, ptr @mu_file.20061, i64 665)
   unreachable
 }
 
@@ -267684,7 +267692,7 @@ march_arm138:                                     ; preds = %march_next134
   br label %match_end
 
 march_next139:                                    ; preds = %march_next134
-  call void @avra_match_unreachable(ptr @.match_fn.20062, i64 %tag, ptr @mu_file.20063, i64 699)
+  call void @avra_match_unreachable(ptr @.match_fn.20062, i64 %tag, ptr @mu_file.20063, i64 700)
   unreachable
 }
 
@@ -267827,7 +267835,7 @@ march_arm46:                                      ; preds = %march_next34
   br label %match_end
 
 march_next47:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.20064, i64 %tag, ptr @mu_file.20065, i64 740)
+  call void @avra_match_unreachable(ptr @.match_fn.20064, i64 %tag, ptr @mu_file.20065, i64 741)
   unreachable
 }
 
@@ -267892,7 +267900,7 @@ march_arm14:                                      ; preds = %march_next12
   br label %match_end
 
 march_next15:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.20066, i64 %tag, ptr @mu_file.20067, i64 757)
+  call void @avra_match_unreachable(ptr @.match_fn.20066, i64 %tag, ptr @mu_file.20067, i64 758)
   unreachable
 }
 
@@ -267906,14 +267914,14 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20068, i64 2, ptr @sty_name.20069, i64 25, i64 %null_ext, ptr @src_file.20070, i64 0, i64 774)
+  call void @avra_null_deref_trap(ptr @fld_name.20068, i64 2, ptr @sty_name.20069, i64 25, i64 %null_ext, ptr @src_file.20070, i64 0, i64 775)
   %lc_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 0
   %lc = load ptr, ptr %lc_ptr, align 8
   %self2 = load ptr, ptr %self, align 8
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20071, i64 10, ptr @sty_name.20072, i64 25, i64 %null_ext5, ptr @src_file.20073, i64 0, i64 774)
+  call void @avra_null_deref_trap(ptr @fld_name.20071, i64 10, ptr @sty_name.20072, i64 25, i64 %null_ext5, ptr @src_file.20073, i64 0, i64 775)
   %current_fn_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self2, i32 0, i32 3
   %current_fn = load ptr, ptr %current_fn_ptr, align 8
   %name6 = load ptr, ptr %name, align 8
@@ -267933,7 +267941,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20074, i64 2, ptr @sty_name.20075, i64 25, i64 %null_ext, ptr @src_file.20076, i64 0, i64 775)
+  call void @avra_null_deref_trap(ptr @fld_name.20074, i64 2, ptr @sty_name.20075, i64 25, i64 %null_ext, ptr @src_file.20076, i64 0, i64 776)
   %lc_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 0
   %lc = load ptr, ptr %lc_ptr, align 8
   %fn_val2 = load ptr, ptr %fn_val, align 8
@@ -267952,7 +267960,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20077, i64 8, ptr @sty_name.20078, i64 25, i64 %null_ext, ptr @src_file.20079, i64 0, i64 776)
+  call void @avra_null_deref_trap(ptr @fld_name.20077, i64 8, ptr @sty_name.20078, i64 25, i64 %null_ext, ptr @src_file.20079, i64 0, i64 777)
   %i64_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %value2 = load i64, ptr %value, align 8
@@ -267970,7 +267978,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20080, i64 2, ptr @sty_name.20081, i64 25, i64 %null_ext, ptr @src_file.20082, i64 0, i64 777)
+  call void @avra_null_deref_trap(ptr @fld_name.20080, i64 2, ptr @sty_name.20081, i64 25, i64 %null_ext, ptr @src_file.20082, i64 0, i64 778)
   %lc_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 0
   %lc = load ptr, ptr %lc_ptr, align 8
   %2 = call ptr @avra_llvm_int8_type(ptr %lc)
@@ -267989,7 +267997,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20083, i64 6, ptr @sty_name.20084, i64 25, i64 %null_ext, ptr @src_file.20085, i64 0, i64 778)
+  call void @avra_null_deref_trap(ptr @fld_name.20083, i64 6, ptr @sty_name.20084, i64 25, i64 %null_ext, ptr @src_file.20085, i64 0, i64 779)
   %module_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 1
   %module = load ptr, ptr %module_ptr, align 8
   %name2 = load ptr, ptr %name, align 8
@@ -268007,7 +268015,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20086, i64 4, ptr @sty_name.20087, i64 25, i64 %null_ext, ptr @src_file.20088, i64 0, i64 779)
+  call void @avra_null_deref_trap(ptr @fld_name.20086, i64 4, ptr @sty_name.20087, i64 25, i64 %null_ext, ptr @src_file.20088, i64 0, i64 780)
   %2 = call ptr @avra_array_new()
   %size2 = load ptr, ptr %size, align 8
   %cast3 = ptrtoint ptr %size2 to i64
@@ -268027,7 +268035,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20090, i64 9, ptr @sty_name.20091, i64 25, i64 %null_ext, ptr @src_file.20092, i64 0, i64 785)
+  call void @avra_null_deref_trap(ptr @fld_name.20090, i64 9, ptr @sty_name.20091, i64 25, i64 %null_ext, ptr @src_file.20092, i64 0, i64 786)
   %arena_ptr_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 30
   %arena_ptr = load ptr, ptr %arena_ptr_ptr, align 8
   %ne = icmp ne ptr %arena_ptr, null
@@ -268041,13 +268049,13 @@ sif_then:                                         ; preds = %entry
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20093, i64 4, ptr @sty_name.20094, i64 25, i64 %null_ext5, ptr @src_file.20095, i64 0, i64 786)
+  call void @avra_null_deref_trap(ptr @fld_name.20093, i64 4, ptr @sty_name.20094, i64 25, i64 %null_ext5, ptr @src_file.20095, i64 0, i64 787)
   %2 = call ptr @avra_array_new()
   %self6 = load ptr, ptr %self, align 8
   %cast7 = ptrtoint ptr %self6 to i64
   %null_chk8 = icmp eq i64 %cast7, 0
   %null_ext9 = zext i1 %null_chk8 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20097, i64 9, ptr @sty_name.20098, i64 25, i64 %null_ext9, ptr @src_file.20099, i64 0, i64 786)
+  call void @avra_null_deref_trap(ptr @fld_name.20097, i64 9, ptr @sty_name.20098, i64 25, i64 %null_ext9, ptr @src_file.20099, i64 0, i64 787)
   %arena_ptr_ptr10 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self6, i32 0, i32 30
   %arena_ptr11 = load ptr, ptr %arena_ptr_ptr10, align 8
   %cast12 = ptrtoint ptr %arena_ptr11 to i64
@@ -268065,7 +268073,7 @@ sif_else:                                         ; preds = %entry
   %cast17 = ptrtoint ptr %self16 to i64
   %null_chk18 = icmp eq i64 %cast17, 0
   %null_ext19 = zext i1 %null_chk18 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20100, i64 4, ptr @sty_name.20101, i64 25, i64 %null_ext19, ptr @src_file.20102, i64 0, i64 788)
+  call void @avra_null_deref_trap(ptr @fld_name.20100, i64 4, ptr @sty_name.20101, i64 25, i64 %null_ext19, ptr @src_file.20102, i64 0, i64 789)
   %4 = call ptr @avra_array_new()
   %size20 = load ptr, ptr %size, align 8
   %cast21 = ptrtoint ptr %size20 to i64
@@ -268091,7 +268099,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20104, i64 4, ptr @sty_name.20105, i64 25, i64 %null_ext, ptr @src_file.20106, i64 0, i64 791)
+  call void @avra_null_deref_trap(ptr @fld_name.20104, i64 4, ptr @sty_name.20105, i64 25, i64 %null_ext, ptr @src_file.20106, i64 0, i64 792)
   %2 = call ptr @avra_array_new()
   %val2 = load ptr, ptr %val, align 8
   %cast3 = ptrtoint ptr %val2 to i64
@@ -268110,7 +268118,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20108, i64 4, ptr @sty_name.20109, i64 25, i64 %null_ext, ptr @src_file.20110, i64 0, i64 792)
+  call void @avra_null_deref_trap(ptr @fld_name.20108, i64 4, ptr @sty_name.20109, i64 25, i64 %null_ext, ptr @src_file.20110, i64 0, i64 793)
   %2 = call ptr @avra_array_new()
   %val2 = load ptr, ptr %val, align 8
   %cast3 = ptrtoint ptr %val2 to i64
@@ -268133,7 +268141,7 @@ entry:
   %cast = ptrtoint ptr %self2 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20112, i64 3, ptr @sty_name.20113, i64 25, i64 %null_ext, ptr @src_file.20114, i64 0, i64 796)
+  call void @avra_null_deref_trap(ptr @fld_name.20112, i64 3, ptr @sty_name.20113, i64 25, i64 %null_ext, ptr @src_file.20114, i64 0, i64 797)
   %bag_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self2, i32 0, i32 33
   %bag = load ptr, ptr %bag_ptr, align 8
   %code3 = load ptr, ptr %code, align 8
@@ -268142,7 +268150,7 @@ entry:
   %cast6 = ptrtoint ptr %self5 to i64
   %null_chk7 = icmp eq i64 %cast6, 0
   %null_ext8 = zext i1 %null_chk7 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20115, i64 11, ptr @sty_name.20116, i64 25, i64 %null_ext8, ptr @src_file.20117, i64 0, i64 796)
+  call void @avra_null_deref_trap(ptr @fld_name.20115, i64 11, ptr @sty_name.20116, i64 25, i64 %null_ext8, ptr @src_file.20117, i64 0, i64 797)
   %source_line_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self5, i32 0, i32 29
   %source_line = load i64, ptr %source_line_ptr, align 8
   %3 = call ptr @"@std::avrac::diagnostics::span_new"(i64 0, i64 0, i64 %source_line, i64 0)
@@ -268245,7 +268253,7 @@ entry:
   %cast = ptrtoint ptr %self2 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20118, i64 14, ptr @sty_name.20119, i64 25, i64 %null_ext, ptr @src_file.20120, i64 0, i64 811)
+  call void @avra_null_deref_trap(ptr @fld_name.20118, i64 14, ptr @sty_name.20119, i64 25, i64 %null_ext, ptr @src_file.20120, i64 0, i64 812)
   %arr3 = load ptr, ptr %arr, align 8
   %count4 = load i64, ptr %count, align 8
   %3 = call i64 @"@std::avrac::codegen::Ctx__fill_i64_types"(ptr %self2, ptr %arr3, i64 0, i64 %count4)
@@ -268277,7 +268285,7 @@ ifcont:                                           ; preds = %if_else
   %cast = ptrtoint ptr %self5 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20121, i64 8, ptr @sty_name.20122, i64 25, i64 %null_ext, ptr @src_file.20123, i64 0, i64 817)
+  call void @avra_null_deref_trap(ptr @fld_name.20121, i64 8, ptr @sty_name.20122, i64 25, i64 %null_ext, ptr @src_file.20123, i64 0, i64 818)
   %i64_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self5, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %4 = call i64 @avra_llvm_type_array_set(ptr %arr3, i64 %idx4, ptr %i64_type)
@@ -268285,7 +268293,7 @@ ifcont:                                           ; preds = %if_else
   %cast7 = ptrtoint ptr %self6 to i64
   %null_chk8 = icmp eq i64 %cast7, 0
   %null_ext9 = zext i1 %null_chk8 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20124, i64 14, ptr @sty_name.20125, i64 25, i64 %null_ext9, ptr @src_file.20126, i64 0, i64 818)
+  call void @avra_null_deref_trap(ptr @fld_name.20124, i64 14, ptr @sty_name.20125, i64 25, i64 %null_ext9, ptr @src_file.20126, i64 0, i64 819)
   %arr10 = load ptr, ptr %arr, align 8
   %idx11 = load i64, ptr %idx, align 8
   %add = add i64 %idx11, 1
@@ -268323,7 +268331,7 @@ entry:
   %cast = ptrtoint ptr %self4 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20127, i64 28, ptr @sty_name.20128, i64 25, i64 %null_ext, ptr @src_file.20129, i64 0, i64 833)
+  call void @avra_null_deref_trap(ptr @fld_name.20127, i64 28, ptr @sty_name.20128, i64 25, i64 %null_ext, ptr @src_file.20129, i64 0, i64 834)
   %arr5 = load ptr, ptr %arr, align 8
   %val_arr6 = load ptr, ptr %val_arr, align 8
   %declared_count7 = load i64, ptr %declared_count, align 8
@@ -268383,7 +268391,7 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %cast16 = ptrtoint ptr %self15 to i64
   %null_chk17 = icmp eq i64 %cast16, 0
   %null_ext18 = zext i1 %null_chk17 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20133, i64 28, ptr @sty_name.20134, i64 25, i64 %null_ext18, ptr @src_file.20135, i64 0, i64 846)
+  call void @avra_null_deref_trap(ptr @fld_name.20133, i64 28, ptr @sty_name.20134, i64 25, i64 %null_ext18, ptr @src_file.20135, i64 0, i64 847)
   %arr19 = load ptr, ptr %arr, align 8
   %val_arr20 = load ptr, ptr %val_arr, align 8
   %idx21 = load i64, ptr %idx, align 8
@@ -268409,7 +268417,7 @@ ife_else:                                         ; preds = %ifcont
   %cast9 = ptrtoint ptr %self8 to i64
   %null_chk = icmp eq i64 %cast9, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20130, i64 8, ptr @sty_name.20131, i64 25, i64 %null_ext, ptr @src_file.20132, i64 0, i64 843)
+  call void @avra_null_deref_trap(ptr @fld_name.20130, i64 8, ptr @sty_name.20131, i64 25, i64 %null_ext, ptr @src_file.20132, i64 0, i64 844)
   %i64_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self8, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %cast10 = ptrtoint ptr %i64_type to i64
@@ -268484,28 +268492,28 @@ march_arm:                                        ; preds = %ifcont
   %cast = ptrtoint ptr %self5 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20136, i64 8, ptr @sty_name.20137, i64 25, i64 %null_ext, ptr @src_file.20138, i64 0, i64 852)
+  call void @avra_null_deref_trap(ptr @fld_name.20136, i64 8, ptr @sty_name.20137, i64 25, i64 %null_ext, ptr @src_file.20138, i64 0, i64 853)
   %i64_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self5, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %self6 = load ptr, ptr %self, align 8
   %cast7 = ptrtoint ptr %self6 to i64
   %null_chk8 = icmp eq i64 %cast7, 0
   %null_ext9 = zext i1 %null_chk8 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20139, i64 7, ptr @sty_name.20140, i64 25, i64 %null_ext9, ptr @src_file.20141, i64 0, i64 852)
+  call void @avra_null_deref_trap(ptr @fld_name.20139, i64 7, ptr @sty_name.20140, i64 25, i64 %null_ext9, ptr @src_file.20141, i64 0, i64 853)
   %i1_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self6, i32 0, i32 6
   %i1_type = load ptr, ptr %i1_type_ptr, align 8
   %self10 = load ptr, ptr %self, align 8
   %cast11 = ptrtoint ptr %self10 to i64
   %null_chk12 = icmp eq i64 %cast11, 0
   %null_ext13 = zext i1 %null_chk12 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20142, i64 11, ptr @sty_name.20143, i64 25, i64 %null_ext13, ptr @src_file.20144, i64 0, i64 852)
+  call void @avra_null_deref_trap(ptr @fld_name.20142, i64 11, ptr @sty_name.20143, i64 25, i64 %null_ext13, ptr @src_file.20144, i64 0, i64 853)
   %double_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self10, i32 0, i32 8
   %double_type = load ptr, ptr %double_type_ptr, align 8
   %self14 = load ptr, ptr %self, align 8
   %cast15 = ptrtoint ptr %self14 to i64
   %null_chk16 = icmp eq i64 %cast15, 0
   %null_ext17 = zext i1 %null_chk16 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20145, i64 8, ptr @sty_name.20146, i64 25, i64 %null_ext17, ptr @src_file.20147, i64 0, i64 852)
+  call void @avra_null_deref_trap(ptr @fld_name.20145, i64 8, ptr @sty_name.20146, i64 25, i64 %null_ext17, ptr @src_file.20147, i64 0, i64 853)
   %ptr_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self14, i32 0, i32 7
   %ptr_type = load ptr, ptr %ptr_type_ptr, align 8
   %vt18 = load ptr, ptr %vt4, align 8
@@ -268523,7 +268531,7 @@ march_arm20:                                      ; preds = %march_next
   %cast24 = ptrtoint ptr %self23 to i64
   %null_chk25 = icmp eq i64 %cast24, 0
   %null_ext26 = zext i1 %null_chk25 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20148, i64 8, ptr @sty_name.20149, i64 25, i64 %null_ext26, ptr @src_file.20150, i64 0, i64 852)
+  call void @avra_null_deref_trap(ptr @fld_name.20148, i64 8, ptr @sty_name.20149, i64 25, i64 %null_ext26, ptr @src_file.20150, i64 0, i64 853)
   %i64_type_ptr27 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self23, i32 0, i32 5
   %i64_type28 = load ptr, ptr %i64_type_ptr27, align 8
   %cast29 = ptrtoint ptr %i64_type28 to i64
@@ -268531,7 +268539,7 @@ march_arm20:                                      ; preds = %march_next
   br label %match_end
 
 march_next21:                                     ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.20151, i64 %tag, ptr @mu_file.20152, i64 852)
+  call void @avra_match_unreachable(ptr @.match_fn.20151, i64 %tag, ptr @mu_file.20152, i64 853)
   unreachable
 
 match_end38:                                      ; preds = %march_arm47, %march_arm39
@@ -268542,7 +268550,7 @@ match_end38:                                      ; preds = %march_arm47, %march
   %cast55 = ptrtoint ptr %self54 to i64
   %null_chk56 = icmp eq i64 %cast55, 0
   %null_ext57 = zext i1 %null_chk56 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20155, i64 24, ptr @sty_name.20156, i64 25, i64 %null_ext57, ptr @src_file.20157, i64 0, i64 858)
+  call void @avra_null_deref_trap(ptr @fld_name.20155, i64 24, ptr @sty_name.20156, i64 25, i64 %null_ext57, ptr @src_file.20157, i64 0, i64 859)
   %arr58 = load ptr, ptr %arr, align 8
   %rest59 = load ptr, ptr %rest, align 8
   %idx60 = load i64, ptr %idx, align 8
@@ -268580,7 +268588,7 @@ march_arm47:                                      ; preds = %march_next40
   br label %match_end38
 
 march_next48:                                     ; preds = %march_next40
-  call void @avra_match_unreachable(ptr @.match_fn.20153, i64 %tag36, ptr @mu_file.20154, i64 857)
+  call void @avra_match_unreachable(ptr @.match_fn.20153, i64 %tag36, ptr @mu_file.20154, i64 858)
   unreachable
 }
 
@@ -268608,7 +268616,7 @@ march_arm:                                        ; preds = %entry
   %cast = ptrtoint ptr %self2 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20158, i64 7, ptr @sty_name.20159, i64 25, i64 %null_ext, ptr @src_file.20160, i64 0, i64 873)
+  call void @avra_null_deref_trap(ptr @fld_name.20158, i64 7, ptr @sty_name.20159, i64 25, i64 %null_ext, ptr @src_file.20160, i64 0, i64 874)
   %i8_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self2, i32 0, i32 9
   %i8_type = load ptr, ptr %i8_type_ptr, align 8
   %cast3 = ptrtoint ptr %i8_type to i64
@@ -268624,7 +268632,7 @@ march_arm4:                                       ; preds = %march_next
   %cast8 = ptrtoint ptr %self7 to i64
   %null_chk9 = icmp eq i64 %cast8, 0
   %null_ext10 = zext i1 %null_chk9 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20161, i64 7, ptr @sty_name.20162, i64 25, i64 %null_ext10, ptr @src_file.20163, i64 0, i64 873)
+  call void @avra_null_deref_trap(ptr @fld_name.20161, i64 7, ptr @sty_name.20162, i64 25, i64 %null_ext10, ptr @src_file.20163, i64 0, i64 874)
   %i8_type_ptr11 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self7, i32 0, i32 9
   %i8_type12 = load ptr, ptr %i8_type_ptr11, align 8
   %cast13 = ptrtoint ptr %i8_type12 to i64
@@ -268640,7 +268648,7 @@ march_arm14:                                      ; preds = %march_next5
   %cast18 = ptrtoint ptr %self17 to i64
   %null_chk19 = icmp eq i64 %cast18, 0
   %null_ext20 = zext i1 %null_chk19 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20164, i64 8, ptr @sty_name.20165, i64 25, i64 %null_ext20, ptr @src_file.20166, i64 0, i64 873)
+  call void @avra_null_deref_trap(ptr @fld_name.20164, i64 8, ptr @sty_name.20165, i64 25, i64 %null_ext20, ptr @src_file.20166, i64 0, i64 874)
   %i16_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self17, i32 0, i32 10
   %i16_type = load ptr, ptr %i16_type_ptr, align 8
   %cast21 = ptrtoint ptr %i16_type to i64
@@ -268656,7 +268664,7 @@ march_arm22:                                      ; preds = %march_next15
   %cast26 = ptrtoint ptr %self25 to i64
   %null_chk27 = icmp eq i64 %cast26, 0
   %null_ext28 = zext i1 %null_chk27 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20167, i64 8, ptr @sty_name.20168, i64 25, i64 %null_ext28, ptr @src_file.20169, i64 0, i64 873)
+  call void @avra_null_deref_trap(ptr @fld_name.20167, i64 8, ptr @sty_name.20168, i64 25, i64 %null_ext28, ptr @src_file.20169, i64 0, i64 874)
   %i16_type_ptr29 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self25, i32 0, i32 10
   %i16_type30 = load ptr, ptr %i16_type_ptr29, align 8
   %cast31 = ptrtoint ptr %i16_type30 to i64
@@ -268672,7 +268680,7 @@ march_arm32:                                      ; preds = %march_next23
   %cast36 = ptrtoint ptr %self35 to i64
   %null_chk37 = icmp eq i64 %cast36, 0
   %null_ext38 = zext i1 %null_chk37 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20170, i64 8, ptr @sty_name.20171, i64 25, i64 %null_ext38, ptr @src_file.20172, i64 0, i64 873)
+  call void @avra_null_deref_trap(ptr @fld_name.20170, i64 8, ptr @sty_name.20171, i64 25, i64 %null_ext38, ptr @src_file.20172, i64 0, i64 874)
   %i32_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self35, i32 0, i32 11
   %i32_type = load ptr, ptr %i32_type_ptr, align 8
   %cast39 = ptrtoint ptr %i32_type to i64
@@ -268688,7 +268696,7 @@ march_arm40:                                      ; preds = %march_next33
   %cast44 = ptrtoint ptr %self43 to i64
   %null_chk45 = icmp eq i64 %cast44, 0
   %null_ext46 = zext i1 %null_chk45 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20173, i64 8, ptr @sty_name.20174, i64 25, i64 %null_ext46, ptr @src_file.20175, i64 0, i64 873)
+  call void @avra_null_deref_trap(ptr @fld_name.20173, i64 8, ptr @sty_name.20174, i64 25, i64 %null_ext46, ptr @src_file.20175, i64 0, i64 874)
   %i32_type_ptr47 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self43, i32 0, i32 11
   %i32_type48 = load ptr, ptr %i32_type_ptr47, align 8
   %cast49 = ptrtoint ptr %i32_type48 to i64
@@ -268704,7 +268712,7 @@ march_arm50:                                      ; preds = %march_next41
   %cast54 = ptrtoint ptr %self53 to i64
   %null_chk55 = icmp eq i64 %cast54, 0
   %null_ext56 = zext i1 %null_chk55 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20176, i64 8, ptr @sty_name.20177, i64 25, i64 %null_ext56, ptr @src_file.20178, i64 0, i64 873)
+  call void @avra_null_deref_trap(ptr @fld_name.20176, i64 8, ptr @sty_name.20177, i64 25, i64 %null_ext56, ptr @src_file.20178, i64 0, i64 874)
   %i64_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self53, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %cast57 = ptrtoint ptr %i64_type to i64
@@ -268719,28 +268727,28 @@ march_arm58:                                      ; preds = %march_next51
   %cast61 = ptrtoint ptr %self60 to i64
   %null_chk62 = icmp eq i64 %cast61, 0
   %null_ext63 = zext i1 %null_chk62 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20179, i64 8, ptr @sty_name.20180, i64 25, i64 %null_ext63, ptr @src_file.20181, i64 0, i64 873)
+  call void @avra_null_deref_trap(ptr @fld_name.20179, i64 8, ptr @sty_name.20180, i64 25, i64 %null_ext63, ptr @src_file.20181, i64 0, i64 874)
   %i64_type_ptr64 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self60, i32 0, i32 5
   %i64_type65 = load ptr, ptr %i64_type_ptr64, align 8
   %self66 = load ptr, ptr %self, align 8
   %cast67 = ptrtoint ptr %self66 to i64
   %null_chk68 = icmp eq i64 %cast67, 0
   %null_ext69 = zext i1 %null_chk68 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20182, i64 7, ptr @sty_name.20183, i64 25, i64 %null_ext69, ptr @src_file.20184, i64 0, i64 873)
+  call void @avra_null_deref_trap(ptr @fld_name.20182, i64 7, ptr @sty_name.20183, i64 25, i64 %null_ext69, ptr @src_file.20184, i64 0, i64 874)
   %i1_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self66, i32 0, i32 6
   %i1_type = load ptr, ptr %i1_type_ptr, align 8
   %self70 = load ptr, ptr %self, align 8
   %cast71 = ptrtoint ptr %self70 to i64
   %null_chk72 = icmp eq i64 %cast71, 0
   %null_ext73 = zext i1 %null_chk72 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20185, i64 11, ptr @sty_name.20186, i64 25, i64 %null_ext73, ptr @src_file.20187, i64 0, i64 873)
+  call void @avra_null_deref_trap(ptr @fld_name.20185, i64 11, ptr @sty_name.20186, i64 25, i64 %null_ext73, ptr @src_file.20187, i64 0, i64 874)
   %double_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self70, i32 0, i32 8
   %double_type = load ptr, ptr %double_type_ptr, align 8
   %self74 = load ptr, ptr %self, align 8
   %cast75 = ptrtoint ptr %self74 to i64
   %null_chk76 = icmp eq i64 %cast75, 0
   %null_ext77 = zext i1 %null_chk76 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20188, i64 8, ptr @sty_name.20189, i64 25, i64 %null_ext77, ptr @src_file.20190, i64 0, i64 873)
+  call void @avra_null_deref_trap(ptr @fld_name.20188, i64 8, ptr @sty_name.20189, i64 25, i64 %null_ext77, ptr @src_file.20190, i64 0, i64 874)
   %ptr_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self74, i32 0, i32 7
   %ptr_type = load ptr, ptr %ptr_type_ptr, align 8
   %vt78 = load ptr, ptr %vt, align 8
@@ -268750,7 +268758,7 @@ march_arm58:                                      ; preds = %march_next51
   br label %match_end
 
 march_next59:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.20191, i64 %tag, ptr @mu_file.20192, i64 873)
+  call void @avra_match_unreachable(ptr @.match_fn.20191, i64 %tag, ptr @mu_file.20192, i64 874)
   unreachable
 }
 
@@ -268783,7 +268791,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20193, i64 6, ptr @sty_name.20194, i64 25, i64 %null_ext, ptr @src_file.20195, i64 0, i64 887)
+  call void @avra_null_deref_trap(ptr @fld_name.20193, i64 6, ptr @sty_name.20194, i64 25, i64 %null_ext, ptr @src_file.20195, i64 0, i64 888)
   %module_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 1
   %module = load ptr, ptr %module_ptr, align 8
   %name2 = load ptr, ptr %name, align 8
@@ -268851,7 +268859,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20196, i64 7, ptr @sty_name.20197, i64 25, i64 %null_ext, ptr @src_file.20198, i64 0, i64 897)
+  call void @avra_null_deref_trap(ptr @fld_name.20196, i64 7, ptr @sty_name.20197, i64 25, i64 %null_ext, ptr @src_file.20198, i64 0, i64 898)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %fn_ty2 = load ptr, ptr %fn_ty, align 8
@@ -268875,7 +268883,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20199, i64 7, ptr @sty_name.20200, i64 25, i64 %null_ext, ptr @src_file.20201, i64 0, i64 905)
+  call void @avra_null_deref_trap(ptr @fld_name.20199, i64 7, ptr @sty_name.20200, i64 25, i64 %null_ext, ptr @src_file.20201, i64 0, i64 906)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %val2 = load ptr, ptr %val, align 8
@@ -268883,7 +268891,7 @@ entry:
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20202, i64 8, ptr @sty_name.20203, i64 25, i64 %null_ext6, ptr @src_file.20204, i64 0, i64 905)
+  call void @avra_null_deref_trap(ptr @fld_name.20202, i64 8, ptr @sty_name.20203, i64 25, i64 %null_ext6, ptr @src_file.20204, i64 0, i64 906)
   %ptr_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self3, i32 0, i32 7
   %ptr_type = load ptr, ptr %ptr_type_ptr, align 8
   %3 = call ptr @avra_llvm_cast_to_type(ptr %builder, ptr %val2, ptr %ptr_type)
@@ -268902,7 +268910,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20205, i64 7, ptr @sty_name.20206, i64 25, i64 %null_ext, ptr @src_file.20207, i64 0, i64 906)
+  call void @avra_null_deref_trap(ptr @fld_name.20205, i64 7, ptr @sty_name.20206, i64 25, i64 %null_ext, ptr @src_file.20207, i64 0, i64 907)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %val2 = load ptr, ptr %val, align 8
@@ -268910,7 +268918,7 @@ entry:
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20208, i64 8, ptr @sty_name.20209, i64 25, i64 %null_ext6, ptr @src_file.20210, i64 0, i64 906)
+  call void @avra_null_deref_trap(ptr @fld_name.20208, i64 8, ptr @sty_name.20209, i64 25, i64 %null_ext6, ptr @src_file.20210, i64 0, i64 907)
   %i64_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self3, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %3 = call ptr @avra_llvm_cast_to_type(ptr %builder, ptr %val2, ptr %i64_type)
@@ -268929,7 +268937,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20211, i64 7, ptr @sty_name.20212, i64 25, i64 %null_ext, ptr @src_file.20213, i64 0, i64 907)
+  call void @avra_null_deref_trap(ptr @fld_name.20211, i64 7, ptr @sty_name.20212, i64 25, i64 %null_ext, ptr @src_file.20213, i64 0, i64 908)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %val2 = load ptr, ptr %val, align 8
@@ -268937,7 +268945,7 @@ entry:
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20214, i64 11, ptr @sty_name.20215, i64 25, i64 %null_ext6, ptr @src_file.20216, i64 0, i64 907)
+  call void @avra_null_deref_trap(ptr @fld_name.20214, i64 11, ptr @sty_name.20215, i64 25, i64 %null_ext6, ptr @src_file.20216, i64 0, i64 908)
   %double_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self3, i32 0, i32 8
   %double_type = load ptr, ptr %double_type_ptr, align 8
   %3 = call ptr @avra_llvm_cast_to_type(ptr %builder, ptr %val2, ptr %double_type)
@@ -268956,7 +268964,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20217, i64 7, ptr @sty_name.20218, i64 25, i64 %null_ext, ptr @src_file.20219, i64 0, i64 910)
+  call void @avra_null_deref_trap(ptr @fld_name.20217, i64 7, ptr @sty_name.20218, i64 25, i64 %null_ext, ptr @src_file.20219, i64 0, i64 911)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %val2 = load ptr, ptr %val, align 8
@@ -268964,7 +268972,7 @@ entry:
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20220, i64 8, ptr @sty_name.20221, i64 25, i64 %null_ext6, ptr @src_file.20222, i64 0, i64 910)
+  call void @avra_null_deref_trap(ptr @fld_name.20220, i64 8, ptr @sty_name.20221, i64 25, i64 %null_ext6, ptr @src_file.20222, i64 0, i64 911)
   %vt7 = load ptr, ptr %vt, align 8
   %3 = call ptr @"@std::avrac::codegen::Ctx__type_for"(ptr %self3, ptr %vt7)
   %4 = call ptr @avra_llvm_cast_to_type(ptr %builder, ptr %val2, ptr %3)
@@ -268983,7 +268991,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20223, i64 7, ptr @sty_name.20224, i64 25, i64 %null_ext, ptr @src_file.20225, i64 0, i64 913)
+  call void @avra_null_deref_trap(ptr @fld_name.20223, i64 7, ptr @sty_name.20224, i64 25, i64 %null_ext, ptr @src_file.20225, i64 0, i64 914)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %val2 = load ptr, ptr %val, align 8
@@ -268991,7 +268999,7 @@ entry:
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20226, i64 11, ptr @sty_name.20227, i64 25, i64 %null_ext6, ptr @src_file.20228, i64 0, i64 913)
+  call void @avra_null_deref_trap(ptr @fld_name.20226, i64 11, ptr @sty_name.20227, i64 25, i64 %null_ext6, ptr @src_file.20228, i64 0, i64 914)
   %double_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self3, i32 0, i32 8
   %double_type = load ptr, ptr %double_type_ptr, align 8
   %name7 = load ptr, ptr %name, align 8
@@ -269011,7 +269019,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20229, i64 7, ptr @sty_name.20230, i64 25, i64 %null_ext, ptr @src_file.20231, i64 0, i64 914)
+  call void @avra_null_deref_trap(ptr @fld_name.20229, i64 7, ptr @sty_name.20230, i64 25, i64 %null_ext, ptr @src_file.20231, i64 0, i64 915)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %val2 = load ptr, ptr %val, align 8
@@ -269019,7 +269027,7 @@ entry:
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20232, i64 8, ptr @sty_name.20233, i64 25, i64 %null_ext6, ptr @src_file.20234, i64 0, i64 914)
+  call void @avra_null_deref_trap(ptr @fld_name.20232, i64 8, ptr @sty_name.20233, i64 25, i64 %null_ext6, ptr @src_file.20234, i64 0, i64 915)
   %i64_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self3, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %name7 = load ptr, ptr %name, align 8
@@ -269037,7 +269045,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20235, i64 13, ptr @sty_name.20236, i64 25, i64 %null_ext, ptr @src_file.20237, i64 0, i64 921)
+  call void @avra_null_deref_trap(ptr @fld_name.20235, i64 13, ptr @sty_name.20236, i64 25, i64 %null_ext, ptr @src_file.20237, i64 0, i64 922)
   %vt2 = load ptr, ptr %vt, align 8
   %2 = call ptr @"@std::avrac::codegen::Ctx__llvm_type_for"(ptr %self1, ptr %vt2)
   ret ptr %2
@@ -269055,14 +269063,14 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20238, i64 7, ptr @sty_name.20239, i64 25, i64 %null_ext, ptr @src_file.20240, i64 0, i64 925)
+  call void @avra_null_deref_trap(ptr @fld_name.20238, i64 7, ptr @sty_name.20239, i64 25, i64 %null_ext, ptr @src_file.20240, i64 0, i64 926)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %self2 = load ptr, ptr %self, align 8
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20241, i64 8, ptr @sty_name.20242, i64 25, i64 %null_ext5, ptr @src_file.20243, i64 0, i64 925)
+  call void @avra_null_deref_trap(ptr @fld_name.20241, i64 8, ptr @sty_name.20242, i64 25, i64 %null_ext5, ptr @src_file.20243, i64 0, i64 926)
   %vt6 = load ptr, ptr %vt, align 8
   %3 = call ptr @"@std::avrac::codegen::Ctx__type_for"(ptr %self2, ptr %vt6)
   %name7 = load ptr, ptr %name, align 8
@@ -269084,14 +269092,14 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20244, i64 7, ptr @sty_name.20245, i64 25, i64 %null_ext, ptr @src_file.20246, i64 0, i64 926)
+  call void @avra_null_deref_trap(ptr @fld_name.20244, i64 7, ptr @sty_name.20245, i64 25, i64 %null_ext, ptr @src_file.20246, i64 0, i64 927)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %self2 = load ptr, ptr %self, align 8
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20247, i64 8, ptr @sty_name.20248, i64 25, i64 %null_ext5, ptr @src_file.20249, i64 0, i64 926)
+  call void @avra_null_deref_trap(ptr @fld_name.20247, i64 8, ptr @sty_name.20248, i64 25, i64 %null_ext5, ptr @src_file.20249, i64 0, i64 927)
   %vt6 = load ptr, ptr %vt, align 8
   %4 = call ptr @"@std::avrac::codegen::Ctx__type_for"(ptr %self2, ptr %vt6)
   %src7 = load ptr, ptr %src, align 8
@@ -269110,7 +269118,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20250, i64 8, ptr @sty_name.20251, i64 25, i64 %null_ext, ptr @src_file.20252, i64 0, i64 930)
+  call void @avra_null_deref_trap(ptr @fld_name.20250, i64 8, ptr @sty_name.20251, i64 25, i64 %null_ext, ptr @src_file.20252, i64 0, i64 931)
   %vt2 = load ptr, ptr %vt, align 8
   %2 = call ptr @"@std::avrac::codegen::Ctx__type_for"(ptr %self1, ptr %vt2)
   %3 = call ptr @avra_llvm_const_null(ptr %2)
@@ -269129,14 +269137,14 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20253, i64 7, ptr @sty_name.20254, i64 25, i64 %null_ext, ptr @src_file.20255, i64 0, i64 934)
+  call void @avra_null_deref_trap(ptr @fld_name.20253, i64 7, ptr @sty_name.20254, i64 25, i64 %null_ext, ptr @src_file.20255, i64 0, i64 935)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %self2 = load ptr, ptr %self, align 8
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20256, i64 7, ptr @sty_name.20257, i64 25, i64 %null_ext5, ptr @src_file.20258, i64 0, i64 934)
+  call void @avra_null_deref_trap(ptr @fld_name.20256, i64 7, ptr @sty_name.20257, i64 25, i64 %null_ext5, ptr @src_file.20258, i64 0, i64 935)
   %val6 = load ptr, ptr %val, align 8
   %ret_ty7 = load ptr, ptr %ret_ty, align 8
   %3 = call ptr @"@std::avrac::codegen::Ctx__cast_to"(ptr %self2, ptr %val6, ptr %ret_ty7)
@@ -269155,14 +269163,14 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20259, i64 7, ptr @sty_name.20260, i64 25, i64 %null_ext, ptr @src_file.20261, i64 0, i64 935)
+  call void @avra_null_deref_trap(ptr @fld_name.20259, i64 7, ptr @sty_name.20260, i64 25, i64 %null_ext, ptr @src_file.20261, i64 0, i64 936)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %self2 = load ptr, ptr %self, align 8
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20262, i64 8, ptr @sty_name.20263, i64 25, i64 %null_ext5, ptr @src_file.20264, i64 0, i64 935)
+  call void @avra_null_deref_trap(ptr @fld_name.20262, i64 8, ptr @sty_name.20263, i64 25, i64 %null_ext5, ptr @src_file.20264, i64 0, i64 936)
   %ret_ty6 = load ptr, ptr %ret_ty, align 8
   %2 = call ptr @"@std::avrac::codegen::Ctx__zero_for"(ptr %self2, ptr %ret_ty6)
   %3 = call ptr @avra_llvm_build_ret(ptr %builder, ptr %2)
@@ -269189,7 +269197,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20265, i64 6, ptr @sty_name.20266, i64 25, i64 %null_ext, ptr @src_file.20267, i64 0, i64 940)
+  call void @avra_null_deref_trap(ptr @fld_name.20265, i64 6, ptr @sty_name.20266, i64 25, i64 %null_ext, ptr @src_file.20267, i64 0, i64 941)
   %module_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 1
   %module = load ptr, ptr %module_ptr, align 8
   %name2 = load ptr, ptr %name, align 8
@@ -269236,7 +269244,7 @@ for.exit:                                         ; preds = %for.cond
   %cast15 = ptrtoint ptr %self14 to i64
   %null_chk16 = icmp eq i64 %cast15, 0
   %null_ext17 = zext i1 %null_chk16 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20268, i64 7, ptr @sty_name.20269, i64 25, i64 %null_ext17, ptr @src_file.20270, i64 0, i64 947)
+  call void @avra_null_deref_trap(ptr @fld_name.20268, i64 7, ptr @sty_name.20269, i64 25, i64 %null_ext17, ptr @src_file.20270, i64 0, i64 948)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self14, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %ft18 = load ptr, ptr %ft, align 8
@@ -269306,7 +269314,7 @@ for.exit:                                         ; preds = %for.cond
   %cast12 = ptrtoint ptr %self11 to i64
   %null_chk = icmp eq i64 %cast12, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20272, i64 7, ptr @sty_name.20273, i64 25, i64 %null_ext, ptr @src_file.20274, i64 0, i64 960)
+  call void @avra_null_deref_trap(ptr @fld_name.20272, i64 7, ptr @sty_name.20273, i64 25, i64 %null_ext, ptr @src_file.20274, i64 0, i64 961)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self11, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %ft13 = load ptr, ptr %ft, align 8
@@ -269378,7 +269386,7 @@ for.exit:                                         ; preds = %for.cond
   %cast12 = ptrtoint ptr %self11 to i64
   %null_chk = icmp eq i64 %cast12, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20276, i64 7, ptr @sty_name.20277, i64 25, i64 %null_ext, ptr @src_file.20278, i64 0, i64 973)
+  call void @avra_null_deref_trap(ptr @fld_name.20276, i64 7, ptr @sty_name.20277, i64 25, i64 %null_ext, ptr @src_file.20278, i64 0, i64 974)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self11, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %ft13 = load ptr, ptr %ft, align 8
@@ -269412,7 +269420,7 @@ entry:
   %cast = ptrtoint ptr %self2 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20279, i64 7, ptr @sty_name.20280, i64 25, i64 %null_ext, ptr @src_file.20281, i64 0, i64 983)
+  call void @avra_null_deref_trap(ptr @fld_name.20279, i64 7, ptr @sty_name.20280, i64 25, i64 %null_ext, ptr @src_file.20281, i64 0, i64 984)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self2, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %ft3 = load ptr, ptr %ft, align 8
@@ -269440,7 +269448,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20283, i64 6, ptr @sty_name.20284, i64 25, i64 %null_ext, ptr @src_file.20285, i64 0, i64 988)
+  call void @avra_null_deref_trap(ptr @fld_name.20283, i64 6, ptr @sty_name.20284, i64 25, i64 %null_ext, ptr @src_file.20285, i64 0, i64 989)
   %val2 = load ptr, ptr %val, align 8
   %4 = call ptr @"@std::avrac::codegen::Ctx__to_i64"(ptr %self1, ptr %val2, ptr @.str.20286)
   store ptr %4, ptr %val_i64, align 8
@@ -269448,13 +269456,13 @@ entry:
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20287, i64 4, ptr @sty_name.20288, i64 25, i64 %null_ext6, ptr @src_file.20289, i64 0, i64 989)
+  call void @avra_null_deref_trap(ptr @fld_name.20287, i64 4, ptr @sty_name.20288, i64 25, i64 %null_ext6, ptr @src_file.20289, i64 0, i64 990)
   %val_i647 = load ptr, ptr %val_i64, align 8
   %self8 = load ptr, ptr %self, align 8
   %cast9 = ptrtoint ptr %self8 to i64
   %null_chk10 = icmp eq i64 %cast9, 0
   %null_ext11 = zext i1 %null_chk10 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20290, i64 8, ptr @sty_name.20291, i64 25, i64 %null_ext11, ptr @src_file.20292, i64 0, i64 989)
+  call void @avra_null_deref_trap(ptr @fld_name.20290, i64 8, ptr @sty_name.20291, i64 25, i64 %null_ext11, ptr @src_file.20292, i64 0, i64 990)
   %i64_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self8, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %5 = call ptr @avra_llvm_const_int(ptr %i64_type, i64 0, i64 0)
@@ -269464,13 +269472,13 @@ entry:
   %cast13 = ptrtoint ptr %self12 to i64
   %null_chk14 = icmp eq i64 %cast13, 0
   %null_ext15 = zext i1 %null_chk14 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20294, i64 4, ptr @sty_name.20295, i64 25, i64 %null_ext15, ptr @src_file.20296, i64 0, i64 990)
+  call void @avra_null_deref_trap(ptr @fld_name.20294, i64 4, ptr @sty_name.20295, i64 25, i64 %null_ext15, ptr @src_file.20296, i64 0, i64 991)
   %is_null_i116 = load ptr, ptr %is_null_i1, align 8
   %self17 = load ptr, ptr %self, align 8
   %cast18 = ptrtoint ptr %self17 to i64
   %null_chk19 = icmp eq i64 %cast18, 0
   %null_ext20 = zext i1 %null_chk19 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20297, i64 8, ptr @sty_name.20298, i64 25, i64 %null_ext20, ptr @src_file.20299, i64 0, i64 990)
+  call void @avra_null_deref_trap(ptr @fld_name.20297, i64 8, ptr @sty_name.20298, i64 25, i64 %null_ext20, ptr @src_file.20299, i64 0, i64 991)
   %i64_type_ptr21 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self17, i32 0, i32 5
   %i64_type22 = load ptr, ptr %i64_type_ptr21, align 8
   %7 = call ptr @"@std::avrac::codegen::Ctx__zext"(ptr %self12, ptr %is_null_i116, ptr %i64_type22, ptr @.str.20300)
@@ -269479,13 +269487,13 @@ entry:
   %cast24 = ptrtoint ptr %self23 to i64
   %null_chk25 = icmp eq i64 %cast24, 0
   %null_ext26 = zext i1 %null_chk25 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20301, i64 4, ptr @sty_name.20302, i64 25, i64 %null_ext26, ptr @src_file.20303, i64 0, i64 991)
+  call void @avra_null_deref_trap(ptr @fld_name.20301, i64 4, ptr @sty_name.20302, i64 25, i64 %null_ext26, ptr @src_file.20303, i64 0, i64 992)
   %8 = call ptr @avra_array_new()
   %self27 = load ptr, ptr %self, align 8
   %cast28 = ptrtoint ptr %self27 to i64
   %null_chk29 = icmp eq i64 %cast28, 0
   %null_ext30 = zext i1 %null_chk29 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20305, i64 10, ptr @sty_name.20306, i64 25, i64 %null_ext30, ptr @src_file.20307, i64 0, i64 991)
+  call void @avra_null_deref_trap(ptr @fld_name.20305, i64 10, ptr @sty_name.20306, i64 25, i64 %null_ext30, ptr @src_file.20307, i64 0, i64 992)
   %field_name31 = load ptr, ptr %field_name, align 8
   %9 = call ptr @"@std::avrac::codegen::Ctx__global_str"(ptr %self27, ptr %field_name31, ptr @.str.20308)
   %cast32 = ptrtoint ptr %9 to i64
@@ -269494,7 +269502,7 @@ entry:
   %cast34 = ptrtoint ptr %self33 to i64
   %null_chk35 = icmp eq i64 %cast34, 0
   %null_ext36 = zext i1 %null_chk35 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20309, i64 3, ptr @sty_name.20310, i64 25, i64 %null_ext36, ptr @src_file.20311, i64 0, i64 991)
+  call void @avra_null_deref_trap(ptr @fld_name.20309, i64 3, ptr @sty_name.20310, i64 25, i64 %null_ext36, ptr @src_file.20311, i64 0, i64 992)
   %field_name37 = load ptr, ptr %field_name, align 8
   %10 = call i64 @strlen(ptr %field_name37)
   %11 = call ptr @"@std::avrac::codegen::Ctx__i64"(ptr %self33, i64 %10)
@@ -269504,7 +269512,7 @@ entry:
   %cast40 = ptrtoint ptr %self39 to i64
   %null_chk41 = icmp eq i64 %cast40, 0
   %null_ext42 = zext i1 %null_chk41 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20312, i64 10, ptr @sty_name.20313, i64 25, i64 %null_ext42, ptr @src_file.20314, i64 0, i64 991)
+  call void @avra_null_deref_trap(ptr @fld_name.20312, i64 10, ptr @sty_name.20313, i64 25, i64 %null_ext42, ptr @src_file.20314, i64 0, i64 992)
   %type_name43 = load ptr, ptr %type_name, align 8
   %12 = call ptr @"@std::avrac::codegen::Ctx__global_str"(ptr %self39, ptr %type_name43, ptr @.str.20315)
   %cast44 = ptrtoint ptr %12 to i64
@@ -269513,7 +269521,7 @@ entry:
   %cast46 = ptrtoint ptr %self45 to i64
   %null_chk47 = icmp eq i64 %cast46, 0
   %null_ext48 = zext i1 %null_chk47 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20316, i64 3, ptr @sty_name.20317, i64 25, i64 %null_ext48, ptr @src_file.20318, i64 0, i64 991)
+  call void @avra_null_deref_trap(ptr @fld_name.20316, i64 3, ptr @sty_name.20317, i64 25, i64 %null_ext48, ptr @src_file.20318, i64 0, i64 992)
   %type_name49 = load ptr, ptr %type_name, align 8
   %13 = call i64 @strlen(ptr %type_name49)
   %14 = call ptr @"@std::avrac::codegen::Ctx__i64"(ptr %self45, i64 %13)
@@ -269526,12 +269534,12 @@ entry:
   %cast54 = ptrtoint ptr %self53 to i64
   %null_chk55 = icmp eq i64 %cast54, 0
   %null_ext56 = zext i1 %null_chk55 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20319, i64 10, ptr @sty_name.20320, i64 25, i64 %null_ext56, ptr @src_file.20321, i64 0, i64 991)
+  call void @avra_null_deref_trap(ptr @fld_name.20319, i64 10, ptr @sty_name.20320, i64 25, i64 %null_ext56, ptr @src_file.20321, i64 0, i64 992)
   %self57 = load ptr, ptr %self, align 8
   %cast58 = ptrtoint ptr %self57 to i64
   %null_chk59 = icmp eq i64 %cast58, 0
   %null_ext60 = zext i1 %null_chk59 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20322, i64 11, ptr @sty_name.20323, i64 25, i64 %null_ext60, ptr @src_file.20324, i64 0, i64 991)
+  call void @avra_null_deref_trap(ptr @fld_name.20322, i64 11, ptr @sty_name.20323, i64 25, i64 %null_ext60, ptr @src_file.20324, i64 0, i64 992)
   %source_file_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self57, i32 0, i32 28
   %source_file = load ptr, ptr %source_file_ptr, align 8
   %15 = call ptr @"@std::avrac::codegen::Ctx__global_str"(ptr %self53, ptr %source_file, ptr @.str.20325)
@@ -269541,12 +269549,12 @@ entry:
   %cast63 = ptrtoint ptr %self62 to i64
   %null_chk64 = icmp eq i64 %cast63, 0
   %null_ext65 = zext i1 %null_chk64 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20326, i64 3, ptr @sty_name.20327, i64 25, i64 %null_ext65, ptr @src_file.20328, i64 0, i64 991)
+  call void @avra_null_deref_trap(ptr @fld_name.20326, i64 3, ptr @sty_name.20327, i64 25, i64 %null_ext65, ptr @src_file.20328, i64 0, i64 992)
   %self66 = load ptr, ptr %self, align 8
   %cast67 = ptrtoint ptr %self66 to i64
   %null_chk68 = icmp eq i64 %cast67, 0
   %null_ext69 = zext i1 %null_chk68 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20329, i64 11, ptr @sty_name.20330, i64 25, i64 %null_ext69, ptr @src_file.20331, i64 0, i64 991)
+  call void @avra_null_deref_trap(ptr @fld_name.20329, i64 11, ptr @sty_name.20330, i64 25, i64 %null_ext69, ptr @src_file.20331, i64 0, i64 992)
   %source_file_ptr70 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self66, i32 0, i32 28
   %source_file71 = load ptr, ptr %source_file_ptr70, align 8
   %16 = call i64 @strlen(ptr %source_file71)
@@ -269557,12 +269565,12 @@ entry:
   %cast74 = ptrtoint ptr %self73 to i64
   %null_chk75 = icmp eq i64 %cast74, 0
   %null_ext76 = zext i1 %null_chk75 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20332, i64 3, ptr @sty_name.20333, i64 25, i64 %null_ext76, ptr @src_file.20334, i64 0, i64 991)
+  call void @avra_null_deref_trap(ptr @fld_name.20332, i64 3, ptr @sty_name.20333, i64 25, i64 %null_ext76, ptr @src_file.20334, i64 0, i64 992)
   %self77 = load ptr, ptr %self, align 8
   %cast78 = ptrtoint ptr %self77 to i64
   %null_chk79 = icmp eq i64 %cast78, 0
   %null_ext80 = zext i1 %null_chk79 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20335, i64 11, ptr @sty_name.20336, i64 25, i64 %null_ext80, ptr @src_file.20337, i64 0, i64 991)
+  call void @avra_null_deref_trap(ptr @fld_name.20335, i64 11, ptr @sty_name.20336, i64 25, i64 %null_ext80, ptr @src_file.20337, i64 0, i64 992)
   %source_line_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self77, i32 0, i32 29
   %source_line = load i64, ptr %source_line_ptr, align 8
   %18 = call ptr @"@std::avrac::codegen::Ctx__i64"(ptr %self73, i64 %source_line)
@@ -269583,7 +269591,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20338, i64 7, ptr @sty_name.20339, i64 25, i64 %null_ext, ptr @src_file.20340, i64 0, i64 1002)
+  call void @avra_null_deref_trap(ptr @fld_name.20338, i64 7, ptr @sty_name.20339, i64 25, i64 %null_ext, ptr @src_file.20340, i64 0, i64 1003)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %bb2 = load ptr, ptr %bb, align 8
@@ -269603,7 +269611,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20341, i64 7, ptr @sty_name.20342, i64 25, i64 %null_ext, ptr @src_file.20343, i64 0, i64 1007)
+  call void @avra_null_deref_trap(ptr @fld_name.20341, i64 7, ptr @sty_name.20342, i64 25, i64 %null_ext, ptr @src_file.20343, i64 0, i64 1008)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %val2 = load ptr, ptr %val, align 8
@@ -269626,14 +269634,14 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20344, i64 7, ptr @sty_name.20345, i64 25, i64 %null_ext, ptr @src_file.20346, i64 0, i64 1013)
+  call void @avra_null_deref_trap(ptr @fld_name.20344, i64 7, ptr @sty_name.20345, i64 25, i64 %null_ext, ptr @src_file.20346, i64 0, i64 1014)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %self2 = load ptr, ptr %self, align 8
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20347, i64 7, ptr @sty_name.20348, i64 25, i64 %null_ext5, ptr @src_file.20349, i64 0, i64 1013)
+  call void @avra_null_deref_trap(ptr @fld_name.20347, i64 7, ptr @sty_name.20348, i64 25, i64 %null_ext5, ptr @src_file.20349, i64 0, i64 1014)
   %val6 = load ptr, ptr %val, align 8
   %field_ty7 = load ptr, ptr %field_ty, align 8
   %4 = call ptr @"@std::avrac::codegen::Ctx__cast_to"(ptr %self2, ptr %val6, ptr %field_ty7)
@@ -269657,7 +269665,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20350, i64 7, ptr @sty_name.20351, i64 25, i64 %null_ext, ptr @src_file.20352, i64 0, i64 1016)
+  call void @avra_null_deref_trap(ptr @fld_name.20350, i64 7, ptr @sty_name.20351, i64 25, i64 %null_ext, ptr @src_file.20352, i64 0, i64 1017)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %ty2 = load ptr, ptr %ty, align 8
@@ -269679,14 +269687,14 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20353, i64 7, ptr @sty_name.20354, i64 25, i64 %null_ext, ptr @src_file.20355, i64 0, i64 1017)
+  call void @avra_null_deref_trap(ptr @fld_name.20353, i64 7, ptr @sty_name.20354, i64 25, i64 %null_ext, ptr @src_file.20355, i64 0, i64 1018)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %self2 = load ptr, ptr %self, align 8
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20356, i64 8, ptr @sty_name.20357, i64 25, i64 %null_ext5, ptr @src_file.20358, i64 0, i64 1017)
+  call void @avra_null_deref_trap(ptr @fld_name.20356, i64 8, ptr @sty_name.20357, i64 25, i64 %null_ext5, ptr @src_file.20358, i64 0, i64 1018)
   %i64_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self2, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %src6 = load ptr, ptr %src, align 8
@@ -269707,14 +269715,14 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20359, i64 7, ptr @sty_name.20360, i64 25, i64 %null_ext, ptr @src_file.20361, i64 0, i64 1018)
+  call void @avra_null_deref_trap(ptr @fld_name.20359, i64 7, ptr @sty_name.20360, i64 25, i64 %null_ext, ptr @src_file.20361, i64 0, i64 1019)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %self2 = load ptr, ptr %self, align 8
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20362, i64 2, ptr @sty_name.20363, i64 25, i64 %null_ext5, ptr @src_file.20364, i64 0, i64 1018)
+  call void @avra_null_deref_trap(ptr @fld_name.20362, i64 2, ptr @sty_name.20363, i64 25, i64 %null_ext5, ptr @src_file.20364, i64 0, i64 1019)
   %lc_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self2, i32 0, i32 0
   %lc = load ptr, ptr %lc_ptr, align 8
   %3 = call ptr @avra_llvm_int8_type(ptr %lc)
@@ -269736,7 +269744,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20365, i64 7, ptr @sty_name.20366, i64 25, i64 %null_ext, ptr @src_file.20367, i64 0, i64 1019)
+  call void @avra_null_deref_trap(ptr @fld_name.20365, i64 7, ptr @sty_name.20366, i64 25, i64 %null_ext, ptr @src_file.20367, i64 0, i64 1020)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %ty2 = load ptr, ptr %ty, align 8
@@ -269755,14 +269763,14 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20368, i64 7, ptr @sty_name.20369, i64 25, i64 %null_ext, ptr @src_file.20370, i64 0, i64 1020)
+  call void @avra_null_deref_trap(ptr @fld_name.20368, i64 7, ptr @sty_name.20369, i64 25, i64 %null_ext, ptr @src_file.20370, i64 0, i64 1021)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %self2 = load ptr, ptr %self, align 8
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20371, i64 8, ptr @sty_name.20372, i64 25, i64 %null_ext5, ptr @src_file.20373, i64 0, i64 1020)
+  call void @avra_null_deref_trap(ptr @fld_name.20371, i64 8, ptr @sty_name.20372, i64 25, i64 %null_ext5, ptr @src_file.20373, i64 0, i64 1021)
   %i64_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self2, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %name6 = load ptr, ptr %name, align 8
@@ -269786,7 +269794,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20374, i64 7, ptr @sty_name.20375, i64 25, i64 %null_ext, ptr @src_file.20376, i64 0, i64 1021)
+  call void @avra_null_deref_trap(ptr @fld_name.20374, i64 7, ptr @sty_name.20375, i64 25, i64 %null_ext, ptr @src_file.20376, i64 0, i64 1022)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %ty2 = load ptr, ptr %ty, align 8
@@ -269809,7 +269817,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20377, i64 7, ptr @sty_name.20378, i64 25, i64 %null_ext, ptr @src_file.20379, i64 0, i64 1022)
+  call void @avra_null_deref_trap(ptr @fld_name.20377, i64 7, ptr @sty_name.20378, i64 25, i64 %null_ext, ptr @src_file.20379, i64 0, i64 1023)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %text2 = load ptr, ptr %text, align 8
@@ -269828,7 +269836,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20380, i64 7, ptr @sty_name.20381, i64 25, i64 %null_ext, ptr @src_file.20382, i64 0, i64 1025)
+  call void @avra_null_deref_trap(ptr @fld_name.20380, i64 7, ptr @sty_name.20381, i64 25, i64 %null_ext, ptr @src_file.20382, i64 0, i64 1026)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %bb2 = load ptr, ptr %bb, align 8
@@ -269851,7 +269859,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20383, i64 7, ptr @sty_name.20384, i64 25, i64 %null_ext, ptr @src_file.20385, i64 0, i64 1026)
+  call void @avra_null_deref_trap(ptr @fld_name.20383, i64 7, ptr @sty_name.20384, i64 25, i64 %null_ext, ptr @src_file.20385, i64 0, i64 1027)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %cond2 = load ptr, ptr %cond, align 8
@@ -269872,7 +269880,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20386, i64 7, ptr @sty_name.20387, i64 25, i64 %null_ext, ptr @src_file.20388, i64 0, i64 1027)
+  call void @avra_null_deref_trap(ptr @fld_name.20386, i64 7, ptr @sty_name.20387, i64 25, i64 %null_ext, ptr @src_file.20388, i64 0, i64 1028)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %val2 = load ptr, ptr %val, align 8
@@ -269889,7 +269897,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20389, i64 7, ptr @sty_name.20390, i64 25, i64 %null_ext, ptr @src_file.20391, i64 0, i64 1028)
+  call void @avra_null_deref_trap(ptr @fld_name.20389, i64 7, ptr @sty_name.20390, i64 25, i64 %null_ext, ptr @src_file.20391, i64 0, i64 1029)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %1 = call ptr @avra_llvm_build_unreachable(ptr %builder)
@@ -269905,7 +269913,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20392, i64 7, ptr @sty_name.20393, i64 25, i64 %null_ext, ptr @src_file.20394, i64 0, i64 1029)
+  call void @avra_null_deref_trap(ptr @fld_name.20392, i64 7, ptr @sty_name.20393, i64 25, i64 %null_ext, ptr @src_file.20394, i64 0, i64 1030)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %1 = call i64 @avra_llvm_block_has_terminator(ptr %builder)
@@ -269923,7 +269931,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20395, i64 7, ptr @sty_name.20396, i64 25, i64 %null_ext, ptr @src_file.20397, i64 0, i64 1030)
+  call void @avra_null_deref_trap(ptr @fld_name.20395, i64 7, ptr @sty_name.20396, i64 25, i64 %null_ext, ptr @src_file.20397, i64 0, i64 1031)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %1 = call ptr @avra_llvm_get_insert_block(ptr %builder)
@@ -269944,7 +269952,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20398, i64 7, ptr @sty_name.20399, i64 25, i64 %null_ext, ptr @src_file.20400, i64 0, i64 1033)
+  call void @avra_null_deref_trap(ptr @fld_name.20398, i64 7, ptr @sty_name.20399, i64 25, i64 %null_ext, ptr @src_file.20400, i64 0, i64 1034)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -269968,7 +269976,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20401, i64 7, ptr @sty_name.20402, i64 25, i64 %null_ext, ptr @src_file.20403, i64 0, i64 1034)
+  call void @avra_null_deref_trap(ptr @fld_name.20401, i64 7, ptr @sty_name.20402, i64 25, i64 %null_ext, ptr @src_file.20403, i64 0, i64 1035)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -269992,7 +270000,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20404, i64 7, ptr @sty_name.20405, i64 25, i64 %null_ext, ptr @src_file.20406, i64 0, i64 1035)
+  call void @avra_null_deref_trap(ptr @fld_name.20404, i64 7, ptr @sty_name.20405, i64 25, i64 %null_ext, ptr @src_file.20406, i64 0, i64 1036)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -270016,7 +270024,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20407, i64 7, ptr @sty_name.20408, i64 25, i64 %null_ext, ptr @src_file.20409, i64 0, i64 1036)
+  call void @avra_null_deref_trap(ptr @fld_name.20407, i64 7, ptr @sty_name.20408, i64 25, i64 %null_ext, ptr @src_file.20409, i64 0, i64 1037)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -270040,7 +270048,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20410, i64 7, ptr @sty_name.20411, i64 25, i64 %null_ext, ptr @src_file.20412, i64 0, i64 1037)
+  call void @avra_null_deref_trap(ptr @fld_name.20410, i64 7, ptr @sty_name.20411, i64 25, i64 %null_ext, ptr @src_file.20412, i64 0, i64 1038)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -270064,7 +270072,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20413, i64 7, ptr @sty_name.20414, i64 25, i64 %null_ext, ptr @src_file.20415, i64 0, i64 1038)
+  call void @avra_null_deref_trap(ptr @fld_name.20413, i64 7, ptr @sty_name.20414, i64 25, i64 %null_ext, ptr @src_file.20415, i64 0, i64 1039)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -270088,7 +270096,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20416, i64 7, ptr @sty_name.20417, i64 25, i64 %null_ext, ptr @src_file.20418, i64 0, i64 1039)
+  call void @avra_null_deref_trap(ptr @fld_name.20416, i64 7, ptr @sty_name.20417, i64 25, i64 %null_ext, ptr @src_file.20418, i64 0, i64 1040)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -270112,7 +270120,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20419, i64 7, ptr @sty_name.20420, i64 25, i64 %null_ext, ptr @src_file.20421, i64 0, i64 1040)
+  call void @avra_null_deref_trap(ptr @fld_name.20419, i64 7, ptr @sty_name.20420, i64 25, i64 %null_ext, ptr @src_file.20421, i64 0, i64 1041)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -270136,7 +270144,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20422, i64 7, ptr @sty_name.20423, i64 25, i64 %null_ext, ptr @src_file.20424, i64 0, i64 1041)
+  call void @avra_null_deref_trap(ptr @fld_name.20422, i64 7, ptr @sty_name.20423, i64 25, i64 %null_ext, ptr @src_file.20424, i64 0, i64 1042)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -270160,7 +270168,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20425, i64 7, ptr @sty_name.20426, i64 25, i64 %null_ext, ptr @src_file.20427, i64 0, i64 1042)
+  call void @avra_null_deref_trap(ptr @fld_name.20425, i64 7, ptr @sty_name.20426, i64 25, i64 %null_ext, ptr @src_file.20427, i64 0, i64 1043)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -270184,7 +270192,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20428, i64 7, ptr @sty_name.20429, i64 25, i64 %null_ext, ptr @src_file.20430, i64 0, i64 1043)
+  call void @avra_null_deref_trap(ptr @fld_name.20428, i64 7, ptr @sty_name.20429, i64 25, i64 %null_ext, ptr @src_file.20430, i64 0, i64 1044)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -270208,7 +270216,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20431, i64 7, ptr @sty_name.20432, i64 25, i64 %null_ext, ptr @src_file.20433, i64 0, i64 1044)
+  call void @avra_null_deref_trap(ptr @fld_name.20431, i64 7, ptr @sty_name.20432, i64 25, i64 %null_ext, ptr @src_file.20433, i64 0, i64 1045)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -270232,7 +270240,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20434, i64 7, ptr @sty_name.20435, i64 25, i64 %null_ext, ptr @src_file.20436, i64 0, i64 1045)
+  call void @avra_null_deref_trap(ptr @fld_name.20434, i64 7, ptr @sty_name.20435, i64 25, i64 %null_ext, ptr @src_file.20436, i64 0, i64 1046)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -270256,7 +270264,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20437, i64 7, ptr @sty_name.20438, i64 25, i64 %null_ext, ptr @src_file.20439, i64 0, i64 1046)
+  call void @avra_null_deref_trap(ptr @fld_name.20437, i64 7, ptr @sty_name.20438, i64 25, i64 %null_ext, ptr @src_file.20439, i64 0, i64 1047)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -270278,7 +270286,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20440, i64 7, ptr @sty_name.20441, i64 25, i64 %null_ext, ptr @src_file.20442, i64 0, i64 1047)
+  call void @avra_null_deref_trap(ptr @fld_name.20440, i64 7, ptr @sty_name.20441, i64 25, i64 %null_ext, ptr @src_file.20442, i64 0, i64 1048)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %val2 = load ptr, ptr %val, align 8
@@ -270303,7 +270311,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20443, i64 7, ptr @sty_name.20444, i64 25, i64 %null_ext, ptr @src_file.20445, i64 0, i64 1050)
+  call void @avra_null_deref_trap(ptr @fld_name.20443, i64 7, ptr @sty_name.20444, i64 25, i64 %null_ext, ptr @src_file.20445, i64 0, i64 1051)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %pred2 = load i64, ptr %pred, align 8
@@ -270330,7 +270338,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20446, i64 7, ptr @sty_name.20447, i64 25, i64 %null_ext, ptr @src_file.20448, i64 0, i64 1051)
+  call void @avra_null_deref_trap(ptr @fld_name.20446, i64 7, ptr @sty_name.20447, i64 25, i64 %null_ext, ptr @src_file.20448, i64 0, i64 1052)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %pred2 = load i64, ptr %pred, align 8
@@ -270355,7 +270363,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20449, i64 7, ptr @sty_name.20450, i64 25, i64 %null_ext, ptr @src_file.20451, i64 0, i64 1052)
+  call void @avra_null_deref_trap(ptr @fld_name.20449, i64 7, ptr @sty_name.20450, i64 25, i64 %null_ext, ptr @src_file.20451, i64 0, i64 1053)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %val2 = load ptr, ptr %val, align 8
@@ -270379,7 +270387,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20452, i64 7, ptr @sty_name.20453, i64 25, i64 %null_ext, ptr @src_file.20454, i64 0, i64 1053)
+  call void @avra_null_deref_trap(ptr @fld_name.20452, i64 7, ptr @sty_name.20453, i64 25, i64 %null_ext, ptr @src_file.20454, i64 0, i64 1054)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %val2 = load ptr, ptr %val, align 8
@@ -270403,7 +270411,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20455, i64 7, ptr @sty_name.20456, i64 25, i64 %null_ext, ptr @src_file.20457, i64 0, i64 1056)
+  call void @avra_null_deref_trap(ptr @fld_name.20455, i64 7, ptr @sty_name.20456, i64 25, i64 %null_ext, ptr @src_file.20457, i64 0, i64 1057)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -270427,7 +270435,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20458, i64 7, ptr @sty_name.20459, i64 25, i64 %null_ext, ptr @src_file.20460, i64 0, i64 1057)
+  call void @avra_null_deref_trap(ptr @fld_name.20458, i64 7, ptr @sty_name.20459, i64 25, i64 %null_ext, ptr @src_file.20460, i64 0, i64 1058)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -270451,7 +270459,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20461, i64 7, ptr @sty_name.20462, i64 25, i64 %null_ext, ptr @src_file.20463, i64 0, i64 1058)
+  call void @avra_null_deref_trap(ptr @fld_name.20461, i64 7, ptr @sty_name.20462, i64 25, i64 %null_ext, ptr @src_file.20463, i64 0, i64 1059)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -270475,7 +270483,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20464, i64 7, ptr @sty_name.20465, i64 25, i64 %null_ext, ptr @src_file.20466, i64 0, i64 1059)
+  call void @avra_null_deref_trap(ptr @fld_name.20464, i64 7, ptr @sty_name.20465, i64 25, i64 %null_ext, ptr @src_file.20466, i64 0, i64 1060)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -270499,7 +270507,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20467, i64 7, ptr @sty_name.20468, i64 25, i64 %null_ext, ptr @src_file.20469, i64 0, i64 1060)
+  call void @avra_null_deref_trap(ptr @fld_name.20467, i64 7, ptr @sty_name.20468, i64 25, i64 %null_ext, ptr @src_file.20469, i64 0, i64 1061)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -270521,7 +270529,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20470, i64 7, ptr @sty_name.20471, i64 25, i64 %null_ext, ptr @src_file.20472, i64 0, i64 1061)
+  call void @avra_null_deref_trap(ptr @fld_name.20470, i64 7, ptr @sty_name.20471, i64 25, i64 %null_ext, ptr @src_file.20472, i64 0, i64 1062)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %val2 = load ptr, ptr %val, align 8
@@ -270540,14 +270548,14 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20473, i64 7, ptr @sty_name.20474, i64 25, i64 %null_ext, ptr @src_file.20475, i64 0, i64 1064)
+  call void @avra_null_deref_trap(ptr @fld_name.20473, i64 7, ptr @sty_name.20474, i64 25, i64 %null_ext, ptr @src_file.20475, i64 0, i64 1065)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %self2 = load ptr, ptr %self, align 8
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20476, i64 7, ptr @sty_name.20477, i64 25, i64 %null_ext5, ptr @src_file.20478, i64 0, i64 1064)
+  call void @avra_null_deref_trap(ptr @fld_name.20476, i64 7, ptr @sty_name.20477, i64 25, i64 %null_ext5, ptr @src_file.20478, i64 0, i64 1065)
   %i1_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self2, i32 0, i32 6
   %i1_type = load ptr, ptr %i1_type_ptr, align 8
   %name6 = load ptr, ptr %name, align 8
@@ -270567,14 +270575,14 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20479, i64 7, ptr @sty_name.20480, i64 25, i64 %null_ext, ptr @src_file.20481, i64 0, i64 1065)
+  call void @avra_null_deref_trap(ptr @fld_name.20479, i64 7, ptr @sty_name.20480, i64 25, i64 %null_ext, ptr @src_file.20481, i64 0, i64 1066)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %self2 = load ptr, ptr %self, align 8
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20482, i64 8, ptr @sty_name.20483, i64 25, i64 %null_ext5, ptr @src_file.20484, i64 0, i64 1065)
+  call void @avra_null_deref_trap(ptr @fld_name.20482, i64 8, ptr @sty_name.20483, i64 25, i64 %null_ext5, ptr @src_file.20484, i64 0, i64 1066)
   %ty6 = load ptr, ptr %ty, align 8
   %3 = call ptr @"@std::avrac::codegen::Ctx__type_for"(ptr %self2, ptr %ty6)
   %name7 = load ptr, ptr %name, align 8
@@ -270609,7 +270617,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20485, i64 7, ptr @sty_name.20486, i64 25, i64 %null_ext, ptr @src_file.20487, i64 0, i64 1069)
+  call void @avra_null_deref_trap(ptr @fld_name.20485, i64 7, ptr @sty_name.20486, i64 25, i64 %null_ext, ptr @src_file.20487, i64 0, i64 1070)
   %i1_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 6
   %i1_type = load ptr, ptr %i1_type_ptr, align 8
   %val2 = load i64, ptr %val, align 8
@@ -270631,7 +270639,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20488, i64 2, ptr @sty_name.20489, i64 25, i64 %null_ext, ptr @src_file.20490, i64 0, i64 1073)
+  call void @avra_null_deref_trap(ptr @fld_name.20488, i64 2, ptr @sty_name.20489, i64 25, i64 %null_ext, ptr @src_file.20490, i64 0, i64 1074)
   %lc_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 0
   %lc = load ptr, ptr %lc_ptr, align 8
   %name2 = load ptr, ptr %name, align 8
@@ -270648,7 +270656,7 @@ ifcont:                                           ; preds = %if_else
   %cast6 = ptrtoint ptr %self5 to i64
   %null_chk7 = icmp eq i64 %cast6, 0
   %null_ext8 = zext i1 %null_chk7 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20491, i64 8, ptr @sty_name.20492, i64 25, i64 %null_ext8, ptr @src_file.20493, i64 0, i64 1076)
+  call void @avra_null_deref_trap(ptr @fld_name.20491, i64 8, ptr @sty_name.20492, i64 25, i64 %null_ext8, ptr @src_file.20493, i64 0, i64 1077)
   %type_reg_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self5, i32 0, i32 34
   %type_reg = load ptr, ptr %type_reg_ptr, align 8
   %name9 = load ptr, ptr %name, align 8
@@ -270658,7 +270666,7 @@ ifcont:                                           ; preds = %if_else
   %cast11 = ptrtoint ptr %self10 to i64
   %null_chk12 = icmp eq i64 %cast11, 0
   %null_ext13 = zext i1 %null_chk12 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20494, i64 8, ptr @sty_name.20495, i64 25, i64 %null_ext13, ptr @src_file.20496, i64 0, i64 1077)
+  call void @avra_null_deref_trap(ptr @fld_name.20494, i64 8, ptr @sty_name.20495, i64 25, i64 %null_ext13, ptr @src_file.20496, i64 0, i64 1078)
   %type_reg_ptr14 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self10, i32 0, i32 34
   %type_reg15 = load ptr, ptr %type_reg_ptr14, align 8
   %tid16 = load i64, ptr %tid, align 8
@@ -270687,7 +270695,7 @@ if_then20:                                        ; preds = %ifcont
   %cast23 = ptrtoint ptr %self22 to i64
   %null_chk24 = icmp eq i64 %cast23, 0
   %null_ext25 = zext i1 %null_chk24 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20498, i64 2, ptr @sty_name.20499, i64 25, i64 %null_ext25, ptr @src_file.20500, i64 0, i64 1079)
+  call void @avra_null_deref_trap(ptr @fld_name.20498, i64 2, ptr @sty_name.20499, i64 25, i64 %null_ext25, ptr @src_file.20500, i64 0, i64 1080)
   %lc_ptr26 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self22, i32 0, i32 0
   %lc27 = load ptr, ptr %lc_ptr26, align 8
   %canonical28 = load ptr, ptr %canonical, align 8
@@ -270725,7 +270733,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20501, i64 7, ptr @sty_name.20502, i64 25, i64 %null_ext, ptr @src_file.20503, i64 0, i64 1084)
+  call void @avra_null_deref_trap(ptr @fld_name.20501, i64 7, ptr @sty_name.20502, i64 25, i64 %null_ext, ptr @src_file.20503, i64 0, i64 1085)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %val2 = load ptr, ptr %val, align 8
@@ -270733,7 +270741,7 @@ entry:
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20504, i64 8, ptr @sty_name.20505, i64 25, i64 %null_ext6, ptr @src_file.20506, i64 0, i64 1084)
+  call void @avra_null_deref_trap(ptr @fld_name.20504, i64 8, ptr @sty_name.20505, i64 25, i64 %null_ext6, ptr @src_file.20506, i64 0, i64 1085)
   %ptr_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self3, i32 0, i32 7
   %ptr_type = load ptr, ptr %ptr_type_ptr, align 8
   %name7 = load ptr, ptr %name, align 8
@@ -270753,7 +270761,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20507, i64 7, ptr @sty_name.20508, i64 25, i64 %null_ext, ptr @src_file.20509, i64 0, i64 1085)
+  call void @avra_null_deref_trap(ptr @fld_name.20507, i64 7, ptr @sty_name.20508, i64 25, i64 %null_ext, ptr @src_file.20509, i64 0, i64 1086)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %val2 = load ptr, ptr %val, align 8
@@ -270761,7 +270769,7 @@ entry:
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20510, i64 8, ptr @sty_name.20511, i64 25, i64 %null_ext6, ptr @src_file.20512, i64 0, i64 1085)
+  call void @avra_null_deref_trap(ptr @fld_name.20510, i64 8, ptr @sty_name.20511, i64 25, i64 %null_ext6, ptr @src_file.20512, i64 0, i64 1086)
   %i64_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self3, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %name7 = load ptr, ptr %name, align 8
@@ -270785,7 +270793,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20513, i64 7, ptr @sty_name.20514, i64 25, i64 %null_ext, ptr @src_file.20515, i64 0, i64 1090)
+  call void @avra_null_deref_trap(ptr @fld_name.20513, i64 7, ptr @sty_name.20514, i64 25, i64 %null_ext, ptr @src_file.20515, i64 0, i64 1091)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %base2 = load ptr, ptr %base, align 8
@@ -270793,7 +270801,7 @@ entry:
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20516, i64 8, ptr @sty_name.20517, i64 25, i64 %null_ext6, ptr @src_file.20518, i64 0, i64 1090)
+  call void @avra_null_deref_trap(ptr @fld_name.20516, i64 8, ptr @sty_name.20517, i64 25, i64 %null_ext6, ptr @src_file.20518, i64 0, i64 1091)
   %i64_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self3, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %name7 = load ptr, ptr %name, align 8
@@ -270814,7 +270822,7 @@ entry:
   %cast11 = ptrtoint ptr %self10 to i64
   %null_chk12 = icmp eq i64 %cast11, 0
   %null_ext13 = zext i1 %null_chk12 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20520, i64 7, ptr @sty_name.20521, i64 25, i64 %null_ext13, ptr @src_file.20522, i64 0, i64 1091)
+  call void @avra_null_deref_trap(ptr @fld_name.20520, i64 7, ptr @sty_name.20521, i64 25, i64 %null_ext13, ptr @src_file.20522, i64 0, i64 1092)
   %builder_ptr14 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self10, i32 0, i32 2
   %builder15 = load ptr, ptr %builder_ptr14, align 8
   %base_int16 = load ptr, ptr %base_int, align 8
@@ -270837,7 +270845,7 @@ entry:
   %cast26 = ptrtoint ptr %self25 to i64
   %null_chk27 = icmp eq i64 %cast26, 0
   %null_ext28 = zext i1 %null_chk27 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20524, i64 7, ptr @sty_name.20525, i64 25, i64 %null_ext28, ptr @src_file.20526, i64 0, i64 1092)
+  call void @avra_null_deref_trap(ptr @fld_name.20524, i64 7, ptr @sty_name.20525, i64 25, i64 %null_ext28, ptr @src_file.20526, i64 0, i64 1093)
   %builder_ptr29 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self25, i32 0, i32 2
   %builder30 = load ptr, ptr %builder_ptr29, align 8
   %addr31 = load ptr, ptr %addr, align 8
@@ -270845,7 +270853,7 @@ entry:
   %cast33 = ptrtoint ptr %self32 to i64
   %null_chk34 = icmp eq i64 %cast33, 0
   %null_ext35 = zext i1 %null_chk34 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20527, i64 8, ptr @sty_name.20528, i64 25, i64 %null_ext35, ptr @src_file.20529, i64 0, i64 1092)
+  call void @avra_null_deref_trap(ptr @fld_name.20527, i64 8, ptr @sty_name.20528, i64 25, i64 %null_ext35, ptr @src_file.20529, i64 0, i64 1093)
   %ptr_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self32, i32 0, i32 7
   %ptr_type = load ptr, ptr %ptr_type_ptr, align 8
   %name36 = load ptr, ptr %name, align 8
@@ -270868,13 +270876,13 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20530, i64 7, ptr @sty_name.20531, i64 25, i64 %null_ext, ptr @src_file.20532, i64 0, i64 1097)
+  call void @avra_null_deref_trap(ptr @fld_name.20530, i64 7, ptr @sty_name.20531, i64 25, i64 %null_ext, ptr @src_file.20532, i64 0, i64 1098)
   %base2 = load ptr, ptr %base, align 8
   %self3 = load ptr, ptr %self, align 8
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20533, i64 3, ptr @sty_name.20534, i64 25, i64 %null_ext6, ptr @src_file.20535, i64 0, i64 1097)
+  call void @avra_null_deref_trap(ptr @fld_name.20533, i64 3, ptr @sty_name.20534, i64 25, i64 %null_ext6, ptr @src_file.20535, i64 0, i64 1098)
   %idx7 = load i64, ptr %idx, align 8
   %mul = mul i64 %idx7, 8
   %4 = call ptr @"@std::avrac::codegen::Ctx__i64"(ptr %self3, i64 %mul)
@@ -270896,14 +270904,14 @@ entry:
   %cast12 = ptrtoint ptr %self11 to i64
   %null_chk13 = icmp eq i64 %cast12, 0
   %null_ext14 = zext i1 %null_chk13 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20537, i64 7, ptr @sty_name.20538, i64 25, i64 %null_ext14, ptr @src_file.20539, i64 0, i64 1098)
+  call void @avra_null_deref_trap(ptr @fld_name.20537, i64 7, ptr @sty_name.20538, i64 25, i64 %null_ext14, ptr @src_file.20539, i64 0, i64 1099)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self11, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %self15 = load ptr, ptr %self, align 8
   %cast16 = ptrtoint ptr %self15 to i64
   %null_chk17 = icmp eq i64 %cast16, 0
   %null_ext18 = zext i1 %null_chk17 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20540, i64 8, ptr @sty_name.20541, i64 25, i64 %null_ext18, ptr @src_file.20542, i64 0, i64 1098)
+  call void @avra_null_deref_trap(ptr @fld_name.20540, i64 8, ptr @sty_name.20541, i64 25, i64 %null_ext18, ptr @src_file.20542, i64 0, i64 1099)
   %i64_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self15, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %slot19 = load ptr, ptr %slot, align 8
@@ -270929,13 +270937,13 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20543, i64 7, ptr @sty_name.20544, i64 25, i64 %null_ext, ptr @src_file.20545, i64 0, i64 1103)
+  call void @avra_null_deref_trap(ptr @fld_name.20543, i64 7, ptr @sty_name.20544, i64 25, i64 %null_ext, ptr @src_file.20545, i64 0, i64 1104)
   %base2 = load ptr, ptr %base, align 8
   %self3 = load ptr, ptr %self, align 8
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20546, i64 3, ptr @sty_name.20547, i64 25, i64 %null_ext6, ptr @src_file.20548, i64 0, i64 1103)
+  call void @avra_null_deref_trap(ptr @fld_name.20546, i64 3, ptr @sty_name.20547, i64 25, i64 %null_ext6, ptr @src_file.20548, i64 0, i64 1104)
   %idx7 = load i64, ptr %idx, align 8
   %mul = mul i64 %idx7, 8
   %5 = call ptr @"@std::avrac::codegen::Ctx__i64"(ptr %self3, i64 %mul)
@@ -270957,14 +270965,14 @@ entry:
   %cast12 = ptrtoint ptr %self11 to i64
   %null_chk13 = icmp eq i64 %cast12, 0
   %null_ext14 = zext i1 %null_chk13 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20550, i64 7, ptr @sty_name.20551, i64 25, i64 %null_ext14, ptr @src_file.20552, i64 0, i64 1104)
+  call void @avra_null_deref_trap(ptr @fld_name.20550, i64 7, ptr @sty_name.20551, i64 25, i64 %null_ext14, ptr @src_file.20552, i64 0, i64 1105)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self11, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %self15 = load ptr, ptr %self, align 8
   %cast16 = ptrtoint ptr %self15 to i64
   %null_chk17 = icmp eq i64 %cast16, 0
   %null_ext18 = zext i1 %null_chk17 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20553, i64 8, ptr @sty_name.20554, i64 25, i64 %null_ext18, ptr @src_file.20555, i64 0, i64 1104)
+  call void @avra_null_deref_trap(ptr @fld_name.20553, i64 8, ptr @sty_name.20554, i64 25, i64 %null_ext18, ptr @src_file.20555, i64 0, i64 1105)
   %ty19 = load ptr, ptr %ty, align 8
   %12 = call ptr @"@std::avrac::codegen::Ctx__type_for"(ptr %self15, ptr %ty19)
   %slot20 = load ptr, ptr %slot, align 8
@@ -270990,13 +270998,13 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20556, i64 7, ptr @sty_name.20557, i64 25, i64 %null_ext, ptr @src_file.20558, i64 0, i64 1109)
+  call void @avra_null_deref_trap(ptr @fld_name.20556, i64 7, ptr @sty_name.20557, i64 25, i64 %null_ext, ptr @src_file.20558, i64 0, i64 1110)
   %base2 = load ptr, ptr %base, align 8
   %self3 = load ptr, ptr %self, align 8
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20559, i64 3, ptr @sty_name.20560, i64 25, i64 %null_ext6, ptr @src_file.20561, i64 0, i64 1109)
+  call void @avra_null_deref_trap(ptr @fld_name.20559, i64 3, ptr @sty_name.20560, i64 25, i64 %null_ext6, ptr @src_file.20561, i64 0, i64 1110)
   %idx7 = load i64, ptr %idx, align 8
   %mul = mul i64 %idx7, 8
   %5 = call ptr @"@std::avrac::codegen::Ctx__i64"(ptr %self3, i64 %mul)
@@ -271006,14 +271014,14 @@ entry:
   %cast9 = ptrtoint ptr %self8 to i64
   %null_chk10 = icmp eq i64 %cast9, 0
   %null_ext11 = zext i1 %null_chk10 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20563, i64 7, ptr @sty_name.20564, i64 25, i64 %null_ext11, ptr @src_file.20565, i64 0, i64 1110)
+  call void @avra_null_deref_trap(ptr @fld_name.20563, i64 7, ptr @sty_name.20564, i64 25, i64 %null_ext11, ptr @src_file.20565, i64 0, i64 1111)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self8, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %self12 = load ptr, ptr %self, align 8
   %cast13 = ptrtoint ptr %self12 to i64
   %null_chk14 = icmp eq i64 %cast13, 0
   %null_ext15 = zext i1 %null_chk14 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20566, i64 7, ptr @sty_name.20567, i64 25, i64 %null_ext15, ptr @src_file.20568, i64 0, i64 1110)
+  call void @avra_null_deref_trap(ptr @fld_name.20566, i64 7, ptr @sty_name.20567, i64 25, i64 %null_ext15, ptr @src_file.20568, i64 0, i64 1111)
   %val16 = load ptr, ptr %val, align 8
   %field_ty17 = load ptr, ptr %field_ty, align 8
   %7 = call ptr @"@std::avrac::codegen::Ctx__cast_to"(ptr %self12, ptr %val16, ptr %field_ty17)
@@ -271040,14 +271048,14 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20569, i64 7, ptr @sty_name.20570, i64 25, i64 %null_ext, ptr @src_file.20571, i64 0, i64 1117)
+  call void @avra_null_deref_trap(ptr @fld_name.20569, i64 7, ptr @sty_name.20570, i64 25, i64 %null_ext, ptr @src_file.20571, i64 0, i64 1118)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %self2 = load ptr, ptr %self, align 8
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20572, i64 8, ptr @sty_name.20573, i64 25, i64 %null_ext5, ptr @src_file.20574, i64 0, i64 1117)
+  call void @avra_null_deref_trap(ptr @fld_name.20572, i64 8, ptr @sty_name.20573, i64 25, i64 %null_ext5, ptr @src_file.20574, i64 0, i64 1118)
   %ty6 = load ptr, ptr %ty, align 8
   %5 = call ptr @"@std::avrac::codegen::Ctx__type_for"(ptr %self2, ptr %ty6)
   %name7 = load ptr, ptr %name, align 8
@@ -271057,7 +271065,7 @@ entry:
   %cast9 = ptrtoint ptr %self8 to i64
   %null_chk10 = icmp eq i64 %cast9, 0
   %null_ext11 = zext i1 %null_chk10 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20575, i64 7, ptr @sty_name.20576, i64 25, i64 %null_ext11, ptr @src_file.20577, i64 0, i64 1118)
+  call void @avra_null_deref_trap(ptr @fld_name.20575, i64 7, ptr @sty_name.20576, i64 25, i64 %null_ext11, ptr @src_file.20577, i64 0, i64 1119)
   %builder_ptr12 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self8, i32 0, i32 2
   %builder13 = load ptr, ptr %builder_ptr12, align 8
   %value14 = load ptr, ptr %value, align 8
@@ -271074,7 +271082,7 @@ sc_rhs:                                           ; preds = %entry
   %cast18 = ptrtoint ptr %self17 to i64
   %null_chk19 = icmp eq i64 %cast18, 0
   %null_ext20 = zext i1 %null_chk19 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20578, i64 13, ptr @sty_name.20579, i64 25, i64 %null_ext20, ptr @src_file.20580, i64 0, i64 1119)
+  call void @avra_null_deref_trap(ptr @fld_name.20578, i64 13, ptr @sty_name.20579, i64 25, i64 %null_ext20, ptr @src_file.20580, i64 0, i64 1120)
   %rc_releasable_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self17, i32 0, i32 20
   %rc_releasable = load ptr, ptr %rc_releasable_ptr, align 8
   %name21 = load ptr, ptr %name, align 8
@@ -271137,7 +271145,7 @@ if_then:                                          ; preds = %sc_merge
   %cast34 = ptrtoint ptr %self33 to i64
   %null_chk35 = icmp eq i64 %cast34, 0
   %null_ext36 = zext i1 %null_chk35 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20581, i64 10, ptr @sty_name.20582, i64 25, i64 %null_ext36, ptr @src_file.20583, i64 0, i64 1120)
+  call void @avra_null_deref_trap(ptr @fld_name.20581, i64 10, ptr @sty_name.20582, i64 25, i64 %null_ext36, ptr @src_file.20583, i64 0, i64 1121)
   %rc_cleanup_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self33, i32 0, i32 19
   %rc_cleanup = load ptr, ptr %rc_cleanup_ptr, align 8
   %slot_base37 = ptrtoint ptr %11 to i64
@@ -271174,7 +271182,7 @@ if_then:                                          ; preds = %sc_merge
   %cast59 = ptrtoint ptr %self58 to i64
   %null_chk60 = icmp eq i64 %cast59, 0
   %null_ext61 = zext i1 %null_chk60 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20584, i64 6, ptr @sty_name.20585, i64 25, i64 %null_ext61, ptr @src_file.20586, i64 0, i64 1122)
+  call void @avra_null_deref_trap(ptr @fld_name.20584, i64 6, ptr @sty_name.20585, i64 25, i64 %null_ext61, ptr @src_file.20586, i64 0, i64 1123)
   %defers_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self58, i32 0, i32 18
   %defers = load ptr, ptr %defers_ptr, align 8
   %slot_base62 = ptrtoint ptr %13 to i64
@@ -271209,14 +271217,14 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20587, i64 7, ptr @sty_name.20588, i64 25, i64 %null_ext, ptr @src_file.20589, i64 0, i64 1133)
+  call void @avra_null_deref_trap(ptr @fld_name.20587, i64 7, ptr @sty_name.20588, i64 25, i64 %null_ext, ptr @src_file.20589, i64 0, i64 1134)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %self2 = load ptr, ptr %self, align 8
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20590, i64 8, ptr @sty_name.20591, i64 25, i64 %null_ext5, ptr @src_file.20592, i64 0, i64 1133)
+  call void @avra_null_deref_trap(ptr @fld_name.20590, i64 8, ptr @sty_name.20591, i64 25, i64 %null_ext5, ptr @src_file.20592, i64 0, i64 1134)
   %ty6 = load ptr, ptr %ty, align 8
   %6 = call ptr @"@std::avrac::codegen::Ctx__type_for"(ptr %self2, ptr %ty6)
   %name7 = load ptr, ptr %name, align 8
@@ -271226,7 +271234,7 @@ entry:
   %cast9 = ptrtoint ptr %self8 to i64
   %null_chk10 = icmp eq i64 %cast9, 0
   %null_ext11 = zext i1 %null_chk10 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20593, i64 7, ptr @sty_name.20594, i64 25, i64 %null_ext11, ptr @src_file.20595, i64 0, i64 1134)
+  call void @avra_null_deref_trap(ptr @fld_name.20593, i64 7, ptr @sty_name.20594, i64 25, i64 %null_ext11, ptr @src_file.20595, i64 0, i64 1135)
   %builder_ptr12 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self8, i32 0, i32 2
   %builder13 = load ptr, ptr %builder_ptr12, align 8
   %stack_ptr14 = load ptr, ptr %stack_ptr, align 8
@@ -271248,7 +271256,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20596, i64 6, ptr @sty_name.20597, i64 25, i64 %null_ext, ptr @src_file.20598, i64 0, i64 1140)
+  call void @avra_null_deref_trap(ptr @fld_name.20596, i64 6, ptr @sty_name.20597, i64 25, i64 %null_ext, ptr @src_file.20598, i64 0, i64 1141)
   %module_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 1
   %module = load ptr, ptr %module_ptr, align 8
   %1 = call i64 @avra_llvm_verify_module_print(ptr %module)
@@ -271265,7 +271273,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20599, i64 6, ptr @sty_name.20600, i64 25, i64 %null_ext, ptr @src_file.20601, i64 0, i64 1141)
+  call void @avra_null_deref_trap(ptr @fld_name.20599, i64 6, ptr @sty_name.20600, i64 25, i64 %null_ext, ptr @src_file.20601, i64 0, i64 1142)
   %module_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 1
   %module = load ptr, ptr %module_ptr, align 8
   %path2 = load ptr, ptr %path, align 8
@@ -271281,7 +271289,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20602, i64 7, ptr @sty_name.20603, i64 25, i64 %null_ext, ptr @src_file.20604, i64 0, i64 1143)
+  call void @avra_null_deref_trap(ptr @fld_name.20602, i64 7, ptr @sty_name.20603, i64 25, i64 %null_ext, ptr @src_file.20604, i64 0, i64 1144)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %1 = call i64 @avra_llvm_dispose_builder(ptr %builder)
@@ -271289,7 +271297,7 @@ entry:
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20605, i64 6, ptr @sty_name.20606, i64 25, i64 %null_ext5, ptr @src_file.20607, i64 0, i64 1144)
+  call void @avra_null_deref_trap(ptr @fld_name.20605, i64 6, ptr @sty_name.20606, i64 25, i64 %null_ext5, ptr @src_file.20607, i64 0, i64 1145)
   %module_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self2, i32 0, i32 1
   %module = load ptr, ptr %module_ptr, align 8
   %2 = call i64 @avra_llvm_module_dispose(ptr %module)
@@ -271297,7 +271305,7 @@ entry:
   %cast7 = ptrtoint ptr %self6 to i64
   %null_chk8 = icmp eq i64 %cast7, 0
   %null_ext9 = zext i1 %null_chk8 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20608, i64 2, ptr @sty_name.20609, i64 25, i64 %null_ext9, ptr @src_file.20610, i64 0, i64 1145)
+  call void @avra_null_deref_trap(ptr @fld_name.20608, i64 2, ptr @sty_name.20609, i64 25, i64 %null_ext9, ptr @src_file.20610, i64 0, i64 1146)
   %lc_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self6, i32 0, i32 0
   %lc = load ptr, ptr %lc_ptr, align 8
   %3 = call i64 @avra_llvm_context_dispose(ptr %lc)
@@ -271318,7 +271326,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20611, i64 7, ptr @sty_name.20612, i64 25, i64 %null_ext, ptr @src_file.20613, i64 0, i64 1151)
+  call void @avra_null_deref_trap(ptr @fld_name.20611, i64 7, ptr @sty_name.20612, i64 25, i64 %null_ext, ptr @src_file.20613, i64 0, i64 1152)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -271342,7 +271350,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20614, i64 7, ptr @sty_name.20615, i64 25, i64 %null_ext, ptr @src_file.20616, i64 0, i64 1152)
+  call void @avra_null_deref_trap(ptr @fld_name.20614, i64 7, ptr @sty_name.20615, i64 25, i64 %null_ext, ptr @src_file.20616, i64 0, i64 1153)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -271366,7 +271374,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20617, i64 7, ptr @sty_name.20618, i64 25, i64 %null_ext, ptr @src_file.20619, i64 0, i64 1153)
+  call void @avra_null_deref_trap(ptr @fld_name.20617, i64 7, ptr @sty_name.20618, i64 25, i64 %null_ext, ptr @src_file.20619, i64 0, i64 1154)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -271407,7 +271415,7 @@ if_then:                                          ; preds = %entry
   %cast = ptrtoint ptr %self3 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20620, i64 7, ptr @sty_name.20621, i64 25, i64 %null_ext, ptr @src_file.20622, i64 0, i64 1159)
+  call void @avra_null_deref_trap(ptr @fld_name.20620, i64 7, ptr @sty_name.20621, i64 25, i64 %null_ext, ptr @src_file.20622, i64 0, i64 1160)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self3, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %val4 = load ptr, ptr %val, align 8
@@ -271415,7 +271423,7 @@ if_then:                                          ; preds = %entry
   %cast6 = ptrtoint ptr %self5 to i64
   %null_chk7 = icmp eq i64 %cast6, 0
   %null_ext8 = zext i1 %null_chk7 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20623, i64 8, ptr @sty_name.20624, i64 25, i64 %null_ext8, ptr @src_file.20625, i64 0, i64 1159)
+  call void @avra_null_deref_trap(ptr @fld_name.20623, i64 8, ptr @sty_name.20624, i64 25, i64 %null_ext8, ptr @src_file.20625, i64 0, i64 1160)
   %ptr_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self5, i32 0, i32 7
   %ptr_type = load ptr, ptr %ptr_type_ptr, align 8
   %5 = call ptr @avra_llvm_const_null(ptr %ptr_type)
@@ -271438,7 +271446,7 @@ if_then15:                                        ; preds = %ifcont
   %cast18 = ptrtoint ptr %self17 to i64
   %null_chk19 = icmp eq i64 %cast18, 0
   %null_ext20 = zext i1 %null_chk19 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20626, i64 7, ptr @sty_name.20627, i64 25, i64 %null_ext20, ptr @src_file.20628, i64 0, i64 1160)
+  call void @avra_null_deref_trap(ptr @fld_name.20626, i64 7, ptr @sty_name.20627, i64 25, i64 %null_ext20, ptr @src_file.20628, i64 0, i64 1161)
   %builder_ptr21 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self17, i32 0, i32 2
   %builder22 = load ptr, ptr %builder_ptr21, align 8
   %val23 = load ptr, ptr %val, align 8
@@ -271446,7 +271454,7 @@ if_then15:                                        ; preds = %ifcont
   %cast25 = ptrtoint ptr %self24 to i64
   %null_chk26 = icmp eq i64 %cast25, 0
   %null_ext27 = zext i1 %null_chk26 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20629, i64 11, ptr @sty_name.20630, i64 25, i64 %null_ext27, ptr @src_file.20631, i64 0, i64 1160)
+  call void @avra_null_deref_trap(ptr @fld_name.20629, i64 11, ptr @sty_name.20630, i64 25, i64 %null_ext27, ptr @src_file.20631, i64 0, i64 1161)
   %double_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self24, i32 0, i32 8
   %double_type = load ptr, ptr %double_type_ptr, align 8
   %7 = call ptr @avra_llvm_const_null(ptr %double_type)
@@ -271489,7 +271497,7 @@ ifcont35:                                         ; preds = %if_else38
   %cast41 = ptrtoint ptr %self40 to i64
   %null_chk42 = icmp eq i64 %cast41, 0
   %null_ext43 = zext i1 %null_chk42 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20632, i64 7, ptr @sty_name.20633, i64 25, i64 %null_ext43, ptr @src_file.20634, i64 0, i64 1162)
+  call void @avra_null_deref_trap(ptr @fld_name.20632, i64 7, ptr @sty_name.20633, i64 25, i64 %null_ext43, ptr @src_file.20634, i64 0, i64 1163)
   %builder_ptr44 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self40, i32 0, i32 2
   %builder45 = load ptr, ptr %builder_ptr44, align 8
   %val46 = load ptr, ptr %val, align 8
@@ -271523,7 +271531,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20635, i64 6, ptr @sty_name.20636, i64 25, i64 %null_ext, ptr @src_file.20637, i64 0, i64 1168)
+  call void @avra_null_deref_trap(ptr @fld_name.20635, i64 6, ptr @sty_name.20636, i64 25, i64 %null_ext, ptr @src_file.20637, i64 0, i64 1169)
   %val2 = load ptr, ptr %val, align 8
   %prefix3 = load ptr, ptr %prefix, align 8
   %3 = call i64 @strlen(ptr %prefix3)
@@ -271543,14 +271551,14 @@ entry:
   %cast7 = ptrtoint ptr %self6 to i64
   %null_chk8 = icmp eq i64 %cast7, 0
   %null_ext9 = zext i1 %null_chk8 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20639, i64 2, ptr @sty_name.20640, i64 25, i64 %null_ext9, ptr @src_file.20641, i64 0, i64 1169)
+  call void @avra_null_deref_trap(ptr @fld_name.20639, i64 2, ptr @sty_name.20640, i64 25, i64 %null_ext9, ptr @src_file.20641, i64 0, i64 1170)
   %lc_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self6, i32 0, i32 0
   %lc = load ptr, ptr %lc_ptr, align 8
   %self10 = load ptr, ptr %self, align 8
   %cast11 = ptrtoint ptr %self10 to i64
   %null_chk12 = icmp eq i64 %cast11, 0
   %null_ext13 = zext i1 %null_chk12 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20642, i64 10, ptr @sty_name.20643, i64 25, i64 %null_ext13, ptr @src_file.20644, i64 0, i64 1169)
+  call void @avra_null_deref_trap(ptr @fld_name.20642, i64 10, ptr @sty_name.20643, i64 25, i64 %null_ext13, ptr @src_file.20644, i64 0, i64 1170)
   %current_fn_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self10, i32 0, i32 3
   %current_fn = load ptr, ptr %current_fn_ptr, align 8
   %prefix14 = load ptr, ptr %prefix, align 8
@@ -271571,14 +271579,14 @@ entry:
   %cast22 = ptrtoint ptr %self21 to i64
   %null_chk23 = icmp eq i64 %cast22, 0
   %null_ext24 = zext i1 %null_chk23 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20646, i64 2, ptr @sty_name.20647, i64 25, i64 %null_ext24, ptr @src_file.20648, i64 0, i64 1170)
+  call void @avra_null_deref_trap(ptr @fld_name.20646, i64 2, ptr @sty_name.20647, i64 25, i64 %null_ext24, ptr @src_file.20648, i64 0, i64 1171)
   %lc_ptr25 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self21, i32 0, i32 0
   %lc26 = load ptr, ptr %lc_ptr25, align 8
   %self27 = load ptr, ptr %self, align 8
   %cast28 = ptrtoint ptr %self27 to i64
   %null_chk29 = icmp eq i64 %cast28, 0
   %null_ext30 = zext i1 %null_chk29 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20649, i64 10, ptr @sty_name.20650, i64 25, i64 %null_ext30, ptr @src_file.20651, i64 0, i64 1170)
+  call void @avra_null_deref_trap(ptr @fld_name.20649, i64 10, ptr @sty_name.20650, i64 25, i64 %null_ext30, ptr @src_file.20651, i64 0, i64 1171)
   %current_fn_ptr31 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self27, i32 0, i32 3
   %current_fn32 = load ptr, ptr %current_fn_ptr31, align 8
   %prefix33 = load ptr, ptr %prefix, align 8
@@ -271599,7 +271607,7 @@ entry:
   %cast41 = ptrtoint ptr %self40 to i64
   %null_chk42 = icmp eq i64 %cast41, 0
   %null_ext43 = zext i1 %null_chk42 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20653, i64 7, ptr @sty_name.20654, i64 25, i64 %null_ext43, ptr @src_file.20655, i64 0, i64 1171)
+  call void @avra_null_deref_trap(ptr @fld_name.20653, i64 7, ptr @sty_name.20654, i64 25, i64 %null_ext43, ptr @src_file.20655, i64 0, i64 1172)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self40, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %cond44 = load ptr, ptr %cond, align 8
@@ -271610,7 +271618,7 @@ entry:
   %cast48 = ptrtoint ptr %self47 to i64
   %null_chk49 = icmp eq i64 %cast48, 0
   %null_ext50 = zext i1 %null_chk49 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20656, i64 7, ptr @sty_name.20657, i64 25, i64 %null_ext50, ptr @src_file.20658, i64 0, i64 1172)
+  call void @avra_null_deref_trap(ptr @fld_name.20656, i64 7, ptr @sty_name.20657, i64 25, i64 %null_ext50, ptr @src_file.20658, i64 0, i64 1173)
   %builder_ptr51 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self47, i32 0, i32 2
   %builder52 = load ptr, ptr %builder_ptr51, align 8
   %then_bb53 = load ptr, ptr %then_bb, align 8
@@ -271635,7 +271643,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20659, i64 7, ptr @sty_name.20660, i64 25, i64 %null_ext, ptr @src_file.20661, i64 0, i64 1179)
+  call void @avra_null_deref_trap(ptr @fld_name.20659, i64 7, ptr @sty_name.20660, i64 25, i64 %null_ext, ptr @src_file.20661, i64 0, i64 1180)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %b2 = load ptr, ptr %b, align 8
@@ -271647,7 +271655,7 @@ entry:
   %cast6 = ptrtoint ptr %self5 to i64
   %null_chk7 = icmp eq i64 %cast6, 0
   %null_ext8 = zext i1 %null_chk7 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20662, i64 7, ptr @sty_name.20663, i64 25, i64 %null_ext8, ptr @src_file.20664, i64 0, i64 1180)
+  call void @avra_null_deref_trap(ptr @fld_name.20662, i64 7, ptr @sty_name.20663, i64 25, i64 %null_ext8, ptr @src_file.20664, i64 0, i64 1181)
   %builder_ptr9 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self5, i32 0, i32 2
   %builder10 = load ptr, ptr %builder_ptr9, align 8
   %a11 = load ptr, ptr %a, align 8
@@ -271659,7 +271667,7 @@ entry:
   %cast15 = ptrtoint ptr %self14 to i64
   %null_chk16 = icmp eq i64 %cast15, 0
   %null_ext17 = zext i1 %null_chk16 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20665, i64 7, ptr @sty_name.20666, i64 25, i64 %null_ext17, ptr @src_file.20667, i64 0, i64 1181)
+  call void @avra_null_deref_trap(ptr @fld_name.20665, i64 7, ptr @sty_name.20666, i64 25, i64 %null_ext17, ptr @src_file.20667, i64 0, i64 1182)
   %builder_ptr18 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self14, i32 0, i32 2
   %builder19 = load ptr, ptr %builder_ptr18, align 8
   %cmp20 = load ptr, ptr %cmp, align 8
@@ -271667,7 +271675,7 @@ entry:
   %cast22 = ptrtoint ptr %self21 to i64
   %null_chk23 = icmp eq i64 %cast22, 0
   %null_ext24 = zext i1 %null_chk23 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20668, i64 8, ptr @sty_name.20669, i64 25, i64 %null_ext24, ptr @src_file.20670, i64 0, i64 1181)
+  call void @avra_null_deref_trap(ptr @fld_name.20668, i64 8, ptr @sty_name.20669, i64 25, i64 %null_ext24, ptr @src_file.20670, i64 0, i64 1182)
   %i64_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self21, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %name25 = load ptr, ptr %name, align 8
@@ -271702,7 +271710,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20672, i64 7, ptr @sty_name.20673, i64 25, i64 %null_ext, ptr @src_file.20674, i64 0, i64 1185)
+  call void @avra_null_deref_trap(ptr @fld_name.20672, i64 7, ptr @sty_name.20673, i64 25, i64 %null_ext, ptr @src_file.20674, i64 0, i64 1186)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %b2 = load ptr, ptr %b, align 8
@@ -271714,7 +271722,7 @@ entry:
   %cast6 = ptrtoint ptr %self5 to i64
   %null_chk7 = icmp eq i64 %cast6, 0
   %null_ext8 = zext i1 %null_chk7 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20675, i64 7, ptr @sty_name.20676, i64 25, i64 %null_ext8, ptr @src_file.20677, i64 0, i64 1186)
+  call void @avra_null_deref_trap(ptr @fld_name.20675, i64 7, ptr @sty_name.20676, i64 25, i64 %null_ext8, ptr @src_file.20677, i64 0, i64 1187)
   %builder_ptr9 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self5, i32 0, i32 2
   %builder10 = load ptr, ptr %builder_ptr9, align 8
   %a11 = load ptr, ptr %a, align 8
@@ -271726,7 +271734,7 @@ entry:
   %cast15 = ptrtoint ptr %self14 to i64
   %null_chk16 = icmp eq i64 %cast15, 0
   %null_ext17 = zext i1 %null_chk16 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20678, i64 7, ptr @sty_name.20679, i64 25, i64 %null_ext17, ptr @src_file.20680, i64 0, i64 1187)
+  call void @avra_null_deref_trap(ptr @fld_name.20678, i64 7, ptr @sty_name.20679, i64 25, i64 %null_ext17, ptr @src_file.20680, i64 0, i64 1188)
   %builder_ptr18 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self14, i32 0, i32 2
   %builder19 = load ptr, ptr %builder_ptr18, align 8
   %cmp20 = load ptr, ptr %cmp, align 8
@@ -271734,7 +271742,7 @@ entry:
   %cast22 = ptrtoint ptr %self21 to i64
   %null_chk23 = icmp eq i64 %cast22, 0
   %null_ext24 = zext i1 %null_chk23 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20681, i64 8, ptr @sty_name.20682, i64 25, i64 %null_ext24, ptr @src_file.20683, i64 0, i64 1187)
+  call void @avra_null_deref_trap(ptr @fld_name.20681, i64 8, ptr @sty_name.20682, i64 25, i64 %null_ext24, ptr @src_file.20683, i64 0, i64 1188)
   %i64_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self21, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %name25 = load ptr, ptr %name, align 8
@@ -271764,7 +271772,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20685, i64 7, ptr @sty_name.20686, i64 25, i64 %null_ext, ptr @src_file.20687, i64 0, i64 1192)
+  call void @avra_null_deref_trap(ptr @fld_name.20685, i64 7, ptr @sty_name.20686, i64 25, i64 %null_ext, ptr @src_file.20687, i64 0, i64 1193)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %2 = call i64 @avra_llvm_block_has_terminator(ptr %builder)
@@ -271779,7 +271787,7 @@ sif_then:                                         ; preds = %entry
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20688, i64 7, ptr @sty_name.20689, i64 25, i64 %null_ext5, ptr @src_file.20690, i64 0, i64 1193)
+  call void @avra_null_deref_trap(ptr @fld_name.20688, i64 7, ptr @sty_name.20689, i64 25, i64 %null_ext5, ptr @src_file.20690, i64 0, i64 1194)
   %builder_ptr6 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self2, i32 0, i32 2
   %builder7 = load ptr, ptr %builder_ptr6, align 8
   %bb8 = load ptr, ptr %bb, align 8
@@ -271812,7 +271820,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20691, i64 7, ptr @sty_name.20692, i64 25, i64 %null_ext, ptr @src_file.20693, i64 0, i64 1200)
+  call void @avra_null_deref_trap(ptr @fld_name.20691, i64 7, ptr @sty_name.20692, i64 25, i64 %null_ext, ptr @src_file.20693, i64 0, i64 1201)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %4 = call i64 @avra_llvm_block_has_terminator(ptr %builder)
@@ -271827,7 +271835,7 @@ sif_then:                                         ; preds = %entry
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20694, i64 6, ptr @sty_name.20695, i64 25, i64 %null_ext5, ptr @src_file.20696, i64 0, i64 1201)
+  call void @avra_null_deref_trap(ptr @fld_name.20694, i64 6, ptr @sty_name.20695, i64 25, i64 %null_ext5, ptr @src_file.20696, i64 0, i64 1202)
   %val6 = load ptr, ptr %val, align 8
   %5 = call ptr @"@std::avrac::codegen::Ctx__to_i64"(ptr %self2, ptr %val6, ptr @.str.20697)
   store ptr %5, ptr %store_val, align 8
@@ -271835,7 +271843,7 @@ sif_then:                                         ; preds = %entry
   %cast8 = ptrtoint ptr %self7 to i64
   %null_chk9 = icmp eq i64 %cast8, 0
   %null_ext10 = zext i1 %null_chk9 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20698, i64 7, ptr @sty_name.20699, i64 25, i64 %null_ext10, ptr @src_file.20700, i64 0, i64 1202)
+  call void @avra_null_deref_trap(ptr @fld_name.20698, i64 7, ptr @sty_name.20699, i64 25, i64 %null_ext10, ptr @src_file.20700, i64 0, i64 1203)
   %builder_ptr11 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self7, i32 0, i32 2
   %builder12 = load ptr, ptr %builder_ptr11, align 8
   %store_val13 = load ptr, ptr %store_val, align 8
@@ -271845,7 +271853,7 @@ sif_then:                                         ; preds = %entry
   %cast16 = ptrtoint ptr %self15 to i64
   %null_chk17 = icmp eq i64 %cast16, 0
   %null_ext18 = zext i1 %null_chk17 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20701, i64 7, ptr @sty_name.20702, i64 25, i64 %null_ext18, ptr @src_file.20703, i64 0, i64 1203)
+  call void @avra_null_deref_trap(ptr @fld_name.20701, i64 7, ptr @sty_name.20702, i64 25, i64 %null_ext18, ptr @src_file.20703, i64 0, i64 1204)
   %builder_ptr19 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self15, i32 0, i32 2
   %builder20 = load ptr, ptr %builder_ptr19, align 8
   %bb21 = load ptr, ptr %bb, align 8
@@ -271872,7 +271880,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20704, i64 7, ptr @sty_name.20705, i64 25, i64 %null_ext, ptr @src_file.20706, i64 0, i64 1209)
+  call void @avra_null_deref_trap(ptr @fld_name.20704, i64 7, ptr @sty_name.20705, i64 25, i64 %null_ext, ptr @src_file.20706, i64 0, i64 1210)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %text2 = load ptr, ptr %text, align 8
@@ -271895,7 +271903,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20708, i64 6, ptr @sty_name.20709, i64 25, i64 %null_ext, ptr @src_file.20710, i64 0, i64 1216)
+  call void @avra_null_deref_trap(ptr @fld_name.20708, i64 6, ptr @sty_name.20709, i64 25, i64 %null_ext, ptr @src_file.20710, i64 0, i64 1217)
   %val2 = load ptr, ptr %val, align 8
   %3 = call ptr @"@std::avrac::codegen::Ctx__to_ptr"(ptr %self1, ptr %val2, ptr @.str.20711)
   store ptr %3, ptr %obj, align 8
@@ -271903,7 +271911,7 @@ entry:
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20712, i64 8, ptr @sty_name.20713, i64 25, i64 %null_ext6, ptr @src_file.20714, i64 0, i64 1217)
+  call void @avra_null_deref_trap(ptr @fld_name.20712, i64 8, ptr @sty_name.20713, i64 25, i64 %null_ext6, ptr @src_file.20714, i64 0, i64 1218)
   %type_name7 = load ptr, ptr %type_name, align 8
   %4 = call ptr @"@std::avrac::codegen::Ctx__get_type"(ptr %self3, ptr %type_name7)
   store ptr %4, ptr %st_ty, align 8
@@ -271911,7 +271919,7 @@ entry:
   %cast9 = ptrtoint ptr %self8 to i64
   %null_chk10 = icmp eq i64 %cast9, 0
   %null_ext11 = zext i1 %null_chk10 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20715, i64 7, ptr @sty_name.20716, i64 25, i64 %null_ext11, ptr @src_file.20717, i64 0, i64 1218)
+  call void @avra_null_deref_trap(ptr @fld_name.20715, i64 7, ptr @sty_name.20716, i64 25, i64 %null_ext11, ptr @src_file.20717, i64 0, i64 1219)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self8, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %st_ty12 = load ptr, ptr %st_ty, align 8
@@ -271922,14 +271930,14 @@ entry:
   %cast15 = ptrtoint ptr %self14 to i64
   %null_chk16 = icmp eq i64 %cast15, 0
   %null_ext17 = zext i1 %null_chk16 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20719, i64 7, ptr @sty_name.20720, i64 25, i64 %null_ext17, ptr @src_file.20721, i64 0, i64 1219)
+  call void @avra_null_deref_trap(ptr @fld_name.20719, i64 7, ptr @sty_name.20720, i64 25, i64 %null_ext17, ptr @src_file.20721, i64 0, i64 1220)
   %builder_ptr18 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self14, i32 0, i32 2
   %builder19 = load ptr, ptr %builder_ptr18, align 8
   %self20 = load ptr, ptr %self, align 8
   %cast21 = ptrtoint ptr %self20 to i64
   %null_chk22 = icmp eq i64 %cast21, 0
   %null_ext23 = zext i1 %null_chk22 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20722, i64 8, ptr @sty_name.20723, i64 25, i64 %null_ext23, ptr @src_file.20724, i64 0, i64 1219)
+  call void @avra_null_deref_trap(ptr @fld_name.20722, i64 8, ptr @sty_name.20723, i64 25, i64 %null_ext23, ptr @src_file.20724, i64 0, i64 1220)
   %i64_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self20, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %tag_gep24 = load ptr, ptr %tag_gep, align 8
@@ -271952,7 +271960,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20726, i64 6, ptr @sty_name.20727, i64 25, i64 %null_ext, ptr @src_file.20728, i64 0, i64 1224)
+  call void @avra_null_deref_trap(ptr @fld_name.20726, i64 6, ptr @sty_name.20727, i64 25, i64 %null_ext, ptr @src_file.20728, i64 0, i64 1225)
   %val2 = load ptr, ptr %val, align 8
   %3 = call ptr @"@std::avrac::codegen::Ctx__to_ptr"(ptr %self1, ptr %val2, ptr @.str.20729)
   store ptr %3, ptr %obj, align 8
@@ -271960,7 +271968,7 @@ entry:
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20730, i64 8, ptr @sty_name.20731, i64 25, i64 %null_ext6, ptr @src_file.20732, i64 0, i64 1225)
+  call void @avra_null_deref_trap(ptr @fld_name.20730, i64 8, ptr @sty_name.20731, i64 25, i64 %null_ext6, ptr @src_file.20732, i64 0, i64 1226)
   %type_name7 = load ptr, ptr %type_name, align 8
   %4 = call ptr @"@std::avrac::codegen::Ctx__get_type"(ptr %self3, ptr %type_name7)
   store ptr %4, ptr %st_ty, align 8
@@ -271968,7 +271976,7 @@ entry:
   %cast9 = ptrtoint ptr %self8 to i64
   %null_chk10 = icmp eq i64 %cast9, 0
   %null_ext11 = zext i1 %null_chk10 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20733, i64 7, ptr @sty_name.20734, i64 25, i64 %null_ext11, ptr @src_file.20735, i64 0, i64 1226)
+  call void @avra_null_deref_trap(ptr @fld_name.20733, i64 7, ptr @sty_name.20734, i64 25, i64 %null_ext11, ptr @src_file.20735, i64 0, i64 1227)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self8, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %st_ty12 = load ptr, ptr %st_ty, align 8
@@ -271979,14 +271987,14 @@ entry:
   %cast15 = ptrtoint ptr %self14 to i64
   %null_chk16 = icmp eq i64 %cast15, 0
   %null_ext17 = zext i1 %null_chk16 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20737, i64 7, ptr @sty_name.20738, i64 25, i64 %null_ext17, ptr @src_file.20739, i64 0, i64 1227)
+  call void @avra_null_deref_trap(ptr @fld_name.20737, i64 7, ptr @sty_name.20738, i64 25, i64 %null_ext17, ptr @src_file.20739, i64 0, i64 1228)
   %builder_ptr18 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self14, i32 0, i32 2
   %builder19 = load ptr, ptr %builder_ptr18, align 8
   %self20 = load ptr, ptr %self, align 8
   %cast21 = ptrtoint ptr %self20 to i64
   %null_chk22 = icmp eq i64 %cast21, 0
   %null_ext23 = zext i1 %null_chk22 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20740, i64 8, ptr @sty_name.20741, i64 25, i64 %null_ext23, ptr @src_file.20742, i64 0, i64 1227)
+  call void @avra_null_deref_trap(ptr @fld_name.20740, i64 8, ptr @sty_name.20741, i64 25, i64 %null_ext23, ptr @src_file.20742, i64 0, i64 1228)
   %ptr_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self20, i32 0, i32 7
   %ptr_type = load ptr, ptr %ptr_type_ptr, align 8
   %pay_gep24 = load ptr, ptr %pay_gep, align 8
@@ -272013,7 +272021,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20744, i64 6, ptr @sty_name.20745, i64 25, i64 %null_ext, ptr @src_file.20746, i64 0, i64 1232)
+  call void @avra_null_deref_trap(ptr @fld_name.20744, i64 6, ptr @sty_name.20745, i64 25, i64 %null_ext, ptr @src_file.20746, i64 0, i64 1233)
   %val2 = load ptr, ptr %val, align 8
   %5 = call ptr @"@std::avrac::codegen::Ctx__to_ptr"(ptr %self1, ptr %val2, ptr @.str.20747)
   store ptr %5, ptr %obj, align 8
@@ -272021,7 +272029,7 @@ entry:
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20748, i64 8, ptr @sty_name.20749, i64 25, i64 %null_ext6, ptr @src_file.20750, i64 0, i64 1233)
+  call void @avra_null_deref_trap(ptr @fld_name.20748, i64 8, ptr @sty_name.20749, i64 25, i64 %null_ext6, ptr @src_file.20750, i64 0, i64 1234)
   %type_name7 = load ptr, ptr %type_name, align 8
   %6 = call ptr @"@std::avrac::codegen::Ctx__get_type"(ptr %self3, ptr %type_name7)
   store ptr %6, ptr %st_ty, align 8
@@ -272029,7 +272037,7 @@ entry:
   %cast9 = ptrtoint ptr %self8 to i64
   %null_chk10 = icmp eq i64 %cast9, 0
   %null_ext11 = zext i1 %null_chk10 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20751, i64 7, ptr @sty_name.20752, i64 25, i64 %null_ext11, ptr @src_file.20753, i64 0, i64 1234)
+  call void @avra_null_deref_trap(ptr @fld_name.20751, i64 7, ptr @sty_name.20752, i64 25, i64 %null_ext11, ptr @src_file.20753, i64 0, i64 1235)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self8, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %st_ty12 = load ptr, ptr %st_ty, align 8
@@ -272053,14 +272061,14 @@ entry:
   %cast19 = ptrtoint ptr %self18 to i64
   %null_chk20 = icmp eq i64 %cast19, 0
   %null_ext21 = zext i1 %null_chk20 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20755, i64 7, ptr @sty_name.20756, i64 25, i64 %null_ext21, ptr @src_file.20757, i64 0, i64 1235)
+  call void @avra_null_deref_trap(ptr @fld_name.20755, i64 7, ptr @sty_name.20756, i64 25, i64 %null_ext21, ptr @src_file.20757, i64 0, i64 1236)
   %builder_ptr22 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self18, i32 0, i32 2
   %builder23 = load ptr, ptr %builder_ptr22, align 8
   %self24 = load ptr, ptr %self, align 8
   %cast25 = ptrtoint ptr %self24 to i64
   %null_chk26 = icmp eq i64 %cast25, 0
   %null_ext27 = zext i1 %null_chk26 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20758, i64 8, ptr @sty_name.20759, i64 25, i64 %null_ext27, ptr @src_file.20760, i64 0, i64 1235)
+  call void @avra_null_deref_trap(ptr @fld_name.20758, i64 8, ptr @sty_name.20759, i64 25, i64 %null_ext27, ptr @src_file.20760, i64 0, i64 1236)
   %i64_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self24, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %fld_gep28 = load ptr, ptr %fld_gep, align 8
@@ -272090,7 +272098,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20761, i64 6, ptr @sty_name.20762, i64 25, i64 %null_ext, ptr @src_file.20763, i64 0, i64 1240)
+  call void @avra_null_deref_trap(ptr @fld_name.20761, i64 6, ptr @sty_name.20762, i64 25, i64 %null_ext, ptr @src_file.20763, i64 0, i64 1241)
   %val2 = load ptr, ptr %val, align 8
   %6 = call ptr @"@std::avrac::codegen::Ctx__to_ptr"(ptr %self1, ptr %val2, ptr @.str.20764)
   store ptr %6, ptr %obj, align 8
@@ -272098,7 +272106,7 @@ entry:
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20765, i64 8, ptr @sty_name.20766, i64 25, i64 %null_ext6, ptr @src_file.20767, i64 0, i64 1241)
+  call void @avra_null_deref_trap(ptr @fld_name.20765, i64 8, ptr @sty_name.20766, i64 25, i64 %null_ext6, ptr @src_file.20767, i64 0, i64 1242)
   %type_name7 = load ptr, ptr %type_name, align 8
   %7 = call ptr @"@std::avrac::codegen::Ctx__get_type"(ptr %self3, ptr %type_name7)
   store ptr %7, ptr %st_ty, align 8
@@ -272106,7 +272114,7 @@ entry:
   %cast9 = ptrtoint ptr %self8 to i64
   %null_chk10 = icmp eq i64 %cast9, 0
   %null_ext11 = zext i1 %null_chk10 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20768, i64 7, ptr @sty_name.20769, i64 25, i64 %null_ext11, ptr @src_file.20770, i64 0, i64 1242)
+  call void @avra_null_deref_trap(ptr @fld_name.20768, i64 7, ptr @sty_name.20769, i64 25, i64 %null_ext11, ptr @src_file.20770, i64 0, i64 1243)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self8, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %st_ty12 = load ptr, ptr %st_ty, align 8
@@ -272130,14 +272138,14 @@ entry:
   %cast19 = ptrtoint ptr %self18 to i64
   %null_chk20 = icmp eq i64 %cast19, 0
   %null_ext21 = zext i1 %null_chk20 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20772, i64 7, ptr @sty_name.20773, i64 25, i64 %null_ext21, ptr @src_file.20774, i64 0, i64 1243)
+  call void @avra_null_deref_trap(ptr @fld_name.20772, i64 7, ptr @sty_name.20773, i64 25, i64 %null_ext21, ptr @src_file.20774, i64 0, i64 1244)
   %builder_ptr22 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self18, i32 0, i32 2
   %builder23 = load ptr, ptr %builder_ptr22, align 8
   %self24 = load ptr, ptr %self, align 8
   %cast25 = ptrtoint ptr %self24 to i64
   %null_chk26 = icmp eq i64 %cast25, 0
   %null_ext27 = zext i1 %null_chk26 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20775, i64 8, ptr @sty_name.20776, i64 25, i64 %null_ext27, ptr @src_file.20777, i64 0, i64 1243)
+  call void @avra_null_deref_trap(ptr @fld_name.20775, i64 8, ptr @sty_name.20776, i64 25, i64 %null_ext27, ptr @src_file.20777, i64 0, i64 1244)
   %ty28 = load ptr, ptr %ty, align 8
   %14 = call ptr @"@std::avrac::codegen::Ctx__type_for"(ptr %self24, ptr %ty28)
   %fld_gep29 = load ptr, ptr %fld_gep, align 8
@@ -272166,7 +272174,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20778, i64 8, ptr @sty_name.20779, i64 25, i64 %null_ext, ptr @src_file.20780, i64 0, i64 1248)
+  call void @avra_null_deref_trap(ptr @fld_name.20778, i64 8, ptr @sty_name.20779, i64 25, i64 %null_ext, ptr @src_file.20780, i64 0, i64 1249)
   %type_name2 = load ptr, ptr %type_name, align 8
   %6 = call ptr @"@std::avrac::codegen::Ctx__get_type"(ptr %self1, ptr %type_name2)
   store ptr %6, ptr %st_ty, align 8
@@ -272174,7 +272182,7 @@ entry:
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20781, i64 7, ptr @sty_name.20782, i64 25, i64 %null_ext6, ptr @src_file.20783, i64 0, i64 1249)
+  call void @avra_null_deref_trap(ptr @fld_name.20781, i64 7, ptr @sty_name.20782, i64 25, i64 %null_ext6, ptr @src_file.20783, i64 0, i64 1250)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self3, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %st_ty7 = load ptr, ptr %st_ty, align 8
@@ -272186,14 +272194,14 @@ entry:
   %cast11 = ptrtoint ptr %self10 to i64
   %null_chk12 = icmp eq i64 %cast11, 0
   %null_ext13 = zext i1 %null_chk12 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20785, i64 7, ptr @sty_name.20786, i64 25, i64 %null_ext13, ptr @src_file.20787, i64 0, i64 1250)
+  call void @avra_null_deref_trap(ptr @fld_name.20785, i64 7, ptr @sty_name.20786, i64 25, i64 %null_ext13, ptr @src_file.20787, i64 0, i64 1251)
   %builder_ptr14 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self10, i32 0, i32 2
   %builder15 = load ptr, ptr %builder_ptr14, align 8
   %self16 = load ptr, ptr %self, align 8
   %cast17 = ptrtoint ptr %self16 to i64
   %null_chk18 = icmp eq i64 %cast17, 0
   %null_ext19 = zext i1 %null_chk18 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20788, i64 7, ptr @sty_name.20789, i64 25, i64 %null_ext19, ptr @src_file.20790, i64 0, i64 1250)
+  call void @avra_null_deref_trap(ptr @fld_name.20788, i64 7, ptr @sty_name.20789, i64 25, i64 %null_ext19, ptr @src_file.20790, i64 0, i64 1251)
   %val20 = load ptr, ptr %val, align 8
   %field_ty21 = load ptr, ptr %field_ty, align 8
   %8 = call ptr @"@std::avrac::codegen::Ctx__cast_to"(ptr %self16, ptr %val20, ptr %field_ty21)
@@ -272213,7 +272221,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20791, i64 14, ptr @sty_name.20792, i64 25, i64 %null_ext, ptr @src_file.20793, i64 0, i64 1256)
+  call void @avra_null_deref_trap(ptr @fld_name.20791, i64 14, ptr @sty_name.20792, i64 25, i64 %null_ext, ptr @src_file.20793, i64 0, i64 1257)
   %2 = call i1 @"@std::avrac::codegen::Ctx__has_terminator"(ptr %self1)
   %widen = zext i1 %2 to i64
   %if_cond = icmp ne i64 %widen, 0
@@ -272224,18 +272232,18 @@ ifcont:                                           ; preds = %if_else
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20794, i64 4, ptr @sty_name.20795, i64 25, i64 %null_ext5, ptr @src_file.20796, i64 0, i64 1257)
+  call void @avra_null_deref_trap(ptr @fld_name.20794, i64 4, ptr @sty_name.20795, i64 25, i64 %null_ext5, ptr @src_file.20796, i64 0, i64 1258)
   %3 = call ptr @avra_array_new()
   %self6 = load ptr, ptr %self, align 8
   %cast7 = ptrtoint ptr %self6 to i64
   %null_chk8 = icmp eq i64 %cast7, 0
   %null_ext9 = zext i1 %null_chk8 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20798, i64 10, ptr @sty_name.20799, i64 25, i64 %null_ext9, ptr @src_file.20800, i64 0, i64 1257)
+  call void @avra_null_deref_trap(ptr @fld_name.20798, i64 10, ptr @sty_name.20799, i64 25, i64 %null_ext9, ptr @src_file.20800, i64 0, i64 1258)
   %self10 = load ptr, ptr %self, align 8
   %cast11 = ptrtoint ptr %self10 to i64
   %null_chk12 = icmp eq i64 %cast11, 0
   %null_ext13 = zext i1 %null_chk12 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20801, i64 15, ptr @sty_name.20802, i64 25, i64 %null_ext13, ptr @src_file.20803, i64 0, i64 1257)
+  call void @avra_null_deref_trap(ptr @fld_name.20801, i64 15, ptr @sty_name.20802, i64 25, i64 %null_ext13, ptr @src_file.20803, i64 0, i64 1258)
   %current_fn_name_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self10, i32 0, i32 4
   %current_fn_name = load ptr, ptr %current_fn_name_ptr, align 8
   %4 = call ptr @"@std::avrac::codegen::Ctx__global_str"(ptr %self6, ptr %current_fn_name, ptr @.str.20804)
@@ -272248,12 +272256,12 @@ ifcont:                                           ; preds = %if_else
   %cast18 = ptrtoint ptr %self17 to i64
   %null_chk19 = icmp eq i64 %cast18, 0
   %null_ext20 = zext i1 %null_chk19 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20805, i64 10, ptr @sty_name.20806, i64 25, i64 %null_ext20, ptr @src_file.20807, i64 0, i64 1257)
+  call void @avra_null_deref_trap(ptr @fld_name.20805, i64 10, ptr @sty_name.20806, i64 25, i64 %null_ext20, ptr @src_file.20807, i64 0, i64 1258)
   %self21 = load ptr, ptr %self, align 8
   %cast22 = ptrtoint ptr %self21 to i64
   %null_chk23 = icmp eq i64 %cast22, 0
   %null_ext24 = zext i1 %null_chk23 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20808, i64 11, ptr @sty_name.20809, i64 25, i64 %null_ext24, ptr @src_file.20810, i64 0, i64 1257)
+  call void @avra_null_deref_trap(ptr @fld_name.20808, i64 11, ptr @sty_name.20809, i64 25, i64 %null_ext24, ptr @src_file.20810, i64 0, i64 1258)
   %source_file_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self21, i32 0, i32 28
   %source_file = load ptr, ptr %source_file_ptr, align 8
   %5 = call ptr @"@std::avrac::codegen::Ctx__global_str"(ptr %self17, ptr %source_file, ptr @.str.20811)
@@ -272263,12 +272271,12 @@ ifcont:                                           ; preds = %if_else
   %cast27 = ptrtoint ptr %self26 to i64
   %null_chk28 = icmp eq i64 %cast27, 0
   %null_ext29 = zext i1 %null_chk28 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20812, i64 3, ptr @sty_name.20813, i64 25, i64 %null_ext29, ptr @src_file.20814, i64 0, i64 1257)
+  call void @avra_null_deref_trap(ptr @fld_name.20812, i64 3, ptr @sty_name.20813, i64 25, i64 %null_ext29, ptr @src_file.20814, i64 0, i64 1258)
   %self30 = load ptr, ptr %self, align 8
   %cast31 = ptrtoint ptr %self30 to i64
   %null_chk32 = icmp eq i64 %cast31, 0
   %null_ext33 = zext i1 %null_chk32 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20815, i64 11, ptr @sty_name.20816, i64 25, i64 %null_ext33, ptr @src_file.20817, i64 0, i64 1257)
+  call void @avra_null_deref_trap(ptr @fld_name.20815, i64 11, ptr @sty_name.20816, i64 25, i64 %null_ext33, ptr @src_file.20817, i64 0, i64 1258)
   %source_line_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self30, i32 0, i32 29
   %source_line = load i64, ptr %source_line_ptr, align 8
   %6 = call ptr @"@std::avrac::codegen::Ctx__i64"(ptr %self26, i64 %source_line)
@@ -272279,7 +272287,7 @@ ifcont:                                           ; preds = %if_else
   %cast36 = ptrtoint ptr %self35 to i64
   %null_chk37 = icmp eq i64 %cast36, 0
   %null_ext38 = zext i1 %null_chk37 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20818, i64 11, ptr @sty_name.20819, i64 25, i64 %null_ext38, ptr @src_file.20820, i64 0, i64 1261)
+  call void @avra_null_deref_trap(ptr @fld_name.20818, i64 11, ptr @sty_name.20819, i64 25, i64 %null_ext38, ptr @src_file.20820, i64 0, i64 1262)
   %8 = call i64 @"@std::avrac::codegen::Ctx__unreachable"(ptr %self35)
   ret i64 %8
 
@@ -272298,7 +272306,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20821, i64 4, ptr @sty_name.20822, i64 25, i64 %null_ext, ptr @src_file.20823, i64 0, i64 1266)
+  call void @avra_null_deref_trap(ptr @fld_name.20821, i64 4, ptr @sty_name.20822, i64 25, i64 %null_ext, ptr @src_file.20823, i64 0, i64 1267)
   %1 = call ptr @avra_array_new()
   %2 = call ptr @"@std::avrac::codegen::Ctx__call"(ptr %self1, ptr @.str.20824, ptr %1)
   ret ptr %2
@@ -272316,7 +272324,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20825, i64 4, ptr @sty_name.20826, i64 25, i64 %null_ext, ptr @src_file.20827, i64 0, i64 1267)
+  call void @avra_null_deref_trap(ptr @fld_name.20825, i64 4, ptr @sty_name.20826, i64 25, i64 %null_ext, ptr @src_file.20827, i64 0, i64 1268)
   %3 = call ptr @avra_array_new()
   %arr2 = load ptr, ptr %arr, align 8
   %cast3 = ptrtoint ptr %arr2 to i64
@@ -272341,7 +272349,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20829, i64 4, ptr @sty_name.20830, i64 25, i64 %null_ext, ptr @src_file.20831, i64 0, i64 1268)
+  call void @avra_null_deref_trap(ptr @fld_name.20829, i64 4, ptr @sty_name.20830, i64 25, i64 %null_ext, ptr @src_file.20831, i64 0, i64 1269)
   %3 = call ptr @avra_array_new()
   %arr2 = load ptr, ptr %arr, align 8
   %cast3 = ptrtoint ptr %arr2 to i64
@@ -272363,7 +272371,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20833, i64 4, ptr @sty_name.20834, i64 25, i64 %null_ext, ptr @src_file.20835, i64 0, i64 1269)
+  call void @avra_null_deref_trap(ptr @fld_name.20833, i64 4, ptr @sty_name.20834, i64 25, i64 %null_ext, ptr @src_file.20835, i64 0, i64 1270)
   %2 = call ptr @avra_array_new()
   %arr2 = load ptr, ptr %arr, align 8
   %cast3 = ptrtoint ptr %arr2 to i64
@@ -272391,14 +272399,14 @@ entry:
 
 match_end:                                        ; preds = %march_arm3, %march_arm
   %match_val = load i64, ptr %match_result, align 8
-  %cast31 = inttoptr i64 %match_val to ptr
-  ret ptr %cast31
+  %cast32 = inttoptr i64 %match_val to ptr
+  ret ptr %cast32
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -272434,9 +272442,9 @@ march_arm3:                                       ; preds = %march_next
   call void @avra_rc_retain(ptr %next)
   store ptr %next, ptr %next12, align 8
   %3 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr13 = getelementptr inbounds nuw %"@std::avrac::core::ParamList", ptr %3, i32 0, i32 0
+  %tag_ptr13 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplMethodRefList", ptr %3, i32 0, i32 0
   store i64 6384368267, ptr %tag_ptr13, align 8
-  %pay_ptr14 = getelementptr inbounds nuw %"@std::avrac::core::ParamList", ptr %3, i32 0, i32 1
+  %pay_ptr14 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplMethodRefList", ptr %3, i32 0, i32 1
   %4 = call ptr @avra_rc_alloc(i64 24)
   store ptr %4, ptr %pay_ptr14, align 8
   %name15 = load ptr, ptr %name6, align 8
@@ -272448,30 +272456,31 @@ march_arm3:                                       ; preds = %march_next
   %cast17 = ptrtoint ptr %self16 to i64
   %null_chk = icmp eq i64 %cast17, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20837, i64 21, ptr @sty_name.20838, i64 25, i64 %null_ext, ptr @src_file.20839, i64 0, i64 1275)
+  call void @avra_null_deref_trap(ptr @fld_name.20837, i64 21, ptr @sty_name.20838, i64 25, i64 %null_ext, ptr @src_file.20839, i64 0, i64 1276)
   %pv18 = load ptr, ptr %pv9, align 8
   %5 = call ptr @"@std::avrac::codegen::Ctx__resolve_codegen_vtype"(ptr %self16, ptr %pv18)
   %slot_base19 = ptrtoint ptr %4 to i64
   %slot_addr20 = add i64 %slot_base19, 8
   %slot21 = inttoptr i64 %slot_addr20 to ptr
-  store ptr %5, ptr %slot21, align 8
-  %self22 = load ptr, ptr %self, align 8
-  %cast23 = ptrtoint ptr %self22 to i64
-  %null_chk24 = icmp eq i64 %cast23, 0
-  %null_ext25 = zext i1 %null_chk24 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20840, i64 14, ptr @sty_name.20841, i64 25, i64 %null_ext25, ptr @src_file.20842, i64 0, i64 1275)
-  %next26 = load ptr, ptr %next12, align 8
-  %6 = call ptr @"@std::avrac::codegen::Ctx__resolve_params"(ptr %self22, ptr %next26)
-  %slot_base27 = ptrtoint ptr %4 to i64
-  %slot_addr28 = add i64 %slot_base27, 16
-  %slot29 = inttoptr i64 %slot_addr28 to ptr
-  store ptr %6, ptr %slot29, align 8
-  %cast30 = ptrtoint ptr %3 to i64
-  store i64 %cast30, ptr %match_result, align 8
+  %cast22 = ptrtoint ptr %5 to i64
+  store i64 %cast22, ptr %slot21, align 8
+  %self23 = load ptr, ptr %self, align 8
+  %cast24 = ptrtoint ptr %self23 to i64
+  %null_chk25 = icmp eq i64 %cast24, 0
+  %null_ext26 = zext i1 %null_chk25 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.20840, i64 14, ptr @sty_name.20841, i64 25, i64 %null_ext26, ptr @src_file.20842, i64 0, i64 1276)
+  %next27 = load ptr, ptr %next12, align 8
+  %6 = call ptr @"@std::avrac::codegen::Ctx__resolve_params"(ptr %self23, ptr %next27)
+  %slot_base28 = ptrtoint ptr %4 to i64
+  %slot_addr29 = add i64 %slot_base28, 16
+  %slot30 = inttoptr i64 %slot_addr29 to ptr
+  store ptr %6, ptr %slot30, align 8
+  %cast31 = ptrtoint ptr %3 to i64
+  store i64 %cast31, ptr %match_result, align 8
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.20843, i64 %tag, ptr @mu_file.20844, i64 1275)
+  call void @avra_match_unreachable(ptr @.match_fn.20843, i64 %tag, ptr @mu_file.20844, i64 1276)
   unreachable
 }
 
@@ -272494,14 +272503,14 @@ entry:
 
 match_end:                                        ; preds = %march_arm3, %march_arm
   %match_val = load i64, ptr %match_result, align 8
-  %cast31 = inttoptr i64 %match_val to ptr
-  ret ptr %cast31
+  %cast32 = inttoptr i64 %match_val to ptr
+  ret ptr %cast32
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -272537,9 +272546,9 @@ march_arm3:                                       ; preds = %march_next
   call void @avra_rc_retain(ptr %next)
   store ptr %next, ptr %next12, align 8
   %3 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr13 = getelementptr inbounds nuw %"@std::avrac::core::ParamList", ptr %3, i32 0, i32 0
+  %tag_ptr13 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplMethodRefList", ptr %3, i32 0, i32 0
   store i64 6384368267, ptr %tag_ptr13, align 8
-  %pay_ptr14 = getelementptr inbounds nuw %"@std::avrac::core::ParamList", ptr %3, i32 0, i32 1
+  %pay_ptr14 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplMethodRefList", ptr %3, i32 0, i32 1
   %4 = call ptr @avra_rc_alloc(i64 24)
   store ptr %4, ptr %pay_ptr14, align 8
   %name15 = load ptr, ptr %name6, align 8
@@ -272551,30 +272560,31 @@ march_arm3:                                       ; preds = %march_next
   %cast17 = ptrtoint ptr %self16 to i64
   %null_chk = icmp eq i64 %cast17, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20845, i64 21, ptr @sty_name.20846, i64 25, i64 %null_ext, ptr @src_file.20847, i64 0, i64 1283)
+  call void @avra_null_deref_trap(ptr @fld_name.20845, i64 21, ptr @sty_name.20846, i64 25, i64 %null_ext, ptr @src_file.20847, i64 0, i64 1284)
   %pv18 = load ptr, ptr %pv9, align 8
   %5 = call ptr @"@std::avrac::codegen::Ctx__resolve_codegen_vtype"(ptr %self16, ptr %pv18)
   %slot_base19 = ptrtoint ptr %4 to i64
   %slot_addr20 = add i64 %slot_base19, 8
   %slot21 = inttoptr i64 %slot_addr20 to ptr
-  store ptr %5, ptr %slot21, align 8
-  %self22 = load ptr, ptr %self, align 8
-  %cast23 = ptrtoint ptr %self22 to i64
-  %null_chk24 = icmp eq i64 %cast23, 0
-  %null_ext25 = zext i1 %null_chk24 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20848, i64 14, ptr @sty_name.20849, i64 25, i64 %null_ext25, ptr @src_file.20850, i64 0, i64 1283)
-  %next26 = load ptr, ptr %next12, align 8
-  %6 = call ptr @"@std::avrac::codegen::Ctx__resolve_fields"(ptr %self22, ptr %next26)
-  %slot_base27 = ptrtoint ptr %4 to i64
-  %slot_addr28 = add i64 %slot_base27, 16
-  %slot29 = inttoptr i64 %slot_addr28 to ptr
-  store ptr %6, ptr %slot29, align 8
-  %cast30 = ptrtoint ptr %3 to i64
-  store i64 %cast30, ptr %match_result, align 8
+  %cast22 = ptrtoint ptr %5 to i64
+  store i64 %cast22, ptr %slot21, align 8
+  %self23 = load ptr, ptr %self, align 8
+  %cast24 = ptrtoint ptr %self23 to i64
+  %null_chk25 = icmp eq i64 %cast24, 0
+  %null_ext26 = zext i1 %null_chk25 to i64
+  call void @avra_null_deref_trap(ptr @fld_name.20848, i64 14, ptr @sty_name.20849, i64 25, i64 %null_ext26, ptr @src_file.20850, i64 0, i64 1284)
+  %next27 = load ptr, ptr %next12, align 8
+  %6 = call ptr @"@std::avrac::codegen::Ctx__resolve_fields"(ptr %self23, ptr %next27)
+  %slot_base28 = ptrtoint ptr %4 to i64
+  %slot_addr29 = add i64 %slot_base28, 16
+  %slot30 = inttoptr i64 %slot_addr29 to ptr
+  store ptr %6, ptr %slot30, align 8
+  %cast31 = ptrtoint ptr %3 to i64
+  store i64 %cast31, ptr %match_result, align 8
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.20851, i64 %tag, ptr @mu_file.20852, i64 1283)
+  call void @avra_match_unreachable(ptr @.match_fn.20851, i64 %tag, ptr @mu_file.20852, i64 1284)
   unreachable
 }
 
@@ -272627,7 +272637,7 @@ march_arm:                                        ; preds = %entry
   %cast = ptrtoint ptr %self3 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20853, i64 8, ptr @sty_name.20854, i64 25, i64 %null_ext, ptr @src_file.20855, i64 0, i64 1298)
+  call void @avra_null_deref_trap(ptr @fld_name.20853, i64 8, ptr @sty_name.20854, i64 25, i64 %null_ext, ptr @src_file.20855, i64 0, i64 1299)
   %type_reg_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self3, i32 0, i32 34
   %type_reg = load ptr, ptr %type_reg_ptr, align 8
   %name4 = load ptr, ptr %name2, align 8
@@ -272637,7 +272647,7 @@ march_arm:                                        ; preds = %entry
   %cast6 = ptrtoint ptr %self5 to i64
   %null_chk7 = icmp eq i64 %cast6, 0
   %null_ext8 = zext i1 %null_chk7 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20856, i64 8, ptr @sty_name.20857, i64 25, i64 %null_ext8, ptr @src_file.20858, i64 0, i64 1299)
+  call void @avra_null_deref_trap(ptr @fld_name.20856, i64 8, ptr @sty_name.20857, i64 25, i64 %null_ext8, ptr @src_file.20858, i64 0, i64 1300)
   %type_reg_ptr9 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self5, i32 0, i32 34
   %type_reg10 = load ptr, ptr %type_reg_ptr9, align 8
   %tid11 = load i64, ptr %tid, align 8
@@ -272684,7 +272694,7 @@ ife_end20:                                        ; preds = %ife_else23, %ife_th
   %cast27 = ptrtoint ptr %self26 to i64
   %null_chk28 = icmp eq i64 %cast27, 0
   %null_ext29 = zext i1 %null_chk28 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20860, i64 5, ptr @sty_name.20861, i64 25, i64 %null_ext29, ptr @src_file.20862, i64 0, i64 1303)
+  call void @avra_null_deref_trap(ptr @fld_name.20860, i64 5, ptr @sty_name.20861, i64 25, i64 %null_ext29, ptr @src_file.20862, i64 0, i64 1304)
   %enums_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self26, i32 0, i32 13
   %enums = load ptr, ptr %enums_ptr, align 8
   %rn30 = load ptr, ptr %rn, align 8
@@ -272694,7 +272704,7 @@ ife_end20:                                        ; preds = %ife_else23, %ife_th
   %cast32 = ptrtoint ptr %e31 to i64
   %null_chk33 = icmp eq i64 %cast32, 0
   %null_ext34 = zext i1 %null_chk33 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20863, i64 5, ptr @sty_name.20864, i64 32, i64 %null_ext34, ptr @src_file.20865, i64 0, i64 1304)
+  call void @avra_null_deref_trap(ptr @fld_name.20863, i64 5, ptr @sty_name.20864, i64 32, i64 %null_ext34, ptr @src_file.20865, i64 0, i64 1305)
   %found_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::EnumLookup", ptr %e31, i32 0, i32 0
   %found = load i64, ptr %found_ptr, align 8
   %if_cond = icmp ne i64 %found, 0
@@ -272714,7 +272724,7 @@ ifcont:                                           ; preds = %if_else
   %cast51 = ptrtoint ptr %self50 to i64
   %null_chk52 = icmp eq i64 %cast51, 0
   %null_ext53 = zext i1 %null_chk52 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20866, i64 7, ptr @sty_name.20867, i64 25, i64 %null_ext53, ptr @src_file.20868, i64 0, i64 1305)
+  call void @avra_null_deref_trap(ptr @fld_name.20866, i64 7, ptr @sty_name.20867, i64 25, i64 %null_ext53, ptr @src_file.20868, i64 0, i64 1306)
   %structs_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self50, i32 0, i32 12
   %structs = load ptr, ptr %structs_ptr, align 8
   %rn54 = load ptr, ptr %rn, align 8
@@ -272724,7 +272734,7 @@ ifcont:                                           ; preds = %if_else
   %cast56 = ptrtoint ptr %s55 to i64
   %null_chk57 = icmp eq i64 %cast56, 0
   %null_ext58 = zext i1 %null_chk57 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20869, i64 5, ptr @sty_name.20870, i64 34, i64 %null_ext58, ptr @src_file.20871, i64 0, i64 1306)
+  call void @avra_null_deref_trap(ptr @fld_name.20869, i64 5, ptr @sty_name.20870, i64 34, i64 %null_ext58, ptr @src_file.20871, i64 0, i64 1307)
   %found_ptr59 = getelementptr inbounds nuw %"@std::avrac::codegen::StructLookup", ptr %s55, i32 0, i32 0
   %found60 = load i64, ptr %found_ptr59, align 8
   %if_cond62 = icmp ne i64 %found60, 0
@@ -272770,7 +272780,7 @@ ifcont61:                                         ; preds = %if_else64
   %cast78 = ptrtoint ptr %self77 to i64
   %null_chk79 = icmp eq i64 %cast78, 0
   %null_ext80 = zext i1 %null_chk79 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20872, i64 11, ptr @sty_name.20873, i64 25, i64 %null_ext80, ptr @src_file.20874, i64 0, i64 1307)
+  call void @avra_null_deref_trap(ptr @fld_name.20872, i64 11, ptr @sty_name.20873, i64 25, i64 %null_ext80, ptr @src_file.20874, i64 0, i64 1308)
   %trait_decls_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self77, i32 0, i32 22
   %trait_decls = load ptr, ptr %trait_decls_ptr, align 8
   %rn81 = load ptr, ptr %rn, align 8
@@ -272808,7 +272818,7 @@ ifcont83:                                         ; preds = %if_else86
   %cast100 = ptrtoint ptr %self99 to i64
   %null_chk101 = icmp eq i64 %cast100, 0
   %null_ext102 = zext i1 %null_chk101 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20875, i64 8, ptr @sty_name.20876, i64 25, i64 %null_ext102, ptr @src_file.20877, i64 0, i64 1308)
+  call void @avra_null_deref_trap(ptr @fld_name.20875, i64 8, ptr @sty_name.20876, i64 25, i64 %null_ext102, ptr @src_file.20877, i64 0, i64 1309)
   %newtypes_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self99, i32 0, i32 23
   %newtypes = load ptr, ptr %newtypes_ptr, align 8
   %rn103 = load ptr, ptr %rn, align 8
@@ -272851,7 +272861,7 @@ ifcont106:                                        ; preds = %if_else109
   %cast131 = ptrtoint ptr %self130 to i64
   %null_chk132 = icmp eq i64 %cast131, 0
   %null_ext133 = zext i1 %null_chk132 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20881, i64 13, ptr @sty_name.20882, i64 25, i64 %null_ext133, ptr @src_file.20883, i64 0, i64 1310)
+  call void @avra_null_deref_trap(ptr @fld_name.20881, i64 13, ptr @sty_name.20882, i64 25, i64 %null_ext133, ptr @src_file.20883, i64 0, i64 1311)
   %union_aliases_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self130, i32 0, i32 24
   %union_aliases = load ptr, ptr %union_aliases_ptr, align 8
   %rn134 = load ptr, ptr %rn, align 8
@@ -272881,7 +272891,7 @@ if_then108:                                       ; preds = %ifcont83
   %cast117 = ptrtoint ptr %self116 to i64
   %null_chk118 = icmp eq i64 %cast117, 0
   %null_ext119 = zext i1 %null_chk118 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20878, i64 21, ptr @sty_name.20879, i64 25, i64 %null_ext119, ptr @src_file.20880, i64 0, i64 1309)
+  call void @avra_null_deref_trap(ptr @fld_name.20878, i64 21, ptr @sty_name.20879, i64 25, i64 %null_ext119, ptr @src_file.20880, i64 0, i64 1310)
   %nt_vt120 = load ptr, ptr %nt_vt, align 8
   %21 = call ptr @"@std::avrac::codegen::Ctx__resolve_codegen_vtype"(ptr %self116, ptr %nt_vt120)
   %slot_base121 = ptrtoint ptr %20 to i64
@@ -272911,7 +272921,7 @@ if_then141:                                       ; preds = %ifcont106
   %cast144 = ptrtoint ptr %self143 to i64
   %null_chk145 = icmp eq i64 %cast144, 0
   %null_ext146 = zext i1 %null_chk145 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20884, i64 21, ptr @sty_name.20885, i64 25, i64 %null_ext146, ptr @src_file.20886, i64 0, i64 1311)
+  call void @avra_null_deref_trap(ptr @fld_name.20884, i64 21, ptr @sty_name.20885, i64 25, i64 %null_ext146, ptr @src_file.20886, i64 0, i64 1312)
   %ua_vt147 = load ptr, ptr %ua_vt, align 8
   %22 = call ptr @"@std::avrac::codegen::Ctx__resolve_codegen_vtype"(ptr %self143, ptr %ua_vt147)
   ret ptr %22
@@ -272951,7 +272961,7 @@ march_arm150:                                     ; preds = %march_next
   %cast170 = ptrtoint ptr %self169 to i64
   %null_chk171 = icmp eq i64 %cast170, 0
   %null_ext172 = zext i1 %null_chk171 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20887, i64 26, ptr @sty_name.20888, i64 25, i64 %null_ext172, ptr @src_file.20889, i64 0, i64 1293)
+  call void @avra_null_deref_trap(ptr @fld_name.20887, i64 26, ptr @sty_name.20888, i64 25, i64 %null_ext172, ptr @src_file.20889, i64 0, i64 1294)
   %args173 = load ptr, ptr %args162, align 8
   %25 = call ptr @"@std::avrac::codegen::Ctx__resolve_codegen_vtype_list"(ptr %self169, ptr %args173)
   %slot_base174 = ptrtoint ptr %24 to i64
@@ -272962,7 +272972,7 @@ march_arm150:                                     ; preds = %march_next
   %cast178 = ptrtoint ptr %self177 to i64
   %null_chk179 = icmp eq i64 %cast178, 0
   %null_ext180 = zext i1 %null_chk179 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20890, i64 8, ptr @sty_name.20891, i64 25, i64 %null_ext180, ptr @src_file.20892, i64 0, i64 1293)
+  call void @avra_null_deref_trap(ptr @fld_name.20890, i64 8, ptr @sty_name.20891, i64 25, i64 %null_ext180, ptr @src_file.20892, i64 0, i64 1294)
   %type_reg_ptr181 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self177, i32 0, i32 34
   %type_reg182 = load ptr, ptr %type_reg_ptr181, align 8
   %name183 = load ptr, ptr %name159, align 8
@@ -272998,7 +273008,7 @@ march_arm188:                                     ; preds = %march_next151
   %cast197 = ptrtoint ptr %self196 to i64
   %null_chk198 = icmp eq i64 %cast197, 0
   %null_ext199 = zext i1 %null_chk198 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20893, i64 21, ptr @sty_name.20894, i64 25, i64 %null_ext199, ptr @src_file.20895, i64 0, i64 1293)
+  call void @avra_null_deref_trap(ptr @fld_name.20893, i64 21, ptr @sty_name.20894, i64 25, i64 %null_ext199, ptr @src_file.20895, i64 0, i64 1294)
   %elem200 = load ptr, ptr %elem193, align 8
   %29 = call ptr @"@std::avrac::codegen::Ctx__resolve_codegen_vtype"(ptr %self196, ptr %elem200)
   %slot_base201 = ptrtoint ptr %28 to i64
@@ -273032,7 +273042,7 @@ march_arm205:                                     ; preds = %march_next189
   %cast214 = ptrtoint ptr %self213 to i64
   %null_chk215 = icmp eq i64 %cast214, 0
   %null_ext216 = zext i1 %null_chk215 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20896, i64 26, ptr @sty_name.20897, i64 25, i64 %null_ext216, ptr @src_file.20898, i64 0, i64 1293)
+  call void @avra_null_deref_trap(ptr @fld_name.20896, i64 26, ptr @sty_name.20897, i64 25, i64 %null_ext216, ptr @src_file.20898, i64 0, i64 1294)
   %types217 = load ptr, ptr %types210, align 8
   %32 = call ptr @"@std::avrac::codegen::Ctx__resolve_codegen_vtype_list"(ptr %self213, ptr %types217)
   %slot_base218 = ptrtoint ptr %31 to i64
@@ -273074,7 +273084,7 @@ march_arm222:                                     ; preds = %march_next206
   %cast234 = ptrtoint ptr %self233 to i64
   %null_chk235 = icmp eq i64 %cast234, 0
   %null_ext236 = zext i1 %null_chk235 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20899, i64 26, ptr @sty_name.20900, i64 25, i64 %null_ext236, ptr @src_file.20901, i64 0, i64 1293)
+  call void @avra_null_deref_trap(ptr @fld_name.20899, i64 26, ptr @sty_name.20900, i64 25, i64 %null_ext236, ptr @src_file.20901, i64 0, i64 1294)
   %params237 = load ptr, ptr %params227, align 8
   %35 = call ptr @"@std::avrac::codegen::Ctx__resolve_codegen_vtype_list"(ptr %self233, ptr %params237)
   %slot_base238 = ptrtoint ptr %34 to i64
@@ -273085,7 +273095,7 @@ march_arm222:                                     ; preds = %march_next206
   %cast242 = ptrtoint ptr %self241 to i64
   %null_chk243 = icmp eq i64 %cast242, 0
   %null_ext244 = zext i1 %null_chk243 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20902, i64 21, ptr @sty_name.20903, i64 25, i64 %null_ext244, ptr @src_file.20904, i64 0, i64 1293)
+  call void @avra_null_deref_trap(ptr @fld_name.20902, i64 21, ptr @sty_name.20903, i64 25, i64 %null_ext244, ptr @src_file.20904, i64 0, i64 1294)
   %ret245 = load ptr, ptr %ret230, align 8
   %36 = call ptr @"@std::avrac::codegen::Ctx__resolve_codegen_vtype"(ptr %self241, ptr %ret245)
   %slot_base246 = ptrtoint ptr %34 to i64
@@ -273106,7 +273116,7 @@ march_arm250:                                     ; preds = %march_next223
   br label %match_end
 
 march_next251:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.20905, i64 %tag, ptr @mu_file.20906, i64 1293)
+  call void @avra_match_unreachable(ptr @.match_fn.20905, i64 %tag, ptr @mu_file.20906, i64 1294)
   unreachable
 }
 
@@ -273133,9 +273143,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -273172,7 +273182,7 @@ march_arm3:                                       ; preds = %march_next
   %cast13 = ptrtoint ptr %self12 to i64
   %null_chk = icmp eq i64 %cast13, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20907, i64 21, ptr @sty_name.20908, i64 25, i64 %null_ext, ptr @src_file.20909, i64 0, i64 1323)
+  call void @avra_null_deref_trap(ptr @fld_name.20907, i64 21, ptr @sty_name.20908, i64 25, i64 %null_ext, ptr @src_file.20909, i64 0, i64 1324)
   %ty14 = load ptr, ptr %ty6, align 8
   %5 = call ptr @"@std::avrac::codegen::Ctx__resolve_codegen_vtype"(ptr %self12, ptr %ty14)
   %slot_base = ptrtoint ptr %4 to i64
@@ -273183,7 +273193,7 @@ march_arm3:                                       ; preds = %march_next
   %cast16 = ptrtoint ptr %self15 to i64
   %null_chk17 = icmp eq i64 %cast16, 0
   %null_ext18 = zext i1 %null_chk17 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20910, i64 26, ptr @sty_name.20911, i64 25, i64 %null_ext18, ptr @src_file.20912, i64 0, i64 1323)
+  call void @avra_null_deref_trap(ptr @fld_name.20910, i64 26, ptr @sty_name.20911, i64 25, i64 %null_ext18, ptr @src_file.20912, i64 0, i64 1324)
   %next19 = load ptr, ptr %next9, align 8
   %6 = call ptr @"@std::avrac::codegen::Ctx__resolve_codegen_vtype_list"(ptr %self15, ptr %next19)
   %slot_base20 = ptrtoint ptr %4 to i64
@@ -273195,7 +273205,7 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.20913, i64 %tag, ptr @mu_file.20914, i64 1323)
+  call void @avra_match_unreachable(ptr @.match_fn.20913, i64 %tag, ptr @mu_file.20914, i64 1324)
   unreachable
 }
 
@@ -273216,7 +273226,7 @@ entry:
   %cast = ptrtoint ptr %self3 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20915, i64 21, ptr @sty_name.20916, i64 25, i64 %null_ext, ptr @src_file.20917, i64 0, i64 1328)
+  call void @avra_null_deref_trap(ptr @fld_name.20915, i64 21, ptr @sty_name.20916, i64 25, i64 %null_ext, ptr @src_file.20917, i64 0, i64 1329)
   %vt4 = load ptr, ptr %vt, align 8
   %4 = call ptr @"@std::avrac::codegen::Ctx__resolve_codegen_vtype"(ptr %self3, ptr %vt4)
   ret ptr %4
@@ -273232,7 +273242,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20918, i64 7, ptr @sty_name.20919, i64 25, i64 %null_ext, ptr @src_file.20920, i64 0, i64 1334)
+  call void @avra_null_deref_trap(ptr @fld_name.20918, i64 7, ptr @sty_name.20919, i64 25, i64 %null_ext, ptr @src_file.20920, i64 0, i64 1335)
   %fn_rets_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 14
   %fn_rets = load ptr, ptr %fn_rets_ptr, align 8
   %name2 = load ptr, ptr %name, align 8
@@ -273248,14 +273258,14 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20921, i64 7, ptr @sty_name.20922, i64 25, i64 %null_ext, ptr @src_file.20923, i64 0, i64 1337)
+  call void @avra_null_deref_trap(ptr @fld_name.20921, i64 7, ptr @sty_name.20922, i64 25, i64 %null_ext, ptr @src_file.20923, i64 0, i64 1338)
   %fn_rets_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 14
   %fn_rets = load ptr, ptr %fn_rets_ptr, align 8
   %self2 = load ptr, ptr %self, align 8
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20924, i64 15, ptr @sty_name.20925, i64 25, i64 %null_ext5, ptr @src_file.20926, i64 0, i64 1337)
+  call void @avra_null_deref_trap(ptr @fld_name.20924, i64 15, ptr @sty_name.20925, i64 25, i64 %null_ext5, ptr @src_file.20926, i64 0, i64 1338)
   %current_fn_name_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self2, i32 0, i32 4
   %current_fn_name = load ptr, ptr %current_fn_name_ptr, align 8
   %1 = call ptr @"@std::avrac::codegen::fn_ret_lookup"(ptr %fn_rets, ptr %current_fn_name)
@@ -273625,7 +273635,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20927, i64 7, ptr @sty_name.20928, i64 25, i64 %null_ext, ptr @src_file.20929, i64 0, i64 1354)
+  call void @avra_null_deref_trap(ptr @fld_name.20927, i64 7, ptr @sty_name.20928, i64 25, i64 %null_ext, ptr @src_file.20929, i64 0, i64 1355)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %pred2 = load i64, ptr %pred, align 8
@@ -273638,7 +273648,7 @@ entry:
   %cast7 = ptrtoint ptr %self6 to i64
   %null_chk8 = icmp eq i64 %cast7, 0
   %null_ext9 = zext i1 %null_chk8 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20930, i64 7, ptr @sty_name.20931, i64 25, i64 %null_ext9, ptr @src_file.20932, i64 0, i64 1355)
+  call void @avra_null_deref_trap(ptr @fld_name.20930, i64 7, ptr @sty_name.20931, i64 25, i64 %null_ext9, ptr @src_file.20932, i64 0, i64 1356)
   %builder_ptr10 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self6, i32 0, i32 2
   %builder11 = load ptr, ptr %builder_ptr10, align 8
   %cmp12 = load ptr, ptr %cmp, align 8
@@ -273646,7 +273656,7 @@ entry:
   %cast14 = ptrtoint ptr %self13 to i64
   %null_chk15 = icmp eq i64 %cast14, 0
   %null_ext16 = zext i1 %null_chk15 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20933, i64 8, ptr @sty_name.20934, i64 25, i64 %null_ext16, ptr @src_file.20935, i64 0, i64 1355)
+  call void @avra_null_deref_trap(ptr @fld_name.20933, i64 8, ptr @sty_name.20934, i64 25, i64 %null_ext16, ptr @src_file.20935, i64 0, i64 1356)
   %i64_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self13, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %name17 = load ptr, ptr %name, align 8
@@ -273702,7 +273712,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20937, i64 7, ptr @sty_name.20938, i64 25, i64 %null_ext, ptr @src_file.20939, i64 0, i64 1359)
+  call void @avra_null_deref_trap(ptr @fld_name.20937, i64 7, ptr @sty_name.20938, i64 25, i64 %null_ext, ptr @src_file.20939, i64 0, i64 1360)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %pred2 = load i64, ptr %pred, align 8
@@ -273715,7 +273725,7 @@ entry:
   %cast7 = ptrtoint ptr %self6 to i64
   %null_chk8 = icmp eq i64 %cast7, 0
   %null_ext9 = zext i1 %null_chk8 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20940, i64 7, ptr @sty_name.20941, i64 25, i64 %null_ext9, ptr @src_file.20942, i64 0, i64 1360)
+  call void @avra_null_deref_trap(ptr @fld_name.20940, i64 7, ptr @sty_name.20941, i64 25, i64 %null_ext9, ptr @src_file.20942, i64 0, i64 1361)
   %builder_ptr10 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self6, i32 0, i32 2
   %builder11 = load ptr, ptr %builder_ptr10, align 8
   %cmp12 = load ptr, ptr %cmp, align 8
@@ -273723,7 +273733,7 @@ entry:
   %cast14 = ptrtoint ptr %self13 to i64
   %null_chk15 = icmp eq i64 %cast14, 0
   %null_ext16 = zext i1 %null_chk15 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20943, i64 8, ptr @sty_name.20944, i64 25, i64 %null_ext16, ptr @src_file.20945, i64 0, i64 1360)
+  call void @avra_null_deref_trap(ptr @fld_name.20943, i64 8, ptr @sty_name.20944, i64 25, i64 %null_ext16, ptr @src_file.20945, i64 0, i64 1361)
   %i64_type_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self13, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %name17 = load ptr, ptr %name, align 8
@@ -273772,19 +273782,19 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20947, i64 4, ptr @sty_name.20948, i64 25, i64 %null_ext, ptr @src_file.20949, i64 0, i64 1366)
+  call void @avra_null_deref_trap(ptr @fld_name.20947, i64 4, ptr @sty_name.20948, i64 25, i64 %null_ext, ptr @src_file.20949, i64 0, i64 1367)
   %2 = call ptr @avra_array_new()
   %self2 = load ptr, ptr %self, align 8
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20951, i64 7, ptr @sty_name.20952, i64 25, i64 %null_ext5, ptr @src_file.20953, i64 0, i64 1366)
+  call void @avra_null_deref_trap(ptr @fld_name.20951, i64 7, ptr @sty_name.20952, i64 25, i64 %null_ext5, ptr @src_file.20953, i64 0, i64 1367)
   %rhs6 = load ptr, ptr %rhs, align 8
   %self7 = load ptr, ptr %self, align 8
   %cast8 = ptrtoint ptr %self7 to i64
   %null_chk9 = icmp eq i64 %cast8, 0
   %null_ext10 = zext i1 %null_chk9 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20954, i64 3, ptr @sty_name.20955, i64 25, i64 %null_ext10, ptr @src_file.20956, i64 0, i64 1366)
+  call void @avra_null_deref_trap(ptr @fld_name.20954, i64 3, ptr @sty_name.20955, i64 25, i64 %null_ext10, ptr @src_file.20956, i64 0, i64 1367)
   %3 = call ptr @"@std::avrac::codegen::Ctx__i64"(ptr %self7, i64 0)
   %4 = call ptr @"@std::avrac::codegen::Ctx__icmp_eq"(ptr %self2, ptr %rhs6, ptr %3, ptr @.str.20957)
   %cast11 = ptrtoint ptr %4 to i64
@@ -273793,12 +273803,12 @@ entry:
   %cast13 = ptrtoint ptr %self12 to i64
   %null_chk14 = icmp eq i64 %cast13, 0
   %null_ext15 = zext i1 %null_chk14 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20958, i64 10, ptr @sty_name.20959, i64 25, i64 %null_ext15, ptr @src_file.20960, i64 0, i64 1366)
+  call void @avra_null_deref_trap(ptr @fld_name.20958, i64 10, ptr @sty_name.20959, i64 25, i64 %null_ext15, ptr @src_file.20960, i64 0, i64 1367)
   %self16 = load ptr, ptr %self, align 8
   %cast17 = ptrtoint ptr %self16 to i64
   %null_chk18 = icmp eq i64 %cast17, 0
   %null_ext19 = zext i1 %null_chk18 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20961, i64 11, ptr @sty_name.20962, i64 25, i64 %null_ext19, ptr @src_file.20963, i64 0, i64 1366)
+  call void @avra_null_deref_trap(ptr @fld_name.20961, i64 11, ptr @sty_name.20962, i64 25, i64 %null_ext19, ptr @src_file.20963, i64 0, i64 1367)
   %source_file_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self16, i32 0, i32 28
   %source_file = load ptr, ptr %source_file_ptr, align 8
   %5 = call ptr @"@std::avrac::codegen::Ctx__global_str"(ptr %self12, ptr %source_file, ptr @.str.20964)
@@ -273808,12 +273818,12 @@ entry:
   %cast22 = ptrtoint ptr %self21 to i64
   %null_chk23 = icmp eq i64 %cast22, 0
   %null_ext24 = zext i1 %null_chk23 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20965, i64 3, ptr @sty_name.20966, i64 25, i64 %null_ext24, ptr @src_file.20967, i64 0, i64 1366)
+  call void @avra_null_deref_trap(ptr @fld_name.20965, i64 3, ptr @sty_name.20966, i64 25, i64 %null_ext24, ptr @src_file.20967, i64 0, i64 1367)
   %self25 = load ptr, ptr %self, align 8
   %cast26 = ptrtoint ptr %self25 to i64
   %null_chk27 = icmp eq i64 %cast26, 0
   %null_ext28 = zext i1 %null_chk27 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20968, i64 11, ptr @sty_name.20969, i64 25, i64 %null_ext28, ptr @src_file.20970, i64 0, i64 1366)
+  call void @avra_null_deref_trap(ptr @fld_name.20968, i64 11, ptr @sty_name.20969, i64 25, i64 %null_ext28, ptr @src_file.20970, i64 0, i64 1367)
   %source_file_ptr29 = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self25, i32 0, i32 28
   %source_file30 = load ptr, ptr %source_file_ptr29, align 8
   %6 = call i64 @strlen(ptr %source_file30)
@@ -273824,12 +273834,12 @@ entry:
   %cast33 = ptrtoint ptr %self32 to i64
   %null_chk34 = icmp eq i64 %cast33, 0
   %null_ext35 = zext i1 %null_chk34 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20971, i64 3, ptr @sty_name.20972, i64 25, i64 %null_ext35, ptr @src_file.20973, i64 0, i64 1366)
+  call void @avra_null_deref_trap(ptr @fld_name.20971, i64 3, ptr @sty_name.20972, i64 25, i64 %null_ext35, ptr @src_file.20973, i64 0, i64 1367)
   %self36 = load ptr, ptr %self, align 8
   %cast37 = ptrtoint ptr %self36 to i64
   %null_chk38 = icmp eq i64 %cast37, 0
   %null_ext39 = zext i1 %null_chk38 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20974, i64 11, ptr @sty_name.20975, i64 25, i64 %null_ext39, ptr @src_file.20976, i64 0, i64 1366)
+  call void @avra_null_deref_trap(ptr @fld_name.20974, i64 11, ptr @sty_name.20975, i64 25, i64 %null_ext39, ptr @src_file.20976, i64 0, i64 1367)
   %source_line_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self36, i32 0, i32 29
   %source_line = load i64, ptr %source_line_ptr, align 8
   %8 = call ptr @"@std::avrac::codegen::Ctx__i64"(ptr %self32, i64 %source_line)
@@ -273850,7 +273860,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20977, i64 7, ptr @sty_name.20978, i64 25, i64 %null_ext, ptr @src_file.20979, i64 0, i64 1375)
+  call void @avra_null_deref_trap(ptr @fld_name.20977, i64 7, ptr @sty_name.20978, i64 25, i64 %null_ext, ptr @src_file.20979, i64 0, i64 1376)
   %structs_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 12
   %structs = load ptr, ptr %structs_ptr, align 8
   %name2 = load ptr, ptr %name, align 8
@@ -273868,7 +273878,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20980, i64 5, ptr @sty_name.20981, i64 25, i64 %null_ext, ptr @src_file.20982, i64 0, i64 1376)
+  call void @avra_null_deref_trap(ptr @fld_name.20980, i64 5, ptr @sty_name.20981, i64 25, i64 %null_ext, ptr @src_file.20982, i64 0, i64 1377)
   %enums_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 13
   %enums = load ptr, ptr %enums_ptr, align 8
   %name2 = load ptr, ptr %name, align 8
@@ -273886,7 +273896,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20983, i64 14, ptr @sty_name.20984, i64 25, i64 %null_ext, ptr @src_file.20985, i64 0, i64 1377)
+  call void @avra_null_deref_trap(ptr @fld_name.20983, i64 14, ptr @sty_name.20984, i64 25, i64 %null_ext, ptr @src_file.20985, i64 0, i64 1378)
   %top_level_vars_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 16
   %top_level_vars = load ptr, ptr %top_level_vars_ptr, align 8
   %name2 = load ptr, ptr %name, align 8
@@ -273906,7 +273916,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20986, i64 11, ptr @sty_name.20987, i64 25, i64 %null_ext, ptr @src_file.20988, i64 0, i64 1381)
+  call void @avra_null_deref_trap(ptr @fld_name.20986, i64 11, ptr @sty_name.20987, i64 25, i64 %null_ext, ptr @src_file.20988, i64 0, i64 1382)
   %enum_name2 = load ptr, ptr %enum_name, align 8
   %2 = call ptr @"@std::avrac::codegen::Ctx__lookup_enum"(ptr %self1, ptr %enum_name2)
   store ptr %2, ptr %lookup, align 8
@@ -273914,7 +273924,7 @@ entry:
   %cast4 = ptrtoint ptr %lookup3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20989, i64 5, ptr @sty_name.20990, i64 32, i64 %null_ext6, ptr @src_file.20991, i64 0, i64 1382)
+  call void @avra_null_deref_trap(ptr @fld_name.20989, i64 5, ptr @sty_name.20990, i64 32, i64 %null_ext6, ptr @src_file.20991, i64 0, i64 1383)
   %found_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::EnumLookup", ptr %lookup3, i32 0, i32 0
   %found = load i64, ptr %found_ptr, align 8
   %not_cmp = icmp eq i64 %found, 0
@@ -273927,7 +273937,7 @@ ifcont:                                           ; preds = %if_else
   %cast10 = ptrtoint ptr %lookup9 to i64
   %null_chk11 = icmp eq i64 %cast10, 0
   %null_ext12 = zext i1 %null_chk11 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20992, i64 8, ptr @sty_name.20993, i64 32, i64 %null_ext12, ptr @src_file.20994, i64 0, i64 1383)
+  call void @avra_null_deref_trap(ptr @fld_name.20992, i64 8, ptr @sty_name.20993, i64 32, i64 %null_ext12, ptr @src_file.20994, i64 0, i64 1384)
   %variants_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::EnumLookup", ptr %lookup9, i32 0, i32 1
   %variants = load ptr, ptr %variants_ptr, align 8
   %3 = call ptr @"@std::avrac::core::variant_lookup"(ptr %variants, ptr @.str.20995)
@@ -273936,7 +273946,7 @@ ifcont:                                           ; preds = %if_else
   %cast14 = ptrtoint ptr %ok13 to i64
   %null_chk15 = icmp eq i64 %cast14, 0
   %null_ext16 = zext i1 %null_chk15 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20996, i64 5, ptr @sty_name.20997, i64 32, i64 %null_ext16, ptr @src_file.20998, i64 0, i64 1384)
+  call void @avra_null_deref_trap(ptr @fld_name.20996, i64 5, ptr @sty_name.20997, i64 32, i64 %null_ext16, ptr @src_file.20998, i64 0, i64 1385)
   %found_ptr17 = getelementptr inbounds nuw %"@std::avrac::core::VariantLookup", ptr %ok13, i32 0, i32 0
   %found18 = load i64, ptr %found_ptr17, align 8
   %not_cmp19 = icmp eq i64 %found18, 0
@@ -273962,7 +273972,7 @@ ifcont21:                                         ; preds = %if_else24
   %cast30 = ptrtoint ptr %ok29 to i64
   %null_chk31 = icmp eq i64 %cast30, 0
   %null_ext32 = zext i1 %null_chk31 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.20999, i64 6, ptr @sty_name.21000, i64 32, i64 %null_ext32, ptr @src_file.21001, i64 0, i64 1385)
+  call void @avra_null_deref_trap(ptr @fld_name.20999, i64 6, ptr @sty_name.21000, i64 32, i64 %null_ext32, ptr @src_file.21001, i64 0, i64 1386)
   %fields_ptr = getelementptr inbounds nuw %"@std::avrac::core::VariantLookup", ptr %ok29, i32 0, i32 1
   %fields = load ptr, ptr %fields_ptr, align 8
   %5 = call ptr @"@std::avrac::codegen::field_resolved_at"(ptr %fields, i64 0)
@@ -273994,7 +274004,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21002, i64 11, ptr @sty_name.21003, i64 25, i64 %null_ext, ptr @src_file.21004, i64 0, i64 1389)
+  call void @avra_null_deref_trap(ptr @fld_name.21002, i64 11, ptr @sty_name.21003, i64 25, i64 %null_ext, ptr @src_file.21004, i64 0, i64 1390)
   %enum_name2 = load ptr, ptr %enum_name, align 8
   %2 = call ptr @"@std::avrac::codegen::Ctx__lookup_enum"(ptr %self1, ptr %enum_name2)
   store ptr %2, ptr %lookup, align 8
@@ -274002,7 +274012,7 @@ entry:
   %cast4 = ptrtoint ptr %lookup3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21005, i64 5, ptr @sty_name.21006, i64 32, i64 %null_ext6, ptr @src_file.21007, i64 0, i64 1390)
+  call void @avra_null_deref_trap(ptr @fld_name.21005, i64 5, ptr @sty_name.21006, i64 32, i64 %null_ext6, ptr @src_file.21007, i64 0, i64 1391)
   %found_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::EnumLookup", ptr %lookup3, i32 0, i32 0
   %found = load i64, ptr %found_ptr, align 8
   %not_cmp = icmp eq i64 %found, 0
@@ -274015,7 +274025,7 @@ ifcont:                                           ; preds = %if_else
   %cast10 = ptrtoint ptr %lookup9 to i64
   %null_chk11 = icmp eq i64 %cast10, 0
   %null_ext12 = zext i1 %null_chk11 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21008, i64 8, ptr @sty_name.21009, i64 32, i64 %null_ext12, ptr @src_file.21010, i64 0, i64 1391)
+  call void @avra_null_deref_trap(ptr @fld_name.21008, i64 8, ptr @sty_name.21009, i64 32, i64 %null_ext12, ptr @src_file.21010, i64 0, i64 1392)
   %variants_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::EnumLookup", ptr %lookup9, i32 0, i32 1
   %variants = load ptr, ptr %variants_ptr, align 8
   %3 = call ptr @"@std::avrac::core::variant_lookup"(ptr %variants, ptr @.str.21011)
@@ -274024,7 +274034,7 @@ ifcont:                                           ; preds = %if_else
   %cast14 = ptrtoint ptr %ev13 to i64
   %null_chk15 = icmp eq i64 %cast14, 0
   %null_ext16 = zext i1 %null_chk15 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21012, i64 5, ptr @sty_name.21013, i64 32, i64 %null_ext16, ptr @src_file.21014, i64 0, i64 1392)
+  call void @avra_null_deref_trap(ptr @fld_name.21012, i64 5, ptr @sty_name.21013, i64 32, i64 %null_ext16, ptr @src_file.21014, i64 0, i64 1393)
   %found_ptr17 = getelementptr inbounds nuw %"@std::avrac::core::VariantLookup", ptr %ev13, i32 0, i32 0
   %found18 = load i64, ptr %found_ptr17, align 8
   %not_cmp19 = icmp eq i64 %found18, 0
@@ -274050,7 +274060,7 @@ ifcont21:                                         ; preds = %if_else24
   %cast30 = ptrtoint ptr %ev29 to i64
   %null_chk31 = icmp eq i64 %cast30, 0
   %null_ext32 = zext i1 %null_chk31 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21015, i64 6, ptr @sty_name.21016, i64 32, i64 %null_ext32, ptr @src_file.21017, i64 0, i64 1393)
+  call void @avra_null_deref_trap(ptr @fld_name.21015, i64 6, ptr @sty_name.21016, i64 32, i64 %null_ext32, ptr @src_file.21017, i64 0, i64 1394)
   %fields_ptr = getelementptr inbounds nuw %"@std::avrac::core::VariantLookup", ptr %ev29, i32 0, i32 1
   %fields = load ptr, ptr %fields_ptr, align 8
   %5 = call ptr @"@std::avrac::codegen::field_resolved_at"(ptr %fields, i64 0)
@@ -274080,7 +274090,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21018, i64 9, ptr @sty_name.21019, i64 25, i64 %null_ext, ptr @src_file.21020, i64 0, i64 1395)
+  call void @avra_null_deref_trap(ptr @fld_name.21018, i64 9, ptr @sty_name.21019, i64 25, i64 %null_ext, ptr @src_file.21020, i64 0, i64 1396)
   %fn_params_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 15
   %fn_params = load ptr, ptr %fn_params_ptr, align 8
   %name2 = load ptr, ptr %name, align 8
@@ -274099,20 +274109,20 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21021, i64 9, ptr @sty_name.21022, i64 25, i64 %null_ext, ptr @src_file.21023, i64 0, i64 1401)
+  call void @avra_null_deref_trap(ptr @fld_name.21021, i64 9, ptr @sty_name.21022, i64 25, i64 %null_ext, ptr @src_file.21023, i64 0, i64 1402)
   %2 = call ptr @"@std::avrac::codegen::Ctx__array_new"(ptr %self1)
   store ptr %2, ptr %arr, align 8
   %self2 = load ptr, ptr %self, align 8
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21024, i64 10, ptr @sty_name.21025, i64 25, i64 %null_ext5, ptr @src_file.21026, i64 0, i64 1402)
+  call void @avra_null_deref_trap(ptr @fld_name.21024, i64 10, ptr @sty_name.21025, i64 25, i64 %null_ext5, ptr @src_file.21026, i64 0, i64 1403)
   %arr6 = load ptr, ptr %arr, align 8
   %self7 = load ptr, ptr %self, align 8
   %cast8 = ptrtoint ptr %self7 to i64
   %null_chk9 = icmp eq i64 %cast8, 0
   %null_ext10 = zext i1 %null_chk9 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21027, i64 3, ptr @sty_name.21028, i64 25, i64 %null_ext10, ptr @src_file.21029, i64 0, i64 1402)
+  call void @avra_null_deref_trap(ptr @fld_name.21027, i64 3, ptr @sty_name.21028, i64 25, i64 %null_ext10, ptr @src_file.21029, i64 0, i64 1403)
   %3 = call i64 @"@std::avrac::codegen::closure_marker"()
   %4 = call ptr @"@std::avrac::codegen::Ctx__i64"(ptr %self7, i64 %3)
   %5 = call i64 @"@std::avrac::codegen::Ctx__array_push"(ptr %self2, ptr %arr6, ptr %4)
@@ -274120,7 +274130,7 @@ entry:
   %cast12 = ptrtoint ptr %self11 to i64
   %null_chk13 = icmp eq i64 %cast12, 0
   %null_ext14 = zext i1 %null_chk13 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21030, i64 10, ptr @sty_name.21031, i64 25, i64 %null_ext14, ptr @src_file.21032, i64 0, i64 1403)
+  call void @avra_null_deref_trap(ptr @fld_name.21030, i64 10, ptr @sty_name.21031, i64 25, i64 %null_ext14, ptr @src_file.21032, i64 0, i64 1404)
   %arr15 = load ptr, ptr %arr, align 8
   %fn_ptr16 = load ptr, ptr %fn_ptr, align 8
   %6 = call i64 @"@std::avrac::codegen::Ctx__array_push"(ptr %self11, ptr %arr15, ptr %fn_ptr16)
@@ -274451,7 +274461,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21033, i64 8, ptr @sty_name.21034, i64 25, i64 %null_ext, ptr @src_file.21035, i64 0, i64 1419)
+  call void @avra_null_deref_trap(ptr @fld_name.21033, i64 8, ptr @sty_name.21034, i64 25, i64 %null_ext, ptr @src_file.21035, i64 0, i64 1420)
   %coverage_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 27
   %coverage = load i1, ptr %coverage_ptr, align 8
   store i64 0, ptr %sif_result, align 8
@@ -274462,21 +274472,21 @@ sif_then:                                         ; preds = %entry
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21036, i64 7, ptr @sty_name.21037, i64 25, i64 %null_ext5, ptr @src_file.21038, i64 0, i64 1420)
+  call void @avra_null_deref_trap(ptr @fld_name.21036, i64 7, ptr @sty_name.21037, i64 25, i64 %null_ext5, ptr @src_file.21038, i64 0, i64 1421)
   %builder_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self2, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %self6 = load ptr, ptr %self, align 8
   %cast7 = ptrtoint ptr %self6 to i64
   %null_chk8 = icmp eq i64 %cast7, 0
   %null_ext9 = zext i1 %null_chk8 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21039, i64 6, ptr @sty_name.21040, i64 25, i64 %null_ext9, ptr @src_file.21041, i64 0, i64 1420)
+  call void @avra_null_deref_trap(ptr @fld_name.21039, i64 6, ptr @sty_name.21040, i64 25, i64 %null_ext9, ptr @src_file.21041, i64 0, i64 1421)
   %module_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self6, i32 0, i32 1
   %module = load ptr, ptr %module_ptr, align 8
   %self10 = load ptr, ptr %self, align 8
   %cast11 = ptrtoint ptr %self10 to i64
   %null_chk12 = icmp eq i64 %cast11, 0
   %null_ext13 = zext i1 %null_chk12 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21042, i64 15, ptr @sty_name.21043, i64 25, i64 %null_ext13, ptr @src_file.21044, i64 0, i64 1420)
+  call void @avra_null_deref_trap(ptr @fld_name.21042, i64 15, ptr @sty_name.21043, i64 25, i64 %null_ext13, ptr @src_file.21044, i64 0, i64 1421)
   %current_fn_name_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self10, i32 0, i32 4
   %current_fn_name = load ptr, ptr %current_fn_name_ptr, align 8
   %counter_idx14 = load i64, ptr %counter_idx, align 8
@@ -274501,7 +274511,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21045, i64 8, ptr @sty_name.21046, i64 25, i64 %null_ext, ptr @src_file.21047, i64 0, i64 1426)
+  call void @avra_null_deref_trap(ptr @fld_name.21045, i64 8, ptr @sty_name.21046, i64 25, i64 %null_ext, ptr @src_file.21047, i64 0, i64 1427)
   %coverage_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 27
   %coverage = load i1, ptr %coverage_ptr, align 8
   %not_cmp = icmp eq i1 %coverage, false
@@ -274514,14 +274524,14 @@ ifcont:                                           ; preds = %if_else
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21049, i64 15, ptr @sty_name.21050, i64 25, i64 %null_ext5, ptr @src_file.21051, i64 0, i64 1427)
+  call void @avra_null_deref_trap(ptr @fld_name.21049, i64 15, ptr @sty_name.21050, i64 25, i64 %null_ext5, ptr @src_file.21051, i64 0, i64 1428)
   %current_fn_name_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self2, i32 0, i32 4
   %current_fn_name = load ptr, ptr %current_fn_name_ptr, align 8
   %self6 = load ptr, ptr %self, align 8
   %cast7 = ptrtoint ptr %self6 to i64
   %null_chk8 = icmp eq i64 %cast7, 0
   %null_ext9 = zext i1 %null_chk8 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21052, i64 11, ptr @sty_name.21053, i64 25, i64 %null_ext9, ptr @src_file.21054, i64 0, i64 1427)
+  call void @avra_null_deref_trap(ptr @fld_name.21052, i64 11, ptr @sty_name.21053, i64 25, i64 %null_ext9, ptr @src_file.21054, i64 0, i64 1428)
   %source_line_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self6, i32 0, i32 29
   %source_line = load i64, ptr %source_line_ptr, align 8
   %1 = call i64 @avra_covmap_alloc(ptr @.str.21048, ptr %current_fn_name, i64 %source_line, i64 0, i64 0)
@@ -274547,7 +274557,7 @@ if_then13:                                        ; preds = %ifcont
   %cast16 = ptrtoint ptr %self15 to i64
   %null_chk17 = icmp eq i64 %cast16, 0
   %null_ext18 = zext i1 %null_chk17 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21055, i64 7, ptr @sty_name.21056, i64 25, i64 %null_ext18, ptr @src_file.21057, i64 0, i64 1428)
+  call void @avra_null_deref_trap(ptr @fld_name.21055, i64 7, ptr @sty_name.21056, i64 25, i64 %null_ext18, ptr @src_file.21057, i64 0, i64 1429)
   %id19 = load i64, ptr %id, align 8
   %2 = call i64 @"@std::avrac::codegen::Ctx__cov_hit"(ptr %self15, i64 %id19)
   br label %ifcont11
@@ -274565,7 +274575,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21058, i64 8, ptr @sty_name.21059, i64 25, i64 %null_ext, ptr @src_file.21060, i64 0, i64 1433)
+  call void @avra_null_deref_trap(ptr @fld_name.21058, i64 8, ptr @sty_name.21059, i64 25, i64 %null_ext, ptr @src_file.21060, i64 0, i64 1434)
   %coverage_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 27
   %coverage = load i1, ptr %coverage_ptr, align 8
   %not_cmp = icmp eq i1 %coverage, false
@@ -274579,14 +274589,14 @@ ifcont:                                           ; preds = %if_else
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21062, i64 15, ptr @sty_name.21063, i64 25, i64 %null_ext5, ptr @src_file.21064, i64 0, i64 1435)
+  call void @avra_null_deref_trap(ptr @fld_name.21062, i64 15, ptr @sty_name.21063, i64 25, i64 %null_ext5, ptr @src_file.21064, i64 0, i64 1436)
   %current_fn_name_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self2, i32 0, i32 4
   %current_fn_name = load ptr, ptr %current_fn_name_ptr, align 8
   %self6 = load ptr, ptr %self, align 8
   %cast7 = ptrtoint ptr %self6 to i64
   %null_chk8 = icmp eq i64 %cast7, 0
   %null_ext9 = zext i1 %null_chk8 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21065, i64 11, ptr @sty_name.21066, i64 25, i64 %null_ext9, ptr @src_file.21067, i64 0, i64 1435)
+  call void @avra_null_deref_trap(ptr @fld_name.21065, i64 11, ptr @sty_name.21066, i64 25, i64 %null_ext9, ptr @src_file.21067, i64 0, i64 1436)
   %source_line_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self6, i32 0, i32 29
   %source_line = load i64, ptr %source_line_ptr, align 8
   %2 = call i64 @avra_covmap_alloc(ptr @.str.21061, ptr %current_fn_name, i64 %source_line, i64 0, i64 0)
@@ -274612,7 +274622,7 @@ if_then13:                                        ; preds = %ifcont
   %cast16 = ptrtoint ptr %self15 to i64
   %null_chk17 = icmp eq i64 %cast16, 0
   %null_ext18 = zext i1 %null_chk17 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21068, i64 7, ptr @sty_name.21069, i64 25, i64 %null_ext18, ptr @src_file.21070, i64 0, i64 1436)
+  call void @avra_null_deref_trap(ptr @fld_name.21068, i64 7, ptr @sty_name.21069, i64 25, i64 %null_ext18, ptr @src_file.21070, i64 0, i64 1437)
   %id19 = load i64, ptr %id, align 8
   %3 = call i64 @"@std::avrac::codegen::Ctx__cov_hit"(ptr %self15, i64 %id19)
   br label %ifcont11
@@ -274632,7 +274642,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21071, i64 8, ptr @sty_name.21072, i64 25, i64 %null_ext, ptr @src_file.21073, i64 0, i64 1441)
+  call void @avra_null_deref_trap(ptr @fld_name.21071, i64 8, ptr @sty_name.21072, i64 25, i64 %null_ext, ptr @src_file.21073, i64 0, i64 1442)
   %coverage_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 27
   %coverage = load i1, ptr %coverage_ptr, align 8
   %not_cmp = icmp eq i1 %coverage, false
@@ -274645,14 +274655,14 @@ ifcont:                                           ; preds = %if_else
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21075, i64 15, ptr @sty_name.21076, i64 25, i64 %null_ext5, ptr @src_file.21077, i64 0, i64 1442)
+  call void @avra_null_deref_trap(ptr @fld_name.21075, i64 15, ptr @sty_name.21076, i64 25, i64 %null_ext5, ptr @src_file.21077, i64 0, i64 1443)
   %current_fn_name_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self2, i32 0, i32 4
   %current_fn_name = load ptr, ptr %current_fn_name_ptr, align 8
   %self6 = load ptr, ptr %self, align 8
   %cast7 = ptrtoint ptr %self6 to i64
   %null_chk8 = icmp eq i64 %cast7, 0
   %null_ext9 = zext i1 %null_chk8 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21078, i64 11, ptr @sty_name.21079, i64 25, i64 %null_ext9, ptr @src_file.21080, i64 0, i64 1442)
+  call void @avra_null_deref_trap(ptr @fld_name.21078, i64 11, ptr @sty_name.21079, i64 25, i64 %null_ext9, ptr @src_file.21080, i64 0, i64 1443)
   %source_line_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self6, i32 0, i32 29
   %source_line = load i64, ptr %source_line_ptr, align 8
   %branch_id10 = load i64, ptr %branch_id, align 8
@@ -274679,7 +274689,7 @@ if_then14:                                        ; preds = %ifcont
   %cast17 = ptrtoint ptr %self16 to i64
   %null_chk18 = icmp eq i64 %cast17, 0
   %null_ext19 = zext i1 %null_chk18 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21081, i64 7, ptr @sty_name.21082, i64 25, i64 %null_ext19, ptr @src_file.21083, i64 0, i64 1443)
+  call void @avra_null_deref_trap(ptr @fld_name.21081, i64 7, ptr @sty_name.21082, i64 25, i64 %null_ext19, ptr @src_file.21083, i64 0, i64 1444)
   %id20 = load i64, ptr %id, align 8
   %3 = call i64 @"@std::avrac::codegen::Ctx__cov_hit"(ptr %self16, i64 %id20)
   br label %ifcont12
@@ -274699,7 +274709,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21084, i64 8, ptr @sty_name.21085, i64 25, i64 %null_ext, ptr @src_file.21086, i64 0, i64 1448)
+  call void @avra_null_deref_trap(ptr @fld_name.21084, i64 8, ptr @sty_name.21085, i64 25, i64 %null_ext, ptr @src_file.21086, i64 0, i64 1449)
   %coverage_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 27
   %coverage = load i1, ptr %coverage_ptr, align 8
   %not_cmp = icmp eq i1 %coverage, false
@@ -274712,14 +274722,14 @@ ifcont:                                           ; preds = %if_else
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21088, i64 15, ptr @sty_name.21089, i64 25, i64 %null_ext5, ptr @src_file.21090, i64 0, i64 1449)
+  call void @avra_null_deref_trap(ptr @fld_name.21088, i64 15, ptr @sty_name.21089, i64 25, i64 %null_ext5, ptr @src_file.21090, i64 0, i64 1450)
   %current_fn_name_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self2, i32 0, i32 4
   %current_fn_name = load ptr, ptr %current_fn_name_ptr, align 8
   %self6 = load ptr, ptr %self, align 8
   %cast7 = ptrtoint ptr %self6 to i64
   %null_chk8 = icmp eq i64 %cast7, 0
   %null_ext9 = zext i1 %null_chk8 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21091, i64 11, ptr @sty_name.21092, i64 25, i64 %null_ext9, ptr @src_file.21093, i64 0, i64 1449)
+  call void @avra_null_deref_trap(ptr @fld_name.21091, i64 11, ptr @sty_name.21092, i64 25, i64 %null_ext9, ptr @src_file.21093, i64 0, i64 1450)
   %source_line_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self6, i32 0, i32 29
   %source_line = load i64, ptr %source_line_ptr, align 8
   %branch_id10 = load i64, ptr %branch_id, align 8
@@ -274746,7 +274756,7 @@ if_then14:                                        ; preds = %ifcont
   %cast17 = ptrtoint ptr %self16 to i64
   %null_chk18 = icmp eq i64 %cast17, 0
   %null_ext19 = zext i1 %null_chk18 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21094, i64 7, ptr @sty_name.21095, i64 25, i64 %null_ext19, ptr @src_file.21096, i64 0, i64 1450)
+  call void @avra_null_deref_trap(ptr @fld_name.21094, i64 7, ptr @sty_name.21095, i64 25, i64 %null_ext19, ptr @src_file.21096, i64 0, i64 1451)
   %id20 = load i64, ptr %id, align 8
   %3 = call i64 @"@std::avrac::codegen::Ctx__cov_hit"(ptr %self16, i64 %id20)
   br label %ifcont12
@@ -274766,7 +274776,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21097, i64 8, ptr @sty_name.21098, i64 25, i64 %null_ext, ptr @src_file.21099, i64 0, i64 1455)
+  call void @avra_null_deref_trap(ptr @fld_name.21097, i64 8, ptr @sty_name.21098, i64 25, i64 %null_ext, ptr @src_file.21099, i64 0, i64 1456)
   %coverage_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 27
   %coverage = load i1, ptr %coverage_ptr, align 8
   %not_cmp = icmp eq i1 %coverage, false
@@ -274779,14 +274789,14 @@ ifcont:                                           ; preds = %if_else
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21101, i64 15, ptr @sty_name.21102, i64 25, i64 %null_ext5, ptr @src_file.21103, i64 0, i64 1456)
+  call void @avra_null_deref_trap(ptr @fld_name.21101, i64 15, ptr @sty_name.21102, i64 25, i64 %null_ext5, ptr @src_file.21103, i64 0, i64 1457)
   %current_fn_name_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self2, i32 0, i32 4
   %current_fn_name = load ptr, ptr %current_fn_name_ptr, align 8
   %self6 = load ptr, ptr %self, align 8
   %cast7 = ptrtoint ptr %self6 to i64
   %null_chk8 = icmp eq i64 %cast7, 0
   %null_ext9 = zext i1 %null_chk8 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21104, i64 11, ptr @sty_name.21105, i64 25, i64 %null_ext9, ptr @src_file.21106, i64 0, i64 1456)
+  call void @avra_null_deref_trap(ptr @fld_name.21104, i64 11, ptr @sty_name.21105, i64 25, i64 %null_ext9, ptr @src_file.21106, i64 0, i64 1457)
   %source_line_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self6, i32 0, i32 29
   %source_line = load i64, ptr %source_line_ptr, align 8
   %arm_idx10 = load i64, ptr %arm_idx, align 8
@@ -274813,7 +274823,7 @@ if_then14:                                        ; preds = %ifcont
   %cast17 = ptrtoint ptr %self16 to i64
   %null_chk18 = icmp eq i64 %cast17, 0
   %null_ext19 = zext i1 %null_chk18 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21107, i64 7, ptr @sty_name.21108, i64 25, i64 %null_ext19, ptr @src_file.21109, i64 0, i64 1457)
+  call void @avra_null_deref_trap(ptr @fld_name.21107, i64 7, ptr @sty_name.21108, i64 25, i64 %null_ext19, ptr @src_file.21109, i64 0, i64 1458)
   %id20 = load i64, ptr %id, align 8
   %3 = call i64 @"@std::avrac::codegen::Ctx__cov_hit"(ptr %self16, i64 %id20)
   br label %ifcont12
@@ -274833,7 +274843,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21110, i64 8, ptr @sty_name.21111, i64 25, i64 %null_ext, ptr @src_file.21112, i64 0, i64 1464)
+  call void @avra_null_deref_trap(ptr @fld_name.21110, i64 8, ptr @sty_name.21111, i64 25, i64 %null_ext, ptr @src_file.21112, i64 0, i64 1465)
   %coverage_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 27
   %coverage = load i1, ptr %coverage_ptr, align 8
   %not_cmp = icmp eq i1 %coverage, false
@@ -274846,14 +274856,14 @@ ifcont:                                           ; preds = %if_else
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21114, i64 15, ptr @sty_name.21115, i64 25, i64 %null_ext5, ptr @src_file.21116, i64 0, i64 1465)
+  call void @avra_null_deref_trap(ptr @fld_name.21114, i64 15, ptr @sty_name.21115, i64 25, i64 %null_ext5, ptr @src_file.21116, i64 0, i64 1466)
   %current_fn_name_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self2, i32 0, i32 4
   %current_fn_name = load ptr, ptr %current_fn_name_ptr, align 8
   %self6 = load ptr, ptr %self, align 8
   %cast7 = ptrtoint ptr %self6 to i64
   %null_chk8 = icmp eq i64 %cast7, 0
   %null_ext9 = zext i1 %null_chk8 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21117, i64 11, ptr @sty_name.21118, i64 25, i64 %null_ext9, ptr @src_file.21119, i64 0, i64 1465)
+  call void @avra_null_deref_trap(ptr @fld_name.21117, i64 11, ptr @sty_name.21118, i64 25, i64 %null_ext9, ptr @src_file.21119, i64 0, i64 1466)
   %source_line_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self6, i32 0, i32 29
   %source_line = load i64, ptr %source_line_ptr, align 8
   %decision_id10 = load i64, ptr %decision_id, align 8
@@ -274880,7 +274890,7 @@ if_then14:                                        ; preds = %ifcont
   %cast17 = ptrtoint ptr %self16 to i64
   %null_chk18 = icmp eq i64 %cast17, 0
   %null_ext19 = zext i1 %null_chk18 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21120, i64 7, ptr @sty_name.21121, i64 25, i64 %null_ext19, ptr @src_file.21122, i64 0, i64 1466)
+  call void @avra_null_deref_trap(ptr @fld_name.21120, i64 7, ptr @sty_name.21121, i64 25, i64 %null_ext19, ptr @src_file.21122, i64 0, i64 1467)
   %id20 = load i64, ptr %id, align 8
   %3 = call i64 @"@std::avrac::codegen::Ctx__cov_hit"(ptr %self16, i64 %id20)
   br label %ifcont12
@@ -274900,7 +274910,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21123, i64 8, ptr @sty_name.21124, i64 25, i64 %null_ext, ptr @src_file.21125, i64 0, i64 1471)
+  call void @avra_null_deref_trap(ptr @fld_name.21123, i64 8, ptr @sty_name.21124, i64 25, i64 %null_ext, ptr @src_file.21125, i64 0, i64 1472)
   %coverage_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 27
   %coverage = load i1, ptr %coverage_ptr, align 8
   %not_cmp = icmp eq i1 %coverage, false
@@ -274913,14 +274923,14 @@ ifcont:                                           ; preds = %if_else
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21127, i64 15, ptr @sty_name.21128, i64 25, i64 %null_ext5, ptr @src_file.21129, i64 0, i64 1472)
+  call void @avra_null_deref_trap(ptr @fld_name.21127, i64 15, ptr @sty_name.21128, i64 25, i64 %null_ext5, ptr @src_file.21129, i64 0, i64 1473)
   %current_fn_name_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self2, i32 0, i32 4
   %current_fn_name = load ptr, ptr %current_fn_name_ptr, align 8
   %self6 = load ptr, ptr %self, align 8
   %cast7 = ptrtoint ptr %self6 to i64
   %null_chk8 = icmp eq i64 %cast7, 0
   %null_ext9 = zext i1 %null_chk8 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21130, i64 11, ptr @sty_name.21131, i64 25, i64 %null_ext9, ptr @src_file.21132, i64 0, i64 1472)
+  call void @avra_null_deref_trap(ptr @fld_name.21130, i64 11, ptr @sty_name.21131, i64 25, i64 %null_ext9, ptr @src_file.21132, i64 0, i64 1473)
   %source_line_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self6, i32 0, i32 29
   %source_line = load i64, ptr %source_line_ptr, align 8
   %decision_id10 = load i64, ptr %decision_id, align 8
@@ -274947,7 +274957,7 @@ if_then14:                                        ; preds = %ifcont
   %cast17 = ptrtoint ptr %self16 to i64
   %null_chk18 = icmp eq i64 %cast17, 0
   %null_ext19 = zext i1 %null_chk18 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21133, i64 7, ptr @sty_name.21134, i64 25, i64 %null_ext19, ptr @src_file.21135, i64 0, i64 1473)
+  call void @avra_null_deref_trap(ptr @fld_name.21133, i64 7, ptr @sty_name.21134, i64 25, i64 %null_ext19, ptr @src_file.21135, i64 0, i64 1474)
   %id20 = load i64, ptr %id, align 8
   %3 = call i64 @"@std::avrac::codegen::Ctx__cov_hit"(ptr %self16, i64 %id20)
   br label %ifcont12
@@ -274966,7 +274976,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21136, i64 8, ptr @sty_name.21137, i64 25, i64 %null_ext, ptr @src_file.21138, i64 0, i64 1480)
+  call void @avra_null_deref_trap(ptr @fld_name.21136, i64 8, ptr @sty_name.21137, i64 25, i64 %null_ext, ptr @src_file.21138, i64 0, i64 1481)
   %coverage_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self1, i32 0, i32 27
   %coverage = load i1, ptr %coverage_ptr, align 8
   %not_cmp = icmp eq i1 %coverage, false
@@ -274995,7 +275005,7 @@ sif_then:                                         ; preds = %ifcont
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @avra_null_deref_trap(ptr @fld_name.21139, i64 10, ptr @sty_name.21140, i64 25, i64 %null_ext6, ptr @src_file.21141, i64 0, i64 1483)
+  call void @avra_null_deref_trap(ptr @fld_name.21139, i64 10, ptr @sty_name.21140, i64 25, i64 %null_ext6, ptr @src_file.21141, i64 0, i64 1484)
   %current_fn_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::Ctx", ptr %self3, i32 0, i32 3
   %current_fn = load ptr, ptr %current_fn_ptr, align 8
   %count7 = load i64, ptr %count, align 8
@@ -277913,9 +277923,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -278003,14 +278013,14 @@ entry:
 
 match_end:                                        ; preds = %march_arm3, %march_arm
   %match_val = load i64, ptr %match_result, align 8
-  %cast27 = inttoptr i64 %match_val to ptr
-  ret ptr %cast27
+  %cast28 = inttoptr i64 %match_val to ptr
+  ret ptr %cast28
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -278046,9 +278056,9 @@ march_arm3:                                       ; preds = %march_next
   call void @avra_rc_retain(ptr %next)
   store ptr %next, ptr %next12, align 8
   %3 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr13 = getelementptr inbounds nuw %"@std::avrac::core::ParamList", ptr %3, i32 0, i32 0
+  %tag_ptr13 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplMethodRefList", ptr %3, i32 0, i32 0
   store i64 6384368267, ptr %tag_ptr13, align 8
-  %pay_ptr14 = getelementptr inbounds nuw %"@std::avrac::core::ParamList", ptr %3, i32 0, i32 1
+  %pay_ptr14 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplMethodRefList", ptr %3, i32 0, i32 1
   %4 = call ptr @avra_rc_alloc(i64 24)
   store ptr %4, ptr %pay_ptr14, align 8
   %name15 = load ptr, ptr %name6, align 8
@@ -278062,16 +278072,17 @@ march_arm3:                                       ; preds = %march_next
   %slot_base18 = ptrtoint ptr %4 to i64
   %slot_addr19 = add i64 %slot_base18, 8
   %slot20 = inttoptr i64 %slot_addr19 to ptr
-  store ptr %5, ptr %slot20, align 8
-  %next21 = load ptr, ptr %next12, align 8
-  %regs22 = load ptr, ptr %regs, align 8
-  %6 = call ptr @"@std::avrac::codegen::resolve_field_list"(ptr %next21, ptr %regs22)
-  %slot_base23 = ptrtoint ptr %4 to i64
-  %slot_addr24 = add i64 %slot_base23, 16
-  %slot25 = inttoptr i64 %slot_addr24 to ptr
-  store ptr %6, ptr %slot25, align 8
-  %cast26 = ptrtoint ptr %3 to i64
-  store i64 %cast26, ptr %match_result, align 8
+  %cast21 = ptrtoint ptr %5 to i64
+  store i64 %cast21, ptr %slot20, align 8
+  %next22 = load ptr, ptr %next12, align 8
+  %regs23 = load ptr, ptr %regs, align 8
+  %6 = call ptr @"@std::avrac::codegen::resolve_field_list"(ptr %next22, ptr %regs23)
+  %slot_base24 = ptrtoint ptr %4 to i64
+  %slot_addr25 = add i64 %slot_base24, 16
+  %slot26 = inttoptr i64 %slot_addr25 to ptr
+  store ptr %6, ptr %slot26, align 8
+  %cast27 = ptrtoint ptr %3 to i64
+  store i64 %cast27, ptr %match_result, align 8
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
@@ -278098,14 +278109,14 @@ entry:
 
 match_end:                                        ; preds = %march_arm3, %march_arm
   %match_val = load i64, ptr %match_result, align 8
-  %cast27 = inttoptr i64 %match_val to ptr
-  ret ptr %cast27
+  %cast28 = inttoptr i64 %match_val to ptr
+  ret ptr %cast28
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -278141,9 +278152,9 @@ march_arm3:                                       ; preds = %march_next
   call void @avra_rc_retain(ptr %next)
   store ptr %next, ptr %next12, align 8
   %3 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr13 = getelementptr inbounds nuw %"@std::avrac::core::ParamList", ptr %3, i32 0, i32 0
+  %tag_ptr13 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplMethodRefList", ptr %3, i32 0, i32 0
   store i64 6384368267, ptr %tag_ptr13, align 8
-  %pay_ptr14 = getelementptr inbounds nuw %"@std::avrac::core::ParamList", ptr %3, i32 0, i32 1
+  %pay_ptr14 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplMethodRefList", ptr %3, i32 0, i32 1
   %4 = call ptr @avra_rc_alloc(i64 24)
   store ptr %4, ptr %pay_ptr14, align 8
   %name15 = load ptr, ptr %name6, align 8
@@ -278157,16 +278168,17 @@ march_arm3:                                       ; preds = %march_next
   %slot_base18 = ptrtoint ptr %4 to i64
   %slot_addr19 = add i64 %slot_base18, 8
   %slot20 = inttoptr i64 %slot_addr19 to ptr
-  store ptr %5, ptr %slot20, align 8
-  %next21 = load ptr, ptr %next12, align 8
-  %regs22 = load ptr, ptr %regs, align 8
-  %6 = call ptr @"@std::avrac::codegen::resolve_param_list"(ptr %next21, ptr %regs22)
-  %slot_base23 = ptrtoint ptr %4 to i64
-  %slot_addr24 = add i64 %slot_base23, 16
-  %slot25 = inttoptr i64 %slot_addr24 to ptr
-  store ptr %6, ptr %slot25, align 8
-  %cast26 = ptrtoint ptr %3 to i64
-  store i64 %cast26, ptr %match_result, align 8
+  %cast21 = ptrtoint ptr %5 to i64
+  store i64 %cast21, ptr %slot20, align 8
+  %next22 = load ptr, ptr %next12, align 8
+  %regs23 = load ptr, ptr %regs, align 8
+  %6 = call ptr @"@std::avrac::codegen::resolve_param_list"(ptr %next22, ptr %regs23)
+  %slot_base24 = ptrtoint ptr %4 to i64
+  %slot_addr25 = add i64 %slot_base24, 16
+  %slot26 = inttoptr i64 %slot_addr25 to ptr
+  store ptr %6, ptr %slot26, align 8
+  %cast27 = ptrtoint ptr %3 to i64
+  store i64 %cast27, ptr %match_result, align 8
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
@@ -278554,9 +278566,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -283055,8 +283067,8 @@ march_next39:                                     ; No predecessors!
 
 define ptr @"@std::avrac::codegen::collect_trait_fn_names"(ptr %0) {
 entry:
-  %ret_vt53 = alloca ptr, align 8
-  %name46 = alloca ptr, align 8
+  %ret_vt54 = alloca ptr, align 8
+  %name47 = alloca ptr, align 8
   %ret_vt24 = alloca ptr, align 8
   %name21 = alloca ptr, align 8
   %match_result14 = alloca i64, align 8
@@ -283073,15 +283085,15 @@ entry:
   br i1 %tag_eq, label %march_arm, label %march_next
 
 match_end:                                        ; preds = %match_end15, %march_arm
-  %match_val73 = load i64, ptr %match_result, align 8
-  %cast74 = inttoptr i64 %match_val73 to ptr
-  ret ptr %cast74
+  %match_val75 = load i64, ptr %match_result, align 8
+  %cast76 = inttoptr i64 %match_val75 to ptr
+  ret ptr %cast76
 
 march_arm:                                        ; preds = %entry
   %1 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %1, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %1, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %1, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %1, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %1 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -283126,7 +283138,7 @@ march_next4:                                      ; preds = %march_next
   call void @avra_match_unreachable(ptr @.match_fn.21986, i64 %tag, ptr @mu_file.21987, i64 1170)
   unreachable
 
-match_end15:                                      ; preds = %march_arm69, %march_arm37, %march_arm16
+match_end15:                                      ; preds = %march_arm71, %march_arm38, %march_arm16
   %match_val = load i64, ptr %match_result14, align 8
   store i64 %match_val, ptr %match_result, align 8
   br label %match_end
@@ -283149,9 +283161,9 @@ march_arm16:                                      ; preds = %march_arm3
   call void @avra_rc_retain(ptr %ret_vt)
   store ptr %ret_vt, ptr %ret_vt24, align 8
   %3 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr25 = getelementptr inbounds nuw %"@std::avrac::core::ParamList", ptr %3, i32 0, i32 0
+  %tag_ptr25 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplMethodRefList", ptr %3, i32 0, i32 0
   store i64 6384368267, ptr %tag_ptr25, align 8
-  %pay_ptr26 = getelementptr inbounds nuw %"@std::avrac::core::ParamList", ptr %3, i32 0, i32 1
+  %pay_ptr26 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplMethodRefList", ptr %3, i32 0, i32 1
   %4 = call ptr @avra_rc_alloc(i64 24)
   store ptr %4, ptr %pay_ptr26, align 8
   %name27 = load ptr, ptr %name21, align 8
@@ -283163,75 +283175,77 @@ march_arm16:                                      ; preds = %march_arm3
   %slot_base29 = ptrtoint ptr %4 to i64
   %slot_addr30 = add i64 %slot_base29, 8
   %slot31 = inttoptr i64 %slot_addr30 to ptr
-  store ptr %ret_vt28, ptr %slot31, align 8
-  %next32 = load ptr, ptr %next9, align 8
-  %5 = call ptr @"@std::avrac::codegen::collect_trait_fn_names"(ptr %next32)
-  %slot_base33 = ptrtoint ptr %4 to i64
-  %slot_addr34 = add i64 %slot_base33, 16
-  %slot35 = inttoptr i64 %slot_addr34 to ptr
-  store ptr %5, ptr %slot35, align 8
-  %cast36 = ptrtoint ptr %3 to i64
-  store i64 %cast36, ptr %match_result14, align 8
+  %cast32 = ptrtoint ptr %ret_vt28 to i64
+  store i64 %cast32, ptr %slot31, align 8
+  %next33 = load ptr, ptr %next9, align 8
+  %5 = call ptr @"@std::avrac::codegen::collect_trait_fn_names"(ptr %next33)
+  %slot_base34 = ptrtoint ptr %4 to i64
+  %slot_addr35 = add i64 %slot_base34, 16
+  %slot36 = inttoptr i64 %slot_addr35 to ptr
+  store ptr %5, ptr %slot36, align 8
+  %cast37 = ptrtoint ptr %3 to i64
+  store i64 %cast37, ptr %match_result14, align 8
   br label %match_end15
 
 march_next17:                                     ; preds = %march_arm3
-  %tag_eq39 = icmp eq i64 %tag13, 7571023594101803
-  br i1 %tag_eq39, label %march_arm37, label %march_next38
+  %tag_eq40 = icmp eq i64 %tag13, 7571023594101803
+  br i1 %tag_eq40, label %march_arm38, label %march_next39
 
-march_arm37:                                      ; preds = %march_next17
-  %pay_slot40 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %2, i32 0, i32 1
-  %payload41 = load ptr, ptr %pay_slot40, align 8
-  %name_slot_base42 = ptrtoint ptr %payload41 to i64
-  %name_slot_addr43 = add i64 %name_slot_base42, 0
-  %name_slot44 = inttoptr i64 %name_slot_addr43 to ptr
-  %name45 = load ptr, ptr %name_slot44, align 8
-  call void @avra_rc_retain(ptr %name45)
-  store ptr %name45, ptr %name46, align 8
-  %pay_slot47 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %2, i32 0, i32 1
-  %payload48 = load ptr, ptr %pay_slot47, align 8
-  %ret_vt_slot_base49 = ptrtoint ptr %payload48 to i64
-  %ret_vt_slot_addr50 = add i64 %ret_vt_slot_base49, 24
-  %ret_vt_slot51 = inttoptr i64 %ret_vt_slot_addr50 to ptr
-  %ret_vt52 = load ptr, ptr %ret_vt_slot51, align 8
-  call void @avra_rc_retain(ptr %ret_vt52)
-  store ptr %ret_vt52, ptr %ret_vt53, align 8
+march_arm38:                                      ; preds = %march_next17
+  %pay_slot41 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %2, i32 0, i32 1
+  %payload42 = load ptr, ptr %pay_slot41, align 8
+  %name_slot_base43 = ptrtoint ptr %payload42 to i64
+  %name_slot_addr44 = add i64 %name_slot_base43, 0
+  %name_slot45 = inttoptr i64 %name_slot_addr44 to ptr
+  %name46 = load ptr, ptr %name_slot45, align 8
+  call void @avra_rc_retain(ptr %name46)
+  store ptr %name46, ptr %name47, align 8
+  %pay_slot48 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %2, i32 0, i32 1
+  %payload49 = load ptr, ptr %pay_slot48, align 8
+  %ret_vt_slot_base50 = ptrtoint ptr %payload49 to i64
+  %ret_vt_slot_addr51 = add i64 %ret_vt_slot_base50, 24
+  %ret_vt_slot52 = inttoptr i64 %ret_vt_slot_addr51 to ptr
+  %ret_vt53 = load ptr, ptr %ret_vt_slot52, align 8
+  call void @avra_rc_retain(ptr %ret_vt53)
+  store ptr %ret_vt53, ptr %ret_vt54, align 8
   %6 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr54 = getelementptr inbounds nuw %"@std::avrac::core::ParamList", ptr %6, i32 0, i32 0
-  store i64 6384368267, ptr %tag_ptr54, align 8
-  %pay_ptr55 = getelementptr inbounds nuw %"@std::avrac::core::ParamList", ptr %6, i32 0, i32 1
+  %tag_ptr55 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplMethodRefList", ptr %6, i32 0, i32 0
+  store i64 6384368267, ptr %tag_ptr55, align 8
+  %pay_ptr56 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplMethodRefList", ptr %6, i32 0, i32 1
   %7 = call ptr @avra_rc_alloc(i64 24)
-  store ptr %7, ptr %pay_ptr55, align 8
-  %name56 = load ptr, ptr %name46, align 8
-  %slot_base57 = ptrtoint ptr %7 to i64
-  %slot_addr58 = add i64 %slot_base57, 0
-  %slot59 = inttoptr i64 %slot_addr58 to ptr
-  store ptr %name56, ptr %slot59, align 8
-  %ret_vt60 = load ptr, ptr %ret_vt53, align 8
-  %slot_base61 = ptrtoint ptr %7 to i64
-  %slot_addr62 = add i64 %slot_base61, 8
-  %slot63 = inttoptr i64 %slot_addr62 to ptr
-  store ptr %ret_vt60, ptr %slot63, align 8
-  %next64 = load ptr, ptr %next9, align 8
-  %8 = call ptr @"@std::avrac::codegen::collect_trait_fn_names"(ptr %next64)
-  %slot_base65 = ptrtoint ptr %7 to i64
-  %slot_addr66 = add i64 %slot_base65, 16
-  %slot67 = inttoptr i64 %slot_addr66 to ptr
-  store ptr %8, ptr %slot67, align 8
-  %cast68 = ptrtoint ptr %6 to i64
-  store i64 %cast68, ptr %match_result14, align 8
+  store ptr %7, ptr %pay_ptr56, align 8
+  %name57 = load ptr, ptr %name47, align 8
+  %slot_base58 = ptrtoint ptr %7 to i64
+  %slot_addr59 = add i64 %slot_base58, 0
+  %slot60 = inttoptr i64 %slot_addr59 to ptr
+  store ptr %name57, ptr %slot60, align 8
+  %ret_vt61 = load ptr, ptr %ret_vt54, align 8
+  %slot_base62 = ptrtoint ptr %7 to i64
+  %slot_addr63 = add i64 %slot_base62, 8
+  %slot64 = inttoptr i64 %slot_addr63 to ptr
+  %cast65 = ptrtoint ptr %ret_vt61 to i64
+  store i64 %cast65, ptr %slot64, align 8
+  %next66 = load ptr, ptr %next9, align 8
+  %8 = call ptr @"@std::avrac::codegen::collect_trait_fn_names"(ptr %next66)
+  %slot_base67 = ptrtoint ptr %7 to i64
+  %slot_addr68 = add i64 %slot_base67, 16
+  %slot69 = inttoptr i64 %slot_addr68 to ptr
+  store ptr %8, ptr %slot69, align 8
+  %cast70 = ptrtoint ptr %6 to i64
+  store i64 %cast70, ptr %match_result14, align 8
   br label %match_end15
 
-march_next38:                                     ; preds = %march_next17
-  br label %march_arm69
+march_next39:                                     ; preds = %march_next17
+  br label %march_arm71
 
-march_arm69:                                      ; preds = %march_next38
-  %next71 = load ptr, ptr %next9, align 8
-  %9 = call ptr @"@std::avrac::codegen::collect_trait_fn_names"(ptr %next71)
-  %cast72 = ptrtoint ptr %9 to i64
-  store i64 %cast72, ptr %match_result14, align 8
+march_arm71:                                      ; preds = %march_next39
+  %next73 = load ptr, ptr %next9, align 8
+  %9 = call ptr @"@std::avrac::codegen::collect_trait_fn_names"(ptr %next73)
+  %cast74 = ptrtoint ptr %9 to i64
+  store i64 %cast74, ptr %match_result14, align 8
   br label %match_end15
 
-march_next70:                                     ; No predecessors!
+march_next72:                                     ; No predecessors!
   call void @avra_match_unreachable(ptr @.match_fn.21984, i64 %tag13, ptr @mu_file.21985, i64 1174)
   unreachable
 }
@@ -284721,9 +284735,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %1 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %1, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %1, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %1, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %1, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %1 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -284751,9 +284765,9 @@ march_arm3:                                       ; preds = %march_next
   call void @avra_rc_retain(ptr %next)
   store ptr %next, ptr %next9, align 8
   %2 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr10 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 0
+  %tag_ptr10 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 0
   store i64 6384368267, ptr %tag_ptr10, align 8
-  %pay_ptr11 = getelementptr inbounds nuw %"@std::lsp::SymList", ptr %2, i32 0, i32 1
+  %pay_ptr11 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplDeclList", ptr %2, i32 0, i32 1
   %3 = call ptr @avra_rc_alloc(i64 16)
   store ptr %3, ptr %pay_ptr11, align 8
   %resolved12 = load ptr, ptr %resolved6, align 8
@@ -284779,8 +284793,8 @@ march_next4:                                      ; preds = %march_next
 define ptr @"@std::avrac::codegen::collect_fn_params"(ptr %0, ptr %1) {
 entry:
   %updated = alloca ptr, align 8
-  %body51 = alloca ptr, align 8
-  %methods42 = alloca ptr, align 8
+  %body52 = alloca ptr, align 8
+  %methods43 = alloca ptr, align 8
   %params25 = alloca ptr, align 8
   %name22 = alloca ptr, align 8
   %match_result15 = alloca i64, align 8
@@ -284800,9 +284814,9 @@ entry:
   br i1 %tag_eq, label %march_arm, label %march_next
 
 match_end:                                        ; preds = %match_end16, %march_arm
-  %match_val63 = load i64, ptr %match_result, align 8
-  %cast64 = inttoptr i64 %match_val63 to ptr
-  ret ptr %cast64
+  %match_val64 = load i64, ptr %match_result, align 8
+  %cast65 = inttoptr i64 %match_val64 to ptr
+  ret ptr %cast65
 
 march_arm:                                        ; preds = %entry
   %reg2 = load ptr, ptr %reg, align 8
@@ -284851,15 +284865,15 @@ march_next4:                                      ; preds = %march_next
   call void @avra_match_unreachable(ptr @.match_fn.22057, i64 %tag, ptr @mu_file.22058, i64 1386)
   unreachable
 
-match_end16:                                      ; preds = %march_arm55, %march_arm46, %march_arm37, %march_arm17
+match_end16:                                      ; preds = %march_arm56, %march_arm47, %march_arm38, %march_arm17
   %match_val = load i64, ptr %match_result15, align 8
-  %cast59 = inttoptr i64 %match_val to ptr
-  store ptr %cast59, ptr %updated, align 8
-  %next60 = load ptr, ptr %next9, align 8
-  %updated61 = load ptr, ptr %updated, align 8
-  %3 = call ptr @"@std::avrac::codegen::collect_fn_params"(ptr %next60, ptr %updated61)
-  %cast62 = ptrtoint ptr %3 to i64
-  store i64 %cast62, ptr %match_result, align 8
+  %cast60 = inttoptr i64 %match_val to ptr
+  store ptr %cast60, ptr %updated, align 8
+  %next61 = load ptr, ptr %next9, align 8
+  %updated62 = load ptr, ptr %updated, align 8
+  %3 = call ptr @"@std::avrac::codegen::collect_fn_params"(ptr %next61, ptr %updated62)
+  %cast63 = ptrtoint ptr %3 to i64
+  store i64 %cast63, ptr %match_result, align 8
   br label %match_end
 
 march_arm17:                                      ; preds = %march_arm3
@@ -284880,9 +284894,9 @@ march_arm17:                                      ; preds = %march_arm3
   call void @avra_rc_retain(ptr %params)
   store ptr %params, ptr %params25, align 8
   %4 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr26 = getelementptr inbounds nuw %"@std::avrac::core::ParamList", ptr %4, i32 0, i32 0
+  %tag_ptr26 = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplMethodRefList", ptr %4, i32 0, i32 0
   store i64 6384368267, ptr %tag_ptr26, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::core::ParamList", ptr %4, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::build::metadata::ImplMethodRefList", ptr %4, i32 0, i32 1
   %5 = call ptr @avra_rc_alloc(i64 24)
   store ptr %5, ptr %pay_ptr, align 8
   %name27 = load ptr, ptr %name22, align 8
@@ -284895,66 +284909,67 @@ march_arm17:                                      ; preds = %march_arm3
   %slot_base29 = ptrtoint ptr %5 to i64
   %slot_addr30 = add i64 %slot_base29, 8
   %slot31 = inttoptr i64 %slot_addr30 to ptr
-  store ptr %6, ptr %slot31, align 8
-  %reg32 = load ptr, ptr %reg, align 8
-  %slot_base33 = ptrtoint ptr %5 to i64
-  %slot_addr34 = add i64 %slot_base33, 16
-  %slot35 = inttoptr i64 %slot_addr34 to ptr
-  store ptr %reg32, ptr %slot35, align 8
-  %cast36 = ptrtoint ptr %4 to i64
-  store i64 %cast36, ptr %match_result15, align 8
+  %cast32 = ptrtoint ptr %6 to i64
+  store i64 %cast32, ptr %slot31, align 8
+  %reg33 = load ptr, ptr %reg, align 8
+  %slot_base34 = ptrtoint ptr %5 to i64
+  %slot_addr35 = add i64 %slot_base34, 16
+  %slot36 = inttoptr i64 %slot_addr35 to ptr
+  store ptr %reg33, ptr %slot36, align 8
+  %cast37 = ptrtoint ptr %4 to i64
+  store i64 %cast37, ptr %match_result15, align 8
   br label %match_end16
 
 march_next18:                                     ; preds = %march_arm3
-  %tag_eq39 = icmp eq i64 %tag14, 6384186807
-  br i1 %tag_eq39, label %march_arm37, label %march_next38
+  %tag_eq40 = icmp eq i64 %tag14, 6384186807
+  br i1 %tag_eq40, label %march_arm38, label %march_next39
 
-march_arm37:                                      ; preds = %march_next18
-  %pay_slot40 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt12, i32 0, i32 1
-  %payload41 = load ptr, ptr %pay_slot40, align 8
-  %methods_slot_base = ptrtoint ptr %payload41 to i64
+march_arm38:                                      ; preds = %march_next18
+  %pay_slot41 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt12, i32 0, i32 1
+  %payload42 = load ptr, ptr %pay_slot41, align 8
+  %methods_slot_base = ptrtoint ptr %payload42 to i64
   %methods_slot_addr = add i64 %methods_slot_base, 8
   %methods_slot = inttoptr i64 %methods_slot_addr to ptr
   %methods = load ptr, ptr %methods_slot, align 8
   call void @avra_rc_retain(ptr %methods)
-  store ptr %methods, ptr %methods42, align 8
-  %methods43 = load ptr, ptr %methods42, align 8
-  %reg44 = load ptr, ptr %reg, align 8
-  %7 = call ptr @"@std::avrac::codegen::collect_fn_params"(ptr %methods43, ptr %reg44)
-  %cast45 = ptrtoint ptr %7 to i64
-  store i64 %cast45, ptr %match_result15, align 8
+  store ptr %methods, ptr %methods43, align 8
+  %methods44 = load ptr, ptr %methods43, align 8
+  %reg45 = load ptr, ptr %reg, align 8
+  %7 = call ptr @"@std::avrac::codegen::collect_fn_params"(ptr %methods44, ptr %reg45)
+  %cast46 = ptrtoint ptr %7 to i64
+  store i64 %cast46, ptr %match_result15, align 8
   br label %match_end16
 
-march_next38:                                     ; preds = %march_next18
-  %tag_eq48 = icmp eq i64 %tag14, 6952537928459
-  br i1 %tag_eq48, label %march_arm46, label %march_next47
+march_next39:                                     ; preds = %march_next18
+  %tag_eq49 = icmp eq i64 %tag14, 6952537928459
+  br i1 %tag_eq49, label %march_arm47, label %march_next48
 
-march_arm46:                                      ; preds = %march_next38
-  %pay_slot49 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt12, i32 0, i32 1
-  %payload50 = load ptr, ptr %pay_slot49, align 8
-  %body_slot_base = ptrtoint ptr %payload50 to i64
+march_arm47:                                      ; preds = %march_next39
+  %pay_slot50 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %stmt12, i32 0, i32 1
+  %payload51 = load ptr, ptr %pay_slot50, align 8
+  %body_slot_base = ptrtoint ptr %payload51 to i64
   %body_slot_addr = add i64 %body_slot_base, 8
   %body_slot = inttoptr i64 %body_slot_addr to ptr
   %body = load ptr, ptr %body_slot, align 8
   call void @avra_rc_retain(ptr %body)
-  store ptr %body, ptr %body51, align 8
-  %body52 = load ptr, ptr %body51, align 8
-  %reg53 = load ptr, ptr %reg, align 8
-  %8 = call ptr @"@std::avrac::codegen::collect_fn_params"(ptr %body52, ptr %reg53)
-  %cast54 = ptrtoint ptr %8 to i64
-  store i64 %cast54, ptr %match_result15, align 8
+  store ptr %body, ptr %body52, align 8
+  %body53 = load ptr, ptr %body52, align 8
+  %reg54 = load ptr, ptr %reg, align 8
+  %8 = call ptr @"@std::avrac::codegen::collect_fn_params"(ptr %body53, ptr %reg54)
+  %cast55 = ptrtoint ptr %8 to i64
+  store i64 %cast55, ptr %match_result15, align 8
   br label %match_end16
 
-march_next47:                                     ; preds = %march_next38
-  br label %march_arm55
+march_next48:                                     ; preds = %march_next39
+  br label %march_arm56
 
-march_arm55:                                      ; preds = %march_next47
-  %reg57 = load ptr, ptr %reg, align 8
-  %cast58 = ptrtoint ptr %reg57 to i64
-  store i64 %cast58, ptr %match_result15, align 8
+march_arm56:                                      ; preds = %march_next48
+  %reg58 = load ptr, ptr %reg, align 8
+  %cast59 = ptrtoint ptr %reg58 to i64
+  store i64 %cast59, ptr %match_result15, align 8
   br label %match_end16
 
-march_next56:                                     ; No predecessors!
+march_next57:                                     ; No predecessors!
   call void @avra_match_unreachable(ptr @.match_fn.22055, i64 %tag14, ptr @mu_file.22056, i64 1391)
   unreachable
 }
@@ -287478,9 +287493,9 @@ when_next:                                        ; preds = %ifcont
   %ty_ptr39 = getelementptr inbounds nuw %"@std::avrac::codegen::EmitValue", ptr %r35, i32 0, i32 1
   %ty40 = load ptr, ptr %ty_ptr39, align 8
   %13 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr41 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %13, i32 0, i32 0
+  %tag_ptr41 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %13, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr41, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %13, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %13, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast42 = ptrtoint ptr %13 to i64
   %cast43 = inttoptr i64 %cast42 to ptr
@@ -287748,9 +287763,9 @@ ifcont:                                           ; preds = %if_else
   %ty_ptr45 = getelementptr inbounds nuw %"@std::avrac::codegen::EmitValue", ptr %r41, i32 0, i32 1
   %ty46 = load ptr, ptr %ty_ptr45, align 8
   %11 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr47 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %11, i32 0, i32 0
+  %tag_ptr47 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %11, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr47, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %11, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %11, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast48 = ptrtoint ptr %11 to i64
   %cast49 = inttoptr i64 %cast48 to ptr
@@ -291413,9 +291428,9 @@ march_arm:                                        ; preds = %try_ok
   %ty_ptr = getelementptr inbounds nuw %"@std::avrac::codegen::EmitValue", ptr %r6, i32 0, i32 1
   %ty = load ptr, ptr %ty_ptr, align 8
   %5 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr10 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %5, i32 0, i32 0
+  %tag_ptr10 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %5, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr10, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %5, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %5, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast11 = ptrtoint ptr %5 to i64
   %cast12 = inttoptr i64 %cast11 to ptr
@@ -291490,17 +291505,17 @@ if_then:                                          ; preds = %march_arm
   call void @avra_null_deref_trap(ptr @fld_name.22881, i64 7, ptr @sty_name.22882, i64 25, i64 %null_ext29, ptr @src_file.22883, i64 0, i64 24)
   %neg30 = load ptr, ptr %neg, align 8
   %13 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr31 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %13, i32 0, i32 0
+  %tag_ptr31 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %13, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr31, align 8
-  %pay_ptr32 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %13, i32 0, i32 1
+  %pay_ptr32 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %13, i32 0, i32 1
   store ptr null, ptr %pay_ptr32, align 8
   %cast33 = ptrtoint ptr %13 to i64
   %cast34 = inttoptr i64 %cast33 to ptr
   %14 = call ptr @"@std::avrac::codegen::Ctx__cast_to"(ptr %ctx26, ptr %neg30, ptr %cast34)
   %15 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr35 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %15, i32 0, i32 0
+  %tag_ptr35 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %15, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr35, align 8
-  %pay_ptr36 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %15, i32 0, i32 1
+  %pay_ptr36 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %15, i32 0, i32 1
   store ptr null, ptr %pay_ptr36, align 8
   %cast37 = ptrtoint ptr %15 to i64
   %cast38 = inttoptr i64 %cast37 to ptr
@@ -291873,9 +291888,9 @@ sc_merge95:                                       ; preds = %sc_r_merge106, %sc_
   %ty_ptr114 = getelementptr inbounds nuw %"@std::avrac::codegen::EmitValue", ptr %left_result110, i32 0, i32 1
   %ty115 = load ptr, ptr %ty_ptr114, align 8
   %15 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %15, i32 0, i32 0
+  %tag_ptr = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %15, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %15, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %15, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast116 = ptrtoint ptr %15 to i64
   %cast117 = inttoptr i64 %cast116 to ptr
@@ -291902,9 +291917,9 @@ sc_rhs120:                                        ; preds = %sc_merge95
   %ty_ptr127 = getelementptr inbounds nuw %"@std::avrac::codegen::EmitValue", ptr %right_result123, i32 0, i32 1
   %ty128 = load ptr, ptr %ty_ptr127, align 8
   %17 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr129 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %17, i32 0, i32 0
+  %tag_ptr129 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %17, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr129, align 8
-  %pay_ptr130 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %17, i32 0, i32 1
+  %pay_ptr130 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %17, i32 0, i32 1
   store ptr null, ptr %pay_ptr130, align 8
   %cast131 = ptrtoint ptr %17 to i64
   %cast132 = inttoptr i64 %cast131 to ptr
@@ -293504,9 +293519,9 @@ entry:
   store ptr %2, ptr %ty, align 8
   %ty1 = load ptr, ptr %ty, align 8
   %3 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %3, i32 0, i32 0
+  %tag_ptr = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %3, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %3, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %3, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %3 to i64
   %cast2 = inttoptr i64 %cast to ptr
@@ -293596,17 +293611,17 @@ march_arm:                                        ; preds = %entry
   %fr14 = load ptr, ptr %fr, align 8
   %8 = call ptr @"@std::avrac::codegen::Ctx__fadd"(ptr %ctx9, ptr %fl13, ptr %fr14, ptr @.str.23190)
   %9 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr15 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %9, i32 0, i32 0
+  %tag_ptr15 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %9, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr15, align 8
-  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %9, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %9, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast16 = ptrtoint ptr %9 to i64
   %cast17 = inttoptr i64 %cast16 to ptr
   %10 = call ptr @"@std::avrac::codegen::Ctx__cast_to"(ptr %ctx8, ptr %8, ptr %cast17)
   %11 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr18 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %11, i32 0, i32 0
+  %tag_ptr18 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %11, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr18, align 8
-  %pay_ptr19 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %11, i32 0, i32 1
+  %pay_ptr19 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %11, i32 0, i32 1
   store ptr null, ptr %pay_ptr19, align 8
   %cast20 = ptrtoint ptr %11 to i64
   %cast21 = inttoptr i64 %cast20 to ptr
@@ -293634,17 +293649,17 @@ march_arm23:                                      ; preds = %march_next
   %fr35 = load ptr, ptr %fr, align 8
   %13 = call ptr @"@std::avrac::codegen::Ctx__fsub"(ptr %ctx30, ptr %fl34, ptr %fr35, ptr @.str.23197)
   %14 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr36 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %14, i32 0, i32 0
+  %tag_ptr36 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %14, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr36, align 8
-  %pay_ptr37 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %14, i32 0, i32 1
+  %pay_ptr37 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %14, i32 0, i32 1
   store ptr null, ptr %pay_ptr37, align 8
   %cast38 = ptrtoint ptr %14 to i64
   %cast39 = inttoptr i64 %cast38 to ptr
   %15 = call ptr @"@std::avrac::codegen::Ctx__cast_to"(ptr %ctx26, ptr %13, ptr %cast39)
   %16 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr40 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %16, i32 0, i32 0
+  %tag_ptr40 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %16, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr40, align 8
-  %pay_ptr41 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %16, i32 0, i32 1
+  %pay_ptr41 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %16, i32 0, i32 1
   store ptr null, ptr %pay_ptr41, align 8
   %cast42 = ptrtoint ptr %16 to i64
   %cast43 = inttoptr i64 %cast42 to ptr
@@ -293672,17 +293687,17 @@ march_arm45:                                      ; preds = %march_next24
   %fr57 = load ptr, ptr %fr, align 8
   %18 = call ptr @"@std::avrac::codegen::Ctx__fmul"(ptr %ctx52, ptr %fl56, ptr %fr57, ptr @.str.23204)
   %19 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr58 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %19, i32 0, i32 0
+  %tag_ptr58 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %19, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr58, align 8
-  %pay_ptr59 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %19, i32 0, i32 1
+  %pay_ptr59 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %19, i32 0, i32 1
   store ptr null, ptr %pay_ptr59, align 8
   %cast60 = ptrtoint ptr %19 to i64
   %cast61 = inttoptr i64 %cast60 to ptr
   %20 = call ptr @"@std::avrac::codegen::Ctx__cast_to"(ptr %ctx48, ptr %18, ptr %cast61)
   %21 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr62 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %21, i32 0, i32 0
+  %tag_ptr62 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %21, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr62, align 8
-  %pay_ptr63 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %21, i32 0, i32 1
+  %pay_ptr63 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %21, i32 0, i32 1
   store ptr null, ptr %pay_ptr63, align 8
   %cast64 = ptrtoint ptr %21 to i64
   %cast65 = inttoptr i64 %cast64 to ptr
@@ -293710,17 +293725,17 @@ march_arm67:                                      ; preds = %march_next46
   %fr79 = load ptr, ptr %fr, align 8
   %23 = call ptr @"@std::avrac::codegen::Ctx__fdiv"(ptr %ctx74, ptr %fl78, ptr %fr79, ptr @.str.23211)
   %24 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr80 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %24, i32 0, i32 0
+  %tag_ptr80 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %24, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr80, align 8
-  %pay_ptr81 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %24, i32 0, i32 1
+  %pay_ptr81 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %24, i32 0, i32 1
   store ptr null, ptr %pay_ptr81, align 8
   %cast82 = ptrtoint ptr %24 to i64
   %cast83 = inttoptr i64 %cast82 to ptr
   %25 = call ptr @"@std::avrac::codegen::Ctx__cast_to"(ptr %ctx70, ptr %23, ptr %cast83)
   %26 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr84 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %26, i32 0, i32 0
+  %tag_ptr84 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %26, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr84, align 8
-  %pay_ptr85 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %26, i32 0, i32 1
+  %pay_ptr85 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %26, i32 0, i32 1
   store ptr null, ptr %pay_ptr85, align 8
   %cast86 = ptrtoint ptr %26 to i64
   %cast87 = inttoptr i64 %cast86 to ptr
@@ -293748,17 +293763,17 @@ march_arm89:                                      ; preds = %march_next68
   %fr101 = load ptr, ptr %fr, align 8
   %28 = call ptr @"@std::avrac::codegen::Ctx__frem"(ptr %ctx96, ptr %fl100, ptr %fr101, ptr @.str.23218)
   %29 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr102 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %29, i32 0, i32 0
+  %tag_ptr102 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %29, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr102, align 8
-  %pay_ptr103 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %29, i32 0, i32 1
+  %pay_ptr103 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %29, i32 0, i32 1
   store ptr null, ptr %pay_ptr103, align 8
   %cast104 = ptrtoint ptr %29 to i64
   %cast105 = inttoptr i64 %cast104 to ptr
   %30 = call ptr @"@std::avrac::codegen::Ctx__cast_to"(ptr %ctx92, ptr %28, ptr %cast105)
   %31 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr106 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %31, i32 0, i32 0
+  %tag_ptr106 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %31, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr106, align 8
-  %pay_ptr107 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %31, i32 0, i32 1
+  %pay_ptr107 = getelementptr inbounds nuw %"@std::avrac::core::Tk", ptr %31, i32 0, i32 1
   store ptr null, ptr %pay_ptr107, align 8
   %cast108 = ptrtoint ptr %31 to i64
   %cast109 = inttoptr i64 %cast108 to ptr
@@ -295797,9 +295812,9 @@ march_arm88:                                      ; preds = %march_next72
   call void @avra_rc_retain(ptr %body)
   store ptr %body, ptr %body93, align 8
   %13 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr94 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %13, i32 0, i32 0
+  %tag_ptr94 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %13, i32 0, i32 0
   store i64 210669825968, ptr %tag_ptr94, align 8
-  %pay_ptr95 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %13, i32 0, i32 1
+  %pay_ptr95 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %13, i32 0, i32 1
   %14 = call ptr @avra_rc_alloc(i64 8)
   store ptr %14, ptr %pay_ptr95, align 8
   %body96 = load ptr, ptr %body93, align 8
@@ -299150,9 +299165,9 @@ march_arm249:                                     ; preds = %march_next223
   call void @avra_rc_retain(ptr %body)
   store ptr %body, ptr %body254, align 8
   %38 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr255 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %38, i32 0, i32 0
+  %tag_ptr255 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %38, i32 0, i32 0
   store i64 210669825968, ptr %tag_ptr255, align 8
-  %pay_ptr256 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %38, i32 0, i32 1
+  %pay_ptr256 = getelementptr inbounds nuw %"@std::avrac::core::Stmt", ptr %38, i32 0, i32 1
   %39 = call ptr @avra_rc_alloc(i64 8)
   store ptr %39, ptr %pay_ptr256, align 8
   %body257 = load ptr, ptr %body254, align 8
@@ -299293,9 +299308,9 @@ march_arm335:                                     ; preds = %march_next319
   call void @avra_rc_retain(ptr %elems)
   store ptr %elems, ptr %elems340, align 8
   %51 = call ptr @avra_rc_alloc(i64 16)
-  %tag_ptr341 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %51, i32 0, i32 0
+  %tag_ptr341 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %51, i32 0, i32 0
   store i64 210691497359, ptr %tag_ptr341, align 8
-  %pay_ptr342 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %51, i32 0, i32 1
+  %pay_ptr342 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %51, i32 0, i32 1
   %52 = call ptr @avra_rc_alloc(i64 8)
   store ptr %52, ptr %pay_ptr342, align 8
   %elems343 = load ptr, ptr %elems340, align 8
