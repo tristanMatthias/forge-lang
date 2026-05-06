@@ -45,12 +45,15 @@ export type TypeInfo = {
 /// "string-name everywhere" approach with O(1) integer ids and
 /// constant-time name ↔ id lookups. Pass-by-value (the maps are
 /// pointers — copying TypeRegistry shares the underlying tables).
-/// @field info_map   — intmap: id → TypeInfo ptr (key 0 holds the
-///                     next-id counter).
+/// @field infos      — List<TypeInfo>: id-1 indexed (id 0 reserved
+///                     as the "no such type" sentinel). Was an
+///                     avra_intmap with hard 256-slot cap before
+///                     forge-crafting-intepreters-q3gp follow-up;
+///                     bundle compiles overflowed at ~280 types.
 /// @field name_to_id — string-keyed map: qualified name → id.
 /// @field id_to_name — intmap: id → name string ptr.
 export type TypeRegistry = {
-    info_map: ptr,
+    infos: List<TypeInfo>,
     name_to_id: ptr,
     id_to_name: ptr,
 }
@@ -59,10 +62,8 @@ export type TypeRegistry = {
 /// Construct an empty registry. The id counter starts at 1 — id 0 is
 /// reserved as the "no such type" sentinel returned by lookups.
 export fn type_registry_new() -> TypeRegistry {
-    let m = avra_intmap_new()
-    avra_intmap_set(m, 0, 1)
     TypeRegistry {
-        info_map: m,
+        infos: [],
         name_to_id: avra_map_new_cstr(),
         id_to_name: avra_intmap_new(),
     }
@@ -78,17 +79,11 @@ export fn type_registry_register(reg: TypeRegistry, name: string, kind: TypeKind
     if avra_map_has_cstr(reg.name_to_id, name) == 1 {
         return avra_map_get_cstr(reg.name_to_id, name)
     }
-    // Atomically get and increment the next_id counter at key 0
-    let id = avra_intmap_inc(reg.info_map, 0)
-    let info = TypeInfo {
-        id,
-        name,
-        kind,
-        fields,
-        variants,
-        inner_vt,
-    }
-    avra_intmap_set(reg.info_map, id, info)
+    // List-backed: id is 1-indexed position. id 0 stays the sentinel.
+    mut infos = reg.infos
+    let id = infos.length + 1
+    let info = TypeInfo { id, name, kind, fields, variants, inner_vt }
+    infos.push(info)
     avra_map_set_cstr(reg.name_to_id, name, id)
     avra_intmap_set(reg.id_to_name, id, name)
     // Also register short name (last segment after ::) for codegen lookups
@@ -102,14 +97,14 @@ export fn type_registry_register(reg: TypeRegistry, name: string, kind: TypeKind
     id
 }
 
-/// Look up the raw TypeInfo pointer (as int) for a given id. Returns
-/// 0 if not found. Callers cast back to TypeInfo — the raw form
-/// keeps the registry layer free of TypeInfo dependencies in C-side
-/// helpers.
-export fn type_registry_lookup_raw(reg: TypeRegistry, id: int) -> int {
-    if id == 0 { return 0 }
-    if avra_intmap_has(reg.info_map, id) == 0 { return 0 }
-    avra_intmap_get(reg.info_map, id)
+/// Look up the TypeInfo for a given id. Returns null when the id is
+/// out of range — callers should branch on null rather than poking
+/// at a dummy struct.
+export fn type_registry_lookup(reg: TypeRegistry, id: int) -> TypeInfo? {
+    if id == 0 { return null }
+    let i = id - 1
+    if i < 0 || i >= reg.infos.length { return null }
+    reg.infos[i]
 }
 
 /// Resolve a type name to its TypeId. Returns 0 when the name has
@@ -123,7 +118,7 @@ export fn type_registry_id_for(reg: TypeRegistry, name: string) -> int {
 /// True iff `id` corresponds to a registered type. Cheap O(1) probe;
 /// use this before treating a non-zero id as valid.
 export fn type_registry_has(reg: TypeRegistry, id: int) -> bool {
-    id > 0 && avra_intmap_has(reg.info_map, id) == 1
+    id > 0 && (id - 1) < reg.infos.length
 }
 
 
@@ -232,9 +227,9 @@ export fn is_result_shaped_enum(reg: TypeRegistry, enum_name: string) -> bool {
     if is_result_enum_name(enum_name) { return true }
     let id = type_registry_id_for(reg, enum_name)
     if id == 0 { return false }
-    let raw = type_registry_lookup_raw(reg, id)
-    if raw == 0 { return false }
-    let info: TypeInfo = raw
+    let opt = type_registry_lookup(reg, id)
+    if opt == null { return false }
+    let info = opt!
     match info.kind { .EnumKind -> {}, _ -> { return false } }
     let ok = variant_list_has(info.variants, "Ok")
     let err = variant_list_has(info.variants, "Err")
