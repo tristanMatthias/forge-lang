@@ -9,7 +9,7 @@
 // pool imports them (forge-crafting-intepreters-dnq4). The fixture
 // is a single-program compile, so there's only ever one copy.
 
-use @std.avrac.build.metadata.{
+use @std.avrac.build.{
     BytesWriter, BytesReader, writer_new, reader_new, sym_id_for,
     SectionKind, MetadataHeader, SectionFrame,
     METADATA_MAGIC, METADATA_VERSION_MAJOR, METADATA_VERSION_MINOR,
@@ -26,8 +26,8 @@ use @std.avrac.core.{
     ValueType, TypeList, FieldList, VariantList, ParamList,
     AnnotationList, vtype_eq, sstmt_dummy, stmt_unwrap, find_annotation,
 }
-use @std.avrac.build.metadata_extract.{extract_unit_metadata}
-use @std.avrac.build.metadata_synthesize.{synthesize_unit_stmts}
+use @std.avrac.build.{extract_unit_metadata}
+use @std.avrac.build.{synthesize_unit_stmts}
 
 extern fn avra_bytes_make(len: int) -> bytes
 extern fn avra_bytes_set(b: bytes, idx: int, val: int)

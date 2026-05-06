@@ -38,7 +38,7 @@ extern fn avra_selfhost_file_exists(path: string) -> int
 extern fn avra_parse_int(s: string) -> int
 
 use @std.json.{json_str}
-use @std.avrac.build.pool.{pool_extract_rc}
+use @std.avrac.build.{pool_extract_rc}
 
 /// True when stdout is an interactive terminal — gates spinner /
 /// progress rendering so CI logs (which pipe stdout) stay byte-clean.

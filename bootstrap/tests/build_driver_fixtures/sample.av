@@ -11,11 +11,11 @@
 //   6. Changing the profile flags forces a Miss.
 //   7. Changing the unit_name forces a Miss.
 
-use @std.avrac.build.driver.{
+use @std.avrac.build.{
     BuildInputs, BuildOutcome,
     decide_build, record_build_result, cached_ll_for,
 }
-use @std.avrac.build.fingerprint.{Fingerprint}
+use @std.avrac.build.{Fingerprint}
 
 extern fn avra_shell_exec(cmd: string) -> string
 

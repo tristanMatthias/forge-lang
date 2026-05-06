@@ -65,19 +65,19 @@ use @std.avrac.features.component_decl.{expand_components}
 use @std.avrac.resolve.{resolve_names}
 use @std.avrac.features.modules.{resolve_module_files, modules_dirname, find_packages_dir, LoadedPaths, dedup_modules}
 use @std.avrac.features.modules.{load_package_config, load_manifest, Dep}
-use @std.avrac.build.driver.{
+use @std.avrac.build.{
     BuildInputs, BuildOutcome,
     decide_build, record_build_result,
+    Fingerprint, fp_short,
+    LinkOptions, default_link_options, link_objects, link_objects_with_coverage,
+    extract_unit_metadata, extract_per_file_metadata, collect_source_files,
+    metadata_write, metadata_read, bytes_from_hex,
+    synthesize_unit_stmts,
+    pool_run,
 }
-use @std.avrac.build.fingerprint.{Fingerprint, fp_short}
-use @std.avrac.build.link.{LinkOptions, default_link_options, link_objects, link_objects_with_coverage}
-use @std.avrac.build.metadata_extract.{extract_unit_metadata, extract_per_file_metadata, collect_source_files}
-use @std.avrac.build.metadata.{metadata_write, metadata_read, bytes_from_hex}
-use @std.avrac.build.metadata_synthesize.{synthesize_unit_stmts}
-use @std.avrac.build.pool.{pool_run}
 use @std.crypto.{sha256_hex}
 extern fn avra_bytes_to_hex(b: bytes) -> string
-use @std.avrac.build.graph.{
+use @std.avrac.build.{
     DepGraph, Unit, build_graph,
 }
 use @std.avrac.typeck.{typecheck_program}

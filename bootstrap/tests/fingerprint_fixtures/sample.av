@@ -6,7 +6,7 @@
 // probe prints a stable label so the test can match without depending
 // on field order or hex-digest values that would have to be hard-coded.
 
-use @std.avrac.build.fingerprint.{
+use @std.avrac.build.{
     Fingerprint, fp_for_unit, fp_eq, fp_short, profile_key_of,
 }
 use @std.crypto.{sha256_hex}

@@ -12,7 +12,7 @@ extern fn avra_process_env_get(name: string) -> string
 extern fn avra_selfhost_file_exists(path: string) -> int
 extern fn avra_uptime_ms() -> int
 
-use @std.avrac.build.pool.{pool_run}
+use @std.avrac.build.{pool_run}
 
 fn probe(name: string, ok: bool) {
     let tag = if ok { "ok" } else { "FAIL" }

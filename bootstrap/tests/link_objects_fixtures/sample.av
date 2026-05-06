@@ -5,7 +5,7 @@
 // Each PROBE line records one assertion the parent test asserts on.
 // Tracking ticket: forge-crafting-intepreters-k21v.
 
-use @std.avrac.build.link.{LinkOptions, default_link_options, link_objects}
+use @std.avrac.build.{LinkOptions, default_link_options, link_objects}
 
 extern fn avra_shell_exec(cmd: string) -> string
 extern fn avra_shell_exec_status(cmd: string) -> int

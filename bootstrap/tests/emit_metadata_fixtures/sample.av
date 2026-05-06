@@ -6,7 +6,7 @@
 //
 // Tracking ticket: forge-crafting-intepreters-xtvc.
 
-use @std.avrac.build.metadata.{
+use @std.avrac.build.{
     UnitMetadata, TypeDeclList, FnDeclList, ConstDeclList, ImplDeclList,
     metadata_read, metadata_file_exists,
 }

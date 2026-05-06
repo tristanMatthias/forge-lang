@@ -196,12 +196,6 @@ fn collect_dep_names(deps: List<Dep>) -> List<string> {
     acc
 }
 
-fn ensure_trailing_slash(s: string) -> string {
-    if s.length == 0 { return "/" }
-    let last = s.substring(s.length - 1, s.length)
-    if last == "/" { s } else { s + "/" }
-}
-
 /// Kahn's algorithm: repeatedly pick a unit whose deps are all
 /// already in the output, output it, mark its name in the resolved
 /// set. Stop when no unit can be picked. If output count < input

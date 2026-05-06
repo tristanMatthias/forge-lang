@@ -193,8 +193,3 @@ export fn lock_is_fresh(lock: Lockfile) -> bool {
     true
 }
 
-fn ensure_trailing_slash(s: string) -> string {
-    if s.length == 0 { return "/" }
-    let last = s.substring(s.length - 1, s.length)
-    if last == "/" { s } else { s + "/" }
-}

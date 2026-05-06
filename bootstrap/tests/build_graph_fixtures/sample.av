@@ -9,7 +9,7 @@
 //
 // Diamond shape. Topo order must put libc before liba/libb before root.
 
-use @std.avrac.build.graph.{
+use @std.avrac.build.{
     DepGraph, Unit,
     build_graph,
 }

@@ -2,13 +2,13 @@
 // end-to-end. Compiled and linked by tests/cache_test.av; the parent
 // test asserts on PROBE lines.
 
-use @std.avrac.build.cache.{
+use @std.avrac.build.{
     Cache, PublishResult,
     cache_for, cache_init, cache_has, cache_publish,
     cache_read_ll, cache_evict,
     entry_dir_for, entry_ll_path,
 }
-use @std.avrac.build.fingerprint.{Fingerprint}
+use @std.avrac.build.{Fingerprint}
 
 extern fn avra_shell_exec(cmd: string) -> string
 

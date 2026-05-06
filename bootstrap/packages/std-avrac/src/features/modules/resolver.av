@@ -6,8 +6,7 @@
 use core.{Stmt, StmtList, SStmt, sstmt, sstmt_at, sstmt_dummy, AnnotationList, ExprList}
 use parse.{parse_program_source, parse_program_source_at}
 use core.{avra_process_env_get, avra_selfhost_append_file, avra_selfhost_read_file, avra_is_dir, avra_selfhost_file_exists}
-use build.metadata.{metadata_read, metadata_file_exists}
-use build.metadata_synthesize.{synthesize_unit_body}
+use build.{metadata_read, metadata_file_exists, synthesize_unit_body}
 use features.modules.{list_avra_module_files, list_avra_module_subdirs}
 
 extern fn avra_bytes_to_hex(b: bytes) -> string

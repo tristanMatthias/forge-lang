@@ -12,7 +12,7 @@ extern fn avra_process_env_get(name: string) -> string
 
 use @std.avrac.parse.{parse_program_source, parse_program_source_at}
 use @std.avrac.features.modules.{resolve_module_files, modules_dirname, LoadedPaths}
-use @std.avrac.build.metadata_extract.{collect_source_files}
+use @std.avrac.build.{collect_source_files}
 
 fn probe(name: string, ok: bool) {
     let tag = if ok { "ok" } else { "FAIL" }

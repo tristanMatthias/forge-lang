@@ -16,17 +16,9 @@
 //   Phase 3: per-module units, metadata files, parallel workers
 //   Phase 4: progress bars, --timings, lockfile, profiles
 //
-// Public surface lives in submodules; this file is the namespace
-// root. Consumers reach machinery via:
+// Public surface lives in sibling files; this file is the namespace
+// root. Each sibling .av (cache.av, driver.av, fingerprint.av, …)
+// auto-loads as part of the `build` module under g2eo.1
+// directory-as-module semantics — no `mod` decls needed. Consumers
+// reach machinery via:
 //   use @std.avrac.build.fingerprint.{fp_for_unit, ...}
-
-mod fingerprint
-mod cache
-mod driver
-mod graph
-mod lock
-mod metadata
-mod metadata_extract
-mod metadata_synthesize
-mod link
-mod pool
