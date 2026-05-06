@@ -261,14 +261,15 @@ fn enum_type_has(reg: EnumTypeReg, name: string) -> bool {
 /// Reverse lookup: which enum declares `variant`? Returns "" when
 /// the variant isn't registered. Used to type bare `.Variant`
 /// expressions where the enum name is implicit from context.
-/// Stays linear over `ord` — variant→enum reverse lookup doesn't
-/// benefit from a name-keyed index without a parallel variant→enum map.
+/// Iterates REVERSE-of-insertion so most-recently-declared enums
+/// win, preserving cons-list LIFO semantics
+/// (forge-crafting-intepreters-q3gp).
 export fn tc_enum_find_by_variant(reg: EnumTypeReg, variant: string) -> string {
-    mut i = 0
-    while i < reg.ord.length {
+    mut i = reg.ord.length - 1
+    while i >= 0 {
         let m = reg.ord[i]
         if variant_has(m.variants, variant) { return m.name }
-        i = i + 1
+        i = i - 1
     }
     ""
 }
