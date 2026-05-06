@@ -377,14 +377,19 @@ export fn resolve_dir_module_body(dir: string, loaded: LoadedPaths) -> ModListRe
         acc = stmt_list_concat(acc, parsed.stmts!)
         i = i + 1
     }
-    // g2eo.1 Phase D: also synthesize `Stmt.Module(<subdir>, [])` decls
-    // for every immediate child directory. This drives the resolver to
-    // descend into subdirs without an explicit `mod foo` line in mod.av,
-    // so a parent directory that lists its subdirs solely through the
-    // filesystem stays valid. The dedup_modules pass at program scope
-    // handles any double-decl that comes from a transition mod.av still
-    // listing some children explicitly.
+    acc = stmt_list_concat(acc, synthesize_subdir_module_decls(dir))
+    ModListResult { stmts: acc, loaded: acc_loaded, had_error: false, error_message: "" }
+}
+
+/// Synthesize bare `Stmt.Module(<name>, [])` decls for every
+/// immediate child directory of `dir`. The resolver's `.Module(name, _)`
+/// arm descends into each subdir, so callers can drop `mod foo` decls
+/// for dirs they want auto-discovered. Dedup_modules at program scope
+/// merges any duplicates with explicit `mod foo` decls — partial
+/// migrations are safe.
+export fn synthesize_subdir_module_decls(dir: string) -> StmtList {
     let subdirs = list_avra_module_subdirs(dir)
+    mut acc: StmtList = StmtList.End
     mut j = 0
     while j < subdirs.length {
         let sd = subdirs[j]
@@ -394,7 +399,7 @@ export fn resolve_dir_module_body(dir: string, loaded: LoadedPaths) -> ModListRe
         }
         j = j + 1
     }
-    ModListResult { stmts: acc, loaded: acc_loaded, had_error: false, error_message: "" }
+    acc
 }
 
 // Trailing-segment of a path (after the last '/'). Returns the input
@@ -828,7 +833,15 @@ fn resolve_package_use_and_continue(ss: SStmt, next: StmtList, dir: string, load
     if pkg_dir_load.had_error {
         return pkg_dir_load
     }
-    let pkg_combined_stmts = stmt_list_concat(pkg_stmts, pkg_dir_load.stmts)
+    // g2eo.1.2 partial migrations: subdir synthesis runs unconditionally
+    // (independent of pkg_decls_present), so a package that has SOME
+    // explicit `mod foo` decls can still drop OTHERS — the dropped ones
+    // get auto-discovered. Duplicates with explicit decls are merged by
+    // dedup_modules at the program-outer level. Skipped on the metadata
+    // fast-path because the metadata stubs already enumerate every
+    // submodule that contributed to the cached unit.
+    let pkg_subdir_decls = if take_meta_fast_path { StmtList.End } else { synthesize_subdir_module_decls(pkg_dir) }
+    let pkg_combined_stmts = stmt_list_concat(stmt_list_concat(pkg_stmts, pkg_dir_load.stmts), pkg_subdir_decls)
     let resolved = resolve_module_files_inner(pkg_combined_stmts, pkg_dir, pkg_dir_load.loaded, stack)
     if resolved.had_error { return resolved }
     // Create a nested module structure: @std → cli → {body}
