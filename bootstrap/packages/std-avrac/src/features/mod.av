@@ -1,40 +1,10 @@
 // WHY: aggregator for all language features. Each subdirectory is
 // one feature with its own parser.av, codegen.av, example.av.
 //
-// Each feature module exports Feature values via factory functions.
-// This file just imports and registers them all.
+// Each feature subdirectory is auto-discovered as a submodule
+// (g2eo.1 directory-as-module). This file just imports and
+// registers their factory functions.
 
-mod match_expr
-mod return_stmt
-mod if_stmt
-mod while_stmt
-mod for_stmt
-mod extern_decl
-mod let_stmt
-mod fn_decl
-mod struct_decl
-mod enum_decl
-mod impl_decl
-mod generics
-mod error_propagation
-mod null_safety
-mod trait_decl
-mod tuples
-mod with_expr
-mod list_lit
-mod closures
-mod map_lit
-mod defer_stmt
-mod is_keyword
-mod in_operator
-mod spec_test
-mod select_stmt
-mod parallel_stmt
-mod spawn_expr
-mod modules
-mod eval
-mod union_type
-mod component_decl
 use features.closures.{closures_feature}
 use features.defer_stmt.{defer_feature, errdefer_feature}
 use features.enum_decl.{enum_decl_feature}

@@ -63,6 +63,13 @@ fn main() -> int {
     avra_shell_exec("mkdir -p " + root + "/sub_a")
     avra_shell_exec("mkdir -p " + root + "/sub_b")
     avra_shell_exec("mkdir -p " + root + "/sub_c")
+    // g2eo.1.2: list_avra_module_subdirs requires each candidate
+    // dir to have at least one top-level .av file. Without this,
+    // bare-stub directories (e.g. features/error_messages/ which
+    // only hosts examples/) would get auto-loaded as empty modules.
+    avra_shell_exec("touch " + root + "/sub_a/x.av")
+    avra_shell_exec("touch " + root + "/sub_b/y.av")
+    avra_shell_exec("touch " + root + "/sub_c/z.av")
 
     // ── unfiltered ─────────────────────────────────────────────
     let all = synthesize_subdir_module_decls(root)

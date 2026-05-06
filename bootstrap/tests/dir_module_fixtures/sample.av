@@ -34,6 +34,12 @@ fn main() -> int {
     avra_shell_exec("rm -rf " + root)
     avra_shell_exec("mkdir -p " + root + "/sub_a")
     avra_shell_exec("mkdir -p " + root + "/sub_b")
+    // g2eo.1.2: list_avra_module_subdirs requires at least one
+    // top-level .av file in each candidate dir (filters out
+    // bare-fixtures stubs like features/error_messages/ that exist
+    // only to host examples/ or tests/).
+    avra_shell_exec("touch " + root + "/sub_a/x.av")
+    avra_shell_exec("touch " + root + "/sub_b/y.av")
     avra_shell_exec("touch " + root + "/foo.av")
     avra_shell_exec("touch " + root + "/bar.av")
     avra_shell_exec("touch " + root + "/mod.av")
@@ -92,6 +98,7 @@ fn main() -> int {
     // artifact-output `build/` dir lives one level above `src/`, so
     // it's never reached by these scans. Tracking g2eo.1.2.1.
     avra_shell_exec("mkdir -p " + root + "/tests " + root + "/build")
+    avra_shell_exec("touch " + root + "/build/cache.av")
     let dirs_after = list_avra_module_subdirs(root)
     probe("tests_dir_excluded", !list_contains_suffix(dirs_after, "/tests"))
     probe("build_dir_included", list_contains_suffix(dirs_after, "/build"))

@@ -67,15 +67,24 @@ export fn list_avra_module_files(dir: string) -> List<string> {
     out
 }
 
-/// List the immediate subdirectories of `dir`, returning their
-/// joined paths. Used by the build driver to enumerate sub-modules
-/// of a parent module's directory.
+/// List the immediate subdirectories of `dir` that look like Avra
+/// modules: each entry must contain at least one `.av` source file
+/// at its top level (per `list_avra_module_files`'s filter — `mod.av`,
+/// `_test.av`, dotfiles excluded). Returns the joined directory
+/// paths. Used by the build driver to enumerate sub-modules of a
+/// parent module's directory.
 ///
 /// Skipped:
 ///   - dotfiles (`.git`, `.cache`, …) — readdir already filters
 ///     `.` and `..`, but third-party dotfiles still appear
 ///   - `tests` — fixtures compile through the spec/given/then test
 ///     harness, not as part of their parent module
+///   - subdirs containing zero source `.av` files (e.g. a feature
+///     stub whose only contents are `tests/` or `examples/`). Those
+///     directories are not yet — or never — modules in their own
+///     right; auto-loading them as empty `Module`s would wrap
+///     unrelated children (test fixtures, error-message examples)
+///     into the parent's namespace.
 ///
 /// We deliberately do NOT filter out `build` even though some
 /// projects use a top-level `build/` dir for artifact output: the
@@ -106,10 +115,30 @@ export fn list_avra_module_subdirs(dir: string) -> List<string> {
             continue
         }
         let path = prefix + name
-        if avra_is_dir(path) != 0 {
+        if avra_is_dir(path) != 0 && dir_has_any_av_at_top(path) {
             out.push(path)
         }
         i = i + 1
     }
     out
+}
+
+/// True iff `dir` contains any `.av` file at its top level — used by
+/// `list_avra_module_subdirs` to decide whether a child directory is
+/// a module. Includes `mod.av` (legacy single-file modules), excludes
+/// dotfiles. Subdirectories don't count: a child with only nested
+/// `tests/`, `examples/`, or `fixtures/` is not itself a module — its
+/// contents belong to a different pipeline (test runner, doc fixtures).
+fn dir_has_any_av_at_top(dir: string) -> bool {
+    if avra_is_dir(dir) == 0 { return false }
+    let entries = avra_readdir(dir)
+    mut i = 0
+    while i < entries.length {
+        let name = entries[i]
+        if name != "" && name.byte(0) != 0x2E && avra_str_ends_with(name, ".av") != 0 {
+            return true
+        }
+        i = i + 1
+    }
+    false
 }

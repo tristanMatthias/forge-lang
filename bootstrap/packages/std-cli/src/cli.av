@@ -2,13 +2,9 @@
 // Provides a builder-style API for defining commands, flags, options, and args.
 // Uses avra_selfhost_argc/get_arg_cstr for raw argument access.
 //
-// dir-as-module Phase D was attempted (drop `mod ui`, rely on subdir
-// auto-discovery) but the metadata extractor doesn't capture auto-
-// discovered subdirs — consumers using `use @std.cli.ui.{X}` via
-// AVRA_USE_METADATA=1 broke. Reinstating the explicit decl so the
-// metadata-fast-path round-trips correctly. Tracked under
-// forge-crafting-intepreters-g2eo.1.2.
-mod ui
+// `ui/` is auto-discovered as a sibling submodule (g2eo.1
+// directory-as-module). Consumers reach helpers via
+// `use @std.cli.ui.{X}` without any `mod` decls in this file.
 
 extern fn avra_selfhost_argc() -> int
 extern fn avra_selfhost_get_arg_cstr(idx: int) -> string
