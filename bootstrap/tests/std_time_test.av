@@ -38,8 +38,12 @@ spec "std time" {
     then "known epoch yields year 2000" {
         avra_datetime_year(961070400) == 2000
     }
-    then "uptime is non-negative and below 10 seconds" {
+    then "uptime is non-negative and below 5 minutes" {
+        // Upper bound is generous because this test runs inside a
+        // bundle of ~2000 spec arms. On a slow machine + cold caches
+        // the cumulative wall time before this test fires can exceed
+        // 10s. 5 minutes is the actual practical ceiling.
         let u = avra_uptime_ms()
-        u >= 0 && u < 10000
+        u >= 0 && u < 300000
     }
 }
