@@ -1,0 +1,71 @@
+// g2eo.1.2 — synthesize_subdir_module_decls + filtered variant.
+//
+// Filtered synthesis is the building block for partial migrations:
+// when a package entry's mod.av declares SOME subdirs explicitly
+// (legacy nested) but wants OTHERS auto-discovered (dir-as-module),
+// the resolver passes the existing declarations as a filter so
+// synthesis only emits decls for the subdirs not already covered —
+// preventing duplicate Module wrappers that would interact badly with
+// dedup_modules.
+//
+// Pin: unfiltered emits a decl per subdir; filtered skips already-
+// declared names; filtering ALL subdirs leaves the result empty;
+// missing-dir is silently empty.
+//
+// Tracking ticket: forge-crafting-intepreters-g2eo.1.2.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn dms_run() -> string {
+    avra_shell_exec("if [ ! -f /tmp/avra_dirmod_synth_test.out ]; then bash scripts/diagnose.sh --run tests/dir_module_synthesis_fixtures/sample.av > /tmp/avra_dirmod_synth_test.out 2>&1 || true; fi; cat /tmp/avra_dirmod_synth_test.out")
+}
+
+fn dms_wipe() -> string {
+    avra_shell_exec("rm -f /tmp/avra_dirmod_synth_test.out")
+}
+
+spec "dir_module synthesis: clear cached output" {
+    then "wipe stale /tmp output" {
+        let _ = dms_wipe()
+        true
+    }
+}
+
+spec "synthesize_subdir_module_decls: unfiltered" {
+    then "emits one Module decl per subdir" {
+        dms_run().contains("PROBE unfiltered_count_3: ok")
+    }
+    then "decls include sub_a" {
+        dms_run().contains("PROBE unfiltered_has_sub_a: ok")
+    }
+    then "decls include sub_b" {
+        dms_run().contains("PROBE unfiltered_has_sub_b: ok")
+    }
+    then "decls include sub_c" {
+        dms_run().contains("PROBE unfiltered_has_sub_c: ok")
+    }
+}
+
+spec "synthesize_subdir_module_decls_filtered: skips already-declared" {
+    then "filter with one existing skips it (count drops to 2)" {
+        dms_run().contains("PROBE filtered_one_count_2: ok")
+    }
+    then "filtered-out subdir does not appear in output" {
+        dms_run().contains("PROBE filtered_one_skip_sub_a: ok")
+    }
+    then "non-filtered subdirs still in output (sub_b)" {
+        dms_run().contains("PROBE filtered_one_keeps_sub_b: ok")
+    }
+    then "non-filtered subdirs still in output (sub_c)" {
+        dms_run().contains("PROBE filtered_one_keeps_sub_c: ok")
+    }
+    then "all subdirs filtered → empty result" {
+        dms_run().contains("PROBE filtered_all_count_0: ok")
+    }
+}
+
+spec "synthesize_subdir_module_decls: missing dir" {
+    then "non-existent dir returns empty list (no error)" {
+        dms_run().contains("PROBE missing_dir_count_0: ok")
+    }
+}
