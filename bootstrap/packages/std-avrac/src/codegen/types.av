@@ -479,18 +479,30 @@ export fn releasable_has(set: ReleasableSet, name: string) -> bool {
     }
 }
 
+/// One struct decl entry in StructReg's `ord` list.
+export type StructRegMeta = { name: string, fields: FieldList }
+
 /// Registry of declared struct types — `name → FieldList`. Built by
-/// the declaration pass; carried as `Ctx.structs`. Fields are stored
-/// in declaration order so `field_resolved_at` can index by position.
-export enum StructReg {
-    End
-    Node(name: string, fields: FieldList, next: StructReg)
+/// the declaration pass; carried as `Ctx.structs`. Hashmap-backed
+/// for O(1) lookup, same pattern as FnRetTypes / typeck registries.
+export type StructReg = {
+    ord: List<StructRegMeta>,
+    idx: ptr,
+}
+
+export fn struct_reg_new() -> StructReg {
+    StructReg { ord: [], idx: avra_map_new_cstr() }
+}
+
+export fn struct_reg_register(reg: StructReg, name: string, fields: FieldList) -> StructReg {
+    mut ord = reg.ord
+    let new_idx = ord.length
+    ord.push(StructRegMeta { name, fields })
+    avra_map_set_cstr(reg.idx, name, new_idx)
+    StructReg { ord, idx: reg.idx }
 }
 
 /// Result of a struct registry lookup. `found` is 1 when present.
-///
-/// @field found — 1 when the struct was registered, 0 otherwise.
-/// @field fields — the struct's declared FieldList (empty on miss).
 export type StructLookup = {
     found: int,
     fields: FieldList,
@@ -499,27 +511,34 @@ export type StructLookup = {
 /// Look up a struct by name. Always returns a StructLookup — callers
 /// inspect `.found` to distinguish hit from miss.
 export fn struct_reg_lookup(reg: StructReg, name: string) -> StructLookup {
-    match reg {
-        .End -> StructLookup { found: false, fields: .End }
-        .Node(n, fields, _) if n == name -> StructLookup { found: true, fields }
-        .Node(n, fields, next) -> {
-            struct_reg_lookup(next, name)
-        }
-    }
+    if avra_map_has_cstr(reg.idx, name) == 0 { return StructLookup { found: false, fields: .End } }
+    let i = avra_map_get_cstr(reg.idx, name)
+    StructLookup { found: true, fields: reg.ord[i].fields }
 }
 
-/// Registry of declared enum types — `name → VariantList`. Variants
-/// remember their tag hashes (djb2-derived) and field lists so codegen
-/// can build constructor calls and pattern-match jump tables.
-export enum EnumReg {
-    End
-    Node(name: string, variants: VariantList, next: EnumReg)
+/// One enum decl entry in EnumReg's `ord` list.
+export type EnumRegMeta = { name: string, variants: VariantList }
+
+/// Registry of declared enum types — `name → VariantList`. Hashmap-
+/// backed for O(1) lookup, same pattern as StructReg.
+export type EnumReg = {
+    ord: List<EnumRegMeta>,
+    idx: ptr,
+}
+
+export fn enum_reg_new() -> EnumReg {
+    EnumReg { ord: [], idx: avra_map_new_cstr() }
+}
+
+export fn enum_reg_register(reg: EnumReg, name: string, variants: VariantList) -> EnumReg {
+    mut ord = reg.ord
+    let new_idx = ord.length
+    ord.push(EnumRegMeta { name, variants })
+    avra_map_set_cstr(reg.idx, name, new_idx)
+    EnumReg { ord, idx: reg.idx }
 }
 
 /// Result of an enum registry lookup. `found` is 1 when present.
-///
-/// @field found — 1 when the enum was registered, 0 otherwise.
-/// @field variants — the enum's variants (empty on miss).
 export type EnumLookup = {
     found: int,
     variants: VariantList,
@@ -528,45 +547,38 @@ export type EnumLookup = {
 /// Look up an enum by name. Always returns an EnumLookup — callers
 /// inspect `.found` to distinguish hit from miss.
 export fn enum_reg_lookup(reg: EnumReg, name: string) -> EnumLookup {
-    match reg {
-        .End -> EnumLookup { found: false, variants: .End }
-        .Node(n, variants, _) if n == name -> EnumLookup { found: true, variants }
-        .Node(n, variants, next) -> {
-            enum_reg_lookup(next, name)
-        }
-    }
+    if avra_map_has_cstr(reg.idx, name) == 0 { return EnumLookup { found: false, variants: .End } }
+    let i = avra_map_get_cstr(reg.idx, name)
+    EnumLookup { found: true, variants: reg.ord[i].variants }
 }
 
 /// Find the enum type name that contains a given variant. Used to
 /// disambiguate the leading-dot shorthand `.Variant` — codegen needs
-/// the enum's name to build the right constructor.
-///
-/// Returns `""` when no enum claims the variant. When multiple enums
-/// share a variant name with different arity, prefer
-/// `enum_reg_find_by_variant_arity` instead.
+/// the enum's name to build the right constructor. Stays linear over
+/// `ord` — variant→enum reverse lookup doesn't benefit from a name-
+/// keyed index.
 export fn enum_reg_find_by_variant(reg: EnumReg, variant: string) -> string {
-    match reg {
-        .End -> ""
-        .Node(name, variants, _) if variant_lookup(variants, variant).found -> name
-        .Node(_, _, next) -> enum_reg_find_by_variant(next, variant)
+    mut i = 0
+    while i < reg.ord.length {
+        let m = reg.ord[i]
+        if variant_lookup(m.variants, variant).found { return m.name }
+        i = i + 1
     }
+    ""
 }
 
 /// Find an enum by variant name AND field count — prevents ambiguity
 /// when multiple enums declare the same variant name but with
 /// different field counts. Returns `""` when no match.
 export fn enum_reg_find_by_variant_arity(reg: EnumReg, variant: string, arity: int) -> string {
-    match reg {
-        .End -> ""
-        .Node(name, variants, next) -> {
-            let v = variant_lookup(variants, variant)
-            if v.found && field_list_length(v.fields) == arity {
-                name
-            } else {
-                enum_reg_find_by_variant_arity(next, variant, arity)
-            }
-        }
+    mut i = 0
+    while i < reg.ord.length {
+        let m = reg.ord[i]
+        let v = variant_lookup(m.variants, variant)
+        if v.found && field_list_length(v.fields) == arity { return m.name }
+        i = i + 1
     }
+    ""
 }
 
 /// Look up a function's return ValueType. Returns `.Unknown` when

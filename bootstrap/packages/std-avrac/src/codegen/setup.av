@@ -280,8 +280,8 @@ fn codegen_program(stmts: StmtList, debug_null_checks: bool, coverage: bool, sou
     // Collect newtype/union alias registries first — needed for field type resolution
     let cg_newtypes = collect_newtypes(stmts, CgNewtypeReg.End)
     let cg_union_aliases = collect_union_aliases(stmts, CgUnionAliasReg.End)
-    let structs = declare_structs(lc, i64t, i1t, dt, pt, stmts, cg_newtypes, cg_union_aliases, StructReg.End)
-    let enums = declare_enums(lc, i64t, i1t, dt, pt, stmts, structs, cg_newtypes, cg_union_aliases, EnumReg.End)
+    let structs = declare_structs(lc, i64t, i1t, dt, pt, stmts, cg_newtypes, cg_union_aliases, struct_reg_new())
+    let enums = declare_enums(lc, i64t, i1t, dt, pt, stmts, structs, cg_newtypes, cg_union_aliases, enum_reg_new())
     // Union type layout: {i64 tag, ptr payload} — same as enums
     let union_arr = avra_llvm_type_array_new(2)
     avra_llvm_type_array_set(union_arr, 0, i64t)
@@ -636,7 +636,7 @@ fn fill_and_register_structs(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, st
             let updated = match stmt {
                 .TypeDecl(name, _, fields) -> {
                     let op_fields = resolve_type_operator(fields, reg)
-                    let base_regs = TypeRegs { structs: reg, enums: EnumReg.End, newtypes: nts, union_aliases: uas }
+                    let base_regs = TypeRegs { structs: reg, enums: enum_reg_new(), newtypes: nts, union_aliases: uas }
                     let resolved_fields = resolve_field_list(op_fields, base_regs)
                     let count = field_list_length(resolved_fields)
                     let field_arr = avra_llvm_type_array_new(count)
@@ -649,10 +649,10 @@ fn fill_and_register_structs(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, st
                         avra_llvm_struct_set_body(st, field_arr, count, 0)
                     }
                     avra_llvm_type_array_free(field_arr)
-                    StructReg.Node(name, resolved_fields, reg)
+                    struct_reg_register(reg, name, resolved_fields)
                 }
                 .ShapeDecl(name, fields) -> {
-                    let base_regs = TypeRegs { structs: reg, enums: EnumReg.End, newtypes: nts, union_aliases: uas }
+                    let base_regs = TypeRegs { structs: reg, enums: enum_reg_new(), newtypes: nts, union_aliases: uas }
                     let resolved_fields = resolve_field_list(fields, base_regs)
                     let count = field_list_length(resolved_fields)
                     let field_arr = avra_llvm_type_array_new(count)
@@ -660,7 +660,7 @@ fn fill_and_register_structs(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, st
                     let st = avra_llvm_get_type_by_name(ctx, name)
                     avra_llvm_struct_set_body(st, field_arr, count, 0)
                     avra_llvm_type_array_free(field_arr)
-                    StructReg.Node(name, resolved_fields, reg)
+                    struct_reg_register(reg, name, resolved_fields)
                 }
                 .UnionAliasDecl(_, _) -> reg
                 .NewtypeDecl(_, _) -> reg
@@ -797,7 +797,7 @@ fn declare_enums(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtLis
                     declare_variant_payloads(ctx, i64t, i1t, dt, pt, name, variants, structs, nts, uas, reg)
                     let ev_regs = TypeRegs { structs, enums: reg, newtypes: nts, union_aliases: uas }
                     let resolved_variants = resolve_variant_fields(variants, ev_regs)
-                    EnumReg.Node(name, resolved_variants, reg)
+                    enum_reg_register(reg, name, resolved_variants)
                 }
                 .Module(_, body) -> declare_enums(ctx, i64t, i1t, dt, pt, body, structs, nts, uas, reg)
                 _ -> reg
@@ -846,16 +846,14 @@ fn variants_have_rc(variants: VariantList) -> bool {
 /// each other's release fns, so all signatures must exist before
 /// any body is emitted.
 fn declare_release_fns_structs(m: ptr, i64t: ptr, pt: ptr, reg: StructReg) {
-    match reg {
-        .End -> {}
-        .Node(name, fields, next) -> {
-            // Declare release function if struct has RC fields OR a drop impl
-            let has_drop = avra_llvm_get_named_function(m, "${name}__drop") != null
-            if fields_have_rc(fields) || has_drop {
-                decl(m, "__release_${name}", i64t, [pt])
-            }
-            declare_release_fns_structs(m, i64t, pt, next)
+    mut i = 0
+    while i < reg.ord.length {
+        let s = reg.ord[i]
+        let has_drop = avra_llvm_get_named_function(m, "${s.name}__drop") != null
+        if fields_have_rc(s.fields) || has_drop {
+            decl(m, "__release_${s.name}", i64t, [pt])
         }
+        i = i + 1
     }
 }
 
@@ -863,14 +861,13 @@ fn declare_release_fns_structs(m: ptr, i64t: ptr, pt: ptr, reg: StructReg) {
 /// variants carry RC payloads. Phase 1 of release emission for
 /// enums (mirror of `declare_release_fns_structs`).
 fn declare_release_fns_enums(m: ptr, i64t: ptr, pt: ptr, reg: EnumReg) {
-    match reg {
-        .End -> {}
-        .Node(name, variants, next) -> {
-            if variants_have_rc(variants) {
-                decl(m, "__release_${name}", i64t, [pt])
-            }
-            declare_release_fns_enums(m, i64t, pt, next)
+    mut i = 0
+    while i < reg.ord.length {
+        let e = reg.ord[i]
+        if variants_have_rc(e.variants) {
+            decl(m, "__release_${e.name}", i64t, [pt])
         }
+        i = i + 1
     }
 }
 
@@ -1079,32 +1076,29 @@ fn emit_release_body_enum(ctx: Ctx, name: string, variants: VariantList, is_cycl
 /// body. Skips structs without RC fields and without a Drop impl —
 /// their release fn was never declared.
 fn emit_release_bodies_structs(ctx: Ctx, reg: StructReg, cycles: CycleSet) {
-    match reg {
-        .End -> {}
-        .Node(name, fields, next) -> {
-            // Generate release function if struct has RC fields OR a drop impl
-            let has_drop = ctx.get_fn("${name}__drop") != null
-            if fields_have_rc(fields) || has_drop {
-                let is_cyclic = cycle_set_has(cycles, name)
-                emit_release_body_struct(ctx, name, fields, is_cyclic)
-            }
-            emit_release_bodies_structs(ctx, next, cycles)
+    mut i = 0
+    while i < reg.ord.length {
+        let s = reg.ord[i]
+        let has_drop = ctx.get_fn("${s.name}__drop") != null
+        if fields_have_rc(s.fields) || has_drop {
+            let is_cyclic = cycle_set_has(cycles, s.name)
+            emit_release_body_struct(ctx, s.name, s.fields, is_cyclic)
         }
+        i = i + 1
     }
 }
 
 /// Phase 2 for enums: walk EnumReg and emit each release fn's body
 /// when at least one variant carries an RC payload.
 fn emit_release_bodies_enums(ctx: Ctx, reg: EnumReg, cycles: CycleSet) {
-    match reg {
-        .End -> {}
-        .Node(name, variants, next) -> {
-            if variants_have_rc(variants) {
-                let is_cyclic = cycle_set_has(cycles, name)
-                emit_release_body_enum(ctx, name, variants, is_cyclic)
-            }
-            emit_release_bodies_enums(ctx, next, cycles)
+    mut i = 0
+    while i < reg.ord.length {
+        let e = reg.ord[i]
+        if variants_have_rc(e.variants) {
+            let is_cyclic = cycle_set_has(cycles, e.name)
+            emit_release_body_enum(ctx, e.name, e.variants, is_cyclic)
         }
+        i = i + 1
     }
 }
 

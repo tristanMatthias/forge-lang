@@ -374,18 +374,24 @@ export fn analyze_copy_types(structs: StructReg, enums: EnumReg) -> CopySet {
 
 /// Seed every struct name as a Copy candidate.
 fn seed_struct_candidates(reg: StructReg, set: CopySet) -> CopySet {
-    match reg {
-        .End -> set
-        .Node(name, _, next) -> seed_struct_candidates(next, CopySet.Node(name, set))
+    mut out = set
+    mut i = 0
+    while i < reg.ord.length {
+        out = CopySet.Node(reg.ord[i].name, out)
+        i = i + 1
     }
+    out
 }
 
 /// Seed every enum name as a Copy candidate.
 fn seed_enum_candidates(reg: EnumReg, set: CopySet) -> CopySet {
-    match reg {
-        .End -> set
-        .Node(name, _, next) -> seed_enum_candidates(next, CopySet.Node(name, set))
+    mut out = set
+    mut i = 0
+    while i < reg.ord.length {
+        out = CopySet.Node(reg.ord[i].name, out)
+        i = i + 1
     }
+    out
 }
 
 /// Iterate `refine_copy` until the candidate set is stable. Every

@@ -118,38 +118,34 @@ fn type_reaches_target(ty: ValueType, target: string, visited: CycleVisited, str
 /// Walk every declared struct type. For each, run a self-targeted
 /// reachability check; record the name when a cycle exists.
 fn analyze_structs(reg: StructReg, cs: CycleSet, structs: StructReg, enums: EnumReg) -> CycleSet {
-    match reg {
-        .End -> cs
-        .Node(name, fields, next) -> {
-            let visited = CycleVisited.Node(name, CycleVisited.End)
-            let is_cyclic = fields_reach_target(fields, name, visited, structs, enums)
-            let updated = if is_cyclic {
-                CycleSet.Node(name, cs)
-            } else {
-                cs
-            }
-            analyze_structs(next, updated, structs, enums)
+    mut out = cs
+    mut i = 0
+    while i < reg.ord.length {
+        let m = reg.ord[i]
+        let visited = CycleVisited.Node(m.name, CycleVisited.End)
+        if fields_reach_target(m.fields, m.name, visited, structs, enums) {
+            out = CycleSet.Node(m.name, out)
         }
+        i = i + 1
     }
+    out
 }
 
 /// Walk every declared enum type. For each, run a self-targeted
 /// reachability check across its variants; record the name when a
 /// cycle exists.
 fn analyze_enums(reg: EnumReg, cs: CycleSet, structs: StructReg, enums: EnumReg) -> CycleSet {
-    match reg {
-        .End -> cs
-        .Node(name, variants, next) -> {
-            let visited = CycleVisited.Node(name, CycleVisited.End)
-            let is_cyclic = variants_reach_target(variants, name, visited, structs, enums)
-            let updated = if is_cyclic {
-                CycleSet.Node(name, cs)
-            } else {
-                cs
-            }
-            analyze_enums(next, updated, structs, enums)
+    mut out = cs
+    mut i = 0
+    while i < reg.ord.length {
+        let m = reg.ord[i]
+        let visited = CycleVisited.Node(m.name, CycleVisited.End)
+        if variants_reach_target(m.variants, m.name, visited, structs, enums) {
+            out = CycleSet.Node(m.name, out)
         }
+        i = i + 1
     }
+    out
 }
 
 /// Public entry point. Computes the cycle-capable set across every
