@@ -209,11 +209,15 @@ fn qualify(current_module: string, name: string) -> string {
 }
 
 fn annotation_has_export(annots: AnnotationList) -> bool {
+    annotation_has(annots, "export")
+}
+
+fn annotation_has(annots: AnnotationList, target: string) -> bool {
     match annots {
         .End -> false
         .Node(name, _, next) -> {
-            if name == "export" { return true }
-            annotation_has_export(next)
+            if name == target { return true }
+            annotation_has(next, target)
         }
     }
 }
@@ -221,6 +225,15 @@ fn annotation_has_export(annots: AnnotationList) -> bool {
 fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool) -> ExtractAcc {
     match stmt {
         .Annotated(annots, inner) -> {
+            // g2eo Phase A/B: when this stmt is the @external_unit
+            // wrapper around a Module from another compile unit, skip
+            // it entirely. Otherwise its types and fns would land in
+            // our metadata.bin AND in the producer's, and consumers
+            // of our `.meta.bin` would see phantom duplicates of
+            // every external decl.
+            if annotation_has(annots, "external_unit") {
+                return acc
+            }
             let is_export = exported || annotation_has_export(annots)
             walk_stmt(acc, inner, current_module, is_export)
         }
