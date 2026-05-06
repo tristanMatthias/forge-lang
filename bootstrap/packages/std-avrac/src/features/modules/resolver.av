@@ -384,22 +384,51 @@ export fn resolve_dir_module_body(dir: string, loaded: LoadedPaths) -> ModListRe
 /// Synthesize bare `Stmt.Module(<name>, [])` decls for every
 /// immediate child directory of `dir`. The resolver's `.Module(name, _)`
 /// arm descends into each subdir, so callers can drop `mod foo` decls
-/// for dirs they want auto-discovered. Dedup_modules at program scope
-/// merges any duplicates with explicit `mod foo` decls — partial
-/// migrations are safe.
-export fn synthesize_subdir_module_decls(dir: string) -> StmtList {
+/// for dirs they want auto-discovered. Skips any subdir whose name is
+/// already declared in `existing` — produces NO duplicates with
+/// explicit `mod foo` decls, so dedup_modules doesn't have to merge
+/// (avoids a dedup-idempotency bug in the program-outer pass).
+export fn synthesize_subdir_module_decls_filtered(dir: string, existing: StmtList) -> StmtList {
     let subdirs = list_avra_module_subdirs(dir)
     mut acc: StmtList = StmtList.End
     mut j = 0
     while j < subdirs.length {
         let sd = subdirs[j]
         let name = path_basename(sd)
-        if name != "" {
+        if name != "" && !stmts_have_module_named(existing, name) {
             acc = stmt_list_concat(acc, StmtList.Node(sstmt_dummy(Stmt.Module(name, StmtList.End)), StmtList.End))
         }
         j = j + 1
     }
     acc
+}
+
+/// Backwards-compat alias for the unfiltered variant — used by
+/// resolve_dir_module_body's call site, where the body has no existing
+/// Module decls to filter against (the file just got parsed and
+/// concatenated).
+export fn synthesize_subdir_module_decls(dir: string) -> StmtList {
+    synthesize_subdir_module_decls_filtered(dir, StmtList.End)
+}
+
+// True iff `stmts` contains a top-level `Module(name, _)` matching
+// `target_name`. Used by synthesize_subdir_module_decls_filtered to
+// avoid producing duplicates with explicit decls.
+fn stmts_have_module_named(stmts: StmtList, target_name: string) -> bool {
+    match stmts {
+        .End -> false
+        .Node(ss, next) -> {
+            let hit = match ss.node {
+                .Module(name, _) -> name == target_name
+                .Annotated(_, inner) -> match inner {
+                    .Module(name, _) -> name == target_name
+                    _ -> false
+                }
+                _ -> false
+            }
+            if hit { true } else { stmts_have_module_named(next, target_name) }
+        }
+    }
 }
 
 // Trailing-segment of a path (after the last '/'). Returns the input
@@ -840,7 +869,7 @@ fn resolve_package_use_and_continue(ss: SStmt, next: StmtList, dir: string, load
     // dedup_modules at the program-outer level. Skipped on the metadata
     // fast-path because the metadata stubs already enumerate every
     // submodule that contributed to the cached unit.
-    let pkg_subdir_decls = if take_meta_fast_path { StmtList.End } else { synthesize_subdir_module_decls(pkg_dir) }
+    let pkg_subdir_decls = if take_meta_fast_path { StmtList.End } else { synthesize_subdir_module_decls_filtered(pkg_dir, pkg_stmts) }
     let pkg_combined_stmts = stmt_list_concat(stmt_list_concat(pkg_stmts, pkg_dir_load.stmts), pkg_subdir_decls)
     let resolved = resolve_module_files_inner(pkg_combined_stmts, pkg_dir, pkg_dir_load.loaded, stack)
     if resolved.had_error { return resolved }
