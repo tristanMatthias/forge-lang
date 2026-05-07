@@ -747,15 +747,48 @@ fn pre_build_subdir_units(project_dir: string, manifest_name: string, compiler_p
     let env_jobs = avra_process_env_get("AVRA_JOBS")
     let jobs_n = if env_jobs != "" { avra_parse_int(env_jobs) } else { 4 }
     if !args.json {
-        eprintln("[per-module] dispatching ${string(cmds.length)} units to pool (jobs=${string(jobs_n)})")
+        eprintln("[per-module] dispatching ${string(cmds.length)} compile units to pool (jobs=${string(jobs_n)})")
     }
-    let rc = pool_run(cmds, jobs_n)
-    if rc != 0 {
-        eprintln("[per-module] one or more units failed (rc=${string(rc)}) — see ${out_dir}/<unit>.log")
-    } else if !args.json {
-        eprintln("[per-module] all ${string(cmds.length)} units built")
+    let cc_rc = pool_run(cmds, jobs_n)
+    if cc_rc != 0 {
+        eprintln("[per-module] one or more compile units failed (rc=${string(cc_rc)}) — see ${out_dir}/<unit>.log")
+        return cc_rc
     }
-    rc
+    // Phase B.2: llc each per-mod .ll → .o in parallel. Same pool,
+    // jobs cap from AVRA_JOBS. The downstream link step expects
+    // object files (`link_objects` from k21v takes List<.o>), so
+    // this is the final step before a multi-unit link.
+    // Resolve llc the same way the coverage path does: $LLVM_PREFIX
+    // when set, otherwise the homebrew-on-arm install path. Plain
+    // `llc` rarely sits on $PATH on macOS.
+    let llvm_env = avra_process_env_get("LLVM_PREFIX")
+    let llvm_prefix = if llvm_env == "" { "/opt/homebrew/opt/llvm" } else { llvm_env }
+    let llc_bin = "${llvm_prefix}/bin/llc"
+    mut llc_cmds = []
+    mut k = 0
+    while k < subdirs.length {
+        let sl = subdir_basename(subdirs[k])
+        if sl == "" {
+            k = k + 1
+            continue
+        }
+        let ll = "${out_dir}/${sl}.ll"
+        let o = "${out_dir}/${sl}.o"
+        llc_cmds.push("${llc_bin} -O0 -filetype=obj '${ll}' -o '${o}' > '${out_dir}/${sl}.llc.log' 2>&1")
+        k = k + 1
+    }
+    if !args.json {
+        eprintln("[per-module] llc'ing ${string(llc_cmds.length)} units to .o (jobs=${string(jobs_n)})")
+    }
+    let llc_rc = pool_run(llc_cmds, jobs_n)
+    if llc_rc != 0 {
+        eprintln("[per-module] llc failed for one or more units (rc=${string(llc_rc)}) — see ${out_dir}/<unit>.llc.log")
+        return llc_rc
+    }
+    if !args.json {
+        eprintln("[per-module] ${string(slugs.length)} .ll + .o + .meta.bin written to ${out_dir}/")
+    }
+    0
 }
 
 // Return the trailing path segment of `p`, stripping any trailing
