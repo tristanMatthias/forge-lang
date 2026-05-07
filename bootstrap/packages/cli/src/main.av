@@ -30,6 +30,7 @@
 // This file owns no compiler logic — it only orchestrates argv
 // parsing and dispatches to the lib's pure entry points.
 use @std.avrac.core.{avra_selfhost_argc, avra_selfhost_get_arg_cstr, avra_selfhost_file_exists, avra_selfhost_read_file, avra_selfhost_write_file, avra_selfhost_append_file, avra_shell_exec, avra_shell_exec_status, avra_process_exit, avra_process_forward, avra_process_env_get, exit, avra_char_from_hex}
+use @std.avrac.core.{avra_file_mtime, avra_is_dir, avra_readdir, avra_str_ends_with}
 
 // Convenience aliases so handler bodies stay readable.
 fn file_exists(path: string) -> int { avra_selfhost_file_exists(path) }
@@ -724,6 +725,7 @@ fn pre_build_subdir_units(project_dir: string, manifest_name: string, compiler_p
     }
     mut cmds = []
     mut slugs = []
+    mut hits = 0
     mut i = 0
     while i < subdirs.length {
         let sub = subdirs[i]
@@ -739,10 +741,30 @@ fn pre_build_subdir_units(project_dir: string, manifest_name: string, compiler_p
         // prefix matches exactly.
         let target = "src/${sub_name}/"
         let out_ll = "${out_dir}/${sub_name}.ll"
+        // g2eo Phase B.4: simple mtime-based incremental rebuild gate.
+        // Skip the per-mod compile when its .o is newer than every
+        // .av file in the subdir (and the entry, since the wrapper
+        // affects which decls land in the unit). Conservative compared
+        // to a full sha256 fingerprint cache — false misses only, no
+        // false hits — and lets `bs2 build --per_module` re-runs skip
+        // unchanged units without integrating with @std.avrac.build's
+        // full cache layout.
+        let out_o = "${out_dir}/${sub_name}.o"
+        let out_meta = "${out_dir}/${sub_name}.ll.meta.bin"
+        if avra_selfhost_file_exists(out_o) != 0 && avra_selfhost_file_exists(out_meta) != 0 {
+            if per_mod_outputs_fresh(sub, out_o, entry_path) {
+                hits = hits + 1
+                i = i + 1
+                continue
+            }
+        }
         let cmd = "cd \"${project_dir}\" && \"${compiler_path}\" compile --module_path='${pkg_qual}' --target_module='${target}' --emit_metadata --output='${out_ll}' '${entry_path}' > '${out_dir}/${sub_name}.log' 2>&1"
         cmds.push(cmd)
         slugs.push(sub_name)
         i = i + 1
+    }
+    if hits > 0 && !args.json {
+        eprintln("[per-module] cache hit on ${string(hits)} unchanged unit(s)")
     }
     // Phase C: also run one extra compile WITHOUT --target_module
     // alongside the per-mod ones. That extra invocation produces the
@@ -803,6 +825,19 @@ fn pre_build_subdir_units(project_dir: string, manifest_name: string, compiler_p
         }
         let ll = "${out_dir}/${sl}.ll"
         let o = "${out_dir}/${sl}.o"
+        // B.4 incremental: skip llc when .o is fresh against its .ll.
+        // The compile-step gate above already handled the .ll vs
+        // sources case; here we just dodge re-llc'ing an unchanged
+        // .ll. Only relevant for fully cached subdirs (cmds list
+        // empty for them, so the .ll never moved).
+        if avra_selfhost_file_exists(o) != 0 && avra_selfhost_file_exists(ll) != 0 {
+            let o_m = avra_file_mtime(o)
+            let ll_m = avra_file_mtime(ll)
+            if o_m > 0 && ll_m > 0 && o_m >= ll_m {
+                k = k + 1
+                continue
+            }
+        }
         llc_cmds.push("${llc_bin} -O0 -filetype=obj '${ll}' -o '${o}' > '${out_dir}/${sl}.llc.log' 2>&1")
         k = k + 1
     }
@@ -832,6 +867,47 @@ fn pre_build_subdir_units(project_dir: string, manifest_name: string, compiler_p
         eprintln("[per-module] ${string(slugs.length)} .ll + .o + .meta.bin + lib${archive_name}.a written to ${out_dir}/")
     }
     0
+}
+
+// True when `out_o` is newer than every `.av` file reachable from
+// `sub_dir` (recursively) AND newer than `entry_path`. The recursive
+// walk covers nested feature subdirs (e.g. features/eval/, features/
+// closures/) so editing any leaf invalidates its parent module's
+// per-mod cache. Conservative: any source we can't stat is treated
+// as newer (force rebuild). Used by pre_build_subdir_units's
+// incremental-rebuild gate.
+fn per_mod_outputs_fresh(sub_dir: string, out_o: string, entry_path: string) -> bool {
+    let out_mtime = avra_file_mtime(out_o)
+    if out_mtime <= 0 { return false }
+    let entry_mtime = avra_file_mtime(entry_path)
+    if entry_mtime <= 0 || entry_mtime > out_mtime { return false }
+    sub_dir_mtime_le(sub_dir, out_mtime)
+}
+
+// Walk `dir` recursively; return false the moment any `.av` source
+// has mtime > `cap`. Empty dirs and missing dirs return true (no
+// invalidation — we built more recently than there is to read).
+fn sub_dir_mtime_le(dir: string, cap: int) -> bool {
+    if avra_is_dir(dir) == 0 { return true }
+    let entries = avra_readdir(dir)
+    let prefix = if dir.length > 0 && dir.byte(dir.length - 1) == 0x2F { dir } else { dir + "/" }
+    mut i = 0
+    while i < entries.length {
+        let name = entries[i]
+        if name == "" || name.byte(0) == 0x2E {
+            i = i + 1
+            continue
+        }
+        let path = prefix + name
+        if avra_is_dir(path) != 0 {
+            if !sub_dir_mtime_le(path, cap) { return false }
+        } else if avra_str_ends_with(name, ".av") != 0 {
+            let m = avra_file_mtime(path)
+            if m <= 0 || m > cap { return false }
+        }
+        i = i + 1
+    }
+    true
 }
 
 // Return the trailing path segment of `p`, stripping any trailing
