@@ -744,6 +744,24 @@ fn pre_build_subdir_units(project_dir: string, manifest_name: string, compiler_p
         slugs.push(sub_name)
         i = i + 1
     }
+    // Phase C: also run one extra compile WITHOUT --target_module
+    // alongside the per-mod ones. That extra invocation produces the
+    // unit-level `<entry>.meta.bin` consumers expect at the legacy
+    // path — the existing AVRA_USE_METADATA fast-path looks for it
+    // colocated with the entry source. Without this, a downstream
+    // `bs2 compile` against `cli/main.av` can't find any std-avrac
+    // metadata and falls back to a full re-parse, defeating the
+    // point of having pre-built per-mod artefacts.
+    //
+    // Cost: one additional full-package compile per `bs2 build
+    // --per_module` invocation. Tradeoff is acceptable for the
+    // Phase B prototype — the merge-per-mod-metas-into-unit-meta
+    // path is the right long-term answer (no extra compile pass)
+    // but needs a dedicated metadata-merge function.
+    let unit_meta_log = "${out_dir}/_unit_meta.log"
+    let unit_meta_cmd = "cd \"${project_dir}\" && \"${compiler_path}\" compile --module_path='${pkg_qual}' --emit_metadata '${entry_path}' > '${unit_meta_log}' 2>&1"
+    cmds.push(unit_meta_cmd)
+    slugs.push("_unit_meta")
     let env_jobs = avra_process_env_get("AVRA_JOBS")
     let jobs_n = if env_jobs != "" { avra_parse_int(env_jobs) } else { 4 }
     if !args.json {
@@ -751,7 +769,7 @@ fn pre_build_subdir_units(project_dir: string, manifest_name: string, compiler_p
     }
     let cc_rc = pool_run(cmds, jobs_n)
     if cc_rc != 0 {
-        eprintln("[per-module] one or more compile units failed (rc=${string(cc_rc)}) — see ${out_dir}/<unit>.log")
+        eprintln("[per-module] one or more compile units failed (rc=${string(cc_rc)}) — see ${out_dir}/<unit>.log or ${unit_meta_log}")
         return cc_rc
     }
     // Phase B.2: llc each per-mod .ll → .o in parallel. Same pool,
