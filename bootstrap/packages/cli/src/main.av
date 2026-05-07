@@ -764,10 +764,21 @@ fn pre_build_subdir_units(project_dir: string, manifest_name: string, compiler_p
     slugs.push("_unit_meta")
     let env_jobs = avra_process_env_get("AVRA_JOBS")
     let jobs_n = if env_jobs != "" { avra_parse_int(env_jobs) } else { 4 }
-    if !args.json {
-        eprintln("[per-module] dispatching ${string(cmds.length)} compile units to pool (jobs=${string(jobs_n)})")
+    let total = cmds.length
+    // Phase C UI: when stdout is a TTY and --json isn't on, spawn the
+    // pool as a subprocess + poll the marker_dir in the foreground
+    // for a multi-line progress bar (same shape as the path-deps TTY
+    // branch). Falls back to silent pool_run when stdout is piped
+    // (CI logs stay byte-clean).
+    let want_progress = progress_should_render() && !args.json
+    let cc_rc = if want_progress {
+        run_per_mod_with_progress(cmds, slugs, jobs_n, out_dir, total)
+    } else {
+        if !args.json {
+            eprintln("[per-module] dispatching ${string(total)} compile units to pool (jobs=${string(jobs_n)})")
+        }
+        pool_run(cmds, jobs_n)
     }
-    let cc_rc = pool_run(cmds, jobs_n)
     if cc_rc != 0 {
         eprintln("[per-module] one or more compile units failed (rc=${string(cc_rc)}) — see ${out_dir}/<unit>.log or ${unit_meta_log}")
         return cc_rc
@@ -840,6 +851,49 @@ fn subdir_basename(p: string) -> string {
         i = prev
     }
     trimmed
+}
+
+// g2eo Phase C: TTY progress bar for the per-module dispatcher.
+// Mirror of run_pre_deps_with_progress but for sub-mod units —
+// spawns the dispatcher in the background (so the foreground stays
+// free to render) and polls `<marker_dir>/<slug>.{running,done}`
+// for a multi-line "K/N done · running: a, b, c" view.
+//
+// The marker_dir is the same `build/per_mod/` we already write
+// .ll/.o into; tmp is unnecessary because per-mod artefacts are
+// project-local. The dispatcher (spawn_pool_async) writes both
+// kinds of marker before/after each job, just like the path-dep
+// path does — the renderer doesn't need to know which dispatcher
+// produced them.
+fn run_per_mod_with_progress(cmds: List<string>, slugs: List<string>, jobs: int, marker_dir: string, total: int) -> int {
+    let pool_handle = spawn_pool_async(cmds, slugs, jobs, marker_dir)
+    if pool_handle < 0 {
+        // Spawn failed — fall back to sync pool_run so the build
+        // still proceeds.
+        return pool_run(cmds, jobs)
+    }
+    let t_start = avra_uptime_ms()
+    mut prev_lines = 0
+    while avra_process_is_alive(pool_handle) != 0 {
+        let done = count_done_markers(marker_dir)
+        let running = list_running_slugs(marker_dir)
+        let elapsed = avra_uptime_ms() - t_start
+        prev_lines = progress_render(prev_lines, total, done, running, elapsed)
+        avra_sleep_ms(100)
+    }
+    let final_json = avra_process_wait(pool_handle)
+    let exit_code = pool_extract_rc(final_json)
+    let final_done = count_done_markers(marker_dir)
+    let final_elapsed = avra_uptime_ms() - t_start
+    progress_clear(prev_lines)
+    let elapsed_s = final_elapsed / 1000
+    let elapsed_tenths = (final_elapsed / 100) - (elapsed_s * 10)
+    if exit_code == 0 {
+        println("built ${string(final_done)} per-mod units in ${string(elapsed_s)}.${string(elapsed_tenths)}s")
+    } else {
+        println("per-module build failed (rc=${string(exit_code)} after ${string(elapsed_s)}.${string(elapsed_tenths)}s) — see logs in ${marker_dir}/")
+    }
+    exit_code
 }
 
 // ── 5gvp: TTY progress bar for parallel path-dep pre-build ─────────────
