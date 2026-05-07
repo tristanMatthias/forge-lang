@@ -65,7 +65,7 @@ use @std.avrac.features.component_decl.{expand_components}
 use @std.avrac.resolve.{resolve_names}
 use @std.avrac.features.modules.{resolve_module_files, modules_dirname, find_packages_dir, LoadedPaths, dedup_modules}
 use @std.avrac.features.modules.{load_package_config, load_manifest, Dep}
-use @std.avrac.features.modules.{filter_to_target_unit}
+use @std.avrac.features.modules.{filter_to_target_unit, list_avra_module_subdirs}
 use @std.avrac.build.{
     BuildInputs, BuildOutcome,
     decide_build, record_build_result,
@@ -532,6 +532,7 @@ type BuildArgs = {
     timings: bool,
     lib: bool,
     emit_metadata: bool,
+    per_module: bool,
     entry: string,
 }
 
@@ -542,6 +543,7 @@ fn parse_build_args() -> BuildArgs {
     mut timings = false
     mut lib = false
     mut emit_metadata = false
+    mut per_module = false
     mut entry = ""
     mut i = 2
     while i < avra_selfhost_argc() {
@@ -576,6 +578,11 @@ fn parse_build_args() -> BuildArgs {
             i = i + 1
             continue
         }
+        if arg == "--per-module" || arg == "--per_module" {
+            per_module = true
+            i = i + 1
+            continue
+        }
         if !arg.starts_with("-") && entry == "" {
             entry = arg
         }
@@ -588,6 +595,7 @@ fn parse_build_args() -> BuildArgs {
         timings: timings,
         lib: lib,
         emit_metadata: emit_metadata,
+        per_module: per_module,
         entry: entry,
     }
 }
@@ -663,6 +671,110 @@ fn build_pre_dep_cmds(deps: List<Dep>, compiler_path: string) -> List<string> {
         i = i + 1
     }
     cmds
+}
+
+// g2eo Phase B: per-module compile dispatcher.
+//
+// Splits the package's `<root>/src/` into N units — one per
+// top-level subdirectory — and runs `bs2 compile` against each in
+// parallel via pool_run. Every invocation passes:
+//   --module_path=@<scope>::<pkg>           — same package wrapper
+//                                             every consumer sees
+//   --target_module=src/<subdir>/           — the per-mod filter:
+//                                             only this subdir's
+//                                             bodies emit; everything
+//                                             else gets @external_unit
+//   --output=<out_dir>/<subdir>.ll          — distinct path per
+//                                             unit so concurrent
+//                                             writers don't race
+//   --emit_metadata                         — sidecar describing
+//                                             this unit's surface
+// Outputs land in `<root>/build/per_mod/`. Each run produces an
+// `.ll` (target subdir's bodies + forward decls for everything
+// else) and a co-located `.meta.bin` (this unit's surface only).
+//
+// Skips silently when the package has no manifest, no [package].name,
+// or no `src/` subdirectories — single-source packages are already
+// served by the existing single-unit build path.
+//
+// Cache integration is deferred: this prototype emits .ll/.meta.bin
+// next to the source tree so a build driver can pick them up.
+// Topo ordering and per-unit fingerprint caching land in the
+// follow-up Phase B.2 (driver wave scheduler) and Phase B.3 (link).
+//
+// Tracking ticket: forge-crafting-intepreters-g2eo Phase B.
+fn pre_build_subdir_units(project_dir: string, manifest_name: string, compiler_path: string, args: BuildArgs) -> int {
+    if manifest_name == "" { return 0 }
+    let pkg_qual = manifest_name.replace("/", "::")
+    if pkg_qual == "" { return 0 }
+    let src_dir = "${project_dir}/src/"
+    let subdirs = list_avra_module_subdirs(src_dir)
+    if subdirs.length == 0 { return 0 }
+    let out_dir = "${project_dir}/build/per_mod"
+    avra_shell_exec("mkdir -p ${out_dir}")
+    // The `entry` is just the package's avrac.av-style root — empty
+    // body after dir-as-module migration, but the resolver still
+    // needs a file to anchor module-path wrapping. Pull from manifest
+    // when present, else fall back to <src>/avrac.av which exists
+    // for the bootstrap's own self-build (the only consumer right now).
+    let entry_path = if args.entry != "" { args.entry } else { "${src_dir}avrac.av" }
+    if !file_exists(entry_path) {
+        eprintln("[per-module] entry not found: ${entry_path}")
+        return 1
+    }
+    mut cmds = []
+    mut slugs = []
+    mut i = 0
+    while i < subdirs.length {
+        let sub = subdirs[i]
+        let sub_name = subdir_basename(sub)
+        if sub_name == "" {
+            i = i + 1
+            continue
+        }
+        // Per-mod target prefix: substring match against SStmt.file
+        // values, which the resolver stores relative to the cwd of the
+        // invoking compile. Running `bs2 compile` from `project_dir`
+        // makes paths look like `src/<sub>/foo.av`, so the target
+        // prefix matches exactly.
+        let target = "src/${sub_name}/"
+        let out_ll = "${out_dir}/${sub_name}.ll"
+        let cmd = "cd \"${project_dir}\" && \"${compiler_path}\" compile --module_path='${pkg_qual}' --target_module='${target}' --emit_metadata --output='${out_ll}' '${entry_path}' > '${out_dir}/${sub_name}.log' 2>&1"
+        cmds.push(cmd)
+        slugs.push(sub_name)
+        i = i + 1
+    }
+    let env_jobs = avra_process_env_get("AVRA_JOBS")
+    let jobs_n = if env_jobs != "" { avra_parse_int(env_jobs) } else { 4 }
+    if !args.json {
+        eprintln("[per-module] dispatching ${string(cmds.length)} units to pool (jobs=${string(jobs_n)})")
+    }
+    let rc = pool_run(cmds, jobs_n)
+    if rc != 0 {
+        eprintln("[per-module] one or more units failed (rc=${string(rc)}) — see ${out_dir}/<unit>.log")
+    } else if !args.json {
+        eprintln("[per-module] all ${string(cmds.length)} units built")
+    }
+    rc
+}
+
+// Return the trailing path segment of `p`, stripping any trailing
+// slash. `/foo/bar/` → `bar`. Mirrors `slug_of_path` but kept local
+// to the per-mod dispatcher so the caller doesn't have to navigate
+// through the TTY-progress code path's helpers.
+fn subdir_basename(p: string) -> string {
+    if p.length == 0 { return "" }
+    let trimmed = if p.byte(p.length - 1) == 0x2F { p.substring(0, p.length - 1) } else { p }
+    let len = trimmed.length
+    mut i = len
+    while i > 0 {
+        let prev = i - 1
+        if trimmed.byte(prev) == 0x2F {
+            return trimmed.substring(i, len)
+        }
+        i = prev
+    }
+    trimmed
 }
 
 // ── 5gvp: TTY progress bar for parallel path-dep pre-build ─────────────
@@ -1055,6 +1167,24 @@ fn run_build_command() {
         if dep_rc != 0 {
             fail("error: failed to pre-build a path-dep — see output above")
         }
+    }
+
+    // g2eo Phase B: when --per_module is set, dispatch one
+    // `bs2 compile --target_module=...` per src/ subdirectory in
+    // parallel via pool_run. Each subdir produces its own .ll +
+    // .meta.bin under build/per_mod/. Stops after the dispatch —
+    // cache integration + final link are forthcoming (Phase B.2/.3).
+    if args.per_module && manifest.found {
+        let per_rc = pre_build_subdir_units(project_dir, manifest.name, compiler_path, args)
+        if per_rc != 0 {
+            fail("error: per-module dispatch failed (see logs above)")
+        }
+        if args.json {
+            println(build_event_json("per_module_done", unit_name, "", "${project_dir}/build/per_mod", ""))
+        } else {
+            println("per-module units written to ${project_dir}/build/per_mod/")
+        }
+        return
     }
 
     // When --explain is on, also surface the manifest's [dependencies]
@@ -1793,6 +1923,7 @@ fn main() {
             description "Incremental build via the @std.avrac.build cache (Phase 1: single-unit)"
             flag release { description "Use [profile.release] instead of [profile.dev]" }
             flag explain { description "Print why each unit will rebuild (cargo --explain analogue)" }
+            flag per_module { description "g2eo Phase B: dispatch one bs2 compile per src/ subdirectory in parallel via pool_run; each subdir produces its own .ll + .meta.bin under build/per_mod/. Experimental, opt-in." }
             arg file { description "Entry source file (overrides manifest [bin].path)" }
         }
 
