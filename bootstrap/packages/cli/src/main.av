@@ -785,8 +785,22 @@ fn pre_build_subdir_units(project_dir: string, manifest_name: string, compiler_p
         eprintln("[per-module] llc failed for one or more units (rc=${string(llc_rc)}) — see ${out_dir}/<unit>.llc.log")
         return llc_rc
     }
+    // Phase B.3: bundle the per-mod .o files into a static archive
+    // so a downstream link step (or another tool: `clang lib.a`,
+    // `ld -r`, etc.) consumes them as one input rather than enumerating
+    // build/per_mod/*.o by hand. The archive name follows the package's
+    // [lib].name when the manifest declares one — same shape every
+    // cargo-style tooling expects (`lib<name>.a`).
+    let archive_name = subdir_basename(manifest_name).replace("@", "").replace("/", "_")
+    let archive_path = "${out_dir}/lib${archive_name}.a"
+    let ar_cmd = "ar rcs '${archive_path}' ${out_dir}/*.o > '${out_dir}/ar.log' 2>&1"
+    let ar_rc = avra_shell_exec_status(ar_cmd)
+    if ar_rc != 0 {
+        eprintln("[per-module] ar failed (rc=${string(ar_rc)}) — see ${out_dir}/ar.log")
+        return ar_rc
+    }
     if !args.json {
-        eprintln("[per-module] ${string(slugs.length)} .ll + .o + .meta.bin written to ${out_dir}/")
+        eprintln("[per-module] ${string(slugs.length)} .ll + .o + .meta.bin + lib${archive_name}.a written to ${out_dir}/")
     }
     0
 }
