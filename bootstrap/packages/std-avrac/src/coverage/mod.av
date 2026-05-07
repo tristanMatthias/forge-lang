@@ -122,11 +122,6 @@ export type ModStats = {
     entered_fns: int,
 }
 
-/// Linked list of ModStats produced by `rollup_modules`.
-export enum ModStatsList {
-    End
-    Node(item: ModStats, next: ModStatsList)
-}
 
 /// MC/DC decision row. `condition_true` and `condition_false`
 /// counters arrive separately in the covmap; `decision_update` pairs
@@ -602,17 +597,18 @@ fn module_of(fn_name: string) -> string {
     acc
 }
 
-/// Group an List<FnStats> into a ModStatsList, summing counters by
-/// module. The public entry — internal recursion lives in
-/// `rollup_inner`.
-fn rollup_modules(stats: List<FnStats>) -> ModStatsList {
-    mut acc = ModStatsList.End
+/// Group an List<FnStats> into a List<ModStats>, summing counters
+/// per module. First-seen order preserved; mod_upsert searches the
+/// list-so-far for an existing row and folds counters in, else
+/// appends.
+fn rollup_modules(stats: List<FnStats>) -> List<ModStats> {
+    mut acc: List<ModStats> = []
     mut i = 0
     while i < stats.length {
         let s = stats[i]
         let mod_name = module_of(s.name)
         let entered = if s.fn_entry_count > 0 { 1 } else { 0 }
-        acc = mod_upsert(acc, mod_name, s.total_lines, s.hit_lines, s.total_branches, s.hit_branches, entered)
+        mod_upsert(acc, mod_name, s.total_lines, s.hit_lines, s.total_branches, s.hit_branches, entered)
         i = i + 1
     }
     acc
@@ -620,23 +616,34 @@ fn rollup_modules(stats: List<FnStats>) -> ModStatsList {
 
 /// Upsert a per-module rollup row. Finds the existing ModStats by
 /// name and increments its counters, or appends a fresh row when no
-/// match. Used by `rollup_inner` to fold every fn into its module.
-fn mod_upsert(acc: ModStatsList, name: string, tl: int, hl: int, tb: int, hb: int, entered: int) -> ModStatsList {
-    match acc {
-        .End -> ModStatsList.Node(ModStats { module: name, total_lines: tl, hit_lines: hl, total_branches: tb, hit_branches: hb, total_fns: 1, entered_fns: entered }, ModStatsList.End)
-        .Node(m, next) -> if m.module == name {
-            ModStatsList.Node(m with {
+/// match. Mutates `acc` in place.
+fn mod_upsert(acc: List<ModStats>, name: string, tl: int, hl: int, tb: int, hb: int, entered: int) {
+    mut local = acc
+    mut i = 0
+    while i < local.length {
+        let m = local[i]
+        if m.module == name {
+            local.set(i, m with {
                 total_lines: m.total_lines + tl,
                 hit_lines: m.hit_lines + hl,
                 total_branches: m.total_branches + tb,
                 hit_branches: m.hit_branches + hb,
                 total_fns: m.total_fns + 1,
                 entered_fns: m.entered_fns + entered,
-            }, next)
-        } else {
-            ModStatsList.Node(m, mod_upsert(next, name, tl, hl, tb, hb, entered))
+            })
+            return
         }
+        i = i + 1
     }
+    local.push(ModStats {
+        module: name,
+        total_lines: tl,
+        hit_lines: hl,
+        total_branches: tb,
+        hit_branches: hb,
+        total_fns: 1,
+        entered_fns: entered,
+    })
 }
 
 // ── Reporting ──
@@ -754,18 +761,17 @@ fn print_summary(stats: List<FnStats>) {
 
 /// Render every module's rollup as a single right-padded row, with
 /// per-stat colours from `color_pct`. Used by `print_summary`.
-fn print_modules(mods: ModStatsList) {
-    match mods {
-        .End -> {}
-        .Node(m, next) -> {
-            let lp = pct(m.hit_lines, m.total_lines)
-            let lstr = "${string(m.hit_lines)}/${string(m.total_lines)}"
-            let bstr = if m.total_branches > 0 { "${string(m.hit_branches)}/${string(m.total_branches)}" } else { "n/a" }
-            let bpct = if m.total_branches > 0 { color_pct(pct(m.hit_branches, m.total_branches)) } else { "    " }
-            let fstr = "${string(m.entered_fns)}/${string(m.total_fns)}"
-            println("${pad_right(m.module, 45)} ${pad_left(lstr, 8)} ${color_pct(lp)}  ${pad_left(bstr, 7)} ${bpct}  ${pad_left(fstr, 8)}")
-            print_modules(next)
-        }
+fn print_modules(mods: List<ModStats>) {
+    mut i = 0
+    while i < mods.length {
+        let m = mods[i]
+        let lp = pct(m.hit_lines, m.total_lines)
+        let lstr = "${string(m.hit_lines)}/${string(m.total_lines)}"
+        let bstr = if m.total_branches > 0 { "${string(m.hit_branches)}/${string(m.total_branches)}" } else { "n/a" }
+        let bpct = if m.total_branches > 0 { color_pct(pct(m.hit_branches, m.total_branches)) } else { "    " }
+        let fstr = "${string(m.entered_fns)}/${string(m.total_fns)}"
+        println("${pad_right(m.module, 45)} ${pad_left(lstr, 8)} ${color_pct(lp)}  ${pad_left(bstr, 7)} ${bpct}  ${pad_left(fstr, 8)}")
+        i = i + 1
     }
 }
 
