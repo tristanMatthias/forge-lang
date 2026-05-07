@@ -24,6 +24,7 @@
 
 use core.{avra_selfhost_read_file, avra_selfhost_write_file, avra_shell_exec}
 use core.{avra_map_new_cstr, avra_map_set_cstr, avra_map_get_cstr, avra_map_has_cstr}
+use core.{avra_intmap_new, avra_intmap_set, avra_intmap_has}
 use render.{color_pct, pad_right, pad_left}
 
 /// One row of the `.covmap.tsv` written by codegen during an
@@ -84,16 +85,20 @@ export type FnStats = {
     hit_branches: int,
     total_conditions: int,
     hit_conditions: int,
-    line_set: IntListSet,
-    line_hit_set: IntListSet,
+    line_set: IntSet,
+    line_hit_set: IntSet,
 }
 
-/// Set-of-int implemented as an unsorted linked list. Per-fn line
-/// counts stay small enough that O(n) membership is fine; switching
-/// to a hash set added cycles in micro-benchmarks for typical inputs.
-export enum IntListSet {
-    End
-    Node(value: int, next: IntListSet)
+/// Set-of-int with O(1) membership/insert plus a List<int> of keys
+/// in insertion order for downstream iteration (intmaps don't expose
+/// key iteration directly). Backs `FnStats.line_set` /
+/// `line_hit_set`. Replaces the prior `IntListSet` cons-list, which
+/// made `apply_line` O(L²) per fn — a multi-minute hang on the full
+/// 1271-test suite (~5K unique lines × 1.3K fns). Tracking ticket
+/// forge-crafting-intepreters-lkze.2.
+export type IntSet = {
+    keys: List<int>,
+    idx: ptr,
 }
 
 
@@ -452,26 +457,28 @@ fn aggregate(covmap: List<CovEntry>, counts: List<FnCounts>) -> List<FnStats> {
 
 /// Update line counters when seeing a `line` covmap entry.
 /// Maintains `total_lines` / `hit_lines` as O(1) running counters
-/// and only mutates the IntListSet for genuinely-new lines.
-/// Without this guard, recomputing intset_size() per call made
-/// aggregation O(L²) per fn — a multi-minute hang on the full
-/// 1271-test suite (~5K unique lines × 1.3K fns).
+/// AND O(1) IntSet inserts via the intmap-backed presence index.
+/// The earlier IntListSet impl was O(n) per insert which made
+/// aggregation O(L²) per fn — multi-minute hang on the full
+/// 1271-test suite (~5K unique lines × 1.3K fns). intmap presence
+/// makes the membership probe + insert both O(1).
 fn apply_line(s: FnStats, line: int, count: int) -> FnStats {
-    // Maintain total_lines / hit_lines as O(1) counters and only update the
-    // IntListSet when the line is genuinely new. Without this guard the
-    // earlier intset_size() recomputation per call made aggregation O(L^2)
-    // per function — visible as a multi-minute hang on the full 1271-test
-    // suite (~5K unique lines across 1.3K fns).
     if line <= 0 { return s }
     let already = intset_has(s.line_set, line)
-    let new_set = if already { s.line_set } else { IntListSet.Node(line, s.line_set) }
-    let new_total = if already { s.total_lines } else { s.total_lines + 1 }
+    let new_total = if already {
+        s.total_lines
+    } else {
+        intset_add(s.line_set, line)
+        s.total_lines + 1
+    }
     let was_hit = intset_has(s.line_hit_set, line)
-    let new_hit = if count > 0 && !was_hit { IntListSet.Node(line, s.line_hit_set) } else { s.line_hit_set }
-    let new_hit_total = if count > 0 && !was_hit { s.hit_lines + 1 } else { s.hit_lines }
+    let new_hit_total = if count > 0 && !was_hit {
+        intset_add(s.line_hit_set, line)
+        s.hit_lines + 1
+    } else {
+        s.hit_lines
+    }
     s with {
-        line_set: new_set,
-        line_hit_set: new_hit,
         total_lines: new_total,
         hit_lines: new_hit_total,
     }
@@ -517,24 +524,31 @@ fn empty_stats(name: string) -> FnStats {
         hit_branches: 0,
         total_conditions: 0,
         hit_conditions: 0,
-        line_set: IntListSet.End,
-        line_hit_set: IntListSet.End,
+        line_set: intset_new(),
+        line_hit_set: intset_new(),
     }
 }
 
-/// Add `value` to an IntListSet, deduplicating. O(n) — fine for
-/// per-fn line sets (small) but hot-path consumers like
-/// `apply_line` should track size externally to stay O(1) overall.
-fn intset_add(set: IntListSet, value: int) -> IntListSet {
-    if intset_has(set, value) { set } else { IntListSet.Node(value, set) }
+/// Construct a fresh empty IntSet — `keys` empty list + freshly-
+/// allocated avra_intmap for the presence index.
+fn intset_new() -> IntSet {
+    IntSet { keys: [], idx: avra_intmap_new() }
 }
 
-/// O(n) membership test for IntListSet.
-fn intset_has(set: IntListSet, value: int) -> bool {
-    match set {
-        .End -> false
-        .Node(v, next) -> if v == value { true } else { intset_has(next, value) }
-    }
+/// Add `value` to `set`, deduplicating. O(1) thanks to the intmap
+/// presence index. The caller is expected to mutate `set.keys` in
+/// place — fine because IntSet is a struct of (List, ptr) and the
+/// intmap is shared by ptr identity, not value-copied.
+fn intset_add(set: IntSet, value: int) {
+    if avra_intmap_has(set.idx, value) == 1 { return }
+    avra_intmap_set(set.idx, value, 1)
+    mut keys = set.keys
+    keys.push(value)
+}
+
+/// O(1) membership test via the intmap presence index.
+fn intset_has(set: IntSet, value: int) -> bool {
+    avra_intmap_has(set.idx, value) == 1
 }
 
 /// Record a `condition_true` hit. Looks up or creates the
@@ -814,45 +828,46 @@ fn write_lcov_fndas(stats: List<FnStats>) -> string {
     out
 }
 
-/// Union the per-fn line sets into a single program-wide set of
-/// total lines. Iterative — random-access stats lets us drop the
-/// recursion while keeping the same union semantics.
-fn collect_all_lines(stats: List<FnStats>) -> IntListSet {
-    mut total = IntListSet.End
+/// Union the per-fn line sets into a single program-wide IntSet.
+/// O(L) total, dominated by the intmap inserts (each O(1)) and the
+/// outer walk over stats. Insertion-order-preserving: the resulting
+/// `keys` list reflects the order each line was first seen across
+/// the per-fn sets, so the LCOV writer downstream emits DA rows in
+/// a stable, source-traversal order.
+fn collect_all_lines(stats: List<FnStats>) -> IntSet {
+    let total = intset_new()
     mut i = 0
     while i < stats.length {
-        total = intset_union(total, stats[i].line_set)
+        intset_union(total, stats[i].line_set)
         i = i + 1
     }
     total
 }
 
-/// Union two IntListSets. O(|a| × |b|) — fine for line-number sets
-/// from a single source file, won't scale to general use.
-fn intset_union(a: IntListSet, b: IntListSet) -> IntListSet {
-    match b {
-        .End -> a
-        .Node(v, next) -> intset_union(intset_add(a, v), next)
+/// Fold every key from `b` into `a`. O(|b|) thanks to the intmap
+/// dedup probe inside `intset_add`.
+fn intset_union(a: IntSet, b: IntSet) {
+    mut i = 0
+    while i < b.keys.length {
+        intset_add(a, b.keys[i])
+        i = i + 1
     }
 }
 
 /// Emit the `DA:line,exec_count` block of an LCOV file — one row
 /// per unique line across all fns, with `1` if any fn hit the line
 /// or `0` otherwise. We intentionally don't expose per-fn counts
-/// here since the LCOV output is single-file.
-fn write_lcov_da(stats: List<FnStats>, all_lines: IntListSet) -> string {
+/// here since the LCOV output is single-file. Iterates the IntSet's
+/// `keys` list directly — ordered by first-seen across fns.
+fn write_lcov_da(stats: List<FnStats>, all_lines: IntSet) -> string {
     mut out = ""
-    mut cur = all_lines
-    while true {
-        match cur {
-            .End -> { return out }
-            .Node(line, next) -> {
-                let was_hit = any_fn_hit_line(stats, line)
-                let hit_str = if was_hit { "1" } else { "0" }
-                out = out + "DA:${string(line)},${hit_str}\n"
-                cur = next
-            }
-        }
+    mut i = 0
+    while i < all_lines.keys.length {
+        let line = all_lines.keys[i]
+        let was_hit = any_fn_hit_line(stats, line)
+        let hit_str = if was_hit { "1" } else { "0" }
+        out = out + "DA:${string(line)},${hit_str}\n"
+        i = i + 1
     }
     out
 }
