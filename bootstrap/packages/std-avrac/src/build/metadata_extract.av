@@ -13,7 +13,7 @@ use build.metadata.{
     UnitMetadata, TypeDeclList, FnDeclList, ConstDeclList, ImplDeclList,
     TypeDeclEntry, FnDeclEntry, ConstDeclEntry, ImplDeclEntry,
     TypeDeclKind, ConstValueKind,
-    MetaTraitMethodList, ImplMethodRefList,
+    MetaTraitMethod, ImplMethodRef,
     sym_id_for, unit_metadata_new,
 }
 use parse.{parse_int_literal}
@@ -251,7 +251,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                 fields: fields,
                 variants: VariantList.End,
                 inner_vt: ValueType.Unknown,
-                methods: MetaTraitMethodList.End,
+                methods: [],
             }
             ExtractAcc { types: TypeDeclList.Node(entry, acc.types), fns: acc.fns, consts: acc.consts, impls: acc.impls }
         }
@@ -265,7 +265,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                 fields: fields,
                 variants: VariantList.End,
                 inner_vt: ValueType.Unknown,
-                methods: MetaTraitMethodList.End,
+                methods: [],
             }
             ExtractAcc { types: TypeDeclList.Node(entry, acc.types), fns: acc.fns, consts: acc.consts, impls: acc.impls }
         }
@@ -279,7 +279,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                 fields: FieldList.End,
                 variants: variants,
                 inner_vt: ValueType.Unknown,
-                methods: MetaTraitMethodList.End,
+                methods: [],
             }
             ExtractAcc { types: TypeDeclList.Node(entry, acc.types), fns: acc.fns, consts: acc.consts, impls: acc.impls }
         }
@@ -293,7 +293,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                 fields: FieldList.End,
                 variants: VariantList.End,
                 inner_vt: inner_vt,
-                methods: MetaTraitMethodList.End,
+                methods: [],
             }
             ExtractAcc { types: TypeDeclList.Node(entry, acc.types), fns: acc.fns, consts: acc.consts, impls: acc.impls }
         }
@@ -307,7 +307,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                 fields: FieldList.End,
                 variants: VariantList.End,
                 inner_vt: type_vt,
-                methods: MetaTraitMethodList.End,
+                methods: [],
             }
             ExtractAcc { types: TypeDeclList.Node(entry, acc.types), fns: acc.fns, consts: acc.consts, impls: acc.impls }
         }
@@ -431,43 +431,55 @@ fn find_single_colon_after_qualification(s: string) -> int {
     0 - 1
 }
 
-fn extract_trait_methods(stmts: StmtList) -> MetaTraitMethodList {
-    match stmts {
-        .End -> MetaTraitMethodList.End
-        .Node(ss, next) -> {
-            let inner = stmt_unwrap(ss.node)
-            match inner {
-                .Function(name, _, params, ret_vt, _) -> {
-                    MetaTraitMethodList.Node(name, params, ret_vt, extract_trait_methods(next))
+fn extract_trait_methods(stmts: StmtList) -> List<MetaTraitMethod> {
+    mut out: List<MetaTraitMethod> = []
+    mut cur = stmts
+    while true {
+        match cur {
+            .End -> return out
+            .Node(ss, next) -> {
+                let inner = stmt_unwrap(ss.node)
+                match inner {
+                    .Function(name, _, params, ret_vt, _) -> {
+                        out.push(MetaTraitMethod { name, params, ret: ret_vt })
+                    }
+                    .ExternFn(name, params, ret_vt) -> {
+                        out.push(MetaTraitMethod { name, params, ret: ret_vt })
+                    }
+                    _ -> {}
                 }
-                .ExternFn(name, params, ret_vt) -> {
-                    MetaTraitMethodList.Node(name, params, ret_vt, extract_trait_methods(next))
-                }
-                _ -> extract_trait_methods(next)
+                cur = next
             }
         }
     }
+    out
 }
 
-fn extract_impl_methods(stmts: StmtList, type_qn: string) -> ImplMethodRefList {
-    match stmts {
-        .End -> ImplMethodRefList.End
-        .Node(ss, next) -> {
-            let inner = stmt_unwrap(ss.node)
-            match inner {
-                // Impl-method names parse to mangled "Type__method"
-                // form via features::impl_decl::parser. The
-                // post-mangle method name is everything after the
-                // final "__".
-                .Function(mangled, _, _, _, _) -> {
-                    let method_name = strip_mangle(mangled)
-                    let fn_qn = qualify(type_qn, method_name)
-                    ImplMethodRefList.Node(method_name, sym_id_for(fn_qn), extract_impl_methods(next, type_qn))
+fn extract_impl_methods(stmts: StmtList, type_qn: string) -> List<ImplMethodRef> {
+    mut out: List<ImplMethodRef> = []
+    mut cur = stmts
+    while true {
+        match cur {
+            .End -> return out
+            .Node(ss, next) -> {
+                let inner = stmt_unwrap(ss.node)
+                match inner {
+                    // Impl-method names parse to mangled "Type__method"
+                    // form via features::impl_decl::parser. The
+                    // post-mangle method name is everything after the
+                    // final "__".
+                    .Function(mangled, _, _, _, _) -> {
+                        let method_name = strip_mangle(mangled)
+                        let fn_qn = qualify(type_qn, method_name)
+                        out.push(ImplMethodRef { method_name, fn_sym_id: sym_id_for(fn_qn) })
+                    }
+                    _ -> {}
                 }
-                _ -> extract_impl_methods(next, type_qn)
+                cur = next
             }
         }
     }
+    out
 }
 
 fn strip_mangle(name: string) -> string {

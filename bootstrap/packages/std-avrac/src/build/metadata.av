@@ -797,7 +797,7 @@ export type TypeDeclEntry = {
     fields: FieldList,
     variants: VariantList,
     inner_vt: ValueType,
-    methods: MetaTraitMethodList,
+    methods: List<MetaTraitMethod>,
 }
 
 impl BytesWriter {
@@ -824,7 +824,7 @@ impl BytesReader {
         mut fields = FieldList.End
         mut variants = VariantList.End
         mut inner = ValueType.Unknown
-        mut methods = MetaTraitMethodList.End
+        mut methods: List<MetaTraitMethod> = []
         if kind is .StructDecl { fields = self.field_list() }
         if kind is .ShapeDecl { fields = self.field_list() }
         if kind is .EnumDecl { variants = self.variant_list() }
@@ -1006,53 +1006,42 @@ impl BytesReader {
     }
 }
 
-// Trait method list — recursive linked list mirroring the
-// FieldList / VariantList / ParamList shape from core::ast. Used
-// to encode TraitDecl bodies in the TYPES section.
-export enum MetaTraitMethodList {
-    End
-    Node(name: string, params: ParamList, ret: ValueType, next: MetaTraitMethodList)
-}
-
-fn meta_trait_method_list_length(ms: MetaTraitMethodList) -> int {
-    match ms {
-        .End -> 0
-        .Node(_, _, _, next) -> 1 + meta_trait_method_list_length(next)
-    }
+// Trait method entry — one row in a `List<MetaTraitMethod>`. Used
+// to encode TraitDecl bodies in the TYPES section. Replaces the
+// prior bespoke `MetaTraitMethodList` cons-list (lkze.4).
+export type MetaTraitMethod = {
+    name: string,
+    params: ParamList,
+    ret: ValueType,
 }
 
 impl BytesWriter {
-    fn meta_trait_method_list(self, ms: MetaTraitMethodList) {
-        self.u32_le(meta_trait_method_list_length(ms))
-        self.meta_trait_method_list_body(ms)
-    }
-
-    fn meta_trait_method_list_body(self, ms: MetaTraitMethodList) {
-        match ms {
-            .End -> {}
-            .Node(name, params, ret, next) -> {
-                self.string(name)
-                self.param_list(params)
-                self.vtype(ret)
-                self.meta_trait_method_list_body(next)
-            }
+    fn meta_trait_method_list(self, ms: List<MetaTraitMethod>) {
+        self.u32_le(ms.length)
+        mut i = 0
+        while i < ms.length {
+            let m = ms[i]
+            self.string(m.name)
+            self.param_list(m.params)
+            self.vtype(m.ret)
+            i = i + 1
         }
     }
 }
 
 impl BytesReader {
-    fn meta_trait_method_list(self) -> MetaTraitMethodList {
+    fn meta_trait_method_list(self) -> List<MetaTraitMethod> {
         let count = self.u32_le()
-        self.meta_trait_method_list_body(count)
-    }
-
-    fn meta_trait_method_list_body(self, count: int) -> MetaTraitMethodList {
-        if count == 0 { return MetaTraitMethodList.End }
-        let name = self.string()
-        let params = self.param_list()
-        let ret = self.vtype()
-        let tail = self.meta_trait_method_list_body(count - 1)
-        MetaTraitMethodList.Node(name, params, ret, tail)
+        mut out: List<MetaTraitMethod> = []
+        mut i = 0
+        while i < count {
+            let name = self.string()
+            let params = self.param_list()
+            let ret = self.vtype()
+            out.push(MetaTraitMethod { name, params, ret })
+            i = i + 1
+        }
+        out
     }
 }
 
@@ -1075,19 +1064,11 @@ impl BytesReader {
 // the FNS section to recover the full signature without having to
 // re-store params and return type on every impl entry.
 
-// Linked-list of (method_name, fn_sym_id). Keeps the section body
-// length proportional to the actual number of methods declared in
-// the impl.
-export enum ImplMethodRefList {
-    End
-    Node(method_name: string, fn_sym_id: int, next: ImplMethodRefList)
-}
-
-fn impl_method_ref_list_length(ms: ImplMethodRefList) -> int {
-    match ms {
-        .End -> 0
-        .Node(_, _, next) -> 1 + impl_method_ref_list_length(next)
-    }
+// One impl method ref — `List<ImplMethodRef>` rows replace the
+// prior bespoke ImplMethodRefList cons-list (lkze.4).
+export type ImplMethodRef = {
+    method_name: string,
+    fn_sym_id: int,
 }
 
 export type ImplDeclEntry = {
@@ -1095,7 +1076,7 @@ export type ImplDeclEntry = {
     trait_name: string,
     type_sym_id: int,
     type_name: string,
-    methods: ImplMethodRefList,
+    methods: List<ImplMethodRef>,
 }
 
 impl BytesWriter {
@@ -1104,18 +1085,13 @@ impl BytesWriter {
         self.string(e.trait_name)
         self.u64_le(e.type_sym_id)
         self.string(e.type_name)
-        self.u32_le(impl_method_ref_list_length(e.methods))
-        self.impl_method_refs_body(e.methods)
-    }
-
-    fn impl_method_refs_body(self, ms: ImplMethodRefList) {
-        match ms {
-            .End -> {}
-            .Node(name, fn_id, next) -> {
-                self.string(name)
-                self.u64_le(fn_id)
-                self.impl_method_refs_body(next)
-            }
+        self.u32_le(e.methods.length)
+        mut i = 0
+        while i < e.methods.length {
+            let m = e.methods[i]
+            self.string(m.method_name)
+            self.u64_le(m.fn_sym_id)
+            i = i + 1
         }
     }
 }
@@ -1127,7 +1103,14 @@ impl BytesReader {
         let type_sid = self.u64_le()
         let type_name = self.string()
         let count = self.u32_le()
-        let methods = self.impl_method_refs_body(count)
+        mut methods: List<ImplMethodRef> = []
+        mut i = 0
+        while i < count {
+            let name = self.string()
+            let fn_id = self.u64_le()
+            methods.push(ImplMethodRef { method_name: name, fn_sym_id: fn_id })
+            i = i + 1
+        }
         ImplDeclEntry {
             trait_sym_id: trait_sid,
             trait_name: trait_name,
@@ -1135,14 +1118,6 @@ impl BytesReader {
             type_name: type_name,
             methods: methods,
         }
-    }
-
-    fn impl_method_refs_body(self, count: int) -> ImplMethodRefList {
-        if count == 0 { return ImplMethodRefList.End }
-        let name = self.string()
-        let fn_id = self.u64_le()
-        let tail = self.impl_method_refs_body(count - 1)
-        ImplMethodRefList.Node(name, fn_id, tail)
     }
 }
 

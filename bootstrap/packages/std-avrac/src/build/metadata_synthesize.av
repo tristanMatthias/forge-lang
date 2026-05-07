@@ -39,7 +39,7 @@ use build.metadata.{
     UnitMetadata, TypeDeclList, FnDeclList, ConstDeclList, ImplDeclList,
     TypeDeclEntry, FnDeclEntry, ConstDeclEntry, ImplDeclEntry,
     TypeDeclKind, ConstValueKind,
-    MetaTraitMethodList, ImplMethodRefList,
+    MetaTraitMethod, ImplMethodRef,
 }
 
 /// Synthesise just the body — the StmtList of all public-surface
@@ -361,14 +361,16 @@ fn type_decl_inner_stmt(e: TypeDeclEntry) -> Stmt {
     Stmt.NoOp
 }
 
-fn synth_trait_method_stmts(ms: MetaTraitMethodList) -> StmtList {
-    match ms {
-        .End -> StmtList.End
-        .Node(name, params, ret, next) -> {
-            let head = sstmt_dummy(Stmt.ExternFn(name, params, ret))
-            StmtList.Node(head, synth_trait_method_stmts(next))
-        }
+fn synth_trait_method_stmts(ms: List<MetaTraitMethod>) -> StmtList {
+    mut acc: StmtList = StmtList.End
+    mut i = ms.length - 1
+    while i >= 0 {
+        let m = ms[i]
+        let head = sstmt_dummy(Stmt.ExternFn(m.name, m.params, m.ret))
+        acc = StmtList.Node(head, acc)
+        i = i - 1
     }
+    acc
 }
 
 // ── FNS ──
@@ -443,17 +445,19 @@ fn synth_impl_decl(e: ImplDeclEntry, types: TypeDeclList) -> SStmt {
 // into the `is_mangled_method` branch and skipping qualification —
 // the synth impl methods carry an `@external_unit` Annotated wrapper
 // which short-circuits rewrite_impl_methods's Function arm.
-fn synth_impl_method_stmts(ms: ImplMethodRefList, trait_methods: MetaTraitMethodList, qualified_type: string) -> StmtList {
-    match ms {
-        .End -> StmtList.End
-        .Node(name, _fn_id, next) -> {
-            let sig = lookup_trait_method_sig(trait_methods, name)
-            let mangled = "${qualified_type}__${name}"
-            let fn_decl = Stmt.Function(mangled, TypeParamList.End, sig.params, sig.ret, StmtList.End)
-            let head = sstmt_dummy(wrap_external_unit(fn_decl))
-            StmtList.Node(head, synth_impl_method_stmts(next, trait_methods, qualified_type))
-        }
+fn synth_impl_method_stmts(ms: List<ImplMethodRef>, trait_methods: List<MetaTraitMethod>, qualified_type: string) -> StmtList {
+    mut acc: StmtList = StmtList.End
+    mut i = ms.length - 1
+    while i >= 0 {
+        let m = ms[i]
+        let sig = lookup_trait_method_sig(trait_methods, m.method_name)
+        let mangled = "${qualified_type}__${m.method_name}"
+        let fn_decl = Stmt.Function(mangled, TypeParamList.End, sig.params, sig.ret, StmtList.End)
+        let head = sstmt_dummy(wrap_external_unit(fn_decl))
+        acc = StmtList.Node(head, acc)
+        i = i - 1
     }
+    acc
 }
 
 type FnSig = {
@@ -461,9 +465,9 @@ type FnSig = {
     ret: ValueType,
 }
 
-fn lookup_trait_methods(types: TypeDeclList, trait_qn: string) -> MetaTraitMethodList {
+fn lookup_trait_methods(types: TypeDeclList, trait_qn: string) -> List<MetaTraitMethod> {
     match types {
-        .End -> MetaTraitMethodList.End
+        .End -> []
         .Node(e, next) -> {
             if e.kind is .TraitDecl && e.name == trait_qn {
                 e.methods
@@ -474,15 +478,14 @@ fn lookup_trait_methods(types: TypeDeclList, trait_qn: string) -> MetaTraitMetho
     }
 }
 
-fn lookup_trait_method_sig(ms: MetaTraitMethodList, name: string) -> FnSig {
-    match ms {
-        .End -> FnSig { params: ParamList.End, ret: ValueType.Unknown }
-        .Node(mname, params, ret, next) -> {
-            if mname == name {
-                FnSig { params: params, ret: ret }
-            } else {
-                lookup_trait_method_sig(next, name)
-            }
+fn lookup_trait_method_sig(ms: List<MetaTraitMethod>, name: string) -> FnSig {
+    mut i = 0
+    while i < ms.length {
+        let m = ms[i]
+        if m.name == name {
+            return FnSig { params: m.params, ret: m.ret }
         }
+        i = i + 1
     }
+    FnSig { params: ParamList.End, ret: ValueType.Unknown }
 }
