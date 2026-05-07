@@ -146,13 +146,16 @@ export type ModuleGraphNode = {
     items: ptr,
 }
 
-/// Linked-list of ModuleGraphNode keyed by id. We could store nodes in a
-/// growable array, but Avra's bootstrap prefers linked lists for new
-/// data structures (matches existing idiom in registry.av, ast.av,
-/// std-lsp). A getter walks the list in O(n).
-export enum ModuleGraphNodeList {
-    End
-    Node(node: ModuleGraphNode, next: ModuleGraphNodeList)
+/// One row of the graph's all-items list. Replaces the prior
+/// `GraphItemList` cons-list (lkze.6).
+///
+/// `canonical` matches the actual qualified path used in aliases:
+/// `mod::name` for normal decls, bare `name` for extern fns (whose
+/// C ABI requires the unqualified symbol).
+export type GraphItem = {
+    short_name: string,
+    canonical: string,
+    exported: int,
 }
 
 /// The whole graph.
@@ -170,12 +173,12 @@ export enum ModuleGraphNodeList {
 ///                         path segments. Single global interner so
 ///                         all Symbols are comparable across the graph.
 export type ModuleGraph = {
-    modules: ModuleGraphNodeList,
+    modules: List<ModuleGraphNode>,
     by_path: ptr,
     by_canonical: ptr,
     package_roots: ptr,
     item_exports: ptr,
-    all_items: GraphItemList,
+    all_items: List<GraphItem>,
     next_module_id: int,
     next_item_id: int,
     next_package_id: int,
@@ -185,31 +188,17 @@ export type ModuleGraph = {
 /// Construct an empty graph.
 export fn module_graph_new() -> ModuleGraph {
     ModuleGraph {
-        modules: ModuleGraphNodeList.End,
+        modules: [],
         by_path: avra_map_new_cstr(),
         by_canonical: avra_map_new_cstr(),
         package_roots: avra_intmap_new(),
         item_exports: avra_map_new_cstr(),
-        all_items: GraphItemList.End,
+        all_items: [],
         next_module_id: 0,
         next_item_id: 0,
         next_package_id: 0,
         interner: interner_new(),
     }
-}
-
-/// Append-only list of every top-level item registered in the graph.
-/// Lets the resolver walk all items in O(n) without needing strmap
-/// iteration FFI. Each entry carries the same fields the legacy
-/// `ModuleItem` chain in resolve/names.av carries — so the graph can
-/// supply a drop-in replacement for `build_global_index`.
-///
-/// `canonical` matches the actual qualified path used in aliases:
-/// `mod::name` for normal decls, bare `name` for extern fns (whose
-/// C ABI requires the unqualified symbol).
-export enum GraphItemList {
-    End
-    Node(short_name: string, canonical: string, exported: int, next: GraphItemList)
 }
 
 /// Mark `canonical` (full path like `@std::avrac::typeck::tc_er`) as
@@ -224,9 +213,14 @@ export fn module_graph_set_export(g: ModuleGraph, canonical: string, exported: i
 /// Append an item to the graph's running all-items list.
 /// `canonical` is what the alias chain stores — `mod::name` for normal
 /// decls, bare `name` for extern fns. The resolver consumes this list
-/// to build its global index.
+/// to build its global index. Mutates `g.all_items` in place via
+/// shared list identity — the returned graph is the same struct value
+/// with the same pointer; the prior cons-list version returned a new
+/// graph because cons was the only way to extend.
 export fn module_graph_append_item(g: ModuleGraph, short_name: string, canonical: string, exported: int) -> ModuleGraph {
-    g with { all_items: GraphItemList.Node(short_name, canonical, exported, g.all_items) }
+    mut items = g.all_items
+    items.push(GraphItem { short_name, canonical, exported })
+    g
 }
 
 /// Walk the graph's all_items list looking for an entry whose
@@ -236,20 +230,15 @@ export fn module_graph_append_item(g: ModuleGraph, short_name: string, canonical
 /// alias chain should record, or "" if no such item exists.
 export fn module_graph_find_item_canonical(g: ModuleGraph, mod_path: string, name: string) -> string {
     let qual = if mod_path == "" { name } else { "${mod_path}::${name}" }
-    find_item_canonical_inner(g.all_items, name, qual)
-}
-
-fn find_item_canonical_inner(items: GraphItemList, name: string, qual: string) -> string {
-    match items {
-        .End -> ""
-        .Node(short, canonical, _, next) -> {
-            if short == name && (canonical == qual || canonical == name) {
-                canonical
-            } else {
-                find_item_canonical_inner(next, name, qual)
-            }
+    mut i = 0
+    while i < g.all_items.length {
+        let it = g.all_items[i]
+        if it.short_name == name && (it.canonical == qual || it.canonical == name) {
+            return it.canonical
         }
+        i = i + 1
     }
+    ""
 }
 
 /// Lookup an item's exported flag by full canonical path. Returns
@@ -297,10 +286,9 @@ export fn module_graph_add(g: ModuleGraph, file: string, parent: int, package: i
         items: avra_map_new_cstr(),
     }
     avra_map_set_cstr(g.by_path, file, id)
-    let updated = g with {
-        modules: ModuleGraphNodeList.Node(node, g.modules),
-        next_module_id: id + 1,
-    }
+    mut modules = g.modules
+    modules.push(node)
+    let updated = g with { next_module_id: id + 1 }
     AddModuleResult { graph: updated, id }
 }
 
@@ -314,19 +302,15 @@ export fn module_graph_find_by_file(g: ModuleGraph, file: string) -> int {
     }
 }
 
-/// Walk the linked list to find a module by id. O(n); used during
+/// Walk the modules list to find a module by id. O(n); used during
 /// graph construction (rare) and diagnostics. Hot lookups go through
 /// `children` / `items` strmaps on a node we already hold.
 export fn module_graph_get(g: ModuleGraph, id: int) -> ModuleGraphNode? {
-    mut cur = g.modules
-    while true {
-        match cur {
-            .End -> { return null }
-            .Node(n, next) -> {
-                if n.id == id { return n }
-                cur = next
-            }
-        }
+    mut i = 0
+    while i < g.modules.length {
+        let n = g.modules[i]
+        if n.id == id { return n }
+        i = i + 1
     }
     null
 }
@@ -364,8 +348,9 @@ export fn module_graph_add_package_root(g: ModuleGraph, file: string) -> AddPack
     }
     avra_map_set_cstr(g.by_path, file, mod_id)
     avra_intmap_set(g.package_roots, pkg_id, mod_id)
+    mut modules = g.modules
+    modules.push(node)
     let updated = g with {
-        modules: ModuleGraphNodeList.Node(node, g.modules),
         next_module_id: mod_id + 1,
         next_package_id: pkg_id + 1,
     }

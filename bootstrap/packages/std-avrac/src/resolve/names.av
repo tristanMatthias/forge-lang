@@ -16,7 +16,7 @@ use core.{Expr, ExprList, FieldList, Stmt, StmtList, ParamList, FieldInitList, M
 use diagnostics.{Confidence, DiagCode, Span, DiagnosticBag, bag_new, bag_merge, bag_report, bag_has_errors, diag_error, diag_warning, diag_with_confidence, span_new, span_at, span_dummy}
 use resolve.{resolve_program}
 use core.{TypeRegistry, TypeKind, type_registry_new, type_registry_register, type_registry_id_for, type_qualified_name, method_mangled_name, trait_impl_name, is_mangled_method, method_from_mangled}
-use core.{ModuleGraph, GraphItemList, module_graph_is_exported, ID_NONE}
+use core.{ModuleGraph, GraphItem, module_graph_is_exported, ID_NONE}
 use features.modules.{build_graph_from_stmts, graph_find_use_path}
 
 // ── Module tree ──
@@ -146,14 +146,19 @@ fn build_global_index(tree: ModuleNode, index: ModuleItem) -> ModuleItem {
 /// pre-computed `all_items` list (populated by graph_build's
 /// `register_item_typed`) into a `ModuleItem` chain the resolver can
 /// scan directly. Avoids the recursive AST walk + per-module
-/// `collect_module_items` pass.
-fn build_global_index_from_graph(items: GraphItemList, acc: ModuleItem) -> ModuleItem {
-    match items {
-        .End -> acc
-        .Node(short, canonical, exported, next) -> {
-            build_global_index_from_graph(next, ModuleItem.Node(short, canonical, exported, acc))
-        }
+/// `collect_module_items` pass. Iterates the List<GraphItem> in
+/// reverse to preserve the existing prepend semantics — graph_build
+/// pushes in source order, so the resulting ModuleItem chain has
+/// first-seen-last (the previous cons-list ordering).
+fn build_global_index_from_graph(items: List<GraphItem>, acc: ModuleItem) -> ModuleItem {
+    mut out = acc
+    mut i = 0
+    while i < items.length {
+        let it = items[i]
+        out = ModuleItem.Node(it.short_name, it.canonical, it.exported, out)
+        i = i + 1
     }
+    out
 }
 
 /// Concat two ModuleItem lists. Used by `build_global_index` to
