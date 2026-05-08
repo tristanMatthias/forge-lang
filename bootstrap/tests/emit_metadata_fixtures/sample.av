@@ -7,7 +7,7 @@
 // Tracking ticket: forge-crafting-intepreters-xtvc.
 
 use @std.avrac.build.{
-    UnitMetadata, TypeDeclList, FnDeclList, ConstDeclList, ImplDeclList,
+    UnitMetadata, TypeDeclEntry, FnDeclEntry, ConstDeclEntry, ImplDeclEntry,
     metadata_read, metadata_file_exists,
 }
 
@@ -41,33 +41,24 @@ fn main() -> int {
     let m = metadata_read(meta_path)
     probe("unit_name_present", m.unit_name != "")
 
+    let m_types: List<TypeDeclEntry> = m.types
+    let m_fns: List<FnDeclEntry> = m.fns
+    let m_consts: List<ConstDeclEntry> = m.consts
+    let m_impls: List<ImplDeclEntry> = m.impls
+
     // TYPES section should contain Pt (and Show as a trait decl)
-    probe("types_section_present",
-        match m.types {
-            .Node(_, _) -> true
-            .End -> false
-        })
+    probe("types_section_present", m_types.length > 0)
 
     // FNS section should include area at minimum
-    probe("fns_section_present",
-        match m.fns {
-            .Node(_, _) -> true
-            .End -> false
-        })
+    probe("fns_section_present", m_fns.length > 0)
 
     // CONSTS section should include LIMIT with int value 100
-    probe("consts_section_present",
-        match m.consts {
-            .Node(e, _) -> e.int_value == 100 || e.str_value == "100"
-            .End -> false
-        })
+    let const0_int = if m_consts.length > 0 { m_consts[0].int_value } else { 0 }
+    let const0_str = if m_consts.length > 0 { m_consts[0].str_value } else { "" }
+    probe("consts_section_present", m_consts.length > 0 && (const0_int == 100 || const0_str == "100"))
 
     // IMPLS section should record Show:Pt
-    probe("impls_section_present",
-        match m.impls {
-            .Node(_, _) -> true
-            .End -> false
-        })
+    probe("impls_section_present", m_impls.length > 0)
 
     0
 }

@@ -1129,57 +1129,10 @@ impl BytesReader {
 // complete file. Higher-level callers (the build driver, downstream
 // consumers) work in terms of UnitMetadata, not raw bytes.
 
-// Linked-list container types — one per section. Matches the shape
-// already used for FieldList / VariantList in core::ast so encoding
-// is straight recursion through the writer's `match`.
-
-export enum TypeDeclList {
-    End
-    Node(entry: TypeDeclEntry, next: TypeDeclList)
-}
-
-export enum FnDeclList {
-    End
-    Node(entry: FnDeclEntry, next: FnDeclList)
-}
-
-export enum ConstDeclList {
-    End
-    Node(entry: ConstDeclEntry, next: ConstDeclList)
-}
-
-export enum ImplDeclList {
-    End
-    Node(entry: ImplDeclEntry, next: ImplDeclList)
-}
-
-fn type_decl_list_length(xs: TypeDeclList) -> int {
-    match xs {
-        .End -> 0
-        .Node(_, next) -> 1 + type_decl_list_length(next)
-    }
-}
-
-fn fn_decl_list_length(xs: FnDeclList) -> int {
-    match xs {
-        .End -> 0
-        .Node(_, next) -> 1 + fn_decl_list_length(next)
-    }
-}
-
-fn const_decl_list_length(xs: ConstDeclList) -> int {
-    match xs {
-        .End -> 0
-        .Node(_, next) -> 1 + const_decl_list_length(next)
-    }
-}
-
-fn impl_decl_list_length(xs: ImplDeclList) -> int {
-    match xs {
-        .End -> 0
-        .Node(_, next) -> 1 + impl_decl_list_length(next)
-    }
-}
+// Section content types — built-in `List<T>` rather than the
+// previous bespoke cons-lists (lkze.3). The writer iterates with a
+// while-loop and the reader pushes into a fresh list — wire format
+// unchanged.
 
 /// Everything that goes into one unit's metadata.bin. The
 /// `unit_name` is the canonical module path (e.g. `@std::avrac::build`);
@@ -1188,10 +1141,10 @@ fn impl_decl_list_length(xs: ImplDeclList) -> int {
 export type UnitMetadata = {
     unit_name: string,
     fingerprint: bytes,
-    types: TypeDeclList,
-    fns: FnDeclList,
-    consts: ConstDeclList,
-    impls: ImplDeclList,
+    types: List<TypeDeclEntry>,
+    fns: List<FnDeclEntry>,
+    consts: List<ConstDeclEntry>,
+    impls: List<ImplDeclEntry>,
 }
 
 /// Build an empty metadata bundle. Convenience for incremental
@@ -1200,10 +1153,10 @@ export fn unit_metadata_new(unit_name: string, fingerprint: bytes) -> UnitMetada
     UnitMetadata {
         unit_name: unit_name,
         fingerprint: fingerprint,
-        types: TypeDeclList.End,
-        fns: FnDeclList.End,
-        consts: ConstDeclList.End,
-        impls: ImplDeclList.End,
+        types: [],
+        fns: [],
+        consts: [],
+        impls: [],
     }
 }
 
@@ -1224,68 +1177,44 @@ impl BytesWriter {
         self.write_impls_section(m.impls)
     }
 
-    fn write_types_section(self, xs: TypeDeclList) {
+    fn write_types_section(self, xs: List<TypeDeclEntry>) {
         let body_w = writer_new()
-        body_w.write_type_decl_list(xs)
-        self.section(SectionKind.Types, type_decl_list_length(xs), body_w.finish())
-    }
-
-    fn write_type_decl_list(self, xs: TypeDeclList) {
-        match xs {
-            .End -> {}
-            .Node(e, next) -> {
-                self.type_decl(e)
-                self.write_type_decl_list(next)
-            }
+        mut i = 0
+        while i < xs.length {
+            body_w.type_decl(xs[i])
+            i = i + 1
         }
+        self.section(SectionKind.Types, xs.length, body_w.finish())
     }
 
-    fn write_fns_section(self, xs: FnDeclList) {
+    fn write_fns_section(self, xs: List<FnDeclEntry>) {
         let body_w = writer_new()
-        body_w.write_fn_decl_list(xs)
-        self.section(SectionKind.Fns, fn_decl_list_length(xs), body_w.finish())
-    }
-
-    fn write_fn_decl_list(self, xs: FnDeclList) {
-        match xs {
-            .End -> {}
-            .Node(e, next) -> {
-                self.fn_decl(e)
-                self.write_fn_decl_list(next)
-            }
+        mut i = 0
+        while i < xs.length {
+            body_w.fn_decl(xs[i])
+            i = i + 1
         }
+        self.section(SectionKind.Fns, xs.length, body_w.finish())
     }
 
-    fn write_consts_section(self, xs: ConstDeclList) {
+    fn write_consts_section(self, xs: List<ConstDeclEntry>) {
         let body_w = writer_new()
-        body_w.write_const_decl_list(xs)
-        self.section(SectionKind.Consts, const_decl_list_length(xs), body_w.finish())
-    }
-
-    fn write_const_decl_list(self, xs: ConstDeclList) {
-        match xs {
-            .End -> {}
-            .Node(e, next) -> {
-                self.const_decl(e)
-                self.write_const_decl_list(next)
-            }
+        mut i = 0
+        while i < xs.length {
+            body_w.const_decl(xs[i])
+            i = i + 1
         }
+        self.section(SectionKind.Consts, xs.length, body_w.finish())
     }
 
-    fn write_impls_section(self, xs: ImplDeclList) {
+    fn write_impls_section(self, xs: List<ImplDeclEntry>) {
         let body_w = writer_new()
-        body_w.write_impl_decl_list(xs)
-        self.section(SectionKind.Impls, impl_decl_list_length(xs), body_w.finish())
-    }
-
-    fn write_impl_decl_list(self, xs: ImplDeclList) {
-        match xs {
-            .End -> {}
-            .Node(e, next) -> {
-                self.impl_decl(e)
-                self.write_impl_decl_list(next)
-            }
+        mut i = 0
+        while i < xs.length {
+            body_w.impl_decl(xs[i])
+            i = i + 1
         }
+        self.section(SectionKind.Impls, xs.length, body_w.finish())
     }
 }
 
@@ -1317,52 +1246,48 @@ impl BytesReader {
     }
 }
 
-fn read_type_decl_list(body: bytes, count: int) -> TypeDeclList {
+fn read_type_decl_list(body: bytes, count: int) -> List<TypeDeclEntry> {
     let r = reader_new(body)
-    read_type_decl_list_loop(r, count)
+    mut out: List<TypeDeclEntry> = []
+    mut i = 0
+    while i < count {
+        out.push(r.type_decl())
+        i = i + 1
+    }
+    out
 }
 
-fn read_type_decl_list_loop(r: BytesReader, count: int) -> TypeDeclList {
-    if count == 0 { return TypeDeclList.End }
-    let head = r.type_decl()
-    let tail = read_type_decl_list_loop(r, count - 1)
-    TypeDeclList.Node(head, tail)
-}
-
-fn read_fn_decl_list(body: bytes, count: int) -> FnDeclList {
+fn read_fn_decl_list(body: bytes, count: int) -> List<FnDeclEntry> {
     let r = reader_new(body)
-    read_fn_decl_list_loop(r, count)
+    mut out: List<FnDeclEntry> = []
+    mut i = 0
+    while i < count {
+        out.push(r.fn_decl())
+        i = i + 1
+    }
+    out
 }
 
-fn read_fn_decl_list_loop(r: BytesReader, count: int) -> FnDeclList {
-    if count == 0 { return FnDeclList.End }
-    let head = r.fn_decl()
-    let tail = read_fn_decl_list_loop(r, count - 1)
-    FnDeclList.Node(head, tail)
-}
-
-fn read_const_decl_list(body: bytes, count: int) -> ConstDeclList {
+fn read_const_decl_list(body: bytes, count: int) -> List<ConstDeclEntry> {
     let r = reader_new(body)
-    read_const_decl_list_loop(r, count)
+    mut out: List<ConstDeclEntry> = []
+    mut i = 0
+    while i < count {
+        out.push(r.const_decl())
+        i = i + 1
+    }
+    out
 }
 
-fn read_const_decl_list_loop(r: BytesReader, count: int) -> ConstDeclList {
-    if count == 0 { return ConstDeclList.End }
-    let head = r.const_decl()
-    let tail = read_const_decl_list_loop(r, count - 1)
-    ConstDeclList.Node(head, tail)
-}
-
-fn read_impl_decl_list(body: bytes, count: int) -> ImplDeclList {
+fn read_impl_decl_list(body: bytes, count: int) -> List<ImplDeclEntry> {
     let r = reader_new(body)
-    read_impl_decl_list_loop(r, count)
-}
-
-fn read_impl_decl_list_loop(r: BytesReader, count: int) -> ImplDeclList {
-    if count == 0 { return ImplDeclList.End }
-    let head = r.impl_decl()
-    let tail = read_impl_decl_list_loop(r, count - 1)
-    ImplDeclList.Node(head, tail)
+    mut out: List<ImplDeclEntry> = []
+    mut i = 0
+    while i < count {
+        out.push(r.impl_decl())
+        i = i + 1
+    }
+    out
 }
 
 // Decode a hex string to a `bytes` value. Two hex chars → one octet.

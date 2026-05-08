@@ -14,7 +14,7 @@ extern fn avra_bytes_make(n: int) -> bytes
 use @std.avrac.parse.{parse_program_source_at}
 use @std.avrac.features.modules.{resolve_module_files, modules_dirname, LoadedPaths}
 use @std.avrac.build.{extract_unit_metadata, extract_per_file_metadata}
-use @std.avrac.build.{UnitMetadata, FnDeclList, TypeDeclList}
+use @std.avrac.build.{UnitMetadata, FnDeclEntry, TypeDeclEntry}
 use @std.avrac.core.{avra_selfhost_read_file}
 
 fn probe(name: string, ok: bool) {
@@ -22,45 +22,34 @@ fn probe(name: string, ok: bool) {
     println("PROBE ${name}: ${tag}")
 }
 
-fn fn_count(xs: FnDeclList) -> int {
-    match xs {
-        .End -> 0
-        .Node(_, next) -> 1 + fn_count(next)
-    }
-}
+fn fn_count(xs: List<FnDeclEntry>) -> int { xs.length }
 
-fn type_count(xs: TypeDeclList) -> int {
-    match xs {
-        .End -> 0
-        .Node(_, next) -> 1 + type_count(next)
-    }
-}
+fn type_count(xs: List<TypeDeclEntry>) -> int { xs.length }
 
-fn fns_contains(xs: FnDeclList, name: string) -> bool {
-    match xs {
-        .End -> false
-        .Node(e, next) -> {
-            // qualified-name suffix match: "...::name"
-            if e.name.length >= name.length {
-                let tail = e.name.substring(e.name.length - name.length, e.name.length)
-                if tail == name { return true }
-            }
-            fns_contains(next, name)
+fn fns_contains(xs: List<FnDeclEntry>, name: string) -> bool {
+    mut i = 0
+    while i < xs.length {
+        let e: FnDeclEntry = xs[i]
+        if e.name.length >= name.length {
+            let tail = e.name.substring(e.name.length - name.length, e.name.length)
+            if tail == name { return true }
         }
+        i = i + 1
     }
+    false
 }
 
-fn types_contains(xs: TypeDeclList, name: string) -> bool {
-    match xs {
-        .End -> false
-        .Node(e, next) -> {
-            if e.name.length >= name.length {
-                let tail = e.name.substring(e.name.length - name.length, e.name.length)
-                if tail == name { return true }
-            }
-            types_contains(next, name)
+fn types_contains(xs: List<TypeDeclEntry>, name: string) -> bool {
+    mut i = 0
+    while i < xs.length {
+        let e: TypeDeclEntry = xs[i]
+        if e.name.length >= name.length {
+            let tail = e.name.substring(e.name.length - name.length, e.name.length)
+            if tail == name { return true }
         }
+        i = i + 1
     }
+    false
 }
 
 fn main() -> int {

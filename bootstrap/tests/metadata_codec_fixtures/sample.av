@@ -17,7 +17,7 @@ use @std.avrac.build.{
     ConstValueKind, ConstDeclEntry,
     MetaTraitMethod,
     ImplDeclEntry, ImplMethodRef,
-    UnitMetadata, TypeDeclList, FnDeclList, ConstDeclList, ImplDeclList,
+    UnitMetadata,
     unit_metadata_new,
     metadata_write, metadata_read, metadata_file_exists,
 }
@@ -635,14 +635,22 @@ fn main() -> int {
         methods: unit_impl_methods,
     }
 
+    mut unit_types: List<TypeDeclEntry> = []
+    unit_types.push(unit_struct_entry)
+    mut unit_fns: List<FnDeclEntry> = []
+    unit_fns.push(unit_fn_entry)
+    mut unit_consts: List<ConstDeclEntry> = []
+    unit_consts.push(unit_const_entry)
+    mut unit_impls: List<ImplDeclEntry> = []
+    unit_impls.push(unit_impl_entry)
     let mut unit = unit_metadata_new("@unit", unit_fp)
     unit = UnitMetadata {
         unit_name: unit.unit_name,
         fingerprint: unit.fingerprint,
-        types: TypeDeclList.Node(unit_struct_entry, TypeDeclList.End),
-        fns: FnDeclList.Node(unit_fn_entry, FnDeclList.End),
-        consts: ConstDeclList.Node(unit_const_entry, ConstDeclList.End),
-        impls: ImplDeclList.Node(unit_impl_entry, ImplDeclList.End),
+        types: unit_types,
+        fns: unit_fns,
+        consts: unit_consts,
+        impls: unit_impls,
     }
 
     let unit_w = writer_new()
@@ -650,29 +658,37 @@ fn main() -> int {
     let unit_buf = unit_w.finish()
     let unit_r = reader_new(unit_buf)
     let decoded = unit_r.unit()
+    let dec_types: List<TypeDeclEntry> = decoded.types
+    let dec_fns: List<FnDeclEntry> = decoded.fns
+    let dec_consts: List<ConstDeclEntry> = decoded.consts
+    let dec_impls: List<ImplDeclEntry> = decoded.impls
+    let dec_type_first: TypeDeclEntry = if dec_types.length > 0 {
+        dec_types[0]
+    } else {
+        TypeDeclEntry { sym_id: 0, kind: TypeDeclKind.StructDecl, name: "", type_params: TypeParamList.End, fields: FieldList.End, variants: VariantList.End, inner_vt: ValueType.Unknown, methods: [] }
+    }
+    let dec_fn_first: FnDeclEntry = if dec_fns.length > 0 {
+        dec_fns[0]
+    } else {
+        FnDeclEntry { sym_id: 0, name: "", type_params: TypeParamList.End, exported: false, is_extern: false, params: ParamList.End, ret: ValueType.Unknown }
+    }
+    let dec_const_first: ConstDeclEntry = if dec_consts.length > 0 {
+        dec_consts[0]
+    } else {
+        ConstDeclEntry { sym_id: 0, name: "", exported: false, ty: ValueType.Unknown, value_kind: ConstValueKind.IntValue, int_value: 0, str_value: "" }
+    }
+    let dec_impl_first: ImplDeclEntry = if dec_impls.length > 0 {
+        dec_impls[0]
+    } else {
+        ImplDeclEntry { trait_sym_id: 0, trait_name: "", type_sym_id: 0, type_name: "", methods: [] }
+    }
     probe("unit_name", decoded.unit_name == "@unit")
     probe("unit_fp_byte0", decoded.fingerprint.byte(0) == 0xAB)
     probe("unit_fp_byte31", decoded.fingerprint.byte(31) == 0xCD)
-    probe("unit_types_present",
-        match decoded.types {
-            .Node(e, _) -> e.name == "@unit::User"
-            .End -> false
-        })
-    probe("unit_fns_present",
-        match decoded.fns {
-            .Node(e, _) -> e.name == "@unit::greet"
-            .End -> false
-        })
-    probe("unit_consts_present",
-        match decoded.consts {
-            .Node(e, _) -> e.str_value == "anonymous"
-            .End -> false
-        })
-    probe("unit_impls_present",
-        match decoded.impls {
-            .Node(e, _) -> e.trait_name == "@unit::Display" && e.type_name == "@unit::User"
-            .End -> false
-        })
+    probe("unit_types_present", dec_types.length > 0 && dec_type_first.name == "@unit::User")
+    probe("unit_fns_present", dec_fns.length > 0 && dec_fn_first.name == "@unit::greet")
+    probe("unit_consts_present", dec_consts.length > 0 && dec_const_first.str_value == "anonymous")
+    probe("unit_impls_present", dec_impls.length > 0 && dec_impl_first.trait_name == "@unit::Display" && dec_impl_first.type_name == "@unit::User")
     probe("unit_reader_exhausted", unit_r.remaining() == 0)
 
     // AST → UnitMetadata extractor: hand-build a small StmtList that
@@ -709,51 +725,41 @@ fn main() -> int {
         StmtList.Node(s_extern, StmtList.End)))))
 
     let extracted = extract_unit_metadata("@ext", ext_fp, ext_stmts)
+    let ex_types: List<TypeDeclEntry> = extracted.types
+    let ex_fns: List<FnDeclEntry> = extracted.fns
+    let ex_consts: List<ConstDeclEntry> = extracted.consts
+    let ex_t0: TypeDeclEntry = if ex_types.length > 0 {
+        ex_types[0]
+    } else {
+        TypeDeclEntry { sym_id: 0, kind: TypeDeclKind.StructDecl, name: "", type_params: TypeParamList.End, fields: FieldList.End, variants: VariantList.End, inner_vt: ValueType.Unknown, methods: [] }
+    }
+    let ex_f0: FnDeclEntry = if ex_fns.length > 0 {
+        ex_fns[0]
+    } else {
+        FnDeclEntry { sym_id: 0, name: "", type_params: TypeParamList.End, exported: false, is_extern: false, params: ParamList.End, ret: ValueType.Unknown }
+    }
+    let ex_c0: ConstDeclEntry = if ex_consts.length > 0 {
+        ex_consts[0]
+    } else {
+        ConstDeclEntry { sym_id: 0, name: "", exported: false, ty: ValueType.Unknown, value_kind: ConstValueKind.IntValue, int_value: 0, str_value: "" }
+    }
+    let ex_c1: ConstDeclEntry = if ex_consts.length > 1 {
+        ex_consts[1]
+    } else {
+        ConstDeclEntry { sym_id: 0, name: "", exported: false, ty: ValueType.Unknown, value_kind: ConstValueKind.IntValue, int_value: 0, str_value: "" }
+    }
+    let ex_f1: FnDeclEntry = if ex_fns.length > 1 {
+        ex_fns[1]
+    } else {
+        FnDeclEntry { sym_id: 0, name: "", type_params: TypeParamList.End, exported: false, is_extern: false, params: ParamList.End, ret: ValueType.Unknown }
+    }
     probe("extract_unit_name", extracted.unit_name == "@ext")
-    probe("extract_type_qualified",
-        match extracted.types {
-            .Node(e, _) -> e.name == "@ext::Pt"
-            .End -> false
-        })
-    probe("extract_fn_qualified",
-        match extracted.fns {
-            .Node(e, _) -> e.name == "@ext::add"
-            .End -> false
-        })
-    probe("extract_fn_exported",
-        match extracted.fns {
-            .Node(e, _) -> e.exported
-            .End -> false
-        })
-    probe("extract_const_str_value",
-        match extracted.consts {
-            .Node(e, _) -> e.str_value == "1.0" && e.value_kind is .StrValue
-            .End -> false
-        })
-    let consts_tail = match extracted.consts {
-        .Node(_, t) -> t
-        .End -> ConstDeclList.End
-    }
-    probe("extract_const_int_value",
-        match consts_tail {
-            .Node(e, _) -> e.int_value == 42 && e.value_kind is .IntValue
-            .End -> false
-        })
-
-    // Find the extern fn in the fns list (which has the exported fn first).
-    let fns_tail = match extracted.fns {
-        .Node(_, t) -> t
-        .End -> FnDeclList.End
-    }
-    probe("extract_extern_is_extern",
-        match fns_tail {
-            // 9ixv: externs are now qualified by their declaring module
-            // (was bare-name only) so the synthesizer can re-emit them
-            // at the original nested-mod path. Fixture's unit_name is
-            // "@ext" (see extract_unit_metadata call upstream).
-            .Node(e, _) -> e.is_extern && e.name == "@ext::host_now"
-            .End -> false
-        })
+    probe("extract_type_qualified", ex_types.length > 0 && ex_t0.name == "@ext::Pt")
+    probe("extract_fn_qualified", ex_fns.length > 0 && ex_f0.name == "@ext::add")
+    probe("extract_fn_exported", ex_fns.length > 0 && ex_f0.exported)
+    probe("extract_const_str_value", ex_consts.length > 0 && ex_c0.str_value == "1.0" && ex_c0.value_kind is .StrValue)
+    probe("extract_const_int_value", ex_consts.length > 1 && ex_c1.int_value == 42 && ex_c1.value_kind is .IntValue)
+    probe("extract_extern_is_extern", ex_fns.length > 1 && ex_f1.is_extern && ex_f1.name == "@ext::host_now")
 
     // Generics: a fn with type_params + a struct with type_params
     let gen_fn_tps = TypeParamList.Node("T", "", TypeParamList.End)
@@ -830,13 +836,15 @@ fn main() -> int {
         inner_vt: ValueType.Unknown,
         methods: [],
     }
+    mut io_types: List<TypeDeclEntry> = []
+    io_types.push(io_struct)
     let io_unit = UnitMetadata {
         unit_name: "@io",
         fingerprint: io_fp,
-        types: TypeDeclList.Node(io_struct, TypeDeclList.End),
-        fns: FnDeclList.End,
-        consts: ConstDeclList.End,
-        impls: ImplDeclList.End,
+        types: io_types,
+        fns: [],
+        consts: [],
+        impls: [],
     }
 
     let write_rc = metadata_write(io_path, io_unit)
@@ -844,14 +852,16 @@ fn main() -> int {
     probe("io_file_exists_after_write", metadata_file_exists(io_path))
 
     let loaded = metadata_read(io_path)
+    let loaded_types: List<TypeDeclEntry> = loaded.types
+    let loaded_t0: TypeDeclEntry = if loaded_types.length > 0 {
+        loaded_types[0]
+    } else {
+        TypeDeclEntry { sym_id: 0, kind: TypeDeclKind.StructDecl, name: "", type_params: TypeParamList.End, fields: FieldList.End, variants: VariantList.End, inner_vt: ValueType.Unknown, methods: [] }
+    }
     probe("io_read_unit_name", loaded.unit_name == "@io")
     probe("io_read_fp_byte0", loaded.fingerprint.byte(0) == 0x77)
     probe("io_read_fp_byte31", loaded.fingerprint.byte(31) == 0x88)
-    probe("io_read_struct_name",
-        match loaded.types {
-            .Node(e, _) -> e.name == "@io::Pt"
-            .End -> false
-        })
+    probe("io_read_struct_name", loaded_types.length > 0 && loaded_t0.name == "@io::Pt")
 
     // Missing file path returns an empty UnitMetadata sentinel — caller
     // gates on metadata_file_exists when the distinction matters.

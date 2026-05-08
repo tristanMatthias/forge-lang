@@ -10,7 +10,7 @@ use core.{
     AnnotationList, stmt_unwrap,
 }
 use build.metadata.{
-    UnitMetadata, TypeDeclList, FnDeclList, ConstDeclList, ImplDeclList,
+    UnitMetadata,
     TypeDeclEntry, FnDeclEntry, ConstDeclEntry, ImplDeclEntry,
     TypeDeclKind, ConstValueKind,
     MetaTraitMethod, ImplMethodRef,
@@ -22,19 +22,14 @@ use parse.{parse_int_literal}
 // the updated record. Lists grow via prepend so traversal stays
 // O(stmts); a final reverse pass restores source order.
 type ExtractAcc = {
-    types: TypeDeclList,
-    fns: FnDeclList,
-    consts: ConstDeclList,
-    impls: ImplDeclList,
+    types: List<TypeDeclEntry>,
+    fns: List<FnDeclEntry>,
+    consts: List<ConstDeclEntry>,
+    impls: List<ImplDeclEntry>,
 }
 
 fn empty_acc() -> ExtractAcc {
-    ExtractAcc {
-        types: TypeDeclList.End,
-        fns: FnDeclList.End,
-        consts: ConstDeclList.End,
-        impls: ImplDeclList.End,
-    }
+    ExtractAcc { types: [], fns: [], consts: [], impls: [] }
 }
 
 // Public entry. `unit_name` becomes the module prefix used to
@@ -49,13 +44,16 @@ export fn extract_unit_metadata(unit_name: string, fingerprint: bytes, stmts: St
     // decls still get qualified against the unit they belong to.
     let inner = unwrap_outer_unit_module(stmts, unit_name)
     let acc = walk_stmts(empty_acc(), inner, unit_name, false)
+    // Lists already in source order — push appends. The cons-list
+    // version had to reverse here because cons-prepend put the
+    // last-seen decl at the head.
     UnitMetadata {
         unit_name: unit_name,
         fingerprint: fingerprint,
-        types: reverse_type_list(acc.types, TypeDeclList.End),
-        fns: reverse_fn_list(acc.fns, FnDeclList.End),
-        consts: reverse_const_list(acc.consts, ConstDeclList.End),
-        impls: reverse_impl_list(acc.impls, ImplDeclList.End),
+        types: acc.types,
+        fns: acc.fns,
+        consts: acc.consts,
+        impls: acc.impls,
     }
 }
 
@@ -80,10 +78,10 @@ export fn extract_per_file_metadata(unit_name: string, target_file: string, fing
     UnitMetadata {
         unit_name: unit_name,
         fingerprint: fingerprint,
-        types: reverse_type_list(acc.types, TypeDeclList.End),
-        fns: reverse_fn_list(acc.fns, FnDeclList.End),
-        consts: reverse_const_list(acc.consts, ConstDeclList.End),
-        impls: reverse_impl_list(acc.impls, ImplDeclList.End),
+        types: acc.types,
+        fns: acc.fns,
+        consts: acc.consts,
+        impls: acc.impls,
     }
 }
 
@@ -158,32 +156,35 @@ fn find_unit_module_body(stmts: StmtList, unit_name: string) -> StmtList {
     }
 }
 
-fn reverse_type_list(xs: TypeDeclList, acc: TypeDeclList) -> TypeDeclList {
-    match xs {
-        .End -> acc
-        .Node(e, next) -> reverse_type_list(next, TypeDeclList.Node(e, acc))
-    }
+// `reverse_list<T>` (defined above) replaces the prior 4 bespoke
+// reverse fns. Generic over the element type — see lkze.3.
+
+// Per-section push helpers — `acc.<field>` is a List<T> shared by
+// ptr identity through the struct copy, so .push mutates in place
+// and we return `acc` unchanged. Replaces the prior cons-prepend
+// + ExtractAcc-rebuild pattern that every walk-stmt arm did.
+fn push_type(acc: ExtractAcc, e: TypeDeclEntry) -> ExtractAcc {
+    mut xs = acc.types
+    xs.push(e)
+    acc
 }
 
-fn reverse_fn_list(xs: FnDeclList, acc: FnDeclList) -> FnDeclList {
-    match xs {
-        .End -> acc
-        .Node(e, next) -> reverse_fn_list(next, FnDeclList.Node(e, acc))
-    }
+fn push_fn(acc: ExtractAcc, e: FnDeclEntry) -> ExtractAcc {
+    mut xs = acc.fns
+    xs.push(e)
+    acc
 }
 
-fn reverse_const_list(xs: ConstDeclList, acc: ConstDeclList) -> ConstDeclList {
-    match xs {
-        .End -> acc
-        .Node(e, next) -> reverse_const_list(next, ConstDeclList.Node(e, acc))
-    }
+fn push_const(acc: ExtractAcc, e: ConstDeclEntry) -> ExtractAcc {
+    mut xs = acc.consts
+    xs.push(e)
+    acc
 }
 
-fn reverse_impl_list(xs: ImplDeclList, acc: ImplDeclList) -> ImplDeclList {
-    match xs {
-        .End -> acc
-        .Node(e, next) -> reverse_impl_list(next, ImplDeclList.Node(e, acc))
-    }
+fn push_impl(acc: ExtractAcc, e: ImplDeclEntry) -> ExtractAcc {
+    mut xs = acc.impls
+    xs.push(e)
+    acc
 }
 
 fn walk_stmts(acc: ExtractAcc, stmts: StmtList, current_module: string, exported: bool) -> ExtractAcc {
@@ -253,7 +254,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                 inner_vt: ValueType.Unknown,
                 methods: [],
             }
-            ExtractAcc { types: TypeDeclList.Node(entry, acc.types), fns: acc.fns, consts: acc.consts, impls: acc.impls }
+            push_type(acc, entry)
         }
         .ShapeDecl(name, fields) -> {
             let qn = qualify(current_module, name)
@@ -267,7 +268,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                 inner_vt: ValueType.Unknown,
                 methods: [],
             }
-            ExtractAcc { types: TypeDeclList.Node(entry, acc.types), fns: acc.fns, consts: acc.consts, impls: acc.impls }
+            push_type(acc, entry)
         }
         .EnumDecl(name, type_params, variants) -> {
             let qn = qualify(current_module, name)
@@ -281,7 +282,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                 inner_vt: ValueType.Unknown,
                 methods: [],
             }
-            ExtractAcc { types: TypeDeclList.Node(entry, acc.types), fns: acc.fns, consts: acc.consts, impls: acc.impls }
+            push_type(acc, entry)
         }
         .NewtypeDecl(name, inner_vt) -> {
             let qn = qualify(current_module, name)
@@ -295,7 +296,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                 inner_vt: inner_vt,
                 methods: [],
             }
-            ExtractAcc { types: TypeDeclList.Node(entry, acc.types), fns: acc.fns, consts: acc.consts, impls: acc.impls }
+            push_type(acc, entry)
         }
         .UnionAliasDecl(name, type_vt) -> {
             let qn = qualify(current_module, name)
@@ -309,7 +310,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                 inner_vt: type_vt,
                 methods: [],
             }
-            ExtractAcc { types: TypeDeclList.Node(entry, acc.types), fns: acc.fns, consts: acc.consts, impls: acc.impls }
+            push_type(acc, entry)
         }
         .TraitDecl(name, methods) -> {
             let qn = qualify(current_module, name)
@@ -323,7 +324,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                 inner_vt: ValueType.Unknown,
                 methods: extract_trait_methods(methods),
             }
-            ExtractAcc { types: TypeDeclList.Node(entry, acc.types), fns: acc.fns, consts: acc.consts, impls: acc.impls }
+            push_type(acc, entry)
         }
         .Function(name, type_params, params, ret_vt, _) -> {
             let qn = qualify(current_module, name)
@@ -336,7 +337,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                 params: params,
                 ret: ret_vt,
             }
-            ExtractAcc { types: acc.types, fns: FnDeclList.Node(entry, acc.fns), consts: acc.consts, impls: acc.impls }
+            push_fn(acc, entry)
         }
         .ExternFn(name, params, ret_vt) -> {
             // Qualify the extern by its declaring module so the
@@ -356,7 +357,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                 params: params,
                 ret: ret_vt,
             }
-            ExtractAcc { types: acc.types, fns: FnDeclList.Node(entry, acc.fns), consts: acc.consts, impls: acc.impls }
+            push_fn(acc, entry)
         }
         .Const(name, ty_vt, init) -> {
             let qn = qualify(current_module, name)
@@ -370,7 +371,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                 int_value: parts.int_val,
                 str_value: parts.str_val,
             }
-            ExtractAcc { types: acc.types, fns: acc.fns, consts: ConstDeclList.Node(entry, acc.consts), impls: acc.impls }
+            push_const(acc, entry)
         }
         .Impl(impl_name, methods) -> {
             let pair = split_impl_name(impl_name)
@@ -384,7 +385,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                     type_name: type_qn,
                     methods: extract_impl_methods(methods, type_qn),
                 }
-                ExtractAcc { types: acc.types, fns: acc.fns, consts: acc.consts, impls: ImplDeclList.Node(entry, acc.impls) }
+                push_impl(acc, entry)
             } else {
                 acc
             }
