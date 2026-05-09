@@ -20,7 +20,7 @@ use core.{has_fn, find_fn_body}
 /// then walk the tree splicing in templates / instantiations.
 export fn expand_components(stmts: StmtList) -> StmtList {
     let reg = collect_component_defs(stmts)
-    let root = CompNestCtx { parent_var: "", parent_name: "" }
+    let root = CompNestCtx { parent_var: "", parent_name: "", parent_children: ChildrenList.End }
     expand_stmt_list(stmts, reg, root)
 }
 
@@ -139,11 +139,17 @@ fn stmt_unwrap_deep(s: Stmt) -> Stmt {
 
 /// Nesting context for nested component blocks.
 ///
-/// @field parent_var  — accumulator var of the enclosing block ("" at root).
-/// @field parent_name — instance name of the enclosing block ("" at root).
+/// @field parent_var      — accumulator var of the enclosing block ("" at root).
+/// @field parent_name     — instance name of the enclosing block ("" at root).
+/// @field parent_children — children-schema of the enclosing parent
+///                          ComponentDef. Used by auto-push (vez6.7.6) to
+///                          decide which list field a nested ComponentBlock
+///                          gets pushed into. Empty at root and for legacy
+///                          parents that didn't declare a schema.
 export type CompNestCtx = {
-    parent_var: string,    // parent accumulator variable ("" = root)
-    parent_name: string,   // parent instance name ("" = root)
+    parent_var: string,
+    parent_name: string,
+    parent_children: ChildrenList,
 }
 
 // ── Self-rewriting ──
@@ -484,7 +490,7 @@ fn config_pairs_to_field_inits(pairs: CompConfigPairList) -> FieldInitList {
 /// triple `type Name`, `impl Name { … }`, and a factory
 /// `fn make_name(cfg) -> Name`. Spliced ahead of `rest` so the
 /// surrounding code sees the synthesized definitions.
-export fn splice_component_def(name: string, params: ParamList, config: CompConfigList, body: StmtList, line: int, col: int, rest: StmtList) -> StmtList {
+export fn splice_component_def(name: string, params: ParamList, config: CompConfigList, children: ChildrenList, body: StmtList, line: int, col: int, rest: StmtList) -> StmtList {
     // Template components (with init hooks): no type/factory generation
     if has_fn(body, "init") {
         let methods = extract_methods(body, name)
@@ -492,15 +498,19 @@ export fn splice_component_def(name: string, params: ParamList, config: CompConf
     }
 
     // Data components: generate struct type + factory function
-    // The struct has a `name` field (implicit) + config fields
+    // Fields: implicit `name` + config + children-slot lists (vez6.7).
     let type_name = capitalize(name)
-    let name_field = FieldList.Node("name", ValueType.Str, config_to_fields(config))
+    let config_fields = config_to_fields(config)
+    let with_children = append_children_fields(config_fields, children)
+    let name_field = FieldList.Node("name", ValueType.Str, with_children)
 
     let type_decl = Stmt.TypeDecl(type_name, TypeParamList.End, name_field)
 
-    // Factory: comp_new(name: string) -> TypeName { TypeName { name, config_defaults... } }
+    // Factory: comp_new(name: string) -> TypeName { TypeName { name, config_defaults..., empty_lists... } }
     let name_param = ParamList.Node("name", ValueType.Str, ParamList.End)
-    let name_init = FieldInitList.Node("name", sexpr(Expr.Ident("name"), 0, 0), config_to_factory_inits(config))
+    let config_inits = config_to_factory_inits(config)
+    let with_child_inits = append_children_inits(config_inits, children)
+    let name_init = FieldInitList.Node("name", sexpr(Expr.Ident("name"), 0, 0), with_child_inits)
     let struct_lit = Expr.StructLit(type_name, name_init)
     let factory_body = StmtList.Node(sstmt(Stmt.Return(struct_lit), 0, 0), StmtList.End)
     let factory = Stmt.Function("${name}_new", TypeParamList.End, name_param, ValueType.Struct(type_name, 0), factory_body)
@@ -510,6 +520,75 @@ export fn splice_component_def(name: string, params: ParamList, config: CompConf
     StmtList.Node(sstmt(type_decl, line, col),
         StmtList.Node(sstmt(factory, line, col),
             append_stmt_lists(methods, rest)))
+}
+
+// ── vez6.7.6: children-slot fields + auto-push ──
+
+/// Append a `slot_name: List<elem>` FieldList entry for every entry
+/// in the children schema. Threads through the existing config/name
+/// fields so the resulting struct carries every list slot the
+/// component declared.
+fn append_children_fields(fields: FieldList, children: ChildrenList) -> FieldList {
+    match children {
+        .End -> fields
+        .Node(slot, ty, next) -> {
+            let appended = field_list_append(fields, slot, ty)
+            append_children_fields(appended, next)
+        }
+    }
+}
+
+fn field_list_append(fields: FieldList, name: string, ty: ValueType) -> FieldList {
+    match fields {
+        .End -> FieldList.Node(name, ty, FieldList.End)
+        .Node(n, t, next) -> FieldList.Node(n, t, field_list_append(next, name, ty))
+    }
+}
+
+/// Initialize each slot to an empty list literal `[]` in the
+/// factory's struct literal, paired with the slot field added by
+/// `append_children_fields`.
+fn append_children_inits(inits: FieldInitList, children: ChildrenList) -> FieldInitList {
+    match children {
+        .End -> inits
+        .Node(slot, _, next) -> {
+            let empty_list = sexpr(Expr.ListLit(ExprList.End), 0, 0)
+            let appended = field_init_list_append(inits, slot, empty_list)
+            append_children_inits(appended, next)
+        }
+    }
+}
+
+fn field_init_list_append(inits: FieldInitList, name: string, value: SExpr) -> FieldInitList {
+    match inits {
+        .End -> FieldInitList.Node(name, value, FieldInitList.End)
+        .Node(n, v, next) -> FieldInitList.Node(n, v, field_init_list_append(next, name, value))
+    }
+}
+
+/// Look up the slot name in `schema` whose element type matches
+/// `child_comp`. Returns "" when no slot matches — caller treats
+/// the empty string as "no auto-push needed".
+fn slot_name_for_child(schema: ChildrenList, child_comp: string) -> string {
+    match schema {
+        .End -> ""
+        .Node(slot, child_ty, next) -> {
+            if vtype_elem_name_matches(child_ty, child_comp) { return slot }
+            slot_name_for_child(next, child_comp)
+        }
+    }
+}
+
+/// Build the auto-push statement: `parent_var.<slot>.push(child_inst)`.
+/// Emitted by splice_data_block when the parent's children schema
+/// matched the child's type.
+fn build_push_stmt(parent_var: string, slot: string, child_inst: string, line: int, col: int) -> SStmt {
+    let push_target = Expr.FieldAccess(
+        Expr.FieldAccess(Expr.Ident(parent_var), slot),
+        "push"
+    )
+    let push_call = Expr.Call(push_target, ExprList.Node(sexpr(Expr.Ident(child_inst), line, col), ExprList.End))
+    sstmt(Stmt.Expr(push_call), line, col)
 }
 
 // ── ComponentBlock splice ──
@@ -670,7 +749,7 @@ fn splice_template_block(comp: string, inst: string, config: CompConfigPairList,
         stmts = append_stmt_lists(rewritten, stmts)
     }
 
-    let child_nest = CompNestCtx { parent_var: accum_var, parent_name: inst }
+    let child_nest = CompNestCtx { parent_var: accum_var, parent_name: inst, parent_children: def.children }
     let expanded_body = expand_stmt_list(body, reg, child_nest)
     stmts = append_stmt_lists(expanded_body, stmts)
 
@@ -711,7 +790,10 @@ fn splice_data_block(comp: string, inst: string, config: CompConfigPairList, bod
         stmts = append_stmt_lists(rewritten, stmts)
     }
 
-    let child_nest = CompNestCtx { parent_var: nest.parent_var, parent_name: nest.parent_name }
+    // Children expand inside this block see THIS instance as their
+    // parent (so auto-push targets `inst.<slot>`), and inherit the
+    // current component's children schema for slot resolution.
+    let child_nest = CompNestCtx { parent_var: inst, parent_name: inst, parent_children: def.children }
     let expanded_body = expand_stmt_list(body, reg, child_nest)
     stmts = append_stmt_lists(expanded_body, stmts)
 
@@ -720,8 +802,18 @@ fn splice_data_block(comp: string, inst: string, config: CompConfigPairList, bod
         stmts = append_stmt_lists(rewritten, stmts)
     }
 
-    StmtList.Node(sstmt(Stmt.Let(inst, ValueType.Unknown, init_expr), line, col),
-        append_stmt_lists(stmts, rest))
+    // Auto-push (vez6.7.6): if this nested instance fills a slot in
+    // the enclosing parent's children schema, emit
+    // `parent_var.<slot>.push(inst)` after the let binding so the
+    // accumulator picks it up.
+    let push_slot = slot_name_for_child(nest.parent_children, comp)
+    let with_push = if push_slot != "" && nest.parent_var != "" {
+        StmtList.Node(build_push_stmt(nest.parent_var, push_slot, inst, line, col), append_stmt_lists(stmts, rest))
+    } else {
+        append_stmt_lists(stmts, rest)
+    }
+
+    StmtList.Node(sstmt(Stmt.Let(inst, ValueType.Unknown, init_expr), line, col), with_push)
 }
 
 // ── Statement list expansion (called by desugar) ──
@@ -737,8 +829,8 @@ export fn expand_stmt_list(stmts: StmtList, reg: CompDefRegistry, nest: CompNest
             let expanded_next = expand_stmt_list(next, reg, nest)
             let inner = stmt_unwrap_deep(ss.node)
             match inner {
-                .ComponentDef(name, params, config, _, body) -> {
-                    splice_component_def(name, params, config, body, ss.line, ss.col, expanded_next)
+                .ComponentDef(name, params, config, children, body) -> {
+                    splice_component_def(name, params, config, children, body, ss.line, ss.col, expanded_next)
                 }
                 .ComponentBlock(comp, inst, config, body) -> {
                     splice_component_block(comp, inst, config, body, ss.line, ss.col, expanded_next, reg, nest)
