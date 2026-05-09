@@ -192,6 +192,7 @@ fn remove_escaped_expr(expr: Expr, set: ReleasableSet) -> ReleasableSet {
         .EnumCtor(_, _, args) -> remove_escaped_args(args, set)
         .Spawn(body) -> remove_escaped_expr(body, set)
         .Quote(_, body) -> remove_escaped_expr(body, set)
+        .Splice(target) -> remove_escaped_expr(target, set)
         .When(_) -> set  // when arms don't contain ident escapes at this level
         .ListComp(body, _, coll, filter) -> {
             let s1 = remove_escaped_expr(body, set)

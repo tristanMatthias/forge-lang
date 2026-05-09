@@ -66,6 +66,7 @@ export fn fmt_expr(se: Expr) -> string {
         .Catch(inner, binding, body, _, _) -> "${fmt_expr(inner)} catch ${binding} { ${fmt_expr(body)} }"
         .Spawn(body) -> "spawn ${fmt_expr(body)}"
         .Quote(kind, body) -> if kind == "expr" { "quote ${fmt_expr(body)}" } else { "quote ${kind} ${fmt_expr(body)}" }
+        .Splice(target) -> "~${fmt_expr(target)}"
     }
 }
 

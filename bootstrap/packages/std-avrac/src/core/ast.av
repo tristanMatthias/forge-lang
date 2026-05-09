@@ -951,8 +951,13 @@ export enum Expr {
     /// evaluating the result rebuilds the original AST node.
     /// `kind` is one of "expr" / "stmt" / "stmts" / "type" / "decl";
     /// the default form `quote { ... }` uses "expr".
-    /// Splicing (`~name` / `~(expr)`) lands in Phase 4.
     Quote(kind: string, body: Expr)
+    /// `~target` inside a quote body — splice the value of `target`
+    /// directly into the constructed AST instead of rebuilding it.
+    /// Outside a quote body the parser produces Expr.Unary(BitNot, ...)
+    /// instead, so the same `~` token is overloaded by context.
+    /// Phase 4 (vez6.4) of Components V2.
+    Splice(target: Expr)
 }
 
 /// Avra statement AST. Anything that doesn't produce a value lowers
@@ -1439,6 +1444,7 @@ export fn render_expr(expr: Expr) -> string {
         .Catch(inner, binding, body, _, _) -> "(catch ${render_expr(inner)} (${binding}) ${render_expr(body)})"
         .Spawn(body) -> "(spawn ${render_expr(body)})"
         .Quote(kind, body) -> "(quote ${kind} ${render_expr(body)})"
+        .Splice(target) -> "(splice ${render_expr(target)})"
     }
 }
 

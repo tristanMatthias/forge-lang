@@ -106,6 +106,11 @@ export type Parser = {
     // in implicit lambdas. Set by method call parsing (.map, etc.),
     // NOT by regular function calls (prevents double-wrapping).
     mut allow_it_sugar: int,
+    // Counts open `quote { ... }` bodies the parser is currently
+    // inside. When > 0, a leading `~` parses as Expr.Splice instead
+    // of Expr.Unary(BitNot, ...). The same `~` token is overloaded
+    // by context — outside a quote, it stays the bitwise-NOT prefix.
+    mut quote_depth: int,
     mut current_start: int,   // byte offset where current token started
     mut bag: DiagnosticBag,
     features: Registry,
@@ -387,6 +392,7 @@ export fn parser_new_with_file(source: string, file: string) -> Parser {
         allow_struct_lit: true,
         allow_dot_postfix: true,
         allow_it_sugar: false,
+        quote_depth: 0,
         current_start: 0,
         bag: bag_new(),
         features: build_registry(),
@@ -949,6 +955,14 @@ impl Parser {
     }
 
     fn parse_unary(self) -> Expr? {
+        // Splice `~target` inside a quote body — overloads the `~`
+        // token. Parses both `~name` and `~(expr)` since parse_unary
+        // descends into a postfix-call chain on `right`.
+        if self.check(Tk.Tilde) && self.quote_depth > 0 {
+            self.advance()
+            let target = self.parse_unary()?
+            return Expr.Splice(target)
+        }
         if self.current_kind in [Tk.Bang, Tk.Minus, Tk.KwNot, Tk.Tilde] {
             let op = match {
                 self.check(Tk.Minus) -> UnOp.Neg
@@ -1761,7 +1775,10 @@ impl Parser {
         // selects the result-type of the captured AST. Default is
         // `expr` — the captured body produces an Expr value at runtime.
         let kind = self.parse_quote_kind()
+        // Track quote nesting so parse_unary recognizes splice `~`.
+        self.quote_depth = self.quote_depth + 1
         let body = self.parse_block_expression()?
+        self.quote_depth = self.quote_depth - 1
         Expr.Quote(kind, body)
     }
 

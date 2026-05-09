@@ -369,6 +369,53 @@ spec "quote: kind dispatch" {
     }
 }
 
+// Splice ~target (vez6.4) — interpolate runtime AST values into quotes.
+spec "quote: splice expressions" {
+    then "splice ident-like value into binary expression" {
+        let x: Expr = Expr.Ident("hello")
+        let e = quote { ~x + 1 }
+        render_expr(e) == "(+ hello 1)"
+    }
+    then "splice number" {
+        let n: Expr = Expr.Number("42")
+        let e = quote { ~n * 2 }
+        render_expr(e) == "(* 42 2)"
+    }
+    then "splice both operands" {
+        let lhs: Expr = Expr.Ident("a")
+        let rhs: Expr = Expr.Ident("b")
+        let e = quote { ~lhs + ~rhs }
+        render_expr(e) == "(+ a b)"
+    }
+    then "splice into call argument" {
+        let arg: Expr = Expr.Ident("user_var")
+        let e = quote { f(~arg) }
+        render_expr(e) == "(call f (user_var))"
+    }
+    then "splice paren-wrapped expression" {
+        let inner: Expr = Expr.Binary(Expr.Number("3"), .Mul, Expr.Number("4"))
+        let e = quote { 1 + ~(inner) }
+        render_expr(e) == "(+ 1 (* 3 4))"
+    }
+    then "splice into nested call" {
+        let v: Expr = Expr.Ident("z")
+        let e = quote { f(g(~v)) }
+        render_expr(e) == "(call f ((call g (z))))"
+    }
+    then "splice into list element" {
+        let v: Expr = Expr.Number("99")
+        let e = quote { [1, ~v, 3] }
+        render_expr(e) == "(list (1, 99, 3))"
+    }
+    then "splice nested quote-built target" {
+        // The splice target can be ANY expression that produces an
+        // AST value at expansion time — not just a bare ident.
+        let inner: Expr = Expr.Number("7")
+        let e = quote { 5 + ~inner }
+        render_expr(e) == "(+ 5 7)"
+    }
+}
+
 // Multi-statement quote bodies (vez6.3.9).
 spec "quote: multi-statement block bodies" {
     then "let + expression" {

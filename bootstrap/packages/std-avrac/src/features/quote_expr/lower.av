@@ -86,6 +86,7 @@ fn any_quote_in_stmt(stmt: Stmt) -> bool {
 fn any_quote_in_expr(expr: Expr) -> bool {
     match expr {
         .Quote(_, _) -> true
+        .Splice(target) -> any_quote_in_expr(target)
         .Binary(l, _, r) -> any_quote_in_expr(l) || any_quote_in_expr(r)
         .Unary(_, r) -> any_quote_in_expr(r)
         .Logical(l, _, r) -> any_quote_in_expr(l) || any_quote_in_expr(r)
@@ -218,6 +219,7 @@ fn lower_expr(expr: Expr) -> Expr {
         .InCheck(needle, items) -> .InCheck(lower_expr(needle), lower_expr_list(items))
         .Spawn(body) -> .Spawn(lower_expr(body))
         .MatchExpr(subj, arms) -> .MatchExpr(lower_expr(subj), arms)
+        .Splice(target) -> .Splice(lower_expr(target))
         _ -> expr
     }
 }
@@ -370,6 +372,11 @@ fn construct_expr(e: Expr) -> Expr {
         .Lambda(params, body) -> expr_ctor("Lambda", two_args(construct_param_list(params), construct_expr(body)))
         .Spawn(body) -> expr_ctor("Spawn", one_arg(construct_expr(body)))
         .Block(body) -> expr_ctor("Block", one_arg(construct_stmt_list(body)))
+        // Splice (~target) — the target evaluates at expansion time
+        // to a runtime AST value of the right shape, so we emit it
+        // straight through without a construct_expr wrap. That's the
+        // whole point of splice: skip construction, paste the value.
+        .Splice(target) -> target
         // Nested Quote: `quote { ... quote { x } ... }` collapses one
         // level — the inner quote's BODY is what gets constructed, as
         // if the user had written `quote { ... x ... }` directly. This
