@@ -813,7 +813,23 @@ fn splice_data_block(comp: string, inst: string, config: CompConfigPairList, bod
         append_stmt_lists(stmts, rest)
     }
 
-    StmtList.Node(sstmt(Stmt.Let(inst, ValueType.Unknown, init_expr), line, col), with_push)
+    // When the component declares a children schema, the binding must
+    // be `mut` so the auto-push (`inst.<slot>.push(child)`) emitted by
+    // nested ComponentBlocks compiles — the resolver rejects mutating
+    // methods on immutable bindings.
+    let binding = if has_any_slot(def.children) {
+        Stmt.Mut(inst, ValueType.Unknown, init_expr)
+    } else {
+        Stmt.Let(inst, ValueType.Unknown, init_expr)
+    }
+    StmtList.Node(sstmt(binding, line, col), with_push)
+}
+
+fn has_any_slot(schema: ChildrenList) -> bool {
+    match schema {
+        .End -> false
+        .Node(_, _, _) -> true
+    }
 }
 
 // ── Statement list expansion (called by desugar) ──
