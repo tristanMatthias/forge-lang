@@ -946,6 +946,13 @@ export enum Expr {
     Catch(inner: Expr, binding: string, body: Expr, line: int, col: int)
     /// `spawn body` — start a green-thread Task running `body`.
     Spawn(body: Expr)
+    /// `quote { body }` — captures the AST of `body` as a value.
+    /// Lowering pass turns this into AST-construction calls so
+    /// evaluating the result rebuilds the original AST node.
+    /// `kind` is one of "expr" / "stmt" / "stmts" / "type" / "decl";
+    /// the default form `quote { ... }` uses "expr".
+    /// Splicing (`~name` / `~(expr)`) lands in Phase 4.
+    Quote(kind: string, body: Expr)
 }
 
 /// Avra statement AST. Anything that doesn't produce a value lowers
@@ -1431,6 +1438,7 @@ export fn render_expr(expr: Expr) -> string {
         .ListComp(body, variable, collection, _) -> "(list-comp ${render_expr(body)} for ${variable} in ${render_expr(collection)})"
         .Catch(inner, binding, body, _, _) -> "(catch ${render_expr(inner)} (${binding}) ${render_expr(body)})"
         .Spawn(body) -> "(spawn ${render_expr(body)})"
+        .Quote(kind, body) -> "(quote ${kind} ${render_expr(body)})"
     }
 }
 

@@ -1361,6 +1361,10 @@ impl Parser {
             return self.parse_when_expression()
         }
 
+        if self.check(Tk.KwQuote) {
+            return self.parse_quote()
+        }
+
         if self.check(Tk.LeftBrace) {
             // Map literal: { "key": value, ... }
             // Disambiguate from block: if first token after { is a string,
@@ -1749,6 +1753,12 @@ impl Parser {
         }
         if self.check(Tk.Greater) { self.advance() }
         args
+    }
+
+    fn parse_quote(self) -> Expr? {
+        self.advance()  // consume `quote`
+        let body = self.parse_block_expression()?
+        Expr.Quote("expr", body)
     }
 
     // Parse `when { cond -> body, ... }` — subjectless match expression.
