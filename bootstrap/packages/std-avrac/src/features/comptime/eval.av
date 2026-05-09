@@ -81,9 +81,58 @@ fn value_to_expr(v: Value) -> Expr? {
         "string" -> Expr.String("\"${v.text}\"")
         "bool"   -> Expr.Bool(if v.bool_value != 0 { "true" } else { "false" })
         "null"   -> Expr.Null
-        "enum"   -> enum_value_to_expr(v)
+        // vez6.6.5: produce the EnumCtor SOURCE FORM (not the
+        // post-resolve raw AST) so the spliced fold result reads as
+        // a value-construction expression. `Expr.Ident("foo")` in
+        // source builds a runtime Expr.Ident("foo") VALUE; the raw
+        // post-resolve Ident("foo") would mean "look up the variable
+        // foo" and codegen would emit `undefined variable` errors.
+        // The Stmt decoder still uses enum_value_to_expr below for
+        // sub-Expr payloads of Stmt — a Stmt.Return(Expr) splice
+        // wants the inner Expr in raw form so `return 7` stays
+        // `return 7`, not `return Expr.Number(\"7\")`.
+        "enum"   -> value_to_construct_expr(v)
         _        -> null
     }
+}
+
+/// Convert a Value back into an Expr representing a runtime
+/// reconstruction of the value. For enum Values this yields
+/// `Expr.EnumCtor(type, variant, args)` matching the shape
+/// `lower_quotes` would emit for the equivalent `quote { ... }`
+/// source. Primitives reuse the fast-path forms in `value_to_expr`.
+///
+/// vez6.6.5: enables comptime fns whose return type is an AST type
+/// (Expr / ExprList / BinOp / etc.) to fold cleanly into their
+/// callers — the call-site receives a value-construction expression
+/// whose runtime evaluation produces the original Value.
+fn value_to_construct_expr(v: Value) -> Expr? {
+    match v.kind {
+        "number" -> Expr.Number(v.number_text)
+        "string" -> Expr.String("\"${v.text}\"")
+        "bool"   -> Expr.Bool(if v.bool_value != 0 { "true" } else { "false" })
+        "null"   -> Expr.Null
+        "enum"   -> {
+            let args = payload_to_args(v.enum_payload, 0)
+            if args == null { return null }
+            Expr.EnumCtor(v.enum_type, v.enum_variant, args!)
+        }
+        _ -> null
+    }
+}
+
+/// Convert a payload List<Value> into an ExprList whose elements
+/// reconstruct each value at runtime. Each value is wrapped via
+/// `sexpr_dummy` so the result fits the SExpr-bearing ExprList.Node
+/// shape — same as `lower_quotes` does when it builds construct-
+/// expression payloads.
+fn payload_to_args(payload: List<Value>, i: int) -> ExprList? {
+    if i >= payload.length { return ExprList.End }
+    let inner = value_to_construct_expr(payload[i])
+    if inner == null { return null }
+    let rest = payload_to_args(payload, i + 1)
+    if rest == null { return null }
+    ExprList.Node(sexpr_dummy(inner!), rest!)
 }
 
 /// Decode an enum Value whose type is `@std::avrac::core::Expr`

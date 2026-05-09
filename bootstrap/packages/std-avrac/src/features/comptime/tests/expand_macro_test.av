@@ -75,3 +75,56 @@ spec "vez6.6: @expand macro replaces decl with macro output" {
         out.contains("seven")
     }
 }
+
+// vez6.6.5 — Expr-typed comptime returns now fold cleanly. The
+// decoder produces the source-form EnumCtor that codegen turns into
+// a runtime Expr value at the call site, where it can be rendered,
+// pattern-matched, etc. Earlier the decoder produced post-resolve
+// raw AST nodes (Expr.Ident("x") meant "look up x") and crashed.
+spec "vez6.6.5: Expr-typed comptime fn folds to runtime Expr value" {
+    then "make_num() yields a runtime Expr that renders as `42`" {
+        let out = run_capture(
+            "use @std.avrac.core.{Expr, render_expr}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn make_num() -> Expr {\n" +
+            "    return quote { 42 }\n" +
+            "}\n" +
+            "\n" +
+            MAIN_HEADER + " {\n" +
+            "    let e: Expr = make_num()\n" +
+            "    println(render_expr(e))\n" +
+            "}\n")
+        out.contains("42")
+    }
+    then "make_ident() yields a runtime Expr that renders as `my_var`" {
+        let out = run_capture(
+            "use @std.avrac.core.{Expr, render_expr}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn make_ident() -> Expr {\n" +
+            "    return quote { my_var }\n" +
+            "}\n" +
+            "\n" +
+            MAIN_HEADER + " {\n" +
+            "    let e: Expr = make_ident()\n" +
+            "    println(render_expr(e))\n" +
+            "}\n")
+        out.contains("my_var")
+    }
+    then "make_sum() yields a runtime Expr.Binary that renders as `(+ 1 2)`" {
+        let out = run_capture(
+            "use @std.avrac.core.{Expr, render_expr}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn make_sum() -> Expr {\n" +
+            "    return quote { 1 + 2 }\n" +
+            "}\n" +
+            "\n" +
+            MAIN_HEADER + " {\n" +
+            "    let e: Expr = make_sum()\n" +
+            "    println(render_expr(e))\n" +
+            "}\n")
+        out.contains("(+ 1 2)")
+    }
+}

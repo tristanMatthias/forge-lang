@@ -3,7 +3,7 @@
 // with literal args, and asserts that `try_fold_call` produces the
 // expected literal Expr.
 
-use @std.avrac.core.{Stmt, StmtList, Expr, ExprList, SExpr, sexpr_dummy, sstmt_dummy, ParamList, ValueType, TypeParamList, BinOp}
+use @std.avrac.core.{Stmt, StmtList, Expr, ExprList, SExpr, sexpr_dummy, sstmt_dummy, ParamList, ValueType, TypeParamList, BinOp, render_expr}
 use @std.avrac.features.comptime.{CompTimeFn, CompTimeRegistry, try_fold_call, prepare_runtime, comptime_registry_new}
 
 // `fn add(x: int, y: int) -> int { return x + y }`
@@ -105,17 +105,15 @@ fn make_ident_registry() -> CompTimeRegistry {
     prepare_runtime(staged)
 }
 
-fn ident_name_of(e: Expr) -> string {
-    match e {
-        .Ident(name) -> name
-        _ -> ""
-    }
-}
-
-spec "comptime.try_fold_call: enum-Value Expr decode (vez6.6.4)" {
-    then "make_ident() folds to Expr.Ident(\"x\")" {
+spec "comptime.try_fold_call: enum-Value Expr decode (vez6.6.4 / vez6.6.5)" {
+    then "make_ident() folds to an Expr.EnumCtor for `Expr.Ident(\"x\")`" {
+        // vez6.6.5: the fold output is now the EnumCtor source form
+        // (so the spliced result evaluates to the original Expr value
+        // at runtime), not the post-resolve Ident AST. Rendering the
+        // EnumCtor pins the variant + payload contents.
         let folded = try_fold_call(make_ident_registry(), mk_call("make_ident", ExprList.End))
-        folded != null && ident_name_of(folded!) == "x"
+        folded != null
+            && render_expr(folded!) == "(ctor @std::avrac::core::Expr.Ident (\"x\"))"
     }
 }
 
@@ -148,22 +146,19 @@ fn make_sum_registry() -> CompTimeRegistry {
     prepare_runtime(staged)
 }
 
-fn binary_shape_of(e: Expr) -> string {
-    match e {
-        .Binary(left, op, right) -> {
-            let lhs = match left { .Number(n) -> n, _ -> "?" }
-            let rhs = match right { .Number(n) -> n, _ -> "?" }
-            let op_str = match op { .Add -> "+", .Sub -> "-", _ -> "?" }
-            "${lhs}${op_str}${rhs}"
-        }
-        _ -> ""
-    }
-}
-
-spec "comptime.try_fold_call: structural enum-Value decode (vez6.6.4)" {
-    then "make_sum() folds to Expr.Binary(Number(1), Add, Number(2))" {
+spec "comptime.try_fold_call: structural enum-Value decode (vez6.6.4 / vez6.6.5)" {
+    then "make_sum() folds to an Expr.EnumCtor for `Expr.Binary(Number(1), Add, Number(2))`" {
+        // The render output is the source-form of the EnumCtor that
+        // codegen will turn into a runtime Expr.Binary value. Inner
+        // operands are themselves EnumCtors (Number ctors), and the
+        // operator is a BinOp ctor — vez6.6.5's generic decoder
+        // rebuilds the whole nested shape.
         let folded = try_fold_call(make_sum_registry(), mk_call("make_sum", ExprList.End))
-        folded != null && binary_shape_of(folded!) == "1+2"
+        folded != null
+            && render_expr(folded!).contains("@std::avrac::core::Expr.Binary")
+            && render_expr(folded!).contains("@std::avrac::core::BinOp.Add")
+            && render_expr(folded!).contains("\"1\"")
+            && render_expr(folded!).contains("\"2\"")
     }
 }
 
@@ -201,26 +196,17 @@ fn make_call_registry() -> CompTimeRegistry {
     prepare_runtime(staged)
 }
 
-fn call_shape_of(e: Expr) -> string {
-    match e {
-        .Call(callee, args) -> {
-            let callee_str = match callee { .Ident(n) -> n, _ -> "?" }
-            let arg_str = match args {
-                .End -> ""
-                .Node(se, _) -> match se.node {
-                    .Number(n) -> n
-                    _ -> "?"
-                }
-            }
-            "${callee_str}(${arg_str})"
-        }
-        _ -> ""
-    }
-}
-
-spec "comptime.try_fold_call: Call + ExprList decode (vez6.6.4)" {
-    then "make_call() folds to Expr.Call(Ident(f), [Number(7)])" {
+spec "comptime.try_fold_call: Call + ExprList decode (vez6.6.4 / vez6.6.5)" {
+    then "make_call() folds to an Expr.EnumCtor for `Expr.Call(Ident(f), [Number(7)])`" {
+        // The Call rebuild contains the callee Ident EnumCtor, an
+        // outer Call EnumCtor, and the ExprList Node ctor for the
+        // single arg. Both the f-name and 7-arg literal appear in
+        // the rendered form.
         let folded = try_fold_call(make_call_registry(), mk_call("make_call", ExprList.End))
-        folded != null && call_shape_of(folded!) == "f(7)"
+        folded != null
+            && render_expr(folded!).contains("@std::avrac::core::Expr.Call")
+            && render_expr(folded!).contains("@std::avrac::core::Expr.Ident")
+            && render_expr(folded!).contains("\"f\"")
+            && render_expr(folded!).contains("\"7\"")
     }
 }
