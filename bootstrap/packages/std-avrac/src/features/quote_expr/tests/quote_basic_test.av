@@ -223,3 +223,111 @@ spec "quote: nested quote inside container is lowered" {
         !render_expr(outer).contains("quote ")
     }
 }
+
+// ── Red-team / edge-case stress tests (vez6.3.8) ──
+
+// Operator precedence preserves the parse tree exactly.
+spec "quote: precedence preserved" {
+    then "mul before add" {
+        let e = quote { a + b * c }
+        render_expr(e) == "(+ a (* b c))"
+    }
+    then "and before or" {
+        let e = quote { a || b && c }
+        render_expr(e) == "(|| a (&& b c))"
+    }
+    then "explicit parens override precedence" {
+        let e = quote { (a + b) * c }
+        render_expr(e) == "(* (group (+ a b)) c)"
+    }
+    then "comparison precedence" {
+        let e = quote { a + b == c - d }
+        render_expr(e) == "(== (+ a b) (- c d))"
+    }
+}
+
+// Deeply nested recursion: lowerings are not stack-bounded.
+spec "quote: deep nesting" {
+    then "8-level groupings" {
+        let e = quote { ((((((((1)))))))) }
+        render_expr(e).contains("(group ")
+    }
+    then "deeply chained binary" {
+        let e = quote { 1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 }
+        render_expr(e).contains("(+ ") && render_expr(e).contains("8")
+    }
+    then "list-of-lists" {
+        let e = quote { [[1, 2], [3, 4], [5, 6]] }
+        render_expr(e) == "(list ((list (1, 2)), (list (3, 4)), (list (5, 6))))"
+    }
+    then "tuple-of-tuples" {
+        let e = quote { ((1, 2), (3, 4)) }
+        render_expr(e) == "(tuple ((tuple (1, 2)), (tuple (3, 4))))"
+    }
+}
+
+// Unary stacking should preserve order — important for `-(-x)` etc.
+spec "quote: stacked unaries" {
+    then "double negation" {
+        let e = quote { --5 }
+        render_expr(e) == "(- (- 5))"
+    }
+    then "double not" {
+        let e = quote { !!flag }
+        render_expr(e) == "(! (! flag))"
+    }
+    then "negated call" {
+        let e = quote { -f(x) }
+        render_expr(e) == "(- (call f (x)))"
+    }
+}
+
+// Long identifier names, snake-case, single-char — exercise the
+// string_arg path for the Ident variant.
+spec "quote: identifier shapes" {
+    then "snake_case identifier" {
+        let e = quote { user_id_value }
+        render_expr(e) == "user_id_value"
+    }
+    then "single-char identifier" {
+        let e = quote { x }
+        render_expr(e) == "x"
+    }
+    then "trailing-digit identifier" {
+        let e = quote { x1 }
+        render_expr(e) == "x1"
+    }
+}
+
+// String literal edge cases — the parser stores Expr.String.value with
+// surrounding quotes, and codegen's strip_quotes must round-trip.
+spec "quote: string-literal shapes" {
+    then "empty string" {
+        let e = quote { "" }
+        render_expr(e) == "\"\""
+    }
+    then "single space" {
+        let e = quote { " " }
+        render_expr(e) == "\" \""
+    }
+    then "longer ASCII" {
+        let e = quote { "hello world" }
+        render_expr(e) == "\"hello world\""
+    }
+}
+
+// Number-literal edge cases.
+spec "quote: number shapes" {
+    then "zero" {
+        let e = quote { 0 }
+        render_expr(e) == "0"
+    }
+    then "large number" {
+        let e = quote { 1000000 }
+        render_expr(e) == "1000000"
+    }
+    then "negative literal via unary" {
+        let e = quote { -1 }
+        render_expr(e) == "(- 1)"
+    }
+}
