@@ -826,6 +826,21 @@ fn count_params(params: ParamList) -> int {
 /// user functions enter a fresh scope, bind params, run the
 /// body, and pop the scope on exit.
 fn eval_call(runtime: Runtime, callee: Expr, args: ExprList) -> StepResult {
+    // vez6.6.4: special-case the AST-construction wrappers from
+    // @std::avrac::core. lower_quotes emits sexpr_dummy / sstmt_dummy
+    // calls around every payload so the resulting AST carries proper
+    // SExpr / SStmt span carriers; at comptime eval those span fields
+    // are unused (line/col are 0) so we can pass the inner argument
+    // straight through. Without this, evaluating a quote-built body
+    // would error on the unresolved fn name. Auto-registering every
+    // pure @std::avrac::core fn would be cleaner but requires the
+    // typechecker to distinguish pure from impure helpers — tracked
+    // as the second half of vez6.6.4 (auto-register).
+    let span_passthrough = call_is_span_wrapper(callee)
+    if span_passthrough {
+        return eval_span_wrapper_passthrough(runtime, args)
+    }
+
     let callee_result = eval_expr(runtime, callee)
     if callee_result.had_error {
         return callee_result
@@ -942,6 +957,35 @@ fn call_builtin(runtime: Runtime, name: string, args: List<Value>) -> StepResult
     }
 
     error_result(runtime, "unknown builtin `${name}`")
+}
+
+/// True when `callee` is a QualifiedIdent for one of the std-core
+/// span wrappers (sexpr_dummy / sstmt_dummy / sexpr / sexpr_at /
+/// sstmt / sstmt_at). At comptime eval these are pass-through —
+/// the resulting Value carries no span info, just the inner AST.
+fn call_is_span_wrapper(callee: Expr) -> bool {
+    match callee {
+        .QualifiedIdent(path) -> {
+            path == "@std::avrac::core::sexpr_dummy"
+                || path == "@std::avrac::core::sstmt_dummy"
+                || path == "@std::avrac::core::sexpr"
+                || path == "@std::avrac::core::sexpr_at"
+                || path == "@std::avrac::core::sstmt"
+                || path == "@std::avrac::core::sstmt_at"
+        }
+        _ -> false
+    }
+}
+
+/// Evaluate the FIRST argument of a span-wrapper call and return it
+/// as the call's value. Span-wrapper signatures all take the inner
+/// AST node as their first arg; remaining args are line/col/file
+/// metadata that comptime eval doesn't need to track.
+fn eval_span_wrapper_passthrough(runtime: Runtime, args: ExprList) -> StepResult {
+    match args {
+        .End -> error_result(runtime, "span-wrapper call needs at least one argument")
+        .Node(arg, _) -> eval_expr(runtime, arg.node)
+    }
 }
 
 /// Evaluate an `Expr.EnumCtor(type_name, variant, args)` — recurse

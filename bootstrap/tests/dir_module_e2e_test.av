@@ -16,12 +16,19 @@
 
 extern fn avra_shell_exec(cmd: string) -> string
 
+
+// vez6.6.4 flake fix: per-PPID cache file so concurrent
+// bs2-test sessions (e.g. a commit pre-commit hook racing
+// a manual run) don't collide on a shared /tmp path. PPID
+// is the bs2 test runner's PID, stable across every
+// avra_shell_exec call in a single test session.
+const CACHE_FILE: string = "/tmp/avra_dirmod_e2e_test.$" + "PPID.out"
 fn dme_run() -> string {
-    avra_shell_exec("if [ ! -f /tmp/avra_dirmod_e2e_test.out ]; then bash scripts/diagnose.sh --run tests/dir_module_e2e_fixtures/sample.av > /tmp/avra_dirmod_e2e_test.out 2>&1 || true; fi; cat /tmp/avra_dirmod_e2e_test.out")
+    avra_shell_exec("if [ ! -f " + CACHE_FILE + " ]; then bash scripts/diagnose.sh --run tests/dir_module_e2e_fixtures/sample.av > " + CACHE_FILE + " 2>&1 || true; fi; cat " + CACHE_FILE + "")
 }
 
 fn dme_wipe() -> string {
-    avra_shell_exec("rm -f /tmp/avra_dirmod_e2e_test.out")
+    avra_shell_exec("rm -f " + CACHE_FILE + "")
 }
 
 spec "AVRA_DIR_MODULE: clear cached output" {

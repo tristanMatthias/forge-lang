@@ -18,6 +18,13 @@
 
 extern fn avra_shell_exec(cmd: string) -> string
 
+
+// vez6.6.4 flake fix: per-PPID cache file so concurrent
+// bs2-test sessions (e.g. a commit pre-commit hook racing
+// a manual run) don't collide on a shared /tmp path. PPID
+// is the bs2 test runner's PID, stable across every
+// avra_shell_exec call in a single test session.
+const CACHE_FILE: string = "/tmp/avra_fp_probe.$" + "PPID.out"
 // `bs2 run` uses the AST evaluator which doesn't execute the runtime
 // code path the fingerprint module relies on. Use the compile+link+run
 // pipeline (scripts/diagnose.sh --run) instead — same one `make run`
@@ -30,13 +37,13 @@ extern fn avra_shell_exec(cmd: string) -> string
 // every subsequent call. The cache file is wiped at the start of each
 // `make test` run by the FIRST then block (run order is deterministic).
 fn run_fixture() -> string {
-    avra_shell_exec("if [ ! -f /tmp/avra_fp_probe.out ]; then bash scripts/diagnose.sh --run tests/fingerprint_fixtures/sample.av > /tmp/avra_fp_probe.out 2>&1 || true; fi; cat /tmp/avra_fp_probe.out")
+    avra_shell_exec("if [ ! -f " + CACHE_FILE + " ]; then bash scripts/diagnose.sh --run tests/fingerprint_fixtures/sample.av > " + CACHE_FILE + " 2>&1 || true; fi; cat " + CACHE_FILE + "")
 }
 
 /// Wipe the cached fixture output. Tests call this once at the top of
 /// the suite so a stale /tmp file from a previous run is not reused.
 fn wipe_cache() -> string {
-    avra_shell_exec("rm -f /tmp/avra_fp_probe.out")
+    avra_shell_exec("rm -f " + CACHE_FILE + "")
 }
 
 spec "fingerprint: clear cached fixture output before probes" {

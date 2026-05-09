@@ -12,12 +12,19 @@
 
 extern fn avra_shell_exec(cmd: string) -> string
 
+
+// vez6.6.4 flake fix: per-PPID cache file so concurrent
+// bs2-test sessions (e.g. a commit pre-commit hook racing
+// a manual run) don't collide on a shared /tmp path. PPID
+// is the bs2 test runner's PID, stable across every
+// avra_shell_exec call in a single test session.
+const CACHE_FILE: string = "/tmp/avra_driver_probe.$" + "PPID.out"
 fn driver_run_fixture() -> string {
-    avra_shell_exec("if [ ! -f /tmp/avra_driver_probe.out ]; then bash scripts/diagnose.sh --run tests/build_driver_fixtures/sample.av > /tmp/avra_driver_probe.out 2>&1 || true; fi; cat /tmp/avra_driver_probe.out")
+    avra_shell_exec("if [ ! -f " + CACHE_FILE + " ]; then bash scripts/diagnose.sh --run tests/build_driver_fixtures/sample.av > " + CACHE_FILE + " 2>&1 || true; fi; cat " + CACHE_FILE + "")
 }
 
 fn driver_wipe_fixture_cache() -> string {
-    avra_shell_exec("rm -f /tmp/avra_driver_probe.out")
+    avra_shell_exec("rm -f " + CACHE_FILE + "")
 }
 
 spec "build driver: clear cached fixture output before probes" {

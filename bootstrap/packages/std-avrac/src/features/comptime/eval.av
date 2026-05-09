@@ -153,7 +153,91 @@ fn enum_value_to_expr(v: Value) -> Expr? {
             if args == null { return null }
             Expr.EnumCtor(head.text, variant_v.text, args!)
         }
+        // Container shapes whose payload is two sub-Exprs.
+        "Index" -> two_expr_decode(p, "Index")
+        "NullCoalesce" -> two_expr_decode(p, "NullCoalesce")
+        "Try" -> {
+            if p.length != 1 { return null }
+            let inner = enum_value_to_expr(head)
+            if inner == null { return null }
+            Expr.Try(inner!)
+        }
+        "Spawn" -> {
+            if p.length != 1 { return null }
+            let inner = enum_value_to_expr(head)
+            if inner == null { return null }
+            Expr.Spawn(inner!)
+        }
+        "FieldAccess" -> {
+            if p.length != 2 { return null }
+            let obj = enum_value_to_expr(head)
+            let field_v: Value = p[1]
+            if obj == null { return null }
+            Expr.FieldAccess(obj!, field_v.text)
+        }
+        "OptionalChain" -> {
+            if p.length != 2 { return null }
+            let obj = enum_value_to_expr(head)
+            let field_v: Value = p[1]
+            if obj == null { return null }
+            Expr.OptionalChain(obj!, field_v.text)
+        }
+        "IsCheck" -> {
+            if p.length != 2 { return null }
+            let subj = enum_value_to_expr(head)
+            let vname_v: Value = p[1]
+            if subj == null { return null }
+            Expr.IsCheck(subj!, vname_v.text)
+        }
+        "Tuple" -> {
+            if p.length != 1 { return null }
+            let elems = enum_value_to_expr_list(head)
+            if elems == null { return null }
+            Expr.Tuple(elems!)
+        }
+        "ListLit" -> {
+            if p.length != 1 { return null }
+            let elems = enum_value_to_expr_list(head)
+            if elems == null { return null }
+            Expr.ListLit(elems!)
+        }
+        "MapLit" -> {
+            if p.length != 1 { return null }
+            let entries = enum_value_to_expr_list(head)
+            if entries == null { return null }
+            Expr.MapLit(entries!)
+        }
+        "InCheck" -> {
+            if p.length != 2 { return null }
+            let needle = enum_value_to_expr(head)
+            let items = enum_value_to_expr_list(p[1])
+            if needle == null || items == null { return null }
+            Expr.InCheck(needle!, items!)
+        }
+        "IfExpr" -> {
+            if p.length != 3 { return null }
+            let c = enum_value_to_expr(head)
+            let t = enum_value_to_expr(p[1])
+            let e = enum_value_to_expr(p[2])
+            if c == null || t == null || e == null { return null }
+            Expr.IfExpr(c!, t!, e!)
+        }
         _                 -> null
+    }
+}
+
+/// Helper for two-Expr-payload variants (Index, NullCoalesce). Picks
+/// the right Expr ctor based on `variant`; returns null when payload
+/// shape is wrong or either child fails to decode.
+fn two_expr_decode(p: List<Value>, variant: string) -> Expr? {
+    if p.length != 2 { return null }
+    let l = enum_value_to_expr(p[0])
+    let r = enum_value_to_expr(p[1])
+    if l == null || r == null { return null }
+    match variant {
+        "Index" -> Expr.Index(l!, r!)
+        "NullCoalesce" -> Expr.NullCoalesce(l!, r!)
+        _ -> null
     }
 }
 
