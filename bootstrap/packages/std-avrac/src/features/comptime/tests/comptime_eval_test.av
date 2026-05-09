@@ -80,3 +80,41 @@ spec "comptime.try_fold_call: non-literal args refuse to fold" {
         try_fold_call(add_registry(), mk_call("add", args)) == null
     }
 }
+
+// vez6.6.4: macro fns return AST values via `quote`-lowered EnumCtor
+// chains. The fold needs to decode the resulting kind="enum" Value
+// back into an Expr literal so it can splice into the surrounding AST.
+
+// `fn make_ident() -> Expr { return Expr.Ident("x") }` — captured as
+// the EnumCtor shape that lower_quotes would have produced.
+fn mk_make_ident_fn() -> CompTimeFn {
+    let arg = ExprList.Node(sexpr_dummy(Expr.String("\"x\"")), ExprList.End)
+    let body = StmtList.Node(
+        sstmt_dummy(Stmt.Return(Expr.EnumCtor("@std::avrac::core::Expr", "Ident", arg))),
+        StmtList.End)
+    CompTimeFn {
+        name: "make_ident",
+        params: ParamList.End,
+        ret_ty: ValueType.Unknown,
+        body,
+    }
+}
+
+fn make_ident_registry() -> CompTimeRegistry {
+    let staged = comptime_registry_new() with { fns: [mk_make_ident_fn()] }
+    prepare_runtime(staged)
+}
+
+fn ident_name_of(e: Expr) -> string {
+    match e {
+        .Ident(name) -> name
+        _ -> ""
+    }
+}
+
+spec "comptime.try_fold_call: enum-Value Expr decode (vez6.6.4)" {
+    then "make_ident() folds to Expr.Ident(\"x\")" {
+        let folded = try_fold_call(make_ident_registry(), mk_call("make_ident", ExprList.End))
+        folded != null && ident_name_of(folded!) == "x"
+    }
+}

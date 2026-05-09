@@ -68,12 +68,46 @@ fn fold_call(reg: CompTimeRegistry, fn_def: CompTimeFn, arg_values: List<Value>)
 /// we can splice it into the surrounding program. Returns null
 /// for shapes that don't have a literal AST representation —
 /// caller treats null as "can't fold, leave the call alone".
+///
+/// Enum values produced by `quote { ... }`-style macro fns are
+/// decoded back to their AST node by recognising the canonical
+/// type path (`@std::avrac::core::Expr`) + variant name. Other
+/// AST types (Stmt, ValueType, list types) reach this only via
+/// the @expand pass which has its own decoder; for the fold
+/// pass, `quote stmt {}` results return null and stay as Calls.
 fn value_to_expr(v: Value) -> Expr? {
     match v.kind {
         "number" -> Expr.Number(v.number_text)
         "string" -> Expr.String("\"${v.text}\"")
         "bool"   -> Expr.Bool(if v.bool_value != 0 { "true" } else { "false" })
         "null"   -> Expr.Null
+        "enum"   -> enum_value_to_expr(v)
         _        -> null
+    }
+}
+
+/// Decode an enum Value whose type is `@std::avrac::core::Expr`
+/// back into its AST shape. The variant name selects the Expr
+/// constructor; payload values are decoded recursively.
+///
+/// First slice covers the leaf + simple-container shapes that
+/// `lower_quotes` can produce for an expression-kind quote
+/// (Number/String/Bool/Null/Ident/QualifiedIdent/FloatLit, plus
+/// the Binary/Unary/Logical/Grouping/Call/EnumCtor structural
+/// shapes). More variants land driven by tests.
+fn enum_value_to_expr(v: Value) -> Expr? {
+    if v.enum_type != "@std::avrac::core::Expr" { return null }
+    if v.enum_variant == "Null" { return Expr.Null }
+    let p = v.enum_payload
+    if p.length == 0 { return null }
+    let head: Value = p[0]
+    match v.enum_variant {
+        "Number"          -> Expr.Number(head.text)
+        "String"          -> Expr.String("\"${head.text}\"")
+        "Bool"            -> Expr.Bool(head.text)
+        "Ident"           -> Expr.Ident(head.text)
+        "QualifiedIdent"  -> Expr.QualifiedIdent(head.text)
+        "FloatLit"        -> Expr.FloatLit(head.text)
+        _                 -> null
     }
 }

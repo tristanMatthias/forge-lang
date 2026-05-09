@@ -1,0 +1,81 @@
+// vez6.6.4 — Value.enum support. Eval can now construct + carry
+// enum values (Stmt, Expr, ValueType variants) so a comptime fn
+// returning `quote stmt { ... }` (which lowers to nested EnumCtors)
+// produces a runtime Stmt value the @expand pass can extract.
+
+use @std.avrac.core.{Expr, ExprList, SExpr, sexpr_dummy}
+use @std.avrac.features.eval.{Runtime, StepResult, Value, runtime_new, eval_expr, value_enum, value_number, render_value}
+
+fn empty_args() -> ExprList { ExprList.End }
+
+fn one_arg(e: Expr) -> ExprList {
+    ExprList.Node(sexpr_dummy(e), ExprList.End)
+}
+
+fn two_args(a: Expr, b: Expr) -> ExprList {
+    ExprList.Node(sexpr_dummy(a), ExprList.Node(sexpr_dummy(b), ExprList.End))
+}
+
+spec "vez6.6.4: eval EnumCtor produces a kind=enum Value" {
+    then "no-payload variant" {
+        let e = Expr.EnumCtor("@std::avrac::core::Expr", "Null", empty_args())
+        let r: StepResult = eval_expr(runtime_new(), e)
+        let v: Value = r.value
+        v.kind == "enum"
+            && v.enum_type == "@std::avrac::core::Expr"
+            && v.enum_variant == "Null"
+            && v.enum_payload.length == 0
+    }
+    then "single-arg payload (Expr.Number)" {
+        // Expr.Number(value: string) — pass a string literal arg.
+        let e = Expr.EnumCtor(
+            "@std::avrac::core::Expr",
+            "Number",
+            one_arg(Expr.String("\"42\"")))
+        let r: StepResult = eval_expr(runtime_new(), e)
+        let v: Value = r.value
+        let payload0: Value = v.enum_payload[0]
+        v.kind == "enum"
+            && v.enum_variant == "Number"
+            && v.enum_payload.length == 1
+            && payload0.kind == "string"
+            && payload0.text == "42"
+    }
+    then "nested enum payloads recurse correctly" {
+        // Outer EnumCtor whose first arg is itself an EnumCtor.
+        // Verifies eval_args_to_values recurses end-to-end.
+        let inner = Expr.EnumCtor(
+            "@std::avrac::core::Expr",
+            "Number",
+            one_arg(Expr.String("\"7\"")))
+        let outer = Expr.EnumCtor(
+            "@std::avrac::core::Stmt",
+            "Return",
+            one_arg(inner))
+        let r: StepResult = eval_expr(runtime_new(), outer)
+        let v: Value = r.value
+        let p0: Value = v.enum_payload[0]
+        let p0p0: Value = p0.enum_payload[0]
+        v.kind == "enum"
+            && v.enum_variant == "Return"
+            && v.enum_payload.length == 1
+            && p0.kind == "enum"
+            && p0.enum_variant == "Number"
+            && p0p0.text == "7"
+    }
+}
+
+spec "vez6.6.4: value_enum constructor + render" {
+    then "value_enum stores its tag fields" {
+        let v = value_enum("@std::avrac::core::Expr", "Null", [])
+        v.kind == "enum" && v.enum_type == "@std::avrac::core::Expr" && v.enum_variant == "Null"
+    }
+    then "render_value on an enum value falls through to null-render" {
+        // Enum values aren't user-facing scalar — render_value
+        // returns the null fallback ("null") since enum isn't in the
+        // primitive-render switch. Pin this so future rendering of
+        // AST values doesn't silently change the existing surface.
+        let v = value_enum("X", "Y", [])
+        render_value(v) == "null"
+    }
+}
