@@ -520,12 +520,133 @@ export fn splice_component_def(name: string, params: ParamList, config: CompConf
 /// template-vs-data classification of the body.
 export fn splice_component_block(comp: string, inst: string, config: CompConfigPairList, body: StmtList, line: int, col: int, rest: StmtList, reg: CompDefRegistry, nest: CompNestCtx) -> StmtList {
     let def = comp_reg_lookup(reg, comp)
+    // vez6.7: validate every nested ComponentBlock matches a declared
+    // child slot. Mismatches are reported via eprintln (proper
+    // DiagnosticBag plumbing comes in a follow-up cleanup pass).
+    if def.found { validate_children_in_body(comp, def.children, body) }
     let has_init = def.found && has_fn(def.body, "init")
 
     if has_init {
         return splice_template_block(comp, inst, config, body, line, col, rest, reg, nest, def)
     }
     splice_data_block(comp, inst, config, body, line, col, rest, reg, nest, def)
+}
+
+// ── vez6.7: child-type validation ──
+
+/// Walk `body` looking for nested ComponentBlock instantiations and
+/// verify each matches a declared slot in `parent_children`. Opt-in
+/// only: when the parent declares no `children { ... }` schema (i.e.
+/// `parent_children == End`) we don't validate — that's the legacy
+/// behaviour where any nested component is permitted. Once the
+/// parent opts in, every nested type must match a declared slot or
+/// eprintln a diagnostic.
+fn validate_children_in_body(parent_comp: string, parent_children: ChildrenList, body: StmtList) {
+    match parent_children {
+        .End -> {}
+        _ -> validate_children_against_schema(parent_comp, parent_children, body)
+    }
+}
+
+fn validate_children_against_schema(parent_comp: string, schema: ChildrenList, body: StmtList) {
+    match body {
+        .End -> {}
+        .Node(ss, next) -> {
+            let inner = stmt_unwrap_deep(ss.node)
+            match inner {
+                .ComponentBlock(child_comp, _, _, _) -> {
+                    if !child_type_matches_slot(schema, child_comp) {
+                        eprintln("error: type `${child_comp}` is not a valid child of `${parent_comp}`${schema_hint(schema, parent_comp)}")
+                    }
+                }
+                _ -> {}
+            }
+            validate_children_against_schema(parent_comp, schema, next)
+        }
+    }
+}
+
+/// True iff `child_comp` matches the element type of any slot in
+/// `schema`. The slot type is expected to be `List<T>` — we match
+/// `child_comp` against `T`'s name. Schema = End always returns
+/// false (parent didn't declare any children).
+fn child_type_matches_slot(schema: ChildrenList, child_comp: string) -> bool {
+    match schema {
+        .End -> false
+        .Node(_, child_ty, next) -> {
+            if vtype_elem_name_matches(child_ty, child_comp) { return true }
+            child_type_matches_slot(next, child_comp)
+        }
+    }
+}
+
+/// Extract the element-type name from a `List<T>` ValueType and
+/// compare to `name`. Returns false for non-list slot types or
+/// non-struct/enum element types — those don't model "accepts a
+/// component instance" so they can't match by definition.
+fn vtype_elem_name_matches(vt: ValueType, name: string) -> bool {
+    match vt {
+        .List(elem) -> {
+            match elem {
+                .Struct(n, _) -> n == name
+                .Enum(n, _, _) -> n == name
+                _ -> false
+            }
+        }
+        _ -> false
+    }
+}
+
+/// Build a `; expected X (slot1) or Y (slot2)` hint string from the
+/// parent's children schema for inclusion in the diagnostic.
+fn schema_hint(schema: ChildrenList, parent: string) -> string {
+    let names = collect_slot_names(schema)
+    if names.length == 0 {
+        "; `${parent}` declares no `children { ... }` schema"
+    } else {
+        "; expected one of ${join_slot_names(schema)}"
+    }
+}
+
+fn collect_slot_names(schema: ChildrenList) -> List<string> {
+    mut acc = []
+    mut cur = schema
+    mut keep_going = true
+    while keep_going {
+        match cur {
+            .End -> { keep_going = false }
+            .Node(slot, _, next) -> {
+                acc.push(slot)
+                cur = next
+            }
+        }
+    }
+    acc
+}
+
+fn join_slot_names(schema: ChildrenList) -> string {
+    match schema {
+        .End -> ""
+        .Node(slot, ty, next) -> {
+            let elem_part = vtype_elem_render(ty)
+            let head = "${elem_part} (${slot})"
+            let tail = join_slot_names(next)
+            if tail == "" { head } else { "${head}, ${tail}" }
+        }
+    }
+}
+
+fn vtype_elem_render(vt: ValueType) -> string {
+    match vt {
+        .List(elem) -> {
+            match elem {
+                .Struct(n, _) -> n
+                .Enum(n, _, _) -> n
+                _ -> "?"
+            }
+        }
+        _ -> "?"
+    }
 }
 
 /// Splice the template-flavour expansion of a component block.
