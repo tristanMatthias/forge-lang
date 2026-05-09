@@ -956,8 +956,12 @@ impl Parser {
 
     fn parse_unary(self) -> Expr? {
         // Splice `~target` inside a quote body — overloads the `~`
-        // token. Parses both `~name` and `~(expr)` since parse_unary
-        // descends into a postfix-call chain on `right`.
+        // token. Splice is greedy: `~f(x)` parses as
+        // `Splice(Call(f, [x]))`, splicing the entire call. Users
+        // who want only `~f` followed by a separate `(x)` call can
+        // write `(~f)(x)` to scope the splice tightly. The greedy
+        // form matches the typical metaprogramming pattern where
+        // the spliced expression IS the whole quoted hole.
         if self.check(Tk.Tilde) && self.quote_depth > 0 {
             self.advance()
             let target = self.parse_unary()?

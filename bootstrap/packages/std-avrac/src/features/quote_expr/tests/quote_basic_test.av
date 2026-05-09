@@ -416,6 +416,51 @@ spec "quote: splice expressions" {
     }
 }
 
+// vez6.4.3 — red-team for splice.
+spec "quote: splice red-team" {
+    then "splice into struct field" {
+        let v: Expr = Expr.Number("99")
+        let e = quote { Point { x: ~v, y: 0 } }
+        render_expr(e) == "(struct Point (x=99, y=0))"
+    }
+    then "splice into tuple element" {
+        let v: Expr = Expr.Ident("z")
+        let e = quote { (1, ~v, 3) }
+        render_expr(e) == "(tuple (1, z, 3))"
+    }
+    then "splice composes with itself" {
+        let a: Expr = Expr.Ident("alpha")
+        let b: Expr = Expr.Ident("beta")
+        let e = quote { ~a * ~b + ~a }
+        render_expr(e) == "(+ (* alpha beta) alpha)"
+    }
+    then "tilde outside quote stays as BitNot" {
+        // Outside any quote body, ~5 = -6 (bitwise NOT).
+        let n = ~5
+        n == 0 - 6
+    }
+    then "splice in negation" {
+        let v: Expr = Expr.Number("3")
+        let e = quote { -~v }
+        render_expr(e) == "(- 3)"
+    }
+    then "splice in if condition" {
+        let cond: Expr = Expr.Bool("true")
+        let e = quote { if ~cond { 1 } else { 2 } }
+        render_expr(e).contains("(if true") && render_expr(e).contains("(expr 1)") && render_expr(e).contains("(expr 2)")
+    }
+    then "splice as call callee — paren-grouped" {
+        // Splice is greedy: `~f(x)` would splice the entire `f(x)`,
+        // requiring `f` and `x` to be in scope. To splice only `f`
+        // and call it with quoted-arg `x`, paren-group the splice:
+        // `(~f)(my_arg)` — the parens scope the splice tightly,
+        // then the call adds postfix args inside the quote.
+        let f: Expr = Expr.Ident("my_fn")
+        let e = quote { (~f)(my_arg) }
+        render_expr(e).contains("my_fn") && render_expr(e).contains("my_arg")
+    }
+}
+
 // Multi-statement quote bodies (vez6.3.9).
 spec "quote: multi-statement block bodies" {
     then "let + expression" {
