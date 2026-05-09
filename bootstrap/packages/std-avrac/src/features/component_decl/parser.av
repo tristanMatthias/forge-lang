@@ -97,25 +97,49 @@ impl Parser {
         } else {
             CompConfigList.End
         }
+        // Optional `children { slot: List<T>, ... }` block declares
+        // accepted nested instantiation slots (vez6.7). Sits at the top
+        // of the component body, after config.
+        let children = if self.check(Tk.Identifier) && self.current_lexeme == "children" {
+            self.advance()
+            if !self.consume(Tk.LeftBrace, "expected `{` after `children`") {
+                return null
+            }
+            let c = self.parse_comp_children_schema()?
+            if !self.consume(Tk.RightBrace, "expected `}` after children entries") {
+                return null
+            }
+            c
+        } else {
+            ChildrenList.End
+        }
         let body = self.parse_comp_def_body()?
         if !self.consume(Tk.RightBrace, "expected `}` at end of component") {
             return null
         }
         // Register this component name for keyword-free instantiation
         register_component_name(self.features, name, (p: Parser) -> p.parse_component_block_bare())
-        Stmt.ComponentDef(name, ParamList.End, config, ChildrenList.End, body)
+        Stmt.ComponentDef(name, ParamList.End, config, children, body)
     }
 
     // ── Children Schema (definition) — vez6.7 ──
 
-    /// Phase B-Step1 stub: defines the method so the seed registers
-    /// its prefixed symbol name. Real body + caller land after the
-    /// next update-seed cycle (Phase B-Step2). Workaround for
-    /// vez6.7.4: new impl methods called from the same compilation
-    /// unit get unprefixed mangled names; isolating the definition
-    /// from the caller across two seed cycles sidesteps that.
+    /// Parse the body of a `children { slot: List<T>, ... }` block.
+    /// Each entry binds a slot name on the parent to the element type
+    /// accepted in that slot. Trailing commas tolerated. Returns
+    /// ChildrenList.End for an empty block.
     fn parse_comp_children_schema(self) -> ChildrenList? {
-        ChildrenList.End
+        if self.check(Tk.RightBrace) { return ChildrenList.End }
+        let slot = self.consume_identifier("expected child slot name")?
+        if !self.consume(Tk.Colon, "expected `:` after slot name") { return null }
+        let te = self.parse_type_expr("expected slot type")?
+        let vt = type_expr_to_vtype(te)
+        if self.check(Tk.Comma) {
+            self.advance()
+            let rest = self.parse_comp_children_schema()?
+            return ChildrenList.Node(slot, vt, rest)
+        }
+        ChildrenList.Node(slot, vt, ChildrenList.End)
     }
 
     // ── Config Schema (definition) ──

@@ -1,0 +1,75 @@
+// vez6.7 — `children { slot: List<T>, ... }` block parser test.
+// Confirms parser produces ComponentDef with a non-End ChildrenList
+// when the body has a children block, and ChildrenList.End otherwise.
+
+use @std.avrac.parse.{parse_program_source}
+use @std.avrac.core.{Stmt, StmtList, ChildrenList, stmt_unwrap}
+
+fn first_component_children(source: string) -> ChildrenList {
+    let r = parse_program_source(source)
+    if r.had_error == 1 { return ChildrenList.End }
+    if r.stmts == null { return ChildrenList.End }
+    children_of_first_component(r.stmts!)
+}
+
+fn children_of_first_component(stmts: StmtList) -> ChildrenList {
+    match stmts {
+        .End -> ChildrenList.End
+        .Node(ss, next) -> {
+            let inner = stmt_unwrap(ss.node)
+            match inner {
+                .ComponentDef(_, _, _, ch, _) -> ch
+                _ -> children_of_first_component(next)
+            }
+        }
+    }
+}
+
+fn child_count(ch: ChildrenList) -> int {
+    match ch {
+        .End -> 0
+        .Node(_, _, next) -> 1 + child_count(next)
+    }
+}
+
+fn first_slot_name(ch: ChildrenList) -> string {
+    match ch {
+        .End -> ""
+        .Node(name, _, _) -> name
+    }
+}
+
+spec "vez6.7: children block parses entries" {
+    then "single slot" {
+        let ch = first_component_children("component Cli {
+    children {
+        commands: List<Command>
+    }
+}")
+        child_count(ch) == 1 && first_slot_name(ch) == "commands"
+    }
+    then "two slots with trailing comma tolerated" {
+        let ch = first_component_children("component Cli {
+    children {
+        commands: List<Command>,
+        flags: List<Flag>,
+    }
+}")
+        child_count(ch) == 2 && first_slot_name(ch) == "commands"
+    }
+    then "absent children block yields End" {
+        let ch = first_component_children("component Cli {
+    config { name: string }
+}")
+        child_count(ch) == 0
+    }
+    then "config + children both present" {
+        let ch = first_component_children("component Cli {
+    config { name: string }
+    children {
+        commands: List<Command>
+    }
+}")
+        child_count(ch) == 1 && first_slot_name(ch) == "commands"
+    }
+}
