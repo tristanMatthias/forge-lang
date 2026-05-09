@@ -118,3 +118,51 @@ spec "comptime.try_fold_call: enum-Value Expr decode (vez6.6.4)" {
         folded != null && ident_name_of(folded!) == "x"
     }
 }
+
+// `fn make_sum() -> Expr { return Expr.Binary(Expr.Number("1"), BinOp.Add, Expr.Number("2")) }`
+// — captured as the EnumCtor shape lower_quotes produces for
+// `quote { 1 + 2 }`. Exercises the structural-variant decoder added
+// to enum_value_to_expr.
+fn mk_make_sum_fn() -> CompTimeFn {
+    let one_arg_str = ExprList.Node(sexpr_dummy(Expr.String("\"1\"")), ExprList.End)
+    let two_arg_str = ExprList.Node(sexpr_dummy(Expr.String("\"2\"")), ExprList.End)
+    let one_expr = Expr.EnumCtor("@std::avrac::core::Expr", "Number", one_arg_str)
+    let two_expr = Expr.EnumCtor("@std::avrac::core::Expr", "Number", two_arg_str)
+    let add_op = Expr.EnumCtor("@std::avrac::core::BinOp", "Add", ExprList.End)
+    let bin_args = ExprList.Node(sexpr_dummy(one_expr),
+                     ExprList.Node(sexpr_dummy(add_op),
+                       ExprList.Node(sexpr_dummy(two_expr), ExprList.End)))
+    let body = StmtList.Node(
+        sstmt_dummy(Stmt.Return(Expr.EnumCtor("@std::avrac::core::Expr", "Binary", bin_args))),
+        StmtList.End)
+    CompTimeFn {
+        name: "make_sum",
+        params: ParamList.End,
+        ret_ty: ValueType.Unknown,
+        body,
+    }
+}
+
+fn make_sum_registry() -> CompTimeRegistry {
+    let staged = comptime_registry_new() with { fns: [mk_make_sum_fn()] }
+    prepare_runtime(staged)
+}
+
+fn binary_shape_of(e: Expr) -> string {
+    match e {
+        .Binary(left, op, right) -> {
+            let lhs = match left { .Number(n) -> n, _ -> "?" }
+            let rhs = match right { .Number(n) -> n, _ -> "?" }
+            let op_str = match op { .Add -> "+", .Sub -> "-", _ -> "?" }
+            "${lhs}${op_str}${rhs}"
+        }
+        _ -> ""
+    }
+}
+
+spec "comptime.try_fold_call: structural enum-Value decode (vez6.6.4)" {
+    then "make_sum() folds to Expr.Binary(Number(1), Add, Number(2))" {
+        let folded = try_fold_call(make_sum_registry(), mk_call("make_sum", ExprList.End))
+        folded != null && binary_shape_of(folded!) == "1+2"
+    }
+}

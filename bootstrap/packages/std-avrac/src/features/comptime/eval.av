@@ -9,7 +9,7 @@
 // Phase 2 of Components V2 (vez6.2). The program-walker that calls
 // this on every call site lives in rewrite.av.
 
-use core.{Expr, ExprList}
+use core.{Expr, ExprList, BinOp, UnOp, LogicOp}
 use features.eval.{Value, eval_fn_with_resolved_args, literal_args_to_values, step_value, step_had_error}
 use features.comptime.{CompTimeFn, CompTimeRegistry, comptime_lookup}
 
@@ -88,13 +88,15 @@ fn value_to_expr(v: Value) -> Expr? {
 
 /// Decode an enum Value whose type is `@std::avrac::core::Expr`
 /// back into its AST shape. The variant name selects the Expr
-/// constructor; payload values are decoded recursively.
+/// constructor; payload values are decoded recursively for the
+/// structural variants.
 ///
-/// First slice covers the leaf + simple-container shapes that
-/// `lower_quotes` can produce for an expression-kind quote
-/// (Number/String/Bool/Null/Ident/QualifiedIdent/FloatLit, plus
-/// the Binary/Unary/Logical/Grouping/Call/EnumCtor structural
-/// shapes). More variants land driven by tests.
+/// Slices land driven by what users build with `quote { ... }`:
+/// leaves (Number/String/Bool/Null/Ident/QualifiedIdent/FloatLit)
+/// and the prefix/infix/grouping shapes (Unary/Binary/Logical/
+/// Grouping). More variants — Call/FieldAccess/Index/etc. — return
+/// null until a test demands them, and the caller treats null as
+/// "can't fold, leave the call alone".
 fn enum_value_to_expr(v: Value) -> Expr? {
     if v.enum_type != "@std::avrac::core::Expr" { return null }
     if v.enum_variant == "Null" { return Expr.Null }
@@ -108,6 +110,72 @@ fn enum_value_to_expr(v: Value) -> Expr? {
         "Ident"           -> Expr.Ident(head.text)
         "QualifiedIdent"  -> Expr.QualifiedIdent(head.text)
         "FloatLit"        -> Expr.FloatLit(head.text)
+        "Grouping"        -> {
+            let inner = enum_value_to_expr(head)
+            if inner == null { return null }
+            Expr.Grouping(inner!)
+        }
+        "Unary" -> {
+            if p.length != 2 { return null }
+            let op = enum_value_to_unop(head)
+            let right = enum_value_to_expr(p[1])
+            if op == null || right == null { return null }
+            Expr.Unary(op!, right!)
+        }
+        "Binary" -> {
+            if p.length != 3 { return null }
+            let left = enum_value_to_expr(head)
+            let op = enum_value_to_binop(p[1])
+            let right = enum_value_to_expr(p[2])
+            if left == null || op == null || right == null { return null }
+            Expr.Binary(left!, op!, right!)
+        }
+        "Logical" -> {
+            if p.length != 3 { return null }
+            let left = enum_value_to_expr(head)
+            let op = enum_value_to_logicop(p[1])
+            let right = enum_value_to_expr(p[2])
+            if left == null || op == null || right == null { return null }
+            Expr.Logical(left!, op!, right!)
+        }
         _                 -> null
+    }
+}
+
+/// Decode an enum Value carrying a `@std::avrac::core::BinOp` tag
+/// back into the BinOp variant. Mirrors construct_binop in lower.av.
+fn enum_value_to_binop(v: Value) -> BinOp? {
+    if v.enum_type != "@std::avrac::core::BinOp" { return null }
+    match v.enum_variant {
+        "Add" -> BinOp.Add
+        "Sub" -> BinOp.Sub
+        "Mul" -> BinOp.Mul
+        "Div" -> BinOp.Div
+        "Mod" -> BinOp.Mod
+        "Eq"  -> BinOp.Eq
+        "Ne"  -> BinOp.Ne
+        "Lt"  -> BinOp.Lt
+        "Le"  -> BinOp.Le
+        "Gt"  -> BinOp.Gt
+        "Ge"  -> BinOp.Ge
+        _     -> null
+    }
+}
+
+fn enum_value_to_unop(v: Value) -> UnOp? {
+    if v.enum_type != "@std::avrac::core::UnOp" { return null }
+    match v.enum_variant {
+        "Neg" -> UnOp.Neg
+        "Not" -> UnOp.Not
+        _     -> null
+    }
+}
+
+fn enum_value_to_logicop(v: Value) -> LogicOp? {
+    if v.enum_type != "@std::avrac::core::LogicOp" { return null }
+    match v.enum_variant {
+        "And" -> LogicOp.And
+        "Or"  -> LogicOp.Or
+        _     -> null
     }
 }
