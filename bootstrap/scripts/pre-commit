@@ -29,13 +29,18 @@ fi
 src_relevant=$(echo "$staged" | grep -E '^(bootstrap/packages/std-avrac/src/|bootstrap/packages/cli/src/|avra/stdlib/runtime\.c|bootstrap/llvm_wrapper.c)' || true)
 
 echo "[pre-commit] bootstrap-affecting changes detected — running spec test suite"
-if ! ( cd bootstrap && ./build/bs2 test ); then
+TEST_LOG="/tmp/avra_pre_commit_test.${PPID}.log"
+if ! ( cd bootstrap && ./build/bs2 test ) > "$TEST_LOG" 2>&1; then
   echo
   echo "[pre-commit] spec test suite failed — commit blocked"
+  echo "[pre-commit] full output: $TEST_LOG"
+  echo "[pre-commit] failures (excerpt):"
+  grep -E "✗|Failures:|tests passed" "$TEST_LOG" | tail -25
   echo "[pre-commit] fix the regression, or 'git commit --no-verify' to bypass"
   exit 1
 fi
 echo "[pre-commit] spec test suite passed"
+rm -f "$TEST_LOG"
 
 if [ -n "$src_relevant" ]; then
   echo "[pre-commit] bootstrap source touched — verifying self-host fixed point"

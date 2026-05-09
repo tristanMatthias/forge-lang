@@ -3,8 +3,9 @@
 // returning `quote stmt { ... }` (which lowers to nested EnumCtors)
 // produces a runtime Stmt value the @expand pass can extract.
 
-use @std.avrac.core.{Expr, ExprList, SExpr, sexpr_dummy}
-use @std.avrac.features.eval.{Runtime, StepResult, Value, runtime_new, eval_expr, value_enum, value_number, render_value}
+use @std.avrac.core.{Expr, ExprList, SExpr, sexpr_dummy, Stmt, StmtList}
+use @std.avrac.features.eval.{Runtime, StepResult, Value, runtime_new, eval_expr, value_enum, render_value}
+use @std.avrac.features.comptime.{value_to_stmt, value_to_stmt_list}
 
 fn empty_args() -> ExprList { ExprList.End }
 
@@ -77,5 +78,96 @@ spec "vez6.6.4: value_enum constructor + render" {
         // AST values doesn't silently change the existing surface.
         let v = value_enum("X", "Y", [])
         render_value(v) == "null"
+    }
+}
+
+// vez6.6.4: Stmt decoder. Mirrors the Expr-decoder tests — eval
+// builds an enum Value via Expr.EnumCtor, then value_to_stmt
+// extracts a Stmt for the @expand pass to splice.
+
+fn one_arg_se(e: Expr) -> ExprList {
+    ExprList.Node(sexpr_dummy(e), ExprList.End)
+}
+
+fn three_args_se(a: Expr, b: Expr, c: Expr) -> ExprList {
+    ExprList.Node(sexpr_dummy(a),
+      ExprList.Node(sexpr_dummy(b),
+        ExprList.Node(sexpr_dummy(c), ExprList.End)))
+}
+
+// Helpers — fold the optional + match-on-shape into one bool so the
+// spec body stays one expression deep (the test runner is happiest
+// when then-blocks return a single bool).
+fn is_return_empty_stmt(s: Stmt?) -> bool {
+    if s == null { return false }
+    match s! {
+        .ReturnEmpty -> true
+        _ -> false
+    }
+}
+
+fn return_number_text(s: Stmt?) -> string {
+    if s == null { return "" }
+    match s! {
+        .Return(e) -> match e {
+            .Number(n) -> n
+            _ -> ""
+        }
+        _ -> ""
+    }
+}
+
+fn let_shape_text(s: Stmt?) -> string {
+    if s == null { return "" }
+    match s! {
+        .Let(name, _, init) -> match init {
+            .Number(n) -> "${name}=${n}"
+            _ -> ""
+        }
+        _ -> ""
+    }
+}
+
+fn is_stmt_list_end(sl: StmtList?) -> bool {
+    if sl == null { return false }
+    match sl! {
+        .End -> true
+        _ -> false
+    }
+}
+
+spec "vez6.6.4: value_to_stmt decodes Stmt enum Values" {
+    then "ReturnEmpty (no payload)" {
+        let e = Expr.EnumCtor("@std::avrac::core::Stmt", "ReturnEmpty", ExprList.End)
+        let r: StepResult = eval_expr(runtime_new(), e)
+        is_return_empty_stmt(value_to_stmt(r.value))
+    }
+    then "Return(Number)" {
+        let inner = Expr.EnumCtor("@std::avrac::core::Expr", "Number", one_arg_se(Expr.String("\"42\"")))
+        let e = Expr.EnumCtor("@std::avrac::core::Stmt", "Return", one_arg_se(inner))
+        let r: StepResult = eval_expr(runtime_new(), e)
+        return_number_text(value_to_stmt(r.value)) == "42"
+    }
+    then "Let(name, _, init)" {
+        let unknown_vt = Expr.EnumCtor("@std::avrac::core::ValueType", "Unknown", ExprList.End)
+        let init_expr = Expr.EnumCtor("@std::avrac::core::Expr", "Number", one_arg_se(Expr.String("\"7\"")))
+        let e = Expr.EnumCtor("@std::avrac::core::Stmt", "Let",
+            three_args_se(Expr.String("\"x\""), unknown_vt, init_expr))
+        let r: StepResult = eval_expr(runtime_new(), e)
+        let_shape_text(value_to_stmt(r.value)) == "x=7"
+    }
+    then "value_to_stmt on a non-enum returns null" {
+        // value_number is private; use the eval result of a Number
+        // literal expression instead.
+        let r: StepResult = eval_expr(runtime_new(), Expr.Number("5"))
+        value_to_stmt(r.value) == null
+    }
+}
+
+spec "vez6.6.4: value_to_stmt_list decodes StmtList chains" {
+    then "End → empty list" {
+        let e = Expr.EnumCtor("@std::avrac::core::StmtList", "End", ExprList.End)
+        let r: StepResult = eval_expr(runtime_new(), e)
+        is_stmt_list_end(value_to_stmt_list(r.value))
     }
 }

@@ -9,7 +9,7 @@
 // Phase 2 of Components V2 (vez6.2). The program-walker that calls
 // this on every call site lives in rewrite.av.
 
-use core.{Expr, ExprList, sexpr_dummy, BinOp, UnOp, LogicOp}
+use core.{Expr, ExprList, sexpr_dummy, Stmt, StmtList, sstmt_dummy, ValueType, BinOp, UnOp, LogicOp}
 use features.eval.{Value, eval_fn_with_resolved_args, literal_args_to_values, step_value, step_had_error}
 use features.comptime.{CompTimeFn, CompTimeRegistry, comptime_lookup}
 
@@ -297,5 +297,118 @@ fn enum_value_to_logicop(v: Value) -> LogicOp? {
         "And" -> LogicOp.And
         "Or"  -> LogicOp.Or
         _     -> null
+    }
+}
+
+// ── Stmt / StmtList decoders (vez6.6.4) ──
+//
+// The fold path can't return Stmt (call sites are expression-typed),
+// so these helpers exist for the upcoming @expand pass: invoke a
+// macro fn returning `quote stmt { ... }`, decode the resulting Value
+// into a real Stmt, splice it into the parent scope.
+
+/// Decode an enum Value whose type is `@std::avrac::core::Stmt`
+/// back into a Stmt AST. Returns null when the variant isn't yet
+/// supported or the payload shape doesn't match.
+export fn value_to_stmt(v: Value) -> Stmt? {
+    if v.kind != "enum" { return null }
+    enum_value_to_stmt(v)
+}
+
+fn enum_value_to_stmt(v: Value) -> Stmt? {
+    if v.enum_type != "@std::avrac::core::Stmt" { return null }
+    let p = v.enum_payload
+    match v.enum_variant {
+        "ReturnEmpty" -> Stmt.ReturnEmpty
+        "Break"       -> Stmt.Break
+        "Continue"    -> Stmt.Continue
+        "NoOp"        -> Stmt.NoOp
+        "Expr" -> {
+            if p.length != 1 { return null }
+            let inner = enum_value_to_expr(p[0])
+            if inner == null { return null }
+            Stmt.Expr(inner!)
+        }
+        "Return" -> {
+            if p.length != 1 { return null }
+            let inner = enum_value_to_expr(p[0])
+            if inner == null { return null }
+            Stmt.Return(inner!)
+        }
+        "Let" -> binding_decode(p, "Let")
+        "Mut" -> binding_decode(p, "Mut")
+        "Const" -> binding_decode(p, "Const")
+        "Block" -> {
+            if p.length != 1 { return null }
+            let body = enum_value_to_stmt_list(p[0])
+            if body == null { return null }
+            Stmt.Block(body!)
+        }
+        _ -> null
+    }
+}
+
+/// Three-arg binding decoder shared by Let / Mut / Const.
+/// Payload: (name: string, ty_vt: ValueType, init: Expr).
+/// Construct lower.av always emits ValueType.Unknown so we don't
+/// need a full ValueType decoder yet — accept any kind="enum"
+/// payload at slot 1 and use Unknown.
+fn binding_decode(p: List<Value>, variant: string) -> Stmt? {
+    if p.length != 3 { return null }
+    let name_v: Value = p[0]
+    let init_v: Value = p[2]
+    let init = enum_value_to_expr(init_v)
+    if init == null { return null }
+    let vt = enum_value_to_value_type(p[1])
+    let resolved_vt = if vt == null { ValueType.Unknown } else { vt! }
+    match variant {
+        "Let"   -> Stmt.Let(name_v.text, resolved_vt, init!)
+        "Mut"   -> Stmt.Mut(name_v.text, resolved_vt, init!)
+        "Const" -> Stmt.Const(name_v.text, resolved_vt, init!)
+        _ -> null
+    }
+}
+
+/// Decode an enum Value carrying a `@std::avrac::core::ValueType`
+/// tag. First slice covers the no-payload primitives + the Unknown
+/// catch-all that lower_quotes emits everywhere by default.
+fn enum_value_to_value_type(v: Value) -> ValueType? {
+    if v.enum_type != "@std::avrac::core::ValueType" { return null }
+    match v.enum_variant {
+        "Int"     -> ValueType.Int
+        "Bool"    -> ValueType.Bool
+        "Float"   -> ValueType.Float
+        "Str"     -> ValueType.Str
+        "Bytes"   -> ValueType.Bytes
+        "Void"    -> ValueType.Void
+        "Ptr"     -> ValueType.Ptr
+        "Unknown" -> ValueType.Unknown
+        _ -> null
+    }
+}
+
+/// Decode an enum Value carrying a `@std::avrac::core::StmtList`
+/// tag back into the linked-list StmtList AST. Each Node payload
+/// is a (Stmt-value, StmtList-value) pair — the SStmt wrap that
+/// lower_quotes emits via sstmt_dummy_call is span-passthrough'd
+/// at eval time, so the head Value is the inner Stmt directly.
+export fn value_to_stmt_list(v: Value) -> StmtList? {
+    if v.kind != "enum" { return null }
+    enum_value_to_stmt_list(v)
+}
+
+fn enum_value_to_stmt_list(v: Value) -> StmtList? {
+    if v.enum_type != "@std::avrac::core::StmtList" { return null }
+    match v.enum_variant {
+        "End" -> StmtList.End
+        "Node" -> {
+            let p = v.enum_payload
+            if p.length != 2 { return null }
+            let inner = enum_value_to_stmt(p[0])
+            let rest = enum_value_to_stmt_list(p[1])
+            if inner == null || rest == null { return null }
+            StmtList.Node(sstmt_dummy(inner!), rest!)
+        }
+        _ -> null
     }
 }
