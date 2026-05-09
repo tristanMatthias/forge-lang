@@ -153,3 +153,50 @@ spec "quote: struct literal" {
         render_expr(e) == "(struct Point3 (x=1, y=2, z=3))"
     }
 }
+
+spec "quote: lambda" {
+    then "no params" {
+        let e = quote { () -> 42 }
+        render_expr(e) == "(lambda () 42)"
+    }
+    then "one param" {
+        let e = quote { (x) -> x + 1 }
+        render_expr(e) == "(lambda (x) (+ x 1))"
+    }
+    then "two params" {
+        let e = quote { (x, y) -> x + y }
+        render_expr(e) == "(lambda (x, y) (+ x y))"
+    }
+}
+
+spec "quote: map literal" {
+    then "single entry" {
+        let e = quote { ({"a": 1}) }
+        render_expr(e) == "(group (map (\"a\", 1)))"
+    }
+}
+
+spec "quote: with-update" {
+    then "single override" {
+        let e = quote { obj with { x: 5 } }
+        render_expr(e) == "(with obj (x=5))"
+    }
+}
+
+spec "quote: tuple index" {
+    then "first index" {
+        let e = quote { t.0 }
+        render_expr(e) == "(tuple-idx t 0)"
+    }
+    then "third index" {
+        let e = quote { t.2 }
+        render_expr(e) == "(tuple-idx t 2)"
+    }
+}
+
+spec "quote: is + in checks" {
+    then "is-check" {
+        let e = quote { x is .Some }
+        render_expr(e) == "(is x .Some)"
+    }
+}

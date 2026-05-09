@@ -165,9 +165,41 @@ fn construct_expr(e: Expr) -> Expr {
         .FloatLit(v) -> ctor("@std::avrac::core::Expr", "FloatLit", string_arg(v))
         .StructLit(name, inits) -> ctor("@std::avrac::core::Expr", "StructLit", two_args(string_lit_expr(name), construct_field_init_list(inits)))
         .EnumCtor(type_name, variant, args) -> ctor("@std::avrac::core::Expr", "EnumCtor", three_args(string_lit_expr(type_name), string_lit_expr(variant), construct_expr_list(args)))
+        .MapLit(entries) -> ctor("@std::avrac::core::Expr", "MapLit", one_arg(construct_expr_list(entries)))
+        .IsCheck(subj, vname) -> ctor("@std::avrac::core::Expr", "IsCheck", two_args(construct_expr(subj), string_lit_expr(vname)))
+        .InCheck(needle, items) -> ctor("@std::avrac::core::Expr", "InCheck", two_args(construct_expr(needle), construct_expr_list(items)))
+        .Slice(obj, start, end) -> ctor("@std::avrac::core::Expr", "Slice", three_args(construct_expr(obj), construct_expr(start), construct_expr(end)))
+        .TupleIndex(obj, idx) -> ctor("@std::avrac::core::Expr", "TupleIndex", two_args(construct_expr(obj), Expr.Number(string(idx))))
+        .With(obj, overrides) -> ctor("@std::avrac::core::Expr", "With", two_args(construct_expr(obj), construct_field_init_list(overrides)))
+        .FieldAssign(obj, field, value) -> ctor("@std::avrac::core::Expr", "FieldAssign", three_args(construct_expr(obj), string_lit_expr(field), construct_expr(value)))
+        .Lambda(params, body) -> ctor("@std::avrac::core::Expr", "Lambda", two_args(construct_param_list(params), construct_expr(body)))
         .When(_) -> e
         _ -> e
     }
+}
+
+/// Build an Expr that, when evaluated, produces a ParamList AST value.
+/// Each ParamList.Node carries (name, resolved_vtype, next). Quote
+/// captures pre-resolve, so ValueType is always Unknown — the resolver
+/// fills it in when the lowered AST is re-resolved.
+fn construct_param_list(params: ParamList) -> Expr {
+    match params {
+        .End -> Expr.EnumCtor("@std::avrac::core::ParamList", "End", ExprList.End)
+        .Node(name, _, next) -> Expr.EnumCtor(
+            "@std::avrac::core::ParamList",
+            "Node",
+            ExprList.Node(sexpr_dummy(string_lit_expr(name)),
+              ExprList.Node(sexpr_dummy(construct_value_type_unknown()),
+                ExprList.Node(sexpr_dummy(construct_param_list(next)), ExprList.End)))
+        )
+    }
+}
+
+/// Emit `ValueType.Unknown` — quote captures pre-resolve, so all types
+/// are Unknown until the lowered AST is type-checked. Avoids the
+/// complexity of constructing every ValueType variant.
+fn construct_value_type_unknown() -> Expr {
+    Expr.EnumCtor("@std::avrac::core::ValueType", "Unknown", ExprList.End)
 }
 
 /// Build an Expr that, when evaluated, produces a FieldInitList AST
