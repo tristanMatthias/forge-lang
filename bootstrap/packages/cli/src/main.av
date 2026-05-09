@@ -83,6 +83,7 @@ use @std.avrac.build.{
     DepGraph, Unit, build_graph,
 }
 use @std.avrac.typeck.{typecheck_program}
+use @std.avrac.features.comptime.{run_comptime}
 use @std.avrac.diagnostics.{bag_has_errors, bag_has_warnings, bag_new, bag_report, diag_error, diag_ice, span_dummy, DiagCode, DiagnosticBag}
 use @std.avrac.diagnostics.{render_bag, render_bag_json}
 use @std.avrac.codegen.{compile_program, codegen_and_emit_object, codegen_and_emit_ir_cov}
@@ -1802,7 +1803,8 @@ fn run_test_command() {
         render_bag("", "<test>", named.bag)
         fail(named.error_message)
     }
-    let tc_result = typecheck_program(named.stmts)
+    let post_comptime = run_comptime(named.stmts)
+    let tc_result = typecheck_program(post_comptime)
     if bag_has_errors(tc_result.bag) {
         render_bag("", "<test>", tc_result.bag)
         fail("type check failed")
@@ -2313,7 +2315,8 @@ fn main() {
                 render_bag_either(check_json, check_source, check_path, named.bag)
             }
             if named.had_error { fail(named.error_message) }
-            let tc_result = typecheck_program(named.stmts)
+            let post_comptime = run_comptime(named.stmts)
+            let tc_result = typecheck_program(post_comptime)
             if bag_has_errors(tc_result.bag) || bag_has_warnings(tc_result.bag) {
                 render_bag_either(check_json, check_source, check_path, tc_result.bag)
             }
@@ -2390,7 +2393,8 @@ fn main() {
                 render_bag(source, path, named.bag)
             }
             if named.had_error { fail(named.error_message) }
-            let tc_result = typecheck_program(named.stmts)
+            let post_comptime = run_comptime(named.stmts)
+            let tc_result = typecheck_program(post_comptime)
             if bag_has_errors(tc_result.bag) || bag_has_warnings(tc_result.bag) {
                 render_bag(source, path, tc_result.bag)
             }
@@ -2536,8 +2540,12 @@ fn main() {
             println("ok")
             return
         }
+        // Comptime fold: replace `@comptime` calls with their literal results.
+        // Runs after resolve so names are bound, before typeck so the
+        // typechecker sees the post-fold (literal-typed) AST.
+        let post_comptime = run_comptime(named.stmts)
         // Type check — gates compilation on errors
-        let tc_result = typecheck_program(named.stmts)
+        let tc_result = typecheck_program(post_comptime)
         let t_typeck = avra_uptime_ms()
         if bag_has_errors(tc_result.bag) || bag_has_warnings(tc_result.bag) {
             render_bag_either(json_output, csource, cpath, tc_result.bag)

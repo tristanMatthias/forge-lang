@@ -13,6 +13,21 @@
 // Design doc: docs/2026_05_08_COMPONENTS_V2_DESIGN.md §3.1
 
 use core.{Stmt, StmtList, ParamList, ValueType, AnnotationList, stmt_unwrap}
+use features.comptime.{rewrite_program}
+
+// ── Top-level entry ──
+
+/// Single-call high-level entry point. Walks `stmts`, collects every
+/// `@comptime` fn declaration, then rewrites every foldable comptime
+/// call site with its evaluated literal. Idempotent.
+///
+/// Inserted into the compile pipeline AFTER `resolve_names` and
+/// BEFORE `typecheck_program` so the typechecker sees the post-fold
+/// AST (calls have collapsed into literals).
+export fn run_comptime(stmts: StmtList) -> StmtList {
+    let reg = collect_comptime_fns(stmts)
+    rewrite_program(stmts, reg)
+}
 
 // ── Types ──
 
