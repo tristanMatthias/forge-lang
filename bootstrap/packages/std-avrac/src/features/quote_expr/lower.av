@@ -318,14 +318,14 @@ fn construct_expr(e: Expr) -> Expr {
         .FieldAssign(obj, field, value) -> expr_ctor("FieldAssign", three_args(construct_expr(obj), string_lit_expr(field), construct_expr(value)))
         .Lambda(params, body) -> expr_ctor("Lambda", two_args(construct_param_list(params), construct_expr(body)))
         .Spawn(body) -> expr_ctor("Spawn", one_arg(construct_expr(body)))
+        .Block(body) -> expr_ctor("Block", one_arg(construct_stmt_list(body)))
         // Nested Quote: `quote { ... quote { x } ... }` collapses one
         // level — the inner quote's BODY is what gets constructed, as
         // if the user had written `quote { ... x ... }` directly. This
         // matches the user's likely intent (inner construction is
-        // already an AST-build expression) and avoids the need for
-        // construct_stmt_list (the body is a Block of stmts). Proper
-        // meta-quote (where the outer captures the inner Quote form
-        // verbatim) lands when Block construction lands in vez6.3.9.
+        // already an AST-build expression) and avoids needing a meta-
+        // quote machinery. Proper meta-quote (outer captures inner
+        // Quote form verbatim) is a separate language design call.
         .Quote(_, body) -> construct_expr(unwrap_quote_body(body))
         .When(_) -> e
         _ -> e
@@ -428,6 +428,97 @@ fn sexpr_dummy_call(arg: Expr) -> Expr {
         Expr.QualifiedIdent("@std::avrac::core::sexpr_dummy"),
         ExprList.Node(sexpr_dummy(arg), ExprList.End)
     )
+}
+
+/// `sstmt_dummy(arg)` as a Call expression — sister to sexpr_dummy_call
+/// for SStmt construction. Used when wrapping a runtime Stmt value in
+/// the spanned carrier required by StmtList.Node.
+fn sstmt_dummy_call(arg: Expr) -> Expr {
+    Expr.Call(
+        Expr.QualifiedIdent("@std::avrac::core::sstmt_dummy"),
+        ExprList.Node(sexpr_dummy(arg), ExprList.End)
+    )
+}
+
+// ── Statement construction (vez6.3.9) ──
+
+/// Build an Expr that, when evaluated, produces a StmtList AST value.
+/// Mirrors construct_expr_list / construct_field_init_list shape.
+fn construct_stmt_list(list: StmtList) -> Expr {
+    match list {
+        .End -> list_end("StmtList")
+        .Node(ss, next) -> list_node("StmtList",
+            two_args(construct_sstmt(ss), construct_stmt_list(next)))
+    }
+}
+
+/// Build an Expr that, when evaluated, produces an SStmt wrapping the
+/// runtime value of `ss.node`.
+fn construct_sstmt(ss: SStmt) -> Expr {
+    sstmt_dummy_call(construct_stmt(ss.node))
+}
+
+/// Build an Expr that, when evaluated, produces a Stmt AST value
+/// matching `stmt`. Variants we support: bindings, control flow,
+/// returns, blocks, defers, traits, parallel — everything common
+/// inside multi-stmt quote bodies. Decl-only variants (TypeDecl,
+/// EnumDecl, NewtypeDecl, ShapeDecl, UnionAliasDecl, Function,
+/// ExternFn, Annotated) and Match (needs MatchArmList construction)
+/// pass through unchanged for now — they belong to vez6.3.10
+/// (`quote decl { ... }`).
+fn construct_stmt(stmt: Stmt) -> Expr {
+    match stmt {
+        .Let(name, _, init) -> stmt_ctor("Let", three_args(string_lit_expr(name), construct_value_type_unknown(), construct_expr(init)))
+        .Mut(name, _, init) -> stmt_ctor("Mut", three_args(string_lit_expr(name), construct_value_type_unknown(), construct_expr(init)))
+        .Const(name, _, init) -> stmt_ctor("Const", three_args(string_lit_expr(name), construct_value_type_unknown(), construct_expr(init)))
+        .Expr(e) -> stmt_ctor("Expr", one_arg(construct_expr(e)))
+        .Block(body) -> stmt_ctor("Block", one_arg(construct_stmt_list(body)))
+        .Return(e) -> stmt_ctor("Return", one_arg(construct_expr(e)))
+        .ReturnEmpty -> stmt_ctor("ReturnEmpty", ExprList.End)
+        .NoOp -> stmt_ctor("NoOp", ExprList.End)
+        .Break -> stmt_ctor("Break", ExprList.End)
+        .Continue -> stmt_ctor("Continue", ExprList.End)
+        .Defer(body) -> stmt_ctor("Defer", one_arg(construct_expr(body)))
+        .Errdefer(body) -> stmt_ctor("Errdefer", one_arg(construct_expr(body)))
+        .While(cond, body) -> stmt_ctor("While", two_args(construct_expr(cond), construct_stmt(body)))
+        .For(v, start, end, body) -> stmt_ctor("For", four_args(string_lit_expr(v), construct_expr(start), construct_expr(end), construct_stmt(body)))
+        .ForIn(v, coll, body) -> stmt_ctor("ForIn", three_args(string_lit_expr(v), construct_expr(coll), construct_stmt(body)))
+        // If has a nullable else_branch — encode null as Expr.Null at
+        // the AST level so the constructed runtime gets back the
+        // null-discriminant.
+        .If(cond, then_b, else_b) -> {
+            if else_b != null {
+                stmt_ctor("If", three_args(construct_expr(cond), construct_stmt(then_b), construct_stmt(else_b!)))
+            } else {
+                stmt_ctor("If", three_args(construct_expr(cond), construct_stmt(then_b), Expr.Null))
+            }
+        }
+        .Impl(type_name, methods) -> stmt_ctor("Impl", two_args(string_lit_expr(type_name), construct_stmt_list(methods)))
+        .TraitDecl(name, methods) -> stmt_ctor("TraitDecl", two_args(string_lit_expr(name), construct_stmt_list(methods)))
+        .Parallel(body) -> stmt_ctor("Parallel", one_arg(construct_stmt_list(body)))
+        _ -> stmt_passthrough(stmt)
+    }
+}
+
+/// Catch-all for Stmt variants we haven't taught construct_stmt yet
+/// (decls, complex Match arms). Returns a synthesized Stmt.NoOp at the
+/// AST level — at runtime the user gets a NoOp instead of a crash, and
+/// the missing variant becomes a feature request rather than a silent
+/// corruption. Filed as vez6.3.10 (`quote decl`) for completion.
+fn stmt_passthrough(stmt: Stmt) -> Expr {
+    stmt_ctor("NoOp", ExprList.End)
+}
+
+/// Sister to expr_ctor for Stmt.
+fn stmt_ctor(variant: string, args: ExprList) -> Expr {
+    Expr.EnumCtor("@std::avrac::core::Stmt", variant, args)
+}
+
+fn four_args(a: Expr, b: Expr, c: Expr, d: Expr) -> ExprList {
+    ExprList.Node(sexpr_dummy(a),
+      ExprList.Node(sexpr_dummy(b),
+        ExprList.Node(sexpr_dummy(c),
+          ExprList.Node(sexpr_dummy(d), ExprList.End))))
 }
 
 fn construct_binop(op: BinOp) -> Expr {

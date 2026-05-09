@@ -331,3 +331,60 @@ spec "quote: number shapes" {
         render_expr(e) == "(- 1)"
     }
 }
+
+// Multi-statement quote bodies (vez6.3.9).
+spec "quote: multi-statement block bodies" {
+    then "let + expression" {
+        let e = quote {
+            let x = 5
+            x + 1
+        }
+        render_expr(e).contains("block-expr") && render_expr(e).contains("let x") && render_expr(e).contains("(+ x 1)")
+    }
+    then "two lets" {
+        let e = quote {
+            let a = 1
+            let b = 2
+        }
+        render_expr(e).contains("let a") && render_expr(e).contains("let b")
+    }
+    then "if statement inside block" {
+        let e = quote {
+            if cond {
+                a
+            } else {
+                b
+            }
+        }
+        render_expr(e).contains("(if cond")
+    }
+    then "while loop" {
+        let e = quote {
+            while x < 10 {
+                x = x + 1
+            }
+        }
+        render_expr(e).contains("(while")
+    }
+    then "for-in loop" {
+        let e = quote {
+            for x in xs {
+                x
+            }
+        }
+        render_expr(e).contains("(for-in x")
+    }
+    then "return statement" {
+        let e = quote {
+            return 42
+        }
+        render_expr(e).contains("(return 42)")
+    }
+    then "defer in block" {
+        let e = quote {
+            defer cleanup()
+            do_work()
+        }
+        render_expr(e).contains("(defer ")
+    }
+}
