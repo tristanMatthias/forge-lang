@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.{BinOp, Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeList, ValueType, VariantList, WhenArmList, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, vtype_display, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_is_unknown, vtype_list_elem, vtype_struct_name, vtype_tuple_at}
+use core.{BinOp, Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeList, ValueType, VariantList, WhenArmList, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, vtype_display, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_is_fn, vtype_is_unknown, vtype_list_elem, vtype_struct_name, vtype_tuple_at}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive}
@@ -1438,6 +1438,24 @@ fn check_method_call(tc: TC, obj: Expr, method: string, args: ExprList) -> ExprR
         if r.found {
             return tc_er(checked_args, r.ret_ty)
         }
+    }
+
+    // UAP (vez6.13): when no impl method exists, look for a fn-typed
+    // struct field with the same name and use its return type as the
+    // call's result type. Codegen already implements the field-fn
+    // dispatch path; this just keeps typecheck from emitting Unknown
+    // (which would cascade Unknown through callers and lose info).
+    // Methods always win over fields: we only reach this branch if
+    // the impl-method lookup above missed.
+    match o.ty {
+        .Struct(struct_name, _) -> {
+            let fields = struct_type_lookup(checked_args.structs, struct_name)
+            let field_ty = field_type_lookup(fields, method)
+            if vtype_is_fn(field_ty) {
+                return tc_er(checked_args, vtype_fn_ret(field_ty))
+            }
+        }
+        _ -> {}
     }
 
     // Fallback — return Unknown for unknown methods

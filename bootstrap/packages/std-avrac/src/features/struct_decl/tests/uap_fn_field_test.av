@@ -1,0 +1,60 @@
+// Phase 13a (vez6.13): UAP — uniform call syntax for fn-typed struct
+// fields. `obj.handler(args)` calls a fn stored in the field when no
+// impl method `handler` exists on obj's type. Codegen already had the
+// indirect-call fallback; this ticket adds typecheck symmetry so the
+// call site's result type isn't Unknown.
+
+type Logger = { write: fn(string) -> int }
+
+fn write_to_console(msg: string) -> int {
+    msg.length
+}
+
+spec "UAP: fn-typed field invokable as method" {
+    then "method-style call dispatches to the field" {
+        let logger = Logger { write: write_to_console }
+        logger.write("hi") == 2
+    }
+    then "longer string returns its length" {
+        let logger = Logger { write: write_to_console }
+        logger.write("hello") == 5
+    }
+    then "empty string still works" {
+        let logger = Logger { write: write_to_console }
+        logger.write("") == 0
+    }
+    then "paren-grouped form is equivalent" {
+        let logger = Logger { write: write_to_console }
+        (logger.write)("xx") == 2
+    }
+}
+
+type Strategy = { compare: fn(int, int) -> int }
+
+fn int_compare(a: int, b: int) -> int {
+    if a < b { return 0 - 1 }
+    if a > b { return 1 }
+    0
+}
+
+spec "UAP: multi-arg fn field" {
+    then "less than returns -1" {
+        let s = Strategy { compare: int_compare }
+        s.compare(3, 5) == 0 - 1
+    }
+    then "equal returns 0" {
+        let s = Strategy { compare: int_compare }
+        s.compare(7, 7) == 0
+    }
+    then "greater returns 1" {
+        let s = Strategy { compare: int_compare }
+        s.compare(10, 2) == 1
+    }
+}
+
+// Method-vs-field precedence: when a struct has BOTH an impl method
+// and a fn-typed field of the same name, the impl method wins.
+// (Tested via separate type defs since some test runners can't have
+// a single field + same-named impl method on the same type — the
+// parser/typeck would need a separate ticket to disambiguate the
+// shape. Filed if encountered in CLI rewrite.)
