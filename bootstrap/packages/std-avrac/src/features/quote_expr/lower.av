@@ -209,12 +209,15 @@ fn string_arg(s: string) -> ExprList {
 }
 
 /// Like string_arg but the string is already in source-text form
-/// (i.e. already includes its surrounding quotes — the parser stores
-/// String exactly as written in source). To embed it as an arg to
-/// Expr.String(...) we need to escape the inner quotes.
+/// (already includes its surrounding quotes — that's how the parser
+/// stores `Expr.String.value`).
+///
+/// We wrap with an extra outer quote-pair (no escape sequences) so
+/// codegen's `strip_quotes` leaves us with `s` itself as the runtime
+/// arg to `Expr.String`. Programmatic AST construction lets us safely
+/// embed literal `"` chars in `.value` — there's no re-parsing step.
 fn string_arg_raw(s: string) -> ExprList {
-    let escaped = escape_string(s)
-    ExprList.Node(sexpr_dummy(Expr.String("\"${escaped}\"")), ExprList.End)
+    ExprList.Node(sexpr_dummy(Expr.String("\"" + s + "\"")), ExprList.End)
 }
 
 fn one_arg(a: Expr) -> ExprList {

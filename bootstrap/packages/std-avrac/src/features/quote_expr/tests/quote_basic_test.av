@@ -9,9 +9,10 @@ spec "quote: literals" {
         let e = quote { 42 }
         render_expr(e) == "42"
     }
-    // String literal escape-handling has a known bug — escape_string +
-    // source-form interpolation double-encodes the inner quotes. Tracked
-    // separately; not blocking other quote work.
+    then "string literal" {
+        let e = quote { "hi" }
+        render_expr(e) == "\"hi\""
+    }
     then "bool literal" {
         let e = quote { true }
         render_expr(e) == "true"
@@ -19,6 +20,17 @@ spec "quote: literals" {
     then "null literal" {
         let e = quote { null }
         render_expr(e) == "null"
+    }
+}
+
+spec "quote: identifier capture" {
+    then "bare identifier" {
+        let e = quote { my_var }
+        render_expr(e) == "my_var"
+    }
+    then "identifier in arithmetic" {
+        let e = quote { x + y }
+        render_expr(e) == "(+ x y)"
     }
 }
 
