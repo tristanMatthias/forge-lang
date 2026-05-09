@@ -6,11 +6,11 @@
 // Expr AST literal. Returns null when the call can't be folded
 // (callee not registered, args not literals, or body errors).
 //
-// Phase 2 of Components V2 (vez6.2 slice B). The next slice (C)
-// adds a program-walker that finds and rewrites every foldable call.
+// Phase 2 of Components V2 (vez6.2). The program-walker that calls
+// this on every call site lives in rewrite.av.
 
-use core.{Stmt, StmtList, Expr, ExprList, SExpr, sexpr_dummy, sstmt_dummy, ParamList, ValueType, TypeParamList}
-use features.eval.{Runtime, Value, runtime_new, execute_stmt, eval_expr, step_value, step_had_error}
+use core.{Expr, ExprList}
+use features.eval.{Value, eval_expr, step_value, step_had_error}
 use features.comptime.{CompTimeFn, CompTimeRegistry, comptime_lookup}
 
 // ── Public API ──
@@ -32,7 +32,7 @@ export fn try_fold_call(reg: CompTimeRegistry, call: Expr) -> Expr? {
                     let fn_def = comptime_lookup(reg, name)
                     if fn_def == null { return null }
                     if !all_args_literal(args) { return null }
-                    fold_call(fn_def!, args)
+                    fold_call(reg, fn_def!, args)
                 }
                 _ -> null
             }
@@ -73,20 +73,14 @@ fn is_literal(e: Expr) -> bool {
 // ── Folding driver ──
 
 /// Run the comptime fn body with arg literals bound as params,
-/// then convert the resulting Value back to an Expr literal.
-fn fold_call(fn_def: CompTimeFn, args: ExprList) -> Expr? {
-    // Build a runtime, register the fn, evaluate the call.
-    let rt = runtime_new()
-    let fn_stmt = Stmt.Function(fn_def.name, TypeParamList.End, fn_def.params, fn_def.ret_ty, fn_def.body)
-    let after_register = execute_stmt(rt, fn_stmt)
-    if step_had_error(after_register) != 0 { return null }
-
-    // Synthesize the call expression: `<name>(<args>)`. The args
-    // came in as Exprs; we splice them straight into the call form.
+/// then convert the resulting Value back to an Expr literal. Uses
+/// the pre-built `reg.runtime` (seeded with every comptime fn)
+/// rather than re-registering per call — see `prepare_runtime` in
+/// mod.av.
+fn fold_call(reg: CompTimeRegistry, fn_def: CompTimeFn, args: ExprList) -> Expr? {
     let call_expr = Expr.Call(Expr.Ident(fn_def.name), args)
-    let call_result = eval_expr(after_register.runtime, call_expr)
+    let call_result = eval_expr(reg.runtime, call_expr)
     if step_had_error(call_result) != 0 { return null }
-
     value_to_expr(step_value(call_result))
 }
 
@@ -94,19 +88,14 @@ fn fold_call(fn_def: CompTimeFn, args: ExprList) -> Expr? {
 
 /// Turn a tree-walk evaluator Value into an AST literal Expr so
 /// we can splice it into the surrounding program. Returns null
-/// for shapes that don't have a literal AST representation.
+/// for shapes that don't have a literal AST representation —
+/// caller treats null as "can't fold, leave the call alone".
 fn value_to_expr(v: Value) -> Expr? {
-    if v.kind == "number" {
-        return Expr.Number(v.number_text)
+    match v.kind {
+        "number" -> Expr.Number(v.number_text)
+        "string" -> Expr.String("\"${v.text}\"")
+        "bool"   -> Expr.Bool(if v.bool_value != 0 { "true" } else { "false" })
+        "null"   -> Expr.Null
+        _        -> null
     }
-    if v.kind == "string" {
-        return Expr.String("\"${v.text}\"")
-    }
-    if v.kind == "bool" {
-        return Expr.Bool(if v.bool_value != 0 { "true" } else { "false" })
-    }
-    if v.kind == "null" {
-        return Expr.Null
-    }
-    null
 }
