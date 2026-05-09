@@ -10,7 +10,7 @@
 // self.__parent → parent accumulator variable
 // self.__parent_name → parent instance name string
 
-use core.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, FieldList, FieldInitList, ParamList, ValueType, CompConfigList, CompConfigPairList, TypeParamList}
+use core.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, FieldList, FieldInitList, ParamList, ValueType, CompConfigList, CompConfigPairList, ChildrenList, TypeParamList}
 use core.{has_fn, find_fn_body}
 
 // ── Public API ──
@@ -27,32 +27,34 @@ export fn expand_components(stmts: StmtList) -> StmtList {
 // ── Component definition registry ──
 
 /// Per-program registry of `component` declarations. Each
-/// entry pairs a component name with its config schema + body
-/// AST. Built once by `collect_component_defs` and consulted by
-/// every `<comp>(...)` instantiation site.
+/// entry pairs a component name with its config schema, child-slot
+/// schema, and body AST. Built once by `collect_component_defs` and
+/// consulted by every `<comp>(...)` instantiation site.
 export enum CompDefRegistry {
     End
-    Entry(name: string, config: CompConfigList, body: StmtList, next: CompDefRegistry)
+    Entry(name: string, config: CompConfigList, children: ChildrenList, body: StmtList, next: CompDefRegistry)
 }
 
 /// Result of a component lookup. `found` distinguishes hit
 /// from miss; the schema + body are zeroed on miss.
 ///
-/// @field found  — 1 when the component was registered.
-/// @field config — its config schema.
-/// @field body   — the body AST.
+/// @field found    — 1 when the component was registered.
+/// @field config   — its config schema.
+/// @field children — its child-slot schema (vez6.7).
+/// @field body     — the body AST.
 type CompDefLookup = {
     found: bool,
     config: CompConfigList,
+    children: ChildrenList,
     body: StmtList,
 }
 
 /// Linear lookup of a component definition by name.
 export fn comp_reg_lookup(reg: CompDefRegistry, name: string) -> CompDefLookup {
     match reg {
-        .End -> CompDefLookup { found: false, config: CompConfigList.End, body: StmtList.End }
-        .Entry(n, config, body, _) if n == name -> CompDefLookup { found: true, config, body }
-        .Entry(_, _, _, next) -> comp_reg_lookup(next, name)
+        .End -> CompDefLookup { found: false, config: CompConfigList.End, children: ChildrenList.End, body: StmtList.End }
+        .Entry(n, config, children, body, _) if n == name -> CompDefLookup { found: true, config, children, body }
+        .Entry(_, _, _, _, next) -> comp_reg_lookup(next, name)
     }
 }
 
@@ -65,8 +67,8 @@ export fn collect_component_defs(stmts: StmtList) -> CompDefRegistry {
         .Node(ss, next) -> {
             let inner = stmt_unwrap_deep(ss.node)
             match inner {
-                .ComponentDef(name, _, config, _, body) -> {
-                    CompDefRegistry.Entry(name, config, body, collect_component_defs(next))
+                .ComponentDef(name, _, config, children, body) -> {
+                    CompDefRegistry.Entry(name, config, children, body, collect_component_defs(next))
                 }
                 .Module(_, mod_body) -> {
                     let mod_defs = collect_component_defs(mod_body)
@@ -88,7 +90,7 @@ export fn collect_component_defs(stmts: StmtList) -> CompDefRegistry {
 fn merge_registries(a: CompDefRegistry, b: CompDefRegistry) -> CompDefRegistry {
     match a {
         .End -> b
-        .Entry(name, config, body, next) -> CompDefRegistry.Entry(name, config, body, merge_registries(next, b))
+        .Entry(name, config, children, body, next) -> CompDefRegistry.Entry(name, config, children, body, merge_registries(next, b))
     }
 }
 
@@ -104,7 +106,7 @@ export fn comp_reg_names(reg: CompDefRegistry) -> List<string> {
     while keep_going {
         match cur {
             .End -> { keep_going = false }
-            .Entry(name, _, _, next) -> {
+            .Entry(name, _, _, _, next) -> {
                 acc.push(name)
                 cur = next
             }
