@@ -1,0 +1,107 @@
+// Phase 1 of Components V2 (vez6.1): exercise the new public AST
+// introspection helpers in core/ast_introspect.av. Builds a small
+// AST by hand, then checks that the helpers find what's there and
+// don't find what's not.
+
+use @std.avrac.core.{Stmt, StmtList, sstmt_dummy, Expr, CompConfigPairList, ParamList, ValueType, TypeParamList}
+use @std.avrac.core.{has_fn, find_fn_body, children_of_type, all_children, config_lookup, config_has}
+
+// Build a fn-decl statement for testing.
+fn mk_fn(name: string) -> Stmt {
+    Stmt.Function(name, TypeParamList.End, ParamList.End, ValueType.Void, StmtList.End)
+}
+
+// Build a ComponentBlock for testing.
+fn mk_block(comp: string, inst: string) -> Stmt {
+    Stmt.ComponentBlock(comp, inst, CompConfigPairList.End, StmtList.End)
+}
+
+// `let body = [fn run() {} ; fn drop() {} ; flag a {} ; flag b {} ; arg target {}]`
+fn sample_body() -> StmtList {
+    StmtList.Node(sstmt_dummy(mk_fn("run")),
+      StmtList.Node(sstmt_dummy(mk_fn("drop")),
+        StmtList.Node(sstmt_dummy(mk_block("flag", "a")),
+          StmtList.Node(sstmt_dummy(mk_block("flag", "b")),
+            StmtList.Node(sstmt_dummy(mk_block("arg", "target")),
+              StmtList.End)))))
+}
+
+spec "ast_introspect.has_fn" {
+    given "a body with run + drop fns" {
+        then "finds run" { has_fn(sample_body(), "run") }
+        then "finds drop" { has_fn(sample_body(), "drop") }
+        then "doesn't find missing fn" { !has_fn(sample_body(), "missing") }
+    }
+    given "an empty body" {
+        then "finds nothing" { !has_fn(StmtList.End, "anything") }
+    }
+}
+
+spec "ast_introspect.find_fn_body" {
+    given "a body with named fns" {
+        then "returns End for the (empty) run body" {
+            match find_fn_body(sample_body(), "run") {
+                .End -> true
+                _ -> false
+            }
+        }
+        then "returns End when fn is missing" {
+            match find_fn_body(sample_body(), "missing") {
+                .End -> true
+                _ -> false
+            }
+        }
+    }
+}
+
+spec "ast_introspect.children_of_type" {
+    given "a body with two flag and one arg child" {
+        then "finds 2 flag children" {
+            children_of_type(sample_body(), "flag").length == 2
+        }
+        then "finds 1 arg child" {
+            children_of_type(sample_body(), "arg").length == 1
+        }
+        then "finds 0 nonexistent children" {
+            children_of_type(sample_body(), "nope").length == 0
+        }
+        then "returns flag instances in source order" {
+            children_of_type(sample_body(), "flag")[0].instance == "a"
+        }
+        then "second flag is 'b'" {
+            children_of_type(sample_body(), "flag")[1].instance == "b"
+        }
+    }
+}
+
+spec "ast_introspect.all_children" {
+    given "a mixed body" {
+        then "returns 3 component-block children (2 flag + 1 arg)" {
+            all_children(sample_body()).length == 3
+        }
+        then "skips non-ComponentBlock statements (the fn decls)" {
+            // Body has 5 stmts (2 fns + 3 blocks); only 3 blocks counted.
+            all_children(sample_body()).length == 3
+        }
+    }
+}
+
+fn sample_pairs() -> CompConfigPairList {
+    CompConfigPairList.Node("description", Expr.String("\"hello\""),
+      CompConfigPairList.Node("version", Expr.String("\"1.0\""),
+        CompConfigPairList.End))
+}
+
+spec "ast_introspect.config_lookup" {
+    given "a config pair list" {
+        then "finds existing key" {
+            config_lookup(sample_pairs(), "description") != null
+        }
+        then "returns null for missing key" {
+            config_lookup(sample_pairs(), "missing") == null
+        }
+        then "config_has reflects lookup" {
+            config_has(sample_pairs(), "version") && !config_has(sample_pairs(), "missing")
+        }
+    }
+}

@@ -1,0 +1,126 @@
+// WHY: AST introspection helpers — the public surface that
+// component-expansion code (and, post Phase 6, @comptime macro
+// authors) uses to walk parsed Avra ASTs without re-implementing
+// pattern-match plumbing.
+//
+// All helpers are pure: walk an AST, return a value, never mutate.
+// Misses return `End` / `null` / `false` rather than panic so callers
+// can compose them safely without a missing-fn bringing the macro
+// down.
+//
+// Phase 1 of Components V2 (vez6.1) — see
+// docs/2026_05_08_COMPONENTS_V2_DESIGN.md §3.2.
+
+use core.{Stmt, StmtList, Expr, CompConfigPairList}
+
+/// Flat-struct view over a `Stmt.ComponentBlock` payload. Lets
+/// macro authors handle component-block introspection without deep
+/// pattern matching when they iterate a parent's children.
+///
+/// @field comp_name — the registered component name (e.g. "flag")
+/// @field instance  — the user-supplied instance name (e.g. "verbose")
+/// @field config    — config pairs supplied at the call site
+/// @field body      — the block body's statement list
+export type ComponentBlockView = {
+    comp_name: string,
+    instance: string,
+    config: CompConfigPairList,
+    body: StmtList,
+}
+
+/// True when `body` contains a top-level function declaration
+/// named `fn_name`. Test for whether a component body provides a
+/// method override (e.g. `run`, `init`, `drop`).
+export fn has_fn(body: StmtList, fn_name: string) -> bool {
+    match body {
+        .End -> false
+        .Node(ss, next) -> {
+            match ss.node {
+                .Function(name, _, _, _, _) -> if name == fn_name { true } else { has_fn(next, fn_name) }
+                _ -> has_fn(next, fn_name)
+            }
+        }
+    }
+}
+
+/// Body of the function named `fn_name` in `body`, or `End` when
+/// not found. Pair with `has_fn` to distinguish "no fn" from
+/// "fn with empty body".
+export fn find_fn_body(body: StmtList, fn_name: string) -> StmtList {
+    match body {
+        .End -> StmtList.End
+        .Node(ss, next) -> {
+            match ss.node {
+                .Function(name, _, _, _, fn_body) -> if name == fn_name { fn_body } else { find_fn_body(next, fn_name) }
+                _ -> find_fn_body(next, fn_name)
+            }
+        }
+    }
+}
+
+/// Every `Stmt.ComponentBlock` direct child of `body` whose
+/// component name matches `comp_name`. Walks only the top level —
+/// nested instantiations inside other component blocks are not
+/// surfaced. Use this to find e.g. all `flag X { … }` children of
+/// a `command Y { … }` block.
+export fn children_of_type(body: StmtList, comp_name: string) -> List<ComponentBlockView> {
+    mut out: List<ComponentBlockView> = []
+    mut cur = body
+    mut keep_going = true
+    while keep_going {
+        match cur {
+            .End -> { keep_going = false }
+            .Node(ss, next) -> {
+                match ss.node {
+                    .ComponentBlock(cn, inst, cfg, b) -> {
+                        if cn == comp_name {
+                            out.push(ComponentBlockView { comp_name: cn, instance: inst, config: cfg, body: b })
+                        }
+                    }
+                    _ -> {}
+                }
+                cur = next
+            }
+        }
+    }
+    out
+}
+
+/// Every direct ComponentBlock child of `body`, regardless of comp
+/// name. Useful for enumerating "what kinds of children did the
+/// user instantiate inside this block".
+export fn all_children(body: StmtList) -> List<ComponentBlockView> {
+    mut out: List<ComponentBlockView> = []
+    mut cur = body
+    mut keep_going = true
+    while keep_going {
+        match cur {
+            .End -> { keep_going = false }
+            .Node(ss, next) -> {
+                match ss.node {
+                    .ComponentBlock(cn, inst, cfg, b) -> {
+                        out.push(ComponentBlockView { comp_name: cn, instance: inst, config: cfg, body: b })
+                    }
+                    _ -> {}
+                }
+                cur = next
+            }
+        }
+    }
+    out
+}
+
+/// Look up a config-pair value by key. Returns null when the key
+/// wasn't supplied — caller falls back to the schema default.
+export fn config_lookup(pairs: CompConfigPairList, key: string) -> Expr? {
+    match pairs {
+        .End -> null
+        .Node(k, v, next) -> if k == key { v } else { config_lookup(next, key) }
+    }
+}
+
+/// True when a config pair with this key was supplied by the user
+/// at the call site.
+export fn config_has(pairs: CompConfigPairList, key: string) -> bool {
+    config_lookup(pairs, key) != null
+}

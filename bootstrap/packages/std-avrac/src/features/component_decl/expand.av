@@ -11,6 +11,7 @@
 // self.__parent_name → parent instance name string
 
 use core.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, FieldList, FieldInitList, ParamList, ValueType, CompConfigList, CompConfigPairList, TypeParamList}
+use core.{has_fn, find_fn_body}
 
 // ── Public API ──
 
@@ -413,35 +414,6 @@ fn config_to_factory_inits(config: CompConfigList) -> FieldInitList {
         .Node(key, _, default_val, next) -> {
             let val = if default_val != null { default_val! } else { Expr.Null }
             FieldInitList.Node(key, sexpr(val, 0, 0), config_to_factory_inits(next))
-        }
-    }
-}
-
-/// True when `stmts` contains a top-level function declaration
-/// named `fn_name`. Used to test whether a component body
-/// already provides a custom factory or method.
-fn has_fn(stmts: StmtList, fn_name: string) -> bool {
-    match stmts {
-        .End -> false
-        .Node(ss, next) -> {
-            match ss.node {
-                .Function(name, _, _, _, _) -> if name == fn_name { true } else { has_fn(next, fn_name) }
-                _ -> has_fn(next, fn_name)
-            }
-        }
-    }
-}
-
-/// Look up a function declaration by name and return its body
-/// statement list. Returns `End` when not found.
-fn find_fn_body(stmts: StmtList, fn_name: string) -> StmtList {
-    match stmts {
-        .End -> StmtList.End
-        .Node(ss, next) -> {
-            match ss.node {
-                .Function(name, _, _, _, fn_body) -> if name == fn_name { fn_body } else { find_fn_body(next, fn_name) }
-                _ -> find_fn_body(next, fn_name)
-            }
         }
     }
 }
