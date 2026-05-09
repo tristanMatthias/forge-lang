@@ -21,7 +21,7 @@
 #   make help         show this list
 
 .DEFAULT_GOAL := build
-.PHONY: build build-O0 build-debug test run selfhost clean help install-hooks score update-seed seed-patch verify-seed seed-sigs next work epic coverage
+.PHONY: build build-O0 build-debug build-quick test test-quick quick run selfhost clean help install-hooks score update-seed seed-patch verify-seed seed-sigs next work epic coverage
 
 # `bs2` is built from the cli package (the binary entry). The
 # library it consumes (@std.avrac) lives at LIB_SRC_DIR — used for
@@ -37,8 +37,11 @@ help:
 	@echo "Bootstrap compiler — common targets:"
 	@echo ""
 	@echo "  make build         Build the bootstrap compiler (default)."
+	@echo "  make build-quick   Rebuild bs2 if source changed, skip self-compile verify (~16s saved)."
 	@echo "  make build-O0      Build at -O0 for lldb debugging (build/bs2_O0)."
 	@echo "  make test          Run spec tests + self-host fixed-point check."
+	@echo "  make test-quick    Tests only, no selfhost. Add FILTER=<substr> to narrow."
+	@echo "  make quick         Inner-loop combo: build-quick + test-quick. FILTER= supported."
 	@echo "  make run FILE=x.av Compile and run a Avra program."
 	@echo "  make selfhost      Verify bs2 and bs3 emit byte-identical IR."
 	@echo "  make update-seed   Rebuild seed/seed.ll from current source (with verify)."
@@ -82,6 +85,11 @@ lint:
 build: lint
 	@$(DIAG) --build-bs2
 
+# Inner-loop build: rebuild bs2 if source changed, skip self-compile verify.
+# Saves ~16s vs `make build` when bs2 is fresh. Run `make build` before commits.
+build-quick:
+	@$(DIAG) --ensure-bs2
+
 # Build at -O0 for lldb debugging. Produces build/bs2_O0.
 build-O0:
 	@$(DIAG) --build-O0
@@ -94,6 +102,17 @@ build-debug:
 test:
 	@$(BS2) test
 	@$(DIAG) --check-fixedpoint
+
+# Inner-loop combo: rebuild + filtered tests, no safety checks.
+# The fastest way to iterate. FILTER=<substr> narrows test selection.
+#
+#   make quick                    # rebuild + all tests
+#   make quick FILTER=parse       # rebuild + parse-related tests only
+#
+# Run `make test` (full + selfhost) before committing.
+quick:
+	@$(DIAG) --ensure-bs2
+	@$(BS2) test $(if $(FILTER),-f $(FILTER))
 
 # Inner-loop iteration: test suite only, no selfhost check.
 # Optional FILTER=<substr> narrows BOTH which tests run AND which

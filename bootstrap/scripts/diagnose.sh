@@ -75,6 +75,8 @@ BUILD MODES
   --build              Rebuild stage1 (host → stage1 binary) + run all stage1 tests.
   --build-runtime      Compile avra/stdlib/runtime.c → build/runtime.o.
   --build-bs2          Compile packages/cli/src/main.av with stage1 → build/bs2.
+  --ensure-bs2         Build bs2 if source changed; SKIP self-compile verify.
+                       Inner-loop convenience — use --build-bs2 before commits.
   --build-O0           Build bs2 at -O0 (no optimization) for debuggability.
                        Makes lldb usable with breakpoints and variable inspection.
                        Output: build/bs2_O0.
@@ -390,6 +392,15 @@ mode_build() {
 }
 
 mode_build_runtime() { ensure_runtime; ok "$RUNTIME_O"; }
+# Fast inner-loop build: rebuild bs2 if source changed, but SKIP the
+# self-compile verify (that step is bootstrap-chain integrity, not
+# correctness). Use this when iterating on changes you want to test
+# against a fresh bs2 but don't need the bootstrap-fixed-point check
+# on every save. Run --build-bs2 (or `make build`) before committing.
+mode_ensure_bs2() {
+  ensure_bs2
+  ok "$BS2"
+}
 mode_build_bs2() {
   ensure_bs2
   # Verify bs2 can compile itself (bootstrap chain integrity).
@@ -925,6 +936,7 @@ main() {
     --build)              mode_build "$@" ;;
     --build-runtime)      mode_build_runtime "$@" ;;
     --build-bs2)          mode_build_bs2 "$@" ;;
+    --ensure-bs2)         mode_ensure_bs2 "$@" ;;
     --build-O0)           mode_build_O0 "$@" ;;
     --build-debug)        mode_build_debug "$@" ;;
     --build-bs2-asan)     mode_build_bs2_asan "$@" ;;
