@@ -112,6 +112,16 @@ fn lookup_scope(scope: HygieneScope, name: string) -> string? {
     }
 }
 
+/// Exit a nested scope: keep the parent's `scope` chain (drops the
+/// child's bindings) but propagate the child's `counter` so suffix
+/// IDs stay monotonic across the whole rewrite. Without this, two
+/// sibling scopes (e.g. then + else branches of an `if`) would
+/// reuse the same counter and produce identical suffixes for
+/// distinct bindings — defeating uniqueness.
+fn restore_scope(parent_scope: HygieneScope, child_ctx: HygieneCtx) -> HygieneCtx {
+    HygieneCtx { scope: parent_scope, counter: child_ctx.counter }
+}
+
 // ── Statement walker ──
 
 fn rename_stmt_list(ctx: HygieneCtx, list: StmtList) -> RenameStmtListResult {
@@ -156,26 +166,29 @@ fn rename_stmt(ctx: HygieneCtx, s: Stmt) -> RenameStmtResult {
             let r = rename_expr(ctx, e)
             RenameStmtResult { stmt: Stmt.Return(r.expr), ctx: r.ctx }
         }
-        // Block: nested scope. Bindings inside don't escape to caller.
+        // Block: nested scope. Bindings inside don't escape to caller,
+        // but the counter must propagate so subsequent siblings see
+        // unique IDs.
         .Block(body) -> {
             let r = rename_stmt_list(ctx, body)
-            RenameStmtResult { stmt: Stmt.Block(r.list), ctx }
+            RenameStmtResult { stmt: Stmt.Block(r.list), ctx: restore_scope(ctx.scope, r.ctx) }
         }
         .If(cond, then_b, else_b) -> {
             let rc = rename_expr(ctx, cond)
             let rt = rename_stmt(rc.ctx, then_b)
-            // then-branch bindings don't escape into else.
+            let after_then = restore_scope(rc.ctx.scope, rt.ctx)
             if else_b != null {
-                let re = rename_stmt(rc.ctx, else_b!)
-                RenameStmtResult { stmt: Stmt.If(rc.expr, rt.stmt, re.stmt), ctx }
+                let re = rename_stmt(after_then, else_b!)
+                let after_else = restore_scope(rc.ctx.scope, re.ctx)
+                RenameStmtResult { stmt: Stmt.If(rc.expr, rt.stmt, re.stmt), ctx: after_else }
             } else {
-                RenameStmtResult { stmt: Stmt.If(rc.expr, rt.stmt, null), ctx }
+                RenameStmtResult { stmt: Stmt.If(rc.expr, rt.stmt, null), ctx: after_then }
             }
         }
         .While(cond, body) -> {
             let rc = rename_expr(ctx, cond)
             let rb = rename_stmt(rc.ctx, body)
-            RenameStmtResult { stmt: Stmt.While(rc.expr, rb.stmt), ctx }
+            RenameStmtResult { stmt: Stmt.While(rc.expr, rb.stmt), ctx: restore_scope(ctx.scope, rb.ctx) }
         }
         // For introduces the loop variable for the body only.
         .For(v, start, end, body) -> {
@@ -183,13 +196,13 @@ fn rename_stmt(ctx: HygieneCtx, s: Stmt) -> RenameStmtResult {
             let re = rename_expr(rs.ctx, end)
             let f = fresh_name(re.ctx, v)
             let rb = rename_stmt(f.ctx, body)
-            RenameStmtResult { stmt: Stmt.For(f.name, rs.expr, re.expr, rb.stmt), ctx }
+            RenameStmtResult { stmt: Stmt.For(f.name, rs.expr, re.expr, rb.stmt), ctx: restore_scope(ctx.scope, rb.ctx) }
         }
         .ForIn(v, coll, body) -> {
             let rc = rename_expr(ctx, coll)
             let f = fresh_name(rc.ctx, v)
             let rb = rename_stmt(f.ctx, body)
-            RenameStmtResult { stmt: Stmt.ForIn(f.name, rc.expr, rb.stmt), ctx }
+            RenameStmtResult { stmt: Stmt.ForIn(f.name, rc.expr, rb.stmt), ctx: restore_scope(ctx.scope, rb.ctx) }
         }
         .Defer(body) -> {
             let r = rename_expr(ctx, body)
@@ -301,16 +314,16 @@ fn rename_expr(ctx: HygieneCtx, e: Expr) -> RenameExprResult {
         }
         .Block(body) -> {
             let r = rename_stmt_list(ctx, body)
-            // Block bindings don't escape; ctx after block == ctx before.
-            RenameExprResult { expr: Expr.Block(r.list), ctx }
+            // Block bindings don't escape; restore scope, keep counter.
+            RenameExprResult { expr: Expr.Block(r.list), ctx: restore_scope(ctx.scope, r.ctx) }
         }
         // Lambda introduces its parameters for the body only.
         .Lambda(params, body) -> {
             let rp = rename_param_list(ctx, params)
             let rb = rename_expr(rp.ctx, body)
             // Params + body bindings don't escape into the surrounding
-            // expression; return the caller's ctx.
-            RenameExprResult { expr: Expr.Lambda(rp.params, rb.expr), ctx }
+            // expression; restore scope, keep counter.
+            RenameExprResult { expr: Expr.Lambda(rp.params, rb.expr), ctx: restore_scope(ctx.scope, rb.ctx) }
         }
         .Spawn(body) -> {
             let r = rename_expr(ctx, body)
