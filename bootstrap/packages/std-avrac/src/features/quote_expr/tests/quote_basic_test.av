@@ -2,7 +2,7 @@
 // Captures small expressions as runtime AST values, verifies via the
 // render_expr S-expression serializer that the captured shape matches.
 
-use @std.avrac.core.{Expr, render_expr}
+use @std.avrac.core.{Expr, render_expr, Stmt, StmtList, render_stmt, render_stmt_list}
 
 spec "quote: literals" {
     then "number literal" {
@@ -329,6 +329,43 @@ spec "quote: number shapes" {
     then "negative literal via unary" {
         let e = quote { -1 }
         render_expr(e) == "(- 1)"
+    }
+}
+
+// Quote-kind variants (vez6.3.10).
+spec "quote: kind dispatch" {
+    then "quote stmt yields a Stmt value" {
+        let s: Stmt = quote stmt { let x = 5 }
+        render_stmt(s) == "(let x:<unknown> 5)"
+    }
+    then "quote stmts yields a StmtList value" {
+        let sl: StmtList = quote stmts {
+            let a = 1
+            let b = 2
+        }
+        render_stmt_list(sl).contains("let a") && render_stmt_list(sl).contains("let b")
+    }
+    then "quote decl with let acts like stmt" {
+        let s: Stmt = quote decl { let x = 5 }
+        render_stmt(s) == "(let x:<unknown> 5)"
+    }
+    then "quote stmt with return" {
+        let s: Stmt = quote stmt { return 42 }
+        render_stmt(s) == "(return 42)"
+    }
+    then "quote stmt with if" {
+        let s: Stmt = quote stmt {
+            if cond { a } else { b }
+        }
+        render_stmt(s).contains("(if cond")
+    }
+    then "quote stmts with single stmt" {
+        let sl: StmtList = quote stmts { let x = 1 }
+        render_stmt_list(sl).contains("let x")
+    }
+    then "quote default kind is expr" {
+        let e: Expr = quote { 42 }
+        render_expr(e) == "42"
     }
 }
 

@@ -189,7 +189,7 @@ fn lower_stmt(stmt: Stmt) -> Stmt {
 /// Ident/QualifiedIdent/FloatLit) hit the catch-all and pass through.
 fn lower_expr(expr: Expr) -> Expr {
     match expr {
-        .Quote(_, body) -> construct_expr(unwrap_quote_body(body))
+        .Quote(kind, body) -> dispatch_quote_kind(kind, body)
         .Binary(l, op, r) -> .Binary(lower_expr(l), op, lower_expr(r))
         .Unary(op, r) -> .Unary(op, lower_expr(r))
         .Logical(l, op, r) -> .Logical(lower_expr(l), op, lower_expr(r))
@@ -240,6 +240,57 @@ fn lower_field_inits(inits: FieldInitList) -> FieldInitList {
             sexpr(lower_expr(se.node), se.line, se.col),
             lower_field_inits(next)
         )
+    }
+}
+
+// ── Quote kind dispatch (vez6.3.10) ──
+
+/// Dispatch on the quote kind keyword to produce the right AST type.
+/// Default `expr` constructs an Expr. `stmt` extracts the single Stmt
+/// inside the body block and constructs it. `stmts` constructs the
+/// whole StmtList. `decl` is currently an alias for `stmt` since decls
+/// in Avra are Stmts. `type` is deferred (vez6.3.13) — would require a
+/// parser change to capture type-expression syntax inside the braces.
+fn dispatch_quote_kind(kind: string, body: Expr) -> Expr {
+    if kind == "stmt" || kind == "decl" {
+        let single = extract_single_stmt(body)
+        if single != null { return construct_stmt(single!) }
+        // Block has 0 or 2+ statements — fall back to constructing
+        // the StmtList as if `stmts` was used. The user gets a
+        // StmtList instead of a Stmt, which surfaces the mismatch.
+        return construct_stmt_list(extract_stmt_list(body))
+    }
+    if kind == "stmts" {
+        return construct_stmt_list(extract_stmt_list(body))
+    }
+    // Default: kind == "expr" or unrecognized.
+    construct_expr(unwrap_quote_body(body))
+}
+
+/// Extract the single Stmt from a `Block(StmtList(Node(ss, End)))`.
+/// Returns null if the block is empty or has multiple statements.
+fn extract_single_stmt(body: Expr) -> Stmt? {
+    match body {
+        .Block(stmts) -> {
+            match stmts {
+                .Node(ss, rest) -> {
+                    match rest {
+                        .End -> ss.node
+                        _ -> null
+                    }
+                }
+                _ -> null
+            }
+        }
+        _ -> null
+    }
+}
+
+/// Extract the StmtList from a Block; otherwise empty.
+fn extract_stmt_list(body: Expr) -> StmtList {
+    match body {
+        .Block(stmts) -> stmts
+        _ -> StmtList.End
     }
 }
 

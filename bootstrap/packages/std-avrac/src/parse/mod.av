@@ -1757,8 +1757,27 @@ impl Parser {
 
     fn parse_quote(self) -> Expr? {
         self.advance()  // consume `quote`
+        // Optional kind keyword: `stmt` / `stmts` / `type` / `decl`
+        // selects the result-type of the captured AST. Default is
+        // `expr` — the captured body produces an Expr value at runtime.
+        let kind = self.parse_quote_kind()
         let body = self.parse_block_expression()?
-        Expr.Quote("expr", body)
+        Expr.Quote(kind, body)
+    }
+
+    fn parse_quote_kind(self) -> string {
+        if self.check(Tk.KwType) {
+            self.advance()
+            return "type"
+        }
+        if self.check(Tk.Identifier) {
+            let lex = self.current_lexeme
+            if lex == "stmt" || lex == "stmts" || lex == "decl" {
+                self.advance()
+                return lex
+            }
+        }
+        "expr"
     }
 
     // Parse `when { cond -> body, ... }` — subjectless match expression.
