@@ -270,6 +270,66 @@ fn finish_result(step: StepResult) -> EvalResult {
     }
 }
 
+/// Direct function call — skips the Call-dispatch overhead
+/// (lookup-by-name, callee Ident eval, per-arg eval_expr) when the
+/// caller already has the fn definition AND pre-resolved arg
+/// values. Used by features/comptime to fold @comptime calls fast.
+///
+/// Returns the StepResult of running `body` with `params` bound to
+/// `arg_values` in a fresh scope of `runtime`. Caller is responsible
+/// for arity (`arg_values.length` should match `params.length`).
+export fn eval_fn_with_resolved_args(runtime: Runtime, params: ParamList, body: StmtList, arg_values: List<Value>) -> StepResult {
+    let call_env = enter_scope(runtime)
+    let bound_env = bind_params(call_env, params, arg_values)
+    let body_result = execute_stmt_list(bound_env, body)
+    let restored = exit_scope(body_result.runtime)
+    if body_result.had_error {
+        return StepResult {
+            runtime: restored,
+            value: value_null(),
+            had_error: true,
+            is_return: false,
+            error_message: body_result.error_message,
+        }
+    }
+    ok_result(restored, body_result.value)
+}
+
+/// Convert a list of literal-Expr args into Value form, ready for
+/// `eval_fn_with_resolved_args`. Returns null when any arg isn't a
+/// literal — caller treats null as "can't fold, leave the call alone".
+/// Replaces an explicit `all_args_literal` pre-check + per-arg
+/// `eval_expr` round-trip.
+export fn literal_args_to_values(args: ExprList) -> List<Value>? {
+    mut out: List<Value> = []
+    mut cur = args
+    mut keep_going = true
+    while keep_going {
+        match cur {
+            .End -> { keep_going = false }
+            .Node(arg, next) -> {
+                let v = literal_expr_to_value(arg.node)
+                if v == null { return null }
+                out.push(v!)
+                cur = next
+            }
+        }
+    }
+    out
+}
+
+/// Convert a single literal Expr to a Value, or null if the Expr
+/// isn't a literal shape eval can represent directly.
+fn literal_expr_to_value(e: Expr) -> Value? {
+    match e {
+        .Number(text) -> value_number(render_number(parse_num(text)))
+        .String(text) -> value_string(unquote_string(text))
+        .Bool(text) -> value_bool(text == "true")
+        .Null -> value_null()
+        _ -> null
+    }
+}
+
 /// Construct a fresh evaluator runtime — empty bindings + fns,
 /// depth zero, full feature registry. Public so external callers
 /// (e.g. compile-time evaluator in features/comptime) can build a
