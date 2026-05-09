@@ -162,7 +162,27 @@ fn construct_expr(e: Expr) -> Expr {
         .NullCoalesce(l, r) -> ctor("@std::avrac::core::Expr", "NullCoalesce", two_args(construct_expr(l), construct_expr(r)))
         .OptionalChain(obj, field) -> ctor("@std::avrac::core::Expr", "OptionalChain", two_args(construct_expr(obj), string_lit_expr(field)))
         .Try(inner) -> ctor("@std::avrac::core::Expr", "Try", one_arg(construct_expr(inner)))
+        .FloatLit(v) -> ctor("@std::avrac::core::Expr", "FloatLit", string_arg(v))
+        .StructLit(name, inits) -> ctor("@std::avrac::core::Expr", "StructLit", two_args(string_lit_expr(name), construct_field_init_list(inits)))
+        .EnumCtor(type_name, variant, args) -> ctor("@std::avrac::core::Expr", "EnumCtor", three_args(string_lit_expr(type_name), string_lit_expr(variant), construct_expr_list(args)))
+        .When(_) -> e
         _ -> e
+    }
+}
+
+/// Build an Expr that, when evaluated, produces a FieldInitList AST
+/// value. Mirrors construct_expr_list's shape since both are linked
+/// lists with payload + tail.
+fn construct_field_init_list(list: FieldInitList) -> Expr {
+    match list {
+        .End -> Expr.EnumCtor("@std::avrac::core::FieldInitList", "End", ExprList.End)
+        .Node(name, se, next) -> Expr.EnumCtor(
+            "@std::avrac::core::FieldInitList",
+            "Node",
+            ExprList.Node(sexpr_dummy(string_lit_expr(name)),
+              ExprList.Node(sexpr_dummy(construct_sexpr(se)),
+                ExprList.Node(sexpr_dummy(construct_field_init_list(next)), ExprList.End)))
+        )
     }
 }
 

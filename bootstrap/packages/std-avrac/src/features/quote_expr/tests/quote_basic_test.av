@@ -131,3 +131,25 @@ spec "quote: null safety" {
         render_expr(e) == "(? fallible)"
     }
 }
+
+spec "quote: float literal" {
+    then "simple float" {
+        let e = quote { 3.14 }
+        render_expr(e) == "3.14"
+    }
+}
+
+spec "quote: struct literal" {
+    then "single field" {
+        let e = quote { Point { x: 1 } }
+        render_expr(e) == "(struct Point (x=1))"
+    }
+    then "two fields" {
+        let e = quote { Point { x: 1, y: 2 } }
+        render_expr(e) == "(struct Point (x=1, y=2))"
+    }
+    then "three fields" {
+        let e = quote { Point3 { x: 1, y: 2, z: 3 } }
+        render_expr(e) == "(struct Point3 (x=1, y=2, z=3))"
+    }
+}
