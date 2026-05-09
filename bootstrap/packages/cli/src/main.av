@@ -84,6 +84,7 @@ use @std.avrac.build.{
 }
 use @std.avrac.typeck.{typecheck_program}
 use @std.avrac.features.comptime.{run_comptime}
+use @std.avrac.features.quote_expr.{lower_quotes}
 use @std.avrac.diagnostics.{bag_has_errors, bag_has_warnings, bag_new, bag_report, diag_error, diag_ice, span_dummy, DiagCode, DiagnosticBag}
 use @std.avrac.diagnostics.{render_bag, render_bag_json}
 use @std.avrac.codegen.{compile_program, codegen_and_emit_object, codegen_and_emit_ir_cov}
@@ -1795,8 +1796,11 @@ fn run_test_command() {
         program
     )
 
-    // Step 4: Full pipeline
-    let desugared = desugar_program(program)
+    // Step 4: Full pipeline. Quote lowering runs first so identifiers
+    // inside `quote { … }` bodies aren't seen by resolve as runtime
+    // references — they're captured as string-typed AST literals.
+    let post_quote = lower_quotes(program)
+    let desugared = desugar_program(post_quote)
     let expanded = expand_components(desugared)
     let named = resolve_names(expanded)
     if bag_has_errors(named.bag) || named.had_error {
@@ -2301,7 +2305,8 @@ fn main() {
             if check_pkg.found && !check_json {
                 eprintln("[pkg] ${check_pkg.name} v${check_pkg.version}")
             }
-            let desugared = desugar_program(parsed.stmts!)
+            let post_quote = lower_quotes(parsed.stmts!)
+            let desugared = desugar_program(post_quote)
             let entry_dir = modules_dirname(check_path)
             let mod_resolved = resolve_module_files(desugared, entry_dir, LoadedPaths.End)
             if mod_resolved.had_error {
@@ -2379,7 +2384,8 @@ fn main() {
                 }
                 fail(parsed.error_message)
             }
-            let desugared = desugar_program(parsed.stmts!)
+            let post_quote = lower_quotes(parsed.stmts!)
+            let desugared = desugar_program(post_quote)
             let entry_dir = modules_dirname(path)
             let mod_resolved = resolve_module_files(desugared, entry_dir, LoadedPaths.End)
             if mod_resolved.had_error {
@@ -2500,8 +2506,13 @@ fn main() {
         } else {
             parsed.stmts!
         }
+        // Quote lowering: convert `quote { … }` into AST-construction
+        // expressions BEFORE desugar/resolve so identifiers inside quote
+        // bodies are captured as string-typed AST literals (not seen by
+        // resolve as undefined references).
+        let post_quote_stmts = lower_quotes(pre_desugar_stmts)
         // Desugar pass: rewrite syntactic sugar to simpler AST forms.
-        let desugared = desugar_program(pre_desugar_stmts)
+        let desugared = desugar_program(post_quote_stmts)
         let t_desugar = avra_uptime_ms()
         // Resolve module files: walk the AST, find `mod` stubs, read
         // and parse the referenced files, attach parsed bodies.

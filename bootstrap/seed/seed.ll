@@ -32539,8 +32539,7 @@ march_arm4:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next5:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn, i64 %tag, ptr @mu_file, i64 425)
-  unreachable
+  ret ptr null
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -32789,8 +32788,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.237, i64 %tag, ptr @mu_file.238, i64 478)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::lsp::sym_list_len"(ptr %0) {
@@ -32850,8 +32849,7 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.239, i64 %tag, ptr @mu_file.240, i64 491)
-  unreachable
+  ret i64 0
 }
 
 define ptr @"@std::lsp::sym_list_find"(ptr %0, ptr %1) {
@@ -32916,8 +32914,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.241, i64 %tag, ptr @mu_file.242, i64 511)
-  unreachable
+  ret ptr null
 
 ifcont:                                           ; preds = %if_else
   %next13 = load ptr, ptr %next9, align 8
@@ -33072,8 +33069,7 @@ march_arm6:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next7:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.258, i64 %tag, ptr @mu_file.259, i64 550)
-  unreachable
+  ret ptr null
 
 ifcont:                                           ; preds = %if_else, %if_then
   %next25 = load ptr, ptr %next12, align 8
@@ -33257,8 +33253,7 @@ march_arm6:                                       ; preds = %march_next
   br label %match_end
 
 march_next7:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.267, i64 %tag, ptr @mu_file.268, i64 586)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::lsp::sym_list_concat"(ptr %0, ptr %1) {
@@ -33332,8 +33327,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.269, i64 %tag, ptr @mu_file.270, i64 605)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::lsp::sym_kind_render"(ptr %0) {
@@ -33722,8 +33717,8 @@ march_arm167:                                     ; preds = %march_next160
   br label %match_end
 
 march_next168:                                    ; preds = %march_next160
-  call void @avra_match_unreachable(ptr @.match_fn.287, i64 %tag, ptr @mu_file.288, i64 616)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::lsp::sym_kind_tag"(ptr %0) {
@@ -33828,8 +33823,8 @@ march_arm29:                                      ; preds = %march_next27
   br label %match_end
 
 march_next30:                                     ; preds = %march_next27
-  call void @avra_match_unreachable(ptr @.match_fn.300, i64 %tag, ptr @mu_file.301, i64 633)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::lsp::empty_corpus_new"() {
@@ -34117,8 +34112,7 @@ march_arm6:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next7:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.307, i64 %tag, ptr @mu_file.308, i64 840)
-  unreachable
+  ret ptr null
 
 ifcont:                                           ; preds = %if_else, %if_then
   %next25 = load ptr, ptr %next12, align 8
@@ -34274,8 +34268,7 @@ march_arm5:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_rhs, label %sc_short
 
 march_next6:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.321, i64 %tag, ptr @mu_file.322, i64 874)
-  unreachable
+  ret ptr null
 
 sc_rhs:                                           ; preds = %march_arm5
   %out15 = load ptr, ptr %out, align 8
@@ -34424,8 +34417,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.332, i64 %tag, ptr @mu_file.333, i64 896)
-  unreachable
+  ret i1 0
 
 ifcont:                                           ; preds = %if_else
   %next21 = load ptr, ptr %next9, align 8
@@ -34534,8 +34526,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_rhs, label %sc_short
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.349, i64 %tag, ptr @mu_file.350, i64 929)
-  unreachable
+  ret ptr null
 
 sc_rhs:                                           ; preds = %march_arm3
   %item13 = load ptr, ptr %item6, align 8
@@ -34998,8 +34989,7 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.402, i64 %tag, ptr @mu_file.403, i64 995)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::lsp::query_symbols"(ptr %0, ptr %1) {
@@ -35077,8 +35067,8 @@ march_arm11:                                      ; preds = %march_next4
   br label %match_end
 
 march_next12:                                     ; preds = %march_next4
-  call void @avra_match_unreachable(ptr @.match_fn.407, i64 %tag, ptr @mu_file.408, i64 1014)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::lsp::filter_by_file"(ptr %0, ptr %1) {
@@ -35539,8 +35529,7 @@ march_arm4:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next5:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.416, i64 %tag, ptr @mu_file.417, i64 1160)
-  unreachable
+  ret ptr null
 
 ifcont:                                           ; preds = %if_else, %if_then
   %next17 = load ptr, ptr %next10, align 8
@@ -35675,8 +35664,7 @@ march_arm6:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next7:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.418, i64 %tag, ptr @mu_file.419, i64 1198)
-  unreachable
+  ret ptr null
 
 ifcont:                                           ; preds = %if_else, %if_then
   %next29 = load ptr, ptr %next12, align 8
@@ -35798,8 +35786,7 @@ march_arm6:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next7:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.423, i64 %tag, ptr @mu_file.424, i64 1222)
-  unreachable
+  ret ptr null
 
 ifcont:                                           ; preds = %if_else, %if_then
   %next25 = load ptr, ptr %next12, align 8
@@ -35908,8 +35895,7 @@ march_arm6:                                       ; preds = %march_next
   br label %match_end
 
 march_next7:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.425, i64 %tag, ptr @mu_file.426, i64 1245)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::lsp::scored_insert"(ptr %0, ptr %1) {
@@ -36002,8 +35988,8 @@ march_arm11:                                      ; preds = %march_next
   br i1 %l_bool, label %sc_short, label %sc_rhs
 
 march_next12:                                     ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.445, i64 %tag, ptr @mu_file.446, i64 1263)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm11
   %item26 = load ptr, ptr %item, align 8
@@ -36230,8 +36216,8 @@ march_arm8:                                       ; preds = %march_next
   br label %match_end
 
 march_next9:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.447, i64 %tag, ptr @mu_file.448, i64 1281)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::lsp::scored_to_strs"(ptr %0) {
@@ -36312,8 +36298,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.452, i64 %tag, ptr @mu_file.453, i64 1290)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::lsp::fuzzy_search_syms"(ptr %0, ptr %1, i64 %2) {
@@ -36422,8 +36408,7 @@ march_arm6:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next7:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.457, i64 %tag, ptr @mu_file.458, i64 1333)
-  unreachable
+  ret ptr null
 
 ifcont:                                           ; preds = %if_else, %if_then
   %next30 = load ptr, ptr %next12, align 8
@@ -36540,8 +36525,7 @@ march_arm6:                                       ; preds = %march_next
   br label %match_end
 
 march_next7:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.459, i64 %tag, ptr @mu_file.460, i64 1357)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::lsp::scored_sym_insert"(ptr %0, ptr %1) {
@@ -36634,8 +36618,8 @@ march_arm11:                                      ; preds = %march_next
   br i1 %l_bool, label %sc_short, label %sc_rhs
 
 march_next12:                                     ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.485, i64 %tag, ptr @mu_file.486, i64 1375)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm11
   %item26 = load ptr, ptr %item, align 8
@@ -36874,8 +36858,8 @@ march_arm8:                                       ; preds = %march_next
   br label %match_end
 
 march_next9:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.487, i64 %tag, ptr @mu_file.488, i64 1393)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 declare i64 @avra_file_mtime(ptr)
@@ -37039,8 +37023,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.499, i64 %tag, ptr @mu_file.500, i64 1476)
-  unreachable
+  ret ptr null
 
 ifcont:                                           ; preds = %if_else
   %next14 = load ptr, ptr %next9, align 8
@@ -37282,8 +37265,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.519, i64 %tag, ptr @mu_file.520, i64 1520)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm3
   %next14 = load ptr, ptr %next9, align 8
@@ -37579,8 +37562,7 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.545, i64 %tag, ptr @mu_file.546, i64 1554)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::lsp::encode_syms"(ptr %0) {
@@ -37672,8 +37654,7 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.549, i64 %tag, ptr @mu_file.550, i64 1575)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::lsp::encode_sym"(ptr %0) {
@@ -37950,8 +37931,7 @@ parm_body6:                                       ; preds = %parm_next3
   br label %pmatch_end
 
 parm_next7:                                       ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.590, i64 -1, ptr @mu_file.591, i64 1606)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::lsp::escape_field"(ptr %0) {
@@ -38073,8 +38053,7 @@ parm_body6:                                       ; preds = %parm_next3
   br label %pmatch_end
 
 parm_next7:                                       ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.597, i64 -1, ptr @mu_file.598, i64 1637)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::lsp::unescape_field"(ptr %0) {
@@ -38578,8 +38557,7 @@ march_arm6:                                       ; preds = %march_next
   br label %match_end
 
 march_next7:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.605, i64 %tag, ptr @mu_file.606, i64 1719)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::lsp::decode_file_row"(ptr %0) {
@@ -38995,8 +38973,7 @@ parm_body92:                                      ; preds = %parm_next86
   br label %pmatch_end
 
 parm_next93:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.626, i64 -1, ptr @mu_file.627, i64 1768)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::lsp::strip_kind_prefix"(ptr %0, ptr %1) {
@@ -39303,8 +39280,7 @@ parm_body18:                                      ; preds = %parm_next15
   br label %pmatch_end
 
 parm_next19:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.647, i64 -1, ptr @mu_file.648, i64 1888)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::lsp::json_escape"(ptr %0) {
@@ -39820,8 +39796,7 @@ parm_body18:                                      ; preds = %parm_next15
   br label %pmatch_end
 
 parm_next19:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.676, i64 -1, ptr @mu_file.677, i64 1949)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::lsp::json_extract_string"(ptr %0, ptr %1) {
@@ -40599,8 +40574,7 @@ march_arm5:                                       ; preds = %march_next
   br i1 %first12, label %if_then, label %if_else
 
 march_next6:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.735, i64 %tag, ptr @mu_file.736, i64 2019)
-  unreachable
+  ret ptr null
 
 ifcont:                                           ; preds = %if_else, %if_then
   %next35 = load ptr, ptr %next11, align 8
@@ -40838,8 +40812,7 @@ parm_body66:                                      ; preds = %parm_next59
   br label %pmatch_end
 
 parm_next67:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.752, i64 -1, ptr @mu_file.753, i64 2060)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::lsp::lsp_initialize_result"() {
@@ -41342,8 +41315,7 @@ march_arm5:                                       ; preds = %march_next
   br i1 %first12, label %if_then, label %if_else
 
 march_next6:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.798, i64 %tag, ptr @mu_file.799, i64 2168)
-  unreachable
+  ret ptr null
 
 ifcont:                                           ; preds = %if_else, %if_then
   %next41 = load ptr, ptr %next11, align 8
@@ -41653,8 +41625,7 @@ march_arm5:                                       ; preds = %march_next
   br i1 %first91, label %if_then, label %if_else
 
 march_next6:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.827, i64 %tag, ptr @mu_file.828, i64 2195)
-  unreachable
+  ret ptr null
 
 ifcont:                                           ; preds = %if_else, %if_then
   %next114 = load ptr, ptr %next11, align 8
@@ -42352,8 +42323,7 @@ parm_body18:                                      ; preds = %parm_next15
   br label %pmatch_end
 
 parm_next19:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.860, i64 -1, ptr @mu_file.861, i64 28)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::json::json_unescape_char"(ptr %0) {
@@ -42427,8 +42397,7 @@ parm_body18:                                      ; preds = %parm_next15
   br label %pmatch_end
 
 parm_next19:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.872, i64 -1, ptr @mu_file.873, i64 42)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::json::json_escape"(ptr %0) {
@@ -46191,8 +46160,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.954, i64 %tag, ptr @mu_file.955, i64 26)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end15:                                      ; preds = %march_arm21, %march_arm16
   %match_val = load i64, ptr %match_result14, align 8
@@ -46232,8 +46201,8 @@ march_arm21:                                      ; preds = %march_next17
   br label %match_end15
 
 march_next22:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.952, i64 %tag13, ptr @mu_file.953, i64 30)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::test_runner::prepend_test_externs"(ptr %0) {
@@ -46560,8 +46529,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.966, i64 %tag, ptr @mu_file.967, i64 76)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::type_registry_new"() {
@@ -47406,8 +47375,7 @@ march_arm21:                                      ; preds = %march_next
   ret i1 false
 
 march_next22:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.1032, i64 %tag, ptr @mu_file.1033, i64 233)
-  unreachable
+  ret i1 0
 
 sc_rhs:                                           ; preds = %match_end
   %err38 = load i1, ptr %err, align 8
@@ -47504,8 +47472,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @avra_match_unreachable(ptr @.match_fn.1042, i64 %tag, ptr @mu_file.1043, i64 242)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 declare i64 @avra_selfhost_argc()
@@ -50492,8 +50460,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @avra_match_unreachable(ptr @.match_fn.1347, i64 %tag, ptr @mu_file.1348, i64 140)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::render_type_param_list"(ptr %0) {
@@ -50562,8 +50530,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1354, i64 %tag, ptr @mu_file.1355, i64 149)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -51157,8 +51125,7 @@ parm_body190:                                     ; preds = %parm_next177
   br label %pmatch_end
 
 parm_next191:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.1377, i64 -1, ptr @mu_file.1378, i64 311)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::avrac::core::type_expr_to_vtype"(ptr %0) {
@@ -51386,8 +51353,8 @@ march_arm66:                                      ; preds = %march_next54
   br i1 %str_eq, label %parm_body, label %parm_next
 
 march_next67:                                     ; preds = %march_next54
-  call void @avra_match_unreachable(ptr @.match_fn.1385, i64 %tag, ptr @mu_file.1386, i64 341)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 pmatch_end:                                       ; preds = %parm_body115, %parm_body104, %match_end80
   %pmatch_val = load i64, ptr %pmatch_result, align 8
@@ -51457,8 +51424,8 @@ march_arm89:                                      ; preds = %march_next82
   br label %match_end80
 
 march_next90:                                     ; preds = %march_next82
-  call void @avra_match_unreachable(ptr @.match_fn.1380, i64 %tag78, ptr @mu_file.1381, i64 358)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 parm_body104:                                     ; preds = %parm_next
   %22 = call ptr @avra_rc_alloc(i64 16)
@@ -51507,8 +51474,8 @@ parm_body115:                                     ; preds = %parm_next105
   br label %pmatch_end
 
 parm_next116:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.1383, i64 -1, ptr @mu_file.1384, i64 355)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::tel_to_type_list"(ptr %0) {
@@ -51584,8 +51551,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1387, i64 %tag, ptr @mu_file.1388, i64 371)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::core::type_expr_list_length"(ptr %0) {
@@ -51629,8 +51596,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1389, i64 %tag, ptr @mu_file.1390, i64 379)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::type_expr_list_append"(ptr %0, ptr %1) {
@@ -51725,8 +51692,8 @@ march_arm11:                                      ; preds = %march_next
   br label %match_end
 
 march_next12:                                     ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1391, i64 %tag, ptr @mu_file.1392, i64 385)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::core::vtype_names_match"(ptr %0, ptr %1) {
@@ -52148,8 +52115,8 @@ march_arm146:                                     ; preds = %march_next130
   br label %match_end128
 
 march_next147:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.1395, i64 %tag126, ptr @mu_file.1396, i64 418)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm148:                                     ; preds = %march_next118
   %pay_slot151 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %a1, i32 0, i32 1
@@ -52261,8 +52228,8 @@ march_arm218:                                     ; preds = %march_next171
   br label %match_end169
 
 march_next219:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.1397, i64 %tag167, ptr @mu_file.1398, i64 418)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm221:                                     ; preds = %march_next149
   %b224 = load ptr, ptr %b, align 8
@@ -52327,8 +52294,8 @@ march_arm251:                                     ; preds = %march_next249
   br label %match_end244
 
 march_next252:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.1399, i64 %tag242, ptr @mu_file.1400, i64 418)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm254:                                     ; preds = %march_next238
   %pay_slot257 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %a1, i32 0, i32 1
@@ -52381,8 +52348,8 @@ march_arm284:                                     ; preds = %march_next270
   br label %match_end268
 
 march_next285:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.1401, i64 %tag266, ptr @mu_file.1402, i64 418)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm287:                                     ; preds = %march_next255
   %b290 = load ptr, ptr %b, align 8
@@ -52413,8 +52380,8 @@ march_arm298:                                     ; preds = %march_next296
   br label %match_end294
 
 march_next299:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.1403, i64 %tag292, ptr @mu_file.1404, i64 418)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm301:                                     ; preds = %march_next288
   %b304 = load ptr, ptr %b, align 8
@@ -52445,8 +52412,8 @@ march_arm312:                                     ; preds = %march_next310
   br label %match_end308
 
 march_next313:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.1405, i64 %tag306, ptr @mu_file.1406, i64 418)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm315:                                     ; preds = %march_next302
   %pay_slot318 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %a1, i32 0, i32 1
@@ -52497,8 +52464,8 @@ march_arm335:                                     ; preds = %march_next327
   br label %match_end325
 
 march_next336:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.1407, i64 %tag323, ptr @mu_file.1408, i64 418)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm338:                                     ; preds = %march_next316
   %pay_slot341 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %a1, i32 0, i32 1
@@ -52551,8 +52518,8 @@ march_arm368:                                     ; preds = %march_next354
   br label %match_end352
 
 march_next369:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.1409, i64 %tag350, ptr @mu_file.1410, i64 418)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm371:                                     ; preds = %march_next339
   %pay_slot374 = getelementptr inbounds nuw %"@std::avrac::core::ValueType", ptr %a1, i32 0, i32 1
@@ -52649,8 +52616,8 @@ march_arm414:                                     ; preds = %march_next386
   br label %match_end384
 
 march_next415:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.1411, i64 %tag382, ptr @mu_file.1412, i64 418)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm417:                                     ; preds = %march_next372
   %b420 = load ptr, ptr %b, align 8
@@ -52682,8 +52649,8 @@ march_arm433:                                     ; preds = %march_next426
   br label %match_end
 
 march_next434:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.1413, i64 %tag, ptr @mu_file.1414, i64 418)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::core::type_lists_eq"(ptr %0, ptr %1) {
@@ -52748,8 +52715,8 @@ march_arm5:                                       ; preds = %march_next
   br i1 %tag_eq19, label %march_arm17, label %march_next18
 
 march_next6:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1417, i64 %tag, ptr @mu_file.1418, i64 456)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end16:                                      ; preds = %sc_merge, %march_arm17
   %match_val = load i64, ptr %match_result15, align 8
@@ -52789,8 +52756,8 @@ march_arm20:                                      ; preds = %march_next18
   br i1 %l_bool, label %sc_rhs, label %sc_short
 
 march_next21:                                     ; preds = %march_next18
-  call void @avra_match_unreachable(ptr @.match_fn.1415, i64 %tag14, ptr @mu_file.1416, i64 456)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm20
   %next_a31 = load ptr, ptr %next_a11, align 8
@@ -52891,8 +52858,8 @@ march_arm15:                                      ; preds = %march_next
   br label %match_end
 
 march_next16:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.1419, i64 %tag, ptr @mu_file.1420, i64 473)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::core::narrowed_assignable_to"(ptr %0, ptr %1) {
@@ -53087,8 +53054,8 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.1424, i64 %tag, ptr @mu_file.1425, i64 504)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::core::vtype_is_map"(ptr %0) {
@@ -53149,8 +53116,8 @@ march_arm8:                                       ; preds = %march_next6
   br label %match_end
 
 march_next9:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.1426, i64 %tag, ptr @mu_file.1427, i64 512)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::vtype_fn_ret"(ptr %0) {
@@ -53237,8 +53204,8 @@ march_arm28:                                      ; preds = %march_next17
   br label %match_end
 
 march_next29:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.1428, i64 %tag, ptr @mu_file.1429, i64 517)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::vtype_fn_params"(ptr %0) {
@@ -53287,8 +53254,8 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.1430, i64 %tag, ptr @mu_file.1431, i64 523)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::core::vtype_closure_captures"(ptr %0) {
@@ -53328,8 +53295,8 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.1432, i64 %tag, ptr @mu_file.1433, i64 529)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::core::vtype_is_closure"(ptr %0) {
@@ -53385,8 +53352,8 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.1435, i64 %tag, ptr @mu_file.1436, i64 538)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::vtype_enum_name"(ptr %0) {
@@ -53448,8 +53415,8 @@ march_arm16:                                      ; preds = %march_next5
   br label %match_end
 
 march_next17:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.1438, i64 %tag, ptr @mu_file.1439, i64 543)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::vtype_narrowed_variant"(ptr %0) {
@@ -53492,8 +53459,8 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.1441, i64 %tag, ptr @mu_file.1442, i64 548)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::vtype_display"(ptr %0) {
@@ -53930,8 +53897,8 @@ march_arm158:                                     ; preds = %march_next156
   br label %match_end
 
 march_next159:                                    ; preds = %march_next156
-  call void @avra_match_unreachable(ptr @.match_fn.1468, i64 %tag, ptr @mu_file.1469, i64 555)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::render_union_display"(ptr %0) {
@@ -53993,8 +53960,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1473, i64 %tag, ptr @mu_file.1474, i64 589)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   %ty11 = load ptr, ptr %ty5, align 8
@@ -54610,8 +54577,8 @@ march_arm222:                                     ; preds = %march_next220
   br label %match_end
 
 march_next223:                                    ; preds = %march_next220
-  call void @avra_match_unreachable(ptr @.match_fn.1505, i64 %tag, ptr @mu_file.1506, i64 608)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::render_type_list_full"(ptr %0) {
@@ -54673,8 +54640,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1510, i64 %tag, ptr @mu_file.1511, i64 646)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   %ty11 = load ptr, ptr %ty5, align 8
@@ -54778,8 +54745,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1515, i64 %tag, ptr @mu_file.1516, i64 663)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   %ty11 = load ptr, ptr %ty5, align 8
@@ -54864,8 +54831,8 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.1518, i64 %tag, ptr @mu_file.1519, i64 679)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::core::vtype_is_union"(ptr %0) {
@@ -54940,8 +54907,8 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.1520, i64 %tag, ptr @mu_file.1521, i64 690)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::vtype_newtype_name"(ptr %0) {
@@ -54984,8 +54951,8 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.1523, i64 %tag, ptr @mu_file.1524, i64 695)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::vtype_union_types"(ptr %0) {
@@ -55034,8 +55001,8 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.1525, i64 %tag, ptr @mu_file.1526, i64 700)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::core::union_contains"(ptr %0, ptr %1) {
@@ -55093,8 +55060,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1527, i64 %tag, ptr @mu_file.1528, i64 706)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -55189,8 +55156,8 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.1529, i64 %tag, ptr @mu_file.1530, i64 716)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end21:                                      ; preds = %march_arm34, %march_arm22
   %match_val50 = load i64, ptr %match_result20, align 8
@@ -55246,8 +55213,8 @@ march_arm34:                                      ; preds = %march_next23
   br label %match_end21
 
 march_next35:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.1531, i64 %tag19, ptr @mu_file.1532, i64 720)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::type_list_concat"(ptr %0, ptr %1) {
@@ -55321,8 +55288,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1533, i64 %tag, ptr @mu_file.1534, i64 729)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::core::type_list_len"(ptr %0) {
@@ -55366,8 +55333,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1535, i64 %tag, ptr @mu_file.1536, i64 737)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::type_list_at"(ptr %0, i64 %1) {
@@ -55430,8 +55397,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1537, i64 %tag, ptr @mu_file.1538, i64 747)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -55744,8 +55711,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1549, i64 %tag, ptr @mu_file.1550, i64 774)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   %ty11 = load ptr, ptr %ty5, align 8
@@ -55840,8 +55807,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.1551, i64 %tag, ptr @mu_file.1552, i64 791)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::typelist_at"(ptr %0, i64 %1) {
@@ -55922,8 +55889,8 @@ march_arm10:                                      ; preds = %march_next4
   br label %match_end
 
 march_next11:                                     ; preds = %march_next4
-  call void @avra_match_unreachable(ptr @.match_fn.1553, i64 %tag, ptr @mu_file.1554, i64 799)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::binop_str"(ptr %0) {
@@ -56068,8 +56035,8 @@ march_arm44:                                      ; preds = %march_next42
   br label %match_end
 
 march_next45:                                     ; preds = %march_next42
-  call void @avra_match_unreachable(ptr @.match_fn.1571, i64 %tag, ptr @mu_file.1572, i64 833)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::unop_str"(ptr %0) {
@@ -56110,8 +56077,8 @@ march_arm5:                                       ; preds = %march_next3
   br label %match_end
 
 march_next6:                                      ; preds = %march_next3
-  call void @avra_match_unreachable(ptr @.match_fn.1576, i64 %tag, ptr @mu_file.1577, i64 855)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::logicop_str"(ptr %0) {
@@ -56144,8 +56111,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1580, i64 %tag, ptr @mu_file.1581, i64 864)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::stmt_unwrap"(ptr %0) {
@@ -56191,8 +56158,8 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.1582, i64 %tag, ptr @mu_file.1583, i64 1103)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::find_annotation"(ptr %0, ptr %1) {
@@ -56267,8 +56234,8 @@ march_arm12:                                      ; preds = %march_next
   br label %match_end
 
 march_next13:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.1584, i64 %tag, ptr @mu_file.1585, i64 1115)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::doc_string_for"(ptr %0) {
@@ -56364,8 +56331,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1588, i64 %tag, ptr @mu_file.1589, i64 1142)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   %3 = call ptr @avra_rc_alloc(i64 16)
@@ -56460,8 +56427,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq13, label %march_arm11, label %march_next12
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1600, i64 %tag, ptr @mu_file.1601, i64 1159)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end10:                                      ; preds = %match_end24, %march_arm11
   %match_val35 = load i64, ptr %match_result9, align 8
@@ -56499,8 +56466,8 @@ march_arm14:                                      ; preds = %march_next12
   br i1 %tag_eq27, label %march_arm25, label %march_next26
 
 march_next15:                                     ; preds = %march_next12
-  call void @avra_match_unreachable(ptr @.match_fn.1598, i64 %tag8, ptr @mu_file.1599, i64 1163)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end24:                                      ; preds = %march_arm33, %march_arm25
   %match_val = load i64, ptr %match_result23, align 8
@@ -56530,8 +56497,8 @@ march_arm33:                                      ; preds = %march_next26
   br label %match_end24
 
 march_next34:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.1596, i64 %tag22, ptr @mu_file.1597, i64 1167)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::strip_quotes"(ptr %0) {
@@ -56771,8 +56738,8 @@ march_arm27:                                      ; preds = %march_next9
   br label %match_end
 
 march_next28:                                     ; preds = %march_next9
-  call void @avra_match_unreachable(ptr @.match_fn.1604, i64 %tag, ptr @mu_file.1605, i64 1219)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::env_extend"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -56926,8 +56893,8 @@ march_arm24:                                      ; preds = %march_next6
   br label %match_end
 
 march_next25:                                     ; preds = %march_next6
-  call void @avra_match_unreachable(ptr @.match_fn.1606, i64 %tag, ptr @mu_file.1607, i64 1255)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::fn_env_extend"(ptr %0, ptr %1, ptr %2, i64 %3) {
@@ -57012,8 +56979,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1608, i64 %tag, ptr @mu_file.1609, i64 1273)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::core::expr_list_length"(ptr %0) {
@@ -57057,8 +57024,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1610, i64 %tag, ptr @mu_file.1611, i64 1281)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::core::field_list_length"(ptr %0) {
@@ -57102,8 +57069,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1612, i64 %tag, ptr @mu_file.1613, i64 1289)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::core::field_list_has"(ptr %0, ptr %1) {
@@ -57178,8 +57145,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @avra_match_unreachable(ptr @.match_fn.1614, i64 %tag, ptr @mu_file.1615, i64 1298)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::filter_fields_without"(ptr %0, ptr %1) {
@@ -57309,8 +57276,8 @@ march_arm15:                                      ; preds = %march_next4
   br label %match_end
 
 march_next16:                                     ; preds = %march_next4
-  call void @avra_match_unreachable(ptr @.match_fn.1616, i64 %tag, ptr @mu_file.1617, i64 1308)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::filter_fields_only"(ptr %0, ptr %1) {
@@ -57431,8 +57398,8 @@ march_arm28:                                      ; preds = %march_next4
   br label %match_end
 
 march_next29:                                     ; preds = %march_next4
-  call void @avra_match_unreachable(ptr @.match_fn.1618, i64 %tag, ptr @mu_file.1619, i64 1318)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::core::field_init_length"(ptr %0) {
@@ -57476,8 +57443,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1620, i64 %tag, ptr @mu_file.1621, i64 1327)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::core::field_index_of"(ptr %0, ptr %1) {
@@ -57567,8 +57534,8 @@ march_arm9:                                       ; preds = %march_next3
   br label %match_end
 
 march_next10:                                     ; preds = %march_next3
-  call void @avra_match_unreachable(ptr @.match_fn.1622, i64 %tag, ptr @mu_file.1623, i64 1342)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::core::variant_list_length"(ptr %0) {
@@ -57612,8 +57579,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1624, i64 %tag, ptr @mu_file.1625, i64 1351)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 declare i64 @avra_variant_hash(ptr)
@@ -57737,8 +57704,8 @@ march_arm22:                                      ; preds = %march_next8
   br label %match_end
 
 march_next23:                                     ; preds = %march_next8
-  call void @avra_match_unreachable(ptr @.match_fn.1626, i64 %tag, ptr @mu_file.1627, i64 1376)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::core::variant_max_payload"(ptr %0) {
@@ -57802,8 +57769,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1628, i64 %tag, ptr @mu_file.1629, i64 1388)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   %here13 = load i64, ptr %here, align 8
@@ -57910,8 +57877,8 @@ march_arm14:                                      ; preds = %march_next4
   br label %match_end
 
 march_next15:                                     ; preds = %march_next4
-  call void @avra_match_unreachable(ptr @.match_fn.1630, i64 %tag, ptr @mu_file.1631, i64 1406)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::render_expr"(ptr %0) {
@@ -60473,8 +60440,8 @@ march_arm1315:                                    ; preds = %march_next1292
   br label %match_end
 
 march_next1316:                                   ; preds = %march_next1292
-  call void @avra_match_unreachable(ptr @.match_fn.1731, i64 %tag, ptr @mu_file.1732, i64 1418)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::render_when_arm_list"(ptr %0) {
@@ -60539,8 +60506,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1743, i64 %tag, ptr @mu_file.1744, i64 1463)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -60753,8 +60720,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1752, i64 %tag, ptr @mu_file.1753, i64 1475)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::render_field_init_tail"(ptr %0) {
@@ -60870,8 +60837,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1760, i64 %tag, ptr @mu_file.1761, i64 1489)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::render_field_list"(ptr %0) {
@@ -60998,8 +60965,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1766, i64 %tag, ptr @mu_file.1767, i64 1497)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::render_field_list_tail"(ptr %0) {
@@ -61109,8 +61076,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1771, i64 %tag, ptr @mu_file.1772, i64 1510)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::render_type_name_list"(ptr %0) {
@@ -61172,8 +61139,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1776, i64 %tag, ptr @mu_file.1777, i64 1518)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   %name11 = load ptr, ptr %name5, align 8
@@ -61314,8 +61281,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1784, i64 %tag, ptr @mu_file.1785, i64 1530)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::render_expr_list_tail"(ptr %0) {
@@ -61399,8 +61366,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1791, i64 %tag, ptr @mu_file.1792, i64 1543)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::render_param_list"(ptr %0) {
@@ -61491,8 +61458,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1796, i64 %tag, ptr @mu_file.1797, i64 1551)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::render_param_list_tail"(ptr %0) {
@@ -61569,8 +61536,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1800, i64 %tag, ptr @mu_file.1801, i64 1563)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::render_stmt"(ptr %0) {
@@ -64465,8 +64432,8 @@ march_arm1485:                                    ; preds = %march_next1422
   br label %match_end
 
 march_next1486:                                   ; preds = %march_next1422
-  call void @avra_match_unreachable(ptr @.match_fn.1924, i64 %tag, ptr @mu_file.1925, i64 1572)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::render_annotation_list"(ptr %0) {
@@ -64554,8 +64521,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1929, i64 %tag, ptr @mu_file.1930, i64 1639)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::render_variant_list"(ptr %0) {
@@ -64671,8 +64638,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1934, i64 %tag, ptr @mu_file.1935, i64 1647)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::render_variant_tail"(ptr %0) {
@@ -64771,8 +64738,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1938, i64 %tag, ptr @mu_file.1939, i64 1660)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::render_pattern"(ptr %0) {
@@ -64971,8 +64938,8 @@ march_arm73:                                      ; preds = %march_next44
   br label %match_end
 
 march_next74:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.1946, i64 %tag, ptr @mu_file.1947, i64 1668)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::core::render_match_arm_list"(ptr %0) {
@@ -65048,8 +65015,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1960, i64 %tag, ptr @mu_file.1961, i64 1679)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -65242,8 +65209,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1973, i64 %tag, ptr @mu_file.1974, i64 1693)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -65419,8 +65386,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.1981, i64 %tag, ptr @mu_file.1982, i64 1706)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   %head12 = load ptr, ptr %head, align 8
@@ -65836,8 +65803,8 @@ march_arm131:                                     ; preds = %march_next129
   br label %match_end
 
 march_next132:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.2028, i64 %tag, ptr @mu_file.2029, i64 1847)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 declare ptr @avra_llvm_context_create()
@@ -66142,8 +66109,7 @@ march_arm4:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next5:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2035, i64 %tag, ptr @mu_file.2036, i64 50)
-  unreachable
+  ret ptr null
 
 match_end14:                                      ; preds = %march_arm31, %sif_end
   %next34 = load ptr, ptr %next10, align 8
@@ -66208,8 +66174,7 @@ march_arm31:                                      ; preds = %march_next17
   br label %match_end14
 
 march_next32:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.2033, i64 %tag13, ptr @mu_file.2034, i64 54)
-  unreachable
+  ret ptr null
 }
 
 define i1 @"@std::avrac::core::has_fn"(ptr %0, ptr %1) {
@@ -66351,8 +66316,7 @@ march_arm4:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next5:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2050, i64 %tag, ptr @mu_file.2051, i64 102)
-  unreachable
+  ret ptr null
 
 match_end14:                                      ; preds = %march_arm47, %sif_end
   %next50 = load ptr, ptr %next10, align 8
@@ -66470,8 +66434,7 @@ march_arm47:                                      ; preds = %march_next17
   br label %match_end14
 
 march_next48:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.2048, i64 %tag13, ptr @mu_file.2049, i64 106)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::avrac::core::config_lookup"(ptr %0, ptr %1) {
@@ -66552,8 +66515,7 @@ march_arm4:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next5:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2052, i64 %tag, ptr @mu_file.2053, i64 130)
-  unreachable
+  ret ptr null
 
 ifcont:                                           ; preds = %if_else
   %next17 = load ptr, ptr %next13, align 8
@@ -66748,8 +66710,8 @@ march_arm5:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next6:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2080, i64 %tag, ptr @mu_file.2081, i64 101)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end15:                                      ; preds = %march_arm56, %march_arm47, %march_arm38, %march_arm25, %march_arm16
   %match_val = load i64, ptr %match_result, align 8
@@ -66847,8 +66809,8 @@ march_arm56:                                      ; preds = %march_next48
   br label %match_end15
 
 march_next57:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.2078, i64 %tag14, ptr @mu_file.2079, i64 105)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::collect_method_names"(ptr %0, ptr %1) {
@@ -66927,8 +66889,8 @@ march_arm5:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next6:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2087, i64 %tag, ptr @mu_file.2088, i64 125)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end15:                                      ; preds = %march_arm25, %march_arm16
   %match_val = load i64, ptr %match_result, align 8
@@ -66966,8 +66928,8 @@ march_arm25:                                      ; preds = %march_next17
   br label %match_end15
 
 march_next26:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.2085, i64 %tag14, ptr @mu_file.2086, i64 129)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::resolver_new"() {
@@ -67550,8 +67512,8 @@ march_arm15:                                      ; preds = %march_next4
   br label %match_end
 
 march_next16:                                     ; preds = %march_next4
-  call void @avra_match_unreachable(ptr @.match_fn.2132, i64 %tag, ptr @mu_file.2133, i64 192)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::declare_name"(ptr %0, ptr %1) {
@@ -67816,8 +67778,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2146, i64 %tag, ptr @mu_file.2147, i64 227)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::define_type_params"(ptr %0, ptr %1) {
@@ -67886,8 +67848,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2148, i64 %tag, ptr @mu_file.2149, i64 242)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::mark_defined"(ptr %0, ptr %1, i64 %2) {
@@ -68116,8 +68078,8 @@ march_arm39:                                      ; preds = %march_next4
   br label %match_end
 
 march_next40:                                     ; preds = %march_next4
-  call void @avra_match_unreachable(ptr @.match_fn.2150, i64 %tag, ptr @mu_file.2151, i64 256)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::declare_function"(ptr %0, ptr %1) {
@@ -68305,8 +68267,8 @@ march_arm22:                                      ; preds = %march_next5
   br label %match_end
 
 march_next23:                                     ; preds = %march_next5
-  call void @avra_match_unreachable(ptr @.match_fn.2155, i64 %tag, ptr @mu_file.2156, i64 283)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::resolve::lookup_fn"(ptr %0, ptr %1) {
@@ -68381,8 +68343,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @avra_match_unreachable(ptr @.match_fn.2157, i64 %tag, ptr @mu_file.2158, i64 293)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::resolve_stmt_list"(ptr %0, ptr %1) {
@@ -68531,8 +68493,7 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2171, i64 %tag, ptr @mu_file.2172, i64 307)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::avrac::resolve::resolve_stmt"(ptr %0, ptr %1) {
@@ -68937,8 +68898,8 @@ march_arm175:                                     ; preds = %march_next167
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next176:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.2176, i64 %tag, ptr @mu_file.2177, i64 323)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %r187 = load ptr, ptr %r, align 8
@@ -69029,8 +68990,7 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2178, i64 %tag, ptr @mu_file.2179, i64 365)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::avrac::resolve::fa_root"(ptr %0) {
@@ -69093,8 +69053,8 @@ march_arm12:                                      ; preds = %march_next5
   br label %match_end
 
 march_next13:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.2181, i64 %tag, ptr @mu_file.2182, i64 382)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::check_immutable_root"(ptr %0, ptr %1, ptr %2) {
@@ -69996,8 +69956,8 @@ march_arm280:                                     ; preds = %march_next247
   br label %match_end245
 
 march_next281:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.2233, i64 %tag244, ptr @mu_file.2234, i64 481)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm285:                                     ; preds = %march_next230
   %pay_slot288 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %expr1, i32 0, i32 1
@@ -70217,8 +70177,8 @@ march_arm392:                                     ; preds = %march_next343
   br i1 %if_cond409, label %if_then410, label %if_else411
 
 march_next393:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.2240, i64 %tag, ptr @mu_file.2241, i64 422)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont408:                                        ; preds = %if_else411
   %r413 = load ptr, ptr %r, align 8
@@ -70394,8 +70354,7 @@ march_arm7:                                       ; preds = %march_next
   br label %match_end
 
 march_next8:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2250, i64 %tag, ptr @mu_file.2251, i64 548)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::avrac::resolve::resolve_expr_list"(ptr %0, ptr %1) {
@@ -70492,8 +70451,7 @@ march_arm7:                                       ; preds = %march_next
   br label %match_end
 
 march_next8:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2258, i64 %tag, ptr @mu_file.2259, i64 566)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::avrac::resolve::alias_lookup"(ptr %0, ptr %1) {
@@ -70579,8 +70537,8 @@ march_arm12:                                      ; preds = %march_next3
   br label %match_end
 
 march_next13:                                     ; preds = %march_next3
-  call void @avra_match_unreachable(ptr @.match_fn.2261, i64 %tag, ptr @mu_file.2262, i64 58)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::item_lookup"(ptr %0, ptr %1) {
@@ -70666,8 +70624,8 @@ march_arm12:                                      ; preds = %march_next3
   br label %match_end
 
 march_next13:                                     ; preds = %march_next3
-  call void @avra_match_unreachable(ptr @.match_fn.2264, i64 %tag, ptr @mu_file.2265, i64 70)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 declare ptr @avra_map_new_cstr.41()
@@ -70773,8 +70731,7 @@ march_arm7:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next8:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2266, i64 %tag, ptr @mu_file.2267, i64 101)
-  unreachable
+  ret ptr null
 
 ifcont:                                           ; preds = %if_else, %if_then
   %next26 = load ptr, ptr %next16, align 8
@@ -70933,8 +70890,8 @@ march_arm12:                                      ; preds = %march_next3
   br label %match_end
 
 march_next13:                                     ; preds = %march_next3
-  call void @avra_match_unreachable(ptr @.match_fn.2278, i64 %tag, ptr @mu_file.2279, i64 125)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::build_global_index"(ptr %0, ptr %1) {
@@ -71012,8 +70969,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2280, i64 %tag, ptr @mu_file.2281, i64 136)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::build_global_index_from_graph"(ptr %0, ptr %1) {
@@ -71202,8 +71159,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2291, i64 %tag, ptr @mu_file.2292, i64 169)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::module_find"(ptr %0, ptr %1) {
@@ -71301,8 +71258,8 @@ march_arm11:                                      ; preds = %march_next4
   br i1 %tag_eq29, label %march_arm27, label %march_next28
 
 march_next12:                                     ; preds = %march_next4
-  call void @avra_match_unreachable(ptr @.match_fn.2295, i64 %tag, ptr @mu_file.2296, i64 181)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end26:                                      ; preds = %march_arm33, %march_arm27
   %match_val = load i64, ptr %match_result25, align 8
@@ -71327,8 +71284,8 @@ march_arm33:                                      ; preds = %march_next28
   br label %match_end26
 
 march_next34:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.2293, i64 %tag24, ptr @mu_file.2294, i64 187)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::build_module_tree"(ptr %0, ptr %1, ptr %2) {
@@ -71402,8 +71359,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2300, i64 %tag, ptr @mu_file.2301, i64 203)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::build_tree_from_stmt"(ptr %0, ptr %1, ptr %2) {
@@ -71535,8 +71492,8 @@ march_arm44:                                      ; preds = %march_next35
   br label %match_end
 
 march_next45:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.2302, i64 %tag, ptr @mu_file.2303, i64 217)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::collect_module_items"(ptr %0, ptr %1) {
@@ -71611,8 +71568,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2307, i64 %tag, ptr @mu_file.2308, i64 236)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::collect_item_from_stmt"(ptr %0, ptr %1, i64 %2, ptr %3) {
@@ -72195,8 +72152,8 @@ march_arm312:                                     ; preds = %march_next298
   br label %match_end296
 
 march_next313:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.2309, i64 %tag295, ptr @mu_file.2310, i64 309)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm321:                                     ; preds = %march_next282
   %rest323 = load ptr, ptr %rest, align 8
@@ -72205,8 +72162,8 @@ march_arm321:                                     ; preds = %march_next282
   br label %match_end
 
 march_next322:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.2311, i64 %tag, ptr @mu_file.2312, i64 251)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::collect_reexport_items"(ptr %0, ptr %1, ptr %2) {
@@ -72297,8 +72254,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2313, i64 %tag, ptr @mu_file.2314, i64 333)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::collect_impl_items"(ptr %0, ptr %1, ptr %2) {
@@ -72369,8 +72326,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2320, i64 %tag, ptr @mu_file.2321, i64 347)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end15:                                      ; preds = %march_arm36, %march_arm16
   %match_val = load i64, ptr %match_result14, align 8
@@ -72432,8 +72389,8 @@ march_arm36:                                      ; preds = %march_next17
   br label %match_end15
 
 march_next37:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.2318, i64 %tag13, ptr @mu_file.2319, i64 351)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::resolve::annotation_has_export"(ptr %0) {
@@ -72489,8 +72446,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2323, i64 %tag, ptr @mu_file.2324, i64 369)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %next10 = load ptr, ptr %next8, align 8
@@ -72615,8 +72572,8 @@ march_arm6:                                       ; preds = %march_next
   br i1 %tag_eq25, label %march_arm23, label %march_next24
 
 march_next7:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2345, i64 %tag, ptr @mu_file.2346, i64 400)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end22:                                      ; preds = %march_arm31, %march_arm23
   %match_val = load i64, ptr %match_result21, align 8
@@ -72659,8 +72616,8 @@ march_arm31:                                      ; preds = %march_next24
   br label %match_end22
 
 march_next32:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.2332, i64 %tag20, ptr @mu_file.2333, i64 405)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end45:                                      ; preds = %march_arm78, %march_arm46
   %match_val82 = load i64, ptr %match_result44, align 8
@@ -72736,8 +72693,8 @@ march_arm78:                                      ; preds = %march_next47
   br label %match_end45
 
 march_next79:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.2343, i64 %tag43, ptr @mu_file.2344, i64 409)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::resolve_use_names"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, ptr %5) {
@@ -73160,8 +73117,8 @@ march_arm184:                                     ; preds = %march_next44
   br label %match_end17
 
 march_next185:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.2380, i64 %tag15, ptr @mu_file.2381, i64 445)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm196:                                     ; preds = %march_next4
   %result198 = load ptr, ptr %result, align 8
@@ -73170,8 +73127,8 @@ march_arm196:                                     ; preds = %march_next4
   br label %match_end
 
 march_next197:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.2382, i64 %tag, ptr @mu_file.2383, i64 439)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::resolve::is_item_visible"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4) {
@@ -73430,8 +73387,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @avra_match_unreachable(ptr @.match_fn.2389, i64 %tag, ptr @mu_file.2390, i64 539)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::resolve::is_builtin_name"(ptr %0) {
@@ -73688,8 +73645,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2404, i64 %tag, ptr @mu_file.2405, i64 585)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::bind_pattern_ctx"(ptr %0, ptr %1) {
@@ -73825,8 +73782,8 @@ march_arm45:                                      ; preds = %march_next20
   br label %match_end
 
 march_next46:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.2409, i64 %tag, ptr @mu_file.2410, i64 594)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::bind_pattern_list"(ptr %0, ptr %1) {
@@ -73887,8 +73844,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2411, i64 %tag, ptr @mu_file.2412, i64 606)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::merge_aliases"(ptr %0, ptr %1) {
@@ -73978,8 +73935,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2413, i64 %tag, ptr @mu_file.2414, i64 615)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::resolve_names"(ptr %0) {
@@ -74330,8 +74287,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2458, i64 %tag, ptr @mu_file.2459, i64 680)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::rewrite_stmt"(ptr %0, ptr %1) {
@@ -76214,8 +76171,8 @@ march_arm1053:                                    ; preds = %march_next1000
   br label %match_end
 
 march_next1054:                                   ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.2501, i64 %tag, ptr @mu_file.2502, i64 690)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::rewrite_select_arms"(ptr %0, ptr %1) {
@@ -76325,8 +76282,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2503, i64 %tag, ptr @mu_file.2504, i64 786)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::rewrite_impl_stmt"(ptr %0, ptr %1, ptr %2) {
@@ -77374,8 +77331,8 @@ march_arm284:                                     ; preds = %march_next271
   br label %match_end
 
 march_next285:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.2551, i64 %tag, ptr @mu_file.2552, i64 861)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::rewrite_vtype_list"(ptr %0, ptr %1) {
@@ -77455,8 +77412,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2553, i64 %tag, ptr @mu_file.2554, i64 899)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::rewrite_field_types"(ptr %0, ptr %1) {
@@ -77550,8 +77507,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2555, i64 %tag, ptr @mu_file.2556, i64 907)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::rewrite_variant_types"(ptr %0, ptr %1) {
@@ -77645,8 +77602,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2557, i64 %tag, ptr @mu_file.2558, i64 915)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::rewrite_param_types"(ptr %0, ptr %1) {
@@ -77740,8 +77697,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2559, i64 %tag, ptr @mu_file.2560, i64 923)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::qualify_self_param"(ptr %0, ptr %1, ptr %2) {
@@ -77819,8 +77776,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2566, i64 %tag, ptr @mu_file.2567, i64 932)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm3
   %ctx14 = load ptr, ptr %ctx, align 8
@@ -77987,8 +77944,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2585, i64 %tag, ptr @mu_file.2586, i64 949)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end15:                                      ; preds = %march_arm64, %march_arm16
   %match_val = load i64, ptr %match_result14, align 8
@@ -78153,8 +78110,8 @@ march_arm64:                                      ; preds = %march_next17
   br label %match_end15
 
 march_next65:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.2574, i64 %tag13, ptr @mu_file.2575, i64 953)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::rewrite_expr"(ptr %0, ptr %1) {
@@ -78444,8 +78401,8 @@ march_arm74:                                      ; preds = %march_next25
   br label %match_end23
 
 march_next75:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.2589, i64 %tag21, ptr @mu_file.2590, i64 980)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm92:                                      ; preds = %march_next11
   %pay_slot95 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %expr3, i32 0, i32 1
@@ -78850,8 +78807,8 @@ march_arm321:                                     ; preds = %march_next308
   br label %match_end
 
 march_next322:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.2591, i64 %tag, ptr @mu_file.2592, i64 974)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::rewrite_expr_compound"(ptr %0, ptr %1) {
@@ -79137,8 +79094,8 @@ march_arm60:                                      ; preds = %march_next15
   br label %match_end13
 
 march_next61:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.2595, i64 %tag11, ptr @mu_file.2596, i64 1013)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm77:                                      ; preds = %march_next
   %pay_slot80 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %expr3, i32 0, i32 1
@@ -79948,8 +79905,8 @@ march_arm522:                                     ; preds = %march_next505
   br label %match_end
 
 march_next523:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.2599, i64 %tag, ptr @mu_file.2600, i64 1008)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::rewrite_ident"(ptr %0, ptr %1, ptr %2) {
@@ -80209,8 +80166,8 @@ march_arm81:                                      ; preds = %march_next
   br label %match_end
 
 march_next82:                                     ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2621, i64 %tag, ptr @mu_file.2622, i64 1069)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont93:                                         ; preds = %if_else96
   br label %ifcont65
@@ -80340,8 +80297,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2636, i64 %tag, ptr @mu_file.2637, i64 1082)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::rewrite_field_inits"(ptr %0, ptr %1) {
@@ -80463,8 +80420,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2650, i64 %tag, ptr @mu_file.2651, i64 1091)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::rewrite_match_arms"(ptr %0, ptr %1) {
@@ -80556,8 +80513,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2676, i64 %tag, ptr @mu_file.2677, i64 1100)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -80842,8 +80799,8 @@ march_arm37:                                      ; preds = %march_next17
   br label %match_end
 
 march_next38:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.2684, i64 %tag, ptr @mu_file.2685, i64 1122)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::rewrite_pattern_list"(ptr %0, ptr %1) {
@@ -80923,8 +80880,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2686, i64 %tag, ptr @mu_file.2687, i64 1136)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::rewrite_when_arms"(ptr %0, ptr %1) {
@@ -80997,8 +80954,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2712, i64 %tag, ptr @mu_file.2713, i64 1144)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -81174,8 +81131,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @avra_match_unreachable(ptr @.match_fn.2714, i64 %tag, ptr @mu_file.2715, i64 1170)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::collect_used_paths_stmts"(ptr %0, ptr %1) {
@@ -81245,8 +81202,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2719, i64 %tag, ptr @mu_file.2720, i64 1181)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::collect_used_paths_stmt"(ptr %0, ptr %1) {
@@ -81740,8 +81697,8 @@ march_arm230:                                     ; preds = %march_next218
   br label %match_end
 
 march_next231:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.2721, i64 %tag, ptr @mu_file.2722, i64 1193)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::collect_used_paths_expr"(ptr %0, ptr %1) {
@@ -82747,8 +82704,8 @@ march_arm490:                                     ; preds = %march_next440
   br label %match_end
 
 march_next491:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.2725, i64 %tag, ptr @mu_file.2726, i64 1229)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::collect_used_paths_expr_list"(ptr %0, ptr %1) {
@@ -82815,8 +82772,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2730, i64 %tag, ptr @mu_file.2731, i64 1276)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::collect_used_paths_field_inits"(ptr %0, ptr %1) {
@@ -82883,8 +82840,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2735, i64 %tag, ptr @mu_file.2736, i64 1284)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::resolve::collect_used_paths_match_arms"(ptr %0, ptr %1) {
@@ -82954,8 +82911,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2743, i64 %tag, ptr @mu_file.2744, i64 1293)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -83084,8 +83041,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_rhs, label %sc_short
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2747, i64 %tag, ptr @mu_file.2748, i64 1317)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm3
   %used15 = load ptr, ptr %used, align 8
@@ -85371,8 +85328,8 @@ march_arm1106:                                    ; preds = %march_next1089
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next1107:                                   ; preds = %march_next1089
-  call void @avra_match_unreachable(ptr @.match_fn.2818, i64 %tag, ptr @mu_file.2819, i64 29)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -89339,8 +89296,8 @@ march_arm2063:                                    ; preds = %march_next1978
   br label %match_end
 
 march_next2064:                                   ; preds = %march_next1978
-  call void @avra_match_unreachable(ptr @.match_fn.2955, i64 %tag, ptr @mu_file.2956, i64 75)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::fmt::fmt_stmt_list"(ptr %0, i64 %1) {
@@ -89416,8 +89373,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2963, i64 %tag, ptr @mu_file.2964, i64 167)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   %head14 = load ptr, ptr %head, align 8
@@ -89536,8 +89493,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2969, i64 %tag, ptr @mu_file.2970, i64 181)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::fmt::fmt_expr_list_comma_tail"(ptr %0) {
@@ -89621,8 +89578,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2976, i64 %tag, ptr @mu_file.2977, i64 195)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::fmt::fmt_param_list_comma"(ptr %0) {
@@ -89691,8 +89648,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2979, i64 %tag, ptr @mu_file.2980, i64 204)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::fmt::fmt_param_list_comma_tail"(ptr %0) {
@@ -89769,8 +89726,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2983, i64 %tag, ptr @mu_file.2984, i64 217)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::fmt::fmt_param_list_typed"(ptr %0) {
@@ -89836,8 +89793,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2988, i64 %tag, ptr @mu_file.2989, i64 226)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -89960,8 +89917,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.2994, i64 %tag, ptr @mu_file.2995, i64 239)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -90097,8 +90054,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.3002, i64 %tag, ptr @mu_file.3003, i64 251)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -90261,8 +90218,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.3007, i64 %tag, ptr @mu_file.3008, i64 265)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   %name11 = load ptr, ptr %name5, align 8
@@ -90413,8 +90370,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.3014, i64 %tag, ptr @mu_file.3015, i64 277)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::fmt::fmt_field_init_list_tail"(ptr %0) {
@@ -90530,8 +90487,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.3022, i64 %tag, ptr @mu_file.3023, i64 290)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::fmt::fmt_field_decl_list"(ptr %0, i64 %1) {
@@ -90648,8 +90605,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.3028, i64 %tag, ptr @mu_file.3029, i64 300)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm3
   %head32 = load ptr, ptr %head, align 8
@@ -90798,8 +90755,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.3033, i64 %tag, ptr @mu_file.3034, i64 315)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm3
   %head27 = load ptr, ptr %head, align 8
@@ -90966,8 +90923,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.3039, i64 %tag, ptr @mu_file.3040, i64 330)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::fmt::fmt_variant_fields_tail"(ptr %0) {
@@ -91077,8 +91034,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.3044, i64 %tag, ptr @mu_file.3045, i64 343)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::fmt::fmt_pattern"(ptr %0) {
@@ -91335,8 +91292,8 @@ march_arm95:                                      ; preds = %march_next66
   br label %match_end
 
 march_next96:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.3056, i64 %tag, ptr @mu_file.3057, i64 351)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::fmt::fmt_match_arms"(ptr %0, i64 %1) {
@@ -91419,8 +91376,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.3070, i64 %tag, ptr @mu_file.3071, i64 367)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -91636,8 +91593,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.3083, i64 %tag, ptr @mu_file.3084, i64 383)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -91862,8 +91819,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.3088, i64 %tag, ptr @mu_file.3089, i64 398)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::fmt::fmt_map_entries"(ptr %0) {
@@ -91924,8 +91881,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq16, label %march_arm14, label %march_next15
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.3105, i64 %tag, ptr @mu_file.3106, i64 408)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end13:                                      ; preds = %sif_end, %march_arm14
   %match_val = load i64, ptr %match_result12, align 8
@@ -92018,8 +91975,8 @@ march_arm19:                                      ; preds = %march_next15
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next20:                                     ; preds = %march_next15
-  call void @avra_match_unreachable(ptr @.match_fn.3103, i64 %tag11, ptr @mu_file.3104, i64 412)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm19
   %head50 = load ptr, ptr %head, align 8
@@ -92197,8 +92154,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.3114, i64 %tag, ptr @mu_file.3115, i64 146)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::parse::table_zip_entries"(ptr %0, ptr %1) {
@@ -92264,8 +92221,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq17, label %march_arm15, label %march_next16
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.3118, i64 %tag, ptr @mu_file.3119, i64 156)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end14:                                      ; preds = %march_arm21, %march_arm15
   %match_val = load i64, ptr %match_result13, align 8
@@ -92343,8 +92300,8 @@ march_arm21:                                      ; preds = %march_next16
   br label %match_end14
 
 march_next22:                                     ; preds = %march_next16
-  call void @avra_match_unreachable(ptr @.match_fn.3116, i64 %tag12, ptr @mu_file.3117, i64 160)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::parse::expr_is_ident"(ptr %0) {
@@ -92384,8 +92341,8 @@ march_arm5:                                       ; preds = %march_next3
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.3120, i64 %tag, ptr @mu_file.3121, i64 174)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::parse::expr_is_upper_ident"(ptr %0) {
@@ -92449,8 +92406,8 @@ march_arm16:                                      ; preds = %march_next5
   br label %match_end
 
 march_next17:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.3122, i64 %tag, ptr @mu_file.3123, i64 185)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::parse::exprs_to_params"(ptr %0) {
@@ -92521,8 +92478,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.3130, i64 %tag, ptr @mu_file.3131, i64 197)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end15:                                      ; preds = %march_arm36, %march_arm24, %march_arm16
   %match_val = load i64, ptr %match_result14, align 8
@@ -92600,8 +92557,8 @@ march_arm36:                                      ; preds = %march_next25
   br label %match_end15
 
 march_next37:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.3128, i64 %tag13, ptr @mu_file.3129, i64 201)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::parse::is_callable"(ptr %0) {
@@ -92649,8 +92606,8 @@ march_arm8:                                       ; preds = %march_next6
   br label %match_end
 
 march_next9:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.3132, i64 %tag, ptr @mu_file.3133, i64 215)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::parse::p_starts_with_upper"(ptr %0) {
@@ -94124,8 +94081,7 @@ parm_body387:                                     ; preds = %parm_next381
   br label %pmatch_end
 
 parm_next388:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.3215, i64 -1, ptr @mu_file.3216, i64 303)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::avrac::parse::parser_new"(ptr %0) {
@@ -96881,8 +96837,8 @@ march_arm55:                                      ; preds = %march_next32
   br label %match_end
 
 march_next56:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.3598, i64 %tag, ptr @mu_file.3599, i64 701)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::parse::Parser__parse_pipe"(ptr %0) {
@@ -97149,8 +97105,8 @@ march_arm80:                                      ; preds = %march_next
   br label %match_end
 
 march_next81:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.3624, i64 %tag, ptr @mu_file.3625, i64 726)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::parse::pipe_args_has_placeholder"(ptr %0) {
@@ -97213,8 +97169,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq16, label %march_arm14, label %march_next15
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.3632, i64 %tag, ptr @mu_file.3633, i64 748)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end13:                                      ; preds = %march_arm21, %march_arm14
   %match_val = load i64, ptr %match_result12, align 8
@@ -97249,8 +97205,8 @@ march_arm21:                                      ; preds = %march_next15
   br label %match_end13
 
 march_next22:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.3630, i64 %tag11, ptr @mu_file.3631, i64 748)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::parse::pipe_replace_placeholder"(ptr %0, ptr %1) {
@@ -97321,8 +97277,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.3640, i64 %tag, ptr @mu_file.3641, i64 760)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end15:                                      ; preds = %march_arm32, %guard_pass
   %match_val = load i64, ptr %match_result14, align 8
@@ -97396,8 +97352,8 @@ march_arm32:                                      ; preds = %march_next17
   br label %match_end15
 
 march_next33:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.3638, i64 %tag13, ptr @mu_file.3639, i64 760)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::parse::Parser__parse_null_coalesce"(ptr %0) {
@@ -101274,8 +101230,8 @@ march_arm696:                                     ; preds = %march_next
   br label %match_end
 
 march_next697:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.4108, i64 %tag, ptr @mu_file.4109, i64 1096)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs702:                                        ; preds = %match_end
   %saved_it705 = load i64, ptr %saved_it, align 8
@@ -101476,8 +101432,8 @@ march_arm807:                                     ; preds = %march_next800
   br label %match_end798
 
 march_next808:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.4135, i64 %tag796, ptr @mu_file.4136, i64 1122)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs814:                                        ; preds = %match_end798
   %self817 = load ptr, ptr %self, align 8
@@ -101769,8 +101725,8 @@ march_arm20:                                      ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next21:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.4166, i64 %tag, ptr @mu_file.4167, i64 1172)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm20
   %raw_expr24 = load ptr, ptr %raw_expr, align 8
@@ -107663,8 +107619,7 @@ march_arm210:                                     ; preds = %march_next
   br label %match_end
 
 march_next211:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.4833, i64 %tag, ptr @mu_file.4834, i64 1696)
-  unreachable
+  ret ptr null
 
 ifcont233:                                        ; preds = %if_else236
   %self271 = load ptr, ptr %self, align 8
@@ -111840,8 +111795,7 @@ parm_body736:                                     ; preds = %parm_next729
   br label %pmatch_end
 
 parm_next737:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.5569, i64 -1, ptr @mu_file.5570, i64 57)
-  unreachable
+  ret i64 0
 
 ifcont741:                                        ; preds = %if_else744
   %ch749 = load ptr, ptr %ch, align 8
@@ -112561,8 +112515,7 @@ parm_body215:                                     ; preds = %parm_next141
   br label %pmatch_end
 
 parm_next216:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.5718, i64 -1, ptr @mu_file.5719, i64 216)
-  unreachable
+  ret i64 0
 
 while.cond218:                                    ; preds = %while.body219, %ifcont
   %self221 = load ptr, ptr %self, align 8
@@ -113682,8 +113635,7 @@ parm_body81:                                      ; preds = %parm_next78
   ret i64 0
 
 parm_next82:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.5944, i64 -1, ptr @mu_file.5945, i64 326)
-  unreachable
+  ret i64 0
 
 sc_rhs:                                           ; preds = %ifcont22
   %self112 = load ptr, ptr %self, align 8
@@ -115394,8 +115346,7 @@ parm_body362:                                     ; preds = %parm_next341
   br label %pmatch_end
 
 parm_next363:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.6230, i64 -1, ptr @mu_file.6231, i64 497)
-  unreachable
+  ret i64 0
 
 ifcont396:                                        ; preds = %if_else399
   %self414 = load ptr, ptr %self, align 8
@@ -116518,8 +116469,7 @@ parm_body464:                                     ; preds = %parm_next443
   br label %pmatch_end
 
 parm_next465:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.6398, i64 -1, ptr @mu_file.6399, i64 605)
-  unreachable
+  ret i64 0
 }
 
 define i64 @"@std::avrac::parse::Parser__scan_raw_string"(ptr %0) {
@@ -118043,8 +117993,7 @@ parm_body79:                                      ; preds = %parm_next73
   br label %pmatch_end
 
 parm_next80:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.6560, i64 -1, ptr @mu_file.6561, i64 778)
-  unreachable
+  ret i64 0
 }
 
 define i64 @"@std::avrac::parse::parse_hex"(ptr %0) {
@@ -118325,8 +118274,7 @@ parm_body38:                                      ; preds = %parm_next35
   br label %pmatch_end
 
 parm_next39:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.6573, i64 -1, ptr @mu_file.6574, i64 840)
-  unreachable
+  ret i64 0
 }
 
 define i64 @"@std::avrac::features::init_features"(ptr %0) {
@@ -118563,8 +118511,8 @@ march_arm11:                                      ; preds = %march_next4
   br label %match_end
 
 march_next12:                                     ; preds = %march_next4
-  call void @avra_match_unreachable(ptr @.match_fn.6575, i64 %tag, ptr @mu_file.6576, i64 40)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::generic_enum_lookup"(ptr %0, ptr %1) {
@@ -118656,8 +118604,8 @@ march_arm11:                                      ; preds = %march_next4
   br label %match_end
 
 march_next12:                                     ; preds = %march_next4
-  call void @avra_match_unreachable(ptr @.match_fn.6577, i64 %tag, ptr @mu_file.6578, i64 51)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::generic_struct_lookup"(ptr %0, ptr %1) {
@@ -118749,8 +118697,8 @@ march_arm11:                                      ; preds = %march_next4
   br label %match_end
 
 march_next12:                                     ; preds = %march_next4
-  call void @avra_match_unreachable(ptr @.match_fn.6579, i64 %tag, ptr @mu_file.6580, i64 62)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::type_arg_lookup"(ptr %0, ptr %1) {
@@ -118852,8 +118800,8 @@ march_arm18:                                      ; preds = %march_next8
   br label %match_end
 
 march_next19:                                     ; preds = %march_next8
-  call void @avra_match_unreachable(ptr @.match_fn.6581, i64 %tag, ptr @mu_file.6582, i64 82)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::features::generics::inst_has"(ptr %0, ptr %1) {
@@ -118928,8 +118876,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @avra_match_unreachable(ptr @.match_fn.6583, i64 %tag, ptr @mu_file.6584, i64 92)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::append_insts"(ptr %0, ptr %1) {
@@ -119008,8 +118956,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_rhs, label %sc_short
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.6586, i64 %tag, ptr @mu_file.6587, i64 98)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm3
   %rest17 = load ptr, ptr %rest, align 8
@@ -119126,8 +119074,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.6588, i64 %tag, ptr @mu_file.6589, i64 114)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::inst_mangled"(ptr %0, ptr %1) {
@@ -119215,8 +119163,8 @@ march_arm14:                                      ; preds = %march_next4
   br label %match_end
 
 march_next15:                                     ; preds = %march_next4
-  call void @avra_match_unreachable(ptr @.match_fn.6590, i64 %tag, ptr @mu_file.6591, i64 121)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::merge_partial"(ptr %0, ptr %1, ptr %2) {
@@ -119365,8 +119313,8 @@ march_arm14:                                      ; preds = %march_next3
   br label %match_end
 
 march_next15:                                     ; preds = %march_next3
-  call void @avra_match_unreachable(ptr @.match_fn.6592, i64 %tag, ptr @mu_file.6593, i64 147)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::merge_into_all"(ptr %0, ptr %1, ptr %2) {
@@ -119615,8 +119563,8 @@ march_arm53:                                      ; preds = %march_next4
   br label %match_end
 
 march_next54:                                     ; preds = %march_next4
-  call void @avra_match_unreachable(ptr @.match_fn.6595, i64 %tag, ptr @mu_file.6596, i64 158)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::append_inst"(ptr %0, ptr %1, ptr %2) {
@@ -119751,8 +119699,8 @@ march_arm18:                                      ; preds = %march_next
   br label %match_end
 
 march_next19:                                     ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.6598, i64 %tag, ptr @mu_file.6599, i64 172)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::features::generics::adds_new_info"(ptr %0, ptr %1) {
@@ -119827,8 +119775,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.6600, i64 %tag, ptr @mu_file.6601, i64 183)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %existing17 = load ptr, ptr %existing, align 8
@@ -119931,8 +119879,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_rhs, label %sc_short
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.6602, i64 %tag, ptr @mu_file.6603, i64 197)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm2
   %a_ty21 = load ptr, ptr %a_ty, align 8
@@ -120062,8 +120010,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.6604, i64 %tag, ptr @mu_file.6605, i64 211)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -120178,8 +120126,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.6606, i64 %tag, ptr @mu_file.6607, i64 231)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::finalize_insts"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -120346,8 +120294,8 @@ march_arm11:                                      ; preds = %march_next
   br label %match_end
 
 march_next12:                                     ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.6614, i64 %tag, ptr @mu_file.6615, i64 243)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::lookup_type_params"(ptr %0, ptr %1) {
@@ -120414,8 +120362,7 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.6619, i64 %tag, ptr @mu_file.6620, i64 259)
-  unreachable
+  ret ptr null
 
 match_end16:                                      ; preds = %march_arm29
   %regs33 = load ptr, ptr %regs, align 8
@@ -120455,8 +120402,7 @@ march_arm29:                                      ; preds = %march_next19
   br label %match_end16
 
 march_next30:                                     ; preds = %march_next19
-  call void @avra_match_unreachable(ptr @.match_fn.6624, i64 %tag15, ptr @mu_file.6625, i64 263)
-  unreachable
+  ret ptr null
 
 match_end40:                                      ; preds = %march_arm53
   %7 = call ptr @avra_rc_alloc(i64 16)
@@ -120491,8 +120437,7 @@ march_arm53:                                      ; preds = %march_next43
   br label %match_end40
 
 march_next54:                                     ; preds = %march_next43
-  call void @avra_match_unreachable(ptr @.match_fn.6629, i64 %tag39, ptr @mu_file.6630, i64 267)
-  unreachable
+  ret ptr null
 }
 
 define i1 @"@std::avrac::features::generics::is_generic_decl"(ptr %0) {
@@ -120614,8 +120559,8 @@ march_arm47:                                      ; preds = %march_next41
   br label %match_end
 
 march_next48:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.6631, i64 %tag, ptr @mu_file.6632, i64 280)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::mangle_name_ordered"(ptr %0, ptr %1, ptr %2) {
@@ -120704,8 +120649,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.6635, i64 %tag, ptr @mu_file.6636, i64 300)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   %ty14 = load ptr, ptr %ty, align 8
@@ -120793,8 +120738,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq17, label %march_arm15, label %march_next16
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.6642, i64 %tag, ptr @mu_file.6643, i64 318)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end14:                                      ; preds = %ife_end, %march_arm15
   %match_val = load i64, ptr %match_result13, align 8
@@ -120839,8 +120784,8 @@ march_arm20:                                      ; preds = %march_next16
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next21:                                     ; preds = %march_next16
-  call void @avra_match_unreachable(ptr @.match_fn.6640, i64 %tag12, ptr @mu_file.6641, i64 318)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -121135,8 +121080,8 @@ march_arm70:                                      ; preds = %march_next63
   br label %match_end
 
 march_next71:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.6655, i64 %tag, ptr @mu_file.6656, i64 347)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::infer_from_params"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -121206,8 +121151,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq17, label %march_arm15, label %march_next16
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.6659, i64 %tag, ptr @mu_file.6660, i64 363)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end14:                                      ; preds = %ife_end, %march_arm15
   %match_val = load i64, ptr %match_result13, align 8
@@ -121255,8 +121200,8 @@ march_arm20:                                      ; preds = %march_next16
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next21:                                     ; preds = %march_next16
-  call void @avra_match_unreachable(ptr @.match_fn.6657, i64 %tag12, ptr @mu_file.6658, i64 363)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -121380,8 +121325,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.6664, i64 %tag, ptr @mu_file.6665, i64 381)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -121519,8 +121464,8 @@ march_arm12:                                      ; preds = %march_next3
   br label %match_end
 
 march_next13:                                     ; preds = %march_next3
-  call void @avra_match_unreachable(ptr @.match_fn.6667, i64 %tag, ptr @mu_file.6668, i64 397)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::check_resolved"(ptr %0, ptr %1, ptr %2, i64 %3, i64 %4, ptr %5, ptr %6) {
@@ -121626,8 +121571,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.6673, i64 %tag, ptr @mu_file.6674, i64 406)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_end57, %ife_then
   %ife_val72 = load i64, ptr %ife_result, align 8
@@ -122771,8 +122716,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.6711, i64 %tag, ptr @mu_file.6712, i64 488)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %next17 = load ptr, ptr %next8, align 8
@@ -122852,8 +122797,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq17, label %march_arm15, label %march_next16
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.6715, i64 %tag, ptr @mu_file.6716, i64 503)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end14:                                      ; preds = %march_arm21, %march_arm15
   %match_val = load i64, ptr %match_result13, align 8
@@ -122920,8 +122865,8 @@ march_arm21:                                      ; preds = %march_next16
   br label %match_end14
 
 march_next22:                                     ; preds = %march_next16
-  call void @avra_match_unreachable(ptr @.match_fn.6713, i64 %tag12, ptr @mu_file.6714, i64 503)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::resolve_enum_type_args"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -123026,8 +122971,8 @@ march_arm5:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next6:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.6728, i64 %tag, ptr @mu_file.6729, i64 525)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end15:                                      ; preds = %march_arm21
   %match_val = load i64, ptr %match_result, align 8
@@ -123051,8 +122996,8 @@ march_arm21:                                      ; preds = %march_next17
   br label %match_end15
 
 march_next22:                                     ; preds = %march_next17
-  call void @avra_match_unreachable(ptr @.match_fn.6726, i64 %tag14, ptr @mu_file.6727, i64 525)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else, %match_end42
   %ty109 = load ptr, ptr %ty, align 8
@@ -123147,8 +123092,8 @@ march_arm63:                                      ; preds = %march_next45
   br i1 %tag_eq79, label %march_arm77, label %march_next78
 
 march_next64:                                     ; preds = %march_next45
-  call void @avra_match_unreachable(ptr @.match_fn.6739, i64 %tag41, ptr @mu_file.6740, i64 537)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end76:                                      ; preds = %march_arm104
   %match_val108 = load i64, ptr %match_result75, align 8
@@ -123199,8 +123144,8 @@ march_arm104:                                     ; preds = %march_next78
   br label %match_end76
 
 march_next105:                                    ; preds = %march_next78
-  call void @avra_match_unreachable(ptr @.match_fn.6737, i64 %tag74, ptr @mu_file.6738, i64 537)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::mangle_annotation"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4) {
@@ -123301,8 +123246,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.6742, i64 %tag, ptr @mu_file.6743, i64 561)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm3
   %args_str12 = load ptr, ptr %args_str, align 8
@@ -123724,8 +123669,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.6749, i64 %tag, ptr @mu_file.6750, i64 610)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %sif_end, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -123867,8 +123812,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.6754, i64 %tag, ptr @mu_file.6755, i64 629)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::collect_generic_stmt"(ptr %0, ptr %1) {
@@ -124251,8 +124196,8 @@ march_arm196:                                     ; preds = %march_next188
   br label %match_end
 
 march_next197:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.6765, i64 %tag, ptr @mu_file.6766, i64 639)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::features::generics::has_generics"(ptr %0) {
@@ -124451,8 +124396,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.6785, i64 %tag, ptr @mu_file.6786, i64 673)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::collect_inst_stmt"(ptr %0, ptr %1, ptr %2) {
@@ -125217,8 +125162,8 @@ march_arm389:                                     ; preds = %march_next376
   br label %match_end
 
 march_next390:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.6817, i64 %tag, ptr @mu_file.6818, i64 683)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::collect_inst_select_arms"(ptr %0, ptr %1, ptr %2) {
@@ -125295,8 +125240,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.6819, i64 %tag, ptr @mu_file.6820, i64 728)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::collect_inst_expr"(ptr %0, ptr %1, ptr %2) {
@@ -125497,8 +125442,8 @@ march_arm41:                                      ; preds = %march_next27
   br label %match_end25
 
 march_next42:                                     ; preds = %march_next27
-  call void @avra_match_unreachable(ptr @.match_fn.6824, i64 %tag23, ptr @mu_file.6825, i64 743)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm46:                                      ; preds = %march_next15
   %pay_slot49 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %callee9, i32 0, i32 1
@@ -125570,8 +125515,8 @@ march_arm90:                                      ; preds = %march_next68
   br label %match_end66
 
 march_next91:                                     ; preds = %march_next68
-  call void @avra_match_unreachable(ptr @.match_fn.6829, i64 %tag64, ptr @mu_file.6830, i64 743)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm96:                                      ; preds = %march_next47
   %callee98 = load ptr, ptr %callee2, align 8
@@ -125583,8 +125528,8 @@ march_arm96:                                      ; preds = %march_next47
   br label %match_end13
 
 march_next97:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.6831, i64 %tag11, ptr @mu_file.6832, i64 743)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm103:                                     ; preds = %march_next
   %pay_slot106 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %expr1, i32 0, i32 1
@@ -125696,8 +125641,8 @@ march_arm169:                                     ; preds = %march_next154
   br label %match_end152
 
 march_next170:                                    ; preds = %march_next154
-  call void @avra_match_unreachable(ptr @.match_fn.6836, i64 %tag150, ptr @mu_file.6837, i64 760)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm175:                                     ; preds = %march_next133
   %pay_slot178 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %callee127, i32 0, i32 1
@@ -125762,8 +125707,8 @@ march_arm212:                                     ; preds = %march_next197
   br label %match_end195
 
 march_next213:                                    ; preds = %march_next197
-  call void @avra_match_unreachable(ptr @.match_fn.6841, i64 %tag193, ptr @mu_file.6842, i64 760)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm218:                                     ; preds = %march_next176
   %callee220 = load ptr, ptr %callee112, align 8
@@ -125775,8 +125720,8 @@ march_arm218:                                     ; preds = %march_next176
   br label %match_end131
 
 march_next219:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.6843, i64 %tag129, ptr @mu_file.6844, i64 760)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm225:                                     ; preds = %march_next104
   %pay_slot228 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %expr1, i32 0, i32 1
@@ -125978,8 +125923,8 @@ march_arm323:                                     ; preds = %march_next299
   br label %match_end297
 
 march_next324:                                    ; preds = %march_next299
-  call void @avra_match_unreachable(ptr @.match_fn.6851, i64 %tag295, ptr @mu_file.6852, i64 739)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm331:                                     ; preds = %march_next284
   %pay_slot334 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %obj278, i32 0, i32 1
@@ -126072,8 +126017,8 @@ march_arm384:                                     ; preds = %march_next353
   br label %match_end351
 
 march_next385:                                    ; preds = %march_next353
-  call void @avra_match_unreachable(ptr @.match_fn.6859, i64 %tag349, ptr @mu_file.6860, i64 739)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm392:                                     ; preds = %march_next332
   %obj394 = load ptr, ptr %obj274, align 8
@@ -126085,8 +126030,8 @@ march_arm392:                                     ; preds = %march_next332
   br label %match_end282
 
 march_next393:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.6861, i64 %tag280, ptr @mu_file.6862, i64 739)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm399:                                     ; preds = %march_next270
   %pay_slot402 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %expr1, i32 0, i32 1
@@ -126637,8 +126582,8 @@ march_arm709:                                     ; preds = %march_next691
   br label %match_end
 
 march_next710:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.6863, i64 %tag, ptr @mu_file.6864, i64 739)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::collect_inst_exprs"(ptr %0, ptr %1, ptr %2) {
@@ -126750,8 +126695,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.6874, i64 %tag, ptr @mu_file.6875, i64 826)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::collect_inst_arms"(ptr %0, ptr %1, ptr %2) {
@@ -126822,8 +126767,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.6882, i64 %tag, ptr @mu_file.6883, i64 832)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -126936,8 +126881,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.6887, i64 %tag, ptr @mu_file.6888, i64 845)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::add_resolved_inst"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -127265,8 +127210,8 @@ march_arm30:                                      ; preds = %march_next
   br label %match_end
 
 march_next31:                                     ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.6916, i64 %tag, ptr @mu_file.6917, i64 874)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::try_add_struct_inst"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -127349,8 +127294,8 @@ march_arm17:                                      ; preds = %march_next
   br label %match_end
 
 march_next18:                                     ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.6921, i64 %tag, ptr @mu_file.6922, i64 884)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::specialize_fn"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4) {
@@ -127599,8 +127544,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq27, label %march_arm25, label %march_next26
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.6938, i64 %tag, ptr @mu_file.6939, i64 916)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end24:                                      ; preds = %match_end60, %march_arm25
   %match_val117 = load i64, ptr %match_result23, align 8
@@ -127679,8 +127624,8 @@ march_arm49:                                      ; preds = %march_next26
   br i1 %tag_eq63, label %march_arm61, label %march_next62
 
 march_next50:                                     ; preds = %march_next26
-  call void @avra_match_unreachable(ptr @.match_fn.6936, i64 %tag22, ptr @mu_file.6937, i64 921)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end60:                                      ; preds = %match_end91, %march_arm61
   %match_val116 = load i64, ptr %match_result59, align 8
@@ -127741,8 +127686,8 @@ march_arm80:                                      ; preds = %march_next62
   br i1 %tag_eq94, label %march_arm92, label %march_next93
 
 march_next81:                                     ; preds = %march_next62
-  call void @avra_match_unreachable(ptr @.match_fn.6934, i64 %tag58, ptr @mu_file.6935, i64 921)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end91:                                      ; preds = %march_arm111, %march_arm92
   %match_val = load i64, ptr %match_result90, align 8
@@ -127793,8 +127738,8 @@ march_arm111:                                     ; preds = %march_next93
   br label %match_end91
 
 march_next112:                                    ; preds = %march_next93
-  call void @avra_match_unreachable(ptr @.match_fn.6932, i64 %tag89, ptr @mu_file.6933, i64 921)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::substitute_vtype"(ptr %0, ptr %1) {
@@ -128182,8 +128127,8 @@ march_arm169:                                     ; preds = %march_next145
   br label %match_end
 
 march_next170:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.6940, i64 %tag, ptr @mu_file.6941, i64 946)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::substitute_vtype_list"(ptr %0, ptr %1) {
@@ -128263,8 +128208,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.6942, i64 %tag, ptr @mu_file.6943, i64 966)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::substitute_params"(ptr %0, ptr %1) {
@@ -128361,8 +128306,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.6944, i64 %tag, ptr @mu_file.6945, i64 971)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::substitute_fields"(ptr %0, ptr %1) {
@@ -128459,8 +128404,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.6946, i64 %tag, ptr @mu_file.6947, i64 979)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::substitute_variants"(ptr %0, ptr %1) {
@@ -128554,8 +128499,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.6948, i64 %tag, ptr @mu_file.6949, i64 987)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::substitute_stmts"(ptr %0, ptr %1) {
@@ -128663,8 +128608,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.6962, i64 %tag, ptr @mu_file.6963, i64 991)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::substitute_expr_list"(ptr %0, ptr %1) {
@@ -128772,8 +128717,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.6976, i64 %tag, ptr @mu_file.6977, i64 995)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::substitute_stmt"(ptr %0, ptr %1) {
@@ -129395,8 +129340,8 @@ march_arm308:                                     ; preds = %march_next291
   br label %match_end
 
 march_next309:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.6978, i64 %tag, ptr @mu_file.6979, i64 1001)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::substitute_expr"(ptr %0, ptr %1) {
@@ -130544,8 +130489,8 @@ march_arm597:                                     ; preds = %march_next551
   br label %match_end
 
 march_next598:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.6980, i64 %tag, ptr @mu_file.6981, i64 1026)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::substitute_match_arms"(ptr %0, ptr %1) {
@@ -130628,8 +130573,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.7006, i64 %tag, ptr @mu_file.7007, i64 1063)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -130907,8 +130852,8 @@ march_arm26:                                      ; preds = %march_next
   br i1 %tag_eq40, label %march_arm38, label %march_next39
 
 march_next27:                                     ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.7017, i64 %tag, ptr @mu_file.7018, i64 1089)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end37:                                      ; preds = %march_arm38
   %match_val = load i64, ptr %match_result36, align 8
@@ -130938,8 +130883,8 @@ march_arm50:                                      ; preds = %march_next39
   ret ptr %insts53
 
 march_next51:                                     ; preds = %march_next39
-  call void @avra_match_unreachable(ptr @.match_fn.7015, i64 %tag35, ptr @mu_file.7016, i64 1089)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::remove_insts_for"(ptr %0, ptr %1) {
@@ -131085,8 +131030,8 @@ march_arm15:                                      ; preds = %march_next4
   br label %match_end
 
 march_next16:                                     ; preds = %march_next4
-  call void @avra_match_unreachable(ptr @.match_fn.7019, i64 %tag, ptr @mu_file.7020, i64 1106)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::vtype_from_type_string"(ptr %0) {
@@ -131296,8 +131241,8 @@ march_arm46:                                      ; preds = %march_next
   br label %match_end
 
 march_next47:                                     ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.7024, i64 %tag, ptr @mu_file.7025, i64 1134)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont61:                                         ; preds = %if_else64
   %20 = call ptr @avra_rc_alloc(i64 16)
@@ -131383,8 +131328,8 @@ march_arm82:                                      ; preds = %march_next71
   br label %match_end69
 
 march_next83:                                     ; preds = %march_next71
-  call void @avra_match_unreachable(ptr @.match_fn.7027, i64 %tag67, ptr @mu_file.7028, i64 1138)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont117:                                        ; preds = %if_else120
   %ty140 = load ptr, ptr %ty, align 8
@@ -131968,8 +131913,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.7046, i64 %tag, ptr @mu_file.7047, i64 1224)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %5 = call ptr @avra_rc_alloc(i64 16)
@@ -133308,8 +133253,8 @@ march_arm638:                                     ; preds = %march_next602
   br label %match_end
 
 march_next639:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.7048, i64 %tag, ptr @mu_file.7049, i64 1252)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::rewrite_select_arms_mono"(ptr %0, ptr %1, ptr %2) {
@@ -133424,8 +133369,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.7050, i64 %tag, ptr @mu_file.7051, i64 1288)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::rewrite_expr"(ptr %0, ptr %1, ptr %2) {
@@ -133685,8 +133630,8 @@ march_arm57:                                      ; preds = %march_next27
   br label %match_end25
 
 march_next58:                                     ; preds = %march_next27
-  call void @avra_match_unreachable(ptr @.match_fn.7055, i64 %tag23, ptr @mu_file.7056, i64 1307)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm71:                                      ; preds = %march_next15
   %pay_slot74 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %callee9, i32 0, i32 1
@@ -133808,8 +133753,8 @@ march_arm135:                                     ; preds = %march_next93
   br label %match_end91
 
 march_next136:                                    ; preds = %march_next93
-  call void @avra_match_unreachable(ptr @.match_fn.7060, i64 %tag89, ptr @mu_file.7061, i64 1307)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm150:                                     ; preds = %march_next72
   %24 = call ptr @avra_rc_alloc(i64 16)
@@ -133836,8 +133781,8 @@ march_arm150:                                     ; preds = %march_next72
   br label %match_end13
 
 march_next151:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.7062, i64 %tag11, ptr @mu_file.7063, i64 1307)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm166:                                     ; preds = %march_next
   %pay_slot169 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %expr1, i32 0, i32 1
@@ -133990,8 +133935,8 @@ march_arm247:                                     ; preds = %march_next217
   br label %match_end215
 
 march_next248:                                    ; preds = %march_next217
-  call void @avra_match_unreachable(ptr @.match_fn.7067, i64 %tag213, ptr @mu_file.7068, i64 1326)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm262:                                     ; preds = %march_next196
   %pay_slot265 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %callee190, i32 0, i32 1
@@ -134097,8 +134042,8 @@ march_arm314:                                     ; preds = %march_next284
   br label %match_end282
 
 march_next315:                                    ; preds = %march_next284
-  call void @avra_match_unreachable(ptr @.match_fn.7072, i64 %tag280, ptr @mu_file.7073, i64 1326)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm329:                                     ; preds = %march_next263
   %46 = call ptr @avra_rc_alloc(i64 16)
@@ -134125,8 +134070,8 @@ march_arm329:                                     ; preds = %march_next263
   br label %match_end194
 
 march_next330:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.7074, i64 %tag192, ptr @mu_file.7075, i64 1326)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm345:                                     ; preds = %march_next167
   %pay_slot348 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %expr1, i32 0, i32 1
@@ -134327,8 +134272,8 @@ march_arm436:                                     ; preds = %march_next415
   br label %match_end413
 
 march_next437:                                    ; preds = %march_next415
-  call void @avra_match_unreachable(ptr @.match_fn.7079, i64 %tag411, ptr @mu_file.7080, i64 1303)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm453:                                     ; preds = %march_next400
   %pay_slot456 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %obj394, i32 0, i32 1
@@ -134426,8 +134371,8 @@ march_arm496:                                     ; preds = %march_next475
   br label %match_end473
 
 march_next497:                                    ; preds = %march_next475
-  call void @avra_match_unreachable(ptr @.match_fn.7084, i64 %tag471, ptr @mu_file.7085, i64 1303)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm513:                                     ; preds = %march_next454
   %69 = call ptr @avra_rc_alloc(i64 16)
@@ -134454,8 +134399,8 @@ march_arm513:                                     ; preds = %march_next454
   br label %match_end398
 
 march_next514:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.7086, i64 %tag396, ptr @mu_file.7087, i64 1303)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm529:                                     ; preds = %march_next386
   %pay_slot532 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %expr1, i32 0, i32 1
@@ -135418,8 +135363,8 @@ march_arm1093:                                    ; preds = %march_next1045
   br label %match_end
 
 march_next1094:                                   ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.7088, i64 %tag, ptr @mu_file.7089, i64 1303)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::rewrite_expr_list"(ptr %0, ptr %1, ptr %2) {
@@ -135531,8 +135476,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.7102, i64 %tag, ptr @mu_file.7103, i64 1387)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::rewrite_arms"(ptr %0, ptr %1, ptr %2) {
@@ -135617,8 +135562,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.7128, i64 %tag, ptr @mu_file.7129, i64 1393)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -135855,8 +135800,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.7142, i64 %tag, ptr @mu_file.7143, i64 1409)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::mangle_enum_at_site"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, ptr %5) {
@@ -136037,8 +135982,8 @@ march_arm26:                                      ; preds = %march_next
   br label %match_end
 
 march_next27:                                     ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.7147, i64 %tag, ptr @mu_file.7148, i64 1429)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::inst_mangled_compatible"(ptr %0, ptr %1, ptr %2) {
@@ -136164,8 +136109,8 @@ march_arm20:                                      ; preds = %march_next4
   br label %match_end
 
 march_next21:                                     ; preds = %march_next4
-  call void @avra_match_unreachable(ptr @.match_fn.7149, i64 %tag, ptr @mu_file.7150, i64 1442)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::rewrite_struct_lit"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -136283,8 +136228,8 @@ march_arm25:                                      ; preds = %march_next
   br label %match_end
 
 march_next26:                                     ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.7154, i64 %tag, ptr @mu_file.7155, i64 1454)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::generics::monomorphize"(ptr %0, ptr %1) {
@@ -136801,8 +136746,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.7216, i64 %tag, ptr @mu_file.7217, i64 1534)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::parse::Parser__parse_type_params"(ptr %0) {
@@ -138215,8 +138160,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.7357, i64 %tag, ptr @mu_file.7358, i64 77)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -138275,8 +138220,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.7359, i64 %tag, ptr @mu_file.7360, i64 87)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::struct_decl::struct_lit_check_expr"(ptr %0, ptr %1) {
@@ -138363,8 +138308,8 @@ march_arm16:                                      ; preds = %march_next
   br label %match_end
 
 march_next17:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.7361, i64 %tag, ptr @mu_file.7362, i64 96)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::struct_decl::field_access_emit_expr"(ptr %0, ptr %1, ptr %2) {
@@ -138429,8 +138374,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.7364, i64 %tag, ptr @mu_file.7365, i64 108)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -138531,8 +138476,8 @@ march_arm18:                                      ; preds = %march_next9
   br label %match_end7
 
 march_next19:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.7366, i64 %tag5, ptr @mu_file.7367, i64 122)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm23:                                      ; preds = %march_next
   %r25 = load ptr, ptr %r, align 8
@@ -138541,8 +138486,8 @@ march_arm23:                                      ; preds = %march_next
   br label %match_end
 
 march_next24:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.7368, i64 %tag, ptr @mu_file.7369, i64 119)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::struct_decl::field_access_check_expr"(ptr %0, ptr %1) {
@@ -138609,8 +138554,8 @@ march_arm9:                                       ; preds = %march_next
   br label %match_end
 
 march_next10:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.7370, i64 %tag, ptr @mu_file.7371, i64 141)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::struct_decl::enum_ctor_emit_expr"(ptr %0, ptr %1, ptr %2) {
@@ -138685,8 +138630,8 @@ march_arm14:                                      ; preds = %march_next
   br label %match_end
 
 march_next15:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.7373, i64 %tag, ptr @mu_file.7374, i64 149)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -138745,8 +138690,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.7375, i64 %tag, ptr @mu_file.7376, i64 157)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::struct_decl::enum_ctor_check_expr"(ptr %0, ptr %1) {
@@ -138887,8 +138832,8 @@ march_arm34:                                      ; preds = %march_next
   br label %match_end
 
 march_next35:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.7381, i64 %tag, ptr @mu_file.7382, i64 168)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::struct_decl::field_assign_emit_expr"(ptr %0, ptr %1, ptr %2) {
@@ -138963,8 +138908,8 @@ march_arm14:                                      ; preds = %march_next
   br label %match_end
 
 march_next15:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.7384, i64 %tag, ptr @mu_file.7385, i64 182)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -139078,8 +139023,8 @@ march_arm22:                                      ; preds = %march_next
   br label %match_end
 
 march_next23:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.7395, i64 %tag, ptr @mu_file.7396, i64 197)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::struct_decl::check_field_access"(ptr %0, ptr %1, ptr %2) {
@@ -139332,8 +139277,8 @@ march_arm95:                                      ; preds = %march_next
   br label %match_end
 
 march_next96:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.7422, i64 %tag, ptr @mu_file.7423, i64 29)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont99:                                         ; preds = %if_else102
   %o189 = load ptr, ptr %o, align 8
@@ -139586,8 +139531,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.7454, i64 %tag, ptr @mu_file.7455, i64 52)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::features::struct_decl::tc_field_exists"(ptr %0, ptr %1) {
@@ -139662,8 +139607,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @avra_match_unreachable(ptr @.match_fn.7456, i64 %tag, ptr @mu_file.7457, i64 65)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::struct_decl::field_type_in"(ptr %0, ptr %1, ptr %2) {
@@ -139760,8 +139705,8 @@ march_arm15:                                      ; preds = %march_next4
   br label %match_end
 
 march_next16:                                     ; preds = %march_next4
-  call void @avra_match_unreachable(ptr @.match_fn.7458, i64 %tag, ptr @mu_file.7459, i64 76)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::parse::Parser__parse_type_declaration"(ptr %0) {
@@ -140162,8 +140107,7 @@ march_arm147:                                     ; preds = %march_next
   br label %match_end
 
 march_next148:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.7503, i64 %tag, ptr @mu_file.7504, i64 38)
-  unreachable
+  ret ptr null
 
 ifcont159:                                        ; preds = %if_else162, %ifcont174
   %33 = call ptr @avra_rc_alloc(i64 16)
@@ -141484,8 +141428,8 @@ march_arm5:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next6:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.7713, i64 %tag, ptr @mu_file.7714, i64 47)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %ctx27 = load ptr, ptr %ctx, align 8
@@ -142191,8 +142135,8 @@ march_arm16:                                      ; preds = %march_next5
   br label %match_end
 
 march_next17:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.7798, i64 %tag, ptr @mu_file.7799, i64 106)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else, %ifcont27
   %ctx38 = load ptr, ptr %ctx, align 8
@@ -142354,8 +142298,8 @@ march_arm78:                                      ; preds = %march_next71
   br label %match_end69
 
 march_next79:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.7821, i64 %tag67, ptr @mu_file.7822, i64 119)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %ifcont49
   %field94 = load ptr, ptr %field, align 8
@@ -143391,8 +143335,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.7996, i64 %tag, ptr @mu_file.7997, i64 10)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::select_stmt::select_feature"() {
@@ -143609,8 +143553,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.8003, i64 %tag, ptr @mu_file.8004, i64 12)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::parse::Parser__parse_select_statement"(ptr %0) {
@@ -144092,8 +144036,8 @@ march_arm6:                                       ; preds = %march_next
   br label %match_end
 
 march_next7:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.8062, i64 %tag, ptr @mu_file.8063, i64 12)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -144289,8 +144233,8 @@ march_arm4:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next5:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.8095, i64 %tag, ptr @mu_file.8096, i64 36)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm4
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %7, i32 0, i32 1
@@ -144513,8 +144457,8 @@ march_arm4:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next5:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.8140, i64 %tag, ptr @mu_file.8141, i64 51)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm4
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %18, i32 0, i32 1
@@ -144749,8 +144693,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.8144, i64 %tag, ptr @mu_file.8145, i64 14)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::while_stmt::while_check"(ptr %0, ptr %1) {
@@ -144975,8 +144919,8 @@ march_arm79:                                      ; preds = %march_next
   br label %match_end
 
 march_next80:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.8166, i64 %tag, ptr @mu_file.8167, i64 28)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::while_stmt::while_eval"(ptr %0, ptr %1) {
@@ -145036,8 +144980,8 @@ march_arm9:                                       ; preds = %march_next
   br label %match_end
 
 march_next10:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.8169, i64 %tag, ptr @mu_file.8170, i64 45)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::while_stmt::while_feature"() {
@@ -145358,8 +145302,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.8196, i64 %tag, ptr @mu_file.8197, i64 11)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -146028,8 +145972,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.8260, i64 %tag, ptr @mu_file.8261, i64 71)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::let_stmt::let_destructure_check_stmt"(ptr %0, ptr %1) {
@@ -146105,8 +146049,8 @@ march_arm16:                                      ; preds = %march_next
   br label %match_end
 
 march_next17:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.8268, i64 %tag, ptr @mu_file.8269, i64 85)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::let_stmt::let_destructure_eval_stmt"(ptr %0, ptr %1) {
@@ -146146,8 +146090,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.8272, i64 %tag, ptr @mu_file.8273, i64 99)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::let_stmt::let_destructure_emit_stmt"(ptr %0, ptr %1, ptr %2) {
@@ -146232,8 +146176,8 @@ march_arm13:                                      ; preds = %march_next
   br label %match_end
 
 march_next14:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.8275, i64 %tag, ptr @mu_file.8276, i64 109)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -146332,8 +146276,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.8277, i64 %tag, ptr @mu_file.8278, i64 18)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::features::let_stmt::is_const_expr"(ptr %0) {
@@ -146499,8 +146443,8 @@ march_arm47:                                      ; preds = %march_next45
   br label %match_end
 
 march_next48:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.8279, i64 %tag, ptr @mu_file.8280, i64 33)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::parse::Parser__parse_let_statement"(ptr %0) {
@@ -147800,8 +147744,7 @@ march_arm214:                                     ; preds = %march_next
   br label %match_end
 
 march_next215:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.8433, i64 %tag, ptr @mu_file.8434, i64 53)
-  unreachable
+  ret ptr null
 
 ifcont240:                                        ; preds = %if_else243
   %copy_target281 = load ptr, ptr %copy_target, align 8
@@ -148081,8 +148024,8 @@ march_arm38:                                      ; preds = %march_next15
   br label %match_end
 
 march_next39:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.8473, i64 %tag, ptr @mu_file.8474, i64 100)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::let_stmt::try_copy_for_struct"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -148442,8 +148385,8 @@ march_arm4:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next5:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.8520, i64 %tag, ptr @mu_file.8521, i64 158)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm4
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %7, i32 0, i32 1
@@ -148842,8 +148785,8 @@ march_arm60:                                      ; preds = %march_next16
   br label %match_end
 
 march_next61:                                     ; preds = %march_next16
-  call void @avra_match_unreachable(ptr @.match_fn.8529, i64 %tag, ptr @mu_file.8530, i64 13)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::parse::Parser__parse_function_declaration"(ptr %0) {
@@ -149820,8 +149763,8 @@ march_arm5:                                       ; preds = %march_next
   br i1 %tag_eq27, label %march_arm25, label %march_next26
 
 march_next6:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.8694, i64 %tag, ptr @mu_file.8695, i64 23)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end24:                                      ; preds = %march_arm81, %sif_end70, %march_arm48, %sif_end
   %match_val = load i64, ptr %match_result23, align 8
@@ -149970,8 +149913,8 @@ march_arm81:                                      ; preds = %march_next58
   br label %match_end24
 
 march_next82:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.8692, i64 %tag22, ptr @mu_file.8693, i64 42)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %match_end24
   %try_pay_slot = getelementptr inbounds nuw %Result__VarEnv__string, ptr %inner89, i32 0, i32 1
@@ -150891,8 +150834,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.8924, i64 %tag, ptr @mu_file.8925, i64 168)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::features::fn_decl::should_null_check_vt"(ptr %0) {
@@ -151016,8 +150959,8 @@ march_arm34:                                      ; preds = %march_next32
   br label %match_end
 
 march_next35:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.8926, i64 %tag, ptr @mu_file.8927, i64 191)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::features::fn_decl::emit_null_checks"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -151087,8 +151030,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.8928, i64 %tag, ptr @mu_file.8929, i64 211)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else, %if_then
   %ctx17 = load ptr, ptr %ctx, align 8
@@ -151404,8 +151347,8 @@ march_arm33:                                      ; preds = %march_next19
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next34:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.8990, i64 %tag, ptr @mu_file.8991, i64 261)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm33
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %7, i32 0, i32 1
@@ -152155,8 +152098,7 @@ parm_body321:                                     ; preds = %parm_next303
   br label %pmatch_end
 
 parm_next322:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.9118, i64 -1, ptr @mu_file.9119, i64 294)
-  unreachable
+  ret ptr null
 
 errdefer_path:                                    ; preds = %pmatch_end
   br label %defer_done
@@ -152567,8 +152509,8 @@ march_arm182:                                     ; preds = %march_next112
   br label %match_end110
 
 march_next183:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.9185, i64 %tag108, ptr @mu_file.9186, i64 378)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm185:                                     ; preds = %march_next
   %36 = call ptr @"@std::avrac::codegen::err_emit"(ptr @.str.9187)
@@ -152577,8 +152519,8 @@ march_arm185:                                     ; preds = %march_next
   br label %match_end
 
 march_next186:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.9188, i64 %tag, ptr @mu_file.9189, i64 378)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 parm_body189:                                     ; preds = %parm_next91
   %ctx193 = load ptr, ptr %ctx, align 8
@@ -152644,8 +152586,8 @@ parm_body210:                                     ; preds = %parm_next190
   br label %pmatch_end
 
 parm_next211:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.9201, i64 -1, ptr @mu_file.9202, i64 352)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %pmatch_end
   br label %defer_done
@@ -152968,8 +152910,8 @@ march_arm126:                                     ; preds = %march_next
   br label %match_end
 
 march_next127:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.9250, i64 %tag, ptr @mu_file.9251, i64 424)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont139:                                        ; preds = %if_else142
   %r154 = load ptr, ptr %r, align 8
@@ -153284,8 +153226,8 @@ march_arm301:                                     ; preds = %march_next291
   br label %match_end284
 
 march_next302:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.9294, i64 %tag283, ptr @mu_file.9295, i64 463)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont312:                                        ; preds = %if_else315, %if_then314
   br label %ifcont272
@@ -153599,8 +153541,8 @@ march_arm470:                                     ; preds = %march_next467
   ret ptr %125
 
 march_next471:                                    ; preds = %march_next467
-  call void @avra_match_unreachable(ptr @.match_fn.9358, i64 %tag463, ptr @mu_file.9359, i64 495)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end464
   br label %defer_done
@@ -153675,8 +153617,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.9376, i64 %tag, ptr @mu_file.9377, i64 513)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -153841,8 +153783,7 @@ parm_body54:                                      ; preds = %parm_next48
   br label %pmatch_end
 
 parm_next55:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.9386, i64 -1, ptr @mu_file.9387, i64 526)
-  unreachable
+  ret ptr null
 
 ifcont:                                           ; preds = %if_else
   %ctx64 = load ptr, ptr %ctx, align 8
@@ -154135,8 +154076,7 @@ march_arm169:                                     ; preds = %march_next
   ret ptr %52
 
 march_next170:                                    ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.9429, i64 %tag, ptr @mu_file.9430, i64 558)
-  unreachable
+  ret ptr null
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -154218,8 +154158,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.9541, i64 %tag, ptr @mu_file.9542, i64 578)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm2
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %4, i32 0, i32 1
@@ -154917,8 +154857,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq16, label %march_arm14, label %march_next15
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.9595, i64 %tag, ptr @mu_file.9596, i64 642)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end13:                                      ; preds = %try_ok46, %march_arm14
   %match_val = load i64, ptr %match_result12, align 8
@@ -154964,8 +154904,8 @@ march_arm18:                                      ; preds = %march_next15
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next19:                                     ; preds = %march_next15
-  call void @avra_match_unreachable(ptr @.match_fn.9593, i64 %tag11, ptr @mu_file.9594, i64 642)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm18
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %5, i32 0, i32 1
@@ -155133,8 +155073,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq16, label %march_arm14, label %march_next15
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.9627, i64 %tag, ptr @mu_file.9628, i64 662)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end13:                                      ; preds = %try_ok46, %march_arm14
   %match_val = load i64, ptr %match_result12, align 8
@@ -155180,8 +155120,8 @@ march_arm18:                                      ; preds = %march_next15
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next19:                                     ; preds = %march_next15
-  call void @avra_match_unreachable(ptr @.match_fn.9625, i64 %tag11, ptr @mu_file.9626, i64 662)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm18
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %5, i32 0, i32 1
@@ -155348,8 +155288,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.9707, i64 %tag, ptr @mu_file.9708, i64 682)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm2
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %4, i32 0, i32 1
@@ -155865,8 +155805,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.9749, i64 %tag, ptr @mu_file.9750, i64 715)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm2
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %4, i32 0, i32 1
@@ -156102,8 +156042,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.9787, i64 %tag, ptr @mu_file.9788, i64 738)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm2
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %4, i32 0, i32 1
@@ -156295,8 +156235,8 @@ march_arm5:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next6:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.9808, i64 %tag, ptr @mu_file.9809, i64 762)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm5
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %10, i32 0, i32 1
@@ -157028,8 +156968,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq16, label %march_arm14, label %march_next15
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.9846, i64 %tag, ptr @mu_file.9847, i64 80)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end13:                                      ; preds = %march_arm27, %guard_pass
   %match_val = load i64, ptr %match_result12, align 8
@@ -157105,8 +157045,8 @@ march_arm27:                                      ; preds = %march_next15
   br label %match_end13
 
 march_next28:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.9844, i64 %tag11, ptr @mu_file.9845, i64 84)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::trait_decl::check_required_methods"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4) {
@@ -157511,8 +157451,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq16, label %march_arm14, label %march_next15
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.9879, i64 %tag, ptr @mu_file.9880, i64 119)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end13:                                      ; preds = %march_arm26, %guard_pass
   %match_val = load i64, ptr %match_result12, align 8
@@ -157562,8 +157502,8 @@ march_arm26:                                      ; preds = %march_next15
   br label %match_end13
 
 march_next27:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.9877, i64 %tag11, ptr @mu_file.9878, i64 123)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::features::trait_decl::impl_has_method"(ptr %0, ptr %1) {
@@ -157629,8 +157569,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq16, label %march_arm14, label %march_next15
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.9886, i64 %tag, ptr @mu_file.9887, i64 136)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end13:                                      ; preds = %march_arm22, %guard_pass
   %match_val = load i64, ptr %match_result12, align 8
@@ -157671,8 +157611,8 @@ march_arm22:                                      ; preds = %march_next15
   br label %match_end13
 
 march_next23:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.9884, i64 %tag11, ptr @mu_file.9885, i64 140)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::trait_decl::collect_method_names_from_stmts"(ptr %0) {
@@ -157752,8 +157692,7 @@ march_arm4:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next5:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.9893, i64 %tag, ptr @mu_file.9894, i64 156)
-  unreachable
+  ret ptr null
 
 match_end14:                                      ; preds = %march_arm31, %march_arm16
   %next34 = load ptr, ptr %next10, align 8
@@ -157804,8 +157743,7 @@ march_arm31:                                      ; preds = %march_next17
   br label %match_end14
 
 march_next32:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.9891, i64 %tag13, ptr @mu_file.9892, i64 160)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::avrac::features::trait_decl::collect_assoc_types_from_stmts"(ptr %0) {
@@ -157884,8 +157822,7 @@ march_arm4:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next5:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.9900, i64 %tag, ptr @mu_file.9901, i64 181)
-  unreachable
+  ret ptr null
 
 match_end14:                                      ; preds = %march_arm26, %march_arm16
   %next29 = load ptr, ptr %next10, align 8
@@ -157921,8 +157858,7 @@ march_arm26:                                      ; preds = %march_next17
   br label %match_end14
 
 march_next27:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.9898, i64 %tag13, ptr @mu_file.9899, i64 185)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::avrac::parse::Parser__parse_trait_declaration"(ptr %0) {
@@ -158701,8 +158637,8 @@ march_arm9:                                       ; preds = %march_next3
   br label %match_end
 
 march_next10:                                     ; preds = %march_next3
-  call void @avra_match_unreachable(ptr @.match_fn.10008, i64 %tag, ptr @mu_file.10009, i64 13)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::trait_decl::trait_method_ret_vt"(ptr %0, ptr %1) {
@@ -158794,8 +158730,8 @@ march_arm14:                                      ; preds = %march_next4
   br label %match_end
 
 march_next15:                                     ; preds = %march_next4
-  call void @avra_match_unreachable(ptr @.match_fn.10010, i64 %tag, ptr @mu_file.10011, i64 23)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::trait_decl::emit_trait_dispatch"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, ptr %5) {
@@ -159525,8 +159461,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.10113, i64 %tag, ptr @mu_file.10114, i64 86)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   %ctx10 = load ptr, ptr %ctx, align 8
@@ -160002,8 +159938,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.10204, i64 %tag, ptr @mu_file.10205, i64 172)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else, %ifcont31
   %ctx41 = load ptr, ptr %ctx, align 8
@@ -160137,8 +160073,8 @@ march_arm60:                                      ; preds = %march_next53
   br label %match_end51
 
 march_next61:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.10188, i64 %tag49, ptr @mu_file.10189, i64 189)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::defer_stmt::defer_emit"(ptr %0, ptr %1, ptr %2) {
@@ -160365,8 +160301,8 @@ march_arm119:                                     ; preds = %march_next
   br label %match_end
 
 march_next120:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.10210, i64 %tag, ptr @mu_file.10211, i64 19)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -160425,8 +160361,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.10212, i64 %tag, ptr @mu_file.10213, i64 32)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::defer_stmt::defer_check"(ptr %0, ptr %1) {
@@ -160484,8 +160420,8 @@ march_arm8:                                       ; preds = %march_next
   br label %match_end
 
 march_next9:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.10217, i64 %tag, ptr @mu_file.10218, i64 39)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::defer_stmt::defer_eval"(ptr %0, ptr %1) {
@@ -160526,8 +160462,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.10220, i64 %tag, ptr @mu_file.10221, i64 53)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::defer_stmt::errdefer_emit"(ptr %0, ptr %1, ptr %2) {
@@ -160754,8 +160690,8 @@ march_arm119:                                     ; preds = %march_next
   br label %match_end
 
 march_next120:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.10226, i64 %tag, ptr @mu_file.10227, i64 63)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -160814,8 +160750,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.10228, i64 %tag, ptr @mu_file.10229, i64 75)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::defer_stmt::errdefer_check"(ptr %0, ptr %1) {
@@ -160873,8 +160809,8 @@ march_arm8:                                       ; preds = %march_next
   br label %match_end
 
 march_next9:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.10233, i64 %tag, ptr @mu_file.10234, i64 80)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::defer_stmt::errdefer_eval"(ptr %0, ptr %1) {
@@ -160915,8 +160851,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.10236, i64 %tag, ptr @mu_file.10237, i64 93)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::defer_stmt::defer_feature"() {
@@ -161496,8 +161432,8 @@ march_arm53:                                      ; preds = %march_next21
   br label %match_end
 
 march_next54:                                     ; preds = %march_next21
-  call void @avra_match_unreachable(ptr @.match_fn.10282, i64 %tag, ptr @mu_file.10283, i64 33)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::tuples::tuple_feature"() {
@@ -161770,8 +161706,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.10286, i64 %tag, ptr @mu_file.10287, i64 33)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::tuples::tuple_check"(ptr %0, ptr %1) {
@@ -161857,8 +161793,8 @@ march_arm15:                                      ; preds = %march_next
   br label %match_end
 
 march_next16:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.10294, i64 %tag, ptr @mu_file.10295, i64 42)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::tuples::tuple_index_resolve"(ptr %0, ptr %1) {
@@ -161907,8 +161843,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.10296, i64 %tag, ptr @mu_file.10297, i64 56)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::tuples::tuple_index_check"(ptr %0, ptr %1) {
@@ -161992,8 +161928,8 @@ march_arm16:                                      ; preds = %march_next
   br label %match_end
 
 march_next17:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.10304, i64 %tag, ptr @mu_file.10305, i64 65)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::tuples::tuple_load"(ptr %0, ptr %1, i64 %2, ptr %3) {
@@ -162099,8 +162035,8 @@ march_arm6:                                       ; preds = %march_next
   br label %match_end
 
 march_next7:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.10313, i64 %tag, ptr @mu_file.10314, i64 26)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -162280,8 +162216,8 @@ march_arm14:                                      ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next15:                                     ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.10337, i64 %tag, ptr @mu_file.10338, i64 47)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm14
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %12, i32 0, i32 1
@@ -162426,8 +162362,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.10339, i64 %tag, ptr @mu_file.10340, i64 66)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::tuples::emit_tuple_index"(ptr %0, ptr %1, ptr %2) {
@@ -162491,8 +162427,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.10342, i64 %tag, ptr @mu_file.10343, i64 75)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -162776,8 +162712,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.10377, i64 %tag, ptr @mu_file.10378, i64 105)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -164290,8 +164226,8 @@ march_arm5:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next6:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.10597, i64 %tag, ptr @mu_file.10598, i64 81)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm5
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %9, i32 0, i32 1
@@ -164366,8 +164302,8 @@ march_arm33:                                      ; preds = %march_next26
   br label %match_end24
 
 march_next34:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.10587, i64 %tag22, ptr @mu_file.10588, i64 86)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end54:                                      ; preds = %march_arm63, %march_arm55
   %match_val68 = load i64, ptr %match_result53, align 8
@@ -164413,8 +164349,8 @@ march_arm63:                                      ; preds = %march_next56
   br label %match_end54
 
 march_next64:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.10595, i64 %tag52, ptr @mu_file.10596, i64 91)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -164524,8 +164460,8 @@ march_arm5:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next6:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.10619, i64 %tag, ptr @mu_file.10620, i64 102)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm5
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %10, i32 0, i32 1
@@ -164609,8 +164545,8 @@ march_arm40:                                      ; preds = %march_next33
   br label %match_end31
 
 march_next41:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.10609, i64 %tag29, ptr @mu_file.10610, i64 108)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end60:                                      ; preds = %march_arm69, %march_arm61
   %match_val74 = load i64, ptr %match_result59, align 8
@@ -164657,8 +164593,8 @@ march_arm69:                                      ; preds = %march_next62
   br label %match_end60
 
 march_next70:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.10617, i64 %tag58, ptr @mu_file.10618, i64 113)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -165235,8 +165171,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.10697, i64 %tag, ptr @mu_file.10698, i64 25)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::spawn_expr::spawn_check"(ptr %0, ptr %1) {
@@ -165310,8 +165246,8 @@ march_arm11:                                      ; preds = %march_next
   br label %match_end
 
 march_next12:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.10702, i64 %tag, ptr @mu_file.10703, i64 34)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::parse::Parser__parse_spawn_expression"(ptr %0) {
@@ -165447,8 +165383,8 @@ march_arm6:                                       ; preds = %march_next
   br label %match_end
 
 march_next7:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.10718, i64 %tag, ptr @mu_file.10719, i64 13)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -165666,8 +165602,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_short, label %sc_rhs
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.10743, i64 %tag, ptr @mu_file.10744, i64 50)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm2
   %next10 = load ptr, ptr %next8, align 8
@@ -166228,8 +166164,8 @@ march_arm224:                                     ; preds = %march_next213
   br label %match_end
 
 march_next225:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.10745, i64 %tag, ptr @mu_file.10746, i64 59)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::features::spawn_expr::arms_have_spawn"(ptr %0) {
@@ -166283,8 +166219,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_short, label %sc_rhs
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.10747, i64 %tag, ptr @mu_file.10748, i64 85)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm2
   %next10 = load ptr, ptr %next8, align 8
@@ -166651,8 +166587,8 @@ march_arm120:                                     ; preds = %march_next113
   br label %match_end
 
 march_next121:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.10749, i64 %tag, ptr @mu_file.10750, i64 95)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::features::spawn_expr::exprs_have_spawn"(ptr %0) {
@@ -166712,8 +166648,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_short, label %sc_rhs
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.10754, i64 %tag, ptr @mu_file.10755, i64 111)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm2
   %next10 = load ptr, ptr %next8, align 8
@@ -167491,8 +167427,7 @@ march_arm68:                                      ; preds = %march_next
   ret ptr %cast157
 
 march_next69:                                     ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.10849, i64 %tag, ptr @mu_file.10850, i64 66)
-  unreachable
+  ret ptr null
 
 ifcont167:                                        ; preds = %if_else170
   %self246 = load ptr, ptr %self, align 8
@@ -168567,8 +168502,7 @@ march_arm5:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next6:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.11008, i64 %tag, ptr @mu_file.11009, i64 132)
-  unreachable
+  ret ptr null
 
 ifcont:                                           ; preds = %if_else, %if_then
   %ss18 = load ptr, ptr %ss8, align 8
@@ -168627,8 +168561,7 @@ march_arm37:                                      ; preds = %march_next29
   br label %match_end26
 
 march_next38:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.11006, i64 %tag25, ptr @mu_file.11007, i64 138)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::avrac::features::comptime::comptime_fn_from_stmt"(ptr %0) {
@@ -168702,8 +168635,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.11011, i64 %tag, ptr @mu_file.11012, i64 153)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::comptime::fn_payload"(ptr %0) {
@@ -168805,8 +168738,8 @@ march_arm27:                                      ; preds = %march_next5
   br label %match_end
 
 march_next28:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.11013, i64 %tag, ptr @mu_file.11014, i64 169)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::features::comptime::annotation_present"(ptr %0, ptr %1) {
@@ -168878,8 +168811,7 @@ march_arm4:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next5:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.11015, i64 %tag, ptr @mu_file.11016, i64 182)
-  unreachable
+  ret i1 0
 
 ifcont:                                           ; preds = %if_else
   %next13 = load ptr, ptr %next10, align 8
@@ -169081,8 +169013,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.11041, i64 %tag, ptr @mu_file.11042, i64 29)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::comptime::rewrite_stmt"(ptr %0, ptr %1) {
@@ -170435,8 +170367,8 @@ march_arm747:                                     ; preds = %march_next705
   br label %match_end
 
 march_next748:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.11043, i64 %tag, ptr @mu_file.11044, i64 39)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::comptime::rewrite_expr"(ptr %0, ptr %1) {
@@ -170498,8 +170430,8 @@ march_arm9:                                       ; preds = %march_next
   br label %match_end
 
 march_next10:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.11045, i64 %tag, ptr @mu_file.11046, i64 89)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::comptime::walk_expr"(ptr %0, ptr %1) {
@@ -172009,8 +171941,8 @@ march_arm816:                                     ; preds = %march_next799
   br label %match_end
 
 march_next817:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.11047, i64 %tag, ptr @mu_file.11048, i64 104)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::comptime::rewrite_opt_expr"(ptr %0, ptr %1) {
@@ -172136,8 +172068,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.11058, i64 %tag, ptr @mu_file.11059, i64 153)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::comptime::rewrite_field_inits"(ptr %0, ptr %1) {
@@ -172252,8 +172184,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.11069, i64 %tag, ptr @mu_file.11070, i64 163)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::comptime::rewrite_match_arms"(ptr %0, ptr %1) {
@@ -172335,8 +172267,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.11089, i64 %tag, ptr @mu_file.11090, i64 174)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -172501,8 +172433,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.11109, i64 %tag, ptr @mu_file.11110, i64 192)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -172699,8 +172631,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.11111, i64 %tag, ptr @mu_file.11112, i64 209)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::comptime::try_fold_call"(ptr %0, ptr %1) {
@@ -172818,16 +172750,16 @@ march_arm31:                                      ; preds = %march_next12
   br label %match_end10
 
 march_next32:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.11113, i64 %tag8, ptr @mu_file.11114, i64 38)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm33:                                      ; preds = %march_next
   store i64 0, ptr %match_result, align 8
   br label %match_end
 
 march_next34:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.11115, i64 %tag, ptr @mu_file.11116, i64 35)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::comptime::fold_call"(ptr %0, ptr %1, ptr %2) {
@@ -173047,8 +172979,7 @@ parm_body51:                                      ; preds = %parm_next45
   br label %pmatch_end
 
 parm_next52:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.11146, i64 -1, ptr @mu_file.11147, i64 74)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::avrac::features::is_keyword::is_keyword_feature"() {
@@ -173211,8 +173142,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.11150, i64 %tag, ptr @mu_file.11151, i64 24)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::is_keyword::is_check"(ptr %0, ptr %1) {
@@ -173286,8 +173217,8 @@ march_arm11:                                      ; preds = %march_next
   br label %match_end
 
 march_next12:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.11155, i64 %tag, ptr @mu_file.11156, i64 35)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::is_keyword::emit_is_check"(ptr %0, ptr %1, ptr %2) {
@@ -173352,8 +173283,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.11158, i64 %tag, ptr @mu_file.11159, i64 9)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -173826,8 +173757,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.11206, i64 %tag, ptr @mu_file.11207, i64 23)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::with_expr::with_check"(ptr %0, ptr %1) {
@@ -173915,8 +173846,8 @@ march_arm17:                                      ; preds = %march_next
   br label %match_end
 
 march_next18:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.11214, i64 %tag, ptr @mu_file.11215, i64 37)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::with_expr::emit_with"(ptr %0, ptr %1, ptr %2) {
@@ -173981,8 +173912,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.11217, i64 %tag, ptr @mu_file.11218, i64 15)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -174396,8 +174327,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.11292, i64 %tag, ptr @mu_file.11293, i64 62)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::with_expr::apply_overrides"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, ptr %5) {
@@ -174494,8 +174425,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.11331, i64 %tag, ptr @mu_file.11332, i64 86)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else, %ifcont47
   %ctx97 = load ptr, ptr %ctx, align 8
@@ -180196,8 +180127,8 @@ march_arm29:                                      ; preds = %march_next12
   br label %match_end
 
 march_next30:                                     ; preds = %march_next12
-  call void @avra_match_unreachable(ptr @.match_fn.11999, i64 %tag, ptr @mu_file.12000, i64 52)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::component_decl::collect_component_defs"(ptr %0) {
@@ -180276,8 +180207,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq19, label %march_arm17, label %march_next18
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.12006, i64 %tag, ptr @mu_file.12007, i64 63)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end16:                                      ; preds = %march_arm65, %march_arm55, %march_arm45, %march_arm17
   %match_val = load i64, ptr %match_result15, align 8
@@ -180399,8 +180330,8 @@ march_arm65:                                      ; preds = %march_next56
   br label %match_end16
 
 march_next66:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12004, i64 %tag14, ptr @mu_file.12005, i64 68)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::component_decl::merge_registries"(ptr %0, ptr %1) {
@@ -180502,8 +180433,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.12008, i64 %tag, ptr @mu_file.12009, i64 93)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::component_decl::comp_reg_names"(ptr %0) {
@@ -180578,8 +180509,7 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.12010, i64 %tag, ptr @mu_file.12011, i64 109)
-  unreachable
+  ret ptr null
 }
 
 define i1 @"@std::avrac::features::component_decl::comp_name_has"(ptr %0, ptr %1) {
@@ -180673,8 +180603,8 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12012, i64 %tag, ptr @mu_file.12013, i64 135)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::component_decl::rewrite_self"(ptr %0, ptr %1) {
@@ -180785,8 +180715,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.12026, i64 %tag, ptr @mu_file.12027, i64 167)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::component_decl::rw_stmt"(ptr %0, ptr %1) {
@@ -181178,8 +181108,8 @@ march_arm183:                                     ; preds = %march_next154
   br label %match_end
 
 march_next184:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12028, i64 %tag, ptr @mu_file.12029, i64 180)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::component_decl::rw_expr"(ptr %0, ptr %1) {
@@ -181618,8 +181548,8 @@ march_arm159:                                     ; preds = %march_next101
   br label %match_end99
 
 march_next160:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12049, i64 %tag97, ptr @mu_file.12050, i64 217)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm173:                                     ; preds = %march_next87
   %38 = call ptr @avra_rc_alloc(i64 16)
@@ -181645,8 +181575,8 @@ march_arm173:                                     ; preds = %march_next87
   br label %match_end10
 
 march_next174:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12051, i64 %tag8, ptr @mu_file.12052, i64 206)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm188:                                     ; preds = %march_next
   %pay_slot191 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %expr1, i32 0, i32 1
@@ -181875,8 +181805,8 @@ march_arm310:                                     ; preds = %march_next243
   br label %match_end241
 
 march_next311:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12058, i64 %tag239, ptr @mu_file.12059, i64 233)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm330:                                     ; preds = %march_next214
   %pay_slot333 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %expr1, i32 0, i32 1
@@ -182232,8 +182162,8 @@ march_arm523:                                     ; preds = %march_next510
   br label %match_end
 
 march_next524:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12064, i64 %tag, ptr @mu_file.12065, i64 203)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::component_decl::rw_expr_list"(ptr %0, ptr %1) {
@@ -182334,8 +182264,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.12075, i64 %tag, ptr @mu_file.12076, i64 256)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::component_decl::rw_template"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4) {
@@ -182451,8 +182381,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.12086, i64 %tag, ptr @mu_file.12087, i64 269)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::component_decl::rw_tpl_stmt"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4) {
@@ -182833,8 +182763,8 @@ march_arm183:                                     ; preds = %march_next122
   br label %match_end
 
 march_next184:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12088, i64 %tag, ptr @mu_file.12089, i64 282)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::component_decl::rw_tpl_expr"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4) {
@@ -183240,8 +183170,8 @@ march_arm137:                                     ; preds = %march_next117
   br label %match_end115
 
 march_next138:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12106, i64 %tag114, ptr @mu_file.12107, i64 319)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm155:                                     ; preds = %march_next104
   %46 = call ptr @avra_rc_alloc(i64 16)
@@ -183270,8 +183200,8 @@ march_arm155:                                     ; preds = %march_next104
   br label %match_end10
 
 march_next156:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12108, i64 %tag8, ptr @mu_file.12109, i64 306)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm172:                                     ; preds = %march_next
   %pay_slot175 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %expr1, i32 0, i32 1
@@ -183439,8 +183369,8 @@ march_arm252:                                     ; preds = %march_next198
   br label %match_end195
 
 march_next253:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12115, i64 %tag194, ptr @mu_file.12116, i64 335)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm278:                                     ; preds = %march_next173
   %pay_slot281 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %expr1, i32 0, i32 1
@@ -183730,8 +183660,8 @@ march_arm432:                                     ; preds = %march_next398
   br label %match_end
 
 march_next433:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12120, i64 %tag, ptr @mu_file.12121, i64 303)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::component_decl::rw_tpl_field_inits"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4) {
@@ -183861,8 +183791,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.12131, i64 %tag, ptr @mu_file.12132, i64 358)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::component_decl::rw_tpl_expr_list"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4) {
@@ -183975,8 +183905,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.12142, i64 %tag, ptr @mu_file.12143, i64 370)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::component_decl::resolve_config_value"(ptr %0, ptr %1, ptr %2) {
@@ -184054,8 +183984,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.12144, i64 %tag, ptr @mu_file.12145, i64 380)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %field15 = load ptr, ptr %field, align 8
@@ -184130,8 +184060,8 @@ march_arm27:                                      ; preds = %march_next23
   br i1 %if_cond53, label %if_then54, label %if_else55
 
 march_next28:                                     ; preds = %march_next23
-  call void @avra_match_unreachable(ptr @.match_fn.12148, i64 %tag20, ptr @mu_file.12149, i64 388)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont52:                                         ; preds = %if_else55
   %field69 = load ptr, ptr %field, align 8
@@ -184519,8 +184449,7 @@ parm_body115:                                     ; preds = %parm_next112
   br label %pmatch_end
 
 parm_next116:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12203, i64 -1, ptr @mu_file.12204, i64 410)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::avrac::features::component_decl::config_to_fields"(ptr %0) {
@@ -184609,8 +184538,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.12205, i64 %tag, ptr @mu_file.12206, i64 426)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::component_decl::config_to_factory_inits"(ptr %0) {
@@ -184681,8 +184610,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.12207, i64 %tag, ptr @mu_file.12208, i64 436)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -184806,8 +184735,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.12225, i64 %tag, ptr @mu_file.12226, i64 450)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end15:                                      ; preds = %march_arm114, %sif_end
   %match_val = load i64, ptr %match_result14, align 8
@@ -185059,8 +184988,8 @@ march_arm114:                                     ; preds = %march_next17
   br label %match_end15
 
 march_next115:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12223, i64 %tag13, ptr @mu_file.12224, i64 454)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::component_decl::append_stmt_lists"(ptr %0, ptr %1) {
@@ -185134,8 +185063,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.12227, i64 %tag, ptr @mu_file.12228, i64 473)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::component_decl::prepend_stmt"(ptr %0, i64 %1, i64 %2, ptr %3) {
@@ -185223,8 +185152,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12229, i64 %tag, ptr @mu_file.12230, i64 490)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::component_decl::config_pairs_to_field_inits"(ptr %0) {
@@ -185314,8 +185243,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.12231, i64 %tag, ptr @mu_file.12232, i64 500)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::component_decl::splice_component_def"(ptr %0, ptr %1, ptr %2, ptr %3, i64 %4, i64 %5, ptr %6) {
@@ -186657,8 +186586,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq22, label %march_arm20, label %march_next21
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.12367, i64 %tag, ptr @mu_file.12368, i64 638)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end19:                                      ; preds = %march_arm92, %march_arm49, %march_arm20
   %match_val = load i64, ptr %match_result18, align 8
@@ -186843,8 +186772,8 @@ march_arm92:                                      ; preds = %march_next50
   br label %match_end19
 
 march_next93:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12365, i64 %tag17, ptr @mu_file.12366, i64 644)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::component_decl::expand_stmt"(ptr %0, ptr %1, ptr %2) {
@@ -187371,8 +187300,8 @@ march_arm261:                                     ; preds = %march_next240
   br label %match_end
 
 march_next262:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12369, i64 %tag, ptr @mu_file.12370, i64 673)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::union_type::emit_union_wrap"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -187694,8 +187623,8 @@ march_arm8:                                       ; preds = %march_next
   br label %match_end
 
 march_next9:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12447, i64 %tag, ptr @mu_file.12448, i64 66)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::parallel_stmt::parallel_resolve"(ptr %0, ptr %1) {
@@ -187744,8 +187673,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12449, i64 %tag, ptr @mu_file.12450, i64 11)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::parallel_stmt::parallel_feature"() {
@@ -188005,8 +187934,8 @@ march_arm6:                                       ; preds = %march_next
   br label %match_end
 
 march_next7:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12471, i64 %tag, ptr @mu_file.12472, i64 8)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -188158,8 +188087,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.12494, i64 %tag, ptr @mu_file.12495, i64 29)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end15:                                      ; preds = %march_arm43, %try_ok
   %match_val = load i64, ptr %match_result14, align 8
@@ -188236,8 +188165,8 @@ march_arm43:                                      ; preds = %march_next17
   br label %match_end15
 
 march_next44:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12492, i64 %tag13, ptr @mu_file.12493, i64 33)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -188439,8 +188368,8 @@ march_arm12:                                      ; preds = %march_next
   br label %match_end
 
 march_next13:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12497, i64 %tag, ptr @mu_file.12498, i64 25)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::closures::closure_check"(ptr %0, ptr %1) {
@@ -188548,8 +188477,8 @@ march_arm22:                                      ; preds = %march_next
   br label %match_end
 
 march_next23:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12505, i64 %tag, ptr @mu_file.12506, i64 41)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::features::closures::expr_contains_it"(ptr %0) {
@@ -189409,8 +189338,8 @@ march_arm399:                                     ; preds = %march_next373
   br label %match_end
 
 march_next400:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12508, i64 %tag, ptr @mu_file.12509, i64 14)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::features::closures::expr_list_contains_it"(ptr %0) {
@@ -189470,8 +189399,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_short, label %sc_rhs
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.12513, i64 %tag, ptr @mu_file.12514, i64 44)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm2
   %next10 = load ptr, ptr %next8, align 8
@@ -189563,8 +189492,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq16, label %march_arm14, label %march_next15
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.12520, i64 %tag, ptr @mu_file.12521, i64 54)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end13:                                      ; preds = %march_arm49, %march_arm41, %march_arm29, %march_arm21, %march_arm14
   %match_val = load i64, ptr %match_result12, align 8
@@ -189653,8 +189582,8 @@ march_arm49:                                      ; preds = %march_next42
   br label %match_end13
 
 march_next50:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12518, i64 %tag11, ptr @mu_file.12519, i64 58)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %match_end13
   %next53 = load ptr, ptr %next8, align 8
@@ -189855,8 +189784,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @avra_match_unreachable(ptr @.match_fn.12532, i64 %tag, ptr @mu_file.12533, i64 38)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::features::closures::is_captured"(ptr %0, ptr %1) {
@@ -190337,8 +190266,8 @@ march_arm179:                                     ; preds = %march_next167
   br label %match_end
 
 march_next180:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12537, i64 %tag, ptr @mu_file.12538, i64 61)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::features::closures::expr_list_assigns"(ptr %0, ptr %1) {
@@ -190401,8 +190330,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_short, label %sc_rhs
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.12542, i64 %tag, ptr @mu_file.12543, i64 77)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm2
   %next11 = load ptr, ptr %next8, align 8
@@ -190491,8 +190420,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_short, label %sc_rhs
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.12547, i64 %tag, ptr @mu_file.12548, i64 85)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm2
   %next11 = load ptr, ptr %next8, align 8
@@ -190918,8 +190847,8 @@ march_arm174:                                     ; preds = %march_next146
   br label %match_end
 
 march_next175:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12549, i64 %tag, ptr @mu_file.12550, i64 95)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::features::closures::mark_mutable_captures"(ptr %0, ptr %1) {
@@ -192025,8 +191954,8 @@ march_arm514:                                     ; preds = %march_next490
   br label %match_end
 
 march_next515:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12566, i64 %tag, ptr @mu_file.12567, i64 133)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::features::closures::find_captures_arms"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -192096,8 +192025,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.12574, i64 %tag, ptr @mu_file.12575, i64 233)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else, %if_then
   %body18 = load ptr, ptr %body8, align 8
@@ -192208,8 +192137,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.12579, i64 %tag, ptr @mu_file.12580, i64 247)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::features::closures::find_captures_when_arms"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -192279,8 +192208,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.12587, i64 %tag, ptr @mu_file.12588, i64 260)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else, %if_then
   %body18 = load ptr, ptr %body8, align 8
@@ -192391,8 +192320,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.12592, i64 %tag, ptr @mu_file.12593, i64 274)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::features::closures::find_captures_stmt_body"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -192890,8 +192819,8 @@ march_arm247:                                     ; preds = %march_next234
   br label %match_end
 
 march_next248:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12594, i64 %tag, ptr @mu_file.12595, i64 287)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::features::closures::find_captures_stmts"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -192977,8 +192906,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq26, label %march_arm24, label %march_next25
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.12604, i64 %tag, ptr @mu_file.12605, i64 333)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end23:                                      ; preds = %march_arm152, %march_arm124, %march_arm100, %march_arm72, %march_arm44, %march_arm24
   %match_val = load i64, ptr %match_result22, align 8
@@ -193218,8 +193147,8 @@ march_arm152:                                     ; preds = %march_next125
   br label %match_end23
 
 march_next153:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12602, i64 %tag21, ptr @mu_file.12603, i64 342)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::closures::env_type_of"(ptr %0, ptr %1, ptr %2) {
@@ -194036,8 +193965,8 @@ march_arm326:                                     ; preds = %march_next311
   br label %match_end
 
 march_next327:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12627, i64 %tag, ptr @mu_file.12628, i64 392)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::features::closures::has_float_ident_list"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4) {
@@ -194109,8 +194038,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_short, label %sc_rhs
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.12632, i64 %tag, ptr @mu_file.12633, i64 423)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm2
   %next14 = load ptr, ptr %next8, align 8
@@ -194250,8 +194179,8 @@ march_arm19:                                      ; preds = %march_next12
   br label %match_end10
 
 march_next20:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12634, i64 %tag8, ptr @mu_file.12635, i64 438)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end25:                                      ; preds = %march_arm41, %march_arm26
   %match_val43 = load i64, ptr %match_result24, align 8
@@ -194286,8 +194215,8 @@ march_arm41:                                      ; preds = %march_next27
   br label %match_end25
 
 march_next42:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12636, i64 %tag23, ptr @mu_file.12637, i64 439)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %match_end25
   %right46 = load ptr, ptr %right5, align 8
@@ -194643,8 +194572,8 @@ march_arm224:                                     ; preds = %march_next172
   br label %match_end
 
 march_next225:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12638, i64 %tag, ptr @mu_file.12639, i64 435)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::features::closures::param_used_with_float_list"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, ptr %5) {
@@ -194719,8 +194648,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_short, label %sc_rhs
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.12643, i64 %tag, ptr @mu_file.12644, i64 461)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm2
   %param_name15 = load ptr, ptr %param_name, align 8
@@ -194827,8 +194756,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq16, label %march_arm14, label %march_next15
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.12650, i64 %tag, ptr @mu_file.12651, i64 473)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end13:                                      ; preds = %march_arm73, %march_arm56, %march_arm43, %march_arm26, %march_arm14
   %match_val = load i64, ptr %match_result12, align 8
@@ -194937,8 +194866,8 @@ march_arm73:                                      ; preds = %march_next57
   br label %match_end13
 
 march_next74:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12648, i64 %tag11, ptr @mu_file.12649, i64 477)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %param_name77 = load ptr, ptr %param_name, align 8
@@ -195038,8 +194967,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_rhs, label %sc_short
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.12655, i64 %tag, ptr @mu_file.12656, i64 495)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm3
   %raw_vt14 = load ptr, ptr %raw_vt9, align 8
@@ -195220,8 +195149,8 @@ march_arm13:                                      ; preds = %march_next
   br label %match_end
 
 march_next14:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12658, i64 %tag, ptr @mu_file.12659, i64 523)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -195479,8 +195408,8 @@ march_arm23:                                      ; preds = %march_next
   br label %match_end
 
 march_next24:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12665, i64 %tag, ptr @mu_file.12666, i64 554)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end109:                                     ; preds = %march_arm110
   %ctx128 = load ptr, ptr %ctx, align 8
@@ -195537,8 +195466,8 @@ march_arm116:                                     ; preds = %march_next111
   ret ptr %39
 
 march_next117:                                    ; preds = %march_next111
-  call void @avra_match_unreachable(ptr @.match_fn.12704, i64 %tag108, ptr @mu_file.12705, i64 578)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else, %if_then
   %body_ctx146 = load ptr, ptr %body_ctx, align 8
@@ -195958,8 +195887,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq14, label %march_arm12, label %march_next13
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.12798, i64 %tag, ptr @mu_file.12799, i64 665)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end11:                                      ; preds = %march_arm27, %march_arm12
   %match_val = load i64, ptr %match_result10, align 8
@@ -196016,8 +195945,8 @@ march_arm27:                                      ; preds = %march_next13
   br label %match_end11
 
 march_next28:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12796, i64 %tag9, ptr @mu_file.12797, i64 669)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -196404,8 +196333,7 @@ march_arm30:                                      ; preds = %march_next
   ret ptr %22
 
 march_next31:                                     ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.12835, i64 %tag, ptr @mu_file.12836, i64 740)
-  unreachable
+  ret ptr null
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -196771,8 +196699,8 @@ march_arm43:                                      ; preds = %march_next
   ret ptr %14
 
 march_next44:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12889, i64 %tag, ptr @mu_file.12890, i64 809)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont48:                                         ; preds = %if_else51, %match_end55
   %user_arg_count147 = load i64, ptr %user_arg_count, align 8
@@ -196941,16 +196869,16 @@ march_arm143:                                     ; preds = %march_next93
   ret ptr %21
 
 march_next144:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12914, i64 %tag90, ptr @mu_file.12915, i64 823)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm145:                                     ; preds = %march_next58
   %22 = call ptr @"@std::avrac::codegen::err_emit"(ptr @.str.12916)
   ret ptr %22
 
 march_next146:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12917, i64 %tag54, ptr @mu_file.12918, i64 819)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont150:                                        ; preds = %if_else153, %match_end157
   %user_arg_count305 = load i64, ptr %user_arg_count, align 8
@@ -197216,24 +197144,24 @@ march_arm297:                                     ; preds = %march_next240
   ret ptr %43
 
 march_next298:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12951, i64 %tag236, ptr @mu_file.12952, i64 844)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm300:                                     ; preds = %march_next200
   %44 = call ptr @"@std::avrac::codegen::err_emit"(ptr @.str.12953)
   ret ptr %44
 
 march_next301:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12954, i64 %tag196, ptr @mu_file.12955, i64 840)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm303:                                     ; preds = %march_next160
   %45 = call ptr @"@std::avrac::codegen::err_emit"(ptr @.str.12956)
   ret ptr %45
 
 march_next304:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.12957, i64 %tag156, ptr @mu_file.12958, i64 836)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %ifcont150
   br label %defer_done
@@ -197331,8 +197259,8 @@ march_arm5:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next6:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.12974, i64 %tag, ptr @mu_file.12975, i64 867)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm5
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %8, i32 0, i32 1
@@ -197472,8 +197400,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq24, label %march_arm22, label %march_next23
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.12989, i64 %tag, ptr @mu_file.12990, i64 883)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end21:                                      ; preds = %sif_end, %march_arm22
   %match_val = load i64, ptr %match_result20, align 8
@@ -197514,8 +197442,8 @@ march_arm30:                                      ; preds = %march_next23
   br i1 %l_bool, label %sc_rhs, label %sc_short
 
 march_next31:                                     ; preds = %march_next23
-  call void @avra_match_unreachable(ptr @.match_fn.12982, i64 %tag19, ptr @mu_file.12983, i64 889)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm30
   %raw_vt34 = load ptr, ptr %raw_vt9, align 8
@@ -197628,8 +197556,8 @@ march_arm61:                                      ; preds = %march_next54
   br label %match_end52
 
 march_next62:                                     ; preds = %march_next54
-  call void @avra_match_unreachable(ptr @.match_fn.12984, i64 %tag50, ptr @mu_file.12985, i64 900)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 declare i64 @avra_selfhost_string_to_int(ptr)
@@ -197805,8 +197733,7 @@ parm_body24:                                      ; preds = %parm_next17
   br label %pmatch_end
 
 parm_next25:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13024, i64 -1, ptr @mu_file.13025, i64 156)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::avrac::features::eval::ok_result"(ptr %0, ptr %1) {
@@ -197937,8 +197864,7 @@ parm_body10:                                      ; preds = %parm_next7
   br label %pmatch_end
 
 parm_next11:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13039, i64 -1, ptr @mu_file.13040, i64 205)
-  unreachable
+  ret i1 0
 }
 
 define ptr @"@std::avrac::features::eval::eval_expression_source"(ptr %0) {
@@ -198389,8 +198315,7 @@ march_arm4:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next5:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.13091, i64 %tag, ptr @mu_file.13092, i64 308)
-  unreachable
+  ret ptr null
 
 ifcont:                                           ; preds = %if_else
   %out13 = load ptr, ptr %out, align 8
@@ -198508,8 +198433,8 @@ march_arm32:                                      ; preds = %march_next29
   br label %match_end
 
 march_next33:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13094, i64 %tag, ptr @mu_file.13095, i64 325)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::eval::runtime_new"() {
@@ -199317,8 +199242,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_short, label %sc_rhs
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.13167, i64 %tag, ptr @mu_file.13168, i64 534)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm3
   %current17 = load ptr, ptr %current, align 8
@@ -199393,8 +199318,8 @@ march_arm32:                                      ; preds = %march_next28
   br label %match_end26
 
 march_next33:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13165, i64 %tag24, ptr @mu_file.13166, i64 543)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::eval::execute_stmt"(ptr %0, ptr %1) {
@@ -199908,8 +199833,8 @@ march_arm237:                                     ; preds = %march_next229
   br i1 %if_cond251, label %if_then252, label %if_else253
 
 march_next238:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13219, i64 %tag, ptr @mu_file.13220, i64 556)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont250:                                        ; preds = %if_else253
   %runtime255 = load ptr, ptr %runtime, align 8
@@ -200803,8 +200728,8 @@ march_arm367:                                     ; preds = %march_next327
   br i1 %if_cond382, label %if_then383, label %if_else384
 
 march_next368:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13312, i64 %tag, ptr @mu_file.13313, i64 660)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont381:                                        ; preds = %if_else384
   %runtime386 = load ptr, ptr %runtime, align 8
@@ -200921,8 +200846,7 @@ march_arm5:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next6:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.13332, i64 %tag, ptr @mu_file.13333, i64 755)
-  unreachable
+  ret ptr null
 
 ifcont:                                           ; preds = %if_else
   %values32 = load ptr, ptr %values, align 8
@@ -201060,8 +200984,7 @@ march_arm5:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next6:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.13335, i64 %tag, ptr @mu_file.13336, i64 787)
-  unreachable
+  ret ptr null
 
 sif_then:                                         ; preds = %march_arm5
   store i1 false, ptr %keep_going, align 8
@@ -201132,8 +201055,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.13337, i64 %tag, ptr @mu_file.13338, i64 806)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::eval::eval_call"(ptr %0, ptr %1, ptr %2) {
@@ -201842,8 +201765,8 @@ march_arm41:                                      ; preds = %march_next31
   br label %match_end
 
 march_next42:                                     ; preds = %march_next31
-  call void @avra_match_unreachable(ptr @.match_fn.13462, i64 %tag, ptr @mu_file.13463, i64 924)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::eval::eval_binary"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -201992,8 +201915,8 @@ march_arm47:                                      ; preds = %march_next40
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next48:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13482, i64 %tag, ptr @mu_file.13483, i64 951)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %right_value52 = load ptr, ptr %right_value, align 8
@@ -202162,8 +202085,8 @@ march_arm117:                                     ; preds = %march_next111
   br label %match_end67
 
 march_next118:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13480, i64 %tag65, ptr @mu_file.13481, i64 967)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::eval::eval_logical"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -202252,8 +202175,8 @@ march_arm15:                                      ; preds = %march_next
   br i1 %if_cond, label %if_then20, label %if_else21
 
 march_next16:                                     ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.13493, i64 %tag, ptr @mu_file.13494, i64 988)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont19:                                         ; preds = %if_else21
   %left_result23 = load ptr, ptr %left_result, align 8
@@ -202600,8 +202523,7 @@ parm_body58:                                      ; preds = %parm_next43
   br label %pmatch_end
 
 parm_next59:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13542, i64 -1, ptr @mu_file.13543, i64 1053)
-  unreachable
+  ret i1 0
 }
 
 define ptr @"@std::avrac::features::eval::unquote_string"(ptr %0) {
@@ -202797,8 +202719,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13545, i64 %tag, ptr @mu_file.13546, i64 22)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::list_lit::list_lit_check_expr"(ptr %0, ptr %1) {
@@ -202855,8 +202777,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13547, i64 %tag, ptr @mu_file.13548, i64 31)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::list_lit::list_lit_emit_expr"(ptr %0, ptr %1, ptr %2) {
@@ -202911,8 +202833,8 @@ march_arm6:                                       ; preds = %march_next
   br label %match_end
 
 march_next7:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13550, i64 %tag, ptr @mu_file.13551, i64 41)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -203032,8 +202954,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.13561, i64 %tag, ptr @mu_file.13562, i64 10)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::list_lit::check_list_method"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -203238,8 +203160,7 @@ parm_body81:                                      ; preds = %parm_next66
   br label %pmatch_end
 
 parm_next82:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13573, i64 -1, ptr @mu_file.13574, i64 26)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::avrac::features::list_lit::tc_infer_lambda_ret"(ptr %0, ptr %1, ptr %2) {
@@ -203309,8 +203230,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq15, label %march_arm13, label %march_next14
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.13588, i64 %tag, ptr @mu_file.13589, i64 48)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end12:                                      ; preds = %march_arm56, %match_end27
   %match_val61 = load i64, ptr %match_result11, align 8
@@ -203402,8 +203323,8 @@ march_arm33:                                      ; preds = %march_next29
   br label %match_end27
 
 march_next34:                                     ; preds = %march_next29
-  call void @avra_match_unreachable(ptr @.match_fn.13578, i64 %tag25, ptr @mu_file.13579, i64 56)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm56:                                      ; preds = %march_next14
   %8 = call ptr @avra_rc_alloc(i64 16)
@@ -203416,8 +203337,8 @@ march_arm56:                                      ; preds = %march_next14
   br label %match_end12
 
 march_next57:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13586, i64 %tag10, ptr @mu_file.13587, i64 52)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::parse::Parser__parse_list_elements"(ptr %0) {
@@ -203930,8 +203851,8 @@ march_arm12:                                      ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next13:                                     ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.13673, i64 %tag, ptr @mu_file.13674, i64 14)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm12
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %8, i32 0, i32 1
@@ -204077,8 +203998,8 @@ march_arm7:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next8:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.13687, i64 %tag, ptr @mu_file.13688, i64 29)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm7
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %8, i32 0, i32 1
@@ -204426,8 +204347,8 @@ march_arm92:                                      ; preds = %march_next44
   br i1 %try_is_ok107, label %try_ok108, label %try_err109
 
 march_next93:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13710, i64 %tag41, ptr @mu_file.13711, i64 54)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok108:                                        ; preds = %march_arm92
   %try_pay_slot110 = getelementptr inbounds nuw %Result__EmitValue__string, ptr %19, i32 0, i32 1
@@ -204450,8 +204371,8 @@ march_arm139:                                     ; preds = %march_next12
   br label %match_end10
 
 march_next140:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13723, i64 %tag8, ptr @mu_file.13724, i64 48)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm142:                                     ; preds = %march_next
   %21 = call ptr @"@std::avrac::codegen::err_emit"(ptr @.str.13725)
@@ -204460,8 +204381,8 @@ march_arm142:                                     ; preds = %march_next
   br label %match_end
 
 march_next143:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13726, i64 %tag, ptr @mu_file.13727, i64 45)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -205213,8 +205134,7 @@ parm_body389:                                     ; preds = %parm_next350
   br label %pmatch_end
 
 parm_next390:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13820, i64 -1, ptr @mu_file.13821, i64 79)
-  unreachable
+  ret ptr null
 
 errdefer_path:                                    ; preds = %pmatch_end
   br label %defer_done
@@ -205406,8 +205326,8 @@ march_arm65:                                      ; preds = %march_next12
   br label %match_end10
 
 march_next66:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13845, i64 %tag8, ptr @mu_file.13846, i64 156)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm68:                                      ; preds = %march_next
   %11 = call ptr @"@std::avrac::codegen::err_emit"(ptr @.str.13847)
@@ -205416,8 +205336,8 @@ march_arm68:                                      ; preds = %march_next
   br label %match_end
 
 march_next69:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13848, i64 %tag, ptr @mu_file.13849, i64 153)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -205626,8 +205546,8 @@ march_arm72:                                      ; preds = %march_next12
   br label %match_end10
 
 march_next73:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13873, i64 %tag8, ptr @mu_file.13874, i64 176)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm75:                                      ; preds = %march_next
   %13 = call ptr @"@std::avrac::codegen::err_emit"(ptr @.str.13875)
@@ -205636,8 +205556,8 @@ march_arm75:                                      ; preds = %march_next
   br label %match_end
 
 march_next76:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13876, i64 %tag, ptr @mu_file.13877, i64 173)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -206023,8 +205943,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13884, i64 %tag, ptr @mu_file.13885, i64 48)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::match_expr::match_resolve_expr"(ptr %0, ptr %1) {
@@ -206087,8 +206007,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13886, i64 %tag, ptr @mu_file.13887, i64 61)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::match_expr::match_eval_stmt"(ptr %0, ptr %1) {
@@ -206128,8 +206048,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13890, i64 %tag, ptr @mu_file.13891, i64 74)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::match_expr::match_eval_expr"(ptr %0, ptr %1) {
@@ -206169,8 +206089,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13894, i64 %tag, ptr @mu_file.13895, i64 83)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::match_expr::when_resolve_expr"(ptr %0, ptr %1) {
@@ -206219,8 +206139,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13896, i64 %tag, ptr @mu_file.13897, i64 92)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::match_expr::when_check_expr"(ptr %0, ptr %1) {
@@ -206277,8 +206197,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13898, i64 %tag, ptr @mu_file.13899, i64 101)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::match_expr::when_eval_expr"(ptr %0, ptr %1) {
@@ -206318,8 +206238,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13902, i64 %tag, ptr @mu_file.13903, i64 110)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::match_expr::match_emit_expr"(ptr %0, ptr %1, ptr %2) {
@@ -206384,8 +206304,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13905, i64 %tag, ptr @mu_file.13906, i64 118)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -206460,8 +206380,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13908, i64 %tag, ptr @mu_file.13909, i64 126)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -206526,8 +206446,8 @@ march_arm6:                                       ; preds = %march_next
   br label %match_end
 
 march_next7:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13911, i64 %tag, ptr @mu_file.13912, i64 134)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -206618,8 +206538,8 @@ march_arm18:                                      ; preds = %march_next
   br label %match_end
 
 march_next19:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13919, i64 %tag, ptr @mu_file.13920, i64 143)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::match_expr::match_check_expr"(ptr %0, ptr %1) {
@@ -206708,8 +206628,8 @@ march_arm18:                                      ; preds = %march_next
   br label %match_end
 
 march_next19:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13927, i64 %tag, ptr @mu_file.13928, i64 158)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::features::match_expr::stmts_diverges"(ptr %0) {
@@ -206765,8 +206685,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq16, label %march_arm14, label %march_next15
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.13934, i64 %tag, ptr @mu_file.13935, i64 19)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end13:                                      ; preds = %march_arm18, %march_arm14
   %match_val = load i64, ptr %match_result12, align 8
@@ -206798,8 +206718,8 @@ march_arm18:                                      ; preds = %march_next15
   br label %match_end13
 
 march_next19:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13932, i64 %tag11, ptr @mu_file.13933, i64 23)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::features::match_expr::stmt_diverges"(ptr %0) {
@@ -206962,8 +206882,8 @@ march_arm38:                                      ; preds = %march_next25
   br label %match_end
 
 march_next39:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13936, i64 %tag, ptr @mu_file.13937, i64 35)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::features::match_expr::expr_diverges"(ptr %0) {
@@ -207007,8 +206927,8 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13938, i64 %tag, ptr @mu_file.13939, i64 54)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::features::match_expr::arm_type_skip"(ptr %0, ptr %1) {
@@ -207124,8 +207044,8 @@ march_arm34:                                      ; preds = %march_next21
   br label %match_end
 
 march_next35:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13942, i64 %tag, ptr @mu_file.13943, i64 74)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::match_expr::enum_type_variants"(ptr %0, ptr %1) {
@@ -207249,8 +207169,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq16, label %march_arm14, label %march_next15
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.13958, i64 %tag, ptr @mu_file.13959, i64 100)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end13:                                      ; preds = %march_arm17, %march_arm14
   %match_val = load i64, ptr %match_result12, align 8
@@ -207272,8 +207192,8 @@ march_arm17:                                      ; preds = %march_next15
   br label %match_end13
 
 march_next18:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13956, i64 %tag11, ptr @mu_file.13957, i64 104)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::match_expr::arms_matched_variants"(ptr %0) {
@@ -207338,8 +207258,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.13964, i64 %tag, ptr @mu_file.13965, i64 116)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %rest13 = load ptr, ptr %rest, align 8
@@ -207580,8 +207500,8 @@ march_arm61:                                      ; preds = %march_next25
   br label %match_end
 
 march_next62:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13970, i64 %tag, ptr @mu_file.13971, i64 133)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::features::match_expr::variant_in_matched"(ptr %0, ptr %1) {
@@ -207828,8 +207748,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.13981, i64 %tag, ptr @mu_file.13982, i64 168)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   %rest13 = load ptr, ptr %rest, align 8
@@ -208004,8 +207924,7 @@ march_arm17:                                      ; preds = %march_next
   br label %match_end
 
 march_next18:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.13987, i64 %tag, ptr @mu_file.13988, i64 195)
-  unreachable
+  ret ptr null
 
 ifcont27:                                         ; preds = %if_else30
   %tc32 = load ptr, ptr %tc, align 8
@@ -208341,8 +208260,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.14008, i64 %tag, ptr @mu_file.14009, i64 219)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   %next11 = load ptr, ptr %next8, align 8
@@ -208752,8 +208671,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.14032, i64 %tag, ptr @mu_file.14033, i64 262)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   %rest14 = load ptr, ptr %rest, align 8
@@ -208876,8 +208795,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.14034, i64 %tag, ptr @mu_file.14035, i64 280)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   %next12 = load ptr, ptr %next8, align 8
@@ -209011,8 +208930,8 @@ march_arm33:                                      ; preds = %march_next20
   br label %match_end
 
 march_next34:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.14036, i64 %tag, ptr @mu_file.14037, i64 300)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::match_expr::tc_enter_pattern_scope"(ptr %0, ptr %1) {
@@ -209086,8 +209005,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.14038, i64 %tag, ptr @mu_file.14039, i64 318)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::match_expr::tc_bind_pattern_params"(ptr %0, ptr %1) {
@@ -209147,8 +209066,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.14041, i64 %tag, ptr @mu_file.14042, i64 328)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %tc13 = load ptr, ptr %tc, align 8
@@ -209260,8 +209179,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.14055, i64 %tag, ptr @mu_file.14056, i64 344)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -209412,8 +209331,8 @@ march_arm4:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next5:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.14087, i64 %tag, ptr @mu_file.14088, i64 367)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -209725,8 +209644,8 @@ march_arm6:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next7:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.14110, i64 %tag, ptr @mu_file.14111, i64 394)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -209892,8 +209811,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.14117, i64 %tag, ptr @mu_file.14118, i64 420)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end15:                                      ; preds = %march_arm27, %march_arm16
   %match_val = load i64, ptr %match_result14, align 8
@@ -209936,8 +209855,8 @@ march_arm27:                                      ; preds = %march_next17
   br label %match_end15
 
 march_next28:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.14115, i64 %tag13, ptr @mu_file.14116, i64 424)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::match_expr::check_when_expr"(ptr %0, ptr %1) {
@@ -210015,8 +209934,8 @@ march_arm6:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next7:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.14134, i64 %tag, ptr @mu_file.14135, i64 440)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -210153,8 +210072,8 @@ march_arm4:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next5:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.14172, i64 %tag, ptr @mu_file.14173, i64 454)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -210496,8 +210415,7 @@ march_arm7:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next8:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.14183, i64 %tag, ptr @mu_file.14184, i64 15)
-  unreachable
+  ret ptr null
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -210643,8 +210561,8 @@ march_arm29:                                      ; preds = %march_next20
   br label %match_end
 
 march_next30:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.14185, i64 %tag, ptr @mu_file.14186, i64 36)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::match_expr::declare_pattern_list"(ptr %0, ptr %1) {
@@ -210705,8 +210623,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.14187, i64 %tag, ptr @mu_file.14188, i64 47)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::match_expr::resolve_when_arms"(ptr %0, ptr %1) {
@@ -210804,8 +210722,7 @@ march_arm7:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next8:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.14198, i64 %tag, ptr @mu_file.14199, i64 62)
-  unreachable
+  ret ptr null
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -211565,8 +211482,8 @@ march_arm124:                                     ; preds = %march_next
   br label %match_end
 
 march_next125:                                    ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.14289, i64 %tag, ptr @mu_file.14290, i64 67)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::parse::Parser__parse_match_table_rows"(ptr %0, ptr %1, i64 %2) {
@@ -214411,8 +214328,8 @@ march_arm7:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next8:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.14732, i64 %tag, ptr @mu_file.14733, i64 43)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %r18 = load ptr, ptr %r12, align 8
@@ -214948,8 +214865,8 @@ march_arm8:                                       ; preds = %march_next
   br i1 %tag_eq28, label %march_arm26, label %march_next27
 
 march_next9:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.14886, i64 %tag, ptr @mu_file.14887, i64 104)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end25:                                      ; preds = %march_arm401, %match_end344, %match_end205, %match_end146
   %match_val404 = load i64, ptr %match_result24, align 8
@@ -215171,8 +215088,8 @@ march_arm105:                                     ; preds = %march_next99
   br label %match_end97
 
 march_next106:                                    ; preds = %march_next99
-  call void @avra_match_unreachable(ptr @.match_fn.14808, i64 %tag96, ptr @mu_file.14809, i64 128)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end146:                                     ; preds = %try_ok, %march_arm147
   %match_val = load i64, ptr %match_result145, align 8
@@ -215239,8 +215156,8 @@ march_arm159:                                     ; preds = %march_next148
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next160:                                    ; preds = %march_next148
-  call void @avra_match_unreachable(ptr @.match_fn.14822, i64 %tag144, ptr @mu_file.14823, i64 139)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm159
   %try_pay_slot = getelementptr inbounds nuw %Result__ValueType__string, ptr %34, i32 0, i32 1
@@ -215336,8 +215253,8 @@ march_arm218:                                     ; preds = %march_next207
   br label %match_end205
 
 march_next219:                                    ; preds = %march_next207
-  call void @avra_match_unreachable(ptr @.match_fn.14833, i64 %tag203, ptr @mu_file.14834, i64 154)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm238:                                     ; preds = %march_next189
   %pay_slot241 = getelementptr inbounds nuw %"@std::avrac::core::Pattern", ptr %pattern21, i32 0, i32 1
@@ -215463,8 +215380,8 @@ march_arm260:                                     ; preds = %march_next253
   br label %match_end251
 
 march_next261:                                    ; preds = %march_next253
-  call void @avra_match_unreachable(ptr @.match_fn.14836, i64 %tag249, ptr @mu_file.14837, i64 166)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -215582,8 +215499,8 @@ march_arm357:                                     ; preds = %march_next346
   br i1 %try_is_ok389, label %try_ok390, label %try_err391
 
 march_next358:                                    ; preds = %march_next346
-  call void @avra_match_unreachable(ptr @.match_fn.14881, i64 %tag342, ptr @mu_file.14882, i64 176)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok390:                                        ; preds = %march_arm357
   %try_pay_slot392 = getelementptr inbounds nuw %Result__ValueType__string, ptr %60, i32 0, i32 1
@@ -215610,8 +215527,8 @@ march_arm401:                                     ; preds = %march_next239
   br label %match_end25
 
 march_next402:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.14884, i64 %tag23, ptr @mu_file.14885, i64 112)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -215677,8 +215594,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq16, label %march_arm14, label %march_next15
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.14890, i64 %tag, ptr @mu_file.14891, i64 197)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end13:                                      ; preds = %march_arm17, %march_arm14
   %match_val = load i64, ptr %match_result12, align 8
@@ -215700,8 +215617,8 @@ march_arm17:                                      ; preds = %march_next15
   br label %match_end13
 
 march_next18:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.14888, i64 %tag11, ptr @mu_file.14889, i64 201)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::match_expr::infer_enum_from_arms"(ptr %0, ptr %1) {
@@ -215763,8 +215680,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq16, label %march_arm14, label %march_next15
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.14901, i64 %tag, ptr @mu_file.14902, i64 215)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end13:                                      ; preds = %march_arm33, %march_arm21, %march_arm14
   %match_val = load i64, ptr %match_result12, align 8
@@ -215818,8 +215735,8 @@ march_arm33:                                      ; preds = %march_next22
   br label %match_end13
 
 march_next34:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.14894, i64 %tag11, ptr @mu_file.14895, i64 219)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else, %ifcont44
   %ctx49 = load ptr, ptr %ctx, align 8
@@ -216022,8 +215939,8 @@ march_arm8:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next9:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.14959, i64 %tag, ptr @mu_file.14960, i64 238)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else, %match_end64
   %ctx99 = load ptr, ptr %ctx, align 8
@@ -216147,8 +216064,8 @@ march_arm72:                                      ; preds = %march_next66
   br label %match_end64
 
 march_next73:                                     ; preds = %march_next66
-  call void @avra_match_unreachable(ptr @.match_fn.14937, i64 %tag63, ptr @mu_file.14938, i64 255)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end121:                                     ; preds = %ifcont169, %march_arm122
   %match_val = load i64, ptr %match_result120, align 8
@@ -216216,8 +216133,8 @@ march_arm134:                                     ; preds = %march_next123
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next135:                                    ; preds = %march_next123
-  call void @avra_match_unreachable(ptr @.match_fn.14957, i64 %tag119, ptr @mu_file.14958, i64 267)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm134
   %try_pay_slot = getelementptr inbounds nuw %Result__ValueType__string, ptr %31, i32 0, i32 1
@@ -216376,8 +216293,8 @@ march_arm7:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next8:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.14995, i64 %tag, ptr @mu_file.14996, i64 291)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %r21 = load ptr, ptr %r12, align 8
@@ -216741,8 +216658,8 @@ march_arm16:                                      ; preds = %march_next5
   br label %match_end
 
 march_next17:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.15002, i64 %tag, ptr @mu_file.15003, i64 339)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::match_expr::emit_pattern_tag_branch"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, ptr %5) {
@@ -216843,8 +216760,8 @@ march_arm25:                                      ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next26:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.15034, i64 %tag, ptr @mu_file.15035, i64 351)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %variants35 = load ptr, ptr %variants, align 8
@@ -217030,8 +216947,8 @@ march_arm24:                                      ; preds = %march_next
   br label %match_end
 
 march_next25:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.15045, i64 %tag, ptr @mu_file.15046, i64 384)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::features::match_expr::emit_nested_tag_check_list"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, i64 %5, ptr %6) {
@@ -217131,8 +217048,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq15, label %march_arm13, label %march_next14
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.15147, i64 %tag, ptr @mu_file.15148, i64 400)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end12:                                      ; preds = %march_arm238, %sif_end131, %sif_end
   %ctx241 = load ptr, ptr %ctx, align 8
@@ -217522,8 +217439,8 @@ march_arm238:                                     ; preds = %march_next111
   br label %match_end12
 
 march_next239:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.15145, i64 %tag11, ptr @mu_file.15146, i64 404)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::match_expr::load_payload_field"(ptr %0, ptr %1, ptr %2, i64 %3, ptr %4, ptr %5) {
@@ -217780,8 +217697,8 @@ march_arm83:                                      ; preds = %march_next79
   br label %match_end
 
 march_next84:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.15181, i64 %tag, ptr @mu_file.15182, i64 472)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::match_expr::bind_pattern_payload_loop"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, ptr %5, i64 %6) {
@@ -217910,8 +217827,8 @@ march_arm19:                                      ; preds = %march_next4
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next20:                                     ; preds = %march_next4
-  call void @avra_match_unreachable(ptr @.match_fn.15194, i64 %tag, ptr @mu_file.15195, i64 498)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else, %if_then
   %ctx53 = load ptr, ptr %ctx, align 8
@@ -218054,8 +217971,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.15197, i64 %tag, ptr @mu_file.15198, i64 524)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::match_expr::bind_single_sub_pattern"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4) {
@@ -218380,8 +218297,8 @@ march_arm155:                                     ; preds = %march_next68
   br label %match_end
 
 march_next156:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.15245, i64 %tag, ptr @mu_file.15246, i64 542)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::match_expr::bind_first_param"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4) {
@@ -218472,8 +218389,8 @@ march_arm10:                                      ; preds = %march_next4
   br label %match_end
 
 march_next11:                                     ; preds = %march_next4
-  call void @avra_match_unreachable(ptr @.match_fn.15251, i64 %tag, ptr @mu_file.15252, i64 584)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::match_expr::emit_primitive_match_expr"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -218890,8 +218807,8 @@ march_arm146:                                     ; preds = %march_next125
   br label %match_end
 
 march_next147:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.15345, i64 %tag, ptr @mu_file.15346, i64 613)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::features::match_expr::is_literal_pattern"(ptr %0) {
@@ -218967,8 +218884,8 @@ march_arm16:                                      ; preds = %march_next12
   br label %match_end
 
 march_next17:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.15347, i64 %tag, ptr @mu_file.15348, i64 671)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::match_expr::emit_primitive_arms_expr"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, ptr %5) {
@@ -219112,8 +219029,8 @@ march_arm16:                                      ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next17:                                     ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.15429, i64 %tag, ptr @mu_file.15430, i64 686)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %ifcont109, %ifcont42
   %ctx167 = load ptr, ptr %ctx, align 8
@@ -219271,8 +219188,8 @@ march_arm81:                                      ; preds = %march_next75
   br label %match_end73
 
 march_next82:                                     ; preds = %march_next75
-  call void @avra_match_unreachable(ptr @.match_fn.15389, i64 %tag72, ptr @mu_file.15390, i64 706)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont109:                                        ; preds = %if_else112, %match_end126
   br label %ifcont
@@ -219358,8 +219275,8 @@ march_arm139:                                     ; preds = %march_next129
   br label %match_end126
 
 march_next140:                                    ; preds = %march_next129
-  call void @avra_match_unreachable(ptr @.match_fn.15407, i64 %tag125, ptr @mu_file.15408, i64 719)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end186:                                     ; preds = %ifcont232, %march_arm187
   %match_val = load i64, ptr %match_result185, align 8
@@ -219424,8 +219341,8 @@ march_arm199:                                     ; preds = %march_next188
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next200:                                    ; preds = %march_next188
-  call void @avra_match_unreachable(ptr @.match_fn.15427, i64 %tag184, ptr @mu_file.15428, i64 733)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm199
   %try_pay_slot = getelementptr inbounds nuw %Result__ValueType__string, ptr %36, i32 0, i32 1
@@ -219768,8 +219685,8 @@ march_arm5:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next6:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.15517, i64 %tag, ptr @mu_file.15518, i64 785)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm5
   %ctx22 = load ptr, ptr %ctx, align 8
@@ -220374,8 +220291,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.15537, i64 %tag, ptr @mu_file.15538, i64 21)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::in_operator::in_check"(ptr %0, ptr %1) {
@@ -220463,8 +220380,8 @@ march_arm16:                                      ; preds = %march_next
   br label %match_end
 
 march_next17:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.15542, i64 %tag, ptr @mu_file.15543, i64 34)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::in_operator::emit_in_check"(ptr %0, ptr %1, ptr %2) {
@@ -220529,8 +220446,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.15545, i64 %tag, ptr @mu_file.15546, i64 11)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -220637,8 +220554,8 @@ march_arm7:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next8:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.15563, i64 %tag, ptr @mu_file.15564, i64 21)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm7
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %8, i32 0, i32 1
@@ -220761,8 +220678,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.15565, i64 %tag, ptr @mu_file.15566, i64 14)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::modules::mod_eval"(ptr %0, ptr %1) {
@@ -220804,8 +220721,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.15567, i64 %tag, ptr @mu_file.15568, i64 21)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::modules::use_eval"(ptr %0, ptr %1) {
@@ -220847,8 +220764,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.15569, i64 %tag, ptr @mu_file.15570, i64 30)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::modules::mod_feature"() {
@@ -222391,8 +222308,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.15661, i64 %tag, ptr @mu_file.15662, i64 34)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   store i64 1, ptr %sif_result, align 8
@@ -222646,8 +222563,8 @@ march_arm79:                                      ; preds = %march_next70
   br label %match_end
 
 march_next80:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.15681, i64 %tag, ptr @mu_file.15682, i64 55)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::features::modules::stmt_reaches_target"(ptr %0, ptr %1, i1 %2) {
@@ -222719,8 +222636,8 @@ march_arm16:                                      ; preds = %march_next7
   br label %match_end
 
 march_next17:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.15683, i64 %tag, ptr @mu_file.15684, i64 67)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::modules::annotate_external"(ptr %0) {
@@ -222901,8 +222818,8 @@ march_arm30:                                      ; preds = %march_next
   br label %match_end
 
 march_next31:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.15693, i64 %tag, ptr @mu_file.15694, i64 80)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::modules::filter_to_target_unit"(ptr %0, ptr %1) {
@@ -223006,8 +222923,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq15, label %march_arm13, label %march_next14
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.15723, i64 %tag, ptr @mu_file.15724, i64 112)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end12:                                      ; preds = %march_arm118, %match_end78, %sif_end
   %next121 = load ptr, ptr %next8, align 8
@@ -223241,8 +223158,8 @@ march_arm115:                                     ; preds = %march_next80
   br label %match_end78
 
 march_next116:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.15719, i64 %tag76, ptr @mu_file.15720, i64 116)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm118:                                     ; preds = %march_next69
   %64 = call ptr @avra_map_new_cstr()
@@ -223251,8 +223168,8 @@ march_arm118:                                     ; preds = %march_next69
   br label %match_end12
 
 march_next119:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.15721, i64 %tag11, ptr @mu_file.15722, i64 116)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::modules::filter_inner"(ptr %0, ptr %1, i1 %2) {
@@ -223338,8 +223255,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.15755, i64 %tag, ptr @mu_file.15756, i64 136)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end15:                                      ; preds = %march_arm216, %match_end104, %sif_end
   %match_val220 = load i64, ptr %match_result14, align 8
@@ -223762,8 +223679,8 @@ march_arm212:                                     ; preds = %march_next106
   br label %match_end104
 
 march_next213:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.15751, i64 %tag102, ptr @mu_file.15752, i64 140)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm216:                                     ; preds = %march_next91
   %ss218 = load ptr, ptr %ss6, align 8
@@ -223772,8 +223689,8 @@ march_arm216:                                     ; preds = %march_next91
   br label %match_end15
 
 march_next217:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.15753, i64 %tag13, ptr @mu_file.15754, i64 140)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::features::modules::stmt_list_empty"(ptr %0) {
@@ -223806,8 +223723,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.15757, i64 %tag, ptr @mu_file.15758, i64 179)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 declare ptr @avra_bytes_to_hex.51(ptr)
@@ -224134,8 +224051,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.15777, i64 %tag, ptr @mu_file.15778, i64 94)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::features::modules::loaded_has"(ptr %0, ptr %1) {
@@ -224210,8 +224127,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @avra_match_unreachable(ptr @.match_fn.15779, i64 %tag, ptr @mu_file.15780, i64 109)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::features::modules::stack_has"(ptr %0, ptr %1) {
@@ -224286,8 +224203,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @avra_match_unreachable(ptr @.match_fn.15781, i64 %tag, ptr @mu_file.15782, i64 155)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::modules::render_cycle"(ptr %0, ptr %1) {
@@ -224388,8 +224305,7 @@ march_arm5:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next6:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.15784, i64 %tag, ptr @mu_file.15785, i64 169)
-  unreachable
+  ret ptr null
 
 sif_then:                                         ; preds = %march_arm5
   %parts24 = load ptr, ptr %parts, align 8
@@ -225739,8 +225655,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq16, label %march_arm14, label %march_next15
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.15855, i64 %tag, ptr @mu_file.15856, i64 418)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end13:                                      ; preds = %march_arm50, %match_end32, %march_arm14
   %match_val52 = load i64, ptr %match_result12, align 8
@@ -225822,16 +225738,16 @@ march_arm48:                                      ; preds = %march_next34
   br label %match_end32
 
 march_next49:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.15851, i64 %tag30, ptr @mu_file.15852, i64 422)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm50:                                      ; preds = %march_next23
   store i64 0, ptr %match_result12, align 8
   br label %match_end13
 
 march_next51:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.15853, i64 %tag11, ptr @mu_file.15854, i64 422)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %match_end13
   store i64 1, ptr %sif_result, align 8
@@ -226041,8 +225957,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.15858, i64 %tag, ptr @mu_file.15859, i64 459)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::features::modules::stmts_have_mod_decl"(ptr %0) {
@@ -226110,8 +226026,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq16, label %march_arm14, label %march_next15
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.15867, i64 %tag, ptr @mu_file.15868, i64 473)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end13:                                      ; preds = %march_arm46, %match_end31, %march_arm14
   %match_val48 = load i64, ptr %match_result12, align 8
@@ -226187,16 +226103,16 @@ march_arm44:                                      ; preds = %march_next33
   br label %match_end31
 
 march_next45:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.15863, i64 %tag29, ptr @mu_file.15864, i64 477)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm46:                                      ; preds = %march_next22
   store i64 0, ptr %match_result12, align 8
   br label %match_end13
 
 march_next47:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.15865, i64 %tag11, ptr @mu_file.15866, i64 477)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %match_end13
   store i64 1, ptr %sif_result, align 8
@@ -226298,8 +226214,7 @@ march_arm4:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next5:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.15880, i64 %tag, ptr @mu_file.15881, i64 535)
-  unreachable
+  ret ptr null
 
 match_end14:                                      ; preds = %march_arm36, %march_arm16
   %next43 = load ptr, ptr %next10, align 8
@@ -226369,8 +226284,7 @@ march_arm36:                                      ; preds = %march_next17
   br label %match_end14
 
 march_next37:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.15878, i64 %tag13, ptr @mu_file.15879, i64 539)
-  unreachable
+  ret ptr null
 }
 
 define i64 @"@std::avrac::features::modules::mod_group_merge"(ptr %0, ptr %1, ptr %2, i64 %3, i64 %4) {
@@ -226541,8 +226455,7 @@ march_arm37:                                      ; preds = %march_next
   br label %match_end
 
 march_next38:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.15882, i64 %tag, ptr @mu_file.15883, i64 562)
-  unreachable
+  ret i64 0
 }
 
 define ptr @"@std::avrac::features::modules::flatten_groups"(ptr %0) {
@@ -226712,8 +226625,7 @@ march_arm42:                                      ; preds = %march_next
   br label %match_end
 
 march_next43:                                     ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.15884, i64 %tag, ptr @mu_file.15885, i64 583)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::avrac::features::modules::hoist_package_modules"(ptr %0) {
@@ -226808,8 +226720,8 @@ march_arm10:                                      ; preds = %march_next
   br i1 %tag_eq26, label %march_arm24, label %march_next25
 
 march_next11:                                     ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.15946, i64 %tag, ptr @mu_file.15947, i64 626)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end23:                                      ; preds = %march_arm210, %sif_end, %guard_pass
   %match_val = load i64, ptr %match_result22, align 8
@@ -227194,8 +227106,8 @@ march_arm210:                                     ; preds = %march_next96
   br label %match_end23
 
 march_next211:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.15944, i64 %tag21, ptr @mu_file.15945, i64 631)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::features::modules::has_no_packages"(ptr %0) {
@@ -227233,8 +227145,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.15951, i64 %tag, ptr @mu_file.15952, i64 671)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::modules::append_stmt_list"(ptr %0, ptr %1) {
@@ -227308,8 +227220,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.15953, i64 %tag, ptr @mu_file.15954, i64 681)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::features::modules::is_package_use"(ptr %0) {
@@ -227583,8 +227495,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.15960, i64 %tag, ptr @mu_file.15961, i64 728)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::modules::qualify_use_in_stmt"(ptr %0, ptr %1) {
@@ -227787,8 +227699,8 @@ march_arm55:                                      ; preds = %march_next35
   br label %match_end
 
 march_next56:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.15974, i64 %tag, ptr @mu_file.15975, i64 748)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::modules::anchor_use_path"(ptr %0, ptr %1) {
@@ -228038,8 +227950,8 @@ march_arm9:                                       ; preds = %march_next
   br i1 %tag_eq24, label %march_arm22, label %march_next23
 
 march_next10:                                     ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.16024, i64 %tag, ptr @mu_file.16025, i64 772)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end21:                                      ; preds = %march_arm54, %match_end39, %march_arm22
   %match_val56 = load i64, ptr %match_result20, align 8
@@ -228114,16 +228026,16 @@ march_arm52:                                      ; preds = %march_next41
   br label %match_end39
 
 march_next53:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.15983, i64 %tag37, ptr @mu_file.15984, i64 780)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm54:                                      ; preds = %march_next30
   store i64 0, ptr %match_result20, align 8
   br label %match_end21
 
 march_next55:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.15985, i64 %tag19, ptr @mu_file.15986, i64 780)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %ss64 = load ptr, ptr %ss12, align 8
@@ -228362,8 +228274,8 @@ march_arm12:                                      ; preds = %march_next5
   br label %match_end
 
 march_next13:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.16027, i64 %tag, ptr @mu_file.16028, i64 811)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::modules::resolve_package_use_and_continue"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4) {
@@ -230910,8 +230822,8 @@ march_arm819:                                     ; preds = %march_next780
   br label %match_end
 
 march_next820:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.16240, i64 %tag, ptr @mu_file.16241, i64 945)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::parse::Parser__parse_module_declaration"(ptr %0) {
@@ -232306,8 +232218,8 @@ march_arm7:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next8:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.16370, i64 %tag, ptr @mu_file.16371, i64 130)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %head24 = load ptr, ptr %head, align 8
@@ -232723,8 +232635,8 @@ march_arm194:                                     ; preds = %march_next180
   br label %match_end
 
 march_next195:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.16382, i64 %tag, ptr @mu_file.16383, i64 151)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::modules::register_item"(ptr %0, i64 %1, ptr %2, ptr %3) {
@@ -234076,8 +233988,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.16535, i64 %tag, ptr @mu_file.16536, i64 378)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::modules::walk_ast_stmt"(ptr %0, ptr %1, i64 %2, ptr %3) {
@@ -234553,8 +234465,8 @@ march_arm224:                                     ; preds = %march_next209
   br label %match_end
 
 march_next225:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.16552, i64 %tag, ptr @mu_file.16553, i64 397)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::modules::register_item_typed"(ptr %0, i64 %1, ptr %2, ptr %3, i64 %4, i1 %5) {
@@ -234733,8 +234645,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.16563, i64 %tag, ptr @mu_file.16564, i64 451)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   store i64 1, ptr %sif_result, align 8
@@ -235633,8 +235545,7 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.16597, i64 %tag, ptr @mu_file.16598, i64 594)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::avrac::features::spec_test::spec_feature"() {
@@ -236052,8 +235963,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.16612, i64 %tag, ptr @mu_file.16613, i64 48)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::spec_test::spec_check_stmt"(ptr %0, ptr %1) {
@@ -236102,8 +236013,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.16614, i64 %tag, ptr @mu_file.16615, i64 58)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::spec_test::given_check_stmt"(ptr %0, ptr %1) {
@@ -236152,8 +236063,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.16616, i64 %tag, ptr @mu_file.16617, i64 67)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::spec_test::then_check_stmt"(ptr %0, ptr %1) {
@@ -236208,8 +236119,8 @@ march_arm7:                                       ; preds = %march_next
   br label %match_end
 
 march_next8:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.16621, i64 %tag, ptr @mu_file.16622, i64 77)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::spec_test::spec_resolve_stmt"(ptr %0, ptr %1) {
@@ -236258,8 +236169,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.16623, i64 %tag, ptr @mu_file.16624, i64 85)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::spec_test::spec_eval_stmt"(ptr %0, ptr %1) {
@@ -236300,8 +236211,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.16626, i64 %tag, ptr @mu_file.16627, i64 94)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::spec_test::given_resolve_stmt"(ptr %0, ptr %1) {
@@ -236350,8 +236261,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.16628, i64 %tag, ptr @mu_file.16629, i64 102)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::spec_test::given_eval_stmt"(ptr %0, ptr %1) {
@@ -236392,8 +236303,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.16631, i64 %tag, ptr @mu_file.16632, i64 111)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::spec_test::then_resolve_stmt"(ptr %0, ptr %1) {
@@ -236442,8 +236353,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.16633, i64 %tag, ptr @mu_file.16634, i64 120)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::spec_test::then_eval_stmt"(ptr %0, ptr %1) {
@@ -236484,8 +236395,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.16636, i64 %tag, ptr @mu_file.16637, i64 129)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 declare i64 @avra_test_pass_inc()
@@ -238217,8 +238128,8 @@ march_arm56:                                      ; preds = %march_next33
   br label %match_end
 
 march_next57:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.16806, i64 %tag, ptr @mu_file.16807, i64 11)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -238714,8 +238625,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.16858, i64 %tag, ptr @mu_file.16859, i64 69)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm3
   %try_pay_slot = getelementptr inbounds nuw %Result__VarEnv__string, ptr %5, i32 0, i32 1
@@ -239006,8 +238917,8 @@ march_arm96:                                      ; preds = %march_next54
   br i1 %try_is_ok122, label %try_ok123, label %try_err124
 
 march_next97:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.16878, i64 %tag, ptr @mu_file.16879, i64 85)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok123:                                        ; preds = %march_arm96
   %try_pay_slot125 = getelementptr inbounds nuw %Result__EmitValue__string, ptr %15, i32 0, i32 1
@@ -239136,8 +239047,8 @@ march_arm24:                                      ; preds = %march_next
   br label %match_end
 
 march_next25:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.16880, i64 %tag, ptr @mu_file.16881, i64 14)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::for_stmt::for_in_resolve"(ptr %0, ptr %1) {
@@ -239227,8 +239138,8 @@ march_arm19:                                      ; preds = %march_next
   br label %match_end
 
 march_next20:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.16882, i64 %tag, ptr @mu_file.16883, i64 33)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::for_stmt::for_check"(ptr %0, ptr %1) {
@@ -239346,8 +239257,8 @@ march_arm32:                                      ; preds = %march_next
   br label %match_end
 
 march_next33:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.16890, i64 %tag, ptr @mu_file.16891, i64 50)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::for_stmt::for_in_check"(ptr %0, ptr %1) {
@@ -239449,8 +239360,8 @@ march_arm24:                                      ; preds = %march_next
   br label %match_end
 
 march_next25:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.16898, i64 %tag, ptr @mu_file.16899, i64 68)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::for_stmt::for_feature"() {
@@ -240116,8 +240027,8 @@ march_arm18:                                      ; preds = %march_next
   br label %match_end
 
 march_next19:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.16958, i64 %tag, ptr @mu_file.16959, i64 14)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -240771,8 +240682,8 @@ march_arm14:                                      ; preds = %march_next
   br label %match_end
 
 march_next15:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.17061, i64 %tag, ptr @mu_file.17062, i64 104)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -241989,8 +241900,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.17192, i64 %tag, ptr @mu_file.17193, i64 59)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::null_safety::optional_chain_resolve_expr"(ptr %0, ptr %1) {
@@ -242039,8 +241950,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.17194, i64 %tag, ptr @mu_file.17195, i64 72)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::null_safety::optional_chain_check_expr"(ptr %0, ptr %1) {
@@ -242107,8 +242018,8 @@ march_arm9:                                       ; preds = %march_next
   br label %match_end
 
 march_next10:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.17196, i64 %tag, ptr @mu_file.17197, i64 83)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::null_safety::try_resolve_expr"(ptr %0, ptr %1) {
@@ -242157,8 +242068,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.17198, i64 %tag, ptr @mu_file.17199, i64 91)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::null_safety::catch_resolve_expr"(ptr %0, ptr %1) {
@@ -242288,8 +242199,8 @@ march_arm28:                                      ; preds = %march_next
   br label %match_end
 
 march_next29:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.17200, i64 %tag, ptr @mu_file.17201, i64 101)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::null_safety::catch_emit_expr"(ptr %0, ptr %1, ptr %2) {
@@ -242364,8 +242275,8 @@ march_arm14:                                      ; preds = %march_next
   br label %match_end
 
 march_next15:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.17203, i64 %tag, ptr @mu_file.17204, i64 118)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -242440,8 +242351,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.17206, i64 %tag, ptr @mu_file.17207, i64 127)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -242516,8 +242427,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.17209, i64 %tag, ptr @mu_file.17210, i64 136)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -242582,8 +242493,8 @@ march_arm6:                                       ; preds = %march_next
   br label %match_end
 
 march_next7:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.17212, i64 %tag, ptr @mu_file.17213, i64 144)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -242871,8 +242782,8 @@ march_arm105:                                     ; preds = %march_next
   br label %match_end
 
 march_next106:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.17244, i64 %tag, ptr @mu_file.17245, i64 13)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::null_safety::check_try"(ptr %0, ptr %1) {
@@ -242961,8 +242872,8 @@ march_arm18:                                      ; preds = %march_next11
   br label %match_end9
 
 march_next19:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.17250, i64 %tag7, ptr @mu_file.17251, i64 47)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else, %ifcont29
   %r40 = load ptr, ptr %r, align 8
@@ -243037,8 +242948,8 @@ march_arm53:                                      ; preds = %march_next
   br label %match_end
 
 march_next54:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.17264, i64 %tag, ptr @mu_file.17265, i64 39)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::null_safety::check_null_coalesce"(ptr %0, ptr %1) {
@@ -243204,8 +243115,8 @@ march_arm68:                                      ; preds = %march_next
   br label %match_end
 
 march_next69:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.17293, i64 %tag, ptr @mu_file.17294, i64 66)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::null_safety::emit_null_coalesce"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -245836,8 +245747,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18025, i64 %tag, ptr @mu_file.18026, i64 24)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::map_lit::map_lit_check_expr"(ptr %0, ptr %1) {
@@ -245905,8 +245816,8 @@ march_arm9:                                       ; preds = %march_next
   br label %match_end
 
 march_next10:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18027, i64 %tag, ptr @mu_file.18028, i64 33)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::map_lit::map_lit_emit_expr"(ptr %0, ptr %1, ptr %2) {
@@ -245961,8 +245872,8 @@ march_arm6:                                       ; preds = %march_next
   br label %match_end
 
 march_next7:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18030, i64 %tag, ptr @mu_file.18031, i64 46)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -246122,8 +246033,7 @@ parm_body51:                                      ; preds = %parm_next40
   br label %pmatch_end
 
 parm_next52:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18038, i64 -1, ptr @mu_file.18039, i64 11)
-  unreachable
+  ret ptr null
 }
 
 define i1 @"@std::avrac::parse::Parser__is_map_literal"(ptr %0) {
@@ -246867,8 +246777,8 @@ march_arm6:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next7:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.18174, i64 %tag, ptr @mu_file.18175, i64 21)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm6
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %6, i32 0, i32 1
@@ -246940,8 +246850,8 @@ march_arm30:                                      ; preds = %march_next27
   br i1 %try_is_ok52, label %try_ok53, label %try_err54
 
 march_next31:                                     ; preds = %march_next27
-  call void @avra_match_unreachable(ptr @.match_fn.18172, i64 %tag23, ptr @mu_file.18173, i64 26)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok53:                                         ; preds = %march_arm30
   %try_pay_slot55 = getelementptr inbounds nuw %Result__EmitValue__string, ptr %8, i32 0, i32 1
@@ -247375,8 +247285,7 @@ parm_body161:                                     ; preds = %parm_next123
   br label %pmatch_end
 
 parm_next162:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18231, i64 -1, ptr @mu_file.18232, i64 43)
-  unreachable
+  ret ptr null
 
 errdefer_path:                                    ; preds = %pmatch_end
   br label %defer_done
@@ -247582,8 +247491,8 @@ march_arm73:                                      ; preds = %march_next12
   br label %match_end10
 
 march_next74:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18260, i64 %tag8, ptr @mu_file.18261, i64 74)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm76:                                      ; preds = %march_next
   %12 = call ptr @"@std::avrac::codegen::err_emit"(ptr @.str.18262)
@@ -247592,8 +247501,8 @@ march_arm76:                                      ; preds = %march_next
   br label %match_end
 
 march_next77:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18263, i64 %tag, ptr @mu_file.18264, i64 71)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -247891,8 +247800,8 @@ march_arm15:                                      ; preds = %march_next
   br label %match_end
 
 march_next16:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18270, i64 %tag, ptr @mu_file.18271, i64 35)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::if_stmt::if_eval_expr"(ptr %0, ptr %1) {
@@ -247932,8 +247841,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18274, i64 %tag, ptr @mu_file.18275, i64 49)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::if_stmt::if_emit_expr"(ptr %0, ptr %1, ptr %2) {
@@ -248008,8 +247917,8 @@ march_arm14:                                      ; preds = %march_next
   br label %match_end
 
 march_next15:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18277, i64 %tag, ptr @mu_file.18278, i64 58)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -248094,8 +248003,8 @@ march_arm14:                                      ; preds = %march_next
   br label %match_end
 
 march_next15:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18280, i64 %tag, ptr @mu_file.18281, i64 67)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -248196,8 +248105,8 @@ march_arm17:                                      ; preds = %march_next
   br label %match_end
 
 march_next18:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18282, i64 %tag, ptr @mu_file.18283, i64 76)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::if_stmt::if_check_stmt"(ptr %0, ptr %1) {
@@ -248450,8 +248359,8 @@ march_arm86:                                      ; preds = %march_next
   br label %match_end
 
 march_next87:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18304, i64 %tag, ptr @mu_file.18305, i64 94)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::if_stmt::if_check_expr"(ptr %0, ptr %1) {
@@ -248971,8 +248880,8 @@ march_arm247:                                     ; preds = %march_next
   br label %match_end
 
 march_next248:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18362, i64 %tag, ptr @mu_file.18363, i64 117)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::if_stmt::if_eval_stmt"(ptr %0, ptr %1) {
@@ -249094,8 +249003,8 @@ march_arm28:                                      ; preds = %march_next
   br label %match_end
 
 march_next29:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18365, i64 %tag, ptr @mu_file.18366, i64 141)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::parse::Parser__parse_if_statement"(ptr %0) {
@@ -249684,16 +249593,16 @@ march_arm15:                                      ; preds = %march_next9
   br label %match_end7
 
 march_next16:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18437, i64 %tag5, ptr @mu_file.18438, i64 15)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm17:                                      ; preds = %march_next
   store i64 ptrtoint (ptr @.str.18439 to i64), ptr %match_result, align 8
   br label %match_end
 
 march_next18:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18440, i64 %tag, ptr @mu_file.18441, i64 15)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::if_stmt::is_check_variant_name"(ptr %0) {
@@ -249736,8 +249645,8 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18443, i64 %tag, ptr @mu_file.18444, i64 27)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::if_stmt::narrow_env_for_is"(ptr %0, ptr %1, ptr %2) {
@@ -250217,8 +250126,8 @@ march_arm20:                                      ; preds = %march_next18
   br label %match_end
 
 march_next21:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18502, i64 %tag, ptr @mu_file.18503, i64 97)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::features::if_stmt::emit_if_expr"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4) {
@@ -251699,8 +251608,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.18625, i64 %tag, ptr @mu_file.18626, i64 93)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::docs::sym_list_append"(ptr %0, ptr %1) {
@@ -251774,8 +251683,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.18627, i64 %tag, ptr @mu_file.18628, i64 101)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::docs::bucket_of"(ptr %0) {
@@ -251852,8 +251761,8 @@ march_arm17:                                      ; preds = %march_next15
   br label %match_end
 
 march_next18:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18632, i64 %tag, ptr @mu_file.18633, i64 119)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::docs::is_fn"(ptr %0) {
@@ -252001,8 +251910,7 @@ march_arm4:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next5:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.18638, i64 %tag, ptr @mu_file.18639, i64 153)
-  unreachable
+  ret i64 0
 
 ifcont:                                           ; preds = %if_else, %if_then
   %next14 = load ptr, ptr %next10, align 8
@@ -252338,8 +252246,8 @@ march_arm106:                                     ; preds = %march_next89
   br label %match_end
 
 march_next107:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18671, i64 %tag, ptr @mu_file.18672, i64 193)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::docs::declaration_line"(ptr %0) {
@@ -252531,8 +252439,8 @@ march_arm81:                                      ; preds = %march_next64
   br label %match_end
 
 march_next82:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18699, i64 %tag, ptr @mu_file.18700, i64 216)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::docs::var_signature"(ptr %0, ptr %1, ptr %2) {
@@ -252885,8 +252793,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.18718, i64 %tag, ptr @mu_file.18719, i64 261)
-  unreachable
+  ret i64 0
 
 ifcont:                                           ; preds = %if_else, %if_then
   %next13 = load ptr, ptr %next9, align 8
@@ -252955,8 +252862,7 @@ parm_body11:                                      ; preds = %parm_next9
   br label %pmatch_end
 
 parm_next12:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18725, i64 -1, ptr @mu_file.18726, i64 281)
-  unreachable
+  ret ptr null
 }
 
 define i64 @"@std::avrac::docs::show_overview"(ptr %0) {
@@ -253592,8 +253498,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.18793, i64 %tag, ptr @mu_file.18794, i64 362)
-  unreachable
+  ret i64 0
 
 ifcont:                                           ; preds = %if_else, %if_then
   %next53 = load ptr, ptr %next9, align 8
@@ -253919,8 +253824,7 @@ march_arm4:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_rhs, label %sc_short
 
 march_next5:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.18816, i64 %tag, ptr @mu_file.18817, i64 420)
-  unreachable
+  ret ptr null
 
 sc_rhs:                                           ; preds = %march_arm4
   %item12 = load ptr, ptr %item7, align 8
@@ -254059,8 +253963,7 @@ march_arm6:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next7:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.18821, i64 %tag, ptr @mu_file.18822, i64 444)
-  unreachable
+  ret ptr null
 
 ifcont:                                           ; preds = %if_else, %if_then
   %next25 = load ptr, ptr %next12, align 8
@@ -254152,8 +254055,7 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.18823, i64 %tag, ptr @mu_file.18824, i64 466)
-  unreachable
+  ret i64 0
 }
 
 define i64 @"@std::avrac::docs::print_call_edges"(ptr %0) {
@@ -254301,8 +254203,7 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.18838, i64 %tag, ptr @mu_file.18839, i64 486)
-  unreachable
+  ret i64 0
 }
 
 define ptr @"@std::avrac::docs::sym_by_path"(ptr %0, ptr %1) {
@@ -254403,8 +254304,7 @@ march_arm6:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_rhs, label %sc_short
 
 march_next7:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.18844, i64 %tag, ptr @mu_file.18845, i64 518)
-  unreachable
+  ret ptr null
 
 sc_rhs:                                           ; preds = %march_arm6
   %item14 = load ptr, ptr %item9, align 8
@@ -254501,8 +254401,7 @@ march_arm39:                                      ; preds = %march_next37
   br i1 %l_bool58, label %sc_rhs59, label %sc_short60
 
 march_next40:                                     ; preds = %march_next37
-  call void @avra_match_unreachable(ptr @.match_fn.18850, i64 %tag33, ptr @mu_file.18851, i64 536)
-  unreachable
+  ret ptr null
 
 sc_rhs59:                                         ; preds = %march_arm39
   %item62 = load ptr, ptr %item48, align 8
@@ -254790,8 +254689,7 @@ march_arm5:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next6:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.18866, i64 %tag, ptr @mu_file.18867, i64 585)
-  unreachable
+  ret i1 0
 
 ifcont:                                           ; preds = %if_else
   %next15 = load ptr, ptr %next11, align 8
@@ -255038,8 +254936,7 @@ march_arm6:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next7:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.18875, i64 %tag, ptr @mu_file.18876, i64 633)
-  unreachable
+  ret ptr null
 
 ifcont:                                           ; preds = %if_else, %if_then
   %next25 = load ptr, ptr %next12, align 8
@@ -255169,8 +255066,7 @@ march_arm6:                                       ; preds = %march_next
   br label %match_end
 
 march_next7:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.18877, i64 %tag, ptr @mu_file.18878, i64 656)
-  unreachable
+  ret ptr null
 }
 
 define i64 @"@std::avrac::docs::print_module_children"(ptr %0, ptr %1) {
@@ -255259,8 +255155,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.18896, i64 %tag, ptr @mu_file.18897, i64 677)
-  unreachable
+  ret i64 0
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -255479,8 +255374,7 @@ march_arm4:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next5:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.18905, i64 %tag, ptr @mu_file.18906, i64 708)
-  unreachable
+  ret ptr null
 
 ifcont:                                           ; preds = %if_else, %ifcont16
   %next27 = load ptr, ptr %next10, align 8
@@ -255612,8 +255506,7 @@ march_arm8:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_rhs, label %sc_short
 
 march_next9:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.18910, i64 %tag, ptr @mu_file.18911, i64 741)
-  unreachable
+  ret i1 0
 
 sc_rhs:                                           ; preds = %march_arm8
   %item16 = load ptr, ptr %item11, align 8
@@ -256062,8 +255955,8 @@ march_arm17:                                      ; preds = %march_next
   br label %match_end
 
 march_next18:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.18965, i64 %tag, ptr @mu_file.18966, i64 788)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::docs::show_short"(ptr %0, ptr %1) {
@@ -256225,8 +256118,7 @@ march_arm31:                                      ; preds = %march_next
   br i1 %l_bool, label %sc_rhs, label %sc_short
 
 march_next32:                                     ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.18990, i64 %tag, ptr @mu_file.18991, i64 818)
-  unreachable
+  ret i1 0
 
 sc_rhs:                                           ; preds = %march_arm31
   %item40 = load ptr, ptr %item34, align 8
@@ -257044,8 +256936,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_rhs, label %sc_short
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.19034, i64 %tag, ptr @mu_file.19035, i64 970)
-  unreachable
+  ret i64 0
 
 sc_rhs:                                           ; preds = %march_arm3
   %item12 = load ptr, ptr %item6, align 8
@@ -257290,8 +257181,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.19053, i64 %tag, ptr @mu_file.19054, i64 1010)
-  unreachable
+  ret i64 0
 
 ifcont:                                           ; preds = %if_else, %ifcont24
   %next41 = load ptr, ptr %next9, align 8
@@ -257659,8 +257549,8 @@ march_arm117:                                     ; preds = %march_next100
   br label %match_end
 
 march_next118:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.19088, i64 %tag, ptr @mu_file.19089, i64 1035)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::docs::validate_docs"(ptr %0) {
@@ -258273,8 +258163,7 @@ march_arm4:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_rhs, label %sc_short
 
 march_next5:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.19139, i64 %tag, ptr @mu_file.19140, i64 1112)
-  unreachable
+  ret ptr null
 
 sc_rhs:                                           ; preds = %march_arm4
   %item13 = load ptr, ptr %item7, align 8
@@ -258592,8 +258481,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.19163, i64 %tag, ptr @mu_file.19164, i64 1157)
-  unreachable
+  ret ptr null
 
 ifcont:                                           ; preds = %if_else, %ifcont13
   %next33 = load ptr, ptr %next9, align 8
@@ -259055,8 +258943,8 @@ march_arm29:                                      ; preds = %march_next27
   br label %match_end
 
 march_next30:                                     ; preds = %march_next27
-  call void @avra_match_unreachable(ptr @.match_fn.19216, i64 %tag, ptr @mu_file.19217, i64 1198)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::docs::render_markdown"(ptr %0) {
@@ -259227,8 +259115,7 @@ march_arm4:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next5:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.19254, i64 %tag, ptr @mu_file.19255, i64 1239)
-  unreachable
+  ret ptr null
 
 ifcont:                                           ; preds = %if_else, %ifcont49
   %next118 = load ptr, ptr %next10, align 8
@@ -259569,8 +259456,7 @@ march_arm12:                                      ; preds = %march_next
   br i1 %l_bool, label %sc_rhs, label %sc_short
 
 march_next13:                                     ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.19291, i64 %tag, ptr @mu_file.19292, i64 1280)
-  unreachable
+  ret i1 0
 
 sc_rhs:                                           ; preds = %march_arm12
   %item21 = load ptr, ptr %item15, align 8
@@ -261842,8 +261728,8 @@ march_arm46:                                      ; preds = %march_next44
   br label %match_end
 
 march_next47:                                     ; preds = %march_next44
-  call void @avra_match_unreachable(ptr @.match_fn.19478, i64 %tag, ptr @mu_file.19479, i64 43)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::docs::stub_for_fn"(ptr %0, ptr %1) {
@@ -264328,8 +264214,7 @@ march_arm6:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_rhs, label %sc_short
 
 march_next7:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.19560, i64 %tag, ptr @mu_file.19561, i64 46)
-  unreachable
+  ret ptr null
 
 sc_rhs:                                           ; preds = %march_arm6
   %item15 = load ptr, ptr %item9, align 8
@@ -264491,8 +264376,7 @@ march_arm6:                                       ; preds = %march_next
   br label %match_end
 
 march_next7:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.19562, i64 %tag, ptr @mu_file.19563, i64 67)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::avrac::docs::find_sym_for_gen"(ptr %0, ptr %1) {
@@ -264557,8 +264441,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_short, label %sc_rhs
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.19570, i64 %tag, ptr @mu_file.19571, i64 84)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm2
   %s11 = load ptr, ptr %s5, align 8
@@ -264930,8 +264814,8 @@ march_arm4:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next5:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.19587, i64 %tag, ptr @mu_file.19588, i64 64)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm4
   %try_pay_slot = getelementptr inbounds nuw %Result__StmtResult__string, ptr %5, i32 0, i32 1
@@ -265074,8 +264958,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.19599, i64 %tag, ptr @mu_file.19600, i64 87)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::codegen::emit_rc_release_typed"(ptr %0, ptr %1, ptr %2) {
@@ -265733,8 +265617,8 @@ march_arm319:                                     ; preds = %march_next269
   br label %match_end
 
 march_next320:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.19672, i64 %tag, ptr @mu_file.19673, i64 105)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::codegen::emit_rc_release_tuple"(ptr %0, ptr %1, ptr %2) {
@@ -265898,8 +265782,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.19749, i64 %tag, ptr @mu_file.19750, i64 209)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else, %if_then
   %ctx100 = load ptr, ptr %ctx, align 8
@@ -266292,8 +266176,8 @@ march_arm59:                                      ; preds = %march_next57
   br label %match_end48
 
 march_next60:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.19765, i64 %tag46, ptr @mu_file.19766, i64 254)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont63:                                         ; preds = %if_else65, %if_then64
   %ctx70 = load ptr, ptr %ctx, align 8
@@ -266929,8 +266813,8 @@ march_arm429:                                     ; preds = %march_next397
   br i1 %if_cond441, label %if_then442, label %if_else443
 
 march_next430:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.19845, i64 %tag, ptr @mu_file.19846, i64 240)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont440:                                        ; preds = %if_else443
   %tag454 = load i64, ptr %tag433, align 8
@@ -267966,8 +267850,8 @@ march_arm524:                                     ; preds = %march_next503
   br i1 %if_cond536, label %if_then537, label %if_else538
 
 march_next525:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.19990, i64 %tag, ptr @mu_file.19991, i64 347)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont535:                                        ; preds = %if_else538
   %tag549 = load i64, ptr %tag528, align 8
@@ -268510,8 +268394,8 @@ march_arm15:                                      ; preds = %march_next4
   br label %match_end
 
 march_next16:                                     ; preds = %march_next4
-  call void @avra_match_unreachable(ptr @.match_fn.20049, i64 %tag, ptr @mu_file.20050, i64 21)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::analyze_releasable"(ptr %0) {
@@ -268577,8 +268461,8 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.20051, i64 %tag, ptr @mu_file.20052, i64 48)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::single_pass_escape"(ptr %0, ptr %1) {
@@ -268648,8 +268532,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.20056, i64 %tag, ptr @mu_file.20057, i64 57)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::analyze_binding"(ptr %0, ptr %1, ptr %2) {
@@ -269385,8 +269269,8 @@ march_arm336:                                     ; preds = %march_next332
   br label %match_end
 
 march_next337:                                    ; preds = %march_next332
-  call void @avra_match_unreachable(ptr @.match_fn.20058, i64 %tag, ptr @mu_file.20059, i64 81)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::codegen::is_allocating_expr"(ptr %0) {
@@ -269442,8 +269326,8 @@ march_arm11:                                      ; preds = %march_next9
   br label %match_end
 
 march_next12:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.20060, i64 %tag, ptr @mu_file.20061, i64 140)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::remove_escaped_expr"(ptr %0, ptr %1) {
@@ -269562,8 +269446,8 @@ march_arm12:                                      ; preds = %march_next9
   br label %match_end7
 
 march_next13:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.20062, i64 %tag5, ptr @mu_file.20063, i64 154)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm17:                                      ; preds = %march_next
   %pay_slot20 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %expr1, i32 0, i32 1
@@ -270439,8 +270323,8 @@ march_arm499:                                     ; preds = %march_next495
   br label %match_end
 
 march_next500:                                    ; preds = %march_next495
-  call void @avra_match_unreachable(ptr @.match_fn.20064, i64 %tag, ptr @mu_file.20065, i64 154)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::remove_escaped_args"(ptr %0, ptr %1) {
@@ -270507,8 +270391,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.20069, i64 %tag, ptr @mu_file.20070, i64 219)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::remove_escaped_field_inits"(ptr %0, ptr %1) {
@@ -270575,8 +270459,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.20074, i64 %tag, ptr @mu_file.20075, i64 228)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::codegen::releasable_any"(ptr %0) {
@@ -270609,8 +270493,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.20076, i64 %tag, ptr @mu_file.20077, i64 245)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::codegen::count_allocating_in_stmts"(ptr %0) {
@@ -270671,8 +270555,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.20081, i64 %tag, ptr @mu_file.20082, i64 253)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::codegen::count_allocating_in_stmt_single"(ptr %0) {
@@ -271126,8 +271010,8 @@ march_arm162:                                     ; preds = %march_next160
   br label %match_end
 
 march_next163:                                    ; preds = %march_next160
-  call void @avra_match_unreachable(ptr @.match_fn.20083, i64 %tag, ptr @mu_file.20084, i64 263)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::codegen::is_arena_eligible"(ptr %0) {
@@ -271528,8 +271412,8 @@ march_arm141:                                     ; preds = %march_next139
   br label %match_end
 
 march_next142:                                    ; preds = %march_next139
-  call void @avra_match_unreachable(ptr @.match_fn.20085, i64 %tag, ptr @mu_file.20086, i64 312)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::analyze_copy_types"(ptr %0, ptr %1) {
@@ -271820,8 +271704,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.20105, i64 %tag, ptr @mu_file.20106, i64 418)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm3
   %6 = call ptr @avra_rc_alloc(i64 16)
@@ -271993,8 +271877,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.20119, i64 %tag, ptr @mu_file.20120, i64 445)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   store i64 0, ptr %sif_result, align 8
@@ -272072,8 +271956,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.20121, i64 %tag, ptr @mu_file.20122, i64 458)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   store i64 0, ptr %sif_result, align 8
@@ -272347,8 +272231,8 @@ march_arm94:                                      ; preds = %march_next92
   br label %match_end
 
 march_next95:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.20123, i64 %tag, ptr @mu_file.20124, i64 475)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::codegen::copy_set_eq"(ptr %0, ptr %1) {
@@ -272434,8 +272318,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.20125, i64 %tag, ptr @mu_file.20126, i64 513)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::codegen::copy_set_subset"(ptr %0, ptr %1) {
@@ -272496,8 +272380,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.20127, i64 %tag, ptr @mu_file.20128, i64 521)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   store i64 0, ptr %sif_result, align 8
@@ -272869,8 +272753,8 @@ march_arm10:                                      ; preds = %march_next4
   br label %match_end
 
 march_next11:                                     ; preds = %march_next4
-  call void @avra_match_unreachable(ptr @.match_fn.20171, i64 %tag, ptr @mu_file.20172, i64 191)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::trait_decl_reg_new"() {
@@ -273288,8 +273172,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.20204, i64 %tag, ptr @mu_file.20205, i64 333)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::field_resolved_at"(ptr %0, i64 %1) {
@@ -273370,8 +273254,8 @@ march_arm10:                                      ; preds = %march_next4
   br label %match_end
 
 march_next11:                                     ; preds = %march_next4
-  call void @avra_match_unreachable(ptr @.match_fn.20206, i64 %tag, ptr @mu_file.20207, i64 343)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 declare ptr @avra_map_new_cstr.53()
@@ -273562,8 +273446,8 @@ march_arm14:                                      ; preds = %march_next4
   br label %match_end
 
 march_next15:                                     ; preds = %march_next4
-  call void @avra_match_unreachable(ptr @.match_fn.20217, i64 %tag, ptr @mu_file.20218, i64 406)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::codegen::copy_set_has"(ptr %0, ptr %1) {
@@ -273638,8 +273522,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @avra_match_unreachable(ptr @.match_fn.20219, i64 %tag, ptr @mu_file.20220, i64 471)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::codegen::vtype_is_copy"(ptr %0, ptr %1) {
@@ -273816,8 +273700,8 @@ march_arm60:                                      ; preds = %march_next52
   br label %match_end
 
 march_next61:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.20221, i64 %tag, ptr @mu_file.20222, i64 485)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::codegen::releasable_has"(ptr %0, ptr %1) {
@@ -273892,8 +273776,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @avra_match_unreachable(ptr @.match_fn.20223, i64 %tag, ptr @mu_file.20224, i64 506)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::struct_reg_new"() {
@@ -274618,8 +274502,8 @@ march_arm27:                                      ; preds = %march_next9
   br label %match_end
 
 march_next28:                                     ; preds = %march_next9
-  call void @avra_match_unreachable(ptr @.match_fn.20314, i64 %tag, ptr @mu_file.20315, i64 661)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::loops_top"(ptr %0) {
@@ -274692,8 +274576,8 @@ march_arm6:                                       ; preds = %march_next
   br label %match_end
 
 march_next7:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.20316, i64 %tag, ptr @mu_file.20317, i64 687)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::llvm_type_for_full"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4) {
@@ -275012,8 +274896,8 @@ march_arm138:                                     ; preds = %march_next134
   br label %match_end
 
 march_next139:                                    ; preds = %march_next134
-  call void @avra_match_unreachable(ptr @.match_fn.20318, i64 %tag, ptr @mu_file.20319, i64 722)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::llvm_type_for_full_sized"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, ptr %5, ptr %6, ptr %7) {
@@ -275155,8 +275039,8 @@ march_arm46:                                      ; preds = %march_next34
   br label %match_end
 
 march_next47:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.20320, i64 %tag, ptr @mu_file.20321, i64 763)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::codegen::vtype_is_ptr_type"(ptr %0) {
@@ -275220,8 +275104,8 @@ march_arm14:                                      ; preds = %march_next12
   br label %match_end
 
 march_next15:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.20322, i64 %tag, ptr @mu_file.20323, i64 780)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::Ctx__bb"(ptr %0, ptr %1) {
@@ -275859,8 +275743,8 @@ march_arm20:                                      ; preds = %march_next
   br label %match_end
 
 march_next21:                                     ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.20407, i64 %tag, ptr @mu_file.20408, i64 875)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end38:                                      ; preds = %march_arm47, %march_arm39
   %match_val52 = load i64, ptr %match_result37, align 8
@@ -275908,8 +275792,8 @@ march_arm47:                                      ; preds = %march_next40
   br label %match_end38
 
 march_next48:                                     ; preds = %march_next40
-  call void @avra_match_unreachable(ptr @.match_fn.20409, i64 %tag36, ptr @mu_file.20410, i64 880)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::Ctx__llvm_type_for"(ptr %0, ptr %1) {
@@ -276078,8 +275962,8 @@ march_arm58:                                      ; preds = %march_next51
   br label %match_end
 
 march_next59:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.20447, i64 %tag, ptr @mu_file.20448, i64 896)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::Ctx__fn_type"(ptr %0, ptr %1, ptr %2, i64 %3) {
@@ -279799,8 +279683,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.21099, i64 %tag, ptr @mu_file.21100, i64 1298)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::Ctx__resolve_fields"(ptr %0, ptr %1) {
@@ -279902,8 +279786,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.21107, i64 %tag, ptr @mu_file.21108, i64 1306)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::Ctx__resolve_codegen_vtype"(ptr %0, ptr %1) {
@@ -280434,8 +280318,8 @@ march_arm250:                                     ; preds = %march_next223
   br label %match_end
 
 march_next251:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.21161, i64 %tag, ptr @mu_file.21162, i64 1316)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::Ctx__resolve_codegen_vtype_list"(ptr %0, ptr %1) {
@@ -280523,8 +280407,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.21169, i64 %tag, ptr @mu_file.21170, i64 1346)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::Ctx__resolve_field_type"(ptr %0, ptr %1, ptr %2) {
@@ -284448,8 +284332,7 @@ march_arm1067:                                    ; preds = %march_next
   ret ptr %cast1079
 
 march_next1068:                                   ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.21580, i64 %tag, ptr @mu_file.21581, i64 384)
-  unreachable
+  ret ptr null
 
 match_end1096:                                    ; preds = %march_arm1098
   %ctx1124 = load ptr, ptr %ctx, align 8
@@ -284505,8 +284388,7 @@ march_arm1102:                                    ; preds = %march_next1099
   ret ptr %cast1123
 
 march_next1103:                                   ; preds = %march_next1099
-  call void @avra_match_unreachable(ptr @.match_fn.21588, i64 %tag1095, ptr @mu_file.21589, i64 399)
-  unreachable
+  ret ptr null
 
 ifcont1128:                                       ; preds = %if_else1130, %ifcont1134
   %user_main1158 = load ptr, ptr %user_main, align 8
@@ -284815,8 +284697,8 @@ march_arm27:                                      ; preds = %march_next
   br label %match_end
 
 march_next28:                                     ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.21622, i64 %tag, ptr @mu_file.21623, i64 448)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -284918,8 +284800,8 @@ march_arm8:                                       ; preds = %march_next
   br label %match_end
 
 march_next9:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.21628, i64 %tag, ptr @mu_file.21629, i64 466)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -285054,8 +284936,8 @@ march_arm20:                                      ; preds = %march_next
   br label %match_end
 
 march_next21:                                     ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.21638, i64 %tag, ptr @mu_file.21639, i64 482)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -285203,8 +285085,8 @@ march_arm24:                                      ; preds = %march_next
   br label %match_end
 
 march_next25:                                     ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.21647, i64 %tag, ptr @mu_file.21648, i64 504)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -285308,8 +285190,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.21649, i64 %tag, ptr @mu_file.21650, i64 523)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::resolve_field_list"(ptr %0, ptr %1) {
@@ -285403,8 +285285,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.21651, i64 %tag, ptr @mu_file.21652, i64 534)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::resolve_param_list"(ptr %0, ptr %1) {
@@ -285498,8 +285380,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.21653, i64 %tag, ptr @mu_file.21654, i64 545)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::resolve_field_vt"(ptr %0, ptr %1) {
@@ -285855,8 +285737,8 @@ march_arm130:                                     ; preds = %march_next109
   br label %match_end
 
 march_next131:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.21667, i64 %tag, ptr @mu_file.21668, i64 569)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::resolve_setup_vt_list"(ptr %0, ptr %1) {
@@ -285936,8 +285818,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.21669, i64 %tag, ptr @mu_file.21670, i64 588)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::codegen::fill_struct_field_types"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, ptr %5, i64 %6) {
@@ -286019,8 +285901,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.21671, i64 %tag, ptr @mu_file.21672, i64 598)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::declare_structs"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, ptr %5, ptr %6, ptr %7, ptr %8) {
@@ -286124,8 +286006,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq16, label %march_arm14, label %march_next15
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.21678, i64 %tag, ptr @mu_file.21679, i64 622)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end13:                                      ; preds = %march_arm44, %march_arm36, %march_arm23, %march_arm14
   %ctx47 = load ptr, ptr %ctx, align 8
@@ -286199,8 +286081,8 @@ march_arm44:                                      ; preds = %march_next37
   br label %match_end13
 
 march_next45:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.21676, i64 %tag12, ptr @mu_file.21677, i64 626)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::fill_and_register_structs"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, ptr %5, ptr %6, ptr %7, ptr %8) {
@@ -286337,8 +286219,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq19, label %march_arm17, label %march_next18
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.21691, i64 %tag, ptr @mu_file.21692, i64 651)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end16:                                      ; preds = %march_arm161, %sc_merge, %march_arm129, %march_arm124, %march_arm72, %ifcont59
   %match_val = load i64, ptr %match_result15, align 8
@@ -286647,8 +286529,8 @@ march_arm161:                                     ; preds = %march_next135
   br label %match_end16
 
 march_next162:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.21689, i64 %tag14, ptr @mu_file.21690, i64 656)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::declare_one_global"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, ptr %5, ptr %6, ptr %7, ptr %8, ptr %9) {
@@ -287013,8 +286895,8 @@ march_arm46:                                      ; preds = %march_next33
   br label %match_end31
 
 march_next47:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.21694, i64 %tag29, ptr @mu_file.21695, i64 747)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm50:                                      ; preds = %march_next19
   %llvm_ty52 = load ptr, ptr %llvm_ty, align 8
@@ -287024,8 +286906,8 @@ march_arm50:                                      ; preds = %march_next19
   br label %match_end
 
 march_next51:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.21696, i64 %tag, ptr @mu_file.21697, i64 736)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::declare_globals"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, ptr %5, ptr %6, ptr %7, ptr %8, ptr %9) {
@@ -287120,8 +287002,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq19, label %march_arm17, label %march_next18
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.21703, i64 %tag, ptr @mu_file.21704, i64 763)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end16:                                      ; preds = %march_arm114, %march_arm97, %march_arm65, %march_arm37, %march_arm17
   %match_val = load i64, ptr %match_result15, align 8
@@ -287293,8 +287175,8 @@ march_arm114:                                     ; preds = %march_next98
   br label %match_end16
 
 march_next115:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.21701, i64 %tag14, ptr @mu_file.21702, i64 768)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::codegen::declare_variant_payloads"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, ptr %5, ptr %6, ptr %7, ptr %8, ptr %9, ptr %10) {
@@ -287387,8 +287269,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.21705, i64 %tag, ptr @mu_file.21706, i64 791)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else, %if_then
   %lc40 = load ptr, ptr %lc, align 8
@@ -287587,8 +287469,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq19, label %march_arm17, label %march_next18
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.21716, i64 %tag, ptr @mu_file.21717, i64 825)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end16:                                      ; preds = %march_arm88, %sc_merge, %march_arm17
   %match_val = load i64, ptr %match_result15, align 8
@@ -287759,8 +287641,8 @@ march_arm88:                                      ; preds = %march_next63
   br label %match_end16
 
 march_next89:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.21714, i64 %tag14, ptr @mu_file.21715, i64 830)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::codegen::fields_have_rc"(ptr %0) {
@@ -287816,8 +287698,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.21718, i64 %tag, ptr @mu_file.21719, i64 869)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   store i64 1, ptr %sif_result, align 8
@@ -287889,8 +287771,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.21720, i64 %tag, ptr @mu_file.21721, i64 883)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   store i64 1, ptr %sif_result, align 8
@@ -288359,8 +288241,8 @@ march_arm77:                                      ; preds = %march_next30
   br label %match_end
 
 march_next78:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.21780, i64 %tag, ptr @mu_file.21781, i64 931)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::codegen::emit_struct_field_releases"(ptr %0, ptr %1, ptr %2, ptr %3, i64 %4) {
@@ -288438,8 +288320,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.21832, i64 %tag, ptr @mu_file.21833, i64 958)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else, %if_then
   %ctx149 = load ptr, ptr %ctx, align 8
@@ -289263,8 +289145,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.22025, i64 %tag, ptr @mu_file.22026, i64 1054)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else, %ifcont20
   %ctx157 = load ptr, ptr %ctx, align 8
@@ -289600,8 +289482,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.22060, i64 %tag, ptr @mu_file.22061, i64 1085)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else, %if_then
   %ctx96 = load ptr, ptr %ctx, align 8
@@ -290495,8 +290377,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.22249, i64 %tag, ptr @mu_file.22250, i64 1190)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end15:                                      ; preds = %march_arm38, %march_arm29, %march_arm16
   %match_val = load i64, ptr %match_result14, align 8
@@ -290565,8 +290447,8 @@ march_arm38:                                      ; preds = %march_next30
   br label %match_end15
 
 march_next39:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.22247, i64 %tag13, ptr @mu_file.22248, i64 1194)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::collect_trait_fn_names"(ptr %0) {
@@ -290639,8 +290521,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.22256, i64 %tag, ptr @mu_file.22257, i64 1208)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end15:                                      ; preds = %march_arm69, %march_arm37, %march_arm16
   %match_val = load i64, ptr %match_result14, align 8
@@ -290748,8 +290630,8 @@ march_arm69:                                      ; preds = %march_next38
   br label %match_end15
 
 march_next70:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.22254, i64 %tag13, ptr @mu_file.22255, i64 1212)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::collect_newtypes"(ptr %0, ptr %1) {
@@ -290820,8 +290702,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.22263, i64 %tag, ptr @mu_file.22264, i64 1224)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end15:                                      ; preds = %march_arm38, %march_arm29, %march_arm16
   %match_val = load i64, ptr %match_result14, align 8
@@ -290889,8 +290771,8 @@ march_arm38:                                      ; preds = %march_next30
   br label %match_end15
 
 march_next39:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.22261, i64 %tag13, ptr @mu_file.22262, i64 1228)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::collect_union_aliases"(ptr %0, ptr %1) {
@@ -290961,8 +290843,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.22270, i64 %tag, ptr @mu_file.22271, i64 1241)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end15:                                      ; preds = %march_arm38, %march_arm29, %march_arm16
   %match_val = load i64, ptr %match_result14, align 8
@@ -291030,8 +290912,8 @@ march_arm38:                                      ; preds = %march_next30
   br label %match_end15
 
 march_next39:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.22268, i64 %tag13, ptr @mu_file.22269, i64 1245)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::resolve_type_operator"(ptr %0, ptr %1) {
@@ -291229,8 +291111,8 @@ march_arm67:                                      ; preds = %march_next17
   br label %match_end15
 
 march_next68:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.22287, i64 %tag13, ptr @mu_file.22288, i64 1265)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm71:                                      ; preds = %march_next
   %fields73 = load ptr, ptr %fields, align 8
@@ -291239,8 +291121,8 @@ march_arm71:                                      ; preds = %march_next
   br label %match_end
 
 march_next72:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.22289, i64 %tag, ptr @mu_file.22290, i64 1261)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::codegen::fill_i64_param_array_offset"(ptr %0, ptr %1, i64 %2, i64 %3) {
@@ -291359,8 +291241,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.22291, i64 %tag, ptr @mu_file.22292, i64 1302)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::codegen::fill_typed_param_array_sized"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, ptr %5, ptr %6, ptr %7, ptr %8, i64 %9) {
@@ -291454,8 +291336,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.22293, i64 %tag, ptr @mu_file.22294, i64 1319)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::resolve_fn_ret"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -291608,8 +291490,8 @@ march_arm31:                                      ; preds = %march_next
   br label %match_end
 
 march_next32:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.22301, i64 %tag, ptr @mu_file.22302, i64 1339)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end40:                                      ; preds = %match_end55, %march_arm41
   %match_val71 = load i64, ptr %match_result39, align 8
@@ -291649,8 +291531,8 @@ march_arm49:                                      ; preds = %march_next42
   br i1 %tag_eq58, label %march_arm56, label %march_next57
 
 march_next50:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.22306, i64 %tag38, ptr @mu_file.22307, i64 1349)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end55:                                      ; preds = %march_arm68, %march_arm56
   %match_val70 = load i64, ptr %match_result54, align 8
@@ -291679,8 +291561,8 @@ march_arm68:                                      ; preds = %march_next57
   br label %match_end55
 
 march_next69:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.22304, i64 %tag53, ptr @mu_file.22305, i64 1349)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %match_end40
   %traits75 = load ptr, ptr %traits, align 8
@@ -291779,8 +291661,8 @@ march_arm108:                                     ; preds = %march_next96
   br label %match_end94
 
 march_next109:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.22309, i64 %tag92, ptr @mu_file.22310, i64 1352)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::declare_functions"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, ptr %5, ptr %6, ptr %7, ptr %8, ptr %9, ptr %10, ptr %11, ptr %12) {
@@ -291895,8 +291777,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq19, label %march_arm17, label %march_next18
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.22318, i64 %tag, ptr @mu_file.22319, i64 1364)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end16:                                      ; preds = %march_arm188, %march_arm164, %march_arm144, %march_arm80, %ifcont
   %match_val = load i64, ptr %match_result15, align 8
@@ -292212,8 +292094,8 @@ march_arm188:                                     ; preds = %march_next165
   br label %match_end16
 
 march_next189:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.22316, i64 %tag14, ptr @mu_file.22317, i64 1369)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::params_to_type_list"(ptr %0) {
@@ -292288,8 +292170,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.22320, i64 %tag, ptr @mu_file.22321, i64 1414)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::collect_fn_params"(ptr %0, ptr %1) {
@@ -292364,8 +292246,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq19, label %march_arm17, label %march_next18
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.22327, i64 %tag, ptr @mu_file.22328, i64 1424)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end16:                                      ; preds = %march_arm55, %march_arm46, %march_arm37, %march_arm17
   %match_val = load i64, ptr %match_result15, align 8
@@ -292471,8 +292353,8 @@ march_arm55:                                      ; preds = %march_next47
   br label %match_end16
 
 march_next56:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.22325, i64 %tag14, ptr @mu_file.22326, i64 1429)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::emit_top_level"(ptr %0, ptr %1, ptr %2) {
@@ -292739,8 +292621,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq133, label %march_arm131, label %march_next132
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.22428, i64 %tag, ptr @mu_file.22429, i64 1450)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end130:                                     ; preds = %try_ok645, %try_ok615, %try_ok569, %try_ok526, %ifcont349, %march_arm131
   %match_val = load i64, ptr %match_result129, align 8
@@ -293533,8 +293415,8 @@ march_arm637:                                     ; preds = %march_next592
   br i1 %try_is_ok644, label %try_ok645, label %try_err646
 
 march_next638:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.22426, i64 %tag128, ptr @mu_file.22427, i64 1456)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok645:                                        ; preds = %march_arm637
   %try_pay_slot647 = getelementptr inbounds nuw %Result__StmtResult__string, ptr %49, i32 0, i32 1
@@ -293933,8 +293815,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.22486, i64 %tag, ptr @mu_file.22487, i64 22)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -294011,8 +293893,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.22488, i64 %tag, ptr @mu_file.22489, i64 37)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -294097,8 +293979,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.22490, i64 %tag, ptr @mu_file.22491, i64 50)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   store i64 1, ptr %sif_result, align 8
@@ -294186,8 +294068,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.22492, i64 %tag, ptr @mu_file.22493, i64 66)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   store i64 1, ptr %sif_result, align 8
@@ -294501,8 +294383,8 @@ march_arm118:                                     ; preds = %march_next107
   br label %match_end
 
 march_next119:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.22506, i64 %tag, ptr @mu_file.22507, i64 85)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::analyze_structs"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -294886,8 +294768,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.22603, i64 %tag, ptr @mu_file.22604, i64 13)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm2
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %4, i32 0, i32 1
@@ -295227,8 +295109,8 @@ march_arm21:                                      ; preds = %march_next9
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next22:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.22639, i64 %tag5, ptr @mu_file.22640, i64 50)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm21
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %10, i32 0, i32 1
@@ -295332,8 +295214,8 @@ march_arm71:                                      ; preds = %march_next
   ret ptr %17
 
 march_next72:                                     ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.22642, i64 %tag, ptr @mu_file.22643, i64 47)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -295735,8 +295617,8 @@ march_arm83:                                      ; preds = %march_next12
   br label %match_end10
 
 march_next84:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.22743, i64 %tag8, ptr @mu_file.22744, i64 38)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm86:                                      ; preds = %march_next
   %14 = call ptr @"@std::avrac::codegen::err_emit"(ptr @.str.22745)
@@ -295745,8 +295627,8 @@ march_arm86:                                      ; preds = %march_next
   br label %match_end
 
 march_next87:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.22746, i64 %tag, ptr @mu_file.22747, i64 35)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -295824,8 +295706,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq16, label %march_arm14, label %march_next15
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.22758, i64 %tag, ptr @mu_file.22759, i64 63)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end13:                                      ; preds = %march_arm18, %march_arm14
   %match_val = load i64, ptr %match_result12, align 8
@@ -295874,8 +295756,8 @@ march_arm18:                                      ; preds = %march_next15
   br label %match_end13
 
 march_next19:                                     ; preds = %march_next15
-  call void @avra_match_unreachable(ptr @.match_fn.22756, i64 %tag11, ptr @mu_file.22757, i64 67)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -296413,8 +296295,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.22893, i64 %tag, ptr @mu_file.22894, i64 14)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -296552,8 +296434,8 @@ march_arm5:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next6:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.22907, i64 %tag, ptr @mu_file.22908, i64 35)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm5
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %8, i32 0, i32 1
@@ -296720,8 +296602,8 @@ march_arm5:                                       ; preds = %march_next
   br i1 %tag_eq30, label %march_arm28, label %march_next29
 
 march_next6:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.22961, i64 %tag, ptr @mu_file.22962, i64 52)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end27:                                      ; preds = %try_ok66, %try_ok
   %ptypes73 = load ptr, ptr %ptypes, align 8
@@ -296826,8 +296708,8 @@ march_arm50:                                      ; preds = %march_next29
   br i1 %try_is_ok65, label %try_ok66, label %try_err67
 
 march_next51:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.22924, i64 %tag26, ptr @mu_file.22925, i64 61)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok66:                                         ; preds = %march_arm50
   %try_pay_slot68 = getelementptr inbounds nuw %Result__EmitValue__string, ptr %20, i32 0, i32 1
@@ -297135,8 +297017,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq17, label %march_arm15, label %march_next16
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.22970, i64 %tag, ptr @mu_file.22971, i64 113)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end14:                                      ; preds = %march_arm50, %match_end24
   %match_val54 = load i64, ptr %match_result13, align 8
@@ -297214,8 +297096,8 @@ march_arm45:                                      ; preds = %march_next34
   br label %match_end24
 
 march_next46:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.22966, i64 %tag22, ptr @mu_file.22967, i64 121)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm50:                                      ; preds = %march_next16
   %next52 = load ptr, ptr %next9, align 8
@@ -297225,8 +297107,8 @@ march_arm50:                                      ; preds = %march_next16
   br label %match_end14
 
 march_next51:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.22968, i64 %tag12, ptr @mu_file.22969, i64 117)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::codegen::ok_br"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -297524,8 +297406,8 @@ march_arm49:                                      ; preds = %march_next32
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next50:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.22978, i64 %tag, ptr @mu_file.22979, i64 41)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm49
   %try_pay_slot = getelementptr inbounds nuw %Result__StmtResult__string, ptr %9, i32 0, i32 1
@@ -297884,8 +297766,8 @@ march_arm154:                                     ; preds = %march_next112
   br i1 %try_is_ok161, label %try_ok162, label %try_err163
 
 march_next155:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.23025, i64 %tag, ptr @mu_file.23026, i64 59)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok162:                                        ; preds = %march_arm154
   %try_pay_slot164 = getelementptr inbounds nuw %Result__StmtResult__string, ptr %16, i32 0, i32 1
@@ -298442,8 +298324,8 @@ march_arm4:                                       ; preds = %march_next
   br i1 %tag_eq130, label %march_arm128, label %march_next129
 
 march_next5:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.23110, i64 %tag, ptr @mu_file.23111, i64 130)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end127:                                     ; preds = %try_ok, %march_arm128
   %match_val = load i64, ptr %match_result126, align 8
@@ -298487,8 +298369,8 @@ march_arm140:                                     ; preds = %march_next129
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next141:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.23108, i64 %tag125, ptr @mu_file.23109, i64 135)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm140
   %try_pay_slot = getelementptr inbounds nuw %Result__StmtResult__string, ptr %8, i32 0, i32 1
@@ -298775,8 +298657,8 @@ march_arm8:                                       ; preds = %march_next
   br i1 %tag_eq134, label %march_arm132, label %march_next133
 
 march_next9:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.23132, i64 %tag, ptr @mu_file.23133, i64 152)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end131:                                     ; preds = %try_ok, %march_arm132
   %match_val = load i64, ptr %match_result130, align 8
@@ -298820,8 +298702,8 @@ march_arm144:                                     ; preds = %march_next133
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next145:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.23130, i64 %tag129, ptr @mu_file.23131, i64 157)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm144
   %try_pay_slot = getelementptr inbounds nuw %Result__StmtResult__string, ptr %9, i32 0, i32 1
@@ -299089,8 +298971,8 @@ march_arm80:                                      ; preds = %march_next59
   br label %match_end
 
 march_next81:                                     ; preds = %march_next59
-  call void @avra_match_unreachable(ptr @.match_fn.23181, i64 %tag, ptr @mu_file.23182, i64 18)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -300669,8 +300551,8 @@ march_arm863:                                     ; preds = %march_next826
   br i1 %is_str866, label %if_then868, label %if_else869
 
 march_next864:                                    ; preds = %march_next826
-  call void @avra_match_unreachable(ptr @.match_fn.23444, i64 %tag, ptr @mu_file.23445, i64 86)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont867:                                        ; preds = %if_else869
   %left_result873 = load ptr, ptr %left_result, align 8
@@ -301410,8 +301292,8 @@ march_arm171:                                     ; preds = %march_next162
   br label %match_end
 
 march_next172:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.23517, i64 %tag, ptr @mu_file.23518, i64 247)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end
   br label %defer_done
@@ -301574,8 +301456,8 @@ march_arm37:                                      ; preds = %march_next
   br label %match_end
 
 march_next38:                                     ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.23550, i64 %tag, ptr @mu_file.23551, i64 284)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end55:                                      ; preds = %march_arm65, %march_arm57
   %ctx73 = load ptr, ptr %ctx, align 8
@@ -301625,8 +301507,8 @@ march_arm65:                                      ; preds = %march_next58
   br label %match_end55
 
 march_next66:                                     ; preds = %march_next58
-  call void @avra_match_unreachable(ptr @.match_fn.23561, i64 %tag54, ptr @mu_file.23562, i64 291)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end86:                                      ; preds = %march_arm96, %march_arm88
   %ctx104 = load ptr, ptr %ctx, align 8
@@ -301669,8 +301551,8 @@ march_arm96:                                      ; preds = %march_next89
   br label %match_end86
 
 march_next97:                                     ; preds = %march_next89
-  call void @avra_match_unreachable(ptr @.match_fn.23575, i64 %tag85, ptr @mu_file.23576, i64 299)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok113:                                        ; preds = %match_end86
   %try_pay_slot115 = getelementptr inbounds nuw %Result__EmitValue__string, ptr %19, i32 0, i32 1
@@ -301887,8 +301769,8 @@ march_arm214:                                     ; preds = %march_next207
   br label %match_end205
 
 march_next215:                                    ; preds = %march_next207
-  call void @avra_match_unreachable(ptr @.match_fn.23642, i64 %tag204, ptr @mu_file.23643, i64 326)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 errdefer_path:                                    ; preds = %match_end205
   br label %defer_done
@@ -302899,8 +302781,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq16, label %march_arm14, label %march_next15
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.23834, i64 %tag, ptr @mu_file.23835, i64 72)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end13:                                      ; preds = %march_arm33, %guard_pass32, %guard_pass
   %match_val = load i64, ptr %match_result12, align 8
@@ -302965,8 +302847,8 @@ march_arm33:                                      ; preds = %march_next23
   br label %match_end13
 
 march_next34:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.23832, i64 %tag11, ptr @mu_file.23833, i64 76)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::desugar::desugar_stmt_list"(ptr %0) {
@@ -303073,8 +302955,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.23848, i64 %tag, ptr @mu_file.23849, i64 90)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::desugar::desugar_stmt"(ptr %0) {
@@ -303996,8 +303878,8 @@ march_arm479:                                     ; preds = %march_next452
   br label %match_end
 
 march_next480:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.23850, i64 %tag, ptr @mu_file.23851, i64 104)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::desugar::desugar_expr"(ptr %0) {
@@ -304088,8 +303970,8 @@ march_arm18:                                      ; preds = %march_next10
   br label %match_end
 
 march_next19:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.23852, i64 %tag, ptr @mu_file.23853, i64 150)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::desugar::rewrite_list_lit"(ptr %0, ptr %1) {
@@ -304491,8 +304373,8 @@ march_arm189:                                     ; preds = %march_next9
   br label %match_end7
 
 march_next190:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.23861, i64 %tag5, ptr @mu_file.23862, i64 165)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm193:                                     ; preds = %march_next
   %original195 = load ptr, ptr %original, align 8
@@ -304501,8 +304383,8 @@ march_arm193:                                     ; preds = %march_next
   br label %match_end
 
 march_next194:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.23863, i64 %tag, ptr @mu_file.23864, i64 162)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::desugar::rewrite_call"(ptr %0, ptr %1, ptr %2) {
@@ -304557,8 +304439,8 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.23866, i64 %tag, ptr @mu_file.23867, i64 199)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 pmatch_end:                                       ; preds = %parm_body40, %parm_body34, %parm_body28, %parm_body22, %parm_body16, %parm_body10, %parm_body
   %pmatch_val = load i64, ptr %pmatch_result, align 8
@@ -304647,8 +304529,8 @@ parm_body40:                                      ; preds = %parm_next35
   br label %pmatch_end
 
 parm_next41:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.23874, i64 -1, ptr @mu_file.23875, i64 200)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::desugar::desugar_assert"(ptr %0) {
@@ -304858,8 +304740,8 @@ march_arm25:                                      ; preds = %march_next13
   br label %match_end11
 
 march_next26:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.23883, i64 %tag9, ptr @mu_file.23884, i64 220)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm93:                                      ; preds = %march_next
   %17 = call ptr @avra_rc_alloc(i64 16)
@@ -304929,8 +304811,8 @@ march_arm93:                                      ; preds = %march_next
   br label %match_end
 
 march_next94:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.23888, i64 %tag, ptr @mu_file.23889, i64 216)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::desugar::desugar_dbg"(ptr %0) {
@@ -305334,8 +305216,8 @@ march_arm173:                                     ; preds = %march_next
   br label %match_end
 
 march_next174:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.23901, i64 %tag, ptr @mu_file.23902, i64 238)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::desugar::desugar_todo"(ptr %0) {
@@ -305487,8 +305369,8 @@ march_arm23:                                      ; preds = %march_next
   br label %match_end
 
 march_next24:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.23908, i64 %tag, ptr @mu_file.23909, i64 270)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::desugar::desugar_unreachable"(ptr %0) {
@@ -305640,8 +305522,8 @@ march_arm23:                                      ; preds = %march_next
   br label %match_end
 
 march_next24:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.23916, i64 %tag, ptr @mu_file.23917, i64 281)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::desugar::desugar_min_max"(ptr %0, i64 %1) {
@@ -306050,8 +305932,8 @@ march_arm164:                                     ; preds = %march_next12
   br label %match_end10
 
 march_next165:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.23933, i64 %tag8, ptr @mu_file.23934, i64 296)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm203:                                     ; preds = %march_next
   %46 = call ptr @avra_rc_alloc(i64 16)
@@ -306121,8 +306003,8 @@ march_arm203:                                     ; preds = %march_next
   br label %match_end
 
 march_next204:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.23937, i64 %tag, ptr @mu_file.23938, i64 293)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::desugar::walk_expr"(ptr %0) {
@@ -307232,8 +307114,8 @@ march_arm570:                                     ; preds = %march_next547
   br label %match_end
 
 march_next571:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.23939, i64 %tag, ptr @mu_file.23940, i64 331)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::desugar::desugar_expr_list"(ptr %0) {
@@ -307330,8 +307212,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.23950, i64 %tag, ptr @mu_file.23951, i64 364)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::desugar::desugar_match_arms"(ptr %0) {
@@ -307411,8 +307293,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.23970, i64 %tag, ptr @mu_file.23971, i64 374)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -307572,8 +307454,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.23990, i64 %tag, ptr @mu_file.23991, i64 387)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -307771,8 +307653,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.24001, i64 %tag, ptr @mu_file.24002, i64 400)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::diagnostics::span_new"(i64 %0, i64 %1, i64 %2, i64 %3) {
@@ -307902,8 +307784,8 @@ march_arm8:                                       ; preds = %march_next6
   br label %match_end
 
 march_next9:                                      ; preds = %march_next6
-  call void @avra_match_unreachable(ptr @.match_fn.24009, i64 %tag, ptr @mu_file.24010, i64 65)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::diagnostics::error_def"(ptr %0) {
@@ -308396,8 +308278,8 @@ march_arm195:                                     ; preds = %march_next190
   br label %match_end
 
 march_next196:                                    ; preds = %march_next190
-  call void @avra_match_unreachable(ptr @.match_fn.24079, i64 %tag, ptr @mu_file.24080, i64 239)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::diagnostics::diag_code_str"(ptr %0) {
@@ -308468,8 +308350,8 @@ march_arm5:                                       ; preds = %march_next3
   br label %match_end
 
 march_next6:                                      ; preds = %march_next3
-  call void @avra_match_unreachable(ptr @.match_fn.24090, i64 %tag, ptr @mu_file.24091, i64 303)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::diagnostics::diag_error"(ptr %0, ptr %1, ptr %2) {
@@ -308873,8 +308755,8 @@ march_arm6:                                       ; preds = %march_next
   br label %match_end
 
 march_next7:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.24101, i64 %tag, ptr @mu_file.24102, i64 402)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end23:                                      ; preds = %march_arm32, %march_arm24
   %match_val40 = load i64, ptr %match_result22, align 8
@@ -308943,8 +308825,8 @@ march_arm32:                                      ; preds = %march_next25
   br label %match_end23
 
 march_next33:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.24112, i64 %tag21, ptr @mu_file.24113, i64 406)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::diagnostics::bag_has_errors"(ptr %0) {
@@ -309154,8 +309036,8 @@ march_arm19:                                      ; preds = %march_next
   br label %match_end
 
 march_next20:                                     ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.24141, i64 %tag, ptr @mu_file.24142, i64 439)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::diagnostics::color_red"(ptr %0) {
@@ -309458,8 +309340,8 @@ march_arm13:                                      ; preds = %march_next9
   br label %match_end
 
 march_next14:                                     ; preds = %march_next9
-  call void @avra_match_unreachable(ptr @.match_fn.24159, i64 %tag, ptr @mu_file.24160, i64 32)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::diagnostics::severity_symbol"(ptr %0) {
@@ -309516,8 +309398,8 @@ march_arm10:                                      ; preds = %march_next7
   br label %match_end
 
 march_next11:                                     ; preds = %march_next7
-  call void @avra_match_unreachable(ptr @.match_fn.24165, i64 %tag, ptr @mu_file.24166, i64 43)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::diagnostics::chr_vbar"() {
@@ -311327,8 +311209,7 @@ march_arm727:                                     ; preds = %march_next
   br label %match_end
 
 march_next728:                                    ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.24310, i64 %tag, ptr @mu_file.24311, i64 228)
-  unreachable
+  ret i64 0
 }
 
 define i64 @"@std::avrac::diagnostics::render_bag"(ptr %0, ptr %1, ptr %2) {
@@ -311675,8 +311556,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.24355, i64 %tag, ptr @mu_file.24356, i64 268)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::diagnostics::render_list"(ptr %0, ptr %1, ptr %2) {
@@ -311782,8 +311663,7 @@ march_arm16:                                      ; preds = %march_next
   br label %match_end
 
 march_next17:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.24360, i64 %tag, ptr @mu_file.24361, i64 280)
-  unreachable
+  ret i64 0
 
 while.cond20:                                     ; preds = %match_end32, %while.exit
   %cur23 = load ptr, ptr %cur, align 8
@@ -311895,8 +311775,7 @@ march_arm73:                                      ; preds = %march_next35
   br label %match_end32
 
 march_next74:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.24365, i64 %tag31, ptr @mu_file.24366, i64 293)
-  unreachable
+  ret i64 0
 }
 
 define i64 @"@std::avrac::diagnostics::render_diagnostic_json"(ptr %0, ptr %1) {
@@ -312261,8 +312140,7 @@ march_arm12:                                      ; preds = %march_next
   br label %match_end
 
 march_next13:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.24408, i64 %tag, ptr @mu_file.24409, i64 333)
-  unreachable
+  ret i64 0
 }
 
 define i64 @"@std::avrac::diagnostics::levenshtein"(ptr %0, ptr %1) {
@@ -312861,8 +312739,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.24435, i64 %tag, ptr @mu_file.24436, i64 89)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::build::walk_ss_for_file"(ptr %0, ptr %1, ptr %2, i1 %3, ptr %4) {
@@ -313037,8 +312915,8 @@ march_arm44:                                      ; preds = %march_next14
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next45:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.24455, i64 %tag, ptr @mu_file.24456, i64 100)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm44
   %acc54 = load ptr, ptr %acc, align 8
@@ -313124,8 +313002,8 @@ march_arm7:                                       ; preds = %march_next
   br label %match_end
 
 march_next8:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.24458, i64 %tag, ptr @mu_file.24459, i64 138)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::build::find_unit_module_body"(ptr %0, ptr %1) {
@@ -313202,8 +313080,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq19, label %march_arm17, label %march_next18
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.24465, i64 %tag, ptr @mu_file.24466, i64 145)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end16:                                      ; preds = %march_arm33, %sif_end
   %match_val = load i64, ptr %match_result15, align 8
@@ -313268,8 +313146,8 @@ march_arm33:                                      ; preds = %march_next18
   br label %match_end16
 
 march_next34:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.24463, i64 %tag14, ptr @mu_file.24464, i64 150)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::build::push_type"(ptr %0, ptr %1) {
@@ -313439,8 +313317,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.24482, i64 %tag, ptr @mu_file.24483, i64 197)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::build::qualify"(ptr %0, ptr %1) {
@@ -313574,8 +313452,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.24488, i64 %tag, ptr @mu_file.24489, i64 224)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %next11 = load ptr, ptr %next8, align 8
@@ -314628,8 +314506,8 @@ march_arm521:                                     ; preds = %march_next475
   br label %match_end
 
 march_next522:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.24509, i64 %tag, ptr @mu_file.24510, i64 235)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::build::split_impl_name"(ptr %0) {
@@ -314882,8 +314760,7 @@ march_arm4:                                       ; preds = %march_next
   br i1 %tag_eq19, label %march_arm17, label %march_next18
 
 march_next5:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.24516, i64 %tag, ptr @mu_file.24517, i64 472)
-  unreachable
+  ret ptr null
 
 match_end15:                                      ; preds = %march_arm70, %march_arm37, %march_arm17
   %next73 = load ptr, ptr %next10, align 8
@@ -314990,8 +314867,7 @@ march_arm70:                                      ; preds = %march_next38
   br label %match_end15
 
 march_next71:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.24514, i64 %tag14, ptr @mu_file.24515, i64 477)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::avrac::build::extract_impl_methods"(ptr %0, ptr %1) {
@@ -315074,8 +314950,7 @@ march_arm4:                                       ; preds = %march_next
   br i1 %tag_eq19, label %march_arm17, label %march_next18
 
 march_next5:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.24523, i64 %tag, ptr @mu_file.24524, i64 499)
-  unreachable
+  ret ptr null
 
 match_end15:                                      ; preds = %march_arm32, %march_arm17
   %next35 = load ptr, ptr %next10, align 8
@@ -315125,8 +315000,7 @@ march_arm32:                                      ; preds = %march_next18
   br label %match_end15
 
 march_next33:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.24521, i64 %tag14, ptr @mu_file.24522, i64 504)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::avrac::build::strip_mangle"(ptr %0) {
@@ -315362,8 +315236,8 @@ march_arm67:                                      ; preds = %march_next56
   br label %match_end
 
 march_next68:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.24530, i64 %tag, ptr @mu_file.24531, i64 543)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::build::strip_quotes"(ptr %0) {
@@ -315533,8 +315407,8 @@ march_arm4:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_rhs, label %sc_short
 
 march_next5:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.24545, i64 %tag, ptr @mu_file.24546, i64 601)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm4
   %local13 = load ptr, ptr %local, align 8
@@ -315672,8 +315546,8 @@ march_arm14:                                      ; preds = %march_next6
   br label %match_end
 
 march_next15:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.24547, i64 %tag, ptr @mu_file.24548, i64 623)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::build::files_contain"(ptr %0, ptr %1) {
@@ -316427,8 +316301,8 @@ march_arm11:                                      ; preds = %march_next9
   br label %match_end
 
 march_next12:                                     ; preds = %march_next9
-  call void @avra_match_unreachable(ptr @.match_fn.24630, i64 %tag, ptr @mu_file.24631, i64 267)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::build::byte_to_section_kind"(i64 %0) {
@@ -316512,8 +316386,7 @@ parm_body20:                                      ; preds = %parm_next15
   br label %pmatch_end
 
 parm_next21:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.24632, i64 -1, ptr @mu_file.24633, i64 277)
-  unreachable
+  ret ptr null
 }
 
 define i64 @"@std::avrac::build::BytesWriter__header"(ptr %0, ptr %1, ptr %2, i64 %3) {
@@ -317360,8 +317233,8 @@ march_arm356:                                     ; preds = %march_next330
   br label %match_end
 
 march_next357:                                    ; preds = %march_next330
-  call void @avra_match_unreachable(ptr @.match_fn.24814, i64 %tag, ptr @mu_file.24815, i64 369)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::build::BytesWriter__vtype_list"(ptr %0, ptr %1) {
@@ -317456,8 +317329,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.24828, i64 %tag, ptr @mu_file.24829, i64 470)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::build::type_list_length"(ptr %0) {
@@ -317501,8 +317374,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.24830, i64 %tag, ptr @mu_file.24831, i64 482)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::build::field_list_length"(ptr %0) {
@@ -317546,8 +317419,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.24832, i64 %tag, ptr @mu_file.24833, i64 489)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::build::variant_list_length"(ptr %0) {
@@ -317591,8 +317464,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.24834, i64 %tag, ptr @mu_file.24835, i64 496)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::build::param_list_length"(ptr %0) {
@@ -317636,8 +317509,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.24836, i64 %tag, ptr @mu_file.24837, i64 503)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::build::type_param_list_length"(ptr %0) {
@@ -317681,8 +317554,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.24838, i64 %tag, ptr @mu_file.24839, i64 510)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::build::BytesWriter__field_list"(ptr %0, ptr %1) {
@@ -317790,8 +317663,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.24855, i64 %tag, ptr @mu_file.24856, i64 529)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::build::BytesWriter__param_list"(ptr %0, ptr %1) {
@@ -317899,8 +317772,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.24872, i64 %tag, ptr @mu_file.24873, i64 546)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::build::BytesWriter__type_param_list"(ptr %0, ptr %1) {
@@ -318008,8 +317881,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.24889, i64 %tag, ptr @mu_file.24890, i64 563)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::build::BytesWriter__variant_list"(ptr %0, ptr %1) {
@@ -318117,8 +317990,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.24906, i64 %tag, ptr @mu_file.24907, i64 580)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::build::BytesReader__field_list"(ptr %0) {
@@ -327682,8 +327555,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.25980, i64 %tag, ptr @mu_file.25981, i64 287)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::build::synth_type_decl"(ptr %0) {
@@ -331758,8 +331631,8 @@ march_arm14:                                      ; preds = %march_next4
   br label %match_end
 
 march_next15:                                     ; preds = %march_next4
-  call void @avra_match_unreachable(ptr @.match_fn.26323, i64 %tag, ptr @mu_file.26324, i64 33)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::typeck::type_bind"(ptr %0, ptr %1, ptr %2, i64 %3) {
@@ -331879,8 +331752,8 @@ march_arm15:                                      ; preds = %march_next4
   br label %match_end
 
 march_next16:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.26325, i64 %tag, ptr @mu_file.26326, i64 48)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 declare ptr @avra_map_new_cstr.70()
@@ -332109,8 +331982,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.26351, i64 %tag, ptr @mu_file.26352, i64 135)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::typeck::tc_catch_ok_type"(ptr %0, ptr %1) {
@@ -332219,8 +332092,8 @@ march_arm23:                                      ; preds = %march_next16
   br label %match_end7
 
 march_next24:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.26354, i64 %tag5, ptr @mu_file.26355, i64 153)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm25:                                      ; preds = %march_next
   %pay_slot28 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %inner1, i32 0, i32 1
@@ -332286,16 +332159,16 @@ march_arm64:                                      ; preds = %march_next53
   br label %match_end39
 
 march_next65:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.26357, i64 %tag37, ptr @mu_file.26358, i64 153)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm67:                                      ; preds = %march_next26
   store i64 ptrtoint (ptr @.str.26359 to i64), ptr %match_result, align 8
   br label %match_end
 
 march_next68:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.26360, i64 %tag, ptr @mu_file.26361, i64 153)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %tc72 = load ptr, ptr %tc, align 8
@@ -332402,16 +332275,16 @@ march_arm116:                                     ; preds = %march_next109
   br label %match_end107
 
 march_next117:                                    ; preds = %march_next109
-  call void @avra_match_unreachable(ptr @.match_fn.26369, i64 %tag105, ptr @mu_file.26370, i64 175)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm120:                                     ; preds = %march_next85
   store i64 0, ptr %match_result82, align 8
   br label %match_end83
 
 march_next121:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.26371, i64 %tag81, ptr @mu_file.26372, i64 170)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::typeck::struct_type_reg_new"() {
@@ -332576,8 +332449,8 @@ march_arm14:                                      ; preds = %march_next4
   br label %match_end
 
 march_next15:                                     ; preds = %march_next4
-  call void @avra_match_unreachable(ptr @.match_fn.26382, i64 %tag, ptr @mu_file.26383, i64 216)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::typeck::struct_type_lookup"(ptr %0, ptr %1) {
@@ -332906,8 +332779,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @avra_match_unreachable(ptr @.match_fn.26424, i64 %tag, ptr @mu_file.26425, i64 280)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::typeck::trait_registry_new"() {
@@ -333254,8 +333127,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @avra_match_unreachable(ptr @.match_fn.26464, i64 %tag, ptr @mu_file.26465, i64 375)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::typeck::newtype_reg_new"() {
@@ -333621,8 +333494,8 @@ march_arm14:                                      ; preds = %march_next4
   br label %match_end
 
 march_next15:                                     ; preds = %march_next4
-  call void @avra_match_unreachable(ptr @.match_fn.26508, i64 %tag, ptr @mu_file.26509, i64 454)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::typeck::type_implements_trait"(ptr %0, ptr %1, ptr %2) {
@@ -333764,8 +333637,8 @@ march_arm16:                                      ; preds = %march_next3
   br label %match_end
 
 march_next17:                                     ; preds = %march_next3
-  call void @avra_match_unreachable(ptr @.match_fn.26510, i64 %tag, ptr @mu_file.26511, i64 505)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::typeck::tc_new"() {
@@ -335128,8 +335001,8 @@ march_arm256:                                     ; preds = %march_next235
   br label %match_end
 
 march_next257:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.26593, i64 %tag, ptr @mu_file.26594, i64 591)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::typeck::resolve_vtype_list"(ptr %0, ptr %1) {
@@ -335209,8 +335082,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.26595, i64 %tag, ptr @mu_file.26596, i64 629)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::typeck::typecheck_program"(ptr %0) {
@@ -335684,8 +335557,8 @@ march_arm44:                                      ; preds = %march_next17
   br label %match_end15
 
 march_next45:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.26625, i64 %tag13, ptr @mu_file.26626, i64 701)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm48:                                      ; preds = %march_next
   %fields50 = load ptr, ptr %fields, align 8
@@ -335694,8 +335567,8 @@ march_arm48:                                      ; preds = %march_next
   br label %match_end
 
 march_next49:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.26627, i64 %tag, ptr @mu_file.26628, i64 697)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::typeck::collect_decls"(ptr %0, ptr %1) {
@@ -335797,8 +335670,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.26671, i64 %tag, ptr @mu_file.26672, i64 723)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end15:                                      ; preds = %march_arm816, %march_arm741, %march_arm732, %ife_end629, %ife_end544, %ife_end, %march_arm355, %march_arm263, %march_arm193, %march_arm85, %march_arm16
   %match_val = load i64, ptr %match_result14, align 8
@@ -337042,8 +336915,8 @@ march_arm816:                                     ; preds = %march_next742
   br label %match_end15
 
 march_next817:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.26669, i64 %tag13, ptr @mu_file.26670, i64 727)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::typeck::collect_impl_assoc_types"(ptr %0, ptr %1, ptr %2) {
@@ -337118,8 +336991,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.26686, i64 %tag, ptr @mu_file.26687, i64 791)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end15:                                      ; preds = %march_arm180, %sif_end
   %match_val = load i64, ptr %match_result14, align 8
@@ -337420,8 +337293,8 @@ march_arm180:                                     ; preds = %march_next17
   br label %match_end15
 
 march_next181:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.26684, i64 %tag13, ptr @mu_file.26685, i64 795)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::typeck::rewrite_fn_ret_tys"(ptr %0, ptr %1) {
@@ -337619,8 +337492,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.26709, i64 %tag, ptr @mu_file.26710, i64 840)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -337823,8 +337696,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.26720, i64 %tag, ptr @mu_file.26721, i64 854)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::typeck::check_binding"(ptr %0, ptr %1, ptr %2, ptr %3, i1 %4) {
@@ -338332,8 +338205,8 @@ march_arm251:                                     ; preds = %march_next219
   br label %match_end
 
 march_next252:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.26767, i64 %tag81, ptr @mu_file.26768, i64 875)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont255:                                        ; preds = %if_else257
   br label %ifcont
@@ -339563,8 +339436,8 @@ march_arm445:                                     ; preds = %march_next426
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next446:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.26846, i64 %tag, ptr @mu_file.26847, i64 906)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %tc461 = load ptr, ptr %tc, align 8
@@ -339703,8 +339576,8 @@ march_arm8:                                       ; preds = %march_next
   br i1 %if_cond14, label %if_then15, label %if_else16
 
 march_next9:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.26854, i64 %tag, ptr @mu_file.26855, i64 1026)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont13:                                         ; preds = %if_else16
   %declared18 = load ptr, ptr %declared, align 8
@@ -339936,8 +339809,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq17, label %march_arm15, label %march_next16
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.26866, i64 %tag, ptr @mu_file.26867, i64 1049)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end14:                                      ; preds = %march_arm54, %match_end23
   %match_val59 = load i64, ptr %match_result13, align 8
@@ -340032,8 +339905,8 @@ march_arm49:                                      ; preds = %march_next44
   br label %match_end23
 
 march_next50:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.26862, i64 %tag21, ptr @mu_file.26863, i64 1056)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm54:                                      ; preds = %march_next16
   %tc56 = load ptr, ptr %tc, align 8
@@ -340044,8 +339917,8 @@ march_arm54:                                      ; preds = %march_next16
   br label %match_end14
 
 march_next55:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.26864, i64 %tag12, ptr @mu_file.26865, i64 1053)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::typeck::tc_check_explicit_returns"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -340123,8 +339996,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.26871, i64 %tag, ptr @mu_file.26872, i64 1081)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::typeck::tc_check_stmt_returns"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -340671,8 +340544,8 @@ march_arm256:                                     ; preds = %march_next242
   br label %match_end
 
 march_next257:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.26900, i64 %tag, ptr @mu_file.26901, i64 1094)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::typeck::tc_bind_params"(ptr %0, ptr %1) {
@@ -340748,8 +340621,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.26902, i64 %tag, ptr @mu_file.26903, i64 1129)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::typeck::check_expr"(ptr %0, ptr %1) {
@@ -341520,8 +341393,8 @@ march_arm383:                                     ; preds = %march_next363
   br i1 %if_cond397, label %if_then398, label %if_else399
 
 march_next384:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.26982, i64 %tag, ptr @mu_file.26983, i64 1145)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont396:                                        ; preds = %if_else399
   %tc401 = load ptr, ptr %tc, align 8
@@ -341608,8 +341481,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq17, label %march_arm15, label %march_next16
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.26992, i64 %tag, ptr @mu_file.26993, i64 1227)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end14:                                      ; preds = %march_arm20, %march_arm15
   %match_val = load i64, ptr %match_result13, align 8
@@ -341674,8 +341547,8 @@ march_arm20:                                      ; preds = %march_next16
   br label %match_end14
 
 march_next21:                                     ; preds = %march_next16
-  call void @avra_match_unreachable(ptr @.match_fn.26990, i64 %tag12, ptr @mu_file.26991, i64 1227)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::typeck::tc_check_newtype_args"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -341753,8 +341626,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq20, label %march_arm18, label %march_next19
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.27007, i64 %tag, ptr @mu_file.27008, i64 1246)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end17:                                      ; preds = %ifcont, %march_arm18
   %match_val = load i64, ptr %match_result16, align 8
@@ -341817,8 +341690,8 @@ march_arm23:                                      ; preds = %march_next19
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next24:                                     ; preds = %march_next19
-  call void @avra_match_unreachable(ptr @.match_fn.27005, i64 %tag15, ptr @mu_file.27006, i64 1246)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else, %ifcont67
   %tc127 = load ptr, ptr %tc, align 8
@@ -342082,8 +341955,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.27015, i64 %tag, ptr @mu_file.27016, i64 1272)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::typeck::tc_check_newtype_ctor"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -342317,8 +342190,8 @@ march_arm81:                                      ; preds = %march_next
   br label %match_end
 
 march_next82:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.27021, i64 %tag, ptr @mu_file.27022, i64 1282)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::typeck::tc_check_shape_compat"(ptr %0, ptr %1, ptr %2) {
@@ -342408,8 +342281,8 @@ march_arm13:                                      ; preds = %march_next
   br label %match_end
 
 march_next14:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.27030, i64 %tag, ptr @mu_file.27031, i64 1304)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont18:                                         ; preds = %if_else21
   %tc23 = load ptr, ptr %tc, align 8
@@ -342519,8 +342392,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.27046, i64 %tag, ptr @mu_file.27047, i64 1317)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm3
   %arg_name15 = load ptr, ptr %arg_name, align 8
@@ -343210,8 +343083,8 @@ march_arm126:                                     ; preds = %march_next118
   br label %match_end
 
 march_next127:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.27048, i64 %tag, ptr @mu_file.27049, i64 1345)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::typeck::tc_check_fn_call_with"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -343580,8 +343453,8 @@ parm_body35:                                      ; preds = %parm_next19
   br label %pmatch_end
 
 parm_next36:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.27082, i64 -1, ptr @mu_file.27083, i64 1401)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %checked49 = load ptr, ptr %checked, align 8
@@ -343755,8 +343628,8 @@ march_arm117:                                     ; preds = %march_next104
   br label %match_end
 
 march_next118:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.27105, i64 %tag, ptr @mu_file.27106, i64 1396)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::typeck::check_method_call"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -343979,8 +343852,8 @@ parm_body82:                                      ; preds = %parm_next70
   br label %pmatch_end
 
 parm_next83:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.27128, i64 -1, ptr @mu_file.27129, i64 1451)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont96:                                         ; preds = %if_else99, %pmatch_end101
   %o139 = load ptr, ptr %o, align 8
@@ -344076,8 +343949,8 @@ parm_body136:                                     ; preds = %parm_next128
   br label %pmatch_end101
 
 parm_next137:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.27138, i64 -1, ptr @mu_file.27139, i64 1465)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont146:                                        ; preds = %if_else149
   %o159 = load ptr, ptr %o, align 8
@@ -344227,8 +344100,8 @@ march_arm223:                                     ; preds = %march_next212
   br label %match_end
 
 march_next224:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.27153, i64 %tag183, ptr @mu_file.27154, i64 1485)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont227:                                        ; preds = %if_else230, %ifcont242
   %checked_args250 = load ptr, ptr %checked_args, align 8
@@ -344394,8 +344267,8 @@ march_arm6:                                       ; preds = %march_next
   br i1 %tag_eq20, label %march_arm18, label %march_next19
 
 march_next7:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.27183, i64 %tag, ptr @mu_file.27184, i64 1519)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end17:                                      ; preds = %march_arm51, %match_end26
   %match_val64 = load i64, ptr %match_result16, align 8
@@ -344468,8 +344341,8 @@ march_arm36:                                      ; preds = %march_next28
   br label %match_end26
 
 march_next37:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.27176, i64 %tag24, ptr @mu_file.27177, i64 1528)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm51:                                      ; preds = %march_next19
   %tc53 = load ptr, ptr %tc, align 8
@@ -344490,8 +344363,8 @@ march_arm51:                                      ; preds = %march_next19
   br label %match_end17
 
 march_next52:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.27181, i64 %tag15, ptr @mu_file.27182, i64 1523)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::typeck::check_expr_list"(ptr %0, ptr %1) {
@@ -344567,8 +344440,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.27191, i64 %tag, ptr @mu_file.27192, i64 1553)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::typeck::check_expr_list_types"(ptr %0, ptr %1) {
@@ -344700,8 +344573,8 @@ march_arm7:                                       ; preds = %march_next
   br label %match_end
 
 march_next8:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.27208, i64 %tag, ptr @mu_file.27209, i64 1574)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::typeck::annotate_enter_fn"(ptr %0, ptr %1) {
@@ -344861,8 +344734,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq25, label %march_arm23, label %march_next24
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.27227, i64 %tag, ptr @mu_file.27228, i64 1608)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end22:                                      ; preds = %march_arm98, %march_arm69, %march_arm40, %march_arm23
   %match_val = load i64, ptr %match_result21, align 8
@@ -345025,8 +344898,8 @@ march_arm98:                                      ; preds = %march_next70
   br label %match_end22
 
 march_next99:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.27219, i64 %tag20, ptr @mu_file.27220, i64 1613)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::typeck::annotate_stmt"(ptr %0, ptr %1) {
@@ -346038,8 +345911,8 @@ march_arm535:                                     ; preds = %march_next518
   br label %match_end
 
 march_next536:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.27229, i64 %tag, ptr @mu_file.27230, i64 1626)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::typeck::annotate_expr"(ptr %0, ptr %1) {
@@ -347597,8 +347470,8 @@ march_arm833:                                     ; preds = %march_next816
   br label %match_end
 
 march_next834:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.27231, i64 %tag, ptr @mu_file.27232, i64 1662)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::typeck::annotate_sexpr"(ptr %0, ptr %1) {
@@ -348028,8 +347901,8 @@ march_arm153:                                     ; preds = %march_next135
   br label %match_end133
 
 march_next154:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.27251, i64 %tag131, ptr @mu_file.27252, i64 1712)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm166:                                     ; preds = %march_next124
   %pay_slot169 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %annotated_node3, i32 0, i32 1
@@ -348504,8 +348377,8 @@ march_arm394:                                     ; preds = %march_next329
   br label %match_end327
 
 march_next395:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.27285, i64 %tag325, ptr @mu_file.27286, i64 1712)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm410:                                     ; preds = %march_next315
   %pay_slot413 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %annotated_node3, i32 0, i32 1
@@ -348615,8 +348488,8 @@ march_arm467:                                     ; preds = %march_next426
   br label %match_end424
 
 march_next468:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.27302, i64 %tag422, ptr @mu_file.27303, i64 1712)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm483:                                     ; preds = %march_next411
   %tc485 = load ptr, ptr %tc, align 8
@@ -348639,8 +348512,8 @@ march_arm483:                                     ; preds = %march_next411
   br label %match_end
 
 march_next484:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.27310, i64 %tag, ptr @mu_file.27311, i64 1712)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::typeck::annotate_sexpr_ty"(ptr %0, ptr %1) {
@@ -348812,8 +348685,8 @@ march_arm50:                                      ; preds = %march_next46
   br label %match_end
 
 march_next51:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.27324, i64 %tag, ptr @mu_file.27325, i64 1816)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::typeck::annotate_expr_list"(ptr %0, ptr %1) {
@@ -348893,8 +348766,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.27326, i64 %tag, ptr @mu_file.27327, i64 1832)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::typeck::annotate_match_arms"(ptr %0, ptr %1) {
@@ -348976,8 +348849,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.27328, i64 %tag, ptr @mu_file.27329, i64 1841)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -349121,8 +348994,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.27330, i64 %tag, ptr @mu_file.27331, i64 1853)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::typeck::annotate_when_arms"(ptr %0, ptr %1) {
@@ -349195,8 +349068,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.27332, i64 %tag, ptr @mu_file.27333, i64 1861)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -350010,8 +349883,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.27354, i64 %tag, ptr @mu_file.27355, i64 1950)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::typeck::check_naming_stmt"(ptr %0, ptr %1) {
@@ -350714,8 +350587,8 @@ march_arm329:                                     ; preds = %march_next321
   br label %match_end
 
 march_next330:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.27371, i64 %tag, ptr @mu_file.27372, i64 1964)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"@std::avrac::coverage::pct"(i64 %0, i64 %1) {
@@ -351443,8 +351316,7 @@ parm_body38:                                      ; preds = %parm_next35
   br label %pmatch_end
 
 parm_next39:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.27402, i64 -1, ptr @mu_file.27403, i64 257)
-  unreachable
+  ret i64 0
 }
 
 define ptr @"@std::avrac::coverage::parse_profdata"(ptr %0) {
@@ -352367,8 +352239,7 @@ parm_body140:                                     ; preds = %parm_next134
   br label %pmatch_end
 
 parm_next141:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.27458, i64 -1, ptr @mu_file.27459, i64 401)
-  unreachable
+  ret ptr null
 
 ifcont161:                                        ; preds = %if_else164, %if_then163
   %e183 = load ptr, ptr %e, align 8
@@ -356176,8 +356047,8 @@ march_arm5:                                       ; preds = %march_next
   br i1 %tag_eq19, label %march_arm17, label %march_next18
 
 march_next6:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.27809, i64 %tag, ptr @mu_file.27810, i64 126)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end16:                                      ; preds = %march_arm68, %march_arm57, %march_arm33, %march_arm17
   %match_val = load i64, ptr %match_result, align 8
@@ -356285,8 +356156,8 @@ march_arm68:                                      ; preds = %march_next58
   br label %match_end16
 
 march_next69:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.27807, i64 %tag15, ptr @mu_file.27808, i64 134)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::indexer::walk_body_for_calls"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -356365,8 +356236,7 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.27811, i64 %tag, ptr @mu_file.27812, i64 163)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::avrac::indexer::scan_stmt_for_calls"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -356733,8 +356603,8 @@ march_arm181:                                     ; preds = %march_next126
   br label %match_end
 
 march_next182:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.27846, i64 %tag, ptr @mu_file.27847, i64 184)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::indexer::scan_expr_for_calls"(ptr %0, ptr %1, ptr %2, i64 %3, i64 %4, ptr %5) {
@@ -356862,8 +356732,8 @@ march_arm29:                                      ; preds = %march_next12
   br label %match_end10
 
 march_next30:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.27848, i64 %tag8, ptr @mu_file.27849, i64 213)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm41:                                      ; preds = %march_next
   %pay_slot44 = getelementptr inbounds nuw %"@std::avrac::core::Expr", ptr %e1, i32 0, i32 1
@@ -356975,8 +356845,8 @@ march_arm107:                                     ; preds = %march_next95
   br label %match_end
 
 march_next108:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.27850, i64 %tag, ptr @mu_file.27851, i64 210)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::indexer::scan_expr_list"(ptr %0, ptr %1, ptr %2, i64 %3, i64 %4, ptr %5) {
@@ -357067,8 +356937,7 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.27855, i64 %tag, ptr @mu_file.27856, i64 240)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::avrac::indexer::extract_inner"(ptr %0, ptr %1, ptr %2) {
@@ -357161,8 +357030,7 @@ march_arm6:                                       ; preds = %march_next
   br label %match_end
 
 march_next7:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.27857, i64 %tag, ptr @mu_file.27858, i64 265)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"@std::avrac::indexer::process_stmt"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -358344,8 +358212,8 @@ march_arm650:                                     ; preds = %march_next608
   br label %match_end
 
 march_next651:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.27894, i64 %tag, ptr @mu_file.27895, i64 293)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"@std::avrac::indexer::has_export_annotation"(ptr %0) {
@@ -358816,8 +358684,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.27918, i64 %tag, ptr @mu_file.27919, i64 444)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::indexer::render_field_decls_tail"(ptr %0) {
@@ -358927,8 +358795,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.27923, i64 %tag, ptr @mu_file.27924, i64 457)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::indexer::render_type_params"(ptr %0) {
@@ -358997,8 +358865,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.27931, i64 %tag, ptr @mu_file.27932, i64 467)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -359171,8 +359039,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_short, label %sc_rhs
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.27937, i64 %tag, ptr @mu_file.27938, i64 482)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm2
   %head_ty14 = load ptr, ptr %head_ty, align 8
@@ -359329,8 +359197,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_short, label %sc_rhs
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.27944, i64 %tag, ptr @mu_file.27945, i64 496)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm2
   %head_ty14 = load ptr, ptr %head_ty, align 8
@@ -359487,8 +359355,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.27949, i64 %tag, ptr @mu_file.27950, i64 511)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   %name11 = load ptr, ptr %name5, align 8
@@ -359683,8 +359551,7 @@ march_arm6:                                       ; preds = %march_next
   br label %match_end
 
 march_next7:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.27953, i64 %tag, ptr @mu_file.27954, i64 536)
-  unreachable
+  ret ptr null
 }
 
 define i64 @"@std::avrac::indexer::run_lsp_server"(ptr %0) {
@@ -360270,8 +360137,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.27994, i64 %tag, ptr @mu_file.27995, i64 659)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"@std::avrac::lang_gen::active_keywords_csv"() {
@@ -367617,8 +367484,7 @@ parm_body452:                                     ; preds = %parm_next402
   br label %pmatch_end
 
 parm_next453:                                     ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.28464, i64 -1, ptr @mu_file.28465, i64 200)
-  unreachable
+  ret ptr null
 }
 
 define ptr @matched_flag(ptr %0) {
@@ -377571,8 +377437,8 @@ march_arm745:                                     ; preds = %march_next
   br i1 %json763, label %if_then765, label %if_else766
 
 march_next746:                                    ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.29211, i64 %tag, ptr @mu_file.29212, i64 1404)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont764:                                        ; preds = %ifcont778, %if_then765
   %compiler_path802 = load ptr, ptr %compiler_path, align 8
@@ -380765,8 +380631,7 @@ march_arm519:                                     ; preds = %march_next
   br label %match_end
 
 march_next520:                                    ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.29404, i64 %tag, ptr @mu_file.29405, i64 1835)
-  unreachable
+  ret i64 0
 
 ifcont544:                                        ; preds = %if_else547, %if_then546
   %bin_path548 = load ptr, ptr %bin_path, align 8
@@ -380875,8 +380740,7 @@ march_arm636:                                     ; preds = %march_next633
   br label %match_end630
 
 march_next637:                                    ; preds = %march_next633
-  call void @avra_match_unreachable(ptr @.match_fn.29426, i64 %tag629, ptr @mu_file.29427, i64 1861)
-  unreachable
+  ret i64 0
 
 ifcont683:                                        ; preds = %if_else686, %if_then685
   %cov_ll687 = load ptr, ptr %cov_ll, align 8
@@ -382153,8 +382017,7 @@ parm_body35:                                      ; preds = %parm_next23
   br label %pmatch_end
 
 parm_next36:                                      ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.29595, i64 -1, ptr @mu_file.29596, i64 2024)
-  unreachable
+  ret ptr null
 }
 
 define i64 @require_lang_av(ptr %0) {
@@ -385138,8 +385001,7 @@ march_arm1380:                                    ; preds = %march_next
   br label %match_end
 
 march_next1381:                                   ; preds = %march_next
-  call void @avra_match_unreachable(ptr @.match_fn.30148, i64 %tag, ptr @mu_file.30149, i64 2434)
-  unreachable
+  ret i64 0
 
 parm_body1397:                                    ; preds = %parm_next1109
   %391 = call ptr @avra_map_new_cstr()
@@ -385148,8 +385010,7 @@ parm_body1397:                                    ; preds = %parm_next1109
   br label %pmatch_end
 
 parm_next1398:                                    ; No predecessors!
-  call void @avra_match_unreachable(ptr @.match_fn.30150, i64 -1, ptr @mu_file.30151, i64 2250)
-  unreachable
+  ret i64 0
 
 ifcont1404:                                       ; preds = %if_else1407
   %392 = call i64 @print_usage()
@@ -386087,8 +385948,7 @@ march_arm1934:                                    ; preds = %march_next1931
   br label %match_end1928
 
 march_next1935:                                   ; preds = %march_next1931
-  call void @avra_match_unreachable(ptr @.match_fn.30283, i64 %tag1927, ptr @mu_file.30284, i64 2599)
-  unreachable
+  ret i64 0
 
 ifcont1958:                                       ; preds = %if_else1960, %ifcont2045
   %list_files_path2063 = load ptr, ptr %list_files_path, align 8

@@ -1,0 +1,53 @@
+// Phase 3 (vez6.3) of Components V2: end-to-end test for `quote { ... }`.
+// Captures small expressions as runtime AST values, verifies via the
+// render_expr S-expression serializer that the captured shape matches.
+
+use @std.avrac.core.{Expr, render_expr}
+
+spec "quote: literals" {
+    then "number literal" {
+        let e = quote { 42 }
+        render_expr(e) == "42"
+    }
+    // String literal escape-handling has a known bug — escape_string +
+    // source-form interpolation double-encodes the inner quotes. Tracked
+    // separately; not blocking other quote work.
+    then "bool literal" {
+        let e = quote { true }
+        render_expr(e) == "true"
+    }
+    then "null literal" {
+        let e = quote { null }
+        render_expr(e) == "null"
+    }
+}
+
+spec "quote: arithmetic" {
+    then "addition" {
+        let e = quote { 5 + 7 }
+        render_expr(e) == "(+ 5 7)"
+    }
+    then "nested arithmetic" {
+        let e = quote { 1 + 2 * 3 }
+        render_expr(e) == "(+ 1 (* 2 3))"
+    }
+    then "subtraction" {
+        let e = quote { 10 - 3 }
+        render_expr(e) == "(- 10 3)"
+    }
+    then "comparison" {
+        let e = quote { 1 == 2 }
+        render_expr(e) == "(== 1 2)"
+    }
+}
+
+spec "quote: unary" {
+    then "negation" {
+        let e = quote { -5 }
+        render_expr(e) == "(- 5)"
+    }
+    then "logical not" {
+        let e = quote { !true }
+        render_expr(e) == "(! true)"
+    }
+}
