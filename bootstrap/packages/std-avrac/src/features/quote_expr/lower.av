@@ -251,8 +251,10 @@ fn lower_field_inits(inits: FieldInitList) -> FieldInitList {
 /// Default `expr` constructs an Expr. `stmt` extracts the single Stmt
 /// inside the body block and constructs it. `stmts` constructs the
 /// whole StmtList. `decl` is currently an alias for `stmt` since decls
-/// in Avra are Stmts. `type` is deferred (vez6.3.13) — would require a
-/// parser change to capture type-expression syntax inside the braces.
+/// in Avra are Stmts. `type` recognizes primitive type names (int /
+/// bool / float / string / bytes / void) by Ident shape — generic
+/// types and structural type expressions need a parser path that
+/// invokes parse_type_expr inside the braces (vez6.3.13 follow-up).
 fn dispatch_quote_kind(kind: string, body: Expr) -> Expr {
     if kind == "stmt" || kind == "decl" {
         let single = extract_single_stmt(body)
@@ -265,8 +267,38 @@ fn dispatch_quote_kind(kind: string, body: Expr) -> Expr {
     if kind == "stmts" {
         return construct_stmt_list(extract_stmt_list(body))
     }
+    if kind == "type" {
+        return construct_value_type_from_body(body)
+    }
     // Default: kind == "expr" or unrecognized.
     construct_expr(unwrap_quote_body(body))
+}
+
+/// Recognize the body of `quote type { ... }` as a ValueType by
+/// matching the body's Ident text against the primitive names.
+/// Anything else falls through to ValueType.Unknown — generic +
+/// structural type expressions are tracked under vez6.3.13.
+fn construct_value_type_from_body(body: Expr) -> Expr {
+    let inner = unwrap_quote_body(body)
+    match inner {
+        .Ident(name) -> primitive_value_type(name)
+        _ -> construct_value_type_unknown()
+    }
+}
+
+fn primitive_value_type(name: string) -> Expr {
+    if name == "int" { return value_type_ctor("Int") }
+    if name == "bool" { return value_type_ctor("Bool") }
+    if name == "float" { return value_type_ctor("Float") }
+    if name == "string" { return value_type_ctor("Str") }
+    if name == "bytes" { return value_type_ctor("Bytes") }
+    if name == "void" { return value_type_ctor("Void") }
+    if name == "ptr" { return value_type_ctor("Ptr") }
+    construct_value_type_unknown()
+}
+
+fn value_type_ctor(variant: string) -> Expr {
+    Expr.EnumCtor("@std::avrac::core::ValueType", variant, ExprList.End)
 }
 
 /// Extract the single Stmt from a `Block(StmtList(Node(ss, End)))`.

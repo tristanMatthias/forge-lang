@@ -2,7 +2,7 @@
 // Captures small expressions as runtime AST values, verifies via the
 // render_expr S-expression serializer that the captured shape matches.
 
-use @std.avrac.core.{Expr, render_expr, Stmt, StmtList, render_stmt, render_stmt_list}
+use @std.avrac.core.{Expr, render_expr, Stmt, StmtList, render_stmt, render_stmt_list, ValueType, vtype_display}
 
 spec "quote: literals" {
     then "number literal" {
@@ -366,6 +366,34 @@ spec "quote: kind dispatch" {
     then "quote default kind is expr" {
         let e: Expr = quote { 42 }
         render_expr(e) == "42"
+    }
+}
+
+// quote type — primitive type names (vez6.3.13 partial).
+spec "quote: type primitives" {
+    then "int" {
+        let t: ValueType = quote type { int }
+        vtype_display(t) == "int"
+    }
+    then "string" {
+        let t: ValueType = quote type { string }
+        vtype_display(t) == "string"
+    }
+    then "bool" {
+        let t: ValueType = quote type { bool }
+        vtype_display(t) == "bool"
+    }
+    then "float" {
+        let t: ValueType = quote type { float }
+        vtype_display(t) == "float"
+    }
+    then "void" {
+        let t: ValueType = quote type { void }
+        vtype_display(t) == "void"
+    }
+    then "unknown name → ValueType.Unknown" {
+        let t: ValueType = quote type { Foo }
+        vtype_display(t) == "<unknown>"
     }
 }
 
