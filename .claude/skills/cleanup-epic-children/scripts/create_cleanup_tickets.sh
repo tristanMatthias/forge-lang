@@ -1,5 +1,7 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Create 3 cleanup sub-tickets per OPEN child of a given epic:
+# Requires bash 4+ (uses `mapfile`). On macOS, install via homebrew
+# (`brew install bash`) — the OS-shipped /bin/bash is 3.2.
 # - .cleanupA: aggressive perf review
 # - .cleanupB: DRY + use language features
 # - .cleanupC: red-team + edge cases
