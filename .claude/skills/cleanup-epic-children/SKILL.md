@@ -45,7 +45,8 @@ The script:
 - Calls `bd --sandbox show` to discover OPEN children of the epic.
 - For each child, calls `bd --sandbox create` three times with `--parent=<child-id>` and the appropriate cleanup-pass description as the body.
 - Names each new ticket `<short-id>.cleanup{A,B,C}: <pass-name>`.
-- Prints `✓ <new-id>` per success or `✗ FAILED` with bd's output for failures.
+- Adds a blocking dep so each cleanup ticket depends on its parent phase being done — without this, cleanup tickets appear in `bd ready` immediately, ahead of the implementation they're meant to review.
+- Prints `✓ <new-id> (blocked-by <child-id>)` per success or `✗ FAILED` with bd's output for failures.
 
 ### Step 3 — Verify the tree
 

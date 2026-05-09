@@ -91,7 +91,13 @@ create_one() {
         echo "  ✗ FAILED $child_id pass=$pass: $out"
         return 1
     fi
-    echo "  ✓ $new_id"
+
+    # Block: cleanup tickets must depend on the parent phase finishing.
+    # Without this they appear in `bd ready` immediately, ahead of the
+    # implementation they're meant to review.
+    bd --sandbox dep add "$new_id" "$child_id" >/dev/null 2>&1
+
+    echo "  ✓ $new_id (blocked-by $child_id)"
 }
 
 for child in "${CHILDREN[@]}"; do
