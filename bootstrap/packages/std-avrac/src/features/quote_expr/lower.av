@@ -179,38 +179,38 @@ fn unwrap_quote_body(body: Expr) -> Expr {
 /// case naturally.
 fn construct_expr(e: Expr) -> Expr {
     match e {
-        .Number(v) -> ctor("@std::avrac::core::Expr", "Number", string_arg(v))
-        .String(v) -> ctor("@std::avrac::core::Expr", "String", string_arg_raw(v))
-        .Bool(v) -> ctor("@std::avrac::core::Expr", "Bool", string_arg(v))
-        .Null -> ctor("@std::avrac::core::Expr", "Null", ExprList.End)
-        .Ident(name) -> ctor("@std::avrac::core::Expr", "Ident", string_arg(name))
-        .QualifiedIdent(path) -> ctor("@std::avrac::core::Expr", "QualifiedIdent", string_arg(path))
-        .Assign(name, value) -> ctor("@std::avrac::core::Expr", "Assign", two_args(sexpr_dummy_call(string_lit_expr(name)), construct_expr(value)))
-        .Binary(l, op, r) -> ctor("@std::avrac::core::Expr", "Binary", three_args(construct_expr(l), construct_binop(op), construct_expr(r)))
-        .Unary(op, r) -> ctor("@std::avrac::core::Expr", "Unary", two_args(construct_unop(op), construct_expr(r)))
-        .Logical(l, op, r) -> ctor("@std::avrac::core::Expr", "Logical", three_args(construct_expr(l), construct_logicop(op), construct_expr(r)))
-        .Grouping(inner) -> ctor("@std::avrac::core::Expr", "Grouping", one_arg(construct_expr(inner)))
-        .Call(callee, args) -> ctor("@std::avrac::core::Expr", "Call", two_args(construct_expr(callee), construct_expr_list(args)))
-        .FieldAccess(obj, field) -> ctor("@std::avrac::core::Expr", "FieldAccess", two_args(construct_expr(obj), string_lit_expr(field)))
-        .Index(obj, idx) -> ctor("@std::avrac::core::Expr", "Index", two_args(construct_expr(obj), construct_expr(idx)))
-        .IfExpr(c, t, el) -> ctor("@std::avrac::core::Expr", "IfExpr", three_args(construct_expr(c), construct_expr(t), construct_expr(el)))
-        .Tuple(elements) -> ctor("@std::avrac::core::Expr", "Tuple", one_arg(construct_expr_list(elements)))
-        .ListLit(elements) -> ctor("@std::avrac::core::Expr", "ListLit", one_arg(construct_expr_list(elements)))
-        .NullCoalesce(l, r) -> ctor("@std::avrac::core::Expr", "NullCoalesce", two_args(construct_expr(l), construct_expr(r)))
-        .OptionalChain(obj, field) -> ctor("@std::avrac::core::Expr", "OptionalChain", two_args(construct_expr(obj), string_lit_expr(field)))
-        .Try(inner) -> ctor("@std::avrac::core::Expr", "Try", one_arg(construct_expr(inner)))
-        .FloatLit(v) -> ctor("@std::avrac::core::Expr", "FloatLit", string_arg(v))
-        .StructLit(name, inits) -> ctor("@std::avrac::core::Expr", "StructLit", two_args(string_lit_expr(name), construct_field_init_list(inits)))
-        .EnumCtor(type_name, variant, args) -> ctor("@std::avrac::core::Expr", "EnumCtor", three_args(string_lit_expr(type_name), string_lit_expr(variant), construct_expr_list(args)))
-        .MapLit(entries) -> ctor("@std::avrac::core::Expr", "MapLit", one_arg(construct_expr_list(entries)))
-        .IsCheck(subj, vname) -> ctor("@std::avrac::core::Expr", "IsCheck", two_args(construct_expr(subj), string_lit_expr(vname)))
-        .InCheck(needle, items) -> ctor("@std::avrac::core::Expr", "InCheck", two_args(construct_expr(needle), construct_expr_list(items)))
-        .Slice(obj, start, end) -> ctor("@std::avrac::core::Expr", "Slice", three_args(construct_expr(obj), construct_expr(start), construct_expr(end)))
-        .TupleIndex(obj, idx) -> ctor("@std::avrac::core::Expr", "TupleIndex", two_args(construct_expr(obj), Expr.Number(string(idx))))
-        .With(obj, overrides) -> ctor("@std::avrac::core::Expr", "With", two_args(construct_expr(obj), construct_field_init_list(overrides)))
-        .FieldAssign(obj, field, value) -> ctor("@std::avrac::core::Expr", "FieldAssign", three_args(construct_expr(obj), string_lit_expr(field), construct_expr(value)))
-        .Lambda(params, body) -> ctor("@std::avrac::core::Expr", "Lambda", two_args(construct_param_list(params), construct_expr(body)))
-        .Spawn(body) -> ctor("@std::avrac::core::Expr", "Spawn", one_arg(construct_expr(body)))
+        .Number(v) -> expr_ctor("Number", string_arg(v))
+        .String(v) -> expr_ctor("String", string_arg(v))
+        .Bool(v) -> expr_ctor("Bool", string_arg(v))
+        .Null -> expr_ctor("Null", ExprList.End)
+        .Ident(name) -> expr_ctor("Ident", string_arg(name))
+        .QualifiedIdent(path) -> expr_ctor("QualifiedIdent", string_arg(path))
+        .Assign(name, value) -> expr_ctor("Assign", two_args(sexpr_dummy_call(string_lit_expr(name)), construct_expr(value)))
+        .Binary(l, op, r) -> expr_ctor("Binary", three_args(construct_expr(l), construct_binop(op), construct_expr(r)))
+        .Unary(op, r) -> expr_ctor("Unary", two_args(construct_unop(op), construct_expr(r)))
+        .Logical(l, op, r) -> expr_ctor("Logical", three_args(construct_expr(l), construct_logicop(op), construct_expr(r)))
+        .Grouping(inner) -> expr_ctor("Grouping", one_arg(construct_expr(inner)))
+        .Call(callee, args) -> expr_ctor("Call", two_args(construct_expr(callee), construct_expr_list(args)))
+        .FieldAccess(obj, field) -> expr_ctor("FieldAccess", two_args(construct_expr(obj), string_lit_expr(field)))
+        .Index(obj, idx) -> expr_ctor("Index", two_args(construct_expr(obj), construct_expr(idx)))
+        .IfExpr(c, t, el) -> expr_ctor("IfExpr", three_args(construct_expr(c), construct_expr(t), construct_expr(el)))
+        .Tuple(elements) -> expr_ctor("Tuple", one_arg(construct_expr_list(elements)))
+        .ListLit(elements) -> expr_ctor("ListLit", one_arg(construct_expr_list(elements)))
+        .NullCoalesce(l, r) -> expr_ctor("NullCoalesce", two_args(construct_expr(l), construct_expr(r)))
+        .OptionalChain(obj, field) -> expr_ctor("OptionalChain", two_args(construct_expr(obj), string_lit_expr(field)))
+        .Try(inner) -> expr_ctor("Try", one_arg(construct_expr(inner)))
+        .FloatLit(v) -> expr_ctor("FloatLit", string_arg(v))
+        .StructLit(name, inits) -> expr_ctor("StructLit", two_args(string_lit_expr(name), construct_field_init_list(inits)))
+        .EnumCtor(type_name, variant, args) -> expr_ctor("EnumCtor", three_args(string_lit_expr(type_name), string_lit_expr(variant), construct_expr_list(args)))
+        .MapLit(entries) -> expr_ctor("MapLit", one_arg(construct_expr_list(entries)))
+        .IsCheck(subj, vname) -> expr_ctor("IsCheck", two_args(construct_expr(subj), string_lit_expr(vname)))
+        .InCheck(needle, items) -> expr_ctor("InCheck", two_args(construct_expr(needle), construct_expr_list(items)))
+        .Slice(obj, start, end) -> expr_ctor("Slice", three_args(construct_expr(obj), construct_expr(start), construct_expr(end)))
+        .TupleIndex(obj, idx) -> expr_ctor("TupleIndex", two_args(construct_expr(obj), Expr.Number(string(idx))))
+        .With(obj, overrides) -> expr_ctor("With", two_args(construct_expr(obj), construct_field_init_list(overrides)))
+        .FieldAssign(obj, field, value) -> expr_ctor("FieldAssign", three_args(construct_expr(obj), string_lit_expr(field), construct_expr(value)))
+        .Lambda(params, body) -> expr_ctor("Lambda", two_args(construct_param_list(params), construct_expr(body)))
+        .Spawn(body) -> expr_ctor("Spawn", one_arg(construct_expr(body)))
         // Nested Quote: `quote { ... quote { x } ... }` collapses one
         // level — the inner quote's BODY is what gets constructed, as
         // if the user had written `quote { ... x ... }` directly. This
@@ -225,20 +225,25 @@ fn construct_expr(e: Expr) -> Expr {
     }
 }
 
+/// Shorthand for `Expr.EnumCtor("@std::avrac::core::Expr", variant, args)`
+/// — the canonical type name appears 25+ times in construct_expr, so
+/// extracting it removes a thick band of visual noise and centralizes
+/// the path constant.
+fn expr_ctor(variant: string, args: ExprList) -> Expr {
+    Expr.EnumCtor("@std::avrac::core::Expr", variant, args)
+}
+
 /// Build an Expr that, when evaluated, produces a ParamList AST value.
 /// Each ParamList.Node carries (name, resolved_vtype, next). Quote
 /// captures pre-resolve, so ValueType is always Unknown — the resolver
 /// fills it in when the lowered AST is re-resolved.
 fn construct_param_list(params: ParamList) -> Expr {
     match params {
-        .End -> Expr.EnumCtor("@std::avrac::core::ParamList", "End", ExprList.End)
-        .Node(name, _, next) -> Expr.EnumCtor(
-            "@std::avrac::core::ParamList",
-            "Node",
-            ExprList.Node(sexpr_dummy(string_lit_expr(name)),
-              ExprList.Node(sexpr_dummy(construct_value_type_unknown()),
-                ExprList.Node(sexpr_dummy(construct_param_list(next)), ExprList.End)))
-        )
+        .End -> list_end("ParamList")
+        .Node(name, _, next) -> list_node("ParamList",
+            three_args(string_lit_expr(name),
+                       construct_value_type_unknown(),
+                       construct_param_list(next)))
     }
 }
 
@@ -254,21 +259,37 @@ fn construct_value_type_unknown() -> Expr {
 /// lists with payload + tail.
 fn construct_field_init_list(list: FieldInitList) -> Expr {
     match list {
-        .End -> Expr.EnumCtor("@std::avrac::core::FieldInitList", "End", ExprList.End)
-        .Node(name, se, next) -> Expr.EnumCtor(
-            "@std::avrac::core::FieldInitList",
-            "Node",
-            ExprList.Node(sexpr_dummy(string_lit_expr(name)),
-              ExprList.Node(sexpr_dummy(construct_sexpr(se)),
-                ExprList.Node(sexpr_dummy(construct_field_init_list(next)), ExprList.End)))
-        )
+        .End -> list_end("FieldInitList")
+        .Node(name, se, next) -> list_node("FieldInitList",
+            three_args(string_lit_expr(name),
+                       construct_sexpr(se),
+                       construct_field_init_list(next)))
     }
 }
 
-/// Build a string-literal Expr carrying `s`. Used as the runtime arg
-/// for variants whose payload is a bare string field (e.g. field name
-/// in FieldAccess) — distinct from string_arg/string_arg_raw which
-/// build *ExprList* wrappers for ctor() invocations.
+/// `Expr.EnumCtor("@std::avrac::core::<list_type>", "End", [])` — the
+/// terminal node of any AST linked list at construct time.
+fn list_end(list_type: string) -> Expr {
+    Expr.EnumCtor("@std::avrac::core::" + list_type, "End", ExprList.End)
+}
+
+/// `Expr.EnumCtor("@std::avrac::core::<list_type>", "Node", args)` —
+/// the cons cell shape shared by every AST linked-list constructor.
+/// Caller passes the per-list payload args as an ExprList.
+fn list_node(list_type: string, args: ExprList) -> Expr {
+    Expr.EnumCtor("@std::avrac::core::" + list_type, "Node", args)
+}
+
+/// Build an `Expr.String` whose runtime arg-after-strip_quotes is
+/// exactly `s`. Codegen unwraps one outer quote pair, so we wrap with
+/// exactly one. Used both bare and via `string_arg(s)` (which wraps
+/// the result in a one-element ExprList for ctor() args).
+///
+/// For inputs whose `s` ALREADY contains source-form quotes (parser's
+/// Expr.String.value), the same wrap is correct: the runtime value
+/// after strip_quotes is just `s` itself, including the inner quotes.
+/// That's the round-trip property — programmatic AST construction
+/// safely embeds literal `"` chars without re-parsing.
 fn string_lit_expr(s: string) -> Expr {
     Expr.String("\"${s}\"")
 }
@@ -278,13 +299,9 @@ fn string_lit_expr(s: string) -> Expr {
 /// ExprList.Node(se, rest) → EnumCtor("ExprList", "Node", [SExpr-ctor, recur]).
 fn construct_expr_list(list: ExprList) -> Expr {
     match list {
-        .End -> Expr.EnumCtor("@std::avrac::core::ExprList", "End", ExprList.End)
-        .Node(se, next) -> Expr.EnumCtor(
-            "@std::avrac::core::ExprList",
-            "Node",
-            ExprList.Node(sexpr_dummy(construct_sexpr(se)),
-              ExprList.Node(sexpr_dummy(construct_expr_list(next)), ExprList.End))
-        )
+        .End -> list_end("ExprList")
+        .Node(se, next) -> list_node("ExprList",
+            two_args(construct_sexpr(se), construct_expr_list(next)))
     }
 }
 
@@ -356,20 +373,12 @@ fn ctor(type_name: string, variant: string, args: ExprList) -> Expr {
     Expr.EnumCtor(type_name, variant, args)
 }
 
+/// One-element ExprList wrapping `string_lit_expr(s)` — the string-arg
+/// form for ctor() invocations. Both ident-like inputs and parser-form
+/// String.value (already-quoted) inputs round-trip through this wrap;
+/// see `string_lit_expr` for why one wrap suffices.
 fn string_arg(s: string) -> ExprList {
-    ExprList.Node(sexpr_dummy(Expr.String("\"${s}\"")), ExprList.End)
-}
-
-/// Like string_arg but the string is already in source-text form
-/// (already includes its surrounding quotes — that's how the parser
-/// stores `Expr.String.value`).
-///
-/// We wrap with an extra outer quote-pair (no escape sequences) so
-/// codegen's `strip_quotes` leaves us with `s` itself as the runtime
-/// arg to `Expr.String`. Programmatic AST construction lets us safely
-/// embed literal `"` chars in `.value` — there's no re-parsing step.
-fn string_arg_raw(s: string) -> ExprList {
-    ExprList.Node(sexpr_dummy(Expr.String("\"" + s + "\"")), ExprList.End)
+    ExprList.Node(sexpr_dummy(string_lit_expr(s)), ExprList.End)
 }
 
 fn one_arg(a: Expr) -> ExprList {
