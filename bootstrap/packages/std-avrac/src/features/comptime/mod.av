@@ -22,6 +22,14 @@ use core.{Stmt, StmtList, ParamList, ValueType, TypeParamList, AnnotationList}
 use features.eval.{Runtime, runtime_new, execute_stmt}
 use features.comptime.{rewrite_program}
 
+// String → int hashmap, same C-runtime primitive resolve/names + module_graph
+// use. Stores name → index-into-`reg.fns` so `comptime_lookup` is O(1) per
+// call site instead of O(N).
+extern fn avra_map_new_cstr() -> ptr
+extern fn avra_map_set_cstr(map: ptr, key: string, value: int)
+extern fn avra_map_get_cstr(map: ptr, key: string) -> int
+extern fn avra_map_has_cstr(map: ptr, key: string) -> int
+
 // ── Top-level entry ──
 
 /// Single-call high-level entry point. Walks `stmts`, collects every
@@ -40,26 +48,30 @@ export fn run_comptime(stmts: StmtList) -> StmtList {
     rewrite_program(stmts, reg)
 }
 
-/// Construct a fresh empty registry — no comptime fns, blank runtime.
-/// Tests and external callers that build registries by hand should use
-/// this rather than the raw struct literal so internal fields can
-/// evolve without touching call sites.
+/// Construct a fresh empty registry — no comptime fns, blank runtime,
+/// empty name index. Tests and external callers that build registries
+/// by hand should use this rather than the raw struct literal so
+/// internal fields can evolve without touching call sites.
 export fn comptime_registry_new() -> CompTimeRegistry {
-    CompTimeRegistry { fns: [], runtime: runtime_new() }
+    CompTimeRegistry { fns: [], runtime: runtime_new(), name_index: avra_map_new_cstr() }
 }
 
-/// Seed `reg.runtime` with every comptime fn so the folder doesn't
-/// re-register them per call site. Returns a new registry — pure.
-/// Idempotent: re-preparing an already-prepared registry rebuilds
-/// from `reg.fns`. Callers usually go through `collect_comptime_fns`
-/// which returns a fully-prepared registry.
+/// Seed `reg.runtime` with every comptime fn AND build the name → index
+/// hashmap. Returns a new registry — pure with respect to the input.
+/// Idempotent: re-preparing rebuilds from `reg.fns`, fine but wasteful.
+/// Callers usually go through `collect_comptime_fns` which returns a
+/// fully-prepared registry.
 export fn prepare_runtime(reg: CompTimeRegistry) -> CompTimeRegistry {
     mut rt = runtime_new()
+    let idx = avra_map_new_cstr()
+    mut i = 0
     for f in reg.fns {
         let fn_stmt = Stmt.Function(f.name, TypeParamList.End, f.params, f.ret_ty, f.body)
         rt = execute_stmt(rt, fn_stmt).runtime
+        avra_map_set_cstr(idx, f.name, i)
+        i = i + 1
     }
-    CompTimeRegistry { fns: reg.fns, runtime: rt }
+    CompTimeRegistry { fns: reg.fns, runtime: rt, name_index: idx }
 }
 
 // ── Types ──
@@ -80,12 +92,18 @@ export type CompTimeFn = {
 }
 
 /// Registry of every `@comptime` fn discovered in the program,
-/// plus a pre-built evaluator Runtime with all of them registered.
-/// Built once per compile by `collect_comptime_fns`; folding reuses
-/// the runtime across every call site.
+/// plus a pre-built evaluator Runtime AND a name → index hashmap
+/// for O(1) lookup at call sites. Built once per compile by
+/// `collect_comptime_fns`; folding reuses everything across every
+/// call site — no per-call-site setup work.
+///
+/// @field fns        — every @comptime fn, in source order.
+/// @field runtime    — eval Runtime with every fn pre-registered.
+/// @field name_index — name → index-in-`fns` hashmap.
 export type CompTimeRegistry = {
     fns: List<CompTimeFn>,
     runtime: Runtime,
+    name_index: ptr,
 }
 
 // ── Discovery ──
@@ -99,7 +117,7 @@ export type CompTimeRegistry = {
 /// found. Pure: doesn't mutate the AST.
 export fn collect_comptime_fns(stmts: StmtList) -> CompTimeRegistry {
     let fns = gather_fns(stmts, [])
-    prepare_runtime(CompTimeRegistry { fns, runtime: runtime_new() })
+    prepare_runtime(CompTimeRegistry { fns, runtime: runtime_new(), name_index: avra_map_new_cstr() })
 }
 
 /// Internal: walk `stmts`, append matching @comptime fns to the
@@ -174,20 +192,15 @@ fn annotation_present(annots: AnnotationList, name: string) -> bool {
 
 /// Find a comptime fn by name. Returns null when not registered —
 /// caller treats that as "not a comptime call, leave it alone."
-///
-/// Linear scan over `reg.fns`. Acceptable for current programs (N
-/// usually 0-20). When N grows (post std-cli rewrite, vez6.11), this
-/// should become an O(1) hashmap lookup — see bd comptime-perf ticket.
+/// O(1) hashmap lookup via `reg.name_index`.
 export fn comptime_lookup(reg: CompTimeRegistry, name: string) -> CompTimeFn? {
-    mut i = 0
-    while i < reg.fns.length {
-        if reg.fns[i].name == name { return reg.fns[i] }
-        i = i + 1
-    }
-    null
+    if avra_map_has_cstr(reg.name_index, name) == 0 { return null }
+    reg.fns[avra_map_get_cstr(reg.name_index, name)]
 }
 
-/// True when `name` is registered as a comptime fn.
+/// True when `name` is registered as a comptime fn. Constant-time —
+/// avoids the full `comptime_lookup` round-trip when callers only
+/// care about presence, not the fn body.
 export fn comptime_has(reg: CompTimeRegistry, name: string) -> bool {
-    comptime_lookup(reg, name) != null
+    avra_map_has_cstr(reg.name_index, name) != 0
 }

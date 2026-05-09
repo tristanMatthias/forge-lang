@@ -30,31 +30,20 @@ export type ComponentBlockView = {
 
 // ── Function lookup ──
 
-/// True when `body` contains a top-level fn named `fn_name`.
-/// Iterative early-exit on first match.
-export fn has_fn(body: StmtList, fn_name: string) -> bool {
-    mut cur = body
-    mut keep_going = true
-    while keep_going {
-        match cur {
-            .End -> { keep_going = false }
-            .Node(ss, next) -> {
-                match ss.node {
-                    .Function(name, _, _, _, _) -> {
-                        if name == fn_name { return true }
-                    }
-                    _ -> {}
-                }
-                cur = next
-            }
-        }
-    }
-    false
+/// Result of `find_fn`. `found` distinguishes "no such fn" from
+/// "fn with empty body" without an additional walk.
+///
+/// @field found — true when a fn with the requested name exists.
+/// @field body  — fn body (StmtList.End on miss).
+export type DeclLookup = {
+    found: bool,
+    body: StmtList,
 }
 
-/// Body of the fn named `fn_name`, or `End` when missing. Use
-/// `has_fn` first if you need to distinguish "no fn" from "empty body".
-export fn find_fn_body(body: StmtList, fn_name: string) -> StmtList {
+/// Find a top-level fn declaration by name in `body`. Single walk
+/// — `has_fn` and `find_fn_body` are O(1) wrappers over this. Returns
+/// `{found: false, body: End}` on miss.
+export fn find_fn(body: StmtList, fn_name: string) -> DeclLookup {
     mut cur = body
     mut keep_going = true
     while keep_going {
@@ -63,7 +52,7 @@ export fn find_fn_body(body: StmtList, fn_name: string) -> StmtList {
             .Node(ss, next) -> {
                 match ss.node {
                     .Function(name, _, _, _, fn_body) -> {
-                        if name == fn_name { return fn_body }
+                        if name == fn_name { return DeclLookup { found: true, body: fn_body } }
                     }
                     _ -> {}
                 }
@@ -71,7 +60,19 @@ export fn find_fn_body(body: StmtList, fn_name: string) -> StmtList {
             }
         }
     }
-    StmtList.End
+    DeclLookup { found: false, body: StmtList.End }
+}
+
+/// True when `body` contains a top-level fn named `fn_name`.
+export fn has_fn(body: StmtList, fn_name: string) -> bool {
+    find_fn(body, fn_name).found
+}
+
+/// Body of the fn named `fn_name`, or `End` when missing. Pair with
+/// `has_fn` (or use `find_fn` directly) to distinguish "no fn" from
+/// "fn with empty body" without two walks.
+export fn find_fn_body(body: StmtList, fn_name: string) -> StmtList {
+    find_fn(body, fn_name).body
 }
 
 // ── Component-block children ──

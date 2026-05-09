@@ -123,16 +123,19 @@ export fn emit_if_expr(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Expr
     let then_env = narrow_env_for_is(ctx, env, condition)
     let t = ctx.emit(then_env, then_branch)?
     let t_ty = emit_value_ty(t)
-    ctx.store(emit_value_ptr(t), result_slot)
-    ctx.br_if_open(merge_bb)
+    // store_br_if_open: skip the store + br when the branch's emit
+    // already terminated the block (e.g. body was `return X`). Without
+    // this guard the codegen produces invalid LLVM IR — two terminators
+    // in one basic block. The bare `store` followed by `br_if_open`
+    // pattern is a footgun: br checks but store doesn't.
+    ctx.store_br_if_open(emit_value_ptr(t), result_slot, merge_bb)
 
     // ── Else branch (with coverage) ──
     ctx.position(else_bb)
     ctx.cov_branch_else(branch_id)
     let e = ctx.emit(env, else_branch)?
     let e_ty = emit_value_ty(e)
-    ctx.store(emit_value_ptr(e), result_slot)
-    ctx.br_if_open(merge_bb)
+    ctx.store_br_if_open(emit_value_ptr(e), result_slot, merge_bb)
 
     // ── Merge ──
     ctx.position(merge_bb)
@@ -166,14 +169,12 @@ export fn emit_if_expr(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Expr
 
     // Then-type wrap (condition was true)
     let t_wrapped = emit_union_wrap(ctx, raw_val, t_ty, union_ty)?
-    ctx.store(emit_value_ptr(t_wrapped), wrap_slot)
-    ctx.br_if_open(wrap_merge)
+    ctx.store_br_if_open(emit_value_ptr(t_wrapped), wrap_slot, wrap_merge)
 
     // Else-type wrap (condition was false)
     ctx.position(wrap_else)
     let e_wrapped = emit_union_wrap(ctx, raw_val, e_ty, union_ty)?
-    ctx.store(emit_value_ptr(e_wrapped), wrap_slot)
-    ctx.br_if_open(wrap_merge)
+    ctx.store_br_if_open(emit_value_ptr(e_wrapped), wrap_slot, wrap_merge)
 
     ctx.position(wrap_merge)
     let result = ctx.load_i64(wrap_slot, "ife_union_val")

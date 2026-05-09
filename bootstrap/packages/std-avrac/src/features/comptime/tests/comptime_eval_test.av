@@ -21,10 +21,12 @@ fn mk_add_fn() -> CompTimeFn {
 }
 
 fn add_registry() -> CompTimeRegistry {
-    let empty_reg = comptime_registry_new()
-    let rt0 = empty_reg.runtime
-    let with_fn = CompTimeRegistry { fns: [mk_add_fn()], runtime: rt0 }
-    prepare_runtime(with_fn)
+    // Reuse comptime_registry_new for the default-field values so this
+    // doesn't need to know the registry's internal field set. Override
+    // `fns`, then re-prepare to seed the runtime + name index.
+    let empty = comptime_registry_new()
+    let staged = empty with { fns: [mk_add_fn()] }
+    prepare_runtime(staged)
 }
 
 // `add(2, 3)` as an Expr.Call AST.
