@@ -5,10 +5,13 @@
 # - .cleanupC: red-team + edge cases
 #
 # Usage: create_cleanup_tickets.sh <epic-id>
-#   e.g. create_cleanup_tickets.sh forge-crafting-intepreters-vez6
+#   e.g. create_cleanup_tickets.sh myproject-abc123
 #
 # Closed children are skipped (they already shipped without cleanup —
 # add a retro-cleanup ticket manually if you really want to revisit).
+#
+# Project-agnostic: works on any bd repository. The epic-id format is
+# whatever bd uses in this repo (typically `<project-slug>-<short-id>`).
 #
 # Description bodies are read from the skill's cleanup_pass_*.md files
 # (relative path resolved from this script's location).
@@ -33,10 +36,15 @@ PASS_C_DESC="$(cat "$SKILL_DIR/cleanup_pass_3.md")"
 # Discover open children of the epic. bd's `show <id>` lists children with
 # a status glyph (○ open, ◐ in_progress, ● blocked, ✓ closed, ❄ deferred).
 # Open + in_progress qualify; closed/blocked/deferred we skip.
+# bd ticket ids look like `<project-slug>-<short-id>`, where the short
+# id may contain dots for sub-tickets (e.g. `myproj-abc.1.2`). Match
+# whatever prefix bd uses in this repo by extracting the first
+# whitespace-bounded token after the status glyph.
 mapfile -t CHILDREN < <(
     bd --sandbox show "$EPIC_ID" 2>/dev/null \
         | grep -E "^\s*↳ [○◐]" \
-        | sed -E 's/^\s*↳ [○◐] (forge-crafting-intepreters-[a-z0-9.]+):.*/\1/'
+        | awk '{print $3}' \
+        | sed 's/:$//'
 )
 
 if [ ${#CHILDREN[@]} -eq 0 ]; then
@@ -64,7 +72,7 @@ create_one() {
     esac
 
     # Use the child's short ID (after final dash) in the title to keep
-    # it readable: e.g. "vez6.3.cleanupA: ..." rather than the full id.
+    # it readable: e.g. "<short>.cleanupA: ..." rather than the full id.
     local short_id="${child_id##*-}"
     local title="${short_id}.cleanup${pass}: ${suffix}"
 

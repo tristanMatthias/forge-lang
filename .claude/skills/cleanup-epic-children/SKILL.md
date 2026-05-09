@@ -21,7 +21,7 @@ Each sub-ticket carries the full description of what counts as "done" for that p
 
 ## Inputs
 
-The user supplies (or you infer from context) **one bd epic ID**, e.g. `forge-crafting-intepreters-vez6`.
+The user supplies (or you infer from context) **one bd epic ID**. The format follows whatever bd uses in this repo (typically `<project-slug>-<short-id>`).
 
 ## Workflow
 
@@ -31,32 +31,23 @@ The user supplies (or you infer from context) **one bd epic ID**, e.g. `forge-cr
 bd --sandbox show <epic-id>
 ```
 
-Confirm the epic has child tickets. Skip closed children (they already shipped without cleanup, so adding now is moot — file a regret-ticket if needed instead).
+Confirm the epic has child tickets. Closed children are skipped automatically (they already shipped without the cleanup contract — file a retro-cleanup ticket separately if you want to revisit).
 
-### Step 2 — Write the three cleanup-pass templates to /tmp
+### Step 2 — Run the bulk-create script
 
-The descriptions are reused verbatim across all 3 × N tickets. Write them once to `/tmp` files so the create script can `cat` them:
-
-```bash
-cp .claude/skills/cleanup-epic-children/cleanup_pass_1.md /tmp/cleanup_pass_1.txt
-cp .claude/skills/cleanup-epic-children/cleanup_pass_2.md /tmp/cleanup_pass_2.txt
-cp .claude/skills/cleanup-epic-children/cleanup_pass_3.md /tmp/cleanup_pass_3.txt
-```
-
-### Step 3 — Run the bulk-create script
-
-The `scripts/create_cleanup_tickets.sh` script walks the epic's open children and creates 3 sub-tickets per child. Edit the `NAMES` array and the phase-list at the top of the script to match your epic — they're the only thing that varies per epic.
+The `scripts/create_cleanup_tickets.sh` script walks the epic's open children and creates 3 sub-tickets per child, reading the cleanup-pass descriptions directly from this skill's `cleanup_pass_*.md` files. No template-copying needed — just point it at the epic ID.
 
 ```bash
 .claude/skills/cleanup-epic-children/scripts/create_cleanup_tickets.sh <epic-id>
 ```
 
 The script:
-- Calls `bd --sandbox create` with `--parent=<child-id>` and `--description=$(cat /tmp/cleanup_pass_N.txt)`
-- Captures the new ticket ID (4th whitespace-separated field of `Created issue:` line)
-- Prints `✓ <new-id>` per success or `✗ FAILED` with bd's output
+- Calls `bd --sandbox show` to discover OPEN children of the epic.
+- For each child, calls `bd --sandbox create` three times with `--parent=<child-id>` and the appropriate cleanup-pass description as the body.
+- Names each new ticket `<short-id>.cleanup{A,B,C}: <pass-name>`.
+- Prints `✓ <new-id>` per success or `✗ FAILED` with bd's output for failures.
 
-### Step 4 — Verify the tree
+### Step 3 — Verify the tree
 
 ```bash
 bd --sandbox show <epic-id>
@@ -91,13 +82,15 @@ By making each cleanup a P1 sub-ticket explicitly blocking the parent phase from
 - `cleanup_pass_3.md` — red-team-pass description
 - `scripts/create_cleanup_tickets.sh` — the bulk-creation script
 
-## Complete example
+## Concrete example
 
-The skill was extracted from work on epic `forge-crafting-intepreters-vez6` (Components V2). After invocation:
+A multi-phase epic with 12 open child phases (e.g. `myproject-abc`), each implementing one phase of a larger architectural change. Invoking the skill:
 
-- 12 child phases (vez6.3 through vez6.14) each gained 3 cleanup sub-tickets.
-- 36 new tickets total, all P1, all parented correctly.
-- Epic ticket count went from 14 to 50 (2 closed + 12 phases × 4 = 48 open, plus the 2 closed phases).
+- Each open child gains 3 P1 cleanup sub-tickets (cleanupA / cleanupB / cleanupC).
+- 36 new tickets total, all parented to the right child.
+- The epic ticket can no longer close until every child + every cleanup is done.
+
+The skill was extracted from a real session where a compiler's metaprogramming epic needed consistent post-implementation rigor across all phases. The approach generalizes to any multi-phase epic where quality must not degrade across phases.
 
 ## Anti-patterns to avoid when invoking
 
