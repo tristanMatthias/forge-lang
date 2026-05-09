@@ -895,21 +895,35 @@ fn qualify_self_param(ctx: NameCtx, params: ParamList, qualified_type: string) -
 
 /// Walk the methods of an impl block, mangling each fn name into
 /// `Type__method` and qualifying its self / param / return types.
+/// Peels `Annotated` wrappers (doc comments, @export, etc.) so a
+/// `/// docstring` on an impl method doesn't hide the Function from
+/// the impl-method mangling — without this, doc-commented impl
+/// methods kept the bare `Type__method` name and call sites looking
+/// up the prefixed `@module::Type__method` failed to dispatch
+/// (vez6.7.4).
 fn rewrite_impl_methods(ctx: NameCtx, qualified_type: string, stmts: StmtList) -> StmtList {
     match stmts {
         .End -> StmtList.End
         .Node(ss, next) -> {
-            let new_stmt = match ss.node {
-                .Function(name, tp, params, rvt, body) -> {
-                    let mn = method_from_mangled(name)
-                    let qualified_name = method_mangled_name(qualified_type, mn)
-                    let rp = rewrite_param_types(ctx, qualify_self_param(ctx, params, qualified_type))
-                    Stmt.Function(qualified_name, tp, rp, rewrite_vtype(ctx, rvt), rewrite_stmt_list(bind_params_ctx(ctx, rp), body))
-                }
-                _ -> rewrite_stmt(ctx, ss.node)
-            }
+            let new_stmt = rewrite_impl_method_stmt(ctx, qualified_type, ss.node)
             StmtList.Node(sstmt_at(new_stmt, ss.line, ss.col, ss.file), rewrite_impl_methods(ctx, qualified_type, next))
         }
+    }
+}
+
+/// Per-statement worker for rewrite_impl_methods. Recurses through
+/// `Annotated` so doc-commented or annotated impl methods get the
+/// same mangling as bare ones.
+fn rewrite_impl_method_stmt(ctx: NameCtx, qualified_type: string, stmt: Stmt) -> Stmt {
+    match stmt {
+        .Function(name, tp, params, rvt, body) -> {
+            let mn = method_from_mangled(name)
+            let qualified_name = method_mangled_name(qualified_type, mn)
+            let rp = rewrite_param_types(ctx, qualify_self_param(ctx, params, qualified_type))
+            Stmt.Function(qualified_name, tp, rp, rewrite_vtype(ctx, rvt), rewrite_stmt_list(bind_params_ctx(ctx, rp), body))
+        }
+        .Annotated(annots, inner) -> .Annotated(annots, rewrite_impl_method_stmt(ctx, qualified_type, inner))
+        _ -> rewrite_stmt(ctx, stmt)
     }
 }
 
