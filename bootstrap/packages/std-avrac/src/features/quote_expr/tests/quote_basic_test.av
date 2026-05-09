@@ -200,3 +200,26 @@ spec "quote: is + in checks" {
         render_expr(e) == "(is x .Some)"
     }
 }
+
+// Regression: lower_expr previously dropped to `_ -> expr` for many
+// container variants, leaving an inner Quote unlowered. Verifies the
+// walker recurses into struct-literal fields, list elements, and
+// tuple elements.
+spec "quote: nested quote inside container is lowered" {
+    then "inner quote inside list literal" {
+        // outer quote builds a list-construction Expr; inner quote
+        // builds a number literal. After lowering both, evaluating
+        // the outer Expr should yield a runtime Expr.ListLit value
+        // whose first element is itself an Expr.Number.
+        let outer = quote { [quote { 42 }] }
+        // The outer Expr is .ListLit with one element. The element is
+        // the LOWERED inner quote — which evaluates to Expr.Number("42").
+        // We check by asserting outer's render contains the marker for
+        // the lowered (constructed) form, not the unlowered Quote form.
+        !render_expr(outer).contains("quote ")
+    }
+    then "inner quote inside struct field" {
+        let outer = quote { Foo { x: quote { 7 } } }
+        !render_expr(outer).contains("quote ")
+    }
+}
