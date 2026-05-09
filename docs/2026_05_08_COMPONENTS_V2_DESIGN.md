@@ -64,7 +64,7 @@ Every node type provides:
 - Inspection methods (`block.children_of_type<T>()`, `decl.method_body("run")`, `decl.instance_name`, etc.).
 - Identity (each AST value carries a stable id for hygiene).
 
-The existing types are stamped `@stable` once macros depend on them. Future AST refactors must be additive (new variants OK; renaming/removing breaks downstream macros).
+A stability contract over these types (`@stable` or similar) is deferred — added once macro authors start shipping libraries that depend on the AST shape. Until then, AST refactors are fair game.
 
 ### 3.3 Quote syntax
 
@@ -382,11 +382,12 @@ Same runtime, zero magic. Always available.
 
 Phased so each phase ships independently and the bootstrap stays green throughout.
 
-### Phase 1 — AST as public, stable surface
-- Audit `core/ast.av` types; mark stable surface with `@stable` annotations (new annotation, no codegen — just marks contract).
+### Phase 1 — AST as public surface
+- Audit `core/ast.av` types and expose them via a curated public path.
 - Add inspection helpers (`children_of_type`, `method_body`, `parent_chain`) to `ComponentDecl`-shaped types.
 - Document invariants per node type.
 - No language changes; pure library work.
+- **Deferred:** stability contract / `@stable` annotation. Revisit when macro authors start depending on these types in published libraries.
 
 ### Phase 2 — Compile-time evaluator
 - Repurpose `features/eval/` as the compile-time interpreter.
@@ -473,7 +474,7 @@ Phased so each phase ships independently and the bootstrap stays green throughou
 ## 7. Risks
 
 - **Compile-time evaluator scope creep.** `features/eval` was built for runtime; using it at compile time may surface bugs. Mitigation: comprehensive comptime test suite; fallback "interpret subset of Avra" approach if full eval reuse proves brittle.
-- **AST type churn breaks macros.** Stamp `@stable` early; treat AST changes as breaking changes after that.
+- **AST type churn breaks macros.** Once macro libraries ship, AST refactors become breaking changes. Add a stability contract (`@stable` or similar) before that point — not load-bearing for the cli rewrite, but needed before external macro libraries ship.
 - **Migration complexity.** 2,652-line `main.av` rewrite is a chunk of work. Mitigation: phased — std-cli changes are usable for any other consumer the moment Phase 11 lands; main.av rewrite (Phase 12) is a separate self-contained effort.
 - **Spec drift.** The spec mentions `@derive` and lifted functions in the abstract; this design pins them to specific syntax/semantics. Mitigation: feed back into spec — propose this as the formal implementation of those concepts.
 
