@@ -73,3 +73,38 @@ spec "vez6.7: children block parses entries" {
         child_count(ch) == 1 && first_slot_name(ch) == "commands"
     }
 }
+
+// ── Red-team / edge cases (vez6.7.3) ──
+
+spec "vez6.7: children parser edges" {
+    then "empty children { } block parses to End" {
+        let ch = first_component_children("component Cli {
+    children {}
+}")
+        child_count(ch) == 0
+    }
+    then "three slots: trailing comma tolerated, names retained" {
+        let ch = first_component_children("component Cli {
+    children {
+        commands: List<Command>,
+        flags: List<Flag>,
+        envs: List<Env>,
+    }
+}")
+        child_count(ch) == 3 && first_slot_name(ch) == "commands"
+    }
+    then "two slots accepting the same element type both register" {
+        // Ambiguous shape: validation/auto-push picks the FIRST
+        // matching slot (slot_name_for_child stops on first hit).
+        // This test pins that semantic so a future refactor can't
+        // silently change it.
+        let ch = first_component_children("component Bus {
+    children {
+        primary: List<Msg>,
+        secondary: List<Msg>
+    }
+}")
+        child_count(ch) == 2 && first_slot_name(ch) == "primary"
+    }
+}
+
