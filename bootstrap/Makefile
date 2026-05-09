@@ -95,6 +95,20 @@ test:
 	@$(BS2) test
 	@$(DIAG) --check-fixedpoint
 
+# Inner-loop iteration: test suite only, no selfhost check.
+# Optional FILTER=<substr> narrows BOTH which tests run AND which
+# files get bundled into the compile (substring-matched against test
+# filename). Use this when iterating on a specific feature.
+#
+# Examples:
+#   make test-quick                       # all tests, skip selfhost
+#   make test-quick FILTER=component      # only tests whose filename contains "component"
+#   make test-quick FILTER=ast_introspect # only the ast_introspect_test.av tests
+#
+# Stopgap until hkms epic lands (proper cached + parallel test runner).
+test-quick:
+	@$(BS2) test $(if $(FILTER),-f $(FILTER))
+
 # Just the fixed-point check.
 selfhost:
 	@$(DIAG) --check-fixedpoint
