@@ -1,0 +1,127 @@
+// WHY: Compile-time evaluator (Phase 2 of Components V2 / vez6.2).
+//
+// `@comptime fn foo(...)` marks a function as evaluable at compile
+// time. When such a fn is called with comptime-known arguments
+// (literals or other comptime calls), the expand pass evaluates the
+// call and replaces it with the resulting AST node — no runtime
+// fn-call survives.
+//
+// This file owns the registry: discovery of `@comptime` annotated
+// fns from a program's AST. Actual evaluation lives in a separate
+// pass that runs after typeck (see comptime/eval.av once landed).
+//
+// Design doc: docs/2026_05_08_COMPONENTS_V2_DESIGN.md §3.1
+
+use core.{Stmt, StmtList, ParamList, ValueType, AnnotationList, stmt_unwrap}
+
+// ── Types ──
+
+/// One `@comptime`-annotated function declaration. Carries enough
+/// AST to invoke the body at compile time: name, params, return
+/// type, body.
+///
+/// @field name    — fn identifier (used for call-site lookup).
+/// @field params  — formal parameter list.
+/// @field ret_ty  — declared return type; the evaluator coerces
+///                  the produced Value to this shape when emitting
+///                  the replacement AST node.
+/// @field body    — fn body statement list.
+export type CompTimeFn = {
+    name: string,
+    params: ParamList,
+    ret_ty: ValueType,
+    body: StmtList,
+}
+
+/// Registry of every `@comptime` fn discovered in the program.
+/// Built by `collect_comptime_fns`; consulted by the evaluator at
+/// every call site to decide whether to fold the call.
+export type CompTimeRegistry = {
+    fns: List<CompTimeFn>,
+}
+
+// ── Discovery ──
+
+/// Walk a program's statement list and collect every fn carrying
+/// the `@comptime` annotation into a `CompTimeRegistry`. Recurses
+/// into Module bodies so package-internal comptime fns are found.
+/// Pure: doesn't mutate the AST.
+export fn collect_comptime_fns(stmts: StmtList) -> CompTimeRegistry {
+    mut fns: List<CompTimeFn> = []
+    mut cur = stmts
+    mut keep_going = true
+    while keep_going {
+        match cur {
+            .End -> { keep_going = false }
+            .Node(ss, next) -> {
+                let entry = comptime_fn_from_stmt(ss.node)
+                if entry != null {
+                    fns.push(entry!)
+                }
+                // Recurse into Module bodies so package-internal
+                // comptime fns are found too.
+                match ss.node {
+                    .Module(_, body) -> {
+                        let inner = collect_comptime_fns(body)
+                        mut j = 0
+                        while j < inner.fns.length {
+                            fns.push(inner.fns[j])
+                            j = j + 1
+                        }
+                    }
+                    _ -> {}
+                }
+                cur = next
+            }
+        }
+    }
+    CompTimeRegistry { fns }
+}
+
+/// If `stmt` is an `@comptime`-annotated fn, return a CompTimeFn
+/// describing it. Returns null otherwise. Peels through arbitrary
+/// nesting of `Annotated` wrappers (`@doc @export @comptime fn` etc).
+fn comptime_fn_from_stmt(stmt: Stmt) -> CompTimeFn? {
+    match stmt {
+        .Annotated(annots, inner) -> {
+            if annotation_present(annots, "comptime") {
+                match stmt_unwrap(stmt) {
+                    .Function(name, _, params, ret_ty, body) -> {
+                        CompTimeFn { name, params, ret_ty, body }
+                    }
+                    _ -> null
+                }
+            } else {
+                comptime_fn_from_stmt(inner)
+            }
+        }
+        _ -> null
+    }
+}
+
+/// True when `annots` contains a `@<name>` annotation. Linear
+/// scan — annotation lists are typically short (1-3 entries).
+fn annotation_present(annots: AnnotationList, name: string) -> bool {
+    match annots {
+        .End -> false
+        .Node(n, _, next) -> if n == name { true } else { annotation_present(next, name) }
+    }
+}
+
+// ── Lookup ──
+
+/// Find a comptime fn by name. Returns null when not registered —
+/// caller treats that as "not a comptime call, leave it alone."
+export fn comptime_lookup(reg: CompTimeRegistry, name: string) -> CompTimeFn? {
+    mut i = 0
+    while i < reg.fns.length {
+        if reg.fns[i].name == name { return reg.fns[i] }
+        i = i + 1
+    }
+    null
+}
+
+/// True when `name` is registered as a comptime fn.
+export fn comptime_has(reg: CompTimeRegistry, name: string) -> bool {
+    comptime_lookup(reg, name) != null
+}

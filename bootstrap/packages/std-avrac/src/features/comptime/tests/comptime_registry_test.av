@@ -1,0 +1,66 @@
+// Phase 2 of Components V2 (vez6.2): exercise the @comptime fn
+// registry — discovery, lookup, recursion into Module bodies.
+
+use @std.avrac.core.{Stmt, StmtList, sstmt_dummy, ParamList, ValueType, TypeParamList, AnnotationList, ExprList}
+use @std.avrac.features.comptime.{CompTimeRegistry, CompTimeFn, collect_comptime_fns, comptime_lookup, comptime_has}
+
+// Build an @<name>-annotated fn statement for testing.
+fn mk_annotated_fn(annot_name: string, fn_name: string) -> Stmt {
+    Stmt.Annotated(
+        AnnotationList.Node(annot_name, ExprList.End, AnnotationList.End),
+        Stmt.Function(fn_name, TypeParamList.End, ParamList.End, ValueType.Int, StmtList.End)
+    )
+}
+
+// `[@comptime fn add() {} ; @inline fn other() {} ; @comptime fn mul() {}]`
+fn sample_program() -> StmtList {
+    StmtList.Node(sstmt_dummy(mk_annotated_fn("comptime", "add")),
+      StmtList.Node(sstmt_dummy(mk_annotated_fn("inline", "other")),
+        StmtList.Node(sstmt_dummy(mk_annotated_fn("comptime", "mul")),
+          StmtList.End)))
+}
+
+spec "comptime.collect_comptime_fns" {
+    then "finds 2 @comptime fns and skips @inline" {
+        collect_comptime_fns(sample_program()).fns.length == 2
+    }
+    then "first registered is `add`" {
+        collect_comptime_fns(sample_program()).fns[0].name == "add"
+    }
+    then "second registered is `mul`" {
+        collect_comptime_fns(sample_program()).fns[1].name == "mul"
+    }
+    then "empty program yields empty registry" {
+        collect_comptime_fns(StmtList.End).fns.length == 0
+    }
+    then "non-annotated fns ignored" {
+        let plain = StmtList.Node(
+            sstmt_dummy(Stmt.Function("plain", TypeParamList.End, ParamList.End, ValueType.Int, StmtList.End)),
+            StmtList.End)
+        collect_comptime_fns(plain).fns.length == 0
+    }
+}
+
+spec "comptime.comptime_lookup" {
+    then "finds registered fn" {
+        let reg = collect_comptime_fns(sample_program())
+        comptime_lookup(reg, "add") != null
+    }
+    then "returns null for unknown" {
+        let reg = collect_comptime_fns(sample_program())
+        comptime_lookup(reg, "missing") == null
+    }
+    then "comptime_has reflects lookup" {
+        let reg = collect_comptime_fns(sample_program())
+        comptime_has(reg, "mul") && !comptime_has(reg, "missing")
+    }
+}
+
+spec "comptime registry recurses into Module bodies" {
+    then "finds @comptime fns inside a Module wrapper" {
+        let inner = StmtList.Node(sstmt_dummy(mk_annotated_fn("comptime", "nested")), StmtList.End)
+        let prog = StmtList.Node(sstmt_dummy(Stmt.Module("foo", inner)), StmtList.End)
+        let reg = collect_comptime_fns(prog)
+        reg.fns.length == 1 && reg.fns[0].name == "nested"
+    }
+}
