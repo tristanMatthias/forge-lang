@@ -573,7 +573,7 @@ fn slot_name_for_child(schema: ChildrenList, child_comp: string) -> string {
     match schema {
         .End -> ""
         .Node(slot, child_ty, next) -> {
-            if vtype_elem_name_matches(child_ty, child_comp) { return slot }
+            if vtype_elem_name(child_ty) == child_comp { return slot }
             slot_name_for_child(next, child_comp)
         }
     }
@@ -634,7 +634,7 @@ fn validate_children_against_schema(parent_comp: string, schema: ChildrenList, b
             let inner = stmt_unwrap_deep(ss.node)
             match inner {
                 .ComponentBlock(child_comp, _, _, _) -> {
-                    if !child_type_matches_slot(schema, child_comp) {
+                    if slot_name_for_child(schema, child_comp) == "" {
                         eprintln("error: type `${child_comp}` is not a valid child of `${parent_comp}`${schema_hint(schema, parent_comp)}")
                     }
                 }
@@ -645,86 +645,44 @@ fn validate_children_against_schema(parent_comp: string, schema: ChildrenList, b
     }
 }
 
-/// True iff `child_comp` matches the element type of any slot in
-/// `schema`. The slot type is expected to be `List<T>` — we match
-/// `child_comp` against `T`'s name. Schema = End always returns
-/// false (parent didn't declare any children).
-fn child_type_matches_slot(schema: ChildrenList, child_comp: string) -> bool {
-    match schema {
-        .End -> false
-        .Node(_, child_ty, next) -> {
-            if vtype_elem_name_matches(child_ty, child_comp) { return true }
-            child_type_matches_slot(next, child_comp)
-        }
-    }
-}
-
-/// Extract the element-type name from a `List<T>` ValueType and
-/// compare to `name`. Returns false for non-list slot types or
-/// non-struct/enum element types — those don't model "accepts a
-/// component instance" so they can't match by definition.
-fn vtype_elem_name_matches(vt: ValueType, name: string) -> bool {
+/// Extract the element-type name from a slot's `List<T>` ValueType.
+/// Returns the empty string when the slot type isn't `List<T>` or
+/// `T` isn't a nominal struct/enum — neither shape models "accepts a
+/// component instance", so they can't match by definition. Single
+/// source of truth used by both slot-name lookup (auto-push +
+/// validation) and the diagnostic hint formatter.
+fn vtype_elem_name(vt: ValueType) -> string {
     match vt {
         .List(elem) -> {
             match elem {
-                .Struct(n, _) -> n == name
-                .Enum(n, _, _) -> n == name
-                _ -> false
+                .Struct(n, _) -> n
+                .Enum(n, _, _) -> n
+                _ -> ""
             }
         }
-        _ -> false
+        _ -> ""
     }
 }
 
 /// Build a `; expected X (slot1) or Y (slot2)` hint string from the
 /// parent's children schema for inclusion in the diagnostic.
 fn schema_hint(schema: ChildrenList, parent: string) -> string {
-    let names = collect_slot_names(schema)
-    if names.length == 0 {
-        "; `${parent}` declares no `children { ... }` schema"
-    } else {
-        "; expected one of ${join_slot_names(schema)}"
+    match schema {
+        .End -> "; `${parent}` declares no `children { ... }` schema"
+        _ -> "; expected one of ${join_slot_names(schema)}"
     }
-}
-
-fn collect_slot_names(schema: ChildrenList) -> List<string> {
-    mut acc = []
-    mut cur = schema
-    mut keep_going = true
-    while keep_going {
-        match cur {
-            .End -> { keep_going = false }
-            .Node(slot, _, next) -> {
-                acc.push(slot)
-                cur = next
-            }
-        }
-    }
-    acc
 }
 
 fn join_slot_names(schema: ChildrenList) -> string {
     match schema {
         .End -> ""
         .Node(slot, ty, next) -> {
-            let elem_part = vtype_elem_render(ty)
-            let head = "${elem_part} (${slot})"
+            let elem_part = vtype_elem_name(ty)
+            let elem_str = if elem_part == "" { "?" } else { elem_part }
+            let head = "${elem_str} (${slot})"
             let tail = join_slot_names(next)
             if tail == "" { head } else { "${head}, ${tail}" }
         }
-    }
-}
-
-fn vtype_elem_render(vt: ValueType) -> string {
-    match vt {
-        .List(elem) -> {
-            match elem {
-                .Struct(n, _) -> n
-                .Enum(n, _, _) -> n
-                _ -> "?"
-            }
-        }
-        _ -> "?"
     }
 }
 
