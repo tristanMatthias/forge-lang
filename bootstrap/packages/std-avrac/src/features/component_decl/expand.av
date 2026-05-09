@@ -65,7 +65,7 @@ export fn collect_component_defs(stmts: StmtList) -> CompDefRegistry {
         .Node(ss, next) -> {
             let inner = stmt_unwrap_deep(ss.node)
             match inner {
-                .ComponentDef(name, _, config, body) -> {
+                .ComponentDef(name, _, config, _, body) -> {
                     CompDefRegistry.Entry(name, config, body, collect_component_defs(next))
                 }
                 .Module(_, mod_body) -> {
@@ -614,7 +614,7 @@ export fn expand_stmt_list(stmts: StmtList, reg: CompDefRegistry, nest: CompNest
             let expanded_next = expand_stmt_list(next, reg, nest)
             let inner = stmt_unwrap_deep(ss.node)
             match inner {
-                .ComponentDef(name, params, config, body) -> {
+                .ComponentDef(name, params, config, _, body) -> {
                     splice_component_def(name, params, config, body, ss.line, ss.col, expanded_next)
                 }
                 .ComponentBlock(comp, inst, config, body) -> {

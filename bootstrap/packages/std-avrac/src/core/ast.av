@@ -1046,7 +1046,7 @@ export enum Stmt {
     AssocType(name: string, ty_vt: ValueType)
     /// Component declaration: `component Name(params) { body }` —
     /// reusable templated block of statements.
-    ComponentDef(name: string, params: ParamList, config: CompConfigList, body: StmtList)
+    ComponentDef(name: string, params: ParamList, config: CompConfigList, children: ChildrenList, body: StmtList)
     /// Component instantiation: `component Foo as bar { config; body }`.
     ComponentBlock(comp_name: string, instance: string, config: CompConfigPairList, body: StmtList)
 }
@@ -1086,6 +1086,14 @@ export enum CompConfigList {
 export enum CompConfigPairList {
     End
     Node(key: string, value: Expr, next: CompConfigPairList)
+}
+
+/// Component child-slot schema entries: `slot_name: List<T>` declared
+/// inside a `children { ... }` block. Each entry names a parent list
+/// field plus the child element type accepted there. Phase 7 (vez6.7).
+export enum ChildrenList {
+    End
+    Node(slot_name: string, child_ty: ValueType, next: ChildrenList)
 }
 
 /// Strip every Annotated wrapper, returning the underlying decl.
@@ -1609,7 +1617,7 @@ export fn render_stmt(stmt: Stmt) -> string {
         .Module(name, body) -> "(module ${name} ${render_stmt_list(body)})"
         .Use(path, names) -> "(use ${path} ${render_param_list(names)})"
         .AssocType(name, ty_vt) -> if vtype_is_unknown(ty_vt) { "(assoc-type ${name})" } else { "(assoc-type ${name} = ${vtype_render_full(ty_vt)})" }
-        .ComponentDef(name, params, _, body) -> "(component-def ${name} ${render_param_list(params)} ${render_stmt_list(body)})"
+        .ComponentDef(name, params, _, _, body) -> "(component-def ${name} ${render_param_list(params)} ${render_stmt_list(body)})"
         .ComponentBlock(comp, inst, _, body) -> "(component-block ${comp} ${inst} ${render_stmt_list(body)})"
     }
 }
