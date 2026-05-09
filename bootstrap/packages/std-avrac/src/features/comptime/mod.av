@@ -7,12 +7,18 @@
 // fn-call survives.
 //
 // This file is the entry point + registry. Folding lives in eval.av;
-// the program-walker lives in rewrite.av. The pipeline runs:
+// the program-walker lives in rewrite.av. Pipeline:
 // resolve_names → run_comptime → typecheck_program.
+//
+// Performance shape:
+// - `run_comptime` short-circuits when no @comptime fns exist
+//   (the common case for current programs — saves a full AST walk).
+// - The shared evaluator Runtime is built once per program; folding
+//   reuses it across every call site instead of re-registering fns.
 //
 // Design doc: docs/2026_05_08_COMPONENTS_V2_DESIGN.md §3.1
 
-use core.{Stmt, StmtList, ParamList, ValueType, TypeParamList, AnnotationList, stmt_unwrap}
+use core.{Stmt, StmtList, ParamList, ValueType, TypeParamList, AnnotationList}
 use features.eval.{Runtime, runtime_new, execute_stmt}
 use features.comptime.{rewrite_program}
 
@@ -25,8 +31,13 @@ use features.comptime.{rewrite_program}
 /// Inserted into the compile pipeline AFTER `resolve_names` and
 /// BEFORE `typecheck_program` so the typechecker sees the post-fold
 /// AST (calls have collapsed into literals).
+///
+/// Fast path: when the program has no @comptime fns we short-circuit
+/// without walking the AST at all.
 export fn run_comptime(stmts: StmtList) -> StmtList {
-    rewrite_program(stmts, collect_comptime_fns(stmts))
+    let reg = collect_comptime_fns(stmts)
+    if reg.fns.length == 0 { return stmts }
+    rewrite_program(stmts, reg)
 }
 
 /// Construct a fresh empty registry — no comptime fns, blank runtime.
@@ -39,14 +50,14 @@ export fn comptime_registry_new() -> CompTimeRegistry {
 
 /// Seed `reg.runtime` with every comptime fn so the folder doesn't
 /// re-register them per call site. Returns a new registry — pure.
+/// Idempotent: re-preparing an already-prepared registry rebuilds
+/// from `reg.fns`. Callers usually go through `collect_comptime_fns`
+/// which returns a fully-prepared registry.
 export fn prepare_runtime(reg: CompTimeRegistry) -> CompTimeRegistry {
     mut rt = runtime_new()
-    mut i = 0
-    while i < reg.fns.length {
-        let f = reg.fns[i]
+    for f in reg.fns {
         let fn_stmt = Stmt.Function(f.name, TypeParamList.End, f.params, f.ret_ty, f.body)
         rt = execute_stmt(rt, fn_stmt).runtime
-        i = i + 1
     }
     CompTimeRegistry { fns: reg.fns, runtime: rt }
 }
@@ -59,9 +70,7 @@ export fn prepare_runtime(reg: CompTimeRegistry) -> CompTimeRegistry {
 ///
 /// @field name    — fn identifier (used for call-site lookup).
 /// @field params  — formal parameter list.
-/// @field ret_ty  — declared return type; the evaluator coerces
-///                  the produced Value to this shape when emitting
-///                  the replacement AST node.
+/// @field ret_ty  — declared return type.
 /// @field body    — fn body statement list.
 export type CompTimeFn = {
     name: string,
@@ -72,14 +81,8 @@ export type CompTimeFn = {
 
 /// Registry of every `@comptime` fn discovered in the program,
 /// plus a pre-built evaluator Runtime with all of them registered.
-/// `collect_comptime_fns` populates `fns` only and leaves `runtime`
-/// fresh-empty; `prepare_runtime` (called by `run_comptime`) seeds
-/// it. Folding rebuilds nothing per call site — the runtime is
-/// shared across all fold attempts in a single compilation.
-///
-/// @field fns     — every @comptime fn, in source order.
-/// @field runtime — eval Runtime with every fn pre-registered.
-///                  Empty until `prepare_runtime` is called.
+/// Built once per compile by `collect_comptime_fns`; folding reuses
+/// the runtime across every call site.
 export type CompTimeRegistry = {
     fns: List<CompTimeFn>,
     runtime: Runtime,
@@ -89,20 +92,22 @@ export type CompTimeRegistry = {
 
 /// Walk a program's statement list and collect every fn carrying
 /// the `@comptime` annotation into a fully-prepared `CompTimeRegistry`.
-/// The returned registry's runtime is already seeded — callers can
-/// fold immediately without a separate `prepare_runtime` step.
+/// The returned registry's runtime is seeded; callers fold immediately
+/// without a separate `prepare_runtime` step.
 ///
 /// Recurses into Module bodies so package-internal comptime fns are
 /// found. Pure: doesn't mutate the AST.
 export fn collect_comptime_fns(stmts: StmtList) -> CompTimeRegistry {
-    prepare_runtime(CompTimeRegistry { fns: gather_fns(stmts), runtime: runtime_new() })
+    let fns = gather_fns(stmts, [])
+    prepare_runtime(CompTimeRegistry { fns, runtime: runtime_new() })
 }
 
-/// Internal: gather the raw fn list without seeding the runtime.
-/// Public callers go through `collect_comptime_fns` (above) which
-/// calls this then runs `prepare_runtime`.
-fn gather_fns(stmts: StmtList) -> List<CompTimeFn> {
-    mut fns: List<CompTimeFn> = []
+/// Internal: walk `stmts`, append matching @comptime fns to the
+/// running accumulator. Recurses into Module bodies. Threading the
+/// accumulator through the recursion avoids the per-Module list-copy
+/// that an outer-merge approach would do.
+fn gather_fns(stmts: StmtList, acc: List<CompTimeFn>) -> List<CompTimeFn> {
+    mut fns = acc
     mut cur = stmts
     mut keep_going = true
     while keep_going {
@@ -110,20 +115,9 @@ fn gather_fns(stmts: StmtList) -> List<CompTimeFn> {
             .End -> { keep_going = false }
             .Node(ss, next) -> {
                 let entry = comptime_fn_from_stmt(ss.node)
-                if entry != null {
-                    fns.push(entry!)
-                }
-                // Recurse into Module bodies so package-internal
-                // comptime fns are found too.
+                if entry != null { fns.push(entry!) }
                 match ss.node {
-                    .Module(_, body) -> {
-                        let inner = gather_fns(body)
-                        mut j = 0
-                        while j < inner.length {
-                            fns.push(inner[j])
-                            j = j + 1
-                        }
-                    }
+                    .Module(_, body) -> { fns = gather_fns(body, fns) }
                     _ -> {}
                 }
                 cur = next
@@ -140,12 +134,7 @@ fn comptime_fn_from_stmt(stmt: Stmt) -> CompTimeFn? {
     match stmt {
         .Annotated(annots, inner) -> {
             if annotation_present(annots, "comptime") {
-                match stmt_unwrap(stmt) {
-                    .Function(name, _, params, ret_ty, body) -> {
-                        CompTimeFn { name, params, ret_ty, body }
-                    }
-                    _ -> null
-                }
+                fn_payload(inner)
             } else {
                 comptime_fn_from_stmt(inner)
             }
@@ -154,19 +143,41 @@ fn comptime_fn_from_stmt(stmt: Stmt) -> CompTimeFn? {
     }
 }
 
-/// True when `annots` contains a `@<name>` annotation. Linear
-/// scan — annotation lists are typically short (1-3 entries).
-fn annotation_present(annots: AnnotationList, name: string) -> bool {
-    match annots {
-        .End -> false
-        .Node(n, _, next) -> if n == name { true } else { annotation_present(next, name) }
+/// Recursively peel further annotation layers and extract the
+/// Function payload. Returns null if the underlying decl isn't a fn.
+fn fn_payload(stmt: Stmt) -> CompTimeFn? {
+    match stmt {
+        .Annotated(_, inner) -> fn_payload(inner)
+        .Function(name, _, params, ret_ty, body) -> CompTimeFn { name, params, ret_ty, body }
+        _ -> null
     }
+}
+
+/// True when `annots` contains a `@<name>` annotation. Iterative
+/// (consistent with the rest of the file's loop pattern).
+fn annotation_present(annots: AnnotationList, name: string) -> bool {
+    mut cur = annots
+    mut keep_going = true
+    while keep_going {
+        match cur {
+            .End -> { keep_going = false }
+            .Node(n, _, next) -> {
+                if n == name { return true }
+                cur = next
+            }
+        }
+    }
+    false
 }
 
 // ── Lookup ──
 
 /// Find a comptime fn by name. Returns null when not registered —
 /// caller treats that as "not a comptime call, leave it alone."
+///
+/// Linear scan over `reg.fns`. Acceptable for current programs (N
+/// usually 0-20). When N grows (post std-cli rewrite, vez6.11), this
+/// should become an O(1) hashmap lookup — see bd comptime-perf ticket.
 export fn comptime_lookup(reg: CompTimeRegistry, name: string) -> CompTimeFn? {
     mut i = 0
     while i < reg.fns.length {

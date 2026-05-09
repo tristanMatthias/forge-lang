@@ -44,16 +44,21 @@ export fn try_fold_call(reg: CompTimeRegistry, call: Expr) -> Expr? {
 // ── Argument-literal check ──
 
 /// True when every Expr in `args` is a literal — the only shape
-/// we know how to fold today. Future slices may relax this to
-/// allow nested folded calls.
+/// we know how to fold today. Iterative + early-exit on first
+/// non-literal so deep arg lists don't blow the stack.
 fn all_args_literal(args: ExprList) -> bool {
-    match args {
-        .End -> true
-        .Node(arg, next) -> {
-            if !is_literal(arg.node) { return false }
-            all_args_literal(next)
+    mut cur = args
+    mut keep_going = true
+    while keep_going {
+        match cur {
+            .End -> { keep_going = false }
+            .Node(arg, next) -> {
+                if !is_literal(arg.node) { return false }
+                cur = next
+            }
         }
     }
+    true
 }
 
 /// Whitelist of Expr shapes treated as compile-time literals for

@@ -79,11 +79,20 @@ fn rewrite_stmt(stmt: Stmt, reg: CompTimeRegistry) -> Stmt {
 /// Bottom-up rewrite: descend into children first, then attempt to
 /// fold THIS expression. Folding the outer-most after the children
 /// lets nested comptime calls collapse in one pass.
+///
+/// Fast path: only Call expressions can fold. Non-Call shapes skip
+/// the `try_fold_call` round-trip entirely — saves a fn call per
+/// expression in the AST. The walker is the hot loop here.
 fn rewrite_expr(expr: Expr, reg: CompTimeRegistry) -> Expr {
     let with_children = walk_expr(expr, reg)
-    let folded = try_fold_call(reg, with_children)
-    if folded != null { return folded! }
-    with_children
+    match with_children {
+        .Call(_, _) -> {
+            let folded = try_fold_call(reg, with_children)
+            if folded != null { return folded! }
+            with_children
+        }
+        _ -> with_children
+    }
 }
 
 /// Structural walk: recurse `rewrite_expr` into every sub-expression
