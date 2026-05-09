@@ -134,11 +134,12 @@ fn unwrap_quote_body(body: Expr) -> Expr {
 /// returns the AST shape of `Expr.Number("5")` — i.e. an EnumCtor for
 /// the Expr.Number variant carrying a string-literal arg "5".
 ///
-/// First slice: covers Number, String, Bool, Null, Ident, Binary, Unary,
-/// Logical, Grouping. Other variants pass through unchanged for now —
-/// downstream stages will see the raw AST and will likely error,
-/// surfacing the missing case naturally. New variants land driven by
-/// tests that need them.
+/// Covers all leaf + structural variants needed for `quote { expr }`.
+/// Block / MatchExpr / StructLit need StmtList / FieldInitList /
+/// MatchArmList constructors — landing in the next slice driven by
+/// tests that need them. Other variants pass through unchanged for
+/// now; downstream stages will see the raw AST and surface the missing
+/// case naturally.
 fn construct_expr(e: Expr) -> Expr {
     match e {
         .Number(v) -> ctor("@std::avrac::core::Expr", "Number", string_arg(v))
@@ -146,12 +147,64 @@ fn construct_expr(e: Expr) -> Expr {
         .Bool(v) -> ctor("@std::avrac::core::Expr", "Bool", string_arg(v))
         .Null -> ctor("@std::avrac::core::Expr", "Null", ExprList.End)
         .Ident(name) -> ctor("@std::avrac::core::Expr", "Ident", string_arg(name))
+        .QualifiedIdent(path) -> ctor("@std::avrac::core::Expr", "QualifiedIdent", string_arg(path))
+        .Assign(name, value) -> ctor("@std::avrac::core::Expr", "Assign", two_args(sexpr_dummy_call(string_lit_expr(name)), construct_expr(value)))
         .Binary(l, op, r) -> ctor("@std::avrac::core::Expr", "Binary", three_args(construct_expr(l), construct_binop(op), construct_expr(r)))
         .Unary(op, r) -> ctor("@std::avrac::core::Expr", "Unary", two_args(construct_unop(op), construct_expr(r)))
         .Logical(l, op, r) -> ctor("@std::avrac::core::Expr", "Logical", three_args(construct_expr(l), construct_logicop(op), construct_expr(r)))
         .Grouping(inner) -> ctor("@std::avrac::core::Expr", "Grouping", one_arg(construct_expr(inner)))
+        .Call(callee, args) -> ctor("@std::avrac::core::Expr", "Call", two_args(construct_expr(callee), construct_expr_list(args)))
+        .FieldAccess(obj, field) -> ctor("@std::avrac::core::Expr", "FieldAccess", two_args(construct_expr(obj), string_lit_expr(field)))
+        .Index(obj, idx) -> ctor("@std::avrac::core::Expr", "Index", two_args(construct_expr(obj), construct_expr(idx)))
+        .IfExpr(c, t, el) -> ctor("@std::avrac::core::Expr", "IfExpr", three_args(construct_expr(c), construct_expr(t), construct_expr(el)))
+        .Tuple(elements) -> ctor("@std::avrac::core::Expr", "Tuple", one_arg(construct_expr_list(elements)))
+        .ListLit(elements) -> ctor("@std::avrac::core::Expr", "ListLit", one_arg(construct_expr_list(elements)))
+        .NullCoalesce(l, r) -> ctor("@std::avrac::core::Expr", "NullCoalesce", two_args(construct_expr(l), construct_expr(r)))
+        .OptionalChain(obj, field) -> ctor("@std::avrac::core::Expr", "OptionalChain", two_args(construct_expr(obj), string_lit_expr(field)))
+        .Try(inner) -> ctor("@std::avrac::core::Expr", "Try", one_arg(construct_expr(inner)))
         _ -> e
     }
+}
+
+/// Build a string-literal Expr carrying `s`. Used as the runtime arg
+/// for variants whose payload is a bare string field (e.g. field name
+/// in FieldAccess) — distinct from string_arg/string_arg_raw which
+/// build *ExprList* wrappers for ctor() invocations.
+fn string_lit_expr(s: string) -> Expr {
+    Expr.String("\"${s}\"")
+}
+
+/// Build an Expr that, when evaluated, produces an ExprList AST value
+/// matching `list`. ExprList.End → EnumCtor("ExprList", "End", []),
+/// ExprList.Node(se, rest) → EnumCtor("ExprList", "Node", [SExpr-ctor, recur]).
+fn construct_expr_list(list: ExprList) -> Expr {
+    match list {
+        .End -> Expr.EnumCtor("@std::avrac::core::ExprList", "End", ExprList.End)
+        .Node(se, next) -> Expr.EnumCtor(
+            "@std::avrac::core::ExprList",
+            "Node",
+            ExprList.Node(sexpr_dummy(construct_sexpr(se)),
+              ExprList.Node(sexpr_dummy(construct_expr_list(next)), ExprList.End))
+        )
+    }
+}
+
+/// Build an Expr that, when evaluated, produces an SExpr wrapping the
+/// runtime value of the given Expr. Uses `sexpr_dummy(e)` rather than
+/// a struct literal to avoid having to track ValueType / file fields.
+fn construct_sexpr(se: SExpr) -> Expr {
+    sexpr_dummy_call(construct_expr(se.node))
+}
+
+/// `sexpr_dummy(arg)` as a Call expression. Helper for constructing
+/// SExpr values at runtime without introducing struct-literal concerns.
+/// Uses QualifiedIdent so the lowered AST round-trips through resolve
+/// without needing the test file to import sexpr_dummy.
+fn sexpr_dummy_call(arg: Expr) -> Expr {
+    Expr.Call(
+        Expr.QualifiedIdent("@std::avrac::core::sexpr_dummy"),
+        ExprList.Node(sexpr_dummy(arg), ExprList.End)
+    )
 }
 
 fn construct_binop(op: BinOp) -> Expr {

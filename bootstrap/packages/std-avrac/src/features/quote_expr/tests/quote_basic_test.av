@@ -63,3 +63,71 @@ spec "quote: unary" {
         render_expr(e) == "(! true)"
     }
 }
+
+spec "quote: function calls" {
+    then "no-arg call" {
+        let e = quote { f() }
+        render_expr(e) == "(call f ())"
+    }
+    then "single arg" {
+        let e = quote { g(7) }
+        render_expr(e) == "(call g (7))"
+    }
+    then "multiple args" {
+        let e = quote { add(1, 2) }
+        render_expr(e) == "(call add (1, 2))"
+    }
+    then "nested calls" {
+        let e = quote { f(g(x)) }
+        render_expr(e) == "(call f ((call g (x))))"
+    }
+}
+
+spec "quote: field + index access" {
+    then "field access" {
+        let e = quote { obj.field }
+        render_expr(e) == "(field obj field)"
+    }
+    then "chained field" {
+        let e = quote { a.b.c }
+        render_expr(e) == "(field (field a b) c)"
+    }
+    then "index access" {
+        let e = quote { xs[0] }
+        render_expr(e) == "(index xs 0)"
+    }
+}
+
+spec "quote: collections" {
+    then "tuple two" {
+        let e = quote { (a, b) }
+        render_expr(e) == "(tuple (a, b))"
+    }
+    then "tuple three" {
+        let e = quote { (1, 2, 3) }
+        render_expr(e) == "(tuple (1, 2, 3))"
+    }
+    then "list literal" {
+        let e = quote { [1, 2, 3] }
+        render_expr(e) == "(list (1, 2, 3))"
+    }
+    then "empty list" {
+        let e = quote { [] }
+        render_expr(e) == "(list ())"
+    }
+}
+
+spec "quote: null safety" {
+    then "null coalesce" {
+        let e = quote { a ?? b }
+        render_expr(e) == "(?? a b)"
+    }
+    then "optional chain" {
+        let e = quote { obj?.field }
+        render_expr(e) == "(?. obj field)"
+    }
+    then "try propagation" {
+        let e = quote { fallible? }
+        render_expr(e) == "(? fallible)"
+    }
+}
