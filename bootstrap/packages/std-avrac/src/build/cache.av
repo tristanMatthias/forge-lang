@@ -24,6 +24,7 @@ use core.{
     avra_rename,
     avra_remove_file,
     avra_is_dir,
+    avra_shell_exec_status,
 }
 use build.fingerprint.{Fingerprint}
 
@@ -84,6 +85,22 @@ export fn entry_o_path(c: Cache, fp: Fingerprint) -> string {
 export fn entry_metadata_path(c: Cache, fp: Fingerprint) -> string {
     entry_dir_for(c, fp) + "/metadata.bin"
 }
+/// Linked binary slot used by the test runner. A test "unit" is the
+/// transitive closure of *_test.av + every @std source file + the
+/// reporter; its action output is a single linked executable. We
+/// store it under the same content-addressed entry directory as
+/// build units so cache eviction, prune, and `--explain` operate
+/// uniformly across both kinds.
+export fn entry_bin_path(c: Cache, fp: Fingerprint) -> string {
+    entry_dir_for(c, fp) + "/unit.bin"
+}
+/// Human-readable manifest for a test entry. Records the action's
+/// distinguishing inputs (filter, coverage, source count) so
+/// `bs2 cache ls` and post-mortem diagnostics can describe what a
+/// given fingerprint represents without re-deriving it.
+export fn entry_manifest_path(c: Cache, fp: Fingerprint) -> string {
+    entry_dir_for(c, fp) + "/manifest.txt"
+}
 
 /// True when this cache has a complete entry for `fp`. We probe the
 /// `.ll` file as the existence sentinel — cache writes use atomic
@@ -93,6 +110,16 @@ export fn entry_metadata_path(c: Cache, fp: Fingerprint) -> string {
 /// but `unit.ll` was not yet written.
 export fn cache_has(c: Cache, fp: Fingerprint) -> bool {
     avra_selfhost_file_exists(entry_ll_path(c, fp)) == 1
+}
+
+/// True when this cache has a published test binary for `fp`. Probes
+/// the `.bin` slot as the sentinel — symmetric to `cache_has` but
+/// for the test-action output. Build units publish .ll/.o/.metadata
+/// without a binary; test units publish .bin without .ll/.o. Each
+/// cache kind keys off its own sentinel so a build entry never
+/// satisfies a test lookup or vice versa.
+export fn cache_has_test(c: Cache, fp: Fingerprint) -> bool {
+    avra_selfhost_file_exists(entry_bin_path(c, fp)) == 1
 }
 
 /// Outcome of a publish attempt. The build driver inspects this to
@@ -162,6 +189,69 @@ export fn cache_read_ll(c: Cache, fp: Fingerprint) -> string {
     avra_selfhost_read_file(entry_ll_path(c, fp))
 }
 
+/// Publish a freshly-linked test binary into the cache.
+///
+/// The test action's output is a single executable; we store it
+/// under the per-fingerprint entry directory alongside a small
+/// human-readable manifest. As with `cache_publish`, writes go
+/// through a tmp staging directory then atomically rename into the
+/// canonical entry path so concurrent readers never see a partial
+/// entry.
+///
+/// Read the binary off disk (rather than through a string parameter)
+/// because executables routinely contain NUL bytes that an Avra
+/// `string` would truncate at. The shell `cp` we use here is
+/// binary-safe.
+///
+/// Race-tolerant: when two concurrent test runs publish the same
+/// fingerprint, the loser's rename fails because the entry already
+/// exists. We treat that as success — both winners produced
+/// byte-identical outputs (cache is content-addressed).
+export fn cache_publish_test(
+    c: Cache,
+    fp: Fingerprint,
+    bin_path_src: string,
+    manifest: string,
+    staging_id: string,
+) -> PublishResult {
+    let staging = c.tmp_dir + fp.hex + "." + staging_id
+    if avra_mkdir_p(staging) == 0 {
+        return PublishResult { success: false, error: "mkdir failed: " + staging }
+    }
+    let staged_bin = staging + "/unit.bin"
+    let staged_manifest = staging + "/manifest.txt"
+
+    // Binary copy via `cp` — avra_selfhost_read_file/write_file goes
+    // through Avra strings (NUL-truncating). Test binaries are full
+    // Mach-O / ELF blobs, so we MUST round-trip them as bytes. Use
+    // `avra_shell_exec_status` so a non-zero rc surfaces as a real
+    // error instead of being smuggled inside captured stdout.
+    let cp_rc = avra_shell_exec_status("cp '" + bin_path_src + "' '" + staged_bin + "'")
+    if cp_rc != 0 {
+        return PublishResult { success: false, error: "cp failed: " + staged_bin + " (rc=" + string(cp_rc) + ")" }
+    }
+
+    if avra_selfhost_write_file(staged_manifest, manifest) == 0 {
+        return PublishResult { success: false, error: "write failed: " + staged_manifest }
+    }
+
+    let final_dir = entry_dir_for(c, fp)
+    if avra_rename(staging, final_dir) == 0 {
+        if cache_has_test(c, fp) {
+            return PublishResult { success: true, error: "" }
+        }
+        return PublishResult { success: false, error: "rename failed: " + staging + " -> " + final_dir }
+    }
+    PublishResult { success: true, error: "" }
+}
+
+/// Avra-side existence guard. The runtime probe lives in
+/// `cache_has_test`; expose `bin` path retrieval here so the test
+/// driver has a single import surface for replay.
+export fn cache_bin_path_for(c: Cache, fp: Fingerprint) -> string {
+    entry_bin_path(c, fp)
+}
+
 /// Read a cached unit's metadata blob. See `cache_read_ll` re:
 /// missing-vs-empty distinction.
 export fn cache_read_metadata(c: Cache, fp: Fingerprint) -> string {
@@ -169,23 +259,24 @@ export fn cache_read_metadata(c: Cache, fp: Fingerprint) -> string {
 }
 
 /// Evict a cache entry. Used by `avra cache prune` to GC stale
-/// entries. Returns true if the entry is gone after the call (either
-/// because we removed it or it was already absent).
+/// entries. Returns true when both kinds of sentinel (build .ll and
+/// test .bin) are gone after the call. Cleans up every artifact
+/// that any kind of entry might have produced; an entry with only
+/// a subset is still fully removed.
 export fn cache_evict(c: Cache, fp: Fingerprint) -> bool {
     let entry = entry_dir_for(c, fp)
-    let ll = entry + "/unit.ll"
-    let o = entry + "/unit.o"
-    let meta = entry + "/metadata.bin"
     // Best-effort: remove individual files first, ignore individual
     // failures (the directory rmdir is what determines overall
     // success). Error reporting belongs at the GC driver level.
-    let _l = avra_remove_file(ll)
-    let _o = avra_remove_file(o)
-    let _m = avra_remove_file(meta)
+    let _l = avra_remove_file(entry + "/unit.ll")
+    let _o = avra_remove_file(entry + "/unit.o")
+    let _m = avra_remove_file(entry + "/metadata.bin")
+    let _b = avra_remove_file(entry + "/unit.bin")
+    let _mf = avra_remove_file(entry + "/manifest.txt")
     // Directory removal is currently best-effort via the runtime —
-    // we model success as "the entry's sentinel file no longer
-    // exists." When a runtime hook for rmdir lands, evolve this.
-    !cache_has(c, fp)
+    // we model success as "neither sentinel file exists." When a
+    // runtime hook for rmdir lands, evolve this.
+    !cache_has(c, fp) && !cache_has_test(c, fp)
 }
 
 /// Path string ends-with helper. The cache module avoids depending

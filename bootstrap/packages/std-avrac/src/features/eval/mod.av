@@ -375,7 +375,7 @@ fn make_return(runtime: Runtime, value: Value) -> StepResult {
 /// Construct a number Value carrying its decimal text. Numbers
 /// keep their text form so the evaluator can echo literals
 /// verbatim (e.g. `1.5` not `1.500000`).
-fn value_number(text: string) -> Value {
+export fn value_number(text: string) -> Value {
     Value {
         kind: "number",
         number_text: text,

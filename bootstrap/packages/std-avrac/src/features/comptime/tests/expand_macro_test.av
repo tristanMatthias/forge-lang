@@ -1,0 +1,77 @@
+// vez6.6 — `@expand(macro_fn)` end-to-end via bs2 compile+run.
+// Confirms the expand pass evaluates a `@comptime fn -> Stmt`
+// at compile time and splices the result over the placeholder
+// declaration.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+const MAIN_HEADER: string = "fn " + "main()"
+
+fn write_temp(path: string, source: string) -> string {
+    let escaped = source.replace("'", "'\\''")
+    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
+}
+
+fn run_capture(source: string) -> string {
+    let path = "/tmp/avra_expand_macro_test.av"
+    write_temp(path, source)
+    avra_shell_exec("bash scripts/diagnose.sh --run '${path}' 2>&1 || true")
+}
+
+fn compile_capture(source: string) -> string {
+    // Use the bs2 compile pass directly so we can inspect the
+    // expand-pass diagnostics that diagnose.sh's run path swallows
+    // (compile-success keeps the original decl + skips its stderr).
+    let path = "/tmp/avra_expand_macro_test.av"
+    write_temp(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 || true")
+}
+
+spec "vez6.6: @expand macro replaces decl with macro output" {
+    then "macro returning quote stmt prints at runtime" {
+        let out = run_capture(
+            "use @std.avrac.core.{Stmt}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn make_println() -> Stmt {\n" +
+            "    return quote stmt {\n" +
+            "        println(\"hello from macro\")\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(make_println)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            MAIN_HEADER + " {\n" +
+            "}\n")
+        out.contains("hello from macro")
+    }
+    then "missing macro fn: clear diagnostic" {
+        let out = compile_capture(
+            "@expand(no_such_macro)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            MAIN_HEADER + " {\n" +
+            "    placeholder()\n" +
+            "}\n")
+        // The eprintln in try_expand_one names the missing macro so
+        // the user can fix the typo.
+        out.contains("no_such_macro") && out.contains("no @comptime fn named")
+    }
+    then "macro returning a different println body" {
+        let out = run_capture(
+            "use @std.avrac.core.{Stmt}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn say_seven() -> Stmt {\n" +
+            "    return quote stmt { println(\"seven\") }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(say_seven)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            MAIN_HEADER + " {\n" +
+            "}\n")
+        out.contains("seven")
+    }
+}

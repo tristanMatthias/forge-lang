@@ -28,6 +28,7 @@ use build.cache.{
     Cache, PublishResult, cache_for, cache_init, cache_has,
     cache_publish, cache_read_ll,
     entry_dir_for, entry_ll_path,
+    cache_has_test, cache_publish_test, cache_bin_path_for,
 }
 use core.{
     avra_selfhost_file_exists,
@@ -246,4 +247,180 @@ fn write_last_inputs(c: Cache, inputs: BuildInputs, fp: Fingerprint) -> bool {
 export fn cached_ll_for(inputs: BuildInputs, fp: Fingerprint) -> string {
     let cache = cache_for(inputs.project_root)
     cache_read_ll(cache, fp)
+}
+
+// ── Test-flavor build cache (hkms.1) ──
+//
+// `bs2 test` is structurally a build action: parse → resolve →
+// expand → typeck → mono → codegen → link. The output is a single
+// linked executable, not a per-unit .ll/.o pair, so it gets its own
+// publish path (cache_publish_test) but reuses the same fingerprint
+// discipline, the same cache directory layout, the same atomic
+// publish, and the same race-tolerance.
+//
+// Inputs:
+//   * Every *_test.av in the project (test source set)
+//   * Every .av under packages/std-avrac/src/ (over-approximates the
+//     transitively-imported package universe — sound; cheap to walk;
+//     a per-import-graph fingerprint is forthcoming hkms.x)
+//   * The reporter source (spec_test/reporter.av — inlined into the
+//     test program at link time)
+//   * The compiler binary (bs2)
+//   * The runtime objects we link against (runtime.o, llvm_wrapper.o)
+//
+// Profile axes (filter, coverage) participate via `unit_name` so that
+// `--filter=foo` and `--coverage` cache as distinct entries from the
+// full-suite build. This mirrors Cargo's pattern: a test-target is a
+// distinct Cargo unit from a lib-target — different unit_name, same
+// fingerprint shape, different cache key.
+
+/// Inputs the test driver needs to consult the cache.
+///
+/// `unit_name` distinguishes test slices that share most of their
+/// inputs but produce different binaries (e.g. `test:all`,
+/// `test:filter=foo`, `test:cov`). Callers compose this from the
+/// CLI args; the driver does not interpret them, so future
+/// flags slot in by extending the unit_name convention without
+/// changing this surface.
+///
+/// `sources` is the canonically-ordered list of every input file
+/// whose contents may affect the binary. Order matters — we hash
+/// in iteration order — but the caller decides the ordering policy.
+/// Today the CLI sorts paths alphabetically.
+export type TestBuildInputs = {
+    project_root: string,
+    unit_name: string,
+    sources: List<string>,
+    compiler_path: string,
+    target_triple: string,
+}
+
+/// Compute the test-action fingerprint and check the cache.
+///
+/// Returns `Hit(fp, bin_path)` when a previously-published binary
+/// exists for these inputs; the CLI execs `bin_path` directly and
+/// skips the entire compile pipeline.
+///
+/// Returns `Miss(fp, profile_key, reason)` otherwise. The CLI runs
+/// the existing compile + link path and then calls
+/// `record_test_build_result` to publish.
+///
+/// Profile_key is fixed to "test|opt=0|dbg=1|ovf=1|cov=0" because
+/// the test runner doesn't surface a tunable profile yet — when it
+/// does (hkms.x), the field becomes part of TestBuildInputs and
+/// `unit_name` no longer carries `:cov`.
+export fn decide_test_build(inputs: TestBuildInputs) -> BuildOutcome {
+    let cache = cache_for(inputs.project_root)
+    let _ = cache_init(cache)
+
+    let profile_key = profile_key_of("test", 0, true, true, false)
+    let compiler_hash = compiler_hash_for(inputs.compiler_path)
+    let fp = fp_for_unit(
+        inputs.unit_name,
+        inputs.sources,
+        compiler_hash,
+        profile_key,
+        inputs.target_triple,
+        [],
+    )
+
+    if cache_has_test(cache, fp) {
+        return BuildOutcome.Hit(fp, cache_bin_path_for(cache, fp))
+    }
+    let reason = test_miss_reason(cache, inputs.unit_name, compiler_hash,
+        profile_key, inputs.target_triple, inputs.sources)
+    BuildOutcome.Miss(fp, profile_key, reason)
+}
+
+/// Diff against the recorded prior inputs to attribute a miss.
+/// Mirrors `miss_reason` but operates on a multi-source unit, where
+/// "source" attribution is the count of files (a content-level diff
+/// across many files lives in the per-source fingerprint, not in
+/// this human label).
+fn test_miss_reason(c: Cache, unit_name: string, compiler_hash: string,
+                    profile_key: string, target_triple: string,
+                    sources: List<string>) -> string {
+    let path = last_inputs_path(c, unit_name)
+    if !avra_selfhost_file_exists(path) {
+        return "no previous test build for unit `" + unit_name + "`"
+    }
+    let prior = avra_selfhost_read_file(path)
+    let prev_compiler = read_field(prior, "compiler:")
+    if prev_compiler != "" && prev_compiler != compiler_hash {
+        return "compiler binary changed"
+    }
+    let prev_profile = read_field(prior, "profile:")
+    if prev_profile != "" && prev_profile != profile_key {
+        return "profile flags changed (" + prev_profile + " → " + profile_key + ")"
+    }
+    let prev_target = read_field(prior, "target:")
+    if prev_target != "" && prev_target != target_triple {
+        return "target triple changed (" + prev_target + " → " + target_triple + ")"
+    }
+    let prev_count = read_field(prior, "src_count:")
+    let cur_count = string(sources.length)
+    if prev_count != "" && prev_count != cur_count {
+        return "source set size changed (" + prev_count + " → " + cur_count + ")"
+    }
+    "test sources changed"
+}
+
+/// Publish a freshly-linked test binary into the cache. Called by
+/// the CLI after a successful link. `staging_id` is a per-process
+/// discriminator (typically PID) so concurrent test runs do not
+/// collide on the same staging path.
+///
+/// Side-effects:
+///   * Atomically materialises `<root>/cache/<fp>/{unit.bin, manifest.txt}`
+///   * Writes a `last/<unit_name>.txt` sidecar so a subsequent
+///     decide_test_build can attribute its Miss reason
+///
+/// Failures are returned, not panicked: a publish failure means the
+/// test action succeeded but the no-op rebuild optimisation is lost
+/// until the next successful publish. The CLI surfaces the error as
+/// a diagnostic.
+export fn record_test_build_result(
+    inputs: TestBuildInputs,
+    fp: Fingerprint,
+    bin_path_src: string,
+    staging_id: string,
+) -> PublishResult {
+    let cache = cache_for(inputs.project_root)
+    let manifest = render_test_manifest(inputs, fp)
+    let pr = cache_publish_test(cache, fp, bin_path_src, manifest, staging_id)
+    if pr.success {
+        let _ = write_last_test_inputs(cache, inputs, fp)
+    }
+    pr
+}
+
+/// Render a small, human-readable manifest describing the test
+/// action's distinguishing inputs. Lives alongside the binary so
+/// `bs2 cache ls` (and a developer who finds an unfamiliar entry
+/// directory) can identify what produced it without re-deriving.
+fn render_test_manifest(inputs: TestBuildInputs, fp: Fingerprint) -> string {
+    let mut body = "kind: test\n"
+    body = body + "fp: " + fp.hex + "\n"
+    body = body + "unit: " + inputs.unit_name + "\n"
+    body = body + "target: " + inputs.target_triple + "\n"
+    body = body + "compiler: " + inputs.compiler_path + "\n"
+    body = body + "src_count: " + string(inputs.sources.length) + "\n"
+    body
+}
+
+/// Persist the prior-inputs sidecar that test_miss_reason consults
+/// on the next decide. Best-effort: a write failure here costs us
+/// specific axis attribution on the next miss, nothing more.
+fn write_last_test_inputs(c: Cache, inputs: TestBuildInputs, fp: Fingerprint) -> bool {
+    let last_dir = c.cache_dir + "last/"
+    if avra_mkdir_p(last_dir) == 0 { return false }
+    let profile_key = profile_key_of("test", 0, true, true, false)
+    let compiler_hash = compiler_hash_for(inputs.compiler_path)
+    let body = "fp:" + fp.hex + "\n"
+        + "compiler:" + compiler_hash + "\n"
+        + "profile:" + profile_key + "\n"
+        + "target:" + inputs.target_triple + "\n"
+        + "src_count:" + string(inputs.sources.length) + "\n"
+    let path = last_inputs_path(c, inputs.unit_name)
+    avra_selfhost_write_file(path, body) != 0
 }

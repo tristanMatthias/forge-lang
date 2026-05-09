@@ -70,6 +70,7 @@ use @std.avrac.features.modules.{filter_to_target_unit, list_avra_module_subdirs
 use @std.avrac.build.{
     BuildInputs, BuildOutcome,
     decide_build, record_build_result,
+    TestBuildInputs, decide_test_build, record_test_build_result,
     Fingerprint, fp_short,
     LinkOptions, default_link_options, link_objects, link_objects_with_coverage,
     extract_unit_metadata, extract_per_file_metadata, collect_source_files,
@@ -83,7 +84,7 @@ use @std.avrac.build.{
     DepGraph, Unit, build_graph,
 }
 use @std.avrac.typeck.{typecheck_program}
-use @std.avrac.features.comptime.{run_comptime}
+use @std.avrac.features.comptime.{run_comptime, expand_macros}
 use @std.avrac.features.quote_expr.{lower_quotes}
 use @std.avrac.diagnostics.{bag_has_errors, bag_has_warnings, bag_new, bag_report, diag_error, diag_ice, span_dummy, DiagCode, DiagnosticBag}
 use @std.avrac.diagnostics.{render_bag, render_bag_json}
@@ -1671,6 +1672,111 @@ fn run_cache_command() {
 // Coverage path lowers `llvm.instrprof.increment` intrinsics, links
 // with clang_rt.profile, then feeds profdata to the Avra-side
 // renderer (`coverage::render_coverage`).
+// hkms.1: assemble the hermetic input set for the test action.
+//
+// Every file whose contents may affect the linked _test.bin must
+// participate in the fingerprint, otherwise we get false-positive
+// cache hits (the worst kind of cache bug — silently runs stale
+// code). The set is intentionally over-broad:
+//
+//   - all *_test.av matching `--filter` (the test sources themselves)
+//   - every .av under packages/std-avrac/src/ (the package universe;
+//     a per-import-graph fingerprint is forthcoming hkms.x)
+//   - the spec_test reporter (inlined into the test program)
+//   - the bs2 compiler binary (any change forces a rebuild)
+//   - runtime.o + llvm_wrapper.o (linked into the final binary)
+//
+// Coverage and filter participate via `unit_name` (the cache scopes
+// per filter and per coverage flag — Cargo's pattern of test-target
+// distinct from lib-target).
+//
+// Sorting matters: the fingerprint hashes paths in iteration order.
+// We pipe through `sort` at find time so the order is canonical and
+// stable across machines.
+fn compute_test_build_inputs(project_dir: string, test_files_listing: string, args: TestArgs) -> TestBuildInputs {
+    // Filtered test paths — only files whose basename matches the
+    // --filter (if any). Mirrors the per-file filter applied during
+    // the parse loop so the cache key matches what gets compiled.
+    mut filtered_paths = []
+    for path in test_files_listing.split("\n") {
+        if path == "" { continue }
+        let mod_name = basename_no_ext(path)
+        if args.filter != "" && !mod_name.contains(args.filter) { continue }
+        filtered_paths = filtered_paths.push(path)
+    }
+
+    // Every .av under packages/std-avrac/src/. Over-approximates the
+    // transitively-imported package universe but is sound (any
+    // change anywhere in @std/avrac invalidates) and cheap. A
+    // per-import-graph fingerprint replaces this in hkms.x.
+    let std_root = find_packages_dir(project_dir) + "std-avrac/src"
+    let std_listing = avra_shell_exec("find ${std_root} -name '*.av' -type f 2>/dev/null | sort")
+    mut std_paths = []
+    for p in std_listing.split("\n") {
+        if p == "" { continue }
+        std_paths = std_paths.push(p)
+    }
+
+    // Reporter (spec_test/reporter.av) is inlined at link time; its
+    // contents directly affect the binary.
+    let reporter_path = find_packages_dir(project_dir) + "std-avrac/src/features/spec_test/reporter.av"
+
+    // Linked-in runtime artifacts. `runtime.o` and `llvm_wrapper.o`
+    // are produced from C sources outside this command's reach, but
+    // their content hash must enter the fingerprint — a `runtime.c`
+    // edit + rebuild changes the linked binary even if no .av source
+    // moved.
+    let build_dir = "${project_dir}/build"
+    let runtime_o = "${build_dir}/runtime.o"
+    let llvm_wrap_o = "${build_dir}/llvm_wrapper.o"
+
+    // Compose the canonical input list: tests first, then std,
+    // then reporter, then runtime. Order is stable; iterations across
+    // machines / runs produce the same bytes.
+    mut sources: List<string> = []
+    mut i = 0
+    while i < filtered_paths.length {
+        sources = sources.push(filtered_paths[i])
+        i = i + 1
+    }
+    let mut j = 0
+    while j < std_paths.length {
+        sources = sources.push(std_paths[j])
+        j = j + 1
+    }
+    sources = sources.push(reporter_path)
+    sources = sources.push(runtime_o)
+    sources = sources.push(llvm_wrap_o)
+
+    // Compiler resolution mirrors run_build_command (line 1334-1342):
+    // honour AVRA_COMPILER, fall back to ./build/bs2, then argv[0].
+    let env_compiler = avra_process_env_get("AVRA_COMPILER")
+    let local_compiler = "${project_dir}/build/bs2"
+    let compiler_path = if env_compiler != "" {
+        env_compiler
+    } else if file_exists(local_compiler) {
+        local_compiler
+    } else {
+        avra_selfhost_get_arg_cstr(0)
+    }
+
+    // unit_name composes the action's cache-key axes that are not
+    // file contents: the filter narrows the source set; coverage
+    // changes the linker flags + emits instrumentation. Both must
+    // produce distinct cache entries.
+    let filter_tag = if args.filter == "" { "all" } else { "filter=" + args.filter }
+    let cov_tag = if args.coverage { ":cov" } else { "" }
+    let unit_name = "test:" + filter_tag + cov_tag
+
+    TestBuildInputs {
+        project_root: project_dir,
+        unit_name: unit_name,
+        sources: sources,
+        compiler_path: compiler_path,
+        target_triple: "host",
+    }
+}
+
 fn run_test_command() {
     let project_dir = avra_process_env_get("PWD")
     let args = parse_test_args()
@@ -1685,6 +1791,40 @@ fn run_test_command() {
     if test_files == "" {
         println("No test files found.")
         return
+    }
+
+    // hkms.1: cache-check before the heavy pipeline.
+    //
+    // The test action's input set is hermetic: every file whose
+    // contents could affect the linked _test.bin participates in the
+    // fingerprint. If a previously-published binary exists for these
+    // inputs, exec it directly and skip parse → resolve → typeck →
+    // mono → codegen → link entirely.
+    //
+    // Coverage path is intentionally not cache-served at v1: it
+    // produces additional artifacts (covmap.tsv) needed by
+    // render_coverage that the binary alone doesn't carry. Caching
+    // coverage is tracked separately; the pre-commit hook runs
+    // non-coverage so the win (~86s → ~10s) lands without it.
+    let test_cache_inputs = compute_test_build_inputs(project_dir, test_files, args)
+    let mut publish_fp: Fingerprint? = null
+    if !args.coverage {
+        match decide_test_build(test_cache_inputs) {
+            .Hit(fp, bin_path) -> {
+                // Hit: exec the cached binary directly. Same exit
+                // semantics as the Miss tail (avra_process_forward +
+                // avra_process_exit) so the caller cannot tell the
+                // two apart from outside.
+                eprintln("[test-cache] hit ${fp_short(fp)} — ${bin_path}")
+                let exit_code = avra_process_forward(bin_path, "[]", "")
+                avra_process_exit(exit_code)
+                return
+            }
+            .Miss(fp, _, reason) -> {
+                eprintln("[test-cache] miss ${fp_short(fp)} — ${reason}")
+                publish_fp = fp
+            }
+        }
     }
 
     // Step 2: Parse each test file as a Module
@@ -1807,7 +1947,8 @@ fn run_test_command() {
         render_bag("", "<test>", named.bag)
         fail(named.error_message)
     }
-    let post_comptime = run_comptime(named.stmts)
+    let expanded_macros = expand_macros(named.stmts)
+    let post_comptime = run_comptime(expanded_macros)
     let tc_result = typecheck_program(post_comptime)
     if bag_has_errors(tc_result.bag) {
         render_bag("", "<test>", tc_result.bag)
@@ -1845,6 +1986,20 @@ fn run_test_command() {
         let link_objs = [obj_path]
         if link_objects(link_objs, "${build_dir}/runtime.o", "${build_dir}/llvm_wrapper.o",
                         bin_path, default_link_options()) != 0 { fail("link failed") }
+        // hkms.1 publish: stash the freshly-linked binary into the
+        // content-addressed cache so the next no-source-change run
+        // is a Hit. Best-effort — a publish failure does not affect
+        // this run's correctness, only the next run's speed.
+        if publish_fp != null {
+            let fp = publish_fp!
+            let staging_id = "${test_cache_inputs.unit_name}.${fp_short(fp)}"
+            let pr = record_test_build_result(test_cache_inputs, fp, bin_path, staging_id)
+            if !pr.success {
+                eprintln("[test-cache] publish failed: ${pr.error}")
+            } else {
+                eprintln("[test-cache] published ${fp_short(fp)}")
+            }
+        }
         let exit_code = avra_process_forward(bin_path, "[]", "")
         avra_process_exit(exit_code)
         return
@@ -2320,7 +2475,8 @@ fn main() {
                 render_bag_either(check_json, check_source, check_path, named.bag)
             }
             if named.had_error { fail(named.error_message) }
-            let post_comptime = run_comptime(named.stmts)
+            let expanded_macros = expand_macros(named.stmts)
+            let post_comptime = run_comptime(expanded_macros)
             let tc_result = typecheck_program(post_comptime)
             if bag_has_errors(tc_result.bag) || bag_has_warnings(tc_result.bag) {
                 render_bag_either(check_json, check_source, check_path, tc_result.bag)
@@ -2399,7 +2555,8 @@ fn main() {
                 render_bag(source, path, named.bag)
             }
             if named.had_error { fail(named.error_message) }
-            let post_comptime = run_comptime(named.stmts)
+            let expanded_macros = expand_macros(named.stmts)
+            let post_comptime = run_comptime(expanded_macros)
             let tc_result = typecheck_program(post_comptime)
             if bag_has_errors(tc_result.bag) || bag_has_warnings(tc_result.bag) {
                 render_bag(source, path, tc_result.bag)
@@ -2554,7 +2711,8 @@ fn main() {
         // Comptime fold: replace `@comptime` calls with their literal results.
         // Runs after resolve so names are bound, before typeck so the
         // typechecker sees the post-fold (literal-typed) AST.
-        let post_comptime = run_comptime(named.stmts)
+        let expanded_macros = expand_macros(named.stmts)
+        let post_comptime = run_comptime(expanded_macros)
         // Type check — gates compilation on errors
         let tc_result = typecheck_program(post_comptime)
         let t_typeck = avra_uptime_ms()
