@@ -341,6 +341,7 @@ export fn p_keyword_kind(text: string) -> Tk {
         "component" -> Tk.KwComponent
         "parallel" -> Tk.KwParallel
         "spawn"    -> Tk.KwSpawn
+        "quote"    -> Tk.KwQuote
         // Reserved future keywords
         "async"    -> Tk.KwReserved
         "await"    -> Tk.KwReserved

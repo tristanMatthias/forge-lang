@@ -1789,6 +1789,7 @@ export enum Tk {
     KwComponent
     KwDyn
     KwWhen
+    KwQuote
     // Reserved future keywords (parse as errors)
     KwReserved
     // Doc comments
@@ -1849,6 +1850,7 @@ export fn tk_keyword_str(tk: Tk) -> string {
         .KwComponent -> "kw_component"
         .KwDyn -> "kw_dyn"
         .KwWhen -> "kw_when"
+        .KwQuote -> "kw_quote"
         _ -> ""
     }
 }
