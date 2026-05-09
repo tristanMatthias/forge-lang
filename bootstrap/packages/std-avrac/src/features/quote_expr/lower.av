@@ -21,8 +21,115 @@ use core.{Stmt, StmtList, SStmt, sstmt_at, sstmt_dummy, Expr, ExprList, SExpr, s
 /// Walk every statement and expression in `stmts`, replacing each
 /// `Expr.Quote` node with an AST-construction expression that evaluates
 /// to the captured AST. Returns a new StmtList.
+///
+/// Fast-path: most files contain zero `quote { ... }` expressions, so
+/// a non-allocating presence scan up-front lets the rewrite walker
+/// skip. The scan does the same recursion shape but without building
+/// a new tree, so the worst case (file *with* quotes) is one extra
+/// O(N) traversal — accepted in exchange for the common-case win
+/// where we never allocate a single new Stmt/Expr node.
 export fn lower_quotes(stmts: StmtList) -> StmtList {
+    if !any_quote_in_stmt_list(stmts) { return stmts }
     lower_stmt_list(stmts)
+}
+
+// ── Fast-path: non-allocating presence scan ──
+
+/// True iff any Expr.Quote node appears anywhere in `stmts`.
+/// Walks the same shape as lower_stmt_list but allocates nothing.
+fn any_quote_in_stmt_list(stmts: StmtList) -> bool {
+    match stmts {
+        .End -> false
+        .Node(ss, next) -> {
+            if any_quote_in_stmt(ss.node) { return true }
+            any_quote_in_stmt_list(next)
+        }
+    }
+}
+
+fn any_quote_in_stmt(stmt: Stmt) -> bool {
+    match stmt {
+        .Let(_, _, init) -> any_quote_in_expr(init)
+        .Mut(_, _, init) -> any_quote_in_expr(init)
+        .Const(_, _, init) -> any_quote_in_expr(init)
+        .Expr(e) -> any_quote_in_expr(e)
+        .Return(e) -> any_quote_in_expr(e)
+        .Block(body) -> any_quote_in_stmt_list(body)
+        .If(cond, then_b, else_b) -> {
+            if any_quote_in_expr(cond) { return true }
+            if any_quote_in_stmt(then_b) { return true }
+            if else_b != null { return any_quote_in_stmt(else_b!) }
+            false
+        }
+        .While(cond, body) -> any_quote_in_expr(cond) || any_quote_in_stmt(body)
+        .For(_, start, end, body) -> any_quote_in_expr(start) || any_quote_in_expr(end) || any_quote_in_stmt(body)
+        .ForIn(_, coll, body) -> any_quote_in_expr(coll) || any_quote_in_stmt(body)
+        .Function(_, _, _, _, body) -> any_quote_in_stmt_list(body)
+        .Impl(_, methods) -> any_quote_in_stmt_list(methods)
+        .Annotated(_, inner) -> any_quote_in_stmt(inner)
+        .Module(_, body) -> any_quote_in_stmt_list(body)
+        .ComponentDef(_, _, _, body) -> any_quote_in_stmt_list(body)
+        .ComponentBlock(_, _, _, body) -> any_quote_in_stmt_list(body)
+        .SpecBlock(_, body) -> any_quote_in_stmt_list(body)
+        .GivenBlock(_, body) -> any_quote_in_stmt_list(body)
+        .ThenBlock(_, cond) -> any_quote_in_expr(cond)
+        .Match(subj, _) -> any_quote_in_expr(subj)
+        .Defer(body) -> any_quote_in_expr(body)
+        .Errdefer(body) -> any_quote_in_expr(body)
+        .LetDestructure(_, init) -> any_quote_in_expr(init)
+        .TraitDecl(_, methods) -> any_quote_in_stmt_list(methods)
+        .Parallel(body) -> any_quote_in_stmt_list(body)
+        _ -> false
+    }
+}
+
+fn any_quote_in_expr(expr: Expr) -> bool {
+    match expr {
+        .Quote(_, _) -> true
+        .Binary(l, _, r) -> any_quote_in_expr(l) || any_quote_in_expr(r)
+        .Unary(_, r) -> any_quote_in_expr(r)
+        .Logical(l, _, r) -> any_quote_in_expr(l) || any_quote_in_expr(r)
+        .Call(callee, args) -> any_quote_in_expr(callee) || any_quote_in_expr_list(args)
+        .GenericCall(callee, _, args) -> any_quote_in_expr(callee) || any_quote_in_expr_list(args)
+        .Grouping(inner) -> any_quote_in_expr(inner)
+        .Block(body) -> any_quote_in_stmt_list(body)
+        .IfExpr(c, t, e) -> any_quote_in_expr(c) || any_quote_in_expr(t) || any_quote_in_expr(e)
+        .Assign(_, v) -> any_quote_in_expr(v)
+        .StructLit(_, inits) -> any_quote_in_field_inits(inits)
+        .FieldAccess(obj, _) -> any_quote_in_expr(obj)
+        .FieldAssign(obj, _, v) -> any_quote_in_expr(obj) || any_quote_in_expr(v)
+        .EnumCtor(_, _, args) -> any_quote_in_expr_list(args)
+        .Index(obj, idx) -> any_quote_in_expr(obj) || any_quote_in_expr(idx)
+        .NullCoalesce(l, r) -> any_quote_in_expr(l) || any_quote_in_expr(r)
+        .OptionalChain(obj, _) -> any_quote_in_expr(obj)
+        .Try(inner) -> any_quote_in_expr(inner)
+        .Tuple(elems) -> any_quote_in_expr_list(elems)
+        .TupleIndex(obj, _) -> any_quote_in_expr(obj)
+        .With(obj, overrides) -> any_quote_in_expr(obj) || any_quote_in_field_inits(overrides)
+        .ListLit(elems) -> any_quote_in_expr_list(elems)
+        .Lambda(_, body) -> any_quote_in_expr(body)
+        .MapLit(entries) -> any_quote_in_expr_list(entries)
+        .Slice(obj, s, e) -> any_quote_in_expr(obj) || any_quote_in_expr(s) || any_quote_in_expr(e)
+        .IsCheck(subj, _) -> any_quote_in_expr(subj)
+        .InCheck(needle, items) -> any_quote_in_expr(needle) || any_quote_in_expr_list(items)
+        .Spawn(body) -> any_quote_in_expr(body)
+        .MatchExpr(subj, _) -> any_quote_in_expr(subj)
+        _ -> false
+    }
+}
+
+fn any_quote_in_expr_list(list: ExprList) -> bool {
+    match list {
+        .End -> false
+        .Node(se, next) -> any_quote_in_expr(se.node) || any_quote_in_expr_list(next)
+    }
+}
+
+fn any_quote_in_field_inits(list: FieldInitList) -> bool {
+    match list {
+        .End -> false
+        .Node(_, se, next) -> any_quote_in_expr(se.node) || any_quote_in_field_inits(next)
+    }
 }
 
 // ── Top-level walker (mirrors comptime/rewrite.av structure) ──
