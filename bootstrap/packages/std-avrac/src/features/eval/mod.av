@@ -12,20 +12,20 @@ use core.{Registry, build_registry}
 use parse.{parse_expression_source, parse_program_source}
 use core.{Registry, build_registry, dispatch_stmt_eval, dispatch_expr_eval, avra_stmt_tag, avra_expr_tag}
 
-// `float` is a host built-in that the bootstrap evaluator uses to
-// parse numeric literal strings. The bootstrap codegen doesn't
-// model floats so we declare it as an i64-returning extern that
-// links to the avra_selfhost_string_to_float C-wrapper (which
-// takes `const char*` to match the bootstrap's calling
-// convention); the wrapper `fn float(s)` lets the rest of the
-// source keep using the short name.
-use core.{avra_selfhost_string_to_float}
+// Numeric-literal parsing for the bootstrap evaluator. Originally
+// routed through `float()` (which called avra_selfhost_string_to_float
+// — a `double`-returning C fn). The Avra-side `int` declaration
+// reinterpreted those float-bits as i64, so any arithmetic on
+// parsed numbers produced garbage (e.g. 2 + 3 = 4890910294835986432).
+//
+// Fix: route Number-literal parsing through an honest base-10
+// integer parser. The bootstrap value model is i64 anyway —
+// no real floats — so this is what we always wanted.
+extern fn avra_selfhost_string_to_int(s: string) -> int
 
-/// Wrapper around the C runtime's string→float parser. Re-
-/// exposed locally so the evaluator can keep using the short
-/// name `float` even though the actual C symbol takes
-/// `const char*`.
-fn float(s: string) -> int { avra_selfhost_string_to_float(s) }
+/// Parse a base-10 integer from a string. Replaces the older
+/// `float()` wrapper; same call shape, different (correct) impl.
+fn parse_num(s: string) -> int { avra_selfhost_string_to_int(s) }
 
 /// Tagged value used by the tree-walking evaluator. The `kind`
 /// field discriminates which other field holds the payload —
@@ -271,8 +271,10 @@ fn finish_result(step: StepResult) -> EvalResult {
 }
 
 /// Construct a fresh evaluator runtime — empty bindings + fns,
-/// depth zero, full feature registry.
-fn runtime_new() -> Runtime {
+/// depth zero, full feature registry. Public so external callers
+/// (e.g. compile-time evaluator in features/comptime) can build a
+/// runtime to thread through `execute_stmt` / `eval_expr`.
+export fn runtime_new() -> Runtime {
     Runtime {
         bindings: [],
         functions: [],
@@ -587,7 +589,7 @@ export fn execute_while(runtime: Runtime, condition: Expr, body: Stmt) -> StepRe
 /// dispatches to feature eval hooks.
 export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
     match expr {
-        .Number(text) -> ok_result(runtime, value_number(render_number(float(text))))
+        .Number(text) -> ok_result(runtime, value_number(render_number(parse_num(text))))
         .FloatLit(text) -> ok_result(runtime, value_number(text))
         .String(text) -> ok_result(runtime, value_string(unquote_string(text)))
         .Bool(text) -> ok_result(runtime, value_bool(text == "true"))
@@ -850,7 +852,7 @@ fn eval_unary(runtime: Runtime, op: UnOp, right: Expr) -> StepResult {
             if number_text == null {
                 return error_result(right_result.runtime, "operand must be a number")
             }
-            ok_result(right_result.runtime, value_number(render_number(0.0 - float(number_text!))))
+            ok_result(right_result.runtime, value_number(render_number(0 - parse_num(number_text!))))
         }
         .Not -> ok_result(right_result.runtime, value_bool(!is_truthy(value)))
         .BitNot -> error_result(right_result.runtime, "bitwise NOT not supported by tree-walk evaluator")
@@ -883,8 +885,8 @@ fn eval_binary(runtime: Runtime, left: Expr, op: BinOp, right: Expr) -> StepResu
             if right_text == null {
                 return error_result(rt, "operand must be a number")
             }
-            let l = float(left_text!)
-            let r = float(right_text!)
+            let l = parse_num(left_text!)
+            let r = parse_num(right_text!)
             match op {
                 .Sub -> ok_result(rt, value_number(render_number(l - r)))
                 .Mul -> ok_result(rt, value_number(render_number(l * r)))
@@ -928,8 +930,8 @@ fn eval_plus(runtime: Runtime, left: Value, right: Value) -> StepResult {
         if right_num_text == null {
             return error_result(runtime, "operands to `+` must both be numbers or both be strings")
         }
-        let left_num = float(left_num_text!)
-        let right_num = float(right_num_text!)
+        let left_num = parse_num(left_num_text!)
+        let right_num = parse_num(right_num_text!)
         return ok_result(runtime, value_number(render_number(left_num + right_num)))
     }
 
@@ -970,7 +972,7 @@ fn as_string(value: Value) -> string? {
 fn values_equal(left: Value, right: Value) -> bool {
     if left.kind != right.kind { return false }
     match left.kind {
-        "number" -> float(left.number_text) == float(right.number_text)
+        "number" -> parse_num(left.number_text) == parse_num(right.number_text)
         "string" -> left.text == right.text
         "bool" -> left.bool_value == right.bool_value
         _ -> true

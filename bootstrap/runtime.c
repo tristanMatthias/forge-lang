@@ -760,6 +760,11 @@ int64_t avra_selfhost_write_file_bytes(const char* path, const char* b) {
 // avra_selfhost_string_to_float is used by the bootstrap's float() builtin.
 double avra_selfhost_string_to_float(const char* s) { return strtod(s, NULL); }
 
+// Parse a base-10 integer from a C string. Used by features/eval to
+// evaluate Number literals correctly — see the comment in
+// features/eval/mod.av on why `float()` was unsafe for arithmetic.
+int64_t avra_selfhost_string_to_int(const char* s) { return strtoll(s, NULL, 10); }
+
 // ─── Dynamic Array ────────────────────────────────────────────────
 // Resizable array of i64 values. Used by List<T> in Avra source.
 //

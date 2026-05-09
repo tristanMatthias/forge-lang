@@ -1,0 +1,77 @@
+// Phase 2 of Components V2 (vez6.2 slice B): exercise the comptime
+// fold driver. Builds a small registry by hand, constructs call ASTs
+// with literal args, and asserts that `try_fold_call` produces the
+// expected literal Expr.
+
+use @std.avrac.core.{Stmt, StmtList, Expr, ExprList, SExpr, sexpr_dummy, sstmt_dummy, ParamList, ValueType, TypeParamList, BinOp}
+use @std.avrac.features.comptime.{CompTimeFn, CompTimeRegistry, try_fold_call}
+
+// `fn add(x: int, y: int) -> int { return x + y }`
+fn mk_add_fn() -> CompTimeFn {
+    let body = StmtList.Node(
+        sstmt_dummy(Stmt.Return(Expr.Binary(Expr.Ident("x"), BinOp.Add, Expr.Ident("y")))),
+        StmtList.End)
+    CompTimeFn {
+        name: "add",
+        params: ParamList.Node("x", ValueType.Int,
+                  ParamList.Node("y", ValueType.Int, ParamList.End)),
+        ret_ty: ValueType.Int,
+        body,
+    }
+}
+
+fn add_registry() -> CompTimeRegistry {
+    CompTimeRegistry { fns: [mk_add_fn()] }
+}
+
+// `add(2, 3)` as an Expr.Call AST.
+fn mk_call(name: string, args: ExprList) -> Expr {
+    Expr.Call(Expr.Ident(name), args)
+}
+
+// Helper: extract the Number text from an Expr literal, or "" if it isn't a Number.
+fn number_text_of(e: Expr) -> string {
+    match e {
+        .Number(text) -> text
+        _ -> ""
+    }
+}
+
+spec "comptime.try_fold_call: basic arithmetic" {
+    then "add(2, 3) folds to 5" {
+        let args = ExprList.Node(sexpr_dummy(Expr.Number("2")),
+                     ExprList.Node(sexpr_dummy(Expr.Number("3")),
+                       ExprList.End))
+        let folded = try_fold_call(add_registry(), mk_call("add", args))
+        folded != null && number_text_of(folded!) == "5"
+    }
+    then "add(10, 20) folds to 30" {
+        let args = ExprList.Node(sexpr_dummy(Expr.Number("10")),
+                     ExprList.Node(sexpr_dummy(Expr.Number("20")),
+                       ExprList.End))
+        let folded = try_fold_call(add_registry(), mk_call("add", args))
+        folded != null && number_text_of(folded!) == "30"
+    }
+}
+
+spec "comptime.try_fold_call: not a call" {
+    then "non-call expr returns null" {
+        try_fold_call(add_registry(), Expr.Number("42")) == null
+    }
+}
+
+spec "comptime.try_fold_call: unknown callee" {
+    then "call to unregistered fn returns null" {
+        let args = ExprList.Node(sexpr_dummy(Expr.Number("1")), ExprList.End)
+        try_fold_call(add_registry(), mk_call("missing", args)) == null
+    }
+}
+
+spec "comptime.try_fold_call: non-literal args refuse to fold" {
+    then "call with Ident arg returns null (can't fold a runtime variable)" {
+        let args = ExprList.Node(sexpr_dummy(Expr.Ident("user_var")),
+                     ExprList.Node(sexpr_dummy(Expr.Number("5")),
+                       ExprList.End))
+        try_fold_call(add_registry(), mk_call("add", args)) == null
+    }
+}

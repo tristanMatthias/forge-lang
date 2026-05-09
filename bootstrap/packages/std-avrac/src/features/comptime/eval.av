@@ -1,0 +1,112 @@
+// WHY: compile-time evaluation of @comptime-annotated fns.
+//
+// `try_fold_call(reg, call_expr)` — given a registered comptime fn
+// and a call expression with literal args, runs the fn body via the
+// tree-walk evaluator (features/eval) and returns the result as an
+// Expr AST literal. Returns null when the call can't be folded
+// (callee not registered, args not literals, or body errors).
+//
+// Phase 2 of Components V2 (vez6.2 slice B). The next slice (C)
+// adds a program-walker that finds and rewrites every foldable call.
+
+use core.{Stmt, StmtList, Expr, ExprList, SExpr, sexpr_dummy, sstmt_dummy, ParamList, ValueType, TypeParamList}
+use features.eval.{Runtime, Value, runtime_new, execute_stmt, eval_expr, step_value, step_had_error}
+use features.comptime.{CompTimeFn, CompTimeRegistry, comptime_lookup}
+
+// ── Public API ──
+
+/// Try to fold a call expression at compile time. Returns the
+/// folded literal Expr on success, null when the call can't be
+/// reduced (callee unknown, args non-literal, body errored, etc).
+///
+/// Caller pattern:
+///   match try_fold_call(reg, expr) {
+///     null      -> emit the call as-is
+///     folded    -> emit `folded`
+///   }
+export fn try_fold_call(reg: CompTimeRegistry, call: Expr) -> Expr? {
+    match call {
+        .Call(callee, args) -> {
+            match callee {
+                .Ident(name) -> {
+                    let fn_def = comptime_lookup(reg, name)
+                    if fn_def == null { return null }
+                    if !all_args_literal(args) { return null }
+                    fold_call(fn_def!, args)
+                }
+                _ -> null
+            }
+        }
+        _ -> null
+    }
+}
+
+// ── Argument-literal check ──
+
+/// True when every Expr in `args` is a literal — the only shape
+/// we know how to fold today. Future slices may relax this to
+/// allow nested folded calls.
+fn all_args_literal(args: ExprList) -> bool {
+    match args {
+        .End -> true
+        .Node(arg, next) -> {
+            if !is_literal(arg.node) { return false }
+            all_args_literal(next)
+        }
+    }
+}
+
+/// Whitelist of Expr shapes treated as compile-time literals for
+/// fold purposes. Number / String / Bool / Null cover the host
+/// runtime's value types; other shapes (Ident, Call, …) need
+/// recursive folding which is a later slice.
+fn is_literal(e: Expr) -> bool {
+    match e {
+        .Number(_) -> true
+        .String(_) -> true
+        .Bool(_) -> true
+        .Null -> true
+        _ -> false
+    }
+}
+
+// ── Folding driver ──
+
+/// Run the comptime fn body with arg literals bound as params,
+/// then convert the resulting Value back to an Expr literal.
+fn fold_call(fn_def: CompTimeFn, args: ExprList) -> Expr? {
+    // Build a runtime, register the fn, evaluate the call.
+    let rt = runtime_new()
+    let fn_stmt = Stmt.Function(fn_def.name, TypeParamList.End, fn_def.params, fn_def.ret_ty, fn_def.body)
+    let after_register = execute_stmt(rt, fn_stmt)
+    if step_had_error(after_register) != 0 { return null }
+
+    // Synthesize the call expression: `<name>(<args>)`. The args
+    // came in as Exprs; we splice them straight into the call form.
+    let call_expr = Expr.Call(Expr.Ident(fn_def.name), args)
+    let call_result = eval_expr(after_register.runtime, call_expr)
+    if step_had_error(call_result) != 0 { return null }
+
+    value_to_expr(step_value(call_result))
+}
+
+// ── Value → Expr conversion ──
+
+/// Turn a tree-walk evaluator Value into an AST literal Expr so
+/// we can splice it into the surrounding program. Returns null
+/// for shapes that don't have a literal AST representation.
+fn value_to_expr(v: Value) -> Expr? {
+    if v.kind == "number" {
+        return Expr.Number(v.number_text)
+    }
+    if v.kind == "string" {
+        return Expr.String("\"${v.text}\"")
+    }
+    if v.kind == "bool" {
+        return Expr.Bool(if v.bool_value != 0 { "true" } else { "false" })
+    }
+    if v.kind == "null" {
+        return Expr.Null
+    }
+    null
+}
