@@ -9,7 +9,7 @@
 // Phase 2 of Components V2 (vez6.2). The program-walker that calls
 // this on every call site lives in rewrite.av.
 
-use core.{Expr, ExprList, BinOp, UnOp, LogicOp}
+use core.{Expr, ExprList, sexpr_dummy, BinOp, UnOp, LogicOp}
 use features.eval.{Value, eval_fn_with_resolved_args, literal_args_to_values, step_value, step_had_error}
 use features.comptime.{CompTimeFn, CompTimeRegistry, comptime_lookup}
 
@@ -138,7 +138,43 @@ fn enum_value_to_expr(v: Value) -> Expr? {
             if left == null || op == null || right == null { return null }
             Expr.Logical(left!, op!, right!)
         }
+        "Call" -> {
+            if p.length != 2 { return null }
+            let callee = enum_value_to_expr(head)
+            let args = enum_value_to_expr_list(p[1])
+            if callee == null || args == null { return null }
+            Expr.Call(callee!, args!)
+        }
+        "EnumCtor" -> {
+            if p.length != 3 { return null }
+            let variant_v: Value = p[1]
+            let args_v: Value = p[2]
+            let args = enum_value_to_expr_list(args_v)
+            if args == null { return null }
+            Expr.EnumCtor(head.text, variant_v.text, args!)
+        }
         _                 -> null
+    }
+}
+
+/// Decode an enum Value carrying an `@std::avrac::core::ExprList`
+/// tag back into the linked-list ExprList AST. Each Node payload
+/// is a (Expr-value, ExprList-value) pair — the SExpr wrap that
+/// lower_quotes emits via sexpr_dummy_call is span-passthrough'd
+/// at eval time, so the head Value is the inner Expr directly.
+fn enum_value_to_expr_list(v: Value) -> ExprList? {
+    if v.enum_type != "@std::avrac::core::ExprList" { return null }
+    match v.enum_variant {
+        "End" -> ExprList.End
+        "Node" -> {
+            let p = v.enum_payload
+            if p.length != 2 { return null }
+            let inner = enum_value_to_expr(p[0])
+            let rest = enum_value_to_expr_list(p[1])
+            if inner == null || rest == null { return null }
+            ExprList.Node(sexpr_dummy(inner!), rest!)
+        }
+        _ -> null
     }
 }
 

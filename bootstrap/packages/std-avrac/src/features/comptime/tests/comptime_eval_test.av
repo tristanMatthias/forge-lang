@@ -166,3 +166,61 @@ spec "comptime.try_fold_call: structural enum-Value decode (vez6.6.4)" {
         folded != null && binary_shape_of(folded!) == "1+2"
     }
 }
+
+// `fn make_call() -> Expr { return Expr.Call(Expr.Ident("f"), [Expr.Number("7")]) }`
+// — exercises the Call + ExprList decoders. The arg list construct
+// in lower.av wraps each element in sexpr_dummy_call (span-passthrough
+// at eval time); the decoder re-wraps with sexpr_dummy at AST level.
+fn mk_make_call_fn() -> CompTimeFn {
+    let arg_str = ExprList.Node(sexpr_dummy(Expr.String("\"7\"")), ExprList.End)
+    let inner_num = Expr.EnumCtor("@std::avrac::core::Expr", "Number", arg_str)
+    // ExprList.Node(sexpr_dummy(num), End)
+    let inner_node_payload = ExprList.Node(
+        sexpr_dummy(Expr.Call(Expr.QualifiedIdent("@std::avrac::core::sexpr_dummy"),
+            ExprList.Node(sexpr_dummy(inner_num), ExprList.End))),
+        ExprList.Node(sexpr_dummy(Expr.EnumCtor("@std::avrac::core::ExprList", "End", ExprList.End)),
+            ExprList.End))
+    let args_list = Expr.EnumCtor("@std::avrac::core::ExprList", "Node", inner_node_payload)
+    let f_ident_str = ExprList.Node(sexpr_dummy(Expr.String("\"f\"")), ExprList.End)
+    let callee_expr = Expr.EnumCtor("@std::avrac::core::Expr", "Ident", f_ident_str)
+    let call_payload = ExprList.Node(sexpr_dummy(callee_expr),
+                         ExprList.Node(sexpr_dummy(args_list), ExprList.End))
+    let body = StmtList.Node(
+        sstmt_dummy(Stmt.Return(Expr.EnumCtor("@std::avrac::core::Expr", "Call", call_payload))),
+        StmtList.End)
+    CompTimeFn {
+        name: "make_call",
+        params: ParamList.End,
+        ret_ty: ValueType.Unknown,
+        body,
+    }
+}
+
+fn make_call_registry() -> CompTimeRegistry {
+    let staged = comptime_registry_new() with { fns: [mk_make_call_fn()] }
+    prepare_runtime(staged)
+}
+
+fn call_shape_of(e: Expr) -> string {
+    match e {
+        .Call(callee, args) -> {
+            let callee_str = match callee { .Ident(n) -> n, _ -> "?" }
+            let arg_str = match args {
+                .End -> ""
+                .Node(se, _) -> match se.node {
+                    .Number(n) -> n
+                    _ -> "?"
+                }
+            }
+            "${callee_str}(${arg_str})"
+        }
+        _ -> ""
+    }
+}
+
+spec "comptime.try_fold_call: Call + ExprList decode (vez6.6.4)" {
+    then "make_call() folds to Expr.Call(Ident(f), [Number(7)])" {
+        let folded = try_fold_call(make_call_registry(), mk_call("make_call", ExprList.End))
+        folded != null && call_shape_of(folded!) == "f(7)"
+    }
+}
