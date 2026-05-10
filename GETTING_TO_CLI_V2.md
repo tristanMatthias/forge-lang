@@ -26,17 +26,17 @@ cli avra {
         flag foobar { short "f", description "Do a thing" }
         arg target { description "Target name", required true }
 
-        run() {
-            if foobar { println("foobar set") }
-            if verbose { println("verbose from parent") }
-            println("building ${target}")
+        run(self) {
+            if self.foobar { println("foobar set") }
+            if self.cli.verbose { println("verbose from parent") }
+            println("building ${self.target}")
             0
         }
     }
 
     command clean {
         description "Clean artifacts"
-        run() {
+        run(self) {
             println("cleaning")
             0
         }
@@ -48,13 +48,15 @@ avra.run()
 
 **What's load-bearing about this shape:**
 
-1. **`run()` takes no args.** Declared flags/args become bare local
-   names inside the body — `if foobar { … }` instead of
-   `result_has_flag(args, "foobar")`. The macro author binds them
-   from parsed argv before the user's body runs.
-2. **Parent flags inherit into nested commands.** `verbose` was
-   declared on the cli; the build command's `run()` sees it
-   automatically.
+1. **`run(self)` is a normal method on a typed struct.** The macro
+   generates a per-command type (`Command_build`) with one field per
+   declared flag/arg. `self.foobar`, `self.target`, etc. are real
+   struct fields — type-checked at compile time, no string lookups,
+   no `result_has_flag(args, "foobar")` boilerplate, no naked-name
+   magic.
+2. **Parent state via back-ref.** `self.cli` points to the enclosing
+   cli instance, so `self.cli.verbose` reads the parent's flag.
+   Explicit and visible — no implicit scope walking.
 3. **Implicit name binding.** `command build { … }` sets
    `name: "build"`; no `name = "build"` assignment needed.
 4. **Child auto-push.** `command build { … }` and `command clean { … }`
@@ -70,17 +72,21 @@ The macro `expand_command` (library-authored, lives in std-cli) lowers
 each `command <inst> { … }` block into a generated subtype + trait impl:
 
 ```avra
-type Command_build = { /* description, flags, args, target value, … */ }
+// Generated per-command type, fields derived from the declared schema
+type Command_build = {
+    description: string,
+    cli: Cli,            // back-ref to parent
+    foobar: bool,        // ← from `flag foobar { ... }`
+    target: string,      // ← from `arg target { required true }`
+}
+
 impl Runnable for Command_build {
     fn name(self) -> string { "build" }
-    fn run(self, args: CliResult) -> int {
-        let foobar = result_has_flag(args, "foobar")
-        let verbose = result_has_flag(args, "verbose")  // inherited
-        let target = result_get_arg(args, "target")
-        // ↓ user's body verbatim:
-        if foobar { println("foobar set") }
-        if verbose { println("verbose from parent") }
-        println("building ${target}")
+    fn run(self) -> int {
+        // ↓ user's body verbatim, references typed self fields:
+        if self.foobar { println("foobar set") }
+        if self.cli.verbose { println("verbose from parent") }
+        println("building ${self.target}")
         0
     }
 }
@@ -93,17 +99,21 @@ let avra = Cli {
     name: "avra",
     description: "Avra compiler",
     version: "0.1.0",
-    global_flags: [Flag { name: "verbose", short: "v", description: "Verbose output" }],
+    verbose: false,  // populated by argv parsing before dispatch
     commands: [
-        Command_build { … } as dyn Runnable,
-        Command_clean { … } as dyn Runnable,
+        Command_build { cli: <back-ref>, foobar: false, target: "" } as dyn Runnable,
+        Command_clean { cli: <back-ref> } as dyn Runnable,
     ],
 }
 ```
 
+The cli's dispatcher (also generated, or shipped on `impl Cli`) parses
+argv, populates the matching command's flag/arg fields, then calls
+`cmd.run()` via the dyn-Runnable vtable. Static typing throughout.
+
 **Three concepts run the whole show:** `@comptime`, `@expand`,
-`component`. Everything else (cli, command, flag, arg, the parent-flag
-inheritance, the auto-push, the bare-name binding) is library code
+`component`. Everything else (cli, command, flag, arg, parent
+back-refs, child auto-push, typed-field generation) is library code
 that ANY user can write — std-cli is just the first user.
 
 ---
