@@ -232,8 +232,55 @@ ensure_seed() {
 }
 
 # Link an LLVM IR file into an executable.
+# rqwh: shared-inputs fingerprint for the link cache. Hashing
+# bs2/runtime.o/llvm_wrapper.o (~5MB each) per fixture would cost
+# ~30ms × 4 = 120ms × 30 fixtures = 3.6s of overhead on every run.
+# Cache the combined hash, invalidate via mtime: if the cache file is
+# newer than every input, reuse; otherwise recompute. Stable across
+# sequential link_ll calls in the same test session.
+LINK_CACHE_DIR="${HOME}/.cache/avra-link-cache"
+LINK_SHARED_FP_FILE="$LINK_CACHE_DIR/.shared-fp"
+
+link_shared_fp() {
+  if [ -f "$LINK_SHARED_FP_FILE" ] \
+     && [ "$LINK_SHARED_FP_FILE" -nt "$BS2" ] \
+     && [ "$LINK_SHARED_FP_FILE" -nt "$RUNTIME_O" ] \
+     && [ "$LINK_SHARED_FP_FILE" -nt "$LLVM_WRAPPER_O" ]; then
+    cat "$LINK_SHARED_FP_FILE"
+    return
+  fi
+  mkdir -p "$LINK_CACHE_DIR"
+  local bs2_h runtime_h wrapper_h composed
+  bs2_h=$(shasum -a 256 "$BS2" | cut -d' ' -f1)
+  runtime_h=$(shasum -a 256 "$RUNTIME_O" | cut -d' ' -f1)
+  wrapper_h=$(shasum -a 256 "$LLVM_WRAPPER_O" | cut -d' ' -f1)
+  composed=$(printf '%s:%s:%s' "$bs2_h" "$runtime_h" "$wrapper_h" \
+    | shasum -a 256 | cut -d' ' -f1)
+  printf '%s' "$composed" > "$LINK_SHARED_FP_FILE"
+  printf '%s' "$composed"
+}
+
 link_ll() {
   local ll="$1" out="$2" logfile="$3" coverage="${4:-}"
+
+  # rqwh: link-step content cache. Skip cache for coverage builds —
+  # they pull in clang_rt.profile_osx which has its own version axes
+  # not tracked here, AND emit profraw files keyed on the binary
+  # itself, so cache hits would short-circuit the instrumentation
+  # this path exists to add.
+  local cached_bin=""
+  if [ -z "$coverage" ] && [ -f "$ll" ]; then
+    local shared_fp ll_h fp
+    shared_fp=$(link_shared_fp)
+    ll_h=$(shasum -a 256 "$ll" | cut -d' ' -f1)
+    fp=$(printf '%s:%s' "$shared_fp" "$ll_h" | shasum -a 256 | cut -d' ' -f1 | head -c 16)
+    cached_bin="$LINK_CACHE_DIR/$fp.bin"
+    if [ -f "$cached_bin" ]; then
+      cp "$cached_bin" "$out"
+      return
+    fi
+  fi
+
   local obj_ll="$ll"
   # Coverage: lower instrprof intrinsics before llc
   if [ "$coverage" = "coverage" ]; then
@@ -255,6 +302,11 @@ link_ll() {
     -Wl,-stack_size,0x2000000 \
     -L"$LLVM_PREFIX/lib" -lLLVM -lc++ $extra_libs 2>"$logfile" \
     || { cat "$logfile" >&2; die "link failed for $out"; }
+
+  # rqwh: publish to cache on success.
+  if [ -n "$cached_bin" ] && [ -f "$out" ]; then
+    cp "$out" "$cached_bin"
+  fi
 }
 
 # Compile <fg> with bs2, producing <fg>.ll.

@@ -2705,6 +2705,14 @@ fn main() {
             && avra_process_env_get("AVRA_DIR_MODULE") == ""
             && !csource.contains("\nmod ")
             && !csource.starts_with("mod ")
+            // /tmp/ ad-hoc fixtures don't have stable identities —
+            // tests rewrite the same path with different sources
+            // across `then` blocks, and the cache's project_root
+            // (also /tmp) accumulates state from many unrelated
+            // tests in one session. Real builds use in-tree project
+            // dirs; tests that need caching go through diagnose.sh's
+            // run_fg which has its own mtime + link cache (rqwh).
+            && !cpath.starts_with("/tmp/")
         let dest_ll = "${cpath}.ll"
         let bs2_path = avra_selfhost_get_arg_cstr(0)
         let compile_inputs = BuildInputs {
