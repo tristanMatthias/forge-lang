@@ -10,7 +10,7 @@
 // self.__parent → parent accumulator variable
 // self.__parent_name → parent instance name string
 
-use core.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, FieldList, FieldInitList, ParamList, ValueType, CompConfigList, CompConfigPairList, ChildrenList, TypeParamList}
+use core.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, FieldList, FieldInitList, ParamList, ValueType, CompConfigList, CompConfigPairList, ChildrenList, TypeParamList, find_annotation}
 use core.{has_fn, find_fn_body}
 
 // ── Public API ──
@@ -61,14 +61,26 @@ export fn comp_reg_lookup(reg: CompDefRegistry, name: string) -> CompDefLookup {
 /// Walk the AST once collecting every `ComponentDef` into a
 /// flat registry. Recurses into modules + function bodies and
 /// peels `Annotated` wrappers (doc comments) off each statement.
+///
+/// vez6.8.5: ComponentDefs annotated with `@expand(macro_fn)` are
+/// SKIPPED here — their instances should route through the
+/// @expand pipeline (features/comptime/expand_macro.av), not the
+/// legacy template path. Skipping them at the registry level means
+/// expand_stmt_list's ComponentBlock arm won't find them, so the
+/// instance passes through unchanged for expand_macros to consume.
 export fn collect_component_defs(stmts: StmtList) -> CompDefRegistry {
     match stmts {
         .End -> CompDefRegistry.End
         .Node(ss, next) -> {
+            let has_expand = find_annotation(ss.node, "expand") != null
             let inner = stmt_unwrap_deep(ss.node)
             match inner {
                 .ComponentDef(name, _, config, children, _, body) -> {
-                    CompDefRegistry.Entry(name, config, children, body, collect_component_defs(next))
+                    if has_expand {
+                        collect_component_defs(next)
+                    } else {
+                        CompDefRegistry.Entry(name, config, children, body, collect_component_defs(next))
+                    }
                 }
                 .Module(_, mod_body) -> {
                     let mod_defs = collect_component_defs(mod_body)
@@ -796,18 +808,37 @@ fn has_any_slot(schema: ChildrenList) -> bool {
 /// dispatching `ComponentDef` to `splice_component_def` and
 /// `ComponentBlock` to `splice_component_block`. Other
 /// statements pass through untouched.
+///
+/// vez6.8.5: when a stmt carries `@expand(macro)`, the legacy
+/// template path defers to the macro pipeline (expand_macros,
+/// runs later in the compile sequence). The annotated stmt
+/// passes through unchanged here; ComponentBlock instances of
+/// @expand'd defs likewise pass through because their parent
+/// def is absent from `reg` (collect_component_defs skipped it).
 export fn expand_stmt_list(stmts: StmtList, reg: CompDefRegistry, nest: CompNestCtx) -> StmtList {
     match stmts {
         .End -> StmtList.End
         .Node(ss, next) -> {
             let expanded_next = expand_stmt_list(next, reg, nest)
+            let has_expand = find_annotation(ss.node, "expand") != null
+            if has_expand {
+                return StmtList.Node(ss, expanded_next)
+            }
             let inner = stmt_unwrap_deep(ss.node)
             match inner {
                 .ComponentDef(name, params, config, children, _, body) -> {
                     splice_component_def(name, params, config, children, body, ss.line, ss.col, expanded_next)
                 }
                 .ComponentBlock(comp, inst, config, body) -> {
-                    splice_component_block(comp, inst, config, body, ss.line, ss.col, expanded_next, reg, nest)
+                    let lookup = comp_reg_lookup(reg, comp)
+                    if !lookup.found {
+                        // Component def absent from registry — either
+                        // legitimately undefined (caught later) or
+                        // routed through @expand. Pass through.
+                        StmtList.Node(ss, expanded_next)
+                    } else {
+                        splice_component_block(comp, inst, config, body, ss.line, ss.col, expanded_next, reg, nest)
+                    }
                 }
                 _ -> {
                     // Recurse into nested statement lists. Preserve

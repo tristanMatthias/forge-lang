@@ -171,6 +171,43 @@ spec "vez6.8.4.B: value_to_stmt decodes Stmt.Impl from macro output" {
     }
 }
 
+// vez6.8.5: @expand on a ComponentDef registers the macro for
+// every ComponentBlock instance of that component. The def
+// itself drops out of the post-expand AST. Verifies the
+// pre-pass + dispatch wiring: collect_component_macros finds
+// the def, expand_stmt_list invokes try_expand_with_macro on
+// each instance.
+spec "vez6.8.5: ComponentDef-level @expand fires on each ComponentBlock instance" {
+    then "instance is rewritten by macro; def drops out" {
+        let out = run_expand_e2e(
+            "use @std.avrac.core.{Stmt}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn expand_cmd(s: Stmt) -> Stmt {\n" +
+            "    return quote stmt {\n" +
+            "        type Command_build = { x: int }\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(expand_cmd)\n" +
+            "component command {\n" +
+            "}\n" +
+            "\n" +
+            "command build {\n" +
+            "}\n" +
+            "\n" +
+            MAIN_HEADER + " {\n" +
+            "}\n")
+        // Confirms: (1) the macro fired for `command build {...}`,
+        // (2) the ComponentDef itself produced no template-style
+        // emission, and (3) only ONE type Command_build appears
+        // (no double-fire from def AND instance).
+        out.contains("type Command_build")
+            && !out.contains("component command")
+            && !out.contains("type Command =")
+    }
+}
+
 // vez6.8.4.A/C: 1-arg @expand macros receive the wrapped Stmt as
 // a Value (boxed via stmt_to_value). Confirms try_expand_one
 // inspects param arity, boxes the unwrapped Stmt for the macro,

@@ -31,10 +31,86 @@ use features.eval.{Runtime, Value, eval_fn_with_resolved_args, step_value, step_
 ///
 /// Fast-path: when the program has no `@expand` annotations the
 /// walker returns the input unchanged with no allocations.
+///
+/// vez6.8.5: also expands ComponentBlock instances of components
+/// whose `ComponentDef` carries `@expand(macro)`. The macro fn is
+/// looked up via a pre-pass that maps component name → macro fn
+/// name; each instance gets the macro applied with the
+/// ComponentBlock as a 1-arg Stmt value.
 export fn expand_macros(stmts: StmtList) -> StmtList {
-    if !any_expand_annotation(stmts) { return stmts }
+    let comp_macros = collect_component_macros(stmts)
+    if !any_expand_annotation(stmts) && comp_macros_empty(comp_macros) { return stmts }
     let reg = collect_comptime_fns(stmts)
-    expand_stmt_list(stmts, reg)
+    expand_stmt_list(stmts, reg, comp_macros)
+}
+
+// ── Component-macro pre-pass (vez6.8.5) ──
+
+/// Linked-list mapping from component name to its @expand macro fn
+/// name. Built once per program and consulted at every
+/// ComponentBlock site.
+enum CompMacros {
+    End
+    Entry(comp_name: string, macro_name: string, next: CompMacros)
+}
+
+fn comp_macros_empty(m: CompMacros) -> bool {
+    match m {
+        .End -> true
+        .Entry(_, _, _) -> false
+    }
+}
+
+fn comp_macro_lookup(m: CompMacros, comp_name: string) -> string {
+    match m {
+        .End -> ""
+        .Entry(n, mn, _) if n == comp_name -> mn
+        .Entry(_, _, next) -> comp_macro_lookup(next, comp_name)
+    }
+}
+
+/// Walk the AST, finding every `@expand(macro) component name { ... }`
+/// declaration and recording its (name → macro_fn) pair.
+fn collect_component_macros(stmts: StmtList) -> CompMacros {
+    match stmts {
+        .End -> CompMacros.End
+        .Node(ss, next) -> {
+            let rest = collect_component_macros(next)
+            let macro_name = comp_macro_for(ss.node)
+            let comp_name = component_def_name(ss.node)
+            if macro_name != "" && comp_name != "" {
+                CompMacros.Entry(comp_name, macro_name, rest)
+            } else {
+                rest
+            }
+        }
+    }
+}
+
+/// If `stmt` is a ComponentDef wrapped in @expand(M), return M's
+/// name. Returns "" otherwise. Handles arbitrarily-nested
+/// Annotated wrappers (e.g. `///` doc + `@expand`).
+fn comp_macro_for(stmt: Stmt) -> string {
+    let inner = peel_annotations(stmt)
+    match inner {
+        .ComponentDef(_, _, _, _, _, _) -> expand_target_name(stmt)
+        _ -> ""
+    }
+}
+
+fn component_def_name(stmt: Stmt) -> string {
+    let inner = peel_annotations(stmt)
+    match inner {
+        .ComponentDef(name, _, _, _, _, _) -> name
+        _ -> ""
+    }
+}
+
+fn peel_annotations(stmt: Stmt) -> Stmt {
+    match stmt {
+        .Annotated(_, inner) -> peel_annotations(inner)
+        _ -> stmt
+    }
 }
 
 // ── Fast-path presence scan ──
@@ -59,24 +135,89 @@ fn has_expand_annotation(stmt: Stmt) -> bool {
 
 // ── Walker ──
 
-fn expand_stmt_list(stmts: StmtList, reg: CompTimeRegistry) -> StmtList {
+fn expand_stmt_list(stmts: StmtList, reg: CompTimeRegistry, comp_macros: CompMacros) -> StmtList {
     match stmts {
         .End -> StmtList.End
         .Node(ss, next) -> {
-            let expanded_rest = expand_stmt_list(next, reg)
-            if has_expand_annotation(ss.node) {
-                let replacement = try_expand_one(ss.node, reg, ss.line, ss.col, ss.file)
-                if replacement != null {
-                    return StmtList.Node(replacement!, expanded_rest)
+            let expanded_rest = expand_stmt_list(next, reg, comp_macros)
+            let inner = peel_annotations(ss.node)
+            // vez6.8.5: a ComponentDef with @expand only REGISTERS
+            // the macro for its instances. The def itself drops
+            // out of the output — there's no template-style expansion
+            // for the def, only per-instance dispatch.
+            match inner {
+                .ComponentDef(_, _, _, _, _, _) -> {
+                    if has_expand_annotation(ss.node) {
+                        return expanded_rest
+                    }
+                    StmtList.Node(ss, expanded_rest)
                 }
-                // Expansion failed — keep the original stmt so
-                // downstream stages can surface the underlying issue
-                // with normal diagnostics. The eprintln in
-                // try_expand_one carries the reason.
+                .ComponentBlock(comp_name, _, _, _) -> {
+                    // ComponentBlock instances of @expand'd defs route
+                    // through the macro pipeline with the block itself
+                    // as the Stmt arg.
+                    let inst_macro = comp_macro_lookup(comp_macros, comp_name)
+                    if inst_macro != "" {
+                        let replacement = try_expand_with_macro(ss.node, inst_macro, reg, ss.line, ss.col, ss.file)
+                        if replacement != null {
+                            return StmtList.Node(replacement!, expanded_rest)
+                        }
+                    }
+                    StmtList.Node(ss, expanded_rest)
+                }
+                _ -> {
+                    if has_expand_annotation(ss.node) {
+                        let replacement = try_expand_one(ss.node, reg, ss.line, ss.col, ss.file)
+                        if replacement != null {
+                            return StmtList.Node(replacement!, expanded_rest)
+                        }
+                        // Expansion failed — keep the original stmt
+                        // so downstream stages surface the issue.
+                    }
+                    StmtList.Node(ss, expanded_rest)
+                }
             }
-            StmtList.Node(ss, expanded_rest)
         }
     }
+}
+
+/// Apply a named macro fn to `stmt`, treating the macro's return
+/// value as the replacement. Sister to `try_expand_one` but
+/// doesn't read the @expand annotation off the stmt — used for
+/// vez6.8.5's component-instance dispatch where the macro is
+/// inherited from the parent ComponentDef.
+fn try_expand_with_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int, col: int, file: string) -> SStmt? {
+    let lookup = comptime_lookup(reg, macro_name)
+    if lookup == null {
+        eprintln("error: component instance routes to @expand(${macro_name}) — no @comptime fn named `${macro_name}` in scope")
+        return null
+    }
+    let fn_def = lookup!
+    let arity = param_list_length(fn_def.params)
+    let arg_values = if arity == 1 {
+        let boxed = stmt_to_value(reg.runtime, stmt)
+        if boxed == null {
+            eprintln("error: @expand(${macro_name}) — could not box the wrapped Stmt as a Value")
+            return null
+        }
+        [boxed!]
+    } else if arity == 0 {
+        []
+    } else {
+        eprintln("error: @expand(${macro_name}) — macro has ${arity} parameters; @expand supports 0- or 1-arg macros only")
+        return null
+    }
+    let result = eval_fn_with_resolved_args(reg.runtime, fn_def.params, fn_def.body, arg_values)
+    if step_had_error(result) {
+        eprintln("error: @expand(${macro_name}) — macro evaluation failed: ${step_error_message(result)}")
+        return null
+    }
+    let decoded = value_to_stmt(step_value(result))
+    if decoded == null {
+        eprintln("error: @expand(${macro_name}) — macro returned a value the expander could not decode into a Stmt (kind=${step_value(result).kind})")
+        return null
+    }
+    sstmt_at(decoded!, line, col, file)
 }
 
 /// Look up the macro fn name from the `@expand` annotation's first
