@@ -1,0 +1,37 @@
+// vez6.4szi step 2 + wd48 regression test —
+// Adding a new @std.avrac.X module + a sibling test that imports it
+// should NOT break unrelated test files' relative imports in the
+// bundled test compile. Specifically: docs/gen_test.av's
+// `use gen.{gen_stub_for_sym, ...}` (sibling import) must still
+// resolve when this file is in the bundle.
+
+use @std.avrac.check.{check_source}
+use @std.avrac.diagnostics.{bag_has_errors}
+
+// Split the entry-point header so this file isn't excluded from the
+// test set (select_test_paths skips files whose contents include the
+// standalone-program signature).
+const MAIN_HEADER: string = "fn " + "main()"
+
+spec "vez6.4szi: check_source basics" {
+    then "valid program produces no errors" {
+        let bag = check_source(MAIN_HEADER + " -> int { 0 }")
+        !bag_has_errors(bag)
+    }
+    then "syntax error surfaces in the bag" {
+        let bag = check_source(MAIN_HEADER + " -> int { let x = }")
+        bag_has_errors(bag)
+    }
+    then "undefined variable produces an error" {
+        let bag = check_source(MAIN_HEADER + " -> int { undefined_var }")
+        bag_has_errors(bag)
+    }
+    then "type mismatch produces an error" {
+        let bag = check_source(MAIN_HEADER + " -> int {\n    let x: int = \"hello\"\n    x\n}")
+        bag_has_errors(bag)
+    }
+    then "valid program with let + arithmetic compiles" {
+        let bag = check_source(MAIN_HEADER + " -> int {\n    let x = 1 + 2\n    x\n}")
+        !bag_has_errors(bag)
+    }
+}

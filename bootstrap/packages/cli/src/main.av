@@ -1828,12 +1828,25 @@ fn compute_test_build_inputs(project_dir: string, accepted_paths: List<string>, 
 // Returns `Ok(bin_path)` on success or `Err(msg)` after rendering
 // the diagnostic bag inline. The caller picks the exit policy.
 fn compile_test_unit(inputs: BuildInputs, test_paths: List<string>, args: TestArgs) -> Result<string, string> {
-    // Step 1: parse each test file as Stmt.Module(name, body) and
-    // share LoadedPaths across the loop so each `@std` package is
-    // only inlined the first time any test imports it.
+    // Step 1: parse each test file as Stmt.Module(name, body).
+    //
+    // wd48 fix — we explicitly do NOT share LoadedPaths across
+    // iterations. The shared-set approach made sibling-Module loads
+    // (e.g. `mod gen` → docs/gen.av in gen_test.av) return an empty
+    // wrapper for the second test file that referenced the same path,
+    // breaking that file's `use gen.{X}` since the wrapper had no
+    // decls. Each test file's tree is independent — separate
+    // Module(test_name) wrappers, distinct scopes.
+    //
+    // Cost: @std/* packages get re-parsed per test file. The
+    // dedup_modules pass collapses the duplicate package wrappers
+    // by Module name and dedups duplicate decls within merged
+    // bodies (decls from the same SStmt.file are identical re-parses
+    // and safely dedup'd; same-name decls from DIFFERENT files
+    // remain — that surfaces as a real user-level naming collision
+    // rather than a silently-dropped definition).
     mut modules = StmtList.End
     mut packages = StmtList.End
-    mut shared_loaded = LoadedPaths.End
     mut count = 0
     mut path_i = 0
     while path_i < test_paths.length {
@@ -1849,11 +1862,10 @@ fn compile_test_unit(inputs: BuildInputs, test_paths: List<string>, args: TestAr
             return Result.Err("error parsing ${path}")
         }
         let test_dir = modules_dirname(path)
-        let mod_resolved = resolve_module_files(parsed.stmts!, test_dir, shared_loaded)
+        let mod_resolved = resolve_module_files(parsed.stmts!, test_dir, LoadedPaths.End)
         if mod_resolved.had_error {
             return Result.Err("module resolve error in ${path}: ${mod_resolved.error_message}")
         }
-        shared_loaded = mod_resolved.loaded
         let split = split_package_modules(mod_resolved.stmts)
         packages = append_stmt_list(split.packages, packages)
         modules = StmtList.Node(

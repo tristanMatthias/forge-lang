@@ -1,0 +1,39 @@
+// WHY: in-process pipeline entry — parse + resolve + typeck a source
+// string and return the accumulated DiagnosticBag. Replaces the test
+// pattern of forking the compiler and grepping stderr.
+//
+// Pipeline stages run (mirrors `bs2 check` minus module file loading):
+//   parse → lower_quotes → desugar → expand_components → resolve_names
+//   → expand_macros → run_comptime → typecheck_program
+//
+// Returns the final DiagnosticBag, which carries every error/warning
+// raised across all stages.
+
+use parse.{parse_program_source}
+use diagnostics.{DiagnosticBag}
+use features.quote_expr.{lower_quotes}
+use desugar.{desugar_program}
+use features.component_decl.{expand_components}
+use resolve.{resolve_names}
+use features.comptime.{expand_macros, run_comptime}
+use typeck.{typecheck_program}
+
+/// Run the diagnostic pipeline against a source string and return
+/// the accumulated DiagnosticBag.
+export fn check_source(source: string) -> DiagnosticBag {
+    let parsed = parse_program_source(source)
+    if parsed.had_error || parsed.stmts == null {
+        return parsed.bag
+    }
+    let post_quote = lower_quotes(parsed.stmts!)
+    let desugared = desugar_program(post_quote)
+    let expanded = expand_components(desugared)
+    let named = resolve_names(expanded)
+    if named.had_error {
+        return named.bag
+    }
+    let expanded_macros = expand_macros(named.stmts)
+    let post_comptime = run_comptime(expanded_macros)
+    let tc_result = typecheck_program(post_comptime)
+    tc_result.bag
+}

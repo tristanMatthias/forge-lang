@@ -570,6 +570,13 @@ fn mod_group_merge(acc: List<ModGroupItem>, name: string, body: StmtList, line: 
 /// Pass entries in place. Recursive dedup on each merged body deals
 /// with nested duplicates like `@std → avrac → indexer` showing up
 /// under both `@std → avrac` instances.
+///
+/// wd48 fix — also dedup by span. When the test runner bundles many
+/// test files, each test file's resolve loads packages independently,
+/// producing identical re-parses of the same source. Merging those
+/// bodies leaves duplicate stmts with identical (file, line, col)
+/// tuples — span-equality means they're literally the same source
+/// position, so dropping the duplicate is safe.
 fn flatten_groups(items: List<ModGroupItem>) -> StmtList {
     mut acc: StmtList = StmtList.End
     mut i = items.length - 1
@@ -580,12 +587,81 @@ fn flatten_groups(items: List<ModGroupItem>) -> StmtList {
                 // source file owns them — so file="" is correct
                 // here. Body stmts retain their own SStmt.file from
                 // the original parse.
-                let merged = sstmt(Stmt.Module(name, dedup_modules(body)), line, col)
+                let merged = sstmt(Stmt.Module(name, dedup_modules(dedup_by_span(body))), line, col)
                 acc = StmtList.Node(merged, acc)
             }
             .Pass(ss) -> acc = StmtList.Node(ss, acc)
         }
         i = i - 1
+    }
+    acc
+}
+
+/// Drop stmts whose (file, line, col) span has already appeared
+/// earlier in the list. wd48: re-parses of the same source file
+/// produce stmts with identical spans; deduping on span identity
+/// is precise (no risk of dropping distinct decls that happen to
+/// share a name across files). Stmts with empty file (synthesized,
+/// no source location) are always kept.
+fn dedup_by_span(stmts: StmtList) -> StmtList {
+    mut acc: StmtList = StmtList.End
+    mut seen: List<string> = []
+    let collected = collect_stmt_list(stmts)
+    mut idx = 0
+    while idx < collected.length {
+        let ss = collected[idx]
+        idx = idx + 1
+        if ss.file == "" {
+            acc = StmtList.Node(ss, acc)
+            continue
+        }
+        let key = "${ss.file}:${ss.line}:${ss.col}"
+        if list_str_contains(seen, key) { continue }
+        seen.push(key)
+        acc = StmtList.Node(ss, acc)
+    }
+    reverse_stmt_list(acc)
+}
+
+/// Helper: linear search for a string in a List<string>.
+fn list_str_contains(xs: List<string>, target: string) -> bool {
+    mut i = 0
+    while i < xs.length {
+        if xs[i] == target { return true }
+        i = i + 1
+    }
+    false
+}
+
+/// Helper: collect linked StmtList into List<SStmt> for indexed walk.
+fn collect_stmt_list(stmts: StmtList) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    mut cur = stmts
+    while true {
+        match cur {
+            .End -> return out
+            .Node(ss, next) -> {
+                out.push(ss)
+                cur = next
+            }
+        }
+    }
+    out
+}
+
+/// Helper: reverse a StmtList (since the dedup pass builds it
+/// backwards via prepend).
+fn reverse_stmt_list(stmts: StmtList) -> StmtList {
+    mut acc = StmtList.End
+    mut cur = stmts
+    while true {
+        match cur {
+            .End -> return acc
+            .Node(ss, next) -> {
+                acc = StmtList.Node(ss, acc)
+                cur = next
+            }
+        }
     }
     acc
 }
