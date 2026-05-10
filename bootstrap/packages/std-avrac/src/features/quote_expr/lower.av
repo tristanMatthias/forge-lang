@@ -172,7 +172,7 @@ fn lower_stmt(stmt: Stmt) -> Stmt {
         .SpecBlock(name, body) -> .SpecBlock(name, lower_stmt_list(body))
         .GivenBlock(name, body) -> .GivenBlock(name, lower_stmt_list(body))
         .ThenBlock(name, cond) -> .ThenBlock(name, lower_expr(cond))
-        .Match(subj, arms) -> .Match(lower_expr(subj), arms)
+        .Match(subj, arms) -> .Match(lower_expr(subj), lower_match_arms(arms))
         .Defer(body) -> .Defer(lower_expr(body))
         .Errdefer(body) -> .Errdefer(lower_expr(body))
         .LetDestructure(names, init) -> .LetDestructure(names, lower_expr(init))
@@ -218,7 +218,7 @@ fn lower_expr(expr: Expr) -> Expr {
         .IsCheck(subj, vname) -> .IsCheck(lower_expr(subj), vname)
         .InCheck(needle, items) -> .InCheck(lower_expr(needle), lower_expr_list(items))
         .Spawn(body) -> .Spawn(lower_expr(body))
-        .MatchExpr(subj, arms) -> .MatchExpr(lower_expr(subj), arms)
+        .MatchExpr(subj, arms) -> .MatchExpr(lower_expr(subj), lower_match_arms(arms))
         .Splice(target) -> .Splice(lower_expr(target))
         _ -> expr
     }
@@ -231,6 +231,27 @@ fn lower_expr_list(list: ExprList) -> ExprList {
             sexpr(lower_expr(se.node), se.line, se.col),
             lower_expr_list(next)
         )
+    }
+}
+
+/// b85m: lower every Quote in match-arm guards + bodies. Without
+/// this, an inline `return quote stmt { ... }` inside a match
+/// arm body keeps its un-lowered Expr.Quote node, which the
+/// tree-walk evaluator can't handle — the macro expansion
+/// silently fails to fire.
+fn lower_match_arms(arms: MatchArmList) -> MatchArmList {
+    match arms {
+        .End -> MatchArmList.End
+        .Node(pattern, guard, body, next) -> {
+            let lowered_body = sexpr(lower_expr(body.node), body.line, body.col)
+            let rest = lower_match_arms(next)
+            if guard == null {
+                return MatchArmList.Node(pattern, null, lowered_body, rest)
+            }
+            let g = guard!
+            let lowered_guard = sexpr(lower_expr(g.node), g.line, g.col)
+            MatchArmList.Node(pattern, lowered_guard, lowered_body, rest)
+        }
     }
 }
 
