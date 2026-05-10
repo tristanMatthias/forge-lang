@@ -532,6 +532,19 @@ fn string_lit_expr(s: string) -> Expr {
     Expr.String("\"${s}\"")
 }
 
+/// swgx: identifier-position splice. When the parser tags a TypeDecl
+/// (or future Function / Impl / TraitDecl) name with a leading `~`,
+/// emit `Expr.Ident(rest)` instead of a string literal so that at
+/// expansion time the splice resolves to the live value of the
+/// surrounding local. Without the prefix it's a plain string literal.
+fn name_or_splice(name: string) -> Expr {
+    if name.length > 0 && name.substring(0, 1) == "~" {
+        Expr.Ident(name.substring(1, name.length))
+    } else {
+        string_lit_expr(name)
+    }
+}
+
 /// Build an Expr that, when evaluated, produces an ExprList AST value
 /// matching `list`. ExprList.End → EnumCtor("ExprList", "End", []),
 /// ExprList.Node(se, rest) → EnumCtor("ExprList", "Node", [SExpr-ctor, recur]).
@@ -638,7 +651,7 @@ export fn construct_stmt(stmt: Stmt) -> Expr {
                       construct_value_type_unknown(),
                       construct_stmt_list(body)))
         .TypeDecl(name, tp, fields) -> stmt_ctor("TypeDecl",
-            three_args(string_lit_expr(name),
+            three_args(name_or_splice(name),
                        construct_type_param_list(tp),
                        construct_field_list(fields)))
         .ComponentBlock(comp_name, instance, config, body) -> stmt_ctor("ComponentBlock",
