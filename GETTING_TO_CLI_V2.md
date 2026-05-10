@@ -27,9 +27,9 @@ cli avra {
         arg target { description "Target name", required true }
 
         run(self) {
-            if self.foobar { println("foobar set") }
-            if self.cli.verbose { println("verbose from parent") }
-            println("building ${self.target}")
+            if self.flag.foobar { println("foobar set") }
+            if self.cli.flag.verbose { println("verbose from parent") }
+            println("building ${self.arg.target}")
             0
         }
     }
@@ -49,20 +49,33 @@ avra.run()
 **What's load-bearing about this shape:**
 
 1. **`run(self)` is a normal method on a typed struct.** The macro
-   generates a per-command type (`Command_build`) with one field per
-   declared flag/arg. `self.foobar`, `self.target`, etc. are real
-   struct fields — type-checked at compile time, no string lookups,
-   no `result_has_flag(args, "foobar")` boilerplate, no naked-name
-   magic.
-2. **Parent state via back-ref.** `self.cli` points to the enclosing
-   cli instance, so `self.cli.verbose` reads the parent's flag.
+   generates a per-command type (`Command_build`) with one nested
+   accessor struct per child component type — `self.flag` for
+   flags, `self.arg` for args, `self.option` for options, etc.
+   Each accessor has one named field per declared instance:
+   `self.flag.foobar: bool`, `self.arg.target: string`. Real
+   struct fields, type-checked at compile time, no string lookups,
+   no naked-name magic.
+2. **`self.flag.X` / `self.arg.X` mirrors the source structure.**
+   The body's `command build { flag foobar { … } arg target { … } }`
+   maps directly to access shape: child `flag foobar` → `self.flag.foobar`.
+   No reordering, no flattening, no surprises.
+3. **This generalizes — not cli-specific.** Any component with
+   `children { flags: List<Flag>, args: List<Arg> }` gets the same
+   treatment: nested accessor struct per child slot, typed field per
+   instance. An HTTP server with `endpoint home { … }` would access
+   it as `self.endpoint.home`. A sql schema with `table users { … }`
+   would access it as `self.table.users`. The macro author writes
+   the schema once; the access pattern follows.
+4. **Parent state via back-ref.** `self.cli` points to the enclosing
+   cli instance, so `self.cli.flag.verbose` reads the parent's flag.
    Explicit and visible — no implicit scope walking.
-3. **Implicit name binding.** `command build { … }` sets
+5. **Implicit name binding.** `command build { … }` sets
    `name: "build"`; no `name = "build"` assignment needed.
-4. **Child auto-push.** `command build { … }` and `command clean { … }`
+6. **Child auto-push.** `command build { … }` and `command clean { … }`
    inside `cli avra { … }` push themselves into `avra.commands`.
    No `add_command(...)` calls.
-5. **No template macros, no `__parent`, no `match command { ... }`.**
+7. **No template macros, no `__parent`, no `match command { ... }`.**
    `avra.run()` is a regular method call going through the trait
    vtable on `commands: List<dyn Runnable>`.
 
@@ -72,21 +85,25 @@ The macro `expand_command` (library-authored, lives in std-cli) lowers
 each `command <inst> { … }` block into a generated subtype + trait impl:
 
 ```avra
-// Generated per-command type, fields derived from the declared schema
+// Per-instance accessor structs, one per child component type
+type Command_build_Flags = { foobar: bool }
+type Command_build_Args  = { target: string }
+
+// Per-command type with the accessor structs as nested fields
 type Command_build = {
     description: string,
-    cli: Cli,            // back-ref to parent
-    foobar: bool,        // ← from `flag foobar { ... }`
-    target: string,      // ← from `arg target { required true }`
+    cli: Cli,                   // back-ref to parent
+    flag: Command_build_Flags,  // ← `flag foobar { ... }` maps here
+    arg:  Command_build_Args,   // ← `arg target { ... }` maps here
 }
 
 impl Runnable for Command_build {
     fn name(self) -> string { "build" }
     fn run(self) -> int {
-        // ↓ user's body verbatim, references typed self fields:
-        if self.foobar { println("foobar set") }
-        if self.cli.verbose { println("verbose from parent") }
-        println("building ${self.target}")
+        // ↓ user's body verbatim, references typed nested fields:
+        if self.flag.foobar { println("foobar set") }
+        if self.cli.flag.verbose { println("verbose from parent") }
+        println("building ${self.arg.target}")
         0
     }
 }
@@ -95,26 +112,36 @@ impl Runnable for Command_build {
 …and the cli block becomes a struct literal with auto-pushed children:
 
 ```avra
+type Cli_Flags = { verbose: bool }
+
 let avra = Cli {
     name: "avra",
     description: "Avra compiler",
     version: "0.1.0",
-    verbose: false,  // populated by argv parsing before dispatch
+    flag: Cli_Flags { verbose: false },  // populated by argv parsing
     commands: [
-        Command_build { cli: <back-ref>, foobar: false, target: "" } as dyn Runnable,
+        Command_build {
+            cli: <back-ref>,
+            flag: Command_build_Flags { foobar: false },
+            arg:  Command_build_Args  { target: "" },
+        } as dyn Runnable,
         Command_clean { cli: <back-ref> } as dyn Runnable,
     ],
 }
 ```
 
 The cli's dispatcher (also generated, or shipped on `impl Cli`) parses
-argv, populates the matching command's flag/arg fields, then calls
-`cmd.run()` via the dyn-Runnable vtable. Static typing throughout.
+argv, populates the matching command's `flag` / `arg` accessor structs,
+then calls `cmd.run()` via the dyn-Runnable vtable. Static typing
+throughout.
 
 **Three concepts run the whole show:** `@comptime`, `@expand`,
-`component`. Everything else (cli, command, flag, arg, parent
-back-refs, child auto-push, typed-field generation) is library code
-that ANY user can write — std-cli is just the first user.
+`component`. Everything else (cli, command, flag, arg, the nested
+accessor structs, parent back-refs, child auto-push, typed-field
+generation) is library code that ANY user can write — std-cli is
+just the first user. The same pattern applies unchanged to
+HTTP routers, SQL schemas, GUI widget trees, plugin DAGs — any
+declarative tree-shaped DSL.
 
 ---
 
