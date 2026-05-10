@@ -24,6 +24,11 @@ extern fn avra_process_env_get(key: string) -> string
 extern fn avra_shell_exec(cmd: string) -> string
 extern fn avra_shell_exec_status(cmd: string) -> int
 extern fn exit(code: int)
+/// vez6.4szi: in-process stdout capture. Runs `closure`, redirecting
+/// stdout to a temp file across the call, returns the captured bytes.
+/// Replaces the test pattern of `avra_shell_exec("./build/bs2 ...")`
+/// for fixtures that just want to grep what the code prints.
+extern fn avra_capture_stdout(closure: fn() -> void) -> string
 
 // ── Result tagging ──
 extern fn avra_tag_as_result(ptr: ptr) -> ptr

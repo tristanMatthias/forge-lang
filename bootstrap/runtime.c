@@ -2640,6 +2640,50 @@ int64_t avra_shell_exec_status(const char* cmd) {
     return (int64_t)((status >> 8) & 0xff);
 }
 
+// vez6.4szi: in-process stdout capture. Replaces fixture tests that
+// fork bs2 to grep stdout. Redirects stdout to a tmpfile across the
+// closure invocation, then reads the file back as a string. tmpfile
+// chosen over pipe to avoid the 64KB buffer-fill deadlock when the
+// closure produces more output than a pipe can hold without a reader.
+//
+// Reentrant-safe-ish: the saved fd is local, so nested calls work as
+// long as each restores in LIFO order. Closure panics will leak the
+// redirect — that's acceptable for the test path; production code
+// shouldn't be capturing stdout this way.
+const char* avra_capture_stdout(int64_t closure) {
+    fflush(stdout);
+    int saved = dup(STDOUT_FILENO);
+    if (saved < 0) return "";
+    FILE* tmp = tmpfile();
+    if (!tmp) {
+        close(saved);
+        return "";
+    }
+    if (dup2(fileno(tmp), STDOUT_FILENO) < 0) {
+        fclose(tmp);
+        close(saved);
+        return "";
+    }
+
+    avra_closure_call_0(closure);
+
+    fflush(stdout);
+    dup2(saved, STDOUT_FILENO);
+    close(saved);
+
+    if (fseek(tmp, 0, SEEK_END) != 0) { fclose(tmp); return ""; }
+    long len = ftell(tmp);
+    if (len < 0) { fclose(tmp); return ""; }
+    if (fseek(tmp, 0, SEEK_SET) != 0) { fclose(tmp); return ""; }
+
+    char* buf = (char*)malloc((size_t)len + 1);
+    if (!buf) { fclose(tmp); return ""; }
+    size_t n = fread(buf, 1, (size_t)len, tmp);
+    buf[n] = '\0';
+    fclose(tmp);
+    return buf;
+}
+
 // Stdout TTY check — gates the build progress bar so CI logs (which
 // pipe stdout) don't get polluted with \r-rewriting escape codes.
 // 1 if interactive, 0 if pipe/file. Mirrors POSIX isatty(STDOUT_FILENO).

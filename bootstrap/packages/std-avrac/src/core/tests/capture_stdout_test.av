@@ -1,0 +1,48 @@
+// vez6.4szi — in-process stdout capture primitive.
+// Replaces the avra_shell_exec("./build/bs2 ...") fixture pattern
+// that costs ~50ms-1s per call. Capture is a function call.
+
+extern fn avra_capture_stdout(closure: fn() -> void) -> string
+
+spec "vez6.4szi: avra_capture_stdout basics" {
+    then "captures a single println" {
+        let out = avra_capture_stdout(() -> println("hello"))
+        out.contains("hello")
+    }
+    then "captures multiple lines in order" {
+        let out = avra_capture_stdout(() -> {
+            println("first")
+            println("second")
+            println("third")
+        })
+        out.contains("first") && out.contains("second") && out.contains("third")
+    }
+    then "captures interpolated values" {
+        let n = 42
+        let out = avra_capture_stdout(() -> println("answer: ${n}"))
+        out.contains("answer: 42")
+    }
+    then "empty closure produces empty string" {
+        let out = avra_capture_stdout(() -> {})
+        out == ""
+    }
+    then "stdout outside the closure is NOT captured" {
+        // Sanity: stdout still works normally before/after the capture
+        let out = avra_capture_stdout(() -> println("inside"))
+        out.contains("inside") && !out.contains("BEFORE") && !out.contains("AFTER")
+    }
+    then "nested capture: inner closure's output goes to inner buffer" {
+        let outer = avra_capture_stdout(() -> {
+            println("outer-pre")
+            let inner = avra_capture_stdout(() -> println("inner"))
+            println("inner-was: ${inner}")
+            println("outer-post")
+        })
+        // Inner output should NOT leak into outer; outer should see
+        // its own prints + the inner-was line.
+        outer.contains("outer-pre")
+            && outer.contains("outer-post")
+            && outer.contains("inner")  // via the inner-was render
+            && !outer.contains("\ninner\n")  // inner shouldn't appear as its own line
+    }
+}
