@@ -185,39 +185,10 @@ fn expand_stmt_list(stmts: StmtList, reg: CompTimeRegistry, comp_macros: CompMac
 /// value as the replacement. Sister to `try_expand_one` but
 /// doesn't read the @expand annotation off the stmt — used for
 /// vez6.8.5's component-instance dispatch where the macro is
-/// inherited from the parent ComponentDef.
+/// inherited from the parent ComponentDef. Caller has already
+/// unwrapped any Annotated layers.
 fn try_expand_with_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int, col: int, file: string) -> SStmt? {
-    let lookup = comptime_lookup(reg, macro_name)
-    if lookup == null {
-        eprintln("error: component instance routes to @expand(${macro_name}) — no @comptime fn named `${macro_name}` in scope")
-        return null
-    }
-    let fn_def = lookup!
-    let arity = param_list_length(fn_def.params)
-    let arg_values = if arity == 1 {
-        let boxed = stmt_to_value(reg.runtime, stmt)
-        if boxed == null {
-            eprintln("error: @expand(${macro_name}) — could not box the wrapped Stmt as a Value")
-            return null
-        }
-        [boxed!]
-    } else if arity == 0 {
-        []
-    } else {
-        eprintln("error: @expand(${macro_name}) — macro has ${arity} parameters; @expand supports 0- or 1-arg macros only")
-        return null
-    }
-    let result = eval_fn_with_resolved_args(reg.runtime, fn_def.params, fn_def.body, arg_values)
-    if step_had_error(result) {
-        eprintln("error: @expand(${macro_name}) — macro evaluation failed: ${step_error_message(result)}")
-        return null
-    }
-    let decoded = value_to_stmt(step_value(result))
-    if decoded == null {
-        eprintln("error: @expand(${macro_name}) — macro returned a value the expander could not decode into a Stmt (kind=${step_value(result).kind})")
-        return null
-    }
-    sstmt_at(decoded!, line, col, file)
+    invoke_macro(stmt, macro_name, reg, line, col, file)
 }
 
 /// Look up the macro fn name from the `@expand` annotation's first
@@ -231,22 +202,31 @@ fn try_expand_one(stmt: Stmt, reg: CompTimeRegistry, line: int, col: int, file: 
         eprintln("error: @expand requires a macro fn identifier as its argument")
         return null
     }
+    invoke_macro(stmt_unwrap(stmt), macro_name, reg, line, col, file)
+}
+
+/// Shared driver: locate `macro_name` in the comptime registry,
+/// dispatch on arity (0 or 1), eval, and decode the return as a
+/// Stmt. Returns null on any failure. Logs context-rich diagnostics
+/// so users see which macro / which step failed.
+///
+/// vez6.8.4.A/C + vez6.8.5: 1-arg macros receive the wrapped Stmt
+/// boxed via stmt_to_value (which routes through construct_stmt +
+/// eval_expr — so any variant lower.av's construct_stmt encodes
+/// roundtrips correctly). Caller is responsible for any
+/// annotation peeling: try_expand_one strips @expand before
+/// invoking; try_expand_with_macro receives an already-unwrapped
+/// ComponentBlock.
+fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int, col: int, file: string) -> SStmt? {
     let lookup = comptime_lookup(reg, macro_name)
     if lookup == null {
         eprintln("error: @expand(${macro_name}) — no @comptime fn named `${macro_name}` in scope")
         return null
     }
     let fn_def = lookup!
-    // vez6.8.4.A/C: 1-arg macros receive the wrapped Stmt as a Value.
-    // The macro can pattern-match on the variant + payload to drive
-    // its rewrite. Stmt arrives unwrapped (annotations peeled) so the
-    // macro doesn't have to dig past @expand itself. Higher arities
-    // are an error today — the @expand annotation only carries the
-    // macro fn identifier, no extra args.
     let arity = param_list_length(fn_def.params)
     let arg_values = if arity == 1 {
-        let unwrapped = stmt_unwrap(stmt)
-        let boxed = stmt_to_value(reg.runtime, unwrapped)
+        let boxed = stmt_to_value(reg.runtime, stmt)
         if boxed == null {
             eprintln("error: @expand(${macro_name}) — could not box the wrapped Stmt as a Value (encoder may not yet support this Stmt variant)")
             return null
