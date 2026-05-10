@@ -7,6 +7,107 @@ Each stage gates the next. Don't skip ahead.
 
 ---
 
+## The destination — what the user actually writes
+
+This is the surface we're building toward. The whole stack of stages
+below exists so that the following code "just works." (See
+`docs/2026_05_08_COMPONENTS_V2_DESIGN.md §4` for the canonical
+articulation.)
+
+```avra
+cli avra {
+    description "Avra compiler"
+    version "0.1.0"
+
+    flag verbose { short "v", description "Verbose output" }
+
+    command build {
+        description "Build a project"
+        flag foobar { short "f", description "Do a thing" }
+        arg target { description "Target name", required true }
+
+        run() {
+            if foobar { println("foobar set") }
+            if verbose { println("verbose from parent") }
+            println("building ${target}")
+            0
+        }
+    }
+
+    command clean {
+        description "Clean artifacts"
+        run() {
+            println("cleaning")
+            0
+        }
+    }
+}
+
+avra.run()
+```
+
+**What's load-bearing about this shape:**
+
+1. **`run()` takes no args.** Declared flags/args become bare local
+   names inside the body — `if foobar { … }` instead of
+   `result_has_flag(args, "foobar")`. The macro author binds them
+   from parsed argv before the user's body runs.
+2. **Parent flags inherit into nested commands.** `verbose` was
+   declared on the cli; the build command's `run()` sees it
+   automatically.
+3. **Implicit name binding.** `command build { … }` sets
+   `name: "build"`; no `name = "build"` assignment needed.
+4. **Child auto-push.** `command build { … }` and `command clean { … }`
+   inside `cli avra { … }` push themselves into `avra.commands`.
+   No `add_command(...)` calls.
+5. **No template macros, no `__parent`, no `match command { ... }`.**
+   `avra.run()` is a regular method call going through the trait
+   vtable on `commands: List<dyn Runnable>`.
+
+### What it desugars to
+
+The macro `expand_command` (library-authored, lives in std-cli) lowers
+each `command <inst> { … }` block into a generated subtype + trait impl:
+
+```avra
+type Command_build = { /* description, flags, args, target value, … */ }
+impl Runnable for Command_build {
+    fn name(self) -> string { "build" }
+    fn run(self, args: CliResult) -> int {
+        let foobar = result_has_flag(args, "foobar")
+        let verbose = result_has_flag(args, "verbose")  // inherited
+        let target = result_get_arg(args, "target")
+        // ↓ user's body verbatim:
+        if foobar { println("foobar set") }
+        if verbose { println("verbose from parent") }
+        println("building ${target}")
+        0
+    }
+}
+```
+
+…and the cli block becomes a struct literal with auto-pushed children:
+
+```avra
+let avra = Cli {
+    name: "avra",
+    description: "Avra compiler",
+    version: "0.1.0",
+    global_flags: [Flag { name: "verbose", short: "v", description: "Verbose output" }],
+    commands: [
+        Command_build { … } as dyn Runnable,
+        Command_clean { … } as dyn Runnable,
+    ],
+}
+```
+
+**Three concepts run the whole show:** `@comptime`, `@expand`,
+`component`. Everything else (cli, command, flag, arg, the parent-flag
+inheritance, the auto-push, the bare-name binding) is library code
+that ANY user can write — std-cli is just the first user.
+
+---
+
 ## Stage 1 — Fix `wd48`: bundled-test resolver leak (P2 bug)
 
 **Bead:** `forge-crafting-intepreters-wd48`
