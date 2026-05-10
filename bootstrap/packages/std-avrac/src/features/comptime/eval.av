@@ -393,6 +393,20 @@ fn enum_value_to_stmt(v: Value) -> Stmt? {
             if body == null { return null }
             Stmt.Block(body!)
         }
+        "Impl" -> {
+            // `impl Type { fns }` or `impl Trait for Type { fns }`.
+            // Payload: (type_name: string, methods: StmtList). The
+            // method list recurses through enum_value_to_stmt_list,
+            // which itself recurses back here for each method body —
+            // so any Stmt variant we don't yet decode becomes the
+            // weak link, not Impl itself. Trait+Type is encoded as
+            // "Trait:Type" in the type_name slot.
+            if p.length != 2 { return null }
+            let type_name_v: Value = p[0]
+            let methods = enum_value_to_stmt_list(p[1])
+            if methods == null { return null }
+            Stmt.Impl(type_name_v.text, methods!)
+        }
         _ -> null
     }
 }

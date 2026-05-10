@@ -128,3 +128,45 @@ spec "vez6.6.5: Expr-typed comptime fn folds to runtime Expr value" {
         out.contains("(+ 1 2)")
     }
 }
+
+// vez6.8.4.B — value_to_stmt now decodes Stmt.Impl. A macro that
+// returns `quote stmt { impl Foo { ... } }` should land an actual
+// impl block in the post-expand AST. The body method bodies fall
+// back to NoOp until Function/TypeDecl/etc. are added to the
+// decoder (subsequent slices of vez6.8.4) — but the Impl wrapper
+// itself decodes through, which is what this slice asserts.
+fn run_expand_e2e(source: string) -> string {
+    let path = "/tmp/avra_expand_impl_test.av"
+    write_temp(path, source)
+    avra_shell_exec("./build/bs2 expand '${path}' 2>&1 || true")
+}
+
+spec "vez6.8.4.B: value_to_stmt decodes Stmt.Impl from macro output" {
+    then "macro emitting `impl Foo { ... }` produces impl wrapper in expanded output" {
+        let out = run_expand_e2e(
+            "use @std.avrac.core.{Stmt}\n" +
+            "\n" +
+            "type Foo = { x: int }\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn make_impl() -> Stmt {\n" +
+            "    return quote stmt {\n" +
+            "        impl Foo {\n" +
+            "            fn bar(self) -> int { return 42 }\n" +
+            "        }\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(make_impl)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            MAIN_HEADER + " {\n" +
+            "}\n")
+        // The expanded output must contain the fmt'd impl wrapper —
+        // proof that value_to_stmt decoded Stmt.Impl rather than
+        // returning null and leaving the @expand annotation in place.
+        out.contains("impl Foo")
+            && !out.contains("@expand(make_impl)")
+            && !out.contains("fn placeholder")
+    }
+}
