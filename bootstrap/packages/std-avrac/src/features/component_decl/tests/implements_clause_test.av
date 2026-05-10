@@ -111,4 +111,39 @@ spec "vez6.8: implements parser edges" {
 }")
         impl_count(impls) == 1 && first_impl_name(impls) == "Runnable"
     }
+    then "trailing comma after the last trait name is tolerated" {
+        let impls = first_component_implements("component Cmd implements Runnable, Describable, {
+}")
+        impl_count(impls) == 2
+    }
+    then "implements after legacy paren-form: component Cmd(p: int) implements Trait { ... }" {
+        let impls = first_component_implements("component Cmd implements Logged (x: int) {
+}")
+        // The implements clause sits BEFORE legacy parens — the parser
+        // accepts the (params) form afterwards. This pins the order
+        // so a future refactor can't silently swap precedence.
+        impl_count(impls) == 1 && first_impl_name(impls) == "Logged"
+    }
+    then "many traits in a row (4+) all register with correct order" {
+        let impls = first_component_implements("component Cmd implements A, B, C, D {
+}")
+        impl_count(impls) == 4 && first_impl_name(impls) == "A"
+    }
+    then "implements + config block + body fn coexist without confusion" {
+        let impls = first_component_implements("component Cmd implements Runnable {
+    config { name: string = \"\" }
+    fn helper() -> int { return 0 }
+}")
+        impl_count(impls) == 1 && first_impl_name(impls) == "Runnable"
+    }
+    then "single-letter trait name parses (no min-length confusion)" {
+        let impls = first_component_implements("component Cmd implements R {
+}")
+        impl_count(impls) == 1 && first_impl_name(impls) == "R"
+    }
+    then "implements then immediate `{` (no whitespace) parses" {
+        let impls = first_component_implements("component Cmd implements Runnable{
+}")
+        impl_count(impls) == 1 && first_impl_name(impls) == "Runnable"
+    }
 }

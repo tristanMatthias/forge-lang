@@ -106,6 +106,12 @@ impl Parser {
         let trait_name = self.consume_identifier("expected trait name after `implements`")?
         if self.check(Tk.Comma) {
             self.advance()
+            // Trailing comma: `implements A, B,` followed directly by
+            // `{` or `(` — treat as legitimate end-of-list rather than
+            // recursing and erroring on the missing identifier.
+            if self.check(Tk.LeftBrace) || self.check(Tk.LeftParen) {
+                return TypeNameList.Node(trait_name, TypeNameList.End)
+            }
             let rest = self.parse_implements_list()?
             return TypeNameList.Node(trait_name, rest)
         }
