@@ -67,25 +67,18 @@ export type BuildProfile = {
     coverage: bool,
 }
 
-/// Compile target: a binary entry (`[bin]`), library root (`[lib]`),
-/// or test program (`[test]`).
-///
-/// At least one of bin/lib must be present (or defaultable from
+/// Compile target: a binary entry (`[bin]`) or library root (`[lib]`).
+/// At least one of these must be present (or defaultable from
 /// `src/main.av` / `src/lib.av`) for a manifest to be buildable.
-/// `[test]` is optional — it's the convergent home for what
-/// `bs2 test` was doing manually.
 ///
-/// `sources_glob` is non-empty only for kind=="test" and resolves
-/// at build time via `find <project_root> -name <pattern>`. The
-/// build driver's test path globs once per build and threads the
-/// expanded list through the same fingerprint + cache machinery
-/// that [bin]/[lib] use. `path` stays empty for tests since the
-/// program is synthesized from the glob expansion.
+/// Tests are NOT a manifest target — they're discovered by
+/// convention (any `*_test.av` in the package tree). The build
+/// driver's test command synthesizes BuildInputs per package
+/// directly, no manifest declaration needed.
 export type BuildTarget = {
-    kind: string,            // "bin", "lib", or "test"
+    kind: string,            // "bin" or "lib"
     name: string,            // defaults to package name
-    path: string,            // resolved relative to project root (bin/lib only)
-    sources_glob: string,    // glob pattern (test only)
+    path: string,            // resolved relative to project root
     present: bool,           // false when this target is not declared
 }
 
@@ -118,14 +111,13 @@ export type Manifest = {
     description: string,
     bin: BuildTarget,
     lib: BuildTarget,
-    test: BuildTarget,
     profile_dev: BuildProfile,
     profile_release: BuildProfile,
     deps: List<Dep>,         // [dependencies] parsed in TOML order
 }
 
 fn default_target(kind: string) -> BuildTarget {
-    BuildTarget { kind: kind, name: "", path: "", sources_glob: "", present: false }
+    BuildTarget { kind: kind, name: "", path: "", present: false }
 }
 
 fn default_profile(name: string) -> BuildProfile {
@@ -161,7 +153,6 @@ fn default_manifest() -> Manifest {
         description: "",
         bin: default_target("bin"),
         lib: default_target("lib"),
-        test: default_target("test"),
         profile_dev: default_profile("dev"),
         profile_release: release_defaults(),
         deps: [],
@@ -174,18 +165,11 @@ fn read_target(content: string, kind: string, pkg_name: string) -> BuildTarget {
     }
     let raw_name = avra_toml_get_section_string(content, kind, "name")
     let raw_path = avra_toml_get_section_string(content, kind, "path")
-    // [test] targets glob the project tree at build time. `sources`
-    // is a single glob pattern (e.g. "**/*_test.av"); a list-of-globs
-    // shape can come later when the TOML reader supports arrays.
-    let raw_sources = if kind == "test" {
-        avra_toml_get_section_string(content, kind, "sources")
-    } else { "" }
     let resolved_name = if raw_name == "" { pkg_name } else { raw_name }
     BuildTarget {
         kind: kind,
         name: resolved_name,
         path: raw_path,
-        sources_glob: raw_sources,
         present: true,
     }
 }
@@ -350,7 +334,6 @@ export fn load_manifest(dir: string) -> Manifest {
         deps: read_dependencies(content),
         bin: read_target(content, "bin", pkg_name),
         lib: read_target(content, "lib", pkg_name),
-        test: read_target(content, "test", pkg_name),
         profile_dev: read_profile(content, "dev", default_profile("dev")),
         profile_release: read_profile(content, "release", release_defaults()),
     }

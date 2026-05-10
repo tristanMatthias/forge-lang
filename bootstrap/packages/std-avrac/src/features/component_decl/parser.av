@@ -7,7 +7,7 @@
 // in the parser's feature registry. Subsequent code can use `name instance { ... }`
 // without the `component` keyword — single-pass, no ambiguity.
 
-use core.{Stmt, Expr, ExprList, SExpr, sexpr_dummy, StmtList, SStmt, sstmt, CompConfigList, CompConfigPairList, ChildrenList, ParamList, FieldList, TypeParamList, ValueType, type_expr_to_vtype}
+use core.{Stmt, Expr, ExprList, SExpr, sexpr_dummy, StmtList, SStmt, sstmt, CompConfigList, CompConfigPairList, ChildrenList, ParamList, FieldList, TypeParamList, TypeNameList, ValueType, type_expr_to_vtype}
 use parse.{Parser}
 use core.{Tk}
 use core.{register_component_name}
@@ -38,9 +38,20 @@ impl Parser {
         self.advance()  // consume `component`
         let name = self.consume_identifier("expected component name")?
 
+        // Optional `implements TraitA, TraitB` clause (vez6.8) sits
+        // between the component name and the body. Both definition
+        // forms (`component name {` and `component name(params) {`)
+        // accept it. The block / nested form does not.
+        let implements = if self.check(Tk.Identifier) && self.current_lexeme == "implements" {
+            self.advance()
+            self.parse_implements_list()?
+        } else {
+            TypeNameList.End
+        }
+
         // Definition: `component name {` ...
         if self.check(Tk.LeftBrace) {
-            return self.parse_component_def(name)
+            return self.parse_component_def(name, implements)
         }
 
         // Legacy: `component name(params) {` — still supported for backward compat
@@ -59,11 +70,20 @@ impl Parser {
             let body = self.parse_comp_def_body()?
             if !self.consume(Tk.RightBrace, "expected `}` at end of component") { return null }
             register_component_name(self.features, name, (p: Parser) -> p.parse_component_block_bare())
-            return Stmt.ComponentDef(name, params, config, ChildrenList.End, body)
+            return Stmt.ComponentDef(name, params, config, ChildrenList.End, implements, body)
         }
 
-        // Legacy: `component comp instance {` — block with keyword prefix
+        // Legacy: `component comp instance {` — block with keyword prefix.
+        // Only legal when no implements clause was supplied (instances
+        // get their trait conformance from the parent ComponentDef).
         if self.check(Tk.Identifier) {
+            match implements {
+                .End -> {}
+                _ -> {
+                    self.set_error("`implements` not allowed on a component block — only on definitions")
+                    return null
+                }
+            }
             let instance = self.current_lexeme
             self.advance()
             if !self.consume(Tk.LeftBrace, "expected `{` after instance name") { return null }
@@ -77,10 +97,27 @@ impl Parser {
         null
     }
 
+    /// Parse `TraitA, TraitB, ...` until `{` or `(`. Comma-separated,
+    /// trailing comma tolerated. Each entry is a bare identifier — no
+    /// generics or qualified paths in this slice (vez6.8). Returns
+    /// TypeNameList.End for the empty case (caller already consumed
+    /// the `implements` keyword and expected at least one name).
+    fn parse_implements_list(self) -> TypeNameList? {
+        let trait_name = self.consume_identifier("expected trait name after `implements`")?
+        if self.check(Tk.Comma) {
+            self.advance()
+            let rest = self.parse_implements_list()?
+            return TypeNameList.Node(trait_name, rest)
+        }
+        TypeNameList.Node(trait_name, TypeNameList.End)
+    }
+
     // ── Component Definition ──
 
-    fn parse_component_def(self, name: string) -> Stmt? {
-        // `component name {` — no parens, self.name is implicit
+    fn parse_component_def(self, name: string, implements: TypeNameList) -> Stmt? {
+        // `component name {` — no parens, self.name is implicit.
+        // `implements` was consumed by the caller (parse_component_decl)
+        // so by the time we land here the next token is the opening `{`.
         if !self.consume(Tk.LeftBrace, "expected `{` after component name") {
             return null
         }
@@ -119,7 +156,7 @@ impl Parser {
         }
         // Register this component name for keyword-free instantiation
         register_component_name(self.features, name, (p: Parser) -> p.parse_component_block_bare())
-        Stmt.ComponentDef(name, ParamList.End, config, children, body)
+        Stmt.ComponentDef(name, ParamList.End, config, children, implements, body)
     }
 
     // ── Children Schema (definition) — vez6.7 ──

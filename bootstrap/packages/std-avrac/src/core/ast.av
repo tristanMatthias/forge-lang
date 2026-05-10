@@ -1046,7 +1046,7 @@ export enum Stmt {
     AssocType(name: string, ty_vt: ValueType)
     /// Component declaration: `component Name(params) { body }` —
     /// reusable templated block of statements.
-    ComponentDef(name: string, params: ParamList, config: CompConfigList, children: ChildrenList, body: StmtList)
+    ComponentDef(name: string, params: ParamList, config: CompConfigList, children: ChildrenList, implements: TypeNameList, body: StmtList)
     /// Component instantiation: `component Foo as bar { config; body }`.
     ComponentBlock(comp_name: string, instance: string, config: CompConfigPairList, body: StmtList)
 }
@@ -1617,7 +1617,7 @@ export fn render_stmt(stmt: Stmt) -> string {
         .Module(name, body) -> "(module ${name} ${render_stmt_list(body)})"
         .Use(path, names) -> "(use ${path} ${render_param_list(names)})"
         .AssocType(name, ty_vt) -> if vtype_is_unknown(ty_vt) { "(assoc-type ${name})" } else { "(assoc-type ${name} = ${vtype_render_full(ty_vt)})" }
-        .ComponentDef(name, params, _, _, body) -> "(component-def ${name} ${render_param_list(params)} ${render_stmt_list(body)})"
+        .ComponentDef(name, params, _, _, _, body) -> "(component-def ${name} ${render_param_list(params)} ${render_stmt_list(body)})"
         .ComponentBlock(comp, inst, _, body) -> "(component-block ${comp} ${inst} ${render_stmt_list(body)})"
     }
 }

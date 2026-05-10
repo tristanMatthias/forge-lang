@@ -149,7 +149,7 @@ export fn fmt_stmt(ss: Stmt, depth: int) -> string {
         .Module(name, body) -> "${ind}mod ${name}\n${fmt_stmt_list(body, depth)}"
         .Use(path, names) -> "${ind}use ${path}.{${fmt_param_list_comma(names)}}"
         .AssocType(name, ty_vt) -> if vtype_is_unknown(ty_vt) { "${ind}type ${name}" } else { "${ind}type ${name} = ${vtype_render_full(ty_vt)}" }
-        .ComponentDef(name, params, _, _, body) -> "${ind}component ${name}(${fmt_param_list_comma(params)}) {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
+        .ComponentDef(name, params, _, _, _, body) -> "${ind}component ${name}(${fmt_param_list_comma(params)}) {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
         .ComponentBlock(comp, inst, _, body) -> "${ind}${comp} ${inst} {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
     }
 }

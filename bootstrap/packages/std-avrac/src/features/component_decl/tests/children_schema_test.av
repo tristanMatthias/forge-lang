@@ -18,7 +18,7 @@ fn children_of_first_component(stmts: StmtList) -> ChildrenList {
         .Node(ss, next) -> {
             let inner = stmt_unwrap(ss.node)
             match inner {
-                .ComponentDef(_, _, _, ch, _) -> ch
+                .ComponentDef(_, _, _, ch, _, _) -> ch
                 _ -> children_of_first_component(next)
             }
         }

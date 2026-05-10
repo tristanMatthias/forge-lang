@@ -70,7 +70,6 @@ use @std.avrac.features.modules.{filter_to_target_unit, list_avra_module_subdirs
 use @std.avrac.build.{
     BuildInputs, BuildOutcome,
     decide_build, record_build_result,
-    TestBuildInputs, decide_test_build, record_test_build_result,
     Fingerprint, fp_short,
     LinkOptions, default_link_options, link_objects, link_objects_with_coverage,
     extract_unit_metadata, extract_per_file_metadata, collect_source_files,
@@ -1342,9 +1341,12 @@ fn run_build_command() {
         avra_selfhost_get_arg_cstr(0)
     }
 
+    let target_kind = if prefer_lib { "lib" } else { "bin" }
     let inputs = BuildInputs {
         project_root: project_dir,
         unit_name: unit_name,
+        kind: target_kind,
+        sources: [entry_path],
         entry_path: entry_path,
         compiler_path: compiler_path,
         target_triple: "host",
@@ -1505,7 +1507,7 @@ fn run_build_command() {
             let ll_content = read_file(ll_path)
             let metadata = ""
             let staging_id = "${unit_name}.${fp_short(fp)}"
-            let pr = record_build_result(inputs, fp, ll_content, ll_path, metadata, staging_id)
+            let pr = record_build_result(inputs, fp, ll_content, ll_path, metadata, "", staging_id)
             // 9ixv-companion: cache_publish takes metadata as a string,
             // which truncates at the first NUL — fine for empty payload
             // but not for the actual binary metadata.bin. After publish
@@ -1719,7 +1721,7 @@ fn select_test_paths(test_files_listing: string, args: TestArgs) -> List<string>
     survivors
 }
 
-fn compute_test_build_inputs(project_dir: string, accepted_paths: List<string>, args: TestArgs) -> TestBuildInputs {
+fn compute_test_build_inputs(project_dir: string, accepted_paths: List<string>, args: TestArgs) -> BuildInputs {
     let filtered_paths = accepted_paths
 
     // Every .av under packages/std-avrac/src/. Over-approximates the
@@ -1786,12 +1788,23 @@ fn compute_test_build_inputs(project_dir: string, accepted_paths: List<string>, 
     let cov_tag = if args.coverage { ":cov" } else { "" }
     let unit_name = "test:" + filter_tag + cov_tag
 
-    TestBuildInputs {
+    BuildInputs {
         project_root: project_dir,
         unit_name: unit_name,
+        kind: "test",
         sources: sources,
+        // For multi-source units (test) entry_path is informational
+        // only — the real input set lives in `sources`. We surface
+        // sources[0] (the first test file) so --explain has a name
+        // to cite when no specific axis matched.
+        entry_path: if sources.length > 0 { sources[0] } else { "" },
         compiler_path: compiler_path,
         target_triple: "host",
+        profile_name: "test",
+        opt_level: 0,
+        debug: true,
+        overflow_checks: true,
+        coverage: false,
     }
 }
 
@@ -1822,28 +1835,21 @@ fn run_test_command() {
         return
     }
 
-    // hkms.1: cache-check before the heavy pipeline.
-    //
-    // The test action's input set is hermetic: every file whose
-    // contents could affect the linked _test.bin participates in the
-    // fingerprint. If a previously-published binary exists for these
-    // inputs, exec it directly and skip parse → resolve → typeck →
-    // mono → codegen → link entirely.
+    // Cache-check via the unified build cache (same machinery [bin]
+    // and [lib] use). The test action's input set is hermetic: every
+    // file whose contents could affect the linked _test.bin
+    // participates in the fingerprint via BuildInputs.sources. On a
+    // hit we exec the cached binary and skip the entire pipeline.
     //
     // Coverage path is intentionally not cache-served at v1: it
     // produces additional artifacts (covmap.tsv) needed by
     // render_coverage that the binary alone doesn't carry. Caching
-    // coverage is tracked separately; the pre-commit hook runs
-    // non-coverage so the win (~86s → ~10s) lands without it.
+    // coverage is future work.
     let test_cache_inputs = compute_test_build_inputs(project_dir, accepted_paths, args)
     let mut publish_fp: Fingerprint? = null
     if !args.coverage {
-        match decide_test_build(test_cache_inputs) {
+        match decide_build(test_cache_inputs) {
             .Hit(fp, bin_path) -> {
-                // Hit: exec the cached binary directly. Same exit
-                // semantics as the Miss tail (avra_process_forward +
-                // avra_process_exit) so the caller cannot tell the
-                // two apart from outside.
                 eprintln("[test-cache] hit ${fp_short(fp)} — ${bin_path}")
                 let exit_code = avra_process_forward(bin_path, "[]", "")
                 avra_process_exit(exit_code)
@@ -2023,7 +2029,7 @@ fn run_test_command() {
         if publish_fp != null {
             let fp = publish_fp!
             let staging_id = "${test_cache_inputs.unit_name}.${fp_short(fp)}"
-            let pr = record_test_build_result(test_cache_inputs, fp, bin_path, staging_id)
+            let pr = record_build_result(test_cache_inputs, fp, "", "", "", bin_path, staging_id)
             if !pr.success {
                 eprintln("[test-cache] publish failed: ${pr.error}")
             } else {

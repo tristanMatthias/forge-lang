@@ -67,7 +67,7 @@ fn rewrite_stmt(stmt: Stmt, reg: CompTimeRegistry) -> Stmt {
         .Select(arms) -> .Select(rewrite_select_arms(arms, reg))
         .Parallel(body) -> .Parallel(rewrite_stmt_list(body, reg))
         .Module(name, body) -> .Module(name, rewrite_stmt_list(body, reg))
-        .ComponentDef(name, params, config, children, body) -> .ComponentDef(name, params, config, children, rewrite_stmt_list(body, reg))
+        .ComponentDef(name, params, config, children, implements, body) -> .ComponentDef(name, params, config, children, implements, rewrite_stmt_list(body, reg))
         .ComponentBlock(comp, inst, config, body) -> .ComponentBlock(comp, inst, config, rewrite_stmt_list(body, reg))
         // Leaves and decl-only statements pass through untouched.
         _ -> stmt

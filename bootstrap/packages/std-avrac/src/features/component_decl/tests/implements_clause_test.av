@@ -1,0 +1,114 @@
+// vez6.8 — `component foo implements TraitA, TraitB { ... }` parser test.
+// Confirms the parser threads the trait-name list through into the
+// ComponentDef AST so later passes (typeck, expand) can consume it.
+
+use @std.avrac.parse.{parse_program_source}
+use @std.avrac.core.{Stmt, StmtList, TypeNameList, stmt_unwrap}
+
+fn first_component_implements(source: string) -> TypeNameList {
+    let r = parse_program_source(source)
+    if r.had_error == 1 { return TypeNameList.End }
+    if r.stmts == null { return TypeNameList.End }
+    implements_of_first_component(r.stmts!)
+}
+
+fn implements_of_first_component(stmts: StmtList) -> TypeNameList {
+    match stmts {
+        .End -> TypeNameList.End
+        .Node(ss, next) -> {
+            let inner = stmt_unwrap(ss.node)
+            match inner {
+                .ComponentDef(_, _, _, _, impls, _) -> impls
+                _ -> implements_of_first_component(next)
+            }
+        }
+    }
+}
+
+fn impl_count(impls: TypeNameList) -> int {
+    match impls {
+        .End -> 0
+        .Node(_, next) -> 1 + impl_count(next)
+    }
+}
+
+fn first_impl_name(impls: TypeNameList) -> string {
+    match impls {
+        .End -> ""
+        .Node(name, _) -> name
+    }
+}
+
+fn second_impl_name(impls: TypeNameList) -> string {
+    match impls {
+        .End -> ""
+        .Node(_, next) -> {
+            match next {
+                .End -> ""
+                .Node(name, _) -> name
+            }
+        }
+    }
+}
+
+spec "vez6.8: implements clause parses trait names" {
+    then "single trait: `implements Runnable`" {
+        let impls = first_component_implements("component Command implements Runnable {
+}")
+        impl_count(impls) == 1 && first_impl_name(impls) == "Runnable"
+    }
+    then "two traits comma-separated" {
+        let impls = first_component_implements("component Command implements Runnable, Describable {
+}")
+        impl_count(impls) == 2
+            && first_impl_name(impls) == "Runnable"
+            && second_impl_name(impls) == "Describable"
+    }
+    then "three traits comma-separated" {
+        let impls = first_component_implements("component Command implements A, B, C {
+}")
+        impl_count(impls) == 3 && first_impl_name(impls) == "A"
+    }
+    then "no implements clause yields End" {
+        let impls = first_component_implements("component Command {
+}")
+        impl_count(impls) == 0
+    }
+    then "implements + config block both present" {
+        let impls = first_component_implements("component Command implements Runnable {
+    config { description: string = \"\" }
+}")
+        impl_count(impls) == 1 && first_impl_name(impls) == "Runnable"
+    }
+    then "implements + children block both present" {
+        let impls = first_component_implements("component Cli implements Runnable {
+    children { commands: List<Command> }
+}")
+        impl_count(impls) == 1 && first_impl_name(impls) == "Runnable"
+    }
+    then "implements + config + children all present" {
+        let impls = first_component_implements("component Cli implements Runnable, Describable {
+    config { name: string = \"\" }
+    children { commands: List<Command> }
+}")
+        impl_count(impls) == 2
+            && first_impl_name(impls) == "Runnable"
+            && second_impl_name(impls) == "Describable"
+    }
+}
+
+// ── Red-team edges (vez6.8.3) ──
+
+spec "vez6.8: implements parser edges" {
+    then "trailing whitespace before `{` after implements list" {
+        let impls = first_component_implements("component Cmd implements Runnable    {
+}")
+        impl_count(impls) == 1 && first_impl_name(impls) == "Runnable"
+    }
+    then "implements with body content (fn decls etc.) coexists" {
+        let impls = first_component_implements("component Cmd implements Runnable {
+    fn helper() -> int { return 0 }
+}")
+        impl_count(impls) == 1 && first_impl_name(impls) == "Runnable"
+    }
+}
