@@ -2670,6 +2670,72 @@ fn main() {
             eprintln("[pkg] ${pkg.name} v${pkg.version}")
         }
 
+        // grgg: file-level compile cache via the existing build-cache.
+        // Eligible only for the simple compile path (no flags or env
+        // vars that mutate the output shape OR demand side-effect
+        // emission). This is the load-bearing fix for the warm-test
+        // bottleneck — fixture compiles HIT regardless of bs2's
+        // mtime, because the cache keys on compiler binary CONTENT.
+        //
+        // Env-var gates: AVRA_TIMINGS / AVRA_TIMINGS_JSON expect
+        // stderr emission per invocation; AVRA_DEPS_OUT expects an
+        // append per producer .o; AVRA_USE_METADATA / AVRA_DIR_MODULE
+        // change resolve behaviour. Skip cache when any are set.
+        //
+        // Source-gate: skip cache when the source has `mod ` decls
+        // (sibling-file imports). The fp only hashes the entry file,
+        // not transitive sources, so a sibling change wouldn't
+        // invalidate the cache. Walking the import graph properly is
+        // future work; this gate keeps the cache correct in the
+        // common single-file case at the cost of zero benefit for
+        // multi-file fixtures (rare; most fixtures are single-file).
+        let cache_eligible = !emit_metadata
+            && !per_file_metadata
+            && list_files_path == ""
+            && module_path == ""
+            && target_module == ""
+            && output_override == ""
+            && stop_after == ""
+            && !debug_null
+            && !enable_coverage
+            && avra_process_env_get("AVRA_TIMINGS") == ""
+            && avra_process_env_get("AVRA_TIMINGS_JSON") == ""
+            && avra_process_env_get("AVRA_DEPS_OUT") == ""
+            && avra_process_env_get("AVRA_USE_METADATA") == ""
+            && avra_process_env_get("AVRA_DIR_MODULE") == ""
+            && !csource.contains("\nmod ")
+            && !csource.starts_with("mod ")
+        let dest_ll = "${cpath}.ll"
+        let bs2_path = avra_selfhost_get_arg_cstr(0)
+        let compile_inputs = BuildInputs {
+            project_root: pkg_dir,
+            unit_name: "compile:" + cpath,
+            kind: "bin",
+            sources: [cpath],
+            entry_path: cpath,
+            compiler_path: bs2_path,
+            target_triple: "host",
+            profile_name: "dev",
+            opt_level: 0,
+            debug: true,
+            overflow_checks: true,
+            coverage: false,
+        }
+        let mut compile_publish_fp: Fingerprint? = null
+        if cache_eligible {
+            match decide_build(compile_inputs) {
+                .Hit(fp, cached_ll_path) -> {
+                    let cached_ll = read_file(cached_ll_path)
+                    avra_selfhost_write_file(dest_ll, cached_ll)
+                    eprintln("[compile-cache] hit ${fp_short(fp)} → ${dest_ll}")
+                    return
+                }
+                .Miss(fp, _, _) -> {
+                    compile_publish_fp = fp
+                }
+            }
+        }
+
         // Per-stage wall-clock timings — emitted to stderr at the
         // end when AVRA_TIMINGS=1 is set in the environment. Cheap
         // enough to leave on always (eight i64 reads), and the
@@ -2786,6 +2852,21 @@ fn main() {
             }
         }
         let t_codegen = avra_uptime_ms()
+        // grgg: publish the freshly-compiled .ll into the per-project
+        // cache so the next invocation with byte-identical inputs can
+        // skip the entire pipeline. Best-effort — a publish failure
+        // doesn't affect this run; only the next one's speed.
+        if compile_publish_fp != null {
+            let fp = compile_publish_fp!
+            let ll_content = read_file(output)
+            let staging_id = "compile.${fp_short(fp)}"
+            let pr = record_build_result(compile_inputs, fp, ll_content, output, "", "", staging_id)
+            if pr.success {
+                eprintln("[compile-cache] published ${fp_short(fp)}")
+            } else {
+                eprintln("[compile-cache] publish failed: ${pr.error}")
+            }
+        }
         // xtvc: emit metadata.bin alongside the .ll when --emit_metadata
         // is set. Walks the post-resolve StmtList so qualified names
         // are canonical; fingerprint is sha256 of the source (same key
