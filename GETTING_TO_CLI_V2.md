@@ -273,7 +273,29 @@ Phase A+B (parser + AST schema for `implements TraitA, TraitB`) shipped
 in `30b3c0c0`. The phase-8 bead also has follow-up children
 (`vez6.8.4` argful @expand, `vez6.8.5` instance routing) — both closed.
 
-**Still open:**
+**Three new blockers surfaced while testing end-to-end (commit `aa8a80af`):**
+
+- **`ty5v` (P1)** — Tree-walk evaluator doesn't support `match`.
+  The canonical macro pattern is `match s { .ComponentBlock(_, inst, _, _) -> ... }`
+  — extracting the instance name from the wrapped Stmt. Without
+  match-in-eval, every macro is forced into ugly chains. Effort:
+  1-2 days; eval already has destructuring primitives for
+  Value.enum_variant + payload, this just wires them into a
+  pattern-arm dispatcher.
+
+- **`swgx` (P2)** — Splice `~name` not supported in identifier
+  position. `quote stmt { type ~type_name = {...} }` fails to parse.
+  Without it, macros can't generate per-instance type names via
+  the natural `quote` syntax. Workaround: build AST directly via
+  `Stmt.TypeDecl(...)` calls (verbose). Effort: half a day —
+  parser + lower changes.
+
+- **`dkfa` (P2)** — Resolver/typeck silently accepts duplicate type
+  decls. Two `type Foo = {...}` in the same scope compile without
+  error. The trait-conformance verification this ticket needs uses
+  the same machinery. Effort: 1-2 hours.
+
+**Still open beyond those:**
 - Trait method resolution at typeck — verify every required trait
   method has a body (user-supplied or default) on the per-instance type
 - `dyn Trait` list field handling — children get boxed correctly
@@ -283,6 +305,15 @@ in `30b3c0c0`. The phase-8 bead also has follow-up children
 **Acceptance per the bead:** `command build { run() { /* body */ } }`
 produces `type Command_build` + `impl Runnable for Command_build { fn run(...) { /* body */ } }`,
 and `cli avra { ... }.run()` dispatches via trait vtable.
+
+**Recommended order to fix:**
+1. `ty5v` first (P1, biggest unblocker — once eval can match, the
+   macro pattern is unblocked)
+2. `swgx` next (lets macros emit clean per-instance code)
+3. `dkfa` (correctness backstop — should NEVER silently accept duplicates)
+4. Then trait method resolution + dyn Trait list handling
+5. Then the end-to-end cli case
+6. Then vez6.8.3 cleanup C
 
 ### 3c. `vez6.9` `body: TokenStream` (P2 — optional for cli rewrite)
 
