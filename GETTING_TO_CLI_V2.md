@@ -273,33 +273,35 @@ Phase A+B (parser + AST schema for `implements TraitA, TraitB`) shipped
 in `30b3c0c0`. The phase-8 bead also has follow-up children
 (`vez6.8.4` argful @expand, `vez6.8.5` instance routing) — both closed.
 
-**Three new blockers surfaced while testing end-to-end (commit `aa8a80af`):**
+**Three blockers from prior session — all CLOSED 2026-05-10:**
 
-- **`ty5v` (P1)** — Tree-walk evaluator doesn't support `match`.
-  The canonical macro pattern is `match s { .ComponentBlock(_, inst, _, _) -> ... }`
-  — extracting the instance name from the wrapped Stmt. Without
-  match-in-eval, every macro is forced into ugly chains. Effort:
-  1-2 days; eval already has destructuring primitives for
-  Value.enum_variant + payload, this just wires them into a
-  pattern-arm dispatcher.
+- ✅ **`ty5v`** (commit `dfb5f1cd`) — Tree-walk evaluator now supports
+  `match`. 13 spec tests cover int / string literal patterns, variant
+  payload binding, or-patterns, nested variants, wildcard, and Block
+  bodies with `return`.
 
-- **`swgx` (P2)** — Splice `~name` not supported in identifier
-  position. `quote stmt { type ~type_name = {...} }` fails to parse.
-  Without it, macros can't generate per-instance type names via
-  the natural `quote` syntax. Workaround: build AST directly via
-  `Stmt.TypeDecl(...)` calls (verbose). Effort: half a day —
-  parser + lower changes.
+- ✅ **`swgx`** (commit `bbccf605`) — `~ident` accepted in `type` name
+  slot inside `quote stmt { ... }`. Parser tags the resulting TypeDecl
+  name with a `~` prefix; lower emits `Expr.Ident(rest)` instead of
+  a string literal so the runtime splice resolves the local at
+  expansion time.
 
-- **`dkfa` (P2)** — Resolver/typeck silently accepts duplicate type
-  decls. Two `type Foo = {...}` in the same scope compile without
-  error. The trait-conformance verification this ticket needs uses
-  the same machinery. Effort: 1-2 hours.
+- ✅ **`dkfa`** (commit `ac175900`) — F3105 duplicate-decl diagnostic
+  for top-level types. Scoped to bare-name TypeDecl / NewtypeDecl /
+  ShapeDecl / EnumDecl; qualified names (`pkg::mod::Foo`) bypass
+  (bundling can legitimately re-register the same qualified name).
+  `Result` intrinsic is silently de-duped vs stdlib's.
 
-**Still open beyond those:**
+**Still open before vez6.8 closes:**
 - Trait method resolution at typeck — verify every required trait
-  method has a body (user-supplied or default) on the per-instance type
-- `dyn Trait` list field handling — children get boxed correctly
-- End-to-end: the cli case from design doc §4 must compile + run
+  method has a body. Bead filed.
+- `dyn Trait` list field handling — children get boxed correctly.
+  Bead filed.
+- End-to-end cli case — **partly works** with let-binding workaround:
+  `@expand(expand_cmd) component command {}` + `command build {}`
+  produces `type Command_build = {...}` end-to-end. Inline
+  `match s { .Variant -> return quote stmt {...} }` silently fails
+  (bead `b85m` filed). Field types lower to `<unknown>` (bead filed).
 - `vez6.8.3` cleanup C (red-team + edge-case pass) — last cleanup ticket
 
 **Acceptance per the bead:** `command build { run() { /* body */ } }`
