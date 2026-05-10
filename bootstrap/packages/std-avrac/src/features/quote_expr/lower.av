@@ -14,7 +14,7 @@
 // that desugar.av and comptime/rewrite.av use; once the generic-AST-
 // visitor ticket lands (93k3) all three should share a single visitor.
 
-use core.{Stmt, StmtList, SStmt, sstmt_at, sstmt_dummy, Expr, ExprList, SExpr, sexpr, sexpr_dummy, FieldInitList, MatchArmList, WhenArmList, SelectArmList, BinOp, UnOp, LogicOp, ParamList, TypeParamList, binop_str, unop_str, logicop_str}
+use core.{Stmt, StmtList, SStmt, sstmt_at, sstmt_dummy, Expr, ExprList, SExpr, sexpr, sexpr_dummy, FieldList, FieldInitList, MatchArmList, WhenArmList, SelectArmList, BinOp, UnOp, LogicOp, ParamList, TypeParamList, CompConfigPairList, binop_str, unop_str, logicop_str}
 
 // ── Public entry ──
 
@@ -457,6 +457,34 @@ fn construct_type_param_list(tp: TypeParamList) -> Expr {
     }
 }
 
+/// Build an Expr that, when evaluated, produces a FieldList AST
+/// value. Each Node carries (name, resolved_vtype, next). Quote
+/// captures pre-resolve so the resolved-type slot is encoded as
+/// Unknown — sister convention to construct_param_list.
+fn construct_field_list(fields: FieldList) -> Expr {
+    match fields {
+        .End -> list_end("FieldList")
+        .Node(name, _, next) -> list_node("FieldList",
+            three_args(string_lit_expr(name),
+                       construct_value_type_unknown(),
+                       construct_field_list(next)))
+    }
+}
+
+/// Build an Expr that, when evaluated, produces a CompConfigPairList
+/// AST value. Each Node is (key: string, value: Expr, next) — the
+/// value is an Expr (not SExpr), so the encoder emits the constructor
+/// shape directly via construct_expr.
+fn construct_comp_config_pair_list(list: CompConfigPairList) -> Expr {
+    match list {
+        .End -> list_end("CompConfigPairList")
+        .Node(key, value, next) -> list_node("CompConfigPairList",
+            three_args(string_lit_expr(key),
+                       construct_expr(value),
+                       construct_comp_config_pair_list(next)))
+    }
+}
+
 /// Emit `ValueType.Unknown` — quote captures pre-resolve, so all types
 /// are Unknown until the lowered AST is type-checked. Avoids the
 /// complexity of constructing every ValueType variant.
@@ -604,6 +632,15 @@ fn construct_stmt(stmt: Stmt) -> Expr {
                       construct_type_param_list(tp),
                       construct_param_list(params),
                       construct_value_type_unknown(),
+                      construct_stmt_list(body)))
+        .TypeDecl(name, tp, fields) -> stmt_ctor("TypeDecl",
+            three_args(string_lit_expr(name),
+                       construct_type_param_list(tp),
+                       construct_field_list(fields)))
+        .ComponentBlock(comp_name, instance, config, body) -> stmt_ctor("ComponentBlock",
+            four_args(string_lit_expr(comp_name),
+                      string_lit_expr(instance),
+                      construct_comp_config_pair_list(config),
                       construct_stmt_list(body)))
         _ -> stmt_passthrough(stmt)
     }
