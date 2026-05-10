@@ -10,6 +10,13 @@ description = "Self-hosting Avra bootstrap compiler"
 name = "bs2"
 path = "packages/cli/src/main.av"
 
+[test]
+# Convergent test runner (hkms): tests build through the same
+# pipeline as [bin]. The reporter and synthetic main() are
+# auto-included by the build driver when target.kind == "test".
+name    = "bootstrap_tests"
+sources = "**/*_test.av"
+
 [dependencies]
 "@std/avrac"  = { path = "packages/std-avrac" }
 "@std/cli"    = { path = "packages/std-cli" }

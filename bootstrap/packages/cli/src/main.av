@@ -1693,17 +1693,34 @@ fn run_cache_command() {
 // Sorting matters: the fingerprint hashes paths in iteration order.
 // We pipe through `sort` at find time so the order is canonical and
 // stable across machines.
-fn compute_test_build_inputs(project_dir: string, test_files_listing: string, args: TestArgs) -> TestBuildInputs {
-    // Filtered test paths — only files whose basename matches the
-    // --filter (if any). Mirrors the per-file filter applied during
-    // the parse loop so the cache key matches what gets compiled.
-    mut filtered_paths = []
+// Decide which discovered *_test.av paths actually contribute to
+// the test program. Applies, in this order:
+//   1. --filter substring match against the file's basename
+//   2. Content predicates: file must contain "spec " and must NOT
+//      contain "fn main()" (a file with main() is treated as a
+//      standalone program — running it would override the test
+//      reporter's `main()`)
+//
+// This is the SINGLE SOURCE OF TRUTH for the test set — both the
+// cache fingerprint and the parse loop must iterate the same list,
+// otherwise we drift (cache-key files differ from compile-body
+// files → false hits). Returns paths in the listing's stable order.
+fn select_test_paths(test_files_listing: string, args: TestArgs) -> List<string> {
+    mut survivors = []
     for path in test_files_listing.split("\n") {
         if path == "" { continue }
         let mod_name = basename_no_ext(path)
         if args.filter != "" && !mod_name.contains(args.filter) { continue }
-        filtered_paths = filtered_paths.push(path)
+        let content = read_file(path)
+        if !content.contains("spec ") { continue }
+        if content.contains("fn main()") { continue }
+        survivors = survivors.push(path)
     }
+    survivors
+}
+
+fn compute_test_build_inputs(project_dir: string, accepted_paths: List<string>, args: TestArgs) -> TestBuildInputs {
+    let filtered_paths = accepted_paths
 
     // Every .av under packages/std-avrac/src/. Over-approximates the
     // transitively-imported package universe but is sound (any
@@ -1763,7 +1780,8 @@ fn compute_test_build_inputs(project_dir: string, test_files_listing: string, ar
     // unit_name composes the action's cache-key axes that are not
     // file contents: the filter narrows the source set; coverage
     // changes the linker flags + emits instrumentation. Both must
-    // produce distinct cache entries.
+    // produce distinct cache entries — Cargo's pattern of separate
+    // unit per (target, profile).
     let filter_tag = if args.filter == "" { "all" } else { "filter=" + args.filter }
     let cov_tag = if args.coverage { ":cov" } else { "" }
     let unit_name = "test:" + filter_tag + cov_tag
@@ -1793,6 +1811,17 @@ fn run_test_command() {
         return
     }
 
+    // Single-source-of-truth filter: applies --filter and content
+    // predicates ("spec " present, "fn main()" absent). The cache
+    // fingerprint and the parse loop must both iterate the SAME
+    // list — otherwise we drift (cache says X, compile body
+    // produces Y) and risk false hits.
+    let accepted_paths = select_test_paths(test_files, args)
+    if accepted_paths.length == 0 {
+        println("No spec test files found.")
+        return
+    }
+
     // hkms.1: cache-check before the heavy pipeline.
     //
     // The test action's input set is hermetic: every file whose
@@ -1806,7 +1835,7 @@ fn run_test_command() {
     // render_coverage that the binary alone doesn't carry. Caching
     // coverage is tracked separately; the pre-commit hook runs
     // non-coverage so the win (~86s → ~10s) lands without it.
-    let test_cache_inputs = compute_test_build_inputs(project_dir, test_files, args)
+    let test_cache_inputs = compute_test_build_inputs(project_dir, accepted_paths, args)
     let mut publish_fp: Fingerprint? = null
     if !args.coverage {
         match decide_test_build(test_cache_inputs) {
@@ -1841,15 +1870,16 @@ fn run_test_command() {
     mut packages = StmtList.End
     mut shared_loaded = LoadedPaths.End
     mut count = 0
-    for path in test_files.split("\n") {
-        if path == "" { continue }
+    // Iterate the canonical accepted_paths list so the parse body
+    // exactly matches what the cache fingerprint covered. Any drift
+    // here would cause the cached binary to disagree with the just-
+    // computed fingerprint — false-hit territory.
+    mut path_i = 0
+    while path_i < accepted_paths.length {
+        let path = accepted_paths[path_i]
+        path_i = path_i + 1
         let content = read_file(path)
-        if !content.contains("spec ") { continue }
-        if content.contains("fn main()") { continue }
-
         let mod_name = basename_no_ext(path)
-        if args.filter != "" && !mod_name.contains(args.filter) { continue }
-
         // Stamp every parsed AST node with `path` so post-bundle
         // diagnostics cite the originating *_test.av — without
         // this the renderer renders the bundle placeholder
@@ -2527,6 +2557,35 @@ fn main() {
                 fail(parsed.error_message)
             }
             println(fmt_stmt_list(parsed.stmts!, 0))
+            return
+        }
+        "expand" -> {
+            // vez6.14: print the post-macro-expansion source so users
+            // can SEE what their `@expand`-decorated declarations and
+            // `@comptime` calls produced. Pipeline runs parse →
+            // lower_quotes → desugar → resolve_module_files →
+            // expand_components → resolve_names → expand_macros →
+            // run_comptime, then formats with fmt_stmt_list.
+            //
+            // The output is valid Avra source that compiles to the
+            // same program as the original — the P7 (visible magic)
+            // promise made tangible.
+            let parsed = parse_program_source(source)
+            if parsed.had_error || parsed.stmts == null {
+                if bag_has_errors(parsed.bag) { render_bag(source, path, parsed.bag) }
+                fail(parsed.error_message)
+            }
+            let post_quote = lower_quotes(parsed.stmts!)
+            let desugared = desugar_program(post_quote)
+            let entry_dir = modules_dirname(path)
+            let mod_resolved = resolve_module_files(desugared, entry_dir, LoadedPaths.End)
+            if mod_resolved.had_error { fail(mod_resolved.error_message) }
+            let expanded = expand_components(mod_resolved.stmts)
+            let named = resolve_names(expanded)
+            if named.had_error { fail(named.error_message) }
+            let expanded_macros = expand_macros(named.stmts)
+            let post_comptime = run_comptime(expanded_macros)
+            println(fmt_stmt_list(post_comptime, 0))
             return
         }
         "test" -> {
