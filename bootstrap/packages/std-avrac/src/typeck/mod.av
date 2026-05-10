@@ -713,32 +713,93 @@ fn tc_resolve_type_operator(fields: FieldList, reg: StructTypeReg) -> FieldList 
 /// (struct, enum, trait, impl, fn signature, ...) before the main
 /// check walks the bodies. Lets bodies forward-reference any
 /// declaration regardless of source order.
+/// dkfa: a registry hit alone isn't enough to flag a duplicate.
+/// Two cases legitimately re-register the same name today:
+///   1. Bundling re-registers a qualified name (e.g.
+///      `gen_test::gen::GenStubResult`) when the same source file
+///      is loaded under different module paths. The `::` check
+///      filters these out.
+///   2. The synthesized `Result` intrinsic coexists with
+///      `@std.avrac.features.error_propagation::Result` whenever
+///      a program transitively imports the stdlib. `Result` and
+///      a handful of other always-on intrinsics live in this
+///      regime — silently dedupe them.
+/// Restrict the duplicate-decl diagnostic to bare, non-intrinsic
+/// names — the canonical vez6.8 case (`Command_build` etc.) lives
+/// here, while the global-registry-vs-module-scoping conflict is
+/// tracked as a separate follow-up.
+fn is_duplicate_decl(idx: ptr, name: string) -> bool {
+    if avra_map_has_cstr(idx, name) == 0 { return false }
+    if string_contains_qualifier(name) { return false }
+    if is_intrinsic_name(name) { return false }
+    true
+}
+
+/// True iff `name` contains `::` — Avra's module-qualifier
+/// separator. Used as the gate for dkfa's diagnostic.
+fn string_contains_qualifier(name: string) -> bool {
+    mut i = 0
+    while i + 1 < name.length {
+        if name.substring(i, i + 2) == "::" { return true }
+        i = i + 1
+    }
+    false
+}
+
+/// True iff `name` is a known compiler-injected intrinsic that
+/// may legitimately appear both as a synthesized declaration AND
+/// as a stdlib import. dkfa silently dedupes these instead of
+/// erroring — the real fix is to skip the intrinsic injection
+/// when the stdlib will provide the same name, tracked as a
+/// follow-up to the bundling cleanup.
+fn is_intrinsic_name(name: string) -> bool {
+    name == "Result"
+}
+
 fn collect_decls(tc: TC, stmts: StmtList) -> TC {
     match stmts {
         .End -> tc
         .Node(ss, next) -> {
             let updated = match stmt_unwrap(ss.node) {
                 .TypeDecl(name, _, fields) -> {
-                    let resolved = tc_resolve_type_operator(fields, tc.structs)
-                    tc with { structs: struct_type_reg_register(tc.structs, name, resolved) }
+                    if is_duplicate_decl(tc.structs.idx, name) {
+                        tc_report_at(tc, DiagCode.DuplicateDecl, "duplicate type declaration `${name}`", ss.line, ss.col, name.length)
+                    } else {
+                        let resolved = tc_resolve_type_operator(fields, tc.structs)
+                        tc with { structs: struct_type_reg_register(tc.structs, name, resolved) }
+                    }
                 }
                 .NewtypeDecl(name, inner_vt) -> {
-                    let inner_ty = resolve_vtype(tc, inner_vt)
-                    let ctor_params = ParamList.Node("value", inner_ty, ParamList.End)
-                    tc with {
-                        newtypes: newtype_reg_register(tc.newtypes, name, inner_vt),
-                        fns: fn_type_reg_register(tc.fns, name, ctor_params, ValueType.Newtype(name, inner_ty, 0)),
+                    if is_duplicate_decl(tc.structs.idx, name) {
+                        tc_report_at(tc, DiagCode.DuplicateDecl, "duplicate type declaration `${name}`", ss.line, ss.col, name.length)
+                    } else {
+                        let inner_ty = resolve_vtype(tc, inner_vt)
+                        let ctor_params = ParamList.Node("value", inner_ty, ParamList.End)
+                        tc with {
+                            newtypes: newtype_reg_register(tc.newtypes, name, inner_vt),
+                            fns: fn_type_reg_register(tc.fns, name, ctor_params, ValueType.Newtype(name, inner_ty, 0)),
+                        }
                     }
                 }
                 .UnionAliasDecl(name, type_vt) -> {
                     tc with { union_aliases: union_alias_reg_register(tc.union_aliases, name, type_vt) }
                 }
-                .ShapeDecl(name, fields) -> tc with {
-                    structs: struct_type_reg_register(tc.structs, name, fields),
-                    shapes: ShapeSet.Node(name, tc.shapes),
+                .ShapeDecl(name, fields) -> {
+                    if is_duplicate_decl(tc.structs.idx, name) {
+                        tc_report_at(tc, DiagCode.DuplicateDecl, "duplicate type declaration `${name}`", ss.line, ss.col, name.length)
+                    } else {
+                        tc with {
+                            structs: struct_type_reg_register(tc.structs, name, fields),
+                            shapes: ShapeSet.Node(name, tc.shapes),
+                        }
+                    }
                 }
-                .EnumDecl(name, _, variants) -> tc with {
-                    enums: enum_type_reg_register(tc.enums, name, variants)
+                .EnumDecl(name, _, variants) -> {
+                    if is_duplicate_decl(tc.enums.idx, name) {
+                        tc_report_at(tc, DiagCode.DuplicateDecl, "duplicate enum declaration `${name}`", ss.line, ss.col, name.length)
+                    } else {
+                        tc with { enums: enum_type_reg_register(tc.enums, name, variants) }
+                    }
                 }
                 .Function(name, _, params, ret_vt, _) -> {
                     let final_ret = if vtype_eq(ret_vt, .Void) { ValueType.Void } else { resolve_vtype(tc, ret_vt) }

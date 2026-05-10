@@ -180,6 +180,15 @@ export enum DiagCode {
     /// declared in the current module's scope. Required by the
     /// orphan rule for trait-impl coherence.
     OrphanImpl
+    /// F3105 — duplicate top-level type / shape / enum / newtype
+    /// declaration. Two `type Foo = { ... }` (or `shape`/`enum`/
+    /// `newtype`) with the same name in the same module silently
+    /// overwrote each other previously. dkfa: enforce that the
+    /// second one is a hard error so per-instance type generation
+    /// (vez6.8 macros) catches accidental name collisions instead
+    /// of producing differently-laid-out structs that share a
+    /// name.
+    DuplicateDecl
     // ── Warnings (F9000-9998) ───────────────────────────────────────
     // ── Spec-test failures (F0900-0999) ─────────────────────────────
     /// F0900 — a spec/given/then assertion evaluated to false at run
@@ -260,6 +269,7 @@ export fn error_def(d: DiagCode) -> ErrorDef {
         .ImportPrivate       -> ErrorDef { code: "F3102", help: "add `export` before the declaration to make it importable" }
         .CircularImport      -> ErrorDef { code: "F3103", help: "break the cycle by moving shared types to a common module" }
         .OrphanImpl          -> ErrorDef { code: "F3104", help: "move the `impl` to the module that defines either the trait or the type" }
+        .DuplicateDecl       -> ErrorDef { code: "F3105", help: "rename one of the duplicates, or remove the redundant declaration" }
         .SpecTestFailed      -> ErrorDef { code: "F0900", help: "the assertion expression evaluated to false — fix the implementation or update the expectation" }
         .NonExhaustiveMatch  -> ErrorDef { code: "F9001", help: "add missing match arms or use a wildcard `_` pattern" }
         .UnusedImport        -> ErrorDef { code: "F9002", help: "remove unused imports to keep code clean" }
