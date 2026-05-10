@@ -416,13 +416,13 @@ fn value_bool(flag: int) -> Value {
 /// Open a new lexical scope by bumping the runtime's depth
 /// counter. New bindings created until `exit_scope` carry this
 /// depth so the cleanup pass knows what to drop.
-fn enter_scope(runtime: Runtime) -> Runtime {
+export fn enter_scope(runtime: Runtime) -> Runtime {
     runtime with { depth: runtime.depth + 1 }
 }
 
 /// Close the current scope: drop every binding created at the
 /// active depth and decrement the depth counter.
-fn exit_scope(runtime: Runtime) -> Runtime {
+export fn exit_scope(runtime: Runtime) -> Runtime {
     runtime with { bindings: pop_scope_bindings(runtime.bindings, runtime.depth), depth: runtime.depth - 1 }
 }
 
@@ -442,7 +442,7 @@ fn pop_scope_bindings(bindings: List<Binding>, depth: int) -> List<Binding> {
 /// Push a new local binding onto the runtime. `mutable_binding`
 /// is 1 for `mut`, 0 for `let`/`const`. The depth is recorded so
 /// `pop_scope_bindings` can drop it later.
-fn define_binding(runtime: Runtime, name: string, mutable_binding: int, value: Value) -> Runtime {
+export fn define_binding(runtime: Runtime, name: string, mutable_binding: int, value: Value) -> Runtime {
     mut new_bindings = runtime.bindings
     new_bindings.push(Binding {
         name: name,

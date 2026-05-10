@@ -4,7 +4,9 @@
 // self-imports.
 use codegen.{err_emit, err_stmt, StmtResult}
 use codegen.{err_sr}
-use features.eval.{error_result}
+use features.eval.{error_result, ok_result, eval_expr, execute_stmt, Runtime, StepResult, Value, define_binding, enter_scope, exit_scope, value_null, is_truthy}
+use features.eval.{step_runtime, step_value, step_had_error, step_is_return, step_error_message}
+use core.{Pattern, PatternList, MatchArmList, ParamList, SExpr, Expr, Stmt}
 use core.{feature_new, Feature}
 use resolve.{resolve_expr}
 use typeck.{check_expr, tc_er}
@@ -66,23 +68,224 @@ fn match_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     }
 }
 
-/// Tree-walk evaluator hook for `Match`. Currently unsupported
-/// — match's pattern semantics are codegen-only.
+/// Tree-walk evaluator hook for `Match`. ty5v: Implements pattern
+/// matching for the @comptime tree-walk evaluator. Evaluates the
+/// subject, walks each arm trying patterns, runs the first matching
+/// arm's body in an extended scope.
 fn match_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
     match stmt {
-        .Match(_, _) -> error_result(rt, "match statements are not supported by the tree-walk evaluator")
+        .Match(subject, arms) -> {
+            let subject_result = eval_expr(rt, subject)
+            if step_had_error(subject_result) { return subject_result }
+            eval_match_arms(step_runtime(subject_result), step_value(subject_result), arms)
+        }
         _ -> error_result(rt, "expected Match")
     }
 }
 
-/// Tree-walk evaluator hook for `MatchExpr`. Mirror of
-/// `match_eval_stmt`.
+/// Tree-walk evaluator hook for `MatchExpr`. Same logic as
+/// `match_eval_stmt` — both produce a value via the body of the
+/// first matching arm.
 fn match_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
     match expr {
-        .MatchExpr(_, _) -> error_result(rt, "match expressions are not supported by the tree-walk evaluator")
+        .MatchExpr(subject, arms) -> {
+            let subject_result = eval_expr(rt, subject)
+            if step_had_error(subject_result) { return subject_result }
+            eval_match_arms(step_runtime(subject_result), step_value(subject_result), arms)
+        }
         _ -> error_result(rt, "expected MatchExpr")
     }
 }
+
+/// Result of attempting to match a pattern against a value:
+/// `matched` flags success, `runtime` carries any pattern-bound
+/// values that should be visible inside the arm body.
+type MatchAttempt = {
+    matched: int,
+    runtime: Runtime,
+}
+
+/// Walk the arm list, attempting each pattern in turn. On the
+/// first match, evaluates the arm body in the extended scope.
+/// Errors when no arm matches — match must be exhaustive (codegen
+/// emits a trap; eval surfaces a real error).
+fn eval_match_arms(rt: Runtime, subject: Value, arms: MatchArmList) -> StepResult {
+    match arms {
+        .End -> error_result(rt, "no match arm matched")
+        .Node(pattern, guard, body, next) -> {
+            let scoped = enter_scope(rt)
+            let attempt = try_match_pattern(scoped, pattern, subject)
+            if attempt.matched {
+                if guard != null {
+                    let guard_result = eval_expr(attempt.runtime, guard!.node)
+                    if step_had_error(guard_result) {
+                        let _exited = exit_scope(step_runtime(guard_result))
+                        return guard_result
+                    }
+                    if !is_truthy(step_value(guard_result)) {
+                        let exited = exit_scope(step_runtime(guard_result))
+                        return eval_match_arms(exited, subject, next)
+                    }
+                    let body_result = eval_match_body(step_runtime(guard_result), body)
+                    return finalize_arm_result(body_result)
+                }
+                let body_result = eval_match_body(attempt.runtime, body)
+                return finalize_arm_result(body_result)
+            }
+            let exited = exit_scope(attempt.runtime)
+            eval_match_arms(exited, subject, next)
+        }
+    }
+}
+
+/// Pop the arm's scope before returning. Preserves error / return
+/// flags so a `return` inside the arm body keeps propagating up
+/// through the enclosing fn body.
+fn finalize_arm_result(body_result: StepResult) -> StepResult {
+    let exited = exit_scope(step_runtime(body_result))
+    if step_had_error(body_result) {
+        return StepResult {
+            runtime: exited,
+            value: value_null(),
+            had_error: true,
+            is_return: false,
+            error_message: step_error_message(body_result),
+        }
+    }
+    if step_is_return(body_result) {
+        return StepResult {
+            runtime: exited,
+            value: step_value(body_result),
+            had_error: false,
+            is_return: true,
+            error_message: "",
+        }
+    }
+    ok_result(exited, step_value(body_result))
+}
+
+/// Evaluate an arm body. Bodies are SExpr; when the body is an
+/// `Expr.Block` (multi-stmt body, e.g. `{ return Stmt.Foo() }`),
+/// route through `execute_stmt` so `return` statements flip
+/// `is_return` and propagate up.
+fn eval_match_body(rt: Runtime, body: SExpr) -> StepResult {
+    match body.node {
+        .Block(stmts) -> execute_stmt(rt, Stmt.Block(stmts))
+        _ -> eval_expr(rt, body.node)
+    }
+}
+
+/// Try to match `pattern` against `value`. On success, returns the
+/// runtime extended with any pattern-introduced bindings. On
+/// failure, returns the input runtime unchanged with `matched=0`.
+fn try_match_pattern(rt: Runtime, pattern: Pattern, value: Value) -> MatchAttempt {
+    match pattern {
+        .Wildcard -> MatchAttempt { matched: true, runtime: rt }
+        .LitString(s) -> {
+            if value.kind == "string" && value.text == s {
+                MatchAttempt { matched: true, runtime: rt }
+            } else {
+                MatchAttempt { matched: false, runtime: rt }
+            }
+        }
+        .LitInt(n) -> {
+            if value.kind == "number" {
+                let parsed = parse_int_text(value.number_text)
+                if parsed == n {
+                    return MatchAttempt { matched: true, runtime: rt }
+                }
+            }
+            MatchAttempt { matched: false, runtime: rt }
+        }
+        .LitBool(b) -> {
+            if value.kind == "bool" && value.bool_value == b {
+                MatchAttempt { matched: true, runtime: rt }
+            } else {
+                MatchAttempt { matched: false, runtime: rt }
+            }
+        }
+        .LitFloat(f) -> {
+            if value.kind == "number" && value.number_text == f {
+                MatchAttempt { matched: true, runtime: rt }
+            } else {
+                MatchAttempt { matched: false, runtime: rt }
+            }
+        }
+        .Variant(name, bindings) -> {
+            if value.kind != "enum" {
+                return MatchAttempt { matched: false, runtime: rt }
+            }
+            if value.enum_variant != name {
+                return MatchAttempt { matched: false, runtime: rt }
+            }
+            let bound_rt = bind_param_list_payload(rt, bindings, value.enum_payload, 0)
+            MatchAttempt { matched: true, runtime: bound_rt }
+        }
+        .NestedVariant(name, sub_patterns) -> {
+            if value.kind != "enum" {
+                return MatchAttempt { matched: false, runtime: rt }
+            }
+            if value.enum_variant != name {
+                return MatchAttempt { matched: false, runtime: rt }
+            }
+            try_match_pattern_list(rt, sub_patterns, value.enum_payload, 0)
+        }
+        .Or(left, right) -> {
+            let left_attempt = try_match_pattern(rt, left, value)
+            if left_attempt.matched { return left_attempt }
+            try_match_pattern(rt, right, value)
+        }
+        .TypePattern(_type_name, binding) -> {
+            // Eval values are dynamically typed — we don't reify
+            // union member tags. Bind the subject under the named
+            // binding and let the body run; the arm order in source
+            // determines dispatch.
+            let bound = define_binding(rt, binding, false, value)
+            MatchAttempt { matched: true, runtime: bound }
+        }
+    }
+}
+
+/// Bind every name in a `ParamList` to the corresponding payload
+/// slot. Used by `.Variant(name, bindings)` patterns. `_` names
+/// are skipped — they're explicit "ignore this slot" markers.
+fn bind_param_list_payload(rt: Runtime, bindings: ParamList, payload: List<Value>, idx: int) -> Runtime {
+    match bindings {
+        .End -> rt
+        .Node(name, _, next) -> {
+            if idx >= payload.length {
+                return rt
+            }
+            let extended = if name == "_" { rt } else { define_binding(rt, name, false, payload[idx]) }
+            bind_param_list_payload(extended, next, payload, idx + 1)
+        }
+    }
+}
+
+/// Pairwise-match a `PatternList` against a payload list. Used by
+/// nested constructor patterns. If any sub-pattern fails, the
+/// whole nested match fails.
+fn try_match_pattern_list(rt: Runtime, patterns: PatternList, payload: List<Value>, idx: int) -> MatchAttempt {
+    match patterns {
+        .End -> MatchAttempt { matched: true, runtime: rt }
+        .Node(pat, next) -> {
+            if idx >= payload.length {
+                return MatchAttempt { matched: false, runtime: rt }
+            }
+            let attempt = try_match_pattern(rt, pat, payload[idx])
+            if !attempt.matched { return attempt }
+            try_match_pattern_list(attempt.runtime, next, payload, idx + 1)
+        }
+    }
+}
+
+extern fn avra_selfhost_string_to_int(s: string) -> int
+
+/// Parse decimal-int text via the runtime helper that backs the
+/// numeric-literal evaluator. Mirrors features.eval's `parse_num`
+/// but inlined here to avoid exporting another helper just for
+/// this one call site.
+fn parse_int_text(s: string) -> int { avra_selfhost_string_to_int(s) }
 
 /// Resolver hook for `When`. Walks every arm's condition + body
 /// through `resolve_when_arms`.
