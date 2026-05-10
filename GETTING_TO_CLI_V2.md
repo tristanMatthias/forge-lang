@@ -292,30 +292,63 @@ in `30b3c0c0`. The phase-8 bead also has follow-up children
   (bundling can legitimately re-register the same qualified name).
   `Result` intrinsic is silently de-duped vs stdlib's.
 
+**Status 2026-05-10 (updated):**
+
+- ✅ **Trait method resolution at typeck** — `check_trait_conformance`
+  in `features/trait_decl/typeck.av` fires F1000 for missing methods.
+  Verified: `impl Runnable for Foo { fn run() {} }` with trait
+  declaring `name()` correctly errors `trait Runnable requires
+  method name but Foo does not implement it`. Bead twn0 closed.
+
+- ✅ **dyn Trait list field handling** — `List<dyn Greeter>`
+  populated from heterogeneous concrete impls (Cat, Dog) iterates
+  and dispatches via vtable correctly. `cmd.run()` lands in the
+  per-type impl. Bead caqe closed.
+
+- ✅ **End-to-end cli case (minimal)** — `@expand(expand_cmd)
+  component command {} + command build {}` generates
+  `type Command_build`, `impl Runnable for Command_build` passes
+  conformance check, `let cmd: dyn Runnable = Command_build {...}`
+  boxes, `cmd.run()` dispatches to the impl. Verified
+  end-to-end (compile + execute). Filed in commit d06e2205.
+
+- ✅ **`b85m` (a6ax)** (commit `d06e2205`) — `lower_match_arms`
+  now walks every match arm's guard + body so inline
+  `return quote stmt {...}` inside a match arm fires the macro.
+  No more let-binding workaround needed for the canonical case.
+
+- ✅ **`t2uk`** (commit `215b1f6b`) — `bs2 test` ends with
+  "NNN/NNN tests passed in X.Ys" wall-clock summary.
+
 **Still open before vez6.8 closes:**
-- Trait method resolution at typeck — verify every required trait
-  method has a body. Bead filed.
-- `dyn Trait` list field handling — children get boxed correctly.
-  Bead filed.
-- End-to-end cli case — **partly works** with let-binding workaround:
-  `@expand(expand_cmd) component command {}` + `command build {}`
-  produces `type Command_build = {...}` end-to-end. Inline
-  `match s { .Variant -> return quote stmt {...} }` silently fails
-  (bead `b85m` filed). Field types lower to `<unknown>` (bead filed).
-- `vez6.8.3` cleanup C (red-team + edge-case pass) — last cleanup ticket
+- `vez6.8.3` cleanup C (red-team + edge-case pass) — last cleanup
+  ticket. P1, in_progress.
+- Macro authoring for the full canonical case (user's `run() { body }`
+  block inside `command build { … }` lowering into `impl Runnable`'s
+  body). This is library-side work tracked under vez6.11 (rewrite
+  std-cli).
+
+**Filed during e2e validation (open follow-ups):**
+- `cai8` (P2): programs with exactly one `@comptime` fn fail with
+  inline-quote-in-match; workaround is to declare a second fn.
+- `cqdk` (P2): tree-walk evaluator value model still i64-only;
+  real `float` support pending.
+- (P3): `construct_field_list` loses field type info during quote
+  lowering — generated types get `x: <unknown>` instead of `x: int`.
 
 **Acceptance per the bead:** `command build { run() { /* body */ } }`
 produces `type Command_build` + `impl Runnable for Command_build { fn run(...) { /* body */ } }`,
 and `cli avra { ... }.run()` dispatches via trait vtable.
 
 **Recommended order to fix:**
-1. `ty5v` first (P1, biggest unblocker — once eval can match, the
-   macro pattern is unblocked)
-2. `swgx` next (lets macros emit clean per-instance code)
-3. `dkfa` (correctness backstop — should NEVER silently accept duplicates)
-4. Then trait method resolution + dyn Trait list handling
-5. Then the end-to-end cli case
-6. Then vez6.8.3 cleanup C
+1. ~~`ty5v`~~ ✅ (commit `dfb5f1cd`)
+2. ~~`swgx`~~ ✅ (commit `bbccf605`)
+3. ~~`dkfa`~~ ✅ (commit `ac175900`)
+4. ~~Trait method resolution + dyn Trait list handling~~ ✅
+   (already implemented in `features/trait_decl/typeck.av`;
+   `dyn` dispatch and `List<dyn>` work today)
+5. ~~End-to-end cli case (minimal)~~ ✅ (commit `d06e2205`)
+6. **`vez6.8.3` cleanup C** ← only remaining open item for vez6.8
 
 ### 3c. `vez6.9` `body: TokenStream` (P2 — optional for cli rewrite)
 
