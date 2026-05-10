@@ -15,6 +15,7 @@ extern fn avra_test_pass_inc() -> int
 extern fn avra_test_fail_inc() -> int
 extern fn avra_test_get_pass() -> int
 extern fn avra_test_get_fail() -> int
+extern fn avra_uptime_ms() -> int
 extern fn avra_test_record_failure(spec_name: string, given_name: string, then_name: string, file: string, ln: int) -> int
 extern fn avra_test_failure_count() -> int
 extern fn avra_test_failure_spec(idx: int) -> string
@@ -73,13 +74,25 @@ export fn test_render_summary() -> int {
         render_failure_list(count, 0)
     }
     println("")
-    let summary = "${string(pass)}/${string(total)} tests passed"
+    let elapsed_ms = avra_uptime_ms()
+    let elapsed_s = render_elapsed(elapsed_ms)
+    let summary = "${string(pass)}/${string(total)} tests passed in ${elapsed_s}"
     if fail > 0 {
         println("${ansi_red(ansi_bold(summary))} ${ansi_red("(${string(fail)} failed)")}")
         return 1
     }
     println("${ansi_green(ansi_bold(summary))}")
     0
+}
+
+/// t2uk: render wall-clock duration as a human-friendly string.
+/// Integer math only — Avra eval doesn't have floats. Sub-second
+/// reads as `Xms`, anything bigger as `X.Ys`.
+fn render_elapsed(ms: int) -> string {
+    if ms < 1000 { return "${string(ms)}ms" }
+    let s = ms / 1000
+    let frac = (ms % 1000) / 100
+    "${string(s)}.${string(frac)}s"
 }
 
 /// Walk the C-side failure list, printing each one's spec/given/
