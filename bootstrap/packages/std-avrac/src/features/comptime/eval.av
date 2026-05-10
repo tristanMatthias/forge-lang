@@ -10,8 +10,9 @@
 // this on every call site lives in rewrite.av.
 
 use core.{Expr, ExprList, sexpr_dummy, Stmt, StmtList, sstmt_dummy, ValueType, BinOp, UnOp, LogicOp, ParamList, TypeParamList, FieldList, CompConfigPairList}
-use features.eval.{Value, eval_fn_with_resolved_args, literal_args_to_values, step_value, step_had_error}
+use features.eval.{Runtime, Value, eval_expr, eval_fn_with_resolved_args, literal_args_to_values, step_value, step_had_error}
 use features.comptime.{CompTimeFn, CompTimeRegistry, comptime_lookup}
+use features.quote_expr.{construct_stmt}
 
 // ── Public API ──
 
@@ -603,4 +604,29 @@ fn enum_value_to_stmt_list(v: Value) -> StmtList? {
         }
         _ -> null
     }
+}
+
+// vez6.8.4.A: Stmt → Value encoder. Mirrors the value_to_stmt
+// decoder so the @expand pass can box a wrapped Stmt as a Value
+// before invoking a 1-arg macro fn.
+//
+// Implementation reuses the existing quote-lowering pipeline:
+// `construct_stmt(s)` produces an Expr.EnumCtor whose runtime
+// evaluation builds the Value the macro pattern-matches on.
+// `eval_expr(runtime, expr)` walks that constructor tree using
+// the same evaluator quote-lowered programs already drive at
+// macro-expansion time. Returns null when evaluation errors —
+// caller falls back to a zero-arg invocation.
+//
+// Variants that lack an encoder in lower.av (`stmt_passthrough`)
+// fall back to NoOp here, matching the decode-side fallthrough.
+
+/// Encode a Stmt as a Value for passing into a comptime fn arg.
+/// Uses the runtime stored on the comptime registry — same one
+/// that try_fold_call seeds via prepare_runtime.
+export fn stmt_to_value(runtime: Runtime, s: Stmt) -> Value? {
+    let expr = construct_stmt(s)
+    let result = eval_expr(runtime, expr)
+    if step_had_error(result) != 0 { return null }
+    step_value(result)
 }

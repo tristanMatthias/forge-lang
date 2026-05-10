@@ -597,7 +597,11 @@ fn construct_sstmt(ss: SStmt) -> Expr {
 /// ExternFn, Annotated) and Match (needs MatchArmList construction)
 /// pass through unchanged for now — they belong to vez6.3.10
 /// (`quote decl { ... }`).
-fn construct_stmt(stmt: Stmt) -> Expr {
+/// vez6.8.4.A: exposed so the @expand pass can box a Stmt as a Value
+/// (via construct_stmt + eval_expr) when invoking a 1-arg macro.
+/// Arity, encoding, and split between encoded vs. passthrough variants
+/// stay an internal detail — callers should treat this as opaque.
+export fn construct_stmt(stmt: Stmt) -> Expr {
     match stmt {
         .Let(name, _, init) -> stmt_ctor("Let", three_args(string_lit_expr(name), construct_value_type_unknown(), construct_expr(init)))
         .Mut(name, _, init) -> stmt_ctor("Mut", three_args(string_lit_expr(name), construct_value_type_unknown(), construct_expr(init)))

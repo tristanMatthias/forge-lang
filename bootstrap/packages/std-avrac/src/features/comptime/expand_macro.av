@@ -19,8 +19,8 @@
 // macro-produced Stmt should still go through the normal fold pass
 // so any `@comptime` calls inside its body fold correctly.
 
-use core.{Stmt, StmtList, SStmt, Expr, ExprList, AnnotationList, sstmt_at, find_annotation}
-use features.comptime.{CompTimeRegistry, comptime_lookup, collect_comptime_fns, value_to_stmt}
+use core.{Stmt, StmtList, SStmt, Expr, ExprList, AnnotationList, sstmt_at, find_annotation, stmt_unwrap, param_list_length}
+use features.comptime.{CompTimeRegistry, comptime_lookup, collect_comptime_fns, value_to_stmt, stmt_to_value}
 use features.eval.{Runtime, Value, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message}
 
 // ── Public entry ──
@@ -80,9 +80,10 @@ fn expand_stmt_list(stmts: StmtList, reg: CompTimeRegistry) -> StmtList {
 }
 
 /// Look up the macro fn name from the `@expand` annotation's first
-/// arg, find it in the comptime registry, evaluate it with no args,
-/// and decode the result. Returns null when ANY step fails — the
-/// caller treats that as "leave this stmt alone".
+/// arg, find it in the comptime registry, evaluate it (with the
+/// wrapped Stmt as a single arg if the macro is 1-ary, else
+/// zero-arg), and decode the result. Returns null when ANY step
+/// fails — the caller treats that as "leave this stmt alone".
 fn try_expand_one(stmt: Stmt, reg: CompTimeRegistry, line: int, col: int, file: string) -> SStmt? {
     let macro_name = expand_target_name(stmt)
     if macro_name == "" {
@@ -95,7 +96,28 @@ fn try_expand_one(stmt: Stmt, reg: CompTimeRegistry, line: int, col: int, file: 
         return null
     }
     let fn_def = lookup!
-    let result = eval_fn_with_resolved_args(reg.runtime, fn_def.params, fn_def.body, [])
+    // vez6.8.4.A/C: 1-arg macros receive the wrapped Stmt as a Value.
+    // The macro can pattern-match on the variant + payload to drive
+    // its rewrite. Stmt arrives unwrapped (annotations peeled) so the
+    // macro doesn't have to dig past @expand itself. Higher arities
+    // are an error today — the @expand annotation only carries the
+    // macro fn identifier, no extra args.
+    let arity = param_list_length(fn_def.params)
+    let arg_values = if arity == 1 {
+        let unwrapped = stmt_unwrap(stmt)
+        let boxed = stmt_to_value(reg.runtime, unwrapped)
+        if boxed == null {
+            eprintln("error: @expand(${macro_name}) — could not box the wrapped Stmt as a Value (encoder may not yet support this Stmt variant)")
+            return null
+        }
+        [boxed!]
+    } else if arity == 0 {
+        []
+    } else {
+        eprintln("error: @expand(${macro_name}) — macro has ${arity} parameters; @expand supports 0- or 1-arg macros only")
+        return null
+    }
+    let result = eval_fn_with_resolved_args(reg.runtime, fn_def.params, fn_def.body, arg_values)
     if step_had_error(result) {
         eprintln("error: @expand(${macro_name}) — macro evaluation failed: ${step_error_message(result)}")
         return null

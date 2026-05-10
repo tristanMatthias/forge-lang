@@ -171,6 +171,42 @@ spec "vez6.8.4.B: value_to_stmt decodes Stmt.Impl from macro output" {
     }
 }
 
+// vez6.8.4.A/C: 1-arg @expand macros receive the wrapped Stmt as
+// a Value (boxed via stmt_to_value). Confirms try_expand_one
+// inspects param arity, boxes the unwrapped Stmt for the macro,
+// and threads its return back through value_to_stmt.
+spec "vez6.8.4.A/C: 1-arg @expand macro receives the wrapped Stmt" {
+    then "macro fn(s: Stmt) -> Stmt is invoked and its return decodes" {
+        let out = run_expand_e2e(
+            "use @std.avrac.core.{Stmt}\n" +
+            "\n" +
+            "type Foo = { x: int }\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn passthrough(s: Stmt) -> Stmt {\n" +
+            "    return quote stmt {\n" +
+            "        impl Foo {\n" +
+            "            fn run(self) -> int { return 7 }\n" +
+            "        }\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(passthrough)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            MAIN_HEADER + " {\n" +
+            "}\n")
+        // The 1-arg dispatch must have invoked the macro (since the
+        // returned Stmt is what we see). Without arg-passing, the
+        // macro fn would error 'wrong arity' and we'd see the
+        // original placeholder fn or no impl at all.
+        out.contains("impl Foo")
+            && out.contains("fn Foo__run")
+            && out.contains("return 7")
+            && !out.contains("fn placeholder")
+    }
+}
+
 // vez6.8.4.B slice 3: TypeDecl + ComponentBlock decoders. A macro
 // emitting `quote stmt { type Foo_inst = { ... } }` now lands a
 // real type declaration, and `quote stmt { command instance { ... } }`
