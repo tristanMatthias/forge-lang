@@ -9,7 +9,7 @@
 // Phase 2 of Components V2 (vez6.2). The program-walker that calls
 // this on every call site lives in rewrite.av.
 
-use core.{Expr, ExprList, sexpr_dummy, Stmt, StmtList, sstmt_dummy, ValueType, BinOp, UnOp, LogicOp}
+use core.{Expr, ExprList, sexpr_dummy, Stmt, StmtList, sstmt_dummy, ValueType, BinOp, UnOp, LogicOp, ParamList, TypeParamList}
 use features.eval.{Value, eval_fn_with_resolved_args, literal_args_to_values, step_value, step_had_error}
 use features.comptime.{CompTimeFn, CompTimeRegistry, comptime_lookup}
 
@@ -406,6 +406,65 @@ fn enum_value_to_stmt(v: Value) -> Stmt? {
             let methods = enum_value_to_stmt_list(p[1])
             if methods == null { return null }
             Stmt.Impl(type_name_v.text, methods!)
+        }
+        "Function" -> {
+            // `fn name<T>(params) -> RT { body }`. Payload:
+            // (name: string, type_params: TypeParamList,
+            //  params: ParamList, ret_vtype: ValueType, body: StmtList).
+            // Quote-lowering emits ValueType.Unknown at slot 3; the
+            // re-resolve pass on the spliced AST fills it in.
+            if p.length != 5 { return null }
+            let name_v: Value = p[0]
+            let tp = enum_value_to_type_param_list(p[1])
+            let params = enum_value_to_param_list(p[2])
+            let ret_vt = enum_value_to_value_type(p[3])
+            let body = enum_value_to_stmt_list(p[4])
+            if tp == null || params == null || body == null { return null }
+            let resolved_rt = if ret_vt == null { ValueType.Unknown } else { ret_vt! }
+            Stmt.Function(name_v.text, tp!, params!, resolved_rt, body!)
+        }
+        _ -> null
+    }
+}
+
+/// Decode a TypeParamList from its enum-Value form. Each Node carries
+/// (name: string, bounds: string, next: TypeParamList) — both fields
+/// are bare strings so this is mechanical.
+fn enum_value_to_type_param_list(v: Value) -> TypeParamList? {
+    if v.kind != "enum" { return null }
+    if v.enum_type != "@std::avrac::core::TypeParamList" { return null }
+    match v.enum_variant {
+        "End" -> TypeParamList.End
+        "Node" -> {
+            let p = v.enum_payload
+            if p.length != 3 { return null }
+            let name_v: Value = p[0]
+            let bounds_v: Value = p[1]
+            let rest = enum_value_to_type_param_list(p[2])
+            if rest == null { return null }
+            TypeParamList.Node(name_v.text, bounds_v.text, rest!)
+        }
+        _ -> null
+    }
+}
+
+/// Decode a ParamList from its enum-Value form. Slot 1 carries the
+/// resolved ValueType which lower.av always emits as Unknown — the
+/// re-resolve pass fills in the real type after splicing.
+fn enum_value_to_param_list(v: Value) -> ParamList? {
+    if v.kind != "enum" { return null }
+    if v.enum_type != "@std::avrac::core::ParamList" { return null }
+    match v.enum_variant {
+        "End" -> ParamList.End
+        "Node" -> {
+            let p = v.enum_payload
+            if p.length != 3 { return null }
+            let name_v: Value = p[0]
+            let vt = enum_value_to_value_type(p[1])
+            let rest = enum_value_to_param_list(p[2])
+            if rest == null { return null }
+            let resolved_vt = if vt == null { ValueType.Unknown } else { vt! }
+            ParamList.Node(name_v.text, resolved_vt, rest!)
         }
         _ -> null
     }

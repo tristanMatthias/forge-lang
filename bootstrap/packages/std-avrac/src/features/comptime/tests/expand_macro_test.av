@@ -170,3 +170,36 @@ spec "vez6.8.4.B: value_to_stmt decodes Stmt.Impl from macro output" {
             && !out.contains("fn placeholder")
     }
 }
+
+// vez6.8.4.B slice 2: Function decode lands the inner method body.
+// Prior to this slice, fn bodies inside `quote stmt { impl X { fn ... } }`
+// fell through to NoOp because Function wasn't in the value_to_stmt
+// matcher and lower.av's stmt_passthrough emitted NoOp for Function.
+spec "vez6.8.4.B slice 2: Stmt.Function decodes inside macro-emitted impl" {
+    then "fn body lands intact in expanded output" {
+        let out = run_expand_e2e(
+            "use @std.avrac.core.{Stmt}\n" +
+            "\n" +
+            "type Foo = { x: int }\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn make_impl() -> Stmt {\n" +
+            "    return quote stmt {\n" +
+            "        impl Foo {\n" +
+            "            fn bar(self) -> int { return 42 }\n" +
+            "        }\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(make_impl)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            MAIN_HEADER + " {\n" +
+            "}\n")
+        // The fmt'd Function variant inside the impl block must
+        // surface the fn name + return body — proves Function +
+        // ParamList + TypeParamList decoders all roundtrip.
+        out.contains("fn Foo__bar")
+            && out.contains("return 42")
+    }
+}

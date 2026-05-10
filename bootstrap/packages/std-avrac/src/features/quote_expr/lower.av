@@ -14,7 +14,7 @@
 // that desugar.av and comptime/rewrite.av use; once the generic-AST-
 // visitor ticket lands (93k3) all three should share a single visitor.
 
-use core.{Stmt, StmtList, SStmt, sstmt_at, sstmt_dummy, Expr, ExprList, SExpr, sexpr, sexpr_dummy, FieldInitList, MatchArmList, WhenArmList, SelectArmList, BinOp, UnOp, LogicOp, binop_str, unop_str, logicop_str}
+use core.{Stmt, StmtList, SStmt, sstmt_at, sstmt_dummy, Expr, ExprList, SExpr, sexpr, sexpr_dummy, FieldInitList, MatchArmList, WhenArmList, SelectArmList, BinOp, UnOp, LogicOp, ParamList, TypeParamList, binop_str, unop_str, logicop_str}
 
 // ── Public entry ──
 
@@ -444,6 +444,19 @@ fn construct_param_list(params: ParamList) -> Expr {
     }
 }
 
+/// Build an Expr that, when evaluated, produces a TypeParamList AST
+/// value. Each Node is (name, bounds, next) — both strings, no
+/// resolved-type slot to elide.
+fn construct_type_param_list(tp: TypeParamList) -> Expr {
+    match tp {
+        .End -> list_end("TypeParamList")
+        .Node(name, bounds, next) -> list_node("TypeParamList",
+            three_args(string_lit_expr(name),
+                       string_lit_expr(bounds),
+                       construct_type_param_list(next)))
+    }
+}
+
 /// Emit `ValueType.Unknown` — quote captures pre-resolve, so all types
 /// are Unknown until the lowered AST is type-checked. Avoids the
 /// complexity of constructing every ValueType variant.
@@ -586,6 +599,12 @@ fn construct_stmt(stmt: Stmt) -> Expr {
         .Impl(type_name, methods) -> stmt_ctor("Impl", two_args(string_lit_expr(type_name), construct_stmt_list(methods)))
         .TraitDecl(name, methods) -> stmt_ctor("TraitDecl", two_args(string_lit_expr(name), construct_stmt_list(methods)))
         .Parallel(body) -> stmt_ctor("Parallel", one_arg(construct_stmt_list(body)))
+        .Function(name, tp, params, _, body) -> stmt_ctor("Function",
+            five_args(string_lit_expr(name),
+                      construct_type_param_list(tp),
+                      construct_param_list(params),
+                      construct_value_type_unknown(),
+                      construct_stmt_list(body)))
         _ -> stmt_passthrough(stmt)
     }
 }
@@ -609,6 +628,14 @@ fn four_args(a: Expr, b: Expr, c: Expr, d: Expr) -> ExprList {
       ExprList.Node(sexpr_dummy(b),
         ExprList.Node(sexpr_dummy(c),
           ExprList.Node(sexpr_dummy(d), ExprList.End))))
+}
+
+fn five_args(a: Expr, b: Expr, c: Expr, d: Expr, e: Expr) -> ExprList {
+    ExprList.Node(sexpr_dummy(a),
+      ExprList.Node(sexpr_dummy(b),
+        ExprList.Node(sexpr_dummy(c),
+          ExprList.Node(sexpr_dummy(d),
+            ExprList.Node(sexpr_dummy(e), ExprList.End)))))
 }
 
 fn construct_binop(op: BinOp) -> Expr {
