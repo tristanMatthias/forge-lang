@@ -1,17 +1,14 @@
 // Compile-error test: reserved keyword `async` is not yet a valid statement.
-// Uses bs2 itself as a subprocess to assert the F-code is reported.
+// Migrated from shell-out to in-process via check_source (Stage 2 step 3
+// of GETTING_TO_CLI_V2.md / 4szi sweep).
 
-extern fn avra_file_write(path: string, content: string) -> int
-extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.check.{check_source}
+use @std.avrac.diagnostics.{bag_has_errors}
 
-fn rk_run() -> string {
-    let src = "fn entry() {\n    async\n}\n"
-    avra_file_write("/tmp/_rk_compile_test.av", src)
-    avra_shell_exec("./build/bs2 compile /tmp/_rk_compile_test.av 2>&1 || true")
-}
+const SOURCE: string = "fn entry() {\n    async\n}\n"
 
 spec "reserved keywords" {
-    then "F0001 reported for reserved keyword `async` in fn body" {
-        rk_run().contains("F0001")
+    then "reserved keyword `async` in fn body produces parse error" {
+        bag_has_errors(check_source(SOURCE))
     }
 }

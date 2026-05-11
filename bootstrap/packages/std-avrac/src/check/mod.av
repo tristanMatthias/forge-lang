@@ -1,22 +1,26 @@
-// WHY: in-process pipeline entry — parse + resolve + typeck a source
-// string and return the accumulated DiagnosticBag. Replaces the test
-// pattern of forking the compiler and grepping stderr.
+// WHY: in-process pipeline entry — parse + resolve + typeck + monomorphize
+// a source string and return the accumulated DiagnosticBag. Replaces the
+// test pattern of forking the compiler and grepping stderr.
 //
-// Pipeline stages run (mirrors `bs2 check` minus module file loading):
-//   parse → lower_quotes → desugar → expand_components → resolve_names
-//   → expand_macros → run_comptime → typecheck_program
+// Pipeline stages run (mirrors `bs2 check` minus file-based module loading):
+//   parse → lower_quotes → desugar → inject_intrinsics → expand_components
+//   → resolve_names → expand_macros → run_comptime → typecheck_program
+//   → monomorphize
 //
+// Monomorphization is included so the where-clause / trait-bound check
+// (which surfaces during specialisation) is observable in the bag.
 // Returns the final DiagnosticBag, which carries every error/warning
 // raised across all stages.
 
 use parse.{parse_program_source}
-use diagnostics.{DiagnosticBag}
+use diagnostics.{DiagnosticBag, bag_merge, bag_has_errors}
 use features.quote_expr.{lower_quotes}
 use desugar.{desugar_program, inject_intrinsics}
 use features.component_decl.{expand_components}
 use resolve.{resolve_names}
 use features.comptime.{expand_macros, run_comptime}
 use typeck.{typecheck_program}
+use features.generics.{monomorphize}
 
 /// Run the diagnostic pipeline against a source string and return
 /// the accumulated DiagnosticBag.
@@ -40,5 +44,12 @@ export fn check_source(source: string) -> DiagnosticBag {
     let expanded_macros = expand_macros(named.stmts)
     let post_comptime = run_comptime(expanded_macros)
     let tc_result = typecheck_program(post_comptime)
-    tc_result.bag
+    if bag_has_errors(tc_result.bag) {
+        return tc_result.bag
+    }
+    // Monomorphize so where-clause / trait-bound errors that only
+    // surface during specialisation land in the bag. Merge with the
+    // typecheck bag so warnings from earlier stages aren't lost.
+    let mono = monomorphize(tc_result.stmts, tc_result.trait_impls)
+    bag_merge(tc_result.bag, mono.bag)
 }
