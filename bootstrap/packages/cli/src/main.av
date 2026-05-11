@@ -1751,13 +1751,18 @@ fn select_test_paths(test_files_listing: string, args: TestArgs) -> List<string>
     survivors
 }
 
-fn compute_test_build_inputs(project_dir: string, accepted_paths: List<string>, args: TestArgs) -> BuildInputs {
-    let filtered_paths = accepted_paths
-
-    // Every .av under packages/std-avrac/src/. Over-approximates the
-    // transitively-imported package universe but is sound (any
-    // change anywhere in @std/avrac invalidates) and cheap. A
-    // per-import-graph fingerprint replaces this in hkms.x.
+// Compose BuildInputs for a test action — bundled or per-shard.
+//
+// The fingerprint-relevant sources are identical in both shapes:
+// (test files contributing to this action) + every .av under @std/avrac
+// (cheap over-approximation of the transitive @std universe) +
+// spec_test reporter + runtime objects. Only the unit_name and the
+// per-action test_paths narrow differ.
+//
+// Used by:
+//   - compute_test_build_inputs (bundled path, all accepted_paths)
+//   - compute_test_shard_inputs (per-file path, [single_path])
+fn make_test_inputs(project_dir: string, test_paths: List<string>, unit_name: string) -> BuildInputs {
     let std_root = find_packages_dir(project_dir) + "std-avrac/src"
     let std_listing = avra_shell_exec("find ${std_root} -name '*.av' -type f 2>/dev/null | sort")
     mut std_paths = []
@@ -1765,30 +1770,20 @@ fn compute_test_build_inputs(project_dir: string, accepted_paths: List<string>, 
         if p == "" { continue }
         std_paths = std_paths.push(p)
     }
-
-    // Reporter (spec_test/reporter.av) is inlined at link time; its
-    // contents directly affect the binary.
     let reporter_path = find_packages_dir(project_dir) + "std-avrac/src/features/spec_test/reporter.av"
-
-    // Linked-in runtime artifacts. `runtime.o` and `llvm_wrapper.o`
-    // are produced from C sources outside this command's reach, but
-    // their content hash must enter the fingerprint — a `runtime.c`
-    // edit + rebuild changes the linked binary even if no .av source
-    // moved.
     let build_dir = "${project_dir}/build"
     let runtime_o = "${build_dir}/runtime.o"
     let llvm_wrap_o = "${build_dir}/llvm_wrapper.o"
 
-    // Compose the canonical input list: tests first, then std,
-    // then reporter, then runtime. Order is stable; iterations across
-    // machines / runs produce the same bytes.
+    // Canonical order: tests first, then std, then reporter, then
+    // runtime objects. Stable across machines / runs.
     mut sources: List<string> = []
     mut i = 0
-    while i < filtered_paths.length {
-        sources = sources.push(filtered_paths[i])
+    while i < test_paths.length {
+        sources = sources.push(test_paths[i])
         i = i + 1
     }
-    let mut j = 0
+    mut j = 0
     while j < std_paths.length {
         sources = sources.push(std_paths[j])
         j = j + 1
@@ -1797,8 +1792,8 @@ fn compute_test_build_inputs(project_dir: string, accepted_paths: List<string>, 
     sources = sources.push(runtime_o)
     sources = sources.push(llvm_wrap_o)
 
-    // Compiler resolution mirrors run_build_command (line 1334-1342):
-    // honour AVRA_COMPILER, fall back to ./build/bs2, then argv[0].
+    // Compiler resolution mirrors run_build_command: honour AVRA_COMPILER,
+    // fall back to ./build/bs2, then argv[0].
     let env_compiler = avra_process_env_get("AVRA_COMPILER")
     let local_compiler = "${project_dir}/build/bs2"
     let compiler_path = if env_compiler != "" {
@@ -1809,25 +1804,14 @@ fn compute_test_build_inputs(project_dir: string, accepted_paths: List<string>, 
         avra_selfhost_get_arg_cstr(0)
     }
 
-    // unit_name composes the action's cache-key axes that are not
-    // file contents: the filter narrows the source set; coverage
-    // changes the linker flags + emits instrumentation. Both must
-    // produce distinct cache entries — Cargo's pattern of separate
-    // unit per (target, profile).
-    let filter_tag = if args.filter == "" { "all" } else { "filter=" + args.filter }
-    let cov_tag = if args.coverage { ":cov" } else { "" }
-    let unit_name = "test:" + filter_tag + cov_tag
-
     BuildInputs {
         project_root: project_dir,
         unit_name: unit_name,
         kind: "test",
         sources: sources,
-        // For multi-source units (test) entry_path is informational
-        // only — the real input set lives in `sources`. We surface
-        // sources[0] (the first test file) so --explain has a name
-        // to cite when no specific axis matched.
-        entry_path: if sources.length > 0 { sources[0] } else { "" },
+        // entry_path is informational only for multi-source test units;
+        // surface the first test path so --explain has a name to cite.
+        entry_path: if test_paths.length > 0 { test_paths[0] } else { "" },
         compiler_path: compiler_path,
         target_triple: "host",
         profile_name: "test",
@@ -1838,66 +1822,21 @@ fn compute_test_build_inputs(project_dir: string, accepted_paths: List<string>, 
     }
 }
 
-// 05yc: per-shard variant. Same source-set shape as
-// compute_test_build_inputs (test file(s) + std + reporter + runtime
-// objects) but the unit_name carries a per-shard slug so each
-// per-test-file cache entry is distinct from every other shard's.
-//
-// Cache axes that matter for a shard: the test file's own content,
-// every @std/avrac source it could transitively import, reporter,
-// runtime — same axes as the bundled inputs, just narrowed to a
-// single test file's contribution.
-fn compute_test_shard_inputs(project_dir: string, test_path: string, args: TestArgs) -> BuildInputs {
-    let std_root = find_packages_dir(project_dir) + "std-avrac/src"
-    let std_listing = avra_shell_exec("find ${std_root} -name '*.av' -type f 2>/dev/null | sort")
-    mut std_paths = []
-    for p in std_listing.split("\n") {
-        if p == "" { continue }
-        std_paths = std_paths.push(p)
-    }
-    let reporter_path = find_packages_dir(project_dir) + "std-avrac/src/features/spec_test/reporter.av"
-    let build_dir = "${project_dir}/build"
-    let runtime_o = "${build_dir}/runtime.o"
-    let llvm_wrap_o = "${build_dir}/llvm_wrapper.o"
-
-    mut sources: List<string> = [test_path]
-    let mut j = 0
-    while j < std_paths.length {
-        sources = sources.push(std_paths[j])
-        j = j + 1
-    }
-    sources = sources.push(reporter_path)
-    sources = sources.push(runtime_o)
-    sources = sources.push(llvm_wrap_o)
-
-    let env_compiler = avra_process_env_get("AVRA_COMPILER")
-    let local_compiler = "${project_dir}/build/bs2"
-    let compiler_path = if env_compiler != "" {
-        env_compiler
-    } else if file_exists(local_compiler) {
-        local_compiler
-    } else {
-        avra_selfhost_get_arg_cstr(0)
-    }
-
-    let shard_slug = basename_no_ext(test_path)
+// Bundled-action inputs: every accepted test file feeds one cache
+// slot keyed on (filter, coverage) so a filter change creates a
+// distinct entry (Cargo's pattern: separate unit per (target, profile)).
+fn compute_test_build_inputs(project_dir: string, accepted_paths: List<string>, args: TestArgs) -> BuildInputs {
+    let filter_tag = if args.filter == "" { "all" } else { "filter=" + args.filter }
     let cov_tag = if args.coverage { ":cov" } else { "" }
-    let unit_name = "test_shard:" + shard_slug + cov_tag
+    make_test_inputs(project_dir, accepted_paths, "test:" + filter_tag + cov_tag)
+}
 
-    BuildInputs {
-        project_root: project_dir,
-        unit_name: unit_name,
-        kind: "test",
-        sources: sources,
-        entry_path: test_path,
-        compiler_path: compiler_path,
-        target_triple: "host",
-        profile_name: "test",
-        opt_level: 0,
-        debug: true,
-        overflow_checks: true,
-        coverage: false,
-    }
+// 05yc: per-shard inputs. One test file → one cache slot keyed on
+// the file's basename so each shard's entry is stable across filter
+// invocations (filter doesn't enter the per-shard fingerprint).
+fn compute_test_shard_inputs(project_dir: string, test_path: string, args: TestArgs) -> BuildInputs {
+    let cov_tag = if args.coverage { ":cov" } else { "" }
+    make_test_inputs(project_dir, [test_path], "test_shard:" + basename_no_ext(test_path) + cov_tag)
 }
 
 // Compile a test unit end-to-end and return the linked binary path.
@@ -1922,28 +1861,19 @@ fn compile_test_unit(inputs: BuildInputs, test_paths: List<string>, args: TestAr
     compile_test_unit_to(inputs, test_paths, args, "all")
 }
 
-// 05yc: shard-scoped wrapper. `shard_id` distinguishes the staging
-// paths so parallel per-file shard builds don't collide on the same
-// `_test.o` / `_test.bin` filenames. The bundled path passes "all";
-// per-file shards pass a per-test slug (basename without extension).
-fn compile_test_unit_to(inputs: BuildInputs, test_paths: List<string>, args: TestArgs, shard_id: string) -> Result<string, string> {
-    // Step 1: parse each test file as Stmt.Module(name, body).
-    //
-    // wd48 fix — we explicitly do NOT share LoadedPaths across
-    // iterations. The shared-set approach made sibling-Module loads
-    // (e.g. `mod gen` → docs/gen.av in gen_test.av) return an empty
-    // wrapper for the second test file that referenced the same path,
-    // breaking that file's `use gen.{X}` since the wrapper had no
-    // decls. Each test file's tree is independent — separate
-    // Module(test_name) wrappers, distinct scopes.
-    //
-    // Cost: @std/* packages get re-parsed per test file. The
-    // dedup_modules pass collapses the duplicate package wrappers
-    // by Module name and dedups duplicate decls within merged
-    // bodies (decls from the same SStmt.file are identical re-parses
-    // and safely dedup'd; same-name decls from DIFFERENT files
-    // remain — that surfaces as a real user-level naming collision
-    // rather than a silently-dropped definition).
+// Assemble the test program for one action: parse each test file as
+// its own Stmt.Module, hoist @std packages, inline the spec_test
+// reporter, and synthesise a main() that returns test_render_summary().
+//
+// wd48 fix: LoadedPaths are NOT shared across iterations. A shared set
+// made sibling-Module loads return empty wrappers on second hit,
+// breaking sibling `use` imports. Each test file's tree is independent
+// — separate Module(test_name) wrappers, distinct scopes. Cost: @std/*
+// packages get re-parsed per test file; dedup_modules collapses the
+// duplicate package wrappers by Module name and dedups same-file
+// decls within merged bodies. Same-name decls from DIFFERENT files
+// survive as a real user-level naming collision.
+fn assemble_test_program(test_paths: List<string>, project_dir: string) -> Result<StmtList, string> {
     mut modules = StmtList.End
     mut packages = StmtList.End
     mut count = 0
@@ -1977,14 +1907,10 @@ fn compile_test_unit_to(inputs: BuildInputs, test_paths: List<string>, args: Tes
         return Result.Err("no spec test files found")
     }
 
-    // Step 2: assemble the program — externs + reporter + dedup'd
-    // packages + per-file modules + synthetic main() that calls
-    // `test_render_summary`. Reporter (features/spec_test/reporter.av)
-    // ships its `test_render_*` fns at module-root scope so spec
-    // codegen's bare `ctx.call("test_render_then", ...)` resolves
-    // directly. State (counters, current spec/given) lives in
-    // runtime.c.
-    let project_dir = inputs.project_root
+    // Reporter (features/spec_test/reporter.av) ships test_render_*
+    // fns at module-root scope so spec codegen's bare
+    // ctx.call("test_render_then", ...) resolves directly. State
+    // (counters, current spec/given) lives in runtime.c.
     let reporter_path = find_packages_dir(project_dir) + "std-avrac/src/features/spec_test/reporter.av"
     let reporter_stmts = if avra_selfhost_file_exists(reporter_path) != 0 {
         let rsrc = read_file(reporter_path)
@@ -2007,18 +1933,29 @@ fn compile_test_unit_to(inputs: BuildInputs, test_paths: List<string>, args: Tes
         sstmt_dummy(Stmt.Function("main", TypeParamList.End, ParamList.End, ValueType.Int, main_body)),
         program
     )
+    Result.Ok(program)
+}
 
-    // Step 3: full pipeline. Quote-lowering runs first so identifiers
-    // inside `quote { … }` bodies aren't seen by resolve as runtime
+// 05yc: shard-scoped wrapper. `shard_id` distinguishes the staging
+// paths so parallel per-file shard builds don't collide on the same
+// `_test.o` / `_test.bin` filenames. The bundled path passes "all";
+// per-file shards pass a per-test slug (basename without extension).
+fn compile_test_unit_to(inputs: BuildInputs, test_paths: List<string>, args: TestArgs, shard_id: string) -> Result<string, string> {
+    let project_dir = inputs.project_root
+    let program = match assemble_test_program(test_paths, project_dir) {
+        .Ok(p) -> p
+        .Err(e) -> { return Result.Err(e) }
+    }
+
+    // Pipeline: quote-lowering runs first so identifiers inside
+    // `quote { … }` bodies aren't seen by resolve as runtime
     // references — they're captured as string-typed AST literals.
+    // Modules were already resolved per-file in assemble_test_program
+    // and wrapped inline, so inject_intrinsics's program_declares_enum
+    // recursion sees stdlib's Result and skips the synthetic when
+    // it's present.
     let post_quote = lower_quotes(program)
     let desugared = desugar_program(post_quote)
-    // Modules were already resolved per-file (step 1's
-    // resolve_module_files call) and wrapped inline by the time
-    // desugar runs, so the post-desugar program already carries
-    // every loaded module's contents. inject_intrinsics's
-    // program_declares_enum recursion sees stdlib's Result and
-    // skips the synthetic when it's present.
     let with_intrinsics = inject_intrinsics(desugared)
     let expanded = expand_components(with_intrinsics)
     let named = resolve_names(expanded)
@@ -2039,7 +1976,7 @@ fn compile_test_unit_to(inputs: BuildInputs, test_paths: List<string>, args: Tes
         return Result.Err("monomorphization failed")
     }
 
-    // Step 4: codegen + link. Branches on `args.coverage`:
+    // Codegen + link. Branches on `args.coverage`:
     //   * non-coverage: codegen straight to `.o`, link with the
     //     standard runtime.
     //   * coverage:     codegen IR with instrprof markers, lower
