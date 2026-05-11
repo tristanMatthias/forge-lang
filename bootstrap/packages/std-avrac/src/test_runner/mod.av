@@ -19,12 +19,7 @@ use core.{
     avra_file_mtime,
 }
 use features.modules.{hoist_package_modules, HoistSplit}
-use @std.crypto.{sha256_hex}
-
-// avra_sha256_file lives in runtime.c. Eventually consolidates into
-// core/runtime.av (the single-source-of-truth for runtime externs) —
-// declared here locally until that DRY pass lands.
-extern fn avra_sha256_file(path: string) -> string
+use @std.crypto.{sha256_hex, sha256_file}
 
 /// Drop every `extern fn` declaration from the list.
 ///
@@ -111,7 +106,7 @@ export fn append_stmt_list(a: StmtList, b: StmtList) -> StmtList {
 export fn cached_fixture_run(fixture_path: string) -> string {
     let cache_dir = "build/cache/fixture_stdout"
     let toolchain_fp = read_or_compute_toolchain_fp(cache_dir)
-    let fixture_h = avra_sha256_file(fixture_path)
+    let fixture_h = sha256_file(fixture_path)
     let key = sha256_hex("${toolchain_fp}:${fixture_h}:${fixture_path}")
     let cache_path = "${cache_dir}/${key}.out"
     if avra_selfhost_file_exists(cache_path) == 1 {
@@ -134,9 +129,9 @@ fn read_or_compute_toolchain_fp(cache_dir: string) -> string {
         && sidecar_newer_than_inputs(sidecar) {
         return avra_selfhost_read_file(sidecar)
     }
-    let bs2_h = avra_sha256_file("build/bs2")
-    let runtime_h = avra_sha256_file("build/runtime.o")
-    let wrapper_h = avra_sha256_file("build/llvm_wrapper.o")
+    let bs2_h = sha256_file("build/bs2")
+    let runtime_h = sha256_file("build/runtime.o")
+    let wrapper_h = sha256_file("build/llvm_wrapper.o")
     let combined = sha256_hex("${bs2_h}:${runtime_h}:${wrapper_h}")
     let _ = avra_mkdir_p(cache_dir)
     let _ = avra_selfhost_write_file(sidecar, combined)
