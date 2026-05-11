@@ -56,31 +56,22 @@ fn meta_fingerprint_matches_source(meta_path: string, src_path: string) -> bool 
     stored_hex == current_hex
 }
 
-/// 0qmm: locate the meta sidecar for a source file. Prefers the
+/// 0qmm: locate the meta sidecar for a source file in the
 /// content-addressed cache slot (build/cache/meta/<sha256(src)>/
-/// unit.meta.bin) — stale hits are impossible there since the path
-/// itself embeds sha256(source). Falls back to the legacy fixed-path
-/// sidecar (<file>.meta.bin) for ephemeral /tmp fixtures that don't
-/// have a `/src/` package layout — the fallback still requires an
-/// explicit fingerprint match (meta_fingerprint_matches_source) so
-/// edited-source-but-stale-sidecar can't silently fast-path.
+/// unit.meta.bin). Stale hits are impossible — the path itself
+/// embeds sha256(source). No legacy sidecar fallback: producer
+/// always writes here, consumer always reads here.
 ///
-/// Returns "" when neither path resolves (consumer takes the
+/// Returns "" when the cache slot is absent (consumer takes the
 /// source-on-disk path).
 fn source_meta_cache_path(pkg_file: string) -> string {
     let pkg_root = package_root_for_file(pkg_file)
-    if pkg_root != "" {
-        let hex = avra_sha256_file(pkg_file)
-        if hex != "" {
-            let cache = cache_for(pkg_root)
-            let cache_path = entry_source_meta_path(cache, Fingerprint { hex })
-            if metadata_file_exists(cache_path) { return cache_path }
-        }
-    }
-    let legacy = "${pkg_file}.meta.bin"
-    if metadata_file_exists(legacy) && meta_fingerprint_matches_source(legacy, pkg_file) {
-        return legacy
-    }
+    if pkg_root == "" { return "" }
+    let hex = avra_sha256_file(pkg_file)
+    if hex == "" { return "" }
+    let cache = cache_for(pkg_root)
+    let cache_path = entry_source_meta_path(cache, Fingerprint { hex })
+    if metadata_file_exists(cache_path) { return cache_path }
     ""
 }
 
@@ -208,21 +199,56 @@ fn render_cycle(stack: ImportStack, cycle_path: string) -> string {
     parts
 }
 
-/// 0qmm: package root for a source file. Find the `/src/`
-/// component in the path and return everything to its left
-/// (without the trailing slash). For `<x>/packages/std-avrac/src/parse/mod.av`
-/// returns `<x>/packages/std-avrac`. Returns "" when the file
-/// isn't inside any `src/` directory (e.g. /tmp test fixtures).
+/// 0qmm: package root for a source file. For files inside a
+/// `<pkg>/src/...` layout, returns the `<pkg>` parent. For flat-
+/// layout files (ephemeral /tmp test fixtures, ad-hoc compiles),
+/// returns the file's containing directory (without trailing slash).
 ///
-/// Used by emit_per_file_metas (producer) and the
-/// AVRA_USE_METADATA resolver path (consumer) to derive the
-/// content-addressed cache location: cache_for(package_root)
-/// + the source-fingerprint slot.
+/// Producer + consumer agree on the same root, which means the
+/// cache slot built from `cache_for(root)` + `sha256(source)` is
+/// the canonical home for the meta sidecar — no fixed-path
+/// legacy sidecar needed.
+/// 0qmm: compute the content-addressed cache path for a source
+/// file's meta sidecar. Exported so fixtures can probe the
+/// canonical location without re-implementing the path derivation.
+/// Returns "" if the source file can't be hashed (missing on disk).
+export fn meta_cache_path_for_source(src_path: string) -> string {
+    let pkg_root = package_root_for_file(src_path)
+    if pkg_root == "" { return "" }
+    let hex = avra_sha256_file(src_path)
+    if hex == "" { return "" }
+    let cache = cache_for(pkg_root)
+    entry_source_meta_path(cache, Fingerprint { hex })
+}
+
 export fn package_root_for_file(file_path: string) -> string {
+    // Canonicalise to an absolute path first — producer and consumer
+    // run from different cwds, so a relative path from one side
+    // resolves to a different string than the other and they'd
+    // disagree on the cache slot. PWD prepend normalises both.
+    let abs = to_absolute_path(file_path)
     let marker = "/src/"
-    let idx = file_path.index_of(marker)
-    if idx < 0 { return "" }
-    file_path.substring(0, idx)
+    let idx = abs.index_of(marker)
+    if idx >= 0 {
+        return abs.substring(0, idx)
+    }
+    // Flat layout: use the file's directory as the package root.
+    // `<dir>/build/cache/meta/<fp>/unit.meta.bin` works the same.
+    let dir = modules_dirname(abs)
+    if dir == "" { return "" }
+    if dir[dir.length - 1] == "/" { return dir.substring(0, dir.length - 1) }
+    dir
+}
+
+/// Resolve `p` to an absolute path. Leaves already-absolute paths
+/// unchanged. For relative paths, prepends $PWD; if PWD is empty
+/// (shouldn't happen in practice) returns the input unchanged.
+fn to_absolute_path(p: string) -> string {
+    if p.length > 0 && p[0] == "/" { return p }
+    let pwd = avra_process_env_get("PWD")
+    if pwd == "" { return p }
+    let prefix = if pwd[pwd.length - 1] == "/" { pwd } else { "${pwd}/" }
+    "${prefix}${p}"
 }
 
 /// Find the packages directory by searching upward from `dir`.

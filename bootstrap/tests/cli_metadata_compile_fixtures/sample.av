@@ -11,6 +11,8 @@
 //
 // Tracking ticket: forge-crafting-intepreters-9ixv (closed, 2026-05-01).
 
+use @std.avrac.features.modules.{meta_cache_path_for_source}
+
 extern fn avra_shell_exec(cmd: string) -> string
 extern fn avra_shell_exec_status(cmd: string) -> int
 extern fn avra_process_env_get(name: string) -> string
@@ -46,11 +48,11 @@ fn main() -> int {
     // every meta.bin a downstream consumer might want lands on disk.
     let rc_lib = avra_shell_exec_status("cd ${avrac_dir} && ${bs2} build --lib --emit_metadata > /tmp/cli_meta_lib.log 2>&1")
     probe("avrac_lib_build_rc_zero", rc_lib == 0)
-    probe("avrac_meta_present", avra_selfhost_file_exists("${avrac_dir}/src/avrac.av.meta.bin") != 0)
-    probe("std_lsp_meta_present", avra_selfhost_file_exists("${pwd}/packages/std-lsp/src/lsp.av.meta.bin") != 0)
-    probe("std_json_meta_present", avra_selfhost_file_exists("${pwd}/packages/std-json/src/json.av.meta.bin") != 0)
-    probe("std_cli_meta_present", avra_selfhost_file_exists("${pwd}/packages/std-cli/src/cli.av.meta.bin") != 0)
-    probe("std_crypto_meta_present", avra_selfhost_file_exists("${pwd}/packages/std-crypto/src/crypto.av.meta.bin") != 0)
+    probe("avrac_meta_present", avra_selfhost_file_exists(meta_cache_path_for_source("${avrac_dir}/src/avrac.av")) != 0)
+    probe("std_lsp_meta_present", avra_selfhost_file_exists(meta_cache_path_for_source("${pwd}/packages/std-lsp/src/lsp.av")) != 0)
+    probe("std_json_meta_present", avra_selfhost_file_exists(meta_cache_path_for_source("${pwd}/packages/std-json/src/json.av")) != 0)
+    probe("std_cli_meta_present", avra_selfhost_file_exists(meta_cache_path_for_source("${pwd}/packages/std-cli/src/cli.av")) != 0)
+    probe("std_crypto_meta_present", avra_selfhost_file_exists(meta_cache_path_for_source("${pwd}/packages/std-crypto/src/crypto.av")) != 0)
 
     // Step 2: compile cli/main.av with AVRA_USE_METADATA=1. Resolver
     // takes the metadata fast-path on every `use @std.<pkg>` import

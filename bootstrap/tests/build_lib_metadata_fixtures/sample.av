@@ -6,6 +6,8 @@
 //
 // Tracking ticket: forge-crafting-intepreters-2f54.
 
+use @std.avrac.features.modules.{meta_cache_path_for_source}
+
 extern fn avra_shell_exec(cmd: string) -> string
 extern fn avra_shell_exec_status(cmd: string) -> int
 extern fn avra_process_env_get(name: string) -> string
@@ -37,8 +39,8 @@ fn main() -> int {
     let rc = avra_shell_exec_status("cd ${pkg} && ${bs2_abs} build --lib --emit_metadata")
     probe("build_rc_zero", rc == 0)
 
-    // The produced .meta.bin lands next to the entry source.
-    let meta = "${pkg}/src/lib.av.meta.bin"
+    // The produced .meta.bin lands in the content-addressed cache.
+    let meta = meta_cache_path_for_source(src)
     let exists_status = avra_shell_exec_status("test -s ${meta}")
     probe("meta_bin_present_and_nonempty", exists_status == 0)
 

@@ -10,6 +10,7 @@ use @std.avrac.build.{
     UnitMetadata, TypeDeclEntry, FnDeclEntry, ConstDeclEntry, ImplDeclEntry,
     metadata_read, metadata_file_exists,
 }
+use @std.avrac.features.modules.{meta_cache_path_for_source}
 
 extern fn avra_shell_exec(cmd: string) -> string
 extern fn avra_shell_exec_status(cmd: string) -> int
@@ -35,7 +36,7 @@ fn main() -> int {
     let rc = avra_shell_exec_status("${bs2} compile --emit_metadata ${src}")
     probe("compile_rc_zero", rc == 0)
 
-    let meta_path = "${src}.meta.bin"
+    let meta_path = meta_cache_path_for_source(src)
     probe("meta_file_written", metadata_file_exists(meta_path))
 
     let m = metadata_read(meta_path)

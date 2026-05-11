@@ -4,6 +4,8 @@
 //
 // Tracking ticket: forge-crafting-intepreters-e20h.
 
+use @std.avrac.features.modules.{meta_cache_path_for_source}
+
 extern fn avra_shell_exec(cmd: string) -> string
 extern fn avra_shell_exec_status(cmd: string) -> int
 extern fn avra_process_env_get(name: string) -> string
@@ -38,9 +40,9 @@ fn main() -> int {
     let rc = avra_shell_exec_status("cd ${root}/app && AVRA_JOBS=3 ${bs2} build --emit_metadata")
     probe("parallel_build_rc_zero", rc == 0)
 
-    probe("a_meta_present", avra_selfhost_file_exists("${root}/a/src/lib.av.meta.bin") != 0)
-    probe("b_meta_present", avra_selfhost_file_exists("${root}/b/src/lib.av.meta.bin") != 0)
-    probe("c_meta_present", avra_selfhost_file_exists("${root}/c/src/lib.av.meta.bin") != 0)
+    probe("a_meta_present", avra_selfhost_file_exists(meta_cache_path_for_source("${root}/a/src/lib.av")) != 0)
+    probe("b_meta_present", avra_selfhost_file_exists(meta_cache_path_for_source("${root}/b/src/lib.av")) != 0)
+    probe("c_meta_present", avra_selfhost_file_exists(meta_cache_path_for_source("${root}/c/src/lib.av")) != 0)
 
     // AVRA_JOBS=1 (sequential) — second run hits the cache for each
     // dep so .meta.bin from the first run is preserved. Just verify

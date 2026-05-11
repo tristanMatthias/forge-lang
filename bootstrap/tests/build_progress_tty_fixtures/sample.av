@@ -8,6 +8,8 @@
 //
 // Tracking ticket: forge-crafting-intepreters-5gvp.
 
+use @std.avrac.features.modules.{meta_cache_path_for_source}
+
 extern fn avra_shell_exec(cmd: string) -> string
 extern fn avra_shell_exec_status(cmd: string) -> int
 extern fn avra_process_env_get(name: string) -> string
@@ -37,12 +39,12 @@ fn main() -> int {
     let bs2 = "${pwd}/build/bs2"
 
     // ── Case 1: pipe stdout (CI shape). The progress bar must NOT render. ──
-    avra_shell_exec("rm -rf ${root}/dep1/src/lib.av.meta.bin ${root}/dep2/src/lib.av.meta.bin")
+    avra_shell_exec("rm -rf ${root}/dep1/build/cache/meta ${root}/dep2/build/cache/meta")
     let pipe_log = "/tmp/avra_5gvp_pipe.log"
     let rc_pipe = avra_shell_exec_status("cd ${root}/app && AVRA_JOBS=2 ${bs2} build --emit_metadata > ${pipe_log} 2>&1")
     probe("pipe_build_rc_zero", rc_pipe == 0)
-    probe("pipe_dep1_meta_present", avra_selfhost_file_exists("${root}/dep1/src/lib.av.meta.bin") != 0)
-    probe("pipe_dep2_meta_present", avra_selfhost_file_exists("${root}/dep2/src/lib.av.meta.bin") != 0)
+    probe("pipe_dep1_meta_present", avra_selfhost_file_exists(meta_cache_path_for_source("${root}/dep1/src/lib.av")) != 0)
+    probe("pipe_dep2_meta_present", avra_selfhost_file_exists(meta_cache_path_for_source("${root}/dep2/src/lib.av")) != 0)
     // The inner `bs2 build` may emit colored diagnostic warnings, so a
     // bare \x1b grep over-matches. Look for the progress bar's unique
     // header instead — that string only ever lands when the bar runs.
@@ -51,7 +53,7 @@ fn main() -> int {
     probe("pipe_log_no_progress_bar", pipe_has_progress != 0)
 
     // ── Case 2: TTY (forced via `script -q`). Progress bar must render. ──
-    avra_shell_exec("rm -rf ${root}/dep1/src/lib.av.meta.bin ${root}/dep2/src/lib.av.meta.bin")
+    avra_shell_exec("rm -rf ${root}/dep1/build/cache/meta ${root}/dep2/build/cache/meta")
     let tty_log = "/tmp/avra_5gvp_tty.log"
     // `script -q /dev/null sh -c '...'` allocates a PTY for stdout on
     // both Linux and macOS (BSD `script` accepts the same arg shape).
@@ -59,8 +61,8 @@ fn main() -> int {
     let tty_cmd = "script -q ${tty_log} sh -c 'cd ${root}/app && AVRA_JOBS=2 ${bs2} build --emit_metadata' > /dev/null 2>&1"
     let rc_tty = avra_shell_exec_status(tty_cmd)
     probe("tty_build_rc_zero", rc_tty == 0)
-    probe("tty_dep1_meta_present", avra_selfhost_file_exists("${root}/dep1/src/lib.av.meta.bin") != 0)
-    probe("tty_dep2_meta_present", avra_selfhost_file_exists("${root}/dep2/src/lib.av.meta.bin") != 0)
+    probe("tty_dep1_meta_present", avra_selfhost_file_exists(meta_cache_path_for_source("${root}/dep1/src/lib.av")) != 0)
+    probe("tty_dep2_meta_present", avra_selfhost_file_exists(meta_cache_path_for_source("${root}/dep2/src/lib.av")) != 0)
     let tty_has_esc = avra_shell_exec_status("grep -q $'\\x1b\\[' ${tty_log}")
     probe("tty_log_has_escape_codes", tty_has_esc == 0)
     let tty_has_summary = avra_shell_exec_status("grep -q 'built 2 deps' ${tty_log}")

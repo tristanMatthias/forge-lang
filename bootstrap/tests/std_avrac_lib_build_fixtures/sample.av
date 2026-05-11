@@ -6,6 +6,8 @@
 //
 // Tracking ticket: forge-crafting-intepreters-2f54.
 
+use @std.avrac.features.modules.{meta_cache_path_for_source}
+
 extern fn avra_shell_exec(cmd: string) -> string
 extern fn avra_shell_exec_status(cmd: string) -> int
 extern fn avra_process_env_get(name: string) -> string
@@ -30,7 +32,7 @@ fn main() -> int {
     let rc = avra_shell_exec_status("cd ${std_avrac} && ${bs2} build --lib --emit_metadata")
     probe("std_avrac_build_rc_zero", rc == 0)
 
-    probe("avrac_meta_bin_present", avra_selfhost_file_exists("${std_avrac}/src/avrac.av.meta.bin") != 0)
+    probe("avrac_meta_bin_present", avra_selfhost_file_exists(meta_cache_path_for_source("${std_avrac}/src/avrac.av")) != 0)
     probe("avrac_ll_present", avra_selfhost_file_exists("${std_avrac}/src/avrac.av.ll") != 0)
 
     // Symbols should be qualified with @std::avrac:: — verify by

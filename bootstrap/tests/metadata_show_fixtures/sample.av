@@ -5,6 +5,8 @@
 //
 // Tracking ticket: forge-crafting-intepreters-xtvc.
 
+use @std.avrac.features.modules.{meta_cache_path_for_source}
+
 extern fn avra_shell_exec(cmd: string) -> string
 extern fn avra_shell_exec_status(cmd: string) -> int
 
@@ -26,8 +28,8 @@ fn main() -> int {
     let rc1 = avra_shell_exec_status("${bs2} compile --emit_metadata ${src}")
     probe("emit_rc_zero", rc1 == 0)
 
-    // Step 2: round-trip via metadata_show
-    let out = avra_shell_exec("${bs2} metadata_show ${src}.meta.bin")
+    // Step 2: round-trip via metadata_show (cache path)
+    let out = avra_shell_exec("${bs2} metadata_show ${meta_cache_path_for_source(src)}")
     probe("show_has_unit_marker", out.contains("metadata for unit"))
     probe("show_has_module_node", out.contains("(module"))
     probe("show_has_pair_type", out.contains("Pair"))
