@@ -63,6 +63,13 @@ export fn test_render_summary() -> int {
     let pass = avra_test_get_pass()
     let fail = avra_test_get_fail()
     let total = pass + fail
+    // 05yc: machine-readable shard summary on its own line so a
+    // parent orchestrator can sum across N per-file shard binaries
+    // without parsing ANSI-coloured output. Always emitted, even
+    // when total == 0 (so the orchestrator can detect an empty
+    // shard vs a missing one).
+    let elapsed_ms = avra_uptime_ms()
+    println("[shard-summary] pass=${string(pass)} fail=${string(fail)} total=${string(total)} elapsed_ms=${string(elapsed_ms)}")
     if total == 0 {
         println("${ansi_yellow("No tests ran.")}")
         return 0
@@ -74,7 +81,6 @@ export fn test_render_summary() -> int {
         render_failure_list(count, 0)
     }
     println("")
-    let elapsed_ms = avra_uptime_ms()
     let elapsed_s = render_elapsed(elapsed_ms)
     let summary = "${string(pass)}/${string(total)} tests passed in ${elapsed_s}"
     if fail > 0 {

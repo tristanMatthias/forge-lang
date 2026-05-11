@@ -77,6 +77,7 @@ use @std.avrac.build.{
     synthesize_unit_stmts,
     pool_run, pool_extract_rc,
     cache_for, entry_source_meta_path, ensure_source_meta_dir,
+    cache_bin_path_for,
 }
 use @std.crypto.{sha256_hex}
 extern fn avra_bytes_to_hex(b: bytes) -> string
@@ -347,12 +348,13 @@ fn has_argv_flag(flag: string) -> bool {
 // Parsed view of `avra test ...` argv. -f/--filter narrows tests
 // by file-name substring; -c/--coverage enables instrumentation;
 // --lcov path turns on coverage AND writes an LCOV report there.
-type TestArgs = { filter: string, coverage: bool, lcov_path: string }
+type TestArgs = { filter: string, coverage: bool, lcov_path: string, per_file: bool }
 
 fn parse_test_args() -> TestArgs {
     mut filter_arg = ""
     mut coverage_flag = false
     mut lcov_path = ""
+    mut per_file_flag = false
     mut i = 2
     while i < avra_selfhost_argc() {
         let arg = avra_selfhost_get_arg_cstr(i)
@@ -376,9 +378,17 @@ fn parse_test_args() -> TestArgs {
             i = i + 2
             continue
         }
+        // 05yc: opt-in per-file shard mode. Compiles each test file
+        // into its own binary; runs them sequentially (parallelism
+        // follows once correctness is proven).
+        if arg == "--per_file" {
+            per_file_flag = true
+            i = i + 1
+            continue
+        }
         i = i + 1
     }
-    TestArgs { filter: filter_arg, coverage: coverage_flag, lcov_path }
+    TestArgs { filter: filter_arg, coverage: coverage_flag, lcov_path, per_file: per_file_flag }
 }
 
 extern fn avra_uptime_ms() -> int
@@ -1828,6 +1838,68 @@ fn compute_test_build_inputs(project_dir: string, accepted_paths: List<string>, 
     }
 }
 
+// 05yc: per-shard variant. Same source-set shape as
+// compute_test_build_inputs (test file(s) + std + reporter + runtime
+// objects) but the unit_name carries a per-shard slug so each
+// per-test-file cache entry is distinct from every other shard's.
+//
+// Cache axes that matter for a shard: the test file's own content,
+// every @std/avrac source it could transitively import, reporter,
+// runtime — same axes as the bundled inputs, just narrowed to a
+// single test file's contribution.
+fn compute_test_shard_inputs(project_dir: string, test_path: string, args: TestArgs) -> BuildInputs {
+    let std_root = find_packages_dir(project_dir) + "std-avrac/src"
+    let std_listing = avra_shell_exec("find ${std_root} -name '*.av' -type f 2>/dev/null | sort")
+    mut std_paths = []
+    for p in std_listing.split("\n") {
+        if p == "" { continue }
+        std_paths = std_paths.push(p)
+    }
+    let reporter_path = find_packages_dir(project_dir) + "std-avrac/src/features/spec_test/reporter.av"
+    let build_dir = "${project_dir}/build"
+    let runtime_o = "${build_dir}/runtime.o"
+    let llvm_wrap_o = "${build_dir}/llvm_wrapper.o"
+
+    mut sources: List<string> = [test_path]
+    let mut j = 0
+    while j < std_paths.length {
+        sources = sources.push(std_paths[j])
+        j = j + 1
+    }
+    sources = sources.push(reporter_path)
+    sources = sources.push(runtime_o)
+    sources = sources.push(llvm_wrap_o)
+
+    let env_compiler = avra_process_env_get("AVRA_COMPILER")
+    let local_compiler = "${project_dir}/build/bs2"
+    let compiler_path = if env_compiler != "" {
+        env_compiler
+    } else if file_exists(local_compiler) {
+        local_compiler
+    } else {
+        avra_selfhost_get_arg_cstr(0)
+    }
+
+    let shard_slug = basename_no_ext(test_path)
+    let cov_tag = if args.coverage { ":cov" } else { "" }
+    let unit_name = "test_shard:" + shard_slug + cov_tag
+
+    BuildInputs {
+        project_root: project_dir,
+        unit_name: unit_name,
+        kind: "test",
+        sources: sources,
+        entry_path: test_path,
+        compiler_path: compiler_path,
+        target_triple: "host",
+        profile_name: "test",
+        opt_level: 0,
+        debug: true,
+        overflow_checks: true,
+        coverage: false,
+    }
+}
+
 // Compile a test unit end-to-end and return the linked binary path.
 // Mirrors the in-process pipeline run_build_command would use, but
 // specialised for the test mode: parses each `*_test.av` as a
@@ -1847,6 +1919,14 @@ fn compute_test_build_inputs(project_dir: string, accepted_paths: List<string>, 
 // Returns `Ok(bin_path)` on success or `Err(msg)` after rendering
 // the diagnostic bag inline. The caller picks the exit policy.
 fn compile_test_unit(inputs: BuildInputs, test_paths: List<string>, args: TestArgs) -> Result<string, string> {
+    compile_test_unit_to(inputs, test_paths, args, "all")
+}
+
+// 05yc: shard-scoped wrapper. `shard_id` distinguishes the staging
+// paths so parallel per-file shard builds don't collide on the same
+// `_test.o` / `_test.bin` filenames. The bundled path passes "all";
+// per-file shards pass a per-test slug (basename without extension).
+fn compile_test_unit_to(inputs: BuildInputs, test_paths: List<string>, args: TestArgs, shard_id: string) -> Result<string, string> {
     // Step 1: parse each test file as Stmt.Module(name, body).
     //
     // wd48 fix — we explicitly do NOT share LoadedPaths across
@@ -1970,8 +2050,8 @@ fn compile_test_unit(inputs: BuildInputs, test_paths: List<string>, args: TestAr
     //   caller decides exec policy + post-run profdata processing.
     let build_dir = "${project_dir}/build"
     if !args.coverage {
-        let obj_path = "${build_dir}/_test.o"
-        let bin_path = "${build_dir}/_test.bin"
+        let obj_path = "${build_dir}/_test_${shard_id}.o"
+        let bin_path = "${build_dir}/_test_${shard_id}.bin"
         match codegen_and_emit_object(mono.stmts, obj_path, named.type_reg) {
             .Ok(_) -> {}
             .Err(e) -> { return Result.Err(e) }
@@ -1986,11 +2066,11 @@ fn compile_test_unit(inputs: BuildInputs, test_paths: List<string>, args: TestAr
     // Coverage path
     let cov_dir = "${build_dir}/coverage"
     avra_shell_exec("mkdir -p ${cov_dir}")
-    let ir_path = "${cov_dir}/_test.ll"
-    let cov_ll = "${cov_dir}/_test.cov.ll"
-    let obj_path = "${cov_dir}/_test.o"
-    let bin_path = "${cov_dir}/_test.bin"
-    match codegen_and_emit_ir_cov(mono.stmts, ir_path, named.type_reg, "${cov_dir}/_test.av") {
+    let ir_path = "${cov_dir}/_test_${shard_id}.ll"
+    let cov_ll = "${cov_dir}/_test_${shard_id}.cov.ll"
+    let obj_path = "${cov_dir}/_test_${shard_id}.o"
+    let bin_path = "${cov_dir}/_test_${shard_id}.bin"
+    match codegen_and_emit_ir_cov(mono.stmts, ir_path, named.type_reg, "${cov_dir}/_test_${shard_id}.av") {
         .Ok(_) -> {}
         .Err(e) -> { return Result.Err(e) }
     }
@@ -2014,6 +2094,194 @@ fn compile_test_unit(inputs: BuildInputs, test_paths: List<string>, args: TestAr
         return Result.Err("link failed (coverage)")
     }
     Result.Ok(bin_path)
+}
+
+// 05yc: parse the machine-readable `[shard-summary] pass=N fail=N
+// total=N elapsed_ms=N` line a shard binary emits at end-of-run.
+// Returns zeros when the marker is absent (shard crashed before
+// summary). The orchestrator sums across shards and renders the
+// unified count.
+type ShardSummary = { pass: int, fail: int, total: int, elapsed_ms: int }
+
+fn parse_shard_summary(out: string) -> ShardSummary {
+    let marker = "[shard-summary] "
+    let idx = out.index_of(marker)
+    if idx < 0 { return ShardSummary { pass: 0, fail: 0, total: 0, elapsed_ms: 0 } }
+    let rest_start = idx + marker.length
+    let tail = out.substring(rest_start, out.length)
+    let nl = tail.index_of("\n")
+    let end = if nl < 0 { tail.length } else { nl }
+    let line = tail.substring(0, end)
+    ShardSummary {
+        pass: extract_kv_int(line, "pass="),
+        fail: extract_kv_int(line, "fail="),
+        total: extract_kv_int(line, "total="),
+        elapsed_ms: extract_kv_int(line, "elapsed_ms="),
+    }
+}
+
+fn extract_kv_int(line: string, key: string) -> int {
+    let idx = line.index_of(key)
+    if idx < 0 { return 0 }
+    let start = idx + key.length
+    mut i = start
+    while i < line.length {
+        let ch = line[i]
+        if ch < "0" || ch > "9" { break }
+        i = i + 1
+    }
+    if i == start { return 0 }
+    avra_parse_int(line.substring(start, i))
+}
+
+// 05yc: internal `bs2 _test_shard <path>` subcommand. Compiles one
+// test file's shard binary (or recovers from cache) and execs it,
+// inheriting stdio. Designed to be forked in parallel by the
+// orchestrator — each child does its own compile + run + summary
+// emission, so a segfault in one shard doesn't take down the others
+// (process-level isolation, hkms.3 acceptance gained for free).
+fn run_test_shard_command() {
+    if avra_selfhost_argc() < 3 {
+        fail("usage: bs2 _test_shard <test_file.av>")
+    }
+    let path = avra_selfhost_get_arg_cstr(2)
+    if !avra_selfhost_file_exists(path) {
+        fail("error: file not found: ${path}")
+    }
+    let project_dir = avra_process_env_get("PWD")
+    // Reuse the same TestArgs shape so coverage / per-file flags
+    // propagate from the orchestrator's parent test invocation.
+    let args = parse_test_args()
+    let inputs = compute_test_shard_inputs(project_dir, path, args)
+    let shard_id = basename_no_ext(path)
+    let bin_path = match decide_build(inputs) {
+        .Hit(_, cached_bin) -> cached_bin
+        .Miss(fp, _, _) -> {
+            let built = match compile_test_unit_to(inputs, [path], args, shard_id) {
+                .Ok(b) -> b
+                .Err(e) -> { fail("shard compile failed: ${e}") }
+            }
+            let staging_id = "${inputs.unit_name}.${fp_short(fp)}"
+            let _ = record_build_result(inputs, fp, "", "", "", built, staging_id)
+            // Publish copies the staging bin into the cache slot, so
+            // the local `_test_<shard>.{bin,o}` aren't load-bearing
+            // anymore. Drop them — 317 shards × ~5MB each = ~1.5GB
+            // of duplicate disk pressure otherwise.
+            let build_dir = "${inputs.project_root}/build"
+            avra_shell_exec("rm -f '${build_dir}/_test_${shard_id}.bin' '${build_dir}/_test_${shard_id}.o'")
+            cache_bin_path_for(cache_for(inputs.project_root), fp)
+        }
+    }
+    let exit_code = avra_process_forward(bin_path, "[]", "")
+    avra_process_exit(exit_code)
+}
+
+// 05yc: per-file test orchestrator. Each `_test.av` becomes its own
+// shard: own BuildInputs (unique unit_name), own cache slot, own
+// linked binary. Forks `bs2 _test_shard <path>` per shard so each
+// compile + run lives in its own process; dispatches them in
+// parallel via spawn_pool_async (existing infra from
+// `bs2 build --per_module`).
+//
+// vs the bundled path: this trades the @std/* parse-once savings for
+// (a) per-shard cache granularity — one test edit invalidates one
+// shard, not the whole 317-test bundle; (b) process-level crash
+// isolation — a segfault in one shard doesn't take the suite down;
+// (c) N-way parallelism on cold compiles. With AVRA_USE_METADATA=1
+// each shard subprocess consumes @std as metadata stubs, keeping
+// per-shard memory bounded (the prereq 0qmm step 1 shipped).
+fn run_per_file_test_command(project_dir: string, accepted_paths: List<string>, args: TestArgs) -> int {
+    let t_start = avra_uptime_ms()
+    let compiler_path = if avra_process_env_get("AVRA_COMPILER") != "" {
+        avra_process_env_get("AVRA_COMPILER")
+    } else {
+        "${project_dir}/build/bs2"
+    }
+    let env_jobs = avra_process_env_get("AVRA_JOBS")
+    let jobs = if env_jobs != "" { avra_parse_int(env_jobs) } else { 8 }
+    let log_dir = "${project_dir}/build/test_shards"
+    avra_shell_exec("rm -rf '${log_dir}' && mkdir -p '${log_dir}'")
+
+    // Build per-shard command list. Each is a self-contained
+    // `bs2 _test_shard <path>` redirecting its full stdio to a
+    // shard-specific log file the orchestrator parses after the
+    // pool completes. Filter is propagated so each child has the
+    // same TestArgs the user invoked.
+    mut cmds: List<string> = []
+    mut slugs: List<string> = []
+    let filter_arg = if args.filter == "" { "" } else { " --filter '${args.filter}'" }
+    mut i = 0
+    while i < accepted_paths.length {
+        let path = accepted_paths[i]
+        let slug = basename_no_ext(path)
+        // AVRA_USE_METADATA=1 would let each shard consume @std/* as
+        // metadata stubs (the 0qmm step 1 fast-path) — keeping
+        // per-shard memory bounded so deep parallelism doesn't OOM.
+        // Currently disabled because the @std/avrac meta cache isn't
+        // auto-regenerated when @std source changes, so a freshly
+        // added stdlib symbol fails to resolve in shards. Filed as a
+        // follow-up (see 0qmm meta-freshness bead).
+        cmds = cmds.push("'${compiler_path}' _test_shard '${path}'${filter_arg} > '${log_dir}/${slug}.log' 2>&1")
+        slugs = slugs.push(slug)
+        i = i + 1
+    }
+
+    let pool_handle = spawn_pool_async(cmds, slugs, jobs, log_dir)
+    if pool_handle < 0 {
+        eprintln("[per-file] pool spawn failed — falling back to sync pool_run")
+        let rc = pool_run(cmds, jobs)
+        return if rc == 0 { aggregate_shard_logs(log_dir, slugs, t_start, 0) } else { 1 }
+    }
+    // Block on the pool. Future: render a TTY progress bar like
+    // run_per_mod_with_progress does (count done markers, list
+    // running slugs). Sequential blocking keeps the first cut
+    // simple — the speed win is the parallelism itself.
+    let final_json = avra_process_wait(pool_handle)
+    let pool_rc = pool_extract_rc(final_json)
+    aggregate_shard_logs(log_dir, slugs, t_start, pool_rc)
+}
+
+// Walk each shard's log file, print it verbatim (preserving per-shard
+// output the user expects), parse the `[shard-summary]` line for the
+// aggregate counts, and render the unified pass/fail summary. Shards
+// whose summary line is missing count as a compile/run failure.
+fn aggregate_shard_logs(log_dir: string, slugs: List<string>, t_start: int, pool_rc: int) -> int {
+    mut sum_pass = 0
+    mut sum_fail = 0
+    mut sum_total = 0
+    mut shard_failures = 0
+    mut i = 0
+    while i < slugs.length {
+        let slug = slugs[i]
+        let log_path = "${log_dir}/${slug}.log"
+        if !avra_selfhost_file_exists(log_path) {
+            shard_failures = shard_failures + 1
+            eprintln("[shard ${slug}] no log produced (compile likely failed before stdout)")
+            i = i + 1
+            continue
+        }
+        let out = avra_selfhost_read_file(log_path)
+        println(out)
+        let s = parse_shard_summary(out)
+        if s.total == 0 && !out.contains("No tests ran") {
+            shard_failures = shard_failures + 1
+        }
+        sum_pass = sum_pass + s.pass
+        sum_fail = sum_fail + s.fail
+        sum_total = sum_total + s.total
+        i = i + 1
+    }
+    let elapsed = avra_uptime_ms() - t_start
+    let elapsed_s = elapsed / 1000
+    let elapsed_tenths = (elapsed / 100) - (elapsed_s * 10)
+    let summary = "${string(sum_pass)}/${string(sum_total)} tests passed in ${string(elapsed_s)}.${string(elapsed_tenths)}s"
+    if sum_fail > 0 || shard_failures > 0 || pool_rc != 0 {
+        let shard_note = if shard_failures > 0 { ", ${string(shard_failures)} shard(s) failed to compile/run" } else { "" }
+        println("\x1b[31m\x1b[1m${summary}\x1b[0m \x1b[31m(${string(sum_fail)} failed${shard_note})\x1b[0m")
+        return 1
+    }
+    println("\x1b[32m\x1b[1m${summary}\x1b[0m")
+    0
 }
 
 // Shim around `compile_test_unit`. The heavy work — parse, resolve,
@@ -2046,6 +2314,15 @@ fn run_test_command() {
     let accepted_paths = select_test_paths(test_files, args)
     if accepted_paths.length == 0 {
         println("No spec test files found.")
+        return
+    }
+
+    // 05yc: opt-in per-file shard mode. Each test file → its own
+    // cache slot + binary. Coverage stays on the bundled path until
+    // covmap merging across shards lands.
+    if args.per_file && !args.coverage {
+        let rc = run_per_file_test_command(project_dir, accepted_paths, args)
+        avra_process_exit(rc)
         return
     }
 
@@ -2420,6 +2697,15 @@ fn main() {
         }
         if cmd0 == "test" {
             run_test_command()
+            return
+        }
+        if cmd0 == "_test_shard" {
+            // 05yc: internal subcommand — the per-file orchestrator
+            // forks `bs2 _test_shard <path>` per shard so each
+            // compile + run lives in its own process (the prereq for
+            // parallel dispatch via spawn_pool_async + free crash
+            // isolation). Not for direct user invocation.
+            run_test_shard_command()
             return
         }
         if cmd0 == "build" {
