@@ -7,32 +7,64 @@ Each stage gates the next. Don't skip ahead.
 
 ---
 
-## Architectural decision (2026-05-10): One cache, content-addressed, no exceptions
+## Architectural decisions
 
-**Bead:** `0qmm` (P1, open)
+### One cache, content-addressed, no exceptions — `0qmm` ✅ shipped
 
 Every build artifact lives in `@std.avrac.build.Cache`. Content-addressed via
 `Fingerprint`. Tests trust the cache; the cache is correct by construction.
 Mature compilers (Cargo, Bazel, Buck2, GHC) all do this — *never trust mtime,
 never trust paths, always hash inputs*.
 
-**Today's mix to consolidate (in priority order):**
-1. `meta.bin` sidecars — currently fixed-path `pkg/src/<entry>.meta.bin`.
-   Move into `build/cache/<fp>/metadata.bin` (already a slot in the Cache API).
-   This single move makes the wipe-and-test fixtures (`cli_metadata_compile`
-   27s, `std_avrac_lib_build` 12s) cache-hit on warm runs.
-2. Link-binary cache (`~/.cache/avra-link-cache/<hash>.bin`) — parallel impl
-   from rqwh. Fold into `build/cache/<fp>/unit.bin`.
-3. Per-PPID fixture-stdout cache (`/tmp/avra_*_probe.$PPID.out`) — make it
-   content-keyed + persistent.
-4. Sweep audit for any remaining one-offs.
+Four steps shipped (commits 9ea91208, 3aef48e9, 23639d00, audit):
+1. `meta.bin` → source-keyed `build/cache/meta/<sha256>/unit.meta.bin`
+2. `~/.cache/avra-link-cache/` → `build/cache/link/`
+3. `/tmp/avra_*_test.$PPID.out` → content-keyed `build/cache/fixture_stdout/`
+4. Audit: no remaining caches outside `build/cache/`
 
-**Acceptance:** zero non-Cache caches survive. Test fixtures stop wiping
-*anything*. Warm full test suite drops from ~165s → ~30s.
+### Test Runner V2: per-file binaries, parallel, process-isolated — `05yc` + follow-ups
 
-**Why this gates everything else**: the current test-iteration speed
-(3-5 min warm) makes Stage 5/6 painful to iterate on. With this consolidation,
-every iteration becomes seconds for the unchanged-input path.
+**The model:** every `_test.av` file (anywhere in the tree, workspace or inside
+packages) is its own test target. The test runner builds N binaries in parallel,
+runs them in parallel processes, aggregates structured results.
+
+Why per-file: this is what OCaml/Dune and cargo's integration tests do. One
+file = one test target = one cache slot = one process. Filter changes don't
+invalidate caches; a single file edit invalidates exactly one binary; a crash
+in one test never takes down the suite.
+
+**Flow:**
+1. Discover: `**/*_test.av` (eventually `hkms.4`: declared `@test` attributes).
+2. Build: per-file binary via shared `build_binary` primitive in
+   `@std.avrac.build`. Cache slot per file. Dispatched in parallel via
+   `spawn_pool_async` at `AVRA_JOBS`-way concurrency.
+3. Run: each binary forks separately; orchestrator captures stdout + reads a
+   structured JSON result file the binary writes to a known path.
+4. Aggregate: orchestrator sums pass/fail/total across N JSON files, renders
+   unified output with each binary's failure list assembled in.
+
+**Cold-compile speed depends on `AVRA_USE_METADATA=1` + multi-object linking
+(in progress).** Each binary compiles with metadata stubs in place of source
+parse for `@std/*` packages; producer `.o` files (pre-built once by the
+orchestrator) get linked in to supply bodies. This is the same shape as
+Bazel's "linked deps via declared graph", just hand-rolled until manifests
+gain proper `[dependencies]` graphs.
+
+**Status:** the orchestrator (`bs2 test --per_file`), per-file inputs, build
+cache slot, parallel dispatch, and process-isolated execution all shipped.
+JSON result file format + multi-object linking are the remaining pieces.
+Vocabulary cleanup ("shard" → "test unit / test binary") follows.
+
+**Shipped commits:**
+- `999d994d` — per-file orchestrator + spawn_pool_async dispatch
+- `dd67e953` — build_binary shared primitive (test runner uses it; bs2
+  compile + bs2 check still inline-duplicate the pipeline — see `03hx`)
+- `2wfp` (in flight) — package meta cache slot keyed on whole-package
+  fingerprint; unblocks AVRA_USE_METADATA reliability
+
+### What's immature and tracked
+
+(See "Test Runner V2 immaturity audit" at the bottom of this doc.)
 
 ---
 
@@ -500,3 +532,35 @@ test is the quality gate for the next.
   it before continuing.
 - After every successful change: `git add` + commit + push. Do NOT
   batch (CLAUDE.md rule 8).
+
+---
+
+## Test Runner V2 immaturity audit
+
+The architecture (per-file binaries, parallel, process-isolated, content-keyed
+cache, structured JSON results) matches mature compilers (OCaml/Dune,
+cargo nextest, Bazel). What's *not* mature about our current implementation,
+listed so we don't deceive ourselves:
+
+| # | Gap | Mature reference | Filed |
+|---|---|---|---|
+| 1 | **No process backpressure.** `AVRA_JOBS=8` runs 8 bs2 children regardless of available RAM. Each holds its own parsed AST + LLVM context. We've already hit OOM kills under disk pressure. | Bazel/Buck2 measure available memory and adapt concurrency. | TODO |
+| 2 | **No test-execution caching.** When the binary + inputs are unchanged, we still RUN the test. Fixture caching is per-call, not per-binary action. | Bazel skips unchanged tests entirely (action-level memoization). | TODO |
+| 3 | **AVRA_USE_METADATA + multi-object linking is hand-rolled.** Orchestrator runs `cd <pkg> && bs2 build --lib` for each hardcoded `@std/*` package, scrapes `last/<name>.txt` sidecars to find `.o` paths, env-passes them as a `:`-delimited string. | Cargo declares deps in manifest, topo-builds, links by graph. | TODO (post-2wfp) |
+| 4 | **Coverage falls back to bundled.** Per-file emits N `.profraw` files needing `llvm-profdata merge` orchestration. | LLVM cov merging is standard. | TODO |
+| 5 | **317 × fork+exec overhead.** ~10-20ms per child = ~5s pure spawn cost. | cargo nextest reuses worker processes across multiple tests. | TODO |
+| 6 | **bash in the link path.** `scripts/diagnose.sh` calls `llc + cc`. | Cargo links via toolchain directly. | TODO |
+| 7 | **Discovery via shell `find`.** Fragile (symlinks, sort order). | Cargo manifest `[[test]]` entries. | `hkms.4` open |
+| 8 | **Resolver leak recurrence.** New module under @std/avrac/src can still trigger sibling-import breakage. | n/a (real bug) | `wmvd` open |
+| 9 | **`03hx` incomplete drift risk.** `build_binary` shared primitive exists; test runner uses it. `bs2 compile` and `bs2 check` still inline-duplicate the AST→binary pipeline. ONE call site converted, TWO not. | n/a (refactor debt) | `03hx` open |
+| 10 | **`package_source_fingerprint` walks @std on every consumer lookup.** ~50 sha256 calls × N shards. No memoization. | Cargo / Bazel cache fingerprints per session. | TODO |
+
+The architecture is right. Items 1-6 are the visible roughness; landing each
+moves us closer to "behaves like cargo nextest" rather than "hand-rolled
+parallel test runner". None of them are *blockers* for shipping per-file as
+default — they're follow-ups that make the inner loop incrementally faster
+and the implementation incrementally less fragile.
+
+The single biggest near-term win is item 3 (AVRA_USE_METADATA + multi-object
+linking). Without it, per-file cold compile is slower than bundled cold.
+With it, cold full-suite should drop to <60s on 8 cores.

@@ -13,7 +13,7 @@
 //
 // Tracking ticket: forge-crafting-intepreters-g2eo.
 
-use @std.avrac.features.modules.{meta_cache_path_for_source}
+use @std.avrac.features.modules.{package_meta_path_for}
 
 extern fn avra_shell_exec(cmd: string) -> string
 extern fn avra_shell_exec_status(cmd: string) -> int
@@ -52,7 +52,7 @@ fn main() -> int {
     avra_shell_exec("rm -f /tmp/avra_g2eo_auto_deps.txt")
     let rc1 = avra_shell_exec_status("cd ${root}/packages/test-app && AVRA_DEPS_OUT=/tmp/avra_g2eo_auto_deps.txt ${bs2} build --emit_metadata > /tmp/avra_g2eo_auto.log 2>&1")
     probe("build_rc_zero", rc1 == 0)
-    probe("dep_meta_pre_built", avra_selfhost_file_exists(meta_cache_path_for_source("${root}/packages/test-dep/src/dep.av")) != 0)
+    probe("dep_meta_pre_built", avra_selfhost_file_exists(package_meta_path_for("${root}/packages/test-dep")) != 0)
     let auto_taken = avra_shell_exec_status("test -s /tmp/avra_g2eo_auto_deps.txt && grep -q dep /tmp/avra_g2eo_auto_deps.txt")
     probe("fast_path_taken_by_default", auto_taken == 0)
 

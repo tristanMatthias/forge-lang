@@ -19,7 +19,14 @@
 // cache shareable across machines and reproducible across runs.
 
 use @std.crypto.{sha256_hex, sha256_file}
-use core.{avra_selfhost_file_exists}
+use core.{
+    avra_selfhost_file_exists,
+    avra_selfhost_read_file,
+    avra_selfhost_write_file,
+    avra_shell_exec,
+    avra_mkdir_p,
+    avra_file_mtime,
+}
 
 /// A computed fingerprint. Wraps the raw 64-char hex string so the
 /// type signature surfaces "this is a fingerprint, not just any hash"
@@ -148,5 +155,62 @@ export fn fp_eq(a: Fingerprint, b: Fingerprint) -> bool {
 /// for human disambiguation in any realistic project.
 export fn fp_short(fp: Fingerprint) -> string {
     fp.hex.substring(0, 12)
+}
+
+/// 2wfp: whole-package fingerprint. Combines every .av source under
+/// `<pkg_root>/src/` into one deterministic digest by concatenating
+/// `<path>:<sha256(content)>\n` for each file, sorted by path, then
+/// hashing the whole accumulator.
+///
+/// Returns "" when `<pkg_root>/avra.toml` is absent — that's the signal
+/// the caller is looking at an ad-hoc single-file compile (e.g.
+/// `bs2 compile /tmp/scratch.av`), not a real package. In that case
+/// callers fall back to a file-level fingerprint scheme.
+///
+/// This is the right cache key for a *package's* unit-level metadata.
+/// Keying on just the entry file's hash misses changes to sibling
+/// files — a new `export fn` in a sub-module wouldn't bump the cache
+/// slot, so consumers under AVRA_USE_METADATA=1 would synthesize stubs
+/// from the stale aggregated meta and fail to resolve the new symbol.
+///
+/// Per-file metas (emit_per_file_metas) keep their per-file fingerprint
+/// scheme — each sub-mod has its own slot keyed on its own sha256.
+/// This function is exclusively for the package-aggregate slot.
+export fn package_source_fingerprint(pkg_root: string) -> string {
+    if pkg_root == "" { return "" }
+    if avra_selfhost_file_exists(pkg_root + "/avra.toml") == 0 { return "" }
+    // Sidecar memoization (same trick rqwh's link_shared_fp uses in
+    // diagnose.sh). The bundled bs2 test compile hits this function
+    // thousands of times during one process — without memoization, each
+    // call walks the ~50 files of @std/avrac and sha256s each. The
+    // sidecar is valid as long as it's newer than every input .av;
+    // recompute otherwise. Naive cold cost ~50ms × 1000 calls = 50s;
+    // memoized warm path is one stat + mtime compare = ~50µs.
+    let src_dir = pkg_root + "/src"
+    let cache_dir = pkg_root + "/build/cache"
+    let sidecar = cache_dir + "/.pkg-fp"
+    if sidecar_is_fresh(sidecar, src_dir) {
+        return avra_selfhost_read_file(sidecar)
+    }
+    let listing = avra_shell_exec("find ${src_dir} -name '*.av' -type f 2>/dev/null | sort")
+    mut acc = ""
+    for line in listing.split("\n") {
+        if line == "" { continue }
+        let hex = sha256_file(line)
+        acc = acc + line + ":" + hex + "\n"
+    }
+    let fp = sha256_hex(acc)
+    let _ = avra_mkdir_p(cache_dir)
+    let _ = avra_selfhost_write_file(sidecar, fp)
+    fp
+}
+
+// True iff `sidecar` exists and has mtime >= every .av under `src_dir`.
+// Uses `find -newer` to short-circuit: if the find finds any newer
+// file, the sidecar is stale. Empty find output means sidecar wins.
+fn sidecar_is_fresh(sidecar: string, src_dir: string) -> bool {
+    if avra_selfhost_file_exists(sidecar) == 0 { return false }
+    let newer = avra_shell_exec("find ${src_dir} -name '*.av' -type f -newer ${sidecar} 2>/dev/null | head -c 1")
+    newer == ""
 }
 

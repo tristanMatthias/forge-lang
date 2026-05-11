@@ -30,16 +30,33 @@ src_relevant=$(echo "$staged" | grep -E '^(bootstrap/packages/std-avrac/src/|boo
 
 echo "[pre-commit] bootstrap-affecting changes detected — running spec test suite"
 TEST_LOG="/tmp/avra_pre_commit_test.${PPID}.log"
-if ! ( cd bootstrap && ./build/bs2 test ) > "$TEST_LOG" 2>&1; then
+# Hard timeout: kill the test suite if it runs longer than 20 min. The
+# baseline is ~2min warm; ~14min cold (rebuilds the bundled binary +
+# runs 2227 tests + ~30 fixtures that fork bs2). Anything past 20 min
+# signals a real perf regression worth blocking. Uses perl alarm
+# because macOS doesn't ship /usr/bin/timeout by default.
+TEST_TIMEOUT_SEC=1200
+TEST_START=$(date +%s)
+perl -e 'alarm shift; exec @ARGV' "$TEST_TIMEOUT_SEC" \
+     sh -c 'cd bootstrap && ./build/bs2 test' > "$TEST_LOG" 2>&1
+TEST_RC=$?
+TEST_ELAPSED=$(( $(date +%s) - TEST_START ))
+if [ $TEST_RC -ne 0 ]; then
   echo
-  echo "[pre-commit] spec test suite failed — commit blocked"
-  echo "[pre-commit] full output: $TEST_LOG"
-  echo "[pre-commit] failures (excerpt):"
-  grep -E "✗|Failures:|tests passed" "$TEST_LOG" | tail -25
-  echo "[pre-commit] fix the regression, or 'git commit --no-verify' to bypass"
+  if [ $TEST_ELAPSED -ge $TEST_TIMEOUT_SEC ]; then
+    echo "[pre-commit] spec test suite TIMED OUT after ${TEST_ELAPSED}s (limit ${TEST_TIMEOUT_SEC}s) — commit blocked"
+    echo "[pre-commit] baseline ~2min warm / ~14min cold; this run exceeded that."
+    echo "[pre-commit] perf regression suspected. Inspect: $TEST_LOG"
+  else
+    echo "[pre-commit] spec test suite failed after ${TEST_ELAPSED}s — commit blocked"
+    echo "[pre-commit] full output: $TEST_LOG"
+    echo "[pre-commit] failures (excerpt):"
+    grep -E "✗|Failures:|tests passed" "$TEST_LOG" | tail -25
+    echo "[pre-commit] fix the regression, or 'git commit --no-verify' to bypass"
+  fi
   exit 1
 fi
-echo "[pre-commit] spec test suite passed"
+echo "[pre-commit] spec test suite passed in ${TEST_ELAPSED}s"
 rm -f "$TEST_LOG"
 
 if [ -n "$src_relevant" ]; then

@@ -79,6 +79,7 @@ use @std.avrac.build.{
     cache_for, entry_source_meta_path, ensure_source_meta_dir,
     cache_bin_path_for,
     CompileTarget, build_binary,
+    package_source_fingerprint,
 }
 use @std.crypto.{sha256_hex}
 extern fn avra_bytes_to_hex(b: bytes) -> string
@@ -1445,9 +1446,9 @@ fn run_build_command() {
                 if file_exists(cached_meta) != 0 {
                     let size_str = avra_shell_exec("wc -c < '${cached_meta}' 2>/dev/null | tr -d ' '")
                     if size_str != "" && size_str != "0" {
+                        // 2wfp: source-keyed slot uses whole-package fp.
                         let pkg_root = package_root_for_file(entry_path)
-                        let src_content = read_file(entry_path)
-                        let source_fp = Fingerprint { hex: sha256_hex(src_content) }
+                        let source_fp = Fingerprint { hex: package_source_fingerprint(pkg_root) }
                         let pkg_cache = cache_for(pkg_root)
                         let _ = ensure_source_meta_dir(pkg_cache, source_fp)
                         let dest = entry_source_meta_path(pkg_cache, source_fp)
@@ -1541,9 +1542,9 @@ fn run_build_command() {
             // a colocated mirror for cache hits to copy back without
             // rederiving the source fingerprint.
             if pr.success && args.emit_metadata {
+                // 2wfp: source-keyed slot uses whole-package fp.
                 let pkg_root = package_root_for_file(entry_path)
-                let src_content = read_file(entry_path)
-                let source_fp = Fingerprint { hex: sha256_hex(src_content) }
+                let source_fp = Fingerprint { hex: package_source_fingerprint(pkg_root) }
                 let pkg_cache = cache_for(pkg_root)
                 let sidecar = entry_source_meta_path(pkg_cache, source_fp)
                 if file_exists(sidecar) != 0 {
@@ -3021,10 +3022,20 @@ fn main() {
             }
             let fp = bytes_from_hex(sha256_hex(csource))
             let unit_meta = extract_unit_metadata(unit_name, fp, named.stmts)
-            // 0qmm: write ONLY to the content-addressed cache slot.
+            // 2wfp: when compiling a real package (avra.toml present),
+            // key the unit-level meta on the whole-package fingerprint
+            // — the aggregated meta covers every file's surface, so any
+            // source change in the package must invalidate this slot.
+            // For ad-hoc single-file compiles (no avra.toml at the
+            // detected pkg_root) keep the original file-fp scheme.
             let pkg_root = package_root_for_file(cpath)
             let cache = cache_for(pkg_root)
-            let source_fp = Fingerprint { hex: sha256_hex(csource) }
+            let pkg_fp = package_source_fingerprint(pkg_root)
+            let source_fp = if pkg_fp != "" {
+                Fingerprint { hex: pkg_fp }
+            } else {
+                Fingerprint { hex: sha256_hex(csource) }
+            }
             let _ = ensure_source_meta_dir(cache, source_fp)
             let cache_meta_path = entry_source_meta_path(cache, source_fp)
             if metadata_write(cache_meta_path, unit_meta) != 1 {

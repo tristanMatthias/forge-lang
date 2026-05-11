@@ -4,7 +4,7 @@
 //
 // Tracking ticket: forge-crafting-intepreters-2f54.
 
-use @std.avrac.features.modules.{meta_cache_path_for_source}
+use @std.avrac.features.modules.{package_meta_path_for}
 
 extern fn avra_shell_exec(cmd: string) -> string
 extern fn avra_shell_exec_status(cmd: string) -> int
@@ -42,7 +42,7 @@ fn main() -> int {
 
     // Dep's lib.av.meta.bin should exist (proof the dep was pre-built
     // with --emit_metadata).
-    probe("dep_meta_bin_present", avra_selfhost_file_exists(meta_cache_path_for_source("${dep_dir}/src/lib.av")) != 0)
+    probe("dep_meta_bin_present", avra_selfhost_file_exists(package_meta_path_for(dep_dir)) != 0)
 
     // Dep's lib.av.ll should exist (proof of compile).
     probe("dep_ll_present", avra_selfhost_file_exists("${dep_dir}/src/lib.av.ll") != 0)
@@ -54,7 +54,7 @@ fn main() -> int {
     avra_shell_exec("rm -rf ${dep_dir}/build/cache/meta")
     let rc2 = avra_shell_exec_status("cd ${app_dir} && ${bs2} build")
     probe("default_build_rc_zero", rc2 == 0)
-    probe("dep_meta_NOT_present_without_flag", avra_selfhost_file_exists(meta_cache_path_for_source("${dep_dir}/src/lib.av")) == 0)
+    probe("dep_meta_NOT_present_without_flag", avra_selfhost_file_exists(package_meta_path_for(dep_dir)) == 0)
 
     0
 }

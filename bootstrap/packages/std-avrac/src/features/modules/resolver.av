@@ -7,7 +7,7 @@ use core.{Stmt, StmtList, SStmt, sstmt, sstmt_at, sstmt_dummy, AnnotationList, E
 use parse.{parse_program_source, parse_program_source_at}
 use core.{avra_process_env_get, avra_selfhost_append_file, avra_selfhost_read_file, avra_is_dir, avra_selfhost_file_exists}
 use build.{metadata_read, metadata_file_exists, synthesize_unit_body}
-use build.{cache_for, entry_source_meta_path, Fingerprint}
+use build.{cache_for, entry_source_meta_path, Fingerprint, package_source_fingerprint}
 use @std.crypto.{sha256_hex, sha256_file}
 use features.modules.{list_avra_module_files, list_avra_module_subdirs}
 
@@ -55,18 +55,39 @@ fn meta_fingerprint_matches_source(meta_path: string, src_path: string) -> bool 
     stored_hex == current_hex
 }
 
-/// 0qmm: locate the meta sidecar for a source file in the
+/// 0qmm: locate the meta sidecar for a single source file in the
 /// content-addressed cache slot (build/cache/meta/<sha256(src)>/
 /// unit.meta.bin). Stale hits are impossible — the path itself
 /// embeds sha256(source). No legacy sidecar fallback: producer
 /// always writes here, consumer always reads here.
 ///
-/// Returns "" when the cache slot is absent (consumer takes the
-/// source-on-disk path).
+/// Used by the `mod foo` (per-file) lookup path; the `use @pkg`
+/// path uses `package_meta_cache_path` (whole-package fingerprint)
+/// because the package-level meta aggregates every file's surface
+/// and must invalidate when any contributing file changes (2wfp).
+///
+/// Returns "" when the cache slot is absent.
 fn source_meta_cache_path(pkg_file: string) -> string {
     let pkg_root = package_root_for_file(pkg_file)
     if pkg_root == "" { return "" }
     let hex = sha256_file(pkg_file)
+    if hex == "" { return "" }
+    let cache = cache_for(pkg_root)
+    let cache_path = entry_source_meta_path(cache, Fingerprint { hex })
+    if metadata_file_exists(cache_path) { return cache_path }
+    ""
+}
+
+/// 2wfp: locate the package-aggregated meta sidecar in the
+/// content-addressed cache slot keyed on `package_source_fingerprint`.
+/// Producer writes here when emitting unit-level metadata for a
+/// package; consumer (use @pkg path) reads here. Stale hits impossible
+/// — change ANY .av file under the package's src/, change the
+/// fingerprint, change the path.
+fn package_meta_cache_path(pkg_file: string) -> string {
+    let pkg_root = package_root_for_file(pkg_file)
+    if pkg_root == "" { return "" }
+    let hex = package_source_fingerprint(pkg_root)
     if hex == "" { return "" }
     let cache = cache_for(pkg_root)
     let cache_path = entry_source_meta_path(cache, Fingerprint { hex })
@@ -211,10 +232,29 @@ fn render_cycle(stack: ImportStack, cycle_path: string) -> string {
 /// file's meta sidecar. Exported so fixtures can probe the
 /// canonical location without re-implementing the path derivation.
 /// Returns "" if the source file can't be hashed (missing on disk).
+///
+/// This computes the PER-FILE slot (keyed on src_path's sha256).
+/// For package-level aggregated meta, use `package_meta_path_for`
+/// — that slot is keyed on the whole-package fingerprint per 2wfp.
 export fn meta_cache_path_for_source(src_path: string) -> string {
     let pkg_root = package_root_for_file(src_path)
     if pkg_root == "" { return "" }
     let hex = sha256_file(src_path)
+    if hex == "" { return "" }
+    let cache = cache_for(pkg_root)
+    entry_source_meta_path(cache, Fingerprint { hex })
+}
+
+/// 2wfp: compute the content-addressed cache path for a package's
+/// aggregated unit meta. Producer (`bs2 compile --emit_metadata` from
+/// the package root) writes here; consumer (`use @pkg` resolver path)
+/// reads here. Fixtures probing for "did the package's meta land?"
+/// should call this, not meta_cache_path_for_source — the package
+/// slot is keyed on the whole-package fingerprint, not the entry
+/// file's sha256.
+export fn package_meta_path_for(pkg_root: string) -> string {
+    if pkg_root == "" { return "" }
+    let hex = package_source_fingerprint(pkg_root)
     if hex == "" { return "" }
     let cache = cache_for(pkg_root)
     entry_source_meta_path(cache, Fingerprint { hex })
@@ -983,12 +1023,17 @@ fn resolve_package_use_and_continue(ss: SStmt, next: StmtList, dir: string, load
     let new_loaded = LoadedPaths.Node(pkg_file, loaded)
     let pkg_dir = modules_dirname(pkg_file)
     let use_meta = avra_process_env_get("AVRA_USE_METADATA") != ""
-    // 0qmm: look up the meta sidecar in the content-addressed cache
-    // slot (build/cache/meta/<sha256(source)>/unit.meta.bin). Producer
-    // (emit_per_file_metas + entry-meta writer in main.av) writes
-    // there using the same fp. Stale hits impossible — change the
-    // source byte, change the cache path.
-    let meta_path = source_meta_cache_path(pkg_file)
+    // 2wfp: package-level lookup uses the WHOLE-PACKAGE fingerprint
+    // (every .av under <pkg_root>/src/), not just the entry file's
+    // sha256. The aggregated unit meta this slot holds covers every
+    // file's exports — so it must invalidate when ANY contributing
+    // file changes, not just the entry. Producer writes to the same
+    // package-fp slot when emitting unit-level metadata.
+    //
+    // Gate the cache-slot computation on use_meta — the fingerprint
+    // walk (~50ms cold for a package the size of @std/avrac) is pure
+    // waste for the default path (no AVRA_USE_METADATA set).
+    let meta_path = if use_meta { package_meta_cache_path(pkg_file) } else { "" }
     let take_meta_fast_path = use_meta && meta_path != "" && metadata_file_exists(meta_path)
     emit_progress_start(pkg_file)
     let pkg_t_start = avra_uptime_ms()
@@ -1174,7 +1219,10 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths, stack: Impo
             // most recent changes from the consumer's compile.
             let use_meta = avra_process_env_get("AVRA_USE_METADATA") != ""
             // 0qmm: cache-keyed meta lookup (see source_meta_cache_path).
-            let meta_path = source_meta_cache_path(mod_path)
+            // Gate on use_meta — the sha256_file of mod_path is small
+            // (~5ms) but called per `mod foo` import; the lookup is
+            // pure waste when AVRA_USE_METADATA is unset.
+            let meta_path = if use_meta { source_meta_cache_path(mod_path) } else { "" }
             let take_meta = use_meta && meta_path != "" && metadata_file_exists(meta_path)
             emit_progress_start(mod_path)
             let mod_t_start = avra_uptime_ms()

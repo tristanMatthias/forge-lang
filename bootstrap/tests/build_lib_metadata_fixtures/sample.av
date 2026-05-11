@@ -6,7 +6,7 @@
 //
 // Tracking ticket: forge-crafting-intepreters-2f54.
 
-use @std.avrac.features.modules.{meta_cache_path_for_source}
+use @std.avrac.features.modules.{package_meta_path_for}
 
 extern fn avra_shell_exec(cmd: string) -> string
 extern fn avra_shell_exec_status(cmd: string) -> int
@@ -40,7 +40,7 @@ fn main() -> int {
     probe("build_rc_zero", rc == 0)
 
     // The produced .meta.bin lands in the content-addressed cache.
-    let meta = meta_cache_path_for_source(src)
+    let meta = package_meta_path_for(pkg)
     let exists_status = avra_shell_exec_status("test -s ${meta}")
     probe("meta_bin_present_and_nonempty", exists_status == 0)
 
