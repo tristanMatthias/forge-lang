@@ -7,6 +7,35 @@ Each stage gates the next. Don't skip ahead.
 
 ---
 
+## Architectural decision (2026-05-10): One cache, content-addressed, no exceptions
+
+**Bead:** `0qmm` (P1, open)
+
+Every build artifact lives in `@std.avrac.build.Cache`. Content-addressed via
+`Fingerprint`. Tests trust the cache; the cache is correct by construction.
+Mature compilers (Cargo, Bazel, Buck2, GHC) all do this — *never trust mtime,
+never trust paths, always hash inputs*.
+
+**Today's mix to consolidate (in priority order):**
+1. `meta.bin` sidecars — currently fixed-path `pkg/src/<entry>.meta.bin`.
+   Move into `build/cache/<fp>/metadata.bin` (already a slot in the Cache API).
+   This single move makes the wipe-and-test fixtures (`cli_metadata_compile`
+   27s, `std_avrac_lib_build` 12s) cache-hit on warm runs.
+2. Link-binary cache (`~/.cache/avra-link-cache/<hash>.bin`) — parallel impl
+   from rqwh. Fold into `build/cache/<fp>/unit.bin`.
+3. Per-PPID fixture-stdout cache (`/tmp/avra_*_probe.$PPID.out`) — make it
+   content-keyed + persistent.
+4. Sweep audit for any remaining one-offs.
+
+**Acceptance:** zero non-Cache caches survive. Test fixtures stop wiping
+*anything*. Warm full test suite drops from ~165s → ~30s.
+
+**Why this gates everything else**: the current test-iteration speed
+(3-5 min warm) makes Stage 5/6 painful to iterate on. With this consolidation,
+every iteration becomes seconds for the unchanged-input path.
+
+---
+
 ## The destination — what the user actually writes
 
 This is the surface we're building toward. The whole stack of stages
