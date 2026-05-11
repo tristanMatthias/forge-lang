@@ -238,7 +238,12 @@ ensure_seed() {
 # Cache the combined hash, invalidate via mtime: if the cache file is
 # newer than every input, reuse; otherwise recompute. Stable across
 # sequential link_ll calls in the same test session.
-LINK_CACHE_DIR="${HOME}/.cache/avra-link-cache"
+#
+# 0qmm: link-binary cache lives inside the project's build/cache/
+# (under a `link/` sub-namespace alongside `meta/`), so every cached
+# artifact lives in one tree — no parallel ~/.cache/avra-* directories.
+# `bs2 cache clean` and `make clean --all` reach this slot uniformly.
+LINK_CACHE_DIR="$BUILD_DIR/cache/link"
 LINK_SHARED_FP_FILE="$LINK_CACHE_DIR/.shared-fp"
 
 link_shared_fp() {
