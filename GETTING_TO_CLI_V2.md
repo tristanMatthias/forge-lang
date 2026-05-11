@@ -286,11 +286,14 @@ in `30b3c0c0`. The phase-8 bead also has follow-up children
   a string literal so the runtime splice resolves the local at
   expansion time.
 
-- ✅ **`dkfa`** (commit `ac175900`) — F3105 duplicate-decl diagnostic
-  for top-level types. Scoped to bare-name TypeDecl / NewtypeDecl /
-  ShapeDecl / EnumDecl; qualified names (`pkg::mod::Foo`) bypass
-  (bundling can legitimately re-register the same qualified name).
-  `Result` intrinsic is silently de-duped vs stdlib's.
+- ✅ **`dkfa`** (commit `ac175900`, refactored in `ac975fe4`) —
+  F3105 duplicate-decl diagnostic for top-level types. Scoped to
+  bare-name TypeDecl / NewtypeDecl / ShapeDecl / EnumDecl;
+  qualified names (`pkg::mod::Foo`) bypass (bundling can
+  legitimately re-register the same qualified name). The original
+  `is_intrinsic_name("Result")` special-case is GONE: inject_intrinsics
+  now runs AFTER resolve_module_files so program_declares_enum can
+  see stdlib's Result and skip the synthetic — no name-matching hack.
 
 **Status 2026-05-10 (updated):**
 
