@@ -8,28 +8,10 @@
 // Memoised at the shell level so each `then` does not re-compile.
 // Tracking ticket: forge-crafting-intepreters-k21v.
 
-extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{cached_fixture_run}
 
-
-// vez6.6.4 flake fix: per-PPID cache file so concurrent
-// bs2-test sessions (e.g. a commit pre-commit hook racing
-// a manual run) don't collide on a shared /tmp path. PPID
-// is the bs2 test runner's PID, stable across every
-// avra_shell_exec call in a single test session.
-const CACHE_FILE: string = "/tmp/avra_link_objects.$" + "PPID.out"
 fn link_run_fixture() -> string {
-    avra_shell_exec("if [ ! -f " + CACHE_FILE + " ]; then bash scripts/diagnose.sh --run tests/link_objects_fixtures/sample.av > " + CACHE_FILE + " 2>&1 || true; fi; cat " + CACHE_FILE + "")
-}
-
-fn link_wipe() -> string {
-    avra_shell_exec("rm -f " + CACHE_FILE + "")
-}
-
-spec "link: clear cached fixture output" {
-    then "wipe stale /tmp output from any prior run" {
-        let _ = link_wipe()
-        true
-    }
+    cached_fixture_run("tests/link_objects_fixtures/sample.av")
 }
 
 spec "link: helper builds the fixture's C objects" {

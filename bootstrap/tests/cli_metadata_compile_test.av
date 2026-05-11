@@ -8,27 +8,10 @@
 //
 // Tracking ticket: forge-crafting-intepreters-9ixv (closed).
 
-extern fn avra_shell_exec(cmd: string) -> string
-
-// Per-PPID cache file so two concurrent bs2-test sessions (e.g. one
-// commit's pre-commit hook racing a manual ./build/bs2 test) don't
-// collide on a shared /tmp path. PPID is the bs2 test runner's PID,
-// stable across every avra_shell_exec call in a single test session.
-const CACHE_FILE: string = "/tmp/avra_cli_meta_compile_test.$" + "PPID.out"
+use @std.avrac.test_runner.{cached_fixture_run}
 
 fn cmc_run() -> string {
-    avra_shell_exec("if [ ! -f " + CACHE_FILE + " ]; then bash scripts/diagnose.sh --run tests/cli_metadata_compile_fixtures/sample.av > " + CACHE_FILE + " 2>&1 || true; fi; cat " + CACHE_FILE)
-}
-
-fn cmc_wipe() -> string {
-    avra_shell_exec("rm -f " + CACHE_FILE)
-}
-
-spec "9ixv regression: clear cached output" {
-    then "wipe stale /tmp output from any prior run" {
-        let _ = cmc_wipe()
-        true
-    }
+    cached_fixture_run("tests/cli_metadata_compile_fixtures/sample.av")
 }
 
 spec "9ixv regression: @std/avrac --lib --emit_metadata pre-builds cleanly" {

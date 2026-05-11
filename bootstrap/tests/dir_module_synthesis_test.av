@@ -14,28 +14,10 @@
 //
 // Tracking ticket: forge-crafting-intepreters-g2eo.1.2.
 
-extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{cached_fixture_run}
 
-
-// vez6.6.4 flake fix: per-PPID cache file so concurrent
-// bs2-test sessions (e.g. a commit pre-commit hook racing
-// a manual run) don't collide on a shared /tmp path. PPID
-// is the bs2 test runner's PID, stable across every
-// avra_shell_exec call in a single test session.
-const CACHE_FILE: string = "/tmp/avra_dirmod_synth_test.$" + "PPID.out"
 fn dms_run() -> string {
-    avra_shell_exec("if [ ! -f " + CACHE_FILE + " ]; then bash scripts/diagnose.sh --run tests/dir_module_synthesis_fixtures/sample.av > " + CACHE_FILE + " 2>&1 || true; fi; cat " + CACHE_FILE + "")
-}
-
-fn dms_wipe() -> string {
-    avra_shell_exec("rm -f " + CACHE_FILE + "")
-}
-
-spec "dir_module synthesis: clear cached output" {
-    then "wipe stale /tmp output" {
-        let _ = dms_wipe()
-        true
-    }
+    cached_fixture_run("tests/dir_module_synthesis_fixtures/sample.av")
 }
 
 spec "synthesize_subdir_module_decls: unfiltered" {

@@ -11,8 +11,20 @@
 use core.{
     Stmt, StmtList, ParamList, ValueType,
     sstmt_dummy,
+    avra_shell_exec,
+    avra_selfhost_file_exists,
+    avra_selfhost_read_file,
+    avra_selfhost_write_file,
+    avra_mkdir_p,
+    avra_file_mtime,
 }
 use features.modules.{hoist_package_modules, HoistSplit}
+use @std.crypto.{sha256_hex}
+
+// avra_sha256_file lives in runtime.c. Eventually consolidates into
+// core/runtime.av (the single-source-of-truth for runtime externs) —
+// declared here locally until that DRY pass lands.
+extern fn avra_sha256_file(path: string) -> string
 
 /// Drop every `extern fn` declaration from the list.
 ///
@@ -76,6 +88,66 @@ export fn append_stmt_list(a: StmtList, b: StmtList) -> StmtList {
         .End -> b
         .Node(ss, next) -> StmtList.Node(ss, append_stmt_list(next, b))
     }
+}
+
+/// 0qmm step 3: content-keyed fixture-stdout cache. Replaces the
+/// per-PPID /tmp pattern that re-ran heavy fixtures (cli_metadata_compile,
+/// std_avrac_lib_build, etc.) on every session because PPID changed —
+/// across sessions, nothing carried over. The hash factors in the
+/// fixture source plus every toolchain input that affects its output
+/// (bs2 + runtime.o + llvm_wrapper.o), so a slot is reused across
+/// sessions when those bytes match and invalidated automatically when
+/// they don't.
+///
+/// Performance: the toolchain inputs (bs2/runtime.o/llvm_wrapper.o)
+/// are ~5MB combined; sha256-ing them on every `then` block would
+/// burn ~100ms per call. We memoise the combined toolchain fp via a
+/// sidecar file (`build/cache/fixture_stdout/.toolchain-fp`), valid
+/// as long as that file is newer than every input. Same trick rqwh's
+/// link_shared_fp uses in diagnose.sh.
+///
+/// On Hit: returns the previously-captured stdout. On Miss: runs the
+/// fixture via diagnose.sh, captures stdout, persists, returns.
+export fn cached_fixture_run(fixture_path: string) -> string {
+    let cache_dir = "build/cache/fixture_stdout"
+    let toolchain_fp = read_or_compute_toolchain_fp(cache_dir)
+    let fixture_h = avra_sha256_file(fixture_path)
+    let key = sha256_hex("${toolchain_fp}:${fixture_h}:${fixture_path}")
+    let cache_path = "${cache_dir}/${key}.out"
+    if avra_selfhost_file_exists(cache_path) == 1 {
+        return avra_selfhost_read_file(cache_path)
+    }
+    let _ = avra_mkdir_p(cache_dir)
+    let out = avra_shell_exec("bash scripts/diagnose.sh --run ${fixture_path} 2>&1 || true")
+    let _ = avra_selfhost_write_file(cache_path, out)
+    out
+}
+
+/// Memoised hash of (bs2, runtime.o, llvm_wrapper.o). Read from the
+/// sidecar when present and newer than every input; recomputed
+/// otherwise. The sidecar is plain hex (64 chars), so an unrelated
+/// touch (e.g. `make clean` deleting the cache dir) just forces one
+/// recomputation, never a wrong hit.
+fn read_or_compute_toolchain_fp(cache_dir: string) -> string {
+    let sidecar = "${cache_dir}/.toolchain-fp"
+    if avra_selfhost_file_exists(sidecar) == 1
+        && sidecar_newer_than_inputs(sidecar) {
+        return avra_selfhost_read_file(sidecar)
+    }
+    let bs2_h = avra_sha256_file("build/bs2")
+    let runtime_h = avra_sha256_file("build/runtime.o")
+    let wrapper_h = avra_sha256_file("build/llvm_wrapper.o")
+    let combined = sha256_hex("${bs2_h}:${runtime_h}:${wrapper_h}")
+    let _ = avra_mkdir_p(cache_dir)
+    let _ = avra_selfhost_write_file(sidecar, combined)
+    combined
+}
+
+fn sidecar_newer_than_inputs(sidecar: string) -> bool {
+    let s_mtime = avra_file_mtime(sidecar)
+    s_mtime > avra_file_mtime("build/bs2")
+        && s_mtime > avra_file_mtime("build/runtime.o")
+        && s_mtime > avra_file_mtime("build/llvm_wrapper.o")
 }
 
 
