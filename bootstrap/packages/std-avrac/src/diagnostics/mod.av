@@ -436,6 +436,27 @@ export fn bag_has_warnings(bag: DiagnosticBag) -> bool {
     bag.warning_count > 0
 }
 
+/// True iff at least one diagnostic in the bag carries `code`. Used by
+/// in-process tests that previously forked bs2 + grep'd stderr for a
+/// specific F-code. Walks the linked list — bag sizes are small in
+/// practice (one path per pipeline phase), so the O(n) cost is fine.
+export fn bag_has_code(bag: DiagnosticBag, code: DiagCode) -> bool {
+    list_has_code(bag.diagnostics, code)
+}
+
+fn list_has_code(list: DiagnosticList, code: DiagCode) -> bool {
+    match list {
+        .End -> false
+        .Node(diag, next) -> {
+            if diag_code_str(diag.code) == diag_code_str(code) {
+                true
+            } else {
+                list_has_code(next, code)
+            }
+        }
+    }
+}
+
 /// Concatenate two bags. Used between phases to roll up per-pass
 /// diagnostics into one program-level bag for rendering.
 export fn bag_merge(a: DiagnosticBag, b: DiagnosticBag) -> DiagnosticBag {

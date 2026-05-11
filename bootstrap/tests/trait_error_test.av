@@ -1,14 +1,13 @@
-extern fn avra_file_write(path: string, content: string) -> int
-extern fn avra_shell_exec(cmd: string) -> string
+// Compile-error test: impl missing a required trait method.
+// In-process via check_source — no fork, no /tmp scratch (4szi step 3).
 
-fn te_run() -> string {
-    let src = "trait Drawable {\n    fn draw(self) -> string\n    fn color(self) -> string\n}\n\ntype Widget = { id: int }\n\nimpl Drawable for Widget {\n    fn draw(self) -> string { \"widget\" }\n    // missing color\n}\n\nfn entry() {\n    let w = Widget { id: 1 }\n    println(w.draw())\n}\n"
-    avra_file_write("/tmp/_te_compile_test.av", src)
-    avra_shell_exec("./build/bs2 compile /tmp/_te_compile_test.av 2>&1 || true")
-}
+use @std.avrac.check.{check_source}
+use @std.avrac.diagnostics.{bag_has_code, DiagCode}
+
+const SOURCE: string = "trait Drawable {\n    fn draw(self) -> string\n    fn color(self) -> string\n}\n\ntype Widget = { id: int }\n\nimpl Drawable for Widget {\n    fn draw(self) -> string { \"widget\" }\n    // missing color\n}\n\nfn entry() {\n    let w = Widget { id: 1 }\n    println(w.draw())\n}\n"
 
 spec "trait error" {
     then "F1000 reported when impl is missing a required method" {
-        te_run().contains("F1000")
+        bag_has_code(check_source(SOURCE), DiagCode.TypeMismatch)
     }
 }
