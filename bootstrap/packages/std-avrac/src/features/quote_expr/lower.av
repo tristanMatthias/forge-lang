@@ -73,7 +73,7 @@ fn any_quote_in_stmt(stmt: Stmt) -> bool {
         .SpecBlock(_, body) -> any_quote_in_stmt_list(body)
         .GivenBlock(_, body) -> any_quote_in_stmt_list(body)
         .ThenBlock(_, cond) -> any_quote_in_expr(cond)
-        .Match(subj, _) -> any_quote_in_expr(subj)
+        .Match(subj, arms) -> any_quote_in_expr(subj) || any_quote_in_match_arms(arms)
         .Defer(body) -> any_quote_in_expr(body)
         .Errdefer(body) -> any_quote_in_expr(body)
         .LetDestructure(_, init) -> any_quote_in_expr(init)
@@ -114,7 +114,7 @@ fn any_quote_in_expr(expr: Expr) -> bool {
         .IsCheck(subj, _) -> any_quote_in_expr(subj)
         .InCheck(needle, items) -> any_quote_in_expr(needle) || any_quote_in_expr_list(items)
         .Spawn(body) -> any_quote_in_expr(body)
-        .MatchExpr(subj, _) -> any_quote_in_expr(subj)
+        .MatchExpr(subj, arms) -> any_quote_in_expr(subj) || any_quote_in_match_arms(arms)
         _ -> false
     }
 }
@@ -130,6 +130,22 @@ fn any_quote_in_field_inits(list: FieldInitList) -> bool {
     match list {
         .End -> false
         .Node(_, se, next) -> any_quote_in_expr(se.node) || any_quote_in_field_inits(next)
+    }
+}
+
+/// cai8: the presence scan must walk match-arm guards + bodies too.
+/// Without this, a program whose ONLY Quote is inside a match arm
+/// hits the fast-path early-return and skips lowering entirely —
+/// the un-lowered Quote nodes then survive into eval and trigger
+/// `no eval_expr handler`. Same shape as `lower_match_arms`.
+fn any_quote_in_match_arms(arms: MatchArmList) -> bool {
+    match arms {
+        .End -> false
+        .Node(_, guard, body, next) -> {
+            if guard != null && any_quote_in_expr(guard!.node) { return true }
+            if any_quote_in_expr(body.node) { return true }
+            any_quote_in_match_arms(next)
+        }
     }
 }
 
