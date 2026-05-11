@@ -85,6 +85,38 @@ export fn entry_o_path(c: Cache, fp: Fingerprint) -> string {
 export fn entry_metadata_path(c: Cache, fp: Fingerprint) -> string {
     entry_dir_for(c, fp) + "/metadata.bin"
 }
+
+/// 0qmm: source-keyed metadata slot. The consolidated home for what
+/// used to live at the fixed path `<file>.meta.bin`. Both producer
+/// (emit_per_file_metas / entry-meta writer) and consumer (resolver's
+/// AVRA_USE_METADATA fast-path) compute the same sha256 from the
+/// source file, so they agree on the cache path without cross-pass
+/// coordination. Stale hits are impossible by construction — change
+/// the source byte, change the path.
+///
+/// Lives under a separate `meta/` sub-namespace inside the cache so
+/// it doesn't collide with the per-fn IR entries (which key on the
+/// richer `fp_for_unit` factoring in compiler + profile + target —
+/// overkill for metadata, which is purely source-derived).
+///
+/// Returns the absolute path to `unit.meta.bin`. Caller is
+/// responsible for creating the parent directory before writing.
+/// `ensure_source_meta_dir` materialises it.
+export fn entry_source_meta_path(c: Cache, source_fp: Fingerprint) -> string {
+    c.cache_dir + "meta/" + source_fp.hex + "/unit.meta.bin"
+}
+
+/// True when the source-keyed metadata slot is populated.
+export fn cache_has_source_meta(c: Cache, source_fp: Fingerprint) -> bool {
+    avra_selfhost_file_exists(entry_source_meta_path(c, source_fp)) == 1
+}
+
+/// Materialise the source-keyed metadata entry directory so a
+/// caller can `metadata_write` (binary-safe) into the slot. Idempotent.
+export fn ensure_source_meta_dir(c: Cache, source_fp: Fingerprint) -> bool {
+    let _ = avra_mkdir_p(c.cache_dir + "meta")
+    avra_mkdir_p(c.cache_dir + "meta/" + source_fp.hex) != 0
+}
 /// Linked binary slot used by the test runner. A test "unit" is the
 /// transitive closure of *_test.av + every @std source file + the
 /// reporter; its action output is a single linked executable. We

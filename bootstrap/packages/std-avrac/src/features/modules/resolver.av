@@ -7,6 +7,8 @@ use core.{Stmt, StmtList, SStmt, sstmt, sstmt_at, sstmt_dummy, AnnotationList, E
 use parse.{parse_program_source, parse_program_source_at}
 use core.{avra_process_env_get, avra_selfhost_append_file, avra_selfhost_read_file, avra_is_dir, avra_selfhost_file_exists}
 use build.{metadata_read, metadata_file_exists, synthesize_unit_body}
+use build.{cache_for, entry_source_meta_path, Fingerprint}
+use @std.crypto.{sha256_hex}
 use features.modules.{list_avra_module_files, list_avra_module_subdirs}
 
 extern fn avra_bytes_to_hex(b: bytes) -> string
@@ -52,6 +54,34 @@ fn meta_fingerprint_matches_source(meta_path: string, src_path: string) -> bool 
     let stored_hex = avra_bytes_to_hex(m.fingerprint)
     let current_hex = avra_sha256_file(src_path)
     stored_hex == current_hex
+}
+
+/// 0qmm: locate the meta sidecar for a source file. Prefers the
+/// content-addressed cache slot (build/cache/meta/<sha256(src)>/
+/// unit.meta.bin) — stale hits are impossible there since the path
+/// itself embeds sha256(source). Falls back to the legacy fixed-path
+/// sidecar (<file>.meta.bin) for ephemeral /tmp fixtures that don't
+/// have a `/src/` package layout — the fallback still requires an
+/// explicit fingerprint match (meta_fingerprint_matches_source) so
+/// edited-source-but-stale-sidecar can't silently fast-path.
+///
+/// Returns "" when neither path resolves (consumer takes the
+/// source-on-disk path).
+fn source_meta_cache_path(pkg_file: string) -> string {
+    let pkg_root = package_root_for_file(pkg_file)
+    if pkg_root != "" {
+        let hex = avra_sha256_file(pkg_file)
+        if hex != "" {
+            let cache = cache_for(pkg_root)
+            let cache_path = entry_source_meta_path(cache, Fingerprint { hex })
+            if metadata_file_exists(cache_path) { return cache_path }
+        }
+    }
+    let legacy = "${pkg_file}.meta.bin"
+    if metadata_file_exists(legacy) && meta_fingerprint_matches_source(legacy, pkg_file) {
+        return legacy
+    }
+    ""
 }
 
 /// Return the directory portion of a path (including the trailing
@@ -176,6 +206,23 @@ fn render_cycle(stack: ImportStack, cycle_path: string) -> string {
         }
     }
     parts
+}
+
+/// 0qmm: package root for a source file. Find the `/src/`
+/// component in the path and return everything to its left
+/// (without the trailing slash). For `<x>/packages/std-avrac/src/parse/mod.av`
+/// returns `<x>/packages/std-avrac`. Returns "" when the file
+/// isn't inside any `src/` directory (e.g. /tmp test fixtures).
+///
+/// Used by emit_per_file_metas (producer) and the
+/// AVRA_USE_METADATA resolver path (consumer) to derive the
+/// content-addressed cache location: cache_for(package_root)
+/// + the source-fingerprint slot.
+export fn package_root_for_file(file_path: string) -> string {
+    let marker = "/src/"
+    let idx = file_path.index_of(marker)
+    if idx < 0 { return "" }
+    file_path.substring(0, idx)
 }
 
 /// Find the packages directory by searching upward from `dir`.
@@ -911,12 +958,13 @@ fn resolve_package_use_and_continue(ss: SStmt, next: StmtList, dir: string, load
     let new_loaded = LoadedPaths.Node(pkg_file, loaded)
     let pkg_dir = modules_dirname(pkg_file)
     let use_meta = avra_process_env_get("AVRA_USE_METADATA") != ""
-    let meta_path = "${pkg_file}.meta.bin"
-    let meta_exists = use_meta && metadata_file_exists(meta_path)
-    // g2eo: gate on fingerprint match too — a stale .meta.bin from
-    // before a source edit would otherwise silently elide the user's
-    // changes from the consumer's compile.
-    let take_meta_fast_path = meta_exists && meta_fingerprint_matches_source(meta_path, pkg_file)
+    // 0qmm: look up the meta sidecar in the content-addressed cache
+    // slot (build/cache/meta/<sha256(source)>/unit.meta.bin). Producer
+    // (emit_per_file_metas + entry-meta writer in main.av) writes
+    // there using the same fp. Stale hits impossible — change the
+    // source byte, change the cache path.
+    let meta_path = source_meta_cache_path(pkg_file)
+    let take_meta_fast_path = use_meta && meta_path != "" && metadata_file_exists(meta_path)
     emit_progress_start(pkg_file)
     let pkg_t_start = avra_uptime_ms()
     let pkg_stmts = if take_meta_fast_path {
@@ -1100,9 +1148,9 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths, stack: Impo
             // produced — a stale hit would silently elide the user's
             // most recent changes from the consumer's compile.
             let use_meta = avra_process_env_get("AVRA_USE_METADATA") != ""
-            let meta_path = "${mod_path}.meta.bin"
-            let meta_exists = use_meta && metadata_file_exists(meta_path)
-            let take_meta = meta_exists && meta_fingerprint_matches_source(meta_path, mod_path)
+            // 0qmm: cache-keyed meta lookup (see source_meta_cache_path).
+            let meta_path = source_meta_cache_path(mod_path)
+            let take_meta = use_meta && meta_path != "" && metadata_file_exists(meta_path)
             emit_progress_start(mod_path)
             let mod_t_start = avra_uptime_ms()
             let mod_stmts = if take_meta {

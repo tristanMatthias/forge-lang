@@ -64,7 +64,7 @@ use @std.avrac.features.eval.{render_value, eval_expression_source, execute_prog
 use @std.avrac.desugar.{desugar_program, inject_intrinsics}
 use @std.avrac.features.component_decl.{expand_components}
 use @std.avrac.resolve.{resolve_names}
-use @std.avrac.features.modules.{resolve_module_files, modules_dirname, find_packages_dir, LoadedPaths, dedup_modules}
+use @std.avrac.features.modules.{resolve_module_files, modules_dirname, find_packages_dir, package_root_for_file, LoadedPaths, dedup_modules}
 use @std.avrac.features.modules.{load_package_config, load_manifest, Dep}
 use @std.avrac.features.modules.{filter_to_target_unit, list_avra_module_subdirs}
 use @std.avrac.build.{
@@ -76,6 +76,7 @@ use @std.avrac.build.{
     metadata_write, metadata_read, bytes_from_hex,
     synthesize_unit_stmts,
     pool_run, pool_extract_rc,
+    cache_for, entry_source_meta_path, ensure_source_meta_dir,
 }
 use @std.crypto.{sha256_hex}
 extern fn avra_bytes_to_hex(b: bytes) -> string
@@ -515,9 +516,27 @@ fn emit_per_file_metas(files: List<string>, stmts: StmtList, unit_name: string, 
             let src = avra_selfhost_read_file(file_path)
             let fp = bytes_from_hex(sha256_hex(src))
             let m = extract_per_file_metadata(unit_name, file_path, fp, stmts)
-            let path = "${file_path}.meta.bin"
-            if metadata_write(path, m) != 1 {
-                fail("per-file metadata write failed for ${path}")
+            // 0qmm: write to the content-addressed cache slot. Consumer
+            // (resolver's AVRA_USE_METADATA fast-path) computes the same
+            // sha256(source) and finds the same path. Transitional: ALSO
+            // write the legacy fixed-path sidecar so tests / tools that
+            // still probe `<file>.meta.bin` keep working. Tracked as
+            // 0qmm follow-up to remove the dual-write after fixtures are
+            // migrated to probe the cache path.
+            let pkg_root = package_root_for_file(file_path)
+            if pkg_root != "" {
+                let cache = cache_for(pkg_root)
+                let source_fp = Fingerprint { hex: sha256_hex(src) }
+                let _ = ensure_source_meta_dir(cache, source_fp)
+                let cache_path = entry_source_meta_path(cache, source_fp)
+                if metadata_write(cache_path, m) != 1 {
+                    fail("per-file metadata write failed for ${cache_path}")
+                }
+            }
+            // Legacy sidecar (transitional dual-write).
+            let sidecar_path = "${file_path}.meta.bin"
+            if metadata_write(sidecar_path, m) != 1 {
+                fail("per-file metadata write failed for ${sidecar_path}")
             }
         }
         i = i + 1
@@ -2925,18 +2944,30 @@ fn main() {
             }
             let fp = bytes_from_hex(sha256_hex(csource))
             let unit_meta = extract_unit_metadata(unit_name, fp, named.stmts)
-            // When --output redirects the .ll, colocate the .meta.bin
-            // with the redirected output so per-module compiles keep
-            // their (.ll, .meta.bin) pair in one directory. Falls back
-            // to <cpath>.meta.bin so the legacy behaviour holds when
-            // --output isn't set.
-            let meta_path = if output_override != "" {
+            // 0qmm: write to the content-addressed cache slot. Both
+            // producer and consumer compute the same sha256(source) and
+            // find the same path. Transitional dual-write: also write
+            // the legacy fixed-path sidecar so existing tests/tools that
+            // probe `<file>.meta.bin` keep working. Follow-up will
+            // migrate fixtures and remove the sidecar write.
+            let pkg_root = package_root_for_file(cpath)
+            if pkg_root != "" {
+                let cache = cache_for(pkg_root)
+                let source_fp = Fingerprint { hex: sha256_hex(csource) }
+                let _ = ensure_source_meta_dir(cache, source_fp)
+                let cache_meta_path = entry_source_meta_path(cache, source_fp)
+                if metadata_write(cache_meta_path, unit_meta) != 1 {
+                    fail("metadata write failed for ${cache_meta_path}")
+                }
+            }
+            // Legacy sidecar (transitional dual-write).
+            let sidecar_path = if output_override != "" {
                 "${output_override}.meta.bin"
             } else {
                 "${cpath}.meta.bin"
             }
-            if metadata_write(meta_path, unit_meta) != 1 {
-                fail("metadata write failed for ${meta_path}")
+            if metadata_write(sidecar_path, unit_meta) != 1 {
+                fail("metadata write failed for ${sidecar_path}")
             }
             // g2eo level-1: emit per-file metadata sidecars too.
             // Each contributing .av file gets its own <src>.meta.bin
