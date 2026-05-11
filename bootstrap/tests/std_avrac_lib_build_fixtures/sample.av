@@ -21,8 +21,11 @@ fn main() -> int {
     let bs2 = "${pwd}/build/bs2"
     let std_avrac = "${pwd}/packages/std-avrac"
 
-    // Wipe cache + meta to force a fresh build.
-    avra_shell_exec("rm -rf ${std_avrac}/build/cache ${std_avrac}/src/avrac.av.meta.bin ${std_avrac}/src/avrac.av.ll")
+    // 0qmm: stop wiping. The content-addressed grgg cache + the
+    // cache-hit metadata-restore in main.av's build path mean the
+    // probes below (avrac_meta_bin_present etc.) work whether the
+    // build ran from-scratch or from-cache. On warm runs the wipe
+    // forced ~12s of unnecessary recompilation.
 
     let rc = avra_shell_exec_status("cd ${std_avrac} && ${bs2} build --lib --emit_metadata")
     probe("std_avrac_build_rc_zero", rc == 0)

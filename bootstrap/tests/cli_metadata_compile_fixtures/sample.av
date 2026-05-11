@@ -27,10 +27,17 @@ fn main() -> int {
     let avrac_dir = "${pwd}/packages/std-avrac"
     let cli_main = "${pwd}/packages/cli/src/main.av"
 
-    // Wipe metadata for every @std/* dep so the test exercises the
-    // full produce-then-consume cycle, not a stale cache hit.
-    avra_shell_exec("rm -f ${pwd}/packages/std-avrac/src/avrac.av.meta.bin ${pwd}/packages/std-cli/src/cli.av.meta.bin ${pwd}/packages/std-crypto/src/crypto.av.meta.bin ${pwd}/packages/std-json/src/json.av.meta.bin ${pwd}/packages/std-lsp/src/lsp.av.meta.bin")
-    avra_shell_exec("rm -rf ${pwd}/packages/std-avrac/build/cache ${pwd}/packages/std-cli/build/cache ${pwd}/packages/std-crypto/build/cache ${pwd}/packages/std-json/build/cache ${pwd}/packages/std-lsp/build/cache")
+    // 0qmm: stop wiping caches. The grgg per-fn IR cache + the build
+    // cache-hit path's metadata.bin restoration (see main.av:1429)
+    // mean we get correct meta.bin sidecars whether the producer
+    // runs from-scratch or from-cache. Wiping was paranoia from
+    // before the cache-hit-restore landed; on warm runs it adds
+    // ~25s of unnecessary recompile work.
+    //
+    // The only thing we still wipe is the transient outputs the test
+    // produces and inspects (the deps sidecar + cli/main.av.ll), so
+    // the probes assert "this run produced these files" not "these
+    // files were left over from a previous run".
     avra_shell_exec("rm -f /tmp/cli_metadata_compile_deps.txt")
     avra_shell_exec("rm -f ${cli_main}.ll")
 
