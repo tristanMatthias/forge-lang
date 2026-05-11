@@ -44,7 +44,7 @@ use @std.cli.ui.{run_with_spinner, run_with_progress}
 use @std.json.{json_str, json_object, json_pairs, json_pair_add}
 use @std.lsp.{Sym, SymList}
 use @std.avrac.fmt.{fmt_stmt_list}
-use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, append_stmt_list}
+use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, append_stmt_list, assemble_test_program}
 use @std.avrac.coverage.{render_coverage}
 use @std.avrac.docs.{extract_project_docs_ast, extract_project_corpus,
           show_overview, show_symbol, show_short, show_symbols,
@@ -1859,81 +1859,6 @@ fn compute_test_shard_inputs(project_dir: string, test_path: string, args: TestA
 // the diagnostic bag inline. The caller picks the exit policy.
 fn compile_test_unit(inputs: BuildInputs, test_paths: List<string>, args: TestArgs) -> Result<string, string> {
     compile_test_unit_to(inputs, test_paths, args, "all")
-}
-
-// Assemble the test program for one action: parse each test file as
-// its own Stmt.Module, hoist @std packages, inline the spec_test
-// reporter, and synthesise a main() that returns test_render_summary().
-//
-// wd48 fix: LoadedPaths are NOT shared across iterations. A shared set
-// made sibling-Module loads return empty wrappers on second hit,
-// breaking sibling `use` imports. Each test file's tree is independent
-// — separate Module(test_name) wrappers, distinct scopes. Cost: @std/*
-// packages get re-parsed per test file; dedup_modules collapses the
-// duplicate package wrappers by Module name and dedups same-file
-// decls within merged bodies. Same-name decls from DIFFERENT files
-// survive as a real user-level naming collision.
-fn assemble_test_program(test_paths: List<string>, project_dir: string) -> Result<StmtList, string> {
-    mut modules = StmtList.End
-    mut packages = StmtList.End
-    mut count = 0
-    mut path_i = 0
-    while path_i < test_paths.length {
-        let path = test_paths[path_i]
-        path_i = path_i + 1
-        let content = read_file(path)
-        let mod_name = basename_no_ext(path)
-        let parsed = parse_program_source_at(content, path)
-        if parsed.had_error || parsed.stmts == null {
-            if bag_has_errors(parsed.bag) {
-                render_bag(content, path, parsed.bag)
-            }
-            return Result.Err("error parsing ${path}")
-        }
-        let test_dir = modules_dirname(path)
-        let mod_resolved = resolve_module_files(parsed.stmts!, test_dir, LoadedPaths.End)
-        if mod_resolved.had_error {
-            return Result.Err("module resolve error in ${path}: ${mod_resolved.error_message}")
-        }
-        let split = split_package_modules(mod_resolved.stmts)
-        packages = append_stmt_list(split.packages, packages)
-        modules = StmtList.Node(
-            sstmt_dummy(Stmt.Module(mod_name, split.body)),
-            modules
-        )
-        count = count + 1
-    }
-    if count == 0 {
-        return Result.Err("no spec test files found")
-    }
-
-    // Reporter (features/spec_test/reporter.av) ships test_render_*
-    // fns at module-root scope so spec codegen's bare
-    // ctx.call("test_render_then", ...) resolves directly. State
-    // (counters, current spec/given) lives in runtime.c.
-    let reporter_path = find_packages_dir(project_dir) + "std-avrac/src/features/spec_test/reporter.av"
-    let reporter_stmts = if avra_selfhost_file_exists(reporter_path) != 0 {
-        let rsrc = read_file(reporter_path)
-        let rparsed = parse_program_source_at(rsrc, reporter_path)
-        if rparsed.had_error || rparsed.stmts == null {
-            StmtList.End
-        } else {
-            rparsed.stmts!
-        }
-    } else {
-        StmtList.End
-    }
-    let deduped_packages = dedup_modules(packages)
-    mut program = prepend_test_externs(append_stmt_list(reporter_stmts, append_stmt_list(deduped_packages, modules)))
-    let main_body = StmtList.Node(
-        sstmt_dummy(Stmt.Return(Expr.Call(Expr.Ident("test_render_summary"), ExprList.End))),
-        StmtList.End
-    )
-    program = StmtList.Node(
-        sstmt_dummy(Stmt.Function("main", TypeParamList.End, ParamList.End, ValueType.Int, main_body)),
-        program
-    )
-    Result.Ok(program)
 }
 
 // 05yc: shard-scoped wrapper. `shard_id` distinguishes the staging
