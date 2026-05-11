@@ -78,6 +78,7 @@ use @std.avrac.build.{
     pool_run, pool_extract_rc,
     cache_for, entry_source_meta_path, ensure_source_meta_dir,
     cache_bin_path_for,
+    CompileTarget, build_binary,
 }
 use @std.crypto.{sha256_hex}
 extern fn avra_bytes_to_hex(b: bytes) -> string
@@ -1871,91 +1872,19 @@ fn compile_test_unit_to(inputs: BuildInputs, test_paths: List<string>, args: Tes
         .Ok(p) -> p
         .Err(e) -> { return Result.Err(e) }
     }
-
-    // Pipeline: quote-lowering runs first so identifiers inside
-    // `quote { … }` bodies aren't seen by resolve as runtime
-    // references — they're captured as string-typed AST literals.
-    // Modules were already resolved per-file in assemble_test_program
-    // and wrapped inline, so inject_intrinsics's program_declares_enum
-    // recursion sees stdlib's Result and skips the synthetic when
-    // it's present.
-    let post_quote = lower_quotes(program)
-    let desugared = desugar_program(post_quote)
-    let with_intrinsics = inject_intrinsics(desugared)
-    let expanded = expand_components(with_intrinsics)
-    let named = resolve_names(expanded)
-    if bag_has_errors(named.bag) || named.had_error {
-        render_bag("", "<test>", named.bag)
-        return Result.Err(named.error_message)
+    let bin_path = if args.coverage {
+        "${project_dir}/build/coverage/_test_${shard_id}.bin"
+    } else {
+        "${project_dir}/build/_test_${shard_id}.bin"
     }
-    let expanded_macros = expand_macros(named.stmts)
-    let post_comptime = run_comptime(expanded_macros)
-    let tc_result = typecheck_program(post_comptime)
-    if bag_has_errors(tc_result.bag) {
-        render_bag("", "<test>", tc_result.bag)
-        return Result.Err("type check failed")
+    let target = CompileTarget {
+        program: program,
+        bin_path: bin_path,
+        project_dir: project_dir,
+        diag_filename: "<test>",
+        coverage: args.coverage,
     }
-    let mono = monomorphize(tc_result.stmts, tc_result.trait_impls)
-    if bag_has_errors(mono.bag) {
-        render_bag("", "<test>", mono.bag)
-        return Result.Err("monomorphization failed")
-    }
-
-    // Codegen + link. Branches on `args.coverage`:
-    //   * non-coverage: codegen straight to `.o`, link with the
-    //     standard runtime.
-    //   * coverage:     codegen IR with instrprof markers, lower
-    //     via `opt`, llc to `.o`, link with clang_rt.profile_osx +
-    //     16K-page-aligned profile sections (Darwin/arm64 expects
-    //     this; without it llvm-profdata reports zero counters).
-    //   In both cases we return the linked binary's path; the
-    //   caller decides exec policy + post-run profdata processing.
-    let build_dir = "${project_dir}/build"
-    if !args.coverage {
-        let obj_path = "${build_dir}/_test_${shard_id}.o"
-        let bin_path = "${build_dir}/_test_${shard_id}.bin"
-        match codegen_and_emit_object(mono.stmts, obj_path, named.type_reg) {
-            .Ok(_) -> {}
-            .Err(e) -> { return Result.Err(e) }
-        }
-        let link_objs = [obj_path]
-        if link_objects(link_objs, "${build_dir}/runtime.o", "${build_dir}/llvm_wrapper.o",
-                        bin_path, default_link_options()) != 0 {
-            return Result.Err("link failed")
-        }
-        return Result.Ok(bin_path)
-    }
-    // Coverage path
-    let cov_dir = "${build_dir}/coverage"
-    avra_shell_exec("mkdir -p ${cov_dir}")
-    let ir_path = "${cov_dir}/_test_${shard_id}.ll"
-    let cov_ll = "${cov_dir}/_test_${shard_id}.cov.ll"
-    let obj_path = "${cov_dir}/_test_${shard_id}.o"
-    let bin_path = "${cov_dir}/_test_${shard_id}.bin"
-    match codegen_and_emit_ir_cov(mono.stmts, ir_path, named.type_reg, "${cov_dir}/_test_${shard_id}.av") {
-        .Ok(_) -> {}
-        .Err(e) -> { return Result.Err(e) }
-    }
-    let llvm_env = avra_process_env_get("LLVM_PREFIX")
-    let llvm_prefix = if llvm_env == "" { "/opt/homebrew/opt/llvm" } else { llvm_env }
-    let llvm_lib = "${llvm_prefix}/lib"
-    // Lower llvm.instrprof.increment intrinsics to runtime counter updates.
-    let opt_args = "[\"-passes=instrprof\", \"-mtriple=arm64-apple-macosx\", \"-o\", \"${cov_ll}\", \"-S\", \"${ir_path}\"]"
-    if avra_process_forward("${llvm_prefix}/bin/opt", opt_args, "") != 0 {
-        return Result.Err("opt instrprof lowering failed")
-    }
-    let llc_args = "[\"-O2\", \"-filetype=obj\", \"${cov_ll}\", \"-o\", \"${obj_path}\"]"
-    if avra_process_forward("${llvm_prefix}/bin/llc", llc_args, "") != 0 {
-        return Result.Err("llc failed")
-    }
-    let darwin_dir = avra_shell_exec("ls -1 ${llvm_prefix}/lib/clang | head -1").trim()
-    let prof_lib_dir = "${llvm_prefix}/lib/clang/${darwin_dir}/lib/darwin"
-    let sectalign = "\"-Wl,-sectalign,__DATA,__llvm_prf_cnts,0x4000\", \"-Wl,-sectalign,__DATA,__llvm_prf_bits,0x4000\", \"-Wl,-sectalign,__DATA,__llvm_prf_data,0x4000\""
-    let link_args = "[\"${obj_path}\", \"${build_dir}/runtime.o\", \"${build_dir}/llvm_wrapper.o\", \"-o\", \"${bin_path}\", \"-Wl,-stack_size,0x2000000\", \"-L${llvm_lib}\", \"-lLLVM\", \"-lc++\", \"-L${prof_lib_dir}\", \"-lclang_rt.profile_osx\", ${sectalign}]"
-    if avra_process_forward("cc", link_args, "") != 0 {
-        return Result.Err("link failed (coverage)")
-    }
-    Result.Ok(bin_path)
+    build_binary(target)
 }
 
 // 05yc: parse the machine-readable `[shard-summary] pass=N fail=N
