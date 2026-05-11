@@ -714,25 +714,17 @@ fn tc_resolve_type_operator(fields: FieldList, reg: StructTypeReg) -> FieldList 
 /// check walks the bodies. Lets bodies forward-reference any
 /// declaration regardless of source order.
 /// dkfa: a registry hit alone isn't enough to flag a duplicate.
-/// Two cases legitimately re-register the same name today:
-///   1. Bundling re-registers a qualified name (e.g.
-///      `gen_test::gen::GenStubResult`) when the same source file
-///      is loaded under different module paths. The `::` check
-///      filters these out.
-///   2. The synthesized `Result` intrinsic coexists with
-///      `@std.avrac.features.error_propagation::Result` whenever
-///      a program transitively imports the stdlib. `Result` and
-///      a handful of other always-on intrinsics live in this
-///      regime — silently dedupe them.
-/// Restrict the duplicate-decl diagnostic to bare, non-intrinsic
-/// names — the canonical vez6.8 case (`Command_build` etc.) lives
-/// here, while the global-registry-vs-module-scoping conflict is
-/// tracked as a separate follow-up.
+/// Bundling re-registers the SAME qualified name (e.g.
+/// `gen_test::gen::GenStubResult`) when the same source file is
+/// loaded under different module paths — that's a bundling
+/// artifact, not a user error. The `::` check filters those out.
+/// The Result-intrinsic-vs-stdlib conflict that motivated the
+/// earlier `is_intrinsic_name` hack is now fixed at the source:
+/// inject_intrinsics runs AFTER module resolution so it can see
+/// the stdlib's Result and skip the synthetic.
 fn is_duplicate_decl(idx: ptr, name: string) -> bool {
     if avra_map_has_cstr(idx, name) == 0 { return false }
-    if string_contains_qualifier(name) { return false }
-    if is_intrinsic_name(name) { return false }
-    true
+    !string_contains_qualifier(name)
 }
 
 /// True iff `name` contains `::` — Avra's module-qualifier
@@ -744,16 +736,6 @@ fn string_contains_qualifier(name: string) -> bool {
         i = i + 1
     }
     false
-}
-
-/// True iff `name` is a known compiler-injected intrinsic that
-/// may legitimately appear both as a synthesized declaration AND
-/// as a stdlib import. dkfa silently dedupes these instead of
-/// erroring — the real fix is to skip the intrinsic injection
-/// when the stdlib will provide the same name, tracked as a
-/// follow-up to the bundling cleanup.
-fn is_intrinsic_name(name: string) -> bool {
-    name == "Result"
 }
 
 fn collect_decls(tc: TC, stmts: StmtList) -> TC {

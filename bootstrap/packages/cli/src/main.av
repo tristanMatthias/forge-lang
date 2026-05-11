@@ -61,7 +61,7 @@ use @std.avrac.pathutil.{basename_no_ext}
 use @std.avrac.parse.{parse_expression_source, parse_program_source, parse_program_source_at}
 use @std.avrac.core.{render_expr, render_stmt_list, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType, Stmt, StmtList, ParamList, Expr, sstmt_dummy, TypeParamList, ExprList}
 use @std.avrac.features.eval.{render_value, eval_expression_source, execute_program_source}
-use @std.avrac.desugar.{desugar_program}
+use @std.avrac.desugar.{desugar_program, inject_intrinsics}
 use @std.avrac.features.component_decl.{expand_components}
 use @std.avrac.resolve.{resolve_names}
 use @std.avrac.features.modules.{resolve_module_files, modules_dirname, find_packages_dir, LoadedPaths, dedup_modules}
@@ -1914,7 +1914,14 @@ fn compile_test_unit(inputs: BuildInputs, test_paths: List<string>, args: TestAr
     // references — they're captured as string-typed AST literals.
     let post_quote = lower_quotes(program)
     let desugared = desugar_program(post_quote)
-    let expanded = expand_components(desugared)
+    // Modules were already resolved per-file (step 1's
+    // resolve_module_files call) and wrapped inline by the time
+    // desugar runs, so the post-desugar program already carries
+    // every loaded module's contents. inject_intrinsics's
+    // program_declares_enum recursion sees stdlib's Result and
+    // skips the synthetic when it's present.
+    let with_intrinsics = inject_intrinsics(desugared)
+    let expanded = expand_components(with_intrinsics)
     let named = resolve_names(expanded)
     if bag_has_errors(named.bag) || named.had_error {
         render_bag("", "<test>", named.bag)
@@ -2491,7 +2498,11 @@ fn main() {
                 render_bag_either(check_json, check_source, check_path, mod_bag)
                 fail(mod_resolved.error_message)
             }
-            let expanded = expand_components(mod_resolved.stmts)
+            // Inject intrinsics AFTER module resolution so stdlib's
+            // Result is visible to program_declares_enum — avoids
+            // synthesizing a duplicate that dkfa would flag.
+            let with_intrinsics = inject_intrinsics(mod_resolved.stmts)
+            let expanded = expand_components(with_intrinsics)
             let named = resolve_names(expanded)
             if bag_has_errors(named.bag) || bag_has_warnings(named.bag) {
                 render_bag_either(check_json, check_source, check_path, named.bag)
@@ -2572,7 +2583,8 @@ fn main() {
             let entry_dir = modules_dirname(path)
             let mod_resolved = resolve_module_files(desugared, entry_dir, LoadedPaths.End)
             if mod_resolved.had_error { fail(mod_resolved.error_message) }
-            let expanded = expand_components(mod_resolved.stmts)
+            let with_intrinsics = inject_intrinsics(mod_resolved.stmts)
+            let expanded = expand_components(with_intrinsics)
             let named = resolve_names(expanded)
             if named.had_error { fail(named.error_message) }
             let expanded_macros = expand_macros(named.stmts)
@@ -2600,7 +2612,8 @@ fn main() {
                 render_bag(source, path, mod_bag)
                 fail(mod_resolved.error_message)
             }
-            let expanded = expand_components(mod_resolved.stmts)
+            let with_intrinsics = inject_intrinsics(mod_resolved.stmts)
+            let expanded = expand_components(with_intrinsics)
             let named = resolve_names(expanded)
             if bag_has_errors(named.bag) || bag_has_warnings(named.bag) {
                 render_bag(source, path, named.bag)
@@ -2810,14 +2823,19 @@ fn main() {
             println("ok")
             return
         }
+        // Inject intrinsics AFTER module resolution so the recursive
+        // program_declares_enum scan sees stdlib's Result (now inline)
+        // and skips synthesizing a duplicate. Cleanup of the earlier
+        // dkfa `is_intrinsic_name` hack.
+        let with_intrinsics = inject_intrinsics(mod_resolved.stmts)
         // g2eo Phase A: per-module compile filter. Marks every Module
         // wrapper outside `target_module` as @external_unit so codegen
         // emits forward-refs, not bodies. Runs after resolve so the
         // filter has the full module tree to inspect.
         let post_filter_stmts = if target_module != "" {
-            filter_to_target_unit(mod_resolved.stmts, target_module)
+            filter_to_target_unit(with_intrinsics, target_module)
         } else {
-            mod_resolved.stmts
+            with_intrinsics
         }
         // Component expansion: runs AFTER module resolution so component
         // definitions in any module are visible to the expander.

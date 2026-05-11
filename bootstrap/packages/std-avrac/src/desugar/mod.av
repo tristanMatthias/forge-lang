@@ -11,14 +11,19 @@ use core.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstm
 
 // ── Public API ──
 
-/// Top-level desugar entry. Injects compiler intrinsics first
-/// (currently `Result<T, E>` when missing — see `inject_intrinsics`),
-/// then walks the statement list rewriting expression-level sugar
-/// (`assert`, `dbg`, `todo`, `unreachable`, `min`, `max`, list
-/// comprehensions). Idempotent: calling again on already-desugared
-/// AST is a no-op.
+/// Top-level desugar entry. Walks the statement list rewriting
+/// expression-level sugar (`assert`, `dbg`, `todo`, `unreachable`,
+/// `min`, `max`, list comprehensions). Idempotent.
+///
+/// **Intrinsic injection moved out of this entry point** — call
+/// `inject_intrinsics` AFTER `resolve_module_files` so the
+/// recursive `program_declares_enum` scan can see the stdlib's
+/// `Result` (loaded by module resolution) and skip the synthetic
+/// duplicate. Each caller does:
+///   parse → lower_quotes → desugar_program → resolve_module_files
+///                                          → inject_intrinsics → ...
 export fn desugar_program(stmts: StmtList) -> StmtList {
-    desugar_stmt_list(inject_intrinsics(stmts))
+    desugar_stmt_list(stmts)
 }
 
 // ── Intrinsic injection ──
@@ -42,7 +47,7 @@ export fn desugar_program(stmts: StmtList) -> StmtList {
 /// see it. Putting the synthesized decl at the global scope also
 /// fixes ticket xks4 (resolver mis-qualification of `Result` inside
 /// trait impls).
-fn inject_intrinsics(stmts: StmtList) -> StmtList {
+export fn inject_intrinsics(stmts: StmtList) -> StmtList {
     if program_declares_enum(stmts, "Result") { return stmts }
     StmtList.Node(sstmt_dummy(synthesize_result_enum()), stmts)
 }
