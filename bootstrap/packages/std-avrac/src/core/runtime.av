@@ -21,6 +21,12 @@ extern fn avra_selfhost_levenshtein(a: string, b: string, len_a: int, len_b: int
 extern fn avra_process_exit(code: int)
 extern fn avra_process_forward(cmd: string, args_json: string, opts_json: string) -> int
 extern fn avra_process_env_get(key: string) -> string
+
+// Unset env var in THIS process. Test runner uses this to clear
+// the metadata-fast-path env before forking the test binary, so
+// runtime shell-outs (e.g. `avra_shell_exec("bs2 compile /tmp/x.av")`)
+// see a clean env rather than inheriting AVRA_USE_METADATA + co.
+extern fn avra_process_env_unset(key: string)
 extern fn avra_shell_exec(cmd: string) -> string
 extern fn avra_shell_exec_status(cmd: string) -> int
 extern fn exit(code: int)

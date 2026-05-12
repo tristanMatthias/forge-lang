@@ -64,7 +64,7 @@ use @std.avrac.features.eval.{render_value, eval_expression_source, execute_prog
 use @std.avrac.desugar.{desugar_program, inject_intrinsics}
 use @std.avrac.features.component_decl.{expand_components}
 use @std.avrac.resolve.{resolve_names}
-use @std.avrac.features.modules.{resolve_module_files, modules_dirname, find_packages_dir, package_root_for_file, LoadedPaths, dedup_modules}
+use @std.avrac.features.modules.{resolve_module_files, modules_dirname, find_packages_dir, package_root_for_file, LoadedPaths, dedup_modules, resolve_dir_module_body, synthesize_subdir_module_decls}
 use @std.avrac.features.modules.{load_package_config, load_manifest, Dep}
 use @std.avrac.features.modules.{filter_to_target_unit, list_avra_module_subdirs}
 use @std.avrac.build.{
@@ -2126,6 +2126,16 @@ fn compile_test_unit_to(inputs: BuildInputs, test_paths: List<string>, args: Tes
 /// Parse AVRA_LIB_OBJS into a list of .o paths. Colon-separated for
 /// shell-pipeline-friendliness (mirrors PATH / LD_LIBRARY_PATH).
 /// Empty / unset env var → empty list.
+/// Concatenate two StmtList values, preserving order. Used by the
+/// --module_path compile path to append dir-as-module siblings to
+/// the entry file's parsed body before wrapping in Stmt.Module.
+fn concat_stmt_lists(left: StmtList, right: StmtList) -> StmtList {
+    match left {
+        .End -> right
+        .Node(ss, next) -> StmtList.Node(ss, concat_stmt_lists(next, right))
+    }
+}
+
 fn parse_lib_objs_env() -> List<string> {
     let raw = avra_process_env_get("AVRA_LIB_OBJS")
     if raw == "" { return [] }
@@ -2219,6 +2229,17 @@ fn run_test_shard_command() {
             cache_bin_path_for(cache_for(inputs.project_root), fp)
         }
     }
+    // Clear the metadata-fast-path env vars before forking the
+    // test binary. These were set by the outer test runner to
+    // gate THIS shard's COMPILE step — they should not bleed into
+    // the test binary's runtime shell-outs (avra_shell_exec
+    // ./build/bs2 compile /tmp/x.av). Otherwise the sub-bs2
+    // inherits AVRA_USE_METADATA=1 + AVRA_LIB_OBJS pointing at
+    // producer .o files + the test's slug as AVRA_LIB_PKG_ROOT,
+    // none of which apply to the user-test's /tmp/x.av compile.
+    avra_process_env_unset("AVRA_USE_METADATA")
+    avra_process_env_unset("AVRA_LIB_OBJS")
+    avra_process_env_unset("AVRA_LIB_PKG_ROOT")
     let exit_code = avra_process_forward(bin_path, "[]", "")
     avra_process_exit(exit_code)
 }
@@ -3189,8 +3210,44 @@ fn main() {
         // get loaded relative to the source dir AND nest under the
         // outer namespace. Result: top-level fns end up qualified
         // with `<module_path>::<inner_mod>::<name>`.
+        //
+        // ALSO load sibling .av files in the entry's directory
+        // (g2eo.1 dir-as-module) when --module_path is set. Without
+        // this a package with sibling files (e.g.
+        // @std/crypto/src/{crypto.av, sha256_pure.av}) only exposes
+        // the entry file's decls in its metadata; consumers can't
+        // resolve symbols defined in siblings. Mirrors what the
+        // resolver does when @pkg is loaded as an IMPORT.
         let pre_desugar_stmts = if module_path != "" {
-            StmtList.Node(sstmt_dummy(Stmt.Module(module_path, parsed.stmts!)), StmtList.End)
+            // Pull sibling `.av` files in the entry's directory into
+            // the package body — but only when the entry actually
+            // lives inside a real package's `src/` directory (parent
+            // dir has an `avra.toml`). Arbitrary fixtures with a
+            // `--module_path` (e.g. `/tmp/foo.av` with --module_path=foo)
+            // shouldn't sweep in sibling files that aren't part of
+            // any package.
+            //
+            // modules_dirname returns paths with trailing `/`, so to
+            // find the parent we strip that first before recursing.
+            let cpath_dir = modules_dirname(cpath)
+            let cpath_dir_stripped = if cpath_dir.ends_with("/") {
+                cpath_dir.substring(0, cpath_dir.length - 1)
+            } else {
+                cpath_dir
+            }
+            let parent_dir = modules_dirname(cpath_dir_stripped)
+            let is_package_src = avra_selfhost_file_exists("${parent_dir}avra.toml") != 0
+            let body_with_siblings = if is_package_src {
+                let dir_load = resolve_dir_module_body(cpath_dir, LoadedPaths.Node(cpath, LoadedPaths.End))
+                if dir_load.had_error {
+                    parsed.stmts!
+                } else {
+                    concat_stmt_lists(parsed.stmts!, dir_load.stmts)
+                }
+            } else {
+                parsed.stmts!
+            }
+            StmtList.Node(sstmt_dummy(Stmt.Module(module_path, body_with_siblings)), StmtList.End)
         } else {
             parsed.stmts!
         }

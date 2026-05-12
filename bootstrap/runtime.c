@@ -3250,6 +3250,15 @@ const char* avra_process_env_get(const char* key) {
     return copy;
 }
 
+// Unset an environment variable for THIS process. Used by the test
+// runner before forking the test binary so its shell-outs to bs2
+// don't inherit AVRA_USE_METADATA / AVRA_LIB_OBJS / AVRA_LIB_PKG_ROOT
+// — those are scoped to the shard's compile, not to any subsequent
+// runtime sub-invocations the test makes.
+void avra_process_env_unset(const char* key) {
+    unsetenv(key);
+}
+
 /// Get the directory containing the current executable.
 const char* avra_process_self_dir(void) {
     char path[4096];
