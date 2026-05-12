@@ -31,6 +31,12 @@ export type CompileTarget = {
     project_dir: string,        // for runtime.o, llvm_wrapper.o
     diag_filename: string,      // displayed in error diagnostics
     coverage: bool,
+    // 6owa library-mode: extra .o files to link against (e.g. the
+    // pre-built @std/* package libs). Per-shard test binaries
+    // populate this from AVRA_LIB_OBJS so AVRA_USE_METADATA=1
+    // resolved call sites have their symbols at link time. Empty
+    // for whole-program builds.
+    extra_objs: List<string>,
 }
 
 /// Run the post-assembly pipeline and link a binary. Returns Ok(bin_path)
@@ -73,7 +79,7 @@ export fn build_binary(target: CompileTarget) -> Result<string, string> {
             .Ok(_) -> {}
             .Err(e) -> { return Result.Err(e) }
         }
-        let link_objs = [obj_path]
+        let link_objs = prepend_extra_objs([obj_path], target.extra_objs)
         if link_objects(link_objs, "${build_dir}/runtime.o", "${build_dir}/llvm_wrapper.o",
                         target.bin_path, default_link_options()) != 0 {
             return Result.Err("link failed")
@@ -108,11 +114,27 @@ export fn build_binary(target: CompileTarget) -> Result<string, string> {
     let darwin_dir = avra_shell_exec("ls -1 ${llvm_prefix}/lib/clang | head -1").trim()
     let prof_lib_dir = "${llvm_prefix}/lib/clang/${darwin_dir}/lib/darwin"
     let cov_libs = "-L${prof_lib_dir}"
-    if link_objects_with_coverage([obj_path], "${build_dir}/runtime.o", "${build_dir}/llvm_wrapper.o",
+    let cov_link_objs = prepend_extra_objs([obj_path], target.extra_objs)
+    if link_objects_with_coverage(cov_link_objs, "${build_dir}/runtime.o", "${build_dir}/llvm_wrapper.o",
                                   target.bin_path, cov_libs, default_link_options()) != 0 {
         return Result.Err("link failed (coverage)")
     }
     Result.Ok(target.bin_path)
+}
+
+/// Combine the per-shard's own .o with any extra producer-library
+/// .o paths. The shard's own .o stays first so its `main` (and any
+/// per-test symbols) take precedence over duplicates from a stale
+/// dep .o. Returns a fresh list — input lists aren't mutated.
+fn prepend_extra_objs(own: List<string>, extras: List<string>) -> List<string> {
+    if extras.length == 0 { return own }
+    mut out = own
+    mut i = 0
+    while i < extras.length {
+        out.push(extras[i])
+        i = i + 1
+    }
+    out
 }
 
 /// Drop a trailing `.bin` so callers can build sibling intermediate

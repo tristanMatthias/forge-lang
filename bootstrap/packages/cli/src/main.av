@@ -77,7 +77,7 @@ use @std.avrac.build.{
     synthesize_unit_stmts,
     pool_run, pool_extract_rc,
     cache_for, entry_source_meta_path, ensure_source_meta_dir,
-    cache_bin_path_for,
+    cache_bin_path_for, cache_entry_realobj_path,
     CompileTarget, build_binary,
     package_source_fingerprint,
 }
@@ -735,6 +735,49 @@ fn pre_build_workspace_std_packages(project_dir: string, compiler_path: string, 
     }
     if cmds.length == 0 { return 0 }
     pool_run(cmds, jobs)
+}
+
+// 6owa library-mode: After pre_build_workspace_std_packages
+// populates each @std/* package's cache slot, walk those slots and
+// collect the realobj.o paths into a `:`-joined string suitable for
+// AVRA_LIB_OBJS.
+//
+// Returns "" when no .o paths are reachable (pre-build skipped, or
+// every package's slot is missing the IR). Caller treats this as
+// "no lib-objs env" — shards fall back to the legacy link path.
+fn collect_workspace_lib_objs(project_dir: string) -> string {
+    let listing = avra_shell_exec("ls -d '${project_dir}/packages'/std-*/ 2>/dev/null")
+    if listing == "" { return "" }
+    let pkg_dirs = split_by_newline(listing)
+    mut paths = []
+    mut i = 0
+    while i < pkg_dirs.length {
+        let dir = pkg_dirs[i]
+        if dir != "" && avra_selfhost_file_exists("${dir}avra.toml") != 0 {
+            // Strip trailing slash so cache_for + package_source_fingerprint
+            // see the same form the build pipeline uses.
+            let pkg_root = if dir.ends_with("/") { dir.substring(0, dir.length - 1) } else { dir }
+            let pkg_fp = package_source_fingerprint(pkg_root)
+            if pkg_fp != "" {
+                let cache = cache_for(pkg_root)
+                let realobj = cache_entry_realobj_path(cache, Fingerprint { hex: pkg_fp })
+                if realobj != "" { paths.push(realobj) }
+            }
+        }
+        i = i + 1
+    }
+    join_with_colon(paths)
+}
+
+fn join_with_colon(xs: List<string>) -> string {
+    mut out = ""
+    mut i = 0
+    while i < xs.length {
+        if i > 0 { out = out + ":" }
+        out = out + xs[i]
+        i = i + 1
+    }
+    out
 }
 
 // Split a newline-separated string into a List<string>, trimming
@@ -1943,8 +1986,34 @@ fn compile_test_unit_to(inputs: BuildInputs, test_paths: List<string>, args: Tes
         project_dir: project_dir,
         diag_filename: "<test>",
         coverage: args.coverage,
+        // 6owa library-mode: per-shard linker pulls in any pre-built
+        // producer .o files listed in AVRA_LIB_OBJS (colon-separated).
+        // The orchestrator (run_per_file_test_command) populates this
+        // before fanning out shard commands so each shard's link step
+        // resolves the mangled call sites AVRA_USE_METADATA exposed.
+        extra_objs: parse_lib_objs_env(),
     }
     build_binary(target)
+}
+
+/// Parse AVRA_LIB_OBJS into a list of .o paths. Colon-separated for
+/// shell-pipeline-friendliness (mirrors PATH / LD_LIBRARY_PATH).
+/// Empty / unset env var → empty list.
+fn parse_lib_objs_env() -> List<string> {
+    let raw = avra_process_env_get("AVRA_LIB_OBJS")
+    if raw == "" { return [] }
+    mut out = []
+    mut start = 0
+    mut i = 0
+    while i < raw.length {
+        if raw.byte(i) == 0x3A {
+            if i > start { out.push(raw.substring(start, i)) }
+            start = i + 1
+        }
+        i = i + 1
+    }
+    if start < raw.length { out.push(raw.substring(start, raw.length)) }
+    out
 }
 
 // 05yc: parse the machine-readable `[shard-summary] pass=N fail=N
@@ -2053,30 +2122,34 @@ fn run_per_file_test_command(project_dir: string, accepted_paths: List<string>, 
     let log_dir = "${project_dir}/build/test_shards"
     avra_shell_exec("rm -rf '${log_dir}' && mkdir -p '${log_dir}'")
 
-    // P6 library-mode (Phase 1): pre-build every workspace @std/*
-    // package as a library so each package's .meta.bin + .o cache
-    // slot is fresh before shards dispatch. Even without
-    // AVRA_USE_METADATA=1 this is a win: linker resolves shard call
-    // sites against the producer's pre-built .o instead of re-
-    // compiling the producer per shard.
+    // P6 library-mode: pre-build every workspace @std/* package as
+    // a library so each package's .meta.bin (with GenericBodies from
+    // P3+P4+P5 + InherentImpls from bd8n) + .o cache slot is fresh
+    // before shards dispatch.
     //
-    // AVRA_USE_METADATA=1 itself is intentionally NOT enabled here.
-    // The metadata fast-path exposes a pre-existing synthesizer gap:
-    // inherent impls (`impl Type { ... }` with no trait) are skipped
-    // by the extractor, so method calls like `bytes_writer.unit()`
-    // fail to resolve at shard compile time. Tracked separately;
-    // when fixed, the use_meta="" line below becomes
-    // "AVRA_USE_METADATA=1 " for the full per-shard speed win.
+    // After pre-build, collect each producer's realobj.o path into
+    // AVRA_LIB_OBJS (6owa) so per-shard link commands can resolve
+    // the mangled call sites AVRA_USE_METADATA=1 exposes.
     //
     // Opt-out via AVRA_SKIP_PREBUILD=1.
     let skip_prebuild = avra_process_env_get("AVRA_SKIP_PREBUILD") != ""
+    mut lib_objs_env = ""
     if !skip_prebuild {
         let pb_rc = pre_build_workspace_std_packages(project_dir, compiler_path, jobs)
         if pb_rc != 0 {
             eprintln("[per-file] pre-build of @std/* libs failed (rc=${string(pb_rc)}) — shards will compile @std/* from source")
+        } else {
+            lib_objs_env = collect_workspace_lib_objs(project_dir)
         }
     }
-    let use_meta = ""
+    // AVRA_USE_METADATA=1 stays opt-in via AVRA_USE_METADATA_LIB
+    // until we've shaken out the remaining consumer-side
+    // synthesizer gaps under a wide set of fixtures. When enabled,
+    // shards see only metadata stubs for @std/*; without it, they
+    // re-parse @std source per shard (the legacy path).
+    let want_meta = avra_process_env_get("AVRA_USE_METADATA_LIB") != ""
+    let use_meta = if want_meta { "AVRA_USE_METADATA=1 " } else { "" }
+    let lib_env = if lib_objs_env == "" { "" } else { "AVRA_LIB_OBJS='${lib_objs_env}' " }
 
     // Build per-shard command list. Each is a self-contained
     // `bs2 _test_shard <path>` redirecting its full stdio to a
@@ -2090,7 +2163,7 @@ fn run_per_file_test_command(project_dir: string, accepted_paths: List<string>, 
     while i < accepted_paths.length {
         let path = accepted_paths[i]
         let slug = basename_no_ext(path)
-        cmds = cmds.push("${use_meta}'${compiler_path}' _test_shard '${path}'${filter_arg} > '${log_dir}/${slug}.log' 2>&1")
+        cmds = cmds.push("${use_meta}${lib_env}'${compiler_path}' _test_shard '${path}'${filter_arg} > '${log_dir}/${slug}.log' 2>&1")
         slugs = slugs.push(slug)
         i = i + 1
     }
