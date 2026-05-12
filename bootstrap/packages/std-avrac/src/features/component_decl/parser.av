@@ -80,7 +80,14 @@ impl Parser {
             match implements {
                 .End -> {}
                 _ -> {
-                    self.set_error("`implements` not allowed on a component block — only on definitions")
+                    // Two common shapes land here, so the message
+                    // covers both: (a) intentional block form with a
+                    // stray `implements` clause; (b) missing `,`
+                    // between two trait names (e.g.
+                    // `implements Runnable Other {` — `Other` is read
+                    // as an instance name once the implements list
+                    // ended at `Runnable`).
+                    self.set_error("`implements` clause must be followed by `{` or `(` — if you meant another trait name, add a `,` (instance-prefix component blocks may not carry an `implements` clause)")
                     return null
                 }
             }
@@ -99,9 +106,12 @@ impl Parser {
 
     /// Parse `TraitA, TraitB, ...` until `{` or `(`. Comma-separated,
     /// trailing comma tolerated. Each entry is a bare identifier — no
-    /// generics or qualified paths in this slice (vez6.8). Returns
-    /// TypeNameList.End for the empty case (caller already consumed
-    /// the `implements` keyword and expected at least one name).
+    /// generics or qualified paths in this slice (vez6.8).
+    ///
+    /// Caller already consumed the `implements` keyword. At least one
+    /// trait name is required; an empty list (`implements {`) is a
+    /// parse error (consume_identifier fails on the missing name and
+    /// the `?` operator propagates null up to `parse_component_decl`).
     fn parse_implements_list(self) -> TypeNameList? {
         let trait_name = self.consume_identifier("expected trait name after `implements`")?
         if self.check(Tk.Comma) {
