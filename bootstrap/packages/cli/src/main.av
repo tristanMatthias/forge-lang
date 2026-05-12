@@ -761,24 +761,56 @@ fn pre_build_workspace_std_packages(project_dir: string, compiler_path: string, 
     pool_run(cmds, jobs)
 }
 
-/// Translate a packages/std-NAME/ dir path into the package's
-/// canonical qualified prefix: `@std::NAME`. Used by
-/// pre_build_workspace_std_packages to set AVRA_LIB_PKG_ROOT per
-/// package so codegen emits only that package's symbols. Returns
-/// "" when the path doesn't match the std-* pattern (caller skips
-/// the env var; package builds in whole-program mode as before).
+/// Translate a `packages/std-NAME/` or `../std-NAME` (relative)
+/// dir path into the package's canonical qualified prefix:
+/// `@std::NAME`. Used by pre_build_workspace_std_packages to set
+/// AVRA_LIB_PKG_ROOT per package so codegen emits only that
+/// package's symbols. Also used by build_pre_dep_cmds where the
+/// path is dep-relative (e.g. `../std-cli` from `packages/std-avrac/`).
+///
+/// Algorithm: locate `std-` in the path (with or without
+/// `packages/` prefix), take everything from the next char up to
+/// the next `/` or end-of-string as the package suffix. Returns
+/// "" when no `std-` segment exists (non-std deps skip the env
+/// var; they build whole-program as before).
 fn derive_lib_root_for(dir: string) -> string {
-    let pfx = "packages/std-"
-    let mi = dir.index_of(pfx)
-    if mi < 0 { return "" }
-    let after = mi + pfx.length
-    mut j = after
+    // Find the LAST occurrence of "/std-" or a leading "std-".
+    // Walking right-to-left handles both `packages/std-cli/` and
+    // `../std-cli` shapes without committing to a `packages/`
+    // prefix that dep-relative paths don't have.
+    let needle = "/std-"
+    let lead = "std-"
+    let start = compute_start(dir, needle, lead)
+    if start < 0 { return "" }
+    mut j = start
     while j < dir.length {
         if dir.byte(j) == 0x2F { break }
         j = j + 1
     }
-    if j == after { return "" }
-    "@std::" + dir.substring(after, j)
+    if j == start { return "" }
+    "@std::" + dir.substring(start, j)
+}
+
+fn compute_start(dir: string, needle: string, lead: string) -> int {
+    let li = last_index_of(dir, needle)
+    if li >= 0 { return li + needle.length }
+    if dir.starts_with(lead) { return lead.length }
+    -1
+}
+
+/// Last-occurrence string search — `.index_of` returns the first
+/// match; we need the last so `packages/std-avrac/.../std-cli`
+/// resolves to `@std::cli` (the dep) rather than `@std::avrac`
+/// (the dispatcher's own path). Returns -1 on miss.
+fn last_index_of(s: string, needle: string) -> int {
+    if needle.length == 0 { return -1 }
+    if needle.length > s.length { return -1 }
+    mut i = s.length - needle.length
+    while i >= 0 {
+        if s.substring(i, i + needle.length) == needle { return i }
+        i = i - 1
+    }
+    -1
 }
 
 // 6owa library-mode: After pre_build_workspace_std_packages
@@ -2269,7 +2301,15 @@ fn run_per_file_test_command(project_dir: string, accepted_paths: List<string>, 
     while i < accepted_paths.length {
         let path = accepted_paths[i]
         let slug = basename_no_ext(path)
-        cmds = cmds.push("${use_meta}${lib_env}'${compiler_path}' _test_shard '${path}'${filter_arg} > '${log_dir}/${slug}.log' 2>&1")
+        // Per-shard AVRA_LIB_PKG_ROOT: the test's basename becomes
+        // the codegen ownership prefix so emit_release_bodies emits
+        // only the TEST's own __release_<Type> fns. @std/* release
+        // fns belong to their producer .o (linked via AVRA_LIB_OBJS).
+        // The resolver wraps the test file in Module(slug, body) so
+        // its fns end up qualified as `<slug>::*` — matches the
+        // root we set here, so the test's own bodies emit.
+        let shard_root = if want_meta { "AVRA_LIB_PKG_ROOT='${slug}' " } else { "" }
+        cmds = cmds.push("${use_meta}${lib_env}${shard_root}'${compiler_path}' _test_shard '${path}'${filter_arg} > '${log_dir}/${slug}.log' 2>&1")
         slugs = slugs.push(slug)
         i = i + 1
     }
