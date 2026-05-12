@@ -1,0 +1,52 @@
+// vez6.11 slice A — Runnable trait scaffolding.
+//
+// Pins the trait + dyn dispatch wiring BEFORE the @expand
+// machinery lands. Once expand_command writes `impl Runnable for
+// Command_<inst>` per instance, the lowering is just generating
+// the by-hand pattern below.
+
+use @std.cli.{Runnable, CliResult}
+
+type Foo = { greeting: string, exit_code: int }
+
+impl Runnable for Foo {
+    fn name(self) -> string { "foo" }
+    fn run(self, _args: CliResult) -> int {
+        println(self.greeting)
+        self.exit_code
+    }
+}
+
+type Bar = { exit_code: int }
+
+impl Runnable for Bar {
+    fn name(self) -> string { "bar" }
+    fn run(self, _args: CliResult) -> int {
+        println("bar ran")
+        self.exit_code
+    }
+}
+
+fn empty_cli_result() -> CliResult {
+    CliResult { command: "", flags: [], options: [], args: [], error: "" }
+}
+
+spec "vez6.11 slice A: Runnable trait + dyn dispatch" {
+    then "concrete impl: Foo.name() returns its name" {
+        let f = Foo { greeting: "hi", exit_code: 0 }
+        f.name() == "foo"
+    }
+    then "concrete impl: Foo.run() returns its exit code" {
+        let f = Foo { greeting: "captured", exit_code: 7 }
+        let rc = f.run(empty_cli_result())
+        rc == 7
+    }
+    then "dyn dispatch: type-annotation auto-boxes for vtable call" {
+        let foo: dyn Runnable = Foo { greeting: "via dyn", exit_code: 3 }
+        let bar: dyn Runnable = Bar { exit_code: 5 }
+        foo.run(empty_cli_result()) == 3
+            && bar.run(empty_cli_result()) == 5
+            && foo.name() == "foo"
+            && bar.name() == "bar"
+    }
+}

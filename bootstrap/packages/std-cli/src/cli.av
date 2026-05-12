@@ -67,7 +67,31 @@ export type Cli = {
     args: List<ArgDef>
 }
 
-// ── Builder ──
+// ── Components V2 surface (vez6.11) ──
+//
+// The pieces below ship the post-Components-V2 cli API in parallel
+// with the legacy builder above. Migration happens incrementally
+// (vez6.10–vez6.12); once main.av has fully moved, the legacy
+// FlagDef / OptionDef / ArgDef / CommandDef / Cli / cli_* surface
+// retires and these become the only API.
+//
+// Shape mirrors `docs/2026_05_08_COMPONENTS_V2_DESIGN.md §4.2`:
+//   trait Runnable { fn name(self) -> string; fn run(self, args) -> int }
+//   @expand(expand_command) component command implements Runnable { ... }
+//   @expand(expand_cli)     component cli                          { ... }
+// The @expand macros generate one `type Command_<inst>` plus
+// `impl Runnable for Command_<inst>` per declared instance, then
+// `cli avra { ... }` becomes a `Cli` struct literal that .run()
+// dispatches across `List<dyn Runnable>` via vtable.
+
+/// Trait every subcommand satisfies. `name()` is checked against
+/// the parsed argv to pick a command; `run()` executes its body
+/// with the resolved flags / args / options bound as locals (the
+/// macro author handles that lowering — see expand_command).
+export trait Runnable {
+    fn name(self) -> string
+    fn run(self, args: CliResult) -> int
+}
 
 /// Construct an empty Cli. Use `cli_add_command` / `cli_add_flag`
 /// / `cli_add_option` / `cli_add_arg` to populate, then `cli_parse`
