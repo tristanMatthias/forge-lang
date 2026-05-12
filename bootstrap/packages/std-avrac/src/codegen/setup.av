@@ -3,6 +3,7 @@
 use core.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_has, field_list_length, filter_fields_only, filter_fields_without, find_annotation, param_list_length, stmt_unwrap, variant_max_payload, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_unknown, vtype_enum_name, vtype_struct_name, env_extend}
 use parse.{parse_int_literal}
 use core.{avra_llvm_const_int}
+use core.{avra_process_env_get}
 use codegen.{Ctx, CgNewtypeReg, CgUnionAliasReg, CopySet, TypeRegs, DeferStack, RcCleanupStack, ReleasableSet, EmitValue, EnumReg, EnumLookup, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for_full, llvm_type_for_full_sized, ok_emit, ok_stmt, struct_reg_lookup, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup}
 use codegen.{analyze_releasable, analyze_copy_types}
 use codegen.{CycleSet, analyze_cycles, cycle_set_has}
@@ -364,6 +365,7 @@ fn codegen_program(stmts: StmtList, debug_null_checks: bool, coverage: bool, sou
         task_group: null,
         bag: bag_new(),
         type_reg,
+        lib_pkg_root: avra_process_env_get("AVRA_LIB_PKG_ROOT"),
     }
 
     // Analyze which types are cycle-capable (can reference themselves
@@ -1096,17 +1098,34 @@ fn emit_release_body_enum(ctx: Ctx, name: string, variants: VariantList, is_cycl
     emit_release_finish(s, is_cyclic)
 }
 
+/// P2 library-mode ownership check (type variant).
+///
+/// Returns true when a type with `type_name` should have its
+/// `__release_<Type>` body emitted in THIS compile. Whole-program
+/// mode (lib_pkg_root == "") always returns true. In library mode,
+/// only types qualified under `${lib_pkg_root}::` (or unqualified
+/// synthetic names with no `::`) belong here; types from other
+/// packages get a `declare` from phase 1 and their body links from
+/// the producer's .o.
+fn type_belongs_to_lib_pkg(ctx: Ctx, type_name: string) -> bool {
+    if ctx.lib_pkg_root == "" { return true }
+    if type_name.index_of("::") < 0 { return true }
+    let prefix = ctx.lib_pkg_root + "::"
+    type_name.starts_with(prefix)
+}
+
 /// Phase 2 for structs: walk StructReg and emit each release fn's
 /// body. Skips structs without RC fields and without a Drop impl —
 /// their release fn was never declared. Also skips entries marked
 /// `external` (g2eo Phase A: per-module compile filter) — their
 /// release body lives in the producer's `.o`, the declaration alone
-/// links us to it.
+/// links us to it. P2 library-mode also skips types not owned by
+/// `ctx.lib_pkg_root`.
 fn emit_release_bodies_structs(ctx: Ctx, reg: StructReg, cycles: CycleSet) {
     mut i = 0
     while i < reg.ord.length {
         let s = reg.ord[i]
-        if s.external {
+        if s.external || !type_belongs_to_lib_pkg(ctx, s.name) {
             i = i + 1
             continue
         }
@@ -1122,11 +1141,12 @@ fn emit_release_bodies_structs(ctx: Ctx, reg: StructReg, cycles: CycleSet) {
 /// Phase 2 for enums: walk EnumReg and emit each release fn's body
 /// when at least one variant carries an RC payload. External entries
 /// (g2eo Phase A) are skipped — their body lives in the producer.
+/// P2 library-mode also skips enums not owned by `ctx.lib_pkg_root`.
 fn emit_release_bodies_enums(ctx: Ctx, reg: EnumReg, cycles: CycleSet) {
     mut i = 0
     while i < reg.ord.length {
         let e = reg.ord[i]
-        if e.external {
+        if e.external || !type_belongs_to_lib_pkg(ctx, e.name) {
             i = i + 1
             continue
         }

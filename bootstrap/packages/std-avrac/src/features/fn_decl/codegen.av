@@ -19,6 +19,13 @@ use features.spawn_expr.{stmts_has_spawn}
 /// recursively descends into impls, modules, and nested decls.
 /// Pass 2 of compilation: signatures are already declared by
 /// `declare_functions` in `setup.av`.
+///
+/// P2 of library-mode: when `ctx.lib_pkg_root` is non-empty (the
+/// compile is targeting one package's library), skip body emission
+/// for functions whose qualified name belongs to ANOTHER package.
+/// The LLVM declaration from `declare_functions` stays as a
+/// declare-only; the linker resolves the call against the producer's
+/// pre-built .o. See `fn_belongs_to_lib_pkg` for the ownership rule.
 export fn emit_function_bodies(ctx: Ctx, stmts: StmtList) -> Result<VarEnv, string> {
     match stmts {
         .End -> ok_stmt(VarEnv.End)
@@ -33,7 +40,7 @@ export fn emit_function_bodies(ctx: Ctx, stmts: StmtList) -> Result<VarEnv, stri
             let is_external = find_annotation(ss.node, "external_unit") != null
             let inner = match stmt_unwrap(ss.node) {
                 .Function(name, _, params, _, body) -> {
-                    if is_external {
+                    if is_external || !fn_belongs_to_lib_pkg(ctx, name) {
                         ok_stmt(VarEnv.End)
                     } else {
                         emit_function_body(ctx, name, params, body)
@@ -60,6 +67,27 @@ export fn emit_function_bodies(ctx: Ctx, stmts: StmtList) -> Result<VarEnv, stri
             emit_function_bodies(ctx, next)
         }
     }
+}
+
+/// P2 library-mode ownership check.
+///
+/// Returns true when `fn_name` should have its body emitted in THIS
+/// compile (i.e. it belongs to the package we're building a library
+/// for) — OR when we're in whole-program mode (lib_pkg_root empty).
+///
+/// Ownership rule:
+///   * Whole-program mode (lib_pkg_root == ""): every fn belongs.
+///     Today's behaviour; emit every body.
+///   * Library mode (lib_pkg_root set, e.g. "@std::cli"): a fn
+///     belongs iff its qualified name starts with
+///     `${lib_pkg_root}::` OR has no `::` at all. Unqualified names
+///     are synthesized wrappers (main, __init_<mod>,
+///     __avra_lib_top_level) that always live in this unit.
+fn fn_belongs_to_lib_pkg(ctx: Ctx, fn_name: string) -> bool {
+    if ctx.lib_pkg_root == "" { return true }
+    if fn_name.index_of("::") < 0 { return true }
+    let prefix = ctx.lib_pkg_root + "::"
+    fn_name.starts_with(prefix)
 }
 
 /// Emit a single function body: position the builder at the

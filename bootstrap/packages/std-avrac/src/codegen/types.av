@@ -116,6 +116,20 @@ export type Ctx = {
     // Central type registry — TypeId-based lookups (O(1) intmap).
     // Will replace the string-keyed linked-list registries above.
     type_reg: TypeRegistry,
+    // P2 of library-mode (see docs/2026_05_11_LIBRARY_MODE_DESIGN.md).
+    // When non-empty, this string is the qualified prefix that
+    // identifies "this package" (e.g. "@std::cli"). Codegen skips
+    // body emission for any function whose qualified name does NOT
+    // start with `${lib_pkg_root}::` (treating it as imported from
+    // another package — linker resolves the call against the
+    // producer's pre-built .o). Unqualified names (no `::`) are
+    // synthesized wrappers (main, __init_<mod>, __avra_lib_top_level)
+    // and are always emitted regardless.
+    //
+    // Empty string ("") means whole-program mode: emit every body.
+    // That's today's default behaviour; library mode opt-in via
+    // --lib-pkg-root=<qualifier>.
+    lib_pkg_root: string,
 }
 
 /// Bundle of every type-resolution registry. Passed as a single
