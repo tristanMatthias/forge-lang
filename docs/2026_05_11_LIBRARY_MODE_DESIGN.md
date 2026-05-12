@@ -100,19 +100,27 @@ metadata). Only `export fn foo<T>(...)` gets its body serialized.
 `.meta.bin` currently encodes the package's surface (types, enums, fns,
 consts) as SIGNATURES only. Library mode requires it to ALSO encode:
 
-- **Generic function bodies** — the full AST of every `export fn` with at
-  least one type parameter. The serializer already round-trips StmtList,
-  Expr, etc. (the synthesizer uses these); the surface just needs to
-  include them.
+- **Generic function bodies** — every `export fn` with at least one type
+  parameter. Encoded as **source text** (the raw fn body slice between
+  the opening `{` and matching `}`). The consumer re-parses + re-resolves
+  + typechecks + monomorphizes at consume time. Swift's `.swiftinterface`
+  pattern: small codec, AST changes don't break the metadata format, sub-
+  ms re-parse cost per monomorphization. AST-level encoding (Rust's
+  approach) is an upgrade path we can take later if profiling justifies
+  the codec maintenance burden.
 - **Trait method bodies** that participate in monomorphization (default
-  impls, since they may need specialization in consumers).
+  impls, since they may need specialization in consumers) — encoded the
+  same way.
 - **Inline-eligible non-generic fns** — optional; useful for tiny helpers
   the consumer can inline at codegen time. v1 can skip this and emit
   every non-generic as a normal extern reference.
 
 The metadata format gains one new section: `GenericBodies`, indexed by
-qualified fn name. Backward-compat: old `.meta.bin` files without this
-section are still readable; the consumer falls back to "import as extern"
+qualified fn name. Each entry is `{ qualified_name: string, source: string,
+file: string, byte_offset: int }` — enough to re-parse the body AND
+preserve diagnostics that point at the producer's source. Backward-compat:
+old `.meta.bin` files without this section are still readable (header
+section_count signals presence); consumers fall back to "import as extern"
 behaviour for generic fns (which won't link — but old metas don't claim
 to support library mode anyway).
 

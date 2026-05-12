@@ -256,11 +256,13 @@ export const METADATA_VERSION_MINOR: int = 0
 /// retired number, otherwise old metadata.bin files mis-route their
 /// sections to the wrong reader.
 export enum SectionKind {
-    Types,    // tag 1: type declarations (struct / enum / shape / newtype / union alias)
-    Fns,      // tag 2: fn signatures (params + return type + visibility)
-    Traits,   // tag 3: trait declarations
-    Impls,    // tag 4: impl table — (Trait,Type) → method list
-    Consts,   // tag 5: const declarations (name + type + value bytes)
+    Types,         // tag 1: type declarations (struct / enum / shape / newtype / union alias)
+    Fns,           // tag 2: fn signatures (params + return type + visibility)
+    Traits,        // tag 3: trait declarations
+    Impls,         // tag 4: impl table — (Trait,Type) → method list
+    Consts,        // tag 5: const declarations (name + type + value bytes)
+    GenericBodies, // tag 6: source text of every exported generic fn body
+                   //         (P3 library-mode — consumer re-parses + monomorphizes)
 }
 
 fn section_kind_to_byte(k: SectionKind) -> int {
@@ -270,6 +272,7 @@ fn section_kind_to_byte(k: SectionKind) -> int {
         .Traits -> 3
         .Impls -> 4
         .Consts -> 5
+        .GenericBodies -> 6
     }
 }
 
@@ -279,6 +282,7 @@ fn byte_to_section_kind(b: int) -> SectionKind {
         3 -> .Traits
         4 -> .Impls
         5 -> .Consts
+        6 -> .GenericBodies
         _ -> .Types
     }
 }
@@ -1121,6 +1125,66 @@ impl BytesReader {
     }
 }
 
+// ── GenericBodies section (P3 library-mode) ──
+//
+// Every exported generic `fn` (i.e. at least one type parameter) ships
+// its body in the GenericBodies section as RAW SOURCE TEXT. The consumer
+// re-parses + re-resolves + typechecks + monomorphizes at consume time —
+// Swift's `.swiftinterface` model. Trade-off vs full-AST serialization:
+//   * Pro: tiny codec (4 fields per entry), AST changes don't break the
+//          metadata format, sub-ms re-parse cost per monomorphization.
+//   * Con: re-parse is strictly slower than deserializing post-resolve
+//          AST. If profiling shows it matters we upgrade later.
+// Same encoding covers default trait method bodies (which also need
+// per-consumer monomorphization).
+//
+// `file` + `byte_offset` keep diagnostics pointing at the producer's
+// source — when a monomorphization-time typeck error fires, we render
+// the producer's location, not a synthesised "in the metadata.bin"
+// pseudo-location.
+
+/// One generic-fn body record. `qualified_name` is the post-resolve
+/// path (e.g. `@std::cli::expand_command`); `source` is the body text
+/// between the opening `{` and the matching `}` (NOT including the
+/// braces themselves — the consumer re-wraps when invoking the parser).
+///
+/// @field qualified_name — canonical fn path, matches FnDeclEntry.qualified_name.
+/// @field source         — fn body source text, brace-content only.
+/// @field file           — producer's source file (for diagnostic spans).
+/// @field byte_offset    — byte offset of the body's first character in
+///                         `file` (so re-parse errors render at the
+///                         original location, not the metadata file).
+export type GenericBodyEntry = {
+    qualified_name: string,
+    source: string,
+    file: string,
+    byte_offset: int,
+}
+
+impl BytesWriter {
+    fn generic_body(self, e: GenericBodyEntry) {
+        self.string(e.qualified_name)
+        self.string(e.source)
+        self.string(e.file)
+        self.u64_le(e.byte_offset)
+    }
+}
+
+impl BytesReader {
+    fn generic_body(self) -> GenericBodyEntry {
+        let qn = self.string()
+        let src = self.string()
+        let fp = self.string()
+        let bo = self.u64_le()
+        GenericBodyEntry {
+            qualified_name: qn,
+            source: src,
+            file: fp,
+            byte_offset: bo,
+        }
+    }
+}
+
 // ── Unit-level orchestration ──
 //
 // `UnitMetadata` aggregates everything that goes into metadata.bin
@@ -1145,6 +1209,7 @@ export type UnitMetadata = {
     fns: List<FnDeclEntry>,
     consts: List<ConstDeclEntry>,
     impls: List<ImplDeclEntry>,
+    generic_bodies: List<GenericBodyEntry>,
 }
 
 /// Build an empty metadata bundle. Convenience for incremental
@@ -1157,24 +1222,32 @@ export fn unit_metadata_new(unit_name: string, fingerprint: bytes) -> UnitMetada
         fns: [],
         consts: [],
         impls: [],
+        generic_bodies: [],
     }
 }
 
 // `BytesWriter.unit(m)` serializes a complete UnitMetadata to bytes
 // — header + every section. Empty sections still consume their
-// frame (section_count is fixed at 4, not the count of non-empty
+// frame (section_count is fixed at 5, not the count of non-empty
 // sections), keeping the file layout predictable for downstream
 // iteration.
+//
+// P3 library-mode bumped section_count from 4 to 5; readers detect
+// old (count=4) vs new (count≥5) and skip the optional sections
+// when they aren't present — a producer that hasn't been rebuilt
+// since the bump still loads cleanly, just with empty
+// generic_bodies. See `BytesReader.unit()` for the gate.
 impl BytesWriter {
     fn unit(self, m: UnitMetadata) {
-        // Always write all four sections, even when empty, so the
+        // Always write all sections, even when empty, so the
         // section_count field stays predictable and downstream tools
         // can iterate without skipping unrecognised tags.
-        self.header(m.unit_name, m.fingerprint, 4)
+        self.header(m.unit_name, m.fingerprint, 5)
         self.write_types_section(m.types)
         self.write_fns_section(m.fns)
         self.write_consts_section(m.consts)
         self.write_impls_section(m.impls)
+        self.write_generic_bodies_section(m.generic_bodies)
     }
 
     fn write_types_section(self, xs: List<TypeDeclEntry>) {
@@ -1216,25 +1289,44 @@ impl BytesWriter {
         }
         self.section(SectionKind.Impls, xs.length, body_w.finish())
     }
+
+    fn write_generic_bodies_section(self, xs: List<GenericBodyEntry>) {
+        let body_w = writer_new()
+        mut i = 0
+        while i < xs.length {
+            body_w.generic_body(xs[i])
+            i = i + 1
+        }
+        self.section(SectionKind.GenericBodies, xs.length, body_w.finish())
+    }
 }
 
 // `BytesReader.unit()` decodes a complete metadata.bin — inverse
 // of `BytesWriter.unit`. Section order is fixed (Types, Fns, Consts,
-// Impls) and matches the writer; magic validation is the caller's
-// responsibility (this is the structural decode, not the policy gate).
+// Impls, GenericBodies) and matches the writer; magic validation is
+// the caller's responsibility (this is the structural decode, not
+// the policy gate).
+//
+// Backward-compat: pre-P3 metadata files carry section_count=4 and
+// no GenericBodies section. The reader checks `hdr.section_count`
+// and only consumes the 5th frame when it's present, returning an
+// empty generic_bodies list otherwise. New decoders linked against
+// an old binary will see empty bodies and fall back to "import as
+// extern" for any generic fn — same behaviour as if the producer
+// were a non-library-mode unit.
 impl BytesReader {
     fn unit(self) -> UnitMetadata {
         let hdr = self.header()
-        // Decode each of the four sections. Section order is fixed
-        // (Types, Fns, Consts, Impls) — assumes the writer side
-        // emitted them in this order. A generic skip-by-kind loop is
-        // straightforward to layer on later when the format gains
-        // optional sections, but pinning order keeps the decoder
-        // simple while the format is still 1.0.
         let types_frame = self.section()
         let fns_frame = self.section()
         let consts_frame = self.section()
         let impls_frame = self.section()
+        let bodies: List<GenericBodyEntry> = if hdr.section_count >= 5 {
+            let bf = self.section()
+            read_generic_body_list(bf.body, bf.entry_count)
+        } else {
+            []
+        }
         UnitMetadata {
             unit_name: hdr.unit_name,
             fingerprint: hdr.fingerprint,
@@ -1242,8 +1334,20 @@ impl BytesReader {
             fns: read_fn_decl_list(fns_frame.body, fns_frame.entry_count),
             consts: read_const_decl_list(consts_frame.body, consts_frame.entry_count),
             impls: read_impl_decl_list(impls_frame.body, impls_frame.entry_count),
+            generic_bodies: bodies,
         }
     }
+}
+
+fn read_generic_body_list(body: bytes, count: int) -> List<GenericBodyEntry> {
+    let r = reader_new(body)
+    mut out: List<GenericBodyEntry> = []
+    mut i = 0
+    while i < count {
+        out.push(r.generic_body())
+        i = i + 1
+    }
+    out
 }
 
 fn read_type_decl_list(body: bytes, count: int) -> List<TypeDeclEntry> {

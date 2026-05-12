@@ -30,17 +30,18 @@
 // Tracked under forge-crafting-intepreters-xtvc.
 
 use core.{
-    Stmt, StmtList, SStmt, sstmt_dummy,
+    Stmt, StmtList, SStmt, sstmt_dummy, stmt_unwrap,
     Expr, ExprList,
     AnnotationList, ParamList, ValueType, FieldList, VariantList, TypeParamList,
     sexpr_dummy,
 }
 use build.metadata.{
     UnitMetadata,
-    TypeDeclEntry, FnDeclEntry, ConstDeclEntry, ImplDeclEntry,
+    TypeDeclEntry, FnDeclEntry, ConstDeclEntry, ImplDeclEntry, GenericBodyEntry,
     TypeDeclKind, ConstValueKind,
     MetaTraitMethod, ImplMethodRef,
 }
+use parse.{parse_program_source}
 
 /// Synthesise just the body — the StmtList of all public-surface
 /// items, with no surrounding Module wrap. Resolver-side callers that
@@ -57,7 +58,12 @@ use build.metadata.{
 export fn synthesize_unit_body(m: UnitMetadata) -> StmtList {
     let empty = SubMod { name: "", direct: StmtList.End, children: [] }
     let after_types = insert_types(empty, m.types, m.unit_name)
-    let after_fns = insert_fns(after_types, m.fns, m.unit_name)
+    // P5 library-mode: thread generic_bodies through to insert_fns so
+    // synth_fn_decl can re-parse the body source for exported generics
+    // and emit a real Function (rather than the empty-body extern-
+    // wrapped stub the non-generic path uses). Non-generic exports
+    // still take the extern path; private fns never appear in xs.
+    let after_fns = insert_fns(after_types, m.fns, m.unit_name, m.generic_bodies)
     let after_consts = insert_consts(after_fns, m.consts, m.unit_name)
     let after_impls = insert_impls(after_consts, m.impls, m.unit_name, m.types)
     trie_to_stmtlist(after_impls)
@@ -221,19 +227,62 @@ fn insert_types(trie: SubMod, xs: List<TypeDeclEntry>, unit_name: string) -> Sub
     t
 }
 
-fn insert_fns(trie: SubMod, xs: List<FnDeclEntry>, unit_name: string) -> SubMod {
+fn insert_fns(trie: SubMod, xs: List<FnDeclEntry>, unit_name: string, bodies: List<GenericBodyEntry>) -> SubMod {
     mut t = trie
     mut i = 0
     while i < xs.length {
         let e = xs[i]
         let rp = relative_path(e.name, unit_name)
         if rp.belongs_to_unit {
-            let decl = synth_fn_decl(e)
+            let decl = synth_fn_decl(e, bodies)
             t = trie_insert_decl(t, rp.segs, 0, decl)
         }
         i = i + 1
     }
     t
+}
+
+/// Look up a generic body source by qualified name. Returns "" when
+/// the entry isn't present (non-generic fn, or pre-P3 metadata.bin
+/// without the GenericBodies section). Linear walk — bodies lists are
+/// small (one entry per exported generic per package).
+fn lookup_generic_body(bodies: List<GenericBodyEntry>, qn: string) -> string {
+    mut i = 0
+    while i < bodies.length {
+        if bodies[i].qualified_name == qn { return bodies[i].source }
+        i = i + 1
+    }
+    ""
+}
+
+/// Re-parse a generic-body source slice into a StmtList. The
+/// producer wrote it via `fmt_stmt_list(body, 0)`, which renders a
+/// brace-less list of statements. We wrap in a placeholder fn so
+/// the program parser has a complete top-level to chew on, then
+/// extract that fn's body.
+///
+/// Returns StmtList.End on any parse failure — consumer treats the
+/// fn as if it had no body (monomorphization fails downstream with a
+/// clearer error than a parser crash).
+fn parse_body_source(source: string) -> StmtList {
+    if source == "" { return StmtList.End }
+    let wrapped = "fn __avra_generic_body_wrapper() {\n" + source + "\n}"
+    let parsed = parse_program_source(wrapped)
+    if parsed.had_error == 1 { return StmtList.End }
+    if parsed.stmts == null { return StmtList.End }
+    extract_wrapper_body(parsed.stmts!)
+}
+
+fn extract_wrapper_body(stmts: StmtList) -> StmtList {
+    match stmts {
+        .End -> StmtList.End
+        .Node(ss, _) -> {
+            match stmt_unwrap(ss.node) {
+                .Function(_, _, _, _, body) -> body
+                _ -> StmtList.End
+            }
+        }
+    }
 }
 
 fn insert_consts(trie: SubMod, xs: List<ConstDeclEntry>, unit_name: string) -> SubMod {
@@ -379,12 +428,24 @@ fn synth_trait_method_stmts(ms: List<MetaTraitMethod>) -> StmtList {
 
 // ── FNS ──
 
-fn synth_fn_decl(e: FnDeclEntry) -> SStmt {
+fn synth_fn_decl(e: FnDeclEntry, bodies: List<GenericBodyEntry>) -> SStmt {
     let n = local_name(e.name)
     if e.is_extern {
         // ExternFn is C ABI; codegen treats it as a forward decl
         // already, so no extra @external_unit wrapping needed.
         return sstmt_dummy(wrap_export(Stmt.ExternFn(n, e.params, e.ret), e.exported))
+    }
+    // P5 library-mode: when this fn has a generic body in the
+    // metadata, materialise it locally so the consumer's
+    // monomorphizer can clone it per instantiation. The body parse
+    // happens once per consume; cached metadata.bin loads stay
+    // cheap. Non-generic fns + missing-body cases fall through to
+    // the @external_unit stub path — linker resolves at link time.
+    let body_source = lookup_generic_body(bodies, e.name)
+    if body_source != "" {
+        let parsed_body = parse_body_source(body_source)
+        let fn_decl = Stmt.Function(n, e.type_params, e.params, e.ret, parsed_body)
+        return sstmt_dummy(wrap_export(fn_decl, e.exported))
     }
     // Avra Function with @external_unit: declare-only at the
     // consumer; the producer's .o supplies the body at link time.

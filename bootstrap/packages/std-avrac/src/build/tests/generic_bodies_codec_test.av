@@ -1,0 +1,230 @@
+// P3 library-mode — round-trip the new GenericBodies section
+// through the metadata codec.
+//
+// Verifies:
+//   * writer + reader round-trip a populated bodies list byte-for-byte
+//   * empty bodies list survives the round-trip
+//   * pre-P3 metadata files (section_count=4, no GenericBodies frame)
+//     decode cleanly with bodies==[] — backward-compat gate.
+
+use @std.avrac.build.{
+    BytesWriter, BytesReader, writer_new, reader_new,
+    UnitMetadata, unit_metadata_new,
+    GenericBodyEntry,
+    SectionKind,
+    METADATA_MAGIC, METADATA_VERSION_MAJOR, METADATA_VERSION_MINOR,
+    bytes_from_hex,
+}
+
+fn fp32() -> bytes {
+    // 32-byte fingerprint stub — content doesn't matter, only length.
+    bytes_from_hex("00000000000000000000000000000000000000000000000000000000000000ff")
+}
+
+fn body_a() -> GenericBodyEntry {
+    GenericBodyEntry {
+        qualified_name: "@std::foo::generic_a",
+        source: "let x = a + b\nreturn x",
+        file: "foo.av",
+        byte_offset: 42,
+    }
+}
+
+fn body_b() -> GenericBodyEntry {
+    GenericBodyEntry {
+        qualified_name: "@std::foo::generic_b",
+        source: "for i in 0..n { sum = sum + i }",
+        file: "foo.av",
+        byte_offset: 1024,
+    }
+}
+
+fn round_trip(m: UnitMetadata) -> UnitMetadata {
+    let w = writer_new()
+    w.unit(m)
+    let r = reader_new(w.finish())
+    r.unit()
+}
+
+spec "P3 metadata codec: GenericBodies round-trip" {
+    then "empty bodies list survives round-trip" {
+        let m = unit_metadata_new("@std::foo", fp32())
+        let decoded = round_trip(m)
+        decoded.generic_bodies.length == 0
+    }
+    then "single-entry round-trip preserves every field" {
+        let m = UnitMetadata {
+            unit_name: "@std::foo",
+            fingerprint: fp32(),
+            types: [],
+            fns: [],
+            consts: [],
+            impls: [],
+            generic_bodies: [body_a()],
+        }
+        let decoded = round_trip(m)
+        decoded.generic_bodies.length == 1
+            && decoded.generic_bodies[0].qualified_name == "@std::foo::generic_a"
+            && decoded.generic_bodies[0].source == "let x = a + b\nreturn x"
+            && decoded.generic_bodies[0].file == "foo.av"
+            && decoded.generic_bodies[0].byte_offset == 42
+    }
+    then "multi-entry round-trip preserves order + offsets" {
+        let m = UnitMetadata {
+            unit_name: "@std::foo",
+            fingerprint: fp32(),
+            types: [],
+            fns: [],
+            consts: [],
+            impls: [],
+            generic_bodies: [body_a(), body_b()],
+        }
+        let decoded = round_trip(m)
+        decoded.generic_bodies.length == 2
+            && decoded.generic_bodies[0].qualified_name == "@std::foo::generic_a"
+            && decoded.generic_bodies[1].qualified_name == "@std::foo::generic_b"
+            && decoded.generic_bodies[1].byte_offset == 1024
+    }
+}
+
+// Synthesise a pre-P3 metadata.bin (section_count=4, no GenericBodies
+// frame) and prove the new reader still decodes it. Ensures consumers
+// linked against post-P3 bs2 can keep loading old producer artifacts
+// without forcing a rebuild.
+fn write_pre_p3_metadata(unit: string, fp: bytes) -> bytes {
+    let w = writer_new()
+    // header: magic + version + unit + fingerprint + section_count=4
+    w.u32_le(METADATA_MAGIC)
+    w.u16_le(METADATA_VERSION_MAJOR)
+    w.u16_le(METADATA_VERSION_MINOR)
+    w.string(unit)
+    w.raw(fp)
+    w.u32_le(4)
+    // 4 empty sections (Types, Fns, Consts, Impls) — tag + count=0 + body_len=0
+    w.section(SectionKind.Types, 0, writer_new().finish())
+    w.section(SectionKind.Fns, 0, writer_new().finish())
+    w.section(SectionKind.Consts, 0, writer_new().finish())
+    w.section(SectionKind.Impls, 0, writer_new().finish())
+    w.finish()
+}
+
+spec "P3 metadata codec: pre-P3 backward-compat" {
+    then "section_count=4 file decodes with empty generic_bodies" {
+        let buf = write_pre_p3_metadata("@std::legacy", fp32())
+        let r = reader_new(buf)
+        let m = r.unit()
+        m.unit_name == "@std::legacy"
+            && m.generic_bodies.length == 0
+            && m.types.length == 0
+            && m.fns.length == 0
+            && m.consts.length == 0
+            && m.impls.length == 0
+    }
+}
+
+// P4 — extractor populates generic_bodies for every exported generic
+// fn. Uses the real parse+resolve pipeline so the test exercises the
+// production code path (parse_program_source → resolve_module_files
+// → extract_unit_metadata).
+use @std.avrac.parse.{parse_program_source}
+use @std.avrac.build.{extract_unit_metadata}
+
+fn extract_from_source(unit: string, src: string) -> List<GenericBodyEntry> {
+    let parsed = parse_program_source(src)
+    if parsed.had_error == 1 { return [] }
+    if parsed.stmts == null { return [] }
+    let m = extract_unit_metadata(unit, fp32(), parsed.stmts!)
+    m.generic_bodies
+}
+
+spec "P4 extractor: generic_bodies population" {
+    then "exported generic fn shows up in generic_bodies" {
+        let bodies = extract_from_source("@std::test",
+            "export fn id<T>(x: T) -> T {\n    return x\n}")
+        bodies.length == 1
+            && bodies[0].qualified_name == "@std::test::id"
+            && bodies[0].source.contains("return")
+            && bodies[0].source.contains("x")
+    }
+    then "non-generic exported fn is NOT in generic_bodies" {
+        let bodies = extract_from_source("@std::test",
+            "export fn plain(x: int) -> int {\n    return x + 1\n}")
+        bodies.length == 0
+    }
+    then "private generic fn (no `export`) is NOT in generic_bodies" {
+        // Per design: generic bodies only leak through export.
+        // Private generics stay inside the producer's compile unit.
+        let bodies = extract_from_source("@std::test",
+            "fn helper<T>(x: T) -> T {\n    return x\n}")
+        bodies.length == 0
+    }
+    then "two exported generics each get their own entry, in source order" {
+        let bodies = extract_from_source("@std::test",
+            "export fn a<T>(x: T) -> T { return x }\nexport fn b<U>(x: U) -> U { return x }")
+        bodies.length == 2
+            && bodies[0].qualified_name == "@std::test::a"
+            && bodies[1].qualified_name == "@std::test::b"
+    }
+}
+
+// P5 — consumer-side: synthesize_unit_body now consumes the
+// generic_bodies a producer wrote and emits a real Function with a
+// re-parsed body (instead of the empty-body extern-wrapped stub the
+// pre-P5 path used for every fn).
+use @std.avrac.build.{synthesize_unit_body}
+use @std.avrac.core.{StmtList, Stmt, stmt_unwrap}
+
+/// Walk a (possibly Module-wrapped) StmtList and find the first
+/// `Function(name)` node, returning its body. Returns End on miss.
+/// Recurses into Module bodies because the synthesizer wraps decls
+/// under their qualified-name path (e.g. unit_name → @std::test).
+fn first_fn_body(stmts: StmtList, name: string) -> StmtList {
+    match stmts {
+        .End -> StmtList.End
+        .Node(ss, next) -> {
+            match stmt_unwrap(ss.node) {
+                .Function(n, _, _, _, body) if n == name -> body
+                .Module(_, body) -> {
+                    let found = first_fn_body(body, name)
+                    match found {
+                        .End -> first_fn_body(next, name)
+                        _ -> found
+                    }
+                }
+                _ -> first_fn_body(next, name)
+            }
+        }
+    }
+}
+
+fn body_stmt_count(b: StmtList) -> int {
+    match b {
+        .End -> 0
+        .Node(_, next) -> 1 + body_stmt_count(next)
+    }
+}
+
+spec "P5 consumer: synthesize_unit_body inlines generic bodies" {
+    then "round-trip: producer body → metadata → synthesized fn has parsed body" {
+        // The full ladder: extract via real pipeline, write to
+        // metadata, synthesize back. The synthesized fn's body
+        // should NOT be empty — proves the source-text round-trip
+        // through fmt → metadata → parse.
+        let parsed = parse_program_source(
+            "export fn id<T>(x: T) -> T {\n    return x\n}")
+        let m = extract_unit_metadata("@std::test", fp32(), parsed.stmts!)
+        let synth = synthesize_unit_body(m)
+        let body = first_fn_body(synth, "id")
+        body_stmt_count(body) >= 1
+    }
+    then "non-generic exported fn still gets empty body + @external_unit" {
+        let parsed = parse_program_source(
+            "export fn plain(x: int) -> int {\n    return x + 1\n}")
+        let m = extract_unit_metadata("@std::test", fp32(), parsed.stmts!)
+        let synth = synthesize_unit_body(m)
+        let body = first_fn_body(synth, "plain")
+        // Body stays empty for non-generic — linker resolves the
+        // call at link time against the producer's .o.
+        body_stmt_count(body) == 0
+    }
+}

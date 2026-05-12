@@ -11,12 +11,13 @@ use core.{
 }
 use build.metadata.{
     UnitMetadata,
-    TypeDeclEntry, FnDeclEntry, ConstDeclEntry, ImplDeclEntry,
+    TypeDeclEntry, FnDeclEntry, ConstDeclEntry, ImplDeclEntry, GenericBodyEntry,
     TypeDeclKind, ConstValueKind,
     MetaTraitMethod, ImplMethodRef,
     sym_id_for, unit_metadata_new,
 }
 use parse.{parse_int_literal}
+use fmt.{fmt_stmt_list}
 
 // Internal accumulator — each walk step folds into this and returns
 // the updated record. Lists grow via prepend so traversal stays
@@ -26,10 +27,13 @@ type ExtractAcc = {
     fns: List<FnDeclEntry>,
     consts: List<ConstDeclEntry>,
     impls: List<ImplDeclEntry>,
+    // P4 library-mode: every exported generic fn's body lands here
+    // as fmt-rendered source. Consumers re-parse + monomorphize.
+    generic_bodies: List<GenericBodyEntry>,
 }
 
 fn empty_acc() -> ExtractAcc {
-    ExtractAcc { types: [], fns: [], consts: [], impls: [] }
+    ExtractAcc { types: [], fns: [], consts: [], impls: [], generic_bodies: [] }
 }
 
 // Public entry. `unit_name` becomes the module prefix used to
@@ -54,6 +58,11 @@ export fn extract_unit_metadata(unit_name: string, fingerprint: bytes, stmts: St
         fns: acc.fns,
         consts: acc.consts,
         impls: acc.impls,
+        // P4 library-mode: every `export fn foo<T>(...)` walked above
+        // pushed a fmt-rendered body into acc.generic_bodies. Consumers
+        // re-parse + monomorphize at consume time. Non-generic exports
+        // stay signature-only — the linker resolves against producer .o.
+        generic_bodies: acc.generic_bodies,
     }
 }
 
@@ -82,6 +91,10 @@ export fn extract_per_file_metadata(unit_name: string, target_file: string, fing
         fns: acc.fns,
         consts: acc.consts,
         impls: acc.impls,
+        // P4 library-mode — same walker as whole-unit, so generic body
+        // extraction filters by file gating in walk_ss_for_file
+        // naturally.
+        generic_bodies: acc.generic_bodies,
     }
 }
 
@@ -185,6 +198,22 @@ fn push_impl(acc: ExtractAcc, e: ImplDeclEntry) -> ExtractAcc {
     mut xs = acc.impls
     xs.push(e)
     acc
+}
+
+fn push_generic_body(acc: ExtractAcc, e: GenericBodyEntry) -> ExtractAcc {
+    mut xs = acc.generic_bodies
+    xs.push(e)
+    acc
+}
+
+/// True when `tp` is non-empty — i.e. the fn declares at least one
+/// type parameter. Used by the P4 extractor to filter generic fns
+/// from the rest of the public surface for body serialization.
+fn type_params_present(tp: TypeParamList) -> bool {
+    match tp {
+        .End -> false
+        _ -> true
+    }
 }
 
 fn walk_stmts(acc: ExtractAcc, stmts: StmtList, current_module: string, exported: bool) -> ExtractAcc {
@@ -326,7 +355,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
             }
             push_type(acc, entry)
         }
-        .Function(name, type_params, params, ret_vt, _) -> {
+        .Function(name, type_params, params, ret_vt, body) -> {
             let qn = qualify(current_module, name)
             let entry = FnDeclEntry {
                 sym_id: sym_id_for(qn),
@@ -337,7 +366,27 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                 params: params,
                 ret: ret_vt,
             }
-            push_fn(acc, entry)
+            let with_fn = push_fn(acc, entry)
+            // P4: every exported generic fn ships its body as
+            // fmt-rendered source so the consumer can monomorphize
+            // at consume time. Non-generic exports stay extern at the
+            // call site (no body needed for typeck; the linker resolves
+            // against the producer's .o). Private fns never escape.
+            if exported && type_params_present(type_params) {
+                let body_entry = GenericBodyEntry {
+                    qualified_name: qn,
+                    source: fmt_stmt_list(body, 0),
+                    // Walker doesn't carry the enclosing SStmt's file
+                    // path; the per-fn span work is P4 follow-up. The
+                    // consumer falls back to "metadata" for the
+                    // diagnostic span when this is empty.
+                    file: "",
+                    byte_offset: 0,
+                }
+                push_generic_body(with_fn, body_entry)
+            } else {
+                with_fn
+            }
         }
         .ExternFn(name, params, ret_vt) -> {
             // Qualify the extern by its declaring module so the
