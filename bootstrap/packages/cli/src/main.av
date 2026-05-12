@@ -698,6 +698,65 @@ fn build_pre_dep_cmds(deps: List<Dep>, compiler_path: string) -> List<string> {
     cmds
 }
 
+// P6 library-mode: pre-build every `packages/std-*` package as a
+// library so the per-file test runner can enable AVRA_USE_METADATA=1
+// in shard commands. Without this, each shard re-parses the entire
+// @std universe — the dominant cost in cold full-suite runs.
+//
+// Discovers packages via ls + filter on the `std-` prefix. Each
+// build invocation chdirs into the package and runs `bs2 build
+// --lib --emit_metadata`, which (a) emits metadata.bin in the
+// per-package cache slot (P3+P4+P5: includes generic bodies) and
+// (b) produces a real Mach-O .o (P1 lazy realobj). The pool
+// dispatches them in parallel honouring `jobs`.
+//
+// Returns 0 on success, or the worst rc returned by any package
+// build. Caller decides whether a non-zero rc disables the metadata
+// fast-path or hard-fails — we soft-fail so a single broken
+// package can't take down the whole test run.
+fn pre_build_workspace_std_packages(project_dir: string, compiler_path: string, jobs: int) -> int {
+    let listing = avra_shell_exec("ls -d '${project_dir}/packages'/std-*/ 2>/dev/null")
+    if listing == "" { return 0 }
+    let pkg_dirs = split_by_newline(listing)
+    mut cmds = []
+    mut i = 0
+    while i < pkg_dirs.length {
+        let dir = pkg_dirs[i]
+        if dir != "" {
+            // Sanity: only enqueue if the dir actually has an
+            // avra.toml. A stray dir under packages/std-* without
+            // a manifest would silently skip the build and leave
+            // the meta slot empty.
+            if avra_selfhost_file_exists("${dir}avra.toml") != 0 {
+                cmds.push("cd \"${dir}\" && \"${compiler_path}\" build --lib --emit_metadata > /dev/null 2>&1")
+            }
+        }
+        i = i + 1
+    }
+    if cmds.length == 0 { return 0 }
+    pool_run(cmds, jobs)
+}
+
+// Split a newline-separated string into a List<string>, trimming
+// trailing whitespace and dropping empty lines. Used by the
+// workspace-package discovery walker — `ls -d` produces one path
+// per line plus a trailing newline.
+fn split_by_newline(s: string) -> List<string> {
+    mut out = []
+    if s == "" { return out }
+    mut start = 0
+    mut i = 0
+    while i < s.length {
+        if s.byte(i) == 0x0A {
+            if i > start { out.push(s.substring(start, i)) }
+            start = i + 1
+        }
+        i = i + 1
+    }
+    if start < s.length { out.push(s.substring(start, s.length)) }
+    out
+}
+
 // g2eo Phase B: per-module compile dispatcher.
 //
 // Splits the package's `<root>/src/` into N units — one per
@@ -1994,6 +2053,31 @@ fn run_per_file_test_command(project_dir: string, accepted_paths: List<string>, 
     let log_dir = "${project_dir}/build/test_shards"
     avra_shell_exec("rm -rf '${log_dir}' && mkdir -p '${log_dir}'")
 
+    // P6 library-mode (Phase 1): pre-build every workspace @std/*
+    // package as a library so each package's .meta.bin + .o cache
+    // slot is fresh before shards dispatch. Even without
+    // AVRA_USE_METADATA=1 this is a win: linker resolves shard call
+    // sites against the producer's pre-built .o instead of re-
+    // compiling the producer per shard.
+    //
+    // AVRA_USE_METADATA=1 itself is intentionally NOT enabled here.
+    // The metadata fast-path exposes a pre-existing synthesizer gap:
+    // inherent impls (`impl Type { ... }` with no trait) are skipped
+    // by the extractor, so method calls like `bytes_writer.unit()`
+    // fail to resolve at shard compile time. Tracked separately;
+    // when fixed, the use_meta="" line below becomes
+    // "AVRA_USE_METADATA=1 " for the full per-shard speed win.
+    //
+    // Opt-out via AVRA_SKIP_PREBUILD=1.
+    let skip_prebuild = avra_process_env_get("AVRA_SKIP_PREBUILD") != ""
+    if !skip_prebuild {
+        let pb_rc = pre_build_workspace_std_packages(project_dir, compiler_path, jobs)
+        if pb_rc != 0 {
+            eprintln("[per-file] pre-build of @std/* libs failed (rc=${string(pb_rc)}) — shards will compile @std/* from source")
+        }
+    }
+    let use_meta = ""
+
     // Build per-shard command list. Each is a self-contained
     // `bs2 _test_shard <path>` redirecting its full stdio to a
     // shard-specific log file the orchestrator parses after the
@@ -2006,14 +2090,7 @@ fn run_per_file_test_command(project_dir: string, accepted_paths: List<string>, 
     while i < accepted_paths.length {
         let path = accepted_paths[i]
         let slug = basename_no_ext(path)
-        // AVRA_USE_METADATA=1 would let each shard consume @std/* as
-        // metadata stubs (the 0qmm step 1 fast-path) — keeping
-        // per-shard memory bounded so deep parallelism doesn't OOM.
-        // Currently disabled because the @std/avrac meta cache isn't
-        // auto-regenerated when @std source changes, so a freshly
-        // added stdlib symbol fails to resolve in shards. Filed as a
-        // follow-up (see 0qmm meta-freshness bead).
-        cmds = cmds.push("'${compiler_path}' _test_shard '${path}'${filter_arg} > '${log_dir}/${slug}.log' 2>&1")
+        cmds = cmds.push("${use_meta}'${compiler_path}' _test_shard '${path}'${filter_arg} > '${log_dir}/${slug}.log' 2>&1")
         slugs = slugs.push(slug)
         i = i + 1
     }
