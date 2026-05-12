@@ -685,13 +685,23 @@ fn pre_build_path_deps(deps: List<Dep>, compiler_path: string, args: BuildArgs) 
 // commands the pool will dispatch — one per path-dep. Skips deps
 // whose `path` is empty (registry/git-ref deps not yet resolved
 // locally).
+//
+// Each dep build sets its own AVRA_LIB_PKG_ROOT derived from the
+// dep's path (`packages/std-<name>/` → `@std::<name>`) so codegen
+// emits ONLY that dep's symbols — preventing duplicate-symbol
+// errors when multiple dep .o files link together. The outer
+// build's AVRA_LIB_PKG_ROOT would mis-bucket every dep fn as
+// foreign and produce a 3-define truncated .ll; we override
+// per-dep here.
 fn build_pre_dep_cmds(deps: List<Dep>, compiler_path: string) -> List<string> {
     mut cmds = []
     mut i = 0
     while i < deps.length {
         let dep = deps[i]
         if dep.path != "" {
-            cmds.push("cd \"${dep.path}\" && \"${compiler_path}\" build --lib --emit_metadata > /dev/null 2>&1")
+            let lib_root = derive_lib_root_for(dep.path)
+            let env_prefix = if lib_root == "" { "" } else { "AVRA_LIB_PKG_ROOT='${lib_root}' " }
+            cmds.push("cd \"${dep.path}\" && ${env_prefix}\"${compiler_path}\" build --lib --emit_metadata > /dev/null 2>&1")
         }
         i = i + 1
     }
@@ -2227,7 +2237,17 @@ fn run_per_file_test_command(project_dir: string, accepted_paths: List<string>, 
     let skip_prebuild = avra_process_env_get("AVRA_SKIP_PREBUILD") != ""
     mut lib_objs_env = ""
     if want_meta && !skip_prebuild {
-        let pb_rc = pre_build_workspace_std_packages(project_dir, compiler_path, jobs)
+        // Serialize the pre-build (jobs=1) until proper topo-sort
+        // lands: packages with [dependencies] (e.g. @std/avrac → lsp,
+        // cli, json, ...) run a sub-pre-build of their own deps via
+        // run_build_command's pre_build_path_deps. Dispatching the
+        // outer + inner concurrently writes to the same per-dep
+        // cache slot from multiple bs2 processes — produces
+        // truncated unit.ll output, blocks the metadata fast-path.
+        // Serial dispatch is correct (deps before dependents) at a
+        // small wall-clock cost. Proper topo-sort follow-up tracked
+        // separately.
+        let pb_rc = pre_build_workspace_std_packages(project_dir, compiler_path, 1)
         if pb_rc != 0 {
             eprintln("[per-file] pre-build of @std/* libs failed (rc=${string(pb_rc)}) — disabling metadata fast-path for this run")
         } else {
