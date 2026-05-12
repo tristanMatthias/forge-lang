@@ -76,14 +76,39 @@ fn collect_component_macros(stmts: StmtList) -> CompMacros {
         .End -> CompMacros.End
         .Node(ss, next) -> {
             let rest = collect_component_macros(next)
-            let macro_name = comp_macro_for(ss.node)
-            let comp_name = component_def_name(ss.node)
-            if macro_name != "" && comp_name != "" {
-                CompMacros.Entry(comp_name, macro_name, rest)
-            } else {
-                rest
+            let inner = peel_annotations(ss.node)
+            // ComponentDefs can live inside Module wrappers (e.g.
+            // `component command implements Runnable {}` declared
+            // in @std/cli's cli.av lands wrapped under
+            // Module("@std::cli::cli", ...) in a bundled compile).
+            // Without this recursion the (comp_name → macro_fn) map
+            // is empty for any def behind a module boundary, so
+            // instance dispatch silently skips them.
+            match inner {
+                .Module(_, body) -> {
+                    let mod_macros = collect_component_macros(body)
+                    merge_comp_macros(mod_macros, rest)
+                }
+                _ -> {
+                    let macro_name = comp_macro_for(ss.node)
+                    let comp_name = component_def_name(ss.node)
+                    if macro_name != "" && comp_name != "" {
+                        CompMacros.Entry(comp_name, macro_name, rest)
+                    } else {
+                        rest
+                    }
+                }
             }
         }
+    }
+}
+
+/// Concatenate two CompMacros lists. Used by `collect_component_macros`
+/// to fold per-Module results into the top-level list.
+fn merge_comp_macros(left: CompMacros, right: CompMacros) -> CompMacros {
+    match left {
+        .End -> right
+        .Entry(n, mn, next) -> CompMacros.Entry(n, mn, merge_comp_macros(next, right))
     }
 }
 
@@ -164,6 +189,19 @@ fn expand_stmt_list(stmts: StmtList, reg: CompTimeRegistry, comp_macros: CompMac
                         }
                     }
                     StmtList.Node(ss, expanded_rest)
+                }
+                // Module bodies have to be walked too — without this,
+                // component instances inside an imported module (e.g.
+                // `component command build {}` declared inside a
+                // submodule of @std/cli) never see the @expand
+                // pipeline, and the unprocessed ComponentBlock falls
+                // through to codegen with an unsupported tag. Re-wraps
+                // the recursed body so the module structure stays
+                // intact for downstream resolve/typeck.
+                .Module(mod_name, body) -> {
+                    let expanded_body = expand_stmt_list(body, reg, comp_macros)
+                    let new_stmt = Stmt.Module(mod_name, expanded_body)
+                    StmtList.Node(sstmt_at(new_stmt, ss.line, ss.col, ss.file), expanded_rest)
                 }
                 _ -> {
                     if has_expand_annotation(ss.node) {
