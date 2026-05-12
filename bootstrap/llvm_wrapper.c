@@ -204,6 +204,16 @@ void avra_llvm_set_initializer(LLVMValueRef g, LLVMValueRef val) {
     LLVMSetInitializer(g, val);
 }
 
+// Mark a fn / global as linkonce_odr — the linker dedupes
+// multiple definitions of the same symbol across translation
+// units, keeping a single copy. Required by library-mode for
+// auto-generated helpers (per-monomorphization __release_<T>,
+// __init_<mod>, public consts) so a shard's .o + producer's .o
+// don't fight over them at link time.
+void avra_llvm_set_linkonce_odr(LLVMValueRef v) {
+    if (v) LLVMSetLinkage(v, LLVMLinkOnceODRLinkage);
+}
+
 // ── Basic blocks ──
 
 LLVMBasicBlockRef avra_llvm_append_basic_block(LLVMContextRef ctx, LLVMValueRef fn_val, const char* name) {

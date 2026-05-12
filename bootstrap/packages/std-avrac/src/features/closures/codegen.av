@@ -16,6 +16,7 @@ use core.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList
 use codegen.{Ctx, EmitValue, err_emit, null_ptr_val, ok_emit}
 use codegen.{emit_expr}
 use codegen.{analyze_releasable_expr}
+use core.{avra_llvm_set_linkonce_odr}
 
 // ── Capture detection ──
 
@@ -503,7 +504,19 @@ export fn emit_lambda(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, st
 /// slot closure with the function pointer only.
 export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, raw_params: ParamList, body: Expr, param_types: TypeList) -> Result<EmitValue, string> {
     let id = avra_next_lambda_id()
-    let name = "__lambda_${string(id)}"
+    // Library-mode: prefix the lambda name with the lib_pkg_root
+    // (e.g. `@std::lsp::__lambda_3`) so two different units that
+    // both happen to emit `__lambda_3` don't collide. The lambda
+    // ID counter is process-local — without the prefix, shard's
+    // `__lambda_3` and producer's `__lambda_3` are completely
+    // different bodies that the linker would pick one of and
+    // crash the unpicked caller at runtime.
+    let lambda_prefix = if ctx.lib_pkg_root == "" {
+        ""
+    } else {
+        ctx.lib_pkg_root + "::"
+    }
+    let name = "${lambda_prefix}__lambda_${string(id)}"
     let params = ctx.resolve_params(raw_params)
 
     // Detect captured variables from the enclosing scope.

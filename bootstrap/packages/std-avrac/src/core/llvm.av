@@ -50,6 +50,12 @@ extern fn avra_llvm_fn_type_of(fn_val: ptr) -> ptr
 extern fn avra_llvm_add_global(m: ptr, ty: ptr, name: string) -> ptr
 extern fn avra_llvm_set_initializer(g: ptr, val: ptr)
 
+// Mark an LLVM Value (fn or global) as linkonce_odr — library-mode
+// uses this on auto-generated helper symbols so consumers and
+// producers can both emit them without the linker rejecting
+// duplicates.
+extern fn avra_llvm_set_linkonce_odr(v: ptr)
+
 // ── Basic blocks ──
 extern fn avra_llvm_append_basic_block(ctx: ptr, fn_val: ptr, name: string) -> ptr
 extern fn avra_llvm_position_at_end(b: ptr, bb: ptr)

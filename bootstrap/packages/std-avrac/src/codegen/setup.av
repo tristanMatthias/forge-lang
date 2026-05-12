@@ -324,6 +324,13 @@ fn codegen_program(stmts: StmtList, debug_null_checks: bool, coverage: bool, sou
     let main_type = avra_llvm_function_type(i64t, main_params, 0, 0)
     avra_llvm_type_array_free(main_params)
     let main_fn = avra_llvm_add_function(m, main_name, main_type)
+    // Library-mode: __avra_lib_top_level is emitted by EVERY lib
+    // compile (consumer + producer alike). linkonce_odr lets the
+    // linker keep one copy. Real `main` (whole-program path)
+    // doesn't need this — there's exactly one main per binary.
+    if library {
+        avra_llvm_set_linkonce_odr(main_fn)
+    }
 
     let entry = avra_llvm_append_basic_block(lc, main_fn, "entry")
     avra_llvm_position_at_end(builder, entry)
@@ -712,6 +719,11 @@ fn declare_one_const_global(m: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, struc
     let g = avra_llvm_add_global(m, llvm_ty, name)
     let initial = const_initializer_for(init, llvm_ty, i64t, i1t)
     avra_llvm_set_initializer(g, initial)
+    // Library-mode: exported consts (e.g. @std::avrac::build::metadata::VT_U32)
+    // get emitted with the same value by every compile unit that
+    // imports them. linkonce_odr lets the linker keep one copy
+    // instead of failing on the duplicate.
+    avra_llvm_set_linkonce_odr(g)
     TopLevelVars.Node(name, g, vt, reg)
 }
 
@@ -878,6 +890,12 @@ fn declare_release_fns_structs(m: ptr, i64t: ptr, pt: ptr, reg: StructReg) {
         let has_drop = avra_llvm_get_named_function(m, "${s.name}__drop") != null
         if fields_have_rc(s.fields) || has_drop {
             decl(m, "__release_${s.name}", i64t, [pt])
+            // linkonce_odr is set when the BODY emits (see
+            // emit_release_body_struct) — applying linkage on a
+            // declare-only function is rejected by llc with
+            // 'invalid linkage for function declaration'. The
+            // body-emit phase only runs for locally-owned types,
+            // so the linkage attaches only to real definitions.
         }
         i = i + 1
     }
@@ -892,6 +910,8 @@ fn declare_release_fns_enums(m: ptr, i64t: ptr, pt: ptr, reg: EnumReg) {
         let e = reg.ord[i]
         if variants_have_rc(e.variants) {
             decl(m, "__release_${e.name}", i64t, [pt])
+            // linkonce_odr set during body emission — see the
+            // struct branch above for the rationale.
         }
         i = i + 1
     }
@@ -1015,6 +1035,11 @@ fn emit_release_body_struct(ctx: Ctx, name: string, fields: FieldList, is_cyclic
     s.fctx.call("avra_rc_free", [s.obj])
     avra_llvm_build_br(s.fctx.builder, s.done_bb)
     emit_release_finish(s, is_cyclic)
+    // Library-mode linkonce_odr: same fn body in every consumer's
+    // .o, linker dedups. Set AFTER body emission so the fn is a
+    // definition (linkonce_odr is rejected on declarations).
+    let fn_val = ctx.get_fn("__release_${name}")
+    if fn_val != null { avra_llvm_set_linkonce_odr(fn_val) }
 }
 
 /// Emit release sequences for the ptr-typed fields of a single
@@ -1096,6 +1121,8 @@ fn emit_release_body_enum(ctx: Ctx, name: string, variants: VariantList, is_cycl
     s.fctx.call("avra_rc_free", [s.obj])
     avra_llvm_build_br(s.fctx.builder, s.done_bb)
     emit_release_finish(s, is_cyclic)
+    // linkonce_odr — same rationale as the struct path.
+    if fn_val != null { avra_llvm_set_linkonce_odr(fn_val) }
 }
 
 /// P2 library-mode ownership check (type variant).
@@ -1447,6 +1474,12 @@ fn emit_top_level(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<VarEnv, stri
                     let init_type = avra_llvm_function_type(ctx.i64_type, init_params, 0, 0)
                     avra_llvm_type_array_free(init_params)
                     let init_fn = avra_llvm_add_function(ctx.module, init_name, init_type)
+                    // Library-mode: __init_<mod> is auto-generated
+                    // from the same source in every consumer + the
+                    // producer, so multiple .o files emit identical
+                    // bodies. linkonce_odr tells the linker to keep
+                    // one and discard the rest.
+                    avra_llvm_set_linkonce_odr(init_fn)
                     let init_entry = avra_llvm_append_basic_block(ctx.lc, init_fn, "entry")
 
                     // Save caller's current basic block
