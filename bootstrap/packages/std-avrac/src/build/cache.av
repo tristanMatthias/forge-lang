@@ -25,6 +25,7 @@ use core.{
     avra_remove_file,
     avra_is_dir,
     avra_shell_exec_status,
+    avra_process_env_get,
 }
 use build.fingerprint.{Fingerprint}
 
@@ -210,6 +211,31 @@ export fn cache_publish(
         return PublishResult { success: false, error: "rename failed: " + staging + " -> " + final_dir }
     }
     PublishResult { success: true, error: "" }
+}
+
+/// Lazy read of a cache slot's `unit.o` as a real Mach-O object.
+/// Library-mode callers (P2+) need actual object files for multi-
+/// object linking; cache_publish today stores the .ll text in the
+/// `unit.o` slot (a historical quirk). This wrapper produces a real
+/// Mach-O sibling at `unit.realobj.o` by running llc on first read;
+/// subsequent calls return the cached path. Returns "" when the
+/// cache slot is absent or llc fails.
+///
+/// Keeping the llc cost on the READ side (rather than the publish
+/// side) means whole-program callers — who never link cached .o
+/// files — pay zero; only library-mode callers pay the llc cost,
+/// and only once per cache slot.
+export fn cache_entry_realobj_path(c: Cache, fp: Fingerprint) -> string {
+    let ll = entry_ll_path(c, fp)
+    if avra_selfhost_file_exists(ll) == 0 { return "" }
+    let entry = entry_dir_for(c, fp)
+    let real_o = entry + "/unit.realobj.o"
+    if avra_selfhost_file_exists(real_o) == 1 { return real_o }
+    let llvm_env = avra_process_env_get("LLVM_PREFIX")
+    let llvm_prefix = if llvm_env == "" { "/opt/homebrew/opt/llvm" } else { llvm_env }
+    let rc = avra_shell_exec_status("'${llvm_prefix}/bin/llc' -O2 -filetype=obj '${ll}' -o '${real_o}' 2>/dev/null")
+    if rc != 0 { return "" }
+    real_o
 }
 
 /// Read a cached unit's IR back. Caller is responsible for checking

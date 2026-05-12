@@ -30,12 +30,13 @@ src_relevant=$(echo "$staged" | grep -E '^(bootstrap/packages/std-avrac/src/|boo
 
 echo "[pre-commit] bootstrap-affecting changes detected — running spec test suite"
 TEST_LOG="/tmp/avra_pre_commit_test.${PPID}.log"
-# Hard timeout: kill the test suite if it runs longer than 20 min. The
-# baseline is ~2min warm; ~14min cold (rebuilds the bundled binary +
-# runs 2227 tests + ~30 fixtures that fork bs2). Anything past 20 min
-# signals a real perf regression worth blocking. Uses perl alarm
+# Hard timeout: kill the test suite if it runs longer than 30 min.
+# Standalone the suite runs ~2min warm / ~14min cold. Pre-commit's
+# environment adds I/O contention and disk pressure (the cold path
+# can land at ~18-22min in practice). 30 min gives generous headroom
+# while still blocking obvious perf regressions. Uses perl alarm
 # because macOS doesn't ship /usr/bin/timeout by default.
-TEST_TIMEOUT_SEC=1200
+TEST_TIMEOUT_SEC=1800
 TEST_START=$(date +%s)
 perl -e 'alarm shift; exec @ARGV' "$TEST_TIMEOUT_SEC" \
      sh -c 'cd bootstrap && ./build/bs2 test' > "$TEST_LOG" 2>&1
