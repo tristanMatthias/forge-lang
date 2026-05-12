@@ -728,7 +728,21 @@ fn pre_build_workspace_std_packages(project_dir: string, compiler_path: string, 
             // a manifest would silently skip the build and leave
             // the meta slot empty.
             if avra_selfhost_file_exists("${dir}avra.toml") != 0 {
-                cmds.push("cd \"${dir}\" && \"${compiler_path}\" build --lib --emit_metadata > /dev/null 2>&1")
+                // P2 codegen lib-mode: each package's build sets
+                // AVRA_LIB_PKG_ROOT to its qualified prefix so the
+                // emitted .o contains only THIS package's symbols.
+                // Without this, every package's .o is whole-program
+                // and linking two packages together produces
+                // thousands of duplicate-symbol errors (which is
+                // exactly what 6owa's link step hit before this fix).
+                //
+                // Qualified prefix derives from `packages/std-<name>/`
+                // → `@std::<name>`. Hard-coded here as
+                // `derive_lib_root_for(dir)` rather than parsing
+                // avra.toml (the [package].name field would work too
+                // but adds a load_manifest call per dir).
+                let lib_root = derive_lib_root_for(dir)
+                cmds.push("cd \"${dir}\" && AVRA_LIB_PKG_ROOT='${lib_root}' \"${compiler_path}\" build --lib --emit_metadata > /dev/null 2>&1")
             }
         }
         i = i + 1
@@ -737,36 +751,107 @@ fn pre_build_workspace_std_packages(project_dir: string, compiler_path: string, 
     pool_run(cmds, jobs)
 }
 
+/// Translate a packages/std-NAME/ dir path into the package's
+/// canonical qualified prefix: `@std::NAME`. Used by
+/// pre_build_workspace_std_packages to set AVRA_LIB_PKG_ROOT per
+/// package so codegen emits only that package's symbols. Returns
+/// "" when the path doesn't match the std-* pattern (caller skips
+/// the env var; package builds in whole-program mode as before).
+fn derive_lib_root_for(dir: string) -> string {
+    let pfx = "packages/std-"
+    let mi = dir.index_of(pfx)
+    if mi < 0 { return "" }
+    let after = mi + pfx.length
+    mut j = after
+    while j < dir.length {
+        if dir.byte(j) == 0x2F { break }
+        j = j + 1
+    }
+    if j == after { return "" }
+    "@std::" + dir.substring(after, j)
+}
+
 // 6owa library-mode: After pre_build_workspace_std_packages
-// populates each @std/* package's cache slot, walk those slots and
-// collect the realobj.o paths into a `:`-joined string suitable for
-// AVRA_LIB_OBJS.
+// populates each @std/* package's cache slot, find every package's
+// realobj.o on disk and join them into AVRA_LIB_OBJS.
 //
-// Returns "" when no .o paths are reachable (pre-build skipped, or
-// every package's slot is missing the IR). Caller treats this as
-// "no lib-objs env" — shards fall back to the legacy link path.
+// Implementation discovers realobjs via shell glob rather than
+// recomputing the cache fingerprint — the build pipeline's fp uses
+// (compiler_hash + profile + target + sources + deps) which is
+// hard to replicate exactly from here, and a glob-walk is more
+// robust to future fp scheme changes. The per-package cache slot
+// is content-addressed so any realobj.o under it is by definition
+// the right binary for THAT source state. Each pre_build invocation
+// publishes a fresh entry; stale realobjs from older source states
+// stay reachable but harmlessly — the linker prefers the freshest
+// definition (later wins).
+//
+// Returns "" when no realobjs exist (pre-build skipped, or every
+// package's slot is missing the .o). Caller treats this as "no
+// lib-objs env" — shards fall back to the legacy link path.
 fn collect_workspace_lib_objs(project_dir: string) -> string {
-    let listing = avra_shell_exec("ls -d '${project_dir}/packages'/std-*/ 2>/dev/null")
+    // The cache_entry_realobj_path helper lazily generates the
+    // realobj.o from unit.ll on first request. We call it via a
+    // shell pass so every reachable cache slot's IR gets ll→o'd
+    // before the glob — without this step a freshly-published
+    // cache entry would still be missing its realobj.o until the
+    // FIRST consume (which is now, here, before the glob).
+    //
+    // Shell command kept simple (no shell parameter expansion) so
+    // it doesn't tickle Avra's interpolation parser. The replacement
+    // step uses sed instead of `${ll%.ll}.realobj.o`.
+    let llvm_pfx = if avra_process_env_get("LLVM_PREFIX") == "" { "/opt/homebrew/opt/llvm" } else { avra_process_env_get("LLVM_PREFIX") }
+    let mat_cmd = "for ll in '${project_dir}/packages'/std-*/build/cache/*/unit.ll; do o=`echo \"$ll\" | sed 's/.ll$/.realobj.o/'`; if [ -f \"$ll\" ] && [ ! -f \"$o\" ]; then '${llvm_pfx}/bin/llc' -O2 -filetype=obj \"$ll\" -o \"$o\" 2>/dev/null; fi; done"
+    avra_shell_exec(mat_cmd)
+    let listing = avra_shell_exec("ls -t '${project_dir}/packages'/std-*/build/cache/*/unit.realobj.o 2>/dev/null")
     if listing == "" { return "" }
-    let pkg_dirs = split_by_newline(listing)
-    mut paths = []
+    let paths = split_by_newline(listing)
+    // Dedup by package: a stale slot's realobj.o would shadow the
+    // fresh one with `later wins` semantics, but we want the FIRST
+    // (most-recently-modified per ls -t) entry per package only.
+    mut seen_pkgs: List<string> = []
+    mut keep = []
     mut i = 0
-    while i < pkg_dirs.length {
-        let dir = pkg_dirs[i]
-        if dir != "" && avra_selfhost_file_exists("${dir}avra.toml") != 0 {
-            // Strip trailing slash so cache_for + package_source_fingerprint
-            // see the same form the build pipeline uses.
-            let pkg_root = if dir.ends_with("/") { dir.substring(0, dir.length - 1) } else { dir }
-            let pkg_fp = package_source_fingerprint(pkg_root)
-            if pkg_fp != "" {
-                let cache = cache_for(pkg_root)
-                let realobj = cache_entry_realobj_path(cache, Fingerprint { hex: pkg_fp })
-                if realobj != "" { paths.push(realobj) }
+    while i < paths.length {
+        let p = paths[i]
+        if p != "" {
+            let pkg = extract_pkg_from_realobj(p)
+            if pkg != "" && !name_list_contains(seen_pkgs, pkg) {
+                seen_pkgs.push(pkg)
+                keep.push(p)
             }
         }
         i = i + 1
     }
-    join_with_colon(paths)
+    join_with_colon(keep)
+}
+
+/// Extract the package-dir slug from a cached realobj path. The
+/// path shape is `<project>/packages/<pkg>/build/cache/<hex>/unit.realobj.o`;
+/// we want `<pkg>`. Returns "" when the path doesn't match.
+fn extract_pkg_from_realobj(p: string) -> string {
+    let marker = "/packages/"
+    let mi = p.index_of(marker)
+    if mi < 0 { return "" }
+    let after = mi + marker.length
+    // Find the next "/" so we slice exactly the package name.
+    mut j = after
+    while j < p.length {
+        if p.byte(j) == 0x2F { break }
+        j = j + 1
+    }
+    if j == after { return "" }
+    p.substring(after, j)
+}
+
+/// `name_list_contains` style helper for the dedup walk above.
+fn name_list_contains(xs: List<string>, target: string) -> bool {
+    mut i = 0
+    while i < xs.length {
+        if xs[i] == target { return true }
+        i = i + 1
+    }
+    false
 }
 
 fn join_with_colon(xs: List<string>) -> string {
