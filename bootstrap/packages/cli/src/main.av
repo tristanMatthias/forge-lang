@@ -2217,22 +2217,23 @@ fn run_per_file_test_command(project_dir: string, accepted_paths: List<string>, 
     // the mangled call sites AVRA_USE_METADATA=1 exposes.
     //
     // Opt-out via AVRA_SKIP_PREBUILD=1.
+    // AVRA_USE_METADATA=1 + AVRA_LIB_OBJS are paired: shards under
+    // the metadata fast-path see only extern decls for @std/*, so
+    // they need to link against the pre-built producer .o files. In
+    // legacy mode (no AVRA_USE_METADATA), shards inline @std/* into
+    // their own .o — adding AVRA_LIB_OBJS would produce duplicate
+    // symbols. The pair flips together via AVRA_USE_METADATA_LIB.
+    let want_meta = avra_process_env_get("AVRA_USE_METADATA_LIB") != ""
     let skip_prebuild = avra_process_env_get("AVRA_SKIP_PREBUILD") != ""
     mut lib_objs_env = ""
-    if !skip_prebuild {
+    if want_meta && !skip_prebuild {
         let pb_rc = pre_build_workspace_std_packages(project_dir, compiler_path, jobs)
         if pb_rc != 0 {
-            eprintln("[per-file] pre-build of @std/* libs failed (rc=${string(pb_rc)}) — shards will compile @std/* from source")
+            eprintln("[per-file] pre-build of @std/* libs failed (rc=${string(pb_rc)}) — disabling metadata fast-path for this run")
         } else {
             lib_objs_env = collect_workspace_lib_objs(project_dir)
         }
     }
-    // AVRA_USE_METADATA=1 stays opt-in via AVRA_USE_METADATA_LIB
-    // until we've shaken out the remaining consumer-side
-    // synthesizer gaps under a wide set of fixtures. When enabled,
-    // shards see only metadata stubs for @std/*; without it, they
-    // re-parse @std source per shard (the legacy path).
-    let want_meta = avra_process_env_get("AVRA_USE_METADATA_LIB") != ""
     let use_meta = if want_meta { "AVRA_USE_METADATA=1 " } else { "" }
     let lib_env = if lib_objs_env == "" { "" } else { "AVRA_LIB_OBJS='${lib_objs_env}' " }
 
