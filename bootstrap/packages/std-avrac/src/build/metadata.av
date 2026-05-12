@@ -256,13 +256,16 @@ export const METADATA_VERSION_MINOR: int = 0
 /// retired number, otherwise old metadata.bin files mis-route their
 /// sections to the wrong reader.
 export enum SectionKind {
-    Types,         // tag 1: type declarations (struct / enum / shape / newtype / union alias)
-    Fns,           // tag 2: fn signatures (params + return type + visibility)
-    Traits,        // tag 3: trait declarations
-    Impls,         // tag 4: impl table — (Trait,Type) → method list
-    Consts,        // tag 5: const declarations (name + type + value bytes)
-    GenericBodies, // tag 6: source text of every exported generic fn body
-                   //         (P3 library-mode — consumer re-parses + monomorphizes)
+    Types,          // tag 1: type declarations (struct / enum / shape / newtype / union alias)
+    Fns,            // tag 2: fn signatures (params + return type + visibility)
+    Traits,         // tag 3: trait declarations
+    Impls,          // tag 4: trait impl table — (Trait,Type) → method list (sigs from trait)
+    Consts,         // tag 5: const declarations (name + type + value bytes)
+    GenericBodies,  // tag 6: source text of every exported generic fn body
+                    //         (P3 library-mode — consumer re-parses + monomorphizes)
+    InherentImpls,  // tag 7: inherent impl blocks (`impl Type { ... }` with no trait)
+                    //         Carries full method sigs inline (no parallel trait to
+                    //         look them up from). bd8n / library-mode P6 phase 2.
 }
 
 fn section_kind_to_byte(k: SectionKind) -> int {
@@ -273,6 +276,7 @@ fn section_kind_to_byte(k: SectionKind) -> int {
         .Impls -> 4
         .Consts -> 5
         .GenericBodies -> 6
+        .InherentImpls -> 7
     }
 }
 
@@ -283,6 +287,7 @@ fn byte_to_section_kind(b: int) -> SectionKind {
         4 -> .Impls
         5 -> .Consts
         6 -> .GenericBodies
+        7 -> .InherentImpls
         _ -> .Types
     }
 }
@@ -1185,6 +1190,56 @@ impl BytesReader {
     }
 }
 
+// ── InherentImpls section (bd8n / library-mode P6 phase 2) ──
+//
+// Inherent impls (`impl BytesWriter { fn unit(self, m) { ... } }`)
+// don't have a parallel trait declaration the synthesizer can pull
+// method signatures from. The IMPLS section's ImplMethodRef stores
+// only (method_name, fn_sym_id) — fine for trait impls because the
+// sigs live on the trait's MetaTraitMethod list. Inherent impls need
+// to ship their own sigs inline so consumers can synthesize the
+// `impl Type { ... }` block with the right per-method extern stubs.
+//
+// Wire format per entry:
+//   [u64 type_sym_id]
+//   [string type_name]
+//   [meta_trait_method_list methods]   — reuses the trait-method
+//                                         codec; same shape suffices.
+//
+// Backward-compat: pre-bd8n metadata files don't ship this section
+// (section_count ≤ 6); the reader skips reading it when the header
+// reports fewer than 7 sections.
+
+/// One inherent-impl block. `methods` carries each method's full
+/// signature so the synthesizer can rebuild `impl Type { ... }`
+/// without relying on a parallel trait.
+export type InherentImplEntry = {
+    type_sym_id: int,
+    type_name: string,
+    methods: List<MetaTraitMethod>,
+}
+
+impl BytesWriter {
+    fn inherent_impl(self, e: InherentImplEntry) {
+        self.u64_le(e.type_sym_id)
+        self.string(e.type_name)
+        self.meta_trait_method_list(e.methods)
+    }
+}
+
+impl BytesReader {
+    fn inherent_impl(self) -> InherentImplEntry {
+        let tsid = self.u64_le()
+        let tn = self.string()
+        let ms = self.meta_trait_method_list()
+        InherentImplEntry {
+            type_sym_id: tsid,
+            type_name: tn,
+            methods: ms,
+        }
+    }
+}
+
 // ── Unit-level orchestration ──
 //
 // `UnitMetadata` aggregates everything that goes into metadata.bin
@@ -1210,6 +1265,7 @@ export type UnitMetadata = {
     consts: List<ConstDeclEntry>,
     impls: List<ImplDeclEntry>,
     generic_bodies: List<GenericBodyEntry>,
+    inherent_impls: List<InherentImplEntry>,
 }
 
 /// Build an empty metadata bundle. Convenience for incremental
@@ -1223,31 +1279,37 @@ export fn unit_metadata_new(unit_name: string, fingerprint: bytes) -> UnitMetada
         consts: [],
         impls: [],
         generic_bodies: [],
+        inherent_impls: [],
     }
 }
 
 // `BytesWriter.unit(m)` serializes a complete UnitMetadata to bytes
 // — header + every section. Empty sections still consume their
-// frame (section_count is fixed at 5, not the count of non-empty
-// sections), keeping the file layout predictable for downstream
-// iteration.
+// frame (section_count is fixed at the highest tag, not the count of
+// non-empty sections), keeping the file layout predictable for
+// downstream iteration.
 //
-// P3 library-mode bumped section_count from 4 to 5; readers detect
-// old (count=4) vs new (count≥5) and skip the optional sections
-// when they aren't present — a producer that hasn't been rebuilt
-// since the bump still loads cleanly, just with empty
-// generic_bodies. See `BytesReader.unit()` for the gate.
+// Format evolution:
+//   - count=4: pre-P3 (Types, Fns, Consts, Impls only)
+//   - count=5: P3+ adds GenericBodies
+//   - count=6: bd8n / P6 phase 2 adds InherentImpls
+//
+// Readers cap at the count reported in the header and treat any
+// trailing sections as absent — so a consumer linked against an
+// older producer's metadata loads cleanly with empty optional
+// lists. See `BytesReader.unit()` for the gate.
 impl BytesWriter {
     fn unit(self, m: UnitMetadata) {
         // Always write all sections, even when empty, so the
         // section_count field stays predictable and downstream tools
         // can iterate without skipping unrecognised tags.
-        self.header(m.unit_name, m.fingerprint, 5)
+        self.header(m.unit_name, m.fingerprint, 6)
         self.write_types_section(m.types)
         self.write_fns_section(m.fns)
         self.write_consts_section(m.consts)
         self.write_impls_section(m.impls)
         self.write_generic_bodies_section(m.generic_bodies)
+        self.write_inherent_impls_section(m.inherent_impls)
     }
 
     fn write_types_section(self, xs: List<TypeDeclEntry>) {
@@ -1299,6 +1361,16 @@ impl BytesWriter {
         }
         self.section(SectionKind.GenericBodies, xs.length, body_w.finish())
     }
+
+    fn write_inherent_impls_section(self, xs: List<InherentImplEntry>) {
+        let body_w = writer_new()
+        mut i = 0
+        while i < xs.length {
+            body_w.inherent_impl(xs[i])
+            i = i + 1
+        }
+        self.section(SectionKind.InherentImpls, xs.length, body_w.finish())
+    }
 }
 
 // `BytesReader.unit()` decodes a complete metadata.bin — inverse
@@ -1327,6 +1399,12 @@ impl BytesReader {
         } else {
             []
         }
+        let inherent: List<InherentImplEntry> = if hdr.section_count >= 6 {
+            let ii = self.section()
+            read_inherent_impl_list(ii.body, ii.entry_count)
+        } else {
+            []
+        }
         UnitMetadata {
             unit_name: hdr.unit_name,
             fingerprint: hdr.fingerprint,
@@ -1335,6 +1413,7 @@ impl BytesReader {
             consts: read_const_decl_list(consts_frame.body, consts_frame.entry_count),
             impls: read_impl_decl_list(impls_frame.body, impls_frame.entry_count),
             generic_bodies: bodies,
+            inherent_impls: inherent,
         }
     }
 }
@@ -1345,6 +1424,17 @@ fn read_generic_body_list(body: bytes, count: int) -> List<GenericBodyEntry> {
     mut i = 0
     while i < count {
         out.push(r.generic_body())
+        i = i + 1
+    }
+    out
+}
+
+fn read_inherent_impl_list(body: bytes, count: int) -> List<InherentImplEntry> {
+    let r = reader_new(body)
+    mut out: List<InherentImplEntry> = []
+    mut i = 0
+    while i < count {
+        out.push(r.inherent_impl())
         i = i + 1
     }
     out

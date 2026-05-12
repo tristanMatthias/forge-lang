@@ -11,13 +11,14 @@ use core.{
 }
 use build.metadata.{
     UnitMetadata,
-    TypeDeclEntry, FnDeclEntry, ConstDeclEntry, ImplDeclEntry, GenericBodyEntry,
+    TypeDeclEntry, FnDeclEntry, ConstDeclEntry, ImplDeclEntry, GenericBodyEntry, InherentImplEntry,
     TypeDeclKind, ConstValueKind,
     MetaTraitMethod, ImplMethodRef,
     sym_id_for, unit_metadata_new,
 }
 use parse.{parse_int_literal}
 use fmt.{fmt_stmt_list}
+use core.{ParamList, param_list_length}
 
 // Internal accumulator — each walk step folds into this and returns
 // the updated record. Lists grow via prepend so traversal stays
@@ -30,10 +31,15 @@ type ExtractAcc = {
     // P4 library-mode: every exported generic fn's body lands here
     // as fmt-rendered source. Consumers re-parse + monomorphize.
     generic_bodies: List<GenericBodyEntry>,
+    // bd8n / P6 phase 2: inherent impl blocks
+    // (`impl Type { ... }` with no `for Trait`) ship their full
+    // method sigs inline so the consumer can synthesize the impl
+    // block without a parallel trait to crib from.
+    inherent_impls: List<InherentImplEntry>,
 }
 
 fn empty_acc() -> ExtractAcc {
-    ExtractAcc { types: [], fns: [], consts: [], impls: [], generic_bodies: [] }
+    ExtractAcc { types: [], fns: [], consts: [], impls: [], generic_bodies: [], inherent_impls: [] }
 }
 
 // Public entry. `unit_name` becomes the module prefix used to
@@ -63,6 +69,7 @@ export fn extract_unit_metadata(unit_name: string, fingerprint: bytes, stmts: St
         // re-parse + monomorphize at consume time. Non-generic exports
         // stay signature-only — the linker resolves against producer .o.
         generic_bodies: acc.generic_bodies,
+        inherent_impls: acc.inherent_impls,
     }
 }
 
@@ -95,6 +102,7 @@ export fn extract_per_file_metadata(unit_name: string, target_file: string, fing
         // extraction filters by file gating in walk_ss_for_file
         // naturally.
         generic_bodies: acc.generic_bodies,
+        inherent_impls: acc.inherent_impls,
     }
 }
 
@@ -204,6 +212,38 @@ fn push_generic_body(acc: ExtractAcc, e: GenericBodyEntry) -> ExtractAcc {
     mut xs = acc.generic_bodies
     xs.push(e)
     acc
+}
+
+fn push_inherent_impl(acc: ExtractAcc, e: InherentImplEntry) -> ExtractAcc {
+    mut xs = acc.inherent_impls
+    xs.push(e)
+    acc
+}
+
+/// Walk an inherent impl body and collect each method's full
+/// signature (name + params + ret_vt). The body's Function names are
+/// mangled (`Type__method`); strip the mangling so the synthesizer's
+/// `${qualified_type}__${m.name}` step doesn't double-mangle.
+fn extract_inherent_methods(stmts: StmtList) -> List<MetaTraitMethod> {
+    mut out: List<MetaTraitMethod> = []
+    mut cur = stmts
+    mut keep_going = true
+    while keep_going {
+        match cur {
+            .End -> { keep_going = false }
+            .Node(ss, next) -> {
+                match stmt_unwrap(ss.node) {
+                    .Function(mangled, _, params, ret_vt, _) -> {
+                        let m_name = strip_mangle(mangled)
+                        out.push(MetaTraitMethod { name: m_name, params: params, ret: ret_vt })
+                    }
+                    _ -> {}
+                }
+                cur = next
+            }
+        }
+    }
+    out
 }
 
 /// True when `tp` is non-empty — i.e. the fn declares at least one
@@ -424,9 +464,9 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
         }
         .Impl(impl_name, methods) -> {
             let pair = split_impl_name(impl_name)
+            let type_qn = qualify(current_module, pair.type_name)
             if pair.has_trait {
                 let trait_qn = qualify(current_module, pair.trait_name)
-                let type_qn = qualify(current_module, pair.type_name)
                 let entry = ImplDeclEntry {
                     trait_sym_id: sym_id_for(trait_qn),
                     trait_name: trait_qn,
@@ -436,7 +476,16 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                 }
                 push_impl(acc, entry)
             } else {
-                acc
+                // bd8n / P6 phase 2: inherent impl ships full method
+                // sigs inline so consumers can synthesize the
+                // `impl Type { ... }` block without a parallel trait
+                // to crib signatures from.
+                let entry = InherentImplEntry {
+                    type_sym_id: sym_id_for(type_qn),
+                    type_name: type_qn,
+                    methods: extract_inherent_methods(methods),
+                }
+                push_inherent_impl(acc, entry)
             }
         }
         _ -> acc

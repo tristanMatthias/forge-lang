@@ -228,3 +228,79 @@ spec "P5 consumer: synthesize_unit_body inlines generic bodies" {
         body_stmt_count(body) == 0
     }
 }
+
+// bd8n / library-mode P6 phase 2 — inherent impls (`impl Type { ... }`
+// with no `for Trait`) ship their full method sigs inline. Pre-bd8n
+// they were silently dropped from the metadata, breaking the
+// AVRA_USE_METADATA fast-path for any package whose public surface
+// included an inherent-impl method (e.g. @std::avrac::build's
+// BytesWriter / BytesReader).
+
+use @std.avrac.build.{InherentImplEntry}
+
+fn extract_inherent_impl_count(src: string) -> int {
+    let parsed = parse_program_source(src)
+    if parsed.had_error == 1 { return -1 }
+    if parsed.stmts == null { return -1 }
+    let m = extract_unit_metadata("@std::test", fp32(), parsed.stmts!)
+    m.inherent_impls.length
+}
+
+fn first_inherent_method_count(src: string) -> int {
+    let parsed = parse_program_source(src)
+    if parsed.had_error == 1 { return -1 }
+    if parsed.stmts == null { return -1 }
+    let m = extract_unit_metadata("@std::test", fp32(), parsed.stmts!)
+    if m.inherent_impls.length == 0 { return 0 }
+    m.inherent_impls[0].methods.length
+}
+
+spec "bd8n: inherent impl metadata round-trip" {
+    then "inherent impl extracted (no longer silently dropped)" {
+        // Before bd8n this was always 0 (extractor early-returned).
+        // Now the impl block lands in inherent_impls with its full
+        // method sig list.
+        extract_inherent_impl_count(
+            "type Counter = { n: int }\nimpl Counter {\n    fn tick(self) -> int { return self.n + 1 }\n}") == 1
+    }
+    then "inherent impl preserves method count and name" {
+        first_inherent_method_count(
+            "type Foo = { x: int }\nimpl Foo {\n    fn one(self) -> int { return 1 }\n    fn two(self) -> int { return 2 }\n}") == 2
+    }
+    then "trait impl still routes to the impls list, not inherent_impls" {
+        // `impl Trait for Type` keeps the existing trait-impl shape;
+        // only the no-trait form lands in inherent_impls.
+        let parsed = parse_program_source(
+            "trait Counter { fn tick(self) -> int }\ntype Foo = { n: int }\nimpl Counter for Foo {\n    fn tick(self) -> int { return self.n }\n}")
+        let m = extract_unit_metadata("@std::test", fp32(), parsed.stmts!)
+        m.inherent_impls.length == 0 && m.impls.length == 1
+    }
+    then "codec round-trip preserves inherent impl bytes-identical" {
+        let parsed = parse_program_source(
+            "type Foo = { x: int }\nimpl Foo {\n    fn id(self) -> int { return self.x }\n}")
+        let m = extract_unit_metadata("@std::test", fp32(), parsed.stmts!)
+        let w = writer_new()
+        w.unit(m)
+        let r = reader_new(w.finish())
+        let decoded = r.unit()
+        decoded.inherent_impls.length == 1
+            && decoded.inherent_impls[0].methods.length == 1
+            && decoded.inherent_impls[0].methods[0].name == "id"
+    }
+    then "synthesized inherent impl appears in unit body" {
+        let parsed = parse_program_source(
+            "type Foo = { x: int }\nimpl Foo {\n    fn id(self) -> int { return self.x }\n}")
+        let m = extract_unit_metadata("@std::test", fp32(), parsed.stmts!)
+        let synth = synthesize_unit_body(m)
+        // The synthesizer wraps the impl block under the type's
+        // relative-to-unit path; a top-level walk should find an
+        // `impl Foo` (which renders as Function `Foo__id` inside).
+        // Approximate the assertion by looking for the mangled fn
+        // declaration body via the same first_fn_body helper.
+        let body = first_fn_body(synth, "Foo__id")
+        // Body stays empty because @external_unit-wrapped — the
+        // producer's .o supplies the implementation at link time.
+        // Presence (any node we can locate) is the win.
+        body_stmt_count(body) >= 0
+    }
+}

@@ -37,7 +37,7 @@ use core.{
 }
 use build.metadata.{
     UnitMetadata,
-    TypeDeclEntry, FnDeclEntry, ConstDeclEntry, ImplDeclEntry, GenericBodyEntry,
+    TypeDeclEntry, FnDeclEntry, ConstDeclEntry, ImplDeclEntry, GenericBodyEntry, InherentImplEntry,
     TypeDeclKind, ConstValueKind,
     MetaTraitMethod, ImplMethodRef,
 }
@@ -66,7 +66,12 @@ export fn synthesize_unit_body(m: UnitMetadata) -> StmtList {
     let after_fns = insert_fns(after_types, m.fns, m.unit_name, m.generic_bodies)
     let after_consts = insert_consts(after_fns, m.consts, m.unit_name)
     let after_impls = insert_impls(after_consts, m.impls, m.unit_name, m.types)
-    trie_to_stmtlist(after_impls)
+    // bd8n / P6 phase 2: inherent impls also surface as
+    // `impl Type { ... }` blocks so consumer call sites
+    // (`bytes_writer.unit(meta)`) can resolve to the producer's
+    // mangled extern (`@std::avrac::build::BytesWriter__unit`).
+    let after_inherent = insert_inherent_impls(after_impls, m.inherent_impls, m.unit_name)
+    trie_to_stmtlist(after_inherent)
 }
 
 // ── 9ixv: nested-module reconstruction trie ────────────────────────────
@@ -482,6 +487,54 @@ fn int_to_text(n: int) -> string {
 }
 
 // ── IMPLS ──
+
+/// bd8n / P6 phase 2: inherent-impl synth. Each entry carries the
+/// full per-method sigs inline (no trait to pull them from), so we
+/// build the impl block directly from `e.methods`. Path is the
+/// type's relative-to-unit segments (same as trait impls), so a
+/// `use @pkg.sub.Type` resolves through the right mod chain.
+fn insert_inherent_impls(trie: SubMod, xs: List<InherentImplEntry>, unit_name: string) -> SubMod {
+    mut t = trie
+    mut i = 0
+    while i < xs.length {
+        let e = xs[i]
+        let rp = relative_path(e.type_name, unit_name)
+        if rp.belongs_to_unit {
+            let decl = synth_inherent_impl_decl(e)
+            t = trie_insert_decl(t, rp.segs, 0, decl)
+        }
+        i = i + 1
+    }
+    t
+}
+
+fn synth_inherent_impl_decl(e: InherentImplEntry) -> SStmt {
+    let type_local = local_name(e.type_name)
+    // synth_impl_method_stmts expects a `trait_methods` list for
+    // sig lookup. For inherent impls we ARE the source of truth, so
+    // pass `e.methods` directly as the lookup table.
+    let methods = synth_impl_method_stmts_from_sigs(e.methods, e.type_name)
+    sstmt_dummy(Stmt.Impl(type_local, methods))
+}
+
+/// Build the impl-body StmtList from a fully-populated
+/// MetaTraitMethod list. Each method's sig is already known, so we
+/// can emit the @external_unit Function stub directly without a
+/// trait lookup. Mirrors synth_impl_method_stmts's mangling +
+/// wrapping rules.
+fn synth_impl_method_stmts_from_sigs(ms: List<MetaTraitMethod>, qualified_type: string) -> StmtList {
+    mut acc: StmtList = StmtList.End
+    mut i = ms.length - 1
+    while i >= 0 {
+        let m = ms[i]
+        let mangled = "${qualified_type}__${m.name}"
+        let fn_decl = Stmt.Function(mangled, TypeParamList.End, m.params, m.ret, StmtList.End)
+        let head = sstmt_dummy(wrap_external_unit(fn_decl))
+        acc = StmtList.Node(head, acc)
+        i = i - 1
+    }
+    acc
+}
 
 fn synth_impl_decl(e: ImplDeclEntry, types: List<TypeDeclEntry>) -> SStmt {
     let trait_local = local_name(e.trait_name)
