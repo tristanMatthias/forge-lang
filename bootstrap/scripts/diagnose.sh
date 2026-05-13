@@ -338,9 +338,15 @@ link_ll() {
     || { rm -f "${out}.tmp"; cat "$logfile" >&2; die "link failed for $out"; }
   mv "${out}.tmp" "$out"
 
-  # rqwh: publish to cache on success.
+  # rqwh: publish to cache on success. Atomic write via .tmp + mv so
+  # parallel shards racing on the same cache slot can't observe a
+  # partial bin. Suspected root cause of the 4 cold-rebuild flakies:
+  # shard A's cp interrupted mid-write; shard B reads partial bin
+  # → broken binary → wrong/missing stdout → test assertion fails.
   if [ -n "$cached_bin" ] && [ -f "$out" ]; then
-    cp "$out" "$cached_bin"
+    cp "$out" "${cached_bin}.tmp.$$" \
+      && mv "${cached_bin}.tmp.$$" "$cached_bin" \
+      || rm -f "${cached_bin}.tmp.$$" 2>/dev/null
   fi
 }
 
