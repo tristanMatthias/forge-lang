@@ -22,6 +22,8 @@
 #include <unistd.h>
 #include <dlfcn.h>
 #include <sys/mman.h>
+#include <pthread.h>
+#include <stdatomic.h>
 #if defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
 #define _XOPEN_SOURCE
 #include <ucontext.h>
@@ -46,18 +48,20 @@ void* avra_tag_as_result(void* ptr) {
 // ─── Reference counting ──────────────────────────────────────────
 //
 // RC header layout (8 bytes, placed BEFORE the user pointer):
-//   [ int32_t refcount | int32_t type_tag ]
-//   ^                                      ^
-//   header_ptr                             user_ptr (what callers see)
+//   [ _Atomic int32_t refcount | int32_t type_tag ]
+//   ^                                              ^
+//   header_ptr                                     user_ptr
 //
 // avra_rc_alloc returns user_ptr. The header is at user_ptr - 8.
-// Non-atomic counters (spec Axis 9.4) — single-threaded v1.0.
+// Refcount is atomic so spawn { } can share RC objects across threads
+// without retain/release races. The rc_set hash table that tracks
+// live RC pointers is protected by rc_set_mutex below.
 
 #define RC_HEADER_SIZE 8
 #define RC_MAGIC 0x5243  // "RC" in little-endian
 
 typedef struct {
-    int32_t refcount;
+    _Atomic int32_t refcount;
     int32_t type_tag;   // RC_MAGIC sentinel + reserved for cycle detection
 } RcHeader;
 
@@ -78,10 +82,14 @@ static void auto_enable_rc_trace(void) {
 // ─── RC pointer set (open-addressing hash set) ──────────────────
 // Tracks all live RC-managed pointers so is_rc_managed can safely
 // distinguish RC objects from bump/stack/literal pointers.
+//
+// All rc_set_* mutators and lookups must hold rc_set_mutex — Avra
+// programs spawn pthreads (avra_spawn) that share heap pointers.
 #define RC_SET_INITIAL_CAP 4096
 static void** rc_set_buckets = NULL;
 static size_t rc_set_cap = 0;
 static size_t rc_set_count = 0;
+static pthread_mutex_t rc_set_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static void rc_set_init(void) {
     if (rc_set_buckets) return;
@@ -117,6 +125,7 @@ static void rc_set_grow(void) {
 }
 
 static void rc_set_add(void* ptr) {
+    pthread_mutex_lock(&rc_set_mutex);
     rc_set_init();
     if (rc_set_count * 4 >= rc_set_cap * 3) rc_set_grow();  // 75% load factor
     size_t idx = rc_set_hash(ptr) & (rc_set_cap - 1);
@@ -127,20 +136,31 @@ static void rc_set_add(void* ptr) {
         rc_set_buckets[idx] = ptr;
         rc_set_count++;
     }
+    pthread_mutex_unlock(&rc_set_mutex);
 }
 
 static int rc_set_contains(void* ptr) {
-    if (!rc_set_buckets || rc_set_count == 0) return 0;
+    pthread_mutex_lock(&rc_set_mutex);
+    if (!rc_set_buckets || rc_set_count == 0) {
+        pthread_mutex_unlock(&rc_set_mutex);
+        return 0;
+    }
     size_t idx = rc_set_hash(ptr) & (rc_set_cap - 1);
+    int found = 0;
     while (rc_set_buckets[idx] != NULL) {
-        if (rc_set_buckets[idx] == ptr) return 1;
+        if (rc_set_buckets[idx] == ptr) { found = 1; break; }
         idx = (idx + 1) & (rc_set_cap - 1);
     }
-    return 0;
+    pthread_mutex_unlock(&rc_set_mutex);
+    return found;
 }
 
 static void rc_set_remove(void* ptr) {
-    if (!rc_set_buckets) return;
+    pthread_mutex_lock(&rc_set_mutex);
+    if (!rc_set_buckets) {
+        pthread_mutex_unlock(&rc_set_mutex);
+        return;
+    }
     size_t idx = rc_set_hash(ptr) & (rc_set_cap - 1);
     while (rc_set_buckets[idx] != NULL) {
         if (rc_set_buckets[idx] == ptr) {
@@ -159,10 +179,12 @@ static void rc_set_remove(void* ptr) {
                 idx = next;
                 next = (idx + 1) & (rc_set_cap - 1);
             }
+            pthread_mutex_unlock(&rc_set_mutex);
             return;
         }
         idx = (idx + 1) & (rc_set_cap - 1);
     }
+    pthread_mutex_unlock(&rc_set_mutex);
 }
 
 // Allocate an RC-managed object via system malloc.
@@ -176,7 +198,7 @@ void* avra_rc_alloc(int64_t payload_size) {
         exit(1);
     }
     RcHeader* hdr = (RcHeader*)raw;
-    hdr->refcount = 1;
+    atomic_store(&hdr->refcount, 1);
     hdr->type_tag = RC_MAGIC;
     void* user_ptr = (char*)raw + RC_HEADER_SIZE;
     rc_set_add(user_ptr);
@@ -197,9 +219,9 @@ void avra_rc_retain(void* ptr) {
     if (!is_rc_managed(ptr)) return;
     RcHeader* hdr = rc_header(ptr);
     if (hdr->type_tag != RC_MAGIC) return;
-    hdr->refcount++;
+    int32_t new_rc = atomic_fetch_add(&hdr->refcount, 1) + 1;
     if (rc_trace) {
-        fprintf(stderr, "[RC] retain %p (rc=%d)\n", ptr, hdr->refcount);
+        fprintf(stderr, "[RC] retain %p (rc=%d)\n", ptr, new_rc);
     }
 }
 
@@ -209,11 +231,11 @@ void avra_rc_release(void* ptr) {
     if (!is_rc_managed(ptr)) return;
     RcHeader* hdr = rc_header(ptr);
     if (hdr->type_tag != RC_MAGIC) return;
-    hdr->refcount--;
+    int32_t new_rc = atomic_fetch_sub(&hdr->refcount, 1) - 1;
     if (rc_trace) {
-        fprintf(stderr, "[RC] release %p (rc=%d)\n", ptr, hdr->refcount);
+        fprintf(stderr, "[RC] release %p (rc=%d)\n", ptr, new_rc);
     }
-    if (hdr->refcount == 0) {
+    if (new_rc == 0) {
         if (rc_trace) {
             fprintf(stderr, "[RC] free %p\n", ptr);
         }
@@ -232,11 +254,11 @@ int64_t avra_rc_should_free(void* ptr) {
     if (!is_rc_managed(ptr)) return 0;
     RcHeader* hdr = rc_header(ptr);
     if (hdr->type_tag != RC_MAGIC) return 0;
-    hdr->refcount--;
+    int32_t new_rc = atomic_fetch_sub(&hdr->refcount, 1) - 1;
     if (rc_trace) {
-        fprintf(stderr, "[RC] should_free %p (rc=%d)\n", ptr, hdr->refcount);
+        fprintf(stderr, "[RC] should_free %p (rc=%d)\n", ptr, new_rc);
     }
-    return hdr->refcount == 0 ? 1 : 0;
+    return new_rc == 0 ? 1 : 0;
 }
 
 // Free an RC object without decrementing. Called after avra_rc_should_free
@@ -264,12 +286,14 @@ void avra_rc_free(void* ptr) {
 static void** suspect_list = NULL;
 static size_t suspect_count = 0;
 static size_t suspect_cap = 0;
+static pthread_mutex_t suspect_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // Add a pointer to the suspect list. Called from generated __release_TypeName
 // when refcount decrements to non-zero for cycle-capable types.
 void avra_rc_suspect(void* ptr) {
     if (!ptr) return;
     if (!is_rc_managed(ptr)) return;
+    pthread_mutex_lock(&suspect_mutex);
     // Lazy init
     if (!suspect_list) {
         suspect_cap = SUSPECT_INITIAL_CAP;
@@ -277,7 +301,10 @@ void avra_rc_suspect(void* ptr) {
     }
     // Deduplicate: don't add if already in list
     for (size_t i = 0; i < suspect_count; i++) {
-        if (suspect_list[i] == ptr) return;
+        if (suspect_list[i] == ptr) {
+            pthread_mutex_unlock(&suspect_mutex);
+            return;
+        }
     }
     // Grow if needed
     if (suspect_count >= suspect_cap) {
@@ -286,8 +313,9 @@ void avra_rc_suspect(void* ptr) {
     }
     suspect_list[suspect_count++] = ptr;
     if (rc_trace) {
-        fprintf(stderr, "[RC] suspect %p (rc=%d)\n", ptr, rc_header(ptr)->refcount);
+        fprintf(stderr, "[RC] suspect %p (rc=%d)\n", ptr, atomic_load(&rc_header(ptr)->refcount));
     }
+    pthread_mutex_unlock(&suspect_mutex);
 }
 
 // Collect cycles at program exit. Frees any RC objects that are still
