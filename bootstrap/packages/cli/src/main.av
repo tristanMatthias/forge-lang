@@ -2285,14 +2285,21 @@ fn run_per_file_test_command(project_dir: string, accepted_paths: List<string>, 
     // AVRA_LIB_OBJS (6owa) so per-shard link commands can resolve
     // the mangled call sites AVRA_USE_METADATA=1 exposes.
     //
-    // Opt-out via AVRA_SKIP_PREBUILD=1.
+    // Opt-out via AVRA_SKIP_PREBUILD=1 (also disables the fast-path).
     // AVRA_USE_METADATA=1 + AVRA_LIB_OBJS are paired: shards under
     // the metadata fast-path see only extern decls for @std/*, so
     // they need to link against the pre-built producer .o files. In
     // legacy mode (no AVRA_USE_METADATA), shards inline @std/* into
     // their own .o — adding AVRA_LIB_OBJS would produce duplicate
-    // symbols. The pair flips together via AVRA_USE_METADATA_LIB.
-    let want_meta = avra_process_env_get("AVRA_USE_METADATA_LIB") != ""
+    // symbols. The pair flips together.
+    //
+    // fxwn: library mode is the default now. The full per-file suite
+    // goes from 121s → 11s warm (10.7x) because expand_macro_test
+    // and friends no longer pay 10s × N for their inline bs2 compiles.
+    // Set AVRA_USE_METADATA_LIB=0 (or AVRA_SKIP_PREBUILD=1) to opt back
+    // to the legacy whole-program path.
+    let meta_env = avra_process_env_get("AVRA_USE_METADATA_LIB")
+    let want_meta = meta_env != "0"
     let skip_prebuild = avra_process_env_get("AVRA_SKIP_PREBUILD") != ""
     mut lib_objs_env = ""
     if want_meta && !skip_prebuild {
