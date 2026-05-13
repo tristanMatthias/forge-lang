@@ -1,0 +1,41 @@
+// vez6.7.3 — auto-push edge cases. Split from children_autopush_test
+// for shard-parallel speed.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+const MAIN_HEADER: string = "fn " + "main()"
+
+fn write_temp(path: string, source: string) -> string {
+    let escaped = source.replace("'", "'\\''")
+    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
+}
+
+fn run_program(source: string) -> string {
+    let path = "/tmp/avra_children_autopush_edges_test.av"
+    write_temp(path, source)
+    avra_shell_exec("bash scripts/diagnose.sh --run '${path}' 2>&1")
+}
+
+const DOLLAR: string = "$"
+
+fn embed_main(prog_body: string) -> string {
+    MAIN_HEADER + " {\n" + prog_body + "\n}\n"
+}
+
+spec "vez6.7.3: auto-push edges" {
+    then "ambiguous slots: child lands in the FIRST slot whose elem matches" {
+        // Bus declares two slots (primary, secondary) both accepting
+        // List<msg_x>. slot_name_for_child stops on first match, so
+        // every msg_x goes into `primary`. Pin this semantic.
+        let out = run_program(
+            "component msg_x { config { tag: string = \"\" } }\n" +
+            "component bus_p { children { primary: List<msg_x>, secondary: List<msg_x> } }\n" +
+            embed_main(
+                "    bus_p hub {\n" +
+                "        msg_x a {}\n" +
+                "        msg_x b {}\n" +
+                "    }\n" +
+                "    println(\"primary=" + DOLLAR + "{hub.primary.length} secondary=" + DOLLAR + "{hub.secondary.length}\")"))
+        out.contains("primary=2 secondary=0")
+    }
+}
