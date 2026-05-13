@@ -26,3 +26,6 @@
 # macOS metadata
 .DS_Store
 **/.DS_Store
+
+# sha256_file sidecar cache (mtime-keyed memo, runtime.c)
+*.avra-sha256

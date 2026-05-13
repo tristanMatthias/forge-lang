@@ -28,18 +28,19 @@ fi
 # test files or scripts doesn't require it.
 src_relevant=$(echo "$staged" | grep -E '^(bootstrap/packages/std-avrac/src/|bootstrap/packages/cli/src/|avra/stdlib/runtime\.c|bootstrap/llvm_wrapper.c)' || true)
 
-echo "[pre-commit] bootstrap-affecting changes detected — running spec test suite"
+echo "[pre-commit] bootstrap-affecting changes detected — running spec test suite (--per_file)"
 TEST_LOG="/tmp/avra_pre_commit_test.${PPID}.log"
 # Hard timeout: kill the test suite if it runs longer than 30 min.
-# Standalone the suite runs ~2min warm / ~14min cold. Pre-commit's
-# environment adds I/O contention and disk pressure (the cold path
-# can land at ~18-22min in practice). 30 min gives generous headroom
-# while still blocking obvious perf regressions. Uses perl alarm
-# because macOS doesn't ship /usr/bin/timeout by default.
+# --per_file: each *_test.av is its own subprocess shard. Properties:
+#  - Process-level isolation: no state leakage between tests.
+#  - Parallel dispatch: ~8x speedup vs bundled mode.
+#  - 2257/2257 passes; bundled mode has known flakies (see bd
+#    forge-crafting-intepreters-i7gw for the bundled-mode rework).
+# Warm runs ~110s; cold (post-rebuild) ~14min. 30 min gives headroom.
 TEST_TIMEOUT_SEC=1800
 TEST_START=$(date +%s)
 perl -e 'alarm shift; exec @ARGV' "$TEST_TIMEOUT_SEC" \
-     sh -c 'cd bootstrap && ./build/bs2 test' > "$TEST_LOG" 2>&1
+     sh -c 'cd bootstrap && ./build/bs2 test --per_file' > "$TEST_LOG" 2>&1
 TEST_RC=$?
 TEST_ELAPSED=$(( $(date +%s) - TEST_START ))
 if [ $TEST_RC -ne 0 ]; then
