@@ -1,0 +1,51 @@
+// `bs2 build` compiler-path resolution (argv[0] fallback + AVRA_COMPILER).
+// Split from cli_build_flags_test.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn bs2_path() -> string {
+    avra_shell_exec("pwd").trim() + "/build/bs2"
+}
+
+fn setup_project() -> string {
+    let project = "/tmp/avra_build_compiler_fixture/"
+    avra_shell_exec("rm -rf " + project)
+    avra_shell_exec("mkdir -p " + project + "build")
+    avra_shell_exec("ln -s " + bs2_path() + " " + project + "build/bs2")
+    avra_shell_exec("printf '[package]\nname = \"flags-fixture\"\nversion = \"0.1.0\"\n[[bin]]\nname = \"flags-fixture\"\npath = \"main.av\"\n' > " + project + "avra.toml")
+    let entry = "main"
+    let body = "fn " + entry + "() -> int { 0 }"
+    avra_shell_exec("printf '%s\\n' '" + body + "' > " + project + entry + ".av")
+    project
+}
+
+fn teardown_project(project: string) -> string {
+    avra_shell_exec("rm -rf " + project)
+}
+
+spec "bs2 build: works without a local build/bs2 (compiler_path argv[0] fallback)" {
+    then "build succeeds when project has no build/bs2 symlink" {
+        let project = "/tmp/avra_no_local_bs2_split/"
+        avra_shell_exec("rm -rf " + project)
+        avra_shell_exec("mkdir -p " + project)
+        avra_shell_exec("printf '[package]\nname = \"no-local-fixture\"\nversion = \"0.1.0\"\n[[bin]]\nname = \"no-local-fixture\"\npath = \"main.av\"\n' > " + project + "avra.toml")
+        let entry = "main"
+        let body = "fn " + entry + "() -> int { 0 }"
+        avra_shell_exec("printf '%s\\n' '" + body + "' > " + project + entry + ".av")
+        let out = avra_shell_exec(
+            "cd " + project + " && " + bs2_path() + " build 2>&1 || true")
+        avra_shell_exec("rm -rf " + project)
+        out.contains("[pkg]") && out.contains("Built ")
+    }
+}
+
+spec "bs2 build: AVRA_COMPILER env override wins over local build/bs2" {
+    then "explicit AVRA_COMPILER points at the build" {
+        let project = setup_project()
+        avra_shell_exec("rm -f " + project + "build/bs2")
+        let out = avra_shell_exec(
+            "cd " + project + " && AVRA_COMPILER=" + bs2_path() + " " + bs2_path() + " build 2>&1 || true")
+        let _ = teardown_project(project)
+        out.contains("[pkg]") && out.contains("Built ")
+    }
+}

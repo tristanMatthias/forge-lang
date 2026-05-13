@@ -1,0 +1,47 @@
+// `bs2 build --timings` flag. Split from cli_build_flags_test.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn bs2_path() -> string {
+    avra_shell_exec("pwd").trim() + "/build/bs2"
+}
+
+fn setup_project() -> string {
+    let project = "/tmp/avra_build_timings_fixture/"
+    avra_shell_exec("rm -rf " + project)
+    avra_shell_exec("mkdir -p " + project + "build")
+    avra_shell_exec("ln -s " + bs2_path() + " " + project + "build/bs2")
+    avra_shell_exec("printf '[package]\nname = \"flags-fixture\"\nversion = \"0.1.0\"\n[[bin]]\nname = \"flags-fixture\"\npath = \"main.av\"\n' > " + project + "avra.toml")
+    let entry = "main"
+    let body = "fn " + entry + "() -> int { 0 }"
+    avra_shell_exec("printf '%s\\n' '" + body + "' > " + project + entry + ".av")
+    project
+}
+
+fn teardown_project(project: string) -> string {
+    avra_shell_exec("rm -rf " + project)
+}
+
+spec "bs2 build --timings: writes the HTML report" {
+    then "build/timings/<unit>-<fp>.html exists after a build" {
+        let project = setup_project()
+        let _ = avra_shell_exec(
+            "cd " + project + " && " + bs2_path() + " build --timings 2>&1 || true")
+        let html_count = avra_shell_exec(
+            "ls " + project + "build/timings/*.html 2>/dev/null | wc -l").trim()
+        let _ = teardown_project(project)
+        html_count != "" && html_count != "0"
+    }
+}
+
+spec "bs2 build --timings: report is self-contained HTML" {
+    then "the report opens with <!DOCTYPE html>" {
+        let project = setup_project()
+        let _ = avra_shell_exec(
+            "cd " + project + " && " + bs2_path() + " build --timings 2>&1 || true")
+        let head = avra_shell_exec(
+            "head -1 " + project + "build/timings/*.html 2>/dev/null || true").trim()
+        let _ = teardown_project(project)
+        head.contains("DOCTYPE") || head.contains("html")
+    }
+}

@@ -1,0 +1,31 @@
+// vez6.6/missing — @expand pointing at unknown macro emits a clear diagnostic.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+const MAIN_HEADER: string = "fn " + "main()"
+
+fn write_temp(path: string, source: string) -> string {
+    let escaped = source.replace("'", "'\\''")
+    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
+}
+
+fn compile_capture(source: string) -> string {
+    let path = "/tmp/avra_expand_macro_missing_test.av"
+    write_temp(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 || true")
+}
+
+spec "vez6.6: missing macro fn — clear diagnostic" {
+    then "missing macro fn: clear diagnostic" {
+        let out = compile_capture(
+            "@expand(no_such_macro)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            MAIN_HEADER + " {\n" +
+            "    placeholder()\n" +
+            "}\n")
+        // The eprintln in try_expand_one names the missing macro so
+        // the user can fix the typo.
+        out.contains("no_such_macro") && out.contains("no @comptime fn named")
+    }
+}
