@@ -2237,6 +2237,14 @@ fn run_test_shard_command() {
     // inherits AVRA_USE_METADATA=1 + AVRA_LIB_OBJS pointing at
     // producer .o files + the test's slug as AVRA_LIB_PKG_ROOT,
     // none of which apply to the user-test's /tmp/x.av compile.
+    //
+    // fxwn perf note: this means tests that shell-out to bs2 compile
+    // (expand_macro_test, expand_command_test) pay 10s per call. The
+    // fix is to make bs2 compile auto-detect @std meta on disk —
+    // see forge-crafting-intepreters-fxwn for the full plan. Tests
+    // that DO rely on env-off behaviour (deps_sidecar_test) regress
+    // when this is naively flipped, so the fix needs an explicit
+    // opt-in/opt-out flag rather than environment inheritance.
     avra_process_env_unset("AVRA_USE_METADATA")
     avra_process_env_unset("AVRA_LIB_OBJS")
     avra_process_env_unset("AVRA_LIB_PKG_ROOT")

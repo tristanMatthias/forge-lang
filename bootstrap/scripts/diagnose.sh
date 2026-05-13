@@ -247,7 +247,18 @@ LINK_CACHE_DIR="$BUILD_DIR/cache/link"
 LINK_SHARED_FP_FILE="$LINK_CACHE_DIR/.shared-fp"
 
 link_shared_fp() {
-  if [ -f "$LINK_SHARED_FP_FILE" ] \
+  # fxwn: include AVRA_LIB_OBJS in the fingerprint so the link cache
+  # invalidates when the @std .o-path set changes. Producer .o paths
+  # are content-addressed (sha256(meta source)/realobj.o), so the
+  # string proxies for content changes too — when bodies change, paths
+  # change. Bypasses the mtime memo when LIB_OBJS is set since the
+  # sidecar doesn't capture it.
+  local libobjs_h=""
+  if [ -n "${AVRA_LIB_OBJS:-}" ]; then
+    libobjs_h=$(printf '%s' "$AVRA_LIB_OBJS" | shasum -a 256 | cut -d' ' -f1)
+  fi
+  if [ -z "$libobjs_h" ] \
+     && [ -f "$LINK_SHARED_FP_FILE" ] \
      && [ "$LINK_SHARED_FP_FILE" -nt "$BS2" ] \
      && [ "$LINK_SHARED_FP_FILE" -nt "$RUNTIME_O" ] \
      && [ "$LINK_SHARED_FP_FILE" -nt "$LLVM_WRAPPER_O" ]; then
@@ -259,9 +270,14 @@ link_shared_fp() {
   bs2_h=$(shasum -a 256 "$BS2" | cut -d' ' -f1)
   runtime_h=$(shasum -a 256 "$RUNTIME_O" | cut -d' ' -f1)
   wrapper_h=$(shasum -a 256 "$LLVM_WRAPPER_O" | cut -d' ' -f1)
-  composed=$(printf '%s:%s:%s' "$bs2_h" "$runtime_h" "$wrapper_h" \
+  composed=$(printf '%s:%s:%s:%s' "$bs2_h" "$runtime_h" "$wrapper_h" "$libobjs_h" \
     | shasum -a 256 | cut -d' ' -f1)
-  printf '%s' "$composed" > "$LINK_SHARED_FP_FILE"
+  # Don't persist when libobjs_h is set — it's per-invocation state,
+  # and persisting would make the next call without LIB_OBJS hit
+  # the stale cached value.
+  if [ -z "$libobjs_h" ]; then
+    printf '%s' "$composed" > "$LINK_SHARED_FP_FILE"
+  fi
   printf '%s' "$composed"
 }
 
@@ -303,7 +319,15 @@ link_ll() {
     local clang_rt_dir="$LLVM_PREFIX/lib/clang/$(ls "$LLVM_PREFIX/lib/clang/" | head -1)/lib/darwin"
     extra_libs="-L$clang_rt_dir -lclang_rt.profile_osx"
   fi
-  cc -o "$out" "${out}.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
+  # fxwn: when AVRA_USE_METADATA is set, the .ll has extern decls for
+  # @std/* fns whose bodies live in pre-built producer .o files. Pull
+  # them in via AVRA_LIB_OBJS (colon-separated, mirrors PATH). Without
+  # this the link step fails with "undefined symbols" for every @std fn.
+  local lib_objs=""
+  if [ -n "${AVRA_LIB_OBJS:-}" ]; then
+    lib_objs=$(printf '%s' "$AVRA_LIB_OBJS" | tr ':' ' ')
+  fi
+  cc -o "$out" "${out}.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" $lib_objs \
     -Wl,-stack_size,0x2000000 \
     -L"$LLVM_PREFIX/lib" -lLLVM -lc++ $extra_libs 2>"$logfile" \
     || { cat "$logfile" >&2; die "link failed for $out"; }
