@@ -194,16 +194,18 @@ export fn cache_publish(
         return PublishResult { success: false, error: "mkdir failed: " + staging }
     }
     let staged_ll = staging + "/unit.ll"
-    let staged_o = staging + "/unit.o"
     let staged_meta = staging + "/metadata.bin"
 
     if avra_selfhost_write_file(staged_ll, ll_content) == 0 {
         return PublishResult { success: false, error: "write failed: " + staged_ll }
     }
-    let o_content = avra_selfhost_read_file(o_path_src)
-    if avra_selfhost_write_file(staged_o, o_content) == 0 {
-        return PublishResult { success: false, error: "write failed: " + staged_o }
-    }
+    // unit.o is no longer written — every historical caller passed
+    // the .ll path as o_path_src, producing a bit-identical duplicate
+    // of unit.ll wasting ~20MB per slot. Real Mach-O objects live at
+    // unit.realobj.o, materialised lazily on first read by
+    // cache_entry_realobj_path. The o_path_src parameter is retained
+    // for API stability but ignored.
+    let _ = o_path_src
     if avra_selfhost_write_file(staged_meta, metadata_content) == 0 {
         return PublishResult { success: false, error: "write failed: " + staged_meta }
     }
