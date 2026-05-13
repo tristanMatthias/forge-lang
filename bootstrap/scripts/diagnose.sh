@@ -224,10 +224,11 @@ ensure_seed() {
     mkdir -p "$BUILD_DIR"
     "$LLC" -O2 -filetype=obj "$SEED_LL" -o "$BUILD_DIR/seed.o" \
       || die "seed llc failed"
-    cc -o "$SEED_BIN" "$BUILD_DIR/seed.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
+    cc -o "${SEED_BIN}.tmp" "$BUILD_DIR/seed.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
       -Wl,-stack_size,0x2000000 \
       -L"$LLVM_PREFIX/lib" -lLLVM -lc++ 2>"$BUILD_DIR/seed.link.log" \
-      || { cat "$BUILD_DIR/seed.link.log" >&2; die "seed link failed"; }
+      || { rm -f "${SEED_BIN}.tmp"; cat "$BUILD_DIR/seed.link.log" >&2; die "seed link failed"; }
+    mv "${SEED_BIN}.tmp" "$SEED_BIN"
   fi
 }
 
@@ -327,10 +328,15 @@ link_ll() {
   if [ -n "${AVRA_LIB_OBJS:-}" ]; then
     lib_objs=$(printf '%s' "$AVRA_LIB_OBJS" | tr ':' ' ')
   fi
-  cc -o "$out" "${out}.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" $lib_objs \
+  # Atomic link: cc writes to a .tmp sibling, then rename. If cc is
+  # killed mid-write (jetsam under memory pressure has done this 3x
+  # this iteration alone), the previous $out remains intact instead
+  # of being corrupted into a 2.2MB Mach-O that SIGKILLs on dyld load.
+  cc -o "${out}.tmp" "${out}.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" $lib_objs \
     -Wl,-stack_size,0x2000000 \
     -L"$LLVM_PREFIX/lib" -lLLVM -lc++ $extra_libs 2>"$logfile" \
-    || { cat "$logfile" >&2; die "link failed for $out"; }
+    || { rm -f "${out}.tmp"; cat "$logfile" >&2; die "link failed for $out"; }
+  mv "${out}.tmp" "$out"
 
   # rqwh: publish to cache on success.
   if [ -n "$cached_bin" ] && [ -f "$out" ]; then
@@ -365,10 +371,11 @@ ensure_bs2() {
       warn "seed crashed at -O2 — testing for LLVM optimization bug"
       "$LLC" -O0 -filetype=obj "$SEED_LL" -o "$BUILD_DIR/seed_o0.o" \
         || die "seed llc -O0 failed"
-      cc -o "$BUILD_DIR/seed_o0" "$BUILD_DIR/seed_o0.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
+      cc -o "$BUILD_DIR/seed_o0.tmp" "$BUILD_DIR/seed_o0.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
         -Wl,-stack_size,0x2000000 \
         -L"$LLVM_PREFIX/lib" -lLLVM -lc++ 2>/dev/null \
-        || die "seed -O0 link failed"
+        || { rm -f "$BUILD_DIR/seed_o0.tmp"; die "seed -O0 link failed"; }
+      mv "$BUILD_DIR/seed_o0.tmp" "$BUILD_DIR/seed_o0"
       if "$BUILD_DIR/seed_o0" compile "$SRC_DIR/main.av" >"$BUILD_DIR/bs2.codegen.log" 2>&1; then
         warn "LLVM OPTIMIZATION BUG: seed works at -O0 but crashes at -O2"
         warn "This is an llc -O2 miscompilation on $(uname -m), not a Avra bug."
@@ -394,10 +401,12 @@ link_ll_O0() {
   local ll="$1" out="$2" logfile="$3"
   "$LLC" -O0 -filetype=obj "$ll" -o "${out}.o" \
     || die "llc -O0 failed for $ll"
-  cc -g -o "$out" "${out}.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
+  # Atomic link via staging path (see link_ll for rationale).
+  cc -g -o "${out}.tmp" "${out}.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
     -Wl,-stack_size,0x2000000 \
     -L"$LLVM_PREFIX/lib" -lLLVM -lc++ 2>"$logfile" \
-    || { cat "$logfile" >&2; die "link failed for $out"; }
+    || { rm -f "${out}.tmp"; cat "$logfile" >&2; die "link failed for $out"; }
+  mv "${out}.tmp" "$out"
 }
 
 # Build bs2 at -O0 for debuggability (lldb + breakpoints).
