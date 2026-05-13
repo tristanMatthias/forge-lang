@@ -1,0 +1,45 @@
+// vez6.8.5 — @expand on a ComponentDef registers the macro for
+// every ComponentBlock instance of that component.
+// Split out of expand_macro_test.av for shard-parallel speed.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+const MAIN_HEADER: string = "fn " + "main()"
+
+fn write_temp(path: string, source: string) -> string {
+    let escaped = source.replace("'", "'\\''")
+    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
+}
+
+fn run_expand_e2e(source: string) -> string {
+    let path = "/tmp/avra_expand_macro_component_test.av"
+    write_temp(path, source)
+    avra_shell_exec("./build/bs2 expand '${path}' 2>&1 || true")
+}
+
+spec "vez6.8.5: ComponentDef-level @expand fires on each ComponentBlock instance" {
+    then "instance is rewritten by macro; def drops out" {
+        let out = run_expand_e2e(
+            "use @std.avrac.core.{Stmt}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn expand_cmd(s: Stmt) -> Stmt {\n" +
+            "    return quote stmt {\n" +
+            "        type Command_build = { x: int }\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(expand_cmd)\n" +
+            "component command {\n" +
+            "}\n" +
+            "\n" +
+            "command build {\n" +
+            "}\n" +
+            "\n" +
+            MAIN_HEADER + " {\n" +
+            "}\n")
+        out.contains("type Command_build")
+            && !out.contains("component command")
+            && !out.contains("type Command =")
+    }
+}

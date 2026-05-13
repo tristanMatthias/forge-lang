@@ -1,0 +1,72 @@
+// vez6.6.5 — Expr-typed comptime returns now fold cleanly. The
+// decoder produces the source-form EnumCtor that codegen turns into
+// a runtime Expr value at the call site, where it can be rendered,
+// pattern-matched, etc.
+//
+// Split out of expand_macro_test.av to run as its own shard — the
+// 10 inline bs2 invocations across the original file dominated the
+// per-file test wall (5.5s of 7s); splitting per-spec parallelises
+// them and drops the wall to the slowest single test.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+const MAIN_HEADER: string = "fn " + "main()"
+
+fn write_temp(path: string, source: string) -> string {
+    let escaped = source.replace("'", "'\\''")
+    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
+}
+
+fn run_capture(source: string) -> string {
+    let path = "/tmp/avra_expand_macro_expr_test.av"
+    write_temp(path, source)
+    avra_shell_exec("bash scripts/diagnose.sh --run '${path}' 2>&1 || true")
+}
+
+spec "vez6.6.5: Expr-typed comptime fn folds to runtime Expr value" {
+    then "make_num() yields a runtime Expr that renders as `42`" {
+        let out = run_capture(
+            "use @std.avrac.core.{Expr, render_expr}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn make_num() -> Expr {\n" +
+            "    return quote { 42 }\n" +
+            "}\n" +
+            "\n" +
+            MAIN_HEADER + " {\n" +
+            "    let e: Expr = make_num()\n" +
+            "    println(render_expr(e))\n" +
+            "}\n")
+        out.contains("42")
+    }
+    then "make_ident() yields a runtime Expr that renders as `my_var`" {
+        let out = run_capture(
+            "use @std.avrac.core.{Expr, render_expr}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn make_ident() -> Expr {\n" +
+            "    return quote { my_var }\n" +
+            "}\n" +
+            "\n" +
+            MAIN_HEADER + " {\n" +
+            "    let e: Expr = make_ident()\n" +
+            "    println(render_expr(e))\n" +
+            "}\n")
+        out.contains("my_var")
+    }
+    then "make_sum() yields a runtime Expr.Binary that renders as `(+ 1 2)`" {
+        let out = run_capture(
+            "use @std.avrac.core.{Expr, render_expr}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn make_sum() -> Expr {\n" +
+            "    return quote { 1 + 2 }\n" +
+            "}\n" +
+            "\n" +
+            MAIN_HEADER + " {\n" +
+            "    let e: Expr = make_sum()\n" +
+            "    println(render_expr(e))\n" +
+            "}\n")
+        out.contains("(+ 1 2)")
+    }
+}

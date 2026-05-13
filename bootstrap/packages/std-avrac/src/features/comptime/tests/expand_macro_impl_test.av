@@ -1,0 +1,44 @@
+// vez6.8.4.B — value_to_stmt decodes Stmt.Impl from macro output.
+// Split out of expand_macro_test.av for shard-parallel speed.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+const MAIN_HEADER: string = "fn " + "main()"
+
+fn write_temp(path: string, source: string) -> string {
+    let escaped = source.replace("'", "'\\''")
+    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
+}
+
+fn run_expand_e2e(source: string) -> string {
+    let path = "/tmp/avra_expand_macro_impl_test.av"
+    write_temp(path, source)
+    avra_shell_exec("./build/bs2 expand '${path}' 2>&1 || true")
+}
+
+spec "vez6.8.4.B: value_to_stmt decodes Stmt.Impl from macro output" {
+    then "macro emitting `impl Foo { ... }` produces impl wrapper in expanded output" {
+        let out = run_expand_e2e(
+            "use @std.avrac.core.{Stmt}\n" +
+            "\n" +
+            "type Foo = { x: int }\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn make_impl() -> Stmt {\n" +
+            "    return quote stmt {\n" +
+            "        impl Foo {\n" +
+            "            fn bar(self) -> int { return 42 }\n" +
+            "        }\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(make_impl)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            MAIN_HEADER + " {\n" +
+            "}\n")
+        out.contains("impl Foo")
+            && !out.contains("@expand(make_impl)")
+            && !out.contains("fn placeholder")
+    }
+}
