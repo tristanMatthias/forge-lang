@@ -2348,7 +2348,7 @@ fn run_per_file_test_command(project_dir: string, accepted_paths: List<string>, 
         // Serial dispatch is correct (deps before dependents) at a
         // small wall-clock cost. Proper topo-sort follow-up tracked
         // separately.
-        let pb_rc = pre_build_workspace_std_packages(project_dir, compiler_path, 1)
+        let pb_rc = pre_build_workspace_std_packages(project_dir, compiler_path, jobs)
         if pb_rc != 0 {
             eprintln("[per-file] pre-build of @std/* libs failed (rc=${string(pb_rc)}) — disabling metadata fast-path for this run")
         } else {
