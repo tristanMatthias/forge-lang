@@ -2229,24 +2229,22 @@ fn run_test_shard_command() {
             cache_bin_path_for(cache_for(inputs.project_root), fp)
         }
     }
-    // Clear the metadata-fast-path env vars before forking the
-    // test binary. These were set by the outer test runner to
-    // gate THIS shard's COMPILE step — they should not bleed into
-    // the test binary's runtime shell-outs (avra_shell_exec
-    // ./build/bs2 compile /tmp/x.av). Otherwise the sub-bs2
-    // inherits AVRA_USE_METADATA=1 + AVRA_LIB_OBJS pointing at
-    // producer .o files + the test's slug as AVRA_LIB_PKG_ROOT,
-    // none of which apply to the user-test's /tmp/x.av compile.
+    // fxwn: only AVRA_LIB_PKG_ROOT is shard-scoped — it's the codegen
+    // ownership prefix derived from the test's slug, with no meaning
+    // for any /tmp/foo.av the test binary itself compiles.
     //
-    // fxwn perf note: this means tests that shell-out to bs2 compile
-    // (expand_macro_test, expand_command_test) pay 10s per call. The
-    // fix is to make bs2 compile auto-detect @std meta on disk —
-    // see forge-crafting-intepreters-fxwn for the full plan. Tests
-    // that DO rely on env-off behaviour (deps_sidecar_test) regress
-    // when this is naively flipped, so the fix needs an explicit
-    // opt-in/opt-out flag rather than environment inheritance.
-    avra_process_env_unset("AVRA_USE_METADATA")
-    avra_process_env_unset("AVRA_LIB_OBJS")
+    // KEEP AVRA_USE_METADATA + AVRA_LIB_OBJS in the test binary's env:
+    // - AVRA_USE_METADATA tells the inherited 'bs2 compile' to use the
+    //   @std/* meta fast-path (38x speedup on a single-file compile).
+    // - AVRA_LIB_OBJS lists @std/* producer .o files, which apply to
+    //   ANY compile (they're the same .o files regardless of test).
+    // This drops expand_macro_test from 117s → ~5s by letting its 10
+    // inline 'bs2 compile' invocations use the meta fast-path.
+    //
+    // Tests that DO rely on env-off behaviour (deps_sidecar_test,
+    // metadata_fast_path_size_test) opt out at the fixture level via
+    // 'env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS' before the bs2
+    // invocation — see those fixtures for the precise idiom.
     avra_process_env_unset("AVRA_LIB_PKG_ROOT")
     let exit_code = avra_process_forward(bin_path, "[]", "")
     avra_process_exit(exit_code)

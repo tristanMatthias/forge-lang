@@ -53,7 +53,9 @@ fn main() -> int {
     probe("producer_emit_rc_zero", rc1 == 0)
 
     // Step 2: compile consumer via the source path (no env var).
-    let rc2 = avra_shell_exec_status("${bs2} compile ${consumer}")
+    // fxwn: scrub the outer test runner's AVRA_USE_METADATA + AVRA_LIB_OBJS
+    // so this probe measures the legacy source-path output specifically.
+    let rc2 = avra_shell_exec_status("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ${bs2} compile ${consumer}")
     probe("consumer_source_compile_rc_zero", rc2 == 0)
     let consumer_ll = "${consumer}.ll"
     let source_fn_count = count_fn_defs(consumer_ll)

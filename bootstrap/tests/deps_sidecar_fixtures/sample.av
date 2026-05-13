@@ -55,7 +55,12 @@ fn main() -> int {
 
     let deps_off = "${dir}/consumer.av.deps_off"
     avra_shell_exec("rm -f ${deps_off}")
-    let rc_off = avra_shell_exec_status("AVRA_DEPS_OUT=${deps_off} ${bs2} compile ${dir}/consumer.av")
+    // fxwn: explicitly scrub the metadata-fast-path env so this
+    // probe measures the legacy behaviour. The outer test runner now
+    // propagates AVRA_USE_METADATA + AVRA_LIB_OBJS into the test
+    // binary's env to make 'inline bs2 compile' calls fast — but
+    // this probe is specifically asserting fast-path-off semantics.
+    let rc_off = avra_shell_exec_status("AVRA_DEPS_OUT=${deps_off} env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ${bs2} compile ${dir}/consumer.av")
     probe("env_off_compile_rc_zero", rc_off == 0)
     probe("env_off_no_deps_file", avra_selfhost_file_exists(deps_off) == 0)
 
