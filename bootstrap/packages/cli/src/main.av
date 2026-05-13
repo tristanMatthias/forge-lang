@@ -1469,19 +1469,28 @@ fn slug_of_path(p: string) -> string {
 // pitfalls; keeps semantics identical to `pool_run_with_progress`
 // (worst-rc wins, hermetic per-job isolation).
 fn spawn_pool_async(cmds: List<string>, slugs: List<string>, jobs: int, marker_dir: string) -> int {
+    spawn_pool_async_with_markers(cmds, slugs, jobs, marker_dir, true)
+}
+
+// `with_progress_markers=false` skips the .running / .done touch+rm
+// fork-chain that's only consumed by the build-pipeline progress UI
+// (run_per_mod_with_progress). The test runner waits on the pool via
+// process_wait and doesn't poll, so the markers are pure overhead
+// there: each `touch`/`rm` is a fork+exec to /usr/bin/{touch,rm}.
+// 451 shards × 3 marker forks ≈ 1.4k forks, ~5ms each on M1 ≈ ~7s
+// of fork serialisation cost.
+fn spawn_pool_async_with_markers(cmds: List<string>, slugs: List<string>, jobs: int, marker_dir: string, with_progress_markers: bool) -> int {
     // FIFO-semaphore dispatcher. Replaces the prior `wait $oldest`
     // FIFO drain (which blocked on the oldest in-flight pid even when
     // other slots were free) with a SysV-style counting semaphore: a
     // named pipe is primed with `jobs` ready tokens; each child
     // `read`s one before starting, writes one when done. Result is
     // any-child wakeup — equivalent to bash's `wait -n` (which macOS
-    // bash 3.2 lacks). On a 2257-shard warm suite this cuts wall by
-    // ~30% (~10s → ~7s) by eliminating dispatcher stalls.
+    // bash 3.2 lacks).
     //
     // POSIX-portable: uses mkfifo + `read <FD>` only. Each child's
     // rc is captured into a per-shard rc file; parent aggregates
-    // after `wait`. Markers (.running / .done) remain identical so
-    // the progress-UI poller works unchanged.
+    // after `wait`.
     let script_path = "${marker_dir}/dispatch.sh"
     mut script = "#!/bin/sh\nset +e\n"
     let fifo = "${marker_dir}/.dispatch-fifo"
@@ -1494,14 +1503,26 @@ fn spawn_pool_async(cmds: List<string>, slugs: List<string>, jobs: int, marker_d
     while i < cmds.length {
         let slug = slugs[i]
         let cmd = cmds[i]
-        // Each child: acquire token via read, run cmd, write rc file,
-        // emit `.done` marker, release token via echo.
+        // Each child: acquire token via read, run cmd, write rc file
+        // (via shell redirect — no fork to /usr/bin/touch), emit
+        // optional .running/.done markers (only when caller will poll
+        // them for progress UI), release token via echo.
+        let start_marker = if with_progress_markers {
+            "touch ${marker_dir}/${slug}.running; "
+        } else {
+            ""
+        }
+        let stop_marker = if with_progress_markers {
+            "rm -f ${marker_dir}/${slug}.running; touch ${marker_dir}/${slug}.done; "
+        } else {
+            ""
+        }
         let job =
             "read tok <&3\n" +
-            "{ touch ${marker_dir}/${slug}.running; ${cmd}; jrc=$?; " +
-            "rm -f ${marker_dir}/${slug}.running; " +
+            "{ ${start_marker}${cmd}; jrc=$?; " +
+            "${stop_marker}" +
             "echo \"" + "$" + "jrc\" > ${marker_dir}/${slug}.rc; " +
-            "touch ${marker_dir}/${slug}.done; echo >&3; } &\n"
+            "echo >&3; } &\n"
         script = script + job
         i = i + 1
     }
@@ -2393,7 +2414,10 @@ fn run_per_file_test_command(project_dir: string, accepted_paths: List<string>, 
         i = i + 1
     }
 
-    let pool_handle = spawn_pool_async(cmds, slugs, jobs, log_dir)
+    // Test runner doesn't poll .running / .done markers — pass false
+    // so dispatch.sh skips the per-shard touch+rm fork chain that the
+    // build-pipeline progress UI relies on.
+    let pool_handle = spawn_pool_async_with_markers(cmds, slugs, jobs, log_dir, false)
     if pool_handle < 0 {
         eprintln("[per-file] pool spawn failed — falling back to sync pool_run")
         let rc = pool_run(cmds, jobs)
