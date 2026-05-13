@@ -2497,11 +2497,70 @@ const char* avra_sha256_hex(const char* s) {
     return out;
 }
 
+// Read mtime + size for a file. Returns 1 on success, 0 on miss.
+// Used by the sha256_file sidecar memo below.
+static int avra_stat_mtime_size(const char* path, long* mtime_out, long* size_out) {
+    struct stat st;
+    if (stat(path, &st) != 0) return 0;
+    *mtime_out = (long)st.st_mtime;
+    *size_out = (long)st.st_size;
+    return 1;
+}
+
+// Sidecar path for `<path>` → `<path>.avra-sha256`. Same-dir colocation
+// keeps invalidation trivial (delete the sidecar to force a recompute)
+// and matches how rqwh's link-cache stamps siblings.
+static int avra_sha256_sidecar_path(const char* path, char* out, size_t cap) {
+    int n = snprintf(out, cap, "%s.avra-sha256", path);
+    return (n > 0 && (size_t)n < cap);
+}
+
 // SHA-256 a file's contents. Returns the same 64-char lowercase hex
 // digest as avra_sha256_hex, or the digest of empty input when the
 // file is missing/unreadable. Streams the file in 64KB chunks so
 // large inputs do not blow the heap.
+//
+// Sidecar memoization: when `<path>.avra-sha256` exists, contains a
+// fresh "<mtime> <size>\n<hex>" envelope, and the recorded mtime+size
+// match the current file, return the cached hex directly. Cuts the
+// per-shard fingerprint cost from ~10-30ms (full sha256 of bs2 binary)
+// to ~50µs (one stat() + one fread()). Wire-format is deliberately
+// boring text so a human can `cat` it for debugging.
+const char* avra_sha256_file_uncached(const char* path);
+
 const char* avra_sha256_file(const char* path) {
+    if (!path) path = "";
+    long mtime = 0, size = 0;
+    if (!avra_stat_mtime_size(path, &mtime, &size)) {
+        return avra_sha256_file_uncached(path);
+    }
+    char sidecar[4096];
+    if (!avra_sha256_sidecar_path(path, sidecar, sizeof(sidecar))) {
+        return avra_sha256_file_uncached(path);
+    }
+    FILE* sf = fopen(sidecar, "r");
+    if (sf) {
+        long sm = 0, ss = 0;
+        char hex[80] = {0};
+        // "mtime size\nhex\n"
+        if (fscanf(sf, "%ld %ld\n%64s", &sm, &ss, hex) == 3 && sm == mtime && ss == size && strlen(hex) == 64) {
+            fclose(sf);
+            char* out = (char*)malloc(65);
+            memcpy(out, hex, 65);
+            return out;
+        }
+        fclose(sf);
+    }
+    const char* hex = avra_sha256_file_uncached(path);
+    FILE* wf = fopen(sidecar, "w");
+    if (wf) {
+        fprintf(wf, "%ld %ld\n%s\n", mtime, size, hex);
+        fclose(wf);
+    }
+    return hex;
+}
+
+const char* avra_sha256_file_uncached(const char* path) {
     if (!path) path = "";
     FILE* f = fopen(path, "rb");
     if (!f) return avra_sha256_hex("");
