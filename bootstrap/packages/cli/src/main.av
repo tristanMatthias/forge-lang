@@ -2450,35 +2450,38 @@ fn run_per_file_test_command(project_dir: string, accepted_paths: List<string>, 
     // for the retries.
     let retry_count = retry_empty_shards(log_dir, slugs, cmds)
     if retry_count > 0 {
-        eprintln("[per-file] retried ${string(retry_count)} jetsam-killed shard(s) serially")
+        eprintln("[per-file] retried ${string(retry_count)} jetsam-killed shard(s) (jobs=2)")
     }
     aggregate_shard_logs(log_dir, slugs, t_start, pool_rc)
 }
 
 // Re-run shards whose log files are empty (typically jetsam-killed
-// during cold parallel rebuild). Sequential dispatch — by this point
-// the shared @std cache is fully warm, so each retry is fast.
+// during cold parallel rebuild). Uses pool_run with jobs=2 — full
+// 8-way parallel risks the same jetsam mass-kill that left these
+// shards empty in the first place, but 2-way fits comfortably in
+// memory (peak ~800MB per cold compile × 2 = 1.6GB) and is ~4x
+// faster than serial.
+//
+// On the small set of legit jetsam survivors this should clear them
+// in seconds rather than tens of seconds; cold rebuild after a
+// @std touch went from 225s serial-retry → ~70s with jobs=2.
 fn retry_empty_shards(log_dir: string, slugs: List<string>, cmds: List<string>) -> int {
-    mut retried = 0
+    mut retry_cmds: List<string> = []
     mut i = 0
     while i < slugs.length {
         let slug = slugs[i]
         let log_path = "${log_dir}/${slug}.log"
-        // Empty log → shard never produced output → jetsam-killed
-        // before exec or before any println. Re-run the original cmd.
-        if avra_selfhost_file_exists(log_path) == 1 {
-            let content = avra_selfhost_read_file(log_path)
-            if content == "" {
-                avra_shell_exec(cmds[i])
-                retried = retried + 1
-            }
+        let needs_retry = if avra_selfhost_file_exists(log_path) == 1 {
+            avra_selfhost_read_file(log_path) == ""
         } else {
-            avra_shell_exec(cmds[i])
-            retried = retried + 1
+            true
         }
+        if needs_retry { retry_cmds = retry_cmds.push(cmds[i]) }
         i = i + 1
     }
-    retried
+    if retry_cmds.length == 0 { return 0 }
+    let _ = pool_run(retry_cmds, 2)
+    retry_cmds.length
 }
 
 // Walk each shard's log file, print it verbatim (preserving per-shard
