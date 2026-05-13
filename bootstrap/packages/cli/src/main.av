@@ -1493,6 +1493,18 @@ fn spawn_pool_async_with_markers(cmds: List<string>, slugs: List<string>, jobs: 
     // after `wait`.
     let script_path = "${marker_dir}/dispatch.sh"
     mut script = "#!/bin/sh\nset +e\n"
+    // Redirect dispatcher's own stdout/stderr to /dev/null. When a
+    // shard's cmd is signal-killed (SIGKILL from macOS jetsam, etc.),
+    // bash prints a shell-level "Killed: 9" notification to the
+    // subshell's stderr — INHERITED from this dispatcher's stderr,
+    // which is a pipe to the orchestrator (avra_process_spawn_bg).
+    // 460 such notifications fill the 64KB pipe; subsequent writes
+    // BLOCK; workers deadlock at __write_nocancel and never refill
+    // the FIFO token; parent's wait blocks forever. Per-cmd `> LOG
+    // 2>&1` doesn't help — those redirect the cmd's output, not the
+    // shell's own. Each cmd still produces its own log file, so the
+    // orchestrator's aggregate_shard_logs still sees everything.
+    script = script + "exec 1>/dev/null 2>&1\n"
     let fifo = "${marker_dir}/.dispatch-fifo"
     script = script + "FIFO=" + fifo + "\n"
     script = script + "rm -f " + "$" + "FIFO\nmkfifo " + "$" + "FIFO\n"
