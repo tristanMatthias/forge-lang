@@ -2015,7 +2015,18 @@ fn select_test_paths(test_files_listing: string, args: TestArgs) -> List<string>
 //   - compute_test_shard_inputs (per-file path, [single_path])
 fn make_test_inputs(project_dir: string, test_paths: List<string>, unit_name: string) -> BuildInputs {
     let std_root = find_packages_dir(project_dir) + "std-avrac/src"
-    let std_listing = avra_shell_exec("find ${std_root} -name '*.av' -type f 2>/dev/null | sort")
+    // Skip the per-shard `find` shell-exec by reading a pre-computed
+    // listing the orchestrator stashes via AVRA_STD_LISTING_FILE. The
+    // orchestrator runs `find` ONCE and writes the result to a temp
+    // file; each shard reads it back instead of forking find again.
+    // Saves ~7ms × 451 shards = ~3s of CPU. Falls back to find for
+    // standalone _test_shard invocations (no orchestrator).
+    let listing_file = avra_process_env_get("AVRA_STD_LISTING_FILE")
+    let std_listing = if listing_file != "" && avra_selfhost_file_exists(listing_file) != 0 {
+        avra_selfhost_read_file(listing_file)
+    } else {
+        avra_shell_exec("find ${std_root} -name '*.av' -type f 2>/dev/null | sort")
+    }
     mut std_paths = []
     for p in std_listing.split("\n") {
         if p == "" { continue }
@@ -2343,6 +2354,16 @@ fn run_per_file_test_command(project_dir: string, accepted_paths: List<string>, 
     let use_meta = if want_meta { "AVRA_USE_METADATA=1 " } else { "" }
     let lib_env = if lib_objs_env == "" { "" } else { "AVRA_LIB_OBJS='${lib_objs_env}' " }
 
+    // Pre-compute the @std/avrac source listing ONCE. Each shard's
+    // make_test_inputs() otherwise forks `find` to enumerate the same
+    // ~275 .av files (~7ms × 451 = ~3s of CPU). Stash the result in
+    // a temp file and propagate the path via AVRA_STD_LISTING_FILE
+    // so shards skip the find.
+    let std_root_for_listing = find_packages_dir(project_dir) + "std-avrac/src"
+    let listing_file = "${log_dir}/std-listing.txt"
+    avra_shell_exec("find '${std_root_for_listing}' -name '*.av' -type f 2>/dev/null | sort > '${listing_file}'")
+    let listing_env = "AVRA_STD_LISTING_FILE='${listing_file}' "
+
     // Build per-shard command list. Each is a self-contained
     // `bs2 _test_shard <path>` redirecting its full stdio to a
     // shard-specific log file the orchestrator parses after the
@@ -2363,7 +2384,7 @@ fn run_per_file_test_command(project_dir: string, accepted_paths: List<string>, 
         // its fns end up qualified as `<slug>::*` — matches the
         // root we set here, so the test's own bodies emit.
         let shard_root = if want_meta { "AVRA_LIB_PKG_ROOT='${slug}' " } else { "" }
-        cmds = cmds.push("${use_meta}${lib_env}${shard_root}'${compiler_path}' _test_shard '${path}'${filter_arg} > '${log_dir}/${slug}.log' 2>&1")
+        cmds = cmds.push("${use_meta}${lib_env}${listing_env}${shard_root}'${compiler_path}' _test_shard '${path}'${filter_arg} > '${log_dir}/${slug}.log' 2>&1")
         slugs = slugs.push(slug)
         i = i + 1
     }
