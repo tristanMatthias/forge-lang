@@ -2441,7 +2441,44 @@ fn run_per_file_test_command(project_dir: string, accepted_paths: List<string>, 
     // simple — the speed win is the parallelism itself.
     let final_json = avra_process_wait(pool_handle)
     let pool_rc = pool_extract_rc(final_json)
+    // Cold-rebuild memory-pressure retry: on cold runs (every shard
+    // recompiles, peak RSS ~3GB across 8 workers), macOS jetsam can
+    // SIGKILL bs2 instances before they produce any output. Those
+    // shards end up with empty log files. Retry them serially —
+    // sequential cold compile fits comfortably in memory, and the
+    // shards that survived the parallel batch warm the @std cache
+    // for the retries.
+    let retry_count = retry_empty_shards(log_dir, slugs, cmds)
+    if retry_count > 0 {
+        eprintln("[per-file] retried ${string(retry_count)} jetsam-killed shard(s) serially")
+    }
     aggregate_shard_logs(log_dir, slugs, t_start, pool_rc)
+}
+
+// Re-run shards whose log files are empty (typically jetsam-killed
+// during cold parallel rebuild). Sequential dispatch — by this point
+// the shared @std cache is fully warm, so each retry is fast.
+fn retry_empty_shards(log_dir: string, slugs: List<string>, cmds: List<string>) -> int {
+    mut retried = 0
+    mut i = 0
+    while i < slugs.length {
+        let slug = slugs[i]
+        let log_path = "${log_dir}/${slug}.log"
+        // Empty log → shard never produced output → jetsam-killed
+        // before exec or before any println. Re-run the original cmd.
+        if avra_selfhost_file_exists(log_path) == 1 {
+            let content = avra_selfhost_read_file(log_path)
+            if content == "" {
+                avra_shell_exec(cmds[i])
+                retried = retried + 1
+            }
+        } else {
+            avra_shell_exec(cmds[i])
+            retried = retried + 1
+        }
+        i = i + 1
+    }
+    retried
 }
 
 // Walk each shard's log file, print it verbatim (preserving per-shard
