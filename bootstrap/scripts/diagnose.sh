@@ -363,6 +363,21 @@ emit_ll_bs2() {
 }
 
 ensure_bs2() {
+  # AVRA_SKIP_ENSURE_BS2=1 is the test runner's signal that bs2 is
+  # already current — see run_per_file_test_command's env block.
+  # Touching @std/avrac/src/* makes `source_newer_than $BS2` return
+  # true (any .av is newer than the bs2 binary's mtime). Without this
+  # short-circuit, every one of the ~10 diagnose.sh-based tests
+  # ALSO running in parallel test shards would each kick off a fresh
+  # bs2 rebuild — 10 concurrent llc + cc invocations holding 1-2GB
+  # RSS each → jetsam mass-kill → flaky test failures with messages
+  # like "scripts/diagnose.sh: line N: PID Killed: 9 bs2 compile".
+  # The test runner has already ensured bs2 is current before
+  # dispatching shards; shards must not redo that work.
+  if [ -n "${AVRA_SKIP_ENSURE_BS2:-}" ]; then
+    [ -x "$BS2" ] || die "AVRA_SKIP_ENSURE_BS2 set but $BS2 missing"
+    return
+  fi
   ensure_seed "${1:-}"
   if [ "${1:-}" = "force" ] || source_newer_than "$BS2" \
      || [ "$SEED_LL" -nt "$BS2" ]; then

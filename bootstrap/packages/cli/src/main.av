@@ -2400,6 +2400,12 @@ fn run_per_file_test_command(project_dir: string, accepted_paths: List<string>, 
     let listing_file = "${log_dir}/std-listing.txt"
     avra_shell_exec("find '${std_root_for_listing}' -name '*.av' -type f 2>/dev/null | sort > '${listing_file}'")
     let listing_env = "AVRA_STD_LISTING_FILE='${listing_file}' "
+    // diagnose.sh inside test shards must NOT re-run ensure_bs2 — the
+    // orchestrator already has bs2 current, and 10 concurrent rebuild
+    // attempts from parallel shards trigger jetsam mass-kills (the 2-4
+    // 'macro returning quote stmt' cold-rebuild flakies were caused
+    // by this). The env var short-circuits ensure_bs2 inside shards.
+    let skip_bs2_env = "AVRA_SKIP_ENSURE_BS2=1 "
 
     // Build per-shard command list. Each is a self-contained
     // `bs2 _test_shard <path>` redirecting its full stdio to a
@@ -2421,7 +2427,7 @@ fn run_per_file_test_command(project_dir: string, accepted_paths: List<string>, 
         // its fns end up qualified as `<slug>::*` — matches the
         // root we set here, so the test's own bodies emit.
         let shard_root = if want_meta { "AVRA_LIB_PKG_ROOT='${slug}' " } else { "" }
-        cmds = cmds.push("${use_meta}${lib_env}${listing_env}${shard_root}'${compiler_path}' _test_shard '${path}'${filter_arg} > '${log_dir}/${slug}.log' 2>&1")
+        cmds = cmds.push("${use_meta}${lib_env}${listing_env}${skip_bs2_env}${shard_root}'${compiler_path}' _test_shard '${path}'${filter_arg} > '${log_dir}/${slug}.log' 2>&1")
         slugs = slugs.push(slug)
         i = i + 1
     }
