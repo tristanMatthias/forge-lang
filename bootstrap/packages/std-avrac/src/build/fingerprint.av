@@ -21,11 +21,9 @@
 use @std.crypto.{sha256_hex, sha256_file}
 use core.{
     avra_selfhost_file_exists,
-    avra_selfhost_read_file,
-    avra_selfhost_write_file,
     avra_shell_exec,
-    avra_mkdir_p,
-    avra_file_mtime,
+    avra_pkg_fp_cache_get,
+    avra_pkg_fp_cache_set,
 }
 
 /// A computed fingerprint. Wraps the raw 64-char hex string so the
@@ -179,19 +177,15 @@ export fn fp_short(fp: Fingerprint) -> string {
 export fn package_source_fingerprint(pkg_root: string) -> string {
     if pkg_root == "" { return "" }
     if avra_selfhost_file_exists(pkg_root + "/avra.toml") == 0 { return "" }
-    // Sidecar memoization (same trick rqwh's link_shared_fp uses in
-    // diagnose.sh). The bundled bs2 test compile hits this function
-    // thousands of times during one process — without memoization, each
-    // call walks the ~50 files of @std/avrac and sha256s each. The
-    // sidecar is valid as long as it's newer than every input .av;
-    // recompute otherwise. Naive cold cost ~50ms × 1000 calls = 50s;
-    // memoized warm path is one stat + mtime compare = ~50µs.
+    // 73r2: in-process memoization. Source can't change mid-invocation,
+    // so caching by pkg_root within ONE bs2 process is always correct.
+    // Replaces the disk sidecar `.pkg-fp`, which silently went stale:
+    // `find -newer` missed mtime ties (APFS second granularity), and
+    // writers/readers could compute different fps for the same source
+    // state — orphaning meta.bin files keyed on the older fp.
+    let cached = avra_pkg_fp_cache_get(pkg_root)
+    if cached != "" { return cached }
     let src_dir = pkg_root + "/src"
-    let cache_dir = pkg_root + "/build/cache"
-    let sidecar = cache_dir + "/.pkg-fp"
-    if sidecar_is_fresh(sidecar, src_dir) {
-        return avra_selfhost_read_file(sidecar)
-    }
     let listing = avra_shell_exec("find ${src_dir} -name '*.av' -type f 2>/dev/null | sort")
     mut acc = ""
     for line in listing.split("\n") {
@@ -200,17 +194,7 @@ export fn package_source_fingerprint(pkg_root: string) -> string {
         acc = acc + line + ":" + hex + "\n"
     }
     let fp = sha256_hex(acc)
-    let _ = avra_mkdir_p(cache_dir)
-    let _ = avra_selfhost_write_file(sidecar, fp)
+    avra_pkg_fp_cache_set(pkg_root, fp)
     fp
-}
-
-// True iff `sidecar` exists and has mtime >= every .av under `src_dir`.
-// Uses `find -newer` to short-circuit: if the find finds any newer
-// file, the sidecar is stale. Empty find output means sidecar wins.
-fn sidecar_is_fresh(sidecar: string, src_dir: string) -> bool {
-    if avra_selfhost_file_exists(sidecar) == 0 { return false }
-    let newer = avra_shell_exec("find ${src_dir} -name '*.av' -type f -newer ${sidecar} 2>/dev/null | head -c 1")
-    newer == ""
 }
 

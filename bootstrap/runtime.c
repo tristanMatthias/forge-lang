@@ -2560,6 +2560,49 @@ const char* avra_sha256_file(const char* path) {
     return hex;
 }
 
+// 73r2: per-process in-memory memoization for package_source_fingerprint.
+//
+// The DISK sidecar (`.pkg-fp` in build/cache/) is unreliable: `find -newer`
+// misses mtime ties (APFS second granularity), and the writer can record
+// fp=X while the reader independently computes fp=Y because the source
+// drifted between them. Meta files keyed on the OLD fp are then orphaned.
+//
+// This in-process cache stores (pkg_root → fp) for the lifetime of one
+// bs2 invocation. Source files don't change mid-invocation, so the cache
+// is automatically consistent. Cross-process callers each compute fresh
+// — cheaper than the disk sidecar's correctness debt.
+typedef struct PkgFpEntry {
+    char* path;
+    char* fp;
+    struct PkgFpEntry* next;
+} PkgFpEntry;
+static PkgFpEntry* pkg_fp_cache_head = NULL;
+
+const char* avra_pkg_fp_cache_get(const char* path) {
+    if (!path) return "";
+    for (PkgFpEntry* e = pkg_fp_cache_head; e; e = e->next) {
+        if (strcmp(e->path, path) == 0) return e->fp;
+    }
+    return "";
+}
+
+void avra_pkg_fp_cache_set(const char* path, const char* fp) {
+    if (!path || !fp) return;
+    // Overwrite if already present.
+    for (PkgFpEntry* e = pkg_fp_cache_head; e; e = e->next) {
+        if (strcmp(e->path, path) == 0) {
+            free(e->fp);
+            e->fp = strdup(fp);
+            return;
+        }
+    }
+    PkgFpEntry* e = (PkgFpEntry*)malloc(sizeof(PkgFpEntry));
+    e->path = strdup(path);
+    e->fp = strdup(fp);
+    e->next = pkg_fp_cache_head;
+    pkg_fp_cache_head = e;
+}
+
 const char* avra_sha256_file_uncached(const char* path) {
     if (!path) path = "";
     FILE* f = fopen(path, "rb");

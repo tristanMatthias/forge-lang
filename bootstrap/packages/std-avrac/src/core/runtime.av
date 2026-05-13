@@ -17,6 +17,13 @@ extern fn avra_selfhost_write_file_bytes(path: string, b: bytes) -> int
 extern fn avra_selfhost_string_to_float(s: string) -> int
 extern fn avra_selfhost_levenshtein(a: string, b: string, len_a: int, len_b: int) -> int
 
+// 73r2: per-process memo for package_source_fingerprint. Stores
+// (pkg_root → fp) within ONE bs2 invocation. Source can't change
+// mid-process, so this is automatically consistent — replaces the
+// disk sidecar which silently went stale.
+extern fn avra_pkg_fp_cache_get(path: string) -> string
+extern fn avra_pkg_fp_cache_set(path: string, fp: string)
+
 // ── Process ──
 extern fn avra_process_exit(code: int)
 extern fn avra_process_forward(cmd: string, args_json: string, opts_json: string) -> int

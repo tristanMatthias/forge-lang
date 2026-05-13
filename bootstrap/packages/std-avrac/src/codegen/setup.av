@@ -213,6 +213,10 @@ fn codegen_program(stmts: StmtList, debug_null_checks: bool, coverage: bool, sou
     decl(m, "avra_sha256_hex", i64t, [pt])
     decl(m, "avra_sha256_file", i64t, [pt])
 
+    // ── 73r2 in-process pkg-fp cache ──
+    decl(m, "avra_pkg_fp_cache_get", i64t, [pt])
+    decl(m, "avra_pkg_fp_cache_set", vt, [pt, pt])
+
     // ── bytes ──
     decl(m, "avra_bytes_from_string", i64t, [pt])
     decl(m, "avra_string_from_bytes", i64t, [pt])
