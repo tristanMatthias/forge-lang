@@ -356,7 +356,15 @@ fn parse_test_args() -> TestArgs {
     mut filter_arg = ""
     mut coverage_flag = false
     mut lcov_path = ""
-    mut per_file_flag = false
+    // ioth: per-file is the default. Bundled mode jetsam-thrashes on
+    // 2257 tests in one process (~10GB working set, fails on
+    // memory-pressured machines) and accumulates spec-to-spec state
+    // pollution that produces ~14 flaky failures. --per_file isolates
+    // each test in its own subprocess, parallelises 8-wide, and runs
+    // the full suite in 11s warm vs >2min bundled (when it doesn't
+    // get killed by jetsam first). Bundled stays reachable via
+    // --bundled for coverage + legacy callers.
+    mut per_file_flag = true
     mut i = 2
     while i < avra_selfhost_argc() {
         let arg = avra_selfhost_get_arg_cstr(i)
@@ -380,11 +388,16 @@ fn parse_test_args() -> TestArgs {
             i = i + 2
             continue
         }
-        // 05yc: opt-in per-file shard mode. Compiles each test file
-        // into its own binary; runs them sequentially (parallelism
-        // follows once correctness is proven).
+        // --per_file is the default now, but still accepted explicitly.
         if arg == "--per_file" {
             per_file_flag = true
+            i = i + 1
+            continue
+        }
+        // ioth: opt out to the bundled path (legacy; coverage uses
+        // it implicitly since coverage doesn't yet support per-file).
+        if arg == "--bundled" {
+            per_file_flag = false
             i = i + 1
             continue
         }
