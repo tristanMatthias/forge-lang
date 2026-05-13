@@ -179,6 +179,16 @@ export fn cache_publish(
     metadata_content: string,
     staging_id: string,
 ) -> PublishResult {
+    // jg3p: reject empty ll_content up-front. Observed bug: a killed
+    // bs2 mid-compile left a 0-byte .ll on disk; the caller then
+    // read_file'd that empty .ll and passed it here, publishing
+    // corrupted state. Future reads hit a 0-byte cached unit.ll →
+    // mysterious "missing _main" link errors across 13+ test fixtures.
+    // The .ll for any real compile is hundreds of KB minimum, so
+    // empty is unambiguously a kill-induced partial.
+    if ll_content == "" {
+        return PublishResult { success: false, error: "refusing to publish empty .ll (likely killed mid-compile)" }
+    }
     let staging = c.tmp_dir + fp.hex + "." + staging_id
     if avra_mkdir_p(staging) == 0 {
         return PublishResult { success: false, error: "mkdir failed: " + staging }
