@@ -996,6 +996,7 @@ fn rewrite_expr_compound(ctx: NameCtx, expr: Expr) -> Expr {
         }
         .MatchExpr(subject, arms) -> .MatchExpr(rewrite_expr(ctx, subject), rewrite_match_arms(ctx, arms))
         .Lambda(params, body) -> .Lambda(params, rewrite_expr(bind_params_ctx(ctx, params), body))
+        .Spawn(body) -> .Spawn(rewrite_expr(ctx, body))
         .IsCheck(subject, variant) -> .IsCheck(rewrite_expr(ctx, subject), variant)
         .InCheck(needle, items) -> .InCheck(rewrite_expr(ctx, needle), rewrite_expr_list(ctx, items))
         .When(arms) -> .When(rewrite_when_arms(ctx, arms))
