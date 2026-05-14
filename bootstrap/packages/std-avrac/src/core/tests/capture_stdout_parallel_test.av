@@ -1,0 +1,40 @@
+// 2zht: avra_capture_stdout under spawn { }. Before the runtime
+// fix, two threads calling avra_capture_stdout concurrently would
+// race on dup2(STDOUT_FILENO) — one thread's println could land in
+// the other's tmpfile, or both could deadlock on the dup2/restore
+// dance. Recursive _capture_mutex now serializes capture windows
+// across threads while preserving same-thread nesting.
+//
+// Spawn return type is currently typed as .Int regardless of the
+// body's actual type (spawn_check in features/spawn_expr/mod.av) so
+// we stage each capture's outcome into a shared mut state and signal
+// success as an int.
+
+extern fn avra_capture_stdout(closure: fn() -> void) -> string
+
+mut hits_alpha: int = 0
+mut hits_beta: int = 0
+mut hits_cross: int = 0
+
+spec "2zht: parallel avra_capture_stdout windows don't cross-contaminate" {
+    then "two spawned captures each see only their own marker" {
+        hits_alpha = 0
+        hits_beta = 0
+        hits_cross = 0
+        let a = spawn {
+            let out = avra_capture_stdout(() -> println("alpha"))
+            if out.contains("alpha") { hits_alpha = hits_alpha + 1 }
+            if out.contains("beta") { hits_cross = hits_cross + 1 }
+            0
+        }
+        let b = spawn {
+            let out = avra_capture_stdout(() -> println("beta"))
+            if out.contains("beta") { hits_beta = hits_beta + 1 }
+            if out.contains("alpha") { hits_cross = hits_cross + 1 }
+            0
+        }
+        a.await
+        b.await
+        hits_alpha == 1 && hits_beta == 1 && hits_cross == 0
+    }
+}

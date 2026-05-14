@@ -2770,28 +2770,37 @@ int64_t avra_shell_exec_status(const char* cmd) {
     return (int64_t)((status >> 8) & 0xff);
 }
 
+// Forward declared so avra_capture_stdout (above) and the test
+// capture API (below) share the same recursive mutex. Body lives in
+// the spec-test section below.
+extern pthread_mutex_t _capture_mutex;
+
 // vez6.4szi: in-process stdout capture. Replaces fixture tests that
 // fork bs2 to grep stdout. Redirects stdout to a tmpfile across the
 // closure invocation, then reads the file back as a string. tmpfile
 // chosen over pipe to avoid the 64KB buffer-fill deadlock when the
 // closure produces more output than a pipe can hold without a reader.
 //
-// Reentrant-safe-ish: the saved fd is local, so nested calls work as
-// long as each restores in LIFO order. Closure panics will leak the
-// redirect — that's acceptable for the test path; production code
-// shouldn't be capturing stdout this way.
+// Thread safety: serialized via the recursive _capture_mutex so two
+// spawned threads can't race on dup2(STDOUT_FILENO). Nested same-
+// thread captures still work (recursive). Closure panics leak the
+// redirect AND the mutex; production code shouldn't capture stdout
+// this way.
 const char* avra_capture_stdout(int64_t closure) {
+    pthread_mutex_lock(&_capture_mutex);
     fflush(stdout);
     int saved = dup(STDOUT_FILENO);
-    if (saved < 0) return "";
+    if (saved < 0) { pthread_mutex_unlock(&_capture_mutex); return ""; }
     FILE* tmp = tmpfile();
     if (!tmp) {
         close(saved);
+        pthread_mutex_unlock(&_capture_mutex);
         return "";
     }
     if (dup2(fileno(tmp), STDOUT_FILENO) < 0) {
         fclose(tmp);
         close(saved);
+        pthread_mutex_unlock(&_capture_mutex);
         return "";
     }
 
@@ -2801,16 +2810,17 @@ const char* avra_capture_stdout(int64_t closure) {
     dup2(saved, STDOUT_FILENO);
     close(saved);
 
-    if (fseek(tmp, 0, SEEK_END) != 0) { fclose(tmp); return ""; }
+    if (fseek(tmp, 0, SEEK_END) != 0) { fclose(tmp); pthread_mutex_unlock(&_capture_mutex); return ""; }
     long len = ftell(tmp);
-    if (len < 0) { fclose(tmp); return ""; }
-    if (fseek(tmp, 0, SEEK_SET) != 0) { fclose(tmp); return ""; }
+    if (len < 0) { fclose(tmp); pthread_mutex_unlock(&_capture_mutex); return ""; }
+    if (fseek(tmp, 0, SEEK_SET) != 0) { fclose(tmp); pthread_mutex_unlock(&_capture_mutex); return ""; }
 
     char* buf = (char*)malloc((size_t)len + 1);
-    if (!buf) { fclose(tmp); return ""; }
+    if (!buf) { fclose(tmp); pthread_mutex_unlock(&_capture_mutex); return ""; }
     size_t n = fread(buf, 1, (size_t)len, tmp);
     buf[n] = '\0';
     fclose(tmp);
+    pthread_mutex_unlock(&_capture_mutex);
     return buf;
 }
 
@@ -3444,9 +3454,25 @@ const char* avra_format_location(const char* file, int64_t line) {
     return result;
 }
 
-// Forward declare capture state (used by test flush + capture)
-static pthread_mutex_t _capture_mutex = PTHREAD_MUTEX_INITIALIZER;
+// Forward declare capture state (used by test flush + capture).
+// Recursive so a thread can do nested avra_capture_stdout(closure)
+// calls (the spec/given/then capture_stdout_test exercises this).
+// Across threads it serializes — only one capture window at a time;
+// other threads block at the lock boundary rather than leaking their
+// stdout into the capturing thread's tmpfile.
+// Defined non-static so avra_capture_stdout (forward-declared above)
+// shares the same mutex.
+pthread_mutex_t _capture_mutex;
 static int _capture_fd_backup = -1;
+
+__attribute__((constructor))
+static void _capture_mutex_init(void) {
+    pthread_mutexattr_t attr;
+    pthread_mutexattr_init(&attr);
+    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+    pthread_mutex_init(&_capture_mutex, &attr);
+    pthread_mutexattr_destroy(&attr);
+}
 
 // ── Spec test runtime: state primitives ──
 // Rendering moved to Avra (features/spec_test/reporter.av) — this
