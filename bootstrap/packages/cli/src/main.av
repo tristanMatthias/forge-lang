@@ -2318,69 +2318,80 @@ fn run_test_shard_command() {
     avra_process_exit(exit_code)
 }
 
-// 05yc: per-file test orchestrator. Each `_test.av` becomes its own
-// shard: own BuildInputs (unique unit_name), own cache slot, own
-// linked binary. Forks `bs2 _test_shard <path>` per shard so each
-// compile + run lives in its own process; dispatches them in
-// parallel via spawn_pool_async (existing infra from
-// `bs2 build --per_module`).
+// 05yc: per-file test orchestrator. The whole pipeline is three
+// steps the reader can scan in one screen:
 //
-// vs the bundled path: this trades the @std/* parse-once savings for
-// (a) per-shard cache granularity — one test edit invalidates one
-// shard, not the whole 317-test bundle; (b) process-level crash
-// isolation — a segfault in one shard doesn't take the suite down;
-// (c) N-way parallelism on cold compiles. With AVRA_USE_METADATA=1
-// each shard subprocess consumes @std as metadata stubs, keeping
-// per-shard memory bounded (the prereq 0qmm step 1 shipped).
+//   1. prepare_test_run — pull config + env from the world once
+//   2. dispatch_shards  — fan out `spawn { run_shard }`, jobs-capped
+//   3. aggregate_shard_logs — read each log, sum the [shard-summary] line
+//
+// Each `_test.av` runs in its own subprocess (`bs2 _test_shard <path>`),
+// so a segfault in one shard doesn't touch the rest, and per-shard
+// cache slots invalidate granularly when one file changes.
 fn run_per_file_test_command(project_dir: string, accepted_paths: List<string>, args: TestArgs) -> int {
     let t_start = avra_uptime_ms()
-    let compiler_path = if avra_process_env_get("AVRA_COMPILER") != "" {
-        avra_process_env_get("AVRA_COMPILER")
-    } else {
-        "${project_dir}/build/bs2"
-    }
+    let cx = prepare_test_run(project_dir, args)
+    let shards = plan_shards(cx, accepted_paths)
+
+    dispatch_shards(shards, cx.jobs)
+    retry_jetsam_killed(shards)
+
+    aggregate_shard_logs(shards, t_start)
+}
+
+// One unit of test work. Built once during planning; every later
+// step (dispatch, retry, aggregate) reads from this struct only —
+// the orchestrator never re-derives slug/log paths.
+type Shard = {
+    path: string,      // full path to the *_test.av source
+    slug: string,      // basename without extension; cache + log key
+    log_path: string,  // where the shard's stdout/stderr land
+    cmd: string,       // fully-formed `env … bs2 _test_shard … > log` line
+}
+
+// Shared knobs prepared once per `avra test` invocation. env_prefix
+// is the per-shard environment, baked at startup so dispatch_shards
+// just concatenates per-shard fields onto it.
+type RunCtx = {
+    log_dir: string,
+    compiler_path: string,
+    env_prefix: string,
+    filter_arg: string,
+    want_meta: bool,
+    jobs: int,
+}
+
+// Read env vars, resolve the compiler, prepare the log dir, kick off
+// the @std/* pre-build (so each shard's metadata-fast-path is ready),
+// pre-compute the @std source listing, and bake all of that into the
+// per-shard env prefix. Done once — every shard then just appends its
+// own AVRA_LIB_PKG_ROOT='<slug>' and runs.
+//
+// fxwn: library mode is the default — the full per-file suite goes
+// 121s → 11s warm (10.7x) because expand_macro_test and friends stop
+// paying 10s × N for their inline bs2 compiles. Set
+// AVRA_USE_METADATA_LIB=0 (or AVRA_SKIP_PREBUILD=1) to opt out.
+fn prepare_test_run(project_dir: string, args: TestArgs) -> RunCtx {
+    let env_compiler = avra_process_env_get("AVRA_COMPILER")
+    let compiler_path = if env_compiler != "" { env_compiler } else { "${project_dir}/build/bs2" }
     let env_jobs = avra_process_env_get("AVRA_JOBS")
     let jobs = if env_jobs != "" { avra_parse_int(env_jobs) } else { 8 }
     let log_dir = "${project_dir}/build/test_shards"
     avra_shell_exec("rm -rf '${log_dir}' && mkdir -p '${log_dir}'")
 
-    // P6 library-mode: pre-build every workspace @std/* package as
-    // a library so each package's .meta.bin (with GenericBodies from
-    // P3+P4+P5 + InherentImpls from bd8n) + .o cache slot is fresh
-    // before shards dispatch.
+    // P6 library-mode pre-build. Each @std/* package's .meta.bin +
+    // .o is freshened before shards dispatch so AVRA_USE_METADATA=1
+    // can link against pre-built producer objects (paired flag —
+    // metadata-only shards inline nothing for @std/*).
     //
-    // After pre-build, collect each producer's realobj.o path into
-    // AVRA_LIB_OBJS (6owa) so per-shard link commands can resolve
-    // the mangled call sites AVRA_USE_METADATA=1 exposes.
-    //
-    // Opt-out via AVRA_SKIP_PREBUILD=1 (also disables the fast-path).
-    // AVRA_USE_METADATA=1 + AVRA_LIB_OBJS are paired: shards under
-    // the metadata fast-path see only extern decls for @std/*, so
-    // they need to link against the pre-built producer .o files. In
-    // legacy mode (no AVRA_USE_METADATA), shards inline @std/* into
-    // their own .o — adding AVRA_LIB_OBJS would produce duplicate
-    // symbols. The pair flips together.
-    //
-    // fxwn: library mode is the default now. The full per-file suite
-    // goes from 121s → 11s warm (10.7x) because expand_macro_test
-    // and friends no longer pay 10s × N for their inline bs2 compiles.
-    // Set AVRA_USE_METADATA_LIB=0 (or AVRA_SKIP_PREBUILD=1) to opt back
-    // to the legacy whole-program path.
-    let meta_env = avra_process_env_get("AVRA_USE_METADATA_LIB")
-    let want_meta = meta_env != "0"
+    // Serial (jobs=1) because workspace packages with [dependencies]
+    // sub-build their own deps; concurrent outer+inner runs would
+    // race on the same per-dep cache slot. Topo-sort follow-up
+    // tracked separately.
+    let want_meta = avra_process_env_get("AVRA_USE_METADATA_LIB") != "0"
     let skip_prebuild = avra_process_env_get("AVRA_SKIP_PREBUILD") != ""
     mut lib_objs_env = ""
     if want_meta && !skip_prebuild {
-        // Serialize the pre-build (jobs=1) until proper topo-sort
-        // lands: packages with [dependencies] (e.g. @std/avrac → lsp,
-        // cli, json, ...) run a sub-pre-build of their own deps via
-        // run_build_command's pre_build_path_deps. Dispatching the
-        // outer + inner concurrently writes to the same per-dep
-        // cache slot from multiple bs2 processes — produces
-        // truncated unit.ll output, blocks the metadata fast-path.
-        // Serial dispatch is correct (deps before dependents) at a
-        // small wall-clock cost. Proper topo-sort follow-up tracked
-        // separately.
         let pb_rc = pre_build_workspace_std_packages(project_dir, compiler_path, jobs)
         if pb_rc != 0 {
             eprintln("[per-file] pre-build of @std/* libs failed (rc=${string(pb_rc)}) — disabling metadata fast-path for this run")
@@ -2388,143 +2399,128 @@ fn run_per_file_test_command(project_dir: string, accepted_paths: List<string>, 
             lib_objs_env = collect_workspace_lib_objs(project_dir)
         }
     }
-    let use_meta = if want_meta { "AVRA_USE_METADATA=1 " } else { "" }
-    let lib_env = if lib_objs_env == "" { "" } else { "AVRA_LIB_OBJS='${lib_objs_env}' " }
 
-    // Pre-compute the @std/avrac source listing ONCE. Each shard's
-    // make_test_inputs() otherwise forks `find` to enumerate the same
-    // ~275 .av files (~7ms × 451 = ~3s of CPU). Stash the result in
-    // a temp file and propagate the path via AVRA_STD_LISTING_FILE
-    // so shards skip the find.
-    let std_root_for_listing = find_packages_dir(project_dir) + "std-avrac/src"
+    // Pre-compute the @std source listing ONCE. Each shard's
+    // make_test_inputs() otherwise forks `find` over the same ~275
+    // files — 7ms × 451 ≈ 3s of CPU saved.
+    let std_root = find_packages_dir(project_dir) + "std-avrac/src"
     let listing_file = "${log_dir}/std-listing.txt"
-    avra_shell_exec("find '${std_root_for_listing}' -name '*.av' -type f 2>/dev/null | sort > '${listing_file}'")
-    let listing_env = "AVRA_STD_LISTING_FILE='${listing_file}' "
-    // diagnose.sh inside test shards must NOT re-run ensure_bs2 — the
-    // orchestrator already has bs2 current, and 10 concurrent rebuild
-    // attempts from parallel shards trigger jetsam mass-kills (the 2-4
-    // 'macro returning quote stmt' cold-rebuild flakies were caused
-    // by this). The env var short-circuits ensure_bs2 inside shards.
-    let skip_bs2_env = "AVRA_SKIP_ENSURE_BS2=1 "
+    avra_shell_exec("find '${std_root}' -name '*.av' -type f 2>/dev/null | sort > '${listing_file}'")
 
-    // Build per-shard command list. Each is a self-contained
-    // `bs2 _test_shard <path>` redirecting its full stdio to a
-    // shard-specific log file the orchestrator parses after the
-    // pool completes. Filter is propagated so each child has the
-    // same TestArgs the user invoked.
-    mut cmds: List<string> = []
-    mut slugs: List<string> = []
+    // Bake the per-shard env once. AVRA_SKIP_ENSURE_BS2=1 stops the
+    // diagnose.sh inside shards from re-running the rebuild check
+    // (10 concurrent rebuilds triggered jetsam mass-kills before).
+    let env_prefix =
+        (if want_meta { "AVRA_USE_METADATA=1 " } else { "" }) +
+        (if lib_objs_env == "" { "" } else { "AVRA_LIB_OBJS='${lib_objs_env}' " }) +
+        "AVRA_STD_LISTING_FILE='${listing_file}' " +
+        "AVRA_SKIP_ENSURE_BS2=1 "
+
     let filter_arg = if args.filter == "" { "" } else { " --filter '${args.filter}'" }
-    mut i = 0
-    while i < accepted_paths.length {
-        let path = accepted_paths[i]
-        let slug = basename_no_ext(path)
-        // Per-shard AVRA_LIB_PKG_ROOT: the test's basename becomes
-        // the codegen ownership prefix so emit_release_bodies emits
-        // only the TEST's own __release_<Type> fns. @std/* release
-        // fns belong to their producer .o (linked via AVRA_LIB_OBJS).
-        // The resolver wraps the test file in Module(slug, body) so
-        // its fns end up qualified as `<slug>::*` — matches the
-        // root we set here, so the test's own bodies emit.
-        let shard_root = if want_meta { "AVRA_LIB_PKG_ROOT='${slug}' " } else { "" }
-        cmds = cmds.push("${use_meta}${lib_env}${listing_env}${skip_bs2_env}${shard_root}'${compiler_path}' _test_shard '${path}'${filter_arg} > '${log_dir}/${slug}.log' 2>&1")
-        slugs = slugs.push(slug)
-        i = i + 1
-    }
 
-    // Test runner doesn't poll .running / .done markers — pass false
-    // so dispatch.sh skips the per-shard touch+rm fork chain that the
-    // build-pipeline progress UI relies on.
-    let pool_handle = spawn_pool_async_with_markers(cmds, slugs, jobs, log_dir, false)
-    if pool_handle < 0 {
-        eprintln("[per-file] pool spawn failed — falling back to sync pool_run")
-        let rc = pool_run(cmds, jobs)
-        return if rc == 0 { aggregate_shard_logs(log_dir, slugs, t_start, 0) } else { 1 }
+    RunCtx {
+        log_dir: log_dir,
+        compiler_path: compiler_path,
+        env_prefix: env_prefix,
+        filter_arg: filter_arg,
+        want_meta: want_meta,
+        jobs: jobs,
     }
-    // Block on the pool. Future: render a TTY progress bar like
-    // run_per_mod_with_progress does (count done markers, list
-    // running slugs). Sequential blocking keeps the first cut
-    // simple — the speed win is the parallelism itself.
-    let final_json = avra_process_wait(pool_handle)
-    let pool_rc = pool_extract_rc(final_json)
-    // Cold-rebuild memory-pressure retry: on cold runs (every shard
-    // recompiles, peak RSS ~3GB across 8 workers), macOS jetsam can
-    // SIGKILL bs2 instances before they produce any output. Those
-    // shards end up with empty log files. Retry them serially —
-    // sequential cold compile fits comfortably in memory, and the
-    // shards that survived the parallel batch warm the @std cache
-    // for the retries.
-    let retry_count = retry_empty_shards(log_dir, slugs, cmds)
-    if retry_count > 0 {
-        eprintln("[per-file] retried ${string(retry_count)} jetsam-killed shard(s) (jobs=2)")
-    }
-    aggregate_shard_logs(log_dir, slugs, t_start, pool_rc)
 }
 
-// Re-run shards whose log files are empty (typically jetsam-killed
-// during cold parallel rebuild). Uses pool_run with jobs=2 — full
-// 8-way parallel risks the same jetsam mass-kill that left these
-// shards empty in the first place, but 2-way fits comfortably in
-// memory (peak ~800MB per cold compile × 2 = 1.6GB) and is ~4x
-// faster than serial.
-//
-// On the small set of legit jetsam survivors this should clear them
-// in seconds rather than tens of seconds; cold rebuild after a
-// @std touch went from 225s serial-retry → ~70s with jobs=2.
-fn retry_empty_shards(log_dir: string, slugs: List<string>, cmds: List<string>) -> int {
-    mut retry_cmds: List<string> = []
-    mut i = 0
-    while i < slugs.length {
-        let slug = slugs[i]
-        let log_path = "${log_dir}/${slug}.log"
-        let needs_retry = if avra_selfhost_file_exists(log_path) == 1 {
-            avra_selfhost_read_file(log_path) == ""
-        } else {
-            true
-        }
-        if needs_retry { retry_cmds = retry_cmds.push(cmds[i]) }
-        i = i + 1
+// Build a Shard per test file. Each shard's command bakes the
+// per-slug AVRA_LIB_PKG_ROOT (codegen ownership prefix — only the
+// test's own __release_<Type> fns emit; @std/* fns belong to the
+// pre-built producer .o files linked via AVRA_LIB_OBJS) and
+// redirects stdio to its log file.
+fn plan_shards(cx: RunCtx, paths: List<string>) -> List<Shard> {
+    mut out: List<Shard> = []
+    for p in paths {
+        let slug = basename_no_ext(p)
+        let log_path = "${cx.log_dir}/${slug}.log"
+        let pkg_root = if cx.want_meta { "AVRA_LIB_PKG_ROOT='${slug}' " } else { "" }
+        let cmd = "${cx.env_prefix}${pkg_root}'${cx.compiler_path}' _test_shard '${p}'${cx.filter_arg} > '${log_path}' 2>&1"
+        out = out.push(Shard { path: p, slug: slug, log_path: log_path, cmd: cmd })
     }
-    if retry_cmds.length == 0 { return 0 }
-    let _ = pool_run(retry_cmds, 2)
-    retry_cmds.length
+    out
+}
+
+// Fan out shards via `spawn { }`, capping concurrency at `jobs` by
+// chunking. Each spawn body shells out to `bs2 _test_shard <path>`
+// — that subprocess writes its own log file, so the spawn's return
+// value isn't load-bearing.
+//
+// Chunked dispatch trades the FIFO-semaphore any-finish-wakeup
+// behaviour for a slightly slower straggler tail. On the warm
+// suite (similar-sized shards, jobs=8) drift is negligible; a
+// proper bounded-channel queue is the right cure if heterogeneous
+// shards push the tail noticeably.
+fn dispatch_shards(shards: List<Shard>, jobs: int) {
+    mut start = 0
+    while start < shards.length {
+        let end = if start + jobs > shards.length { shards.length } else { start + jobs }
+        mut handles: List<int> = []
+        mut k = start
+        while k < end {
+            let cmd = shards[k].cmd
+            let h = spawn {
+                let _ = avra_shell_exec(cmd)
+                0
+            }
+            handles = handles.push(h)
+            k = k + 1
+        }
+        for h in handles { let _ = h.await }
+        start = end
+    }
+}
+
+// Cold-rebuild jetsam recovery: any shard whose log is empty got
+// SIGKILL'd before producing output. The surviving shards have
+// already warmed the @std cache, so we redispatch the victims at
+// jobs=2 — peak RSS ~1.6GB fits comfortably while still being
+// ~4x faster than serial.
+fn retry_jetsam_killed(shards: List<Shard>) {
+    mut victims: List<Shard> = []
+    for s in shards {
+        let alive = avra_selfhost_file_exists(s.log_path) == 1 && avra_selfhost_read_file(s.log_path) != ""
+        if !alive { victims = victims.push(s) }
+    }
+    if victims.length == 0 { return }
+    eprintln("[per-file] retrying ${string(victims.length)} jetsam-killed shard(s) (jobs=2)")
+    dispatch_shards(victims, 2)
 }
 
 // Walk each shard's log file, print it verbatim (preserving per-shard
 // output the user expects), parse the `[shard-summary]` line for the
 // aggregate counts, and render the unified pass/fail summary. Shards
 // whose summary line is missing count as a compile/run failure.
-fn aggregate_shard_logs(log_dir: string, slugs: List<string>, t_start: int, pool_rc: int) -> int {
+fn aggregate_shard_logs(shards: List<Shard>, t_start: int) -> int {
     mut sum_pass = 0
     mut sum_fail = 0
     mut sum_total = 0
     mut shard_failures = 0
-    mut i = 0
-    while i < slugs.length {
-        let slug = slugs[i]
-        let log_path = "${log_dir}/${slug}.log"
-        if !avra_selfhost_file_exists(log_path) {
+    for s in shards {
+        if avra_selfhost_file_exists(s.log_path) != 1 {
             shard_failures = shard_failures + 1
-            eprintln("[shard ${slug}] no log produced (compile likely failed before stdout)")
-            i = i + 1
+            eprintln("[shard ${s.slug}] no log produced (compile likely failed before stdout)")
             continue
         }
-        let out = avra_selfhost_read_file(log_path)
+        let out = avra_selfhost_read_file(s.log_path)
         println(out)
-        let s = parse_shard_summary(out)
-        if s.total == 0 && !out.contains("No tests ran") {
+        let parsed = parse_shard_summary(out)
+        if parsed.total == 0 && !out.contains("No tests ran") {
             shard_failures = shard_failures + 1
         }
-        sum_pass = sum_pass + s.pass
-        sum_fail = sum_fail + s.fail
-        sum_total = sum_total + s.total
-        i = i + 1
+        sum_pass = sum_pass + parsed.pass
+        sum_fail = sum_fail + parsed.fail
+        sum_total = sum_total + parsed.total
     }
     let elapsed = avra_uptime_ms() - t_start
     let elapsed_s = elapsed / 1000
     let elapsed_tenths = (elapsed / 100) - (elapsed_s * 10)
     let summary = "${string(sum_pass)}/${string(sum_total)} tests passed in ${string(elapsed_s)}.${string(elapsed_tenths)}s"
-    if sum_fail > 0 || shard_failures > 0 || pool_rc != 0 {
+    if sum_fail > 0 || shard_failures > 0 {
         let shard_note = if shard_failures > 0 { ", ${string(shard_failures)} shard(s) failed to compile/run" } else { "" }
         println("\x1b[31m\x1b[1m${summary}\x1b[0m \x1b[31m(${string(sum_fail)} failed${shard_note})\x1b[0m")
         return 1
