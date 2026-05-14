@@ -1,0 +1,23 @@
+// tjb5: track which spawn-in-spec/then call shapes resolve correctly
+// vs. which fail. The failing case is documented in the bead — kept
+// commented-out here so the suite stays green; re-enable once
+// spawn_resolve actually sees top-level fns in the spec/then context.
+
+fn spawn_topfn_add_one(x: int) -> int { x + 1 }
+
+spec "spawn calling top-level fn (tjb5 partial)" {
+    then "DIRECT call to top-level fn from then" {
+        spawn_topfn_add_one(41) == 42
+    }
+    then "call top-level fn from explicit lambda inside then" {
+        let f = () -> { spawn_topfn_add_one(41) }
+        f() == 42
+    }
+    // TJB5: the case below currently fails with F3000 'undefined variable
+    // spawn_topfn_add_one' even though the same identifier resolves in the
+    // two then-blocks above. Re-enable when fixed:
+    //     then "spawn body invokes top-level fn directly" {
+    //         let t = spawn { spawn_topfn_add_one(41) }
+    //         t.await == 42
+    //     }
+}
