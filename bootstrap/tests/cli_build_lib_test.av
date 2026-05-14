@@ -6,15 +6,16 @@ fn bs2_path() -> string {
     avra_shell_exec("pwd").trim() + "/build/bs2"
 }
 
+// Single shell invocation does the entire fixture setup — going
+// through five fork+execs per spec dominated this shard.
 fn setup_lib_project() -> string {
     let project = "/tmp/avra_build_lib_fixture_split/"
-    avra_shell_exec("rm -rf " + project)
-    avra_shell_exec("mkdir -p " + project + "build")
-    avra_shell_exec("ln -s " + bs2_path() + " " + project + "build/bs2")
-    avra_shell_exec("printf '[package]\nname = \"lib-fixture\"\nversion = \"0.1.0\"\n[[lib]]\nname = \"lib-fixture\"\npath = \"lib.av\"\n' > " + project + "avra.toml")
-    let entry = "id"
-    let body = "export fn " + entry + "(x: int) -> int { x }"
-    avra_shell_exec("printf '%s\\n' '" + body + "' > " + project + "lib.av")
+    avra_shell_exec(
+        "rm -rf " + project + " && " +
+        "mkdir -p " + project + "build && " +
+        "ln -s " + bs2_path() + " " + project + "build/bs2 && " +
+        "printf '[package]\nname = \"lib-fixture\"\nversion = \"0.1.0\"\n[[lib]]\nname = \"lib-fixture\"\npath = \"lib.av\"\n' > " + project + "avra.toml && " +
+        "printf 'export fn id(x: int) -> int { x }\\n' > " + project + "lib.av")
     project
 }
 

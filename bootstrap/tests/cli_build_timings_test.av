@@ -8,13 +8,12 @@ fn bs2_path() -> string {
 
 fn setup_project() -> string {
     let project = "/tmp/avra_build_timings_fixture/"
-    avra_shell_exec("rm -rf " + project)
-    avra_shell_exec("mkdir -p " + project + "build")
-    avra_shell_exec("ln -s " + bs2_path() + " " + project + "build/bs2")
-    avra_shell_exec("printf '[package]\nname = \"flags-fixture\"\nversion = \"0.1.0\"\n[[bin]]\nname = \"flags-fixture\"\npath = \"main.av\"\n' > " + project + "avra.toml")
-    let entry = "main"
-    let body = "fn " + entry + "() -> int { 0 }"
-    avra_shell_exec("printf '%s\\n' '" + body + "' > " + project + entry + ".av")
+    avra_shell_exec(
+        "rm -rf " + project + " && " +
+        "mkdir -p " + project + "build && " +
+        "ln -s " + bs2_path() + " " + project + "build/bs2 && " +
+        "printf '[package]\nname = \"flags-fixture\"\nversion = \"0.1.0\"\n[[bin]]\nname = \"flags-fixture\"\npath = \"main.av\"\n' > " + project + "avra.toml && " +
+        "printf '" + "fn " + "main() -> int { 0 }\\n' > " + project + "main.av")
     project
 }
 
