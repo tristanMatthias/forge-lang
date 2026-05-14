@@ -1,6 +1,7 @@
 // vez6.6.5/ident — Expr-typed comptime fn folds to runtime Expr (ident).
 
 extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{cached_fixture_run}
 
 const MAIN_HEADER: string = "fn " + "main()"
 
@@ -12,7 +13,7 @@ fn write_temp(path: string, source: string) -> string {
 fn run_capture(source: string) -> string {
     let path = "/tmp/avra_expand_macro_expr_ident_test.av"
     write_temp(path, source)
-    avra_shell_exec("bash scripts/diagnose.sh --run '${path}' 2>&1 || true")
+    cached_fixture_run(path)
 }
 
 spec "vez6.6.5: Expr-typed comptime fn folds to runtime Expr value (ident)" {

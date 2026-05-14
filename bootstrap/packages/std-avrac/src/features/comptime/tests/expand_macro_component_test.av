@@ -3,6 +3,7 @@
 // Split out of expand_macro_test.av for shard-parallel speed.
 
 extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{cached_fixture_expand}
 
 const MAIN_HEADER: string = "fn " + "main()"
 
@@ -14,7 +15,7 @@ fn write_temp(path: string, source: string) -> string {
 fn run_expand_e2e(source: string) -> string {
     let path = "/tmp/avra_expand_macro_component_test.av"
     write_temp(path, source)
-    avra_shell_exec("./build/bs2 expand '${path}' 2>&1 || true")
+    cached_fixture_expand(path)
 }
 
 spec "vez6.8.5: ComponentDef-level @expand fires on each ComponentBlock instance" {

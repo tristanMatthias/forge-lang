@@ -6,6 +6,7 @@
 // Edge cases (vez6.7.3) are in children_autopush_edges_test.av.
 
 extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{cached_fixture_run}
 
 const MAIN_HEADER: string = "fn " + "main()"
 
@@ -17,7 +18,7 @@ fn write_temp(path: string, source: string) -> string {
 fn run_program(source: string) -> string {
     let path = "/tmp/avra_children_autopush_test.av"
     write_temp(path, source)
-    avra_shell_exec("bash scripts/diagnose.sh --run '${path}' 2>&1")
+    cached_fixture_run(path)
 }
 
 const DOLLAR: string = "$"
