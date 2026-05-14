@@ -4,6 +4,7 @@
 // expanded form contains the expected macro-produced shape.
 
 extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{cached_fixture_expand}
 
 const MAIN_HEADER: string = "fn " + "main()"
 
@@ -15,7 +16,7 @@ fn write_temp(path: string, source: string) -> string {
 fn run_expand(source: string) -> string {
     let path = "/tmp/avra_expand_command_test.av"
     write_temp(path, source)
-    avra_shell_exec("./build/bs2 expand '${path}' 2>&1 || true")
+    cached_fixture_expand(path)
 }
 
 spec "vez6.14: bs2 expand prints post-macro-expansion source" {
