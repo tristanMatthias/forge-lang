@@ -1,44 +1,78 @@
-// nce6 phase A: prove `avra_isolated_run_int` runs a closure in a
-// forked subprocess, returns its int via pipe, preserves captures
-// via fork's COW, and survives child crashes.
-//
-// Lives under @std/avrac/core/tests (rather than @std/process/tests)
-// because the test runner already bundles @std/avrac universally;
-// @std/process bundling is a follow-up.
+// nce6 phase A→B: `isolated_*` returns Result<T, IsolatedError>.
+// The crash path is a typed Err variant, not a sentinel value —
+// matches Rust `Result<T, io::Error>`, Go `(T, error)`, Swift
+// `throws` etc. No magic numbers leaking into user code.
 
-extern fn avra_isolated_run_int(body: fn() -> int) -> int
-extern fn avra_isolated_crash_sentinel() -> int
+extern fn avra_isolated_run(body: fn() -> bytes) -> bytes
+extern fn avra_int_to_bytes_le(n: int) -> bytes
+extern fn avra_bytes_to_int_le(b: bytes, offset: int) -> int
+extern fn avra_bytes_from_string(s: string) -> bytes
+extern fn avra_string_from_bytes(b: bytes) -> string
+extern fn avra_bytes_slice(b: bytes, start: int, end: int) -> bytes
+extern fn avra_bytes_empty() -> bytes
 extern fn abort() -> int
 
-spec "isolated_int (nce6.A)" {
-    then "happy path: closure runs in child, parent reads int via pipe" {
-        let r = avra_isolated_run_int(() -> 41 + 1)
-        r == 42
+// Locally re-declared so this test bundle doesn't depend on
+// @std/process being in the assembled program. Once the test
+// runner always pulls @std/process into bundled compiles, this
+// file can drop the duplicate type + helpers.
+enum LocalIsolatedError {
+    Crashed,
+    ForkFailed,
+    PipeFailed,
+}
+
+fn local_isolated_int(body: fn() -> int) -> Result<int, LocalIsolatedError> {
+    let raw = avra_isolated_run(() -> avra_int_to_bytes_le(body()))
+    if raw.length < 16 { return Result.Err(LocalIsolatedError.PipeFailed) }
+    let status = avra_bytes_to_int_le(raw, 0)
+    if status == 0 {
+        Result.Ok(avra_bytes_to_int_le(raw, 16))
+    } else if status == 1 { Result.Err(LocalIsolatedError.Crashed) }
+    else if status == 2 { Result.Err(LocalIsolatedError.ForkFailed) }
+    else { Result.Err(LocalIsolatedError.PipeFailed) }
+}
+
+spec "isolated_int returns Result (nce6.A→B)" {
+    then "happy path: Ok(value) from a child closure" {
+        match local_isolated_int(() -> 41 + 1) {
+            .Ok(n) -> n == 42
+            .Err(_) -> false
+        }
     }
-    then "captures: fork's COW carries the closure's captured env" {
+    then "captures cross the fork boundary via COW" {
         let captured = 100
-        let r = avra_isolated_run_int(() -> captured * 2)
-        r == 200
+        match local_isolated_int(() -> captured * 2) {
+            .Ok(n) -> n == 200
+            .Err(_) -> false
+        }
     }
-    then "multiple bindings, mixed arithmetic" {
+    then "deeper captures: multiple bindings + mixed ops" {
         let a = 10
         let b = 7
-        let r = avra_isolated_run_int(() -> a * b + 3)
-        r == 73
+        match local_isolated_int(() -> a * b + 3) {
+            .Ok(n) -> n == 73
+            .Err(_) -> false
+        }
     }
-    then "child crash returns the sentinel, parent stays alive" {
-        let bad = avra_isolated_run_int(() -> {
+    then "child crash: Err(Crashed), parent stays alive" {
+        let r = local_isolated_int(() -> {
             abort()
             0
         })
-        bad == avra_isolated_crash_sentinel()
+        match r {
+            .Ok(_) -> false
+            .Err(e) -> match e { .Crashed -> true, _ -> false }
+        }
     }
     then "parent recovers after a child crash" {
-        let _ = avra_isolated_run_int(() -> {
+        let _ = local_isolated_int(() -> {
             abort()
             0
         })
-        let good = avra_isolated_run_int(() -> 7 * 6)
-        good == 42
+        match local_isolated_int(() -> 7 * 6) {
+            .Ok(n) -> n == 42
+            .Err(_) -> false
+        }
     }
 }

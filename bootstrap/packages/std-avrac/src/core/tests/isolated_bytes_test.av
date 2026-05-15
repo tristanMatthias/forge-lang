@@ -1,0 +1,119 @@
+// nce6 phase B: bytes-payload variant. Struct round-trip through
+// fork+pipe+wait using a hand-rolled marshaler (the same code
+// `@marshal` will generate in Phase C). Result-shaped error path
+// — crash returns `Err(Crashed)`, never collides with an empty
+// payload.
+
+extern fn avra_isolated_run(body: fn() -> bytes) -> bytes
+extern fn avra_bytes_from_string(s: string) -> bytes
+extern fn avra_string_from_bytes(b: bytes) -> string
+extern fn avra_int_to_bytes_le(n: int) -> bytes
+extern fn avra_bytes_to_int_le(b: bytes, offset: int) -> int
+extern fn avra_bytes_concat(a: bytes, b: bytes) -> bytes
+extern fn avra_bytes_slice(b: bytes, start: int, end: int) -> bytes
+extern fn avra_bytes_empty() -> bytes
+extern fn abort() -> int
+
+enum LocalIsoErr {
+    Crashed,
+    ForkFailed,
+    PipeFailed,
+}
+
+fn local_isolated_bytes(body: fn() -> bytes) -> Result<bytes, LocalIsoErr> {
+    let raw = avra_isolated_run(body)
+    if raw.length < 16 { return Result.Err(LocalIsoErr.PipeFailed) }
+    let status = avra_bytes_to_int_le(raw, 0)
+    let len = avra_bytes_to_int_le(raw, 8)
+    if status == 0 {
+        if len == 0 { return Result.Ok(avra_bytes_empty()) }
+        Result.Ok(avra_bytes_slice(raw, 16, 16 + len))
+    } else if status == 1 { Result.Err(LocalIsoErr.Crashed) }
+    else if status == 2 { Result.Err(LocalIsoErr.ForkFailed) }
+    else { Result.Err(LocalIsoErr.PipeFailed) }
+}
+
+type TestUserBR = { id: int, name: string, admin: bool }
+
+fn marshal_test_user(u: TestUserBR) -> bytes {
+    let id_bytes = avra_int_to_bytes_le(u.id)
+    let name_bytes = avra_bytes_from_string(u.name)
+    let name_len = avra_int_to_bytes_le(name_bytes.length)
+    let admin_byte = avra_int_to_bytes_le(if u.admin { 1 } else { 0 })
+    let buf1 = avra_bytes_concat(id_bytes, name_len)
+    let buf2 = avra_bytes_concat(buf1, name_bytes)
+    avra_bytes_concat(buf2, admin_byte)
+}
+
+fn unmarshal_test_user(b: bytes) -> TestUserBR {
+    let id = avra_bytes_to_int_le(b, 0)
+    let name_len = avra_bytes_to_int_le(b, 8)
+    let name_bytes = avra_bytes_slice(b, 16, 16 + name_len)
+    TestUserBR {
+        id: id,
+        name: avra_string_from_bytes(name_bytes),
+        admin: avra_bytes_to_int_le(b, 16 + name_len) != 0,
+    }
+}
+
+spec "isolated_bytes returns Result (nce6.B)" {
+    then "string payload round-trips through fork+pipe+wait" {
+        match local_isolated_bytes(() -> avra_bytes_from_string("hello from child")) {
+            .Ok(b) -> avra_string_from_bytes(b) == "hello from child"
+            .Err(_) -> false
+        }
+    }
+    then "captures cross the fork boundary via COW" {
+        let prefix = "child says:"
+        match local_isolated_bytes(() -> avra_bytes_from_string("${prefix} ok")) {
+            .Ok(b) -> avra_string_from_bytes(b) == "child says: ok"
+            .Err(_) -> false
+        }
+    }
+    then "struct round-trip: int + string + bool" {
+        let original = TestUserBR { id: 42, name: "alice", admin: true }
+        match local_isolated_bytes(() -> marshal_test_user(original)) {
+            .Ok(b) -> {
+                let recovered = unmarshal_test_user(b)
+                recovered.id == 42 && recovered.name == "alice" && recovered.admin
+            }
+            .Err(_) -> false
+        }
+    }
+    then "struct round-trip: empty string is well-formed" {
+        let original = TestUserBR { id: 7, name: "", admin: false }
+        match local_isolated_bytes(() -> marshal_test_user(original)) {
+            .Ok(b) -> {
+                let recovered = unmarshal_test_user(b)
+                recovered.id == 7 && recovered.name == "" && !recovered.admin
+            }
+            .Err(_) -> false
+        }
+    }
+    then "empty payload is OK, not crash" {
+        match local_isolated_bytes(() -> avra_bytes_empty()) {
+            .Ok(b) -> b.length == 0
+            .Err(_) -> false
+        }
+    }
+    then "child crash: Err(Crashed), parent stays alive" {
+        let r = local_isolated_bytes(() -> {
+            abort()
+            avra_bytes_empty()
+        })
+        match r {
+            .Ok(_) -> false
+            .Err(e) -> match e { .Crashed -> true, _ -> false }
+        }
+    }
+    then "parent recovers after child crash" {
+        let _ = local_isolated_bytes(() -> {
+            abort()
+            avra_bytes_empty()
+        })
+        match local_isolated_bytes(() -> avra_bytes_from_string("alive")) {
+            .Ok(b) -> avra_string_from_bytes(b) == "alive"
+            .Err(_) -> false
+        }
+    }
+}

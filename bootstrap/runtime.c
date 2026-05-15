@@ -3758,67 +3758,144 @@ int64_t avra_task_cancel(int64_t handle) {
 }
 
 // ── Process isolation ──
-// `isolated { body }` (Phase A): run a zero-arg closure in a forked
-// subprocess, return its int64 result. The child inherits parent's
-// memory via copy-on-write, so closure captures are preserved
-// without marshaling. Only the return value crosses the pipe.
+// `isolated_run(body)`: run a zero-arg closure that produces bytes
+// in a forked subprocess; return a status-framed bytes payload so
+// the parent can distinguish "ok with empty data" from "child
+// crashed". The child inherits parent memory via copy-on-write, so
+// closure captures travel for free — only the return value crosses
+// the IPC boundary.
 //
-// Crash-safe: if the child exits abnormally (signal / non-zero status),
-// the parent returns INT64_MIN as a sentinel. Future phases promote
-// this to `Task<Result<T, ProcessCrash>>` once marshaling lands.
+// Wire format the parent hands back to Avra-land:
+//
+//     [i64 status][i64 payload_len][payload_len bytes of data]
+//
+// status:
+//   0 = OK            (payload follows)
+//   1 = CRASH         (signal / non-zero exit; no payload)
+//   2 = FORK_FAILED   (fork(2) returned -1)
+//   3 = PIPE_FAILED   (pipe / short read; no payload)
+//
+// The stdlib wraps this into `Result<T, IsolatedError>` so callers
+// never see the framing or have to reason about sentinel values.
 
-#define AVRA_ISOLATED_CRASH_SENTINEL INT64_MIN
+#define AVRA_ISOLATED_STATUS_OK           0
+#define AVRA_ISOLATED_STATUS_CRASH        1
+#define AVRA_ISOLATED_STATUS_FORK_FAILED  2
+#define AVRA_ISOLATED_STATUS_PIPE_FAILED  3
 
-// Exposed so Avra callers can compare against the sentinel without
-// trying to write `INT64_MIN` as a literal — Avra's integer parser
-// rejects `-9223372036854775808` because it's lexed as `-(9223372036854775808)`
-// and the positive form is out of range.
-int64_t avra_isolated_crash_sentinel(void) {
-    return AVRA_ISOLATED_CRASH_SENTINEL;
+// Build a [status][len=0][] frame for an early failure path.
+static const char* avra_isolated_frame_err(int64_t status) {
+    char* r = avra_bytes_alloc(16);
+    char* d = avra_bytes_data(r);
+    int64_t s = status;
+    int64_t z = 0;
+    memcpy(d, &s, 8);
+    memcpy(d + 8, &z, 8);
+    return r;
 }
 
-int64_t avra_isolated_run_int(int64_t closure) {
+// ── Bytes ↔ int marshaling primitives ──
+//
+// Pure-i64 little-endian encode/decode used by the stdlib's
+// `isolated_int` and `isolated_string` wrappers (and any caller
+// hand-rolling a marshaler until `@marshal` lands). The runtime
+// owns this because Avra has no bit-shift over the bytes layer
+// today — a pure-Avra impl would burn 8 byte() reads + shifts per
+// int. Native is one memcpy.
+
+const char* avra_int_to_bytes_le(int64_t n) {
+    char* r = avra_bytes_alloc(8);
+    memcpy(avra_bytes_data(r), &n, 8);
+    return r;
+}
+
+int64_t avra_bytes_to_int_le(const char* b, int64_t offset) {
+    if (!b) return 0;
+    int64_t len = *(int64_t*)b;
+    if (offset < 0 || offset + 8 > len) return 0;
+    int64_t v = 0;
+    memcpy(&v, avra_bytes_data((char*)b) + offset, 8);
+    return v;
+}
+
+const char* avra_isolated_run(int64_t closure) {
     int pipefd[2];
-    if (pipe(pipefd) != 0) return AVRA_ISOLATED_CRASH_SENTINEL;
+    if (pipe(pipefd) != 0) return avra_isolated_frame_err(AVRA_ISOLATED_STATUS_PIPE_FAILED);
 
     pid_t pid = fork();
     if (pid < 0) {
         close(pipefd[0]);
         close(pipefd[1]);
-        return AVRA_ISOLATED_CRASH_SENTINEL;
+        return avra_isolated_frame_err(AVRA_ISOLATED_STATUS_FORK_FAILED);
     }
 
     if (pid == 0) {
-        // Child: COW copy of parent's memory. Run closure, ship the
-        // int64 result back through the pipe, exit cleanly. Any
-        // SIGSEGV here propagates out as WTERMSIG and the parent
-        // returns the sentinel; the rest of the orchestrator lives.
+        // Child: closure returns a bytes header ptr. Pipe out the
+        // length then the payload, exit cleanly. Any crash here is
+        // caught by the parent's waitpid status check.
         close(pipefd[0]);
         int64_t result = avra_closure_call_0(closure);
-        ssize_t n = write(pipefd[1], &result, sizeof(result));
+        const char* b = (const char*)(uintptr_t)result;
+        int64_t len = b ? *(int64_t*)b : 0;
+        ssize_t hn = write(pipefd[1], &len, sizeof(len));
+        ssize_t dn = 0;
+        if (hn == sizeof(len) && len > 0) {
+            dn = write(pipefd[1], avra_bytes_data((char*)b), (size_t)len);
+        }
         close(pipefd[1]);
-        _exit(n == sizeof(result) ? 0 : 1);
+        _exit((hn == sizeof(len) && dn == len) ? 0 : 1);
     }
 
-    // Parent: drain the pipe before waitpid so a child writing more
-    // than PIPE_BUF can't deadlock on a full buffer; with an int64
-    // payload that's safe today but keep the order disciplined.
+    // Parent: read length header, allocate the receiving bytes,
+    // drain the data. waitpid LAST so a child writing more than
+    // PIPE_BUF can't deadlock on a full pipe.
     close(pipefd[1]);
-    int64_t result = AVRA_ISOLATED_CRASH_SENTINEL;
-    ssize_t n = read(pipefd[0], &result, sizeof(result));
+    int64_t len = 0;
+    ssize_t hn = read(pipefd[0], &len, sizeof(len));
+    int header_ok = (hn == (ssize_t)sizeof(len) && len >= 0 && len <= ((int64_t)1 << 30));
+
+    // Drain payload into a scratch buffer (when the header was
+    // valid) so we can surface the right status after seeing the
+    // child's exit code: a short read on a crashed child is a
+    // crash, not a pipe failure.
+    char* scratch = (header_ok && len > 0) ? (char*)malloc((size_t)len) : NULL;
+    int short_read = 0;
+    if (header_ok && len > 0) {
+        int64_t got = 0;
+        while (got < len) {
+            ssize_t m = read(pipefd[0], scratch + got, (size_t)(len - got));
+            if (m <= 0) { short_read = 1; break; }
+            got += m;
+        }
+    }
     close(pipefd[0]);
 
     int status = 0;
-    if (waitpid(pid, &status, 0) < 0) {
-        return AVRA_ISOLATED_CRASH_SENTINEL;
+    int64_t wstat = (waitpid(pid, &status, 0) < 0) ? -1 : 0;
+    int crashed = (wstat < 0) || !WIFEXITED(status) || WEXITSTATUS(status) != 0;
+
+    // Order matters: a crashed child often produces a missing
+    // header or short read, but the *cause* is the crash. Report
+    // that first so callers don't see `PipeFailed` when the truth
+    // is `Crashed`.
+    if (crashed) {
+        if (scratch) free(scratch);
+        return avra_isolated_frame_err(AVRA_ISOLATED_STATUS_CRASH);
     }
-    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-        return AVRA_ISOLATED_CRASH_SENTINEL;
+    if (!header_ok || short_read) {
+        if (scratch) free(scratch);
+        return avra_isolated_frame_err(AVRA_ISOLATED_STATUS_PIPE_FAILED);
     }
-    if (n != (ssize_t)sizeof(result)) {
-        return AVRA_ISOLATED_CRASH_SENTINEL;
-    }
-    return result;
+
+    // Success: emit [status=OK][len][payload].
+    char* framed = avra_bytes_alloc(16 + len);
+    char* d = avra_bytes_data(framed);
+    int64_t s = AVRA_ISOLATED_STATUS_OK;
+    memcpy(d, &s, 8);
+    memcpy(d + 8, &len, 8);
+    if (len > 0) memcpy(d + 16, scratch, (size_t)len);
+    if (scratch) free(scratch);
+    return framed;
 }
 
 // Legacy join — kept for backward compat with existing tests.
