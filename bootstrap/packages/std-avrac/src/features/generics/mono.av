@@ -70,7 +70,8 @@ fn generic_struct_lookup(reg: GenericStructReg, name: string) -> GenericStructRe
 
 /// Concrete bindings for one set of type parameters at a call
 /// site. e.g. `T=int, E=string` for `f::<int, string>()`.
-enum TypeArgList { End, Node(param_name: string, concrete_vt: ValueType, next: TypeArgList) }
+// TypeArgList moved to core/ast.av so typeck can use the same shape
+// without a circular import on this module.
 
 /// Look up the concrete ValueType bound to a type parameter.
 /// Returns a placeholder `Struct(name)` when not found so the

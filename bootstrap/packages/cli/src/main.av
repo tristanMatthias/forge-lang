@@ -58,6 +58,7 @@ use @std.avrac.docs.{gen_stub_for_sym, gen_apply, GenStubResult}
 use @std.avrac.lang_gen.{render_lang_av, write_lang_av}
 use @std.avrac.indexer.{run_lsp_server, extract_project_syms_cached}
 use @std.avrac.pathutil.{basename_no_ext}
+use @std.avrac.list_ops.{list_map, list_filter, list_fold}
 use @std.avrac.parse.{parse_expression_source, parse_program_source, parse_program_source_at}
 use @std.avrac.core.{render_expr, render_stmt_list, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType, Stmt, StmtList, ParamList, Expr, sstmt_dummy, TypeParamList, ExprList}
 use @std.avrac.features.eval.{render_value, eval_expression_source, execute_program_source}
@@ -2331,8 +2332,7 @@ fn run_test_shard_command() {
 fn run_per_file_test_command(project_dir: string, accepted_paths: List<string>, args: TestArgs) -> int {
     let t_start = avra_uptime_ms()
     let cx = prepare_test_run(project_dir, args)
-    mut shards: List<Shard> = []
-    for p in accepted_paths { shards = shards.push(cx.shard_for(p)) }
+    let shards = list_map(accepted_paths, (p: string) -> cx.shard_for(p))
 
     dispatch_shards(shards, cx.jobs)
     retry_jetsam_killed(shards)
@@ -2520,8 +2520,7 @@ fn dispatch_shards(shards: List<Shard>, jobs: int) {
 // jobs=2 — peak RSS ~1.6GB fits comfortably while still being
 // ~4x faster than serial.
 fn retry_jetsam_killed(shards: List<Shard>) {
-    mut victims: List<Shard> = []
-    for s in shards { if !s.log_alive() { victims = victims.push(s) } }
+    let victims = list_filter(shards, (s: Shard) -> !s.log_alive())
     if victims.length == 0 { return }
     eprintln("[per-file] retrying ${string(victims.length)} jetsam-killed shard(s) (jobs=2)")
     dispatch_shards(victims, 2)
@@ -2531,17 +2530,16 @@ fn retry_jetsam_killed(shards: List<Shard>) {
 // output the user expects), parse the `[shard-summary]` line for the
 // aggregate counts, and render the unified pass/fail summary.
 fn aggregate_shard_logs(shards: List<Shard>, t_start: int) -> int {
-    mut totals = Totals { pass: 0, fail: 0, total: 0, shard_failures: 0 }
-    for s in shards {
+    let zero = Totals { pass: 0, fail: 0, total: 0, shard_failures: 0 }
+    let totals = list_fold(shards, zero, (acc: Totals, s: Shard) -> {
         if !s.log_alive() {
             eprintln("[shard ${s.slug}] no log produced (compile likely failed before stdout)")
-            totals = totals with { shard_failures: totals.shard_failures + 1 }
-            continue
+            return acc with { shard_failures: acc.shard_failures + 1 }
         }
         let out = s.read_log()
         println(out)
-        totals = totals.merge(out, parse_shard_summary(out))
-    }
+        acc.merge(out, parse_shard_summary(out))
+    })
     render_test_summary(totals, avra_uptime_ms() - t_start)
 }
 

@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.{BinOp, Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeList, ValueType, VariantList, WhenArmList, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, vtype_display, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_is_fn, vtype_is_unknown, vtype_list_elem, vtype_struct_name, vtype_tuple_at}
+use core.{BinOp, Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeArgList, TypeList, TypeParamList, ValueType, VariantList, WhenArmList, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, type_param_has, vtype_display, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_is_fn, vtype_is_unknown, vtype_list_elem, vtype_struct_name, vtype_tuple_at}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive}
@@ -57,8 +57,16 @@ fn type_pop_scope(env: TypeEntry, depth: int) -> TypeEntry {
 /// Per-fn metadata stored in FnTypeReg's `ord` list. Insertion order
 /// is preserved so rewrite_fn_ret_tys can re-resolve every entry's
 /// param/ret types deterministically.
+///
+/// `tp` is the generic type-parameter list (e.g. `<T, U>`). At every
+/// call site, typeck uses it to substitute T's in `ret_ty` from the
+/// concrete arg types — so `fn first<T>(xs: List<T>) -> T` returns
+/// `Int` (not the unresolved `T`) when called with a `List<int>`,
+/// letting downstream call chains and let-bindings carry the
+/// concrete type forward.
 type FnTypeMeta = {
     name: string,
+    tp: TypeParamList,
     params: ParamList,
     ret_ty: ValueType,
 }
@@ -94,10 +102,10 @@ fn fn_type_reg_new() -> FnTypeReg {
 /// Append (name, params, ret_ty) to `reg`. Mutates the map in place;
 /// returns a new FnTypeReg with the extended list. Map ptr is shared
 /// with the prior reg — see the `idx` field doc above.
-fn fn_type_reg_register(reg: FnTypeReg, name: string, params: ParamList, ret_ty: ValueType) -> FnTypeReg {
+fn fn_type_reg_register(reg: FnTypeReg, name: string, tp: TypeParamList, params: ParamList, ret_ty: ValueType) -> FnTypeReg {
     mut ord = reg.ord
     let new_idx = ord.length
-    ord.push(FnTypeMeta { name, params, ret_ty })
+    ord.push(FnTypeMeta { name, tp, params, ret_ty })
     avra_map_set_cstr(reg.idx, name, new_idx)
     FnTypeReg { ord, idx: reg.idx }
 }
@@ -112,6 +120,7 @@ fn fn_type_reg_register(reg: FnTypeReg, name: string, params: ParamList, ret_ty:
 /// re-traversed the registry 4–5 times.
 type FnTypeFound = {
     found: bool,
+    tp: TypeParamList,
     params: ParamList,
     ret_ty: ValueType,
 }
@@ -120,11 +129,11 @@ type FnTypeFound = {
 /// when the name is unregistered (params/ret_ty hold safe sentinels).
 fn fn_type_get(fns: FnTypeReg, name: string) -> FnTypeFound {
     if avra_map_has_cstr(fns.idx, name) == 0 {
-        return FnTypeFound { found: false, params: ParamList.End, ret_ty: ValueType.Unknown }
+        return FnTypeFound { found: false, tp: TypeParamList.End, params: ParamList.End, ret_ty: ValueType.Unknown }
     }
     let i = avra_map_get_cstr(fns.idx, name)
     let m = fns.ord[i]
-    FnTypeFound { found: true, params: m.params, ret_ty: m.ret_ty }
+    FnTypeFound { found: true, tp: m.tp, params: m.params, ret_ty: m.ret_ty }
 }
 
 
@@ -759,7 +768,7 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
                         let ctor_params = ParamList.Node("value", inner_ty, ParamList.End)
                         tc with {
                             newtypes: newtype_reg_register(tc.newtypes, name, inner_vt),
-                            fns: fn_type_reg_register(tc.fns, name, ctor_params, ValueType.Newtype(name, inner_ty, 0)),
+                            fns: fn_type_reg_register(tc.fns, name, TypeParamList.End, ctor_params, ValueType.Newtype(name, inner_ty, 0)),
                         }
                     }
                 }
@@ -783,13 +792,13 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
                         tc with { enums: enum_type_reg_register(tc.enums, name, variants) }
                     }
                 }
-                .Function(name, _, params, ret_vt, _) -> {
+                .Function(name, tp, params, ret_vt, _) -> {
                     let final_ret = if vtype_eq(ret_vt, .Void) { ValueType.Void } else { resolve_vtype(tc, ret_vt) }
-                    tc with { fns: fn_type_reg_register(tc.fns, name, params, final_ret) }
+                    tc with { fns: fn_type_reg_register(tc.fns, name, tp, params, final_ret) }
                 }
                 .ExternFn(name, params, ret_vt) -> {
                     let final_ret = if vtype_eq(ret_vt, .Void) { ValueType.Void } else { resolve_vtype(tc, ret_vt) }
-                    tc with { fns: fn_type_reg_register(tc.fns, name, params, final_ret) }
+                    tc with { fns: fn_type_reg_register(tc.fns, name, TypeParamList.End, params, final_ret) }
                 }
                 .Impl(impl_name, methods) -> {
                     let colon_idx = find_trait_separator(impl_name)
@@ -857,7 +866,7 @@ fn rewrite_fn_ret_tys(tc: TC, fns: FnTypeReg) -> FnTypeReg {
         let m = fns.ord[i]
         let upgraded_ret = if vtype_eq(m.ret_ty, .Void) { m.ret_ty } else { resolve_vtype(tc, m.ret_ty) }
         let upgraded_params = rewrite_param_list_vts(tc, m.params)
-        out = fn_type_reg_register(out, m.name, upgraded_params, upgraded_ret)
+        out = fn_type_reg_register(out, m.name, m.tp, upgraded_params, upgraded_ret)
         i = i + 1
     }
     out
@@ -1376,7 +1385,189 @@ fn tc_check_fn_call_with(checked: TC, name: string, args: ExprList, rec: FnTypeF
     let newtype_checked = tc_check_newtype_args(shape_checked, name, rec.params, args)
     let first_arg_ty = tc_first_arg_type(newtype_checked, args)
     let ctor_checked = tc_check_newtype_ctor(newtype_checked, name, rec.ret_ty, first_arg_ty)
-    tc_er(ctor_checked, rec.ret_ty)
+    // For generic fns: infer T from the call's arg types and substitute
+    // into ret_ty so downstream typeck sees `Int` for `first(nums)`
+    // instead of the unresolved `T`. Non-generic fns short-circuit via
+    // the empty-tp guard in tc_subst_generic_ret.
+    let resolved_ret = tc_subst_generic_ret(newtype_checked, rec.tp, rec.params, args, rec.ret_ty)
+    tc_er(ctor_checked, resolved_ret)
+}
+
+/// Resolve a generic-fn call's return type. Walks params/args
+/// pairwise to bind every type parameter, then substitutes
+/// bindings into ret_ty. For non-generic fns (`tp.End`) this is a
+/// fast no-op returning ret_ty verbatim.
+///
+/// Mirrors mono's `unify_param` / `infer_from_params` but runs at
+/// typeck time so let-bindings, call chains, and field accesses
+/// downstream see the concrete result type. Without this, the
+/// chain `let xs = generic_call(); other_generic_call(xs)` loses
+/// the inner type at the `let` boundary and the second call's
+/// type-arg can't be inferred.
+fn tc_subst_generic_ret(tc: TC, tp: TypeParamList, params: ParamList, args: ExprList, ret_ty: ValueType) -> ValueType {
+    match tp {
+        .End -> return ret_ty
+        _ -> {}
+    }
+    let bindings = tc_infer_type_args(tc, tp, params, args, TypeArgList.End)
+    tc_subst_vtype(ret_ty, bindings)
+}
+
+/// Walk params/args pairwise, recursing into List/Task/FnTyped
+/// constructors. Returns a TypeArgList mapping each bound T to its
+/// concrete arg type. Args whose typeck-annotated `.ty` is Unknown
+/// fall back to `tc_infer_lit_ty` so literal `[1,2,3]` and bare
+/// lambdas still contribute bindings.
+fn tc_infer_type_args(tc: TC, tp: TypeParamList, params: ParamList, args: ExprList, acc: TypeArgList) -> TypeArgList {
+    match params {
+        .End -> acc
+        .Node(_, resolved, rest) -> match args {
+            .End -> acc
+            .Node(arg, rest_args) -> {
+                let arg_ty = tc_arg_concrete_ty(tc, arg)
+                tc_infer_type_args(tc, tp, rest, rest_args, tc_unify(tp, resolved, arg_ty, acc))
+            }
+        }
+    }
+}
+
+/// Recursively unify a param type against an arg type, binding
+/// any naked type-param (Struct named "T", "U", …) that appears.
+/// Peels `List<T>`, `Task<T>`, and `fn(T) -> U` so type params
+/// nested inside generic constructors still bind.
+fn tc_unify(tp: TypeParamList, param_ty: ValueType, arg_ty: ValueType, acc: TypeArgList) -> TypeArgList {
+    let name = vtype_display(param_ty)
+    if type_param_has(tp, name) {
+        return TypeArgList.Node(name, arg_ty, acc)
+    }
+    match param_ty {
+        .List(p_inner) -> match arg_ty {
+            .List(a_inner) -> tc_unify(tp, p_inner, a_inner, acc)
+            _ -> acc
+        }
+        .Task(p_inner) -> match arg_ty {
+            .Task(a_inner) -> tc_unify(tp, p_inner, a_inner, acc)
+            _ -> acc
+        }
+        .FnTyped(p_params, p_ret) -> match arg_ty {
+            .FnTyped(a_params, a_ret) -> {
+                let acc1 = tc_unify(tp, p_ret, a_ret, acc)
+                tc_unify_lists(tp, p_params, a_params, acc1)
+            }
+            .Closure(_, a_ret) -> tc_unify(tp, p_ret, a_ret, acc)
+            .Fn(a_ret) -> tc_unify(tp, p_ret, a_ret, acc)
+            _ -> acc
+        }
+        _ -> acc
+    }
+}
+
+/// Pairwise unify two TypeLists (fn-param recursion in `tc_unify`).
+fn tc_unify_lists(tp: TypeParamList, params: TypeList, args: TypeList, acc: TypeArgList) -> TypeArgList {
+    match params {
+        .End -> acc
+        .Node(p, prest) -> match args {
+            .End -> acc
+            .Node(a, arest) -> tc_unify_lists(tp, prest, arest, tc_unify(tp, p, a, acc))
+        }
+    }
+}
+
+/// Best-effort concrete type of one argument. Re-checks the
+/// expression through `check_expr` to pick up any typeck-side
+/// substitutions (e.g. `let xs = first(nums)` should now type as
+/// `Int`, not `T`). Falls back to a literal-shape inference for
+/// list / lambda literals so call sites without surrounding
+/// annotations still bind their inner types.
+fn tc_arg_concrete_ty(tc: TC, arg: SExpr) -> ValueType {
+    if !vtype_is_unknown(arg.ty) { return arg.ty }
+    let r = check_expr(tc, arg.node)
+    if !vtype_is_unknown(r.ty) { return r.ty }
+    tc_infer_lit_ty(arg.node)
+}
+
+/// Lightweight literal-shape inference for arg types when typeck
+/// hasn't annotated. Mirrors mono's `infer_lit_ty` but uses
+/// typeck-local helpers (no cross-module import).
+fn tc_infer_lit_ty(e: Expr) -> ValueType {
+    match e {
+        .Number(_) -> ValueType.Int
+        .FloatLit(_) -> ValueType.Float
+        .String(_) -> ValueType.Str
+        .Bool(_) -> ValueType.Bool
+        .StructLit(name, _) if name != "" -> ValueType.Struct(name, 0)
+        .EnumCtor(tn, _, _) if tn != "" -> ValueType.Enum(tn, TypeList.End, 0)
+        .Grouping(inner) -> tc_infer_lit_ty(inner)
+        .ListLit(elements) -> ValueType.List(tc_infer_list_elem(elements))
+        .Lambda(params, _) -> ValueType.FnTyped(tc_param_types(params), ValueType.Unknown)
+        _ -> ValueType.Unknown
+    }
+}
+
+fn tc_infer_list_elem(elements: ExprList) -> ValueType {
+    match elements {
+        .End -> ValueType.Unknown
+        .Node(first, _) -> {
+            let t = tc_infer_lit_ty(first.node)
+            if vtype_is_unknown(t) { ValueType.Unknown } else { t }
+        }
+    }
+}
+
+fn tc_param_types(params: ParamList) -> TypeList {
+    match params {
+        .End -> TypeList.End
+        .Node(_, ty, next) -> TypeList.Node(ty, tc_param_types(next))
+    }
+}
+
+/// Inspect the first element of a list literal and return its
+/// inferred type; falls back to `Unknown` for an empty list.
+/// Used by `annotate_sexpr`'s ListLit fast-path so `[1, 2, 3]`
+/// types as `List<int>` instead of `List<unknown>`.
+fn tc_first_elem_ty(tc: TC, elements: ExprList) -> ValueType {
+    match elements {
+        .End -> ValueType.Unknown
+        .Node(first, _) -> {
+            let r = check_expr(tc, first.node)
+            if vtype_is_unknown(r.ty) { tc_infer_lit_ty(first.node) } else { r.ty }
+        }
+    }
+}
+
+/// Substitute every T occurrence in `ty` with the binding from
+/// `bindings`. Recurses through List/Task/FnTyped/Enum/Union
+/// constructors so a generic `Result<T, E>` returns the
+/// substituted shape.
+fn tc_subst_vtype(ty: ValueType, bindings: TypeArgList) -> ValueType {
+    let name = vtype_display(ty)
+    let bound = tc_type_arg_lookup(bindings, name)
+    if !vtype_is_unknown(bound) { return bound }
+    match ty {
+        .List(elem) -> ValueType.List(tc_subst_vtype(elem, bindings))
+        .Task(inner) -> ValueType.Task(tc_subst_vtype(inner, bindings))
+        .FnTyped(params, ret) -> ValueType.FnTyped(tc_subst_type_list(params, bindings), tc_subst_vtype(ret, bindings))
+        .Enum(en, args, id) -> ValueType.Enum(en, tc_subst_type_list(args, bindings), id)
+        .Union(types) -> ValueType.Union(tc_subst_type_list(types, bindings))
+        _ -> ty
+    }
+}
+
+fn tc_subst_type_list(types: TypeList, bindings: TypeArgList) -> TypeList {
+    match types {
+        .End -> TypeList.End
+        .Node(t, rest) -> TypeList.Node(tc_subst_vtype(t, bindings), tc_subst_type_list(rest, bindings))
+    }
+}
+
+/// Lookup a binding by type-param name. Returns `Unknown` on miss
+/// so `tc_subst_vtype` can detect "not bound" via `vtype_is_unknown`.
+fn tc_type_arg_lookup(args: TypeArgList, name: string) -> ValueType {
+    match args {
+        .End -> ValueType.Unknown
+        .Node(pn, ct, _) if pn == name -> ct
+        .Node(_, _, next) -> tc_type_arg_lookup(next, name)
+    }
 }
 
 /// Type-check a `Call` expression. Routes to `check_method_call`
@@ -1674,7 +1865,7 @@ fn annotate_expr(tc: TC, expr: Expr) -> Expr {
         .FieldAccess(obj, f) -> .FieldAccess(annotate_expr(tc, obj), f)
         .Assign(name, val) -> .Assign(name, annotate_expr(tc, val))
         .FieldAssign(obj, f, val) -> .FieldAssign(annotate_expr(tc, obj), f, annotate_expr(tc, val))
-        .Lambda(params, body) -> .Lambda(params, annotate_expr(tc, body))
+        .Lambda(params, body) -> .Lambda(params, annotate_expr(tc_bind_params(tc, params), body))
         .NullCoalesce(l, r) -> .NullCoalesce(annotate_expr(tc, l), annotate_expr(tc, r))
         .Try(e) -> .Try(annotate_expr(tc, e))
         .Slice(obj, start, end) -> .Slice(annotate_expr(tc, obj), annotate_expr(tc, start), annotate_expr(tc, end))
@@ -1716,8 +1907,15 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
         // Arithmetic binary/unary: fall through to check_expr for float handling
         // Unary: falls through to check_expr for correct float handling
         // Call: look up return type from function registry
-        .Call(callee, _) -> match callee {
-            .Ident(name) -> fn_type_get(tc.fns, name).ret_ty
+        .Call(callee, args) -> match callee {
+            .Ident(name) -> {
+                let rec = fn_type_get(tc.fns, name)
+                tc_subst_generic_ret(tc, rec.tp, rec.params, args, rec.ret_ty)
+            }
+            .QualifiedIdent(name) -> {
+                let rec = fn_type_get(tc.fns, name)
+                tc_subst_generic_ret(tc, rec.tp, rec.params, args, rec.ret_ty)
+            }
             _ -> check_expr(tc, se.node).ty
         }
         // Struct/Enum constructors
@@ -1725,10 +1923,12 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
         .EnumCtor(name, _, _) -> {
             if name != "" { ValueType.Enum(name, TypeList.End, 0) } else { check_expr(tc, se.node).ty }
         }
-        .ListLit(_) -> ValueType.List(ValueType.Unknown)
+        .ListLit(elements) -> ValueType.List(tc_first_elem_ty(tc, elements))
         .MapLit(_) -> ValueType.Map
         .Tuple(_) -> ValueType.Tuple(TypeList.End)
-        .Lambda(_, _) -> ValueType.Fn(ValueType.Unknown)
+        // Lambda body type needs a real check — fall through. Cheap
+        // because annotate_expr already walked the body recursively.
+        .Lambda(params, body) -> ValueType.FnTyped(tc_param_types(params), check_expr(tc, body).ty)
         // Grouping forwards its inner expression's type. Used heavily
         // by parser-emitted parenthesised forms; falling through to
         // check_expr was a needless re-walk.
