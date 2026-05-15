@@ -27,6 +27,8 @@ extern fn avra_test_set_current_spec(name: string) -> int
 extern fn avra_test_set_current_given(name: string) -> int
 extern fn avra_test_get_current_spec() -> string
 extern fn avra_test_get_current_given() -> string
+extern fn avra_process_env_get(name: string) -> string
+extern fn avra_selfhost_write_file(path: string, content: string) -> int
 
 fn ansi_green(s: string) -> string { "\x1b[32m${s}\x1b[0m" }
 fn ansi_red(s: string) -> string { "\x1b[31m${s}\x1b[0m" }
@@ -63,12 +65,15 @@ export fn test_render_summary() -> int {
     let pass = avra_test_get_pass()
     let fail = avra_test_get_fail()
     let total = pass + fail
-    // 05yc: machine-readable shard summary on its own line so a
-    // parent orchestrator can sum across N per-file shard binaries
-    // without parsing ANSI-coloured output. Always emitted, even
-    // when total == 0 (so the orchestrator can detect an empty
-    // shard vs a missing one).
     let elapsed_ms = avra_uptime_ms()
+    // ylye: structured JSON results to AVRA_TEST_RESULTS_PATH when
+    // the orchestrator set one. Keeps the `[shard-summary]` line as
+    // a transitional fallback until orchestrator + reporter both
+    // ship the JSON path (single seed cycle).
+    let results_path = avra_process_env_get("AVRA_TEST_RESULTS_PATH")
+    if results_path != "" {
+        let _ = avra_selfhost_write_file(results_path, render_results_json(pass, fail, total, elapsed_ms))
+    }
     println("[shard-summary] pass=${string(pass)} fail=${string(fail)} total=${string(total)} elapsed_ms=${string(elapsed_ms)}")
     if total == 0 {
         println("${ansi_yellow("No tests ran.")}")
@@ -106,6 +111,54 @@ fn render_elapsed(ms: int) -> string {
 /// snippet (which would require the diagnostics framework). Future:
 /// upgrade to render_bag once the test bundle always loads
 /// @std.avrac so `use diagnostics.{...}` resolves cleanly.
+/// Build the per-binary results JSON. Shape:
+///
+///     {"pass": N, "fail": N, "total": N, "elapsed_ms": N,
+///      "failures": [{"spec": "...", "given": "...", "then": "...",
+///                    "file": "...", "line": N}, ...]}
+///
+/// Hand-rolled rather than via @std.json because the reporter is
+/// inlined into each test bundle — its imports must resolve at the
+/// test program's scope, which doesn't include @std.avrac.json
+/// reliably until the bundle assembler always pulls in @std.
+fn render_results_json(pass: int, fail: int, total: int, elapsed_ms: int) -> string {
+    let header = "{\"pass\":${string(pass)},\"fail\":${string(fail)},\"total\":${string(total)},\"elapsed_ms\":${string(elapsed_ms)},\"failures\":["
+    let body = render_failures_json(avra_test_failure_count(), 0, "")
+    "${header}${body}]}"
+}
+
+/// Walk the C-side failure list emitting one JSON object per
+/// failure, comma-separated. Recursive so we don't need a mutable
+/// accumulator in reporter scope.
+fn render_failures_json(count: int, idx: int, acc: string) -> string {
+    if idx >= count { return acc }
+    let s = json_escape(avra_test_failure_spec(idx))
+    let g = json_escape(avra_test_failure_given(idx))
+    let t = json_escape(avra_test_failure_then(idx))
+    let f = json_escape(avra_test_failure_file(idx))
+    let l = avra_test_failure_line(idx)
+    let entry = "{\"spec\":\"${s}\",\"given\":\"${g}\",\"then\":\"${t}\",\"file\":\"${f}\",\"line\":${string(l)}}"
+    let sep = if idx == 0 { "" } else { "," }
+    render_failures_json(count, idx + 1, "${acc}${sep}${entry}")
+}
+
+/// Minimal JSON string escaper — handles the printable-ASCII
+/// quote/backslash plus newline, tab, CR. Test spec/given/then
+/// names are author-controlled English text, file paths are
+/// filesystem strings, so we don't need full \uXXXX coverage.
+fn json_escape(s: string) -> string {
+    mut out = ""
+    for ch in s {
+        if ch == "\"" { out = out + "\\\"" }
+        else if ch == "\\" { out = out + "\\\\" }
+        else if ch == "\n" { out = out + "\\n" }
+        else if ch == "\r" { out = out + "\\r" }
+        else if ch == "\t" { out = out + "\\t" }
+        else { out = out + ch }
+    }
+    out
+}
+
 fn render_failure_list(count: int, idx: int) {
     if idx >= count { return }
     let s = avra_test_failure_spec(idx)

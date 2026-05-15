@@ -92,8 +92,10 @@ export fn exec_simple(cmd: string) -> ProcessResult {
     run(cmd, "[]", "")
 }
 
-/// Spawn a background process. Returns handle.
-export fn spawn(cmd: string, args: string, opts: string) -> int {
+/// Spawn a background process. Returns handle. Named `spawn_bg`
+/// rather than `spawn` because `spawn` is a reserved keyword for
+/// the `spawn { body }` pthread primitive.
+export fn spawn_bg(cmd: string, args: string, opts: string) -> int {
     avra_process_spawn_bg(cmd, args, opts)
 }
 
@@ -149,4 +151,38 @@ export fn exit(code: int) {
 /// Get the directory containing the current executable.
 export fn self_dir() -> string {
     avra_process_self_dir()
+}
+
+// ── Process isolation: fork-then-run a closure ──
+//
+// `isolated_int(body)` runs `body` in a forked subprocess. The child
+// inherits the parent's memory via copy-on-write, so closure captures
+// "just work" — no marshaling. The child's int64 return value travels
+// back through an anonymous pipe. On crash (SIGSEGV, abort, non-zero
+// exit), the parent gets `ISOLATED_CRASH` (== INT64_MIN) and stays alive.
+//
+// Phase A of the `isolated { body }` epic (forge-crafting-intepreters-nce6).
+// Subsequent phases add typed return values for strings, structs, lists
+// via a marshal layer; this one carries int only.
+
+extern fn avra_isolated_run_int(body: fn() -> int) -> int
+extern fn avra_isolated_crash_sentinel() -> int
+
+/// Run `body` in a forked subprocess. Returns the int the body
+/// produced, or the crash sentinel if the child died abnormally
+/// (see `is_isolated_crash`).
+///
+/// Use when each call site is its own crash domain — running test
+/// binaries, plugin code, untrusted compile passes, etc. The cost
+/// is one fork() + one waitpid() per call (~1ms on Linux/macOS).
+export fn isolated_int(body: fn() -> int) -> int {
+    avra_isolated_run_int(body)
+}
+
+/// True iff `n` is the crash sentinel from a failed `isolated_int`
+/// call. The sentinel is `INT64_MIN`, which Avra's integer parser
+/// can't write directly as a literal — so we expose the comparison
+/// through this helper.
+export fn is_isolated_crash(n: int) -> bool {
+    n == avra_isolated_crash_sentinel()
 }

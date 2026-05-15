@@ -1,0 +1,44 @@
+// nce6 phase A: prove `avra_isolated_run_int` runs a closure in a
+// forked subprocess, returns its int via pipe, preserves captures
+// via fork's COW, and survives child crashes.
+//
+// Lives under @std/avrac/core/tests (rather than @std/process/tests)
+// because the test runner already bundles @std/avrac universally;
+// @std/process bundling is a follow-up.
+
+extern fn avra_isolated_run_int(body: fn() -> int) -> int
+extern fn avra_isolated_crash_sentinel() -> int
+extern fn abort() -> int
+
+spec "isolated_int (nce6.A)" {
+    then "happy path: closure runs in child, parent reads int via pipe" {
+        let r = avra_isolated_run_int(() -> 41 + 1)
+        r == 42
+    }
+    then "captures: fork's COW carries the closure's captured env" {
+        let captured = 100
+        let r = avra_isolated_run_int(() -> captured * 2)
+        r == 200
+    }
+    then "multiple bindings, mixed arithmetic" {
+        let a = 10
+        let b = 7
+        let r = avra_isolated_run_int(() -> a * b + 3)
+        r == 73
+    }
+    then "child crash returns the sentinel, parent stays alive" {
+        let bad = avra_isolated_run_int(() -> {
+            abort()
+            0
+        })
+        bad == avra_isolated_crash_sentinel()
+    }
+    then "parent recovers after a child crash" {
+        let _ = avra_isolated_run_int(() -> {
+            abort()
+            0
+        })
+        let good = avra_isolated_run_int(() -> 7 * 6)
+        good == 42
+    }
+}

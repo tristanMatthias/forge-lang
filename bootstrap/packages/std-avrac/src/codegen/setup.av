@@ -233,6 +233,8 @@ fn codegen_program(stmts: StmtList, debug_null_checks: bool, coverage: bool, sou
     decl(m, "avra_spawn", i64t, [pt])
     decl(m, "avra_task_await", i64t, [pt])
     decl(m, "avra_thread_join", i32t, [pt])
+    decl(m, "avra_isolated_run_int", i64t, [pt])
+    decl(m, "avra_isolated_crash_sentinel", i64t, [])
     decl(m, "avra_yield", vt, [])
     decl(m, "avra_scheduler_run", vt, [])
     decl(m, "avra_task_group_new", pt, [])

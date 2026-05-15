@@ -24,6 +24,7 @@
 #include <sys/mman.h>
 #include <pthread.h>
 #include <stdatomic.h>
+#include <sys/wait.h>
 #if defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
 #define _XOPEN_SOURCE
 #include <ucontext.h>
@@ -3754,6 +3755,70 @@ int64_t avra_task_cancel(int64_t handle) {
     pthread_join(task->thread, NULL);
     task->joined = 1;
     return 0;
+}
+
+// ── Process isolation ──
+// `isolated { body }` (Phase A): run a zero-arg closure in a forked
+// subprocess, return its int64 result. The child inherits parent's
+// memory via copy-on-write, so closure captures are preserved
+// without marshaling. Only the return value crosses the pipe.
+//
+// Crash-safe: if the child exits abnormally (signal / non-zero status),
+// the parent returns INT64_MIN as a sentinel. Future phases promote
+// this to `Task<Result<T, ProcessCrash>>` once marshaling lands.
+
+#define AVRA_ISOLATED_CRASH_SENTINEL INT64_MIN
+
+// Exposed so Avra callers can compare against the sentinel without
+// trying to write `INT64_MIN` as a literal — Avra's integer parser
+// rejects `-9223372036854775808` because it's lexed as `-(9223372036854775808)`
+// and the positive form is out of range.
+int64_t avra_isolated_crash_sentinel(void) {
+    return AVRA_ISOLATED_CRASH_SENTINEL;
+}
+
+int64_t avra_isolated_run_int(int64_t closure) {
+    int pipefd[2];
+    if (pipe(pipefd) != 0) return AVRA_ISOLATED_CRASH_SENTINEL;
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(pipefd[0]);
+        close(pipefd[1]);
+        return AVRA_ISOLATED_CRASH_SENTINEL;
+    }
+
+    if (pid == 0) {
+        // Child: COW copy of parent's memory. Run closure, ship the
+        // int64 result back through the pipe, exit cleanly. Any
+        // SIGSEGV here propagates out as WTERMSIG and the parent
+        // returns the sentinel; the rest of the orchestrator lives.
+        close(pipefd[0]);
+        int64_t result = avra_closure_call_0(closure);
+        ssize_t n = write(pipefd[1], &result, sizeof(result));
+        close(pipefd[1]);
+        _exit(n == sizeof(result) ? 0 : 1);
+    }
+
+    // Parent: drain the pipe before waitpid so a child writing more
+    // than PIPE_BUF can't deadlock on a full buffer; with an int64
+    // payload that's safe today but keep the order disciplined.
+    close(pipefd[1]);
+    int64_t result = AVRA_ISOLATED_CRASH_SENTINEL;
+    ssize_t n = read(pipefd[0], &result, sizeof(result));
+    close(pipefd[0]);
+
+    int status = 0;
+    if (waitpid(pid, &status, 0) < 0) {
+        return AVRA_ISOLATED_CRASH_SENTINEL;
+    }
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+        return AVRA_ISOLATED_CRASH_SENTINEL;
+    }
+    if (n != (ssize_t)sizeof(result)) {
+        return AVRA_ISOLATED_CRASH_SENTINEL;
+    }
+    return result;
 }
 
 // Legacy join — kept for backward compat with existing tests.
