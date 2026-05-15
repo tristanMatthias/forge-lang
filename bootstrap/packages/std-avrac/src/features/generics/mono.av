@@ -309,11 +309,60 @@ fn infer_from_fields(tp: TypeParamList, fields: FieldList, args: ExprList, acc: 
         .End -> acc
         .Node(_, resolved, rest) -> match args {
             .End -> acc
-            .Node(arg, rest_args) -> {
-                let ty_name = vtype_display(resolved)
-                let new_acc = if type_param_has(tp, ty_name) { TypeArgList.Node(ty_name, arg.ty, acc) } else { acc }
-                infer_from_fields(tp, rest, rest_args, new_acc)
+            .Node(arg, rest_args) -> infer_from_fields(tp, rest, rest_args, unify_param(tp, resolved, arg.ty, acc))
+        }
+    }
+}
+
+/// Recursively unify a declared param type against a concrete arg
+/// type, binding any type parameter that appears anywhere in the
+/// param type. Peels `List<T>`, `Task<T>`, and `fn(T...) -> U`
+/// constructors so generic list combinators like
+/// `list_map<T,U>(xs: List<T>, f: fn(T) -> U)` can infer T and U
+/// from the call site without an explicit turbofish.
+///
+/// Falls back to no-binding when the constructors don't match —
+/// the monomorphizer's later `check_resolved` reports F1002 if a
+/// param ended up unbound.
+fn unify_param(tp: TypeParamList, param_ty: ValueType, arg_ty: ValueType, acc: TypeArgList) -> TypeArgList {
+    let name = vtype_display(param_ty)
+    if type_param_has(tp, name) {
+        return TypeArgList.Node(name, arg_ty, acc)
+    }
+    match param_ty {
+        .List(p_inner) -> match arg_ty {
+            .List(a_inner) -> unify_param(tp, p_inner, a_inner, acc)
+            _ -> acc
+        }
+        .Task(p_inner) -> match arg_ty {
+            .Task(a_inner) -> unify_param(tp, p_inner, a_inner, acc)
+            _ -> acc
+        }
+        .FnTyped(p_params, p_ret) -> match arg_ty {
+            .FnTyped(a_params, a_ret) -> {
+                let acc1 = unify_param(tp, p_ret, a_ret, acc)
+                unify_type_lists(tp, p_params, a_params, acc1)
             }
+            // Closures/typeck-Fn carry the return type only; recurse on
+            // it so generic-fn calls passed a lambda can still bind the
+            // return-type param. Their param-types come from the param
+            // declaration itself, which still has a chance to bind via
+            // earlier args (e.g. list_map: T bound by xs, U bound here).
+            .Closure(_, a_ret) -> unify_param(tp, p_ret, a_ret, acc)
+            .Fn(a_ret) -> unify_param(tp, p_ret, a_ret, acc)
+            _ -> acc
+        }
+        _ -> acc
+    }
+}
+
+/// Pairwise unify two TypeLists (used for fn-param recursion).
+fn unify_type_lists(tp: TypeParamList, params: TypeList, args: TypeList, acc: TypeArgList) -> TypeArgList {
+    match params {
+        .End -> acc
+        .Node(p, prest) -> match args {
+            .End -> acc
+            .Node(a, arest) -> unify_type_lists(tp, prest, arest, unify_param(tp, p, a, acc))
         }
     }
 }
@@ -331,7 +380,10 @@ fn arg_concrete_ty(arg: SExpr) -> ValueType {
 
 /// Map a literal expression to its ValueType (Int / Bool /
 /// Float / Str). Used by `arg_concrete_ty` for the trivial
-/// cases.
+/// cases. For `List<T>` inference at call sites we also peek at
+/// `[a, b, c]` (taking the first element's inferred type) and
+/// `(x: T) -> body` (synthesising `fn(T) -> Unknown` so
+/// `unify_param` can still bind T).
 fn infer_lit_ty(e: Expr) -> ValueType {
     match e {
         .Number(_) -> ValueType.Int
@@ -341,24 +393,46 @@ fn infer_lit_ty(e: Expr) -> ValueType {
         .StructLit(name, _) if name != "" -> ValueType.Struct(name, 0)
         .EnumCtor(tn, _, _) if tn != "" -> ValueType.Enum(tn, TypeList.End, 0)
         .Grouping(inner) -> infer_lit_ty(inner)
+        .ListLit(elements) -> ValueType.List(infer_list_elem_ty(elements))
+        .Lambda(params, _) -> ValueType.FnTyped(param_types(params), ValueType.Unknown)
         _ -> ValueType.Unknown
     }
 }
 
+/// Pick the first element's inferred type as the list's element
+/// type. Empty / all-unknown lists fall back to Unknown — the
+/// monomorphizer then reports F1002 and the user adds a turbofish.
+fn infer_list_elem_ty(elements: ExprList) -> ValueType {
+    match elements {
+        .End -> ValueType.Unknown
+        .Node(first, _) -> {
+            let t = arg_concrete_ty(first)
+            if vtype_is_unknown(t) { ValueType.Unknown } else { t }
+        }
+    }
+}
+
+/// Project a ParamList down to its declared types (in declaration
+/// order). Used to synthesise an FnTyped from a lambda literal so
+/// generic-fn inference can bind its `T` parameters.
+fn param_types(params: ParamList) -> TypeList {
+    match params {
+        .End -> TypeList.End
+        .Node(_, ty, next) -> TypeList.Node(ty, param_types(next))
+    }
+}
+
 /// Infer concrete type-args for a generic fn call by walking
-/// the params + args lists pairwise and resolving any T
-/// parameters that appear in the param types.
+/// the params + args lists pairwise. `unify_param` recurses into
+/// generic constructors (`List<T>`, `Task<T>`, `fn(T) -> U`) so
+/// type params nested inside them are bound from the call's
+/// concrete arg types.
 fn infer_from_params(tp: TypeParamList, params: ParamList, args: ExprList, acc: TypeArgList) -> TypeArgList {
     match params {
         .End -> acc
         .Node(_, resolved, rest) -> match args {
             .End -> acc
-            .Node(arg, rest_args) -> {
-                let ty_name = vtype_display(resolved)
-                let arg_ty = arg_concrete_ty(arg)
-                let new_acc = if type_param_has(tp, ty_name) { TypeArgList.Node(ty_name, arg_ty, acc) } else { acc }
-                infer_from_params(tp, rest, rest_args, new_acc)
-            }
+            .Node(arg, rest_args) -> infer_from_params(tp, rest, rest_args, unify_param(tp, resolved, arg_concrete_ty(arg), acc))
         }
     }
 }

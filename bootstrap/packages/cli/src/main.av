@@ -2323,7 +2323,7 @@ fn run_test_shard_command() {
 //
 //   1. prepare_test_run — pull config + env from the world once
 //   2. dispatch_shards  — fan out `spawn { run_shard }`, jobs-capped
-//   3. aggregate_shard_logs — read each log, sum the [shard-summary] line
+//   3. aggregate_shard_logs — read each log, sum its result line
 //
 // Each `_test.av` runs in its own subprocess (`bs2 _test_shard <path>`),
 // so a segfault in one shard doesn't touch the rest, and per-shard
@@ -2331,7 +2331,8 @@ fn run_test_shard_command() {
 fn run_per_file_test_command(project_dir: string, accepted_paths: List<string>, args: TestArgs) -> int {
     let t_start = avra_uptime_ms()
     let cx = prepare_test_run(project_dir, args)
-    let shards = plan_shards(cx, accepted_paths)
+    mut shards: List<Shard> = []
+    for p in accepted_paths { shards = shards.push(cx.shard_for(p)) }
 
     dispatch_shards(shards, cx.jobs)
     retry_jetsam_killed(shards)
@@ -2349,6 +2350,21 @@ type Shard = {
     cmd: string,       // fully-formed `env … bs2 _test_shard … > log` line
 }
 
+impl Shard {
+    /// True when the shard left an output. A missing or empty log
+    /// means the subprocess was killed (jetsam) before any stdout
+    /// got flushed — retry territory, not a successful empty run.
+    fn log_alive(self) -> bool {
+        avra_selfhost_file_exists(self.log_path) == 1 && avra_selfhost_read_file(self.log_path) != ""
+    }
+
+    /// Read the shard's captured stdout. Caller is expected to
+    /// have checked `log_alive` first.
+    fn read_log(self) -> string {
+        avra_selfhost_read_file(self.log_path)
+    }
+}
+
 // Shared knobs prepared once per `avra test` invocation. env_prefix
 // is the per-shard environment, baked at startup so dispatch_shards
 // just concatenates per-shard fields onto it.
@@ -2359,6 +2375,47 @@ type RunCtx = {
     filter_arg: string,
     want_meta: bool,
     jobs: int,
+}
+
+impl RunCtx {
+    /// Project one test-file path to a fully-formed `Shard` ready
+    /// for dispatch. AVRA_LIB_PKG_ROOT='<slug>' is the codegen
+    /// ownership prefix — only the test's own __release_<Type> fns
+    /// emit, @std/* fns belong to the pre-built producer .o files
+    /// linked via AVRA_LIB_OBJS.
+    fn shard_for(self, path: string) -> Shard {
+        let slug = basename_no_ext(path)
+        let log_path = "${self.log_dir}/${slug}.log"
+        let pkg_root = if self.want_meta { "AVRA_LIB_PKG_ROOT='${slug}' " } else { "" }
+        let cmd = "${self.env_prefix}${pkg_root}'${self.compiler_path}' _test_shard '${path}'${self.filter_arg} > '${log_path}' 2>&1"
+        Shard { path: path, slug: slug, log_path: log_path, cmd: cmd }
+    }
+}
+
+// Running pass/fail/total counters. `merge` folds one shard's
+// summary into the running totals so `aggregate_shard_logs`
+// reads as `totals = totals.merge(out, parsed)` instead of four
+// separate field increments at the call site.
+type Totals = {
+    pass: int,
+    fail: int,
+    total: int,
+    shard_failures: int,
+}
+
+impl Totals {
+    /// Add one shard's parsed summary into the running totals. A
+    /// shard with total==0 that didn't say "No tests ran" counts
+    /// as a compile/run failure.
+    fn merge(self, out: string, parsed: ShardSummary) -> Totals {
+        let crashed = parsed.total == 0 && !out.contains("No tests ran")
+        self with {
+            pass: self.pass + parsed.pass,
+            fail: self.fail + parsed.fail,
+            total: self.total + parsed.total,
+            shard_failures: self.shard_failures + (if crashed { 1 } else { 0 }),
+        }
+    }
 }
 
 // Read env vars, resolve the compiler, prepare the log dir, kick off
@@ -2428,23 +2485,6 @@ fn prepare_test_run(project_dir: string, args: TestArgs) -> RunCtx {
     }
 }
 
-// Build a Shard per test file. Each shard's command bakes the
-// per-slug AVRA_LIB_PKG_ROOT (codegen ownership prefix — only the
-// test's own __release_<Type> fns emit; @std/* fns belong to the
-// pre-built producer .o files linked via AVRA_LIB_OBJS) and
-// redirects stdio to its log file.
-fn plan_shards(cx: RunCtx, paths: List<string>) -> List<Shard> {
-    mut out: List<Shard> = []
-    for p in paths {
-        let slug = basename_no_ext(p)
-        let log_path = "${cx.log_dir}/${slug}.log"
-        let pkg_root = if cx.want_meta { "AVRA_LIB_PKG_ROOT='${slug}' " } else { "" }
-        let cmd = "${cx.env_prefix}${pkg_root}'${cx.compiler_path}' _test_shard '${p}'${cx.filter_arg} > '${log_path}' 2>&1"
-        out = out.push(Shard { path: p, slug: slug, log_path: log_path, cmd: cmd })
-    }
-    out
-}
-
 // Fan out shards via `spawn { }`, capping concurrency at `jobs` by
 // chunking. Each spawn body shells out to `bs2 _test_shard <path>`
 // — that subprocess writes its own log file, so the spawn's return
@@ -2462,12 +2502,11 @@ fn dispatch_shards(shards: List<Shard>, jobs: int) {
         mut handles: List<int> = []
         mut k = start
         while k < end {
-            let cmd = shards[k].cmd
-            let h = spawn {
-                let _ = avra_shell_exec(cmd)
+            let s = shards[k]
+            handles = handles.push(spawn {
+                let _ = avra_shell_exec(s.cmd)
                 0
-            }
-            handles = handles.push(h)
+            })
             k = k + 1
         }
         for h in handles { let _ = h.await }
@@ -2482,10 +2521,7 @@ fn dispatch_shards(shards: List<Shard>, jobs: int) {
 // ~4x faster than serial.
 fn retry_jetsam_killed(shards: List<Shard>) {
     mut victims: List<Shard> = []
-    for s in shards {
-        let alive = avra_selfhost_file_exists(s.log_path) == 1 && avra_selfhost_read_file(s.log_path) != ""
-        if !alive { victims = victims.push(s) }
-    }
+    for s in shards { if !s.log_alive() { victims = victims.push(s) } }
     if victims.length == 0 { return }
     eprintln("[per-file] retrying ${string(victims.length)} jetsam-killed shard(s) (jobs=2)")
     dispatch_shards(victims, 2)
@@ -2493,36 +2529,31 @@ fn retry_jetsam_killed(shards: List<Shard>) {
 
 // Walk each shard's log file, print it verbatim (preserving per-shard
 // output the user expects), parse the `[shard-summary]` line for the
-// aggregate counts, and render the unified pass/fail summary. Shards
-// whose summary line is missing count as a compile/run failure.
+// aggregate counts, and render the unified pass/fail summary.
 fn aggregate_shard_logs(shards: List<Shard>, t_start: int) -> int {
-    mut sum_pass = 0
-    mut sum_fail = 0
-    mut sum_total = 0
-    mut shard_failures = 0
+    mut totals = Totals { pass: 0, fail: 0, total: 0, shard_failures: 0 }
     for s in shards {
-        if avra_selfhost_file_exists(s.log_path) != 1 {
-            shard_failures = shard_failures + 1
+        if !s.log_alive() {
             eprintln("[shard ${s.slug}] no log produced (compile likely failed before stdout)")
+            totals = totals with { shard_failures: totals.shard_failures + 1 }
             continue
         }
-        let out = avra_selfhost_read_file(s.log_path)
+        let out = s.read_log()
         println(out)
-        let parsed = parse_shard_summary(out)
-        if parsed.total == 0 && !out.contains("No tests ran") {
-            shard_failures = shard_failures + 1
-        }
-        sum_pass = sum_pass + parsed.pass
-        sum_fail = sum_fail + parsed.fail
-        sum_total = sum_total + parsed.total
+        totals = totals.merge(out, parse_shard_summary(out))
     }
-    let elapsed = avra_uptime_ms() - t_start
-    let elapsed_s = elapsed / 1000
-    let elapsed_tenths = (elapsed / 100) - (elapsed_s * 10)
-    let summary = "${string(sum_pass)}/${string(sum_total)} tests passed in ${string(elapsed_s)}.${string(elapsed_tenths)}s"
-    if sum_fail > 0 || shard_failures > 0 {
-        let shard_note = if shard_failures > 0 { ", ${string(shard_failures)} shard(s) failed to compile/run" } else { "" }
-        println("\x1b[31m\x1b[1m${summary}\x1b[0m \x1b[31m(${string(sum_fail)} failed${shard_note})\x1b[0m")
+    render_test_summary(totals, avra_uptime_ms() - t_start)
+}
+
+/// Pretty-print the unified pass/fail tally + elapsed wall-time.
+/// Returns the orchestrator's exit code (0 green, 1 anything red).
+fn render_test_summary(t: Totals, elapsed_ms: int) -> int {
+    let elapsed_s = elapsed_ms / 1000
+    let elapsed_tenths = (elapsed_ms / 100) - (elapsed_s * 10)
+    let summary = "${string(t.pass)}/${string(t.total)} tests passed in ${string(elapsed_s)}.${string(elapsed_tenths)}s"
+    if t.fail > 0 || t.shard_failures > 0 {
+        let shard_note = if t.shard_failures > 0 { ", ${string(t.shard_failures)} shard(s) failed to compile/run" } else { "" }
+        println("\x1b[31m\x1b[1m${summary}\x1b[0m \x1b[31m(${string(t.fail)} failed${shard_note})\x1b[0m")
         return 1
     }
     println("\x1b[32m\x1b[1m${summary}\x1b[0m")

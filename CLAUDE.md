@@ -96,6 +96,10 @@ Diagnostics: `bash scripts/diagnose.sh --help` (single entry point for all analy
 
 If you discover a missing language feature or infrastructure gap while working, STOP and implement the missing piece FIRST. Do NOT work around, defer, or hack a substitute. Every workaround becomes permanent tech debt.
 
+## CRITICAL RULE: Out-of-Space Recovery
+
+When any command fails with ENOSPC / "no space left on device" / similar disk-full errors, do NOT ask the user to clean up manually. Run `make clean` from `bootstrap/` first (drops `build/` — caches, test-shard logs, coverage artifacts, staged binaries; tens of GB recoverable on a warm tree). Then retry the failing command. The bootstrap rebuilds itself from `seed/seed.ll`, so wiping `build/` is always safe — never destroys uncommitted source.
+
 ## Adding a Feature — MANDATORY PROCESS
 
 ### Phase 1: Plan
