@@ -38,10 +38,24 @@ export fn check_try(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .Try(inner) -> {
             let r = check_expr(tc, inner)
-            // The ? operator is valid on:
-            // - Result<T, E> / any Result-like enum — unwraps to T, propagates E
-            // - T? (nullable) — unwraps to T, propagates null
-            // For Result, extract the Ok type if possible.
+            // Two extraction paths for Result: (1) structural — peel
+            // the first type-arg off the inner expression's
+            // ValueType (works for method calls, indexed-list
+            // returns, anything whose .ty is already a concrete
+            // `Result<Ok, Err>`); (2) name-based — look up the
+            // callee's registered return type. Always prefer
+            // structural — `tc_catch_ok_type` can only see the
+            // fn's pre-substitution ret_ty, which loses generic
+            // bindings for method calls and chained generic calls.
+            match r.ty {
+                .Enum(name, args, _) if is_result_enum_name(name) -> match args {
+                    .Node(ok_ty, _) -> {
+                        if !vtype_is_unknown(ok_ty) { return tc_er(r.tc, ok_ty) }
+                    }
+                    .End -> {}
+                }
+                _ -> {}
+            }
             let inner_name = match r.ty { .Enum(n, _, _) -> n, _ -> "" }
             if is_result_enum_name(inner_name) {
                 let maybe_ok = tc_catch_ok_type(r.tc, inner)

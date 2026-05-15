@@ -3818,6 +3818,26 @@ int64_t avra_bytes_to_int_le(const char* b, int64_t offset) {
     return v;
 }
 
+// Float (IEEE-754 double) encode/decode. Avra's `float` is f64 so
+// the wire format is 8 raw bytes — same shape as the int variant.
+// Endianness matches the host; we don't bswap because subprocess
+// and parent are the same arch (fork() can't cross machines).
+
+const char* avra_float_to_bytes_le(double f) {
+    char* r = avra_bytes_alloc(8);
+    memcpy(avra_bytes_data(r), &f, 8);
+    return r;
+}
+
+double avra_bytes_to_float_le(const char* b, int64_t offset) {
+    if (!b) return 0.0;
+    int64_t len = *(int64_t*)b;
+    if (offset < 0 || offset + 8 > len) return 0.0;
+    double v = 0.0;
+    memcpy(&v, avra_bytes_data((char*)b) + offset, 8);
+    return v;
+}
+
 const char* avra_isolated_run(int64_t closure) {
     int pipefd[2];
     if (pipe(pipefd) != 0) return avra_isolated_frame_err(AVRA_ISOLATED_STATUS_PIPE_FAILED);

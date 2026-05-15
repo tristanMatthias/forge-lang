@@ -285,6 +285,8 @@ fn codegen_program(stmts: StmtList, debug_null_checks: bool, coverage: bool, sou
     // mutable globals.
     let dt = avra_llvm_double_type(lc)
     decl(m, "avra_test_roughly", i64t, [dt, dt, dt])
+    decl(m, "avra_float_to_bytes_le", pt, [dt])
+    decl(m, "avra_bytes_to_float_le", dt, [pt, i64t])
     // Collect newtype/union alias registries first — needed for field type resolution
     let cg_newtypes = collect_newtypes(stmts, cg_newtype_reg_new())
     let cg_union_aliases = collect_union_aliases(stmts, cg_union_alias_reg_new())

@@ -10,7 +10,7 @@ use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive}
 use features.trait_decl.{check_trait_conformance, collect_method_names_from_stmts, collect_assoc_types_from_stmts, find_trait_separator}
 use features.list_lit.{check_list_method}
 use features.map_lit.{check_map_method}
-use features.let_stmt.{is_const_expr}
+use features.let_stmt.{is_const_expr, bind_destructure}
 use core.{method_mangled_name, type_short_name, is_result_enum_name}
 use core.{avra_process_env_get}
 
@@ -1003,9 +1003,14 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
             let r = check_expr(tc, body)
             r.tc
         }
-        .LetDestructure(_, init) -> {
+        .LetDestructure(names, init) -> {
             let r = check_expr(tc, init)
-            r.tc
+            // Bind each destructured name to its tuple-position
+            // type. Without this, `let (a, b) = pair` typechecks
+            // `pair` but leaves `a`/`b` unbound — every later
+            // `.field` access on a destructured tuple element
+            // would fall back to Unknown and ICE at codegen.
+            bind_destructure(r.tc, names, r.ty)
         }
         _ -> {
             let tag = avra_stmt_tag(stmt)
@@ -1801,6 +1806,11 @@ fn annotate_stmts(tc: TC, stmts: StmtList) -> StmtList {
                 .Let(name, ty_vt, init) -> annotate_bind(tc, name, ty_vt, init)
                 .Mut(name, ty_vt, init) -> annotate_bind(tc, name, ty_vt, init)
                 .Const(name, ty_vt, init) -> annotate_bind(tc, name, ty_vt, init)
+                // Destructured names need to flow into the annotate
+                // scope too, otherwise later `.field` accesses on
+                // destructured tuple elements see Unknown and ICE
+                // at codegen.
+                .LetDestructure(names, init) -> bind_destructure(tc, names, check_expr(tc, init).ty)
                 _ -> tc
             }
             StmtList.Node(sstmt(new_stmt, ss.line, ss.col), annotate_stmts(updated_tc, next))

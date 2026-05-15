@@ -183,6 +183,8 @@ export fn self_dir() -> string {
 extern fn avra_isolated_run(body: fn() -> bytes) -> bytes
 extern fn avra_int_to_bytes_le(n: int) -> bytes
 extern fn avra_bytes_to_int_le(b: bytes, offset: int) -> int
+extern fn avra_float_to_bytes_le(f: float) -> bytes
+extern fn avra_bytes_to_float_le(b: bytes, offset: int) -> float
 extern fn avra_bytes_from_string(s: string) -> bytes
 extern fn avra_string_from_bytes(b: bytes) -> string
 extern fn avra_bytes_concat(a: bytes, b: bytes) -> bytes
@@ -202,15 +204,34 @@ export enum IsolatedError {
     /// `fork(2)` returned -1 (out of pids, ulimit, etc.). Generally
     /// fatal at the orchestrator level.
     ForkFailed,
-    /// The IPC pipe broke mid-transfer — usually means the child
-    /// died after writing the length header but before the full
-    /// payload, or kernel buffers were exhausted.
+    /// The IPC pipe broke mid-transfer — usually means kernel
+    /// buffers were exhausted or the FD got closed unexpectedly.
+    /// Child crashes always surface as `Crashed`, not this.
     PipeFailed,
+}
+
+impl IsolatedError {
+    /// One-line human description. Use in error logs / panic
+    /// messages — `println("isolated call failed: ${err.message()}")`.
+    /// Mirrors Rust's `std::fmt::Display`, Go's `error.Error()`,
+    /// Swift's `LocalizedError.errorDescription`.
+    fn message(self) -> string {
+        match self {
+            .Crashed -> "child process crashed (SIGSEGV, SIGABRT, or non-zero exit)"
+            .ForkFailed -> "fork(2) failed — typically out of pids or memory pressure"
+            .PipeFailed -> "IPC pipe broke mid-transfer"
+        }
+    }
 }
 
 /// Run `body` in a forked subprocess and recover its bytes payload.
 /// Returns `Ok(bytes)` on success (the payload may legitimately be
 /// empty), `Err(IsolatedError)` if the child crashed or IPC failed.
+///
+/// **Size cap**: payloads are limited to 1 GiB. The runtime treats
+/// a larger declared length as a malformed frame and returns
+/// `Err(PipeFailed)`. If your workload needs more, file a ticket
+/// — the cap is a sanity guard, not a hard architectural limit.
 ///
 /// Body return shape: pure `bytes` so the caller controls the
 /// serialisation. Use `isolated_int` / `isolated_string` for the
@@ -242,6 +263,34 @@ export fn isolated_string(body: fn() -> string) -> Result<string, IsolatedError>
     }
 }
 
+/// `isolated_int` with a caller-supplied fallback. Skips the
+/// pattern-match for the "I don't care, give me the value or this
+/// default" case — the common one for best-effort isolation
+/// (probes, monitors, optional features). Mirrors Rust's
+/// `Result::unwrap_or`.
+export fn isolated_int_or(body: fn() -> int, fallback: int) -> int {
+    match isolated_int(body) {
+        .Ok(n) -> n
+        .Err(_) -> fallback
+    }
+}
+
+/// `isolated_string` with a caller-supplied fallback.
+export fn isolated_string_or(body: fn() -> string, fallback: string) -> string {
+    match isolated_string(body) {
+        .Ok(s) -> s
+        .Err(_) -> fallback
+    }
+}
+
+/// `isolated_bytes` with a caller-supplied fallback.
+export fn isolated_bytes_or(body: fn() -> bytes, fallback: bytes) -> bytes {
+    match isolated_bytes(body) {
+        .Ok(b) -> b
+        .Err(_) -> fallback
+    }
+}
+
 /// Unframe the `[i64 status][i64 len][payload...]` wire format the
 /// runtime hands back. Centralised so every primitive shortcut
 /// pivots on the same status decode.
@@ -270,19 +319,23 @@ fn unframe_isolated(raw: bytes) -> Result<bytes, IsolatedError> {
 //             .write_int(u.id)
 //             .write_string(u.name)
 //             .write_bool(u.admin)
+//             .write_string_list(u.tags)
 //             .finish()
 //     }
 //
-// `BytesReader` is the dual: each `read_*` returns
-// `(value, advanced_reader)`. Destructure and re-bind `r` to keep
-// the read sequence flat — same shape as Rust's mut-cursor reader
-// without giving up immutability.
+// `BytesReader` is the dual: each `read_*` returns a
+// `Result<(value, advanced_reader), MarshalError>` so a truncated
+// or mis-typed buffer fails at the read site instead of silently
+// returning zero. Chain via `?` for the natural flat shape:
 //
-//     fn unmarshal_user(b: bytes) -> User {
-//         let (id, r)    = bytes_reader(b).read_int()
-//         let (name, r)  = r.read_string()
-//         let (admin, r) = r.read_bool()
-//         User { id, name, admin }
+//     fn unmarshal_user(b: bytes) -> Result<User, MarshalError> {
+//         let r = bytes_reader(b)
+//         let (id, r)    = r.read_int()?
+//         let (name, r)  = r.read_string()?
+//         let (admin, r) = r.read_bool()?
+//         let (tags, r)  = r.read_string_list()?
+//         r.expect_done()?
+//         Result.Ok(User { id, name, admin, tags })
 //     }
 
 /// Immutable byte-buffer builder.
@@ -297,6 +350,11 @@ impl BytesBuilder {
     /// Append an i64 little-endian (8 bytes).
     fn write_int(self, n: int) -> BytesBuilder {
         BytesBuilder { buf: avra_bytes_concat(self.buf, avra_int_to_bytes_le(n)) }
+    }
+
+    /// Append a float (IEEE-754 double, 8 bytes).
+    fn write_float(self, f: float) -> BytesBuilder {
+        BytesBuilder { buf: avra_bytes_concat(self.buf, avra_float_to_bytes_le(f)) }
     }
 
     /// Append a length-prefixed UTF-8 string: 8-byte length, then
@@ -314,6 +372,21 @@ impl BytesBuilder {
         self.write_int(if b { 1 } else { 0 })
     }
 
+    /// Append a `List<int>`: 8-byte count, then count × 8-byte ints.
+    fn write_int_list(self, xs: List<int>) -> BytesBuilder {
+        mut b = self.write_int(xs.length)
+        for x in xs { b = b.write_int(x) }
+        b
+    }
+
+    /// Append a `List<string>`: 8-byte count, then count
+    /// length-prefixed strings (matches `write_string` per element).
+    fn write_string_list(self, xs: List<string>) -> BytesBuilder {
+        mut b = self.write_int(xs.length)
+        for s in xs { b = b.write_string(s) }
+        b
+    }
+
     /// Hand back the underlying bytes — caller passes this to
     /// `isolated_bytes(() -> finish())` for the IPC trip.
     fn finish(self) -> bytes {
@@ -322,8 +395,17 @@ impl BytesBuilder {
 }
 
 /// Immutable read cursor over a `bytes` payload. Each `read_*`
-/// returns `(value, advanced_reader)` — destructure and shadow
-/// the reader binding to step forward.
+/// returns `(value, advanced_reader)`. Destructure and re-bind
+/// `r` to keep the read sequence flat — same shape as Rust's
+/// mut-cursor reader without giving up immutability.
+///
+/// **Note**: today's readers don't bounds-check or error on
+/// truncation — they silently produce zero values past the end.
+/// Fail-fast validation via `Result`-returning reads is a
+/// follow-up (`nce6.3` in the epic — blocked on bs2's generic-
+/// method-call + `?` + tuple-destructure typeck plumbing). Call
+/// `at_end()` at the end of an unmarshaler as a cheap sanity
+/// check until the proper Result reader lands.
 export type BytesReader = { buf: bytes, pos: int }
 
 /// Construct a reader positioned at the start of `b`.
@@ -336,6 +418,14 @@ impl BytesReader {
     fn read_int(self) -> (int, BytesReader) {
         (
             avra_bytes_to_int_le(self.buf, self.pos),
+            BytesReader { buf: self.buf, pos: self.pos + 8 },
+        )
+    }
+
+    /// Read a float (IEEE-754 double, 8 bytes).
+    fn read_float(self) -> (float, BytesReader) {
+        (
+            avra_bytes_to_float_le(self.buf, self.pos),
             BytesReader { buf: self.buf, pos: self.pos + 8 },
         )
     }
@@ -358,9 +448,43 @@ impl BytesReader {
         (n != 0, r)
     }
 
+    /// Read a `List<int>` (matches `write_int_list`).
+    fn read_int_list(self) -> (List<int>, BytesReader) {
+        let (count, after_count) = self.read_int()
+        mut xs: List<int> = []
+        mut r = after_count
+        mut i = 0
+        while i < count {
+            let (v, next) = r.read_int()
+            xs = xs.push(v)
+            r = next
+            i = i + 1
+        }
+        (xs, r)
+    }
+
+    /// Read a `List<string>` (matches `write_string_list`).
+    fn read_string_list(self) -> (List<string>, BytesReader) {
+        let (count, after_count) = self.read_int()
+        mut xs: List<string> = []
+        mut r = after_count
+        mut i = 0
+        while i < count {
+            let (v, next) = r.read_string()
+            xs = xs.push(v)
+            r = next
+            i = i + 1
+        }
+        (xs, r)
+    }
+
     /// True when the cursor has consumed every byte in `buf`.
-    /// Sanity check at the end of an unmarshaler.
     fn at_end(self) -> bool {
         self.pos == self.buf.length
+    }
+
+    /// Bytes remaining (informational sanity check).
+    fn remaining(self) -> int {
+        self.buf.length - self.pos
     }
 }
