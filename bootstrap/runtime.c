@@ -3783,6 +3783,11 @@ int64_t avra_task_cancel(int64_t handle) {
 #define AVRA_ISOLATED_STATUS_FORK_FAILED  2
 #define AVRA_ISOLATED_STATUS_PIPE_FAILED  3
 
+// Sanity cap on the child's declared payload length. Larger than
+// any realistic stdout/result blob; smaller than what would let a
+// corrupted header trigger gigabyte allocations.
+#define AVRA_ISOLATED_PAYLOAD_CAP ((int64_t)1 << 30)
+
 // Build a [status][len=0][] frame for an early failure path.
 static const char* avra_isolated_frame_err(int64_t status) {
     char* r = avra_bytes_alloc(16);
@@ -3872,7 +3877,7 @@ const char* avra_isolated_run(int64_t closure) {
     close(pipefd[1]);
     int64_t len = 0;
     ssize_t hn = read(pipefd[0], &len, sizeof(len));
-    int header_ok = (hn == (ssize_t)sizeof(len) && len >= 0 && len <= ((int64_t)1 << 30));
+    int header_ok = (hn == (ssize_t)sizeof(len) && len >= 0 && len <= AVRA_ISOLATED_PAYLOAD_CAP);
 
     // Drain payload into a scratch buffer (when the header was
     // valid) so we can surface the right status after seeing the

@@ -1,0 +1,21 @@
+# @std/process — subprocess execution, environment, and process isolation.
+#
+# Surface:
+#   - `run` / `exec` — synchronous subprocess execution with captured I/O.
+#   - `spawn_bg` / `wait` / `kill` — long-running background processes.
+#   - `isolated_int` / `isolated_string` / `isolated_bytes` — crash-safe
+#     closure execution in a forked subprocess, with typed
+#     `Result<T, IsolatedError>` returns.
+#   - `BytesBuilder` / `BytesReader` — hand-rolled marshaling helpers
+#     (will be superseded by `@marshal` derive in nce6.C).
+#
+# All functions backed by C runtime in bootstrap/runtime.c.
+
+[package]
+name        = "@std/process"
+version     = "0.1.0"
+description = "Subprocess execution + crash-safe closure isolation"
+
+[lib]
+name = "std-process"
+path = "src/process.av"

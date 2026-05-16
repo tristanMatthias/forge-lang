@@ -174,7 +174,7 @@ export fn self_dir() -> string {
 //   - Unified `avra_isolated_run` runtime that returns a
 //     status-framed payload so OK-with-empty-data ≠ crash-no-data
 //   - Result-returning stdlib API for int / string / bytes
-//   - BytesBuilder / BytesReader for hand-rolled marshalers
+//   - PayloadBuilder / PayloadReader for hand-rolled marshalers
 //     (replaced by `@marshal`-derived ones in Phase C)
 // Phase C: `@marshal` annotation generates `to_bytes`/`from_bytes`
 //   per declared type so callers stop touching the bytes layer.
@@ -235,7 +235,7 @@ impl IsolatedError {
 ///
 /// Body return shape: pure `bytes` so the caller controls the
 /// serialisation. Use `isolated_int` / `isolated_string` for the
-/// primitive shortcuts; use `BytesBuilder` / `BytesReader` (or, in
+/// primitive shortcuts; use `PayloadBuilder` / `PayloadReader` (or, in
 /// Phase C, `@marshal`-generated codecs) for structured types.
 export fn isolated_bytes(body: fn() -> bytes) -> Result<bytes, IsolatedError> {
     unframe_isolated(avra_isolated_run(body))
@@ -291,31 +291,47 @@ export fn isolated_bytes_or(body: fn() -> bytes, fallback: bytes) -> bytes {
     }
 }
 
+// Wire format constants — must match `AVRA_ISOLATED_STATUS_*` in
+// runtime.c. The runtime writes one of these as the first i64 of
+// every isolated payload; the stdlib decodes here to a typed
+// `IsolatedError`. Single source of truth: if a status code is
+// ever added, update both sides together.
+const ISOLATED_STATUS_OK: int = 0
+const ISOLATED_STATUS_CRASH: int = 1
+const ISOLATED_STATUS_FORK_FAILED: int = 2
+const ISOLATED_STATUS_PIPE_FAILED: int = 3
+
+/// Header size of an isolated payload: `[i64 status][i64 len]`,
+/// payload bytes follow. Used for slice-offset arithmetic in
+/// `unframe_isolated`.
+const ISOLATED_HEADER_BYTES: int = 16
+
 /// Unframe the `[i64 status][i64 len][payload...]` wire format the
 /// runtime hands back. Centralised so every primitive shortcut
 /// pivots on the same status decode.
 fn unframe_isolated(raw: bytes) -> Result<bytes, IsolatedError> {
-    if raw.length < 16 { return Result.Err(IsolatedError.PipeFailed) }
+    if raw.length < ISOLATED_HEADER_BYTES { return Result.Err(IsolatedError.PipeFailed) }
     let status = avra_bytes_to_int_le(raw, 0)
     let len = avra_bytes_to_int_le(raw, 8)
-    if status == 0 {
+    if status == ISOLATED_STATUS_OK {
         if len == 0 { return Result.Ok(avra_bytes_empty()) }
-        Result.Ok(avra_bytes_slice(raw, 16, 16 + len))
-    } else if status == 1 { Result.Err(IsolatedError.Crashed) }
-    else if status == 2 { Result.Err(IsolatedError.ForkFailed) }
-    else { Result.Err(IsolatedError.PipeFailed) }
+        return Result.Ok(avra_bytes_slice(raw, ISOLATED_HEADER_BYTES, ISOLATED_HEADER_BYTES + len))
+    }
+    if status == ISOLATED_STATUS_CRASH { return Result.Err(IsolatedError.Crashed) }
+    if status == ISOLATED_STATUS_FORK_FAILED { return Result.Err(IsolatedError.ForkFailed) }
+    Result.Err(IsolatedError.PipeFailed)
 }
 
 // ── Marshaler helpers ──
 //
 // Hand-rolled marshaling is the bridge until `@marshal` (Phase C)
-// generates these calls automatically. `BytesBuilder` is an
+// generates these calls automatically. `PayloadBuilder` is an
 // immutable chainable buffer; each `write_*` returns a new builder
 // so the marshaler reads as a linear sequence of writes. Mirrors
 // Rust's `bytes::BufMut` / Go's `bytes.Buffer.Write*` ergonomics.
 //
 //     fn marshal_user(u: User) -> bytes {
-//         bytes_builder()
+//         payload_builder()
 //             .write_int(u.id)
 //             .write_string(u.name)
 //             .write_bool(u.admin)
@@ -323,13 +339,13 @@ fn unframe_isolated(raw: bytes) -> Result<bytes, IsolatedError> {
 //             .finish()
 //     }
 //
-// `BytesReader` is the dual: each `read_*` returns a
+// `PayloadReader` is the dual: each `read_*` returns a
 // `Result<(value, advanced_reader), MarshalError>` so a truncated
 // or mis-typed buffer fails at the read site instead of silently
 // returning zero. Chain via `?` for the natural flat shape:
 //
 //     fn unmarshal_user(b: bytes) -> Result<User, MarshalError> {
-//         let r = bytes_reader(b)
+//         let r = payload_reader(b)
 //         let (id, r)    = r.read_int()?
 //         let (name, r)  = r.read_string()?
 //         let (admin, r) = r.read_bool()?
@@ -339,52 +355,37 @@ fn unframe_isolated(raw: bytes) -> Result<bytes, IsolatedError> {
 //     }
 
 /// Immutable byte-buffer builder.
-export type BytesBuilder = { buf: bytes }
+export type PayloadBuilder = { buf: bytes }
 
 /// Construct an empty builder.
-export fn bytes_builder() -> BytesBuilder {
-    BytesBuilder { buf: avra_bytes_empty() }
+export fn payload_builder() -> PayloadBuilder {
+    PayloadBuilder { buf: avra_bytes_empty() }
 }
 
-impl BytesBuilder {
+impl PayloadBuilder {
     /// Append an i64 little-endian (8 bytes).
-    fn write_int(self, n: int) -> BytesBuilder {
-        BytesBuilder { buf: avra_bytes_concat(self.buf, avra_int_to_bytes_le(n)) }
+    fn write_int(self, n: int) -> PayloadBuilder {
+        PayloadBuilder { buf: avra_bytes_concat(self.buf, avra_int_to_bytes_le(n)) }
     }
 
     /// Append a float (IEEE-754 double, 8 bytes).
-    fn write_float(self, f: float) -> BytesBuilder {
-        BytesBuilder { buf: avra_bytes_concat(self.buf, avra_float_to_bytes_le(f)) }
+    fn write_float(self, f: float) -> PayloadBuilder {
+        PayloadBuilder { buf: avra_bytes_concat(self.buf, avra_float_to_bytes_le(f)) }
     }
 
     /// Append a length-prefixed UTF-8 string: 8-byte length, then
     /// the raw bytes.
-    fn write_string(self, s: string) -> BytesBuilder {
+    fn write_string(self, s: string) -> PayloadBuilder {
         let s_bytes = avra_bytes_from_string(s)
         let with_len = avra_bytes_concat(self.buf, avra_int_to_bytes_le(s_bytes.length))
-        BytesBuilder { buf: avra_bytes_concat(with_len, s_bytes) }
+        PayloadBuilder { buf: avra_bytes_concat(with_len, s_bytes) }
     }
 
     /// Append a bool as a single i64 (1 or 0). Wastes 7 bytes per
     /// bool but keeps every primitive 8-byte-aligned so readers
     /// don't track sub-byte position.
-    fn write_bool(self, b: bool) -> BytesBuilder {
+    fn write_bool(self, b: bool) -> PayloadBuilder {
         self.write_int(if b { 1 } else { 0 })
-    }
-
-    /// Append a `List<int>`: 8-byte count, then count × 8-byte ints.
-    fn write_int_list(self, xs: List<int>) -> BytesBuilder {
-        mut b = self.write_int(xs.length)
-        for x in xs { b = b.write_int(x) }
-        b
-    }
-
-    /// Append a `List<string>`: 8-byte count, then count
-    /// length-prefixed strings (matches `write_string` per element).
-    fn write_string_list(self, xs: List<string>) -> BytesBuilder {
-        mut b = self.write_int(xs.length)
-        for s in xs { b = b.write_string(s) }
-        b
     }
 
     /// Hand back the underlying bytes — caller passes this to
@@ -406,77 +407,53 @@ impl BytesBuilder {
 /// method-call + `?` + tuple-destructure typeck plumbing). Call
 /// `at_end()` at the end of an unmarshaler as a cheap sanity
 /// check until the proper Result reader lands.
-export type BytesReader = { buf: bytes, pos: int }
+export type PayloadReader = { buf: bytes, pos: int }
 
 /// Construct a reader positioned at the start of `b`.
-export fn bytes_reader(b: bytes) -> BytesReader {
-    BytesReader { buf: b, pos: 0 }
+export fn payload_reader(b: bytes) -> PayloadReader {
+    PayloadReader { buf: b, pos: 0 }
 }
 
-impl BytesReader {
+impl PayloadReader {
     /// Read an i64 little-endian (8 bytes). Returns `(value, next)`.
-    fn read_int(self) -> (int, BytesReader) {
+    fn read_int(self) -> (int, PayloadReader) {
         (
             avra_bytes_to_int_le(self.buf, self.pos),
-            BytesReader { buf: self.buf, pos: self.pos + 8 },
+            PayloadReader { buf: self.buf, pos: self.pos + 8 },
         )
     }
 
     /// Read a float (IEEE-754 double, 8 bytes).
-    fn read_float(self) -> (float, BytesReader) {
+    fn read_float(self) -> (float, PayloadReader) {
         (
             avra_bytes_to_float_le(self.buf, self.pos),
-            BytesReader { buf: self.buf, pos: self.pos + 8 },
+            PayloadReader { buf: self.buf, pos: self.pos + 8 },
         )
     }
 
     /// Read a length-prefixed UTF-8 string. Pairs with
-    /// `BytesBuilder.write_string()`.
-    fn read_string(self) -> (string, BytesReader) {
+    /// `PayloadBuilder.write_string()`.
+    fn read_string(self) -> (string, PayloadReader) {
         let len = avra_bytes_to_int_le(self.buf, self.pos)
         let start = self.pos + 8
         let s_bytes = avra_bytes_slice(self.buf, start, start + len)
         (
             avra_string_from_bytes(s_bytes),
-            BytesReader { buf: self.buf, pos: start + len },
+            PayloadReader { buf: self.buf, pos: start + len },
         )
     }
 
     /// Read a bool stored as an i64 (1 → true, 0 → false).
-    fn read_bool(self) -> (bool, BytesReader) {
+    fn read_bool(self) -> (bool, PayloadReader) {
         let (n, r) = self.read_int()
         (n != 0, r)
     }
 
-    /// Read a `List<int>` (matches `write_int_list`).
-    fn read_int_list(self) -> (List<int>, BytesReader) {
-        let (count, after_count) = self.read_int()
-        mut xs: List<int> = []
-        mut r = after_count
-        mut i = 0
-        while i < count {
-            let (v, next) = r.read_int()
-            xs = xs.push(v)
-            r = next
-            i = i + 1
-        }
-        (xs, r)
-    }
-
-    /// Read a `List<string>` (matches `write_string_list`).
-    fn read_string_list(self) -> (List<string>, BytesReader) {
-        let (count, after_count) = self.read_int()
-        mut xs: List<string> = []
-        mut r = after_count
-        mut i = 0
-        while i < count {
-            let (v, next) = r.read_string()
-            xs = xs.push(v)
-            r = next
-            i = i + 1
-        }
-        (xs, r)
-    }
+    // List<T> marshaling helpers (`write_int_list` / `read_int_list`
+    // etc.) live in nce6.3 — the loop body trips a bs2 typeck bug
+    // around method-call-result destructure + mut-rebind + repeated
+    // method call. Until that lands, callers hand-roll the count-
+    // prefix + per-element loop.
 
     /// True when the cursor has consumed every byte in `buf`.
     fn at_end(self) -> bool {
