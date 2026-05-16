@@ -48,18 +48,19 @@ and ships its return value back via `to_bytes`/`from_bytes_<T>`.
 
 Concatenated, little-endian, no header:
 
-| Field type            | Bytes                                                  |
-|-----------------------|--------------------------------------------------------|
-| `int`                 | 8 (i64)                                                |
-| `bool`                | 8 (i64; 0 or 1)                                        |
-| `float`               | 8 (IEEE-754 double)                                    |
-| `string`              | 8 length-prefix + UTF-8 payload                        |
-| `List<int>`           | 8 count + count × 8                                    |
-| `List<bool>`          | 8 count + count × 8                                    |
-| `List<string>`        | 8 count + count × length-prefixed payload              |
-| `List<float>`         | 8 count + count × 8                                    |
-| nested `@marshal` struct | 8 length-prefix + inner `to_bytes()` payload        |
-| `@marshal` enum       | 8 tag (source-order variant index) + payload-as-above  |
+| Field type                  | Bytes                                                  |
+|-----------------------------|--------------------------------------------------------|
+| `int`                       | 8 (i64)                                                |
+| `bool`                      | 8 (i64; 0 or 1)                                        |
+| `float`                     | 8 (IEEE-754 double)                                    |
+| `string`                    | 8 length-prefix + UTF-8 payload                        |
+| `List<int>`                 | 8 count + count × 8                                    |
+| `List<bool>`                | 8 count + count × 8                                    |
+| `List<string>`              | 8 count + count × length-prefixed payload              |
+| `List<float>`               | 8 count + count × 8                                    |
+| nested `@marshal` struct    | 8 length-prefix + inner `to_bytes()` payload           |
+| `List<NestedMarshalStruct>` | 8 count + count × (8 length-prefix + inner payload)    |
+| `@marshal` enum             | 8 tag (source-order variant index) + payload-as-above  |
 
 Enum tag ordering matches source declaration order; adding a variant
 at the end stays backwards-compatible, inserting in the middle does
@@ -72,12 +73,15 @@ Today (this commit):
 - Primitives: `int` / `bool` / `string` / `float`.
 - Homogeneous lists of any supported primitive.
 - Nested `@marshal` structs (recursive).
-- Enum variants whose payload fields are any of the above.
+- **Lists of nested `@marshal` structs** — synthesised as an inline
+  `mut __b = base.write_int(len); for x in xs { __b = __b.write_bytes(x.to_bytes()) }`
+  block-expr on the write side, and a `while __i < count` loop
+  calling `from_bytes_<Inner>` on the read side.
+- Enum variants whose payload fields are any of the above
+  (primitives, lists, nested @marshal structs — all work).
 
 Open (separate sub-tickets):
 
-- `List<NestedMarshalStruct>` — needs an inline loop synthesis or a
-  generic `write_struct_list` helper.
 - `Map<K, V>` — key/value iteration; v1.0 may be intentionally
   excluded per the parent ticket.
 - Nullable `T?` — blocked on `TypeExpr.Optional` being preserved in

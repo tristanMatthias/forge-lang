@@ -69,3 +69,46 @@ spec "@marshal: enum round-trip (nce6.1.D)" {
         describe(s2) == "F::0"
     }
 }
+
+@marshal
+type MCoord = { x: int, y: int }
+
+@marshal
+enum MFigure {
+    Empty,
+    Dot(p: MCoord),
+    Segment(a: MCoord, b: MCoord),
+    Path(points: List<MCoord>),
+}
+
+fn shape_summary(f: MFigure) -> string {
+    match f {
+        .Empty -> "empty"
+        .Dot(p) -> "dot:" + string(p.x) + "," + string(p.y)
+        .Segment(a, b) -> "seg:(" + string(a.x) + "," + string(a.y) + ")-(" + string(b.x) + "," + string(b.y) + ")"
+        .Path(pts) -> "path:" + string(pts.length)
+    }
+}
+
+spec "@marshal: enum with nested-struct + list-of-struct payloads" {
+    then "variant with single nested-struct payload" {
+        let f = MFigure.Dot(MCoord { x: 5, y: 7 })
+        shape_summary(from_bytes_MFigure(f.to_bytes())) == "dot:5,7"
+    }
+    then "variant with two nested-struct payloads" {
+        let f = MFigure.Segment(MCoord { x: 1, y: 2 }, MCoord { x: 3, y: 4 })
+        shape_summary(from_bytes_MFigure(f.to_bytes())) == "seg:(1,2)-(3,4)"
+    }
+    then "variant with List<NestedStruct> payload" {
+        let pts = [MCoord { x: 0, y: 0 }, MCoord { x: 10, y: 10 }, MCoord { x: 20, y: 20 }]
+        let f = MFigure.Path(pts)
+        let f2 = from_bytes_MFigure(f.to_bytes())
+        match f2 {
+            .Path(pts2) -> pts2.length == 3 && pts2[0].x == 0 && pts2[2].y == 20
+            _ -> false
+        }
+    }
+    then "payload-less variant still works alongside complex ones" {
+        shape_summary(from_bytes_MFigure(MFigure.Empty.to_bytes())) == "empty"
+    }
+}
