@@ -1163,6 +1163,20 @@ fn vtype_from_type_string(ty: string) -> ValueType {
     if ty.ends_with("?") && ty.length > 1 {
         return vtype_from_type_string(ty.substring(0, ty.length - 1))
     }
+    // Handle tuple type strings like "(int, string)" — produced by
+    // `vtype_render_full(.Tuple(types))`. Without this, the round-
+    // trip through mono's rewrite_fn_ret (which renders ValueType
+    // to string and parses back) lands at `vtype_from_name` and
+    // falls into `_ -> Struct(name, 0)`, corrupting the tuple
+    // into a struct whose name is the tuple's text representation
+    // ("(int, T)"). Downstream codegen then sees Struct and tries
+    // to look it up — bs2 hits "method call / field access on
+    // non-struct value" at the destructure site. Sibling of the
+    // List<T> / Task<T> peel below.
+    if ty.length >= 2 && ty.substring(0, 1) == "(" && ty.ends_with(")") {
+        let inner = ty.substring(1, ty.length - 1)
+        return ValueType.Tuple(parse_type_args_to_list(inner))
+    }
     // Handle generic type strings like "Result<int, string>"
     let angle = find_char(ty, "<")
     if angle >= 0 {

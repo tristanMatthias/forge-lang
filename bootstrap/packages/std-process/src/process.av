@@ -388,6 +388,21 @@ impl PayloadBuilder {
         self.write_int(if b { 1 } else { 0 })
     }
 
+    /// Append a `List<int>`: 8-byte count, then count × 8-byte ints.
+    fn write_int_list(self, xs: List<int>) -> PayloadBuilder {
+        mut b = self.write_int(xs.length)
+        for x in xs { b = b.write_int(x) }
+        b
+    }
+
+    /// Append a `List<string>`: 8-byte count, then count
+    /// length-prefixed strings (matches `write_string` per element).
+    fn write_string_list(self, xs: List<string>) -> PayloadBuilder {
+        mut b = self.write_int(xs.length)
+        for s in xs { b = b.write_string(s) }
+        b
+    }
+
     /// Hand back the underlying bytes — caller passes this to
     /// `isolated_bytes(() -> finish())` for the IPC trip.
     fn finish(self) -> bytes {
@@ -449,11 +464,35 @@ impl PayloadReader {
         (n != 0, r)
     }
 
-    // List<T> marshaling helpers (`write_int_list` / `read_int_list`
-    // etc.) live in nce6.3 — the loop body trips a bs2 typeck bug
-    // around method-call-result destructure + mut-rebind + repeated
-    // method call. Until that lands, callers hand-roll the count-
-    // prefix + per-element loop.
+    /// Read a `List<int>` (matches `write_int_list`).
+    fn read_int_list(self) -> (List<int>, PayloadReader) {
+        let (count, after_count) = self.read_int()
+        mut xs: List<int> = []
+        mut r = after_count
+        mut i = 0
+        while i < count {
+            let (v, next) = r.read_int()
+            xs = xs.push(v)
+            r = next
+            i = i + 1
+        }
+        (xs, r)
+    }
+
+    /// Read a `List<string>` (matches `write_string_list`).
+    fn read_string_list(self) -> (List<string>, PayloadReader) {
+        let (count, after_count) = self.read_int()
+        mut xs: List<string> = []
+        mut r = after_count
+        mut i = 0
+        while i < count {
+            let (v, next) = r.read_string()
+            xs = xs.push(v)
+            r = next
+            i = i + 1
+        }
+        (xs, r)
+    }
 
     /// True when the cursor has consumed every byte in `buf`.
     fn at_end(self) -> bool {
