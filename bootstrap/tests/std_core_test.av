@@ -43,7 +43,7 @@ spec "std core" {
         scr_run_float() == "3.14\n4.14"
     }
     then "bool operations" {
-        scr_run_bool() == "1\n0\n0\n1\n1"
+        scr_run_bool() == "true\nfalse\nfalse\ntrue\ntrue"
     }
     then "string concat" {
         "hello" + " world" == "hello world"

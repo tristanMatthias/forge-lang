@@ -53,6 +53,6 @@ fn cu_run() -> string {
 
 spec "combo ultimate" {
     then "full output" {
-        cu_run() == "implement (p4)\ntest (p3)\ndeploy (p5)\n1\n0\n3\nx=42, y=99\n15\n20\n30\n40"
+        cu_run() == "implement (p4)\ntest (p3)\ndeploy (p5)\ntrue\nfalse\n3\nx=42, y=99\n15\n20\n30\n40"
     }
 }

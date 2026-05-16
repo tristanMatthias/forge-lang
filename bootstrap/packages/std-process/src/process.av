@@ -174,7 +174,7 @@ export fn self_dir() -> string {
 //   - Unified `avra_isolated_run` runtime that returns a
 //     status-framed payload so OK-with-empty-data ≠ crash-no-data
 //   - Result-returning stdlib API for int / string / bytes
-//   - PayloadBuilder / PayloadReader for hand-rolled marshalers
+//   - BytesBuilder / BytesReader for hand-rolled marshalers
 //     (replaced by `@marshal`-derived ones in Phase C)
 // Phase C: `@marshal` annotation generates `to_bytes`/`from_bytes`
 //   per declared type so callers stop touching the bytes layer.
@@ -235,7 +235,7 @@ impl IsolatedError {
 ///
 /// Body return shape: pure `bytes` so the caller controls the
 /// serialisation. Use `isolated_int` / `isolated_string` for the
-/// primitive shortcuts; use `PayloadBuilder` / `PayloadReader` (or, in
+/// primitive shortcuts; use `BytesBuilder` / `BytesReader` (or, in
 /// Phase C, `@marshal`-generated codecs) for structured types.
 export fn isolated_bytes(body: fn() -> bytes) -> Result<bytes, IsolatedError> {
     unframe_isolated(avra_isolated_run(body))
@@ -325,13 +325,13 @@ fn unframe_isolated(raw: bytes) -> Result<bytes, IsolatedError> {
 // ── Marshaler helpers ──
 //
 // Hand-rolled marshaling is the bridge until `@marshal` (Phase C)
-// generates these calls automatically. `PayloadBuilder` is an
+// generates these calls automatically. `BytesBuilder` is an
 // immutable chainable buffer; each `write_*` returns a new builder
 // so the marshaler reads as a linear sequence of writes. Mirrors
 // Rust's `bytes::BufMut` / Go's `bytes.Buffer.Write*` ergonomics.
 //
 //     fn marshal_user(u: User) -> bytes {
-//         payload_builder()
+//         bytes_builder()
 //             .write_int(u.id)
 //             .write_string(u.name)
 //             .write_bool(u.admin)
@@ -339,13 +339,13 @@ fn unframe_isolated(raw: bytes) -> Result<bytes, IsolatedError> {
 //             .finish()
 //     }
 //
-// `PayloadReader` is the dual: each `read_*` returns a
+// `BytesReader` is the dual: each `read_*` returns a
 // `Result<(value, advanced_reader), MarshalError>` so a truncated
 // or mis-typed buffer fails at the read site instead of silently
 // returning zero. Chain via `?` for the natural flat shape:
 //
 //     fn unmarshal_user(b: bytes) -> Result<User, MarshalError> {
-//         let r = payload_reader(b)
+//         let r = bytes_reader(b)
 //         let (id, r)    = r.read_int()?
 //         let (name, r)  = r.read_string()?
 //         let (admin, r) = r.read_bool()?
@@ -355,41 +355,41 @@ fn unframe_isolated(raw: bytes) -> Result<bytes, IsolatedError> {
 //     }
 
 /// Immutable byte-buffer builder.
-export type PayloadBuilder = { buf: bytes }
+export type BytesBuilder = { buf: bytes }
 
 /// Construct an empty builder.
-export fn payload_builder() -> PayloadBuilder {
-    PayloadBuilder { buf: avra_bytes_empty() }
+export fn bytes_builder() -> BytesBuilder {
+    BytesBuilder { buf: avra_bytes_empty() }
 }
 
-impl PayloadBuilder {
+impl BytesBuilder {
     /// Append an i64 little-endian (8 bytes).
-    fn write_int(self, n: int) -> PayloadBuilder {
-        PayloadBuilder { buf: avra_bytes_concat(self.buf, avra_int_to_bytes_le(n)) }
+    fn write_int(self, n: int) -> BytesBuilder {
+        BytesBuilder { buf: avra_bytes_concat(self.buf, avra_int_to_bytes_le(n)) }
     }
 
     /// Append a float (IEEE-754 double, 8 bytes).
-    fn write_float(self, f: float) -> PayloadBuilder {
-        PayloadBuilder { buf: avra_bytes_concat(self.buf, avra_float_to_bytes_le(f)) }
+    fn write_float(self, f: float) -> BytesBuilder {
+        BytesBuilder { buf: avra_bytes_concat(self.buf, avra_float_to_bytes_le(f)) }
     }
 
     /// Append a length-prefixed UTF-8 string: 8-byte length, then
     /// the raw bytes.
-    fn write_string(self, s: string) -> PayloadBuilder {
+    fn write_string(self, s: string) -> BytesBuilder {
         let s_bytes = avra_bytes_from_string(s)
         let with_len = avra_bytes_concat(self.buf, avra_int_to_bytes_le(s_bytes.length))
-        PayloadBuilder { buf: avra_bytes_concat(with_len, s_bytes) }
+        BytesBuilder { buf: avra_bytes_concat(with_len, s_bytes) }
     }
 
     /// Append a bool as a single i64 (1 or 0). Wastes 7 bytes per
     /// bool but keeps every primitive 8-byte-aligned so readers
     /// don't track sub-byte position.
-    fn write_bool(self, b: bool) -> PayloadBuilder {
+    fn write_bool(self, b: bool) -> BytesBuilder {
         self.write_int(if b { 1 } else { 0 })
     }
 
     /// Append a `List<int>`: 8-byte count, then count × 8-byte ints.
-    fn write_int_list(self, xs: List<int>) -> PayloadBuilder {
+    fn write_int_list(self, xs: List<int>) -> BytesBuilder {
         mut b = self.write_int(xs.length)
         for x in xs { b = b.write_int(x) }
         b
@@ -397,7 +397,7 @@ impl PayloadBuilder {
 
     /// Append a `List<string>`: 8-byte count, then count
     /// length-prefixed strings (matches `write_string` per element).
-    fn write_string_list(self, xs: List<string>) -> PayloadBuilder {
+    fn write_string_list(self, xs: List<string>) -> BytesBuilder {
         mut b = self.write_int(xs.length)
         for s in xs { b = b.write_string(s) }
         b
@@ -422,50 +422,50 @@ impl PayloadBuilder {
 /// method-call + `?` + tuple-destructure typeck plumbing). Call
 /// `at_end()` at the end of an unmarshaler as a cheap sanity
 /// check until the proper Result reader lands.
-export type PayloadReader = { buf: bytes, pos: int }
+export type BytesReader = { buf: bytes, pos: int }
 
 /// Construct a reader positioned at the start of `b`.
-export fn payload_reader(b: bytes) -> PayloadReader {
-    PayloadReader { buf: b, pos: 0 }
+export fn bytes_reader(b: bytes) -> BytesReader {
+    BytesReader { buf: b, pos: 0 }
 }
 
-impl PayloadReader {
+impl BytesReader {
     /// Read an i64 little-endian (8 bytes). Returns `(value, next)`.
-    fn read_int(self) -> (int, PayloadReader) {
+    fn read_int(self) -> (int, BytesReader) {
         (
             avra_bytes_to_int_le(self.buf, self.pos),
-            PayloadReader { buf: self.buf, pos: self.pos + 8 },
+            BytesReader { buf: self.buf, pos: self.pos + 8 },
         )
     }
 
     /// Read a float (IEEE-754 double, 8 bytes).
-    fn read_float(self) -> (float, PayloadReader) {
+    fn read_float(self) -> (float, BytesReader) {
         (
             avra_bytes_to_float_le(self.buf, self.pos),
-            PayloadReader { buf: self.buf, pos: self.pos + 8 },
+            BytesReader { buf: self.buf, pos: self.pos + 8 },
         )
     }
 
     /// Read a length-prefixed UTF-8 string. Pairs with
-    /// `PayloadBuilder.write_string()`.
-    fn read_string(self) -> (string, PayloadReader) {
+    /// `BytesBuilder.write_string()`.
+    fn read_string(self) -> (string, BytesReader) {
         let len = avra_bytes_to_int_le(self.buf, self.pos)
         let start = self.pos + 8
         let s_bytes = avra_bytes_slice(self.buf, start, start + len)
         (
             avra_string_from_bytes(s_bytes),
-            PayloadReader { buf: self.buf, pos: start + len },
+            BytesReader { buf: self.buf, pos: start + len },
         )
     }
 
     /// Read a bool stored as an i64 (1 → true, 0 → false).
-    fn read_bool(self) -> (bool, PayloadReader) {
+    fn read_bool(self) -> (bool, BytesReader) {
         let (n, r) = self.read_int()
         (n != 0, r)
     }
 
     /// Read a `List<int>` (matches `write_int_list`).
-    fn read_int_list(self) -> (List<int>, PayloadReader) {
+    fn read_int_list(self) -> (List<int>, BytesReader) {
         let (count, after_count) = self.read_int()
         mut xs: List<int> = []
         mut r = after_count
@@ -480,7 +480,7 @@ impl PayloadReader {
     }
 
     /// Read a `List<string>` (matches `write_string_list`).
-    fn read_string_list(self) -> (List<string>, PayloadReader) {
+    fn read_string_list(self) -> (List<string>, BytesReader) {
         let (count, after_count) = self.read_int()
         mut xs: List<string> = []
         mut r = after_count

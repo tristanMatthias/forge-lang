@@ -15,6 +15,8 @@
 **/build/
 !packages/std-avrac/src/build/
 !packages/std-avrac/src/build/**
+# Per-file cache fingerprints — re-exclude inside the whitelisted source dir
+packages/std-avrac/src/build/**/*.avra-sha256
 dogfood_progress.csv
 
 # Generated language reference (rebuild with 'avra lang')

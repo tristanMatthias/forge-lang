@@ -17,6 +17,6 @@ fn cb_run() -> string {
 
 spec "const basic" {
     then "const values print correctly" {
-        cb_run() == "1000\n3.14\navra\n500\n1"
+        cb_run() == "1000\n3.14\navra\n500\ntrue"
     }
 }

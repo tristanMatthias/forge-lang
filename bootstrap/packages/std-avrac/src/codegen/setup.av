@@ -159,6 +159,7 @@ fn codegen_program(stmts: StmtList, debug_null_checks: bool, coverage: bool, sou
     // ── float ──
     decl(m, "avra_float_parse", i64t, [pt])
     decl(m, "avra_float_to_string", i64t, [i64t])
+    decl(m, "avra_bool_to_string", pt, [i64t])
     decl(m, "avra_format_float", pt, [i64t, pt])
     decl(m, "avra_format_int", pt, [i64t, pt])
 

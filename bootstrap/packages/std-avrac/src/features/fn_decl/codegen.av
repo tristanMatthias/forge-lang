@@ -578,6 +578,22 @@ export fn emit_int_to_string(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<Em
             if vtype_is_str(r.ty) {
                 return ok_emit(r.value, .Str)
             }
+            // Bool → "true" / "false". Without this the int fallback
+            // snprintf %lld emits "1" / "0", which never matches what
+            // a user expects in `println("ok=${b}")`. Goes through a
+            // tiny C helper so the format-bool semantics live in one
+            // place across the interpolation + raw string() paths.
+            if vtype_eq(r.ty, .Bool) {
+                return ok_emit(ctx.call("avra_bool_to_string", [r.value]), .Str)
+            }
+            // Duck-typed Display: any Struct / Enum / Newtype whose
+            // type defines `display(self) -> string` opts in via the
+            // method, no formal trait declaration required. Mirrors
+            // Go's Stringer pattern — define the method, you're in.
+            // Falls through to the integer/snprintf path for types
+            // without a display method.
+            let display_dispatch = emit_display_dispatch(ctx, r)
+            if display_dispatch != null { return ok_emit(display_dispatch!, .Str) }
             // Newtype: unwrap and convert inner type
             if vtype_is_newtype(r.ty) {
                 let inner = vtype_newtype_inner(r.ty)
@@ -613,6 +629,31 @@ export fn emit_int_to_string(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<Em
             ok_emit(buf, .Str)
         }
     }
+}
+
+/// Duck-typed Display dispatch: if `r.ty` is a user-defined Struct
+/// / Enum / Newtype with a `display(self) -> string` method, emit
+/// the method call and return the resulting SSA value. Otherwise
+/// returns null so the caller falls through to its default
+/// conversion path (snprintf for ints, etc.).
+///
+/// Looks up via the method-mangle table (`<Type>__display`) — no
+/// formal `Display` trait required, just a method by convention.
+/// Go's `Stringer` pattern but with compile-time dispatch.
+fn emit_display_dispatch(ctx: Ctx, r: EmitValue) -> ptr? {
+    let type_name = vtype_struct_name(r.ty)
+    let enum_name = vtype_enum_name(r.ty)
+    let owner = if type_name != "" { type_name } else { enum_name }
+    if owner == "" { return null }
+    let mangled = method_mangled_name(owner, "display")
+    let fn_val = ctx.get_fn(mangled)
+    if fn_val == null { return null }
+    // Build a 1-arg array containing self, call through the method.
+    let arr = ctx.value_array(1)
+    ctx.value_array_set(arr, 0, r.value)
+    let result = ctx.call_raw(fn_val, arr, 1)
+    ctx.value_array_free(arr)
+    result
 }
 
 /// Inner converter for `string(value)` — shared by the public

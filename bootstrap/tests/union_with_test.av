@@ -33,6 +33,6 @@ fn uw_run() -> string {
 
 spec "union with" {
     then "union with output" {
-        uw_run() == "updated\nfirst\nstr:hello\nsecond\na str: hello\nb bool: 1"
+        uw_run() == "updated\nfirst\nstr:hello\nsecond\na str: hello\nb bool: true"
     }
 }

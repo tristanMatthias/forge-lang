@@ -31,6 +31,6 @@ fn ui_run() -> string {
 
 spec "union ifexpr" {
     then "union if expression output" {
-        ui_run() == "hello\n3.14\nname: Alice\n1"
+        ui_run() == "hello\n3.14\nname: Alice\ntrue"
     }
 }

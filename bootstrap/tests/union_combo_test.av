@@ -62,7 +62,7 @@ fn uc_match_return(r: int | string) -> string {
 
 spec "union combo" {
     then "multi bool" {
-        uc_show_multi(true) == "bool: 1"
+        uc_show_multi(true) == "bool: true"
     }
     then "multi float" {
         uc_show_multi(3.14) == "float: 3.14"

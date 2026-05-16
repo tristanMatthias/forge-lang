@@ -104,6 +104,6 @@ fn tc_run() -> string {
 
 spec "trait combo" {
     then "trait combo output" {
-        tc_run() == "main (10x5)\n50\nmain (20x3)\n60\nrect 4x6\ncircle r=3\n0\n0\nrect 4x6 (angular)\ncircle r=3 (round)\n105\n42\nmain (10x5)\nbox: main (10x5), size: 50"
+        tc_run() == "main (10x5)\n50\nmain (20x3)\n60\nrect 4x6\ncircle r=3\nfalse\nfalse\nrect 4x6 (angular)\ncircle r=3 (round)\n105\n42\nmain (10x5)\nbox: main (10x5), size: 50"
     }
 }

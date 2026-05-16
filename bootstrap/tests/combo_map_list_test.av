@@ -29,6 +29,6 @@ fn cml_run() -> string {
 
 spec "combo map list" {
     then "map and list combo" {
-        cml_run() == "localhost\n8080\n3\n3\n200\n1\n0\n3\n999\n2\n90"
+        cml_run() == "localhost\n8080\n3\n3\n200\ntrue\nfalse\n3\n999\n2\n90"
     }
 }

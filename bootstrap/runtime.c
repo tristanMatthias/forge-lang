@@ -1840,6 +1840,12 @@ int64_t avra_float_parse(const char* s) {
     return result;
 }
 
+// `string(bool)` and `${bool}` interpolation. Returns static
+// strings — no allocation, safe to use without an arena.
+const char* avra_bool_to_string(int64_t b) {
+    return b != 0 ? "true" : "false";
+}
+
 const char* avra_float_to_string(int64_t bits) {
     double d;
     memcpy(&d, &bits, sizeof(d));
