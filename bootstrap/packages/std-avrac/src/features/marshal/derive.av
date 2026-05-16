@@ -170,6 +170,7 @@ fn writer_for(ty: ValueType) -> string {
         .Int -> "write_int"
         .Bool -> "write_bool"
         .Str -> "write_string"
+        .List(elem) -> list_writer_for(elem)
         _ -> ""
     }
 }
@@ -179,6 +180,27 @@ fn reader_for(ty: ValueType) -> string {
         .Int -> "read_int"
         .Bool -> "read_bool"
         .Str -> "read_string"
+        .List(elem) -> list_reader_for(elem)
+        _ -> ""
+    }
+}
+
+/// nce6.1.B: List<T> codec. Pairs with @std/process's pre-existing
+/// write_int_list / read_int_list / write_string_list /
+/// read_string_list. List<bool> waits on a runtime helper; List of
+/// nested @marshal structs is nce6.1.C territory.
+fn list_writer_for(elem: ValueType) -> string {
+    match elem {
+        .Int -> "write_int_list"
+        .Str -> "write_string_list"
+        _ -> ""
+    }
+}
+
+fn list_reader_for(elem: ValueType) -> string {
+    match elem {
+        .Int -> "read_int_list"
+        .Str -> "read_string_list"
         _ -> ""
     }
 }
@@ -275,6 +297,7 @@ fn default_for(ty: ValueType) -> Expr {
     if ty is .Int { return Expr.Number("0") }
     if ty is .Bool { return Expr.Bool("false") }
     if ty is .Str { return Expr.String("\"\"") }
+    if ty is .List { return Expr.ListLit(ExprList.End) }
     // Fallback — `null` covers nullable / reference shapes; gets
     // tightened as the codec table expands.
     Expr.Null

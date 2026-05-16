@@ -1,0 +1,47 @@
+// nce6.1.B: @marshal List<T> field codec. Routes List<int> and
+// List<string> through @std/process's pre-existing
+// write_int_list / read_int_list / write_string_list / read_string_list
+// methods (length-prefix + per-element write/read).
+//
+// Out of scope here (later sub-tickets):
+//   - List<bool> — pairs need a write_bool_list / read_bool_list
+//     helper in @std/process first.
+//   - List<NestedMarshalStruct> — nce6.1.C.
+
+use @std.process.{bytes_builder, bytes_reader}
+
+@marshal
+type LFruits = { tags: List<string>, counts: List<int>, label: string }
+
+spec "@marshal: List<int> + List<string> round-trip (nce6.1.B)" {
+    then "list-of-string survives" {
+        let f = LFruits { tags: ["apple", "berry", "cherry"], counts: [], label: "x" }
+        let f2 = from_bytes_LFruits(f.to_bytes())
+        f2.tags.length == 3 && f2.tags[0] == "apple" && f2.tags[2] == "cherry"
+    }
+    then "list-of-int survives" {
+        let f = LFruits { tags: [], counts: [10, 20, 30, 40], label: "x" }
+        let f2 = from_bytes_LFruits(f.to_bytes())
+        f2.counts.length == 4 && f2.counts[0] == 10 && f2.counts[3] == 40
+    }
+    then "empty list round-trip" {
+        let f = LFruits { tags: [], counts: [], label: "x" }
+        let f2 = from_bytes_LFruits(f.to_bytes())
+        f2.tags.length == 0 && f2.counts.length == 0
+    }
+    then "string field still works alongside lists" {
+        let f = LFruits { tags: ["a"], counts: [1], label: "hello" }
+        let f2 = from_bytes_LFruits(f.to_bytes())
+        f2.label == "hello"
+    }
+    then "single-element list round-trip" {
+        let f = LFruits { tags: ["only"], counts: [99], label: "" }
+        let f2 = from_bytes_LFruits(f.to_bytes())
+        f2.tags.length == 1 && f2.tags[0] == "only" && f2.counts[0] == 99
+    }
+    then "list order preserved" {
+        let f = LFruits { tags: ["z", "y", "a"], counts: [3, 2, 1], label: "ord" }
+        let f2 = from_bytes_LFruits(f.to_bytes())
+        f2.tags[0] == "z" && f2.tags[2] == "a" && f2.counts[0] == 3 && f2.counts[2] == 1
+    }
+}
