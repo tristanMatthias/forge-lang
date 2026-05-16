@@ -56,3 +56,39 @@ spec "@marshal: nested struct round-trip (nce6.1.C)" {
         p2.addr.street == big
     }
 }
+
+@marshal
+type MTag = { id: int, name: string }
+
+@marshal
+type MCollection = { tags: List<MTag>, total: int }
+
+spec "@marshal: List<NestedMarshalStruct> round-trip" {
+    then "list of @marshal structs round-trips with all fields" {
+        let c = MCollection {
+            tags: [
+                MTag { id: 10, name: "alpha" },
+                MTag { id: 20, name: "beta" },
+                MTag { id: 30, name: "gamma" },
+            ],
+            total: 3,
+        }
+        let c2 = from_bytes_MCollection(c.to_bytes())
+        c2.tags.length == 3
+            && c2.total == 3
+            && c2.tags[0].id == 10
+            && c2.tags[0].name == "alpha"
+            && c2.tags[2].id == 30
+            && c2.tags[2].name == "gamma"
+    }
+    then "empty List<Nested> round-trips" {
+        let c = MCollection { tags: [], total: 0 }
+        let c2 = from_bytes_MCollection(c.to_bytes())
+        c2.tags.length == 0 && c2.total == 0
+    }
+    then "single-element List<Nested>" {
+        let c = MCollection { tags: [MTag { id: 99, name: "lone" }], total: 1 }
+        let c2 = from_bytes_MCollection(c.to_bytes())
+        c2.tags.length == 1 && c2.tags[0].id == 99 && c2.tags[0].name == "lone"
+    }
+}

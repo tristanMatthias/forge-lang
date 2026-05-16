@@ -176,6 +176,19 @@ fn chain_writes(base: Expr, fields: FieldList, from_self: bool) -> Expr {
                 let new_base = Expr.Call(Expr.FieldAccess(base, "write_bytes"), args)
                 return chain_writes(new_base, next, from_self)
             }
+            // List<NestedMarshalStruct>: BytesBuilder doesn't have a
+            // generic write_struct_list (would need a trait-bound
+            // method), so we inline a for-loop in a block-expr that
+            // yields the final builder for the chain to continue.
+            match ty {
+                .List(elem) -> {
+                    if elem is .Struct {
+                        let new_base = list_of_struct_block(base, value_expr, name)
+                        return chain_writes(new_base, next, from_self)
+                    }
+                }
+                _ -> {}
+            }
             let writer = writer_for(ty)
             if writer == "" {
                 // Unsupported field type — skip so the impl still
@@ -189,6 +202,43 @@ fn chain_writes(base: Expr, fields: FieldList, from_self: bool) -> Expr {
             }
         }
     }
+}
+
+/// Build a block-expr that returns a BytesBuilder after appending
+/// every nested-struct element's `to_bytes()` payload to `base`:
+///
+///     {
+///         mut __b_<n> = base.write_int(value_expr.length)
+///         for __x_<n> in value_expr {
+///             __b_<n> = __b_<n>.write_bytes(__x_<n>.to_bytes())
+///         }
+///         __b_<n>
+///     }
+///
+/// The chained writer reuses this block-expr as its new base, so
+/// downstream field writes append naturally. Unique-per-field
+/// variable names keep multiple List<Struct> fields in the same
+/// struct from colliding on the accumulator.
+fn list_of_struct_block(base: Expr, value_expr: Expr, field_name: string) -> Expr {
+    let bvar = "__b_" + field_name
+    let xvar = "__x_" + field_name
+    // mut __b_<n> = base.write_int(value_expr.length)
+    let len_expr = Expr.FieldAccess(value_expr, "length")
+    let init_call = Expr.Call(Expr.FieldAccess(base, "write_int"),
+        ExprList.Node(sexpr_dummy(len_expr), ExprList.End))
+    let init_stmt = Stmt.Mut(bvar, ValueType.Unknown, init_call)
+    // body: __b_<n> = __b_<n>.write_bytes(__x_<n>.to_bytes())
+    let x_to_bytes = Expr.Call(Expr.FieldAccess(Expr.Ident(xvar), "to_bytes"), ExprList.End)
+    let new_b = Expr.Call(Expr.FieldAccess(Expr.Ident(bvar), "write_bytes"),
+        ExprList.Node(sexpr_dummy(x_to_bytes), ExprList.End))
+    let assign_stmt = Stmt.Expr(Expr.Assign(bvar, new_b))
+    let body = Stmt.Block(StmtList.Node(sstmt_dummy(assign_stmt), StmtList.End))
+    let for_stmt = Stmt.ForIn(xvar, value_expr, body)
+    let yield_stmt = Stmt.Expr(Expr.Ident(bvar))
+    let block_body = StmtList.Node(sstmt_dummy(init_stmt),
+        StmtList.Node(sstmt_dummy(for_stmt),
+            StmtList.Node(sstmt_dummy(yield_stmt), StmtList.End)))
+    Expr.Block(block_body)
 }
 
 fn writer_for(ty: ValueType) -> string {
@@ -251,9 +301,13 @@ fn build_from_bytes_fn(type_name: string, fields: FieldList) -> Stmt {
     //   let (f1, r) = r.read_*()  -- per field (skipped if no reader)
     //   T { fields }
     // Qualified bytes_reader call — same reasoning as build_chain.
+    // `mut r` because list-of-struct reads need to reassign the
+    // cursor across loop iterations, and primitive reads thread
+    // via explicit reassignment (avoids the let-shadow that
+    // would hide the mut from inner scopes).
     let init_call = Expr.Call(Expr.QualifiedIdent("@std::process::bytes_reader"),
         ExprList.Node(sexpr_dummy(Expr.Ident("b")), ExprList.End))
-    let init_let = Stmt.Let("r", ValueType.Unknown, init_call)
+    let init_let = Stmt.Mut("r", ValueType.Unknown, init_call)
     let reads_then_ctor = build_reads_and_ctor(type_name, fields)
     let body = StmtList.Node(sstmt_dummy(init_let), reads_then_ctor)
     // Top-level fn named `from_bytes_<T>` (no static-method syntax
@@ -278,24 +332,29 @@ fn build_reads(fields: FieldList) -> StmtList {
     match fields {
         .End -> StmtList.End
         .Node(name, ty, next) -> {
-            // Nested @marshal struct (nce6.1.C): emit two stmts.
-            //   let (__nested_<n>, r) = r.read_bytes()
+            // Nested @marshal struct (nce6.1.C): emit three stmts.
+            //   let (__nested_<n>, __r_<n>) = r.read_bytes()
+            //   r = __r_<n>
             //   let <n> = from_bytes_<InnerT>(__nested_<n>)
-            // The bytes-read threads `r` forward; the from_bytes
-            // call binds the typed inner struct that the
-            // surrounding struct-literal constructor consumes.
             match ty {
                 .Struct(inner_name, _) -> {
-                    let raw_name = "__nested_" + name
-                    let read_call = Expr.Call(Expr.FieldAccess(Expr.Ident("r"), "read_bytes"), ExprList.End)
-                    let destruct_names = ParamList.Node(raw_name, ValueType.Unknown,
-                        ParamList.Node("r", ValueType.Unknown, ParamList.End))
-                    let read_stmt = Stmt.LetDestructure(destruct_names, read_call)
+                    let stmts = read_then_reassign(name, "__nested_" + name, "read_bytes")
                     let from_bytes_call = Expr.Call(Expr.Ident("from_bytes_" + inner_name),
-                        ExprList.Node(sexpr_dummy(Expr.Ident(raw_name)), ExprList.End))
+                        ExprList.Node(sexpr_dummy(Expr.Ident("__nested_" + name)), ExprList.End))
                     let bind_stmt = Stmt.Let(name, ValueType.Unknown, from_bytes_call)
-                    StmtList.Node(sstmt_dummy(read_stmt),
-                        StmtList.Node(sstmt_dummy(bind_stmt), build_reads(next)))
+                    append_stmts(stmts, StmtList.Node(sstmt_dummy(bind_stmt), build_reads(next)))
+                }
+                .List(elem) -> {
+                    if elem is .Struct {
+                        let stmts = list_of_struct_reads(name, elem)
+                        return append_stmts(stmts, build_reads(next))
+                    }
+                    let reader = reader_for(ty)
+                    if reader == "" {
+                        build_reads(next)
+                    } else {
+                        append_stmts(read_then_reassign(name, name, reader), build_reads(next))
+                    }
                 }
                 _ -> {
                     let reader = reader_for(ty)
@@ -306,16 +365,99 @@ fn build_reads(fields: FieldList) -> StmtList {
                         // extend the table.
                         build_reads(next)
                     } else {
-                        let read_call = Expr.Call(Expr.FieldAccess(Expr.Ident("r"), reader), ExprList.End)
-                        let names = ParamList.Node(name, ValueType.Unknown,
-                            ParamList.Node("r", ValueType.Unknown, ParamList.End))
-                        let stmt = Stmt.LetDestructure(names, read_call)
-                        StmtList.Node(sstmt_dummy(stmt), build_reads(next))
+                        append_stmts(read_then_reassign(name, name, reader), build_reads(next))
                     }
                 }
             }
         }
     }
+}
+
+/// Emit `let (<value_name>, __r_<n>) = r.<reader>(); r = __r_<n>`
+/// — extracts a value AND advances the cursor explicitly. The
+/// explicit reassignment lets list-of-struct loops + while-loops
+/// inside the same fn body share `mut r` without let-shadow
+/// hiding the mut.
+fn read_then_reassign(field_name: string, value_name: string, reader: string) -> StmtList {
+    let r_next = "__r_" + field_name
+    let read_call = Expr.Call(Expr.FieldAccess(Expr.Ident("r"), reader), ExprList.End)
+    let destruct_names = ParamList.Node(value_name, ValueType.Unknown,
+        ParamList.Node(r_next, ValueType.Unknown, ParamList.End))
+    let destruct_stmt = Stmt.LetDestructure(destruct_names, read_call)
+    let reassign_stmt = Stmt.Expr(Expr.Assign("r", Expr.Ident(r_next)))
+    StmtList.Node(sstmt_dummy(destruct_stmt),
+        StmtList.Node(sstmt_dummy(reassign_stmt), StmtList.End))
+}
+
+/// Synthesise the read sequence for a `field: List<NestedStruct>`:
+///
+///     let (__count_<n>, r) = r.read_int()
+///     mut __acc_<n>: List<Inner> = []
+///     mut __i_<n> = 0
+///     while __i_<n> < __count_<n> {
+///         let (__raw_<n>, r2) = r.read_bytes()
+///         __acc_<n> = __acc_<n>.push(from_bytes_<Inner>(__raw_<n>))
+///         r = r2
+///         __i_<n> = __i_<n> + 1
+///     }
+///     let <n> = __acc_<n>
+///
+/// `<Inner>` is read off the .Struct(name, _) of the elem type.
+fn list_of_struct_reads(field_name: string, elem: ValueType) -> StmtList {
+    let inner_name = match elem {
+        .Struct(n, _) -> n
+        _ -> ""
+    }
+    let cname = "__count_" + field_name
+    let aname = "__acc_" + field_name
+    let iname = "__i_" + field_name
+    let rname = "__r2_" + field_name
+    let rawname = "__raw_" + field_name
+
+    // Count read using explicit-reassign pattern — keeps `r`'s
+    // mut binding visible inside the while-loop below.
+    let count_stmts = read_then_reassign("listcount_" + field_name, cname, "read_int")
+
+    // mut __acc: List<Inner> = []
+    let acc_init = Expr.ListLit(ExprList.End)
+    let acc_stmt = Stmt.Mut(aname, ValueType.List(ValueType.Struct(inner_name, 0)), acc_init)
+
+    // mut __i = 0
+    let i_stmt = Stmt.Mut(iname, ValueType.Int, Expr.Number("0"))
+
+    // while __i < __count { ... }
+    let cond = Expr.Binary(Expr.Ident(iname), BinOp.Lt, Expr.Ident(cname))
+    // let (__raw, __r2) = r.read_bytes()
+    let raw_read = Expr.Call(Expr.FieldAccess(Expr.Ident("r"), "read_bytes"), ExprList.End)
+    let raw_names = ParamList.Node(rawname, ValueType.Unknown,
+        ParamList.Node(rname, ValueType.Unknown, ParamList.End))
+    let raw_stmt = Stmt.LetDestructure(raw_names, raw_read)
+    // __acc = __acc.push(from_bytes_<Inner>(__raw))
+    let from_call = Expr.Call(Expr.Ident("from_bytes_" + inner_name),
+        ExprList.Node(sexpr_dummy(Expr.Ident(rawname)), ExprList.End))
+    let push_call = Expr.Call(Expr.FieldAccess(Expr.Ident(aname), "push"),
+        ExprList.Node(sexpr_dummy(from_call), ExprList.End))
+    let acc_assign = Stmt.Expr(Expr.Assign(aname, push_call))
+    // r = __r2
+    let r_assign = Stmt.Expr(Expr.Assign("r", Expr.Ident(rname)))
+    // __i = __i + 1
+    let i_inc = Stmt.Expr(Expr.Assign(iname,
+        Expr.Binary(Expr.Ident(iname), BinOp.Add, Expr.Number("1"))))
+
+    let loop_body = Stmt.Block(StmtList.Node(sstmt_dummy(raw_stmt),
+        StmtList.Node(sstmt_dummy(acc_assign),
+            StmtList.Node(sstmt_dummy(r_assign),
+                StmtList.Node(sstmt_dummy(i_inc), StmtList.End)))))
+    let while_stmt = Stmt.While(cond, loop_body)
+
+    // let <field_name> = __acc
+    let bind_stmt = Stmt.Let(field_name, ValueType.Unknown, Expr.Ident(aname))
+
+    let trailer = StmtList.Node(sstmt_dummy(acc_stmt),
+        StmtList.Node(sstmt_dummy(i_stmt),
+            StmtList.Node(sstmt_dummy(while_stmt),
+                StmtList.Node(sstmt_dummy(bind_stmt), StmtList.End))))
+    append_stmts(count_stmts, trailer)
 }
 
 /// Build the final `T { f1: f1, f2: f2, … }` constructor.
@@ -329,9 +471,10 @@ fn build_field_inits(fields: FieldList) -> FieldInitList {
         .Node(name, ty, next) -> {
             // The field has a local binding by the same name iff
             // build_reads emitted a read for it — true for any
-            // primitive with a reader OR a nested Struct field
-            // (handled by from_bytes_<inner>).
-            let init_expr = if reader_for(ty) != "" || ty is .Struct {
+            // primitive with a reader, a nested Struct field
+            // (handled by from_bytes_<inner>), or a List<Struct>
+            // field (list_of_struct_reads emits `let <name> = __acc`).
+            let init_expr = if reader_for(ty) != "" || ty is .Struct || list_of_struct_elem(ty) {
                 Expr.Ident(name)
             } else {
                 // Field type wasn't read; placeholder initializer
@@ -360,6 +503,16 @@ fn default_for(ty: ValueType) -> Expr {
     // Fallback — `null` covers nullable / reference shapes; gets
     // tightened as the codec table expands.
     Expr.Null
+}
+
+/// True when `ty` is `List<NestedMarshalStruct>` — i.e. a list
+/// whose element type is itself a struct. Used to gate the
+/// list-of-struct read/write block-synthesis paths.
+fn list_of_struct_elem(ty: ValueType) -> bool {
+    match ty {
+        .List(elem) -> elem is .Struct
+        _ -> false
+    }
 }
 
 fn append_stmts(a: StmtList, b: StmtList) -> StmtList {
@@ -447,14 +600,13 @@ fn build_enum_from_bytes_fn(type_name: string, variants: VariantList) -> Stmt {
     let params = ParamList.Node("b", ValueType.Bytes, ParamList.End)
     let init_call = Expr.Call(Expr.QualifiedIdent("@std::process::bytes_reader"),
         ExprList.Node(sexpr_dummy(Expr.Ident("b")), ExprList.End))
-    let init_let = Stmt.Let("r", ValueType.Unknown, init_call)
-    let tag_destruct = Stmt.LetDestructure(
-        ParamList.Node("tag", ValueType.Unknown,
-            ParamList.Node("r", ValueType.Unknown, ParamList.End)),
-        Expr.Call(Expr.FieldAccess(Expr.Ident("r"), "read_int"), ExprList.End))
+    let init_let = Stmt.Mut("r", ValueType.Unknown, init_call)
+    // Tag read uses the new explicit-reassign pattern so the
+    // mut r binding stays visible to the variant payload reads.
+    let tag_reads = read_then_reassign("tag", "tag", "read_int")
     let dispatch = build_enum_dispatch(type_name, variants, 0)
     let body = StmtList.Node(sstmt_dummy(init_let),
-        StmtList.Node(sstmt_dummy(tag_destruct), dispatch))
+        append_stmts(tag_reads, dispatch))
     let fn_name = "from_bytes_" + type_name
     Stmt.Function(fn_name, TypeParamList.End, params,
         ValueType.Enum(type_name, TypeList.End, 0), body)
