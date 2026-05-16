@@ -145,15 +145,24 @@ fn build_chain(fields: FieldList) -> Expr {
     // to @std::process. Bare Ident here would force every consumer
     // of @marshal to import the byte primitives explicitly.
     let start = Expr.Call(Expr.QualifiedIdent("@std::process::bytes_builder"), ExprList.End)
-    let written = chain_writes(start, fields)
+    let written = chain_writes(start, fields, true)
     // Cap with `.finish()` so the chain produces a `bytes` value.
     Expr.Call(Expr.FieldAccess(written, "finish"), ExprList.End)
 }
 
-fn chain_writes(base: Expr, fields: FieldList) -> Expr {
+/// `from_self == true` references each field via `self.<name>`
+/// (struct-method codegen); `false` references the bare `<name>`
+/// binding (enum-variant codegen, where match-arm bindings expose
+/// payload fields as local idents).
+fn chain_writes(base: Expr, fields: FieldList, from_self: bool) -> Expr {
     match fields {
         .End -> base
         .Node(name, ty, next) -> {
+            let value_expr = if from_self {
+                Expr.FieldAccess(Expr.Ident("self"), name)
+            } else {
+                Expr.Ident(name)
+            }
             // Nested @marshal struct (nce6.1.C): the field's own
             // to_bytes() returns a `bytes` payload that we embed
             // length-prefixed via the parent's write_bytes. We
@@ -162,24 +171,21 @@ fn chain_writes(base: Expr, fields: FieldList) -> Expr {
             // doesn't, the type-checker will catch the undefined
             // `to_bytes` later with a clear error.
             if ty is .Struct {
-                let self_field = Expr.FieldAccess(Expr.Ident("self"), name)
-                let inner_bytes = Expr.Call(Expr.FieldAccess(self_field, "to_bytes"), ExprList.End)
+                let inner_bytes = Expr.Call(Expr.FieldAccess(value_expr, "to_bytes"), ExprList.End)
                 let args = ExprList.Node(sexpr_dummy(inner_bytes), ExprList.End)
                 let new_base = Expr.Call(Expr.FieldAccess(base, "write_bytes"), args)
-                return chain_writes(new_base, next)
+                return chain_writes(new_base, next, from_self)
             }
             let writer = writer_for(ty)
             if writer == "" {
-                // Unsupported field type — skip writing this field
-                // so the impl still type-checks; round-trip is
-                // lossy until follow-up sub-tickets extend the
-                // table.
-                chain_writes(base, next)
+                // Unsupported field type — skip so the impl still
+                // type-checks; round-trip is lossy until follow-up
+                // sub-tickets extend the table.
+                chain_writes(base, next, from_self)
             } else {
-                let self_field = Expr.FieldAccess(Expr.Ident("self"), name)
-                let args = ExprList.Node(sexpr_dummy(self_field), ExprList.End)
+                let args = ExprList.Node(sexpr_dummy(value_expr), ExprList.End)
                 let new_base = Expr.Call(Expr.FieldAccess(base, writer), args)
-                chain_writes(new_base, next)
+                chain_writes(new_base, next, from_self)
             }
         }
     }
@@ -415,33 +421,14 @@ fn field_list_to_param_list(fields: FieldList) -> ParamList {
 /// for a single variant. Payload fields reference the
 /// match-arm-bound idents (no `self.` prefix — they're locals).
 fn build_variant_write_chain(tag: int, payload: FieldList) -> Expr {
-    let tag_arg = ExprList.Node(sexpr_dummy(Expr.Number(int_to_string(tag))), ExprList.End)
+    let tag_arg = ExprList.Node(sexpr_dummy(Expr.Number(string(tag))), ExprList.End)
     let start = Expr.Call(Expr.QualifiedIdent("@std::process::bytes_builder"), ExprList.End)
     let with_tag = Expr.Call(Expr.FieldAccess(start, "write_int"), tag_arg)
-    let with_payload = chain_payload_writes(with_tag, payload)
+    // Variant payloads are match-arm bindings (local idents),
+    // hence from_self=false. Reuses the same codec table as
+    // struct fields via the shared chain_writes.
+    let with_payload = chain_writes(with_tag, payload, false)
     Expr.Call(Expr.FieldAccess(with_payload, "finish"), ExprList.End)
-}
-
-fn chain_payload_writes(base: Expr, payload: FieldList) -> Expr {
-    match payload {
-        .End -> base
-        .Node(name, ty, next) -> {
-            if ty is .Struct {
-                let inner_bytes = Expr.Call(Expr.FieldAccess(Expr.Ident(name), "to_bytes"), ExprList.End)
-                let args = ExprList.Node(sexpr_dummy(inner_bytes), ExprList.End)
-                let new_base = Expr.Call(Expr.FieldAccess(base, "write_bytes"), args)
-                return chain_payload_writes(new_base, next)
-            }
-            let writer = writer_for(ty)
-            if writer == "" {
-                chain_payload_writes(base, next)
-            } else {
-                let args = ExprList.Node(sexpr_dummy(Expr.Ident(name)), ExprList.End)
-                let new_base = Expr.Call(Expr.FieldAccess(base, writer), args)
-                chain_payload_writes(new_base, next)
-            }
-        }
-    }
 }
 
 /// fn from_bytes_<T>(b: bytes) -> T {
@@ -476,7 +463,7 @@ fn build_enum_dispatch(type_name: string, variants: VariantList, tag: int) -> St
         .End -> StmtList.End
         .Node(name, payload, next) -> {
             let is_last = match next { .End -> true, _ -> false }
-            let read_payload_stmts = build_variant_reads(payload)
+            let read_payload_stmts = build_reads(payload)
             let ctor = build_enum_ctor(type_name, name, payload)
             let ret_stmt = Stmt.Return(ctor)
             let block_body = append_stmts(read_payload_stmts,
@@ -484,7 +471,7 @@ fn build_enum_dispatch(type_name: string, variants: VariantList, tag: int) -> St
             if is_last {
                 block_body
             } else {
-                let tag_lit = Expr.Number(int_to_string(tag))
+                let tag_lit = Expr.Number(string(tag))
                 let cmp = Expr.Binary(Expr.Ident("tag"), BinOp.Eq, tag_lit)
                 let then_block = Stmt.Block(block_body)
                 let if_stmt = Stmt.If(cmp, then_block, null)
@@ -495,39 +482,11 @@ fn build_enum_dispatch(type_name: string, variants: VariantList, tag: int) -> St
     }
 }
 
-fn build_variant_reads(payload: FieldList) -> StmtList {
-    match payload {
-        .End -> StmtList.End
-        .Node(name, ty, next) -> {
-            match ty {
-                .Struct(inner_name, _) -> {
-                    let raw_name = "__nested_" + name
-                    let read_call = Expr.Call(Expr.FieldAccess(Expr.Ident("r"), "read_bytes"), ExprList.End)
-                    let destruct_names = ParamList.Node(raw_name, ValueType.Unknown,
-                        ParamList.Node("r", ValueType.Unknown, ParamList.End))
-                    let read_stmt = Stmt.LetDestructure(destruct_names, read_call)
-                    let from_bytes_call = Expr.Call(Expr.Ident("from_bytes_" + inner_name),
-                        ExprList.Node(sexpr_dummy(Expr.Ident(raw_name)), ExprList.End))
-                    let bind_stmt = Stmt.Let(name, ValueType.Unknown, from_bytes_call)
-                    StmtList.Node(sstmt_dummy(read_stmt),
-                        StmtList.Node(sstmt_dummy(bind_stmt), build_variant_reads(next)))
-                }
-                _ -> {
-                    let reader = reader_for(ty)
-                    if reader == "" {
-                        build_variant_reads(next)
-                    } else {
-                        let read_call = Expr.Call(Expr.FieldAccess(Expr.Ident("r"), reader), ExprList.End)
-                        let names = ParamList.Node(name, ValueType.Unknown,
-                            ParamList.Node("r", ValueType.Unknown, ParamList.End))
-                        let stmt = Stmt.LetDestructure(names, read_call)
-                        StmtList.Node(sstmt_dummy(stmt), build_variant_reads(next))
-                    }
-                }
-            }
-        }
-    }
-}
+// build_variant_reads was identical to build_reads — both read a
+// FieldList field-by-field, threading the `r` reader, recursing
+// into nested @marshal structs via from_bytes_<T>. Collapsed into
+// build_reads (struct & enum-variant payload share the same read
+// shape since match-arm bindings produce the same locals).
 
 fn build_enum_ctor(type_name: string, variant: string, payload: FieldList) -> Expr {
     Expr.EnumCtor(type_name, variant, field_list_to_arg_list(payload))
@@ -598,24 +557,3 @@ fn build_isolated_fn(type_name: string, ty: ValueType) -> Stmt {
     Stmt.Function(fn_name, TypeParamList.End, params, ret_ty, body_stmts)
 }
 
-// Minimal int → string for tag literals. Avra has `string(int)`
-// at runtime but here we're constructing AST at compile-time, so
-// the Number literal needs an explicit text form. Handles 0..9
-// directly and recurses for larger values; tags rarely exceed
-// single digits in real enums (most have <10 variants).
-fn int_to_string(n: int) -> string {
-    if n < 0 { return "-" + int_to_string(0 - n) }
-    if n < 10 {
-        if n == 0 { return "0" }
-        if n == 1 { return "1" }
-        if n == 2 { return "2" }
-        if n == 3 { return "3" }
-        if n == 4 { return "4" }
-        if n == 5 { return "5" }
-        if n == 6 { return "6" }
-        if n == 7 { return "7" }
-        if n == 8 { return "8" }
-        return "9"
-    }
-    int_to_string(n / 10) + int_to_string(n % 10)
-}
