@@ -125,8 +125,10 @@ fn derive_stmts(type_name: string, fields: FieldList) -> StmtList {
     let methods = StmtList.Node(sstmt_dummy(to_bytes_fn), StmtList.End)
     let impl_stmt = Stmt.Impl(type_name, methods)
     let from_bytes_fn = build_from_bytes_fn(type_name, fields)
+    let isolated_fn = build_isolated_fn(type_name, ValueType.Struct(type_name, 0))
     StmtList.Node(sstmt_dummy(impl_stmt),
-        StmtList.Node(sstmt_dummy(from_bytes_fn), StmtList.End))
+        StmtList.Node(sstmt_dummy(from_bytes_fn),
+            StmtList.Node(sstmt_dummy(isolated_fn), StmtList.End)))
 }
 
 fn build_to_bytes_fn(fields: FieldList) -> Stmt {
@@ -362,8 +364,11 @@ fn derive_enum_stmts(type_name: string, variants: VariantList) -> StmtList {
     let methods = StmtList.Node(sstmt_dummy(to_bytes_fn), StmtList.End)
     let impl_stmt = Stmt.Impl(type_name, methods)
     let from_bytes_fn = build_enum_from_bytes_fn(type_name, variants)
+    let isolated_fn = build_isolated_fn(type_name,
+        ValueType.Enum(type_name, TypeList.End, 0))
     StmtList.Node(sstmt_dummy(impl_stmt),
-        StmtList.Node(sstmt_dummy(from_bytes_fn), StmtList.End))
+        StmtList.Node(sstmt_dummy(from_bytes_fn),
+            StmtList.Node(sstmt_dummy(isolated_fn), StmtList.End)))
 }
 
 fn build_enum_to_bytes_fn(type_name: string, variants: VariantList) -> Stmt {
@@ -526,6 +531,63 @@ fn field_list_to_arg_list(payload: FieldList) -> ExprList {
         .Node(name, _, next) -> ExprList.Node(sexpr_dummy(Expr.Ident(name)),
             field_list_to_arg_list(next))
     }
+}
+
+// ── isolated_<T>(body) synthesis (nce6.1.E) ──
+
+/// Synthesise:
+///   fn isolated_<T>(body: fn() -> T) -> Result<T, IsolatedError> {
+///       match isolated_bytes(() -> body().to_bytes()) {
+///           .Ok(b) -> Result.Ok(from_bytes_<T>(b))
+///           .Err(e) -> Result.Err(e)
+///       }
+///   }
+///
+/// Per-T pragmatic shortcut for what would be a generic
+/// `isolated<T: Marshal>(body)` if Avra had trait-bound generics
+/// today. Each @marshal-annotated type gets its own
+/// monomorphic `isolated_<T>` wrapper alongside to_bytes /
+/// from_bytes_<T>; the user-facing DX is identical to a generic
+/// trait-bound version.
+fn build_isolated_fn(type_name: string, ty: ValueType) -> Stmt {
+    // Param: body: fn() -> T
+    let body_param_ty = ValueType.FnTyped(TypeList.End, ty)
+    let params = ParamList.Node("body", body_param_ty, ParamList.End)
+    // Result<T, IsolatedError> as the return type. Resolver
+    // upgrades the bare Enum form once IsolatedError is bound.
+    let isolated_err_ty = ValueType.Enum("IsolatedError", TypeList.End, 0)
+    let result_type_args = TypeList.Node(ty,
+        TypeList.Node(isolated_err_ty, TypeList.End))
+    let ret_ty = ValueType.Enum("Result", result_type_args, 0)
+    // Inner closure: () -> body().to_bytes()
+    let body_call = Expr.Call(Expr.Ident("body"), ExprList.End)
+    let to_bytes_call = Expr.Call(Expr.FieldAccess(body_call, "to_bytes"), ExprList.End)
+    let inner_closure = Expr.Lambda(ParamList.End, to_bytes_call)
+    // Subject: @std::process::isolated_bytes(closure). Qualified
+    // so consumers of @marshal don't need to `use isolated_bytes`
+    // — only types that actually fork pay the import cost (via
+    // their own use of `isolated_<T>` somewhere reachable).
+    let isolated_call = Expr.Call(Expr.QualifiedIdent("@std::process::isolated_bytes"),
+        ExprList.Node(sexpr_dummy(inner_closure), ExprList.End))
+    // Ok arm: Result.Ok(from_bytes_<T>(b))
+    let from_bytes_call = Expr.Call(Expr.Ident("from_bytes_" + type_name),
+        ExprList.Node(sexpr_dummy(Expr.Ident("b")), ExprList.End))
+    let ok_body = Expr.EnumCtor("Result", "Ok",
+        ExprList.Node(sexpr_dummy(from_bytes_call), ExprList.End))
+    let ok_pattern = Pattern.Variant("Ok",
+        ParamList.Node("b", ValueType.Unknown, ParamList.End))
+    // Err arm: Result.Err(e) — pass-through
+    let err_body = Expr.EnumCtor("Result", "Err",
+        ExprList.Node(sexpr_dummy(Expr.Ident("e")), ExprList.End))
+    let err_pattern = Pattern.Variant("Err",
+        ParamList.Node("e", ValueType.Unknown, ParamList.End))
+    let arms = MatchArmList.Node(ok_pattern, null, sexpr_dummy(ok_body),
+        MatchArmList.Node(err_pattern, null, sexpr_dummy(err_body),
+            MatchArmList.End))
+    let match_expr = Expr.MatchExpr(isolated_call, arms)
+    let body_stmts = StmtList.Node(sstmt_dummy(Stmt.Return(match_expr)), StmtList.End)
+    let fn_name = "isolated_" + type_name
+    Stmt.Function(fn_name, TypeParamList.End, params, ret_ty, body_stmts)
 }
 
 // Minimal int → string for tag literals. Avra has `string(int)`
