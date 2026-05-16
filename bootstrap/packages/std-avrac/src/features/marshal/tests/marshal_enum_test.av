@@ -1,0 +1,71 @@
+// nce6.1.D: @marshal on enum decls. Wire format: 8-byte tag
+// (source-order variant index) + per-variant payload writes.
+// from_bytes_<T> cascades through `if tag == N` and returns the
+// matching variant constructed from the read payload.
+
+use @std.process.{bytes_builder, bytes_reader}
+
+@marshal
+enum MStatus {
+    Active,
+    Pending(count: int),
+    Failed(reason: string, code: int),
+}
+
+@marshal
+enum MShape {
+    Empty,
+    Point(x: int, y: int),
+    Labeled(name: string),
+}
+
+fn describe(s: MStatus) -> string {
+    match s {
+        .Active -> "A"
+        .Pending(c) -> "P" + string(c)
+        .Failed(r, c) -> "F:" + r + ":" + string(c)
+    }
+}
+
+fn describe_shape(s: MShape) -> string {
+    match s {
+        .Empty -> "E"
+        .Point(x, y) -> "P:" + string(x) + "," + string(y)
+        .Labeled(n) -> "L:" + n
+    }
+}
+
+spec "@marshal: enum round-trip (nce6.1.D)" {
+    then "payload-less variant survives" {
+        let s2 = from_bytes_MStatus(MStatus.Active.to_bytes())
+        describe(s2) == "A"
+    }
+    then "single-int-payload variant survives" {
+        let s2 = from_bytes_MStatus(MStatus.Pending(42).to_bytes())
+        describe(s2) == "P42"
+    }
+    then "two-field payload variant survives" {
+        let s2 = from_bytes_MStatus(MStatus.Failed("disk", 7).to_bytes())
+        describe(s2) == "F:disk:7"
+    }
+    then "all variants round-trip in same program run" {
+        let a = describe(from_bytes_MStatus(MStatus.Active.to_bytes()))
+        let p = describe(from_bytes_MStatus(MStatus.Pending(99).to_bytes()))
+        let f = describe(from_bytes_MStatus(MStatus.Failed("net", 0 - 1).to_bytes()))
+        a == "A" && p == "P99" && f == "F:net:-1"
+    }
+    then "different enum types don't cross-contaminate tag space" {
+        let s2 = from_bytes_MShape(MShape.Empty.to_bytes())
+        let p2 = from_bytes_MShape(MShape.Point(3, 4).to_bytes())
+        let l2 = from_bytes_MShape(MShape.Labeled("hi").to_bytes())
+        describe_shape(s2) == "E" && describe_shape(p2) == "P:3,4" && describe_shape(l2) == "L:hi"
+    }
+    then "negative-int payload survives" {
+        let s2 = from_bytes_MStatus(MStatus.Pending(0 - 50).to_bytes())
+        describe(s2) == "P-50"
+    }
+    then "empty-string payload survives" {
+        let s2 = from_bytes_MStatus(MStatus.Failed("", 0).to_bytes())
+        describe(s2) == "F::0"
+    }
+}
