@@ -211,11 +211,10 @@ export enum IsolatedError {
 }
 
 impl IsolatedError {
-    /// One-line human description. Use in error logs / panic
-    /// messages — `println("isolated call failed: ${err.message()}")`.
+    /// Display impl — invoked by `string(err)` and `"${err}"`.
     /// Mirrors Rust's `std::fmt::Display`, Go's `error.Error()`,
     /// Swift's `LocalizedError.errorDescription`.
-    fn message(self) -> string {
+    fn display(self) -> string {
         match self {
             .Crashed -> "child process crashed (SIGSEGV, SIGABRT, or non-zero exit)"
             .ForkFailed -> "fork(2) failed — typically out of pids or memory pressure"

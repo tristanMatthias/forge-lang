@@ -85,3 +85,32 @@ spec "Fallback paths still work" {
         string(n) == "-7"
     }
 }
+
+// Per-file shard mode compiles each test alone without bundling
+// runtime.av's externs, so this test re-declares the shell-exec
+// extern it uses for the strictness fixtures below.
+//
+// The strictness-fixture sources MUST avoid the literal entry-point
+// substring (`fn ma` + `in()` glued together). The test-runner
+// discovery filter (select_test_paths in cli/main.av's
+// has_top_level_main) skips files containing a top-level main, so
+// the fixtures build their entry point via string concatenation to
+// keep that substring out of THIS file.
+extern fn avra_shell_exec(cmd: string) -> string
+
+spec "Display strictness — no display() means compile error" {
+    then "struct without display() rejects string(value)" {
+        let entry = "fn ma" + "in() { let n = NoDisp { x: 1 }\n println(string(n)) }\n"
+        let body = "type NoDisp = { x: int }\n" + entry
+        let cmd = "printf '%s' '" + body + "' > /tmp/no_display.av && ./build/bs2 compile /tmp/no_display.av 2>&1 || true"
+        let out = avra_shell_exec(cmd)
+        out.contains("NoDisp") && out.contains("display(self)")
+    }
+    then "enum without display() rejects string(value)" {
+        let entry = "fn ma" + "in() { let v = NoDispE.A\n println(string(v)) }\n"
+        let body = "enum NoDispE { A, B }\n" + entry
+        let cmd = "printf '%s' '" + body + "' > /tmp/no_display_enum.av && ./build/bs2 compile /tmp/no_display_enum.av 2>&1 || true"
+        let out = avra_shell_exec(cmd)
+        out.contains("NoDispE") && out.contains("display(self)")
+    }
+}

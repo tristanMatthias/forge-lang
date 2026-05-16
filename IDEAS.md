@@ -27,6 +27,10 @@ Based on the ideas that:
 - Pascal's const recurision declaration
 - Pascal's if i in [0..3, 7, 9, 12..15] 
 - Enforce types for every variable (params too)
+- Needed for md5 Crypto etc
+  1. Sized integer types — u8, u16, u32, u64, i8, i16, i32. Wrapping arithmetic is the default for unsigned per spec convention. The codegen already has the LLVM types (i32, i8 are first-class in LLVM); the surface language just needs to expose them.
+  2. A bytes type (or just [u8]) — distinct from string. Strings are UTF-8 character data; bytes are raw octets. Crypto, binary protocols, and file I/O all want raw bytes. Today everything is shoehorned through string.
+  3. string.byte(i) -> u8 and bytes_from_string(s) -> [u8] — or whatever the spec settles on. The conversion has to be cheap.
 # Std libs
 - @std/config
 - @@std/logs
@@ -43,6 +47,7 @@ std/mobile
 - @std.cli
   - Typed args based on sub commands
 - Import / compile Typespec projects
+- Ternaries
 
 - # Compiler
 - Single output compiler

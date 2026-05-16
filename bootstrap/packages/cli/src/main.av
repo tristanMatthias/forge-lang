@@ -2034,10 +2034,44 @@ fn select_test_paths(test_files_listing: string, args: TestArgs) -> List<string>
         if args.filter != "" && !mod_name.contains(args.filter) { continue }
         let content = read_file(path)
         if !content.contains("spec ") { continue }
-        if content.contains("fn main()") { continue }
+        if has_top_level_main(content) { continue }
         survivors = survivors.push(path)
     }
     survivors
+}
+
+// Decide whether a *_test.av declares its own `fn main(...)` at the
+// top of the file. A naive `content.contains("fn main()")` produced
+// false positives on comments and string literals containing the
+// substring — see display_dispatch_test.av's strictness fixtures.
+//
+// Walk line by line, skip the line's leading whitespace, reject
+// line-comments, and require the trimmed line to start with `fn main`
+// followed by `(` (so `fn main_helper` doesn't trip it).
+fn has_top_level_main(content: string) -> bool {
+    for raw in content.split("\n") {
+        // Skip leading whitespace manually — no trim_start method.
+        mut i = 0
+        while i < raw.length {
+            let c = raw[i]
+            if c != " " && c != "\t" { break }
+            i = i + 1
+        }
+        if i >= raw.length { continue }
+        let rest = raw.substring(i, raw.length)
+        if rest.starts_with("//") { continue }
+        if !rest.starts_with("fn main") { continue }
+        // Reject `fn mainHelper`, `fn main_thing` — must be followed
+        // by `(` (with optional intervening whitespace).
+        mut j = 7  // length of "fn main"
+        while j < rest.length {
+            let c = rest[j]
+            if c != " " && c != "\t" { break }
+            j = j + 1
+        }
+        if j < rest.length && rest[j] == "(" { return true }
+    }
+    false
 }
 
 // Compose BuildInputs for a test action — bundled or per-shard.

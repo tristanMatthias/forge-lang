@@ -590,10 +590,20 @@ export fn emit_int_to_string(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<Em
             // type defines `display(self) -> string` opts in via the
             // method, no formal trait declaration required. Mirrors
             // Go's Stringer pattern — define the method, you're in.
-            // Falls through to the integer/snprintf path for types
-            // without a display method.
             let display_dispatch = emit_display_dispatch(ctx, r)
             if display_dispatch != null { return ok_emit(display_dispatch!, .Str) }
+            // Struct / Enum without display() must NOT silently fall
+            // through to snprintf — the pointer would print as a
+            // garbage integer. Hard-error and point the user at the
+            // fix (define `display(self) -> string`).
+            let sname = vtype_struct_name(r.ty)
+            let ename = vtype_enum_name(r.ty)
+            if sname != "" {
+                return err_emit("type `${sname}` cannot be converted to string — define `fn display(self) -> string` on `${sname}` (see Display dispatch)")
+            }
+            if ename != "" {
+                return err_emit("enum `${ename}` cannot be converted to string — define `fn display(self) -> string` on `${ename}` (see Display dispatch)")
+            }
             // Newtype: unwrap and convert inner type
             if vtype_is_newtype(r.ty) {
                 let inner = vtype_newtype_inner(r.ty)
