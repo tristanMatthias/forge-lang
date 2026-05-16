@@ -13,6 +13,7 @@ use core.{StmtList, avra_process_env_get, avra_process_forward, avra_shell_exec}
 use features.quote_expr.{lower_quotes}
 use desugar.{desugar_program, inject_intrinsics}
 use features.component_decl.{expand_components}
+use features.marshal.{derive_marshal}
 use resolve.{resolve_names}
 use features.comptime.{expand_macros, run_comptime}
 use typeck.{typecheck_program}
@@ -54,7 +55,12 @@ export fn build_binary(target: CompileTarget) -> Result<string, string> {
     let desugared = desugar_program(post_quote)
     let with_intrinsics = inject_intrinsics(desugared)
     let expanded = expand_components(with_intrinsics)
-    let named = resolve_names(expanded)
+    // @marshal derive: synthesise `impl T { to_bytes; from_bytes }`
+    // next to every `@marshal type T` so the resolver sees the type
+    // AND its methods in the same pass. Zero-cost when no
+    // @marshal annotation exists (early-out).
+    let with_marshal = derive_marshal(expanded)
+    let named = resolve_names(with_marshal)
     if bag_has_errors(named.bag) || named.had_error {
         render_bag("", target.diag_filename, named.bag)
         return Result.Err(named.error_message)

@@ -64,6 +64,7 @@ use @std.avrac.core.{render_expr, render_stmt_list, binop_str, unop_str, logicop
 use @std.avrac.features.eval.{render_value, eval_expression_source, execute_program_source}
 use @std.avrac.desugar.{desugar_program, inject_intrinsics}
 use @std.avrac.features.component_decl.{expand_components}
+use @std.avrac.features.marshal.{derive_marshal}
 use @std.avrac.resolve.{resolve_names}
 use @std.avrac.features.modules.{resolve_module_files, modules_dirname, find_packages_dir, package_root_for_file, LoadedPaths, dedup_modules, resolve_dir_module_body, synthesize_subdir_module_decls}
 use @std.avrac.features.modules.{load_package_config, load_manifest, Dep}
@@ -3116,7 +3117,8 @@ fn main() {
             // synthesizing a duplicate that dkfa would flag.
             let with_intrinsics = inject_intrinsics(mod_resolved.stmts)
             let expanded = expand_components(with_intrinsics)
-            let named = resolve_names(expanded)
+            let with_marshal = derive_marshal(expanded)
+            let named = resolve_names(with_marshal)
             if bag_has_errors(named.bag) || bag_has_warnings(named.bag) {
                 render_bag_either(check_json, check_source, check_path, named.bag)
             }
@@ -3198,7 +3200,8 @@ fn main() {
             if mod_resolved.had_error { fail(mod_resolved.error_message) }
             let with_intrinsics = inject_intrinsics(mod_resolved.stmts)
             let expanded = expand_components(with_intrinsics)
-            let named = resolve_names(expanded)
+            let with_marshal = derive_marshal(expanded)
+            let named = resolve_names(with_marshal)
             if named.had_error { fail(named.error_message) }
             let expanded_macros = expand_macros(named.stmts)
             let post_comptime = run_comptime(expanded_macros)
@@ -3227,7 +3230,8 @@ fn main() {
             }
             let with_intrinsics = inject_intrinsics(mod_resolved.stmts)
             let expanded = expand_components(with_intrinsics)
-            let named = resolve_names(expanded)
+            let with_marshal = derive_marshal(expanded)
+            let named = resolve_names(with_marshal)
             if bag_has_errors(named.bag) || bag_has_warnings(named.bag) {
                 render_bag(source, path, named.bag)
             }

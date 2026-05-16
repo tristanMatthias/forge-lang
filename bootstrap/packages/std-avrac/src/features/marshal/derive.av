@@ -1,0 +1,164 @@
+// WHY: `@marshal` derive — Phase C of the `isolated { body }` epic
+// (nce6.C / nce6.1.A). When a user annotates a `type` declaration
+// with `@marshal`, this pass synthesises an `impl T { fn to_bytes;
+// fn from_bytes }` block next to it so callers can ship typed
+// values across an `isolated` fork boundary without hand-rolling
+// the bytes layer.
+//
+// Phase 1 scope (this slice):
+//   - Struct TypeDecls with fields of type int / bool / string.
+//   - Generates `fn to_bytes(self) -> bytes` only.
+//   - `from_bytes` + nested types + List<T> + enums live in
+//     follow-up sub-tickets (nce6.1.B–F).
+//
+// Pipeline placement: this pass runs after expand_components and
+// before resolve_names. Synthesising pre-resolution lets the
+// resolver bind both the original TypeDecl and the synthesised
+// methods in the same pass; the call sites in the generated bodies
+// use unqualified names (`bytes_builder`, `write_int`) that the
+// resolver wires up to @std/process the same way a hand-written
+// impl would.
+
+use core.{Stmt, StmtList, SStmt, sstmt_dummy, Expr, ExprList, SExpr, sexpr_dummy, FieldList, ParamList, ValueType, TypeParamList, AnnotationList, find_annotation}
+
+// ── Public entry ──
+
+/// Walk `stmts`, emit a paired `impl` next to every `@marshal`-
+/// annotated TypeDecl. Original decls stay in place — the resolver
+/// sees the type AND its methods together.
+///
+/// Fast-path: when no `@marshal` annotation is present, returns
+/// the input unchanged (matches the expand_macros zero-cost
+/// pattern).
+export fn derive_marshal(stmts: StmtList) -> StmtList {
+    if !any_marshal_annotation(stmts) { return stmts }
+    walk(stmts)
+}
+
+fn walk(stmts: StmtList) -> StmtList {
+    match stmts {
+        .End -> StmtList.End
+        .Node(ss, next) -> {
+            let rest = walk(next)
+            // Module bodies host TypeDecls too — recurse so a
+            // `@marshal type T` declared inside a submodule still
+            // gets its impl synthesised. Wrap the recursed body
+            // back into a Module so downstream stages see the
+            // same shape.
+            match ss.node {
+                .Module(name, body) -> {
+                    let walked = walk(body)
+                    let new_mod = Stmt.Module(name, walked)
+                    StmtList.Node(sstmt_dummy(new_mod), rest)
+                }
+                _ -> {
+                    let impl_opt = derive_for(ss.node)
+                    if impl_opt != null {
+                        StmtList.Node(ss, StmtList.Node(sstmt_dummy(impl_opt!), rest))
+                    } else {
+                        StmtList.Node(ss, rest)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── Annotation detection ──
+
+fn any_marshal_annotation(stmts: StmtList) -> bool {
+    match stmts {
+        .End -> false
+        .Node(ss, next) -> {
+            if has_marshal(ss.node) { return true }
+            match ss.node {
+                .Module(_, body) -> {
+                    if any_marshal_annotation(body) { return true }
+                }
+                _ -> {}
+            }
+            any_marshal_annotation(next)
+        }
+    }
+}
+
+fn has_marshal(stmt: Stmt) -> bool {
+    find_annotation(stmt, "marshal") != null
+}
+
+// ── Synthesis ──
+
+/// If `stmt` is an `@marshal`-annotated TypeDecl, return the
+/// synthesised `Stmt.Impl(...)`. Otherwise null.
+fn derive_for(stmt: Stmt) -> Stmt? {
+    if !has_marshal(stmt) { return null }
+    let inner = peel_annotations(stmt)
+    match inner {
+        .TypeDecl(name, _, fields) -> derive_impl(name, fields)
+        _ -> null
+    }
+}
+
+fn peel_annotations(stmt: Stmt) -> Stmt {
+    match stmt {
+        .Annotated(_, inner) -> peel_annotations(inner)
+        _ -> stmt
+    }
+}
+
+/// Build `impl T { fn to_bytes(self) -> bytes { ... } }`. Phase 1
+/// — no `from_bytes` yet. Field types outside {int, bool, string}
+/// fall through to a no-op write so the impl still type-checks but
+/// the round-trip would be lossy; nce6.1.B/C/D extend the codec
+/// table to handle them properly.
+fn derive_impl(type_name: string, fields: FieldList) -> Stmt {
+    let to_bytes_fn = build_to_bytes_fn(fields)
+    let methods = StmtList.Node(sstmt_dummy(to_bytes_fn), StmtList.End)
+    Stmt.Impl(type_name, methods)
+}
+
+fn build_to_bytes_fn(fields: FieldList) -> Stmt {
+    // Body: return bytes_builder().write_X(self.f1).write_Y(self.f2)…finish()
+    let chain = build_chain(fields)
+    let body = StmtList.Node(sstmt_dummy(Stmt.Return(chain)), StmtList.End)
+    let params = ParamList.Node("self", ValueType.Unknown, ParamList.End)
+    Stmt.Function("to_bytes", TypeParamList.End, params, ValueType.Bytes, body)
+}
+
+fn build_chain(fields: FieldList) -> Expr {
+    let start = Expr.Call(Expr.Ident("bytes_builder"), ExprList.End)
+    let written = chain_writes(start, fields)
+    // Cap with `.finish()` so the chain produces a `bytes` value.
+    Expr.Call(Expr.FieldAccess(written, "finish"), ExprList.End)
+}
+
+fn chain_writes(base: Expr, fields: FieldList) -> Expr {
+    match fields {
+        .End -> base
+        .Node(name, ty, next) -> {
+            let writer = writer_for(ty)
+            if writer == "" {
+                // Unsupported field type — Phase 1 only handles
+                // int / bool / string. Skip writing this field
+                // so the impl still type-checks; round-trip is
+                // lossy until the follow-up tickets extend the
+                // table.
+                chain_writes(base, next)
+            } else {
+                let self_field = Expr.FieldAccess(Expr.Ident("self"), name)
+                let args = ExprList.Node(sexpr_dummy(self_field), ExprList.End)
+                let new_base = Expr.Call(Expr.FieldAccess(base, writer), args)
+                chain_writes(new_base, next)
+            }
+        }
+    }
+}
+
+fn writer_for(ty: ValueType) -> string {
+    match ty {
+        .Int -> "write_int"
+        .Bool -> "write_bool"
+        .Str -> "write_string"
+        _ -> ""
+    }
+}
