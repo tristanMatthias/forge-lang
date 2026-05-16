@@ -548,6 +548,16 @@ export fn vtype_enum_name(t: ValueType) -> string {
     match t { .Enum(n, _, _) -> n, .NarrowedEnum(n, _, _) -> n, _ -> "" }
 }
 
+/// Type arguments attached to an Enum ValueType — the concrete
+/// substitutions produced by monomorphization. Empty list for
+/// non-Enum types or unparameterised enums. Used by codegen sites
+/// that need to recover the substituted payload type when the
+/// enum's registry entry still references the generic param
+/// (nce6.3 `?` propagation on Result<(T, …), E>).
+export fn vtype_enum_type_args(t: ValueType) -> TypeList {
+    match t { .Enum(_, args, _) -> args, _ -> TypeList.End }
+}
+
 /// Variant name pinned by a NarrowedEnum, or "" otherwise.
 export fn vtype_narrowed_variant(t: ValueType) -> string {
     match t { .NarrowedEnum(_, v, _) -> v, _ -> "" }

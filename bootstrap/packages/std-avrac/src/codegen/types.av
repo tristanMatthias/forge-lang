@@ -12,7 +12,7 @@
 //                                 logic (features/<X>/codegen.av)
 //                                 or the dispatchers (codegen.av)
 
-use core.{Expr, SExpr, VarEnv, FieldList, VariantList, ValueType, vtype_is_str, vtype_is_unknown, variant_lookup, vtype_eq, field_list_length, field_vtype_of, env_extend, union_type_list_merge, find_type_pipe}
+use core.{Expr, SExpr, VarEnv, FieldList, VariantList, ValueType, TypeList, type_list_len, type_list_at, vtype_is_str, vtype_is_unknown, variant_lookup, vtype_eq, field_list_length, field_vtype_of, env_extend, union_type_list_merge, find_type_pipe}
 use core.{Registry}
 use core.{TypeRegistry, type_registry_id_for, type_registry_name_for}
 use core.{avra_coverage_emit_hit, avra_covmap_alloc, avra_covmap_counter_count, avra_coverage_finalize_fn}
@@ -1416,6 +1416,22 @@ impl Ctx {
         if !ok.found { return ValueType.Unknown }
         field_resolved_at(ok.fields, 0)
     }
+
+    /// Type-args-aware variant of resolve_ok_type. Used at codegen
+    /// sites where the caller has the full `ValueType.Enum(name,
+    /// type_args, _)` — preferred when type_args is populated
+    /// because the registry's generic payload type still references
+    /// the type parameter (`T`) before monomorphization substitution,
+    /// while type_args carries the concrete substitution.
+    /// nce6.3.
+    fn resolve_ok_type_with(self, enum_name: string, type_args: TypeList) -> ValueType {
+        if type_list_len(type_args) >= 1 {
+            let arg = type_list_at(type_args, 0)
+            if !(arg is .Unknown) { return arg }
+        }
+        self.resolve_ok_type(enum_name)
+    }
+
     // Resolve the Err variant's payload type for Result enums.
     fn resolve_err_type(self, enum_name: string) -> ValueType {
         let lookup = self.lookup_enum(enum_name)
@@ -1423,6 +1439,16 @@ impl Ctx {
         let ev = variant_lookup(lookup.variants, "Err")
         if !ev.found { return ValueType.Unknown }
         field_resolved_at(ev.fields, 0)
+    }
+
+    /// Type-args-aware variant — same shape as resolve_ok_type_with
+    /// but pulls the 2nd type arg (Err type) instead. nce6.3.
+    fn resolve_err_type_with(self, enum_name: string, type_args: TypeList) -> ValueType {
+        if type_list_len(type_args) >= 2 {
+            let arg = type_list_at(type_args, 1)
+            if !(arg is .Unknown) { return arg }
+        }
+        self.resolve_err_type(enum_name)
     }
     fn lookup_fn_params(self, name: string) -> ParamTypeList { fn_param_lookup(self.fn_params, name) }
 

@@ -9,7 +9,7 @@
 // In the bootstrap's everything-is-i64 model, null == 0. These
 // operators compile to i64 null-check or enum-tag-check branches.
 
-use core.{Expr, VarEnv, FieldList, field_index_of, ValueType, vtype_eq, vtype_is_unknown, vtype_is_str, vtype_struct_name, vtype_enum_name, variant_lookup}
+use core.{Expr, VarEnv, FieldList, field_index_of, ValueType, vtype_eq, vtype_is_unknown, vtype_is_str, vtype_struct_name, vtype_enum_name, vtype_enum_type_args, variant_lookup}
 use core.{is_result_enum_name, is_result_shaped_enum}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, field_resolved_at, vtype_is_ptr_type}
 use features.defer_stmt.{emit_defers_on_error}
@@ -167,8 +167,11 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> Result<EmitValue, stri
         let pay_gep = ctx.gep(enum_ty, enum_ptr, 1, "try_pay_slot")
         let pay_ptr = ctx.load(ctx.ptr_type, pay_gep, "try_payload")
         let ok_val = ctx.load_i64(pay_ptr, "try_ok_val")
-        // Resolve the Ok variant's payload type from the enum registry.
-        let ok_ty = ctx.resolve_ok_type(enum_name)
+        // nce6.3: prefer r.ty's type_args (concrete monomorphisation)
+        // over the enum registry's generic payload type — the
+        // registry has Ok(value: T) before substitution, while
+        // r.ty carries the substituted (concrete) T after typeck.
+        let ok_ty = ctx.resolve_ok_type_with(enum_name, vtype_enum_type_args(r.ty))
         // Retain the extracted Ok value so it survives Result wrapper release.
         // The release function recursively releases inner fields; without
         // this retain, ptr-type Ok payloads are freed while still in use.
