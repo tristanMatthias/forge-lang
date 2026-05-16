@@ -190,6 +190,7 @@ fn writer_for(ty: ValueType) -> string {
         .Int -> "write_int"
         .Bool -> "write_bool"
         .Str -> "write_string"
+        .Float -> "write_float"
         .List(elem) -> list_writer_for(elem)
         _ -> ""
     }
@@ -200,6 +201,7 @@ fn reader_for(ty: ValueType) -> string {
         .Int -> "read_int"
         .Bool -> "read_bool"
         .Str -> "read_string"
+        .Float -> "read_float"
         .List(elem) -> list_reader_for(elem)
         _ -> ""
     }
@@ -342,6 +344,7 @@ fn default_for(ty: ValueType) -> Expr {
     if ty is .Int { return Expr.Number("0") }
     if ty is .Bool { return Expr.Bool("false") }
     if ty is .Str { return Expr.String("\"\"") }
+    if ty is .Float { return Expr.FloatLit("0.0") }
     if ty is .List { return Expr.ListLit(ExprList.End) }
     // Fallback — `null` covers nullable / reference shapes; gets
     // tightened as the codec table expands.

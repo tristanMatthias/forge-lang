@@ -33,6 +33,11 @@ fn local_isolated_bytes(body: fn() -> bytes) -> Result<bytes, LocalIsoErr> {
     else { Result.Err(LocalIsoErr.PipeFailed) }
 }
 
+// Hand-rolled marshalers kept here intentionally — this test
+// lives under @std/avrac/core/tests/ and its bundle excludes
+// @std/process, so a `@marshal` annotation can't resolve the
+// qualified @std::process::bytes_builder synthesis target. The
+// real @marshal dogfood lives in features/marshal/tests/.
 type TestUserBR = { id: int, name: string, admin: bool }
 
 fn marshal_test_user(u: TestUserBR) -> bytes {

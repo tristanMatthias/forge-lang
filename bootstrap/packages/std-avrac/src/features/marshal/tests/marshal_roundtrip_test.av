@@ -41,3 +41,19 @@ spec "@marshal: primitive-field round-trip (nce6.1.A)" {
         u2.id == 0 - 99
     }
 }
+
+@marshal
+type MMetric = { name: string, value: float, weight: float }
+
+spec "@marshal: float field round-trip" {
+    then "float survives via avra_float_to_bytes_le wire format" {
+        let m = MMetric { name: "latency", value: 99.5, weight: 0.75 }
+        let m2 = from_bytes_MMetric(m.to_bytes())
+        m2.value == 99.5 && m2.weight == 0.75 && m2.name == "latency"
+    }
+    then "zero float" {
+        let m = MMetric { name: "z", value: 0.0, weight: 0.0 }
+        let m2 = from_bytes_MMetric(m.to_bytes())
+        m2.value == 0.0 && m2.weight == 0.0
+    }
+}
