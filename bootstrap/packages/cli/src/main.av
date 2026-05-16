@@ -29,7 +29,7 @@
 // Pull every compiler-pipeline symbol from the @std.avrac library.
 // This file owns no compiler logic — it only orchestrates argv
 // parsing and dispatches to the lib's pure entry points.
-use @std.avrac.core.{avra_selfhost_argc, avra_selfhost_get_arg_cstr, avra_selfhost_file_exists, avra_selfhost_read_file, avra_selfhost_write_file, avra_selfhost_append_file, avra_shell_exec, avra_shell_exec_status, avra_process_exit, avra_process_forward, avra_process_env_get, exit, avra_char_from_hex}
+use @std.avrac.core.{avra_selfhost_argc, avra_selfhost_get_arg_cstr, avra_selfhost_file_exists, avra_selfhost_read_file, avra_selfhost_read_file_bytes, avra_selfhost_write_file, avra_selfhost_append_file, avra_shell_exec, avra_shell_exec_status, avra_process_exit, avra_process_forward, avra_process_env_get, exit, avra_char_from_hex}
 use @std.avrac.core.{avra_file_mtime, avra_is_dir, avra_readdir, avra_str_ends_with}
 
 // Convenience aliases so handler bodies stay readable.
@@ -2264,6 +2264,28 @@ fn parse_lib_objs_env() -> List<string> {
 // unified count.
 type ShardSummary = { pass: int, fail: int, total: int, elapsed_ms: int }
 
+// nce6.1.F: structured shard summary. Reporter writes 32 bytes
+// (4 × i64 little-endian: pass, fail, total, elapsed_ms) to
+// AVRA_TEST_RESULTS_BIN_PATH using @std/process byte primitives.
+// Orchestrator decodes manually here — using @marshal would
+// require importing @std/process types into cli/main.av, which
+// duplicates BytesReader.* method symbols (the same files
+// already get pulled in via test_runner / package metadata).
+// The wire format is intentionally the same one @marshal emits
+// so any future @marshal-derived consumer stays compatible.
+type TestResults = { pass: int, fail: int, total: int, elapsed_ms: int }
+
+extern fn avra_bytes_to_int_le(b: bytes, offset: int) -> int
+
+fn decode_test_results(b: bytes) -> TestResults {
+    TestResults {
+        pass: avra_bytes_to_int_le(b, 0),
+        fail: avra_bytes_to_int_le(b, 8),
+        total: avra_bytes_to_int_le(b, 16),
+        elapsed_ms: avra_bytes_to_int_le(b, 24),
+    }
+}
+
 fn parse_shard_summary(out: string) -> ShardSummary {
     let marker = "[shard-summary] "
     let idx = out.index_of(marker)
@@ -2382,6 +2404,7 @@ type Shard = {
     path: string,      // full path to the *_test.av source
     slug: string,      // basename without extension; cache + log key
     log_path: string,  // where the shard's stdout/stderr land
+    bin_path: string,  // nce6.1.F: where the shard writes @marshal TestResults
     cmd: string,       // fully-formed `env … bs2 _test_shard … > log` line
 }
 
@@ -2397,6 +2420,18 @@ impl Shard {
     /// have checked `log_alive` first.
     fn read_log(self) -> string {
         avra_selfhost_read_file(self.log_path)
+    }
+
+    /// nce6.1.F: read the @marshal-binary TestResults the shard wrote
+    /// when AVRA_TEST_RESULTS_BIN_PATH was set. Returns null when
+    /// the file is missing or empty (shard crashed pre-emit, or the
+    /// env var didn't propagate — orchestrator falls back to
+    /// text-line parsing).
+    fn read_results_bin(self) -> TestResults? {
+        if avra_selfhost_file_exists(self.bin_path) != 1 { return null }
+        let b = avra_selfhost_read_file_bytes(self.bin_path)
+        if b.length < 32 { return null }
+        decode_test_results(b)
     }
 }
 
@@ -2421,9 +2456,14 @@ impl RunCtx {
     fn shard_for(self, path: string) -> Shard {
         let slug = basename_no_ext(path)
         let log_path = "${self.log_dir}/${slug}.log"
+        let bin_path = "${self.log_dir}/${slug}.bin"
         let pkg_root = if self.want_meta { "AVRA_LIB_PKG_ROOT='${slug}' " } else { "" }
-        let cmd = "${self.env_prefix}${pkg_root}'${self.compiler_path}' _test_shard '${path}'${self.filter_arg} > '${log_path}' 2>&1"
-        Shard { path: path, slug: slug, log_path: log_path, cmd: cmd }
+        // nce6.1.F: propagate AVRA_TEST_RESULTS_BIN_PATH so the shard
+        // reporter writes a @marshal-compatible TestResults file
+        // alongside the text [shard-summary] line. Orchestrator
+        // prefers the bin when present.
+        let cmd = "${self.env_prefix}${pkg_root}AVRA_TEST_RESULTS_BIN_PATH='${bin_path}' '${self.compiler_path}' _test_shard '${path}'${self.filter_arg} > '${log_path}' 2>&1"
+        Shard { path: path, slug: slug, log_path: log_path, bin_path: bin_path, cmd: cmd }
     }
 }
 
@@ -2573,7 +2613,19 @@ fn aggregate_shard_logs(shards: List<Shard>, t_start: int) -> int {
         }
         let out = s.read_log()
         println(out)
-        acc.merge(out, parse_shard_summary(out))
+        // nce6.1.F: prefer the @marshal-binary results when the
+        // reporter wrote one (post-r-cycle shards). Falls back to
+        // regex-parsing the [shard-summary] text line for compat
+        // with cached binaries that pre-date this change AND for
+        // crash-before-write cases where the bin is missing.
+        let bin_opt = s.read_results_bin()
+        let summary = if bin_opt != null {
+            let r = bin_opt!
+            ShardSummary { pass: r.pass, fail: r.fail, total: r.total, elapsed_ms: r.elapsed_ms }
+        } else {
+            parse_shard_summary(out)
+        }
+        acc.merge(out, summary)
     })
     render_test_summary(totals, avra_uptime_ms() - t_start)
 }

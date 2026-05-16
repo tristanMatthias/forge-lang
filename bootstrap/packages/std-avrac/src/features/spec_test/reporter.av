@@ -29,6 +29,17 @@ extern fn avra_test_get_current_spec() -> string
 extern fn avra_test_get_current_given() -> string
 extern fn avra_process_env_get(name: string) -> string
 extern fn avra_selfhost_write_file(path: string, content: string) -> int
+extern fn avra_selfhost_write_file_bytes(path: string, b: bytes) -> int
+// nce6.1.F: hand-rolled writers for the @marshal TestResults wire
+// format. The reporter is inlined into every test bundle and we
+// don't want to drag @std/process in for every test binary, so
+// the byte primitives are extern-decl'd directly. Format must
+// stay in sync with BytesBuilder.write_int / @marshal's
+// generated TestResults.to_bytes() — 4 × little-endian i64 with
+// no padding or length prefix.
+extern fn avra_int_to_bytes_le(n: int) -> bytes
+extern fn avra_bytes_concat(a: bytes, b: bytes) -> bytes
+extern fn avra_bytes_empty() -> bytes
 
 fn ansi_green(s: string) -> string { "\x1b[32m${s}\x1b[0m" }
 fn ansi_red(s: string) -> string { "\x1b[31m${s}\x1b[0m" }
@@ -73,6 +84,17 @@ export fn test_render_summary() -> int {
     let results_path = avra_process_env_get("AVRA_TEST_RESULTS_PATH")
     if results_path != "" {
         let _ = avra_selfhost_write_file(results_path, render_results_json(pass, fail, total, elapsed_ms))
+    }
+    // nce6.1.F: @marshal-compatible binary results. Format matches
+    // BytesBuilder.write_int — 4 i64s concatenated, no header.
+    // Orchestrator decodes via from_bytes_TestResults (cli/main.av).
+    let bin_path = avra_process_env_get("AVRA_TEST_RESULTS_BIN_PATH")
+    if bin_path != "" {
+        let buf = avra_bytes_concat(
+            avra_bytes_concat(avra_int_to_bytes_le(pass), avra_int_to_bytes_le(fail)),
+            avra_bytes_concat(avra_int_to_bytes_le(total), avra_int_to_bytes_le(elapsed_ms))
+        )
+        let _ = avra_selfhost_write_file_bytes(bin_path, buf)
     }
     println("[shard-summary] pass=${string(pass)} fail=${string(fail)} total=${string(total)} elapsed_ms=${string(elapsed_ms)}")
     if total == 0 {
