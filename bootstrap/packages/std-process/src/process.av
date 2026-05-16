@@ -411,6 +411,20 @@ impl BytesBuilder {
         b
     }
 
+    /// Append a `List<bool>`: 8-byte count + count × 8-byte bool (1 or 0).
+    fn write_bool_list(self, xs: List<bool>) -> BytesBuilder {
+        mut b = self.write_int(xs.length)
+        for x in xs { b = b.write_bool(x) }
+        b
+    }
+
+    /// Append a `List<float>`: 8-byte count + count × 8-byte IEEE-754.
+    fn write_float_list(self, xs: List<float>) -> BytesBuilder {
+        mut b = self.write_int(xs.length)
+        for x in xs { b = b.write_float(x) }
+        b
+    }
+
     /// Hand back the underlying bytes — caller passes this to
     /// `isolated_bytes(() -> finish())` for the IPC trip.
     fn finish(self) -> bytes {
@@ -506,6 +520,36 @@ impl BytesReader {
         mut i = 0
         while i < count {
             let (v, next) = r.read_string()
+            xs = xs.push(v)
+            r = next
+            i = i + 1
+        }
+        (xs, r)
+    }
+
+    /// Read a `List<bool>` (matches `write_bool_list`).
+    fn read_bool_list(self) -> (List<bool>, BytesReader) {
+        let (count, after_count) = self.read_int()
+        mut xs: List<bool> = []
+        mut r = after_count
+        mut i = 0
+        while i < count {
+            let (v, next) = r.read_bool()
+            xs = xs.push(v)
+            r = next
+            i = i + 1
+        }
+        (xs, r)
+    }
+
+    /// Read a `List<float>` (matches `write_float_list`).
+    fn read_float_list(self) -> (List<float>, BytesReader) {
+        let (count, after_count) = self.read_int()
+        mut xs: List<float> = []
+        mut r = after_count
+        mut i = 0
+        while i < count {
+            let (v, next) = r.read_float()
             xs = xs.push(v)
             r = next
             i = i + 1

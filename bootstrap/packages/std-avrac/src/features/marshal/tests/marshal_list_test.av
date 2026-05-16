@@ -45,3 +45,24 @@ spec "@marshal: List<int> + List<string> round-trip (nce6.1.B)" {
         f2.tags[0] == "z" && f2.tags[2] == "a" && f2.counts[0] == 3 && f2.counts[2] == 1
     }
 }
+
+@marshal
+type LFlagged = { flags: List<bool>, scores: List<float> }
+
+spec "@marshal: List<bool> + List<float> codec" {
+    then "list-of-bool round-trips" {
+        let f = LFlagged { flags: [true, false, true, true, false], scores: [] }
+        let f2 = from_bytes_LFlagged(f.to_bytes())
+        f2.flags.length == 5 && f2.flags[0] && !f2.flags[1] && f2.flags[2] && f2.flags[3] && !f2.flags[4]
+    }
+    then "list-of-float round-trips" {
+        let f = LFlagged { flags: [], scores: [1.5, 2.25, 3.125] }
+        let f2 = from_bytes_LFlagged(f.to_bytes())
+        f2.scores.length == 3 && f2.scores[0] == 1.5 && f2.scores[1] == 2.25 && f2.scores[2] == 3.125
+    }
+    then "both lists in one struct" {
+        let f = LFlagged { flags: [true, true], scores: [0.5, 0.25] }
+        let f2 = from_bytes_LFlagged(f.to_bytes())
+        f2.flags.length == 2 && f2.scores.length == 2 && f2.flags[1] && f2.scores[1] == 0.25
+    }
+}
