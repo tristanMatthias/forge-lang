@@ -140,7 +140,11 @@ fn build_to_bytes_fn(fields: FieldList) -> Stmt {
 }
 
 fn build_chain(fields: FieldList) -> Expr {
-    let start = Expr.Call(Expr.Ident("bytes_builder"), ExprList.End)
+    // Qualified call so callers don't need `use bytes_builder`. The
+    // resolver short-circuits on QualifiedIdent and binds straight
+    // to @std::process. Bare Ident here would force every consumer
+    // of @marshal to import the byte primitives explicitly.
+    let start = Expr.Call(Expr.QualifiedIdent("@std::process::bytes_builder"), ExprList.End)
     let written = chain_writes(start, fields)
     // Cap with `.finish()` so the chain produces a `bytes` value.
     Expr.Call(Expr.FieldAccess(written, "finish"), ExprList.End)
@@ -233,7 +237,8 @@ fn build_from_bytes_fn(type_name: string, fields: FieldList) -> Stmt {
     //   let r = bytes_reader(b)
     //   let (f1, r) = r.read_*()  -- per field (skipped if no reader)
     //   T { fields }
-    let init_call = Expr.Call(Expr.Ident("bytes_reader"),
+    // Qualified bytes_reader call — same reasoning as build_chain.
+    let init_call = Expr.Call(Expr.QualifiedIdent("@std::process::bytes_reader"),
         ExprList.Node(sexpr_dummy(Expr.Ident("b")), ExprList.End))
     let init_let = Stmt.Let("r", ValueType.Unknown, init_call)
     let reads_then_ctor = build_reads_and_ctor(type_name, fields)
@@ -408,7 +413,7 @@ fn field_list_to_param_list(fields: FieldList) -> ParamList {
 /// match-arm-bound idents (no `self.` prefix — they're locals).
 fn build_variant_write_chain(tag: int, payload: FieldList) -> Expr {
     let tag_arg = ExprList.Node(sexpr_dummy(Expr.Number(int_to_string(tag))), ExprList.End)
-    let start = Expr.Call(Expr.Ident("bytes_builder"), ExprList.End)
+    let start = Expr.Call(Expr.QualifiedIdent("@std::process::bytes_builder"), ExprList.End)
     let with_tag = Expr.Call(Expr.FieldAccess(start, "write_int"), tag_arg)
     let with_payload = chain_payload_writes(with_tag, payload)
     Expr.Call(Expr.FieldAccess(with_payload, "finish"), ExprList.End)
@@ -445,7 +450,7 @@ fn chain_payload_writes(base: Expr, payload: FieldList) -> Expr {
 /// }
 fn build_enum_from_bytes_fn(type_name: string, variants: VariantList) -> Stmt {
     let params = ParamList.Node("b", ValueType.Bytes, ParamList.End)
-    let init_call = Expr.Call(Expr.Ident("bytes_reader"),
+    let init_call = Expr.Call(Expr.QualifiedIdent("@std::process::bytes_reader"),
         ExprList.Node(sexpr_dummy(Expr.Ident("b")), ExprList.End))
     let init_let = Stmt.Let("r", ValueType.Unknown, init_call)
     let tag_destruct = Stmt.LetDestructure(
