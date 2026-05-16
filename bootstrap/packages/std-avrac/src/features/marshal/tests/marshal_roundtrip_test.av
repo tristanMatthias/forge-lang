@@ -1,0 +1,43 @@
+// nce6.1.A: end-to-end @marshal round-trip for the three primitive
+// field types (int, bool, string). The derive pass synthesises
+// to_bytes + from_bytes next to the type, so the test just calls
+// the methods like a hand-written impl.
+
+use @std.process.{bytes_builder, bytes_reader, BytesBuilder, BytesReader}
+
+@marshal
+type MUser = { id: int, name: string, admin: bool }
+
+spec "@marshal: primitive-field round-trip (nce6.1.A)" {
+    then "int field survives to_bytes → from_bytes" {
+        let u = MUser { id: 42, name: "alice", admin: true }
+        let b = u.to_bytes()
+        let u2 = from_bytes_MUser(b)
+        u2.id == 42
+    }
+    then "string field survives" {
+        let u = MUser { id: 1, name: "bob", admin: false }
+        let u2 = from_bytes_MUser(u.to_bytes())
+        u2.name == "bob"
+    }
+    then "bool field survives" {
+        let u = MUser { id: 1, name: "x", admin: true }
+        let u2 = from_bytes_MUser(u.to_bytes())
+        u2.admin == true
+    }
+    then "false-bool round-trip (sanity vs always-true)" {
+        let u = MUser { id: 1, name: "x", admin: false }
+        let u2 = from_bytes_MUser(u.to_bytes())
+        !u2.admin
+    }
+    then "empty string round-trip" {
+        let u = MUser { id: 1, name: "", admin: false }
+        let u2 = from_bytes_MUser(u.to_bytes())
+        u2.name == ""
+    }
+    then "negative-int round-trip" {
+        let u = MUser { id: 0 - 99, name: "neg", admin: false }
+        let u2 = from_bytes_MUser(u.to_bytes())
+        u2.id == 0 - 99
+    }
+}

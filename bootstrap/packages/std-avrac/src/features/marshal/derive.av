@@ -19,7 +19,7 @@
 // resolver wires up to @std/process the same way a hand-written
 // impl would.
 
-use core.{Stmt, StmtList, SStmt, sstmt_dummy, Expr, ExprList, SExpr, sexpr_dummy, FieldList, ParamList, ValueType, TypeParamList, AnnotationList, find_annotation}
+use core.{Stmt, StmtList, SStmt, sstmt_dummy, Expr, ExprList, SExpr, sexpr_dummy, FieldList, FieldInitList, ParamList, ValueType, TypeParamList, AnnotationList, find_annotation}
 
 // ── Public entry ──
 
@@ -52,12 +52,8 @@ fn walk(stmts: StmtList) -> StmtList {
                     StmtList.Node(sstmt_dummy(new_mod), rest)
                 }
                 _ -> {
-                    let impl_opt = derive_for(ss.node)
-                    if impl_opt != null {
-                        StmtList.Node(ss, StmtList.Node(sstmt_dummy(impl_opt!), rest))
-                    } else {
-                        StmtList.Node(ss, rest)
-                    }
+                    let derived = derive_for(ss.node)
+                    StmtList.Node(ss, append_stmts(derived, rest))
                 }
             }
         }
@@ -89,13 +85,14 @@ fn has_marshal(stmt: Stmt) -> bool {
 // ── Synthesis ──
 
 /// If `stmt` is an `@marshal`-annotated TypeDecl, return the
-/// synthesised `Stmt.Impl(...)`. Otherwise null.
-fn derive_for(stmt: Stmt) -> Stmt? {
-    if !has_marshal(stmt) { return null }
+/// synthesised `[impl T {...}, fn from_bytes_T(b) -> T {...}]`
+/// StmtList. Empty list when no synthesis applies.
+fn derive_for(stmt: Stmt) -> StmtList {
+    if !has_marshal(stmt) { return StmtList.End }
     let inner = peel_annotations(stmt)
     match inner {
-        .TypeDecl(name, _, fields) -> derive_impl(name, fields)
-        _ -> null
+        .TypeDecl(name, _, fields) -> derive_stmts(name, fields)
+        _ -> StmtList.End
     }
 }
 
@@ -106,15 +103,29 @@ fn peel_annotations(stmt: Stmt) -> Stmt {
     }
 }
 
-/// Build `impl T { fn to_bytes(self) -> bytes { ... } }`. Phase 1
-/// — no `from_bytes` yet. Field types outside {int, bool, string}
-/// fall through to a no-op write so the impl still type-checks but
-/// the round-trip would be lossy; nce6.1.B/C/D extend the codec
-/// table to handle them properly.
-fn derive_impl(type_name: string, fields: FieldList) -> Stmt {
+/// Build the synthesised stmts for a `@marshal type T = {...}`:
+///   - `impl T { fn to_bytes(self) -> bytes { ... } }` (instance method)
+///   - `fn from_bytes_T(b: bytes) -> T { ... }` (top-level fn)
+///
+/// from_bytes lives at module scope (not inside impl) because
+/// Avra has no static-method syntax — `T.from_bytes(...)` parses
+/// as enum-variant access. The naming convention `<Type>_from_bytes`
+/// mirrors what generic `isolated<T: Marshal>(body)` will look up
+/// once nce6.1.E lands.
+///
+/// Field types outside {int, bool, string} fall through to a
+/// no-op write so the impl still type-checks but the round-trip
+/// would be lossy; nce6.1.B/C/D extend the codec table to handle
+/// List<T> / nested @marshal / enums.
+///
+/// Returns a 2-element StmtList: [impl_stmt, from_bytes_fn].
+fn derive_stmts(type_name: string, fields: FieldList) -> StmtList {
     let to_bytes_fn = build_to_bytes_fn(fields)
     let methods = StmtList.Node(sstmt_dummy(to_bytes_fn), StmtList.End)
-    Stmt.Impl(type_name, methods)
+    let impl_stmt = Stmt.Impl(type_name, methods)
+    let from_bytes_fn = build_from_bytes_fn(type_name, fields)
+    StmtList.Node(sstmt_dummy(impl_stmt),
+        StmtList.Node(sstmt_dummy(from_bytes_fn), StmtList.End))
 }
 
 fn build_to_bytes_fn(fields: FieldList) -> Stmt {
@@ -160,5 +171,118 @@ fn writer_for(ty: ValueType) -> string {
         .Bool -> "write_bool"
         .Str -> "write_string"
         _ -> ""
+    }
+}
+
+fn reader_for(ty: ValueType) -> string {
+    match ty {
+        .Int -> "read_int"
+        .Bool -> "read_bool"
+        .Str -> "read_string"
+        _ -> ""
+    }
+}
+
+// ── from_bytes synthesis ──
+
+/// Build `fn from_bytes(b: bytes) -> T { let r = bytes_reader(b); let (f1, r) = r.read_*(); … ; T { f1: f1, … } }`.
+/// Reuses the `r` binding across reads (Avra's let-rebinding
+/// shadows the outer `r`), keeping the body flat.
+fn build_from_bytes_fn(type_name: string, fields: FieldList) -> Stmt {
+    // Param: b: bytes
+    let params = ParamList.Node("b", ValueType.Bytes, ParamList.End)
+    // Body stmts:
+    //   let r = bytes_reader(b)
+    //   let (f1, r) = r.read_*()  -- per field (skipped if no reader)
+    //   T { fields }
+    let init_call = Expr.Call(Expr.Ident("bytes_reader"),
+        ExprList.Node(sexpr_dummy(Expr.Ident("b")), ExprList.End))
+    let init_let = Stmt.Let("r", ValueType.Unknown, init_call)
+    let reads_then_ctor = build_reads_and_ctor(type_name, fields)
+    let body = StmtList.Node(sstmt_dummy(init_let), reads_then_ctor)
+    // Top-level fn named `from_bytes_<T>` (no static-method syntax
+    // in Avra). nce6.1.E will route generic `isolated<T: Marshal>`
+    // through this naming convention.
+    let fn_name = "from_bytes_" + type_name
+    Stmt.Function(fn_name, TypeParamList.End, params,
+        ValueType.Struct(type_name, 0), body)
+}
+
+/// Builds the per-field read sequence followed by the final
+/// struct-literal constructor. Both parts are emitted as one
+/// StmtList because the reader has to thread `r` through every
+/// step and produce the value at the end.
+fn build_reads_and_ctor(type_name: string, fields: FieldList) -> StmtList {
+    let reads = build_reads(fields)
+    let ctor = build_ctor(type_name, fields)
+    append_stmts(reads, StmtList.Node(sstmt_dummy(Stmt.Return(ctor)), StmtList.End))
+}
+
+fn build_reads(fields: FieldList) -> StmtList {
+    match fields {
+        .End -> StmtList.End
+        .Node(name, ty, next) -> {
+            let reader = reader_for(ty)
+            if reader == "" {
+                // Unsupported field type — Phase 1 only handles
+                // int / bool / string. Drop the read so the impl
+                // still compiles; round-trip is lossy for this
+                // field until nce6.1.B/C/D ship.
+                build_reads(next)
+            } else {
+                let read_call = Expr.Call(Expr.FieldAccess(Expr.Ident("r"), reader), ExprList.End)
+                // let (name, r) = r.read_*()
+                let names = ParamList.Node(name, ValueType.Unknown,
+                    ParamList.Node("r", ValueType.Unknown, ParamList.End))
+                let stmt = Stmt.LetDestructure(names, read_call)
+                StmtList.Node(sstmt_dummy(stmt), build_reads(next))
+            }
+        }
+    }
+}
+
+/// Build the final `T { f1: f1, f2: f2, … }` constructor.
+fn build_ctor(type_name: string, fields: FieldList) -> Expr {
+    Expr.StructLit(type_name, build_field_inits(fields))
+}
+
+fn build_field_inits(fields: FieldList) -> FieldInitList {
+    match fields {
+        .End -> FieldInitList.End
+        .Node(name, ty, next) -> {
+            let init_expr = if reader_for(ty) != "" {
+                Expr.Ident(name)
+            } else {
+                // Phase 1: field type wasn't read; placeholder
+                // initializer keeps the struct-literal complete
+                // until follow-up sub-tickets land. Using a
+                // type-appropriate zero would be ideal; for now
+                // the synthesised impl is type-checked but the
+                // field-value round-trip is lossy.
+                default_for(ty)
+            }
+            FieldInitList.Node(name, sexpr_dummy(init_expr), build_field_inits(next))
+        }
+    }
+}
+
+/// Return a zero-ish initializer expression matching `ty` so the
+/// synthesised struct literal type-checks for un-marshaled
+/// fields. List<T>/nested-struct fields produce `[]`-style
+/// placeholders; the lossy-round-trip note in build_field_inits
+/// applies.
+fn default_for(ty: ValueType) -> Expr {
+    if ty is .Int { return Expr.Number("0") }
+    if ty is .Bool { return Expr.Bool("false") }
+    if ty is .Str { return Expr.String("\"\"") }
+    // Fallback — `null` covers nullable / reference shapes; gets
+    // tightened as the codec table expands.
+    Expr.Null
+}
+
+fn append_stmts(a: StmtList, b: StmtList) -> StmtList {
+    match a {
+        .End -> b
+        .Node(ss, next) -> StmtList.Node(ss, append_stmts(next, b))
     }
 }
