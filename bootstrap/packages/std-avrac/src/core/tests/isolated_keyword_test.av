@@ -1,0 +1,57 @@
+// nce6.D: `isolated { body }` keyword sugar. Mirrors `spawn { }`
+// but forks a subprocess instead of a pthread. Body must produce
+// `bytes`; the runtime hands back a status-framed payload that
+// callers either consume raw (this test) or unframe via the
+// `@std/process` helpers into `Result<T, IsolatedError>`.
+
+extern fn avra_bytes_from_string(s: string) -> bytes
+extern fn avra_string_from_bytes(b: bytes) -> string
+extern fn avra_bytes_slice(b: bytes, start: int, end: int) -> bytes
+extern fn avra_bytes_to_int_le(b: bytes, offset: int) -> int
+extern fn avra_bytes_empty() -> bytes
+extern fn abort() -> int
+
+// Wire format from runtime: [i64 status][i64 len][payload].
+// status: 0=OK, 1=CRASH, 2=FORK_FAILED, 3=PIPE_FAILED.
+fn unframe(raw: bytes) -> string {
+    if raw.length < 16 { return "" }
+    let status = avra_bytes_to_int_le(raw, 0)
+    if status != 0 { return "" }
+    let len = avra_bytes_to_int_le(raw, 8)
+    if len == 0 { return "" }
+    avra_string_from_bytes(avra_bytes_slice(raw, 16, 16 + len))
+}
+
+spec "isolated { body } keyword (nce6.D)" {
+    then "body runs in forked child, bytes payload travels back" {
+        let payload = isolated {
+            avra_bytes_from_string("hello from child")
+        }
+        unframe(payload) == "hello from child"
+    }
+    then "captures cross the fork boundary via COW" {
+        let prefix = "child says:"
+        let payload = isolated {
+            avra_bytes_from_string("${prefix} ok")
+        }
+        unframe(payload) == "child says: ok"
+    }
+    then "child crash framed as status=1, parent stays alive" {
+        let payload = isolated {
+            abort()
+            avra_bytes_empty()
+        }
+        if payload.length < 8 { return false }
+        avra_bytes_to_int_le(payload, 0) == 1
+    }
+    then "parent recovers after a crashed isolated block" {
+        let _ = isolated {
+            abort()
+            avra_bytes_empty()
+        }
+        let payload = isolated {
+            avra_bytes_from_string("alive")
+        }
+        unframe(payload) == "alive"
+    }
+}

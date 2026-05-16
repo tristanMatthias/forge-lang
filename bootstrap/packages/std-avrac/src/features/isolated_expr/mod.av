@@ -1,0 +1,51 @@
+// WHY: feature registration for `isolated { body }` expression.
+// Forks a subprocess running `body`, marshals the bytes return
+// value back through a pipe. Crash-safe sibling of `spawn { }` —
+// SIGSEGV / abort in the child propagates as `Result.Err(Crashed)`
+// to the parent, not a process-wide death.
+//
+// dir-as-module (g2eo.1): codegen.av + parser.av auto-load as
+// siblings, surface flat at `features.isolated_expr.{...}`.
+//
+// Phase D of forge-crafting-intepreters-nce6.
+
+use core.{feature_new, Feature}
+use resolve.{resolve_expr}
+use typeck.{check_expr, tc_er}
+
+/// Register the `isolated { body }` expression feature.
+export fn isolated_expr_feature() -> Feature {
+    feature_new("isolated") with {
+        expr_tag: Expr.Isolated(Expr.Null),
+        emit_expr: isolated_emit_expr,
+        resolve_expr: isolated_resolve,
+        check_expr: isolated_check,
+    }
+}
+
+/// Resolver hook for `Isolated`. Body resolves in the enclosing
+/// scope — fork() preserves captured names via COW so identifiers
+/// from the outer scope work inside the body.
+fn isolated_resolve(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .Isolated(body) -> resolve_expr(r, body)
+        _ -> r
+    }
+}
+
+/// Type-check hook for `Isolated`. Walks the body for its errors
+/// then declares the result `bytes` — the framed payload from the
+/// subprocess. The stdlib's `unframe_isolated` decodes this into
+/// `Result<bytes, IsolatedError>` for callers.
+fn isolated_check(tc: TC, expr: Expr) -> ExprResult {
+    match expr {
+        .Isolated(body) -> {
+            let b = check_expr(tc, body)
+            // The body's actual return type isn't reflected here yet —
+            // until @marshal / generic isolated<T> lands, the surface
+            // is "you return bytes; orchestrator unframes them".
+            tc_er(b.tc, .Bytes)
+        }
+        _ -> tc_er(tc, .Unknown)
+    }
+}

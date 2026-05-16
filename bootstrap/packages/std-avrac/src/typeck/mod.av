@@ -1893,6 +1893,7 @@ fn annotate_expr(tc: TC, expr: Expr) -> Expr {
         .TupleIndex(obj, idx) -> .TupleIndex(annotate_expr(tc, obj), idx)
         .When(arms) -> .When(annotate_when_arms(tc, arms))
         .Spawn(body) -> .Spawn(annotate_expr(tc, body))
+        .Isolated(body) -> .Isolated(annotate_expr(tc, body))
         _ -> expr  // Leaf expressions: Number, String, Bool, Null, Ident, FloatLit, QualifiedIdent
     }
 }

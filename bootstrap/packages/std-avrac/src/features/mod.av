@@ -23,6 +23,7 @@ use features.modules.{mod_feature, use_feature}
 use features.null_safety.{null_coalesce_feature, optional_chain_feature, try_feature, catch_feature}
 use features.parallel_stmt.{parallel_feature}
 use features.spawn_expr.{spawn_expr_feature}
+use features.isolated_expr.{isolated_expr_feature}
 use features.quote_expr.{quote_expr_feature}
 use features.return_stmt.{return_stmt_feature}
 use features.select_stmt.{select_feature}
@@ -59,6 +60,7 @@ export fn init_features(reg: Registry) {
     register(reg, is_keyword_feature())
     register(reg, in_operator_feature())
     register(reg, spawn_expr_feature())
+    register(reg, isolated_expr_feature())
     register(reg, quote_expr_feature())
     register(reg, with_expr_feature())
     register(reg, tuple_feature())

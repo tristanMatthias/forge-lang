@@ -346,6 +346,7 @@ export fn p_keyword_kind(text: string) -> Tk {
         "component" -> Tk.KwComponent
         "parallel" -> Tk.KwParallel
         "spawn"    -> Tk.KwSpawn
+        "isolated" -> Tk.KwIsolated
         "quote"    -> Tk.KwQuote
         // Reserved future keywords
         "async"    -> Tk.KwReserved
@@ -1373,6 +1374,10 @@ impl Parser {
 
         if self.check(Tk.KwSpawn) {
             return self.parse_spawn_expression()
+        }
+
+        if self.check(Tk.KwIsolated) {
+            return self.parse_isolated_expression()
         }
 
         if self.check(Tk.KwWhen) {

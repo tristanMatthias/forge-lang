@@ -997,6 +997,7 @@ fn rewrite_expr_compound(ctx: NameCtx, expr: Expr) -> Expr {
         .MatchExpr(subject, arms) -> .MatchExpr(rewrite_expr(ctx, subject), rewrite_match_arms(ctx, arms))
         .Lambda(params, body) -> .Lambda(params, rewrite_expr(bind_params_ctx(ctx, params), body))
         .Spawn(body) -> .Spawn(rewrite_expr(ctx, body))
+        .Isolated(body) -> .Isolated(rewrite_expr(ctx, body))
         .IsCheck(subject, variant) -> .IsCheck(rewrite_expr(ctx, subject), variant)
         .InCheck(needle, items) -> .InCheck(rewrite_expr(ctx, needle), rewrite_expr_list(ctx, items))
         .When(arms) -> .When(rewrite_when_arms(ctx, arms))
@@ -1205,6 +1206,7 @@ fn collect_used_paths_expr(expr: Expr, acc: UsedPathSet) -> UsedPathSet {
         .InCheck(needle, items) -> collect_used_paths_expr_list(items, collect_used_paths_expr(needle, acc))
         .Catch(inner, _, body, _, _) -> collect_used_paths_expr(body, collect_used_paths_expr(inner, acc))
         .Spawn(body) -> collect_used_paths_expr(body, acc)
+        .Isolated(body) -> collect_used_paths_expr(body, acc)
         .Ident(name) -> {
             // PascalCase identifiers may be imported type/enum names.
             // Track them as used paths by looking up their alias.

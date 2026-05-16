@@ -955,6 +955,11 @@ export enum Expr {
     Catch(inner: Expr, binding: string, body: Expr, line: int, col: int)
     /// `spawn body` — start a green-thread Task running `body`.
     Spawn(body: Expr)
+    /// `isolated { body }` — run `body` in a forked subprocess; the
+    /// child's bytes return value travels back through a pipe. Crash-
+    /// safe sibling of `spawn { }`. Lowers to `avra_isolated_run` at
+    /// codegen with body wrapped in a zero-arg closure.
+    Isolated(body: Expr)
     /// `quote { body }` — captures the AST of `body` as a value.
     /// Lowering pass turns this into AST-construction calls so
     /// evaluating the result rebuilds the original AST node.
@@ -1460,6 +1465,7 @@ export fn render_expr(expr: Expr) -> string {
         .ListComp(body, variable, collection, _) -> "(list-comp ${render_expr(body)} for ${variable} in ${render_expr(collection)})"
         .Catch(inner, binding, body, _, _) -> "(catch ${render_expr(inner)} (${binding}) ${render_expr(body)})"
         .Spawn(body) -> "(spawn ${render_expr(body)})"
+        .Isolated(body) -> "(isolated ${render_expr(body)})"
         .Quote(kind, body) -> "(quote ${kind} ${render_expr(body)})"
         .Splice(target) -> "(splice ${render_expr(target)})"
     }
@@ -1806,6 +1812,7 @@ export enum Tk {
     KwParallel
     KwReturn
     KwSpawn
+    KwIsolated
     KwSelect
     KwShape
     KwSpec
@@ -1867,6 +1874,7 @@ export fn tk_keyword_str(tk: Tk) -> string {
         .KwParallel -> "kw_parallel"
         .KwReturn -> "kw_return"
         .KwSpawn -> "kw_spawn"
+        .KwIsolated -> "kw_isolated"
         .KwSelect -> "kw_select"
         .KwShape -> "kw_shape"
         .KwSpec -> "kw_spec"
