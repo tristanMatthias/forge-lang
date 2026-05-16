@@ -147,12 +147,25 @@ fn chain_writes(base: Expr, fields: FieldList) -> Expr {
     match fields {
         .End -> base
         .Node(name, ty, next) -> {
+            // Nested @marshal struct (nce6.1.C): the field's own
+            // to_bytes() returns a `bytes` payload that we embed
+            // length-prefixed via the parent's write_bytes. We
+            // optimistically emit the recursive call without
+            // checking the inner type has @marshal — if it
+            // doesn't, the type-checker will catch the undefined
+            // `to_bytes` later with a clear error.
+            if ty is .Struct {
+                let self_field = Expr.FieldAccess(Expr.Ident("self"), name)
+                let inner_bytes = Expr.Call(Expr.FieldAccess(self_field, "to_bytes"), ExprList.End)
+                let args = ExprList.Node(sexpr_dummy(inner_bytes), ExprList.End)
+                let new_base = Expr.Call(Expr.FieldAccess(base, "write_bytes"), args)
+                return chain_writes(new_base, next)
+            }
             let writer = writer_for(ty)
             if writer == "" {
-                // Unsupported field type — Phase 1 only handles
-                // int / bool / string. Skip writing this field
+                // Unsupported field type — skip writing this field
                 // so the impl still type-checks; round-trip is
-                // lossy until the follow-up tickets extend the
+                // lossy until follow-up sub-tickets extend the
                 // table.
                 chain_writes(base, next)
             } else {
@@ -244,20 +257,41 @@ fn build_reads(fields: FieldList) -> StmtList {
     match fields {
         .End -> StmtList.End
         .Node(name, ty, next) -> {
-            let reader = reader_for(ty)
-            if reader == "" {
-                // Unsupported field type — Phase 1 only handles
-                // int / bool / string. Drop the read so the impl
-                // still compiles; round-trip is lossy for this
-                // field until nce6.1.B/C/D ship.
-                build_reads(next)
-            } else {
-                let read_call = Expr.Call(Expr.FieldAccess(Expr.Ident("r"), reader), ExprList.End)
-                // let (name, r) = r.read_*()
-                let names = ParamList.Node(name, ValueType.Unknown,
-                    ParamList.Node("r", ValueType.Unknown, ParamList.End))
-                let stmt = Stmt.LetDestructure(names, read_call)
-                StmtList.Node(sstmt_dummy(stmt), build_reads(next))
+            // Nested @marshal struct (nce6.1.C): emit two stmts.
+            //   let (__nested_<n>, r) = r.read_bytes()
+            //   let <n> = from_bytes_<InnerT>(__nested_<n>)
+            // The bytes-read threads `r` forward; the from_bytes
+            // call binds the typed inner struct that the
+            // surrounding struct-literal constructor consumes.
+            match ty {
+                .Struct(inner_name, _) -> {
+                    let raw_name = "__nested_" + name
+                    let read_call = Expr.Call(Expr.FieldAccess(Expr.Ident("r"), "read_bytes"), ExprList.End)
+                    let destruct_names = ParamList.Node(raw_name, ValueType.Unknown,
+                        ParamList.Node("r", ValueType.Unknown, ParamList.End))
+                    let read_stmt = Stmt.LetDestructure(destruct_names, read_call)
+                    let from_bytes_call = Expr.Call(Expr.Ident("from_bytes_" + inner_name),
+                        ExprList.Node(sexpr_dummy(Expr.Ident(raw_name)), ExprList.End))
+                    let bind_stmt = Stmt.Let(name, ValueType.Unknown, from_bytes_call)
+                    StmtList.Node(sstmt_dummy(read_stmt),
+                        StmtList.Node(sstmt_dummy(bind_stmt), build_reads(next)))
+                }
+                _ -> {
+                    let reader = reader_for(ty)
+                    if reader == "" {
+                        // Unsupported field type — skip the read
+                        // so the impl still compiles; round-trip
+                        // is lossy until follow-up sub-tickets
+                        // extend the table.
+                        build_reads(next)
+                    } else {
+                        let read_call = Expr.Call(Expr.FieldAccess(Expr.Ident("r"), reader), ExprList.End)
+                        let names = ParamList.Node(name, ValueType.Unknown,
+                            ParamList.Node("r", ValueType.Unknown, ParamList.End))
+                        let stmt = Stmt.LetDestructure(names, read_call)
+                        StmtList.Node(sstmt_dummy(stmt), build_reads(next))
+                    }
+                }
             }
         }
     }
@@ -272,15 +306,18 @@ fn build_field_inits(fields: FieldList) -> FieldInitList {
     match fields {
         .End -> FieldInitList.End
         .Node(name, ty, next) -> {
-            let init_expr = if reader_for(ty) != "" {
+            // The field has a local binding by the same name iff
+            // build_reads emitted a read for it — true for any
+            // primitive with a reader OR a nested Struct field
+            // (handled by from_bytes_<inner>).
+            let init_expr = if reader_for(ty) != "" || ty is .Struct {
                 Expr.Ident(name)
             } else {
-                // Phase 1: field type wasn't read; placeholder
-                // initializer keeps the struct-literal complete
-                // until follow-up sub-tickets land. Using a
-                // type-appropriate zero would be ideal; for now
-                // the synthesised impl is type-checked but the
-                // field-value round-trip is lossy.
+                // Field type wasn't read; placeholder initializer
+                // keeps the struct-literal complete until
+                // follow-up sub-tickets land. Lossy round-trip
+                // for this field is documented at the field-type
+                // dispatch in chain_writes / build_reads.
                 default_for(ty)
             }
             FieldInitList.Node(name, sexpr_dummy(init_expr), build_field_inits(next))

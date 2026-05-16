@@ -380,6 +380,15 @@ impl BytesBuilder {
         BytesBuilder { buf: avra_bytes_concat(with_len, s_bytes) }
     }
 
+    /// Append raw bytes, length-prefixed (8-byte len + payload). Used
+    /// by nested @marshal struct fields: outer.to_bytes() embeds
+    /// inner.to_bytes()'s payload here so the cursor stays
+    /// self-describing on the reader side.
+    fn write_bytes(self, payload: bytes) -> BytesBuilder {
+        let with_len = avra_bytes_concat(self.buf, avra_int_to_bytes_le(payload.length))
+        BytesBuilder { buf: avra_bytes_concat(with_len, payload) }
+    }
+
     /// Append a bool as a single i64 (1 or 0). Wastes 7 bytes per
     /// bool but keeps every primitive 8-byte-aligned so readers
     /// don't track sub-byte position.
@@ -455,6 +464,17 @@ impl BytesReader {
             avra_string_from_bytes(s_bytes),
             BytesReader { buf: self.buf, pos: start + len },
         )
+    }
+
+    /// Read raw length-prefixed bytes. Pairs with
+    /// `BytesBuilder.write_bytes()`. The returned `bytes` slice is
+    /// suitable for handing straight to a nested type's
+    /// `from_bytes_<T>(...)` constructor.
+    fn read_bytes(self) -> (bytes, BytesReader) {
+        let len = avra_bytes_to_int_le(self.buf, self.pos)
+        let start = self.pos + 8
+        let payload = avra_bytes_slice(self.buf, start, start + len)
+        (payload, BytesReader { buf: self.buf, pos: start + len })
     }
 
     /// Read a bool stored as an i64 (1 → true, 0 → false).
