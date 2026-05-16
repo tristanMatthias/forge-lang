@@ -3,6 +3,11 @@
 .dolt/
 *.db
 
+# Local-only docs Claude tools emit at repo root — keep them on
+# disk but out of git so `git add -A` doesn't drag them in.
+/ONBOARDING.md
+/SHIPPED_THIS_WEEK.md
+
 # Rust build artifacts
 **/target/
 .ralph/logs/
