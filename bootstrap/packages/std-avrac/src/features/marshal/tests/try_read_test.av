@@ -1,0 +1,97 @@
+// nce6.3.1: bounds-checking BytesReader API.
+//
+// `try_read_*` returns `Result<(T, BytesReader), MarshalError>`
+// — fail-fast on underrun (cursor walked past end), negative
+// length-prefix (torn write), or trailing bytes detected by
+// `expect_done()`. Each method composes with `?` propagation
+// for natural unmarshaler shapes.
+//
+// The plain `read_*` family stays in place for @marshal-
+// synthesised codecs where the schema fixes the layout. New
+// hand-rolled unmarshalers should pick this family.
+
+use @std.process.{bytes_builder, bytes_reader, MarshalError}
+
+fn parse_one_int(b: bytes) -> Result<int, MarshalError> {
+    let r = bytes_reader(b)
+    let (n, r) = r.try_read_int()?
+    r.expect_done()?
+    Result.Ok(n)
+}
+
+fn parse_one_string(b: bytes) -> Result<string, MarshalError> {
+    let r = bytes_reader(b)
+    let (s, r) = r.try_read_string()?
+    r.expect_done()?
+    Result.Ok(s)
+}
+
+// try_read_int_list / try_read_string_list etc. compile cleanly
+// but the spec test path that returns
+// Result<int, MarshalError> from a List<int>-reading helper
+// trips a separate generic-substitution issue at codegen — the
+// tuple-element type extracted into `xs` lands as `int` instead
+// of `List<int>`. Tracking separately; the underlying
+// `try_read_int_list` works fine when used inside an
+// unmarshaler that *consumes* xs as List<int>.
+
+spec "nce6.3.1: try_read_* round-trip + fail-fast" {
+    then "good int payload — Ok with value" {
+        let b = bytes_builder().write_int(42).finish()
+        match parse_one_int(b) {
+            .Ok(v) -> v == 42
+            .Err(_) -> false
+        }
+    }
+    then "empty payload — Err(Underrun)" {
+        let b = bytes_builder().finish()
+        match parse_one_int(b) {
+            .Ok(_) -> false
+            .Err(e) -> match e {
+                .Underrun -> true
+                .TrailingBytes -> false
+                .NegativeLength -> false
+            }
+        }
+    }
+    then "extra bytes past expected end — Err(TrailingBytes)" {
+        let b = bytes_builder().write_int(1).write_int(99).finish()
+        match parse_one_int(b) {
+            .Ok(_) -> false
+            .Err(e) -> match e {
+                .Underrun -> false
+                .TrailingBytes -> true
+                .NegativeLength -> false
+            }
+        }
+    }
+    then "good string payload — Ok with text" {
+        let b = bytes_builder().write_string("hello").finish()
+        match parse_one_string(b) {
+            .Ok(s) -> s == "hello"
+            .Err(_) -> false
+        }
+    }
+    then "truncated string length-prefix — Err(Underrun)" {
+        // Write only the length, no payload bytes.
+        let b = bytes_builder().write_int(5).finish()
+        match parse_one_string(b) {
+            .Ok(_) -> false
+            .Err(e) -> match e {
+                .Underrun -> true
+                _ -> false
+            }
+        }
+    }
+    then "negative length-prefix on string — Err(NegativeLength)" {
+        // Write -1 as the length-prefix, no payload.
+        let b = bytes_builder().write_int(0 - 1).finish()
+        match parse_one_string(b) {
+            .Ok(_) -> false
+            .Err(e) -> match e {
+                .NegativeLength -> true
+                _ -> false
+            }
+        }
+    }
+}

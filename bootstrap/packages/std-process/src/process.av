@@ -437,14 +437,32 @@ impl BytesBuilder {
 /// `r` to keep the read sequence flat — same shape as Rust's
 /// mut-cursor reader without giving up immutability.
 ///
-/// **Note**: today's readers don't bounds-check or error on
-/// truncation — they silently produce zero values past the end.
-/// Fail-fast validation via `Result`-returning reads is a
-/// follow-up (`nce6.3` in the epic — blocked on bs2's generic-
-/// method-call + `?` + tuple-destructure typeck plumbing). Call
-/// `at_end()` at the end of an unmarshaler as a cheap sanity
-/// check until the proper Result reader lands.
+/// **Note**: the plain `read_*` family doesn't bounds-check
+/// or error on truncation — they silently produce zero values
+/// past the end. For fail-fast validation, use the parallel
+/// `try_read_*` family (nce6.3.1) which returns
+/// `Result<(value, BytesReader), MarshalError>` and bails on
+/// underrun. The plain family stays exported for the
+/// @marshal-synthesised codecs (where the schema fixes the
+/// layout) and for cases where the caller has already
+/// guaranteed the cursor is well-formed.
 export type BytesReader = { buf: bytes, pos: int }
+
+/// Typed failure mode for the `try_read_*` reader family.
+/// Distinguishes the three loss-of-integrity cases a
+/// truncated or malformed buffer can surface.
+export enum MarshalError {
+    /// Reader ran past the end of `buf` — needed more bytes than
+    /// remained.
+    Underrun,
+    /// `expect_done()` was called on a reader that still has
+    /// bytes left; the producer wrote more than the consumer
+    /// expected.
+    TrailingBytes,
+    /// A length-prefix or count field was negative — likely a
+    /// torn write or a wrong-type payload.
+    NegativeLength,
+}
 
 /// Construct a reader positioned at the start of `b`.
 export fn bytes_reader(b: bytes) -> BytesReader {
@@ -565,5 +583,136 @@ impl BytesReader {
     /// Bytes remaining (informational sanity check).
     fn remaining(self) -> int {
         self.buf.length - self.pos
+    }
+
+    // ── nce6.3.1 try_read_* family ──
+    //
+    // Bounds-checked counterparts to the plain read_* methods.
+    // Each returns Result<(value, BytesReader), MarshalError>:
+    // Underrun when the cursor would walk past the end,
+    // NegativeLength when a length-prefix or count is < 0.
+    // Designed for `?` propagation in unmarshalers:
+    //
+    //     let (n, r) = r.try_read_int()?
+    //     let (s, r) = r.try_read_string()?
+    //     r.expect_done()?
+
+    fn try_read_int(self) -> Result<(int, BytesReader), MarshalError> {
+        if self.pos + 8 > self.buf.length {
+            return Result.Err(MarshalError.Underrun)
+        }
+        Result.Ok((
+            avra_bytes_to_int_le(self.buf, self.pos),
+            BytesReader { buf: self.buf, pos: self.pos + 8 },
+        ))
+    }
+
+    fn try_read_float(self) -> Result<(float, BytesReader), MarshalError> {
+        if self.pos + 8 > self.buf.length {
+            return Result.Err(MarshalError.Underrun)
+        }
+        Result.Ok((
+            avra_bytes_to_float_le(self.buf, self.pos),
+            BytesReader { buf: self.buf, pos: self.pos + 8 },
+        ))
+    }
+
+    fn try_read_bool(self) -> Result<(bool, BytesReader), MarshalError> {
+        let (n, r) = self.try_read_int()?
+        Result.Ok((n != 0, r))
+    }
+
+    fn try_read_string(self) -> Result<(string, BytesReader), MarshalError> {
+        let (len, after_len) = self.try_read_int()?
+        if len < 0 { return Result.Err(MarshalError.NegativeLength) }
+        if after_len.pos + len > after_len.buf.length {
+            return Result.Err(MarshalError.Underrun)
+        }
+        let s_bytes = avra_bytes_slice(after_len.buf, after_len.pos, after_len.pos + len)
+        Result.Ok((
+            avra_string_from_bytes(s_bytes),
+            BytesReader { buf: after_len.buf, pos: after_len.pos + len },
+        ))
+    }
+
+    fn try_read_bytes(self) -> Result<(bytes, BytesReader), MarshalError> {
+        let (len, after_len) = self.try_read_int()?
+        if len < 0 { return Result.Err(MarshalError.NegativeLength) }
+        if after_len.pos + len > after_len.buf.length {
+            return Result.Err(MarshalError.Underrun)
+        }
+        let payload = avra_bytes_slice(after_len.buf, after_len.pos, after_len.pos + len)
+        Result.Ok((payload, BytesReader { buf: after_len.buf, pos: after_len.pos + len }))
+    }
+
+    fn try_read_int_list(self) -> Result<(List<int>, BytesReader), MarshalError> {
+        let (count, after_count) = self.try_read_int()?
+        if count < 0 { return Result.Err(MarshalError.NegativeLength) }
+        mut xs: List<int> = []
+        mut r = after_count
+        mut i = 0
+        while i < count {
+            let (v, r2) = r.try_read_int()?
+            xs = xs.push(v)
+            r = r2
+            i = i + 1
+        }
+        Result.Ok((xs, r))
+    }
+
+    fn try_read_string_list(self) -> Result<(List<string>, BytesReader), MarshalError> {
+        let (count, after_count) = self.try_read_int()?
+        if count < 0 { return Result.Err(MarshalError.NegativeLength) }
+        mut xs: List<string> = []
+        mut r = after_count
+        mut i = 0
+        while i < count {
+            let (v, r2) = r.try_read_string()?
+            xs = xs.push(v)
+            r = r2
+            i = i + 1
+        }
+        Result.Ok((xs, r))
+    }
+
+    fn try_read_bool_list(self) -> Result<(List<bool>, BytesReader), MarshalError> {
+        let (count, after_count) = self.try_read_int()?
+        if count < 0 { return Result.Err(MarshalError.NegativeLength) }
+        mut xs: List<bool> = []
+        mut r = after_count
+        mut i = 0
+        while i < count {
+            let (v, r2) = r.try_read_bool()?
+            xs = xs.push(v)
+            r = r2
+            i = i + 1
+        }
+        Result.Ok((xs, r))
+    }
+
+    fn try_read_float_list(self) -> Result<(List<float>, BytesReader), MarshalError> {
+        let (count, after_count) = self.try_read_int()?
+        if count < 0 { return Result.Err(MarshalError.NegativeLength) }
+        mut xs: List<float> = []
+        mut r = after_count
+        mut i = 0
+        while i < count {
+            let (v, r2) = r.try_read_float()?
+            xs = xs.push(v)
+            r = r2
+            i = i + 1
+        }
+        Result.Ok((xs, r))
+    }
+
+    /// Fail when bytes remain past the cursor — call at the end
+    /// of an unmarshaler to assert the producer wrote what the
+    /// consumer expected. Mirrors Rust's `Cursor.read_to_end`
+    /// followed by an empty check.
+    fn expect_done(self) -> Result<BytesReader, MarshalError> {
+        if self.pos != self.buf.length {
+            return Result.Err(MarshalError.TrailingBytes)
+        }
+        Result.Ok(self)
     }
 }
