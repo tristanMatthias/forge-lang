@@ -2644,6 +2644,13 @@ fn prepare_test_run(project_dir: string, args: TestArgs) -> RunCtx {
 // suite (similar-sized shards, jobs=8) drift is negligible; a
 // proper bounded-channel queue is the right cure if heterogeneous
 // shards push the tail noticeably.
+//
+// Attempted to swap in @std.avrac.build.pool's `pool_run` for a
+// proper any-finish-wakeup bounded queue in hkms.1.1, but its 50ms
+// poll-sleep in workers_reap costs more than the straggler tail
+// saves for these short ~80ms-per-shard workloads. The win would
+// need a no-sleep reap path (e.g. blocking wait on any-child via
+// signalfd / kqueue) — outside the iter scope.
 fn dispatch_shards(shards: List<Shard>, jobs: int) {
     mut start = 0
     while start < shards.length {
