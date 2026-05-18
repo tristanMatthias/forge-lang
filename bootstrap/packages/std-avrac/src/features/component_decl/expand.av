@@ -18,8 +18,16 @@ use core.{has_fn, find_fn_body}
 /// Public entry: expand every `component` declaration + usage
 /// in `stmts`. Two-phase: collect every `ComponentDef` first,
 /// then walk the tree splicing in templates / instantiations.
+///
+/// Empty-registry fast-path: programs that declare zero
+/// components (the overwhelming majority — components are a
+/// niche UI feature) pay zero cost beyond the registry scan.
+/// Without this, `expand_stmt_list` rebuilt the entire stmt
+/// tree even when there was nothing to expand (4szi.1 perf
+/// pass — every check_source / `bs2 check` call runs this).
 export fn expand_components(stmts: StmtList) -> StmtList {
     let reg = collect_component_defs(stmts)
+    if reg is .End { return stmts }
     let root = CompNestCtx { parent_var: "", parent_name: "", parent_children: ChildrenList.End }
     expand_stmt_list(stmts, reg, root)
 }
