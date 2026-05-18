@@ -584,7 +584,17 @@ fn resolve_setup_vt(regs: TypeRegs, vt: ValueType) -> ValueType {
             if e.found { return ValueType.Enum(name, TypeList.End, 0) }
             let s = struct_reg_lookup(regs.structs, name)
             if s.found { return ValueType.Struct(name, 0) }
-            ValueType.Unknown
+            // Forward reference — the named type isn't yet in the
+            // registry because this declaration was reached before
+            // the referent's decl. Keep the name so downstream
+            // lookups (List<T> elem resolution, ForIn binding,
+            // method dispatch) can find the type once codegen's
+            // declare-pass populates the registry. Returning
+            // Unknown here erased the name and broke field access
+            // through forward-referenced structs (#6, e.g.
+            // `type Outer = { items: List<Item> }` with Item
+            // declared AFTER Outer).
+            ValueType.Struct(name, 0)
         }
         .List(elem) -> ValueType.List(resolve_setup_vt(regs, elem))
         .Union(types) -> ValueType.Union(resolve_setup_vt_list(regs, types))
