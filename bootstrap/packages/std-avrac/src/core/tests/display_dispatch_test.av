@@ -113,18 +113,21 @@ spec "Display strictness — no display() means compile error (F1003)" {
             && !out.contains("F9999")
             && !out.contains("this is a compiler bug")
     }
-    then "enum without display() rejects string(value)" {
-        // Both direct EnumCtor and let-binding shapes still hit
-        // the codegen-level backstop (F9999) today — the
-        // typecheck-level F1003 path only fires for struct types
-        // because of a separate let-binding inference gap that
-        // leaves enum-typed locals at Unknown. The user-facing
-        // error text remains actionable in both cases. Filed
-        // separately as a follow-up.
+    then "enum without display() rejects string(value) with F1003" {
+        // Shortcut #4: parens-less `EnumType.Variant` parses as
+        // FieldAccess(Ident, "Variant"). check_expr now recognises
+        // this shape when the head Ident is a registered enum and
+        // returns Enum(type_name), so let-bindings retain the
+        // proper type and display_check_arg fires the typeck-side
+        // F1003 instead of the codegen F9999 backstop.
         let entry = "fn ma" + "in() { let v = NoDispE.A\n println(string(v)) }\n"
         let body = "enum NoDispE { A, B }\n" + entry
         let cmd = "printf '%s' '" + body + "' > /tmp/no_display_enum.av && ./build/bs2 compile /tmp/no_display_enum.av 2>&1 || true"
         let out = avra_shell_exec(cmd)
-        out.contains("NoDispE") && out.contains("display(self)")
+        out.contains("F1003")
+            && out.contains("NoDispE")
+            && out.contains("display(self)")
+            && !out.contains("F9999")
+            && !out.contains("this is a compiler bug")
     }
 }

@@ -1234,6 +1234,25 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             if tn == "" { return tc_er(after_args, .Unknown) }
             tc_er(after_args, ValueType.Enum(tn, TypeList.End, 0))
         }
+        // Parens-less `EnumType.Variant` parses as
+        // FieldAccess(Ident(EnumType), Variant). When the head is a
+        // registered enum, treat the access as a payload-less ctor
+        // and propagate the enum type — without this `let v = E.A`
+        // binds `v: Unknown` and downstream `${v}` falls through to
+        // the codegen F9999 backstop instead of the typeck-side
+        // F1003 (shortcut #4 — Display strictness).
+        .FieldAccess(obj, _) -> {
+            match obj {
+                .Ident(type_name) if enum_type_has(tc.enums, type_name) -> {
+                    return tc_er(tc, ValueType.Enum(type_name, TypeList.End, 0))
+                }
+                _ -> {}
+            }
+            let tag = avra_expr_tag(expr)
+            let result = dispatch_expr_check(tc.features, tag, tc, expr)
+            if result != null { return result! }
+            tc_er(tc, .Unknown)
+        }
         _ -> {
             let tag = avra_expr_tag(expr)
             let result = dispatch_expr_check(tc.features, tag, tc, expr)
