@@ -86,6 +86,16 @@ export fn split_package_modules(stmts: StmtList) -> PackageSplit {
 
 /// Concatenate two statement lists. Order-preserving: every node
 /// from `a` comes before every node from `b`.
+/// Resolve the absolute path of the spec_test reporter (`reporter.av`).
+/// Three call sites used to assemble this concatenation by hand
+/// (assemble_test_program here, make_test_inputs + prepare_test_run
+/// in cli/main.av); the literal `std-avrac/src/features/spec_test/`
+/// is now centralised in one place — move the reporter file and one
+/// edit fixes every consumer.
+export fn test_reporter_path(project_dir: string) -> string {
+    find_packages_dir(project_dir) + "std-avrac/src/features/spec_test/reporter.av"
+}
+
 export fn append_stmt_list(a: StmtList, b: StmtList) -> StmtList {
     match a {
         .End -> b
@@ -143,7 +153,7 @@ export fn assemble_test_program(test_paths: List<string>, project_dir: string) -
     // fns at module-root scope so spec codegen's bare
     // ctx.call("test_render_then", ...) resolves directly. State
     // (counters, current spec/given) lives in runtime.c.
-    let reporter_path = find_packages_dir(project_dir) + "std-avrac/src/features/spec_test/reporter.av"
+    let reporter_path = test_reporter_path(project_dir)
     let reporter_stmts = if avra_selfhost_file_exists(reporter_path) != 0 {
         let rsrc = avra_selfhost_read_file(reporter_path)
         let rparsed = parse_program_source_at(rsrc, reporter_path)

@@ -48,7 +48,7 @@ use @std.cli.ui.{run_with_spinner, run_with_progress}
 use @std.json.{json_str, json_object, json_pairs, json_pair_add}
 use @std.lsp.{Sym, SymList}
 use @std.avrac.fmt.{fmt_stmt_list}
-use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, append_stmt_list, assemble_test_program}
+use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, append_stmt_list, assemble_test_program, test_reporter_path}
 use @std.avrac.coverage.{render_coverage}
 use @std.avrac.docs.{extract_project_docs_ast, extract_project_corpus,
           show_overview, show_symbol, show_short, show_symbols,
@@ -2112,7 +2112,7 @@ fn make_test_inputs(project_dir: string, test_paths: List<string>, unit_name: st
     // file; each shard reads it back instead of forking find again.
     // Saves ~7ms × 451 shards = ~3s of CPU. Falls back to find for
     // standalone _test_shard invocations (no orchestrator).
-    let reporter_path = find_packages_dir(project_dir) + "std-avrac/src/features/spec_test/reporter.av"
+    let reporter_path = test_reporter_path(project_dir)
     let build_dir = "${project_dir}/build"
     let runtime_o = "${build_dir}/runtime.o"
     let llvm_wrap_o = "${build_dir}/llvm_wrapper.o"
@@ -2587,7 +2587,7 @@ fn prepare_test_run(project_dir: string, args: TestArgs) -> RunCtx {
     // inputs are identical across shards in one `make test` run,
     // and the rolled hash captures every byte that would otherwise
     // be sha256'd-per-shard — same cache-invalidation contract.
-    let reporter_path = find_packages_dir(project_dir) + "std-avrac/src/features/spec_test/reporter.av"
+    let reporter_path = test_reporter_path(project_dir)
     let build_dir = "${project_dir}/build"
     let runtime_o = "${build_dir}/runtime.o"
     let llvm_wrap_o = "${build_dir}/llvm_wrapper.o"
