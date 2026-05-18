@@ -1217,6 +1217,16 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             let fn_ty = fn_type_get(tc.fns, path).ret_ty
             tc_er(tc, fn_ty)
         }
+        // Enum constructor — `Status.Active`, `Status.Pending(count)`.
+        // Returns the enum type so callers (let-bindings, fn args,
+        // string()-strictness) see the typed value instead of
+        // falling through to Unknown. Mirrors how StructLit is
+        // handled by the struct_decl feature hook.
+        .EnumCtor(tn, _, args) -> {
+            let after_args = check_expr_list(tc, args)
+            if tn == "" { return tc_er(after_args, .Unknown) }
+            tc_er(after_args, ValueType.Enum(tn, TypeList.End, 0))
+        }
         _ -> {
             let tag = avra_expr_tag(expr)
             let result = dispatch_expr_check(tc.features, tag, tc, expr)
