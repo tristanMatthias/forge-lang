@@ -98,15 +98,29 @@ spec "Fallback paths still work" {
 // keep that substring out of THIS file.
 extern fn avra_shell_exec(cmd: string) -> string
 
-spec "Display strictness — no display() means compile error" {
-    then "struct without display() rejects string(value)" {
+spec "Display strictness — no display() means compile error (F1003)" {
+    then "struct without display() rejects string(value) with F1003" {
         let entry = "fn ma" + "in() { let n = NoDisp { x: 1 }\n println(string(n)) }\n"
         let body = "type NoDisp = { x: int }\n" + entry
         let cmd = "printf '%s' '" + body + "' > /tmp/no_display.av && ./build/bs2 compile /tmp/no_display.av 2>&1 || true"
         let out = avra_shell_exec(cmd)
-        out.contains("NoDisp") && out.contains("display(self)")
+        // Assert the proper F-code (not F9999 ICE) plus the type
+        // name and the help text — covers the bfdq strictness
+        // criterion end-to-end.
+        out.contains("F1003")
+            && out.contains("NoDisp")
+            && out.contains("display(self)")
+            && !out.contains("F9999")
+            && !out.contains("this is a compiler bug")
     }
     then "enum without display() rejects string(value)" {
+        // Both direct EnumCtor and let-binding shapes still hit
+        // the codegen-level backstop (F9999) today — the
+        // typecheck-level F1003 path only fires for struct types
+        // because of a separate let-binding inference gap that
+        // leaves enum-typed locals at Unknown. The user-facing
+        // error text remains actionable in both cases. Filed
+        // separately as a follow-up.
         let entry = "fn ma" + "in() { let v = NoDispE.A\n println(string(v)) }\n"
         let body = "enum NoDispE { A, B }\n" + entry
         let cmd = "printf '%s' '" + body + "' > /tmp/no_display_enum.av && ./build/bs2 compile /tmp/no_display_enum.av 2>&1 || true"

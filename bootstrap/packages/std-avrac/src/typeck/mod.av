@@ -1772,6 +1772,24 @@ type ExprListResult = {
 /// Type-check every expression in `exprs` and return the list of
 /// inferred types alongside the updated TC. Used by call-site
 /// arity / per-arg type checks.
+/// Last-resort type inference for a `string(arg)` argument when
+/// check_expr returned Unknown. Inspects the source Expr shape:
+///
+/// - bare Ident: look up in the type env (`tc.types`).
+/// - EnumCtor: return the constructor's enum type.
+/// - StructLit: return the struct type.
+///
+/// Returns Unknown if none of these apply; the caller short-
+/// circuits without emitting F1003 in that case.
+fn infer_arg_for_display(tc: TC, expr: Expr) -> ValueType {
+    match expr {
+        .Ident(name) -> type_lookup(tc.types, name)
+        .EnumCtor(tn, _, _) -> if tn != "" { ValueType.Enum(tn, TypeList.End, 0) } else { ValueType.Unknown }
+        .StructLit(name, _) -> if name != "" { ValueType.Struct(name, 0) } else { ValueType.Unknown }
+        _ -> ValueType.Unknown
+    }
+}
+
 /// nce6.1 / bfdq follow-up: if `string(arg)` is called with arg
 /// typed as a struct/enum that doesn't define
 /// `fn display(self) -> string`, emit F1003 (MissingDisplay) via
@@ -1780,8 +1798,21 @@ type ExprListResult = {
 /// typecheck-coded diagnostic instead of an F9999 (ICE).
 fn display_check_arg(tc: TC, types: TypeList, args: ExprList) -> TC {
     let arg_ty = type_list_at(types, 0)
-    let owner = vtype_struct_name(arg_ty)
-    let enum_owner = vtype_enum_name(arg_ty)
+    // Fallback when check_expr returned Unknown (a separate
+    // let-binding inference gap drops enum-typed locals to
+    // Unknown; the EnumCtor / StructLit literal forms below
+    // catch the common shape). The right long-term fix is
+    // tightening the let-binding inference.
+    let resolved_ty = if vtype_is_unknown(arg_ty) {
+        match args {
+            .Node(se, _) -> infer_arg_for_display(tc, se.node)
+            _ -> arg_ty
+        }
+    } else {
+        arg_ty
+    }
+    let owner = vtype_struct_name(resolved_ty)
+    let enum_owner = vtype_enum_name(resolved_ty)
     let type_name = if owner != "" { owner } else { enum_owner }
     if type_name == "" { return tc }
     // Skip Result and other generic-instantiated enums — they pass
