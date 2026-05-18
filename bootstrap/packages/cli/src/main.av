@@ -933,23 +933,15 @@ fn join_with_colon(xs: List<string>) -> string {
     out
 }
 
-// Split a newline-separated string into a List<string>, trimming
-// trailing whitespace and dropping empty lines. Used by the
-// workspace-package discovery walker — `ls -d` produces one path
-// per line plus a trailing newline.
+// Split a newline-separated string into a List<string>, dropping
+// empty lines. Used by the workspace-package discovery walker —
+// `ls -d` produces one path per line plus a trailing newline that
+// `.split("\n")` would otherwise emit as a trailing empty entry.
 fn split_by_newline(s: string) -> List<string> {
     mut out = []
-    if s == "" { return out }
-    mut start = 0
-    mut i = 0
-    while i < s.length {
-        if s.byte(i) == 0x0A {
-            if i > start { out.push(s.substring(start, i)) }
-            start = i + 1
-        }
-        i = i + 1
+    for p in s.split("\n") {
+        if p != "" { out.push(p) }
     }
-    if start < s.length { out.push(s.substring(start, s.length)) }
     out
 }
 
@@ -2291,18 +2283,10 @@ fn concat_stmt_lists(left: StmtList, right: StmtList) -> StmtList {
 
 fn parse_lib_objs_env() -> List<string> {
     let raw = avra_process_env_get("AVRA_LIB_OBJS")
-    if raw == "" { return [] }
     mut out = []
-    mut start = 0
-    mut i = 0
-    while i < raw.length {
-        if raw.byte(i) == 0x3A {
-            if i > start { out.push(raw.substring(start, i)) }
-            start = i + 1
-        }
-        i = i + 1
+    for p in raw.split(":") {
+        if p != "" { out.push(p) }
     }
-    if start < raw.length { out.push(raw.substring(start, raw.length)) }
     out
 }
 
