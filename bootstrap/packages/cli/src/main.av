@@ -38,6 +38,10 @@ fn read_file(path: string) -> string { avra_selfhost_read_file(path) }
 fn write_file(path: string, content: string) -> int { avra_selfhost_write_file(path, content) }
 
 use @std.cli.{cli_new, cli_add_command, cli_command_add_flag, cli_command_add_option, cli_command_add_arg, cli_parse, result_has_flag, result_get_option}
+// nce6.1.F: @marshal on TestResults synthesises `impl Marshal:TestResults`
+// + `from_bytes_TestResults` calling bytes_reader. Both depend on
+// @std/process's trait + byte primitives.
+use @std.process.{Marshal, bytes_reader, bytes_builder}
 // dir-as-module (g2eo.1): ui is a flat directory module, exports
 // surface at `@std.cli.ui.{...}` directly (not `.ui.spinner.{...}`).
 use @std.cli.ui.{run_with_spinner, run_with_progress}
@@ -2267,25 +2271,10 @@ type ShardSummary = { pass: int, fail: int, total: int, elapsed_ms: int }
 // nce6.1.F: structured shard summary. Reporter writes 32 bytes
 // (4 × i64 little-endian: pass, fail, total, elapsed_ms) to
 // AVRA_TEST_RESULTS_BIN_PATH using @std/process byte primitives.
-// Orchestrator decodes manually — @marshal on this type triggers
-// duplicate @std::process::BytesReader__* impl symbols at link
-// time because the test bundle pulls @std/process in via test
-// fixtures while main.av's bundle would emit them again. The
-// wire format matches @marshal exactly, so swapping in
-// from_bytes_TestResults is mechanical when the duplicate-symbol
-// dedup work lands (separate cleanup ticket).
+// @marshal synthesises from_bytes_TestResults(b: bytes) →
+// TestResults — symmetric with the reporter side.
+@marshal
 type TestResults = { pass: int, fail: int, total: int, elapsed_ms: int }
-
-extern fn avra_bytes_to_int_le(b: bytes, offset: int) -> int
-
-fn decode_test_results(b: bytes) -> TestResults {
-    TestResults {
-        pass: avra_bytes_to_int_le(b, 0),
-        fail: avra_bytes_to_int_le(b, 8),
-        total: avra_bytes_to_int_le(b, 16),
-        elapsed_ms: avra_bytes_to_int_le(b, 24),
-    }
-}
 
 fn parse_shard_summary(out: string) -> ShardSummary {
     let marker = "[shard-summary] "
@@ -2432,7 +2421,7 @@ impl Shard {
         if avra_selfhost_file_exists(self.bin_path) != 1 { return null }
         let b = avra_selfhost_read_file_bytes(self.bin_path)
         if b.length < 32 { return null }
-        decode_test_results(b)
+        from_bytes_TestResults(b)
     }
 }
 
