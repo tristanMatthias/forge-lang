@@ -1,15 +1,13 @@
 // nce6 phase B: bytes-payload variant. Struct round-trip through
-// fork+pipe+wait using a hand-rolled marshaler (the same code
-// `@marshal` will generate in Phase C). Result-shaped error path
-// — crash returns `Err(Crashed)`, never collides with an empty
-// payload.
+// fork+pipe+wait, now using @marshal-synthesised marshalers
+// (formerly hand-rolled — shortcut #7 cleanup).
+
+use @std.process.{Marshal, bytes_reader, bytes_builder}
 
 extern fn avra_isolated_run(body: fn() -> bytes) -> bytes
 extern fn avra_bytes_from_string(s: string) -> bytes
 extern fn avra_string_from_bytes(b: bytes) -> string
-extern fn avra_int_to_bytes_le(n: int) -> bytes
 extern fn avra_bytes_to_int_le(b: bytes, offset: int) -> int
-extern fn avra_bytes_concat(a: bytes, b: bytes) -> bytes
 extern fn avra_bytes_slice(b: bytes, start: int, end: int) -> bytes
 extern fn avra_bytes_empty() -> bytes
 extern fn abort() -> int
@@ -33,33 +31,8 @@ fn local_isolated_bytes(body: fn() -> bytes) -> Result<bytes, LocalIsoErr> {
     else { Result.Err(LocalIsoErr.PipeFailed) }
 }
 
-// Hand-rolled marshalers kept here intentionally — this test
-// lives under @std/avrac/core/tests/ and its bundle excludes
-// @std/process, so a `@marshal` annotation can't resolve the
-// qualified @std::process::bytes_builder synthesis target. The
-// real @marshal dogfood lives in features/marshal/tests/.
+@marshal
 type TestUserBR = { id: int, name: string, admin: bool }
-
-fn marshal_test_user(u: TestUserBR) -> bytes {
-    let id_bytes = avra_int_to_bytes_le(u.id)
-    let name_bytes = avra_bytes_from_string(u.name)
-    let name_len = avra_int_to_bytes_le(name_bytes.length)
-    let admin_byte = avra_int_to_bytes_le(if u.admin { 1 } else { 0 })
-    let buf1 = avra_bytes_concat(id_bytes, name_len)
-    let buf2 = avra_bytes_concat(buf1, name_bytes)
-    avra_bytes_concat(buf2, admin_byte)
-}
-
-fn unmarshal_test_user(b: bytes) -> TestUserBR {
-    let id = avra_bytes_to_int_le(b, 0)
-    let name_len = avra_bytes_to_int_le(b, 8)
-    let name_bytes = avra_bytes_slice(b, 16, 16 + name_len)
-    TestUserBR {
-        id: id,
-        name: avra_string_from_bytes(name_bytes),
-        admin: avra_bytes_to_int_le(b, 16 + name_len) != 0,
-    }
-}
 
 spec "isolated_bytes returns Result (nce6.B)" {
     then "string payload round-trips through fork+pipe+wait" {
@@ -77,9 +50,9 @@ spec "isolated_bytes returns Result (nce6.B)" {
     }
     then "struct round-trip: int + string + bool" {
         let original = TestUserBR { id: 42, name: "alice", admin: true }
-        match local_isolated_bytes(() -> marshal_test_user(original)) {
+        match local_isolated_bytes(() -> original.to_bytes()) {
             .Ok(b) -> {
-                let recovered = unmarshal_test_user(b)
+                let recovered = from_bytes_TestUserBR(b)
                 recovered.id == 42 && recovered.name == "alice" && recovered.admin
             }
             .Err(_) -> false
@@ -87,9 +60,9 @@ spec "isolated_bytes returns Result (nce6.B)" {
     }
     then "struct round-trip: empty string is well-formed" {
         let original = TestUserBR { id: 7, name: "", admin: false }
-        match local_isolated_bytes(() -> marshal_test_user(original)) {
+        match local_isolated_bytes(() -> original.to_bytes()) {
             .Ok(b) -> {
-                let recovered = unmarshal_test_user(b)
+                let recovered = from_bytes_TestUserBR(b)
                 recovered.id == 7 && recovered.name == "" && !recovered.admin
             }
             .Err(_) -> false
