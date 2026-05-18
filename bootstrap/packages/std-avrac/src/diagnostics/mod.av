@@ -157,6 +157,12 @@ export enum DiagCode {
     /// arguments. Add explicit type args (`f::<int>(x)`) or pass a
     /// value whose type pins T.
     CannotInferTypeParam
+    /// F1003 — `string(value)` / `"${value}"` interpolation on a
+    /// struct or enum type that doesn't define
+    /// `fn display(self) -> string`. Mirrors Go's Stringer / Rust's
+    /// Display — define the method or convert the value through one
+    /// of the primitive types first.
+    MissingDisplay
     // ── Name resolution (F3000-3999) ────────────────────────────────
     /// F3000 — name not in scope. Either a typo, missing `use`, or
     /// reference to a private symbol.
@@ -262,6 +268,7 @@ export fn error_def(d: DiagCode) -> ErrorDef {
         .TypeMismatch        -> ErrorDef { code: "F1000", help: "the value's type doesn't match what's expected — coerce explicitly or change one side" }
         .WrongArgCount       -> ErrorDef { code: "F1001", help: "check the function's declared arity against the call site" }
         .CannotInferTypeParam -> ErrorDef { code: "F1002", help: "add explicit type arguments, or ensure the type can be inferred from the arguments" }
+        .MissingDisplay      -> ErrorDef { code: "F1003", help: "define `fn display(self) -> string` on the type (or convert through a primitive first)" }
         .UndefinedVariable   -> ErrorDef { code: "F3000", help: "name not in scope — check spelling, add a `use` import, or declare it" }
         .ImmutableAssign     -> ErrorDef { code: "F3001", help: "declare with `mut` instead of `let` to allow reassignment" }
         .ModuleNotFound      -> ErrorDef { code: "F3100", help: "create the module file or remove the `mod` declaration" }

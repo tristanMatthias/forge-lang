@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.{BinOp, Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeArgList, TypeList, TypeParamList, ValueType, VariantList, WhenArmList, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, type_param_has, vtype_display, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_is_fn, vtype_is_unknown, vtype_list_elem, vtype_struct_name, vtype_tuple_at}
+use core.{BinOp, Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeArgList, TypeList, TypeParamList, ValueType, VariantList, WhenArmList, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, type_list_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_is_fn, vtype_is_unknown, vtype_list_elem, vtype_struct_name, vtype_tuple_at}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive}
@@ -1581,10 +1581,18 @@ fn tc_type_arg_lookup(args: TypeArgList, name: string) -> ValueType {
 fn check_call(tc: TC, callee: Expr, args: ExprList) -> ExprResult {
     match callee {
         .Ident(name) -> {
+            // For `string(arg)` we need the typed arg list so we can
+            // F1003 if arg is a struct/enum without display().
+            // Other built-ins / user fns fall back to the type-less
+            // check_expr_list path.
+            if name == "string" {
+                let typed = check_expr_list_types(tc, args)
+                let checked = display_check_arg(typed.tc, typed.types, args)
+                return tc_er(checked, .Str)
+            }
             let checked = check_expr_list(tc, args)
             // Built-in functions
             match name {
-                "string" -> return tc_er(checked, .Str)
                 "int"    -> return tc_er(checked, .Int)
                 "println" or "eprintln" or "print" or "eprint" -> return tc_er(checked, .Void)
                 _ -> {}
@@ -1764,6 +1772,36 @@ type ExprListResult = {
 /// Type-check every expression in `exprs` and return the list of
 /// inferred types alongside the updated TC. Used by call-site
 /// arity / per-arg type checks.
+/// nce6.1 / bfdq follow-up: if `string(arg)` is called with arg
+/// typed as a struct/enum that doesn't define
+/// `fn display(self) -> string`, emit F1003 (MissingDisplay) via
+/// the bag. The codegen-level check in fn_decl/codegen.av stays
+/// as a backstop, but emitting here gives the user a proper
+/// typecheck-coded diagnostic instead of an F9999 (ICE).
+fn display_check_arg(tc: TC, types: TypeList, args: ExprList) -> TC {
+    let arg_ty = type_list_at(types, 0)
+    let owner = vtype_struct_name(arg_ty)
+    let enum_owner = vtype_enum_name(arg_ty)
+    let type_name = if owner != "" { owner } else { enum_owner }
+    if type_name == "" { return tc }
+    // Skip Result and other generic-instantiated enums — they pass
+    // through string() as part of error-message formatting elsewhere
+    // and aren't user-display-required.
+    if is_result_enum_name(type_name) { return tc }
+    let mangled = method_mangled_name(type_name, "display")
+    let lookup = fn_type_get(tc.fns, mangled)
+    if lookup.found { return tc }
+    // No display method — emit F1003 with the first arg's span.
+    let span = match args {
+        .Node(se, _) -> span_new(0, 0, se.line, se.col)
+        _ -> span_dummy()
+    }
+    let kind = if owner != "" { "type" } else { "enum" }
+    let dollar_brace = "$" + "{"
+    let msg = "${kind} `${type_name}` cannot be converted to string — `string(value)` and `" + dollar_brace + "value}` interpolation require a `fn display(self) -> string` method"
+    tc with { bag: bag_report(tc.bag, diag_error(DiagCode.MissingDisplay, msg, span)) }
+}
+
 export fn check_expr_list_types(tc: TC, exprs: ExprList) -> ExprListResult {
     match exprs {
         .End -> ExprListResult { tc, types: TypeList.End }
