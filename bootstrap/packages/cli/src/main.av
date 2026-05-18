@@ -933,6 +933,27 @@ fn join_with_colon(xs: List<string>) -> string {
     out
 }
 
+// Resolve the compiler binary path for any sub-compile / shard
+// dispatch. First-match wins:
+//   1. AVRA_COMPILER env var (explicit override — CI / cross-builds)
+//   2. ${project_dir}/build/bs2 (in-tree bootstrap convention)
+//   3. argv[0] (the currently-running bs2 — guaranteed to exist
+//      since we're already executing inside it, but ONLY when
+//      file_exists(local_compiler) is false, otherwise we'd send
+//      shards through a different bs2 than the orchestrator)
+//
+// Three sites used to inline this resolution — prepare_test_run had
+// the truncated 2-step variant (no argv0 fallback) which silently
+// pointed at a missing build/bs2 in projects without a local
+// bootstrap. Unifying the helper closes that drift.
+fn resolve_compiler_path(project_dir: string) -> string {
+    let env_compiler = avra_process_env_get("AVRA_COMPILER")
+    if env_compiler != "" { return env_compiler }
+    let local_compiler = "${project_dir}/build/bs2"
+    if file_exists(local_compiler) { return local_compiler }
+    avra_selfhost_get_arg_cstr(0)
+}
+
 // Split a newline-separated string into a List<string>, dropping
 // empty lines. Used by the workspace-package discovery walker —
 // `ls -d` produces one path per line plus a trailing newline that
@@ -1627,25 +1648,7 @@ fn run_build_command() {
         "main"
     }
 
-    // Resolve the compiler binary used for the sub-compile step.
-    // Resolution order, first-match wins:
-    //   1. AVRA_COMPILER env var (explicit override)
-    //   2. ${project_dir}/build/bs2 (in-tree convention used by the
-    //      bootstrap and by `bs2 test` fixtures)
-    //   3. argv[0] (the currently-running bs2 — guaranteed to exist
-    //      since we're already executing inside it)
-    // Without (3) the build command failed in any project that doesn't
-    // ship a local build/bs2 — e.g. running `bs2 build --lib` from
-    // packages/std-avrac/. Step toward 2f54.
-    let env_compiler = avra_process_env_get("AVRA_COMPILER")
-    let local_compiler = "${project_dir}/build/bs2"
-    let compiler_path = if env_compiler != "" {
-        env_compiler
-    } else if file_exists(local_compiler) {
-        local_compiler
-    } else {
-        avra_selfhost_get_arg_cstr(0)
-    }
+    let compiler_path = resolve_compiler_path(project_dir)
 
     let target_kind = if prefer_lib { "lib" } else { "bin" }
     let inputs = BuildInputs {
@@ -2168,17 +2171,7 @@ fn make_test_inputs(project_dir: string, test_paths: List<string>, unit_name: st
         sources = sources.push(llvm_wrap_o)
     }
 
-    // Compiler resolution mirrors run_build_command: honour AVRA_COMPILER,
-    // fall back to ./build/bs2, then argv[0].
-    let env_compiler = avra_process_env_get("AVRA_COMPILER")
-    let local_compiler = "${project_dir}/build/bs2"
-    let compiler_path = if env_compiler != "" {
-        env_compiler
-    } else if file_exists(local_compiler) {
-        local_compiler
-    } else {
-        avra_selfhost_get_arg_cstr(0)
-    }
+    let compiler_path = resolve_compiler_path(project_dir)
 
     BuildInputs {
         project_root: project_dir,
@@ -2551,8 +2544,7 @@ fn compute_test_universe_fp(listing_file: string, reporter_path: string, runtime
 // paying 10s × N for their inline bs2 compiles. Set
 // AVRA_USE_METADATA_LIB=0 (or AVRA_SKIP_PREBUILD=1) to opt out.
 fn prepare_test_run(project_dir: string, args: TestArgs) -> RunCtx {
-    let env_compiler = avra_process_env_get("AVRA_COMPILER")
-    let compiler_path = if env_compiler != "" { env_compiler } else { "${project_dir}/build/bs2" }
+    let compiler_path = resolve_compiler_path(project_dir)
     let env_jobs = avra_process_env_get("AVRA_JOBS")
     let jobs = if env_jobs != "" { avra_parse_int(env_jobs) } else { 8 }
     let log_dir = "${project_dir}/build/test_shards"
