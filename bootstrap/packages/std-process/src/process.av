@@ -180,6 +180,19 @@ export fn self_dir() -> string {
 //   per declared type so callers stop touching the bytes layer.
 // Phase D: `isolated { body }` keyword sugar.
 
+/// nce6.1 / shortcut-cleanup #1: the canonical Marshal trait
+/// every `@marshal`-annotated type conforms to. The synthesised
+/// `impl Marshal for T` carries the `to_bytes` method declared
+/// here. `from_bytes_<T>` stays as a top-level fn (no Self
+/// type in Avra yet, so it can't be a trait method).
+///
+/// Future `isolated<T: Marshal>(body)` will use this trait
+/// bound to route through `T.to_bytes` and `from_bytes_<T>`
+/// without per-type synthesis.
+export trait Marshal {
+    fn to_bytes(self) -> bytes
+}
+
 extern fn avra_isolated_run(body: fn() -> bytes) -> bytes
 extern fn avra_int_to_bytes_le(n: int) -> bytes
 extern fn avra_bytes_to_int_le(b: bytes, offset: int) -> int

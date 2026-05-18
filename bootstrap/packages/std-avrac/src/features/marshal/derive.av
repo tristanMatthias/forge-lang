@@ -123,7 +123,10 @@ fn peel_annotations(stmt: Stmt) -> Stmt {
 fn derive_stmts(type_name: string, fields: FieldList) -> StmtList {
     let to_bytes_fn = build_to_bytes_fn(fields)
     let methods = StmtList.Node(sstmt_dummy(to_bytes_fn), StmtList.End)
-    let impl_stmt = Stmt.Impl(type_name, methods)
+    // Cleanup #1: emit `impl Marshal for T` instead of bare `impl T`
+    // so @marshal-annotated types are nominal members of the
+    // Marshal trait — unblocks `fn f<T: Marshal>(...)` bounds.
+    let impl_stmt = Stmt.Impl("@std::process::Marshal:" + type_name, methods)
     let from_bytes_fn = build_from_bytes_fn(type_name, fields)
     let isolated_fn = build_isolated_fn(type_name, ValueType.Struct(type_name, 0))
     StmtList.Node(sstmt_dummy(impl_stmt),
@@ -534,7 +537,8 @@ fn append_stmts(a: StmtList, b: StmtList) -> StmtList {
 fn derive_enum_stmts(type_name: string, variants: VariantList) -> StmtList {
     let to_bytes_fn = build_enum_to_bytes_fn(type_name, variants)
     let methods = StmtList.Node(sstmt_dummy(to_bytes_fn), StmtList.End)
-    let impl_stmt = Stmt.Impl(type_name, methods)
+    // Cleanup #1: same `impl Marshal for T` form for enums.
+    let impl_stmt = Stmt.Impl("@std::process::Marshal:" + type_name, methods)
     let from_bytes_fn = build_enum_from_bytes_fn(type_name, variants)
     let isolated_fn = build_isolated_fn(type_name,
         ValueType.Enum(type_name, TypeList.End, 0))
