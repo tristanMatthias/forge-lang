@@ -1796,6 +1796,20 @@ fn infer_arg_for_display(tc: TC, expr: Expr) -> ValueType {
         .Ident(name) -> type_lookup(tc.types, name)
         .EnumCtor(tn, _, _) -> if tn != "" { ValueType.Enum(tn, TypeList.End, 0) } else { ValueType.Unknown }
         .StructLit(name, _) -> if name != "" { ValueType.Struct(name, 0) } else { ValueType.Unknown }
+        // Shortcut #4 typeck-side: parens-less `EnumType.Variant`
+        // parses as FieldAccess(Ident, "Variant"). If the head
+        // Ident is a registered enum name, the access is the
+        // payload-less ctor — recover the enum type so
+        // display_check_arg can fire F1003. Doesn't disturb the
+        // parser; safer than changing the AST shape globally.
+        .FieldAccess(obj, _) -> match obj {
+            .Ident(type_name) -> if enum_type_has(tc.enums, type_name) {
+                ValueType.Enum(type_name, TypeList.End, 0)
+            } else {
+                ValueType.Unknown
+            }
+            _ -> ValueType.Unknown
+        }
         _ -> ValueType.Unknown
     }
 }
