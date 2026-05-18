@@ -891,6 +891,18 @@ void* avra_array_slice(void* arr, int64_t start, int64_t end) {
 #include <dirent.h>
 #include <sys/stat.h>
 
+// Return the on-disk file size for `path`, or -1 when the file is
+// missing/inaccessible. Faster than avra_selfhost_read_file when
+// callers only need a non-empty check (test-runner's log_alive
+// reads the entire log content just to compare against ""; this
+// extern lets it ask `size > 0` instead).
+int64_t avra_file_size(const char* path) {
+    if (!path) return -1;
+    struct stat st;
+    if (stat(path, &st) != 0) return -1;
+    return (int64_t)st.st_size;
+}
+
 // List directory entries. Returns a AvraArray of string pointers.
 void* avra_readdir(const char* path) {
     AvraArray* arr = avra_array_new();

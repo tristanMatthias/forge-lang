@@ -81,6 +81,12 @@ extern fn avra_bytes_empty() -> bytes
 extern fn avra_readdir(path: string) -> List<string>
 extern fn avra_is_dir(path: string) -> int
 extern fn avra_file_mtime(path: string) -> int
+/// Return the on-disk file size in bytes for `path`, or -1 when the
+/// file is missing/inaccessible. Lets callers ask "is this file
+/// non-empty?" without reading the whole content (hkms.1.1 perf
+/// pass: test-runner's log_alive used to read every shard's full
+/// log just to compare against "").
+extern fn avra_file_size(path: string) -> int
 extern fn avra_mkdir_p(path: string) -> int
 extern fn avra_rename(src: string, dst: string) -> int
 extern fn avra_remove_file(path: string) -> int
