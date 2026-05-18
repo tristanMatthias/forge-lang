@@ -108,7 +108,19 @@ fn each_with_count(items: List<string>, kind: string) -> string {
 /// driver should fail before this point if a declared source is
 /// missing; this function is permissive so fingerprints stay
 /// computable even mid-edit.
+///
+/// Fast-path for the `@@fp:<hex>` synthetic sentinel. The test-runner
+/// orchestrator pre-computes a "universe fingerprint" rolling up
+/// every shared input (@std/* tree, reporter, runtime objs) and
+/// passes it as one synthetic path in the sources list. Each shard
+/// then skips ~280 sidecar reads — the universe FP changes only when
+/// shared inputs do, so cache invalidation semantics stay correct.
+/// Hkms.1.1 perf pass.
 fn hash_source_entry(path: string) -> string {
+    let sentinel = "@@fp:"
+    if path.length > sentinel.length && path.starts_with(sentinel) {
+        return path.substring(sentinel.length, path.length)
+    }
     if !avra_selfhost_file_exists(path) {
         return sha256_file("/__missing__")
     }
