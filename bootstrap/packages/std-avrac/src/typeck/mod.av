@@ -625,6 +625,13 @@ export fn resolve_vtype(tc: TC, vt: ValueType) -> ValueType {
         .List(elem) -> ValueType.List(resolve_vtype(tc, elem))
         .Union(types) -> ValueType.Union(resolve_vtype_list(tc, types))
         .FnTyped(params, ret) -> ValueType.FnTyped(resolve_vtype_list(tc, params), resolve_vtype(tc, ret))
+        // Shortcut #6: recurse into Tuple element types. Without
+        // this, a cross-package fn returning
+        // `Result<(List<int>, BytesReader), E>` lost its Tuple
+        // element types — they stayed un-resolved Struct shells
+        // and check_try saw `(tuple)` instead of
+        // `(tuple List<int>, BytesReader)`.
+        .Tuple(elems) -> ValueType.Tuple(resolve_vtype_list(tc, elems))
         _ -> vt
     }
 }
