@@ -30,7 +30,7 @@
 // This file owns no compiler logic — it only orchestrates argv
 // parsing and dispatches to the lib's pure entry points.
 use @std.avrac.core.{avra_selfhost_argc, avra_selfhost_get_arg_cstr, avra_selfhost_file_exists, avra_selfhost_read_file, avra_selfhost_read_file_bytes, avra_selfhost_write_file, avra_selfhost_append_file, avra_shell_exec, avra_shell_exec_status, avra_process_exit, avra_process_forward, avra_process_env_get, exit, avra_char_from_hex}
-use @std.avrac.core.{avra_file_mtime, avra_file_size, avra_is_dir, avra_readdir, avra_str_ends_with}
+use @std.avrac.core.{avra_file_mtime, avra_file_size, avra_is_dir, avra_readdir, avra_remove_file, avra_str_ends_with}
 
 // Convenience aliases so handler bodies stay readable.
 fn file_exists(path: string) -> int { avra_selfhost_file_exists(path) }
@@ -2361,9 +2361,13 @@ fn run_test_shard_command() {
             // Publish copies the staging bin into the cache slot, so
             // the local `_test_<shard>.{bin,o}` aren't load-bearing
             // anymore. Drop them — 317 shards × ~5MB each = ~1.5GB
-            // of duplicate disk pressure otherwise.
+            // of duplicate disk pressure otherwise. Native unlink
+            // beats `avra_shell_exec("rm -f …")` per-shard (~5ms
+            // fork + sh -c) — for ~451 cache-miss shards on a cold
+            // build that's ~2s of shell overhead.
             let build_dir = "${inputs.project_root}/build"
-            avra_shell_exec("rm -f '${build_dir}/_test_${shard_id}.bin' '${build_dir}/_test_${shard_id}.o'")
+            let _ = avra_remove_file("${build_dir}/_test_${shard_id}.bin")
+            let _ = avra_remove_file("${build_dir}/_test_${shard_id}.o")
             cache_bin_path_for(cache_for(inputs.project_root), fp)
         }
     }
