@@ -678,19 +678,19 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
             Stmt.Module(name, rewrite_stmt_list(ctx_with_module(ctx, mod_path, merge_aliases(ctx.aliases, mod_uses.aliases)), body))
         }
         .TypeDecl(name, tp, fields) -> {
-            let qn = resolve_type_in_ctx(ctx, name)
+            let qn = declared_type_name(ctx, name)
             let rf = rewrite_field_types(ctx, fields)
             type_registry_register(ctx.type_reg, qn, TypeKind.StructKind, rf, VariantList.End, ValueType.Unknown)
             Stmt.TypeDecl(qn, tp, rf)
         }
         .EnumDecl(name, tp, variants) -> {
-            let qn = resolve_type_in_ctx(ctx, name)
+            let qn = declared_type_name(ctx, name)
             let rv = rewrite_variant_types(ctx, variants)
             type_registry_register(ctx.type_reg, qn, TypeKind.EnumKind, FieldList.End, rv, ValueType.Unknown)
             Stmt.EnumDecl(qn, tp, rv)
         }
         .TraitDecl(name, body) -> {
-            let qn = resolve_type_in_ctx(ctx, name)
+            let qn = declared_type_name(ctx, name)
             type_registry_register(ctx.type_reg, qn, TypeKind.TraitKind, FieldList.End, VariantList.End, ValueType.Unknown)
             // Rewrite the body's method signatures so each method's
             // params/ret_ty pick up the surrounding module's qualifier.
@@ -703,13 +703,13 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
             Stmt.TraitDecl(qn, rewrite_stmt_list(ctx, body))
         }
         .ShapeDecl(name, fields) -> {
-            let qn = resolve_type_in_ctx(ctx, name)
+            let qn = declared_type_name(ctx, name)
             let rf = rewrite_field_types(ctx, fields)
             type_registry_register(ctx.type_reg, qn, TypeKind.ShapeKind, rf, VariantList.End, ValueType.Unknown)
             Stmt.ShapeDecl(qn, rf)
         }
         .NewtypeDecl(name, inner) -> {
-            let qn = resolve_type_in_ctx(ctx, name)
+            let qn = declared_type_name(ctx, name)
             let ri = rewrite_vtype(ctx, inner)
             type_registry_register(ctx.type_reg, qn, TypeKind.NewtypeKind, FieldList.End, VariantList.End, ri)
             Stmt.NewtypeDecl(qn, ri)
@@ -727,7 +727,7 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
         .Select(arms) -> .Select(rewrite_select_arms(ctx, arms))
         .Const(name, vt, init) -> .Const(name, rewrite_vtype(ctx, vt), rewrite_expr(ctx, init))
         .UnionAliasDecl(name, vt) -> {
-            let qn = resolve_type_in_ctx(ctx, name)
+            let qn = declared_type_name(ctx, name)
             let rvt = rewrite_vtype(ctx, vt)
             type_registry_register(ctx.type_reg, qn, TypeKind.NewtypeKind, FieldList.End, VariantList.End, rvt)
             Stmt.UnionAliasDecl(qn, rvt)
@@ -787,16 +787,44 @@ fn find_single_colon(s: string) -> int {
     -1
 }
 
+/// Qualify a type name at its DECLARATION site. Unlike
+/// `resolve_type_in_ctx` (which qualifies REFERENCES and falls
+/// back to the global index when a name isn't locally defined),
+/// a declaration unambiguously belongs to the surrounding module.
+/// Going through the global index here let imported types from
+/// other packages steal the canonical name (e.g. metadata.av's
+/// `type BytesReader` ended up registered as
+/// `@std::process::BytesReader` when both were in scope, causing
+/// duplicate-symbol FATALs at codegen — yx7b).
+fn declared_type_name(ctx: NameCtx, name: string) -> string {
+    if name.contains("::") { return name }
+    if ctx.current_module != "" {
+        return type_qualified_name(ctx.current_module, name)
+    }
+    name
+}
+
 /// Qualify a bare type name to its canonical path. Tries (in order):
 /// already-qualified pass-through, primitives + single-uppercase
-/// type params, the global index, the alias table, and finally the
-/// current module path. The order encodes the precedence rules from
-/// spec Axis 28.
+/// type params, the current module (when it declares the type),
+/// the global index, the alias table, and finally the current
+/// module path as a default. The current-module check comes BEFORE
+/// the global index so a locally-declared type shadows an
+/// identically-named import — without this, an impl block in a
+/// module that shadows a name from another imported package
+/// gets its methods mangled with the OTHER package's prefix,
+/// producing FATAL duplicate-symbol collisions at codegen (yx7b).
 fn resolve_type_in_ctx(ctx: NameCtx, type_name: string) -> string {
     if type_name.contains("::") { return type_name }
     // Primitives and type parameters (single uppercase letter) stay as-is
     if type_name in ["int", "string", "bool", "float", "ptr", "void"] { return type_name }
     if type_name.length == 1 && type_name[0] in "A".."Z" { return type_name }
+    if ctx.current_module != "" {
+        let local_qn = type_qualified_name(ctx.current_module, type_name)
+        if type_registry_id_for(ctx.type_reg, local_qn) != 0 {
+            return local_qn
+        }
+    }
     let canonical = global_item_lookup(ctx.global_index, type_name)
     if canonical != "" { return canonical }
     let alias = alias_lookup(ctx.aliases, type_name)

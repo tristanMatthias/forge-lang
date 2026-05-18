@@ -1,0 +1,32 @@
+// yx7b — when two imported packages each declare a type with the
+// same short name (here `BytesReader`), the resolver MUST mangle
+// each impl block's methods with the OWNING module's prefix.
+// Falling back to the global index at declaration time used to let
+// metadata.av's `type BytesReader` get registered under
+// `@std::process::BytesReader`, producing FATAL duplicate-symbol
+// emissions at codegen-link when both packages were in scope.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn compile_capture(source: string) -> string {
+    let path = "/tmp/avra_yx7b_shadow_test.av"
+    let escaped = source.replace("'", "'\\''")
+    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 || true")
+}
+
+spec "yx7b: same-named types across packages don't collide at codegen" {
+    then "importing @std.process AND @std.avrac.build (both define BytesReader) compiles cleanly" {
+        let out = compile_capture(
+            "use @std.avrac.core.{avra_selfhost_argc}\n" +
+            "use @std.avrac.test_runner.{prepend_test_externs}\n" +
+            "use @std.process.{bytes_reader, bytes_builder}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let b = bytes_builder()\n" +
+            "    let r = bytes_reader(b.finish())\n" +
+            "}\n")
+        !out.contains("FATAL: duplicate function")
+            && !out.contains("BytesReader__remaining` — rename")
+    }
+}
