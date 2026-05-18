@@ -2038,45 +2038,64 @@ fn select_test_paths(test_files_listing: string, args: TestArgs) -> List<string>
         let mod_name = basename_no_ext(path)
         if args.filter != "" && !mod_name.contains(args.filter) { continue }
         let content = read_file(path)
-        if !content.contains("spec ") { continue }
-        if has_top_level_main(content) { continue }
+        // Single pass for both predicates — the file content is large
+        // relative to the substrings we're scanning for, so doing
+        // `contains("spec ")` AND `has_top_level_main(content)` was
+        // two full walks of the file. classify_test_file folds them
+        // into one line-by-line walk that short-circuits when both
+        // answers are known (hkms.1.1 perf pass).
+        let cls = classify_test_file(content)
+        if !cls.has_spec { continue }
+        if cls.has_top_main { continue }
         survivors = survivors.push(path)
     }
     survivors
 }
 
-// Decide whether a *_test.av declares its own `fn main(...)` at the
-// top of the file. A naive `content.contains("fn main()")` produced
-// false positives on comments and string literals containing the
-// substring — see display_dispatch_test.av's strictness fixtures.
-//
-// Walk line by line, skip the line's leading whitespace, reject
-// line-comments, and require the trimmed line to start with `fn main`
-// followed by `(` (so `fn main_helper` doesn't trip it).
-fn has_top_level_main(content: string) -> bool {
+type TestFileClass = { has_spec: bool, has_top_main: bool }
+
+// Single-pass classifier: scans a file's content once and reports
+// (a) whether it contains a `spec ` keyword (anywhere in any line) and
+// (b) whether it declares a top-level `fn main(...)` — only counting
+// lines whose leading non-whitespace begins with `fn main` followed
+// by `(` (rejects `fn mainHelper`, line-commented occurrences, and
+// `spec`/`fn main` text inside string literals via the naive but
+// historically-sufficient leading-skip heuristic).
+fn classify_test_file(content: string) -> TestFileClass {
+    mut has_spec = false
+    mut has_top_main = false
     for raw in content.split("\n") {
-        // Skip leading whitespace manually — no trim_start method.
-        mut i = 0
-        while i < raw.length {
-            let c = raw[i]
-            if c != " " && c != "\t" { break }
-            i = i + 1
+        // Cheap any-position check for "spec " (matches original
+        // `content.contains("spec ")` semantics — finds it even in
+        // strings/comments, which the historical filter accepted).
+        if !has_spec && raw.contains("spec ") { has_spec = true }
+        // Line-anchored `fn main(...)` check — skip leading whitespace,
+        // skip line-comments, require `fn main` followed by an optional
+        // run of spaces/tabs and then `(`.
+        if !has_top_main {
+            mut i = 0
+            while i < raw.length {
+                let c = raw[i]
+                if c != " " && c != "\t" { break }
+                i = i + 1
+            }
+            if i < raw.length {
+                let rest = raw.substring(i, raw.length)
+                if !rest.starts_with("//") && rest.starts_with("fn main") {
+                    mut j = 7  // length of "fn main"
+                    while j < rest.length {
+                        let c = rest[j]
+                        if c != " " && c != "\t" { break }
+                        j = j + 1
+                    }
+                    if j < rest.length && rest[j] == "(" { has_top_main = true }
+                }
+            }
         }
-        if i >= raw.length { continue }
-        let rest = raw.substring(i, raw.length)
-        if rest.starts_with("//") { continue }
-        if !rest.starts_with("fn main") { continue }
-        // Reject `fn mainHelper`, `fn main_thing` — must be followed
-        // by `(` (with optional intervening whitespace).
-        mut j = 7  // length of "fn main"
-        while j < rest.length {
-            let c = rest[j]
-            if c != " " && c != "\t" { break }
-            j = j + 1
-        }
-        if j < rest.length && rest[j] == "(" { return true }
+        // Both answers known → stop walking lines.
+        if has_spec && has_top_main { break }
     }
-    false
+    TestFileClass { has_spec, has_top_main }
 }
 
 // Compose BuildInputs for a test action — bundled or per-shard.
