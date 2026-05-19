@@ -2032,17 +2032,11 @@ fn run_cache_command() {
 /// hkms.4: applies `--filter` to the structurally-discovered list.
 /// Filter matches against the file's basename — same semantics as the
 /// legacy `select_test_paths` filter so user CLI invocations work
-/// unchanged after the discovery swap.
+/// unchanged after the discovery swap. Empty-filter fast path skips
+/// the basename hashing/walk entirely.
 fn filter_discovered(files: List<DiscoveredFile>, filter: string) -> List<DiscoveredFile> {
     if filter == "" { return files }
-    mut out: List<DiscoveredFile> = []
-    mut i = 0
-    while i < files.length {
-        let d = files[i]
-        if basename_no_ext(d.path).contains(filter) { out.push(d) }
-        i = i + 1
-    }
-    out
+    list_filter(files, (d: DiscoveredFile) -> basename_no_ext(d.path).contains(filter))
 }
 
 /// hkms.4: render the structurally-discovered test set for `--list`.
@@ -2050,18 +2044,20 @@ fn filter_discovered(files: List<DiscoveredFile>, filter: string) -> List<Discov
 /// `grep`, humans) can navigate directly to the source. Format is
 /// stable and machine-friendly — `:` separators, no ANSI colour.
 fn print_discovered(files: List<DiscoveredFile>) {
-    mut i = 0
-    while i < files.length {
-        let d = files[i]
-        i = i + 1
-        mut j = 0
-        while j < d.entries.length {
-            match d.entries[j] {
-                .Spec(name, line) -> println("${d.path}:${string(line)}: spec ${name}")
-                .TestFn(fn_name, line) -> println("${d.path}:${string(line)}: @test fn ${fn_name}")
-            }
-            j = j + 1
+    for d in files {
+        for entry in d.entries {
+            println(render_discovered_entry(d.path, entry))
         }
+    }
+}
+
+/// Single entry's `--list` line — picks the right "spec" / "@test fn"
+/// label based on the entry variant. Pure formatter so the iteration
+/// shape above stays small.
+fn render_discovered_entry(path: string, entry: DiscoveredEntry) -> string {
+    match entry {
+        .Spec(name, line)      -> "${path}:${string(line)}: spec ${name}"
+        .TestFn(fn_name, line) -> "${path}:${string(line)}: @test fn ${fn_name}"
     }
 }
 

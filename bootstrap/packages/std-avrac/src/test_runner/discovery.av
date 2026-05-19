@@ -47,10 +47,8 @@ use parse.{parser_new_with_file}
 /// './build' -prune` exclusion the discovery is replacing.
 fn is_skipped_dir(name: string) -> bool {
     if name == "" { return true }
-    if name.byte(0) == 0x2E { return true }
-    if name == "target" { return true }
-    if name == "node_modules" { return true }
-    false
+    if name.byte(0) == 0x2E { return true }   // dotfile
+    name in ["target", "node_modules"]
 }
 
 /// Project-root-anchored exclusions. `build/` is the canonical
@@ -58,8 +56,7 @@ fn is_skipped_dir(name: string) -> bool {
 /// thousands of generated `.ll` / `.av` test fixtures. Nested
 /// `src/build/` packages are real source.
 fn is_skipped_at_root(name: string) -> bool {
-    if name == "build" { return true }
-    false
+    name == "build"
 }
 
 /// True iff `name` looks like an Avra source file. Lower case `.av`
@@ -67,9 +64,19 @@ fn is_skipped_at_root(name: string) -> bool {
 /// target. Naming convention `*_test.av` is preserved as the default
 /// but no longer load-bearing (see hkms.4 spec).
 fn is_av_source(name: string) -> bool {
-    if name == "" { return false }
-    if name.byte(0) == 0x2E { return false }
+    if name == "" || name.byte(0) == 0x2E { return false }
     avra_str_ends_with(name, ".av") != 0
+}
+
+/// Trailing-slash-aware path join. Centralises the
+/// `prefix + "/" + name` dance so the walker doesn't sprinkle byte
+/// inspection at every recursion site.
+fn path_join(prefix: string, name: string) -> string {
+    if prefix.length > 0 && prefix.byte(prefix.length - 1) == 0x2F {
+        prefix + name
+    } else {
+        prefix + "/" + name
+    }
 }
 
 /// Recursive `.av` walk under `root`. Order is depth-first, parent
@@ -89,26 +96,15 @@ export fn walk_av_files(root: string) -> List<string> {
 /// exclusions like `./build/` apply only at the top level.
 fn walk_into(dir: string, out_ref: List<string>, is_root: bool) {
     if avra_is_dir(dir) == 0 { return }
-    let entries = avra_readdir(dir)
-    let prefix = if dir.length > 0 && dir.byte(dir.length - 1) == 0x2F {
-        dir
-    } else {
-        dir + "/"
-    }
     mut out = out_ref
-    mut i = 0
-    while i < entries.length {
-        let name = entries[i]
-        let path = prefix + name
+    for name in avra_readdir(dir) {
+        let path = path_join(dir, name)
         if avra_is_dir(path) != 0 {
             let skip = is_skipped_dir(name) || (is_root && is_skipped_at_root(name))
-            if !skip {
-                walk_into(path, out, false)
-            }
+            if !skip { walk_into(path, out, false) }
         } else if is_av_source(name) {
             out.push(path)
         }
-        i = i + 1
     }
 }
 
@@ -158,73 +154,96 @@ export fn classify_av_source(path: string, source: string) -> DiscoveredFile {
     while p.current_kind != Tk.Eof {
         // Track delimiter depth so we only count entries at module top.
         match p.current_kind {
-            .LeftBrace -> { brace_depth = brace_depth + 1 }
+            .LeftBrace  -> { brace_depth = brace_depth + 1 }
             .RightBrace -> { brace_depth = brace_depth - 1 }
-            .LeftParen -> { paren_depth = paren_depth + 1 }
+            .LeftParen  -> { paren_depth = paren_depth + 1 }
             .RightParen -> { paren_depth = paren_depth - 1 }
             _ -> {}
         }
         if brace_depth == 0 && paren_depth == 0 {
-            match p.current_kind {
+            let consumed = match p.current_kind {
                 .KwSpec -> {
-                    let line = p.current_line
-                    p.advance()
-                    if p.current_kind == Tk.String {
-                        entries.push(DiscoveredEntry.Spec(p.current_lexeme, line))
-                    }
-                    continue
+                    try_capture_spec(p, entries)
+                    true
                 }
                 .At -> {
-                    let line = p.current_line
-                    p.advance()
-                    if p.current_kind == Tk.Identifier && p.current_lexeme == "test" {
-                        // Skip past `@test(args)` if present, then look
-                        // for the next `fn` and grab its name.
-                        p.advance()
-                        if p.current_kind == Tk.LeftParen {
-                            // Skip arg list by tracking paren depth.
-                            mut d = 1
-                            p.advance()
-                            while p.current_kind != Tk.Eof && d > 0 {
-                                if p.current_kind == Tk.LeftParen { d = d + 1 }
-                                if p.current_kind == Tk.RightParen { d = d - 1 }
-                                p.advance()
-                            }
-                        }
-                        // Skip any further annotations on the same fn —
-                        // walk until we see `fn`.
-                        while p.current_kind != Tk.Eof && p.current_kind != Tk.KwFn {
-                            p.advance()
-                        }
-                        if p.current_kind == Tk.KwFn {
-                            p.advance()
-                            if p.current_kind == Tk.Identifier {
-                                entries.push(DiscoveredEntry.TestFn(p.current_lexeme, line))
-                            }
-                        }
-                    }
-                    continue
+                    try_capture_test_annot(p, entries)
+                    true
                 }
                 .KwFn -> {
-                    let line = p.current_line
-                    p.advance()
-                    if p.current_kind == Tk.Identifier && p.current_lexeme == "main" {
-                        // `fn main(` at top level — same predicate as
-                        // the legacy line-anchored heuristic, but token-
-                        // exact (no false positives on `fn mainHelper`).
-                        p.advance()
-                        if p.current_kind == Tk.LeftParen {
-                            has_top_main = true
-                        }
-                    }
-                    continue
+                    if try_detect_main(p) { has_top_main = true }
+                    true
                 }
-                _ -> {}
+                _ -> false
             }
+            if consumed { continue }
         }
         p.advance()
     }
     DiscoveredFile { path, entries, has_top_main }
+}
+
+/// `spec "name"` at module top → push Spec(lexeme, line). Assumes
+/// the parser is positioned on the `spec` keyword; leaves it on the
+/// token after the captured String (or unchanged if no String
+/// follows — a malformed `spec` we let the parser later surface).
+/// `entries_ref` is the caller's accumulator — rebound to a `mut`
+/// local because Avra params are immutable (the underlying heap
+/// AvraArray is shared, so push mutations reach the caller).
+fn try_capture_spec(p: Parser, entries_ref: List<DiscoveredEntry>) {
+    let line = p.current_line
+    p.advance()
+    if p.current_kind == Tk.String {
+        mut entries = entries_ref
+        entries.push(DiscoveredEntry.Spec(p.current_lexeme, line))
+        p.advance()
+    }
+}
+
+/// `@test fn name`  →  push TestFn(name, line) — skips through any
+/// `@test(args)` arg list and any further annotations stacked on the
+/// same fn. Assumes the parser is positioned on `@`. Bare `@inline`
+/// / `@export` (anything other than `test`) is a no-op skip.
+fn try_capture_test_annot(p: Parser, entries_ref: List<DiscoveredEntry>) {
+    let line = p.current_line
+    p.advance()
+    if p.current_kind != Tk.Identifier || p.current_lexeme != "test" {
+        return
+    }
+    p.advance()
+    if p.current_kind == Tk.LeftParen { skip_paren_group(p) }
+    while p.current_kind != Tk.Eof && p.current_kind != Tk.KwFn { p.advance() }
+    if p.current_kind != Tk.KwFn { return }
+    p.advance()
+    if p.current_kind == Tk.Identifier {
+        mut entries = entries_ref
+        entries.push(DiscoveredEntry.TestFn(p.current_lexeme, line))
+        p.advance()
+    }
+}
+
+/// `fn main(` at module top → true. Assumes the parser is on `fn`;
+/// leaves it on the first token after `main(` (when matched) or just
+/// past `fn` (when not). Token-exact: `fn mainHelper` does NOT match
+/// because the identifier lexeme is "mainHelper", not "main".
+fn try_detect_main(p: Parser) -> bool {
+    p.advance()
+    if p.current_kind != Tk.Identifier || p.current_lexeme != "main" { return false }
+    p.advance()
+    p.current_kind == Tk.LeftParen
+}
+
+/// Advance past a balanced `( ... )` group. Assumes the parser is
+/// positioned ON the opening LeftParen. Leaves the parser on the
+/// token immediately after the matching RightParen.
+fn skip_paren_group(p: Parser) {
+    mut depth = 1
+    p.advance()
+    while p.current_kind != Tk.Eof && depth > 0 {
+        if p.current_kind == Tk.LeftParen  { depth = depth + 1 }
+        if p.current_kind == Tk.RightParen { depth = depth - 1 }
+        p.advance()
+    }
 }
 
 // ── Discovery orchestrator ──────────────────────────────────────────
@@ -233,20 +252,20 @@ export fn classify_av_source(path: string, source: string) -> DiscoveredFile {
 /// file that owns at least one test entry AND does NOT declare its
 /// own `fn main(`. Sort order: by path, lexicographic — stable across
 /// runs so cache keys + diagnostic order are reproducible.
+///
+/// Filter inlined as a single-pass loop rather than via
+/// `list_ops.list_filter<DiscoveredFile>` because library-mode mono
+/// would emit the specialisation in both `@std::avrac` and the
+/// consuming test shard, producing a duplicate-symbol link error.
 export fn discover_tests(root: string) -> List<DiscoveredFile> {
-    let paths = walk_av_files(root)
-    let sorted = sort_paths(paths)
+    let paths = sort_paths(walk_av_files(root))
     mut out: List<DiscoveredFile> = []
-    mut i = 0
-    while i < sorted.length {
-        let path = sorted[i]
-        i = i + 1
+    for path in paths {
         if avra_selfhost_file_exists(path) == 0 { continue }
-        let src = avra_selfhost_read_file(path)
-        let classified = classify_av_source(path, src)
-        if classified.has_top_main { continue }
-        if classified.entries.length == 0 { continue }
-        out.push(classified)
+        let d = classify_av_source(path, avra_selfhost_read_file(path))
+        if d.has_top_main { continue }
+        if d.entries.length == 0 { continue }
+        out.push(d)
     }
     out
 }
@@ -259,11 +278,7 @@ export fn discover_tests(root: string) -> List<DiscoveredFile> {
 fn sort_paths(paths: List<string>) -> List<string> {
     let n = paths.length
     mut sorted: List<string> = []
-    mut i = 0
-    while i < n {
-        sorted.push(paths[i])
-        i = i + 1
-    }
+    for p in paths { sorted.push(p) }
     mut a = 0
     while a < n {
         mut b = a + 1

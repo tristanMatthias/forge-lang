@@ -3,14 +3,15 @@
 // runtime.c referencing forge-crafting-intepreters-3uy9.
 //
 // This file is inlined into the test program at the bundle's top
-// level (test runner reads + parses + prepends), so its `use`
-// imports must resolve at that scope — not via @std.avrac. Until
-// the test runner can guarantee @std.avrac is loaded, the failure
-// summary uses plain ANSI rendering rather than the diagnostics
-// framework (which would give us source snippets per failure).
-// Future: switch to diagnostics::render_bag once the bundle
-// always loads @std.avrac.
+// level (test runner reads + parses + prepends), so it lives WITHOUT
+// `use` imports — every helper it needs is either inlined locally or
+// declared extern below. Until the test runner can guarantee
+// @std.avrac is loaded, the failure summary uses plain ANSI rendering
+// rather than the diagnostics framework (which would give us source
+// snippets per failure). Future: switch to diagnostics::render_bag
+// once the bundle always loads @std.avrac.
 
+// ── Test runtime externs ────────────────────────────────────────────
 extern fn avra_test_pass_inc() -> int
 extern fn avra_test_fail_inc() -> int
 extern fn avra_test_get_pass() -> int
@@ -40,23 +41,24 @@ extern fn avra_test_crash_signal_name(idx: int) -> string
 extern fn avra_process_env_get(name: string) -> string
 extern fn avra_selfhost_write_file(path: string, content: string) -> int
 extern fn avra_selfhost_write_file_bytes(path: string, b: bytes) -> int
-// nce6.1.F: hand-rolled writers for the @marshal TestResults wire
-// format. The reporter is inlined into every test bundle and we
-// don't want to drag @std/process in for every test binary, so
-// the byte primitives are extern-decl'd directly. Format must
-// stay in sync with BytesBuilder.write_int / @marshal's
-// generated TestResults.to_bytes() — 4 × little-endian i64 with
-// no padding or length prefix.
-extern fn avra_int_to_bytes_le(n: int) -> bytes
-extern fn avra_bytes_concat(a: bytes, b: bytes) -> bytes
-extern fn avra_bytes_empty() -> bytes
+// nce6.1.F + hkms.3: single-call summary serializer. Replaces the
+// 4-deep `avra_bytes_concat(...)` chain that previously assembled
+// the wire format one int at a time. Wire layout must stay in sync
+// with `cli/main.av :: TestResults` (5 × i64 little-endian:
+// pass, fail, total, elapsed_ms, crashes).
+extern fn avra_test_summary_to_bytes(pass: int, fail: int, total: int, elapsed_ms: int, crashes: int) -> bytes
 
-fn ansi_green(s: string) -> string { "\x1b[32m${s}\x1b[0m" }
-fn ansi_red(s: string) -> string { "\x1b[31m${s}\x1b[0m" }
+// ── ANSI helpers (no \u escape, no formatting library — reporter
+// ships as inlined source so we can't drag in @std.avrac) ──────────
+fn ansi_green (s: string) -> string { "\x1b[32m${s}\x1b[0m" }
+fn ansi_red   (s: string) -> string { "\x1b[31m${s}\x1b[0m" }
 fn ansi_yellow(s: string) -> string { "\x1b[33m${s}\x1b[0m" }
-fn ansi_dim(s: string) -> string { "\x1b[2m${s}\x1b[0m" }
-fn ansi_bold(s: string) -> string { "\x1b[1m${s}\x1b[0m" }
-fn ansi_cyan(s: string) -> string { "\x1b[36m${s}\x1b[0m" }
+fn ansi_dim   (s: string) -> string { "\x1b[2m${s}\x1b[0m" }
+fn ansi_bold  (s: string) -> string { "\x1b[1m${s}\x1b[0m" }
+fn ansi_cyan  (s: string) -> string { "\x1b[36m${s}\x1b[0m" }
+
+// ── Live render hooks: emitted into __init_<modname> by spec_test
+// codegen for every spec/given/then arm the user wrote ─────────────
 
 export fn test_render_spec_start(name: string) {
     avra_test_set_current_spec(name)
@@ -75,12 +77,13 @@ export fn test_render_then(name: string, result: bool, file: string, ln: int) {
         println("    ${ansi_green("PASS")} ${name}")
     } else {
         avra_test_fail_inc()
-        let cur_spec = avra_test_get_current_spec()
-        let cur_given = avra_test_get_current_given()
-        avra_test_record_failure(cur_spec, cur_given, name, file, ln)
+        avra_test_record_failure(avra_test_get_current_spec(), avra_test_get_current_given(), name, file, ln)
         println("    ${ansi_red("FAIL")} ${name} ${ansi_dim("(${file}:${string(ln)})")}")
     }
 }
+
+// ── Summary render: called once at end-of-binary by the synthetic
+// `fn main() -> int { test_render_summary() }` ─────────────────────
 
 export fn test_render_summary() -> int {
     let pass = avra_test_get_pass()
@@ -88,82 +91,157 @@ export fn test_render_summary() -> int {
     let crashes = avra_test_crash_count()
     let total = pass + fail
     let elapsed_ms = avra_uptime_ms()
-    // ylye: structured JSON results to AVRA_TEST_RESULTS_PATH when
-    // the orchestrator set one. Keeps the `[shard-summary]` line as
-    // a transitional fallback until orchestrator + reporter both
-    // ship the JSON path (single seed cycle).
-    let results_path = avra_process_env_get("AVRA_TEST_RESULTS_PATH")
-    if results_path != "" {
-        let _ = avra_selfhost_write_file(results_path, render_results_json(pass, fail, total, elapsed_ms, crashes))
-    }
-    // nce6.1.F: @marshal-compatible binary results. Format matches
-    // BytesBuilder.write_int — 5 i64s concatenated, no header.
-    // hkms.3: 5th i64 is the crash count so the orchestrator can
-    // distinguish caught-spec-crashes from assertion fails.
-    // Orchestrator decodes via from_bytes_TestResults (cli/main.av).
-    let bin_path = avra_process_env_get("AVRA_TEST_RESULTS_BIN_PATH")
-    if bin_path != "" {
-        let buf = avra_bytes_concat(
-            avra_bytes_concat(
-                avra_bytes_concat(avra_int_to_bytes_le(pass), avra_int_to_bytes_le(fail)),
-                avra_bytes_concat(avra_int_to_bytes_le(total), avra_int_to_bytes_le(elapsed_ms))
-            ),
-            avra_int_to_bytes_le(crashes)
-        )
-        let _ = avra_selfhost_write_file_bytes(bin_path, buf)
-    }
+
+    write_sidecars(pass, fail, total, elapsed_ms, crashes)
     let crash_kv = if crashes > 0 { " crashes=${string(crashes)}" } else { "" }
     println("[shard-summary] pass=${string(pass)} fail=${string(fail)} total=${string(total)} elapsed_ms=${string(elapsed_ms)}${crash_kv}")
+
     if total == 0 && crashes == 0 {
-        println("${ansi_yellow("No tests ran.")}")
+        println(ansi_yellow("No tests ran."))
         return 0
     }
-    if fail > 0 {
-        println("")
-        println("${ansi_bold(ansi_red("Failures:"))}")
-        let count = avra_test_failure_count()
-        render_failure_list(count, 0)
+    render_failure_section(fail)
+    render_crash_section(crashes)
+    render_final_tally(pass, fail, total, crashes, elapsed_ms)
+}
+
+/// ylye + nce6.1.F: write structured results to the orchestrator's
+/// sidecar paths when they're set. JSON sidecar is human-readable
+/// for IDE / CI consumption; binary sidecar is the @marshal wire
+/// format the orchestrator decodes directly into TestResults.
+fn write_sidecars(pass: int, fail: int, total: int, elapsed_ms: int, crashes: int) {
+    let json_path = avra_process_env_get("AVRA_TEST_RESULTS_PATH")
+    if json_path != "" {
+        let _ = avra_selfhost_write_file(json_path, render_results_json(pass, fail, total, elapsed_ms, crashes))
     }
-    if crashes > 0 {
-        println("")
-        println("${ansi_bold(ansi_red("Crashed specs:"))}")
-        render_crash_list(crashes, 0)
+    let bin_path = avra_process_env_get("AVRA_TEST_RESULTS_BIN_PATH")
+    if bin_path != "" {
+        let _ = avra_selfhost_write_file_bytes(bin_path, avra_test_summary_to_bytes(pass, fail, total, elapsed_ms, crashes))
     }
+}
+
+/// Render the "Failures:" section if any assertions failed. No-op
+/// otherwise so the summary stays terse on green runs.
+fn render_failure_section(fail: int) {
+    if fail <= 0 { return }
     println("")
-    let elapsed_s = render_elapsed(elapsed_ms)
-    let summary = "${string(pass)}/${string(total)} tests passed in ${elapsed_s}"
-    let red_note = if fail > 0 && crashes > 0 {
-        " (${string(fail)} failed, ${string(crashes)} crashed)"
-    } else if fail > 0 {
-        " (${string(fail)} failed)"
-    } else if crashes > 0 {
-        " (${string(crashes)} crashed)"
-    } else {
-        ""
-    }
+    println(ansi_bold(ansi_red("Failures:")))
+    let count = avra_test_failure_count()
+    render_indexed(count, render_one_failure)
+}
+
+/// hkms.3: render the "Crashed specs:" section if any spec block
+/// died on a fatal signal. Mirrors render_failure_section's shape so
+/// the reader can tell at a glance which list they're reading.
+fn render_crash_section(crashes: int) {
+    if crashes <= 0 { return }
+    println("")
+    println(ansi_bold(ansi_red("Crashed specs:")))
+    render_indexed(crashes, render_one_crash)
+}
+
+/// Final pass/fail tally + exit code. Green when nothing went wrong;
+/// red with a `(N failed, M crashed)` note otherwise.
+fn render_final_tally(pass: int, fail: int, total: int, crashes: int, elapsed_ms: int) -> int {
+    println("")
+    let summary = "${string(pass)}/${string(total)} tests passed in ${format_elapsed(elapsed_ms)}"
     if fail > 0 || crashes > 0 {
-        println("${ansi_red(ansi_bold(summary))} ${ansi_red(red_note)}")
+        println("${ansi_red(ansi_bold(summary))} ${ansi_red(red_note(fail, crashes))}")
         return 1
     }
-    println("${ansi_green(ansi_bold(summary))}")
+    println(ansi_green(ansi_bold(summary)))
     0
 }
+
+/// Parenthesised counts for the red summary line. Picks the right
+/// combination of `N failed` + `M crashed` based on which counts are
+/// non-zero, with a comma separator when both apply.
+fn red_note(fail: int, crashes: int) -> string {
+    if fail > 0 && crashes > 0 {
+        "(${string(fail)} failed, ${string(crashes)} crashed)"
+    } else if fail > 0 {
+        "(${string(fail)} failed)"
+    } else {
+        "(${string(crashes)} crashed)"
+    }
+}
+
+/// Walk indices 0..count-1, invoking `render_one` for each. Shared
+/// shape used by `render_failure_section` and `render_crash_section`
+/// (and the JSON serialisers via `render_indexed_joined`).
+fn render_indexed(count: int, render_one: fn(int) -> int) {
+    mut i = 0
+    while i < count {
+        render_one(i)
+        i = i + 1
+    }
+}
+
+/// String-fold sibling of `render_indexed` — invokes `render_one(i)`
+/// for each `i < count` and joins the results with `sep`. Used by
+/// the JSON serialisers so the failures + crashes arrays produce
+/// comma-separated entries without per-index sep bookkeeping at the
+/// call site.
+fn render_indexed_joined(count: int, sep: string, render_one: fn(int) -> string) -> string {
+    mut out = ""
+    mut i = 0
+    while i < count {
+        if i > 0 { out = out + sep }
+        out = out + render_one(i)
+        i = i + 1
+    }
+    out
+}
+
+/// One failure entry — used by both `render_failure_section` (live)
+/// and the per-index walk. Fetches the C-side fields and prints the
+/// spec/given/then chain plus its source location.
+fn render_one_failure(idx: int) -> int {
+    let s = avra_test_failure_spec(idx)
+    let g = avra_test_failure_given(idx)
+    let t = avra_test_failure_then(idx)
+    let f = avra_test_failure_file(idx)
+    let l = avra_test_failure_line(idx)
+    let chain = if g != "" {
+        "${s} / ${ansi_dim("given")} ${g} / ${ansi_dim("then")} ${t}"
+    } else {
+        "${s} / ${ansi_dim("then")} ${t}"
+    }
+    println("  ${ansi_red("✗")} ${chain}")
+    if f != "" {
+        println("    ${ansi_dim("at ${f}:${string(l)}")}")
+    }
+    0
+}
+
+/// hkms.3 sibling of render_one_failure — spec name, signal label,
+/// source location.
+fn render_one_crash(idx: int) -> int {
+    let s = avra_test_crash_spec(idx)
+    let f = avra_test_crash_file(idx)
+    let l = avra_test_crash_line(idx)
+    let sn = avra_test_crash_signal_name(idx)
+    println("  ${ansi_red("💥")} ${s} ${ansi_dim("(${sn})")}")
+    if f != "" {
+        println("    ${ansi_dim("at ${f}:${string(l)}")}")
+    }
+    0
+}
+
+// ── Time formatting ─────────────────────────────────────────────────
 
 /// t2uk: render wall-clock duration as a human-friendly string.
 /// Integer math only — Avra eval doesn't have floats. Sub-second
 /// reads as `Xms`, anything bigger as `X.Ys`.
-fn render_elapsed(ms: int) -> string {
+fn format_elapsed(ms: int) -> string {
     if ms < 1000 { return "${string(ms)}ms" }
     let s = ms / 1000
     let frac = (ms % 1000) / 100
     "${string(s)}.${string(frac)}s"
 }
 
-/// Walk the C-side failure list, printing each one's spec/given/
-/// then names + source location. Plain-text rendering — no source
-/// snippet (which would require the diagnostics framework). Future:
-/// upgrade to render_bag once the test bundle always loads
-/// @std.avrac so `use diagnostics.{...}` resolves cleanly.
+// ── JSON sidecar ────────────────────────────────────────────────────
+
 /// Build the per-binary results JSON. Shape:
 ///
 ///     {"pass": N, "fail": N, "total": N, "elapsed_ms": N,
@@ -178,39 +256,33 @@ fn render_elapsed(ms: int) -> string {
 /// test program's scope, which doesn't include @std.avrac.json
 /// reliably until the bundle assembler always pulls in @std.
 fn render_results_json(pass: int, fail: int, total: int, elapsed_ms: int, crashes: int) -> string {
-    let header = "{\"pass\":${string(pass)},\"fail\":${string(fail)},\"total\":${string(total)},\"elapsed_ms\":${string(elapsed_ms)},\"crashes\":${string(crashes)},\"failures\":["
-    let fail_body = render_failures_json(avra_test_failure_count(), 0, "")
-    let crash_body = render_crashes_json(crashes, 0, "")
-    "${header}${fail_body}],\"crashed_specs\":[${crash_body}]}"
+    let header = "{\"pass\":${string(pass)},\"fail\":${string(fail)},\"total\":${string(total)},\"elapsed_ms\":${string(elapsed_ms)},\"crashes\":${string(crashes)}"
+    let fails  = render_indexed_joined(avra_test_failure_count(), ",", failure_json_entry)
+    let crashs = render_indexed_joined(crashes, ",", crash_json_entry)
+    "${header},\"failures\":[${fails}],\"crashed_specs\":[${crashs}]}"
 }
 
-/// hkms.3 sibling of render_failures_json — one JSON entry per
-/// crashed spec.
-fn render_crashes_json(count: int, idx: int, acc: string) -> string {
-    if idx >= count { return acc }
-    let s  = json_escape(avra_test_crash_spec(idx))
-    let f  = json_escape(avra_test_crash_file(idx))
-    let l  = avra_test_crash_line(idx)
-    let sg = avra_test_crash_signal(idx)
-    let sn = json_escape(avra_test_crash_signal_name(idx))
-    let entry = "{\"spec\":\"${s}\",\"file\":\"${f}\",\"line\":${string(l)},\"signal\":${string(sg)},\"signal_name\":\"${sn}\"}"
-    let sep = if idx == 0 { "" } else { "," }
-    render_crashes_json(count, idx + 1, "${acc}${sep}${entry}")
-}
-
-/// Walk the C-side failure list emitting one JSON object per
-/// failure, comma-separated. Recursive so we don't need a mutable
-/// accumulator in reporter scope.
-fn render_failures_json(count: int, idx: int, acc: string) -> string {
-    if idx >= count { return acc }
+/// One failure as a JSON object. Field order matches the
+/// `render_one_failure` print so a reader scanning both surfaces
+/// sees them in the same shape.
+fn failure_json_entry(idx: int) -> string {
     let s = json_escape(avra_test_failure_spec(idx))
     let g = json_escape(avra_test_failure_given(idx))
     let t = json_escape(avra_test_failure_then(idx))
     let f = json_escape(avra_test_failure_file(idx))
     let l = avra_test_failure_line(idx)
-    let entry = "{\"spec\":\"${s}\",\"given\":\"${g}\",\"then\":\"${t}\",\"file\":\"${f}\",\"line\":${string(l)}}"
-    let sep = if idx == 0 { "" } else { "," }
-    render_failures_json(count, idx + 1, "${acc}${sep}${entry}")
+    "{\"spec\":\"${s}\",\"given\":\"${g}\",\"then\":\"${t}\",\"file\":\"${f}\",\"line\":${string(l)}}"
+}
+
+/// One crashed spec as a JSON object. `signal` is the raw signal
+/// number; `signal_name` is the human-readable label.
+fn crash_json_entry(idx: int) -> string {
+    let s  = json_escape(avra_test_crash_spec(idx))
+    let f  = json_escape(avra_test_crash_file(idx))
+    let l  = avra_test_crash_line(idx)
+    let sg = avra_test_crash_signal(idx)
+    let sn = json_escape(avra_test_crash_signal_name(idx))
+    "{\"spec\":\"${s}\",\"file\":\"${f}\",\"line\":${string(l)},\"signal\":${string(sg)},\"signal_name\":\"${sn}\"}"
 }
 
 /// Minimal JSON string escaper — handles the printable-ASCII
@@ -228,39 +300,4 @@ fn json_escape(s: string) -> string {
         else { out = out + ch }
     }
     out
-}
-
-fn render_failure_list(count: int, idx: int) {
-    if idx >= count { return }
-    let s = avra_test_failure_spec(idx)
-    let g = avra_test_failure_given(idx)
-    let t = avra_test_failure_then(idx)
-    let f = avra_test_failure_file(idx)
-    let l = avra_test_failure_line(idx)
-    let chain = if g != "" {
-        "${s} / ${ansi_dim("given")} ${g} / ${ansi_dim("then")} ${t}"
-    } else {
-        "${s} / ${ansi_dim("then")} ${t}"
-    }
-    println("  ${ansi_red("✗")} ${chain}")
-    if f != "" {
-        println("    ${ansi_dim("at ${f}:${string(l)}")}")
-    }
-    render_failure_list(count, idx + 1)
-}
-
-/// hkms.3: print every crashed spec — name, source location, and
-/// the signal label so the reader sees segfault vs abort vs FPE at
-/// a glance. Recursive walk mirroring `render_failure_list`.
-fn render_crash_list(count: int, idx: int) {
-    if idx >= count { return }
-    let s = avra_test_crash_spec(idx)
-    let f = avra_test_crash_file(idx)
-    let l = avra_test_crash_line(idx)
-    let sn = avra_test_crash_signal_name(idx)
-    println("  ${ansi_red("💥")} ${s} ${ansi_dim("(${sn})")}")
-    if f != "" {
-        println("    ${ansi_dim("at ${f}:${string(l)}")}")
-    }
-    render_crash_list(count, idx + 1)
 }

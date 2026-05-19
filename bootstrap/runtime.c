@@ -674,6 +674,18 @@ static void avra_signal_handler(int sig, siginfo_t *si, void *context) {
     _exit(128 + sig);
 }
 
+// hkms.3: when `avra_isolated_run` (or any other site) forks, the
+// child inherits the parent's `_spec_guard_active` flag. If the
+// child then crashes — which `isolated_*` tests deliberately do —
+// our signal handler would siglongjmp into a sigjmp_buf set up in
+// the parent's address space, which after CoW lives at the same VA
+// in the child but represents a stack frame the child never entered.
+// The atfork-child hook clears the flag so a crash in the child
+// proceeds to the normal "_exit(128+sig)" path instead.
+static void avra_clear_spec_guard_in_child(void) {
+    _spec_guard_active = 0;
+}
+
 __attribute__((constructor))
 static void avra_install_signal_handlers(void) {
     // Alternate signal stack so handler works during stack overflow
@@ -691,6 +703,8 @@ static void avra_install_signal_handlers(void) {
     sigaction(SIGFPE,  &sa, NULL);
     sigaction(SIGILL,  &sa, NULL);
     sigaction(SIGTRAP, &sa, NULL);
+
+    pthread_atfork(NULL, NULL, avra_clear_spec_guard_in_child);
 }
 
 // ─── Selfhost helpers ─────────────────────────────────────────────
@@ -3532,6 +3546,56 @@ static void _capture_mutex_init(void) {
 static _Atomic int64_t avra_test_pass_count = 0;
 static _Atomic int64_t avra_test_fail_count = 0;
 
+// ── Append-only record store ──────────────────────────────────────
+// The test reporter holds two heterogeneous record streams: failed
+// assertions and crashed specs. Both follow the SAME shape — a
+// linked list with O(1) append + O(idx) random access via getters,
+// guarded by a mutex against concurrent test execution, with an
+// atomic count so the reporter's reader-side reads don't need to
+// take the lock. The only thing that differs is the payload struct.
+//
+// `AvraRecordList` factors the head/tail/count/mutex bookkeeping
+// out of every per-record store; each payload type then declares a
+// `static AvraRecordList _foo = AVRA_RECORD_LIST_INIT;` and uses
+// `record_list_append` + `record_list_at`. Failures and crashes both
+// use this — see below.
+
+typedef struct AvraRecordNode {
+    void* payload;
+    struct AvraRecordNode* next;
+} AvraRecordNode;
+
+typedef struct AvraRecordList {
+    AvraRecordNode* head;
+    AvraRecordNode* tail;
+    _Atomic int64_t count;
+    pthread_mutex_t mutex;
+} AvraRecordList;
+
+#define AVRA_RECORD_LIST_INIT { NULL, NULL, 0, PTHREAD_MUTEX_INITIALIZER }
+
+static void record_list_append(AvraRecordList* list, void* payload) {
+    AvraRecordNode* node = (AvraRecordNode*)malloc(sizeof(AvraRecordNode));
+    node->payload = payload;
+    node->next = NULL;
+    pthread_mutex_lock(&list->mutex);
+    if (list->tail) list->tail->next = node;
+    else list->head = node;
+    list->tail = node;
+    atomic_fetch_add(&list->count, 1);
+    pthread_mutex_unlock(&list->mutex);
+}
+
+// O(idx) walk — record counts are typically small (<100). The
+// alternative is a vector with realloc which trades memory churn for
+// O(1) lookup; the reporter reads each index exactly once per
+// summary so amortised cost is the same either way.
+static void* record_list_at(const AvraRecordList* list, int64_t idx) {
+    AvraRecordNode* node = list->head;
+    while (node && idx > 0) { node = node->next; idx--; }
+    return node ? node->payload : NULL;
+}
+
 // One failed assertion's metadata. Strings are rc-allocated copies
 // so they survive past the call site (the Avra reporter reads them
 // at summary time).
@@ -3541,13 +3605,9 @@ typedef struct AvraTestFailure {
     const char* then_name;
     const char* file;
     int64_t line;
-    struct AvraTestFailure* next;
 } AvraTestFailure;
 
-static AvraTestFailure* _failures_head = NULL;
-static AvraTestFailure* _failures_tail = NULL;
-static _Atomic int64_t _failures_count = 0;
-static pthread_mutex_t _failures_mutex = PTHREAD_MUTEX_INITIALIZER;
+static AvraRecordList _failures = AVRA_RECORD_LIST_INIT;
 
 // Simple rc-allocated string copy — outlives the C call so the Avra
 // reporter can read it later. Re-uses avra_rc_alloc so refcount works.
@@ -3584,52 +3644,28 @@ void avra_test_record_failure(const char* spec, const char* given,
     f->then_name = test_str_dup(then_name);
     f->file = test_str_dup(file);
     f->line = line;
-    f->next = NULL;
-    pthread_mutex_lock(&_failures_mutex);
-    if (_failures_tail) _failures_tail->next = f;
-    else _failures_head = f;
-    _failures_tail = f;
-    atomic_fetch_add(&_failures_count, 1);
-    pthread_mutex_unlock(&_failures_mutex);
+    record_list_append(&_failures, f);
 }
 
 int64_t avra_test_failure_count(void) {
-    return atomic_load(&_failures_count);
+    return atomic_load(&_failures.count);
 }
 
-// O(idx) walk — failure counts are small (typically <50) so this is
-// fine; the alternative is a vector with realloc which adds complexity
-// for marginal gain.
-static AvraTestFailure* test_failure_at(int64_t idx) {
-    AvraTestFailure* f = _failures_head;
-    while (f && idx > 0) { f = f->next; idx--; }
-    return f;
-}
+// Per-field getter macro — every Avra-side getter follows the
+// `lookup → null guard → return field-or-default` pattern. The macro
+// keeps each one a one-liner without obscuring the field access.
+#define AVRA_FAIL_FIELD(field, default_) do { \
+        AvraTestFailure* f = (AvraTestFailure*)record_list_at(&_failures, idx); \
+        return f ? f->field : (default_); \
+    } while (0)
 
-const char* avra_test_failure_spec(int64_t idx) {
-    AvraTestFailure* f = test_failure_at(idx);
-    return f ? f->spec : "";
-}
+const char* avra_test_failure_spec (int64_t idx) { AVRA_FAIL_FIELD(spec,      ""); }
+const char* avra_test_failure_given(int64_t idx) { AVRA_FAIL_FIELD(given,     ""); }
+const char* avra_test_failure_then (int64_t idx) { AVRA_FAIL_FIELD(then_name, ""); }
+const char* avra_test_failure_file (int64_t idx) { AVRA_FAIL_FIELD(file,      ""); }
+int64_t     avra_test_failure_line (int64_t idx) { AVRA_FAIL_FIELD(line,       0); }
 
-const char* avra_test_failure_given(int64_t idx) {
-    AvraTestFailure* f = test_failure_at(idx);
-    return f ? f->given : "";
-}
-
-const char* avra_test_failure_then(int64_t idx) {
-    AvraTestFailure* f = test_failure_at(idx);
-    return f ? f->then_name : "";
-}
-
-const char* avra_test_failure_file(int64_t idx) {
-    AvraTestFailure* f = test_failure_at(idx);
-    return f ? f->file : "";
-}
-
-int64_t avra_test_failure_line(int64_t idx) {
-    AvraTestFailure* f = test_failure_at(idx);
-    return f ? f->line : 0;
-}
+#undef AVRA_FAIL_FIELD
 
 // Current spec/given "context" — set by the codegen-emitted
 // `test_render_spec_start` / `test_render_given_start` calls so
@@ -3670,13 +3706,9 @@ typedef struct AvraTestCrash {
     const char* file;
     int64_t line;
     int64_t signal;
-    struct AvraTestCrash* next;
 } AvraTestCrash;
 
-static AvraTestCrash* _crashes_head = NULL;
-static AvraTestCrash* _crashes_tail = NULL;
-static _Atomic int64_t _crashes_count = 0;
-static pthread_mutex_t _crashes_mutex = PTHREAD_MUTEX_INITIALIZER;
+static AvraRecordList _crashes = AVRA_RECORD_LIST_INIT;
 
 // Human-readable name for the signal numbers our handler catches.
 // Stable single-word labels so the reporter can render them inline.
@@ -3699,17 +3731,11 @@ void avra_test_record_crash(const char* spec, const char* file,
     c->file = test_str_dup(file);
     c->line = line;
     c->signal = signal;
-    c->next = NULL;
-    pthread_mutex_lock(&_crashes_mutex);
-    if (_crashes_tail) _crashes_tail->next = c;
-    else _crashes_head = c;
-    _crashes_tail = c;
-    atomic_fetch_add(&_crashes_count, 1);
-    pthread_mutex_unlock(&_crashes_mutex);
+    record_list_append(&_crashes, c);
 }
 
 int64_t avra_test_crash_count(void) {
-    return atomic_load(&_crashes_count);
+    return atomic_load(&_crashes.count);
 }
 
 // Hook for tests that DELIBERATELY crash a spec to exercise the
@@ -3719,39 +3745,25 @@ int64_t avra_test_crash_count(void) {
 // is left in place so prior introspection (avra_test_crash_spec etc.)
 // can still see what was recorded before the ack.
 void avra_test_ack_expected_crash(void) {
-    atomic_fetch_sub(&_crashes_count, 1);
+    atomic_fetch_sub(&_crashes.count, 1);
 }
 
-static AvraTestCrash* test_crash_at(int64_t idx) {
-    AvraTestCrash* c = _crashes_head;
-    while (c && idx > 0) { c = c->next; idx--; }
-    return c;
-}
+#define AVRA_CRASH_FIELD(field, default_) do { \
+        AvraTestCrash* c = (AvraTestCrash*)record_list_at(&_crashes, idx); \
+        return c ? c->field : (default_); \
+    } while (0)
 
-const char* avra_test_crash_spec(int64_t idx) {
-    AvraTestCrash* c = test_crash_at(idx);
-    return c ? c->spec : "";
-}
-
-const char* avra_test_crash_file(int64_t idx) {
-    AvraTestCrash* c = test_crash_at(idx);
-    return c ? c->file : "";
-}
-
-int64_t avra_test_crash_line(int64_t idx) {
-    AvraTestCrash* c = test_crash_at(idx);
-    return c ? c->line : 0;
-}
-
-int64_t avra_test_crash_signal(int64_t idx) {
-    AvraTestCrash* c = test_crash_at(idx);
-    return c ? c->signal : 0;
-}
+const char* avra_test_crash_spec  (int64_t idx) { AVRA_CRASH_FIELD(spec, ""); }
+const char* avra_test_crash_file  (int64_t idx) { AVRA_CRASH_FIELD(file, ""); }
+int64_t     avra_test_crash_line  (int64_t idx) { AVRA_CRASH_FIELD(line,  0); }
+int64_t     avra_test_crash_signal(int64_t idx) { AVRA_CRASH_FIELD(signal, 0); }
 
 const char* avra_test_crash_signal_name(int64_t idx) {
-    AvraTestCrash* c = test_crash_at(idx);
+    AvraTestCrash* c = (AvraTestCrash*)record_list_at(&_crashes, idx);
     return c ? avra_signal_label((int)c->signal) : "";
 }
+
+#undef AVRA_CRASH_FIELD
 
 // Testing helper for the spec-guard mechanism itself: raise a
 // process-wide signal that the guard is supposed to catch. Avra has
@@ -3762,6 +3774,25 @@ const char* avra_test_crash_signal_name(int64_t idx) {
 int64_t avra_test_raise_signal(int64_t sig) {
     raise((int)sig);
     return 0;
+}
+
+// Single-call bytes serializer for the @marshal-compatible
+// TestResults wire format. Replaces a 4-deep nested
+// `avra_bytes_concat(...)` chain in reporter.av — one alloc + one
+// pass of memcpy here vs five small allocs through the per-int
+// concat path. Wire layout must stay in sync with
+// `cli/main.av :: TestResults` (5 × i64 little-endian).
+const char* avra_test_summary_to_bytes(int64_t pass, int64_t fail,
+                                       int64_t total, int64_t elapsed_ms,
+                                       int64_t crashes) {
+    char* r = avra_bytes_alloc(40);
+    int64_t* d = (int64_t*)avra_bytes_data(r);
+    d[0] = pass;
+    d[1] = fail;
+    d[2] = total;
+    d[3] = elapsed_ms;
+    d[4] = crashes;
+    return r;
 }
 
 // Invoke a no-arg Avra closure under a sigsetjmp guard. Returns 0 on

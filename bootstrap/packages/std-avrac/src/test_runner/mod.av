@@ -50,35 +50,108 @@ export fn strip_externs(stmts: StmtList) -> StmtList {
     }
 }
 
-/// Prepend the runtime externs that every assembled test program
+// ── AST builder mini-DSL ────────────────────────────────────────────
+//
+// `prepend_test_externs` and `build_guarded_spec_call` both compose
+// nested cons-chains by hand. The helpers below hide that ceremony so
+// the call sites read top-to-bottom in declaration order rather than
+// inside-out. They're test_runner-local because they bake in
+// dummy-span metadata (`sstmt_dummy` / `sexpr_dummy`); other AST
+// consumers may want real spans.
+
+/// Single extern declaration row. Drives `prepend_test_externs`'s
+/// table-driven prepend loop so the runtime contract reads as a
+/// vertical list instead of five nested `StmtList.Node(...)` calls.
+type RuntimeExtern = { name: string, params: ParamList, ret: ValueType }
+
+/// Convert `List<RuntimeExtern>` into prepended `ExternFn` stmts in
+/// declaration order. Iterates back-to-front so the cons-prepend
+/// builds the final list in the same order the table reads.
+fn prepend_externs(stmts: StmtList, decls: List<RuntimeExtern>) -> StmtList {
+    mut acc = stmts
+    mut i = decls.length - 1
+    while i >= 0 {
+        let d = decls[i]
+        acc = StmtList.Node(sstmt_dummy(Stmt.ExternFn(d.name, d.params, d.ret)), acc)
+        i = i - 1
+    }
+    acc
+}
+
+/// Reversed cons-prepend of a `List<Expr>` into an `ExprList` —
+/// produces declaration-order args from a flat literal list. Each
+/// Expr gets a dummy-span SExpr wrapper so the resulting list can
+/// stand in any call-site position.
+fn expr_list_from(args: List<Expr>) -> ExprList {
+    mut acc = ExprList.End
+    mut i = args.length - 1
+    while i >= 0 {
+        acc = ExprList.Node(sexpr_dummy(args[i]), acc)
+        i = i - 1
+    }
+    acc
+}
+
+/// Build a fresh `ParamList` from `(name, type)` rows. Same pattern
+/// as `expr_list_from` — declaration order in, ParamList out.
+type ParamSpec = { name: string, ty: ValueType }
+
+fn param_list_from(specs: List<ParamSpec>) -> ParamList {
+    mut acc = ParamList.End
+    mut i = specs.length - 1
+    while i >= 0 {
+        let s = specs[i]
+        acc = ParamList.Node(s.name, s.ty, acc)
+        i = i - 1
+    }
+    acc
+}
+
+// ── Runtime extern table ────────────────────────────────────────────
+
+/// The full set of runtime externs every assembled test program
 /// needs to link against:
-///   - `avra_test_summary()  -> int`  → final pass/fail tally
-///   - `avra_test_flush()    -> void` → drain the captured-output ring
-///   - `avra_test_capture_start() -> void`
-///   - `avra_test_capture_stop()  -> string`
+///   - `avra_test_summary()        -> int`  → final pass/fail tally
+///   - `avra_test_flush()          -> void` → drain captured-output ring
+///   - `avra_test_capture_start()  -> void`
+///   - `avra_test_capture_stop()   -> string`
 ///   - `avra_test_run_spec_guarded(name, file, ln, body) -> int` →
 ///     hkms.3: invoke one spec block under a sigsetjmp checkpoint so
 ///     a fatal signal is caught and the runner advances to the next
-///     spec instead of taking down the bundle. `body` is a no-arg Avra
-///     closure produced by `wrap_specs_with_guard` for every top-level
-///     `spec { ... }` block.
-///
-/// Order is reversed inside (cons-prepend) so the rendered program
-/// reads top-to-bottom in declaration order (`summary` first).
-export fn prepend_test_externs(stmts: StmtList) -> StmtList {
-    let guard_params = ParamList.Node("name", ValueType.Str,
-                       ParamList.Node("file", ValueType.Str,
-                       ParamList.Node("ln",   ValueType.Int,
-                       ParamList.Node("body", ValueType.Fn(ValueType.Int),
-                       ParamList.End))))
-    let s5 = StmtList.Node(sstmt_dummy(Stmt.ExternFn("avra_test_run_spec_guarded", guard_params, ValueType.Int)), stmts)
-    let s4 = StmtList.Node(sstmt_dummy(Stmt.ExternFn("avra_test_capture_stop", ParamList.End, ValueType.Str)), s5)
-    let s3 = StmtList.Node(sstmt_dummy(Stmt.ExternFn("avra_test_capture_start", ParamList.End, ValueType.Void)), s4)
-    let s2 = StmtList.Node(sstmt_dummy(Stmt.ExternFn("avra_test_flush", ParamList.End, ValueType.Void)), s3)
-    StmtList.Node(sstmt_dummy(Stmt.ExternFn("avra_test_summary", ParamList.End, ValueType.Int)), s2)
+///     spec instead of taking down the bundle. `body` is a no-arg
+///     Avra closure produced by `wrap_specs_with_guard` for every
+///     top-level `spec { ... }` block.
+fn test_runtime_externs() -> List<RuntimeExtern> {
+    [
+        RuntimeExtern { name: "avra_test_summary",          params: ParamList.End, ret: ValueType.Int },
+        RuntimeExtern { name: "avra_test_flush",            params: ParamList.End, ret: ValueType.Void },
+        RuntimeExtern { name: "avra_test_capture_start",    params: ParamList.End, ret: ValueType.Void },
+        RuntimeExtern { name: "avra_test_capture_stop",     params: ParamList.End, ret: ValueType.Str },
+        RuntimeExtern { name: "avra_test_run_spec_guarded", params: guard_extern_params(), ret: ValueType.Int },
+    ]
 }
 
-/// hkms.3: AST transform that wraps each top-level `spec` block in a
+/// Signature for the per-spec guard runtime fn. Named separately so
+/// the externs table reads cleanly without a five-line nested
+/// `ParamList.Node` cons-chain on one row.
+fn guard_extern_params() -> ParamList {
+    param_list_from([
+        ParamSpec { name: "name", ty: ValueType.Str },
+        ParamSpec { name: "file", ty: ValueType.Str },
+        ParamSpec { name: "ln",   ty: ValueType.Int },
+        ParamSpec { name: "body", ty: ValueType.Fn(ValueType.Int) },
+    ])
+}
+
+/// Cons-prepend the runtime extern table onto a freshly-assembled
+/// test program. See `test_runtime_externs` for the full contract.
+export fn prepend_test_externs(stmts: StmtList) -> StmtList {
+    prepend_externs(stmts, test_runtime_externs())
+}
+
+// ── hkms.3 wrap: spec → guarded call site ──────────────────────────
+
+/// AST transform that wraps each top-level `spec` block in a
 /// crash-isolating call so a SIGSEGV / abort in one spec doesn't kill
 /// the bundle.
 ///
@@ -109,13 +182,11 @@ export fn wrap_specs_with_guard(stmts: StmtList) -> StmtList {
     match stmts {
         .End -> StmtList.End
         .Node(ss, next) -> {
-            match ss.node {
-                .SpecBlock(name, _) -> {
-                    let call = build_guarded_spec_call(ss, name)
-                    StmtList.Node(call, wrap_specs_with_guard(next))
-                }
-                _ -> StmtList.Node(ss, wrap_specs_with_guard(next))
+            let rewritten = match ss.node {
+                .SpecBlock(name, _) -> build_guarded_spec_call(ss, name)
+                _ -> ss
             }
+            StmtList.Node(rewritten, wrap_specs_with_guard(next))
         }
     }
 }
@@ -132,26 +203,14 @@ export fn wrap_specs_with_guard(stmts: StmtList) -> StmtList {
 fn build_guarded_spec_call(orig: SStmt, spec_name_lex: string) -> SStmt {
     let body_stmts = StmtList.Node(
         sstmt_dummy(orig.node),
-        StmtList.Node(
-            sstmt_dummy(Stmt.Expr(Expr.Number("0"))),
-            StmtList.End
-        )
-    )
+        StmtList.Node(sstmt_dummy(Stmt.Expr(Expr.Number("0"))), StmtList.End))
     let body_lambda = Expr.Lambda(ParamList.End, Expr.Block(body_stmts))
-    let file_lit = "\"" + orig.file + "\""
-    let args = ExprList.Node(
-        sexpr_dummy(Expr.String(spec_name_lex)),
-        ExprList.Node(
-            sexpr_dummy(Expr.String(file_lit)),
-            ExprList.Node(
-                sexpr_dummy(Expr.Number(string(orig.line))),
-                ExprList.Node(
-                    sexpr_dummy(body_lambda),
-                    ExprList.End
-                )
-            )
-        )
-    )
+    let args = expr_list_from([
+        Expr.String(spec_name_lex),
+        Expr.String("\"" + orig.file + "\""),
+        Expr.Number(string(orig.line)),
+        body_lambda,
+    ])
     let call = Expr.Call(Expr.Ident("avra_test_run_spec_guarded"), args)
     sstmt_at(Stmt.Expr(call), orig.line, orig.col, orig.file)
 }
