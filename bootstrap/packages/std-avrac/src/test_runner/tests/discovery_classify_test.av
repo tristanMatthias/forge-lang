@@ -1,0 +1,106 @@
+// hkms.4 red-team: lex-based classifier — every false-positive shape
+// the legacy `content.contains("spec ")` filter accepted is rejected,
+// every true-positive shape is captured at the right source line.
+
+use @std.avrac.test_runner.{classify_av_source, DiscoveredEntry}
+
+fn entries_count(src: string) -> int {
+    classify_av_source("synth.av", src).entries.length
+}
+
+fn top_main(src: string) -> bool {
+    classify_av_source("synth.av", src).has_top_main
+}
+
+fn entry_line(src: string, idx: int) -> int {
+    let e = classify_av_source("synth.av", src).entries[idx]
+    match e {
+        .Spec(_, line) -> line
+        .TestFn(_, line) -> line
+    }
+}
+
+fn entry_name(src: string, idx: int) -> string {
+    let e = classify_av_source("synth.av", src).entries[idx]
+    match e {
+        .Spec(name, _) -> name
+        .TestFn(name, _) -> name
+    }
+}
+
+spec "discovery classifier: trivial shapes" {
+    then "empty source has no entries" {
+        entries_count("") == 0
+    }
+    then "only-comments source has no entries" {
+        entries_count("// just a comment\n// another\n") == 0
+    }
+    then "only-whitespace source has no entries" {
+        entries_count("   \n\n\t\n") == 0
+    }
+}
+
+spec "discovery classifier: true positives" {
+    then "top-level spec block is captured" {
+        entries_count("spec \"x\" { then \"y\" { true } }") == 1
+    }
+    then "spec name lexeme retains its quotes" {
+        entry_name("spec \"hello\" { }", 0) == "\"hello\""
+    }
+    then "spec line number is the spec keyword's line" {
+        entry_line("\n\nspec \"x\" { }", 0) == 3
+    }
+    then "multiple top-level specs are all captured" {
+        entries_count("spec \"a\" { } spec \"b\" { }") == 2
+    }
+}
+
+spec "discovery classifier: false-positive rejections" {
+    then "spec inside a line comment is NOT a test entry" {
+        entries_count("// spec \"fake\" { }\n") == 0
+    }
+    then "spec inside a string literal is NOT a test entry" {
+        // The literal `spec ` lives inside a string token — the
+        // lexer produces Tk.String, not Tk.KwSpec.
+        entries_count("fn x() -> string { \"spec is just text\" }") == 0
+    }
+    then "spec inside a fn body is NOT a top-level entry" {
+        entries_count("fn x() { spec \"nested\" { } }") == 0
+    }
+    then "spec inside a struct literal initializer is NOT top-level" {
+        // `Type { field: ... }` opens a brace; inside it we are not
+        // at module top.
+        entries_count("type T = { v: int }\nfn x() -> T { T { v: 1 } }") == 0
+    }
+}
+
+spec "discovery classifier: fn main detection" {
+    then "top-level fn main is flagged" {
+        top_main("fn main() -> int { 0 }")
+    }
+    then "fn mainHelper does NOT flag has_top_main" {
+        // Token-exact match: `fn` then identifier `main` then `(`
+        // — `mainHelper` is a single Identifier token, not `main`
+        // followed by `(`.
+        !top_main("fn mainHelper() -> int { 0 }")
+    }
+    then "fn main inside another fn body does NOT flag top_main" {
+        // Inner `fn main(` is at brace_depth > 0 → classifier skips.
+        !top_main("fn outer() { fn main() { } }")
+    }
+}
+
+spec "discovery classifier: @test annotation" {
+    then "@test fn is captured as TestFn" {
+        entries_count("@test\nfn my_check() { }") == 1
+    }
+    then "@test fn captures the fn identifier as the entry name" {
+        entry_name("@test\nfn my_check() { }", 0) == "my_check"
+    }
+    then "@test with parenthesised args still captures the fn" {
+        entries_count("@test(\"label\")\nfn another() { }") == 1
+    }
+    then "@other (not @test) is NOT a test entry" {
+        entries_count("@inline\nfn foo() { }") == 0
+    }
+}
