@@ -18,6 +18,7 @@
 #include <stdint.h>
 #include <limits.h>
 #include <signal.h>
+#include <setjmp.h>
 #include <execinfo.h>
 #include <unistd.h>
 #include <dlfcn.h>
@@ -495,9 +496,29 @@ static void avra_runtime_errorf(const char* fmt, ...) {
     fprintf(stderr, "\n");
 }
 
+// ─── Per-spec crash guard (hkms.3) ────────────────────────────────
+// Thread-local sigsetjmp checkpoint installed by
+// `avra_test_run_spec_guarded` for the duration of one spec block's
+// invocation. When the signal handler sees `_spec_guard_active` set,
+// it siglongjmps back to the guarded call site instead of dumping a
+// crash report — the runner advances to the next spec.
+//
+// Per-thread state: SIGSEGV/SIGBUS/SIGFPE/SIGILL/SIGABRT are
+// synchronous and delivered to the offending thread, so `_Thread_local`
+// gives the handler the right jmp_buf without coordination.
+static _Thread_local sigjmp_buf _spec_guard_jmp;
+static _Thread_local volatile sig_atomic_t _spec_guard_active = 0;
+
 // ─── Signal handler ───────────────────────────────────────────────
 
 static void avra_signal_handler(int sig, siginfo_t *si, void *context) {
+    // Spec-guard fast path: a spec block is mid-flight and a fatal
+    // signal arrived; jump back to the guarded call site so the
+    // runner records the crash and continues with the next spec.
+    if (_spec_guard_active) {
+        _spec_guard_active = 0;
+        siglongjmp(_spec_guard_jmp, sig);
+    }
     // This entire handler uses only async-signal-safe functions:
     // write(), _exit(), backtrace(), dladdr(), snprintf() into stack buffers.
     // NO fprintf, NO malloc, NO stdio.
@@ -1718,8 +1739,6 @@ const char* avra_char_from_hex(const char* hi, const char* lo) {
 // ═══════════════════════════════════════════════════════════════════
 // Developer tooling — debugging, crash guards, tracing
 // ═══════════════════════════════════════════════════════════════════
-
-#include <setjmp.h>
 
 // ── 1. Crash guard ──────────────────────────────────────────────
 // Wraps a function call in setjmp/longjmp so a segfault inside
@@ -3636,6 +3655,142 @@ int64_t avra_test_roughly(double actual, double expected, double tolerance) {
     double diff = actual - expected;
     if (diff < 0) diff = -diff;
     return diff <= tolerance ? 1 : 0;
+}
+
+// ── Per-spec crash isolation (hkms.3) ──
+// Each top-level spec block in a test bundle is wrapped by the test
+// runner's AST transform as `avra_test_run_spec_guarded(name, file,
+// line, () -> { ...body... })`. We sigsetjmp around the closure
+// invocation; the modified signal handler siglongjmps back here on
+// fatal crashes. The runner records the crash with full attribution
+// and returns so the next spec block runs.
+
+typedef struct AvraTestCrash {
+    const char* spec;
+    const char* file;
+    int64_t line;
+    int64_t signal;
+    struct AvraTestCrash* next;
+} AvraTestCrash;
+
+static AvraTestCrash* _crashes_head = NULL;
+static AvraTestCrash* _crashes_tail = NULL;
+static _Atomic int64_t _crashes_count = 0;
+static pthread_mutex_t _crashes_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+// Human-readable name for the signal numbers our handler catches.
+// Stable single-word labels so the reporter can render them inline.
+static const char* avra_signal_label(int sig) {
+    switch (sig) {
+        case SIGSEGV: return "SIGSEGV (segmentation fault)";
+        case SIGBUS:  return "SIGBUS (bus error)";
+        case SIGABRT: return "SIGABRT (abort)";
+        case SIGFPE:  return "SIGFPE (arithmetic error)";
+        case SIGILL:  return "SIGILL (illegal instruction)";
+        case SIGTRAP: return "SIGTRAP (debug trap)";
+        default:      return "unknown signal";
+    }
+}
+
+void avra_test_record_crash(const char* spec, const char* file,
+                            int64_t line, int64_t signal) {
+    AvraTestCrash* c = (AvraTestCrash*)malloc(sizeof(AvraTestCrash));
+    c->spec = test_str_dup(spec);
+    c->file = test_str_dup(file);
+    c->line = line;
+    c->signal = signal;
+    c->next = NULL;
+    pthread_mutex_lock(&_crashes_mutex);
+    if (_crashes_tail) _crashes_tail->next = c;
+    else _crashes_head = c;
+    _crashes_tail = c;
+    atomic_fetch_add(&_crashes_count, 1);
+    pthread_mutex_unlock(&_crashes_mutex);
+}
+
+int64_t avra_test_crash_count(void) {
+    return atomic_load(&_crashes_count);
+}
+
+// Hook for tests that DELIBERATELY crash a spec to exercise the
+// guard (e.g. spec_test/tests/crash_isolation_test.av). Decrements
+// the live count so the reporter's exit code stays green AND the
+// "Crashed specs:" section stops walking — the linked list entry
+// is left in place so prior introspection (avra_test_crash_spec etc.)
+// can still see what was recorded before the ack.
+void avra_test_ack_expected_crash(void) {
+    atomic_fetch_sub(&_crashes_count, 1);
+}
+
+static AvraTestCrash* test_crash_at(int64_t idx) {
+    AvraTestCrash* c = _crashes_head;
+    while (c && idx > 0) { c = c->next; idx--; }
+    return c;
+}
+
+const char* avra_test_crash_spec(int64_t idx) {
+    AvraTestCrash* c = test_crash_at(idx);
+    return c ? c->spec : "";
+}
+
+const char* avra_test_crash_file(int64_t idx) {
+    AvraTestCrash* c = test_crash_at(idx);
+    return c ? c->file : "";
+}
+
+int64_t avra_test_crash_line(int64_t idx) {
+    AvraTestCrash* c = test_crash_at(idx);
+    return c ? c->line : 0;
+}
+
+int64_t avra_test_crash_signal(int64_t idx) {
+    AvraTestCrash* c = test_crash_at(idx);
+    return c ? c->signal : 0;
+}
+
+const char* avra_test_crash_signal_name(int64_t idx) {
+    AvraTestCrash* c = test_crash_at(idx);
+    return c ? avra_signal_label((int)c->signal) : "";
+}
+
+// Testing helper for the spec-guard mechanism itself: raise a
+// process-wide signal that the guard is supposed to catch. Avra has
+// no built-in "force a crash" primitive (raw memory ops are gated by
+// the language), so we expose `raise(signal)` under a name that
+// makes its intent obvious. Only used inside `*_test.av` files —
+// production code has no reason to call it.
+int64_t avra_test_raise_signal(int64_t sig) {
+    raise((int)sig);
+    return 0;
+}
+
+// Invoke a no-arg Avra closure under a sigsetjmp guard. Returns 0 on
+// success, the signal number on crash (in which case the crash is
+// already recorded via `avra_test_record_crash` and a one-liner has
+// been printed to stderr). The closure pointer is the standard Avra
+// callable layout — `avra_closure_call_0` handles fn-ptr extraction
+// and the captures convention.
+int64_t avra_test_run_spec_guarded(const char* name, const char* file,
+                                   int64_t line, int64_t closure) {
+    int sig = sigsetjmp(_spec_guard_jmp, 1);
+    if (sig == 0) {
+        _spec_guard_active = 1;
+        avra_closure_call_0(closure);
+        _spec_guard_active = 0;
+        return 0;
+    }
+    _spec_guard_active = 0;
+    avra_test_record_crash(name, file, line, sig);
+    // Print to stdout (same stream as test_render_*) so the per-spec
+    // header / given / crash lines land in source order. Stderr would
+    // interleave randomly when the shard's combined stdio is captured.
+    printf("    \x1b[31m✗ SPEC CRASHED\x1b[0m %s \x1b[2m(at %s:%lld — %s)\x1b[0m\n",
+           name ? name : "<unknown>",
+           file ? file : "<unknown>",
+           (long long)line,
+           avra_signal_label(sig));
+    fflush(stdout);
+    return sig;
 }
 
 // ── Backward-compat shims ──

@@ -2288,20 +2288,23 @@ fn parse_lib_objs_env() -> List<string> {
 // Returns zeros when the marker is absent (shard crashed before
 // summary). The orchestrator sums across shards and renders the
 // unified count.
-type ShardSummary = { pass: int, fail: int, total: int, elapsed_ms: int }
+type ShardSummary = { pass: int, fail: int, total: int, elapsed_ms: int, crashes: int }
 
-// nce6.1.F: structured shard summary. Reporter writes 32 bytes
-// (4 × i64 little-endian: pass, fail, total, elapsed_ms) to
+// nce6.1.F: structured shard summary. Reporter writes 40 bytes
+// (5 × i64 little-endian: pass, fail, total, elapsed_ms, crashes) to
 // AVRA_TEST_RESULTS_BIN_PATH using @std/process byte primitives.
+// hkms.3: `crashes` records spec blocks that died on a fatal signal
+// and were caught by the per-spec guard so the run could continue —
+// distinct from `fail` (assertion mismatches).
 // @marshal synthesises from_bytes_TestResults(b: bytes) →
 // TestResults — symmetric with the reporter side.
 @marshal
-type TestResults = { pass: int, fail: int, total: int, elapsed_ms: int }
+type TestResults = { pass: int, fail: int, total: int, elapsed_ms: int, crashes: int }
 
 fn parse_shard_summary(out: string) -> ShardSummary {
     let marker = "[shard-summary] "
     let idx = out.index_of(marker)
-    if idx < 0 { return ShardSummary { pass: 0, fail: 0, total: 0, elapsed_ms: 0 } }
+    if idx < 0 { return ShardSummary { pass: 0, fail: 0, total: 0, elapsed_ms: 0, crashes: 0 } }
     let rest_start = idx + marker.length
     let tail = out.substring(rest_start, out.length)
     let nl = tail.index_of("\n")
@@ -2312,6 +2315,9 @@ fn parse_shard_summary(out: string) -> ShardSummary {
         fail: extract_kv_int(line, "fail="),
         total: extract_kv_int(line, "total="),
         elapsed_ms: extract_kv_int(line, "elapsed_ms="),
+        // hkms.3: missing `crashes=` keeps backwards compat with cached
+        // binaries that pre-date the field (extract_kv_int returns 0).
+        crashes: extract_kv_int(line, "crashes="),
     }
 }
 
@@ -2451,7 +2457,7 @@ impl Shard {
     fn read_results_bin(self) -> TestResults? {
         if avra_selfhost_file_exists(self.bin_path) != 1 { return null }
         let b = avra_selfhost_read_file_bytes(self.bin_path)
-        if b.length < 32 { return null }
+        if b.length < 40 { return null }
         from_bytes_TestResults(b)
     }
 }
@@ -2497,19 +2503,25 @@ type Totals = {
     fail: int,
     total: int,
     shard_failures: int,
+    crashes: int,
 }
 
 impl Totals {
     /// Add one shard's parsed summary into the running totals. A
-    /// shard with total==0 that didn't say "No tests ran" counts
-    /// as a compile/run failure.
+    /// shard with total==0 AND crashes==0 that didn't say "No tests
+    /// ran" counts as a compile/run failure. hkms.3: spec-level
+    /// crashes accumulate into `crashes` so the orchestrator can
+    /// distinguish them from assertion fails AND from shard-level
+    /// blow-ups (the shard with crashed specs still emits a
+    /// [shard-summary], so it's NOT a shard_failure).
     fn merge(self, out: string, parsed: ShardSummary) -> Totals {
-        let crashed = parsed.total == 0 && !out.contains("No tests ran")
+        let shard_blew_up = parsed.total == 0 && parsed.crashes == 0 && !out.contains("No tests ran")
         self with {
             pass: self.pass + parsed.pass,
             fail: self.fail + parsed.fail,
             total: self.total + parsed.total,
-            shard_failures: self.shard_failures + (if crashed { 1 } else { 0 }),
+            shard_failures: self.shard_failures + (if shard_blew_up { 1 } else { 0 }),
+            crashes: self.crashes + parsed.crashes,
         }
     }
 }
@@ -2671,7 +2683,7 @@ fn retry_jetsam_killed(shards: List<Shard>) {
 // output the user expects), parse the `[shard-summary]` line for the
 // aggregate counts, and render the unified pass/fail summary.
 fn aggregate_shard_logs(shards: List<Shard>, t_start: int) -> int {
-    let zero = Totals { pass: 0, fail: 0, total: 0, shard_failures: 0 }
+    let zero = Totals { pass: 0, fail: 0, total: 0, shard_failures: 0, crashes: 0 }
     let totals = list_fold(shards, zero, (acc: Totals, s: Shard) -> {
         if !s.log_alive() {
             eprintln("[shard ${s.slug}] no log produced (compile likely failed before stdout)")
@@ -2687,7 +2699,7 @@ fn aggregate_shard_logs(shards: List<Shard>, t_start: int) -> int {
         let bin_opt = s.read_results_bin()
         let summary = if bin_opt != null {
             let r = bin_opt!
-            ShardSummary { pass: r.pass, fail: r.fail, total: r.total, elapsed_ms: r.elapsed_ms }
+            ShardSummary { pass: r.pass, fail: r.fail, total: r.total, elapsed_ms: r.elapsed_ms, crashes: r.crashes }
         } else {
             parse_shard_summary(out)
         }
@@ -2698,13 +2710,18 @@ fn aggregate_shard_logs(shards: List<Shard>, t_start: int) -> int {
 
 /// Pretty-print the unified pass/fail tally + elapsed wall-time.
 /// Returns the orchestrator's exit code (0 green, 1 anything red).
+/// hkms.3: crashes appear as a distinct note (`Nspec(s) crashed`)
+/// alongside fails and shard-level blow-ups so the reader can see
+/// at a glance whether they hit assertion mismatches, fatal signals,
+/// or shard compile errors.
 fn render_test_summary(t: Totals, elapsed_ms: int) -> int {
     let elapsed_s = elapsed_ms / 1000
     let elapsed_tenths = (elapsed_ms / 100) - (elapsed_s * 10)
     let summary = "${string(t.pass)}/${string(t.total)} tests passed in ${string(elapsed_s)}.${string(elapsed_tenths)}s"
-    if t.fail > 0 || t.shard_failures > 0 {
-        let shard_note = if t.shard_failures > 0 { ", ${string(t.shard_failures)} shard(s) failed to compile/run" } else { "" }
-        println("\x1b[31m\x1b[1m${summary}\x1b[0m \x1b[31m(${string(t.fail)} failed${shard_note})\x1b[0m")
+    if t.fail > 0 || t.shard_failures > 0 || t.crashes > 0 {
+        let crash_note  = if t.crashes > 0        { ", ${string(t.crashes)} spec(s) crashed" } else { "" }
+        let shard_note  = if t.shard_failures > 0 { ", ${string(t.shard_failures)} shard(s) failed to compile/run" } else { "" }
+        println("\x1b[31m\x1b[1m${summary}\x1b[0m \x1b[31m(${string(t.fail)} failed${crash_note}${shard_note})\x1b[0m")
         return 1
     }
     println("\x1b[32m\x1b[1m${summary}\x1b[0m")

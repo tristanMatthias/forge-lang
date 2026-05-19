@@ -9,9 +9,10 @@
 // reuse them to build a test program.
 
 use core.{
-    Stmt, StmtList, ParamList, ValueType, TypeParamList,
+    Stmt, StmtList, SStmt, ParamList, ValueType, TypeParamList,
     Expr, ExprList,
-    sstmt_dummy,
+    sstmt_dummy, sstmt_at,
+    sexpr_dummy,
     avra_shell_exec,
     avra_selfhost_file_exists,
     avra_selfhost_read_file,
@@ -49,20 +50,110 @@ export fn strip_externs(stmts: StmtList) -> StmtList {
     }
 }
 
-/// Prepend the four runtime externs that every assembled test
-/// program needs to link against:
+/// Prepend the runtime externs that every assembled test program
+/// needs to link against:
 ///   - `avra_test_summary()  -> int`  → final pass/fail tally
 ///   - `avra_test_flush()    -> void` → drain the captured-output ring
 ///   - `avra_test_capture_start() -> void`
 ///   - `avra_test_capture_stop()  -> string`
+///   - `avra_test_run_spec_guarded(name, file, ln, body) -> int` →
+///     hkms.3: invoke one spec block under a sigsetjmp checkpoint so
+///     a fatal signal is caught and the runner advances to the next
+///     spec instead of taking down the bundle. `body` is a no-arg Avra
+///     closure produced by `wrap_specs_with_guard` for every top-level
+///     `spec { ... }` block.
 ///
 /// Order is reversed inside (cons-prepend) so the rendered program
 /// reads top-to-bottom in declaration order (`summary` first).
 export fn prepend_test_externs(stmts: StmtList) -> StmtList {
-    let s4 = StmtList.Node(sstmt_dummy(Stmt.ExternFn("avra_test_capture_stop", ParamList.End, ValueType.Str)), stmts)
+    let guard_params = ParamList.Node("name", ValueType.Str,
+                       ParamList.Node("file", ValueType.Str,
+                       ParamList.Node("ln",   ValueType.Int,
+                       ParamList.Node("body", ValueType.Fn(ValueType.Int),
+                       ParamList.End))))
+    let s5 = StmtList.Node(sstmt_dummy(Stmt.ExternFn("avra_test_run_spec_guarded", guard_params, ValueType.Int)), stmts)
+    let s4 = StmtList.Node(sstmt_dummy(Stmt.ExternFn("avra_test_capture_stop", ParamList.End, ValueType.Str)), s5)
     let s3 = StmtList.Node(sstmt_dummy(Stmt.ExternFn("avra_test_capture_start", ParamList.End, ValueType.Void)), s4)
     let s2 = StmtList.Node(sstmt_dummy(Stmt.ExternFn("avra_test_flush", ParamList.End, ValueType.Void)), s3)
     StmtList.Node(sstmt_dummy(Stmt.ExternFn("avra_test_summary", ParamList.End, ValueType.Int)), s2)
+}
+
+/// hkms.3: AST transform that wraps each top-level `spec` block in a
+/// crash-isolating call so a SIGSEGV / abort in one spec doesn't kill
+/// the bundle.
+///
+/// For every top-level `Stmt.SpecBlock(name, body)` in `stmts`,
+/// replace the position with:
+///
+///     avra_test_run_spec_guarded(name, file, line, () -> {
+///         <original SpecBlock>
+///         0
+///     })
+///
+/// Why a no-arg **lambda** rather than a hoisted top-level fn:
+///   - Avra closures preserve the enclosing scope, so top-level `mut`
+///     globals in the test file (e.g. `mut hits_alpha: int = 0`) stay
+///     visible inside the wrapped spec body — a hoisted fn would open
+///     a fresh scope and lose them.
+///   - The Avra closure layout (`[TAG, fn_ptr, ...captures]`) is
+///     exactly what `avra_test_run_spec_guarded` consumes via the
+///     existing `avra_closure_call_0` dispatch in runtime.c.
+///   - One less module-level identifier per spec, no synthetic-fn
+///     name to worry about (`is_mangled_method` collisions, etc).
+///
+/// The wrap operates only at the module top level — `spec` blocks
+/// nested inside fn bodies (no realistic use today, but cheap to keep
+/// untouched) compile as before, since their crash would already be
+/// scoped to the enclosing fn call.
+export fn wrap_specs_with_guard(stmts: StmtList) -> StmtList {
+    match stmts {
+        .End -> StmtList.End
+        .Node(ss, next) -> {
+            match ss.node {
+                .SpecBlock(name, _) -> {
+                    let call = build_guarded_spec_call(ss, name)
+                    StmtList.Node(call, wrap_specs_with_guard(next))
+                }
+                _ -> StmtList.Node(ss, wrap_specs_with_guard(next))
+            }
+        }
+    }
+}
+
+/// Build the replacement call site:
+///     avra_test_run_spec_guarded("spec name", "file.av", LINE,
+///                                () -> { spec name { body }; 0 })
+///
+/// The spec name retains its outer quotes from the lexeme — codegen's
+/// `strip_quotes` removes one pair so the runtime crash record gets a
+/// clean name. File path is freshly wrapped in quotes for the same
+/// round-trip. The body Lambda returns int (per the extern's
+/// `body: fn() -> int` signature) via the trailing `0`.
+fn build_guarded_spec_call(orig: SStmt, spec_name_lex: string) -> SStmt {
+    let body_stmts = StmtList.Node(
+        sstmt_dummy(orig.node),
+        StmtList.Node(
+            sstmt_dummy(Stmt.Expr(Expr.Number("0"))),
+            StmtList.End
+        )
+    )
+    let body_lambda = Expr.Lambda(ParamList.End, Expr.Block(body_stmts))
+    let file_lit = "\"" + orig.file + "\""
+    let args = ExprList.Node(
+        sexpr_dummy(Expr.String(spec_name_lex)),
+        ExprList.Node(
+            sexpr_dummy(Expr.String(file_lit)),
+            ExprList.Node(
+                sexpr_dummy(Expr.Number(string(orig.line))),
+                ExprList.Node(
+                    sexpr_dummy(body_lambda),
+                    ExprList.End
+                )
+            )
+        )
+    )
+    let call = Expr.Call(Expr.Ident("avra_test_run_spec_guarded"), args)
+    sstmt_at(Stmt.Expr(call), orig.line, orig.col, orig.file)
 }
 
 /// Outcome of splitting a stmt list into hoistable package modules
@@ -139,8 +230,14 @@ export fn assemble_test_program(test_paths: List<string>, project_dir: string) -
         }
         let split = split_package_modules(mod_resolved.stmts)
         packages = append_stmt_list(split.packages, packages)
+        // hkms.3: rewrite each top-level `spec` block in this test file
+        // into a guarded `avra_test_run_spec_guarded(...)` call and hoist
+        // the original block into a synthetic fn. The two pieces ride
+        // side-by-side in the test module so the resolver sees both as
+        // siblings (the call references the freshly-minted fn by name).
+        let wrapped_body = wrap_specs_with_guard(split.body)
         modules = StmtList.Node(
-            sstmt_dummy(Stmt.Module(mod_name, split.body)),
+            sstmt_dummy(Stmt.Module(mod_name, wrapped_body)),
             modules
         )
         count = count + 1
