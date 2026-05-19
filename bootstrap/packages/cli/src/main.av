@@ -1266,14 +1266,12 @@ fn run_per_mod_with_progress(cmds: List<string>, slugs: List<string>, jobs: int,
     let final_json = avra_process_wait(pool_handle)
     let exit_code = pool_extract_rc(final_json)
     let final_done = count_done_markers(marker_dir)
-    let final_elapsed = avra_uptime_ms() - t_start
+    let final_elapsed = format_elapsed_seconds(avra_uptime_ms() - t_start)
     progress_clear(prev_lines)
-    let elapsed_s = final_elapsed / 1000
-    let elapsed_tenths = (final_elapsed / 100) - (elapsed_s * 10)
     if exit_code == 0 {
-        println("built ${string(final_done)} per-mod units in ${string(elapsed_s)}.${string(elapsed_tenths)}s")
+        println("built ${string(final_done)} per-mod units in ${final_elapsed}")
     } else {
-        println("per-module build failed (rc=${string(exit_code)} after ${string(elapsed_s)}.${string(elapsed_tenths)}s) — see logs in ${marker_dir}/")
+        println("per-module build failed (rc=${string(exit_code)} after ${final_elapsed}) — see logs in ${marker_dir}/")
     }
     exit_code
 }
@@ -2073,73 +2071,16 @@ fn render_discovered_entry(path: string, entry: DiscoveredEntry) -> string {
 //   - compute_test_build_inputs (bundled path, all accepted_paths)
 //   - compute_test_shard_inputs (per-file path, [single_path])
 fn make_test_inputs(project_dir: string, test_paths: List<string>, unit_name: string) -> BuildInputs {
-    let std_root = find_packages_dir(project_dir) + "std-avrac/src"
-    // Skip the per-shard `find` shell-exec by reading a pre-computed
-    // listing the orchestrator stashes via AVRA_STD_LISTING_FILE. The
-    // orchestrator runs `find` ONCE and writes the result to a temp
-    // file; each shard reads it back instead of forking find again.
-    // Saves ~7ms × 451 shards = ~3s of CPU. Falls back to find for
-    // standalone _test_shard invocations (no orchestrator).
-    let reporter_path = test_reporter_path(project_dir)
     let build_dir = "${project_dir}/build"
+    let reporter_path = test_reporter_path(project_dir)
     let runtime_o = "${build_dir}/runtime.o"
     let llvm_wrap_o = "${build_dir}/llvm_wrapper.o"
 
     // Canonical order: tests first, then std (or pre-rolled universe
     // FP), then reporter, then runtime objects. Stable across runs.
     mut sources: List<string> = []
-    mut i = 0
-    while i < test_paths.length {
-        sources = sources.push(test_paths[i])
-        i = i + 1
-    }
-
-    // hkms.1.1 perf pass: when the orchestrator pre-rolls every
-    // shared input (the @std/* tree + reporter + runtime objects)
-    // into a single SHA-256 universe FP and exports it as
-    // AVRA_STD_UNIVERSE_FP, drop in one synthetic `@@fp:<hex>`
-    // entry instead of pushing 280-ish file paths that each
-    // trigger a sidecar read in fp_for_unit. fp.av's
-    // hash_source_entry recognises the sentinel and returns the
-    // hex directly without any I/O.
-    //
-    // Falls back to the per-path listing for standalone
-    // `bs2 _test_shard` invocations or when AVRA_USE_FP_BUNDLE is
-    // explicitly disabled. The universe FP MUST cover the same
-    // inputs the fallback path would hash, otherwise cache
-    // invalidation drifts.
-    let universe_fp = avra_process_env_get("AVRA_STD_UNIVERSE_FP")
-    if universe_fp != "" {
-        sources = sources.push("@@fp:" + universe_fp)
-    } else {
-        // Skip the per-shard `find` shell-exec by reading a pre-computed
-        // listing the orchestrator stashes via AVRA_STD_LISTING_FILE. The
-        // orchestrator runs `find` ONCE and writes the result to a temp
-        // file; each shard reads it back instead of forking find again.
-        // Saves ~7ms × 451 shards = ~3s of CPU. Falls back to find for
-        // standalone _test_shard invocations (no orchestrator).
-        let listing_file = avra_process_env_get("AVRA_STD_LISTING_FILE")
-        let std_listing = if listing_file != "" && avra_selfhost_file_exists(listing_file) != 0 {
-            avra_selfhost_read_file(listing_file)
-        } else {
-            avra_shell_exec("find ${std_root} -name '*.av' -type f 2>/dev/null | sort")
-        }
-        mut std_paths = []
-        for p in std_listing.split("\n") {
-            if p == "" { continue }
-            std_paths = std_paths.push(p)
-        }
-        mut j = 0
-        while j < std_paths.length {
-            sources = sources.push(std_paths[j])
-            j = j + 1
-        }
-        sources = sources.push(reporter_path)
-        sources = sources.push(runtime_o)
-        sources = sources.push(llvm_wrap_o)
-    }
-
-    let compiler_path = resolve_compiler_path(project_dir)
+    for p in test_paths { sources.push(p) }
+    append_shared_sources(sources, project_dir, reporter_path, runtime_o, llvm_wrap_o)
 
     BuildInputs {
         project_root: project_dir,
@@ -2149,7 +2090,7 @@ fn make_test_inputs(project_dir: string, test_paths: List<string>, unit_name: st
         // entry_path is informational only for multi-source test units;
         // surface the first test path so --explain has a name to cite.
         entry_path: if test_paths.length > 0 { test_paths[0] } else { "" },
-        compiler_path: compiler_path,
+        compiler_path: resolve_compiler_path(project_dir),
         target_triple: "host",
         profile_name: "test",
         opt_level: 0,
@@ -2157,6 +2098,55 @@ fn make_test_inputs(project_dir: string, test_paths: List<string>, unit_name: st
         overflow_checks: true,
         coverage: false,
     }
+}
+
+/// Append the cross-shard-shared inputs (@std/* tree + reporter +
+/// runtime objects) to `sources`. Pulls the orchestrator's prerolled
+/// universe-fingerprint sentinel when available; otherwise enumerates
+/// each path explicitly so cache invalidation stays per-file.
+///
+/// hkms.1.1 perf pass: when the orchestrator pre-rolls every shared
+/// input into a single SHA-256 universe FP and exports it as
+/// AVRA_STD_UNIVERSE_FP, drop in one synthetic `@@fp:<hex>` entry
+/// instead of pushing ~280 file paths that each trigger a sidecar
+/// read in `fp_for_unit`. `fp.av :: hash_source_entry` recognises
+/// the sentinel and returns the hex directly without any I/O.
+///
+/// Falls back to the per-path listing for standalone `bs2 _test_shard`
+/// invocations (no orchestrator). The universe FP MUST cover the same
+/// inputs the fallback path would hash, otherwise cache invalidation
+/// drifts.
+fn append_shared_sources(sources_ref: List<string>, project_dir: string,
+                         reporter_path: string, runtime_o: string, llvm_wrap_o: string) {
+    mut sources = sources_ref
+    let universe_fp = avra_process_env_get("AVRA_STD_UNIVERSE_FP")
+    if universe_fp != "" {
+        sources.push("@@fp:" + universe_fp)
+        return
+    }
+    for p in std_avra_listing(project_dir) { sources.push(p) }
+    sources.push(reporter_path)
+    sources.push(runtime_o)
+    sources.push(llvm_wrap_o)
+}
+
+/// Per-shard view of the @std/* `.av` listing. Prefers the
+/// orchestrator-stashed listing file (AVRA_STD_LISTING_FILE) so 451
+/// shards don't each fork-exec `find`; falls back to a shell `find`
+/// for standalone shard runs.
+fn std_avra_listing(project_dir: string) -> List<string> {
+    let std_root = find_packages_dir(project_dir) + "std-avrac/src"
+    let listing_file = avra_process_env_get("AVRA_STD_LISTING_FILE")
+    let raw = if listing_file != "" && avra_selfhost_file_exists(listing_file) != 0 {
+        avra_selfhost_read_file(listing_file)
+    } else {
+        avra_shell_exec("find ${std_root} -name '*.av' -type f 2>/dev/null | sort")
+    }
+    mut out: List<string> = []
+    for p in raw.split("\n") {
+        if p != "" { out.push(p) }
+    }
+    out
 }
 
 // Bundled-action inputs: every accepted test file feeds one cache
@@ -2428,6 +2418,18 @@ impl Shard {
         if b.length < 40 { return null }
         from_bytes_TestResults(b)
     }
+
+    /// Per-shard summary fetch — prefers the @marshal-binary results
+    /// when the reporter wrote one (post-r-cycle shards), falls back
+    /// to regex-parsing the `[shard-summary]` text line for compat
+    /// with cached binaries that pre-date the bin sidecar AND for
+    /// crash-before-write cases where the bin is missing.
+    fn summary(self, out: string) -> ShardSummary {
+        let bin = self.read_results_bin()
+        if bin == null { return parse_shard_summary(out) }
+        let r = bin!
+        ShardSummary { pass: r.pass, fail: r.fail, total: r.total, elapsed_ms: r.elapsed_ms, crashes: r.crashes }
+    }
 }
 
 // Shared knobs prepared once per `avra test` invocation. env_prefix
@@ -2659,19 +2661,7 @@ fn aggregate_shard_logs(shards: List<Shard>, t_start: int) -> int {
         }
         let out = s.read_log()
         println(out)
-        // nce6.1.F: prefer the @marshal-binary results when the
-        // reporter wrote one (post-r-cycle shards). Falls back to
-        // regex-parsing the [shard-summary] text line for compat
-        // with cached binaries that pre-date this change AND for
-        // crash-before-write cases where the bin is missing.
-        let bin_opt = s.read_results_bin()
-        let summary = if bin_opt != null {
-            let r = bin_opt!
-            ShardSummary { pass: r.pass, fail: r.fail, total: r.total, elapsed_ms: r.elapsed_ms, crashes: r.crashes }
-        } else {
-            parse_shard_summary(out)
-        }
-        acc.merge(out, summary)
+        acc.merge(out, s.summary(out))
     })
     render_test_summary(totals, avra_uptime_ms() - t_start)
 }
@@ -2683,17 +2673,26 @@ fn aggregate_shard_logs(shards: List<Shard>, t_start: int) -> int {
 /// at a glance whether they hit assertion mismatches, fatal signals,
 /// or shard compile errors.
 fn render_test_summary(t: Totals, elapsed_ms: int) -> int {
-    let elapsed_s = elapsed_ms / 1000
-    let elapsed_tenths = (elapsed_ms / 100) - (elapsed_s * 10)
-    let summary = "${string(t.pass)}/${string(t.total)} tests passed in ${string(elapsed_s)}.${string(elapsed_tenths)}s"
+    let summary = "${string(t.pass)}/${string(t.total)} tests passed in ${format_elapsed_seconds(elapsed_ms)}"
     if t.fail > 0 || t.shard_failures > 0 || t.crashes > 0 {
-        let crash_note  = if t.crashes > 0        { ", ${string(t.crashes)} spec(s) crashed" } else { "" }
-        let shard_note  = if t.shard_failures > 0 { ", ${string(t.shard_failures)} shard(s) failed to compile/run" } else { "" }
+        let crash_note = if t.crashes > 0        { ", ${string(t.crashes)} spec(s) crashed" } else { "" }
+        let shard_note = if t.shard_failures > 0 { ", ${string(t.shard_failures)} shard(s) failed to compile/run" } else { "" }
         println("\x1b[31m\x1b[1m${summary}\x1b[0m \x1b[31m(${string(t.fail)} failed${crash_note}${shard_note})\x1b[0m")
         return 1
     }
     println("\x1b[32m\x1b[1m${summary}\x1b[0m")
     0
+}
+
+/// Format a millisecond duration as `X.Ys` (one-decimal seconds).
+/// Integer math only — Avra doesn't have floats in const contexts.
+/// Used by both `render_test_summary` and the per-mod build progress
+/// printer below; previously inlined at both call sites with the
+/// same divide/mod dance.
+fn format_elapsed_seconds(elapsed_ms: int) -> string {
+    let s = elapsed_ms / 1000
+    let tenths = (elapsed_ms / 100) - (s * 10)
+    "${string(s)}.${string(tenths)}s"
 }
 
 // Shim around `compile_test_unit`. The heavy work — parse, resolve,

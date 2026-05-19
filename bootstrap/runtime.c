@@ -3798,9 +3798,14 @@ const char* avra_test_summary_to_bytes(int64_t pass, int64_t fail,
 // Invoke a no-arg Avra closure under a sigsetjmp guard. Returns 0 on
 // success, the signal number on crash (in which case the crash is
 // already recorded via `avra_test_record_crash` and a one-liner has
-// been printed to stderr). The closure pointer is the standard Avra
+// been printed to stdout). The closure pointer is the standard Avra
 // callable layout — `avra_closure_call_0` handles fn-ptr extraction
 // and the captures convention.
+//
+// Output channel note: stdout (same stream as `test_render_*` /
+// `println`) so the per-spec header / given / crash lines land in
+// source order. Stderr would interleave randomly when the shard's
+// combined stdio is captured by the orchestrator.
 int64_t avra_test_run_spec_guarded(const char* name, const char* file,
                                    int64_t line, int64_t closure) {
     int sig = sigsetjmp(_spec_guard_jmp, 1);
@@ -3812,9 +3817,6 @@ int64_t avra_test_run_spec_guarded(const char* name, const char* file,
     }
     _spec_guard_active = 0;
     avra_test_record_crash(name, file, line, sig);
-    // Print to stdout (same stream as test_render_*) so the per-spec
-    // header / given / crash lines land in source order. Stderr would
-    // interleave randomly when the shard's combined stdio is captured.
     printf("    \x1b[31m✗ SPEC CRASHED\x1b[0m %s \x1b[2m(at %s:%lld — %s)\x1b[0m\n",
            name ? name : "<unknown>",
            file ? file : "<unknown>",
