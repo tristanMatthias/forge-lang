@@ -49,6 +49,7 @@ use @std.json.{json_str, json_object, json_pairs, json_pair_add}
 use @std.lsp.{Sym, SymList}
 use @std.avrac.fmt.{fmt_stmt_list}
 use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, append_stmt_list, assemble_test_program, test_reporter_path}
+use @std.avrac.test_runner.{discover_tests, DiscoveredFile, DiscoveredEntry}
 use @std.avrac.coverage.{render_coverage}
 use @std.avrac.docs.{extract_project_docs_ast, extract_project_corpus,
           show_overview, show_symbol, show_short, show_symbols,
@@ -355,8 +356,9 @@ fn has_argv_flag(flag: string) -> bool {
 
 // Parsed view of `avra test ...` argv. -f/--filter narrows tests
 // by file-name substring; -c/--coverage enables instrumentation;
-// --lcov path turns on coverage AND writes an LCOV report there.
-type TestArgs = { filter: string, coverage: bool, lcov_path: string, per_file: bool }
+// --lcov path turns on coverage AND writes an LCOV report there;
+// --list (hkms.4) prints discovered tests and exits without compile.
+type TestArgs = { filter: string, coverage: bool, lcov_path: string, per_file: bool, list_only: bool }
 
 fn parse_test_args() -> TestArgs {
     mut filter_arg = ""
@@ -371,6 +373,7 @@ fn parse_test_args() -> TestArgs {
     // get killed by jetsam first). Bundled stays reachable via
     // --bundled for coverage + legacy callers.
     mut per_file_flag = true
+    mut list_only_flag = false
     mut i = 2
     while i < avra_selfhost_argc() {
         let arg = avra_selfhost_get_arg_cstr(i)
@@ -407,9 +410,20 @@ fn parse_test_args() -> TestArgs {
             i = i + 1
             continue
         }
+        // hkms.4: structural-discovery dry-run. Prints one line per
+        // discovered test (`<file>:<line>: spec "name"` or
+        // `<file>:<line>: @test fn name`) and exits — no compile,
+        // no shard fan-out, no cache hit. Useful both as a sanity
+        // check after a discovery-rule change and as an IDE
+        // integration point.
+        if arg == "--list" {
+            list_only_flag = true
+            i = i + 1
+            continue
+        }
         i = i + 1
     }
-    TestArgs { filter: filter_arg, coverage: coverage_flag, lcov_path, per_file: per_file_flag }
+    TestArgs { filter: filter_arg, coverage: coverage_flag, lcov_path, per_file: per_file_flag, list_only: list_only_flag }
 }
 
 extern fn avra_uptime_ms() -> int
@@ -2011,86 +2025,44 @@ fn run_cache_command() {
 // per filter and per coverage flag — Cargo's pattern of test-target
 // distinct from lib-target).
 //
-// Sorting matters: the fingerprint hashes paths in iteration order.
-// We pipe through `sort` at find time so the order is canonical and
-// stable across machines.
-// Decide which discovered *_test.av paths actually contribute to
-// the test program. Applies, in this order:
-//   1. --filter substring match against the file's basename
-//   2. Content predicates: file must contain "spec " and must NOT
-//      contain "fn main()" (a file with main() is treated as a
-//      standalone program — running it would override the test
-//      reporter's `main()`)
-//
-// This is the SINGLE SOURCE OF TRUTH for the test set — both the
-// cache fingerprint and the parse loop must iterate the same list,
-// otherwise we drift (cache-key files differ from compile-body
-// files → false hits). Returns paths in the listing's stable order.
-fn select_test_paths(test_files_listing: string, args: TestArgs) -> List<string> {
-    mut survivors = []
-    for path in test_files_listing.split("\n") {
-        if path == "" { continue }
-        let mod_name = basename_no_ext(path)
-        if args.filter != "" && !mod_name.contains(args.filter) { continue }
-        let content = read_file(path)
-        // Single pass for both predicates — the file content is large
-        // relative to the substrings we're scanning for, so doing
-        // `contains("spec ")` AND `has_top_level_main(content)` was
-        // two full walks of the file. classify_test_file folds them
-        // into one line-by-line walk that short-circuits when both
-        // answers are known (hkms.1.1 perf pass).
-        let cls = classify_test_file(content)
-        if !cls.has_spec { continue }
-        if cls.has_top_main { continue }
-        survivors = survivors.push(path)
+// Sorting matters: the fingerprint hashes paths in iteration order;
+// `discover_tests` already returns results sorted lexicographically by
+// path so the canonical-input string is stable across machines.
+
+/// hkms.4: applies `--filter` to the structurally-discovered list.
+/// Filter matches against the file's basename — same semantics as the
+/// legacy `select_test_paths` filter so user CLI invocations work
+/// unchanged after the discovery swap.
+fn filter_discovered(files: List<DiscoveredFile>, filter: string) -> List<DiscoveredFile> {
+    if filter == "" { return files }
+    mut out: List<DiscoveredFile> = []
+    mut i = 0
+    while i < files.length {
+        let d = files[i]
+        if basename_no_ext(d.path).contains(filter) { out.push(d) }
+        i = i + 1
     }
-    survivors
+    out
 }
 
-type TestFileClass = { has_spec: bool, has_top_main: bool }
-
-// Single-pass classifier: scans a file's content once and reports
-// (a) whether it contains a `spec ` keyword (anywhere in any line) and
-// (b) whether it declares a top-level `fn main(...)` — only counting
-// lines whose leading non-whitespace begins with `fn main` followed
-// by `(` (rejects `fn mainHelper`, line-commented occurrences, and
-// `spec`/`fn main` text inside string literals via the naive but
-// historically-sufficient leading-skip heuristic).
-fn classify_test_file(content: string) -> TestFileClass {
-    mut has_spec = false
-    mut has_top_main = false
-    for raw in content.split("\n") {
-        // Cheap any-position check for "spec " (matches original
-        // `content.contains("spec ")` semantics — finds it even in
-        // strings/comments, which the historical filter accepted).
-        if !has_spec && raw.contains("spec ") { has_spec = true }
-        // Line-anchored `fn main(...)` check — skip leading whitespace,
-        // skip line-comments, require `fn main` followed by an optional
-        // run of spaces/tabs and then `(`.
-        if !has_top_main {
-            mut i = 0
-            while i < raw.length {
-                let c = raw[i]
-                if c != " " && c != "\t" { break }
-                i = i + 1
+/// hkms.4: render the structurally-discovered test set for `--list`.
+/// One line per entry, prefixed by file:line, so callers (IDEs,
+/// `grep`, humans) can navigate directly to the source. Format is
+/// stable and machine-friendly — `:` separators, no ANSI colour.
+fn print_discovered(files: List<DiscoveredFile>) {
+    mut i = 0
+    while i < files.length {
+        let d = files[i]
+        i = i + 1
+        mut j = 0
+        while j < d.entries.length {
+            match d.entries[j] {
+                .Spec(name, line) -> println("${d.path}:${string(line)}: spec ${name}")
+                .TestFn(fn_name, line) -> println("${d.path}:${string(line)}: @test fn ${fn_name}")
             }
-            if i < raw.length {
-                let rest = raw.substring(i, raw.length)
-                if !rest.starts_with("//") && rest.starts_with("fn main") {
-                    mut j = 7  // length of "fn main"
-                    while j < rest.length {
-                        let c = rest[j]
-                        if c != " " && c != "\t" { break }
-                        j = j + 1
-                    }
-                    if j < rest.length && rest[j] == "(" { has_top_main = true }
-                }
-            }
+            j = j + 1
         }
-        // Both answers known → stop walking lines.
-        if has_spec && has_top_main { break }
     }
-    TestFileClass { has_spec, has_top_main }
 }
 
 // Compose BuildInputs for a test action — bundled or per-shard.
@@ -2739,27 +2711,31 @@ fn run_test_command() {
     let project_dir = avra_process_env_get("PWD")
     let args = parse_test_args()
 
-    // TODO(bead wcrm): replace shell `find` with a proper FS walk.
-    // Anchor the build-artifacts exclusion to the project root so a
-    // legitimate src tree containing a `build/` subdirectory (e.g.
-    // packages/std-avrac/src/build/, the build-driver module) is NOT
-    // skipped — only the top-level compile-output dir is.
-    let test_files = avra_shell_exec("find ${project_dir} \\( -path '${project_dir}/build' -o -path '${project_dir}/build/*' \\) -prune -o -name '*_test.av' -type f -print 2>/dev/null | sort")
-    if test_files == "" {
-        println("No test files found.")
+    // hkms.4: structural discovery via the @std.avrac.test_runner
+    // discovery module. Walks the project tree natively (no shell
+    // fork), classifies every `.av` source by tokens (so `spec` in a
+    // comment doesn't false-positive, and `*_test.av` naming is no
+    // longer load-bearing). Filters out files declaring their own
+    // `fn main(`. Result is sorted by path for stable iteration.
+    let discovered = discover_tests(project_dir)
+    let accepted = filter_discovered(discovered, args.filter)
+
+    if args.list_only {
+        print_discovered(accepted)
+        avra_process_exit(0)
         return
     }
 
-    // Single-source-of-truth filter: applies --filter and content
-    // predicates ("spec " present, "fn main()" absent). The cache
-    // fingerprint and compile_test_unit's parse loop must both
-    // iterate the SAME list — otherwise we drift (cache says X,
-    // compile body produces Y) and risk false hits.
-    let accepted_paths = select_test_paths(test_files, args)
-    if accepted_paths.length == 0 {
-        println("No spec test files found.")
+    if discovered.length == 0 {
+        println("No test files found.")
         return
     }
+    if accepted.length == 0 {
+        println("No spec test files matched filter.")
+        return
+    }
+
+    let accepted_paths = list_map(accepted, (d: DiscoveredFile) -> d.path)
 
     // 05yc: opt-in per-file shard mode. Each test file → its own
     // cache slot + binary. Coverage stays on the bundled path until

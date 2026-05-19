@@ -1,0 +1,281 @@
+// WHY: structural test discovery (hkms.4).
+//
+// The legacy discovery pipeline shells out to `find ... -name '*_test.av'`
+// then scans each file's content for the substring `"spec "`. That has
+// three failure modes the spec calls out:
+//   * a renamed file (`*-test.av` etc.) disappears even when it carries
+//     real `spec` blocks
+//   * a literal `spec ` inside a comment or string triggers a false
+//     positive — the file gets parsed only to fail compilation
+//   * any future `@test`-style entry point can never be discovered by
+//     a content grep, because the marker lives in the AST
+//
+// This module replaces both passes with structural primitives:
+//   * `walk_av_files` does a native FS walk (no fork(2)) that skips
+//     `build/`, hidden dirs, and well-known cache locations.
+//   * `classify_av_source` drives the existing lexer through `Parser`
+//     to find top-level `spec` keywords and top-level `@test` annotations
+//     — tokens, not strings, so `spec ` inside a comment lexes as
+//     part of `Tk.Comment` (or is skipped entirely) and does NOT
+//     trigger a false positive.
+//   * `discover_tests` glues the two together and returns one
+//     `DiscoveredFile` per source file that owns at least one test
+//     entry — sorted by path for stable iteration.
+//
+// The classifier still flags top-level `fn main(` so the runner can
+// continue to reject files that declare their own program entry point
+// (those would override the test reporter's main).
+
+use core.{
+    avra_readdir, avra_is_dir, avra_str_ends_with,
+    avra_selfhost_read_file, avra_selfhost_file_exists,
+    Tk,
+}
+use parse.{parser_new_with_file}
+
+// ── Walker ──────────────────────────────────────────────────────────
+
+/// Match-set for directory entries that should never be recursed into
+/// when discovering tests, at ANY depth in the tree:
+///   - hidden dirs (`.git`, `.cache`, `.beads`) — leading dot
+///   - `target`, `node_modules` — typically tool/lang dropouts
+///
+/// `build/` is handled separately by `is_skipped_at_root` — it's only
+/// skipped at the project root, because a nested `src/build/`
+/// directory (e.g. `packages/std-avrac/src/build/tests/`) IS a real
+/// source tree we must traverse. Mirrors the legacy `find -path
+/// './build' -prune` exclusion the discovery is replacing.
+fn is_skipped_dir(name: string) -> bool {
+    if name == "" { return true }
+    if name.byte(0) == 0x2E { return true }
+    if name == "target" { return true }
+    if name == "node_modules" { return true }
+    false
+}
+
+/// Project-root-anchored exclusions. `build/` is the canonical
+/// compile-output dir at the project root; walking it would pull in
+/// thousands of generated `.ll` / `.av` test fixtures. Nested
+/// `src/build/` packages are real source.
+fn is_skipped_at_root(name: string) -> bool {
+    if name == "build" { return true }
+    false
+}
+
+/// True iff `name` looks like an Avra source file. Lower case `.av`
+/// only — Avra forbids mixed-case extensions on every platform we
+/// target. Naming convention `*_test.av` is preserved as the default
+/// but no longer load-bearing (see hkms.4 spec).
+fn is_av_source(name: string) -> bool {
+    if name == "" { return false }
+    if name.byte(0) == 0x2E { return false }
+    avra_str_ends_with(name, ".av") != 0
+}
+
+/// Recursive `.av` walk under `root`. Order is depth-first, parent
+/// before children, files within a directory in `avra_readdir` order.
+/// Caller can sort the result if it needs lexicographic stability.
+/// Root-level `build/` is excluded (compile output); nested
+/// `src/build/` source trees are NOT excluded.
+export fn walk_av_files(root: string) -> List<string> {
+    mut out: List<string> = []
+    walk_into(root, out, true)
+    out
+}
+
+/// Walker step — appends every `.av` under `dir` to `out` and recurses
+/// into subdirectories that pass the skip predicate. `is_root` is true
+/// only for the direct call from `walk_av_files` so root-anchored
+/// exclusions like `./build/` apply only at the top level.
+fn walk_into(dir: string, out_ref: List<string>, is_root: bool) {
+    if avra_is_dir(dir) == 0 { return }
+    let entries = avra_readdir(dir)
+    let prefix = if dir.length > 0 && dir.byte(dir.length - 1) == 0x2F {
+        dir
+    } else {
+        dir + "/"
+    }
+    mut out = out_ref
+    mut i = 0
+    while i < entries.length {
+        let name = entries[i]
+        let path = prefix + name
+        if avra_is_dir(path) != 0 {
+            let skip = is_skipped_dir(name) || (is_root && is_skipped_at_root(name))
+            if !skip {
+                walk_into(path, out, false)
+            }
+        } else if is_av_source(name) {
+            out.push(path)
+        }
+        i = i + 1
+    }
+}
+
+// ── Classifier ──────────────────────────────────────────────────────
+
+/// One test entry point discovered in a source file. `Spec` carries
+/// the lexed spec name (including quotes, like the parser stores it).
+/// `TestFn` carries the fn identifier so the runner can synthesise a
+/// call site for it.
+export enum DiscoveredEntry {
+    Spec(name: string, line: int)
+    TestFn(fn_name: string, line: int)
+}
+
+/// Per-file discovery result. `entries` is empty when the file has no
+/// test entry points (still surfaced so callers can distinguish "no
+/// tests found in this file" from "file failed to read"). `has_top_main`
+/// flags files that declare `fn main(` at the top level — the runner
+/// rejects those because their `main` would override the test bundle's.
+export type DiscoveredFile = {
+    path: string,
+    entries: List<DiscoveredEntry>,
+    has_top_main: bool,
+}
+
+/// Classify one Avra source file via lex tokens. We instantiate a
+/// real `Parser` and only call `advance` — never `parse_*` — so the
+/// cost stays bounded at one tokenisation per file. Tracking braces
+/// at depth lets us reject `spec` keywords nested inside fn bodies
+/// or expressions.
+///
+/// The classifier never reports lex errors; a syntactically broken
+/// file is still classified by whatever tokens lex cleanly before the
+/// error, and the compile-time parser will surface the diagnostic
+/// later when the runner tries to build the bundle.
+export fn classify_av_source(path: string, source: string) -> DiscoveredFile {
+    // `parser_new_with_file` already calls `advance_token` once before
+    // returning, so the parser is positioned AT the first token —
+    // don't `advance()` again or we'd skip past it (subtle bug: a
+    // file that starts with `spec "..." { ... }` would be classified
+    // as having zero entries).
+    mut p = parser_new_with_file(source, path)
+    mut entries: List<DiscoveredEntry> = []
+    mut has_top_main = false
+    mut brace_depth = 0
+    mut paren_depth = 0
+    while p.current_kind != Tk.Eof {
+        // Track delimiter depth so we only count entries at module top.
+        match p.current_kind {
+            .LeftBrace -> { brace_depth = brace_depth + 1 }
+            .RightBrace -> { brace_depth = brace_depth - 1 }
+            .LeftParen -> { paren_depth = paren_depth + 1 }
+            .RightParen -> { paren_depth = paren_depth - 1 }
+            _ -> {}
+        }
+        if brace_depth == 0 && paren_depth == 0 {
+            match p.current_kind {
+                .KwSpec -> {
+                    let line = p.current_line
+                    p.advance()
+                    if p.current_kind == Tk.String {
+                        entries.push(DiscoveredEntry.Spec(p.current_lexeme, line))
+                    }
+                    continue
+                }
+                .At -> {
+                    let line = p.current_line
+                    p.advance()
+                    if p.current_kind == Tk.Identifier && p.current_lexeme == "test" {
+                        // Skip past `@test(args)` if present, then look
+                        // for the next `fn` and grab its name.
+                        p.advance()
+                        if p.current_kind == Tk.LeftParen {
+                            // Skip arg list by tracking paren depth.
+                            mut d = 1
+                            p.advance()
+                            while p.current_kind != Tk.Eof && d > 0 {
+                                if p.current_kind == Tk.LeftParen { d = d + 1 }
+                                if p.current_kind == Tk.RightParen { d = d - 1 }
+                                p.advance()
+                            }
+                        }
+                        // Skip any further annotations on the same fn —
+                        // walk until we see `fn`.
+                        while p.current_kind != Tk.Eof && p.current_kind != Tk.KwFn {
+                            p.advance()
+                        }
+                        if p.current_kind == Tk.KwFn {
+                            p.advance()
+                            if p.current_kind == Tk.Identifier {
+                                entries.push(DiscoveredEntry.TestFn(p.current_lexeme, line))
+                            }
+                        }
+                    }
+                    continue
+                }
+                .KwFn -> {
+                    let line = p.current_line
+                    p.advance()
+                    if p.current_kind == Tk.Identifier && p.current_lexeme == "main" {
+                        // `fn main(` at top level — same predicate as
+                        // the legacy line-anchored heuristic, but token-
+                        // exact (no false positives on `fn mainHelper`).
+                        p.advance()
+                        if p.current_kind == Tk.LeftParen {
+                            has_top_main = true
+                        }
+                    }
+                    continue
+                }
+                _ -> {}
+            }
+        }
+        p.advance()
+    }
+    DiscoveredFile { path, entries, has_top_main }
+}
+
+// ── Discovery orchestrator ──────────────────────────────────────────
+
+/// Walk + classify + filter. Returns one `DiscoveredFile` per source
+/// file that owns at least one test entry AND does NOT declare its
+/// own `fn main(`. Sort order: by path, lexicographic — stable across
+/// runs so cache keys + diagnostic order are reproducible.
+export fn discover_tests(root: string) -> List<DiscoveredFile> {
+    let paths = walk_av_files(root)
+    let sorted = sort_paths(paths)
+    mut out: List<DiscoveredFile> = []
+    mut i = 0
+    while i < sorted.length {
+        let path = sorted[i]
+        i = i + 1
+        if avra_selfhost_file_exists(path) == 0 { continue }
+        let src = avra_selfhost_read_file(path)
+        let classified = classify_av_source(path, src)
+        if classified.has_top_main { continue }
+        if classified.entries.length == 0 { continue }
+        out.push(classified)
+    }
+    out
+}
+
+/// Lexicographic sort for path lists. Uses the language's string
+/// comparison so the result matches what `sort | uniq` would produce
+/// on the command line. Hand-rolled selection sort because `List<T>`
+/// doesn't yet have a `.sort()` codegen path; N is hundreds (project
+/// `.av` count), well within O(n²) territory.
+fn sort_paths(paths: List<string>) -> List<string> {
+    let n = paths.length
+    mut sorted: List<string> = []
+    mut i = 0
+    while i < n {
+        sorted.push(paths[i])
+        i = i + 1
+    }
+    mut a = 0
+    while a < n {
+        mut b = a + 1
+        while b < n {
+            if sorted[b] < sorted[a] {
+                let tmp = sorted[a]
+                sorted.set(a, sorted[b])
+                sorted.set(b, tmp)
+            }
+            b = b + 1
+        }
+        a = a + 1
+    }
+    sorted
+}
