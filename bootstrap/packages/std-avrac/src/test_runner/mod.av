@@ -234,8 +234,6 @@ export fn split_package_modules(stmts: StmtList) -> PackageSplit {
     PackageSplit { packages: h.packages, body: h.body }
 }
 
-/// Concatenate two statement lists. Order-preserving: every node
-/// from `a` comes before every node from `b`.
 /// Resolve the absolute path of the spec_test reporter (`reporter.av`).
 /// Three call sites used to assemble this concatenation by hand
 /// (assemble_test_program here, make_test_inputs + prepare_test_run
@@ -246,6 +244,8 @@ export fn test_reporter_path(project_dir: string) -> string {
     find_packages_dir(project_dir) + "std-avrac/src/features/spec_test/reporter.av"
 }
 
+/// Concatenate two statement lists. Order-preserving: every node
+/// from `a` comes before every node from `b`.
 export fn append_stmt_list(a: StmtList, b: StmtList) -> StmtList {
     match a {
         .End -> b
@@ -253,84 +253,91 @@ export fn append_stmt_list(a: StmtList, b: StmtList) -> StmtList {
     }
 }
 
+/// One test file's contribution to an assembled program. The body is
+/// already guard-wrapped; the @std/* packages are split out so the
+/// caller can dedup them across the whole program in one pass.
+type AssembledFile = {
+    mod_name: string,
+    packages: StmtList,
+    wrapped_body: StmtList,
+}
+
+/// Parse + resolve-module-files + hoist + spec-wrap one test file.
+/// Pure on the AST side; errors travel back as Result.Err with the
+/// rendered diagnostic already on stderr (via render_bag).
+///
+/// wd48: LoadedPaths is NOT shared across calls. A shared set made
+/// sibling-Module loads return empty wrappers on second hit, breaking
+/// sibling `use` imports. Cost: @std/* packages re-parsed per file;
+/// `dedup_modules` collapses the duplicate package wrappers by name
+/// at the program-root level.
+fn assemble_one_test_file(path: string) -> Result<AssembledFile, string> {
+    let content = avra_selfhost_read_file(path)
+    let parsed = parse_program_source_at(content, path)
+    if parsed.had_error || parsed.stmts == null {
+        if bag_has_errors(parsed.bag) { render_bag(content, path, parsed.bag) }
+        return Result.Err("error parsing ${path}")
+    }
+    let mod_resolved = resolve_module_files(parsed.stmts!, modules_dirname(path), LoadedPaths.End)
+    if mod_resolved.had_error {
+        return Result.Err("module resolve error in ${path}: ${mod_resolved.error_message}")
+    }
+    let split = split_package_modules(mod_resolved.stmts)
+    Result.Ok(AssembledFile {
+        mod_name: basename_no_ext(path),
+        packages: split.packages,
+        // hkms.3: rewrite each top-level `spec` block into a guarded
+        // `avra_test_run_spec_guarded(...)` call so a SIGSEGV / abort
+        // in one spec doesn't take down the bundle.
+        wrapped_body: wrap_specs_with_guard(split.body),
+    })
+}
+
+/// Load + parse the spec_test reporter. Returns `StmtList.End` when
+/// the file is missing or fails to parse — the caller still produces
+/// a (broken) test program; the missing reporter fns surface as
+/// "undefined name" diagnostics in the codegen pass, which is the
+/// signal we want when something is wrong with the install.
+fn load_reporter_stmts(project_dir: string) -> StmtList {
+    let reporter_path = test_reporter_path(project_dir)
+    if avra_selfhost_file_exists(reporter_path) == 0 { return StmtList.End }
+    let rsrc = avra_selfhost_read_file(reporter_path)
+    let rparsed = parse_program_source_at(rsrc, reporter_path)
+    if rparsed.had_error || rparsed.stmts == null { return StmtList.End }
+    rparsed.stmts!
+}
+
+/// Synthetic `fn main() -> int { return test_render_summary() }` —
+/// the test bundle's program entry point. Cons-prepended onto the
+/// rest of the assembled program so its declaration lands first in
+/// the rendered AST.
+fn synth_test_main() -> SStmt {
+    let body = StmtList.Node(
+        sstmt_dummy(Stmt.Return(Expr.Call(Expr.Ident("test_render_summary"), ExprList.End))),
+        StmtList.End)
+    sstmt_dummy(Stmt.Function("main", TypeParamList.End, ParamList.End, ValueType.Int, body))
+}
+
 /// Assemble the test program for one action: parse each test file as
 /// its own Stmt.Module, hoist @std packages, inline the spec_test
 /// reporter, and synthesise a main() that returns test_render_summary().
 ///
-/// wd48 fix: LoadedPaths are NOT shared across iterations. A shared
-/// set made sibling-Module loads return empty wrappers on second hit,
-/// breaking sibling `use` imports. Each test file's tree is
-/// independent — separate Module(test_name) wrappers, distinct scopes.
-/// Cost: @std/* packages get re-parsed per test file; dedup_modules
-/// collapses the duplicate package wrappers by Module name and dedups
-/// same-file decls within merged bodies. Same-name decls from
-/// DIFFERENT files survive as a real user-level naming collision.
+/// Returned program layout (top-to-bottom): runtime externs,
+/// reporter fns, deduped @std/* packages, per-file test modules,
+/// synthesised `fn main`.
 export fn assemble_test_program(test_paths: List<string>, project_dir: string) -> Result<StmtList, string> {
     mut modules = StmtList.End
     mut packages = StmtList.End
-    mut count = 0
-    mut path_i = 0
-    while path_i < test_paths.length {
-        let path = test_paths[path_i]
-        path_i = path_i + 1
-        let content = avra_selfhost_read_file(path)
-        let mod_name = basename_no_ext(path)
-        let parsed = parse_program_source_at(content, path)
-        if parsed.had_error || parsed.stmts == null {
-            if bag_has_errors(parsed.bag) {
-                render_bag(content, path, parsed.bag)
-            }
-            return Result.Err("error parsing ${path}")
-        }
-        let test_dir = modules_dirname(path)
-        let mod_resolved = resolve_module_files(parsed.stmts!, test_dir, LoadedPaths.End)
-        if mod_resolved.had_error {
-            return Result.Err("module resolve error in ${path}: ${mod_resolved.error_message}")
-        }
-        let split = split_package_modules(mod_resolved.stmts)
-        packages = append_stmt_list(split.packages, packages)
-        // hkms.3: rewrite each top-level `spec` block in this test file
-        // into a guarded `avra_test_run_spec_guarded(...)` call and hoist
-        // the original block into a synthetic fn. The two pieces ride
-        // side-by-side in the test module so the resolver sees both as
-        // siblings (the call references the freshly-minted fn by name).
-        let wrapped_body = wrap_specs_with_guard(split.body)
-        modules = StmtList.Node(
-            sstmt_dummy(Stmt.Module(mod_name, wrapped_body)),
-            modules
-        )
-        count = count + 1
+    for path in test_paths {
+        let a = assemble_one_test_file(path)?
+        packages = append_stmt_list(a.packages, packages)
+        modules = StmtList.Node(sstmt_dummy(Stmt.Module(a.mod_name, a.wrapped_body)), modules)
     }
-    if count == 0 {
-        return Result.Err("no spec test files found")
-    }
+    if test_paths.length == 0 { return Result.Err("no spec test files found") }
 
-    // Reporter (features/spec_test/reporter.av) ships test_render_*
-    // fns at module-root scope so spec codegen's bare
-    // ctx.call("test_render_then", ...) resolves directly. State
-    // (counters, current spec/given) lives in runtime.c.
-    let reporter_path = test_reporter_path(project_dir)
-    let reporter_stmts = if avra_selfhost_file_exists(reporter_path) != 0 {
-        let rsrc = avra_selfhost_read_file(reporter_path)
-        let rparsed = parse_program_source_at(rsrc, reporter_path)
-        if rparsed.had_error || rparsed.stmts == null {
-            StmtList.End
-        } else {
-            rparsed.stmts!
-        }
-    } else {
-        StmtList.End
-    }
-    let deduped_packages = dedup_modules(packages)
-    mut program = prepend_test_externs(append_stmt_list(reporter_stmts, append_stmt_list(deduped_packages, modules)))
-    let main_body = StmtList.Node(
-        sstmt_dummy(Stmt.Return(Expr.Call(Expr.Ident("test_render_summary"), ExprList.End))),
-        StmtList.End
-    )
-    program = StmtList.Node(
-        sstmt_dummy(Stmt.Function("main", TypeParamList.End, ParamList.End, ValueType.Int, main_body)),
-        program
-    )
+    let body = append_stmt_list(load_reporter_stmts(project_dir),
+               append_stmt_list(dedup_modules(packages), modules))
+    let program = StmtList.Node(synth_test_main(), prepend_test_externs(body))
     Result.Ok(program)
 }
 
