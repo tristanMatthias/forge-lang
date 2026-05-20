@@ -118,6 +118,8 @@ fn codegen_program(stmts: StmtList, debug_null_checks: bool, coverage: bool, sou
     decl(m, "avra_array_contains", i64t, [pt, i64t])
     decl(m, "avra_array_index_of", i64t, [pt, i64t])
     decl(m, "avra_array_reverse", pt, [pt])
+    decl(m, "avra_array_sort", pt, [pt, i64t])
+    decl(m, "avra_array_insert", pt, [pt, i64t, i64t])
 
     // ── strings ──
     decl(m, "avra_str_contains", i64t, [pt, pt])

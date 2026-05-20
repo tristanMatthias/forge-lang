@@ -1571,6 +1571,66 @@ void* avra_array_reverse(void* arr) {
     return arr;
 }
 
+// Insert `value` at index `idx`, shifting later elements right by one.
+// `idx == len` appends (matches Python's list.insert / Rust's Vec::insert).
+// Returns the same array so the call chains.
+void* avra_array_insert(void* arr, int64_t idx, int64_t value) {
+    AvraArray* a = (AvraArray*)arr;
+    if (idx < 0) idx = 0;
+    if (idx > a->len) idx = a->len;
+    if (a->len >= a->cap) {
+        a->cap *= 2;
+        if (a->cap == 0) a->cap = 8;
+        a->data = (int64_t*)realloc(a->data, a->cap * sizeof(int64_t));
+    }
+    memmove(a->data + idx + 1, a->data + idx, (size_t)(a->len - idx) * sizeof(int64_t));
+    a->data[idx] = value;
+    a->len += 1;
+    return arr;
+}
+
+// Sort context for qsort_r — packs the closure-based comparator's
+// fn_ptr into the comparator's user-data slot. qsort_r is the
+// portable way to thread state through a C qsort callback.
+typedef struct AvraSortCtx { int64_t fn_ptr; } AvraSortCtx;
+
+// rlb4: comparator wrapper around the user's closure. Returns the
+// closure's int directly so a user-supplied `(a, b) -> a - b` works
+// without normalisation. Crashes inside the closure propagate via the
+// usual signal-handler path; sort is single-threaded so partial results
+// are discarded by the runtime panic anyway.
+#if defined(__APPLE__) || defined(__FreeBSD__)
+// macOS / BSD qsort_r: comparator is (ctx, a, b) — context first.
+static int avra_array_sort_cmp(void* ctx, const void* a, const void* b) {
+    AvraSortCtx* sc = (AvraSortCtx*)ctx;
+    int64_t r = avra_closure_call_2(sc->fn_ptr,
+        *(const int64_t*)a, *(const int64_t*)b);
+    return r < 0 ? -1 : (r > 0 ? 1 : 0);
+}
+#else
+// glibc qsort_r: comparator is (a, b, ctx) — context last.
+static int avra_array_sort_cmp(const void* a, const void* b, void* ctx) {
+    AvraSortCtx* sc = (AvraSortCtx*)ctx;
+    int64_t r = avra_closure_call_2(sc->fn_ptr,
+        *(const int64_t*)a, *(const int64_t*)b);
+    return r < 0 ? -1 : (r > 0 ? 1 : 0);
+}
+#endif
+
+// In-place sort by a user comparator `(a, b) -> int` (negative ⇒
+// a before b). Returns the same array so the call chains.
+// O(N log N) via qsort_r.
+void* avra_array_sort(void* arr, int64_t cmp_fn) {
+    AvraArray* a = (AvraArray*)arr;
+    AvraSortCtx ctx = { .fn_ptr = cmp_fn };
+#if defined(__APPLE__) || defined(__FreeBSD__)
+    qsort_r(a->data, (size_t)a->len, sizeof(int64_t), &ctx, avra_array_sort_cmp);
+#else
+    qsort_r(a->data, (size_t)a->len, sizeof(int64_t), avra_array_sort_cmp, &ctx);
+#endif
+    return arr;
+}
+
 // Join a list of strings with a separator.
 const char* avra_str_join(void* arr, const char* sep) {
     AvraArray* a = (AvraArray*)arr;
@@ -3593,9 +3653,18 @@ typedef struct AvraRecordList {
     AvraRecordNode* tail;
     _Atomic int64_t count;
     pthread_mutex_t mutex;
+    // jbkk: amortised-O(1) random access. The reporter walks each
+    // record N times (one per field getter) at summary time; a naive
+    // linked-list walk per call is O(N²). We cache the (idx, node)
+    // pair of the last read — sequential walks (`for i in 0..count`)
+    // hit the cache every iteration and degrade to O(N) total.
+    // Append-only data, so the cache only ever needs to advance
+    // forward; resets when an entry is overwritten (never today).
+    AvraRecordNode* cache_node;
+    int64_t         cache_idx;
 } AvraRecordList;
 
-#define AVRA_RECORD_LIST_INIT { NULL, NULL, 0, PTHREAD_MUTEX_INITIALIZER }
+#define AVRA_RECORD_LIST_INIT { NULL, NULL, 0, PTHREAD_MUTEX_INITIALIZER, NULL, -1 }
 
 static void record_list_append(AvraRecordList* list, void* payload) {
     AvraRecordNode* node = (AvraRecordNode*)malloc(sizeof(AvraRecordNode));
@@ -3609,14 +3678,32 @@ static void record_list_append(AvraRecordList* list, void* payload) {
     pthread_mutex_unlock(&list->mutex);
 }
 
-// O(idx) walk — record counts are typically small (<100). The
-// alternative is a vector with realloc which trades memory churn for
-// O(1) lookup; the reporter reads each index exactly once per
-// summary so amortised cost is the same either way.
-static void* record_list_at(const AvraRecordList* list, int64_t idx) {
-    AvraRecordNode* node = list->head;
-    while (node && idx > 0) { node = node->next; idx--; }
-    return node ? node->payload : NULL;
+// Index into the linked list with a one-slot positional cache.
+// Sequential access (idx N+1 after idx N) is O(1). Random access
+// stays O(idx) — same as the naive walk — but only pays the full
+// walk once per index, not once per field-getter call.
+//
+// The cache is updated unconditionally on lookup; concurrent
+// readers tolerate the race (worst case: a stale cache forces an
+// extra walk on one call, then the cache is refreshed). The
+// reporter is single-threaded at summary time anyway.
+static void* record_list_at(AvraRecordList* list, int64_t idx) {
+    AvraRecordNode* node;
+    int64_t start;
+    if (list->cache_node != NULL && idx >= list->cache_idx) {
+        node = list->cache_node;
+        start = list->cache_idx;
+    } else {
+        node = list->head;
+        start = 0;
+    }
+    while (node && start < idx) { node = node->next; start++; }
+    if (node) {
+        list->cache_node = node;
+        list->cache_idx = idx;
+        return node->payload;
+    }
+    return NULL;
 }
 
 // One failed assertion's metadata. Strings are rc-allocated copies

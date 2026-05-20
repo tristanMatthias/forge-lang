@@ -281,25 +281,12 @@ export fn discover_tests(root: string) -> List<DiscoveredFile> {
 
 /// Lexicographic sort for path lists. Uses the language's string
 /// comparison so the result matches what `sort | uniq` would produce
-/// on the command line. Hand-rolled selection sort because `List<T>`
-/// doesn't yet have a `.sort()` codegen path; N is hundreds (project
-/// `.av` count), well within O(n²) territory.
+/// on the command line. O(N log N) via the runtime's qsort_r-backed
+/// `.sort()` codegen path (rlb4) — was a hand-rolled selection sort
+/// before `.sort()` existed.
 fn sort_paths(paths: List<string>) -> List<string> {
-    let n = paths.length
     mut sorted: List<string> = []
     for p in paths { sorted.push(p) }
-    mut a = 0
-    while a < n {
-        mut b = a + 1
-        while b < n {
-            if sorted[b] < sorted[a] {
-                let tmp = sorted[a]
-                sorted.set(a, sorted[b])
-                sorted.set(b, tmp)
-            }
-            b = b + 1
-        }
-        a = a + 1
-    }
+    sorted.sort((a: string, b: string) -> if a < b { -1 } else if a > b { 1 } else { 0 })
     sorted
 }

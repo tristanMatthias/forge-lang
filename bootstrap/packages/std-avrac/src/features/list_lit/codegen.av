@@ -119,6 +119,34 @@ export fn emit_list_method_call(ctx: Ctx, env: VarEnv, list_val: ptr, list_ty: V
         "reverse" -> {
             return ok_emit(ctx.call("avra_array_reverse", [list_val]), list_ty)
         }
+        // rlb4: in-place sort by a `(T, T) -> int` comparator (negative
+        // ⇒ first arg sorts earlier). Closure args typed with the
+        // element type so `(a: string, b: string) -> ...` infers
+        // correctly. Returns the same list so the call chains.
+        "sort" -> {
+            let elem_ty = vtype_list_elem(list_ty)
+            let arg_r = emit_typed_lambda_arg(ctx, env, args,
+                TypeList.Node(elem_ty, TypeList.Node(elem_ty, TypeList.End)))?
+            return ok_emit(ctx.call("avra_array_sort", [list_val, arg_r.value]), list_ty)
+        }
+        // rlb4: insert `value` at `idx`, shifting later elements
+        // right. `idx == length` appends. Mirrors Python's
+        // list.insert / Rust's Vec::insert.
+        "insert" -> {
+            let elem_ty = vtype_list_elem(list_ty)
+            match args {
+                .Node(se_idx, rest) -> match rest {
+                    .Node(se_val, _) -> {
+                        let idx_r = ctx.emit(env, se_idx.node)?
+                        let val_r = ctx.emit(env, se_val.node)?
+                        ctx.call("avra_array_insert", [list_val, idx_r.value, val_r.value])
+                        return ok_emit(list_val, list_ty)
+                    }
+                    _ -> return err_emit("list.insert expects 2 arguments: index and value")
+                }
+                _ -> return err_emit("list.insert expects 2 arguments: index and value")
+            }
+        }
         "slice" -> return emit_list_slice(ctx, env, list_val, list_ty, args)
         "join" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
