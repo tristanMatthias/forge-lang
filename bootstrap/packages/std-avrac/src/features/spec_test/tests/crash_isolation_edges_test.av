@@ -8,14 +8,11 @@
 //   * A spec whose ONLY content is a crashing `then` — no given —
 //     still gets caught and named.
 
-extern fn avra_test_raise_signal(sig: int) -> int
+// `avra_test_raise_signal`, `avra_test_ack_expected_crash`, and the
+// SIG* constants come from the inlined spec_test reporter.
 extern fn avra_test_crash_count() -> int
 extern fn avra_test_crash_spec(idx: int) -> string
 extern fn avra_test_crash_signal(idx: int) -> int
-extern fn avra_test_ack_expected_crash()
-
-const SIGABRT: int = 6
-const SIGFPE:  int = 8
 
 spec "crash isolation edges: spec with empty body wraps without crashing" {
 }

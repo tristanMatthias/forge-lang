@@ -8,16 +8,12 @@
 //   * the crashed spec's name + signal land in the C-side crash list
 //   * subsequent spec blocks pass normally — they ran AFTER the crash
 
-extern fn avra_test_raise_signal(sig: int) -> int
+// `avra_test_raise_signal`, `avra_test_ack_expected_crash`, and the
+// SIGABRT constant come from the inlined spec_test reporter. Only the
+// crash-list getters need explicit extern decls.
 extern fn avra_test_crash_count() -> int
 extern fn avra_test_crash_spec(idx: int) -> string
 extern fn avra_test_crash_signal(idx: int) -> int
-extern fn avra_test_ack_expected_crash()
-
-// SIGABRT — POSIX-standard, 6 on every platform we target. Our runtime
-// already calls abort() on null-list / out-of-bounds, so SIGABRT is the
-// signal users are most likely to hit in real spec failures.
-const SIGABRT: int = 6
 
 spec "crash isolation: a spec that aborts is caught" {
     given "first spec triggers SIGABRT mid-body" {

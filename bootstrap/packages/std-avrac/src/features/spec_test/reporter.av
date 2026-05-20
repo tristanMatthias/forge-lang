@@ -48,6 +48,37 @@ extern fn avra_selfhost_write_file_bytes(path: string, b: bytes) -> int
 // pass, fail, total, elapsed_ms, crashes).
 extern fn avra_test_summary_to_bytes(pass: int, fail: int, total: int, elapsed_ms: int, crashes: int) -> bytes
 
+// ── Test-author helpers ────────────────────────────────────────────
+//
+// Re-exposed from the reporter so spec-only test files can use them
+// without redeclaring the externs and constants in every file. The
+// reporter is inlined into every test bundle (see WHY at the top of
+// this file), so these decls land in the test program's scope for
+// free. The runner's `strip_externs` collapses duplicate decls when
+// a user file ALSO declares one of these, so adding a re-export here
+// is non-breaking.
+
+/// POSIX signal numbers — exposed as `pub const` so tests can write
+/// `avra_test_raise_signal(SIGABRT)` instead of magic 6 / 8 / ….
+/// Numbers are stable across every platform we target (Darwin/Linux,
+/// arm64/x86_64).
+export const SIGABRT: int = 6
+export const SIGFPE:  int = 8
+export const SIGSEGV: int = 11
+
+/// Raise the given signal in the current process. Intended for tests
+/// that deliberately exercise the per-spec crash guard (hkms.3) — the
+/// signal handler longjmps back to `avra_test_run_spec_guarded` and
+/// records the spec as crashed.
+extern fn avra_test_raise_signal(sig: int) -> int
+
+/// Decrement the live crash count without removing the recorded
+/// entry. Use this from a spec block that DELIBERATELY caused a crash
+/// (e.g. crash_isolation_test.av) so the shard's exit code stays
+/// green AND the "Crashed specs:" render stops walking — prior
+/// introspection of the recorded entry still works.
+extern fn avra_test_ack_expected_crash()
+
 // ── ANSI helpers (no \u escape, no formatting library — reporter
 // ships as inlined source so we can't drag in @std.avrac) ──────────
 fn ansi_green (s: string) -> string { "\x1b[32m${s}\x1b[0m" }
@@ -323,15 +354,27 @@ fn json_object(fields: List<string>) -> string {
 /// quote/backslash plus newline, tab, CR. Test spec/given/then
 /// names are author-controlled English text, file paths are
 /// filesystem strings, so we don't need full \uXXXX coverage.
+///
+/// Accumulates escape-mapped chunks in a `List<string>` and joins
+/// once at the end — `avra_str_join` is single-pass O(N), so the
+/// total cost is O(N) rather than the O(N²) `out + ch` repeated-
+/// concat shape this used to have.
 fn json_escape(s: string) -> string {
-    mut out = ""
+    mut chunks: List<string> = []
     for ch in s {
-        if ch == "\"" { out = out + "\\\"" }
-        else if ch == "\\" { out = out + "\\\\" }
-        else if ch == "\n" { out = out + "\\n" }
-        else if ch == "\r" { out = out + "\\r" }
-        else if ch == "\t" { out = out + "\\t" }
-        else { out = out + ch }
+        chunks.push(json_escape_one(ch))
     }
-    out
+    chunks.join("")
+}
+
+/// Per-character escape table. Inlined-by-hand `match` instead of a
+/// lookup map because the alphabet is five entries — the if-ladder
+/// reads faster than building a const string-keyed map.
+fn json_escape_one(ch: string) -> string {
+    if      ch == "\"" { "\\\"" }
+    else if ch == "\\" { "\\\\" }
+    else if ch == "\n" { "\\n" }
+    else if ch == "\r" { "\\r" }
+    else if ch == "\t" { "\\t" }
+    else { ch }
 }

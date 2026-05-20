@@ -2792,61 +2792,79 @@ fn run_test_command() {
 
     let inputs = compute_test_build_inputs(project_dir, accepted_paths, args)
 
-    // Cache lookup. Coverage is intentionally not cache-served at v1
-    // (it produces additional artifacts — covmap.tsv — needed by
-    // render_coverage that the binary alone doesn't carry).
-    let mut publish_fp: Fingerprint? = null
-    if !args.coverage {
-        match decide_build(inputs) {
-            .Hit(fp, bin_path) -> {
-                eprintln("[test-cache] hit ${fp_short(fp)} — ${bin_path}")
-                let exit_code = avra_process_forward(bin_path, "[]", "")
-                avra_process_exit(exit_code)
-                return
-            }
-            .Miss(fp, _, reason) -> {
-                eprintln("[test-cache] miss ${fp_short(fp)} — ${reason}")
-                publish_fp = fp
-            }
-        }
+    if args.coverage {
+        run_test_coverage_path(project_dir, inputs, accepted_paths, args)
+        return
     }
+    run_test_cached_path(inputs, accepted_paths, args)
+}
 
-    // Build the test binary in-process (same pipeline `run_build_command`
-    // will use once collapsed onto compile_test_unit's successor).
+/// Non-coverage path: cache lookup, build, publish, exec.
+///
+/// On cache hit we exec the cached binary directly — no compile, no
+/// publish. On cache miss we compile, publish the result (capturing
+/// any publish failure as a non-fatal warning), then exec.
+fn run_test_cached_path(inputs: BuildInputs, accepted_paths: List<string>, args: TestArgs) {
+    let publish_fp = check_test_cache_or_miss(inputs)  // exits process on hit
     let bin_path = match compile_test_unit(inputs, accepted_paths, args) {
         .Ok(p) -> p
         .Err(e) -> { fail(e) }
     }
-
-    // Non-coverage: publish + exec + exit.
-    if !args.coverage {
-        if publish_fp != null {
-            let fp = publish_fp!
-            let staging_id = "${inputs.unit_name}.${fp_short(fp)}"
-            let pr = record_build_result(inputs, fp, "", "", "", bin_path, staging_id)
-            if !pr.success {
-                eprintln("[test-cache] publish failed: ${pr.error}")
-            } else {
-                eprintln("[test-cache] published ${fp_short(fp)}")
-            }
-        }
-        let exit_code = avra_process_forward(bin_path, "[]", "")
-        avra_process_exit(exit_code)
-        return
+    if publish_fp != null {
+        publish_test_binary(inputs, publish_fp!, bin_path)
     }
+    avra_process_exit(avra_process_forward(bin_path, "[]", ""))
+}
 
-    // Coverage post-run: instrumented binary streams stdout while
-    // emitting profile data, then we dump + render via llvm-profdata.
+/// Look up the test bundle in the build cache. On hit: forwards to
+/// the cached binary, prints the exit code, and `avra_process_exit`s
+/// — never returns. On miss: returns the fingerprint the caller
+/// should publish under after compiling.
+fn check_test_cache_or_miss(inputs: BuildInputs) -> Fingerprint? {
+    match decide_build(inputs) {
+        .Hit(fp, bin_path) -> {
+            eprintln("[test-cache] hit ${fp_short(fp)} — ${bin_path}")
+            avra_process_exit(avra_process_forward(bin_path, "[]", ""))
+            null  // unreachable — avra_process_exit doesn't return
+        }
+        .Miss(fp, _, reason) -> {
+            eprintln("[test-cache] miss ${fp_short(fp)} — ${reason}")
+            fp
+        }
+    }
+}
+
+/// Publish a freshly-compiled test binary into the build cache under
+/// `fp`. Failures are reported but don't abort the test run — the
+/// binary is still on disk and the user can re-run.
+fn publish_test_binary(inputs: BuildInputs, fp: Fingerprint, bin_path: string) {
+    let staging_id = "${inputs.unit_name}.${fp_short(fp)}"
+    let pr = record_build_result(inputs, fp, "", "", "", bin_path, staging_id)
+    if !pr.success {
+        eprintln("[test-cache] publish failed: ${pr.error}")
+    } else {
+        eprintln("[test-cache] published ${fp_short(fp)}")
+    }
+}
+
+/// Coverage path: compile (no cache — covmap.tsv isn't binary-cached
+/// at v1), run with LLVM_PROFILE_FILE set, merge the raw profile via
+/// `llvm-profdata`, dump per-function counts as text, and render the
+/// coverage report via the Avra-side coverage::render_coverage.
+fn run_test_coverage_path(project_dir: string, inputs: BuildInputs,
+                          accepted_paths: List<string>, args: TestArgs) {
+    let bin_path = match compile_test_unit(inputs, accepted_paths, args) {
+        .Ok(p) -> p
+        .Err(e) -> { fail(e) }
+    }
     let cov_dir = "${project_dir}/build/coverage"
     let profraw = "${cov_dir}/_test.profraw"
     let profdata = "${cov_dir}/_test.profdata"
     avra_shell_exec("rm -f ${profraw}")
-    let run_opts = "{\"env\":{\"LLVM_PROFILE_FILE\":\"${profraw}\"}}"
-    let run_rc = avra_process_forward(bin_path, "[]", run_opts)
+    let run_rc = avra_process_forward(bin_path, "[]", "{\"env\":{\"LLVM_PROFILE_FILE\":\"${profraw}\"}}")
     if run_rc != 0 { eprintln("test binary exited with code ${string(run_rc)}") }
 
-    let llvm_env = avra_process_env_get("LLVM_PREFIX")
-    let llvm_prefix = if llvm_env == "" { "/opt/homebrew/opt/llvm" } else { llvm_env }
+    let llvm_prefix = resolve_llvm_prefix()
     let merge_out = avra_shell_exec("${llvm_prefix}/bin/llvm-profdata merge -sparse -o ${profdata} ${profraw} 2>&1")
     if merge_out.length > 0 { eprintln(merge_out.trim()) }
 
@@ -2855,10 +2873,16 @@ fn run_test_command() {
     // per-function counts to produce line/branch/MC-DC stats + optional LCOV).
     let dump_path = "${cov_dir}/_test.profdata.txt"
     avra_shell_exec("${llvm_prefix}/bin/llvm-profdata show --all-functions --counts ${profdata} > ${dump_path} 2>/dev/null")
-    let covmap_path = "${cov_dir}/_test.av.covmap.tsv"
     println("")
-    render_coverage(covmap_path, dump_path, args.lcov_path)
+    render_coverage("${cov_dir}/_test.av.covmap.tsv", dump_path, args.lcov_path)
     avra_process_exit(0)
+}
+
+/// LLVM toolchain prefix lookup. `LLVM_PREFIX` env wins; the default
+/// is the homebrew install path on the dev machines this targets.
+fn resolve_llvm_prefix() -> string {
+    let env = avra_process_env_get("LLVM_PREFIX")
+    if env == "" { "/opt/homebrew/opt/llvm" } else { env }
 }
 
 // Top-level dispatch for `avra docs`. Pulls argv via parse_docs_args,
