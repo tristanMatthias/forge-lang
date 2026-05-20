@@ -252,33 +252,71 @@ fn format_elapsed(ms: int) -> string {
 /// test program's scope, which doesn't include @std.avrac.json
 /// reliably until the bundle assembler always pulls in @std.
 fn render_results_json(pass: int, fail: int, total: int, elapsed_ms: int, crashes: int) -> string {
-    let header = "{\"pass\":${string(pass)},\"fail\":${string(fail)},\"total\":${string(total)},\"elapsed_ms\":${string(elapsed_ms)},\"crashes\":${string(crashes)}"
-    let fails  = render_indexed_joined(avra_test_failure_count(), ",", failure_json_entry)
-    let crashs = render_indexed_joined(crashes, ",", crash_json_entry)
-    "${header},\"failures\":[${fails}],\"crashed_specs\":[${crashs}]}"
+    json_object([
+        json_field_int("pass",        pass),
+        json_field_int("fail",        fail),
+        json_field_int("total",       total),
+        json_field_int("elapsed_ms",  elapsed_ms),
+        json_field_int("crashes",     crashes),
+        json_field_raw("failures",     "[${render_indexed_joined(avra_test_failure_count(), ",", failure_json_entry)}]"),
+        json_field_raw("crashed_specs","[${render_indexed_joined(crashes, ",", crash_json_entry)}]"),
+    ])
 }
 
 /// One failure as a JSON object. Field order matches the
 /// `render_one_failure` print so a reader scanning both surfaces
 /// sees them in the same shape.
 fn failure_json_entry(idx: int) -> string {
-    let s = json_escape(avra_test_failure_spec(idx))
-    let g = json_escape(avra_test_failure_given(idx))
-    let t = json_escape(avra_test_failure_then(idx))
-    let f = json_escape(avra_test_failure_file(idx))
-    let l = avra_test_failure_line(idx)
-    "{\"spec\":\"${s}\",\"given\":\"${g}\",\"then\":\"${t}\",\"file\":\"${f}\",\"line\":${string(l)}}"
+    json_object([
+        json_field_str("spec",  avra_test_failure_spec(idx)),
+        json_field_str("given", avra_test_failure_given(idx)),
+        json_field_str("then",  avra_test_failure_then(idx)),
+        json_field_str("file",  avra_test_failure_file(idx)),
+        json_field_int("line",  avra_test_failure_line(idx)),
+    ])
 }
 
 /// One crashed spec as a JSON object. `signal` is the raw signal
 /// number; `signal_name` is the human-readable label.
 fn crash_json_entry(idx: int) -> string {
-    let s  = json_escape(avra_test_crash_spec(idx))
-    let f  = json_escape(avra_test_crash_file(idx))
-    let l  = avra_test_crash_line(idx)
-    let sg = avra_test_crash_signal(idx)
-    let sn = json_escape(avra_test_crash_signal_name(idx))
-    "{\"spec\":\"${s}\",\"file\":\"${f}\",\"line\":${string(l)},\"signal\":${string(sg)},\"signal_name\":\"${sn}\"}"
+    json_object([
+        json_field_str("spec",        avra_test_crash_spec(idx)),
+        json_field_str("file",        avra_test_crash_file(idx)),
+        json_field_int("line",        avra_test_crash_line(idx)),
+        json_field_int("signal",      avra_test_crash_signal(idx)),
+        json_field_str("signal_name", avra_test_crash_signal_name(idx)),
+    ])
+}
+
+// ── Tiny JSON builder ───────────────────────────────────────────────
+// Avoids dragging in @std.avrac.json (see render_results_json doc) by
+// providing just enough primitive to build the test-results document
+// declaratively. Every entry produced here is already-rendered JSON;
+// `json_object` wraps a list of them in `{ }` with comma separators.
+
+fn json_field_str(name: string, value: string) -> string {
+    "\"${name}\":\"${json_escape(value)}\""
+}
+
+fn json_field_int(name: string, value: int) -> string {
+    "\"${name}\":${string(value)}"
+}
+
+/// Raw-value field — `body` is spliced unescaped. Used for nested
+/// arrays / objects already-rendered upstream.
+fn json_field_raw(name: string, body: string) -> string {
+    "\"${name}\":${body}"
+}
+
+fn json_object(fields: List<string>) -> string {
+    mut out = "{"
+    mut i = 0
+    while i < fields.length {
+        if i > 0 { out = out + "," }
+        out = out + fields[i]
+        i = i + 1
+    }
+    out + "}"
 }
 
 /// Minimal JSON string escaper — handles the printable-ASCII

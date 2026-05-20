@@ -212,12 +212,21 @@ fn try_capture_test_annot(p: Parser, entries_ref: List<DiscoveredEntry>) {
     }
     p.advance()
     if p.current_kind == Tk.LeftParen { skip_paren_group(p) }
-    while p.current_kind != Tk.Eof && p.current_kind != Tk.KwFn { p.advance() }
+    advance_until(p, Tk.KwFn)
     if p.current_kind != Tk.KwFn { return }
     p.advance()
     if p.current_kind == Tk.Identifier {
         mut entries = entries_ref
         entries.push(DiscoveredEntry.TestFn(p.current_lexeme, line))
+        p.advance()
+    }
+}
+
+/// Advance the parser until it reaches `stop` or EOF. Returns
+/// silently — caller checks `current_kind` to distinguish the
+/// match from the EOF case.
+fn advance_until(p: Parser, stop: Tk) {
+    while p.current_kind != Tk.Eof && p.current_kind != stop {
         p.advance()
     }
 }
