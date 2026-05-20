@@ -24,19 +24,22 @@ export fn spec_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult
 /// records the current spec name in C state for later failure
 /// attribution), then walk the body. No `_end_spec` call — the
 /// reporter doesn't need a close marker.
+///
+/// Body-local `let` bindings DO NOT escape to sibling spec blocks
+/// — each spec is independent, so we return the original `env`
+/// after discarding the body's accumulated VarEnv.
 fn emit_spec_block(ctx: Ctx, env: VarEnv, name: string, body: StmtList) -> Result<StmtResult, string> {
-    let name_val = ctx.global_str(name, "spec_str")
-    ctx.call("test_render_spec_start", [name_val])
-    let r = emit_spec_stmts(ctx, env, body)?
+    ctx.call("test_render_spec_start", [ctx.global_str(name, "spec_str")])
+    let _ = emit_spec_stmts(ctx, env, body)?
     ok_sr(ctx, env)
 }
 
 /// Emit a `given` block: call `test_render_given_start` and walk
 /// the body. Threads the env so `let` bindings flow into later
-/// `then` arms.
+/// `then` arms within the same given (the canonical use case:
+/// `given "..." { let x = ...; then "..." { x == 1 } }`).
 fn emit_given_block(ctx: Ctx, env: VarEnv, name: string, body: StmtList) -> Result<StmtResult, string> {
-    let name_val = ctx.global_str(name, "spec_str")
-    ctx.call("test_render_given_start", [name_val])
+    ctx.call("test_render_given_start", [ctx.global_str(name, "spec_str")])
     let new_env = emit_spec_stmts(ctx, env, body)?
     ok_sr(ctx, new_env)
 }
@@ -45,16 +48,21 @@ fn emit_given_block(ctx: Ctx, env: VarEnv, name: string, body: StmtList) -> Resu
 /// the boolean result + name + file/line to the Avra reporter's
 /// `test_render_then`. File/line lets the reporter record
 /// failures with their source location for the summary block.
+///
+/// Cond is coerced to i1 via `ctx.truthy` because tests historically
+/// relied on nonzero/non-null == truthy when the runner took an int.
+/// Without the coerce, LLVM's call coerce truncates ints/ptrs to i1
+/// (LSB), which miscounts non-bool results (e.g. `?? 0 == 8080`
+/// parses as `?? (0 == 8080)` and yields the int 8080, whose LSB
+/// is 0 → FAIL).
 fn emit_then_block(ctx: Ctx, env: VarEnv, name: string, cond: Expr, file: string, line: int) -> Result<StmtResult, string> {
     let r = ctx.emit(env, cond)?
-    // Coerce cond to i1: tests historically relied on nonzero/non-null
-    // == truthy because the original C-side runner took an int. Without
-    // this, LLVM's call coerce truncates ints/ptrs to i1 (LSB), which
-    // miscounts non-bool results (e.g. `?? 0 == 8080` parses as
-    // `?? (0 == 8080)` and yields the int 8080, whose LSB is 0 → FAIL).
-    let cond_bool = ctx.truthy(r.value, "then_truthy")
-    let file_val = ctx.global_str(file, "spec_file")
-    ctx.call("test_render_then", [ctx.global_str(name, "spec_str"), cond_bool, file_val, ctx.i64(line)])
+    ctx.call("test_render_then", [
+        ctx.global_str(name, "spec_str"),
+        ctx.truthy(r.value, "then_truthy"),
+        ctx.global_str(file, "spec_file"),
+        ctx.i64(line),
+    ])
     ok_sr(ctx, env)
 }
 
@@ -77,27 +85,27 @@ fn emit_spec_stmts(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<VarEnv, str
 }
 
 /// Per-statement spec emitter. SpecBlock / GivenBlock / ThenBlock
-/// dispatch to their dedicated emitters; anything else (regular
+/// route through the shared dispatcher (`spec_emit_stmt`) and the
+/// StmtResult is unwrapped back to a VarEnv. Anything else (regular
 /// `let`, `mut`, function calls inside `given`) is wrapped and
 /// emitted as a normal block-loop statement.
 fn emit_spec_single(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<VarEnv, string> {
+    if is_spec_arm(stmt) {
+        let sr = spec_emit_stmt(ctx, env, stmt)?
+        return ok_stmt(sr.env)
+    }
+    let wrapped = StmtList.Node(sstmt_dummy(stmt), StmtList.End)
+    emit_block_loop(ctx, env, wrapped, ctx.i64(0), .Unknown)?
+    ok_stmt(env)
+}
+
+/// True iff `stmt` is one of the three spec-test arm variants that
+/// `spec_emit_stmt` handles. Centralised so adding a fourth arm
+/// (`@before` / `@after` hooks, etc.) needs only the dispatcher and
+/// this predicate updated, not the per-stmt walker.
+fn is_spec_arm(stmt: Stmt) -> bool {
     match stmt {
-        .SpecBlock(name, body) -> {
-            let sr = emit_spec_block(ctx, env, name, body)?
-            ok_stmt(sr.env)
-        }
-        .GivenBlock(name, body) -> {
-            let sr = emit_given_block(ctx, env, name, body)?
-            ok_stmt(sr.env)
-        }
-        .ThenBlock(name, cond) -> {
-            let sr = emit_then_block(ctx, env, name, cond, ctx.source_file, ctx.source_line)?
-            ok_stmt(sr.env)
-        }
-        _ -> {
-            let wrapped = StmtList.Node(sstmt_dummy(stmt), StmtList.End)
-            emit_block_loop(ctx, env, wrapped, ctx.i64(0), .Unknown)?
-            ok_stmt(env)
-        }
+        .SpecBlock(_, _) or .GivenBlock(_, _) or .ThenBlock(_, _) -> true
+        _ -> false
     }
 }
