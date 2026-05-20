@@ -167,9 +167,8 @@ fn red_note(fail: int, crashes: int) -> string {
 }
 
 /// Walk indices 0..count-1, invoking `render_one` for each. Shared
-/// shape used by `render_failure_section` and `render_crash_section`
-/// (and the JSON serialisers via `render_indexed_joined`).
-fn render_indexed(count: int, render_one: fn(int) -> int) {
+/// shape used by `render_failure_section` and `render_crash_section`.
+fn render_indexed(count: int, render_one: fn(int) -> void) {
     mut i = 0
     while i < count {
         render_one(i)
@@ -193,39 +192,36 @@ fn render_indexed_joined(count: int, sep: string, render_one: fn(int) -> string)
     out
 }
 
-/// One failure entry — used by both `render_failure_section` (live)
-/// and the per-index walk. Fetches the C-side fields and prints the
+/// Two-line failure/crash entry renderer. `bullet` is the leading
+/// glyph (✗ for fails, 💥 for crashes); `chain` is the spec ⁄ given
+/// ⁄ then breadcrumb; `file:line` is the optional source location
+/// (printed as a dimmed `at` line when present).
+fn render_entry_lines(bullet: string, chain: string, file: string, line: int) {
+    println("  ${ansi_red(bullet)} ${chain}")
+    if file != "" {
+        println("    ${ansi_dim("at ${file}:${string(line)}")}")
+    }
+}
+
+/// One failure entry — fetches the C-side fields and prints the
 /// spec/given/then chain plus its source location.
-fn render_one_failure(idx: int) -> int {
+fn render_one_failure(idx: int) {
     let s = avra_test_failure_spec(idx)
     let g = avra_test_failure_given(idx)
     let t = avra_test_failure_then(idx)
-    let f = avra_test_failure_file(idx)
-    let l = avra_test_failure_line(idx)
     let chain = if g != "" {
         "${s} / ${ansi_dim("given")} ${g} / ${ansi_dim("then")} ${t}"
     } else {
         "${s} / ${ansi_dim("then")} ${t}"
     }
-    println("  ${ansi_red("✗")} ${chain}")
-    if f != "" {
-        println("    ${ansi_dim("at ${f}:${string(l)}")}")
-    }
-    0
+    render_entry_lines("✗", chain, avra_test_failure_file(idx), avra_test_failure_line(idx))
 }
 
 /// hkms.3 sibling of render_one_failure — spec name, signal label,
 /// source location.
-fn render_one_crash(idx: int) -> int {
-    let s = avra_test_crash_spec(idx)
-    let f = avra_test_crash_file(idx)
-    let l = avra_test_crash_line(idx)
-    let sn = avra_test_crash_signal_name(idx)
-    println("  ${ansi_red("💥")} ${s} ${ansi_dim("(${sn})")}")
-    if f != "" {
-        println("    ${ansi_dim("at ${f}:${string(l)}")}")
-    }
-    0
+fn render_one_crash(idx: int) {
+    let chain = "${avra_test_crash_spec(idx)} ${ansi_dim("(${avra_test_crash_signal_name(idx)})")}"
+    render_entry_lines("💥", chain, avra_test_crash_file(idx), avra_test_crash_line(idx))
 }
 
 // ── Time formatting ─────────────────────────────────────────────────

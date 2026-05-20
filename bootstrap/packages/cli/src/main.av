@@ -2135,13 +2135,12 @@ fn append_shared_sources(sources_ref: List<string>, project_dir: string,
 /// shards don't each fork-exec `find`; falls back to a shell `find`
 /// for standalone shard runs.
 fn std_avra_listing(project_dir: string) -> List<string> {
-    let std_root = find_packages_dir(project_dir) + "std-avrac/src"
     let listing_file = avra_process_env_get("AVRA_STD_LISTING_FILE")
-    let raw = if listing_file != "" && avra_selfhost_file_exists(listing_file) != 0 {
-        avra_selfhost_read_file(listing_file)
-    } else {
-        avra_shell_exec("find ${std_root} -name '*.av' -type f 2>/dev/null | sort")
+    if listing_file != "" && avra_selfhost_file_exists(listing_file) != 0 {
+        return read_listing_file_paths(listing_file)
     }
+    let std_root = find_packages_dir(project_dir) + "std-avrac/src"
+    let raw = avra_shell_exec("find ${std_root} -name '*.av' -type f 2>/dev/null | sort")
     mut out: List<string> = []
     for p in raw.split("\n") {
         if p != "" { out.push(p) }
@@ -2505,18 +2504,28 @@ impl Totals {
 // and passing the rolled digest as a single synthetic `@@fp:<hex>`
 // source entry collapses that work.
 fn compute_test_universe_fp(listing_file: string, reporter_path: string, runtime_o: string, llvm_wrap_o: string) -> string {
-    mut composed = ""
-    if avra_selfhost_file_exists(listing_file) != 0 {
-        let lst = avra_selfhost_read_file(listing_file)
-        for p in lst.split("\n") {
-            if p == "" { continue }
-            composed = composed + sha256_file(p) + "\n"
-        }
+    let std_paths = if avra_selfhost_file_exists(listing_file) != 0 {
+        read_listing_file_paths(listing_file)
+    } else {
+        []
     }
-    composed = composed + sha256_file(reporter_path) + "\n"
-    composed = composed + sha256_file(runtime_o) + "\n"
-    composed = composed + sha256_file(llvm_wrap_o) + "\n"
-    sha256_hex(composed)
+    mut paths = std_paths
+    paths.push(reporter_path)
+    paths.push(runtime_o)
+    paths.push(llvm_wrap_o)
+    sha256_hex(list_fold(paths, "", (acc: string, p: string) -> acc + sha256_file(p) + "\n"))
+}
+
+/// Read a newline-separated path listing produced by `find ... | sort`.
+/// Drops blank lines. Shared between the orchestrator's universe-fp
+/// hasher and `make_test_inputs`'s shard-side fallback.
+fn read_listing_file_paths(listing_file: string) -> List<string> {
+    let raw = avra_selfhost_read_file(listing_file)
+    mut out: List<string> = []
+    for p in raw.split("\n") {
+        if p != "" { out.push(p) }
+    }
+    out
 }
 
 // Read env vars, resolve the compiler, prepare the log dir, kick off
@@ -2531,74 +2540,93 @@ fn compute_test_universe_fp(listing_file: string, reporter_path: string, runtime
 // AVRA_USE_METADATA_LIB=0 (or AVRA_SKIP_PREBUILD=1) to opt out.
 fn prepare_test_run(project_dir: string, args: TestArgs) -> RunCtx {
     let compiler_path = resolve_compiler_path(project_dir)
-    let env_jobs = avra_process_env_get("AVRA_JOBS")
-    let jobs = if env_jobs != "" { avra_parse_int(env_jobs) } else { 8 }
+    let jobs = parse_jobs_env(8)
     let log_dir = "${project_dir}/build/test_shards"
     avra_shell_exec("rm -rf '${log_dir}' && mkdir -p '${log_dir}'")
 
-    // P6 library-mode pre-build. Each @std/* package's .meta.bin +
-    // .o is freshened before shards dispatch so AVRA_USE_METADATA=1
-    // can link against pre-built producer objects (paired flag —
-    // metadata-only shards inline nothing for @std/*).
-    //
-    // Serial (jobs=1) because workspace packages with [dependencies]
-    // sub-build their own deps; concurrent outer+inner runs would
-    // race on the same per-dep cache slot. Topo-sort follow-up
-    // tracked separately.
-    let want_meta = avra_process_env_get("AVRA_USE_METADATA_LIB") != "0"
-    let skip_prebuild = avra_process_env_get("AVRA_SKIP_PREBUILD") != ""
-    mut lib_objs_env = ""
-    if want_meta && !skip_prebuild {
-        let pb_rc = pre_build_workspace_std_packages(project_dir, compiler_path, jobs)
-        if pb_rc != 0 {
-            eprintln("[per-file] pre-build of @std/* libs failed (rc=${string(pb_rc)}) — disabling metadata fast-path for this run")
-        } else {
-            lib_objs_env = collect_workspace_lib_objs(project_dir)
-        }
-    }
-
-    // Pre-compute the @std source listing ONCE. Each shard's
-    // make_test_inputs() otherwise forks `find` over the same ~275
-    // files — 7ms × 451 ≈ 3s of CPU saved.
-    let std_root = find_packages_dir(project_dir) + "std-avrac/src"
-    let listing_file = "${log_dir}/std-listing.txt"
-    avra_shell_exec("find '${std_root}' -name '*.av' -type f 2>/dev/null | sort > '${listing_file}'")
-
-    // hkms.1.1 perf pass: pre-roll every shared input (every @std
-    // file + reporter + runtime objs) into ONE universe fingerprint
-    // here so each shard skips ~280 sidecar reads in fp_for_unit.
-    // make_test_inputs picks this up from AVRA_STD_UNIVERSE_FP and
-    // emits a single `@@fp:<hex>` synthetic source-list entry that
-    // fp.av's hash_source_entry recognises without I/O. The shared
-    // inputs are identical across shards in one `make test` run,
-    // and the rolled hash captures every byte that would otherwise
-    // be sha256'd-per-shard — same cache-invalidation contract.
-    let reporter_path = test_reporter_path(project_dir)
-    let build_dir = "${project_dir}/build"
-    let runtime_o = "${build_dir}/runtime.o"
-    let llvm_wrap_o = "${build_dir}/llvm_wrapper.o"
-    let universe_fp = compute_test_universe_fp(listing_file, reporter_path, runtime_o, llvm_wrap_o)
-
-    // Bake the per-shard env once. AVRA_SKIP_ENSURE_BS2=1 stops the
-    // diagnose.sh inside shards from re-running the rebuild check
-    // (10 concurrent rebuilds triggered jetsam mass-kills before).
-    let env_prefix =
-        (if want_meta { "AVRA_USE_METADATA=1 " } else { "" }) +
-        (if lib_objs_env == "" { "" } else { "AVRA_LIB_OBJS='${lib_objs_env}' " }) +
-        "AVRA_STD_LISTING_FILE='${listing_file}' " +
-        "AVRA_STD_UNIVERSE_FP='${universe_fp}' " +
-        "AVRA_SKIP_ENSURE_BS2=1 "
-
-    let filter_arg = if args.filter == "" { "" } else { " --filter '${args.filter}'" }
+    let lib = maybe_prebuild_std_libs(project_dir, compiler_path, jobs)
+    let listing_file = compute_std_listing_file(project_dir, log_dir)
+    let universe_fp = compute_test_universe_fp(listing_file, test_reporter_path(project_dir),
+                                               "${project_dir}/build/runtime.o",
+                                               "${project_dir}/build/llvm_wrapper.o")
 
     RunCtx {
         log_dir: log_dir,
         compiler_path: compiler_path,
-        env_prefix: env_prefix,
-        filter_arg: filter_arg,
-        want_meta: want_meta,
+        env_prefix: build_shard_env_prefix(lib, listing_file, universe_fp),
+        filter_arg: if args.filter == "" { "" } else { " --filter '${args.filter}'" },
+        want_meta: lib.want_meta,
         jobs: jobs,
     }
+}
+
+/// Concurrency knob — `AVRA_JOBS` env, falling back to `default_jobs`.
+fn parse_jobs_env(default_jobs: int) -> int {
+    let env_jobs = avra_process_env_get("AVRA_JOBS")
+    if env_jobs == "" { default_jobs } else { avra_parse_int(env_jobs) }
+}
+
+/// Outcome of the optional @std/* pre-build pass. `want_meta` stays
+/// true even when the pre-build fails so shards still TRY the metadata
+/// fast-path; `lib_objs` only populates on success.
+type LibMode = { want_meta: bool, lib_objs: string }
+
+/// P6 library-mode pre-build. Each @std/* package's .meta.bin + .o
+/// is freshened before shards dispatch so AVRA_USE_METADATA=1 can
+/// link against pre-built producer objects (paired flag — metadata-
+/// only shards inline nothing for @std/*).
+///
+/// Serial (jobs=1 implied by the helper) because workspace packages
+/// with [dependencies] sub-build their own deps; concurrent
+/// outer+inner runs would race on the same per-dep cache slot.
+fn maybe_prebuild_std_libs(project_dir: string, compiler_path: string, jobs: int) -> LibMode {
+    let want_meta = avra_process_env_get("AVRA_USE_METADATA_LIB") != "0"
+    let skip = avra_process_env_get("AVRA_SKIP_PREBUILD") != ""
+    if !want_meta || skip { return LibMode { want_meta, lib_objs: "" } }
+    let rc = pre_build_workspace_std_packages(project_dir, compiler_path, jobs)
+    if rc != 0 {
+        eprintln("[per-file] pre-build of @std/* libs failed (rc=${string(rc)}) — disabling metadata fast-path for this run")
+        return LibMode { want_meta, lib_objs: "" }
+    }
+    LibMode { want_meta, lib_objs: collect_workspace_lib_objs(project_dir) }
+}
+
+/// Pre-compute the @std source listing ONCE. Each shard's
+/// `make_test_inputs()` otherwise forks `find` over the same ~275
+/// files — 7ms × 451 ≈ 3s of CPU saved.
+fn compute_std_listing_file(project_dir: string, log_dir: string) -> string {
+    let std_root = find_packages_dir(project_dir) + "std-avrac/src"
+    let listing_file = "${log_dir}/std-listing.txt"
+    avra_shell_exec("find '${std_root}' -name '*.av' -type f 2>/dev/null | sort > '${listing_file}'")
+    listing_file
+}
+
+/// One environment-variable assignment for the shard command line.
+/// `value=""` means "skip this var" — used by callers that conditionally
+/// include LibObjs / etc.
+type EnvAssignment = { name: string, value: string }
+
+/// Render `[EnvAssignment, ...]` into a shell-prefix string:
+///   `NAME1='val1' NAME2='val2' ...` (trailing space included so
+/// the caller can concatenate the next token directly). Skips
+/// entries whose value is empty so optional vars stay unset.
+fn format_env_prefix(vars: List<EnvAssignment>) -> string {
+    list_fold(vars, "", (acc: string, v: EnvAssignment) -> {
+        if v.value == "" { acc } else { "${acc}${v.name}='${v.value}' " }
+    })
+}
+
+/// Bake the per-shard env once. AVRA_SKIP_ENSURE_BS2=1 stops the
+/// diagnose.sh inside shards from re-running the rebuild check (10
+/// concurrent rebuilds triggered jetsam mass-kills before).
+fn build_shard_env_prefix(lib: LibMode, listing_file: string, universe_fp: string) -> string {
+    format_env_prefix([
+        EnvAssignment { name: "AVRA_USE_METADATA",    value: if lib.want_meta { "1" } else { "" } },
+        EnvAssignment { name: "AVRA_LIB_OBJS",        value: lib.lib_objs },
+        EnvAssignment { name: "AVRA_STD_LISTING_FILE", value: listing_file },
+        EnvAssignment { name: "AVRA_STD_UNIVERSE_FP",  value: universe_fp },
+        EnvAssignment { name: "AVRA_SKIP_ENSURE_BS2",  value: "1" },
+    ])
 }
 
 // Fan out shards via `spawn { }`, capping concurrency at `jobs` by
@@ -2621,20 +2649,41 @@ fn prepare_test_run(project_dir: string, args: TestArgs) -> RunCtx {
 fn dispatch_shards(shards: List<Shard>, jobs: int) {
     mut start = 0
     while start < shards.length {
-        let end = if start + jobs > shards.length { shards.length } else { start + jobs }
-        mut handles: List<int> = []
-        mut k = start
-        while k < end {
-            let s = shards[k]
-            handles = handles.push(spawn {
-                let _ = avra_shell_exec(s.cmd)
-                0
-            })
-            k = k + 1
-        }
-        for h in handles { let _ = h.await }
+        let end = min_int(start + jobs, shards.length)
+        await_all(dispatch_chunk(shards, start, end))
         start = end
     }
+}
+
+/// Spawn one chunk of `[start, end)` shards in parallel. Returns the
+/// `Task` handles so the caller can decide when to await — useful for
+/// the jetsam-retry path which wants to inspect victims before
+/// joining.
+fn dispatch_chunk(shards: List<Shard>, start: int, end: int) -> List<int> {
+    mut handles: List<int> = []
+    mut k = start
+    while k < end {
+        let s = shards[k]
+        handles.push(spawn {
+            let _ = avra_shell_exec(s.cmd)
+            0
+        })
+        k = k + 1
+    }
+    handles
+}
+
+/// Drain a list of spawned task handles, discarding their return
+/// values. Each `spawn { … }` returns an int handle and `h.await`
+/// blocks until that task finishes.
+fn await_all(handles: List<int>) {
+    for h in handles { let _ = h.await }
+}
+
+/// Smaller of two ints — saves repeating
+/// `if a < b { a } else { b }` in the chunked-dispatch loop.
+fn min_int(a: int, b: int) -> int {
+    if a < b { a } else { b }
 }
 
 // Cold-rebuild jetsam recovery: any shard whose log is empty got

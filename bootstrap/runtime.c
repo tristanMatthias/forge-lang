@@ -509,6 +509,35 @@ static void avra_runtime_errorf(const char* fmt, ...) {
 static _Thread_local sigjmp_buf _spec_guard_jmp;
 static _Thread_local volatile sig_atomic_t _spec_guard_active = 0;
 
+// ─── Signal naming ────────────────────────────────────────────────
+// Used by both the unguarded crash dump (avra_signal_handler) and
+// the spec-guard's crash record (avra_signal_label). Centralising
+// the table here keeps the two views from drifting.
+
+static const char* avra_signal_short_name(int sig) {
+    switch (sig) {
+        case SIGSEGV: return "SIGSEGV";
+        case SIGBUS:  return "SIGBUS";
+        case SIGABRT: return "SIGABRT";
+        case SIGFPE:  return "SIGFPE";
+        case SIGILL:  return "SIGILL";
+        case SIGTRAP: return "SIGTRAP";
+        default:      return "unknown";
+    }
+}
+
+static const char* avra_signal_description(int sig) {
+    switch (sig) {
+        case SIGSEGV: return "segmentation fault";
+        case SIGBUS:  return "bus error";
+        case SIGABRT: return "abort";
+        case SIGFPE:  return "arithmetic error";
+        case SIGILL:  return "illegal instruction";
+        case SIGTRAP: return "debug trap";
+        default:      return "unknown signal";
+    }
+}
+
 // ─── Signal handler ───────────────────────────────────────────────
 
 static void avra_signal_handler(int sig, siginfo_t *si, void *context) {
@@ -523,13 +552,7 @@ static void avra_signal_handler(int sig, siginfo_t *si, void *context) {
     // write(), _exit(), backtrace(), dladdr(), snprintf() into stack buffers.
     // NO fprintf, NO malloc, NO stdio.
 
-    const char* name = sig == SIGSEGV ? "segmentation fault"
-                     : sig == SIGBUS  ? "bus error"
-                     : sig == SIGABRT ? "abort"
-                     : sig == SIGFPE  ? "arithmetic error"
-                     : sig == SIGILL  ? "illegal instruction"
-                     : sig == SIGTRAP ? "debug trap"
-                     : "unknown signal";
+    const char* name = avra_signal_description(sig);
 
     // Distinguish stack overflow from null dereference by checking fault address.
     if (sig == SIGSEGV && si && si->si_addr) {
@@ -3652,20 +3675,19 @@ int64_t avra_test_failure_count(void) {
 }
 
 // Per-field getter macro — every Avra-side getter follows the
-// `lookup → null guard → return field-or-default` pattern. The macro
-// keeps each one a one-liner without obscuring the field access.
-#define AVRA_FAIL_FIELD(field, default_) do { \
-        AvraTestFailure* f = (AvraTestFailure*)record_list_at(&_failures, idx); \
-        return f ? f->field : (default_); \
+// `lookup → null guard → return field-or-default` pattern. Parametric
+// over the record struct type AND the list global so failures, crashes,
+// and any future record stream share one boilerplate-collapser.
+#define AVRA_RECORD_FIELD(StructT, list, field, default_) do { \
+        StructT* r = (StructT*)record_list_at(&(list), idx); \
+        return r ? r->field : (default_); \
     } while (0)
 
-const char* avra_test_failure_spec (int64_t idx) { AVRA_FAIL_FIELD(spec,      ""); }
-const char* avra_test_failure_given(int64_t idx) { AVRA_FAIL_FIELD(given,     ""); }
-const char* avra_test_failure_then (int64_t idx) { AVRA_FAIL_FIELD(then_name, ""); }
-const char* avra_test_failure_file (int64_t idx) { AVRA_FAIL_FIELD(file,      ""); }
-int64_t     avra_test_failure_line (int64_t idx) { AVRA_FAIL_FIELD(line,       0); }
-
-#undef AVRA_FAIL_FIELD
+const char* avra_test_failure_spec (int64_t idx) { AVRA_RECORD_FIELD(AvraTestFailure, _failures, spec,      ""); }
+const char* avra_test_failure_given(int64_t idx) { AVRA_RECORD_FIELD(AvraTestFailure, _failures, given,     ""); }
+const char* avra_test_failure_then (int64_t idx) { AVRA_RECORD_FIELD(AvraTestFailure, _failures, then_name, ""); }
+const char* avra_test_failure_file (int64_t idx) { AVRA_RECORD_FIELD(AvraTestFailure, _failures, file,      ""); }
+int64_t     avra_test_failure_line (int64_t idx) { AVRA_RECORD_FIELD(AvraTestFailure, _failures, line,       0); }
 
 // Current spec/given "context" — set by the codegen-emitted
 // `test_render_spec_start` / `test_render_given_start` calls so
@@ -3710,18 +3732,24 @@ typedef struct AvraTestCrash {
 
 static AvraRecordList _crashes = AVRA_RECORD_LIST_INIT;
 
-// Human-readable name for the signal numbers our handler catches.
-// Stable single-word labels so the reporter can render them inline.
+// Per-signal label buffer pool — one slot per supported signal so the
+// "SIGNAME (description)" string returned by `avra_signal_label` has
+// a stable storage location. The reporter holds the pointer past the
+// call (via `record_list_at(&_crashes, ...)`) so a thread-local stack
+// buffer would dangle.
+static char _signal_label_buf[NSIG][48] = {{0}};
+
+// Render "SIGNAME (description)" for the spec-guard crash record.
+// Composes the parts from the same source-of-truth `avra_signal_*`
+// helpers the unguarded signal handler uses. Idempotent — first call
+// per signal populates the buffer, subsequent calls re-use it.
 static const char* avra_signal_label(int sig) {
-    switch (sig) {
-        case SIGSEGV: return "SIGSEGV (segmentation fault)";
-        case SIGBUS:  return "SIGBUS (bus error)";
-        case SIGABRT: return "SIGABRT (abort)";
-        case SIGFPE:  return "SIGFPE (arithmetic error)";
-        case SIGILL:  return "SIGILL (illegal instruction)";
-        case SIGTRAP: return "SIGTRAP (debug trap)";
-        default:      return "unknown signal";
+    if (sig < 0 || sig >= NSIG) return "unknown signal";
+    if (_signal_label_buf[sig][0] == '\0') {
+        snprintf(_signal_label_buf[sig], sizeof(_signal_label_buf[sig]),
+                 "%s (%s)", avra_signal_short_name(sig), avra_signal_description(sig));
     }
+    return _signal_label_buf[sig];
 }
 
 void avra_test_record_crash(const char* spec, const char* file,
@@ -3748,22 +3776,17 @@ void avra_test_ack_expected_crash(void) {
     atomic_fetch_sub(&_crashes.count, 1);
 }
 
-#define AVRA_CRASH_FIELD(field, default_) do { \
-        AvraTestCrash* c = (AvraTestCrash*)record_list_at(&_crashes, idx); \
-        return c ? c->field : (default_); \
-    } while (0)
-
-const char* avra_test_crash_spec  (int64_t idx) { AVRA_CRASH_FIELD(spec, ""); }
-const char* avra_test_crash_file  (int64_t idx) { AVRA_CRASH_FIELD(file, ""); }
-int64_t     avra_test_crash_line  (int64_t idx) { AVRA_CRASH_FIELD(line,  0); }
-int64_t     avra_test_crash_signal(int64_t idx) { AVRA_CRASH_FIELD(signal, 0); }
+const char* avra_test_crash_spec  (int64_t idx) { AVRA_RECORD_FIELD(AvraTestCrash, _crashes, spec,   ""); }
+const char* avra_test_crash_file  (int64_t idx) { AVRA_RECORD_FIELD(AvraTestCrash, _crashes, file,   ""); }
+int64_t     avra_test_crash_line  (int64_t idx) { AVRA_RECORD_FIELD(AvraTestCrash, _crashes, line,    0); }
+int64_t     avra_test_crash_signal(int64_t idx) { AVRA_RECORD_FIELD(AvraTestCrash, _crashes, signal,  0); }
 
 const char* avra_test_crash_signal_name(int64_t idx) {
     AvraTestCrash* c = (AvraTestCrash*)record_list_at(&_crashes, idx);
     return c ? avra_signal_label((int)c->signal) : "";
 }
 
-#undef AVRA_CRASH_FIELD
+#undef AVRA_RECORD_FIELD
 
 // Testing helper for the spec-guard mechanism itself: raise a
 // process-wide signal that the guard is supposed to catch. Avra has
