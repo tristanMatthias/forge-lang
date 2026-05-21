@@ -6,7 +6,7 @@
 // Tracked under forge-crafting-intepreters-iinq.
 
 use core.{
-    Stmt, StmtList, SStmt, sstmt_at, Expr, ParamList, FieldList, VariantList, TypeParamList, ValueType,
+    Stmt, StmtList, SStmt, sstmt_at, Expr, ParamList, FieldList, VariantList, TypeParamEntry, ValueType,
     Annotation, stmt_unwrap,
 }
 use build.metadata.{
@@ -246,16 +246,6 @@ fn extract_inherent_methods(stmts: StmtList) -> List<MetaTraitMethod> {
     out
 }
 
-/// True when `tp` is non-empty — i.e. the fn declares at least one
-/// type parameter. Used by the P4 extractor to filter generic fns
-/// from the rest of the public surface for body serialization.
-fn type_params_present(tp: TypeParamList) -> bool {
-    match tp {
-        .End -> false
-        _ -> true
-    }
-}
-
 fn walk_stmts(acc: ExtractAcc, stmts: StmtList, current_module: string, exported: bool) -> ExtractAcc {
     match stmts {
         .End -> acc
@@ -330,7 +320,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                 sym_id: sym_id_for(qn),
                 kind: TypeDeclKind.ShapeDecl,
                 name: qn,
-                type_params: TypeParamList.End,
+                type_params: [],
                 fields: fields,
                 variants: VariantList.End,
                 inner_vt: ValueType.Unknown,
@@ -358,7 +348,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                 sym_id: sym_id_for(qn),
                 kind: TypeDeclKind.NewtypeDecl,
                 name: qn,
-                type_params: TypeParamList.End,
+                type_params: [],
                 fields: FieldList.End,
                 variants: VariantList.End,
                 inner_vt: inner_vt,
@@ -372,7 +362,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                 sym_id: sym_id_for(qn),
                 kind: TypeDeclKind.UnionAliasDecl,
                 name: qn,
-                type_params: TypeParamList.End,
+                type_params: [],
                 fields: FieldList.End,
                 variants: VariantList.End,
                 inner_vt: type_vt,
@@ -386,7 +376,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                 sym_id: sym_id_for(qn),
                 kind: TypeDeclKind.TraitDecl,
                 name: qn,
-                type_params: TypeParamList.End,
+                type_params: [],
                 fields: FieldList.End,
                 variants: VariantList.End,
                 inner_vt: ValueType.Unknown,
@@ -411,7 +401,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
             // at consume time. Non-generic exports stay extern at the
             // call site (no body needed for typeck; the linker resolves
             // against the producer's .o). Private fns never escape.
-            if exported && type_params_present(type_params) {
+            if exported && type_params.length > 0 {
                 let body_entry = GenericBodyEntry {
                     qualified_name: qn,
                     source: fmt_stmt_list(body, 0),
@@ -441,7 +431,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                 name: qn,
                 exported: true,
                 is_extern: true,
-                type_params: TypeParamList.End,
+                type_params: [],
                 params: params,
                 ret: ret_vt,
             }

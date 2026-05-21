@@ -1,7 +1,7 @@
 // WHY: parses `type Foo = { ... }` and `shape Foo = { ... }` declarations
 // and the supporting field grammars (declaration + literal init).
 
-use core.{Stmt, Expr, FieldList, FieldInitList, SExpr, sexpr, TypeParamList, TypeExpr, ValueType, type_expr_to_vtype}
+use core.{Stmt, Expr, FieldList, FieldInitList, SExpr, sexpr, TypeParamEntry, TypeExpr, ValueType, type_expr_to_vtype}
 use parse.{Parser}
 use core.{Tk}
 
@@ -21,10 +21,10 @@ impl Parser {
             self.consume_identifier("expected type name")?
         }
         // Optional generic parameters: type Foo<T, U> = { ... }
-        let tp = if self.check(Tk.Less) {
+        let tp: List<TypeParamEntry> = if self.check(Tk.Less) {
             self.parse_type_params()
         } else {
-            TypeParamList.End
+            []
         }
         if !self.consume(Tk.Equal, "expected `=` after type name") {
             return null

@@ -1,7 +1,7 @@
 // WHY: parses `enum Foo { ... }` declarations and the variant
 // list syntax (with optional payload fields).
 
-use core.{Stmt, FieldList, VariantList, TypeParamList, ValueType, type_expr_to_vtype}
+use core.{Stmt, FieldList, VariantList, TypeParamEntry, ValueType, type_expr_to_vtype}
 use parse.{Parser}
 use core.{Tk}
 
@@ -10,10 +10,10 @@ impl Parser {
         self.advance()
         let name = self.consume_identifier("expected enum name")?
         // Optional generic parameters: enum Result<T, E> { ... }
-        let tp = if self.check(Tk.Less) {
+        let tp: List<TypeParamEntry> = if self.check(Tk.Less) {
             self.parse_type_params()
         } else {
-            TypeParamList.End
+            []
         }
         if !self.consume(Tk.LeftBrace, "expected `{` after enum name") {
             return null

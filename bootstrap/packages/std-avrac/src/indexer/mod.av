@@ -18,7 +18,7 @@ use core.{avra_selfhost_read_file, avra_shell_exec}
 use core.{Stmt, StmtList, SStmt,
               Expr, SExpr, ExprList,
               ParamList, FieldList,
-              VariantList, ValueType, TypeParamList,
+              VariantList, ValueType, TypeParamEntry, render_type_param_list,
               vtype_display, vtype_render_full,
               find_annotation, doc_string_for, stmt_unwrap}
 use parse.{parse_program_source}
@@ -403,8 +403,8 @@ fn has_export_annotation(s: Stmt) -> bool {
 /// Render a fn declaration as a single-line signature string used
 /// by the docs renderer header. Handles type params, fully typed
 /// params, and the `-> Ret` clause (suppressed when ret is void).
-fn render_fn_signature(name: string, tp: TypeParamList, params: ParamList, ret: ValueType) -> string {
-    let tp_str = render_type_params(tp)
+fn render_fn_signature(name: string, tp: List<TypeParamEntry>, params: ParamList, ret: ValueType) -> string {
+    let tp_str = render_type_param_list(tp)
     let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
     let params_str = render_params_typed(params)
     let ret_str = vtype_display(ret)
@@ -415,8 +415,8 @@ fn render_fn_signature(name: string, tp: TypeParamList, params: ParamList, ret: 
 /// Render a `type Foo<T, U>` header without a body. Used as the
 /// prefix when `render_type_decl_with_fields` adds the body, and
 /// as the standalone header for shape decls.
-fn render_type_decl(name: string, tp: TypeParamList) -> string {
-    let tp_str = render_type_params(tp)
+fn render_type_decl(name: string, tp: List<TypeParamEntry>) -> string {
+    let tp_str = render_type_param_list(tp)
     let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
     "type ${name}${tp_part}"
 }
@@ -425,7 +425,7 @@ fn render_type_decl(name: string, tp: TypeParamList) -> string {
 /// `type Point = { x: int, y: int }`. Used by the indexer so
 /// `docs --gen` can recover field names without re-parsing the
 /// source.
-fn render_type_decl_with_fields(name: string, tp: TypeParamList, fields: FieldList) -> string {
+fn render_type_decl_with_fields(name: string, tp: List<TypeParamEntry>, fields: FieldList) -> string {
     let header = render_type_decl(name, tp)
     let body = render_field_decls(fields)
     if body == "" { return header }
@@ -450,20 +450,6 @@ fn render_field_decls_tail(fields: FieldList) -> string {
     match fields {
         .End -> ""
         .Node(name, vt, next) -> ", ${name}: ${vtype_display(vt)}${render_field_decls_tail(next)}"
-    }
-}
-
-/// Render a TypeParamList as a comma-separated string with optional
-/// `: Bound` clauses. Empty input → empty string (caller decides
-/// whether to wrap in `<...>`).
-fn render_type_params(tp: TypeParamList) -> string {
-    match tp {
-        .End -> ""
-        .Node(name, bound, next) -> {
-            let bound_part = if bound == "" { "" } else { ": ${bound}" }
-            let rest = render_type_params(next)
-            if rest == "" { "${name}${bound_part}" } else { "${name}${bound_part}, ${rest}" }
-        }
     }
 }
 

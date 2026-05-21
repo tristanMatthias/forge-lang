@@ -8,10 +8,11 @@
 
 use core.{
     Expr, Stmt, StmtList, ExprList, ParamList,
-    TypeParamList, FieldInitList, FieldList,
+    FieldInitList, FieldList,
     VariantList, Pattern, MatchArmList, WhenArm, Annotation,
     binop_str, unop_str, logicop_str,
     vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq,
+    render_type_param_list,
 }
 
 /// Render `depth * 4` spaces — Avra's canonical indent unit.
@@ -101,7 +102,7 @@ export fn fmt_stmt(ss: Stmt, depth: int) -> string {
         .For(variable, start, end, body) -> "${ind}for ${variable} in ${fmt_expr(start)}..${fmt_expr(end)} {\n${fmt_stmt(body, depth + 1)}\n${ind}}"
         .ForIn(variable, collection, body) -> "${ind}for ${variable} in ${fmt_expr(collection)} {\n${fmt_stmt(body, depth + 1)}\n${ind}}"
         .Function(name, tp, params, rvt, body) -> {
-            let tp_str = fmt_type_param_list(tp)
+            let tp_str = render_type_param_list(tp)
             let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
             let ret_part = if vtype_eq(rvt, .Void) { "" } else { " -> ${vtype_display(rvt)}" }
             "${ind}fn ${name}${tp_part}(${fmt_param_list_typed(params)})${ret_part} {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
@@ -109,7 +110,7 @@ export fn fmt_stmt(ss: Stmt, depth: int) -> string {
         .Return(value) -> "${ind}return ${fmt_expr(value)}"
         .ReturnEmpty -> "${ind}return"
         .TypeDecl(name, tp, fields) -> {
-            let tp_str = fmt_type_param_list(tp)
+            let tp_str = render_type_param_list(tp)
             let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
             "${ind}type ${name}${tp_part} = {\n${fmt_field_decl_list(fields, depth + 1)}\n${ind}}"
         }
@@ -117,7 +118,7 @@ export fn fmt_stmt(ss: Stmt, depth: int) -> string {
         .UnionAliasDecl(name, type_vt) -> "${ind}type ${name} = ${vtype_render_full(type_vt)}"
         .ShapeDecl(name, fields) -> "${ind}shape ${name} = {\n${fmt_field_decl_list(fields, depth + 1)}\n${ind}}"
         .EnumDecl(name, tp, variants) -> {
-            let tp_str = fmt_type_param_list(tp)
+            let tp_str = render_type_param_list(tp)
             let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
             "${ind}enum ${name}${tp_part} {\n${fmt_variant_list(variants, depth + 1)}\n${ind}}"
         }
@@ -231,18 +232,6 @@ fn fmt_param_list_typed_tail(params: ParamList) -> string {
         .Node(name, resolved, next) -> {
             let ty_part = if vtype_is_unknown(resolved) { "" } else { ": ${vtype_display(resolved)}" }
             ", ${name}${ty_part}${fmt_param_list_typed_tail(next)}"
-        }
-    }
-}
-
-/// Render a generic-parameter list — `T, U: SomeBound`.
-fn fmt_type_param_list(tp: TypeParamList) -> string {
-    match tp {
-        .End -> ""
-        .Node(name, bound, next) -> {
-            let bound_part = if bound == "" { "" } else { ": ${bound}" }
-            let rest = fmt_type_param_list(next)
-            if rest == "" { "${name}${bound_part}" } else { "${name}${bound_part}, ${rest}" }
         }
     }
 }

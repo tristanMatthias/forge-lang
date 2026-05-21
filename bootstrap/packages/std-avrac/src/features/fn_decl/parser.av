@@ -1,23 +1,33 @@
 // WHY: parses top-level `fn` declarations and the parameter list
 // they introduce.
 
-use core.{Stmt, ParamList, TypeParamList, ValueType, type_expr_to_vtype}
+use core.{Stmt, ParamList, TypeParamEntry, ValueType, type_expr_to_vtype}
 use parse.{Parser}
 use core.{Tk}
 
-/// Merge a where-clause bound into an existing TypeParamList.
+/// Merge a where-clause bound into an existing List<TypeParamEntry>.
 /// When the named param already exists, append the new bound
 /// separated by ` + ` (so `T: Display` + `T: Debug` becomes
 /// `Display + Debug`). Otherwise append a fresh entry.
-fn merge_type_param_bound(params: TypeParamList, name: string, bounds: string) -> TypeParamList {
-    match params {
-        .End -> TypeParamList.Node(name, bounds, TypeParamList.End)
-        .Node(n, existing_bounds, next) if n == name -> {
-            let merged = if existing_bounds == "" { bounds } else { existing_bounds + " + " + bounds }
-            TypeParamList.Node(n, merged, next)
+fn merge_type_param_bound(params: List<TypeParamEntry>, name: string, bounds: string) -> List<TypeParamEntry> {
+    mut out: List<TypeParamEntry> = []
+    mut found = false
+    mut i = 0
+    while i < params.length {
+        let e = params[i]
+        if e.name == name {
+            let merged = if e.bounds == "" { bounds } else { e.bounds + " + " + bounds }
+            out.push(TypeParamEntry { name: e.name, bounds: merged })
+            found = true
+        } else {
+            out.push(e)
         }
-        .Node(n, b, next) -> TypeParamList.Node(n, b, merge_type_param_bound(next, name, bounds))
+        i = i + 1
     }
+    if !found {
+        out.push(TypeParamEntry { name: name, bounds: bounds })
+    }
+    out
 }
 
 impl Parser {
@@ -25,10 +35,10 @@ impl Parser {
         self.advance()
         let name = self.consume_identifier("expected function name")?
         // Optional generic parameters: fn name<T, U>(...)
-        mut tp = if self.check(Tk.Less) {
+        mut tp: List<TypeParamEntry> = if self.check(Tk.Less) {
             self.parse_type_params()
         } else {
-            TypeParamList.End
+            []
         }
         if !self.consume(Tk.LeftParen, "expected `(` after function name") {
             return null
@@ -92,15 +102,15 @@ impl Parser {
         ParamList.Node(name, resolved, ParamList.End)
     }
 
-    // Parse `where T: Trait1, U: Trait2` and merge bounds into existing TypeParamList.
+    // Parse `where T: Trait1, U: Trait2` and merge bounds into existing List<TypeParamEntry>.
     // If the type param already exists with inline bounds, the where bounds are appended.
     // If the type param doesn't exist in the list yet, it's added.
-    fn parse_where_clause(self, existing: TypeParamList) -> TypeParamList {
+    fn parse_where_clause(self, existing: List<TypeParamEntry>) -> List<TypeParamEntry> {
         self.advance()  // consume `where`
         self.parse_where_entries(existing)
     }
 
-    fn parse_where_entries(self, acc: TypeParamList) -> TypeParamList {
+    fn parse_where_entries(self, acc: List<TypeParamEntry>) -> List<TypeParamEntry> {
         if !self.check(Tk.Identifier) {
             return acc
         }

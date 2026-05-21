@@ -2,7 +2,7 @@
 // Parsing lives in parser.av (extends Parser with parse_type_params).
 // Declaration parsers (fn_decl, struct_decl, enum_decl) call
 // parse_type_params when they see `<` after the declaration name.
-// The monomorphization pass (mono.av) consumes TypeParamList to generate
+// The monomorphization pass (mono.av) consumes List<TypeParamEntry> to generate
 // concrete specializations before codegen.
 //
 // dir-as-module (g2eo.1): no `mod` decls — sibling .av files

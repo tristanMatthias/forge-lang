@@ -19,7 +19,7 @@
 // resolver wires up to @std/process the same way a hand-written
 // impl would.
 
-use core.{Stmt, StmtList, SStmt, sstmt_dummy, Expr, ExprList, SExpr, sexpr_dummy, FieldList, FieldInitList, ParamList, ValueType, TypeParamList, VariantList, Pattern, MatchArmList, TypeList, BinOp, find_annotation}
+use core.{Stmt, StmtList, SStmt, sstmt_dummy, Expr, ExprList, SExpr, sexpr_dummy, FieldList, FieldInitList, ParamList, ValueType, TypeParamEntry, VariantList, Pattern, MatchArmList, TypeList, BinOp, find_annotation}
 
 // ── Public entry ──
 
@@ -139,7 +139,8 @@ fn build_to_bytes_fn(fields: FieldList) -> Stmt {
     let chain = build_chain(fields)
     let body = StmtList.Node(sstmt_dummy(Stmt.Return(chain)), StmtList.End)
     let params = ParamList.Node("self", ValueType.Unknown, ParamList.End)
-    Stmt.Function("to_bytes", TypeParamList.End, params, ValueType.Bytes, body)
+    let empty_tp: List<TypeParamEntry> = []
+    Stmt.Function("to_bytes", empty_tp, params, ValueType.Bytes, body)
 }
 
 fn build_chain(fields: FieldList) -> Expr {
@@ -317,7 +318,8 @@ fn build_from_bytes_fn(type_name: string, fields: FieldList) -> Stmt {
     // in Avra). nce6.1.E will route generic `isolated<T: Marshal>`
     // through this naming convention.
     let fn_name = "from_bytes_" + type_name
-    Stmt.Function(fn_name, TypeParamList.End, params,
+    let empty_tp: List<TypeParamEntry> = []
+    Stmt.Function(fn_name, empty_tp, params,
         ValueType.Struct(type_name, 0), body)
 }
 
@@ -552,7 +554,8 @@ fn build_enum_to_bytes_fn(type_name: string, variants: VariantList) -> Stmt {
     let match_expr = Expr.MatchExpr(Expr.Ident("self"), arms)
     let body = StmtList.Node(sstmt_dummy(Stmt.Return(match_expr)), StmtList.End)
     let params = ParamList.Node("self", ValueType.Unknown, ParamList.End)
-    Stmt.Function("to_bytes", TypeParamList.End, params, ValueType.Bytes, body)
+    let empty_tp: List<TypeParamEntry> = []
+    Stmt.Function("to_bytes", empty_tp, params, ValueType.Bytes, body)
 }
 
 /// Per-variant match arms for to_bytes. Tag = source-order index;
@@ -612,7 +615,8 @@ fn build_enum_from_bytes_fn(type_name: string, variants: VariantList) -> Stmt {
     let body = StmtList.Node(sstmt_dummy(init_let),
         append_stmts(tag_reads, dispatch))
     let fn_name = "from_bytes_" + type_name
-    Stmt.Function(fn_name, TypeParamList.End, params,
+    let empty_tp: List<TypeParamEntry> = []
+    Stmt.Function(fn_name, empty_tp, params,
         ValueType.Enum(type_name, TypeList.End, 0), body)
 }
 
@@ -715,6 +719,7 @@ fn build_isolated_fn(type_name: string, ty: ValueType) -> Stmt {
     let match_expr = Expr.MatchExpr(isolated_call, arms)
     let body_stmts = StmtList.Node(sstmt_dummy(Stmt.Return(match_expr)), StmtList.End)
     let fn_name = "isolated_" + type_name
-    Stmt.Function(fn_name, TypeParamList.End, params, ret_ty, body_stmts)
+    let empty_tp: List<TypeParamEntry> = []
+    Stmt.Function(fn_name, empty_tp, params, ret_ty, body_stmts)
 }
 

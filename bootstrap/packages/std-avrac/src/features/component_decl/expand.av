@@ -10,7 +10,7 @@
 // self.__parent → parent accumulator variable
 // self.__parent_name → parent instance name string
 
-use core.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, FieldList, FieldInitList, ParamList, ValueType, CompConfig, CompConfigPair, ChildrenSlot, TypeParamList, find_annotation}
+use core.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, FieldList, FieldInitList, ParamList, ValueType, CompConfig, CompConfigPair, ChildrenSlot, TypeParamEntry, find_annotation}
 use core.{has_fn, find_fn_body}
 
 // ── Public API ──
@@ -540,7 +540,8 @@ export fn splice_component_def(name: string, params: ParamList, config: List<Com
     let with_children = append_children_fields(config_fields, children)
     let name_field = FieldList.Node("name", ValueType.Str, with_children)
 
-    let type_decl = Stmt.TypeDecl(type_name, TypeParamList.End, name_field)
+    let empty_tp: List<TypeParamEntry> = []
+    let type_decl = Stmt.TypeDecl(type_name, empty_tp, name_field)
 
     // Factory: comp_new(name: string) -> TypeName { TypeName { name, config_defaults..., empty_lists... } }
     let name_param = ParamList.Node("name", ValueType.Str, ParamList.End)
@@ -549,7 +550,7 @@ export fn splice_component_def(name: string, params: ParamList, config: List<Com
     let name_init = FieldInitList.Node("name", sexpr(Expr.Ident("name"), 0, 0), with_child_inits)
     let struct_lit = Expr.StructLit(type_name, name_init)
     let factory_body = StmtList.Node(sstmt(Stmt.Return(struct_lit), 0, 0), StmtList.End)
-    let factory = Stmt.Function("${name}_new", TypeParamList.End, name_param, ValueType.Struct(type_name, 0), factory_body)
+    let factory = Stmt.Function("${name}_new", empty_tp, name_param, ValueType.Struct(type_name, 0), factory_body)
 
     let methods = extract_methods(body, name)
 

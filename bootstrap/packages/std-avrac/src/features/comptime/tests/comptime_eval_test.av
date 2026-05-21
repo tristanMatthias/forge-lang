@@ -3,7 +3,7 @@
 // with literal args, and asserts that `try_fold_call` produces the
 // expected literal Expr.
 
-use @std.avrac.core.{Stmt, StmtList, Expr, ExprList, SExpr, sexpr_dummy, sstmt_dummy, ParamList, ValueType, TypeParamList, BinOp, render_expr}
+use @std.avrac.core.{Stmt, StmtList, Expr, ExprList, SExpr, sexpr_dummy, sstmt_dummy, ParamList, ValueType, BinOp, render_expr}
 use @std.avrac.features.comptime.{CompTimeFn, CompTimeRegistry, try_fold_call, prepare_runtime, comptime_registry_new}
 
 // `fn add(x: int, y: int) -> int { return x + y }`

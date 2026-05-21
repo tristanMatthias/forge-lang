@@ -137,31 +137,38 @@ export enum MatchArmList {
 /// throughout `typeck/mod.av` and `features/generics/mono.av`.
 export type TypeArg = { param_name: string, concrete_vt: ValueType }
 
-export enum TypeParamList {
-    End
-    Node(name: string, bounds: string, next: TypeParamList)
+/// One generic type-parameter entry on a declaration
+/// (`fn foo<T, U: Display>(...)`). `bounds` is `""` for unconstrained
+/// params, or a trait name for bounded params.
+///
+/// `List<TypeParamEntry>` replaces the retired `enum TypeParamList`.
+/// Used throughout the parser (`parse_type_params`), typeck
+/// (binding type params into scope), and the monomorphizer.
+export type TypeParamEntry = { name: string, bounds: string }
+
+/// Membership test for a `List<TypeParamEntry>`. True iff `name`
+/// appears as a parameter name (bounds ignored).
+export fn type_param_has(params: List<TypeParamEntry>, name: string) -> bool {
+    mut i = 0
+    while i < params.length {
+        if params[i].name == name { return true }
+        i = i + 1
+    }
+    false
 }
 
-/// Membership test for a TypeParamList. True iff `name` appears as
-/// a parameter name (bounds ignored).
-export fn type_param_has(params: TypeParamList, name: string) -> bool {
-    match params {
-        .End -> false
-        .Node(n, _, _) if n == name -> true
-        .Node(_, _, next) -> type_param_has(next, name)
+/// Render a `List<TypeParamEntry>` back to source-form: `T, U: Display`.
+export fn render_type_param_list(params: List<TypeParamEntry>) -> string {
+    mut out = ""
+    mut i = 0
+    while i < params.length {
+        let name = params[i].name
+        let bounds = params[i].bounds
+        let entry = if bounds == "" { name } else { "${name}: ${bounds}" }
+        if i == 0 { out = entry } else { out = "${out}, ${entry}" }
+        i = i + 1
     }
-}
-
-/// Render a TypeParamList back to source-form: `T, U: Display`.
-export fn render_type_param_list(params: TypeParamList) -> string {
-    match params {
-        .End -> ""
-        .Node(name, bounds, next) -> {
-            let b = if bounds == "" { name } else { "${name}: ${bounds}" }
-            let rest = render_type_param_list(next)
-            if rest == "" { b } else { "${b}, ${rest}" }
-        }
-    }
+    out
 }
 
 // `List<string>` replaces the retired `enum TypeNameList`. Used as
@@ -1007,13 +1014,13 @@ export enum Stmt {
     ForIn(variable: string, collection: Expr, body: Stmt)
     /// Function declaration. `type_params` empty for non-generic
     /// fns; resolver fills `ret_vtype` from the source annotation.
-    Function(name: string, type_params: TypeParamList, params: ParamList, ret_vtype: ValueType, body: StmtList)
+    Function(name: string, type_params: List<TypeParamEntry>, params: ParamList, ret_vtype: ValueType, body: StmtList)
     /// `return value` — early return with an expression.
     Return(value: Expr)
     /// Bare `return` — ends a void fn.
     ReturnEmpty
     /// Struct type declaration: `type Point = { x: int, y: int }`.
-    TypeDecl(name: string, type_params: TypeParamList, fields: FieldList)
+    TypeDecl(name: string, type_params: List<TypeParamEntry>, fields: FieldList)
     /// Newtype: `type UserId = UUID` — nominal wrapper.
     NewtypeDecl(name: string, inner_vt: ValueType)
     /// Union alias: `type Json = string | int | bool`.
@@ -1022,7 +1029,7 @@ export enum Stmt {
     /// width-subtyping record.
     ShapeDecl(name: string, fields: FieldList)
     /// Enum declaration: `enum Color { Red, Green, Blue }`.
-    EnumDecl(name: string, type_params: TypeParamList, variants: VariantList)
+    EnumDecl(name: string, type_params: List<TypeParamEntry>, variants: VariantList)
     /// Match as a statement: `match v { ... }` with no result.
     Match(subject: Expr, arms: MatchArmList)
     /// `impl Type { fns }` or `impl Trait for Type { fns }`. The

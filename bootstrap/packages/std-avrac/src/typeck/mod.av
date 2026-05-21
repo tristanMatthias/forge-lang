@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.{BinOp, Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeArg, TypeList, TypeParamList, ValueType, VariantList, WhenArm, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_list_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_is_fn, vtype_is_unknown, vtype_list_elem, vtype_struct_name, vtype_tuple_at}
+use core.{BinOp, Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeArg, TypeList, TypeParamEntry, ValueType, VariantList, WhenArm, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_list_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_is_fn, vtype_is_unknown, vtype_list_elem, vtype_struct_name, vtype_tuple_at}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive}
@@ -66,7 +66,7 @@ fn type_pop_scope(env: TypeEntry, depth: int) -> TypeEntry {
 /// concrete type forward.
 type FnTypeMeta = {
     name: string,
-    tp: TypeParamList,
+    tp: List<TypeParamEntry>,
     params: ParamList,
     ret_ty: ValueType,
 }
@@ -99,10 +99,18 @@ fn fn_type_reg_new() -> FnTypeReg {
     FnTypeReg { ord: [], idx: avra_map_new_cstr() }
 }
 
+/// Empty `List<TypeParamEntry>` — used when registering non-generic
+/// fns / extern fns / ctors that carry no type params. Wrapped in
+/// a helper so callers don't need to spell the type at each site.
+fn empty_type_params() -> List<TypeParamEntry> {
+    let out: List<TypeParamEntry> = []
+    out
+}
+
 /// Append (name, params, ret_ty) to `reg`. Mutates the map in place;
 /// returns a new FnTypeReg with the extended list. Map ptr is shared
 /// with the prior reg — see the `idx` field doc above.
-fn fn_type_reg_register(reg: FnTypeReg, name: string, tp: TypeParamList, params: ParamList, ret_ty: ValueType) -> FnTypeReg {
+fn fn_type_reg_register(reg: FnTypeReg, name: string, tp: List<TypeParamEntry>, params: ParamList, ret_ty: ValueType) -> FnTypeReg {
     mut ord = reg.ord
     let new_idx = ord.length
     ord.push(FnTypeMeta { name, tp, params, ret_ty })
@@ -120,7 +128,7 @@ fn fn_type_reg_register(reg: FnTypeReg, name: string, tp: TypeParamList, params:
 /// re-traversed the registry 4–5 times.
 type FnTypeFound = {
     found: bool,
-    tp: TypeParamList,
+    tp: List<TypeParamEntry>,
     params: ParamList,
     ret_ty: ValueType,
 }
@@ -129,7 +137,8 @@ type FnTypeFound = {
 /// when the name is unregistered (params/ret_ty hold safe sentinels).
 fn fn_type_get(fns: FnTypeReg, name: string) -> FnTypeFound {
     if avra_map_has_cstr(fns.idx, name) == 0 {
-        return FnTypeFound { found: false, tp: TypeParamList.End, params: ParamList.End, ret_ty: ValueType.Unknown }
+        let empty_tp: List<TypeParamEntry> = []
+        return FnTypeFound { found: false, tp: empty_tp, params: ParamList.End, ret_ty: ValueType.Unknown }
     }
     let i = avra_map_get_cstr(fns.idx, name)
     let m = fns.ord[i]
@@ -775,7 +784,7 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
                         let ctor_params = ParamList.Node("value", inner_ty, ParamList.End)
                         tc with {
                             newtypes: newtype_reg_register(tc.newtypes, name, inner_vt),
-                            fns: fn_type_reg_register(tc.fns, name, TypeParamList.End, ctor_params, ValueType.Newtype(name, inner_ty, 0)),
+                            fns: fn_type_reg_register(tc.fns, name, empty_type_params(), ctor_params, ValueType.Newtype(name, inner_ty, 0)),
                         }
                     }
                 }
@@ -805,7 +814,7 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
                 }
                 .ExternFn(name, params, ret_vt) -> {
                     let final_ret = if vtype_eq(ret_vt, .Void) { ValueType.Void } else { resolve_vtype(tc, ret_vt) }
-                    tc with { fns: fn_type_reg_register(tc.fns, name, TypeParamList.End, params, final_ret) }
+                    tc with { fns: fn_type_reg_register(tc.fns, name, empty_type_params(), params, final_ret) }
                 }
                 .Impl(impl_name, methods) -> {
                     let colon_idx = find_trait_separator(impl_name)
@@ -1445,11 +1454,8 @@ fn tc_check_fn_call_with(checked: TC, name: string, args: ExprList, rec: FnTypeF
 /// chain `let xs = generic_call(); other_generic_call(xs)` loses
 /// the inner type at the `let` boundary and the second call's
 /// type-arg can't be inferred.
-fn tc_subst_generic_ret(tc: TC, tp: TypeParamList, params: ParamList, args: ExprList, ret_ty: ValueType) -> ValueType {
-    match tp {
-        .End -> return ret_ty
-        _ -> {}
-    }
+fn tc_subst_generic_ret(tc: TC, tp: List<TypeParamEntry>, params: ParamList, args: ExprList, ret_ty: ValueType) -> ValueType {
+    if tp.length == 0 { return ret_ty }
     let empty: List<TypeArg> = []
     let bindings = tc_infer_type_args(tc, tp, params, args, empty)
     tc_subst_vtype(ret_ty, bindings)
@@ -1460,7 +1466,7 @@ fn tc_subst_generic_ret(tc: TC, tp: TypeParamList, params: ParamList, args: Expr
 /// its concrete arg type. Args whose typeck-annotated `.ty` is
 /// Unknown fall back to `tc_infer_lit_ty` so literal `[1,2,3]` and
 /// bare lambdas still contribute bindings.
-fn tc_infer_type_args(tc: TC, tp: TypeParamList, params: ParamList, args: ExprList, acc: List<TypeArg>) -> List<TypeArg> {
+fn tc_infer_type_args(tc: TC, tp: List<TypeParamEntry>, params: ParamList, args: ExprList, acc: List<TypeArg>) -> List<TypeArg> {
     match params {
         .End -> acc
         .Node(_, resolved, rest) -> match args {
@@ -1480,7 +1486,7 @@ fn tc_infer_type_args(tc: TC, tp: TypeParamList, params: ParamList, args: ExprLi
 /// semantics preserved via a fresh list with the new entry pushed
 /// before the existing bindings (innermost-binding-wins for
 /// `tc_type_arg_lookup`).
-fn tc_unify(tp: TypeParamList, param_ty: ValueType, arg_ty: ValueType, acc: List<TypeArg>) -> List<TypeArg> {
+fn tc_unify(tp: List<TypeParamEntry>, param_ty: ValueType, arg_ty: ValueType, acc: List<TypeArg>) -> List<TypeArg> {
     let name = vtype_display(param_ty)
     if type_param_has(tp, name) {
         mut out: List<TypeArg> = []
@@ -1515,7 +1521,7 @@ fn tc_unify(tp: TypeParamList, param_ty: ValueType, arg_ty: ValueType, acc: List
 }
 
 /// Pairwise unify two TypeLists (fn-param recursion in `tc_unify`).
-fn tc_unify_lists(tp: TypeParamList, params: TypeList, args: TypeList, acc: List<TypeArg>) -> List<TypeArg> {
+fn tc_unify_lists(tp: List<TypeParamEntry>, params: TypeList, args: TypeList, acc: List<TypeArg>) -> List<TypeArg> {
     match params {
         .End -> acc
         .Node(p, prest) -> match args {

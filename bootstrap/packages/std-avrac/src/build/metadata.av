@@ -16,7 +16,7 @@
 // Tracked under forge-crafting-intepreters-iinq (epic
 // forge-crafting-intepreters-a1el — the build system).
 
-use core.{ValueType, TypeList, FieldList, VariantList, ParamList, TypeParamList}
+use core.{ValueType, TypeList, FieldList, VariantList, ParamList, TypeParamEntry}
 
 extern fn avra_bytes_make(len: int) -> bytes
 extern fn avra_bytes_set(b: bytes, idx: int, val: int)
@@ -502,13 +502,6 @@ fn param_list_length(params: ParamList) -> int {
     }
 }
 
-fn type_param_list_length(params: TypeParamList) -> int {
-    match params {
-        .End -> 0
-        .Node(_, _, next) -> 1 + type_param_list_length(next)
-    }
-}
-
 // ── Composite list encoders ──
 //
 // FieldList / VariantList / ParamList are the building blocks of the
@@ -548,19 +541,13 @@ impl BytesWriter {
         }
     }
 
-    fn type_param_list(self, params: TypeParamList) {
-        self.u32_le(type_param_list_length(params))
-        self.type_param_list_body(params)
-    }
-
-    fn type_param_list_body(self, params: TypeParamList) {
-        match params {
-            .End -> {}
-            .Node(name, bounds, next) -> {
-                self.string(name)
-                self.string(bounds)
-                self.type_param_list_body(next)
-            }
+    fn type_param_list(self, params: List<TypeParamEntry>) {
+        self.u32_le(params.length)
+        mut i = 0
+        while i < params.length {
+            self.string(params[i].name)
+            self.string(params[i].bounds)
+            i = i + 1
         }
     }
 
@@ -621,17 +608,17 @@ impl BytesReader {
         VariantList.Node(name, fields, tail)
     }
 
-    fn type_param_list(self) -> TypeParamList {
+    fn type_param_list(self) -> List<TypeParamEntry> {
         let count = self.u32_le()
-        self.type_param_list_body(count)
-    }
-
-    fn type_param_list_body(self, count: int) -> TypeParamList {
-        if count == 0 { return TypeParamList.End }
-        let name = self.string()
-        let bounds = self.string()
-        let tail = self.type_param_list_body(count - 1)
-        TypeParamList.Node(name, bounds, tail)
+        mut out: List<TypeParamEntry> = []
+        mut i = 0
+        while i < count {
+            let name = self.string()
+            let bounds = self.string()
+            out.push(TypeParamEntry { name: name, bounds: bounds })
+            i = i + 1
+        }
+        out
     }
 }
 
@@ -802,7 +789,7 @@ export type TypeDeclEntry = {
     sym_id: int,
     kind: TypeDeclKind,
     name: string,
-    type_params: TypeParamList,
+    type_params: List<TypeParamEntry>,
     fields: FieldList,
     variants: VariantList,
     inner_vt: ValueType,
@@ -874,7 +861,7 @@ export type FnDeclEntry = {
     name: string,
     exported: bool,
     is_extern: bool,
-    type_params: TypeParamList,
+    type_params: List<TypeParamEntry>,
     params: ParamList,
     ret: ValueType,
 }

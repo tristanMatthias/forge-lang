@@ -18,7 +18,7 @@
 //
 // Design doc: docs/2026_05_08_COMPONENTS_V2_DESIGN.md §3.1
 
-use core.{Stmt, StmtList, ParamList, ValueType, TypeParamList, Annotation}
+use core.{Stmt, StmtList, ParamList, ValueType, TypeParamEntry, Annotation}
 use features.eval.{Runtime, runtime_new, execute_stmt}
 use features.comptime.{rewrite_program}
 
@@ -66,7 +66,8 @@ export fn prepare_runtime(reg: CompTimeRegistry) -> CompTimeRegistry {
     let idx = avra_map_new_cstr()
     mut i = 0
     for f in reg.fns {
-        let fn_stmt = Stmt.Function(f.name, TypeParamList.End, f.params, f.ret_ty, f.body)
+        let empty_tp: List<TypeParamEntry> = []
+        let fn_stmt = Stmt.Function(f.name, empty_tp, f.params, f.ret_ty, f.body)
         rt = execute_stmt(rt, fn_stmt).runtime
         avra_map_set_cstr(idx, f.name, i)
         i = i + 1

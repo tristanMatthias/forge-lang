@@ -9,7 +9,7 @@
 // reuse them to build a test program.
 
 use core.{
-    Stmt, StmtList, SStmt, ParamList, ValueType, TypeParamList,
+    Stmt, StmtList, SStmt, ParamList, ValueType, TypeParamEntry,
     Expr, ExprList,
     sstmt_dummy, sstmt_at,
     sexpr_dummy,
@@ -315,7 +315,8 @@ fn synth_test_main() -> SStmt {
     let body = StmtList.Node(
         sstmt_dummy(Stmt.Return(Expr.Call(Expr.Ident("test_render_summary"), ExprList.End))),
         StmtList.End)
-    sstmt_dummy(Stmt.Function("main", TypeParamList.End, ParamList.End, ValueType.Int, body))
+    let empty_tp: List<TypeParamEntry> = []
+    sstmt_dummy(Stmt.Function("main", empty_tp, ParamList.End, ValueType.Int, body))
 }
 
 /// Assemble the test program for one action: parse each test file as

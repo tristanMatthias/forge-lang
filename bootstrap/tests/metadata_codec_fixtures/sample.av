@@ -22,7 +22,7 @@ use @std.avrac.build.{
     metadata_write, metadata_read, metadata_file_exists,
 }
 use @std.avrac.core.{
-    Stmt, StmtList, Expr, ExprList, TypeParamList,
+    Stmt, StmtList, Expr, ExprList, TypeParamEntry,
     ValueType, TypeList, FieldList, VariantList, ParamList,
     Annotation, vtype_eq, sstmt_dummy, stmt_unwrap, find_annotation,
 }
@@ -260,7 +260,7 @@ fn main() -> int {
         sym_id: sym_id_for("@test::Point"),
         kind: TypeDeclKind.StructDecl,
         name: "@test::Point",
-        type_params: TypeParamList.End,
+        type_params: [],
         fields: pt_fields,
         variants: VariantList.End,
         inner_vt: ValueType.Unknown,
@@ -280,7 +280,7 @@ fn main() -> int {
         sym_id: sym_id_for("@test::UserId"),
         kind: TypeDeclKind.NewtypeDecl,
         name: "@test::UserId",
-        type_params: TypeParamList.End,
+        type_params: [],
         fields: FieldList.End,
         variants: VariantList.End,
         inner_vt: ValueType.Int,
@@ -302,7 +302,7 @@ fn main() -> int {
         sym_id: sym_id_for("@test::Color"),
         kind: TypeDeclKind.EnumDecl,
         name: "@test::Color",
-        type_params: TypeParamList.End,
+        type_params: [],
         fields: FieldList.End,
         variants: col_variants,
         inner_vt: ValueType.Unknown,
@@ -322,7 +322,7 @@ fn main() -> int {
     let add_entry = FnDeclEntry {
         sym_id: sym_id_for("@test::add"),
         name: "@test::add",
-        type_params: TypeParamList.End,
+        type_params: [],
         exported: true,
         is_extern: false,
         params: add_params,
@@ -342,7 +342,7 @@ fn main() -> int {
     let now_entry = FnDeclEntry {
         sym_id: sym_id_for("avra_now"),
         name: "avra_now",
-        type_params: TypeParamList.End,
+        type_params: [],
         exported: true,
         is_extern: true,
         params: ParamList.End,
@@ -362,7 +362,7 @@ fn main() -> int {
     let proc_entry = FnDeclEntry {
         sym_id: sym_id_for("@test::process"),
         name: "@test::process",
-        type_params: TypeParamList.End,
+        type_params: [],
         exported: false,
         is_extern: false,
         params: proc_params,
@@ -386,7 +386,7 @@ fn main() -> int {
         sym_id: sym_id_for("@test::e2e::Cell"),
         kind: TypeDeclKind.StructDecl,
         name: "@test::e2e::Cell",
-        type_params: TypeParamList.End,
+        type_params: [],
         fields: e2e_struct_fields,
         variants: VariantList.End,
         inner_vt: ValueType.Unknown,
@@ -400,7 +400,7 @@ fn main() -> int {
     let e2e_fn_entry = FnDeclEntry {
         sym_id: sym_id_for("@test::e2e::cell_x"),
         name: "@test::e2e::cell_x",
-        type_params: TypeParamList.End,
+        type_params: [],
         exported: true,
         is_extern: false,
         params: ParamList.Node("c", ValueType.Struct("@test::e2e::Cell", 0), ParamList.End),
@@ -519,7 +519,7 @@ fn main() -> int {
         sym_id: sym_id_for("@test::Display"),
         kind: TypeDeclKind.TraitDecl,
         name: "@test::Display",
-        type_params: TypeParamList.End,
+        type_params: [],
         fields: FieldList.End,
         variants: VariantList.End,
         inner_vt: ValueType.Unknown,
@@ -601,7 +601,7 @@ fn main() -> int {
         sym_id: sym_id_for("@unit::User"),
         kind: TypeDeclKind.StructDecl,
         name: "@unit::User",
-        type_params: TypeParamList.End,
+        type_params: [],
         fields: unit_struct_fields,
         variants: VariantList.End,
         inner_vt: ValueType.Unknown,
@@ -610,7 +610,7 @@ fn main() -> int {
     let unit_fn_entry = FnDeclEntry {
         sym_id: sym_id_for("@unit::greet"),
         name: "@unit::greet",
-        type_params: TypeParamList.End,
+        type_params: [],
         exported: true,
         is_extern: false,
         params: ParamList.Node("u", ValueType.Struct("@unit::User", 0), ParamList.End),
@@ -665,12 +665,12 @@ fn main() -> int {
     let dec_type_first: TypeDeclEntry = if dec_types.length > 0 {
         dec_types[0]
     } else {
-        TypeDeclEntry { sym_id: 0, kind: TypeDeclKind.StructDecl, name: "", type_params: TypeParamList.End, fields: FieldList.End, variants: VariantList.End, inner_vt: ValueType.Unknown, methods: [] }
+        TypeDeclEntry { sym_id: 0, kind: TypeDeclKind.StructDecl, name: "", type_params: [], fields: FieldList.End, variants: VariantList.End, inner_vt: ValueType.Unknown, methods: [] }
     }
     let dec_fn_first: FnDeclEntry = if dec_fns.length > 0 {
         dec_fns[0]
     } else {
-        FnDeclEntry { sym_id: 0, name: "", type_params: TypeParamList.End, exported: false, is_extern: false, params: ParamList.End, ret: ValueType.Unknown }
+        FnDeclEntry { sym_id: 0, name: "", type_params: [], exported: false, is_extern: false, params: ParamList.End, ret: ValueType.Unknown }
     }
     let dec_const_first: ConstDeclEntry = if dec_consts.length > 0 {
         dec_consts[0]
@@ -698,11 +698,13 @@ fn main() -> int {
 
     // type Pt = { x: int }
     let pt_fields_ast = FieldList.Node("x", ValueType.Int, FieldList.End)
-    let s_type = sstmt_dummy(Stmt.TypeDecl("Pt", TypeParamList.End, pt_fields_ast))
+    let empty_tp_pt: List<TypeParamEntry> = []
+    let s_type = sstmt_dummy(Stmt.TypeDecl("Pt", empty_tp_pt, pt_fields_ast))
 
     // export fn add(a: int, b: int) -> int { ... }  (body irrelevant for extraction)
     let add_params_ast = ParamList.Node("a", ValueType.Int, ParamList.Node("b", ValueType.Int, ParamList.End))
-    let s_fn_inner = Stmt.Function("add", TypeParamList.End, add_params_ast, ValueType.Int, StmtList.End)
+    let empty_tp_add: List<TypeParamEntry> = []
+    let s_fn_inner = Stmt.Function("add", empty_tp_add, add_params_ast, ValueType.Int, StmtList.End)
     let exp_annots: List<Annotation> = [Annotation { name: "export", args: ExprList.End }]
     let s_fn = sstmt_dummy(Stmt.Annotated(exp_annots, s_fn_inner))
 
@@ -729,12 +731,12 @@ fn main() -> int {
     let ex_t0: TypeDeclEntry = if ex_types.length > 0 {
         ex_types[0]
     } else {
-        TypeDeclEntry { sym_id: 0, kind: TypeDeclKind.StructDecl, name: "", type_params: TypeParamList.End, fields: FieldList.End, variants: VariantList.End, inner_vt: ValueType.Unknown, methods: [] }
+        TypeDeclEntry { sym_id: 0, kind: TypeDeclKind.StructDecl, name: "", type_params: [], fields: FieldList.End, variants: VariantList.End, inner_vt: ValueType.Unknown, methods: [] }
     }
     let ex_f0: FnDeclEntry = if ex_fns.length > 0 {
         ex_fns[0]
     } else {
-        FnDeclEntry { sym_id: 0, name: "", type_params: TypeParamList.End, exported: false, is_extern: false, params: ParamList.End, ret: ValueType.Unknown }
+        FnDeclEntry { sym_id: 0, name: "", type_params: [], exported: false, is_extern: false, params: ParamList.End, ret: ValueType.Unknown }
     }
     let ex_c0: ConstDeclEntry = if ex_consts.length > 0 {
         ex_consts[0]
@@ -749,7 +751,7 @@ fn main() -> int {
     let ex_f1: FnDeclEntry = if ex_fns.length > 1 {
         ex_fns[1]
     } else {
-        FnDeclEntry { sym_id: 0, name: "", type_params: TypeParamList.End, exported: false, is_extern: false, params: ParamList.End, ret: ValueType.Unknown }
+        FnDeclEntry { sym_id: 0, name: "", type_params: [], exported: false, is_extern: false, params: ParamList.End, ret: ValueType.Unknown }
     }
     probe("extract_unit_name", extracted.unit_name == "@ext")
     probe("extract_type_qualified", ex_types.length > 0 && ex_t0.name == "@ext::Pt")
@@ -760,7 +762,8 @@ fn main() -> int {
     probe("extract_extern_is_extern", ex_fns.length > 1 && ex_f1.is_extern && ex_f1.name == "@ext::host_now")
 
     // Generics: a fn with type_params + a struct with type_params
-    let gen_fn_tps = TypeParamList.Node("T", "", TypeParamList.End)
+    mut gen_fn_tps: List<TypeParamEntry> = []
+    gen_fn_tps.push(TypeParamEntry { name: "T", bounds: "" })
     let gen_fn_entry = FnDeclEntry {
         sym_id: sym_id_for("@gen::id"),
         name: "@gen::id",
@@ -774,22 +777,13 @@ fn main() -> int {
     wgen.fn_decl(gen_fn_entry)
     let rgen = reader_new(wgen.finish())
     let gen_decoded = rgen.fn_decl()
-    let gen_tail = match gen_decoded.type_params {
-        .Node(_, _, t) -> t
-        .End -> TypeParamList.End
-    }
-    probe("generic_fn_tparam_count",
-        match gen_tail {
-            .End -> true
-            _ -> false
-        })
+    probe("generic_fn_tparam_count", gen_decoded.type_params.length == 1)
     probe("generic_fn_tparam_name",
-        match gen_decoded.type_params {
-            .Node(n, _, _) -> n == "T"
-            .End -> false
-        })
+        gen_decoded.type_params.length >= 1 && gen_decoded.type_params[0].name == "T")
 
-    let gen_type_tps = TypeParamList.Node("K", "", TypeParamList.Node("V", "Display", TypeParamList.End))
+    mut gen_type_tps: List<TypeParamEntry> = []
+    gen_type_tps.push(TypeParamEntry { name: "K", bounds: "" })
+    gen_type_tps.push(TypeParamEntry { name: "V", bounds: "Display" })
     let gen_type_entry = TypeDeclEntry {
         sym_id: sym_id_for("@gen::Pair"),
         kind: TypeDeclKind.StructDecl,
@@ -804,15 +798,8 @@ fn main() -> int {
     wgt.type_decl(gen_type_entry)
     let rgt = reader_new(wgt.finish())
     let gt_decoded = rgt.type_decl()
-    let gt_tail = match gt_decoded.type_params {
-        .Node(_, _, t) -> t
-        .End -> TypeParamList.End
-    }
     probe("generic_struct_tparam_2nd_bound",
-        match gt_tail {
-            .Node(_, b, _) -> b == "Display"
-            .End -> false
-        })
+        gt_decoded.type_params.length >= 2 && gt_decoded.type_params[1].bounds == "Display")
 
     // File IO: write a UnitMetadata to disk, read it back, verify
     // the structure survives the round trip. Uses /tmp so the test
@@ -828,7 +815,7 @@ fn main() -> int {
         sym_id: sym_id_for("@io::Pt"),
         kind: TypeDeclKind.StructDecl,
         name: "@io::Pt",
-        type_params: TypeParamList.End,
+        type_params: [],
         fields: FieldList.Node("x", ValueType.Int, FieldList.End),
         variants: VariantList.End,
         inner_vt: ValueType.Unknown,
@@ -854,7 +841,7 @@ fn main() -> int {
     let loaded_t0: TypeDeclEntry = if loaded_types.length > 0 {
         loaded_types[0]
     } else {
-        TypeDeclEntry { sym_id: 0, kind: TypeDeclKind.StructDecl, name: "", type_params: TypeParamList.End, fields: FieldList.End, variants: VariantList.End, inner_vt: ValueType.Unknown, methods: [] }
+        TypeDeclEntry { sym_id: 0, kind: TypeDeclKind.StructDecl, name: "", type_params: [], fields: FieldList.End, variants: VariantList.End, inner_vt: ValueType.Unknown, methods: [] }
     }
     probe("io_read_unit_name", loaded.unit_name == "@io")
     probe("io_read_fp_byte0", loaded.fingerprint.byte(0) == 0x77)
@@ -872,12 +859,13 @@ fn main() -> int {
     // way they came in.
     let synth_fields = FieldList.Node("x", ValueType.Int, FieldList.End)
     let greet_annots: List<Annotation> = [Annotation { name: "export", args: ExprList.End }]
+    let empty_tp_synth: List<TypeParamEntry> = []
     let synth_stmts = StmtList.Node(
-        sstmt_dummy(Stmt.TypeDecl("Cell", TypeParamList.End, synth_fields)),
+        sstmt_dummy(Stmt.TypeDecl("Cell", empty_tp_synth, synth_fields)),
         StmtList.Node(
             sstmt_dummy(Stmt.Annotated(
                 greet_annots,
-                Stmt.Function("greet", TypeParamList.End, ParamList.End, ValueType.Str, StmtList.End),
+                Stmt.Function("greet", empty_tp_synth, ParamList.End, ValueType.Str, StmtList.End),
             )),
             StmtList.Node(
                 sstmt_dummy(Stmt.Const("BUILD", ValueType.Str, Expr.String("\"42\""))),

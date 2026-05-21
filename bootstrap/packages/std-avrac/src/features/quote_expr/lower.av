@@ -14,7 +14,7 @@
 // that desugar.av and comptime/rewrite.av use; once the generic-AST-
 // visitor ticket lands (93k3) all three should share a single visitor.
 
-use core.{Stmt, StmtList, SStmt, sstmt_at, sstmt_dummy, Expr, ExprList, SExpr, sexpr, sexpr_dummy, FieldList, FieldInitList, MatchArmList, BinOp, UnOp, LogicOp, ParamList, TypeParamList, CompConfigPair, binop_str, unop_str, logicop_str}
+use core.{Stmt, StmtList, SStmt, sstmt_at, sstmt_dummy, Expr, ExprList, SExpr, sexpr, sexpr_dummy, FieldList, FieldInitList, MatchArmList, BinOp, UnOp, LogicOp, ParamList, TypeParamEntry, CompConfigPair, binop_str, unop_str, logicop_str}
 
 // ── Public entry ──
 
@@ -484,17 +484,25 @@ fn construct_param_list(params: ParamList) -> Expr {
     }
 }
 
-/// Build an Expr that, when evaluated, produces a TypeParamList AST
-/// value. Each Node is (name, bounds, next) — both strings, no
-/// resolved-type slot to elide.
-fn construct_type_param_list(tp: TypeParamList) -> Expr {
-    match tp {
-        .End -> list_end("TypeParamList")
-        .Node(name, bounds, next) -> list_node("TypeParamList",
-            three_args(string_lit_expr(name),
-                       string_lit_expr(bounds),
-                       construct_type_param_list(next)))
+/// Build an Expr that, when evaluated, produces a
+/// `List<TypeParamEntry>` AST value. Each entry is a struct literal
+/// `TypeParamEntry { name, bounds }`; the result is an `Expr.ListLit`
+/// so codegen materializes a real list at runtime.
+fn construct_type_param_list(tp: List<TypeParamEntry>) -> Expr {
+    // ExprList is cons-prepend, so walk back-to-front to preserve
+    // source order.
+    mut elems = ExprList.End
+    mut i = tp.length
+    while i > 0 {
+        i = i - 1
+        let e = tp[i]
+        let inits = FieldInitList.Node("name", sexpr_dummy(string_lit_expr(e.name)),
+                    FieldInitList.Node("bounds", sexpr_dummy(string_lit_expr(e.bounds)),
+                                       FieldInitList.End))
+        let struct_lit = Expr.StructLit("@std::avrac::core::TypeParamEntry", inits)
+        elems = ExprList.Node(sexpr_dummy(struct_lit), elems)
     }
+    Expr.ListLit(elems)
 }
 
 /// Build an Expr that, when evaluated, produces a FieldList AST

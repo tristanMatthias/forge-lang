@@ -1,15 +1,16 @@
 // Phase 2 of Components V2 (vez6.2): exercise the @comptime fn
 // registry — discovery, lookup, recursion into Module bodies.
 
-use @std.avrac.core.{Stmt, StmtList, sstmt_dummy, ParamList, ValueType, TypeParamList, Annotation, ExprList}
+use @std.avrac.core.{Stmt, StmtList, sstmt_dummy, ParamList, ValueType, TypeParamEntry, Annotation, ExprList}
 use @std.avrac.features.comptime.{CompTimeRegistry, CompTimeFn, collect_comptime_fns, comptime_lookup, comptime_has}
 
 // Build an @<name>-annotated fn statement for testing.
 fn mk_annotated_fn(annot_name: string, fn_name: string) -> Stmt {
     let annots: List<Annotation> = [Annotation { name: annot_name, args: ExprList.End }]
+    let empty_tp: List<TypeParamEntry> = []
     Stmt.Annotated(
         annots,
-        Stmt.Function(fn_name, TypeParamList.End, ParamList.End, ValueType.Int, StmtList.End)
+        Stmt.Function(fn_name, empty_tp, ParamList.End, ValueType.Int, StmtList.End)
     )
 }
 
@@ -35,8 +36,9 @@ spec "comptime.collect_comptime_fns" {
         collect_comptime_fns(StmtList.End).fns.length == 0
     }
     then "non-annotated fns ignored" {
+        let empty_tp: List<TypeParamEntry> = []
         let plain = StmtList.Node(
-            sstmt_dummy(Stmt.Function("plain", TypeParamList.End, ParamList.End, ValueType.Int, StmtList.End)),
+            sstmt_dummy(Stmt.Function("plain", empty_tp, ParamList.End, ValueType.Int, StmtList.End)),
             StmtList.End)
         collect_comptime_fns(plain).fns.length == 0
     }

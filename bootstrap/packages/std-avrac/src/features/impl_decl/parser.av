@@ -1,7 +1,7 @@
 // WHY: parses `impl Type { fn method(self) { ... } }` blocks. Each
 // method is desugared to a free function named `Type__method`.
 
-use core.{Stmt, StmtList, ParamList, TypeParamList, SStmt, sstmt, ValueType, type_expr_to_vtype, vtype_from_name, Expr, ExprList, Annotation, sexpr_dummy}
+use core.{Stmt, StmtList, ParamList, TypeParamEntry, SStmt, sstmt, ValueType, type_expr_to_vtype, vtype_from_name, Expr, ExprList, Annotation, sexpr_dummy}
 use parse.{Parser}
 use core.{method_mangled_name}
 use core.{Tk}
@@ -126,7 +126,8 @@ impl Parser {
             return null
         }
         let mangled = method_mangled_name(type_name, name)
-        Stmt.Function(mangled, TypeParamList.End, params, ret_vtype, body)
+        let empty_tp: List<TypeParamEntry> = []
+        Stmt.Function(mangled, empty_tp, params, ret_vtype, body)
     }
 
     fn parse_method_param_list(self, type_name: string) -> ParamList? {

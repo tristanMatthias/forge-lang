@@ -6,7 +6,7 @@
 // dir-as-module (g2eo.1): names.av auto-loads as a sibling, surfaces
 // flat at `resolve.{...}`.
 
-use core.{Expr, ExprList, FieldInitList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeParamList, stmt_unwrap}
+use core.{Expr, ExprList, FieldInitList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeParamEntry, stmt_unwrap}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_with_help, span_dummy, span_new, span_at}
 use core.{Registry, build_registry, dispatch_stmt_resolve, dispatch_expr_resolve, avra_stmt_tag, avra_expr_tag}
 
@@ -233,15 +233,16 @@ export fn define_param_names(r: Resolver, params: ParamList) -> Resolver {
 /// Push type param names (`T`, `U`, ...) into scope as defined
 /// variables. Prevents "undefined variable" errors when `T` appears
 /// in param types, return types, or the function body.
-fn define_type_params(r: Resolver, params: TypeParamList) -> Resolver {
-    match params {
-        .End -> r
-        .Node(name, _, next) -> {
-            let after = declare_name(r, name)
-            let defined = define_name(after, name)
-            define_type_params(defined, next)
-        }
+fn define_type_params(r: Resolver, params: List<TypeParamEntry>) -> Resolver {
+    mut acc = r
+    mut i = 0
+    while i < params.length {
+        let name = params[i].name
+        let after = declare_name(acc, name)
+        acc = define_name(after, name)
+        i = i + 1
     }
+    acc
 }
 
 /// Walk the scope stack and flip the `defined` flag on the entry

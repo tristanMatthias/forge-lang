@@ -3,7 +3,7 @@
 // checking and before codegen. After this pass, the AST contains no
 // generic declarations — codegen sees only concrete code.
 
-use core.{Expr, ExprList, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, StmtList, ParamList, FieldList, FieldInitList, TypeList, VariantList, MatchArmList, TypeArg, TypeParamList, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge, SelectArm}
+use core.{Expr, ExprList, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, StmtList, ParamList, FieldList, FieldInitList, TypeList, VariantList, MatchArmList, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge, SelectArm}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_warning, span_new}
 use typeck.{TraitImplReg, type_implements_trait}
 use core.{mangle_join, type_short_name}
@@ -23,11 +23,11 @@ type GenRegs = {
 }
 
 /// One entry in the generic-fn registry. Pairs the name with the
-/// declaration's TypeParamList, params, return type, and body —
+/// declaration's List<TypeParamEntry>, params, return type, and body —
 /// everything needed to specialise it later.
 type GenericFnEntry = {
     name: string,
-    tp: TypeParamList,
+    tp: List<TypeParamEntry>,
     params: ParamList,
     ret_vt: ValueType,
     body: StmtList,
@@ -35,13 +35,13 @@ type GenericFnEntry = {
 /// One entry in the generic-enum registry.
 type GenericEnumEntry = {
     name: string,
-    tp: TypeParamList,
+    tp: List<TypeParamEntry>,
     variants: VariantList,
 }
 /// One entry in the generic-struct registry.
 type GenericStructEntry = {
     name: string,
-    tp: TypeParamList,
+    tp: List<TypeParamEntry>,
     fields: FieldList,
 }
 
@@ -310,16 +310,17 @@ fn finalize_insts(insts: List<Inst>, regs: GenRegs, bag: DiagnosticBag, ti: Trai
     CollectState { insts: out, bag: acc_bag, line: 0, col: 0, trait_impls: ti }
 }
 
-/// Find the TypeParamList for a generic decl by name across
+/// Find the List<TypeParamEntry> for a generic decl by name across
 /// every registry (fns / enums / structs).
-fn lookup_type_params(name: string, regs: GenRegs) -> TypeParamList {
+fn lookup_type_params(name: string, regs: GenRegs) -> List<TypeParamEntry> {
     let fn_e = generic_fn_lookup(regs.fns, name)
     if fn_e != null { return fn_e!.tp }
     let enum_e = generic_enum_lookup(regs.enums, name)
     if enum_e != null { return enum_e!.tp }
     let struct_e = generic_struct_lookup(regs.structs, name)
     if struct_e != null { return struct_e!.tp }
-    TypeParamList.End
+    let empty: List<TypeParamEntry> = []
+    empty
 }
 
 // ── Helpers ──
@@ -329,33 +330,34 @@ fn lookup_type_params(name: string, regs: GenRegs) -> TypeParamList {
 /// `monomorphize` to filter the AST before specialisation.
 fn is_generic_decl(stmt: Stmt) -> bool {
     match stmt {
-        .Function(_, tp, _, _, _) if tp is .Node -> true
-        .EnumDecl(_, tp, _) if tp is .Node -> true
-        .TypeDecl(_, tp, _) if tp is .Node -> true
+        .Function(_, tp, _, _, _) if tp.length > 0 -> true
+        .EnumDecl(_, tp, _) if tp.length > 0 -> true
+        .TypeDecl(_, tp, _) if tp.length > 0 -> true
         .Annotated(_, inner) -> is_generic_decl(inner)
         _ -> false
     }
 }
 
 /// Build the mangled name for a specialisation. Joins the
-/// base name with the concrete types in TypeParamList order
+/// base name with the concrete types in List<TypeParamEntry> order
 /// (so two sites with the same args produce the same mangled
 /// name even when the resolver visits them differently).
-fn mangle_name_ordered(base: string, tp: TypeParamList, ta: List<TypeArg>) -> string {
+fn mangle_name_ordered(base: string, tp: List<TypeParamEntry>, ta: List<TypeArg>) -> string {
     mangle_join(type_short_name(base), mangle_ordered(tp, ta))
 }
 
 /// Worker for `mangle_name_ordered` — concatenate the
-/// concrete type names following the TypeParamList order.
-fn mangle_ordered(tp: TypeParamList, ta: List<TypeArg>) -> string {
-    match tp {
-        .End -> ""
-        .Node(name, _, next) -> {
-            let ty = type_short_name(vtype_render_full(type_arg_lookup(ta, name)))
-            let rest = mangle_ordered(next, ta)
-            if rest == "" { ty } else { mangle_join(ty, rest) }
-        }
+/// concrete type names following the List<TypeParamEntry> order.
+fn mangle_ordered(tp: List<TypeParamEntry>, ta: List<TypeArg>) -> string {
+    mut out = ""
+    mut i = 0
+    while i < tp.length {
+        let name = tp[i].name
+        let ty = type_short_name(vtype_render_full(type_arg_lookup(ta, name)))
+        if out == "" { out = ty } else { out = mangle_join(out, ty) }
+        i = i + 1
     }
+    out
 }
 
 
@@ -364,7 +366,7 @@ fn mangle_ordered(tp: TypeParamList, ta: List<TypeArg>) -> string {
 /// Infer concrete type-args for an enum / struct constructor
 /// by pairing the declared field types with the arg
 /// expressions and binding any T params that appear.
-fn infer_from_fields(tp: TypeParamList, fields: FieldList, args: ExprList, acc: List<TypeArg>) -> List<TypeArg> {
+fn infer_from_fields(tp: List<TypeParamEntry>, fields: FieldList, args: ExprList, acc: List<TypeArg>) -> List<TypeArg> {
     match fields {
         .End -> acc
         .Node(_, resolved, rest) -> match args {
@@ -384,7 +386,7 @@ fn infer_from_fields(tp: TypeParamList, fields: FieldList, args: ExprList, acc: 
 /// Falls back to no-binding when the constructors don't match —
 /// the monomorphizer's later `check_resolved` reports F1002 if a
 /// param ended up unbound.
-fn unify_param(tp: TypeParamList, param_ty: ValueType, arg_ty: ValueType, acc: List<TypeArg>) -> List<TypeArg> {
+fn unify_param(tp: List<TypeParamEntry>, param_ty: ValueType, arg_ty: ValueType, acc: List<TypeArg>) -> List<TypeArg> {
     let name = vtype_display(param_ty)
     if type_param_has(tp, name) {
         // Cons-prepend: new binding lands at the head so
@@ -426,7 +428,7 @@ fn unify_param(tp: TypeParamList, param_ty: ValueType, arg_ty: ValueType, acc: L
 }
 
 /// Pairwise unify two TypeLists (used for fn-param recursion).
-fn unify_type_lists(tp: TypeParamList, params: TypeList, args: TypeList, acc: List<TypeArg>) -> List<TypeArg> {
+fn unify_type_lists(tp: List<TypeParamEntry>, params: TypeList, args: TypeList, acc: List<TypeArg>) -> List<TypeArg> {
     match params {
         .End -> acc
         .Node(p, prest) -> match args {
@@ -496,7 +498,7 @@ fn param_types(params: ParamList) -> TypeList {
 /// generic constructors (`List<T>`, `Task<T>`, `fn(T) -> U`) so
 /// type params nested inside them are bound from the call's
 /// concrete arg types.
-fn infer_from_params(tp: TypeParamList, params: ParamList, args: ExprList, acc: List<TypeArg>) -> List<TypeArg> {
+fn infer_from_params(tp: List<TypeParamEntry>, params: ParamList, args: ExprList, acc: List<TypeArg>) -> List<TypeArg> {
     match params {
         .End -> acc
         .Node(_, resolved, rest) -> match args {
@@ -508,7 +510,7 @@ fn infer_from_params(tp: TypeParamList, params: ParamList, args: ExprList, acc: 
 
 /// Infer type-args from a struct literal's field initializers
 /// by matching each init against its declared field type.
-fn infer_from_field_inits(tp: TypeParamList, fields: FieldList, inits: FieldInitList, acc: List<TypeArg>) -> List<TypeArg> {
+fn infer_from_field_inits(tp: List<TypeParamEntry>, fields: FieldList, inits: FieldInitList, acc: List<TypeArg>) -> List<TypeArg> {
     match inits {
         .End -> acc
         .Node(name, val, next) -> {
@@ -539,21 +541,23 @@ fn field_type_for(fields: FieldList, name: string) -> string {
 /// concrete arg satisfies the param's trait bounds. Emits
 /// F1002 (cannot infer) for unbound params and F1000 for
 /// bound violations.
-fn check_resolved(tp: TypeParamList, ta: List<TypeArg>, name: string, line: int, col: int, bag: DiagnosticBag, ti: TraitImplReg) -> DiagnosticBag {
-    match tp {
-        .End -> bag
-        .Node(pname, bounds, next) -> {
-            let concrete = type_arg_lookup(ta, pname)
-            let concrete_str = vtype_render_full(concrete)
-            let updated = if vtype_eq(concrete, ValueType.Struct(pname, 0)) {
-                bag_report(bag, diag_error(DiagCode.CannotInferTypeParam, "cannot infer type parameter `${pname}` in `${name}<...>`", span_new(0, 0, line, col)))
-            } else if bounds != "" {
-                // Check trait bounds: "T: Display + Debug" → check each bound
-                check_type_bounds(concrete_str, bounds, name, pname, line, col, bag, ti)
-            } else { bag }
-            check_resolved(next, ta, name, line, col, updated, ti)
-        }
+fn check_resolved(tp: List<TypeParamEntry>, ta: List<TypeArg>, name: string, line: int, col: int, bag: DiagnosticBag, ti: TraitImplReg) -> DiagnosticBag {
+    mut acc = bag
+    mut i = 0
+    while i < tp.length {
+        let pname = tp[i].name
+        let bounds = tp[i].bounds
+        let concrete = type_arg_lookup(ta, pname)
+        let concrete_str = vtype_render_full(concrete)
+        acc = if vtype_eq(concrete, ValueType.Struct(pname, 0)) {
+            bag_report(acc, diag_error(DiagCode.CannotInferTypeParam, "cannot infer type parameter `${pname}` in `${name}<...>`", span_new(0, 0, line, col)))
+        } else if bounds != "" {
+            // Check trait bounds: "T: Display + Debug" → check each bound
+            check_type_bounds(concrete_str, bounds, name, pname, line, col, acc, ti)
+        } else { acc }
+        i = i + 1
     }
+    acc
 }
 
 /// Walk a `+`-separated bound clause checking that the
@@ -620,53 +624,38 @@ fn builtin_implements(ty: string, trait_name: string) -> bool {
 /// True when every param in `tp` has a binding in `ta`. Used
 /// to decide whether an inst is fully resolved and can become
 /// a real specialisation.
-fn all_resolved(tp: TypeParamList, ta: List<TypeArg>) -> bool {
-    match tp {
-        .End -> true
-        .Node(pname, _, next) -> {
-            if vtype_eq(type_arg_lookup(ta, pname), ValueType.Struct(pname, 0)) { return false }
-            all_resolved(next, ta)
-        }
+fn all_resolved(tp: List<TypeParamEntry>, ta: List<TypeArg>) -> bool {
+    mut i = 0
+    while i < tp.length {
+        let pname = tp[i].name
+        if vtype_eq(type_arg_lookup(ta, pname), ValueType.Struct(pname, 0)) { return false }
+        i = i + 1
     }
+    true
 }
 
 /// Convert an explicit `f::<int, string>` argument list into
 /// a `List<TypeArg>` by zipping with the declared
-/// TypeParamList. Zips stop at whichever side ends first — same
+/// List<TypeParamEntry>. Zips stop at whichever side ends first — same
 /// shortest-zip semantics as the prior recursive shape.
-fn explicit_to_type_args(tp: TypeParamList, names: List<string>) -> List<TypeArg> {
-    explicit_to_type_args_at(tp, names, 0)
-}
-
-fn explicit_to_type_args_at(tp: TypeParamList, names: List<string>, idx: int) -> List<TypeArg> {
-    match tp {
-        .End -> {
-            let empty: List<TypeArg> = []
-            empty
-        }
-        .Node(param_name, _, tp_next) -> {
-            if idx >= names.length {
-                let empty: List<TypeArg> = []
-                return empty
-            }
-            // Cons-prepend: new entry lands at the head; the
-            // recursive call returns the tail of the list.
-            mut out: List<TypeArg> = []
-            out.push(TypeArg { param_name, concrete_vt: vtype_from_type_string(names[idx]) })
-            let rest = explicit_to_type_args_at(tp_next, names, idx + 1)
-            mut i = 0
-            while i < rest.length {
-                out.push(rest[i])
-                i = i + 1
-            }
-            out
-        }
+fn explicit_to_type_args(tp: List<TypeParamEntry>, names: List<string>) -> List<TypeArg> {
+    // Zip stops at whichever side ends first — matches the prior
+    // shortest-zip semantics. Source-order push keeps the order
+    // type_arg_lookup callers expect (callers don't rely on a
+    // particular ordering, but keeping it stable avoids surprises).
+    mut out: List<TypeArg> = []
+    let limit = if tp.length < names.length { tp.length } else { names.length }
+    mut i = 0
+    while i < limit {
+        out.push(TypeArg { param_name: tp[i].name, concrete_vt: vtype_from_type_string(names[i]) })
+        i = i + 1
     }
+    out
 }
 
 /// Infer enum-constructor type-args from the variant's
 /// declared field types and the constructor call's args.
-fn resolve_enum_type_args(tp: TypeParamList, variants: VariantList, variant: string, args: ExprList) -> List<TypeArg> {
+fn resolve_enum_type_args(tp: List<TypeParamEntry>, variants: VariantList, variant: string, args: ExprList) -> List<TypeArg> {
     let vl = variant_lookup(variants, variant)
     let empty: List<TypeArg> = []
     infer_from_fields(tp, vl.fields, args, empty)
@@ -700,36 +689,28 @@ fn rewrite_type_name(ty: string, regs: GenRegs, insts: List<Inst>) -> string {
 /// Mangle a generic type annotation like `Result<EmitValue,
 /// string>` into `Result__EmitValue__string`. `args_str` is
 /// the comma-separated type-arg list inside the brackets.
-fn mangle_annotation(base: string, tp: TypeParamList, args_str: string, regs: GenRegs, insts: List<Inst>) -> string {
+fn mangle_annotation(base: string, tp: List<TypeParamEntry>, args_str: string, regs: GenRegs, insts: List<Inst>) -> string {
     let ta = split_annotation_args(tp, args_str, regs, insts)
     mangle_name_ordered(base, tp, ta)
 }
 
 /// Split a comma-separated type-arg string (`"EmitValue,
 /// string"`) into a `List<TypeArg>` matched against the
-/// declaration's TypeParamList. Respects nested generics —
+/// declaration's List<TypeParamEntry>. Respects nested generics —
 /// the comma in `Map<string, int>` doesn't split.
-fn split_annotation_args(tp: TypeParamList, args_str: string, regs: GenRegs, insts: List<Inst>) -> List<TypeArg> {
-    match tp {
-        .End -> {
-            let empty: List<TypeArg> = []
-            empty
-        }
-        .Node(param_name, _, next_tp) -> {
-            let split = top_level_split_idx(args_str)
-            let head_arg = if split < 0 { args_str.trim() } else { args_str.substring(0, split).trim() }
-            let tail = if split < 0 { "" } else { args_str.substring(split + 1, args_str.length) }
-            mut out: List<TypeArg> = []
-            out.push(TypeArg { param_name, concrete_vt: vtype_from_type_string(rewrite_type_name(head_arg, regs, insts)) })
-            let rest = split_annotation_args(next_tp, tail, regs, insts)
-            mut i = 0
-            while i < rest.length {
-                out.push(rest[i])
-                i = i + 1
-            }
-            out
-        }
+fn split_annotation_args(tp: List<TypeParamEntry>, args_str: string, regs: GenRegs, insts: List<Inst>) -> List<TypeArg> {
+    mut out: List<TypeArg> = []
+    mut remaining = args_str
+    mut i = 0
+    while i < tp.length {
+        let split = top_level_split_idx(remaining)
+        let head_arg = if split < 0 { remaining.trim() } else { remaining.substring(0, split).trim() }
+        let tail = if split < 0 { "" } else { remaining.substring(split + 1, remaining.length) }
+        out.push(TypeArg { param_name: tp[i].name, concrete_vt: vtype_from_type_string(rewrite_type_name(head_arg, regs, insts)) })
+        remaining = tail
+        i = i + 1
     }
+    out
 }
 
 /// Linear search for a single character in a string. Returns
@@ -792,17 +773,17 @@ fn collect_generics(stmts: StmtList, regs: GenRegs) -> GenRegs {
 /// other stmts pass through.
 fn collect_generic_stmt(stmt: Stmt, regs: GenRegs) -> GenRegs {
     match stmt {
-        .Function(name, tp, params, ret_vt, body) if tp is .Node -> {
+        .Function(name, tp, params, ret_vt, body) if tp.length > 0 -> {
             mut fns = regs.fns
             fns.push(GenericFnEntry { name, tp, params, ret_vt, body })
             regs with { fns }
         }
-        .EnumDecl(name, tp, variants) if tp is .Node -> {
+        .EnumDecl(name, tp, variants) if tp.length > 0 -> {
             mut enums = regs.enums
             enums.push(GenericEnumEntry { name, tp, variants })
             regs with { enums }
         }
-        .TypeDecl(name, tp, fields) if tp is .Node -> {
+        .TypeDecl(name, tp, fields) if tp.length > 0 -> {
             mut structs = regs.structs
             structs.push(GenericStructEntry { name, tp, fields })
             regs with { structs }
@@ -853,7 +834,7 @@ fn collect_inst_stmt(stmt: Stmt, regs: GenRegs, st: CollectState) -> CollectStat
         .Block(body) -> collect_inst_stmts(body, regs, st)
         .Module(_, body) -> collect_inst_stmts(body, regs, st)
         .Function(_, tp, _, ret_vt, body) -> {
-            if tp is .Node { return st }
+            if tp.length > 0 { return st }
             // Scope merging to this function: collect body's instantiations
             // independently so enum ctors merge within the function, not globally.
             let fn_state = collect_inst_stmts(body, regs, CollectState { insts: [], bag: st.bag, line: st.line, col: st.col, trait_impls: st.trait_impls })
@@ -1017,7 +998,7 @@ fn collect_inst_field_inits(inits: FieldInitList, regs: GenRegs, st: CollectStat
 /// Append a fully-resolved instantiation (every param has a
 /// concrete binding) to the InstList. Used by `GenericCall`
 /// where the user supplied explicit type args.
-fn add_resolved_inst(name: string, tp: TypeParamList, ta: List<TypeArg>, st: CollectState) -> CollectState {
+fn add_resolved_inst(name: string, tp: List<TypeParamEntry>, ta: List<TypeArg>, st: CollectState) -> CollectState {
     if all_resolved(tp, ta) {
         let mangled = mangle_name_ordered(name, tp, ta)
         let new_insts = if inst_has(st.insts, mangled) {
@@ -1044,7 +1025,7 @@ fn add_resolved_inst(name: string, tp: TypeParamList, ta: List<TypeArg>, st: Col
 /// Add (or merge) a generic-fn instantiation inferred from
 /// the call args. Falls back to `merge_partial` so partial
 /// info from one call site can complete another's bindings.
-fn try_add_fn_inst(name: string, tp: TypeParamList, params: ParamList, args: ExprList, st: CollectState) -> CollectState {
+fn try_add_fn_inst(name: string, tp: List<TypeParamEntry>, params: ParamList, args: ExprList, st: CollectState) -> CollectState {
     let empty_ta: List<TypeArg> = []
     add_resolved_inst(name, tp, infer_from_params(tp, params, args, empty_ta), st)
 }
@@ -1076,18 +1057,21 @@ fn try_add_struct_inst(name: string, inits: FieldInitList, regs: GenRegs, st: Co
 /// substituted param/return types + substituted body.
 fn specialize_fn(mangled: string, params: ParamList, ret_vt: ValueType, body: StmtList, ta: List<TypeArg>) -> Stmt {
     let concrete_ret_vt = substitute_vtype(ret_vt, ta)
-    Stmt.Function(mangled, TypeParamList.End, substitute_params(params, ta), concrete_ret_vt, substitute_stmts(body, ta))
+    let empty_tp: List<TypeParamEntry> = []
+    Stmt.Function(mangled, empty_tp, substitute_params(params, ta), concrete_ret_vt, substitute_stmts(body, ta))
 }
 /// Specialise a generic enum — mirror of `specialize_fn` but
 /// for enum decls. Substitutes type params in every variant's
 /// payload fields.
 fn specialize_enum(mangled: string, variants: VariantList, ta: List<TypeArg>) -> Stmt {
-    Stmt.EnumDecl(mangled, TypeParamList.End, substitute_variants(variants, ta))
+    let empty_tp: List<TypeParamEntry> = []
+    Stmt.EnumDecl(mangled, empty_tp, substitute_variants(variants, ta))
 }
 /// Specialise a generic struct — mirror of `specialize_fn`.
 /// Substitutes type params in every field's declared type.
 fn specialize_struct(mangled: string, fields: FieldList, ta: List<TypeArg>) -> Stmt {
-    Stmt.TypeDecl(mangled, TypeParamList.End, substitute_fields(fields, ta))
+    let empty_tp: List<TypeParamEntry> = []
+    Stmt.TypeDecl(mangled, empty_tp, substitute_fields(fields, ta))
 }
 
 /// Generate one specialised AST node for each fully-resolved
@@ -1267,7 +1251,7 @@ fn scope_insts_for_ret(ret_ty: string, regs: GenRegs, insts: List<Inst>) -> List
     if angle < 0 { return insts }
     let base = ret_ty.substring(0, angle)
     let args_str = ret_ty.substring(angle + 1, ret_ty.length - 1)
-    mut tp = TypeParamList.End
+    mut tp: List<TypeParamEntry> = []
     let enum_e = generic_enum_lookup(regs.enums, base)
     if enum_e != null {
         tp = enum_e!.tp
@@ -1425,7 +1409,7 @@ fn rewrite_fn_ret(ret_ty: string, regs: GenRegs, insts: List<Inst>) -> ValueType
 /// type, body — all forwarded through `rewrite_*` helpers.
 /// Used by the per-fn pass to convert generic decls into
 /// non-generic ones referencing mangled specialisations.
-fn rewrite_function(name: string, tp: TypeParamList, params: ParamList, ret_ty: string, body: StmtList, regs: GenRegs, insts: List<Inst>) -> Stmt {
+fn rewrite_function(name: string, tp: List<TypeParamEntry>, params: ParamList, ret_ty: string, body: StmtList, regs: GenRegs, insts: List<Inst>) -> Stmt {
     let scoped = scope_insts_for_ret(ret_ty, regs, insts)
     Stmt.Function(name, tp, rewrite_param_types(params, regs, scoped), rewrite_fn_ret(ret_ty, regs, insts), rewrite_stmts(body, regs, scoped))
 }
@@ -1644,7 +1628,7 @@ fn rewrite_field_inits(inits: FieldInitList, regs: GenRegs, insts: List<Inst>) -
 /// Compute the mangled enum name for a constructor call site
 /// from its arg-inferred `List<TypeArg>`. Falls back to existing
 /// inst entries when site-local inference can't fully resolve.
-fn mangle_enum_at_site(tn: string, variant: string, tp: TypeParamList, variants: VariantList, args: ExprList, insts: List<Inst>) -> string {
+fn mangle_enum_at_site(tn: string, variant: string, tp: List<TypeParamEntry>, variants: VariantList, args: ExprList, insts: List<Inst>) -> string {
     let partial = resolve_enum_type_args(tp, variants, variant, args)
     let result = inst_mangled_compatible(insts, tn, partial)
     // If compatible match failed (returned raw name), fall back to any entry

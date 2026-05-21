@@ -32,7 +32,7 @@
 use core.{
     Stmt, StmtList, SStmt, sstmt_dummy, stmt_unwrap,
     Expr, ExprList,
-    Annotation, ParamList, ValueType, FieldList, VariantList, TypeParamList,
+    Annotation, ParamList, ValueType, FieldList, VariantList, TypeParamEntry,
     sexpr_dummy,
 }
 use build.metadata.{
@@ -524,7 +524,8 @@ fn synth_impl_method_stmts_from_sigs(ms: List<MetaTraitMethod>, qualified_type: 
     while i >= 0 {
         let m = ms[i]
         let mangled = "${qualified_type}__${m.name}"
-        let fn_decl = Stmt.Function(mangled, TypeParamList.End, m.params, m.ret, StmtList.End)
+        let empty_tp: List<TypeParamEntry> = []
+        let fn_decl = Stmt.Function(mangled, empty_tp, m.params, m.ret, StmtList.End)
         let head = sstmt_dummy(wrap_external_unit(fn_decl))
         acc = StmtList.Node(head, acc)
         i = i - 1
@@ -566,7 +567,8 @@ fn synth_impl_method_stmts(ms: List<ImplMethodRef>, trait_methods: List<MetaTrai
         let m = ms[i]
         let sig = lookup_trait_method_sig(trait_methods, m.method_name)
         let mangled = "${qualified_type}__${m.method_name}"
-        let fn_decl = Stmt.Function(mangled, TypeParamList.End, sig.params, sig.ret, StmtList.End)
+        let empty_tp: List<TypeParamEntry> = []
+        let fn_decl = Stmt.Function(mangled, empty_tp, sig.params, sig.ret, StmtList.End)
         let head = sstmt_dummy(wrap_external_unit(fn_decl))
         acc = StmtList.Node(head, acc)
         i = i - 1

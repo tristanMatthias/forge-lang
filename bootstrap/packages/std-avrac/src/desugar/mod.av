@@ -7,7 +7,7 @@
 // Component expansion is a SEPARATE pass that runs before desugar.
 // See features/component_decl/expand.av.
 
-use core.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, sstmt_dummy, stmt_unwrap, FieldList, FieldInitList, MatchArmList, WhenArm, PatternList, ParamList, Pattern, BinOp, UnOp, ValueType, VariantList, TypeParamList}
+use core.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, sstmt_dummy, stmt_unwrap, FieldList, FieldInitList, MatchArmList, WhenArm, PatternList, ParamList, Pattern, BinOp, UnOp, ValueType, VariantList, TypeParamEntry}
 
 // ── Public API ──
 
@@ -63,10 +63,9 @@ fn synthesize_result_enum() -> Stmt {
         "Ok", ok_fields,
         VariantList.Node("Err", err_fields, VariantList.End)
     )
-    let type_params = TypeParamList.Node(
-        "T", "",
-        TypeParamList.Node("E", "", TypeParamList.End)
-    )
+    mut type_params: List<TypeParamEntry> = []
+    type_params.push(TypeParamEntry { name: "T", bounds: "" })
+    type_params.push(TypeParamEntry { name: "E", bounds: "" })
     Stmt.EnumDecl("Result", type_params, variants)
 }
 
