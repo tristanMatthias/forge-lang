@@ -6,7 +6,7 @@
 //   do NOT read this file when:   the issue is expression precedence (parser.av)
 //   related:                features/match_expr/codegen.av, core.ast.{Pattern, MatchArmList}
 
-use core.{Stmt, Expr, ExprList, Pattern, PatternList, MatchArmList, WhenArm, ParamList, SExpr, sexpr, StmtList, sstmt}use parse.{Parser, reverse_expr_list, table_zip_entries}
+use core.{Stmt, Expr, ExprList, Pattern, MatchArmList, WhenArm, ParamList, SExpr, sexpr, StmtList, sstmt}use parse.{Parser, reverse_expr_list, table_zip_entries}
 use core.{Tk}
 
 impl Parser {
@@ -245,19 +245,14 @@ impl Parser {
         self.check(Tk.Dot)
     }
 
-    fn parse_pattern_list(self) -> PatternList? {
-        if self.check(Tk.RightParen) {
-            return PatternList.End
+    fn parse_pattern_list(self) -> List<Pattern>? {
+        mut out: List<Pattern> = []
+        while !self.check(Tk.RightParen) {
+            let p = self.parse_pattern()?
+            out.push(p)
+            if self.check(Tk.Comma) { self.advance() }
         }
-        let p = self.parse_pattern()?
-        if self.check(Tk.Comma) {
-            self.advance()
-        }
-        if self.check(Tk.RightParen) {
-            return PatternList.Node(p, PatternList.End)
-        }
-        let rest = self.parse_pattern_list()?
-        PatternList.Node(p, rest)
+        out
     }
 
     fn parse_match_expression(self) -> Expr? {

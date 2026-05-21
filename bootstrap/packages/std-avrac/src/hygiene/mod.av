@@ -31,7 +31,7 @@ use core.{
     Stmt, StmtList, SStmt, sstmt_at,
     Expr, ExprList, SExpr, sexpr,
     FieldInitList, MatchArmList,
-    ParamList, Pattern, PatternList,
+    ParamList, Pattern,
     BinOp, UnOp, LogicOp,
     ValueType,
 }

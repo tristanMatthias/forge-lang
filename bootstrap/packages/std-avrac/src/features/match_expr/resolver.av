@@ -1,6 +1,6 @@
 // WHY: resolves names in match arms — binds pattern variables into scope.
 
-use core.{Pattern, PatternList, MatchArmList, WhenArm}
+use core.{Pattern, MatchArmList, WhenArm}
 use resolve.{Resolver, enter_resolve_scope, exit_resolve_scope, resolve_expr, declare_params, declare_name, define_name}
 
 /// Resolve every arm of a `match` expression. For each arm:
@@ -41,12 +41,15 @@ fn declare_pattern_bindings(r: Resolver, pattern: Pattern) -> Resolver {
     }
 }
 
-/// Walk a PatternList declaring captures from every sub-pattern.
-fn declare_pattern_list(r: Resolver, pats: PatternList) -> Resolver {
-    match pats {
-        .End -> r
-        .Node(p, next) -> declare_pattern_list(declare_pattern_bindings(r, p), next)
+/// Walk a `List<Pattern>` declaring captures from every sub-pattern.
+fn declare_pattern_list(r: Resolver, pats: List<Pattern>) -> Resolver {
+    mut acc = r
+    mut i = 0
+    while i < pats.length {
+        acc = declare_pattern_bindings(acc, pats[i])
+        i = i + 1
     }
+    acc
 }
 
 /// Resolve every arm of a `when` (subjectless `match`)

@@ -1,6 +1,6 @@
 // WHY: emits LLVM IR for `match` as both a statement and an expression.
 
-use core.{Expr, Pattern, PatternList, MatchArmList, WhenArm, ParamList, FieldList, TypeList, VariantList, VarEnv, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types}
+use core.{Expr, Pattern, MatchArmList, WhenArm, ParamList, FieldList, TypeList, VariantList, VarEnv, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types}
 use codegen.{Ctx, EmitValue, StmtResult, err_emit, ok_emit, field_resolved_at, advance_field_list, emit_value_ptr, emit_value_ty, enum_reg_find_by_variant, vtype_is_ptr_type}
 use core.{vtype_from_name}
 use codegen.{ok_sr, err_sr}
@@ -372,59 +372,60 @@ fn emit_nested_tag_checks(ctx: Ctx, pattern: Pattern, st_ty: ptr, subj_ptr: ptr,
 /// Recursive worker for `emit_nested_tag_checks` — walks the
 /// pattern list pairwise with the variant's field list, emitting
 /// tag-compare branches for each constructor sub-pattern.
-fn emit_nested_tag_check_list(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, pats: PatternList, fields: FieldList, idx: int, next_bb: ptr) {
-    match pats {
-        .End -> {}
-        .Node(pat, next) -> {
-            match pat {
-                .Variant(inner_vname, _) -> {
-                    let inner_ty = field_resolved_at(fields, 0)
-                    let enum_name = vtype_enum_name(inner_ty)
-                    if enum_name != "" {
-                        let lookup = ctx.lookup_enum(enum_name)
-                        if lookup.found {
-                            let iv = variant_lookup(lookup.variants, inner_vname)
-                            if iv.found {
-                                let inner_val = load_payload_field(ctx, st_ty, subj_ptr, idx, inner_ty, "inner_i64")
-                                let inner_ptr = ctx.to_ptr(inner_val, "inner_enum_ptr")
-                                let inner_struct_ty = ctx.get_type(enum_name)
-                                let inner_tag_gep = ctx.gep(inner_struct_ty, inner_ptr, 0, "inner_tag_ptr")
-                                let inner_tag = ctx.load_i64(inner_tag_gep, "inner_tag")
-                                let want = ctx.i64(iv.tag)
-                                let cmp = ctx.eq(inner_tag, want, "inner_tag_eq")
-                                let pass_bb = ctx.bb("inner_pass")
-                                ctx.cond_br(cmp, pass_bb, next_bb)
-                                ctx.position(pass_bb)
-                            }
+fn emit_nested_tag_check_list(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, pats: List<Pattern>, fields: FieldList, idx: int, next_bb: ptr) {
+    mut i = 0
+    mut current_fields = fields
+    while i < pats.length {
+        let pat = pats[i]
+        match pat {
+            .Variant(inner_vname, _) -> {
+                let inner_ty = field_resolved_at(current_fields, 0)
+                let enum_name = vtype_enum_name(inner_ty)
+                if enum_name != "" {
+                    let lookup = ctx.lookup_enum(enum_name)
+                    if lookup.found {
+                        let iv = variant_lookup(lookup.variants, inner_vname)
+                        if iv.found {
+                            let inner_val = load_payload_field(ctx, st_ty, subj_ptr, idx + i, inner_ty, "inner_i64")
+                            let inner_ptr = ctx.to_ptr(inner_val, "inner_enum_ptr")
+                            let inner_struct_ty = ctx.get_type(enum_name)
+                            let inner_tag_gep = ctx.gep(inner_struct_ty, inner_ptr, 0, "inner_tag_ptr")
+                            let inner_tag = ctx.load_i64(inner_tag_gep, "inner_tag")
+                            let want = ctx.i64(iv.tag)
+                            let cmp = ctx.eq(inner_tag, want, "inner_tag_eq")
+                            let pass_bb = ctx.bb("inner_pass")
+                            ctx.cond_br(cmp, pass_bb, next_bb)
+                            ctx.position(pass_bb)
                         }
                     }
                 }
-                .NestedVariant(inner_vname, _) -> {
-                    let inner_ty = field_resolved_at(fields, 0)
-                    let enum_name = vtype_enum_name(inner_ty)
-                    if enum_name != "" {
-                        let lookup = ctx.lookup_enum(enum_name)
-                        if lookup.found {
-                            let iv = variant_lookup(lookup.variants, inner_vname)
-                            if iv.found {
-                                let inner_val = load_payload_field(ctx, st_ty, subj_ptr, idx, inner_ty, "inner_i64")
-                                let inner_ptr = ctx.to_ptr(inner_val, "inner_enum_ptr")
-                                let inner_struct_ty = ctx.get_type(enum_name)
-                                let inner_tag_gep = ctx.gep(inner_struct_ty, inner_ptr, 0, "inner_tag_ptr")
-                                let inner_tag = ctx.load_i64(inner_tag_gep, "inner_tag")
-                                let want = ctx.i64(iv.tag)
-                                let cmp = ctx.eq(inner_tag, want, "inner_tag_eq")
-                                let pass_bb = ctx.bb("inner_pass")
-                                ctx.cond_br(cmp, pass_bb, next_bb)
-                                ctx.position(pass_bb)
-                            }
-                        }
-                    }
-                }
-                _ -> {}
             }
-            emit_nested_tag_check_list(ctx, st_ty, subj_ptr, next, advance_field_list(fields), idx + 1, next_bb)
+            .NestedVariant(inner_vname, _) -> {
+                let inner_ty = field_resolved_at(current_fields, 0)
+                let enum_name = vtype_enum_name(inner_ty)
+                if enum_name != "" {
+                    let lookup = ctx.lookup_enum(enum_name)
+                    if lookup.found {
+                        let iv = variant_lookup(lookup.variants, inner_vname)
+                        if iv.found {
+                            let inner_val = load_payload_field(ctx, st_ty, subj_ptr, idx + i, inner_ty, "inner_i64")
+                            let inner_ptr = ctx.to_ptr(inner_val, "inner_enum_ptr")
+                            let inner_struct_ty = ctx.get_type(enum_name)
+                            let inner_tag_gep = ctx.gep(inner_struct_ty, inner_ptr, 0, "inner_tag_ptr")
+                            let inner_tag = ctx.load_i64(inner_tag_gep, "inner_tag")
+                            let want = ctx.i64(iv.tag)
+                            let cmp = ctx.eq(inner_tag, want, "inner_tag_eq")
+                            let pass_bb = ctx.bb("inner_pass")
+                            ctx.cond_br(cmp, pass_bb, next_bb)
+                            ctx.position(pass_bb)
+                        }
+                    }
+                }
+            }
+            _ -> {}
         }
+        current_fields = advance_field_list(current_fields)
+        i = i + 1
     }
 }
 
@@ -484,22 +485,24 @@ fn bind_pattern_payload_loop(ctx: Ctx, env: VarEnv, st_ty: ptr, subj_ptr: ptr, b
     }
 }
 
-// Bind nested sub-patterns: each PatternList element matches against the
+// Bind nested sub-patterns: each list element matches against the
 // corresponding payload field of the outer variant.
-/// Recursive binder for nested constructor patterns. For each
+/// Binder for nested constructor patterns. For each
 /// sub-pattern, loads the matching field slot and either binds
 /// it directly (single-name capture) or recurses into deeper
 /// constructor patterns.
-fn bind_nested_patterns(ctx: Ctx, env: VarEnv, st_ty: ptr, subj_ptr: ptr, pats: PatternList, fields: FieldList, idx: int) -> VarEnv {
-    match pats {
-        .End -> env
-        .Node(pat, next) -> {
-            let field_ty = field_resolved_at(fields, 0)
-            let loaded = load_payload_field(ctx, st_ty, subj_ptr, idx, field_ty, "npat_val")
-            let new_env = bind_single_sub_pattern(ctx, env, pat, loaded, field_ty)
-            bind_nested_patterns(ctx, new_env, st_ty, subj_ptr, next, advance_field_list(fields), idx + 1)
-        }
+fn bind_nested_patterns(ctx: Ctx, env: VarEnv, st_ty: ptr, subj_ptr: ptr, pats: List<Pattern>, fields: FieldList, idx: int) -> VarEnv {
+    mut acc = env
+    mut current_fields = fields
+    mut i = 0
+    while i < pats.length {
+        let field_ty = field_resolved_at(current_fields, 0)
+        let loaded = load_payload_field(ctx, st_ty, subj_ptr, idx + i, field_ty, "npat_val")
+        acc = bind_single_sub_pattern(ctx, acc, pats[i], loaded, field_ty)
+        current_fields = advance_field_list(current_fields)
+        i = i + 1
     }
+    acc
 }
 
 // Bind a single sub-pattern against a value extracted from a payload field.

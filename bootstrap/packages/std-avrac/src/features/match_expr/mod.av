@@ -6,7 +6,7 @@ use codegen.{err_emit, err_stmt, StmtResult}
 use codegen.{err_sr}
 use features.eval.{error_result, ok_result, eval_expr, execute_stmt, Runtime, StepResult, Value, define_binding, enter_scope, exit_scope, value_null, is_truthy}
 use features.eval.{step_runtime, step_value, step_had_error, step_is_return, step_error_message}
-use core.{Pattern, PatternList, MatchArmList, ParamList, SExpr, Expr, Stmt}
+use core.{Pattern, MatchArmList, ParamList, SExpr, Expr, Stmt}
 use core.{feature_new, Feature}
 use resolve.{resolve_expr}
 use typeck.{check_expr, tc_er}
@@ -263,21 +263,22 @@ fn bind_param_list_payload(rt: Runtime, bindings: ParamList, payload: List<Value
     }
 }
 
-/// Pairwise-match a `PatternList` against a payload list. Used by
+/// Pairwise-match a `List<Pattern>` against a payload list. Used by
 /// nested constructor patterns. If any sub-pattern fails, the
 /// whole nested match fails.
-fn try_match_pattern_list(rt: Runtime, patterns: PatternList, payload: List<Value>, idx: int) -> MatchAttempt {
-    match patterns {
-        .End -> MatchAttempt { matched: true, runtime: rt }
-        .Node(pat, next) -> {
-            if idx >= payload.length {
-                return MatchAttempt { matched: false, runtime: rt }
-            }
-            let attempt = try_match_pattern(rt, pat, payload[idx])
-            if !attempt.matched { return attempt }
-            try_match_pattern_list(attempt.runtime, next, payload, idx + 1)
+fn try_match_pattern_list(rt: Runtime, patterns: List<Pattern>, payload: List<Value>, idx: int) -> MatchAttempt {
+    mut current_rt = rt
+    mut i = 0
+    while i < patterns.length {
+        if idx + i >= payload.length {
+            return MatchAttempt { matched: false, runtime: current_rt }
         }
+        let attempt = try_match_pattern(current_rt, patterns[i], payload[idx + i])
+        if !attempt.matched { return attempt }
+        current_rt = attempt.runtime
+        i = i + 1
     }
+    MatchAttempt { matched: true, runtime: current_rt }
 }
 
 extern fn avra_selfhost_string_to_int(s: string) -> int

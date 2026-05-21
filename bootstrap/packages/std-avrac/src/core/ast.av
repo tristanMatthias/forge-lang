@@ -84,13 +84,10 @@ export enum VariantList {
     Node(name: string, fields: FieldList, next: VariantList)
 }
 
-/// Recursive pattern list for nested pattern matching:
-/// `match v { .Some(.Ok(x)) -> ... }` builds nested NestedVariant
-/// patterns whose sub-patterns live in this list.
-export enum PatternList {
-    End
-    Node(pattern: Pattern, next: PatternList)
-}
+// `List<Pattern>` replaces the retired `enum PatternList`. Used as
+// the `sub_patterns` payload on `Pattern.NestedVariant` so nested
+// destructures like `match v { .Some(.Ok(x)) -> ... }` recurse into
+// a real growable list.
 
 /// Pattern in a match arm. Used by `match`, `when`, and destructuring
 /// `let (a, b) = tuple`.
@@ -109,7 +106,7 @@ export enum Pattern {
     /// Float literal pattern (stored as string to preserve precision).
     LitFloat(value: string)
     /// Nested destructure: `.Some(.Ok(x))` — sub-patterns recurse.
-    NestedVariant(name: string, sub_patterns: PatternList)
+    NestedVariant(name: string, sub_patterns: List<Pattern>)
     /// Or-pattern: `.Red | .Green | .Blue -> ...`.
     Or(left: Pattern, right: Pattern)
     /// Union-type pattern: `int(n)` matches the int branch of a

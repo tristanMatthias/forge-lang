@@ -1,7 +1,7 @@
 // WHY: type checking for match statements and expressions.
 // Exhaustiveness checking, pattern variable binding, arm type unification.
 
-use core.{Expr, Pattern, PatternList, MatchArmList, TypeList, WhenArm, ParamList, Stmt, StmtList, VariantList, ValueType, stmt_unwrap, vtype_display, vtype_enum_name, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types}
+use core.{Expr, Pattern, MatchArmList, TypeList, WhenArm, ParamList, Stmt, StmtList, VariantList, ValueType, stmt_unwrap, vtype_display, vtype_enum_name, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types}
 use diagnostics.{DiagCode, diag_warning, span_new, bag_report}
 use core.{type_short_name}
 use typeck.{EnumTypeReg, ExprResult, TC, check_expr, tc_bind, tc_check_explicit_returns, tc_enter, tc_er, tc_exit, tc_report, resolve_vtype}
@@ -304,12 +304,15 @@ export fn tc_enter_pattern_scope(tc: TC, pattern: Pattern) -> TC {
     tc_bind_pattern(tc_enter(tc), pattern)
 }
 
-/// Walk a PatternList binding captures from every sub-pattern.
-fn tc_bind_pattern_list(tc: TC, pats: PatternList) -> TC {
-    match pats {
-        .End -> tc
-        .Node(p, next) -> tc_bind_pattern_list(tc_bind_pattern(tc, p), next)
+/// Walk a `List<Pattern>` binding captures from every sub-pattern.
+fn tc_bind_pattern_list(tc: TC, pats: List<Pattern>) -> TC {
+    mut acc = tc
+    mut i = 0
+    while i < pats.length {
+        acc = tc_bind_pattern(acc, pats[i])
+        i = i + 1
     }
+    acc
 }
 
 /// Bind every named param from a constructor pattern into the
