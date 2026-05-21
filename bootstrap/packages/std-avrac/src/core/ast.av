@@ -1068,7 +1068,7 @@ export enum Stmt {
     AssocType(name: string, ty_vt: ValueType)
     /// Component declaration: `component Name(params) { body }` —
     /// reusable templated block of statements.
-    ComponentDef(name: string, params: ParamList, config: CompConfigList, children: List<ChildrenSlot>, implements: List<string>, body: StmtList)
+    ComponentDef(name: string, params: ParamList, config: List<CompConfig>, children: List<ChildrenSlot>, implements: List<string>, body: StmtList)
     /// Component instantiation: `component Foo as bar { config; body }`.
     ComponentBlock(comp_name: string, instance: string, config: List<CompConfigPair>, body: StmtList)
 }
@@ -1098,13 +1098,13 @@ export enum AnnotationList {
     Node(name: string, args: ExprList, next: AnnotationList)
 }
 
-/// Component config schema entries: `key`, `ty_vt`, optional default
-/// value. Declared by ComponentDef so call sites can be type-checked
-/// against the schema.
-export enum CompConfigList {
-    End
-    Node(key: string, ty_vt: ValueType, default_val: Expr?, next: CompConfigList)
-}
+/// Component config schema entry: one `key: ty = default` row declared
+/// by a ComponentDef. Call sites are type-checked against the schema.
+///
+/// `List<CompConfig>` replaces the retired `enum CompConfigList`. Used
+/// as `config: List<CompConfig>` on Stmt.ComponentDef and threaded
+/// through component expansion / lookup helpers.
+export type CompConfig = { key: string, ty_vt: ValueType, default_val: Expr? }
 
 /// Component config pair: one `key: value` supplied at a
 /// ComponentBlock call site to override the schema's default.

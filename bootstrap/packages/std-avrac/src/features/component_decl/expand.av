@@ -10,7 +10,7 @@
 // self.__parent → parent accumulator variable
 // self.__parent_name → parent instance name string
 
-use core.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, FieldList, FieldInitList, ParamList, ValueType, CompConfigList, CompConfigPair, ChildrenSlot, TypeParamList, find_annotation}
+use core.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, FieldList, FieldInitList, ParamList, ValueType, CompConfig, CompConfigPair, ChildrenSlot, TypeParamList, find_annotation}
 use core.{has_fn, find_fn_body}
 
 // ── Public API ──
@@ -41,7 +41,7 @@ export fn expand_components(stmts: StmtList) -> StmtList {
 /// consulted by every `<comp>(...)` instantiation site.
 export enum CompDefRegistry {
     End
-    Entry(name: string, config: CompConfigList, children: List<ChildrenSlot>, body: StmtList, next: CompDefRegistry)
+    Entry(name: string, config: List<CompConfig>, children: List<ChildrenSlot>, body: StmtList, next: CompDefRegistry)
 }
 
 /// Result of a component lookup. `found` distinguishes hit
@@ -53,7 +53,7 @@ export enum CompDefRegistry {
 /// @field body     — the body AST.
 type CompDefLookup = {
     found: bool,
-    config: CompConfigList,
+    config: List<CompConfig>,
     children: List<ChildrenSlot>,
     body: StmtList,
 }
@@ -63,7 +63,8 @@ export fn comp_reg_lookup(reg: CompDefRegistry, name: string) -> CompDefLookup {
     match reg {
         .End -> {
             let empty_slots: List<ChildrenSlot> = []
-            CompDefLookup { found: false, config: CompConfigList.End, children: empty_slots, body: StmtList.End }
+            let empty_cfg: List<CompConfig> = []
+            CompDefLookup { found: false, config: empty_cfg, children: empty_slots, body: StmtList.End }
         }
         .Entry(n, config, children, body, _) if n == name -> CompDefLookup { found: true, config, children, body }
         .Entry(_, _, _, _, next) -> comp_reg_lookup(next, name)
@@ -284,7 +285,7 @@ fn rw_expr_list(list: ExprList, ctx: RewriteCtx) -> ExprList {
 /// reference with the user-supplied config value (falling back
 /// to the schema default). Threads the rewrite ctx so nested
 /// `@self` references still resolve.
-fn rw_template(stmts: StmtList, inst: string, uc: List<CompConfigPair>, schema: CompConfigList, ctx: RewriteCtx) -> StmtList {
+fn rw_template(stmts: StmtList, inst: string, uc: List<CompConfigPair>, schema: List<CompConfig>, ctx: RewriteCtx) -> StmtList {
     match stmts {
         .End -> StmtList.End
         .Node(ss, next) -> {
@@ -296,7 +297,7 @@ fn rw_template(stmts: StmtList, inst: string, uc: List<CompConfigPair>, schema: 
 
 /// Per-statement template rewrite — same shape as `rw_stmt`
 /// but with the config substitution active.
-fn rw_tpl_stmt(stmt: Stmt, inst: string, uc: List<CompConfigPair>, schema: CompConfigList, ctx: RewriteCtx) -> Stmt {
+fn rw_tpl_stmt(stmt: Stmt, inst: string, uc: List<CompConfigPair>, schema: List<CompConfig>, ctx: RewriteCtx) -> Stmt {
     match stmt {
         .Expr(e) -> .Expr(rw_tpl_expr(e, inst, uc, schema, ctx))
         .Let(name, vt, init) -> .Let(name, vt, rw_tpl_expr(init, inst, uc, schema, ctx))
@@ -316,7 +317,7 @@ fn rw_tpl_stmt(stmt: Stmt, inst: string, uc: List<CompConfigPair>, schema: CompC
 
 /// Per-expression template rewrite. `@cfg.field` references
 /// resolve via `resolve_config_value`; other shapes recurse.
-fn rw_tpl_expr(expr: Expr, inst: string, uc: List<CompConfigPair>, schema: CompConfigList, ctx: RewriteCtx) -> Expr {
+fn rw_tpl_expr(expr: Expr, inst: string, uc: List<CompConfigPair>, schema: List<CompConfig>, ctx: RewriteCtx) -> Expr {
     match expr {
         .FieldAccess(obj, field) -> {
             match obj {
@@ -365,7 +366,7 @@ fn rw_tpl_expr(expr: Expr, inst: string, uc: List<CompConfigPair>, schema: CompC
 
 /// Map `rw_tpl_expr` over every field initializer in a struct
 /// literal embedded in a template body.
-fn rw_tpl_field_inits(inits: FieldInitList, inst: string, uc: List<CompConfigPair>, schema: CompConfigList, ctx: RewriteCtx) -> FieldInitList {
+fn rw_tpl_field_inits(inits: FieldInitList, inst: string, uc: List<CompConfigPair>, schema: List<CompConfig>, ctx: RewriteCtx) -> FieldInitList {
     match inits {
         .End -> FieldInitList.End
         .Node(name, sv, next) -> {
@@ -376,7 +377,7 @@ fn rw_tpl_field_inits(inits: FieldInitList, inst: string, uc: List<CompConfigPai
 }
 
 /// Map `rw_tpl_expr` over an ExprList in a template body.
-fn rw_tpl_expr_list(list: ExprList, inst: string, uc: List<CompConfigPair>, schema: CompConfigList, ctx: RewriteCtx) -> ExprList {
+fn rw_tpl_expr_list(list: ExprList, inst: string, uc: List<CompConfigPair>, schema: List<CompConfig>, ctx: RewriteCtx) -> ExprList {
     match list {
         .End -> ExprList.End
         .Node(se, next) -> ExprList.Node(sexpr(rw_tpl_expr(se.node, inst, uc, schema, ctx), se.line, se.col), rw_tpl_expr_list(next, inst, uc, schema, ctx))
@@ -386,24 +387,23 @@ fn rw_tpl_expr_list(list: ExprList, inst: string, uc: List<CompConfigPair>, sche
 /// Resolve a `@cfg.field` reference: prefer the user's
 /// instantiation override, fall back to the schema's default,
 /// finally `Expr.Null` when neither exists.
-export fn resolve_config_value(field: string, user_config: List<CompConfigPair>, schema: CompConfigList) -> Expr {
+export fn resolve_config_value(field: string, user_config: List<CompConfigPair>, schema: List<CompConfig>) -> Expr {
     mut i = 0
     while i < user_config.length {
         let pair = user_config[i]
         if pair.key == field { return pair.value }
         i = i + 1
     }
-    match schema {
-        .End -> Expr.String("\"\"")
-        .Node(key, _, default_val, next) -> {
-            if key == field {
-                if default_val != null { return default_val! }
-                return Expr.String("\"\"")
-            }
-            let empty: List<CompConfigPair> = []
-            resolve_config_value(field, empty, next)
+    mut j = 0
+    while j < schema.length {
+        let entry = schema[j]
+        if entry.key == field {
+            if entry.default_val != null { return entry.default_val! }
+            return Expr.String("\"\"")
         }
+        j = j + 1
     }
+    Expr.String("\"\"")
 }
 
 // ── Helpers ──
@@ -430,24 +430,32 @@ fn capitalize(s: string) -> string {
 /// Convert a component's config schema into struct fields for
 /// the synthesized backing struct. Each schema entry's
 /// declared type becomes a field type.
-fn config_to_fields(config: CompConfigList) -> FieldList {
-    match config {
-        .End -> FieldList.End
-        .Node(key, vt, _, next) -> FieldList.Node(key, vt, config_to_fields(next))
+fn config_to_fields(config: List<CompConfig>) -> FieldList {
+    // FieldList is cons-prepend — walk back-to-front to preserve source order.
+    mut out = FieldList.End
+    mut i = config.length
+    while i > 0 {
+        i = i - 1
+        let entry = config[i]
+        out = FieldList.Node(entry.key, entry.ty_vt, out)
     }
+    out
 }
 
 /// Convert a config schema to the `Foo { field: cfg.field, …}`
 /// FieldInitList used when instantiating the synthesized struct
-/// from inside the factory function.
-fn config_to_factory_inits(config: CompConfigList) -> FieldInitList {
-    match config {
-        .End -> FieldInitList.End
-        .Node(key, _, default_val, next) -> {
-            let val = if default_val != null { default_val! } else { Expr.Null }
-            FieldInitList.Node(key, sexpr(val, 0, 0), config_to_factory_inits(next))
-        }
+/// from inside the factory function. Walks back-to-front for the
+/// same source-order reason as `config_to_fields`.
+fn config_to_factory_inits(config: List<CompConfig>) -> FieldInitList {
+    mut out = FieldInitList.End
+    mut i = config.length
+    while i > 0 {
+        i = i - 1
+        let entry = config[i]
+        let val = if entry.default_val != null { entry.default_val! } else { Expr.Null }
+        out = FieldInitList.Node(entry.key, sexpr(val, 0, 0), out)
     }
+    out
 }
 
 /// Walk a component body collecting every method-shaped fn
@@ -518,7 +526,7 @@ fn config_pairs_to_field_inits(pairs: List<CompConfigPair>) -> FieldInitList {
 /// triple `type Name`, `impl Name { … }`, and a factory
 /// `fn make_name(cfg) -> Name`. Spliced ahead of `rest` so the
 /// surrounding code sees the synthesized definitions.
-export fn splice_component_def(name: string, params: ParamList, config: CompConfigList, children: List<ChildrenSlot>, body: StmtList, line: int, col: int, rest: StmtList) -> StmtList {
+export fn splice_component_def(name: string, params: ParamList, config: List<CompConfig>, children: List<ChildrenSlot>, body: StmtList, line: int, col: int, rest: StmtList) -> StmtList {
     // Template components (with init hooks): no type/factory generation
     if has_fn(body, "init") {
         let methods = extract_methods(body, name)

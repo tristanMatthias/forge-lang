@@ -7,7 +7,7 @@
 // in the parser's feature registry. Subsequent code can use `name instance { ... }`
 // without the `component` keyword — single-pass, no ambiguity.
 
-use core.{Stmt, Expr, ExprList, SExpr, sexpr_dummy, StmtList, SStmt, sstmt, CompConfigList, CompConfigPair, ChildrenSlot, ParamList, FieldList, TypeParamList, ValueType, type_expr_to_vtype}
+use core.{Stmt, Expr, ExprList, SExpr, sexpr_dummy, StmtList, SStmt, sstmt, CompConfig, CompConfigPair, ChildrenSlot, ParamList, FieldList, TypeParamList, ValueType, type_expr_to_vtype}
 use parse.{Parser}
 use core.{Tk}
 use core.{register_component_name}
@@ -60,13 +60,13 @@ impl Parser {
             let params = self.parse_param_list()?
             if !self.consume(Tk.RightParen, "expected `)` after component params") { return null }
             if !self.consume(Tk.LeftBrace, "expected `{` after component header") { return null }
-            let config = if self.check(Tk.Identifier) && self.current_lexeme == "config" {
+            let config: List<CompConfig> = if self.check(Tk.Identifier) && self.current_lexeme == "config" {
                 self.advance()
                 if !self.consume(Tk.LeftBrace, "expected `{` after `config`") { return null }
                 let c = self.parse_comp_config_schema()?
                 if !self.consume(Tk.RightBrace, "expected `}` after config entries") { return null }
                 c
-            } else { CompConfigList.End }
+            } else { [] }
             let body = self.parse_comp_def_body()?
             if !self.consume(Tk.RightBrace, "expected `}` at end of component") { return null }
             register_component_name(self.features, name, (p: Parser) -> p.parse_component_block_bare())
@@ -134,7 +134,7 @@ impl Parser {
         if !self.consume(Tk.LeftBrace, "expected `{` after component name") {
             return null
         }
-        let config = if self.check(Tk.Identifier) && self.current_lexeme == "config" {
+        let config: List<CompConfig> = if self.check(Tk.Identifier) && self.current_lexeme == "config" {
             self.advance()
             if !self.consume(Tk.LeftBrace, "expected `{` after `config`") {
                 return null
@@ -145,7 +145,7 @@ impl Parser {
             }
             c
         } else {
-            CompConfigList.End
+            []
         }
         // Optional `children { slot: List<T>, ... }` block declares
         // accepted nested instantiation slots (vez6.7). Sits at the top
@@ -199,27 +199,29 @@ impl Parser {
 
     // ── Config Schema (definition) ──
 
-    fn parse_comp_config_schema(self) -> CompConfigList? {
-        if self.check(Tk.RightBrace) { return CompConfigList.End }
-        let key = self.consume_identifier("expected config key")?
-        if !self.consume(Tk.Colon, "expected `:` after config key") { return null }
-        let te = self.parse_type_expr("expected config type")?
-        let vt = type_expr_to_vtype(te)
-        let default_val = if self.check(Tk.Equal) {
-            self.advance()
-            let dv = self.parse_expression()?
-            dv
-        } else {
-            null
+    fn parse_comp_config_schema(self) -> List<CompConfig>? {
+        mut out: List<CompConfig> = []
+        while !self.check(Tk.RightBrace) {
+            let key = self.consume_identifier("expected config key")?
+            if !self.consume(Tk.Colon, "expected `:` after config key") { return null }
+            let te = self.parse_type_expr("expected config type")?
+            let vt = type_expr_to_vtype(te)
+            let default_val = if self.check(Tk.Equal) {
+                self.advance()
+                let dv = self.parse_expression()?
+                dv
+            } else {
+                null
+            }
+            // Skip optional annotations like @default
+            while self.check(Tk.At) {
+                self.advance()
+                if self.check(Tk.Identifier) { self.advance() }
+            }
+            if self.check(Tk.Comma) { self.advance() }
+            out.push(CompConfig { key, ty_vt: vt, default_val })
         }
-        // Skip optional annotations like @default
-        while self.check(Tk.At) {
-            self.advance()
-            if self.check(Tk.Identifier) { self.advance() }
-        }
-        if self.check(Tk.Comma) { self.advance() }
-        let rest = self.parse_comp_config_schema()?
-        CompConfigList.Node(key, vt, default_val, rest)
+        out
     }
 
     // ── Definition Body ──
