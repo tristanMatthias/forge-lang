@@ -4,7 +4,7 @@ use core.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEn
 use parse.{parse_int_literal}
 use core.{avra_llvm_const_int}
 use core.{avra_process_env_get}
-use codegen.{Ctx, CgNewtypeReg, CgUnionAliasReg, CopySet, TypeRegs, DeferStack, RcCleanupStack, ReleasableSet, EmitValue, EnumReg, EnumLookup, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for_full, llvm_type_for_full_sized, ok_emit, ok_stmt, struct_reg_lookup, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup}
+use codegen.{Ctx, CgNewtypeReg, CgUnionAliasReg, CopySet, TypeRegs, DeferStack, RcCleanupStack, ReleasableSet, EmitValue, EnumReg, EnumLookup, FnParamTypes, FnRetTypes, LoopStack, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for_full, llvm_type_for_full_sized, ok_emit, ok_stmt, struct_reg_lookup, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup}
 use codegen.{analyze_releasable, analyze_copy_types}
 use codegen.{CycleSet, analyze_cycles, cycle_set_has}
 use core.{build_registry}
@@ -1435,11 +1435,19 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, i8
 /// Strip parameter names from a ParamList, returning only the
 /// resolved ValueTypes in declaration order. Used when registering
 /// `fn_params` so call sites can look up parameter types by index.
-fn params_to_type_list(params: ParamList) -> ParamTypeList {
-    match params {
-        .End -> .End
-        .Node(_, resolved, next) -> .Node(resolved, params_to_type_list(next))
+fn params_to_type_list(params: ParamList) -> List<ValueType> {
+    mut out: List<ValueType> = []
+    mut cur = params
+    while true {
+        match cur {
+            .End -> return out
+            .Node(_, resolved, next) -> {
+                out.push(resolved)
+                cur = next
+            }
+        }
     }
+    out
 }
 
 /// Walk the AST collecting every function's parameter type list

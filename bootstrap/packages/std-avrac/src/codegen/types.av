@@ -200,13 +200,12 @@ fn cg_union_alias_vtype_lookup(reg: CgUnionAliasReg, name: string) -> ValueType 
     reg.ord[i].type_vt
 }
 
-/// Index into a ParamTypeList. Returns Unknown out-of-range.
-export fn param_type_vt_at(list: ParamTypeList, idx: int) -> ValueType {
-    match list {
-        .End -> ValueType.Unknown
-        .Node(vt, _) if idx == 0 -> vt
-        .Node(_, next) -> param_type_vt_at(next, idx - 1)
-    }
+/// Index into a fn's parameter ValueType list. Returns Unknown
+/// out-of-range — call sites lookup via `fn_param_lookup` first then
+/// index this for per-arg coercion.
+export fn param_type_vt_at(list: List<ValueType>, idx: int) -> ValueType {
+    if idx < 0 || idx >= list.length { return ValueType.Unknown }
+    list[idx]
 }
 
 /// Linked list of method names + return ValueTypes belonging to a
@@ -399,30 +398,22 @@ export fn fn_ret_types_register(reg: FnRetTypes, name: string, ret_ty: ValueType
     FnRetTypes { ord, idx: reg.idx }
 }
 
-/// Linked list of parameter ValueTypes — one entry per param of a
-/// function. Order matters: index N of the list corresponds to the
-/// Nth declared parameter.
-export enum ParamTypeList {
-    End
-    Node(ty_vt: ValueType, next: ParamTypeList)
-}
-
-/// Function parameter-type registry — `name → ParamTypeList`. Used
-/// for typed argument coercion at call sites.
+/// Function parameter-type registry — `name → List<ValueType>`. Used
+/// for typed argument coercion at call sites. The parameter list per
+/// entry is index-aligned with the declared parameter order — index
+/// N of the list corresponds to the Nth declared parameter.
 export enum FnParamTypes {
     End
-    Node(name: string, params: ParamTypeList, next: FnParamTypes)
+    Node(name: string, params: List<ValueType>, next: FnParamTypes)
 }
 
-/// Look up the parameter type list for a function. `End` when
+/// Look up the parameter type list for a function. Empty list when
 /// unknown — callers fall back to i64 coercion in that case.
-export fn fn_param_lookup(reg: FnParamTypes, name: string) -> ParamTypeList {
+export fn fn_param_lookup(reg: FnParamTypes, name: string) -> List<ValueType> {
     match reg {
-        .End -> .End
+        .End -> []
         .Node(n, params, _) if n == name -> params
-        .Node(n, params, next) -> {
-            fn_param_lookup(next, name)
-        }
+        .Node(_, _, next) -> fn_param_lookup(next, name)
     }
 }
 
@@ -1450,7 +1441,7 @@ impl Ctx {
         }
         self.resolve_err_type(enum_name)
     }
-    fn lookup_fn_params(self, name: string) -> ParamTypeList { fn_param_lookup(self.fn_params, name) }
+    fn lookup_fn_params(self, name: string) -> List<ValueType> { fn_param_lookup(self.fn_params, name) }
 
     // ── Closure support ──
 
