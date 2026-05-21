@@ -113,10 +113,19 @@ fn global_item_reg_build(items: List<ModuleItemEntry>) -> GlobalItemReg {
     mut i = 0
     while i < items.length {
         let it = items[i]
-        if avra_map_has_cstr(idx, it.short_name) == 0 {
+        // Bind field accesses to locals before passing them to method
+        // calls — the current seed compiler's typeck can't propagate
+        // the struct field type through `canonicals.push(it.canonical)`
+        // directly (it bails with "field access on non-struct value,
+        // ty=<unknown>"). Once a future seed cycle picks up improved
+        // type inference, this can be simplified back to the direct
+        // form.
+        let sn = it.short_name
+        let canon = it.canonical
+        if avra_map_has_cstr(idx, sn) == 0 {
             let n = canonicals.length
-            canonicals.push(it.canonical)
-            avra_map_set_cstr(idx, it.short_name, n)
+            canonicals.push(canon)
+            avra_map_set_cstr(idx, sn, n)
         }
         i = i + 1
     }
@@ -232,11 +241,17 @@ fn collect_module_items(stmts: StmtList, mod_path: string) -> List<ModuleItemEnt
 }
 
 /// Per-stmt branch of `collect_module_items` — appends one or
-/// more `ModuleItemEntry`s to `out` for the matched declaration
-/// variants (Function, TypeDecl, EnumDecl, TraitDecl, etc.).
-/// `exported` is threaded down from the enclosing
+/// more `ModuleItemEntry`s to `out_ref` for the matched
+/// declaration variants (Function, TypeDecl, EnumDecl, TraitDecl,
+/// etc.). `exported` is threaded down from the enclosing
 /// `Annotated(@export, …)`.
-fn collect_item_from_stmt(stmt: Stmt, mod_path: string, exported: int, out: List<ModuleItemEntry>) {
+///
+/// `out_ref` is rebound to a `mut` local before pushing — Avra
+/// params are immutable, but the underlying heap AvraArray is
+/// shared so push mutations reach the caller (same convention as
+/// test_runner/discovery.av).
+fn collect_item_from_stmt(stmt: Stmt, mod_path: string, exported: int, out_ref: List<ModuleItemEntry>) {
+    mut out = out_ref
     match stmt {
         .Function(name, _, _, _, _) -> {
             let canonical = type_qualified_name(mod_path, name)
@@ -304,7 +319,8 @@ fn collect_item_from_stmt(stmt: Stmt, mod_path: string, exported: int, out: List
 /// Collect re-exported names from `export use path.{name1, name2}`.
 /// Each imported name becomes an exported item in the current
 /// module, with its canonical path pointing at the source module.
-fn collect_reexport_items(names: ParamList, source_mod: string, out: List<ModuleItemEntry>) {
+fn collect_reexport_items(names: ParamList, source_mod: string, out_ref: List<ModuleItemEntry>) {
+    mut out = out_ref
     match names {
         .End -> {}
         .Node(name, _, next) -> {
@@ -318,7 +334,8 @@ fn collect_reexport_items(names: ParamList, source_mod: string, out: List<Module
 /// Collect the methods of an impl block. Methods are stored under
 /// their pre-mangled `Type__method` name so dispatch can grep the
 /// global index directly.
-fn collect_impl_items(stmts: StmtList, mod_path: string, out: List<ModuleItemEntry>) {
+fn collect_impl_items(stmts: StmtList, mod_path: string, out_ref: List<ModuleItemEntry>) {
+    mut out = out_ref
     match stmts {
         .End -> {}
         .Node(ss, next) -> {
@@ -1222,10 +1239,17 @@ fn collect_used_paths_stmt(stmt: Stmt, acc: List<string>) -> List<string> {
 
 /// Per-expr branch of the unused-import sweep — recurses into
 /// every sub-expression to find QualifiedIdent references.
-fn collect_used_paths_expr(expr: Expr, acc: List<string>) -> List<string> {
-    if expr == null { return acc }
+fn collect_used_paths_expr(expr: Expr, acc_ref: List<string>) -> List<string> {
+    if expr == null { return acc_ref }
+    // Avra params are immutable. Rebind to a `mut` local — the
+    // underlying heap AvraArray is shared, so push mutations reach
+    // the caller (same convention as test_runner/discovery.av).
+    mut acc = acc_ref
     match expr {
-        .QualifiedIdent(path) -> { acc.push(path); acc }
+        .QualifiedIdent(path) -> {
+            acc.push(path)
+            acc
+        }
         .Call(callee, args) -> collect_used_paths_expr_list(args, collect_used_paths_expr(callee, acc))
         .GenericCall(callee, _, args) -> collect_used_paths_expr_list(args, collect_used_paths_expr(callee, acc))
         .Binary(l, _, r) -> collect_used_paths_expr(r, collect_used_paths_expr(l, acc))
