@@ -281,18 +281,17 @@ export enum TypeExpr {
     /// Nullable: `T?`.
     Optional(inner: TypeExpr)
     /// Function type: `fn(int, string) -> bool`.
-    FnType(params: TypeExprList, ret: TypeExpr)
+    FnType(params: List<TypeExpr>, ret: TypeExpr)
     /// List type: `[T]` / `List<T>`.
     ListType(elem: TypeExpr)
     /// Generic instantiation: `Result<int, IoError>`.
-    Generic(base: string, args: TypeExprList)
+    Generic(base: string, args: List<TypeExpr>)
 }
 
-/// Linked list of TypeExpr — used for generic args, fn params, etc.
-export enum TypeExprList {
-    End
-    Node(ty: TypeExpr, next: TypeExprList)
-}
+// `List<TypeExpr>` replaces the retired `enum TypeExprList`. Used
+// as the payload type for `TypeExpr.FnType` params and
+// `TypeExpr.Generic` args; produced by the parser's
+// `parse_type_expr_list` / `parse_generic_type_args`.
 
 
 // Convert a structured TypeExpr to a ValueType without string round-tripping.
@@ -364,7 +363,7 @@ export fn type_expr_to_vtype(te: TypeExpr) -> ValueType {
         .Generic(base, args) -> {
             match base {
                 "List" -> {
-                    let elem = match args { .Node(t, _) -> type_expr_to_vtype(t), .End -> ValueType.Unknown }
+                    let elem = if args.length == 0 { ValueType.Unknown } else { type_expr_to_vtype(args[0]) }
                     ValueType.List(elem)
                 }
                 "__tuple" -> ValueType.Tuple(tel_to_type_list(args))
@@ -374,27 +373,17 @@ export fn type_expr_to_vtype(te: TypeExpr) -> ValueType {
     }
 }
 
-/// Lower a TypeExprList to its corresponding TypeList by recursing
-/// `type_expr_to_vtype` on each element.
-fn tel_to_type_list(tel: TypeExprList) -> TypeList {
-    match tel {
-        .End -> TypeList.End
-        .Node(te, next) -> TypeList.Node(type_expr_to_vtype(te), tel_to_type_list(next))
+/// Lower a `List<TypeExpr>` to its corresponding TypeList by mapping
+/// `type_expr_to_vtype` over each element. The TypeList output is
+/// still cons-shaped because typeck / mono have not migrated yet.
+fn tel_to_type_list(tel: List<TypeExpr>) -> TypeList {
+    mut out = TypeList.End
+    mut i = tel.length - 1
+    while i >= 0 {
+        out = TypeList.Node(type_expr_to_vtype(tel[i]), out)
+        i = i - 1
     }
-}
-
-/// Length of a TypeExprList. O(n).
-export fn type_expr_list_length(tel: TypeExprList) -> int {
-    match tel { .End -> 0, .Node(_, next) -> 1 + type_expr_list_length(next) }
-}
-
-/// Append `ty` to the end of a TypeExprList. O(n) — the parser uses
-/// this when assembling generic argument lists left-to-right.
-export fn type_expr_list_append(list: TypeExprList, ty: TypeExpr) -> TypeExprList {
-    match list {
-        .End -> TypeExprList.Node(ty, TypeExprList.End)
-        .Node(head, next) -> TypeExprList.Node(head, type_expr_list_append(next, ty))
-    }
+    out
 }
 
 /// Compare two type names, accepting equality if their last
