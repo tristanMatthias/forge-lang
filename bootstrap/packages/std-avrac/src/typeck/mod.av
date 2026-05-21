@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.{BinOp, Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeArgList, TypeList, TypeParamList, ValueType, VariantList, WhenArm, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_list_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_is_fn, vtype_is_unknown, vtype_list_elem, vtype_struct_name, vtype_tuple_at}
+use core.{BinOp, Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeArg, TypeList, TypeParamList, ValueType, VariantList, WhenArm, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_list_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_is_fn, vtype_is_unknown, vtype_list_elem, vtype_struct_name, vtype_tuple_at}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive}
@@ -1450,16 +1450,17 @@ fn tc_subst_generic_ret(tc: TC, tp: TypeParamList, params: ParamList, args: Expr
         .End -> return ret_ty
         _ -> {}
     }
-    let bindings = tc_infer_type_args(tc, tp, params, args, TypeArgList.End)
+    let empty: List<TypeArg> = []
+    let bindings = tc_infer_type_args(tc, tp, params, args, empty)
     tc_subst_vtype(ret_ty, bindings)
 }
 
 /// Walk params/args pairwise, recursing into List/Task/FnTyped
-/// constructors. Returns a TypeArgList mapping each bound T to its
-/// concrete arg type. Args whose typeck-annotated `.ty` is Unknown
-/// fall back to `tc_infer_lit_ty` so literal `[1,2,3]` and bare
-/// lambdas still contribute bindings.
-fn tc_infer_type_args(tc: TC, tp: TypeParamList, params: ParamList, args: ExprList, acc: TypeArgList) -> TypeArgList {
+/// constructors. Returns a `List<TypeArg>` mapping each bound T to
+/// its concrete arg type. Args whose typeck-annotated `.ty` is
+/// Unknown fall back to `tc_infer_lit_ty` so literal `[1,2,3]` and
+/// bare lambdas still contribute bindings.
+fn tc_infer_type_args(tc: TC, tp: TypeParamList, params: ParamList, args: ExprList, acc: List<TypeArg>) -> List<TypeArg> {
     match params {
         .End -> acc
         .Node(_, resolved, rest) -> match args {
@@ -1475,11 +1476,21 @@ fn tc_infer_type_args(tc: TC, tp: TypeParamList, params: ParamList, args: ExprLi
 /// Recursively unify a param type against an arg type, binding
 /// any naked type-param (Struct named "T", "U", …) that appears.
 /// Peels `List<T>`, `Task<T>`, and `fn(T) -> U` so type params
-/// nested inside generic constructors still bind.
-fn tc_unify(tp: TypeParamList, param_ty: ValueType, arg_ty: ValueType, acc: TypeArgList) -> TypeArgList {
+/// nested inside generic constructors still bind. Cons-prepend
+/// semantics preserved via a fresh list with the new entry pushed
+/// before the existing bindings (innermost-binding-wins for
+/// `tc_type_arg_lookup`).
+fn tc_unify(tp: TypeParamList, param_ty: ValueType, arg_ty: ValueType, acc: List<TypeArg>) -> List<TypeArg> {
     let name = vtype_display(param_ty)
     if type_param_has(tp, name) {
-        return TypeArgList.Node(name, arg_ty, acc)
+        mut out: List<TypeArg> = []
+        out.push(TypeArg { param_name: name, concrete_vt: arg_ty })
+        mut i = 0
+        while i < acc.length {
+            out.push(acc[i])
+            i = i + 1
+        }
+        return out
     }
     match param_ty {
         .List(p_inner) -> match arg_ty {
@@ -1504,7 +1515,7 @@ fn tc_unify(tp: TypeParamList, param_ty: ValueType, arg_ty: ValueType, acc: Type
 }
 
 /// Pairwise unify two TypeLists (fn-param recursion in `tc_unify`).
-fn tc_unify_lists(tp: TypeParamList, params: TypeList, args: TypeList, acc: TypeArgList) -> TypeArgList {
+fn tc_unify_lists(tp: TypeParamList, params: TypeList, args: TypeList, acc: List<TypeArg>) -> List<TypeArg> {
     match params {
         .End -> acc
         .Node(p, prest) -> match args {
@@ -1580,7 +1591,7 @@ fn tc_first_elem_ty(tc: TC, elements: ExprList) -> ValueType {
 /// `bindings`. Recurses through List/Task/FnTyped/Enum/Union
 /// constructors so a generic `Result<T, E>` returns the
 /// substituted shape.
-fn tc_subst_vtype(ty: ValueType, bindings: TypeArgList) -> ValueType {
+fn tc_subst_vtype(ty: ValueType, bindings: List<TypeArg>) -> ValueType {
     let name = vtype_display(ty)
     let bound = tc_type_arg_lookup(bindings, name)
     if !vtype_is_unknown(bound) { return bound }
@@ -1594,7 +1605,7 @@ fn tc_subst_vtype(ty: ValueType, bindings: TypeArgList) -> ValueType {
     }
 }
 
-fn tc_subst_type_list(types: TypeList, bindings: TypeArgList) -> TypeList {
+fn tc_subst_type_list(types: TypeList, bindings: List<TypeArg>) -> TypeList {
     match types {
         .End -> TypeList.End
         .Node(t, rest) -> TypeList.Node(tc_subst_vtype(t, bindings), tc_subst_type_list(rest, bindings))
@@ -1603,12 +1614,16 @@ fn tc_subst_type_list(types: TypeList, bindings: TypeArgList) -> TypeList {
 
 /// Lookup a binding by type-param name. Returns `Unknown` on miss
 /// so `tc_subst_vtype` can detect "not bound" via `vtype_is_unknown`.
-fn tc_type_arg_lookup(args: TypeArgList, name: string) -> ValueType {
-    match args {
-        .End -> ValueType.Unknown
-        .Node(pn, ct, _) if pn == name -> ct
-        .Node(_, _, next) -> tc_type_arg_lookup(next, name)
+/// Walks head-to-tail so the cons-prepend semantics in `tc_unify`
+/// hold (innermost / most-recent binding wins).
+fn tc_type_arg_lookup(args: List<TypeArg>, name: string) -> ValueType {
+    mut i = 0
+    while i < args.length {
+        let entry = args[i]
+        if entry.param_name == name { return entry.concrete_vt }
+        i = i + 1
     }
+    ValueType.Unknown
 }
 
 /// Type-check a `Call` expression. Routes to `check_method_call`

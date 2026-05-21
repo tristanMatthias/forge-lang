@@ -129,14 +129,13 @@ export enum MatchArmList {
 /// Type parameter list — used on generic declarations
 /// (`fn foo<T, U: Display>(...)`). `bounds` is `""` for unconstrained
 /// params, or a trait name for bounded params.
-/// Type-arg binding list: `TypeArgList` maps each type parameter
-/// name (e.g. "T") to its concrete `ValueType`. Built during
-/// inference (both typeck-side substitution and mono's
-/// specialisation). Lives in core so both passes share one shape.
-export enum TypeArgList {
-    End,
-    Node(param_name: string, concrete_vt: ValueType, next: TypeArgList),
-}
+/// Type-arg binding entry: one mapping from a type parameter name
+/// (e.g. "T") to its concrete `ValueType`. Built during inference
+/// (both typeck-side substitution and mono's specialisation).
+///
+/// `List<TypeArg>` replaces the retired `enum TypeArgList`. Used
+/// throughout `typeck/mod.av` and `features/generics/mono.av`.
+export type TypeArg = { param_name: string, concrete_vt: ValueType }
 
 export enum TypeParamList {
     End
