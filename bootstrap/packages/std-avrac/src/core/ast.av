@@ -957,7 +957,7 @@ export enum Expr {
     /// `Ident(name)` once the name's canonical path is known.
     QualifiedIdent(path: string)
     /// Subjectless match: `when { cond -> body, else -> body }`.
-    When(arms: WhenArmList)
+    When(arms: List<WhenArm>)
     /// Catch block: `expr catch (e) { body }` — recovers from an
     /// erroring `expr` by binding the error to `e`.
     Catch(inner: Expr, binding: string, body: Expr, line: int, col: int)
@@ -1073,12 +1073,13 @@ export enum Stmt {
     ComponentBlock(comp_name: string, instance: string, config: CompConfigPairList, body: StmtList)
 }
 
-/// When-arms: `cond -> body` or `else -> body` (cond is null for the
-/// final else). Used by the subjectless `when { ... }` expression.
-export enum WhenArmList {
-    End
-    Node(cond: SExpr?, body: SExpr, next: WhenArmList)
-}
+/// When arm: one branch `cond -> body` or `else -> body` (cond is
+/// null for the final else). Used by the subjectless `when { ... }`
+/// expression.
+///
+/// `List<WhenArm>` replaces the retired `enum WhenArmList`. Used as
+/// `arms: List<WhenArm>` on Expr.When.
+export type WhenArm = { cond: SExpr?, body: SExpr }
 
 /// Select arm: one branch `binding <- channel -> body` of a
 /// `select { ... }` block.
@@ -1484,14 +1485,16 @@ export fn render_expr(expr: Expr) -> string {
 }
 
 /// Render the body of a `when` expression as `cond -> body, ...`.
-fn render_when_arm_list(arms: WhenArmList) -> string {
-    match arms {
-        .End -> ""
-        .Node(cond, body, next) -> {
-            let cond_str = if cond == null { "_" } else { render_expr(cond!.node) }
-            "${cond_str} -> ${render_expr(body.node)} ${render_when_arm_list(next)}"
-        }
+fn render_when_arm_list(arms: List<WhenArm>) -> string {
+    mut out = ""
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let cond_str = if arm.cond == null { "_" } else { render_expr(arm.cond!.node) }
+        out = out + "${cond_str} -> ${render_expr(arm.body.node)} "
+        i = i + 1
     }
+    out
 }
 
 /// Render a FieldInitList as an S-expression: `(k=v, k2=v2)`.

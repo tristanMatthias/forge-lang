@@ -7,7 +7,7 @@
 // Component expansion is a SEPARATE pass that runs before desugar.
 // See features/component_decl/expand.av.
 
-use core.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, sstmt_dummy, stmt_unwrap, FieldList, FieldInitList, MatchArmList, WhenArmList, PatternList, ParamList, Pattern, BinOp, UnOp, ValueType, VariantList, TypeParamList}
+use core.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, sstmt_dummy, stmt_unwrap, FieldList, FieldInitList, MatchArmList, WhenArm, PatternList, ParamList, Pattern, BinOp, UnOp, ValueType, VariantList, TypeParamList}
 
 // ── Public API ──
 
@@ -376,16 +376,21 @@ fn desugar_match_arms(arms: MatchArmList) -> MatchArmList {
     }
 }
 
-/// Walk a WhenArmList desugaring each arm's condition and body.
+/// Walk a `when` arm list desugaring each arm's condition and body.
 /// `when` arms have an optional condition (the `else` arm is null).
-fn desugar_when_arms(arms: WhenArmList) -> WhenArmList {
-    match arms {
-        .End -> WhenArmList.End
-        .Node(cond, body, next) -> {
-            let new_cond = if cond != null { sexpr(desugar_expr(cond!.node), cond!.line, cond!.col) } else { null }
-            WhenArmList.Node(new_cond, sexpr(desugar_expr(body.node), body.line, body.col), desugar_when_arms(next))
-        }
+fn desugar_when_arms(arms: List<WhenArm>) -> List<WhenArm> {
+    mut out: List<WhenArm> = []
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let new_cond = if arm.cond != null { sexpr(desugar_expr(arm.cond!.node), arm.cond!.line, arm.cond!.col) } else { null }
+        out.push(WhenArm {
+            cond: new_cond,
+            body: sexpr(desugar_expr(arm.body.node), arm.body.line, arm.body.col),
+        })
+        i = i + 1
     }
+    out
 }
 
 /// Walk a FieldInitList (used by struct literals and `with` exprs)

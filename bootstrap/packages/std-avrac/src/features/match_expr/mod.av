@@ -35,8 +35,9 @@ export fn match_feature() -> Feature {
 /// `when` expression feature. Distinct AST tag — no subject,
 /// each arm carries its own boolean condition.
 export fn when_feature() -> Feature {
+    let empty_arms: List<WhenArm> = []
     feature_new("match_when") with {
-        expr_tag: Expr.When(WhenArmList.End),
+        expr_tag: Expr.When(empty_arms),
         emit_expr: when_emit_expr,
         resolve_expr: when_resolve_expr,
         check_expr: when_check_expr,

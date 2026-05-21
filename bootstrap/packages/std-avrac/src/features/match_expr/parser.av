@@ -6,7 +6,7 @@
 //   do NOT read this file when:   the issue is expression precedence (parser.av)
 //   related:                features/match_expr/codegen.av, core.ast.{Pattern, MatchArmList}
 
-use core.{Stmt, Expr, ExprList, Pattern, PatternList, MatchArmList, WhenArmList, ParamList, SExpr, sexpr, StmtList, sstmt}use parse.{Parser, reverse_expr_list, table_zip_entries}
+use core.{Stmt, Expr, ExprList, Pattern, PatternList, MatchArmList, WhenArm, ParamList, SExpr, sexpr, StmtList, sstmt}use parse.{Parser, reverse_expr_list, table_zip_entries}
 use core.{Tk}
 
 impl Parser {
@@ -293,23 +293,25 @@ impl Parser {
     }
 
     // Convert subjectless match arms to an if-else chain.
-    fn parse_when_arm_list(self) -> WhenArmList? {
-        if self.check(Tk.RightBrace) { return WhenArmList.End }
-        // `_` → else/wildcard arm (no condition)
-        let cond: SExpr? = if self.check(Tk.Identifier) && self.current_lexeme == "_" {
-            self.advance()
-            null
-        } else {
-            let c = self.parse_expression()?
-            sexpr(c, self.current_line, self.current_column)
+    fn parse_when_arm_list(self) -> List<WhenArm>? {
+        mut out: List<WhenArm> = []
+        while !self.check(Tk.RightBrace) {
+            // `_` → else/wildcard arm (no condition)
+            let cond: SExpr? = if self.check(Tk.Identifier) && self.current_lexeme == "_" {
+                self.advance()
+                null
+            } else {
+                let c = self.parse_expression()?
+                sexpr(c, self.current_line, self.current_column)
+            }
+            if !self.consume(Tk.Arrow, "expected `->` in match arm") { return null }
+            let saved = self.allow_dot_postfix
+            self.allow_dot_postfix = false
+            let body_expr = self.parse_expression()?
+            self.allow_dot_postfix = saved
+            if self.check(Tk.Comma) { self.advance() }
+            out.push(WhenArm { cond, body: sexpr(body_expr, self.current_line, self.current_column) })
         }
-        if !self.consume(Tk.Arrow, "expected `->` in match arm") { return null }
-        let saved = self.allow_dot_postfix
-        self.allow_dot_postfix = false
-        let body_expr = self.parse_expression()?
-        self.allow_dot_postfix = saved
-        if self.check(Tk.Comma) { self.advance() }
-        let rest = self.parse_when_arm_list()?
-        WhenArmList.Node(cond, sexpr(body_expr, self.current_line, self.current_column), rest)
+        out
     }
 }

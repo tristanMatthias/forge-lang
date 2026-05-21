@@ -12,7 +12,7 @@
 //   do NOT read this file when:   the issue is variable scoping or
 //                                  type checking
 
-use core.{Expr, ExprList, FieldList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, WhenArmList, Pattern, PatternList, SExpr, SStmt, VariantList, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, AnnotationList, ValueType, TypeList, SelectArm}
+use core.{Expr, ExprList, FieldList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, WhenArm, Pattern, PatternList, SExpr, SStmt, VariantList, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, AnnotationList, ValueType, TypeList, SelectArm}
 use diagnostics.{Confidence, DiagCode, Span, DiagnosticBag, bag_new, bag_merge, bag_report, bag_has_errors, diag_error, diag_warning, diag_with_confidence, span_new, span_at, span_dummy}
 use resolve.{resolve_program}
 use core.{TypeRegistry, TypeKind, type_registry_new, type_registry_register, type_registry_id_for, type_qualified_name, method_mangled_name, trait_impl_name, is_mangled_method, method_from_mangled}
@@ -1165,15 +1165,20 @@ fn rewrite_pattern_list(ctx: NameCtx, pats: PatternList) -> PatternList {
     }
 }
 
-/// Walk a WhenArmList, rewriting each arm's cond + body.
-fn rewrite_when_arms(ctx: NameCtx, arms: WhenArmList) -> WhenArmList {
-    match arms {
-        .End -> WhenArmList.End
-        .Node(cond, body, next) -> {
-            let new_cond = if cond == null { null } else { sexpr_at(rewrite_expr(ctx, cond!.node), cond!.line, cond!.col, cond!.file) }
-            WhenArmList.Node(new_cond, sexpr_at(rewrite_expr(ctx, body.node), body.line, body.col, body.file), rewrite_when_arms(ctx, next))
-        }
+/// Walk a `when` arm list, rewriting each arm's cond + body.
+fn rewrite_when_arms(ctx: NameCtx, arms: List<WhenArm>) -> List<WhenArm> {
+    mut out: List<WhenArm> = []
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let new_cond = if arm.cond == null { null } else { sexpr_at(rewrite_expr(ctx, arm.cond!.node), arm.cond!.line, arm.cond!.col, arm.cond!.file) }
+        out.push(WhenArm {
+            cond: new_cond,
+            body: sexpr_at(rewrite_expr(ctx, arm.body.node), arm.body.line, arm.body.col, arm.body.file),
+        })
+        i = i + 1
     }
+    out
 }
 
 // ── Unused import detection ──

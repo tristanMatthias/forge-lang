@@ -11,7 +11,7 @@
 // sites in packages/cli/src/main.av between resolve_names and
 // typecheck_program.
 
-use core.{Stmt, StmtList, sstmt_at, Expr, ExprList, sexpr, FieldInitList, MatchArmList, WhenArmList, SelectArm}
+use core.{Stmt, StmtList, sstmt_at, Expr, ExprList, sexpr, FieldInitList, MatchArmList, WhenArm, SelectArm}
 use features.comptime.{CompTimeRegistry, try_fold_call}
 
 // ── Public entry ──
@@ -184,20 +184,21 @@ fn rewrite_match_arms(arms: MatchArmList, reg: CompTimeRegistry) -> MatchArmList
     }
 }
 
-fn rewrite_when_arms(arms: WhenArmList, reg: CompTimeRegistry) -> WhenArmList {
-    match arms {
-        .End -> WhenArmList.End
-        .Node(cond, body, next) -> {
-            let new_cond = if cond != null {
-                sexpr(rewrite_expr(cond!.node, reg), cond!.line, cond!.col)
-            } else { null }
-            WhenArmList.Node(
-                new_cond,
-                sexpr(rewrite_expr(body.node, reg), body.line, body.col),
-                rewrite_when_arms(next, reg)
-            )
-        }
+fn rewrite_when_arms(arms: List<WhenArm>, reg: CompTimeRegistry) -> List<WhenArm> {
+    mut out: List<WhenArm> = []
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let new_cond = if arm.cond != null {
+            sexpr(rewrite_expr(arm.cond!.node, reg), arm.cond!.line, arm.cond!.col)
+        } else { null }
+        out.push(WhenArm {
+            cond: new_cond,
+            body: sexpr(rewrite_expr(arm.body.node, reg), arm.body.line, arm.body.col),
+        })
+        i = i + 1
     }
+    out
 }
 
 fn rewrite_select_arms(arms: List<SelectArm>, reg: CompTimeRegistry) -> List<SelectArm> {

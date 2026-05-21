@@ -1,6 +1,6 @@
 // WHY: emits LLVM IR for `match` as both a statement and an expression.
 
-use core.{Expr, Pattern, PatternList, MatchArmList, WhenArmList, ParamList, FieldList, TypeList, VariantList, VarEnv, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types}
+use core.{Expr, Pattern, PatternList, MatchArmList, WhenArm, ParamList, FieldList, TypeList, VariantList, VarEnv, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types}
 use codegen.{Ctx, EmitValue, StmtResult, err_emit, ok_emit, field_resolved_at, advance_field_list, emit_value_ptr, emit_value_ty, enum_reg_find_by_variant, vtype_is_ptr_type}
 use core.{vtype_from_name}
 use codegen.{ok_sr, err_sr}
@@ -718,11 +718,11 @@ fn emit_primitive_match_stmt(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: Match
 /// match). Each arm evaluates a Bool condition; the first true
 /// arm runs and stores the result. Compiles to a chained-if
 /// dispatch.
-export fn emit_when_expr(ctx: Ctx, env: VarEnv, arms: WhenArmList) -> Result<EmitValue, string> {
+export fn emit_when_expr(ctx: Ctx, env: VarEnv, arms: List<WhenArm>) -> Result<EmitValue, string> {
     let merge_bb = ctx.bb("when_end")
     let result_slot = ctx.alloca_i64("when_result")
     ctx.store(ctx.i64(0), result_slot)
-    let ty = emit_when_arms(ctx, env, arms, merge_bb, result_slot)?
+    let ty = emit_when_arms(ctx, env, arms, 0, merge_bb, result_slot)?
     ctx.position(merge_bb)
     let loaded = ctx.load_i64(result_slot, "when_val")
     ok_emit(loaded, ty)
@@ -731,34 +731,31 @@ export fn emit_when_expr(ctx: Ctx, env: VarEnv, arms: WhenArmList) -> Result<Emi
 /// Recursive worker for `emit_when_expr`. Threads through each
 /// arm emitting its condition + body and unifying result types
 /// across arms via `warn_arm_type_mismatch` on disagreement.
-fn emit_when_arms(ctx: Ctx, env: VarEnv, arms: WhenArmList, merge_bb: ptr, result_slot: ptr) -> Result<ValueType, string> {
-    match arms {
-        .End -> ok_match_ty(.Unknown)
-        .Node(cond, body, next) -> {
-            ctx.cov_match_arm(body.line)
-            if cond == null {
-                // Else arm — emit body directly, store, branch to merge
-                let r = ctx.emit(env, body.node)?
-                ctx.store(emit_value_ptr(r), result_slot)
-                ctx.br_if_open(merge_bb)
-                ok_match_ty(emit_value_ty(r))
-            } else {
-                let cond_r = ctx.emit(env, cond!.node)?
-                let cond_i1 = ctx.truthy(emit_value_ptr(cond_r), "when_cond")
-                let arm_bb = ctx.bb("when_arm")
-                let next_bb = ctx.bb("when_next")
-                ctx.cond_br(cond_i1, arm_bb, next_bb)
-                // Arm body
-                ctx.position(arm_bb)
-                let body_r = ctx.emit(env, body.node)?
-                ctx.store(emit_value_ptr(body_r), result_slot)
-                let arm_ty = emit_value_ty(body_r)
-                ctx.br_if_open(merge_bb)
-                // Check next arm
-                ctx.position(next_bb)
-                let rest_ty = emit_when_arms(ctx, env, next, merge_bb, result_slot)?
-                if vtype_is_unknown(arm_ty) { ok_match_ty(rest_ty) } else { ok_match_ty(arm_ty) }
-            }
-        }
+fn emit_when_arms(ctx: Ctx, env: VarEnv, arms: List<WhenArm>, idx: int, merge_bb: ptr, result_slot: ptr) -> Result<ValueType, string> {
+    if idx >= arms.length { return ok_match_ty(.Unknown) }
+    let arm = arms[idx]
+    ctx.cov_match_arm(arm.body.line)
+    if arm.cond == null {
+        // Else arm — emit body directly, store, branch to merge
+        let r = ctx.emit(env, arm.body.node)?
+        ctx.store(emit_value_ptr(r), result_slot)
+        ctx.br_if_open(merge_bb)
+        ok_match_ty(emit_value_ty(r))
+    } else {
+        let cond_r = ctx.emit(env, arm.cond!.node)?
+        let cond_i1 = ctx.truthy(emit_value_ptr(cond_r), "when_cond")
+        let arm_bb = ctx.bb("when_arm")
+        let next_bb = ctx.bb("when_next")
+        ctx.cond_br(cond_i1, arm_bb, next_bb)
+        // Arm body
+        ctx.position(arm_bb)
+        let body_r = ctx.emit(env, arm.body.node)?
+        ctx.store(emit_value_ptr(body_r), result_slot)
+        let arm_ty = emit_value_ty(body_r)
+        ctx.br_if_open(merge_bb)
+        // Check next arm
+        ctx.position(next_bb)
+        let rest_ty = emit_when_arms(ctx, env, arms, idx + 1, merge_bb, result_slot)?
+        if vtype_is_unknown(arm_ty) { ok_match_ty(rest_ty) } else { ok_match_ty(arm_ty) }
     }
 }

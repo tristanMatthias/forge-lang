@@ -9,7 +9,7 @@
 use core.{
     Expr, Stmt, StmtList, ExprList, ParamList,
     TypeParamList, FieldInitList, FieldList,
-    VariantList, Pattern, MatchArmList, WhenArmList, AnnotationList,
+    VariantList, Pattern, MatchArmList, WhenArm, AnnotationList,
     binop_str, unop_str, logicop_str,
     vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq,
 }
@@ -360,17 +360,19 @@ fn fmt_match_arms(arms: MatchArmList, depth: int) -> string {
 
 /// Render a `when` arm list — one arm per indented line. A null
 /// condition becomes `_` (the catch-all).
-fn fmt_when_arms(arms: WhenArmList, depth: int) -> string {
+fn fmt_when_arms(arms: List<WhenArm>, depth: int) -> string {
     let ind = fmt_indent(depth)
-    match arms {
-        .End -> ""
-        .Node(cond, body, next) -> {
-            let cond_str = if cond == null { "_" } else { fmt_expr(cond!.node) }
-            let head = "${ind}${cond_str} -> ${fmt_expr(body.node)}"
-            let tail = fmt_when_arms(next, depth)
-            if tail == "" { head } else { "${head}\n${tail}" }
-        }
+    mut out = ""
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let cond_str = if arm.cond == null { "_" } else { fmt_expr(arm.cond!.node) }
+        let head = "${ind}${cond_str} -> ${fmt_expr(arm.body.node)}"
+        if i > 0 { out = out + "\n" }
+        out = out + head
+        i = i + 1
     }
+    out
 }
 
 /// Render an annotation chain — `@name\n@name\n` prefix to a stmt.

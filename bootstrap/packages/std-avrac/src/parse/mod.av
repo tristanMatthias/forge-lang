@@ -11,7 +11,7 @@
 
 // dir-as-module (g2eo.1): lexer.av auto-loads as a sibling, surfaces
 // flat at `parse.{...}`.
-use core.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, WhenArmList, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, AnnotationList, Tk, tk_keyword_str, TypeExpr, TypeExprList, type_expr_list_append, type_expr_list_length}
+use core.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, WhenArm, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, AnnotationList, Tk, tk_keyword_str, TypeExpr, TypeExprList, type_expr_list_append, type_expr_list_length}
 use core.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser}
 use features.closures.{expr_contains_it, wrap_in_it_lambda}
 use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, diag_error, diag_with_help, span_new}
@@ -1815,25 +1815,27 @@ impl Parser {
         Expr.When(arms)
     }
 
-    fn parse_when_arms(self) -> WhenArmList? {
-        if self.check(Tk.RightBrace) { return WhenArmList.End }
-        // `_ -> body` or `else -> body` is the default arm (null condition)
-        let line = self.current_line
-        let col = self.current_column
-        let cond = if (self.check(Tk.Identifier) && self.current_lexeme == "_") || self.check(Tk.KwElse) {
-            self.advance()
-            null
-        } else {
-            let c = self.parse_expression()?
-            sexpr_at(c, line, col, self.file)
+    fn parse_when_arms(self) -> List<WhenArm>? {
+        mut out: List<WhenArm> = []
+        while !self.check(Tk.RightBrace) {
+            // `_ -> body` or `else -> body` is the default arm (null condition)
+            let line = self.current_line
+            let col = self.current_column
+            let cond = if (self.check(Tk.Identifier) && self.current_lexeme == "_") || self.check(Tk.KwElse) {
+                self.advance()
+                null
+            } else {
+                let c = self.parse_expression()?
+                sexpr_at(c, line, col, self.file)
+            }
+            if !self.consume(Tk.Arrow, "expected `->` after when condition") { return null }
+            let body_line = self.current_line
+            let body_col = self.current_column
+            let body = self.parse_expression()?
+            let body_se = sexpr_at(body, body_line, body_col, self.file)
+            out.push(WhenArm { cond, body: body_se })
         }
-        if !self.consume(Tk.Arrow, "expected `->` after when condition") { return null }
-        let body_line = self.current_line
-        let body_col = self.current_column
-        let body = self.parse_expression()?
-        let body_se = sexpr_at(body, body_line, body_col, self.file)
-        let next = self.parse_when_arms()?
-        WhenArmList.Node(cond, body_se, next)
+        out
     }
 
     // ── Speculative parsing (backtracking) ──

@@ -14,7 +14,7 @@
 // that desugar.av and comptime/rewrite.av use; once the generic-AST-
 // visitor ticket lands (93k3) all three should share a single visitor.
 
-use core.{Stmt, StmtList, SStmt, sstmt_at, sstmt_dummy, Expr, ExprList, SExpr, sexpr, sexpr_dummy, FieldList, FieldInitList, MatchArmList, WhenArmList, BinOp, UnOp, LogicOp, ParamList, TypeParamList, CompConfigPairList, binop_str, unop_str, logicop_str}
+use core.{Stmt, StmtList, SStmt, sstmt_at, sstmt_dummy, Expr, ExprList, SExpr, sexpr, sexpr_dummy, FieldList, FieldInitList, MatchArmList, BinOp, UnOp, LogicOp, ParamList, TypeParamList, CompConfigPairList, binop_str, unop_str, logicop_str}
 
 // ── Public entry ──
 
