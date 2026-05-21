@@ -22,17 +22,11 @@ export type ResolveResult = {
 /// One binding in the resolver's scope stack: name, "defined yet?"
 /// (set after `define_name`), mutability flag, and the depth at
 /// which it was declared (used for scope pop).
-enum ScopeEntry {
-    End
-    Node(name: string, defined: int, mutable: int, depth: int, next: ScopeEntry)
-}
-
-/// Linked list of declared function names. Pre-populated before
-/// statement walking so mutual recursion (`fn a() { b() } fn b() { a() }`)
-/// resolves cleanly regardless of source order.
-enum FnEntry {
-    End
-    Node(name: string, next: FnEntry)
+type ScopeBinding = {
+    name: string,
+    defined: int,
+    mutable: int,
+    depth: int,
 }
 
 /// Mutable threaded state for the resolver pass. Every helper takes
@@ -52,8 +46,8 @@ enum FnEntry {
 ///                         spans so multi-file bundles (test runner)
 ///                         can render snippets from the right file.
 type Resolver = {
-    scopes: ScopeEntry,
-    functions: FnEntry,
+    scopes: List<ScopeBinding>,
+    functions: List<string>,
     depth: int,
     had_error: int,
     error_message: string,
@@ -139,8 +133,8 @@ fn collect_method_names(r: Resolver, methods: StmtList) -> Resolver {
 /// and an empty diagnostic bag.
 fn resolver_new() -> Resolver {
     Resolver {
-        scopes: ScopeEntry.End,
-        functions: FnEntry.End,
+        scopes: [],
+        functions: [],
         depth: 0,
         had_error: false,
         error_message: "",
@@ -183,15 +177,17 @@ export fn exit_resolve_scope(r: Resolver) -> Resolver {
     r with { scopes: pop_resolve_scope(r.scopes, r.depth), depth: r.depth - 1 }
 }
 
-/// Drop ScopeEntries whose depth equals `depth` from the head down.
-/// Stops at the first entry from a shallower scope, leaving the
-/// outer scope intact.
-fn pop_resolve_scope(entries: ScopeEntry, depth: int) -> ScopeEntry {
-    match entries {
-        .End -> ScopeEntry.End
-        .Node(_, _, _, entry_depth, next) if entry_depth == depth -> pop_resolve_scope(next, depth)
-        .Node(name, defined, is_mut, entry_depth, next) -> ScopeEntry.Node(name, defined, is_mut, entry_depth, next)
+/// Drop bindings whose depth equals `depth` from the top of the
+/// stack down. Stops at the first entry from a shallower scope,
+/// leaving the outer scope intact. The list is used as a stack:
+/// new bindings get pushed at the end, so popping the top means
+/// trimming entries off the tail.
+fn pop_resolve_scope(entries: List<ScopeBinding>, depth: int) -> List<ScopeBinding> {
+    mut out = entries
+    while out.length > 0 && out[out.length - 1].depth == depth {
+        out.pop()
     }
+    out
 }
 
 /// Push a `let`-style (immutable) binding onto the scope. The
@@ -210,7 +206,9 @@ fn declare_name_mutable(r: Resolver, name: string) -> Resolver {
 /// Implementation backing `declare_name` / `declare_name_mutable` —
 /// pushes the entry with the given mutability flag.
 fn declare_name_mut(r: Resolver, name: string, is_mut: int) -> Resolver {
-    r with { scopes: ScopeEntry.Node(name, false, is_mut, r.depth, r.scopes) }
+    mut scopes = r.scopes
+    scopes.push(ScopeBinding { name, defined: false, mutable: is_mut, depth: r.depth })
+    r with { scopes }
 }
 
 /// Mark a previously-declared name as defined. Allows references
@@ -248,20 +246,29 @@ fn define_type_params(r: Resolver, params: TypeParamList) -> Resolver {
 
 /// Walk the scope stack and flip the `defined` flag on the entry
 /// matching `name` + `depth`. Other entries pass through unchanged.
-fn mark_defined(entries: ScopeEntry, name: string, depth: int) -> ScopeEntry {
-    match entries {
-        .End -> ScopeEntry.End
-        .Node(entry_name, _, is_mut, entry_depth, next) if entry_name == name && entry_depth == depth ->
-            ScopeEntry.Node(entry_name, true, is_mut, entry_depth, next)
-        .Node(entry_name, defined, is_mut, entry_depth, next) ->
-            ScopeEntry.Node(entry_name, defined, is_mut, entry_depth, mark_defined(next, name, depth))
+/// Scans from the top of the stack (end of the list) so the most
+/// recent matching binding wins — same semantics as the cons-list
+/// walk-from-head form.
+fn mark_defined(entries: List<ScopeBinding>, name: string, depth: int) -> List<ScopeBinding> {
+    mut out = entries
+    mut i = out.length - 1
+    while i >= 0 {
+        let b = out[i]
+        if b.name == name && b.depth == depth {
+            out.set(i, b with { defined: true })
+            return out
+        }
+        i = i - 1
     }
+    out
 }
 
 /// Register a top-level fn name. Visible across the whole program
 /// after `collect_function_names` finishes.
 fn declare_function(r: Resolver, name: string) -> Resolver {
-    r with { functions: FnEntry.Node(name, r.functions) }
+    mut functions = r.functions
+    functions.push(name)
+    r with { functions }
 }
 
 /// Result of `lookup_name`: was the name found, has it been defined
@@ -273,24 +280,30 @@ type NameLookup = {
 }
 
 /// Resolve a name against the current scope stack. Returns the
-/// matching ScopeEntry's metadata, or `found: false` when the name
-/// isn't in scope.
-fn lookup_name(entries: ScopeEntry, name: string) -> NameLookup {
-    match entries {
-        .End -> NameLookup { found: false, defined: false, mutable: false }
-        .Node(entry_name, defined, is_mut, _, _) if entry_name == name -> NameLookup { found: true, defined, mutable: is_mut }
-        .Node(_, _, _, _, next) -> lookup_name(next, name)
+/// matching binding's metadata, or `found: false` when the name
+/// isn't in scope. Walks from the top of the stack (end of the
+/// list) so inner shadowing wins.
+fn lookup_name(entries: List<ScopeBinding>, name: string) -> NameLookup {
+    mut i = entries.length - 1
+    while i >= 0 {
+        let b = entries[i]
+        if b.name == name {
+            return NameLookup { found: true, defined: b.defined, mutable: b.mutable }
+        }
+        i = i - 1
     }
+    NameLookup { found: false, defined: false, mutable: false }
 }
 
-/// Membership test for FnEntry — true iff `name` was registered via
-/// `declare_function`.
-fn lookup_fn(fns: FnEntry, name: string) -> bool {
-    match fns {
-        .End -> false
-        .Node(fn_name, _) if fn_name == name -> true
-        .Node(_, next) -> lookup_fn(next, name)
+/// Membership test for the declared-functions list — true iff
+/// `name` was registered via `declare_function`.
+fn lookup_fn(fns: List<string>, name: string) -> bool {
+    mut i = 0
+    while i < fns.length {
+        if fns[i] == name { return true }
+        i = i + 1
     }
+    false
 }
 
 /// Walk a StmtList, threading the Resolver through each stmt.

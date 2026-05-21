@@ -27,17 +27,23 @@ use features.modules.{build_graph_from_stmts, graph_find_use_path}
 
 /// One declaration registered inside a module: short name, fully
 /// qualified canonical path, export visibility flag.
-enum ModuleItem {
-    End
-    Node(short_name: string, canonical: string, exported: int, next: ModuleItem)
+type ModuleItemEntry = {
+    short_name: string,
+    canonical: string,
+    exported: int,
 }
 
 /// Hierarchical module tree built from `Stmt.Module` nodes. Each
 /// node holds its name, full path, the items declared at that
 /// level, child modules, and a sibling pointer.
+///
+/// Kept as an enum — `ModuleNode` is tree-shaped (each node has
+/// BOTH `children` and `next` pointers), so a flat `List<T>` can't
+/// model it. The `items` payload, however, is a simple list, so
+/// that one moved over to `List<ModuleItemEntry>`.
 enum ModuleNode {
     End
-    Node(name: string, path: string, items: ModuleItem, children: ModuleNode, next: ModuleNode)
+    Node(name: string, path: string, items: List<ModuleItemEntry>, children: ModuleNode, next: ModuleNode)
 }
 
 // ── Alias table ──
@@ -45,33 +51,41 @@ enum ModuleNode {
 // Maps short names to canonical paths within a module scope.
 // Built from `use` declarations.
 
-/// `use mod.{name}` produces one AliasEntry per imported name —
+/// `use mod.{name}` produces one AliasBinding per imported name —
 /// short name → canonical path inside the module.
-enum AliasEntry {
-    End
-    Node(short_name: string, canonical: string, next: AliasEntry)
+type AliasBinding = {
+    short_name: string,
+    canonical: string,
 }
 
-/// Linear search for `name` in the alias chain. Returns the
-/// canonical path or "" when not aliased.
-fn alias_lookup(aliases: AliasEntry, name: string) -> string {
-    match aliases {
-        .End -> ""
-        .Node(short, canonical, _) if short == name -> canonical
-        .Node(_, _, next) -> alias_lookup(next, name)
+/// Linear search for `name` in the alias list. Returns the
+/// canonical path or "" when not aliased. Scans from the tail
+/// (most-recently-pushed) so the cons-list "newer alias wins"
+/// shadowing semantics carry over — call sites that push the
+/// same short_name twice (e.g. inner-module overrides
+/// outer-module use) keep the inner binding.
+fn alias_lookup(aliases: List<AliasBinding>, name: string) -> string {
+    mut i = aliases.length - 1
+    while i >= 0 {
+        let a = aliases[i]
+        if a.short_name == name { return a.canonical }
+        i = i - 1
     }
+    ""
 }
 
 // ── Module item lookup ──
 
 /// Linear search for `name` in a module's item list. Returns the
 /// canonical path or "" when not declared.
-fn item_lookup(items: ModuleItem, name: string) -> string {
-    match items {
-        .End -> ""
-        .Node(short, canonical, _, _) if short == name -> canonical
-        .Node(_, _, _, next) -> item_lookup(next, name)
+fn item_lookup(items: List<ModuleItemEntry>, name: string) -> string {
+    mut i = 0
+    while i < items.length {
+        let it = items[i]
+        if it.short_name == name { return it.canonical }
+        i = i + 1
     }
+    ""
 }
 
 // ── Global-index hashmap ──
@@ -93,22 +107,18 @@ type GlobalItemReg = {
     idx: ptr,
 }
 
-fn global_item_reg_build(items: ModuleItem) -> GlobalItemReg {
+fn global_item_reg_build(items: List<ModuleItemEntry>) -> GlobalItemReg {
     let idx = avra_map_new_cstr()
     mut canonicals: List<string> = []
-    mut cur = items
-    while true {
-        match cur {
-            .End -> { return GlobalItemReg { canonicals, idx } }
-            .Node(short, canonical, _, next) -> {
-                if avra_map_has_cstr(idx, short) == 0 {
-                    let i = canonicals.length
-                    canonicals.push(canonical)
-                    avra_map_set_cstr(idx, short, i)
-                }
-                cur = next
-            }
+    mut i = 0
+    while i < items.length {
+        let it = items[i]
+        if avra_map_has_cstr(idx, it.short_name) == 0 {
+            let n = canonicals.length
+            canonicals.push(it.canonical)
+            avra_map_set_cstr(idx, it.short_name, n)
         }
+        i = i + 1
     }
     GlobalItemReg { canonicals, idx }
 }
@@ -120,56 +130,32 @@ fn global_item_lookup(reg: GlobalItemReg, name: string) -> string {
 }
 
 /// True iff `name` is declared in `items` AND marked `export`.
-fn item_is_exported(items: ModuleItem, name: string) -> bool {
-    match items {
-        .End -> false
-        .Node(short, _, exported, _) if short == name -> exported
-        .Node(_, _, _, next) -> item_is_exported(next, name)
-    }
-}
-
-/// Build a flat index of ALL items across ALL modules. Called once
-/// at the start of `resolve_names`. Turns the O(n*m) tree traversal
-/// per identifier into an O(m) linked-list scan (same as alias_lookup).
-fn build_global_index(tree: ModuleNode, index: ModuleItem) -> ModuleItem {
-    match tree {
-        .End -> index
-        .Node(_, _, items, children, next) -> {
-            let with_items = append_items(items, index)
-            let with_children = build_global_index(children, with_items)
-            build_global_index(next, with_children)
-        }
-    }
-}
-
-/// Graph-driven equivalent of `build_global_index`: walks the graph's
-/// pre-computed `all_items` list (populated by graph_build's
-/// `register_item_typed`) into a `ModuleItem` chain the resolver can
-/// scan directly. Avoids the recursive AST walk + per-module
-/// `collect_module_items` pass. Iterates the List<GraphItem> in
-/// reverse to preserve the existing prepend semantics — graph_build
-/// pushes in source order, so the resulting ModuleItem chain has
-/// first-seen-last (the previous cons-list ordering).
-fn build_global_index_from_graph(items: List<GraphItem>, acc: ModuleItem) -> ModuleItem {
-    mut out = acc
+fn item_is_exported(items: List<ModuleItemEntry>, name: string) -> bool {
     mut i = 0
     while i < items.length {
         let it = items[i]
-        out = ModuleItem.Node(it.short_name, it.canonical, it.exported, out)
+        if it.short_name == name { return it.exported }
         i = i + 1
     }
-    out
+    false
 }
 
-/// Concat two ModuleItem lists. Used by `build_global_index` to
-/// roll a module's items into the running flat index.
-fn append_items(items: ModuleItem, rest: ModuleItem) -> ModuleItem {
-    match items {
-        .End -> rest
-        .Node(short, canonical, exported, next) -> {
-            append_items(next, ModuleItem.Node(short, canonical, exported, rest))
-        }
+/// Graph-driven flat index builder: walks the graph's pre-computed
+/// `all_items` list (populated by graph_build's `register_item_typed`)
+/// into a `List<ModuleItemEntry>` the resolver can scan directly.
+/// Avoids the recursive AST walk + per-module `collect_module_items`
+/// pass. Iterates the List<GraphItem> in reverse to preserve the
+/// prepend semantics of the previous cons-list form — graph_build
+/// pushes in source order, so the resulting list has first-seen-last.
+fn build_global_index_from_graph(items: List<GraphItem>) -> List<ModuleItemEntry> {
+    mut out: List<ModuleItemEntry> = []
+    mut i = items.length - 1
+    while i >= 0 {
+        let it = items[i]
+        out.push(ModuleItemEntry { short_name: it.short_name, canonical: it.canonical, exported: it.exported })
+        i = i - 1
     }
+    out
 }
 
 /// Find a ModuleNode by qualified path (e.g. `"helpers"` or
@@ -226,62 +212,72 @@ fn build_tree_from_stmt(stmt: Stmt, parent_path: string, tree: ModuleNode) -> Mo
 
 /// Collect every declaration name in a module's body — fn, type,
 /// enum, trait, newtype, etc. Wraps the per-stmt collector.
-fn collect_module_items(stmts: StmtList, mod_path: string) -> ModuleItem {
-    match stmts {
-        .End -> ModuleItem.End
-        .Node(ss, next) -> {
-            let rest = collect_module_items(next, mod_path)
-            collect_item_from_stmt(ss.node, mod_path, false, rest)
+/// Walks stmts in source order, pushing items as they're seen so
+/// the resulting list preserves source order (matching the
+/// previous cons-list which was built head-first by walking the
+/// tail recursively).
+fn collect_module_items(stmts: StmtList, mod_path: string) -> List<ModuleItemEntry> {
+    mut out: List<ModuleItemEntry> = []
+    mut cur = stmts
+    while true {
+        match cur {
+            .End -> { return out }
+            .Node(ss, next) -> {
+                collect_item_from_stmt(ss.node, mod_path, false, out)
+                cur = next
+            }
         }
     }
+    out
 }
 
-/// Per-stmt branch of `collect_module_items` — produces a
-/// ModuleItem for each declaration variant (Function, TypeDecl,
-/// EnumDecl, TraitDecl, etc.). `exported` is threaded down from
-/// the enclosing `Annotated(@export, …)`.
-fn collect_item_from_stmt(stmt: Stmt, mod_path: string, exported: int, rest: ModuleItem) -> ModuleItem {
+/// Per-stmt branch of `collect_module_items` — appends one or
+/// more `ModuleItemEntry`s to `out` for the matched declaration
+/// variants (Function, TypeDecl, EnumDecl, TraitDecl, etc.).
+/// `exported` is threaded down from the enclosing
+/// `Annotated(@export, …)`.
+fn collect_item_from_stmt(stmt: Stmt, mod_path: string, exported: int, out: List<ModuleItemEntry>) {
     match stmt {
         .Function(name, _, _, _, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            ModuleItem.Node(name, canonical, exported, rest)
+            out.push(ModuleItemEntry { short_name: name, canonical, exported })
         }
         .ExternFn(name, _, _) -> {
             // Extern fns keep bare names (C ABI) but are registered
             // for visibility tracking
-            ModuleItem.Node(name, name, true, rest)
+            out.push(ModuleItemEntry { short_name: name, canonical: name, exported: true })
         }
         .TypeDecl(name, _, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            ModuleItem.Node(name, canonical, exported, rest)
+            out.push(ModuleItemEntry { short_name: name, canonical, exported })
         }
         .NewtypeDecl(name, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            ModuleItem.Node(name, canonical, exported, rest)
+            out.push(ModuleItemEntry { short_name: name, canonical, exported })
         }
         .UnionAliasDecl(name, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            ModuleItem.Node(name, canonical, exported, rest)
+            out.push(ModuleItemEntry { short_name: name, canonical, exported })
         }
         .ShapeDecl(name, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            ModuleItem.Node(name, canonical, exported, rest)
+            out.push(ModuleItemEntry { short_name: name, canonical, exported })
         }
         .EnumDecl(name, _, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            ModuleItem.Node(name, canonical, exported, rest)
+            out.push(ModuleItemEntry { short_name: name, canonical, exported })
         }
         .TraitDecl(name, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            ModuleItem.Node(name, canonical, exported, rest)
+            out.push(ModuleItemEntry { short_name: name, canonical, exported })
         }
         // Module-level consts are visible to `use mod.{NAME}` callers
         // exactly like fns and types.
         .Const(name, _, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            ModuleItem.Node(name, canonical, exported, rest)
+            out.push(ModuleItemEntry { short_name: name, canonical, exported })
         }
-        .Impl(_, methods) -> collect_impl_items(methods, mod_path, rest)
+        .Impl(_, methods) -> collect_impl_items(methods, mod_path, out)
         .Annotated(annotations, inner) -> {
             let is_export = annotation_has_export(annotations)
             // Re-exports: `export use path.{name1, name2}` makes imported
@@ -293,26 +289,28 @@ fn collect_item_from_stmt(stmt: Stmt, mod_path: string, exported: int, rest: Mod
                         // prefix with the module path to get the canonical path.
                         let rel_path = dots_to_colons(use_path)
                         let canonical_mod = type_qualified_name(mod_path, rel_path)
-                        return collect_reexport_items(names, canonical_mod, rest)
+                        collect_reexport_items(names, canonical_mod, out)
+                        return
                     }
                     _ -> {}
                 }
             }
-            collect_item_from_stmt(inner, mod_path, is_export, rest)
+            collect_item_from_stmt(inner, mod_path, is_export, out)
         }
-        _ -> rest
+        _ -> {}
     }
 }
 
 /// Collect re-exported names from `export use path.{name1, name2}`.
 /// Each imported name becomes an exported item in the current
 /// module, with its canonical path pointing at the source module.
-fn collect_reexport_items(names: ParamList, source_mod: string, rest: ModuleItem) -> ModuleItem {
+fn collect_reexport_items(names: ParamList, source_mod: string, out: List<ModuleItemEntry>) {
     match names {
-        .End -> rest
+        .End -> {}
         .Node(name, _, next) -> {
             let canonical = type_qualified_name(source_mod, name)
-            ModuleItem.Node(name, canonical, true, collect_reexport_items(next, source_mod, rest))
+            out.push(ModuleItemEntry { short_name: name, canonical, exported: true })
+            collect_reexport_items(next, source_mod, out)
         }
     }
 }
@@ -320,19 +318,19 @@ fn collect_reexport_items(names: ParamList, source_mod: string, rest: ModuleItem
 /// Collect the methods of an impl block. Methods are stored under
 /// their pre-mangled `Type__method` name so dispatch can grep the
 /// global index directly.
-fn collect_impl_items(stmts: StmtList, mod_path: string, rest: ModuleItem) -> ModuleItem {
+fn collect_impl_items(stmts: StmtList, mod_path: string, out: List<ModuleItemEntry>) {
     match stmts {
-        .End -> rest
+        .End -> {}
         .Node(ss, next) -> {
-            let with_this = match stmt_unwrap(ss.node) {
+            match stmt_unwrap(ss.node) {
                 .Function(name, _, _, _, _) -> {
                     // Impl methods are already mangled as Type__method.
                     // Keep bare name — method call codegen uses Type__method directly.
-                    ModuleItem.Node(name, name, true, rest)
+                    out.push(ModuleItemEntry { short_name: name, canonical: name, exported: true })
                 }
-                _ -> rest
+                _ -> {}
             }
-            collect_impl_items(next, mod_path, with_this)
+            collect_impl_items(next, mod_path, out)
         }
     }
 }
@@ -370,7 +368,7 @@ fn resolve_use_aliases(stmts: StmtList, tree: ModuleNode, graph: ModuleGraph) ->
 /// module exists at the program root.
 fn resolve_use_aliases_in(stmts: StmtList, tree: ModuleNode, graph: ModuleGraph, current_module: string) -> UseResult {
     match stmts {
-        .End -> UseResult { aliases: AliasEntry.End, bag: bag_new() }
+        .End -> UseResult { aliases: [], bag: bag_new() }
         .Node(ss, next) -> {
             let rest = resolve_use_aliases_in(next, tree, graph, current_module)
             let unwrapped = match ss.node {
@@ -394,10 +392,10 @@ fn resolve_use_aliases_in(stmts: StmtList, tree: ModuleNode, graph: ModuleGraph,
     }
 }
 
-/// Output of `resolve_use_aliases` — the alias chain plus any
+/// Output of `resolve_use_aliases` — the alias list plus any
 /// diagnostics encountered during use-resolution.
 type UseResult = {
-    aliases: AliasEntry,
+    aliases: List<AliasBinding>,
     bag: DiagnosticBag,
 }
 
@@ -437,7 +435,11 @@ fn resolve_use_names(mod_path: string, names: ParamList, tree: ModuleNode, graph
                             let d = diag_error(DiagCode.ImportPrivate, "`${name}` is private in module `${mod_path}`", name_sp)
                             UseResult { aliases: result.aliases, bag: bag_report(result.bag, d) }
                         }
-                        _ -> UseResult { aliases: AliasEntry.Node(name, found, result.aliases), bag: result.bag }
+                        _ -> {
+                            mut new_aliases = result.aliases
+                            new_aliases.push(AliasBinding { short_name: name, canonical: found })
+                            UseResult { aliases: new_aliases, bag: result.bag }
+                        }
                     }
                 }
                 _ -> result
@@ -452,7 +454,7 @@ fn resolve_use_names(mod_path: string, names: ParamList, tree: ModuleNode, graph
 /// items list. Extern-fn items have a bare-name canonical (preserved
 /// for C ABI) that doesn't appear in the graph's `${mod}::${name}`
 /// keying — for those, defer to `item_is_exported(items, name)`.
-fn is_item_visible(graph: ModuleGraph, mod_path: string, name: string, canonical: string, items: ModuleItem) -> bool {
+fn is_item_visible(graph: ModuleGraph, mod_path: string, name: string, canonical: string, items: List<ModuleItemEntry>) -> bool {
     let qual = if mod_path == "" { name } else { "${mod_path}::${name}" }
     if canonical == qual {
         // Standard case: graph's export bit is the source of truth.
@@ -492,20 +494,23 @@ fn dots_to_colons(path: string) -> string {
 
 /// Scope stack for the name-resolution pass — tracks the local
 /// variables in scope at each point during the rewrite. Distinct
-/// from the resolver's ScopeEntry because this layer also threads
-/// `defined` for forward-reference handling.
-enum LocalScope {
-    End
-    Node(name: string, mutable: int, defined: int, depth: int, next: LocalScope)
+/// from the resolver's ScopeBinding because this layer also
+/// carries `defined` for forward-reference handling.
+type LocalBinding = {
+    name: string,
+    mutable: int,
+    defined: int,
+    depth: int,
 }
 
-/// Membership probe for the local scope chain.
-fn scope_has(scope: LocalScope, name: string) -> bool {
-    match scope {
-        .End -> false
-        .Node(n, _, _, _, _) if n == name -> true
-        .Node(_, _, _, _, next) -> scope_has(next, name)
+/// Membership probe for the local scope list.
+fn scope_has(scope: List<LocalBinding>, name: string) -> bool {
+    mut i = 0
+    while i < scope.length {
+        if scope[i].name == name { return true }
+        i = i + 1
     }
+    false
 }
 
 /// True for names the rewriter must NOT qualify even when a global
@@ -526,21 +531,21 @@ fn is_builtin_name(name: string) -> bool {
 type NameCtx = {
     tree: ModuleNode,
     graph: ModuleGraph,
-    aliases: AliasEntry,
+    aliases: List<AliasBinding>,
     current_module: string,
-    locals: LocalScope,
+    locals: List<LocalBinding>,
     global_index: GlobalItemReg,
     type_reg: TypeRegistry,
 }
 
 /// Functional update: replace the `locals` field.
-fn ctx_with_locals(ctx: NameCtx, locals: LocalScope) -> NameCtx {
+fn ctx_with_locals(ctx: NameCtx, locals: List<LocalBinding>) -> NameCtx {
     ctx with { locals }
 }
 
 /// Functional update: enter a new module by swapping the active path
 /// and alias chain.
-fn ctx_with_module(ctx: NameCtx, current_module: string, aliases: AliasEntry) -> NameCtx {
+fn ctx_with_module(ctx: NameCtx, current_module: string, aliases: List<AliasBinding>) -> NameCtx {
     ctx with { aliases, current_module }
 }
 
@@ -549,7 +554,11 @@ fn ctx_with_module(ctx: NameCtx, current_module: string, aliases: AliasEntry) ->
 fn bind_params_ctx(ctx: NameCtx, params: ParamList) -> NameCtx {
     match params {
         .End -> ctx
-        .Node(name, _, next) -> bind_params_ctx(ctx_with_locals(ctx, LocalScope.Node(name, false, true, 0, ctx.locals)), next)
+        .Node(name, _, next) -> {
+            mut new_locals = ctx.locals
+            new_locals.push(LocalBinding { name, mutable: false, defined: true, depth: 0 })
+            bind_params_ctx(ctx_with_locals(ctx, new_locals), next)
+        }
     }
 }
 
@@ -560,7 +569,11 @@ fn bind_pattern_ctx(ctx: NameCtx, pattern: Pattern) -> NameCtx {
         .Wildcard -> ctx
         .Variant(_, bindings) -> bind_params_ctx(ctx, bindings)
         .NestedVariant(_, sub_pats) -> bind_pattern_list(ctx, sub_pats)
-        .TypePattern(_, binding) -> ctx_with_locals(ctx, LocalScope.Node(binding, false, true, 0, ctx.locals))
+        .TypePattern(_, binding) -> {
+            mut new_locals = ctx.locals
+            new_locals.push(LocalBinding { name: binding, mutable: false, defined: true, depth: 0 })
+            ctx_with_locals(ctx, new_locals)
+        }
         _ -> ctx
     }
 }
@@ -574,13 +587,18 @@ fn bind_pattern_list(ctx: NameCtx, pats: PatternList) -> NameCtx {
     }
 }
 
-/// Concat two alias chains. Used to layer per-Module imports onto a
-/// parent's alias environment.
-fn merge_aliases(base: AliasEntry, extra: AliasEntry) -> AliasEntry {
-    match extra {
-        .End -> base
-        .Node(short, canonical, next) -> merge_aliases(AliasEntry.Node(short, canonical, base), next)
+/// Concat two alias lists. Used to layer per-Module imports onto a
+/// parent's alias environment. The `extra` entries are appended
+/// in order so the last entry has the highest lookup priority
+/// (alias_lookup scans from the tail).
+fn merge_aliases(base: List<AliasBinding>, extra: List<AliasBinding>) -> List<AliasBinding> {
+    mut out = base
+    mut i = 0
+    while i < extra.length {
+        out.push(extra[i])
+        i = i + 1
     }
+    out
 }
 
 // ── Public entry point ──
@@ -610,10 +628,10 @@ export fn resolve_names(stmts: StmtList) -> NameResolveResult {
     // O(item-count) walk instead of the legacy O(modules * items) tree
     // traversal + extra collect_module_items pass for top-level items
     // (the graph builder already walked them).
-    let global_index_list = build_global_index_from_graph(graph.all_items, ModuleItem.End)
+    let global_index_list = build_global_index_from_graph(graph.all_items)
     let global_index = global_item_reg_build(global_index_list)
     let reg = type_registry_new()
-    let ctx = NameCtx { tree, graph, aliases: use_result.aliases, current_module: "", locals: LocalScope.End, global_index, type_reg: reg }
+    let ctx = NameCtx { tree, graph, aliases: use_result.aliases, current_module: "", locals: [], global_index, type_reg: reg }
     let rewritten = rewrite_stmt_list(ctx, stmts)
 
     // Pass 2: Validate variable scopes (was separate resolve_program call)
@@ -621,7 +639,7 @@ export fn resolve_names(stmts: StmtList) -> NameResolveResult {
 
     // Pass 3: Detect unused imports — collect all QualifiedIdent paths
     // from the rewritten AST and warn about imports that were never used.
-    let used = collect_used_paths_stmts(rewritten, UsedPathSet.End)
+    let used = collect_used_paths_stmts(rewritten, [])
     let unused_bag = check_unused_imports(use_result.aliases, used)
 
     // Merge diagnostics from all passes
@@ -1143,28 +1161,24 @@ fn rewrite_when_arms(ctx: NameCtx, arms: WhenArmList) -> WhenArmList {
 // from the rewritten AST, then check each use-imported alias against
 // the used set. Emit warnings for imports that were never referenced.
 
-/// Set of canonical paths the rewrite pass actually emitted as
-/// QualifiedIdent. Built once per program; consulted by
-/// `check_unused_imports` to flag dead imports.
-enum UsedPathSet {
-    End
-    Node(path: string, next: UsedPathSet)
-}
-
-/// Membership probe for the UsedPathSet — backs the unused-import
-/// detection.
-fn used_has(set: UsedPathSet, path: string) -> bool {
-    match set {
-        .End -> false
-        .Node(p, _) if p == path -> true
-        .Node(_, next) -> used_has(next, path)
+/// Membership probe for the used-path list — backs the
+/// unused-import detection. The list is a multiset of canonical
+/// paths the rewrite pass emitted as QualifiedIdent (plus
+/// PascalCase Idents); duplicates are fine since this is only
+/// queried for "ever used at all" containment.
+fn used_has(set: List<string>, path: string) -> bool {
+    mut i = 0
+    while i < set.length {
+        if set[i] == path { return true }
+        i = i + 1
     }
+    false
 }
 
 // Collect all QualifiedIdent paths from the rewritten AST.
 /// Walk a StmtList, accumulating every QualifiedIdent path the
 /// rewrite pass emitted.
-fn collect_used_paths_stmts(stmts: StmtList, acc: UsedPathSet) -> UsedPathSet {
+fn collect_used_paths_stmts(stmts: StmtList, acc: List<string>) -> List<string> {
     match stmts {
         .End -> acc
         .Node(ss, next) -> {
@@ -1175,7 +1189,7 @@ fn collect_used_paths_stmts(stmts: StmtList, acc: UsedPathSet) -> UsedPathSet {
 }
 
 /// Per-stmt branch of `collect_used_paths_stmts`.
-fn collect_used_paths_stmt(stmt: Stmt, acc: UsedPathSet) -> UsedPathSet {
+fn collect_used_paths_stmt(stmt: Stmt, acc: List<string>) -> List<string> {
     match stmt {
         .Expr(e) -> collect_used_paths_expr(e, acc)
         .Let(_, _, init) -> collect_used_paths_expr(init, acc)
@@ -1208,10 +1222,10 @@ fn collect_used_paths_stmt(stmt: Stmt, acc: UsedPathSet) -> UsedPathSet {
 
 /// Per-expr branch of the unused-import sweep — recurses into
 /// every sub-expression to find QualifiedIdent references.
-fn collect_used_paths_expr(expr: Expr, acc: UsedPathSet) -> UsedPathSet {
+fn collect_used_paths_expr(expr: Expr, acc: List<string>) -> List<string> {
     if expr == null { return acc }
     match expr {
-        .QualifiedIdent(path) -> UsedPathSet.Node(path, acc)
+        .QualifiedIdent(path) -> { acc.push(path); acc }
         .Call(callee, args) -> collect_used_paths_expr_list(args, collect_used_paths_expr(callee, acc))
         .GenericCall(callee, _, args) -> collect_used_paths_expr_list(args, collect_used_paths_expr(callee, acc))
         .Binary(l, _, r) -> collect_used_paths_expr(r, collect_used_paths_expr(l, acc))
@@ -1230,8 +1244,14 @@ fn collect_used_paths_expr(expr: Expr, acc: UsedPathSet) -> UsedPathSet {
         .Tuple(elems) -> collect_used_paths_expr_list(elems, acc)
         .ListLit(elems) -> collect_used_paths_expr_list(elems, acc)
         .MapLit(entries) -> collect_used_paths_expr_list(entries, acc)
-        .StructLit(sn, inits) -> collect_used_paths_field_inits(inits, UsedPathSet.Node(sn, acc))
-        .EnumCtor(tn, _, args) -> collect_used_paths_expr_list(args, UsedPathSet.Node(tn, acc))
+        .StructLit(sn, inits) -> {
+            acc.push(sn)
+            collect_used_paths_field_inits(inits, acc)
+        }
+        .EnumCtor(tn, _, args) -> {
+            acc.push(tn)
+            collect_used_paths_expr_list(args, acc)
+        }
         .MatchExpr(subj, arms) -> collect_used_paths_match_arms(arms, collect_used_paths_expr(subj, acc))
         .Lambda(_, body) -> collect_used_paths_expr(body, acc)
         .With(obj, overrides) -> collect_used_paths_field_inits(overrides, collect_used_paths_expr(obj, acc))
@@ -1245,7 +1265,8 @@ fn collect_used_paths_expr(expr: Expr, acc: UsedPathSet) -> UsedPathSet {
             // PascalCase identifiers may be imported type/enum names.
             // Track them as used paths by looking up their alias.
             if name.length > 0 && name[0] >= "A" && name[0] <= "Z" {
-                return UsedPathSet.Node(name, acc)
+                acc.push(name)
+                return acc
             }
             acc
         }
@@ -1254,7 +1275,7 @@ fn collect_used_paths_expr(expr: Expr, acc: UsedPathSet) -> UsedPathSet {
 }
 
 /// Map `collect_used_paths_expr` over an ExprList.
-fn collect_used_paths_expr_list(exprs: ExprList, acc: UsedPathSet) -> UsedPathSet {
+fn collect_used_paths_expr_list(exprs: ExprList, acc: List<string>) -> List<string> {
     match exprs {
         .End -> acc
         .Node(se, next) -> collect_used_paths_expr_list(next, collect_used_paths_expr(se.node, acc))
@@ -1262,7 +1283,7 @@ fn collect_used_paths_expr_list(exprs: ExprList, acc: UsedPathSet) -> UsedPathSe
 }
 
 /// Walk a FieldInitList for the unused-import sweep.
-fn collect_used_paths_field_inits(inits: FieldInitList, acc: UsedPathSet) -> UsedPathSet {
+fn collect_used_paths_field_inits(inits: FieldInitList, acc: List<string>) -> List<string> {
     match inits {
         .End -> acc
         .Node(_, sv, next) -> collect_used_paths_field_inits(next, collect_used_paths_expr(sv.node, acc))
@@ -1271,7 +1292,7 @@ fn collect_used_paths_field_inits(inits: FieldInitList, acc: UsedPathSet) -> Use
 
 /// Walk a MatchArmList for the unused-import sweep — both guards
 /// and bodies contribute.
-fn collect_used_paths_match_arms(arms: MatchArmList, acc: UsedPathSet) -> UsedPathSet {
+fn collect_used_paths_match_arms(arms: MatchArmList, acc: List<string>) -> List<string> {
     match arms {
         .End -> acc
         .Node(_, guard, body, next) -> {
@@ -1287,24 +1308,23 @@ fn collect_used_paths_match_arms(arms: MatchArmList, acc: UsedPathSet) -> UsedPa
 /// Compare the alias chain against the used-paths set, emitting
 /// `UnusedImport` warnings for every alias the rewrite never
 /// referenced.
-fn check_unused_imports(aliases: AliasEntry, used: UsedPathSet) -> DiagnosticBag {
+fn check_unused_imports(aliases: List<AliasBinding>, used: List<string>) -> DiagnosticBag {
     // Walk top-level Use stmts to match aliases to source spans
     check_unused_aliases(aliases, used, bag_new())
 }
 
-/// Implementation backing `check_unused_imports` — recurses through
-/// the alias chain, accumulating warnings into the bag.
-fn check_unused_aliases(aliases: AliasEntry, used: UsedPathSet, bag: DiagnosticBag) -> DiagnosticBag {
-    match aliases {
-        .End -> bag
-        .Node(short_name, canonical, next) -> {
-            let after = if !used_has(used, canonical) && !used_has(used, short_name) {
-                let d = diag_with_confidence(diag_warning(DiagCode.UnusedImport, "unused import `${short_name}`", span_dummy()), Confidence.Medium)
-                bag_report(bag, d)
-            } else {
-                bag
-            }
-            check_unused_aliases(next, used, after)
+/// Implementation backing `check_unused_imports` — walks the
+/// alias list, accumulating warnings into the bag.
+fn check_unused_aliases(aliases: List<AliasBinding>, used: List<string>, bag: DiagnosticBag) -> DiagnosticBag {
+    mut acc = bag
+    mut i = 0
+    while i < aliases.length {
+        let a = aliases[i]
+        if !used_has(used, a.canonical) && !used_has(used, a.short_name) {
+            let d = diag_with_confidence(diag_warning(DiagCode.UnusedImport, "unused import `${a.short_name}`", span_dummy()), Confidence.Medium)
+            acc = bag_report(acc, d)
         }
+        i = i + 1
     }
+    acc
 }
