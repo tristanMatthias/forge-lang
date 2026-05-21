@@ -5,7 +5,7 @@
 // Cycle-capable types get avra_rc_suspect() calls in their release
 // functions when refcount decrements to non-zero.
 
-use core.{FieldList, ValueType, VariantList}
+use core.{FieldList, ValueType, Variant}
 use codegen.{StructReg, EnumReg, struct_reg_lookup, enum_reg_lookup, vtype_is_ptr_type}
 
 /// Set of type names whose layout can reach back to itself through
@@ -61,17 +61,13 @@ fn fields_reach_target(fields: FieldList, target: string, visited: CycleVisited,
 
 /// True when at least one variant's payload can reach `target`.
 /// Recursion entry for enum types.
-fn variants_reach_target(variants: VariantList, target: string, visited: CycleVisited, structs: StructReg, enums: EnumReg) -> bool {
-    match variants {
-        .End -> false
-        .Node(_, fields, next) -> {
-            if fields_reach_target(fields, target, visited, structs, enums) {
-                true
-            } else {
-                variants_reach_target(next, target, visited, structs, enums)
-            }
-        }
+fn variants_reach_target(variants: List<Variant>, target: string, visited: CycleVisited, structs: StructReg, enums: EnumReg) -> bool {
+    mut i = 0
+    while i < variants.length {
+        if fields_reach_target(variants[i].fields, target, visited, structs, enums) { return true }
+        i = i + 1
     }
+    false
 }
 
 /// True when traversing `ty` can reach `target`. Marks names as

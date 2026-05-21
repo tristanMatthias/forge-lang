@@ -23,7 +23,7 @@ use @std.avrac.build.{
 }
 use @std.avrac.core.{
     Stmt, StmtList, Expr, ExprList, TypeParamEntry,
-    ValueType, TypeList, FieldList, VariantList, ParamList,
+    ValueType, TypeList, FieldList, Variant, ParamList,
     Annotation, vtype_eq, sstmt_dummy, stmt_unwrap, find_annotation,
 }
 use @std.avrac.build.{extract_unit_metadata}
@@ -53,11 +53,8 @@ fn field_list_count(fs: FieldList) -> int {
     }
 }
 
-fn variant_list_count(vs: VariantList) -> int {
-    match vs {
-        .End -> 0
-        .Node(_, _, next) -> 1 + variant_list_count(next)
-    }
+fn variant_list_count(vs: List<Variant>) -> int {
+    vs.length
 }
 
 fn main() -> int {
@@ -262,7 +259,7 @@ fn main() -> int {
         name: "@test::Point",
         type_params: [],
         fields: pt_fields,
-        variants: VariantList.End,
+        variants: [],
         inner_vt: ValueType.Unknown,
         methods: [],
     }
@@ -282,7 +279,7 @@ fn main() -> int {
         name: "@test::UserId",
         type_params: [],
         fields: FieldList.End,
-        variants: VariantList.End,
+        variants: [],
         inner_vt: ValueType.Int,
         methods: [],
     }
@@ -295,9 +292,10 @@ fn main() -> int {
     probe("type_newtype_inner", vtype_eq(uid_decoded.inner_vt, ValueType.Int))
 
     // Enum: enum Color { Red, Green, Blue }
-    let col_variants = VariantList.Node("Red", FieldList.End,
-        VariantList.Node("Green", FieldList.End,
-        VariantList.Node("Blue", FieldList.End, VariantList.End)))
+    mut col_variants: List<Variant> = []
+    col_variants.push(Variant { name: "Red", fields: FieldList.End })
+    col_variants.push(Variant { name: "Green", fields: FieldList.End })
+    col_variants.push(Variant { name: "Blue", fields: FieldList.End })
     let col_entry = TypeDeclEntry {
         sym_id: sym_id_for("@test::Color"),
         kind: TypeDeclKind.EnumDecl,
@@ -388,7 +386,7 @@ fn main() -> int {
         name: "@test::e2e::Cell",
         type_params: [],
         fields: e2e_struct_fields,
-        variants: VariantList.End,
+        variants: [],
         inner_vt: ValueType.Unknown,
         methods: [],
     }
@@ -521,7 +519,7 @@ fn main() -> int {
         name: "@test::Display",
         type_params: [],
         fields: FieldList.End,
-        variants: VariantList.End,
+        variants: [],
         inner_vt: ValueType.Unknown,
         methods: display_methods,
     }
@@ -603,7 +601,7 @@ fn main() -> int {
         name: "@unit::User",
         type_params: [],
         fields: unit_struct_fields,
-        variants: VariantList.End,
+        variants: [],
         inner_vt: ValueType.Unknown,
         methods: [],
     }
@@ -665,7 +663,7 @@ fn main() -> int {
     let dec_type_first: TypeDeclEntry = if dec_types.length > 0 {
         dec_types[0]
     } else {
-        TypeDeclEntry { sym_id: 0, kind: TypeDeclKind.StructDecl, name: "", type_params: [], fields: FieldList.End, variants: VariantList.End, inner_vt: ValueType.Unknown, methods: [] }
+        TypeDeclEntry { sym_id: 0, kind: TypeDeclKind.StructDecl, name: "", type_params: [], fields: FieldList.End, variants: [], inner_vt: ValueType.Unknown, methods: [] }
     }
     let dec_fn_first: FnDeclEntry = if dec_fns.length > 0 {
         dec_fns[0]
@@ -731,7 +729,7 @@ fn main() -> int {
     let ex_t0: TypeDeclEntry = if ex_types.length > 0 {
         ex_types[0]
     } else {
-        TypeDeclEntry { sym_id: 0, kind: TypeDeclKind.StructDecl, name: "", type_params: [], fields: FieldList.End, variants: VariantList.End, inner_vt: ValueType.Unknown, methods: [] }
+        TypeDeclEntry { sym_id: 0, kind: TypeDeclKind.StructDecl, name: "", type_params: [], fields: FieldList.End, variants: [], inner_vt: ValueType.Unknown, methods: [] }
     }
     let ex_f0: FnDeclEntry = if ex_fns.length > 0 {
         ex_fns[0]
@@ -790,7 +788,7 @@ fn main() -> int {
         name: "@gen::Pair",
         type_params: gen_type_tps,
         fields: FieldList.Node("k", ValueType.Struct("K", 0), FieldList.Node("v", ValueType.Struct("V", 0), FieldList.End)),
-        variants: VariantList.End,
+        variants: [],
         inner_vt: ValueType.Unknown,
         methods: [],
     }
@@ -817,7 +815,7 @@ fn main() -> int {
         name: "@io::Pt",
         type_params: [],
         fields: FieldList.Node("x", ValueType.Int, FieldList.End),
-        variants: VariantList.End,
+        variants: [],
         inner_vt: ValueType.Unknown,
         methods: [],
     }
@@ -841,7 +839,7 @@ fn main() -> int {
     let loaded_t0: TypeDeclEntry = if loaded_types.length > 0 {
         loaded_types[0]
     } else {
-        TypeDeclEntry { sym_id: 0, kind: TypeDeclKind.StructDecl, name: "", type_params: [], fields: FieldList.End, variants: VariantList.End, inner_vt: ValueType.Unknown, methods: [] }
+        TypeDeclEntry { sym_id: 0, kind: TypeDeclKind.StructDecl, name: "", type_params: [], fields: FieldList.End, variants: [], inner_vt: ValueType.Unknown, methods: [] }
     }
     probe("io_read_unit_name", loaded.unit_name == "@io")
     probe("io_read_fp_byte0", loaded.fingerprint.byte(0) == 0x77)

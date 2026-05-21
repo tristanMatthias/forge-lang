@@ -1,7 +1,7 @@
 // WHY: type checking for match statements and expressions.
 // Exhaustiveness checking, pattern variable binding, arm type unification.
 
-use core.{Expr, Pattern, MatchArmList, TypeList, WhenArm, ParamList, Stmt, StmtList, VariantList, ValueType, stmt_unwrap, vtype_display, vtype_enum_name, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types}
+use core.{Expr, Pattern, MatchArmList, TypeList, WhenArm, ParamList, Stmt, StmtList, Variant, ValueType, stmt_unwrap, vtype_display, vtype_enum_name, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types}
 use diagnostics.{DiagCode, diag_warning, span_new, bag_report}
 use core.{type_short_name}
 use typeck.{EnumTypeReg, ExprResult, TC, check_expr, tc_bind, tc_check_explicit_returns, tc_enter, tc_er, tc_exit, tc_report, resolve_vtype}
@@ -81,8 +81,11 @@ fn arm_type_skip(body: Expr, ty: ValueType) -> bool {
 /// Look up an enum's full variant list by name. Returns an
 /// empty list when the enum isn't registered (typeck's
 /// fallback for generic / unresolved enums).
-fn enum_type_variants(reg: EnumTypeReg, name: string) -> VariantList {
-    if avra_map_has_cstr(reg.idx, name) == 0 { return VariantList.End }
+fn enum_type_variants(reg: EnumTypeReg, name: string) -> List<Variant> {
+    if avra_map_has_cstr(reg.idx, name) == 0 {
+        let empty: List<Variant> = []
+        return empty
+    }
     let i = avra_map_get_cstr(reg.idx, name)
     reg.ord[i].variants
 }
@@ -159,18 +162,22 @@ fn variant_in_matched(name: string, matched: string) -> bool {
 /// Build a CSV of variants the user forgot to match. Used in
 /// the F9001 "non-exhaustive" diagnostic so the user sees
 /// exactly which variants need arms.
-fn find_missing_variants(variants: VariantList, matched: string) -> string {
-    match variants {
-        .End -> ""
-        .Node(name, _, next) -> {
-            let rest = find_missing_variants(next, matched)
-            if variant_in_matched(name, matched) {
-                rest
-            } else {
-                if rest == "" { ".${name}" } else { "${rest}, .${name}" }
-            }
+fn find_missing_variants(variants: List<Variant>, matched: string) -> string {
+    // Walk back-to-front, appending each unmatched variant — the
+    // original cons recursion built the tail's string first and
+    // then suffixed the head (`${rest}, .${name}`), so tail names
+    // appear before head names. Reverse iteration with suffix-
+    // append preserves that ordering byte-for-byte.
+    mut out = ""
+    mut i = variants.length - 1
+    while i >= 0 {
+        let name = variants[i].name
+        if !variant_in_matched(name, matched) {
+            if out == "" { out = ".${name}" } else { out = "${out}, .${name}" }
         }
+        i = i - 1
     }
+    out
 }
 
 /// Run exhaustiveness analysis (spec Axis 4) for a `match`.
@@ -186,7 +193,7 @@ export fn tc_check_exhaustive(tc: TC, subject_ty: ValueType, arms: MatchArmList)
     let enum_name = vtype_enum_name(subject_ty)
     if enum_name == "" { return tc }
     let variants = enum_type_variants(tc.enums, enum_name)
-    match variants { .End -> return tc, _ -> {} }
+    if variants.length == 0 { return tc }
     let matched = arms_matched_variants(arms)
     let missing = find_missing_variants(variants, matched)
     if missing == "" { return tc }
@@ -209,17 +216,14 @@ export fn tc_check_exhaustive(tc: TC, subject_ty: ValueType, arms: MatchArmList)
 
 /// Count uncovered variants in the missing list. Drives the
 /// F9001 lint threshold (warn when >2 hidden variants).
-fn count_missing(variants: VariantList, matched: string) -> int {
-    match variants {
-        .End -> 0
-        .Node(name, _, next) -> {
-            if variant_in_matched(name, matched) {
-                count_missing(next, matched)
-            } else {
-                1 + count_missing(next, matched)
-            }
-        }
+fn count_missing(variants: List<Variant>, matched: string) -> int {
+    mut n = 0
+    mut i = 0
+    while i < variants.length {
+        if !variant_in_matched(variants[i].name, matched) { n = n + 1 }
+        i = i + 1
     }
+    n
 }
 
 // ── Union exhaustiveness ──

@@ -7,7 +7,7 @@
 // Component expansion is a SEPARATE pass that runs before desugar.
 // See features/component_decl/expand.av.
 
-use core.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, sstmt_dummy, stmt_unwrap, FieldList, FieldInitList, MatchArmList, WhenArm, ParamList, Pattern, BinOp, UnOp, ValueType, VariantList, TypeParamEntry}
+use core.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, sstmt_dummy, stmt_unwrap, FieldList, FieldInitList, MatchArmList, WhenArm, ParamList, Pattern, BinOp, UnOp, ValueType, Variant, TypeParamEntry}
 
 // ── Public API ──
 
@@ -59,10 +59,9 @@ fn synthesize_result_enum() -> Stmt {
     let e = ValueType.Struct("E", 0)
     let ok_fields = FieldList.Node("value", t, FieldList.End)
     let err_fields = FieldList.Node("error", e, FieldList.End)
-    let variants = VariantList.Node(
-        "Ok", ok_fields,
-        VariantList.Node("Err", err_fields, VariantList.End)
-    )
+    mut variants: List<Variant> = []
+    variants.push(Variant { name: "Ok", fields: ok_fields })
+    variants.push(Variant { name: "Err", fields: err_fields })
     mut type_params: List<TypeParamEntry> = []
     type_params.push(TypeParamEntry { name: "T", bounds: "" })
     type_params.push(TypeParamEntry { name: "E", bounds: "" })

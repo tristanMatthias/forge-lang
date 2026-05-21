@@ -76,13 +76,12 @@ export enum FieldInitList {
     Node(name: string, value: SExpr, next: FieldInitList)
 }
 
-/// Variant of an enum declaration. Each variant has zero or more
-/// payload fields, stored as a FieldList so the same renderer works
-/// for both struct fields and variant payloads.
-export enum VariantList {
-    End
-    Node(name: string, fields: FieldList, next: VariantList)
-}
+// `List<Variant>` replaces the retired `enum VariantList`. Each
+// variant has zero or more payload fields, stored as a FieldList so
+// the same renderer works for both struct fields and variant
+// payloads. `FieldList` is the next list-enum slated for retirement —
+// its conversion will flip `Variant.fields` to `List<FieldEntry>`.
+export type Variant = { name: string, fields: FieldList }
 
 // `List<Pattern>` replaces the retired `enum PatternList`. Used as
 // the `sub_patterns` payload on `Pattern.NestedVariant` so nested
@@ -1015,7 +1014,7 @@ export enum Stmt {
     /// width-subtyping record.
     ShapeDecl(name: string, fields: FieldList)
     /// Enum declaration: `enum Color { Red, Green, Blue }`.
-    EnumDecl(name: string, type_params: List<TypeParamEntry>, variants: VariantList)
+    EnumDecl(name: string, type_params: List<TypeParamEntry>, variants: List<Variant>)
     /// Match as a statement: `match v { ... }` with no result.
     Match(subject: Expr, arms: MatchArmList)
     /// `impl Type { fns }` or `impl Trait for Type { fns }`. The
@@ -1359,14 +1358,6 @@ fn field_index_of_loop(fields: FieldList, name: string, idx: int) -> int {
     }
 }
 
-/// Length of a VariantList. O(n).
-export fn variant_list_length(variants: VariantList) -> int {
-    match variants {
-        .End -> 0
-        .Node(_, _, next) -> 1 + variant_list_length(next)
-    }
-}
-
 /// Result of `variant_lookup`. `tag` is the djb2-style stable hash
 /// used as the LLVM tag value; -1 when not found.
 export type VariantLookup = {
@@ -1378,38 +1369,33 @@ export type VariantLookup = {
 extern fn avra_variant_hash(name: string) -> int
 
 /// Find a variant by name. Returns its FieldList plus the stable
-/// tag hash, or `found: false` when absent.
-export fn variant_lookup(variants: VariantList, name: string) -> VariantLookup {
-    variant_lookup_by_hash(variants, name)
-}
-
-/// Implementation of `variant_lookup`: walks the list and computes
-/// the djb2 tag hash for the matching variant.
-fn variant_lookup_by_hash(variants: VariantList, name: string) -> VariantLookup {
-    match variants {
-        .End -> VariantLookup { found: false, fields: FieldList.End, tag: -1 }
-        .Node(n, fields, _) if n == name -> VariantLookup { found: true, fields, tag: avra_variant_hash(name) }
-        .Node(_, _, next) -> variant_lookup_by_hash(next, name)
+/// tag hash, or `found: false` when absent. Indexed walk over the
+/// retired `VariantList` cons-list.
+export fn variant_lookup(variants: List<Variant>, name: string) -> VariantLookup {
+    mut i = 0
+    while i < variants.length {
+        let v = variants[i]
+        if v.name == name {
+            return VariantLookup { found: true, fields: v.fields, tag: avra_variant_hash(name) }
+        }
+        i = i + 1
     }
+    VariantLookup { found: false, fields: FieldList.End, tag: -1 }
 }
 
 /// Maximum number of i64 slots needed across all variants in an
 /// enum — determines the size of the payload union in the LLVM
 /// struct layout. Each variant's payload is `field_list_length(...)`
 /// slots; the enum's overall payload sizes to the largest.
-export fn variant_max_payload(variants: VariantList) -> int {
-    match variants {
-        .End -> 0
-        .Node(_, fields, next) -> {
-            let here = field_list_length(fields)
-            let rest = variant_max_payload(next)
-            if here > rest {
-                here
-            } else {
-                rest
-            }
-        }
+export fn variant_max_payload(variants: List<Variant>) -> int {
+    mut max = 0
+    mut i = 0
+    while i < variants.length {
+        let here = field_list_length(variants[i].fields)
+        if here > max { max = here }
+        i = i + 1
     }
+    max
 }
 
 /// Resolved ValueType for field `name`, or Unknown when the field
@@ -1652,24 +1638,18 @@ export fn render_annotation_list(annots: List<Annotation>) -> string {
     out
 }
 
-/// Render a VariantList as an S-expression: `(Ok(value:T), Err(error:E))`.
-export fn render_variant_list(variants: VariantList) -> string {
-    match variants {
-        .End -> "()"
-        .Node(name, fields, next) -> {
-            let head = "${name}${render_field_list(fields)}"
-            let tail = render_variant_tail(next)
-            "(${head}${tail})"
-        }
+/// Render a `List<Variant>` as an S-expression: `(Ok(value:T), Err(error:E))`.
+export fn render_variant_list(variants: List<Variant>) -> string {
+    if variants.length == 0 { return "()" }
+    mut out = ""
+    mut i = 0
+    while i < variants.length {
+        let v = variants[i]
+        let entry = "${v.name}${render_field_list(v.fields)}"
+        if i == 0 { out = entry } else { out = "${out}, ${entry}" }
+        i = i + 1
     }
-}
-
-/// Tail half of `render_variant_list` — see `render_field_init_tail`.
-fn render_variant_tail(variants: VariantList) -> string {
-    match variants {
-        .End -> ""
-        .Node(name, fields, next) -> ", ${name}${render_field_list(fields)}${render_variant_tail(next)}"
-    }
+    "(${out})"
 }
 
 /// Render a Pattern as an S-expression — used by render_match_arm.

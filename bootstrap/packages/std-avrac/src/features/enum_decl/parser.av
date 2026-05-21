@@ -1,7 +1,7 @@
 // WHY: parses `enum Foo { ... }` declarations and the variant
 // list syntax (with optional payload fields).
 
-use core.{Stmt, FieldList, VariantList, TypeParamEntry, ValueType, type_expr_to_vtype}
+use core.{Stmt, FieldList, Variant, TypeParamEntry, ValueType, type_expr_to_vtype}
 use parse.{Parser}
 use core.{Tk}
 
@@ -25,46 +25,43 @@ impl Parser {
         Stmt.EnumDecl(name, tp, variants)
     }
 
-    fn parse_variant_list(self) -> VariantList? {
-        // Skip any /// doc comments preceding this variant. We don't
-        // attach them to variants yet (would require widening
-        // VariantList) — but allowing them keeps inline-documented
-        // enums (e.g. DiagCode) parseable today.
-        while self.check(Tk.DocComment) {
-            self.advance()
-        }
-        if self.check(Tk.RightBrace) {
-            return VariantList.End
-        }
-        let name = self.consume_identifier("expected variant name")?
-        // Optional payload: `(name: ty, name: ty)`
-        if self.check(Tk.LeftParen) {
-            self.advance()
-            let fields = self.parse_field_list_until_paren()?
-            if !self.consume(Tk.RightParen, "expected `)` after variant fields") {
-                return null
+    fn parse_variant_list(self) -> List<Variant>? {
+        // Source-order loop appending into a growable List<Variant>.
+        // Replaces the prior cons-list recursion (`parse_variant_list`
+        // + `finish_variant`) — both shared the doc-comment skip and
+        // the optional-comma / newline-separator handling. /// doc
+        // comments preceding variants are skipped (we don't attach
+        // them yet — widening Variant for docs is a separate change).
+        mut out: List<Variant> = []
+        mut done = false
+        while !done {
+            while self.check(Tk.DocComment) {
+                self.advance()
             }
-            return self.finish_variant(name, fields)
+            if self.check(Tk.RightBrace) { return out }
+            let name = self.consume_identifier("expected variant name")?
+            mut fields = FieldList.End
+            if self.check(Tk.LeftParen) {
+                self.advance()
+                fields = self.parse_field_list_until_paren()?
+                if !self.consume(Tk.RightParen, "expected `)` after variant fields") {
+                    return null
+                }
+            }
+            out.push(Variant { name, fields })
+            if self.check(Tk.Comma) {
+                self.advance()
+            }
+            // Accept either comma-separated OR newline-separated
+            // variants. After consuming the optional comma, if we
+            // hit `}` we're done; otherwise expect another variant
+            // (identifier or doc comment).
+            if self.check(Tk.RightBrace) { return out }
+            if !(self.check(Tk.Identifier) || self.check(Tk.DocComment)) {
+                done = true
+            }
         }
-        self.finish_variant(name, FieldList.End)
-    }
-
-    fn finish_variant(self, name: string, fields: FieldList) -> VariantList? {
-        if self.check(Tk.Comma) {
-            self.advance()
-        }
-        // Accept either comma-separated OR newline-separated
-        // variants. After consuming the optional comma, if we
-        // immediately see a `}` we're done. /// doc comments before
-        // the next variant are skipped (see parse_variant_list).
-        if self.check(Tk.RightBrace) {
-            return VariantList.Node(name, fields, VariantList.End)
-        }
-        if self.check(Tk.Identifier) || self.check(Tk.DocComment) {
-            let rest = self.parse_variant_list()?
-            return VariantList.Node(name, fields, rest)
-        }
-        VariantList.Node(name, fields, VariantList.End)
+        out
     }
 
     fn parse_field_list_until_paren(self) -> FieldList? {

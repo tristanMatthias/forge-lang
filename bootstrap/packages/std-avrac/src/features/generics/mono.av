@@ -3,7 +3,7 @@
 // checking and before codegen. After this pass, the AST contains no
 // generic declarations — codegen sees only concrete code.
 
-use core.{Expr, ExprList, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, StmtList, ParamList, FieldList, FieldInitList, TypeList, VariantList, MatchArmList, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge, SelectArm}
+use core.{Expr, ExprList, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, StmtList, ParamList, FieldList, FieldInitList, TypeList, Variant, MatchArmList, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge, SelectArm}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_warning, span_new}
 use typeck.{TraitImplReg, type_implements_trait}
 use core.{mangle_join, type_short_name}
@@ -36,7 +36,7 @@ type GenericFnEntry = {
 type GenericEnumEntry = {
     name: string,
     tp: List<TypeParamEntry>,
-    variants: VariantList,
+    variants: List<Variant>,
 }
 /// One entry in the generic-struct registry.
 type GenericStructEntry = {
@@ -655,7 +655,7 @@ fn explicit_to_type_args(tp: List<TypeParamEntry>, names: List<string>) -> List<
 
 /// Infer enum-constructor type-args from the variant's
 /// declared field types and the constructor call's args.
-fn resolve_enum_type_args(tp: List<TypeParamEntry>, variants: VariantList, variant: string, args: ExprList) -> List<TypeArg> {
+fn resolve_enum_type_args(tp: List<TypeParamEntry>, variants: List<Variant>, variant: string, args: ExprList) -> List<TypeArg> {
     let vl = variant_lookup(variants, variant)
     let empty: List<TypeArg> = []
     infer_from_fields(tp, vl.fields, args, empty)
@@ -1063,7 +1063,7 @@ fn specialize_fn(mangled: string, params: ParamList, ret_vt: ValueType, body: St
 /// Specialise a generic enum — mirror of `specialize_fn` but
 /// for enum decls. Substitutes type params in every variant's
 /// payload fields.
-fn specialize_enum(mangled: string, variants: VariantList, ta: List<TypeArg>) -> Stmt {
+fn specialize_enum(mangled: string, variants: List<Variant>, ta: List<TypeArg>) -> Stmt {
     let empty_tp: List<TypeParamEntry> = []
     Stmt.EnumDecl(mangled, empty_tp, substitute_variants(variants, ta))
 }
@@ -1151,8 +1151,15 @@ fn substitute_fields(fields: FieldList, ta: List<TypeArg>) -> FieldList {
     }}
 }
 /// Substitute type-args into every variant's payload fields.
-fn substitute_variants(variants: VariantList, ta: List<TypeArg>) -> VariantList {
-    match variants { .End -> .End, .Node(n, fields, next) -> VariantList.Node(n, substitute_fields(fields, ta), substitute_variants(next, ta)) }
+fn substitute_variants(variants: List<Variant>, ta: List<TypeArg>) -> List<Variant> {
+    mut out: List<Variant> = []
+    mut i = 0
+    while i < variants.length {
+        let v = variants[i]
+        out.push(Variant { name: v.name, fields: substitute_fields(v.fields, ta) })
+        i = i + 1
+    }
+    out
 }
 /// Map `substitute_stmt` over a StmtList.
 fn substitute_stmts(stmts: StmtList, ta: List<TypeArg>) -> StmtList {
@@ -1628,7 +1635,7 @@ fn rewrite_field_inits(inits: FieldInitList, regs: GenRegs, insts: List<Inst>) -
 /// Compute the mangled enum name for a constructor call site
 /// from its arg-inferred `List<TypeArg>`. Falls back to existing
 /// inst entries when site-local inference can't fully resolve.
-fn mangle_enum_at_site(tn: string, variant: string, tp: List<TypeParamEntry>, variants: VariantList, args: ExprList, insts: List<Inst>) -> string {
+fn mangle_enum_at_site(tn: string, variant: string, tp: List<TypeParamEntry>, variants: List<Variant>, args: ExprList, insts: List<Inst>) -> string {
     let partial = resolve_enum_type_args(tp, variants, variant, args)
     let result = inst_mangled_compatible(insts, tn, partial)
     // If compatible match failed (returned raw name), fall back to any entry

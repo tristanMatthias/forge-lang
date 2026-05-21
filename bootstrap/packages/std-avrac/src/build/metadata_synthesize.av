@@ -32,7 +32,7 @@
 use core.{
     Stmt, StmtList, SStmt, sstmt_dummy, stmt_unwrap,
     Expr, ExprList,
-    Annotation, ParamList, ValueType, FieldList, VariantList, TypeParamEntry,
+    Annotation, ParamList, ValueType, FieldList, Variant, TypeParamEntry,
     sexpr_dummy,
 }
 use build.metadata.{

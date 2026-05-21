@@ -9,7 +9,7 @@
 use core.{
     Expr, Stmt, StmtList, ExprList, ParamList,
     FieldInitList, FieldList,
-    VariantList, Pattern, MatchArmList, WhenArm, Annotation,
+    Variant, Pattern, MatchArmList, WhenArm, Annotation,
     binop_str, unop_str, logicop_str,
     vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq,
     render_type_param_list,
@@ -285,17 +285,18 @@ fn fmt_field_decl_list(fields: FieldList, depth: int) -> string {
 
 /// Render an enum-variant list — one `Name(field: T, ...)` per
 /// indented line.
-fn fmt_variant_list(variants: VariantList, depth: int) -> string {
+fn fmt_variant_list(variants: List<Variant>, depth: int) -> string {
     let ind = fmt_indent(depth)
-    match variants {
-        .End -> ""
-        .Node(name, fields, next) -> {
-            let fields_str = fmt_variant_fields(fields)
-            let head = "${ind}${name}${fields_str}"
-            let tail = fmt_variant_list(next, depth)
-            if tail == "" { head } else { "${head}\n${tail}" }
-        }
+    mut out = ""
+    mut i = 0
+    while i < variants.length {
+        let v = variants[i]
+        let fields_str = fmt_variant_fields(v.fields)
+        let head = "${ind}${v.name}${fields_str}"
+        if i == 0 { out = head } else { out = "${out}\n${head}" }
+        i = i + 1
     }
+    out
 }
 
 /// Render the parameter section of an enum variant — `(name: T, ...)`,

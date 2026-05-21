@@ -19,7 +19,7 @@
 // resolver wires up to @std/process the same way a hand-written
 // impl would.
 
-use core.{Stmt, StmtList, SStmt, sstmt_dummy, Expr, ExprList, SExpr, sexpr_dummy, FieldList, FieldInitList, ParamList, ValueType, TypeParamEntry, VariantList, Pattern, MatchArmList, TypeList, BinOp, find_annotation}
+use core.{Stmt, StmtList, SStmt, sstmt_dummy, Expr, ExprList, SExpr, sexpr_dummy, FieldList, FieldInitList, ParamList, ValueType, TypeParamEntry, Variant, Pattern, MatchArmList, TypeList, BinOp, find_annotation}
 
 // ── Public entry ──
 
@@ -536,7 +536,7 @@ fn append_stmts(a: StmtList, b: StmtList) -> StmtList {
 /// fields (using the same per-type writers as struct fields). Tag
 /// ordering matches source order so adding a variant at the end
 /// stays backwards-compatible — inserting in the middle does not.
-fn derive_enum_stmts(type_name: string, variants: VariantList) -> StmtList {
+fn derive_enum_stmts(type_name: string, variants: List<Variant>) -> StmtList {
     let to_bytes_fn = build_enum_to_bytes_fn(type_name, variants)
     let methods = StmtList.Node(sstmt_dummy(to_bytes_fn), StmtList.End)
     // Cleanup #1: same `impl Marshal for T` form for enums.
@@ -549,8 +549,8 @@ fn derive_enum_stmts(type_name: string, variants: VariantList) -> StmtList {
             StmtList.Node(sstmt_dummy(isolated_fn), StmtList.End)))
 }
 
-fn build_enum_to_bytes_fn(type_name: string, variants: VariantList) -> Stmt {
-    let arms = build_variant_arms(variants, 0)
+fn build_enum_to_bytes_fn(type_name: string, variants: List<Variant>) -> Stmt {
+    let arms = build_variant_arms(variants)
     let match_expr = Expr.MatchExpr(Expr.Ident("self"), arms)
     let body = StmtList.Node(sstmt_dummy(Stmt.Return(match_expr)), StmtList.End)
     let params = ParamList.Node("self", ValueType.Unknown, ParamList.End)
@@ -560,18 +560,20 @@ fn build_enum_to_bytes_fn(type_name: string, variants: VariantList) -> Stmt {
 
 /// Per-variant match arms for to_bytes. Tag = source-order index;
 /// each arm builds a bytes_builder().write_int(tag).<payload>.finish()
-/// chain.
-fn build_variant_arms(variants: VariantList, tag: int) -> MatchArmList {
-    match variants {
-        .End -> MatchArmList.End
-        .Node(name, payload, next) -> {
-            let bindings = field_list_to_param_list(payload)
-            let pattern = Pattern.Variant(name, bindings)
-            let chain = build_variant_write_chain(tag, payload)
-            MatchArmList.Node(pattern, null, sexpr_dummy(chain),
-                build_variant_arms(next, tag + 1))
-        }
+/// chain. Builds the cons-list back-to-front so source order is
+/// preserved when read head-first.
+fn build_variant_arms(variants: List<Variant>) -> MatchArmList {
+    mut out = MatchArmList.End
+    mut i = variants.length - 1
+    while i >= 0 {
+        let v = variants[i]
+        let bindings = field_list_to_param_list(v.fields)
+        let pattern = Pattern.Variant(v.name, bindings)
+        let chain = build_variant_write_chain(i, v.fields)
+        out = MatchArmList.Node(pattern, null, sexpr_dummy(chain), out)
+        i = i - 1
     }
+    out
 }
 
 fn field_list_to_param_list(fields: FieldList) -> ParamList {
@@ -603,7 +605,7 @@ fn build_variant_write_chain(tag: int, payload: FieldList) -> Expr {
 ///   if tag == 1 { … return T.Variant1(…) }
 ///   … last variant returned without an if-guard …
 /// }
-fn build_enum_from_bytes_fn(type_name: string, variants: VariantList) -> Stmt {
+fn build_enum_from_bytes_fn(type_name: string, variants: List<Variant>) -> Stmt {
     let params = ParamList.Node("b", ValueType.Bytes, ParamList.End)
     let init_call = Expr.Call(Expr.QualifiedIdent("@std::process::bytes_reader"),
         ExprList.Node(sexpr_dummy(Expr.Ident("b")), ExprList.End))
@@ -611,7 +613,7 @@ fn build_enum_from_bytes_fn(type_name: string, variants: VariantList) -> Stmt {
     // Tag read uses the new explicit-reassign pattern so the
     // mut r binding stays visible to the variant payload reads.
     let tag_reads = read_then_reassign("tag", "tag", "read_int")
-    let dispatch = build_enum_dispatch(type_name, variants, 0)
+    let dispatch = build_enum_dispatch(type_name, variants)
     let body = StmtList.Node(sstmt_dummy(init_let),
         append_stmts(tag_reads, dispatch))
     let fn_name = "from_bytes_" + type_name
@@ -622,29 +624,37 @@ fn build_enum_from_bytes_fn(type_name: string, variants: VariantList) -> Stmt {
 
 /// Cascade of `if tag == N { build variant }` stmts. The final
 /// variant returns unconditionally — the type-checker enforces
-/// total return coverage.
-fn build_enum_dispatch(type_name: string, variants: VariantList, tag: int) -> StmtList {
-    match variants {
-        .End -> StmtList.End
-        .Node(name, payload, next) -> {
-            let is_last = match next { .End -> true, _ -> false }
-            let read_payload_stmts = build_reads(payload)
-            let ctor = build_enum_ctor(type_name, name, payload)
-            let ret_stmt = Stmt.Return(ctor)
-            let block_body = append_stmts(read_payload_stmts,
-                StmtList.Node(sstmt_dummy(ret_stmt), StmtList.End))
-            if is_last {
-                block_body
-            } else {
-                let tag_lit = Expr.Number(string(tag))
-                let cmp = Expr.Binary(Expr.Ident("tag"), BinOp.Eq, tag_lit)
-                let then_block = Stmt.Block(block_body)
-                let if_stmt = Stmt.If(cmp, then_block, null)
-                let rest = build_enum_dispatch(type_name, next, tag + 1)
-                StmtList.Node(sstmt_dummy(if_stmt), rest)
-            }
+/// total return coverage. Indexed walk over `variants`; builds the
+/// StmtList back-to-front so source order is preserved.
+fn build_enum_dispatch(type_name: string, variants: List<Variant>) -> StmtList {
+    mut out = StmtList.End
+    let n = variants.length
+    mut i = n - 1
+    while i >= 0 {
+        let v = variants[i]
+        let read_payload_stmts = build_reads(v.fields)
+        let ctor = build_enum_ctor(type_name, v.name, v.fields)
+        let ret_stmt = Stmt.Return(ctor)
+        let block_body = append_stmts(read_payload_stmts,
+            StmtList.Node(sstmt_dummy(ret_stmt), StmtList.End))
+        let is_last = i == n - 1
+        let head_stmt = if is_last {
+            // Final variant: emit the read+return body unguarded —
+            // the cascade above narrowed everything but the last tag
+            // away. Splicing the body directly avoids an unreachable
+            // final `if`.
+            block_body
+        } else {
+            let tag_lit = Expr.Number(string(i))
+            let cmp = Expr.Binary(Expr.Ident("tag"), BinOp.Eq, tag_lit)
+            let then_block = Stmt.Block(block_body)
+            let if_stmt = Stmt.If(cmp, then_block, null)
+            StmtList.Node(sstmt_dummy(if_stmt), StmtList.End)
         }
+        out = append_stmts(head_stmt, out)
+        i = i - 1
     }
+    out
 }
 
 // build_variant_reads was identical to build_reads — both read a

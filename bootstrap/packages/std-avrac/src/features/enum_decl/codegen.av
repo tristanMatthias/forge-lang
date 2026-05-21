@@ -1,7 +1,7 @@
 // WHY: emits enum constructors (heap-allocated tagged unions) and
 // enum value comparison (tag equality via struct GEP).
 
-use core.{ExprList, FieldList, VariantList, VarEnv, variant_lookup, field_list_length, expr_list_length, ValueType, vtype_enum_name}
+use core.{ExprList, FieldList, Variant, VarEnv, variant_lookup, field_list_length, expr_list_length, ValueType, vtype_enum_name}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, null_ptr_val, enum_reg_find_by_variant, enum_reg_find_by_variant_arity}
 use core.{type_registry_id_for, variant_payload_name}
 
@@ -68,7 +68,7 @@ export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: stri
 /// Allocate the fixed 16-byte `{tag, payload}` outer struct.
 /// `variants` parameter is unused — kept for symmetry with the
 /// struct-side `malloc_struct_bytes`.
-export fn malloc_enum_bytes(ctx: Ctx, variants: VariantList) -> ptr {
+export fn malloc_enum_bytes(ctx: Ctx, variants: List<Variant>) -> ptr {
     // Fixed size: {i8 tag, ptr payload} = 16 bytes always
     ctx.arena_alloc(ctx.i64(16))
 }

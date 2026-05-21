@@ -18,7 +18,7 @@ use core.{avra_selfhost_read_file, avra_shell_exec}
 use core.{Stmt, StmtList, SStmt,
               Expr, SExpr, ExprList,
               ParamList, FieldList,
-              VariantList, ValueType, TypeParamEntry, render_type_param_list,
+              Variant, ValueType, TypeParamEntry, render_type_param_list,
               vtype_display, vtype_render_full,
               find_annotation, doc_string_for, stmt_unwrap}
 use parse.{parse_program_source}
@@ -480,17 +480,17 @@ fn render_params_typed_tail(params: ParamList) -> string {
     }
 }
 
-/// Render an enum's VariantList as a comma-separated string of
+/// Render an enum's variant list as a comma-separated string of
 /// variant names. Used as the `SymKind.Enum` payload so the docs
 /// renderer can show variant lists without re-walking the AST.
-fn render_variant_csv(vs: VariantList) -> string {
-    match vs {
-        .End -> ""
-        .Node(name, _, next) -> {
-            let rest = render_variant_csv(next)
-            if rest == "" { name } else { "${name}, ${rest}" }
-        }
+fn render_variant_csv(vs: List<Variant>) -> string {
+    mut out = ""
+    mut i = 0
+    while i < vs.length {
+        if i == 0 { out = vs[i].name } else { out = "${out}, ${vs[i].name}" }
+        i = i + 1
     }
+    out
 }
 
 // ── List helpers ────────────────────────────────────────────────────

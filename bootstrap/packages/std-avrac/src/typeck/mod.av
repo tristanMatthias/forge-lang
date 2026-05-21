@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.{BinOp, Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, SExpr, SStmt, Stmt, StmtList, TypeArg, TypeList, TypeParamEntry, ValueType, VariantList, WhenArm, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_list_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_is_fn, vtype_is_unknown, vtype_list_elem, vtype_struct_name, vtype_tuple_at}
+use core.{BinOp, Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, SExpr, SStmt, Stmt, StmtList, TypeArg, TypeList, TypeParamEntry, ValueType, Variant, WhenArm, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_list_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_is_fn, vtype_is_unknown, vtype_list_elem, vtype_struct_name, vtype_tuple_at}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive}
@@ -250,10 +250,10 @@ fn struct_type_has(reg: StructTypeReg, name: string) -> bool {
 }
 
 /// One enum's metadata in EnumTypeReg's `ord` list.
-type EnumTypeMeta = { name: string, variants: VariantList }
+type EnumTypeMeta = { name: string, variants: List<Variant> }
 
-/// Enum-name → VariantList table. Mirror of StructTypeReg for enums —
-/// hashmap-backed for O(1) lookup.
+/// Enum-name → `List<Variant>` table. Mirror of StructTypeReg for
+/// enums — hashmap-backed for O(1) lookup.
 type EnumTypeReg = {
     ord: List<EnumTypeMeta>,
     idx: ptr,
@@ -263,7 +263,7 @@ fn enum_type_reg_new() -> EnumTypeReg {
     EnumTypeReg { ord: [], idx: avra_map_new_cstr() }
 }
 
-fn enum_type_reg_register(reg: EnumTypeReg, name: string, variants: VariantList) -> EnumTypeReg {
+fn enum_type_reg_register(reg: EnumTypeReg, name: string, variants: List<Variant>) -> EnumTypeReg {
     mut ord = reg.ord
     let new_idx = ord.length
     ord.push(EnumTypeMeta { name, variants })
@@ -293,12 +293,13 @@ export fn tc_enum_find_by_variant(reg: EnumTypeReg, variant: string) -> string {
 }
 
 /// True iff `name` matches any variant in the list.
-fn variant_has(variants: VariantList, name: string) -> bool {
-    match variants {
-        .End -> false
-        .Node(vn, _, _) if vn == name -> true
-        .Node(_, _, next) -> variant_has(next, name)
+fn variant_has(variants: List<Variant>, name: string) -> bool {
+    mut i = 0
+    while i < variants.length {
+        if variants[i].name == name { return true }
+        i = i + 1
     }
+    false
 }
 
 // ── Checker state ──

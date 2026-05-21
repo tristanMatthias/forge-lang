@@ -16,7 +16,7 @@
 // Tracked under forge-crafting-intepreters-iinq (epic
 // forge-crafting-intepreters-a1el — the build system).
 
-use core.{ValueType, TypeList, FieldList, VariantList, ParamList, TypeParamEntry}
+use core.{ValueType, TypeList, FieldList, Variant, ParamList, TypeParamEntry}
 
 extern fn avra_bytes_make(len: int) -> bytes
 extern fn avra_bytes_set(b: bytes, idx: int, val: int)
@@ -488,13 +488,6 @@ fn field_list_length(fields: FieldList) -> int {
     }
 }
 
-fn variant_list_length(variants: VariantList) -> int {
-    match variants {
-        .End -> 0
-        .Node(_, _, next) -> 1 + variant_list_length(next)
-    }
-}
-
 fn param_list_length(params: ParamList) -> int {
     match params {
         .End -> 0
@@ -551,19 +544,14 @@ impl BytesWriter {
         }
     }
 
-    fn variant_list(self, variants: VariantList) {
-        self.u32_le(variant_list_length(variants))
-        self.variant_list_body(variants)
-    }
-
-    fn variant_list_body(self, variants: VariantList) {
-        match variants {
-            .End -> {}
-            .Node(name, fields, next) -> {
-                self.string(name)
-                self.field_list(fields)
-                self.variant_list_body(next)
-            }
+    fn variant_list(self, variants: List<Variant>) {
+        self.u32_le(variants.length)
+        mut i = 0
+        while i < variants.length {
+            let v = variants[i]
+            self.string(v.name)
+            self.field_list(v.fields)
+            i = i + 1
         }
     }
 }
@@ -595,17 +583,17 @@ impl BytesReader {
         ParamList.Node(name, vt, tail)
     }
 
-    fn variant_list(self) -> VariantList {
+    fn variant_list(self) -> List<Variant> {
         let count = self.u32_le()
-        self.variant_list_body(count)
-    }
-
-    fn variant_list_body(self, count: int) -> VariantList {
-        if count == 0 { return VariantList.End }
-        let name = self.string()
-        let fields = self.field_list()
-        let tail = self.variant_list_body(count - 1)
-        VariantList.Node(name, fields, tail)
+        mut out: List<Variant> = []
+        mut i = 0
+        while i < count {
+            let name = self.string()
+            let fields = self.field_list()
+            out.push(Variant { name, fields })
+            i = i + 1
+        }
+        out
     }
 
     fn type_param_list(self) -> List<TypeParamEntry> {
@@ -791,7 +779,7 @@ export type TypeDeclEntry = {
     name: string,
     type_params: List<TypeParamEntry>,
     fields: FieldList,
-    variants: VariantList,
+    variants: List<Variant>,
     inner_vt: ValueType,
     methods: List<MetaTraitMethod>,
 }
@@ -818,7 +806,7 @@ impl BytesReader {
         let name = self.string()
         let tps = self.type_param_list()
         mut fields = FieldList.End
-        mut variants = VariantList.End
+        mut variants: List<Variant> = []
         mut inner = ValueType.Unknown
         mut methods: List<MetaTraitMethod> = []
         if kind is .StructDecl { fields = self.field_list() }

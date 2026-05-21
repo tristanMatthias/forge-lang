@@ -6,7 +6,7 @@
 // Tracked under forge-crafting-intepreters-iinq.
 
 use core.{
-    Stmt, StmtList, SStmt, sstmt_at, Expr, ParamList, FieldList, VariantList, TypeParamEntry, ValueType,
+    Stmt, StmtList, SStmt, sstmt_at, Expr, ParamList, FieldList, Variant, TypeParamEntry, ValueType,
     Annotation, stmt_unwrap,
 }
 use build.metadata.{
@@ -308,7 +308,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                 name: qn,
                 type_params: type_params,
                 fields: fields,
-                variants: VariantList.End,
+                variants: [],
                 inner_vt: ValueType.Unknown,
                 methods: [],
             }
@@ -322,7 +322,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                 name: qn,
                 type_params: [],
                 fields: fields,
-                variants: VariantList.End,
+                variants: [],
                 inner_vt: ValueType.Unknown,
                 methods: [],
             }
@@ -350,7 +350,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                 name: qn,
                 type_params: [],
                 fields: FieldList.End,
-                variants: VariantList.End,
+                variants: [],
                 inner_vt: inner_vt,
                 methods: [],
             }
@@ -364,7 +364,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                 name: qn,
                 type_params: [],
                 fields: FieldList.End,
-                variants: VariantList.End,
+                variants: [],
                 inner_vt: type_vt,
                 methods: [],
             }
@@ -378,7 +378,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                 name: qn,
                 type_params: [],
                 fields: FieldList.End,
-                variants: VariantList.End,
+                variants: [],
                 inner_vt: ValueType.Unknown,
                 methods: extract_trait_methods(methods),
             }

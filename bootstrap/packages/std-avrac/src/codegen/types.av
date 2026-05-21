@@ -12,7 +12,7 @@
 //                                 logic (features/<X>/codegen.av)
 //                                 or the dispatchers (codegen.av)
 
-use core.{Expr, SExpr, VarEnv, FieldList, VariantList, ValueType, TypeList, type_list_len, type_list_at, vtype_is_str, vtype_is_unknown, variant_lookup, vtype_eq, field_list_length, field_vtype_of, env_extend, union_type_list_merge, find_type_pipe}
+use core.{Expr, SExpr, VarEnv, FieldList, Variant, ValueType, TypeList, type_list_len, type_list_at, vtype_is_str, vtype_is_unknown, variant_lookup, vtype_eq, field_list_length, field_vtype_of, env_extend, union_type_list_merge, find_type_pipe}
 use core.{Registry}
 use core.{TypeRegistry, type_registry_id_for, type_registry_name_for}
 use core.{avra_coverage_emit_hit, avra_covmap_alloc, avra_covmap_counter_count, avra_coverage_finalize_fn}
@@ -567,9 +567,9 @@ export fn struct_reg_lookup(reg: StructReg, name: string) -> StructLookup {
 /// `StructRegMeta.external` — set when the enum belongs to an
 /// `@external_unit` module so per-module compile skips emitting its
 /// `__release_EnumName` body (g2eo Phase A).
-export type EnumRegMeta = { name: string, variants: VariantList, external: bool }
+export type EnumRegMeta = { name: string, variants: List<Variant>, external: bool }
 
-/// Registry of declared enum types — `name → VariantList`. Hashmap-
+/// Registry of declared enum types — `name → List<Variant>`. Hashmap-
 /// backed for O(1) lookup, same pattern as StructReg.
 export type EnumReg = {
     ord: List<EnumRegMeta>,
@@ -580,14 +580,14 @@ export fn enum_reg_new() -> EnumReg {
     EnumReg { ord: [], idx: avra_map_new_cstr() }
 }
 
-export fn enum_reg_register(reg: EnumReg, name: string, variants: VariantList) -> EnumReg {
+export fn enum_reg_register(reg: EnumReg, name: string, variants: List<Variant>) -> EnumReg {
     enum_reg_register_full(reg, name, variants, false)
 }
 
 /// Variant of `enum_reg_register` that records whether the enum
 /// originates from an `@external_unit` module — see
 /// `struct_reg_register_full`.
-export fn enum_reg_register_full(reg: EnumReg, name: string, variants: VariantList, external: bool) -> EnumReg {
+export fn enum_reg_register_full(reg: EnumReg, name: string, variants: List<Variant>, external: bool) -> EnumReg {
     mut ord = reg.ord
     let new_idx = ord.length
     ord.push(EnumRegMeta { name, variants, external })
@@ -598,13 +598,16 @@ export fn enum_reg_register_full(reg: EnumReg, name: string, variants: VariantLi
 /// Result of an enum registry lookup. `found` is 1 when present.
 export type EnumLookup = {
     found: int,
-    variants: VariantList,
+    variants: List<Variant>,
 }
 
 /// Look up an enum by name. Always returns an EnumLookup — callers
 /// inspect `.found` to distinguish hit from miss.
 export fn enum_reg_lookup(reg: EnumReg, name: string) -> EnumLookup {
-    if avra_map_has_cstr(reg.idx, name) == 0 { return EnumLookup { found: false, variants: .End } }
+    if avra_map_has_cstr(reg.idx, name) == 0 {
+        let empty: List<Variant> = []
+        return EnumLookup { found: false, variants: empty }
+    }
     let i = avra_map_get_cstr(reg.idx, name)
     EnumLookup { found: true, variants: reg.ord[i].variants }
 }

@@ -1,6 +1,6 @@
 // WHY: compilation setup — declaration passes and top-level emission.
 
-use core.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_has, field_list_length, filter_fields_only, filter_fields_without, find_annotation, param_list_length, stmt_unwrap, variant_max_payload, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_unknown, vtype_enum_name, vtype_struct_name, env_extend}
+use core.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, Variant, SStmt, field_list_has, field_list_length, filter_fields_only, filter_fields_without, find_annotation, param_list_length, stmt_unwrap, variant_max_payload, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_unknown, vtype_enum_name, vtype_struct_name, env_extend}
 use parse.{parse_int_literal}
 use core.{avra_llvm_const_int}
 use core.{avra_process_env_get}
@@ -529,16 +529,20 @@ export fn codegen_and_emit_ir_cov(stmts: StmtList, ir_path: string, type_reg: Ty
     }
 }
 
-/// Walk a VariantList and rebuild it with each variant's FieldList
-/// resolved against the codegen TypeRegs. Used when registering an
-/// enum so the registry stores `Enum(name, …)` ValueTypes for fields
-/// that the parser left as `Struct(name, …)` placeholders.
-fn resolve_variant_fields(variants: VariantList, regs: TypeRegs) -> VariantList {
-    match variants {
-        .End -> .End
-        .Node(name, fields, next) ->
-            VariantList.Node(name, resolve_field_list(fields, regs), resolve_variant_fields(next, regs))
+/// Walk a `List<Variant>` and rebuild it with each variant's
+/// FieldList resolved against the codegen TypeRegs. Used when
+/// registering an enum so the registry stores `Enum(name, …)`
+/// ValueTypes for fields that the parser left as `Struct(name, …)`
+/// placeholders.
+fn resolve_variant_fields(variants: List<Variant>, regs: TypeRegs) -> List<Variant> {
+    mut out: List<Variant> = []
+    mut i = 0
+    while i < variants.length {
+        let v = variants[i]
+        out.push(Variant { name: v.name, fields: resolve_field_list(v.fields, regs) })
+        i = i + 1
     }
+    out
 }
 
 /// Walk a FieldList and resolve each field's ValueType using the
@@ -803,23 +807,22 @@ fn declare_globals(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stru
 /// `%EnumName.VariantName = type { field_types... }`. Outer enum
 /// shape is `{i64 tag, ptr payload}`; the per-variant struct names
 /// what `payload` actually points at when that variant is active.
-fn declare_variant_payloads(lc: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, enum_name: string, variants: VariantList, structs: StructReg, nts: CgNewtypeReg, uas: CgUnionAliasReg, enums: EnumReg) {
-    match variants {
-        .End -> {}
-        .Node(vname, fields, next) -> {
-            let count = field_list_length(fields)
-            if count > 0 {
-                let payload_name = variant_payload_name(enum_name, vname)
-                let vp_regs = TypeRegs { structs, enums, newtypes: nts, union_aliases: uas }
-                let resolved_fields = resolve_field_list(fields, vp_regs)
-                let arr = avra_llvm_type_array_new(count)
-                fill_struct_field_types(arr, i64t, i1t, dt, pt, resolved_fields, 0)
-                let st = avra_llvm_struct_create_named(lc, payload_name)
-                avra_llvm_struct_set_body(st, arr, count, 0)
-                avra_llvm_type_array_free(arr)
-            }
-            declare_variant_payloads(lc, i64t, i1t, dt, pt, enum_name, next, structs, nts, uas, enums)
+fn declare_variant_payloads(lc: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, enum_name: string, variants: List<Variant>, structs: StructReg, nts: CgNewtypeReg, uas: CgUnionAliasReg, enums: EnumReg) {
+    mut i = 0
+    while i < variants.length {
+        let v = variants[i]
+        let count = field_list_length(v.fields)
+        if count > 0 {
+            let payload_name = variant_payload_name(enum_name, v.name)
+            let vp_regs = TypeRegs { structs, enums, newtypes: nts, union_aliases: uas }
+            let resolved_fields = resolve_field_list(v.fields, vp_regs)
+            let arr = avra_llvm_type_array_new(count)
+            fill_struct_field_types(arr, i64t, i1t, dt, pt, resolved_fields, 0)
+            let st = avra_llvm_struct_create_named(lc, payload_name)
+            avra_llvm_struct_set_body(st, arr, count, 0)
+            avra_llvm_type_array_free(arr)
         }
+        i = i + 1
     }
 }
 
@@ -889,14 +892,13 @@ fn fields_have_rc(fields: FieldList) -> bool {
 /// True when at least one variant of an enum has a ptr-type field
 /// (i.e. its payload contains an RC-managed value). Decides whether
 /// `__release_EnumName` is generated.
-fn variants_have_rc(variants: VariantList) -> bool {
-    match variants {
-        .End -> false
-        .Node(_, fields, next) -> {
-            if fields_have_rc(fields) { true }
-            else { variants_have_rc(next) }
-        }
+fn variants_have_rc(variants: List<Variant>) -> bool {
+    mut i = 0
+    while i < variants.length {
+        if fields_have_rc(variants[i].fields) { return true }
+        i = i + 1
     }
+    false
 }
 
 /// Declare `__release_TypeName(ptr) -> i64` for every struct that
@@ -1099,25 +1101,24 @@ fn emit_variant_field_releases(ctx: Ctx, payload: ptr, enum_name: string, varian
 /// `tag_val` against the variant's djb2 hash; matching variants
 /// release their payload fields and branch to `done_bb`. Variants
 /// without RC fields are skipped entirely (no comparison emitted).
-fn emit_enum_variant_releases(ctx: Ctx, tag_val: ptr, payload: ptr, enum_name: string, variants: VariantList, done_bb: ptr) {
-    match variants {
-        .End -> {}
-        .Node(vname, fields, next) -> {
-            if fields_have_rc(fields) {
-                let tag_hash = avra_variant_hash(vname)
-                let tag_const = avra_llvm_const_int(ctx.i64_type, tag_hash, 0)
-                let cmp = avra_llvm_build_icmp(ctx.builder, 32, tag_val, tag_const, "is_${vname}")
-                let match_bb = avra_llvm_append_basic_block(ctx.lc, ctx.current_fn, "rel_${vname}")
-                let next_bb = avra_llvm_append_basic_block(ctx.lc, ctx.current_fn, "try_next_${vname}")
-                avra_llvm_build_cond_br(ctx.builder, cmp, match_bb, next_bb)
-                avra_llvm_position_at_end(ctx.builder, match_bb)
-                // Cast payload ptr to variant struct type and release fields
-                emit_variant_field_releases(ctx, payload, enum_name, vname, fields, 0)
-                avra_llvm_build_br(ctx.builder, done_bb)
-                avra_llvm_position_at_end(ctx.builder, next_bb)
-            }
-            emit_enum_variant_releases(ctx, tag_val, payload, enum_name, next, done_bb)
+fn emit_enum_variant_releases(ctx: Ctx, tag_val: ptr, payload: ptr, enum_name: string, variants: List<Variant>, done_bb: ptr) {
+    mut i = 0
+    while i < variants.length {
+        let v = variants[i]
+        if fields_have_rc(v.fields) {
+            let tag_hash = avra_variant_hash(v.name)
+            let tag_const = avra_llvm_const_int(ctx.i64_type, tag_hash, 0)
+            let cmp = avra_llvm_build_icmp(ctx.builder, 32, tag_val, tag_const, "is_${v.name}")
+            let match_bb = avra_llvm_append_basic_block(ctx.lc, ctx.current_fn, "rel_${v.name}")
+            let next_bb = avra_llvm_append_basic_block(ctx.lc, ctx.current_fn, "try_next_${v.name}")
+            avra_llvm_build_cond_br(ctx.builder, cmp, match_bb, next_bb)
+            avra_llvm_position_at_end(ctx.builder, match_bb)
+            // Cast payload ptr to variant struct type and release fields
+            emit_variant_field_releases(ctx, payload, enum_name, v.name, v.fields, 0)
+            avra_llvm_build_br(ctx.builder, done_bb)
+            avra_llvm_position_at_end(ctx.builder, next_bb)
         }
+        i = i + 1
     }
 }
 
@@ -1125,7 +1126,7 @@ fn emit_enum_variant_releases(ctx: Ctx, tag_val: ptr, payload: ptr, enum_name: s
 /// and payload, dispatches via `emit_enum_variant_releases`, then
 /// frees the outer object. Cycle-capable enums get an
 /// `avra_rc_suspect` call in the alive path.
-fn emit_release_body_enum(ctx: Ctx, name: string, variants: VariantList, is_cyclic: bool) {
+fn emit_release_body_enum(ctx: Ctx, name: string, variants: List<Variant>, is_cyclic: bool) {
     let sc = emit_release_scaffold(ctx, name)
     if sc == null { return }
     let s = sc!

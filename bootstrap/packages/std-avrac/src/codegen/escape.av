@@ -6,7 +6,7 @@
 //
 // Conservative: if in doubt, mark as escaped (don't release).
 
-use core.{Expr, ExprList, FieldList, FieldInitList, VariantList, ValueType, Stmt, StmtList, SExpr, SStmt, stmt_unwrap}
+use core.{Expr, ExprList, FieldList, FieldInitList, Variant, ValueType, Stmt, StmtList, SExpr, SStmt, stmt_unwrap}
 use codegen.{ReleasableSet, releasable_has, StructReg, EnumReg, struct_reg_lookup, enum_reg_lookup, CopySet, copy_set_has}
 
 /// Add `name` to the releasable set, deduplicating. The set is the
@@ -446,14 +446,13 @@ fn fields_all_copy(fields: FieldList, candidates: CopySet) -> bool {
 
 /// True when every variant of an enum has Copy fields under the
 /// current candidate set.
-fn variants_all_copy(variants: VariantList, candidates: CopySet) -> bool {
-    match variants {
-        .End -> true
-        .Node(_, fields, next) -> {
-            if !fields_all_copy(fields, candidates) { false }
-            else { variants_all_copy(next, candidates) }
-        }
+fn variants_all_copy(variants: List<Variant>, candidates: CopySet) -> bool {
+    mut i = 0
+    while i < variants.length {
+        if !fields_all_copy(variants[i].fields, candidates) { return false }
+        i = i + 1
     }
+    true
 }
 
 /// Local Copy classifier used during the fixpoint analysis. Differs

@@ -1,6 +1,6 @@
 // WHY: emits LLVM IR for `match` as both a statement and an expression.
 
-use core.{Expr, Pattern, MatchArmList, WhenArm, ParamList, FieldList, TypeList, VariantList, VarEnv, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types}
+use core.{Expr, Pattern, MatchArmList, WhenArm, ParamList, FieldList, TypeList, Variant, VarEnv, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types}
 use codegen.{Ctx, EmitValue, StmtResult, err_emit, ok_emit, field_resolved_at, advance_field_list, emit_value_ptr, emit_value_ty, enum_reg_find_by_variant, vtype_is_ptr_type}
 use core.{vtype_from_name}
 use codegen.{ok_sr, err_sr}
@@ -220,7 +220,7 @@ fn infer_enum_from_arms(ctx: Ctx, arms: MatchArmList) -> string {
 /// chain via `emit_pattern_tag_branch`, binds payload captures
 /// via `bind_pattern_payload`, then emits the arm body and
 /// stores its result. Wildcards skip the tag check entirely.
-fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_ptr: ptr, tag_val: ptr, variants: VariantList, merge_bb: ptr, result_slot: ptr) -> Result<ValueType, string> {
+fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_ptr: ptr, tag_val: ptr, variants: List<Variant>, merge_bb: ptr, result_slot: ptr) -> Result<ValueType, string> {
     match arms {
         .End -> {
             ctx.match_trap(tag_val)
@@ -301,7 +301,7 @@ export fn emit_match(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmList) -
 /// Statement-position arm emitter. Mirror of
 /// `emit_match_expr_arms` but doesn't store arm results — bodies
 /// are evaluated for side effects only.
-fn emit_match_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_ptr: ptr, tag_val: ptr, variants: VariantList, merge_bb: ptr) -> Result<StmtResult, string> {
+fn emit_match_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_ptr: ptr, tag_val: ptr, variants: List<Variant>, merge_bb: ptr) -> Result<StmtResult, string> {
     // Reuse the expression arm emitter with a dummy result_slot.
     // The slot is written to but never loaded (statements discard the value).
     let dummy_slot = ctx.alloca_i64("match_stmt_discard")
@@ -327,7 +327,7 @@ fn pattern_variant_name(pattern: Pattern) -> string {
 /// arm. On match, control transfers to `arm_bb`; otherwise to
 /// `next_bb` (next arm). Wildcards branch unconditionally to
 /// `arm_bb`.
-fn emit_pattern_tag_branch(ctx: Ctx, pattern: Pattern, tag_val: ptr, variants: VariantList, arm_bb: ptr, next_bb: ptr) -> ptr {
+fn emit_pattern_tag_branch(ctx: Ctx, pattern: Pattern, tag_val: ptr, variants: List<Variant>, arm_bb: ptr, next_bb: ptr) -> ptr {
     match pattern {
         .Or(left, right) -> {
             // Try left alternative; if it fails, try right.
@@ -357,7 +357,7 @@ fn emit_pattern_tag_branch(ctx: Ctx, pattern: Pattern, tag_val: ptr, variants: V
 /// Emit additional tag checks for nested constructor patterns
 /// (e.g. `.Some(.Ok(x))`). Each level of nesting compares the
 /// inner payload's tag and routes mismatches to `next_bb`.
-fn emit_nested_tag_checks(ctx: Ctx, pattern: Pattern, st_ty: ptr, subj_ptr: ptr, variants: VariantList, next_bb: ptr) {
+fn emit_nested_tag_checks(ctx: Ctx, pattern: Pattern, st_ty: ptr, subj_ptr: ptr, variants: List<Variant>, next_bb: ptr) {
     match pattern {
         .NestedVariant(vname, sub_pats) -> {
             let v = variant_lookup(variants, vname)
@@ -442,7 +442,7 @@ fn load_payload_field(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, idx: int, field_ty: V
 /// it to the right payload slot. Variants with named bindings
 /// drop straight in; nested patterns recurse into
 /// `bind_nested_patterns`.
-fn bind_pattern_payload(ctx: Ctx, env: VarEnv, pattern: Pattern, st_ty: ptr, subj_ptr: ptr, variants: VariantList) -> VarEnv {
+fn bind_pattern_payload(ctx: Ctx, env: VarEnv, pattern: Pattern, st_ty: ptr, subj_ptr: ptr, variants: List<Variant>) -> VarEnv {
     match pattern {
         .Wildcard -> env
         .Variant(vname, bindings) -> {
