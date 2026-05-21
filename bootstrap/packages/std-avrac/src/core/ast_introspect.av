@@ -11,7 +11,7 @@
 // Phase 1 of Components V2 (vez6.1) — see
 // docs/2026_05_08_COMPONENTS_V2_DESIGN.md §3.2.
 
-use core.{Stmt, StmtList, Expr, CompConfigPairList}
+use core.{Stmt, StmtList, Expr, CompConfigPair}
 
 /// Flat-struct view over a `Stmt.ComponentBlock` payload. Lets
 /// macro authors handle component-block introspection without deep
@@ -24,7 +24,7 @@ use core.{Stmt, StmtList, Expr, CompConfigPairList}
 export type ComponentBlockView = {
     comp_name: string,
     instance: string,
-    config: CompConfigPairList,
+    config: List<CompConfigPair>,
     body: StmtList,
 }
 
@@ -119,23 +119,18 @@ fn children_matching(body: StmtList, filter_name: string) -> List<ComponentBlock
 
 /// Look up a config-pair value by key. Returns null when the key
 /// wasn't supplied — caller falls back to the schema default.
-export fn config_lookup(pairs: CompConfigPairList, key: string) -> Expr? {
-    mut cur = pairs
-    mut keep_going = true
-    while keep_going {
-        match cur {
-            .End -> { keep_going = false }
-            .Node(k, v, next) -> {
-                if k == key { return v }
-                cur = next
-            }
-        }
+export fn config_lookup(pairs: List<CompConfigPair>, key: string) -> Expr? {
+    mut i = 0
+    while i < pairs.length {
+        let pair = pairs[i]
+        if pair.key == key { return pair.value }
+        i = i + 1
     }
     null
 }
 
 /// True when a config pair with this key was supplied by the user
 /// at the call site.
-export fn config_has(pairs: CompConfigPairList, key: string) -> bool {
+export fn config_has(pairs: List<CompConfigPair>, key: string) -> bool {
     config_lookup(pairs, key) != null
 }

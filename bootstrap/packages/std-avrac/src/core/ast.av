@@ -1070,7 +1070,7 @@ export enum Stmt {
     /// reusable templated block of statements.
     ComponentDef(name: string, params: ParamList, config: CompConfigList, children: List<ChildrenSlot>, implements: List<string>, body: StmtList)
     /// Component instantiation: `component Foo as bar { config; body }`.
-    ComponentBlock(comp_name: string, instance: string, config: CompConfigPairList, body: StmtList)
+    ComponentBlock(comp_name: string, instance: string, config: List<CompConfigPair>, body: StmtList)
 }
 
 /// When arm: one branch `cond -> body` or `else -> body` (cond is
@@ -1106,12 +1106,13 @@ export enum CompConfigList {
     Node(key: string, ty_vt: ValueType, default_val: Expr?, next: CompConfigList)
 }
 
-/// Component config pairs as supplied in a ComponentBlock — `key:
-/// value` filled in by the consumer.
-export enum CompConfigPairList {
-    End
-    Node(key: string, value: Expr, next: CompConfigPairList)
-}
+/// Component config pair: one `key: value` supplied at a
+/// ComponentBlock call site to override the schema's default.
+///
+/// `List<CompConfigPair>` replaces the retired
+/// `enum CompConfigPairList`. Used as `config: List<CompConfigPair>`
+/// on Stmt.ComponentBlock and threaded through component expansion.
+export type CompConfigPair = { key: string, value: Expr }
 
 /// Component child-slot schema entry: one row of the `children { ... }`
 /// block declared on a ComponentDef. Each entry names a parent list

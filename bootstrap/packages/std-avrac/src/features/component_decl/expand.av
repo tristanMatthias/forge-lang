@@ -10,7 +10,7 @@
 // self.__parent → parent accumulator variable
 // self.__parent_name → parent instance name string
 
-use core.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, FieldList, FieldInitList, ParamList, ValueType, CompConfigList, CompConfigPairList, ChildrenSlot, TypeParamList, find_annotation}
+use core.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, FieldList, FieldInitList, ParamList, ValueType, CompConfigList, CompConfigPair, ChildrenSlot, TypeParamList, find_annotation}
 use core.{has_fn, find_fn_body}
 
 // ── Public API ──
@@ -284,7 +284,7 @@ fn rw_expr_list(list: ExprList, ctx: RewriteCtx) -> ExprList {
 /// reference with the user-supplied config value (falling back
 /// to the schema default). Threads the rewrite ctx so nested
 /// `@self` references still resolve.
-fn rw_template(stmts: StmtList, inst: string, uc: CompConfigPairList, schema: CompConfigList, ctx: RewriteCtx) -> StmtList {
+fn rw_template(stmts: StmtList, inst: string, uc: List<CompConfigPair>, schema: CompConfigList, ctx: RewriteCtx) -> StmtList {
     match stmts {
         .End -> StmtList.End
         .Node(ss, next) -> {
@@ -296,7 +296,7 @@ fn rw_template(stmts: StmtList, inst: string, uc: CompConfigPairList, schema: Co
 
 /// Per-statement template rewrite — same shape as `rw_stmt`
 /// but with the config substitution active.
-fn rw_tpl_stmt(stmt: Stmt, inst: string, uc: CompConfigPairList, schema: CompConfigList, ctx: RewriteCtx) -> Stmt {
+fn rw_tpl_stmt(stmt: Stmt, inst: string, uc: List<CompConfigPair>, schema: CompConfigList, ctx: RewriteCtx) -> Stmt {
     match stmt {
         .Expr(e) -> .Expr(rw_tpl_expr(e, inst, uc, schema, ctx))
         .Let(name, vt, init) -> .Let(name, vt, rw_tpl_expr(init, inst, uc, schema, ctx))
@@ -316,7 +316,7 @@ fn rw_tpl_stmt(stmt: Stmt, inst: string, uc: CompConfigPairList, schema: CompCon
 
 /// Per-expression template rewrite. `@cfg.field` references
 /// resolve via `resolve_config_value`; other shapes recurse.
-fn rw_tpl_expr(expr: Expr, inst: string, uc: CompConfigPairList, schema: CompConfigList, ctx: RewriteCtx) -> Expr {
+fn rw_tpl_expr(expr: Expr, inst: string, uc: List<CompConfigPair>, schema: CompConfigList, ctx: RewriteCtx) -> Expr {
     match expr {
         .FieldAccess(obj, field) -> {
             match obj {
@@ -365,7 +365,7 @@ fn rw_tpl_expr(expr: Expr, inst: string, uc: CompConfigPairList, schema: CompCon
 
 /// Map `rw_tpl_expr` over every field initializer in a struct
 /// literal embedded in a template body.
-fn rw_tpl_field_inits(inits: FieldInitList, inst: string, uc: CompConfigPairList, schema: CompConfigList, ctx: RewriteCtx) -> FieldInitList {
+fn rw_tpl_field_inits(inits: FieldInitList, inst: string, uc: List<CompConfigPair>, schema: CompConfigList, ctx: RewriteCtx) -> FieldInitList {
     match inits {
         .End -> FieldInitList.End
         .Node(name, sv, next) -> {
@@ -376,7 +376,7 @@ fn rw_tpl_field_inits(inits: FieldInitList, inst: string, uc: CompConfigPairList
 }
 
 /// Map `rw_tpl_expr` over an ExprList in a template body.
-fn rw_tpl_expr_list(list: ExprList, inst: string, uc: CompConfigPairList, schema: CompConfigList, ctx: RewriteCtx) -> ExprList {
+fn rw_tpl_expr_list(list: ExprList, inst: string, uc: List<CompConfigPair>, schema: CompConfigList, ctx: RewriteCtx) -> ExprList {
     match list {
         .End -> ExprList.End
         .Node(se, next) -> ExprList.Node(sexpr(rw_tpl_expr(se.node, inst, uc, schema, ctx), se.line, se.col), rw_tpl_expr_list(next, inst, uc, schema, ctx))
@@ -386,13 +386,12 @@ fn rw_tpl_expr_list(list: ExprList, inst: string, uc: CompConfigPairList, schema
 /// Resolve a `@cfg.field` reference: prefer the user's
 /// instantiation override, fall back to the schema's default,
 /// finally `Expr.Null` when neither exists.
-export fn resolve_config_value(field: string, user_config: CompConfigPairList, schema: CompConfigList) -> Expr {
-    match user_config {
-        .End -> {}
-        .Node(key, value, next) -> {
-            if key == field { return value }
-            return resolve_config_value(field, next, schema)
-        }
+export fn resolve_config_value(field: string, user_config: List<CompConfigPair>, schema: CompConfigList) -> Expr {
+    mut i = 0
+    while i < user_config.length {
+        let pair = user_config[i]
+        if pair.key == field { return pair.value }
+        i = i + 1
     }
     match schema {
         .End -> Expr.String("\"\"")
@@ -401,7 +400,8 @@ export fn resolve_config_value(field: string, user_config: CompConfigPairList, s
                 if default_val != null { return default_val! }
                 return Expr.String("\"\"")
             }
-            resolve_config_value(field, CompConfigPairList.End, next)
+            let empty: List<CompConfigPair> = []
+            resolve_config_value(field, empty, next)
         }
     }
 }
@@ -491,21 +491,25 @@ fn prepend_stmt(stmt: Stmt, line: int, col: int, rest: StmtList) -> StmtList {
 /// Wrap a base expression in a struct-literal `with { ... }`
 /// override using the supplied config pairs. Used to pass an
 /// instance's user config to the factory.
-fn apply_config_pairs(base: Expr, config: CompConfigPairList) -> Expr {
-    match config {
-        .End -> base
-        _ -> Expr.With(base, config_pairs_to_field_inits(config))
-    }
+fn apply_config_pairs(base: Expr, config: List<CompConfigPair>) -> Expr {
+    if config.length == 0 { return base }
+    Expr.With(base, config_pairs_to_field_inits(config))
 }
 
-/// Convert a CompConfigPairList (user instantiation config)
+/// Convert a `List<CompConfigPair>` (user instantiation config)
 /// into a FieldInitList for direct splicing into a struct
 /// literal.
-fn config_pairs_to_field_inits(pairs: CompConfigPairList) -> FieldInitList {
-    match pairs {
-        .End -> FieldInitList.End
-        .Node(key, value, next) -> FieldInitList.Node(key, sexpr(value, 0, 0), config_pairs_to_field_inits(next))
+fn config_pairs_to_field_inits(pairs: List<CompConfigPair>) -> FieldInitList {
+    // FieldInitList is cons-prepend, so walk back-to-front to
+    // preserve the user's source order in the resulting list.
+    mut out = FieldInitList.End
+    mut i = pairs.length
+    while i > 0 {
+        i = i - 1
+        let pair = pairs[i]
+        out = FieldInitList.Node(pair.key, sexpr(pair.value, 0, 0), out)
     }
+    out
 }
 
 // ── ComponentDef splice ──
@@ -617,7 +621,7 @@ fn build_push_stmt(parent_var: string, slot: string, child_inst: string, line: i
 /// component definition, then dispatches to either
 /// `splice_template_block` or `splice_data_block` based on the
 /// template-vs-data classification of the body.
-export fn splice_component_block(comp: string, inst: string, config: CompConfigPairList, body: StmtList, line: int, col: int, rest: StmtList, reg: CompDefRegistry, nest: CompNestCtx) -> StmtList {
+export fn splice_component_block(comp: string, inst: string, config: List<CompConfigPair>, body: StmtList, line: int, col: int, rest: StmtList, reg: CompDefRegistry, nest: CompNestCtx) -> StmtList {
     let def = comp_reg_lookup(reg, comp)
     // vez6.7: validate every nested ComponentBlock matches a declared
     // child slot. Mismatches are reported via eprintln (proper
@@ -709,7 +713,7 @@ fn join_slot_names(schema: List<ChildrenSlot>) -> string {
 /// The component's body is rewritten via `rw_template` (for
 /// `@cfg`) and `rewrite_self` (for `@self`), then the result
 /// inlines into the surrounding scope.
-fn splice_template_block(comp: string, inst: string, config: CompConfigPairList, body: StmtList, line: int, col: int, rest: StmtList, reg: CompDefRegistry, nest: CompNestCtx, def: CompDefLookup) -> StmtList {
+fn splice_template_block(comp: string, inst: string, config: List<CompConfigPair>, body: StmtList, line: int, col: int, rest: StmtList, reg: CompDefRegistry, nest: CompNestCtx, def: CompDefLookup) -> StmtList {
     let is_root = nest.parent_var == ""
     let accum_var = if is_root { inst } else { nest.parent_var }
     let rw_ctx = RewriteCtx { inst, parent_var: accum_var, parent_name: nest.parent_name }
@@ -746,7 +750,7 @@ fn splice_template_block(comp: string, inst: string, config: CompConfigPairList,
 /// Emits a `let inst = <factory>(cfg)` binding plus any nested
 /// component blocks expanded recursively under the new
 /// nesting context.
-fn splice_data_block(comp: string, inst: string, config: CompConfigPairList, body: StmtList, line: int, col: int, rest: StmtList, reg: CompDefRegistry, nest: CompNestCtx, def: CompDefLookup) -> StmtList {
+fn splice_data_block(comp: string, inst: string, config: List<CompConfigPair>, body: StmtList, line: int, col: int, rest: StmtList, reg: CompDefRegistry, nest: CompNestCtx, def: CompDefLookup) -> StmtList {
     let rw_ctx = RewriteCtx { inst, parent_var: nest.parent_var, parent_name: nest.parent_name }
 
     let call_expr = Expr.Call(

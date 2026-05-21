@@ -14,7 +14,7 @@
 // that desugar.av and comptime/rewrite.av use; once the generic-AST-
 // visitor ticket lands (93k3) all three should share a single visitor.
 
-use core.{Stmt, StmtList, SStmt, sstmt_at, sstmt_dummy, Expr, ExprList, SExpr, sexpr, sexpr_dummy, FieldList, FieldInitList, MatchArmList, BinOp, UnOp, LogicOp, ParamList, TypeParamList, CompConfigPairList, binop_str, unop_str, logicop_str}
+use core.{Stmt, StmtList, SStmt, sstmt_at, sstmt_dummy, Expr, ExprList, SExpr, sexpr, sexpr_dummy, FieldList, FieldInitList, MatchArmList, BinOp, UnOp, LogicOp, ParamList, TypeParamList, CompConfigPair, binop_str, unop_str, logicop_str}
 
 // ── Public entry ──
 
@@ -511,18 +511,25 @@ fn construct_field_list(fields: FieldList) -> Expr {
     }
 }
 
-/// Build an Expr that, when evaluated, produces a CompConfigPairList
-/// AST value. Each Node is (key: string, value: Expr, next) — the
-/// value is an Expr (not SExpr), so the encoder emits the constructor
-/// shape directly via construct_expr.
-fn construct_comp_config_pair_list(list: CompConfigPairList) -> Expr {
-    match list {
-        .End -> list_end("CompConfigPairList")
-        .Node(key, value, next) -> list_node("CompConfigPairList",
-            three_args(string_lit_expr(key),
-                       construct_expr(value),
-                       construct_comp_config_pair_list(next)))
+/// Build an Expr that, when evaluated, produces a
+/// `List<CompConfigPair>` AST value. Each entry is a struct
+/// literal `CompConfigPair { key, value }`; the result is an
+/// `Expr.ListLit` so codegen materializes a real list at runtime.
+fn construct_comp_config_pair_list(list: List<CompConfigPair>) -> Expr {
+    // ExprList is cons-prepend, so walk back-to-front to preserve
+    // source order.
+    mut elems = ExprList.End
+    mut i = list.length
+    while i > 0 {
+        i = i - 1
+        let pair = list[i]
+        let inits = FieldInitList.Node("key", sexpr_dummy(string_lit_expr(pair.key)),
+                    FieldInitList.Node("value", sexpr_dummy(construct_expr(pair.value)),
+                                       FieldInitList.End))
+        let struct_lit = Expr.StructLit("@std::avrac::core::CompConfigPair", inits)
+        elems = ExprList.Node(sexpr_dummy(struct_lit), elems)
     }
+    Expr.ListLit(elems)
 }
 
 /// Emit `ValueType.Unknown` — quote captures pre-resolve, so all types

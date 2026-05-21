@@ -3,7 +3,7 @@
 // AST by hand, then checks that the helpers find what's there and
 // don't find what's not.
 
-use @std.avrac.core.{Stmt, StmtList, sstmt_dummy, Expr, CompConfigPairList, ParamList, ValueType, TypeParamList}
+use @std.avrac.core.{Stmt, StmtList, sstmt_dummy, Expr, CompConfigPair, ParamList, ValueType, TypeParamList}
 use @std.avrac.core.{has_fn, find_fn_body, children_of_type, all_children, config_lookup, config_has}
 
 // Build a fn-decl statement for testing.
@@ -13,7 +13,8 @@ fn mk_fn(name: string) -> Stmt {
 
 // Build a ComponentBlock for testing.
 fn mk_block(comp: string, inst: string) -> Stmt {
-    Stmt.ComponentBlock(comp, inst, CompConfigPairList.End, StmtList.End)
+    let empty: List<CompConfigPair> = []
+    Stmt.ComponentBlock(comp, inst, empty, StmtList.End)
 }
 
 // `let body = [fn run() {} ; fn drop() {} ; flag a {} ; flag b {} ; arg target {}]`
@@ -86,10 +87,11 @@ spec "ast_introspect.all_children" {
     }
 }
 
-fn sample_pairs() -> CompConfigPairList {
-    CompConfigPairList.Node("description", Expr.String("\"hello\""),
-      CompConfigPairList.Node("version", Expr.String("\"1.0\""),
-        CompConfigPairList.End))
+fn sample_pairs() -> List<CompConfigPair> {
+    [
+        CompConfigPair { key: "description", value: Expr.String("\"hello\"") },
+        CompConfigPair { key: "version", value: Expr.String("\"1.0\"") },
+    ]
 }
 
 spec "ast_introspect.config_lookup" {

@@ -722,6 +722,17 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
             ok_result(next_runtime, value_result.value)
         }
         .Grouping(inner) -> eval_expr(runtime, inner)
+        // lkze.9 #5: minimal ListLit / StructLit handlers so the
+        // comptime evaluator can step through quote-lowered AST
+        // constructors that emit list / struct values (post the
+        // CompConfigPairList enum retirement, ComponentBlock's
+        // config slot lowers to an Expr.ListLit of StructLits).
+        // The Value union models only enum + primitives, so we
+        // collapse list / struct values to `value_null()` —
+        // round-trip fidelity for real list/struct values awaits
+        // proper list/struct kinds on Value (filed separately).
+        .ListLit(_) -> ok_result(runtime, value_null())
+        .StructLit(_, _) -> ok_result(runtime, value_null())
         .Unary(op, right) -> eval_unary(runtime, op, right)
         .Binary(left, op, right) -> eval_binary(runtime, left, op, right)
         .Logical(left, op, right) -> eval_logical(runtime, left, op, right)

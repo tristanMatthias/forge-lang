@@ -7,7 +7,7 @@
 // in the parser's feature registry. Subsequent code can use `name instance { ... }`
 // without the `component` keyword — single-pass, no ambiguity.
 
-use core.{Stmt, Expr, ExprList, SExpr, sexpr_dummy, StmtList, SStmt, sstmt, CompConfigList, CompConfigPairList, ChildrenSlot, ParamList, FieldList, TypeParamList, ValueType, type_expr_to_vtype}
+use core.{Stmt, Expr, ExprList, SExpr, sexpr_dummy, StmtList, SStmt, sstmt, CompConfigList, CompConfigPair, ChildrenSlot, ParamList, FieldList, TypeParamList, ValueType, type_expr_to_vtype}
 use parse.{Parser}
 use core.{Tk}
 use core.{register_component_name}
@@ -284,45 +284,46 @@ impl Parser {
 
     // Parse config pairs: `key value` where value is a literal.
     // Uses character-level peek to decide without consuming tokens.
-    fn parse_comp_config_pairs(self) -> CompConfigPairList? {
-        if self.check(Tk.RightBrace) { return CompConfigPairList.End }
-        if self.check(Tk.KwFn) || self.check(Tk.KwComponent) || self.check(Tk.KwLet) {
-            return CompConfigPairList.End
+    fn parse_comp_config_pairs(self) -> List<CompConfigPair>? {
+        mut out: List<CompConfigPair> = []
+        mut keep_going = true
+        while keep_going {
+            if self.check(Tk.RightBrace) { return out }
+            if self.check(Tk.KwFn) || self.check(Tk.KwComponent) || self.check(Tk.KwLet) { return out }
+            if !self.check(Tk.Identifier) { return out }
+            let key = self.current_lexeme
+            if key == "on" { return out }
+            // Peek at what follows the identifier (without consuming)
+            if self.peek_after_ident_is_brace() { return out }  // nested block
+            // Check if next char is a quote (string literal) or digit (number)
+            if self.peek_after_ident_is_string() || self.peek_after_ident_is_number() {
+                self.advance()  // consume key
+                let value = self.parse_expression()?
+                if self.check(Tk.Comma) { self.advance() }
+                out.push(CompConfigPair { key, value })
+                continue
+            }
+            // Check for `true` or `false` keywords after ident
+            if self.peek_after_ident_is_keyword("true") || self.peek_after_ident_is_keyword("false") {
+                self.advance()  // consume key
+                let value = self.parse_expression()?
+                if self.check(Tk.Comma) { self.advance() }
+                out.push(CompConfigPair { key, value })
+                continue
+            }
+            // `key = expression` — unambiguous config pair with arbitrary expression value
+            if self.peek_after_ident_is_eq() {
+                self.advance()  // consume key
+                self.advance()  // consume =
+                let value = self.parse_expression()?
+                if self.check(Tk.Comma) { self.advance() }
+                out.push(CompConfigPair { key, value })
+                continue
+            }
+            // Anything else (identifier, etc.) → end of config pairs
+            keep_going = false
         }
-        if !self.check(Tk.Identifier) { return CompConfigPairList.End }
-        let key = self.current_lexeme
-        if key == "on" { return CompConfigPairList.End }
-        // Peek at what follows the identifier (without consuming)
-        if self.peek_after_ident_is_brace() {
-            return CompConfigPairList.End  // nested block
-        }
-        // Check if next char is a quote (string literal) or digit (number)
-        if self.peek_after_ident_is_string() || self.peek_after_ident_is_number() {
-            self.advance()  // consume key
-            let value = self.parse_expression()?
-            if self.check(Tk.Comma) { self.advance() }
-            let rest = self.parse_comp_config_pairs()?
-            return CompConfigPairList.Node(key, value, rest)
-        }
-        // Check for `true` or `false` keywords after ident
-        if self.peek_after_ident_is_keyword("true") || self.peek_after_ident_is_keyword("false") {
-            self.advance()  // consume key
-            let value = self.parse_expression()?
-            if self.check(Tk.Comma) { self.advance() }
-            let rest = self.parse_comp_config_pairs()?
-            return CompConfigPairList.Node(key, value, rest)
-        }
-        // `key = expression` — unambiguous config pair with arbitrary expression value
-        if self.peek_after_ident_is_eq() {
-            self.advance()  // consume key
-            self.advance()  // consume =
-            let value = self.parse_expression()?
-            if self.check(Tk.Comma) { self.advance() }
-            let rest = self.parse_comp_config_pairs()?
-            return CompConfigPairList.Node(key, value, rest)
-        }
-        // Anything else (identifier, etc.) → end of config pairs
-        CompConfigPairList.End
+        out
     }
 
     fn peek_after_ident_is_string(self) -> bool {
