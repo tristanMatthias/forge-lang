@@ -8,7 +8,7 @@ use @std.lsp.{lsp_pos,
               qualified_parent, qualified_leaf, qualified_depth,
               qualified_breadcrumbs,
               render_tree_summary,
-              sym_new, SymbolGraph, SymList}
+              sym_new, SymbolGraph, Sym}
 
 fn hier_test_span() -> LspSpan {
     LspSpan { start: lsp_pos(1, 1), end: lsp_pos(1, 1) }
@@ -34,28 +34,12 @@ fn hier_test_graph() -> SymbolGraph {
     g
 }
 
-fn hier_test_count(list: SymList) -> int {
-    mut n = 0
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return n
-            }
-            .Node(_, next) -> {
-                n = n + 1
-                cur = next
-            }
-        }
-    }
-    n
+fn hier_test_count(list: List<Sym>) -> int {
+    list.length
 }
 
-fn hier_test_first_qual(list: SymList) -> string {
-    match list {
-        .End -> ""
-        .Node(item, _) -> item.qualified
-    }
+fn hier_test_first_qual(list: List<Sym>) -> string {
+    if list.length > 0 { list[0].qualified } else { "" }
 }
 
 spec "hierarchy: path utilities" {

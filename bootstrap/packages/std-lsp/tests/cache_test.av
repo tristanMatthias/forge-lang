@@ -2,9 +2,9 @@
 // eviction. Disk-side load/save is exercised by writing to /tmp.
 
 use @std.lsp.{lsp_pos,
-              SymKind, SymbolGraph, SymList, Sym,
+              SymKind, SymbolGraph, Sym,
               graph_new, graph_add, sym_new,
-              CacheState, CacheFileEntry, CacheFileList,
+              CacheState, CacheFileEntry,
               cache_empty, cache_is_fresh, cache_evict_file,
               cache_add_file, cache_encode, cache_decode,
               cache_load, cache_save}
@@ -15,17 +15,16 @@ fn cache_test_span() -> LspSpan {
     LspSpan { start: lsp_pos(7, 1), end: lsp_pos(7, 1) }
 }
 
-fn cache_test_syms_for_file(file: string) -> SymList {
+fn cache_test_syms_for_file(file: string) -> List<Sym> {
     let sp = cache_test_span()
-    SymList.Node(
+    [
         sym_new("foo", "mod_a::foo",
             SymKind.Fn("fn foo() -> int", "int"),
             "Doc for foo.", file, sp, true, ""),
-        SymList.Node(
-            sym_new("Bar", "mod_a::Bar",
-                SymKind.Type("type Bar"),
-                "Doc for Bar.", file, sp, true, ""),
-            SymList.End))
+        sym_new("Bar", "mod_a::Bar",
+            SymKind.Type("type Bar"),
+            "Doc for Bar.", file, sp, true, "")
+    ]
 }
 
 fn cache_test_state() -> CacheState {
@@ -33,45 +32,16 @@ fn cache_test_state() -> CacheState {
     cache_add_file(s, "mod_a.av", 1000000000, cache_test_syms_for_file("mod_a.av"))
 }
 
-fn cache_test_count_syms(list: SymList) -> int {
-    mut n = 0
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return n
-            }
-            .Node(_, next) -> {
-                n = n + 1
-                cur = next
-            }
-        }
-    }
-    n
+fn cache_test_count_syms(list: List<Sym>) -> int {
+    list.length
 }
 
-fn cache_test_count_files(list: CacheFileList) -> int {
-    mut n = 0
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return n
-            }
-            .Node(_, next) -> {
-                n = n + 1
-                cur = next
-            }
-        }
-    }
-    n
+fn cache_test_count_files(list: List<CacheFileEntry>) -> int {
+    list.length
 }
 
-fn cache_test_first_sym_qualified(list: SymList) -> string {
-    match list {
-        .End -> ""
-        .Node(item, _) -> item.qualified
-    }
+fn cache_test_first_sym_qualified(list: List<Sym>) -> string {
+    if list.length > 0 { list[0].qualified } else { "" }
 }
 
 spec "cache: empty state" {
@@ -149,11 +119,12 @@ spec "cache: doc + sig escape round-trip" {
             let weird = sym_new("weird", "weird::weird",
                 SymKind.Fn("fn weird() -> int", "int"),
                 "Line one.\nLine two.\twith tab.", "weird.av", sp, true, "")
-            let s = cache_add_file(cache_empty(), "weird.av", 1, SymList.Node(weird, SymList.End))
+            let s = cache_add_file(cache_empty(), "weird.av", 1, [weird])
             let decoded = cache_decode(cache_encode(s, "v"))
-            match decoded.syms {
-                .Node(item, _) -> item.doc == "Line one.\nLine two.\twith tab."
-                _ -> false
+            if decoded.syms.length > 0 {
+                decoded.syms[0].doc == "Line one.\nLine two.\twith tab."
+            } else {
+                false
             }
         }
     }
@@ -164,7 +135,7 @@ spec "cache: freshness against real files" {
         then "cache_is_fresh returns false (current mtime is 0)" {
             let nonexistent = "/tmp/avra_lsp_definitely_does_not_exist_xyz.av"
             avra_shell_exec("rm -f ${nonexistent}")
-            let s = cache_add_file(cache_empty(), nonexistent, 1000000000, SymList.End)
+            let s = cache_add_file(cache_empty(), nonexistent, 1000000000, [])
             let result = cache_is_fresh(s, nonexistent)
             result == false
         }
@@ -174,13 +145,13 @@ spec "cache: freshness against real files" {
             let tmp = "/tmp/avra_lsp_cache_freshness_test.av"
             avra_shell_exec("touch ${tmp}")
             let future = 9999999999000000000
-            let s = cache_add_file(cache_empty(), tmp, future, SymList.End)
+            let s = cache_add_file(cache_empty(), tmp, future, [])
             cache_is_fresh(s, tmp) == true
         }
         then "cache stamped at epoch 1 is stale" {
             let tmp = "/tmp/avra_lsp_cache_freshness_test_old.av"
             avra_shell_exec("touch ${tmp}")
-            let s = cache_add_file(cache_empty(), tmp, 1, SymList.End)
+            let s = cache_add_file(cache_empty(), tmp, 1, [])
             cache_is_fresh(s, tmp) == false
         }
     }

@@ -46,7 +46,7 @@ use @std.process.{Marshal, bytes_reader, bytes_builder}
 // surface at `@std.cli.ui.{...}` directly (not `.ui.spinner.{...}`).
 use @std.cli.ui.{run_with_spinner, run_with_progress}
 use @std.json.{json_str, json_object, json_pairs, json_pair_add}
-use @std.lsp.{Sym, SymList}
+use @std.lsp.{Sym}
 use @std.avrac.fmt.{fmt_stmt_list}
 use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, append_stmt_list, assemble_test_program, test_reporter_path}
 use @std.avrac.test_runner.{discover_tests, DiscoveredFile, DiscoveredEntry}
@@ -58,7 +58,6 @@ use @std.avrac.docs.{extract_project_docs_ast, extract_project_corpus,
           render_json, render_markdown}
 use @std.avrac.docs.{extract_lang_corpus, extract_errors_corpus,
                  find_sym_for_gen}
-use @std.lsp.{sym_list_concat}
 use @std.avrac.docs.{gen_stub_for_sym, gen_apply, GenStubResult}
 use @std.avrac.lang_gen.{render_lang_av, write_lang_av}
 use @std.avrac.indexer.{run_lsp_server, extract_project_syms_cached}
@@ -310,7 +309,7 @@ fn parse_docs_args() -> DocsArgs {
 // "No symbol 'foo' found" + optional did-you-mean hint. Centralised
 // because the docs handler hits this branch from --gen, --callers,
 // and the bare-query miss path with identical formatting.
-fn print_no_symbol(query: string, list: SymList, hint: string) {
+fn print_no_symbol(query: string, list: List<Sym>, hint: string) {
     let suggestion = suggest_similar(query, list)
     eprintln("")
     eprintln("  No symbol '${query}' found in project.")
@@ -2990,7 +2989,7 @@ fn run_docs_command() {
 // `lang`/`errors` paths verify target/lang.av exists before calling
 // the lib helper — the lib returns an empty SymList on absence so it
 // stays argv-free; the CLI surfaces the missing-file diagnostic.
-fn load_docs_corpus(project_dir: string, args: DocsArgs) -> SymList {
+fn load_docs_corpus(project_dir: string, args: DocsArgs) -> List<Sym> {
     match args.scope {
         "project" -> extract_project_syms_cached(project_dir, args.want_no_cache)
         "lang" -> {
@@ -3001,13 +3000,15 @@ fn load_docs_corpus(project_dir: string, args: DocsArgs) -> SymList {
             require_lang_av(project_dir)
             extract_errors_corpus(project_dir)
         }
-        "all" -> sym_list_concat(
-            extract_project_syms_cached(project_dir, args.want_no_cache),
-            extract_lang_corpus(project_dir))
+        "all" -> {
+            mut out = extract_project_syms_cached(project_dir, args.want_no_cache)
+            for s in extract_lang_corpus(project_dir) { out.push(s) }
+            out
+        }
         _ -> {
             eprintln("error: unknown scope '${args.scope}' (try project / lang / errors / all)")
             exit(1)
-            SymList.End
+            []
         }
     }
 }
@@ -3025,7 +3026,7 @@ fn require_lang_av(project_dir: string) {
 // to stdout (`--print`) or insert it above the symbol's decl. Returns
 // false when the symbol can't be found so the caller can render a
 // did-you-mean hint.
-fn gen_for_symbol(query: string, docs_set: SymList, want_print: bool) -> bool {
+fn gen_for_symbol(query: string, docs_set: List<Sym>, want_print: bool) -> bool {
     let target = find_sym_for_gen(docs_set, query)
     if target == null { return false }
     let s = target!

@@ -6,9 +6,9 @@ use @std.json.{json_escape, json_str,
                 json_extract_string, json_extract_int,
                 jsonrpc_response, jsonrpc_error}
 use @std.lsp.{lsp_pos,
-              SymKind, SymbolGraph, SymList,
+              SymKind, SymbolGraph,
               graph_new, graph_add, sym_new,
-              CallList, calls_new,
+              calls_new,
               lsp_frame,
               sym_to_json, symlist_to_json,
               lsp_dispatch}
@@ -113,16 +113,9 @@ spec "protocol: Sym serialization" {
     given "sym_to_json" {
         then "embeds qualified path and detail" {
             let g = pt_graph()
-            // pull the sym back out
             mut found = ""
-            mut cur = graph_new().syms
-            // shortcut: use sym_to_json on a hand-built Sym from the graph
-            match g.syms {
-                .Node(item, _) -> {
-                    let j = sym_to_json(item)
-                    found = j
-                }
-                _ -> {}
+            if g.syms.length > 0 {
+                found = sym_to_json(g.syms[0])
             }
             found.contains("math::square") == true && found.contains("Square a number") == true
         }
@@ -135,7 +128,7 @@ spec "protocol: Sym serialization" {
                 && arr.contains("square") == true
         }
         then "empty list renders as []" {
-            symlist_to_json(SymList.End) == "[]"
+            symlist_to_json([]) == "[]"
         }
     }
 }

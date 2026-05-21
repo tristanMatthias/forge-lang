@@ -2,13 +2,13 @@
 // callers, completion, symbols-by-scope, search.
 
 use @std.lsp.{lsp_pos,
-              SymKind, SymbolGraph, SymList, Sym,
+              SymKind, SymbolGraph, Sym,
               graph_new, graph_add, sym_new, sym_id_for,
-              CallEdge, CallList, calls_new, calls_add,
+              CallEdge, calls_new, calls_add,
               query_callers, query_callees, query_references,
               query_at, query_hover, query_hover_by_path,
               query_completion, query_symbols, query_search,
-              ScoredSymList,
+              ScoredSym,
               Scope, Hover, CompletionItem}
 
 fn q_test_span() -> LspSpan {
@@ -41,7 +41,7 @@ fn q_test_graph() -> SymbolGraph {
     g
 }
 
-fn q_test_calls() -> CallList {
+fn q_test_calls() -> List<CallEdge> {
     mut c = calls_new()
     c = calls_add(c, CallEdge { caller: "math::pythagorean", callee: "square", file: "math.av", line: 13, col: 5 })
     c = calls_add(c, CallEdge { caller: "math::pythagorean", callee: "square", file: "math.av", line: 13, col: 20 })
@@ -50,59 +50,20 @@ fn q_test_calls() -> CallList {
     c
 }
 
-fn q_count_syms(list: SymList) -> int {
-    mut n = 0
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return n
-            }
-            .Node(_, next) -> {
-                n = n + 1
-                cur = next
-            }
-        }
-    }
-    n
+fn q_count_syms(list: List<Sym>) -> int {
+    list.length
 }
 
-fn q_count_calls(list: CallList) -> int {
-    mut n = 0
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return n
-            }
-            .Node(_, next) -> {
-                n = n + 1
-                cur = next
-            }
-        }
-    }
-    n
+fn q_count_calls(list: List<CallEdge>) -> int {
+    list.length
 }
 
 fn q_count_completion(list: List<CompletionItem>) -> int {
     list.length
 }
 
-fn q_count_scored(list: ScoredSymList) -> int {
-    mut n = 0
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return n
-            }
-            .Node(_, next) -> {
-                n = n + 1
-                cur = next
-            }
-        }
-    }
-    n
+fn q_count_scored(list: List<ScoredSym>) -> int {
+    list.length
 }
 
 spec "query: callers and references" {

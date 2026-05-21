@@ -17,7 +17,7 @@
 // banners that map onto the originally-planned submodules:
 //
 //   ── LspSpan ──     positions, ranges, locations
-//   ── Graph ──    SymKind, Sym, SymList, SymbolGraph, queries
+//   ── Graph ──    SymKind, Sym, SymbolGraph, queries
 //   ── Corpus ──   trait + IoError + EmptyCorpus default
 //   ── Query ──    Hover, CompletionItem, Scope, Query trait, free fns
 //
@@ -123,7 +123,7 @@ export fn lsp_span_contains(s: LspSpan, p: LspPos) -> bool {
 // are vanishingly unlikely; `graph_by_qualified` re-checks the string
 // on the way out.
 //
-// The graph is a linked-list of Sym for v1. Linear scans dominate
+// The graph is a `List<Sym>` for v1. Linear scans dominate
 // readability; ticket .7 introduces a hash-keyed sidecar for
 // incremental rebuilds.
 
@@ -161,15 +161,9 @@ export type Sym = {
     tags_csv: string
 }
 
-/// Linked list of Sym.
-export enum SymList {
-    End
-    Node(item: Sym, next: SymList)
-}
-
 /// The graph itself. Opaque-ish; consumers go through query helpers.
 export type SymbolGraph = {
-    syms: SymList
+    syms: List<Sym>
 }
 
 // ── Construction ────────────────────────────────────────────────────
@@ -177,19 +171,20 @@ export type SymbolGraph = {
 /// Empty graph. Build up via `graph_add` or `graph_extend`. Held by
 /// every higher-level API as the canonical symbol-source.
 export fn graph_new() -> SymbolGraph {
-    SymbolGraph { syms: SymList.End }
+    SymbolGraph { syms: [] }
 }
 
-// Prepend a sym. Insertion order is reversed in `syms`; iteration
-/// helpers compensate when stable order matters.
+/// Append a sym. Insertion order is preserved in `syms`.
 export fn graph_add(g: SymbolGraph, s: Sym) -> SymbolGraph {
-    g with { syms: SymList.Node(s, g.syms) }
+    mut out = g.syms
+    out.push(s)
+    g with { syms: out }
 }
 
-/// Append a SymList to the graph. Cheaper than repeated `graph_add`
-/// when bulk-loading from a single corpus / file.
-export fn graph_extend(g: SymbolGraph, list: SymList) -> SymbolGraph {
-    g with { syms: sym_list_concat(list, g.syms) }
+/// Append a `List<Sym>` to the graph. Cheaper than repeated
+/// `graph_add` when bulk-loading from a single corpus / file.
+export fn graph_extend(g: SymbolGraph, list: List<Sym>) -> SymbolGraph {
+    g with { syms: sym_list_concat(g.syms, list) }
 }
 
 // ── Identity ────────────────────────────────────────────────────────
@@ -232,15 +227,14 @@ export fn sym_new(name: string, qualified: string, kind: SymKind,
 
 // ── Queries ─────────────────────────────────────────────────────────
 
-/// All symbols in the graph (in reverse-insertion order).
-export fn graph_all(g: SymbolGraph) -> SymList {
+/// All symbols in the graph (in insertion order).
+export fn graph_all(g: SymbolGraph) -> List<Sym> {
     g.syms
 }
 
-/// Total number of Sym entries in the graph. O(n) — walks the
-/// linked list once.
+/// Total number of Sym entries in the graph.
 export fn graph_count(g: SymbolGraph) -> int {
-    sym_list_len(g.syms)
+    g.syms.length
 }
 
 /// Lookup by stable id. None if not present.
@@ -254,7 +248,7 @@ export fn graph_by_name(g: SymbolGraph, name: string) -> Sym? {
 }
 
 /// Every symbol whose display name equals `name` (modulo case).
-export fn graph_all_by_name(g: SymbolGraph, name: string) -> SymList {
+export fn graph_all_by_name(g: SymbolGraph, name: string) -> List<Sym> {
     collect_by_name(g.syms, name)
 }
 
@@ -275,7 +269,7 @@ export fn graph_by_qualified(g: SymbolGraph, qualified: string) -> Sym? {
 /// `prefix`. `graph_children(g, "core")` returns `core::ast::Expr`,
 /// `core::ast`, `core::ast::vtype_display`, etc. Use
 /// `graph_direct_children` for one-level navigation.
-export fn graph_children(g: SymbolGraph, prefix: string) -> SymList {
+export fn graph_children(g: SymbolGraph, prefix: string) -> List<Sym> {
     collect_children(g.syms, prefix)
 }
 
@@ -285,14 +279,14 @@ export fn graph_children(g: SymbolGraph, prefix: string) -> SymList {
 ///
 /// This is the navigation primitive for `avra docs <module>`: showing
 /// what's *inside* a module without flattening the tree.
-export fn graph_direct_children(g: SymbolGraph, prefix: string) -> SymList {
+export fn graph_direct_children(g: SymbolGraph, prefix: string) -> List<Sym> {
     collect_direct_children(g.syms, prefix)
 }
 
 /// Top-level module roots — symbols whose qualified path has no
 /// `::` separator. Used by `avra docs` (no args) to show the
 /// project's top-level shape instead of dumping every symbol flat.
-export fn graph_module_roots(g: SymbolGraph) -> SymList {
+export fn graph_module_roots(g: SymbolGraph) -> List<Sym> {
     collect_module_roots(g.syms)
 }
 
@@ -315,7 +309,8 @@ export fn graph_resolve(g: SymbolGraph, path: string) -> Sym? {
         // Anchored suffix: "ast::Expr" matches "core::ast::Expr".
         let suffix = "::${path}"
         let candidates = collect_qualified_suffix(g.syms, suffix)
-        return sym_list_first(candidates)
+        if candidates.length > 0 { return candidates[0] }
+        return null
     }
     graph_by_name(g, path)
 }
@@ -323,11 +318,11 @@ export fn graph_resolve(g: SymbolGraph, path: string) -> Sym? {
 /// Every match for a partial path. Used by `avra docs Expr` to
 /// produce a disambiguation prompt when multiple symbols share a
 /// short name.
-export fn graph_resolve_all(g: SymbolGraph, path: string) -> SymList {
+export fn graph_resolve_all(g: SymbolGraph, path: string) -> List<Sym> {
     if path.contains("::") {
         let exact = graph_by_qualified(g, path)
         if exact != null {
-            return SymList.Node(exact!, SymList.End)
+            return [exact!]
         }
         return collect_qualified_suffix(g.syms, "::${path}")
     }
@@ -418,23 +413,14 @@ export fn render_tree_summary(g: SymbolGraph, prefix: string) -> string {
 
 /// Render `list` as one indented line per node, with child counts.
 /// `indent` is prepended verbatim — callers feed `""` at the root.
-fn render_tree_lines(g: SymbolGraph, list: SymList, indent: string) -> string {
+fn render_tree_lines(g: SymbolGraph, list: List<Sym>, indent: string) -> string {
     mut out = ""
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return out
-            }
-            .Node(s, next) -> {
-                let leaf = qualified_leaf(s.qualified)
-                let kid_count = sym_list_len(graph_direct_children(g, s.qualified))
-                let count_str = if kid_count > 0 { " (${string(kid_count)})" } else { "" }
-                let line = "${indent}${leaf}${count_str}\n"
-                out = "${out}${line}"
-                cur = next
-            }
-        }
+    for s in list {
+        let leaf = qualified_leaf(s.qualified)
+        let kid_count = graph_direct_children(g, s.qualified).length
+        let count_str = if kid_count > 0 { " (${string(kid_count)})" } else { "" }
+        let line = "${indent}${leaf}${count_str}\n"
+        out = "${out}${line}"
     }
     out
 }
@@ -444,7 +430,7 @@ fn render_tree_lines(g: SymbolGraph, list: SymList, indent: string) -> string {
 /// Filter `list` to immediate children of the qualified `prefix`
 /// (one `::` deeper than `prefix`). When `prefix == ""`, returns
 /// the top-level — symbols with no `::` in their qualified path.
-fn collect_direct_children(list: SymList, prefix: string) -> SymList {
+fn collect_direct_children(list: List<Sym>, prefix: string) -> List<Sym> {
     let pfx_dot = "${prefix}::"
     let pfx_depth = if prefix == "" { -1 } else { qualified_depth(prefix) }
     sym_list_filter(list, (item: Sym) -> {
@@ -459,143 +445,79 @@ fn collect_direct_children(list: SymList, prefix: string) -> SymList {
 
 /// Filter `list` to module-root symbols — those whose qualified
 /// path has no `::`, i.e. top-level types / fns.
-fn collect_module_roots(list: SymList) -> SymList {
+fn collect_module_roots(list: List<Sym>) -> List<Sym> {
     sym_list_filter(list, (item: Sym) -> !item.qualified.contains("::"))
 }
 
 /// Filter `list` to symbols whose qualified path ends in `suffix`
 /// (the `::leaf` form) or equals the leaf bare. Used by the
 /// hierarchy resolver for ambiguous-name fallback.
-fn collect_qualified_suffix(list: SymList, suffix: string) -> SymList {
+fn collect_qualified_suffix(list: List<Sym>, suffix: string) -> List<Sym> {
     let leaf = suffix.substring(2, suffix.length)
     sym_list_filter(list, (item: Sym) -> item.qualified.ends_with(suffix) || item.qualified == leaf)
 }
 
-/// First Sym in a SymList, or null when empty.
-fn sym_list_first(list: SymList) -> Sym? {
-    match list {
-        .End -> null
-        .Node(item, _) -> item
-    }
-}
-
 // ── List helpers ────────────────────────────────────────────────────
 
-/// Length of a SymList. O(n).
-fn sym_list_len(list: SymList) -> int {
-    mut n = 0
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return n
-            }
-            .Node(_, next) -> {
-                n = n + 1
-                cur = next
-            }
-        }
-    }
-    n
-}
-
-/// First Sym matching `pred`, or null. Closure form lets every
-/// caller state its rule inline; the traversal lives in one place.
-fn sym_list_find(list: SymList, pred: fn(Sym) -> bool) -> Sym? {
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return null
-            }
-            .Node(item, next) -> {
-                if pred(item) {
-                    return item
-                }
-                cur = next
-            }
-        }
+/// First Sym matching `pred`, or null. Indexed walk; closure form
+/// lets every caller state its rule inline.
+fn sym_list_find(list: List<Sym>, pred: fn(Sym) -> bool) -> Sym? {
+    mut i = 0
+    while i < list.length {
+        let item = list[i]
+        if pred(item) { return item }
+        i = i + 1
     }
     null
 }
 
 /// Find a Sym by stable id (djb2 of qualified path).
-fn sym_list_find_id(list: SymList, id: SymId) -> Sym? {
+fn sym_list_find_id(list: List<Sym>, id: SymId) -> Sym? {
     sym_list_find(list, (item: Sym) -> item.id.value == id.value)
 }
 
 /// Find a Sym by short name, case-insensitive.
-fn sym_list_find_name(list: SymList, name: string) -> Sym? {
+fn sym_list_find_name(list: List<Sym>, name: string) -> Sym? {
     let want = name.to_lower()
     sym_list_find(list, (item: Sym) -> item.name.to_lower() == want)
 }
 
 /// Find a Sym by exact qualified path. Case-sensitive.
-fn sym_list_find_qualified(list: SymList, qualified: string) -> Sym? {
+fn sym_list_find_qualified(list: List<Sym>, qualified: string) -> Sym? {
     sym_list_find(list, (item: Sym) -> item.qualified == qualified)
 }
 
-/// Filter a SymList by predicate, preserving original order. Closure
-/// form replaces what used to be six near-identical accumulator loops.
-fn sym_list_filter(list: SymList, pred: fn(Sym) -> bool) -> SymList {
-    mut acc = SymList.End
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return reverse_syms(acc)
-            }
-            .Node(item, next) -> {
-                if pred(item) {
-                    acc = SymList.Node(item, acc)
-                }
-                cur = next
-            }
-        }
+/// Filter a `List<Sym>` by predicate, preserving original order.
+/// Closure form replaces what used to be six near-identical
+/// accumulator loops.
+fn sym_list_filter(list: List<Sym>, pred: fn(Sym) -> bool) -> List<Sym> {
+    mut acc: List<Sym> = []
+    for item in list {
+        if pred(item) { acc.push(item) }
     }
-    SymList.End
+    acc
 }
 
 /// All Syms whose short name matches `name` case-insensitively.
-fn collect_by_name(list: SymList, name: string) -> SymList {
+fn collect_by_name(list: List<Sym>, name: string) -> List<Sym> {
     let want = name.to_lower()
     sym_list_filter(list, (item: Sym) -> item.name.to_lower() == want)
 }
 
 /// All Syms whose qualified path lives under `prefix` (any depth).
 /// Distinct from `collect_direct_children` which restricts to one level.
-fn collect_children(list: SymList, prefix: string) -> SymList {
+fn collect_children(list: List<Sym>, prefix: string) -> List<Sym> {
     let pfx_dot = "${prefix}::"
     sym_list_filter(list, (item: Sym) -> item.qualified.starts_with(pfx_dot))
 }
 
-/// Reverse a SymList. O(n) — used to undo the cons-prepend pattern
-/// after `sym_list_filter` accumulates results.
-fn reverse_syms(list: SymList) -> SymList {
-    mut acc = SymList.End
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return acc
-            }
-            .Node(item, next) -> {
-                acc = SymList.Node(item, acc)
-                cur = next
-            }
-        }
-    }
-    SymList.End
-}
-
-/// Append `b` after `a`. O(n) in `a` — used by `graph_extend`,
+/// Append `b` after `a`. O(n) in `b` — used by `graph_extend`,
 /// the indexer's per-file concatenation, and the docs corpus
 /// scope-merging path.
-export fn sym_list_concat(a: SymList, b: SymList) -> SymList {
-    match a {
-        .End -> b
-        .Node(item, next) -> SymList.Node(item, sym_list_concat(next, b))
-    }
+export fn sym_list_concat(a: List<Sym>, b: List<Sym>) -> List<Sym> {
+    mut out = a
+    for x in b { out.push(x) }
+    out
 }
 
 // ── Display helpers ─────────────────────────────────────────────────
@@ -662,7 +584,7 @@ export enum IoError {
 export trait Corpus {
     fn id(self) -> string
     fn description(self) -> string
-    fn extract(self) -> Result<SymList, IoError>
+    fn extract(self) -> Result<List<Sym>, IoError>
 }
 
 /// Corpus that yields no symbols. Plays the null-object role for
@@ -685,7 +607,7 @@ export fn empty_corpus_new() -> EmptyCorpus {
 impl Corpus for EmptyCorpus {
     fn id(self) -> string { self.label }
     fn description(self) -> string { "yields no symbols (placeholder for tests)" }
-    fn extract(self) -> Result<SymList, IoError> { Result.Ok(SymList.End) }
+    fn extract(self) -> Result<List<Sym>, IoError> { Result.Ok([]) }
 }
 
 // build_graph(corpora) lives with the unified --scope CLI (epic
@@ -730,9 +652,9 @@ export trait Query {
     fn hover(self, file: string, pos: LspPos) -> Hover?
     fn definition(self, file: string, pos: LspPos) -> LspLocation?
     fn references(self, sym: SymId) -> List<LspLocation>
-    fn callers(self, sym: SymId) -> SymList
+    fn callers(self, sym: SymId) -> List<Sym>
     fn completion(self, file: string, pos: LspPos, prefix: string) -> List<CompletionItem>
-    fn symbols(self, scope: Scope) -> SymList
+    fn symbols(self, scope: Scope) -> List<Sym>
 }
 
 // ── v1 query helpers (graph-only, no caching) ───────────────────────
@@ -757,7 +679,7 @@ export fn query_by_qualified(g: SymbolGraph, qualified: string) -> Sym? {
 }
 
 /// Every symbol in the graph.
-export fn query_all(g: SymbolGraph) -> SymList {
+export fn query_all(g: SymbolGraph) -> List<Sym> {
     graph_all(g)
 }
 
@@ -780,114 +702,78 @@ export type CallEdge = {
     col: int
 }
 
-/// Linked list of CallEdge. Encodes the program's call graph: one
-/// node per call site, in the order the indexer visited them.
-/// `query_callers` and `query_callees` walk this list to answer
-/// reverse / forward lookups for a given symbol.
-export enum CallList {
-    End
-    Node(item: CallEdge, next: CallList)
-}
-
-/// Empty CallList — preferred over `CallList.End` at call sites for
+/// Empty `List<CallEdge>` — preferred over `[]` at call sites for
 /// symmetry with `graph_new` / `calls_add`.
-export fn calls_new() -> CallList { CallList.End }
+export fn calls_new() -> List<CallEdge> { [] }
 
-/// Prepend a CallEdge to the list. O(1); insertion order is reversed
-/// vs the source — `query_callers` accounts for this.
-export fn calls_add(list: CallList, edge: CallEdge) -> CallList {
-    CallList.Node(edge, list)
+/// Append a CallEdge to the list. O(1) amortised; insertion order
+/// is preserved.
+export fn calls_add(list: List<CallEdge>, edge: CallEdge) -> List<CallEdge> {
+    mut out = list
+    out.push(edge)
+    out
 }
 
 /// Every symbol that *calls* (or otherwise references) `target_name`.
 /// Returns the resolved caller Syms — handy for `avra docs <name>
 /// --callers` rendering.
-export fn query_callers(g: SymbolGraph, calls: CallList, target_name: string) -> SymList {
+export fn query_callers(g: SymbolGraph, calls: List<CallEdge>, target_name: string) -> List<Sym> {
     let edges = collect_edges_to(calls, target_name)
-    edges_to_caller_syms(g, edges, SymList.End)
+    edges_to_caller_syms(g, edges)
 }
 
 /// Every use-site Location of `target_name`. Same edges as
 /// `query_callers` but returned as raw Locations rather than the
 /// caller Sym (for "find references" rendering).
-export fn query_references(g: SymbolGraph, calls: CallList, target_name: string) -> CallList {
+export fn query_references(g: SymbolGraph, calls: List<CallEdge>, target_name: string) -> List<CallEdge> {
     collect_edges_to(calls, target_name)
 }
 
 /// Every callee (target name) referenced by `caller_qualified`.
 /// Used by hover detail to show "this fn calls: foo, bar, baz".
-export fn query_callees(calls: CallList, caller_qualified: string) -> CallList {
+export fn query_callees(calls: List<CallEdge>, caller_qualified: string) -> List<CallEdge> {
     collect_edges_from(calls, caller_qualified)
 }
 
 /// One traversal helper for every "filter call edges by predicate"
-/// case. Order is reversed (insertion order); callers that need
-/// stable ordering should reverse externally.
-fn call_list_filter(list: CallList, pred: fn(CallEdge) -> bool) -> CallList {
-    mut acc = CallList.End
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return acc
-            }
-            .Node(edge, next) -> {
-                if pred(edge) {
-                    acc = CallList.Node(edge, acc)
-                }
-                cur = next
-            }
-        }
+/// case. Order is preserved (insertion order).
+fn call_list_filter(list: List<CallEdge>, pred: fn(CallEdge) -> bool) -> List<CallEdge> {
+    mut acc: List<CallEdge> = []
+    for edge in list {
+        if pred(edge) { acc.push(edge) }
     }
-    CallList.End
+    acc
 }
 
 /// CallEdges whose callee is `target` — backs `query_callers`.
-fn collect_edges_to(list: CallList, target: string) -> CallList {
+fn collect_edges_to(list: List<CallEdge>, target: string) -> List<CallEdge> {
     call_list_filter(list, (edge: CallEdge) -> edge.callee == target)
 }
 
 /// CallEdges whose caller is `caller` — backs `query_callees`.
-fn collect_edges_from(list: CallList, caller: string) -> CallList {
+fn collect_edges_from(list: List<CallEdge>, caller: string) -> List<CallEdge> {
     call_list_filter(list, (edge: CallEdge) -> edge.caller == caller)
 }
 
 /// Resolve each CallEdge's caller-name to a Sym via `graph_by_qualified`,
-/// dedup by id (multiple call sites can share a caller fn), and prepend
-/// to `acc`.
-fn edges_to_caller_syms(g: SymbolGraph, edges: CallList, acc: SymList) -> SymList {
-    mut cur = edges
-    mut out = acc
-    while true {
-        match cur {
-            .End -> {
-                return out
-            }
-            .Node(edge, next) -> {
-                let s = graph_by_qualified(g, edge.caller)
-                if s != null && !sym_list_contains_id(out, s!.id) {
-                    out = SymList.Node(s!, out)
-                }
-                cur = next
-            }
+/// dedup by id (multiple call sites can share a caller fn).
+fn edges_to_caller_syms(g: SymbolGraph, edges: List<CallEdge>) -> List<Sym> {
+    mut out: List<Sym> = []
+    for edge in edges {
+        let s = graph_by_qualified(g, edge.caller)
+        if s != null && !sym_list_contains_id(out, s!.id) {
+            out.push(s!)
         }
     }
-    SymList.End
+    out
 }
 
 /// True iff any Sym in `list` has the given stable id.
-fn sym_list_contains_id(list: SymList, id: SymId) -> bool {
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return false
-            }
-            .Node(item, next) -> {
-                if item.id.value == id.value { return true }
-                cur = next
-            }
-        }
+fn sym_list_contains_id(list: List<Sym>, id: SymId) -> bool {
+    mut i = 0
+    while i < list.length {
+        if list[i].id.value == id.value { return true }
+        i = i + 1
     }
     false
 }
@@ -907,20 +793,14 @@ export fn query_at(g: SymbolGraph, file: string, line: int) -> Sym? {
 
 /// Find the Sym whose decl span contains `(file, line)`. Backs
 /// `query_at` and the LSP `textDocument/hover` request.
-fn sym_at_position(list: SymList, file: string, line: int) -> Sym? {
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return null
-            }
-            .Node(item, next) -> {
-                if item.file == file && item.span.start.line == line {
-                    return item
-                }
-                cur = next
-            }
+fn sym_at_position(list: List<Sym>, file: string, line: int) -> Sym? {
+    mut i = 0
+    while i < list.length {
+        let item = list[i]
+        if item.file == file && item.span.start.line == line {
+            return item
         }
+        i = i + 1
     }
     null
 }
@@ -965,32 +845,23 @@ export fn query_completion(g: SymbolGraph, prefix: string, limit: int, exported_
 }
 
 /// Keep only `exported: true` Syms — surfaces public-API completion.
-fn filter_exported(list: SymList) -> SymList {
+fn filter_exported(list: List<Sym>) -> List<Sym> {
     sym_list_filter(list, (item: Sym) -> item.exported)
 }
 
-/// Convert a ranked ScoredSymList into LSP CompletionItem records.
-fn scored_syms_to_completion_items(list: ScoredSymList) -> List<CompletionItem> {
+/// Convert a ranked `List<ScoredSym>` into LSP CompletionItem records.
+fn scored_syms_to_completion_items(list: List<ScoredSym>) -> List<CompletionItem> {
     mut acc: List<CompletionItem> = []
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return acc
-            }
-            .Node(item, next) -> {
-                let detail = sym_kind_render(item.sym.kind)
-                acc.push(CompletionItem { label: item.sym.name, detail, sym: item.sym })
-                cur = next
-            }
-        }
+    for item in list {
+        let detail = sym_kind_render(item.sym.kind)
+        acc.push(CompletionItem { label: item.sym.name, detail, sym: item.sym })
     }
     acc
 }
 
 /// Symbols filtered by scope. Used by the LSP's documentSymbol
 /// (per-file outline) and the CLI's `avra docs --symbols` flag.
-export fn query_symbols(g: SymbolGraph, scope: Scope) -> SymList {
+export fn query_symbols(g: SymbolGraph, scope: Scope) -> List<Sym> {
     match scope {
         .All -> graph_all(g)
         .File(path) -> filter_by_file(g.syms, path)
@@ -1000,12 +871,12 @@ export fn query_symbols(g: SymbolGraph, scope: Scope) -> SymList {
 
 /// Keep only Syms whose `file` field matches `file` exactly. Backs
 /// the LSP `textDocument/documentSymbol` query.
-fn filter_by_file(list: SymList, file: string) -> SymList {
+fn filter_by_file(list: List<Sym>, file: string) -> List<Sym> {
     sym_list_filter(list, (item: Sym) -> item.file == file)
 }
 
 /// Project-wide search via the composed fuzzy scorer.
-export fn query_search(g: SymbolGraph, query: string, limit: int) -> ScoredSymList {
+export fn query_search(g: SymbolGraph, query: string, limit: int) -> List<ScoredSym> {
     fuzzy_search_syms(query, g.syms, limit)
 }
 
@@ -1091,38 +962,16 @@ fn fuzzy_is_subsequence(needle: string, haystack: string) -> bool {
     false
 }
 
-// String-keyed candidate list. Linked list because Avra collections
-// don't yet have rich vec semantics, and consumers pass either
-// hand-built lists (fixture tests, CLI flag enumerations) or lists
-/// derived from a SymList walk.
-export enum StrList {
-    End
-    Node(value: string, next: StrList)
-}
-
-/// Cons a string onto the head of a StrList. Symmetry with the rest
-/// of the linked-list API.
-export fn strlist_cons(head: string, tail: StrList) -> StrList {
-    StrList.Node(head, tail)
-}
-
 /// Scored candidate, paired with its score for sorting.
 export type Scored = {
     value: string,
     score: int
 }
 
-/// Linked list of Scored entries. Used by fuzzy_search internally
-/// before its callers convert to a sorted top-N list of plain strings.
-export enum ScoredList {
-    End
-    Node(item: Scored, next: ScoredList)
-}
-
 // Score every candidate, drop zeros, sort score-desc then lex-asc,
 // truncate to `limit`. Used by --search, completion ranking, and
 /// every "find me the closest matches to X" UX.
-export fn fuzzy_search(query: string, candidates: StrList, limit: int) -> ScoredList {
+export fn fuzzy_search(query: string, candidates: List<string>, limit: int) -> List<Scored> {
     let scored = score_all(query, candidates)
     let sorted = scored_list_sort(scored)
     scored_list_take(sorted, limit)
@@ -1132,23 +981,14 @@ export fn fuzzy_search(query: string, candidates: StrList, limit: int) -> Scored
 // empty string when no candidate scores ≥ threshold — callers should
 // suppress the "did you mean" line in that case (silence beats a
 /// misleading suggestion).
-export fn did_you_mean(query: string, candidates: StrList) -> string {
+export fn did_you_mean(query: string, candidates: List<string>) -> string {
     mut best_value = ""
     mut best_score = fuzzy_did_you_mean_threshold() - 1
-    mut cur = candidates
-    while true {
-        match cur {
-            .End -> {
-                return best_value
-            }
-            .Node(c, next) -> {
-                let s = fuzzy_score(query, c)
-                if s > best_score {
-                    best_score = s
-                    best_value = c
-                }
-                cur = next
-            }
+    for c in candidates {
+        let s = fuzzy_score(query, c)
+        if s > best_score {
+            best_score = s
+            best_value = c
         }
     }
     best_value
@@ -1156,10 +996,9 @@ export fn did_you_mean(query: string, candidates: StrList) -> string {
 
 // Top-N suggestions for `query`, used by error renderers that show
 /// up to three "did you mean" candidates instead of just one.
-export fn did_you_mean_n(query: string, candidates: StrList, n: int) -> StrList {
-    mut acc = StrList.End
-    mut cur = scored_take_threshold(score_all(query, candidates), fuzzy_did_you_mean_threshold())
-    let sorted = scored_list_sort(cur)
+export fn did_you_mean_n(query: string, candidates: List<string>, n: int) -> List<string> {
+    let scored = scored_take_threshold(score_all(query, candidates), fuzzy_did_you_mean_threshold())
+    let sorted = scored_list_sort(scored)
     let topn = scored_list_take(sorted, n)
     scored_to_strs(topn)
 }
@@ -1167,107 +1006,72 @@ export fn did_you_mean_n(query: string, candidates: StrList, n: int) -> StrList 
 // ── internals ───────────────────────────────────────────────────────
 
 /// Score every candidate against `query`, dropping zero-scored
-/// (no-match) entries. Returned in reverse-source order; sort the
-/// result via `scored_list_sort` before consumption.
-fn score_all(query: string, candidates: StrList) -> ScoredList {
-    mut acc = ScoredList.End
-    mut cur = candidates
-    while true {
-        match cur {
-            .End -> {
-                return acc
-            }
-            .Node(c, next) -> {
-                let s = fuzzy_score(query, c)
-                if s > 0 {
-                    acc = ScoredList.Node(Scored { value: c, score: s }, acc)
-                }
-                cur = next
-            }
-        }
+/// (no-match) entries. Returned in source order; sort via
+/// `scored_list_sort` before consumption.
+fn score_all(query: string, candidates: List<string>) -> List<Scored> {
+    mut acc: List<Scored> = []
+    for c in candidates {
+        let s = fuzzy_score(query, c)
+        if s > 0 { acc.push(Scored { value: c, score: s }) }
     }
     acc
 }
 
-/// Drop ScoredList entries whose score falls below `threshold`.
+/// Drop `List<Scored>` entries whose score falls below `threshold`.
 /// Used by `did_you_mean_n` to keep only confident suggestions.
-fn scored_take_threshold(list: ScoredList, threshold: int) -> ScoredList {
-    mut acc = ScoredList.End
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return acc
-            }
-            .Node(item, next) -> {
-                if item.score >= threshold {
-                    acc = ScoredList.Node(item, acc)
-                }
-                cur = next
-            }
-        }
+fn scored_take_threshold(list: List<Scored>, threshold: int) -> List<Scored> {
+    mut acc: List<Scored> = []
+    for item in list {
+        if item.score >= threshold { acc.push(item) }
     }
     acc
 }
 
-/// Insertion sort by score-desc, then value-asc. Stable. Inputs are
-/// typically small (≤ a few hundred); insertion sort is fine.
-fn scored_list_sort(list: ScoredList) -> ScoredList {
-    mut sorted = ScoredList.End
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return sorted
-            }
-            .Node(item, next) -> {
-                sorted = scored_insert(sorted, item)
-                cur = next
-            }
+/// Sort by score-desc, then value-asc. In-place; returns the list
+/// so the call chains.
+fn scored_list_sort(list: List<Scored>) -> List<Scored> {
+    mut out = list
+    out.sort((a: Scored, b: Scored) -> {
+        if a.score != b.score {
+            b.score - a.score
+        } else if a.value < b.value {
+            -1
+        } else if a.value > b.value {
+            1
+        } else {
+            0
         }
-    }
-    sorted
+    })
+    out
 }
 
-/// Insert a Scored entry into a (already-sorted) ScoredList,
-/// preserving the score-desc / value-asc ordering.
-fn scored_insert(list: ScoredList, item: Scored) -> ScoredList {
-    match list {
-        .End -> ScoredList.Node(item, ScoredList.End)
-        .Node(head, tail) -> {
-            if item.score > head.score
-                || (item.score == head.score && item.value < head.value) {
-                ScoredList.Node(item, list)
-            } else {
-                ScoredList.Node(head, scored_insert(tail, item))
-            }
-        }
+/// First `n` entries of a `List<Scored>` — produces a fresh list,
+/// caps at `n` even if the input is shorter.
+fn scored_list_take(list: List<Scored>, n: int) -> List<Scored> {
+    if n <= 0 { return [] }
+    let stop = if n < list.length { n } else { list.length }
+    mut out: List<Scored> = []
+    mut i = 0
+    while i < stop {
+        out.push(list[i])
+        i = i + 1
     }
+    out
 }
 
-/// First `n` entries of a ScoredList. Identity-preserving — stops
-/// short rather than rebuilding when the list is shorter than `n`.
-fn scored_list_take(list: ScoredList, n: int) -> ScoredList {
-    if n <= 0 { return ScoredList.End }
-    match list {
-        .End -> ScoredList.End
-        .Node(item, next) -> ScoredList.Node(item, scored_list_take(next, n - 1))
-    }
-}
-
-/// Strip scores, returning the underlying StrList — final step of
-/// `fuzzy_search` after sort + take.
-fn scored_to_strs(list: ScoredList) -> StrList {
-    match list {
-        .End -> StrList.End
-        .Node(item, next) -> StrList.Node(item.value, scored_to_strs(next))
-    }
+/// Strip scores, returning the underlying `List<string>` — final
+/// step of `fuzzy_search` after sort + take.
+fn scored_to_strs(list: List<Scored>) -> List<string> {
+    mut out: List<string> = []
+    for item in list { out.push(item.value) }
+    out
 }
 
 // ── Sym-aware wrappers ──────────────────────────────────────────────
 //
 // Bridge fuzzy scoring to the SymbolGraph: search by Sym.name with
-// the same composed scorer. Returns SymList ranked by score.
+// the same composed scorer. Returns `List<ScoredSym>` ranked by
+// score.
 
 /// Sym paired with the fuzzy-search score that ranked it. Output of
 /// `fuzzy_search_syms`; consumers like `query_completion` discard the
@@ -1278,96 +1082,65 @@ export type ScoredSym = {
     score: int
 }
 
-/// Linked list of ScoredSym, mirroring SymList shape so consumers can
-/// reuse the standard list traversal patterns.
-export enum ScoredSymList {
-    End
-    Node(item: ScoredSym, next: ScoredSymList)
-}
-
 /// Sym-aware `fuzzy_search`. Scores every Sym's `name` against
 /// `query`, sorts by score-desc / name-asc, and returns the top
 /// `limit` as ScoredSyms.
-export fn fuzzy_search_syms(query: string, syms: SymList, limit: int) -> ScoredSymList {
+export fn fuzzy_search_syms(query: string, syms: List<Sym>, limit: int) -> List<ScoredSym> {
     let scored = score_syms(query, syms)
     let sorted = scored_sym_sort(scored)
     scored_sym_take(sorted, limit)
 }
 
 /// Score every Sym in `syms` against `query`, dropping zero scores.
-/// Returns reverse-source order; sort with `scored_sym_sort` for
-/// ranked output.
-fn score_syms(query: string, syms: SymList) -> ScoredSymList {
-    mut acc = ScoredSymList.End
-    mut cur = syms
-    while true {
-        match cur {
-            .End -> {
-                return acc
-            }
-            .Node(s, next) -> {
-                let score = fuzzy_score(query, s.name)
-                if score > 0 {
-                    acc = ScoredSymList.Node(ScoredSym { sym: s, score }, acc)
-                }
-                cur = next
-            }
-        }
+/// Returns source order; sort with `scored_sym_sort` for ranked output.
+fn score_syms(query: string, syms: List<Sym>) -> List<ScoredSym> {
+    mut acc: List<ScoredSym> = []
+    for s in syms {
+        let score = fuzzy_score(query, s.name)
+        if score > 0 { acc.push(ScoredSym { sym: s, score }) }
     }
     acc
 }
 
-/// Insertion sort by score-desc then `sym.name`-asc. Mirror of
+/// Sort by score-desc then `sym.name`-asc. Mirror of
 /// `scored_list_sort` for the ScoredSym shape.
-fn scored_sym_sort(list: ScoredSymList) -> ScoredSymList {
-    mut sorted = ScoredSymList.End
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return sorted
-            }
-            .Node(item, next) -> {
-                sorted = scored_sym_insert(sorted, item)
-                cur = next
-            }
+fn scored_sym_sort(list: List<ScoredSym>) -> List<ScoredSym> {
+    mut out = list
+    out.sort((a: ScoredSym, b: ScoredSym) -> {
+        if a.score != b.score {
+            b.score - a.score
+        } else if a.sym.name < b.sym.name {
+            -1
+        } else if a.sym.name > b.sym.name {
+            1
+        } else {
+            0
         }
-    }
-    sorted
+    })
+    out
 }
 
-/// Sorted insert into a ScoredSymList — counterpart to
-/// `scored_insert` for the Sym shape.
-fn scored_sym_insert(list: ScoredSymList, item: ScoredSym) -> ScoredSymList {
-    match list {
-        .End -> ScoredSymList.Node(item, ScoredSymList.End)
-        .Node(head, tail) -> {
-            if item.score > head.score
-                || (item.score == head.score && item.sym.name < head.sym.name) {
-                ScoredSymList.Node(item, list)
-            } else {
-                ScoredSymList.Node(head, scored_sym_insert(tail, item))
-            }
-        }
-    }
-}
-
-/// First `n` entries of a ScoredSymList — counterpart to
+/// First `n` entries of a `List<ScoredSym>` — counterpart to
 /// `scored_list_take` for the Sym shape.
-fn scored_sym_take(list: ScoredSymList, n: int) -> ScoredSymList {
-    if n <= 0 { return ScoredSymList.End }
-    match list {
-        .End -> ScoredSymList.End
-        .Node(item, next) -> ScoredSymList.Node(item, scored_sym_take(next, n - 1))
+fn scored_sym_take(list: List<ScoredSym>, n: int) -> List<ScoredSym> {
+    if n <= 0 { return [] }
+    let stop = if n < list.length { n } else { list.length }
+    mut out: List<ScoredSym> = []
+    mut i = 0
+    while i < stop {
+        out.push(list[i])
+        i = i + 1
     }
+    out
 }
 
 // ╔═══════════════════════════════════════════════════════════════════╗
 // ║                              CACHE                                ║
 // ╚═══════════════════════════════════════════════════════════════════╝
 //
-// Persist the SymList between `avra docs` invocations so the second
-// run is sub-50ms instead of re-walking + re-parsing every .av.
+// Persist the `List<Sym>` between `avra docs` invocations so the
+// second run is sub-50ms instead of re-walking + re-parsing every
+// .av.
 //
 // Layout (`target/lsp/`):
 //   files.tsv  — header + one row per source file:
@@ -1394,34 +1167,26 @@ extern fn avra_file_mtime(path: string) -> int
 
 /// One per-file cache row: path, last-seen mtime, count of Syms that
 /// were extracted from it. The Syms themselves live in the parallel
-/// SymList; the row exists so freshness checks don't need to scan
-/// the SymList.
+/// `List<Sym>`; the row exists so freshness checks don't need to
+/// scan that list.
 export type CacheFileEntry = {
     path: string,
     mtime_ns: int,
     sym_count: int
 }
 
-/// Linked list of CacheFileEntry. One node per source file the cache
-/// has stamped — used by `cache_is_fresh` for the mtime probe and by
-/// `cache_evict_file` to drop stale rows when a file changes.
-export enum CacheFileList {
-    End
-    Node(item: CacheFileEntry, next: CacheFileList)
-}
-
 /// Loaded cache state — header + per-file rows + the materialised
-/// SymList. `version` is empty when no cache file existed.
+/// `List<Sym>`. `version` is empty when no cache file existed.
 export type CacheState = {
     version: string,
-    files: CacheFileList,
-    syms: SymList
+    files: List<CacheFileEntry>,
+    syms: List<Sym>
 }
 
 /// Empty cache — `version: ""` is the "no cache file existed yet"
 /// sentinel, distinguished from an explicitly-versioned reload.
 export fn cache_empty() -> CacheState {
-    CacheState { version: "", files: CacheFileList.End, syms: SymList.End }
+    CacheState { version: "", files: [], syms: [] }
 }
 
 /// True if `path` appears in the cache with mtime >= the file's
@@ -1436,20 +1201,12 @@ export fn cache_is_fresh(state: CacheState, path: string) -> bool {
 
 /// Linear lookup of a CacheFileEntry by `path`, or null. Backs
 /// `cache_is_fresh` and the eviction path.
-fn cache_files_find(list: CacheFileList, path: string) -> CacheFileEntry? {
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return null
-            }
-            .Node(item, next) -> {
-                if item.path == path {
-                    return item
-                }
-                cur = next
-            }
-        }
+fn cache_files_find(list: List<CacheFileEntry>, path: string) -> CacheFileEntry? {
+    mut i = 0
+    while i < list.length {
+        let item = list[i]
+        if item.path == path { return item }
+        i = i + 1
     }
     null
 }
@@ -1462,35 +1219,32 @@ export fn cache_evict_file(state: CacheState, path: string) -> CacheState {
     state with { syms: kept_syms, files: kept_files }
 }
 
-/// Add a fresh per-file slice to the cache: the new SymList for
+/// Add a fresh per-file slice to the cache: the new `List<Sym>` for
 /// `path` plus an updated CacheFileEntry. Caller is responsible for
 /// having evicted any prior slice for the same path.
-export fn cache_add_file(state: CacheState, path: string, mtime_ns: int, syms: SymList) -> CacheState {
-    let count = sym_list_len(syms)
+export fn cache_add_file(state: CacheState, path: string, mtime_ns: int, syms: List<Sym>) -> CacheState {
+    let count = syms.length
     let entry = CacheFileEntry { path, mtime_ns, sym_count: count }
+    mut new_files = state.files
+    new_files.push(entry)
     state with {
-        syms: sym_list_concat(syms, state.syms),
-        files: CacheFileList.Node(entry, state.files)
+        syms: sym_list_concat(state.syms, syms),
+        files: new_files
     }
 }
 
 /// Drop every Sym whose `file` equals `path` — half of file eviction.
-fn sym_list_drop_by_file(list: SymList, path: string) -> SymList {
+fn sym_list_drop_by_file(list: List<Sym>, path: string) -> List<Sym> {
     sym_list_filter(list, (item: Sym) -> item.file != path)
 }
 
 /// Drop the CacheFileEntry for `path` — the other half of eviction.
-fn file_list_drop(list: CacheFileList, path: string) -> CacheFileList {
-    match list {
-        .End -> CacheFileList.End
-        .Node(item, next) -> {
-            if item.path == path {
-                file_list_drop(next, path)
-            } else {
-                CacheFileList.Node(item, file_list_drop(next, path))
-            }
-        }
+fn file_list_drop(list: List<CacheFileEntry>, path: string) -> List<CacheFileEntry> {
+    mut out: List<CacheFileEntry> = []
+    for item in list {
+        if item.path != path { out.push(item) }
     }
+    out
 }
 
 // ── TSV encode / decode ─────────────────────────────────────────────
@@ -1510,38 +1264,20 @@ export fn cache_encode(state: CacheState, version: string) -> string {
 
 /// Encode the file-mtime header section of the cache: one
 /// `path<TAB>mtime<TAB>sym_count` row per CacheFileEntry.
-fn encode_files(list: CacheFileList) -> string {
+fn encode_files(list: List<CacheFileEntry>) -> string {
     mut out = ""
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return out
-            }
-            .Node(item, next) -> {
-                let line = "${item.path}\t${string(item.mtime_ns)}\t${string(item.sym_count)}\n"
-                out = "${out}${line}"
-                cur = next
-            }
-        }
+    for item in list {
+        let line = "${item.path}\t${string(item.mtime_ns)}\t${string(item.sym_count)}\n"
+        out = "${out}${line}"
     }
     out
 }
 
 /// Encode the Sym body section of the cache: one TSV row per Sym.
-fn encode_syms(list: SymList) -> string {
+fn encode_syms(list: List<Sym>) -> string {
     mut out = ""
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return out
-            }
-            .Node(item, next) -> {
-                out = "${out}${encode_sym(item)}\n"
-                cur = next
-            }
-        }
+    for item in list {
+        out = "${out}${encode_sym(item)}\n"
     }
     out
 }
@@ -1642,8 +1378,8 @@ export fn cache_decode(source: string) -> CacheState {
     }
     let version = header.substring(19, header.length)
 
-    mut files = CacheFileList.End
-    mut syms = SymList.End
+    mut files: List<CacheFileEntry> = []
+    mut syms: List<Sym> = []
     mut idx = 1
     mut in_syms = false
     while idx < lines.length {
@@ -1656,36 +1392,13 @@ export fn cache_decode(source: string) -> CacheState {
         }
         if in_syms {
             let parsed = decode_sym(line)
-            if parsed != null {
-                syms = SymList.Node(parsed!, syms)
-            }
+            if parsed != null { syms.push(parsed!) }
         } else {
             let parsed = decode_file_row(line)
-            if parsed != null {
-                files = CacheFileList.Node(parsed!, files)
-            }
+            if parsed != null { files.push(parsed!) }
         }
     }
-    CacheState { version, files: cache_files_reverse(files), syms: reverse_syms(syms) }
-}
-
-/// Reverse a CacheFileList — used to undo the cons-prepend ordering
-/// after the decoder accumulates rows.
-fn cache_files_reverse(list: CacheFileList) -> CacheFileList {
-    mut acc = CacheFileList.End
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return acc
-            }
-            .Node(item, next) -> {
-                acc = CacheFileList.Node(item, acc)
-                cur = next
-            }
-        }
-    }
-    CacheFileList.End
+    CacheState { version, files, syms }
 }
 
 /// Parse one TSV row from the cache header into a CacheFileEntry,
@@ -1965,25 +1678,16 @@ export fn sym_to_json(s: Sym) -> string {
     "{\"name\":${name},\"qualified\":${qual},\"kind\":${json_str(kind_tag)},\"detail\":${detail},\"doc\":${doc},\"file\":${file},\"line\":${string(s.span.start.line)},\"exported\":${exp}}"
 }
 
-/// Render a SymList as a JSON array.
-export fn symlist_to_json(list: SymList) -> string {
+/// Render a `List<Sym>` as a JSON array.
+export fn symlist_to_json(list: List<Sym>) -> string {
     mut out = "["
     mut first = true
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return "${out}]"
-            }
-            .Node(item, next) -> {
-                if first {
-                    out = "${out}${sym_to_json(item)}"
-                    first = false
-                } else {
-                    out = "${out},${sym_to_json(item)}"
-                }
-                cur = next
-            }
+    for item in list {
+        if first {
+            out = "${out}${sym_to_json(item)}"
+            first = false
+        } else {
+            out = "${out},${sym_to_json(item)}"
         }
     }
     "${out}]"
@@ -2009,7 +1713,7 @@ export fn symlist_to_json(list: SymList) -> string {
 /// Build a JSON-RPC response for `method`. `id` is the request id
 /// (already JSON-encoded — caller passes the raw string value).
 /// `g` and `calls` are the symbol graph and call-edge list.
-export fn lsp_dispatch(g: SymbolGraph, calls: CallList, id: string, method: string, params: string) -> string {
+export fn lsp_dispatch(g: SymbolGraph, calls: List<CallEdge>, id: string, method: string, params: string) -> string {
     match method {
         "initialize" -> jsonrpc_response(id, lsp_initialize_result())
         "initialized" -> ""
@@ -2080,7 +1784,7 @@ fn dispatch_workspace_symbol(g: SymbolGraph, id: string, params: string) -> stri
 
 /// Handle the custom `avra/callers` request — every Sym that calls
 /// the request's target qualified name.
-fn dispatch_callers(g: SymbolGraph, calls: CallList, id: string, params: string) -> string {
+fn dispatch_callers(g: SymbolGraph, calls: List<CallEdge>, id: string, params: string) -> string {
     let name = json_extract_string(params, "name")
     let callers = query_callers(g, calls, name)
     jsonrpc_response(id, symlist_to_json(callers))
@@ -2088,7 +1792,7 @@ fn dispatch_callers(g: SymbolGraph, calls: CallList, id: string, params: string)
 
 /// Handle the custom `avra/callees` request — every name called
 /// from the request's caller qualified name.
-fn dispatch_callees(calls: CallList, id: string, params: string) -> string {
+fn dispatch_callees(calls: List<CallEdge>, id: string, params: string) -> string {
     let qualified = json_extract_string(params, "qualified")
     let edges = query_callees(calls, qualified)
     jsonrpc_response(id, calls_to_json(edges))
@@ -2112,51 +1816,33 @@ fn uri_to_file(uri: string) -> string {
     }
 }
 
-/// Serialize a ScoredSymList as a JSON array of CompletionItems.
-fn scored_syms_to_json(list: ScoredSymList) -> string {
+/// Serialize a `List<ScoredSym>` as a JSON array of CompletionItems.
+fn scored_syms_to_json(list: List<ScoredSym>) -> string {
     mut out = "["
     mut first = true
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return "${out}]"
-            }
-            .Node(item, next) -> {
-                if first {
-                    out = "${out}${sym_to_json(item.sym)}"
-                    first = false
-                } else {
-                    out = "${out},${sym_to_json(item.sym)}"
-                }
-                cur = next
-            }
+    for item in list {
+        if first {
+            out = "${out}${sym_to_json(item.sym)}"
+            first = false
+        } else {
+            out = "${out},${sym_to_json(item.sym)}"
         }
     }
     "${out}]"
 }
 
-/// Serialize a CallList as a JSON array of Location objects (one
-/// per CallEdge) — used by `dispatch_callees` and references.
-fn calls_to_json(list: CallList) -> string {
+/// Serialize a `List<CallEdge>` as a JSON array of Location objects
+/// (one per CallEdge) — used by `dispatch_callees` and references.
+fn calls_to_json(list: List<CallEdge>) -> string {
     mut out = "["
     mut first = true
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return "${out}]"
-            }
-            .Node(edge, next) -> {
-                let row = "{\"caller\":${json_str(edge.caller)},\"callee\":${json_str(edge.callee)},\"file\":${json_str(edge.file)},\"line\":${string(edge.line)},\"col\":${string(edge.col)}}"
-                if first {
-                    out = "${out}${row}"
-                    first = false
-                } else {
-                    out = "${out},${row}"
-                }
-                cur = next
-            }
+    for edge in list {
+        let row = "{\"caller\":${json_str(edge.caller)},\"callee\":${json_str(edge.callee)},\"file\":${json_str(edge.file)},\"line\":${string(edge.line)},\"col\":${string(edge.col)}}"
+        if first {
+            out = "${out}${row}"
+            first = false
+        } else {
+            out = "${out},${row}"
         }
     }
     "${out}]"
@@ -2176,7 +1862,7 @@ fn calls_to_json(list: CallList) -> string {
 /// stdin, dispatches to the appropriate `dispatch_*` handler, and
 /// writes framed responses to stdout. Returns when stdin closes
 /// (typically on the editor's `exit` notification).
-export fn lsp_serve(g: SymbolGraph, calls: CallList) {
+export fn lsp_serve(g: SymbolGraph, calls: List<CallEdge>) {
     while true {
         let body = lsp_read_frame()
         if body == "" { return }

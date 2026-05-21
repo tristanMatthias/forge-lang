@@ -82,10 +82,7 @@ spec "std-lsp corpus: EmptyCorpus via Corpus trait" {
         }
         then "yields no symbols" {
             match empty_corpus_new().extract() {
-                .Ok(syms) -> match syms {
-                    .End -> true
-                    _ -> false
-                }
+                .Ok(syms) -> syms.length == 0
                 .Err(_) -> false
             }
         }

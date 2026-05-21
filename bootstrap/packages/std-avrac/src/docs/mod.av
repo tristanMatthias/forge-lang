@@ -27,7 +27,7 @@
 use core.{avra_selfhost_read_file, avra_shell_exec, avra_selfhost_levenshtein}
 use parse.{parse_program_source}
 use indexer.{extract_from_ast_at, extract_calls_from_ast_at}
-use @std.lsp.{Sym, SymList, SymKind, CallEdge, CallList}
+use @std.lsp.{Sym, SymKind, CallEdge}
 use @std.json.{json_str}
 use render.{bold, dim, cyan, green, yellow, red,
             pad_right, truncate_str, rule, first_line, icase_eq, pct}
@@ -43,8 +43,8 @@ use pathutil.{relativise, qualified_leaf, qualified_breadcrumbs, count_path_seps
 /// @field syms  — symbol graph extracted by `extract_from_ast_at`.
 /// @field calls — call edges extracted by `extract_calls_from_ast_at`.
 export type DocsCorpus = {
-    syms: SymList,
-    calls: CallList
+    syms: List<Sym>,
+    calls: List<CallEdge>
 }
 
 /// Walk every `.av` file under `dir`, parse it, and build the
@@ -56,11 +56,11 @@ export fn extract_project_corpus(dir: string) -> DocsCorpus {
     let cmd = "find ${dir} -name '*.av' -type f -not -path '*/build/*' -not -path '*/.beads/*' -not -path '*/seed/*' 2>/dev/null | sort"
     let files_text = avra_shell_exec(cmd)
     if files_text == "" {
-        return DocsCorpus { syms: SymList.End, calls: CallList.End }
+        return DocsCorpus { syms: [], calls: [] }
     }
 
-    mut syms = SymList.End
-    mut calls = CallList.End
+    mut syms: List<Sym> = []
+    mut calls: List<CallEdge> = []
     for path in files_text.split("\n") {
         if path == "" { continue }
         let content = avra_selfhost_read_file(path)
@@ -75,33 +75,16 @@ export fn extract_project_corpus(dir: string) -> DocsCorpus {
         let rel = relativise(path, dir)
         let file_syms = extract_from_ast_at(parsed.stmts!, rel)
         let file_calls = extract_calls_from_ast_at(parsed.stmts!, rel)
-        syms = sym_list_append(file_syms, syms)
-        calls = call_list_append(file_calls, calls)
+        for s in file_syms { syms.push(s) }
+        for c in file_calls { calls.push(c) }
     }
     DocsCorpus { syms, calls }
 }
 
-/// Backwards-compat wrapper for callers that only need the SymList
-/// half of `extract_project_corpus`.
-export fn extract_project_docs_ast(dir: string) -> SymList {
+/// Backwards-compat wrapper for callers that only need the symbol
+/// list half of `extract_project_corpus`.
+export fn extract_project_docs_ast(dir: string) -> List<Sym> {
     extract_project_corpus(dir).syms
-}
-
-/// Concatenate two CallLists. Used to fold per-file CallList halves
-/// into the project-wide list inside `extract_project_corpus`.
-fn call_list_append(a: CallList, b: CallList) -> CallList {
-    match a {
-        .End -> b
-        .Node(item, next) -> CallList.Node(item, call_list_append(next, b))
-    }
-}
-
-/// Concatenate two SymLists. Sister of `call_list_append`.
-fn sym_list_append(a: SymList, b: SymList) -> SymList {
-    match a {
-        .End -> b
-        .Node(item, next) -> SymList.Node(item, sym_list_append(next, b))
-    }
 }
 
 // ── Kind classification ─────────────────────────────────────────────
@@ -144,41 +127,34 @@ fn has_doc(s: Sym) -> bool { s.doc != "" }
 
 // ── List traversal ──────────────────────────────────────────────────
 
-/// Count how many Syms in `list` satisfy `pred`. Iterative so big
-/// projects don't blow the recursion stack.
-fn count_syms(list: SymList, pred: fn(Sym) -> bool) -> int {
-    mut cur = list
+/// Count how many Syms in `list` satisfy `pred`. Indexed walk over
+/// the built-in `List<Sym>`.
+fn count_syms(list: List<Sym>, pred: fn(Sym) -> bool) -> int {
     mut n = 0
-    while true {
-        match cur {
-            .End -> return n
-            .Node(item, next) -> {
-                if pred(item) { n = n + 1 }
-                cur = next
-            }
-        }
+    for item in list {
+        if pred(item) { n = n + 1 }
     }
     n
 }
 
 /// Total renderable Syms in `list`.
-fn count_total(list: SymList) -> int {
+fn count_total(list: List<Sym>) -> int {
     count_syms(list, is_renderable)
 }
 
 /// Number of renderable Syms in `list` that have a /// doc.
-fn count_documented(list: SymList) -> int {
+fn count_documented(list: List<Sym>) -> int {
     count_syms(list, (item: Sym) -> is_renderable(item) && has_doc(item))
 }
 
 /// Number of Syms in `list` belonging to `want_bucket` that have a
 /// /// doc.
-fn count_documented_in(list: SymList, want_bucket: int) -> int {
+fn count_documented_in(list: List<Sym>, want_bucket: int) -> int {
     count_syms(list, (item: Sym) -> bucket_of(item) == want_bucket && has_doc(item))
 }
 
 /// Number of Syms in `list` belonging to `want_bucket`.
-fn count_in_bucket(list: SymList, want_bucket: int) -> int {
+fn count_in_bucket(list: List<Sym>, want_bucket: int) -> int {
     count_syms(list, (item: Sym) -> bucket_of(item) == want_bucket)
 }
 
@@ -251,21 +227,12 @@ fn print_summary_row(s: Sym) {
     }
 }
 
-/// Walk the SymList, calling `print_summary_row` on every Sym
-/// whose bucket matches `want_bucket`. Iterative for big projects.
-fn print_summary_kind(list: SymList, want_bucket: int) {
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return
-            }
-            .Node(item, next) -> {
-                if bucket_of(item) == want_bucket {
-                    print_summary_row(item)
-                }
-                cur = next
-            }
+/// Walk the symbol list, calling `print_summary_row` on every Sym
+/// whose bucket matches `want_bucket`.
+fn print_summary_kind(list: List<Sym>, want_bucket: int) {
+    for item in list {
+        if bucket_of(item) == want_bucket {
+            print_summary_row(item)
         }
     }
 }
@@ -289,7 +256,7 @@ fn kind_label(bucket: int) -> string {
 /// per-bucket symbol summary plus a coverage line. Empty projects
 /// get a friendly "no source files found" message instead of an
 /// empty table.
-export fn show_overview(docs: SymList) {
+export fn show_overview(docs: List<Sym>) {
     println("")
     println("  ${bold("avra docs")} ${dim("—")} Project Documentation")
     println("  ${dim(rule(37))}")
@@ -330,7 +297,7 @@ export fn show_overview(docs: SymList) {
 /// Render the flat `--symbols` reference: every renderable Sym in
 /// every bucket, paired with its `file:line` location. Used by
 /// editors / users who want a project-wide symbol index.
-export fn show_symbols(docs: SymList) {
+export fn show_symbols(docs: List<Sym>) {
     println("")
     println("  ${bold("Symbol Reference")}")
     println("  ${dim(rule(16))}")
@@ -352,21 +319,12 @@ export fn show_symbols(docs: SymList) {
 
 /// Worker for `show_symbols`: print every Sym in `want_bucket` as
 /// `<header>  <file>:<line>`. Iterative.
-fn print_with_loc_kind(list: SymList, want_bucket: int) {
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return
-            }
-            .Node(item, next) -> {
-                if bucket_of(item) == want_bucket {
-                    let head = declaration_line(item)
-                    let loc = "${item.file}:${string(item.span.start.line)}"
-                    println("    ${pad_right(head, 44)} ${dim(loc)}")
-                }
-                cur = next
-            }
+fn print_with_loc_kind(list: List<Sym>, want_bucket: int) {
+    for item in list {
+        if bucket_of(item) == want_bucket {
+            let head = declaration_line(item)
+            let loc = "${item.file}:${string(item.span.start.line)}"
+            println("    ${pad_right(head, 44)} ${dim(loc)}")
         }
     }
 }
@@ -393,94 +351,47 @@ export fn show_callers(query: string, corpus: DocsCorpus) -> bool {
     println("  ${bold(declaration_line(target!))}")
     println("  ${dim("Used by:")}")
 
-    if call_list_len(edges) == 0 {
+    if edges.length == 0 {
         println("    ${dim("(no callers in project)")}")
         println("")
         return true
     }
 
     print_call_edges(edges)
-    println("    ${dim("(${string(call_list_len(edges))} callers)")}")
+    println("    ${dim("(${string(edges.length)} callers)")}")
     println("")
     true
 }
 
 /// Case-insensitive lookup of a Sym by bare name. Returns the
 /// first renderable match or `null`.
-fn sym_by_name(list: SymList, name: string) -> Sym? {
+fn sym_by_name(list: List<Sym>, name: string) -> Sym? {
     let want = name.to_lower()
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return null
-            }
-            .Node(item, next) -> {
-                if is_renderable(item) && item.name.to_lower() == want {
-                    return item
-                }
-                cur = next
-            }
+    for item in list {
+        if is_renderable(item) && item.name.to_lower() == want {
+            return item
         }
     }
     null
 }
 
-/// Filter the project-wide CallList to just the edges whose
+/// Filter the project-wide `List<CallEdge>` to just the edges whose
 /// `callee` matches `target`. Used by `show_callers` to find every
 /// call site of a fn.
-fn call_edges_to(calls: CallList, target: string) -> CallList {
-    mut acc = CallList.End
-    mut cur = calls
-    while true {
-        match cur {
-            .End -> {
-                return acc
-            }
-            .Node(edge, next) -> {
-                if edge.callee == target {
-                    acc = CallList.Node(edge, acc)
-                }
-                cur = next
-            }
-        }
+fn call_edges_to(calls: List<CallEdge>, target: string) -> List<CallEdge> {
+    mut acc: List<CallEdge> = []
+    for edge in calls {
+        if edge.callee == target { acc.push(edge) }
     }
-    CallList.End
-}
-
-/// Length of a CallList. Iterative.
-fn call_list_len(list: CallList) -> int {
-    mut n = 0
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return n
-            }
-            .Node(_, next) -> {
-                n = n + 1
-                cur = next
-            }
-        }
-    }
-    n
+    acc
 }
 
 /// Print each call edge in `edges` as `<caller>  <file>:<line>`.
 /// Worker for `show_callers`.
-fn print_call_edges(edges: CallList) {
-    mut cur = edges
-    while true {
-        match cur {
-            .End -> {
-                return
-            }
-            .Node(edge, next) -> {
-                let loc = "${edge.file}:${string(edge.line)}"
-                println("    ${pad_right(edge.caller, 36)} ${dim(loc)}")
-                cur = next
-            }
-        }
+fn print_call_edges(edges: List<CallEdge>) {
+    for edge in edges {
+        let loc = "${edge.file}:${string(edge.line)}"
+        println("    ${pad_right(edge.caller, 36)} ${dim(loc)}")
     }
 }
 
@@ -494,40 +405,18 @@ fn print_call_edges(edges: CallList) {
 /// query contains `::`, tries an exact qualified match first, then
 /// falls back to suffix matching so partial paths resolve
 /// (`ast::Expr` finds `core::ast::Expr`).
-fn sym_by_path(list: SymList, path: string) -> Sym? {
+fn sym_by_path(list: List<Sym>, path: string) -> Sym? {
     if !path.contains("::") {
         return sym_by_name(list, path)
     }
     // Exact qualified match first.
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                break
-            }
-            .Node(item, next) -> {
-                if is_renderable(item) && item.qualified == path {
-                    return item
-                }
-                cur = next
-            }
-        }
+    for item in list {
+        if is_renderable(item) && item.qualified == path { return item }
     }
     // Suffix match: `ast::Expr` matches `core::ast::Expr`.
     let suffix = "::${path}"
-    mut cur2 = list
-    while true {
-        match cur2 {
-            .End -> {
-                return null
-            }
-            .Node(item, next) -> {
-                if is_renderable(item) && item.qualified.ends_with(suffix) {
-                    return item
-                }
-                cur2 = next
-            }
-        }
+    for item in list {
+        if is_renderable(item) && item.qualified.ends_with(suffix) { return item }
     }
     null
 }
@@ -536,9 +425,9 @@ fn sym_by_path(list: SymList, path: string) -> Sym? {
 /// deeper, not transitive. Returns false when no descendants exist
 /// at any depth — distinguishes "real but childless prefix" from
 /// "no such prefix anywhere".
-export fn show_module(prefix: string, docs: SymList) -> bool {
+export fn show_module(prefix: string, docs: List<Sym>) -> bool {
     let direct = direct_children(docs, prefix)
-    if sym_count(direct) == 0 && !has_any_descendant(docs, prefix) {
+    if direct.length == 0 && !has_any_descendant(docs, prefix) {
         return false
     }
 
@@ -560,19 +449,10 @@ export fn show_module(prefix: string, docs: SymList) -> bool {
 /// True when at least one Sym in `list` has a qualified path
 /// starting with `prefix::`. Used by `show_module` to distinguish
 /// real-but-childless modules from typos.
-fn has_any_descendant(list: SymList, prefix: string) -> bool {
+fn has_any_descendant(list: List<Sym>, prefix: string) -> bool {
     let pfx_dot = "${prefix}::"
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return false
-            }
-            .Node(item, next) -> {
-                if item.qualified.starts_with(pfx_dot) { return true }
-                cur = next
-            }
-        }
+    for item in list {
+        if item.qualified.starts_with(pfx_dot) { return true }
     }
     false
 }
@@ -580,7 +460,7 @@ fn has_any_descendant(list: SymList, prefix: string) -> bool {
 /// Filter `list` to just the Syms that are direct children of
 /// `prefix` — exactly one path segment deeper, not transitive
 /// descendants. The empty prefix matches top-level (no `::`) syms.
-fn direct_children(list: SymList, prefix: string) -> SymList {
+fn direct_children(list: List<Sym>, prefix: string) -> List<Sym> {
     let pfx_dot = "${prefix}::"
     let pfx_depth = if prefix == "" { -1 } else { count_path_seps(prefix) }
     sym_list_filter_local(list,
@@ -599,73 +479,29 @@ fn is_direct_child_of(item: Sym, prefix: string, pfx_dot: string, pfx_depth: int
     }
 }
 
-/// Length of a SymList — counts every entry, no filtering.
-fn sym_count(list: SymList) -> int {
-    count_syms(list, (_: Sym) -> true)
-}
-
-/// Local SymList filter — produces a new SymList in the original
-/// source order. Iterative + reverse so big projects stay linear.
-fn sym_list_filter_local(list: SymList, pred: fn(Sym) -> bool) -> SymList {
-    mut acc = SymList.End
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return reverse_sym_list_local(acc)
-            }
-            .Node(item, next) -> {
-                if pred(item) {
-                    acc = SymList.Node(item, acc)
-                }
-                cur = next
-            }
-        }
+/// Local `List<Sym>` filter — produces a new `List<Sym>` in the
+/// original source order.
+fn sym_list_filter_local(list: List<Sym>, pred: fn(Sym) -> bool) -> List<Sym> {
+    mut acc: List<Sym> = []
+    for item in list {
+        if pred(item) { acc.push(item) }
     }
-    SymList.End
-}
-
-/// In-place SymList reverse. Used to flip prepend-built lists back
-/// into source order.
-fn reverse_sym_list_local(list: SymList) -> SymList {
-    mut acc = SymList.End
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return acc
-            }
-            .Node(item, next) -> {
-                acc = SymList.Node(item, acc)
-                cur = next
-            }
-        }
-    }
-    SymList.End
+    acc
 }
 
 /// Worker for `show_module`: print one row per direct child with
 /// its leaf name, descendant count, and doc preview. `all` is
 /// passed in so each row's grandchildren count can be looked up.
-fn print_module_children(direct: SymList, all: SymList) {
-    mut cur = direct
-    while true {
-        match cur {
-            .End -> {
-                return
-            }
-            .Node(item, next) -> {
-                let leaf = qualified_leaf(item.qualified)
-                let kid_count = sym_count(direct_children(all, item.qualified))
-                let count_str = if kid_count > 0 { dim(" (${string(kid_count)})") } else { "" }
-                let preview = first_line(item.doc)
-                if preview == "" {
-                    println("    ${leaf}${count_str}")
-                } else {
-                    println("    ${pad_right(leaf, 36)}${count_str} ${dim(truncate_str(preview, 40))}")
-                }
-                cur = next
-            }
+fn print_module_children(direct: List<Sym>, all: List<Sym>) {
+    for item in direct {
+        let leaf = qualified_leaf(item.qualified)
+        let kid_count = direct_children(all, item.qualified).length
+        let count_str = if kid_count > 0 { dim(" (${string(kid_count)})") } else { "" }
+        let preview = first_line(item.doc)
+        if preview == "" {
+            println("    ${leaf}${count_str}")
+        } else {
+            println("    ${pad_right(leaf, 36)}${count_str} ${dim(truncate_str(preview, 40))}")
         }
     }
 }
@@ -674,24 +510,15 @@ fn print_module_children(direct: SymList, all: SymList) {
 /// when no candidate is plausibly close. Threshold matches
 /// `@std/lsp`'s `did_you_mean` default (200): silence beats a
 /// misleading suggestion.
-export fn suggest_similar(query: string, docs: SymList) -> string {
+export fn suggest_similar(query: string, docs: List<Sym>) -> string {
     mut best_score = 199
     mut best_name = ""
-    mut cur = docs
-    while true {
-        match cur {
-            .End -> {
-                return best_name
-            }
-            .Node(item, next) -> {
-                if is_renderable(item) {
-                    let s = fuzzy_score(query, item.name)
-                    if s > best_score {
-                        best_score = s
-                        best_name = item.name
-                    }
-                }
-                cur = next
+    for item in docs {
+        if is_renderable(item) {
+            let s = fuzzy_score(query, item.name)
+            if s > best_score {
+                best_score = s
+                best_name = item.name
             }
         }
     }
@@ -701,24 +528,17 @@ export fn suggest_similar(query: string, docs: SymList) -> string {
 /// Show full detail for a single symbol: header, doc body,
 /// variants (for enums), location, and exported flag. Used by
 /// `avra docs <name>`. Returns false when no matching Sym exists.
-export fn show_symbol(query: string, docs: SymList) -> bool {
+export fn show_symbol(query: string, docs: List<Sym>) -> bool {
     let direct = sym_by_path(docs, query)
     if direct != null {
         show_one(direct!, docs)
         return true
     }
     // Fallback: case-insensitive bare-name match.
-    mut cur = docs
-    while true {
-        match cur {
-            .End -> return false
-            .Node(item, next) -> {
-                if is_renderable(item) && icase_eq(item.name, query) {
-                    show_one(item, docs)
-                    return true
-                }
-                cur = next
-            }
+    for item in docs {
+        if is_renderable(item) && icase_eq(item.name, query) {
+            show_one(item, docs)
+            return true
         }
     }
     false
@@ -727,7 +547,7 @@ export fn show_symbol(query: string, docs: SymList) -> bool {
 /// Worker for `show_symbol`: render the detail view for a single
 /// Sym. The full DocsCorpus is passed in so `@see` references can
 /// be resolved against it.
-fn show_one(s: Sym, docs: SymList) {
+fn show_one(s: Sym, docs: List<Sym>) {
     let header = declaration_line(s)
     let rule_len = if header.length > 20 { header.length } else { 20 }
 
@@ -775,7 +595,7 @@ fn print_variant_block(s: Sym) {
 /// `--short` view: print one line — `name: first-line-of-doc` —
 /// for the matching Sym. Returns false when no match. Designed for
 /// shell tools and editors wanting a quick lookup.
-export fn show_short(query: string, docs: SymList) -> bool {
+export fn show_short(query: string, docs: List<Sym>) -> bool {
     let s = sym_by_path(docs, query)
     if s != null {
         let line = first_line(s!.doc)
@@ -783,19 +603,12 @@ export fn show_short(query: string, docs: SymList) -> bool {
         println("  ${s!.name}: ${desc}")
         return true
     }
-    mut cur = docs
-    while true {
-        match cur {
-            .End -> return false
-            .Node(item, next) -> {
-                if is_renderable(item) && icase_eq(item.name, query) {
-                    let line = first_line(item.doc)
-                    let desc = if line == "" { "(undocumented)" } else { line }
-                    println("  ${item.name}: ${desc}")
-                    return true
-                }
-                cur = next
-            }
+    for item in docs {
+        if is_renderable(item) && icase_eq(item.name, query) {
+            let line = first_line(item.doc)
+            let desc = if line == "" { "(undocumented)" } else { line }
+            println("  ${item.name}: ${desc}")
+            return true
         }
     }
     false
@@ -884,7 +697,7 @@ fn is_subsequence(needle: string, haystack: string) -> bool {
 /// renderable Sym and prints the matches grouped by bucket. Empty
 /// projects and zero-hit queries get a "No results" message instead
 /// of an empty table.
-export fn show_search(query: string, docs: SymList) {
+export fn show_search(query: string, docs: List<Sym>) {
     if count_total(docs) == 0 {
         println("")
         println("  No results for \"${query}\".")
@@ -926,27 +739,18 @@ export fn show_search(query: string, docs: SymList) {
 /// Count Syms in `list` that belong to `want_bucket` AND
 /// score-match `q` (any tier > 0). Used by `show_search` to decide
 /// whether to print each bucket header.
-fn count_search_in_bucket(list: SymList, q: string, want_bucket: int) -> int {
+fn count_search_in_bucket(list: List<Sym>, q: string, want_bucket: int) -> int {
     count_syms(list, (item: Sym) ->
         bucket_of(item) == want_bucket && score_match(item.name, item.doc, q) > 0)
 }
 
 /// Worker for `show_search`: print one row per matching Sym in the
 /// requested bucket, with name + truncated doc preview.
-fn print_search_kind(list: SymList, q: string, want_bucket: int) {
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return
-            }
-            .Node(item, next) -> {
-                if bucket_of(item) == want_bucket && score_match(item.name, item.doc, q) > 0 {
-                    let desc = truncate_str(first_line(item.doc), 50)
-                    println("    ${pad_right(item.name, 24)} ${dim(desc)}")
-                }
-                cur = next
-            }
+fn print_search_kind(list: List<Sym>, q: string, want_bucket: int) {
+    for item in list {
+        if bucket_of(item) == want_bucket && score_match(item.name, item.doc, q) > 0 {
+            let desc = truncate_str(first_line(item.doc), 50)
+            println("    ${pad_right(item.name, 24)} ${dim(desc)}")
         }
     }
 }
@@ -956,7 +760,7 @@ fn print_search_kind(list: SymList, q: string, want_bucket: int) {
 /// `--llm` view: render every symbol as plain markdown headings,
 /// suitable for piping into an LLM context. Used by AI tooling that
 /// wants a coherent summary of the project's exported surface.
-export fn show_llm(docs: SymList) {
+export fn show_llm(docs: List<Sym>) {
     println("# Project Documentation (LLM-friendly)")
     println("")
 
@@ -971,23 +775,14 @@ export fn show_llm(docs: SymList) {
 
 /// Worker for `show_llm`: print one entry per Sym in the bucket
 /// with its declaration line and first doc line.
-fn print_llm_kind(list: SymList, want_bucket: int) {
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return
-            }
-            .Node(item, next) -> {
-                if bucket_of(item) == want_bucket {
-                    let head = llm_head(item)
-                    let exp = if item.exported { " [export]" } else { "" }
-                    println("${head}${exp}")
-                    if item.doc != "" {
-                        println("# ${first_line(item.doc)}")
-                    }
-                }
-                cur = next
+fn print_llm_kind(list: List<Sym>, want_bucket: int) {
+    for item in list {
+        if bucket_of(item) == want_bucket {
+            let head = llm_head(item)
+            let exp = if item.exported { " [export]" } else { "" }
+            println("${head}${exp}")
+            if item.doc != "" {
+                println("# ${first_line(item.doc)}")
             }
         }
     }
@@ -1049,7 +844,7 @@ export fn validate_docs(dir: string) {
 /// Worker for `validate_docs`: print one section per bucket with
 /// documented count, percentage, and the comma-separated list of
 /// undocumented names.
-fn print_validation_kind(list: SymList, want_bucket: int, label: string) {
+fn print_validation_kind(list: List<Sym>, want_bucket: int, label: string) {
     let total = count_in_bucket(list, want_bucket)
     if total == 0 { return }
     let doc_n = count_documented_in(list, want_bucket)
@@ -1069,28 +864,21 @@ fn print_validation_kind(list: SymList, want_bucket: int, label: string) {
 /// Build a comma-separated string of every undocumented Sym name
 /// in `want_bucket`. Used by `print_validation_kind` so the output
 /// stays diff-friendly (one line per bucket).
-fn collect_undocumented_names(list: SymList, want_bucket: int) -> string {
-    mut cur = list
+fn collect_undocumented_names(list: List<Sym>, want_bucket: int) -> string {
     mut acc = ""
-    while true {
-        match cur {
-            .End -> return acc
-            .Node(item, next) -> {
-                if bucket_of(item) == want_bucket && !has_doc(item) {
-                    acc = if acc == "" { item.name } else { acc + ", " + item.name }
-                }
-                cur = next
-            }
+    for item in list {
+        if bucket_of(item) == want_bucket && !has_doc(item) {
+            acc = if acc == "" { item.name } else { acc + ", " + item.name }
         }
     }
     acc
 }
 
-/// Resolve an `@see` reference against the SymList. Found symbols
-/// render in cyan with their `file:line` suffix; unresolved ones
-/// get a red `⚠ unresolved` marker so doc rot is visible at a
+/// Resolve an `@see` reference against the `List<Sym>`. Found
+/// symbols render in cyan with their `file:line` suffix; unresolved
+/// ones get a red `⚠ unresolved` marker so doc rot is visible at a
 /// glance.
-fn render_see_ref(name: string, docs: SymList) -> string {
+fn render_see_ref(name: string, docs: List<Sym>) -> string {
     let target = sym_by_path(docs, name)
     if target == null {
         return "${dim(name)} ${red("⚠ unresolved")}"
@@ -1112,26 +900,17 @@ fn render_see_ref(name: string, docs: SymList) -> string {
 /// JSON array — one record per renderable Sym with name /
 /// qualified / kind / detail / doc / file / line / exported.
 /// Schema is stable; bumping it is a breaking change.
-export fn render_json(docs: SymList) -> string {
+export fn render_json(docs: List<Sym>) -> string {
     mut out = "["
     mut first = true
-    mut cur = docs
-    while true {
-        match cur {
-            .End -> {
-                break
-            }
-            .Node(item, next) -> {
-                if is_renderable(item) {
-                    let row = render_sym_json(item)
-                    if first {
-                        out = "${out}${row}"
-                        first = false
-                    } else {
-                        out = "${out},${row}"
-                    }
-                }
-                cur = next
+    for item in docs {
+        if is_renderable(item) {
+            let row = render_sym_json(item)
+            if first {
+                out = "${out}${row}"
+                first = false
+            } else {
+                out = "${out},${row}"
             }
         }
     }
@@ -1180,7 +959,7 @@ fn sym_kind_tag(s: Sym) -> string {
 /// `--format=markdown` exporter. Plain markdown — no ANSI codes —
 /// suitable for pasting into a GitHub README or piping into `glow`.
 /// Mirrors `show_llm`'s structure but without the LLM framing.
-export fn render_markdown(docs: SymList) -> string {
+export fn render_markdown(docs: List<Sym>) -> string {
     mut out = "# Project Documentation\n\n"
     for bucket in 1..5 {
         if count_in_bucket(docs, bucket) > 0 {
@@ -1193,26 +972,17 @@ export fn render_markdown(docs: SymList) -> string {
 /// Worker for `render_markdown`: emit one `### ...` block per Sym
 /// in the bucket, with code-fenced declaration, doc body, and
 /// italicised location footer.
-fn render_md_kind(list: SymList, want_bucket: int) -> string {
+fn render_md_kind(list: List<Sym>, want_bucket: int) -> string {
     mut out = ""
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return out
+    for item in list {
+        if bucket_of(item) == want_bucket {
+            let head = declaration_line(item)
+            let exp = if item.exported { " *(exported)*" } else { "" }
+            out = out + "### `" + head + "`" + exp + "\n\n"
+            if item.doc != "" {
+                out = out + item.doc + "\n\n"
             }
-            .Node(item, next) -> {
-                if bucket_of(item) == want_bucket {
-                    let head = declaration_line(item)
-                    let exp = if item.exported { " *(exported)*" } else { "" }
-                    out = out + "### `" + head + "`" + exp + "\n\n"
-                    if item.doc != "" {
-                        out = out + item.doc + "\n\n"
-                    }
-                    out = out + "_" + item.file + ":" + string(item.span.start.line) + "_\n\n"
-                }
-                cur = next
-            }
+            out = out + "_" + item.file + ":" + string(item.span.start.line) + "_\n\n"
         }
     }
     out
@@ -1228,36 +998,27 @@ fn render_md_kind(list: SymList, want_bucket: int) -> string {
 /// blocks from its /// body, parse each, and report pass/fail. CI
 /// uses this to catch stale doc examples. Returns true when every
 /// block parsed cleanly.
-export fn run_doctests(docs: SymList) -> bool {
+export fn run_doctests(docs: List<Sym>) -> bool {
     mut total = 0
     mut passed = 0
     println("")
     println("  ${bold("Doctests")}")
     println("  ${dim(rule(20))}")
-    mut cur = docs
-    while true {
-        match cur {
-            .End -> {
-                break
-            }
-            .Node(item, next) -> {
-                if is_renderable(item) && item.doc != "" {
-                    let block = parse_doc(item.doc)
-                    mut idx = 0
-                    while idx < block.examples.length {
-                        total = total + 1
-                        let ex = block.examples[idx]
-                        let ok = doctest_check(ex)
-                        if ok {
-                            passed = passed + 1
-                            println("    ${green("✓")} ${item.qualified} [${string(idx)}]")
-                        } else {
-                            println("    ${red("✗")} ${item.qualified} [${string(idx)}] failed to parse")
-                        }
-                        idx = idx + 1
-                    }
+    for item in docs {
+        if is_renderable(item) && item.doc != "" {
+            let block = parse_doc(item.doc)
+            mut idx = 0
+            while idx < block.examples.length {
+                total = total + 1
+                let ex = block.examples[idx]
+                let ok = doctest_check(ex)
+                if ok {
+                    passed = passed + 1
+                    println("    ${green("✓")} ${item.qualified} [${string(idx)}]")
+                } else {
+                    println("    ${red("✗")} ${item.qualified} [${string(idx)}] failed to parse")
                 }
-                cur = next
+                idx = idx + 1
             }
         }
     }
@@ -1475,7 +1236,7 @@ export fn parse_doc(text: string) -> DocBlock {
 /// non-empty: summary, body, parameters, returns, examples, see-
 /// also, since, deprecated. The full DocsCorpus is passed in so
 /// `@see` references can be resolved.
-fn render_doc_block(block: DocBlock, docs: SymList) {
+fn render_doc_block(block: DocBlock, docs: List<Sym>) {
     if block.summary != "" {
         println("")
         println("  ${block.summary}")

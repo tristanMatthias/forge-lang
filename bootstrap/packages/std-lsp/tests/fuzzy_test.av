@@ -1,48 +1,21 @@
 // Composed scorer + did_you_mean + fuzzy_search.
 
-use @std.lsp.{fuzzy_score, did_you_mean, did_you_mean_n, fuzzy_search,
-              StrList, strlist_cons,
-              ScoredList}
+use @std.lsp.{fuzzy_score, did_you_mean, did_you_mean_n, fuzzy_search, Scored}
 
-fn fuzzy_test_candidates() -> StrList {
-    strlist_cons("square",
-        strlist_cons("sqrt",
-            strlist_cons("sequence",
-                strlist_cons("init_user",
-                    strlist_cons("Foo",
-                        strlist_cons("FooBar",
-                            StrList.End))))))
+fn fuzzy_test_candidates() -> List<string> {
+    ["square", "sqrt", "sequence", "init_user", "Foo", "FooBar"]
 }
 
-fn fuzzy_test_strlist_first(list: StrList) -> string {
-    match list {
-        .End -> ""
-        .Node(v, _) -> v
-    }
+fn fuzzy_test_strlist_first(list: List<string>) -> string {
+    if list.length > 0 { list[0] } else { "" }
 }
 
-fn fuzzy_test_scored_first_value(list: ScoredList) -> string {
-    match list {
-        .End -> ""
-        .Node(item, _) -> item.value
-    }
+fn fuzzy_test_scored_first_value(list: List<Scored>) -> string {
+    if list.length > 0 { list[0].value } else { "" }
 }
 
-fn fuzzy_test_scored_len(list: ScoredList) -> int {
-    mut n = 0
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return n
-            }
-            .Node(_, next) -> {
-                n = n + 1
-                cur = next
-            }
-        }
-    }
-    n
+fn fuzzy_test_scored_len(list: List<Scored>) -> int {
+    list.length
 }
 
 spec "fuzzy: score tiers" {

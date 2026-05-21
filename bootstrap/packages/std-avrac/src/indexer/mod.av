@@ -23,9 +23,9 @@ use core.{Stmt, StmtList, SStmt,
               find_annotation, doc_string_for, stmt_unwrap}
 use parse.{parse_program_source}
 use pathutil.{relativise}
-use @std.lsp.{LspPos, LspSpan, Sym, SymList, SymKind,
-              SymbolGraph, CallEdge, CallList,
-              CacheState, CacheFileEntry, CacheFileList,
+use @std.lsp.{LspPos, LspSpan, Sym, SymKind,
+              SymbolGraph, CallEdge,
+              CacheState, CacheFileEntry,
               calls_new, calls_add,
               graph_new, graph_extend,
               lsp_pos, lsp_span, sym_new,
@@ -44,7 +44,7 @@ use @std.lsp.{LspPos, LspSpan, Sym, SymList, SymKind,
 /// Module nesting is preserved by qualifying every nested decl with
 /// the module's name as a `module::name` prefix. So
 /// `mod core { fn foo() }` produces `name="foo", qualified="core::foo"`.
-export fn extract_from_ast(stmts: StmtList, file: string) -> SymList {
+export fn extract_from_ast(stmts: StmtList, file: string) -> List<Sym> {
     extract_inner(stmts, file, "")
 }
 
@@ -53,14 +53,14 @@ export fn extract_from_ast(stmts: StmtList, file: string) -> SymList {
 /// a fn inside that file ends up qualified as `core::ast::foo`.
 /// `core/mod.av` → "core" (the `mod` filename collapses). Used by
 /// `avra docs` so cross-file hierarchical addressing works.
-export fn extract_from_ast_at(stmts: StmtList, file: string) -> SymList {
+export fn extract_from_ast_at(stmts: StmtList, file: string) -> List<Sym> {
     extract_inner(stmts, file, file_to_module_prefix(file))
 }
 
 /// Like `extract_calls_from_ast` but seeds the caller's
 /// qualified-name prefix from the file path, mirroring
 /// `extract_from_ast_at`.
-export fn extract_calls_from_ast_at(stmts: StmtList, file: string) -> CallList {
+export fn extract_calls_from_ast_at(stmts: StmtList, file: string) -> List<CallEdge> {
     extract_calls_inner(stmts, file, file_to_module_prefix(file), calls_new())
 }
 
@@ -111,7 +111,7 @@ fn path_to_qualifier(dir: string) -> string {
 /// Captures the most common "X calls Y" relationship; deeper
 /// coverage (calls inside match arms, closures, lambdas) is
 /// layered on as needed.
-export fn extract_calls_from_ast(stmts: StmtList, file: string) -> CallList {
+export fn extract_calls_from_ast(stmts: StmtList, file: string) -> List<CallEdge> {
     extract_calls_inner(stmts, file, "", calls_new())
 }
 
@@ -119,7 +119,7 @@ export fn extract_calls_from_ast(stmts: StmtList, file: string) -> CallList {
 /// `extract_calls_from_ast_at`. Threads the qualified-name prefix
 /// through nested modules and impls; descends into function bodies
 /// via `walk_body_for_calls`.
-fn extract_calls_inner(stmts: StmtList, file: string, qual_prefix: string, acc: CallList) -> CallList {
+fn extract_calls_inner(stmts: StmtList, file: string, qual_prefix: string, acc: List<CallEdge>) -> List<CallEdge> {
     mut cur_acc = acc
     mut cur = stmts
     while true {
@@ -152,7 +152,7 @@ fn extract_calls_inner(stmts: StmtList, file: string, qual_prefix: string, acc: 
 /// `Expr.Call` sites whose callee is a bare identifier. Deeper
 /// expression structure (lambdas, match arms) is reached through
 /// `scan_expr_for_calls`.
-fn walk_body_for_calls(stmts: StmtList, file: string, caller: string, acc: CallList) -> CallList {
+fn walk_body_for_calls(stmts: StmtList, file: string, caller: string, acc: List<CallEdge>) -> List<CallEdge> {
     mut cur_acc = acc
     mut cur = stmts
     while true {
@@ -172,7 +172,7 @@ fn walk_body_for_calls(stmts: StmtList, file: string, caller: string, acc: CallL
 /// Per-statement call scanner. Recurses into expression payloads
 /// for `let`/`mut`/`const`/`if`/`while`/`return`/`expr`; treats
 /// other statements as opaque.
-fn scan_stmt_for_calls(ss: SStmt, file: string, caller: string, acc: CallList) -> CallList {
+fn scan_stmt_for_calls(ss: SStmt, file: string, caller: string, acc: List<CallEdge>) -> List<CallEdge> {
     let inner = stmt_unwrap(ss.node)
     let scan_e = (e: Expr) -> scan_expr_for_calls(e, file, caller, ss.line, ss.col, acc)
     match inner {
@@ -198,7 +198,7 @@ fn scan_stmt_for_calls(ss: SStmt, file: string, caller: string, acc: CallList) -
 /// callee is a bare `Ident` and recurses into args + nested
 /// binary/logical/grouping operands. Other expression shapes are
 /// not traversed (would over-report on closure bodies and lambdas).
-fn scan_expr_for_calls(e: Expr, file: string, caller: string, line: int, col: int, acc: CallList) -> CallList {
+fn scan_expr_for_calls(e: Expr, file: string, caller: string, line: int, col: int, acc: List<CallEdge>) -> List<CallEdge> {
     match e {
         .Call(callee, args) -> {
             let with_callee = match callee {
@@ -222,7 +222,7 @@ fn scan_expr_for_calls(e: Expr, file: string, caller: string, line: int, col: in
 
 /// Map `scan_expr_for_calls` over an ExprList — used to walk
 /// argument lists when the call site itself is recorded.
-fn scan_expr_list(es: ExprList, file: string, caller: string, line: int, col: int, acc: CallList) -> CallList {
+fn scan_expr_list(es: ExprList, file: string, caller: string, line: int, col: int, acc: List<CallEdge>) -> List<CallEdge> {
     mut cur_acc = acc
     mut cur = es
     while true {
@@ -244,23 +244,22 @@ fn scan_expr_list(es: ExprList, file: string, caller: string, line: int, col: in
 /// Recursive worker for `extract_from_ast`. `qual_prefix`
 /// accumulates the module path: "" at the top level, "core" inside
 /// `mod core`, "core::ast" inside `mod core { mod ast { ... } }`.
-/// Iterative + reverse to keep memory linear on big projects.
-fn extract_inner(stmts: StmtList, file: string, qual_prefix: string) -> SymList {
-    mut acc = SymList.End
+/// Iterative append over the built-in `List<Sym>`.
+fn extract_inner(stmts: StmtList, file: string, qual_prefix: string) -> List<Sym> {
+    mut acc: List<Sym> = []
     mut cur = stmts
     while true {
         match cur {
             .End -> {
-                return reverse_syms(acc)
+                return acc
             }
             .Node(ss, next) -> {
-                let new_acc = process_stmt(ss, file, qual_prefix, acc)
-                acc = new_acc
+                acc = process_stmt(ss, file, qual_prefix, acc)
                 cur = next
             }
         }
     }
-    SymList.End
+    acc
 }
 
 /// Convert a single statement into a Sym (or several, when the
@@ -268,7 +267,7 @@ fn extract_inner(stmts: StmtList, file: string, qual_prefix: string) -> SymList 
 /// via `doc_string_for` and the export flag via the AST's
 /// annotation list. Statements that don't produce a doc symbol
 /// (Expr, Return, …) pass through with `acc` unchanged.
-fn process_stmt(ss: SStmt, file: string, qual_prefix: string, acc: SymList) -> SymList {
+fn process_stmt(ss: SStmt, file: string, qual_prefix: string, acc: List<Sym>) -> List<Sym> {
     let outer = ss.node
     let inner = stmt_unwrap(outer)
     let doc = doc_string_for(outer)
@@ -281,41 +280,55 @@ fn process_stmt(ss: SStmt, file: string, qual_prefix: string, acc: SymList) -> S
             let ret_str = vtype_display(ret)
             let qual = qualify(qual_prefix, name)
             let sym = sym_new(name, qual, SymKind.Fn(sig, ret_str), doc, file, sp, exported, "")
-            SymList.Node(sym, acc)
+            mut out = acc
+            out.push(sym)
+            out
         }
         .TypeDecl(name, tp, fields) -> {
             let rendered = render_type_decl_with_fields(name, tp, fields)
             let qual = qualify(qual_prefix, name)
             let sym = sym_new(name, qual, SymKind.Type(rendered), doc, file, sp, exported, "")
-            SymList.Node(sym, acc)
+            mut out = acc
+            out.push(sym)
+            out
         }
         .NewtypeDecl(name, inner_vt) -> {
             let rendered = "type ${name} = ${vtype_render_full(inner_vt)}"
             let qual = qualify(qual_prefix, name)
             let sym = sym_new(name, qual, SymKind.Type(rendered), doc, file, sp, exported, "")
-            SymList.Node(sym, acc)
+            mut out = acc
+            out.push(sym)
+            out
         }
         .UnionAliasDecl(name, ty_vt) -> {
             let rendered = "type ${name} = ${vtype_render_full(ty_vt)}"
             let qual = qualify(qual_prefix, name)
             let sym = sym_new(name, qual, SymKind.Type(rendered), doc, file, sp, exported, "")
-            SymList.Node(sym, acc)
+            mut out = acc
+            out.push(sym)
+            out
         }
         .ShapeDecl(name, _) -> {
             let qual = qualify(qual_prefix, name)
             let sym = sym_new(name, qual, SymKind.Type("shape ${name}"), doc, file, sp, exported, "")
-            SymList.Node(sym, acc)
+            mut out = acc
+            out.push(sym)
+            out
         }
         .EnumDecl(name, _, variants) -> {
             let csv = render_variant_csv(variants)
             let qual = qualify(qual_prefix, name)
             let sym = sym_new(name, qual, SymKind.Enum(csv), doc, file, sp, exported, "")
-            SymList.Node(sym, acc)
+            mut out = acc
+            out.push(sym)
+            out
         }
         .TraitDecl(name, _) -> {
             let qual = qualify(qual_prefix, name)
             let sym = sym_new(name, qual, SymKind.Trait("trait ${name}"), doc, file, sp, exported, "")
-            SymList.Node(sym, acc)
+            mut out = acc
+            out.push(sym)
+            out
         }
         .Impl(type_name, _) -> {
             // type_name is "Trait:Type" or "Type"; both rendered as a
@@ -333,25 +346,33 @@ fn process_stmt(ss: SStmt, file: string, qual_prefix: string, acc: SymList) -> S
             let qual = qualify(qual_prefix, type_name)
             let display = if colon >= 0 { type_name.substring(0, colon) } else { type_name }
             let sym = sym_new(display, qual, pair, doc, file, sp, exported, "")
-            SymList.Node(sym, acc)
+            mut out = acc
+            out.push(sym)
+            out
         }
         .Const(name, vt, _) -> {
             let ty_str = vtype_display(vt)
             let qual = qualify(qual_prefix, name)
             let sym = sym_new(name, qual, SymKind.Const(ty_str), doc, file, sp, exported, "")
-            SymList.Node(sym, acc)
+            mut out = acc
+            out.push(sym)
+            out
         }
         .Mut(name, vt, _) -> {
             let ty_str = vtype_display(vt)
             let qual = qualify(qual_prefix, name)
             let sym = sym_new(name, qual, SymKind.Mut(ty_str), doc, file, sp, exported, "")
-            SymList.Node(sym, acc)
+            mut out = acc
+            out.push(sym)
+            out
         }
         .Let(name, vt, _) -> {
             let ty_str = vtype_display(vt)
             let qual = qualify(qual_prefix, name)
             let sym = sym_new(name, qual, SymKind.Let(ty_str), doc, file, sp, exported, "")
-            SymList.Node(sym, acc)
+            mut out = acc
+            out.push(sym)
+            out
         }
         .Module(name, body) -> {
             let qual = qualify(qual_prefix, name)
@@ -359,7 +380,11 @@ fn process_stmt(ss: SStmt, file: string, qual_prefix: string, acc: SymList) -> S
             // Recurse into the module body so nested decls land in the
             // graph with the correct qualified prefix.
             let inner_syms = extract_inner(body, file, qual)
-            sym_list_concat(inner_syms, SymList.Node(module_sym, acc))
+            // Append the module symbol first, then its contents — keeps
+            // module-then-children ordering for downstream renderers.
+            mut out = acc
+            out.push(module_sym)
+            sym_list_concat(out, inner_syms)
         }
         _ -> acc
     }
@@ -491,25 +516,6 @@ fn qualify(prefix: string, name: string) -> string {
     if prefix == "" { name } else { "${prefix}::${name}" }
 }
 
-/// In-place reverse of a SymList — used by `extract_inner` to flip
-/// its prepend-built result back into source order.
-fn reverse_syms(list: SymList) -> SymList {
-    mut acc = SymList.End
-    mut cur = list
-    while true {
-        match cur {
-            .End -> {
-                return acc
-            }
-            .Node(item, next) -> {
-                acc = SymList.Node(item, acc)
-                cur = next
-            }
-        }
-    }
-    SymList.End
-}
-
 // ── LSP server entry point ─────────────────────────────────────────
 //
 // Indexes every .av in `project_dir` then enters @std/lsp's stdio
@@ -541,7 +547,7 @@ export fn run_lsp_server(project_dir: string) {
         let file_syms = extract_from_ast(parsed.stmts!, rel)
         let file_calls = extract_calls_from_ast(parsed.stmts!, rel)
         g = graph_extend(g, file_syms)
-        calls = call_list_concat(file_calls, calls)
+        for e in file_calls { calls.push(e) }
     }
 
     lsp_serve(g, calls)
@@ -585,12 +591,12 @@ fn cache_version() -> string {
 /// every `.av` file, and only re-parses + re-extracts files whose
 /// mtime is newer than the cached stamp. Persists the updated
 /// state back to disk on exit (failure is non-fatal).
-export fn extract_project_syms_cached(project_dir: string, force_rebuild: bool) -> SymList {
+export fn extract_project_syms_cached(project_dir: string, force_rebuild: bool) -> List<Sym> {
     let cache_path = cache_file_path(project_dir)
     let initial = if force_rebuild { cache_empty() } else { cache_load(cache_path) }
     let cmd = "find ${project_dir} -name '*.av' -type f -not -path '*/build/*' -not -path '*/.beads/*' -not -path '*/seed/*' -not -path '*/target/*' 2>/dev/null | sort"
     let files_text = avra_shell_exec(cmd)
-    if files_text == "" { return SymList.End }
+    if files_text == "" { return [] }
 
     mut state = initial
     for path in files_text.split("\n") {
@@ -613,13 +619,4 @@ export fn extract_project_syms_cached(project_dir: string, force_rebuild: bool) 
     cache_save(state, cache_path, cache_version())
 
     state.syms
-}
-
-/// Concatenate two CallLists. Used by `run_lsp_server` to fold
-/// per-file CallList halves into the project-wide list.
-fn call_list_concat(a: CallList, b: CallList) -> CallList {
-    match a {
-        .End -> b
-        .Node(item, next) -> CallList.Node(item, call_list_concat(next, b))
-    }
 }
