@@ -55,8 +55,8 @@ whether `idx == N` and, if so, binds `val` to its named local
 
 ## Pipeline placement
 
-- Parser produces `Stmt.Select(arms: SelectArmList)`. Each arm
-  is `(binding, channel_expr, body_stmts, next)`.
+- Parser produces `Stmt.Select(arms: List<SelectArm>)`. Each
+  entry carries `binding`, `channel`, `body`.
 - Resolve walks each channel expression in the enclosing scope,
   then each body with the arm's binding in scope.
 - Type-check accepts any channel-typed expressions; arm

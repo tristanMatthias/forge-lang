@@ -1,7 +1,7 @@
 // WHY: parses `select { binding <- channel -> { body } }` statements.
 
 use parse.{Parser}
-use core.{Stmt, SelectArmList}
+use core.{Stmt, SelectArm}
 use core.{Tk}
 
 impl Parser {
@@ -17,33 +17,34 @@ impl Parser {
         Stmt.Select(arms)
     }
 
-    fn parse_select_arm_list(self) -> SelectArmList {
-        if self.current_kind in [Tk.RightBrace, Tk.Eof] {
-            return SelectArmList.End
+    fn parse_select_arm_list(self) -> List<SelectArm> {
+        mut out: List<SelectArm> = []
+        while !(self.current_kind in [Tk.RightBrace, Tk.Eof]) {
+            // Parse: binding <- channel -> { body }
+            if !self.check(Tk.Identifier) { return out }
+            let binding = self.current_lexeme
+            self.advance()
+            // Expect `<-`
+            if !self.check(Tk.LeftArrow) { return out }
+            self.advance()  // consume <-
+            // Parse channel expression
+            let channel = self.parse_expression()
+            if channel == null { return out }
+            // Expect `->`
+            if !self.consume(Tk.Arrow, "expected `->` after channel in select arm") {
+                return out
+            }
+            // Parse body block
+            if !self.consume(Tk.LeftBrace, "expected `{` for select arm body") {
+                return out
+            }
+            let body = self.parse_statement_list(true)
+            if body == null { return out }
+            if !self.consume(Tk.RightBrace, "expected `}` to close select arm") {
+                return out
+            }
+            out.push(SelectArm { binding, channel: channel!, body: body! })
         }
-        // Parse: binding <- channel -> { body }
-        if !self.check(Tk.Identifier) { return SelectArmList.End }
-        let binding = self.current_lexeme
-        self.advance()
-        // Expect `<-`
-        if !self.check(Tk.LeftArrow) { return SelectArmList.End }
-        self.advance()  // consume <-
-        // Parse channel expression
-        let channel = self.parse_expression()
-        if channel == null { return SelectArmList.End }
-        // Expect `->`
-        if !self.consume(Tk.Arrow, "expected `->` after channel in select arm") {
-            return SelectArmList.End
-        }
-        // Parse body block
-        if !self.consume(Tk.LeftBrace, "expected `{` for select arm body") {
-            return SelectArmList.End
-        }
-        let body = self.parse_statement_list(true)
-        if body == null { return SelectArmList.End }
-        if !self.consume(Tk.RightBrace, "expected `}` to close select arm") {
-            return SelectArmList.End
-        }
-        SelectArmList.Node(binding, channel!, body!, self.parse_select_arm_list())
+        out
     }
 }

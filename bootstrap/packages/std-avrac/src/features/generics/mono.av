@@ -3,7 +3,7 @@
 // checking and before codegen. After this pass, the AST contains no
 // generic declarations — codegen sees only concrete code.
 
-use core.{Expr, ExprList, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, StmtList, ParamList, FieldList, FieldInitList, TypeList, VariantList, MatchArmList, TypeParamList, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge, SelectArmList}
+use core.{Expr, ExprList, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, StmtList, ParamList, FieldList, FieldInitList, TypeList, VariantList, MatchArmList, TypeParamList, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge, SelectArm}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_warning, span_new}
 use typeck.{TraitImplReg, type_implements_trait}
 use core.{mangle_join, type_short_name}
@@ -830,11 +830,16 @@ fn collect_inst_stmt(stmt: Stmt, regs: GenRegs, st: CollectState) -> CollectStat
 
 /// Walk every arm of a `select { ... }` collecting
 /// instantiations from each channel + body.
-fn collect_inst_select_arms(arms: SelectArmList, regs: GenRegs, st: CollectState) -> CollectState {
-    match arms {
-        .End -> st
-        .Node(_, channel, body, next) -> collect_inst_select_arms(next, regs, collect_inst_stmts(body, regs, collect_inst_expr(channel, regs, st)))
+fn collect_inst_select_arms(arms: List<SelectArm>, regs: GenRegs, st: CollectState) -> CollectState {
+    mut cur = st
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let after_ch = collect_inst_expr(arm.channel, regs, cur)
+        cur = collect_inst_stmts(arm.body, regs, after_ch)
+        i = i + 1
     }
+    cur
 }
 
 /// Per-expression instantiation collector. Recognises Call /
@@ -1430,16 +1435,19 @@ fn rewrite_stmt(stmt: Stmt, regs: GenRegs, insts: List<Inst>) -> Stmt {
 
 /// Walk every `select` arm rewriting type references in the
 /// channel + body.
-fn rewrite_select_arms_mono(arms: SelectArmList, regs: GenRegs, insts: List<Inst>) -> SelectArmList {
-    match arms {
-        .End -> SelectArmList.End
-        .Node(binding, channel, body, next) -> SelectArmList.Node(
-            binding,
-            rewrite_expr(channel, regs, insts),
-            rewrite_stmts(body, regs, insts),
-            rewrite_select_arms_mono(next, regs, insts)
-        )
+fn rewrite_select_arms_mono(arms: List<SelectArm>, regs: GenRegs, insts: List<Inst>) -> List<SelectArm> {
+    mut out: List<SelectArm> = []
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        out.push(SelectArm {
+            binding: arm.binding,
+            channel: rewrite_expr(arm.channel, regs, insts),
+            body: rewrite_stmts(arm.body, regs, insts),
+        })
+        i = i + 1
     }
+    out
 }
 
 /// Per-expression rewrite. Calls + EnumCtors + StructLits

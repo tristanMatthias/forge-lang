@@ -11,7 +11,7 @@
 // sites in packages/cli/src/main.av between resolve_names and
 // typecheck_program.
 
-use core.{Stmt, StmtList, sstmt_at, Expr, ExprList, sexpr, FieldInitList, MatchArmList, WhenArmList, SelectArmList}
+use core.{Stmt, StmtList, sstmt_at, Expr, ExprList, sexpr, FieldInitList, MatchArmList, WhenArmList, SelectArm}
 use features.comptime.{CompTimeRegistry, try_fold_call}
 
 // ── Public entry ──
@@ -200,14 +200,17 @@ fn rewrite_when_arms(arms: WhenArmList, reg: CompTimeRegistry) -> WhenArmList {
     }
 }
 
-fn rewrite_select_arms(arms: SelectArmList, reg: CompTimeRegistry) -> SelectArmList {
-    match arms {
-        .End -> SelectArmList.End
-        .Node(binding, channel, body, next) -> SelectArmList.Node(
-            binding,
-            rewrite_expr(channel, reg),
-            rewrite_stmt_list(body, reg),
-            rewrite_select_arms(next, reg)
-        )
+fn rewrite_select_arms(arms: List<SelectArm>, reg: CompTimeRegistry) -> List<SelectArm> {
+    mut out: List<SelectArm> = []
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        out.push(SelectArm {
+            binding: arm.binding,
+            channel: rewrite_expr(arm.channel, reg),
+            body: rewrite_stmt_list(arm.body, reg),
+        })
+        i = i + 1
     }
+    out
 }

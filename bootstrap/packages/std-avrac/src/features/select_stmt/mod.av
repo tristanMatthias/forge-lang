@@ -15,8 +15,9 @@ fn select_resolve(r: Resolver, stmt: Stmt) -> Resolver {
 /// Spec Axis 18: blocks until one of the listed channels is
 /// ready, then runs the matching arm.
 export fn select_feature() -> Feature {
+    let empty_arms: List<SelectArm> = []
     feature_new("select") with {
-        stmt_tag: Stmt.Select(SelectArmList.End),
+        stmt_tag: Stmt.Select(empty_arms),
         decl_keyword: "kw_select",
         parse_decl: (p: Parser) -> p.parse_select_statement(),
         emit_stmt: select_emit_stmt,

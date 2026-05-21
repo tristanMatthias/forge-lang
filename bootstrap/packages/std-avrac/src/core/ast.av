@@ -1055,7 +1055,7 @@ export enum Stmt {
     /// Test assertion block: `then "name" { boolean_condition }`.
     ThenBlock(name: string, condition: Expr)
     /// `select { x <- ch1 -> body, ... }` — multi-channel wait.
-    Select(arms: SelectArmList)
+    Select(arms: List<SelectArm>)
     /// `parallel { stmts }` — run statements concurrently as Tasks.
     Parallel(body: StmtList)
     /// `mod name { body }` — namespaced sub-module. Pre-resolution
@@ -1080,12 +1080,14 @@ export enum WhenArmList {
     Node(cond: SExpr?, body: SExpr, next: WhenArmList)
 }
 
-/// Select-arms: `binding <- channel -> body` — one branch of a
-/// `select` block.
-export enum SelectArmList {
-    End
-    Node(binding: string, channel: Expr, body: StmtList, next: SelectArmList)
-}
+/// Select arm: one branch `binding <- channel -> body` of a
+/// `select { ... }` block.
+///
+/// `List<SelectArm>` replaces the retired `enum SelectArmList`.
+/// Used as `arms: List<SelectArm>` on Stmt.Select. `body` stays
+/// `StmtList` for now — StmtList itself becomes `List<SStmt>` in a
+/// later lkze.9 ticket.
+export type SelectArm = { binding: string, channel: Expr, body: StmtList }
 
 /// Annotations attached to declarations: `@name` or `@name(args)`.
 /// Args are stored as ExprList for generality so any annotation

@@ -1,6 +1,6 @@
 // WHY: resolves names in select arms — binds channel binding variables into scope.
 
-use core.{SelectArmList}
+use core.{SelectArm}
 use resolve.{Resolver, enter_resolve_scope, exit_resolve_scope, resolve_expr, resolve_stmt_list, declare_name, define_name}
 
 /// Resolve every arm of a `select { ... }` statement. For each
@@ -8,17 +8,18 @@ use resolve.{Resolver, enter_resolve_scope, exit_resolve_scope, resolve_expr, re
 /// a fresh scope is entered to define the binding name (the
 /// received value), and finally the body resolves with that
 /// binding visible.
-export fn resolve_select_arms(r: Resolver, arms: SelectArmList) -> Resolver {
-    match arms {
-        .End -> r
-        .Node(binding, channel, body, next) -> {
-            let after_ch = resolve_expr(r, channel)
-            let scoped = enter_resolve_scope(after_ch)
-            let with_binding = declare_name(scoped, binding)
-            let defined = define_name(with_binding, binding)
-            let after_body = resolve_stmt_list(defined, body)
-            let exited = exit_resolve_scope(after_body)
-            resolve_select_arms(exited, next)
-        }
+export fn resolve_select_arms(r: Resolver, arms: List<SelectArm>) -> Resolver {
+    mut cur = r
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let after_ch = resolve_expr(cur, arm.channel)
+        let scoped = enter_resolve_scope(after_ch)
+        let with_binding = declare_name(scoped, arm.binding)
+        let defined = define_name(with_binding, arm.binding)
+        let after_body = resolve_stmt_list(defined, arm.body)
+        cur = exit_resolve_scope(after_body)
+        i = i + 1
     }
+    cur
 }
