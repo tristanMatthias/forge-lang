@@ -6,7 +6,7 @@
 // Tracked under forge-crafting-intepreters-iinq.
 
 use core.{
-    Stmt, StmtList, SStmt, sstmt_at, Expr, ParamList, FieldList, Variant, TypeParamEntry, ValueType,
+    Stmt, StmtList, SStmt, sstmt_at, Expr, ParamList, FieldEntry, Variant, TypeParamEntry, ValueType,
     Annotation, stmt_unwrap,
 }
 use build.metadata.{
@@ -335,7 +335,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                 kind: TypeDeclKind.EnumDecl,
                 name: qn,
                 type_params: type_params,
-                fields: FieldList.End,
+                fields: [],
                 variants: variants,
                 inner_vt: ValueType.Unknown,
                 methods: [],
@@ -349,7 +349,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                 kind: TypeDeclKind.NewtypeDecl,
                 name: qn,
                 type_params: [],
-                fields: FieldList.End,
+                fields: [],
                 variants: [],
                 inner_vt: inner_vt,
                 methods: [],
@@ -363,7 +363,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                 kind: TypeDeclKind.UnionAliasDecl,
                 name: qn,
                 type_params: [],
-                fields: FieldList.End,
+                fields: [],
                 variants: [],
                 inner_vt: type_vt,
                 methods: [],
@@ -377,7 +377,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                 kind: TypeDeclKind.TraitDecl,
                 name: qn,
                 type_params: [],
-                fields: FieldList.End,
+                fields: [],
                 variants: [],
                 inner_vt: ValueType.Unknown,
                 methods: extract_trait_methods(methods),

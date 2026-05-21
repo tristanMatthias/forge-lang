@@ -10,7 +10,7 @@
 // self.__parent → parent accumulator variable
 // self.__parent_name → parent instance name string
 
-use core.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, FieldList, FieldInitList, ParamList, ValueType, CompConfig, CompConfigPair, ChildrenSlot, TypeParamEntry, find_annotation}
+use core.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, FieldEntry, FieldInitList, ParamList, ValueType, CompConfig, CompConfigPair, ChildrenSlot, TypeParamEntry, find_annotation}
 use core.{has_fn, find_fn_body}
 
 // ── Public API ──
@@ -430,14 +430,15 @@ fn capitalize(s: string) -> string {
 /// Convert a component's config schema into struct fields for
 /// the synthesized backing struct. Each schema entry's
 /// declared type becomes a field type.
-fn config_to_fields(config: List<CompConfig>) -> FieldList {
-    // FieldList is cons-prepend — walk back-to-front to preserve source order.
-    mut out = FieldList.End
-    mut i = config.length
-    while i > 0 {
-        i = i - 1
+fn config_to_fields(config: List<CompConfig>) -> List<FieldEntry> {
+    // List<FieldEntry> uses .push for forward growth — walk source
+    // order, no reversal needed.
+    mut out: List<FieldEntry> = []
+    mut i = 0
+    while i < config.length {
         let entry = config[i]
-        out = FieldList.Node(entry.key, entry.ty_vt, out)
+        out.push(FieldEntry { name: entry.key, resolved: entry.ty_vt })
+        i = i + 1
     }
     out
 }
@@ -538,7 +539,16 @@ export fn splice_component_def(name: string, params: ParamList, config: List<Com
     let type_name = capitalize(name)
     let config_fields = config_to_fields(config)
     let with_children = append_children_fields(config_fields, children)
-    let name_field = FieldList.Node("name", ValueType.Str, with_children)
+    // Prepend the implicit `name: Str` field. List<FieldEntry> uses
+    // forward growth, so build a fresh list starting with `name`,
+    // then push every existing entry.
+    mut name_field: List<FieldEntry> = []
+    name_field.push(FieldEntry { name: "name", resolved: ValueType.Str })
+    mut nf_i = 0
+    while nf_i < with_children.length {
+        name_field.push(with_children[nf_i])
+        nf_i = nf_i + 1
+    }
 
     let empty_tp: List<TypeParamEntry> = []
     let type_decl = Stmt.TypeDecl(type_name, empty_tp, name_field)
@@ -565,19 +575,20 @@ export fn splice_component_def(name: string, params: ParamList, config: List<Com
 /// in the children schema. Threads through the existing config/name
 /// fields so the resulting struct carries every list slot the
 /// component declared.
-fn append_children_fields(fields: FieldList, children: List<ChildrenSlot>) -> FieldList {
-    mut out = fields
+fn append_children_fields(fields: List<FieldEntry>, children: List<ChildrenSlot>) -> List<FieldEntry> {
+    // Copy `fields` then push each child-slot entry. List<T>.push
+    // appends in O(1) amortised, so the prior linked-list tail-walk
+    // helper (`field_list_append`) is gone — direct push covers it.
+    mut out: List<FieldEntry> = []
+    mut i = 0
+    while i < fields.length {
+        out.push(fields[i])
+        i = i + 1
+    }
     for slot in children {
-        out = field_list_append(out, slot.slot_name, slot.child_ty)
+        out.push(FieldEntry { name: slot.slot_name, resolved: slot.child_ty })
     }
     out
-}
-
-fn field_list_append(fields: FieldList, name: string, ty: ValueType) -> FieldList {
-    match fields {
-        .End -> FieldList.Node(name, ty, FieldList.End)
-        .Node(n, t, next) -> FieldList.Node(n, t, field_list_append(next, name, ty))
-    }
 }
 
 /// Initialize each slot to an empty list literal `[]` in the

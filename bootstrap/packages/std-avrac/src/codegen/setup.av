@@ -1,6 +1,6 @@
 // WHY: compilation setup — declaration passes and top-level emission.
 
-use core.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, Variant, SStmt, field_list_has, field_list_length, filter_fields_only, filter_fields_without, find_annotation, param_list_length, stmt_unwrap, variant_max_payload, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_unknown, vtype_enum_name, vtype_struct_name, env_extend}
+use core.{Expr, ExprList, FieldEntry, ParamList, Stmt, StmtList, ValueType, VarEnv, Variant, SStmt, field_list_has, filter_fields_only, filter_fields_without, find_annotation, param_list_length, stmt_unwrap, variant_max_payload, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_unknown, vtype_enum_name, vtype_struct_name, env_extend}
 use parse.{parse_int_literal}
 use core.{avra_llvm_const_int}
 use core.{avra_process_env_get}
@@ -545,15 +545,18 @@ fn resolve_variant_fields(variants: List<Variant>, regs: TypeRegs) -> List<Varia
     out
 }
 
-/// Walk a FieldList and resolve each field's ValueType using the
-/// type registries. Mirrors `resolve_variant_fields` but for plain
-/// struct field lists.
-fn resolve_field_list(fields: FieldList, regs: TypeRegs) -> FieldList {
-    match fields {
-        .End -> .End
-        .Node(name, pv, next) ->
-            .Node(name, resolve_field_vt(regs, pv), resolve_field_list(next, regs))
+/// Walk a `List<FieldEntry>` and resolve each field's ValueType
+/// using the type registries. Mirrors `resolve_variant_fields` but
+/// for plain struct field lists.
+fn resolve_field_list(fields: List<FieldEntry>, regs: TypeRegs) -> List<FieldEntry> {
+    mut out: List<FieldEntry> = []
+    mut i = 0
+    while i < fields.length {
+        let e = fields[i]
+        out.push(FieldEntry { name: e.name, resolved: resolve_field_vt(regs, e.resolved) })
+        i = i + 1
     }
+    out
 }
 
 /// Walk a ParamList and resolve each param's ValueType. Used during
@@ -621,13 +624,11 @@ fn resolve_setup_vt_list(regs: TypeRegs, types: TypeList) -> TypeList {
 
 /// Populate an LLVM type array with the lowered LLVM type of each
 /// field in `fields`. Used when calling `LLVMStructSetBody`.
-fn fill_struct_field_types(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, fields: FieldList, idx: int) {
-    match fields {
-        .End -> {}
-        .Node(_, resolved, next) -> {
-            avra_llvm_type_array_set(arr, idx, llvm_type_for_full(i64t, i1t, dt, pt, resolved))
-            fill_struct_field_types(arr, i64t, i1t, dt, pt, next, idx + 1)
-        }
+fn fill_struct_field_types(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, fields: List<FieldEntry>) {
+    mut i = 0
+    while i < fields.length {
+        avra_llvm_type_array_set(arr, i, llvm_type_for_full(i64t, i1t, dt, pt, fields[i].resolved))
+        i = i + 1
     }
 }
 
@@ -682,9 +683,9 @@ fn fill_and_register_structs_ext(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr
                     let op_fields = resolve_type_operator(fields, reg)
                     let base_regs = TypeRegs { structs: reg, enums: enum_reg_new(), newtypes: nts, union_aliases: uas }
                     let resolved_fields = resolve_field_list(op_fields, base_regs)
-                    let count = field_list_length(resolved_fields)
+                    let count = resolved_fields.length
                     let field_arr = avra_llvm_type_array_new(count)
-                    fill_struct_field_types(field_arr, i64t, i1t, dt, pt, resolved_fields, 0)
+                    fill_struct_field_types(field_arr, i64t, i1t, dt, pt, resolved_fields)
                     let st = avra_llvm_get_type_by_name(ctx, name)
                     if st == null {
                         eprintln("[CRASH] fill_and_register: LLVM type '${name}' not found after forward declare")
@@ -698,9 +699,9 @@ fn fill_and_register_structs_ext(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr
                 .ShapeDecl(name, fields) -> {
                     let base_regs = TypeRegs { structs: reg, enums: enum_reg_new(), newtypes: nts, union_aliases: uas }
                     let resolved_fields = resolve_field_list(fields, base_regs)
-                    let count = field_list_length(resolved_fields)
+                    let count = resolved_fields.length
                     let field_arr = avra_llvm_type_array_new(count)
-                    fill_struct_field_types(field_arr, i64t, i1t, dt, pt, resolved_fields, 0)
+                    fill_struct_field_types(field_arr, i64t, i1t, dt, pt, resolved_fields)
                     let st = avra_llvm_get_type_by_name(ctx, name)
                     avra_llvm_struct_set_body(st, field_arr, count, 0)
                     avra_llvm_type_array_free(field_arr)
@@ -811,13 +812,13 @@ fn declare_variant_payloads(lc: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, enum
     mut i = 0
     while i < variants.length {
         let v = variants[i]
-        let count = field_list_length(v.fields)
+        let count = v.fields.length
         if count > 0 {
             let payload_name = variant_payload_name(enum_name, v.name)
             let vp_regs = TypeRegs { structs, enums, newtypes: nts, union_aliases: uas }
             let resolved_fields = resolve_field_list(v.fields, vp_regs)
             let arr = avra_llvm_type_array_new(count)
-            fill_struct_field_types(arr, i64t, i1t, dt, pt, resolved_fields, 0)
+            fill_struct_field_types(arr, i64t, i1t, dt, pt, resolved_fields)
             let st = avra_llvm_struct_create_named(lc, payload_name)
             avra_llvm_struct_set_body(st, arr, count, 0)
             avra_llvm_type_array_free(arr)
@@ -879,14 +880,13 @@ fn declare_enums_ext(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: Stm
 /// True when at least one field in `fields` lowers to an LLVM ptr
 /// (i.e. needs RC tracking). Used to decide whether a struct needs
 /// a `__release_TypeName` function.
-fn fields_have_rc(fields: FieldList) -> bool {
-    match fields {
-        .End -> false
-        .Node(_, resolved, next) -> {
-            if vtype_is_ptr_type(resolved) { true }
-            else { fields_have_rc(next) }
-        }
+fn fields_have_rc(fields: List<FieldEntry>) -> bool {
+    mut i = 0
+    while i < fields.length {
+        if vtype_is_ptr_type(fields[i].resolved) { return true }
+        i = i + 1
     }
+    false
 }
 
 /// True when at least one variant of an enum has a ptr-type field
@@ -971,26 +971,25 @@ fn emit_field_release(ctx: Ctx, val: ptr, ty: ValueType) {
 /// Emit a release sequence for every ptr-typed field of a struct.
 /// Each field is GEP'd, loaded, null-checked (skip on null), then
 /// passed through `emit_field_release` so the right teardown runs.
-fn emit_struct_field_releases(ctx: Ctx, obj: ptr, type_name: string, fields: FieldList, idx: int) {
-    match fields {
-        .End -> {}
-        .Node(fname, resolved, next) -> {
-            if vtype_is_ptr_type(resolved) {
-                let st_ty = ctx.get_type(type_name)
-                let fld_gep = avra_llvm_build_struct_gep2(ctx.builder, st_ty, obj, idx, "rel_${fname}_ptr")
-                let fld_val = avra_llvm_build_load(ctx.builder, ctx.ptr_type, fld_gep, "rel_${fname}")
-                // Null check: field may be uninitialized or nullable
-                let is_null = avra_llvm_build_icmp(ctx.builder, 32, fld_val, avra_llvm_const_null(ctx.ptr_type), "is_null_${fname}")
-                let then_bb = avra_llvm_append_basic_block(ctx.lc, ctx.current_fn, "rel_${fname}_skip")
-                let else_bb = avra_llvm_append_basic_block(ctx.lc, ctx.current_fn, "rel_${fname}_do")
-                avra_llvm_build_cond_br(ctx.builder, is_null, then_bb, else_bb)
-                avra_llvm_position_at_end(ctx.builder, else_bb)
-                emit_field_release(ctx, fld_val, resolved)
-                avra_llvm_build_br(ctx.builder, then_bb)
-                avra_llvm_position_at_end(ctx.builder, then_bb)
-            }
-            emit_struct_field_releases(ctx, obj, type_name, next, idx + 1)
+fn emit_struct_field_releases(ctx: Ctx, obj: ptr, type_name: string, fields: List<FieldEntry>) {
+    mut i = 0
+    while i < fields.length {
+        let e = fields[i]
+        if vtype_is_ptr_type(e.resolved) {
+            let st_ty = ctx.get_type(type_name)
+            let fld_gep = avra_llvm_build_struct_gep2(ctx.builder, st_ty, obj, i, "rel_${e.name}_ptr")
+            let fld_val = avra_llvm_build_load(ctx.builder, ctx.ptr_type, fld_gep, "rel_${e.name}")
+            // Null check: field may be uninitialized or nullable
+            let is_null = avra_llvm_build_icmp(ctx.builder, 32, fld_val, avra_llvm_const_null(ctx.ptr_type), "is_null_${e.name}")
+            let then_bb = avra_llvm_append_basic_block(ctx.lc, ctx.current_fn, "rel_${e.name}_skip")
+            let else_bb = avra_llvm_append_basic_block(ctx.lc, ctx.current_fn, "rel_${e.name}_do")
+            avra_llvm_build_cond_br(ctx.builder, is_null, then_bb, else_bb)
+            avra_llvm_position_at_end(ctx.builder, else_bb)
+            emit_field_release(ctx, fld_val, e.resolved)
+            avra_llvm_build_br(ctx.builder, then_bb)
+            avra_llvm_position_at_end(ctx.builder, then_bb)
         }
+        i = i + 1
     }
 }
 
@@ -1045,7 +1044,7 @@ fn emit_release_finish(sc: ReleaseScaffold, is_cyclic: bool) {
 /// user-supplied `Drop::drop` first when present (spec 9.4), then
 /// recursively releases every ptr-typed field, then `avra_rc_free`s
 /// the outer object.
-fn emit_release_body_struct(ctx: Ctx, name: string, fields: FieldList, is_cyclic: bool) {
+fn emit_release_body_struct(ctx: Ctx, name: string, fields: List<FieldEntry>, is_cyclic: bool) {
     let sc = emit_release_scaffold(ctx, name)
     if sc == null { return }
     let s = sc!
@@ -1055,7 +1054,7 @@ fn emit_release_body_struct(ctx: Ctx, name: string, fields: FieldList, is_cyclic
     if drop_fn != null {
         s.fctx.call("${name}__drop", [s.obj])
     }
-    emit_struct_field_releases(s.fctx, s.obj, name, fields, 0)
+    emit_struct_field_releases(s.fctx, s.obj, name, fields)
     s.fctx.call("avra_rc_free", [s.obj])
     avra_llvm_build_br(s.fctx.builder, s.done_bb)
     emit_release_finish(s, is_cyclic)
@@ -1071,28 +1070,27 @@ fn emit_release_body_struct(ctx: Ctx, name: string, fields: FieldList, is_cyclic
 /// `emit_struct_field_releases`, but the GEPs use the per-variant
 /// payload type (`%EnumName.VariantName`) rather than the outer
 /// enum struct.
-fn emit_variant_field_releases(ctx: Ctx, payload: ptr, enum_name: string, variant_name: string, fields: FieldList, idx: int) {
-    match fields {
-        .End -> {}
-        .Node(fname, resolved, next) -> {
-            if vtype_is_ptr_type(resolved) {
-                let payload_type_name = variant_payload_name(enum_name, variant_name)
-                let pay_ty = ctx.get_type(payload_type_name)
-                if pay_ty != null {
-                    let fld_gep = avra_llvm_build_struct_gep2(ctx.builder, pay_ty, payload, idx, "vrel_${fname}_ptr")
-                    let fld_val = avra_llvm_build_load(ctx.builder, ctx.ptr_type, fld_gep, "vrel_${fname}")
-                    let is_null = avra_llvm_build_icmp(ctx.builder, 32, fld_val, avra_llvm_const_null(ctx.ptr_type), "vrel_null_${fname}")
-                    let then_bb = avra_llvm_append_basic_block(ctx.lc, ctx.current_fn, "vrel_${fname}_skip")
-                    let else_bb = avra_llvm_append_basic_block(ctx.lc, ctx.current_fn, "vrel_${fname}_do")
-                    avra_llvm_build_cond_br(ctx.builder, is_null, then_bb, else_bb)
-                    avra_llvm_position_at_end(ctx.builder, else_bb)
-                    emit_field_release(ctx, fld_val, resolved)
-                    avra_llvm_build_br(ctx.builder, then_bb)
-                    avra_llvm_position_at_end(ctx.builder, then_bb)
-                }
+fn emit_variant_field_releases(ctx: Ctx, payload: ptr, enum_name: string, variant_name: string, fields: List<FieldEntry>) {
+    mut i = 0
+    while i < fields.length {
+        let e = fields[i]
+        if vtype_is_ptr_type(e.resolved) {
+            let payload_type_name = variant_payload_name(enum_name, variant_name)
+            let pay_ty = ctx.get_type(payload_type_name)
+            if pay_ty != null {
+                let fld_gep = avra_llvm_build_struct_gep2(ctx.builder, pay_ty, payload, i, "vrel_${e.name}_ptr")
+                let fld_val = avra_llvm_build_load(ctx.builder, ctx.ptr_type, fld_gep, "vrel_${e.name}")
+                let is_null = avra_llvm_build_icmp(ctx.builder, 32, fld_val, avra_llvm_const_null(ctx.ptr_type), "vrel_null_${e.name}")
+                let then_bb = avra_llvm_append_basic_block(ctx.lc, ctx.current_fn, "vrel_${e.name}_skip")
+                let else_bb = avra_llvm_append_basic_block(ctx.lc, ctx.current_fn, "vrel_${e.name}_do")
+                avra_llvm_build_cond_br(ctx.builder, is_null, then_bb, else_bb)
+                avra_llvm_position_at_end(ctx.builder, else_bb)
+                emit_field_release(ctx, fld_val, e.resolved)
+                avra_llvm_build_br(ctx.builder, then_bb)
+                avra_llvm_position_at_end(ctx.builder, then_bb)
             }
-            emit_variant_field_releases(ctx, payload, enum_name, variant_name, next, idx + 1)
         }
+        i = i + 1
     }
 }
 
@@ -1114,7 +1112,7 @@ fn emit_enum_variant_releases(ctx: Ctx, tag_val: ptr, payload: ptr, enum_name: s
             avra_llvm_build_cond_br(ctx.builder, cmp, match_bb, next_bb)
             avra_llvm_position_at_end(ctx.builder, match_bb)
             // Cast payload ptr to variant struct type and release fields
-            emit_variant_field_releases(ctx, payload, enum_name, v.name, v.fields, 0)
+            emit_variant_field_releases(ctx, payload, enum_name, v.name, v.fields)
             avra_llvm_build_br(ctx.builder, done_bb)
             avra_llvm_position_at_end(ctx.builder, next_bb)
         }
@@ -1291,27 +1289,32 @@ fn collect_union_aliases(stmts: StmtList, reg: CgUnionAliasReg) -> CgUnionAliasR
 /// the parser's `__base` marker, expands it to the base struct's
 /// fields, then optionally filters via `__without`/`__only`. Plain
 /// field lists pass through unchanged.
-fn resolve_type_operator(fields: FieldList, reg: StructReg) -> FieldList {
-    match fields {
-        .Node(marker, base_vt, rest) if marker == "__base" -> {
-            let base_name = vtype_struct_name(base_vt)
-            match rest {
-                .Node(op_marker, _, excluded_fields) -> {
-                    let base_lookup = struct_reg_lookup(reg, base_name)
-                    if !base_lookup.found { return FieldList.End }
-                    if op_marker == "__without" {
-                        return filter_fields_without(base_lookup.fields, excluded_fields)
-                    }
-                    if op_marker == "__only" {
-                        return filter_fields_only(base_lookup.fields, excluded_fields)
-                    }
-                    base_lookup.fields
-                }
-                _ -> fields
-            }
-        }
-        _ -> fields
+fn resolve_type_operator(fields: List<FieldEntry>, reg: StructReg) -> List<FieldEntry> {
+    // Sentinel-prefixed shape: [__base(base_vt), __without|__only,
+    // <name1>, <name2>, ...]. Anything else passes through unchanged
+    // (a regular struct field list).
+    if fields.length < 2 { return fields }
+    let head = fields[0]
+    if head.name != "__base" { return fields }
+    let base_name = vtype_struct_name(head.resolved)
+    let op_marker = fields[1].name
+    // Slice the user-listed names off the tail — they were pushed
+    // straight off `parse_ident_list` so each entry's `.name` is the
+    // identifier; the resolved type is `.Unknown` and unused here.
+    mut excluded: List<FieldEntry> = []
+    mut i = 2
+    while i < fields.length {
+        excluded.push(fields[i])
+        i = i + 1
     }
+    let base_lookup = struct_reg_lookup(reg, base_name)
+    if !base_lookup.found {
+        let empty: List<FieldEntry> = []
+        return empty
+    }
+    if op_marker == "__without" { return filter_fields_without(base_lookup.fields, excluded) }
+    if op_marker == "__only" { return filter_fields_only(base_lookup.fields, excluded) }
+    base_lookup.fields
 }
 
 // field_list_has, filter_fields_without, filter_fields_only now in core/ast.av

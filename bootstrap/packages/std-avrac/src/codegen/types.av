@@ -12,7 +12,7 @@
 //                                 logic (features/<X>/codegen.av)
 //                                 or the dispatchers (codegen.av)
 
-use core.{Expr, SExpr, VarEnv, FieldList, Variant, ValueType, TypeList, type_list_len, type_list_at, vtype_is_str, vtype_is_unknown, variant_lookup, vtype_eq, field_list_length, field_vtype_of, env_extend, union_type_list_merge, find_type_pipe}
+use core.{Expr, SExpr, VarEnv, FieldEntry, Variant, ValueType, TypeList, type_list_len, type_list_at, vtype_is_str, vtype_is_unknown, variant_lookup, vtype_eq, field_vtype_of, env_extend, union_type_list_merge, find_type_pipe}
 use core.{Registry}
 use core.{TypeRegistry, type_registry_id_for, type_registry_name_for}
 use core.{avra_coverage_emit_hit, avra_covmap_alloc, avra_covmap_counter_count, avra_coverage_finalize_fn}
@@ -339,25 +339,12 @@ fn closure_marker() -> int { -559038737 }
 // codegen.av unblocks feature-codegen extraction without dragging
 // the registry state along with them.
 
-/// Drop the head of a FieldList, returning the tail. `.End` when
-/// already empty. Convenience for callers walking field lists in
-/// step with index counters.
-export fn advance_field_list(fields: FieldList) -> FieldList {
-    match fields {
-        .End -> .End
-        .Node(_, _, next) -> next
-    }
-}
-
 /// Get the resolved ValueType of the Nth field (0-indexed). Returns
 /// `Unknown` when `idx` is out of range — callers must be prepared
 /// for that.
-export fn field_resolved_at(fields: FieldList, idx: int) -> ValueType {
-    match fields {
-        .End -> .Unknown
-        .Node(_, vt, _) if idx <= 0 -> vt
-        .Node(_, _, next) -> field_resolved_at(next, idx - 1)
-    }
+export fn field_resolved_at(fields: List<FieldEntry>, idx: int) -> ValueType {
+    if idx < 0 || idx >= fields.length { return ValueType.Unknown }
+    fields[idx].resolved
 }
 
 // ── Type registries ──
@@ -519,11 +506,11 @@ export fn releasable_has(set: ReleasableSet, name: string) -> bool {
 /// `__release_TypeName` body lives in the producer's `.o` and we
 /// must emit only the declaration here, not a duplicate body
 /// (g2eo Phase A: per-module compile filter).
-export type StructRegMeta = { name: string, fields: FieldList, external: bool }
+export type StructRegMeta = { name: string, fields: List<FieldEntry>, external: bool }
 
-/// Registry of declared struct types — `name → FieldList`. Built by
-/// the declaration pass; carried as `Ctx.structs`. Hashmap-backed
-/// for O(1) lookup, same pattern as FnRetTypes / typeck registries.
+/// Registry of declared struct types — `name → List<FieldEntry>`.
+/// Built by the declaration pass; carried as `Ctx.structs`. Hashmap-
+/// backed for O(1) lookup, same pattern as FnRetTypes / typeck registries.
 export type StructReg = {
     ord: List<StructRegMeta>,
     idx: ptr,
@@ -533,7 +520,7 @@ export fn struct_reg_new() -> StructReg {
     StructReg { ord: [], idx: avra_map_new_cstr() }
 }
 
-export fn struct_reg_register(reg: StructReg, name: string, fields: FieldList) -> StructReg {
+export fn struct_reg_register(reg: StructReg, name: string, fields: List<FieldEntry>) -> StructReg {
     struct_reg_register_full(reg, name, fields, false)
 }
 
@@ -541,7 +528,7 @@ export fn struct_reg_register(reg: StructReg, name: string, fields: FieldList) -
 /// originates from an `@external_unit` module. Used by per-module
 /// compile (g2eo Phase A) to skip emitting `__release_TypeName`
 /// bodies for types defined elsewhere.
-export fn struct_reg_register_full(reg: StructReg, name: string, fields: FieldList, external: bool) -> StructReg {
+export fn struct_reg_register_full(reg: StructReg, name: string, fields: List<FieldEntry>, external: bool) -> StructReg {
     mut ord = reg.ord
     let new_idx = ord.length
     ord.push(StructRegMeta { name, fields, external })
@@ -552,13 +539,16 @@ export fn struct_reg_register_full(reg: StructReg, name: string, fields: FieldLi
 /// Result of a struct registry lookup. `found` is 1 when present.
 export type StructLookup = {
     found: int,
-    fields: FieldList,
+    fields: List<FieldEntry>,
 }
 
 /// Look up a struct by name. Always returns a StructLookup — callers
 /// inspect `.found` to distinguish hit from miss.
 export fn struct_reg_lookup(reg: StructReg, name: string) -> StructLookup {
-    if avra_map_has_cstr(reg.idx, name) == 0 { return StructLookup { found: false, fields: .End } }
+    if avra_map_has_cstr(reg.idx, name) == 0 {
+        let empty: List<FieldEntry> = []
+        return StructLookup { found: false, fields: empty }
+    }
     let i = avra_map_get_cstr(reg.idx, name)
     StructLookup { found: true, fields: reg.ord[i].fields }
 }
@@ -636,7 +626,7 @@ export fn enum_reg_find_by_variant_arity(reg: EnumReg, variant: string, arity: i
     while i >= 0 {
         let m = reg.ord[i]
         let v = variant_lookup(m.variants, variant)
-        if v.found && field_list_length(v.fields) == arity { return m.name }
+        if v.found && v.fields.length == arity { return m.name }
         i = i - 1
     }
     ""
@@ -1307,12 +1297,15 @@ impl Ctx {
         }
     }
 
-    fn resolve_fields(self, fields: FieldList) -> FieldList {
-        match fields {
-            .End -> .End
-            .Node(name, pv, next) ->
-                .Node(name, self.resolve_codegen_vtype(pv), self.resolve_fields(next))
+    fn resolve_fields(self, fields: List<FieldEntry>) -> List<FieldEntry> {
+        mut out: List<FieldEntry> = []
+        mut i = 0
+        while i < fields.length {
+            let e = fields[i]
+            out.push(FieldEntry { name: e.name, resolved: self.resolve_codegen_vtype(e.resolved) })
+            i = i + 1
         }
+        out
     }
 
     // Upgrade a parser-resolved ValueType using codegen registries.
@@ -1349,7 +1342,7 @@ impl Ctx {
         match types { .End -> .End, .Node(ty, next) -> TypeList.Node(self.resolve_codegen_vtype(ty), self.resolve_codegen_vtype_list(next)) }
     }
 
-    fn resolve_field_type(self, fields: FieldList, name: string) -> ValueType {
+    fn resolve_field_type(self, fields: List<FieldEntry>, name: string) -> ValueType {
         let vt = field_vtype_of(fields, name)
         self.resolve_codegen_vtype(vt)
     }

@@ -9,7 +9,7 @@
 // Phase 2 of Components V2 (vez6.2). The program-walker that calls
 // this on every call site lives in rewrite.av.
 
-use core.{Expr, ExprList, sexpr_dummy, Stmt, StmtList, sstmt_dummy, ValueType, BinOp, UnOp, LogicOp, ParamList, TypeParamEntry, FieldList, CompConfigPair}
+use core.{Expr, ExprList, sexpr_dummy, Stmt, StmtList, sstmt_dummy, ValueType, BinOp, UnOp, LogicOp, ParamList, TypeParamEntry, FieldEntry, CompConfigPair}
 use features.eval.{Runtime, Value, eval_expr, eval_fn_with_resolved_args, literal_args_to_values, step_value, step_had_error}
 use features.comptime.{CompTimeFn, CompTimeRegistry, comptime_lookup}
 use features.quote_expr.{construct_stmt}
@@ -426,15 +426,22 @@ fn enum_value_to_stmt(v: Value) -> Stmt? {
         }
         "TypeDecl" -> {
             // `type Name<T> = { f1: T1, ... }`. Payload:
-            // (name: string, type_params: List<TypeParamEntry>, fields: FieldList).
-            // Field types are encoded as Unknown by lower.av — the
-            // re-resolve pass populates the real types.
+            // (name: string, type_params: List<TypeParamEntry>,
+            //  fields: List<FieldEntry>).
+            //
+            // lkze.9 #13: fields is now a struct-list. The comptime
+            // Value union models only enum + primitive values — list
+            // and struct shapes don't flow through this decoder, so
+            // macro-emitted TypeDecls land here with empty type-params
+            // and an empty fields slot (mirrors the existing
+            // type-params treatment). Expanding Value to model list /
+            // struct values is its own lift (filed as future work).
             if p.length != 3 { return null }
             let name_v: Value = p[0]
             let tp = enum_value_to_type_param_list(p[1])
-            let fields = enum_value_to_field_list(p[2])
-            if tp == null || fields == null { return null }
-            Stmt.TypeDecl(name_v.text, tp!, fields!)
+            if tp == null { return null }
+            let empty_fields: List<FieldEntry> = []
+            Stmt.TypeDecl(name_v.text, tp!, empty_fields)
         }
         "ComponentBlock" -> {
             // `comp_name instance { config; body }`. Payload:
@@ -461,27 +468,13 @@ fn enum_value_to_stmt(v: Value) -> Stmt? {
     }
 }
 
-/// Decode a FieldList from its enum-Value form. Mirrors ParamList —
-/// (name: string, resolved_vtype: ValueType, next) with the slot 1
-/// vtype currently always Unknown post-quote.
-fn enum_value_to_field_list(v: Value) -> FieldList? {
-    if v.kind != "enum" { return null }
-    if v.enum_type != "@std::avrac::core::FieldList" { return null }
-    match v.enum_variant {
-        "End" -> FieldList.End
-        "Node" -> {
-            let p = v.enum_payload
-            if p.length != 3 { return null }
-            let name_v: Value = p[0]
-            let vt = enum_value_to_value_type(p[1])
-            let rest = enum_value_to_field_list(p[2])
-            if rest == null { return null }
-            let resolved_vt = if vt == null { ValueType.Unknown } else { vt! }
-            FieldList.Node(name_v.text, resolved_vt, rest!)
-        }
-        _ -> null
-    }
-}
+// enum_value_to_field_list was deleted alongside FieldList: the
+// comptime Value union doesn't model `List<T>` or struct shapes, so
+// macro-emitted TypeDecls now decode with an empty `List<FieldEntry>`
+// (same treatment as type_params and component-block config above).
+// Once Value grows list/struct support, the decoder can be
+// reintroduced — for now the dropped slot is documented at the
+// TypeDecl decode site.
 
 /// Decode a `List<TypeParamEntry>` from its evaluator-Value form.
 ///

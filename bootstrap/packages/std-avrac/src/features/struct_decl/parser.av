@@ -1,7 +1,7 @@
 // WHY: parses `type Foo = { ... }` and `shape Foo = { ... }` declarations
 // and the supporting field grammars (declaration + literal init).
 
-use core.{Stmt, Expr, FieldList, FieldInitList, SExpr, sexpr, TypeParamEntry, TypeExpr, ValueType, type_expr_to_vtype}
+use core.{Stmt, Expr, FieldEntry, FieldInitList, SExpr, sexpr, TypeParamEntry, TypeExpr, ValueType, type_expr_to_vtype}
 use parse.{Parser}
 use core.{Tk}
 
@@ -60,7 +60,20 @@ impl Parser {
                         if !self.consume(Tk.LeftBrace, "expected `{` after type operator") { return null }
                         let op_fields = self.parse_ident_list()
                         if !self.consume(Tk.RightBrace, "expected `}` after type operator fields") { return null }
-                        let derived = FieldList.Node("__base", type_expr_to_vtype(type_expr), FieldList.Node("__" + op, ValueType.Str, op_fields))
+                        // Synthetic FieldEntry list: a `__base` sentinel
+                        // carrying the underlying type, a `__without` /
+                        // `__only` marker, then the user-listed field
+                        // names. codegen/setup.av's `resolve_type_operator`
+                        // walks this exact shape, so the marker name needs
+                        // to be `__without` / `__only`, not `__op`.
+                        mut derived: List<FieldEntry> = []
+                        derived.push(FieldEntry { name: "__base", resolved: type_expr_to_vtype(type_expr) })
+                        derived.push(FieldEntry { name: "__" + op, resolved: ValueType.Str })
+                        mut k = 0
+                        while k < op_fields.length {
+                            derived.push(op_fields[k])
+                            k = k + 1
+                        }
                         return Stmt.TypeDecl(name, tp, derived)
                     }
                 }
@@ -68,7 +81,8 @@ impl Parser {
                 return Stmt.NewtypeDecl(name, type_expr_to_vtype(type_expr))
             }
         }
-        Stmt.TypeDecl(name, tp, FieldList.End)
+        let empty: List<FieldEntry> = []
+        Stmt.TypeDecl(name, tp, empty)
     }
 
     // shape Name = { field: Type, ... }
@@ -89,36 +103,44 @@ impl Parser {
         Stmt.ShapeDecl(name, fields)
     }
 
-    // Parse a list of identifiers separated by commas: {a, b, c}
-    fn parse_ident_list(self) -> FieldList {
-        if self.check(Tk.RightBrace) { return FieldList.End }
-        if !self.check(Tk.Identifier) { return FieldList.End }
-        let id = self.current_lexeme
-        self.advance()
-        if self.check(Tk.Comma) { self.advance() }
-        FieldList.Node(id, ValueType.Unknown, self.parse_ident_list())
+    // Parse a list of identifiers separated by commas: {a, b, c}.
+    // Returns a `List<FieldEntry>` whose entries have
+    // `resolved: ValueType.Unknown` — the marker-list pattern used
+    // by `type X = Base without { ... }` packs the names into the
+    // same FieldEntry shape so `resolve_type_operator` can treat the
+    // tail as a plain field list.
+    fn parse_ident_list(self) -> List<FieldEntry> {
+        mut out: List<FieldEntry> = []
+        while !self.check(Tk.RightBrace) {
+            if !self.check(Tk.Identifier) { return out }
+            let id = self.current_lexeme
+            self.advance()
+            out.push(FieldEntry { name: id, resolved: ValueType.Unknown })
+            if self.check(Tk.Comma) { self.advance() }
+        }
+        out
     }
 
-    fn parse_field_list(self) -> FieldList? {
-        if self.check(Tk.RightBrace) {
-            return FieldList.End
+    fn parse_field_list(self) -> List<FieldEntry>? {
+        // Source-order loop pushing into a growable list. The prior
+        // recursion built `.Node(name, ty, .Node(...))` head-first
+        // and propagated the inner `?` via cons; switching to a
+        // mutable accumulator with `?`-propagation keeps the same
+        // error semantics (early return on missing colon / type).
+        mut out: List<FieldEntry> = []
+        while !self.check(Tk.RightBrace) {
+            // Optional `mut` modifier — ignored for now.
+            if self.check(Tk.KwMut) { self.advance() }
+            let name = self.consume_identifier("expected field name")?
+            if !self.consume(Tk.Colon, "expected `:` after field name") {
+                return null
+            }
+            let te = self.parse_type_expr("expected field type")?
+            let resolved = type_expr_to_vtype(te)
+            out.push(FieldEntry { name, resolved })
+            if self.check(Tk.Comma) { self.advance() }
         }
-        // Optional `mut` modifier — ignored for now.
-        if self.check(Tk.KwMut) {
-            self.advance()
-        }
-        let name = self.consume_identifier("expected field name")?
-        if !self.consume(Tk.Colon, "expected `:` after field name") {
-            return null
-        }
-        let te = self.parse_type_expr("expected field type")?
-        let resolved = type_expr_to_vtype(te)
-        if self.check(Tk.Comma) {
-            self.advance()
-            let rest = self.parse_field_list()?
-            return FieldList.Node(name, resolved, rest)
-        }
-        FieldList.Node(name, resolved, FieldList.End)
+        out
     }
 
     fn parse_field_init_list(self) -> FieldInitList? {

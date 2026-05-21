@@ -9,7 +9,7 @@
 // In the bootstrap's everything-is-i64 model, null == 0. These
 // operators compile to i64 null-check or enum-tag-check branches.
 
-use core.{Expr, VarEnv, FieldList, field_index_of, ValueType, vtype_eq, vtype_is_unknown, vtype_is_str, vtype_struct_name, vtype_enum_name, vtype_enum_type_args, variant_lookup}
+use core.{Expr, VarEnv, FieldEntry, field_index_of, ValueType, vtype_eq, vtype_is_unknown, vtype_is_str, vtype_struct_name, vtype_enum_name, vtype_enum_type_args, variant_lookup}
 use core.{is_result_enum_name, is_result_shaped_enum}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, field_resolved_at, vtype_is_ptr_type}
 use features.defer_stmt.{emit_defers_on_error}
@@ -272,7 +272,8 @@ export fn emit_catch(ctx: Ctx, env: VarEnv, inner: Expr, binding: string, body: 
             let err_pay_ptr = ctx.load(ctx.ptr_type, err_pay_gep, "catch_err_payload")
             let err_val = ctx.load_i64(err_pay_ptr, "catch_err_val")
             let lookup = ctx.lookup_enum(enum_name)
-            let err_fields = if lookup.found { variant_lookup(lookup.variants, "Err").fields } else { FieldList.End }
+            let empty_fields: List<FieldEntry> = []
+            let err_fields = if lookup.found { variant_lookup(lookup.variants, "Err").fields } else { empty_fields }
             let err_ty = field_resolved_at(err_fields, 0)
             ctx.bind(env, binding, err_val, err_ty)
         } else { env }

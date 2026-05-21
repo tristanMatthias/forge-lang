@@ -3,7 +3,7 @@
 // checking and before codegen. After this pass, the AST contains no
 // generic declarations — codegen sees only concrete code.
 
-use core.{Expr, ExprList, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, StmtList, ParamList, FieldList, FieldInitList, TypeList, Variant, MatchArmList, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge, SelectArm}
+use core.{Expr, ExprList, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, StmtList, ParamList, FieldEntry, FieldInitList, TypeList, Variant, MatchArmList, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge, SelectArm}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_warning, span_new}
 use typeck.{TraitImplReg, type_implements_trait}
 use core.{mangle_join, type_short_name}
@@ -42,7 +42,7 @@ type GenericEnumEntry = {
 type GenericStructEntry = {
     name: string,
     tp: List<TypeParamEntry>,
-    fields: FieldList,
+    fields: List<FieldEntry>,
 }
 
 /// Find a generic fn by name. Returns the matching entry, or
@@ -366,14 +366,24 @@ fn mangle_ordered(tp: List<TypeParamEntry>, ta: List<TypeArg>) -> string {
 /// Infer concrete type-args for an enum / struct constructor
 /// by pairing the declared field types with the arg
 /// expressions and binding any T params that appear.
-fn infer_from_fields(tp: List<TypeParamEntry>, fields: FieldList, args: ExprList, acc: List<TypeArg>) -> List<TypeArg> {
-    match fields {
-        .End -> acc
-        .Node(_, resolved, rest) -> match args {
-            .End -> acc
-            .Node(arg, rest_args) -> infer_from_fields(tp, rest, rest_args, unify_param(tp, resolved, arg.ty, acc))
+fn infer_from_fields(tp: List<TypeParamEntry>, fields: List<FieldEntry>, args: ExprList, acc: List<TypeArg>) -> List<TypeArg> {
+    // Walk the field list with an index counter, threading `acc`
+    // through `unify_param` so each new binding lives at the head
+    // (lookup semantics match the prior cons-prepend recursion).
+    mut out = acc
+    mut i = 0
+    mut a = args
+    while i < fields.length {
+        match a {
+            .End -> return out
+            .Node(arg, rest_args) -> {
+                out = unify_param(tp, fields[i].resolved, arg.ty, out)
+                a = rest_args
+                i = i + 1
+            }
         }
     }
+    out
 }
 
 /// Recursively unify a declared param type against a concrete arg
@@ -510,7 +520,7 @@ fn infer_from_params(tp: List<TypeParamEntry>, params: ParamList, args: ExprList
 
 /// Infer type-args from a struct literal's field initializers
 /// by matching each init against its declared field type.
-fn infer_from_field_inits(tp: List<TypeParamEntry>, fields: FieldList, inits: FieldInitList, acc: List<TypeArg>) -> List<TypeArg> {
+fn infer_from_field_inits(tp: List<TypeParamEntry>, fields: List<FieldEntry>, inits: FieldInitList, acc: List<TypeArg>) -> List<TypeArg> {
     match inits {
         .End -> acc
         .Node(name, val, next) -> {
@@ -532,8 +542,14 @@ fn infer_from_field_inits(tp: List<TypeParamEntry>, fields: FieldList, inits: Fi
 
 /// Look up a field's declared type-name (as a string) by
 /// field name. Returns "" when not found.
-fn field_type_for(fields: FieldList, name: string) -> string {
-    match fields { .End -> "", .Node(n, vt, _) if n == name -> vtype_display(vt), .Node(_, _, next) -> field_type_for(next, name) }
+fn field_type_for(fields: List<FieldEntry>, name: string) -> string {
+    mut i = 0
+    while i < fields.length {
+        let e = fields[i]
+        if e.name == name { return vtype_display(e.resolved) }
+        i = i + 1
+    }
+    ""
 }
 
 // Validate that all type params are resolved. Emit F1002 for each missing one.
@@ -1069,7 +1085,7 @@ fn specialize_enum(mangled: string, variants: List<Variant>, ta: List<TypeArg>) 
 }
 /// Specialise a generic struct — mirror of `specialize_fn`.
 /// Substitutes type params in every field's declared type.
-fn specialize_struct(mangled: string, fields: FieldList, ta: List<TypeArg>) -> Stmt {
+fn specialize_struct(mangled: string, fields: List<FieldEntry>, ta: List<TypeArg>) -> Stmt {
     let empty_tp: List<TypeParamEntry> = []
     Stmt.TypeDecl(mangled, empty_tp, substitute_fields(fields, ta))
 }
@@ -1144,11 +1160,15 @@ fn substitute_params(params: ParamList, ta: List<TypeArg>) -> ParamList {
     }}
 }
 /// Substitute type-args into every field's declared type.
-fn substitute_fields(fields: FieldList, ta: List<TypeArg>) -> FieldList {
-    match fields { .End -> .End, .Node(n, r, next) -> {
-        let subst_r = substitute_vtype(r, ta)
-        FieldList.Node(n, subst_r, substitute_fields(next, ta))
-    }}
+fn substitute_fields(fields: List<FieldEntry>, ta: List<TypeArg>) -> List<FieldEntry> {
+    mut out: List<FieldEntry> = []
+    mut i = 0
+    while i < fields.length {
+        let e = fields[i]
+        out.push(FieldEntry { name: e.name, resolved: substitute_vtype(e.resolved, ta) })
+        i = i + 1
+    }
+    out
 }
 /// Substitute type-args into every variant's payload fields.
 fn substitute_variants(variants: List<Variant>, ta: List<TypeArg>) -> List<Variant> {

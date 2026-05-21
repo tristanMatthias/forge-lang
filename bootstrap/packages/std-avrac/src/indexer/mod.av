@@ -17,7 +17,7 @@
 use core.{avra_selfhost_read_file, avra_shell_exec}
 use core.{Stmt, StmtList, SStmt,
               Expr, SExpr, ExprList,
-              ParamList, FieldList,
+              ParamList, FieldEntry,
               Variant, ValueType, TypeParamEntry, render_type_param_list,
               vtype_display, vtype_render_full,
               find_annotation, doc_string_for, stmt_unwrap}
@@ -425,32 +425,30 @@ fn render_type_decl(name: string, tp: List<TypeParamEntry>) -> string {
 /// `type Point = { x: int, y: int }`. Used by the indexer so
 /// `docs --gen` can recover field names without re-parsing the
 /// source.
-fn render_type_decl_with_fields(name: string, tp: List<TypeParamEntry>, fields: FieldList) -> string {
+fn render_type_decl_with_fields(name: string, tp: List<TypeParamEntry>, fields: List<FieldEntry>) -> string {
     let header = render_type_decl(name, tp)
     let body = render_field_decls(fields)
     if body == "" { return header }
     "${header} = { ${body} }"
 }
 
-/// Render the head field of a comma-separated `name: ty, name: ty`
-/// list. Used by `render_type_decl_with_fields`.
-fn render_field_decls(fields: FieldList) -> string {
-    match fields {
-        .End -> ""
-        .Node(name, vt, next) -> {
-            let rest = render_field_decls_tail(next)
-            "${name}: ${vtype_display(vt)}${rest}"
+/// Render `name: ty, name: ty` for a field list. Used by
+/// `render_type_decl_with_fields`. Single-pass joiner — the prior
+/// head/tail split (`render_field_decls` + `render_field_decls_tail`)
+/// collapses into one loop with an `i == 0` guard.
+fn render_field_decls(fields: List<FieldEntry>) -> string {
+    mut out = ""
+    mut i = 0
+    while i < fields.length {
+        let e = fields[i]
+        if i == 0 {
+            out = "${e.name}: ${vtype_display(e.resolved)}"
+        } else {
+            out = "${out}, ${e.name}: ${vtype_display(e.resolved)}"
         }
+        i = i + 1
     }
-}
-
-/// Tail half of `render_field_decls`: prepend `, ` between items
-/// while keeping the head clean.
-fn render_field_decls_tail(fields: FieldList) -> string {
-    match fields {
-        .End -> ""
-        .Node(name, vt, next) -> ", ${name}: ${vtype_display(vt)}${render_field_decls_tail(next)}"
-    }
+    out
 }
 
 /// Render the head element of a comma-separated `name: ty` param

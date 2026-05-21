@@ -5,7 +5,7 @@
 // Implementation: malloc new struct, copy all fields from original,
 // then overwrite the specified fields with new values.
 
-use core.{Expr, FieldList, FieldInitList, VarEnv, field_index_of, field_list_length, vtype_struct_name, vtype_display}
+use core.{Expr, FieldEntry, FieldInitList, VarEnv, field_index_of, vtype_struct_name, vtype_display}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
 
@@ -37,16 +37,15 @@ fn emit_with_inner(ctx: Ctx, env: VarEnv, obj: Expr, overrides: FieldInitList) -
     // Count fields and allocate new struct
     // Copy-type stack allocation (spec 9.12): if a pre-allocated stack
     // target exists (set by emit_var_decl), write directly into it.
-    let field_count = field_list_length(lookup.fields)
     let new_buf = if ctx.copy_alloc_target != null {
         ctx.copy_alloc_target
     } else {
-        ctx.arena_alloc(ctx.i64(field_count * 8))
+        ctx.arena_alloc(ctx.i64(lookup.fields.length * 8))
     }
     let src_ptr = ctx.to_ptr(r.value, "with_src")
 
     // Copy all fields from original
-    copy_struct_fields(ctx, src_ptr, new_buf, struct_name, lookup.fields, 0)
+    copy_struct_fields(ctx, src_ptr, new_buf, struct_name, lookup.fields)
 
     // Override specified fields
     apply_overrides(ctx, env, new_buf, struct_name, lookup.fields, overrides)?
@@ -58,21 +57,20 @@ fn emit_with_inner(ctx: Ctx, env: VarEnv, obj: Expr, overrides: FieldInitList) -
 /// load/store. Respects each field's LLVM type via `store_field`
 /// so packed bool/i1 fields don't overwrite adjacent slots
 /// (ticket 14s7 was a 64-bit store clobbering a neighbouring i1).
-fn copy_struct_fields(ctx: Ctx, src: ptr, dst: ptr, struct_name: string, fields: FieldList, idx: int) {
-    match fields {
-        .End -> {}
-        .Node(_, resolved, next) -> {
-            let st_ty = ctx.get_type(struct_name)
-            let src_gep = ctx.gep(st_ty, src, idx, "with_cp_src")
-            let val = ctx.load_typed(resolved, src_gep, "with_cp_val")
-            let dst_gep = ctx.gep(st_ty, dst, idx, "with_cp_dst")
-            // store_field respects the destination field's LLVM type
-            // (i1 for bool, ptr for refs, etc.). Plain ctx.store would
-            // write 8 bytes and clobber adjacent packed bool fields
-            // (forge-crafting-intepreters-14s7).
-            ctx.store_field(val, dst_gep, resolved)
-            copy_struct_fields(ctx, src, dst, struct_name, next, idx + 1)
-        }
+fn copy_struct_fields(ctx: Ctx, src: ptr, dst: ptr, struct_name: string, fields: List<FieldEntry>) {
+    let st_ty = ctx.get_type(struct_name)
+    mut i = 0
+    while i < fields.length {
+        let resolved = fields[i].resolved
+        let src_gep = ctx.gep(st_ty, src, i, "with_cp_src")
+        let val = ctx.load_typed(resolved, src_gep, "with_cp_val")
+        let dst_gep = ctx.gep(st_ty, dst, i, "with_cp_dst")
+        // store_field respects the destination field's LLVM type
+        // (i1 for bool, ptr for refs, etc.). Plain ctx.store would
+        // write 8 bytes and clobber adjacent packed bool fields
+        // (forge-crafting-intepreters-14s7).
+        ctx.store_field(val, dst_gep, resolved)
+        i = i + 1
     }
 }
 
@@ -81,7 +79,7 @@ fn copy_struct_fields(ctx: Ctx, src: ptr, dst: ptr, struct_name: string, fields:
 /// up each field's index, emits the override expression, and
 /// stores it via `store_field`. Union-typed fields receive a
 /// `union_wrap` first when needed.
-fn apply_overrides(ctx: Ctx, env: VarEnv, dst: ptr, struct_name: string, fields: FieldList, overrides: FieldInitList) -> Result<int, string> {
+fn apply_overrides(ctx: Ctx, env: VarEnv, dst: ptr, struct_name: string, fields: List<FieldEntry>, overrides: FieldInitList) -> Result<int, string> {
     match overrides {
         .End -> .Ok(0)
         .Node(name, sv, next) -> {

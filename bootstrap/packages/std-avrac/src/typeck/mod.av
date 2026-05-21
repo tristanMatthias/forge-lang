@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.{BinOp, Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, SExpr, SStmt, Stmt, StmtList, TypeArg, TypeList, TypeParamEntry, ValueType, Variant, WhenArm, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_list_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_is_fn, vtype_is_unknown, vtype_list_elem, vtype_struct_name, vtype_tuple_at}
+use core.{BinOp, Expr, ExprList, FieldInitList, FieldEntry, MatchArmList, ParamList, Pattern, SExpr, SStmt, Stmt, StmtList, TypeArg, TypeList, TypeParamEntry, ValueType, Variant, WhenArm, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_list_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_is_fn, vtype_is_unknown, vtype_list_elem, vtype_struct_name, vtype_tuple_at}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive}
@@ -201,13 +201,13 @@ export fn tc_catch_ok_type(tc: TC, inner: Expr) -> ValueType? {
 // ── Struct/Enum registries ──
 
 /// One struct's metadata in StructTypeReg's `ord` list.
-type StructTypeMeta = { name: string, fields: FieldList }
+type StructTypeMeta = { name: string, fields: List<FieldEntry> }
 
-/// Struct-name → FieldList table. Populated during the `collect_decls`
-/// pre-pass; consulted by struct-literal and field-access typecheck.
-/// Same hashmap-backed shape as FnTypeReg — O(1) lookup via cstr_map
-/// index into the insertion-ordered list. Replaces a cons-list that
-/// was O(n) per lookup.
+/// Struct-name → `List<FieldEntry>` table. Populated during the
+/// `collect_decls` pre-pass; consulted by struct-literal and
+/// field-access typecheck. Same hashmap-backed shape as FnTypeReg —
+/// O(1) lookup via cstr_map index into the insertion-ordered list.
+/// Replaces a cons-list that was O(n) per lookup.
 type StructTypeReg = {
     ord: List<StructTypeMeta>,
     idx: ptr,
@@ -217,7 +217,7 @@ fn struct_type_reg_new() -> StructTypeReg {
     StructTypeReg { ord: [], idx: avra_map_new_cstr() }
 }
 
-fn struct_type_reg_register(reg: StructTypeReg, name: string, fields: FieldList) -> StructTypeReg {
+fn struct_type_reg_register(reg: StructTypeReg, name: string, fields: List<FieldEntry>) -> StructTypeReg {
     mut ord = reg.ord
     let new_idx = ord.length
     ord.push(StructTypeMeta { name, fields })
@@ -225,21 +225,26 @@ fn struct_type_reg_register(reg: StructTypeReg, name: string, fields: FieldList)
     StructTypeReg { ord, idx: reg.idx }
 }
 
-/// Look up a single field's resolved type within a FieldList. Returns
-/// ValueType.Unknown when the field name isn't found. Used by the
-/// kkgf annotate fast-path to skip a redundant check_expr re-walk
-/// for `obj.field` reads when obj is a bare identifier.
-export fn field_type_lookup(fields: FieldList, name: string) -> ValueType {
-    match fields {
-        .End -> ValueType.Unknown
-        .Node(fname, fty, _) if fname == name -> fty
-        .Node(_, _, next) -> field_type_lookup(next, name)
+/// Look up a single field's resolved type within a field list.
+/// Returns ValueType.Unknown when the field name isn't found. Used
+/// by the kkgf annotate fast-path to skip a redundant check_expr
+/// re-walk for `obj.field` reads when obj is a bare identifier.
+export fn field_type_lookup(fields: List<FieldEntry>, name: string) -> ValueType {
+    mut i = 0
+    while i < fields.length {
+        let e = fields[i]
+        if e.name == name { return e.resolved }
+        i = i + 1
     }
+    ValueType.Unknown
 }
 
-/// Look up a struct's FieldList by name. Empty list when not found.
-export fn struct_type_lookup(reg: StructTypeReg, name: string) -> FieldList {
-    if avra_map_has_cstr(reg.idx, name) == 0 { return FieldList.End }
+/// Look up a struct's field list by name. Empty list when not found.
+export fn struct_type_lookup(reg: StructTypeReg, name: string) -> List<FieldEntry> {
+    if avra_map_has_cstr(reg.idx, name) == 0 {
+        let empty: List<FieldEntry> = []
+        return empty
+    }
     let i = avra_map_get_cstr(reg.idx, name)
     reg.ord[i].fields
 }
@@ -715,22 +720,25 @@ export fn typecheck_program(stmts: StmtList) -> TypeCheckResult {
 /// list that's actually a request to compose another struct's
 /// fields. Inlines the resolved fields so downstream typecheck
 /// sees a flat shape.
-fn tc_resolve_type_operator(fields: FieldList, reg: StructTypeReg) -> FieldList {
-    match fields {
-        .Node(marker, base_vt, rest) if marker == "__base" -> {
-            let base_name = vtype_struct_name(base_vt)
-            match rest {
-                .Node(op_marker, _, excluded) -> {
-                    let base_fields = struct_type_lookup(reg, base_name)
-                    if op_marker == "__without" { return filter_fields_without(base_fields, excluded) }
-                    if op_marker == "__only" { return filter_fields_only(base_fields, excluded) }
-                    base_fields
-                }
-                _ -> fields
-            }
-        }
-        _ -> fields
+fn tc_resolve_type_operator(fields: List<FieldEntry>, reg: StructTypeReg) -> List<FieldEntry> {
+    // Same sentinel-prefixed shape as codegen-side
+    // `resolve_type_operator` — [__base(base_vt), __without|__only,
+    // names...] — see that function for the layout's origin.
+    if fields.length < 2 { return fields }
+    let head = fields[0]
+    if head.name != "__base" { return fields }
+    let base_name = vtype_struct_name(head.resolved)
+    let op_marker = fields[1].name
+    mut excluded: List<FieldEntry> = []
+    mut i = 2
+    while i < fields.length {
+        excluded.push(fields[i])
+        i = i + 1
     }
+    let base_fields = struct_type_lookup(reg, base_name)
+    if op_marker == "__without" { return filter_fields_without(base_fields, excluded) }
+    if op_marker == "__only" { return filter_fields_only(base_fields, excluded) }
+    base_fields
 }
 
 // field_list_has, filter_fields_without, filter_fields_only now in core/ast.av
@@ -1365,24 +1373,25 @@ fn tc_check_shape_compat(tc: TC, param_ty_str: string, arg_ty: ValueType) -> TC 
 
 /// Inner check for `tc_check_shape_compat` — emit an error per
 /// field that's required but missing from the arg type.
-fn tc_check_fields_present(tc: TC, shape_name: string, arg_name: string, required: FieldList, available: FieldList) -> TC {
-    match required {
-        .End -> tc
-        .Node(field_name, req_vt, next) -> {
-            if !field_list_has(available, field_name) {
-                let msg = "type `${arg_name}` does not satisfy shape `${shape_name}` — missing field `${field_name}`"
-                tc_check_fields_present(tc_report(tc, DiagCode.TypeMismatch, msg), shape_name, arg_name, next, available)
-            } else {
-                let expected_vt = resolve_vtype(tc, req_vt)
-                let actual_vt = resolve_vtype(tc, field_vtype_of(available, field_name))
-                let after = if !vtype_is_unknown(expected_vt) && !vtype_is_unknown(actual_vt) && !vtype_eq(expected_vt, actual_vt) && !vtype_assignable(actual_vt, expected_vt) {
-                    let msg = "field `${field_name}` has type `${vtype_display(actual_vt)}` in `${arg_name}` but shape `${shape_name}` requires `${vtype_display(expected_vt)}`"
-                    tc_report(tc, DiagCode.TypeMismatch, msg)
-                } else { tc }
-                tc_check_fields_present(after, shape_name, arg_name, next, available)
+fn tc_check_fields_present(tc: TC, shape_name: string, arg_name: string, required: List<FieldEntry>, available: List<FieldEntry>) -> TC {
+    mut acc = tc
+    mut i = 0
+    while i < required.length {
+        let e = required[i]
+        if !field_list_has(available, e.name) {
+            let msg = "type `${arg_name}` does not satisfy shape `${shape_name}` — missing field `${e.name}`"
+            acc = tc_report(acc, DiagCode.TypeMismatch, msg)
+        } else {
+            let expected_vt = resolve_vtype(acc, e.resolved)
+            let actual_vt = resolve_vtype(acc, field_vtype_of(available, e.name))
+            if !vtype_is_unknown(expected_vt) && !vtype_is_unknown(actual_vt) && !vtype_eq(expected_vt, actual_vt) && !vtype_assignable(actual_vt, expected_vt) {
+                let msg = "field `${e.name}` has type `${vtype_display(actual_vt)}` in `${arg_name}` but shape `${shape_name}` requires `${vtype_display(expected_vt)}`"
+                acc = tc_report(acc, DiagCode.TypeMismatch, msg)
             }
         }
+        i = i + 1
     }
+    acc
 }
 
 // ── Binary operator type rules ──

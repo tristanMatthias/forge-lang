@@ -1,7 +1,7 @@
 // WHY: emits LLVM IR for `match` as both a statement and an expression.
 
-use core.{Expr, Pattern, MatchArmList, WhenArm, ParamList, FieldList, TypeList, Variant, VarEnv, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types}
-use codegen.{Ctx, EmitValue, StmtResult, err_emit, ok_emit, field_resolved_at, advance_field_list, emit_value_ptr, emit_value_ty, enum_reg_find_by_variant, vtype_is_ptr_type}
+use core.{Expr, Pattern, MatchArmList, WhenArm, ParamList, FieldEntry, TypeList, Variant, VarEnv, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types}
+use codegen.{Ctx, EmitValue, StmtResult, err_emit, ok_emit, field_resolved_at, emit_value_ptr, emit_value_ty, enum_reg_find_by_variant, vtype_is_ptr_type}
 use core.{vtype_from_name}
 use codegen.{ok_sr, err_sr}
 use features.union_type.{emit_union_tag, emit_union_extract}
@@ -372,14 +372,18 @@ fn emit_nested_tag_checks(ctx: Ctx, pattern: Pattern, st_ty: ptr, subj_ptr: ptr,
 /// Recursive worker for `emit_nested_tag_checks` — walks the
 /// pattern list pairwise with the variant's field list, emitting
 /// tag-compare branches for each constructor sub-pattern.
-fn emit_nested_tag_check_list(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, pats: List<Pattern>, fields: FieldList, idx: int, next_bb: ptr) {
+fn emit_nested_tag_check_list(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, pats: List<Pattern>, fields: List<FieldEntry>, idx: int, next_bb: ptr) {
     mut i = 0
-    mut current_fields = fields
     while i < pats.length {
         let pat = pats[i]
+        // Per-iteration field cursor (was a `mut current_fields`
+        // threaded through `advance_field_list(...)`). With
+        // `List<FieldEntry>` indexed access, the i-th field is just
+        // `fields[i]`, so `field_resolved_at(fields, i)` replaces
+        // the old head-only `field_resolved_at(current_fields, 0)`.
         match pat {
             .Variant(inner_vname, _) -> {
-                let inner_ty = field_resolved_at(current_fields, 0)
+                let inner_ty = field_resolved_at(fields, i)
                 let enum_name = vtype_enum_name(inner_ty)
                 if enum_name != "" {
                     let lookup = ctx.lookup_enum(enum_name)
@@ -401,7 +405,7 @@ fn emit_nested_tag_check_list(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, pats: List<Pa
                 }
             }
             .NestedVariant(inner_vname, _) -> {
-                let inner_ty = field_resolved_at(current_fields, 0)
+                let inner_ty = field_resolved_at(fields, i)
                 let enum_name = vtype_enum_name(inner_ty)
                 if enum_name != "" {
                     let lookup = ctx.lookup_enum(enum_name)
@@ -424,7 +428,6 @@ fn emit_nested_tag_check_list(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, pats: List<Pa
             }
             _ -> {}
         }
-        current_fields = advance_field_list(current_fields)
         i = i + 1
     }
 }
@@ -466,13 +469,18 @@ fn bind_pattern_payload(ctx: Ctx, env: VarEnv, pattern: Pattern, st_ty: ptr, sub
 /// the binding list pairwise with the variant's fields, loading
 /// each payload slot and adding it to the env. Wildcards
 /// (`_`) bypass the bind step.
-fn bind_pattern_payload_loop(ctx: Ctx, env: VarEnv, st_ty: ptr, subj_ptr: ptr, bindings: ParamList, fields: FieldList, idx: int) -> VarEnv {
+fn bind_pattern_payload_loop(ctx: Ctx, env: VarEnv, st_ty: ptr, subj_ptr: ptr, bindings: ParamList, fields: List<FieldEntry>, idx: int) -> VarEnv {
     match bindings {
         .End -> env
         .Node(name, _, next_b) if name == "_" ->
-            bind_pattern_payload_loop(ctx, env, st_ty, subj_ptr, next_b, advance_field_list(fields), idx + 1)
+            bind_pattern_payload_loop(ctx, env, st_ty, subj_ptr, next_b, fields, idx + 1)
         .Node(name, _, next_b) -> {
-            let field_ty = field_resolved_at(fields, 0)
+            // `idx` is both the payload-slot index AND the field
+            // index — they advanced in lock-step under the cons-list
+            // variant via `advance_field_list(fields)`. With
+            // List<FieldEntry>, no per-iteration tail walk: pass
+            // `fields` as-is and read `fields[idx]`.
+            let field_ty = field_resolved_at(fields, idx)
             let loaded = load_payload_field(ctx, st_ty, subj_ptr, idx, field_ty, name)
             // Retain ptr-type payload fields so they survive enum release.
             if vtype_is_ptr_type(field_ty) {
@@ -480,7 +488,7 @@ fn bind_pattern_payload_loop(ctx: Ctx, env: VarEnv, st_ty: ptr, subj_ptr: ptr, b
                 ctx.rc_retain(as_ptr)
             }
             let extended = ctx.bind(env, name, loaded, field_ty)
-            bind_pattern_payload_loop(ctx, extended, st_ty, subj_ptr, next_b, advance_field_list(fields), idx + 1)
+            bind_pattern_payload_loop(ctx, extended, st_ty, subj_ptr, next_b, fields, idx + 1)
         }
     }
 }
@@ -491,15 +499,17 @@ fn bind_pattern_payload_loop(ctx: Ctx, env: VarEnv, st_ty: ptr, subj_ptr: ptr, b
 /// sub-pattern, loads the matching field slot and either binds
 /// it directly (single-name capture) or recurses into deeper
 /// constructor patterns.
-fn bind_nested_patterns(ctx: Ctx, env: VarEnv, st_ty: ptr, subj_ptr: ptr, pats: List<Pattern>, fields: FieldList, idx: int) -> VarEnv {
+fn bind_nested_patterns(ctx: Ctx, env: VarEnv, st_ty: ptr, subj_ptr: ptr, pats: List<Pattern>, fields: List<FieldEntry>, idx: int) -> VarEnv {
     mut acc = env
-    mut current_fields = fields
     mut i = 0
     while i < pats.length {
-        let field_ty = field_resolved_at(current_fields, 0)
+        // The i-th sub-pattern matches the i-th payload field; with
+        // indexed fields, the prior `mut current_fields = ...;
+        // advance_field_list(...)` pattern collapses to direct
+        // `field_resolved_at(fields, i)`.
+        let field_ty = field_resolved_at(fields, i)
         let loaded = load_payload_field(ctx, st_ty, subj_ptr, idx + i, field_ty, "npat_val")
         acc = bind_single_sub_pattern(ctx, acc, pats[i], loaded, field_ty)
-        current_fields = advance_field_list(current_fields)
         i = i + 1
     }
     acc

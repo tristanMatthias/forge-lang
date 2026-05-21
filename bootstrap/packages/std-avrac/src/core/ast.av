@@ -63,11 +63,11 @@ export enum ParamList {
     Node(name: string, resolved: ValueType, next: ParamList)
 }
 
-/// Struct field declaration list — used in `type Foo = { f1: int, f2: string }`.
-export enum FieldList {
-    End
-    Node(name: string, resolved: ValueType, next: FieldList)
-}
+// `List<FieldEntry>` replaces the retired `enum FieldList`. Used as
+// the `fields:` payload on `Stmt.TypeDecl`, `Stmt.ShapeDecl`, and
+// `Variant.fields`. The `resolved` ValueType is populated by the
+// resolver and consumed by typeck + codegen for ABI / GEP offsets.
+export type FieldEntry = { name: string, resolved: ValueType }
 
 /// Field initializer list — used in literal construction like
 /// `Foo { f1: 1, f2: "hi" }`.
@@ -77,11 +77,10 @@ export enum FieldInitList {
 }
 
 // `List<Variant>` replaces the retired `enum VariantList`. Each
-// variant has zero or more payload fields, stored as a FieldList so
-// the same renderer works for both struct fields and variant
-// payloads. `FieldList` is the next list-enum slated for retirement —
-// its conversion will flip `Variant.fields` to `List<FieldEntry>`.
-export type Variant = { name: string, fields: FieldList }
+// variant has zero or more payload fields, stored as a
+// `List<FieldEntry>` so the same renderer works for both struct
+// fields and variant payloads.
+export type Variant = { name: string, fields: List<FieldEntry> }
 
 // `List<Pattern>` replaces the retired `enum PatternList`. Used as
 // the `sub_patterns` payload on `Pattern.NestedVariant` so nested
@@ -1005,14 +1004,14 @@ export enum Stmt {
     /// Bare `return` — ends a void fn.
     ReturnEmpty
     /// Struct type declaration: `type Point = { x: int, y: int }`.
-    TypeDecl(name: string, type_params: List<TypeParamEntry>, fields: FieldList)
+    TypeDecl(name: string, type_params: List<TypeParamEntry>, fields: List<FieldEntry>)
     /// Newtype: `type UserId = UUID` — nominal wrapper.
     NewtypeDecl(name: string, inner_vt: ValueType)
     /// Union alias: `type Json = string | int | bool`.
     UnionAliasDecl(name: string, type_vt: ValueType)
     /// Structural shape: `shape Point = { x: int, y: int }` —
     /// width-subtyping record.
-    ShapeDecl(name: string, fields: FieldList)
+    ShapeDecl(name: string, fields: List<FieldEntry>)
     /// Enum declaration: `enum Color { Red, Green, Blue }`.
     EnumDecl(name: string, type_params: List<TypeParamEntry>, variants: List<Variant>)
     /// Match as a statement: `match v { ... }` with no result.
@@ -1296,42 +1295,41 @@ export fn expr_list_length(exprs: ExprList) -> int {
     }
 }
 
-/// Length of a FieldList. O(n).
-export fn field_list_length(fields: FieldList) -> int {
-    match fields {
-        .End -> 0
-        .Node(_, _, next) -> 1 + field_list_length(next)
+/// Membership test for a `List<FieldEntry>`. True iff `target`
+/// matches the name of any field.
+export fn field_list_has(list: List<FieldEntry>, target: string) -> bool {
+    mut i = 0
+    while i < list.length {
+        if list[i].name == target { return true }
+        i = i + 1
     }
-}
-
-/// Membership test for a FieldList. True iff `target` matches the
-/// name of any field.
-export fn field_list_has(list: FieldList, target: string) -> bool {
-    match list {
-        .End -> false
-        .Node(n, _, _) if n == target -> true
-        .Node(_, _, next) -> field_list_has(next, target)
-    }
+    false
 }
 
 /// Drop every entry of `base` whose name appears in `excluded`. Used
 /// by shape-coercion typecheck to compute the unmatched-field error.
-export fn filter_fields_without(base: FieldList, excluded: FieldList) -> FieldList {
-    match base {
-        .End -> FieldList.End
-        .Node(name, _, next) if field_list_has(excluded, name) -> filter_fields_without(next, excluded)
-        .Node(name, r, next) -> FieldList.Node(name, r, filter_fields_without(next, excluded))
+export fn filter_fields_without(base: List<FieldEntry>, excluded: List<FieldEntry>) -> List<FieldEntry> {
+    mut out: List<FieldEntry> = []
+    mut i = 0
+    while i < base.length {
+        let e = base[i]
+        if !field_list_has(excluded, e.name) { out.push(e) }
+        i = i + 1
     }
+    out
 }
 
 /// Keep only the entries of `base` whose name appears in `included`.
 /// The complement of `filter_fields_without`.
-export fn filter_fields_only(base: FieldList, included: FieldList) -> FieldList {
-    match base {
-        .End -> FieldList.End
-        .Node(name, r, next) if field_list_has(included, name) -> FieldList.Node(name, r, filter_fields_only(next, included))
-        .Node(_, _, next) -> filter_fields_only(next, included)
+export fn filter_fields_only(base: List<FieldEntry>, included: List<FieldEntry>) -> List<FieldEntry> {
+    mut out: List<FieldEntry> = []
+    mut i = 0
+    while i < base.length {
+        let e = base[i]
+        if field_list_has(included, e.name) { out.push(e) }
+        i = i + 1
     }
+    out
 }
 
 /// Length of a FieldInitList. O(n).
@@ -1344,33 +1342,28 @@ export fn field_init_length(inits: FieldInitList) -> int {
 
 /// Zero-based index of `name` in `fields`, or -1 if absent. Used by
 /// codegen for GEP offsets.
-export fn field_index_of(fields: FieldList, name: string) -> int {
-    field_index_of_loop(fields, name, 0)
-}
-
-/// Tail-recursive search loop backing `field_index_of`. Threads the
-/// running counter through the recursion.
-fn field_index_of_loop(fields: FieldList, name: string, idx: int) -> int {
-    match fields {
-        .End -> -1
-        .Node(n, _, _) if n == name -> idx
-        .Node(_, _, next) -> field_index_of_loop(next, name, idx + 1)
+export fn field_index_of(fields: List<FieldEntry>, name: string) -> int {
+    mut i = 0
+    while i < fields.length {
+        if fields[i].name == name { return i }
+        i = i + 1
     }
+    -1
 }
 
 /// Result of `variant_lookup`. `tag` is the djb2-style stable hash
 /// used as the LLVM tag value; -1 when not found.
 export type VariantLookup = {
     found: int,
-    fields: FieldList,
+    fields: List<FieldEntry>,
     tag: int,
 }
 
 extern fn avra_variant_hash(name: string) -> int
 
-/// Find a variant by name. Returns its FieldList plus the stable
-/// tag hash, or `found: false` when absent. Indexed walk over the
-/// retired `VariantList` cons-list.
+/// Find a variant by name. Returns its payload-fields list plus
+/// the stable tag hash, or `found: false` when absent. Indexed walk
+/// over the retired `VariantList` cons-list.
 export fn variant_lookup(variants: List<Variant>, name: string) -> VariantLookup {
     mut i = 0
     while i < variants.length {
@@ -1380,18 +1373,19 @@ export fn variant_lookup(variants: List<Variant>, name: string) -> VariantLookup
         }
         i = i + 1
     }
-    VariantLookup { found: false, fields: FieldList.End, tag: -1 }
+    let empty: List<FieldEntry> = []
+    VariantLookup { found: false, fields: empty, tag: -1 }
 }
 
 /// Maximum number of i64 slots needed across all variants in an
 /// enum — determines the size of the payload union in the LLVM
-/// struct layout. Each variant's payload is `field_list_length(...)`
-/// slots; the enum's overall payload sizes to the largest.
+/// struct layout. Each variant's payload is `fields.length` slots;
+/// the enum's overall payload sizes to the largest.
 export fn variant_max_payload(variants: List<Variant>) -> int {
     mut max = 0
     mut i = 0
     while i < variants.length {
-        let here = field_list_length(variants[i].fields)
+        let here = variants[i].fields.length
         if here > max { max = here }
         i = i + 1
     }
@@ -1400,12 +1394,14 @@ export fn variant_max_payload(variants: List<Variant>) -> int {
 
 /// Resolved ValueType for field `name`, or Unknown when the field
 /// isn't present.
-export fn field_vtype_of(fields: FieldList, name: string) -> ValueType {
-    match fields {
-        .End -> .Unknown
-        .Node(n, vt, _) if n == name -> vt
-        .Node(_, _, next) -> field_vtype_of(next, name)
+export fn field_vtype_of(fields: List<FieldEntry>, name: string) -> ValueType {
+    mut i = 0
+    while i < fields.length {
+        let e = fields[i]
+        if e.name == name { return e.resolved }
+        i = i + 1
     }
+    ValueType.Unknown
 }
 
 /// Render an Expr as an S-expression. Used by `bs2 expr` /
@@ -1492,24 +1488,18 @@ fn render_field_init_tail(inits: FieldInitList) -> string {
     }
 }
 
-/// Render a FieldList as an S-expression: `(name:Type, name2:Type)`.
-export fn render_field_list(fields: FieldList) -> string {
-    match fields {
-        .End -> "()"
-        .Node(name, vt, next) -> {
-            let head = "${name}:${vtype_display(vt)}"
-            let tail = render_field_list_tail(next)
-            "(${head}${tail})"
-        }
+/// Render a `List<FieldEntry>` as an S-expression: `(name:Type, name2:Type)`.
+export fn render_field_list(fields: List<FieldEntry>) -> string {
+    if fields.length == 0 { return "()" }
+    mut out = ""
+    mut i = 0
+    while i < fields.length {
+        let e = fields[i]
+        let entry = "${e.name}:${vtype_display(e.resolved)}"
+        if i == 0 { out = entry } else { out = "${out}, ${entry}" }
+        i = i + 1
     }
-}
-
-/// Tail half of `render_field_list` — see `render_field_init_tail`.
-fn render_field_list_tail(fields: FieldList) -> string {
-    match fields {
-        .End -> ""
-        .Node(name, vt, next) -> ", ${name}:${vtype_display(vt)}${render_field_list_tail(next)}"
-    }
+    "(${out})"
 }
 
 /// Render a `List<string>` of type names as a comma-separated string.

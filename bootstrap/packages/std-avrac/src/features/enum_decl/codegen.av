@@ -1,7 +1,7 @@
 // WHY: emits enum constructors (heap-allocated tagged unions) and
 // enum value comparison (tag equality via struct GEP).
 
-use core.{ExprList, FieldList, Variant, VarEnv, variant_lookup, field_list_length, expr_list_length, ValueType, vtype_enum_name}
+use core.{ExprList, FieldEntry, Variant, VarEnv, variant_lookup, expr_list_length, ValueType, vtype_enum_name}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, null_ptr_val, enum_reg_find_by_variant, enum_reg_find_by_variant_arity}
 use core.{type_registry_id_for, variant_payload_name}
 
@@ -51,7 +51,7 @@ export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: stri
     ctx.store(ctx.i64(v.tag), tag_gep)
 
     // Allocate typed payload struct for variants with fields.
-    let num_fields = field_list_length(v.fields)
+    let num_fields = v.fields.length
     let payload_gep = ctx.gep(st_ty, buf, 1, "pay_ptr")
     if num_fields == 0 {
         ctx.store(ctx.zero_for(ValueType.Ptr), payload_gep)
@@ -76,19 +76,17 @@ export fn malloc_enum_bytes(ctx: Ctx, variants: List<Variant>) -> ptr {
 /// Untyped payload-fill: walks the args, emitting each and
 /// storing it at the right slot via `ctx.store_slot`. Used as
 /// the lightweight path; `fill_enum_payload_typed` is the GEP-
-/// based variant when the payload struct type is known.
-fn fill_enum_payload(ctx: Ctx, env: VarEnv, payload_ptr: ptr, fields: FieldList, args: ExprList, idx: int) -> Result<EmitValue, string> {
+/// based variant when the payload struct type is known. Iterates
+/// the ExprList head-to-tail; `idx` tracks both the payload slot
+/// and the field-list cursor (they advance in lock-step).
+fn fill_enum_payload(ctx: Ctx, env: VarEnv, payload_ptr: ptr, fields: List<FieldEntry>, args: ExprList, idx: int) -> Result<EmitValue, string> {
     match args {
         .End -> ok_emit(null_ptr_val(), .Void)
         .Node(se, next) -> {
             let r = ctx.emit(env, se.node)?
-            let fld_ty = match fields {
-                .Node(_, resolved, _) -> resolved
-                _ -> ValueType.Unknown
-            }
+            let fld_ty = if idx < fields.length { fields[idx].resolved } else { ValueType.Unknown }
             ctx.store_slot(payload_ptr, idx, r.value, fld_ty)
-            let next_fields = match fields { .Node(_, _, rest) -> rest, _ -> FieldList.End }
-            fill_enum_payload(ctx, env, payload_ptr, next_fields, next, idx + 1)
+            fill_enum_payload(ctx, env, payload_ptr, fields, next, idx + 1)
         }
     }
 }
@@ -97,19 +95,15 @@ fn fill_enum_payload(ctx: Ctx, env: VarEnv, payload_ptr: ptr, fields: FieldList,
 /// type. Lets `store_field` truncate / cast each value to its
 /// declared field type so packed bool / float fields don't get
 /// clobbered.
-fn fill_enum_payload_typed(ctx: Ctx, env: VarEnv, pay_ty: ptr, payload_ptr: ptr, fields: FieldList, args: ExprList, idx: int) -> Result<EmitValue, string> {
+fn fill_enum_payload_typed(ctx: Ctx, env: VarEnv, pay_ty: ptr, payload_ptr: ptr, fields: List<FieldEntry>, args: ExprList, idx: int) -> Result<EmitValue, string> {
     match args {
         .End -> ok_emit(null_ptr_val(), .Void)
         .Node(se, next) -> {
             let r = ctx.emit(env, se.node)?
             let fld_gep = ctx.gep(pay_ty, payload_ptr, idx, "pay_fld")
-            let fld_ty = match fields {
-                .Node(_, resolved, _) -> resolved
-                _ -> ValueType.Unknown
-            }
+            let fld_ty = if idx < fields.length { fields[idx].resolved } else { ValueType.Unknown }
             ctx.store_field(r.value, fld_gep, fld_ty)
-            let next_fields = match fields { .Node(_, _, rest) -> rest, _ -> FieldList.End }
-            fill_enum_payload_typed(ctx, env, pay_ty, payload_ptr, next_fields, next, idx + 1)
+            fill_enum_payload_typed(ctx, env, pay_ty, payload_ptr, fields, next, idx + 1)
         }
     }
 }

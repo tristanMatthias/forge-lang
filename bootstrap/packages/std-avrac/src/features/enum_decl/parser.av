@@ -1,7 +1,7 @@
 // WHY: parses `enum Foo { ... }` declarations and the variant
 // list syntax (with optional payload fields).
 
-use core.{Stmt, FieldList, Variant, TypeParamEntry, ValueType, type_expr_to_vtype}
+use core.{Stmt, FieldEntry, Variant, TypeParamEntry, ValueType, type_expr_to_vtype}
 use parse.{Parser}
 use core.{Tk}
 
@@ -40,7 +40,7 @@ impl Parser {
             }
             if self.check(Tk.RightBrace) { return out }
             let name = self.consume_identifier("expected variant name")?
-            mut fields = FieldList.End
+            mut fields: List<FieldEntry> = []
             if self.check(Tk.LeftParen) {
                 self.advance()
                 fields = self.parse_field_list_until_paren()?
@@ -64,25 +64,22 @@ impl Parser {
         out
     }
 
-    fn parse_field_list_until_paren(self) -> FieldList? {
-        if self.check(Tk.RightParen) {
-            return FieldList.End
+    fn parse_field_list_until_paren(self) -> List<FieldEntry>? {
+        // Same source-order push pattern as `parse_field_list`, but
+        // terminates on `)` instead of `}` — variant payloads are
+        // paren-delimited.
+        mut out: List<FieldEntry> = []
+        while !self.check(Tk.RightParen) {
+            if self.check(Tk.KwMut) { self.advance() }
+            let name = self.consume_identifier("expected field name")?
+            if !self.consume(Tk.Colon, "expected `:` after field name") {
+                return null
+            }
+            let te = self.parse_type_expr("expected field type")?
+            let resolved = type_expr_to_vtype(te)
+            out.push(FieldEntry { name, resolved })
+            if self.check(Tk.Comma) { self.advance() }
         }
-        // Optional `mut` modifier — ignored for now.
-        if self.check(Tk.KwMut) {
-            self.advance()
-        }
-        let name = self.consume_identifier("expected field name")?
-        if !self.consume(Tk.Colon, "expected `:` after field name") {
-            return null
-        }
-        let te = self.parse_type_expr("expected field type")?
-        let resolved = type_expr_to_vtype(te)
-        if self.check(Tk.Comma) {
-            self.advance()
-            let rest = self.parse_field_list_until_paren()?
-            return FieldList.Node(name, resolved, rest)
-        }
-        FieldList.Node(name, resolved, FieldList.End)
+        out
     }
 }

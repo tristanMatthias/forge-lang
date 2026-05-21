@@ -16,7 +16,7 @@
 // Tracked under forge-crafting-intepreters-iinq (epic
 // forge-crafting-intepreters-a1el — the build system).
 
-use core.{ValueType, TypeList, FieldList, Variant, ParamList, TypeParamEntry}
+use core.{ValueType, TypeList, FieldEntry, Variant, ParamList, TypeParamEntry}
 
 extern fn avra_bytes_make(len: int) -> bytes
 extern fn avra_bytes_set(b: bytes, idx: int, val: int)
@@ -481,13 +481,6 @@ fn type_list_length(types: TypeList) -> int {
     }
 }
 
-fn field_list_length(fields: FieldList) -> int {
-    match fields {
-        .End -> 0
-        .Node(_, _, next) -> 1 + field_list_length(next)
-    }
-}
-
 fn param_list_length(params: ParamList) -> int {
     match params {
         .End -> 0
@@ -502,19 +495,14 @@ fn param_list_length(params: ParamList) -> int {
 // where each entry is `[string name][per-element body]`.
 
 impl BytesWriter {
-    fn field_list(self, fields: FieldList) {
-        self.u32_le(field_list_length(fields))
-        self.field_list_body(fields)
-    }
-
-    fn field_list_body(self, fields: FieldList) {
-        match fields {
-            .End -> {}
-            .Node(name, vt, next) -> {
-                self.string(name)
-                self.vtype(vt)
-                self.field_list_body(next)
-            }
+    fn field_list(self, fields: List<FieldEntry>) {
+        self.u32_le(fields.length)
+        mut i = 0
+        while i < fields.length {
+            let e = fields[i]
+            self.string(e.name)
+            self.vtype(e.resolved)
+            i = i + 1
         }
     }
 
@@ -557,17 +545,17 @@ impl BytesWriter {
 }
 
 impl BytesReader {
-    fn field_list(self) -> FieldList {
+    fn field_list(self) -> List<FieldEntry> {
         let count = self.u32_le()
-        self.field_list_body(count)
-    }
-
-    fn field_list_body(self, count: int) -> FieldList {
-        if count == 0 { return FieldList.End }
-        let name = self.string()
-        let vt = self.vtype()
-        let tail = self.field_list_body(count - 1)
-        FieldList.Node(name, vt, tail)
+        mut out: List<FieldEntry> = []
+        mut i = 0
+        while i < count {
+            let name = self.string()
+            let vt = self.vtype()
+            out.push(FieldEntry { name, resolved: vt })
+            i = i + 1
+        }
+        out
     }
 
     fn param_list(self) -> ParamList {
@@ -778,7 +766,7 @@ export type TypeDeclEntry = {
     kind: TypeDeclKind,
     name: string,
     type_params: List<TypeParamEntry>,
-    fields: FieldList,
+    fields: List<FieldEntry>,
     variants: List<Variant>,
     inner_vt: ValueType,
     methods: List<MetaTraitMethod>,
@@ -805,7 +793,7 @@ impl BytesReader {
         let kind = byte_to_type_decl_kind(self.u8())
         let name = self.string()
         let tps = self.type_param_list()
-        mut fields = FieldList.End
+        mut fields: List<FieldEntry> = []
         mut variants: List<Variant> = []
         mut inner = ValueType.Unknown
         mut methods: List<MetaTraitMethod> = []

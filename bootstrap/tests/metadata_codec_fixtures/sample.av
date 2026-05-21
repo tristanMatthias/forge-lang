@@ -23,7 +23,7 @@ use @std.avrac.build.{
 }
 use @std.avrac.core.{
     Stmt, StmtList, Expr, ExprList, TypeParamEntry,
-    ValueType, TypeList, FieldList, Variant, ParamList,
+    ValueType, TypeList, FieldEntry, Variant, ParamList,
     Annotation, vtype_eq, sstmt_dummy, stmt_unwrap, find_annotation,
 }
 use @std.avrac.build.{extract_unit_metadata}
@@ -46,11 +46,8 @@ fn vt_roundtrip(name: string, vt: ValueType) {
     probe("vt_${name}", vtype_eq(vt, decoded))
 }
 
-fn field_list_count(fs: FieldList) -> int {
-    match fs {
-        .End -> 0
-        .Node(_, _, next) -> 1 + field_list_count(next)
-    }
+fn field_list_count(fs: List<FieldEntry>) -> int {
+    fs.length
 }
 
 fn variant_list_count(vs: List<Variant>) -> int {
@@ -252,7 +249,9 @@ fn main() -> int {
 
     // TYPES section per-entry round-trips.
     // Struct: type Point = { x: int, y: int }
-    let pt_fields = FieldList.Node("x", ValueType.Int, FieldList.Node("y", ValueType.Int, FieldList.End))
+    mut pt_fields: List<FieldEntry> = []
+    pt_fields.push(FieldEntry { name: "x", resolved: ValueType.Int })
+    pt_fields.push(FieldEntry { name: "y", resolved: ValueType.Int })
     let pt_entry = TypeDeclEntry {
         sym_id: sym_id_for("@test::Point"),
         kind: TypeDeclKind.StructDecl,
@@ -278,7 +277,7 @@ fn main() -> int {
         kind: TypeDeclKind.NewtypeDecl,
         name: "@test::UserId",
         type_params: [],
-        fields: FieldList.End,
+        fields: [],
         variants: [],
         inner_vt: ValueType.Int,
         methods: [],
@@ -293,15 +292,16 @@ fn main() -> int {
 
     // Enum: enum Color { Red, Green, Blue }
     mut col_variants: List<Variant> = []
-    col_variants.push(Variant { name: "Red", fields: FieldList.End })
-    col_variants.push(Variant { name: "Green", fields: FieldList.End })
-    col_variants.push(Variant { name: "Blue", fields: FieldList.End })
+    let empty_fields: List<FieldEntry> = []
+    col_variants.push(Variant { name: "Red", fields: empty_fields })
+    col_variants.push(Variant { name: "Green", fields: empty_fields })
+    col_variants.push(Variant { name: "Blue", fields: empty_fields })
     let col_entry = TypeDeclEntry {
         sym_id: sym_id_for("@test::Color"),
         kind: TypeDeclKind.EnumDecl,
         name: "@test::Color",
         type_params: [],
-        fields: FieldList.End,
+        fields: [],
         variants: col_variants,
         inner_vt: ValueType.Unknown,
         methods: [],
@@ -379,7 +379,8 @@ fn main() -> int {
     e2e_w.header("@test::e2e", e2e_fp, 2)
 
     // Encode TYPES body containing one struct entry
-    let e2e_struct_fields = FieldList.Node("x", ValueType.Int, FieldList.End)
+    mut e2e_struct_fields: List<FieldEntry> = []
+    e2e_struct_fields.push(FieldEntry { name: "x", resolved: ValueType.Int })
     let e2e_struct_entry = TypeDeclEntry {
         sym_id: sym_id_for("@test::e2e::Cell"),
         kind: TypeDeclKind.StructDecl,
@@ -423,10 +424,7 @@ fn main() -> int {
     let decoded_struct = types_body_r.type_decl()
     probe("e2e_struct_name", decoded_struct.name == "@test::e2e::Cell")
     probe("e2e_struct_field0",
-        match decoded_struct.fields {
-            .Node(n, _, _) -> n == "x"
-            .End -> false
-        })
+        decoded_struct.fields.length > 0 && decoded_struct.fields[0].name == "x")
 
     let fns_frame = e2e_r.section()
     probe("e2e_fns_kind", fns_frame.kind is .Fns)
@@ -518,7 +516,7 @@ fn main() -> int {
         kind: TypeDeclKind.TraitDecl,
         name: "@test::Display",
         type_params: [],
-        fields: FieldList.End,
+        fields: [],
         variants: [],
         inner_vt: ValueType.Unknown,
         methods: display_methods,
@@ -594,7 +592,8 @@ fn main() -> int {
     avra_bytes_set(unit_fp, 0, 0xAB)
     avra_bytes_set(unit_fp, 31, 0xCD)
 
-    let unit_struct_fields = FieldList.Node("name", ValueType.Str, FieldList.End)
+    mut unit_struct_fields: List<FieldEntry> = []
+    unit_struct_fields.push(FieldEntry { name: "name", resolved: ValueType.Str })
     let unit_struct_entry = TypeDeclEntry {
         sym_id: sym_id_for("@unit::User"),
         kind: TypeDeclKind.StructDecl,
@@ -663,7 +662,7 @@ fn main() -> int {
     let dec_type_first: TypeDeclEntry = if dec_types.length > 0 {
         dec_types[0]
     } else {
-        TypeDeclEntry { sym_id: 0, kind: TypeDeclKind.StructDecl, name: "", type_params: [], fields: FieldList.End, variants: [], inner_vt: ValueType.Unknown, methods: [] }
+        TypeDeclEntry { sym_id: 0, kind: TypeDeclKind.StructDecl, name: "", type_params: [], fields: [], variants: [], inner_vt: ValueType.Unknown, methods: [] }
     }
     let dec_fn_first: FnDeclEntry = if dec_fns.length > 0 {
         dec_fns[0]
@@ -695,7 +694,8 @@ fn main() -> int {
     let ext_fp = avra_bytes_make(32)
 
     // type Pt = { x: int }
-    let pt_fields_ast = FieldList.Node("x", ValueType.Int, FieldList.End)
+    mut pt_fields_ast: List<FieldEntry> = []
+    pt_fields_ast.push(FieldEntry { name: "x", resolved: ValueType.Int })
     let empty_tp_pt: List<TypeParamEntry> = []
     let s_type = sstmt_dummy(Stmt.TypeDecl("Pt", empty_tp_pt, pt_fields_ast))
 
@@ -729,7 +729,7 @@ fn main() -> int {
     let ex_t0: TypeDeclEntry = if ex_types.length > 0 {
         ex_types[0]
     } else {
-        TypeDeclEntry { sym_id: 0, kind: TypeDeclKind.StructDecl, name: "", type_params: [], fields: FieldList.End, variants: [], inner_vt: ValueType.Unknown, methods: [] }
+        TypeDeclEntry { sym_id: 0, kind: TypeDeclKind.StructDecl, name: "", type_params: [], fields: [], variants: [], inner_vt: ValueType.Unknown, methods: [] }
     }
     let ex_f0: FnDeclEntry = if ex_fns.length > 0 {
         ex_fns[0]
@@ -782,12 +782,15 @@ fn main() -> int {
     mut gen_type_tps: List<TypeParamEntry> = []
     gen_type_tps.push(TypeParamEntry { name: "K", bounds: "" })
     gen_type_tps.push(TypeParamEntry { name: "V", bounds: "Display" })
+    mut gen_pair_fields: List<FieldEntry> = []
+    gen_pair_fields.push(FieldEntry { name: "k", resolved: ValueType.Struct("K", 0) })
+    gen_pair_fields.push(FieldEntry { name: "v", resolved: ValueType.Struct("V", 0) })
     let gen_type_entry = TypeDeclEntry {
         sym_id: sym_id_for("@gen::Pair"),
         kind: TypeDeclKind.StructDecl,
         name: "@gen::Pair",
         type_params: gen_type_tps,
-        fields: FieldList.Node("k", ValueType.Struct("K", 0), FieldList.Node("v", ValueType.Struct("V", 0), FieldList.End)),
+        fields: gen_pair_fields,
         variants: [],
         inner_vt: ValueType.Unknown,
         methods: [],
@@ -809,12 +812,14 @@ fn main() -> int {
     avra_bytes_set(io_fp, 0, 0x77)
     avra_bytes_set(io_fp, 31, 0x88)
 
+    mut io_pt_fields: List<FieldEntry> = []
+    io_pt_fields.push(FieldEntry { name: "x", resolved: ValueType.Int })
     let io_struct = TypeDeclEntry {
         sym_id: sym_id_for("@io::Pt"),
         kind: TypeDeclKind.StructDecl,
         name: "@io::Pt",
         type_params: [],
-        fields: FieldList.Node("x", ValueType.Int, FieldList.End),
+        fields: io_pt_fields,
         variants: [],
         inner_vt: ValueType.Unknown,
         methods: [],
@@ -839,7 +844,7 @@ fn main() -> int {
     let loaded_t0: TypeDeclEntry = if loaded_types.length > 0 {
         loaded_types[0]
     } else {
-        TypeDeclEntry { sym_id: 0, kind: TypeDeclKind.StructDecl, name: "", type_params: [], fields: FieldList.End, variants: [], inner_vt: ValueType.Unknown, methods: [] }
+        TypeDeclEntry { sym_id: 0, kind: TypeDeclKind.StructDecl, name: "", type_params: [], fields: [], variants: [], inner_vt: ValueType.Unknown, methods: [] }
     }
     probe("io_read_unit_name", loaded.unit_name == "@io")
     probe("io_read_fp_byte0", loaded.fingerprint.byte(0) == 0x77)
@@ -855,7 +860,8 @@ fn main() -> int {
     // synth back to a StmtList. The body should be a Module wrapper
     // around the original public-surface items, qualified the same
     // way they came in.
-    let synth_fields = FieldList.Node("x", ValueType.Int, FieldList.End)
+    mut synth_fields: List<FieldEntry> = []
+    synth_fields.push(FieldEntry { name: "x", resolved: ValueType.Int })
     let greet_annots: List<Annotation> = [Annotation { name: "export", args: ExprList.End }]
     let empty_tp_synth: List<TypeParamEntry> = []
     let synth_stmts = StmtList.Node(

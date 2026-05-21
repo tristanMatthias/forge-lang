@@ -2,7 +2,7 @@
 // Every type gets a unique integer TypeId. All registries use O(1) intmap lookups.
 // String names are kept only for diagnostics and LLVM type name generation.
 
-use core.{FieldList, Variant, ValueType, TypeList}
+use core.{FieldEntry, Variant, ValueType, TypeList}
 use core.{avra_intmap_new, avra_intmap_set, avra_intmap_get, avra_intmap_has, avra_map_new_cstr, avra_map_set_cstr, avra_map_get_cstr, avra_map_has_cstr}
 use core.{avra_intmap_inc, avra_intmap_get_as_string}
 
@@ -36,7 +36,7 @@ export type TypeInfo = {
     id: int,
     name: string,
     kind: TypeKind,
-    fields: FieldList,
+    fields: List<FieldEntry>,
     variants: List<Variant>,
     inner_vt: ValueType,
 }
@@ -74,7 +74,7 @@ export fn type_registry_new() -> TypeRegistry {
 /// indexes the unqualified short name (`Foo` for `module::Foo`) when
 /// the short form is unambiguous.
 /// @returns the assigned TypeId, or the existing id on duplicate.
-export fn type_registry_register(reg: TypeRegistry, name: string, kind: TypeKind, fields: FieldList, variants: List<Variant>, inner_vt: ValueType) -> int {
+export fn type_registry_register(reg: TypeRegistry, name: string, kind: TypeKind, fields: List<FieldEntry>, variants: List<Variant>, inner_vt: ValueType) -> int {
     // If already registered, return existing id
     if avra_map_has_cstr(reg.name_to_id, name) == 1 {
         return avra_map_get_cstr(reg.name_to_id, name)

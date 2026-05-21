@@ -6,7 +6,7 @@
 //
 // Conservative: if in doubt, mark as escaped (don't release).
 
-use core.{Expr, ExprList, FieldList, FieldInitList, Variant, ValueType, Stmt, StmtList, SExpr, SStmt, stmt_unwrap}
+use core.{Expr, ExprList, FieldEntry, FieldInitList, Variant, ValueType, Stmt, StmtList, SExpr, SStmt, stmt_unwrap}
 use codegen.{ReleasableSet, releasable_has, StructReg, EnumReg, struct_reg_lookup, enum_reg_lookup, CopySet, copy_set_has}
 
 /// Add `name` to the releasable set, deduplicating. The set is the
@@ -434,14 +434,13 @@ fn is_name_copy(name: string, candidates: CopySet, structs: StructReg, enums: En
 
 /// True when every field in `fields` has a Copy ValueType under
 /// the current candidate set.
-fn fields_all_copy(fields: FieldList, candidates: CopySet) -> bool {
-    match fields {
-        .End -> true
-        .Node(_, vt, next) -> {
-            if !vtype_is_copy_in_set(vt, candidates) { false }
-            else { fields_all_copy(next, candidates) }
-        }
+fn fields_all_copy(fields: List<FieldEntry>, candidates: CopySet) -> bool {
+    mut i = 0
+    while i < fields.length {
+        if !vtype_is_copy_in_set(fields[i].resolved, candidates) { return false }
+        i = i + 1
     }
+    true
 }
 
 /// True when every variant of an enum has Copy fields under the

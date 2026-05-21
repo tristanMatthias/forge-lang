@@ -5,7 +5,7 @@
 // Cycle-capable types get avra_rc_suspect() calls in their release
 // functions when refcount decrements to non-zero.
 
-use core.{FieldList, ValueType, Variant}
+use core.{FieldEntry, ValueType, Variant}
 use codegen.{StructReg, EnumReg, struct_reg_lookup, enum_reg_lookup, vtype_is_ptr_type}
 
 /// Set of type names whose layout can reach back to itself through
@@ -46,17 +46,13 @@ fn visited_has(vs: CycleVisited, name: string) -> bool {
 
 /// True when at least one field in `fields` can reach `target`.
 /// Recursion entry for struct types.
-fn fields_reach_target(fields: FieldList, target: string, visited: CycleVisited, structs: StructReg, enums: EnumReg) -> bool {
-    match fields {
-        .End -> false
-        .Node(_, resolved, next) -> {
-            if type_reaches_target(resolved, target, visited, structs, enums) {
-                true
-            } else {
-                fields_reach_target(next, target, visited, structs, enums)
-            }
-        }
+fn fields_reach_target(fields: List<FieldEntry>, target: string, visited: CycleVisited, structs: StructReg, enums: EnumReg) -> bool {
+    mut i = 0
+    while i < fields.length {
+        if type_reaches_target(fields[i].resolved, target, visited, structs, enums) { return true }
+        i = i + 1
     }
+    false
 }
 
 /// True when at least one variant's payload can reach `target`.

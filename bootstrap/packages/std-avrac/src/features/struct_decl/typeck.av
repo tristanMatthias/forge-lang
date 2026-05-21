@@ -2,7 +2,7 @@
 // Also handles .length on strings and lists (property access is routed here).
 // Shared by struct_decl, with_expr, and null_safety features.
 
-use core.{Expr, ExprList, FieldList, FieldInitList, ValueType, SExpr, vtype_eq, vtype_is_list}
+use core.{Expr, ExprList, FieldEntry, FieldInitList, ValueType, SExpr, vtype_eq, vtype_is_list}
 use typeck.{TC, ExprResult, tc_er, tc_report, check_expr, StructTypeReg, struct_type_lookup, resolve_vtype}
 use diagnostics.{DiagCode}
 
@@ -33,7 +33,7 @@ export fn check_field_access(tc: TC, obj: Expr, field: string) -> ExprResult {
     if struct_name.length > 0 {
         let fields = struct_type_lookup(o.tc.structs, struct_name)
         // Skip field check for generic type parameters (not in struct registry)
-        if fields is .End { return tc_er(o.tc, .Unknown) }
+        if fields.length == 0 { return tc_er(o.tc, .Unknown) }
         if !tc_field_exists(fields, field) {
             let msg = "no field `${field}` on type `${struct_name}`"
             return tc_er(tc_report(o.tc, DiagCode.TypeMismatch, msg), .Unknown)
@@ -60,21 +60,24 @@ export fn check_field_inits(tc: TC, inits: FieldInitList) -> TC {
 
 /// Linear scan for a field by name. Used by `check_field_access`
 /// to surface "no field X on type Y" diagnostics.
-fn tc_field_exists(fields: FieldList, name: string) -> bool {
-    match fields {
-        .End -> false
-        .Node(fname, _, _) if fname == name -> true
-        .Node(_, _, next) -> tc_field_exists(next, name)
+fn tc_field_exists(fields: List<FieldEntry>, name: string) -> bool {
+    mut i = 0
+    while i < fields.length {
+        if fields[i].name == name { return true }
+        i = i + 1
     }
+    false
 }
 
 /// Return the resolved ValueType of a named field, or `.Unknown`
 /// when not found. Routes the raw field type through `resolve_vtype`
 /// so cross-module struct refs resolve to canonical names.
-fn field_type_in(tc: TC, fields: FieldList, name: string) -> ValueType {
-    match fields {
-        .End -> .Unknown
-        .Node(fname, resolved, _) if fname == name -> resolve_vtype(tc, resolved)
-        .Node(_, _, next) -> field_type_in(tc, next, name)
+fn field_type_in(tc: TC, fields: List<FieldEntry>, name: string) -> ValueType {
+    mut i = 0
+    while i < fields.length {
+        let e = fields[i]
+        if e.name == name { return resolve_vtype(tc, e.resolved) }
+        i = i + 1
     }
+    ValueType.Unknown
 }

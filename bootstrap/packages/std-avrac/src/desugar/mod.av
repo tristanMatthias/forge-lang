@@ -7,7 +7,7 @@
 // Component expansion is a SEPARATE pass that runs before desugar.
 // See features/component_decl/expand.av.
 
-use core.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, sstmt_dummy, stmt_unwrap, FieldList, FieldInitList, MatchArmList, WhenArm, ParamList, Pattern, BinOp, UnOp, ValueType, Variant, TypeParamEntry}
+use core.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, sstmt_dummy, stmt_unwrap, FieldEntry, FieldInitList, MatchArmList, WhenArm, ParamList, Pattern, BinOp, UnOp, ValueType, Variant, TypeParamEntry}
 
 // ── Public API ──
 
@@ -57,8 +57,10 @@ export fn inject_intrinsics(stmts: StmtList) -> StmtList {
 fn synthesize_result_enum() -> Stmt {
     let t = ValueType.Struct("T", 0)
     let e = ValueType.Struct("E", 0)
-    let ok_fields = FieldList.Node("value", t, FieldList.End)
-    let err_fields = FieldList.Node("error", e, FieldList.End)
+    mut ok_fields: List<FieldEntry> = []
+    ok_fields.push(FieldEntry { name: "value", resolved: t })
+    mut err_fields: List<FieldEntry> = []
+    err_fields.push(FieldEntry { name: "error", resolved: e })
     mut variants: List<Variant> = []
     variants.push(Variant { name: "Ok", fields: ok_fields })
     variants.push(Variant { name: "Err", fields: err_fields })

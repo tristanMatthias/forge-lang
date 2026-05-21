@@ -8,7 +8,7 @@
 
 use core.{
     Expr, Stmt, StmtList, ExprList, ParamList,
-    FieldInitList, FieldList,
+    FieldInitList, FieldEntry,
     Variant, Pattern, MatchArmList, WhenArm, Annotation,
     binop_str, unop_str, logicop_str,
     vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq,
@@ -271,16 +271,17 @@ fn fmt_field_init_list_tail(inits: FieldInitList) -> string {
 
 /// Render a struct-decl/shape field list — one `name: Type` per
 /// indented line.
-fn fmt_field_decl_list(fields: FieldList, depth: int) -> string {
+fn fmt_field_decl_list(fields: List<FieldEntry>, depth: int) -> string {
     let ind = fmt_indent(depth)
-    match fields {
-        .End -> ""
-        .Node(name, vt, next) -> {
-            let head = "${ind}${name}: ${vtype_display(vt)}"
-            let tail = fmt_field_decl_list(next, depth)
-            if tail == "" { head } else { "${head}\n${tail}" }
-        }
+    mut out = ""
+    mut i = 0
+    while i < fields.length {
+        let e = fields[i]
+        let head = "${ind}${e.name}: ${vtype_display(e.resolved)}"
+        if i == 0 { out = head } else { out = "${out}\n${head}" }
+        i = i + 1
     }
+    out
 }
 
 /// Render an enum-variant list — one `Name(field: T, ...)` per
@@ -300,24 +301,22 @@ fn fmt_variant_list(variants: List<Variant>, depth: int) -> string {
 }
 
 /// Render the parameter section of an enum variant — `(name: T, ...)`,
-/// or empty when the variant carries no payload.
-fn fmt_variant_fields(fields: FieldList) -> string {
-    match fields {
-        .End -> ""
-        .Node(name, vt, next) -> {
-            let head = "${name}: ${vtype_display(vt)}"
-            let tail = fmt_variant_fields_tail(next)
-            "(${head}${tail})"
+/// or empty when the variant carries no payload. Single-pass joiner
+/// replaces the prior head/tail split.
+fn fmt_variant_fields(fields: List<FieldEntry>) -> string {
+    if fields.length == 0 { return "" }
+    mut body = ""
+    mut i = 0
+    while i < fields.length {
+        let e = fields[i]
+        if i == 0 {
+            body = "${e.name}: ${vtype_display(e.resolved)}"
+        } else {
+            body = "${body}, ${e.name}: ${vtype_display(e.resolved)}"
         }
+        i = i + 1
     }
-}
-
-/// Tail of `fmt_variant_fields`.
-fn fmt_variant_fields_tail(fields: FieldList) -> string {
-    match fields {
-        .End -> ""
-        .Node(name, vt, next) -> ", ${name}: ${vtype_display(vt)}${fmt_variant_fields_tail(next)}"
-    }
+    "(${body})"
 }
 
 /// Render a match-arm pattern.
