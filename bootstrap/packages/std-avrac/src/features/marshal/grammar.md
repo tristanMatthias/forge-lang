@@ -8,7 +8,7 @@ struct_decl    = marshal_attr? "type" IDENT "=" "{" field_list "}"
 enum_decl      = marshal_attr? "enum" IDENT "{" variant_list "}"
 ```
 
-The `@marshal` annotation lives in the standard `AnnotationList` slot
+The `@marshal` annotation lives in the standard `List<Annotation>` slot
 that precedes any declaration — no new grammar production. Detection
 happens in the post-resolve pass `features/marshal/derive.av`, which
 walks the AST and synthesises codec functions next to every annotated

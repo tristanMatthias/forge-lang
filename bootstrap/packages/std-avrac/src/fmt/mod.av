@@ -9,7 +9,7 @@
 use core.{
     Expr, Stmt, StmtList, ExprList, ParamList,
     TypeParamList, FieldInitList, FieldList,
-    VariantList, Pattern, MatchArmList, WhenArm, AnnotationList,
+    VariantList, Pattern, MatchArmList, WhenArm, Annotation,
     binop_str, unop_str, logicop_str,
     vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq,
 }
@@ -376,12 +376,15 @@ fn fmt_when_arms(arms: List<WhenArm>, depth: int) -> string {
 }
 
 /// Render an annotation chain — `@name\n@name\n` prefix to a stmt.
-fn fmt_annotation_list(annots: AnnotationList, depth: int) -> string {
+fn fmt_annotation_list(annots: List<Annotation>, depth: int) -> string {
     let ind = fmt_indent(depth)
-    match annots {
-        .End -> ""
-        .Node(name, _, next) -> "${ind}@${name}\n${fmt_annotation_list(next, depth)}"
+    mut out = ""
+    mut i = 0
+    while i < annots.length {
+        out = out + "${ind}@${annots[i].name}\n"
+        i = i + 1
     }
+    out
 }
 
 /// Render map-literal entries — flat `key: val, key: val` form.

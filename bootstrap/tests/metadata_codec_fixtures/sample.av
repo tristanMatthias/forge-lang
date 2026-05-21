@@ -24,7 +24,7 @@ use @std.avrac.build.{
 use @std.avrac.core.{
     Stmt, StmtList, Expr, ExprList, TypeParamList,
     ValueType, TypeList, FieldList, VariantList, ParamList,
-    AnnotationList, vtype_eq, sstmt_dummy, stmt_unwrap, find_annotation,
+    Annotation, vtype_eq, sstmt_dummy, stmt_unwrap, find_annotation,
 }
 use @std.avrac.build.{extract_unit_metadata}
 use @std.avrac.build.{synthesize_unit_stmts}
@@ -703,10 +703,8 @@ fn main() -> int {
     // export fn add(a: int, b: int) -> int { ... }  (body irrelevant for extraction)
     let add_params_ast = ParamList.Node("a", ValueType.Int, ParamList.Node("b", ValueType.Int, ParamList.End))
     let s_fn_inner = Stmt.Function("add", TypeParamList.End, add_params_ast, ValueType.Int, StmtList.End)
-    let s_fn = sstmt_dummy(Stmt.Annotated(
-        AnnotationList.Node("export", ExprList.End, AnnotationList.End),
-        s_fn_inner,
-    ))
+    let exp_annots: List<Annotation> = [Annotation { name: "export", args: ExprList.End }]
+    let s_fn = sstmt_dummy(Stmt.Annotated(exp_annots, s_fn_inner))
 
     // const VERSION: string = "1.0"
     let s_const = sstmt_dummy(Stmt.Const("VERSION", ValueType.Str, Expr.String("\"1.0\"")))
@@ -873,11 +871,12 @@ fn main() -> int {
     // around the original public-surface items, qualified the same
     // way they came in.
     let synth_fields = FieldList.Node("x", ValueType.Int, FieldList.End)
+    let greet_annots: List<Annotation> = [Annotation { name: "export", args: ExprList.End }]
     let synth_stmts = StmtList.Node(
         sstmt_dummy(Stmt.TypeDecl("Cell", TypeParamList.End, synth_fields)),
         StmtList.Node(
             sstmt_dummy(Stmt.Annotated(
-                AnnotationList.Node("export", ExprList.End, AnnotationList.End),
+                greet_annots,
                 Stmt.Function("greet", TypeParamList.End, ParamList.End, ValueType.Str, StmtList.End),
             )),
             StmtList.Node(

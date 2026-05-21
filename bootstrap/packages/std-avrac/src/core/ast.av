@@ -1047,7 +1047,7 @@ export enum Stmt {
     Errdefer(body: Expr)
     /// Annotation wrapper: `@annot stmt` — annotations live here so
     /// the inner stmt's match arms stay focused on the actual decl.
-    Annotated(annotations: AnnotationList, inner: Stmt)
+    Annotated(annotations: List<Annotation>, inner: Stmt)
     /// Test outer block: `spec "name" { ... }`.
     SpecBlock(name: string, body: StmtList)
     /// Test setup block: `given "name" { let setup = ...; then "..." }`.
@@ -1093,10 +1093,13 @@ export type SelectArm = { binding: string, channel: Expr, body: StmtList }
 /// Annotations attached to declarations: `@name` or `@name(args)`.
 /// Args are stored as ExprList for generality so any annotation
 /// shape works without dedicated AST variants.
-export enum AnnotationList {
-    End
-    Node(name: string, args: ExprList, next: AnnotationList)
-}
+///
+/// `List<Annotation>` replaces the retired `enum AnnotationList`.
+/// Used as `annotations: List<Annotation>` on Stmt.Annotated and
+/// threaded through the resolver, type checker, macro expander,
+/// metadata extractor and formatter. `args` stays `ExprList` for
+/// now — ExprList retirement is later in lkze.9.
+export type Annotation = { name: string, args: ExprList }
 
 /// Component config schema entry: one `key: ty = default` row declared
 /// by a ComponentDef. Call sites are type-checked against the schema.
@@ -1140,10 +1143,10 @@ export fn stmt_unwrap(s: Stmt) -> Stmt {
 
 /// Look up an annotation by name on a Stmt. Walks every Annotated
 /// layer (so `/// foo\n@inline\nfn bar()` finds @doc, @inline, etc.),
-/// returning the first occurrence. Returns the raw arg list — the
-/// caller decides what shape it expects (single string for @doc,
-/// no args for @export, etc.).
-export fn find_annotation(s: Stmt, name: string) -> AnnotationList? {
+/// returning the first occurrence. Returns the raw Annotation —
+/// the caller decides what shape it expects (single string for
+/// @doc, no args for @export, etc.).
+export fn find_annotation(s: Stmt, name: string) -> Annotation? {
     match s {
         .Annotated(annots, inner) -> {
             let here = annotation_list_find(annots, name)
@@ -1159,7 +1162,7 @@ export fn find_annotation(s: Stmt, name: string) -> AnnotationList? {
 /// Extract the first `@doc` annotation's text body, with surrounding
 /// `"..."` literal quotes stripped. Returns "" if the stmt has no
 /// @doc annotation. Tooling (std-lsp indexer, IDE hover, the docs
-/// CLI) should prefer this over reading the AnnotationList directly.
+/// CLI) should prefer this over reading the annotation list directly.
 export fn doc_string_for(s: Stmt) -> string {
     let found = find_annotation(s, "doc")
     if found == null { return "" }
@@ -1167,36 +1170,28 @@ export fn doc_string_for(s: Stmt) -> string {
 }
 
 /// Linear scan for an annotation by name within a single
-/// AnnotationList layer. Used by `find_annotation` which walks
+/// `List<Annotation>` layer. Used by `find_annotation` which walks
 /// nested Annotated wrappers via `stmt_unwrap`.
-fn annotation_list_find(annots: AnnotationList, name: string) -> AnnotationList? {
-    match annots {
-        .End -> null
-        .Node(n, args, next) -> {
-            if n == name {
-                AnnotationList.Node(n, args, AnnotationList.End)
-            } else {
-                annotation_list_find(next, name)
-            }
-        }
+fn annotation_list_find(annots: List<Annotation>, name: string) -> Annotation? {
+    mut i = 0
+    while i < annots.length {
+        let a = annots[i]
+        if a.name == name { return a }
+        i = i + 1
     }
+    null
 }
 
 /// Pull the first arg's string body out of an annotation. The parser
 /// stores doc comments as `Expr.String("\"…raw text…\"")` — quotes
 /// are part of the literal form, so we strip them here.
-fn annotation_first_string(annots: AnnotationList) -> string {
-    match annots {
+fn annotation_first_string(a: Annotation) -> string {
+    match a.args {
         .End -> ""
-        .Node(_, args, _) -> {
-            match args {
-                .End -> ""
-                .Node(se, _) -> {
-                    match se.node {
-                        .String(literal) -> strip_quotes(literal)
-                        _ -> ""
-                    }
-                }
+        .Node(se, _) -> {
+            match se.node {
+                .String(literal) -> strip_quotes(literal)
+                _ -> ""
             }
         }
     }
@@ -1654,12 +1649,15 @@ export fn render_stmt(stmt: Stmt) -> string {
     }
 }
 
-/// Render an AnnotationList in the source `@name @name2` form.
-export fn render_annotation_list(annots: AnnotationList) -> string {
-    match annots {
-        .End -> ""
-        .Node(name, _, next) -> "@${name} ${render_annotation_list(next)}"
+/// Render a `List<Annotation>` in the source `@name @name2` form.
+export fn render_annotation_list(annots: List<Annotation>) -> string {
+    mut out = ""
+    mut i = 0
+    while i < annots.length {
+        out = out + "@${annots[i].name} "
+        i = i + 1
     }
+    out
 }
 
 /// Render a VariantList as an S-expression: `(Ok(value:T), Err(error:E))`.

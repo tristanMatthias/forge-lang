@@ -7,7 +7,7 @@
 
 use core.{
     Stmt, StmtList, SStmt, sstmt_at, Expr, ParamList, FieldList, VariantList, TypeParamList, ValueType,
-    AnnotationList, stmt_unwrap,
+    Annotation, stmt_unwrap,
 }
 use build.metadata.{
     UnitMetadata,
@@ -278,18 +278,17 @@ fn qualify(current_module: string, name: string) -> string {
     "${current_module}::${name}"
 }
 
-fn annotation_has_export(annots: AnnotationList) -> bool {
+fn annotation_has_export(annots: List<Annotation>) -> bool {
     annotation_has(annots, "export")
 }
 
-fn annotation_has(annots: AnnotationList, target: string) -> bool {
-    match annots {
-        .End -> false
-        .Node(name, _, next) -> {
-            if name == target { return true }
-            annotation_has(next, target)
-        }
+fn annotation_has(annots: List<Annotation>, target: string) -> bool {
+    mut i = 0
+    while i < annots.length {
+        if annots[i].name == target { return true }
+        i = i + 1
     }
+    false
 }
 
 fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool) -> ExtractAcc {

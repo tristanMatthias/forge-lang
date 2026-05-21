@@ -16,7 +16,7 @@
 //
 // Tracking: forge-crafting-intepreters-g2eo Phase A.
 
-use core.{Stmt, StmtList, SStmt, AnnotationList, ExprList, sstmt_at, avra_process_env_get}
+use core.{Stmt, StmtList, SStmt, Annotation, ExprList, sstmt_at, avra_process_env_get}
 
 /// Returns true iff any decl reachable from `body` carries a
 /// `SStmt.file` whose path starts with `target_prefix`. Recurses
@@ -75,17 +75,24 @@ fn stmt_reaches_target(stmt: Stmt, target_prefix: string, debug: bool) -> bool {
 /// (e.g. `@export` on items inside the module body don't apply here,
 /// but `@annotated` chains on the Module itself would).
 fn annotate_external(ss: SStmt) -> SStmt {
-    let new_stmt = match ss.node {
-        .Annotated(annots, inner) -> Stmt.Annotated(
-            AnnotationList.Node("external_unit", ExprList.End, annots),
-            inner,
-        )
-        _ -> Stmt.Annotated(
-            AnnotationList.Node("external_unit", ExprList.End, AnnotationList.End),
-            ss.node,
-        )
+    // Prepend `@external_unit` to whatever annotation list already
+    // wraps the stmt — preserves the original cons-prepend semantics
+    // for stmts that came in pre-Annotated, and starts a fresh
+    // single-entry list for bare stmts.
+    mut combined: List<Annotation> = []
+    combined.push(Annotation { name: "external_unit", args: ExprList.End })
+    let inner_stmt = match ss.node {
+        .Annotated(annots, inner) -> {
+            mut i = 0
+            while i < annots.length {
+                combined.push(annots[i])
+                i = i + 1
+            }
+            inner
+        }
+        _ -> ss.node
     }
-    sstmt_at(new_stmt, ss.line, ss.col, ss.file)
+    sstmt_at(Stmt.Annotated(combined, inner_stmt), ss.line, ss.col, ss.file)
 }
 
 /// Walk `stmts` and rewrite each top-level `Stmt.Module(name, body)`:

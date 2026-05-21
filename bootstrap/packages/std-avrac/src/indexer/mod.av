@@ -17,7 +17,7 @@
 use core.{avra_selfhost_read_file, avra_shell_exec}
 use core.{Stmt, StmtList, SStmt,
               Expr, SExpr, ExprList,
-              AnnotationList, ParamList, FieldList,
+              ParamList, FieldList,
               VariantList, ValueType, TypeParamList,
               vtype_display, vtype_render_full,
               find_annotation, doc_string_for, stmt_unwrap}

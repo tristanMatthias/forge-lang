@@ -18,7 +18,7 @@
 //
 // Design doc: docs/2026_05_08_COMPONENTS_V2_DESIGN.md §3.1
 
-use core.{Stmt, StmtList, ParamList, ValueType, TypeParamList, AnnotationList}
+use core.{Stmt, StmtList, ParamList, ValueType, TypeParamList, Annotation}
 use features.eval.{Runtime, runtime_new, execute_stmt}
 use features.comptime.{rewrite_program}
 
@@ -173,17 +173,11 @@ fn fn_payload(stmt: Stmt) -> CompTimeFn? {
 
 /// True when `annots` contains a `@<name>` annotation. Iterative
 /// (consistent with the rest of the file's loop pattern).
-fn annotation_present(annots: AnnotationList, name: string) -> bool {
-    mut cur = annots
-    mut keep_going = true
-    while keep_going {
-        match cur {
-            .End -> { keep_going = false }
-            .Node(n, _, next) -> {
-                if n == name { return true }
-                cur = next
-            }
-        }
+fn annotation_present(annots: List<Annotation>, name: string) -> bool {
+    mut i = 0
+    while i < annots.length {
+        if annots[i].name == name { return true }
+        i = i + 1
     }
     false
 }

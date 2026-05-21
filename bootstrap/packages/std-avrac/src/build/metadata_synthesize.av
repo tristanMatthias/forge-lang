@@ -32,7 +32,7 @@
 use core.{
     Stmt, StmtList, SStmt, sstmt_dummy, stmt_unwrap,
     Expr, ExprList,
-    AnnotationList, ParamList, ValueType, FieldList, VariantList, TypeParamList,
+    Annotation, ParamList, ValueType, FieldList, VariantList, TypeParamList,
     sexpr_dummy,
 }
 use build.metadata.{
@@ -357,10 +357,8 @@ fn synth_type_decl(e: TypeDeclEntry) -> SStmt {
 // `use foo::Bar` lookup, which gates on @export.
 fn wrap_export(s: Stmt, exported: bool) -> Stmt {
     if exported {
-        Stmt.Annotated(
-            AnnotationList.Node("export", ExprList.End, AnnotationList.End),
-            s,
-        )
+        let annots: List<Annotation> = [Annotation { name: "export", args: ExprList.End }]
+        Stmt.Annotated(annots, s)
     } else {
         s
     }
@@ -373,10 +371,8 @@ fn wrap_export(s: Stmt, exported: bool) -> Stmt {
 // references don't need it (consts inline values; impl methods route
 // through the same Function gate).
 fn wrap_external_unit(s: Stmt) -> Stmt {
-    Stmt.Annotated(
-        AnnotationList.Node("external_unit", ExprList.End, AnnotationList.End),
-        s,
-    )
+    let annots: List<Annotation> = [Annotation { name: "external_unit", args: ExprList.End }]
+    Stmt.Annotated(annots, s)
 }
 
 // Recover the bare local name from a qualified name. The qualified

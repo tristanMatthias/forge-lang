@@ -19,7 +19,7 @@
 // resolver wires up to @std/process the same way a hand-written
 // impl would.
 
-use core.{Stmt, StmtList, SStmt, sstmt_dummy, Expr, ExprList, SExpr, sexpr_dummy, FieldList, FieldInitList, ParamList, ValueType, TypeParamList, AnnotationList, VariantList, Pattern, MatchArmList, TypeList, BinOp, find_annotation}
+use core.{Stmt, StmtList, SStmt, sstmt_dummy, Expr, ExprList, SExpr, sexpr_dummy, FieldList, FieldInitList, ParamList, ValueType, TypeParamList, VariantList, Pattern, MatchArmList, TypeList, BinOp, find_annotation}
 
 // ── Public entry ──
 

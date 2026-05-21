@@ -3,7 +3,7 @@
 // them, and attaches the parsed bodies. This is the bridge between
 // the pure parser (no I/O) and the file system.
 
-use core.{Stmt, StmtList, SStmt, sstmt, sstmt_at, sstmt_dummy, AnnotationList, ExprList}
+use core.{Stmt, StmtList, SStmt, sstmt, sstmt_at, sstmt_dummy, Annotation, ExprList}
 use parse.{parse_program_source, parse_program_source_at}
 use core.{avra_process_env_get, avra_selfhost_append_file, avra_selfhost_read_file, avra_is_dir, avra_selfhost_file_exists}
 use build.{metadata_read, metadata_file_exists, synthesize_unit_body}
@@ -1291,10 +1291,8 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths, stack: Impo
             // the producer's compiled .o which the linker resolves).
             let module_stmt = Stmt.Module(name, resolved.stmts)
             let final_stmt = if take_meta {
-                Stmt.Annotated(
-                    AnnotationList.Node("external_unit", ExprList.End, AnnotationList.End),
-                    module_stmt,
-                )
+                let ext_annots: List<Annotation> = [Annotation { name: "external_unit", args: ExprList.End }]
+                Stmt.Annotated(ext_annots, module_stmt)
             } else {
                 module_stmt
             }

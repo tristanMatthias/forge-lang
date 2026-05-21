@@ -24,7 +24,7 @@
 // exercised by the diff-harness spec test in this ticket and by the
 // cutover in y4n1.8.
 
-use core.{Stmt, StmtList, SStmt, SExpr, Expr, ExprList, ParamList, ValueType, AnnotationList}
+use core.{Stmt, StmtList, SStmt, SExpr, Expr, ExprList, ParamList, ValueType, Annotation}
 use core.{
     ModuleGraph, ModuleGraphNode, ResolvedPath,
     StringInterner, InternResult,
@@ -442,13 +442,13 @@ fn register_item_typed(g: ModuleGraph, parent_id: int, canon: string, name: stri
 
 /// True iff `annots` contains the `@export` marker. Mirrors the
 /// `annotation_has_export` check in resolve/names.av's tree builder.
-fn annotation_list_has_export(annots: AnnotationList) -> bool {
-    match annots {
-        .End -> false
-        .Node(name, _, next) -> {
-            if name == "export" { true } else { annotation_list_has_export(next) }
-        }
+fn annotation_list_has_export(annots: List<Annotation>) -> bool {
+    mut i = 0
+    while i < annots.length {
+        if annots[i].name == "export" { return true }
+        i = i + 1
     }
+    false
 }
 
 /// Look up a module by canonical path with ancestor walk: tries

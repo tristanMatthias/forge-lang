@@ -19,7 +19,7 @@
 // macro-produced Stmt should still go through the normal fold pass
 // so any `@comptime` calls inside its body fold correctly.
 
-use core.{Stmt, StmtList, SStmt, Expr, ExprList, AnnotationList, sstmt_at, find_annotation, stmt_unwrap, param_list_length}
+use core.{Stmt, StmtList, SStmt, Expr, ExprList, sstmt_at, find_annotation, stmt_unwrap, param_list_length}
 use features.comptime.{CompTimeRegistry, comptime_lookup, collect_comptime_fns, value_to_stmt, stmt_to_value}
 use features.eval.{Runtime, Value, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message}
 
@@ -295,10 +295,7 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
 fn expand_target_name(stmt: Stmt) -> string {
     let found = find_annotation(stmt, "expand")
     if found == null { return "" }
-    match found! {
-        .End -> ""
-        .Node(_, args, _) -> first_arg_ident(args)
-    }
+    first_arg_ident(found!.args)
 }
 
 fn first_arg_ident(args: ExprList) -> string {

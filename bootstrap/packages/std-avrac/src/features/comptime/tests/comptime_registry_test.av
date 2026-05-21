@@ -1,13 +1,14 @@
 // Phase 2 of Components V2 (vez6.2): exercise the @comptime fn
 // registry — discovery, lookup, recursion into Module bodies.
 
-use @std.avrac.core.{Stmt, StmtList, sstmt_dummy, ParamList, ValueType, TypeParamList, AnnotationList, ExprList}
+use @std.avrac.core.{Stmt, StmtList, sstmt_dummy, ParamList, ValueType, TypeParamList, Annotation, ExprList}
 use @std.avrac.features.comptime.{CompTimeRegistry, CompTimeFn, collect_comptime_fns, comptime_lookup, comptime_has}
 
 // Build an @<name>-annotated fn statement for testing.
 fn mk_annotated_fn(annot_name: string, fn_name: string) -> Stmt {
+    let annots: List<Annotation> = [Annotation { name: annot_name, args: ExprList.End }]
     Stmt.Annotated(
-        AnnotationList.Node(annot_name, ExprList.End, AnnotationList.End),
+        annots,
         Stmt.Function(fn_name, TypeParamList.End, ParamList.End, ValueType.Int, StmtList.End)
     )
 }

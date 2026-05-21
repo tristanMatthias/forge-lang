@@ -1,7 +1,7 @@
 // WHY: parses `impl Type { fn method(self) { ... } }` blocks. Each
 // method is desugared to a free function named `Type__method`.
 
-use core.{Stmt, StmtList, ParamList, TypeParamList, SStmt, sstmt, ValueType, type_expr_to_vtype, vtype_from_name, Expr, ExprList, AnnotationList, sexpr_dummy}
+use core.{Stmt, StmtList, ParamList, TypeParamList, SStmt, sstmt, ValueType, type_expr_to_vtype, vtype_from_name, Expr, ExprList, Annotation, sexpr_dummy}
 use parse.{Parser}
 use core.{method_mangled_name}
 use core.{Tk}
@@ -70,10 +70,8 @@ impl Parser {
                 }
                 .Node(ss, tail) -> {
                     let doc_arg = ExprList.Node(sexpr_dummy(Expr.String("\"${doc_text}\"")), ExprList.End)
-                    let annotated = Stmt.Annotated(
-                        AnnotationList.Node("doc", doc_arg, AnnotationList.End),
-                        ss.node,
-                    )
+                    let doc_annots: List<Annotation> = [Annotation { name: "doc", args: doc_arg }]
+                    let annotated = Stmt.Annotated(doc_annots, ss.node)
                     return StmtList.Node(sstmt(annotated, ss.line, ss.col), tail)
                 }
             }
