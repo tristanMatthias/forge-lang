@@ -8,7 +8,7 @@
 
 use core.{
     Expr, Stmt, StmtList, ExprList, ParamList,
-    TypeParamList, TypeNameList, FieldInitList, FieldList,
+    TypeParamList, FieldInitList, FieldList,
     VariantList, Pattern, MatchArmList, WhenArmList, AnnotationList,
     binop_str, unop_str, logicop_str,
     vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq,
@@ -249,14 +249,15 @@ fn fmt_type_param_list(tp: TypeParamList) -> string {
 
 /// Render a comma-separated list of type names — for explicit
 /// generic-call type arguments `f::<T, U>(x)`.
-fn fmt_type_name_list(names: TypeNameList) -> string {
-    match names {
-        .End -> ""
-        .Node(name, next) -> {
-            let rest = fmt_type_name_list(next)
-            if rest == "" { name } else { "${name}, ${rest}" }
-        }
+fn fmt_type_name_list(names: List<string>) -> string {
+    mut out = ""
+    mut i = 0
+    while i < names.length {
+        if i > 0 { out = out + ", " }
+        out = out + names[i]
+        i = i + 1
     }
+    out
 }
 
 /// Render a struct/with field-init list — `name: expr, name: expr`.

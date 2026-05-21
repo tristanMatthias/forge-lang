@@ -3,7 +3,7 @@
 // checking and before codegen. After this pass, the AST contains no
 // generic declarations — codegen sees only concrete code.
 
-use core.{Expr, ExprList, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, StmtList, ParamList, FieldList, FieldInitList, TypeList, VariantList, MatchArmList, TypeParamList, TypeNameList, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge, SelectArmList}
+use core.{Expr, ExprList, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, StmtList, ParamList, FieldList, FieldInitList, TypeList, VariantList, MatchArmList, TypeParamList, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge, SelectArmList}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_warning, span_new}
 use typeck.{TraitImplReg, type_implements_trait}
 use core.{mangle_join, type_short_name}
@@ -595,16 +595,21 @@ fn all_resolved(tp: TypeParamList, ta: TypeArgList) -> bool {
     }
 }
 
-// Convert explicit type args (TypeNameList from parser) to TypeArgList
-// by pairing them with the declaration's TypeParamList in order.
 /// Convert an explicit `f::<int, string>` argument list into
-/// a TypeArgList by zipping with the declared TypeParamList.
-fn explicit_to_type_args(tp: TypeParamList, names: TypeNameList) -> TypeArgList {
+/// a TypeArgList by zipping with the declared TypeParamList. Zips
+/// stop at whichever side ends first — same shortest-zip semantics
+/// as the prior recursive shape.
+fn explicit_to_type_args(tp: TypeParamList, names: List<string>) -> TypeArgList {
+    explicit_to_type_args_at(tp, names, 0)
+}
+
+fn explicit_to_type_args_at(tp: TypeParamList, names: List<string>, idx: int) -> TypeArgList {
     match tp {
         .End -> TypeArgList.End
-        .Node(param_name, _, tp_next) -> match names {
-            .End -> TypeArgList.End
-            .Node(concrete, names_next) -> TypeArgList.Node(param_name, vtype_from_type_string(concrete), explicit_to_type_args(tp_next, names_next))
+        .Node(param_name, _, tp_next) -> {
+            if idx >= names.length { return TypeArgList.End }
+            TypeArgList.Node(param_name, vtype_from_type_string(names[idx]),
+                             explicit_to_type_args_at(tp_next, names, idx + 1))
         }
     }
 }

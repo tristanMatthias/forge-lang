@@ -7,7 +7,7 @@
 // in the parser's feature registry. Subsequent code can use `name instance { ... }`
 // without the `component` keyword — single-pass, no ambiguity.
 
-use core.{Stmt, Expr, ExprList, SExpr, sexpr_dummy, StmtList, SStmt, sstmt, CompConfigList, CompConfigPairList, ChildrenList, ParamList, FieldList, TypeParamList, TypeNameList, ValueType, type_expr_to_vtype}
+use core.{Stmt, Expr, ExprList, SExpr, sexpr_dummy, StmtList, SStmt, sstmt, CompConfigList, CompConfigPairList, ChildrenList, ParamList, FieldList, TypeParamList, ValueType, type_expr_to_vtype}
 use parse.{Parser}
 use core.{Tk}
 use core.{register_component_name}
@@ -42,11 +42,11 @@ impl Parser {
         // between the component name and the body. Both definition
         // forms (`component name {` and `component name(params) {`)
         // accept it. The block / nested form does not.
-        let implements = if self.check(Tk.Identifier) && self.current_lexeme == "implements" {
+        let implements: List<string> = if self.check(Tk.Identifier) && self.current_lexeme == "implements" {
             self.advance()
             self.parse_implements_list()?
         } else {
-            TypeNameList.End
+            []
         }
 
         // Definition: `component name {` ...
@@ -77,19 +77,16 @@ impl Parser {
         // Only legal when no implements clause was supplied (instances
         // get their trait conformance from the parent ComponentDef).
         if self.check(Tk.Identifier) {
-            match implements {
-                .End -> {}
-                _ -> {
-                    // Two common shapes land here, so the message
-                    // covers both: (a) intentional block form with a
-                    // stray `implements` clause; (b) missing `,`
-                    // between two trait names (e.g.
-                    // `implements Runnable Other {` — `Other` is read
-                    // as an instance name once the implements list
-                    // ended at `Runnable`).
-                    self.set_error("`implements` clause must be followed by `{` or `(` — if you meant another trait name, add a `,` (instance-prefix component blocks may not carry an `implements` clause)")
-                    return null
-                }
+            if implements.length > 0 {
+                // Two common shapes land here, so the message
+                // covers both: (a) intentional block form with a
+                // stray `implements` clause; (b) missing `,`
+                // between two trait names (e.g.
+                // `implements Runnable Other {` — `Other` is read
+                // as an instance name once the implements list
+                // ended at `Runnable`).
+                self.set_error("`implements` clause must be followed by `{` or `(` — if you meant another trait name, add a `,` (instance-prefix component blocks may not carry an `implements` clause)")
+                return null
             }
             let instance = self.current_lexeme
             self.advance()
@@ -112,25 +109,25 @@ impl Parser {
     /// trait name is required; an empty list (`implements {`) is a
     /// parse error (consume_identifier fails on the missing name and
     /// the `?` operator propagates null up to `parse_component_decl`).
-    fn parse_implements_list(self) -> TypeNameList? {
-        let trait_name = self.consume_identifier("expected trait name after `implements`")?
-        if self.check(Tk.Comma) {
+    fn parse_implements_list(self) -> List<string>? {
+        mut out: List<string> = []
+        let first = self.consume_identifier("expected trait name after `implements`")?
+        out.push(first)
+        while self.check(Tk.Comma) {
             self.advance()
             // Trailing comma: `implements A, B,` followed directly by
             // `{` or `(` — treat as legitimate end-of-list rather than
             // recursing and erroring on the missing identifier.
-            if self.check(Tk.LeftBrace) || self.check(Tk.LeftParen) {
-                return TypeNameList.Node(trait_name, TypeNameList.End)
-            }
-            let rest = self.parse_implements_list()?
-            return TypeNameList.Node(trait_name, rest)
+            if self.check(Tk.LeftBrace) || self.check(Tk.LeftParen) { return out }
+            let next = self.consume_identifier("expected trait name after `,`")?
+            out.push(next)
         }
-        TypeNameList.Node(trait_name, TypeNameList.End)
+        out
     }
 
     // ── Component Definition ──
 
-    fn parse_component_def(self, name: string, implements: TypeNameList) -> Stmt? {
+    fn parse_component_def(self, name: string, implements: List<string>) -> Stmt? {
         // `component name {` — no parens, self.name is implicit.
         // `implements` was consumed by the caller (parse_component_decl)
         // so by the time we land here the next token is the opening `{`.

@@ -2,7 +2,7 @@
 // parse_type_params: called from fn_decl/struct_decl/enum_decl for `<T, U>` declarations.
 // try_parse_generic_call: called from the postfix loop for `f<int, string>(x)` calls.
 
-use core.{TypeParamList, TypeNameList, Expr, ExprList, Tk}
+use core.{TypeParamList, Expr, ExprList, Tk}
 use parse.{Parser}
 
 impl Parser {
@@ -75,17 +75,18 @@ impl Parser {
         Expr.GenericCall(callee, type_args, args!)
     }
 
-    fn parse_type_name_list(self) -> TypeNameList {
-        if self.check(Tk.Greater) { return TypeNameList.End }
-        if !self.check(Tk.Identifier) && !self.check(Tk.KwFn) {
-            return TypeNameList.End
-        }
-        let name = self.current_lexeme
+    fn parse_type_name_list(self) -> List<string> {
+        mut out: List<string> = []
+        if self.check(Tk.Greater) { return out }
+        if !self.check(Tk.Identifier) && !self.check(Tk.KwFn) { return out }
+        out.push(self.current_lexeme)
         self.advance()
-        if self.check(Tk.Comma) {
+        while self.check(Tk.Comma) {
             self.advance()
-            return TypeNameList.Node(name, self.parse_type_name_list())
+            if !self.check(Tk.Identifier) && !self.check(Tk.KwFn) { return out }
+            out.push(self.current_lexeme)
+            self.advance()
         }
-        TypeNameList.Node(name, TypeNameList.End)
+        out
     }
 }

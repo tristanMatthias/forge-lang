@@ -165,12 +165,10 @@ export fn render_type_param_list(params: TypeParamList) -> string {
     }
 }
 
-/// Explicit type arguments at call sites: `identity::<int, string>(x)`
-/// — used by GenericCall to pin generic type parameters.
-export enum TypeNameList {
-    End
-    Node(name: string, next: TypeNameList)
-}
+// `List<string>` replaces the retired `enum TypeNameList`. Used as
+// `type_args: List<string>` on Expr.GenericCall, `implements:
+// List<string>` on Stmt.ComponentDef, and as the parser's
+// `parse_type_name_list` return.
 
 // ── Value types ──
 //
@@ -907,7 +905,7 @@ export enum Expr {
     /// Function call: `f(a, b)`.
     Call(callee: Expr, args: ExprList)
     /// Call with explicit type arguments: `f::<int, string>(x, y)`.
-    GenericCall(callee: Expr, type_args: TypeNameList, args: ExprList)
+    GenericCall(callee: Expr, type_args: List<string>, args: ExprList)
     /// Struct literal: `Foo { x: 1, y: 2 }`.
     StructLit(name: string, inits: FieldInitList)
     /// Field access: `obj.field`.
@@ -1070,7 +1068,7 @@ export enum Stmt {
     AssocType(name: string, ty_vt: ValueType)
     /// Component declaration: `component Name(params) { body }` —
     /// reusable templated block of statements.
-    ComponentDef(name: string, params: ParamList, config: CompConfigList, children: ChildrenList, implements: TypeNameList, body: StmtList)
+    ComponentDef(name: string, params: ParamList, config: CompConfigList, children: ChildrenList, implements: List<string>, body: StmtList)
     /// Component instantiation: `component Foo as bar { config; body }`.
     ComponentBlock(comp_name: string, instance: string, config: CompConfigPairList, body: StmtList)
 }
@@ -1533,15 +1531,16 @@ fn render_field_list_tail(fields: FieldList) -> string {
     }
 }
 
-/// Render a TypeNameList as a comma-separated string.
-export fn render_type_name_list(names: TypeNameList) -> string {
-    match names {
-        .End -> ""
-        .Node(name, next) -> {
-            let rest = render_type_name_list(next)
-            if rest == "" { name } else { "${name}, ${rest}" }
-        }
+/// Render a `List<string>` of type names as a comma-separated string.
+export fn render_type_name_list(names: List<string>) -> string {
+    mut out = ""
+    mut i = 0
+    while i < names.length {
+        if i > 0 { out = out + ", " }
+        out = out + names[i]
+        i = i + 1
     }
+    out
 }
 
 /// Render an ExprList as an S-expression: `(e1, e2, e3)`.

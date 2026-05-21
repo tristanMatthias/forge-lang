@@ -3,12 +3,12 @@
 // ComponentDef AST so later passes (typeck, expand) can consume it.
 
 use @std.avrac.parse.{parse_program_source}
-use @std.avrac.core.{Stmt, StmtList, TypeNameList, stmt_unwrap}
+use @std.avrac.core.{Stmt, StmtList, stmt_unwrap}
 
-fn first_component_implements(source: string) -> TypeNameList {
+fn first_component_implements(source: string) -> List<string> {
     let r = parse_program_source(source)
-    if r.had_error == 1 { return TypeNameList.End }
-    if r.stmts == null { return TypeNameList.End }
+    if r.had_error == 1 { return [] }
+    if r.stmts == null { return [] }
     implements_of_first_component(r.stmts!)
 }
 
@@ -46,9 +46,9 @@ fn walk_impl_counts(stmts: StmtList, acc_in: List<int>) -> List<int> {
     }
 }
 
-fn implements_of_first_component(stmts: StmtList) -> TypeNameList {
+fn implements_of_first_component(stmts: StmtList) -> List<string> {
     match stmts {
-        .End -> TypeNameList.End
+        .End -> []
         .Node(ss, next) -> {
             let inner = stmt_unwrap(ss.node)
             match inner {
@@ -59,30 +59,14 @@ fn implements_of_first_component(stmts: StmtList) -> TypeNameList {
     }
 }
 
-fn impl_count(impls: TypeNameList) -> int {
-    match impls {
-        .End -> 0
-        .Node(_, next) -> 1 + impl_count(next)
-    }
+fn impl_count(impls: List<string>) -> int { impls.length }
+
+fn first_impl_name(impls: List<string>) -> string {
+    if impls.length > 0 { impls[0] } else { "" }
 }
 
-fn first_impl_name(impls: TypeNameList) -> string {
-    match impls {
-        .End -> ""
-        .Node(name, _) -> name
-    }
-}
-
-fn second_impl_name(impls: TypeNameList) -> string {
-    match impls {
-        .End -> ""
-        .Node(_, next) -> {
-            match next {
-                .End -> ""
-                .Node(name, _) -> name
-            }
-        }
-    }
+fn second_impl_name(impls: List<string>) -> string {
+    if impls.length > 1 { impls[1] } else { "" }
 }
 
 spec "vez6.8: implements clause parses trait names" {
