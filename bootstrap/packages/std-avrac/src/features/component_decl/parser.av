@@ -7,7 +7,7 @@
 // in the parser's feature registry. Subsequent code can use `name instance { ... }`
 // without the `component` keyword — single-pass, no ambiguity.
 
-use core.{Stmt, Expr, ExprList, SExpr, sexpr_dummy, StmtList, SStmt, sstmt, CompConfigList, CompConfigPairList, ChildrenList, ParamList, FieldList, TypeParamList, ValueType, type_expr_to_vtype}
+use core.{Stmt, Expr, ExprList, SExpr, sexpr_dummy, StmtList, SStmt, sstmt, CompConfigList, CompConfigPairList, ChildrenSlot, ParamList, FieldList, TypeParamList, ValueType, type_expr_to_vtype}
 use parse.{Parser}
 use core.{Tk}
 use core.{register_component_name}
@@ -70,7 +70,7 @@ impl Parser {
             let body = self.parse_comp_def_body()?
             if !self.consume(Tk.RightBrace, "expected `}` at end of component") { return null }
             register_component_name(self.features, name, (p: Parser) -> p.parse_component_block_bare())
-            return Stmt.ComponentDef(name, params, config, ChildrenList.End, implements, body)
+            return Stmt.ComponentDef(name, params, config, [], implements, body)
         }
 
         // Legacy: `component comp instance {` — block with keyword prefix.
@@ -150,7 +150,7 @@ impl Parser {
         // Optional `children { slot: List<T>, ... }` block declares
         // accepted nested instantiation slots (vez6.7). Sits at the top
         // of the component body, after config.
-        let children = if self.check(Tk.Identifier) && self.current_lexeme == "children" {
+        let children: List<ChildrenSlot> = if self.check(Tk.Identifier) && self.current_lexeme == "children" {
             self.advance()
             if !self.consume(Tk.LeftBrace, "expected `{` after `children`") {
                 return null
@@ -161,7 +161,7 @@ impl Parser {
             }
             c
         } else {
-            ChildrenList.End
+            []
         }
         let body = self.parse_comp_def_body()?
         if !self.consume(Tk.RightBrace, "expected `}` at end of component") {
@@ -176,20 +176,25 @@ impl Parser {
 
     /// Parse the body of a `children { slot: List<T>, ... }` block.
     /// Each entry binds a slot name on the parent to the element type
-    /// accepted in that slot. Trailing commas tolerated. Returns
-    /// ChildrenList.End for an empty block.
-    fn parse_comp_children_schema(self) -> ChildrenList? {
-        if self.check(Tk.RightBrace) { return ChildrenList.End }
-        let slot = self.consume_identifier("expected child slot name")?
+    /// accepted in that slot. Trailing commas tolerated. Returns an
+    /// empty list for an empty block.
+    fn parse_comp_children_schema(self) -> List<ChildrenSlot>? {
+        mut out: List<ChildrenSlot> = []
+        if self.check(Tk.RightBrace) { return out }
+        let first_slot = self.consume_identifier("expected child slot name")?
         if !self.consume(Tk.Colon, "expected `:` after slot name") { return null }
-        let te = self.parse_type_expr("expected slot type")?
-        let vt = type_expr_to_vtype(te)
-        if self.check(Tk.Comma) {
+        let first_te = self.parse_type_expr("expected slot type")?
+        out.push(ChildrenSlot { slot_name: first_slot, child_ty: type_expr_to_vtype(first_te) })
+        while self.check(Tk.Comma) {
             self.advance()
-            let rest = self.parse_comp_children_schema()?
-            return ChildrenList.Node(slot, vt, rest)
+            // Trailing comma tolerated.
+            if self.check(Tk.RightBrace) { return out }
+            let slot = self.consume_identifier("expected child slot name")?
+            if !self.consume(Tk.Colon, "expected `:` after slot name") { return null }
+            let te = self.parse_type_expr("expected slot type")?
+            out.push(ChildrenSlot { slot_name: slot, child_ty: type_expr_to_vtype(te) })
         }
-        ChildrenList.Node(slot, vt, ChildrenList.End)
+        out
     }
 
     // ── Config Schema (definition) ──
