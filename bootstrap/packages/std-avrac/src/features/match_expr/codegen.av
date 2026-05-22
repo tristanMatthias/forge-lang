@@ -1,6 +1,6 @@
 // WHY: emits LLVM IR for `match` as both a statement and an expression.
 
-use core.{Expr, Pattern, MatchArmList, WhenArm, ParamList, FieldEntry, TypeList, Variant, VarEnv, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types}
+use core.{Expr, Pattern, MatchArm, WhenArm, ParamList, FieldEntry, TypeList, Variant, VarEnv, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types}
 use codegen.{Ctx, EmitValue, StmtResult, err_emit, ok_emit, field_resolved_at, emit_value_ptr, emit_value_ty, enum_reg_find_by_variant, vtype_is_ptr_type}
 use core.{vtype_from_name}
 use codegen.{ok_sr, err_sr}
@@ -39,7 +39,7 @@ fn forward_stmt_err(message: string) -> Result<StmtResult, string> {
 /// - Else  → `emit_primitive_match_expr` (literal compare).
 /// Allocates a result slot, fills it from each matching arm,
 /// and merges via a final phi-block.
-export fn emit_match_expr(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmList) -> Result<EmitValue, string> {
+export fn emit_match_expr(ctx: Ctx, env: VarEnv, subject: Expr, arms: List<MatchArm>) -> Result<EmitValue, string> {
     match ctx.emit(env, subject) {
         .Err(msg) -> forward_emit_err(msg)
         .Ok(r) -> {
@@ -82,7 +82,7 @@ export fn emit_match_expr(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmLi
 /// Emit a union-typed match expression. Loads the wrapper's
 /// tag, builds a dispatch chain across the union members, then
 /// delegates per-arm emission to `emit_union_match_arms`.
-fn emit_union_match_expr(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: MatchArmList) -> Result<EmitValue, string> {
+fn emit_union_match_expr(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: List<MatchArm>) -> Result<EmitValue, string> {
     let tag_val = emit_union_tag(ctx, emit_value_ptr(subj))
     let result_slot = ctx.alloca_i64("union_match_result")
     ctx.store(ctx.i64(0), result_slot)
@@ -98,99 +98,116 @@ fn emit_union_match_expr(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: MatchArmL
 /// each arm's expected type-hash; on match, extracts the
 /// payload typed correctly and runs the arm body. Merges all
 /// arm exits at `merge_bb` and stores results in `result_slot`.
-fn emit_union_match_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, subj_val: ptr, tag_val: ptr, union_types: TypeList, merge_bb: ptr, result_slot: ptr) -> Result<ValueType, string> {
-    match arms {
-        .End -> {
-            ctx.match_trap(tag_val)
-            ok_match_ty(.Unknown)
-        }
-        .Node(pattern, guard, body, next) -> {
-            match pattern {
-                .TypePattern(type_name, binding) -> {
-                    let arm_bb = ctx.bb("union_arm")
-                    let next_bb = ctx.bb("union_next")
-                    // Compare tag against hash of type name
-                    let expected_tag = ctx.i64(avra_variant_hash(type_name))
-                    let cmp = ctx.eq(tag_val, expected_tag, "union_tag_eq")
-                    ctx.cond_br(cmp, arm_bb, next_bb)
-                    ctx.position(arm_bb)
-                    // Extract payload and bind to variable
-                    let member_ty = ctx.resolve_codegen_vtype(vtype_from_name(type_name))
-                    let extracted = emit_union_extract(ctx, subj_val, member_ty)
-                    let arm_env = ctx.bind(env, binding, extracted.value, member_ty)
-                    // Guard
-                    if guard != null {
-                        match ctx.emit(arm_env, guard!.node) {
-                            .Err(msg) -> return err_match_ty(msg)
-                            .Ok(guard_r) -> {
-                                let guard_bool = ctx.truthy(emit_value_ptr(guard_r), "guard")
-                                let guard_pass_bb = ctx.bb("guard_pass")
-                                ctx.cond_br(guard_bool, guard_pass_bb, next_bb)
-                                ctx.position(guard_pass_bb)
-                            }
-                        }
-                    }
-                    match ctx.emit(arm_env, body.node) {
-                        .Err(msg) -> err_match_ty(msg)
-                        .Ok(body_result) -> {
-                            ctx.store_br_if_open(emit_value_ptr(body_result), result_slot, merge_bb)
-                            ctx.position(next_bb)
-                            let rest_ty = emit_union_match_arms(ctx, env, next, subj_val, tag_val, union_types, merge_bb, result_slot)?
-                            ok_match_ty(emit_value_ty(body_result))
+fn emit_union_match_arms(ctx: Ctx, env: VarEnv, arms: List<MatchArm>, subj_val: ptr, tag_val: ptr, union_types: TypeList, merge_bb: ptr, result_slot: ptr) -> Result<ValueType, string> {
+    // Source-order arm walk. Each iteration positions the IR
+    // builder either at the arm's body block (on tag match) or at
+    // the fall-through `next_bb` (no match). The wildcard arm
+    // short-circuits — bodies after it are unreachable, so we stop
+    // the walk and skip the fall-through trap. The reported type is
+    // the FIRST arm's body type (matches the prior outermost-wraps
+    // recursion semantics — every level returned its own body type,
+    // and the outermost was the first arm).
+    mut first_ty: ValueType = ValueType.Unknown
+    mut first_ty_set = false
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let body = arm.body
+        let result_for_arm = match arm.pattern {
+            .TypePattern(type_name, binding) -> {
+                let arm_bb = ctx.bb("union_arm")
+                let next_bb = ctx.bb("union_next")
+                let expected_tag = ctx.i64(avra_variant_hash(type_name))
+                let cmp = ctx.eq(tag_val, expected_tag, "union_tag_eq")
+                ctx.cond_br(cmp, arm_bb, next_bb)
+                ctx.position(arm_bb)
+                let member_ty = ctx.resolve_codegen_vtype(vtype_from_name(type_name))
+                let extracted = emit_union_extract(ctx, subj_val, member_ty)
+                let arm_env = ctx.bind(env, binding, extracted.value, member_ty)
+                if arm.guard != null {
+                    match ctx.emit(arm_env, arm.guard!.node) {
+                        .Err(msg) -> return err_match_ty(msg)
+                        .Ok(guard_r) -> {
+                            let guard_bool = ctx.truthy(emit_value_ptr(guard_r), "guard")
+                            let guard_pass_bb = ctx.bb("guard_pass")
+                            ctx.cond_br(guard_bool, guard_pass_bb, next_bb)
+                            ctx.position(guard_pass_bb)
                         }
                     }
                 }
-                .Wildcard -> {
-                    // Wildcard matches everything — emit body directly, no branch needed
-                    match ctx.emit(env, body.node) {
-                        .Err(msg) -> err_match_ty(msg)
-                        .Ok(body_result) -> {
-                            ctx.store_br_if_open(emit_value_ptr(body_result), result_slot, merge_bb)
-                            ok_match_ty(emit_value_ty(body_result))
-                        }
+                match ctx.emit(arm_env, body.node) {
+                    .Err(msg) -> return err_match_ty(msg)
+                    .Ok(body_result) -> {
+                        ctx.store_br_if_open(emit_value_ptr(body_result), result_slot, merge_bb)
+                        ctx.position(next_bb)
+                        emit_value_ty(body_result)
                     }
                 }
-                // Treat .Variant(name, bindings) as a type pattern on unions
-                .Variant(vname, bindings) -> {
-                    let binding = match bindings { .Node(n, _, _) -> n, .End -> "_" }
-                    let arm_bb = ctx.bb("union_arm")
-                    let next_bb = ctx.bb("union_next")
-                    let expected_tag = ctx.i64(avra_variant_hash(vname))
-                    let cmp = ctx.eq(tag_val, expected_tag, "union_tag_eq")
-                    ctx.cond_br(cmp, arm_bb, next_bb)
-                    ctx.position(arm_bb)
-                    let member_ty = ctx.resolve_codegen_vtype(vtype_from_name(vname))
-                    let extracted = emit_union_extract(ctx, subj_val, member_ty)
-                    let arm_env = if binding != "_" { ctx.bind(env, binding, extracted.value, member_ty) } else { env }
-                    match ctx.emit(arm_env, body.node) {
-                        .Err(msg) -> err_match_ty(msg)
-                        .Ok(body_result) -> {
-                            ctx.store_br_if_open(emit_value_ptr(body_result), result_slot, merge_bb)
-                            ctx.position(next_bb)
-                            let rest_ty = emit_union_match_arms(ctx, env, next, subj_val, tag_val, union_types, merge_bb, result_slot)?
-                            ok_match_ty(emit_value_ty(body_result))
-                        }
-                    }
-                }
-                _ -> err_match_ty("union match requires type patterns like `int(n)` or `.Variant(binding)`, or `_` wildcard")
             }
+            .Wildcard -> {
+                // Wildcard matches everything — emit body directly,
+                // no branch needed. Subsequent arms are unreachable.
+                match ctx.emit(env, body.node) {
+                    .Err(msg) -> return err_match_ty(msg)
+                    .Ok(body_result) -> {
+                        ctx.store_br_if_open(emit_value_ptr(body_result), result_slot, merge_bb)
+                        // Cap the type and exit early — no trap
+                        // (everything is matched) and no further arms
+                        // would execute. If this is the very first
+                        // arm, its type is what we report; otherwise
+                        // the already-captured `first_ty` wins.
+                        let ty = emit_value_ty(body_result)
+                        return ok_match_ty(if first_ty_set { first_ty } else { ty })
+                    }
+                }
+            }
+            // Treat .Variant(name, bindings) as a type pattern on unions
+            .Variant(vname, bindings) -> {
+                let binding = match bindings { .Node(n, _, _) -> n, .End -> "_" }
+                let arm_bb = ctx.bb("union_arm")
+                let next_bb = ctx.bb("union_next")
+                let expected_tag = ctx.i64(avra_variant_hash(vname))
+                let cmp = ctx.eq(tag_val, expected_tag, "union_tag_eq")
+                ctx.cond_br(cmp, arm_bb, next_bb)
+                ctx.position(arm_bb)
+                let member_ty = ctx.resolve_codegen_vtype(vtype_from_name(vname))
+                let extracted = emit_union_extract(ctx, subj_val, member_ty)
+                let arm_env = if binding != "_" { ctx.bind(env, binding, extracted.value, member_ty) } else { env }
+                match ctx.emit(arm_env, body.node) {
+                    .Err(msg) -> return err_match_ty(msg)
+                    .Ok(body_result) -> {
+                        ctx.store_br_if_open(emit_value_ptr(body_result), result_slot, merge_bb)
+                        ctx.position(next_bb)
+                        emit_value_ty(body_result)
+                    }
+                }
+            }
+            _ -> return err_match_ty("union match requires type patterns like `int(n)` or `.Variant(binding)`, or `_` wildcard")
         }
+        if !first_ty_set {
+            first_ty = result_for_arm
+            first_ty_set = true
+        }
+        i = i + 1
     }
+    // Fell through every arm (no wildcard) — trap on unmatched tag.
+    ctx.match_trap(tag_val)
+    ok_match_ty(first_ty)
 }
 
 /// True when any arm uses a type-pattern (`int(n)` /
 /// `string(s)`). Used to recognise union-shaped matches when
 /// the subject's static type is opaque.
-fn arms_have_type_pattern(arms: MatchArmList) -> bool {
-    match arms {
-        .End -> false
-        .Node(pattern, _, _, next) -> {
-            match pattern {
-                .TypePattern(_, _) -> true
-                _ -> arms_have_type_pattern(next)
-            }
+fn arms_have_type_pattern(arms: List<MatchArm>) -> bool {
+    mut i = 0
+    while i < arms.length {
+        match arms[i].pattern {
+            .TypePattern(_, _) -> return true
+            _ -> {}
         }
+        i = i + 1
     }
+    false
 }
 
 // Infer the enum type from match arm patterns by looking up variant names in the enum registry.
@@ -198,70 +215,89 @@ fn arms_have_type_pattern(arms: MatchArmList) -> bool {
 /// when the subject's declared type is missing or `Unknown`
 /// (e.g. when matching a generic). Looks up the first variant
 /// in the enum registry to pick a canonical name.
-fn infer_enum_from_arms(ctx: Ctx, arms: MatchArmList) -> string {
-    match arms {
-        .End -> ""
-        .Node(pattern, _, _, next) -> {
-            let vname = match pattern {
-                .Variant(name, _) -> name
-                .NestedVariant(name, _) -> name
-                _ -> ""
-            }
-            if vname != "" {
-                let found = enum_reg_find_by_variant(ctx.enums, vname)
-                if found != "" { return found }
-            }
-            infer_enum_from_arms(ctx, next)
+fn infer_enum_from_arms(ctx: Ctx, arms: List<MatchArm>) -> string {
+    mut i = 0
+    while i < arms.length {
+        let vname = match arms[i].pattern {
+            .Variant(name, _) -> name
+            .NestedVariant(name, _) -> name
+            _ -> ""
         }
+        if vname != "" {
+            let found = enum_reg_find_by_variant(ctx.enums, vname)
+            if found != "" { return found }
+        }
+        i = i + 1
     }
+    ""
 }
 
 /// Per-arm enum match emitter. Builds the tag-compare branch
 /// chain via `emit_pattern_tag_branch`, binds payload captures
 /// via `bind_pattern_payload`, then emits the arm body and
 /// stores its result. Wildcards skip the tag check entirely.
-fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_ptr: ptr, tag_val: ptr, variants: List<Variant>, merge_bb: ptr, result_slot: ptr) -> Result<ValueType, string> {
-    match arms {
-        .End -> {
-            ctx.match_trap(tag_val)
-            ok_match_ty(.Unknown)
-        }
-        .Node(pattern, guard, body, next) -> {
-            let arm_bb = ctx.bb("march_arm")
-            let next_bb = ctx.bb("march_next")
-            emit_pattern_tag_branch(ctx, pattern, tag_val, variants, arm_bb, next_bb)
-            ctx.position(arm_bb)
-            // For nested patterns, check inner variant tags before binding
-            emit_nested_tag_checks(ctx, pattern, st_ty, subj_ptr, variants, next_bb)
-            let arm_env = bind_pattern_payload(ctx, env, pattern, st_ty, subj_ptr, variants)
-            // Guard: if present, check condition; if false, skip to next arm
-            if guard != null {
-                match ctx.emit(arm_env, guard!.node) {
-                    .Err(msg) -> return err_match_ty(msg)
-                    .Ok(guard_r) -> {
-                        let guard_bool = ctx.truthy(emit_value_ptr(guard_r), "guard")
-                        let guard_pass_bb = ctx.bb("guard_pass")
-                        ctx.cond_br(guard_bool, guard_pass_bb, next_bb)
-                        ctx.position(guard_pass_bb)
-                    }
-                }
-            }
-            ctx.cov_match_arm(body.line)
-            match ctx.emit(arm_env, body.node) {
-                .Err(msg) -> err_match_ty(msg)
-                .Ok(body_result) -> {
-                    ctx.store_br_if_open(emit_value_ptr(body_result), result_slot, merge_bb)
-                    ctx.position(next_bb)
-                    let rest_ty = emit_match_expr_arms(ctx, env, next, st_ty, subj_ptr, tag_val, variants, merge_bb, result_slot)?
-                    let body_ty = emit_value_ty(body_result)
-                    if !vtype_is_unknown(rest_ty) && !vtype_eq(body_ty, rest_ty) {
-                        warn_arm_type_mismatch(ctx, body_ty, rest_ty)
-                    }
-                    ok_match_ty(body_ty)
+fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: List<MatchArm>, st_ty: ptr, subj_ptr: ptr, tag_val: ptr, variants: List<Variant>, merge_bb: ptr, result_slot: ptr) -> Result<ValueType, string> {
+    // Source-order arm walk: emit the branch/check/body for each
+    // arm in turn. The prior cons recursion threaded type-mismatch
+    // warnings between adjacent arms — we keep the same behavior
+    // by remembering the previous arm's body type (`prev_ty`) and
+    // comparing the current arm against it when both are typed.
+    //
+    // The reported type is the FIRST arm's body type, matching the
+    // outermost-wraps semantics of the prior recursive shape.
+    mut first_ty: ValueType = ValueType.Unknown
+    mut first_ty_set = false
+    mut prev_ty: ValueType = ValueType.Unknown
+    mut prev_ty_set = false
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let arm_bb = ctx.bb("march_arm")
+        let next_bb = ctx.bb("march_next")
+        emit_pattern_tag_branch(ctx, arm.pattern, tag_val, variants, arm_bb, next_bb)
+        ctx.position(arm_bb)
+        // For nested patterns, check inner variant tags before binding
+        emit_nested_tag_checks(ctx, arm.pattern, st_ty, subj_ptr, variants, next_bb)
+        let arm_env = bind_pattern_payload(ctx, env, arm.pattern, st_ty, subj_ptr, variants)
+        // Guard: if present, check condition; if false, skip to
+        // the next arm via `next_bb`.
+        if arm.guard != null {
+            match ctx.emit(arm_env, arm.guard!.node) {
+                .Err(msg) -> return err_match_ty(msg)
+                .Ok(guard_r) -> {
+                    let guard_bool = ctx.truthy(emit_value_ptr(guard_r), "guard")
+                    let guard_pass_bb = ctx.bb("guard_pass")
+                    ctx.cond_br(guard_bool, guard_pass_bb, next_bb)
+                    ctx.position(guard_pass_bb)
                 }
             }
         }
+        ctx.cov_match_arm(arm.body.line)
+        let body_ty = match ctx.emit(arm_env, arm.body.node) {
+            .Err(msg) -> return err_match_ty(msg)
+            .Ok(body_result) -> {
+                ctx.store_br_if_open(emit_value_ptr(body_result), result_slot, merge_bb)
+                ctx.position(next_bb)
+                emit_value_ty(body_result)
+            }
+        }
+        // Cross-arm type mismatch warning — paired with the
+        // previous arm's body type when both are known. Prior cons
+        // recursion compared each arm against its tail; the
+        // adjacent-pair comparison preserves that fanout.
+        if prev_ty_set && !vtype_is_unknown(body_ty) && !vtype_eq(body_ty, prev_ty) {
+            warn_arm_type_mismatch(ctx, prev_ty, body_ty)
+        }
+        prev_ty = body_ty
+        prev_ty_set = true
+        if !first_ty_set {
+            first_ty = body_ty
+            first_ty_set = true
+        }
+        i = i + 1
     }
+    ctx.match_trap(tag_val)
+    ok_match_ty(first_ty)
 }
 
 // ── Match as statement ──
@@ -269,7 +305,7 @@ fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, s
 /// Emit `match expr { arms... }` in statement position. Same
 /// dispatch shape as `emit_match_expr` but no value is
 /// produced — bodies are emitted for side effects only.
-export fn emit_match(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmList) -> Result<StmtResult, string> {
+export fn emit_match(ctx: Ctx, env: VarEnv, subject: Expr, arms: List<MatchArm>) -> Result<StmtResult, string> {
     match ctx.emit(env, subject) {
         .Err(msg) -> forward_stmt_err(msg)
         .Ok(r) -> {
@@ -301,7 +337,7 @@ export fn emit_match(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmList) -
 /// Statement-position arm emitter. Mirror of
 /// `emit_match_expr_arms` but doesn't store arm results — bodies
 /// are evaluated for side effects only.
-fn emit_match_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_ptr: ptr, tag_val: ptr, variants: List<Variant>, merge_bb: ptr) -> Result<StmtResult, string> {
+fn emit_match_arms(ctx: Ctx, env: VarEnv, arms: List<MatchArm>, st_ty: ptr, subj_ptr: ptr, tag_val: ptr, variants: List<Variant>, merge_bb: ptr) -> Result<StmtResult, string> {
     // Reuse the expression arm emitter with a dummy result_slot.
     // The slot is written to but never loaded (statements discard the value).
     let dummy_slot = ctx.alloca_i64("match_stmt_discard")
@@ -574,7 +610,7 @@ fn bind_first_param(ctx: Ctx, env: VarEnv, bindings: ParamList, value: ptr, ty: 
 /// Emit a match-expression on a primitive subject (Int / Bool /
 /// Float / Str). Each arm's literal pattern compiles to an
 /// equality comparison; results unify into a phi-merge.
-fn emit_primitive_match_expr(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: MatchArmList) -> Result<EmitValue, string> {
+fn emit_primitive_match_expr(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: List<MatchArm>) -> Result<EmitValue, string> {
     let result_slot = ctx.alloca_i64("pmatch_result")
     ctx.store(ctx.i64(0), result_slot)
     let merge_bb = ctx.bb("pmatch_end")
@@ -650,38 +686,29 @@ fn is_literal_pattern(pattern: Pattern) -> bool {
 /// Compares literal patterns one-by-one, unconditionally
 /// branches into wildcard arms, then runs the body and stores
 /// its result.
-fn emit_primitive_arms_expr(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: MatchArmList, merge_bb: ptr, result_slot: ptr) -> Result<ValueType, string> {
-    match arms {
-        .End -> {
-            ctx.match_trap(ctx.i64(-1))
-            ctx.position(merge_bb)
-            ok_match_ty(.Unknown)
-        }
-        .Node(pattern, guard, body, next) -> {
-            let body_bb = ctx.bb("parm_body")
-            let next_bb = ctx.bb("parm_next")
+fn emit_primitive_arms_expr(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: List<MatchArm>, merge_bb: ptr, result_slot: ptr) -> Result<ValueType, string> {
+    // Source-order arm walk. Same adjacent-pair type-mismatch
+    // warning as the enum-side emitter; reported type is the FIRST
+    // arm's body type (outermost-wraps semantics of the prior
+    // recursive shape).
+    mut first_ty: ValueType = ValueType.Unknown
+    mut first_ty_set = false
+    mut prev_ty: ValueType = ValueType.Unknown
+    mut prev_ty_set = false
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let body_bb = ctx.bb("parm_body")
+        let next_bb = ctx.bb("parm_next")
 
-            if is_literal_pattern(pattern) {
-                // Literal pattern: compare subject against the literal
-                let cmp = emit_literal_cmp(ctx, subj, pattern)
-                if guard != null {
-                    // Literal + guard: both must be true
-                    let lit_pass_bb = ctx.bb("lit_guard")
-                    ctx.cond_br(cmp, lit_pass_bb, next_bb)
-                    ctx.position(lit_pass_bb)
-                    match ctx.emit(env, guard!.node) {
-                        .Err(msg) -> return err_match_ty(msg)
-                        .Ok(guard_r) -> {
-                            let guard_bool = ctx.truthy(emit_value_ptr(guard_r), "pguard")
-                            ctx.cond_br(guard_bool, body_bb, next_bb)
-                        }
-                    }
-                } else {
-                    ctx.cond_br(cmp, body_bb, next_bb)
-                }
-            } else if guard != null {
-                // Guarded wildcard: if guard { body } else { next arm }
-                match ctx.emit(env, guard!.node) {
+        if is_literal_pattern(arm.pattern) {
+            let cmp = emit_literal_cmp(ctx, subj, arm.pattern)
+            if arm.guard != null {
+                // Literal + guard: both must hold.
+                let lit_pass_bb = ctx.bb("lit_guard")
+                ctx.cond_br(cmp, lit_pass_bb, next_bb)
+                ctx.position(lit_pass_bb)
+                match ctx.emit(env, arm.guard!.node) {
                     .Err(msg) -> return err_match_ty(msg)
                     .Ok(guard_r) -> {
                         let guard_bool = ctx.truthy(emit_value_ptr(guard_r), "pguard")
@@ -689,33 +716,51 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: MatchA
                     }
                 }
             } else {
-                // Unguarded wildcard: always matches (catch-all)
-                ctx.br(body_bb)
+                ctx.cond_br(cmp, body_bb, next_bb)
             }
-
-            ctx.position(body_bb)
-            match ctx.emit(env, body.node) {
-                .Err(msg) -> err_match_ty(msg)
-                .Ok(body_r) -> {
-                    ctx.store_br_if_open(emit_value_ptr(body_r), result_slot, merge_bb)
-
-                    ctx.position(next_bb)
-                    let rest_ty = emit_primitive_arms_expr(ctx, env, subj, next, merge_bb, result_slot)?
-                    let body_ty = emit_value_ty(body_r)
-                    if !vtype_is_unknown(rest_ty) && !vtype_eq(body_ty, rest_ty) {
-                        warn_arm_type_mismatch(ctx, body_ty, rest_ty)
-                    }
-                    ok_match_ty(body_ty)
+        } else if arm.guard != null {
+            // Guarded wildcard: if guard { body } else { next arm }.
+            match ctx.emit(env, arm.guard!.node) {
+                .Err(msg) -> return err_match_ty(msg)
+                .Ok(guard_r) -> {
+                    let guard_bool = ctx.truthy(emit_value_ptr(guard_r), "pguard")
+                    ctx.cond_br(guard_bool, body_bb, next_bb)
                 }
             }
+        } else {
+            // Unguarded wildcard: always matches (catch-all).
+            ctx.br(body_bb)
         }
+
+        ctx.position(body_bb)
+        let body_ty = match ctx.emit(env, arm.body.node) {
+            .Err(msg) -> return err_match_ty(msg)
+            .Ok(body_r) -> {
+                ctx.store_br_if_open(emit_value_ptr(body_r), result_slot, merge_bb)
+                ctx.position(next_bb)
+                emit_value_ty(body_r)
+            }
+        }
+        if prev_ty_set && !vtype_is_unknown(body_ty) && !vtype_eq(body_ty, prev_ty) {
+            warn_arm_type_mismatch(ctx, prev_ty, body_ty)
+        }
+        prev_ty = body_ty
+        prev_ty_set = true
+        if !first_ty_set {
+            first_ty = body_ty
+            first_ty_set = true
+        }
+        i = i + 1
     }
+    ctx.match_trap(ctx.i64(-1))
+    ctx.position(merge_bb)
+    ok_match_ty(first_ty)
 }
 
 /// Statement-position primitive match. Mirror of
 /// `emit_primitive_match_expr` but no result slot — bodies run
 /// for side effects only.
-fn emit_primitive_match_stmt(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: MatchArmList) -> Result<StmtResult, string> {
+fn emit_primitive_match_stmt(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: List<MatchArm>) -> Result<StmtResult, string> {
     // Reuse the expression arm emitter with a dummy result_slot.
     let merge_bb = ctx.bb("pmatch_end")
     let dummy_slot = ctx.alloca_i64("pmatch_stmt_discard")

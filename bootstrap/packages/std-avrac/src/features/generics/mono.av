@@ -3,7 +3,7 @@
 // checking and before codegen. After this pass, the AST contains no
 // generic declarations — codegen sees only concrete code.
 
-use core.{Expr, ExprList, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, StmtList, ParamList, FieldEntry, FieldInit, TypeList, Variant, MatchArmList, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge, SelectArm}
+use core.{Expr, ExprList, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, StmtList, ParamList, FieldEntry, FieldInit, TypeList, Variant, MatchArm, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge, SelectArm}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_warning, span_new}
 use typeck.{TraitImplReg, type_implements_trait}
 use core.{mangle_join, type_short_name}
@@ -997,14 +997,18 @@ fn collect_inst_exprs(exprs: ExprList, regs: GenRegs, st: CollectState) -> Colle
 
 /// Walk every match arm collecting instantiations from arm
 /// bodies. Patterns themselves don't register instantiations.
-fn collect_inst_arms(arms: MatchArmList, regs: GenRegs, st: CollectState) -> CollectState {
-    match arms {
-        .End -> st
-        .Node(_, guard, body, next) -> {
-            let a = if guard != null { collect_inst_expr(guard!.node, regs, st) } else { st }
-            collect_inst_arms(next, regs, collect_inst_expr(body.node, regs, a))
+fn collect_inst_arms(arms: List<MatchArm>, regs: GenRegs, st: CollectState) -> CollectState {
+    mut acc = st
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        if arm.guard != null {
+            acc = collect_inst_expr(arm.guard!.node, regs, acc)
         }
+        acc = collect_inst_expr(arm.body.node, regs, acc)
+        i = i + 1
     }
+    acc
 }
 
 /// Walk a `List<FieldInit>` collecting instantiations from each
@@ -1262,17 +1266,20 @@ fn substitute_expr(expr: Expr, ta: List<TypeArg>) -> Expr {
 
 /// Map `substitute_expr` over each guard + body of a match
 /// arm list. Patterns themselves don't carry types.
-fn substitute_match_arms(arms: MatchArmList, ta: List<TypeArg>) -> MatchArmList {
-    match arms {
-        .End -> .End
-        .Node(pat, guard, body, next) -> {
-            let new_guard = if guard != null {
-                let g = guard!
-                sexpr_at(substitute_expr(g.node, ta), g.line, g.col, g.file)
-            } else { null }
-            MatchArmList.Node(pat, new_guard, sexpr_at(substitute_expr(body.node, ta), body.line, body.col, body.file), substitute_match_arms(next, ta))
-        }
+fn substitute_match_arms(arms: List<MatchArm>, ta: List<TypeArg>) -> List<MatchArm> {
+    mut out: List<MatchArm> = []
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let new_guard = if arm.guard != null {
+            let g = arm.guard!
+            sexpr_at(substitute_expr(g.node, ta), g.line, g.col, g.file)
+        } else { null }
+        let new_body = sexpr_at(substitute_expr(arm.body.node, ta), arm.body.line, arm.body.col, arm.body.file)
+        out.push(MatchArm { pattern: arm.pattern, guard: new_guard, body: new_body })
+        i = i + 1
     }
+    out
 }
 
 // Scope the instantiation list for a function body based on its return type.
@@ -1643,17 +1650,20 @@ fn rewrite_expr_list(exprs: ExprList, regs: GenRegs, insts: List<Inst>) -> ExprL
 
 /// Map `rewrite_expr` over each guard + body in a match-arm
 /// list.
-fn rewrite_arms(arms: MatchArmList, regs: GenRegs, insts: List<Inst>) -> MatchArmList {
-    match arms {
-        .End -> .End
-        .Node(pat, guard, body, next) -> {
-            let new_guard = if guard != null {
-                let g = guard!
-                sexpr_at(rewrite_expr(g.node, regs, insts), g.line, g.col, g.file)
-            } else { null }
-            MatchArmList.Node(pat, new_guard, sexpr_at(rewrite_expr(body.node, regs, insts), body.line, body.col, body.file), rewrite_arms(next, regs, insts))
-        }
+fn rewrite_arms(arms: List<MatchArm>, regs: GenRegs, insts: List<Inst>) -> List<MatchArm> {
+    mut out: List<MatchArm> = []
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let new_guard = if arm.guard != null {
+            let g = arm.guard!
+            sexpr_at(rewrite_expr(g.node, regs, insts), g.line, g.col, g.file)
+        } else { null }
+        let new_body = sexpr_at(rewrite_expr(arm.body.node, regs, insts), arm.body.line, arm.body.col, arm.body.file)
+        out.push(MatchArm { pattern: arm.pattern, guard: new_guard, body: new_body })
+        i = i + 1
     }
+    out
 }
 
 /// Map `rewrite_expr` over every value in a struct-literal /

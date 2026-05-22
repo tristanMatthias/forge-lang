@@ -12,7 +12,7 @@
 //   do NOT read this file when:   the issue is variable scoping or
 //                                  type checking
 
-use core.{Expr, ExprList, FieldEntry, Stmt, StmtList, ParamList, FieldInit, MatchArmList, WhenArm, Pattern, SExpr, SStmt, Variant, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, ValueType, TypeList, SelectArm}
+use core.{Expr, ExprList, FieldEntry, Stmt, StmtList, ParamList, FieldInit, MatchArm, WhenArm, Pattern, SExpr, SStmt, Variant, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, ValueType, TypeList, SelectArm}
 use diagnostics.{Confidence, DiagCode, Span, DiagnosticBag, bag_new, bag_merge, bag_report, bag_has_errors, diag_error, diag_warning, diag_with_confidence, span_new, span_at, span_dummy}
 use resolve.{resolve_program}
 use core.{TypeRegistry, TypeKind, type_registry_new, type_registry_register, type_registry_id_for, type_qualified_name, method_mangled_name, trait_impl_name, is_mangled_method, method_from_mangled}
@@ -1146,18 +1146,23 @@ fn rewrite_field_inits(ctx: NameCtx, inits: List<FieldInit>) -> List<FieldInit> 
     out
 }
 
-/// Walk a MatchArmList, binding pattern captures into the local
+/// Walk a `List<MatchArm>`, binding pattern captures into the local
 /// scope before rewriting each arm body.
-fn rewrite_match_arms(ctx: NameCtx, arms: MatchArmList) -> MatchArmList {
-    match arms {
-        .End -> MatchArmList.End
-        .Node(pattern, guard, body, next) -> {
-            let rp = rewrite_pattern(ctx, pattern)
-            let arm_ctx = bind_pattern_ctx(ctx, rp)
-            let new_guard = if guard != null { sexpr_at(rewrite_expr(arm_ctx, guard!.node), guard!.line, guard!.col, guard!.file) } else { null }
-            MatchArmList.Node(rp, new_guard, sexpr_at(rewrite_expr(arm_ctx, body.node), body.line, body.col, body.file), rewrite_match_arms(ctx, next))
-        }
+fn rewrite_match_arms(ctx: NameCtx, arms: List<MatchArm>) -> List<MatchArm> {
+    mut out: List<MatchArm> = []
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let rp = rewrite_pattern(ctx, arm.pattern)
+        let arm_ctx = bind_pattern_ctx(ctx, rp)
+        let new_guard = if arm.guard != null {
+            sexpr_at(rewrite_expr(arm_ctx, arm.guard!.node), arm.guard!.line, arm.guard!.col, arm.guard!.file)
+        } else { null }
+        let new_body = sexpr_at(rewrite_expr(arm_ctx, arm.body.node), arm.body.line, arm.body.col, arm.body.file)
+        out.push(MatchArm { pattern: rp, guard: new_guard, body: new_body })
+        i = i + 1
     }
+    out
 }
 
 // Qualify type names inside match patterns
@@ -1352,17 +1357,20 @@ fn collect_used_paths_field_inits(inits: List<FieldInit>, acc: List<string>) -> 
     out
 }
 
-/// Walk a MatchArmList for the unused-import sweep — both guards
-/// and bodies contribute.
-fn collect_used_paths_match_arms(arms: MatchArmList, acc: List<string>) -> List<string> {
-    match arms {
-        .End -> acc
-        .Node(_, guard, body, next) -> {
-            let with_guard = if guard != null { collect_used_paths_expr(guard!.node, acc) } else { acc }
-            let with_body = collect_used_paths_expr(body.node, with_guard)
-            collect_used_paths_match_arms(next, with_body)
+/// Walk a `List<MatchArm>` for the unused-import sweep — both
+/// guards and bodies contribute.
+fn collect_used_paths_match_arms(arms: List<MatchArm>, acc: List<string>) -> List<string> {
+    mut out = acc
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        if arm.guard != null {
+            out = collect_used_paths_expr(arm.guard!.node, out)
         }
+        out = collect_used_paths_expr(arm.body.node, out)
+        i = i + 1
     }
+    out
 }
 
 // Check each alias in the use_result against the used paths set.

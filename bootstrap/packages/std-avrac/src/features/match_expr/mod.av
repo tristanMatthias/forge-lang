@@ -6,7 +6,7 @@ use codegen.{err_emit, err_stmt, StmtResult}
 use codegen.{err_sr}
 use features.eval.{error_result, ok_result, eval_expr, execute_stmt, Runtime, StepResult, Value, define_binding, enter_scope, exit_scope, value_null, is_truthy}
 use features.eval.{step_runtime, step_value, step_had_error, step_is_return, step_error_message}
-use core.{Pattern, MatchArmList, ParamList, SExpr, Expr, Stmt}
+use core.{Pattern, MatchArm, ParamList, SExpr, Expr, Stmt}
 use core.{feature_new, Feature}
 use resolve.{resolve_expr}
 use typeck.{check_expr, tc_er}
@@ -15,9 +15,10 @@ use typeck.{check_expr, tc_er}
 /// expression positions. Wires up parser, resolver, type-checker,
 /// codegen, and eval hooks for each.
 export fn match_feature() -> Feature {
+    let empty_arms: List<MatchArm> = []
     feature_new("match") with {
-        expr_tag: Expr.MatchExpr(Expr.Null, MatchArmList.End),
-        stmt_tag: Stmt.Match(Expr.Null, MatchArmList.End),
+        expr_tag: Expr.MatchExpr(Expr.Null, empty_arms),
+        stmt_tag: Stmt.Match(Expr.Null, empty_arms),
         emit_expr: match_emit_expr,
         emit_stmt: match_emit_stmt,
         resolve_stmt: match_resolve_stmt,
@@ -110,33 +111,39 @@ type MatchAttempt = {
 /// first match, evaluates the arm body in the extended scope.
 /// Errors when no arm matches — match must be exhaustive (codegen
 /// emits a trap; eval surfaces a real error).
-fn eval_match_arms(rt: Runtime, subject: Value, arms: MatchArmList) -> StepResult {
-    match arms {
-        .End -> error_result(rt, "no match arm matched")
-        .Node(pattern, guard, body, next) -> {
-            let scoped = enter_scope(rt)
-            let attempt = try_match_pattern(scoped, pattern, subject)
-            if attempt.matched {
-                if guard != null {
-                    let guard_result = eval_expr(attempt.runtime, guard!.node)
-                    if step_had_error(guard_result) {
-                        let _exited = exit_scope(step_runtime(guard_result))
-                        return guard_result
-                    }
-                    if !is_truthy(step_value(guard_result)) {
-                        let exited = exit_scope(step_runtime(guard_result))
-                        return eval_match_arms(exited, subject, next)
-                    }
-                    let body_result = eval_match_body(step_runtime(guard_result), body)
-                    return finalize_arm_result(body_result)
+fn eval_match_arms(rt: Runtime, subject: Value, arms: List<MatchArm>) -> StepResult {
+    // Indexed walk: try each arm in source order (first match wins).
+    // The prior cons-list recursion threaded the "skip to next arm"
+    // through a tail-call; we re-encode that via `mut current_rt`
+    // + an explicit early-return on the first matching arm.
+    mut current_rt = rt
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let scoped = enter_scope(current_rt)
+        let attempt = try_match_pattern(scoped, arm.pattern, subject)
+        if attempt.matched {
+            if arm.guard != null {
+                let guard_result = eval_expr(attempt.runtime, arm.guard!.node)
+                if step_had_error(guard_result) {
+                    let _exited = exit_scope(step_runtime(guard_result))
+                    return guard_result
                 }
-                let body_result = eval_match_body(attempt.runtime, body)
+                if !is_truthy(step_value(guard_result)) {
+                    current_rt = exit_scope(step_runtime(guard_result))
+                    i = i + 1
+                    continue
+                }
+                let body_result = eval_match_body(step_runtime(guard_result), arm.body)
                 return finalize_arm_result(body_result)
             }
-            let exited = exit_scope(attempt.runtime)
-            eval_match_arms(exited, subject, next)
+            let body_result = eval_match_body(attempt.runtime, arm.body)
+            return finalize_arm_result(body_result)
         }
+        current_rt = exit_scope(attempt.runtime)
+        i = i + 1
     }
+    error_result(current_rt, "no match arm matched")
 }
 
 /// Pop the arm's scope before returning. Preserves error / return

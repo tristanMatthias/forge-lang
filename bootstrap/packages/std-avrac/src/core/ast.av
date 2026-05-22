@@ -110,13 +110,16 @@ export enum Pattern {
     TypePattern(type_name: string, binding: string)
 }
 
-/// Arms of a match expression / statement, terminated by `End`. Body
-/// is an SExpr — single-expression arms are common, and a brace
-/// block is itself an `Expr.Block`. Optional `guard` adds an `if`
-/// condition that must hold for the arm to fire.
-export enum MatchArmList {
-    End
-    Node(pattern: Pattern, guard: SExpr?, body: SExpr, next: MatchArmList)
+// `List<MatchArm>` replaces the retired `enum MatchArmList`. Arm
+// order matters: match exhaustiveness uses first-match-wins, so
+// every walker iterates source-order. Body is an SExpr —
+// single-expression arms are common, and a brace block is itself an
+// `Expr.Block`. Optional `guard` adds an `if` condition that must
+// hold for the arm to fire.
+export type MatchArm = {
+    pattern: Pattern,
+    guard: SExpr?,
+    body: SExpr,
 }
 
 /// Type parameter list — used on generic declarations
@@ -905,7 +908,7 @@ export enum Expr {
     /// Block expression — value is the last statement's value.
     Block(body: StmtList)
     /// `match subject { arms }` — match used as an expression.
-    MatchExpr(subject: Expr, arms: MatchArmList)
+    MatchExpr(subject: Expr, arms: List<MatchArm>)
     /// Field reassignment: `obj.field = value`.
     FieldAssign(obj: Expr, field: string, value: Expr)
     /// Ternary-like `if cond { then } else { else_branch }` as an expr.
@@ -1013,7 +1016,7 @@ export enum Stmt {
     /// Enum declaration: `enum Color { Red, Green, Blue }`.
     EnumDecl(name: string, type_params: List<TypeParamEntry>, variants: List<Variant>)
     /// Match as a statement: `match v { ... }` with no result.
-    Match(subject: Expr, arms: MatchArmList)
+    Match(subject: Expr, arms: List<MatchArm>)
     /// `impl Type { fns }` or `impl Trait for Type { fns }`. The
     /// `:` form encodes the trait+type pair as `"Trait:Type"`.
     Impl(type_name: string, methods: StmtList)
@@ -1636,28 +1639,19 @@ export fn render_pattern(p: Pattern) -> string {
     }
 }
 
-/// Render a MatchArmList as a comma-separated list of `pat -> body`.
-export fn render_match_arm_list(arms: MatchArmList) -> string {
-    match arms {
-        .End -> "()"
-        .Node(pattern, guard, body, next) -> {
-            let guard_str = if guard != null { " if ${render_expr(guard!.node)}" } else { "" }
-            let head = "${render_pattern(pattern)}${guard_str} -> ${render_expr(body.node)}"
-            let tail = render_match_arm_tail(next)
-            "(${head}${tail})"
-        }
+/// Render a `List<MatchArm>` as a comma-separated list of `pat -> body`.
+export fn render_match_arm_list(arms: List<MatchArm>) -> string {
+    if arms.length == 0 { return "()" }
+    mut out = ""
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let guard_str = if arm.guard != null { " if ${render_expr(arm.guard!.node)}" } else { "" }
+        let entry = "${render_pattern(arm.pattern)}${guard_str} -> ${render_expr(arm.body.node)}"
+        if i == 0 { out = entry } else { out = "${out}; ${entry}" }
+        i = i + 1
     }
-}
-
-/// Tail half of `render_match_arm_list` — see `render_field_init_tail`.
-fn render_match_arm_tail(arms: MatchArmList) -> string {
-    match arms {
-        .End -> ""
-        .Node(pattern, guard, body, next) -> {
-            let guard_str = if guard != null { " if ${render_expr(guard!.node)}" } else { "" }
-            "; ${render_pattern(pattern)}${guard_str} -> ${render_expr(body.node)}${render_match_arm_tail(next)}"
-        }
-    }
+    "(${out})"
 }
 
 /// Render a StmtList as an S-expression sequence — convenient for

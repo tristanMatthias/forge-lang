@@ -1,28 +1,24 @@
 // WHY: resolves names in match arms — binds pattern variables into scope.
 
-use core.{Pattern, MatchArmList, WhenArm}
+use core.{Pattern, MatchArm, WhenArm}
 use resolve.{Resolver, enter_resolve_scope, exit_resolve_scope, resolve_expr, declare_params, declare_name, define_name}
 
 /// Resolve every arm of a `match` expression. For each arm:
 /// open a fresh scope, declare the pattern's captured names,
 /// resolve the optional guard, then resolve the arm body —
 /// finally pop the scope. Stops on first resolver error.
-export fn resolve_match_arms(r: Resolver, arms: MatchArmList) -> Resolver {
-    mut current = arms
+export fn resolve_match_arms(r: Resolver, arms: List<MatchArm>) -> Resolver {
     mut res = r
-    while true {
+    mut i = 0
+    while i < arms.length {
         if res.had_error { return res }
-        match current {
-            .End -> { return res }
-            .Node(pattern, guard, body, next) -> {
-                let entered = enter_resolve_scope(res)
-                let with_bindings = declare_pattern_bindings(entered, pattern)
-                let after_guard = if guard != null { resolve_expr(with_bindings, guard!.node) } else { with_bindings }
-                let after_body = resolve_expr(after_guard, body.node)
-                res = exit_resolve_scope(after_body)
-                current = next
-            }
-        }
+        let arm = arms[i]
+        let entered = enter_resolve_scope(res)
+        let with_bindings = declare_pattern_bindings(entered, arm.pattern)
+        let after_guard = if arm.guard != null { resolve_expr(with_bindings, arm.guard!.node) } else { with_bindings }
+        let after_body = resolve_expr(after_guard, arm.body.node)
+        res = exit_resolve_scope(after_body)
+        i = i + 1
     }
     res
 }

@@ -7,7 +7,7 @@
 // Component expansion is a SEPARATE pass that runs before desugar.
 // See features/component_decl/expand.av.
 
-use core.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, sstmt_dummy, stmt_unwrap, FieldEntry, FieldInit, MatchArmList, WhenArm, ParamList, Pattern, BinOp, UnOp, ValueType, Variant, TypeParamEntry}
+use core.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, sstmt_dummy, stmt_unwrap, FieldEntry, FieldInit, MatchArm, WhenArm, ParamList, Pattern, BinOp, UnOp, ValueType, Variant, TypeParamEntry}
 
 // ── Public API ──
 
@@ -363,17 +363,22 @@ fn desugar_expr_list(list: ExprList) -> ExprList {
     }
 }
 
-/// Walk a MatchArmList desugaring each arm's guard (when present)
-/// and body. Patterns are not desugared — they're already in
-/// canonical form.
-fn desugar_match_arms(arms: MatchArmList) -> MatchArmList {
-    match arms {
-        .End -> MatchArmList.End
-        .Node(pattern, guard, body, next) -> {
-            let new_guard = if guard != null { sexpr(desugar_expr(guard!.node), guard!.line, guard!.col) } else { null }
-            MatchArmList.Node(pattern, new_guard, sexpr(desugar_expr(body.node), body.line, body.col), desugar_match_arms(next))
-        }
+/// Walk a `List<MatchArm>` desugaring each arm's guard (when
+/// present) and body. Patterns are not desugared — they're already
+/// in canonical form.
+fn desugar_match_arms(arms: List<MatchArm>) -> List<MatchArm> {
+    mut out: List<MatchArm> = []
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let new_guard = if arm.guard != null {
+            sexpr(desugar_expr(arm.guard!.node), arm.guard!.line, arm.guard!.col)
+        } else { null }
+        let new_body = sexpr(desugar_expr(arm.body.node), arm.body.line, arm.body.col)
+        out.push(MatchArm { pattern: arm.pattern, guard: new_guard, body: new_body })
+        i = i + 1
     }
+    out
 }
 
 /// Walk a `when` arm list desugaring each arm's condition and body.

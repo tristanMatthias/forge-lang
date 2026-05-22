@@ -14,7 +14,7 @@
 // that desugar.av and comptime/rewrite.av use; once the generic-AST-
 // visitor ticket lands (93k3) all three should share a single visitor.
 
-use core.{Stmt, StmtList, SStmt, sstmt_at, sstmt_dummy, Expr, ExprList, SExpr, sexpr, sexpr_dummy, FieldEntry, FieldInit, MatchArmList, BinOp, UnOp, LogicOp, ParamList, TypeParamEntry, CompConfigPair, binop_str, unop_str, logicop_str}
+use core.{Stmt, StmtList, SStmt, sstmt_at, sstmt_dummy, Expr, ExprList, SExpr, sexpr, sexpr_dummy, FieldEntry, FieldInit, MatchArm, BinOp, UnOp, LogicOp, ParamList, TypeParamEntry, CompConfigPair, binop_str, unop_str, logicop_str}
 
 // ── Public entry ──
 
@@ -141,15 +141,15 @@ fn any_quote_in_field_inits(list: List<FieldInit>) -> bool {
 /// hits the fast-path early-return and skips lowering entirely —
 /// the un-lowered Quote nodes then survive into eval and trigger
 /// `no eval_expr handler`. Same shape as `lower_match_arms`.
-fn any_quote_in_match_arms(arms: MatchArmList) -> bool {
-    match arms {
-        .End -> false
-        .Node(_, guard, body, next) -> {
-            if guard != null && any_quote_in_expr(guard!.node) { return true }
-            if any_quote_in_expr(body.node) { return true }
-            any_quote_in_match_arms(next)
-        }
+fn any_quote_in_match_arms(arms: List<MatchArm>) -> bool {
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        if arm.guard != null && any_quote_in_expr(arm.guard!.node) { return true }
+        if any_quote_in_expr(arm.body.node) { return true }
+        i = i + 1
     }
+    false
 }
 
 // ── Top-level walker (mirrors comptime/rewrite.av structure) ──
@@ -259,20 +259,20 @@ fn lower_expr_list(list: ExprList) -> ExprList {
 /// arm body keeps its un-lowered Expr.Quote node, which the
 /// tree-walk evaluator can't handle — the macro expansion
 /// silently fails to fire.
-fn lower_match_arms(arms: MatchArmList) -> MatchArmList {
-    match arms {
-        .End -> MatchArmList.End
-        .Node(pattern, guard, body, next) -> {
-            let lowered_body = sexpr(lower_expr(body.node), body.line, body.col)
-            let rest = lower_match_arms(next)
-            if guard == null {
-                return MatchArmList.Node(pattern, null, lowered_body, rest)
-            }
-            let g = guard!
-            let lowered_guard = sexpr(lower_expr(g.node), g.line, g.col)
-            MatchArmList.Node(pattern, lowered_guard, lowered_body, rest)
+fn lower_match_arms(arms: List<MatchArm>) -> List<MatchArm> {
+    mut out: List<MatchArm> = []
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let lowered_body = sexpr(lower_expr(arm.body.node), arm.body.line, arm.body.col)
+        let lowered_guard = if arm.guard == null { null } else {
+            let g = arm.guard!
+            sexpr(lower_expr(g.node), g.line, g.col)
         }
+        out.push(MatchArm { pattern: arm.pattern, guard: lowered_guard, body: lowered_body })
+        i = i + 1
     }
+    out
 }
 
 fn lower_field_inits(inits: List<FieldInit>) -> List<FieldInit> {

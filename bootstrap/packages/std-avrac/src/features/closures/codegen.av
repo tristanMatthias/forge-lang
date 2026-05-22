@@ -12,7 +12,7 @@
 // For non-capturing lambdas (the common case), the closure value
 // is just the function pointer with a null environment.
 
-use core.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInit, MatchArmList, WhenArm, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length, ValueType, TypeList, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, vtype_is_unknown}
+use core.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInit, MatchArm, WhenArm, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length, ValueType, TypeList, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, vtype_is_unknown}
 use codegen.{Ctx, EmitValue, err_emit, null_ptr_val, ok_emit}
 use codegen.{emit_expr}
 use codegen.{analyze_releasable_expr}
@@ -216,14 +216,13 @@ fn find_captures(expr: Expr, params: ParamList, env: VarEnv, captures: List<Capt
 }
 
 /// Recurse `find_captures` through every match-arm body.
-fn find_captures_arms(arms: MatchArmList, params: ParamList, env: VarEnv, captures: List<Capture>) {
-    match arms {
-        .End -> {}
-        .Node(_, guard, body, next) -> {
-            if guard != null { find_captures(guard!.node, params, env, captures) }
-            find_captures(body.node, params, env, captures)
-            find_captures_arms(next, params, env, captures)
-        }
+fn find_captures_arms(arms: List<MatchArm>, params: ParamList, env: VarEnv, captures: List<Capture>) {
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        if arm.guard != null { find_captures(arm.guard!.node, params, env, captures) }
+        find_captures(arm.body.node, params, env, captures)
+        i = i + 1
     }
 }
 

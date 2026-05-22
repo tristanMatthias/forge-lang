@@ -30,7 +30,7 @@
 use core.{
     Stmt, StmtList, SStmt, sstmt_at,
     Expr, ExprList, SExpr, sexpr,
-    FieldInit, MatchArmList,
+    FieldInit,
     ParamList, Pattern,
     BinOp, UnOp, LogicOp,
     ValueType,

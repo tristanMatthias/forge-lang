@@ -9,7 +9,7 @@
 use core.{
     Expr, Stmt, StmtList, ExprList, ParamList,
     FieldInit, FieldEntry,
-    Variant, Pattern, MatchArmList, WhenArm, Annotation,
+    Variant, Pattern, MatchArm, WhenArm, Annotation,
     binop_str, unop_str, logicop_str,
     vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq,
     render_type_param_list,
@@ -328,17 +328,18 @@ fn fmt_pattern(p: Pattern) -> string {
 }
 
 /// Render a match-arm list — one arm per indented line.
-fn fmt_match_arms(arms: MatchArmList, depth: int) -> string {
+fn fmt_match_arms(arms: List<MatchArm>, depth: int) -> string {
     let ind = fmt_indent(depth)
-    match arms {
-        .End -> ""
-        .Node(pattern, guard, body, next) -> {
-            let guard_str = if guard != null { " if ${fmt_expr(guard!.node)}" } else { "" }
-            let head = "${ind}${fmt_pattern(pattern)}${guard_str} -> ${fmt_expr(body.node)}"
-            let tail = fmt_match_arms(next, depth)
-            if tail == "" { head } else { "${head}\n${tail}" }
-        }
+    mut out = ""
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let guard_str = if arm.guard != null { " if ${fmt_expr(arm.guard!.node)}" } else { "" }
+        let head = "${ind}${fmt_pattern(arm.pattern)}${guard_str} -> ${fmt_expr(arm.body.node)}"
+        if i == 0 { out = head } else { out = "${out}\n${head}" }
+        i = i + 1
     }
+    out
 }
 
 /// Render a `when` arm list — one arm per indented line. A null

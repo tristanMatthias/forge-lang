@@ -11,7 +11,7 @@
 // sites in packages/cli/src/main.av between resolve_names and
 // typecheck_program.
 
-use core.{Stmt, StmtList, sstmt_at, Expr, ExprList, sexpr, FieldInit, MatchArmList, WhenArm, SelectArm}
+use core.{Stmt, StmtList, sstmt_at, Expr, ExprList, sexpr, FieldInit, MatchArm, WhenArm, SelectArm}
 use features.comptime.{CompTimeRegistry, try_fold_call}
 
 // ── Public entry ──
@@ -168,21 +168,19 @@ fn rewrite_field_inits(inits: List<FieldInit>, reg: CompTimeRegistry) -> List<Fi
     out
 }
 
-fn rewrite_match_arms(arms: MatchArmList, reg: CompTimeRegistry) -> MatchArmList {
-    match arms {
-        .End -> MatchArmList.End
-        .Node(pattern, guard, body, next) -> {
-            let new_guard = if guard != null {
-                sexpr(rewrite_expr(guard!.node, reg), guard!.line, guard!.col)
-            } else { null }
-            MatchArmList.Node(
-                pattern,
-                new_guard,
-                sexpr(rewrite_expr(body.node, reg), body.line, body.col),
-                rewrite_match_arms(next, reg)
-            )
-        }
+fn rewrite_match_arms(arms: List<MatchArm>, reg: CompTimeRegistry) -> List<MatchArm> {
+    mut out: List<MatchArm> = []
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let new_guard = if arm.guard != null {
+            sexpr(rewrite_expr(arm.guard!.node, reg), arm.guard!.line, arm.guard!.col)
+        } else { null }
+        let new_body = sexpr(rewrite_expr(arm.body.node, reg), arm.body.line, arm.body.col)
+        out.push(MatchArm { pattern: arm.pattern, guard: new_guard, body: new_body })
+        i = i + 1
     }
+    out
 }
 
 fn rewrite_when_arms(arms: List<WhenArm>, reg: CompTimeRegistry) -> List<WhenArm> {

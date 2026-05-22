@@ -1,7 +1,7 @@
 // WHY: type checking for match statements and expressions.
 // Exhaustiveness checking, pattern variable binding, arm type unification.
 
-use core.{Expr, Pattern, MatchArmList, TypeList, WhenArm, ParamList, Stmt, StmtList, Variant, ValueType, stmt_unwrap, vtype_display, vtype_enum_name, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types}
+use core.{Expr, Pattern, MatchArm, TypeList, WhenArm, ParamList, Stmt, StmtList, Variant, ValueType, stmt_unwrap, vtype_display, vtype_enum_name, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types}
 use diagnostics.{DiagCode, diag_warning, span_new, bag_report}
 use core.{type_short_name}
 use typeck.{EnumTypeReg, ExprResult, TC, check_expr, tc_bind, tc_check_explicit_returns, tc_enter, tc_er, tc_exit, tc_report, resolve_vtype}
@@ -97,31 +97,36 @@ extern fn avra_map_has_cstr(map: ptr, key: string) -> int
 /// satisfy the exhaustiveness check on their own; the F9001
 /// "non-exhaustive match" lint fires when the wildcard hides
 /// more than two uncovered variants.
-fn arms_has_wildcard(arms: MatchArmList) -> bool {
-    match arms {
-        .End -> false
-        .Node(pattern, _, _, next) -> {
-            match pattern {
-                .Wildcard -> true
-                _ -> arms_has_wildcard(next)
-            }
+fn arms_has_wildcard(arms: List<MatchArm>) -> bool {
+    mut i = 0
+    while i < arms.length {
+        match arms[i].pattern {
+            .Wildcard -> return true
+            _ -> {}
         }
+        i = i + 1
     }
+    false
 }
 
 /// Build a comma-separated list of variant names covered by
 /// the arms' patterns. Used by `find_missing_variants` to
 /// compute the difference against the enum's full set.
-fn arms_matched_variants(arms: MatchArmList) -> string {
-    match arms {
-        .End -> ""
-        .Node(pattern, _, _, next) -> {
-            let rest = arms_matched_variants(next)
-            let vnames = pattern_variant_names(pattern)
-            if vnames == "" { return rest }
-            if rest == "" { vnames } else { "${rest}|${vnames}" }
+fn arms_matched_variants(arms: List<MatchArm>) -> string {
+    // Walk back-to-front: the old cons recursion built `rest` first
+    // (tail variants), then suffixed the head with `${rest}|${vnames}`,
+    // so tail variants appeared before head ones. Reverse iteration
+    // with suffix-append preserves that ordering byte-for-byte.
+    mut out = ""
+    mut i = arms.length - 1
+    while i >= 0 {
+        let vnames = pattern_variant_names(arms[i].pattern)
+        if vnames != "" {
+            if out == "" { out = vnames } else { out = "${out}|${vnames}" }
         }
+        i = i - 1
     }
+    out
 }
 
 // Collect all variant names covered by a pattern (handles Or chains).
@@ -185,7 +190,7 @@ fn find_missing_variants(variants: List<Variant>, matched: string) -> string {
 /// every member type is matched. Wildcard `_` arms satisfy
 /// the check unconditionally but trigger the F9001 lint when
 /// they hide more than two missing variants.
-export fn tc_check_exhaustive(tc: TC, subject_ty: ValueType, arms: MatchArmList) -> TC {
+export fn tc_check_exhaustive(tc: TC, subject_ty: ValueType, arms: List<MatchArm>) -> TC {
     // Union exhaustiveness: check all member types are covered
     if vtype_is_union(subject_ty) {
         return tc_check_union_exhaustive(tc, subject_ty, arms)
@@ -231,7 +236,7 @@ fn count_missing(variants: List<Variant>, matched: string) -> int {
 /// Union-flavoured exhaustiveness check. Each member type of
 /// the union must be matched (or the match must have a
 /// wildcard). Reports F9001 with the missing types listed.
-fn tc_check_union_exhaustive(tc: TC, subject_ty: ValueType, arms: MatchArmList) -> TC {
+fn tc_check_union_exhaustive(tc: TC, subject_ty: ValueType, arms: List<MatchArm>) -> TC {
     let types = vtype_union_types(subject_ty)
     let matched = arms_matched_variants(arms)
     let missing = find_missing_union_members(types, matched)
@@ -337,20 +342,21 @@ fn tc_bind_pattern_params(tc: TC, params: ParamList) -> TC {
 /// Statement-position arm checker. Type-checks every arm's
 /// guard + body within a fresh pattern-scope; doesn't do type
 /// unification (statements don't produce values).
-export fn check_match_arms(tc: TC, arms: MatchArmList) -> TC {
-    match arms {
-        .End -> tc
-        .Node(pattern, guard, body, next) -> {
-            let with_bindings = tc_enter_pattern_scope(tc, pattern)
-            let with_guard = if guard != null {
-                let g = check_expr(with_bindings, guard!.node)
-                g.tc
-            } else { with_bindings }
-            let b = check_expr(with_guard, body.node)
-            let after = tc_exit(b.tc)
-            check_match_arms(after, next)
-        }
+export fn check_match_arms(tc: TC, arms: List<MatchArm>) -> TC {
+    mut acc = tc
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let with_bindings = tc_enter_pattern_scope(acc, arm.pattern)
+        let with_guard = if arm.guard != null {
+            let g = check_expr(with_bindings, arm.guard!.node)
+            g.tc
+        } else { with_bindings }
+        let b = check_expr(with_guard, arm.body.node)
+        acc = tc_exit(b.tc)
+        i = i + 1
     }
+    acc
 }
 
 // ── Match expression type inference ──
@@ -359,50 +365,74 @@ export fn check_match_arms(tc: TC, arms: MatchArmList) -> TC {
 /// unifies the result types — emitting F1000 when arms
 /// disagree on a non-skip type. Skips divergent / Void / Unknown
 /// arms via `arm_type_skip`.
-export fn check_match_expr_arms(tc: TC, arms: MatchArmList, first_ty: ValueType) -> ExprResult {
-    match arms {
-        .End -> tc_er(tc, first_ty)
-        .Node(pattern, guard, body, next) -> {
-            let with_bindings = tc_enter_pattern_scope(tc, pattern)
-            let with_guard = if guard != null {
-                let g = check_expr(with_bindings, guard!.node)
-                g.tc
-            } else { with_bindings }
-            let b = check_expr(with_guard, body.node)
-            let after = tc_exit(b.tc)
-            if arm_type_skip(body.node, b.ty) {
-                return check_match_expr_arms(after, next, first_ty)
-            }
-            let checked_after = if !arm_type_skip(body.node, first_ty) && !vtype_eq(first_ty, b.ty) {
-                let msg = "match expression arms have different types: `${vtype_display(first_ty)}` vs `${vtype_display(b.ty)}`"
-                tc_report(after, DiagCode.TypeMismatch, msg)
-            } else { after }
-            check_match_expr_arms(checked_after, next, first_ty)
+export fn check_match_expr_arms(tc: TC, arms: List<MatchArm>, first_ty: ValueType) -> ExprResult {
+    mut acc = tc
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let with_bindings = tc_enter_pattern_scope(acc, arm.pattern)
+        let with_guard = if arm.guard != null {
+            let g = check_expr(with_bindings, arm.guard!.node)
+            g.tc
+        } else { with_bindings }
+        let b = check_expr(with_guard, arm.body.node)
+        let after = tc_exit(b.tc)
+        acc = if arm_type_skip(arm.body.node, b.ty) {
+            after
+        } else if !arm_type_skip(arm.body.node, first_ty) && !vtype_eq(first_ty, b.ty) {
+            let msg = "match expression arms have different types: `${vtype_display(first_ty)}` vs `${vtype_display(b.ty)}`"
+            tc_report(after, DiagCode.TypeMismatch, msg)
+        } else {
+            after
         }
+        i = i + 1
     }
+    tc_er(acc, first_ty)
 }
 
 /// Wrapper around `check_match_expr_arms` that picks a seed
 /// type from the first non-skip arm. Used when the caller
 /// doesn't have an expected type to seed unification with.
-export fn check_match_expr_infer(tc: TC, arms: MatchArmList) -> ExprResult {
-    match arms {
-        .End -> tc_er(tc, .Unknown)
-        .Node(pattern, guard, body, next) -> {
-            let with_bindings = tc_enter_pattern_scope(tc, pattern)
-            let with_guard = if guard != null {
-                let g = check_expr(with_bindings, guard!.node)
-                g.tc
-            } else { with_bindings }
-            let b = check_expr(with_guard, body.node)
-            let after = tc_exit(b.tc)
-            // If the first arm doesn't produce a usable type, infer from next arm
-            if arm_type_skip(body.node, b.ty) {
-                return check_match_expr_infer(after, next)
+export fn check_match_expr_infer(tc: TC, arms: List<MatchArm>) -> ExprResult {
+    mut acc = tc
+    mut seed: ValueType = ValueType.Unknown
+    mut found_seed = false
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let with_bindings = tc_enter_pattern_scope(acc, arm.pattern)
+        let with_guard = if arm.guard != null {
+            let g = check_expr(with_bindings, arm.guard!.node)
+            g.tc
+        } else { with_bindings }
+        let b = check_expr(with_guard, arm.body.node)
+        let after = tc_exit(b.tc)
+        if !found_seed {
+            // First arm whose body actually produces a usable type
+            // seeds the unification target for the remaining arms.
+            if !arm_type_skip(arm.body.node, b.ty) {
+                seed = b.ty
+                found_seed = true
+                acc = after
+                i = i + 1
+                continue
             }
-            check_match_expr_arms(after, next, b.ty)
+            acc = after
+            i = i + 1
+            continue
         }
+        // Seed is set: unify subsequent arms against it.
+        acc = if arm_type_skip(arm.body.node, b.ty) {
+            after
+        } else if !arm_type_skip(arm.body.node, seed) && !vtype_eq(seed, b.ty) {
+            let msg = "match expression arms have different types: `${vtype_display(seed)}` vs `${vtype_display(b.ty)}`"
+            tc_report(after, DiagCode.TypeMismatch, msg)
+        } else {
+            after
+        }
+        i = i + 1
     }
+    tc_er(acc, seed)
 }
 
 // ── Return type checking in match arms ──
@@ -410,17 +440,18 @@ export fn check_match_expr_infer(tc: TC, arms: MatchArmList) -> ExprResult {
 /// For a fn whose body is a `match`, verify every arm's tail
 /// expression is assignable to the fn's declared return type.
 /// Used when the user writes `fn f() -> T = match x { ... }`.
-export fn tc_check_match_arm_returns(tc: TC, fn_name: string, declared: ValueType, arms: MatchArmList) -> TC {
-    match arms {
-        .End -> tc
-        .Node(_, _, body, next) -> {
-            let after = match body.node {
-                .Block(stmts) -> tc_check_explicit_returns(tc, fn_name, declared, stmts)
-                _ -> tc
-            }
-            tc_check_match_arm_returns(after, fn_name, declared, next)
+export fn tc_check_match_arm_returns(tc: TC, fn_name: string, declared: ValueType, arms: List<MatchArm>) -> TC {
+    mut acc = tc
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        match arm.body.node {
+            .Block(stmts) -> acc = tc_check_explicit_returns(acc, fn_name, declared, stmts)
+            _ -> {}
         }
+        i = i + 1
     }
+    acc
 }
 
 // ── When expression type checking ──

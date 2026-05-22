@@ -3,7 +3,7 @@
 // -> ... }` — without match-eval the comptime fold errors with
 // "match statements are not supported by the tree-walk evaluator".
 
-use @std.avrac.core.{Stmt, StmtList, Expr, ExprList, SExpr, sexpr_dummy, sstmt_dummy, ParamList, ValueType, BinOp, Pattern, MatchArmList, render_expr}
+use @std.avrac.core.{Stmt, StmtList, Expr, ExprList, SExpr, sexpr_dummy, sstmt_dummy, ParamList, ValueType, BinOp, Pattern, MatchArm, render_expr}
 use @std.avrac.features.eval.{Value, value_enum, value_number, eval_fn_with_resolved_args, step_value, step_had_error, runtime_new}
 use @std.avrac.features.comptime.{CompTimeFn, CompTimeRegistry, try_fold_call, prepare_runtime, comptime_registry_new}
 
@@ -15,10 +15,10 @@ use @std.avrac.features.comptime.{CompTimeFn, CompTimeRegistry, try_fold_call, p
 //     }
 // }`
 fn mk_int_match_fn() -> CompTimeFn {
-    let arms =
-        MatchArmList.Node(Pattern.LitInt(0), null, sexpr_dummy(Expr.Number("100")),
-            MatchArmList.Node(Pattern.LitInt(1), null, sexpr_dummy(Expr.Number("200")),
-                MatchArmList.Node(Pattern.Wildcard, null, sexpr_dummy(Expr.Number("999")), MatchArmList.End)))
+    mut arms: List<MatchArm> = []
+    arms.push(MatchArm { pattern: Pattern.LitInt(0), guard: null, body: sexpr_dummy(Expr.Number("100")) })
+    arms.push(MatchArm { pattern: Pattern.LitInt(1), guard: null, body: sexpr_dummy(Expr.Number("200")) })
+    arms.push(MatchArm { pattern: Pattern.Wildcard, guard: null, body: sexpr_dummy(Expr.Number("999")) })
     let return_expr = Expr.MatchExpr(Expr.Ident("x"), arms)
     let body = StmtList.Node(sstmt_dummy(Stmt.Return(return_expr)), StmtList.End)
     CompTimeFn {
@@ -71,10 +71,10 @@ spec "ty5v: match on integer literal patterns" {
 //     }
 // }`
 fn mk_string_match_fn() -> CompTimeFn {
-    let arms =
-        MatchArmList.Node(Pattern.LitString("one"), null, sexpr_dummy(Expr.Number("1")),
-            MatchArmList.Node(Pattern.LitString("two"), null, sexpr_dummy(Expr.Number("2")),
-                MatchArmList.Node(Pattern.Wildcard, null, sexpr_dummy(Expr.Number("0")), MatchArmList.End)))
+    mut arms: List<MatchArm> = []
+    arms.push(MatchArm { pattern: Pattern.LitString("one"), guard: null, body: sexpr_dummy(Expr.Number("1")) })
+    arms.push(MatchArm { pattern: Pattern.LitString("two"), guard: null, body: sexpr_dummy(Expr.Number("2")) })
+    arms.push(MatchArm { pattern: Pattern.Wildcard, guard: null, body: sexpr_dummy(Expr.Number("0")) })
     let return_expr = Expr.MatchExpr(Expr.Ident("s"), arms)
     let body = StmtList.Node(sstmt_dummy(Stmt.Return(return_expr)), StmtList.End)
     CompTimeFn {
@@ -120,9 +120,9 @@ spec "ty5v: match on string literal patterns" {
 fn mk_unwrap_fn() -> CompTimeFn {
     let some_pat = Pattern.Variant("Some", ParamList.Node("x", ValueType.Unknown, ParamList.End))
     let none_pat = Pattern.Variant("None", ParamList.End)
-    let arms =
-        MatchArmList.Node(some_pat, null, sexpr_dummy(Expr.Ident("x")),
-            MatchArmList.Node(none_pat, null, sexpr_dummy(Expr.Number("0")), MatchArmList.End))
+    mut arms: List<MatchArm> = []
+    arms.push(MatchArm { pattern: some_pat, guard: null, body: sexpr_dummy(Expr.Ident("x")) })
+    arms.push(MatchArm { pattern: none_pat, guard: null, body: sexpr_dummy(Expr.Number("0")) })
     let return_expr = Expr.MatchExpr(Expr.Ident("arg"), arms)
     let body = StmtList.Node(sstmt_dummy(Stmt.Return(return_expr)), StmtList.End)
     CompTimeFn {
@@ -161,9 +161,9 @@ fn mk_or_pattern_fn() -> CompTimeFn {
     let green_pat = Pattern.Variant("Green", ParamList.End)
     let blue_pat = Pattern.Variant("Blue", ParamList.End)
     let or_pat = Pattern.Or(red_pat, green_pat)
-    let arms =
-        MatchArmList.Node(or_pat, null, sexpr_dummy(Expr.Number("1")),
-            MatchArmList.Node(blue_pat, null, sexpr_dummy(Expr.Number("2")), MatchArmList.End))
+    mut arms: List<MatchArm> = []
+    arms.push(MatchArm { pattern: or_pat, guard: null, body: sexpr_dummy(Expr.Number("1")) })
+    arms.push(MatchArm { pattern: blue_pat, guard: null, body: sexpr_dummy(Expr.Number("2")) })
     let return_expr = Expr.MatchExpr(Expr.Ident("c"), arms)
     let body = StmtList.Node(sstmt_dummy(Stmt.Return(return_expr)), StmtList.End)
     CompTimeFn {
@@ -210,9 +210,9 @@ fn mk_match_stmt_with_return_fn() -> CompTimeFn {
     let arm_wild_block = Expr.Block(StmtList.Node(
         sstmt_dummy(Stmt.Return(Expr.Number("99"))),
         StmtList.End))
-    let arms =
-        MatchArmList.Node(Pattern.LitInt(0), null, sexpr_dummy(arm0_block),
-            MatchArmList.Node(Pattern.Wildcard, null, sexpr_dummy(arm_wild_block), MatchArmList.End))
+    mut arms: List<MatchArm> = []
+    arms.push(MatchArm { pattern: Pattern.LitInt(0), guard: null, body: sexpr_dummy(arm0_block) })
+    arms.push(MatchArm { pattern: Pattern.Wildcard, guard: null, body: sexpr_dummy(arm_wild_block) })
     let body = StmtList.Node(
         sstmt_dummy(Stmt.Match(Expr.Ident("x"), arms)),
         StmtList.Node(sstmt_dummy(Stmt.Return(Expr.Unary(UnOp.Neg, Expr.Number("1")))), StmtList.End))

@@ -4,9 +4,9 @@
 // AGENT:
 //   read this file when:    adding match-arm forms or new pattern shapes
 //   do NOT read this file when:   the issue is expression precedence (parser.av)
-//   related:                features/match_expr/codegen.av, core.ast.{Pattern, MatchArmList}
+//   related:                features/match_expr/codegen.av, core.ast.{Pattern, MatchArm}
 
-use core.{Stmt, Expr, ExprList, Pattern, MatchArmList, WhenArm, ParamList, SExpr, sexpr, StmtList, sstmt}use parse.{Parser, reverse_expr_list, table_zip_entries}
+use core.{Stmt, Expr, ExprList, Pattern, MatchArm, WhenArm, ParamList, SExpr, sexpr, StmtList, sstmt}use parse.{Parser, reverse_expr_list, table_zip_entries}
 use core.{Tk}
 
 impl Parser {
@@ -44,7 +44,7 @@ impl Parser {
 
     // Parse match table: first row is headers, remaining rows are pattern | values.
     // Desugars each row to a match arm returning a MapLit.
-    fn parse_match_table_arms(self) -> MatchArmList? {
+    fn parse_match_table_arms(self) -> List<MatchArm>? {
         // Parse header row: identifiers separated by |
         mut headers: ExprList = ExprList.End
         mut header_count = 0
@@ -62,7 +62,8 @@ impl Parser {
                 break
             }
         }
-        if header_count < 2 { return MatchArmList.End }
+        let empty_arms: List<MatchArm> = []
+        if header_count < 2 { return empty_arms }
         // Skip the first header (pattern column)
         let value_headers = match reverse_expr_list(headers) {
             .End -> ExprList.End
@@ -73,34 +74,39 @@ impl Parser {
         self.parse_match_table_rows(value_headers, value_count)
     }
 
-    fn parse_match_table_rows(self, headers: ExprList, value_count: int) -> MatchArmList? {
-        if self.current_kind in [Tk.RightBrace, Tk.Eof] { return MatchArmList.End }
-        // Parse pattern — disable dot postfix to prevent .Variant from
-        // becoming a field access on the previous expression
-        let saved_dot = self.allow_dot_postfix
-        self.allow_dot_postfix = false
-        let pattern = self.parse_pattern()?
-        self.allow_dot_postfix = saved_dot
-        if self.check(Tk.Pipe) { self.advance() }
-        // Parse values — one per column, stopping at | separators
-        let row_line = self.current_line
-        mut vals: ExprList = ExprList.End
-        mut i = 0
-        while i < value_count {
-            if self.check(Tk.RightBrace) { break }
-            // Use primary-only parsing for table cells to avoid
-            // consuming | or the next row's pattern
-            let val = self.parse_primary()?
-            vals = ExprList.Node(sexpr(val, self.current_line, self.current_column), vals)
-            i = i + 1
+    fn parse_match_table_rows(self, headers: ExprList, value_count: int) -> List<MatchArm>? {
+        // Source-order loop appending each row's match arm directly
+        // into a growable `List<MatchArm>` — arm order matters
+        // (first-match-wins).
+        mut out: List<MatchArm> = []
+        while !(self.current_kind in [Tk.RightBrace, Tk.Eof]) {
+            // Parse pattern — disable dot postfix to prevent .Variant from
+            // becoming a field access on the previous expression
+            let saved_dot = self.allow_dot_postfix
+            self.allow_dot_postfix = false
+            let pattern = self.parse_pattern()?
+            self.allow_dot_postfix = saved_dot
             if self.check(Tk.Pipe) { self.advance() }
+            // Parse values — one per column, stopping at | separators
+            mut vals: ExprList = ExprList.End
+            mut i = 0
+            while i < value_count {
+                if self.check(Tk.RightBrace) { break }
+                let val = self.parse_primary()?
+                vals = ExprList.Node(sexpr(val, self.current_line, self.current_column), vals)
+                i = i + 1
+                if self.check(Tk.Pipe) { self.advance() }
+            }
+            let map_entries = table_zip_entries(headers, reverse_expr_list(vals))
+            let body = Expr.MapLit(map_entries)
+            if self.check(Tk.Comma) { self.advance() }
+            out.push(MatchArm {
+                pattern,
+                guard: null,
+                body: sexpr(body, self.current_line, self.current_column),
+            })
         }
-        // Build map body
-        let map_entries = table_zip_entries(headers, reverse_expr_list(vals))
-        let body = Expr.MapLit(map_entries)
-        if self.check(Tk.Comma) { self.advance() }
-        let rest = self.parse_match_table_rows(headers, value_count)?
-        MatchArmList.Node(pattern, null, sexpr(body, self.current_line, self.current_column), rest)
+        out
     }
 
     // Parse a pattern that may be an OR of alternatives: `pat or pat or pat`.
@@ -114,43 +120,48 @@ impl Parser {
         Pattern.Or(left, right)
     }
 
-    fn parse_match_arm_list(self) -> MatchArmList? {
-        if self.check(Tk.RightBrace) {
-            return MatchArmList.End
-        }
-        let pattern = self.parse_pattern_or()?
-        // Optional guard: `pattern if cond ->`
-        let guard: SExpr? = if self.check(Tk.KwIf) {
-            self.advance()
-            let g = self.parse_expression()?
-            sexpr(g, self.current_line, self.current_column)
-        } else {
-            null
-        }
-        if !self.consume(Tk.Arrow, "expected `->` after pattern") {
-            return null
-        }
-        let saved = self.allow_dot_postfix
-        self.allow_dot_postfix = false
-        // Allow `return expr` in bare match arm position by wrapping
-        // it in a Block expression: `{ return expr }`
-        let body = if self.check(Tk.KwReturn) {
-            self.advance()
-            let ret_val = self.parse_expression()
-            if ret_val == null { null } else {
-                let ret_stmt = sstmt(Stmt.Return(ret_val!), self.current_line, self.current_column)
-                Expr.Block(StmtList.Node(ret_stmt, StmtList.End))
+    fn parse_match_arm_list(self) -> List<MatchArm>? {
+        // Source-order loop: each iteration parses one arm and
+        // pushes it into the growable list. First-match-wins arm
+        // ordering is preserved by the natural forward push.
+        mut out: List<MatchArm> = []
+        while !self.check(Tk.RightBrace) {
+            let pattern = self.parse_pattern_or()?
+            // Optional guard: `pattern if cond ->`
+            let guard: SExpr? = if self.check(Tk.KwIf) {
+                self.advance()
+                let g = self.parse_expression()?
+                sexpr(g, self.current_line, self.current_column)
+            } else {
+                null
             }
-        } else {
-            self.parse_expression()
+            if !self.consume(Tk.Arrow, "expected `->` after pattern") {
+                return null
+            }
+            let saved = self.allow_dot_postfix
+            self.allow_dot_postfix = false
+            // Allow `return expr` in bare match arm position by
+            // wrapping it in a Block expression: `{ return expr }`.
+            let body = if self.check(Tk.KwReturn) {
+                self.advance()
+                let ret_val = self.parse_expression()
+                if ret_val == null { null } else {
+                    let ret_stmt = sstmt(Stmt.Return(ret_val!), self.current_line, self.current_column)
+                    Expr.Block(StmtList.Node(ret_stmt, StmtList.End))
+                }
+            } else {
+                self.parse_expression()
+            }
+            self.allow_dot_postfix = saved
+            let body_val = body?
+            if self.check(Tk.Comma) { self.advance() }
+            out.push(MatchArm {
+                pattern,
+                guard,
+                body: sexpr(body_val, self.current_line, self.current_column),
+            })
         }
-        self.allow_dot_postfix = saved
-        let body_val = body?
-        if self.check(Tk.Comma) {
-            self.advance()
-        }
-        let rest = self.parse_match_arm_list()?
-        MatchArmList.Node(pattern, guard, sexpr(body_val, self.current_line, self.current_column), rest)
+        out
     }
 
     fn parse_pattern(self) -> Pattern? {

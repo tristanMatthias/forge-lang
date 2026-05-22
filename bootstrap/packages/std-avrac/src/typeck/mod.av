@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.{BinOp, Expr, ExprList, FieldInit, FieldEntry, MatchArmList, ParamList, Pattern, SExpr, SStmt, Stmt, StmtList, TypeArg, TypeList, TypeParamEntry, ValueType, Variant, WhenArm, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_list_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_is_fn, vtype_is_unknown, vtype_list_elem, vtype_struct_name, vtype_tuple_at}
+use core.{BinOp, Expr, ExprList, FieldInit, FieldEntry, MatchArm, ParamList, Pattern, SExpr, SStmt, Stmt, StmtList, TypeArg, TypeList, TypeParamEntry, ValueType, Variant, WhenArm, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_list_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_is_fn, vtype_is_unknown, vtype_list_elem, vtype_struct_name, vtype_tuple_at}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive}
@@ -2189,14 +2189,16 @@ fn annotate_expr_list(tc: TC, exprs: ExprList) -> ExprList {
 
 /// Walk every match arm, binding pattern captures into the type
 /// env, then annotating both guard and body.
-fn annotate_match_arms(tc: TC, arms: MatchArmList) -> MatchArmList {
-    match arms {
-        .End -> .End
-        .Node(pat, guard, body, next) -> {
-            let new_guard = if guard != null { annotate_sexpr(tc, guard!) } else { null }
-            MatchArmList.Node(pat, new_guard, annotate_sexpr(tc, body), annotate_match_arms(tc, next))
-        }
+fn annotate_match_arms(tc: TC, arms: List<MatchArm>) -> List<MatchArm> {
+    mut out: List<MatchArm> = []
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let new_guard = if arm.guard != null { annotate_sexpr(tc, arm.guard!) } else { null }
+        out.push(MatchArm { pattern: arm.pattern, guard: new_guard, body: annotate_sexpr(tc, arm.body) })
+        i = i + 1
     }
+    out
 }
 
 /// Map `annotate_sexpr` over each `List<FieldInit>` value.

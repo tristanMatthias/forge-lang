@@ -19,7 +19,7 @@
 // resolver wires up to @std/process the same way a hand-written
 // impl would.
 
-use core.{Stmt, StmtList, SStmt, sstmt_dummy, Expr, ExprList, SExpr, sexpr_dummy, FieldEntry, FieldInit, ParamList, ValueType, TypeParamEntry, Variant, Pattern, MatchArmList, TypeList, BinOp, find_annotation}
+use core.{Stmt, StmtList, SStmt, sstmt_dummy, Expr, ExprList, SExpr, sexpr_dummy, FieldEntry, FieldInit, ParamList, ValueType, TypeParamEntry, Variant, Pattern, MatchArm, TypeList, BinOp, find_annotation}
 
 // ── Public entry ──
 
@@ -570,16 +570,18 @@ fn build_enum_to_bytes_fn(type_name: string, variants: List<Variant>) -> Stmt {
 /// each arm builds a bytes_builder().write_int(tag).<payload>.finish()
 /// chain. Builds the cons-list back-to-front so source order is
 /// preserved when read head-first.
-fn build_variant_arms(variants: List<Variant>) -> MatchArmList {
-    mut out = MatchArmList.End
-    mut i = variants.length - 1
-    while i >= 0 {
+fn build_variant_arms(variants: List<Variant>) -> List<MatchArm> {
+    // List<MatchArm>.push appends forward — walk source order, no
+    // reversal needed.
+    mut out: List<MatchArm> = []
+    mut i = 0
+    while i < variants.length {
         let v = variants[i]
         let bindings = field_list_to_param_list(v.fields)
         let pattern = Pattern.Variant(v.name, bindings)
         let chain = build_variant_write_chain(i, v.fields)
-        out = MatchArmList.Node(pattern, null, sexpr_dummy(chain), out)
-        i = i - 1
+        out.push(MatchArm { pattern, guard: null, body: sexpr_dummy(chain) })
+        i = i + 1
     }
     out
 }
@@ -739,9 +741,9 @@ fn build_isolated_fn(type_name: string, ty: ValueType) -> Stmt {
         ExprList.Node(sexpr_dummy(Expr.Ident("e")), ExprList.End))
     let err_pattern = Pattern.Variant("Err",
         ParamList.Node("e", ValueType.Unknown, ParamList.End))
-    let arms = MatchArmList.Node(ok_pattern, null, sexpr_dummy(ok_body),
-        MatchArmList.Node(err_pattern, null, sexpr_dummy(err_body),
-            MatchArmList.End))
+    mut arms: List<MatchArm> = []
+    arms.push(MatchArm { pattern: ok_pattern, guard: null, body: sexpr_dummy(ok_body) })
+    arms.push(MatchArm { pattern: err_pattern, guard: null, body: sexpr_dummy(err_body) })
     let match_expr = Expr.MatchExpr(isolated_call, arms)
     let body_stmts = StmtList.Node(sstmt_dummy(Stmt.Return(match_expr)), StmtList.End)
     let fn_name = "isolated_" + type_name
