@@ -9,7 +9,7 @@
 // Phase 2 of Components V2 (vez6.2). The program-walker that calls
 // this on every call site lives in rewrite.av.
 
-use core.{Expr, ExprList, sexpr_dummy, Stmt, StmtList, sstmt_dummy, ValueType, BinOp, UnOp, LogicOp, ParamList, TypeParamEntry, FieldEntry, CompConfigPair}
+use core.{Expr, ExprList, sexpr_dummy, Stmt, StmtList, sstmt_dummy, ValueType, BinOp, UnOp, LogicOp, ParamList, TypeParamEntry, FieldEntry, FieldInit, CompConfigPair}
 use features.eval.{Runtime, Value, eval_expr, eval_fn_with_resolved_args, literal_args_to_values, step_value, step_had_error}
 use features.comptime.{CompTimeFn, CompTimeRegistry, comptime_lookup}
 use features.quote_expr.{construct_stmt}
@@ -118,6 +118,27 @@ fn value_to_construct_expr(v: Value) -> Expr? {
             if args == null { return null }
             Expr.EnumCtor(v.enum_type, v.enum_variant, args!)
         }
+        // fwyx: a list Value reconstructs as Expr.ListLit, mirroring
+        // the construct_expr_list output that produced it.
+        "list" -> {
+            let elems = payload_to_args(v.list_payload, 0)
+            if elems == null { return null }
+            Expr.ListLit(elems!)
+        }
+        // fwyx: a struct Value reconstructs as Expr.StructLit, mirroring
+        // the struct_lit_2 output (every FieldInit recurses).
+        "struct" -> {
+            mut inits: List<FieldInit> = []
+            mut i = 0
+            while i < v.struct_payload.length {
+                let f = v.struct_payload[i]
+                let inner = value_to_construct_expr(f.value)
+                if inner == null { return null }
+                inits.push(FieldInit { name: f.name, value: sexpr_dummy(inner!) })
+                i = i + 1
+            }
+            Expr.StructLit(v.struct_type, inits)
+        }
         _ -> null
     }
 }
@@ -191,7 +212,7 @@ fn enum_value_to_expr(v: Value) -> Expr? {
         "Call" -> {
             if p.length != 2 { return null }
             let callee = enum_value_to_expr(head)
-            let args = enum_value_to_expr_list(p[1])
+            let args = list_value_to_expr_list(p[1])
             if callee == null || args == null { return null }
             Expr.Call(callee!, args!)
         }
@@ -199,7 +220,7 @@ fn enum_value_to_expr(v: Value) -> Expr? {
             if p.length != 3 { return null }
             let variant_v: Value = p[1]
             let args_v: Value = p[2]
-            let args = enum_value_to_expr_list(args_v)
+            let args = list_value_to_expr_list(args_v)
             if args == null { return null }
             Expr.EnumCtor(head.text, variant_v.text, args!)
         }
@@ -241,26 +262,26 @@ fn enum_value_to_expr(v: Value) -> Expr? {
         }
         "Tuple" -> {
             if p.length != 1 { return null }
-            let elems = enum_value_to_expr_list(head)
+            let elems = list_value_to_expr_list(head)
             if elems == null { return null }
             Expr.Tuple(elems!)
         }
         "ListLit" -> {
             if p.length != 1 { return null }
-            let elems = enum_value_to_expr_list(head)
+            let elems = list_value_to_expr_list(head)
             if elems == null { return null }
             Expr.ListLit(elems!)
         }
         "MapLit" -> {
             if p.length != 1 { return null }
-            let entries = enum_value_to_expr_list(head)
+            let entries = list_value_to_expr_list(head)
             if entries == null { return null }
             Expr.MapLit(entries!)
         }
         "InCheck" -> {
             if p.length != 2 { return null }
             let needle = enum_value_to_expr(head)
-            let items = enum_value_to_expr_list(p[1])
+            let items = list_value_to_expr_list(p[1])
             if needle == null || items == null { return null }
             Expr.InCheck(needle!, items!)
         }
@@ -291,20 +312,45 @@ fn two_expr_decode(p: List<Value>, variant: string) -> Expr? {
     }
 }
 
-/// Decode an enum Value carrying an `@std::avrac::core::ExprList`
-/// tag back into the linked-list ExprList AST. Each Node payload
-/// is a (Expr-value, ExprList-value) pair — the SExpr wrap that
-/// lower_quotes emits via sexpr_dummy_call is span-passthrough'd
-/// at eval time, so the head Value is the inner Expr directly.
-fn enum_value_to_expr_list(v: Value) -> ExprList? {
-    if v.enum_type != "@std::avrac::core::ExprList" { return null }
+/// Decode a Value carrying an `ExprList` back into the linked-list
+/// ExprList AST. Accepts BOTH shapes during the lkze.9 transition:
+///
+///   - kind="list" Value (produced by Expr.ListLit eval) — used once
+///     ExprList is retired and construct_expr_list emits Expr.ListLit
+///     (lkze.9 #18, Phase 2 of fwyx).
+///   - kind="enum" Value with type tag "@std::avrac::core::ExprList"
+///     and variant "End"/"Node" cons cells — the current shape until
+///     ExprList retires.
+///
+/// fwyx: dual-mode is the bridge that lets fwyx land before lkze.9 #18.
+/// Once #18 ships, the enum arm is dead code and goes.
+fn list_value_to_expr_list(v: Value) -> ExprList? {
+    if v.kind == "list" { return list_value_to_expr_list_at(v.list_payload, 0) }
+    if v.kind == "enum" && v.enum_type == "@std::avrac::core::ExprList" {
+        return enum_value_to_expr_list_cons(v)
+    }
+    null
+}
+
+fn list_value_to_expr_list_at(items: List<Value>, i: int) -> ExprList? {
+    if i >= items.length { return ExprList.End }
+    let inner = enum_value_to_expr(items[i])
+    if inner == null { return null }
+    let rest = list_value_to_expr_list_at(items, i + 1)
+    if rest == null { return null }
+    ExprList.Node(sexpr_dummy(inner!), rest!)
+}
+
+/// Pre-fwyx cons-cell decoder for ExprList Values. Goes away once
+/// construct_expr_list flips to Expr.ListLit in lkze.9 #18.
+fn enum_value_to_expr_list_cons(v: Value) -> ExprList? {
     match v.enum_variant {
         "End" -> ExprList.End
         "Node" -> {
             let p = v.enum_payload
             if p.length != 2 { return null }
             let inner = enum_value_to_expr(p[0])
-            let rest = enum_value_to_expr_list(p[1])
+            let rest = enum_value_to_expr_list_cons(p[1])
             if inner == null || rest == null { return null }
             ExprList.Node(sexpr_dummy(inner!), rest!)
         }
@@ -390,21 +436,21 @@ fn enum_value_to_stmt(v: Value) -> Stmt? {
         "Const" -> binding_decode(p, "Const")
         "Block" -> {
             if p.length != 1 { return null }
-            let body = enum_value_to_stmt_list(p[0])
+            let body = list_value_to_stmt_list(p[0])
             if body == null { return null }
             Stmt.Block(body!)
         }
         "Impl" -> {
             // `impl Type { fns }` or `impl Trait for Type { fns }`.
             // Payload: (type_name: string, methods: StmtList). The
-            // method list recurses through enum_value_to_stmt_list,
+            // method list recurses through list_value_to_stmt_list,
             // which itself recurses back here for each method body —
             // so any Stmt variant we don't yet decode becomes the
             // weak link, not Impl itself. Trait+Type is encoded as
             // "Trait:Type" in the type_name slot.
             if p.length != 2 { return null }
             let type_name_v: Value = p[0]
-            let methods = enum_value_to_stmt_list(p[1])
+            let methods = list_value_to_stmt_list(p[1])
             if methods == null { return null }
             Stmt.Impl(type_name_v.text, methods!)
         }
@@ -416,10 +462,10 @@ fn enum_value_to_stmt(v: Value) -> Stmt? {
             // re-resolve pass on the spliced AST fills it in.
             if p.length != 5 { return null }
             let name_v: Value = p[0]
-            let tp = enum_value_to_type_param_list(p[1])
-            let params = enum_value_to_param_list(p[2])
+            let tp = list_value_to_type_param_list(p[1])
+            let params = list_value_to_param_list(p[2])
             let ret_vt = enum_value_to_value_type(p[3])
-            let body = enum_value_to_stmt_list(p[4])
+            let body = list_value_to_stmt_list(p[4])
             if tp == null || params == null || body == null { return null }
             let resolved_rt = if ret_vt == null { ValueType.Unknown } else { ret_vt! }
             Stmt.Function(name_v.text, tp!, params!, resolved_rt, body!)
@@ -429,71 +475,136 @@ fn enum_value_to_stmt(v: Value) -> Stmt? {
             // (name: string, type_params: List<TypeParamEntry>,
             //  fields: List<FieldEntry>).
             //
-            // lkze.9 #13: fields is now a struct-list. The comptime
-            // Value union models only enum + primitive values — list
-            // and struct shapes don't flow through this decoder, so
-            // macro-emitted TypeDecls land here with empty type-params
-            // and an empty fields slot (mirrors the existing
-            // type-params treatment). Expanding Value to model list /
-            // struct values is its own lift (filed as future work).
+            // fwyx: fields + type_params now decode for real via the
+            // list / struct kinds on Value — previous comments about
+            // an empty fields slot are obsolete.
             if p.length != 3 { return null }
             let name_v: Value = p[0]
-            let tp = enum_value_to_type_param_list(p[1])
-            if tp == null { return null }
-            let empty_fields: List<FieldEntry> = []
-            Stmt.TypeDecl(name_v.text, tp!, empty_fields)
+            let tp = list_value_to_type_param_list(p[1])
+            let fields = list_value_to_field_list(p[2])
+            if tp == null || fields == null { return null }
+            Stmt.TypeDecl(name_v.text, tp!, fields!)
         }
         "ComponentBlock" -> {
             // `comp_name instance { config; body }`. Payload:
             // (comp_name: string, instance: string,
             //  config: List<CompConfigPair>, body: StmtList).
-            // Used when a macro emits a synthetic component
-            // instantiation (e.g., the trait-impl factory pattern).
             //
-            // lkze.9 #5: config is now a struct-list. The comptime
-            // Value union models only enum + primitive values — list
-            // and struct shapes don't flow through this decoder, so
-            // macro-emitted ComponentBlocks land here with an empty
-            // config slot. Expanding Value to model list/struct
-            // values is its own lift (filed as future work).
+            // fwyx: config now decodes for real via the list / struct
+            // kinds on Value — the old "empty config" workaround is gone.
             if p.length != 4 { return null }
             let comp_v: Value = p[0]
             let inst_v: Value = p[1]
-            let body = enum_value_to_stmt_list(p[3])
-            if body == null { return null }
-            let empty_config: List<CompConfigPair> = []
-            Stmt.ComponentBlock(comp_v.text, inst_v.text, empty_config, body!)
+            let config = list_value_to_comp_config_pair_list(p[2])
+            let body = list_value_to_stmt_list(p[3])
+            if config == null || body == null { return null }
+            Stmt.ComponentBlock(comp_v.text, inst_v.text, config!, body!)
         }
         _ -> null
     }
 }
 
-// enum_value_to_field_list was deleted alongside FieldList: the
-// comptime Value union doesn't model `List<T>` or struct shapes, so
-// macro-emitted TypeDecls now decode with an empty `List<FieldEntry>`
-// (same treatment as type_params and component-block config above).
+/// Decode a list-Value of FieldEntry struct values back into a
+/// `List<FieldEntry>`. Quote captures pre-resolve, so each entry's
+/// resolved slot lands as ValueType.Unknown — the typeck pass fills
+/// in real types on the re-resolved spliced AST.
+fn list_value_to_field_list(v: Value) -> List<FieldEntry>? {
+    if v.kind != "list" { return [] }
+    mut out: List<FieldEntry> = []
+    mut i = 0
+    while i < v.list_payload.length {
+        let entry = v.list_payload[i]
+        let name = struct_field_string(entry, "name")
+        let vt = struct_field_value_type(entry, "resolved")
+        let resolved = if vt == null { ValueType.Unknown } else { vt! }
+        out.push(FieldEntry { name, resolved })
+        i = i + 1
+    }
+    out
+}
+
+/// Decode a list-Value of CompConfigPair struct values back into a
+/// `List<CompConfigPair>`. Each pair carries a key (string) and a
+/// value (Expr decoded via enum_value_to_expr).
+fn list_value_to_comp_config_pair_list(v: Value) -> List<CompConfigPair>? {
+    if v.kind != "list" { return [] }
+    mut out: List<CompConfigPair> = []
+    mut i = 0
+    while i < v.list_payload.length {
+        let entry = v.list_payload[i]
+        if entry.kind != "struct" { return null }
+        let key = struct_field_string(entry, "key")
+        mut value_expr: Expr = Expr.Null
+        mut j = 0
+        while j < entry.struct_payload.length {
+            let f = entry.struct_payload[j]
+            if f.name == "value" {
+                let decoded = enum_value_to_expr(f.value)
+                if decoded == null { return null }
+                value_expr = decoded!
+            }
+            j = j + 1
+        }
+        out.push(CompConfigPair { key, value: value_expr })
+        i = i + 1
+    }
+    out
+}
 // Once Value grows list/struct support, the decoder can be
 // reintroduced — for now the dropped slot is documented at the
 // TypeDecl decode site.
 
-/// Decode a `List<TypeParamEntry>` from its evaluator-Value form.
+/// Decode a `List<TypeParamEntry>` from its evaluator-Value form
+/// (kind="list" of kind="struct" `TypeParamEntry {name, bounds}`).
 ///
-/// lkze.9 #9: type_params is now a struct-list. The comptime Value
-/// union models only enum + primitive values — list and struct shapes
-/// don't flow through this decoder, so macro-emitted Function /
-/// TypeDecl land here with an empty type-param slot. Expanding Value
-/// to model list/struct values is its own lift (filed as future work).
-fn enum_value_to_type_param_list(v: Value) -> List<TypeParamEntry>? {
-    let empty: List<TypeParamEntry> = []
-    empty
+/// fwyx: was a TODO-stub returning the empty list because the Value
+/// union didn't model list / struct shapes. Now flowing through the
+/// real list_payload + struct_payload — macro-emitted Function /
+/// TypeDecl regain proper type-param fidelity.
+fn list_value_to_type_param_list(v: Value) -> List<TypeParamEntry>? {
+    if v.kind != "list" { return [] }
+    mut out: List<TypeParamEntry> = []
+    mut i = 0
+    while i < v.list_payload.length {
+        let entry = v.list_payload[i]
+        let name = struct_field_string(entry, "name")
+        let bounds = struct_field_string(entry, "bounds")
+        out.push(TypeParamEntry { name, bounds })
+        i = i + 1
+    }
+    out
 }
 
-/// Decode a ParamList from its enum-Value form. Slot 1 carries the
-/// resolved ValueType which lower.av always emits as Unknown — the
-/// re-resolve pass fills in the real type after splicing.
-fn enum_value_to_param_list(v: Value) -> ParamList? {
-    if v.kind != "enum" { return null }
-    if v.enum_type != "@std::avrac::core::ParamList" { return null }
+/// Decode a Value carrying a `ParamList` back into a ParamList AST.
+/// Accepts BOTH shapes during the lkze.9 transition —
+/// same dual-mode bridge as `list_value_to_expr_list` above.
+///
+/// list-mode: list_payload of struct Values `{name, vtype}`. Activated
+/// once construct_param_list flips to Expr.ListLit (lkze.9 #19).
+/// enum-mode: cons-cell EnumCtor("ParamList", "Node"/"End"). Current
+/// shape until ParamList retires.
+fn list_value_to_param_list(v: Value) -> ParamList? {
+    if v.kind == "list" { return list_value_to_param_list_at(v.list_payload, 0) }
+    if v.kind == "enum" && v.enum_type == "@std::avrac::core::ParamList" {
+        return enum_value_to_param_list_cons(v)
+    }
+    null
+}
+
+fn list_value_to_param_list_at(items: List<Value>, i: int) -> ParamList? {
+    if i >= items.length { return ParamList.End }
+    let entry = items[i]
+    let name = struct_field_string(entry, "name")
+    let vt = struct_field_value_type(entry, "vtype")
+    let rest = list_value_to_param_list_at(items, i + 1)
+    if rest == null { return null }
+    let resolved_vt = if vt == null { ValueType.Unknown } else { vt! }
+    ParamList.Node(name, resolved_vt, rest!)
+}
+
+/// Pre-fwyx cons-cell decoder for ParamList Values. Goes away once
+/// construct_param_list flips to Expr.ListLit in lkze.9 #19.
+fn enum_value_to_param_list_cons(v: Value) -> ParamList? {
     match v.enum_variant {
         "End" -> ParamList.End
         "Node" -> {
@@ -501,13 +612,41 @@ fn enum_value_to_param_list(v: Value) -> ParamList? {
             if p.length != 3 { return null }
             let name_v: Value = p[0]
             let vt = enum_value_to_value_type(p[1])
-            let rest = enum_value_to_param_list(p[2])
+            let rest = enum_value_to_param_list_cons(p[2])
             if rest == null { return null }
             let resolved_vt = if vt == null { ValueType.Unknown } else { vt! }
             ParamList.Node(name_v.text, resolved_vt, rest!)
         }
         _ -> null
     }
+}
+
+/// Lookup a string-valued field on a struct Value. Returns "" when
+/// the entry isn't a struct, the field is missing, or the value
+/// isn't a string. Callers treat "" as the no-name default.
+fn struct_field_string(v: Value, name: string) -> string {
+    if v.kind != "struct" { return "" }
+    mut i = 0
+    while i < v.struct_payload.length {
+        let f = v.struct_payload[i]
+        if f.name == name { return f.value.text }
+        i = i + 1
+    }
+    ""
+}
+
+/// Lookup a ValueType-encoded field. Returns null when the entry
+/// isn't a struct, the field is missing, or the decoder rejects
+/// the payload.
+fn struct_field_value_type(v: Value, name: string) -> ValueType? {
+    if v.kind != "struct" { return null }
+    mut i = 0
+    while i < v.struct_payload.length {
+        let f = v.struct_payload[i]
+        if f.name == name { return enum_value_to_value_type(f.value) }
+        i = i + 1
+    }
+    null
 }
 
 /// Three-arg binding decoder shared by Let / Mut / Const.
@@ -549,25 +688,40 @@ fn enum_value_to_value_type(v: Value) -> ValueType? {
     }
 }
 
-/// Decode an enum Value carrying a `@std::avrac::core::StmtList`
-/// tag back into the linked-list StmtList AST. Each Node payload
-/// is a (Stmt-value, StmtList-value) pair — the SStmt wrap that
-/// lower_quotes emits via sstmt_dummy_call is span-passthrough'd
-/// at eval time, so the head Value is the inner Stmt directly.
+/// Decode a Value carrying a `StmtList` back into the linked-list
+/// StmtList AST. Accepts BOTH shapes during the lkze.9 transition —
+/// same dual-mode bridge as `list_value_to_expr_list` above.
 export fn value_to_stmt_list(v: Value) -> StmtList? {
-    if v.kind != "enum" { return null }
-    enum_value_to_stmt_list(v)
+    list_value_to_stmt_list(v)
 }
 
-fn enum_value_to_stmt_list(v: Value) -> StmtList? {
-    if v.enum_type != "@std::avrac::core::StmtList" { return null }
+fn list_value_to_stmt_list(v: Value) -> StmtList? {
+    if v.kind == "list" { return list_value_to_stmt_list_at(v.list_payload, 0) }
+    if v.kind == "enum" && v.enum_type == "@std::avrac::core::StmtList" {
+        return enum_value_to_stmt_list_cons(v)
+    }
+    null
+}
+
+fn list_value_to_stmt_list_at(items: List<Value>, i: int) -> StmtList? {
+    if i >= items.length { return StmtList.End }
+    let inner = enum_value_to_stmt(items[i])
+    if inner == null { return null }
+    let rest = list_value_to_stmt_list_at(items, i + 1)
+    if rest == null { return null }
+    StmtList.Node(sstmt_dummy(inner!), rest!)
+}
+
+/// Pre-fwyx cons-cell decoder for StmtList Values. Goes away once
+/// construct_stmt_list flips to Expr.ListLit in lkze.9 #20.
+fn enum_value_to_stmt_list_cons(v: Value) -> StmtList? {
     match v.enum_variant {
         "End" -> StmtList.End
         "Node" -> {
             let p = v.enum_payload
             if p.length != 2 { return null }
             let inner = enum_value_to_stmt(p[0])
-            let rest = enum_value_to_stmt_list(p[1])
+            let rest = enum_value_to_stmt_list_cons(p[1])
             if inner == null || rest == null { return null }
             StmtList.Node(sstmt_dummy(inner!), rest!)
         }

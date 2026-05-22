@@ -479,10 +479,15 @@ fn expr_ctor(variant: string, args: ExprList) -> Expr {
 /// Each ParamList.Node carries (name, resolved_vtype, next). Quote
 /// captures pre-resolve, so ValueType is always Unknown — the resolver
 /// fills it in when the lowered AST is re-resolved.
+///
+/// fwyx: stays as cons-cell EnumCtor("ParamList", ...) because
+/// Expr.Lambda.params is still `ParamList`. Once ParamList retires
+/// (lkze.9 #19), flip this to Expr.ListLit + struct-lit ParamEntry —
+/// mirroring construct_expr_list.
 fn construct_param_list(params: ParamList) -> Expr {
     match params {
-        .End -> list_end("ParamList")
-        .Node(name, _, next) -> list_node("ParamList",
+        .End -> Expr.EnumCtor("@std::avrac::core::ParamList", "End", ExprList.End)
+        .Node(name, _, next) -> Expr.EnumCtor("@std::avrac::core::ParamList", "Node",
             three_args(string_lit_expr(name),
                        construct_value_type_unknown(),
                        construct_param_list(next)))
@@ -589,19 +594,6 @@ fn construct_field_init_list(list: List<FieldInit>) -> Expr {
     Expr.ListLit(elems)
 }
 
-/// `Expr.EnumCtor("@std::avrac::core::<list_type>", "End", [])` — the
-/// terminal node of any AST linked list at construct time.
-fn list_end(list_type: string) -> Expr {
-    Expr.EnumCtor("@std::avrac::core::" + list_type, "End", ExprList.End)
-}
-
-/// `Expr.EnumCtor("@std::avrac::core::<list_type>", "Node", args)` —
-/// the cons cell shape shared by every AST linked-list constructor.
-/// Caller passes the per-list payload args as an ExprList.
-fn list_node(list_type: string, args: ExprList) -> Expr {
-    Expr.EnumCtor("@std::avrac::core::" + list_type, "Node", args)
-}
-
 /// Build an `Expr.String` whose runtime arg-after-strip_quotes is
 /// exactly `s`. Codegen unwraps one outer quote pair, so we wrap with
 /// exactly one. Used both bare and via `string_arg(s)` (which wraps
@@ -632,10 +624,21 @@ fn name_or_splice(name: string) -> Expr {
 /// Build an Expr that, when evaluated, produces an ExprList AST value
 /// matching `list`. ExprList.End → EnumCtor("ExprList", "End", []),
 /// ExprList.Node(se, rest) → EnumCtor("ExprList", "Node", [SExpr-ctor, recur]).
+///
+/// fwyx: stays as cons-cell EnumCtor("ExprList", ...) because
+/// Expr.Call.args / Expr.EnumCtor.args / Expr.Tuple.elements / etc.
+/// still hold a runtime ExprList. Flipping construct_expr_list to
+/// Expr.ListLit ahead of those slots becoming List<SExpr> would
+/// hand the callers a list value where they expect an ExprList,
+/// blowing up later renderers (`render_expr_list`'s match aborts on
+/// the kind="list" Value's runtime tag). The retirement happens in
+/// lkze.9 #18 (Phase 2 of this work) — once Expr.Call.args becomes
+/// List<SExpr>, this fn flips to Expr.ListLit and the matching
+/// decoder rename in comptime/eval.av activates.
 fn construct_expr_list(list: ExprList) -> Expr {
     match list {
-        .End -> list_end("ExprList")
-        .Node(se, next) -> list_node("ExprList",
+        .End -> Expr.EnumCtor("@std::avrac::core::ExprList", "End", ExprList.End)
+        .Node(se, next) -> Expr.EnumCtor("@std::avrac::core::ExprList", "Node",
             two_args(construct_sexpr(se), construct_expr_list(next)))
     }
 }
@@ -672,10 +675,15 @@ fn sstmt_dummy_call(arg: Expr) -> Expr {
 
 /// Build an Expr that, when evaluated, produces a StmtList AST value.
 /// Mirrors construct_expr_list / construct_field_init_list shape.
+///
+/// fwyx: stays as cons-cell EnumCtor("StmtList", ...) because
+/// Stmt.Block.body / Stmt.Function.body / etc. still hold a runtime
+/// StmtList. Once StmtList retires (lkze.9 #20), flip to Expr.ListLit
+/// — same shape as the planned construct_expr_list flip.
 fn construct_stmt_list(list: StmtList) -> Expr {
     match list {
-        .End -> list_end("StmtList")
-        .Node(ss, next) -> list_node("StmtList",
+        .End -> Expr.EnumCtor("@std::avrac::core::StmtList", "End", ExprList.End)
+        .Node(ss, next) -> Expr.EnumCtor("@std::avrac::core::StmtList", "Node",
             two_args(construct_sstmt(ss), construct_stmt_list(next)))
     }
 }

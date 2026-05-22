@@ -142,6 +142,18 @@ export type TypeArg = { param_name: string, concrete_vt: ValueType }
 /// (binding type params into scope), and the monomorphizer.
 export type TypeParamEntry = { name: string, bounds: string }
 
+/// One entry produced by `construct_param_list` in the quote-lowering
+/// pass — used once ParamList retires in lkze.9 #19 and the construct
+/// path flips from cons-cell `EnumCtor("ParamList", ...)` to
+/// `Expr.ListLit` of `ParamEntry { name, vtype }` struct lits.
+/// The fwyx comptime decoder (`list_value_to_param_list`) already
+/// understands this shape via its list-mode arm.
+///
+/// The `vtype` slot is always Unknown after lowering because quote
+/// captures pre-resolve — the typeck pass fills in real types on
+/// the re-resolved spliced AST.
+export type ParamEntry = { name: string, vtype: ValueType }
+
 /// Membership test for a `List<TypeParamEntry>`. True iff `name`
 /// appears as a parameter name (bounds ignored).
 export fn type_param_has(params: List<TypeParamEntry>, name: string) -> bool {

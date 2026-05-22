@@ -1,7 +1,7 @@
 // WHY: eval types shared across features. Actual tree-walk
 // evaluator lives in features/eval/mod.av.
 
-use core.{Expr, ExprList, Stmt, StmtList, ParamList, SExpr, SStmt}
+use core.{Expr, ExprList, Stmt, StmtList, ParamList, SExpr, SStmt, FieldInit}
 use core.{Registry, build_registry}
 
 // WHY: tree-walk expression evaluator — used by `eval` and `check`
@@ -37,6 +37,16 @@ fn parse_num(s: string) -> int { avra_selfhost_string_to_int(s) }
 /// @field number_text  — decimal text when kind == "number".
 /// @field text         — string contents when kind == "string".
 /// @field bool_value   — 0/1 when kind == "bool".
+/// One named field on a struct Value. Used by the `"struct"` kind
+/// so eval can carry struct-literal values produced by the comptime
+/// evaluator (lower.av now emits Expr.ListLit + Expr.StructLit for
+/// AST list/struct payloads; the eval side needs first-class kinds
+/// to match).
+export type StructField = {
+    name: string,
+    value: Value,
+}
+
 /// Tagged-union value handed back by the evaluator. `kind` selects
 /// which trailing fields are populated. Phase 6 of Components V2
 /// (vez6.6.4) added the `enum_*` fields so eval can carry runtime
@@ -44,9 +54,16 @@ fn parse_num(s: string) -> int { avra_selfhost_string_to_int(s) }
 /// macro fn body can `return quote stmt { ... }` and the @expand
 /// pass can extract the resulting Stmt.
 ///
+/// fwyx: added `"list"` and `"struct"` kinds so the comptime
+/// decoder can read AST list / struct payloads directly off the
+/// produced Value, instead of walking enum cons-cells. Unblocks
+/// the ExprList / ParamList / StmtList retirements (lkze.9 #18-#20).
+///
 /// kind = "number" | "string" | "bool" | "null"
 ///      | "function" | "builtin"
 ///      | "enum"     — enum_type / enum_variant / enum_payload set
+///      | "list"     — list_payload set
+///      | "struct"   — struct_type + struct_payload set
 export type Value = {
     kind: string,
     number_text: string,
@@ -55,6 +72,9 @@ export type Value = {
     enum_type: string,
     enum_variant: string,
     enum_payload: List<Value>,
+    list_payload: List<Value>,
+    struct_type: string,
+    struct_payload: List<StructField>,
 }
 
 /// Final result of an evaluation. `value` is null on failure;
@@ -211,6 +231,9 @@ export fn value_null() -> Value {
         enum_type: "",
         enum_variant: "",
         enum_payload: [],
+        list_payload: [],
+        struct_type: "",
+        struct_payload: [],
     }
 }
 
@@ -384,6 +407,9 @@ export fn value_number(text: string) -> Value {
         enum_type: "",
         enum_variant: "",
         enum_payload: [],
+        list_payload: [],
+        struct_type: "",
+        struct_payload: [],
     }
 }
 
@@ -397,6 +423,9 @@ fn value_string(text: string) -> Value {
         enum_type: "",
         enum_variant: "",
         enum_payload: [],
+        list_payload: [],
+        struct_type: "",
+        struct_payload: [],
     }
 }
 
@@ -410,6 +439,9 @@ fn value_bool(flag: int) -> Value {
         enum_type: "",
         enum_variant: "",
         enum_payload: [],
+        list_payload: [],
+        struct_type: "",
+        struct_payload: [],
     }
 }
 
@@ -722,17 +754,14 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
             ok_result(next_runtime, value_result.value)
         }
         .Grouping(inner) -> eval_expr(runtime, inner)
-        // lkze.9 #5: minimal ListLit / StructLit handlers so the
-        // comptime evaluator can step through quote-lowered AST
-        // constructors that emit list / struct values (post the
-        // CompConfigPairList enum retirement, ComponentBlock's
-        // config slot lowers to an Expr.ListLit of StructLits).
-        // The Value union models only enum + primitives, so we
-        // collapse list / struct values to `value_null()` —
-        // round-trip fidelity for real list/struct values awaits
-        // proper list/struct kinds on Value (filed separately).
-        .ListLit(_) -> ok_result(runtime, value_null())
-        .StructLit(_, _) -> ok_result(runtime, value_null())
+        // fwyx: real list / struct kinds on Value — eval the
+        // elements / inits and assemble a list / struct Value so
+        // the comptime decoder can read AST list / struct payloads
+        // directly (post lkze.9 ExprList retirement, lower.av emits
+        // Expr.ListLit + Expr.StructLit for AST list / struct
+        // payloads instead of cons-cell EnumCtors).
+        .ListLit(elems) -> eval_list_lit(runtime, elems)
+        .StructLit(type_name, inits) -> eval_struct_lit(runtime, type_name, inits)
         .Unary(op, right) -> eval_unary(runtime, op, right)
         .Binary(left, op, right) -> eval_binary(runtime, left, op, right)
         .Logical(left, op, right) -> eval_logical(runtime, left, op, right)
@@ -915,6 +944,9 @@ fn value_function(name: string) -> Value {
         enum_type: "",
         enum_variant: "",
         enum_payload: [],
+        list_payload: [],
+        struct_type: "",
+        struct_payload: [],
     }
 }
 
@@ -929,6 +961,9 @@ fn value_builtin(name: string) -> Value {
         enum_type: "",
         enum_variant: "",
         enum_payload: [],
+        list_payload: [],
+        struct_type: "",
+        struct_payload: [],
     }
 }
 
@@ -945,6 +980,46 @@ export fn value_enum(type_name: string, variant: string, payload: List<Value>) -
         enum_type: type_name,
         enum_variant: variant,
         enum_payload: payload,
+        list_payload: [],
+        struct_type: "",
+        struct_payload: [],
+    }
+}
+
+/// Construct a list Value. Carries each element as a Value in
+/// `list_payload`. Source-order is preserved (no reverse).
+/// fwyx — used by Expr.ListLit eval.
+export fn value_list(items: List<Value>) -> Value {
+    Value {
+        kind: "list",
+        number_text: "",
+        text: "",
+        bool_value: false,
+        enum_type: "",
+        enum_variant: "",
+        enum_payload: [],
+        list_payload: items,
+        struct_type: "",
+        struct_payload: [],
+    }
+}
+
+/// Construct a struct Value. `type_name` is the struct-type tag
+/// (the StructLit's name slot); `fields` carries the per-field
+/// init values in source order.
+/// fwyx — used by Expr.StructLit eval.
+export fn value_struct(type_name: string, fields: List<StructField>) -> Value {
+    Value {
+        kind: "struct",
+        number_text: "",
+        text: "",
+        bool_value: false,
+        enum_type: "",
+        enum_variant: "",
+        enum_payload: [],
+        list_payload: [],
+        struct_type: type_name,
+        struct_payload: fields,
     }
 }
 
@@ -1047,6 +1122,52 @@ fn eval_args_to_values(runtime: Runtime, args: ExprList) -> ArgEvalResult {
         }
     }
     ArgEvalResult { runtime: rt, values: acc, had_error: false, error_message: "" }
+}
+
+/// Evaluate an Expr.ListLit: walk every element via eval_expr,
+/// threading the runtime through, and wrap the result list in a
+/// kind="list" Value. fwyx — replaces the previous value_null()
+/// stub so the comptime decoder can read AST list payloads.
+fn eval_list_lit(runtime: Runtime, elems: ExprList) -> StepResult {
+    let evaluated = eval_args_to_values(runtime, elems)
+    if evaluated.had_error {
+        return StepResult {
+            runtime: evaluated.runtime,
+            value: value_null(),
+            had_error: true,
+            is_return: false,
+            error_message: evaluated.error_message,
+        }
+    }
+    ok_result(evaluated.runtime, value_list(evaluated.values))
+}
+
+/// Evaluate an Expr.StructLit: walk every FieldInit value via
+/// eval_expr (threading runtime), pair each with its field name,
+/// and wrap in a kind="struct" Value tagged with `type_name`.
+/// fwyx — replaces the previous value_null() stub so the comptime
+/// decoder can read AST struct payloads.
+fn eval_struct_lit(runtime: Runtime, type_name: string, inits: List<FieldInit>) -> StepResult {
+    mut current = runtime
+    mut fields: List<StructField> = []
+    mut i = 0
+    while i < inits.length {
+        let init = inits[i]
+        let r = eval_expr(current, init.value.node)
+        if r.had_error {
+            return StepResult {
+                runtime: r.runtime,
+                value: value_null(),
+                had_error: true,
+                is_return: false,
+                error_message: r.error_message,
+            }
+        }
+        fields.push(StructField { name: init.name, value: r.value })
+        current = r.runtime
+        i = i + 1
+    }
+    ok_result(current, value_struct(type_name, fields))
 }
 
 /// Evaluate a unary operator (`-x`, `!x`, `~x`). Negation
