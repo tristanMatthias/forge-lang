@@ -590,6 +590,17 @@ export fn tc_report_at(tc: TC, code: DiagCode, msg: string, line: int, col: int,
     tc with { bag: bag_report(tc.bag, diag_error(code, message, sp)) }
 }
 
+/// Warning-severity sibling of `tc_report`. Goes through `bag_report`
+/// like errors but doesn't cause `bag_has_errors` to fire — useful for
+/// strict-mode checks that want to surface signal without blocking
+/// the build (e.g. AVRA_STRICT_ARGS).
+export fn tc_warn(tc: TC, code: DiagCode, msg: string) -> TC {
+    let message = if tc.current_fn.length > 0 {
+        "${msg} (in function `${tc.current_fn}`)"
+    } else { msg }
+    tc with { bag: bag_report(tc.bag, diag_warning(code, message, span_dummy())) }
+}
+
 /// Append a diagnostic with a dedicated cause message — surfaced
 /// indented under the primary by the renderer.
 export fn tc_report_with_cause(tc: TC, code: DiagCode, msg: string, cause_msg: string) -> TC {
@@ -1451,14 +1462,91 @@ fn tc_check_fn_call_with(checked: TC, name: string, args: ExprList, rec: FnTypeF
     // Check shape and newtype compatibility
     let shape_checked = tc_check_shape_args(checked, rec.params, args)
     let newtype_checked = tc_check_newtype_args(shape_checked, name, rec.params, args)
-    let first_arg_ty = tc_first_arg_type(newtype_checked, args)
-    let ctor_checked = tc_check_newtype_ctor(newtype_checked, name, rec.ret_ty, first_arg_ty)
+    // Optional strict arg-type warnings: AVRA_STRICT_ARGS=1 surfaces
+    // F9004 when a concrete arg type isn't assignable to its concrete
+    // param type. Off by default — the existing typeck has gaps in
+    // component-expansion-synthesised bindings that would otherwise spam.
+    // Used during the lkze.9 refactor to catch silent ExprList vs
+    // List<SExpr> ptr-shape coercions before they corrupt runtime.
+    let strict_checked = if avra_process_env_get("AVRA_STRICT_ARGS") != "" {
+        tc_strict_arg_types(newtype_checked, name, rec.tp, rec.params, args)
+    } else {
+        newtype_checked
+    }
+    let first_arg_ty = tc_first_arg_type(strict_checked, args)
+    let ctor_checked = tc_check_newtype_ctor(strict_checked, name, rec.ret_ty, first_arg_ty)
     // For generic fns: infer T from the call's arg types and substitute
     // into ret_ty so downstream typeck sees `Int` for `first(nums)`
     // instead of the unresolved `T`. Non-generic fns short-circuit via
     // the empty-tp guard in tc_subst_generic_ret.
     let resolved_ret = tc_subst_generic_ret(newtype_checked, rec.tp, rec.params, args, rec.ret_ty)
     tc_er(ctor_checked, resolved_ret)
+}
+
+/// Walks params/args pairwise, reporting F9004 warnings when a
+/// concrete arg type isn't assignable to its concrete param type.
+/// Generic params (containing T, U, …) skip the check — those bind
+/// via inference. Unknown types skip too (still being resolved).
+/// Gated by AVRA_STRICT_ARGS at the call site so the default build
+/// stays quiet; turn on for refactor sessions that need fail-fast on
+/// silent ptr-shape coercions.
+fn tc_strict_arg_types(tc: TC, name: string, tp: List<TypeParamEntry>, params: ParamList, args: ExprList) -> TC {
+    mut cur_tc = tc
+    mut cur_params = params
+    mut cur_args = args
+    while true {
+        match cur_params {
+            .End -> return cur_tc
+            .Node(pname, ptype, prest) -> match cur_args {
+                .End -> return cur_tc
+                .Node(arg_se, arest) -> {
+                    let arg_ty = tc_arg_concrete_ty(cur_tc, arg_se)
+                    let skip_unknown = vtype_is_unknown(ptype) || vtype_is_unknown(arg_ty)
+                    let skip_generic = vtype_mentions_typeparam(ptype, tp)
+                    if !skip_unknown && !skip_generic {
+                        if !vtype_eq(arg_ty, ptype) && !vtype_assignable(arg_ty, ptype) {
+                            let msg = "`${name}` parameter `${pname}` expects ${vtype_display(ptype)}, got ${vtype_display(arg_ty)}"
+                            cur_tc = tc_warn(cur_tc, DiagCode.ArgTypeMismatch, msg)
+                        }
+                    }
+                    cur_params = prest
+                    cur_args = arest
+                }
+            }
+        }
+    }
+    cur_tc
+}
+
+/// True iff `ty` (or any inner type it wraps) is a `.Struct(name, _)`
+/// whose name is one of the function's type parameters. Used to skip
+/// strict arg-type checks on generic-parametric params — those bind
+/// to whatever the arg's type is via tc_subst_generic_ret.
+fn vtype_mentions_typeparam(ty: ValueType, tp: List<TypeParamEntry>) -> bool {
+    if tp.length == 0 { return false }
+    match ty {
+        .Struct(n, _) -> type_param_has(tp, n)
+        .List(elem) -> vtype_mentions_typeparam(elem, tp)
+        .Task(payload) -> vtype_mentions_typeparam(payload, tp)
+        .FnTyped(ptypes, ret) -> {
+            if vtype_mentions_typeparam(ret, tp) { return true }
+            mut i = 0
+            while i < ptypes.length {
+                if vtype_mentions_typeparam(ptypes[i], tp) { return true }
+                i = i + 1
+            }
+            false
+        }
+        .Enum(_, type_args, _) -> {
+            mut i = 0
+            while i < type_args.length {
+                if vtype_mentions_typeparam(type_args[i], tp) { return true }
+                i = i + 1
+            }
+            false
+        }
+        _ -> false
+    }
 }
 
 /// Resolve a generic-fn call's return type. Walks params/args

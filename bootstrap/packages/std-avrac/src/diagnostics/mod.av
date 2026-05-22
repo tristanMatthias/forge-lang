@@ -213,6 +213,14 @@ export enum DiagCode {
     /// convention (PascalCase types, snake_case fns/vars,
     /// SCREAMING_SNAKE constants).
     NamingConvention
+    /// F9004 — call-site arg type doesn't match the declared param
+    /// type. Off by default; opt in with `AVRA_STRICT_ARGS=1` for
+    /// refactors that need fail-fast on silent ptr-shape coercions
+    /// (e.g. cons-cell `ExprList` flowing into `List<SExpr>`-typed
+    /// helpers). Warning-class because the existing typeck has
+    /// known gaps in component-expansion-synthesised bindings that
+    /// would otherwise spam errors.
+    ArgTypeMismatch
     // ── Internal (F9999) ────────────────────────────────────────────
     /// F9999 — internal compiler error. Compiler invariant violated;
     /// the bug is in the compiler, not the user's code. Report.
@@ -281,6 +289,7 @@ export fn error_def(d: DiagCode) -> ErrorDef {
         .NonExhaustiveMatch  -> ErrorDef { code: "F9001", help: "add missing match arms or use a wildcard `_` pattern" }
         .UnusedImport        -> ErrorDef { code: "F9002", help: "remove unused imports to keep code clean" }
         .NamingConvention    -> ErrorDef { code: "F9003", help: "use PascalCase for types, snake_case for functions/variables, SCREAMING_SNAKE for constants" }
+        .ArgTypeMismatch     -> ErrorDef { code: "F9004", help: "call-site arg type differs from declared param — coerce explicitly or fix the binding's inferred type" }
         .ICE                 -> ErrorDef { code: "F9999", help: "this is a compiler bug — please report it at https://github.com/avra-lang/avra/issues" }
         .RuntimeNullDeref    -> ErrorDef { code: "F5000", help: "code dereferenced a null pointer — check optional unwraps and trait casts" }
         .RuntimeDivByZero    -> ErrorDef { code: "F5001", help: "guard the divisor: `if denom != 0 { num / denom } else { default }`" }
