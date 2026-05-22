@@ -901,13 +901,13 @@ export enum Expr {
     /// Function call: `f(a, b)`.
     Call(callee: Expr, args: List<SExpr>)
     /// Call with explicit type arguments: `f::<int, string>(x, y)`.
-    GenericCall(callee: Expr, type_args: List<string>, args: ExprList)
+    GenericCall(callee: Expr, type_args: List<string>, args: List<SExpr>)
     /// Struct literal: `Foo { x: 1, y: 2 }`.
     StructLit(name: string, inits: List<FieldInit>)
     /// Field access: `obj.field`.
     FieldAccess(obj: Expr, field: string)
     /// Enum constructor with payload: `Color.Red(255)` or `.Some(x)`.
-    EnumCtor(type_name: string, variant: string, args: ExprList)
+    EnumCtor(type_name: string, variant: string, args: List<SExpr>)
     /// Index access: `list[i]` / `map["key"]`.
     Index(obj: Expr, idx: Expr)
     /// Block expression — value is the last statement's value.
@@ -927,18 +927,18 @@ export enum Expr {
     /// if `expr` is Err / null.
     Try(expr: Expr)
     /// Tuple literal: `(a, b, c)`.
-    Tuple(elements: ExprList)
+    Tuple(elements: List<SExpr>)
     /// Tuple index: `t.0`, `t.1`.
     TupleIndex(obj: Expr, index: int)
     /// Functional struct update: `obj with { field: new_value }`.
     With(obj: Expr, overrides: List<FieldInit>)
     /// List literal: `[1, 2, 3]`.
-    ListLit(elements: ExprList)
+    ListLit(elements: List<SExpr>)
     /// Closure literal: `(x, y) -> body`.
     Lambda(params: ParamList, body: Expr)
     /// Map literal — flat list of alternating key/value:
     /// `{ "a": 1, "b": 2 }` → entries = [key1, val1, key2, val2, ...].
-    MapLit(entries: ExprList)
+    MapLit(entries: List<SExpr>)
     /// Slice: `list[start..end]`.
     Slice(obj: Expr, start: Expr, end: Expr)
     /// Float literal (text form, like Number).
@@ -946,7 +946,7 @@ export enum Expr {
     /// Type-narrowing test: `subject is .Variant`.
     IsCheck(subject: Expr, variant_name: string)
     /// Membership test: `needle in [a, b, c]`.
-    InCheck(needle: Expr, items: ExprList)
+    InCheck(needle: Expr, items: List<SExpr>)
     /// List comprehension: `[body for variable in collection if filter]`.
     ListComp(body: Expr, variable: string, collection: Expr, filter: Expr?)
     /// Module-qualified identifier — produced by the resolver from
