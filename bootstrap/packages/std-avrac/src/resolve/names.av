@@ -12,7 +12,7 @@
 //   do NOT read this file when:   the issue is variable scoping or
 //                                  type checking
 
-use core.{Expr, ExprList, FieldEntry, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, WhenArm, Pattern, SExpr, SStmt, Variant, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, ValueType, TypeList, SelectArm}
+use core.{Expr, ExprList, FieldEntry, Stmt, StmtList, ParamList, FieldInit, MatchArmList, WhenArm, Pattern, SExpr, SStmt, Variant, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, ValueType, TypeList, SelectArm}
 use diagnostics.{Confidence, DiagCode, Span, DiagnosticBag, bag_new, bag_merge, bag_report, bag_has_errors, diag_error, diag_warning, diag_with_confidence, span_new, span_at, span_dummy}
 use resolve.{resolve_program}
 use core.{TypeRegistry, TypeKind, type_registry_new, type_registry_register, type_registry_id_for, type_qualified_name, method_mangled_name, trait_impl_name, is_mangled_method, method_from_mangled}
@@ -1134,11 +1134,16 @@ fn rewrite_expr_list(ctx: NameCtx, exprs: ExprList) -> ExprList {
 
 /// Walk a `Foo { f: v, ... }` initializer list, rewriting each
 /// value expression but leaving field names verbatim.
-fn rewrite_field_inits(ctx: NameCtx, inits: FieldInitList) -> FieldInitList {
-    match inits {
-        .End -> FieldInitList.End
-        .Node(name, se, next) -> FieldInitList.Node(name, sexpr_at(rewrite_expr(ctx, se.node), se.line, se.col, se.file), rewrite_field_inits(ctx, next))
+fn rewrite_field_inits(ctx: NameCtx, inits: List<FieldInit>) -> List<FieldInit> {
+    mut out: List<FieldInit> = []
+    mut i = 0
+    while i < inits.length {
+        let init = inits[i]
+        let new_val = sexpr_at(rewrite_expr(ctx, init.value.node), init.value.line, init.value.col, init.value.file)
+        out.push(FieldInit { name: init.name, value: new_val })
+        i = i + 1
     }
+    out
 }
 
 /// Walk a MatchArmList, binding pattern captures into the local
@@ -1336,12 +1341,15 @@ fn collect_used_paths_expr_list(exprs: ExprList, acc: List<string>) -> List<stri
     }
 }
 
-/// Walk a FieldInitList for the unused-import sweep.
-fn collect_used_paths_field_inits(inits: FieldInitList, acc: List<string>) -> List<string> {
-    match inits {
-        .End -> acc
-        .Node(_, sv, next) -> collect_used_paths_field_inits(next, collect_used_paths_expr(sv.node, acc))
+/// Walk a `List<FieldInit>` for the unused-import sweep.
+fn collect_used_paths_field_inits(inits: List<FieldInit>, acc: List<string>) -> List<string> {
+    mut out = acc
+    mut i = 0
+    while i < inits.length {
+        out = collect_used_paths_expr(inits[i].value.node, out)
+        i = i + 1
     }
+    out
 }
 
 /// Walk a MatchArmList for the unused-import sweep — both guards

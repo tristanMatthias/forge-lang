@@ -2,7 +2,7 @@
 // Also handles .length on strings and lists (property access is routed here).
 // Shared by struct_decl, with_expr, and null_safety features.
 
-use core.{Expr, ExprList, FieldEntry, FieldInitList, ValueType, SExpr, vtype_eq, vtype_is_list}
+use core.{Expr, ExprList, FieldEntry, FieldInit, ValueType, SExpr, vtype_eq, vtype_is_list}
 use typeck.{TC, ExprResult, tc_er, tc_report, check_expr, StructTypeReg, struct_type_lookup, resolve_vtype}
 use diagnostics.{DiagCode}
 
@@ -45,17 +45,18 @@ export fn check_field_access(tc: TC, obj: Expr, field: string) -> ExprResult {
     tc_er(o.tc, .Unknown)
 }
 
-/// Type-check every value in a FieldInitList. Field names are
-/// validated separately (e.g. against the struct's declared
+/// Type-check every value in a `List<FieldInit>`. Field names
+/// are validated separately (e.g. against the struct's declared
 /// fields); this function only walks the values for type errors.
-export fn check_field_inits(tc: TC, inits: FieldInitList) -> TC {
-    match inits {
-        .End -> tc
-        .Node(_, value, next) -> {
-            let r = check_expr(tc, value.node)
-            check_field_inits(r.tc, next)
-        }
+export fn check_field_inits(tc: TC, inits: List<FieldInit>) -> TC {
+    mut acc = tc
+    mut i = 0
+    while i < inits.length {
+        let r = check_expr(acc, inits[i].value.node)
+        acc = r.tc
+        i = i + 1
     }
+    acc
 }
 
 /// Linear scan for a field by name. Used by `check_field_access`

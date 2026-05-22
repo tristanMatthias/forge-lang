@@ -8,7 +8,7 @@
 
 use core.{
     Expr, Stmt, StmtList, ExprList, ParamList,
-    FieldInitList, FieldEntry,
+    FieldInit, FieldEntry,
     Variant, Pattern, MatchArmList, WhenArm, Annotation,
     binop_str, unop_str, logicop_str,
     vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq,
@@ -250,23 +250,17 @@ fn fmt_type_name_list(names: List<string>) -> string {
 }
 
 /// Render a struct/with field-init list — `name: expr, name: expr`.
-fn fmt_field_init_list(inits: FieldInitList) -> string {
-    match inits {
-        .End -> ""
-        .Node(name, sv, next) -> {
-            let head = "${name}: ${fmt_expr(sv.node)}"
-            let tail = fmt_field_init_list_tail(next)
-            "${head}${tail}"
-        }
+/// Single-pass joiner; the prior head/tail split is gone.
+fn fmt_field_init_list(inits: List<FieldInit>) -> string {
+    mut out = ""
+    mut i = 0
+    while i < inits.length {
+        let init = inits[i]
+        let entry = "${init.name}: ${fmt_expr(init.value.node)}"
+        if i == 0 { out = entry } else { out = "${out}, ${entry}" }
+        i = i + 1
     }
-}
-
-/// Tail of `fmt_field_init_list`.
-fn fmt_field_init_list_tail(inits: FieldInitList) -> string {
-    match inits {
-        .End -> ""
-        .Node(name, sv, next) -> ", ${name}: ${fmt_expr(sv.node)}${fmt_field_init_list_tail(next)}"
-    }
+    out
 }
 
 /// Render a struct-decl/shape field list — one `name: Type` per

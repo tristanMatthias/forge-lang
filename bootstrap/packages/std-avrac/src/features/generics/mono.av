@@ -3,7 +3,7 @@
 // checking and before codegen. After this pass, the AST contains no
 // generic declarations — codegen sees only concrete code.
 
-use core.{Expr, ExprList, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, StmtList, ParamList, FieldEntry, FieldInitList, TypeList, Variant, MatchArmList, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge, SelectArm}
+use core.{Expr, ExprList, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, StmtList, ParamList, FieldEntry, FieldInit, TypeList, Variant, MatchArmList, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge, SelectArm}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_warning, span_new}
 use typeck.{TraitImplReg, type_implements_trait}
 use core.{mangle_join, type_short_name}
@@ -520,24 +520,28 @@ fn infer_from_params(tp: List<TypeParamEntry>, params: ParamList, args: ExprList
 
 /// Infer type-args from a struct literal's field initializers
 /// by matching each init against its declared field type.
-fn infer_from_field_inits(tp: List<TypeParamEntry>, fields: List<FieldEntry>, inits: FieldInitList, acc: List<TypeArg>) -> List<TypeArg> {
-    match inits {
-        .End -> acc
-        .Node(name, val, next) -> {
-            let field_ty = field_type_for(fields, name)
-            let new_acc = if type_param_has(tp, field_ty) {
-                mut out: List<TypeArg> = []
-                out.push(TypeArg { param_name: field_ty, concrete_vt: val.ty })
-                mut i = 0
-                while i < acc.length {
-                    out.push(acc[i])
-                    i = i + 1
-                }
-                out
-            } else { acc }
-            infer_from_field_inits(tp, fields, next, new_acc)
+fn infer_from_field_inits(tp: List<TypeParamEntry>, fields: List<FieldEntry>, inits: List<FieldInit>, acc: List<TypeArg>) -> List<TypeArg> {
+    mut out_acc = acc
+    mut i = 0
+    while i < inits.length {
+        let init = inits[i]
+        let field_ty = field_type_for(fields, init.name)
+        if type_param_has(tp, field_ty) {
+            // Cons-prepend: most-recent binding lives at the head so
+            // `type_arg_lookup` finds it first. Match the prior
+            // recursion's ordering: head = first init that bound.
+            mut prepended: List<TypeArg> = []
+            prepended.push(TypeArg { param_name: field_ty, concrete_vt: init.value.ty })
+            mut j = 0
+            while j < out_acc.length {
+                prepended.push(out_acc[j])
+                j = j + 1
+            }
+            out_acc = prepended
         }
+        i = i + 1
     }
+    out_acc
 }
 
 /// Look up a field's declared type-name (as a string) by
@@ -1003,10 +1007,16 @@ fn collect_inst_arms(arms: MatchArmList, regs: GenRegs, st: CollectState) -> Col
     }
 }
 
-/// Walk a FieldInitList collecting instantiations from each
+/// Walk a `List<FieldInit>` collecting instantiations from each
 /// field's initializer expression.
-fn collect_inst_field_inits(inits: FieldInitList, regs: GenRegs, st: CollectState) -> CollectState {
-    match inits { .End -> st, .Node(_, val, next) -> collect_inst_field_inits(next, regs, collect_inst_expr(val.node, regs, st)) }
+fn collect_inst_field_inits(inits: List<FieldInit>, regs: GenRegs, st: CollectState) -> CollectState {
+    mut acc = st
+    mut i = 0
+    while i < inits.length {
+        acc = collect_inst_expr(inits[i].value.node, regs, acc)
+        i = i + 1
+    }
+    acc
 }
 
 // Merge partial inference — full resolution is checked later in finalize_insts.
@@ -1058,7 +1068,7 @@ fn try_add_enum_inst(tn: string, variant: string, args: ExprList, regs: GenRegs,
 
 /// Add (or merge) a generic-struct instantiation inferred
 /// from a struct literal's field initializers.
-fn try_add_struct_inst(name: string, inits: FieldInitList, regs: GenRegs, st: CollectState) -> CollectState {
+fn try_add_struct_inst(name: string, inits: List<FieldInit>, regs: GenRegs, st: CollectState) -> CollectState {
     let e = generic_struct_lookup(regs.structs, name)
     if e == null { return st }
     let entry = e!
@@ -1648,8 +1658,16 @@ fn rewrite_arms(arms: MatchArmList, regs: GenRegs, insts: List<Inst>) -> MatchAr
 
 /// Map `rewrite_expr` over every value in a struct-literal /
 /// `with` field-init list.
-fn rewrite_field_inits(inits: FieldInitList, regs: GenRegs, insts: List<Inst>) -> FieldInitList {
-    match inits { .End -> .End, .Node(n, val, next) -> FieldInitList.Node(n, sexpr_at(rewrite_expr(val.node, regs, insts), val.line, val.col, val.file), rewrite_field_inits(next, regs, insts)) }
+fn rewrite_field_inits(inits: List<FieldInit>, regs: GenRegs, insts: List<Inst>) -> List<FieldInit> {
+    mut out: List<FieldInit> = []
+    mut i = 0
+    while i < inits.length {
+        let init = inits[i]
+        let new_val = sexpr_at(rewrite_expr(init.value.node, regs, insts), init.value.line, init.value.col, init.value.file)
+        out.push(FieldInit { name: init.name, value: new_val })
+        i = i + 1
+    }
+    out
 }
 
 /// Compute the mangled enum name for a constructor call site
@@ -1692,7 +1710,7 @@ fn inst_mangled_compatible(insts: List<Inst>, name: string, partial: List<TypeAr
 /// Rewrite a `StructLit(name, inits)` site, replacing the
 /// struct name with its mangled specialisation. Recurses
 /// through every initialiser to rewrite nested generic refs.
-fn rewrite_struct_lit(name: string, inits: FieldInitList, regs: GenRegs, insts: List<Inst>) -> Expr {
+fn rewrite_struct_lit(name: string, inits: List<FieldInit>, regs: GenRegs, insts: List<Inst>) -> Expr {
     let new_inits = rewrite_field_inits(inits, regs, insts)
     let e = generic_struct_lookup(regs.structs, name)
     if e == null { return Expr.StructLit(name, new_inits) }

@@ -10,7 +10,7 @@ use typeck.{check_expr, check_expr_list, tc_er}
 /// Register the `Foo { x: 1, y: 2 }` struct literal feature.
 export fn struct_lit_feature() -> Feature {
     feature_new("struct_lit") with {
-        expr_tag: Expr.StructLit("", FieldInitList.End),
+        expr_tag: Expr.StructLit("", []),
         emit_expr: struct_lit_emit_expr,
         resolve_expr: struct_lit_resolve_expr,
         check_expr: struct_lit_check_expr,

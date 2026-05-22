@@ -14,7 +14,7 @@
 // that desugar.av and comptime/rewrite.av use; once the generic-AST-
 // visitor ticket lands (93k3) all three should share a single visitor.
 
-use core.{Stmt, StmtList, SStmt, sstmt_at, sstmt_dummy, Expr, ExprList, SExpr, sexpr, sexpr_dummy, FieldEntry, FieldInitList, MatchArmList, BinOp, UnOp, LogicOp, ParamList, TypeParamEntry, CompConfigPair, binop_str, unop_str, logicop_str}
+use core.{Stmt, StmtList, SStmt, sstmt_at, sstmt_dummy, Expr, ExprList, SExpr, sexpr, sexpr_dummy, FieldEntry, FieldInit, MatchArmList, BinOp, UnOp, LogicOp, ParamList, TypeParamEntry, CompConfigPair, binop_str, unop_str, logicop_str}
 
 // ── Public entry ──
 
@@ -127,11 +127,13 @@ fn any_quote_in_expr_list(list: ExprList) -> bool {
     }
 }
 
-fn any_quote_in_field_inits(list: FieldInitList) -> bool {
-    match list {
-        .End -> false
-        .Node(_, se, next) -> any_quote_in_expr(se.node) || any_quote_in_field_inits(next)
+fn any_quote_in_field_inits(list: List<FieldInit>) -> bool {
+    mut i = 0
+    while i < list.length {
+        if any_quote_in_expr(list[i].value.node) { return true }
+        i = i + 1
     }
+    false
 }
 
 /// cai8: the presence scan must walk match-arm guards + bodies too.
@@ -273,15 +275,18 @@ fn lower_match_arms(arms: MatchArmList) -> MatchArmList {
     }
 }
 
-fn lower_field_inits(inits: FieldInitList) -> FieldInitList {
-    match inits {
-        .End -> FieldInitList.End
-        .Node(name, se, next) -> FieldInitList.Node(
-            name,
-            sexpr(lower_expr(se.node), se.line, se.col),
-            lower_field_inits(next)
-        )
+fn lower_field_inits(inits: List<FieldInit>) -> List<FieldInit> {
+    mut out: List<FieldInit> = []
+    mut i = 0
+    while i < inits.length {
+        let init = inits[i]
+        out.push(FieldInit {
+            name: init.name,
+            value: sexpr(lower_expr(init.value.node), init.value.line, init.value.col),
+        })
+        i = i + 1
     }
+    out
 }
 
 // ── Quote kind dispatch (vez6.3.10) ──
@@ -484,6 +489,17 @@ fn construct_param_list(params: ParamList) -> Expr {
     }
 }
 
+/// Build a two-field struct-literal Expr `Type { k1: v1, k2: v2 }`.
+/// Centralises the `Expr.StructLit(type_name, List<FieldInit> { ... })`
+/// construction used by every `construct_*_list` below for the inner
+/// per-entry struct literal.
+fn struct_lit_2(type_name: string, k1: string, v1: Expr, k2: string, v2: Expr) -> Expr {
+    mut inits: List<FieldInit> = []
+    inits.push(FieldInit { name: k1, value: sexpr_dummy(v1) })
+    inits.push(FieldInit { name: k2, value: sexpr_dummy(v2) })
+    Expr.StructLit(type_name, inits)
+}
+
 /// Build an Expr that, when evaluated, produces a
 /// `List<TypeParamEntry>` AST value. Each entry is a struct literal
 /// `TypeParamEntry { name, bounds }`; the result is an `Expr.ListLit`
@@ -496,10 +512,9 @@ fn construct_type_param_list(tp: List<TypeParamEntry>) -> Expr {
     while i > 0 {
         i = i - 1
         let e = tp[i]
-        let inits = FieldInitList.Node("name", sexpr_dummy(string_lit_expr(e.name)),
-                    FieldInitList.Node("bounds", sexpr_dummy(string_lit_expr(e.bounds)),
-                                       FieldInitList.End))
-        let struct_lit = Expr.StructLit("@std::avrac::core::TypeParamEntry", inits)
+        let struct_lit = struct_lit_2("@std::avrac::core::TypeParamEntry",
+            "name", string_lit_expr(e.name),
+            "bounds", string_lit_expr(e.bounds))
         elems = ExprList.Node(sexpr_dummy(struct_lit), elems)
     }
     Expr.ListLit(elems)
@@ -519,10 +534,9 @@ fn construct_field_list(fields: List<FieldEntry>) -> Expr {
     while i > 0 {
         i = i - 1
         let e = fields[i]
-        let inits = FieldInitList.Node("name", sexpr_dummy(string_lit_expr(e.name)),
-                    FieldInitList.Node("resolved", sexpr_dummy(construct_value_type_unknown()),
-                                       FieldInitList.End))
-        let struct_lit = Expr.StructLit("@std::avrac::core::FieldEntry", inits)
+        let struct_lit = struct_lit_2("@std::avrac::core::FieldEntry",
+            "name", string_lit_expr(e.name),
+            "resolved", construct_value_type_unknown())
         elems = ExprList.Node(sexpr_dummy(struct_lit), elems)
     }
     Expr.ListLit(elems)
@@ -540,10 +554,9 @@ fn construct_comp_config_pair_list(list: List<CompConfigPair>) -> Expr {
     while i > 0 {
         i = i - 1
         let pair = list[i]
-        let inits = FieldInitList.Node("key", sexpr_dummy(string_lit_expr(pair.key)),
-                    FieldInitList.Node("value", sexpr_dummy(construct_expr(pair.value)),
-                                       FieldInitList.End))
-        let struct_lit = Expr.StructLit("@std::avrac::core::CompConfigPair", inits)
+        let struct_lit = struct_lit_2("@std::avrac::core::CompConfigPair",
+            "key", string_lit_expr(pair.key),
+            "value", construct_expr(pair.value))
         elems = ExprList.Node(sexpr_dummy(struct_lit), elems)
     }
     Expr.ListLit(elems)
@@ -556,17 +569,24 @@ fn construct_value_type_unknown() -> Expr {
     Expr.EnumCtor("@std::avrac::core::ValueType", "Unknown", ExprList.End)
 }
 
-/// Build an Expr that, when evaluated, produces a FieldInitList AST
-/// value. Mirrors construct_expr_list's shape since both are linked
-/// lists with payload + tail.
-fn construct_field_init_list(list: FieldInitList) -> Expr {
-    match list {
-        .End -> list_end("FieldInitList")
-        .Node(name, se, next) -> list_node("FieldInitList",
-            three_args(string_lit_expr(name),
-                       construct_sexpr(se),
-                       construct_field_init_list(next)))
+/// Build an Expr that, when evaluated, produces a
+/// `List<FieldInit>` AST value. Each entry materialises as a
+/// `FieldInit { name, value }` struct literal; the result is an
+/// `Expr.ListLit` so codegen produces a real list at runtime.
+/// Mirrors `construct_type_param_list` shape — same pattern, same
+/// reverse-walk-to-preserve-source-order.
+fn construct_field_init_list(list: List<FieldInit>) -> Expr {
+    mut elems = ExprList.End
+    mut i = list.length
+    while i > 0 {
+        i = i - 1
+        let init = list[i]
+        let struct_lit = struct_lit_2("@std::avrac::core::FieldInit",
+            "name", string_lit_expr(init.name),
+            "value", construct_sexpr(init.value))
+        elems = ExprList.Node(sexpr_dummy(struct_lit), elems)
     }
+    Expr.ListLit(elems)
 }
 
 /// `Expr.EnumCtor("@std::avrac::core::<list_type>", "End", [])` — the

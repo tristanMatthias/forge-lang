@@ -1,6 +1,6 @@
 // WHY: emits struct literal construction and field-filling.
 
-use core.{Expr, ExprList, FieldEntry, FieldInitList, VarEnv, field_index_of, ValueType, vtype_struct_name, vtype_display, vtype_is_str, vtype_is_bytes, vtype_is_list, vtype_is_map, vtype_narrowed_variant, vtype_enum_name, variant_lookup}
+use core.{Expr, ExprList, FieldEntry, FieldInit, VarEnv, field_index_of, ValueType, vtype_struct_name, vtype_display, vtype_is_str, vtype_is_bytes, vtype_is_list, vtype_is_map, vtype_narrowed_variant, vtype_enum_name, variant_lookup}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, null_ptr_val}
 use core.{type_registry_id_for}
 use features.enum_decl.{emit_enum_ctor}
@@ -10,7 +10,7 @@ use features.union_type.{emit_union_wrap, needs_union_wrap}
 /// LLVM type via the arena (or reuses a Copy-type stack slot when
 /// one is set), fills every field via `fill_struct_fields`, and
 /// returns the buffer typed as `Struct(name)`.
-export fn emit_struct_lit(ctx: Ctx, env: VarEnv, name: string, inits: FieldInitList) -> Result<EmitValue, string> {
+export fn emit_struct_lit(ctx: Ctx, env: VarEnv, name: string, inits: List<FieldInit>) -> Result<EmitValue, string> {
     let lookup = ctx.lookup_struct(name)
     if !lookup.found {
         return err_emit("undefined struct type `${name}`")
@@ -42,25 +42,25 @@ fn malloc_struct_bytes(ctx: Ctx, name: string, fields: List<FieldEntry>) -> ptr 
 /// `store_field` (which casts to the field's declared LLVM type).
 /// Concrete values flowing into union-typed fields are
 /// auto-wrapped via `emit_union_wrap`.
-fn fill_struct_fields(ctx: Ctx, env: VarEnv, st_ty: ptr, alloca: ptr, inits: FieldInitList, fields: List<FieldEntry>) -> Result<EmitValue, string> {
-    match inits {
-        .End -> ok_emit(null_ptr_val(), .Void)
-        .Node(field_name, sv, next) -> {
-            let idx = field_index_of(fields, field_name)
-            if idx < 0 { return err_emit("unknown field `${field_name}`") }
-            let r = ctx.emit(env, sv.node)?
-            let fld_ty = ctx.resolve_field_type(fields, field_name)
-            let gep = ctx.gep(st_ty, alloca, idx, "fld_ptr")
-            // Union wrapping: if field type is union and value is a concrete member
-            if needs_union_wrap(r.ty, fld_ty) {
-                let wrapped = emit_union_wrap(ctx, r.value, r.ty, fld_ty)?
-                ctx.store_field(wrapped.value, gep, fld_ty)
-            } else {
-                ctx.store_field(r.value, gep, fld_ty)
-            }
-            fill_struct_fields(ctx, env, st_ty, alloca, next, fields)
+fn fill_struct_fields(ctx: Ctx, env: VarEnv, st_ty: ptr, alloca: ptr, inits: List<FieldInit>, fields: List<FieldEntry>) -> Result<EmitValue, string> {
+    mut i = 0
+    while i < inits.length {
+        let init = inits[i]
+        let idx = field_index_of(fields, init.name)
+        if idx < 0 { return err_emit("unknown field `${init.name}`") }
+        let r = ctx.emit(env, init.value.node)?
+        let fld_ty = ctx.resolve_field_type(fields, init.name)
+        let gep = ctx.gep(st_ty, alloca, idx, "fld_ptr")
+        // Union wrapping: if field type is union and value is a concrete member
+        if needs_union_wrap(r.ty, fld_ty) {
+            let wrapped = emit_union_wrap(ctx, r.value, r.ty, fld_ty)?
+            ctx.store_field(wrapped.value, gep, fld_ty)
+        } else {
+            ctx.store_field(r.value, gep, fld_ty)
         }
+        i = i + 1
     }
+    ok_emit(null_ptr_val(), .Void)
 }
 
 /// Codegen for `obj.field = value`. Looks up the field's index

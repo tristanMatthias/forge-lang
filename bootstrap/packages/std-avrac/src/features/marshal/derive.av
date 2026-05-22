@@ -19,7 +19,7 @@
 // resolver wires up to @std/process the same way a hand-written
 // impl would.
 
-use core.{Stmt, StmtList, SStmt, sstmt_dummy, Expr, ExprList, SExpr, sexpr_dummy, FieldEntry, FieldInitList, ParamList, ValueType, TypeParamEntry, Variant, Pattern, MatchArmList, TypeList, BinOp, find_annotation}
+use core.{Stmt, StmtList, SStmt, sstmt_dummy, Expr, ExprList, SExpr, sexpr_dummy, FieldEntry, FieldInit, ParamList, ValueType, TypeParamEntry, Variant, Pattern, MatchArmList, TypeList, BinOp, find_annotation}
 
 // ── Public entry ──
 
@@ -473,12 +473,11 @@ fn build_ctor(type_name: string, fields: List<FieldEntry>) -> Expr {
     Expr.StructLit(type_name, build_field_inits(fields))
 }
 
-fn build_field_inits(fields: List<FieldEntry>) -> FieldInitList {
-    // Build back-to-front so the cons-list comes out in source order
-    // (head-first reads expect source-order field bindings).
-    mut out = FieldInitList.End
-    mut i = fields.length - 1
-    while i >= 0 {
+fn build_field_inits(fields: List<FieldEntry>) -> List<FieldInit> {
+    // List<FieldInit>.push appends forward — walk source order.
+    mut out: List<FieldInit> = []
+    mut i = 0
+    while i < fields.length {
         let e = fields[i]
         let name = e.name
         let ty = e.resolved
@@ -497,8 +496,8 @@ fn build_field_inits(fields: List<FieldEntry>) -> FieldInitList {
             // chain_writes / build_reads.
             default_for(ty)
         }
-        out = FieldInitList.Node(name, sexpr_dummy(init_expr), out)
-        i = i - 1
+        out.push(FieldInit { name, value: sexpr_dummy(init_expr) })
+        i = i + 1
     }
     out
 }

@@ -6,7 +6,7 @@
 //
 // Conservative: if in doubt, mark as escaped (don't release).
 
-use core.{Expr, ExprList, FieldEntry, FieldInitList, Variant, ValueType, Stmt, StmtList, SExpr, SStmt, stmt_unwrap}
+use core.{Expr, ExprList, FieldEntry, FieldInit, Variant, ValueType, Stmt, StmtList, SExpr, SStmt, stmt_unwrap}
 use codegen.{ReleasableSet, releasable_has, StructReg, EnumReg, struct_reg_lookup, enum_reg_lookup, CopySet, copy_set_has}
 
 /// Add `name` to the releasable set, deduplicating. The set is the
@@ -219,12 +219,15 @@ fn remove_escaped_args(args: ExprList, set: ReleasableSet) -> ReleasableSet {
 }
 
 /// Apply `remove_escaped_expr` to every value in a struct-literal
-/// FieldInitList. Used on `Foo { x: a, y: b }` and `with` exprs.
-fn remove_escaped_field_inits(inits: FieldInitList, set: ReleasableSet) -> ReleasableSet {
-    match inits {
-        .End -> set
-        .Node(_, val_se, next) -> remove_escaped_field_inits(next, remove_escaped_expr(val_se.node, set))
+/// `List<FieldInit>`. Used on `Foo { x: a, y: b }` and `with` exprs.
+fn remove_escaped_field_inits(inits: List<FieldInit>, set: ReleasableSet) -> ReleasableSet {
+    mut acc = set
+    mut i = 0
+    while i < inits.length {
+        acc = remove_escaped_expr(inits[i].value.node, acc)
+        i = i + 1
     }
+    acc
 }
 
 // ── Arena eligibility (spec Axis 9.6) ─────────────────────────────

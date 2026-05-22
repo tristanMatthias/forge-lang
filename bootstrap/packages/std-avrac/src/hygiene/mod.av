@@ -30,7 +30,7 @@
 use core.{
     Stmt, StmtList, SStmt, sstmt_at,
     Expr, ExprList, SExpr, sexpr,
-    FieldInitList, MatchArmList,
+    FieldInit, MatchArmList,
     ParamList, Pattern,
     BinOp, UnOp, LogicOp,
     ValueType,
@@ -59,7 +59,7 @@ type RenameExprResult = { expr: Expr, ctx: HygieneCtx }
 type RenameStmtResult = { stmt: Stmt, ctx: HygieneCtx }
 type RenameStmtListResult = { list: StmtList, ctx: HygieneCtx }
 type RenameExprListResult = { list: ExprList, ctx: HygieneCtx }
-type RenameFieldInitsResult = { list: FieldInitList, ctx: HygieneCtx }
+type RenameFieldInitsResult = { list: List<FieldInit>, ctx: HygieneCtx }
 type RenameParamsResult = { params: ParamList, ctx: HygieneCtx }
 type FreshResult = { name: string, ctx: HygieneCtx }
 
@@ -359,18 +359,18 @@ fn rename_expr_list(ctx: HygieneCtx, list: ExprList) -> RenameExprListResult {
     }
 }
 
-fn rename_field_inits(ctx: HygieneCtx, inits: FieldInitList) -> RenameFieldInitsResult {
-    match inits {
-        .End -> RenameFieldInitsResult { list: FieldInitList.End, ctx }
-        .Node(name, se, next) -> {
-            let r1 = rename_expr(ctx, se.node)
-            let r2 = rename_field_inits(r1.ctx, next)
-            RenameFieldInitsResult {
-                list: FieldInitList.Node(name, sexpr(r1.expr, se.line, se.col), r2.list),
-                ctx: r2.ctx,
-            }
-        }
+fn rename_field_inits(ctx: HygieneCtx, inits: List<FieldInit>) -> RenameFieldInitsResult {
+    mut acc = ctx
+    mut out: List<FieldInit> = []
+    mut i = 0
+    while i < inits.length {
+        let init = inits[i]
+        let r = rename_expr(acc, init.value.node)
+        out.push(FieldInit { name: init.name, value: sexpr(r.expr, init.value.line, init.value.col) })
+        acc = r.ctx
+        i = i + 1
     }
+    RenameFieldInitsResult { list: out, ctx: acc }
 }
 
 fn rename_param_list(ctx: HygieneCtx, params: ParamList) -> RenameParamsResult {

@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.{BinOp, Expr, ExprList, FieldInitList, FieldEntry, MatchArmList, ParamList, Pattern, SExpr, SStmt, Stmt, StmtList, TypeArg, TypeList, TypeParamEntry, ValueType, Variant, WhenArm, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_list_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_is_fn, vtype_is_unknown, vtype_list_elem, vtype_struct_name, vtype_tuple_at}
+use core.{BinOp, Expr, ExprList, FieldInit, FieldEntry, MatchArmList, ParamList, Pattern, SExpr, SStmt, Stmt, StmtList, TypeArg, TypeList, TypeParamEntry, ValueType, Variant, WhenArm, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_list_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_is_fn, vtype_is_unknown, vtype_list_elem, vtype_struct_name, vtype_tuple_at}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive}
@@ -2199,12 +2199,16 @@ fn annotate_match_arms(tc: TC, arms: MatchArmList) -> MatchArmList {
     }
 }
 
-/// Map `annotate_sexpr` over each FieldInitList value.
-fn annotate_field_inits(tc: TC, inits: FieldInitList) -> FieldInitList {
-    match inits {
-        .End -> .End
-        .Node(name, val, next) -> FieldInitList.Node(name, annotate_sexpr(tc, val), annotate_field_inits(tc, next))
+/// Map `annotate_sexpr` over each `List<FieldInit>` value.
+fn annotate_field_inits(tc: TC, inits: List<FieldInit>) -> List<FieldInit> {
+    mut out: List<FieldInit> = []
+    mut i = 0
+    while i < inits.length {
+        let init = inits[i]
+        out.push(FieldInit { name: init.name, value: annotate_sexpr(tc, init.value) })
+        i = i + 1
     }
+    out
 }
 
 /// Walk every `when` arm, annotating cond + body SExprs.

@@ -69,12 +69,10 @@ export enum ParamList {
 // resolver and consumed by typeck + codegen for ABI / GEP offsets.
 export type FieldEntry = { name: string, resolved: ValueType }
 
-/// Field initializer list — used in literal construction like
-/// `Foo { f1: 1, f2: "hi" }`.
-export enum FieldInitList {
-    End
-    Node(name: string, value: SExpr, next: FieldInitList)
-}
+// `List<FieldInit>` replaces the retired `enum FieldInitList`.
+// Used in literal construction like `Foo { f1: 1, f2: "hi" }` —
+// the payload on `Expr.StructLit` and `Expr.With`.
+export type FieldInit = { name: string, value: SExpr }
 
 // `List<Variant>` replaces the retired `enum VariantList`. Each
 // variant has zero or more payload fields, stored as a
@@ -897,7 +895,7 @@ export enum Expr {
     /// Call with explicit type arguments: `f::<int, string>(x, y)`.
     GenericCall(callee: Expr, type_args: List<string>, args: ExprList)
     /// Struct literal: `Foo { x: 1, y: 2 }`.
-    StructLit(name: string, inits: FieldInitList)
+    StructLit(name: string, inits: List<FieldInit>)
     /// Field access: `obj.field`.
     FieldAccess(obj: Expr, field: string)
     /// Enum constructor with payload: `Color.Red(255)` or `.Some(x)`.
@@ -925,7 +923,7 @@ export enum Expr {
     /// Tuple index: `t.0`, `t.1`.
     TupleIndex(obj: Expr, index: int)
     /// Functional struct update: `obj with { field: new_value }`.
-    With(obj: Expr, overrides: FieldInitList)
+    With(obj: Expr, overrides: List<FieldInit>)
     /// List literal: `[1, 2, 3]`.
     ListLit(elements: ExprList)
     /// Closure literal: `(x, y) -> body`.
@@ -1332,14 +1330,6 @@ export fn filter_fields_only(base: List<FieldEntry>, included: List<FieldEntry>)
     out
 }
 
-/// Length of a FieldInitList. O(n).
-export fn field_init_length(inits: FieldInitList) -> int {
-    match inits {
-        .End -> 0
-        .Node(_, _, next) -> 1 + field_init_length(next)
-    }
-}
-
 /// Zero-based index of `name` in `fields`, or -1 if absent. Used by
 /// codegen for GEP offsets.
 export fn field_index_of(fields: List<FieldEntry>, name: string) -> int {
@@ -1467,25 +1457,18 @@ fn render_when_arm_list(arms: List<WhenArm>) -> string {
     out
 }
 
-/// Render a FieldInitList as an S-expression: `(k=v, k2=v2)`.
-export fn render_field_init_list(inits: FieldInitList) -> string {
-    match inits {
-        .End -> "()"
-        .Node(name, sv, next) -> {
-            let head = "${name}=${render_expr(sv.node)}"
-            let tail = render_field_init_tail(next)
-            "(${head}${tail})"
-        }
+/// Render a `List<FieldInit>` as an S-expression: `(k=v, k2=v2)`.
+export fn render_field_init_list(inits: List<FieldInit>) -> string {
+    if inits.length == 0 { return "()" }
+    mut out = ""
+    mut i = 0
+    while i < inits.length {
+        let e = inits[i]
+        let entry = "${e.name}=${render_expr(e.value.node)}"
+        if i == 0 { out = entry } else { out = "${out}, ${entry}" }
+        i = i + 1
     }
-}
-
-/// Tail half of `render_field_init_list` — comma-prefixes each entry
-/// past the head so the head doesn't get a leading comma.
-fn render_field_init_tail(inits: FieldInitList) -> string {
-    match inits {
-        .End -> ""
-        .Node(name, sv, next) -> ", ${name}=${render_expr(sv.node)}${render_field_init_tail(next)}"
-    }
+    "(${out})"
 }
 
 /// Render a `List<FieldEntry>` as an S-expression: `(name:Type, name2:Type)`.

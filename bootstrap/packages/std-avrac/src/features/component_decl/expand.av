@@ -10,7 +10,7 @@
 // self.__parent → parent accumulator variable
 // self.__parent_name → parent instance name string
 
-use core.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, FieldEntry, FieldInitList, ParamList, ValueType, CompConfig, CompConfigPair, ChildrenSlot, TypeParamEntry, find_annotation}
+use core.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, FieldEntry, FieldInit, ParamList, ValueType, CompConfig, CompConfigPair, ChildrenSlot, TypeParamEntry, find_annotation}
 use core.{has_fn, find_fn_body}
 
 // ── Public API ──
@@ -366,14 +366,16 @@ fn rw_tpl_expr(expr: Expr, inst: string, uc: List<CompConfigPair>, schema: List<
 
 /// Map `rw_tpl_expr` over every field initializer in a struct
 /// literal embedded in a template body.
-fn rw_tpl_field_inits(inits: FieldInitList, inst: string, uc: List<CompConfigPair>, schema: List<CompConfig>, ctx: RewriteCtx) -> FieldInitList {
-    match inits {
-        .End -> FieldInitList.End
-        .Node(name, sv, next) -> {
-            let new_val = rw_tpl_expr(sv.node, inst, uc, schema, ctx)
-            FieldInitList.Node(name, sexpr(new_val, sv.line, sv.col), rw_tpl_field_inits(next, inst, uc, schema, ctx))
-        }
+fn rw_tpl_field_inits(inits: List<FieldInit>, inst: string, uc: List<CompConfigPair>, schema: List<CompConfig>, ctx: RewriteCtx) -> List<FieldInit> {
+    mut out: List<FieldInit> = []
+    mut i = 0
+    while i < inits.length {
+        let init = inits[i]
+        let new_val = rw_tpl_expr(init.value.node, inst, uc, schema, ctx)
+        out.push(FieldInit { name: init.name, value: sexpr(new_val, init.value.line, init.value.col) })
+        i = i + 1
     }
+    out
 }
 
 /// Map `rw_tpl_expr` over an ExprList in a template body.
@@ -447,14 +449,15 @@ fn config_to_fields(config: List<CompConfig>) -> List<FieldEntry> {
 /// FieldInitList used when instantiating the synthesized struct
 /// from inside the factory function. Walks back-to-front for the
 /// same source-order reason as `config_to_fields`.
-fn config_to_factory_inits(config: List<CompConfig>) -> FieldInitList {
-    mut out = FieldInitList.End
-    mut i = config.length
-    while i > 0 {
-        i = i - 1
+fn config_to_factory_inits(config: List<CompConfig>) -> List<FieldInit> {
+    // List<FieldInit>.push appends forward — walk source order.
+    mut out: List<FieldInit> = []
+    mut i = 0
+    while i < config.length {
         let entry = config[i]
         let val = if entry.default_val != null { entry.default_val! } else { Expr.Null }
-        out = FieldInitList.Node(entry.key, sexpr(val, 0, 0), out)
+        out.push(FieldInit { name: entry.key, value: sexpr(val, 0, 0) })
+        i = i + 1
     }
     out
 }
@@ -508,15 +511,14 @@ fn apply_config_pairs(base: Expr, config: List<CompConfigPair>) -> Expr {
 /// Convert a `List<CompConfigPair>` (user instantiation config)
 /// into a FieldInitList for direct splicing into a struct
 /// literal.
-fn config_pairs_to_field_inits(pairs: List<CompConfigPair>) -> FieldInitList {
-    // FieldInitList is cons-prepend, so walk back-to-front to
-    // preserve the user's source order in the resulting list.
-    mut out = FieldInitList.End
-    mut i = pairs.length
-    while i > 0 {
-        i = i - 1
+fn config_pairs_to_field_inits(pairs: List<CompConfigPair>) -> List<FieldInit> {
+    // List<FieldInit>.push appends forward — walk source order.
+    mut out: List<FieldInit> = []
+    mut i = 0
+    while i < pairs.length {
         let pair = pairs[i]
-        out = FieldInitList.Node(pair.key, sexpr(pair.value, 0, 0), out)
+        out.push(FieldInit { name: pair.key, value: sexpr(pair.value, 0, 0) })
+        i = i + 1
     }
     out
 }
@@ -557,7 +559,16 @@ export fn splice_component_def(name: string, params: ParamList, config: List<Com
     let name_param = ParamList.Node("name", ValueType.Str, ParamList.End)
     let config_inits = config_to_factory_inits(config)
     let with_child_inits = append_children_inits(config_inits, children)
-    let name_init = FieldInitList.Node("name", sexpr(Expr.Ident("name"), 0, 0), with_child_inits)
+    // Prepend the implicit `name: name` init. List<FieldInit> grows
+    // forward, so build a fresh list with `name` first, then push
+    // the existing entries.
+    mut name_init: List<FieldInit> = []
+    name_init.push(FieldInit { name: "name", value: sexpr(Expr.Ident("name"), 0, 0) })
+    mut ni_i = 0
+    while ni_i < with_child_inits.length {
+        name_init.push(with_child_inits[ni_i])
+        ni_i = ni_i + 1
+    }
     let struct_lit = Expr.StructLit(type_name, name_init)
     let factory_body = StmtList.Node(sstmt(Stmt.Return(struct_lit), 0, 0), StmtList.End)
     let factory = Stmt.Function("${name}_new", empty_tp, name_param, ValueType.Struct(type_name, 0), factory_body)
@@ -593,21 +604,21 @@ fn append_children_fields(fields: List<FieldEntry>, children: List<ChildrenSlot>
 
 /// Initialize each slot to an empty list literal `[]` in the
 /// factory's struct literal, paired with the slot field added by
-/// `append_children_fields`.
-fn append_children_inits(inits: FieldInitList, children: List<ChildrenSlot>) -> FieldInitList {
-    mut out = inits
+/// `append_children_fields`. Copy + push appends; the prior linked
+/// `field_init_list_append` tail-walker is gone (List<T>.push is
+/// O(1) amortised).
+fn append_children_inits(inits: List<FieldInit>, children: List<ChildrenSlot>) -> List<FieldInit> {
+    mut out: List<FieldInit> = []
+    mut i = 0
+    while i < inits.length {
+        out.push(inits[i])
+        i = i + 1
+    }
     for slot in children {
         let empty_list = sexpr(Expr.ListLit(ExprList.End), 0, 0)
-        out = field_init_list_append(out, slot.slot_name, empty_list)
+        out.push(FieldInit { name: slot.slot_name, value: empty_list })
     }
     out
-}
-
-fn field_init_list_append(inits: FieldInitList, name: string, value: SExpr) -> FieldInitList {
-    match inits {
-        .End -> FieldInitList.Node(name, value, FieldInitList.End)
-        .Node(n, v, next) -> FieldInitList.Node(n, v, field_init_list_append(next, name, value))
-    }
 }
 
 /// Look up the slot name in `schema` whose element type matches

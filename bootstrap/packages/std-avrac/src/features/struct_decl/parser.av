@@ -1,7 +1,7 @@
 // WHY: parses `type Foo = { ... }` and `shape Foo = { ... }` declarations
 // and the supporting field grammars (declaration + literal init).
 
-use core.{Stmt, Expr, FieldEntry, FieldInitList, SExpr, sexpr, TypeParamEntry, TypeExpr, ValueType, type_expr_to_vtype}
+use core.{Stmt, Expr, FieldEntry, FieldInit, SExpr, sexpr, TypeParamEntry, TypeExpr, ValueType, type_expr_to_vtype}
 use parse.{Parser}
 use core.{Tk}
 
@@ -143,26 +143,22 @@ impl Parser {
         out
     }
 
-    fn parse_field_init_list(self) -> FieldInitList? {
-        if self.check(Tk.RightBrace) {
-            return FieldInitList.End
+    fn parse_field_init_list(self) -> List<FieldInit>? {
+        // Source-order loop. `Foo { name }` shorthand expands to
+        // `Foo { name: name }` so the value defaults to an
+        // `Expr.Ident(name)` when the `:` is absent.
+        mut out: List<FieldInit> = []
+        while !self.check(Tk.RightBrace) {
+            let name = self.consume_identifier("expected field name")?
+            let value = if self.check(Tk.Colon) {
+                self.advance()
+                self.parse_expression()?
+            } else {
+                Expr.Ident(name)
+            }
+            out.push(FieldInit { name, value: sexpr(value, self.current_line, self.current_column) })
+            if self.check(Tk.Comma) { self.advance() }
         }
-        let name = self.consume_identifier("expected field name")?
-        // Shorthand: `Foo { name }` is sugar for `Foo { name: name }`.
-        // If the next token is `,` or `}`, the field value is just
-        // the variable with the same name.
-        let value = if self.check(Tk.Colon) {
-            self.advance()
-            let v = self.parse_expression()?
-            v
-        } else {
-            Expr.Ident(name)
-        }
-        if self.check(Tk.Comma) {
-            self.advance()
-            let rest = self.parse_field_init_list()?
-            return FieldInitList.Node(name, sexpr(value, self.current_line, self.current_column), rest)
-        }
-        FieldInitList.Node(name, sexpr(value, self.current_line, self.current_column), FieldInitList.End)
+        out
     }
 }
