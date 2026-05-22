@@ -73,7 +73,7 @@ export fn shape_decl_feature() -> Feature {
 }
 
 /// Codegen hook for `StructLit`. Forwards to `emit_struct_lit`.
-fn struct_lit_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+fn struct_lit_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .StructLit(name, inits) -> emit_struct_lit(ctx, env, name, inits)
         _ -> err_emit("expected StructLit")
@@ -103,7 +103,7 @@ fn struct_lit_check_expr(tc: TC, expr: Expr) -> ExprResult {
 }
 
 /// Codegen hook for `FieldAccess`. Forwards to `emit_field_access`.
-fn field_access_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+fn field_access_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .FieldAccess(obj, field) -> emit_field_access(ctx, env, obj, field)
         _ -> err_emit("expected FieldAccess")
@@ -142,7 +142,7 @@ fn field_access_check_expr(tc: TC, expr: Expr) -> ExprResult {
 }
 
 /// Codegen hook for `EnumCtor`. Forwards to `emit_enum_ctor`.
-fn enum_ctor_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+fn enum_ctor_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .EnumCtor(type_name, variant, args) -> emit_enum_ctor(ctx, env, type_name, variant, args)
         _ -> err_emit("expected EnumCtor")
@@ -175,7 +175,7 @@ fn enum_ctor_check_expr(tc: TC, expr: Expr) -> ExprResult {
 
 /// Codegen hook for `FieldAssign`. Forwards to
 /// `emit_field_assign`.
-fn field_assign_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+fn field_assign_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .FieldAssign(obj, field, value) -> emit_field_assign(ctx, env, obj, field, value)
         _ -> err_emit("expected FieldAssign")

@@ -9,7 +9,7 @@ use features.closures.{emit_lambda}
 
 /// Codegen entry for `spawn { body }`. Pattern-matches the
 /// `Spawn` AST node and forwards to `emit_spawn`.
-export fn spawn_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+export fn spawn_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .Spawn(body) -> emit_spawn(ctx, env, body)
         _ -> err_emit("spawn_emit_expr: expected Spawn")
@@ -21,7 +21,7 @@ export fn spawn_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue
 /// active structured-concurrency task group (when one exists).
 /// Result type is `Task<RetTy>` inferred from the lambda's return
 /// type so `await` later sees the right type.
-fn emit_spawn(ctx: Ctx, env: VarEnv, body: Expr) -> Result<EmitValue, string> {
+fn emit_spawn(ctx: Ctx, env: List<VarBinding>, body: Expr) -> Result<EmitValue, string> {
     // Wrap body in a zero-arg lambda: () -> { body }
     let closure = emit_lambda(ctx, env, Expr.Lambda(ParamList.End, body))?
 

@@ -1,6 +1,6 @@
 // WHY: codegen for string operations — concat, comparison, replace, substring.
 
-use core.{Expr, ExprList, VarEnv}
+use core.{Expr, ExprList, VarBinding}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit}
 use codegen.{strip_quotes}
 
@@ -31,7 +31,7 @@ export fn emit_concat(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr) -> Result<EmitValue,
 /// both arg expressions, then defers actual replacement to the C
 /// runtime (`avra_str_replace`). Errors when the call site doesn't
 /// supply exactly two args.
-export fn emit_str_replace(ctx: Ctx, env: VarEnv, str_i64: ptr, args: ExprList) -> Result<EmitValue, string> {
+export fn emit_str_replace(ctx: Ctx, env: List<VarBinding>, str_i64: ptr, args: ExprList) -> Result<EmitValue, string> {
     match args {
         .Node(se_from, rest) -> {
             match rest {
@@ -57,7 +57,7 @@ export fn emit_str_replace(ctx: Ctx, env: VarEnv, str_i64: ptr, args: ExprList) 
 /// Why the single match: the host compiler had a bug where
 /// re-matching `args` in nested arms corrupted the inner payload.
 /// Destructuring exactly once dodges that.
-export fn emit_substring(ctx: Ctx, env: VarEnv, str_i64: ptr, args: ExprList) -> Result<EmitValue, string> {
+export fn emit_substring(ctx: Ctx, env: List<VarBinding>, str_i64: ptr, args: ExprList) -> Result<EmitValue, string> {
     match args {
         .End -> err_emit("substring expects 2 args, got 0")
         .Node(se_start, rest) -> {
@@ -72,7 +72,7 @@ export fn emit_substring(ctx: Ctx, env: VarEnv, str_i64: ptr, args: ExprList) ->
 /// Inner emitter for `substring`. Computes `len = end - start`,
 /// allocates `len + 1` bytes via RC, memcpys `[start..end)` into
 /// the buffer, and writes a trailing NUL so it's a valid C string.
-export fn emit_substring_inner(ctx: Ctx, env: VarEnv, str_i64: ptr, start_arg: Expr, end_arg: Expr) -> Result<EmitValue, string> {
+export fn emit_substring_inner(ctx: Ctx, env: List<VarBinding>, str_i64: ptr, start_arg: Expr, end_arg: Expr) -> Result<EmitValue, string> {
     let start_r = ctx.emit(env, start_arg)?
     let end_r = ctx.emit(env, end_arg)?
     let str_ptr = ctx.to_ptr(str_i64, "sub_src")

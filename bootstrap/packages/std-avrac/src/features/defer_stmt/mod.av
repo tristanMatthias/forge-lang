@@ -15,7 +15,7 @@ use typeck.{check_expr}
 /// scoped DeferStack so the emitted body runs at scope exit in
 /// LIFO order. The body itself isn't emitted here — `emit_defers`
 /// (called from return / scope-exit emitters) materializes it.
-fn defer_emit(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
+fn defer_emit(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .Defer(body) -> {
             let updated = ctx with { defers: DeferStack.Frame(sexpr_dummy(body), ctx.defers) }
@@ -57,7 +57,7 @@ fn defer_eval(rt: Runtime, stmt: Stmt) -> StepResult {
 /// Codegen hook for `errdefer body`. Same shape as `defer_emit`
 /// but pushes an `ErrFrame` so the body only runs on early-error
 /// returns (`Err(...)` or `null` for nullable-returning fns).
-fn errdefer_emit(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
+fn errdefer_emit(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .Errdefer(body) -> {
             let updated = ctx with { defers: DeferStack.ErrFrame(sexpr_dummy(body), ctx.defers) }

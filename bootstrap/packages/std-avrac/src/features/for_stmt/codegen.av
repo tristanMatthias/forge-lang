@@ -3,14 +3,14 @@
 // Arena-eligible loops (non-escaping allocations only) use per-scope
 // bump arenas for O(1) allocation and O(1) bulk free (spec Axis 9.6).
 
-use core.{Expr, Stmt, VarEnv, env_extend, ValueType, vtype_list_elem, vtype_is_str}
+use core.{Expr, Stmt, VarBinding, env_extend, ValueType, vtype_list_elem, vtype_is_str}
 use codegen.{Ctx, StmtResult, emit_value_ptr, emit_value_ty}
 use codegen.{emit_stmt, ok_sr, err_sr}
 use codegen.{is_arena_eligible}
 
 /// Codegen entry for `for i in start..end { body }`. Pattern-
 /// matches the `For` AST node and forwards to `emit_for_inner`.
-export fn emit_for(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
+export fn emit_for(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .For(variable, start, end, body) -> emit_for_inner(ctx, env, variable, start, end, body)
         _ -> err_sr("expected For")
@@ -22,7 +22,7 @@ export fn emit_for(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, stri
 /// to the right targets. When the body is arena-eligible (every
 /// allocation non-escaping per spec Axis 9.6), wraps execution in
 /// a per-iteration bump arena destroyed at exit.
-fn emit_for_inner(ctx: Ctx, env: VarEnv, variable: string, start: Expr, end: Expr, body: Stmt) -> Result<StmtResult, string> {
+fn emit_for_inner(ctx: Ctx, env: List<VarBinding>, variable: string, start: Expr, end: Expr, body: Stmt) -> Result<StmtResult, string> {
     ctx.cov_line()
     let start_r = ctx.emit(env, start)?
 
@@ -100,7 +100,7 @@ fn emit_for_inner(ctx: Ctx, env: VarEnv, variable: string, start: Expr, end: Exp
 /// ```
 /// Strings are special-cased to use `strlen` + `avra_str_char_at`
 /// so character iteration produces fresh single-char strings.
-export fn emit_for_in(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
+export fn emit_for_in(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .ForIn(variable, collection, body) -> emit_for_in_inner(ctx, env, variable, collection, body)
         _ -> err_sr("expected ForIn")
@@ -111,7 +111,7 @@ export fn emit_for_in(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, s
 /// computes its length, then runs the same cond/body/incr/exit
 /// shape as `emit_for_inner` with the loop variable rebound to
 /// `array_get(coll, i)` each iteration.
-fn emit_for_in_inner(ctx: Ctx, env: VarEnv, variable: string, collection: Expr, body: Stmt) -> Result<StmtResult, string> {
+fn emit_for_in_inner(ctx: Ctx, env: List<VarBinding>, variable: string, collection: Expr, body: Stmt) -> Result<StmtResult, string> {
     ctx.cov_line()
     let coll_r = ctx.emit(env, collection)?
     let coll_ty = emit_value_ty(coll_r)

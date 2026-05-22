@@ -1,6 +1,6 @@
 // WHY: block expression codegen — evaluating statement blocks as values.
 
-use core.{Expr, Stmt, StmtList, ValueType, VarEnv, SStmt, stmt_unwrap}
+use core.{Expr, Stmt, StmtList, ValueType, VarBinding, SStmt, stmt_unwrap}
 use codegen.{BlockResult, Ctx, EmitValue, StmtResult,  err_emit, ok_emit, ok_stmt, emit_value_ptr, emit_value_ty}
 use codegen.{emit_expr, emit_stmt, emit_stmt_list}
 use features.match_expr.{emit_match_expr}
@@ -12,7 +12,7 @@ use core.{avra_tag_as_result}
 
 /// Wrap a successful block-as-expr emit (value + type + threaded
 /// ctx + env) as `Result.Ok`. Internal helper for this module only.
-fn ok_br(value: ptr, ty: ValueType, ctx: Ctx, env: VarEnv) -> Result<BlockResult, string> {
+fn ok_br(value: ptr, ty: ValueType, ctx: Ctx, env: List<VarBinding>) -> Result<BlockResult, string> {
     let r = Result.Ok(BlockResult { value, ty, ctx, env })
     avra_tag_as_result(r)
     r
@@ -29,7 +29,7 @@ fn err_br(msg: string) -> Result<BlockResult, string> {
 /// block's value is the value of the LAST statement when that stmt
 /// is a `.Expr`; everything else (return, let, while, ...) yields
 /// i64 0. Non-tail statements run for their side effects.
-export fn emit_block_expr(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<EmitValue, string> {
+export fn emit_block_expr(ctx: Ctx, env: List<VarBinding>, stmts: StmtList) -> Result<EmitValue, string> {
     emit_block_loop(ctx, env, stmts, ctx.i64(0), .Unknown)
 }
 
@@ -37,7 +37,7 @@ export fn emit_block_expr(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<Emit
 /// `.Block`, `.Match`, `.If` we emit them inline with a result slot.
 /// Anything else falls back to plain `emit_stmt` and inherits the
 /// caller's `last_val` / `last_ty`.
-export fn emit_stmt_as_value(ctx: Ctx, env: VarEnv, stmt: Stmt, last_val: ptr, last_ty: ValueType) -> Result<EmitValue, string> {
+export fn emit_stmt_as_value(ctx: Ctx, env: List<VarBinding>, stmt: Stmt, last_val: ptr, last_ty: ValueType) -> Result<EmitValue, string> {
     match stmt {
         .Expr(e) -> ctx.emit(env, e)
         .Block(body) -> emit_block_expr(ctx, env, body)
@@ -53,7 +53,7 @@ export fn emit_stmt_as_value(ctx: Ctx, env: VarEnv, stmt: Stmt, last_val: ptr, l
 /// Same as `emit_stmt_as_value` but threads ctx + env through and
 /// returns a BlockResult. Used by `emit_block_loop_ctx` so callers
 /// can recover defer state after evaluating a block.
-fn emit_stmt_as_value_ctx(ctx: Ctx, env: VarEnv, stmt: Stmt, last_val: ptr, last_ty: ValueType) -> Result<BlockResult, string> {
+fn emit_stmt_as_value_ctx(ctx: Ctx, env: List<VarBinding>, stmt: Stmt, last_val: ptr, last_ty: ValueType) -> Result<BlockResult, string> {
     ctx.cov_line()
     match stmt {
         .Expr(e) -> {
@@ -84,7 +84,7 @@ fn emit_stmt_as_value_ctx(ctx: Ctx, env: VarEnv, stmt: Stmt, last_val: ptr, last
 /// each branch's tail value into a slot, and merges. `is`-narrowing
 /// runs on the then-branch via `narrow_env_for_is`. Branch coverage
 /// counters fire on each side.
-export fn emit_stmt_if_as_value(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> Result<EmitValue, string> {
+export fn emit_stmt_if_as_value(ctx: Ctx, env: List<VarBinding>, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> Result<EmitValue, string> {
     let branch_id = avra_covmap_next_branch_id()
     let cond = ctx.emit(env, condition)?
     let cond_i1 = ctx.truthy(emit_value_ptr(cond), "sif_cond")
@@ -120,7 +120,7 @@ export fn emit_stmt_if_as_value(ctx: Ctx, env: VarEnv, condition: Expr, then_bra
 /// every non-tail stmt runs via `emit_stmt`; the tail stmt runs via
 /// `emit_stmt_as_value` so the block produces a value. Tracks
 /// `source_line` for accurate diagnostics and coverage.
-export fn emit_block_loop(ctx: Ctx, env: VarEnv, stmts: StmtList, last_val: ptr, last_ty: ValueType) -> Result<EmitValue, string> {
+export fn emit_block_loop(ctx: Ctx, env: List<VarBinding>, stmts: StmtList, last_val: ptr, last_ty: ValueType) -> Result<EmitValue, string> {
     match stmts {
         .End -> ok_emit(last_val, last_ty)
         .Node(ss, next) -> {
@@ -140,9 +140,12 @@ export fn emit_block_loop(ctx: Ctx, env: VarEnv, stmts: StmtList, last_val: ptr,
 /// final `Ctx` (with accumulated defers). Used by features whose
 /// emission needs to react to ctx changes inside the block (defer
 /// stack mutations, RC pushes, etc.).
-export fn emit_block_loop_ctx(ctx: Ctx, env: VarEnv, stmts: StmtList, last_val: ptr, last_ty: ValueType) -> Result<BlockResult, string> {
+export fn emit_block_loop_ctx(ctx: Ctx, env: List<VarBinding>, stmts: StmtList, last_val: ptr, last_ty: ValueType) -> Result<BlockResult, string> {
     match stmts {
-        .End -> ok_br(last_val, last_ty, ctx, VarEnv.End)
+        .End -> {
+            let e: List<VarBinding> = []
+            ok_br(last_val, last_ty, ctx, e)
+        }
         .Node(ss, next) -> {
             let line_ctx = ctx with { source_line: ss.line, source_file: ss.file }
             match next {

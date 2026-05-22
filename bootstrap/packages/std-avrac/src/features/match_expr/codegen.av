@@ -1,6 +1,6 @@
 // WHY: emits LLVM IR for `match` as both a statement and an expression.
 
-use core.{Expr, Pattern, MatchArm, WhenArm, ParamList, FieldEntry, Variant, VarEnv, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types}
+use core.{Expr, Pattern, MatchArm, WhenArm, ParamList, FieldEntry, Variant, VarBinding, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types}
 use codegen.{Ctx, EmitValue, StmtResult, err_emit, ok_emit, field_resolved_at, emit_value_ptr, emit_value_ty, enum_reg_find_by_variant, vtype_is_ptr_type}
 use core.{vtype_from_name}
 use codegen.{ok_sr, err_sr}
@@ -39,7 +39,7 @@ fn forward_stmt_err(message: string) -> Result<StmtResult, string> {
 /// - Else  → `emit_primitive_match_expr` (literal compare).
 /// Allocates a result slot, fills it from each matching arm,
 /// and merges via a final phi-block.
-export fn emit_match_expr(ctx: Ctx, env: VarEnv, subject: Expr, arms: List<MatchArm>) -> Result<EmitValue, string> {
+export fn emit_match_expr(ctx: Ctx, env: List<VarBinding>, subject: Expr, arms: List<MatchArm>) -> Result<EmitValue, string> {
     match ctx.emit(env, subject) {
         .Err(msg) -> forward_emit_err(msg)
         .Ok(r) -> {
@@ -82,7 +82,7 @@ export fn emit_match_expr(ctx: Ctx, env: VarEnv, subject: Expr, arms: List<Match
 /// Emit a union-typed match expression. Loads the wrapper's
 /// tag, builds a dispatch chain across the union members, then
 /// delegates per-arm emission to `emit_union_match_arms`.
-fn emit_union_match_expr(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: List<MatchArm>) -> Result<EmitValue, string> {
+fn emit_union_match_expr(ctx: Ctx, env: List<VarBinding>, subj: EmitValue, arms: List<MatchArm>) -> Result<EmitValue, string> {
     let tag_val = emit_union_tag(ctx, emit_value_ptr(subj))
     let result_slot = ctx.alloca_i64("union_match_result")
     ctx.store(ctx.i64(0), result_slot)
@@ -98,7 +98,7 @@ fn emit_union_match_expr(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: List<Matc
 /// each arm's expected type-hash; on match, extracts the
 /// payload typed correctly and runs the arm body. Merges all
 /// arm exits at `merge_bb` and stores results in `result_slot`.
-fn emit_union_match_arms(ctx: Ctx, env: VarEnv, arms: List<MatchArm>, subj_val: ptr, tag_val: ptr, union_types: List<ValueType>, merge_bb: ptr, result_slot: ptr) -> Result<ValueType, string> {
+fn emit_union_match_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, subj_val: ptr, tag_val: ptr, union_types: List<ValueType>, merge_bb: ptr, result_slot: ptr) -> Result<ValueType, string> {
     // Source-order arm walk. Each iteration positions the IR
     // builder either at the arm's body block (on tag match) or at
     // the fall-through `next_bb` (no match). The wildcard arm
@@ -236,7 +236,7 @@ fn infer_enum_from_arms(ctx: Ctx, arms: List<MatchArm>) -> string {
 /// chain via `emit_pattern_tag_branch`, binds payload captures
 /// via `bind_pattern_payload`, then emits the arm body and
 /// stores its result. Wildcards skip the tag check entirely.
-fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: List<MatchArm>, st_ty: ptr, subj_ptr: ptr, tag_val: ptr, variants: List<Variant>, merge_bb: ptr, result_slot: ptr) -> Result<ValueType, string> {
+fn emit_match_expr_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, st_ty: ptr, subj_ptr: ptr, tag_val: ptr, variants: List<Variant>, merge_bb: ptr, result_slot: ptr) -> Result<ValueType, string> {
     // Source-order arm walk: emit the branch/check/body for each
     // arm in turn. The prior cons recursion threaded type-mismatch
     // warnings between adjacent arms — we keep the same behavior
@@ -305,7 +305,7 @@ fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: List<MatchArm>, st_ty: ptr,
 /// Emit `match expr { arms... }` in statement position. Same
 /// dispatch shape as `emit_match_expr` but no value is
 /// produced — bodies are emitted for side effects only.
-export fn emit_match(ctx: Ctx, env: VarEnv, subject: Expr, arms: List<MatchArm>) -> Result<StmtResult, string> {
+export fn emit_match(ctx: Ctx, env: List<VarBinding>, subject: Expr, arms: List<MatchArm>) -> Result<StmtResult, string> {
     match ctx.emit(env, subject) {
         .Err(msg) -> forward_stmt_err(msg)
         .Ok(r) -> {
@@ -337,7 +337,7 @@ export fn emit_match(ctx: Ctx, env: VarEnv, subject: Expr, arms: List<MatchArm>)
 /// Statement-position arm emitter. Mirror of
 /// `emit_match_expr_arms` but doesn't store arm results — bodies
 /// are evaluated for side effects only.
-fn emit_match_arms(ctx: Ctx, env: VarEnv, arms: List<MatchArm>, st_ty: ptr, subj_ptr: ptr, tag_val: ptr, variants: List<Variant>, merge_bb: ptr) -> Result<StmtResult, string> {
+fn emit_match_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, st_ty: ptr, subj_ptr: ptr, tag_val: ptr, variants: List<Variant>, merge_bb: ptr) -> Result<StmtResult, string> {
     // Reuse the expression arm emitter with a dummy result_slot.
     // The slot is written to but never loaded (statements discard the value).
     let dummy_slot = ctx.alloca_i64("match_stmt_discard")
@@ -481,7 +481,7 @@ fn load_payload_field(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, idx: int, field_ty: V
 /// it to the right payload slot. Variants with named bindings
 /// drop straight in; nested patterns recurse into
 /// `bind_nested_patterns`.
-fn bind_pattern_payload(ctx: Ctx, env: VarEnv, pattern: Pattern, st_ty: ptr, subj_ptr: ptr, variants: List<Variant>) -> VarEnv {
+fn bind_pattern_payload(ctx: Ctx, env: List<VarBinding>, pattern: Pattern, st_ty: ptr, subj_ptr: ptr, variants: List<Variant>) -> List<VarBinding> {
     match pattern {
         .Wildcard -> env
         .Variant(vname, bindings) -> {
@@ -505,7 +505,7 @@ fn bind_pattern_payload(ctx: Ctx, env: VarEnv, pattern: Pattern, st_ty: ptr, sub
 /// the binding list pairwise with the variant's fields, loading
 /// each payload slot and adding it to the env. Wildcards
 /// (`_`) bypass the bind step.
-fn bind_pattern_payload_loop(ctx: Ctx, env: VarEnv, st_ty: ptr, subj_ptr: ptr, bindings: ParamList, fields: List<FieldEntry>, idx: int) -> VarEnv {
+fn bind_pattern_payload_loop(ctx: Ctx, env: List<VarBinding>, st_ty: ptr, subj_ptr: ptr, bindings: ParamList, fields: List<FieldEntry>, idx: int) -> List<VarBinding> {
     match bindings {
         .End -> env
         .Node(name, _, next_b) if name == "_" ->
@@ -535,7 +535,7 @@ fn bind_pattern_payload_loop(ctx: Ctx, env: VarEnv, st_ty: ptr, subj_ptr: ptr, b
 /// sub-pattern, loads the matching field slot and either binds
 /// it directly (single-name capture) or recurses into deeper
 /// constructor patterns.
-fn bind_nested_patterns(ctx: Ctx, env: VarEnv, st_ty: ptr, subj_ptr: ptr, pats: List<Pattern>, fields: List<FieldEntry>, idx: int) -> VarEnv {
+fn bind_nested_patterns(ctx: Ctx, env: List<VarBinding>, st_ty: ptr, subj_ptr: ptr, pats: List<Pattern>, fields: List<FieldEntry>, idx: int) -> List<VarBinding> {
     mut acc = env
     mut i = 0
     while i < pats.length {
@@ -556,7 +556,7 @@ fn bind_nested_patterns(ctx: Ctx, env: VarEnv, st_ty: ptr, subj_ptr: ptr, pats: 
 /// constructor) into the env. Wildcards skip; single-name
 /// patterns bind; nested patterns recurse with `value` as
 /// the new subject.
-fn bind_single_sub_pattern(ctx: Ctx, env: VarEnv, pat: Pattern, value: ptr, ty: ValueType) -> VarEnv {
+fn bind_single_sub_pattern(ctx: Ctx, env: List<VarBinding>, pat: Pattern, value: ptr, ty: ValueType) -> List<VarBinding> {
     match pat {
         .Wildcard -> env
         .Variant(vname, bindings) -> {
@@ -594,7 +594,7 @@ fn bind_single_sub_pattern(ctx: Ctx, env: VarEnv, pat: Pattern, value: ptr, ty: 
 /// Bind the first declared name in a ParamList to `value`.
 /// Used by the nested-pattern path when a single-payload
 /// variant is bound to a single capture name.
-fn bind_first_param(ctx: Ctx, env: VarEnv, bindings: ParamList, value: ptr, ty: ValueType) -> VarEnv {
+fn bind_first_param(ctx: Ctx, env: List<VarBinding>, bindings: ParamList, value: ptr, ty: ValueType) -> List<VarBinding> {
     match bindings {
         .End -> env
         .Node(name, _, _) if name == "_" -> env
@@ -610,7 +610,7 @@ fn bind_first_param(ctx: Ctx, env: VarEnv, bindings: ParamList, value: ptr, ty: 
 /// Emit a match-expression on a primitive subject (Int / Bool /
 /// Float / Str). Each arm's literal pattern compiles to an
 /// equality comparison; results unify into a phi-merge.
-fn emit_primitive_match_expr(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: List<MatchArm>) -> Result<EmitValue, string> {
+fn emit_primitive_match_expr(ctx: Ctx, env: List<VarBinding>, subj: EmitValue, arms: List<MatchArm>) -> Result<EmitValue, string> {
     let result_slot = ctx.alloca_i64("pmatch_result")
     ctx.store(ctx.i64(0), result_slot)
     let merge_bb = ctx.bb("pmatch_end")
@@ -686,7 +686,7 @@ fn is_literal_pattern(pattern: Pattern) -> bool {
 /// Compares literal patterns one-by-one, unconditionally
 /// branches into wildcard arms, then runs the body and stores
 /// its result.
-fn emit_primitive_arms_expr(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: List<MatchArm>, merge_bb: ptr, result_slot: ptr) -> Result<ValueType, string> {
+fn emit_primitive_arms_expr(ctx: Ctx, env: List<VarBinding>, subj: EmitValue, arms: List<MatchArm>, merge_bb: ptr, result_slot: ptr) -> Result<ValueType, string> {
     // Source-order arm walk. Same adjacent-pair type-mismatch
     // warning as the enum-side emitter; reported type is the FIRST
     // arm's body type (outermost-wraps semantics of the prior
@@ -760,7 +760,7 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: List<M
 /// Statement-position primitive match. Mirror of
 /// `emit_primitive_match_expr` but no result slot — bodies run
 /// for side effects only.
-fn emit_primitive_match_stmt(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: List<MatchArm>) -> Result<StmtResult, string> {
+fn emit_primitive_match_stmt(ctx: Ctx, env: List<VarBinding>, subj: EmitValue, arms: List<MatchArm>) -> Result<StmtResult, string> {
     // Reuse the expression arm emitter with a dummy result_slot.
     let merge_bb = ctx.bb("pmatch_end")
     let dummy_slot = ctx.alloca_i64("pmatch_stmt_discard")
@@ -776,7 +776,7 @@ fn emit_primitive_match_stmt(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: List<
 /// match). Each arm evaluates a Bool condition; the first true
 /// arm runs and stores the result. Compiles to a chained-if
 /// dispatch.
-export fn emit_when_expr(ctx: Ctx, env: VarEnv, arms: List<WhenArm>) -> Result<EmitValue, string> {
+export fn emit_when_expr(ctx: Ctx, env: List<VarBinding>, arms: List<WhenArm>) -> Result<EmitValue, string> {
     let merge_bb = ctx.bb("when_end")
     let result_slot = ctx.alloca_i64("when_result")
     ctx.store(ctx.i64(0), result_slot)
@@ -789,7 +789,7 @@ export fn emit_when_expr(ctx: Ctx, env: VarEnv, arms: List<WhenArm>) -> Result<E
 /// Recursive worker for `emit_when_expr`. Threads through each
 /// arm emitting its condition + body and unifying result types
 /// across arms via `warn_arm_type_mismatch` on disagreement.
-fn emit_when_arms(ctx: Ctx, env: VarEnv, arms: List<WhenArm>, idx: int, merge_bb: ptr, result_slot: ptr) -> Result<ValueType, string> {
+fn emit_when_arms(ctx: Ctx, env: List<VarBinding>, arms: List<WhenArm>, idx: int, merge_bb: ptr, result_slot: ptr) -> Result<ValueType, string> {
     if idx >= arms.length { return ok_match_ty(.Unknown) }
     let arm = arms[idx]
     ctx.cov_match_arm(arm.body.line)

@@ -8,7 +8,7 @@ use codegen.{emit_block_loop}
 use codegen.{ok_sr, err_sr}
 /// Codegen entry for `select { ... }`. Pattern-matches the
 /// `Select` AST node and forwards to `emit_select`.
-export fn select_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
+export fn select_emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .Select(arms) -> emit_select(ctx, env, arms)
         _ -> err_sr("select_emit_stmt: expected Select")
@@ -18,7 +18,7 @@ export fn select_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResu
 /// Build a channel array from each arm, call `avra_select` to
 /// block on whichever channel is ready first, then dispatch to
 /// the matching arm via `emit_select_dispatch`.
-fn emit_select(ctx: Ctx, env: VarEnv, arms: List<SelectArm>) -> Result<StmtResult, string> {
+fn emit_select(ctx: Ctx, env: List<VarBinding>, arms: List<SelectArm>) -> Result<StmtResult, string> {
     let channels = ctx.array_new()
     push_channels(ctx, env, arms, channels)?
 
@@ -31,7 +31,7 @@ fn emit_select(ctx: Ctx, env: VarEnv, arms: List<SelectArm>) -> Result<StmtResul
 
 /// Walk the arms, emitting each channel expression and pushing
 /// its value into `arr`.
-fn push_channels(ctx: Ctx, env: VarEnv, arms: List<SelectArm>, arr: ptr) -> Result<int, string> {
+fn push_channels(ctx: Ctx, env: List<VarBinding>, arms: List<SelectArm>, arr: ptr) -> Result<int, string> {
     mut i = 0
     while i < arms.length {
         let r = ctx.emit(env, arms[i].channel)?
@@ -44,7 +44,7 @@ fn push_channels(ctx: Ctx, env: VarEnv, arms: List<SelectArm>, arr: ptr) -> Resu
 /// Emit a chained-if dispatch: compare the runtime arm index
 /// against each arm's static index, branch into the matching
 /// body with the received value bound, fall through otherwise.
-fn emit_select_dispatch(ctx: Ctx, env: VarEnv, arms: List<SelectArm>, idx: ptr, val: ptr, arm_idx: int) -> Result<StmtResult, string> {
+fn emit_select_dispatch(ctx: Ctx, env: List<VarBinding>, arms: List<SelectArm>, idx: ptr, val: ptr, arm_idx: int) -> Result<StmtResult, string> {
     if arm_idx >= arms.length { return ok_sr(ctx, env) }
     let arm = arms[arm_idx]
     let cmp = ctx.eq(idx, ctx.i64(arm_idx), "sel_cmp")

@@ -9,7 +9,7 @@
 // In the bootstrap's everything-is-i64 model, null == 0. These
 // operators compile to i64 null-check or enum-tag-check branches.
 
-use core.{Expr, VarEnv, FieldEntry, field_index_of, ValueType, vtype_eq, vtype_is_unknown, vtype_is_str, vtype_struct_name, vtype_enum_name, vtype_enum_type_args, variant_lookup}
+use core.{Expr, VarBinding, FieldEntry, field_index_of, ValueType, vtype_eq, vtype_is_unknown, vtype_is_str, vtype_struct_name, vtype_enum_name, vtype_enum_type_args, variant_lookup}
 use core.{is_result_enum_name, is_result_shaped_enum}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, field_resolved_at, vtype_is_ptr_type}
 use features.defer_stmt.{emit_defers_on_error}
@@ -20,7 +20,7 @@ use features.union_type.{emit_union_wrap, needs_union_wrap}
 /// `right` otherwise. Phi-merges the two branches into a single
 /// SSA value. Result type widens Str when the left side is
 /// Unknown/Void and the right is Str.
-export fn emit_null_coalesce(ctx: Ctx, env: VarEnv, left: Expr, right: Expr) -> Result<EmitValue, string> {
+export fn emit_null_coalesce(ctx: Ctx, env: List<VarBinding>, left: Expr, right: Expr) -> Result<EmitValue, string> {
     let l = ctx.emit(env, left)?
 
     // Short-circuit: if left != 0/null (non-null), skip right.
@@ -52,7 +52,7 @@ export fn emit_null_coalesce(ctx: Ctx, env: VarEnv, left: Expr, right: Expr) -> 
 /// produces null without touching the field; otherwise GEPs into
 /// the struct and loads. Falls back to a passthrough on non-
 /// struct receivers (e.g. strings).
-export fn emit_optional_chain(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> Result<EmitValue, string> {
+export fn emit_optional_chain(ctx: Ctx, env: List<VarBinding>, obj: Expr, field: string) -> Result<EmitValue, string> {
     let r = ctx.emit(env, obj)?
 
     // If the object is null, produce null without accessing.
@@ -111,7 +111,7 @@ export fn emit_optional_chain(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -
 /// Inner-codegen failures (a `Result.Err` from `ctx.emit`)
 /// propagate to the host normally — this only handles the
 /// runtime-level try semantics.
-export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> Result<EmitValue, string> {
+export fn emit_try(ctx: Ctx, env: List<VarBinding>, inner: Expr) -> Result<EmitValue, string> {
     let r = ctx.emit(env, inner)?
 
     // ── Mode 1: Result enum (including monomorphized Result__T__E) ──
@@ -238,7 +238,7 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> Result<EmitValue, stri
 /// `body` (with the optional error binding in scope) and merge.
 /// Both paths feed into a single result slot so the caller sees
 /// one SSA value typed as the `Ok` payload.
-export fn emit_catch(ctx: Ctx, env: VarEnv, inner: Expr, binding: string, body: Expr) -> Result<EmitValue, string> {
+export fn emit_catch(ctx: Ctx, env: List<VarBinding>, inner: Expr, binding: string, body: Expr) -> Result<EmitValue, string> {
     let r = ctx.emit(env, inner)?
 
     // Result enum: check tag, Ok → extract value, Err → evaluate catch body

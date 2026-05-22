@@ -103,7 +103,7 @@ fn let_destructure_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
 /// Codegen hook for `let (a, b) = ...`. Forwards to the tuples
 /// feature's `emit_let_destructure`, which emits per-position
 /// loads from the tuple alloca.
-fn let_destructure_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
+fn let_destructure_emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .LetDestructure(names, initializer) -> {
             let new_env = emit_let_destructure(ctx, env, names, initializer)?

@@ -37,7 +37,7 @@ fn list_lit_check_expr(tc: TC, expr: Expr) -> ExprResult {
 
 /// Codegen hook for `ListLit`. Pattern-matches the AST node and
 /// forwards to `emit_list_lit`.
-fn list_lit_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+fn list_lit_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .ListLit(elements) -> emit_list_lit(ctx, env, elements)
         _ -> err_emit("expected ListLit")

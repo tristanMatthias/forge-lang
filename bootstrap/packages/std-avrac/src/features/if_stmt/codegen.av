@@ -2,7 +2,7 @@
 // Also handles flow-sensitive type narrowing: when condition is
 // `x is .Variant`, the then-branch sees `x` as NarrowedEnum.
 
-use core.{Expr, Stmt, ValueType, VarEnv, vtype_eq, env_lookup, env_extend, vtype_enum_name}
+use core.{Expr, Stmt, ValueType, VarBinding, vtype_eq, env_lookup, env_extend, vtype_enum_name}
 use codegen.{Ctx, EmitValue, StmtResult, ok_emit, emit_value_ptr, emit_value_ty}
 use codegen.{emit_stmt, ok_sr}
 use core.{avra_covmap_next_branch_id}
@@ -30,13 +30,13 @@ fn is_check_variant_name(condition: Expr) -> string {
     }
 }
 
-/// Build a narrowed VarEnv for the then-branch of an
+/// Build a narrowed List<VarBinding> for the then-branch of an
 /// `if x is .Variant` condition. The narrowed env rebinds `x`
 /// with `NarrowedEnum` so payload-extracting code in the body
 /// sees the more specific type. Falls back to the un-narrowed
 /// env when the condition isn't an `is`-on-ident or `x` isn't an
 /// enum-typed binding. Checks both local and top-level scopes.
-export fn narrow_env_for_is(ctx: Ctx, env: VarEnv, condition: Expr) -> VarEnv {
+export fn narrow_env_for_is(ctx: Ctx, env: List<VarBinding>, condition: Expr) -> List<VarBinding> {
     let var_name = is_check_var_name(condition)
     if var_name == "" { return env }
     let vname = is_check_variant_name(condition)
@@ -66,7 +66,7 @@ export fn narrow_env_for_is(ctx: Ctx, env: VarEnv, condition: Expr) -> VarEnv {
 /// merge block when neither branch terminated. Branch coverage
 /// counters fire on each side. The then-branch sees a narrowed
 /// env when the condition is an `is`-check.
-export fn emit_if(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> Result<StmtResult, string> {
+export fn emit_if(ctx: Ctx, env: List<VarBinding>, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> Result<StmtResult, string> {
     ctx.cov_line()
     let branch_id = avra_covmap_next_branch_id()
     let cond = ctx.emit(env, condition)?
@@ -111,7 +111,7 @@ fn is_union_safe_type(ty: ValueType) -> bool {
 /// When both branches produce different but union-safe concrete
 /// types, re-emits a wrapping pass so the result is typed as
 /// `Union<Then, Else>`. Otherwise loads the raw value.
-export fn emit_if_expr(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Expr, else_branch: Expr) -> Result<EmitValue, string> {
+export fn emit_if_expr(ctx: Ctx, env: List<VarBinding>, condition: Expr, then_branch: Expr, else_branch: Expr) -> Result<EmitValue, string> {
     ctx.cov_line()
     let branch_id = avra_covmap_next_branch_id()
     let cond = ctx.emit(env, condition)?

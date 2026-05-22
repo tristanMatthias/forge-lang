@@ -6,7 +6,7 @@
 // indexing/helpers/escape/cycles auto-load as siblings, surface flat at
 // `codegen.{...}`.
 
-use core.{Expr, ExprList, ParamList, Pattern, SExpr, SStmt, Stmt, StmtList, ValueType, VarEnv, env_extend, env_lookup, expr_list_length, field_index_of, param_list_length, sexpr_dummy, stmt_unwrap, variant_lookup, variant_max_payload, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_list_elem, vtype_struct_name, vtype_trait_name}
+use core.{Expr, ExprList, ParamList, Pattern, SExpr, SStmt, Stmt, StmtList, ValueType, VarBinding, env_extend, env_lookup, expr_list_length, field_index_of, param_list_length, sexpr_dummy, stmt_unwrap, variant_lookup, variant_max_payload, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_list_elem, vtype_struct_name, vtype_trait_name}
 
 use core.{build_registry, dispatch_expr_emit, dispatch_stmt_emit, avra_expr_tag, avra_stmt_tag, has_expr_emit, has_stmt_emit, registry_new}
 use features.closures.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value, emit_typed_lambda_arg}
@@ -42,7 +42,7 @@ use core.{avra_tag_as_result}
 
 /// Wrap a successful statement emit (ctx + env pair) as `Result.Ok`.
 /// The threaded-state mirror of `ok_emit`.
-export fn ok_sr(ctx: Ctx, env: VarEnv) -> Result<StmtResult, string> {
+export fn ok_sr(ctx: Ctx, env: List<VarBinding>) -> Result<StmtResult, string> {
     let r = Result.Ok(StmtResult { ctx, env })
     avra_tag_as_result(r)
     r
@@ -60,7 +60,7 @@ export fn err_sr(msg: string) -> Result<StmtResult, string> {
 /// Emit a statement list left-to-right, threading ctx + env through
 /// each step. Tracks the source line on `ctx.source_line` so coverage
 /// and diagnostics get accurate line numbers.
-export fn emit_stmt_list(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<StmtResult, string> {
+export fn emit_stmt_list(ctx: Ctx, env: List<VarBinding>, stmts: StmtList) -> Result<StmtResult, string> {
     match stmts {
         .End -> ok_sr(ctx, env)
         .Node(ss, next) -> {
@@ -226,7 +226,7 @@ fn emit_tuple_elem_releases(ctx: Ctx, buf: ptr, elements: List<ValueType>, idx: 
 ///
 /// Coverage instrumentation runs before any branch — every statement
 /// gets a counter when `--coverage` is on.
-export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
+export fn emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> {
     // Coverage: instrument each statement with its source line as region ID
     ctx.cov_line()
     match stmt {
@@ -323,7 +323,7 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, str
 /// are inlined here, everything else dispatches to the feature
 /// registry. Returns a typed `EmitValue` so callers always know the
 /// resulting ValueType (for cleanup, casting, branching).
-export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+export fn emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     ctx.cov_line()
     match expr {
         .Number(text) -> {
@@ -397,7 +397,7 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, stri
 /// function (wrapped as a closure value). Failure produces an
 /// `undefined ${label}` diagnostic — `label` differentiates
 /// "variable" vs. "name" in the message.
-fn emit_name_lookup(ctx: Ctx, env: VarEnv, name: string, label: string) -> Result<EmitValue, string> {
+fn emit_name_lookup(ctx: Ctx, env: List<VarBinding>, name: string, label: string) -> Result<EmitValue, string> {
     let local = env_lookup(env, name)
     if local.found {
         let loaded = ctx.load_typed(local.ty, local.alloca, name)
@@ -423,7 +423,7 @@ fn emit_name_lookup(ctx: Ctx, env: VarEnv, name: string, label: string) -> Resul
 // Make expression/statement emission flow through Ctx.
 
 impl Ctx {
-    fn emit(self, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+    fn emit(self, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
         emit_expr(self, env, expr)
     }
 }

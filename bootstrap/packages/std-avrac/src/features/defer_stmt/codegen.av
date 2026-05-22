@@ -4,7 +4,7 @@
 // Release = RC cleanup for ptr-typed locals.
 // The stack lives on Ctx.defers — no mutable global needed.
 
-use core.{VarEnv}
+use core.{VarBinding}
 use codegen.{Ctx, DeferStack}
 use codegen.{emit_rc_release_typed}
 
@@ -12,7 +12,7 @@ use codegen.{emit_rc_release_typed}
 /// DeferStack in LIFO order, running every `Frame` (defer body)
 /// and `Release` (RC drop) entry — but skipping `ErrFrame`
 /// (errdefer) entries which only fire on error returns.
-export fn emit_defers(ctx: Ctx, env: VarEnv) {
+export fn emit_defers(ctx: Ctx, env: List<VarBinding>) {
     emit_stack_filtered(ctx, env, ctx.defers, false)
 }
 
@@ -20,7 +20,7 @@ export fn emit_defers(ctx: Ctx, env: VarEnv) {
 /// DeferStack in LIFO order running every entry (Frame +
 /// ErrFrame + Release) — `errdefer` is the only kind that this
 /// path activates beyond what `emit_defers` does.
-export fn emit_defers_on_error(ctx: Ctx, env: VarEnv) {
+export fn emit_defers_on_error(ctx: Ctx, env: List<VarBinding>) {
     emit_stack_filtered(ctx, env, ctx.defers, true)
 }
 
@@ -29,7 +29,7 @@ export fn emit_defers_on_error(ctx: Ctx, env: VarEnv) {
 /// `Frame` always emits, `ErrFrame` emits only when `is_error`,
 /// `Release` always loads + RC-releases. Recursion order
 /// produces the required LIFO behaviour.
-fn emit_stack_filtered(ctx: Ctx, env: VarEnv, stack: DeferStack, is_error: int) {
+fn emit_stack_filtered(ctx: Ctx, env: List<VarBinding>, stack: DeferStack, is_error: int) {
     match stack {
         .End -> {}
         .Frame(body, next) -> {

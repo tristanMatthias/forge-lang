@@ -112,7 +112,7 @@ fn catch_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
 }
 
 /// Codegen hook for `Catch`. Forwards to `emit_catch`.
-fn catch_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+fn catch_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .Catch(inner, binding, body, _, _) -> emit_catch(ctx, env, inner, binding, body)
         _ -> err_emit("expected Catch")
@@ -121,7 +121,7 @@ fn catch_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, strin
 
 /// Codegen hook for `NullCoalesce`. Forwards to
 /// `emit_null_coalesce`.
-fn null_coalesce_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+fn null_coalesce_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .NullCoalesce(left, right) -> emit_null_coalesce(ctx, env, left, right)
         _ -> err_emit("expected NullCoalesce")
@@ -130,7 +130,7 @@ fn null_coalesce_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValu
 
 /// Codegen hook for `OptionalChain`. Forwards to
 /// `emit_optional_chain`.
-fn optional_chain_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+fn optional_chain_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .OptionalChain(obj, field) -> emit_optional_chain(ctx, env, obj, field)
         _ -> err_emit("expected OptionalChain")
@@ -138,7 +138,7 @@ fn optional_chain_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitVal
 }
 
 /// Codegen hook for `Try`. Forwards to `emit_try`.
-fn try_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+fn try_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .Try(inner) -> emit_try(ctx, env, inner)
         _ -> err_emit("expected Try")

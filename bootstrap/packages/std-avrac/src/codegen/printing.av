@@ -1,6 +1,6 @@
 // WHY: codegen for println/eprintln builtins.
 
-use core.{Expr, ExprList, VarEnv, ValueType, vtype_is_str, vtype_eq}
+use core.{Expr, ExprList, VarBinding, ValueType, vtype_is_str, vtype_eq}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit}
 use codegen.{emit_concat}
 use codegen.{strip_quotes}
@@ -9,7 +9,7 @@ use codegen.{strip_quotes}
 /// to `avra_float_to_string`; everything else gets snprintf'd as a
 /// signed integer into a 32-byte buffer. Union-typed args are
 /// rejected — caller must `match` first.
-export fn emit_eprintln(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<EmitValue, string> {
+export fn emit_eprintln(ctx: Ctx, env: List<VarBinding>, args: ExprList) -> Result<EmitValue, string> {
     match args {
         .End -> err_emit("eprintln() expects 1 arg")
         .Node(se, _) -> {
@@ -40,7 +40,7 @@ export fn emit_eprintln(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<EmitVal
 /// shape: pulls the string text out in the inner match arm directly,
 /// because re-binding `text` through any extra layer clobbers the
 /// payload (see TECH_DEBT.md #11 — host miscompilation).
-export fn emit_println(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<EmitValue, string> {
+export fn emit_println(ctx: Ctx, env: List<VarBinding>, args: ExprList) -> Result<EmitValue, string> {
     let print_ptr = match args {
         .Node(se, _) -> {
             match se.node {

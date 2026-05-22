@@ -12,7 +12,7 @@
 //                                 logic (features/<X>/codegen.av)
 //                                 or the dispatchers (codegen.av)
 
-use core.{Expr, SExpr, VarEnv, FieldEntry, Variant, ValueType, vtype_is_str, vtype_is_unknown, variant_lookup, vtype_eq, field_vtype_of, env_extend, union_type_list_merge, find_type_pipe}
+use core.{Expr, SExpr, VarBinding, FieldEntry, Variant, ValueType, vtype_is_str, vtype_is_unknown, variant_lookup, vtype_eq, field_vtype_of, env_extend, union_type_list_merge, find_type_pipe}
 use core.{Registry}
 use core.{TypeRegistry, type_registry_id_for, type_registry_name_for}
 use core.{avra_coverage_emit_hit, avra_covmap_alloc, avra_covmap_counter_count, avra_coverage_finalize_fn}
@@ -267,7 +267,7 @@ export fn null_ptr_val() -> ptr {
 // ── Emit types ──
 //
 // Expression emitters return Result<EmitValue, string>.
-// Statement emitters return Result<VarEnv, string>.
+// Statement emitters return Result<List<VarBinding>, string>.
 // Use ? to propagate errors: `let r = ctx.emit(env, expr)?`
 
 /// Result of every expression emit. Pairs the LLVM SSA value with
@@ -308,9 +308,9 @@ export fn err_emit(message: string) -> Result<EmitValue, string> {
     r
 }
 
-/// Wrap a successful statement result (an updated VarEnv) into
+/// Wrap a successful statement result (an updated List<VarBinding>) into
 /// `Result.Ok`. The statement-level mirror of `ok_emit`.
-export fn ok_stmt(env: VarEnv) -> Result<VarEnv, string> {
+export fn ok_stmt(env: List<VarBinding>) -> Result<List<VarBinding>, string> {
 
     let r = Result.Ok(env)
     avra_tag_as_result(r)
@@ -319,7 +319,7 @@ export fn ok_stmt(env: VarEnv) -> Result<VarEnv, string> {
 /// Wrap a statement-level codegen error. No `codegen error:` prefix
 /// here — statement errors are surfaced verbatim because callers
 /// embed them directly into diagnostics.
-export fn err_stmt(message: string) -> Result<VarEnv, string> {
+export fn err_stmt(message: string) -> Result<List<VarBinding>, string> {
 
     let r = Result.Err(message)
     avra_tag_as_result(r)
@@ -1136,7 +1136,7 @@ impl Ctx {
     // ── Variable binding ──
     // Allocate, store, and extend the environment in one call.
     // The most common 3-line pattern in codegen: alloca + store + env_extend.
-    fn bind(self, env: VarEnv, name: string, value: ptr, ty: ValueType) -> VarEnv {
+    fn bind(self, env: List<VarBinding>, name: string, value: ptr, ty: ValueType) -> List<VarBinding> {
         let alloca = avra_llvm_build_alloca(self.builder, self.type_for(ty), name)
         avra_llvm_build_store_cast(self.builder, value, alloca)
         if vtype_is_ptr_type(ty) && releasable_has(self.rc_releasable, name) {
@@ -1151,7 +1151,7 @@ impl Ctx {
     // data is already on the stack (written directly by emit_struct_lit
     // via copy_alloc_target). No RC cleanup needed — stack memory is
     // freed when the function returns.
-    fn bind_copy_stack(self, env: VarEnv, name: string, stack_ptr: ptr, ty: ValueType, struct_name: string) -> VarEnv {
+    fn bind_copy_stack(self, env: List<VarBinding>, name: string, stack_ptr: ptr, ty: ValueType, struct_name: string) -> List<VarBinding> {
         // Store the stack pointer as the local's value
         let alloca = avra_llvm_build_alloca(self.builder, self.type_for(ty), name)
         avra_llvm_build_store_cast(self.builder, stack_ptr, alloca)
@@ -1549,7 +1549,7 @@ impl Ctx {
 ///
 /// @field ctx — the updated codegen context (defers, rc state, …).
 /// @field env — the updated variable environment.
-export type StmtResult = { ctx: Ctx, env: VarEnv }
+export type StmtResult = { ctx: Ctx, env: List<VarBinding> }
 
 /// Carrier for a block-as-expression emit. Same threaded state as
 /// StmtResult plus the block's terminal value and its ValueType, so
@@ -1559,4 +1559,4 @@ export type StmtResult = { ctx: Ctx, env: VarEnv }
 /// @field ty — the block's terminal ValueType.
 /// @field ctx — the updated codegen context.
 /// @field env — the updated variable environment.
-export type BlockResult = { value: ptr, ty: ValueType, ctx: Ctx, env: VarEnv }
+export type BlockResult = { value: ptr, ty: ValueType, ctx: Ctx, env: List<VarBinding> }

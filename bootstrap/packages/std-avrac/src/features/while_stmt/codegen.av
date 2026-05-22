@@ -1,13 +1,13 @@
 // WHY: emits LLVM IR for `while cond { body }` with break/continue
 // support via the scoped loop stack in Ctx.
 
-use core.{Expr, Stmt, VarEnv}
+use core.{Expr, Stmt, VarBinding}
 use codegen.{Ctx, LoopStack, StmtResult,  ok_stmt, emit_value_ptr}
 use codegen.{emit_expr, emit_stmt, ok_sr, err_sr}
 
 /// Codegen entry for `while cond { body }`. Pattern-matches the
 /// `While` AST node and forwards to `emit_while_inner`.
-export fn emit_while(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
+export fn emit_while(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .While(condition, body) -> emit_while_inner(ctx, env, condition, body)
         _ -> err_sr("expected While")
@@ -18,7 +18,7 @@ export fn emit_while(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, st
 /// LoopStack frame onto the scoped Ctx so `break` / `continue`
 /// resolve correctly inside the body. Falls through to `exit_bb`
 /// when the body ends without an early exit.
-fn emit_while_inner(ctx: Ctx, env: VarEnv, condition: Expr, body: Stmt) -> Result<StmtResult, string> {
+fn emit_while_inner(ctx: Ctx, env: List<VarBinding>, condition: Expr, body: Stmt) -> Result<StmtResult, string> {
     ctx.cov_line()
     let cond_bb = ctx.bb("while.cond")
     let body_bb = ctx.bb("while.body")

@@ -1201,14 +1201,20 @@ export enum StmtList {
     Node(stmt: SStmt, next: StmtList)
 }
 
-/// Recursive variable environment threaded through codegen. Each
-/// node binds a name to its alloca (i64-shaped, holds either an int
-/// or a ptr-encoded value) plus the ValueType tag that drives op
-/// dispatch. Newer bindings sit at the head — `env_lookup` walks
-/// in source order (innermost shadowing).
-export enum VarEnv {
-    End
-    Node(name: string, alloca: ptr, ty: ValueType, next: VarEnv)
+// `List<VarBinding>` replaces the retired `enum VarEnv`. The variable
+// environment is threaded through codegen as a flat growable list — each
+// binding maps a name to its alloca (i64-shaped, holds either an int or a
+// ptr-encoded value) plus the ValueType tag that drives op dispatch.
+//
+// SHADOWING NOTE: with direct-push (newest at TAIL), `env_lookup` walks
+// the list BACKWARDS so the innermost binding still wins. Do not flip
+// this to a forward scan — it would break lexical shadowing.
+
+/// One name → alloca + type binding in the codegen environment.
+export type VarBinding = {
+    name: string,
+    alloca: ptr,
+    ty: ValueType,
 }
 
 /// Result of an `env_lookup`. `found` is 0 / 1 (Avra has no Option
@@ -1220,28 +1226,46 @@ export type VarLookup = {
 }
 
 /// Look up a name in the env. Returns `found: false` with a null
-/// alloca and Unknown type when not present. Innermost (head-most)
-/// binding wins — supports lexical shadowing.
-export fn env_lookup(env: VarEnv, name: string) -> VarLookup {
-    match env {
-        .End -> {
-            let n: ptr = null
-            VarLookup { found: false, alloca: n, ty: ValueType.Unknown }
+/// alloca and Unknown type when not present. Newest binding lives at
+/// the TAIL (because callers push), so we walk BACKWARDS — that
+/// preserves innermost-shadowing semantics from the old cons-list
+/// shape (head was newest, walked head→tail).
+export fn env_lookup(env: List<VarBinding>, name: string) -> VarLookup {
+    mut i = env.length - 1
+    while i >= 0 {
+        let b = env[i]
+        if b.name == name {
+            return VarLookup { found: true, alloca: b.alloca, ty: b.ty }
         }
-        .Node(n, alloca, ty, _) if n == name -> VarLookup { found: true, alloca, ty }
-        .Node(_, _, _, next) -> env_lookup(next, name)
+        i = i - 1
     }
+    let n: ptr = null
+    VarLookup { found: false, alloca: n, ty: ValueType.Unknown }
 }
 
-/// Cons a new binding at the head — pure functional update, leaves
-/// the underlying VarEnv shared with prior callers.
-export fn env_extend(env: VarEnv, name: string, alloca: ptr, ty: ValueType) -> VarEnv {
-    VarEnv.Node(name, alloca, ty, env)
+/// Append a new binding. Returns a FRESH list — the caller's `env`
+/// reference is left untouched. This preserves the old cons-list's
+/// pure-functional shape: every scope's `env` is independent, so
+/// inner-scope bindings never leak back to the outer scope.
+///
+/// (A plain `out.push(...)` would mutate the underlying array in
+/// place — and because Avra `List<T>` is a reference type, every
+/// outer caller still holding that reference would see the new
+/// binding too, breaking lexical scoping. Hence the clone.)
+export fn env_extend(env: List<VarBinding>, name: string, alloca: ptr, ty: ValueType) -> List<VarBinding> {
+    mut out: List<VarBinding> = []
+    mut i = 0
+    while i < env.length {
+        out.push(env[i])
+        i = i + 1
+    }
+    out.push(VarBinding { name, alloca, ty })
+    out
 }
 
 /// Function symbol table — name → (LLVM function value, arity).
-/// Separate from VarEnv because fns are visible across the whole
-/// module and don't follow lexical scope rules.
+/// Separate from the var env (List<VarBinding>) because fns are
+/// visible across the whole module and don't follow lexical scope rules.
 export enum FnEnv {
     End
     Node(name: string, fn_val: ptr, arity: int, next: FnEnv)

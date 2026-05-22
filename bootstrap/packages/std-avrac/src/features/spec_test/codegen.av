@@ -7,7 +7,7 @@ use codegen.{ok_sr, err_sr}
 /// Codegen entry for the test feature. Dispatches Spec / Given /
 /// Then blocks to the corresponding emitter; everything else is
 /// an internal mismatch.
-export fn spec_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
+export fn spec_emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .SpecBlock(name, body) -> emit_spec_block(ctx, env, name, body)
         .GivenBlock(name, body) -> emit_given_block(ctx, env, name, body)
@@ -27,8 +27,8 @@ export fn spec_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult
 ///
 /// Body-local `let` bindings DO NOT escape to sibling spec blocks
 /// — each spec is independent, so we return the original `env`
-/// after discarding the body's accumulated VarEnv.
-fn emit_spec_block(ctx: Ctx, env: VarEnv, name: string, body: StmtList) -> Result<StmtResult, string> {
+/// after discarding the body's accumulated List<VarBinding>.
+fn emit_spec_block(ctx: Ctx, env: List<VarBinding>, name: string, body: StmtList) -> Result<StmtResult, string> {
     ctx.call("test_render_spec_start", [ctx.global_str(name, "spec_str")])
     let _ = emit_spec_stmts(ctx, env, body)?
     ok_sr(ctx, env)
@@ -38,7 +38,7 @@ fn emit_spec_block(ctx: Ctx, env: VarEnv, name: string, body: StmtList) -> Resul
 /// the body. Threads the env so `let` bindings flow into later
 /// `then` arms within the same given (the canonical use case:
 /// `given "..." { let x = ...; then "..." { x == 1 } }`).
-fn emit_given_block(ctx: Ctx, env: VarEnv, name: string, body: StmtList) -> Result<StmtResult, string> {
+fn emit_given_block(ctx: Ctx, env: List<VarBinding>, name: string, body: StmtList) -> Result<StmtResult, string> {
     ctx.call("test_render_given_start", [ctx.global_str(name, "spec_str")])
     let new_env = emit_spec_stmts(ctx, env, body)?
     ok_sr(ctx, new_env)
@@ -55,7 +55,7 @@ fn emit_given_block(ctx: Ctx, env: VarEnv, name: string, body: StmtList) -> Resu
 /// (LSB), which miscounts non-bool results (e.g. `?? 0 == 8080`
 /// parses as `?? (0 == 8080)` and yields the int 8080, whose LSB
 /// is 0 → FAIL).
-fn emit_then_block(ctx: Ctx, env: VarEnv, name: string, cond: Expr, file: string, line: int) -> Result<StmtResult, string> {
+fn emit_then_block(ctx: Ctx, env: List<VarBinding>, name: string, cond: Expr, file: string, line: int) -> Result<StmtResult, string> {
     let r = ctx.emit(env, cond)?
     ctx.call("test_render_then", [
         ctx.global_str(name, "spec_str"),
@@ -67,13 +67,13 @@ fn emit_then_block(ctx: Ctx, env: VarEnv, name: string, cond: Expr, file: string
 }
 
 /// Walk a spec/given body emitting each child statement. Threads
-/// the VarEnv through so `let` bindings flow into later arms.
+/// the List<VarBinding> through so `let` bindings flow into later arms.
 /// Updates `ctx.source_file` / `ctx.source_line` from each SStmt
 /// so the reporter records the correct location for each `then`
 /// arm — the outer codegen walker only updates ctx at top-level
 /// stmt boundaries, but `then` arms are nested inside `spec` /
 /// `given` bodies and need their own per-stmt update.
-fn emit_spec_stmts(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<VarEnv, string> {
+fn emit_spec_stmts(ctx: Ctx, env: List<VarBinding>, stmts: StmtList) -> Result<List<VarBinding>, string> {
     match stmts {
         .End -> ok_stmt(env)
         .Node(ss, next) -> {
@@ -86,10 +86,10 @@ fn emit_spec_stmts(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<VarEnv, str
 
 /// Per-statement spec emitter. SpecBlock / GivenBlock / ThenBlock
 /// route through the shared dispatcher (`spec_emit_stmt`) and the
-/// StmtResult is unwrapped back to a VarEnv. Anything else (regular
+/// StmtResult is unwrapped back to a List<VarBinding>. Anything else (regular
 /// `let`, `mut`, function calls inside `given`) is wrapped and
 /// emitted as a normal block-loop statement.
-fn emit_spec_single(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<VarEnv, string> {
+fn emit_spec_single(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<List<VarBinding>, string> {
     if is_spec_arm(stmt) {
         let sr = spec_emit_stmt(ctx, env, stmt)?
         return ok_stmt(sr.env)

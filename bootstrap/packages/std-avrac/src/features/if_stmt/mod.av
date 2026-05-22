@@ -53,7 +53,7 @@ fn if_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
 
 /// Codegen hook for `IfExpr`. Forwards to `emit_if_expr` which
 /// emits both branches into a result-slot phi.
-fn if_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+fn if_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .IfExpr(condition, then_branch, else_branch) -> emit_if_expr(ctx, env, condition, then_branch, else_branch)
         _ -> err_emit("expected IfExpr")
@@ -62,7 +62,7 @@ fn if_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> 
 
 /// Codegen hook for `If` statements. Forwards to `emit_if`
 /// which emits both branches into named basic blocks.
-fn if_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
+fn if_emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .If(condition, then_branch, else_branch) -> emit_if(ctx, env, condition, then_branch, else_branch)
         _ -> err_sr("expected If")

@@ -3,11 +3,11 @@
 
 use codegen.{Ctx, EmitValue, ok_emit, err_emit}
 use codegen.{emit_binary}
-use core.{Expr, ExprList, BinOp, VarEnv}
+use core.{Expr, ExprList, BinOp, VarBinding}
 
 /// Codegen entry for `x in [a, b, c]`. Pattern-matches the
 /// `InCheck` AST node and forwards to `emit_in_items`.
-export fn emit_in_check(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+export fn emit_in_check(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .InCheck(needle, items) -> emit_in_items(ctx, env, needle, items)
         _ -> err_emit("expected InCheck")
@@ -17,7 +17,7 @@ export fn emit_in_check(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, 
 /// Expand `x in [a, b, c]` into `x == a || x == b || x == c` by
 /// folding `BinOp.Eq` over the items list with bitwise-or. Uses
 /// the regular binary emitter so enum/string equality work.
-fn emit_in_items(ctx: Ctx, env: VarEnv, needle: Expr, items: ExprList) -> Result<EmitValue, string> {
+fn emit_in_items(ctx: Ctx, env: List<VarBinding>, needle: Expr, items: ExprList) -> Result<EmitValue, string> {
     match items {
         .End -> ok_emit(ctx.i64(0), .Int)
         .Node(item, next) -> {

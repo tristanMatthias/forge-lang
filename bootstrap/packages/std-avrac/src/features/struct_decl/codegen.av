@@ -1,6 +1,6 @@
 // WHY: emits struct literal construction and field-filling.
 
-use core.{Expr, ExprList, FieldEntry, FieldInit, VarEnv, field_index_of, ValueType, vtype_struct_name, vtype_display, vtype_is_str, vtype_is_bytes, vtype_is_list, vtype_is_map, vtype_narrowed_variant, vtype_enum_name, variant_lookup}
+use core.{Expr, ExprList, FieldEntry, FieldInit, VarBinding, field_index_of, ValueType, vtype_struct_name, vtype_display, vtype_is_str, vtype_is_bytes, vtype_is_list, vtype_is_map, vtype_narrowed_variant, vtype_enum_name, variant_lookup}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, null_ptr_val}
 use core.{type_registry_id_for}
 use features.enum_decl.{emit_enum_ctor}
@@ -10,7 +10,7 @@ use features.union_type.{emit_union_wrap, needs_union_wrap}
 /// LLVM type via the arena (or reuses a Copy-type stack slot when
 /// one is set), fills every field via `fill_struct_fields`, and
 /// returns the buffer typed as `Struct(name)`.
-export fn emit_struct_lit(ctx: Ctx, env: VarEnv, name: string, inits: List<FieldInit>) -> Result<EmitValue, string> {
+export fn emit_struct_lit(ctx: Ctx, env: List<VarBinding>, name: string, inits: List<FieldInit>) -> Result<EmitValue, string> {
     let lookup = ctx.lookup_struct(name)
     if !lookup.found {
         return err_emit("undefined struct type `${name}`")
@@ -42,7 +42,7 @@ fn malloc_struct_bytes(ctx: Ctx, name: string, fields: List<FieldEntry>) -> ptr 
 /// `store_field` (which casts to the field's declared LLVM type).
 /// Concrete values flowing into union-typed fields are
 /// auto-wrapped via `emit_union_wrap`.
-fn fill_struct_fields(ctx: Ctx, env: VarEnv, st_ty: ptr, alloca: ptr, inits: List<FieldInit>, fields: List<FieldEntry>) -> Result<EmitValue, string> {
+fn fill_struct_fields(ctx: Ctx, env: List<VarBinding>, st_ty: ptr, alloca: ptr, inits: List<FieldInit>, fields: List<FieldEntry>) -> Result<EmitValue, string> {
     mut i = 0
     while i < inits.length {
         let init = inits[i]
@@ -68,7 +68,7 @@ fn fill_struct_fields(ctx: Ctx, env: VarEnv, st_ty: ptr, alloca: ptr, inits: Lis
 /// underlying buffer, and stores the new value via `store_field`.
 /// Auto-wraps for union-typed fields. Returns the assigned value
 /// so chains like `a.b = c.d = ...` work.
-export fn emit_field_assign(ctx: Ctx, env: VarEnv, obj: Expr, field: string, value: Expr) -> Result<EmitValue, string> {
+export fn emit_field_assign(ctx: Ctx, env: List<VarBinding>, obj: Expr, field: string, value: Expr) -> Result<EmitValue, string> {
     let r = ctx.emit(env, obj)?
     let struct_name = vtype_struct_name(r.ty)
     if struct_name == "" {
@@ -99,7 +99,7 @@ export fn emit_field_assign(ctx: Ctx, env: VarEnv, obj: Expr, field: string, val
 /// task and types the result as the Task's payload type;
 /// (3) `.length` on Str/List/Map — routes to the runtime helper.
 /// Otherwise emits a struct-field GEP + load.
-export fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> Result<EmitValue, string> {
+export fn emit_field_access(ctx: Ctx, env: List<VarBinding>, obj: Expr, field: string) -> Result<EmitValue, string> {
     // Bare `EnumName.Variant` (zero-arg enum constructor)
     let head_name = match obj { .Ident(h) -> h, .QualifiedIdent(h) -> h, _ -> "" }
     if head_name != "" {

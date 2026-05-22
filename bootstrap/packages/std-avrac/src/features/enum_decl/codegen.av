@@ -1,7 +1,7 @@
 // WHY: emits enum constructors (heap-allocated tagged unions) and
 // enum value comparison (tag equality via struct GEP).
 
-use core.{ExprList, FieldEntry, Variant, VarEnv, variant_lookup, expr_list_length, ValueType, vtype_enum_name}
+use core.{ExprList, FieldEntry, Variant, VarBinding, variant_lookup, expr_list_length, ValueType, vtype_enum_name}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, null_ptr_val, enum_reg_find_by_variant, enum_reg_find_by_variant_arity}
 use core.{type_registry_id_for, variant_payload_name}
 
@@ -12,7 +12,7 @@ use core.{type_registry_id_for, variant_payload_name}
 /// payload struct. The leading-dot form uses arity-aware lookup
 /// so two enums with same-named variants of different arity
 /// don't collide.
-export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: string, args: ExprList) -> Result<EmitValue, string> {
+export fn emit_enum_ctor(ctx: Ctx, env: List<VarBinding>, type_name: string, variant: string, args: ExprList) -> Result<EmitValue, string> {
     // Contextual resolution: `.Variant` with empty type_name.
     // Use arity-aware lookup to disambiguate variants with the same
     // name but different field counts (e.g. LoopStack.Frame vs DeferStack.Frame).
@@ -80,7 +80,7 @@ export fn malloc_enum_bytes(ctx: Ctx, variants: List<Variant>) -> ptr {
 /// based variant when the payload struct type is known. Iterates
 /// the ExprList head-to-tail; `idx` tracks both the payload slot
 /// and the field-list cursor (they advance in lock-step).
-fn fill_enum_payload(ctx: Ctx, env: VarEnv, payload_ptr: ptr, fields: List<FieldEntry>, args: ExprList, idx: int) -> Result<EmitValue, string> {
+fn fill_enum_payload(ctx: Ctx, env: List<VarBinding>, payload_ptr: ptr, fields: List<FieldEntry>, args: ExprList, idx: int) -> Result<EmitValue, string> {
     match args {
         .End -> ok_emit(null_ptr_val(), .Void)
         .Node(se, next) -> {
@@ -96,7 +96,7 @@ fn fill_enum_payload(ctx: Ctx, env: VarEnv, payload_ptr: ptr, fields: List<Field
 /// type. Lets `store_field` truncate / cast each value to its
 /// declared field type so packed bool / float fields don't get
 /// clobbered.
-fn fill_enum_payload_typed(ctx: Ctx, env: VarEnv, pay_ty: ptr, payload_ptr: ptr, fields: List<FieldEntry>, args: ExprList, idx: int) -> Result<EmitValue, string> {
+fn fill_enum_payload_typed(ctx: Ctx, env: List<VarBinding>, pay_ty: ptr, payload_ptr: ptr, fields: List<FieldEntry>, args: ExprList, idx: int) -> Result<EmitValue, string> {
     match args {
         .End -> ok_emit(null_ptr_val(), .Void)
         .Node(se, next) -> {

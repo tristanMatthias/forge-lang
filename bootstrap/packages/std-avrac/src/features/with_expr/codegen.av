@@ -5,13 +5,13 @@
 // Implementation: malloc new struct, copy all fields from original,
 // then overwrite the specified fields with new values.
 
-use core.{Expr, FieldEntry, FieldInit, VarEnv, field_index_of, vtype_struct_name, vtype_display}
+use core.{Expr, FieldEntry, FieldInit, VarBinding, field_index_of, vtype_struct_name, vtype_display}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
 
 /// Codegen entry for `obj with { field: val, ... }`. Pattern-
 /// matches the `With` AST node and forwards to `emit_with_inner`.
-export fn emit_with(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+export fn emit_with(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .With(obj, overrides) -> emit_with_inner(ctx, env, obj, overrides)
         _ -> err_emit("expected With")
@@ -22,7 +22,7 @@ export fn emit_with(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, stri
 /// struct buffer (or reuse the Copy-type stack target when set —
 /// spec 9.12), copy every field, then overwrite the named ones
 /// with their override expressions.
-fn emit_with_inner(ctx: Ctx, env: VarEnv, obj: Expr, overrides: List<FieldInit>) -> Result<EmitValue, string> {
+fn emit_with_inner(ctx: Ctx, env: List<VarBinding>, obj: Expr, overrides: List<FieldInit>) -> Result<EmitValue, string> {
     let r = ctx.emit(env, obj)?
 
     let struct_name = vtype_struct_name(r.ty)
@@ -79,7 +79,7 @@ fn copy_struct_fields(ctx: Ctx, src: ptr, dst: ptr, struct_name: string, fields:
 /// up each field's index, emits the override expression, and
 /// stores it via `store_field`. Union-typed fields receive a
 /// `union_wrap` first when needed.
-fn apply_overrides(ctx: Ctx, env: VarEnv, dst: ptr, struct_name: string, fields: List<FieldEntry>, overrides: List<FieldInit>) -> Result<int, string> {
+fn apply_overrides(ctx: Ctx, env: List<VarBinding>, dst: ptr, struct_name: string, fields: List<FieldEntry>, overrides: List<FieldInit>) -> Result<int, string> {
     mut i = 0
     while i < overrides.length {
         let ov = overrides[i]

@@ -1,11 +1,11 @@
 // WHY: codegen for `expr is .Variant` — checks enum tag at runtime.
 
-use core.{Expr, VarEnv, variant_lookup, vtype_display, vtype_enum_name}
+use core.{Expr, VarBinding, variant_lookup, vtype_display, vtype_enum_name}
 use codegen.{Ctx, EmitValue, err_emit, ok_emit}
 
 /// Codegen entry for the `is` operator. Pattern-matches the
 /// `IsCheck` AST node and forwards to `emit_is_check_inner`.
-export fn emit_is_check(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+export fn emit_is_check(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .IsCheck(subject, vname) -> emit_is_check_inner(ctx, env, subject, vname)
         _ -> err_emit("expected IsCheck")
@@ -16,7 +16,7 @@ export fn emit_is_check(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, 
 /// hash, and compare the loaded tag to the constant. Returns Bool.
 /// Errors when the subject isn't an enum or the named variant
 /// doesn't exist on its enum.
-fn emit_is_check_inner(ctx: Ctx, env: VarEnv, subject: Expr, vname: string) -> Result<EmitValue, string> {
+fn emit_is_check_inner(ctx: Ctx, env: List<VarBinding>, subject: Expr, vname: string) -> Result<EmitValue, string> {
     let r = ctx.emit(env, subject)?
     let enum_name = vtype_enum_name(r.ty)
     if enum_name == "" {

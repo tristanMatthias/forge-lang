@@ -73,9 +73,9 @@ export type Feature = {
 // those passes have non-error fallback shapes.
 
 /// Codegen no-op for expressions — `err_emit("no expr handler")`.
-fn noop_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> { err_emit("no expr handler") }
+fn noop_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> { err_emit("no expr handler") }
 /// Codegen no-op for statements — `err_sr("no stmt handler")`.
-fn noop_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> { err_sr("no stmt handler") }
+fn noop_emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> { err_sr("no stmt handler") }
 /// Resolver no-op for expressions — pass-through.
 fn noop_resolve_expr(r: Resolver, expr: Expr) -> Resolver { r }
 /// Resolver no-op for statements — pass-through.
@@ -196,8 +196,8 @@ export fn has_expr_emit(reg: Registry, tag: int) -> bool {
 
 /// Invoke the registered expr-codegen handler. Caller must verify
 /// `has_expr_emit` first — there's no fallback at this layer.
-export fn dispatch_expr_emit(reg: Registry, tag: int, ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
-    let handler: fn(Ctx, VarEnv, Expr) -> Result<EmitValue, string> = avra_intmap_get(reg.expr_emitters, tag)
+export fn dispatch_expr_emit(reg: Registry, tag: int, ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
+    let handler: fn(Ctx, List<VarBinding>, Expr) -> Result<EmitValue, string> = avra_intmap_get(reg.expr_emitters, tag)
     handler(ctx, env, expr)
 }
 
@@ -208,8 +208,8 @@ export fn has_stmt_emit(reg: Registry, tag: int) -> bool {
 
 /// Invoke the registered stmt-codegen handler. Caller must verify
 /// `has_stmt_emit` first.
-export fn dispatch_stmt_emit(reg: Registry, tag: int, ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
-    let handler: fn(Ctx, VarEnv, Stmt) -> Result<StmtResult, string> = avra_intmap_get(reg.stmt_emitters, tag)
+export fn dispatch_stmt_emit(reg: Registry, tag: int, ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> {
+    let handler: fn(Ctx, List<VarBinding>, Stmt) -> Result<StmtResult, string> = avra_intmap_get(reg.stmt_emitters, tag)
     handler(ctx, env, stmt)
 }
 

@@ -1,6 +1,6 @@
 // WHY: shared codegen utilities used across features.
 
-use core.{Expr, ExprList, StmtList, ParamList, VarEnv, ValueType, SStmt, stmt_unwrap, vtype_fn_params, vtype_trait_name}
+use core.{Expr, ExprList, StmtList, ParamList, VarBinding, ValueType, SStmt, stmt_unwrap, vtype_fn_params, vtype_trait_name}
 use codegen.{Ctx, EmitValue, err_emit, null_ptr_val, ok_emit, param_type_vt_at, trait_decl_has}
 use core.{vtype_is_unknown}
 use features.trait_decl.{box_for_trait, resolve_concrete_type_name}
@@ -10,7 +10,7 @@ use features.union_type.{emit_union_wrap, needs_union_wrap}
 /// Emit a single-argument call helper. Returns the first argument's
 /// EmitValue or an error when the list is empty. Used by built-in
 /// methods like `print` that take exactly one expression.
-export fn emit_single_arg(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<EmitValue, string> {
+export fn emit_single_arg(ctx: Ctx, env: List<VarBinding>, args: ExprList) -> Result<EmitValue, string> {
     match args {
         .End -> err_emit("expected 1 argument, got 0")
         .Node(se, _) -> ctx.emit(env, se.node)
@@ -31,7 +31,7 @@ export fn strip_quotes(s: string) -> string {
 /// Fill an LLVM value array with the SSA results of a list of
 /// expressions, in order. No type coercion — for that, see
 /// `fill_arg_array_boxing`.
-export fn fill_arg_array(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, idx: int) -> Result<EmitValue, string> {
+export fn fill_arg_array(ctx: Ctx, env: List<VarBinding>, arr: ptr, args: ExprList, idx: int) -> Result<EmitValue, string> {
     match args {
         .End -> ok_emit(null_ptr_val(), .Void)
         .Node(se, next) -> {
@@ -47,7 +47,7 @@ export fn fill_arg_array(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, idx: i
 /// inside the closure; concrete values are boxed for `dyn Trait`
 /// parameters; concrete values are wrapped for union-typed
 /// parameters. The full call-site coercion pipeline.
-export fn fill_arg_array_boxing(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, ptypes: List<ValueType>, idx: int) -> Result<EmitValue, string> {
+export fn fill_arg_array_boxing(ctx: Ctx, env: List<VarBinding>, arr: ptr, args: ExprList, ptypes: List<ValueType>, idx: int) -> Result<EmitValue, string> {
     match args {
         .End -> ok_emit(null_ptr_val(), .Void)
         .Node(se, next) -> {

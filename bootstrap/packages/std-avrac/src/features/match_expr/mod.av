@@ -324,7 +324,7 @@ fn when_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
 }
 
 /// Codegen hook for `MatchExpr`. Forwards to `emit_match_expr`.
-fn match_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+fn match_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .MatchExpr(subject, arms) -> emit_match_expr(ctx, env, subject, arms)
         _ -> err_emit("expected MatchExpr")
@@ -332,7 +332,7 @@ fn match_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, strin
 }
 
 /// Codegen hook for `Match`. Forwards to `emit_match`.
-fn match_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
+fn match_emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .Match(subject, arms) -> emit_match(ctx, env, subject, arms)
         _ -> err_sr("expected Match")
@@ -340,7 +340,7 @@ fn match_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, stri
 }
 
 /// Codegen hook for `When`. Forwards to `emit_when_expr`.
-fn when_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+fn when_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .When(arms) -> emit_when_expr(ctx, env, arms)
         _ -> err_emit("expected When")

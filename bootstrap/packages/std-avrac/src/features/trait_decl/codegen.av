@@ -1,6 +1,6 @@
 // WHY: codegen for trait dynamic dispatch.
 
-use core.{Expr, ExprList, VarEnv, ValueType, vtype_struct_name, vtype_enum_name, expr_list_length}
+use core.{Expr, ExprList, VarBinding, ValueType, vtype_struct_name, vtype_enum_name, expr_list_length}
 use core.{avra_llvm_append_basic_block, avra_llvm_position_at_end, avra_llvm_get_insert_block, avra_llvm_function_type, avra_llvm_add_function, avra_llvm_type_array_new, avra_llvm_type_array_set, avra_llvm_type_array_free, avra_llvm_get_param, avra_llvm_count_params, avra_llvm_build_ret, avra_llvm_build_bitcast, avra_llvm_fn_type_of, avra_llvm_value_array_new, avra_llvm_value_array_set, avra_llvm_value_array_free, avra_llvm_build_call_coerce}
 use codegen.{Ctx, EmitValue, TraitMethodNames, ok_emit, err_emit, trait_decl_lookup}
 use core.{method_mangled_name, type_registry_id_for, type_registry_name_for}
@@ -33,7 +33,7 @@ fn trait_method_ret_vt(methods: TraitMethodNames, name: string) -> ValueType {
 /// arity. Up to 4 user arguments (5 closure args including
 /// self) — beyond that, returns an error so the user sees the
 /// limit explicitly.
-export fn emit_trait_dispatch(ctx: Ctx, env: VarEnv, obj_val: ptr, trait_name: string, method: string, args: ExprList) -> Result<EmitValue, string> {
+export fn emit_trait_dispatch(ctx: Ctx, env: List<VarBinding>, obj_val: ptr, trait_name: string, method: string, args: ExprList) -> Result<EmitValue, string> {
     let obj_ptr = ctx.to_ptr(obj_val, "tobj_ptr")
     let concrete = ctx.call("avra_trait_object_value", [obj_ptr])
     let vtable = ctx.call("avra_trait_object_vtable", [obj_ptr])
@@ -82,7 +82,7 @@ export fn emit_trait_dispatch(ctx: Ctx, env: VarEnv, obj_val: ptr, trait_name: s
 /// Emit the n-th argument from a trait-dispatch arg list.
 /// Used by `emit_trait_dispatch` to access positional args
 /// without having to destructure the list inline at each call.
-fn emit_trait_arg(ctx: Ctx, env: VarEnv, args: ExprList, n: int) -> Result<EmitValue, string> {
+fn emit_trait_arg(ctx: Ctx, env: List<VarBinding>, args: ExprList, n: int) -> Result<EmitValue, string> {
     match args {
         .End -> err_emit("trait dispatch: missing argument")
         .Node(se, next) -> {
