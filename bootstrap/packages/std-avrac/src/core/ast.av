@@ -1093,9 +1093,10 @@ export type SelectArm = { binding: string, channel: Expr, body: StmtList }
 /// `List<Annotation>` replaces the retired `enum AnnotationList`.
 /// Used as `annotations: List<Annotation>` on Stmt.Annotated and
 /// threaded through the resolver, type checker, macro expander,
-/// metadata extractor and formatter. `args` stays `ExprList` for
-/// now — ExprList retirement is later in lkze.9.
-export type Annotation = { name: string, args: ExprList }
+/// metadata extractor and formatter. `args` is `List<SExpr>`
+/// (lkze.9 #18 first slice — seeds the List<SExpr> monomorphization
+/// the seed needs before the bigger Expr.Call.args / etc. flips).
+export type Annotation = { name: string, args: List<SExpr> }
 
 /// Component config schema entry: one `key: ty = default` row declared
 /// by a ComponentDef. Call sites are type-checked against the schema.
@@ -1182,14 +1183,10 @@ fn annotation_list_find(annots: List<Annotation>, name: string) -> Annotation? {
 /// stores doc comments as `Expr.String("\"…raw text…\"")` — quotes
 /// are part of the literal form, so we strip them here.
 fn annotation_first_string(a: Annotation) -> string {
-    match a.args {
-        .End -> ""
-        .Node(se, _) -> {
-            match se.node {
-                .String(literal) -> strip_quotes(literal)
-                _ -> ""
-            }
-        }
+    if a.args.length == 0 { return "" }
+    match a.args[0].node {
+        .String(literal) -> strip_quotes(literal)
+        _ -> ""
     }
 }
 
@@ -1323,6 +1320,26 @@ export fn expr_list_length(exprs: ExprList) -> int {
         .End -> 0
         .Node(_, next) -> 1 + expr_list_length(next)
     }
+}
+
+/// Convert a cons-cell `ExprList` to a growable `List<SExpr>`.
+/// Bridge used during the lkze.9 #18 retirement: Annotation.args
+/// flipped to `List<SExpr>` first (smaller surface, primes the
+/// seed's monomorphization), but parse_arg_list still returns
+/// `ExprList` until the bigger carrier flips land.
+export fn expr_list_to_list(el: ExprList) -> List<SExpr> {
+    mut out: List<SExpr> = []
+    mut cur = el
+    while true {
+        match cur {
+            .End -> return out
+            .Node(se, next) -> {
+                out.push(se)
+                cur = next
+            }
+        }
+    }
+    out
 }
 
 /// Membership test for a `List<FieldEntry>`. True iff `target`

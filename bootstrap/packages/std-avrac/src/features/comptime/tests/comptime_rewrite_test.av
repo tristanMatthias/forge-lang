@@ -18,7 +18,8 @@ fn mk_add_decl() -> Stmt {
         ParamList.Node("x", ValueType.Int, ParamList.Node("y", ValueType.Int, ParamList.End)),
         ValueType.Int,
         body)
-    let annots: List<Annotation> = [Annotation { name: "comptime", args: ExprList.End }]
+    let annot_args: List<SExpr> = []
+    let annots: List<Annotation> = [Annotation { name: "comptime", args: annot_args }]
     Stmt.Annotated(annots, fn_decl)
 }
 

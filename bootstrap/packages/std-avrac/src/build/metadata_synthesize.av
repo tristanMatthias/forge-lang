@@ -31,7 +31,7 @@
 
 use core.{
     Stmt, StmtList, SStmt, sstmt_dummy, stmt_unwrap,
-    Expr, ExprList,
+    Expr, SExpr,
     Annotation, ParamList, ValueType, FieldEntry, Variant, TypeParamEntry,
     sexpr_dummy,
 }
@@ -357,7 +357,8 @@ fn synth_type_decl(e: TypeDeclEntry) -> SStmt {
 // `use foo::Bar` lookup, which gates on @export.
 fn wrap_export(s: Stmt, exported: bool) -> Stmt {
     if exported {
-        let annots: List<Annotation> = [Annotation { name: "export", args: ExprList.End }]
+        let exp_args: List<SExpr> = []
+        let annots: List<Annotation> = [Annotation { name: "export", args: exp_args }]
         Stmt.Annotated(annots, s)
     } else {
         s
@@ -371,7 +372,8 @@ fn wrap_export(s: Stmt, exported: bool) -> Stmt {
 // references don't need it (consts inline values; impl methods route
 // through the same Function gate).
 fn wrap_external_unit(s: Stmt) -> Stmt {
-    let annots: List<Annotation> = [Annotation { name: "external_unit", args: ExprList.End }]
+    let ext_args: List<SExpr> = []
+    let annots: List<Annotation> = [Annotation { name: "external_unit", args: ext_args }]
     Stmt.Annotated(annots, s)
 }
 

@@ -19,7 +19,7 @@
 // macro-produced Stmt should still go through the normal fold pass
 // so any `@comptime` calls inside its body fold correctly.
 
-use core.{Stmt, StmtList, SStmt, Expr, ExprList, sstmt_at, find_annotation, stmt_unwrap, param_list_length}
+use core.{Stmt, StmtList, SStmt, Expr, ExprList, SExpr, sstmt_at, find_annotation, stmt_unwrap, param_list_length}
 use features.comptime.{CompTimeRegistry, comptime_lookup, collect_comptime_fns, value_to_stmt, stmt_to_value}
 use features.eval.{Runtime, Value, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message}
 
@@ -298,15 +298,11 @@ fn expand_target_name(stmt: Stmt) -> string {
     first_arg_ident(found!.args)
 }
 
-fn first_arg_ident(args: ExprList) -> string {
-    match args {
-        .End -> ""
-        .Node(se, _) -> {
-            match se.node {
-                .Ident(name) -> name
-                .QualifiedIdent(path) -> path
-                _ -> ""
-            }
-        }
+fn first_arg_ident(args: List<SExpr>) -> string {
+    if args.length == 0 { return "" }
+    match args[0].node {
+        .Ident(name) -> name
+        .QualifiedIdent(path) -> path
+        _ -> ""
     }
 }

@@ -11,7 +11,7 @@
 
 // dir-as-module (g2eo.1): lexer.av auto-loads as a sibling, surfaces
 // flat at `parse.{...}`.
-use core.{Expr, ExprList, Stmt, StmtList, ParamList, Pattern, WhenArm, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, Annotation, Tk, tk_keyword_str, TypeExpr}
+use core.{Expr, ExprList, Stmt, StmtList, ParamList, Pattern, WhenArm, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, Annotation, Tk, tk_keyword_str, TypeExpr, expr_list_to_list}
 use core.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser}
 use features.closures.{expr_contains_it, wrap_in_it_lambda}
 use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, diag_error, diag_with_help, span_new}
@@ -508,7 +508,7 @@ impl Parser {
                 self.advance()
             }
             let inner = self.parse_declaration()?
-            let doc_arg = ExprList.Node(sexpr_dummy(Expr.String("\"${doc_text}\"")), ExprList.End)
+            let doc_arg: List<SExpr> = [sexpr_dummy(Expr.String("\"${doc_text}\""))]
             let doc_annots: List<Annotation> = [Annotation { name: "doc", args: doc_arg }]
             return Stmt.Annotated(doc_annots, inner)
         }
@@ -520,7 +520,7 @@ impl Parser {
                 self.advance()
             }
             // Module docs don't wrap a declaration — store as a NoOp with annotation
-            let doc_arg = ExprList.Node(sexpr_dummy(Expr.String("\"${doc_text}\"")), ExprList.End)
+            let doc_arg: List<SExpr> = [sexpr_dummy(Expr.String("\"${doc_text}\""))]
             let mdoc_annots: List<Annotation> = [Annotation { name: "module_doc", args: doc_arg }]
             return Stmt.Annotated(mdoc_annots, Stmt.NoOp)
         }
@@ -546,7 +546,8 @@ impl Parser {
                 null
             }
             let inner = inner_opt?
-            let exp_annots: List<Annotation> = [Annotation { name: "export", args: ExprList.End }]
+            let exp_args: List<SExpr> = []
+            let exp_annots: List<Annotation> = [Annotation { name: "export", args: exp_args }]
             return Stmt.Annotated(exp_annots, inner)
         }
 
@@ -582,13 +583,13 @@ impl Parser {
             let name = self.current_lexeme
             self.advance()  // consume name
             // Optional argument list
-            let args = if self.check(Tk.LeftParen) {
+            let args: List<SExpr> = if self.check(Tk.LeftParen) {
                 self.advance()  // consume (
                 let a = self.parse_arg_list()
                 if self.check(Tk.RightParen) { self.advance() }
-                if a == null { ExprList.End } else { a! }
+                if a == null { [] } else { expr_list_to_list(a!) }
             } else {
-                ExprList.End
+                []
             }
             out.push(Annotation { name, args })
         }
