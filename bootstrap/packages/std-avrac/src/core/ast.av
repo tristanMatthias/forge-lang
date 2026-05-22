@@ -899,7 +899,7 @@ export enum Expr {
     /// Short-circuit logical: `a && b`, `a || b`.
     Logical(left: Expr, op: LogicOp, right: Expr)
     /// Function call: `f(a, b)`.
-    Call(callee: Expr, args: ExprList)
+    Call(callee: Expr, args: List<SExpr>)
     /// Call with explicit type arguments: `f::<int, string>(x, y)`.
     GenericCall(callee: Expr, type_args: List<string>, args: ExprList)
     /// Struct literal: `Foo { x: 1, y: 2 }`.
@@ -1323,10 +1323,7 @@ export fn expr_list_length(exprs: ExprList) -> int {
 }
 
 /// Convert a cons-cell `ExprList` to a growable `List<SExpr>`.
-/// Bridge used during the lkze.9 #18 retirement: Annotation.args
-/// flipped to `List<SExpr>` first (smaller surface, primes the
-/// seed's monomorphization), but parse_arg_list still returns
-/// `ExprList` until the bigger carrier flips land.
+/// Bridge used during the lkze.9 #18 retirement.
 export fn expr_list_to_list(el: ExprList) -> List<SExpr> {
     mut out: List<SExpr> = []
     mut cur = el
@@ -1338,6 +1335,20 @@ export fn expr_list_to_list(el: ExprList) -> List<SExpr> {
                 cur = next
             }
         }
+    }
+    out
+}
+
+/// Convert a `List<SExpr>` back to a cons-cell `ExprList`.
+/// Reverse direction of `expr_list_to_list`. Lets consumer code
+/// that still expects ExprList accept the new List<SExpr>-typed
+/// carrier values during the lkze.9 #18 incremental flips.
+export fn list_to_expr_list(list: List<SExpr>) -> ExprList {
+    mut out: ExprList = ExprList.End
+    mut i = list.length - 1
+    while i >= 0 {
+        out = ExprList.Node(list[i], out)
+        i = i - 1
     }
     out
 }
