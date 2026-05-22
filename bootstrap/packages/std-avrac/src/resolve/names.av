@@ -12,7 +12,7 @@
 //   do NOT read this file when:   the issue is variable scoping or
 //                                  type checking
 
-use core.{Expr, ExprList, FieldEntry, Stmt, StmtList, ParamList, FieldInit, MatchArm, WhenArm, Pattern, SExpr, SStmt, Variant, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, ValueType, TypeList, SelectArm}
+use core.{Expr, ExprList, FieldEntry, Stmt, StmtList, ParamList, FieldInit, MatchArm, WhenArm, Pattern, SExpr, SStmt, Variant, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, ValueType, SelectArm}
 use diagnostics.{Confidence, DiagCode, Span, DiagnosticBag, bag_new, bag_merge, bag_report, bag_has_errors, diag_error, diag_warning, diag_with_confidence, span_new, span_at, span_dummy}
 use resolve.{resolve_program}
 use core.{TypeRegistry, TypeKind, type_registry_new, type_registry_register, type_registry_id_for, type_qualified_name, method_mangled_name, trait_impl_name, is_mangled_method, method_from_mangled}
@@ -885,8 +885,9 @@ fn resolve_type_in_ctx(ctx: NameCtx, type_name: string) -> string {
 }
 
 // ── ValueType + param rewriting ──
-// Qualify all type names inside ValueType, ParamList, and TypeList.
-// After this pass, every Struct/Enum/Trait/Newtype name is fully qualified.
+// Qualify all type names inside ValueType, ParamList, and the
+// `List<ValueType>` payloads on ValueType variants. After this pass,
+// every Struct/Enum/Trait/Newtype name is fully qualified.
 
 /// Qualify every type name inside a ValueType. Recurses into
 /// compound shapes (List, Union, Tuple, FnTyped, ...).
@@ -928,12 +929,15 @@ fn rewrite_vtype(ctx: NameCtx, vt: ValueType) -> ValueType {
     }
 }
 
-/// Map `rewrite_vtype` over a TypeList.
-fn rewrite_vtype_list(ctx: NameCtx, tl: TypeList) -> TypeList {
-    match tl {
-        .End -> .End
-        .Node(vt, next) -> .Node(rewrite_vtype(ctx, vt), rewrite_vtype_list(ctx, next))
+/// Map `rewrite_vtype` over each ValueType in a `List<ValueType>`.
+fn rewrite_vtype_list(ctx: NameCtx, tl: List<ValueType>) -> List<ValueType> {
+    mut out: List<ValueType> = []
+    mut i = 0
+    while i < tl.length {
+        out.push(rewrite_vtype(ctx, tl[i]))
+        i = i + 1
     }
+    out
 }
 
 /// Map `rewrite_vtype` over each FieldEntry's resolved type.

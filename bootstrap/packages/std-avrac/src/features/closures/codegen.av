@@ -12,7 +12,7 @@
 // For non-capturing lambdas (the common case), the closure value
 // is just the function pointer with a null environment.
 
-use core.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInit, MatchArm, WhenArm, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length, ValueType, TypeList, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, vtype_is_unknown}
+use core.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInit, MatchArm, WhenArm, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length, ValueType, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, vtype_is_unknown}
 use codegen.{Ctx, EmitValue, err_emit, null_ptr_val, ok_emit}
 use codegen.{emit_expr}
 use codegen.{analyze_releasable_expr}
@@ -454,23 +454,28 @@ fn param_used_with_float_stmts(param_name: string, stmts: StmtList, ctx: Ctx, en
 
 /// Infer types for unannotated lambda params by scanning the
 /// body. Defaults to Int; promotes to Float when the param is
-/// used alongside another float operand. Result is a TypeList
-/// matched 1:1 to the input param list.
-fn infer_param_types(params: ParamList, body: Expr, ctx: Ctx, env: VarEnv, captures: List<Capture>) -> TypeList {
-    match params {
-        .End -> TypeList.End
-        .Node(name, raw_vt, next) -> {
-            // Priority: explicit annotation > float inference > default Unknown
-            let ty = if !vtype_is_unknown(raw_vt) && !(raw_vt is .Int) {
-                ctx.resolve_codegen_vtype(raw_vt)
-            } else if param_used_with_float(name, body, ctx, env, captures, params) {
-                ValueType.Float
-            } else {
-                ValueType.Unknown
+/// used alongside another float operand. Result is a
+/// `List<ValueType>` matched 1:1 to the input param list.
+fn infer_param_types(params: ParamList, body: Expr, ctx: Ctx, env: VarEnv, captures: List<Capture>) -> List<ValueType> {
+    mut out: List<ValueType> = []
+    mut cur = params
+    while !(cur is .End) {
+        match cur {
+            .Node(name, raw_vt, next) -> {
+                let ty = if !vtype_is_unknown(raw_vt) && !(raw_vt is .Int) {
+                    ctx.resolve_codegen_vtype(raw_vt)
+                } else if param_used_with_float(name, body, ctx, env, captures, params) {
+                    ValueType.Float
+                } else {
+                    ValueType.Unknown
+                }
+                out.push(ty)
+                cur = next
             }
-            TypeList.Node(ty, infer_param_types(next, body, ctx, env, captures))
+            _ -> {}
         }
     }
+    out
 }
 
 // Global lambda counter for unique names.
@@ -484,7 +489,10 @@ extern fn avra_next_lambda_id() -> int
 /// `infer_param_types` pick a default per param.
 export fn emit_lambda(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
     match expr {
-        .Lambda(params, body) -> emit_lambda_typed(ctx, env, params, body, TypeList.End)
+        .Lambda(params, body) -> {
+            let empty_types: List<ValueType> = []
+            emit_lambda_typed(ctx, env, params, body, empty_types)
+        }
         _ -> err_emit("expected Lambda")
     }
 }
@@ -498,7 +506,7 @@ export fn emit_lambda(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, st
 /// array `[TAG, fn_ptr, capture0, capture1, ...]` and returns
 /// it as the call's value. Non-capturing lambdas get a single-
 /// slot closure with the function pointer only.
-export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, raw_params: ParamList, body: Expr, param_types: TypeList) -> Result<EmitValue, string> {
+export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, raw_params: ParamList, body: Expr, param_types: List<ValueType>) -> Result<EmitValue, string> {
     let id = avra_next_lambda_id()
     // Library-mode: prefix the lambda name with the lib_pkg_root
     // (e.g. `@std::lsp::__lambda_3`) so two different units that
@@ -526,9 +534,11 @@ export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, raw_params: ParamList, body: 
 
     // Compute effective parameter types BEFORE creating the LLVM function,
     // so we can build a properly-typed LLVM function signature.
-    let effective_types = match param_types {
-        .End -> infer_param_types(params, body, ctx, env, captures)
-        _ -> param_types
+    // Empty caller-supplied list means "infer from the body".
+    let effective_types = if param_types.length == 0 {
+        infer_param_types(params, body, ctx, env, captures)
+    } else {
+        param_types
     }
 
     // Build typed LLVM function: declared params use effective_types, captures use i64.
@@ -635,7 +645,7 @@ fn push_captured_values(ctx: Ctx, captures: List<Capture>, arr: ptr) {
 /// using the heuristic. Used by higher-order list methods
 /// (`map`, `filter`, …) that know their callback's expected
 /// param types.
-export fn emit_typed_lambda_arg(ctx: Ctx, env: VarEnv, args: ExprList, param_types: TypeList) -> Result<EmitValue, string> {
+export fn emit_typed_lambda_arg(ctx: Ctx, env: VarEnv, args: ExprList, param_types: List<ValueType>) -> Result<EmitValue, string> {
     match args {
         .End -> err_emit("expected 1 argument, got 0")
         .Node(se, _) -> {
@@ -844,27 +854,30 @@ fn fill_lambda_args(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, idx: int) -
 /// pulling its declared type from the supplied `types` list (or
 /// falling back to the param's annotation when the type list is
 /// short). Mirror of `bind_params_inline` for closure bodies.
-fn bind_lambda_params_typed(ctx: Ctx, env: VarEnv, params: ParamList, fn_val: ptr, idx: int, types: TypeList) -> VarEnv {
-    match params {
-        .End -> env
-        .Node(name, raw_vt, next) -> {
-            let param_val = ctx.get_param(fn_val, idx)
-            // Priority: external TypeList > param annotation > resolved
-            let ty = match types {
-                .Node(t, _) -> t
-                .End -> {
-                    if !vtype_is_unknown(raw_vt) && !(raw_vt is .Int) {
-                        ctx.resolve_codegen_vtype(raw_vt)
-                    } else {
-                        ValueType.Unknown
-                    }
+fn bind_lambda_params_typed(ctx: Ctx, env: VarEnv, params: ParamList, fn_val: ptr, idx: int, types: List<ValueType>) -> VarEnv {
+    mut cur_env = env
+    mut cur_params = params
+    mut i = idx
+    mut type_idx = 0
+    while !(cur_params is .End) {
+        match cur_params {
+            .Node(name, raw_vt, next) -> {
+                let param_val = ctx.get_param(fn_val, i)
+                // Priority: external types list > param annotation > Unknown
+                let ty = if type_idx < types.length {
+                    types[type_idx]
+                } else if !vtype_is_unknown(raw_vt) && !(raw_vt is .Int) {
+                    ctx.resolve_codegen_vtype(raw_vt)
+                } else {
+                    ValueType.Unknown
                 }
+                cur_env = ctx.bind(cur_env, name, param_val, ty)
+                cur_params = next
+                i = i + 1
+                type_idx = type_idx + 1
             }
-            let rest_types = match types {
-                .Node(_, rest) -> rest
-                .End -> TypeList.End
-            }
-            bind_lambda_params_typed(ctx, ctx.bind(env, name, param_val, ty), next, fn_val, idx + 1, rest_types)
+            _ -> {}
         }
     }
+    cur_env
 }

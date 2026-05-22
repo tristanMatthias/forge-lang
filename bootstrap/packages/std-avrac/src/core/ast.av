@@ -178,12 +178,11 @@ export fn render_type_param_list(params: List<TypeParamEntry>) -> string {
 // to dispatch operations. The string-tag-everywhere model has been
 // retired — ValueType is the single source of truth.
 
-/// Linked list of ValueType. Used for tuple element types, generic
-/// type args, and union member types.
-export enum TypeList {
-    End,
-    Node(ty: ValueType, next: TypeList),
-}
+// `List<ValueType>` replaces the retired `enum TypeList`. Used for
+// tuple element types, generic type args, fn-typed params, and
+// union member types — every ValueType variant that carries a
+// sequence of inner ValueTypes now stores them in a real growable
+// list rather than a cons-shaped sub-enum.
 
 /// The compiler's central type representation. Every Sym, every Expr
 /// carries one of these; codegen dispatches on the variant to pick
@@ -222,9 +221,9 @@ export enum ValueType {
     Struct(name: string, id: int),
     /// Enum (sum type). `type_args` populated for generic instances
     /// (`Result<int, string>` carries Int + Str in type_args).
-    Enum(name: string, type_args: TypeList, id: int),
+    Enum(name: string, type_args: List<ValueType>, id: int),
     /// Anonymous tuple: `(int, string, bool)`.
-    Tuple(elements: TypeList),
+    Tuple(elements: List<ValueType>),
     /// Homogeneous list. `elem` is the element type.
     List(elem: ValueType),
     /// String-keyed map. Element type pinned by usage / inference.
@@ -243,12 +242,12 @@ export enum ValueType {
     /// Function type with full param + return signature. Resolver
     /// upgrades plain `Fn(ret)` into this once arity / param types
     /// are known.
-    FnTyped(params: TypeList, ret: ValueType),
+    FnTyped(params: List<ValueType>, ret: ValueType),
     /// Trait reference: `dyn Printable` etc. `id` is the TypeRegistry id.
     Trait(name: string, id: int),
     /// Union type: `int | string | bool`. `types` is the list of
     /// alternatives.
-    Union(types: TypeList),
+    Union(types: List<ValueType>),
     /// Newtype wrapper. `inner` is the wrapped type — codegen passes
     /// it through, but typecheck enforces nominal distinction.
     Newtype(name: string, inner: ValueType, id: int),
@@ -369,15 +368,14 @@ export fn type_expr_to_vtype(te: TypeExpr) -> ValueType {
     }
 }
 
-/// Lower a `List<TypeExpr>` to its corresponding TypeList by mapping
-/// `type_expr_to_vtype` over each element. The TypeList output is
-/// still cons-shaped because typeck / mono have not migrated yet.
-fn tel_to_type_list(tel: List<TypeExpr>) -> TypeList {
-    mut out = TypeList.End
-    mut i = tel.length - 1
-    while i >= 0 {
-        out = TypeList.Node(type_expr_to_vtype(tel[i]), out)
-        i = i - 1
+/// Lower a `List<TypeExpr>` to its corresponding `List<ValueType>`
+/// by mapping `type_expr_to_vtype` over each element.
+fn tel_to_type_list(tel: List<TypeExpr>) -> List<ValueType> {
+    mut out: List<ValueType> = []
+    mut i = 0
+    while i < tel.length {
+        out.push(type_expr_to_vtype(tel[i]))
+        i = i + 1
     }
     out
 }
@@ -445,15 +443,16 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
     }
 }
 
-/// Pairwise `vtype_eq` over two TypeLists. False on length mismatch.
-fn type_lists_eq(a: TypeList, b: TypeList) -> bool {
-    match a {
-        .End -> b is .End
-        .Node(ty_a, next_a) -> match b {
-            .End -> false
-            .Node(ty_b, next_b) -> vtype_eq(ty_a, ty_b) && type_lists_eq(next_a, next_b)
-        }
+/// Pairwise `vtype_eq` over two `List<ValueType>`s. False on
+/// length mismatch.
+fn type_lists_eq(a: List<ValueType>, b: List<ValueType>) -> bool {
+    if a.length != b.length { return false }
+    mut i = 0
+    while i < a.length {
+        if !vtype_eq(a[i], b[i]) { return false }
+        i = i + 1
     }
+    true
 }
 
 /// Subtype check: can a `src`-typed value be passed where a `dst`
@@ -513,8 +512,14 @@ export fn vtype_fn_ret(t: ValueType) -> ValueType {
 
 /// Parameter list for a fully-typed callable. `Fn(ret)` (params not
 /// yet resolved) returns an empty list.
-export fn vtype_fn_params(t: ValueType) -> TypeList {
-    match t { .FnTyped(p, _) -> p, _ -> TypeList.End }
+export fn vtype_fn_params(t: ValueType) -> List<ValueType> {
+    match t {
+        .FnTyped(p, _) -> p
+        _ -> {
+            let empty: List<ValueType> = []
+            empty
+        }
+    }
 }
 
 /// Number of captured locals for a Closure, 0 otherwise. Codegen
@@ -543,8 +548,14 @@ export fn vtype_enum_name(t: ValueType) -> string {
 /// that need to recover the substituted payload type when the
 /// enum's registry entry still references the generic param
 /// (nce6.3 `?` propagation on Result<(T, …), E>).
-export fn vtype_enum_type_args(t: ValueType) -> TypeList {
-    match t { .Enum(_, args, _) -> args, _ -> TypeList.End }
+export fn vtype_enum_type_args(t: ValueType) -> List<ValueType> {
+    match t {
+        .Enum(_, args, _) -> args
+        _ -> {
+            let empty: List<ValueType> = []
+            empty
+        }
+    }
 }
 
 /// Variant name pinned by a NarrowedEnum, or "" otherwise.
@@ -587,20 +598,17 @@ export fn vtype_display(t: ValueType) -> string {
     }
 }
 
-/// Display-form pipe-join over a union's TypeList, used by
+/// Display-form pipe-join over a union's element types, used by
 /// `vtype_display` for the `Union(types)` arm.
-fn render_union_display(tl: TypeList) -> string {
-    match tl {
-        .End -> ""
-        .Node(ty, next) -> {
-            let rest = render_union_display(next)
-            if rest == "" {
-                vtype_display(ty)
-            } else {
-                vtype_display(ty) + " | " + rest
-            }
-        }
+fn render_union_display(tl: List<ValueType>) -> string {
+    mut out = ""
+    mut i = 0
+    while i < tl.length {
+        let entry = vtype_display(tl[i])
+        if i == 0 { out = entry } else { out = "${out} | ${entry}" }
+        i = i + 1
     }
+    out
 }
 
 /// Render a ValueType including generic type arguments — e.g.
@@ -642,36 +650,31 @@ export fn vtype_render_full(t: ValueType) -> string {
     }
 }
 
-/// `vtype_render_full` over each element of a TypeList, comma-joined.
-/// Used by `vtype_render_full` for tuple / fn-param rendering.
-fn render_type_list_full(tl: TypeList) -> string {
-    match tl {
-        .End -> ""
-        .Node(ty, next) -> {
-            let rest = render_type_list_full(next)
-            if rest == "" {
-                vtype_render_full(ty)
-            } else {
-                "${vtype_render_full(ty)}, ${rest}"
-            }
-        }
+/// `vtype_render_full` over each element of a `List<ValueType>`,
+/// comma-joined. Used by `vtype_render_full` for tuple / fn-param
+/// rendering.
+fn render_type_list_full(tl: List<ValueType>) -> string {
+    mut out = ""
+    mut i = 0
+    while i < tl.length {
+        let entry = vtype_render_full(tl[i])
+        if i == 0 { out = entry } else { out = "${out}, ${entry}" }
+        i = i + 1
     }
+    out
 }
 
-/// `vtype_render_full` over each element of a TypeList, pipe-joined
-/// for union rendering (`int|string|bool`).
-fn render_union_full(tl: TypeList) -> string {
-    match tl {
-        .End -> ""
-        .Node(ty, next) -> {
-            let rest = render_union_full(next)
-            if rest == "" {
-                vtype_render_full(ty)
-            } else {
-                vtype_render_full(ty) + "|" + rest
-            }
-        }
+/// `vtype_render_full` over each element of a `List<ValueType>`,
+/// pipe-joined for union rendering (`int|string|bool`).
+fn render_union_full(tl: List<ValueType>) -> string {
+    mut out = ""
+    mut i = 0
+    while i < tl.length {
+        let entry = vtype_render_full(tl[i])
+        if i == 0 { out = entry } else { out = "${out}|${entry}" }
+        i = i + 1
     }
+    out
 }
 
 /// Trait name for a Trait ValueType, or "" otherwise.
@@ -695,60 +698,59 @@ export fn vtype_newtype_name(t: ValueType) -> string {
     match t { .Newtype(n, _, _) -> n, _ -> "" }
 }
 
-/// Member TypeList of a Union, or empty list otherwise.
-export fn vtype_union_types(t: ValueType) -> TypeList {
-    match t { .Union(tl) -> tl, _ -> TypeList.End }
-}
-
-/// Membership test for a union's TypeList — `vtype_eq` against each
-/// element. Used by `vtype_assignable` to widen concrete types.
-export fn union_contains(tl: TypeList, t: ValueType) -> bool {
-    match tl {
-        .End -> false
-        .Node(ty, next) -> if vtype_eq(ty, t) { true } else { union_contains(next, t) }
-    }
-}
-
-/// Build a TypeList from two types, flattening nested unions. Used
-/// by the parser when reading `A | B | C` so the resulting Union is
-/// always one level deep, regardless of operator associativity.
-export fn union_type_list_merge(a: ValueType, b: ValueType) -> TypeList {
-    let left = match a {
+/// Member type list of a Union, or empty list otherwise.
+export fn vtype_union_types(t: ValueType) -> List<ValueType> {
+    match t {
         .Union(tl) -> tl
-        _ -> TypeList.Node(a, TypeList.End)
+        _ -> {
+            let empty: List<ValueType> = []
+            empty
+        }
     }
-    let right = match b {
-        .Union(tl) -> tl
-        _ -> TypeList.Node(b, TypeList.End)
-    }
-    type_list_concat(left, right)
 }
 
-/// Concatenate two TypeLists. O(n) in `a`.
-fn type_list_concat(a: TypeList, b: TypeList) -> TypeList {
+/// Membership test for a union's element types — `vtype_eq` against
+/// each element. Used by `vtype_assignable` to widen concrete types.
+export fn union_contains(tl: List<ValueType>, t: ValueType) -> bool {
+    mut i = 0
+    while i < tl.length {
+        if vtype_eq(tl[i], t) { return true }
+        i = i + 1
+    }
+    false
+}
+
+/// Build a `List<ValueType>` from two types, flattening nested
+/// unions. Used by the parser when reading `A | B | C` so the
+/// resulting Union is always one level deep, regardless of operator
+/// associativity.
+export fn union_type_list_merge(a: ValueType, b: ValueType) -> List<ValueType> {
+    mut out: List<ValueType> = []
     match a {
-        .End -> b
-        .Node(ty, next) -> TypeList.Node(ty, type_list_concat(next, b))
+        .Union(tl) -> {
+            mut i = 0
+            while i < tl.length {
+                out.push(tl[i])
+                i = i + 1
+            }
+        }
+        _ -> out.push(a)
     }
+    match b {
+        .Union(tl) -> {
+            mut i = 0
+            while i < tl.length {
+                out.push(tl[i])
+                i = i + 1
+            }
+        }
+        _ -> out.push(b)
+    }
+    out
 }
 
-/// Length of a TypeList. O(n).
-export fn type_list_len(tl: TypeList) -> int {
-    match tl {
-        .End -> 0
-        .Node(_, next) -> 1 + type_list_len(next)
-    }
-}
-
-/// Get the type at position `idx` (0-based). Returns Unknown for
-/// out-of-range — typecheck callers branch on Unknown rather than
-/// pattern-matching on Option.
-export fn type_list_at(tl: TypeList, idx: int) -> ValueType {
-    match tl {
-        .End -> ValueType.Unknown
-        .Node(ty, next) -> if idx == 0 { ty } else { type_list_at(next, idx - 1) }
-    }
-}
+// `type_list_len` and `type_list_at` retired alongside the
+// `TypeList` enum — callers use `.length` and direct indexing.
 
 /// Find a top-level `|` in a type string (not inside `<>`, `()`, or
 /// `[]`). Used by both typeck and codegen to parse union type
@@ -770,35 +772,26 @@ export fn find_type_pipe(s: string) -> int {
 /// Comma-separate the display names of every type in `tl`. Used by
 /// every renderer that prints a type sequence (tuple types, generic
 /// args, fn param lists).
-export fn render_type_list(tl: TypeList) -> string {
-    match tl {
-        .End -> ""
-        .Node(ty, next) -> {
-            let rest = render_type_list(next)
-            if rest == "" {
-                vtype_display(ty)
-            } else {
-                "${vtype_display(ty)}, ${rest}"
-            }
-        }
+export fn render_type_list(tl: List<ValueType>) -> string {
+    mut out = ""
+    mut i = 0
+    while i < tl.length {
+        let entry = vtype_display(tl[i])
+        if i == 0 { out = entry } else { out = "${out}, ${entry}" }
+        i = i + 1
     }
+    out
 }
 
 /// Index into a Tuple ValueType. Returns Unknown for non-tuples or
-/// out-of-range — same convention as `type_list_at`.
+/// out-of-range — Unknown is the standard sentinel for missing
+/// type info across the type-helpers in this module.
 export fn vtype_tuple_at(t: ValueType, idx: int) -> ValueType {
     match t {
-        .Tuple(types) -> typelist_at(types, idx)
+        .Tuple(types) -> {
+            if idx < 0 || idx >= types.length { ValueType.Unknown } else { types[idx] }
+        }
         _ -> ValueType.Unknown
-    }
-}
-
-/// 0-indexed nth element of a TypeList, or Unknown out-of-range.
-fn typelist_at(list: TypeList, idx: int) -> ValueType {
-    match list {
-        .End -> ValueType.Unknown
-        .Node(ty, _) if idx <= 0 -> ty
-        .Node(_, next) -> typelist_at(next, idx - 1)
     }
 }
 

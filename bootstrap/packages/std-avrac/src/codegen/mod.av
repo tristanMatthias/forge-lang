@@ -6,7 +6,7 @@
 // indexing/helpers/escape/cycles auto-load as siblings, surface flat at
 // `codegen.{...}`.
 
-use core.{Expr, ExprList, ParamList, Pattern, SExpr, SStmt, Stmt, StmtList, TypeList, ValueType, VarEnv, env_extend, env_lookup, expr_list_length, field_index_of, param_list_length, sexpr_dummy, stmt_unwrap, variant_lookup, variant_max_payload, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_list_elem, vtype_struct_name, vtype_trait_name}
+use core.{Expr, ExprList, ParamList, Pattern, SExpr, SStmt, Stmt, StmtList, ValueType, VarEnv, env_extend, env_lookup, expr_list_length, field_index_of, param_list_length, sexpr_dummy, stmt_unwrap, variant_lookup, variant_max_payload, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_list_elem, vtype_struct_name, vtype_trait_name}
 
 use core.{build_registry, dispatch_expr_emit, dispatch_stmt_emit, avra_expr_tag, avra_stmt_tag, has_expr_emit, has_stmt_emit, registry_new}
 use features.closures.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value, emit_typed_lambda_arg}
@@ -182,7 +182,7 @@ export fn emit_rc_release_typed(ctx: Ctx, val: ptr, ty: ValueType) {
 /// 2. When freeing: walk each ptr-typed element, null-check, recurse
 ///    into `emit_rc_release_typed`, then `avra_rc_free` the buffer.
 /// 3. Otherwise: nothing more to do (refcount was just decremented).
-fn emit_rc_release_tuple(ctx: Ctx, val: ptr, elements: TypeList) {
+fn emit_rc_release_tuple(ctx: Ctx, val: ptr, elements: List<ValueType>) {
     let should = ctx.call("avra_rc_should_free", [val])
     let cond = ctx.icmp_ne(should, ctx.i64(0), "tup_should_free")
     let free_bb = ctx.bb("tup_free")
@@ -195,27 +195,27 @@ fn emit_rc_release_tuple(ctx: Ctx, val: ptr, elements: TypeList) {
     ctx.position(done_bb)
 }
 
-/// Recursive worker for `emit_rc_release_tuple`. For each
-/// ptr-typed element in `elements`, load slot N, null-check,
-/// release, and continue. Skips primitive elements.
-fn emit_tuple_elem_releases(ctx: Ctx, buf: ptr, elements: TypeList, idx: int) {
-    match elements {
-        .End -> {}
-        .Node(elem_ty, next) -> {
-            if vtype_is_ptr_type(elem_ty) {
-                let loaded = ctx.load_slot(buf, idx, "trel_${idx}")
-                let as_ptr = ctx.to_ptr(loaded, "trel_ptr_${idx}")
-                let is_null = ctx.icmp_eq(as_ptr, ctx.zero_for(.Ptr), "trel_null_${idx}")
-                let skip_bb = ctx.bb("trel_skip_${idx}")
-                let do_bb = ctx.bb("trel_do_${idx}")
-                ctx.cond_br(is_null, skip_bb, do_bb)
-                ctx.position(do_bb)
-                emit_rc_release_typed(ctx, as_ptr, elem_ty)
-                ctx.br(skip_bb)
-                ctx.position(skip_bb)
-            }
-            emit_tuple_elem_releases(ctx, buf, next, idx + 1)
+/// Iterate every ptr-typed element of `elements`, loading slot N,
+/// null-checking, releasing, and continuing. Skips primitive
+/// elements. Caller passes the starting slot index in `idx`; the
+/// loop walks every position from there to `elements.length - 1`.
+fn emit_tuple_elem_releases(ctx: Ctx, buf: ptr, elements: List<ValueType>, idx: int) {
+    mut i = idx
+    while i < elements.length {
+        let elem_ty = elements[i]
+        if vtype_is_ptr_type(elem_ty) {
+            let loaded = ctx.load_slot(buf, i, "trel_${i}")
+            let as_ptr = ctx.to_ptr(loaded, "trel_ptr_${i}")
+            let is_null = ctx.icmp_eq(as_ptr, ctx.zero_for(.Ptr), "trel_null_${i}")
+            let skip_bb = ctx.bb("trel_skip_${i}")
+            let do_bb = ctx.bb("trel_do_${i}")
+            ctx.cond_br(is_null, skip_bb, do_bb)
+            ctx.position(do_bb)
+            emit_rc_release_typed(ctx, as_ptr, elem_ty)
+            ctx.br(skip_bb)
+            ctx.position(skip_bb)
         }
+        i = i + 1
     }
 }
 

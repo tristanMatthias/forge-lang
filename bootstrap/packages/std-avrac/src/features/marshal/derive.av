@@ -19,7 +19,7 @@
 // resolver wires up to @std/process the same way a hand-written
 // impl would.
 
-use core.{Stmt, StmtList, SStmt, sstmt_dummy, Expr, ExprList, SExpr, sexpr_dummy, FieldEntry, FieldInit, ParamList, ValueType, TypeParamEntry, Variant, Pattern, MatchArm, TypeList, BinOp, find_annotation}
+use core.{Stmt, StmtList, SStmt, sstmt_dummy, Expr, ExprList, SExpr, sexpr_dummy, FieldEntry, FieldInit, ParamList, ValueType, TypeParamEntry, Variant, Pattern, MatchArm, BinOp, find_annotation}
 
 // ── Public entry ──
 
@@ -550,8 +550,9 @@ fn derive_enum_stmts(type_name: string, variants: List<Variant>) -> StmtList {
     // Cleanup #1: same `impl Marshal for T` form for enums.
     let impl_stmt = Stmt.Impl("@std::process::Marshal:" + type_name, methods)
     let from_bytes_fn = build_enum_from_bytes_fn(type_name, variants)
+    let empty_args: List<ValueType> = []
     let isolated_fn = build_isolated_fn(type_name,
-        ValueType.Enum(type_name, TypeList.End, 0))
+        ValueType.Enum(type_name, empty_args, 0))
     StmtList.Node(sstmt_dummy(impl_stmt),
         StmtList.Node(sstmt_dummy(from_bytes_fn),
             StmtList.Node(sstmt_dummy(isolated_fn), StmtList.End)))
@@ -632,8 +633,9 @@ fn build_enum_from_bytes_fn(type_name: string, variants: List<Variant>) -> Stmt 
         append_stmts(tag_reads, dispatch))
     let fn_name = "from_bytes_" + type_name
     let empty_tp: List<TypeParamEntry> = []
+    let empty_args: List<ValueType> = []
     Stmt.Function(fn_name, empty_tp, params,
-        ValueType.Enum(type_name, TypeList.End, 0), body)
+        ValueType.Enum(type_name, empty_args, 0), body)
 }
 
 /// Cascade of `if tag == N { build variant }` stmts. The final
@@ -711,13 +713,16 @@ fn field_list_to_arg_list(payload: List<FieldEntry>) -> ExprList {
 /// trait-bound version.
 fn build_isolated_fn(type_name: string, ty: ValueType) -> Stmt {
     // Param: body: fn() -> T
-    let body_param_ty = ValueType.FnTyped(TypeList.End, ty)
+    let no_params: List<ValueType> = []
+    let body_param_ty = ValueType.FnTyped(no_params, ty)
     let params = ParamList.Node("body", body_param_ty, ParamList.End)
     // Result<T, IsolatedError> as the return type. Resolver
     // upgrades the bare Enum form once IsolatedError is bound.
-    let isolated_err_ty = ValueType.Enum("IsolatedError", TypeList.End, 0)
-    let result_type_args = TypeList.Node(ty,
-        TypeList.Node(isolated_err_ty, TypeList.End))
+    let isolated_empty_args: List<ValueType> = []
+    let isolated_err_ty = ValueType.Enum("IsolatedError", isolated_empty_args, 0)
+    mut result_type_args: List<ValueType> = []
+    result_type_args.push(ty)
+    result_type_args.push(isolated_err_ty)
     let ret_ty = ValueType.Enum("Result", result_type_args, 0)
     // Inner closure: () -> body().to_bytes()
     let body_call = Expr.Call(Expr.Ident("body"), ExprList.End)

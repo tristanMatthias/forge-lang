@@ -23,7 +23,7 @@ use @std.avrac.build.{
 }
 use @std.avrac.core.{
     Stmt, StmtList, Expr, ExprList, TypeParamEntry,
-    ValueType, TypeList, FieldEntry, Variant, ParamList,
+    ValueType, FieldEntry, Variant, ParamList,
     Annotation, vtype_eq, sstmt_dummy, stmt_unwrap, find_annotation,
 }
 use @std.avrac.build.{extract_unit_metadata}
@@ -235,16 +235,25 @@ fn main() -> int {
     vt_roundtrip("closure", ValueType.Closure(3, ValueType.Bool))
     vt_roundtrip("fn_ret_str", ValueType.Fn(ValueType.Str))
 
-    let enum_args = TypeList.Node(ValueType.Int, TypeList.Node(ValueType.Str, TypeList.End))
+    mut enum_args: List<ValueType> = []
+    enum_args.push(ValueType.Int)
+    enum_args.push(ValueType.Str)
     vt_roundtrip("enum_with_args", ValueType.Enum("Result", enum_args, 0))
 
-    let tuple_types = TypeList.Node(ValueType.Int, TypeList.Node(ValueType.Bool, TypeList.End))
+    mut tuple_types: List<ValueType> = []
+    tuple_types.push(ValueType.Int)
+    tuple_types.push(ValueType.Bool)
     vt_roundtrip("tuple", ValueType.Tuple(tuple_types))
 
-    let union_types = TypeList.Node(ValueType.Int, TypeList.Node(ValueType.Str, TypeList.Node(ValueType.Bool, TypeList.End)))
+    mut union_types: List<ValueType> = []
+    union_types.push(ValueType.Int)
+    union_types.push(ValueType.Str)
+    union_types.push(ValueType.Bool)
     vt_roundtrip("union", ValueType.Union(union_types))
 
-    let fn_params = TypeList.Node(ValueType.Int, TypeList.Node(ValueType.Str, TypeList.End))
+    mut fn_params: List<ValueType> = []
+    fn_params.push(ValueType.Int)
+    fn_params.push(ValueType.Str)
     vt_roundtrip("fn_typed", ValueType.FnTyped(fn_params, ValueType.Bool))
 
     // TYPES section per-entry round-trips.
@@ -356,7 +365,9 @@ fn main() -> int {
     // fn process(items: List<int>, label: string) -> Result<int, string>
     let proc_params = ParamList.Node("items", ValueType.List(ValueType.Int),
         ParamList.Node("label", ValueType.Str, ParamList.End))
-    let proc_ret_args = TypeList.Node(ValueType.Int, TypeList.Node(ValueType.Str, TypeList.End))
+    mut proc_ret_args: List<ValueType> = []
+    proc_ret_args.push(ValueType.Int)
+    proc_ret_args.push(ValueType.Str)
     let proc_entry = FnDeclEntry {
         sym_id: sym_id_for("@test::process"),
         name: "@test::process",

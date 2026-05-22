@@ -48,11 +48,11 @@ export fn check_try(tc: TC, expr: Expr) -> ExprResult {
             // fn's pre-substitution ret_ty, which loses generic
             // bindings for method calls and chained generic calls.
             match r.ty {
-                .Enum(name, args, _) if is_result_enum_name(name) -> match args {
-                    .Node(ok_ty, _) -> {
+                .Enum(name, args, _) if is_result_enum_name(name) -> {
+                    if args.length > 0 {
+                        let ok_ty = args[0]
                         if !vtype_is_unknown(ok_ty) { return tc_er(r.tc, ok_ty) }
                     }
-                    .End -> {}
                 }
                 _ -> {}
             }

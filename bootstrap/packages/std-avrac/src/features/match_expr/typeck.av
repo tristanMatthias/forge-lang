@@ -1,7 +1,7 @@
 // WHY: type checking for match statements and expressions.
 // Exhaustiveness checking, pattern variable binding, arm type unification.
 
-use core.{Expr, Pattern, MatchArm, TypeList, WhenArm, ParamList, Stmt, StmtList, Variant, ValueType, stmt_unwrap, vtype_display, vtype_enum_name, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types}
+use core.{Expr, Pattern, MatchArm, WhenArm, ParamList, Stmt, StmtList, Variant, ValueType, stmt_unwrap, vtype_display, vtype_enum_name, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types}
 use diagnostics.{DiagCode, diag_warning, span_new, bag_report}
 use core.{type_short_name}
 use typeck.{EnumTypeReg, ExprResult, TC, check_expr, tc_bind, tc_check_explicit_returns, tc_enter, tc_er, tc_exit, tc_report, resolve_vtype}
@@ -260,35 +260,30 @@ fn tc_check_union_exhaustive(tc: TC, subject_ty: ValueType, arms: List<MatchArm>
 
 /// CSV of union members the user forgot to match — companion
 /// of `find_missing_variants` for union types.
-fn find_missing_union_members(types: TypeList, matched: string) -> string {
-    match types {
-        .End -> ""
-        .Node(ty, next) -> {
-            let name = vtype_display(ty)
-            let rest = find_missing_union_members(next, matched)
-            if variant_in_matched(name, matched) {
-                rest
-            } else {
-                if rest == "" { name } else { "${name}, ${rest}" }
-            }
+fn find_missing_union_members(types: List<ValueType>, matched: string) -> string {
+    mut out = ""
+    mut i = 0
+    while i < types.length {
+        let name = vtype_display(types[i])
+        if !variant_in_matched(name, matched) {
+            if out == "" { out = name } else { out = "${out}, ${name}" }
         }
+        i = i + 1
     }
+    out
 }
 
 /// Count uncovered union members. Mirror of `count_missing`
 /// for union exhaustiveness.
-fn count_missing_union_members(types: TypeList, matched: string) -> int {
-    match types {
-        .End -> 0
-        .Node(ty, next) -> {
-            let name = vtype_display(ty)
-            if variant_in_matched(name, matched) {
-                count_missing_union_members(next, matched)
-            } else {
-                1 + count_missing_union_members(next, matched)
-            }
-        }
+fn count_missing_union_members(types: List<ValueType>, matched: string) -> int {
+    mut n = 0
+    mut i = 0
+    while i < types.length {
+        let name = vtype_display(types[i])
+        if !variant_in_matched(name, matched) { n = n + 1 }
+        i = i + 1
     }
+    n
 }
 
 // ── Pattern variable binding ──

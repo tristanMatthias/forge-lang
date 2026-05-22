@@ -590,7 +590,10 @@ fn resolve_setup_vt(regs: TypeRegs, vt: ValueType) -> ValueType {
     match vt {
         .Struct(name, _) -> {
             let e = enum_reg_lookup(regs.enums, name)
-            if e.found { return ValueType.Enum(name, TypeList.End, 0) }
+            if e.found {
+                let empty_args: List<ValueType> = []
+                return ValueType.Enum(name, empty_args, 0)
+            }
             let s = struct_reg_lookup(regs.structs, name)
             if s.found { return ValueType.Struct(name, 0) }
             // Forward reference — the named type isn't yet in the
@@ -613,12 +616,15 @@ fn resolve_setup_vt(regs: TypeRegs, vt: ValueType) -> ValueType {
     }
 }
 
-/// Map `resolve_setup_vt` over every element of a TypeList.
-fn resolve_setup_vt_list(regs: TypeRegs, types: TypeList) -> TypeList {
-    match types {
-        .End -> .End
-        .Node(ty, next) -> TypeList.Node(resolve_setup_vt(regs, ty), resolve_setup_vt_list(regs, next))
+/// Map `resolve_setup_vt` over every element of a `List<ValueType>`.
+fn resolve_setup_vt_list(regs: TypeRegs, types: List<ValueType>) -> List<ValueType> {
+    mut out: List<ValueType> = []
+    mut i = 0
+    while i < types.length {
+        out.push(resolve_setup_vt(regs, types[i]))
+        i = i + 1
     }
+    out
 }
 
 
@@ -1372,7 +1378,10 @@ fn resolve_fn_ret(regs: TypeRegs, traits: TraitDeclReg, rvt: ValueType, body: St
         match resolved {
             .Enum(name, _, _) -> {
                 let found = enum_reg_lookup(regs.enums, name)
-                if found.found { ValueType.Enum(name, TypeList.End, 0) } else { resolved }
+                if found.found {
+                    let empty_args: List<ValueType> = []
+                    ValueType.Enum(name, empty_args, 0)
+                } else { resolved }
             }
             _ -> resolved
         }

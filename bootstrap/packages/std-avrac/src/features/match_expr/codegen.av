@@ -1,6 +1,6 @@
 // WHY: emits LLVM IR for `match` as both a statement and an expression.
 
-use core.{Expr, Pattern, MatchArm, WhenArm, ParamList, FieldEntry, TypeList, Variant, VarEnv, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types}
+use core.{Expr, Pattern, MatchArm, WhenArm, ParamList, FieldEntry, Variant, VarEnv, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types}
 use codegen.{Ctx, EmitValue, StmtResult, err_emit, ok_emit, field_resolved_at, emit_value_ptr, emit_value_ty, enum_reg_find_by_variant, vtype_is_ptr_type}
 use core.{vtype_from_name}
 use codegen.{ok_sr, err_sr}
@@ -98,7 +98,7 @@ fn emit_union_match_expr(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: List<Matc
 /// each arm's expected type-hash; on match, extracts the
 /// payload typed correctly and runs the arm body. Merges all
 /// arm exits at `merge_bb` and stores results in `result_slot`.
-fn emit_union_match_arms(ctx: Ctx, env: VarEnv, arms: List<MatchArm>, subj_val: ptr, tag_val: ptr, union_types: TypeList, merge_bb: ptr, result_slot: ptr) -> Result<ValueType, string> {
+fn emit_union_match_arms(ctx: Ctx, env: VarEnv, arms: List<MatchArm>, subj_val: ptr, tag_val: ptr, union_types: List<ValueType>, merge_bb: ptr, result_slot: ptr) -> Result<ValueType, string> {
     // Source-order arm walk. Each iteration positions the IR
     // builder either at the arm's body block (on tag match) or at
     // the fall-through `next_bb` (no match). The wildcard arm

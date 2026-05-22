@@ -12,7 +12,7 @@
 //                                 logic (features/<X>/codegen.av)
 //                                 or the dispatchers (codegen.av)
 
-use core.{Expr, SExpr, VarEnv, FieldEntry, Variant, ValueType, TypeList, type_list_len, type_list_at, vtype_is_str, vtype_is_unknown, variant_lookup, vtype_eq, field_vtype_of, env_extend, union_type_list_merge, find_type_pipe}
+use core.{Expr, SExpr, VarEnv, FieldEntry, Variant, ValueType, vtype_is_str, vtype_is_unknown, variant_lookup, vtype_eq, field_vtype_of, env_extend, union_type_list_merge, find_type_pipe}
 use core.{Registry}
 use core.{TypeRegistry, type_registry_id_for, type_registry_name_for}
 use core.{avra_coverage_emit_hit, avra_covmap_alloc, avra_covmap_counter_count, avra_coverage_finalize_fn}
@@ -864,16 +864,21 @@ impl Ctx {
         self.fill_value_array_param_types(arr, val_arr, idx + 1, declared_count, total)
     }
 
-    // Fill type array from TypeList for declared params, then i64 for captures.
-    fn fill_typed_lambda_params(self, arr: ptr, types: TypeList, idx: int, total: int) {
-        if idx >= total { return }
-        let llvm_ty = match types {
-            .Node(vt, _) -> llvm_type_for_full(self.i64_type, self.i1_type, self.double_type, self.ptr_type, vt)
-            .End -> self.i64_type
+    // Fill type array from a `List<ValueType>` for declared params,
+    // then i64 for captures. Walks the list by index; the offset is
+    // `idx` so each call uses `idx`-aligned positions when called as
+    // the initial entrypoint with `idx == 0`.
+    fn fill_typed_lambda_params(self, arr: ptr, types: List<ValueType>, idx: int, total: int) {
+        mut i = idx
+        while i < total {
+            let llvm_ty = if i < types.length {
+                llvm_type_for_full(self.i64_type, self.i1_type, self.double_type, self.ptr_type, types[i])
+            } else {
+                self.i64_type
+            }
+            avra_llvm_type_array_set(arr, i, llvm_ty)
+            i = i + 1
         }
-        avra_llvm_type_array_set(arr, idx, llvm_ty)
-        let rest = match types { .Node(_, next) -> next, .End -> TypeList.End }
-        self.fill_typed_lambda_params(arr, rest, idx + 1, total)
     }
 
     // ── Sized-integer LLVM type dispatch ──
@@ -1320,7 +1325,10 @@ impl Ctx {
                 let rid = if tid > 0 { tid } else { 0 }
                 // Check registries with resolved name
                 let e = enum_reg_lookup(self.enums, rn)
-                if e.found { return ValueType.Enum(rn, TypeList.End, rid) }
+                if e.found {
+                    let empty_args: List<ValueType> = []
+                    return ValueType.Enum(rn, empty_args, rid)
+                }
                 let s = struct_reg_lookup(self.structs, rn)
                 if s.found { return ValueType.Struct(rn, rid) }
                 if trait_decl_has(self.trait_decls, rn) { return ValueType.Trait(rn, rid) }
@@ -1338,8 +1346,14 @@ impl Ctx {
         }
     }
 
-    fn resolve_codegen_vtype_list(self, types: TypeList) -> TypeList {
-        match types { .End -> .End, .Node(ty, next) -> TypeList.Node(self.resolve_codegen_vtype(ty), self.resolve_codegen_vtype_list(next)) }
+    fn resolve_codegen_vtype_list(self, types: List<ValueType>) -> List<ValueType> {
+        mut out: List<ValueType> = []
+        mut i = 0
+        while i < types.length {
+            out.push(self.resolve_codegen_vtype(types[i]))
+            i = i + 1
+        }
+        out
     }
 
     fn resolve_field_type(self, fields: List<FieldEntry>, name: string) -> ValueType {
@@ -1411,9 +1425,9 @@ impl Ctx {
     /// the type parameter (`T`) before monomorphization substitution,
     /// while type_args carries the concrete substitution.
     /// nce6.3.
-    fn resolve_ok_type_with(self, enum_name: string, type_args: TypeList) -> ValueType {
-        if type_list_len(type_args) >= 1 {
-            let arg = type_list_at(type_args, 0)
+    fn resolve_ok_type_with(self, enum_name: string, type_args: List<ValueType>) -> ValueType {
+        if type_args.length >= 1 {
+            let arg = type_args[0]
             if !(arg is .Unknown) { return arg }
         }
         self.resolve_ok_type(enum_name)
@@ -1430,9 +1444,9 @@ impl Ctx {
 
     /// Type-args-aware variant — same shape as resolve_ok_type_with
     /// but pulls the 2nd type arg (Err type) instead. nce6.3.
-    fn resolve_err_type_with(self, enum_name: string, type_args: TypeList) -> ValueType {
-        if type_list_len(type_args) >= 2 {
-            let arg = type_list_at(type_args, 1)
+    fn resolve_err_type_with(self, enum_name: string, type_args: List<ValueType>) -> ValueType {
+        if type_args.length >= 2 {
+            let arg = type_args[1]
             if !(arg is .Unknown) { return arg }
         }
         self.resolve_err_type(enum_name)

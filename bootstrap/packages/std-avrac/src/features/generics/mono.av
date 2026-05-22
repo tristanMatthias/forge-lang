@@ -3,7 +3,7 @@
 // checking and before codegen. After this pass, the AST contains no
 // generic declarations — codegen sees only concrete code.
 
-use core.{Expr, ExprList, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, StmtList, ParamList, FieldEntry, FieldInit, TypeList, Variant, MatchArm, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge, SelectArm}
+use core.{Expr, ExprList, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, StmtList, ParamList, FieldEntry, FieldInit, Variant, MatchArm, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge, SelectArm}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_warning, span_new}
 use typeck.{TraitImplReg, type_implements_trait}
 use core.{mangle_join, type_short_name}
@@ -437,15 +437,16 @@ fn unify_param(tp: List<TypeParamEntry>, param_ty: ValueType, arg_ty: ValueType,
     }
 }
 
-/// Pairwise unify two TypeLists (used for fn-param recursion).
-fn unify_type_lists(tp: List<TypeParamEntry>, params: TypeList, args: TypeList, acc: List<TypeArg>) -> List<TypeArg> {
-    match params {
-        .End -> acc
-        .Node(p, prest) -> match args {
-            .End -> acc
-            .Node(a, arest) -> unify_type_lists(tp, prest, arest, unify_param(tp, p, a, acc))
-        }
+/// Pairwise unify two type lists (used for fn-param recursion).
+fn unify_type_lists(tp: List<TypeParamEntry>, params: List<ValueType>, args: List<ValueType>, acc: List<TypeArg>) -> List<TypeArg> {
+    let n = if params.length < args.length { params.length } else { args.length }
+    mut out = acc
+    mut i = 0
+    while i < n {
+        out = unify_param(tp, params[i], args[i], out)
+        i = i + 1
     }
+    out
 }
 
 // If the typecheck-annotated arg type is Unknown (which happens when the
@@ -472,7 +473,10 @@ fn infer_lit_ty(e: Expr) -> ValueType {
         .String(_) -> ValueType.Str
         .Bool(_) -> ValueType.Bool
         .StructLit(name, _) if name != "" -> ValueType.Struct(name, 0)
-        .EnumCtor(tn, _, _) if tn != "" -> ValueType.Enum(tn, TypeList.End, 0)
+        .EnumCtor(tn, _, _) if tn != "" -> {
+            let empty: List<ValueType> = []
+            ValueType.Enum(tn, empty, 0)
+        }
         .Grouping(inner) -> infer_lit_ty(inner)
         .ListLit(elements) -> ValueType.List(infer_list_elem_ty(elements))
         .Lambda(params, _) -> ValueType.FnTyped(param_types(params), ValueType.Unknown)
@@ -496,11 +500,19 @@ fn infer_list_elem_ty(elements: ExprList) -> ValueType {
 /// Project a ParamList down to its declared types (in declaration
 /// order). Used to synthesise an FnTyped from a lambda literal so
 /// generic-fn inference can bind its `T` parameters.
-fn param_types(params: ParamList) -> TypeList {
-    match params {
-        .End -> TypeList.End
-        .Node(_, ty, next) -> TypeList.Node(ty, param_types(next))
+fn param_types(params: ParamList) -> List<ValueType> {
+    mut out: List<ValueType> = []
+    mut cur = params
+    while !(cur is .End) {
+        match cur {
+            .Node(_, ty, next) -> {
+                out.push(ty)
+                cur = next
+            }
+            _ -> {}
+        }
     }
+    out
 }
 
 /// Infer concrete type-args for a generic fn call by walking
@@ -1161,9 +1173,15 @@ fn substitute_vtype(vt: ValueType, ta: List<TypeArg>) -> ValueType {
     }
 }
 
-/// Map `substitute_vtype` over a TypeList.
-fn substitute_vtype_list(types: TypeList, ta: List<TypeArg>) -> TypeList {
-    match types { .End -> .End, .Node(ty, next) -> TypeList.Node(substitute_vtype(ty, ta), substitute_vtype_list(next, ta)) }
+/// Map `substitute_vtype` over a `List<ValueType>`.
+fn substitute_vtype_list(types: List<ValueType>, ta: List<TypeArg>) -> List<ValueType> {
+    mut out: List<ValueType> = []
+    mut i = 0
+    while i < types.length {
+        out.push(substitute_vtype(types[i], ta))
+        i = i + 1
+    }
+    out
 }
 
 /// Substitute type-args into every param's declared type.
@@ -1372,11 +1390,11 @@ fn vtype_from_type_string(ty: string) -> ValueType {
         // List/Task type check (vtype_is_list, .length codegen, ...).
         // Tracked under forge-crafting-intepreters-gvq3.
         if base == "List" {
-            let elem = match args { .Node(t, _) -> t, .End -> ValueType.Unknown }
+            let elem = if args.length > 0 { args[0] } else { ValueType.Unknown }
             return ValueType.List(elem)
         }
         if base == "Task" {
-            let inner = match args { .Node(t, _) -> t, .End -> ValueType.Unknown }
+            let inner = if args.length > 0 { args[0] } else { ValueType.Unknown }
             return ValueType.Task(inner)
         }
         return ValueType.Enum(base, args, 0)
@@ -1403,18 +1421,25 @@ fn vtype_from_type_string(ty: string) -> ValueType {
 /// split `Foo__Int__Bool` into base + type-arg slugs.
 fn find_dunder(s: string) -> int { find_dunder_from(s, 0) }
 
-/// Recursively parse the `__`-separated type-arg slugs from a
-/// mangled name into a TypeList. Reverse of mangling — used
-/// when rewriting mangled annotations back into ValueTypes.
-fn parse_dunder_args(s: string, start: int) -> TypeList {
-    let next_dunder = find_dunder_from(s, start)
-    if next_dunder >= 0 {
-        let arg = s.substring(start, next_dunder)
-        TypeList.Node(vtype_from_type_string(arg), parse_dunder_args(s, next_dunder + 2))
-    } else {
-        let arg = s.substring(start, s.length)
-        TypeList.Node(vtype_from_type_string(arg), TypeList.End)
+/// Parse the `__`-separated type-arg slugs from a mangled name
+/// into a `List<ValueType>`. Reverse of mangling — used when
+/// rewriting mangled annotations back into ValueTypes.
+fn parse_dunder_args(s: string, start: int) -> List<ValueType> {
+    mut out: List<ValueType> = []
+    mut pos = start
+    while true {
+        let next_dunder = find_dunder_from(s, pos)
+        if next_dunder >= 0 {
+            let arg = s.substring(pos, next_dunder)
+            out.push(vtype_from_type_string(arg))
+            pos = next_dunder + 2
+        } else {
+            let arg = s.substring(pos, s.length)
+            out.push(vtype_from_type_string(arg))
+            return out
+        }
     }
+    out
 }
 
 /// Find the next `__` boundary in `s` starting from `start`.
@@ -1428,19 +1453,25 @@ fn find_dunder_from(s: string, start: int) -> int {
     -1
 }
 
-/// Parse a comma-separated type-arg list (`"int, string"`)
-/// into a TypeList. Mirror of `split_annotation_args` for the
+/// Parse a comma-separated type-arg list (`"int, string"`) into a
+/// `List<ValueType>`. Mirror of `split_annotation_args` for the
 /// pre-rewrite path.
-fn parse_type_args_to_list(args_str: string) -> TypeList {
-    if args_str == "" { return TypeList.End }
-    let comma = top_level_split_idx(args_str)
-    if comma >= 0 {
-        let head = args_str.substring(0, comma)
-        let tail = args_str.substring(comma + 1, args_str.length)
-        TypeList.Node(vtype_from_type_string(head.trim()), parse_type_args_to_list(tail))
-    } else {
-        TypeList.Node(vtype_from_type_string(args_str.trim()), TypeList.End)
+fn parse_type_args_to_list(args_str: string) -> List<ValueType> {
+    mut out: List<ValueType> = []
+    if args_str == "" { return out }
+    mut rest = args_str
+    while true {
+        let comma = top_level_split_idx(rest)
+        if comma >= 0 {
+            let head = rest.substring(0, comma)
+            out.push(vtype_from_type_string(head.trim()))
+            rest = rest.substring(comma + 1, rest.length)
+        } else {
+            out.push(vtype_from_type_string(rest.trim()))
+            return out
+        }
     }
+    out
 }
 
 /// Rewrite a fn's return-type annotation, replacing every

@@ -16,7 +16,7 @@
 // Tracked under forge-crafting-intepreters-iinq (epic
 // forge-crafting-intepreters-a1el — the build system).
 
-use core.{ValueType, TypeList, FieldEntry, Variant, ParamList, TypeParamEntry}
+use core.{ValueType, FieldEntry, Variant, ParamList, TypeParamEntry}
 
 extern fn avra_bytes_make(len: int) -> bytes
 extern fn avra_bytes_set(b: bytes, idx: int, val: int)
@@ -457,27 +457,13 @@ impl BytesWriter {
         }
     }
 
-    fn vtype_list(self, types: TypeList) {
-        let count = type_list_length(types)
-        self.u32_le(count)
-        self.vtype_list_body(types)
-    }
-
-    fn vtype_list_body(self, types: TypeList) {
-        match types {
-            .End -> {}
-            .Node(t, next) -> {
-                self.vtype(t)
-                self.vtype_list_body(next)
-            }
+    fn vtype_list(self, types: List<ValueType>) {
+        self.u32_le(types.length)
+        mut i = 0
+        while i < types.length {
+            self.vtype(types[i])
+            i = i + 1
         }
-    }
-}
-
-fn type_list_length(types: TypeList) -> int {
-    match types {
-        .End -> 0
-        .Node(_, next) -> 1 + type_list_length(next)
     }
 }
 
@@ -675,16 +661,15 @@ impl BytesReader {
         ValueType.Unknown
     }
 
-    fn vtype_list(self) -> TypeList {
+    fn vtype_list(self) -> List<ValueType> {
         let count = self.u32_le()
-        self.vtype_list_body(count)
-    }
-
-    fn vtype_list_body(self, count: int) -> TypeList {
-        if count == 0 { return TypeList.End }
-        let head = self.vtype()
-        let tail = self.vtype_list_body(count - 1)
-        TypeList.Node(head, tail)
+        mut out: List<ValueType> = []
+        mut i = 0
+        while i < count {
+            out.push(self.vtype())
+            i = i + 1
+        }
+        out
     }
 }
 

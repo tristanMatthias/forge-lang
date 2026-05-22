@@ -1,7 +1,7 @@
 // dir-as-module (g2eo.1): parser.av + codegen.av auto-load as siblings,
 // surface flat at `features.if_stmt.{...}`. emit_if + emit_if_expr are
 // in scope without a self-import.
-use core.{TypeList, ValueType, vtype_display, vtype_eq, vtype_is_unknown}
+use core.{ValueType, vtype_display, vtype_eq, vtype_is_unknown}
 use codegen.{err_emit, err_stmt, StmtResult}
 use codegen.{err_sr}
 use features.eval.{error_result, is_truthy, ok_result, value_null, step_had_error, step_value, step_runtime}
@@ -121,7 +121,10 @@ fn if_check_expr(tc: TC, expr: Expr) -> ExprResult {
             let e = check_expr(t.tc, else_branch)
             if !vtype_eq(t.ty, e.ty) && !vtype_is_unknown(t.ty) && !vtype_is_unknown(e.ty) && !vtype_eq(t.ty, .Void) && !vtype_eq(e.ty, .Void) {
                 // Both branches have concrete different types — result is a union
-                let union_ty = ValueType.Union(TypeList.Node(t.ty, TypeList.Node(e.ty, TypeList.End)))
+                mut union_members: List<ValueType> = []
+                union_members.push(t.ty)
+                union_members.push(e.ty)
+                let union_ty = ValueType.Union(union_members)
                 return tc_er(e.tc, union_ty)
             }
             tc_er(e.tc, t.ty)

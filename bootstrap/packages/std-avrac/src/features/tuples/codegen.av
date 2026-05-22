@@ -4,11 +4,11 @@
 // buffer of i64 values. Tuple index t.0 loads from offset 0*8, etc.
 // Destructuring `let (x, y) = expr` loads each element into a local.
 //
-// Type tracking: tuple EmitResult carries a .Tuple(TypeList)
+// Type tracking: tuple EmitResult carries a .Tuple(List<ValueType>)
 // so that tuple indexing can return the correct element type
 // (critical for match on enum tuple elements).
 
-use core.{Expr, ExprList, ParamList, VarEnv, env_extend, expr_list_length, ValueType, TypeList, vtype_tuple_at}
+use core.{Expr, ExprList, ParamList, VarEnv, env_extend, expr_list_length, ValueType, vtype_tuple_at}
 use codegen.{Ctx, EmitValue,  ok_emit, err_emit, ok_stmt}
 
 /// Sugar for an i64-typed tuple slot load — wraps `ctx.load_slot`
@@ -36,34 +36,26 @@ export fn emit_tuple(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, str
 fn emit_tuple_inner(ctx: Ctx, env: VarEnv, elements: ExprList) -> Result<EmitValue, string> {
     let count = expr_list_length(elements)
     let buf = ctx.arena_alloc(ctx.i64(count * 8))
-    store_tuple_elements(ctx, env, elements, buf, 0, .End)
+    let types_acc: List<ValueType> = []
+    store_tuple_elements(ctx, env, elements, buf, 0, types_acc)
 }
 
-/// Recursively emit each element, store it in the tuple buffer,
-/// and accumulate its type in `types_acc`. At the End sentinel,
-/// reverse the type accumulator (built backwards via prepend) and
-/// return the final `Tuple<...>` typed value.
-fn store_tuple_elements(ctx: Ctx, env: VarEnv, elements: ExprList, buf: ptr, idx: int, types_acc: TypeList) -> Result<EmitValue, string> {
+/// Emit each element, store it in the tuple buffer, and accumulate
+/// its type in `types_acc` in source order. Returns the final
+/// `Tuple<...>` typed value once the ExprList is exhausted.
+fn store_tuple_elements(ctx: Ctx, env: VarEnv, elements: ExprList, buf: ptr, idx: int, types_acc: List<ValueType>) -> Result<EmitValue, string> {
     match elements {
         .End -> {
-            let ty = .Tuple(reverse_type_list(types_acc, .End))
+            let ty = .Tuple(types_acc)
             ok_emit(ctx.to_i64(buf, "tuple_i64"), ty)
         }
         .Node(se, next) -> {
             let r = ctx.emit(env, se.node)?
             tuple_store(ctx, buf, idx, r.value)
-            let new_types = TypeList.Node(r.ty, types_acc)
+            mut new_types = types_acc
+            new_types.push(r.ty)
             store_tuple_elements(ctx, env, next, buf, idx + 1, new_types)
         }
-    }
-}
-
-/// In-place TypeList reverse with explicit accumulator. Used to
-/// flip the prepend-built type list back into source order.
-fn reverse_type_list(list: TypeList, acc: TypeList) -> TypeList {
-    match list {
-        .End -> acc
-        .Node(ty, next) -> reverse_type_list(next, .Node(ty, acc))
     }
 }
 

@@ -2,7 +2,7 @@
 // Every type gets a unique integer TypeId. All registries use O(1) intmap lookups.
 // String names are kept only for diagnostics and LLVM type name generation.
 
-use core.{FieldEntry, Variant, ValueType, TypeList}
+use core.{FieldEntry, Variant, ValueType}
 use core.{avra_intmap_new, avra_intmap_set, avra_intmap_get, avra_intmap_has, avra_map_new_cstr, avra_map_set_cstr, avra_map_get_cstr, avra_map_has_cstr}
 use core.{avra_intmap_inc, avra_intmap_get_as_string}
 

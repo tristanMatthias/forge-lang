@@ -1,7 +1,7 @@
 // WHY: codegen for list literals [1, 2, 3] and list higher-order methods.
 // Lists are backed by the C-runtime avra_array_* functions.
 
-use core.{Expr, ExprList, VarEnv, ValueType, TypeList, vtype_list_elem, vtype_fn_ret}
+use core.{Expr, ExprList, VarEnv, ValueType, vtype_list_elem, vtype_fn_ret}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit}
 use features.closures.{emit_lambda_typed, emit_typed_lambda_arg}
 use codegen.{emit_single_arg}
@@ -49,7 +49,10 @@ export fn emit_list_reduce_typed(ctx: Ctx, env: VarEnv, list_val: ptr, args: Exp
                     mut fn_r = EmitValue { value: ctx.i64(0), ty: .Int }
                     match se_fn.node {
                         .Lambda(params, body) -> {
-                            fn_r = emit_lambda_typed(ctx, env, params, body, TypeList.Node(init_r.ty, TypeList.Node(elem_ty, TypeList.End)))?
+                            mut reduce_param_types: List<ValueType> = []
+                            reduce_param_types.push(init_r.ty)
+                            reduce_param_types.push(elem_ty)
+                            fn_r = emit_lambda_typed(ctx, env, params, body, reduce_param_types)?
                         }
                         _ -> {
                             fn_r = ctx.emit(env, se_fn.node)?
@@ -89,18 +92,24 @@ export fn emit_list_method_call(ctx: Ctx, env: VarEnv, list_val: ptr, list_ty: V
         "set" -> return emit_list_set(ctx, env, list_val, args)
         "map" -> {
             let elem_ty = vtype_list_elem(list_ty)
-            let arg_r = emit_typed_lambda_arg(ctx, env, args, TypeList.Node(elem_ty, TypeList.End))?
+            mut map_param_types: List<ValueType> = []
+            map_param_types.push(elem_ty)
+            let arg_r = emit_typed_lambda_arg(ctx, env, args, map_param_types)?
             let result = ctx.call("avra_array_map", [list_val, arg_r.value])
             return ok_emit(result, .List(vtype_fn_ret(arg_r.ty)))
         }
         "filter" -> {
             let elem_ty = vtype_list_elem(list_ty)
-            let arg_r = emit_typed_lambda_arg(ctx, env, args, TypeList.Node(elem_ty, TypeList.End))?
+            mut filter_param_types: List<ValueType> = []
+            filter_param_types.push(elem_ty)
+            let arg_r = emit_typed_lambda_arg(ctx, env, args, filter_param_types)?
             return ok_emit(ctx.call("avra_array_filter", [list_val, arg_r.value]), .List(elem_ty))
         }
         "foreach" -> {
             let elem_ty = vtype_list_elem(list_ty)
-            let arg_r = emit_typed_lambda_arg(ctx, env, args, TypeList.Node(elem_ty, TypeList.End))?
+            mut foreach_param_types: List<ValueType> = []
+            foreach_param_types.push(elem_ty)
+            let arg_r = emit_typed_lambda_arg(ctx, env, args, foreach_param_types)?
             ctx.call("avra_array_foreach", [list_val, arg_r.value])
             return ok_emit(ctx.i64(0), .Int)
         }
@@ -125,8 +134,10 @@ export fn emit_list_method_call(ctx: Ctx, env: VarEnv, list_val: ptr, list_ty: V
         // correctly. Returns the same list so the call chains.
         "sort" -> {
             let elem_ty = vtype_list_elem(list_ty)
-            let arg_r = emit_typed_lambda_arg(ctx, env, args,
-                TypeList.Node(elem_ty, TypeList.Node(elem_ty, TypeList.End)))?
+            mut sort_param_types: List<ValueType> = []
+            sort_param_types.push(elem_ty)
+            sort_param_types.push(elem_ty)
+            let arg_r = emit_typed_lambda_arg(ctx, env, args, sort_param_types)?
             return ok_emit(ctx.call("avra_array_sort", [list_val, arg_r.value]), list_ty)
         }
         // rlb4: insert `value` at `idx`, shifting later elements

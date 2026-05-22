@@ -2,7 +2,7 @@
 // Also handles flow-sensitive type narrowing: when condition is
 // `x is .Variant`, the then-branch sees `x` as NarrowedEnum.
 
-use core.{Expr, Stmt, TypeList, ValueType, VarEnv, vtype_eq, env_lookup, env_extend, vtype_enum_name}
+use core.{Expr, Stmt, ValueType, VarEnv, vtype_eq, env_lookup, env_extend, vtype_enum_name}
 use codegen.{Ctx, EmitValue, StmtResult, ok_emit, emit_value_ptr, emit_value_ty}
 use codegen.{emit_stmt, ok_sr}
 use core.{avra_covmap_next_branch_id}
@@ -150,7 +150,10 @@ export fn emit_if_expr(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Expr
     // We can't go back and insert wrapping into already-emitted branches,
     // so we emit fresh branches that wrap directly. The condition SSA value
     // persists across basic blocks in LLVM, so reusing it is correct.
-    let union_ty = ValueType.Union(TypeList.Node(t_ty, TypeList.Node(e_ty, TypeList.End)))
+    mut union_members: List<ValueType> = []
+    union_members.push(t_ty)
+    union_members.push(e_ty)
+    let union_ty = ValueType.Union(union_members)
     let wrap_slot = ctx.alloca_i64("ife_wrap")
     let wrap_merge = ctx.bb("ife_wrap_end")
     // Branch tag: 0 = then, 1 = else. Stored during initial emission.
