@@ -300,10 +300,18 @@ export fn ok_emit(value: ptr, ty: ValueType) -> Result<EmitValue, string> {
 }
 /// Wrap a codegen failure into `Result.Err` with a `codegen error:`
 /// prefix so callers can pattern-match on the layer that produced
-/// the diagnostic.
+/// the diagnostic. If `message` already starts with the prefix
+/// (propagated error from a nested emit call), pass it through
+/// instead of double-wrapping — yields one clean prefix instead of
+/// `codegen error: codegen error: ...`.
 export fn err_emit(message: string) -> Result<EmitValue, string> {
 
-    let r = Result.Err("codegen error: ${message}")
+    let wrapped = if message.length >= 15 && message.substring(0, 15) == "codegen error: " {
+        message
+    } else {
+        "codegen error: ${message}"
+    }
+    let r = Result.Err(wrapped)
     avra_tag_as_result(r)
     r
 }
