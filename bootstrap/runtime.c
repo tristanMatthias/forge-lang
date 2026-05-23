@@ -4486,13 +4486,49 @@ void avra_match_unreachable(const char *fn_name, int64_t tag, const char *file, 
     if (file && file[0]) {
         fprintf(stderr, "  --> %s:%lld\n", file, (long long)line);
     }
-    if (tag > 0x100000000LL) {
-        fprintf(stderr, "  tag looks like ptr, *tag = [0x%llx, 0x%llx]\n",
-            (unsigned long long)((int64_t*)tag)[0], (unsigned long long)((int64_t*)tag)[1]);
+
+    // Heuristic-rich tag analysis. The historical message just said "tag looks
+    // like ptr"; the seed-cycle debug sessions (lkze.9) showed that's nearly
+    // useless. The new bias: dump every plausible interpretation and let the
+    // reader pick the right one.
+    int looks_like_ptr = (tag > 0x100000000LL && tag < 0x800000000000LL);
+    if (looks_like_ptr) {
+        int64_t w0 = ((int64_t*)tag)[0];
+        int64_t w1 = ((int64_t*)tag)[1];
+        fprintf(stderr, "\n  value at 0x%llx looks like a heap ptr; first 16 bytes:\n",
+            (unsigned long long)tag);
+        fprintf(stderr, "    word[0] = 0x%llx  (%lld)\n", (unsigned long long)w0, (long long)w0);
+        fprintf(stderr, "    word[1] = 0x%llx  (%lld)\n", (unsigned long long)w1, (long long)w1);
+
+        // Shape heuristics — covers the silent-mismatch case (lkze.9 #18)
+        // where the seed's baked codegen matches a value as a cons-cell
+        // enum but the value is actually a `List<T>` or some other ptr-
+        // shaped carrier.
+        int w0_small = (w0 >= 0 && w0 < 0x1000000);
+        int w1_is_ptr = (w1 > 0x100000000LL && w1 < 0x800000000000LL);
+        if (w0_small && w1_is_ptr) {
+            fprintf(stderr, "    shape hint: looks like `List<T> { length=%lld, data=0x%llx }`\n",
+                (long long)w0, (unsigned long long)w1);
+            fprintf(stderr, "                or a struct whose first two fields are (int, ptr)\n");
+        } else if (w0 < 0x100 && w1_is_ptr) {
+            fprintf(stderr, "    shape hint: looks like `{ tag=%lld, payload=0x%llx }` (cons-cell enum)\n",
+                (long long)w0, (unsigned long long)w1);
+        } else {
+            fprintf(stderr, "    shape hint: bytes don't match List<T> or cons-cell layouts;\n");
+            fprintf(stderr, "                this may be a use-after-free or a wholly different type\n");
+        }
+    } else if (tag >= 0 && tag < 0x100) {
+        fprintf(stderr, "\n  small int — likely a real enum tag the match didn't cover\n");
+        fprintf(stderr, "  (function `%s`'s source-level `match` is missing a variant arm)\n", fn_name);
+    } else {
+        fprintf(stderr, "\n  tag value out of expected ranges — probable use-after-free\n");
     }
-    fprintf(stderr, "This means an enum value has a corrupt or unexpected tag byte.\n");
-    fprintf(stderr, "Common causes:\n");
-    fprintf(stderr, "  - Enum variant was added but match arms weren't updated\n");
+
+    fprintf(stderr, "\nCommon causes:\n");
+    fprintf(stderr, "  - SEED MISMATCH: the seed's baked codegen for `%s` destructures a\n", fn_name);
+    fprintf(stderr, "    different runtime shape than the source declares (lkze.9 class).\n");
+    fprintf(stderr, "    Diagnose: bash scripts/diagnose.sh --seed-diff %s\n", fn_name);
+    fprintf(stderr, "  - Enum variant added but match arms not updated\n");
     fprintf(stderr, "  - Struct field read at wrong offset (enum layout mismatch)\n");
     fprintf(stderr, "  - Use-after-free or memory corruption\n");
     exit(99);
