@@ -10,7 +10,7 @@
 
 use core.{
     Stmt, StmtList, SStmt, ParamList, ValueType, TypeParamEntry,
-    Expr, ExprList,
+    Expr, SExpr,
     sstmt_dummy, sstmt_at,
     sexpr_dummy,
     avra_shell_exec,
@@ -78,18 +78,17 @@ fn prepend_externs(stmts: StmtList, decls: List<RuntimeExtern>) -> StmtList {
     acc
 }
 
-/// Reversed cons-prepend of a `List<Expr>` into an `ExprList` —
-/// produces declaration-order args from a flat literal list. Each
-/// Expr gets a dummy-span SExpr wrapper so the resulting list can
-/// stand in any call-site position.
-fn expr_list_from(args: List<Expr>) -> ExprList {
-    mut acc = ExprList.End
-    mut i = args.length - 1
-    while i >= 0 {
-        acc = ExprList.Node(sexpr_dummy(args[i]), acc)
-        i = i - 1
+/// Convert a `List<Expr>` into a `List<SExpr>` in declaration order.
+/// Each Expr gets a dummy-span SExpr wrapper so the resulting list
+/// can stand in any call-site position.
+fn expr_list_from(args: List<Expr>) -> List<SExpr> {
+    mut out: List<SExpr> = []
+    mut i = 0
+    while i < args.length {
+        out.push(sexpr_dummy(args[i]))
+        i = i + 1
     }
-    acc
+    out
 }
 
 /// Build a fresh `ParamList` from `(name, type)` rows. Same pattern
@@ -312,8 +311,9 @@ fn load_reporter_stmts(project_dir: string) -> StmtList {
 /// rest of the assembled program so its declaration lands first in
 /// the rendered AST.
 fn synth_test_main() -> SStmt {
+    let empty_args: List<SExpr> = []
     let body = StmtList.Node(
-        sstmt_dummy(Stmt.Return(Expr.Call(Expr.Ident("test_render_summary"), ExprList.End))),
+        sstmt_dummy(Stmt.Return(Expr.Call(Expr.Ident("test_render_summary"), empty_args))),
         StmtList.End)
     let empty_tp: List<TypeParamEntry> = []
     sstmt_dummy(Stmt.Function("main", empty_tp, ParamList.End, ValueType.Int, body))

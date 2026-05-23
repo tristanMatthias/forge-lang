@@ -19,7 +19,7 @@
 // resolver wires up to @std/process the same way a hand-written
 // impl would.
 
-use core.{Stmt, StmtList, SStmt, sstmt_dummy, Expr, ExprList, SExpr, sexpr_dummy, FieldEntry, FieldInit, ParamList, ValueType, TypeParamEntry, Variant, Pattern, MatchArm, BinOp, find_annotation}
+use core.{Stmt, StmtList, SStmt, sstmt_dummy, Expr, SExpr, sexpr_dummy, FieldEntry, FieldInit, ParamList, ValueType, TypeParamEntry, Variant, Pattern, MatchArm, BinOp, find_annotation}
 
 // ── Public entry ──
 
@@ -148,10 +148,10 @@ fn build_chain(fields: List<FieldEntry>) -> Expr {
     // resolver short-circuits on QualifiedIdent and binds straight
     // to @std::process. Bare Ident here would force every consumer
     // of @marshal to import the byte primitives explicitly.
-    let start = Expr.Call(Expr.QualifiedIdent("@std::process::bytes_builder"), ExprList.End)
+    let start = Expr.Call(Expr.QualifiedIdent("@std::process::bytes_builder"), [])
     let written = chain_writes(start, fields, true)
     // Cap with `.finish()` so the chain produces a `bytes` value.
-    Expr.Call(Expr.FieldAccess(written, "finish"), ExprList.End)
+    Expr.Call(Expr.FieldAccess(written, "finish"), [])
 }
 
 /// `from_self == true` references each field via `self.<name>`
@@ -180,8 +180,8 @@ fn chain_writes(base: Expr, fields: List<FieldEntry>, from_self: bool) -> Expr {
         // doesn't, the type-checker will catch the undefined
         // `to_bytes` later with a clear error.
         if ty is .Struct {
-            let inner_bytes = Expr.Call(Expr.FieldAccess(value_expr, "to_bytes"), ExprList.End)
-            let args = ExprList.Node(sexpr_dummy(inner_bytes), ExprList.End)
+            let inner_bytes = Expr.Call(Expr.FieldAccess(value_expr, "to_bytes"), [])
+            let args = [sexpr_dummy(inner_bytes)]
             acc = Expr.Call(Expr.FieldAccess(acc, "write_bytes"), args)
             i = i + 1
             continue
@@ -202,7 +202,7 @@ fn chain_writes(base: Expr, fields: List<FieldEntry>, from_self: bool) -> Expr {
                 // Unsupported field type (writer == "") skips so
                 // the impl still type-checks; round-trip is lossy
                 // until follow-up sub-tickets extend the table.
-                let args = ExprList.Node(sexpr_dummy(value_expr), ExprList.End)
+                let args = [sexpr_dummy(value_expr)]
                 acc = Expr.Call(Expr.FieldAccess(acc, writer), args)
             }
         }
@@ -232,12 +232,12 @@ fn list_of_struct_block(base: Expr, value_expr: Expr, field_name: string) -> Exp
     // mut __b_<n> = base.write_int(value_expr.length)
     let len_expr = Expr.FieldAccess(value_expr, "length")
     let init_call = Expr.Call(Expr.FieldAccess(base, "write_int"),
-        ExprList.Node(sexpr_dummy(len_expr), ExprList.End))
+        [sexpr_dummy(len_expr)])
     let init_stmt = Stmt.Mut(bvar, ValueType.Unknown, init_call)
     // body: __b_<n> = __b_<n>.write_bytes(__x_<n>.to_bytes())
-    let x_to_bytes = Expr.Call(Expr.FieldAccess(Expr.Ident(xvar), "to_bytes"), ExprList.End)
+    let x_to_bytes = Expr.Call(Expr.FieldAccess(Expr.Ident(xvar), "to_bytes"), [])
     let new_b = Expr.Call(Expr.FieldAccess(Expr.Ident(bvar), "write_bytes"),
-        ExprList.Node(sexpr_dummy(x_to_bytes), ExprList.End))
+        [sexpr_dummy(x_to_bytes)])
     let assign_stmt = Stmt.Expr(Expr.Assign(bvar, new_b))
     let body = Stmt.Block(StmtList.Node(sstmt_dummy(assign_stmt), StmtList.End))
     let for_stmt = Stmt.ForIn(xvar, value_expr, body)
@@ -313,7 +313,7 @@ fn build_from_bytes_fn(type_name: string, fields: List<FieldEntry>) -> Stmt {
     // via explicit reassignment (avoids the let-shadow that
     // would hide the mut from inner scopes).
     let init_call = Expr.Call(Expr.QualifiedIdent("@std::process::bytes_reader"),
-        ExprList.Node(sexpr_dummy(Expr.Ident("b")), ExprList.End))
+        [sexpr_dummy(Expr.Ident("b"))])
     let init_let = Stmt.Mut("r", ValueType.Unknown, init_call)
     let reads_then_ctor = build_reads_and_ctor(type_name, fields)
     let body = StmtList.Node(sstmt_dummy(init_let), reads_then_ctor)
@@ -355,7 +355,7 @@ fn build_reads(fields: List<FieldEntry>) -> StmtList {
             .Struct(inner_name, _) -> {
                 let stmts = read_then_reassign(name, "__nested_" + name, "read_bytes")
                 let from_bytes_call = Expr.Call(Expr.Ident("from_bytes_" + inner_name),
-                    ExprList.Node(sexpr_dummy(Expr.Ident("__nested_" + name)), ExprList.End))
+                    [sexpr_dummy(Expr.Ident("__nested_" + name))])
                 let bind_stmt = Stmt.Let(name, ValueType.Unknown, from_bytes_call)
                 append_stmts(stmts, StmtList.Node(sstmt_dummy(bind_stmt), StmtList.End))
             }
@@ -388,7 +388,7 @@ fn build_reads(fields: List<FieldEntry>) -> StmtList {
 /// hiding the mut.
 fn read_then_reassign(field_name: string, value_name: string, reader: string) -> StmtList {
     let r_next = "__r_" + field_name
-    let read_call = Expr.Call(Expr.FieldAccess(Expr.Ident("r"), reader), ExprList.End)
+    let read_call = Expr.Call(Expr.FieldAccess(Expr.Ident("r"), reader), [])
     let destruct_names = ParamList.Node(value_name, ValueType.Unknown,
         ParamList.Node(r_next, ValueType.Unknown, ParamList.End))
     let destruct_stmt = Stmt.LetDestructure(destruct_names, read_call)
@@ -427,7 +427,7 @@ fn list_of_struct_reads(field_name: string, elem: ValueType) -> StmtList {
     let count_stmts = read_then_reassign("listcount_" + field_name, cname, "read_int")
 
     // mut __acc: List<Inner> = []
-    let acc_init = Expr.ListLit(ExprList.End)
+    let acc_init = Expr.ListLit([])
     let acc_stmt = Stmt.Mut(aname, ValueType.List(ValueType.Struct(inner_name, 0)), acc_init)
 
     // mut __i = 0
@@ -436,15 +436,15 @@ fn list_of_struct_reads(field_name: string, elem: ValueType) -> StmtList {
     // while __i < __count { ... }
     let cond = Expr.Binary(Expr.Ident(iname), BinOp.Lt, Expr.Ident(cname))
     // let (__raw, __r2) = r.read_bytes()
-    let raw_read = Expr.Call(Expr.FieldAccess(Expr.Ident("r"), "read_bytes"), ExprList.End)
+    let raw_read = Expr.Call(Expr.FieldAccess(Expr.Ident("r"), "read_bytes"), [])
     let raw_names = ParamList.Node(rawname, ValueType.Unknown,
         ParamList.Node(rname, ValueType.Unknown, ParamList.End))
     let raw_stmt = Stmt.LetDestructure(raw_names, raw_read)
     // __acc = __acc.push(from_bytes_<Inner>(__raw))
     let from_call = Expr.Call(Expr.Ident("from_bytes_" + inner_name),
-        ExprList.Node(sexpr_dummy(Expr.Ident(rawname)), ExprList.End))
+        [sexpr_dummy(Expr.Ident(rawname))])
     let push_call = Expr.Call(Expr.FieldAccess(Expr.Ident(aname), "push"),
-        ExprList.Node(sexpr_dummy(from_call), ExprList.End))
+        [sexpr_dummy(from_call)])
     let acc_assign = Stmt.Expr(Expr.Assign(aname, push_call))
     // r = __r2
     let r_assign = Stmt.Expr(Expr.Assign("r", Expr.Ident(rname)))
@@ -512,7 +512,7 @@ fn default_for(ty: ValueType) -> Expr {
     if ty is .Bool { return Expr.Bool("false") }
     if ty is .Str { return Expr.String("\"\"") }
     if ty is .Float { return Expr.FloatLit("0.0") }
-    if ty is .List { return Expr.ListLit(ExprList.End) }
+    if ty is .List { return Expr.ListLit([]) }
     // Fallback — `null` covers nullable / reference shapes; gets
     // tightened as the codec table expands.
     Expr.Null
@@ -603,14 +603,14 @@ fn field_list_to_param_list(fields: List<FieldEntry>) -> ParamList {
 /// for a single variant. Payload fields reference the
 /// match-arm-bound idents (no `self.` prefix — they're locals).
 fn build_variant_write_chain(tag: int, payload: List<FieldEntry>) -> Expr {
-    let tag_arg = ExprList.Node(sexpr_dummy(Expr.Number(string(tag))), ExprList.End)
-    let start = Expr.Call(Expr.QualifiedIdent("@std::process::bytes_builder"), ExprList.End)
+    let tag_arg: List<SExpr> = [sexpr_dummy(Expr.Number(string(tag)))]
+    let start = Expr.Call(Expr.QualifiedIdent("@std::process::bytes_builder"), [])
     let with_tag = Expr.Call(Expr.FieldAccess(start, "write_int"), tag_arg)
     // Variant payloads are match-arm bindings (local idents),
     // hence from_self=false. Reuses the same codec table as
     // struct fields via the shared chain_writes.
     let with_payload = chain_writes(with_tag, payload, false)
-    Expr.Call(Expr.FieldAccess(with_payload, "finish"), ExprList.End)
+    Expr.Call(Expr.FieldAccess(with_payload, "finish"), [])
 }
 
 /// fn from_bytes_<T>(b: bytes) -> T {
@@ -623,7 +623,7 @@ fn build_variant_write_chain(tag: int, payload: List<FieldEntry>) -> Expr {
 fn build_enum_from_bytes_fn(type_name: string, variants: List<Variant>) -> Stmt {
     let params = ParamList.Node("b", ValueType.Bytes, ParamList.End)
     let init_call = Expr.Call(Expr.QualifiedIdent("@std::process::bytes_reader"),
-        ExprList.Node(sexpr_dummy(Expr.Ident("b")), ExprList.End))
+        [sexpr_dummy(Expr.Ident("b"))])
     let init_let = Stmt.Mut("r", ValueType.Unknown, init_call)
     // Tag read uses the new explicit-reassign pattern so the
     // mut r binding stays visible to the variant payload reads.
@@ -683,14 +683,12 @@ fn build_enum_ctor(type_name: string, variant: string, payload: List<FieldEntry>
     Expr.EnumCtor(type_name, variant, field_list_to_arg_list(payload))
 }
 
-fn field_list_to_arg_list(payload: List<FieldEntry>) -> ExprList {
-    // ExprList is cons-shaped — build back-to-front to preserve
-    // source order in the resulting chain.
-    mut out = ExprList.End
-    mut i = payload.length - 1
-    while i >= 0 {
-        out = ExprList.Node(sexpr_dummy(Expr.Ident(payload[i].name)), out)
-        i = i - 1
+fn field_list_to_arg_list(payload: List<FieldEntry>) -> List<SExpr> {
+    mut out: List<SExpr> = []
+    mut i = 0
+    while i < payload.length {
+        out.push(sexpr_dummy(Expr.Ident(payload[i].name)))
+        i = i + 1
     }
     out
 }
@@ -725,25 +723,25 @@ fn build_isolated_fn(type_name: string, ty: ValueType) -> Stmt {
     result_type_args.push(isolated_err_ty)
     let ret_ty = ValueType.Enum("Result", result_type_args, 0)
     // Inner closure: () -> body().to_bytes()
-    let body_call = Expr.Call(Expr.Ident("body"), ExprList.End)
-    let to_bytes_call = Expr.Call(Expr.FieldAccess(body_call, "to_bytes"), ExprList.End)
+    let body_call = Expr.Call(Expr.Ident("body"), [])
+    let to_bytes_call = Expr.Call(Expr.FieldAccess(body_call, "to_bytes"), [])
     let inner_closure = Expr.Lambda(ParamList.End, to_bytes_call)
     // Subject: @std::process::isolated_bytes(closure). Qualified
     // so consumers of @marshal don't need to `use isolated_bytes`
     // — only types that actually fork pay the import cost (via
     // their own use of `isolated_<T>` somewhere reachable).
     let isolated_call = Expr.Call(Expr.QualifiedIdent("@std::process::isolated_bytes"),
-        ExprList.Node(sexpr_dummy(inner_closure), ExprList.End))
+        [sexpr_dummy(inner_closure)])
     // Ok arm: Result.Ok(from_bytes_<T>(b))
     let from_bytes_call = Expr.Call(Expr.Ident("from_bytes_" + type_name),
-        ExprList.Node(sexpr_dummy(Expr.Ident("b")), ExprList.End))
+        [sexpr_dummy(Expr.Ident("b"))])
     let ok_body = Expr.EnumCtor("Result", "Ok",
-        ExprList.Node(sexpr_dummy(from_bytes_call), ExprList.End))
+        [sexpr_dummy(from_bytes_call)])
     let ok_pattern = Pattern.Variant("Ok",
         ParamList.Node("b", ValueType.Unknown, ParamList.End))
     // Err arm: Result.Err(e) — pass-through
     let err_body = Expr.EnumCtor("Result", "Err",
-        ExprList.Node(sexpr_dummy(Expr.Ident("e")), ExprList.End))
+        [sexpr_dummy(Expr.Ident("e"))])
     let err_pattern = Pattern.Variant("Err",
         ParamList.Node("e", ValueType.Unknown, ParamList.End))
     mut arms: List<MatchArm> = []

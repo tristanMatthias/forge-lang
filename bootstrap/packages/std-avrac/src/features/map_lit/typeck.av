@@ -1,6 +1,6 @@
 // WHY: type checking for map method calls.
 
-use core.{ExprList, ValueType}
+use core.{ValueType}
 use typeck.{TC, ExprResult, tc_er}
 
 /// Map a method name to its result ValueType for type-checking.

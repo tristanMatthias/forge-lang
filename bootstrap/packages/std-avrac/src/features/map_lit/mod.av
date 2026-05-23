@@ -11,7 +11,7 @@ use typeck.{check_expr_list, tc_er}
 /// registry. Spec axis 28.
 export fn map_lit_feature() -> Feature {
     feature_new("map_lit") with {
-        expr_tag: Expr.MapLit(ExprList.End),
+        expr_tag: Expr.MapLit([]),
         emit_expr: map_lit_emit_expr,
         resolve_expr: map_lit_resolve_expr,
         check_expr: map_lit_check_expr,

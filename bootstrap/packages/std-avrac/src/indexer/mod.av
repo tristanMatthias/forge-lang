@@ -16,7 +16,7 @@
 
 use core.{avra_selfhost_read_file, avra_shell_exec}
 use core.{Stmt, StmtList, SStmt,
-              Expr, SExpr, ExprList,
+              Expr, SExpr,
               ParamList, FieldEntry,
               Variant, ValueType, TypeParamEntry, render_type_param_list,
               vtype_display, vtype_render_full,
@@ -220,21 +220,14 @@ fn scan_expr_for_calls(e: Expr, file: string, caller: string, line: int, col: in
     }
 }
 
-/// Map `scan_expr_for_calls` over an ExprList — used to walk
+/// Map `scan_expr_for_calls` over a `List<SExpr>` — used to walk
 /// argument lists when the call site itself is recorded.
-fn scan_expr_list(es: ExprList, file: string, caller: string, line: int, col: int, acc: List<CallEdge>) -> List<CallEdge> {
+fn scan_expr_list(es: List<SExpr>, file: string, caller: string, line: int, col: int, acc: List<CallEdge>) -> List<CallEdge> {
     mut cur_acc = acc
-    mut cur = es
-    while true {
-        match cur {
-            .End -> {
-                return cur_acc
-            }
-            .Node(se, next) -> {
-                cur_acc = scan_expr_for_calls(se.node, file, caller, line, col, cur_acc)
-                cur = next
-            }
-        }
+    mut i = 0
+    while i < es.length {
+        cur_acc = scan_expr_for_calls(es[i].node, file, caller, line, col, cur_acc)
+        i = i + 1
     }
     cur_acc
 }

@@ -1,7 +1,7 @@
 // WHY: emits enum constructors (heap-allocated tagged unions) and
 // enum value comparison (tag equality via struct GEP).
 
-use core.{ExprList, FieldEntry, Variant, VarBinding, variant_lookup, expr_list_length, ValueType, vtype_enum_name}
+use core.{SExpr, FieldEntry, Variant, VarBinding, variant_lookup, ValueType, vtype_enum_name}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, null_ptr_val, enum_reg_find_by_variant, enum_reg_find_by_variant_arity}
 use core.{type_registry_id_for, variant_payload_name}
 
@@ -12,11 +12,11 @@ use core.{type_registry_id_for, variant_payload_name}
 /// payload struct. The leading-dot form uses arity-aware lookup
 /// so two enums with same-named variants of different arity
 /// don't collide.
-export fn emit_enum_ctor(ctx: Ctx, env: List<VarBinding>, type_name: string, variant: string, args: ExprList) -> Result<EmitValue, string> {
+export fn emit_enum_ctor(ctx: Ctx, env: List<VarBinding>, type_name: string, variant: string, args: List<SExpr>) -> Result<EmitValue, string> {
     // Contextual resolution: `.Variant` with empty type_name.
     // Use arity-aware lookup to disambiguate variants with the same
     // name but different field counts (e.g. LoopStack.Frame vs DeferStack.Frame).
-    let arg_count = expr_list_length(args)
+    let arg_count = args.length
     let resolved_name = if type_name == "" {
         let found = enum_reg_find_by_variant_arity(ctx.enums, variant, arg_count)
         if found == "" {
@@ -77,36 +77,34 @@ export fn malloc_enum_bytes(ctx: Ctx, variants: List<Variant>) -> ptr {
 /// Untyped payload-fill: walks the args, emitting each and
 /// storing it at the right slot via `ctx.store_slot`. Used as
 /// the lightweight path; `fill_enum_payload_typed` is the GEP-
-/// based variant when the payload struct type is known. Iterates
-/// the ExprList head-to-tail; `idx` tracks both the payload slot
-/// and the field-list cursor (they advance in lock-step).
-fn fill_enum_payload(ctx: Ctx, env: List<VarBinding>, payload_ptr: ptr, fields: List<FieldEntry>, args: ExprList, idx: int) -> Result<EmitValue, string> {
-    match args {
-        .End -> ok_emit(null_ptr_val(), .Void)
-        .Node(se, next) -> {
-            let r = ctx.emit(env, se.node)?
-            let fld_ty = if idx < fields.length { fields[idx].resolved } else { ValueType.Unknown }
-            ctx.store_slot(payload_ptr, idx, r.value, fld_ty)
-            fill_enum_payload(ctx, env, payload_ptr, fields, next, idx + 1)
-        }
+/// based variant when the payload struct type is known.
+fn fill_enum_payload(ctx: Ctx, env: List<VarBinding>, payload_ptr: ptr, fields: List<FieldEntry>, args: List<SExpr>, idx: int) -> Result<EmitValue, string> {
+    mut i = 0
+    while i < args.length {
+        let slot = idx + i
+        let r = ctx.emit(env, args[i].node)?
+        let fld_ty = if slot < fields.length { fields[slot].resolved } else { ValueType.Unknown }
+        ctx.store_slot(payload_ptr, slot, r.value, fld_ty)
+        i = i + 1
     }
+    ok_emit(null_ptr_val(), .Void)
 }
 
 /// Type-safe payload fill via GEP into the per-variant struct
 /// type. Lets `store_field` truncate / cast each value to its
 /// declared field type so packed bool / float fields don't get
 /// clobbered.
-fn fill_enum_payload_typed(ctx: Ctx, env: List<VarBinding>, pay_ty: ptr, payload_ptr: ptr, fields: List<FieldEntry>, args: ExprList, idx: int) -> Result<EmitValue, string> {
-    match args {
-        .End -> ok_emit(null_ptr_val(), .Void)
-        .Node(se, next) -> {
-            let r = ctx.emit(env, se.node)?
-            let fld_gep = ctx.gep(pay_ty, payload_ptr, idx, "pay_fld")
-            let fld_ty = if idx < fields.length { fields[idx].resolved } else { ValueType.Unknown }
-            ctx.store_field(r.value, fld_gep, fld_ty)
-            fill_enum_payload_typed(ctx, env, pay_ty, payload_ptr, fields, next, idx + 1)
-        }
+fn fill_enum_payload_typed(ctx: Ctx, env: List<VarBinding>, pay_ty: ptr, payload_ptr: ptr, fields: List<FieldEntry>, args: List<SExpr>, idx: int) -> Result<EmitValue, string> {
+    mut i = 0
+    while i < args.length {
+        let slot = idx + i
+        let r = ctx.emit(env, args[i].node)?
+        let fld_gep = ctx.gep(pay_ty, payload_ptr, slot, "pay_fld")
+        let fld_ty = if slot < fields.length { fields[slot].resolved } else { ValueType.Unknown }
+        ctx.store_field(r.value, fld_gep, fld_ty)
+        i = i + 1
     }
+    ok_emit(null_ptr_val(), .Void)
 }
 
 /// Compare two enum values by their tag field. Returns Bool.

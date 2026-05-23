@@ -9,7 +9,6 @@
 // makes the keyword work with arbitrary `Result<T, ...>` returns.
 
 use codegen.{ok_emit, err_emit, EmitValue}
-use core.{ExprList}
 use features.closures.{emit_lambda}
 
 /// Codegen entry for `isolated { body }`. Pattern-matches the

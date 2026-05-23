@@ -1,6 +1,6 @@
 // WHY: codegen for indexing (obj[idx]) and slicing (obj[start..end]).
 
-use core.{Expr, ExprList, ValueType, VarBinding, vtype_display, vtype_eq, vtype_is_list, vtype_is_str, vtype_list_elem}
+use core.{Expr, ValueType, VarBinding, vtype_display, vtype_eq, vtype_is_list, vtype_is_str, vtype_list_elem}
 use codegen.{Ctx, EmitValue, err_emit, ok_emit, ok_emit}
 
 /// Codegen for `obj[idx]`. Dispatches by container type:

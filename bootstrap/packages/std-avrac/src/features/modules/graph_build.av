@@ -24,7 +24,7 @@
 // exercised by the diff-harness spec test in this ticket and by the
 // cutover in y4n1.8.
 
-use core.{Stmt, StmtList, SStmt, SExpr, Expr, ExprList, ParamList, ValueType, Annotation}
+use core.{Stmt, StmtList, SStmt, SExpr, Expr, ParamList, ValueType, Annotation}
 use core.{
     ModuleGraph, ModuleGraphNode, ResolvedPath,
     StringInterner, InternResult,

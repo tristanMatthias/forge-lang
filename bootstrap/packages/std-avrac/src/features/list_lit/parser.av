@@ -2,12 +2,13 @@
 // `[expr for x in collection if? filter]`.
 // Comprehensions produce Expr.ListComp — desugared by desugar/mod.av.
 
-use core.{Expr, ExprList, SExpr, sexpr}
+use core.{Expr, SExpr, sexpr}
 use parse.{Parser}
 use core.{Tk}
 
 impl Parser {
-    fn parse_list_elements(self) -> ExprList? {
+    fn parse_list_elements(self) -> List<SExpr>? {
+        mut out: List<SExpr> = []
         let expr = self.parse_expression()?
 
         // List comprehension: [expr for x in collection if? filter]
@@ -20,22 +21,22 @@ impl Parser {
                 self.advance()
                 self.parse_expression()?
             } else { null }
-            // Wrap in a single-element ExprList. The caller wraps in ListLit.
+            // Wrap in a single-element list. The caller wraps in ListLit.
             // The desugar pass recognizes ListLit containing a ListComp and
             // replaces the entire ListLit with the desugared Block.
             let comp = Expr.ListComp(expr, var_name, collection, filter)
-            return ExprList.Node(sexpr(comp, self.current_line, self.current_column), ExprList.End)
+            out.push(sexpr(comp, self.current_line, self.current_column))
+            return out
         }
 
-        // Regular list elements
-        if self.check(Tk.Comma) {
+        out.push(sexpr(expr, self.current_line, self.current_column))
+        // Regular list elements — accumulate in source order
+        while self.check(Tk.Comma) {
             self.advance()
-            if self.check(Tk.RightBracket) {
-                return ExprList.Node(sexpr(expr, self.current_line, self.current_column), ExprList.End)
-            }
-            let rest = self.parse_list_elements()?
-            return ExprList.Node(sexpr(expr, self.current_line, self.current_column), rest)
+            if self.check(Tk.RightBracket) { return out }
+            let next_expr = self.parse_expression()?
+            out.push(sexpr(next_expr, self.current_line, self.current_column))
         }
-        ExprList.Node(sexpr(expr, self.current_line, self.current_column), ExprList.End)
+        out
     }
 }

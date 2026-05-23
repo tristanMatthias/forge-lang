@@ -1,6 +1,6 @@
 // WHY: codegen for string operations — concat, comparison, replace, substring.
 
-use core.{Expr, ExprList, VarBinding}
+use core.{Expr, SExpr, VarBinding}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit}
 use codegen.{strip_quotes}
 
@@ -31,24 +31,17 @@ export fn emit_concat(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr) -> Result<EmitValue,
 /// both arg expressions, then defers actual replacement to the C
 /// runtime (`avra_str_replace`). Errors when the call site doesn't
 /// supply exactly two args.
-export fn emit_str_replace(ctx: Ctx, env: List<VarBinding>, str_i64: ptr, args: ExprList) -> Result<EmitValue, string> {
-    match args {
-        .Node(se_from, rest) -> {
-            match rest {
-                .Node(se_to, _) -> {
-                    let from_r = ctx.emit(env, se_from.node)?
-                    let to_r = ctx.emit(env, se_to.node)?
-                    let str_ptr = ctx.to_ptr(str_i64, "rep_self")
-                    let from_ptr = ctx.to_ptr(from_r.value, "rep_from")
-                    let to_ptr_v = ctx.to_ptr(to_r.value, "rep_to")
-                    let result = ctx.call("avra_str_replace", [str_ptr, from_ptr, to_ptr_v])
-                    ok_emit(result, .Str)
-                }
-                _ -> err_emit("replace expects 2 arguments")
-            }
-        }
-        _ -> err_emit("replace expects 2 arguments")
-    }
+export fn emit_str_replace(ctx: Ctx, env: List<VarBinding>, str_i64: ptr, args: List<SExpr>) -> Result<EmitValue, string> {
+    if args.length < 2 { return err_emit("replace expects 2 arguments") }
+    let se_from = args[0]
+    let se_to = args[1]
+    let from_r = ctx.emit(env, se_from.node)?
+    let to_r = ctx.emit(env, se_to.node)?
+    let str_ptr = ctx.to_ptr(str_i64, "rep_self")
+    let from_ptr = ctx.to_ptr(from_r.value, "rep_from")
+    let to_ptr_v = ctx.to_ptr(to_r.value, "rep_to")
+    let result = ctx.call("avra_str_replace", [str_ptr, from_ptr, to_ptr_v])
+    ok_emit(result, .Str)
 }
 
 /// Codegen for `substring(self, start, end)`. Validates the arg
@@ -57,16 +50,10 @@ export fn emit_str_replace(ctx: Ctx, env: List<VarBinding>, str_i64: ptr, args: 
 /// Why the single match: the host compiler had a bug where
 /// re-matching `args` in nested arms corrupted the inner payload.
 /// Destructuring exactly once dodges that.
-export fn emit_substring(ctx: Ctx, env: List<VarBinding>, str_i64: ptr, args: ExprList) -> Result<EmitValue, string> {
-    match args {
-        .End -> err_emit("substring expects 2 args, got 0")
-        .Node(se_start, rest) -> {
-            match rest {
-                .End -> err_emit("substring expects 2 args, got 1")
-                .Node(se_end, _) -> emit_substring_inner(ctx, env, str_i64, se_start.node, se_end.node)
-            }
-        }
-    }
+export fn emit_substring(ctx: Ctx, env: List<VarBinding>, str_i64: ptr, args: List<SExpr>) -> Result<EmitValue, string> {
+    if args.length == 0 { return err_emit("substring expects 2 args, got 0") }
+    if args.length == 1 { return err_emit("substring expects 2 args, got 1") }
+    emit_substring_inner(ctx, env, str_i64, args[0].node, args[1].node)
 }
 
 /// Inner emitter for `substring`. Computes `len = end - start`,

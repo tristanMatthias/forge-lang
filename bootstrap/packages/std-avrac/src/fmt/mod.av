@@ -7,7 +7,7 @@
 // Public entry point is `fmt_stmt_list(stmts, 0)`.
 
 use core.{
-    Expr, Stmt, StmtList, ExprList, ParamList,
+    Expr, SExpr, Stmt, StmtList, ParamList,
     FieldInit, FieldEntry,
     Variant, Pattern, MatchArm, WhenArm, Annotation,
     binop_str, unop_str, logicop_str,
@@ -169,26 +169,17 @@ export fn fmt_stmt_list(stmts: StmtList, depth: int) -> string {
     }
 }
 
-/// Render an ExprList as comma-separated expressions — used inside
-/// call args, list literals, tuple elements, and generic call args.
-fn fmt_expr_list_comma(exprs: ExprList) -> string {
-    match exprs {
-        .End -> ""
-        .Node(se, next) -> {
-            let head = fmt_expr(se.node)
-            let tail = fmt_expr_list_comma_tail(next)
-            "${head}${tail}"
-        }
+/// Render a `List<SExpr>` as comma-separated expressions — used
+/// inside call args, list literals, tuple elements, and generic call args.
+fn fmt_expr_list_comma(exprs: List<SExpr>) -> string {
+    mut out = ""
+    mut i = 0
+    while i < exprs.length {
+        if i > 0 { out = out + ", " }
+        out = out + fmt_expr(exprs[i].node)
+        i = i + 1
     }
-}
-
-/// Tail recursion for `fmt_expr_list_comma` — every element after
-/// the head gets a leading `, ` separator.
-fn fmt_expr_list_comma_tail(exprs: ExprList) -> string {
-    match exprs {
-        .End -> ""
-        .Node(se, next) -> ", ${fmt_expr(se.node)}${fmt_expr_list_comma_tail(next)}"
-    }
+    out
 }
 
 /// Render a ParamList as comma-separated names (no types) —
@@ -372,20 +363,23 @@ fn fmt_annotation_list(annots: List<Annotation>, depth: int) -> string {
 }
 
 /// Render map-literal entries — flat `key: val, key: val` form.
-/// Map AST stores keys and values as alternating ExprList nodes;
-/// this walks them pairwise.
-fn fmt_map_entries(entries: ExprList) -> string {
-    match entries {
-        .End -> ""
-        .Node(key_se, rest) -> {
-            match rest {
-                .End -> fmt_expr(key_se.node)
-                .Node(val_se, next) -> {
-                    let head = "${fmt_expr(key_se.node)}: ${fmt_expr(val_se.node)}"
-                    let tail = fmt_map_entries(next)
-                    if tail == "" { head } else { "${head}, ${tail}" }
-                }
-            }
+/// Map AST stores keys and values as alternating elements; this
+/// walks them pairwise.
+fn fmt_map_entries(entries: List<SExpr>) -> string {
+    mut out = ""
+    mut i = 0
+    while i < entries.length {
+        let key_se = entries[i]
+        if i + 1 >= entries.length {
+            if out != "" { out = out + ", " }
+            out = out + fmt_expr(key_se.node)
+            i = i + 1
+        } else {
+            let val_se = entries[i + 1]
+            if out != "" { out = out + ", " }
+            out = out + "${fmt_expr(key_se.node)}: ${fmt_expr(val_se.node)}"
+            i = i + 2
         }
     }
+    out
 }

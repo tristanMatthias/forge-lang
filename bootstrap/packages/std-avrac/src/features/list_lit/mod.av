@@ -10,7 +10,7 @@ use typeck.{tc_er}
 /// resolver, type-checker, and codegen via the standard registry.
 export fn list_lit_feature() -> Feature {
     feature_new("list_lit") with {
-        expr_tag: Expr.ListLit(ExprList.End),
+        expr_tag: Expr.ListLit([]),
         emit_expr: list_lit_emit_expr,
         resolve_expr: list_lit_resolve_expr,
         check_expr: list_lit_check_expr,

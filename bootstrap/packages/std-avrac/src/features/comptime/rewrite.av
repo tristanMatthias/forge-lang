@@ -11,7 +11,7 @@
 // sites in packages/cli/src/main.av between resolve_names and
 // typecheck_program.
 
-use core.{Stmt, StmtList, sstmt_at, Expr, ExprList, sexpr, FieldInit, MatchArm, WhenArm, SelectArm}
+use core.{Stmt, StmtList, sstmt_at, Expr, SExpr, sexpr, FieldInit, MatchArm, WhenArm, SelectArm}
 use features.comptime.{CompTimeRegistry, try_fold_call}
 
 // ── Public entry ──
@@ -146,14 +146,15 @@ fn rewrite_opt_expr(opt: Expr?, reg: CompTimeRegistry) -> Expr? {
     rewrite_expr(opt!, reg)
 }
 
-fn rewrite_expr_list(list: ExprList, reg: CompTimeRegistry) -> ExprList {
-    match list {
-        .End -> ExprList.End
-        .Node(se, next) -> ExprList.Node(
-            sexpr(rewrite_expr(se.node, reg), se.line, se.col),
-            rewrite_expr_list(next, reg)
-        )
+fn rewrite_expr_list(list: List<SExpr>, reg: CompTimeRegistry) -> List<SExpr> {
+    mut out: List<SExpr> = []
+    mut i = 0
+    while i < list.length {
+        let se = list[i]
+        out.push(sexpr(rewrite_expr(se.node, reg), se.line, se.col))
+        i = i + 1
     }
+    out
 }
 
 fn rewrite_field_inits(inits: List<FieldInit>, reg: CompTimeRegistry) -> List<FieldInit> {

@@ -1,6 +1,6 @@
 // WHY: codegen for println/eprintln builtins.
 
-use core.{Expr, ExprList, VarBinding, ValueType, vtype_is_str, vtype_eq}
+use core.{Expr, SExpr, VarBinding, ValueType, vtype_is_str, vtype_eq}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit}
 use codegen.{emit_concat}
 use codegen.{strip_quotes}
@@ -9,30 +9,27 @@ use codegen.{strip_quotes}
 /// to `avra_float_to_string`; everything else gets snprintf'd as a
 /// signed integer into a 32-byte buffer. Union-typed args are
 /// rejected — caller must `match` first.
-export fn emit_eprintln(ctx: Ctx, env: List<VarBinding>, args: ExprList) -> Result<EmitValue, string> {
-    match args {
-        .End -> err_emit("eprintln() expects 1 arg")
-        .Node(se, _) -> {
-            let r = ctx.emit(env, se.node)?
-            if r.ty is .Union {
-                return err_emit("cannot print union type directly — use `match` to extract the value first")
-            }
-            let str_ptr = match {
-                vtype_is_str(r.ty) -> ctx.to_ptr(r.value, "eprint_arg")
-                vtype_eq(r.ty, .Float) -> {
-                    ctx.call("avra_float_to_string", [r.value])
-                }
-                _ -> {
-                    let buf = ctx.rc_alloc(ctx.i64(32))
-                    let fmt = ctx.global_str("%lld", ".eprint_fmt")
-                    ctx.call("snprintf", [buf, ctx.i64(32), fmt, r.value])
-                    buf
-                }
-            }
-            ctx.call("avra_eprintln", [str_ptr])
-            ok_emit(ctx.i64(0), .Void)
+export fn emit_eprintln(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>) -> Result<EmitValue, string> {
+    if args.length == 0 { return err_emit("eprintln() expects 1 arg") }
+    let se = args[0]
+    let r = ctx.emit(env, se.node)?
+    if r.ty is .Union {
+        return err_emit("cannot print union type directly — use `match` to extract the value first")
+    }
+    let str_ptr = match {
+        vtype_is_str(r.ty) -> ctx.to_ptr(r.value, "eprint_arg")
+        vtype_eq(r.ty, .Float) -> {
+            ctx.call("avra_float_to_string", [r.value])
+        }
+        _ -> {
+            let buf = ctx.rc_alloc(ctx.i64(32))
+            let fmt = ctx.global_str("%lld", ".eprint_fmt")
+            ctx.call("snprintf", [buf, ctx.i64(32), fmt, r.value])
+            buf
         }
     }
+    ctx.call("avra_eprintln", [str_ptr])
+    ok_emit(ctx.i64(0), .Void)
 }
 
 /// Codegen for `println(value)`. Mirrors `emit_eprintln` but writes
@@ -40,29 +37,24 @@ export fn emit_eprintln(ctx: Ctx, env: List<VarBinding>, args: ExprList) -> Resu
 /// shape: pulls the string text out in the inner match arm directly,
 /// because re-binding `text` through any extra layer clobbers the
 /// payload (see TECH_DEBT.md #11 — host miscompilation).
-export fn emit_println(ctx: Ctx, env: List<VarBinding>, args: ExprList) -> Result<EmitValue, string> {
-    let print_ptr = match args {
-        .Node(se, _) -> {
-            match se.node {
-                .String(text) -> {
-                    let inner = strip_quotes(text)
-                    ctx.global_str(inner, ".str")
-                }
-                _ -> {
-                    let r = ctx.emit(env, se.node)?
-                    if r.ty is .Union {
-                        return err_emit("cannot print union type directly — use `match` to extract the value first")
-                    }
-                    if vtype_eq(r.ty, .Float) {
-                        ctx.call("avra_float_to_string", [r.value])
-                    } else {
-                        ctx.to_ptr(r.value, "print_arg")
-                    }
-                }
-            }
+export fn emit_println(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>) -> Result<EmitValue, string> {
+    if args.length == 0 { return err_emit("println expects 1 argument") }
+    let se = args[0]
+    let print_ptr = match se.node {
+        .String(text) -> {
+            let inner = strip_quotes(text)
+            ctx.global_str(inner, ".str")
         }
-        .End -> {
-            return err_emit("println expects 1 argument")
+        _ -> {
+            let r = ctx.emit(env, se.node)?
+            if r.ty is .Union {
+                return err_emit("cannot print union type directly — use `match` to extract the value first")
+            }
+            if vtype_eq(r.ty, .Float) {
+                ctx.call("avra_float_to_string", [r.value])
+            } else {
+                ctx.to_ptr(r.value, "print_arg")
+            }
         }
     }
     ctx.call("puts", [print_ptr])

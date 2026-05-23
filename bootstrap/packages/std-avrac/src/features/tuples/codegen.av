@@ -8,7 +8,7 @@
 // so that tuple indexing can return the correct element type
 // (critical for match on enum tuple elements).
 
-use core.{Expr, ExprList, ParamList, VarBinding, env_extend, expr_list_length, ValueType, vtype_tuple_at}
+use core.{Expr, SExpr, ParamList, VarBinding, env_extend, ValueType, vtype_tuple_at}
 use codegen.{Ctx, EmitValue,  ok_emit, err_emit, ok_stmt}
 
 /// Sugar for an i64-typed tuple slot load — wraps `ctx.load_slot`
@@ -33,30 +33,19 @@ export fn emit_tuple(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<Emit
 /// each i64 slot with the corresponding element. Returns an
 /// `EmitValue` typed as `Tuple<T0, T1, ...>` so downstream
 /// consumers see the precise element types.
-fn emit_tuple_inner(ctx: Ctx, env: List<VarBinding>, elements: ExprList) -> Result<EmitValue, string> {
-    let count = expr_list_length(elements)
+fn emit_tuple_inner(ctx: Ctx, env: List<VarBinding>, elements: List<SExpr>) -> Result<EmitValue, string> {
+    let count = elements.length
     let buf = ctx.arena_alloc(ctx.i64(count * 8))
-    let types_acc: List<ValueType> = []
-    store_tuple_elements(ctx, env, elements, buf, 0, types_acc)
-}
-
-/// Emit each element, store it in the tuple buffer, and accumulate
-/// its type in `types_acc` in source order. Returns the final
-/// `Tuple<...>` typed value once the ExprList is exhausted.
-fn store_tuple_elements(ctx: Ctx, env: List<VarBinding>, elements: ExprList, buf: ptr, idx: int, types_acc: List<ValueType>) -> Result<EmitValue, string> {
-    match elements {
-        .End -> {
-            let ty = .Tuple(types_acc)
-            ok_emit(ctx.to_i64(buf, "tuple_i64"), ty)
-        }
-        .Node(se, next) -> {
-            let r = ctx.emit(env, se.node)?
-            tuple_store(ctx, buf, idx, r.value)
-            mut new_types = types_acc
-            new_types.push(r.ty)
-            store_tuple_elements(ctx, env, next, buf, idx + 1, new_types)
-        }
+    mut types_acc: List<ValueType> = []
+    mut i = 0
+    while i < elements.length {
+        let r = ctx.emit(env, elements[i].node)?
+        tuple_store(ctx, buf, i, r.value)
+        types_acc.push(r.ty)
+        i = i + 1
     }
+    let ty = .Tuple(types_acc)
+    ok_emit(ctx.to_i64(buf, "tuple_i64"), ty)
 }
 
 /// Codegen entry for `t.0`, `t.1`, ... Pattern-matches the AST

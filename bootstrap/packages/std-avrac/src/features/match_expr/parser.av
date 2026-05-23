@@ -6,7 +6,8 @@
 //   do NOT read this file when:   the issue is expression precedence (parser.av)
 //   related:                features/match_expr/codegen.av, core.ast.{Pattern, MatchArm}
 
-use core.{Stmt, Expr, ExprList, Pattern, MatchArm, WhenArm, ParamList, SExpr, sexpr, StmtList, sstmt}use parse.{Parser, reverse_expr_list, table_zip_entries}
+use core.{Stmt, Expr, Pattern, MatchArm, WhenArm, ParamList, SExpr, sexpr, StmtList, sstmt}
+use parse.{Parser, table_zip_entries}
 use core.{Tk}
 
 impl Parser {
@@ -46,7 +47,7 @@ impl Parser {
     // Desugars each row to a match arm returning a MapLit.
     fn parse_match_table_arms(self) -> List<MatchArm>? {
         // Parse header row: identifiers separated by |
-        mut headers: ExprList = ExprList.End
+        mut headers: List<SExpr> = []
         mut header_count = 0
         let header_line = self.current_line
         while !self.check(Tk.RightBrace) && !self.check(Tk.Eof) && self.current_line == header_line {
@@ -55,7 +56,7 @@ impl Parser {
                 self.advance()
                 // Wrap in quotes so strip_quotes in codegen produces the correct key
                 let quoted_col = "\"${col}\""
-                headers = ExprList.Node(sexpr(Expr.String(quoted_col), self.current_line, self.current_column), headers)
+                headers.push(sexpr(Expr.String(quoted_col), self.current_line, self.current_column))
                 header_count = header_count + 1
                 if self.check(Tk.Pipe) { self.advance() }
             } else {
@@ -64,17 +65,19 @@ impl Parser {
         }
         let empty_arms: List<MatchArm> = []
         if header_count < 2 { return empty_arms }
-        // Skip the first header (pattern column)
-        let value_headers = match reverse_expr_list(headers) {
-            .End -> ExprList.End
-            .Node(_, rest) -> rest
+        // Skip the first header (pattern column) by copying from index 1
+        mut value_headers: List<SExpr> = []
+        mut hi = 1
+        while hi < headers.length {
+            value_headers.push(headers[hi])
+            hi = hi + 1
         }
         let value_count = header_count - 1
         // Parse data rows: pattern | val1 | val2
         self.parse_match_table_rows(value_headers, value_count)
     }
 
-    fn parse_match_table_rows(self, headers: ExprList, value_count: int) -> List<MatchArm>? {
+    fn parse_match_table_rows(self, headers: List<SExpr>, value_count: int) -> List<MatchArm>? {
         // Source-order loop appending each row's match arm directly
         // into a growable `List<MatchArm>` — arm order matters
         // (first-match-wins).
@@ -88,16 +91,16 @@ impl Parser {
             self.allow_dot_postfix = saved_dot
             if self.check(Tk.Pipe) { self.advance() }
             // Parse values — one per column, stopping at | separators
-            mut vals: ExprList = ExprList.End
+            mut vals: List<SExpr> = []
             mut i = 0
             while i < value_count {
                 if self.check(Tk.RightBrace) { break }
                 let val = self.parse_primary()?
-                vals = ExprList.Node(sexpr(val, self.current_line, self.current_column), vals)
+                vals.push(sexpr(val, self.current_line, self.current_column))
                 i = i + 1
                 if self.check(Tk.Pipe) { self.advance() }
             }
-            let map_entries = table_zip_entries(headers, reverse_expr_list(vals))
+            let map_entries = table_zip_entries(headers, vals)
             let body = Expr.MapLit(map_entries)
             if self.check(Tk.Comma) { self.advance() }
             out.push(MatchArm {

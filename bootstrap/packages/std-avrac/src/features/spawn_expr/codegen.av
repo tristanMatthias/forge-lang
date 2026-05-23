@@ -4,7 +4,7 @@
 // to the enclosing scope and auto-awaited at scope exit.
 
 use codegen.{ok_emit, err_emit, EmitValue}
-use core.{vtype_fn_ret, MatchArm, ExprList}
+use core.{vtype_fn_ret, MatchArm, SExpr}
 use features.closures.{emit_lambda}
 
 /// Codegen entry for `spawn { body }`. Pattern-matches the
@@ -106,11 +106,13 @@ fn expr_has_spawn(ex: Expr) -> bool {
     }
 }
 
-/// Map `expr_has_spawn` across an ExprList — used to walk call
+/// Map `expr_has_spawn` across a `List<SExpr>` — used to walk call
 /// argument lists.
-fn exprs_have_spawn(args: ExprList) -> bool {
-    match args {
-        .End -> false
-        .Node(se, next) -> expr_has_spawn(se.node) || exprs_have_spawn(next)
+fn exprs_have_spawn(args: List<SExpr>) -> bool {
+    mut i = 0
+    while i < args.length {
+        if expr_has_spawn(args[i].node) { return true }
+        i = i + 1
     }
+    false
 }

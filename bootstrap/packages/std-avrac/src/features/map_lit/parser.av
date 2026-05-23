@@ -1,7 +1,7 @@
 // WHY: parses map literal expressions `{ "key": value, ... }`.
 // is_map_literal does lookahead to disambiguate map literals from blocks.
 
-use core.{Expr, ExprList, SExpr, sexpr}
+use core.{Expr, SExpr, sexpr}
 use parse.{Parser}
 use core.{Tk}
 
@@ -33,7 +33,8 @@ impl Parser {
         self.advance()  // consume {
         if self.check(Tk.RightBrace) {
             self.advance()
-            return Expr.MapLit(ExprList.End)
+            let empty: List<SExpr> = []
+            return Expr.MapLit(empty)
         }
         let entries = self.parse_map_entries()?
         if !self.consume(Tk.RightBrace, "expected `}` after map") {
@@ -43,20 +44,24 @@ impl Parser {
     }
 
     // Parse key:value pairs into a flat list: key1, val1, key2, val2, ...
-    fn parse_map_entries(self) -> ExprList? {
-        let key = self.parse_expression()?
-        if !self.consume(Tk.Colon, "expected `:` after map key") {
-            return null
-        }
-        let value = self.parse_expression()?
-        if self.check(Tk.Comma) {
-            self.advance()
-            if self.check(Tk.RightBrace) {
-                return ExprList.Node(sexpr(key, self.current_line, self.current_column), ExprList.Node(sexpr(value, self.current_line, self.current_column), ExprList.End))
+    fn parse_map_entries(self) -> List<SExpr>? {
+        mut out: List<SExpr> = []
+        mut keep_going = true
+        while keep_going {
+            let key = self.parse_expression()?
+            if !self.consume(Tk.Colon, "expected `:` after map key") {
+                return null
             }
-            let rest = self.parse_map_entries()?
-            return ExprList.Node(sexpr(key, self.current_line, self.current_column), ExprList.Node(sexpr(value, self.current_line, self.current_column), rest))
+            let value = self.parse_expression()?
+            out.push(sexpr(key, self.current_line, self.current_column))
+            out.push(sexpr(value, self.current_line, self.current_column))
+            if self.check(Tk.Comma) {
+                self.advance()
+                if self.check(Tk.RightBrace) { keep_going = false }
+            } else {
+                keep_going = false
+            }
         }
-        ExprList.Node(sexpr(key, self.current_line, self.current_column), ExprList.Node(sexpr(value, self.current_line, self.current_column), ExprList.End))
+        out
     }
 }

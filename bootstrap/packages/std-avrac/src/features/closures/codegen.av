@@ -12,7 +12,7 @@
 // For non-capturing lambdas (the common case), the closure value
 // is just the function pointer with a null environment.
 
-use core.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInit, MatchArm, WhenArm, VarBinding, env_lookup, env_extend, param_list_length, expr_list_length, ValueType, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, vtype_is_unknown}
+use core.{Expr, SExpr, Stmt, StmtList, ParamList, FieldInit, MatchArm, WhenArm, VarBinding, env_lookup, env_extend, param_list_length, ValueType, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, vtype_is_unknown}
 use codegen.{Ctx, EmitValue, err_emit, null_ptr_val, ok_emit}
 use codegen.{emit_expr}
 use codegen.{analyze_releasable_expr}
@@ -73,12 +73,14 @@ fn expr_assigns(expr: Expr, target: string) -> bool {
     }
 }
 
-/// True when any element of an ExprList assigns to `target`.
-fn expr_list_assigns(list: ExprList, target: string) -> bool {
-    match list {
-        .End -> false
-        .Node(se, next) -> expr_assigns(se.node, target) || expr_list_assigns(next, target)
+/// True when any element of a `List<SExpr>` assigns to `target`.
+fn expr_list_assigns(list: List<SExpr>, target: string) -> bool {
+    mut i = 0
+    while i < list.length {
+        if expr_assigns(list[i].node, target) { return true }
+        i = i + 1
     }
+    false
 }
 
 /// True when any statement in `stmts` assigns to `target`.
@@ -248,15 +250,13 @@ fn find_captures_when_arms(arms: List<WhenArm>, params: ParamList, env: List<Var
     }
 }
 
-/// Recurse `find_captures` across an ExprList — call args,
+/// Recurse `find_captures` across a `List<SExpr>` — call args,
 /// list literals, etc.
-fn find_captures_list(exprs: ExprList, params: ParamList, env: List<VarBinding>, captures: List<Capture>) {
-    match exprs {
-        .End -> {}
-        .Node(se, next) -> {
-            find_captures(se.node, params, env, captures)
-            find_captures_list(next, params, env, captures)
-        }
+fn find_captures_list(exprs: List<SExpr>, params: ParamList, env: List<VarBinding>, captures: List<Capture>) {
+    mut i = 0
+    while i < exprs.length {
+        find_captures(exprs[i].node, params, env, captures)
+        i = i + 1
     }
 }
 
@@ -388,12 +388,14 @@ fn has_float_ident(expr: Expr, ctx: Ctx, env: List<VarBinding>, captures: List<C
     }
 }
 
-/// Map `has_float_ident` over an ExprList.
-fn has_float_ident_list(exprs: ExprList, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, params: ParamList) -> bool {
-    match exprs {
-        .End -> false
-        .Node(se, next) -> has_float_ident(se.node, ctx, env, captures, params) || has_float_ident_list(next, ctx, env, captures, params)
+/// Map `has_float_ident` over a `List<SExpr>`.
+fn has_float_ident_list(exprs: List<SExpr>, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, params: ParamList) -> bool {
+    mut i = 0
+    while i < exprs.length {
+        if has_float_ident(exprs[i].node, ctx, env, captures, params) { return true }
+        i = i + 1
     }
+    false
 }
 
 // Check if a parameter is used in a binary expression with a Float value.
@@ -423,14 +425,14 @@ fn param_used_with_float(param_name: string, expr: Expr, ctx: Ctx, env: List<Var
     }
 }
 
-/// Map `param_used_with_float` over an ExprList.
-fn param_used_with_float_list(param_name: string, exprs: ExprList, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, params: ParamList) -> bool {
-    match exprs {
-        .End -> false
-        .Node(se, next) -> {
-            param_used_with_float(param_name, se.node, ctx, env, captures, params) || param_used_with_float_list(param_name, next, ctx, env, captures, params)
-        }
+/// Map `param_used_with_float` over a `List<SExpr>`.
+fn param_used_with_float_list(param_name: string, exprs: List<SExpr>, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, params: ParamList) -> bool {
+    mut i = 0
+    while i < exprs.length {
+        if param_used_with_float(param_name, exprs[i].node, ctx, env, captures, params) { return true }
+        i = i + 1
     }
+    false
 }
 
 /// Map `param_used_with_float` through a statement list,
@@ -645,15 +647,12 @@ fn push_captured_values(ctx: Ctx, captures: List<Capture>, arr: ptr) {
 /// using the heuristic. Used by higher-order list methods
 /// (`map`, `filter`, …) that know their callback's expected
 /// param types.
-export fn emit_typed_lambda_arg(ctx: Ctx, env: List<VarBinding>, args: ExprList, param_types: List<ValueType>) -> Result<EmitValue, string> {
-    match args {
-        .End -> err_emit("expected 1 argument, got 0")
-        .Node(se, _) -> {
-            match se.node {
-                .Lambda(params, body) -> emit_lambda_typed(ctx, env, params, body, param_types)
-                _ -> ctx.emit(env, se.node)
-            }
-        }
+export fn emit_typed_lambda_arg(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>, param_types: List<ValueType>) -> Result<EmitValue, string> {
+    if args.length == 0 { return err_emit("expected 1 argument, got 0") }
+    let se = args[0]
+    match se.node {
+        .Lambda(params, body) -> emit_lambda_typed(ctx, env, params, body, param_types)
+        _ -> ctx.emit(env, se.node)
     }
 }
 
@@ -663,7 +662,7 @@ export fn emit_typed_lambda_arg(ctx: Ctx, env: List<VarBinding>, args: ExprList,
 /// closure pointer from the alloca and dispatches via
 /// `emit_closure_call` (which handles env-pointer prepend +
 /// arity coercion).
-export fn emit_indirect_call(ctx: Ctx, env: List<VarBinding>, alloca: ptr, name: string, args: ExprList) -> Result<EmitValue, string> {
+export fn emit_indirect_call(ctx: Ctx, env: List<VarBinding>, alloca: ptr, name: string, args: List<SExpr>) -> Result<EmitValue, string> {
     let fn_i64 = ctx.load_i64(alloca, name)
     let local = env_lookup(env, name)
     let ret_ty = vtype_fn_ret(local.ty)
@@ -683,7 +682,7 @@ export fn emit_indirect_call(ctx: Ctx, env: List<VarBinding>, alloca: ptr, name:
 /// Same as `emit_indirect_call` but loads the closure pointer
 /// from a top-level global instead of a local alloca. Used when
 /// a fn is exported as a `mut` global.
-export fn emit_indirect_call_from_global(ctx: Ctx, env: List<VarBinding>, global: ptr, name: string, args: ExprList, ty: ValueType) -> Result<EmitValue, string> {
+export fn emit_indirect_call_from_global(ctx: Ctx, env: List<VarBinding>, global: ptr, name: string, args: List<SExpr>, ty: ValueType) -> Result<EmitValue, string> {
     let fn_i64 = ctx.load_i64(global, name)
     let ret_ty = vtype_fn_ret(ty)
     if vtype_is_closure(ty) {
@@ -702,7 +701,7 @@ export fn emit_indirect_call_from_global(ctx: Ctx, env: List<VarBinding>, global
 /// pointer from slot 1 of the closure array, builds the arg
 /// array (prepending captured values when `num_captures > 0`),
 /// and calls via `avra_closure_call_N` for the right arity.
-fn emit_closure_call(ctx: Ctx, env: List<VarBinding>, closure_val: ptr, args: ExprList, num_captures: int) -> Result<EmitValue, string> {
+fn emit_closure_call(ctx: Ctx, env: List<VarBinding>, closure_val: ptr, args: List<SExpr>, num_captures: int) -> Result<EmitValue, string> {
     // Closure array layout: [TAG, fn_ptr, cap1, cap2, ...]
     // TAG is at index 0, fn_ptr at index 1, captures start at index 2.
     let closure_ptr = ctx.to_ptr(closure_val, "closure_ptr")
@@ -710,7 +709,7 @@ fn emit_closure_call(ctx: Ctx, env: List<VarBinding>, closure_val: ptr, args: Ex
     let get_fn_call = ctx.array_get(closure_ptr, ctx.i64(1))
     let fn_ptr = ctx.int_to_ptr(get_fn_call, "fn_ptr")
 
-    let user_arg_count = expr_list_length(args)
+    let user_arg_count = args.length
     let total_args = user_arg_count + num_captures
 
     // Fill the value array first so we can read each emitted value's
@@ -757,7 +756,7 @@ fn fill_closure_captures(ctx: Ctx, val_arr: ptr, closure_val: ptr, start_idx: in
 /// Indirect call where the caller already has the closure as an
 /// SSA i64 and knows the expected return type. Skips the
 /// alloca-load step and dispatches straight through.
-export fn emit_indirect_call_typed(ctx: Ctx, env: List<VarBinding>, fn_i64: ptr, args: ExprList, ret_ty: ValueType) -> Result<EmitValue, string> {
+export fn emit_indirect_call_typed(ctx: Ctx, env: List<VarBinding>, fn_i64: ptr, args: List<SExpr>, ret_ty: ValueType) -> Result<EmitValue, string> {
     let r = emit_indirect_call_value(ctx, env, fn_i64, args)?
     ok_emit(r.value, ret_ty)
 }
@@ -765,7 +764,7 @@ export fn emit_indirect_call_typed(ctx: Ctx, env: List<VarBinding>, fn_i64: ptr,
 /// Variant of `emit_closure_call` for callers that already have
 /// the SSA i64 and know both the capture count and return type.
 /// Saves a load and types the result for the caller.
-export fn emit_closure_call_typed(ctx: Ctx, env: List<VarBinding>, fn_i64: ptr, args: ExprList, num_captures: int, ret_ty: ValueType) -> Result<EmitValue, string> {
+export fn emit_closure_call_typed(ctx: Ctx, env: List<VarBinding>, fn_i64: ptr, args: List<SExpr>, num_captures: int, ret_ty: ValueType) -> Result<EmitValue, string> {
     let r = emit_closure_call(ctx, env, fn_i64, args, num_captures)?
     ok_emit(r.value, ret_ty)
 }
@@ -773,7 +772,7 @@ export fn emit_closure_call_typed(ctx: Ctx, env: List<VarBinding>, fn_i64: ptr, 
 /// Indirect call against an i64-shaped closure value when the
 /// caller doesn't yet know the expected return type. Used in
 /// generic call paths where typing is deferred.
-export fn emit_indirect_call_value(ctx: Ctx, env: List<VarBinding>, fn_i64: ptr, args: ExprList) -> Result<EmitValue, string> {
+export fn emit_indirect_call_value(ctx: Ctx, env: List<VarBinding>, fn_i64: ptr, args: List<SExpr>) -> Result<EmitValue, string> {
     // Indirect call for values with unknown closure status at compile time.
     // This happens when a fn returns a closure but the return type says
     // Fn/FnTyped (the type system can't distinguish bare ptrs from
@@ -783,71 +782,40 @@ export fn emit_indirect_call_value(ctx: Ctx, env: List<VarBinding>, fn_i64: ptr,
     // function pointers and closure arrays at runtime via
     // avra_closure_dispatch in runtime.c. Supports up to 8 total
     // args (user + captures).
-    let user_arg_count = expr_list_length(args)
+    let user_arg_count = args.length
     if user_arg_count == 0 {
         return ok_emit(ctx.call("avra_closure_call_0", [fn_i64]), .Int)
     }
     if user_arg_count == 1 {
-        match args {
-            .Node(se, _) -> {
-                let a0 = ctx.emit(env, se.node)?
-                return ok_emit(ctx.call("avra_closure_call_1", [fn_i64, a0.value]), .Int)
-            }
-            _ -> { return err_emit("expected 1 arg") }
-        }
+        let a0 = ctx.emit(env, args[0].node)?
+        return ok_emit(ctx.call("avra_closure_call_1", [fn_i64, a0.value]), .Int)
     }
     if user_arg_count == 2 {
-        match args {
-            .Node(se0, rest) -> {
-                let a0 = ctx.emit(env, se0.node)?
-                match rest {
-                    .Node(se1, _) -> {
-                        let a1 = ctx.emit(env, se1.node)?
-                        return ok_emit(ctx.call("avra_closure_call_2", [fn_i64, a0.value, a1.value]), .Int)
-                    }
-                    _ -> { return err_emit("expected 2 args") }
-                }
-            }
-            _ -> { return err_emit("expected 2 args") }
-        }
+        let a0 = ctx.emit(env, args[0].node)?
+        let a1 = ctx.emit(env, args[1].node)?
+        return ok_emit(ctx.call("avra_closure_call_2", [fn_i64, a0.value, a1.value]), .Int)
     }
     if user_arg_count == 3 {
-        match args {
-            .Node(se0, rest0) -> {
-                let a0 = ctx.emit(env, se0.node)?
-                match rest0 {
-                    .Node(se1, rest1) -> {
-                        let a1 = ctx.emit(env, se1.node)?
-                        match rest1 {
-                            .Node(se2, _) -> {
-                                let a2 = ctx.emit(env, se2.node)?
-                                return ok_emit(ctx.call("avra_closure_call_3", [fn_i64, a0.value, a1.value, a2.value]), .Int)
-                            }
-                            _ -> { return err_emit("expected 3 args") }
-                        }
-                    }
-                    _ -> { return err_emit("expected 3 args") }
-                }
-            }
-            _ -> { return err_emit("expected 3 args") }
-        }
+        let a0 = ctx.emit(env, args[0].node)?
+        let a1 = ctx.emit(env, args[1].node)?
+        let a2 = ctx.emit(env, args[2].node)?
+        return ok_emit(ctx.call("avra_closure_call_3", [fn_i64, a0.value, a1.value, a2.value]), .Int)
     }
     err_emit("indirect calls with ${string(user_arg_count)} args not yet supported")
 }
 
-/// Walk an ExprList emitting each arg into successive slots of
+/// Walk a `List<SExpr>` emitting each arg into successive slots of
 /// `arr`. Lambda call paths use this to pack user-supplied
 /// arguments into the value array passed to
 /// `avra_closure_call_N`.
-fn fill_lambda_args(ctx: Ctx, env: List<VarBinding>, arr: ptr, args: ExprList, idx: int) -> Result<EmitValue, string> {
-    match args {
-        .End -> ok_emit(null_ptr_val(), .Void)
-        .Node(se, next) -> {
-            let r = ctx.emit(env, se.node)?
-            ctx.value_array_set(arr, idx, r.value)
-            fill_lambda_args(ctx, env, arr, next, idx + 1)
-        }
+fn fill_lambda_args(ctx: Ctx, env: List<VarBinding>, arr: ptr, args: List<SExpr>, idx: int) -> Result<EmitValue, string> {
+    mut i = 0
+    while i < args.length {
+        let r = ctx.emit(env, args[i].node)?
+        ctx.value_array_set(arr, idx + i, r.value)
+        i = i + 1
     }
+    ok_emit(null_ptr_val(), .Void)
 }
 
 /// Bind each lambda parameter as an alloca + env entry,

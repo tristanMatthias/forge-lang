@@ -3,18 +3,21 @@
 // returning `quote stmt { ... }` (which lowers to nested EnumCtors)
 // produces a runtime Stmt value the @expand pass can extract.
 
-use @std.avrac.core.{Expr, ExprList, SExpr, sexpr_dummy, Stmt, StmtList}
+use @std.avrac.core.{Expr, SExpr, sexpr_dummy, Stmt, StmtList}
 use @std.avrac.features.eval.{Runtime, StepResult, Value, runtime_new, eval_expr, value_enum, render_value}
 use @std.avrac.features.comptime.{value_to_stmt, value_to_stmt_list}
 
-fn empty_args() -> ExprList { ExprList.End }
-
-fn one_arg(e: Expr) -> ExprList {
-    ExprList.Node(sexpr_dummy(e), ExprList.End)
+fn empty_args() -> List<SExpr> {
+    let e: List<SExpr> = []
+    e
 }
 
-fn two_args(a: Expr, b: Expr) -> ExprList {
-    ExprList.Node(sexpr_dummy(a), ExprList.Node(sexpr_dummy(b), ExprList.End))
+fn one_arg(e: Expr) -> List<SExpr> {
+    [sexpr_dummy(e)]
+}
+
+fn two_args(a: Expr, b: Expr) -> List<SExpr> {
+    [sexpr_dummy(a), sexpr_dummy(b)]
 }
 
 spec "vez6.6.4: eval EnumCtor produces a kind=enum Value" {
@@ -85,14 +88,12 @@ spec "vez6.6.4: value_enum constructor + render" {
 // builds an enum Value via Expr.EnumCtor, then value_to_stmt
 // extracts a Stmt for the @expand pass to splice.
 
-fn one_arg_se(e: Expr) -> ExprList {
-    ExprList.Node(sexpr_dummy(e), ExprList.End)
+fn one_arg_se(e: Expr) -> List<SExpr> {
+    [sexpr_dummy(e)]
 }
 
-fn three_args_se(a: Expr, b: Expr, c: Expr) -> ExprList {
-    ExprList.Node(sexpr_dummy(a),
-      ExprList.Node(sexpr_dummy(b),
-        ExprList.Node(sexpr_dummy(c), ExprList.End)))
+fn three_args_se(a: Expr, b: Expr, c: Expr) -> List<SExpr> {
+    [sexpr_dummy(a), sexpr_dummy(b), sexpr_dummy(c)]
 }
 
 // Helpers — fold the optional + match-on-shape into one bool so the
@@ -138,7 +139,7 @@ fn is_stmt_list_end(sl: StmtList?) -> bool {
 
 spec "vez6.6.4: value_to_stmt decodes Stmt enum Values" {
     then "ReturnEmpty (no payload)" {
-        let e = Expr.EnumCtor("@std::avrac::core::Stmt", "ReturnEmpty", ExprList.End)
+        let e = Expr.EnumCtor("@std::avrac::core::Stmt", "ReturnEmpty", empty_args())
         let r: StepResult = eval_expr(runtime_new(), e)
         is_return_empty_stmt(value_to_stmt(r.value))
     }
@@ -149,7 +150,7 @@ spec "vez6.6.4: value_to_stmt decodes Stmt enum Values" {
         return_number_text(value_to_stmt(r.value)) == "42"
     }
     then "Let(name, _, init)" {
-        let unknown_vt = Expr.EnumCtor("@std::avrac::core::ValueType", "Unknown", ExprList.End)
+        let unknown_vt = Expr.EnumCtor("@std::avrac::core::ValueType", "Unknown", empty_args())
         let init_expr = Expr.EnumCtor("@std::avrac::core::Expr", "Number", one_arg_se(Expr.String("\"7\"")))
         let e = Expr.EnumCtor("@std::avrac::core::Stmt", "Let",
             three_args_se(Expr.String("\"x\""), unknown_vt, init_expr))
@@ -166,7 +167,7 @@ spec "vez6.6.4: value_to_stmt decodes Stmt enum Values" {
 
 spec "vez6.6.4: value_to_stmt_list decodes StmtList chains" {
     then "End → empty list" {
-        let e = Expr.EnumCtor("@std::avrac::core::StmtList", "End", ExprList.End)
+        let e = Expr.EnumCtor("@std::avrac::core::StmtList", "End", empty_args())
         let r: StepResult = eval_expr(runtime_new(), e)
         is_stmt_list_end(value_to_stmt_list(r.value))
     }
@@ -175,7 +176,7 @@ spec "vez6.6.4: value_to_stmt_list decodes StmtList chains" {
         // enum cons-cell form (test above) and the new list-Value form
         // (this test). Once construct_stmt_list flips in lkze.9 #20,
         // the enum-form arm goes away.
-        let e = Expr.ListLit(ExprList.End)
+        let e = Expr.ListLit(empty_args())
         let r: StepResult = eval_expr(runtime_new(), e)
         is_stmt_list_end(value_to_stmt_list(r.value))
     }

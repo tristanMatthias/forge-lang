@@ -10,7 +10,7 @@
 // self.__parent → parent accumulator variable
 // self.__parent_name → parent instance name string
 
-use core.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, FieldEntry, FieldInit, ParamList, ValueType, CompConfig, CompConfigPair, ChildrenSlot, TypeParamEntry, find_annotation}
+use core.{Expr, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, FieldEntry, FieldInit, ParamList, ValueType, CompConfig, CompConfigPair, ChildrenSlot, TypeParamEntry, find_annotation}
 use core.{has_fn, find_fn_body}
 
 // ── Public API ──
@@ -271,12 +271,16 @@ fn rw_expr(expr: Expr, ctx: RewriteCtx) -> Expr {
     }
 }
 
-/// Map `rw_expr` over an ExprList.
-fn rw_expr_list(list: ExprList, ctx: RewriteCtx) -> ExprList {
-    match list {
-        .End -> ExprList.End
-        .Node(se, next) -> ExprList.Node(sexpr(rw_expr(se.node, ctx), se.line, se.col), rw_expr_list(next, ctx))
+/// Map `rw_expr` over a `List<SExpr>`.
+fn rw_expr_list(list: List<SExpr>, ctx: RewriteCtx) -> List<SExpr> {
+    mut out: List<SExpr> = []
+    mut i = 0
+    while i < list.length {
+        let se = list[i]
+        out.push(sexpr(rw_expr(se.node, ctx), se.line, se.col))
+        i = i + 1
     }
+    out
 }
 
 // ── Template self-rewriting (inlines config values) ──
@@ -378,12 +382,16 @@ fn rw_tpl_field_inits(inits: List<FieldInit>, inst: string, uc: List<CompConfigP
     out
 }
 
-/// Map `rw_tpl_expr` over an ExprList in a template body.
-fn rw_tpl_expr_list(list: ExprList, inst: string, uc: List<CompConfigPair>, schema: List<CompConfig>, ctx: RewriteCtx) -> ExprList {
-    match list {
-        .End -> ExprList.End
-        .Node(se, next) -> ExprList.Node(sexpr(rw_tpl_expr(se.node, inst, uc, schema, ctx), se.line, se.col), rw_tpl_expr_list(next, inst, uc, schema, ctx))
+/// Map `rw_tpl_expr` over a `List<SExpr>` in a template body.
+fn rw_tpl_expr_list(list: List<SExpr>, inst: string, uc: List<CompConfigPair>, schema: List<CompConfig>, ctx: RewriteCtx) -> List<SExpr> {
+    mut out: List<SExpr> = []
+    mut i = 0
+    while i < list.length {
+        let se = list[i]
+        out.push(sexpr(rw_tpl_expr(se.node, inst, uc, schema, ctx), se.line, se.col))
+        i = i + 1
     }
+    out
 }
 
 /// Resolve a `@cfg.field` reference: prefer the user's
@@ -615,7 +623,8 @@ fn append_children_inits(inits: List<FieldInit>, children: List<ChildrenSlot>) -
         i = i + 1
     }
     for slot in children {
-        let empty_list = sexpr(Expr.ListLit(ExprList.End), 0, 0)
+        let empty_elems: List<SExpr> = []
+        let empty_list = sexpr(Expr.ListLit(empty_elems), 0, 0)
         out.push(FieldInit { name: slot.slot_name, value: empty_list })
     }
     out
@@ -642,7 +651,8 @@ fn build_push_stmt(parent_var: string, slot: string, child_inst: string, line: i
         Expr.FieldAccess(Expr.Ident(parent_var), slot),
         "push"
     )
-    let push_call = Expr.Call(push_target, ExprList.Node(sexpr(Expr.Ident(child_inst), line, col), ExprList.End))
+    let push_args: List<SExpr> = [sexpr(Expr.Ident(child_inst), line, col)]
+    let push_call = Expr.Call(push_target, push_args)
     sstmt(Stmt.Expr(push_call), line, col)
 }
 
@@ -784,9 +794,10 @@ fn splice_template_block(comp: string, inst: string, config: List<CompConfigPair
 fn splice_data_block(comp: string, inst: string, config: List<CompConfigPair>, body: StmtList, line: int, col: int, rest: StmtList, reg: CompDefRegistry, nest: CompNestCtx, def: CompDefLookup) -> StmtList {
     let rw_ctx = RewriteCtx { inst, parent_var: nest.parent_var, parent_name: nest.parent_name }
 
+    let call_args: List<SExpr> = [sexpr(Expr.String("\"${inst}\""), 0, 0)]
     let call_expr = Expr.Call(
         Expr.Ident("${comp}_new"),
-        ExprList.Node(sexpr(Expr.String("\"${inst}\""), 0, 0), ExprList.End)
+        call_args
     )
     let init_expr = apply_config_pairs(call_expr, config)
 

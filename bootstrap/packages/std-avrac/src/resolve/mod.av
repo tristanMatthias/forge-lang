@@ -6,7 +6,7 @@
 // dir-as-module (g2eo.1): names.av auto-loads as a sibling, surfaces
 // flat at `resolve.{...}`.
 
-use core.{Expr, ExprList, FieldInit, ParamList, Pattern, SExpr, SStmt, Stmt, StmtList, TypeParamEntry, stmt_unwrap}
+use core.{Expr, FieldInit, ParamList, Pattern, SExpr, SStmt, Stmt, StmtList, TypeParamEntry, stmt_unwrap}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_with_help, span_dummy, span_new, span_at}
 use core.{Registry, build_registry, dispatch_stmt_resolve, dispatch_expr_resolve, avra_stmt_tag, avra_expr_tag}
 
@@ -544,18 +544,13 @@ export fn resolve_field_init_list(r: Resolver, inits: List<FieldInit>) -> Resolv
 }
 
 /// Resolve every Expr in a list, threading the Resolver through.
-export fn resolve_expr_list(r: Resolver, exprs: ExprList) -> Resolver {
-    mut current = exprs
+export fn resolve_expr_list(r: Resolver, exprs: List<SExpr>) -> Resolver {
     mut res = r
-    while true {
+    mut i = 0
+    while i < exprs.length {
         if res.had_error { return res }
-        match current {
-            .End -> { return res }
-            .Node(se, next) -> {
-                res = resolve_expr(res, se.node)
-                current = next
-            }
-        }
+        res = resolve_expr(res, exprs[i].node)
+        i = i + 1
     }
     res
 }

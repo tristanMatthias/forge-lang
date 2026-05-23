@@ -1,6 +1,6 @@
 // WHY: shared codegen utilities used across features.
 
-use core.{Expr, ExprList, StmtList, ParamList, VarBinding, ValueType, SStmt, stmt_unwrap, vtype_fn_params, vtype_trait_name}
+use core.{Expr, SExpr, StmtList, ParamList, VarBinding, ValueType, SStmt, stmt_unwrap, vtype_fn_params, vtype_trait_name}
 use codegen.{Ctx, EmitValue, err_emit, null_ptr_val, ok_emit, param_type_vt_at, trait_decl_has}
 use core.{vtype_is_unknown}
 use features.trait_decl.{box_for_trait, resolve_concrete_type_name}
@@ -10,11 +10,9 @@ use features.union_type.{emit_union_wrap, needs_union_wrap}
 /// Emit a single-argument call helper. Returns the first argument's
 /// EmitValue or an error when the list is empty. Used by built-in
 /// methods like `print` that take exactly one expression.
-export fn emit_single_arg(ctx: Ctx, env: List<VarBinding>, args: ExprList) -> Result<EmitValue, string> {
-    match args {
-        .End -> err_emit("expected 1 argument, got 0")
-        .Node(se, _) -> ctx.emit(env, se.node)
-    }
+export fn emit_single_arg(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>) -> Result<EmitValue, string> {
+    if args.length == 0 { return err_emit("expected 1 argument, got 0") }
+    ctx.emit(env, args[0].node)
 }
 
 /// Drop the leading and trailing quote characters from a string
@@ -31,15 +29,15 @@ export fn strip_quotes(s: string) -> string {
 /// Fill an LLVM value array with the SSA results of a list of
 /// expressions, in order. No type coercion — for that, see
 /// `fill_arg_array_boxing`.
-export fn fill_arg_array(ctx: Ctx, env: List<VarBinding>, arr: ptr, args: ExprList, idx: int) -> Result<EmitValue, string> {
-    match args {
-        .End -> ok_emit(null_ptr_val(), .Void)
-        .Node(se, next) -> {
-            let r = ctx.emit(env, se.node)?
-            ctx.value_array_set(arr, idx, r.value)
-            fill_arg_array(ctx, env, arr, next, idx + 1)
-        }
+export fn fill_arg_array(ctx: Ctx, env: List<VarBinding>, arr: ptr, args: List<SExpr>, idx: int) -> Result<EmitValue, string> {
+    mut i = 0
+    let n = args.length
+    while i < n {
+        let r = ctx.emit(env, args[i].node)?
+        ctx.value_array_set(arr, idx + i, r.value)
+        i = i + 1
     }
+    ok_emit(null_ptr_val(), .Void)
 }
 
 /// Fill an arg array with type-aware coercion: lambdas are compiled
@@ -47,50 +45,52 @@ export fn fill_arg_array(ctx: Ctx, env: List<VarBinding>, arr: ptr, args: ExprLi
 /// inside the closure; concrete values are boxed for `dyn Trait`
 /// parameters; concrete values are wrapped for union-typed
 /// parameters. The full call-site coercion pipeline.
-export fn fill_arg_array_boxing(ctx: Ctx, env: List<VarBinding>, arr: ptr, args: ExprList, ptypes: List<ValueType>, idx: int) -> Result<EmitValue, string> {
-    match args {
-        .End -> ok_emit(null_ptr_val(), .Void)
-        .Node(se, next) -> {
-            // When a Lambda arg is passed to a function expecting a typed fn param,
-            // compile the lambda with the expected param types so enum matching works.
-            mut r = EmitValue { value: ctx.i64(0), ty: .Int }
-            match se.node {
-                .Lambda(params, body) -> {
-                    let fn_vt = ctx.resolve_codegen_vtype(param_type_vt_at(ptypes, idx))
-                    let lambda_types = vtype_fn_params(fn_vt)
-                    r = emit_lambda_typed(ctx, env, params, body, lambda_types)?
-                }
-                _ -> {
-                    r = ctx.emit(env, se.node)?
-                }
+export fn fill_arg_array_boxing(ctx: Ctx, env: List<VarBinding>, arr: ptr, args: List<SExpr>, ptypes: List<ValueType>, idx: int) -> Result<EmitValue, string> {
+    let n = args.length
+    mut i = 0
+    while i < n {
+        let se = args[i]
+        let slot = idx + i
+        // When a Lambda arg is passed to a function expecting a typed fn param,
+        // compile the lambda with the expected param types so enum matching works.
+        mut r = EmitValue { value: ctx.i64(0), ty: .Int }
+        match se.node {
+            .Lambda(params, body) -> {
+                let fn_vt = ctx.resolve_codegen_vtype(param_type_vt_at(ptypes, slot))
+                let lambda_types = vtype_fn_params(fn_vt)
+                r = emit_lambda_typed(ctx, env, params, body, lambda_types)?
             }
-            // Check if the parameter type is a trait and the argument is concrete
-            let param_vt_raw = param_type_vt_at(ptypes, idx)
-            let param_vt_resolved = ctx.resolve_codegen_vtype(param_vt_raw)
-            let trait_name = vtype_trait_name(param_vt_resolved)
-            mut value = if trait_name != "" {
-                let concrete_name = resolve_concrete_type_name(r.ty)
-                if concrete_name != "" && !trait_decl_has(ctx.trait_decls, concrete_name) {
-                    box_for_trait(ctx, r.value, trait_name, concrete_name)
-                } else {
-                    r.value
-                }
+            _ -> {
+                r = ctx.emit(env, se.node)?
+            }
+        }
+        // Check if the parameter type is a trait and the argument is concrete
+        let param_vt_raw = param_type_vt_at(ptypes, slot)
+        let param_vt_resolved = ctx.resolve_codegen_vtype(param_vt_raw)
+        let trait_name = vtype_trait_name(param_vt_resolved)
+        mut value = if trait_name != "" {
+            let concrete_name = resolve_concrete_type_name(r.ty)
+            if concrete_name != "" && !trait_decl_has(ctx.trait_decls, concrete_name) {
+                box_for_trait(ctx, r.value, trait_name, concrete_name)
             } else {
                 r.value
             }
-            // Union wrapping: concrete arg → union-typed param
-            let param_vt = param_type_vt_at(ptypes, idx)
-            if !vtype_is_unknown(param_vt) {
-                let param_ty = ctx.resolve_codegen_vtype(param_vt)
-                if needs_union_wrap(r.ty, param_ty) {
-                    let wrapped = emit_union_wrap(ctx, value, r.ty, param_ty)?
-                    value = wrapped.value
-                }
-            }
-            ctx.value_array_set(arr, idx, value)
-            fill_arg_array_boxing(ctx, env, arr, next, ptypes, idx + 1)
+        } else {
+            r.value
         }
+        // Union wrapping: concrete arg → union-typed param
+        let param_vt = param_type_vt_at(ptypes, slot)
+        if !vtype_is_unknown(param_vt) {
+            let param_ty = ctx.resolve_codegen_vtype(param_vt)
+            if needs_union_wrap(r.ty, param_ty) {
+                let wrapped = emit_union_wrap(ctx, value, r.ty, param_ty)?
+                value = wrapped.value
+            }
+        }
+        ctx.value_array_set(arr, slot, value)
+        i = i + 1
     }
+    ok_emit(null_ptr_val(), .Void)
 }
 
 

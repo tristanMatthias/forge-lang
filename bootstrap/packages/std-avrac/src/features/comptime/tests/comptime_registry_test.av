@@ -6,8 +6,8 @@ use @std.avrac.features.comptime.{CompTimeRegistry, CompTimeFn, collect_comptime
 
 // Build an @<name>-annotated fn statement for testing.
 fn mk_annotated_fn(annot_name: string, fn_name: string) -> Stmt {
-    let annot_args: List<SExpr> = []
-    let annots: List<Annotation> = [Annotation { name: annot_name, args: annot_args }]
+    let empty_args: List<SExpr> = []
+    let annots: List<Annotation> = [Annotation { name: annot_name, args: empty_args }]
     let empty_tp: List<TypeParamEntry> = []
     Stmt.Annotated(
         annots,

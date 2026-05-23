@@ -1,6 +1,6 @@
 // WHY: codegen for operators — binary, unary, logical, float.
 
-use core.{Expr, ExprList, VarBinding, ValueType, BinOp, UnOp, LogicOp, vtype_eq, vtype_enum_name, vtype_is_str}
+use core.{Expr, VarBinding, ValueType, BinOp, UnOp, LogicOp, vtype_eq, vtype_enum_name, vtype_is_str}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit}
 use core.{avra_covmap_next_decision_id}
 use codegen.{emit_concat, emit_str_eq, emit_str_cmp}

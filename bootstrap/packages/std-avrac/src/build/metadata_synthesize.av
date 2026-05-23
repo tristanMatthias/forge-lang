@@ -357,8 +357,8 @@ fn synth_type_decl(e: TypeDeclEntry) -> SStmt {
 // `use foo::Bar` lookup, which gates on @export.
 fn wrap_export(s: Stmt, exported: bool) -> Stmt {
     if exported {
-        let exp_args: List<SExpr> = []
-        let annots: List<Annotation> = [Annotation { name: "export", args: exp_args }]
+        let empty_args: List<SExpr> = []
+        let annots: List<Annotation> = [Annotation { name: "export", args: empty_args }]
         Stmt.Annotated(annots, s)
     } else {
         s
@@ -372,8 +372,8 @@ fn wrap_export(s: Stmt, exported: bool) -> Stmt {
 // references don't need it (consts inline values; impl methods route
 // through the same Function gate).
 fn wrap_external_unit(s: Stmt) -> Stmt {
-    let ext_args: List<SExpr> = []
-    let annots: List<Annotation> = [Annotation { name: "external_unit", args: ext_args }]
+    let empty_args: List<SExpr> = []
+    let annots: List<Annotation> = [Annotation { name: "external_unit", args: empty_args }]
     Stmt.Annotated(annots, s)
 }
 

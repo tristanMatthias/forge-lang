@@ -1,27 +1,23 @@
 // WHY: type checking for list literals and list method calls.
 
-use core.{Expr, ExprList, ParamList, ValueType, vtype_list_elem}
+use core.{Expr, SExpr, ParamList, ValueType, vtype_list_elem}
 use typeck.{TC, ExprResult, tc_er, tc_enter, tc_exit, tc_bind, check_expr, check_expr_list}
 
 /// Type-check a list literal. Empty literals get `List<Unknown>`
 /// (caller infers from context); non-empty literals pin the element
 /// type from the first element and check the rest against it.
-export fn check_list_lit(tc: TC, elements: ExprList) -> ExprResult {
-    match elements {
-        .End -> tc_er(tc, .List(.Unknown))
-        .Node(se, _) -> {
-            let r = check_expr(tc, se.node)
-            let checked = check_expr_list(r.tc, elements)
-            tc_er(checked, .List(r.ty))
-        }
-    }
+export fn check_list_lit(tc: TC, elements: List<SExpr>) -> ExprResult {
+    if elements.length == 0 { return tc_er(tc, .List(.Unknown)) }
+    let r = check_expr(tc, elements[0].node)
+    let checked = check_expr_list(r.tc, elements)
+    tc_er(checked, .List(r.ty))
 }
 
 /// Map a List method name to its result ValueType. `map` is
 /// special-cased: result is `List<Ret>` where `Ret` is inferred
 /// from the lambda body. Unknown methods return `.Unknown` so the
 /// codegen path can surface them as errors.
-export fn check_list_method(tc: TC, elem: ValueType, method: string, args: ExprList) -> ExprResult {
+export fn check_list_method(tc: TC, elem: ValueType, method: string, args: List<SExpr>) -> ExprResult {
     match method {
         "length" or "len"                          -> tc_er(tc, .Int)
         "reduce"                                   -> tc_er(tc, .Unknown)
@@ -43,23 +39,19 @@ export fn check_list_method(tc: TC, elem: ValueType, method: string, args: ExprL
 /// Walk into a `map(lambda)` argument and recover the lambda's
 /// return type by entering a fresh scope with its single param
 /// bound to the list's element type, then checking the body.
-fn tc_infer_lambda_ret(tc: TC, args: ExprList, elem_ty: ValueType) -> ValueType {
-    match args {
-        .End -> .Unknown
-        .Node(se, _) -> {
-            match se.node {
-                .Lambda(params, body) -> {
-                    let inner = tc_enter(tc)
-                    let with_params = match params {
-                        .End -> inner
-                        .Node(pname, _, _) -> tc_bind(inner, pname, elem_ty)
-                    }
-                    let r = check_expr(with_params, body)
-                    tc_exit(r.tc)
-                    r.ty
-                }
-                _ -> .Unknown
+fn tc_infer_lambda_ret(tc: TC, args: List<SExpr>, elem_ty: ValueType) -> ValueType {
+    if args.length == 0 { return .Unknown }
+    match args[0].node {
+        .Lambda(params, body) -> {
+            let inner = tc_enter(tc)
+            let with_params = match params {
+                .End -> inner
+                .Node(pname, _, _) -> tc_bind(inner, pname, elem_ty)
             }
+            let r = check_expr(with_params, body)
+            tc_exit(r.tc)
+            r.ty
         }
+        _ -> .Unknown
     }
 }

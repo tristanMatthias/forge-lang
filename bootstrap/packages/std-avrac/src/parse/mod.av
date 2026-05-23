@@ -11,7 +11,7 @@
 
 // dir-as-module (g2eo.1): lexer.av auto-loads as a sibling, surfaces
 // flat at `parse.{...}`.
-use core.{Expr, ExprList, Stmt, StmtList, ParamList, Pattern, WhenArm, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, Annotation, Tk, tk_keyword_str, TypeExpr, expr_list_to_list}
+use core.{Expr, Stmt, StmtList, ParamList, Pattern, WhenArm, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, Annotation, Tk, tk_keyword_str, TypeExpr}
 use core.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser}
 use features.closures.{expr_contains_it, wrap_in_it_lambda}
 use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, diag_error, diag_with_help, span_new}
@@ -139,36 +139,33 @@ export fn parse_program_source_at(source: string, file: string) -> ProgramParseR
     parser.parse_file_program()
 }
 
-/// Reverse an ExprList. O(n). Used to undo the cons-prepend pattern
+/// Reverse a `List<SExpr>`. O(n). Used to undo the prepend pattern
 /// once an arg list has been collected in source order via
-/// `cons-and-iterate`.
-export fn reverse_expr_list(list: ExprList) -> ExprList {
-    reverse_expr_list_acc(list, ExprList.End)
-}
-
-/// Tail-recursive accumulator for `reverse_expr_list`.
-fn reverse_expr_list_acc(list: ExprList, acc: ExprList) -> ExprList {
-    match list {
-        .End -> acc
-        .Node(se, next) -> reverse_expr_list_acc(next, ExprList.Node(se, acc))
+/// `cons-and-iterate`. Preserved because growable `List` clones cheaply
+/// but the historical parser still produces some prepend-shaped paths.
+export fn reverse_expr_list(list: List<SExpr>) -> List<SExpr> {
+    mut out: List<SExpr> = []
+    mut i = list.length - 1
+    while i >= 0 {
+        out.push(list[i])
+        i = i - 1
     }
+    out
 }
 
 /// Interleave header names and values into a flat alternating list:
 /// `[k1, k2]` + `[v1, v2]` → `[k1, v1, k2, v2]`. MapLit expects this
 /// flat shape; table-literal parsing produces it.
-export fn table_zip_entries(headers: ExprList, values: ExprList) -> ExprList {
-    match headers {
-        .End -> ExprList.End
-        .Node(hse, hnext) -> {
-            match values {
-                .End -> ExprList.End
-                .Node(vse, vnext) -> {
-                    ExprList.Node(hse, ExprList.Node(vse, table_zip_entries(hnext, vnext)))
-                }
-            }
-        }
+export fn table_zip_entries(headers: List<SExpr>, values: List<SExpr>) -> List<SExpr> {
+    mut out: List<SExpr> = []
+    let n = if headers.length < values.length { headers.length } else { values.length }
+    mut i = 0
+    while i < n {
+        out.push(headers[i])
+        out.push(values[i])
+        i = i + 1
     }
+    out
 }
 
 /// True iff `e` is a bare or qualified identifier — used to gate
@@ -196,18 +193,19 @@ fn expr_is_upper_ident(e: Expr) -> bool {
 /// parsing). `(x, y) -> ...` parses the parens as expressions first,
 /// then reinterprets the Ident names as parameter names once `->`
 /// is seen.
-fn exprs_to_params(exprs: ExprList) -> ParamList {
-    match exprs {
-        .End -> ParamList.End
-        .Node(se, next) -> {
-            let name = match se.node {
-                .Ident(n) -> n
-                .QualifiedIdent(n) -> n
-                _ -> "_"  // non-ident in lambda params — use placeholder
-            }
-            ParamList.Node(name, ValueType.Unknown, exprs_to_params(next))
-        }
+fn exprs_to_params(exprs: List<SExpr>) -> ParamList {
+    exprs_to_params_at(exprs, 0)
+}
+
+fn exprs_to_params_at(exprs: List<SExpr>, i: int) -> ParamList {
+    if i >= exprs.length { return ParamList.End }
+    let se = exprs[i]
+    let name = match se.node {
+        .Ident(n) -> n
+        .QualifiedIdent(n) -> n
+        _ -> "_"  // non-ident in lambda params — use placeholder
     }
+    ParamList.Node(name, ValueType.Unknown, exprs_to_params_at(exprs, i + 1))
 }
 
 /// True iff `expr` is something that could syntactically be the
@@ -546,8 +544,8 @@ impl Parser {
                 null
             }
             let inner = inner_opt?
-            let exp_args: List<SExpr> = []
-            let exp_annots: List<Annotation> = [Annotation { name: "export", args: exp_args }]
+            let empty_args: List<SExpr> = []
+            let exp_annots: List<Annotation> = [Annotation { name: "export", args: empty_args }]
             return Stmt.Annotated(exp_annots, inner)
         }
 
@@ -587,7 +585,7 @@ impl Parser {
                 self.advance()  // consume (
                 let a = self.parse_arg_list()
                 if self.check(Tk.RightParen) { self.advance() }
-                if a == null { [] } else { expr_list_to_list(a!) }
+                if a == null { [] } else { a! }
             } else {
                 []
             }
@@ -601,7 +599,7 @@ impl Parser {
     fn parse_table_literal(self) -> Expr? {
         self.advance()  // consume `{`
         // Parse header row: identifiers separated by `|`
-        mut headers: ExprList = ExprList.End
+        mut headers: List<SExpr> = []
         mut header_count = 0
         let header_line = self.current_line
         while !self.check(Tk.RightBrace) && !self.check(Tk.Eof) && self.current_line == header_line {
@@ -609,7 +607,7 @@ impl Parser {
                 let col = self.current_lexeme
                 self.advance()
                 let quoted_col = "\"${col}\""
-                headers = ExprList.Node(sexpr_at(Expr.String(quoted_col), self.current_line, self.current_column, self.file), headers)
+                headers.push(sexpr_at(Expr.String(quoted_col), self.current_line, self.current_column, self.file))
                 header_count = header_count + 1
                 if self.check(Tk.Pipe) {
                     self.advance()
@@ -620,34 +618,36 @@ impl Parser {
         }
         if header_count == 0 {
             if !self.consume(Tk.RightBrace, "expected `}` to close table") { return null }
-            return Expr.ListLit(ExprList.End)
+            let empty: List<SExpr> = []
+            return Expr.ListLit(empty)
         }
-        let header_names = reverse_expr_list(headers)
-        // Parse data rows
-        mut rows: ExprList = ExprList.End
+        // headers are accumulated in source order (push); no reverse needed
+        let header_names = headers
+        // Parse data rows in source order
+        mut rows: List<SExpr> = []
         while !self.check(Tk.RightBrace) && !self.check(Tk.Eof) {
-            mut vals: ExprList = ExprList.End
+            mut vals: List<SExpr> = []
             mut col_idx = 0
             while col_idx < header_count {
                 if self.check(Tk.RightBrace) { break }
                 // Use parse_bitwise_xor which stops before `|`
                 let val = self.parse_bitwise_xor()?
-                vals = ExprList.Node(sexpr_at(val, self.current_line, self.current_column, self.file), vals)
+                vals.push(sexpr_at(val, self.current_line, self.current_column, self.file))
                 col_idx = col_idx + 1
                 if self.check(Tk.Pipe) {
                     self.advance()
                 }
             }
             if col_idx == header_count {
-                let map_entries = table_zip_entries(header_names, reverse_expr_list(vals))
+                let map_entries = table_zip_entries(header_names, vals)
                 let row_map = Expr.MapLit(map_entries)
-                rows = ExprList.Node(sexpr_at(row_map, self.current_line, self.current_column, self.file), rows)
+                rows.push(sexpr_at(row_map, self.current_line, self.current_column, self.file))
             }
         }
         if !self.consume(Tk.RightBrace, "expected `}` to close table") {
             return null
         }
-        Expr.ListLit(reverse_expr_list(rows))
+        Expr.ListLit(rows)
     }
 
     // Module parser (parse_module_declaration, parse_use_declaration)
@@ -729,10 +729,19 @@ impl Parser {
                     if pipe_args_has_placeholder(args) {
                         Expr.Call(callee, pipe_replace_placeholder(args, se))
                     } else {
-                        Expr.Call(callee, ExprList.Node(se, args))
+                        mut prepended: List<SExpr> = [se]
+                        mut i = 0
+                        while i < args.length {
+                            prepended.push(args[i])
+                            i = i + 1
+                        }
+                        Expr.Call(callee, prepended)
                     }
                 }
-                _ -> Expr.Call(rhs, ExprList.Node(se, ExprList.End))
+                _ -> {
+                    let one: List<SExpr> = [se]
+                    Expr.Call(rhs, one)
+                }
             }
         }
 
@@ -744,26 +753,34 @@ impl Parser {
 /// True iff the pipe RHS arg list contains an `_` placeholder.
 /// `x |> f(_, 2)` uses the placeholder to position the LHS at a
 /// specific arg slot; without one, the LHS becomes the first arg.
-fn pipe_args_has_placeholder(args: ExprList) -> bool {
-    match args {
-        .End -> false
-        .Node(se, next) -> match se.node {
-            .Ident(n) -> n == "_"
-            _ -> pipe_args_has_placeholder(next)
+fn pipe_args_has_placeholder(args: List<SExpr>) -> bool {
+    mut i = 0
+    while i < args.length {
+        let se = args[i]
+        match se.node {
+            .Ident(n) -> if n == "_" { return true }
+            _ -> {}
         }
+        i = i + 1
     }
+    false
 }
 
 /// Replace the first `_` placeholder in `args` with the pipe's LHS
 /// expression. Counterpart to `pipe_args_has_placeholder`.
-fn pipe_replace_placeholder(args: ExprList, replacement: SExpr) -> ExprList {
-    match args {
-        .End -> ExprList.End
-        .Node(se, next) -> match se.node {
-            .Ident(n) if n == "_" -> ExprList.Node(replacement, pipe_replace_placeholder(next, replacement))
-            _ -> ExprList.Node(se, pipe_replace_placeholder(next, replacement))
+fn pipe_replace_placeholder(args: List<SExpr>, replacement: SExpr) -> List<SExpr> {
+    mut out: List<SExpr> = []
+    mut i = 0
+    while i < args.length {
+        let se = args[i]
+        let is_placeholder = match se.node {
+            .Ident(n) -> n == "_"
+            _ -> false
         }
+        if is_placeholder { out.push(replacement) } else { out.push(se) }
+        i = i + 1
     }
+    out
 }
 
 impl Parser {
@@ -823,8 +840,8 @@ impl Parser {
             if self.check(Tk.LeftBracket) {
                 // List membership: x in [a, b, c]
                 self.advance()
-                let items = if self.check(Tk.RightBracket) {
-                    ExprList.End
+                let items: List<SExpr> = if self.check(Tk.RightBracket) {
+                    []
                 } else {
                     self.parse_arg_list_inner()?
                 }
@@ -1158,7 +1175,7 @@ impl Parser {
         result
     }
 
-    fn parse_arg_list(self) -> ExprList? {
+    fn parse_arg_list(self) -> List<SExpr>? {
         // Inside a paren-bounded arg list we're unambiguously not
         // at a sibling pattern position, so re-enable `.field`
         // postfix consumption.
@@ -1169,38 +1186,41 @@ impl Parser {
         result
     }
 
-    fn parse_arg_list_inner(self) -> ExprList? {
+    fn parse_arg_list_inner(self) -> List<SExpr>? {
+        mut out: List<SExpr> = []
         if self.check(Tk.RightParen) {
-            return ExprList.End
+            return out
         }
-
-        let raw_expr = self.parse_expression()?
-        // `it` parameter sugar: only wrap if allow_it_sugar is set
-        // (method calls like .map/.filter set this, regular function
-        // calls do not, preventing double-wrapping in `f(it)` inside
-        // `.map(f(it))`).
-        let expr = if self.allow_it_sugar {
-            match raw_expr {
-                .Lambda(_, _) -> raw_expr
-                _ -> {
-                    if expr_contains_it(raw_expr) {
-                        wrap_in_it_lambda(raw_expr)
-                    } else {
-                        raw_expr
+        mut keep_going = true
+        while keep_going {
+            let raw_expr = self.parse_expression()?
+            // `it` parameter sugar: only wrap if allow_it_sugar is set
+            // (method calls like .map/.filter set this, regular function
+            // calls do not, preventing double-wrapping in `f(it)` inside
+            // `.map(f(it))`).
+            let expr = if self.allow_it_sugar {
+                match raw_expr {
+                    .Lambda(_, _) -> raw_expr
+                    _ -> {
+                        if expr_contains_it(raw_expr) {
+                            wrap_in_it_lambda(raw_expr)
+                        } else {
+                            raw_expr
+                        }
                     }
                 }
+            } else {
+                raw_expr
             }
-        } else {
-            raw_expr
+            out.push(sexpr_at(expr, self.current_line, self.current_column, self.file))
+            if self.check(Tk.Comma) {
+                self.advance()
+                if self.check(Tk.RightParen) { keep_going = false }
+            } else {
+                keep_going = false
+            }
         }
-
-        if self.check(Tk.Comma) {
-            self.advance()
-            let rest = self.parse_arg_list_inner()?
-            return ExprList.Node(sexpr_at(expr, self.current_line, self.current_column, self.file), rest)
-        }
-
-        ExprList.Node(sexpr_at(expr, self.current_line, self.current_column, self.file), ExprList.End)
+        out
     }
 
     fn parse_primary(self) -> Expr? {
@@ -1254,7 +1274,8 @@ impl Parser {
                     }
                     return Expr.EnumCtor("", variant, args)
                 }
-                return Expr.EnumCtor("", variant, ExprList.End)
+                let empty: List<SExpr> = []
+                return Expr.EnumCtor("", variant, empty)
             }
         }
 
@@ -1280,7 +1301,7 @@ impl Parser {
                 let raw = self.current_lexeme
                 self.advance()
                 let template_expr = self.desugar_template(raw)?
-                let args = ExprList.Node(sexpr_at(template_expr, self.current_line, self.current_column, self.file), ExprList.End)
+                let args: List<SExpr> = [sexpr_at(template_expr, self.current_line, self.current_column, self.file)]
                 return Expr.Call(Expr.Ident(name), args)
             }
             return Expr.Ident(name)
@@ -1300,7 +1321,8 @@ impl Parser {
                     let body = self.parse_lambda_body()?
                     return Expr.Lambda(ParamList.End, body)
                 }
-                return Expr.Tuple(ExprList.End)
+                let empty: List<SExpr> = []
+                return Expr.Tuple(empty)
             }
             // Typed lambda: (x: int, y: string) -> body
             // Detect by peeking: if current is identifier and next non-ws is ':'
@@ -1329,11 +1351,23 @@ impl Parser {
                 // (a, b) -> expr  is a lambda
                 if self.check(Tk.Arrow) {
                     self.advance()
-                    let params = exprs_to_params(ExprList.Node(sexpr_at(expr!, self.current_line, self.current_column, self.file), rest))
+                    mut combined: List<SExpr> = [sexpr_at(expr!, self.current_line, self.current_column, self.file)]
+                    mut ri = 0
+                    while ri < rest.length {
+                        combined.push(rest[ri])
+                        ri = ri + 1
+                    }
+                    let params = exprs_to_params(combined)
                     let body = self.parse_lambda_body()?
                     return Expr.Lambda(params, body)
                 }
-                return Expr.Tuple(ExprList.Node(sexpr_at(expr!, self.current_line, self.current_column, self.file), rest))
+                mut tuple_elems: List<SExpr> = [sexpr_at(expr!, self.current_line, self.current_column, self.file)]
+                mut tj = 0
+                while tj < rest.length {
+                    tuple_elems.push(rest[tj])
+                    tj = tj + 1
+                }
+                return Expr.Tuple(tuple_elems)
             }
             if !self.consume(Tk.RightParen, "expected `)` after expression") {
                 return null
@@ -1341,7 +1375,8 @@ impl Parser {
             // (x) -> expr  is a single-param lambda
             if self.check(Tk.Arrow) {
                 self.advance()
-                let params = exprs_to_params(ExprList.Node(sexpr_at(expr!, self.current_line, self.current_column, self.file), ExprList.End))
+                let one: List<SExpr> = [sexpr_at(expr!, self.current_line, self.current_column, self.file)]
+                let params = exprs_to_params(one)
                 let body = self.parse_lambda_body()?
                 return Expr.Lambda(params, body)
             }
@@ -1353,7 +1388,8 @@ impl Parser {
             self.advance()
             if self.check(Tk.RightBracket) {
                 self.advance()
-                return Expr.ListLit(ExprList.End)
+                let empty: List<SExpr> = []
+                return Expr.ListLit(empty)
             }
             let elements = self.parse_list_elements()?
             if !self.consume(Tk.RightBracket, "expected `]` after list") {
@@ -1469,21 +1505,20 @@ impl Parser {
                     let last_ch = fmt_spec[fmt_spec.length - 1]
                     let first_ch = fmt_spec[0]
                     let is_float_fmt = last_ch in ["f", "e", "E", "g", "G"] || first_ch == "."
+                    let fmt_args: List<SExpr> = [
+                        sexpr_dummy(parsed!),
+                        sexpr_dummy(Expr.String("\"${fmt_spec}\""))
+                    ]
                     if is_float_fmt {
                         // Float format: avra_format_float(expr, spec)
-                        Expr.Call(Expr.Ident("avra_format_float"), ExprList.Node(
-                            sexpr_dummy(parsed!),
-                            ExprList.Node(sexpr_dummy(Expr.String("\"${fmt_spec}\"")), ExprList.End)
-                        ))
+                        Expr.Call(Expr.Ident("avra_format_float"), fmt_args)
                     } else {
                         // Int format: avra_format_int(expr, spec)
-                        Expr.Call(Expr.Ident("avra_format_int"), ExprList.Node(
-                            sexpr_dummy(parsed!),
-                            ExprList.Node(sexpr_dummy(Expr.String("\"${fmt_spec}\"")), ExprList.End)
-                        ))
+                        Expr.Call(Expr.Ident("avra_format_int"), fmt_args)
                     }
                 } else {
-                    Expr.Call(Expr.Ident("string"), ExprList.Node(sexpr_dummy(parsed!), ExprList.End))
+                    let str_args: List<SExpr> = [sexpr_dummy(parsed!)]
+                    Expr.Call(Expr.Ident("string"), str_args)
                 }
                 if result == null {
                     result = str_call
@@ -1512,18 +1547,24 @@ impl Parser {
         result
     }
 
-    fn parse_tuple_rest(self) -> ExprList? {
+    fn parse_tuple_rest(self) -> List<SExpr>? {
         // After the first comma in a tuple. Parse remaining elements.
-        if self.check(Tk.RightParen) {
-            return ExprList.End
+        mut out: List<SExpr> = []
+        mut keep_going = true
+        while keep_going {
+            if self.check(Tk.RightParen) {
+                keep_going = false
+            } else {
+                let expr = self.parse_expression()?
+                out.push(sexpr_at(expr, self.current_line, self.current_column, self.file))
+                if self.check(Tk.Comma) {
+                    self.advance()
+                } else {
+                    keep_going = false
+                }
+            }
         }
-        let expr = self.parse_expression()?
-        if self.check(Tk.Comma) {
-            self.advance()
-            let rest = self.parse_tuple_rest()?
-            return ExprList.Node(sexpr_at(expr, self.current_line, self.current_column, self.file), rest)
-        }
-        ExprList.Node(sexpr_at(expr, self.current_line, self.current_column, self.file), ExprList.End)
+        out
     }
 
     fn parse_block_expression(self) -> Expr? {

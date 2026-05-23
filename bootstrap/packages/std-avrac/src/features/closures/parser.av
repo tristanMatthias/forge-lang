@@ -3,7 +3,7 @@
 //   `list.map(it * 2)` → `list.map((it) -> { it * 2 })`
 // `parse_lambda_body` handles lambda body parsing (block or single expression).
 
-use core.{Expr, ExprList, StmtList, ParamList}
+use core.{Expr, SExpr, StmtList, ParamList}
 use parse.{Parser}
 use core.{Tk}
 
@@ -39,12 +39,14 @@ export fn expr_contains_it(expr: Expr) -> bool {
     }
 }
 
-/// Map `expr_contains_it` over an ExprList.
-export fn expr_list_contains_it(list: ExprList) -> bool {
-    match list {
-        .End -> false
-        .Node(se, next) -> expr_contains_it(se.node) || expr_list_contains_it(next)
+/// Map `expr_contains_it` over a `List<SExpr>`.
+export fn expr_list_contains_it(list: List<SExpr>) -> bool {
+    mut i = 0
+    while i < list.length {
+        if expr_contains_it(list[i].node) { return true }
+        i = i + 1
     }
+    false
 }
 
 /// Map `expr_contains_it` over the expression payload of every

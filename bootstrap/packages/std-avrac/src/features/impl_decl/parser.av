@@ -1,7 +1,7 @@
 // WHY: parses `impl Type { fn method(self) { ... } }` blocks. Each
 // method is desugared to a free function named `Type__method`.
 
-use core.{Stmt, StmtList, ParamList, TypeParamEntry, SStmt, sstmt, ValueType, type_expr_to_vtype, vtype_from_name, Expr, ExprList, SExpr, Annotation, sexpr_dummy}
+use core.{Stmt, StmtList, ParamList, TypeParamEntry, SStmt, sstmt, ValueType, type_expr_to_vtype, vtype_from_name, Expr, SExpr, Annotation, sexpr_dummy}
 use parse.{Parser}
 use core.{method_mangled_name}
 use core.{Tk}

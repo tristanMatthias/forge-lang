@@ -1,7 +1,7 @@
 // WHY: eval types shared across features. Actual tree-walk
 // evaluator lives in features/eval/mod.av.
 
-use core.{Expr, ExprList, Stmt, StmtList, ParamList, SExpr, SStmt, FieldInit}
+use core.{Expr, Stmt, StmtList, ParamList, SExpr, SStmt, FieldInit}
 use core.{Registry, build_registry}
 
 // WHY: tree-walk expression evaluator — used by `eval` and `check`
@@ -339,20 +339,14 @@ export fn eval_fn_with_resolved_args(runtime: Runtime, params: ParamList, body: 
 /// literal — caller treats null as "can't fold, leave the call alone".
 /// Replaces an explicit `all_args_literal` pre-check + per-arg
 /// `eval_expr` round-trip.
-export fn literal_args_to_values(args: ExprList) -> List<Value>? {
+export fn literal_args_to_values(args: List<SExpr>) -> List<Value>? {
     mut out: List<Value> = []
-    mut cur = args
-    mut keep_going = true
-    while keep_going {
-        match cur {
-            .End -> { keep_going = false }
-            .Node(arg, next) -> {
-                let v = literal_expr_to_value(arg.node)
-                if v == null { return null }
-                out.push(v!)
-                cur = next
-            }
-        }
+    mut i = 0
+    while i < args.length {
+        let v = literal_expr_to_value(args[i].node)
+        if v == null { return null }
+        out.push(v!)
+        i = i + 1
     }
     out
 }
@@ -799,29 +793,23 @@ type EvalArgsResult = {
 /// Evaluate every expression in `args` left-to-right, threading
 /// the runtime through each call. Bails on first error. Source
 /// order is preserved by .push — no reverse pass needed.
-fn eval_arg_list(runtime: Runtime, args: ExprList) -> EvalArgsResult {
+fn eval_arg_list(runtime: Runtime, args: List<SExpr>) -> EvalArgsResult {
     mut current = runtime
     mut values: List<Value> = []
-    mut cur = args
-    mut keep_going = true
-    while keep_going {
-        match cur {
-            .End -> { keep_going = false }
-            .Node(se, next) -> {
-                let result = eval_expr(current, se.node)
-                if result.had_error {
-                    return EvalArgsResult {
-                        runtime: result.runtime,
-                        values: [],
-                        had_error: true,
-                        error_message: result.error_message,
-                    }
-                }
-                values.push(result.value)
-                current = result.runtime
-                cur = next
+    mut i = 0
+    while i < args.length {
+        let result = eval_expr(current, args[i].node)
+        if result.had_error {
+            return EvalArgsResult {
+                runtime: result.runtime,
+                values: [],
+                had_error: true,
+                error_message: result.error_message,
             }
         }
+        values.push(result.value)
+        current = result.runtime
+        i = i + 1
     }
     EvalArgsResult { runtime: current, values: values, had_error: false, error_message: "" }
 }
@@ -865,7 +853,7 @@ fn count_params(params: ParamList) -> int {
 /// arity, and dispatches: builtins go through `call_builtin`,
 /// user functions enter a fresh scope, bind params, run the
 /// body, and pop the scope on exit.
-fn eval_call(runtime: Runtime, callee: Expr, args: ExprList) -> StepResult {
+fn eval_call(runtime: Runtime, callee: Expr, args: List<SExpr>) -> StepResult {
     // vez6.6.4: special-case the AST-construction wrappers from
     // @std::avrac::core. lower_quotes emits sexpr_dummy / sstmt_dummy
     // calls around every payload so the resulting AST carries proper
@@ -1067,11 +1055,9 @@ fn call_is_span_wrapper(callee: Expr) -> bool {
 /// as the call's value. Span-wrapper signatures all take the inner
 /// AST node as their first arg; remaining args are line/col/file
 /// metadata that comptime eval doesn't need to track.
-fn eval_span_wrapper_passthrough(runtime: Runtime, args: ExprList) -> StepResult {
-    match args {
-        .End -> error_result(runtime, "span-wrapper call needs at least one argument")
-        .Node(arg, _) -> eval_expr(runtime, arg.node)
-    }
+fn eval_span_wrapper_passthrough(runtime: Runtime, args: List<SExpr>) -> StepResult {
+    if args.length == 0 { return error_result(runtime, "span-wrapper call needs at least one argument") }
+    eval_expr(runtime, args[0].node)
 }
 
 /// Evaluate an `Expr.EnumCtor(type_name, variant, args)` — recurse
@@ -1079,7 +1065,7 @@ fn eval_span_wrapper_passthrough(runtime: Runtime, args: ExprList) -> StepResult
 /// resulting payload. Phase 6 of Components V2 (vez6.6.4) — needed
 /// so a comptime fn body can return a constructed AST value via
 /// `quote stmt { ... }` (which lowers to nested EnumCtors).
-fn eval_enum_ctor(runtime: Runtime, type_name: string, variant: string, args: ExprList) -> StepResult {
+fn eval_enum_ctor(runtime: Runtime, type_name: string, variant: string, args: List<SExpr>) -> StepResult {
     let evaluated = eval_args_to_values(runtime, args)
     if evaluated.had_error {
         return StepResult {
@@ -1100,26 +1086,20 @@ type ArgEvalResult = {
     error_message: string,
 }
 
-/// Recursively evaluate each `ExprList` arg, threading the runtime
-/// through. Used by `eval_enum_ctor` and any future arg-list eval.
-fn eval_args_to_values(runtime: Runtime, args: ExprList) -> ArgEvalResult {
+/// Recursively evaluate each `List<SExpr>` arg, threading the
+/// runtime through. Used by `eval_enum_ctor` and any future arg-list eval.
+fn eval_args_to_values(runtime: Runtime, args: List<SExpr>) -> ArgEvalResult {
     mut acc: List<Value> = []
     mut rt = runtime
-    mut cur = args
-    mut keep_going = true
-    while keep_going {
-        match cur {
-            .End -> { keep_going = false }
-            .Node(arg, next) -> {
-                let r = eval_expr(rt, arg.node)
-                if r.had_error {
-                    return ArgEvalResult { runtime: r.runtime, values: [], had_error: true, error_message: r.error_message }
-                }
-                acc.push(r.value)
-                rt = r.runtime
-                cur = next
-            }
+    mut i = 0
+    while i < args.length {
+        let r = eval_expr(rt, args[i].node)
+        if r.had_error {
+            return ArgEvalResult { runtime: r.runtime, values: [], had_error: true, error_message: r.error_message }
         }
+        acc.push(r.value)
+        rt = r.runtime
+        i = i + 1
     }
     ArgEvalResult { runtime: rt, values: acc, had_error: false, error_message: "" }
 }
@@ -1128,7 +1108,7 @@ fn eval_args_to_values(runtime: Runtime, args: ExprList) -> ArgEvalResult {
 /// threading the runtime through, and wrap the result list in a
 /// kind="list" Value. fwyx — replaces the previous value_null()
 /// stub so the comptime decoder can read AST list payloads.
-fn eval_list_lit(runtime: Runtime, elems: ExprList) -> StepResult {
+fn eval_list_lit(runtime: Runtime, elems: List<SExpr>) -> StepResult {
     let evaluated = eval_args_to_values(runtime, elems)
     if evaluated.had_error {
         return StepResult {

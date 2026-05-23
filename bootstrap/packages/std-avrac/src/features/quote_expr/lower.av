@@ -14,7 +14,7 @@
 // that desugar.av and comptime/rewrite.av use; once the generic-AST-
 // visitor ticket lands (93k3) all three should share a single visitor.
 
-use core.{Stmt, StmtList, SStmt, sstmt_at, sstmt_dummy, Expr, ExprList, SExpr, sexpr, sexpr_dummy, FieldEntry, FieldInit, MatchArm, BinOp, UnOp, LogicOp, ParamList, TypeParamEntry, CompConfigPair, binop_str, unop_str, logicop_str}
+use core.{Stmt, StmtList, SStmt, sstmt_at, sstmt_dummy, Expr, SExpr, sexpr, sexpr_dummy, FieldEntry, FieldInit, MatchArm, BinOp, UnOp, LogicOp, ParamList, TypeParamEntry, CompConfigPair, binop_str, unop_str, logicop_str}
 
 // ── Public entry ──
 
@@ -120,11 +120,13 @@ fn any_quote_in_expr(expr: Expr) -> bool {
     }
 }
 
-fn any_quote_in_expr_list(list: ExprList) -> bool {
-    match list {
-        .End -> false
-        .Node(se, next) -> any_quote_in_expr(se.node) || any_quote_in_expr_list(next)
+fn any_quote_in_expr_list(list: List<SExpr>) -> bool {
+    mut i = 0
+    while i < list.length {
+        if any_quote_in_expr(list[i].node) { return true }
+        i = i + 1
     }
+    false
 }
 
 fn any_quote_in_field_inits(list: List<FieldInit>) -> bool {
@@ -244,14 +246,15 @@ fn lower_expr(expr: Expr) -> Expr {
     }
 }
 
-fn lower_expr_list(list: ExprList) -> ExprList {
-    match list {
-        .End -> ExprList.End
-        .Node(se, next) -> ExprList.Node(
-            sexpr(lower_expr(se.node), se.line, se.col),
-            lower_expr_list(next)
-        )
+fn lower_expr_list(list: List<SExpr>) -> List<SExpr> {
+    mut out: List<SExpr> = []
+    mut i = 0
+    while i < list.length {
+        let se = list[i]
+        out.push(sexpr(lower_expr(se.node), se.line, se.col))
+        i = i + 1
     }
+    out
 }
 
 /// b85m: lower every Quote in match-arm guards + bodies. Without
@@ -342,7 +345,8 @@ fn primitive_value_type(name: string) -> Expr {
 }
 
 fn value_type_ctor(variant: string) -> Expr {
-    Expr.EnumCtor("@std::avrac::core::ValueType", variant, ExprList.End)
+    let empty: List<SExpr> = []
+    Expr.EnumCtor("@std::avrac::core::ValueType", variant, empty)
 }
 
 /// Extract the single Stmt from a `Block(StmtList(Node(ss, End)))`.
@@ -418,7 +422,10 @@ fn construct_expr(e: Expr) -> Expr {
         .Number(v) -> expr_ctor("Number", string_arg(v))
         .String(v) -> expr_ctor("String", string_arg(v))
         .Bool(v) -> expr_ctor("Bool", string_arg(v))
-        .Null -> expr_ctor("Null", ExprList.End)
+        .Null -> {
+            let empty: List<SExpr> = []
+            expr_ctor("Null", empty)
+        }
         .Ident(name) -> expr_ctor("Ident", string_arg(name))
         .QualifiedIdent(path) -> expr_ctor("QualifiedIdent", string_arg(path))
         .Assign(name, value) -> expr_ctor("Assign", two_args(sexpr_dummy_call(string_lit_expr(name)), construct_expr(value)))
@@ -471,7 +478,7 @@ fn construct_expr(e: Expr) -> Expr {
 /// — the canonical type name appears 25+ times in construct_expr, so
 /// extracting it removes a thick band of visual noise and centralizes
 /// the path constant.
-fn expr_ctor(variant: string, args: ExprList) -> Expr {
+fn expr_ctor(variant: string, args: List<SExpr>) -> Expr {
     Expr.EnumCtor("@std::avrac::core::Expr", variant, args)
 }
 
@@ -486,7 +493,10 @@ fn expr_ctor(variant: string, args: ExprList) -> Expr {
 /// mirroring construct_expr_list.
 fn construct_param_list(params: ParamList) -> Expr {
     match params {
-        .End -> Expr.EnumCtor("@std::avrac::core::ParamList", "End", ExprList.End)
+        .End -> {
+            let empty: List<SExpr> = []
+            Expr.EnumCtor("@std::avrac::core::ParamList", "End", empty)
+        }
         .Node(name, _, next) -> Expr.EnumCtor("@std::avrac::core::ParamList", "Node",
             three_args(string_lit_expr(name),
                        construct_value_type_unknown(),
@@ -510,17 +520,17 @@ fn struct_lit_2(type_name: string, k1: string, v1: Expr, k2: string, v2: Expr) -
 /// `TypeParamEntry { name, bounds }`; the result is an `Expr.ListLit`
 /// so codegen materializes a real list at runtime.
 fn construct_type_param_list(tp: List<TypeParamEntry>) -> Expr {
-    // ExprList is cons-prepend, so walk back-to-front to preserve
-    // source order.
-    mut elems = ExprList.End
-    mut i = tp.length
-    while i > 0 {
-        i = i - 1
+    // Walk source order, pushing each struct-literal SExpr into the
+    // ListLit element list.
+    mut elems: List<SExpr> = []
+    mut i = 0
+    while i < tp.length {
         let e = tp[i]
         let struct_lit = struct_lit_2("@std::avrac::core::TypeParamEntry",
             "name", string_lit_expr(e.name),
             "bounds", string_lit_expr(e.bounds))
-        elems = ExprList.Node(sexpr_dummy(struct_lit), elems)
+        elems.push(sexpr_dummy(struct_lit))
+        i = i + 1
     }
     Expr.ListLit(elems)
 }
@@ -532,17 +542,15 @@ fn construct_type_param_list(tp: List<TypeParamEntry>) -> Expr {
 /// so every entry's `resolved` slot is encoded as
 /// `ValueType.Unknown` — sister convention to `construct_param_list`.
 fn construct_field_list(fields: List<FieldEntry>) -> Expr {
-    // ExprList is cons-prepend, so walk back-to-front to preserve
-    // source order in the eventual ListLit.
-    mut elems = ExprList.End
-    mut i = fields.length
-    while i > 0 {
-        i = i - 1
+    mut elems: List<SExpr> = []
+    mut i = 0
+    while i < fields.length {
         let e = fields[i]
         let struct_lit = struct_lit_2("@std::avrac::core::FieldEntry",
             "name", string_lit_expr(e.name),
             "resolved", construct_value_type_unknown())
-        elems = ExprList.Node(sexpr_dummy(struct_lit), elems)
+        elems.push(sexpr_dummy(struct_lit))
+        i = i + 1
     }
     Expr.ListLit(elems)
 }
@@ -552,17 +560,15 @@ fn construct_field_list(fields: List<FieldEntry>) -> Expr {
 /// literal `CompConfigPair { key, value }`; the result is an
 /// `Expr.ListLit` so codegen materializes a real list at runtime.
 fn construct_comp_config_pair_list(list: List<CompConfigPair>) -> Expr {
-    // ExprList is cons-prepend, so walk back-to-front to preserve
-    // source order.
-    mut elems = ExprList.End
-    mut i = list.length
-    while i > 0 {
-        i = i - 1
+    mut elems: List<SExpr> = []
+    mut i = 0
+    while i < list.length {
         let pair = list[i]
         let struct_lit = struct_lit_2("@std::avrac::core::CompConfigPair",
             "key", string_lit_expr(pair.key),
             "value", construct_expr(pair.value))
-        elems = ExprList.Node(sexpr_dummy(struct_lit), elems)
+        elems.push(sexpr_dummy(struct_lit))
+        i = i + 1
     }
     Expr.ListLit(elems)
 }
@@ -571,7 +577,8 @@ fn construct_comp_config_pair_list(list: List<CompConfigPair>) -> Expr {
 /// are Unknown until the lowered AST is type-checked. Avoids the
 /// complexity of constructing every ValueType variant.
 fn construct_value_type_unknown() -> Expr {
-    Expr.EnumCtor("@std::avrac::core::ValueType", "Unknown", ExprList.End)
+    let empty: List<SExpr> = []
+    Expr.EnumCtor("@std::avrac::core::ValueType", "Unknown", empty)
 }
 
 /// Build an Expr that, when evaluated, produces a
@@ -581,15 +588,15 @@ fn construct_value_type_unknown() -> Expr {
 /// Mirrors `construct_type_param_list` shape — same pattern, same
 /// reverse-walk-to-preserve-source-order.
 fn construct_field_init_list(list: List<FieldInit>) -> Expr {
-    mut elems = ExprList.End
-    mut i = list.length
-    while i > 0 {
-        i = i - 1
+    mut elems: List<SExpr> = []
+    mut i = 0
+    while i < list.length {
         let init = list[i]
         let struct_lit = struct_lit_2("@std::avrac::core::FieldInit",
             "name", string_lit_expr(init.name),
             "value", construct_sexpr(init.value))
-        elems = ExprList.Node(sexpr_dummy(struct_lit), elems)
+        elems.push(sexpr_dummy(struct_lit))
+        i = i + 1
     }
     Expr.ListLit(elems)
 }
@@ -597,7 +604,7 @@ fn construct_field_init_list(list: List<FieldInit>) -> Expr {
 /// Build an `Expr.String` whose runtime arg-after-strip_quotes is
 /// exactly `s`. Codegen unwraps one outer quote pair, so we wrap with
 /// exactly one. Used both bare and via `string_arg(s)` (which wraps
-/// the result in a one-element ExprList for ctor() args).
+/// the result in a one-element `List<SExpr>` for ctor() args).
 ///
 /// For inputs whose `s` ALREADY contains source-form quotes (parser's
 /// Expr.String.value), the same wrap is correct: the runtime value
@@ -621,26 +628,21 @@ fn name_or_splice(name: string) -> Expr {
     }
 }
 
-/// Build an Expr that, when evaluated, produces an ExprList AST value
-/// matching `list`. ExprList.End → EnumCtor("ExprList", "End", []),
-/// ExprList.Node(se, rest) → EnumCtor("ExprList", "Node", [SExpr-ctor, recur]).
-///
-/// fwyx: stays as cons-cell EnumCtor("ExprList", ...) because
-/// Expr.Call.args / Expr.EnumCtor.args / Expr.Tuple.elements / etc.
-/// still hold a runtime ExprList. Flipping construct_expr_list to
-/// Expr.ListLit ahead of those slots becoming List<SExpr> would
-/// hand the callers a list value where they expect an ExprList,
-/// blowing up later renderers (`render_expr_list`'s match aborts on
-/// the kind="list" Value's runtime tag). The retirement happens in
-/// lkze.9 #18 (Phase 2 of this work) — once Expr.Call.args becomes
-/// List<SExpr>, this fn flips to Expr.ListLit and the matching
-/// decoder rename in comptime/eval.av activates.
-fn construct_expr_list(list: ExprList) -> Expr {
-    match list {
-        .End -> Expr.EnumCtor("@std::avrac::core::ExprList", "End", ExprList.End)
-        .Node(se, next) -> Expr.EnumCtor("@std::avrac::core::ExprList", "Node",
-            two_args(construct_sexpr(se), construct_expr_list(next)))
+/// Build an Expr that, when evaluated, produces a `List<SExpr>` AST
+/// value matching `list`. Emits `Expr.ListLit([sexpr_call_0, ...])`
+/// — each element is a Call to `sexpr_dummy(construct_expr(item))`,
+/// so at runtime the ListLit eval produces a list of SExpr values
+/// shaped like the original `List<SExpr>`. Decoded by
+/// `list_value_to_expr_list` in comptime/eval.av.
+fn construct_expr_list(list: List<SExpr>) -> Expr {
+    mut elems: List<SExpr> = []
+    mut i = 0
+    while i < list.length {
+        let se = list[i]
+        elems.push(sexpr_dummy(construct_sexpr(se)))
+        i = i + 1
     }
+    Expr.ListLit(elems)
 }
 
 /// Build an Expr that, when evaluated, produces an SExpr wrapping the
@@ -655,9 +657,10 @@ fn construct_sexpr(se: SExpr) -> Expr {
 /// Uses QualifiedIdent so the lowered AST round-trips through resolve
 /// without needing the test file to import sexpr_dummy.
 fn sexpr_dummy_call(arg: Expr) -> Expr {
+    let args: List<SExpr> = [sexpr_dummy(arg)]
     Expr.Call(
         Expr.QualifiedIdent("@std::avrac::core::sexpr_dummy"),
-        ExprList.Node(sexpr_dummy(arg), ExprList.End)
+        args
     )
 }
 
@@ -665,9 +668,10 @@ fn sexpr_dummy_call(arg: Expr) -> Expr {
 /// for SStmt construction. Used when wrapping a runtime Stmt value in
 /// the spanned carrier required by StmtList.Node.
 fn sstmt_dummy_call(arg: Expr) -> Expr {
+    let args: List<SExpr> = [sexpr_dummy(arg)]
     Expr.Call(
         Expr.QualifiedIdent("@std::avrac::core::sstmt_dummy"),
-        ExprList.Node(sexpr_dummy(arg), ExprList.End)
+        args
     )
 }
 
@@ -682,7 +686,10 @@ fn sstmt_dummy_call(arg: Expr) -> Expr {
 /// — same shape as the planned construct_expr_list flip.
 fn construct_stmt_list(list: StmtList) -> Expr {
     match list {
-        .End -> Expr.EnumCtor("@std::avrac::core::StmtList", "End", ExprList.End)
+        .End -> {
+            let empty: List<SExpr> = []
+            Expr.EnumCtor("@std::avrac::core::StmtList", "End", empty)
+        }
         .Node(ss, next) -> Expr.EnumCtor("@std::avrac::core::StmtList", "Node",
             two_args(construct_sstmt(ss), construct_stmt_list(next)))
     }
@@ -714,10 +721,22 @@ export fn construct_stmt(stmt: Stmt) -> Expr {
         .Expr(e) -> stmt_ctor("Expr", one_arg(construct_expr(e)))
         .Block(body) -> stmt_ctor("Block", one_arg(construct_stmt_list(body)))
         .Return(e) -> stmt_ctor("Return", one_arg(construct_expr(e)))
-        .ReturnEmpty -> stmt_ctor("ReturnEmpty", ExprList.End)
-        .NoOp -> stmt_ctor("NoOp", ExprList.End)
-        .Break -> stmt_ctor("Break", ExprList.End)
-        .Continue -> stmt_ctor("Continue", ExprList.End)
+        .ReturnEmpty -> {
+            let empty: List<SExpr> = []
+            stmt_ctor("ReturnEmpty", empty)
+        }
+        .NoOp -> {
+            let empty: List<SExpr> = []
+            stmt_ctor("NoOp", empty)
+        }
+        .Break -> {
+            let empty: List<SExpr> = []
+            stmt_ctor("Break", empty)
+        }
+        .Continue -> {
+            let empty: List<SExpr> = []
+            stmt_ctor("Continue", empty)
+        }
         .Defer(body) -> stmt_ctor("Defer", one_arg(construct_expr(body)))
         .Errdefer(body) -> stmt_ctor("Errdefer", one_arg(construct_expr(body)))
         .While(cond, body) -> stmt_ctor("While", two_args(construct_expr(cond), construct_stmt(body)))
@@ -761,37 +780,34 @@ export fn construct_stmt(stmt: Stmt) -> Expr {
 /// the missing variant becomes a feature request rather than a silent
 /// corruption. Filed as vez6.3.10 (`quote decl`) for completion.
 fn stmt_passthrough(stmt: Stmt) -> Expr {
-    stmt_ctor("NoOp", ExprList.End)
+    let empty: List<SExpr> = []
+    stmt_ctor("NoOp", empty)
 }
 
 /// Sister to expr_ctor for Stmt.
-fn stmt_ctor(variant: string, args: ExprList) -> Expr {
+fn stmt_ctor(variant: string, args: List<SExpr>) -> Expr {
     Expr.EnumCtor("@std::avrac::core::Stmt", variant, args)
 }
 
-fn four_args(a: Expr, b: Expr, c: Expr, d: Expr) -> ExprList {
-    ExprList.Node(sexpr_dummy(a),
-      ExprList.Node(sexpr_dummy(b),
-        ExprList.Node(sexpr_dummy(c),
-          ExprList.Node(sexpr_dummy(d), ExprList.End))))
+fn four_args(a: Expr, b: Expr, c: Expr, d: Expr) -> List<SExpr> {
+    [sexpr_dummy(a), sexpr_dummy(b), sexpr_dummy(c), sexpr_dummy(d)]
 }
 
-fn five_args(a: Expr, b: Expr, c: Expr, d: Expr, e: Expr) -> ExprList {
-    ExprList.Node(sexpr_dummy(a),
-      ExprList.Node(sexpr_dummy(b),
-        ExprList.Node(sexpr_dummy(c),
-          ExprList.Node(sexpr_dummy(d),
-            ExprList.Node(sexpr_dummy(e), ExprList.End)))))
+fn five_args(a: Expr, b: Expr, c: Expr, d: Expr, e: Expr) -> List<SExpr> {
+    [sexpr_dummy(a), sexpr_dummy(b), sexpr_dummy(c), sexpr_dummy(d), sexpr_dummy(e)]
 }
 
 fn construct_binop(op: BinOp) -> Expr {
-    Expr.EnumCtor("@std::avrac::core::BinOp", op_variant_name_bin(op), ExprList.End)
+    let empty: List<SExpr> = []
+    Expr.EnumCtor("@std::avrac::core::BinOp", op_variant_name_bin(op), empty)
 }
 fn construct_unop(op: UnOp) -> Expr {
-    Expr.EnumCtor("@std::avrac::core::UnOp", op_variant_name_un(op), ExprList.End)
+    let empty: List<SExpr> = []
+    Expr.EnumCtor("@std::avrac::core::UnOp", op_variant_name_un(op), empty)
 }
 fn construct_logicop(op: LogicOp) -> Expr {
-    Expr.EnumCtor("@std::avrac::core::LogicOp", op_variant_name_logic(op), ExprList.End)
+    let empty: List<SExpr> = []
+    Expr.EnumCtor("@std::avrac::core::LogicOp", op_variant_name_logic(op), empty)
 }
 
 /// Map BinOp variants to their constructor-name string. binop_str
@@ -830,28 +846,26 @@ fn op_variant_name_logic(op: LogicOp) -> string {
 
 // ── Constructor-call helpers ──
 
-fn ctor(type_name: string, variant: string, args: ExprList) -> Expr {
+fn ctor(type_name: string, variant: string, args: List<SExpr>) -> Expr {
     Expr.EnumCtor(type_name, variant, args)
 }
 
-/// One-element ExprList wrapping `string_lit_expr(s)` — the string-arg
-/// form for ctor() invocations. Both ident-like inputs and parser-form
-/// String.value (already-quoted) inputs round-trip through this wrap;
-/// see `string_lit_expr` for why one wrap suffices.
-fn string_arg(s: string) -> ExprList {
-    ExprList.Node(sexpr_dummy(string_lit_expr(s)), ExprList.End)
+/// One-element `List<SExpr>` wrapping `string_lit_expr(s)` — the
+/// string-arg form for ctor() invocations. Both ident-like inputs
+/// and parser-form String.value (already-quoted) inputs round-trip
+/// through this wrap; see `string_lit_expr` for why one wrap suffices.
+fn string_arg(s: string) -> List<SExpr> {
+    [sexpr_dummy(string_lit_expr(s))]
 }
 
-fn one_arg(a: Expr) -> ExprList {
-    ExprList.Node(sexpr_dummy(a), ExprList.End)
+fn one_arg(a: Expr) -> List<SExpr> {
+    [sexpr_dummy(a)]
 }
-fn two_args(a: Expr, b: Expr) -> ExprList {
-    ExprList.Node(sexpr_dummy(a), ExprList.Node(sexpr_dummy(b), ExprList.End))
+fn two_args(a: Expr, b: Expr) -> List<SExpr> {
+    [sexpr_dummy(a), sexpr_dummy(b)]
 }
-fn three_args(a: Expr, b: Expr, c: Expr) -> ExprList {
-    ExprList.Node(sexpr_dummy(a),
-      ExprList.Node(sexpr_dummy(b),
-        ExprList.Node(sexpr_dummy(c), ExprList.End)))
+fn three_args(a: Expr, b: Expr, c: Expr) -> List<SExpr> {
+    [sexpr_dummy(a), sexpr_dummy(b), sexpr_dummy(c)]
 }
 
 /// Escape every `"` and `\` in `s` for embedding in a string-literal

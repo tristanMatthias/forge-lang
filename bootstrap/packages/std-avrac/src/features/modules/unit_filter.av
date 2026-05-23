@@ -80,8 +80,8 @@ fn annotate_external(ss: SStmt) -> SStmt {
     // for stmts that came in pre-Annotated, and starts a fresh
     // single-entry list for bare stmts.
     mut combined: List<Annotation> = []
-    let ext_args: List<SExpr> = []
-    combined.push(Annotation { name: "external_unit", args: ext_args })
+    let empty_args: List<SExpr> = []
+    combined.push(Annotation { name: "external_unit", args: empty_args })
     let inner_stmt = match ss.node {
         .Annotated(annots, inner) -> {
             mut i = 0

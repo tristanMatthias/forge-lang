@@ -48,8 +48,8 @@ export fn sstmt_at(s: Stmt, line: int, col: int, file: string) -> SStmt { SStmt 
 /// `sexpr_dummy` — synthesised nodes only.
 export fn sstmt_dummy(s: Stmt) -> SStmt { SStmt { node: s, line: 0, col: 0, file: "" } }
 
-/// Linked list of expressions. Used for call args, list literals,
-/// and any other comma-separated expression sequence.
+/// Deprecated. Bridge so `use core.{..., ExprList}` imports remain
+/// resolvable. Removed in a follow-on slice.
 export enum ExprList {
     End
     Node(expr: SExpr, next: ExprList)
@@ -1087,15 +1087,13 @@ export type WhenArm = { cond: SExpr?, body: SExpr }
 export type SelectArm = { binding: string, channel: Expr, body: StmtList }
 
 /// Annotations attached to declarations: `@name` or `@name(args)`.
-/// Args are stored as ExprList for generality so any annotation
+/// Args are stored as `List<SExpr>` for generality so any annotation
 /// shape works without dedicated AST variants.
 ///
 /// `List<Annotation>` replaces the retired `enum AnnotationList`.
 /// Used as `annotations: List<Annotation>` on Stmt.Annotated and
 /// threaded through the resolver, type checker, macro expander,
-/// metadata extractor and formatter. `args` is `List<SExpr>`
-/// (lkze.9 #18 first slice — seeds the List<SExpr> monomorphization
-/// the seed needs before the bigger Expr.Call.args / etc. flips).
+/// metadata extractor and formatter.
 export type Annotation = { name: string, args: List<SExpr> }
 
 /// Component config schema entry: one `key: ty = default` row declared
@@ -1314,43 +1312,10 @@ export fn param_list_length(params: ParamList) -> int {
     }
 }
 
-/// Length of an ExprList. O(n).
-export fn expr_list_length(exprs: ExprList) -> int {
-    match exprs {
-        .End -> 0
-        .Node(_, next) -> 1 + expr_list_length(next)
-    }
-}
-
-/// Convert a cons-cell `ExprList` to a growable `List<SExpr>`.
-/// Bridge used during the lkze.9 #18 retirement.
-export fn expr_list_to_list(el: ExprList) -> List<SExpr> {
-    mut out: List<SExpr> = []
-    mut cur = el
-    while true {
-        match cur {
-            .End -> return out
-            .Node(se, next) -> {
-                out.push(se)
-                cur = next
-            }
-        }
-    }
-    out
-}
-
-/// Convert a `List<SExpr>` back to a cons-cell `ExprList`.
-/// Reverse direction of `expr_list_to_list`. Lets consumer code
-/// that still expects ExprList accept the new List<SExpr>-typed
-/// carrier values during the lkze.9 #18 incremental flips.
-export fn list_to_expr_list(list: List<SExpr>) -> ExprList {
-    mut out: ExprList = ExprList.End
-    mut i = list.length - 1
-    while i >= 0 {
-        out = ExprList.Node(list[i], out)
-        i = i - 1
-    }
-    out
+/// Length of a `List<SExpr>`. O(1) — preserved for source
+/// compatibility while call sites migrate to `.length` directly.
+export fn expr_list_length(exprs: List<SExpr>) -> int {
+    exprs.length
 }
 
 /// Membership test for a `List<FieldEntry>`. True iff `target`
@@ -1557,24 +1522,17 @@ export fn render_type_name_list(names: List<string>) -> string {
     out
 }
 
-/// Render an ExprList as an S-expression: `(e1, e2, e3)`.
-export fn render_expr_list(exprs: ExprList) -> string {
-    match exprs {
-        .End -> "()"
-        .Node(se, next) -> {
-            let head = render_expr(se.node)
-            let tail = render_expr_list_tail(next)
-            "(${head}${tail})"
-        }
+/// Render a `List<SExpr>` as an S-expression: `(e1, e2, e3)`.
+export fn render_expr_list(exprs: List<SExpr>) -> string {
+    if exprs.length == 0 { return "()" }
+    mut out = "("
+    mut i = 0
+    while i < exprs.length {
+        if i > 0 { out = out + ", " }
+        out = out + render_expr(exprs[i].node)
+        i = i + 1
     }
-}
-
-/// Tail half of `render_expr_list` — see `render_field_init_tail`.
-fn render_expr_list_tail(exprs: ExprList) -> string {
-    match exprs {
-        .End -> ""
-        .Node(se, next) -> ", ${render_expr(se.node)}${render_expr_list_tail(next)}"
-    }
+    out + ")"
 }
 
 /// Render a ParamList as `(name:Type, name2:Type)`.

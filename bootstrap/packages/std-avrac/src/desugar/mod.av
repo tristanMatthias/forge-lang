@@ -7,7 +7,7 @@
 // Component expansion is a SEPARATE pass that runs before desugar.
 // See features/component_decl/expand.av.
 
-use core.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, sstmt_dummy, stmt_unwrap, FieldEntry, FieldInit, MatchArm, WhenArm, ParamList, Pattern, BinOp, UnOp, ValueType, Variant, TypeParamEntry}
+use core.{Expr, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, sstmt_dummy, stmt_unwrap, FieldEntry, FieldInit, MatchArm, WhenArm, ParamList, Pattern, BinOp, UnOp, ValueType, Variant, TypeParamEntry}
 
 // ── Public API ──
 
@@ -160,33 +160,32 @@ fn rewrite_expr(expr: Expr) -> Expr {
 /// ListLit wrapping a ListComp) into the imperative
 /// `mut __lc = []; for x in coll { if filter { __lc.push(body) } }; __lc`
 /// block expression. Plain list literals are untouched.
-fn rewrite_list_lit(original: Expr, elems: ExprList) -> Expr {
-    match elems {
-        .Node(se, _) -> {
-            match se.node {
-                .ListComp(body, variable, collection, filter) -> {
-                    let push_expr = Expr.Call(
-                        Expr.FieldAccess(Expr.Ident("__lc"), "push"),
-                        ExprList.Node(sexpr_dummy(body), ExprList.End)
-                    )
-                    let push_stmt = if filter != null {
-                        Stmt.If(filter!, Stmt.Expr(push_expr), null)
-                    } else {
-                        Stmt.Expr(push_expr)
-                    }
-                    Expr.Block(StmtList.Node(
-                        sstmt(Stmt.Mut("__lc", ValueType.Unknown, Expr.ListLit(ExprList.End)), 0, 0),
-                        StmtList.Node(
-                            sstmt(Stmt.ForIn(variable, collection, push_stmt), 0, 0),
-                            StmtList.Node(
-                                sstmt(Stmt.Expr(Expr.Ident("__lc")), 0, 0),
-                                StmtList.End
-                            )
-                        )
-                    ))
-                }
-                _ -> original
+fn rewrite_list_lit(original: Expr, elems: List<SExpr>) -> Expr {
+    if elems.length == 0 { return original }
+    let se = elems[0]
+    match se.node {
+        .ListComp(body, variable, collection, filter) -> {
+            let push_args: List<SExpr> = [sexpr_dummy(body)]
+            let push_expr = Expr.Call(
+                Expr.FieldAccess(Expr.Ident("__lc"), "push"),
+                push_args
+            )
+            let push_stmt = if filter != null {
+                Stmt.If(filter!, Stmt.Expr(push_expr), null)
+            } else {
+                Stmt.Expr(push_expr)
             }
+            let empty_elems: List<SExpr> = []
+            Expr.Block(StmtList.Node(
+                sstmt(Stmt.Mut("__lc", ValueType.Unknown, Expr.ListLit(empty_elems)), 0, 0),
+                StmtList.Node(
+                    sstmt(Stmt.ForIn(variable, collection, push_stmt), 0, 0),
+                    StmtList.Node(
+                        sstmt(Stmt.Expr(Expr.Ident("__lc")), 0, 0),
+                        StmtList.End
+                    )
+                )
+            ))
         }
         _ -> original
     }
@@ -195,7 +194,7 @@ fn rewrite_list_lit(original: Expr, elems: ExprList) -> Expr {
 /// Dispatch a call expression to the right `desugar_*` rewriter
 /// when its callee is a known sugar builtin. Plain calls pass
 /// through unchanged so user-defined `assert`/`dbg` shadowing works.
-fn rewrite_call(original: Expr, callee: Expr, args: ExprList) -> Expr {
+fn rewrite_call(original: Expr, callee: Expr, args: List<SExpr>) -> Expr {
     let name = match callee { .Ident(n) -> n, _ -> "" }
     match name {
         "assert" -> desugar_assert(args)
@@ -212,109 +211,104 @@ fn rewrite_call(original: Expr, callee: Expr, args: ExprList) -> Expr {
 /// `if !cond { panic(msg) } else null`. Default message is
 /// `"assertion failed"`. Calls without args become a panic so the
 /// failure surfaces immediately.
-fn desugar_assert(args: ExprList) -> Expr {
-    match args {
-        .Node(cond_se, rest) -> {
-            let cond = cond_se.node
-            let msg = match rest {
-                .Node(msg_se, _) -> msg_se.node
-                _ -> Expr.String("\"assertion failed\"")
-            }
-            Expr.IfExpr(
-                Expr.Unary(UnOp.Not, cond),
-                Expr.Call(Expr.Ident("panic"), ExprList.Node(sexpr_dummy(msg), ExprList.End)),
-                Expr.Null
-            )
-        }
-        _ -> Expr.Call(Expr.Ident("panic"), ExprList.Node(sexpr_dummy(Expr.String("\"assert: no condition\"")), ExprList.End))
+fn desugar_assert(args: List<SExpr>) -> Expr {
+    if args.length == 0 {
+        let panic_args: List<SExpr> = [sexpr_dummy(Expr.String("\"assert: no condition\""))]
+        return Expr.Call(Expr.Ident("panic"), panic_args)
     }
+    let cond = args[0].node
+    let msg = if args.length > 1 { args[1].node } else { Expr.String("\"assertion failed\"") }
+    let panic_args: List<SExpr> = [sexpr_dummy(msg)]
+    Expr.IfExpr(
+        Expr.Unary(UnOp.Not, cond),
+        Expr.Call(Expr.Ident("panic"), panic_args),
+        Expr.Null
+    )
 }
 
 /// Rewrite `dbg(expr)` into `{ let __dbg = expr;
 /// println("[dbg] " + string(__dbg)); __dbg }`. Side-effect-once on
 /// `expr`, returns the value so `dbg` can be chained mid-pipeline.
-fn desugar_dbg(args: ExprList) -> Expr {
-    match args {
-        .Node(val_se, _) -> {
-            let val = val_se.node
-            let print_arg = Expr.Binary(
-                Expr.String("\"[dbg] \""),
-                BinOp.Add,
-                Expr.Call(Expr.Ident("string"), ExprList.Node(sexpr_dummy(Expr.Ident("__dbg")), ExprList.End))
-            )
-            Expr.Block(StmtList.Node(
-                sstmt(Stmt.Let("__dbg", ValueType.Unknown, val), 0, 0),
-                StmtList.Node(
-                    sstmt(Stmt.Expr(
-                        Expr.Call(Expr.Ident("println"), ExprList.Node(
-                            sexpr_dummy(print_arg),
-                            ExprList.End
-                        ))
-                    ), 0, 0),
-                    StmtList.Node(
-                        sstmt(Stmt.Expr(Expr.Ident("__dbg")), 0, 0),
-                        StmtList.End
-                    )
-                )
-            ))
-        }
-        _ -> Expr.Call(Expr.Ident("panic"), ExprList.Node(sexpr_dummy(Expr.String("\"dbg: no argument\"")), ExprList.End))
+fn desugar_dbg(args: List<SExpr>) -> Expr {
+    if args.length == 0 {
+        let panic_args: List<SExpr> = [sexpr_dummy(Expr.String("\"dbg: no argument\""))]
+        return Expr.Call(Expr.Ident("panic"), panic_args)
     }
+    let val = args[0].node
+    let string_args: List<SExpr> = [sexpr_dummy(Expr.Ident("__dbg"))]
+    let print_arg = Expr.Binary(
+        Expr.String("\"[dbg] \""),
+        BinOp.Add,
+        Expr.Call(Expr.Ident("string"), string_args)
+    )
+    let println_args: List<SExpr> = [sexpr_dummy(print_arg)]
+    Expr.Block(StmtList.Node(
+        sstmt(Stmt.Let("__dbg", ValueType.Unknown, val), 0, 0),
+        StmtList.Node(
+            sstmt(Stmt.Expr(
+                Expr.Call(Expr.Ident("println"), println_args)
+            ), 0, 0),
+            StmtList.Node(
+                sstmt(Stmt.Expr(Expr.Ident("__dbg")), 0, 0),
+                StmtList.End
+            )
+        )
+    ))
 }
 
 /// Rewrite `todo()` / `todo("message")` into a `panic` with a
 /// `"not yet implemented"` prefix.
-fn desugar_todo(args: ExprList) -> Expr {
-    let msg = match args {
-        .Node(se, _) -> Expr.Binary(Expr.String("\"not yet implemented: \""), BinOp.Add, se.node)
-        _ -> Expr.String("\"not yet implemented\"")
+fn desugar_todo(args: List<SExpr>) -> Expr {
+    let msg = if args.length > 0 {
+        Expr.Binary(Expr.String("\"not yet implemented: \""), BinOp.Add, args[0].node)
+    } else {
+        Expr.String("\"not yet implemented\"")
     }
-    Expr.Call(Expr.Ident("panic"), ExprList.Node(sexpr_dummy(msg), ExprList.End))
+    let panic_args: List<SExpr> = [sexpr_dummy(msg)]
+    Expr.Call(Expr.Ident("panic"), panic_args)
 }
 
 /// Rewrite `unreachable()` / `unreachable("reason")` into a `panic`
 /// with `"unreachable code reached"` prefix. For impossible code
 /// paths the type-checker can't yet prove dead.
-fn desugar_unreachable(args: ExprList) -> Expr {
-    let msg = match args {
-        .Node(se, _) -> Expr.Binary(Expr.String("\"unreachable: \""), BinOp.Add, se.node)
-        _ -> Expr.String("\"unreachable code reached\"")
+fn desugar_unreachable(args: List<SExpr>) -> Expr {
+    let msg = if args.length > 0 {
+        Expr.Binary(Expr.String("\"unreachable: \""), BinOp.Add, args[0].node)
+    } else {
+        Expr.String("\"unreachable code reached\"")
     }
-    Expr.Call(Expr.Ident("panic"), ExprList.Node(sexpr_dummy(msg), ExprList.End))
+    let panic_args: List<SExpr> = [sexpr_dummy(msg)]
+    Expr.Call(Expr.Ident("panic"), panic_args)
 }
 
 /// Rewrite `min(a, b)` / `max(a, b)` into a let-binding block that
 /// evaluates each operand once, then picks the appropriate side via
 /// `IfExpr`. `is_min` chooses the comparison op (`<` for min, `>`
 /// for max). Wrong arity panics.
-fn desugar_min_max(args: ExprList, is_min: int) -> Expr {
-    match args {
-        .Node(a_se, rest) -> {
-            match rest {
-                .Node(b_se, _) -> {
-                    let op = if is_min { BinOp.Lt } else { BinOp.Gt }
-                    Expr.Block(StmtList.Node(
-                        sstmt(Stmt.Let("__a", ValueType.Unknown, a_se.node), 0, 0),
-                        StmtList.Node(
-                            sstmt(Stmt.Let("__b", ValueType.Unknown, b_se.node), 0, 0),
-                            StmtList.Node(
-                                sstmt(Stmt.Expr(
-                                    Expr.IfExpr(
-                                        Expr.Binary(Expr.Ident("__a"), op, Expr.Ident("__b")),
-                                        Expr.Ident("__a"),
-                                        Expr.Ident("__b")
-                                    )
-                                ), 0, 0),
-                                StmtList.End
-                            )
-                        )
-                    ))
-                }
-                _ -> Expr.Call(Expr.Ident("panic"), ExprList.Node(sexpr_dummy(Expr.String("\"min/max requires 2 arguments\"")), ExprList.End))
-            }
-        }
-        _ -> Expr.Call(Expr.Ident("panic"), ExprList.Node(sexpr_dummy(Expr.String("\"min/max requires 2 arguments\"")), ExprList.End))
+fn desugar_min_max(args: List<SExpr>, is_min: int) -> Expr {
+    if args.length < 2 {
+        let panic_args: List<SExpr> = [sexpr_dummy(Expr.String("\"min/max requires 2 arguments\""))]
+        return Expr.Call(Expr.Ident("panic"), panic_args)
     }
+    let a_se = args[0]
+    let b_se = args[1]
+    let op = if is_min { BinOp.Lt } else { BinOp.Gt }
+    Expr.Block(StmtList.Node(
+        sstmt(Stmt.Let("__a", ValueType.Unknown, a_se.node), 0, 0),
+        StmtList.Node(
+            sstmt(Stmt.Let("__b", ValueType.Unknown, b_se.node), 0, 0),
+            StmtList.Node(
+                sstmt(Stmt.Expr(
+                    Expr.IfExpr(
+                        Expr.Binary(Expr.Ident("__a"), op, Expr.Ident("__b")),
+                        Expr.Ident("__a"),
+                        Expr.Ident("__b")
+                    )
+                ), 0, 0),
+                StmtList.End
+            )
+        )
+    ))
 }
 
 // ── Generic expression walker ──
@@ -354,13 +348,17 @@ fn walk_expr(expr: Expr) -> Expr {
     }
 }
 
-/// Map `desugar_expr` over every element of an ExprList,
+/// Map `desugar_expr` over every element of a `List<SExpr>`,
 /// preserving span info on each rewritten node.
-fn desugar_expr_list(list: ExprList) -> ExprList {
-    match list {
-        .End -> ExprList.End
-        .Node(se, next) -> ExprList.Node(sexpr(desugar_expr(se.node), se.line, se.col), desugar_expr_list(next))
+fn desugar_expr_list(list: List<SExpr>) -> List<SExpr> {
+    mut out: List<SExpr> = []
+    mut i = 0
+    while i < list.length {
+        let se = list[i]
+        out.push(sexpr(desugar_expr(se.node), se.line, se.col))
+        i = i + 1
     }
+    out
 }
 
 /// Walk a `List<MatchArm>` desugaring each arm's guard (when

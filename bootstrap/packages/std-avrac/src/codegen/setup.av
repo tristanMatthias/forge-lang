@@ -1,6 +1,6 @@
 // WHY: compilation setup — declaration passes and top-level emission.
 
-use core.{Expr, ExprList, FieldEntry, ParamList, Stmt, StmtList, ValueType, VarBinding, Variant, SStmt, field_list_has, filter_fields_only, filter_fields_without, find_annotation, param_list_length, stmt_unwrap, variant_max_payload, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_unknown, vtype_enum_name, vtype_struct_name, env_extend}
+use core.{Expr, FieldEntry, ParamList, Stmt, StmtList, ValueType, VarBinding, Variant, SStmt, field_list_has, filter_fields_only, filter_fields_without, find_annotation, param_list_length, stmt_unwrap, variant_max_payload, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_unknown, vtype_enum_name, vtype_struct_name, env_extend}
 use parse.{parse_int_literal}
 use core.{avra_llvm_const_int}
 use core.{avra_process_env_get}

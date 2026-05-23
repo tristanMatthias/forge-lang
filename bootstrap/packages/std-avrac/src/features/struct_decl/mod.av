@@ -34,7 +34,7 @@ export fn field_access_feature() -> Feature {
 /// struct_lit because the parsing/typeck shape is similar.
 export fn enum_ctor_feature() -> Feature {
     feature_new("enum_ctor") with {
-        expr_tag: Expr.EnumCtor("", "", ExprList.End),
+        expr_tag: Expr.EnumCtor("", "", []),
         emit_expr: enum_ctor_emit_expr,
         resolve_expr: enum_ctor_resolve_expr,
         check_expr: enum_ctor_check_expr,

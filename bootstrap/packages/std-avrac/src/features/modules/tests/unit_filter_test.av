@@ -5,7 +5,7 @@
 // Codegen then skips body emission for those modules. These tests
 // build small in-memory ASTs and assert on the post-filter shape.
 
-use @std.avrac.core.{Stmt, StmtList, SStmt, Annotation, ExprList, ParamList, ValueType, sstmt_at, sstmt_dummy}
+use @std.avrac.core.{Stmt, StmtList, SStmt, Annotation, ParamList, ValueType, sstmt_at, sstmt_dummy}
 use @std.avrac.features.modules.{filter_to_target_unit}
 
 /// Build a `Stmt.Function` SStmt anchored at `file` so the filter

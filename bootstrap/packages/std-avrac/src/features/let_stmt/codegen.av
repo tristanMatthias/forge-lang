@@ -2,7 +2,7 @@
 // Handles trait boxing: `let d: Describable = Circle { ... }` creates
 // a trait object with a vtable for dynamic dispatch.
 
-use core.{Expr, ExprList, ValueType, VarBinding, vtype_is_unknown, vtype_trait_name, vtype_struct_name, vtype_enum_name, vtype_list_elem, vtype_is_list}
+use core.{Expr, SExpr, ValueType, VarBinding, vtype_is_unknown, vtype_trait_name, vtype_struct_name, vtype_enum_name, vtype_list_elem, vtype_is_list}
 use core.{type_registry_id_for, method_mangled_name}
 use codegen.{Ctx, ok_stmt, vtype_is_copy, releasable_has}
 use features.trait_decl.{box_for_trait}
@@ -143,7 +143,7 @@ fn resolve_concrete_name(ty: ValueType) -> string {
 /// boxed as a trait object before being pushed. Used for
 /// `let xs: List<Trait> = [c1, c2]` so callers see one type at
 /// runtime even when the elements have different concrete types.
-fn emit_trait_boxed_list(ctx: Ctx, env: List<VarBinding>, elements: ExprList, trait_name: string) -> Result<ptr, string> {
+fn emit_trait_boxed_list(ctx: Ctx, env: List<VarBinding>, elements: List<SExpr>, trait_name: string) -> Result<ptr, string> {
     let arr = ctx.array_new()
     push_boxed_elements(ctx, env, arr, elements, trait_name)
 }
@@ -151,22 +151,21 @@ fn emit_trait_boxed_list(ctx: Ctx, env: List<VarBinding>, elements: ExprList, tr
 /// Recursive worker for `emit_trait_boxed_list`. Emits each
 /// element, boxes it for the trait when its type is concrete,
 /// and pushes the result onto `arr`.
-fn push_boxed_elements(ctx: Ctx, env: List<VarBinding>, arr: ptr, elements: ExprList, trait_name: string) -> Result<ptr, string> {
-    match elements {
-        .End -> .Ok(arr)
-        .Node(se, next) -> {
-            let r = ctx.emit(env, se.node)?
-            let concrete_name = resolve_concrete_name(r.ty)
-            let boxed = if concrete_name != "" {
-                box_for_trait(ctx, r.value, trait_name, concrete_name)
-            } else {
-                // Already boxed or unknown type — push as-is
-                r.value
-            }
-            ctx.array_push(arr, boxed)
-            push_boxed_elements(ctx, env, arr, next, trait_name)
+fn push_boxed_elements(ctx: Ctx, env: List<VarBinding>, arr: ptr, elements: List<SExpr>, trait_name: string) -> Result<ptr, string> {
+    mut i = 0
+    while i < elements.length {
+        let r = ctx.emit(env, elements[i].node)?
+        let concrete_name = resolve_concrete_name(r.ty)
+        let boxed = if concrete_name != "" {
+            box_for_trait(ctx, r.value, trait_name, concrete_name)
+        } else {
+            // Already boxed or unknown type — push as-is
+            r.value
         }
+        ctx.array_push(arr, boxed)
+        i = i + 1
     }
+    .Ok(arr)
 }
 
 // build_vtable and push_vtable_entries removed — use box_for_trait from codegen/mod.av

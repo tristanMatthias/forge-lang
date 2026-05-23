@@ -9,7 +9,7 @@
 // Phase 2 of Components V2 (vez6.2). The program-walker that calls
 // this on every call site lives in rewrite.av.
 
-use core.{Expr, ExprList, sexpr_dummy, Stmt, StmtList, sstmt_dummy, ValueType, BinOp, UnOp, LogicOp, ParamList, TypeParamEntry, FieldEntry, FieldInit, CompConfigPair}
+use core.{Expr, SExpr, sexpr_dummy, Stmt, StmtList, sstmt_dummy, ValueType, BinOp, UnOp, LogicOp, ParamList, TypeParamEntry, FieldEntry, FieldInit, CompConfigPair}
 use features.eval.{Runtime, Value, eval_expr, eval_fn_with_resolved_args, literal_args_to_values, step_value, step_had_error}
 use features.comptime.{CompTimeFn, CompTimeRegistry, comptime_lookup}
 use features.quote_expr.{construct_stmt}
@@ -143,18 +143,20 @@ fn value_to_construct_expr(v: Value) -> Expr? {
     }
 }
 
-/// Convert a payload List<Value> into an ExprList whose elements
+/// Convert a payload List<Value> into a `List<SExpr>` whose elements
 /// reconstruct each value at runtime. Each value is wrapped via
-/// `sexpr_dummy` so the result fits the SExpr-bearing ExprList.Node
-/// shape — same as `lower_quotes` does when it builds construct-
-/// expression payloads.
-fn payload_to_args(payload: List<Value>, i: int) -> ExprList? {
-    if i >= payload.length { return ExprList.End }
-    let inner = value_to_construct_expr(payload[i])
-    if inner == null { return null }
-    let rest = payload_to_args(payload, i + 1)
-    if rest == null { return null }
-    ExprList.Node(sexpr_dummy(inner!), rest!)
+/// `sexpr_dummy` — same as `lower_quotes` does when it builds
+/// construct-expression payloads.
+fn payload_to_args(payload: List<Value>, i: int) -> List<SExpr>? {
+    mut out: List<SExpr> = []
+    mut j = i
+    while j < payload.length {
+        let inner = value_to_construct_expr(payload[j])
+        if inner == null { return null }
+        out.push(sexpr_dummy(inner!))
+        j = j + 1
+    }
+    out
 }
 
 /// Decode an enum Value whose type is `@std::avrac::core::Expr`
@@ -312,50 +314,25 @@ fn two_expr_decode(p: List<Value>, variant: string) -> Expr? {
     }
 }
 
-/// Decode a Value carrying an `ExprList` back into the linked-list
-/// ExprList AST. Accepts BOTH shapes during the lkze.9 transition:
-///
-///   - kind="list" Value (produced by Expr.ListLit eval) — used once
-///     ExprList is retired and construct_expr_list emits Expr.ListLit
-///     (lkze.9 #18, Phase 2 of fwyx).
-///   - kind="enum" Value with type tag "@std::avrac::core::ExprList"
-///     and variant "End"/"Node" cons cells — the current shape until
-///     ExprList retires.
-///
-/// fwyx: dual-mode is the bridge that lets fwyx land before lkze.9 #18.
-/// Once #18 ships, the enum arm is dead code and goes.
-fn list_value_to_expr_list(v: Value) -> ExprList? {
-    if v.kind == "list" { return list_value_to_expr_list_at(v.list_payload, 0) }
-    if v.kind == "enum" && v.enum_type == "@std::avrac::core::ExprList" {
-        return enum_value_to_expr_list_cons(v)
-    }
-    null
+/// Decode a Value carrying a list-of-Expr back into a `List<SExpr>`.
+/// Post-lkze.9 #18: `construct_expr_list` emits `Expr.ListLit` whose
+/// runtime evaluation produces a `kind="list"` Value, so the only
+/// shape we see is the flat list payload.
+fn list_value_to_expr_list(v: Value) -> List<SExpr>? {
+    if v.kind != "list" { return null }
+    list_value_to_expr_list_at(v.list_payload, 0)
 }
 
-fn list_value_to_expr_list_at(items: List<Value>, i: int) -> ExprList? {
-    if i >= items.length { return ExprList.End }
-    let inner = enum_value_to_expr(items[i])
-    if inner == null { return null }
-    let rest = list_value_to_expr_list_at(items, i + 1)
-    if rest == null { return null }
-    ExprList.Node(sexpr_dummy(inner!), rest!)
-}
-
-/// Pre-fwyx cons-cell decoder for ExprList Values. Goes away once
-/// construct_expr_list flips to Expr.ListLit in lkze.9 #18.
-fn enum_value_to_expr_list_cons(v: Value) -> ExprList? {
-    match v.enum_variant {
-        "End" -> ExprList.End
-        "Node" -> {
-            let p = v.enum_payload
-            if p.length != 2 { return null }
-            let inner = enum_value_to_expr(p[0])
-            let rest = enum_value_to_expr_list_cons(p[1])
-            if inner == null || rest == null { return null }
-            ExprList.Node(sexpr_dummy(inner!), rest!)
-        }
-        _ -> null
+fn list_value_to_expr_list_at(items: List<Value>, i: int) -> List<SExpr>? {
+    mut out: List<SExpr> = []
+    mut j = i
+    while j < items.length {
+        let inner = enum_value_to_expr(items[j])
+        if inner == null { return null }
+        out.push(sexpr_dummy(inner!))
+        j = j + 1
     }
+    out
 }
 
 /// Decode an enum Value carrying a `@std::avrac::core::BinOp` tag
