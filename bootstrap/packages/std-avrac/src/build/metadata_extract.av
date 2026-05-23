@@ -6,7 +6,7 @@
 // Tracked under forge-crafting-intepreters-iinq.
 
 use core.{
-    Stmt, StmtList, SStmt, sstmt_at, Expr, ParamList, FieldEntry, Variant, TypeParamEntry, ValueType,
+    Stmt, StmtList, SStmt, sstmt_at, Expr, FieldEntry, Variant, TypeParamEntry, ValueType,
     Annotation, stmt_unwrap,
 }
 use build.metadata.{
@@ -18,7 +18,7 @@ use build.metadata.{
 }
 use parse.{parse_int_literal}
 use fmt.{fmt_stmt_list}
-use core.{ParamList, param_list_length}
+use core.{param_list_length}
 
 // Internal accumulator — each walk step folds into this and returns
 // the updated record. Lists grow via prepend so traversal stays

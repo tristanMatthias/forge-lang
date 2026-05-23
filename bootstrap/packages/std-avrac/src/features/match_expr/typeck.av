@@ -1,7 +1,7 @@
 // WHY: type checking for match statements and expressions.
 // Exhaustiveness checking, pattern variable binding, arm type unification.
 
-use core.{Expr, Pattern, MatchArm, WhenArm, ParamList, Stmt, StmtList, Variant, ValueType, stmt_unwrap, vtype_display, vtype_enum_name, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types}
+use core.{Expr, Pattern, MatchArm, WhenArm, ParamEntry, Stmt, StmtList, Variant, ValueType, stmt_unwrap, vtype_display, vtype_enum_name, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types}
 use diagnostics.{DiagCode, diag_warning, span_new, bag_report}
 use core.{type_short_name}
 use typeck.{EnumTypeReg, ExprResult, TC, check_expr, tc_bind, tc_check_explicit_returns, tc_enter, tc_er, tc_exit, tc_report, resolve_vtype}
@@ -322,14 +322,17 @@ fn tc_bind_pattern_list(tc: TC, pats: List<Pattern>) -> TC {
 /// Bind every named param from a constructor pattern into the
 /// type environment. Wildcards pass through; the caller's
 /// resolver pass already validated each name's payload type.
-fn tc_bind_pattern_params(tc: TC, params: ParamList) -> TC {
-    match params {
-        .End -> tc
-        .Node(name, _, next) -> {
-            if name == "_" { return tc_bind_pattern_params(tc, next) }
-            tc_bind_pattern_params(tc_bind(tc, name, .Unknown), next)
+fn tc_bind_pattern_params(tc: TC, params: List<ParamEntry>) -> TC {
+    mut cur = tc
+    mut i = 0
+    while i < params.length {
+        let n = params[i].name
+        if n != "_" {
+            cur = tc_bind(cur, n, .Unknown)
         }
+        i = i + 1
     }
+    cur
 }
 
 // ── Match arm checking ──

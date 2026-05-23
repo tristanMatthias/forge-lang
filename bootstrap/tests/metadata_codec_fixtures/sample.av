@@ -22,8 +22,8 @@ use @std.avrac.build.{
     metadata_write, metadata_read, metadata_file_exists,
 }
 use @std.avrac.core.{
-    Stmt, StmtList, Expr, ExprList, TypeParamEntry,
-    ValueType, FieldEntry, Variant, ParamList,
+    Stmt, StmtList, Expr, SExpr, TypeParamEntry,
+    ValueType, FieldEntry, Variant, ParamEntry,
     Annotation, vtype_eq, sstmt_dummy, stmt_unwrap, find_annotation,
 }
 use @std.avrac.build.{extract_unit_metadata}
@@ -325,7 +325,10 @@ fn main() -> int {
 
     // FNS section per-entry round-trips.
     // fn add(a: int, b: int) -> int  (exported)
-    let add_params = ParamList.Node("a", ValueType.Int, ParamList.Node("b", ValueType.Int, ParamList.End))
+    let add_params: List<ParamEntry> = [
+        ParamEntry { name: "a", vtype: ValueType.Int },
+        ParamEntry { name: "b", vtype: ValueType.Int },
+    ]
     let add_entry = FnDeclEntry {
         sym_id: sym_id_for("@test::add"),
         name: "@test::add",
@@ -352,7 +355,7 @@ fn main() -> int {
         type_params: [],
         exported: true,
         is_extern: true,
-        params: ParamList.End,
+        params: [],
         ret: ValueType.Int,
     }
     let wext = writer_new()
@@ -360,11 +363,13 @@ fn main() -> int {
     let rext = reader_new(wext.finish())
     let now_decoded = rext.fn_decl()
     probe("fn_extern", now_decoded.is_extern)
-    probe("fn_no_params", match now_decoded.params { .End -> true, _ -> false })
+    probe("fn_no_params", now_decoded.params.length == 0)
 
     // fn process(items: List<int>, label: string) -> Result<int, string>
-    let proc_params = ParamList.Node("items", ValueType.List(ValueType.Int),
-        ParamList.Node("label", ValueType.Str, ParamList.End))
+    let proc_params: List<ParamEntry> = [
+        ParamEntry { name: "items", vtype: ValueType.List(ValueType.Int) },
+        ParamEntry { name: "label", vtype: ValueType.Str },
+    ]
     mut proc_ret_args: List<ValueType> = []
     proc_ret_args.push(ValueType.Int)
     proc_ret_args.push(ValueType.Str)
@@ -413,7 +418,7 @@ fn main() -> int {
         type_params: [],
         exported: true,
         is_extern: false,
-        params: ParamList.Node("c", ValueType.Struct("@test::e2e::Cell", 0), ParamList.End),
+        params: [ParamEntry { name: "c", vtype: ValueType.Struct("@test::e2e::Cell", 0) }],
         ret: ValueType.Int,
     }
     let e2e_fns_body_w = writer_new()
@@ -519,7 +524,7 @@ fn main() -> int {
     probe("const_int_value", mr_decoded.int_value == 42)
 
     // TraitDecl: trait Display { fn show(self) -> string }
-    let show_method_params = ParamList.Node("self", ValueType.Struct("Self", 0), ParamList.End)
+    let show_method_params: List<ParamEntry> = [ParamEntry { name: "self", vtype: ValueType.Struct("Self", 0) }]
     mut display_methods: List<MetaTraitMethod> = []
     display_methods.push(MetaTraitMethod { name: "show", params: show_method_params, ret: ValueType.Str })
     let display_entry = TypeDeclEntry {
@@ -542,7 +547,7 @@ fn main() -> int {
     let disp_first: MetaTraitMethod = if disp_methods.length > 0 {
         disp_methods[0]
     } else {
-        MetaTraitMethod { name: "", params: ParamList.End, ret: ValueType.Unknown }
+        MetaTraitMethod { name: "", params: [], ret: ValueType.Unknown }
     }
     probe("type_trait_method_present", disp_methods.length > 0 && disp_first.name == "show")
     probe("type_trait_method_ret", disp_methods.length > 0 && vtype_eq(disp_first.ret, ValueType.Str))
@@ -621,7 +626,7 @@ fn main() -> int {
         type_params: [],
         exported: true,
         is_extern: false,
-        params: ParamList.Node("u", ValueType.Struct("@unit::User", 0), ParamList.End),
+        params: [ParamEntry { name: "u", vtype: ValueType.Struct("@unit::User", 0) }],
         ret: ValueType.Str,
     }
     let unit_const_entry = ConstDeclEntry {
@@ -678,7 +683,7 @@ fn main() -> int {
     let dec_fn_first: FnDeclEntry = if dec_fns.length > 0 {
         dec_fns[0]
     } else {
-        FnDeclEntry { sym_id: 0, name: "", type_params: [], exported: false, is_extern: false, params: ParamList.End, ret: ValueType.Unknown }
+        FnDeclEntry { sym_id: 0, name: "", type_params: [], exported: false, is_extern: false, params: [], ret: ValueType.Unknown }
     }
     let dec_const_first: ConstDeclEntry = if dec_consts.length > 0 {
         dec_consts[0]
@@ -711,10 +716,13 @@ fn main() -> int {
     let s_type = sstmt_dummy(Stmt.TypeDecl("Pt", empty_tp_pt, pt_fields_ast))
 
     // export fn add(a: int, b: int) -> int { ... }  (body irrelevant for extraction)
-    let add_params_ast = ParamList.Node("a", ValueType.Int, ParamList.Node("b", ValueType.Int, ParamList.End))
+    let add_params_ast: List<ParamEntry> = [
+        ParamEntry { name: "a", vtype: ValueType.Int },
+        ParamEntry { name: "b", vtype: ValueType.Int },
+    ]
     let empty_tp_add: List<TypeParamEntry> = []
     let s_fn_inner = Stmt.Function("add", empty_tp_add, add_params_ast, ValueType.Int, StmtList.End)
-    let exp_annots: List<Annotation> = [Annotation { name: "export", args: ExprList.End }]
+    let exp_annots: List<Annotation> = [Annotation { name: "export", args: [] }]
     let s_fn = sstmt_dummy(Stmt.Annotated(exp_annots, s_fn_inner))
 
     // const VERSION: string = "1.0"
@@ -724,7 +732,8 @@ fn main() -> int {
     let s_const_int = sstmt_dummy(Stmt.Const("N", ValueType.Int, Expr.Number("42")))
 
     // extern fn host_now() -> int
-    let s_extern = sstmt_dummy(Stmt.ExternFn("host_now", ParamList.End, ValueType.Int))
+    let extern_params: List<ParamEntry> = []
+    let s_extern = sstmt_dummy(Stmt.ExternFn("host_now", extern_params, ValueType.Int))
 
     let ext_stmts =
         StmtList.Node(s_type,
@@ -745,7 +754,7 @@ fn main() -> int {
     let ex_f0: FnDeclEntry = if ex_fns.length > 0 {
         ex_fns[0]
     } else {
-        FnDeclEntry { sym_id: 0, name: "", type_params: [], exported: false, is_extern: false, params: ParamList.End, ret: ValueType.Unknown }
+        FnDeclEntry { sym_id: 0, name: "", type_params: [], exported: false, is_extern: false, params: [], ret: ValueType.Unknown }
     }
     let ex_c0: ConstDeclEntry = if ex_consts.length > 0 {
         ex_consts[0]
@@ -760,7 +769,7 @@ fn main() -> int {
     let ex_f1: FnDeclEntry = if ex_fns.length > 1 {
         ex_fns[1]
     } else {
-        FnDeclEntry { sym_id: 0, name: "", type_params: [], exported: false, is_extern: false, params: ParamList.End, ret: ValueType.Unknown }
+        FnDeclEntry { sym_id: 0, name: "", type_params: [], exported: false, is_extern: false, params: [], ret: ValueType.Unknown }
     }
     probe("extract_unit_name", extracted.unit_name == "@ext")
     probe("extract_type_qualified", ex_types.length > 0 && ex_t0.name == "@ext::Pt")
@@ -779,7 +788,7 @@ fn main() -> int {
         exported: true,
         is_extern: false,
         type_params: gen_fn_tps,
-        params: ParamList.Node("x", ValueType.Struct("T", 0), ParamList.End),
+        params: [ParamEntry { name: "x", vtype: ValueType.Struct("T", 0) }],
         ret: ValueType.Struct("T", 0),
     }
     let wgen = writer_new()
@@ -873,14 +882,14 @@ fn main() -> int {
     // way they came in.
     mut synth_fields: List<FieldEntry> = []
     synth_fields.push(FieldEntry { name: "x", resolved: ValueType.Int })
-    let greet_annots: List<Annotation> = [Annotation { name: "export", args: ExprList.End }]
+    let greet_annots: List<Annotation> = [Annotation { name: "export", args: [] }]
     let empty_tp_synth: List<TypeParamEntry> = []
     let synth_stmts = StmtList.Node(
         sstmt_dummy(Stmt.TypeDecl("Cell", empty_tp_synth, synth_fields)),
         StmtList.Node(
             sstmt_dummy(Stmt.Annotated(
                 greet_annots,
-                Stmt.Function("greet", empty_tp_synth, ParamList.End, ValueType.Str, StmtList.End),
+                Stmt.Function("greet", empty_tp_synth, [], ValueType.Str, StmtList.End),
             )),
             StmtList.Node(
                 sstmt_dummy(Stmt.Const("BUILD", ValueType.Str, Expr.String("\"42\""))),

@@ -1,6 +1,6 @@
 // WHY: emits LLVM IR for `match` as both a statement and an expression.
 
-use core.{Expr, Pattern, MatchArm, WhenArm, ParamList, FieldEntry, Variant, VarBinding, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types}
+use core.{Expr, Pattern, MatchArm, WhenArm, ParamEntry, FieldEntry, Variant, VarBinding, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types}
 use codegen.{Ctx, EmitValue, StmtResult, err_emit, ok_emit, field_resolved_at, emit_value_ptr, emit_value_ty, enum_reg_find_by_variant, vtype_is_ptr_type}
 use core.{vtype_from_name}
 use codegen.{ok_sr, err_sr}
@@ -505,28 +505,26 @@ fn bind_pattern_payload(ctx: Ctx, env: List<VarBinding>, pattern: Pattern, st_ty
 /// the binding list pairwise with the variant's fields, loading
 /// each payload slot and adding it to the env. Wildcards
 /// (`_`) bypass the bind step.
-fn bind_pattern_payload_loop(ctx: Ctx, env: List<VarBinding>, st_ty: ptr, subj_ptr: ptr, bindings: ParamList, fields: List<FieldEntry>, idx: int) -> List<VarBinding> {
-    match bindings {
-        .End -> env
-        .Node(name, _, next_b) if name == "_" ->
-            bind_pattern_payload_loop(ctx, env, st_ty, subj_ptr, next_b, fields, idx + 1)
-        .Node(name, _, next_b) -> {
-            // `idx` is both the payload-slot index AND the field
-            // index — they advanced in lock-step under the cons-list
-            // variant via `advance_field_list(fields)`. With
-            // List<FieldEntry>, no per-iteration tail walk: pass
-            // `fields` as-is and read `fields[idx]`.
-            let field_ty = field_resolved_at(fields, idx)
-            let loaded = load_payload_field(ctx, st_ty, subj_ptr, idx, field_ty, name)
-            // Retain ptr-type payload fields so they survive enum release.
+fn bind_pattern_payload_loop(ctx: Ctx, env: List<VarBinding>, st_ty: ptr, subj_ptr: ptr, bindings: List<ParamEntry>, fields: List<FieldEntry>, idx: int) -> List<VarBinding> {
+    mut cur_env = env
+    mut i = 0
+    while i < bindings.length {
+        let name = bindings[i].name
+        let slot = idx + i
+        if name == "_" {
+            i = i + 1
+        } else {
+            let field_ty = field_resolved_at(fields, slot)
+            let loaded = load_payload_field(ctx, st_ty, subj_ptr, slot, field_ty, name)
             if vtype_is_ptr_type(field_ty) {
                 let as_ptr = ctx.int_to_ptr(loaded, "retain_payload")
                 ctx.rc_retain(as_ptr)
             }
-            let extended = ctx.bind(env, name, loaded, field_ty)
-            bind_pattern_payload_loop(ctx, extended, st_ty, subj_ptr, next_b, fields, idx + 1)
+            cur_env = ctx.bind(cur_env, name, loaded, field_ty)
+            i = i + 1
         }
     }
+    cur_env
 }
 
 // Bind nested sub-patterns: each list element matches against the
@@ -594,12 +592,11 @@ fn bind_single_sub_pattern(ctx: Ctx, env: List<VarBinding>, pat: Pattern, value:
 /// Bind the first declared name in a ParamList to `value`.
 /// Used by the nested-pattern path when a single-payload
 /// variant is bound to a single capture name.
-fn bind_first_param(ctx: Ctx, env: List<VarBinding>, bindings: ParamList, value: ptr, ty: ValueType) -> List<VarBinding> {
-    match bindings {
-        .End -> env
-        .Node(name, _, _) if name == "_" -> env
-        .Node(name, _, _) -> ctx.bind(env, name, value, ty)
-    }
+fn bind_first_param(ctx: Ctx, env: List<VarBinding>, bindings: List<ParamEntry>, value: ptr, ty: ValueType) -> List<VarBinding> {
+    if bindings.length == 0 { return env }
+    let name = bindings[0].name
+    if name == "_" { return env }
+    ctx.bind(env, name, value, ty)
 }
 
 // ── Primitive match (non-enum) ──

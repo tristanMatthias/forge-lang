@@ -6,7 +6,7 @@
 // dir-as-module (g2eo.1): names.av auto-loads as a sibling, surfaces
 // flat at `resolve.{...}`.
 
-use core.{Expr, FieldInit, ParamList, Pattern, SExpr, SStmt, Stmt, StmtList, TypeParamEntry, stmt_unwrap}
+use core.{Expr, FieldInit, ParamEntry, Pattern, SExpr, SStmt, Stmt, StmtList, TypeParamEntry, stmt_unwrap}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_with_help, span_dummy, span_new, span_at}
 use core.{Registry, build_registry, dispatch_stmt_resolve, dispatch_expr_resolve, avra_stmt_tag, avra_expr_tag}
 
@@ -219,15 +219,16 @@ export fn define_name(r: Resolver, name: string) -> Resolver {
 
 /// Declare-and-define every parameter name. Params are usable
 /// immediately inside the fn body, so we skip the two-step pattern.
-export fn define_param_names(r: Resolver, params: ParamList) -> Resolver {
-    match params {
-        .End -> r
-        .Node(name, _, next) -> {
-            let after = declare_name(r, name)
-            let defined = define_name(after, name)
-            define_param_names(defined, next)
-        }
+export fn define_param_names(r: Resolver, params: List<ParamEntry>) -> Resolver {
+    mut acc = r
+    mut i = 0
+    while i < params.length {
+        let name = params[i].name
+        let after = declare_name(acc, name)
+        acc = define_name(after, name)
+        i = i + 1
     }
+    acc
 }
 
 /// Push type param names (`T`, `U`, ...) into scope as defined
@@ -364,18 +365,14 @@ export fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
 
 /// Same as `define_param_names` but iterative — used in performance-
 /// sensitive paths to skip the recursive Resolver-threading overhead.
-export fn declare_params(r: Resolver, params: ParamList) -> Resolver {
-    mut current = params
+export fn declare_params(r: Resolver, params: List<ParamEntry>) -> Resolver {
     mut res = r
-    while true {
-        match current {
-            .End -> { return res }
-            .Node(name, _, next) -> {
-                let declared = declare_name(res, name)
-                res = define_name(declared, name)
-                current = next
-            }
-        }
+    mut i = 0
+    while i < params.length {
+        let name = params[i].name
+        let declared = declare_name(res, name)
+        res = define_name(declared, name)
+        i = i + 1
     }
     res
 }

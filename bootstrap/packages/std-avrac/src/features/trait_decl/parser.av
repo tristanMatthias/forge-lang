@@ -3,7 +3,7 @@
 // The trait declaration itself is a no-op at codegen — the methods
 // are implemented by `impl Trait for Type { ... }` blocks.
 
-use core.{Stmt, StmtList, ParamList, TypeParamEntry, SStmt, sstmt, ValueType, type_expr_to_vtype}
+use core.{Stmt, StmtList, TypeParamEntry, SStmt, sstmt, ValueType, type_expr_to_vtype}
 use parse.{Parser}
 use core.{Tk}
 

@@ -1,7 +1,7 @@
 // WHY: emits function bodies and binds parameters into the body scope.
 // Also emits null-argument checks when debug_null_checks is enabled on Ctx.
 
-use core.{Expr, SExpr, Stmt, StmtList, ParamList, VarBinding, env_lookup, ValueType, stmt_unwrap, field_index_of, find_annotation, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_is_bytes, vtype_is_newtype, vtype_newtype_inner, vtype_newtype_name, vtype_struct_name, vtype_trait_name, vtype_is_unknown}
+use core.{Expr, SExpr, Stmt, StmtList, ParamEntry, VarBinding, env_lookup, ValueType, stmt_unwrap, field_index_of, find_annotation, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_is_bytes, vtype_is_newtype, vtype_newtype_inner, vtype_newtype_name, vtype_struct_name, vtype_trait_name, vtype_is_unknown}
 use codegen.{cg_newtype_vtype_lookup}
 use core.{method_mangled_name, type_registry_id_for, type_registry_name_for, is_result_enum_name, is_result_shaped_enum}
 use codegen.{Ctx, EmitValue, ok_emit, ok_emit, ok_stmt, err_emit, err_stmt, trait_decl_has}
@@ -104,7 +104,7 @@ fn fn_belongs_to_lib_pkg(ctx: Ctx, fn_name: string) -> bool {
 /// task group when the body uses `spawn`, then walk the body.
 /// Adds an implicit return at the end when the last statement
 /// didn't terminate.
-export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: StmtList) -> Result<List<VarBinding>, string> {
+export fn emit_function_body(ctx: Ctx, name: string, params: List<ParamEntry>, body: StmtList) -> Result<List<VarBinding>, string> {
     let fn_val = ctx.get_fn(name)
     if fn_val == null {
         return err_stmt("codegen error: function `${name}` was not declared in pass 1")
@@ -191,14 +191,16 @@ export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: St
 /// alloca and extending the environment so the body sees the
 /// param by name. Each binding is typed with the resolved
 /// param's ValueType.
-fn bind_params_inline(ctx: Ctx, fn_val: ptr, params: ParamList, idx: int, env: List<VarBinding>) -> List<VarBinding> {
-    match params {
-        .End -> env
-        .Node(name, resolved, next) -> {
-            let arg = ctx.get_param(fn_val, idx)
-            bind_params_inline(ctx, fn_val, next, idx + 1, ctx.bind(env, name, arg, resolved))
-        }
+fn bind_params_inline(ctx: Ctx, fn_val: ptr, params: List<ParamEntry>, idx: int, env: List<VarBinding>) -> List<VarBinding> {
+    mut cur_env = env
+    mut i = 0
+    while i < params.length {
+        let p = params[i]
+        let arg = ctx.get_param(fn_val, idx + i)
+        cur_env = ctx.bind(cur_env, p.name, arg, p.vtype)
+        i = i + 1
     }
+    cur_env
 }
 
 // ── Debug null checks ──
@@ -233,15 +235,14 @@ fn should_null_check_vt(vt: ValueType) -> bool {
 /// Emit per-parameter null-check traps when
 /// `ctx.debug_null_checks` is on. Walks the ParamList calling
 /// `emit_one_null_check` for each non-nullable param.
-fn emit_null_checks(ctx: Ctx, fn_name: string, params: ParamList, env: List<VarBinding>) {
-    match params {
-        .End -> {}
-        .Node(name, vt, next) -> {
-            if should_null_check_vt(vt) {
-                emit_one_null_check(ctx, fn_name, name, env)
-            }
-            emit_null_checks(ctx, fn_name, next, env)
+fn emit_null_checks(ctx: Ctx, fn_name: string, params: List<ParamEntry>, env: List<VarBinding>) {
+    mut i = 0
+    while i < params.length {
+        let p = params[i]
+        if should_null_check_vt(p.vtype) {
+            emit_one_null_check(ctx, fn_name, p.name, env)
         }
+        i = i + 1
     }
 }
 

@@ -16,7 +16,7 @@
 // Tracked under forge-crafting-intepreters-iinq (epic
 // forge-crafting-intepreters-a1el — the build system).
 
-use core.{ValueType, FieldEntry, Variant, ParamList, TypeParamEntry}
+use core.{ValueType, FieldEntry, Variant, ParamEntry, TypeParamEntry}
 
 extern fn avra_bytes_make(len: int) -> bytes
 extern fn avra_bytes_set(b: bytes, idx: int, val: int)
@@ -467,11 +467,8 @@ impl BytesWriter {
     }
 }
 
-fn param_list_length(params: ParamList) -> int {
-    match params {
-        .End -> 0
-        .Node(_, _, next) -> 1 + param_list_length(next)
-    }
+fn param_list_length(params: List<ParamEntry>) -> int {
+    params.length
 }
 
 // ── Composite list encoders ──
@@ -492,19 +489,13 @@ impl BytesWriter {
         }
     }
 
-    fn param_list(self, params: ParamList) {
-        self.u32_le(param_list_length(params))
-        self.param_list_body(params)
-    }
-
-    fn param_list_body(self, params: ParamList) {
-        match params {
-            .End -> {}
-            .Node(name, vt, next) -> {
-                self.string(name)
-                self.vtype(vt)
-                self.param_list_body(next)
-            }
+    fn param_list(self, params: List<ParamEntry>) {
+        self.u32_le(params.length)
+        mut i = 0
+        while i < params.length {
+            self.string(params[i].name)
+            self.vtype(params[i].vtype)
+            i = i + 1
         }
     }
 
@@ -544,17 +535,17 @@ impl BytesReader {
         out
     }
 
-    fn param_list(self) -> ParamList {
+    fn param_list(self) -> List<ParamEntry> {
         let count = self.u32_le()
-        self.param_list_body(count)
-    }
-
-    fn param_list_body(self, count: int) -> ParamList {
-        if count == 0 { return ParamList.End }
-        let name = self.string()
-        let vt = self.vtype()
-        let tail = self.param_list_body(count - 1)
-        ParamList.Node(name, vt, tail)
+        mut out: List<ParamEntry> = []
+        mut i = 0
+        while i < count {
+            let name = self.string()
+            let vt = self.vtype()
+            out.push(ParamEntry { name, vtype: vt })
+            i = i + 1
+        }
+        out
     }
 
     fn variant_list(self) -> List<Variant> {
@@ -823,7 +814,7 @@ export type FnDeclEntry = {
     exported: bool,
     is_extern: bool,
     type_params: List<TypeParamEntry>,
-    params: ParamList,
+    params: List<ParamEntry>,
     ret: ValueType,
 }
 
@@ -968,7 +959,7 @@ impl BytesReader {
 // prior bespoke `MetaTraitMethodList` cons-list (lkze.4).
 export type MetaTraitMethod = {
     name: string,
-    params: ParamList,
+    params: List<ParamEntry>,
     ret: ValueType,
 }
 

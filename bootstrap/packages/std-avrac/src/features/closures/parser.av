@@ -3,7 +3,7 @@
 //   `list.map(it * 2)` → `list.map((it) -> { it * 2 })`
 // `parse_lambda_body` handles lambda body parsing (block or single expression).
 
-use core.{Expr, SExpr, StmtList, ParamList}
+use core.{Expr, SExpr, StmtList, ParamEntry, ValueType}
 use parse.{Parser}
 use core.{Tk}
 
@@ -72,7 +72,8 @@ export fn stmt_list_contains_it(list: StmtList) -> bool {
 /// `(it) -> body` lambda. The parameter type is left as
 /// `Unknown` so the regular type-inference path picks it up.
 export fn wrap_in_it_lambda(expr: Expr) -> Expr {
-    Expr.Lambda(ParamList.Node("it", ValueType.Unknown, ParamList.End), expr)
+    let ps: List<ParamEntry> = [ParamEntry { name: "it", vtype: ValueType.Unknown }]
+    Expr.Lambda(ps, expr)
 }
 
 impl Parser {

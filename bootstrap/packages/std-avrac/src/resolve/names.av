@@ -12,7 +12,7 @@
 //   do NOT read this file when:   the issue is variable scoping or
 //                                  type checking
 
-use core.{Expr, FieldEntry, Stmt, StmtList, ParamList, FieldInit, MatchArm, WhenArm, Pattern, SExpr, SStmt, Variant, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, ValueType, SelectArm}
+use core.{Expr, FieldEntry, Stmt, StmtList, ParamEntry, FieldInit, MatchArm, WhenArm, Pattern, SExpr, SStmt, Variant, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, ValueType, SelectArm}
 use diagnostics.{Confidence, DiagCode, Span, DiagnosticBag, bag_new, bag_merge, bag_report, bag_has_errors, diag_error, diag_warning, diag_with_confidence, span_new, span_at, span_dummy}
 use resolve.{resolve_program}
 use core.{TypeRegistry, TypeKind, type_registry_new, type_registry_register, type_registry_id_for, type_qualified_name, method_mangled_name, trait_impl_name, is_mangled_method, method_from_mangled}
@@ -319,15 +319,14 @@ fn collect_item_from_stmt(stmt: Stmt, mod_path: string, exported: int, out_ref: 
 /// Collect re-exported names from `export use path.{name1, name2}`.
 /// Each imported name becomes an exported item in the current
 /// module, with its canonical path pointing at the source module.
-fn collect_reexport_items(names: ParamList, source_mod: string, out_ref: List<ModuleItemEntry>) {
+fn collect_reexport_items(names: List<ParamEntry>, source_mod: string, out_ref: List<ModuleItemEntry>) {
     mut out = out_ref
-    match names {
-        .End -> {}
-        .Node(name, _, next) -> {
-            let canonical = type_qualified_name(source_mod, name)
-            out.push(ModuleItemEntry { short_name: name, canonical, exported: true })
-            collect_reexport_items(next, source_mod, out)
-        }
+    mut i = 0
+    while i < names.length {
+        let name = names[i].name
+        let canonical = type_qualified_name(source_mod, name)
+        out.push(ModuleItemEntry { short_name: name, canonical, exported: true })
+        i = i + 1
     }
 }
 
@@ -419,51 +418,41 @@ type UseResult = {
 /// Looks each name up in `mod_path`'s items, emits ImportNotFound /
 /// ImportPrivate when missing or non-exported, and otherwise
 /// prepends an AliasEntry.
-fn resolve_use_names(mod_path: string, names: ParamList, tree: ModuleNode, graph: ModuleGraph, result: UseResult, sp: Span) -> UseResult {
-    match names {
-        .End -> result
-        .Node(name, _, next) -> {
-            let name_sp = sp
-            let mod_node = module_find(tree, mod_path)
-            let found_info = match mod_node {
-                .End -> {
-                    let d = diag_error(DiagCode.ImportNotFound, "`use ${mod_path}` — module not found in module tree", sp)
-                    UseResult { aliases: result.aliases, bag: bag_report(result.bag, d) }
-                }
-                .Node(_, _, items, _, _) -> {
-                    let found = item_lookup(items, name)
-                    match {
-                        found == "" -> {
-                            let d = diag_error(DiagCode.ImportNotFound, "`${name}` not found in module `${mod_path}`", name_sp)
-                            UseResult { aliases: result.aliases, bag: bag_report(result.bag, d) }
-                        }
-                        // Visibility check is graph-driven: the export
-                        // bit was set during graph construction at the
-                        // item's declaration site, keyed by full
-                        // canonical path. Falls back to the AST item
-                        // when the item's canonical isn't `mod::name`
-                        // (e.g. extern fns whose canonical is the bare
-                        // C symbol — for those `module_graph_is_exported`
-                        // would miss and we conservatively treat as
-                        // exported, matching the legacy `extern fn ->
-                        // exported: true` rule in collect_item_from_stmt).
-                        !is_item_visible(graph, mod_path, name, found, items) -> {
-                            let d = diag_error(DiagCode.ImportPrivate, "`${name}` is private in module `${mod_path}`", name_sp)
-                            UseResult { aliases: result.aliases, bag: bag_report(result.bag, d) }
-                        }
-                        _ -> {
-                            mut new_aliases = result.aliases
-                            new_aliases.push(AliasBinding { short_name: name, canonical: found })
-                            UseResult { aliases: new_aliases, bag: result.bag }
-                        }
+fn resolve_use_names(mod_path: string, names: List<ParamEntry>, tree: ModuleNode, graph: ModuleGraph, result: UseResult, sp: Span) -> UseResult {
+    mut acc = result
+    mut i = 0
+    while i < names.length {
+        let name = names[i].name
+        let name_sp = sp
+        let mod_node = module_find(tree, mod_path)
+        acc = match mod_node {
+            .End -> {
+                let d = diag_error(DiagCode.ImportNotFound, "`use ${mod_path}` — module not found in module tree", sp)
+                UseResult { aliases: acc.aliases, bag: bag_report(acc.bag, d) }
+            }
+            .Node(_, _, items, _, _) -> {
+                let found = item_lookup(items, name)
+                match {
+                    found == "" -> {
+                        let d = diag_error(DiagCode.ImportNotFound, "`${name}` not found in module `${mod_path}`", name_sp)
+                        UseResult { aliases: acc.aliases, bag: bag_report(acc.bag, d) }
+                    }
+                    !is_item_visible(graph, mod_path, name, found, items) -> {
+                        let d = diag_error(DiagCode.ImportPrivate, "`${name}` is private in module `${mod_path}`", name_sp)
+                        UseResult { aliases: acc.aliases, bag: bag_report(acc.bag, d) }
+                    }
+                    _ -> {
+                        mut new_aliases = acc.aliases
+                        new_aliases.push(AliasBinding { short_name: name, canonical: found })
+                        UseResult { aliases: new_aliases, bag: acc.bag }
                     }
                 }
-                _ -> result
             }
-            resolve_use_names(mod_path, next, tree, graph, found_info, sp)
+            _ -> acc
         }
-        _ -> result
+        i = i + 1
     }
+    acc
 }
 
 /// Visibility check that prefers the graph but falls back to the AST
@@ -567,15 +556,16 @@ fn ctx_with_module(ctx: NameCtx, current_module: string, aliases: List<AliasBind
 
 /// Push every parameter name onto the local scope as a defined
 /// variable. Used when entering a fn / lambda body.
-fn bind_params_ctx(ctx: NameCtx, params: ParamList) -> NameCtx {
-    match params {
-        .End -> ctx
-        .Node(name, _, next) -> {
-            mut new_locals = ctx.locals
-            new_locals.push(LocalBinding { name, mutable: false, defined: true, depth: 0 })
-            bind_params_ctx(ctx_with_locals(ctx, new_locals), next)
-        }
+fn bind_params_ctx(ctx: NameCtx, params: List<ParamEntry>) -> NameCtx {
+    mut acc = ctx
+    mut i = 0
+    while i < params.length {
+        mut new_locals = acc.locals
+        new_locals.push(LocalBinding { name: params[i].name, mutable: false, defined: true, depth: 0 })
+        acc = ctx_with_locals(acc, new_locals)
+        i = i + 1
     }
+    acc
 }
 
 /// Bind every binding in a pattern (e.g. `.Some(x, y)` adds `x` and
@@ -965,27 +955,33 @@ fn rewrite_variant_types(ctx: NameCtx, variants: List<Variant>) -> List<Variant>
 }
 
 /// Map `rewrite_vtype` over each ParamList entry's type.
-fn rewrite_param_types(ctx: NameCtx, params: ParamList) -> ParamList {
-    match params {
-        .End -> .End
-        .Node(name, vt, next) -> .Node(name, rewrite_vtype(ctx, vt), rewrite_param_types(ctx, next))
+fn rewrite_param_types(ctx: NameCtx, params: List<ParamEntry>) -> List<ParamEntry> {
+    mut out: List<ParamEntry> = []
+    mut i = 0
+    while i < params.length {
+        let p = params[i]
+        out.push(ParamEntry { name: p.name, vtype: rewrite_vtype(ctx, p.vtype) })
+        i = i + 1
     }
+    out
 }
 
 /// Replace the `self` parameter's bare type with the impl's
 /// qualified type name. Other params pass through unchanged.
-fn qualify_self_param(ctx: NameCtx, params: ParamList, qualified_type: string) -> ParamList {
-    match params {
-        .End -> .End
-        .Node(name, vt, next) -> {
-            if name == "self" {
-                let tid = type_registry_id_for(ctx.type_reg, qualified_type)
-                ParamList.Node("self", ValueType.Struct(qualified_type, tid), next)
-            } else {
-                ParamList.Node(name, vt, qualify_self_param(ctx, next, qualified_type))
-            }
+fn qualify_self_param(ctx: NameCtx, params: List<ParamEntry>, qualified_type: string) -> List<ParamEntry> {
+    mut out: List<ParamEntry> = []
+    mut i = 0
+    while i < params.length {
+        let p = params[i]
+        if p.name == "self" {
+            let tid = type_registry_id_for(ctx.type_reg, qualified_type)
+            out.push(ParamEntry { name: "self", vtype: ValueType.Struct(qualified_type, tid) })
+        } else {
+            out.push(p)
         }
+        i = i + 1
     }
+    out
 }
 
 /// Walk the methods of an impl block, mangling each fn name into

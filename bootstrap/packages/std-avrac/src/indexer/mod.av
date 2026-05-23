@@ -17,7 +17,7 @@
 use core.{avra_selfhost_read_file, avra_shell_exec}
 use core.{Stmt, StmtList, SStmt,
               Expr, SExpr,
-              ParamList, FieldEntry,
+              ParamEntry, FieldEntry,
               Variant, ValueType, TypeParamEntry, render_type_param_list,
               vtype_display, vtype_render_full,
               find_annotation, doc_string_for, stmt_unwrap}
@@ -396,7 +396,7 @@ fn has_export_annotation(s: Stmt) -> bool {
 /// Render a fn declaration as a single-line signature string used
 /// by the docs renderer header. Handles type params, fully typed
 /// params, and the `-> Ret` clause (suppressed when ret is void).
-fn render_fn_signature(name: string, tp: List<TypeParamEntry>, params: ParamList, ret: ValueType) -> string {
+fn render_fn_signature(name: string, tp: List<TypeParamEntry>, params: List<ParamEntry>, ret: ValueType) -> string {
     let tp_str = render_type_param_list(tp)
     let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
     let params_str = render_params_typed(params)
@@ -447,28 +447,17 @@ fn render_field_decls(fields: List<FieldEntry>) -> string {
 /// Render the head element of a comma-separated `name: ty` param
 /// list. Suppresses `: ty` when the type is unknown / blank so
 /// untyped lambdas still render cleanly.
-fn render_params_typed(params: ParamList) -> string {
-    match params {
-        .End -> ""
-        .Node(name, vt, next) -> {
-            let head_ty = vtype_display(vt)
-            let head = if head_ty == "" || head_ty == "<unknown>" { name } else { "${name}: ${head_ty}" }
-            let tail = render_params_typed_tail(next)
-            "${head}${tail}"
-        }
+fn render_params_typed(params: List<ParamEntry>) -> string {
+    mut out = ""
+    mut i = 0
+    while i < params.length {
+        if i > 0 { out = out + ", " }
+        let p = params[i]
+        let head_ty = vtype_display(p.vtype)
+        out = out + (if head_ty == "" || head_ty == "<unknown>" { p.name } else { "${p.name}: ${head_ty}" })
+        i = i + 1
     }
-}
-
-/// Tail half of `render_params_typed`: prepend `, ` between items.
-fn render_params_typed_tail(params: ParamList) -> string {
-    match params {
-        .End -> ""
-        .Node(name, vt, next) -> {
-            let head_ty = vtype_display(vt)
-            let head = if head_ty == "" || head_ty == "<unknown>" { name } else { "${name}: ${head_ty}" }
-            ", ${head}${render_params_typed_tail(next)}"
-        }
-    }
+    out
 }
 
 /// Render an enum's variant list as a comma-separated string of

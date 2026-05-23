@@ -1,6 +1,6 @@
 // WHY: compilation setup — declaration passes and top-level emission.
 
-use core.{Expr, FieldEntry, ParamList, Stmt, StmtList, ValueType, VarBinding, Variant, SStmt, field_list_has, filter_fields_only, filter_fields_without, find_annotation, param_list_length, stmt_unwrap, variant_max_payload, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_unknown, vtype_enum_name, vtype_struct_name, env_extend}
+use core.{Expr, FieldEntry, ParamEntry, Stmt, StmtList, ValueType, VarBinding, Variant, SStmt, field_list_has, filter_fields_only, filter_fields_without, find_annotation, param_list_length, stmt_unwrap, variant_max_payload, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_unknown, vtype_enum_name, vtype_struct_name, env_extend}
 use parse.{parse_int_literal}
 use core.{avra_llvm_const_int}
 use core.{avra_process_env_get}
@@ -562,12 +562,15 @@ fn resolve_field_list(fields: List<FieldEntry>, regs: TypeRegs) -> List<FieldEnt
 /// Walk a ParamList and resolve each param's ValueType. Used during
 /// `declare_functions` so emitted LLVM types match the canonical
 /// registry-backed ValueType.
-fn resolve_param_list(params: ParamList, regs: TypeRegs) -> ParamList {
-    match params {
-        .End -> .End
-        .Node(name, pv, next) ->
-            .Node(name, resolve_setup_vt(regs, pv), resolve_param_list(next, regs))
+fn resolve_param_list(params: List<ParamEntry>, regs: TypeRegs) -> List<ParamEntry> {
+    mut out: List<ParamEntry> = []
+    mut i = 0
+    while i < params.length {
+        let p = params[i]
+        out.push(ParamEntry { name: p.name, vtype: resolve_setup_vt(regs, p.vtype) })
+        i = i + 1
     }
+    out
 }
 
 /// Resolve a single field's ValueType. Returns the resolved type
@@ -1339,13 +1342,11 @@ fn fill_i64_param_array_offset(arr: ptr, i64t: ptr, base: int, count: int) {
 /// Fill an LLVM type array with the lowered LLVM type of every
 /// parameter in `params`. Used when emitting a function declaration
 /// so each param gets the right alloca/load type downstream.
-fn fill_typed_param_array(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, params: ParamList, idx: int) {
-    match params {
-        .End -> {}
-        .Node(_, resolved, next) -> {
-            avra_llvm_type_array_set(arr, idx, llvm_type_for_full(i64t, i1t, dt, pt, resolved))
-            fill_typed_param_array(arr, i64t, i1t, dt, pt, next, idx + 1)
-        }
+fn fill_typed_param_array(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, params: List<ParamEntry>, idx: int) {
+    mut i = 0
+    while i < params.length {
+        avra_llvm_type_array_set(arr, idx + i, llvm_type_for_full(i64t, i1t, dt, pt, params[i].vtype))
+        i = i + 1
     }
 }
 
@@ -1355,13 +1356,11 @@ fn fill_typed_param_array(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, param
 /// alloca-side type produced by ctx.type_for. Used by
 /// declare_functions; legacy fill_typed_param_array stays for
 /// callers without narrow type pointers.
-fn fill_typed_param_array_sized(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, i8t: ptr, i16t: ptr, i32t: ptr, params: ParamList, idx: int) {
-    match params {
-        .End -> {}
-        .Node(_, resolved, next) -> {
-            avra_llvm_type_array_set(arr, idx, llvm_type_for_full_sized(i64t, i1t, dt, pt, i8t, i16t, i32t, resolved))
-            fill_typed_param_array_sized(arr, i64t, i1t, dt, pt, i8t, i16t, i32t, next, idx + 1)
-        }
+fn fill_typed_param_array_sized(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, i8t: ptr, i16t: ptr, i32t: ptr, params: List<ParamEntry>, idx: int) {
+    mut i = 0
+    while i < params.length {
+        avra_llvm_type_array_set(arr, idx + i, llvm_type_for_full_sized(i64t, i1t, dt, pt, i8t, i16t, i32t, params[i].vtype))
+        i = i + 1
     }
 }
 
@@ -1448,17 +1447,12 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, i8
 /// Strip parameter names from a ParamList, returning only the
 /// resolved ValueTypes in declaration order. Used when registering
 /// `fn_params` so call sites can look up parameter types by index.
-fn params_to_type_list(params: ParamList) -> List<ValueType> {
+fn params_to_type_list(params: List<ParamEntry>) -> List<ValueType> {
     mut out: List<ValueType> = []
-    mut cur = params
-    while true {
-        match cur {
-            .End -> return out
-            .Node(_, resolved, next) -> {
-                out.push(resolved)
-                cur = next
-            }
-        }
+    mut i = 0
+    while i < params.length {
+        out.push(params[i].vtype)
+        i = i + 1
     }
     out
 }

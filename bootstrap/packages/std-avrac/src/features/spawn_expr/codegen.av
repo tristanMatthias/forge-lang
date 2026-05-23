@@ -4,7 +4,7 @@
 // to the enclosing scope and auto-awaited at scope exit.
 
 use codegen.{ok_emit, err_emit, EmitValue}
-use core.{vtype_fn_ret, MatchArm, SExpr}
+use core.{vtype_fn_ret, MatchArm, SExpr, ParamEntry}
 use features.closures.{emit_lambda}
 
 /// Codegen entry for `spawn { body }`. Pattern-matches the
@@ -23,7 +23,8 @@ export fn spawn_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result
 /// type so `await` later sees the right type.
 fn emit_spawn(ctx: Ctx, env: List<VarBinding>, body: Expr) -> Result<EmitValue, string> {
     // Wrap body in a zero-arg lambda: () -> { body }
-    let closure = emit_lambda(ctx, env, Expr.Lambda(ParamList.End, body))?
+    let empty_p: List<ParamEntry> = []
+    let closure = emit_lambda(ctx, env, Expr.Lambda(empty_p, body))?
 
     // Call avra_spawn(closure_ptr) which returns a thread handle
     let handle = ctx.call("avra_spawn", [closure.value])

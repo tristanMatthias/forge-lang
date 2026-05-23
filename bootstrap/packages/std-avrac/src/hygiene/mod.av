@@ -31,7 +31,7 @@ use core.{
     Stmt, StmtList, SStmt, sstmt_at,
     Expr, SExpr, sexpr,
     FieldInit,
-    ParamList, Pattern,
+    ParamEntry, Pattern,
     BinOp, UnOp, LogicOp,
     ValueType,
 }
@@ -60,7 +60,7 @@ type RenameStmtResult = { stmt: Stmt, ctx: HygieneCtx }
 type RenameStmtListResult = { list: StmtList, ctx: HygieneCtx }
 type RenameExprListResult = { list: List<SExpr>, ctx: HygieneCtx }
 type RenameFieldInitsResult = { list: List<FieldInit>, ctx: HygieneCtx }
-type RenameParamsResult = { params: ParamList, ctx: HygieneCtx }
+type RenameParamsResult = { params: List<ParamEntry>, ctx: HygieneCtx }
 type FreshResult = { name: string, ctx: HygieneCtx }
 
 // ── Public entry points ──
@@ -373,16 +373,16 @@ fn rename_field_inits(ctx: HygieneCtx, inits: List<FieldInit>) -> RenameFieldIni
     RenameFieldInitsResult { list: out, ctx: acc }
 }
 
-fn rename_param_list(ctx: HygieneCtx, params: ParamList) -> RenameParamsResult {
-    match params {
-        .End -> RenameParamsResult { params: ParamList.End, ctx }
-        .Node(name, vt, next) -> {
-            let f = fresh_name(ctx, name)
-            let rest = rename_param_list(f.ctx, next)
-            RenameParamsResult {
-                params: ParamList.Node(f.name, vt, rest.params),
-                ctx: rest.ctx,
-            }
-        }
+fn rename_param_list(ctx: HygieneCtx, params: List<ParamEntry>) -> RenameParamsResult {
+    mut out: List<ParamEntry> = []
+    mut cur = ctx
+    mut i = 0
+    while i < params.length {
+        let p = params[i]
+        let f = fresh_name(cur, p.name)
+        out.push(ParamEntry { name: f.name, vtype: p.vtype })
+        cur = f.ctx
+        i = i + 1
     }
+    RenameParamsResult { params: out, ctx: cur }
 }

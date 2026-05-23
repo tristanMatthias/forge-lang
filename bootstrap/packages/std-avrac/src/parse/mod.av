@@ -11,7 +11,7 @@
 
 // dir-as-module (g2eo.1): lexer.av auto-loads as a sibling, surfaces
 // flat at `parse.{...}`.
-use core.{Expr, Stmt, StmtList, ParamList, Pattern, WhenArm, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, Annotation, Tk, tk_keyword_str, TypeExpr}
+use core.{Expr, Stmt, StmtList, ParamEntry, Pattern, WhenArm, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, Annotation, Tk, tk_keyword_str, TypeExpr}
 use core.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser}
 use features.closures.{expr_contains_it, wrap_in_it_lambda}
 use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, diag_error, diag_with_help, span_new}
@@ -193,19 +193,20 @@ fn expr_is_upper_ident(e: Expr) -> bool {
 /// parsing). `(x, y) -> ...` parses the parens as expressions first,
 /// then reinterprets the Ident names as parameter names once `->`
 /// is seen.
-fn exprs_to_params(exprs: List<SExpr>) -> ParamList {
-    exprs_to_params_at(exprs, 0)
-}
-
-fn exprs_to_params_at(exprs: List<SExpr>, i: int) -> ParamList {
-    if i >= exprs.length { return ParamList.End }
-    let se = exprs[i]
-    let name = match se.node {
-        .Ident(n) -> n
-        .QualifiedIdent(n) -> n
-        _ -> "_"  // non-ident in lambda params — use placeholder
+fn exprs_to_params(exprs: List<SExpr>) -> List<ParamEntry> {
+    mut out: List<ParamEntry> = []
+    mut i = 0
+    while i < exprs.length {
+        let se = exprs[i]
+        let name = match se.node {
+            .Ident(n) -> n
+            .QualifiedIdent(n) -> n
+            _ -> "_"
+        }
+        out.push(ParamEntry { name: name, vtype: ValueType.Unknown })
+        i = i + 1
     }
-    ParamList.Node(name, ValueType.Unknown, exprs_to_params_at(exprs, i + 1))
+    out
 }
 
 /// True iff `expr` is something that could syntactically be the
@@ -1319,7 +1320,8 @@ impl Parser {
                 if self.check(Tk.Arrow) {
                     self.advance()
                     let body = self.parse_lambda_body()?
-                    return Expr.Lambda(ParamList.End, body)
+                    let empty_ps: List<ParamEntry> = []
+                    return Expr.Lambda(empty_ps, body)
                 }
                 let empty: List<SExpr> = []
                 return Expr.Tuple(empty)

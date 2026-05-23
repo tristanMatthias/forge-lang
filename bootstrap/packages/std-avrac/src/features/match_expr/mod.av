@@ -6,7 +6,7 @@ use codegen.{err_emit, err_stmt, StmtResult}
 use codegen.{err_sr}
 use features.eval.{error_result, ok_result, eval_expr, execute_stmt, Runtime, StepResult, Value, define_binding, enter_scope, exit_scope, value_null, is_truthy}
 use features.eval.{step_runtime, step_value, step_had_error, step_is_return, step_error_message}
-use core.{Pattern, MatchArm, ParamList, SExpr, Expr, Stmt}
+use core.{Pattern, MatchArm, ParamEntry, SExpr, Expr, Stmt}
 use core.{feature_new, Feature}
 use resolve.{resolve_expr}
 use typeck.{check_expr, tc_er}
@@ -257,17 +257,19 @@ fn try_match_pattern(rt: Runtime, pattern: Pattern, value: Value) -> MatchAttemp
 /// Bind every name in a `ParamList` to the corresponding payload
 /// slot. Used by `.Variant(name, bindings)` patterns. `_` names
 /// are skipped — they're explicit "ignore this slot" markers.
-fn bind_param_list_payload(rt: Runtime, bindings: ParamList, payload: List<Value>, idx: int) -> Runtime {
-    match bindings {
-        .End -> rt
-        .Node(name, _, next) -> {
-            if idx >= payload.length {
-                return rt
-            }
-            let extended = if name == "_" { rt } else { define_binding(rt, name, false, payload[idx]) }
-            bind_param_list_payload(extended, next, payload, idx + 1)
+fn bind_param_list_payload(rt: Runtime, bindings: List<ParamEntry>, payload: List<Value>, idx: int) -> Runtime {
+    mut cur = rt
+    mut i = 0
+    while i < bindings.length {
+        let slot = idx + i
+        if slot >= payload.length { return cur }
+        let name = bindings[i].name
+        if name != "_" {
+            cur = define_binding(cur, name, false, payload[slot])
         }
+        i = i + 1
     }
+    cur
 }
 
 /// Pairwise-match a `List<Pattern>` against a payload list. Used by

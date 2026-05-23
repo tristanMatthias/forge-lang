@@ -3,7 +3,7 @@
 // checking and before codegen. After this pass, the AST contains no
 // generic declarations — codegen sees only concrete code.
 
-use core.{Expr, SExpr, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, StmtList, ParamList, FieldEntry, FieldInit, Variant, MatchArm, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge, SelectArm}
+use core.{Expr, SExpr, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, StmtList, ParamEntry, FieldEntry, FieldInit, Variant, MatchArm, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge, SelectArm}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_warning, span_new}
 use typeck.{TraitImplReg, type_implements_trait}
 use core.{mangle_join, type_short_name}
@@ -28,7 +28,7 @@ type GenRegs = {
 type GenericFnEntry = {
     name: string,
     tp: List<TypeParamEntry>,
-    params: ParamList,
+    params: List<ParamEntry>,
     ret_vt: ValueType,
     body: StmtList,
 }
@@ -487,17 +487,12 @@ fn infer_list_elem_ty(elements: List<SExpr>) -> ValueType {
 /// Project a ParamList down to its declared types (in declaration
 /// order). Used to synthesise an FnTyped from a lambda literal so
 /// generic-fn inference can bind its `T` parameters.
-fn param_types(params: ParamList) -> List<ValueType> {
+fn param_types(params: List<ParamEntry>) -> List<ValueType> {
     mut out: List<ValueType> = []
-    mut cur = params
-    while !(cur is .End) {
-        match cur {
-            .Node(_, ty, next) -> {
-                out.push(ty)
-                cur = next
-            }
-            _ -> {}
-        }
+    mut i = 0
+    while i < params.length {
+        out.push(params[i].vtype)
+        i = i + 1
     }
     out
 }
@@ -507,18 +502,15 @@ fn param_types(params: ParamList) -> List<ValueType> {
 /// generic constructors (`List<T>`, `Task<T>`, `fn(T) -> U`) so
 /// type params nested inside them are bound from the call's
 /// concrete arg types.
-fn infer_from_params(tp: List<TypeParamEntry>, params: ParamList, args: List<SExpr>, acc: List<TypeArg>) -> List<TypeArg> {
-    infer_from_params_at(tp, params, args, 0, acc)
-}
-
-fn infer_from_params_at(tp: List<TypeParamEntry>, params: ParamList, args: List<SExpr>, i: int, acc: List<TypeArg>) -> List<TypeArg> {
-    match params {
-        .End -> acc
-        .Node(_, resolved, rest) -> {
-            if i >= args.length { return acc }
-            infer_from_params_at(tp, rest, args, i + 1, unify_param(tp, resolved, arg_concrete_ty(args[i]), acc))
-        }
+fn infer_from_params(tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<SExpr>, acc: List<TypeArg>) -> List<TypeArg> {
+    mut out = acc
+    mut i = 0
+    let n = if params.length < args.length { params.length } else { args.length }
+    while i < n {
+        out = unify_param(tp, params[i].vtype, arg_concrete_ty(args[i]), out)
+        i = i + 1
     }
+    out
 }
 
 /// Infer type-args from a struct literal's field initializers
@@ -766,18 +758,20 @@ fn top_level_split_idx(s: string) -> int {
 /// Walk a ParamList rewriting every type annotation through
 /// `rewrite_type_name`. Used during specialisation so the
 /// generated fn body sees the concrete (mangled) types.
-fn rewrite_param_types(params: ParamList, regs: GenRegs, insts: List<Inst>) -> ParamList {
-    match params {
-        .End -> .End
-        .Node(name, resolved, next) -> {
-            let vt = if vtype_is_unknown(resolved) { resolved } else {
-                let ty_name = vtype_display(resolved)
-                let rewritten = rewrite_type_name(ty_name, regs, insts)
-                if rewritten != ty_name { vtype_from_type_string(rewritten) } else { resolved }
-            }
-            ParamList.Node(name, vt, rewrite_param_types(next, regs, insts))
+fn rewrite_param_types(params: List<ParamEntry>, regs: GenRegs, insts: List<Inst>) -> List<ParamEntry> {
+    mut out: List<ParamEntry> = []
+    mut i = 0
+    while i < params.length {
+        let p = params[i]
+        let vt = if vtype_is_unknown(p.vtype) { p.vtype } else {
+            let ty_name = vtype_display(p.vtype)
+            let rewritten = rewrite_type_name(ty_name, regs, insts)
+            if rewritten != ty_name { vtype_from_type_string(rewritten) } else { p.vtype }
         }
+        out.push(ParamEntry { name: p.name, vtype: vt })
+        i = i + 1
     }
+    out
 }
 
 // ── Pass 1: Collect generic declarations ──
@@ -1065,7 +1059,7 @@ fn add_resolved_inst(name: string, tp: List<TypeParamEntry>, ta: List<TypeArg>, 
 /// Add (or merge) a generic-fn instantiation inferred from
 /// the call args. Falls back to `merge_partial` so partial
 /// info from one call site can complete another's bindings.
-fn try_add_fn_inst(name: string, tp: List<TypeParamEntry>, params: ParamList, args: List<SExpr>, st: CollectState) -> CollectState {
+fn try_add_fn_inst(name: string, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<SExpr>, st: CollectState) -> CollectState {
     let empty_ta: List<TypeArg> = []
     add_resolved_inst(name, tp, infer_from_params(tp, params, args, empty_ta), st)
 }
@@ -1095,7 +1089,7 @@ fn try_add_struct_inst(name: string, inits: List<FieldInit>, regs: GenRegs, st: 
 /// Specialise a generic fn for one `List<TypeArg>`. Returns a
 /// fresh `Function` AST node with the mangled name +
 /// substituted param/return types + substituted body.
-fn specialize_fn(mangled: string, params: ParamList, ret_vt: ValueType, body: StmtList, ta: List<TypeArg>) -> Stmt {
+fn specialize_fn(mangled: string, params: List<ParamEntry>, ret_vt: ValueType, body: StmtList, ta: List<TypeArg>) -> Stmt {
     let concrete_ret_vt = substitute_vtype(ret_vt, ta)
     let empty_tp: List<TypeParamEntry> = []
     Stmt.Function(mangled, empty_tp, substitute_params(params, ta), concrete_ret_vt, substitute_stmts(body, ta))
@@ -1183,11 +1177,15 @@ fn substitute_vtype_list(types: List<ValueType>, ta: List<TypeArg>) -> List<Valu
 }
 
 /// Substitute type-args into every param's declared type.
-fn substitute_params(params: ParamList, ta: List<TypeArg>) -> ParamList {
-    match params { .End -> .End, .Node(n, r, next) -> {
-        let subst_r = substitute_vtype(r, ta)
-        ParamList.Node(n, subst_r, substitute_params(next, ta))
-    }}
+fn substitute_params(params: List<ParamEntry>, ta: List<TypeArg>) -> List<ParamEntry> {
+    mut out: List<ParamEntry> = []
+    mut i = 0
+    while i < params.length {
+        let p = params[i]
+        out.push(ParamEntry { name: p.name, vtype: substitute_vtype(p.vtype, ta) })
+        i = i + 1
+    }
+    out
 }
 /// Substitute type-args into every field's declared type.
 fn substitute_fields(fields: List<FieldEntry>, ta: List<TypeArg>) -> List<FieldEntry> {
@@ -1489,7 +1487,7 @@ fn rewrite_fn_ret(ret_ty: string, regs: GenRegs, insts: List<Inst>) -> ValueType
 /// type, body — all forwarded through `rewrite_*` helpers.
 /// Used by the per-fn pass to convert generic decls into
 /// non-generic ones referencing mangled specialisations.
-fn rewrite_function(name: string, tp: List<TypeParamEntry>, params: ParamList, ret_ty: string, body: StmtList, regs: GenRegs, insts: List<Inst>) -> Stmt {
+fn rewrite_function(name: string, tp: List<TypeParamEntry>, params: List<ParamEntry>, ret_ty: string, body: StmtList, regs: GenRegs, insts: List<Inst>) -> Stmt {
     let scoped = scope_insts_for_ret(ret_ty, regs, insts)
     Stmt.Function(name, tp, rewrite_param_types(params, regs, scoped), rewrite_fn_ret(ret_ty, regs, insts), rewrite_stmts(body, regs, scoped))
 }

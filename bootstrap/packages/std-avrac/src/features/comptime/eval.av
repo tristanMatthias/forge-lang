@@ -9,7 +9,7 @@
 // Phase 2 of Components V2 (vez6.2). The program-walker that calls
 // this on every call site lives in rewrite.av.
 
-use core.{Expr, SExpr, sexpr_dummy, Stmt, StmtList, sstmt_dummy, ValueType, BinOp, UnOp, LogicOp, ParamList, TypeParamEntry, FieldEntry, FieldInit, CompConfigPair}
+use core.{Expr, SExpr, sexpr_dummy, Stmt, StmtList, sstmt_dummy, ValueType, BinOp, UnOp, LogicOp, ParamEntry, TypeParamEntry, FieldEntry, FieldInit, CompConfigPair}
 use features.eval.{Runtime, Value, eval_expr, eval_fn_with_resolved_args, literal_args_to_values, step_value, step_had_error}
 use features.comptime.{CompTimeFn, CompTimeRegistry, comptime_lookup}
 use features.quote_expr.{construct_stmt}
@@ -552,50 +552,22 @@ fn list_value_to_type_param_list(v: Value) -> List<TypeParamEntry>? {
     out
 }
 
-/// Decode a Value carrying a `ParamList` back into a ParamList AST.
-/// Accepts BOTH shapes during the lkze.9 transition —
-/// same dual-mode bridge as `list_value_to_expr_list` above.
-///
-/// list-mode: list_payload of struct Values `{name, vtype}`. Activated
-/// once construct_param_list flips to Expr.ListLit (lkze.9 #19).
-/// enum-mode: cons-cell EnumCtor("ParamList", "Node"/"End"). Current
-/// shape until ParamList retires.
-fn list_value_to_param_list(v: Value) -> ParamList? {
-    if v.kind == "list" { return list_value_to_param_list_at(v.list_payload, 0) }
-    if v.kind == "enum" && v.enum_type == "@std::avrac::core::ParamList" {
-        return enum_value_to_param_list_cons(v)
+/// Decode a Value carrying a `List<ParamEntry>` back into a real
+/// `List<ParamEntry>` AST value. Walks the list payload of struct
+/// Values `{name, vtype}` produced by `construct_param_list`.
+fn list_value_to_param_list(v: Value) -> List<ParamEntry>? {
+    if v.kind != "list" { return null }
+    mut out: List<ParamEntry> = []
+    mut i = 0
+    while i < v.list_payload.length {
+        let entry = v.list_payload[i]
+        let name = struct_field_string(entry, "name")
+        let vt = struct_field_value_type(entry, "vtype")
+        let resolved_vt = if vt == null { ValueType.Unknown } else { vt! }
+        out.push(ParamEntry { name: name, vtype: resolved_vt })
+        i = i + 1
     }
-    null
-}
-
-fn list_value_to_param_list_at(items: List<Value>, i: int) -> ParamList? {
-    if i >= items.length { return ParamList.End }
-    let entry = items[i]
-    let name = struct_field_string(entry, "name")
-    let vt = struct_field_value_type(entry, "vtype")
-    let rest = list_value_to_param_list_at(items, i + 1)
-    if rest == null { return null }
-    let resolved_vt = if vt == null { ValueType.Unknown } else { vt! }
-    ParamList.Node(name, resolved_vt, rest!)
-}
-
-/// Pre-fwyx cons-cell decoder for ParamList Values. Goes away once
-/// construct_param_list flips to Expr.ListLit in lkze.9 #19.
-fn enum_value_to_param_list_cons(v: Value) -> ParamList? {
-    match v.enum_variant {
-        "End" -> ParamList.End
-        "Node" -> {
-            let p = v.enum_payload
-            if p.length != 3 { return null }
-            let name_v: Value = p[0]
-            let vt = enum_value_to_value_type(p[1])
-            let rest = enum_value_to_param_list_cons(p[2])
-            if rest == null { return null }
-            let resolved_vt = if vt == null { ValueType.Unknown } else { vt! }
-            ParamList.Node(name_v.text, resolved_vt, rest!)
-        }
-        _ -> null
-    }
+    out
 }
 
 /// Lookup a string-valued field on a struct Value. Returns "" when

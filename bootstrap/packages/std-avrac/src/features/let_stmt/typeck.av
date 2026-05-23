@@ -1,27 +1,19 @@
 // WHY: type checking for let/mut/const bindings and tuple destructuring.
 
-use core.{Expr, ParamList, ValueType, vtype_tuple_at}
+use core.{Expr, ParamEntry, ValueType, vtype_tuple_at}
 use typeck.{TC, tc_bind}
 
 /// Bind a tuple-destructure's names into the type-check env,
-/// pulling each element type from `tuple_ty` via
-/// `vtype_tuple_at`. Public entry — internal recursion is
-/// `bind_destructure_idx`.
-export fn bind_destructure(tc: TC, names: ParamList, tuple_ty: ValueType) -> TC {
-    bind_destructure_idx(tc, names, tuple_ty, 0)
-}
-
-/// Recursive worker for `bind_destructure`. Index-tracks the
-/// position within the tuple type so each name picks up the
-/// matching element type.
-fn bind_destructure_idx(tc: TC, names: ParamList, tuple_ty: ValueType, idx: int) -> TC {
-    match names {
-        .End -> tc
-        .Node(name, _, next) -> {
-            let elem_ty = vtype_tuple_at(tuple_ty, idx)
-            bind_destructure_idx(tc_bind(tc, name, elem_ty), next, tuple_ty, idx + 1)
-        }
+/// pulling each element type from `tuple_ty` via `vtype_tuple_at`.
+export fn bind_destructure(tc: TC, names: List<ParamEntry>, tuple_ty: ValueType) -> TC {
+    mut cur = tc
+    mut i = 0
+    while i < names.length {
+        let elem_ty = vtype_tuple_at(tuple_ty, i)
+        cur = tc_bind(cur, names[i].name, elem_ty)
+        i = i + 1
     }
+    cur
 }
 
 /// Compile-time-constant predicate used by `const x = ...`

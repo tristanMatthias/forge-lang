@@ -10,7 +10,7 @@ use typeck.{check_expr, tc_bind_params, tc_enter, tc_er, tc_exit}
 /// Axis 28.
 export fn closures_feature() -> Feature {
     feature_new("lambda") with {
-        expr_tag: Expr.Lambda(ParamList.End, Expr.Null),
+        expr_tag: Expr.Lambda([], Expr.Null),
         emit_expr: emit_lambda,
         resolve_expr: closure_resolve,
         check_expr: closure_check,

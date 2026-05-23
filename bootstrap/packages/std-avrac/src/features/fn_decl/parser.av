@@ -1,7 +1,7 @@
 // WHY: parses top-level `fn` declarations and the parameter list
 // they introduce.
 
-use core.{Stmt, ParamList, TypeParamEntry, ValueType, type_expr_to_vtype}
+use core.{Stmt, ParamEntry, TypeParamEntry, ValueType, type_expr_to_vtype}
 use parse.{Parser}
 use core.{Tk}
 
@@ -76,30 +76,31 @@ impl Parser {
         Stmt.Function(name, tp, params, ret_vtype, body)
     }
 
-    fn parse_param_list(self) -> ParamList? {
+    fn parse_param_list(self) -> List<ParamEntry>? {
+        mut out: List<ParamEntry> = []
         if self.check(Tk.RightParen) {
-            return ParamList.End
+            return out
         }
-
-        let name = self.consume_identifier("expected parameter name")?
-
-        if self.check(Tk.Colon) {
-            self.advance()
-            let te = self.parse_type_expr("expected parameter type after `:`")?
-            let resolved = type_expr_to_vtype(te)
-            return self.finish_param(name, resolved)
+        mut keep_going = true
+        while keep_going {
+            let name = self.consume_identifier("expected parameter name")?
+            mut resolved = ValueType.Int
+            if self.check(Tk.Colon) {
+                self.advance()
+                let te = self.parse_type_expr("expected parameter type after `:`")?
+                resolved = type_expr_to_vtype(te)
+            }
+            out.push(ParamEntry { name: name, vtype: resolved })
+            if self.check(Tk.Comma) {
+                self.advance()
+                if self.check(Tk.RightParen) {
+                    keep_going = false
+                }
+            } else {
+                keep_going = false
+            }
         }
-
-        self.finish_param(name, ValueType.Int)
-    }
-
-    fn finish_param(self, name: string, resolved: ValueType) -> ParamList? {
-        if self.check(Tk.Comma) {
-            self.advance()
-            let rest = self.parse_param_list()?
-            return ParamList.Node(name, resolved, rest)
-        }
-        ParamList.Node(name, resolved, ParamList.End)
+        out
     }
 
     // Parse `where T: Trait1, U: Trait2` and merge bounds into existing List<TypeParamEntry>.

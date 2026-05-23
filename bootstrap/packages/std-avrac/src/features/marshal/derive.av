@@ -19,7 +19,7 @@
 // resolver wires up to @std/process the same way a hand-written
 // impl would.
 
-use core.{Stmt, StmtList, SStmt, sstmt_dummy, Expr, SExpr, sexpr_dummy, FieldEntry, FieldInit, ParamList, ValueType, TypeParamEntry, Variant, Pattern, MatchArm, BinOp, find_annotation}
+use core.{Stmt, StmtList, SStmt, sstmt_dummy, Expr, SExpr, sexpr_dummy, FieldEntry, FieldInit, ParamEntry, ValueType, TypeParamEntry, Variant, Pattern, MatchArm, BinOp, find_annotation}
 
 // ── Public entry ──
 
@@ -138,7 +138,7 @@ fn build_to_bytes_fn(fields: List<FieldEntry>) -> Stmt {
     // Body: return bytes_builder().write_X(self.f1).write_Y(self.f2)…finish()
     let chain = build_chain(fields)
     let body = StmtList.Node(sstmt_dummy(Stmt.Return(chain)), StmtList.End)
-    let params = ParamList.Node("self", ValueType.Unknown, ParamList.End)
+    let params: List<ParamEntry> = [ParamEntry { name: "self", vtype: ValueType.Unknown }]
     let empty_tp: List<TypeParamEntry> = []
     Stmt.Function("to_bytes", empty_tp, params, ValueType.Bytes, body)
 }
@@ -302,7 +302,7 @@ fn list_reader_for(elem: ValueType) -> string {
 /// shadows the outer `r`), keeping the body flat.
 fn build_from_bytes_fn(type_name: string, fields: List<FieldEntry>) -> Stmt {
     // Param: b: bytes
-    let params = ParamList.Node("b", ValueType.Bytes, ParamList.End)
+    let params: List<ParamEntry> = [ParamEntry { name: "b", vtype: ValueType.Bytes }]
     // Body stmts:
     //   let r = bytes_reader(b)
     //   let (f1, r) = r.read_*()  -- per field (skipped if no reader)
@@ -389,8 +389,10 @@ fn build_reads(fields: List<FieldEntry>) -> StmtList {
 fn read_then_reassign(field_name: string, value_name: string, reader: string) -> StmtList {
     let r_next = "__r_" + field_name
     let read_call = Expr.Call(Expr.FieldAccess(Expr.Ident("r"), reader), [])
-    let destruct_names = ParamList.Node(value_name, ValueType.Unknown,
-        ParamList.Node(r_next, ValueType.Unknown, ParamList.End))
+    let destruct_names: List<ParamEntry> = [
+        ParamEntry { name: value_name, vtype: ValueType.Unknown },
+        ParamEntry { name: r_next, vtype: ValueType.Unknown },
+    ]
     let destruct_stmt = Stmt.LetDestructure(destruct_names, read_call)
     let reassign_stmt = Stmt.Expr(Expr.Assign("r", Expr.Ident(r_next)))
     StmtList.Node(sstmt_dummy(destruct_stmt),
@@ -437,8 +439,10 @@ fn list_of_struct_reads(field_name: string, elem: ValueType) -> StmtList {
     let cond = Expr.Binary(Expr.Ident(iname), BinOp.Lt, Expr.Ident(cname))
     // let (__raw, __r2) = r.read_bytes()
     let raw_read = Expr.Call(Expr.FieldAccess(Expr.Ident("r"), "read_bytes"), [])
-    let raw_names = ParamList.Node(rawname, ValueType.Unknown,
-        ParamList.Node(rname, ValueType.Unknown, ParamList.End))
+    let raw_names: List<ParamEntry> = [
+        ParamEntry { name: rawname, vtype: ValueType.Unknown },
+        ParamEntry { name: rname, vtype: ValueType.Unknown },
+    ]
     let raw_stmt = Stmt.LetDestructure(raw_names, raw_read)
     // __acc = __acc.push(from_bytes_<Inner>(__raw))
     let from_call = Expr.Call(Expr.Ident("from_bytes_" + inner_name),
@@ -562,7 +566,7 @@ fn build_enum_to_bytes_fn(type_name: string, variants: List<Variant>) -> Stmt {
     let arms = build_variant_arms(variants)
     let match_expr = Expr.MatchExpr(Expr.Ident("self"), arms)
     let body = StmtList.Node(sstmt_dummy(Stmt.Return(match_expr)), StmtList.End)
-    let params = ParamList.Node("self", ValueType.Unknown, ParamList.End)
+    let params: List<ParamEntry> = [ParamEntry { name: "self", vtype: ValueType.Unknown }]
     let empty_tp: List<TypeParamEntry> = []
     Stmt.Function("to_bytes", empty_tp, params, ValueType.Bytes, body)
 }
@@ -587,14 +591,12 @@ fn build_variant_arms(variants: List<Variant>) -> List<MatchArm> {
     out
 }
 
-fn field_list_to_param_list(fields: List<FieldEntry>) -> ParamList {
-    // ParamList is still a cons-list — build back-to-front to keep
-    // source order in the resulting linked chain.
-    mut out = ParamList.End
-    mut i = fields.length - 1
-    while i >= 0 {
-        out = ParamList.Node(fields[i].name, ValueType.Unknown, out)
-        i = i - 1
+fn field_list_to_param_list(fields: List<FieldEntry>) -> List<ParamEntry> {
+    mut out: List<ParamEntry> = []
+    mut i = 0
+    while i < fields.length {
+        out.push(ParamEntry { name: fields[i].name, vtype: ValueType.Unknown })
+        i = i + 1
     }
     out
 }
@@ -621,7 +623,7 @@ fn build_variant_write_chain(tag: int, payload: List<FieldEntry>) -> Expr {
 ///   … last variant returned without an if-guard …
 /// }
 fn build_enum_from_bytes_fn(type_name: string, variants: List<Variant>) -> Stmt {
-    let params = ParamList.Node("b", ValueType.Bytes, ParamList.End)
+    let params: List<ParamEntry> = [ParamEntry { name: "b", vtype: ValueType.Bytes }]
     let init_call = Expr.Call(Expr.QualifiedIdent("@std::process::bytes_reader"),
         [sexpr_dummy(Expr.Ident("b"))])
     let init_let = Stmt.Mut("r", ValueType.Unknown, init_call)
@@ -713,7 +715,7 @@ fn build_isolated_fn(type_name: string, ty: ValueType) -> Stmt {
     // Param: body: fn() -> T
     let no_params: List<ValueType> = []
     let body_param_ty = ValueType.FnTyped(no_params, ty)
-    let params = ParamList.Node("body", body_param_ty, ParamList.End)
+    let params: List<ParamEntry> = [ParamEntry { name: "body", vtype: body_param_ty }]
     // Result<T, IsolatedError> as the return type. Resolver
     // upgrades the bare Enum form once IsolatedError is bound.
     let isolated_empty_args: List<ValueType> = []
@@ -725,7 +727,8 @@ fn build_isolated_fn(type_name: string, ty: ValueType) -> Stmt {
     // Inner closure: () -> body().to_bytes()
     let body_call = Expr.Call(Expr.Ident("body"), [])
     let to_bytes_call = Expr.Call(Expr.FieldAccess(body_call, "to_bytes"), [])
-    let inner_closure = Expr.Lambda(ParamList.End, to_bytes_call)
+    let empty_lp: List<ParamEntry> = []
+    let inner_closure = Expr.Lambda(empty_lp, to_bytes_call)
     // Subject: @std::process::isolated_bytes(closure). Qualified
     // so consumers of @marshal don't need to `use isolated_bytes`
     // — only types that actually fork pay the import cost (via
@@ -737,13 +740,13 @@ fn build_isolated_fn(type_name: string, ty: ValueType) -> Stmt {
         [sexpr_dummy(Expr.Ident("b"))])
     let ok_body = Expr.EnumCtor("Result", "Ok",
         [sexpr_dummy(from_bytes_call)])
-    let ok_pattern = Pattern.Variant("Ok",
-        ParamList.Node("b", ValueType.Unknown, ParamList.End))
+    let ok_bindings: List<ParamEntry> = [ParamEntry { name: "b", vtype: ValueType.Unknown }]
+    let ok_pattern = Pattern.Variant("Ok", ok_bindings)
     // Err arm: Result.Err(e) — pass-through
     let err_body = Expr.EnumCtor("Result", "Err",
         [sexpr_dummy(Expr.Ident("e"))])
-    let err_pattern = Pattern.Variant("Err",
-        ParamList.Node("e", ValueType.Unknown, ParamList.End))
+    let err_bindings: List<ParamEntry> = [ParamEntry { name: "e", vtype: ValueType.Unknown }]
+    let err_pattern = Pattern.Variant("Err", err_bindings)
     mut arms: List<MatchArm> = []
     arms.push(MatchArm { pattern: ok_pattern, guard: null, body: sexpr_dummy(ok_body) })
     arms.push(MatchArm { pattern: err_pattern, guard: null, body: sexpr_dummy(err_body) })

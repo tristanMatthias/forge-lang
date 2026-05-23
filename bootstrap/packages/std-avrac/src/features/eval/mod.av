@@ -1,7 +1,7 @@
 // WHY: eval types shared across features. Actual tree-walk
 // evaluator lives in features/eval/mod.av.
 
-use core.{Expr, Stmt, StmtList, ParamList, SExpr, SStmt, FieldInit}
+use core.{Expr, Stmt, StmtList, ParamEntry, SExpr, SStmt, FieldInit}
 use core.{Registry, build_registry}
 
 // WHY: tree-walk expression evaluator — used by `eval` and `check`
@@ -105,7 +105,7 @@ type Binding = {
 /// can resolve at call time.
 type FunctionDef = {
     name: string,
-    params: ParamList,
+    params: List<ParamEntry>,
     body: StmtList,
 }
 
@@ -317,7 +317,7 @@ fn finish_result(step: StepResult) -> EvalResult {
 /// Returns the StepResult of running `body` with `params` bound to
 /// `arg_values` in a fresh scope of `runtime`. Caller is responsible
 /// for arity (`arg_values.length` should match `params.length`).
-export fn eval_fn_with_resolved_args(runtime: Runtime, params: ParamList, body: StmtList, arg_values: List<Value>) -> StepResult {
+export fn eval_fn_with_resolved_args(runtime: Runtime, params: List<ParamEntry>, body: StmtList, arg_values: List<Value>) -> StepResult {
     let call_env = enter_scope(runtime)
     let bound_env = bind_params(call_env, params, arg_values)
     let body_result = execute_stmt_list(bound_env, body)
@@ -497,7 +497,7 @@ type LookupResult = {
 /// @field body   — the fn's body statements.
 /// @field found  — 1 when the fn was registered.
 type FunctionLookupResult = {
-    params: ParamList,
+    params: List<ParamEntry>,
     body: StmtList,
     found: int,
 }
@@ -528,13 +528,14 @@ fn lookup_function(functions: List<FunctionDef>, name: string) -> FunctionLookup
         }
         i = i - 1
     }
-    FunctionLookupResult { params: ParamList.End, body: StmtList.End, found: false }
+    let empty_p: List<ParamEntry> = []
+    FunctionLookupResult { params: empty_p, body: StmtList.End, found: false }
 }
 
 /// Register a function declaration on the runtime. Functions
 /// don't track depth (they're effectively program-global from
 /// the evaluator's perspective).
-fn define_function(runtime: Runtime, name: string, params: ParamList, body: StmtList) -> Runtime {
+fn define_function(runtime: Runtime, name: string, params: List<ParamEntry>, body: StmtList) -> Runtime {
     mut new_functions = runtime.functions
     new_functions.push(FunctionDef { name: name, params: params, body: body })
     runtime with { functions: new_functions }
@@ -818,34 +819,20 @@ fn eval_arg_list(runtime: Runtime, args: List<SExpr>) -> EvalArgsResult {
 /// `params`. Used by `eval_call` to set up the callee's scope.
 /// Bindings are immutable (`mut: false`) — params are not
 /// reassignable in the evaluator.
-fn bind_params(runtime: Runtime, params: ParamList, args: List<Value>) -> Runtime {
+fn bind_params(runtime: Runtime, params: List<ParamEntry>, args: List<Value>) -> Runtime {
     mut current = runtime
-    mut p = params
-    mut idx = 0
-    mut keep_going = true
-    while keep_going {
-        match p {
-            .End -> { keep_going = false }
-            .Node(name, _, next_params) -> {
-                if idx >= args.length { keep_going = false }
-                else {
-                    current = define_binding(current, name, false, args[idx])
-                    p = next_params
-                    idx = idx + 1
-                }
-            }
-        }
+    let limit = if params.length < args.length { params.length } else { args.length }
+    mut i = 0
+    while i < limit {
+        current = define_binding(current, params[i].name, false, args[i])
+        i = i + 1
     }
     current
 }
 
-/// Number of declared parameters in a ParamList. Used to assert
-/// arity at call sites.
-fn count_params(params: ParamList) -> int {
-    match params {
-        .End -> 0
-        .Node(_, _, next) -> 1 + count_params(next)
-    }
+/// Number of declared parameters. Used to assert arity at call sites.
+fn count_params(params: List<ParamEntry>) -> int {
+    params.length
 }
 
 /// Evaluate a call site. Resolves the callee value first

@@ -12,7 +12,7 @@
 // For non-capturing lambdas (the common case), the closure value
 // is just the function pointer with a null environment.
 
-use core.{Expr, SExpr, Stmt, StmtList, ParamList, FieldInit, MatchArm, WhenArm, VarBinding, env_lookup, env_extend, param_list_length, ValueType, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, vtype_is_unknown}
+use core.{Expr, SExpr, Stmt, StmtList, ParamEntry, FieldInit, MatchArm, WhenArm, VarBinding, env_lookup, env_extend, param_list_length, ValueType, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, vtype_is_unknown}
 use codegen.{Ctx, EmitValue, err_emit, null_ptr_val, ok_emit}
 use codegen.{emit_expr}
 use codegen.{analyze_releasable_expr}
@@ -35,12 +35,27 @@ type Capture = {
 /// True when `name` is one of the lambda's declared parameters.
 /// Used by capture detection to skip params (they're not
 /// captures of the enclosing scope).
-fn is_param(params: ParamList, name: string) -> bool {
-    match params {
-        .End -> false
-        .Node(pname, _, _) if pname == name -> true
-        .Node(_, _, next) -> is_param(next, name)
+fn is_param(params: List<ParamEntry>, name: string) -> bool {
+    mut i = 0
+    while i < params.length {
+        if params[i].name == name { return true }
+        i = i + 1
     }
+    false
+}
+
+/// Return a fresh list = `params` with `extra` appended. Used when
+/// extending the in-scope param set across a Let/Mut/Const/For
+/// without mutating the caller's view.
+fn copy_params_with(params: List<ParamEntry>, extra: ParamEntry) -> List<ParamEntry> {
+    mut out: List<ParamEntry> = []
+    mut i = 0
+    while i < params.length {
+        out.push(params[i])
+        i = i + 1
+    }
+    out.push(extra)
+    out
 }
 
 /// Membership test for the capture list. Stops capture detection
@@ -132,7 +147,7 @@ fn mark_mutable_captures(captures: List<Capture>, body: Expr) {
 /// every compound expression form so nested calls and blocks
 /// work. Mutates `captures` in place — no `c1`/`c2` thread-state
 /// dance, just one shared list reference.
-fn find_captures(expr: Expr, params: ParamList, env: List<VarBinding>, captures: List<Capture>) {
+fn find_captures(expr: Expr, params: List<ParamEntry>, env: List<VarBinding>, captures: List<Capture>) {
     match expr {
         .Ident(name) -> {
             if is_param(params, name) { return }
@@ -218,7 +233,7 @@ fn find_captures(expr: Expr, params: ParamList, env: List<VarBinding>, captures:
 }
 
 /// Recurse `find_captures` through every match-arm body.
-fn find_captures_arms(arms: List<MatchArm>, params: ParamList, env: List<VarBinding>, captures: List<Capture>) {
+fn find_captures_arms(arms: List<MatchArm>, params: List<ParamEntry>, env: List<VarBinding>, captures: List<Capture>) {
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
@@ -230,7 +245,7 @@ fn find_captures_arms(arms: List<MatchArm>, params: ParamList, env: List<VarBind
 
 /// Recurse `find_captures` through every value in a struct
 /// literal / `with` override list.
-fn find_captures_field_inits(inits: List<FieldInit>, params: ParamList, env: List<VarBinding>, captures: List<Capture>) {
+fn find_captures_field_inits(inits: List<FieldInit>, params: List<ParamEntry>, env: List<VarBinding>, captures: List<Capture>) {
     mut i = 0
     while i < inits.length {
         find_captures(inits[i].value.node, params, env, captures)
@@ -240,7 +255,7 @@ fn find_captures_field_inits(inits: List<FieldInit>, params: ParamList, env: Lis
 
 /// Recurse `find_captures` through every condition + body in a
 /// `when` arm list.
-fn find_captures_when_arms(arms: List<WhenArm>, params: ParamList, env: List<VarBinding>, captures: List<Capture>) {
+fn find_captures_when_arms(arms: List<WhenArm>, params: List<ParamEntry>, env: List<VarBinding>, captures: List<Capture>) {
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
@@ -252,7 +267,7 @@ fn find_captures_when_arms(arms: List<WhenArm>, params: ParamList, env: List<Var
 
 /// Recurse `find_captures` across a `List<SExpr>` — call args,
 /// list literals, etc.
-fn find_captures_list(exprs: List<SExpr>, params: ParamList, env: List<VarBinding>, captures: List<Capture>) {
+fn find_captures_list(exprs: List<SExpr>, params: List<ParamEntry>, env: List<VarBinding>, captures: List<Capture>) {
     mut i = 0
     while i < exprs.length {
         find_captures(exprs[i].node, params, env, captures)
@@ -262,7 +277,7 @@ fn find_captures_list(exprs: List<SExpr>, params: ParamList, env: List<VarBindin
 
 /// Per-statement capture finder. Recurses into expression
 /// payloads + nested bodies. Decl-only statements pass through.
-fn find_captures_stmt_body(stmt: Stmt, params: ParamList, env: List<VarBinding>, captures: List<Capture>) {
+fn find_captures_stmt_body(stmt: Stmt, params: List<ParamEntry>, env: List<VarBinding>, captures: List<Capture>) {
     match stmt {
         .Block(stmts) -> find_captures_stmts(stmts, params, env, captures)
         .Expr(e) -> find_captures(e, params, env, captures)
@@ -303,7 +318,7 @@ fn find_captures_stmt_body(stmt: Stmt, params: ParamList, env: List<VarBinding>,
 
 /// Walk a StmtList collecting captures via
 /// `find_captures_stmt_body`.
-fn find_captures_stmts(stmts: StmtList, params: ParamList, env: List<VarBinding>, captures: List<Capture>) {
+fn find_captures_stmts(stmts: StmtList, params: List<ParamEntry>, env: List<VarBinding>, captures: List<Capture>) {
     match stmts {
         .End -> {}
         .Node(ss, next) -> {
@@ -311,14 +326,15 @@ fn find_captures_stmts(stmts: StmtList, params: ParamList, env: List<VarBinding>
             find_captures_stmt_body(ss.node, params, env, captures)
             // If this statement binds a local name, add it to params so subsequent
             // uses of the name won't be treated as captures from the outer scope.
-            let updated_params = match ss.node {
-                .Let(name, _, _) -> ParamList.Node(name, ValueType.Unknown, params)
-                .Mut(name, _, _) -> ParamList.Node(name, ValueType.Unknown, params)
-                .Const(name, _, _) -> ParamList.Node(name, ValueType.Unknown, params)
-                .For(vname, _, _, _) -> ParamList.Node(vname, ValueType.Unknown, params)
-                .ForIn(vname, _, _) -> ParamList.Node(vname, ValueType.Unknown, params)
-                _ -> params
+            let extra: ParamEntry? = match ss.node {
+                .Let(name, _, _) -> ParamEntry { name: name, vtype: ValueType.Unknown }
+                .Mut(name, _, _) -> ParamEntry { name: name, vtype: ValueType.Unknown }
+                .Const(name, _, _) -> ParamEntry { name: name, vtype: ValueType.Unknown }
+                .For(vname, _, _, _) -> ParamEntry { name: vname, vtype: ValueType.Unknown }
+                .ForIn(vname, _, _) -> ParamEntry { name: vname, vtype: ValueType.Unknown }
+                _ -> null
             }
+            let updated_params = if extra != null { copy_params_with(params, extra!) } else { params }
             find_captures_stmts(next, updated_params, env, captures)
         }
     }
@@ -360,7 +376,7 @@ fn capture_type_of(captures: List<Capture>, name: string) -> ValueType {
 /// True when `expr` references at least one float-typed name —
 /// used by `infer_param_types` to widen otherwise-untyped lambda
 /// params to Float when they participate in float arithmetic.
-fn has_float_ident(expr: Expr, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, params: ParamList) -> bool {
+fn has_float_ident(expr: Expr, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, params: List<ParamEntry>) -> bool {
     match expr {
         .Ident(name) -> {
             if is_param(params, name) { return false }
@@ -389,7 +405,7 @@ fn has_float_ident(expr: Expr, ctx: Ctx, env: List<VarBinding>, captures: List<C
 }
 
 /// Map `has_float_ident` over a `List<SExpr>`.
-fn has_float_ident_list(exprs: List<SExpr>, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, params: ParamList) -> bool {
+fn has_float_ident_list(exprs: List<SExpr>, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, params: List<ParamEntry>) -> bool {
     mut i = 0
     while i < exprs.length {
         if has_float_ident(exprs[i].node, ctx, env, captures, params) { return true }
@@ -403,7 +419,7 @@ fn has_float_ident_list(exprs: List<SExpr>, ctx: Ctx, env: List<VarBinding>, cap
 /// an arithmetic expression. Drives the heuristic that promotes
 /// otherwise-untyped lambda params to Float so `(x) -> x + 1.5`
 /// works without explicit type annotations.
-fn param_used_with_float(param_name: string, expr: Expr, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, params: ParamList) -> bool {
+fn param_used_with_float(param_name: string, expr: Expr, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, params: List<ParamEntry>) -> bool {
     match expr {
         .Binary(left, _, right) -> {
             let left_is_param = match left { .Ident(n) -> n == param_name, _ -> false }
@@ -426,7 +442,7 @@ fn param_used_with_float(param_name: string, expr: Expr, ctx: Ctx, env: List<Var
 }
 
 /// Map `param_used_with_float` over a `List<SExpr>`.
-fn param_used_with_float_list(param_name: string, exprs: List<SExpr>, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, params: ParamList) -> bool {
+fn param_used_with_float_list(param_name: string, exprs: List<SExpr>, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, params: List<ParamEntry>) -> bool {
     mut i = 0
     while i < exprs.length {
         if param_used_with_float(param_name, exprs[i].node, ctx, env, captures, params) { return true }
@@ -437,7 +453,7 @@ fn param_used_with_float_list(param_name: string, exprs: List<SExpr>, ctx: Ctx, 
 
 /// Map `param_used_with_float` through a statement list,
 /// recursing into expression payloads + nested bodies.
-fn param_used_with_float_stmts(param_name: string, stmts: StmtList, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, params: ParamList) -> bool {
+fn param_used_with_float_stmts(param_name: string, stmts: StmtList, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, params: List<ParamEntry>) -> bool {
     match stmts {
         .End -> false
         .Node(ss, next) -> {
@@ -458,24 +474,20 @@ fn param_used_with_float_stmts(param_name: string, stmts: StmtList, ctx: Ctx, en
 /// body. Defaults to Int; promotes to Float when the param is
 /// used alongside another float operand. Result is a
 /// `List<ValueType>` matched 1:1 to the input param list.
-fn infer_param_types(params: ParamList, body: Expr, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>) -> List<ValueType> {
+fn infer_param_types(params: List<ParamEntry>, body: Expr, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>) -> List<ValueType> {
     mut out: List<ValueType> = []
-    mut cur = params
-    while !(cur is .End) {
-        match cur {
-            .Node(name, raw_vt, next) -> {
-                let ty = if !vtype_is_unknown(raw_vt) && !(raw_vt is .Int) {
-                    ctx.resolve_codegen_vtype(raw_vt)
-                } else if param_used_with_float(name, body, ctx, env, captures, params) {
-                    ValueType.Float
-                } else {
-                    ValueType.Unknown
-                }
-                out.push(ty)
-                cur = next
-            }
-            _ -> {}
+    mut i = 0
+    while i < params.length {
+        let p = params[i]
+        let ty = if !vtype_is_unknown(p.vtype) && !(p.vtype is .Int) {
+            ctx.resolve_codegen_vtype(p.vtype)
+        } else if param_used_with_float(p.name, body, ctx, env, captures, params) {
+            ValueType.Float
+        } else {
+            ValueType.Unknown
         }
+        out.push(ty)
+        i = i + 1
     }
     out
 }
@@ -508,7 +520,7 @@ export fn emit_lambda(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<Emi
 /// array `[TAG, fn_ptr, capture0, capture1, ...]` and returns
 /// it as the call's value. Non-capturing lambdas get a single-
 /// slot closure with the function pointer only.
-export fn emit_lambda_typed(ctx: Ctx, env: List<VarBinding>, raw_params: ParamList, body: Expr, param_types: List<ValueType>) -> Result<EmitValue, string> {
+export fn emit_lambda_typed(ctx: Ctx, env: List<VarBinding>, raw_params: List<ParamEntry>, body: Expr, param_types: List<ValueType>) -> Result<EmitValue, string> {
     let id = avra_next_lambda_id()
     // Library-mode: prefix the lambda name with the lib_pkg_root
     // (e.g. `@std::lsp::__lambda_3`) so two different units that
@@ -822,30 +834,25 @@ fn fill_lambda_args(ctx: Ctx, env: List<VarBinding>, arr: ptr, args: List<SExpr>
 /// pulling its declared type from the supplied `types` list (or
 /// falling back to the param's annotation when the type list is
 /// short). Mirror of `bind_params_inline` for closure bodies.
-fn bind_lambda_params_typed(ctx: Ctx, env: List<VarBinding>, params: ParamList, fn_val: ptr, idx: int, types: List<ValueType>) -> List<VarBinding> {
+fn bind_lambda_params_typed(ctx: Ctx, env: List<VarBinding>, params: List<ParamEntry>, fn_val: ptr, idx: int, types: List<ValueType>) -> List<VarBinding> {
     mut cur_env = env
-    mut cur_params = params
     mut i = idx
     mut type_idx = 0
-    while !(cur_params is .End) {
-        match cur_params {
-            .Node(name, raw_vt, next) -> {
-                let param_val = ctx.get_param(fn_val, i)
-                // Priority: external types list > param annotation > Unknown
-                let ty = if type_idx < types.length {
-                    types[type_idx]
-                } else if !vtype_is_unknown(raw_vt) && !(raw_vt is .Int) {
-                    ctx.resolve_codegen_vtype(raw_vt)
-                } else {
-                    ValueType.Unknown
-                }
-                cur_env = ctx.bind(cur_env, name, param_val, ty)
-                cur_params = next
-                i = i + 1
-                type_idx = type_idx + 1
-            }
-            _ -> {}
+    mut pi = 0
+    while pi < params.length {
+        let p = params[pi]
+        let param_val = ctx.get_param(fn_val, i)
+        let ty = if type_idx < types.length {
+            types[type_idx]
+        } else if !vtype_is_unknown(p.vtype) && !(p.vtype is .Int) {
+            ctx.resolve_codegen_vtype(p.vtype)
+        } else {
+            ValueType.Unknown
         }
+        cur_env = ctx.bind(cur_env, p.name, param_val, ty)
+        i = i + 1
+        type_idx = type_idx + 1
+        pi = pi + 1
     }
     cur_env
 }

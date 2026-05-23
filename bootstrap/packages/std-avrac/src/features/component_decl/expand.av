@@ -10,7 +10,7 @@
 // self.__parent → parent accumulator variable
 // self.__parent_name → parent instance name string
 
-use core.{Expr, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, FieldEntry, FieldInit, ParamList, ValueType, CompConfig, CompConfigPair, ChildrenSlot, TypeParamEntry, find_annotation}
+use core.{Expr, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, FieldEntry, FieldInit, ParamEntry, ValueType, CompConfig, CompConfigPair, ChildrenSlot, TypeParamEntry, find_annotation}
 use core.{has_fn, find_fn_body}
 
 // ── Public API ──
@@ -537,7 +537,7 @@ fn config_pairs_to_field_inits(pairs: List<CompConfigPair>) -> List<FieldInit> {
 /// triple `type Name`, `impl Name { … }`, and a factory
 /// `fn make_name(cfg) -> Name`. Spliced ahead of `rest` so the
 /// surrounding code sees the synthesized definitions.
-export fn splice_component_def(name: string, params: ParamList, config: List<CompConfig>, children: List<ChildrenSlot>, body: StmtList, line: int, col: int, rest: StmtList) -> StmtList {
+export fn splice_component_def(name: string, params: List<ParamEntry>, config: List<CompConfig>, children: List<ChildrenSlot>, body: StmtList, line: int, col: int, rest: StmtList) -> StmtList {
     // Template components (with init hooks): no type/factory generation
     if has_fn(body, "init") {
         let methods = extract_methods(body, name)
@@ -564,7 +564,7 @@ export fn splice_component_def(name: string, params: ParamList, config: List<Com
     let type_decl = Stmt.TypeDecl(type_name, empty_tp, name_field)
 
     // Factory: comp_new(name: string) -> TypeName { TypeName { name, config_defaults..., empty_lists... } }
-    let name_param = ParamList.Node("name", ValueType.Str, ParamList.End)
+    let name_param: List<ParamEntry> = [ParamEntry { name: "name", vtype: ValueType.Str }]
     let config_inits = config_to_factory_inits(config)
     let with_child_inits = append_children_inits(config_inits, children)
     // Prepend the implicit `name: name` init. List<FieldInit> grows

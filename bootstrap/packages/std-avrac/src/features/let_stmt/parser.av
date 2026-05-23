@@ -1,6 +1,6 @@
 // WHY: parses `let`, `mut`, and `const` variable bindings.
 
-use core.{Stmt, ParamList, ValueType, type_expr_to_vtype}
+use core.{Stmt, ParamEntry, ValueType, type_expr_to_vtype}
 use parse.{Parser}
 use core.{Tk}
 
@@ -61,14 +61,20 @@ impl Parser {
         Stmt.LetDestructure(names, initializer)
     }
 
-    fn parse_destructure_names(self) -> ParamList? {
-        if self.check(Tk.RightParen) { return ParamList.End }
-        let name = self.consume_identifier("expected variable name in destructure")?
-        if self.check(Tk.Comma) {
-            self.advance()
-            let rest = self.parse_destructure_names()?
-            return ParamList.Node(name, ValueType.Unknown, rest)
+    fn parse_destructure_names(self) -> List<ParamEntry>? {
+        mut out: List<ParamEntry> = []
+        if self.check(Tk.RightParen) { return out }
+        mut keep_going = true
+        while keep_going {
+            let name = self.consume_identifier("expected variable name in destructure")?
+            out.push(ParamEntry { name: name, vtype: ValueType.Unknown })
+            if self.check(Tk.Comma) {
+                self.advance()
+                if self.check(Tk.RightParen) { keep_going = false }
+            } else {
+                keep_going = false
+            }
         }
-        ParamList.Node(name, ValueType.Unknown, ParamList.End)
+        out
     }
 }

@@ -1,6 +1,6 @@
 // WHY: type checking for list literals and list method calls.
 
-use core.{Expr, SExpr, ParamList, ValueType, vtype_list_elem}
+use core.{Expr, SExpr, ValueType, vtype_list_elem}
 use typeck.{TC, ExprResult, tc_er, tc_enter, tc_exit, tc_bind, check_expr, check_expr_list}
 
 /// Type-check a list literal. Empty literals get `List<Unknown>`
@@ -44,10 +44,7 @@ fn tc_infer_lambda_ret(tc: TC, args: List<SExpr>, elem_ty: ValueType) -> ValueTy
     match args[0].node {
         .Lambda(params, body) -> {
             let inner = tc_enter(tc)
-            let with_params = match params {
-                .End -> inner
-                .Node(pname, _, _) -> tc_bind(inner, pname, elem_ty)
-            }
+            let with_params = if params.length == 0 { inner } else { tc_bind(inner, params[0].name, elem_ty) }
             let r = check_expr(with_params, body)
             tc_exit(r.tc)
             r.ty

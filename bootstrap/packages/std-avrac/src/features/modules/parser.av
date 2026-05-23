@@ -1,7 +1,7 @@
 // WHY: parses module declarations (`mod name`) and use imports
 // (`use path.{name1, name2}`). Part of the modules feature.
 
-use core.{Stmt, StmtList, ParamList}
+use core.{Stmt, StmtList, ParamEntry, ValueType}
 use parse.{Parser}
 use core.{Tk}
 
@@ -49,15 +49,15 @@ impl Parser {
     }
 
     // Parse comma-separated identifier list inside `use path.{...}`.
-    fn parse_use_name_list(self) -> ParamList? {
-        if self.check(Tk.RightBrace) {
-            return ParamList.End
+    fn parse_use_name_list(self) -> List<ParamEntry>? {
+        mut out: List<ParamEntry> = []
+        while !self.check(Tk.RightBrace) {
+            let name = self.consume_identifier("expected import name")?
+            out.push(ParamEntry { name: name, vtype: ValueType.Unknown })
+            if self.check(Tk.Comma) {
+                self.advance()
+            }
         }
-        let name = self.consume_identifier("expected import name")?
-        if self.check(Tk.Comma) {
-            self.advance()
-        }
-        let rest = self.parse_use_name_list()?
-        ParamList.Node(name, ValueType.Unknown, rest)
+        out
     }
 }

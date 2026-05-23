@@ -51,7 +51,7 @@ export fn mod_feature() -> Feature {
 /// resolver's name-rewriting pass.
 export fn use_feature() -> Feature {
     feature_new("use") with {
-        stmt_tag: Stmt.Use("", ParamList.End),
+        stmt_tag: Stmt.Use("", []),
         decl_keyword: "kw_use",
         parse_decl: (p: Parser) -> p.parse_use_declaration(),
         eval_stmt: use_eval,

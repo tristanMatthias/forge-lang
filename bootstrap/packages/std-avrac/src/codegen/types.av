@@ -12,7 +12,7 @@
 //                                 logic (features/<X>/codegen.av)
 //                                 or the dispatchers (codegen.av)
 
-use core.{Expr, SExpr, VarBinding, FieldEntry, Variant, ValueType, vtype_is_str, vtype_is_unknown, variant_lookup, vtype_eq, field_vtype_of, env_extend, union_type_list_merge, find_type_pipe}
+use core.{Expr, SExpr, VarBinding, FieldEntry, ParamEntry, Variant, ValueType, vtype_is_str, vtype_is_unknown, variant_lookup, vtype_eq, field_vtype_of, env_extend, union_type_list_merge, find_type_pipe}
 use core.{Registry}
 use core.{TypeRegistry, type_registry_id_for, type_registry_name_for}
 use core.{avra_coverage_emit_hit, avra_covmap_alloc, avra_covmap_counter_count, avra_coverage_finalize_fn}
@@ -1302,12 +1302,15 @@ impl Ctx {
     // ── Type resolution ──
 
     // Resolve all type annotations in a ParamList from strings to ValueType.
-    fn resolve_params(self, params: ParamList) -> ParamList {
-        match params {
-            .End -> .End
-            .Node(name, pv, next) ->
-                .Node(name, self.resolve_codegen_vtype(pv), self.resolve_params(next))
+    fn resolve_params(self, params: List<ParamEntry>) -> List<ParamEntry> {
+        mut out: List<ParamEntry> = []
+        mut i = 0
+        while i < params.length {
+            let p = params[i]
+            out.push(ParamEntry { name: p.name, vtype: self.resolve_codegen_vtype(p.vtype) })
+            i = i + 1
         }
+        out
     }
 
     fn resolve_fields(self, fields: List<FieldEntry>) -> List<FieldEntry> {

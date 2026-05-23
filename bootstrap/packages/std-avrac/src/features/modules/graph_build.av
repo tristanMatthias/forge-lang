@@ -24,7 +24,7 @@
 // exercised by the diff-harness spec test in this ticket and by the
 // cutover in y4n1.8.
 
-use core.{Stmt, StmtList, SStmt, SExpr, Expr, ParamList, ValueType, Annotation}
+use core.{Stmt, StmtList, SStmt, SExpr, Expr, ParamEntry, ValueType, Annotation}
 use core.{
     ModuleGraph, ModuleGraphNode, ResolvedPath,
     StringInterner, InternResult,
@@ -235,7 +235,7 @@ fn walk_mod_decl(g: ModuleGraph, name: string, _body: StmtList, parent_id: int, 
 ///
 /// Records a UseEdge so name resolution can later bind the imported
 /// names against the graph.
-fn walk_use_stmt(g: ModuleGraph, path: string, names: ParamList, parent_id: int, pkg_id: int, dir: string, uses: List<UseEdge>) -> BuildGraphResult {
+fn walk_use_stmt(g: ModuleGraph, path: string, names: List<ParamEntry>, parent_id: int, pkg_id: int, dir: string, uses: List<UseEdge>) -> BuildGraphResult {
     if is_package_use(path) {
         // @scope.name.X.Y — load the package, build PackageRoot.
         let pkg_load = ensure_package_loaded(g, path, dir)
@@ -579,21 +579,15 @@ type ParamNamesResult = { graph: ModuleGraph, list: List<int> }
 /// Intern every `name` from a ParamList — used for `use a.b.{X, Y, Z}`
 /// where each name in the braces becomes a binding in the importing
 /// module's scope. Source-order via .push.
-fn intern_param_names(g: ModuleGraph, params: ParamList) -> ParamNamesResult {
+fn intern_param_names(g: ModuleGraph, params: List<ParamEntry>) -> ParamNamesResult {
     mut graph = g
-    mut out = []
-    mut cur = params
-    mut keep_going = true
-    while keep_going {
-        match cur {
-            .End -> { keep_going = false }
-            .Node(name, _, next) -> {
-                let r = interner_intern(graph.interner, name)
-                graph = graph with { interner: r.interner }
-                out.push(r.sym)
-                cur = next
-            }
-        }
+    mut out: List<int> = []
+    mut i = 0
+    while i < params.length {
+        let r = interner_intern(graph.interner, params[i].name)
+        graph = graph with { interner: r.interner }
+        out.push(r.sym)
+        i = i + 1
     }
     ParamNamesResult { graph: graph, list: out }
 }

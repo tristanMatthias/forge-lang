@@ -7,7 +7,7 @@
 // Public entry point is `fmt_stmt_list(stmts, 0)`.
 
 use core.{
-    Expr, SExpr, Stmt, StmtList, ParamList,
+    Expr, SExpr, Stmt, StmtList, ParamEntry,
     FieldInit, FieldEntry,
     Variant, Pattern, MatchArm, WhenArm, Annotation,
     binop_str, unop_str, logicop_str,
@@ -182,49 +182,30 @@ fn fmt_expr_list_comma(exprs: List<SExpr>) -> string {
     out
 }
 
-/// Render a ParamList as comma-separated names (no types) —
-/// for destructuring patterns and lambda parameter lists.
-fn fmt_param_list_comma(params: ParamList) -> string {
-    match params {
-        .End -> ""
-        .Node(name, _, next) -> {
-            let tail = fmt_param_list_comma_tail(next)
-            "${name}${tail}"
-        }
+/// Render `List<ParamEntry>` as comma-separated names (no types).
+fn fmt_param_list_comma(params: List<ParamEntry>) -> string {
+    mut out = ""
+    mut i = 0
+    while i < params.length {
+        if i > 0 { out = out + ", " }
+        out = out + params[i].name
+        i = i + 1
     }
+    out
 }
 
-/// Tail of `fmt_param_list_comma` — every element after head gets
-/// a leading `, `.
-fn fmt_param_list_comma_tail(params: ParamList) -> string {
-    match params {
-        .End -> ""
-        .Node(name, _, next) -> ", ${name}${fmt_param_list_comma_tail(next)}"
+/// Render `List<ParamEntry>` with type annotations.
+fn fmt_param_list_typed(params: List<ParamEntry>) -> string {
+    mut out = ""
+    mut i = 0
+    while i < params.length {
+        if i > 0 { out = out + ", " }
+        let p = params[i]
+        let ty_part = if vtype_is_unknown(p.vtype) { "" } else { ": ${vtype_display(p.vtype)}" }
+        out = out + p.name + ty_part
+        i = i + 1
     }
-}
-
-/// Render a ParamList with type annotations — for `fn` and
-/// `extern fn` signatures.
-fn fmt_param_list_typed(params: ParamList) -> string {
-    match params {
-        .End -> ""
-        .Node(name, resolved, next) -> {
-            let ty_part = if vtype_is_unknown(resolved) { "" } else { ": ${vtype_display(resolved)}" }
-            let tail = fmt_param_list_typed_tail(next)
-            "${name}${ty_part}${tail}"
-        }
-    }
-}
-
-/// Tail of `fmt_param_list_typed`.
-fn fmt_param_list_typed_tail(params: ParamList) -> string {
-    match params {
-        .End -> ""
-        .Node(name, resolved, next) -> {
-            let ty_part = if vtype_is_unknown(resolved) { "" } else { ": ${vtype_display(resolved)}" }
-            ", ${name}${ty_part}${fmt_param_list_typed_tail(next)}"
-        }
-    }
+    out
 }
 
 /// Render a comma-separated list of type names — for explicit

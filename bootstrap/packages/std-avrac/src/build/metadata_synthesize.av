@@ -32,7 +32,7 @@
 use core.{
     Stmt, StmtList, SStmt, sstmt_dummy, stmt_unwrap,
     Expr, SExpr,
-    Annotation, ParamList, ValueType, FieldEntry, Variant, TypeParamEntry,
+    Annotation, ParamEntry, ValueType, FieldEntry, Variant, TypeParamEntry,
     sexpr_dummy,
 }
 use build.metadata.{
@@ -579,7 +579,7 @@ fn synth_impl_method_stmts(ms: List<ImplMethodRef>, trait_methods: List<MetaTrai
 }
 
 type FnSig = {
-    params: ParamList,
+    params: List<ParamEntry>,
     ret: ValueType,
 }
 
@@ -604,5 +604,6 @@ fn lookup_trait_method_sig(ms: List<MetaTraitMethod>, name: string) -> FnSig {
         }
         i = i + 1
     }
-    FnSig { params: ParamList.End, ret: ValueType.Unknown }
+    let empty_p: List<ParamEntry> = []
+    FnSig { params: empty_p, ret: ValueType.Unknown }
 }

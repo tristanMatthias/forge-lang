@@ -18,7 +18,7 @@
 //
 // Design doc: docs/2026_05_08_COMPONENTS_V2_DESIGN.md §3.1
 
-use core.{Stmt, StmtList, ParamList, ValueType, TypeParamEntry, Annotation}
+use core.{Stmt, StmtList, ParamEntry, ValueType, TypeParamEntry, Annotation}
 use features.eval.{Runtime, runtime_new, execute_stmt}
 use features.comptime.{rewrite_program}
 
@@ -87,7 +87,7 @@ export fn prepare_runtime(reg: CompTimeRegistry) -> CompTimeRegistry {
 /// @field body    — fn body statement list.
 export type CompTimeFn = {
     name: string,
-    params: ParamList,
+    params: List<ParamEntry>,
     ret_ty: ValueType,
     body: StmtList,
 }

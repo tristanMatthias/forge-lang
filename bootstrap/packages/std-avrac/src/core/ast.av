@@ -49,14 +49,7 @@ export fn sstmt_at(s: Stmt, line: int, col: int, file: string) -> SStmt { SStmt 
 export fn sstmt_dummy(s: Stmt) -> SStmt { SStmt { node: s, line: 0, col: 0, file: "" } }
 
 // `enum ExprList` retired in lkze.9 #18 — `List<SExpr>` everywhere.
-
-/// Function parameter list. Each param carries its resolved
-/// ValueType — populated by the resolver, used by typecheck and
-/// codegen for arity and ABI matching.
-export enum ParamList {
-    End
-    Node(name: string, resolved: ValueType, next: ParamList)
-}
+// `enum ParamList` retired in lkze.9 #19 — `List<ParamEntry>` everywhere.
 
 // `List<FieldEntry>` replaces the retired `enum FieldList`. Used as
 // the `fields:` payload on `Stmt.TypeDecl`, `Stmt.ShapeDecl`, and
@@ -87,7 +80,7 @@ export enum Pattern {
     Wildcard
     /// `.Variant(a, b)` — positional payload bindings into `bindings`.
     /// Bare `.Variant` (no payload) shows up here with empty bindings.
-    Variant(name: string, bindings: ParamList)
+    Variant(name: string, bindings: List<ParamEntry>)
     /// String literal pattern: `"hello" -> ...`.
     LitString(value: string)
     /// Integer literal pattern: `42 -> ...`.
@@ -930,7 +923,7 @@ export enum Expr {
     /// List literal: `[1, 2, 3]`.
     ListLit(elements: List<SExpr>)
     /// Closure literal: `(x, y) -> body`.
-    Lambda(params: ParamList, body: Expr)
+    Lambda(params: List<ParamEntry>, body: Expr)
     /// Map literal — flat list of alternating key/value:
     /// `{ "a": 1, "b": 2 }` → entries = [key1, val1, key2, val2, ...].
     MapLit(entries: List<SExpr>)
@@ -999,7 +992,7 @@ export enum Stmt {
     ForIn(variable: string, collection: Expr, body: Stmt)
     /// Function declaration. `type_params` empty for non-generic
     /// fns; resolver fills `ret_vtype` from the source annotation.
-    Function(name: string, type_params: List<TypeParamEntry>, params: ParamList, ret_vtype: ValueType, body: StmtList)
+    Function(name: string, type_params: List<TypeParamEntry>, params: List<ParamEntry>, ret_vtype: ValueType, body: StmtList)
     /// `return value` — early return with an expression.
     Return(value: Expr)
     /// Bare `return` — ends a void fn.
@@ -1023,7 +1016,7 @@ export enum Stmt {
     /// Placeholder — used after rewriting passes that drop a stmt.
     NoOp
     /// FFI declaration: `extern fn name(...)`. No body; ABI matches C.
-    ExternFn(name: string, params: ParamList, ret_vtype: ValueType)
+    ExternFn(name: string, params: List<ParamEntry>, ret_vtype: ValueType)
     /// `break` — exit the enclosing loop.
     Break
     /// `continue` — skip to the next iteration of the enclosing loop.
@@ -1031,7 +1024,7 @@ export enum Stmt {
     /// `trait Name { fn ... }` — interface declaration.
     TraitDecl(name: string, methods: StmtList)
     /// Destructuring let: `let (a, b) = pair` / `let {x, y} = struct`.
-    LetDestructure(names: ParamList, initializer: Expr)
+    LetDestructure(names: List<ParamEntry>, initializer: Expr)
     /// `defer expr` — runs `expr` at scope exit, LIFO order.
     Defer(body: Expr)
     /// `errdefer expr` — runs `expr` only on Err / panic exit.
@@ -1054,12 +1047,12 @@ export enum Stmt {
     /// filled in by the module resolver.
     Module(name: string, body: StmtList)
     /// `use module.path.{name1, name2}` — import declaration.
-    Use(module_path: string, names: ParamList)
+    Use(module_path: string, names: List<ParamEntry>)
     /// Trait associated type: `type Item = T` inside a trait body.
     AssocType(name: string, ty_vt: ValueType)
     /// Component declaration: `component Name(params) { body }` —
     /// reusable templated block of statements.
-    ComponentDef(name: string, params: ParamList, config: List<CompConfig>, children: List<ChildrenSlot>, implements: List<string>, body: StmtList)
+    ComponentDef(name: string, params: List<ParamEntry>, config: List<CompConfig>, children: List<ChildrenSlot>, implements: List<string>, body: StmtList)
     /// Component instantiation: `component Foo as bar { config; body }`.
     ComponentBlock(comp_name: string, instance: string, config: List<CompConfigPair>, body: StmtList)
 }
@@ -1299,12 +1292,10 @@ export fn fn_env_extend(env: FnEnv, name: string, fn_val: ptr, arity: int) -> Fn
     FnEnv.Node(name, fn_val, arity, env)
 }
 
-/// Length of a ParamList. O(n).
-export fn param_list_length(params: ParamList) -> int {
-    match params {
-        .End -> 0
-        .Node(_, _, next) -> 1 + param_list_length(next)
-    }
+/// Length of a `List<ParamEntry>`. O(1) — preserved as a helper for
+/// source-level callers that prefer the named fn over `.length`.
+export fn param_list_length(params: List<ParamEntry>) -> int {
+    params.length
 }
 
 /// Length of a `List<SExpr>`. O(1) — preserved for source
@@ -1530,23 +1521,17 @@ export fn render_expr_list(exprs: List<SExpr>) -> string {
     out + ")"
 }
 
-/// Render a ParamList as `(name:Type, name2:Type)`.
-export fn render_param_list(params: ParamList) -> string {
-    match params {
-        .End -> "()"
-        .Node(name, _, next) -> {
-            let tail = render_param_list_tail(next)
-            "(${name}${tail})"
-        }
+/// Render a `List<ParamEntry>` as `(name, name2)`.
+export fn render_param_list(params: List<ParamEntry>) -> string {
+    if params.length == 0 { return "()" }
+    mut out = "("
+    mut i = 0
+    while i < params.length {
+        if i > 0 { out = out + ", " }
+        out = out + params[i].name
+        i = i + 1
     }
-}
-
-/// Tail half of `render_param_list` — see `render_field_init_tail`.
-fn render_param_list_tail(params: ParamList) -> string {
-    match params {
-        .End -> ""
-        .Node(name, _, next) -> ", ${name}${render_param_list_tail(next)}"
-    }
+    out + ")"
 }
 
 /// Render a Stmt as an S-expression. Mirror to `render_expr` —

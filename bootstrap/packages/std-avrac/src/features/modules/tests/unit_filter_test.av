@@ -5,15 +5,16 @@
 // Codegen then skips body emission for those modules. These tests
 // build small in-memory ASTs and assert on the post-filter shape.
 
-use @std.avrac.core.{Stmt, StmtList, SStmt, Annotation, ParamList, ValueType, sstmt_at, sstmt_dummy}
+use @std.avrac.core.{Stmt, StmtList, SStmt, Annotation, ParamEntry, ValueType, sstmt_at, sstmt_dummy}
 use @std.avrac.features.modules.{filter_to_target_unit}
 
 /// Build a `Stmt.Function` SStmt anchored at `file` so the filter
 /// has a `SStmt.file` to compare against. Body is empty — we never
 /// codegen these test fixtures, only inspect their structure.
 fn uft_fn_in_file(name: string, file: string) -> SStmt {
+    let empty_p: List<ParamEntry> = []
     sstmt_at(
-        Stmt.Function(name, .End, ParamList.End, ValueType.Unknown, StmtList.End),
+        Stmt.Function(name, .End, empty_p, ValueType.Unknown, StmtList.End),
         1, 1, file,
     )
 }

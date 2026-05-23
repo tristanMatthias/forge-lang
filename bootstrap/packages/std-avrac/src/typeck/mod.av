@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamList, Pattern, SExpr, SStmt, Stmt, StmtList, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_is_fn, vtype_is_unknown, vtype_list_elem, vtype_struct_name, vtype_tuple_at}
+use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, Stmt, StmtList, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_is_fn, vtype_is_unknown, vtype_list_elem, vtype_struct_name, vtype_tuple_at}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive}
@@ -67,7 +67,7 @@ fn type_pop_scope(env: TypeEntry, depth: int) -> TypeEntry {
 type FnTypeMeta = {
     name: string,
     tp: List<TypeParamEntry>,
-    params: ParamList,
+    params: List<ParamEntry>,
     ret_ty: ValueType,
 }
 
@@ -110,7 +110,7 @@ fn empty_type_params() -> List<TypeParamEntry> {
 /// Append (name, params, ret_ty) to `reg`. Mutates the map in place;
 /// returns a new FnTypeReg with the extended list. Map ptr is shared
 /// with the prior reg — see the `idx` field doc above.
-fn fn_type_reg_register(reg: FnTypeReg, name: string, tp: List<TypeParamEntry>, params: ParamList, ret_ty: ValueType) -> FnTypeReg {
+fn fn_type_reg_register(reg: FnTypeReg, name: string, tp: List<TypeParamEntry>, params: List<ParamEntry>, ret_ty: ValueType) -> FnTypeReg {
     mut ord = reg.ord
     let new_idx = ord.length
     ord.push(FnTypeMeta { name, tp, params, ret_ty })
@@ -129,7 +129,7 @@ fn fn_type_reg_register(reg: FnTypeReg, name: string, tp: List<TypeParamEntry>, 
 type FnTypeFound = {
     found: bool,
     tp: List<TypeParamEntry>,
-    params: ParamList,
+    params: List<ParamEntry>,
     ret_ty: ValueType,
 }
 
@@ -138,7 +138,8 @@ type FnTypeFound = {
 fn fn_type_get(fns: FnTypeReg, name: string) -> FnTypeFound {
     if avra_map_has_cstr(fns.idx, name) == 0 {
         let empty_tp: List<TypeParamEntry> = []
-        return FnTypeFound { found: false, tp: empty_tp, params: ParamList.End, ret_ty: ValueType.Unknown }
+        let empty_p: List<ParamEntry> = []
+        return FnTypeFound { found: false, tp: empty_tp, params: empty_p, ret_ty: ValueType.Unknown }
     }
     let i = avra_map_get_cstr(fns.idx, name)
     let m = fns.ord[i]
@@ -802,7 +803,7 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
                         tc_report_at(tc, DiagCode.DuplicateDecl, "duplicate type declaration `${name}`", ss.line, ss.col, name.length)
                     } else {
                         let inner_ty = resolve_vtype(tc, inner_vt)
-                        let ctor_params = ParamList.Node("value", inner_ty, ParamList.End)
+                        let ctor_params: List<ParamEntry> = [ParamEntry { name: "value", vtype: inner_ty }]
                         tc with {
                             newtypes: newtype_reg_register(tc.newtypes, name, inner_vt),
                             fns: fn_type_reg_register(tc.fns, name, empty_type_params(), ctor_params, ValueType.Newtype(name, inner_ty, 0)),
@@ -910,14 +911,16 @@ fn rewrite_fn_ret_tys(tc: TC, fns: FnTypeReg) -> FnTypeReg {
 }
 
 /// Map `resolve_vtype` over each ParamList entry's declared type.
-fn rewrite_param_list_vts(tc: TC, params: ParamList) -> ParamList {
-    match params {
-        .End -> .End
-        .Node(name, ty, next) -> {
-            let upgraded = if vtype_is_unknown(ty) { ty } else { resolve_vtype(tc, ty) }
-            ParamList.Node(name, upgraded, rewrite_param_list_vts(tc, next))
-        }
+fn rewrite_param_list_vts(tc: TC, params: List<ParamEntry>) -> List<ParamEntry> {
+    mut out: List<ParamEntry> = []
+    mut i = 0
+    while i < params.length {
+        let p = params[i]
+        let upgraded = if vtype_is_unknown(p.vtype) { p.vtype } else { resolve_vtype(tc, p.vtype) }
+        out.push(ParamEntry { name: p.name, vtype: upgraded })
+        i = i + 1
     }
+    out
 }
 
 // ── Pass 2: Statement checking ──
@@ -1181,14 +1184,16 @@ fn tc_check_stmt_returns(tc: TC, fn_name: string, declared: ValueType, stmt: Stm
 
 /// Bind every parameter of a fn into the type environment as a
 /// defined binding. Mirrors `define_param_names` in resolve/.
-export fn tc_bind_params(tc: TC, params: ParamList) -> TC {
-    match params {
-        .End -> tc
-        .Node(name, resolved, next) -> {
-            let ty = resolve_vtype(tc, resolved)
-            tc_bind_params(tc_bind(tc, name, ty), next)
-        }
+export fn tc_bind_params(tc: TC, params: List<ParamEntry>) -> TC {
+    mut cur = tc
+    mut i = 0
+    while i < params.length {
+        let p = params[i]
+        let ty = resolve_vtype(cur, p.vtype)
+        cur = tc_bind(cur, p.name, ty)
+        i = i + 1
     }
+    cur
 }
 
 // ── Expression checking ──
@@ -1300,49 +1305,39 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
 
 /// Verify that each arg passed to a shape-typed parameter has all
 /// the required fields (width-subtype check).
-fn tc_check_shape_args(tc: TC, params: ParamList, args: List<SExpr>) -> TC {
-    tc_check_shape_args_at(tc, params, args, 0)
-}
-
-fn tc_check_shape_args_at(tc: TC, params: ParamList, args: List<SExpr>, i: int) -> TC {
-    match params {
-        .End -> tc
-        .Node(_, param_vt, next_params) -> {
-            if i >= args.length { return tc }
-            let arg_se = args[i]
-            let arg_ty = check_expr(tc, arg_se.node).ty
-            let checked = tc_check_shape_compat(tc, vtype_display(param_vt), arg_ty)
-            tc_check_shape_args_at(checked, next_params, args, i + 1)
-        }
+fn tc_check_shape_args(tc: TC, params: List<ParamEntry>, args: List<SExpr>) -> TC {
+    mut cur = tc
+    mut i = 0
+    let limit = if params.length < args.length { params.length } else { args.length }
+    while i < limit {
+        let arg_ty = check_expr(cur, args[i].node).ty
+        cur = tc_check_shape_compat(cur, vtype_display(params[i].vtype), arg_ty)
+        i = i + 1
     }
+    cur
 }
 
 // Check that newtype arguments match — UserId != OrderId even if both wrap string
 /// Verify newtype-wrapped arguments: a `UserId` param doesn't
 /// accept a bare `UUID` — the wrapper has to be explicit at the
 /// call site.
-fn tc_check_newtype_args(tc: TC, fn_name: string, params: ParamList, args: List<SExpr>) -> TC {
-    tc_check_newtype_args_at(tc, fn_name, params, args, 0)
-}
-
-fn tc_check_newtype_args_at(tc: TC, fn_name: string, params: ParamList, args: List<SExpr>, i: int) -> TC {
-    match params {
-        .End -> tc
-        .Node(param_name, param_vt, next_params) -> {
-            if i >= args.length { return tc }
-            let arg_se = args[i]
-            let param_ty = resolve_vtype(tc, param_vt)
-            let arg_ty = check_expr(tc, arg_se.node).ty
-            // Newtype parameter check: must be same newtype or the inner type
-            if param_ty is .Newtype {
-                if !vtype_eq(param_ty, arg_ty) && !vtype_assignable(arg_ty, param_ty) && !(arg_ty is .Unknown) {
-                    let msg = "`${fn_name}` parameter `${param_name}` expects `${vtype_display(param_ty)}`, got `${vtype_display(arg_ty)}`"
-                    return tc_check_newtype_args_at(tc_report(tc, DiagCode.TypeMismatch, msg), fn_name, next_params, args, i + 1)
-                }
+fn tc_check_newtype_args(tc: TC, fn_name: string, params: List<ParamEntry>, args: List<SExpr>) -> TC {
+    mut cur = tc
+    mut i = 0
+    let limit = if params.length < args.length { params.length } else { args.length }
+    while i < limit {
+        let p = params[i]
+        let param_ty = resolve_vtype(cur, p.vtype)
+        let arg_ty = check_expr(cur, args[i].node).ty
+        if param_ty is .Newtype {
+            if !vtype_eq(param_ty, arg_ty) && !vtype_assignable(arg_ty, param_ty) && !(arg_ty is .Unknown) {
+                let msg = "`${fn_name}` parameter `${p.name}` expects `${vtype_display(param_ty)}`, got `${vtype_display(arg_ty)}`"
+                cur = tc_report(cur, DiagCode.TypeMismatch, msg)
             }
-            tc_check_newtype_args_at(tc, fn_name, next_params, args, i + 1)
         }
+        i = i + 1
     }
+    cur
 }
 
 // Extract the first argument's type. Safe to call after check_expr_list
@@ -1489,27 +1484,22 @@ fn tc_check_fn_call_with(checked: TC, name: string, args: List<SExpr>, rec: FnTy
 /// Gated by AVRA_STRICT_ARGS at the call site so the default build
 /// stays quiet; turn on for refactor sessions that need fail-fast on
 /// silent ptr-shape coercions.
-fn tc_strict_arg_types(tc: TC, name: string, tp: List<TypeParamEntry>, params: ParamList, args: List<SExpr>) -> TC {
+fn tc_strict_arg_types(tc: TC, name: string, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<SExpr>) -> TC {
     mut cur_tc = tc
-    mut cur_params = params
     mut i = 0
-    while i < args.length {
-        match cur_params {
-            .End -> return cur_tc
-            .Node(pname, ptype, prest) -> {
-                let arg_ty = tc_arg_concrete_ty(cur_tc, args[i])
-                let skip_unknown = vtype_is_unknown(ptype) || vtype_is_unknown(arg_ty)
-                let skip_generic = vtype_mentions_typeparam(ptype, tp)
-                if !skip_unknown && !skip_generic {
-                    if !vtype_eq(arg_ty, ptype) && !vtype_assignable(arg_ty, ptype) {
-                        let msg = "`${name}` parameter `${pname}` expects ${vtype_display(ptype)}, got ${vtype_display(arg_ty)}"
-                        cur_tc = tc_warn(cur_tc, DiagCode.ArgTypeMismatch, msg)
-                    }
-                }
-                cur_params = prest
-                i = i + 1
+    let limit = if params.length < args.length { params.length } else { args.length }
+    while i < limit {
+        let p = params[i]
+        let arg_ty = tc_arg_concrete_ty(cur_tc, args[i])
+        let skip_unknown = vtype_is_unknown(p.vtype) || vtype_is_unknown(arg_ty)
+        let skip_generic = vtype_mentions_typeparam(p.vtype, tp)
+        if !skip_unknown && !skip_generic {
+            if !vtype_eq(arg_ty, p.vtype) && !vtype_assignable(arg_ty, p.vtype) {
+                let msg = "`${name}` parameter `${p.name}` expects ${vtype_display(p.vtype)}, got ${vtype_display(arg_ty)}"
+                cur_tc = tc_warn(cur_tc, DiagCode.ArgTypeMismatch, msg)
             }
         }
+        i = i + 1
     }
     cur_tc
 }
@@ -1556,7 +1546,7 @@ fn vtype_mentions_typeparam(ty: ValueType, tp: List<TypeParamEntry>) -> bool {
 /// chain `let xs = generic_call(); other_generic_call(xs)` loses
 /// the inner type at the `let` boundary and the second call's
 /// type-arg can't be inferred.
-fn tc_subst_generic_ret(tc: TC, tp: List<TypeParamEntry>, params: ParamList, args: List<SExpr>, ret_ty: ValueType) -> ValueType {
+fn tc_subst_generic_ret(tc: TC, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<SExpr>, ret_ty: ValueType) -> ValueType {
     if tp.length == 0 { return ret_ty }
     let empty: List<TypeArg> = []
     let bindings = tc_infer_type_args(tc, tp, params, args, empty)
@@ -1568,20 +1558,16 @@ fn tc_subst_generic_ret(tc: TC, tp: List<TypeParamEntry>, params: ParamList, arg
 /// its concrete arg type. Args whose typeck-annotated `.ty` is
 /// Unknown fall back to `tc_infer_lit_ty` so literal `[1,2,3]` and
 /// bare lambdas still contribute bindings.
-fn tc_infer_type_args(tc: TC, tp: List<TypeParamEntry>, params: ParamList, args: List<SExpr>, acc: List<TypeArg>) -> List<TypeArg> {
-    tc_infer_type_args_at(tc, tp, params, args, 0, acc)
-}
-
-fn tc_infer_type_args_at(tc: TC, tp: List<TypeParamEntry>, params: ParamList, args: List<SExpr>, i: int, acc: List<TypeArg>) -> List<TypeArg> {
-    match params {
-        .End -> acc
-        .Node(_, resolved, rest) -> {
-            if i >= args.length { return acc }
-            let arg = args[i]
-            let arg_ty = tc_arg_concrete_ty(tc, arg)
-            tc_infer_type_args_at(tc, tp, rest, args, i + 1, tc_unify(tp, resolved, arg_ty, acc))
-        }
+fn tc_infer_type_args(tc: TC, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<SExpr>, acc: List<TypeArg>) -> List<TypeArg> {
+    mut cur_acc = acc
+    mut i = 0
+    let limit = if params.length < args.length { params.length } else { args.length }
+    while i < limit {
+        let arg_ty = tc_arg_concrete_ty(tc, args[i])
+        cur_acc = tc_unify(tp, params[i].vtype, arg_ty, cur_acc)
+        i = i + 1
     }
+    cur_acc
 }
 
 /// Recursively unify a param type against an arg type, binding
@@ -1678,17 +1664,12 @@ fn tc_infer_list_elem(elements: List<SExpr>) -> ValueType {
     if vtype_is_unknown(t) { ValueType.Unknown } else { t }
 }
 
-fn tc_param_types(params: ParamList) -> List<ValueType> {
+fn tc_param_types(params: List<ParamEntry>) -> List<ValueType> {
     mut out: List<ValueType> = []
-    mut cur = params
-    while !(cur is .End) {
-        match cur {
-            .Node(_, ty, next) -> {
-                out.push(ty)
-                cur = next
-            }
-            _ -> {}
-        }
+    mut i = 0
+    while i < params.length {
+        out.push(params[i].vtype)
+        i = i + 1
     }
     out
 }
@@ -2043,7 +2024,7 @@ export fn check_expr_list_types(tc: TC, exprs: List<SExpr>) -> ExprListResult {
 /// Annotation-pass scope-enter: bind every param into the type env
 /// at the new depth. Mirror of `tc_bind_params` for the second
 /// pass that writes types back into the AST.
-fn annotate_enter_fn(tc: TC, params: ParamList) -> TC {
+fn annotate_enter_fn(tc: TC, params: List<ParamEntry>) -> TC {
     tc_bind_params(tc_enter(tc), params)
 }
 

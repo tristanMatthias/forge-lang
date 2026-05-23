@@ -7,7 +7,7 @@
 // in the parser's feature registry. Subsequent code can use `name instance { ... }`
 // without the `component` keyword — single-pass, no ambiguity.
 
-use core.{Stmt, Expr, SExpr, sexpr_dummy, StmtList, SStmt, sstmt, CompConfig, CompConfigPair, ChildrenSlot, ParamList, TypeParamEntry, ValueType, type_expr_to_vtype}
+use core.{Stmt, Expr, SExpr, sexpr_dummy, StmtList, SStmt, sstmt, CompConfig, CompConfigPair, ChildrenSlot, ParamEntry, TypeParamEntry, ValueType, type_expr_to_vtype}
 use parse.{Parser}
 use core.{Tk}
 use core.{register_component_name}
@@ -169,7 +169,8 @@ impl Parser {
         }
         // Register this component name for keyword-free instantiation
         register_component_name(self.features, name, (p: Parser) -> p.parse_component_block_bare())
-        Stmt.ComponentDef(name, ParamList.End, config, children, implements, body)
+        let empty_p: List<ParamEntry> = []
+        Stmt.ComponentDef(name, empty_p, config, children, implements, body)
     }
 
     // ── Children Schema (definition) — vez6.7 ──
@@ -239,7 +240,8 @@ impl Parser {
             let body = self.parse_statement_list(true)?
             if !self.consume(Tk.RightBrace, "expected `}` after event body") { return null }
             let empty_tp: List<TypeParamEntry> = []
-            let stmt = Stmt.Function("__on_${event_name}", empty_tp, ParamList.End, ValueType.Void, body)
+            let empty_p: List<ParamEntry> = []
+            let stmt = Stmt.Function("__on_${event_name}", empty_tp, empty_p, ValueType.Void, body)
             let rest = self.parse_comp_def_body()?
             return StmtList.Node(sstmt(stmt, line, col), rest)
         }
@@ -248,12 +250,12 @@ impl Parser {
         if self.check(Tk.Identifier) && self.current_lexeme == "event" {
             self.advance()
             let ev_name = self.consume_identifier("expected event name")?
-            let ev_params = if self.check(Tk.LeftParen) {
+            let ev_params: List<ParamEntry> = if self.check(Tk.LeftParen) {
                 self.advance()
                 let p = self.parse_param_list()?
                 if !self.consume(Tk.RightParen, "expected `)` after event params") { return null }
                 p
-            } else { ParamList.End }
+            } else { [] }
             let empty_tp: List<TypeParamEntry> = []
             let stmt = Stmt.Function("__event_${ev_name}", empty_tp, ev_params, ValueType.Void, StmtList.End)
             let rest = self.parse_comp_def_body()?
@@ -446,12 +448,12 @@ impl Parser {
         if self.check(Tk.Identifier) && self.current_lexeme == "on" {
             self.advance()
             let event_name = self.consume_identifier("expected event name after `on`")?
-            let ev_params = if self.check(Tk.LeftParen) {
+            let ev_params: List<ParamEntry> = if self.check(Tk.LeftParen) {
                 self.advance()
                 let p = self.parse_param_list()?
                 if !self.consume(Tk.RightParen, "expected `)` after event params") { return null }
                 p
-            } else { ParamList.End }
+            } else { [] }
             if !self.consume(Tk.LeftBrace, "expected `{` after event handler") { return null }
             let body = self.parse_statement_list(true)?
             if !self.consume(Tk.RightBrace, "expected `}` after event body") { return null }

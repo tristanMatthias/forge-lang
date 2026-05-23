@@ -9,7 +9,7 @@
 // reuse them to build a test program.
 
 use core.{
-    Stmt, StmtList, SStmt, ParamList, ValueType, TypeParamEntry,
+    Stmt, StmtList, SStmt, ParamEntry, ValueType, TypeParamEntry,
     Expr, SExpr,
     sstmt_dummy, sstmt_at,
     sexpr_dummy,
@@ -62,7 +62,7 @@ export fn strip_externs(stmts: StmtList) -> StmtList {
 /// Single extern declaration row. Drives `prepend_test_externs`'s
 /// table-driven prepend loop so the runtime contract reads as a
 /// vertical list instead of five nested `StmtList.Node(...)` calls.
-type RuntimeExtern = { name: string, params: ParamList, ret: ValueType }
+type RuntimeExtern = { name: string, params: List<ParamEntry>, ret: ValueType }
 
 /// Convert `List<RuntimeExtern>` into prepended `ExternFn` stmts in
 /// declaration order. Iterates back-to-front so the cons-prepend
@@ -95,15 +95,15 @@ fn expr_list_from(args: List<Expr>) -> List<SExpr> {
 /// as `expr_list_from` — declaration order in, ParamList out.
 type ParamSpec = { name: string, ty: ValueType }
 
-fn param_list_from(specs: List<ParamSpec>) -> ParamList {
-    mut acc = ParamList.End
-    mut i = specs.length - 1
-    while i >= 0 {
+fn param_list_from(specs: List<ParamSpec>) -> List<ParamEntry> {
+    mut out: List<ParamEntry> = []
+    mut i = 0
+    while i < specs.length {
         let s = specs[i]
-        acc = ParamList.Node(s.name, s.ty, acc)
-        i = i - 1
+        out.push(ParamEntry { name: s.name, vtype: s.ty })
+        i = i + 1
     }
-    acc
+    out
 }
 
 // ── Runtime extern table ────────────────────────────────────────────
@@ -121,11 +121,12 @@ fn param_list_from(specs: List<ParamSpec>) -> ParamList {
 ///     Avra closure produced by `wrap_specs_with_guard` for every
 ///     top-level `spec { ... }` block.
 fn test_runtime_externs() -> List<RuntimeExtern> {
+    let empty_p: List<ParamEntry> = []
     [
-        RuntimeExtern { name: "avra_test_summary",          params: ParamList.End, ret: ValueType.Int },
-        RuntimeExtern { name: "avra_test_flush",            params: ParamList.End, ret: ValueType.Void },
-        RuntimeExtern { name: "avra_test_capture_start",    params: ParamList.End, ret: ValueType.Void },
-        RuntimeExtern { name: "avra_test_capture_stop",     params: ParamList.End, ret: ValueType.Str },
+        RuntimeExtern { name: "avra_test_summary",          params: empty_p, ret: ValueType.Int },
+        RuntimeExtern { name: "avra_test_flush",            params: empty_p, ret: ValueType.Void },
+        RuntimeExtern { name: "avra_test_capture_start",    params: empty_p, ret: ValueType.Void },
+        RuntimeExtern { name: "avra_test_capture_stop",     params: empty_p, ret: ValueType.Str },
         RuntimeExtern { name: "avra_test_run_spec_guarded", params: guard_extern_params(), ret: ValueType.Int },
     ]
 }
@@ -133,7 +134,7 @@ fn test_runtime_externs() -> List<RuntimeExtern> {
 /// Signature for the per-spec guard runtime fn. Named separately so
 /// the externs table reads cleanly without a five-line nested
 /// `ParamList.Node` cons-chain on one row.
-fn guard_extern_params() -> ParamList {
+fn guard_extern_params() -> List<ParamEntry> {
     param_list_from([
         ParamSpec { name: "name", ty: ValueType.Str },
         ParamSpec { name: "file", ty: ValueType.Str },
@@ -203,7 +204,8 @@ fn build_guarded_spec_call(orig: SStmt, spec_name_lex: string) -> SStmt {
     let body_stmts = StmtList.Node(
         sstmt_dummy(orig.node),
         StmtList.Node(sstmt_dummy(Stmt.Expr(Expr.Number("0"))), StmtList.End))
-    let body_lambda = Expr.Lambda(ParamList.End, Expr.Block(body_stmts))
+    let empty_p: List<ParamEntry> = []
+    let body_lambda = Expr.Lambda(empty_p, Expr.Block(body_stmts))
     let args = expr_list_from([
         Expr.String(spec_name_lex),
         Expr.String("\"" + orig.file + "\""),
@@ -316,7 +318,8 @@ fn synth_test_main() -> SStmt {
         sstmt_dummy(Stmt.Return(Expr.Call(Expr.Ident("test_render_summary"), empty_args))),
         StmtList.End)
     let empty_tp: List<TypeParamEntry> = []
-    sstmt_dummy(Stmt.Function("main", empty_tp, ParamList.End, ValueType.Int, body))
+    let empty_p: List<ParamEntry> = []
+    sstmt_dummy(Stmt.Function("main", empty_tp, empty_p, ValueType.Int, body))
 }
 
 /// Assemble the test program for one action: parse each test file as
