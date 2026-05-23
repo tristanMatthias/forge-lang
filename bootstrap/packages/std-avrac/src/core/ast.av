@@ -48,12 +48,7 @@ export fn sstmt_at(s: Stmt, line: int, col: int, file: string) -> SStmt { SStmt 
 /// `sexpr_dummy` — synthesised nodes only.
 export fn sstmt_dummy(s: Stmt) -> SStmt { SStmt { node: s, line: 0, col: 0, file: "" } }
 
-/// Deprecated. Bridge so `use core.{..., ExprList}` imports remain
-/// resolvable. Removed in a follow-on slice.
-export enum ExprList {
-    End
-    Node(expr: SExpr, next: ExprList)
-}
+// `enum ExprList` retired in lkze.9 #18 — `List<SExpr>` everywhere.
 
 /// Function parameter list. Each param carries its resolved
 /// ValueType — populated by the resolver, used by typecheck and

@@ -1489,28 +1489,25 @@ fn tc_check_fn_call_with(checked: TC, name: string, args: List<SExpr>, rec: FnTy
 /// Gated by AVRA_STRICT_ARGS at the call site so the default build
 /// stays quiet; turn on for refactor sessions that need fail-fast on
 /// silent ptr-shape coercions.
-fn tc_strict_arg_types(tc: TC, name: string, tp: List<TypeParamEntry>, params: ParamList, args: ExprList) -> TC {
+fn tc_strict_arg_types(tc: TC, name: string, tp: List<TypeParamEntry>, params: ParamList, args: List<SExpr>) -> TC {
     mut cur_tc = tc
     mut cur_params = params
-    mut cur_args = args
-    while true {
+    mut i = 0
+    while i < args.length {
         match cur_params {
             .End -> return cur_tc
-            .Node(pname, ptype, prest) -> match cur_args {
-                .End -> return cur_tc
-                .Node(arg_se, arest) -> {
-                    let arg_ty = tc_arg_concrete_ty(cur_tc, arg_se)
-                    let skip_unknown = vtype_is_unknown(ptype) || vtype_is_unknown(arg_ty)
-                    let skip_generic = vtype_mentions_typeparam(ptype, tp)
-                    if !skip_unknown && !skip_generic {
-                        if !vtype_eq(arg_ty, ptype) && !vtype_assignable(arg_ty, ptype) {
-                            let msg = "`${name}` parameter `${pname}` expects ${vtype_display(ptype)}, got ${vtype_display(arg_ty)}"
-                            cur_tc = tc_warn(cur_tc, DiagCode.ArgTypeMismatch, msg)
-                        }
+            .Node(pname, ptype, prest) -> {
+                let arg_ty = tc_arg_concrete_ty(cur_tc, args[i])
+                let skip_unknown = vtype_is_unknown(ptype) || vtype_is_unknown(arg_ty)
+                let skip_generic = vtype_mentions_typeparam(ptype, tp)
+                if !skip_unknown && !skip_generic {
+                    if !vtype_eq(arg_ty, ptype) && !vtype_assignable(arg_ty, ptype) {
+                        let msg = "`${name}` parameter `${pname}` expects ${vtype_display(ptype)}, got ${vtype_display(arg_ty)}"
+                        cur_tc = tc_warn(cur_tc, DiagCode.ArgTypeMismatch, msg)
                     }
-                    cur_params = prest
-                    cur_args = arest
                 }
+                cur_params = prest
+                i = i + 1
             }
         }
     }
