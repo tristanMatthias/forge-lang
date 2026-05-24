@@ -41,14 +41,11 @@ use @std.crypto.{sha256_hex, sha256_file}
 /// the assembled program.
 export fn strip_externs(stmts: List<SStmt>) -> List<SStmt> {
     mut out: List<SStmt> = []
-    mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
+    for ss in stmts {
         match ss.node {
             .ExternFn(_, _, _) -> {}
             _ -> out.push(ss)
         }
-        i = i + 1
     }
     out
 }
@@ -72,16 +69,11 @@ type RuntimeExtern = { name: string, params: List<ParamEntry>, ret: ValueType }
 /// the existing stmts.
 fn prepend_externs(stmts: List<SStmt>, decls: List<RuntimeExtern>) -> List<SStmt> {
     mut out: List<SStmt> = []
-    mut i = 0
-    while i < decls.length {
-        let d = decls[i]
+    for d in decls {
         out.push(sstmt_dummy(Stmt.ExternFn(d.name, d.params, d.ret)))
-        i = i + 1
     }
-    mut j = 0
-    while j < stmts.length {
-        out.push(stmts[j])
-        j = j + 1
+    for s in stmts {
+        out.push(s)
     }
     out
 }
@@ -91,10 +83,8 @@ fn prepend_externs(stmts: List<SStmt>, decls: List<RuntimeExtern>) -> List<SStmt
 /// can stand in any call-site position.
 fn expr_list_from(args: List<Expr>) -> List<SExpr> {
     mut out: List<SExpr> = []
-    mut i = 0
-    while i < args.length {
-        out.push(sexpr_dummy(args[i]))
-        i = i + 1
+    for a in args {
+        out.push(sexpr_dummy(a))
     }
     out
 }
@@ -106,11 +96,8 @@ type ParamSpec = { name: string, ty: ValueType }
 
 fn param_list_from(specs: List<ParamSpec>) -> List<ParamEntry> {
     mut out: List<ParamEntry> = []
-    mut i = 0
-    while i < specs.length {
-        let s = specs[i]
+    for s in specs {
         out.push(ParamEntry { name: s.name, vtype: s.ty })
-        i = i + 1
     }
     out
 }
@@ -189,15 +176,12 @@ export fn prepend_test_externs(stmts: List<SStmt>) -> List<SStmt> {
 /// scoped to the enclosing fn call.
 export fn wrap_specs_with_guard(stmts: List<SStmt>) -> List<SStmt> {
     mut out: List<SStmt> = []
-    mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
+    for ss in stmts {
         let rewritten = match ss.node {
             .SpecBlock(name, _) -> build_guarded_spec_call(ss, name)
             _ -> ss
         }
         out.push(rewritten)
-        i = i + 1
     }
     out
 }
@@ -353,13 +337,7 @@ export fn assemble_test_program(test_paths: List<string>, project_dir: string) -
 
     let body = list_concat(load_reporter_stmts(project_dir),
                list_concat(dedup_modules(packages), modules))
-    mut program: List<SStmt> = [synth_test_main()]
-    let with_externs = prepend_test_externs(body)
-    mut i = 0
-    while i < with_externs.length {
-        program.push(with_externs[i])
-        i = i + 1
-    }
+    let program = list_concat([synth_test_main()], prepend_test_externs(body))
     Result.Ok(program)
 }
 
