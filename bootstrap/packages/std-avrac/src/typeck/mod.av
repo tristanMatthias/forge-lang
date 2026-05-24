@@ -239,11 +239,8 @@ fn struct_type_reg_register(reg: StructTypeReg, name: string, fields: List<Field
 /// by the kkgf annotate fast-path to skip a redundant check_expr
 /// re-walk for `obj.field` reads when obj is a bare identifier.
 export fn field_type_lookup(fields: List<FieldEntry>, name: string) -> ValueType {
-    mut i = 0
-    while i < fields.length {
-        let e = fields[i]
+    for e in fields {
         if e.name == name { return e.resolved }
-        i = i + 1
     }
     ValueType.Unknown
 }
@@ -925,12 +922,9 @@ fn rewrite_param_list_vts(tc: TC, params: List<ParamEntry>) -> List<ParamEntry> 
 /// Type-check every statement in a list, threading the TC.
 fn check_stmts(tc: TC, stmts: List<SStmt>) -> TC {
     mut cur = tc
-    mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
+    for ss in stmts {
         let with_pos = cur with { current_line: ss.line, current_col: ss.col }
         cur = check_stmt(with_pos, ss.node)
-        i = i + 1
     }
     cur
 }
@@ -1131,11 +1125,8 @@ fn tc_body_tail_type(tc: TC, stmts: List<SStmt>) -> ValueType {
 /// and conditionals.
 export fn tc_check_explicit_returns(tc: TC, fn_name: string, declared: ValueType, stmts: List<SStmt>) -> TC {
     mut cur = tc
-    mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
+    for ss in stmts {
         cur = tc_check_stmt_returns(cur, fn_name, declared, ss.node)
-        i = i + 1
     }
     cur
 }
@@ -1177,12 +1168,8 @@ fn tc_check_stmt_returns(tc: TC, fn_name: string, declared: ValueType, stmt: Stm
 /// defined binding. Mirrors `define_param_names` in resolve/.
 export fn tc_bind_params(tc: TC, params: List<ParamEntry>) -> TC {
     mut cur = tc
-    mut i = 0
-    while i < params.length {
-        let p = params[i]
-        let ty = resolve_vtype(cur, p.vtype)
-        cur = tc_bind(cur, p.name, ty)
-        i = i + 1
+    for p in params {
+        cur = tc_bind(cur, p.name, resolve_vtype(cur, p.vtype))
     }
     cur
 }
@@ -1698,11 +1685,8 @@ fn tc_subst_type_list(types: List<ValueType>, bindings: List<TypeArg>) -> List<V
 /// Walks head-to-tail so the cons-prepend semantics in `tc_unify`
 /// hold (innermost / most-recent binding wins).
 fn tc_type_arg_lookup(args: List<TypeArg>, name: string) -> ValueType {
-    mut i = 0
-    while i < args.length {
-        let entry = args[i]
+    for entry in args {
         if entry.param_name == name { return entry.concrete_vt }
-        i = i + 1
     }
     ValueType.Unknown
 }
