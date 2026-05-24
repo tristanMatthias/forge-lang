@@ -44,16 +44,13 @@ export type DeclLookup = {
 /// — `has_fn` and `find_fn_body` are O(1) wrappers over this. Returns
 /// `{found: false, body: End}` on miss.
 export fn find_fn(body: List<SStmt>, fn_name: string) -> DeclLookup {
-    mut i = 0
-    while i < body.length {
-        let ss = body[i]
+    for ss in body {
         match ss.node {
             .Function(name, _, _, _, fn_body) -> {
                 if name == fn_name { return DeclLookup { found: true, body: fn_body } }
             }
             _ -> {}
         }
-        i = i + 1
     }
     let empty: List<SStmt> = []
     DeclLookup { found: false, body: empty }
@@ -90,9 +87,7 @@ export fn children_of_type(body: List<SStmt>, comp_name: string) -> List<Compone
 /// `filter_name == ""` means "no filter — include everything".
 fn children_matching(body: List<SStmt>, filter_name: string) -> List<ComponentBlockView> {
     mut out: List<ComponentBlockView> = []
-    mut i = 0
-    while i < body.length {
-        let ss = body[i]
+    for ss in body {
         match ss.node {
             .ComponentBlock(cn, inst, cfg, b) -> {
                 if filter_name == "" || cn == filter_name {
@@ -101,7 +96,6 @@ fn children_matching(body: List<SStmt>, filter_name: string) -> List<ComponentBl
             }
             _ -> {}
         }
-        i = i + 1
     }
     out
 }
@@ -111,11 +105,8 @@ fn children_matching(body: List<SStmt>, filter_name: string) -> List<ComponentBl
 /// Look up a config-pair value by key. Returns null when the key
 /// wasn't supplied — caller falls back to the schema default.
 export fn config_lookup(pairs: List<CompConfigPair>, key: string) -> Expr? {
-    mut i = 0
-    while i < pairs.length {
-        let pair = pairs[i]
+    for pair in pairs {
         if pair.key == key { return pair.value }
-        i = i + 1
     }
     null
 }
