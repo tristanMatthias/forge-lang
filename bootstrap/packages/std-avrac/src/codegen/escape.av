@@ -7,7 +7,7 @@
 // Conservative: if in doubt, mark as escaped (don't release).
 
 use core.{Expr, FieldEntry, FieldInit, Variant, ValueType, Stmt, SExpr, SStmt, stmt_unwrap}
-use codegen.{ReleasableSet, releasable_has, StructReg, EnumReg, struct_reg_lookup, enum_reg_lookup, CopySet, copy_set_has}
+use codegen.{ReleasableSet, releasable_has, StructReg, EnumReg, struct_reg_lookup, enum_reg_lookup, copy_set_has}
 
 /// Add `name` to the releasable set, deduplicating. The set is the
 /// list of locals safe to RC-release at scope exit.
@@ -379,37 +379,30 @@ export fn is_arena_eligible(body: Stmt) -> bool {
 /// Seeds the candidate set with every named struct + enum and runs
 /// `fixpoint_copy` to remove anything that touches a non-Copy
 /// primitive (Str, List, Map, Ptr, Closure, Trait, Union, …).
-export fn analyze_copy_types(structs: StructReg, enums: EnumReg) -> CopySet {
-    let candidates = seed_struct_candidates(structs, seed_enum_candidates(enums, CopySet.End))
+export fn analyze_copy_types(structs: StructReg, enums: EnumReg) -> List<string> {
+    let empty: List<string> = []
+    let candidates = seed_struct_candidates(structs, seed_enum_candidates(enums, empty))
     fixpoint_copy(candidates, structs, enums)
 }
 
 /// Seed every struct name as a Copy candidate.
-fn seed_struct_candidates(reg: StructReg, set: CopySet) -> CopySet {
+fn seed_struct_candidates(reg: StructReg, set: List<string>) -> List<string> {
     mut out = set
-    mut i = 0
-    while i < reg.ord.length {
-        out = CopySet.Node(reg.ord[i].name, out)
-        i = i + 1
-    }
+    for m in reg.ord { out = out.push(m.name) }
     out
 }
 
 /// Seed every enum name as a Copy candidate.
-fn seed_enum_candidates(reg: EnumReg, set: CopySet) -> CopySet {
+fn seed_enum_candidates(reg: EnumReg, set: List<string>) -> List<string> {
     mut out = set
-    mut i = 0
-    while i < reg.ord.length {
-        out = CopySet.Node(reg.ord[i].name, out)
-        i = i + 1
-    }
+    for m in reg.ord { out = out.push(m.name) }
     out
 }
 
 /// Iterate `refine_copy` until the candidate set is stable. Every
 /// pass shrinks the set (or matches the prior pass), so this
 /// terminates after at most `len(candidates)` passes.
-fn fixpoint_copy(candidates: CopySet, structs: StructReg, enums: EnumReg) -> CopySet {
+fn fixpoint_copy(candidates: List<string>, structs: StructReg, enums: EnumReg) -> List<string> {
     let refined = refine_copy(candidates, structs, enums)
     if copy_set_eq(refined, candidates) { refined }
     else { fixpoint_copy(refined, structs, enums) }
@@ -417,23 +410,19 @@ fn fixpoint_copy(candidates: CopySet, structs: StructReg, enums: EnumReg) -> Cop
 
 /// One pass of the Copy fixpoint: keep only those candidates whose
 /// fields/variants are themselves Copy under the current set.
-fn refine_copy(candidates: CopySet, structs: StructReg, enums: EnumReg) -> CopySet {
-    match candidates {
-        .End -> .End
-        .Node(name, next) -> {
-            let rest = refine_copy(next, structs, enums)
-            if is_name_copy(name, candidates, structs, enums) {
-                CopySet.Node(name, rest)
-            } else {
-                rest
-            }
+fn refine_copy(candidates: List<string>, structs: StructReg, enums: EnumReg) -> List<string> {
+    mut out: List<string> = []
+    for name in candidates {
+        if is_name_copy(name, candidates, structs, enums) {
+            out = out.push(name)
         }
     }
+    out
 }
 
 /// True when `name` is registered as a struct/enum and all of its
 /// fields/variants are Copy under the current candidate set.
-fn is_name_copy(name: string, candidates: CopySet, structs: StructReg, enums: EnumReg) -> bool {
+fn is_name_copy(name: string, candidates: List<string>, structs: StructReg, enums: EnumReg) -> bool {
     let sl = struct_reg_lookup(structs, name)
     if sl.found { return fields_all_copy(sl.fields, candidates) }
     let el = enum_reg_lookup(enums, name)
@@ -443,22 +432,18 @@ fn is_name_copy(name: string, candidates: CopySet, structs: StructReg, enums: En
 
 /// True when every field in `fields` has a Copy ValueType under
 /// the current candidate set.
-fn fields_all_copy(fields: List<FieldEntry>, candidates: CopySet) -> bool {
-    mut i = 0
-    while i < fields.length {
-        if !vtype_is_copy_in_set(fields[i].resolved, candidates) { return false }
-        i = i + 1
+fn fields_all_copy(fields: List<FieldEntry>, candidates: List<string>) -> bool {
+    for f in fields {
+        if !vtype_is_copy_in_set(f.resolved, candidates) { return false }
     }
     true
 }
 
 /// True when every variant of an enum has Copy fields under the
 /// current candidate set.
-fn variants_all_copy(variants: List<Variant>, candidates: CopySet) -> bool {
-    mut i = 0
-    while i < variants.length {
-        if !fields_all_copy(variants[i].fields, candidates) { return false }
-        i = i + 1
+fn variants_all_copy(variants: List<Variant>, candidates: List<string>) -> bool {
+    for v in variants {
+        if !fields_all_copy(v.fields, candidates) { return false }
     }
     true
 }
@@ -469,7 +454,7 @@ fn variants_all_copy(variants: List<Variant>, candidates: CopySet) -> bool {
 /// outer set isn't final yet). Renamed `*_in_set` to avoid colliding
 /// with `vtype_is_copy` from types.av now that codegen/ is a flat
 /// dir-as-module namespace (g2eo.1).
-fn vtype_is_copy_in_set(vt: ValueType, candidates: CopySet) -> bool {
+fn vtype_is_copy_in_set(vt: ValueType, candidates: List<string>) -> bool {
     match vt {
         .Int -> true
         .U8 -> true
@@ -499,28 +484,17 @@ fn vtype_is_copy_in_set(vt: ValueType, candidates: CopySet) -> bool {
     }
 }
 
-/// CopySet equality used by `fixpoint_copy` to detect convergence.
+/// Copy-set equality used by `fixpoint_copy` to detect convergence.
 /// Two sets are equal when same length and one is a subset of the
 /// other — order doesn't matter.
-fn copy_set_eq(a: CopySet, b: CopySet) -> bool {
-    copy_set_len(a) == copy_set_len(b) && copy_set_subset(a, b)
-}
-
-/// Length of a CopySet. O(n).
-fn copy_set_len(set: CopySet) -> int {
-    match set {
-        .End -> 0
-        .Node(_, next) -> 1 + copy_set_len(next)
-    }
+fn copy_set_eq(a: List<string>, b: List<string>) -> bool {
+    a.length == b.length && copy_set_subset(a, b)
 }
 
 /// True when every name in `a` also appears in `b`. O(|a| × |b|).
-fn copy_set_subset(a: CopySet, b: CopySet) -> bool {
-    match a {
-        .End -> true
-        .Node(name, next) -> {
-            if !copy_set_has(b, name) { false }
-            else { copy_set_subset(next, b) }
-        }
+fn copy_set_subset(a: List<string>, b: List<string>) -> bool {
+    for name in a {
+        if !copy_set_has(b, name) { return false }
     }
+    true
 }

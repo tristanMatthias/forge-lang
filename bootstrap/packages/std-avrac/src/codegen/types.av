@@ -90,7 +90,7 @@ export type Ctx = {
     trait_decls: TraitDeclReg,
     newtypes: CgNewtypeReg,
     union_aliases: CgUnionAliasReg,
-    copy_types: CopySet,
+    copy_types: List<string>,
     debug_null_checks: int,
     // LLVM source-based coverage (--coverage flag). When true, codegen
     // emits llvm.instrprof.increment calls at each coverage region.
@@ -460,18 +460,14 @@ export enum ReleasableSet {
 /// Set of type names that are Copy (all-primitive fields, no heap
 /// references). Built once by `analyze_copy_types` and threaded
 /// through `Ctx` so emit code can decide whether to RC-track a value.
-export enum CopySet {
-    End
-    Node(name: string, next: CopySet)
-}
+/// Order-irrelevant; queried for membership only.
 
 /// Membership test for the Copy-types set.
-export fn copy_set_has(set: CopySet, name: string) -> bool {
-    match set {
-        .End -> false
-        .Node(n, _) if n == name -> true
-        .Node(_, next) -> copy_set_has(next, name)
+export fn copy_set_has(set: List<string>, name: string) -> bool {
+    for n in set {
+        if n == name { return true }
     }
+    false
 }
 
 /// Decide whether `vt` is a Copy type — i.e. cheap to duplicate and
@@ -480,7 +476,7 @@ export fn copy_set_has(set: CopySet, name: string) -> bool {
 /// appear in `copies`; Newtype unwraps to its inner; everything else
 /// (Str, List, Map, Ptr, Fn, Closure, Trait, Tuple, Union, …) is
 /// non-Copy.
-export fn vtype_is_copy(vt: ValueType, copies: CopySet) -> bool {
+export fn vtype_is_copy(vt: ValueType, copies: List<string>) -> bool {
     match vt {
         .Int -> true
         .U8 -> true

@@ -4,9 +4,9 @@ use core.{Expr, FieldEntry, ParamEntry, Stmt, ValueType, VarBinding, Variant, SS
 use parse.{parse_int_literal}
 use core.{avra_llvm_const_int}
 use core.{avra_process_env_get}
-use codegen.{Ctx, CgNewtypeReg, CgUnionAliasReg, CopySet, TypeRegs, DeferStack, RcCleanupStack, ReleasableSet, EmitValue, EnumReg, EnumLookup, FnParamTypes, FnRetTypes, LoopStack, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for_full, llvm_type_for_full_sized, ok_emit, ok_stmt, struct_reg_lookup, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup}
+use codegen.{Ctx, CgNewtypeReg, CgUnionAliasReg, TypeRegs, DeferStack, RcCleanupStack, ReleasableSet, EmitValue, EnumReg, EnumLookup, FnParamTypes, FnRetTypes, LoopStack, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for_full, llvm_type_for_full_sized, ok_emit, ok_stmt, struct_reg_lookup, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup}
 use codegen.{analyze_releasable, analyze_copy_types}
-use codegen.{CycleSet, analyze_cycles, cycle_set_has}
+use codegen.{analyze_cycles, cycle_set_has}
 use core.{build_registry}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
 use codegen.{emit_expr, emit_stmt, emit_stmt_list}
@@ -1180,7 +1180,7 @@ fn type_belongs_to_lib_pkg(ctx: Ctx, type_name: string) -> bool {
 /// release body lives in the producer's `.o`, the declaration alone
 /// links us to it. P2 library-mode also skips types not owned by
 /// `ctx.lib_pkg_root`.
-fn emit_release_bodies_structs(ctx: Ctx, reg: StructReg, cycles: CycleSet) {
+fn emit_release_bodies_structs(ctx: Ctx, reg: StructReg, cycles: List<string>) {
     mut i = 0
     while i < reg.ord.length {
         let s = reg.ord[i]
@@ -1201,7 +1201,7 @@ fn emit_release_bodies_structs(ctx: Ctx, reg: StructReg, cycles: CycleSet) {
 /// when at least one variant carries an RC payload. External entries
 /// (g2eo Phase A) are skipped — their body lives in the producer.
 /// P2 library-mode also skips enums not owned by `ctx.lib_pkg_root`.
-fn emit_release_bodies_enums(ctx: Ctx, reg: EnumReg, cycles: CycleSet) {
+fn emit_release_bodies_enums(ctx: Ctx, reg: EnumReg, cycles: List<string>) {
     mut i = 0
     while i < reg.ord.length {
         let e = reg.ord[i]
@@ -1221,7 +1221,7 @@ fn emit_release_bodies_enums(ctx: Ctx, reg: EnumReg, cycles: CycleSet) {
 /// signature first (so mutually-recursive types can call each
 /// other), then emits every body. Run once per module before user
 /// function bodies are emitted.
-fn emit_release_functions(ctx: Ctx, cycles: CycleSet) {
+fn emit_release_functions(ctx: Ctx, cycles: List<string>) {
     // Phase 1: declare all signatures (needed for mutual recursion)
     declare_release_fns_structs(ctx.module, ctx.i64_type, ctx.ptr_type, ctx.structs)
     declare_release_fns_enums(ctx.module, ctx.i64_type, ctx.ptr_type, ctx.enums)

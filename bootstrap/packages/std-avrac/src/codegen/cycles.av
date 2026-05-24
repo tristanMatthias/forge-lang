@@ -12,32 +12,40 @@ use codegen.{StructReg, EnumReg, struct_reg_lookup, enum_reg_lookup, vtype_is_pt
 /// some chain of pointer-typed fields. Built once by `analyze_cycles`
 /// and consulted by release-fn emission so cycle-capable types call
 /// `avra_rc_suspect()` on non-zero decrements (spec Axis 9.5).
-export enum CycleSet {
-    End
-    Node(name: string, next: CycleSet)
-}
+///
+/// Order is irrelevant — this is a name set used purely for
+/// membership queries, not iteration.
 
 /// Membership test for the cycle-capable set.
-export fn cycle_set_has(cs: CycleSet, name: string) -> bool {
-    match cs {
-        .End -> false
-        .Node(n, next) -> if n == name { true } else { cycle_set_has(next, name) }
+export fn cycle_set_has(cs: List<string>, name: string) -> bool {
+    for n in cs {
+        if n == name { return true }
     }
+    false
 }
 
 /// DFS visited set — tracks types already explored on the current
-/// search path so reachability never loops forever.
-enum CycleVisited {
-    End
-    Node(name: string, next: CycleVisited)
-}
+/// search path so reachability never loops forever. Each branch in
+/// the search gets its OWN list via `visited_extend` (which copies)
+/// so a sibling branch's recursion doesn't pollute another's
+/// visited frontier.
 
 /// Membership test for the visited set.
-fn visited_has(vs: CycleVisited, name: string) -> bool {
-    match vs {
-        .End -> false
-        .Node(n, next) -> if n == name { true } else { visited_has(next, name) }
+fn visited_has(vs: List<string>, name: string) -> bool {
+    for n in vs {
+        if n == name { return true }
     }
+    false
+}
+
+/// Return a fresh list = `vs ++ [name]`. The copy is critical: the
+/// caller's `vs` may be reused for sibling DFS branches, and
+/// `.push()` on the shared list would corrupt those branches.
+fn visited_extend(vs: List<string>, name: string) -> List<string> {
+    mut out: List<string> = []
+    for n in vs { out = out.push(n) }
+    out = out.push(name)
+    out
 }
 
 // ── Core DFS reachability check ──
@@ -46,22 +54,18 @@ fn visited_has(vs: CycleVisited, name: string) -> bool {
 
 /// True when at least one field in `fields` can reach `target`.
 /// Recursion entry for struct types.
-fn fields_reach_target(fields: List<FieldEntry>, target: string, visited: CycleVisited, structs: StructReg, enums: EnumReg) -> bool {
-    mut i = 0
-    while i < fields.length {
-        if type_reaches_target(fields[i].resolved, target, visited, structs, enums) { return true }
-        i = i + 1
+fn fields_reach_target(fields: List<FieldEntry>, target: string, visited: List<string>, structs: StructReg, enums: EnumReg) -> bool {
+    for f in fields {
+        if type_reaches_target(f.resolved, target, visited, structs, enums) { return true }
     }
     false
 }
 
 /// True when at least one variant's payload can reach `target`.
 /// Recursion entry for enum types.
-fn variants_reach_target(variants: List<Variant>, target: string, visited: CycleVisited, structs: StructReg, enums: EnumReg) -> bool {
-    mut i = 0
-    while i < variants.length {
-        if fields_reach_target(variants[i].fields, target, visited, structs, enums) { return true }
-        i = i + 1
+fn variants_reach_target(variants: List<Variant>, target: string, visited: List<string>, structs: StructReg, enums: EnumReg) -> bool {
+    for v in variants {
+        if fields_reach_target(v.fields, target, visited, structs, enums) { return true }
     }
     false
 }
@@ -71,12 +75,12 @@ fn variants_reach_target(variants: List<Variant>, target: string, visited: Cycle
 /// hop. Lists and Newtypes recurse into their inner type. Leaf
 /// types (Int, Bool, Str, Map, Closure, …) trivially can't form a
 /// cycle, since they don't carry user-typed pointers.
-fn type_reaches_target(ty: ValueType, target: string, visited: CycleVisited, structs: StructReg, enums: EnumReg) -> bool {
+fn type_reaches_target(ty: ValueType, target: string, visited: List<string>, structs: StructReg, enums: EnumReg) -> bool {
     match ty {
         .Struct(name, _) -> {
             if name == target { return true }
             if visited_has(visited, name) { return false }
-            let vs2 = CycleVisited.Node(name, visited)
+            let vs2 = visited_extend(visited, name)
             let lookup = struct_reg_lookup(structs, name)
             if lookup.found {
                 fields_reach_target(lookup.fields, target, vs2, structs, enums)
@@ -87,7 +91,7 @@ fn type_reaches_target(ty: ValueType, target: string, visited: CycleVisited, str
         .Enum(name, _, _) -> {
             if name == target { return true }
             if visited_has(visited, name) { return false }
-            let vs2 = CycleVisited.Node(name, visited)
+            let vs2 = visited_extend(visited, name)
             let elookup = enum_reg_lookup(enums, name)
             if elookup.found {
                 variants_reach_target(elookup.variants, target, vs2, structs, enums)
@@ -109,16 +113,14 @@ fn type_reaches_target(ty: ValueType, target: string, visited: CycleVisited, str
 
 /// Walk every declared struct type. For each, run a self-targeted
 /// reachability check; record the name when a cycle exists.
-fn analyze_structs(reg: StructReg, cs: CycleSet, structs: StructReg, enums: EnumReg) -> CycleSet {
+fn analyze_structs(reg: StructReg, cs: List<string>, structs: StructReg, enums: EnumReg) -> List<string> {
     mut out = cs
-    mut i = 0
-    while i < reg.ord.length {
-        let m = reg.ord[i]
-        let visited = CycleVisited.Node(m.name, CycleVisited.End)
+    for m in reg.ord {
+        let empty: List<string> = []
+        let visited = visited_extend(empty, m.name)
         if fields_reach_target(m.fields, m.name, visited, structs, enums) {
-            out = CycleSet.Node(m.name, out)
+            out = out.push(m.name)
         }
-        i = i + 1
     }
     out
 }
@@ -126,16 +128,14 @@ fn analyze_structs(reg: StructReg, cs: CycleSet, structs: StructReg, enums: Enum
 /// Walk every declared enum type. For each, run a self-targeted
 /// reachability check across its variants; record the name when a
 /// cycle exists.
-fn analyze_enums(reg: EnumReg, cs: CycleSet, structs: StructReg, enums: EnumReg) -> CycleSet {
+fn analyze_enums(reg: EnumReg, cs: List<string>, structs: StructReg, enums: EnumReg) -> List<string> {
     mut out = cs
-    mut i = 0
-    while i < reg.ord.length {
-        let m = reg.ord[i]
-        let visited = CycleVisited.Node(m.name, CycleVisited.End)
+    for m in reg.ord {
+        let empty: List<string> = []
+        let visited = visited_extend(empty, m.name)
         if variants_reach_target(m.variants, m.name, visited, structs, enums) {
-            out = CycleSet.Node(m.name, out)
+            out = out.push(m.name)
         }
-        i = i + 1
     }
     out
 }
@@ -143,8 +143,8 @@ fn analyze_enums(reg: EnumReg, cs: CycleSet, structs: StructReg, enums: EnumReg)
 /// Public entry point. Computes the cycle-capable set across every
 /// declared struct and enum type. Run once during `compile_program`,
 /// then carried through release-fn emission.
-export fn analyze_cycles(structs: StructReg, enums: EnumReg) -> CycleSet {
-    let cs = CycleSet.End
-    let cs2 = analyze_structs(structs, cs, structs, enums)
+export fn analyze_cycles(structs: StructReg, enums: EnumReg) -> List<string> {
+    let empty: List<string> = []
+    let cs2 = analyze_structs(structs, empty, structs, enums)
     analyze_enums(enums, cs2, structs, enums)
 }
