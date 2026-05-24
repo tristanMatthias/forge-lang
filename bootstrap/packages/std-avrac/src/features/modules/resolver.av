@@ -10,7 +10,7 @@ use build.{metadata_read, metadata_file_exists, synthesize_unit_body}
 use build.{cache_for, entry_source_meta_path, Fingerprint, package_source_fingerprint}
 use @std.crypto.{sha256_hex, sha256_file}
 use features.modules.{list_avra_module_files, list_avra_module_subdirs}
-use list_ops.{list_concat, list_push_copy, list_any}
+use list_ops.{list_concat, list_push_copy, list_any, list_map}
 
 extern fn avra_bytes_to_hex(b: bytes) -> string
 extern fn avra_uptime_ms() -> int
@@ -442,13 +442,8 @@ export fn resolve_dir_module_body(dir: string, loaded: List<string>) -> ModListR
     let files = list_avra_module_files(dir)
     mut acc: List<SStmt> = []
     mut acc_loaded = loaded
-    mut i = 0
-    while i < files.length {
-        let path = files[i]
-        if loaded_has(acc_loaded, path) {
-            i = i + 1
-            continue
-        }
+    for path in files {
+        if loaded_has(acc_loaded, path) { continue }
         let source = avra_selfhost_read_file(path)
         let parsed = parse_program_source_at(source, path)
         if parsed.had_error || parsed.stmts == null {
@@ -461,7 +456,6 @@ export fn resolve_dir_module_body(dir: string, loaded: List<string>) -> ModListR
         }
         acc_loaded = list_push_copy(acc_loaded, path)
         acc = list_concat(acc, parsed.stmts!)
-        i = i + 1
     }
     acc = list_concat(acc, synthesize_subdir_module_decls(dir))
     ModListResult { stmts: acc, loaded: acc_loaded, had_error: false, error_message: "" }
@@ -503,21 +497,14 @@ export fn synthesize_subdir_module_decls(dir: string) -> List<SStmt> {
 // `target_name`. Used by synthesize_subdir_module_decls_filtered to
 // avoid producing duplicates with explicit decls.
 fn stmts_have_module_named(stmts: List<SStmt>, target_name: string) -> bool {
-    mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
-        let hit = match ss.node {
+    list_any(stmts, (ss: SStmt) -> match ss.node {
+        .Module(name, _) -> name == target_name
+        .Annotated(_, inner) -> match inner {
             .Module(name, _) -> name == target_name
-            .Annotated(_, inner) -> match inner {
-                .Module(name, _) -> name == target_name
-                _ -> false
-            }
             _ -> false
         }
-        if hit { return true }
-        i = i + 1
-    }
-    false
+        _ -> false
+    })
 }
 
 // Trailing-segment of a path (after the last '/'). Returns the input
@@ -546,21 +533,14 @@ fn path_basename(p: string) -> string {
 // children behind a now-empty Module wrapper. Annotated wrappers
 // pass through.
 fn stmts_have_mod_decl(stmts: List<SStmt>) -> bool {
-    mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
-        let is_mod = match ss.node {
+    list_any(stmts, (ss: SStmt) -> match ss.node {
+        .Module(_, body) -> body.length == 0
+        .Annotated(_, inner) -> match inner {
             .Module(_, body) -> body.length == 0
-            .Annotated(_, inner) -> match inner {
-                .Module(_, body) -> body.length == 0
-                _ -> false
-            }
             _ -> false
         }
-        if is_mod { return true }
-        i = i + 1
-    }
-    false
+        _ -> false
+    })
 }
 
 /// Merge duplicate `Module(name, body)` nodes by qualified name.
@@ -606,16 +586,11 @@ enum ModGroupItem {
 /// not on bodies.
 fn group_by_module_name(stmts: List<SStmt>) -> List<ModGroupItem> {
     mut acc: List<ModGroupItem> = []
-    mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
+    for ss in stmts {
         match ss.node {
             .Module(name, body) -> mod_group_merge(acc, name, body, ss.line, ss.col)
-            _ -> {
-                acc.push(ModGroupItem.Pass(ss))
-            }
+            _ -> acc.push(ModGroupItem.Pass(ss))
         }
-        i = i + 1
     }
     acc
 }
@@ -699,12 +674,7 @@ fn dedup_by_span(stmts: List<SStmt>) -> List<SStmt> {
 
 /// Helper: linear search for a string in a List<string>.
 fn list_str_contains(xs: List<string>, target: string) -> bool {
-    mut i = 0
-    while i < xs.length {
-        if xs[i] == target { return true }
-        i = i + 1
-    }
-    false
+    list_any(xs, (s: string) -> s == target)
 }
 
 /// Helper: collect linked List<SStmt> into List<SStmt> for indexed walk.
@@ -732,18 +702,12 @@ export type HoistSplit = {
 export fn hoist_package_modules(stmts: List<SStmt>) -> HoistSplit {
     mut packages: List<SStmt> = []
     mut body: List<SStmt> = []
-    mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
+    for ss in stmts {
         match ss.node {
             .Module(name, mbody) if name.length > 0 && name[0] == "@" -> {
                 let inner = hoist_package_modules(mbody)
                 let cleaned = sstmt_at(Stmt.Module(name, inner.body), ss.line, ss.col, ss.file)
-                mut j = 0
-                while j < inner.packages.length {
-                    packages.push(inner.packages[j])
-                    j = j + 1
-                }
+                for p in inner.packages { packages.push(p) }
                 packages.push(cleaned)
             }
             .Module(name, mbody) -> {
@@ -752,17 +716,12 @@ export fn hoist_package_modules(stmts: List<SStmt>) -> HoistSplit {
                     body.push(ss)
                 } else {
                     let cleaned = sstmt_at(Stmt.Module(name, inner.body), ss.line, ss.col, ss.file)
-                    mut j = 0
-                    while j < inner.packages.length {
-                        packages.push(inner.packages[j])
-                        j = j + 1
-                    }
+                    for p in inner.packages { packages.push(p) }
                     body.push(cleaned)
                 }
             }
             _ -> body.push(ss)
         }
-        i = i + 1
     }
     HoistSplit { packages, body }
 }
@@ -816,13 +775,7 @@ export fn package_module_name(path: string) -> string {
 /// sub-files (e.g. `features/match_expr/typeck.av`) get anchored
 /// just like the package's top-level body does.
 fn qualify_uses_recursively(stmts: List<SStmt>, pkg_qual: string) -> List<SStmt> {
-    mut out: List<SStmt> = []
-    mut i = 0
-    while i < stmts.length {
-        out.push(qualify_use_in_stmt(stmts[i], pkg_qual))
-        i = i + 1
-    }
-    out
+    list_map(stmts, (ss: SStmt) -> qualify_use_in_stmt(ss, pkg_qual))
 }
 
 /// Per-statement worker: rewrite `Use` (handling Annotated wrappers)
