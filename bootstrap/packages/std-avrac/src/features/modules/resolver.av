@@ -10,7 +10,7 @@ use build.{metadata_read, metadata_file_exists, synthesize_unit_body}
 use build.{cache_for, entry_source_meta_path, Fingerprint, package_source_fingerprint}
 use @std.crypto.{sha256_hex, sha256_file}
 use features.modules.{list_avra_module_files, list_avra_module_subdirs}
-use list_ops.{list_concat, list_push_copy}
+use list_ops.{list_concat, list_push_copy, list_any}
 
 extern fn avra_bytes_to_hex(b: bytes) -> string
 extern fn avra_uptime_ms() -> int
@@ -134,10 +134,7 @@ fn record_meta_dep(producer_path: string) {
 
 /// Membership test for `LoadedPaths`.
 fn loaded_has(paths: List<string>, path: string) -> bool {
-    for p in paths {
-        if p == path { return true }
-    }
-    false
+    list_any(paths, (p: string) -> p == path)
 }
 
 /// Result of resolving a list of statements that may contain
@@ -176,10 +173,7 @@ type ModStmtResult = {
 
 /// Membership test for the import stack. Used to detect cycles.
 fn stack_has(stack: List<string>, path: string) -> bool {
-    for p in stack {
-        if p == path { return true }
-    }
-    false
+    list_any(stack, (p: string) -> p == path)
 }
 
 /// Render the import stack as `a.av -> b.av -> a.av` for cycle-

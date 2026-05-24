@@ -13,7 +13,7 @@ use features.map_lit.{check_map_method}
 use features.let_stmt.{is_const_expr, bind_destructure}
 use core.{method_mangled_name, type_short_name, is_result_enum_name}
 use core.{avra_process_env_get}
-use list_ops.{list_push_copy}
+use list_ops.{list_push_copy, list_any}
 
 extern fn avra_uptime_ms() -> int
 
@@ -401,10 +401,7 @@ export fn tc_owns_type(tc: TC, name: string) -> bool {
 
 /// Membership probe for the shape set.
 fn is_shape(set: List<string>, name: string) -> bool {
-    for n in set {
-        if n == name { return true }
-    }
-    false
+    list_any(set, (n: string) -> n == name)
 }
 
 /// One newtype's metadata in NewtypeReg's `ord` list.

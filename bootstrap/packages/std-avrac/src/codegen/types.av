@@ -19,6 +19,7 @@ use core.{avra_coverage_emit_hit, avra_covmap_alloc, avra_covmap_counter_count, 
 use features.error_propagation.{Result}
 use diagnostics.{DiagnosticBag, bag_new, bag_report, diag_warning, span_new, DiagCode}
 use core.{avra_tag_as_result}
+use list_ops.{list_any}
 
 // ── Codegen context ──
 //
@@ -451,10 +452,7 @@ export type RcCleanupEntry = { name: string, alloca: ptr, ty: ValueType }
 
 /// Membership test for the Copy-types set.
 export fn copy_set_has(set: List<string>, name: string) -> bool {
-    for n in set {
-        if n == name { return true }
-    }
-    false
+    list_any(set, (n: string) -> n == name)
 }
 
 /// Decide whether `vt` is a Copy type — i.e. cheap to duplicate and
@@ -485,10 +483,7 @@ export fn vtype_is_copy(vt: ValueType, copies: List<string>) -> bool {
 
 /// Membership test for the releasable set.
 export fn releasable_has(set: List<string>, name: string) -> bool {
-    for n in set {
-        if n == name { return true }
-    }
-    false
+    list_any(set, (n: string) -> n == name)
 }
 
 /// One struct decl entry in StructReg's `ord` list. `external` is

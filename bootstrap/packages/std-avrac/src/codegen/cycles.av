@@ -7,7 +7,7 @@
 
 use core.{FieldEntry, ValueType, Variant}
 use codegen.{StructReg, EnumReg, struct_reg_lookup, enum_reg_lookup, vtype_is_ptr_type}
-use list_ops.{list_push_copy}
+use list_ops.{list_push_copy, list_any}
 
 /// Set of type names whose layout can reach back to itself through
 /// some chain of pointer-typed fields. Built once by `analyze_cycles`
@@ -19,10 +19,7 @@ use list_ops.{list_push_copy}
 
 /// Membership test for the cycle-capable set.
 export fn cycle_set_has(cs: List<string>, name: string) -> bool {
-    for n in cs {
-        if n == name { return true }
-    }
-    false
+    list_any(cs, (n: string) -> n == name)
 }
 
 /// DFS visited set — tracks types already explored on the current
@@ -33,10 +30,7 @@ export fn cycle_set_has(cs: List<string>, name: string) -> bool {
 
 /// Membership test for the visited set.
 fn visited_has(vs: List<string>, name: string) -> bool {
-    for n in vs {
-        if n == name { return true }
-    }
-    false
+    list_any(vs, (n: string) -> n == name)
 }
 
 
