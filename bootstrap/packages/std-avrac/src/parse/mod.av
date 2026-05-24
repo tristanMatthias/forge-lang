@@ -563,7 +563,7 @@ impl Parser {
                 self.advance()  // consume (
                 let a = self.parse_arg_list()
                 if self.check(Tk.RightParen) { self.advance() }
-                if a == null { [] } else { a! }
+                a ?? []
             } else {
                 []
             }
