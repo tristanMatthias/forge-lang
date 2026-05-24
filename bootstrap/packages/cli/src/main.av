@@ -48,7 +48,7 @@ use @std.cli.ui.{run_with_spinner, run_with_progress}
 use @std.json.{json_str, json_object, json_pairs, json_pair_add}
 use @std.lsp.{Sym}
 use @std.avrac.fmt.{fmt_stmt_list}
-use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, append_stmt_list, assemble_test_program, test_reporter_path}
+use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, assemble_test_program, test_reporter_path}
 use @std.avrac.test_runner.{discover_tests, DiscoveredFile, DiscoveredEntry}
 use @std.avrac.coverage.{render_coverage}
 use @std.avrac.docs.{extract_project_docs_ast, extract_project_corpus,

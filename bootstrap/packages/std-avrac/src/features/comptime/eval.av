@@ -37,11 +37,9 @@ export fn try_fold_call(reg: CompTimeRegistry, call: Expr) -> Expr? {
         .Call(callee, args) -> {
             match callee {
                 .Ident(name) -> {
-                    let fn_def = comptime_lookup(reg, name)
-                    if fn_def == null { return null }
-                    let arg_values = literal_args_to_values(args)
-                    if arg_values == null { return null }
-                    fold_call(reg, fn_def!, arg_values!)
+                    let fn_def = comptime_lookup(reg, name)?
+                    let arg_values = literal_args_to_values(args)?
+                    fold_call(reg, fn_def, arg_values)
                 }
                 _ -> null
             }
@@ -114,16 +112,14 @@ fn value_to_construct_expr(v: Value) -> Expr? {
         "bool"   -> Expr.Bool(if v.bool_value != 0 { "true" } else { "false" })
         "null"   -> Expr.Null
         "enum"   -> {
-            let args = payload_to_args(v.enum_payload, 0)
-            if args == null { return null }
-            Expr.EnumCtor(v.enum_type, v.enum_variant, args!)
+            let args = payload_to_args(v.enum_payload, 0)?
+            Expr.EnumCtor(v.enum_type, v.enum_variant, args)
         }
         // fwyx: a list Value reconstructs as Expr.ListLit, mirroring
         // the construct_expr_list output that produced it.
         "list" -> {
-            let elems = payload_to_args(v.list_payload, 0)
-            if elems == null { return null }
-            Expr.ListLit(elems!)
+            let elems = payload_to_args(v.list_payload, 0)?
+            Expr.ListLit(elems)
         }
         // fwyx: a struct Value reconstructs as Expr.StructLit, mirroring
         // the struct_lit_2 output (every FieldInit recurses).
@@ -132,9 +128,8 @@ fn value_to_construct_expr(v: Value) -> Expr? {
             mut i = 0
             while i < v.struct_payload.length {
                 let f = v.struct_payload[i]
-                let inner = value_to_construct_expr(f.value)
-                if inner == null { return null }
-                inits.push(FieldInit { name: f.name, value: sexpr_dummy(inner!) })
+                let inner = value_to_construct_expr(f.value)?
+                inits.push(FieldInit { name: f.name, value: sexpr_dummy(inner) })
                 i = i + 1
             }
             Expr.StructLit(v.struct_type, inits)
@@ -151,9 +146,8 @@ fn payload_to_args(payload: List<Value>, i: int) -> List<SExpr>? {
     mut out: List<SExpr> = []
     mut j = i
     while j < payload.length {
-        let inner = value_to_construct_expr(payload[j])
-        if inner == null { return null }
-        out.push(sexpr_dummy(inner!))
+        let inner = value_to_construct_expr(payload[j])?
+        out.push(sexpr_dummy(inner))
         j = j + 1
     }
     out
@@ -184,116 +178,100 @@ fn enum_value_to_expr(v: Value) -> Expr? {
         "QualifiedIdent"  -> Expr.QualifiedIdent(head.text)
         "FloatLit"        -> Expr.FloatLit(head.text)
         "Grouping"        -> {
-            let inner = enum_value_to_expr(head)
-            if inner == null { return null }
-            Expr.Grouping(inner!)
+            let inner = enum_value_to_expr(head)?
+            Expr.Grouping(inner)
         }
         "Unary" -> {
             if p.length != 2 { return null }
-            let op = enum_value_to_unop(head)
-            let right = enum_value_to_expr(p[1])
-            if op == null || right == null { return null }
-            Expr.Unary(op!, right!)
+            let op = enum_value_to_unop(head)?
+            let right = enum_value_to_expr(p[1])?
+            Expr.Unary(op, right)
         }
         "Binary" -> {
             if p.length != 3 { return null }
-            let left = enum_value_to_expr(head)
-            let op = enum_value_to_binop(p[1])
-            let right = enum_value_to_expr(p[2])
-            if left == null || op == null || right == null { return null }
-            Expr.Binary(left!, op!, right!)
+            let left = enum_value_to_expr(head)?
+            let op = enum_value_to_binop(p[1])?
+            let right = enum_value_to_expr(p[2])?
+            Expr.Binary(left, op, right)
         }
         "Logical" -> {
             if p.length != 3 { return null }
-            let left = enum_value_to_expr(head)
-            let op = enum_value_to_logicop(p[1])
-            let right = enum_value_to_expr(p[2])
-            if left == null || op == null || right == null { return null }
-            Expr.Logical(left!, op!, right!)
+            let left = enum_value_to_expr(head)?
+            let op = enum_value_to_logicop(p[1])?
+            let right = enum_value_to_expr(p[2])?
+            Expr.Logical(left, op, right)
         }
         "Call" -> {
             if p.length != 2 { return null }
-            let callee = enum_value_to_expr(head)
-            let args = list_value_to_expr_list(p[1])
-            if callee == null || args == null { return null }
-            Expr.Call(callee!, args!)
+            let callee = enum_value_to_expr(head)?
+            let args = list_value_to_expr_list(p[1])?
+            Expr.Call(callee, args)
         }
         "EnumCtor" -> {
             if p.length != 3 { return null }
             let variant_v: Value = p[1]
             let args_v: Value = p[2]
-            let args = list_value_to_expr_list(args_v)
-            if args == null { return null }
-            Expr.EnumCtor(head.text, variant_v.text, args!)
+            let args = list_value_to_expr_list(args_v)?
+            Expr.EnumCtor(head.text, variant_v.text, args)
         }
         // Container shapes whose payload is two sub-Exprs.
         "Index" -> two_expr_decode(p, "Index")
         "NullCoalesce" -> two_expr_decode(p, "NullCoalesce")
         "Try" -> {
             if p.length != 1 { return null }
-            let inner = enum_value_to_expr(head)
-            if inner == null { return null }
-            Expr.Try(inner!)
+            let inner = enum_value_to_expr(head)?
+            Expr.Try(inner)
         }
         "Spawn" -> {
             if p.length != 1 { return null }
-            let inner = enum_value_to_expr(head)
-            if inner == null { return null }
-            Expr.Spawn(inner!)
+            let inner = enum_value_to_expr(head)?
+            Expr.Spawn(inner)
         }
         "FieldAccess" -> {
             if p.length != 2 { return null }
-            let obj = enum_value_to_expr(head)
+            let obj = enum_value_to_expr(head)?
             let field_v: Value = p[1]
-            if obj == null { return null }
-            Expr.FieldAccess(obj!, field_v.text)
+            Expr.FieldAccess(obj, field_v.text)
         }
         "OptionalChain" -> {
             if p.length != 2 { return null }
-            let obj = enum_value_to_expr(head)
+            let obj = enum_value_to_expr(head)?
             let field_v: Value = p[1]
-            if obj == null { return null }
-            Expr.OptionalChain(obj!, field_v.text)
+            Expr.OptionalChain(obj, field_v.text)
         }
         "IsCheck" -> {
             if p.length != 2 { return null }
-            let subj = enum_value_to_expr(head)
+            let subj = enum_value_to_expr(head)?
             let vname_v: Value = p[1]
-            if subj == null { return null }
-            Expr.IsCheck(subj!, vname_v.text)
+            Expr.IsCheck(subj, vname_v.text)
         }
         "Tuple" -> {
             if p.length != 1 { return null }
-            let elems = list_value_to_expr_list(head)
-            if elems == null { return null }
-            Expr.Tuple(elems!)
+            let elems = list_value_to_expr_list(head)?
+            Expr.Tuple(elems)
         }
         "ListLit" -> {
             if p.length != 1 { return null }
-            let elems = list_value_to_expr_list(head)
-            if elems == null { return null }
-            Expr.ListLit(elems!)
+            let elems = list_value_to_expr_list(head)?
+            Expr.ListLit(elems)
         }
         "MapLit" -> {
             if p.length != 1 { return null }
-            let entries = list_value_to_expr_list(head)
-            if entries == null { return null }
-            Expr.MapLit(entries!)
+            let entries = list_value_to_expr_list(head)?
+            Expr.MapLit(entries)
         }
         "InCheck" -> {
             if p.length != 2 { return null }
-            let needle = enum_value_to_expr(head)
-            let items = list_value_to_expr_list(p[1])
-            if needle == null || items == null { return null }
-            Expr.InCheck(needle!, items!)
+            let needle = enum_value_to_expr(head)?
+            let items = list_value_to_expr_list(p[1])?
+            Expr.InCheck(needle, items)
         }
         "IfExpr" -> {
             if p.length != 3 { return null }
-            let c = enum_value_to_expr(head)
-            let t = enum_value_to_expr(p[1])
-            let e = enum_value_to_expr(p[2])
-            if c == null || t == null || e == null { return null }
-            Expr.IfExpr(c!, t!, e!)
+            let c = enum_value_to_expr(head)?
+            let t = enum_value_to_expr(p[1])?
+            let e = enum_value_to_expr(p[2])?
+            Expr.IfExpr(c, t, e)
         }
         _                 -> null
     }
@@ -304,12 +282,11 @@ fn enum_value_to_expr(v: Value) -> Expr? {
 /// shape is wrong or either child fails to decode.
 fn two_expr_decode(p: List<Value>, variant: string) -> Expr? {
     if p.length != 2 { return null }
-    let l = enum_value_to_expr(p[0])
-    let r = enum_value_to_expr(p[1])
-    if l == null || r == null { return null }
+    let l = enum_value_to_expr(p[0])?
+    let r = enum_value_to_expr(p[1])?
     match variant {
-        "Index" -> Expr.Index(l!, r!)
-        "NullCoalesce" -> Expr.NullCoalesce(l!, r!)
+        "Index" -> Expr.Index(l, r)
+        "NullCoalesce" -> Expr.NullCoalesce(l, r)
         _ -> null
     }
 }
@@ -327,9 +304,8 @@ fn list_value_to_expr_list_at(items: List<Value>, i: int) -> List<SExpr>? {
     mut out: List<SExpr> = []
     mut j = i
     while j < items.length {
-        let inner = enum_value_to_expr(items[j])
-        if inner == null { return null }
-        out.push(sexpr_dummy(inner!))
+        let inner = enum_value_to_expr(items[j])?
+        out.push(sexpr_dummy(inner))
         j = j + 1
     }
     out
@@ -398,24 +374,21 @@ fn enum_value_to_stmt(v: Value) -> Stmt? {
         "NoOp"        -> Stmt.NoOp
         "Expr" -> {
             if p.length != 1 { return null }
-            let inner = enum_value_to_expr(p[0])
-            if inner == null { return null }
-            Stmt.Expr(inner!)
+            let inner = enum_value_to_expr(p[0])?
+            Stmt.Expr(inner)
         }
         "Return" -> {
             if p.length != 1 { return null }
-            let inner = enum_value_to_expr(p[0])
-            if inner == null { return null }
-            Stmt.Return(inner!)
+            let inner = enum_value_to_expr(p[0])?
+            Stmt.Return(inner)
         }
         "Let" -> binding_decode(p, "Let")
         "Mut" -> binding_decode(p, "Mut")
         "Const" -> binding_decode(p, "Const")
         "Block" -> {
             if p.length != 1 { return null }
-            let body = list_value_to_stmt_list(p[0])
-            if body == null { return null }
-            Stmt.Block(body!)
+            let body = list_value_to_stmt_list(p[0])?
+            Stmt.Block(body)
         }
         "Impl" -> {
             // `impl Type { fns }` or `impl Trait for Type { fns }`.
@@ -427,9 +400,8 @@ fn enum_value_to_stmt(v: Value) -> Stmt? {
             // "Trait:Type" in the type_name slot.
             if p.length != 2 { return null }
             let type_name_v: Value = p[0]
-            let methods = list_value_to_stmt_list(p[1])
-            if methods == null { return null }
-            Stmt.Impl(type_name_v.text, methods!)
+            let methods = list_value_to_stmt_list(p[1])?
+            Stmt.Impl(type_name_v.text, methods)
         }
         "Function" -> {
             // `fn name<T>(params) -> RT { body }`. Payload:
@@ -439,13 +411,12 @@ fn enum_value_to_stmt(v: Value) -> Stmt? {
             // re-resolve pass on the spliced AST fills it in.
             if p.length != 5 { return null }
             let name_v: Value = p[0]
-            let tp = list_value_to_type_param_list(p[1])
-            let params = list_value_to_param_list(p[2])
+            let tp = list_value_to_type_param_list(p[1])?
+            let params = list_value_to_param_list(p[2])?
             let ret_vt = enum_value_to_value_type(p[3])
-            let body = list_value_to_stmt_list(p[4])
-            if tp == null || params == null || body == null { return null }
-            let resolved_rt = if ret_vt == null { ValueType.Unknown } else { ret_vt! }
-            Stmt.Function(name_v.text, tp!, params!, resolved_rt, body!)
+            let body = list_value_to_stmt_list(p[4])?
+            let resolved_rt = ret_vt ?? ValueType.Unknown
+            Stmt.Function(name_v.text, tp, params, resolved_rt, body)
         }
         "TypeDecl" -> {
             // `type Name<T> = { f1: T1, ... }`. Payload:
@@ -457,10 +428,9 @@ fn enum_value_to_stmt(v: Value) -> Stmt? {
             // an empty fields slot are obsolete.
             if p.length != 3 { return null }
             let name_v: Value = p[0]
-            let tp = list_value_to_type_param_list(p[1])
-            let fields = list_value_to_field_list(p[2])
-            if tp == null || fields == null { return null }
-            Stmt.TypeDecl(name_v.text, tp!, fields!)
+            let tp = list_value_to_type_param_list(p[1])?
+            let fields = list_value_to_field_list(p[2])?
+            Stmt.TypeDecl(name_v.text, tp, fields)
         }
         "ComponentBlock" -> {
             // `comp_name instance { config; body }`. Payload:
@@ -472,10 +442,9 @@ fn enum_value_to_stmt(v: Value) -> Stmt? {
             if p.length != 4 { return null }
             let comp_v: Value = p[0]
             let inst_v: Value = p[1]
-            let config = list_value_to_comp_config_pair_list(p[2])
-            let body = list_value_to_stmt_list(p[3])
-            if config == null || body == null { return null }
-            Stmt.ComponentBlock(comp_v.text, inst_v.text, config!, body!)
+            let config = list_value_to_comp_config_pair_list(p[2])?
+            let body = list_value_to_stmt_list(p[3])?
+            Stmt.ComponentBlock(comp_v.text, inst_v.text, config, body)
         }
         _ -> null
     }
@@ -492,8 +461,7 @@ fn list_value_to_field_list(v: Value) -> List<FieldEntry>? {
     while i < v.list_payload.length {
         let entry = v.list_payload[i]
         let name = struct_field_string(entry, "name")
-        let vt = struct_field_value_type(entry, "resolved")
-        let resolved = if vt == null { ValueType.Unknown } else { vt! }
+        let resolved = struct_field_value_type(entry, "resolved") ?? ValueType.Unknown
         out.push(FieldEntry { name, resolved })
         i = i + 1
     }
@@ -516,9 +484,7 @@ fn list_value_to_comp_config_pair_list(v: Value) -> List<CompConfigPair>? {
         while j < entry.struct_payload.length {
             let f = entry.struct_payload[j]
             if f.name == "value" {
-                let decoded = enum_value_to_expr(f.value)
-                if decoded == null { return null }
-                value_expr = decoded!
+                value_expr = enum_value_to_expr(f.value)?
             }
             j = j + 1
         }
@@ -562,8 +528,7 @@ fn list_value_to_param_list(v: Value) -> List<ParamEntry>? {
     while i < v.list_payload.length {
         let entry = v.list_payload[i]
         let name = struct_field_string(entry, "name")
-        let vt = struct_field_value_type(entry, "vtype")
-        let resolved_vt = if vt == null { ValueType.Unknown } else { vt! }
+        let resolved_vt = struct_field_value_type(entry, "vtype") ?? ValueType.Unknown
         out.push(ParamEntry { name: name, vtype: resolved_vt })
         i = i + 1
     }
@@ -606,15 +571,12 @@ fn struct_field_value_type(v: Value, name: string) -> ValueType? {
 fn binding_decode(p: List<Value>, variant: string) -> Stmt? {
     if p.length != 3 { return null }
     let name_v: Value = p[0]
-    let init_v: Value = p[2]
-    let init = enum_value_to_expr(init_v)
-    if init == null { return null }
-    let vt = enum_value_to_value_type(p[1])
-    let resolved_vt = if vt == null { ValueType.Unknown } else { vt! }
+    let init = enum_value_to_expr(p[2])?
+    let resolved_vt = enum_value_to_value_type(p[1]) ?? ValueType.Unknown
     match variant {
-        "Let"   -> Stmt.Let(name_v.text, resolved_vt, init!)
-        "Mut"   -> Stmt.Mut(name_v.text, resolved_vt, init!)
-        "Const" -> Stmt.Const(name_v.text, resolved_vt, init!)
+        "Let"   -> Stmt.Let(name_v.text, resolved_vt, init)
+        "Mut"   -> Stmt.Mut(name_v.text, resolved_vt, init)
+        "Const" -> Stmt.Const(name_v.text, resolved_vt, init)
         _ -> null
     }
 }
@@ -649,9 +611,8 @@ fn list_value_to_stmt_list(v: Value) -> List<SStmt>? {
     mut out: List<SStmt> = []
     mut i = 0
     while i < v.list_payload.length {
-        let inner = enum_value_to_stmt(v.list_payload[i])
-        if inner == null { return null }
-        out.push(sstmt_dummy(inner!))
+        let inner = enum_value_to_stmt(v.list_payload[i])?
+        out.push(sstmt_dummy(inner))
         i = i + 1
     }
     out
