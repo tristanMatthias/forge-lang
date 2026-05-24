@@ -46,7 +46,7 @@ expressions must evaluate to a string at runtime.
 
 ## Pipeline placement
 
-- Parser produces `Expr.MapLit(entries: ExprList)` where
+- Parser produces `Expr.MapLit(entries: List<SExpr>)` where
   entries alternates key, value, key, value, … (flat list, not
   paired — keeps the AST shape uniform with `Expr.ListLit`).
 - Resolve walks each entry expression.

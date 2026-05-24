@@ -130,12 +130,12 @@ export type TypeArg = { param_name: string, concrete_vt: ValueType }
 /// (binding type params into scope), and the monomorphizer.
 export type TypeParamEntry = { name: string, bounds: string }
 
-/// One entry produced by `construct_param_list` in the quote-lowering
-/// pass — used once ParamList retires in lkze.9 #19 and the construct
-/// path flips from cons-cell `EnumCtor("ParamList", ...)` to
-/// `Expr.ListLit` of `ParamEntry { name, vtype }` struct lits.
-/// The fwyx comptime decoder (`list_value_to_param_list`) already
-/// understands this shape via its list-mode arm.
+/// One entry in a fn's parameter list. Carries the binding name and
+/// the resolver-filled declared type. Produced by `parse_param_list`
+/// and `construct_param_list` (the quote-lowering builder). The fwyx
+/// comptime decoder `list_value_to_param_list` walks `Expr.ListLit`
+/// of `ParamEntry { name, vtype }` struct literals to reconstruct
+/// the AST shape at expansion time.
 ///
 /// The `vtype` slot is always Unknown after lowering because quote
 /// captures pre-resolve — the typeck pass fills in real types on
@@ -1091,9 +1091,7 @@ export type WhenArm = { cond: SExpr?, body: SExpr }
 /// `select { ... }` block.
 ///
 /// `List<SelectArm>` replaces the retired `enum SelectArmList`.
-/// Used as `arms: List<SelectArm>` on Stmt.Select. `body` stays
-/// `StmtList` for now — StmtList itself becomes `List<SStmt>` in a
-/// later lkze.9 ticket.
+/// Used as `arms: List<SelectArm>` on Stmt.Select.
 export type SelectArm = { binding: string, channel: Expr, body: List<SStmt> }
 
 /// Annotations attached to declarations: `@name` or `@name(args)`.
@@ -1654,8 +1652,8 @@ export fn render_match_arm_list(arms: List<MatchArm>) -> string {
     "(${out})"
 }
 
-/// Render a StmtList as an S-expression sequence — convenient for
-/// `render_stmt` recursion on Block bodies.
+/// Render a `List<SStmt>` as an S-expression sequence — convenient
+/// for `render_stmt` recursion on Block bodies.
 export fn render_stmt_list(stmts: List<SStmt>) -> string {
     mut out = ""
     mut i = 0

@@ -104,7 +104,7 @@ fn value_to_expr(v: Value) -> Expr? {
 /// source. Primitives reuse the fast-path forms in `value_to_expr`.
 ///
 /// vez6.6.5: enables comptime fns whose return type is an AST type
-/// (Expr / ExprList / BinOp / etc.) to fold cleanly into their
+/// (Expr / List<SExpr> / BinOp / etc.) to fold cleanly into their
 /// callers — the call-site receives a value-construction expression
 /// whose runtime evaluation produces the original Value.
 fn value_to_construct_expr(v: Value) -> Expr? {
@@ -373,7 +373,7 @@ fn enum_value_to_logicop(v: Value) -> LogicOp? {
     }
 }
 
-// ── Stmt / StmtList decoders (vez6.6.4) ──
+// ── Stmt / List<SStmt> decoders (vez6.6.4) ──
 //
 // The fold path can't return Stmt (call sites are expression-typed),
 // so these helpers exist for the upcoming @expand pass: invoke a
@@ -434,7 +434,7 @@ fn enum_value_to_stmt(v: Value) -> Stmt? {
         "Function" -> {
             // `fn name<T>(params) -> RT { body }`. Payload:
             // (name: string, type_params: List<TypeParamEntry>,
-            //  params: ParamList, ret_vtype: ValueType, body: List<SStmt>).
+            //  params: List<ParamEntry>, ret_vtype: ValueType, body: List<SStmt>).
             // Quote-lowering emits ValueType.Unknown at slot 3; the
             // re-resolve pass on the spliced AST fills it in.
             if p.length != 5 { return null }

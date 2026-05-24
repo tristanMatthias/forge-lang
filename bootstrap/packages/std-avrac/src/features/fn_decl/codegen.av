@@ -169,9 +169,9 @@ export fn emit_function_body(ctx: Ctx, name: string, params: List<ParamEntry>, b
     ok_stmt(e)
 }
 
-/// Walk a ParamList copying each LLVM parameter into a stack
-/// alloca and extending the environment so the body sees the
-/// param by name. Each binding is typed with the resolved
+/// Walk the `List<ParamEntry>` copying each LLVM parameter into
+/// a stack alloca and extending the environment so the body sees
+/// the param by name. Each binding is typed with the resolved
 /// param's ValueType.
 fn bind_params_inline(ctx: Ctx, fn_val: ptr, params: List<ParamEntry>, idx: int, env: List<VarBinding>) -> List<VarBinding> {
     mut cur_env = env
@@ -215,7 +215,7 @@ fn should_null_check_vt(vt: ValueType) -> bool {
 }
 
 /// Emit per-parameter null-check traps when
-/// `ctx.debug_null_checks` is on. Walks the ParamList calling
+/// `ctx.debug_null_checks` is on. Walks the `List<ParamEntry>` calling
 /// `emit_one_null_check` for each non-nullable param.
 fn emit_null_checks(ctx: Ctx, fn_name: string, params: List<ParamEntry>, env: List<VarBinding>) {
     mut i = 0

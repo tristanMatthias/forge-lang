@@ -1301,7 +1301,7 @@ impl Ctx {
 
     // ── Type resolution ──
 
-    // Resolve all type annotations in a ParamList from strings to ValueType.
+    // Resolve all type annotations in a List<ParamEntry> from strings to ValueType.
     fn resolve_params(self, params: List<ParamEntry>) -> List<ParamEntry> {
         mut out: List<ParamEntry> = []
         mut i = 0

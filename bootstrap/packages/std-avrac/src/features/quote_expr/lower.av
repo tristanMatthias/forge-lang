@@ -297,18 +297,18 @@ fn lower_field_inits(inits: List<FieldInit>) -> List<FieldInit> {
 /// Dispatch on the quote kind keyword to produce the right AST type.
 /// Default `expr` constructs an Expr. `stmt` extracts the single Stmt
 /// inside the body block and constructs it. `stmts` constructs the
-/// whole StmtList. `decl` is currently an alias for `stmt` since decls
-/// in Avra are Stmts. `type` recognizes primitive type names (int /
-/// bool / float / string / bytes / void) by Ident shape — generic
-/// types and structural type expressions need a parser path that
-/// invokes parse_type_expr inside the braces (vez6.3.13 follow-up).
+/// whole `List<SStmt>`. `decl` is currently an alias for `stmt` since
+/// decls in Avra are Stmts. `type` recognizes primitive type names
+/// (int / bool / float / string / bytes / void) by Ident shape —
+/// generic types and structural type expressions need a parser path
+/// that invokes parse_type_expr inside the braces (vez6.3.13 follow-up).
 fn dispatch_quote_kind(kind: string, body: Expr) -> Expr {
     if kind == "stmt" || kind == "decl" {
         let single = extract_single_stmt(body)
         if single != null { return construct_stmt(single!) }
         // Block has 0 or 2+ statements — fall back to constructing
-        // the StmtList as if `stmts` was used. The user gets a
-        // StmtList instead of a Stmt, which surfaces the mismatch.
+        // the List<SStmt> as if `stmts` was used. The user gets a
+        // list instead of a Stmt, which surfaces the mismatch.
         return construct_stmt_list(extract_stmt_list(body))
     }
     if kind == "stmts" {
@@ -401,9 +401,9 @@ fn unwrap_quote_body(body: Expr) -> Expr {
 /// the Expr.Number variant carrying a string-literal arg "5".
 ///
 /// Covers all leaf + structural variants needed for `quote { expr }`.
-/// Block / MatchExpr / StructLit need StmtList / FieldInitList /
-/// MatchArmList constructors — landing in the next slice driven by
-/// tests that need them. Other variants pass through unchanged for
+/// Block / MatchExpr / StructLit need `List<SStmt>` / `List<FieldInit>`
+/// / `List<MatchArm>` constructors — landing in the next slice driven
+/// by tests that need them. Other variants pass through unchanged for
 /// now; downstream stages will see the raw AST and surface the missing
 /// case naturally.
 fn construct_expr(e: Expr) -> Expr {
@@ -651,7 +651,7 @@ fn sexpr_dummy_call(arg: Expr) -> Expr {
 
 /// `sstmt_dummy(arg)` as a Call expression — sister to sexpr_dummy_call
 /// for SStmt construction. Used when wrapping a runtime Stmt value in
-/// the spanned carrier required by StmtList.Node.
+/// the spanned carrier required by `List<SStmt>` entries.
 fn sstmt_dummy_call(arg: Expr) -> Expr {
     let args: List<SExpr> = [sexpr_dummy(arg)]
     Expr.Call(

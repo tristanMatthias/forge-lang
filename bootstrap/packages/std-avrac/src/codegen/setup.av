@@ -559,7 +559,7 @@ fn resolve_field_list(fields: List<FieldEntry>, regs: TypeRegs) -> List<FieldEnt
     out
 }
 
-/// Walk a ParamList and resolve each param's ValueType. Used during
+/// Walk a `List<ParamEntry>` and resolve each param's ValueType. Used during
 /// `declare_functions` so emitted LLVM types match the canonical
 /// registry-backed ValueType.
 fn resolve_param_list(params: List<ParamEntry>, regs: TypeRegs) -> List<ParamEntry> {
@@ -1455,7 +1455,7 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, i8
     cur
 }
 
-/// Strip parameter names from a ParamList, returning only the
+/// Strip parameter names from a `List<ParamEntry>`, returning only the
 /// resolved ValueTypes in declaration order. Used when registering
 /// `fn_params` so call sites can look up parameter types by index.
 fn params_to_type_list(params: List<ParamEntry>) -> List<ValueType> {

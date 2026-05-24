@@ -97,7 +97,7 @@ fn program_declares_enum(stmts: List<SStmt>, target: string) -> bool {
 
 // ── Statement desugaring ──
 
-/// Map `desugar_stmt` over every element of a StmtList, preserving
+/// Map `desugar_stmt` over every element of a `List<SStmt>`, preserving
 /// span info on each rewritten node.
 fn desugar_stmt_list(stmts: List<SStmt>) -> List<SStmt> {
     mut out: List<SStmt> = []

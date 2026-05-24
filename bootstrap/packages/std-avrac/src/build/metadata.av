@@ -469,7 +469,7 @@ impl BytesWriter {
 
 // ── Composite list encoders ──
 //
-// FieldList / VariantList / ParamList are the building blocks of the
+// List<FieldEntry> / List<Variant> / List<ParamEntry> are the building blocks of the
 // per-section bodies. Each list encodes as `[u32 count][entries]`,
 // where each entry is `[string name][per-element body]`.
 

@@ -25,7 +25,7 @@ export type ParseResult = {
 }
 
 /// Output of `parse_program_source`. Same shape as ParseResult but
-/// carries a StmtList plus the full DiagnosticBag so later passes
+/// carries a `List<SStmt>` plus the full DiagnosticBag so later passes
 /// can render multi-error messages.
 export type ProgramParseResult = {
     stmts: List<SStmt>?,
@@ -189,7 +189,7 @@ fn expr_is_upper_ident(e: Expr) -> bool {
     }
 }
 
-/// Convert a list of Ident expressions into a ParamList (for lambda
+/// Convert a list of Ident expressions into a `List<ParamEntry>` (for lambda
 /// parsing). `(x, y) -> ...` parses the parens as expressions first,
 /// then reinterprets the Ident names as parameter names once `->`
 /// is seen.

@@ -912,7 +912,7 @@ fn rewrite_fn_ret_tys(tc: TC, fns: FnTypeReg) -> FnTypeReg {
     out
 }
 
-/// Map `resolve_vtype` over each ParamList entry's declared type.
+/// Map `resolve_vtype` over each `ParamEntry`'s declared type.
 fn rewrite_param_list_vts(tc: TC, params: List<ParamEntry>) -> List<ParamEntry> {
     mut out: List<ParamEntry> = []
     mut i = 0

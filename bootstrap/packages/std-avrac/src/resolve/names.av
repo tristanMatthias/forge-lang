@@ -876,8 +876,8 @@ fn resolve_type_in_ctx(ctx: NameCtx, type_name: string) -> string {
 }
 
 // ── ValueType + param rewriting ──
-// Qualify all type names inside ValueType, ParamList, and the
-// `List<ValueType>` payloads on ValueType variants. After this pass,
+// Qualify all type names inside ValueType, `List<ParamEntry>`, and
+// the `List<ValueType>` payloads on ValueType variants. After this pass,
 // every Struct/Enum/Trait/Newtype name is fully qualified.
 
 /// Qualify every type name inside a ValueType. Recurses into
@@ -955,7 +955,7 @@ fn rewrite_variant_types(ctx: NameCtx, variants: List<Variant>) -> List<Variant>
     out
 }
 
-/// Map `rewrite_vtype` over each ParamList entry's type.
+/// Map `rewrite_vtype` over each `ParamEntry`'s declared type.
 fn rewrite_param_types(ctx: NameCtx, params: List<ParamEntry>) -> List<ParamEntry> {
     mut out: List<ParamEntry> = []
     mut i = 0

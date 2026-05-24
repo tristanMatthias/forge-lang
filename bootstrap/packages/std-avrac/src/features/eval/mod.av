@@ -57,7 +57,7 @@ export type StructField = {
 /// fwyx: added `"list"` and `"struct"` kinds so the comptime
 /// decoder can read AST list / struct payloads directly off the
 /// produced Value, instead of walking enum cons-cells. Unblocks
-/// the ExprList / ParamList / List<SStmt> retirements (lkze.9 #18-#20).
+/// the ExprList / ParamList / StmtList retirements (lkze.9 #18-#20, now shipped).
 ///
 /// kind = "number" | "string" | "bool" | "null"
 ///      | "function" | "builtin"

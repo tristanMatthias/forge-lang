@@ -55,10 +55,10 @@ let s: Stmt = quote stmt { let x = 5 }
 render_stmt(s) == "(let x:<unknown> 5)"
 ```
 
-StmtList-quote captures multiple stmts:
+`stmts`-quote captures multiple stmts:
 
 ```avra
-let sl: StmtList = quote stmts {
+let sl: List<SStmt> = quote stmts {
     let a = 1
     let b = 2
 }
@@ -104,5 +104,5 @@ host-language.
 | (none)   | expression       | `Expr`          |
 | `stmt`   | statement        | `Stmt`          |
 | `decl`   | statement        | `Stmt`          |
-| `stmts`  | statement list   | `StmtList`      |
+| `stmts`  | statement list   | `List<SStmt>`   |
 | `type`   | type expression  | `ValueType`     |

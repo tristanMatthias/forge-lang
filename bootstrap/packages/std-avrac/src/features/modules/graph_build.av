@@ -579,7 +579,7 @@ fn intern_segments_iter(g: ModuleGraph, path: string, start: int) -> PathSegment
 
 type ParamNamesResult = { graph: ModuleGraph, list: List<int> }
 
-/// Intern every `name` from a ParamList — used for `use a.b.{X, Y, Z}`
+/// Intern every `name` from a `List<ParamEntry>` — used for `use a.b.{X, Y, Z}`
 /// where each name in the braces becomes a binding in the importing
 /// module's scope. Source-order via .push.
 fn intern_param_names(g: ModuleGraph, params: List<ParamEntry>) -> ParamNamesResult {

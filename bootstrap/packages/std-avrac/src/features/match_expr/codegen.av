@@ -588,10 +588,9 @@ fn bind_single_sub_pattern(ctx: Ctx, env: List<VarBinding>, pat: Pattern, value:
     }
 }
 
-// Bind the first param from a ParamList as a simple variable.
-/// Bind the first declared name in a ParamList to `value`.
-/// Used by the nested-pattern path when a single-payload
-/// variant is bound to a single capture name.
+/// Bind the first entry of a `List<ParamEntry>` to `value` as
+/// a simple variable binding. Used by the nested-pattern path
+/// when a single-payload variant is bound to a single capture name.
 fn bind_first_param(ctx: Ctx, env: List<VarBinding>, bindings: List<ParamEntry>, value: ptr, ty: ValueType) -> List<VarBinding> {
     if bindings.length == 0 { return env }
     let name = bindings[0].name

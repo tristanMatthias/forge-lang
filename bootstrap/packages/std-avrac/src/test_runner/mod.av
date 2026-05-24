@@ -98,8 +98,9 @@ fn expr_list_from(args: List<Expr>) -> List<SExpr> {
     out
 }
 
-/// Build a fresh `ParamList` from `(name, type)` rows. Same pattern
-/// as `expr_list_from` — declaration order in, ParamList out.
+/// Build a fresh `List<ParamEntry>` from `(name, type)` rows. Same
+/// pattern as `expr_list_from` — declaration order in, parameter
+/// list out.
 type ParamSpec = { name: string, ty: ValueType }
 
 fn param_list_from(specs: List<ParamSpec>) -> List<ParamEntry> {
@@ -139,8 +140,8 @@ fn test_runtime_externs() -> List<RuntimeExtern> {
 }
 
 /// Signature for the per-spec guard runtime fn. Named separately so
-/// the externs table reads cleanly without a five-line nested
-/// `ParamList.Node` cons-chain on one row.
+/// the externs table reads cleanly without an inline list literal
+/// on one row.
 fn guard_extern_params() -> List<ParamEntry> {
     param_list_from([
         ParamSpec { name: "name", ty: ValueType.Str },

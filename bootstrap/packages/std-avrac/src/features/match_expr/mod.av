@@ -254,7 +254,7 @@ fn try_match_pattern(rt: Runtime, pattern: Pattern, value: Value) -> MatchAttemp
     }
 }
 
-/// Bind every name in a `ParamList` to the corresponding payload
+/// Bind every name in a `List<ParamEntry>` to the corresponding payload
 /// slot. Used by `.Variant(name, bindings)` patterns. `_` names
 /// are skipped — they're explicit "ignore this slot" markers.
 fn bind_param_list_payload(rt: Runtime, bindings: List<ParamEntry>, payload: List<Value>, idx: int) -> Runtime {

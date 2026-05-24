@@ -3251,7 +3251,7 @@ fn main() {
         }
         "metadata_show" -> {
             // xtvc consumer-side smoke: read a .meta.bin from disk,
-            // synthesize the StmtList, and print it. Same renderer
+            // synthesize the List<SStmt>, and print it. Same renderer
             // `program` uses — round-trippable through the eyes.
             if !file_exists(path) { fail("error: file not found: ${path}") }
             let m = metadata_read(path)
@@ -3750,7 +3750,7 @@ fn main() {
             }
         }
         // xtvc: emit metadata.bin alongside the .ll when --emit_metadata
-        // is set. Walks the post-resolve StmtList so qualified names
+        // is set. Walks the post-resolve List<SStmt> so qualified names
         // are canonical; fingerprint is sha256 of the source (same key
         // the cache uses for content addressing).
         if emit_metadata {

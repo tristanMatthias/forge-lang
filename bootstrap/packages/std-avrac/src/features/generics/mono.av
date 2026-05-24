@@ -529,9 +529,9 @@ fn infer_list_elem_ty(elements: List<SExpr>) -> ValueType {
     if vtype_is_unknown(t) { ValueType.Unknown } else { t }
 }
 
-/// Project a ParamList down to its declared types (in declaration
-/// order). Used to synthesise an FnTyped from a lambda literal so
-/// generic-fn inference can bind its `T` parameters.
+/// Project a `List<ParamEntry>` down to its declared types (in
+/// declaration order). Used to synthesise an FnTyped from a lambda
+/// literal so generic-fn inference can bind its `T` parameters.
 fn param_types(params: List<ParamEntry>) -> List<ValueType> {
     mut out: List<ValueType> = []
     mut i = 0
@@ -800,7 +800,7 @@ fn top_level_split_idx(s: string) -> int {
     -1
 }
 
-/// Walk a ParamList rewriting every type annotation through
+/// Walk a `List<ParamEntry>` rewriting every type annotation through
 /// `rewrite_type_name`. Used during specialisation so the
 /// generated fn body sees the concrete (mangled) types.
 fn rewrite_param_types(params: List<ParamEntry>, regs: GenRegs, insts: List<Inst>) -> List<ParamEntry> {
