@@ -159,130 +159,74 @@ export fn fmt_stmt(ss: Stmt, depth: int) -> string {
 /// Public entry point — render a top-level statement list. Each
 /// statement gets one source line, joined with `\n`.
 export fn fmt_stmt_list(stmts: List<SStmt>, depth: int) -> string {
-    mut out = ""
-    mut i = 0
-    while i < stmts.length {
-        let head = fmt_stmt(stmts[i].node, depth)
-        out = if out == "" { head } else { "${out}\n${head}" }
-        i = i + 1
-    }
-    out
+    mut parts: List<string> = []
+    for ss in stmts { parts.push(fmt_stmt(ss.node, depth)) }
+    parts.join("\n")
 }
 
 /// Render a `List<SExpr>` as comma-separated expressions — used
 /// inside call args, list literals, tuple elements, and generic call args.
 fn fmt_expr_list_comma(exprs: List<SExpr>) -> string {
-    mut out = ""
-    mut i = 0
-    while i < exprs.length {
-        if i > 0 { out = out + ", " }
-        out = out + fmt_expr(exprs[i].node)
-        i = i + 1
-    }
-    out
+    mut parts: List<string> = []
+    for se in exprs { parts.push(fmt_expr(se.node)) }
+    parts.join(", ")
 }
 
 /// Render `List<ParamEntry>` as comma-separated names (no types).
 fn fmt_param_list_comma(params: List<ParamEntry>) -> string {
-    mut out = ""
-    mut i = 0
-    while i < params.length {
-        if i > 0 { out = out + ", " }
-        out = out + params[i].name
-        i = i + 1
-    }
-    out
+    mut parts: List<string> = []
+    for p in params { parts.push(p.name) }
+    parts.join(", ")
 }
 
 /// Render `List<ParamEntry>` with type annotations.
 fn fmt_param_list_typed(params: List<ParamEntry>) -> string {
-    mut out = ""
-    mut i = 0
-    while i < params.length {
-        if i > 0 { out = out + ", " }
-        let p = params[i]
+    mut parts: List<string> = []
+    for p in params {
         let ty_part = if vtype_is_unknown(p.vtype) { "" } else { ": ${vtype_display(p.vtype)}" }
-        out = out + p.name + ty_part
-        i = i + 1
+        parts.push(p.name + ty_part)
     }
-    out
+    parts.join(", ")
 }
 
 /// Render a comma-separated list of type names — for explicit
 /// generic-call type arguments `f::<T, U>(x)`.
 fn fmt_type_name_list(names: List<string>) -> string {
-    mut out = ""
-    mut i = 0
-    while i < names.length {
-        if i > 0 { out = out + ", " }
-        out = out + names[i]
-        i = i + 1
-    }
-    out
+    names.join(", ")
 }
 
 /// Render a struct/with field-init list — `name: expr, name: expr`.
-/// Single-pass joiner; the prior head/tail split is gone.
 fn fmt_field_init_list(inits: List<FieldInit>) -> string {
-    mut out = ""
-    mut i = 0
-    while i < inits.length {
-        let init = inits[i]
-        let entry = "${init.name}: ${fmt_expr(init.value.node)}"
-        if i == 0 { out = entry } else { out = "${out}, ${entry}" }
-        i = i + 1
-    }
-    out
+    mut parts: List<string> = []
+    for init in inits { parts.push("${init.name}: ${fmt_expr(init.value.node)}") }
+    parts.join(", ")
 }
 
 /// Render a struct-decl/shape field list — one `name: Type` per
 /// indented line.
 fn fmt_field_decl_list(fields: List<FieldEntry>, depth: int) -> string {
     let ind = fmt_indent(depth)
-    mut out = ""
-    mut i = 0
-    while i < fields.length {
-        let e = fields[i]
-        let head = "${ind}${e.name}: ${vtype_display(e.resolved)}"
-        if i == 0 { out = head } else { out = "${out}\n${head}" }
-        i = i + 1
-    }
-    out
+    mut parts: List<string> = []
+    for e in fields { parts.push("${ind}${e.name}: ${vtype_display(e.resolved)}") }
+    parts.join("\n")
 }
 
 /// Render an enum-variant list — one `Name(field: T, ...)` per
 /// indented line.
 fn fmt_variant_list(variants: List<Variant>, depth: int) -> string {
     let ind = fmt_indent(depth)
-    mut out = ""
-    mut i = 0
-    while i < variants.length {
-        let v = variants[i]
-        let fields_str = fmt_variant_fields(v.fields)
-        let head = "${ind}${v.name}${fields_str}"
-        if i == 0 { out = head } else { out = "${out}\n${head}" }
-        i = i + 1
-    }
-    out
+    mut parts: List<string> = []
+    for v in variants { parts.push("${ind}${v.name}${fmt_variant_fields(v.fields)}") }
+    parts.join("\n")
 }
 
 /// Render the parameter section of an enum variant — `(name: T, ...)`,
-/// or empty when the variant carries no payload. Single-pass joiner
-/// replaces the prior head/tail split.
+/// or empty when the variant carries no payload.
 fn fmt_variant_fields(fields: List<FieldEntry>) -> string {
     if fields.length == 0 { return "" }
-    mut body = ""
-    mut i = 0
-    while i < fields.length {
-        let e = fields[i]
-        if i == 0 {
-            body = "${e.name}: ${vtype_display(e.resolved)}"
-        } else {
-            body = "${body}, ${e.name}: ${vtype_display(e.resolved)}"
-        }
-        i = i + 1
-    }
-    "(${body})"
+    mut parts: List<string> = []
+    for e in fields { parts.push("${e.name}: ${vtype_display(e.resolved)}") }
+    "(${parts.join(", ")})"
 }
 
 /// Render a match-arm pattern.
@@ -302,44 +246,31 @@ fn fmt_pattern(p: Pattern) -> string {
 /// Render a match-arm list — one arm per indented line.
 fn fmt_match_arms(arms: List<MatchArm>, depth: int) -> string {
     let ind = fmt_indent(depth)
-    mut out = ""
-    mut i = 0
-    while i < arms.length {
-        let arm = arms[i]
+    mut parts: List<string> = []
+    for arm in arms {
         let guard_str = if arm.guard != null { " if ${fmt_expr(arm.guard!.node)}" } else { "" }
-        let head = "${ind}${fmt_pattern(arm.pattern)}${guard_str} -> ${fmt_expr(arm.body.node)}"
-        if i == 0 { out = head } else { out = "${out}\n${head}" }
-        i = i + 1
+        parts.push("${ind}${fmt_pattern(arm.pattern)}${guard_str} -> ${fmt_expr(arm.body.node)}")
     }
-    out
+    parts.join("\n")
 }
 
 /// Render a `when` arm list — one arm per indented line. A null
 /// condition becomes `_` (the catch-all).
 fn fmt_when_arms(arms: List<WhenArm>, depth: int) -> string {
     let ind = fmt_indent(depth)
-    mut out = ""
-    mut i = 0
-    while i < arms.length {
-        let arm = arms[i]
+    mut parts: List<string> = []
+    for arm in arms {
         let cond_str = if arm.cond == null { "_" } else { fmt_expr(arm.cond!.node) }
-        let head = "${ind}${cond_str} -> ${fmt_expr(arm.body.node)}"
-        if i > 0 { out = out + "\n" }
-        out = out + head
-        i = i + 1
+        parts.push("${ind}${cond_str} -> ${fmt_expr(arm.body.node)}")
     }
-    out
+    parts.join("\n")
 }
 
 /// Render an annotation chain — `@name\n@name\n` prefix to a stmt.
 fn fmt_annotation_list(annots: List<Annotation>, depth: int) -> string {
     let ind = fmt_indent(depth)
     mut out = ""
-    mut i = 0
-    while i < annots.length {
-        out = out + "${ind}@${annots[i].name}\n"
-        i = i + 1
-    }
+    for a in annots { out = out + "${ind}@${a.name}\n" }
     out
 }
 
