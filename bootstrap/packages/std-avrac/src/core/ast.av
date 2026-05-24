@@ -422,15 +422,23 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
         .Enum(n1, _, id1) -> match b { .Enum(n2, _, id2) -> if id1 > 0 && id2 > 0 { id1 == id2 } else { n1 == n2 }, _ -> false }
         .Float -> b is .Float
         .Map -> b is .Map
-        .FnTyped(_, _) -> match b { .FnTyped(_, _) -> true, .Fn(_) -> true, _ -> false }
+        .FnTyped(pa, ra) -> match b {
+            // FnTyped-vs-FnTyped: compare param list + return, element-aware.
+            .FnTyped(pb, rb) -> type_lists_eq_loose(pa, pb) && vtype_eq_loose(ra, rb)
+            // FnTyped-vs-Fn: untyped Fn historically matches any FnTyped.
+            // Preserved so the existing leniency at sites that pass bare `fn`
+            // into a typed fn-param slot doesn't regress.
+            .Fn(_) -> true
+            _ -> false
+        }
         .Trait(n1, _) -> match b { .Trait(n2, _) -> n1 == n2, _ -> false }
         .Tuple(ea) -> match b { .Tuple(eb) -> type_lists_eq_loose(ea, eb), _ -> false }
-        .Closure(_, _) -> match b { .Closure(_, _) -> true, _ -> false }
+        .Closure(na, ra) -> match b { .Closure(nb, rb) -> na == nb && vtype_eq_loose(ra, rb), _ -> false }
         .Union(types_a) -> match b {
             .Union(types_b) -> type_lists_eq(types_a, types_b)
             _ -> false
         }
-        .Newtype(n1, _, _) -> match b { .Newtype(n2, _, _) -> n1 == n2, _ -> false }
+        .Newtype(n1, ia, _) -> match b { .Newtype(n2, ib, _) -> n1 == n2 && vtype_eq_loose(ia, ib), _ -> false }
         .NarrowedEnum(e1, v1, _) -> match b { .NarrowedEnum(e2, v2, _) -> e1 == e2 && v1 == v2, _ -> false }
         .Unknown -> b is .Unknown
         .Task(ra) -> match b { .Task(rb) -> vtype_eq_loose(ra, rb), _ -> false }

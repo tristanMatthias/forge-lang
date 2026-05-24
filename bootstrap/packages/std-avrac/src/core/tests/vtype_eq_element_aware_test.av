@@ -1,0 +1,63 @@
+// k3v2: vtype_eq must be element-aware for Closure / FnTyped / Newtype.
+// Before the fix, `Closure(0, Int) == Closure(0, Float)` returned true,
+// `FnTyped([Int], Int) == FnTyped([Str], Str)` returned true, and
+// `Newtype("Wrap", Int, _) == Newtype("Wrap", Str, _)` returned true.
+// Each was a latent monomorphizer dupe-drop: when one of these types
+// appeared inside Result<…, E>, merge_partial silently collapsed
+// distinct instantiations and codegen blew up at the call site with
+// `undefined enum type`.
+
+use @std.avrac.core.{vtype_eq, ValueType}
+
+spec "k3v2: vtype_eq element-aware for Closure" {
+    then "Closure with different return types is not equal" {
+        let a = ValueType.Closure(0, ValueType.Int)
+        let b = ValueType.Closure(0, ValueType.Float)
+        !vtype_eq(a, b)
+    }
+    then "Closure with different capture counts is not equal" {
+        let a = ValueType.Closure(0, ValueType.Int)
+        let b = ValueType.Closure(2, ValueType.Int)
+        !vtype_eq(a, b)
+    }
+    then "Identical Closure compares equal" {
+        let a = ValueType.Closure(1, ValueType.Str)
+        let b = ValueType.Closure(1, ValueType.Str)
+        vtype_eq(a, b)
+    }
+}
+
+spec "k3v2: vtype_eq element-aware for FnTyped" {
+    then "FnTyped with different return types is not equal" {
+        let ints: List<ValueType> = [ValueType.Int]
+        let a = ValueType.FnTyped(ints, ValueType.Int)
+        let b = ValueType.FnTyped(ints, ValueType.Float)
+        !vtype_eq(a, b)
+    }
+    then "FnTyped with different param types is not equal" {
+        let int_params: List<ValueType> = [ValueType.Int]
+        let str_params: List<ValueType> = [ValueType.Str]
+        let a = ValueType.FnTyped(int_params, ValueType.Int)
+        let b = ValueType.FnTyped(str_params, ValueType.Int)
+        !vtype_eq(a, b)
+    }
+    then "FnTyped vs untyped Fn stays lenient (preserved leniency)" {
+        let ints: List<ValueType> = [ValueType.Int]
+        let typed_fn = ValueType.FnTyped(ints, ValueType.Int)
+        let untyped_fn = ValueType.Fn(ValueType.Int)
+        vtype_eq(typed_fn, untyped_fn)
+    }
+}
+
+spec "k3v2: vtype_eq element-aware for Newtype inner" {
+    then "Newtype with same name but different inner is not equal" {
+        let a = ValueType.Newtype("Wrap", ValueType.Int, 0)
+        let b = ValueType.Newtype("Wrap", ValueType.Str, 0)
+        !vtype_eq(a, b)
+    }
+    then "Newtype with identical name and inner compares equal" {
+        let a = ValueType.Newtype("Wrap", ValueType.Int, 0)
+        let b = ValueType.Newtype("Wrap", ValueType.Int, 0)
+        vtype_eq(a, b)
+    }
+}
