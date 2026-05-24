@@ -15,6 +15,7 @@
 // visitor ticket lands (93k3) all three should share a single visitor.
 
 use core.{Stmt, SStmt, sstmt_at, sstmt_dummy, Expr, SExpr, sexpr, sexpr_dummy, FieldEntry, FieldInit, MatchArm, BinOp, UnOp, LogicOp, ParamEntry, TypeParamEntry, CompConfigPair, binop_str, unop_str, logicop_str}
+use list_ops.{list_map}
 
 // ── Public entry ──
 
@@ -156,14 +157,7 @@ fn any_quote_in_match_arms(arms: List<MatchArm>) -> bool {
 // ── Top-level walker (mirrors comptime/rewrite.av structure) ──
 
 fn lower_stmt_list(stmts: List<SStmt>) -> List<SStmt> {
-    mut out: List<SStmt> = []
-    mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
-        out.push(sstmt_at(lower_stmt(ss.node), ss.line, ss.col, ss.file))
-        i = i + 1
-    }
-    out
+    list_map(stmts, (ss: SStmt) -> sstmt_at(lower_stmt(ss.node), ss.line, ss.col, ss.file))
 }
 
 fn lower_stmt(stmt: Stmt) -> Stmt {
@@ -247,14 +241,7 @@ fn lower_expr(expr: Expr) -> Expr {
 }
 
 fn lower_expr_list(list: List<SExpr>) -> List<SExpr> {
-    mut out: List<SExpr> = []
-    mut i = 0
-    while i < list.length {
-        let se = list[i]
-        out.push(sexpr(lower_expr(se.node), se.line, se.col))
-        i = i + 1
-    }
-    out
+    list_map(list, (se: SExpr) -> sexpr(lower_expr(se.node), se.line, se.col))
 }
 
 /// b85m: lower every Quote in match-arm guards + bodies. Without
@@ -263,33 +250,21 @@ fn lower_expr_list(list: List<SExpr>) -> List<SExpr> {
 /// tree-walk evaluator can't handle — the macro expansion
 /// silently fails to fire.
 fn lower_match_arms(arms: List<MatchArm>) -> List<MatchArm> {
-    mut out: List<MatchArm> = []
-    mut i = 0
-    while i < arms.length {
-        let arm = arms[i]
+    list_map(arms, (arm: MatchArm) -> {
         let lowered_body = sexpr(lower_expr(arm.body.node), arm.body.line, arm.body.col)
         let lowered_guard = if arm.guard == null { null } else {
             let g = arm.guard!
             sexpr(lower_expr(g.node), g.line, g.col)
         }
-        out.push(MatchArm { pattern: arm.pattern, guard: lowered_guard, body: lowered_body })
-        i = i + 1
-    }
-    out
+        MatchArm { pattern: arm.pattern, guard: lowered_guard, body: lowered_body }
+    })
 }
 
 fn lower_field_inits(inits: List<FieldInit>) -> List<FieldInit> {
-    mut out: List<FieldInit> = []
-    mut i = 0
-    while i < inits.length {
-        let init = inits[i]
-        out.push(FieldInit {
-            name: init.name,
-            value: sexpr(lower_expr(init.value.node), init.value.line, init.value.col),
-        })
-        i = i + 1
-    }
-    out
+    list_map(inits, (init: FieldInit) -> FieldInit {
+        name: init.name,
+        value: sexpr(lower_expr(init.value.node), init.value.line, init.value.col),
+    })
 }
 
 // ── Quote kind dispatch (vez6.3.10) ──
