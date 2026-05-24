@@ -143,8 +143,7 @@ fn walk_expr(expr: Expr, reg: CompTimeRegistry) -> Expr {
 // ── List / sub-structure helpers ──
 
 fn rewrite_opt_expr(opt: Expr?, reg: CompTimeRegistry) -> Expr? {
-    if opt == null { return null }
-    rewrite_expr(opt!, reg)
+    rewrite_expr(opt?, reg)
 }
 
 fn rewrite_expr_list(list: List<SExpr>, reg: CompTimeRegistry) -> List<SExpr> {

@@ -282,9 +282,8 @@ impl Parser {
             }
 
             // Regular statement (fn declarations, etc.)
-            let stmt = self.parse_declaration()
-            if stmt == null { return null }
-            out.push(sstmt(stmt!, line, col))
+            let stmt = self.parse_declaration()?
+            out.push(sstmt(stmt, line, col))
         }
         out
     }
@@ -501,9 +500,8 @@ impl Parser {
             }
 
             // fn declarations and other statements
-            let stmt = self.parse_declaration()
-            if stmt == null { return null }
-            out.push(sstmt(stmt!, line, col))
+            let stmt = self.parse_declaration()?
+            out.push(sstmt(stmt, line, col))
         }
         out
     }
