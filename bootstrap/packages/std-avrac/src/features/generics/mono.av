@@ -5,7 +5,7 @@
 
 use core.{Expr, SExpr, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, SStmt, ParamEntry, FieldEntry, FieldInit, Variant, MatchArm, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge, SelectArm, Annotation}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_warning, span_new}
-use typeck.{TraitImplReg, type_implements_trait}
+use typeck.{TraitImplEntry, type_implements_trait}
 use core.{mangle_join, type_short_name}
 
 // ── Registries ──
@@ -295,7 +295,7 @@ fn merge_across_scopes(insts: List<Inst>) -> List<Inst> {
 /// name from its type-args, drop the still-partial ones, and
 /// run trait-bound checks for each. Diagnostics accumulate in
 /// the returned CollectState's bag.
-fn finalize_insts(insts: List<Inst>, regs: GenRegs, bag: DiagnosticBag, ti: TraitImplReg) -> CollectState {
+fn finalize_insts(insts: List<Inst>, regs: GenRegs, bag: DiagnosticBag, ti: List<TraitImplEntry>) -> CollectState {
     mut out: List<Inst> = []
     mut acc_bag = bag
     mut i = 0
@@ -601,7 +601,7 @@ fn field_type_for(fields: List<FieldEntry>, name: string) -> string {
 /// concrete arg satisfies the param's trait bounds. Emits
 /// F1002 (cannot infer) for unbound params and F1000 for
 /// bound violations.
-fn check_resolved(tp: List<TypeParamEntry>, ta: List<TypeArg>, name: string, line: int, col: int, bag: DiagnosticBag, ti: TraitImplReg) -> DiagnosticBag {
+fn check_resolved(tp: List<TypeParamEntry>, ta: List<TypeArg>, name: string, line: int, col: int, bag: DiagnosticBag, ti: List<TraitImplEntry>) -> DiagnosticBag {
     mut acc = bag
     mut i = 0
     while i < tp.length {
@@ -623,7 +623,7 @@ fn check_resolved(tp: List<TypeParamEntry>, ta: List<TypeArg>, name: string, lin
 /// Walk a `+`-separated bound clause checking that the
 /// concrete type implements each named trait. Each bound
 /// failure adds its own diagnostic.
-fn check_type_bounds(concrete: string, bounds: string, fn_name: string, param_name: string, line: int, col: int, bag: DiagnosticBag, ti: TraitImplReg) -> DiagnosticBag {
+fn check_type_bounds(concrete: string, bounds: string, fn_name: string, param_name: string, line: int, col: int, bag: DiagnosticBag, ti: List<TraitImplEntry>) -> DiagnosticBag {
     // bounds is "Trait1 + Trait2" — split on " + "
     let plus = bounds.index_of(" + ")
     if plus >= 0 {
@@ -647,7 +647,7 @@ fn is_builtin_type(name: string) -> bool {
 /// Verify a single trait bound on a concrete type. Emits
 /// F1000 with a "trait bound not satisfied" message when the
 /// type doesn't implement the trait.
-fn check_one_bound(concrete: string, trait_name: string, fn_name: string, param_name: string, line: int, col: int, bag: DiagnosticBag, ti: TraitImplReg) -> DiagnosticBag {
+fn check_one_bound(concrete: string, trait_name: string, fn_name: string, param_name: string, line: int, col: int, bag: DiagnosticBag, ti: List<TraitImplEntry>) -> DiagnosticBag {
     // Built-in types have implicit trait implementations (no explicit impl blocks).
     // Check against known built-in trait impls rather than blanket-accepting all.
     if is_builtin_type(concrete) {
@@ -875,7 +875,7 @@ fn has_generics(regs: GenRegs) -> bool {
 /// @field bag          — diagnostics bag.
 /// @field line / col   — current source line/col for diagnostics.
 /// @field trait_impls  — registered trait impls, for bound checks.
-type CollectState = { insts: List<Inst>, bag: DiagnosticBag, line: int, col: int, trait_impls: TraitImplReg }
+type CollectState = { insts: List<Inst>, bag: DiagnosticBag, line: int, col: int, trait_impls: List<TraitImplEntry> }
 
 /// Pass 2 entry: walk a List<SStmt> collecting instantiation
 /// requests at every call / constructor site.
@@ -1859,7 +1859,7 @@ export type MonoResult = { stmts: List<SStmt>, bag: DiagnosticBag }
 /// rewrites every reference to use the mangled names. Iterates
 /// to a fixed point so transitively-required specialisations
 /// are pulled in.
-export fn monomorphize(stmts: List<SStmt>, trait_impls: TraitImplReg) -> MonoResult {
+export fn monomorphize(stmts: List<SStmt>, trait_impls: List<TraitImplEntry>) -> MonoResult {
     let regs = collect_generics(stmts, GenRegs { fns: [], enums: [], structs: [] })
     if !has_generics(regs) { return MonoResult { stmts, bag: bag_new() } }
 
@@ -1899,7 +1899,7 @@ type ConvergeResult = { all_insts: List<Inst>, all_specs: List<SStmt>, bag: Diag
 /// the freshly-emitted specialisations looking for further
 /// instantiations they need; recurses until no new insts get
 /// added. `depth` is bounded to prevent runaway recursion.
-fn mono_converge(new_specs: List<SStmt>, regs: GenRegs, all_insts: List<Inst>, all_specs: List<SStmt>, b: DiagnosticBag, depth: int, ti: TraitImplReg) -> ConvergeResult {
+fn mono_converge(new_specs: List<SStmt>, regs: GenRegs, all_insts: List<Inst>, all_specs: List<SStmt>, b: DiagnosticBag, depth: int, ti: List<TraitImplEntry>) -> ConvergeResult {
     if depth >= 10 { return ConvergeResult { all_insts, all_specs, bag: b } }
     let trans = collect_inst_stmts(new_specs, regs, CollectState { insts: [], bag: b, line: 0, col: 0, trait_impls: ti })
     let trans_final = finalize_insts(trans.insts, regs, trans.bag, ti)
