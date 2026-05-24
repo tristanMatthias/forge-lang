@@ -305,12 +305,7 @@ export fn tc_enum_find_by_variant(reg: EnumTypeReg, variant: string) -> string {
 
 /// True iff `name` matches any variant in the list.
 fn variant_has(variants: List<Variant>, name: string) -> bool {
-    mut i = 0
-    while i < variants.length {
-        if variants[i].name == name { return true }
-        i = i + 1
-    }
-    false
+    list_any(variants, (v: Variant) -> v.name == name)
 }
 
 // ── Checker state ──
@@ -784,9 +779,7 @@ fn string_contains_qualifier(name: string) -> bool {
 
 fn collect_decls(tc: TC, stmts: List<SStmt>) -> TC {
     mut cur = tc
-    mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
+    for ss in stmts {
         cur = match stmt_unwrap(ss.node) {
             .TypeDecl(name, _, fields) -> {
                 if is_duplicate_decl(cur.structs.idx, name) {
@@ -853,7 +846,6 @@ fn collect_decls(tc: TC, stmts: List<SStmt>) -> TC {
             }
             _ -> cur
         }
-        i = i + 1
     }
     cur
 }
@@ -864,9 +856,7 @@ fn collect_decls(tc: TC, stmts: List<SStmt>) -> TC {
 /// definitions into `tc.assoc_type_defs`.
 fn collect_impl_assoc_types(tc: TC, type_name: string, stmts: List<SStmt>) -> TC {
     mut cur = tc
-    mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
+    for ss in stmts {
         cur = match ss.node {
             .AssocType(name, ty_vt) -> {
                 if !vtype_is_unknown(ty_vt) {
@@ -878,7 +868,6 @@ fn collect_impl_assoc_types(tc: TC, type_name: string, stmts: List<SStmt>) -> TC
             }
             _ -> cur
         }
-        i = i + 1
     }
     cur
 }
@@ -1495,20 +1484,10 @@ fn vtype_mentions_typeparam(ty: ValueType, tp: List<TypeParamEntry>) -> bool {
         .Task(payload) -> vtype_mentions_typeparam(payload, tp)
         .FnTyped(ptypes, ret) -> {
             if vtype_mentions_typeparam(ret, tp) { return true }
-            mut i = 0
-            while i < ptypes.length {
-                if vtype_mentions_typeparam(ptypes[i], tp) { return true }
-                i = i + 1
-            }
-            false
+            list_any(ptypes, (p: ValueType) -> vtype_mentions_typeparam(p, tp))
         }
         .Enum(_, type_args, _) -> {
-            mut i = 0
-            while i < type_args.length {
-                if vtype_mentions_typeparam(type_args[i], tp) { return true }
-                i = i + 1
-            }
-            false
+            list_any(type_args, (a: ValueType) -> vtype_mentions_typeparam(a, tp))
         }
         _ -> false
     }
@@ -2002,9 +1981,7 @@ fn annotate_bind(tc: TC, name: string, ty_vt: ValueType, init: Expr) -> TC {
 fn annotate_stmts(tc: TC, stmts: List<SStmt>) -> List<SStmt> {
     mut out: List<SStmt> = []
     mut cur = tc
-    mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
+    for ss in stmts {
         let new_stmt = annotate_stmt(cur, ss.node)
         out.push(sstmt_at(new_stmt, ss.line, ss.col, ss.file))
         cur = match ss.node {
@@ -2018,7 +1995,6 @@ fn annotate_stmts(tc: TC, stmts: List<SStmt>) -> List<SStmt> {
             .LetDestructure(names, init) -> bind_destructure(cur, names, check_expr(cur, init).ty)
             _ -> cur
         }
-        i = i + 1
     }
     out
 }
@@ -2360,10 +2336,8 @@ fn naming_warn(tc: TC, msg: string) -> TC {
 /// convention check.
 fn check_naming_conventions(tc: TC, stmts: List<SStmt>) -> TC {
     mut cur = tc
-    mut i = 0
-    while i < stmts.length {
-        cur = check_naming_stmt(cur, stmts[i].node)
-        i = i + 1
+    for ss in stmts {
+        cur = check_naming_stmt(cur, ss.node)
     }
     cur
 }
