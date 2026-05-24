@@ -6,7 +6,7 @@ use codegen.{ok_sr, err_sr}
 use features.eval.{error_result, ok_result, value_null}
 use core.{feature_new, Feature}
 use resolve.{resolve_expr}
-use codegen.{DeferStack}
+use codegen.{DeferEntry}
 use typeck.{check_expr}
 
 // All handlers are private.
@@ -18,7 +18,7 @@ use typeck.{check_expr}
 fn defer_emit(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .Defer(body) -> {
-            let updated = ctx with { defers: DeferStack.Frame(sexpr_dummy(body), ctx.defers) }
+            let updated = ctx with { defers: ctx.defers.push(DeferEntry.Frame(sexpr_dummy(body))) }
             ok_sr(updated, env)
         }
         _ -> err_sr("expected Defer")
@@ -60,7 +60,7 @@ fn defer_eval(rt: Runtime, stmt: Stmt) -> StepResult {
 fn errdefer_emit(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .Errdefer(body) -> {
-            let updated = ctx with { defers: DeferStack.ErrFrame(sexpr_dummy(body), ctx.defers) }
+            let updated = ctx with { defers: ctx.defers.push(DeferEntry.ErrFrame(sexpr_dummy(body))) }
             ok_sr(updated, env)
         }
         _ -> err_sr("expected Errdefer")

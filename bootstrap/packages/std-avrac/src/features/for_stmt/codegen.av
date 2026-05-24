@@ -4,7 +4,7 @@
 // bump arenas for O(1) allocation and O(1) bulk free (spec Axis 9.6).
 
 use core.{Expr, Stmt, VarBinding, env_extend, ValueType, vtype_list_elem, vtype_is_str}
-use codegen.{Ctx, StmtResult, emit_value_ptr, emit_value_ty}
+use codegen.{Ctx, LoopStackFrame, StmtResult, emit_value_ptr, emit_value_ty}
 use codegen.{emit_stmt, ok_sr, err_sr}
 use codegen.{is_arena_eligible}
 
@@ -63,7 +63,7 @@ fn emit_for_inner(ctx: Ctx, env: List<VarBinding>, variable: string, start: Expr
 
     // Body — continue jumps to incr_bb, break jumps to exit_bb
     ctx.position(body_bb)
-    let body_ctx_base = ctx.with_loops(.Frame(incr_bb, exit_bb, ctx.loops))
+    let body_ctx_base = ctx.with_loops(ctx.loops.push(LoopStackFrame { cond_bb: incr_bb, exit_bb }))
     // If arena is active, pass it to the body context so arena_alloc is used
     let body_ctx = if use_arena {
         body_ctx_base with { arena_ptr: arena_val }
@@ -167,7 +167,7 @@ fn emit_for_in_inner(ctx: Ctx, env: List<VarBinding>, variable: string, collecti
     }
     ctx.store(elem, elem_alloca)
 
-    let body_ctx_base = ctx.with_loops(.Frame(incr_bb, exit_bb, ctx.loops))
+    let body_ctx_base = ctx.with_loops(ctx.loops.push(LoopStackFrame { cond_bb: incr_bb, exit_bb }))
     let body_ctx = if use_arena {
         body_ctx_base with { arena_ptr: arena_val }
     } else {

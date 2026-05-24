@@ -4,7 +4,7 @@ use core.{Expr, FieldEntry, ParamEntry, Stmt, ValueType, VarBinding, Variant, SS
 use parse.{parse_int_literal}
 use core.{avra_llvm_const_int}
 use core.{avra_process_env_get}
-use codegen.{Ctx, CgNewtypeReg, CgUnionAliasReg, TypeRegs, DeferStack, RcCleanupStack, EmitValue, EnumReg, EnumLookup, FnParamMeta, FnRetTypes, LoopStack, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVarMeta, TraitDeclReg, TraitMethodMeta, err_emit, err_stmt, llvm_type_for_full, llvm_type_for_full_sized, ok_emit, ok_stmt, struct_reg_lookup, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup}
+use codegen.{Ctx, CgNewtypeReg, CgUnionAliasReg, TypeRegs, DeferEntry, RcCleanupEntry, EmitValue, EnumReg, EnumLookup, FnParamMeta, FnRetTypes, LoopStackFrame, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVarMeta, TraitDeclReg, TraitMethodMeta, err_emit, err_stmt, llvm_type_for_full, llvm_type_for_full_sized, ok_emit, ok_stmt, struct_reg_lookup, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup}
 use codegen.{analyze_releasable, analyze_copy_types}
 use codegen.{analyze_cycles, cycle_set_has}
 use core.{build_registry}
@@ -351,6 +351,9 @@ fn codegen_program(stmts: List<SStmt>, debug_null_checks: bool, coverage: bool, 
 
     let copy_types = analyze_copy_types(structs, enums)
     let empty_releasable: List<string> = []
+    let empty_loops: List<LoopStackFrame> = []
+    let empty_defers: List<DeferEntry> = []
+    let empty_rc: List<RcCleanupEntry> = []
     mut ctx = Ctx {
         lc,
         module: m,
@@ -369,9 +372,9 @@ fn codegen_program(stmts: List<SStmt>, debug_null_checks: bool, coverage: bool, 
         fn_rets,
         fn_params,
         top_level_vars,
-        loops: LoopStack.End,
-        defers: DeferStack.End,
-        rc_cleanup: RcCleanupStack.End,
+        loops: empty_loops,
+        defers: empty_defers,
+        rc_cleanup: empty_rc,
         rc_releasable: empty_releasable,
         features: build_registry(),
         trait_decls,

@@ -82,9 +82,9 @@ export type Ctx = {
     fn_rets: FnRetTypes,
     fn_params: List<FnParamMeta>,
     top_level_vars: List<TopLevelVarMeta>,
-    loops: LoopStack,
-    defers: DeferStack,
-    rc_cleanup: RcCleanupStack,
+    loops: List<LoopStackFrame>,
+    defers: List<DeferEntry>,
+    rc_cleanup: List<RcCleanupEntry>,
     rc_releasable: List<string>,
     features: Registry,
     trait_decls: TraitDeclReg,
@@ -415,32 +415,28 @@ export fn fn_param_lookup(reg: List<FnParamMeta>, name: string) -> List<ValueTyp
 export type TopLevelVarMeta = { name: string, llvm_global: ptr, ty: ValueType }
 
 /// Loop control-flow stack — one frame per enclosing `while` / `for`.
-/// `break` jumps to `exit_bb`, `continue` jumps to `cond_bb`. Pushed
-/// in `emit_block_loop`, popped on exit.
-export enum LoopStack {
-    End
-    Frame(cond_bb: ptr, exit_bb: ptr, next: LoopStack)
-}
+/// `break` jumps to `exit_bb`, `continue` jumps to `cond_bb`. Backed
+/// by `List<LoopStackFrame>`; the innermost loop is the LAST element
+/// (LIFO via append-and-walk-backwards).
+export type LoopStackFrame = { cond_bb: ptr, exit_bb: ptr }
 
-/// LIFO stack of deferred actions running at scope exit.
-/// `Frame` is a normal `defer`, `ErrFrame` is `errdefer` (only fires
-/// on early return / propagation), `Release` is an RC drop pushed by
-/// the binder so defer + RC observe the same LIFO order (spec 9.4).
-export enum DeferStack {
-    End
-    Frame(body: SExpr, next: DeferStack)
-    ErrFrame(body: SExpr, next: DeferStack)
-    Release(name: string, alloca: ptr, ty: ValueType, next: DeferStack)
+/// LIFO stack of deferred actions running at scope exit. Three
+/// kinds interleave in a single list so they observe the same
+/// declaration order:
+///   - `Frame`     → `defer` body (always runs)
+///   - `ErrFrame`  → `errdefer` body (only on error return)
+///   - `Release`   → RC drop pushed by the binder (spec 9.4)
+export enum DeferEntry {
+    Frame(body: SExpr)
+    ErrFrame(body: SExpr)
+    Release(name: string, alloca: ptr, ty: ValueType)
 }
 
 /// RC cleanup stack — tracks RC-managed locals for release at scope
-/// exit. Each entry holds the alloca and its ValueType. The cleanup
-/// emitter walks this list in LIFO order, calling `avra_rc_release`
-/// on every live entry that escape analysis didn't already drain.
-export enum RcCleanupStack {
-    End
-    Node(name: string, alloca: ptr, ty: ValueType, next: RcCleanupStack)
-}
+/// exit. The cleanup emitter walks the list in LIFO order, calling
+/// `avra_rc_release` on every live entry that escape analysis didn't
+/// already drain.
+export type RcCleanupEntry = { name: string, alloca: ptr, ty: ValueType }
 
 /// Set of variable names that are safe to release at scope exit.
 /// Backed by `List<string>` — order is irrelevant, only membership
@@ -672,14 +668,14 @@ export type LoopFrame = {
 
 /// Peek at the innermost loop frame. `found = 0` means the stack is
 /// empty (i.e. `break` / `continue` was used outside any loop).
-export fn loops_top(stack: LoopStack) -> LoopFrame {
-    match stack {
-        .End -> {
-            let n: ptr = null
-            LoopFrame { found: false, cond_bb: n, exit_bb: n }
-        }
-        .Frame(c, e, _) -> LoopFrame { found: true, cond_bb: c, exit_bb: e }
+/// Innermost is the LAST element since `with_loops` appends.
+export fn loops_top(stack: List<LoopStackFrame>) -> LoopFrame {
+    if stack.length == 0 {
+        let n: ptr = null
+        return LoopFrame { found: false, cond_bb: n, exit_bb: n }
     }
+    let top = stack[stack.length - 1]
+    LoopFrame { found: true, cond_bb: top.cond_bb, exit_bb: top.exit_bb }
 }
 
 // ── LLVM type mapping ──
@@ -1133,9 +1129,9 @@ impl Ctx {
         let alloca = avra_llvm_build_alloca(self.builder, self.type_for(ty), name)
         avra_llvm_build_store_cast(self.builder, value, alloca)
         if vtype_is_ptr_type(ty) && releasable_has(self.rc_releasable, name) {
-            self.rc_cleanup = RcCleanupStack.Node(name, alloca, ty, self.rc_cleanup)
+            self.rc_cleanup = self.rc_cleanup.push(RcCleanupEntry { name, alloca, ty })
             // Push Release onto defers for LIFO interleaving with defer/errdefer
-            self.defers = DeferStack.Release(name, alloca, ty, self.defers)
+            self.defers = self.defers.push(DeferEntry.Release(name, alloca, ty))
         }
         env_extend(env, name, alloca, ty)
     }
@@ -1369,10 +1365,12 @@ impl Ctx {
 
     fn with_fn(self, fn_val: ptr, fn_name: string) -> Ctx {
         let empty: List<string> = []
-        self with { current_fn: fn_val, current_fn_name: fn_name, defers: DeferStack.End, rc_cleanup: RcCleanupStack.End, rc_releasable: empty, task_group: null }
+        let empty_defers: List<DeferEntry> = []
+        let empty_rc: List<RcCleanupEntry> = []
+        self with { current_fn: fn_val, current_fn_name: fn_name, defers: empty_defers, rc_cleanup: empty_rc, rc_releasable: empty, task_group: null }
     }
 
-    fn with_loops(self, loops: LoopStack) -> Ctx {
+    fn with_loops(self, loops: List<LoopStackFrame>) -> Ctx {
         self with { loops }
     }
 
@@ -1466,7 +1464,7 @@ impl Ctx {
         self with { top_level_vars }
     }
 
-    fn with_defers(self, defers: DeferStack) -> Ctx {
+    fn with_defers(self, defers: List<DeferEntry>) -> Ctx {
         self with { defers }
     }
 

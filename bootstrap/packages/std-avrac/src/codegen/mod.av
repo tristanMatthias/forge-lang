@@ -86,14 +86,13 @@ export fn emit_rc_cleanup(ctx: Ctx) {
 /// Recursive worker for `emit_rc_cleanup`. Loads each entry's alloca
 /// and calls `emit_rc_release_typed` so type-aware deallocation runs
 /// (vs. plain `avra_rc_release`).
-fn emit_rc_stack(ctx: Ctx, stack: RcCleanupStack) {
-    match stack {
-        .End -> {}
-        .Node(_, alloca, ty, next) -> {
-            let val = ctx.load(ctx.ptr_type, alloca, "rc_local")
-            emit_rc_release_typed(ctx, val, ty)
-            emit_rc_stack(ctx, next)
-        }
+fn emit_rc_stack(ctx: Ctx, stack: List<RcCleanupEntry>) {
+    mut i = stack.length - 1
+    while i >= 0 {
+        let entry = stack[i]
+        let val = ctx.load(ctx.ptr_type, entry.alloca, "rc_local")
+        emit_rc_release_typed(ctx, val, entry.ty)
+        i = i - 1
     }
 }
 
