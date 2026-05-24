@@ -11,7 +11,6 @@ use core.{avra_variant_hash}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
 use features.trait_decl.{box_for_trait, resolve_concrete_type_name}
 use codegen.{emit_rc_cleanup}
-use codegen.{ReleasableSet}
 use codegen.{analyze_releasable}
 use features.spawn_expr.{stmts_has_spawn}
 

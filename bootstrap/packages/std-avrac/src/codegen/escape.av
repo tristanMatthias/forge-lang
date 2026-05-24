@@ -7,22 +7,28 @@
 // Conservative: if in doubt, mark as escaped (don't release).
 
 use core.{Expr, FieldEntry, FieldInit, Variant, ValueType, Stmt, SExpr, SStmt, stmt_unwrap}
-use codegen.{ReleasableSet, releasable_has, StructReg, EnumReg, struct_reg_lookup, enum_reg_lookup, copy_set_has}
+use codegen.{releasable_has, StructReg, EnumReg, struct_reg_lookup, enum_reg_lookup, copy_set_has}
 
-/// Add `name` to the releasable set, deduplicating. The set is the
-/// list of locals safe to RC-release at scope exit.
-fn releasable_add(set: ReleasableSet, name: string) -> ReleasableSet {
-    if releasable_has(set, name) { set } else { ReleasableSet.Node(name, set) }
+/// Add `name` to the releasable set, deduplicating. Returns a fresh
+/// list — callers reusing `set` elsewhere stay correct.
+fn releasable_add(set: List<string>, name: string) -> List<string> {
+    if releasable_has(set, name) { return set }
+    mut out: List<string> = []
+    for n in set { out = out.push(n) }
+    out = out.push(name)
+    out
 }
 
-/// Remove `name` from the releasable set. Used when a use-site
-/// proves the local escapes (return, arg pass, etc.).
-fn releasable_remove(set: ReleasableSet, name: string) -> ReleasableSet {
-    match set {
-        .End -> .End
-        .Node(n, next) if n == name -> releasable_remove(next, name)
-        .Node(n, next) -> ReleasableSet.Node(n, releasable_remove(next, name))
+/// Remove every occurrence of `name` from the releasable set.
+/// Returns a fresh list so callers reusing the old reference
+/// elsewhere stay correct. Used when a use-site proves the local
+/// escapes (return, arg pass, etc.).
+fn releasable_remove(set: List<string>, name: string) -> List<string> {
+    mut out: List<string> = []
+    for n in set {
+        if n != name { out = out.push(n) }
     }
+    out
 }
 
 /// Analyze a function body and return the set of locals whose values
@@ -37,23 +43,27 @@ fn releasable_remove(set: ReleasableSet, name: string) -> ReleasableSet {
 /// order, so the algorithm walks the list once — a `let` adds the
 /// name; later uses only ever remove. Forward references therefore
 /// work without a second pass.
-export fn analyze_releasable(body: List<SStmt>) -> ReleasableSet {
-    single_pass_escape(body, ReleasableSet.End)
+export fn analyze_releasable(body: List<SStmt>) -> List<string> {
+    let empty: List<string> = []
+    single_pass_escape(body, empty)
 }
 
 /// Lambda variant of `analyze_releasable`. Lambda bodies that aren't
 /// blocks have no bindings to release; otherwise descend into the
 /// inner List<SStmt>.
-export fn analyze_releasable_expr(body: Expr) -> ReleasableSet {
+export fn analyze_releasable_expr(body: Expr) -> List<string> {
     match body {
         .Block(stmts) -> analyze_releasable(stmts)
-        _ -> ReleasableSet.End
+        _ -> {
+            let empty: List<string> = []
+            empty
+        }
     }
 }
 
 /// Single-pass escape analysis worker. Walks `stmts` left-to-right,
-/// folding `single_pass_stmt` over the running ReleasableSet.
-fn single_pass_escape(stmts: List<SStmt>, set: ReleasableSet) -> ReleasableSet {
+/// folding `single_pass_stmt` over the running List<string>.
+fn single_pass_escape(stmts: List<SStmt>, set: List<string>) -> List<string> {
     mut cur = set
     mut i = 0
     while i < stmts.length {
@@ -66,7 +76,7 @@ fn single_pass_escape(stmts: List<SStmt>, set: ReleasableSet) -> ReleasableSet {
 /// Process a `let`/`mut`/`const` binding: add the name when its
 /// initializer is allocating, then sweep the initializer for any
 /// uses of names already in the set (which would mark them escaped).
-fn analyze_binding(name: string, init: Expr, set: ReleasableSet) -> ReleasableSet {
+fn analyze_binding(name: string, init: Expr, set: List<string>) -> List<string> {
     let s1 = if is_allocating_expr(init) { releasable_add(set, name) } else { set }
     remove_escaped_expr(init, s1)
 }
@@ -75,7 +85,7 @@ fn analyze_binding(name: string, init: Expr, set: ReleasableSet) -> ReleasableSe
 /// flow statements recurse into their bodies; everything else is
 /// only checked for escaping uses inside its expressions. Decl-only
 /// statements (TypeDecl, TraitDecl, …) are pass-through.
-fn single_pass_stmt(stmt: Stmt, set: ReleasableSet) -> ReleasableSet {
+fn single_pass_stmt(stmt: Stmt, set: List<string>) -> List<string> {
     let inner = stmt_unwrap(stmt)
     match inner {
         .Let(name, _, init) -> analyze_binding(name, init, set)
@@ -147,7 +157,7 @@ fn is_allocating_expr(expr: Expr) -> bool {
 /// they're used in a way that escapes the local. The only safe
 /// pattern is `.FieldAccess(Ident(name), _)` (reading a field). Any
 /// other use of `Ident(name)` removes it.
-fn remove_escaped_expr(expr: Expr, set: ReleasableSet) -> ReleasableSet {
+fn remove_escaped_expr(expr: Expr, set: List<string>) -> List<string> {
     match expr {
         // Field access is safe — reading a field doesn't escape the struct
         .FieldAccess(obj, _) -> match obj {
@@ -211,7 +221,7 @@ fn remove_escaped_expr(expr: Expr, set: ReleasableSet) -> ReleasableSet {
 }
 
 /// Apply `remove_escaped_expr` to every element of a `List<SExpr>`.
-fn remove_escaped_args(args: List<SExpr>, set: ReleasableSet) -> ReleasableSet {
+fn remove_escaped_args(args: List<SExpr>, set: List<string>) -> List<string> {
     mut acc = set
     mut i = 0
     while i < args.length {
@@ -223,7 +233,7 @@ fn remove_escaped_args(args: List<SExpr>, set: ReleasableSet) -> ReleasableSet {
 
 /// Apply `remove_escaped_expr` to every value in a struct-literal
 /// `List<FieldInit>`. Used on `Foo { x: a, y: b }` and `with` exprs.
-fn remove_escaped_field_inits(inits: List<FieldInit>, set: ReleasableSet) -> ReleasableSet {
+fn remove_escaped_field_inits(inits: List<FieldInit>, set: List<string>) -> List<string> {
     mut acc = set
     mut i = 0
     while i < inits.length {
@@ -240,15 +250,6 @@ fn remove_escaped_field_inits(inits: List<FieldInit>, set: ReleasableSet) -> Rel
 // bindings are non-escaping (releasable). This means every allocation
 // in the loop iteration can safely live in a bump arena that is
 // freed in bulk at scope exit.
-
-/// True when the set has at least one entry. Used for arena
-/// eligibility — a body needs at least one releasable allocation.
-fn releasable_any(set: ReleasableSet) -> bool {
-    match set {
-        .End -> false
-        .Node(_, _) -> true
-    }
-}
 
 /// Sum the count of allocating expressions across a statement list.
 fn count_allocating_in_stmts(stmts: List<SStmt>) -> int {
@@ -320,8 +321,8 @@ export fn is_arena_eligible(body: Stmt) -> bool {
             let owned_count = count_allocating_in_stmts(stmts)
             if owned_count == 0 { return false }
             // All allocations must be releasable (non-escaping)
-            let releasable = single_pass_escape(stmts, ReleasableSet.End)
-            releasable_any(releasable)
+            let empty: List<string> = []
+            single_pass_escape(stmts, empty).length > 0
         }
         .Let(_, _, init) -> is_allocating_expr(init)
         .Mut(_, _, init) -> is_allocating_expr(init)

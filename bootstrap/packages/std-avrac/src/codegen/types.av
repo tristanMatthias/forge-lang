@@ -85,7 +85,7 @@ export type Ctx = {
     loops: LoopStack,
     defers: DeferStack,
     rc_cleanup: RcCleanupStack,
-    rc_releasable: ReleasableSet,
+    rc_releasable: List<string>,
     features: Registry,
     trait_decls: TraitDeclReg,
     newtypes: CgNewtypeReg,
@@ -449,13 +449,10 @@ export enum RcCleanupStack {
 }
 
 /// Set of variable names that are safe to release at scope exit.
-/// Lives here (instead of `escape.av`) because `Ctx.rc_releasable`
-/// needs the type and escape.av already imports from types.av —
-/// keeping it here breaks the cycle.
-export enum ReleasableSet {
-    End
-    Node(name: string, next: ReleasableSet)
-}
+/// Backed by `List<string>` — order is irrelevant, only membership
+/// matters. `Ctx.rc_releasable` carries the per-fn set; escape
+/// analysis (codegen/escape.av) builds it and codegen consults it
+/// via `releasable_has`.
 
 /// Set of type names that are Copy (all-primitive fields, no heap
 /// references). Built once by `analyze_copy_types` and threaded
@@ -497,12 +494,11 @@ export fn vtype_is_copy(vt: ValueType, copies: List<string>) -> bool {
 }
 
 /// Membership test for the releasable set.
-export fn releasable_has(set: ReleasableSet, name: string) -> bool {
-    match set {
-        .End -> false
-        .Node(n, _) if n == name -> true
-        .Node(_, next) -> releasable_has(next, name)
+export fn releasable_has(set: List<string>, name: string) -> bool {
+    for n in set {
+        if n == name { return true }
     }
+    false
 }
 
 /// One struct decl entry in StructReg's `ord` list. `external` is
@@ -1379,7 +1375,8 @@ impl Ctx {
     // ── Context builders ──
 
     fn with_fn(self, fn_val: ptr, fn_name: string) -> Ctx {
-        self with { current_fn: fn_val, current_fn_name: fn_name, defers: DeferStack.End, rc_cleanup: RcCleanupStack.End, rc_releasable: ReleasableSet.End, task_group: null }
+        let empty: List<string> = []
+        self with { current_fn: fn_val, current_fn_name: fn_name, defers: DeferStack.End, rc_cleanup: RcCleanupStack.End, rc_releasable: empty, task_group: null }
     }
 
     fn with_loops(self, loops: LoopStack) -> Ctx {
