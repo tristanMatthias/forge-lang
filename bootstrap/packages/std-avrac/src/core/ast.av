@@ -2,6 +2,8 @@
 // Stmt, Pattern, and their recursive list types. Pure data only;
 // all logic (parsing, resolution, codegen) lives elsewhere.
 
+use list_ops.{list_map}
+
 // ── Spanned wrappers ──
 //
 // Every Expr / Stmt in the AST is wrapped in a span carrier so error
@@ -155,11 +157,7 @@ export fn type_param_has(params: List<TypeParamEntry>, name: string) -> bool {
 
 /// Render a `List<TypeParamEntry>` back to source-form: `T, U: Display`.
 export fn render_type_param_list(params: List<TypeParamEntry>) -> string {
-    mut parts: List<string> = []
-    for p in params {
-        parts.push(if p.bounds == "" { p.name } else { "${p.name}: ${p.bounds}" })
-    }
-    parts.join(", ")
+    list_map(params, (p: TypeParamEntry) -> if p.bounds == "" { p.name } else { "${p.name}: ${p.bounds}" }).join(", ")
 }
 
 // `List<string>` replaces the retired `enum TypeNameList`. Used as
@@ -641,9 +639,7 @@ export fn vtype_display(t: ValueType) -> string {
 /// Display-form pipe-join over a union's element types, used by
 /// `vtype_display` for the `Union(types)` arm.
 fn render_union_display(tl: List<ValueType>) -> string {
-    mut parts: List<string> = []
-    for t in tl { parts.push(vtype_display(t)) }
-    parts.join(" | ")
+    list_map(tl, (t: ValueType) -> vtype_display(t)).join(" | ")
 }
 
 /// Render a ValueType including generic type arguments — e.g.
@@ -689,17 +685,13 @@ export fn vtype_render_full(t: ValueType) -> string {
 /// comma-joined. Used by `vtype_render_full` for tuple / fn-param
 /// rendering.
 fn render_type_list_full(tl: List<ValueType>) -> string {
-    mut parts: List<string> = []
-    for t in tl { parts.push(vtype_render_full(t)) }
-    parts.join(", ")
+    list_map(tl, (t: ValueType) -> vtype_render_full(t)).join(", ")
 }
 
 /// `vtype_render_full` over each element of a `List<ValueType>`,
 /// pipe-joined for union rendering (`int|string|bool`).
 fn render_union_full(tl: List<ValueType>) -> string {
-    mut parts: List<string> = []
-    for t in tl { parts.push(vtype_render_full(t)) }
-    parts.join("|")
+    list_map(tl, (t: ValueType) -> vtype_render_full(t)).join("|")
 }
 
 /// Trait name for a Trait ValueType, or "" otherwise.
@@ -798,9 +790,7 @@ export fn find_type_pipe(s: string) -> int {
 /// every renderer that prints a type sequence (tuple types, generic
 /// args, fn param lists).
 export fn render_type_list(tl: List<ValueType>) -> string {
-    mut parts: List<string> = []
-    for t in tl { parts.push(vtype_display(t)) }
-    parts.join(", ")
+    list_map(tl, (t: ValueType) -> vtype_display(t)).join(", ")
 }
 
 /// Index into a Tuple ValueType. Returns Unknown for non-tuples or
@@ -1438,17 +1428,13 @@ fn render_when_arm_list(arms: List<WhenArm>) -> string {
 /// Render a `List<FieldInit>` as an S-expression: `(k=v, k2=v2)`.
 export fn render_field_init_list(inits: List<FieldInit>) -> string {
     if inits.length == 0 { return "()" }
-    mut parts: List<string> = []
-    for e in inits { parts.push("${e.name}=${render_expr(e.value.node)}") }
-    "(${parts.join(", ")})"
+    "(${list_map(inits, (e: FieldInit) -> "${e.name}=${render_expr(e.value.node)}").join(", ")})"
 }
 
 /// Render a `List<FieldEntry>` as an S-expression: `(name:Type, name2:Type)`.
 export fn render_field_list(fields: List<FieldEntry>) -> string {
     if fields.length == 0 { return "()" }
-    mut parts: List<string> = []
-    for e in fields { parts.push("${e.name}:${vtype_display(e.resolved)}") }
-    "(${parts.join(", ")})"
+    "(${list_map(fields, (e: FieldEntry) -> "${e.name}:${vtype_display(e.resolved)}").join(", ")})"
 }
 
 /// Render a `List<string>` of type names as a comma-separated string.
@@ -1459,17 +1445,13 @@ export fn render_type_name_list(names: List<string>) -> string {
 /// Render a `List<SExpr>` as an S-expression: `(e1, e2, e3)`.
 export fn render_expr_list(exprs: List<SExpr>) -> string {
     if exprs.length == 0 { return "()" }
-    mut parts: List<string> = []
-    for se in exprs { parts.push(render_expr(se.node)) }
-    "(${parts.join(", ")})"
+    "(${list_map(exprs, (se: SExpr) -> render_expr(se.node)).join(", ")})"
 }
 
 /// Render a `List<ParamEntry>` as `(name, name2)`.
 export fn render_param_list(params: List<ParamEntry>) -> string {
     if params.length == 0 { return "()" }
-    mut parts: List<string> = []
-    for p in params { parts.push(p.name) }
-    "(${parts.join(", ")})"
+    "(${list_map(params, (p: ParamEntry) -> p.name).join(", ")})"
 }
 
 /// Render a Stmt as an S-expression. Mirror to `render_expr` —
@@ -1550,9 +1532,7 @@ export fn render_annotation_list(annots: List<Annotation>) -> string {
 /// Render a `List<Variant>` as an S-expression: `(Ok(value:T), Err(error:E))`.
 export fn render_variant_list(variants: List<Variant>) -> string {
     if variants.length == 0 { return "()" }
-    mut parts: List<string> = []
-    for v in variants { parts.push("${v.name}${render_field_list(v.fields)}") }
-    "(${parts.join(", ")})"
+    "(${list_map(variants, (v: Variant) -> "${v.name}${render_field_list(v.fields)}").join(", ")})"
 }
 
 /// Render a Pattern as an S-expression — used by render_match_arm.
@@ -1569,20 +1549,16 @@ export fn render_pattern(p: Pattern) -> string {
 /// Render a `List<MatchArm>` as a comma-separated list of `pat -> body`.
 export fn render_match_arm_list(arms: List<MatchArm>) -> string {
     if arms.length == 0 { return "()" }
-    mut parts: List<string> = []
-    for arm in arms {
+    "(${list_map(arms, (arm: MatchArm) -> {
         let guard_str = if arm.guard != null { " if ${render_expr(arm.guard!.node)}" } else { "" }
-        parts.push("${render_pattern(arm.pattern)}${guard_str} -> ${render_expr(arm.body.node)}")
-    }
-    "(${parts.join("; ")})"
+        "${render_pattern(arm.pattern)}${guard_str} -> ${render_expr(arm.body.node)}"
+    }).join("; ")})"
 }
 
 /// Render a `List<SStmt>` as an S-expression sequence — convenient
 /// for `render_stmt` recursion on Block bodies.
 export fn render_stmt_list(stmts: List<SStmt>) -> string {
-    mut parts: List<string> = []
-    for ss in stmts { parts.push(render_stmt(ss.node)) }
-    parts.join("\n")
+    list_map(stmts, (ss: SStmt) -> render_stmt(ss.node)).join("\n")
 }
 
 // ── Token kinds ──

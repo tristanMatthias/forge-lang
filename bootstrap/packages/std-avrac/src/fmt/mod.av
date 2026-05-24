@@ -14,6 +14,7 @@ use core.{
     vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq,
     render_type_param_list,
 }
+use list_ops.{list_map}
 
 /// Render `depth * 4` spaces — Avra's canonical indent unit.
 fn fmt_indent(depth: int) -> string {
@@ -159,34 +160,26 @@ export fn fmt_stmt(ss: Stmt, depth: int) -> string {
 /// Public entry point — render a top-level statement list. Each
 /// statement gets one source line, joined with `\n`.
 export fn fmt_stmt_list(stmts: List<SStmt>, depth: int) -> string {
-    mut parts: List<string> = []
-    for ss in stmts { parts.push(fmt_stmt(ss.node, depth)) }
-    parts.join("\n")
+    list_map(stmts, (ss: SStmt) -> fmt_stmt(ss.node, depth)).join("\n")
 }
 
 /// Render a `List<SExpr>` as comma-separated expressions — used
 /// inside call args, list literals, tuple elements, and generic call args.
 fn fmt_expr_list_comma(exprs: List<SExpr>) -> string {
-    mut parts: List<string> = []
-    for se in exprs { parts.push(fmt_expr(se.node)) }
-    parts.join(", ")
+    list_map(exprs, (se: SExpr) -> fmt_expr(se.node)).join(", ")
 }
 
 /// Render `List<ParamEntry>` as comma-separated names (no types).
 fn fmt_param_list_comma(params: List<ParamEntry>) -> string {
-    mut parts: List<string> = []
-    for p in params { parts.push(p.name) }
-    parts.join(", ")
+    list_map(params, (p: ParamEntry) -> p.name).join(", ")
 }
 
 /// Render `List<ParamEntry>` with type annotations.
 fn fmt_param_list_typed(params: List<ParamEntry>) -> string {
-    mut parts: List<string> = []
-    for p in params {
+    list_map(params, (p: ParamEntry) -> {
         let ty_part = if vtype_is_unknown(p.vtype) { "" } else { ": ${vtype_display(p.vtype)}" }
-        parts.push(p.name + ty_part)
-    }
-    parts.join(", ")
+        p.name + ty_part
+    }).join(", ")
 }
 
 /// Render a comma-separated list of type names — for explicit
@@ -197,36 +190,28 @@ fn fmt_type_name_list(names: List<string>) -> string {
 
 /// Render a struct/with field-init list — `name: expr, name: expr`.
 fn fmt_field_init_list(inits: List<FieldInit>) -> string {
-    mut parts: List<string> = []
-    for init in inits { parts.push("${init.name}: ${fmt_expr(init.value.node)}") }
-    parts.join(", ")
+    list_map(inits, (init: FieldInit) -> "${init.name}: ${fmt_expr(init.value.node)}").join(", ")
 }
 
 /// Render a struct-decl/shape field list — one `name: Type` per
 /// indented line.
 fn fmt_field_decl_list(fields: List<FieldEntry>, depth: int) -> string {
     let ind = fmt_indent(depth)
-    mut parts: List<string> = []
-    for e in fields { parts.push("${ind}${e.name}: ${vtype_display(e.resolved)}") }
-    parts.join("\n")
+    list_map(fields, (e: FieldEntry) -> "${ind}${e.name}: ${vtype_display(e.resolved)}").join("\n")
 }
 
 /// Render an enum-variant list — one `Name(field: T, ...)` per
 /// indented line.
 fn fmt_variant_list(variants: List<Variant>, depth: int) -> string {
     let ind = fmt_indent(depth)
-    mut parts: List<string> = []
-    for v in variants { parts.push("${ind}${v.name}${fmt_variant_fields(v.fields)}") }
-    parts.join("\n")
+    list_map(variants, (v: Variant) -> "${ind}${v.name}${fmt_variant_fields(v.fields)}").join("\n")
 }
 
 /// Render the parameter section of an enum variant — `(name: T, ...)`,
 /// or empty when the variant carries no payload.
 fn fmt_variant_fields(fields: List<FieldEntry>) -> string {
     if fields.length == 0 { return "" }
-    mut parts: List<string> = []
-    for e in fields { parts.push("${e.name}: ${vtype_display(e.resolved)}") }
-    "(${parts.join(", ")})"
+    "(${list_map(fields, (e: FieldEntry) -> "${e.name}: ${vtype_display(e.resolved)}").join(", ")})"
 }
 
 /// Render a match-arm pattern.
@@ -246,24 +231,20 @@ fn fmt_pattern(p: Pattern) -> string {
 /// Render a match-arm list — one arm per indented line.
 fn fmt_match_arms(arms: List<MatchArm>, depth: int) -> string {
     let ind = fmt_indent(depth)
-    mut parts: List<string> = []
-    for arm in arms {
+    list_map(arms, (arm: MatchArm) -> {
         let guard_str = if arm.guard != null { " if ${fmt_expr(arm.guard!.node)}" } else { "" }
-        parts.push("${ind}${fmt_pattern(arm.pattern)}${guard_str} -> ${fmt_expr(arm.body.node)}")
-    }
-    parts.join("\n")
+        "${ind}${fmt_pattern(arm.pattern)}${guard_str} -> ${fmt_expr(arm.body.node)}"
+    }).join("\n")
 }
 
 /// Render a `when` arm list — one arm per indented line. A null
 /// condition becomes `_` (the catch-all).
 fn fmt_when_arms(arms: List<WhenArm>, depth: int) -> string {
     let ind = fmt_indent(depth)
-    mut parts: List<string> = []
-    for arm in arms {
+    list_map(arms, (arm: WhenArm) -> {
         let cond_str = if arm.cond == null { "_" } else { fmt_expr(arm.cond!.node) }
-        parts.push("${ind}${cond_str} -> ${fmt_expr(arm.body.node)}")
-    }
-    parts.join("\n")
+        "${ind}${cond_str} -> ${fmt_expr(arm.body.node)}"
+    }).join("\n")
 }
 
 /// Render an annotation chain — `@name\n@name\n` prefix to a stmt.
