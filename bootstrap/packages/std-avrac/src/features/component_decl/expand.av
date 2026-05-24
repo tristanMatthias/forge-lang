@@ -12,7 +12,7 @@
 
 use core.{Expr, Stmt, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, FieldEntry, FieldInit, ParamEntry, ValueType, CompConfig, CompConfigPair, ChildrenSlot, TypeParamEntry, find_annotation}
 use core.{has_fn, find_fn_body}
-use list_ops.{list_concat}
+use list_ops.{list_concat, list_map}
 
 // ── Public API ──
 
@@ -159,14 +159,7 @@ type RewriteCtx = {
 /// to the right per-instance variable. The entry point for
 /// per-instance expansion of a component body.
 fn rewrite_self(stmts: List<SStmt>, ctx: RewriteCtx) -> List<SStmt> {
-    mut out: List<SStmt> = []
-    mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
-        out.push(sstmt_at(rw_stmt(ss.node, ctx), ss.line, ss.col, ss.file))
-        i = i + 1
-    }
-    out
+    list_map(stmts, (ss: SStmt) -> sstmt_at(rw_stmt(ss.node, ctx), ss.line, ss.col, ss.file))
 }
 
 /// Per-statement self-rewrite. Recurses into expression
@@ -241,14 +234,7 @@ fn rw_expr(expr: Expr, ctx: RewriteCtx) -> Expr {
 
 /// Map `rw_expr` over a `List<SExpr>`.
 fn rw_expr_list(list: List<SExpr>, ctx: RewriteCtx) -> List<SExpr> {
-    mut out: List<SExpr> = []
-    mut i = 0
-    while i < list.length {
-        let se = list[i]
-        out.push(sexpr(rw_expr(se.node, ctx), se.line, se.col))
-        i = i + 1
-    }
-    out
+    list_map(list, (se: SExpr) -> sexpr(rw_expr(se.node, ctx), se.line, se.col))
 }
 
 // ── Template self-rewriting (inlines config values) ──
@@ -258,14 +244,7 @@ fn rw_expr_list(list: List<SExpr>, ctx: RewriteCtx) -> List<SExpr> {
 /// to the schema default). Threads the rewrite ctx so nested
 /// `@self` references still resolve.
 fn rw_template(stmts: List<SStmt>, inst: string, uc: List<CompConfigPair>, schema: List<CompConfig>, ctx: RewriteCtx) -> List<SStmt> {
-    mut out: List<SStmt> = []
-    mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
-        out.push(sstmt(rw_tpl_stmt(ss.node, inst, uc, schema, ctx), ss.line, ss.col))
-        i = i + 1
-    }
-    out
+    list_map(stmts, (ss: SStmt) -> sstmt(rw_tpl_stmt(ss.node, inst, uc, schema, ctx), ss.line, ss.col))
 }
 
 /// Per-statement template rewrite — same shape as `rw_stmt`
@@ -340,27 +319,15 @@ fn rw_tpl_expr(expr: Expr, inst: string, uc: List<CompConfigPair>, schema: List<
 /// Map `rw_tpl_expr` over every field initializer in a struct
 /// literal embedded in a template body.
 fn rw_tpl_field_inits(inits: List<FieldInit>, inst: string, uc: List<CompConfigPair>, schema: List<CompConfig>, ctx: RewriteCtx) -> List<FieldInit> {
-    mut out: List<FieldInit> = []
-    mut i = 0
-    while i < inits.length {
-        let init = inits[i]
-        let new_val = rw_tpl_expr(init.value.node, inst, uc, schema, ctx)
-        out.push(FieldInit { name: init.name, value: sexpr(new_val, init.value.line, init.value.col) })
-        i = i + 1
-    }
-    out
+    list_map(inits, (init: FieldInit) -> FieldInit {
+        name: init.name,
+        value: sexpr(rw_tpl_expr(init.value.node, inst, uc, schema, ctx), init.value.line, init.value.col),
+    })
 }
 
 /// Map `rw_tpl_expr` over a `List<SExpr>` in a template body.
 fn rw_tpl_expr_list(list: List<SExpr>, inst: string, uc: List<CompConfigPair>, schema: List<CompConfig>, ctx: RewriteCtx) -> List<SExpr> {
-    mut out: List<SExpr> = []
-    mut i = 0
-    while i < list.length {
-        let se = list[i]
-        out.push(sexpr(rw_tpl_expr(se.node, inst, uc, schema, ctx), se.line, se.col))
-        i = i + 1
-    }
-    out
+    list_map(list, (se: SExpr) -> sexpr(rw_tpl_expr(se.node, inst, uc, schema, ctx), se.line, se.col))
 }
 
 /// Resolve a `@cfg.field` reference: prefer the user's
@@ -410,33 +377,17 @@ fn capitalize(s: string) -> string {
 /// the synthesized backing struct. Each schema entry's
 /// declared type becomes a field type.
 fn config_to_fields(config: List<CompConfig>) -> List<FieldEntry> {
-    // List<FieldEntry> uses .push for forward growth — walk source
-    // order, no reversal needed.
-    mut out: List<FieldEntry> = []
-    mut i = 0
-    while i < config.length {
-        let entry = config[i]
-        out.push(FieldEntry { name: entry.key, resolved: entry.ty_vt })
-        i = i + 1
-    }
-    out
+    list_map(config, (entry: CompConfig) -> FieldEntry { name: entry.key, resolved: entry.ty_vt })
 }
 
 /// Convert a config schema to the `Foo { field: cfg.field, …}`
 /// FieldInitList used when instantiating the synthesized struct
-/// from inside the factory function. Walks back-to-front for the
-/// same source-order reason as `config_to_fields`.
+/// from inside the factory function.
 fn config_to_factory_inits(config: List<CompConfig>) -> List<FieldInit> {
-    // List<FieldInit>.push appends forward — walk source order.
-    mut out: List<FieldInit> = []
-    mut i = 0
-    while i < config.length {
-        let entry = config[i]
-        let val = if entry.default_val != null { entry.default_val! } else { Expr.Null }
-        out.push(FieldInit { name: entry.key, value: sexpr(val, 0, 0) })
-        i = i + 1
-    }
-    out
+    list_map(config, (entry: CompConfig) -> FieldInit {
+        name: entry.key,
+        value: sexpr(entry.default_val ?? Expr.Null, 0, 0),
+    })
 }
 
 /// Walk a component body collecting every method-shaped fn
