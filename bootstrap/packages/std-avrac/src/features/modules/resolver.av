@@ -723,24 +723,6 @@ fn list_str_contains(xs: List<string>, target: string) -> bool {
 }
 
 /// Helper: collect linked List<SStmt> into List<SStmt> for indexed walk.
-/// Identity passthrough now that the list is already indexed —
-/// retained as an alias so callers don't need to be updated all at once.
-fn collect_stmt_list(stmts: List<SStmt>) -> List<SStmt> {
-    stmts
-}
-
-/// Helper: reverse a List<SStmt> (since the dedup pass builds it
-/// backwards via prepend).
-fn reverse_stmt_list(stmts: List<SStmt>) -> List<SStmt> {
-    mut acc: List<SStmt> = []
-    mut i = stmts.length - 1
-    while i >= 0 {
-        acc.push(stmts[i])
-        i = i - 1
-    }
-    acc
-}
-
 /// Buckets produced by `hoist_package_modules`: every `@`-prefixed
 /// `Module` lives in `packages`, the rest in `body`. The two get
 /// concatenated to put package wrappers at the program root.

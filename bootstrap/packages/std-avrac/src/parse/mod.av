@@ -139,20 +139,6 @@ export fn parse_program_source_at(source: string, file: string) -> ProgramParseR
     parser.parse_file_program()
 }
 
-/// Reverse a `List<SExpr>`. O(n). Used to undo the prepend pattern
-/// once an arg list has been collected in source order via
-/// `cons-and-iterate`. Preserved because growable `List` clones cheaply
-/// but the historical parser still produces some prepend-shaped paths.
-export fn reverse_expr_list(list: List<SExpr>) -> List<SExpr> {
-    mut out: List<SExpr> = []
-    mut i = list.length - 1
-    while i >= 0 {
-        out.push(list[i])
-        i = i - 1
-    }
-    out
-}
-
 /// Interleave header names and values into a flat alternating list:
 /// `[k1, k2]` + `[v1, v2]` → `[k1, v1, k2, v2]`. MapLit expects this
 /// flat shape; table-literal parsing produces it.
