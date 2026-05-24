@@ -13,7 +13,7 @@ use features.map_lit.{check_map_method}
 use features.let_stmt.{is_const_expr, bind_destructure}
 use core.{method_mangled_name, type_short_name, is_result_enum_name}
 use core.{avra_process_env_get}
-use list_ops.{list_push_copy, list_any}
+use list_ops.{list_push_copy, list_any, list_map}
 
 extern fn avra_uptime_ms() -> int
 
@@ -914,15 +914,10 @@ fn rewrite_fn_ret_tys(tc: TC, fns: FnTypeReg) -> FnTypeReg {
 
 /// Map `resolve_vtype` over each `ParamEntry`'s declared type.
 fn rewrite_param_list_vts(tc: TC, params: List<ParamEntry>) -> List<ParamEntry> {
-    mut out: List<ParamEntry> = []
-    mut i = 0
-    while i < params.length {
-        let p = params[i]
-        let upgraded = if vtype_is_unknown(p.vtype) { p.vtype } else { resolve_vtype(tc, p.vtype) }
-        out.push(ParamEntry { name: p.name, vtype: upgraded })
-        i = i + 1
-    }
-    out
+    list_map(params, (p: ParamEntry) -> ParamEntry {
+        name: p.name,
+        vtype: if vtype_is_unknown(p.vtype) { p.vtype } else { resolve_vtype(tc, p.vtype) },
+    })
 }
 
 // ── Pass 2: Statement checking ──
@@ -1662,13 +1657,7 @@ fn tc_infer_list_elem(elements: List<SExpr>) -> ValueType {
 }
 
 fn tc_param_types(params: List<ParamEntry>) -> List<ValueType> {
-    mut out: List<ValueType> = []
-    mut i = 0
-    while i < params.length {
-        out.push(params[i].vtype)
-        i = i + 1
-    }
-    out
+    list_map(params, (p: ParamEntry) -> p.vtype)
 }
 
 /// Inspect the first element of a list literal and return its
@@ -1701,13 +1690,7 @@ fn tc_subst_vtype(ty: ValueType, bindings: List<TypeArg>) -> ValueType {
 }
 
 fn tc_subst_type_list(types: List<ValueType>, bindings: List<TypeArg>) -> List<ValueType> {
-    mut out: List<ValueType> = []
-    mut i = 0
-    while i < types.length {
-        out.push(tc_subst_vtype(types[i], bindings))
-        i = i + 1
-    }
-    out
+    list_map(types, (t: ValueType) -> tc_subst_vtype(t, bindings))
 }
 
 /// Lookup a binding by type-param name. Returns `Unknown` on miss
@@ -2275,27 +2258,17 @@ fn annotate_sexpr_ty(tc: TC, e: Expr) -> ValueType {
 
 /// Map `annotate_sexpr` over a `List<SExpr>`.
 fn annotate_expr_list(tc: TC, exprs: List<SExpr>) -> List<SExpr> {
-    mut out: List<SExpr> = []
-    mut i = 0
-    while i < exprs.length {
-        out.push(annotate_sexpr(tc, exprs[i]))
-        i = i + 1
-    }
-    out
+    list_map(exprs, (se: SExpr) -> annotate_sexpr(tc, se))
 }
 
 /// Walk every match arm, binding pattern captures into the type
 /// env, then annotating both guard and body.
 fn annotate_match_arms(tc: TC, arms: List<MatchArm>) -> List<MatchArm> {
-    mut out: List<MatchArm> = []
-    mut i = 0
-    while i < arms.length {
-        let arm = arms[i]
-        let new_guard = if arm.guard != null { annotate_sexpr(tc, arm.guard!) } else { null }
-        out.push(MatchArm { pattern: arm.pattern, guard: new_guard, body: annotate_sexpr(tc, arm.body) })
-        i = i + 1
-    }
-    out
+    list_map(arms, (arm: MatchArm) -> MatchArm {
+        pattern: arm.pattern,
+        guard: if arm.guard != null { annotate_sexpr(tc, arm.guard!) } else { null },
+        body: annotate_sexpr(tc, arm.body),
+    })
 }
 
 /// Map `annotate_sexpr` over each `List<FieldInit>` value.
