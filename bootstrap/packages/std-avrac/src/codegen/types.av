@@ -80,8 +80,8 @@ export type Ctx = {
     structs: StructReg,
     enums: EnumReg,
     fn_rets: FnRetTypes,
-    fn_params: FnParamTypes,
-    top_level_vars: TopLevelVars,
+    fn_params: List<FnParamMeta>,
+    top_level_vars: List<TopLevelVarMeta>,
     loops: LoopStack,
     defers: DeferStack,
     rc_cleanup: RcCleanupStack,
@@ -208,18 +208,16 @@ export fn param_type_vt_at(list: List<ValueType>, idx: int) -> ValueType {
     list[idx]
 }
 
-/// Linked list of method names + return ValueTypes belonging to a
-/// single trait declaration. Built by `collect_trait_decls`.
-export enum TraitMethodNames {
-    End
-    Node(name: string, ret_vt: ValueType, next: TraitMethodNames)
-}
+/// One method on a trait — name + declared return type. Built by
+/// `collect_trait_decls`; consulted by codegen to wire up vtables
+/// and resolve `dyn Trait` method calls.
+export type TraitMethodMeta = { name: string, ret_vt: ValueType }
 
 /// One trait decl entry in TraitDeclReg's `ord` list.
-export type TraitDeclMeta = { trait_name: string, methods: TraitMethodNames }
+export type TraitDeclMeta = { trait_name: string, methods: List<TraitMethodMeta> }
 
 /// Trait declaration registry — maps trait name → its
-/// `TraitMethodNames`. Carried through `Ctx.trait_decls` and consulted
+/// `List<TraitMethodMeta>`. Carried through `Ctx.trait_decls` and consulted
 /// by codegen to resolve method calls on `dyn Trait` and `impl Trait`
 /// receivers. Hashmap-backed for O(1) lookup.
 export type TraitDeclReg = {
@@ -231,7 +229,7 @@ export fn trait_decl_reg_new() -> TraitDeclReg {
     TraitDeclReg { ord: [], idx: avra_map_new_cstr() }
 }
 
-export fn trait_decl_reg_register(reg: TraitDeclReg, trait_name: string, methods: TraitMethodNames) -> TraitDeclReg {
+export fn trait_decl_reg_register(reg: TraitDeclReg, trait_name: string, methods: List<TraitMethodMeta>) -> TraitDeclReg {
     mut ord = reg.ord
     let new_idx = ord.length
     ord.push(TraitDeclMeta { trait_name, methods })
@@ -239,10 +237,13 @@ export fn trait_decl_reg_register(reg: TraitDeclReg, trait_name: string, methods
     TraitDeclReg { ord, idx: reg.idx }
 }
 
-/// Look up a trait by name, returning its method list. `End` when
+/// Look up a trait by name, returning its method list. Empty when
 /// the trait is not registered.
-export fn trait_decl_lookup(reg: TraitDeclReg, name: string) -> TraitMethodNames {
-    if avra_map_has_cstr(reg.idx, name) == 0 { return TraitMethodNames.End }
+export fn trait_decl_lookup(reg: TraitDeclReg, name: string) -> List<TraitMethodMeta> {
+    if avra_map_has_cstr(reg.idx, name) == 0 {
+        let empty: List<TraitMethodMeta> = []
+        return empty
+    }
     let i = avra_map_get_cstr(reg.idx, name)
     reg.ord[i].methods
 }
@@ -393,32 +394,25 @@ export fn fn_ret_types_register(reg: FnRetTypes, name: string, ret_ty: ValueType
     FnRetTypes { ord, idx: reg.idx }
 }
 
-/// Function parameter-type registry — `name → List<ValueType>`. Used
-/// for typed argument coercion at call sites. The parameter list per
-/// entry is index-aligned with the declared parameter order — index
-/// N of the list corresponds to the Nth declared parameter.
-export enum FnParamTypes {
-    End
-    Node(name: string, params: List<ValueType>, next: FnParamTypes)
-}
+/// One fn's parameter-type entry: declared name + the per-position
+/// `List<ValueType>` (index N = Nth declared parameter). The full
+/// registry is `List<FnParamMeta>` carried through `Ctx.fn_params`.
+export type FnParamMeta = { name: string, params: List<ValueType> }
 
 /// Look up the parameter type list for a function. Empty list when
 /// unknown — callers fall back to i64 coercion in that case.
-export fn fn_param_lookup(reg: FnParamTypes, name: string) -> List<ValueType> {
-    match reg {
-        .End -> []
-        .Node(n, params, _) if n == name -> params
-        .Node(_, _, next) -> fn_param_lookup(next, name)
+export fn fn_param_lookup(reg: List<FnParamMeta>, name: string) -> List<ValueType> {
+    for e in reg {
+        if e.name == name { return e.params }
     }
+    []
 }
 
-/// Top-level variable registry — maps `name → (llvm_global, ty)` for
-/// every `export let` / `export mut` binding. Looked up by
-/// `emit_name_lookup` when a name resolves outside any local scope.
-export enum TopLevelVars {
-    End
-    Node(name: string, llvm_global: ptr, ty: ValueType, next: TopLevelVars)
-}
+/// One top-level binding (`export let` / `export mut`): name +
+/// its LLVM global + its ValueType. Looked up by `emit_name_lookup`
+/// when a name resolves outside any local scope. The full registry
+/// is `List<TopLevelVarMeta>` carried through `Ctx.top_level_vars`.
+export type TopLevelVarMeta = { name: string, llvm_global: ptr, ty: ValueType }
 
 /// Loop control-flow stack — one frame per enclosing `while` / `for`.
 /// `break` jumps to `exit_bb`, `continue` jumps to `cond_bb`. Pushed
@@ -654,15 +648,14 @@ export type TopLevelLookup = {
 /// Look up an exported top-level binding. Always returns a
 /// TopLevelLookup — callers inspect `.found` to distinguish hit
 /// from miss.
-export fn toplevel_lookup(reg: TopLevelVars, name: string) -> TopLevelLookup {
-    match reg {
-        .End -> {
-            let n: ptr = null
-            TopLevelLookup { found: false, llvm_global: n, ty: .Unknown }
+export fn toplevel_lookup(reg: List<TopLevelVarMeta>, name: string) -> TopLevelLookup {
+    for e in reg {
+        if e.name == name {
+            return TopLevelLookup { found: true, llvm_global: e.llvm_global, ty: e.ty }
         }
-        .Node(n, g, ty, _) if n == name -> TopLevelLookup { found: true, llvm_global: g, ty }
-        .Node(_, _, _, next) -> toplevel_lookup(next, name)
     }
+    let n: ptr = null
+    TopLevelLookup { found: false, llvm_global: n, ty: .Unknown }
 }
 
 /// The top of the LoopStack, surfaced as a flat record so emit_break
@@ -1469,7 +1462,7 @@ impl Ctx {
 
     // ── Context builders (continued) ──
 
-    fn with_top_level(self, top_level_vars: TopLevelVars) -> Ctx {
+    fn with_top_level(self, top_level_vars: List<TopLevelVarMeta>) -> Ctx {
         self with { top_level_vars }
     }
 

@@ -2,29 +2,29 @@
 
 use core.{Expr, SExpr, VarBinding, ValueType, vtype_struct_name, vtype_enum_name}
 use core.{avra_llvm_append_basic_block, avra_llvm_position_at_end, avra_llvm_get_insert_block, avra_llvm_function_type, avra_llvm_add_function, avra_llvm_type_array_new, avra_llvm_type_array_set, avra_llvm_type_array_free, avra_llvm_get_param, avra_llvm_count_params, avra_llvm_build_ret, avra_llvm_build_bitcast, avra_llvm_fn_type_of, avra_llvm_value_array_new, avra_llvm_value_array_set, avra_llvm_value_array_free, avra_llvm_build_call_coerce}
-use codegen.{Ctx, EmitValue, TraitMethodNames, ok_emit, err_emit, trait_decl_lookup}
+use codegen.{Ctx, EmitValue, TraitMethodMeta, ok_emit, err_emit, trait_decl_lookup}
 use core.{method_mangled_name, type_registry_id_for, type_registry_name_for}
 use features.fn_decl.{emit_first_arg}
 
-/// Find the position of `name` in a TraitMethodNames list. Used
+/// Find the position of `name` in a method list. Used
 /// to convert a method name into a vtable slot index. Returns -1
 /// when the method isn't on the trait.
-export fn trait_method_idx(methods: TraitMethodNames, name: string, idx: int) -> int {
-    match methods {
-        .End -> 0 - 1
-        .Node(n, _, _) if n == name -> idx
-        .Node(_, _, next) -> trait_method_idx(next, name, idx + 1)
+export fn trait_method_idx(methods: List<TraitMethodMeta>, name: string) -> int {
+    mut i = 0
+    while i < methods.length {
+        if methods[i].name == name { return i }
+        i = i + 1
     }
+    0 - 1
 }
 
 /// Look up a trait method's declared return type. Returns
 /// `Unknown` when the method isn't on the trait.
-fn trait_method_ret_vt(methods: TraitMethodNames, name: string) -> ValueType {
-    match methods {
-        .End -> ValueType.Unknown
-        .Node(n, vt, _) if n == name -> vt
-        .Node(_, _, next) -> trait_method_ret_vt(next, name)
+fn trait_method_ret_vt(methods: List<TraitMethodMeta>, name: string) -> ValueType {
+    for m in methods {
+        if m.name == name { return m.ret_vt }
     }
+    ValueType.Unknown
 }
 
 /// Emit a `dyn Trait` method call. Loads the concrete value and
@@ -38,7 +38,7 @@ export fn emit_trait_dispatch(ctx: Ctx, env: List<VarBinding>, obj_val: ptr, tra
     let concrete = ctx.call("avra_trait_object_value", [obj_ptr])
     let vtable = ctx.call("avra_trait_object_vtable", [obj_ptr])
     let methods = trait_decl_lookup(ctx.trait_decls, trait_name)
-    let idx = trait_method_idx(methods, method, 0)
+    let idx = trait_method_idx(methods, method)
     if idx < 0 {
         return err_emit("trait has no method `${method}`")
     }
@@ -154,37 +154,33 @@ fn build_float_vtable_wrapper(ctx: Ctx, mangled: string, real_fn: ptr, arity: in
     wrapper
 }
 
-/// Walk a TraitMethodNames list and append one closure-wrapped
-/// fn pointer per method to `vtable`. Float-returning methods
-/// route through `build_float_vtable_wrapper` to dodge the ABI
-/// mismatch. Falls back to TypeRegistry lookups when the
-/// directly-mangled name isn't found (handles renamed types).
-export fn push_vtable_entries_call(ctx: Ctx, vtable: ptr, methods: TraitMethodNames, concrete_name: string) {
-    match methods {
-        .End -> {}
-        .Node(method_name, method_ret_vt, next) -> {
-            let mangled = method_mangled_name(concrete_name, method_name)
-            mut fn_val = ctx.get_fn(mangled)
-            // Fallback: resolve via TypeRegistry
-            if fn_val == null {
-                let tid = type_registry_id_for(ctx.type_reg, concrete_name)
-                let canonical = type_registry_name_for(ctx.type_reg, tid)
-                if canonical != "" {
-                    fn_val = ctx.get_fn(method_mangled_name(canonical, method_name))
-                }
+/// Walk the trait method list and append one closure-wrapped fn
+/// pointer per method to `vtable`. Float-returning methods route
+/// through `build_float_vtable_wrapper` to dodge the ABI mismatch.
+/// Falls back to TypeRegistry lookups when the directly-mangled
+/// name isn't found (handles renamed types).
+export fn push_vtable_entries_call(ctx: Ctx, vtable: ptr, methods: List<TraitMethodMeta>, concrete_name: string) {
+    for m in methods {
+        let mangled = method_mangled_name(concrete_name, m.name)
+        mut fn_val = ctx.get_fn(mangled)
+        // Fallback: resolve via TypeRegistry
+        if fn_val == null {
+            let tid = type_registry_id_for(ctx.type_reg, concrete_name)
+            let canonical = type_registry_name_for(ctx.type_reg, tid)
+            if canonical != "" {
+                fn_val = ctx.get_fn(method_mangled_name(canonical, m.name))
             }
-            // For float-returning methods, use a wrapper to avoid ABI mismatch
-            let ret_vt = ctx.resolve_codegen_vtype(method_ret_vt)
-            let arity = avra_llvm_count_params(fn_val)
-            let target = match ret_vt {
-                .Float -> build_float_vtable_wrapper(ctx, mangled, fn_val, arity)
-                _ -> fn_val
-            }
-            let fn_i64 = ctx.ptr_to_int(target, "vfn_ptr")
-            let closure = ctx.closure_array(fn_i64)
-            ctx.array_push(vtable, ctx.to_i64(closure, "vcl_i64"))
-            push_vtable_entries_call(ctx, vtable, next, concrete_name)
         }
+        // For float-returning methods, use a wrapper to avoid ABI mismatch
+        let ret_vt = ctx.resolve_codegen_vtype(m.ret_vt)
+        let arity = avra_llvm_count_params(fn_val)
+        let target = match ret_vt {
+            .Float -> build_float_vtable_wrapper(ctx, mangled, fn_val, arity)
+            _ -> fn_val
+        }
+        let fn_i64 = ctx.ptr_to_int(target, "vfn_ptr")
+        let closure = ctx.closure_array(fn_i64)
+        ctx.array_push(vtable, ctx.to_i64(closure, "vcl_i64"))
     }
 }
 

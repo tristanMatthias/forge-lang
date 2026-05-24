@@ -4,7 +4,7 @@ use core.{Expr, FieldEntry, ParamEntry, Stmt, ValueType, VarBinding, Variant, SS
 use parse.{parse_int_literal}
 use core.{avra_llvm_const_int}
 use core.{avra_process_env_get}
-use codegen.{Ctx, CgNewtypeReg, CgUnionAliasReg, TypeRegs, DeferStack, RcCleanupStack, EmitValue, EnumReg, EnumLookup, FnParamTypes, FnRetTypes, LoopStack, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for_full, llvm_type_for_full_sized, ok_emit, ok_stmt, struct_reg_lookup, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup}
+use codegen.{Ctx, CgNewtypeReg, CgUnionAliasReg, TypeRegs, DeferStack, RcCleanupStack, EmitValue, EnumReg, EnumLookup, FnParamMeta, FnRetTypes, LoopStack, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVarMeta, TraitDeclReg, TraitMethodMeta, err_emit, err_stmt, llvm_type_for_full, llvm_type_for_full_sized, ok_emit, ok_stmt, struct_reg_lookup, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup}
 use codegen.{analyze_releasable, analyze_copy_types}
 use codegen.{analyze_cycles, cycle_set_has}
 use core.{build_registry}
@@ -303,12 +303,14 @@ fn codegen_program(stmts: List<SStmt>, debug_null_checks: bool, coverage: bool, 
     avra_llvm_struct_set_body(union_st, union_arr, 2, 0)
     avra_llvm_type_array_free(union_arr)
     let trait_decls = collect_trait_decls(stmts, trait_decl_reg_new())
-    let top_level_vars = declare_globals(m, lc, i64t, i1t, dt, pt, structs, enums, stmts, TopLevelVars.End)
+    let empty_top: List<TopLevelVarMeta> = []
+    let top_level_vars = declare_globals(m, lc, i64t, i1t, dt, pt, structs, enums, stmts, empty_top)
     let type_regs = TypeRegs { structs, enums, newtypes: cg_newtypes, union_aliases: cg_union_aliases }
     let i8t = avra_llvm_int8_type(lc)
     let i16t = avra_llvm_int16_type(lc)
     let fn_rets = declare_functions(m, lc, i64t, i1t, dt, pt, i8t, i16t, i32t, type_regs, trait_decls, stmts, fn_ret_types_new())
-    let fn_params = collect_fn_params(stmts, FnParamTypes.End)
+    let empty_fp: List<FnParamMeta> = []
+    let fn_params = collect_fn_params(stmts, empty_fp)
 
     // Synthesize a wrapper function for the top-level non-function
     // statements. If the source already defines its own `fn main`,
@@ -733,12 +735,14 @@ fn fill_and_register_structs_ext(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr
 /// Declare a single LLVM global for an `export let / mut / const`
 /// binding. Initializes to null/zero of the appropriate LLVM type;
 /// the actual init expression runs in `emit_top_level_init`.
-fn declare_one_global(m: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, structs: StructReg, enums: EnumReg, name: string, ty_vt: ValueType, reg: TopLevelVars) -> TopLevelVars {
+fn declare_one_global(m: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, structs: StructReg, enums: EnumReg, name: string, ty_vt: ValueType, reg: List<TopLevelVarMeta>) -> List<TopLevelVarMeta> {
     let vt = if !vtype_is_unknown(ty_vt) { ty_vt } else { ValueType.Int }
     let llvm_ty = llvm_type_for_full(i64t, i1t, dt, pt, vt)
     let g = avra_llvm_add_global(m, llvm_ty, name)
     avra_llvm_set_initializer(g, avra_llvm_const_null(llvm_ty))
-    TopLevelVars.Node(name, g, vt, reg)
+    mut out = reg
+    out = out.push(TopLevelVarMeta { name: name, llvm_global: g, ty: vt })
+    out
 }
 
 /// Declare a global for a `const` binding. When the initializer is
@@ -750,7 +754,7 @@ fn declare_one_global(m: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, structs: St
 /// the literal. This sidesteps j7ly: at -O2 the linker's dedup of
 /// duplicate __init_@std symbols was previously stripping the only
 /// store path, leaving consts at zero.
-fn declare_one_const_global(m: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, structs: StructReg, enums: EnumReg, name: string, ty_vt: ValueType, init: Expr, reg: TopLevelVars) -> TopLevelVars {
+fn declare_one_const_global(m: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, structs: StructReg, enums: EnumReg, name: string, ty_vt: ValueType, init: Expr, reg: List<TopLevelVarMeta>) -> List<TopLevelVarMeta> {
     let vt = if !vtype_is_unknown(ty_vt) { ty_vt } else { ValueType.Int }
     let llvm_ty = llvm_type_for_full(i64t, i1t, dt, pt, vt)
     let g = avra_llvm_add_global(m, llvm_ty, name)
@@ -761,7 +765,9 @@ fn declare_one_const_global(m: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, struc
     // imports them. linkonce_odr lets the linker keep one copy
     // instead of failing on the duplicate.
     avra_llvm_set_linkonce_odr(g)
-    TopLevelVars.Node(name, g, vt, reg)
+    mut out = reg
+    out = out.push(TopLevelVarMeta { name: name, llvm_global: g, ty: vt })
+    out
 }
 
 /// Best-effort folding of a const initializer expression to an LLVM
@@ -791,7 +797,7 @@ fn const_initializer_for(init: Expr, llvm_ty: ptr, i64t: ptr, i1t: ptr) -> ptr {
 
 /// Walk the AST collecting every top-level `let` / `mut` / `const`
 /// and emit an LLVM global for it. Recurses into modules.
-fn declare_globals(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, structs: StructReg, enums: EnumReg, stmts: List<SStmt>, reg: TopLevelVars) -> TopLevelVars {
+fn declare_globals(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, structs: StructReg, enums: EnumReg, stmts: List<SStmt>, reg: List<TopLevelVarMeta>) -> List<TopLevelVarMeta> {
     mut cur = reg
     mut i = 0
     while i < stmts.length {
@@ -1251,20 +1257,16 @@ fn collect_trait_decls(stmts: List<SStmt>, reg: TraitDeclReg) -> TraitDeclReg {
 
 /// Pull the method names + return ValueTypes out of a trait body.
 /// Both `extern fn` (signature only) and `fn` (default impl) count
-/// as trait methods. Walks the list from end to start so the
-/// resulting cons-cell `TraitMethodNames` preserves source order
-/// (same as the original head-recursive walk).
-fn collect_trait_fn_names(stmts: List<SStmt>) -> TraitMethodNames {
-    mut out: TraitMethodNames = .End
-    mut i = stmts.length - 1
-    while i >= 0 {
-        let ss = stmts[i]
-        out = match stmt_unwrap(ss.node) {
-            .ExternFn(name, _, ret_vt) -> .Node(name, ret_vt, out)
-            .Function(name, _, _, ret_vt, _) -> .Node(name, ret_vt, out)
-            _ -> out
+/// as trait methods. Walks the list start-to-end (List.push appends,
+/// so order is preserved naturally).
+fn collect_trait_fn_names(stmts: List<SStmt>) -> List<TraitMethodMeta> {
+    mut out: List<TraitMethodMeta> = []
+    for ss in stmts {
+        match stmt_unwrap(ss.node) {
+            .ExternFn(name, _, ret_vt) -> out = out.push(TraitMethodMeta { name, ret_vt })
+            .Function(name, _, _, ret_vt, _) -> out = out.push(TraitMethodMeta { name, ret_vt })
+            _ -> {}
         }
-        i = i - 1
     }
     out
 }
@@ -1470,23 +1472,19 @@ fn params_to_type_list(params: List<ParamEntry>) -> List<ValueType> {
 }
 
 /// Walk the AST collecting every function's parameter type list
-/// into a `FnParamTypes` registry. Used by call sites to coerce
+/// into a `List<FnParamMeta>` registry. Used by call sites to coerce
 /// arguments to declared param types. Recurses into impls + modules.
-fn collect_fn_params(stmts: List<SStmt>, reg: FnParamTypes) -> FnParamTypes {
+fn collect_fn_params(stmts: List<SStmt>, reg: List<FnParamMeta>) -> List<FnParamMeta> {
     mut cur = reg
-    mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
-        let stmt = stmt_unwrap(ss.node)
-        cur = match stmt {
+    for ss in stmts {
+        match stmt_unwrap(ss.node) {
             .Function(name, _, params, _, _) -> {
-                .Node(name, params_to_type_list(params), cur)
+                cur = cur.push(FnParamMeta { name, params: params_to_type_list(params) })
             }
-            .Impl(_, methods) -> collect_fn_params(methods, cur)
-            .Module(_, body) -> collect_fn_params(body, cur)
-            _ -> cur
+            .Impl(_, methods) -> cur = collect_fn_params(methods, cur)
+            .Module(_, body) -> cur = collect_fn_params(body, cur)
+            _ -> {}
         }
-        i = i + 1
     }
     cur
 }
@@ -1619,7 +1617,8 @@ fn emit_top_level_init(ctx: Ctx, env: List<VarBinding>, name: string, init: Expr
     } else {
         ctx.store(r.value, g.llvm_global)
     }
-    let updated_top = TopLevelVars.Node(name, g.llvm_global, r.ty, ctx.top_level_vars)
-    let updated_cg = ctx.with_top_level(updated_top)
+    mut tlv = ctx.top_level_vars
+    tlv = tlv.push(TopLevelVarMeta { name: name, llvm_global: g.llvm_global, ty: r.ty })
+    let updated_cg = ctx.with_top_level(tlv)
     Result.Ok(StmtResult { ctx: updated_cg, env })
 }
