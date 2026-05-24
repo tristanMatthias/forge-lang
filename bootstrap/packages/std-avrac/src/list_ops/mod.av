@@ -55,3 +55,12 @@ export fn list_all<T>(xs: List<T>, pred: fn(T) -> bool) -> bool {
 export fn list_each<T>(xs: List<T>, step: fn(T) -> void) {
     for x in xs { step(x) }
 }
+
+/// Concatenate `a ++ b` into a fresh `List<T>`. Both inputs are
+/// left intact. O(N+M) — copies element references, no deep clone.
+export fn list_concat<T>(a: List<T>, b: List<T>) -> List<T> {
+    mut out: List<T> = []
+    for x in a { out = out.push(x) }
+    for x in b { out = out.push(x) }
+    out
+}

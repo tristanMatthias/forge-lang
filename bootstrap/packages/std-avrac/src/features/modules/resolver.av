@@ -10,6 +10,7 @@ use build.{metadata_read, metadata_file_exists, synthesize_unit_body}
 use build.{cache_for, entry_source_meta_path, Fingerprint, package_source_fingerprint}
 use @std.crypto.{sha256_hex, sha256_file}
 use features.modules.{list_avra_module_files, list_avra_module_subdirs}
+use list_ops.{list_concat}
 
 extern fn avra_bytes_to_hex(b: bytes) -> string
 extern fn avra_uptime_ms() -> int
@@ -428,7 +429,7 @@ export fn resolve_module_files(stmts: List<SStmt>, dir: string, loaded: LoadedPa
     // forge-crafting-intepreters-dnq4.
     let deduped = dedup_modules(split.packages)
     ModListResult {
-        stmts: append_stmt_list(deduped, split.body),
+        stmts: list_concat(deduped, split.body),
         loaded: inner.loaded,
         had_error: false,
         error_message: "",
@@ -482,10 +483,10 @@ export fn resolve_dir_module_body(dir: string, loaded: LoadedPaths) -> ModListRe
             }
         }
         acc_loaded = LoadedPaths.Node(path, acc_loaded)
-        acc = stmt_list_concat(acc, parsed.stmts!)
+        acc = list_concat(acc, parsed.stmts!)
         i = i + 1
     }
-    acc = stmt_list_concat(acc, synthesize_subdir_module_decls(dir))
+    acc = list_concat(acc, synthesize_subdir_module_decls(dir))
     ModListResult { stmts: acc, loaded: acc_loaded, had_error: false, error_message: "" }
 }
 
@@ -558,26 +559,6 @@ fn path_basename(p: string) -> string {
         i = prev
     }
     trimmed
-}
-
-// Append `right` to the end of `left`, returning a fresh list
-// whose nodes are `left`'s followed by `right`'s. Used by
-// `resolve_dir_module_body` to fold each file's parsed stmts onto
-// the running accumulator. Linear in `left`'s length — fine here
-// because the per-directory file count is small (typically <30).
-fn stmt_list_concat(left: List<SStmt>, right: List<SStmt>) -> List<SStmt> {
-    mut out: List<SStmt> = []
-    mut i = 0
-    while i < left.length {
-        out.push(left[i])
-        i = i + 1
-    }
-    mut j = 0
-    while j < right.length {
-        out.push(right[j])
-        j = j + 1
-    }
-    out
 }
 
 // True iff `stmts` contains at least one `mod foo` declaration with
@@ -673,7 +654,7 @@ fn mod_group_merge(acc: List<ModGroupItem>, name: string, body: List<SStmt>, lin
     while i < local.length {
         match local[i] {
             .Group(n, b, l, c) if n == name -> {
-                local.set(i, ModGroupItem.Group(n, append_stmt_list(b, body), l, c))
+                local.set(i, ModGroupItem.Group(n, list_concat(b, body), l, c))
                 return
             }
             _ -> {}
@@ -833,24 +814,6 @@ export fn hoist_package_modules(stmts: List<SStmt>) -> HoistSplit {
 /// SStmt can pass through verbatim, preserving span identity.
 fn has_no_packages(split: HoistSplit) -> bool {
     split.packages.length == 0
-}
-
-/// Concat two stmt lists order-preservingly. Pulled in here so
-/// `resolve_module_files` can reuse it for the hoist append without
-/// dragging in another module dependency.
-fn append_stmt_list(a: List<SStmt>, b: List<SStmt>) -> List<SStmt> {
-    mut out: List<SStmt> = []
-    mut i = 0
-    while i < a.length {
-        out.push(a[i])
-        i = i + 1
-    }
-    mut j = 0
-    while j < b.length {
-        out.push(b[j])
-        j = j + 1
-    }
-    out
 }
 
 /// True when the use path is a `@scope.pkg` package import
@@ -1109,7 +1072,7 @@ fn resolve_package_use_and_continue(ss: SStmt, next: List<SStmt>, dir: string, l
     // submodule that contributed to the cached unit.
     let empty_subdir: List<SStmt> = []
     let pkg_subdir_decls = if take_meta_fast_path { empty_subdir } else { synthesize_subdir_module_decls_filtered(pkg_dir, pkg_stmts) }
-    let pkg_combined_stmts = stmt_list_concat(stmt_list_concat(pkg_stmts, pkg_dir_load.stmts), pkg_subdir_decls)
+    let pkg_combined_stmts = list_concat(list_concat(pkg_stmts, pkg_dir_load.stmts), pkg_subdir_decls)
     let resolved = resolve_module_files_inner(pkg_combined_stmts, pkg_dir, pkg_dir_load.loaded, stack)
     if resolved.had_error { return resolved }
     // Create a nested module structure: @std → cli → {body}
@@ -1191,7 +1154,7 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths, stack: Impo
         // subdirs in `dir`.
         .Module(name, body) if (name.length > 0 && name[0] == "@") || !stmt_list_is_empty(body) -> {
             let combined = if name.length > 0 && name[0] == "@" {
-                stmt_list_concat(body, synthesize_subdir_module_decls_filtered(dir, body))
+                list_concat(body, synthesize_subdir_module_decls_filtered(dir, body))
             } else {
                 body
             }
@@ -1317,7 +1280,7 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths, stack: Impo
             if dir_load.had_error {
                 return ModStmtResult { stmt, loaded: dir_load.loaded, had_error: true, error_message: dir_load.error_message }
             }
-            let combined_stmts = stmt_list_concat(mod_stmts, dir_load.stmts)
+            let combined_stmts = list_concat(mod_stmts, dir_load.stmts)
             let post_dir_loaded = dir_load.loaded
             let resolved = resolve_module_files_inner(combined_stmts, mod_dir, post_dir_loaded, new_stack)
             if resolved.had_error {

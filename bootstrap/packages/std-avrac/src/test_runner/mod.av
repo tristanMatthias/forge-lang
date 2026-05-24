@@ -28,6 +28,7 @@ use features.modules.{
 use parse.{parse_program_source_at}
 use diagnostics.{bag_has_errors, render_bag}
 use pathutil.{basename_no_ext}
+use list_ops.{list_concat}
 use @std.crypto.{sha256_hex, sha256_file}
 
 /// Drop every `extern fn` declaration from the list.
@@ -256,22 +257,6 @@ export fn test_reporter_path(project_dir: string) -> string {
     find_packages_dir(project_dir) + "std-avrac/src/features/spec_test/reporter.av"
 }
 
-/// Concatenate two statement lists. Order-preserving: every node
-/// from `a` comes before every node from `b`.
-export fn append_stmt_list(a: List<SStmt>, b: List<SStmt>) -> List<SStmt> {
-    mut out: List<SStmt> = []
-    mut i = 0
-    while i < a.length {
-        out.push(a[i])
-        i = i + 1
-    }
-    mut j = 0
-    while j < b.length {
-        out.push(b[j])
-        j = j + 1
-    }
-    out
-}
 
 /// One test file's contribution to an assembled program. The body is
 /// already guard-wrapped; the @std/* packages are split out so the
@@ -354,7 +339,7 @@ export fn assemble_test_program(test_paths: List<string>, project_dir: string) -
     mut packages: List<SStmt> = []
     for path in test_paths {
         let a = assemble_one_test_file(path)?
-        packages = append_stmt_list(a.packages, packages)
+        packages = list_concat(a.packages, packages)
         modules_fwd.push(sstmt_dummy(Stmt.Module(a.mod_name, a.wrapped_body)))
     }
     if test_paths.length == 0 { return Result.Err("no spec test files found") }
@@ -366,8 +351,8 @@ export fn assemble_test_program(test_paths: List<string>, project_dir: string) -
         r = r - 1
     }
 
-    let body = append_stmt_list(load_reporter_stmts(project_dir),
-               append_stmt_list(dedup_modules(packages), modules))
+    let body = list_concat(load_reporter_stmts(project_dir),
+               list_concat(dedup_modules(packages), modules))
     mut program: List<SStmt> = [synth_test_main()]
     let with_externs = prepend_test_externs(body)
     mut i = 0

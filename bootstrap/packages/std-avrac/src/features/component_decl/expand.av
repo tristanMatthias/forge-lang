@@ -12,6 +12,7 @@
 
 use core.{Expr, Stmt, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, FieldEntry, FieldInit, ParamEntry, ValueType, CompConfig, CompConfigPair, ChildrenSlot, TypeParamEntry, find_annotation}
 use core.{has_fn, find_fn_body}
+use list_ops.{list_concat}
 
 // ── Public API ──
 
@@ -490,22 +491,6 @@ fn extract_methods(body: List<SStmt>, comp_name: string) -> List<SStmt> {
     out
 }
 
-/// Concatenate two List<SStmt>s. Used to splice the synthesized
-/// struct + impl + factory into the surrounding scope.
-fn append_stmt_lists(a: List<SStmt>, b: List<SStmt>) -> List<SStmt> {
-    mut out: List<SStmt> = []
-    mut i = 0
-    while i < a.length {
-        out.push(a[i])
-        i = i + 1
-    }
-    mut j = 0
-    while j < b.length {
-        out.push(b[j])
-        j = j + 1
-    }
-    out
-}
 
 /// Prepend a single statement onto `rest`, attaching the given
 /// line/col span info. Used by the splice helpers when emitting
@@ -553,7 +538,7 @@ export fn splice_component_def(name: string, params: List<ParamEntry>, config: L
     // Template components (with init hooks): no type/factory generation
     if has_fn(body, "init") {
         let methods = extract_methods(body, name)
-        return append_stmt_lists(methods, rest)
+        return list_concat(methods, rest)
     }
 
     // Data components: generate struct type + factory function
@@ -596,7 +581,7 @@ export fn splice_component_def(name: string, params: List<ParamEntry>, config: L
     let methods = extract_methods(body, name)
 
     mut out: List<SStmt> = [sstmt(type_decl, line, col), sstmt(factory, line, col)]
-    let with_methods = append_stmt_lists(methods, rest)
+    let with_methods = list_concat(methods, rest)
     mut wi = 0
     while wi < with_methods.length {
         out.push(with_methods[wi])
@@ -784,23 +769,23 @@ fn splice_template_block(comp: string, inst: string, config: List<CompConfigPair
 
     if has_fn(def.body, "__on_after_children") {
         let rewritten = rw_template(find_fn_body(def.body, "__on_after_children"), inst, config, def.config, rw_ctx)
-        stmts = append_stmt_lists(rewritten, stmts)
+        stmts = list_concat(rewritten, stmts)
     }
 
     let child_nest = CompNestCtx { parent_var: accum_var, parent_name: inst, parent_children: def.children }
     let expanded_body = expand_stmt_list(body, reg, child_nest)
-    stmts = append_stmt_lists(expanded_body, stmts)
+    stmts = list_concat(expanded_body, stmts)
 
     if has_fn(def.body, "init") {
         let rewritten = rw_template(find_fn_body(def.body, "init"), inst, config, def.config, rw_ctx)
-        stmts = append_stmt_lists(rewritten, stmts)
+        stmts = list_concat(rewritten, stmts)
     }
 
     if is_root {
         stmts = prepend_stmt(Stmt.Mut(inst, ValueType.Unknown, Expr.Number("0")), line, col, stmts)
     }
 
-    append_stmt_lists(stmts, rest)
+    list_concat(stmts, rest)
 }
 
 /// Splice the data-flavour expansion of a component block.
@@ -826,7 +811,7 @@ fn splice_data_block(comp: string, inst: string, config: List<CompConfigPair>, b
 
     if def.found && has_fn(def.body, "__on_after_children") {
         let rewritten = rewrite_self(find_fn_body(def.body, "__on_after_children"), rw_ctx)
-        stmts = append_stmt_lists(rewritten, stmts)
+        stmts = list_concat(rewritten, stmts)
     }
 
     // Children expand inside this block see THIS instance as their
@@ -834,11 +819,11 @@ fn splice_data_block(comp: string, inst: string, config: List<CompConfigPair>, b
     // current component's children schema for slot resolution.
     let child_nest = CompNestCtx { parent_var: inst, parent_name: inst, parent_children: def.children }
     let expanded_body = expand_stmt_list(body, reg, child_nest)
-    stmts = append_stmt_lists(expanded_body, stmts)
+    stmts = list_concat(expanded_body, stmts)
 
     if def.found && has_fn(def.body, "init") {
         let rewritten = rewrite_self(find_fn_body(def.body, "init"), rw_ctx)
-        stmts = append_stmt_lists(rewritten, stmts)
+        stmts = list_concat(rewritten, stmts)
     }
 
     // Auto-push (vez6.7.6): if this nested instance fills a slot in
@@ -848,7 +833,7 @@ fn splice_data_block(comp: string, inst: string, config: List<CompConfigPair>, b
     let push_slot = slot_name_for_child(nest.parent_children, comp)
     let with_push: List<SStmt> = if push_slot != "" && nest.parent_var != "" {
         mut wp: List<SStmt> = [build_push_stmt(nest.parent_var, push_slot, inst, line, col)]
-        let tail = append_stmt_lists(stmts, rest)
+        let tail = list_concat(stmts, rest)
         mut wpi = 0
         while wpi < tail.length {
             wp.push(tail[wpi])
@@ -856,7 +841,7 @@ fn splice_data_block(comp: string, inst: string, config: List<CompConfigPair>, b
         }
         wp
     } else {
-        append_stmt_lists(stmts, rest)
+        list_concat(stmts, rest)
     }
 
     // When the component declares a children schema, the binding must
