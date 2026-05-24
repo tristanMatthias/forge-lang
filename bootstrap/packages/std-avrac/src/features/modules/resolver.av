@@ -128,14 +128,6 @@ fn record_meta_dep(producer_path: string) {
     let _ = avra_selfhost_append_file(deps_out, line)
 }
 
-// True iff the List<SStmt> has no elements. Used by resolve_module_stmt
-// to distinguish a parser-emitted bare `mod foo` stub (empty body,
-// needs file load) from a pre-populated Module wrapper produced by
-// cli's --module_path (body already resolved, just recurse).
-fn stmt_list_is_empty(stmts: List<SStmt>) -> bool {
-    stmts.length == 0
-}
-
 /// Set of file paths the resolver has already loaded — prevents
 /// double-parsing when two modules import the same file.
 export enum LoadedPaths {
@@ -573,9 +565,9 @@ fn stmts_have_mod_decl(stmts: List<SStmt>) -> bool {
     while i < stmts.length {
         let ss = stmts[i]
         let is_mod = match ss.node {
-            .Module(_, body) -> stmt_list_is_empty(body)
+            .Module(_, body) -> body.length == 0
             .Annotated(_, inner) -> match inner {
-                .Module(_, body) -> stmt_list_is_empty(body)
+                .Module(_, body) -> body.length == 0
                 _ -> false
             }
             _ -> false
@@ -1152,7 +1144,7 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths, stack: Impo
         // for `<dir>/@std.avrac.av` (which doesn't exist) and fail.
         // The package's content comes entirely from auto-discovered
         // subdirs in `dir`.
-        .Module(name, body) if (name.length > 0 && name[0] == "@") || !stmt_list_is_empty(body) -> {
+        .Module(name, body) if (name.length > 0 && name[0] == "@") || !body.length == 0 -> {
             let combined = if name.length > 0 && name[0] == "@" {
                 list_concat(body, synthesize_subdir_module_decls_filtered(dir, body))
             } else {

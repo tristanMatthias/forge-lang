@@ -116,8 +116,8 @@ fn dump_top_level(stmts: List<SStmt>, indent: string) -> int {
         let ss = stmts[i]
         match ss.node {
             .Module(name, body) -> {
-                eprintln("[dump] ${indent}Module(${name}) [body_empty=${stmt_list_empty(body)}]")
-                if !stmt_list_empty(body) {
+                eprintln("[dump] ${indent}Module(${name}) [body_empty=${body.length == 0}]")
+                if body.length != 0 {
                     let _ = dump_top_level(body, indent + "  ")
                 }
             }
@@ -143,7 +143,7 @@ fn filter_inner(stmts: List<SStmt>, target_prefix: string, debug: bool) -> List<
                     if debug { eprintln("[filter] keep Module ${name}") }
                     let inner = filter_inner(body, target_prefix, debug)
                     sstmt_at(Stmt.Module(name, inner), ss.line, ss.col, ss.file)
-                } else if !stmt_list_empty(body) {
+                } else if body.length != 0 {
                     if debug { eprintln("[filter] external Module ${name}") }
                     annotate_external(ss)
                 } else {
@@ -157,7 +157,7 @@ fn filter_inner(stmts: List<SStmt>, target_prefix: string, debug: bool) -> List<
                         if debug { eprintln("[filter] keep Annotated Module ${name}") }
                         let inner_filtered = filter_inner(body, target_prefix, debug)
                         sstmt_at(Stmt.Annotated(annots, Stmt.Module(name, inner_filtered)), ss.line, ss.col, ss.file)
-                    } else if !stmt_list_empty(body) {
+                    } else if body.length != 0 {
                         if debug { eprintln("[filter] external Annotated Module ${name}") }
                         annotate_external(ss)
                     } else {
@@ -172,8 +172,4 @@ fn filter_inner(stmts: List<SStmt>, target_prefix: string, debug: bool) -> List<
         i = i + 1
     }
     out
-}
-
-fn stmt_list_empty(s: List<SStmt>) -> bool {
-    s.length == 0
 }
