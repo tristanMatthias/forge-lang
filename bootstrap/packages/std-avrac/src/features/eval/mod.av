@@ -56,8 +56,8 @@ export type StructField = {
 ///
 /// fwyx: added `"list"` and `"struct"` kinds so the comptime
 /// decoder can read AST list / struct payloads directly off the
-/// produced Value, instead of walking enum cons-cells. Unblocks
-/// the ExprList / ParamList / StmtList retirements (lkze.9 #18-#20, now shipped).
+/// produced Value, instead of walking enum cons-cells. This is what
+/// unblocked the list-enum→List<T> migrations (lkze.9 + kpbp).
 ///
 /// kind = "number" | "string" | "bool" | "null"
 ///      | "function" | "builtin"
@@ -747,9 +747,8 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
         // fwyx: real list / struct kinds on Value — eval the
         // elements / inits and assemble a list / struct Value so
         // the comptime decoder can read AST list / struct payloads
-        // directly (post lkze.9 ExprList retirement, lower.av emits
-        // Expr.ListLit + Expr.StructLit for AST list / struct
-        // payloads instead of cons-cell EnumCtors).
+        // directly. lower.av emits Expr.ListLit + Expr.StructLit
+        // for AST list / struct payloads.
         .ListLit(elems) -> eval_list_lit(runtime, elems)
         .StructLit(type_name, inits) -> eval_struct_lit(runtime, type_name, inits)
         .Unary(op, right) -> eval_unary(runtime, op, right)

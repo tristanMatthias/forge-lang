@@ -1459,8 +1459,9 @@ fn tc_check_fn_call_with(checked: TC, name: string, args: List<SExpr>, rec: FnTy
     // F9004 when a concrete arg type isn't assignable to its concrete
     // param type. Off by default — the existing typeck has gaps in
     // component-expansion-synthesised bindings that would otherwise spam.
-    // Used during the lkze.9 refactor to catch silent ExprList vs
-    // List<SExpr> ptr-shape coercions before they corrupt runtime.
+    // Originally added during the lkze.9 list-enum→List<T> refactor to
+    // catch silent ptr-shape coercions; kept around as an opt-in
+    // tightness probe for future migrations.
     let strict_checked = if avra_process_env_get("AVRA_STRICT_ARGS") != "" {
         tc_strict_arg_types(newtype_checked, name, rec.tp, rec.params, args)
     } else {

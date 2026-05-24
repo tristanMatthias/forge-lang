@@ -15,7 +15,7 @@ use core.{type_registry_id_for, variant_payload_name}
 export fn emit_enum_ctor(ctx: Ctx, env: List<VarBinding>, type_name: string, variant: string, args: List<SExpr>) -> Result<EmitValue, string> {
     // Contextual resolution: `.Variant` with empty type_name.
     // Use arity-aware lookup to disambiguate variants with the same
-    // name but different field counts (e.g. LoopStack.Frame vs DeferStack.Frame).
+    // name but different field counts.
     let arg_count = args.length
     let resolved_name = if type_name == "" {
         let found = enum_reg_find_by_variant_arity(ctx.enums, variant, arg_count)
