@@ -3,7 +3,7 @@
 // checking and before codegen. After this pass, the AST contains no
 // generic declarations — codegen sees only concrete code.
 
-use core.{Expr, SExpr, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, SStmt, ParamEntry, FieldEntry, FieldInit, Variant, MatchArm, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge, SelectArm}
+use core.{Expr, SExpr, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, SStmt, ParamEntry, FieldEntry, FieldInit, Variant, MatchArm, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge, SelectArm, Annotation}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_warning, span_new}
 use typeck.{TraitImplReg, type_implements_trait}
 use core.{mangle_join, type_short_name}
@@ -1144,7 +1144,15 @@ fn try_add_struct_inst(name: string, inits: List<FieldInit>, regs: GenRegs, st: 
 fn specialize_fn(mangled: string, params: List<ParamEntry>, ret_vt: ValueType, body: List<SStmt>, ta: List<TypeArg>) -> Stmt {
     let concrete_ret_vt = substitute_vtype(ret_vt, ta)
     let empty_tp: List<TypeParamEntry> = []
-    Stmt.Function(mangled, empty_tp, substitute_params(params, ta), concrete_ret_vt, substitute_stmts(body, ta))
+    let fn_stmt = Stmt.Function(mangled, empty_tp, substitute_params(params, ta), concrete_ret_vt, substitute_stmts(body, ta))
+    // Wrap with @mono_spec so codegen knows to emit `linkonce_odr`
+    // linkage. Each consuming .o that monomorphizes the same generic
+    // would otherwise emit a duplicate global symbol, breaking the
+    // final link in library-mode (multiple packages share specs).
+    let empty_args: List<SExpr> = []
+    mut annots: List<Annotation> = []
+    annots.push(Annotation { name: "mono_spec", args: empty_args })
+    Stmt.Annotated(annots, fn_stmt)
 }
 /// Specialise a generic enum — mirror of `specialize_fn` but
 /// for enum decls. Substitutes type params in every variant's

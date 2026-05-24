@@ -32,6 +32,7 @@ use core.{
     Tk,
 }
 use parse.{parser_new_with_file}
+use list_ops.{list_filter}
 
 // ── Walker ──────────────────────────────────────────────────────────
 
@@ -261,22 +262,14 @@ fn skip_paren_group(p: Parser) {
 /// file that owns at least one test entry AND does NOT declare its
 /// own `fn main(`. Sort order: by path, lexicographic — stable across
 /// runs so cache keys + diagnostic order are reproducible.
-///
-/// Filter inlined as a single-pass loop rather than via
-/// `list_ops.list_filter<DiscoveredFile>` because library-mode mono
-/// would emit the specialisation in both `@std::avrac` and the
-/// consuming test shard, producing a duplicate-symbol link error.
 export fn discover_tests(root: string) -> List<DiscoveredFile> {
     let paths = sort_paths(walk_av_files(root))
-    mut out: List<DiscoveredFile> = []
+    mut classified: List<DiscoveredFile> = []
     for path in paths {
         if avra_selfhost_file_exists(path) == 0 { continue }
-        let d = classify_av_source(path, avra_selfhost_read_file(path))
-        if d.has_top_main { continue }
-        if d.entries.length == 0 { continue }
-        out.push(d)
+        classified.push(classify_av_source(path, avra_selfhost_read_file(path)))
     }
-    out
+    list_filter(classified, (d: DiscoveredFile) -> !d.has_top_main && d.entries.length > 0)
 }
 
 /// Lexicographic sort for path lists. Uses the language's string
