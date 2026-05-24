@@ -74,9 +74,9 @@ fn is_av_source(name: string) -> bool {
 /// inspection at every recursion site.
 fn path_join(prefix: string, name: string) -> string {
     if prefix.length > 0 && prefix.byte(prefix.length - 1) == 0x2F {
-        prefix + name
+        "${prefix}${name}"
     } else {
-        prefix + "/" + name
+        "${prefix}/${name}"
     }
 }
 

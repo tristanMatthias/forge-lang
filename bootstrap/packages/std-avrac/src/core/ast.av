@@ -519,6 +519,18 @@ export fn vtype_is_unknown(t: ValueType) -> bool { t is .Unknown }
 /// True iff `t` is the `string` type.
 export fn vtype_is_str(t: ValueType) -> bool { t is .Str }
 
+/// True iff `t` is an unsigned sized-integer (`u8`/`u16`/`u32`/`u64`).
+/// Used by codegen to pick LLVM's unsigned ICmp predicates + zext.
+export fn vtype_is_unsigned_int(t: ValueType) -> bool {
+    t is .U8 || t is .U16 || t is .U32 || t is .U64
+}
+
+/// True iff `t` is a signed narrow sized-integer (`i8`/`i16`/`i32`).
+/// `i64` is the default `int` and not considered narrow.
+export fn vtype_is_signed_narrow_int(t: ValueType) -> bool {
+    t is .I8 || t is .I16 || t is .I32
+}
+
 /// True iff `t` is the `bytes` type.
 export fn vtype_is_bytes(t: ValueType) -> bool { t is .Bytes }
 

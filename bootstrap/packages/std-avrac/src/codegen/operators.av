@@ -1,6 +1,6 @@
 // WHY: codegen for operators — binary, unary, logical, float.
 
-use core.{Expr, VarBinding, ValueType, BinOp, UnOp, LogicOp, vtype_eq, vtype_enum_name, vtype_is_str}
+use core.{Expr, VarBinding, ValueType, BinOp, UnOp, LogicOp, vtype_eq, vtype_enum_name, vtype_is_str, vtype_is_unsigned_int, vtype_is_signed_narrow_int}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit}
 use core.{avra_covmap_next_decision_id}
 use codegen.{emit_concat, emit_str_eq, emit_str_cmp}
@@ -180,24 +180,10 @@ export fn emit_binary(ctx: Ctx, env: List<VarBinding>, left: Expr, op: BinOp, ri
     }
 }
 
-/// True iff `ty` is one of the unsigned sized-integer ValueType
-/// variants. Used by the comparison codegen to pick LLVM's unsigned
-/// ICmp predicate (ULT/ULE/UGT/UGE) instead of the signed default.
-fn vtype_is_unsigned(ty: ValueType) -> bool {
-    ty is .U8 || ty is .U16 || ty is .U32 || ty is .U64
-}
-
-/// True iff `ty` is one of the signed narrow sized-integer
-/// ValueType variants (i8/i16/i32). i64 is the default `int` and
-/// not considered narrow.
-fn vtype_is_signed_narrow(ty: ValueType) -> bool {
-    ty is .I8 || ty is .I16 || ty is .I32
-}
-
 /// True iff `ty` is any narrow sized-integer variant — used to
 /// detect when a binary op needs width normalisation.
 fn is_narrow(ty: ValueType) -> bool {
-    vtype_is_unsigned(ty) || vtype_is_signed_narrow(ty)
+    vtype_is_unsigned_int(ty) || vtype_is_signed_narrow_int(ty)
 }
 
 /// True iff a binary comparison should use unsigned ICmp. Either
@@ -205,14 +191,14 @@ fn is_narrow(ty: ValueType) -> bool {
 /// unsigned with `int` should never happen post-typeck, but the
 /// branch is cheap and keeps the codegen robust).
 fn is_unsigned_compare(lty: ValueType, rty: ValueType) -> bool {
-    vtype_is_unsigned(lty) || vtype_is_unsigned(rty)
+    vtype_is_unsigned_int(lty) || vtype_is_unsigned_int(rty)
 }
 
 /// True iff at least one operand is a signed narrow type. Used
 /// alongside `is_unsigned_compare` to gate the width-normalisation
 /// pre-pass — both signed and unsigned narrow types need rhs casting.
 fn is_signed_narrow(lty: ValueType, rty: ValueType) -> bool {
-    vtype_is_signed_narrow(lty) || vtype_is_signed_narrow(rty)
+    vtype_is_signed_narrow_int(lty) || vtype_is_signed_narrow_int(rty)
 }
 
 /// Coerce an LLVM value to f64. If it's already Float we just bit-
