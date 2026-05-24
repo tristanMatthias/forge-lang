@@ -1,6 +1,6 @@
 // WHY: compilation setup — declaration passes and top-level emission.
 
-use core.{Expr, FieldEntry, ParamEntry, Stmt, ValueType, VarBinding, Variant, SStmt, field_list_has, filter_fields_only, filter_fields_without, find_annotation, param_list_length, stmt_unwrap, variant_max_payload, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_unknown, vtype_enum_name, vtype_struct_name, env_extend}
+use core.{Expr, FieldEntry, ParamEntry, Stmt, ValueType, VarBinding, Variant, SStmt, field_list_has, filter_fields_only, filter_fields_without, find_annotation, stmt_unwrap, variant_max_payload, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_unknown, vtype_enum_name, vtype_struct_name, env_extend}
 use parse.{parse_int_literal}
 use core.{avra_llvm_const_int}
 use core.{avra_process_env_get}
@@ -1418,7 +1418,7 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, i8
         cur = match stmt {
             .Function(name, _, params, rvt, body) -> {
                 let resolved_params = resolve_param_list(params, regs)
-                let arity = param_list_length(resolved_params)
+                let arity = resolved_params.length
                 let existing = avra_llvm_get_named_function(m, name)
                 if existing != null {
                     eprintln("FATAL: duplicate function `${name}` — rename to avoid collision")
@@ -1435,7 +1435,7 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, i8
             }
             .ExternFn(name, params, ext_rvt) -> {
                 let resolved_params = resolve_param_list(params, regs)
-                let arity = param_list_length(resolved_params)
+                let arity = resolved_params.length
                 let param_arr = avra_llvm_type_array_new(arity)
                 fill_typed_param_array_sized(param_arr, i64t, i1t, dt, pt, i8t, i16t, i32t, resolved_params, 0)
                 let empty_body: List<SStmt> = []

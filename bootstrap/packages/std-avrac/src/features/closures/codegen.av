@@ -12,7 +12,7 @@
 // For non-capturing lambdas (the common case), the closure value
 // is just the function pointer with a null environment.
 
-use core.{Expr, SExpr, Stmt, ParamEntry, FieldInit, MatchArm, WhenArm, VarBinding, env_lookup, env_extend, param_list_length, ValueType, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, vtype_is_unknown}
+use core.{Expr, SExpr, Stmt, ParamEntry, FieldInit, MatchArm, WhenArm, VarBinding, env_lookup, env_extend, ValueType, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, vtype_is_unknown}
 use codegen.{Ctx, EmitValue, err_emit, null_ptr_val, ok_emit}
 use codegen.{emit_expr}
 use codegen.{analyze_releasable_expr}
@@ -544,7 +544,7 @@ export fn emit_lambda_typed(ctx: Ctx, env: List<VarBinding>, raw_params: List<Pa
     find_captures(body, params, env, captures)
     mark_mutable_captures(captures, body)
     let num_captures = captures.length
-    let num_declared = param_list_length(params)
+    let num_declared = params.length
     let arity = num_declared + num_captures
 
     // Compute effective parameter types BEFORE creating the LLVM function,

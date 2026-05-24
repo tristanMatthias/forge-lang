@@ -19,7 +19,7 @@
 // macro-produced Stmt should still go through the normal fold pass
 // so any `@comptime` calls inside its body fold correctly.
 
-use core.{Stmt, SStmt, Expr, SExpr, sstmt_at, find_annotation, stmt_unwrap, param_list_length}
+use core.{Stmt, SStmt, Expr, SExpr, sstmt_at, find_annotation, stmt_unwrap}
 use features.comptime.{CompTimeRegistry, comptime_lookup, collect_comptime_fns, value_to_stmt, stmt_to_value}
 use features.eval.{Runtime, Value, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message}
 
@@ -266,7 +266,7 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
         return null
     }
     let fn_def = lookup!
-    let arity = param_list_length(fn_def.params)
+    let arity = fn_def.params.length
     let arg_values = if arity == 1 {
         let boxed = stmt_to_value(reg.runtime, stmt)
         if boxed == null {

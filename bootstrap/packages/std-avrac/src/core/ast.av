@@ -1309,18 +1309,6 @@ export fn fn_env_extend(env: FnEnv, name: string, fn_val: ptr, arity: int) -> Fn
     FnEnv.Node(name, fn_val, arity, env)
 }
 
-/// Length of a `List<ParamEntry>`. O(1) — preserved as a helper for
-/// source-level callers that prefer the named fn over `.length`.
-export fn param_list_length(params: List<ParamEntry>) -> int {
-    params.length
-}
-
-/// Length of a `List<SExpr>`. O(1) — preserved for source
-/// compatibility while call sites migrate to `.length` directly.
-export fn expr_list_length(exprs: List<SExpr>) -> int {
-    exprs.length
-}
-
 /// Membership test for a `List<FieldEntry>`. True iff `target`
 /// matches the name of any field.
 export fn field_list_has(list: List<FieldEntry>, target: string) -> bool {

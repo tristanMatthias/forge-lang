@@ -1,6 +1,6 @@
 // WHY: trait conformance checking — verifies impl blocks provide all required methods.
 
-use core.{Stmt, SStmt, param_list_length, vtype_is_unknown, stmt_unwrap}
+use core.{Stmt, SStmt, vtype_is_unknown, stmt_unwrap}
 use diagnostics.{DiagCode}
 use typeck.{TC, tc_report, TraitRegistry, TraitMethod, trait_get, tc_owns_type}
 use core.{method_mangled_name}
@@ -118,7 +118,7 @@ fn impl_method_param_count(methods: List<SStmt>, name: string) -> int {
     mut i = 0
     while i < methods.length {
         match stmt_unwrap(methods[i].node) {
-            .Function(fn_name, _, params, _, _) if fn_name == name -> return param_list_length(params)
+            .Function(fn_name, _, params, _, _) if fn_name == name -> return params.length
             _ -> {}
         }
         i = i + 1
@@ -151,7 +151,7 @@ export fn collect_method_names_from_stmts(stmts: List<SStmt>) -> List<TraitMetho
     while i < stmts.length {
         match stmts[i].node {
             .ExternFn(name, params, _) -> {
-                out.push(TraitMethod { name: name, param_count: param_list_length(params) })
+                out.push(TraitMethod { name: name, param_count: params.length })
             }
             _ -> {}
         }

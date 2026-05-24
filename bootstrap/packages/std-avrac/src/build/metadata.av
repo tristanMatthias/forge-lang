@@ -467,10 +467,6 @@ impl BytesWriter {
     }
 }
 
-fn param_list_length(params: List<ParamEntry>) -> int {
-    params.length
-}
-
 // ── Composite list encoders ──
 //
 // FieldList / VariantList / ParamList are the building blocks of the

@@ -18,7 +18,6 @@ use build.metadata.{
 }
 use parse.{parse_int_literal}
 use fmt.{fmt_stmt_list}
-use core.{param_list_length}
 
 // Internal accumulator — each walk step folds into this and returns
 // the updated record. Lists grow via prepend so traversal stays
