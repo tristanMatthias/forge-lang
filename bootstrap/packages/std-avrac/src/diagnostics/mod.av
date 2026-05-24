@@ -400,26 +400,20 @@ export fn diag_ice(message: string) -> Diagnostic {
     Diagnostic { code: DiagCode.ICE, severity: Severity.Error, message, span: span_dummy(), help: diag_code_help(DiagCode.ICE), confidence: Confidence.High, cause: DiagnosticCause.None }
 }
 
-/// Linked list of Diagnostic. The cons-list shape lets each pass
-/// prepend in O(1) without mutating the upstream's view.
-export enum DiagnosticList {
-    End
-    Node(diag: Diagnostic, next: DiagnosticList)
-}
-
 /// Accumulator for diagnostics emitted during compilation. Carries
-/// the running list plus pre-computed error/warning counts so
-/// `bag_has_errors` is O(1) — important when each pass merges its
-/// own bag at the end.
+/// the running list (in insertion order) plus pre-computed
+/// error/warning counts so `bag_has_errors` is O(1) — important
+/// when each pass merges its own bag at the end.
 export type DiagnosticBag = {
-    diagnostics: DiagnosticList,
+    diagnostics: List<Diagnostic>,
     error_count: int,
     warning_count: int,
 }
 
 /// Empty bag — every pass starts here and grows it via `bag_report`.
 export fn bag_new() -> DiagnosticBag {
-    DiagnosticBag { diagnostics: DiagnosticList.End, error_count: 0, warning_count: 0 }
+    let empty: List<Diagnostic> = []
+    DiagnosticBag { diagnostics: empty, error_count: 0, warning_count: 0 }
 }
 
 /// Append `diag` to the bag. Updates the appropriate counter so the
@@ -433,8 +427,10 @@ export fn bag_report(bag: DiagnosticBag, diag: Diagnostic) -> DiagnosticBag {
         .Warning -> bag.warning_count + 1
         _ -> bag.warning_count
     }
+    mut updated_diags = bag.diagnostics
+    updated_diags = updated_diags.push(diag)
     DiagnosticBag {
-        diagnostics: DiagnosticList.Node(diag, bag.diagnostics),
+        diagnostics: updated_diags,
         error_count: new_errors,
         warning_count: new_warnings,
     }
@@ -460,34 +456,23 @@ export fn bag_has_code(bag: DiagnosticBag, code: DiagCode) -> bool {
     list_has_code(bag.diagnostics, code)
 }
 
-fn list_has_code(list: DiagnosticList, code: DiagCode) -> bool {
-    match list {
-        .End -> false
-        .Node(diag, next) -> {
-            if diag_code_str(diag.code) == diag_code_str(code) {
-                true
-            } else {
-                list_has_code(next, code)
-            }
-        }
+fn list_has_code(list: List<Diagnostic>, code: DiagCode) -> bool {
+    for diag in list {
+        if diag_code_str(diag.code) == diag_code_str(code) { return true }
     }
+    false
 }
 
 /// Concatenate two bags. Used between phases to roll up per-pass
-/// diagnostics into one program-level bag for rendering.
+/// diagnostics into one program-level bag for rendering. Appends b
+/// onto a so insertion order across passes is preserved.
 export fn bag_merge(a: DiagnosticBag, b: DiagnosticBag) -> DiagnosticBag {
-    merge_lists(a, b.diagnostics, b.error_count, b.warning_count)
-}
-
-/// Recursive worker for `bag_merge`. Prepends every node from
-/// `list` onto `bag.diagnostics`, then bumps the running counts in
-/// one final `with` update at the End sentinel.
-fn merge_lists(bag: DiagnosticBag, list: DiagnosticList, extra_errors: int, extra_warnings: int) -> DiagnosticBag {
-    match list {
-        .End -> bag with { error_count: bag.error_count + extra_errors, warning_count: bag.warning_count + extra_warnings }
-        .Node(diag, next) -> {
-            let updated = bag with { diagnostics: DiagnosticList.Node(diag, bag.diagnostics) }
-            merge_lists(updated, next, extra_errors, extra_warnings)
-        }
+    mut merged: List<Diagnostic> = []
+    for d in a.diagnostics { merged = merged.push(d) }
+    for d in b.diagnostics { merged = merged.push(d) }
+    DiagnosticBag {
+        diagnostics: merged,
+        error_count: a.error_count + b.error_count,
+        warning_count: a.warning_count + b.warning_count,
     }
 }

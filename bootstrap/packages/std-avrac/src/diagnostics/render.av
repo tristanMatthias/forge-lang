@@ -2,7 +2,7 @@
 // Hybrid design inspired by ariadne (box frame), miette (severity
 // symbols), Roc (Unicode separators), and codespan (connecting carets).
 
-use diagnostics.{Diagnostic, DiagnosticBag, DiagnosticList, DiagnosticCause, Span, Severity, severity_str, diag_code_str, confidence_str}
+use diagnostics.{Diagnostic, DiagnosticBag, DiagnosticCause, Span, Severity, severity_str, diag_code_str, confidence_str}
 use @std.json.{json_escape}
 use core.{avra_selfhost_file_exists, avra_selfhost_read_file}
 
@@ -260,43 +260,22 @@ export fn render_bag(source: string, filename: string, bag: DiagnosticBag) {
     }
 }
 
-/// True when the linked list has hit its End sentinel. Used by the
-/// iterative renderer below to walk the list without recursion (so
-/// large bags don't risk a stack overflow).
-fn diag_list_is_end(list: DiagnosticList) -> bool {
-    match list { .End -> true, _ -> false }
-}
-
-/// Render a DiagnosticList in two iterative passes: errors first,
+/// Render a `List<Diagnostic>` in two iterative passes: errors first,
 /// then warnings (capped at 10). Two passes — instead of one merged
 /// pass — so users see all hard errors above any noise from
 /// warnings when scrolling output.
-fn render_list(source: string, filename: string, list: DiagnosticList) {
-    // Iterative two-pass rendering — no stack overflow regardless of count.
+fn render_list(source: string, filename: string, list: List<Diagnostic>) {
     // Pass 1: all errors
-    mut cur = list
-    while !diag_list_is_end(cur) {
-        match cur {
-            .Node(diag, next) -> {
-                if diag.severity is .Error { render_diagnostic(source, filename, diag) }
-                cur = next
-            }
-            _ -> {}
-        }
+    for diag in list {
+        if diag.severity is .Error { render_diagnostic(source, filename, diag) }
     }
     // Pass 2: warnings (capped at 10)
     mut warn_count = 0
-    cur = list
-    while !diag_list_is_end(cur) && warn_count < 10 {
-        match cur {
-            .Node(diag, next) -> {
-                if !(diag.severity is .Error) {
-                    render_diagnostic(source, filename, diag)
-                    warn_count = warn_count + 1
-                }
-                cur = next
-            }
-            _ -> {}
+    for diag in list {
+        if warn_count >= 10 { break }
+        if !(diag.severity is .Error) {
+            render_diagnostic(source, filename, diag)
+            warn_count = warn_count + 1
         }
     }
 }
@@ -325,14 +304,7 @@ export fn render_diagnostic_json(filename: string, diag: Diagnostic) {
 /// Emit every Diagnostic in a bag as ND-JSON (one object per line).
 /// Iterative loop, no recursion — large bags don't blow the stack.
 export fn render_bag_json(filename: string, bag: DiagnosticBag) {
-    mut cur = bag.diagnostics
-    while !diag_list_is_end(cur) {
-        match cur {
-            .Node(diag, next) -> {
-                render_diagnostic_json(filename, diag)
-                cur = next
-            }
-            _ -> {}
-        }
+    for diag in bag.diagnostics {
+        render_diagnostic_json(filename, diag)
     }
 }
