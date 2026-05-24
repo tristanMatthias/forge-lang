@@ -1271,40 +1271,6 @@ export fn env_extend(env: List<VarBinding>, name: string, alloca: ptr, ty: Value
     out
 }
 
-/// Function symbol table — name → (LLVM function value, arity).
-/// Separate from the var env (List<VarBinding>) because fns are
-/// visible across the whole module and don't follow lexical scope rules.
-export enum FnEnv {
-    End
-    Node(name: string, fn_val: ptr, arity: int, next: FnEnv)
-}
-
-/// Result of a `fn_env_lookup`. Same convention as VarLookup:
-/// `found: false` carries a null fn_val + arity 0.
-export type FnLookup = {
-    found: int,
-    fn_val: ptr,
-    arity: int,
-}
-
-/// Look up a function by name. Like env_lookup, returns the unfound
-/// sentinel rather than an Option for pointer fields.
-export fn fn_env_lookup(env: FnEnv, name: string) -> FnLookup {
-    match env {
-        .End -> {
-            let n: ptr = null
-            FnLookup { found: false, fn_val: n, arity: 0 }
-        }
-        .Node(n, fn_val, arity, _) if n == name -> FnLookup { found: true, fn_val, arity }
-        .Node(_, _, _, next) -> fn_env_lookup(next, name)
-    }
-}
-
-/// Cons a fn binding at the head of an FnEnv.
-export fn fn_env_extend(env: FnEnv, name: string, fn_val: ptr, arity: int) -> FnEnv {
-    FnEnv.Node(name, fn_val, arity, env)
-}
-
 /// Membership test for a `List<FieldEntry>`. True iff `target`
 /// matches the name of any field.
 export fn field_list_has(list: List<FieldEntry>, target: string) -> bool {
