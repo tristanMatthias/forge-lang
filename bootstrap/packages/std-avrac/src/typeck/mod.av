@@ -20,36 +20,51 @@ extern fn avra_uptime_ms() -> int
 
 /// Scope-stack entry for the type checker. Each binding records
 /// the variable's name, inferred type, and the depth at which it
-/// was declared (for scope-pop on block exit).
-enum TypeEntry {
-    End
-    Node(name: string, ty: ValueType, depth: int, next: TypeEntry)
-}
+/// was declared (for scope-pop on block exit). The full env is
+/// `List<TypeEntry>` — most-recently-bound at the largest index;
+/// lookup walks tail-to-head so the innermost binding shadows.
+type TypeEntry = { name: string, ty: ValueType, depth: int }
 
-/// Walk the type-environment chain looking for `name`. Returns
+/// Walk the type-environment looking for `name`. Returns
 /// `ValueType.Unknown` when not bound — typecheck callers branch
 /// on Unknown rather than pattern-matching on Option.
-fn type_lookup(env: TypeEntry, name: string) -> ValueType {
-    match env {
-        .End -> ValueType.Unknown
-        .Node(n, ty, _, _) if n == name -> ty
-        .Node(_, _, _, next) -> type_lookup(next, name)
+fn type_lookup(env: List<TypeEntry>, name: string) -> ValueType {
+    mut i = env.length - 1
+    while i >= 0 {
+        let e = env[i]
+        if e.name == name { return e.ty }
+        i = i - 1
     }
+    ValueType.Unknown
 }
 
-/// Cons a binding onto the type environment. Innermost shadowing.
-fn type_bind(env: TypeEntry, name: string, ty: ValueType, depth: int) -> TypeEntry {
-    TypeEntry.Node(name, ty, depth, env)
+/// Push a binding onto the type environment. Returns a fresh
+/// snapshot so sibling branches (then/else of an if etc.) keep
+/// the parent's env un-extended.
+fn type_bind(env: List<TypeEntry>, name: string, ty: ValueType, depth: int) -> List<TypeEntry> {
+    mut out: List<TypeEntry> = []
+    for e in env { out = out.push(e) }
+    out = out.push(TypeEntry { name, ty, depth })
+    out
 }
 
 /// Pop every entry whose declared depth is `>= depth`. Used on
-/// block / fn exit to drop bindings that left their scope.
-fn type_pop_scope(env: TypeEntry, depth: int) -> TypeEntry {
-    match env {
-        .End -> TypeEntry.End
-        .Node(_, _, d, next) if d >= depth -> type_pop_scope(next, depth)
-        _ -> env
+/// block / fn exit to drop bindings that left their scope. Returns
+/// a fresh list containing only the entries that remain in scope.
+fn type_pop_scope(env: List<TypeEntry>, depth: int) -> List<TypeEntry> {
+    mut keep_len = env.length
+    while keep_len > 0 {
+        if env[keep_len - 1].depth < depth { break }
+        keep_len = keep_len - 1
     }
+    if keep_len == env.length { return env }
+    mut out: List<TypeEntry> = []
+    mut i = 0
+    while i < keep_len {
+        out = out.push(env[i])
+        i = i + 1
+    }
+    out
 }
 
 // ── Function type registry ──
@@ -474,7 +489,7 @@ fn assoc_type_vt_lookup(reg: List<AssocTypeEntry>, key: string) -> ValueType {
 /// current source position. Like Resolver, threaded purely
 /// functionally despite the imperative-looking call sites.
 type TC = {
-    types: TypeEntry,
+    types: List<TypeEntry>,
     fns: FnTypeReg,
     structs: StructTypeReg,
     shapes: List<string>,
@@ -526,8 +541,9 @@ fn tc_new() -> TC {
     let empty_shapes: List<string> = []
     let empty_assoc: List<AssocTypeEntry> = []
     let empty_impls: List<TraitImplEntry> = []
+    let empty_types: List<TypeEntry> = []
     TC {
-        types: TypeEntry.End,
+        types: empty_types,
         fns: fn_type_reg_new(),
         structs: struct_type_reg_new(),
         shapes: empty_shapes,
