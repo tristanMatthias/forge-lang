@@ -7,7 +7,7 @@
 // Public entry point is `fmt_stmt_list(stmts, 0)`.
 
 use core.{
-    Expr, SExpr, Stmt, StmtList, ParamEntry,
+    Expr, SExpr, Stmt, ParamEntry,
     FieldInit, FieldEntry,
     Variant, Pattern, MatchArm, WhenArm, Annotation,
     binop_str, unop_str, logicop_str,
@@ -158,15 +158,15 @@ export fn fmt_stmt(ss: Stmt, depth: int) -> string {
 
 /// Public entry point — render a top-level statement list. Each
 /// statement gets one source line, joined with `\n`.
-export fn fmt_stmt_list(stmts: StmtList, depth: int) -> string {
-    match stmts {
-        .End -> ""
-        .Node(ss, next) -> {
-            let head = fmt_stmt(ss.node, depth)
-            let tail = fmt_stmt_list(next, depth)
-            if tail == "" { head } else { "${head}\n${tail}" }
-        }
+export fn fmt_stmt_list(stmts: List<SStmt>, depth: int) -> string {
+    mut out = ""
+    mut i = 0
+    while i < stmts.length {
+        let head = fmt_stmt(stmts[i].node, depth)
+        out = if out == "" { head } else { "${out}\n${head}" }
+        i = i + 1
     }
+    out
 }
 
 /// Render a `List<SExpr>` as comma-separated expressions — used

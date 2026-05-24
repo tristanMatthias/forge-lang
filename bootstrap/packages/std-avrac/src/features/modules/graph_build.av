@@ -24,7 +24,7 @@
 // exercised by the diff-harness spec test in this ticket and by the
 // cutover in y4n1.8.
 
-use core.{Stmt, StmtList, SStmt, SExpr, Expr, ParamEntry, ValueType, Annotation}
+use core.{Stmt, SStmt, SExpr, Expr, ParamEntry, ValueType, Annotation}
 use core.{
     ModuleGraph, ModuleGraphNode, ResolvedPath,
     StringInterner, InternResult,
@@ -126,15 +126,18 @@ export fn build_module_graph(entry_file: string) -> BuildGraphResult {
 /// `parent_id` is the ModuleId currently being populated (the file
 /// these stmts came from). `pkg_id` is its package. `dir` is the
 /// directory of `parent_id`'s source file — used for sibling lookup.
-fn walk_stmts(g: ModuleGraph, stmts: StmtList, parent_id: int, pkg_id: int, canon: string, dir: string, uses: List<UseEdge>) -> BuildGraphResult {
-    match stmts {
-        .End -> BuildGraphResult { graph: g, uses, had_error: 0, error_message: "" }
-        .Node(ss, next) -> {
-            let head = walk_stmt(g, ss, parent_id, pkg_id, canon, dir, uses)
-            if head.had_error { return head }
-            walk_stmts(head.graph, next, parent_id, pkg_id, canon, dir, head.uses)
-        }
+fn walk_stmts(g: ModuleGraph, stmts: List<SStmt>, parent_id: int, pkg_id: int, canon: string, dir: string, uses: List<UseEdge>) -> BuildGraphResult {
+    mut cur_g = g
+    mut cur_uses = uses
+    mut i = 0
+    while i < stmts.length {
+        let head = walk_stmt(cur_g, stmts[i], parent_id, pkg_id, canon, dir, cur_uses)
+        if head.had_error { return head }
+        cur_g = head.graph
+        cur_uses = head.uses
+        i = i + 1
     }
+    BuildGraphResult { graph: cur_g, uses: cur_uses, had_error: 0, error_message: "" }
 }
 
 /// Visit one statement. Dispatches on its kind:
@@ -188,7 +191,7 @@ fn register_item(g: ModuleGraph, parent_id: int, name: string, uses: List<UseEdg
 /// graph node, we skip re-parsing and just wire up the parent→child
 /// edge against the existing id. Cycles are impossible here because
 /// `mod X` always references a distinct file.
-fn walk_mod_decl(g: ModuleGraph, name: string, _body: StmtList, parent_id: int, pkg_id: int, canon: string, dir: string, uses: List<UseEdge>) -> BuildGraphResult {
+fn walk_mod_decl(g: ModuleGraph, name: string, _body: List<SStmt>, parent_id: int, pkg_id: int, canon: string, dir: string, uses: List<UseEdge>) -> BuildGraphResult {
     let sibling = "${dir}${name}.av"
     let dir_mod = "${dir}${name}/mod.av"
     mut mod_path = ""
@@ -363,7 +366,7 @@ fn ensure_package_loaded(g: ModuleGraph, use_path: string, dir: string) -> Ensur
 /// Returned graph is "anchored at the program root" — there's no
 /// package allocation here because the AST already encodes packages
 /// as wrapped Modules with `@`-prefixed names.
-export fn build_graph_from_stmts(stmts: StmtList) -> ModuleGraph {
+export fn build_graph_from_stmts(stmts: List<SStmt>) -> ModuleGraph {
     let g0 = module_graph_new()
     // Allocate the root module with file="" — it represents the
     // program root, not any specific source file.
@@ -372,14 +375,14 @@ export fn build_graph_from_stmts(stmts: StmtList) -> ModuleGraph {
     walk_ast_stmts(g1, stmts, root.id, "")
 }
 
-fn walk_ast_stmts(g: ModuleGraph, stmts: StmtList, parent_id: int, canon: string) -> ModuleGraph {
-    match stmts {
-        .End -> g
-        .Node(ss, next) -> {
-            let g_next = walk_ast_stmt(g, ss.node, parent_id, canon)
-            walk_ast_stmts(g_next, next, parent_id, canon)
-        }
+fn walk_ast_stmts(g: ModuleGraph, stmts: List<SStmt>, parent_id: int, canon: string) -> ModuleGraph {
+    mut cur = g
+    mut i = 0
+    while i < stmts.length {
+        cur = walk_ast_stmt(cur, stmts[i].node, parent_id, canon)
+        i = i + 1
     }
+    cur
 }
 
 fn walk_ast_stmt(g: ModuleGraph, stmt: Stmt, parent_id: int, canon: string) -> ModuleGraph {

@@ -3,7 +3,7 @@
 // checking and before codegen. After this pass, the AST contains no
 // generic declarations — codegen sees only concrete code.
 
-use core.{Expr, SExpr, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, StmtList, ParamEntry, FieldEntry, FieldInit, Variant, MatchArm, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge, SelectArm}
+use core.{Expr, SExpr, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, SStmt, ParamEntry, FieldEntry, FieldInit, Variant, MatchArm, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge, SelectArm}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_warning, span_new}
 use typeck.{TraitImplReg, type_implements_trait}
 use core.{mangle_join, type_short_name}
@@ -30,7 +30,7 @@ type GenericFnEntry = {
     tp: List<TypeParamEntry>,
     params: List<ParamEntry>,
     ret_vt: ValueType,
-    body: StmtList,
+    body: List<SStmt>,
 }
 /// One entry in the generic-enum registry.
 type GenericEnumEntry = {
@@ -348,13 +348,58 @@ fn mangle_name_ordered(base: string, tp: List<TypeParamEntry>, ta: List<TypeArg>
 
 /// Worker for `mangle_name_ordered` — concatenate the
 /// concrete type names following the List<TypeParamEntry> order.
+/// Uses `vtype_mangle_slug` (a qualifier-stripping renderer) so
+/// every Struct / Enum / Newtype name gets short-named regardless
+/// of how deeply it is nested inside `List<…>` / `Task<…>` /
+/// `Tuple<…>` wrappers. The previous code did
+/// `type_short_name(vtype_render_full(…))` which split the entire
+/// rendered string on `::` and took the last part — that turned
+/// `List<@std::lsp::Sym>` into `Sym>` because the trailing `>`
+/// fell out of the last `::`-separated part, then divergently
+/// matched at lookup sites where the qualifier survived through
+/// a different rewrite path.
 fn mangle_ordered(tp: List<TypeParamEntry>, ta: List<TypeArg>) -> string {
     mut out = ""
     mut i = 0
     while i < tp.length {
         let name = tp[i].name
-        let ty = type_short_name(vtype_render_full(type_arg_lookup(ta, name)))
+        let ty = vtype_mangle_slug(type_arg_lookup(ta, name))
         if out == "" { out = ty } else { out = mangle_join(out, ty) }
+        i = i + 1
+    }
+    out
+}
+
+/// Structural slug renderer for monomorphization names. Strips
+/// `::` qualifiers PER-TYPE (so `@std::lsp::Sym` becomes `Sym`)
+/// and recurses into containers so nested type-args get the same
+/// treatment. Both monomorphization DECL emission and call-site
+/// LOOKUP rewriting go through `mangle_name_ordered` → here, so
+/// the names always match regardless of whether the caller passed
+/// qualified or unqualified Struct names.
+fn vtype_mangle_slug(t: ValueType) -> string {
+    match t {
+        .Struct(n, _) -> type_short_name(n)
+        .Newtype(n, _, _) -> type_short_name(n)
+        .Trait(n, _) -> "dyn ${type_short_name(n)}"
+        .Enum(n, args, _) -> {
+            let short = type_short_name(n)
+            if args.length == 0 { short } else { "${short}<${mangle_arg_list(args)}>" }
+        }
+        .List(elem) -> "List<${vtype_mangle_slug(elem)}>"
+        .Task(inner) -> "Task<${vtype_mangle_slug(inner)}>"
+        .Tuple(elems) -> "Tuple<${mangle_arg_list(elems)}>"
+        .NarrowedEnum(en, vn, _) -> "${type_short_name(en)}.${vn}"
+        _ -> vtype_render_full(t)
+    }
+}
+
+fn mangle_arg_list(args: List<ValueType>) -> string {
+    mut out = ""
+    mut i = 0
+    while i < args.length {
+        let part = vtype_mangle_slug(args[i])
+        if i == 0 { out = part } else { out = "${out}, ${part}" }
         i = i + 1
     }
     out
@@ -778,11 +823,14 @@ fn rewrite_param_types(params: List<ParamEntry>, regs: GenRegs, insts: List<Inst
 
 /// Pass 1 entry: walk the AST collecting every generic decl
 /// into the `GenRegs` registries. Recurses into modules.
-fn collect_generics(stmts: StmtList, regs: GenRegs) -> GenRegs {
-    match stmts {
-        .End -> regs
-        .Node(ss, next) -> collect_generics(next, collect_generic_stmt(ss.node, regs))
+fn collect_generics(stmts: List<SStmt>, regs: GenRegs) -> GenRegs {
+    mut cur = regs
+    mut i = 0
+    while i < stmts.length {
+        cur = collect_generic_stmt(stmts[i].node, cur)
+        i = i + 1
     }
+    cur
 }
 
 /// Per-statement collector. `Function`/`EnumDecl`/`TypeDecl`
@@ -829,13 +877,17 @@ fn has_generics(regs: GenRegs) -> bool {
 /// @field trait_impls  — registered trait impls, for bound checks.
 type CollectState = { insts: List<Inst>, bag: DiagnosticBag, line: int, col: int, trait_impls: TraitImplReg }
 
-/// Pass 2 entry: walk a StmtList collecting instantiation
+/// Pass 2 entry: walk a List<SStmt> collecting instantiation
 /// requests at every call / constructor site.
-fn collect_inst_stmts(stmts: StmtList, regs: GenRegs, st: CollectState) -> CollectState {
-    match stmts {
-        .End -> st
-        .Node(ss, next) -> collect_inst_stmts(next, regs, collect_inst_stmt(ss.node, regs, st with { line: ss.line, col: ss.col }))
+fn collect_inst_stmts(stmts: List<SStmt>, regs: GenRegs, st: CollectState) -> CollectState {
+    mut cur = st
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        cur = collect_inst_stmt(ss.node, regs, cur with { line: ss.line, col: ss.col })
+        i = i + 1
     }
+    cur
 }
 
 /// Per-statement instantiation collector. Recurses into every
@@ -1089,7 +1141,7 @@ fn try_add_struct_inst(name: string, inits: List<FieldInit>, regs: GenRegs, st: 
 /// Specialise a generic fn for one `List<TypeArg>`. Returns a
 /// fresh `Function` AST node with the mangled name +
 /// substituted param/return types + substituted body.
-fn specialize_fn(mangled: string, params: List<ParamEntry>, ret_vt: ValueType, body: StmtList, ta: List<TypeArg>) -> Stmt {
+fn specialize_fn(mangled: string, params: List<ParamEntry>, ret_vt: ValueType, body: List<SStmt>, ta: List<TypeArg>) -> Stmt {
     let concrete_ret_vt = substitute_vtype(ret_vt, ta)
     let empty_tp: List<TypeParamEntry> = []
     Stmt.Function(mangled, empty_tp, substitute_params(params, ta), concrete_ret_vt, substitute_stmts(body, ta))
@@ -1112,10 +1164,10 @@ fn specialize_struct(mangled: string, fields: List<FieldEntry>, ta: List<TypeArg
 /// inst in `insts`. Calls `specialize_fn` / `specialize_enum`
 /// / `specialize_struct` based on which registry the inst's
 /// origin name lives in.
-fn generate_specializations(insts: List<Inst>, regs: GenRegs) -> StmtList {
-    mut out = StmtList.End
-    mut i = insts.length - 1
-    while i >= 0 {
+fn generate_specializations(insts: List<Inst>, regs: GenRegs) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    mut i = 0
+    while i < insts.length {
         let e = insts[i]
         let name = e.orig_name
         let mangled = e.mangled
@@ -1123,19 +1175,19 @@ fn generate_specializations(insts: List<Inst>, regs: GenRegs) -> StmtList {
         let fn_e = generic_fn_lookup(regs.fns, name)
         if fn_e != null {
             let fe = fn_e!
-            out = StmtList.Node(sstmt(specialize_fn(mangled, fe.params, fe.ret_vt, fe.body, ta), 0, 0), out)
+            out.push(sstmt(specialize_fn(mangled, fe.params, fe.ret_vt, fe.body, ta), 0, 0))
         } else {
             let enum_e = generic_enum_lookup(regs.enums, name)
             if enum_e != null {
-                out = StmtList.Node(sstmt(specialize_enum(mangled, enum_e!.variants, ta), 0, 0), out)
+                out.push(sstmt(specialize_enum(mangled, enum_e!.variants, ta), 0, 0))
             } else {
                 let struct_e = generic_struct_lookup(regs.structs, name)
                 if struct_e != null {
-                    out = StmtList.Node(sstmt(specialize_struct(mangled, struct_e!.fields, ta), 0, 0), out)
+                    out.push(sstmt(specialize_struct(mangled, struct_e!.fields, ta), 0, 0))
                 }
             }
         }
-        i = i - 1
+        i = i + 1
     }
     out
 }
@@ -1209,9 +1261,16 @@ fn substitute_variants(variants: List<Variant>, ta: List<TypeArg>) -> List<Varia
     }
     out
 }
-/// Map `substitute_stmt` over a StmtList.
-fn substitute_stmts(stmts: StmtList, ta: List<TypeArg>) -> StmtList {
-    match stmts { .End -> .End, .Node(ss, next) -> StmtList.Node(sstmt_at(substitute_stmt(ss.node, ta), ss.line, ss.col, ss.file), substitute_stmts(next, ta)) }
+/// Map `substitute_stmt` over a List<SStmt>.
+fn substitute_stmts(stmts: List<SStmt>, ta: List<TypeArg>) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        out.push(sstmt_at(substitute_stmt(ss.node, ta), ss.line, ss.col, ss.file))
+        i = i + 1
+    }
+    out
 }
 /// Map `substitute_expr` over a `List<SExpr>`.
 fn substitute_expr_list(exprs: List<SExpr>, ta: List<TypeArg>) -> List<SExpr> {
@@ -1380,8 +1439,19 @@ fn vtype_from_type_string(ty: string) -> ValueType {
         let inner = ty.substring(1, ty.length - 1)
         return ValueType.Tuple(parse_type_args_to_list(inner))
     }
-    // Handle generic type strings like "Result<int, string>"
+    // Handle mangled names like "Result__int__string" — when `__` appears
+    // BEFORE any `<`, the name is a monomorphized slug, not a generic
+    // annotation. The earlier-position check matters because a nested
+    // generic arg like `Result__List<int>__string` has BOTH separators;
+    // the outer mangling (`__`) must win or we'd mis-parse the base as
+    // "Result__List" and the args as "int>__string".
     let angle = find_char(ty, "<")
+    let dunder = find_dunder(ty)
+    if dunder >= 0 && (angle < 0 || dunder < angle) {
+        let args = parse_dunder_args(ty, dunder + 2)
+        return ValueType.Enum(ty, args, 0)
+    }
+    // Handle generic type strings like "Result<int, string>"
     if angle >= 0 {
         let base = ty.substring(0, angle)
         let args_str = ty.substring(angle + 1, ty.length - 1)
@@ -1401,13 +1471,6 @@ fn vtype_from_type_string(ty: string) -> ValueType {
             return ValueType.Task(inner)
         }
         return ValueType.Enum(base, args, 0)
-    }
-    // Handle mangled names like "Result__int__string" BEFORE union check —
-    // mangled names like "Result__X__A|B" contain | but are NOT unions.
-    let dunder = find_dunder(ty)
-    if dunder >= 0 {
-        let args = parse_dunder_args(ty, dunder + 2)
-        return ValueType.Enum(ty, args, 0)
     }
     // Handle union types "A | B" — checked AFTER mangled names
     // so "Result__X__A|B" is treated as a mangled name, not a union
@@ -1487,22 +1550,25 @@ fn rewrite_fn_ret(ret_ty: string, regs: GenRegs, insts: List<Inst>) -> ValueType
 /// type, body — all forwarded through `rewrite_*` helpers.
 /// Used by the per-fn pass to convert generic decls into
 /// non-generic ones referencing mangled specialisations.
-fn rewrite_function(name: string, tp: List<TypeParamEntry>, params: List<ParamEntry>, ret_ty: string, body: StmtList, regs: GenRegs, insts: List<Inst>) -> Stmt {
+fn rewrite_function(name: string, tp: List<TypeParamEntry>, params: List<ParamEntry>, ret_ty: string, body: List<SStmt>, regs: GenRegs, insts: List<Inst>) -> Stmt {
     let scoped = scope_insts_for_ret(ret_ty, regs, insts)
     Stmt.Function(name, tp, rewrite_param_types(params, regs, scoped), rewrite_fn_ret(ret_ty, regs, insts), rewrite_stmts(body, regs, scoped))
 }
 
 // ── Pass 4: Rewrite call sites and remove generic declarations ──
 
-/// Map `rewrite_stmt` over a StmtList.
-fn rewrite_stmts(stmts: StmtList, regs: GenRegs, insts: List<Inst>) -> StmtList {
-    match stmts {
-        .End -> .End
-        .Node(ss, next) -> {
-            if is_generic_decl(ss.node) { return rewrite_stmts(next, regs, insts) }
-            StmtList.Node(sstmt_at(rewrite_stmt(ss.node, regs, insts), ss.line, ss.col, ss.file), rewrite_stmts(next, regs, insts))
+/// Map `rewrite_stmt` over a List<SStmt>.
+fn rewrite_stmts(stmts: List<SStmt>, regs: GenRegs, insts: List<Inst>) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        if !is_generic_decl(ss.node) {
+            out.push(sstmt_at(rewrite_stmt(ss.node, regs, insts), ss.line, ss.col, ss.file))
         }
+        i = i + 1
     }
+    out
 }
 
 /// Rewrite a `let`/`mut` binding's type annotation + init.
@@ -1777,7 +1843,7 @@ fn rewrite_struct_lit(name: string, inits: List<FieldInit>, regs: GenRegs, insts
 ///
 /// @field stmts — the program with generics specialised away.
 /// @field bag   — diagnostics accumulated during monomorphization.
-export type MonoResult = { stmts: StmtList, bag: DiagnosticBag }
+export type MonoResult = { stmts: List<SStmt>, bag: DiagnosticBag }
 
 /// Public entry: run the monomorphization pass over a
 /// program. Phase 1 collects generic decls + instantiation
@@ -1785,7 +1851,7 @@ export type MonoResult = { stmts: StmtList, bag: DiagnosticBag }
 /// rewrites every reference to use the mangled names. Iterates
 /// to a fixed point so transitively-required specialisations
 /// are pulled in.
-export fn monomorphize(stmts: StmtList, trait_impls: TraitImplReg) -> MonoResult {
+export fn monomorphize(stmts: List<SStmt>, trait_impls: TraitImplReg) -> MonoResult {
     let regs = collect_generics(stmts, GenRegs { fns: [], enums: [], structs: [] })
     if !has_generics(regs) { return MonoResult { stmts, bag: bag_new() } }
 
@@ -1819,13 +1885,13 @@ export fn monomorphize(stmts: StmtList, trait_impls: TraitImplReg) -> MonoResult
 /// @field all_insts — every inst seen across iterations.
 /// @field all_specs — every emitted specialisation AST node.
 /// @field bag       — accumulated diagnostics.
-type ConvergeResult = { all_insts: List<Inst>, all_specs: StmtList, bag: DiagnosticBag }
+type ConvergeResult = { all_insts: List<Inst>, all_specs: List<SStmt>, bag: DiagnosticBag }
 
 /// Iteration step of the monomorphization fixed-point. Walks
 /// the freshly-emitted specialisations looking for further
 /// instantiations they need; recurses until no new insts get
 /// added. `depth` is bounded to prevent runaway recursion.
-fn mono_converge(new_specs: StmtList, regs: GenRegs, all_insts: List<Inst>, all_specs: StmtList, b: DiagnosticBag, depth: int, ti: TraitImplReg) -> ConvergeResult {
+fn mono_converge(new_specs: List<SStmt>, regs: GenRegs, all_insts: List<Inst>, all_specs: List<SStmt>, b: DiagnosticBag, depth: int, ti: TraitImplReg) -> ConvergeResult {
     if depth >= 10 { return ConvergeResult { all_insts, all_specs, bag: b } }
     let trans = collect_inst_stmts(new_specs, regs, CollectState { insts: [], bag: b, line: 0, col: 0, trait_impls: ti })
     let trans_final = finalize_insts(trans.insts, regs, trans.bag, ti)
@@ -1840,8 +1906,19 @@ fn mono_converge(new_specs: StmtList, regs: GenRegs, all_insts: List<Inst>, all_
     }
 }
 
-/// Concatenate two StmtLists. Specialisations get prepended to
+/// Concatenate two List<SStmt>s. Specialisations get prepended to
 /// the original program so generated decls precede their uses.
-fn prepend_stmts(prefix: StmtList, rest: StmtList) -> StmtList {
-    match prefix { .End -> rest, .Node(ss, next) -> StmtList.Node(ss, prepend_stmts(next, rest)) }
+fn prepend_stmts(prefix: List<SStmt>, rest: List<SStmt>) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    mut i = 0
+    while i < prefix.length {
+        out.push(prefix[i])
+        i = i + 1
+    }
+    mut j = 0
+    while j < rest.length {
+        out.push(rest[j])
+        j = j + 1
+    }
+    out
 }

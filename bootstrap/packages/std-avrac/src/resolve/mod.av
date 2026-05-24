@@ -6,7 +6,7 @@
 // dir-as-module (g2eo.1): names.av auto-loads as a sibling, surfaces
 // flat at `resolve.{...}`.
 
-use core.{Expr, FieldInit, ParamEntry, Pattern, SExpr, SStmt, Stmt, StmtList, TypeParamEntry, stmt_unwrap}
+use core.{Expr, FieldInit, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeParamEntry, stmt_unwrap}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_with_help, span_dummy, span_new, span_at}
 use core.{Registry, build_registry, dispatch_stmt_resolve, dispatch_expr_resolve, avra_stmt_tag, avra_expr_tag}
 
@@ -61,7 +61,7 @@ type Resolver = {
 /// Top-level entry: resolve every name reference in `stmts`. Pre-
 /// declares the language's built-in fns so they resolve like normal
 /// declarations.
-export fn resolve_program(stmts: StmtList) -> ResolveResult {
+export fn resolve_program(stmts: List<SStmt>) -> ResolveResult {
     mut r = resolver_new()
     // Pre-declare builtins so they resolve like any other function
     r = declare_function(r, "println")
@@ -88,43 +88,33 @@ export fn resolve_program(stmts: StmtList) -> ResolveResult {
 /// First pass — pre-declare every fn / extern fn / impl-method /
 /// nested-module fn name so the second pass can resolve forward
 /// references. Walks Module / Impl bodies recursively.
-fn collect_function_names(r: Resolver, stmts: StmtList) -> Resolver {
-    mut current = stmts
+fn collect_function_names(r: Resolver, stmts: List<SStmt>) -> Resolver {
     mut res = r
-    while true {
-        match current {
-            .End -> { return res }
-            .Node(ss, next) -> {
-                res = match stmt_unwrap(ss.node) {
-                    .Function(name, _, _, _, _) -> declare_function(res, name)
-                    .ExternFn(name, _, _) -> declare_function(res, name)
-                    .Impl(_, methods) -> collect_method_names(res, methods)
-                    .Module(_, body) -> collect_function_names(res, body)
-                    _ -> res
-                }
-                current = next
-            }
+    mut i = 0
+    while i < stmts.length {
+        res = match stmt_unwrap(stmts[i].node) {
+            .Function(name, _, _, _, _) -> declare_function(res, name)
+            .ExternFn(name, _, _) -> declare_function(res, name)
+            .Impl(_, methods) -> collect_method_names(res, methods)
+            .Module(_, body) -> collect_function_names(res, body)
+            _ -> res
         }
+        i = i + 1
     }
     res
 }
 
 /// Helper for `collect_function_names` — register every method
 /// inside an impl block.
-fn collect_method_names(r: Resolver, methods: StmtList) -> Resolver {
-    mut current = methods
+fn collect_method_names(r: Resolver, methods: List<SStmt>) -> Resolver {
     mut res = r
-    while true {
-        match current {
-            .End -> { return res }
-            .Node(ss, next) -> {
-                res = match stmt_unwrap(ss.node) {
-                    .Function(name, _, _, _, _) -> declare_function(res, name)
-                    _ -> res
-                }
-                current = next
-            }
+    mut i = 0
+    while i < methods.length {
+        res = match stmt_unwrap(methods[i].node) {
+            .Function(name, _, _, _, _) -> declare_function(res, name)
+            _ -> res
         }
+        i = i + 1
     }
     res
 }
@@ -308,20 +298,16 @@ fn lookup_fn(fns: List<string>, name: string) -> bool {
     false
 }
 
-/// Walk a StmtList, threading the Resolver through each stmt.
+/// Walk a List<SStmt>, threading the Resolver through each stmt.
 /// Updates `source_line` / `source_col` per stmt for accurate
 /// diagnostics.
-export fn resolve_stmt_list(r: Resolver, stmts: StmtList) -> Resolver {
-    mut current = stmts
+export fn resolve_stmt_list(r: Resolver, stmts: List<SStmt>) -> Resolver {
     mut res = r
-    while true {
-        match current {
-            .End -> { return res }
-            .Node(ss, next) -> {
-                res = resolve_stmt(res with { source_line: ss.line, source_col: ss.col, source_file: ss.file }, ss.node)
-                current = next
-            }
-        }
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        res = resolve_stmt(res with { source_line: ss.line, source_col: ss.col, source_file: ss.file }, ss.node)
+        i = i + 1
     }
     res
 }

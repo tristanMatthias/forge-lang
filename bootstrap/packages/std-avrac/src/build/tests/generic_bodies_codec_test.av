@@ -172,36 +172,32 @@ spec "P4 extractor: generic_bodies population" {
 // re-parsed body (instead of the empty-body extern-wrapped stub the
 // pre-P5 path used for every fn).
 use @std.avrac.build.{synthesize_unit_body}
-use @std.avrac.core.{StmtList, Stmt, stmt_unwrap}
+use @std.avrac.core.{SStmt, Stmt, stmt_unwrap}
 
-/// Walk a (possibly Module-wrapped) StmtList and find the first
-/// `Function(name)` node, returning its body. Returns End on miss.
-/// Recurses into Module bodies because the synthesizer wraps decls
-/// under their qualified-name path (e.g. unit_name → @std::test).
-fn first_fn_body(stmts: StmtList, name: string) -> StmtList {
-    match stmts {
-        .End -> StmtList.End
-        .Node(ss, next) -> {
-            match stmt_unwrap(ss.node) {
-                .Function(n, _, _, _, body) if n == name -> body
-                .Module(_, body) -> {
-                    let found = first_fn_body(body, name)
-                    match found {
-                        .End -> first_fn_body(next, name)
-                        _ -> found
-                    }
-                }
-                _ -> first_fn_body(next, name)
+/// Walk a (possibly Module-wrapped) List<SStmt> and find the first
+/// `Function(name)` node, returning its body. Returns an empty list
+/// on miss. Recurses into Module bodies because the synthesizer wraps
+/// decls under their qualified-name path (e.g. unit_name → @std::test).
+fn first_fn_body(stmts: List<SStmt>, name: string) -> List<SStmt> {
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        match stmt_unwrap(ss.node) {
+            .Function(n, _, _, _, body) if n == name -> return body
+            .Module(_, body) -> {
+                let found = first_fn_body(body, name)
+                if found.length > 0 { return found }
             }
+            _ -> {}
         }
+        i = i + 1
     }
+    let empty: List<SStmt> = []
+    empty
 }
 
-fn body_stmt_count(b: StmtList) -> int {
-    match b {
-        .End -> 0
-        .Node(_, next) -> 1 + body_stmt_count(next)
-    }
+fn body_stmt_count(b: List<SStmt>) -> int {
+    b.length
 }
 
 spec "P5 consumer: synthesize_unit_body inlines generic bodies" {

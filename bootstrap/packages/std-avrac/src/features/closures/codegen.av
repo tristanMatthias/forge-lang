@@ -12,7 +12,7 @@
 // For non-capturing lambdas (the common case), the closure value
 // is just the function pointer with a null environment.
 
-use core.{Expr, SExpr, Stmt, StmtList, ParamEntry, FieldInit, MatchArm, WhenArm, VarBinding, env_lookup, env_extend, param_list_length, ValueType, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, vtype_is_unknown}
+use core.{Expr, SExpr, Stmt, ParamEntry, FieldInit, MatchArm, WhenArm, VarBinding, env_lookup, env_extend, param_list_length, ValueType, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, vtype_is_unknown}
 use codegen.{Ctx, EmitValue, err_emit, null_ptr_val, ok_emit}
 use codegen.{emit_expr}
 use codegen.{analyze_releasable_expr}
@@ -99,11 +99,13 @@ fn expr_list_assigns(list: List<SExpr>, target: string) -> bool {
 }
 
 /// True when any statement in `stmts` assigns to `target`.
-fn stmt_list_assigns(stmts: StmtList, target: string) -> bool {
-    match stmts {
-        .End -> false
-        .Node(ss, next) -> stmt_assigns(ss.node, target) || stmt_list_assigns(next, target)
+fn stmt_list_assigns(stmts: List<SStmt>, target: string) -> bool {
+    mut i = 0
+    while i < stmts.length {
+        if stmt_assigns(stmts[i].node, target) { return true }
+        i = i + 1
     }
+    false
 }
 
 /// Per-statement assignment detector. Recognises `Assign`,
@@ -316,27 +318,27 @@ fn find_captures_stmt_body(stmt: Stmt, params: List<ParamEntry>, env: List<VarBi
     }
 }
 
-/// Walk a StmtList collecting captures via
+/// Walk a List<SStmt> collecting captures via
 /// `find_captures_stmt_body`.
-fn find_captures_stmts(stmts: StmtList, params: List<ParamEntry>, env: List<VarBinding>, captures: List<Capture>) {
-    match stmts {
-        .End -> {}
-        .Node(ss, next) -> {
-            // Process this statement for captures using the shared handler.
-            find_captures_stmt_body(ss.node, params, env, captures)
-            // If this statement binds a local name, add it to params so subsequent
-            // uses of the name won't be treated as captures from the outer scope.
-            let extra: ParamEntry? = match ss.node {
-                .Let(name, _, _) -> ParamEntry { name: name, vtype: ValueType.Unknown }
-                .Mut(name, _, _) -> ParamEntry { name: name, vtype: ValueType.Unknown }
-                .Const(name, _, _) -> ParamEntry { name: name, vtype: ValueType.Unknown }
-                .For(vname, _, _, _) -> ParamEntry { name: vname, vtype: ValueType.Unknown }
-                .ForIn(vname, _, _) -> ParamEntry { name: vname, vtype: ValueType.Unknown }
-                _ -> null
-            }
-            let updated_params = if extra != null { copy_params_with(params, extra!) } else { params }
-            find_captures_stmts(next, updated_params, env, captures)
+fn find_captures_stmts(stmts: List<SStmt>, params: List<ParamEntry>, env: List<VarBinding>, captures: List<Capture>) {
+    mut cur_params = params
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        // Process this statement for captures using the shared handler.
+        find_captures_stmt_body(ss.node, cur_params, env, captures)
+        // If this statement binds a local name, add it to params so subsequent
+        // uses of the name won't be treated as captures from the outer scope.
+        let extra: ParamEntry? = match ss.node {
+            .Let(name, _, _) -> ParamEntry { name: name, vtype: ValueType.Unknown }
+            .Mut(name, _, _) -> ParamEntry { name: name, vtype: ValueType.Unknown }
+            .Const(name, _, _) -> ParamEntry { name: name, vtype: ValueType.Unknown }
+            .For(vname, _, _, _) -> ParamEntry { name: vname, vtype: ValueType.Unknown }
+            .ForIn(vname, _, _) -> ParamEntry { name: vname, vtype: ValueType.Unknown }
+            _ -> null
         }
+        if extra != null { cur_params = copy_params_with(cur_params, extra!) }
+        i = i + 1
     }
 }
 
@@ -453,21 +455,20 @@ fn param_used_with_float_list(param_name: string, exprs: List<SExpr>, ctx: Ctx, 
 
 /// Map `param_used_with_float` through a statement list,
 /// recursing into expression payloads + nested bodies.
-fn param_used_with_float_stmts(param_name: string, stmts: StmtList, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, params: List<ParamEntry>) -> bool {
-    match stmts {
-        .End -> false
-        .Node(ss, next) -> {
-            let found = match ss.node {
-                .Expr(e) -> param_used_with_float(param_name, e, ctx, env, captures, params)
-                .Return(e) -> param_used_with_float(param_name, e, ctx, env, captures, params)
-                .Let(_, _, init) -> param_used_with_float(param_name, init, ctx, env, captures, params)
-                .Mut(_, _, init) -> param_used_with_float(param_name, init, ctx, env, captures, params)
-                _ -> false
-            }
-            if found { return true }
-            param_used_with_float_stmts(param_name, next, ctx, env, captures, params)
+fn param_used_with_float_stmts(param_name: string, stmts: List<SStmt>, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, params: List<ParamEntry>) -> bool {
+    mut i = 0
+    while i < stmts.length {
+        let found = match stmts[i].node {
+            .Expr(e) -> param_used_with_float(param_name, e, ctx, env, captures, params)
+            .Return(e) -> param_used_with_float(param_name, e, ctx, env, captures, params)
+            .Let(_, _, init) -> param_used_with_float(param_name, init, ctx, env, captures, params)
+            .Mut(_, _, init) -> param_used_with_float(param_name, init, ctx, env, captures, params)
+            _ -> false
         }
+        if found { return true }
+        i = i + 1
     }
+    false
 }
 
 /// Infer types for unannotated lambda params by scanning the

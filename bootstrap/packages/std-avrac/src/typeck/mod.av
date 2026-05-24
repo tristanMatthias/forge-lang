@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, Stmt, StmtList, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_is_fn, vtype_is_unknown, vtype_list_elem, vtype_struct_name, vtype_tuple_at}
+use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_is_fn, vtype_is_unknown, vtype_list_elem, vtype_struct_name, vtype_tuple_at}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive}
@@ -678,7 +678,7 @@ fn resolve_vtype_list(tc: TC, types: List<ValueType>) -> List<ValueType> {
 /// diagnostic bag, and the trait-impl registry (consumed later by
 /// the monomorphizer for trait-bound monomorphisation).
 export type TypeCheckResult = {
-    stmts: StmtList,
+    stmts: List<SStmt>,
     had_error: int,
     bag: DiagnosticBag,
     trait_impls: TraitImplReg,
@@ -688,7 +688,7 @@ export type TypeCheckResult = {
 /// passes: pre-pass `collect_decls` registers types/fns; main
 /// `check_stmts` walks the AST inferring + checking types;
 /// `annotate_*` writes the inferred types back into SExpr.ty.
-export fn typecheck_program(stmts: StmtList) -> TypeCheckResult {
+export fn typecheck_program(stmts: List<SStmt>) -> TypeCheckResult {
     // Per-pass wall-clock timings — emitted to stderr at the end
     // when AVRA_TIMINGS_TYPECK=1 is set, so kkgf can rank the
     // four typeck passes (collect / check / naming / annotate)
@@ -785,103 +785,105 @@ fn string_contains_qualifier(name: string) -> bool {
     false
 }
 
-fn collect_decls(tc: TC, stmts: StmtList) -> TC {
-    match stmts {
-        .End -> tc
-        .Node(ss, next) -> {
-            let updated = match stmt_unwrap(ss.node) {
-                .TypeDecl(name, _, fields) -> {
-                    if is_duplicate_decl(tc.structs.idx, name) {
-                        tc_report_at(tc, DiagCode.DuplicateDecl, "duplicate type declaration `${name}`", ss.line, ss.col, name.length)
-                    } else {
-                        let resolved = tc_resolve_type_operator(fields, tc.structs)
-                        tc with { structs: struct_type_reg_register(tc.structs, name, resolved) }
-                    }
+fn collect_decls(tc: TC, stmts: List<SStmt>) -> TC {
+    mut cur = tc
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        cur = match stmt_unwrap(ss.node) {
+            .TypeDecl(name, _, fields) -> {
+                if is_duplicate_decl(cur.structs.idx, name) {
+                    tc_report_at(cur, DiagCode.DuplicateDecl, "duplicate type declaration `${name}`", ss.line, ss.col, name.length)
+                } else {
+                    let resolved = tc_resolve_type_operator(fields, cur.structs)
+                    cur with { structs: struct_type_reg_register(cur.structs, name, resolved) }
                 }
-                .NewtypeDecl(name, inner_vt) -> {
-                    if is_duplicate_decl(tc.structs.idx, name) {
-                        tc_report_at(tc, DiagCode.DuplicateDecl, "duplicate type declaration `${name}`", ss.line, ss.col, name.length)
-                    } else {
-                        let inner_ty = resolve_vtype(tc, inner_vt)
-                        let ctor_params: List<ParamEntry> = [ParamEntry { name: "value", vtype: inner_ty }]
-                        tc with {
-                            newtypes: newtype_reg_register(tc.newtypes, name, inner_vt),
-                            fns: fn_type_reg_register(tc.fns, name, empty_type_params(), ctor_params, ValueType.Newtype(name, inner_ty, 0)),
-                        }
-                    }
-                }
-                .UnionAliasDecl(name, type_vt) -> {
-                    tc with { union_aliases: union_alias_reg_register(tc.union_aliases, name, type_vt) }
-                }
-                .ShapeDecl(name, fields) -> {
-                    if is_duplicate_decl(tc.structs.idx, name) {
-                        tc_report_at(tc, DiagCode.DuplicateDecl, "duplicate type declaration `${name}`", ss.line, ss.col, name.length)
-                    } else {
-                        tc with {
-                            structs: struct_type_reg_register(tc.structs, name, fields),
-                            shapes: ShapeSet.Node(name, tc.shapes),
-                        }
-                    }
-                }
-                .EnumDecl(name, _, variants) -> {
-                    if is_duplicate_decl(tc.enums.idx, name) {
-                        tc_report_at(tc, DiagCode.DuplicateDecl, "duplicate enum declaration `${name}`", ss.line, ss.col, name.length)
-                    } else {
-                        tc with { enums: enum_type_reg_register(tc.enums, name, variants) }
-                    }
-                }
-                .Function(name, tp, params, ret_vt, _) -> {
-                    let final_ret = if vtype_eq(ret_vt, .Void) { ValueType.Void } else { resolve_vtype(tc, ret_vt) }
-                    tc with { fns: fn_type_reg_register(tc.fns, name, tp, params, final_ret) }
-                }
-                .ExternFn(name, params, ret_vt) -> {
-                    let final_ret = if vtype_eq(ret_vt, .Void) { ValueType.Void } else { resolve_vtype(tc, ret_vt) }
-                    tc with { fns: fn_type_reg_register(tc.fns, name, empty_type_params(), params, final_ret) }
-                }
-                .Impl(impl_name, methods) -> {
-                    let colon_idx = find_trait_separator(impl_name)
-                    let with_impl = if colon_idx >= 0 {
-                        let trait_name = impl_name.substring(0, colon_idx)
-                        let type_name = impl_name.substring(colon_idx + 1, impl_name.length)
-                        let with_trait = tc with { trait_impls: TraitImplReg.Node(trait_name, type_name, tc.trait_impls) }
-                        // Collect associated type definitions: `type Item = ConcreteType`
-                        collect_impl_assoc_types(with_trait, type_name, methods)
-                    } else { tc }
-                    collect_decls(with_impl, methods)
-                }
-                .Module(_, body) -> collect_decls(tc, body)
-                .TraitDecl(name, methods) -> tc with {
-                    traits: trait_registry_register(tc.traits, name, collect_method_names_from_stmts(methods), collect_assoc_types_from_stmts(methods))
-                }
-                _ -> tc
             }
-            collect_decls(updated, next)
+            .NewtypeDecl(name, inner_vt) -> {
+                if is_duplicate_decl(cur.structs.idx, name) {
+                    tc_report_at(cur, DiagCode.DuplicateDecl, "duplicate type declaration `${name}`", ss.line, ss.col, name.length)
+                } else {
+                    let inner_ty = resolve_vtype(cur, inner_vt)
+                    let ctor_params: List<ParamEntry> = [ParamEntry { name: "value", vtype: inner_ty }]
+                    cur with {
+                        newtypes: newtype_reg_register(cur.newtypes, name, inner_vt),
+                        fns: fn_type_reg_register(cur.fns, name, empty_type_params(), ctor_params, ValueType.Newtype(name, inner_ty, 0)),
+                    }
+                }
+            }
+            .UnionAliasDecl(name, type_vt) -> {
+                cur with { union_aliases: union_alias_reg_register(cur.union_aliases, name, type_vt) }
+            }
+            .ShapeDecl(name, fields) -> {
+                if is_duplicate_decl(cur.structs.idx, name) {
+                    tc_report_at(cur, DiagCode.DuplicateDecl, "duplicate type declaration `${name}`", ss.line, ss.col, name.length)
+                } else {
+                    cur with {
+                        structs: struct_type_reg_register(cur.structs, name, fields),
+                        shapes: ShapeSet.Node(name, cur.shapes),
+                    }
+                }
+            }
+            .EnumDecl(name, _, variants) -> {
+                if is_duplicate_decl(cur.enums.idx, name) {
+                    tc_report_at(cur, DiagCode.DuplicateDecl, "duplicate enum declaration `${name}`", ss.line, ss.col, name.length)
+                } else {
+                    cur with { enums: enum_type_reg_register(cur.enums, name, variants) }
+                }
+            }
+            .Function(name, tp, params, ret_vt, _) -> {
+                let final_ret = if vtype_eq(ret_vt, .Void) { ValueType.Void } else { resolve_vtype(cur, ret_vt) }
+                cur with { fns: fn_type_reg_register(cur.fns, name, tp, params, final_ret) }
+            }
+            .ExternFn(name, params, ret_vt) -> {
+                let final_ret = if vtype_eq(ret_vt, .Void) { ValueType.Void } else { resolve_vtype(cur, ret_vt) }
+                cur with { fns: fn_type_reg_register(cur.fns, name, empty_type_params(), params, final_ret) }
+            }
+            .Impl(impl_name, methods) -> {
+                let colon_idx = find_trait_separator(impl_name)
+                let with_impl = if colon_idx >= 0 {
+                    let trait_name = impl_name.substring(0, colon_idx)
+                    let type_name = impl_name.substring(colon_idx + 1, impl_name.length)
+                    let with_trait = cur with { trait_impls: TraitImplReg.Node(trait_name, type_name, cur.trait_impls) }
+                    // Collect associated type definitions: `type Item = ConcreteType`
+                    collect_impl_assoc_types(with_trait, type_name, methods)
+                } else { cur }
+                collect_decls(with_impl, methods)
+            }
+            .Module(_, body) -> collect_decls(cur, body)
+            .TraitDecl(name, methods) -> cur with {
+                traits: trait_registry_register(cur.traits, name, collect_method_names_from_stmts(methods), collect_assoc_types_from_stmts(methods))
+            }
+            _ -> cur
         }
+        i = i + 1
     }
+    cur
 }
 
 // Collect associated type definitions from an impl block.
 // `type Item = ConcreteType` → store "TypeName.Item" → ConcreteType vtype in assoc_type_defs.
 /// Walk an impl block to register its `type AssocName = Concrete`
 /// definitions into `tc.assoc_type_defs`.
-fn collect_impl_assoc_types(tc: TC, type_name: string, stmts: StmtList) -> TC {
-    match stmts {
-        .End -> tc
-        .Node(ss, next) -> {
-            let updated = match ss.node {
-                .AssocType(name, ty_vt) -> {
-                    if !vtype_is_unknown(ty_vt) {
-                        let key = "${type_name}.${name}"
-                        let self_key = "Self.${name}"
-                        let with_type = tc with { assoc_type_defs: AssocTypeDefs.Node(key, ty_vt, tc.assoc_type_defs) }
-                        with_type with { assoc_type_defs: AssocTypeDefs.Node(self_key, ty_vt, with_type.assoc_type_defs) }
-                    } else { tc }
-                }
-                _ -> tc
+fn collect_impl_assoc_types(tc: TC, type_name: string, stmts: List<SStmt>) -> TC {
+    mut cur = tc
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        cur = match ss.node {
+            .AssocType(name, ty_vt) -> {
+                if !vtype_is_unknown(ty_vt) {
+                    let key = "${type_name}.${name}"
+                    let self_key = "Self.${name}"
+                    let with_type = cur with { assoc_type_defs: AssocTypeDefs.Node(key, ty_vt, cur.assoc_type_defs) }
+                    with_type with { assoc_type_defs: AssocTypeDefs.Node(self_key, ty_vt, with_type.assoc_type_defs) }
+                } else { cur }
             }
-            collect_impl_assoc_types(updated, type_name, next)
+            _ -> cur
         }
+        i = i + 1
     }
+    cur
 }
 
 /// Re-resolve every FnTypeEntry's ret_ty AND param types against the
@@ -926,15 +928,16 @@ fn rewrite_param_list_vts(tc: TC, params: List<ParamEntry>) -> List<ParamEntry> 
 // ── Pass 2: Statement checking ──
 
 /// Type-check every statement in a list, threading the TC.
-fn check_stmts(tc: TC, stmts: StmtList) -> TC {
-    match stmts {
-        .End -> tc
-        .Node(ss, next) -> {
-            let with_pos = tc with { current_line: ss.line, current_col: ss.col }
-            let updated = check_stmt(with_pos, ss.node)
-            check_stmts(updated, next)
-        }
+fn check_stmts(tc: TC, stmts: List<SStmt>) -> TC {
+    mut cur = tc
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        let with_pos = cur with { current_line: ss.line, current_col: ss.col }
+        cur = check_stmt(with_pos, ss.node)
+        i = i + 1
     }
+    cur
 }
 
 /// Type-check a `let` / `mut` / `const` binding: infer the
@@ -1065,7 +1068,7 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
 /// Type-check a function body against its declared return type.
 /// Includes implicit-return checking (the body's tail expression
 /// must match `ret_vt`) and explicit-return path verification.
-fn tc_check_fn_body(tc: TC, name: string, ret_vt: ValueType, body: StmtList) -> TC {
+fn tc_check_fn_body(tc: TC, name: string, ret_vt: ValueType, body: List<SStmt>) -> TC {
     let checked = check_stmts(tc, body)
     // Skip return type checking for functions without a declared return type.
     if vtype_eq(ret_vt, .Void) {
@@ -1086,7 +1089,7 @@ fn tc_check_fn_body(tc: TC, name: string, ret_vt: ValueType, body: StmtList) -> 
 // functions whose last statement isn't an expression.
 /// Verify that the body's tail expression matches the declared
 /// return type — Avra's implicit-return rule. Skipped for void.
-fn tc_check_implicit_return(tc: TC, fn_name: string, declared: ValueType, stmts: StmtList) -> TC {
+fn tc_check_implicit_return(tc: TC, fn_name: string, declared: ValueType, stmts: List<SStmt>) -> TC {
     let body_ty = tc_body_tail_type(tc, stmts)
     // Skip when either side is Unknown (fallback/unreliable) or Void (no value).
     if vtype_is_unknown(declared) { return tc }
@@ -1110,25 +1113,17 @@ fn tc_check_implicit_return(tc: TC, fn_name: string, declared: ValueType, stmts:
 /// Compute the type of the tail expression of a block. Skips
 /// trailing return / break / continue. Used to determine the
 /// implicit-return value type.
-fn tc_body_tail_type(tc: TC, stmts: StmtList) -> ValueType {
-    match stmts {
-        .End -> ValueType.Void
-        .Node(ss, next) -> {
-            match next {
-                .End -> {
-                    match ss.node {
-                        .Expr(e) -> {
-                            let r = check_expr(tc, e)
-                            r.ty
-                        }
-                        .Return(_) -> ValueType.Void  // explicit return — handled elsewhere
-                        .ReturnEmpty -> ValueType.Void
-                        _ -> ValueType.Void
-                    }
-                }
-                _ -> tc_body_tail_type(tc, next)
-            }
+fn tc_body_tail_type(tc: TC, stmts: List<SStmt>) -> ValueType {
+    if stmts.length == 0 { return ValueType.Void }
+    let ss = stmts[stmts.length - 1]
+    match ss.node {
+        .Expr(e) -> {
+            let r = check_expr(tc, e)
+            r.ty
         }
+        .Return(_) -> ValueType.Void  // explicit return — handled elsewhere
+        .ReturnEmpty -> ValueType.Void
+        _ -> ValueType.Void
     }
 }
 
@@ -1139,14 +1134,15 @@ fn tc_body_tail_type(tc: TC, stmts: StmtList) -> ValueType {
 /// Walk every explicit `return value` in `stmts`, verifying
 /// `value`'s type matches `declared`. Recurses into nested blocks
 /// and conditionals.
-export fn tc_check_explicit_returns(tc: TC, fn_name: string, declared: ValueType, stmts: StmtList) -> TC {
-    match stmts {
-        .End -> tc
-        .Node(ss, next) -> {
-            let updated = tc_check_stmt_returns(tc, fn_name, declared, ss.node)
-            tc_check_explicit_returns(updated, fn_name, declared, next)
-        }
+export fn tc_check_explicit_returns(tc: TC, fn_name: string, declared: ValueType, stmts: List<SStmt>) -> TC {
+    mut cur = tc
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        cur = tc_check_stmt_returns(cur, fn_name, declared, ss.node)
+        i = i + 1
     }
+    cur
 }
 
 /// Per-stmt branch of `tc_check_explicit_returns` — the recursive
@@ -1866,7 +1862,7 @@ fn check_method_call(tc: TC, obj: Expr, method: string, args: List<SExpr>) -> Ex
 /// Type-check a block as an expression — the block's value is
 /// the value of its last statement (when that's an Expr stmt) or
 /// Void otherwise.
-fn check_block(tc: TC, stmts: StmtList) -> ExprResult {
+fn check_block(tc: TC, stmts: List<SStmt>) -> ExprResult {
     let inner = tc_enter(tc)
     let pair = check_block_stmts(inner, stmts)
     let after = tc_exit(pair.tc)
@@ -1875,26 +1871,22 @@ fn check_block(tc: TC, stmts: StmtList) -> ExprResult {
 
 /// Implementation of `check_block` — walks every stmt, returning
 /// the last one's value type as the block's type.
-fn check_block_stmts(tc: TC, stmts: StmtList) -> ExprResult {
-    match stmts {
-        .End -> tc_er(tc, .Void)
-        .Node(ss, next) -> {
-            match next {
-                .End -> {
-                    // Last statement — its type is the block's type
-                    match ss.node {
-                        .Expr(e) -> check_expr(tc, e)
-                        _ -> {
-                            let checked = check_stmt(tc, ss.node)
-                            tc_er(checked, .Void)
-                        }
-                    }
-                }
-                _ -> {
-                    let checked = check_stmt(tc, ss.node)
-                    check_block_stmts(checked, next)
-                }
-            }
+fn check_block_stmts(tc: TC, stmts: List<SStmt>) -> ExprResult {
+    if stmts.length == 0 { return tc_er(tc, .Void) }
+    mut cur = tc
+    mut i = 0
+    let last = stmts.length - 1
+    while i < last {
+        cur = check_stmt(cur, stmts[i].node)
+        i = i + 1
+    }
+    // Last statement — its type is the block's type
+    let ss = stmts[last]
+    match ss.node {
+        .Expr(e) -> check_expr(cur, e)
+        _ -> {
+            let checked = check_stmt(cur, ss.node)
+            tc_er(checked, .Void)
         }
     }
 }
@@ -2037,27 +2029,30 @@ fn annotate_bind(tc: TC, name: string, ty_vt: ValueType, init: Expr) -> TC {
     tc_bind(tc, name, declared_ty)
 }
 
-/// Walk a StmtList, returning a copy with every contained SExpr's
+/// Walk a List<SStmt>, returning a copy with every contained SExpr's
 /// `.ty` field filled in.
-fn annotate_stmts(tc: TC, stmts: StmtList) -> StmtList {
-    match stmts {
-        .End -> .End
-        .Node(ss, next) -> {
-            let new_stmt = annotate_stmt(tc, ss.node)
-            let updated_tc = match ss.node {
-                .Let(name, ty_vt, init) -> annotate_bind(tc, name, ty_vt, init)
-                .Mut(name, ty_vt, init) -> annotate_bind(tc, name, ty_vt, init)
-                .Const(name, ty_vt, init) -> annotate_bind(tc, name, ty_vt, init)
-                // Destructured names need to flow into the annotate
-                // scope too, otherwise later `.field` accesses on
-                // destructured tuple elements see Unknown and ICE
-                // at codegen.
-                .LetDestructure(names, init) -> bind_destructure(tc, names, check_expr(tc, init).ty)
-                _ -> tc
-            }
-            StmtList.Node(sstmt_at(new_stmt, ss.line, ss.col, ss.file), annotate_stmts(updated_tc, next))
+fn annotate_stmts(tc: TC, stmts: List<SStmt>) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    mut cur = tc
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        let new_stmt = annotate_stmt(cur, ss.node)
+        out.push(sstmt_at(new_stmt, ss.line, ss.col, ss.file))
+        cur = match ss.node {
+            .Let(name, ty_vt, init) -> annotate_bind(cur, name, ty_vt, init)
+            .Mut(name, ty_vt, init) -> annotate_bind(cur, name, ty_vt, init)
+            .Const(name, ty_vt, init) -> annotate_bind(cur, name, ty_vt, init)
+            // Destructured names need to flow into the annotate
+            // scope too, otherwise later `.field` accesses on
+            // destructured tuple elements see Unknown and ICE
+            // at codegen.
+            .LetDestructure(names, init) -> bind_destructure(cur, names, check_expr(cur, init).ty)
+            _ -> cur
         }
+        i = i + 1
     }
+    out
 }
 
 /// Per-stmt branch of the annotation pass.
@@ -2405,14 +2400,14 @@ fn naming_warn(tc: TC, msg: string) -> TC {
 
 /// Walk every top-level statement and apply the per-decl naming-
 /// convention check.
-fn check_naming_conventions(tc: TC, stmts: StmtList) -> TC {
-    match stmts {
-        .End -> tc
-        .Node(ss, next) -> {
-            let updated = check_naming_stmt(tc, ss.node)
-            check_naming_conventions(updated, next)
-        }
+fn check_naming_conventions(tc: TC, stmts: List<SStmt>) -> TC {
+    mut cur = tc
+    mut i = 0
+    while i < stmts.length {
+        cur = check_naming_stmt(cur, stmts[i].node)
+        i = i + 1
     }
+    cur
 }
 
 /// Per-stmt branch of `check_naming_conventions`. Each declaration

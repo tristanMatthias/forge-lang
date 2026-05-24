@@ -4,7 +4,7 @@
 // empty list otherwise.
 
 use @std.avrac.parse.{parse_program_source}
-use @std.avrac.core.{Stmt, StmtList, ChildrenSlot, stmt_unwrap}
+use @std.avrac.core.{Stmt, SStmt, ChildrenSlot, stmt_unwrap}
 
 fn first_component_children(source: string) -> List<ChildrenSlot> {
     let r = parse_program_source(source)
@@ -13,17 +13,17 @@ fn first_component_children(source: string) -> List<ChildrenSlot> {
     children_of_first_component(r.stmts!)
 }
 
-fn children_of_first_component(stmts: StmtList) -> List<ChildrenSlot> {
-    match stmts {
-        .End -> []
-        .Node(ss, next) -> {
-            let inner = stmt_unwrap(ss.node)
-            match inner {
-                .ComponentDef(_, _, _, ch, _, _) -> ch
-                _ -> children_of_first_component(next)
-            }
+fn children_of_first_component(stmts: List<SStmt>) -> List<ChildrenSlot> {
+    mut i = 0
+    while i < stmts.length {
+        let inner = stmt_unwrap(stmts[i].node)
+        match inner {
+            .ComponentDef(_, _, _, ch, _, _) -> return ch
+            _ -> {}
         }
+        i = i + 1
     }
+    []
 }
 
 fn child_count(ch: List<ChildrenSlot>) -> int { ch.length }

@@ -11,28 +11,29 @@
 // sites in packages/cli/src/main.av between resolve_names and
 // typecheck_program.
 
-use core.{Stmt, StmtList, sstmt_at, Expr, SExpr, sexpr, FieldInit, MatchArm, WhenArm, SelectArm}
+use core.{Stmt, SStmt, sstmt_at, Expr, SExpr, sexpr, FieldInit, MatchArm, WhenArm, SelectArm}
 use features.comptime.{CompTimeRegistry, try_fold_call}
 
 // ── Public entry ──
 
 /// Walk every statement and expression in `stmts`, replacing each
 /// foldable @comptime call with its evaluated literal. Returns a
-/// new StmtList — the input AST is never mutated.
-export fn rewrite_program(stmts: StmtList, reg: CompTimeRegistry) -> StmtList {
+/// new List<SStmt> — the input AST is never mutated.
+export fn rewrite_program(stmts: List<SStmt>, reg: CompTimeRegistry) -> List<SStmt> {
     rewrite_stmt_list(stmts, reg)
 }
 
 // ── Statement walker ──
 
-fn rewrite_stmt_list(stmts: StmtList, reg: CompTimeRegistry) -> StmtList {
-    match stmts {
-        .End -> StmtList.End
-        .Node(ss, next) -> StmtList.Node(
-            sstmt_at(rewrite_stmt(ss.node, reg), ss.line, ss.col, ss.file),
-            rewrite_stmt_list(next, reg)
-        )
+fn rewrite_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        out.push(sstmt_at(rewrite_stmt(ss.node, reg), ss.line, ss.col, ss.file))
+        i = i + 1
     }
+    out
 }
 
 fn rewrite_stmt(stmt: Stmt, reg: CompTimeRegistry) -> Stmt {

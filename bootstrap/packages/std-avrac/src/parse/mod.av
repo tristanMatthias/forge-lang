@@ -11,7 +11,7 @@
 
 // dir-as-module (g2eo.1): lexer.av auto-loads as a sibling, surfaces
 // flat at `parse.{...}`.
-use core.{Expr, Stmt, StmtList, ParamEntry, Pattern, WhenArm, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, Annotation, Tk, tk_keyword_str, TypeExpr}
+use core.{Expr, Stmt, ParamEntry, Pattern, WhenArm, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, Annotation, Tk, tk_keyword_str, TypeExpr}
 use core.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser}
 use features.closures.{expr_contains_it, wrap_in_it_lambda}
 use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, diag_error, diag_with_help, span_new}
@@ -28,7 +28,7 @@ export type ParseResult = {
 /// carries a StmtList plus the full DiagnosticBag so later passes
 /// can render multi-error messages.
 export type ProgramParseResult = {
-    stmts: StmtList?,
+    stmts: List<SStmt>?,
     had_error: int,
     error_message: string,
     bag: DiagnosticBag,
@@ -457,35 +457,26 @@ impl Parser {
         }
     }
 
-    fn parse_statement_list(self, stop_at_right_brace: int) -> StmtList? {
-        if stop_at_right_brace && self.check(Tk.RightBrace) {
-            return StmtList.End
+    fn parse_statement_list(self, stop_at_right_brace: int) -> List<SStmt>? {
+        mut out: List<SStmt> = []
+        while true {
+            if stop_at_right_brace && self.check(Tk.RightBrace) { return out }
+            if self.check(Tk.Eof) { return out }
+            if !stop_at_right_brace && self.check(Tk.RightBrace) {
+                self.report(DiagCode.MismatchedBrace, "unexpected `}`")
+                self.advance()
+                continue
+            }
+            let stmt_line = self.current_line
+            let stmt_col = self.current_column
+            let stmt = self.parse_declaration()
+            if stmt == null {
+                self.synchronize()
+                continue
+            }
+            out.push(sstmt_at(stmt!, stmt_line, stmt_col, self.file))
         }
-
-        if self.check(Tk.Eof) {
-            return StmtList.End
-        }
-
-        if !stop_at_right_brace && self.check(Tk.RightBrace) {
-            // Report but recover — skip the `}` and keep going
-            self.report(DiagCode.MismatchedBrace, "unexpected `}`")
-            self.advance()
-            return self.parse_statement_list(stop_at_right_brace)
-        }
-
-        // Capture line/col BEFORE parsing the statement so the SStmt
-        // points at the start of the declaration, not the end.
-        let stmt_line = self.current_line
-        let stmt_col = self.current_column
-        let stmt = self.parse_declaration()
-        if stmt == null {
-            self.synchronize()
-            return self.parse_statement_list(stop_at_right_brace)
-        }
-
-        let next = self.parse_statement_list(stop_at_right_brace)?
-
-        StmtList.Node(sstmt_at(stmt!, stmt_line, stmt_col, self.file), next)
+        out
     }
 
     fn parse_declaration(self) -> Stmt? {

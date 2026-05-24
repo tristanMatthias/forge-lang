@@ -47,11 +47,13 @@ fn emit_spawn(ctx: Ctx, env: List<VarBinding>, body: Expr) -> Result<EmitValue, 
 /// flow + bodies) contains a `spawn` expression. Used by
 /// `emit_function_body` to decide whether to allocate a structured-
 /// concurrency task group up front.
-export fn stmts_has_spawn(stmts: StmtList) -> bool {
-    match stmts {
-        .End -> false
-        .Node(ss, next) -> stmt_has_spawn(ss.node) || stmts_has_spawn(next)
+export fn stmts_has_spawn(stmts: List<SStmt>) -> bool {
+    mut i = 0
+    while i < stmts.length {
+        if stmt_has_spawn(stmts[i].node) { return true }
+        i = i + 1
     }
+    false
 }
 
 /// Per-statement spawn-detector. Recurses into expression

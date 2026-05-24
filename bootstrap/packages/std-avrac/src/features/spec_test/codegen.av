@@ -28,7 +28,7 @@ export fn spec_emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<
 /// Body-local `let` bindings DO NOT escape to sibling spec blocks
 /// — each spec is independent, so we return the original `env`
 /// after discarding the body's accumulated List<VarBinding>.
-fn emit_spec_block(ctx: Ctx, env: List<VarBinding>, name: string, body: StmtList) -> Result<StmtResult, string> {
+fn emit_spec_block(ctx: Ctx, env: List<VarBinding>, name: string, body: List<SStmt>) -> Result<StmtResult, string> {
     ctx.call("test_render_spec_start", [ctx.global_str(name, "spec_str")])
     let _ = emit_spec_stmts(ctx, env, body)?
     ok_sr(ctx, env)
@@ -38,7 +38,7 @@ fn emit_spec_block(ctx: Ctx, env: List<VarBinding>, name: string, body: StmtList
 /// the body. Threads the env so `let` bindings flow into later
 /// `then` arms within the same given (the canonical use case:
 /// `given "..." { let x = ...; then "..." { x == 1 } }`).
-fn emit_given_block(ctx: Ctx, env: List<VarBinding>, name: string, body: StmtList) -> Result<StmtResult, string> {
+fn emit_given_block(ctx: Ctx, env: List<VarBinding>, name: string, body: List<SStmt>) -> Result<StmtResult, string> {
     ctx.call("test_render_given_start", [ctx.global_str(name, "spec_str")])
     let new_env = emit_spec_stmts(ctx, env, body)?
     ok_sr(ctx, new_env)
@@ -73,15 +73,16 @@ fn emit_then_block(ctx: Ctx, env: List<VarBinding>, name: string, cond: Expr, fi
 /// arm — the outer codegen walker only updates ctx at top-level
 /// stmt boundaries, but `then` arms are nested inside `spec` /
 /// `given` bodies and need their own per-stmt update.
-fn emit_spec_stmts(ctx: Ctx, env: List<VarBinding>, stmts: StmtList) -> Result<List<VarBinding>, string> {
-    match stmts {
-        .End -> ok_stmt(env)
-        .Node(ss, next) -> {
-            let line_ctx = ctx with { source_line: ss.line, source_file: ss.file }
-            let new_env = emit_spec_single(line_ctx, env, ss.node)?
-            emit_spec_stmts(ctx, new_env, next)
-        }
+fn emit_spec_stmts(ctx: Ctx, env: List<VarBinding>, stmts: List<SStmt>) -> Result<List<VarBinding>, string> {
+    mut cur_env = env
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        let line_ctx = ctx with { source_line: ss.line, source_file: ss.file }
+        cur_env = emit_spec_single(line_ctx, cur_env, ss.node)?
+        i = i + 1
     }
+    ok_stmt(cur_env)
 }
 
 /// Per-statement spec emitter. SpecBlock / GivenBlock / ThenBlock
@@ -94,7 +95,7 @@ fn emit_spec_single(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<List<
         let sr = spec_emit_stmt(ctx, env, stmt)?
         return ok_stmt(sr.env)
     }
-    let wrapped = StmtList.Node(sstmt_dummy(stmt), StmtList.End)
+    let wrapped: List<SStmt> = [sstmt_dummy(stmt)]
     emit_block_loop(ctx, env, wrapped, ctx.i64(0), .Unknown)?
     ok_stmt(env)
 }

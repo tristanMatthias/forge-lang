@@ -1,6 +1,6 @@
 // WHY: trait conformance checking — verifies impl blocks provide all required methods.
 
-use core.{Stmt, StmtList, SStmt, param_list_length, vtype_is_unknown, stmt_unwrap}
+use core.{Stmt, SStmt, param_list_length, vtype_is_unknown, stmt_unwrap}
 use diagnostics.{DiagCode}
 use typeck.{TC, tc_report, TraitRegistry, TraitMethod, trait_get, tc_owns_type}
 use core.{method_mangled_name}
@@ -30,7 +30,7 @@ export fn find_trait_separator(name: string) -> int {
 /// method on the trait is implemented; (c) every required
 /// associated type is provided. Inherent impls (no `Trait:`
 /// prefix) bypass conformance checks.
-export fn check_trait_conformance(tc: TC, impl_name: string, methods: StmtList) -> TC {
+export fn check_trait_conformance(tc: TC, impl_name: string, methods: List<SStmt>) -> TC {
     let colon_idx = find_trait_separator(impl_name)
     if colon_idx < 0 { return tc }
 
@@ -61,7 +61,7 @@ export fn check_trait_conformance(tc: TC, impl_name: string, methods: StmtList) 
 /// impl block defines a matching `type Name = ...` entry. Missing
 /// associated types surface as F1000 with a message that names
 /// both the trait and the implementing type.
-fn check_required_assoc_types(tc: TC, trait_name: string, type_name: string, required: List<string>, impl_stmts: StmtList) -> TC {
+fn check_required_assoc_types(tc: TC, trait_name: string, type_name: string, required: List<string>, impl_stmts: List<SStmt>) -> TC {
     mut current = tc
     mut i = 0
     while i < required.length {
@@ -76,23 +76,23 @@ fn check_required_assoc_types(tc: TC, trait_name: string, type_name: string, req
 
 /// True when `stmts` contains an `AssocType(name, …)` entry with
 /// a resolved (non-Unknown) right-hand side.
-fn impl_has_assoc_type(stmts: StmtList, name: string) -> bool {
-    match stmts {
-        .End -> false
-        .Node(ss, next) -> {
-            match ss.node {
-                .AssocType(n, ty_vt) if n == name && !vtype_is_unknown(ty_vt) -> true
-                _ -> impl_has_assoc_type(next, name)
-            }
+fn impl_has_assoc_type(stmts: List<SStmt>, name: string) -> bool {
+    mut i = 0
+    while i < stmts.length {
+        match stmts[i].node {
+            .AssocType(n, ty_vt) if n == name && !vtype_is_unknown(ty_vt) -> return true
+            _ -> {}
         }
+        i = i + 1
     }
+    false
 }
 
 /// For every method the trait requires, check that the impl
 /// supplies a function with the same name (after method-mangling)
 /// and matching arity. Each missing method or arity mismatch
 /// emits its own F1000 diagnostic so users see the full picture.
-fn check_required_methods(tc: TC, trait_name: string, type_name: string, required: List<TraitMethod>, impl_methods: StmtList) -> TC {
+fn check_required_methods(tc: TC, trait_name: string, type_name: string, required: List<TraitMethod>, impl_methods: List<SStmt>) -> TC {
     mut current = tc
     mut i = 0
     while i < required.length {
@@ -114,75 +114,63 @@ fn check_required_methods(tc: TC, trait_name: string, type_name: string, require
 
 /// Look up a method by mangled name and return its parameter
 /// count, or -1 when not found.
-fn impl_method_param_count(methods: StmtList, name: string) -> int {
-    match methods {
-        .End -> -1
-        .Node(ss, next) -> {
-            match stmt_unwrap(ss.node) {
-                .Function(fn_name, _, params, _, _) if fn_name == name -> param_list_length(params)
-                _ -> impl_method_param_count(next, name)
-            }
+fn impl_method_param_count(methods: List<SStmt>, name: string) -> int {
+    mut i = 0
+    while i < methods.length {
+        match stmt_unwrap(methods[i].node) {
+            .Function(fn_name, _, params, _, _) if fn_name == name -> return param_list_length(params)
+            _ -> {}
         }
+        i = i + 1
     }
+    -1
 }
 
 /// True when `methods` contains a `Function` with the given
 /// (mangled) name. Walks `Annotated` wrappers transparently so
 /// methods carrying `@external_unit` (synthesised from metadata.bin
 /// for cross-unit impls — 9ixv) still register as present.
-fn impl_has_method(methods: StmtList, name: string) -> bool {
-    match methods {
-        .End -> false
-        .Node(ss, next) -> {
-            match stmt_unwrap(ss.node) {
-                .Function(fn_name, _, _, _, _) if fn_name == name -> true
-                _ -> impl_has_method(next, name)
-            }
+fn impl_has_method(methods: List<SStmt>, name: string) -> bool {
+    mut i = 0
+    while i < methods.length {
+        match stmt_unwrap(methods[i].node) {
+            .Function(fn_name, _, _, _, _) if fn_name == name -> return true
+            _ -> {}
         }
+        i = i + 1
     }
+    false
 }
 
 /// Walk a trait body and produce the method-signature list of every
 /// `extern fn` (the trait's required signatures). Default-
 /// implemented methods don't count — only the abstract ones.
-export fn collect_method_names_from_stmts(stmts: StmtList) -> List<TraitMethod> {
+export fn collect_method_names_from_stmts(stmts: List<SStmt>) -> List<TraitMethod> {
     mut out = []
-    mut cur = stmts
-    mut keep_going = true
-    while keep_going {
-        match cur {
-            .End -> { keep_going = false }
-            .Node(ss, next) -> {
-                match ss.node {
-                    .ExternFn(name, params, _) -> {
-                        out.push(TraitMethod { name: name, param_count: param_list_length(params) })
-                    }
-                    _ -> {}
-                }
-                cur = next
+    mut i = 0
+    while i < stmts.length {
+        match stmts[i].node {
+            .ExternFn(name, params, _) -> {
+                out.push(TraitMethod { name: name, param_count: param_list_length(params) })
             }
+            _ -> {}
         }
+        i = i + 1
     }
     out
 }
 
 /// Walk a trait body and produce the list of every `type Name`
 /// declaration (associated types — spec Axis 2).
-export fn collect_assoc_types_from_stmts(stmts: StmtList) -> List<string> {
+export fn collect_assoc_types_from_stmts(stmts: List<SStmt>) -> List<string> {
     mut out = []
-    mut cur = stmts
-    mut keep_going = true
-    while keep_going {
-        match cur {
-            .End -> { keep_going = false }
-            .Node(ss, next) -> {
-                match ss.node {
-                    .AssocType(name, _) -> { out.push(name) }
-                    _ -> {}
-                }
-                cur = next
-            }
+    mut i = 0
+    while i < stmts.length {
+        match stmts[i].node {
+            .AssocType(name, _) -> { out.push(name) }
+            _ -> {}
         }
+        i = i + 1
     }
     out
 }

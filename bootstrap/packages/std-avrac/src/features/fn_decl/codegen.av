@@ -1,7 +1,7 @@
 // WHY: emits function bodies and binds parameters into the body scope.
 // Also emits null-argument checks when debug_null_checks is enabled on Ctx.
 
-use core.{Expr, SExpr, Stmt, StmtList, ParamEntry, VarBinding, env_lookup, ValueType, stmt_unwrap, field_index_of, find_annotation, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_is_bytes, vtype_is_newtype, vtype_newtype_inner, vtype_newtype_name, vtype_struct_name, vtype_trait_name, vtype_is_unknown}
+use core.{Expr, SExpr, Stmt, ParamEntry, VarBinding, env_lookup, ValueType, stmt_unwrap, field_index_of, find_annotation, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_is_bytes, vtype_is_newtype, vtype_newtype_inner, vtype_newtype_name, vtype_struct_name, vtype_trait_name, vtype_is_unknown}
 use codegen.{cg_newtype_vtype_lookup}
 use core.{method_mangled_name, type_registry_id_for, type_registry_name_for, is_result_enum_name, is_result_shaped_enum}
 use codegen.{Ctx, EmitValue, ok_emit, ok_emit, ok_stmt, err_emit, err_stmt, trait_decl_has}
@@ -26,55 +26,37 @@ use features.spawn_expr.{stmts_has_spawn}
 /// The LLVM declaration from `declare_functions` stays as a
 /// declare-only; the linker resolves the call against the producer's
 /// pre-built .o. See `fn_belongs_to_lib_pkg` for the ownership rule.
-export fn emit_function_bodies(ctx: Ctx, stmts: StmtList) -> Result<List<VarBinding>, string> {
-    match stmts {
-        .End -> {
-            let e: List<VarBinding> = []
-            ok_stmt(e)
-        }
-        .Node(ss, next) -> {
-            // Skip body emission for fns marked `@external_unit` —
-            // their compiled code lives in another unit's .o that the
-            // linker resolves at final link time. The function decl
-            // already exists (from declare_functions), so call sites
-            // emit a normal call instruction; we just don't reproduce
-            // the body here. Driven by xtvc's metadata-synthesised
-            // stubs (forge-crafting-intepreters-2f54).
-            let is_external = find_annotation(ss.node, "external_unit") != null
-            let inner = match stmt_unwrap(ss.node) {
-                .Function(name, _, params, _, body) -> {
-                    if is_external || !fn_belongs_to_lib_pkg(ctx, name) {
-                        let e: List<VarBinding> = []
-                        ok_stmt(e)
-                    } else {
-                        emit_function_body(ctx, name, params, body)
-                    }
-                }
-                .Impl(_, methods) -> emit_function_bodies(ctx, methods)
-                // @external_unit on a Module skips body recursion too —
-                // every fn inside is part of another unit's .o, so we
-                // must not emit duplicate bodies here. Without this
-                // gate the per-module compile (g2eo Phase A target_module
-                // filter) blew up to ~2500 defines because Module
-                // wrappers weren't propagating their external annotation
-                // down to the fns inside.
-                .Module(_, body) -> {
-                    if is_external {
-                        let e: List<VarBinding> = []
-                        ok_stmt(e)
-                    } else {
-                        emit_function_bodies(ctx, body)
-                    }
-                }
-                _ -> {
-                    let e: List<VarBinding> = []
-                    ok_stmt(e)
+export fn emit_function_bodies(ctx: Ctx, stmts: List<SStmt>) -> Result<List<VarBinding>, string> {
+    let empty_e: List<VarBinding> = []
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        // Skip body emission for fns marked `@external_unit` —
+        // their compiled code lives in another unit's .o that the
+        // linker resolves at final link time.
+        let is_external = find_annotation(ss.node, "external_unit") != null
+        let inner = match stmt_unwrap(ss.node) {
+            .Function(name, _, params, _, body) -> {
+                if is_external || !fn_belongs_to_lib_pkg(ctx, name) {
+                    ok_stmt(empty_e)
+                } else {
+                    emit_function_body(ctx, name, params, body)
                 }
             }
-            inner?
-            emit_function_bodies(ctx, next)
+            .Impl(_, methods) -> emit_function_bodies(ctx, methods)
+            .Module(_, body) -> {
+                if is_external {
+                    ok_stmt(empty_e)
+                } else {
+                    emit_function_bodies(ctx, body)
+                }
+            }
+            _ -> ok_stmt(empty_e)
         }
+        inner?
+        i = i + 1
     }
+    ok_stmt(empty_e)
 }
 
 /// P2 library-mode ownership check.
@@ -104,7 +86,7 @@ fn fn_belongs_to_lib_pkg(ctx: Ctx, fn_name: string) -> bool {
 /// task group when the body uses `spawn`, then walk the body.
 /// Adds an implicit return at the end when the last statement
 /// didn't terminate.
-export fn emit_function_body(ctx: Ctx, name: string, params: List<ParamEntry>, body: StmtList) -> Result<List<VarBinding>, string> {
+export fn emit_function_body(ctx: Ctx, name: string, params: List<ParamEntry>, body: List<SStmt>) -> Result<List<VarBinding>, string> {
     let fn_val = ctx.get_fn(name)
     if fn_val == null {
         return err_stmt("codegen error: function `${name}` was not declared in pass 1")

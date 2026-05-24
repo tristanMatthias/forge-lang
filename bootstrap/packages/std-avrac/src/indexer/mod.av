@@ -1,6 +1,6 @@
 // AST → SymList indexer.
 //
-// Walks a parsed StmtList, reads /// → @doc annotations, renders the
+// Walks a parsed List<SStmt>, reads /// → @doc annotations, renders the
 // declaration shape into a string-typed SymKind, and produces std-lsp
 // Sym records ready for the SymbolGraph.
 //
@@ -9,13 +9,13 @@
 // types, exported-ness, span) is read from the parser's output rather
 // than re-parsed from source text.
 //
-// The indexer is compiler-internal because it consumes Stmt/StmtList
+// The indexer is compiler-internal because it consumes Stmt/List<SStmt>
 // from src/core/ast.av. It produces std-lsp's portable Sym shape, so
 // downstream consumers (docs CLI, LSP server) only need @std.lsp's
 // types — they never import compiler internals.
 
 use core.{avra_selfhost_read_file, avra_shell_exec}
-use core.{Stmt, StmtList, SStmt,
+use core.{Stmt, SStmt,
               Expr, SExpr,
               ParamEntry, FieldEntry,
               Variant, ValueType, TypeParamEntry, render_type_param_list,
@@ -44,7 +44,7 @@ use @std.lsp.{LspPos, LspSpan, Sym, SymKind,
 /// Module nesting is preserved by qualifying every nested decl with
 /// the module's name as a `module::name` prefix. So
 /// `mod core { fn foo() }` produces `name="foo", qualified="core::foo"`.
-export fn extract_from_ast(stmts: StmtList, file: string) -> List<Sym> {
+export fn extract_from_ast(stmts: List<SStmt>, file: string) -> List<Sym> {
     extract_inner(stmts, file, "")
 }
 
@@ -53,14 +53,14 @@ export fn extract_from_ast(stmts: StmtList, file: string) -> List<Sym> {
 /// a fn inside that file ends up qualified as `core::ast::foo`.
 /// `core/mod.av` → "core" (the `mod` filename collapses). Used by
 /// `avra docs` so cross-file hierarchical addressing works.
-export fn extract_from_ast_at(stmts: StmtList, file: string) -> List<Sym> {
+export fn extract_from_ast_at(stmts: List<SStmt>, file: string) -> List<Sym> {
     extract_inner(stmts, file, file_to_module_prefix(file))
 }
 
 /// Like `extract_calls_from_ast` but seeds the caller's
 /// qualified-name prefix from the file path, mirroring
 /// `extract_from_ast_at`.
-export fn extract_calls_from_ast_at(stmts: StmtList, file: string) -> List<CallEdge> {
+export fn extract_calls_from_ast_at(stmts: List<SStmt>, file: string) -> List<CallEdge> {
     extract_calls_inner(stmts, file, file_to_module_prefix(file), calls_new())
 }
 
@@ -111,7 +111,7 @@ fn path_to_qualifier(dir: string) -> string {
 /// Captures the most common "X calls Y" relationship; deeper
 /// coverage (calls inside match arms, closures, lambdas) is
 /// layered on as needed.
-export fn extract_calls_from_ast(stmts: StmtList, file: string) -> List<CallEdge> {
+export fn extract_calls_from_ast(stmts: List<SStmt>, file: string) -> List<CallEdge> {
     extract_calls_inner(stmts, file, "", calls_new())
 }
 
@@ -119,31 +119,25 @@ export fn extract_calls_from_ast(stmts: StmtList, file: string) -> List<CallEdge
 /// `extract_calls_from_ast_at`. Threads the qualified-name prefix
 /// through nested modules and impls; descends into function bodies
 /// via `walk_body_for_calls`.
-fn extract_calls_inner(stmts: StmtList, file: string, qual_prefix: string, acc: List<CallEdge>) -> List<CallEdge> {
+fn extract_calls_inner(stmts: List<SStmt>, file: string, qual_prefix: string, acc: List<CallEdge>) -> List<CallEdge> {
     mut cur_acc = acc
-    mut cur = stmts
-    while true {
-        match cur {
-            .End -> {
-                return cur_acc
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        let inner = stmt_unwrap(ss.node)
+        cur_acc = match inner {
+            .Function(name, _, _, _, body) -> {
+                let qual = qualify(qual_prefix, name)
+                walk_body_for_calls(body, file, qual, cur_acc)
             }
-            .Node(ss, next) -> {
-                let inner = stmt_unwrap(ss.node)
-                cur_acc = match inner {
-                    .Function(name, _, _, _, body) -> {
-                        let qual = qualify(qual_prefix, name)
-                        walk_body_for_calls(body, file, qual, cur_acc)
-                    }
-                    .Module(name, body) -> {
-                        let nested_qual = qualify(qual_prefix, name)
-                        extract_calls_inner(body, file, nested_qual, cur_acc)
-                    }
-                    .Impl(_, methods) -> extract_calls_inner(methods, file, qual_prefix, cur_acc)
-                    _ -> cur_acc
-                }
-                cur = next
+            .Module(name, body) -> {
+                let nested_qual = qualify(qual_prefix, name)
+                extract_calls_inner(body, file, nested_qual, cur_acc)
             }
+            .Impl(_, methods) -> extract_calls_inner(methods, file, qual_prefix, cur_acc)
+            _ -> cur_acc
         }
+        i = i + 1
     }
     cur_acc
 }
@@ -152,19 +146,12 @@ fn extract_calls_inner(stmts: StmtList, file: string, qual_prefix: string, acc: 
 /// `Expr.Call` sites whose callee is a bare identifier. Deeper
 /// expression structure (lambdas, match arms) is reached through
 /// `scan_expr_for_calls`.
-fn walk_body_for_calls(stmts: StmtList, file: string, caller: string, acc: List<CallEdge>) -> List<CallEdge> {
+fn walk_body_for_calls(stmts: List<SStmt>, file: string, caller: string, acc: List<CallEdge>) -> List<CallEdge> {
     mut cur_acc = acc
-    mut cur = stmts
-    while true {
-        match cur {
-            .End -> {
-                return cur_acc
-            }
-            .Node(ss, next) -> {
-                cur_acc = scan_stmt_for_calls(ss, file, caller, cur_acc)
-                cur = next
-            }
-        }
+    mut i = 0
+    while i < stmts.length {
+        cur_acc = scan_stmt_for_calls(stmts[i], file, caller, cur_acc)
+        i = i + 1
     }
     cur_acc
 }
@@ -238,19 +225,12 @@ fn scan_expr_list(es: List<SExpr>, file: string, caller: string, line: int, col:
 /// accumulates the module path: "" at the top level, "core" inside
 /// `mod core`, "core::ast" inside `mod core { mod ast { ... } }`.
 /// Iterative append over the built-in `List<Sym>`.
-fn extract_inner(stmts: StmtList, file: string, qual_prefix: string) -> List<Sym> {
+fn extract_inner(stmts: List<SStmt>, file: string, qual_prefix: string) -> List<Sym> {
     mut acc: List<Sym> = []
-    mut cur = stmts
-    while true {
-        match cur {
-            .End -> {
-                return acc
-            }
-            .Node(ss, next) -> {
-                acc = process_stmt(ss, file, qual_prefix, acc)
-                cur = next
-            }
-        }
+    mut i = 0
+    while i < stmts.length {
+        acc = process_stmt(stmts[i], file, qual_prefix, acc)
+        i = i + 1
     }
     acc
 }

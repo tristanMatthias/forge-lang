@@ -14,13 +14,13 @@
 // that desugar.av and comptime/rewrite.av use; once the generic-AST-
 // visitor ticket lands (93k3) all three should share a single visitor.
 
-use core.{Stmt, StmtList, SStmt, sstmt_at, sstmt_dummy, Expr, SExpr, sexpr, sexpr_dummy, FieldEntry, FieldInit, MatchArm, BinOp, UnOp, LogicOp, ParamEntry, TypeParamEntry, CompConfigPair, binop_str, unop_str, logicop_str}
+use core.{Stmt, SStmt, sstmt_at, sstmt_dummy, Expr, SExpr, sexpr, sexpr_dummy, FieldEntry, FieldInit, MatchArm, BinOp, UnOp, LogicOp, ParamEntry, TypeParamEntry, CompConfigPair, binop_str, unop_str, logicop_str}
 
 // ── Public entry ──
 
 /// Walk every statement and expression in `stmts`, replacing each
 /// `Expr.Quote` node with an AST-construction expression that evaluates
-/// to the captured AST. Returns a new StmtList.
+/// to the captured AST. Returns a new List<SStmt>.
 ///
 /// Fast-path: most files contain zero `quote { ... }` expressions, so
 /// a non-allocating presence scan up-front lets the rewrite walker
@@ -28,7 +28,7 @@ use core.{Stmt, StmtList, SStmt, sstmt_at, sstmt_dummy, Expr, SExpr, sexpr, sexp
 /// a new tree, so the worst case (file *with* quotes) is one extra
 /// O(N) traversal — accepted in exchange for the common-case win
 /// where we never allocate a single new Stmt/Expr node.
-export fn lower_quotes(stmts: StmtList) -> StmtList {
+export fn lower_quotes(stmts: List<SStmt>) -> List<SStmt> {
     if !any_quote_in_stmt_list(stmts) { return stmts }
     lower_stmt_list(stmts)
 }
@@ -37,14 +37,13 @@ export fn lower_quotes(stmts: StmtList) -> StmtList {
 
 /// True iff any Expr.Quote node appears anywhere in `stmts`.
 /// Walks the same shape as lower_stmt_list but allocates nothing.
-fn any_quote_in_stmt_list(stmts: StmtList) -> bool {
-    match stmts {
-        .End -> false
-        .Node(ss, next) -> {
-            if any_quote_in_stmt(ss.node) { return true }
-            any_quote_in_stmt_list(next)
-        }
+fn any_quote_in_stmt_list(stmts: List<SStmt>) -> bool {
+    mut i = 0
+    while i < stmts.length {
+        if any_quote_in_stmt(stmts[i].node) { return true }
+        i = i + 1
     }
+    false
 }
 
 fn any_quote_in_stmt(stmt: Stmt) -> bool {
@@ -156,14 +155,15 @@ fn any_quote_in_match_arms(arms: List<MatchArm>) -> bool {
 
 // ── Top-level walker (mirrors comptime/rewrite.av structure) ──
 
-fn lower_stmt_list(stmts: StmtList) -> StmtList {
-    match stmts {
-        .End -> StmtList.End
-        .Node(ss, next) -> StmtList.Node(
-            sstmt_at(lower_stmt(ss.node), ss.line, ss.col, ss.file),
-            lower_stmt_list(next)
-        )
+fn lower_stmt_list(stmts: List<SStmt>) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        out.push(sstmt_at(lower_stmt(ss.node), ss.line, ss.col, ss.file))
+        i = i + 1
     }
+    out
 }
 
 fn lower_stmt(stmt: Stmt) -> Stmt {
@@ -349,55 +349,44 @@ fn value_type_ctor(variant: string) -> Expr {
     Expr.EnumCtor("@std::avrac::core::ValueType", variant, empty)
 }
 
-/// Extract the single Stmt from a `Block(StmtList(Node(ss, End)))`.
+/// Extract the single Stmt from a `Block(List<SStmt>)` of length 1.
 /// Returns null if the block is empty or has multiple statements.
 fn extract_single_stmt(body: Expr) -> Stmt? {
     match body {
         .Block(stmts) -> {
-            match stmts {
-                .Node(ss, rest) -> {
-                    match rest {
-                        .End -> ss.node
-                        _ -> null
-                    }
-                }
-                _ -> null
-            }
+            if stmts.length == 1 { stmts[0].node } else { null }
         }
         _ -> null
     }
 }
 
-/// Extract the StmtList from a Block; otherwise empty.
-fn extract_stmt_list(body: Expr) -> StmtList {
+/// Extract the List<SStmt> from a Block; otherwise empty.
+fn extract_stmt_list(body: Expr) -> List<SStmt> {
     match body {
         .Block(stmts) -> stmts
-        _ -> StmtList.End
+        _ -> {
+            let empty: List<SStmt> = []
+            empty
+        }
     }
 }
 
 // ── Quote body unwrapping ──
 
 /// `parse_quote` currently captures the body via parse_block_expression,
-/// which wraps single expressions in a Block(StmtList(Stmt.Expr(...))).
+/// which wraps single expressions in a Block of one Stmt.Expr.
 /// For a single-expr body, peel that off so `quote { 5 }` lowers to the
 /// AST of the literal 5, not the AST of a one-stmt Block.
 fn unwrap_quote_body(body: Expr) -> Expr {
     match body {
         .Block(stmts) -> {
-            match stmts {
-                .Node(ss, rest) -> {
-                    match rest {
-                        .End -> {
-                            match ss.node {
-                                .Expr(inner) -> inner
-                                _ -> body
-                            }
-                        }
-                        _ -> body
-                    }
+            if stmts.length == 1 {
+                match stmts[0].node {
+                    .Expr(inner) -> inner
+                    _ -> body
                 }
-                _ -> body
+            } else {
+                body
             }
         }
         _ -> body
@@ -673,22 +662,17 @@ fn sstmt_dummy_call(arg: Expr) -> Expr {
 
 // ── Statement construction (vez6.3.9) ──
 
-/// Build an Expr that, when evaluated, produces a StmtList AST value.
-/// Mirrors construct_expr_list / construct_field_init_list shape.
-///
-/// fwyx: stays as cons-cell EnumCtor("StmtList", ...) because
-/// Stmt.Block.body / Stmt.Function.body / etc. still hold a runtime
-/// StmtList. Once StmtList retires (lkze.9 #20), flip to Expr.ListLit
-/// — same shape as the planned construct_expr_list flip.
-fn construct_stmt_list(list: StmtList) -> Expr {
-    match list {
-        .End -> {
-            let empty: List<SExpr> = []
-            Expr.EnumCtor("@std::avrac::core::StmtList", "End", empty)
-        }
-        .Node(ss, next) -> Expr.EnumCtor("@std::avrac::core::StmtList", "Node",
-            two_args(construct_sstmt(ss), construct_stmt_list(next)))
+/// Build an Expr that, when evaluated, produces a `List<SStmt>` AST value.
+/// Mirrors construct_expr_list / construct_field_init_list shape:
+/// emits `Expr.ListLit([construct_sstmt(s0), construct_sstmt(s1), ...])`.
+fn construct_stmt_list(list: List<SStmt>) -> Expr {
+    mut elems: List<SExpr> = []
+    mut i = 0
+    while i < list.length {
+        elems.push(sexpr_dummy(construct_sstmt(list[i])))
+        i = i + 1
     }
+    Expr.ListLit(elems)
 }
 
 /// Build an Expr that, when evaluated, produces an SStmt wrapping the

@@ -1,4 +1,4 @@
-// WHY: Walk a parsed StmtList and produce a UnitMetadata for it.
+// WHY: Walk a parsed List<SStmt> and produce a UnitMetadata for it.
 // Bridge from the in-memory AST to the metadata.bin codec — every
 // exported public-surface item (type, fn, const, impl) becomes one
 // entry in the corresponding section list.
@@ -6,7 +6,7 @@
 // Tracked under forge-crafting-intepreters-iinq.
 
 use core.{
-    Stmt, StmtList, SStmt, sstmt_at, Expr, FieldEntry, Variant, TypeParamEntry, ValueType,
+    Stmt, SStmt, sstmt_at, Expr, FieldEntry, Variant, TypeParamEntry, ValueType,
     Annotation, stmt_unwrap,
 }
 use build.metadata.{
@@ -46,7 +46,7 @@ fn empty_acc() -> ExtractAcc {
 // qualify every symbol (so the same fn `add` in a different module
 // gets a distinct sym_id). `fingerprint` is the 32-byte sha256 of
 // the source set, computed by the build driver upstream.
-export fn extract_unit_metadata(unit_name: string, fingerprint: bytes, stmts: StmtList) -> UnitMetadata {
+export fn extract_unit_metadata(unit_name: string, fingerprint: bytes, stmts: List<SStmt>) -> UnitMetadata {
     // When the source is already wrapped in `Module(unit_name, body)`
     // (the lib path with --module_path), descend into body to avoid
     // double-prefixing qns (e.g. `@std::avrac::@std::avrac::core::X`).
@@ -74,7 +74,7 @@ export fn extract_unit_metadata(unit_name: string, fingerprint: bytes, stmts: St
 }
 
 /// Extract metadata for ONLY the decls that came from `target_file`.
-/// Walks the same resolved StmtList that `extract_unit_metadata` does
+/// Walks the same resolved List<SStmt> that `extract_unit_metadata` does
 /// but accumulates a TypeDecl / FnDecl / ConstDecl / ImplDecl only
 /// when its enclosing SStmt.file matches the target. Module wraps and
 /// Annotated wrappers are always traversed (so a target file's decls
@@ -88,7 +88,7 @@ export fn extract_unit_metadata(unit_name: string, fingerprint: bytes, stmts: St
 /// stable across all per-file slices so consumers see byte-identical
 /// qns whether they load the package's whole-unit metadata or the
 /// per-file slice.
-export fn extract_per_file_metadata(unit_name: string, target_file: string, fingerprint: bytes, stmts: StmtList) -> UnitMetadata {
+export fn extract_per_file_metadata(unit_name: string, target_file: string, fingerprint: bytes, stmts: List<SStmt>) -> UnitMetadata {
     let inner = unwrap_outer_unit_module(stmts, unit_name)
     let acc = walk_stmts_for_file(empty_acc(), inner, unit_name, false, target_file)
     UnitMetadata {
@@ -106,14 +106,14 @@ export fn extract_per_file_metadata(unit_name: string, target_file: string, fing
     }
 }
 
-fn walk_stmts_for_file(acc: ExtractAcc, stmts: StmtList, current_module: string, exported: bool, target_file: string) -> ExtractAcc {
-    match stmts {
-        .End -> acc
-        .Node(ss, next) -> {
-            let after = walk_ss_for_file(acc, ss, current_module, exported, target_file)
-            walk_stmts_for_file(after, next, current_module, exported, target_file)
-        }
+fn walk_stmts_for_file(acc: ExtractAcc, stmts: List<SStmt>, current_module: string, exported: bool, target_file: string) -> ExtractAcc {
+    mut cur = acc
+    mut i = 0
+    while i < stmts.length {
+        cur = walk_ss_for_file(cur, stmts[i], current_module, exported, target_file)
+        i = i + 1
     }
+    cur
 }
 
 fn walk_ss_for_file(acc: ExtractAcc, ss: SStmt, current_module: string, exported: bool, target_file: string) -> ExtractAcc {
@@ -149,32 +149,28 @@ fn walk_ss_for_file(acc: ExtractAcc, ss: SStmt, current_module: string, exported
 // the resolver prepended for `use @pkg` paths. When no such wrap
 // exists the source is treated as a flat unit, returning `stmts`
 // unchanged so the legacy single-file path still works.
-fn unwrap_outer_unit_module(stmts: StmtList, unit_name: string) -> StmtList {
+fn unwrap_outer_unit_module(stmts: List<SStmt>, unit_name: string) -> List<SStmt> {
     if unit_name == "" { return stmts }
     let body = find_unit_module_body(stmts, unit_name)
-    match body {
-        .End -> stmts
-        _ -> body
-    }
+    if body.length == 0 { return stmts }
+    body
 }
 
-fn find_unit_module_body(stmts: StmtList, unit_name: string) -> StmtList {
-    match stmts {
-        .End -> StmtList.End
-        .Node(ss, rest) -> {
-            let inner = stmt_unwrap(ss.node)
-            match inner {
-                .Module(name, body) -> {
-                    if name == unit_name {
-                        body
-                    } else {
-                        find_unit_module_body(rest, unit_name)
-                    }
-                }
-                _ -> find_unit_module_body(rest, unit_name)
+fn find_unit_module_body(stmts: List<SStmt>, unit_name: string) -> List<SStmt> {
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        let inner = stmt_unwrap(ss.node)
+        match inner {
+            .Module(name, body) -> {
+                if name == unit_name { return body }
             }
+            _ -> {}
         }
+        i = i + 1
     }
+    let empty: List<SStmt> = []
+    empty
 }
 
 // `reverse_list<T>` (defined above) replaces the prior 4 bespoke
@@ -224,36 +220,31 @@ fn push_inherent_impl(acc: ExtractAcc, e: InherentImplEntry) -> ExtractAcc {
 /// signature (name + params + ret_vt). The body's Function names are
 /// mangled (`Type__method`); strip the mangling so the synthesizer's
 /// `${qualified_type}__${m.name}` step doesn't double-mangle.
-fn extract_inherent_methods(stmts: StmtList) -> List<MetaTraitMethod> {
+fn extract_inherent_methods(stmts: List<SStmt>) -> List<MetaTraitMethod> {
     mut out: List<MetaTraitMethod> = []
-    mut cur = stmts
-    mut keep_going = true
-    while keep_going {
-        match cur {
-            .End -> { keep_going = false }
-            .Node(ss, next) -> {
-                match stmt_unwrap(ss.node) {
-                    .Function(mangled, _, params, ret_vt, _) -> {
-                        let m_name = strip_mangle(mangled)
-                        out.push(MetaTraitMethod { name: m_name, params: params, ret: ret_vt })
-                    }
-                    _ -> {}
-                }
-                cur = next
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        match stmt_unwrap(ss.node) {
+            .Function(mangled, _, params, ret_vt, _) -> {
+                let m_name = strip_mangle(mangled)
+                out.push(MetaTraitMethod { name: m_name, params: params, ret: ret_vt })
             }
+            _ -> {}
         }
+        i = i + 1
     }
     out
 }
 
-fn walk_stmts(acc: ExtractAcc, stmts: StmtList, current_module: string, exported: bool) -> ExtractAcc {
-    match stmts {
-        .End -> acc
-        .Node(ss, next) -> {
-            let after = walk_stmt(acc, ss.node, current_module, exported)
-            walk_stmts(after, next, current_module, exported)
-        }
+fn walk_stmts(acc: ExtractAcc, stmts: List<SStmt>, current_module: string, exported: bool) -> ExtractAcc {
+    mut cur = acc
+    mut i = 0
+    while i < stmts.length {
+        cur = walk_stmt(cur, stmts[i].node, current_module, exported)
+        i = i + 1
     }
+    cur
 }
 
 fn qualify(current_module: string, name: string) -> string {
@@ -519,53 +510,45 @@ fn find_single_colon_after_qualification(s: string) -> int {
     0 - 1
 }
 
-fn extract_trait_methods(stmts: StmtList) -> List<MetaTraitMethod> {
+fn extract_trait_methods(stmts: List<SStmt>) -> List<MetaTraitMethod> {
     mut out: List<MetaTraitMethod> = []
-    mut cur = stmts
-    while true {
-        match cur {
-            .End -> return out
-            .Node(ss, next) -> {
-                let inner = stmt_unwrap(ss.node)
-                match inner {
-                    .Function(name, _, params, ret_vt, _) -> {
-                        out.push(MetaTraitMethod { name, params, ret: ret_vt })
-                    }
-                    .ExternFn(name, params, ret_vt) -> {
-                        out.push(MetaTraitMethod { name, params, ret: ret_vt })
-                    }
-                    _ -> {}
-                }
-                cur = next
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        let inner = stmt_unwrap(ss.node)
+        match inner {
+            .Function(name, _, params, ret_vt, _) -> {
+                out.push(MetaTraitMethod { name, params, ret: ret_vt })
             }
+            .ExternFn(name, params, ret_vt) -> {
+                out.push(MetaTraitMethod { name, params, ret: ret_vt })
+            }
+            _ -> {}
         }
+        i = i + 1
     }
     out
 }
 
-fn extract_impl_methods(stmts: StmtList, type_qn: string) -> List<ImplMethodRef> {
+fn extract_impl_methods(stmts: List<SStmt>, type_qn: string) -> List<ImplMethodRef> {
     mut out: List<ImplMethodRef> = []
-    mut cur = stmts
-    while true {
-        match cur {
-            .End -> return out
-            .Node(ss, next) -> {
-                let inner = stmt_unwrap(ss.node)
-                match inner {
-                    // Impl-method names parse to mangled "Type__method"
-                    // form via features::impl_decl::parser. The
-                    // post-mangle method name is everything after the
-                    // final "__".
-                    .Function(mangled, _, _, _, _) -> {
-                        let method_name = strip_mangle(mangled)
-                        let fn_qn = qualify(type_qn, method_name)
-                        out.push(ImplMethodRef { method_name, fn_sym_id: sym_id_for(fn_qn) })
-                    }
-                    _ -> {}
-                }
-                cur = next
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        let inner = stmt_unwrap(ss.node)
+        match inner {
+            // Impl-method names parse to mangled "Type__method"
+            // form via features::impl_decl::parser. The
+            // post-mangle method name is everything after the
+            // final "__".
+            .Function(mangled, _, _, _, _) -> {
+                let method_name = strip_mangle(mangled)
+                let fn_qn = qualify(type_qn, method_name)
+                out.push(ImplMethodRef { method_name, fn_sym_id: sym_id_for(fn_qn) })
             }
+            _ -> {}
         }
+        i = i + 1
     }
     out
 }
@@ -629,7 +612,7 @@ fn strip_quotes(quoted: string) -> string {
 
 // ── 9ixv-followup / g2eo prep: per-file source discovery ─────────────
 //
-// Walks a resolved StmtList and collects every distinct `SStmt.file`
+// Walks a resolved List<SStmt> and collects every distinct `SStmt.file`
 // value it encounters. The parser stamps each statement with the path
 // of the .av file it was parsed from (parse/mod.av:481 sstmt_at), and
 // resolve_module_files preserves that stamp when inlining sub-mod
@@ -640,23 +623,23 @@ fn strip_quotes(quoted: string) -> string {
 //
 // Used today only by tests; the build driver picks it up under g2eo.
 
-export fn collect_source_files(stmts: StmtList) -> List<string> {
+export fn collect_source_files(stmts: List<SStmt>) -> List<string> {
     mut acc = []
     walk_files(stmts, acc)
 }
 
-fn walk_files(stmts: StmtList, acc: List<string>) -> List<string> {
+fn walk_files(stmts: List<SStmt>, acc: List<string>) -> List<string> {
     mut local = acc
-    match stmts {
-        .End -> local
-        .Node(ss, next) -> {
-            if ss.file != "" && !files_contain(local, ss.file) {
-                local.push(ss.file)
-            }
-            let after_inner = walk_files_in_stmt(ss.node, local)
-            walk_files(next, after_inner)
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        if ss.file != "" && !files_contain(local, ss.file) {
+            local.push(ss.file)
         }
+        local = walk_files_in_stmt(ss.node, local)
+        i = i + 1
     }
+    local
 }
 
 // Recurse into Module bodies (and Annotated wrappers) so files

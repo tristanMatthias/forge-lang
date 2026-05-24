@@ -3,7 +3,7 @@
 // ComponentDef AST so later passes (typeck, expand) can consume it.
 
 use @std.avrac.parse.{parse_program_source}
-use @std.avrac.core.{Stmt, StmtList, stmt_unwrap}
+use @std.avrac.core.{Stmt, SStmt, stmt_unwrap}
 
 fn first_component_implements(source: string) -> List<string> {
     let r = parse_program_source(source)
@@ -24,39 +24,36 @@ fn parse_has_error(source: string) -> bool {
 /// implements list into a list of (component_name, impl_count)
 /// pairs. Used by tests that file multiple component defs in
 /// one source to confirm each gets its own implements list.
-fn all_component_impl_counts(stmts: StmtList) -> List<int> {
+fn all_component_impl_counts(stmts: List<SStmt>) -> List<int> {
     mut out: List<int> = []
     walk_impl_counts(stmts, out)
 }
 
-fn walk_impl_counts(stmts: StmtList, acc_in: List<int>) -> List<int> {
+fn walk_impl_counts(stmts: List<SStmt>, acc_in: List<int>) -> List<int> {
     mut acc = acc_in
-    match stmts {
-        .End -> acc
-        .Node(ss, next) -> {
-            let inner = stmt_unwrap(ss.node)
-            match inner {
-                .ComponentDef(_, _, _, _, impls, _) -> {
-                    acc.push(impl_count(impls))
-                    walk_impl_counts(next, acc)
-                }
-                _ -> walk_impl_counts(next, acc)
-            }
+    mut i = 0
+    while i < stmts.length {
+        let inner = stmt_unwrap(stmts[i].node)
+        match inner {
+            .ComponentDef(_, _, _, _, impls, _) -> acc.push(impl_count(impls))
+            _ -> {}
         }
+        i = i + 1
     }
+    acc
 }
 
-fn implements_of_first_component(stmts: StmtList) -> List<string> {
-    match stmts {
-        .End -> []
-        .Node(ss, next) -> {
-            let inner = stmt_unwrap(ss.node)
-            match inner {
-                .ComponentDef(_, _, _, _, impls, _) -> impls
-                _ -> implements_of_first_component(next)
-            }
+fn implements_of_first_component(stmts: List<SStmt>) -> List<string> {
+    mut i = 0
+    while i < stmts.length {
+        let inner = stmt_unwrap(stmts[i].node)
+        match inner {
+            .ComponentDef(_, _, _, _, impls, _) -> return impls
+            _ -> {}
         }
+        i = i + 1
     }
+    []
 }
 
 fn impl_count(impls: List<string>) -> int { impls.length }

@@ -2,7 +2,7 @@
 // Captures small expressions as runtime AST values, verifies via the
 // render_expr S-expression serializer that the captured shape matches.
 
-use @std.avrac.core.{Expr, render_expr, Stmt, StmtList, render_stmt, render_stmt_list, ValueType, vtype_display}
+use @std.avrac.core.{Expr, render_expr, Stmt, SStmt, render_stmt, render_stmt_list, ValueType, vtype_display}
 
 spec "quote: literals" {
     then "number literal" {
@@ -338,8 +338,8 @@ spec "quote: kind dispatch" {
         let s: Stmt = quote stmt { let x = 5 }
         render_stmt(s) == "(let x:<unknown> 5)"
     }
-    then "quote stmts yields a StmtList value" {
-        let sl: StmtList = quote stmts {
+    then "quote stmts yields a List<SStmt> value" {
+        let sl: List<SStmt> = quote stmts {
             let a = 1
             let b = 2
         }
@@ -360,7 +360,7 @@ spec "quote: kind dispatch" {
         render_stmt(s).contains("(if cond")
     }
     then "quote stmts with single stmt" {
-        let sl: StmtList = quote stmts { let x = 1 }
+        let sl: List<SStmt> = quote stmts { let x = 1 }
         render_stmt_list(sl).contains("let x")
     }
     then "quote default kind is expr" {

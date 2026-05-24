@@ -1,6 +1,6 @@
 // WHY: Pure-AST helpers for assembling a synthetic test program from a
 // set of `_test.av` source files. Used by the `avra test` driver to
-// stitch each test file into one StmtList, hoist package modules so
+// stitch each test file into one List<SStmt>, hoist package modules so
 // each @std package appears only once, and prepend the externs the
 // test harness binds against.
 //
@@ -9,7 +9,7 @@
 // reuse them to build a test program.
 
 use core.{
-    Stmt, StmtList, SStmt, ParamEntry, ValueType, TypeParamEntry,
+    Stmt, SStmt, ParamEntry, ValueType, TypeParamEntry,
     Expr, SExpr,
     sstmt_dummy, sstmt_at,
     sexpr_dummy,
@@ -38,16 +38,18 @@ use @std.crypto.{sha256_hex, sha256_file}
 /// set we prepend in `prepend_test_externs`. Stripping them once on
 /// each test file keeps a single declaration of each runtime hook in
 /// the assembled program.
-export fn strip_externs(stmts: StmtList) -> StmtList {
-    match stmts {
-        .End -> StmtList.End
-        .Node(ss, next) -> {
-            match ss.node {
-                .ExternFn(_, _, _) -> strip_externs(next)
-                _ -> StmtList.Node(ss, strip_externs(next))
-            }
+export fn strip_externs(stmts: List<SStmt>) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        match ss.node {
+            .ExternFn(_, _, _) -> {}
+            _ -> out.push(ss)
         }
+        i = i + 1
     }
+    out
 }
 
 // ── AST builder mini-DSL ────────────────────────────────────────────
@@ -61,21 +63,26 @@ export fn strip_externs(stmts: StmtList) -> StmtList {
 
 /// Single extern declaration row. Drives `prepend_test_externs`'s
 /// table-driven prepend loop so the runtime contract reads as a
-/// vertical list instead of five nested `StmtList.Node(...)` calls.
+/// vertical list instead of five nested `List` pushes.
 type RuntimeExtern = { name: string, params: List<ParamEntry>, ret: ValueType }
 
 /// Convert `List<RuntimeExtern>` into prepended `ExternFn` stmts in
-/// declaration order. Iterates back-to-front so the cons-prepend
-/// builds the final list in the same order the table reads.
-fn prepend_externs(stmts: StmtList, decls: List<RuntimeExtern>) -> StmtList {
-    mut acc = stmts
-    mut i = decls.length - 1
-    while i >= 0 {
+/// declaration order. Builds a fresh List with externs first, then
+/// the existing stmts.
+fn prepend_externs(stmts: List<SStmt>, decls: List<RuntimeExtern>) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    mut i = 0
+    while i < decls.length {
         let d = decls[i]
-        acc = StmtList.Node(sstmt_dummy(Stmt.ExternFn(d.name, d.params, d.ret)), acc)
-        i = i - 1
+        out.push(sstmt_dummy(Stmt.ExternFn(d.name, d.params, d.ret)))
+        i = i + 1
     }
-    acc
+    mut j = 0
+    while j < stmts.length {
+        out.push(stmts[j])
+        j = j + 1
+    }
+    out
 }
 
 /// Convert a `List<Expr>` into a `List<SExpr>` in declaration order.
@@ -145,7 +152,7 @@ fn guard_extern_params() -> List<ParamEntry> {
 
 /// Cons-prepend the runtime extern table onto a freshly-assembled
 /// test program. See `test_runtime_externs` for the full contract.
-export fn prepend_test_externs(stmts: StmtList) -> StmtList {
+export fn prepend_test_externs(stmts: List<SStmt>) -> List<SStmt> {
     prepend_externs(stmts, test_runtime_externs())
 }
 
@@ -178,17 +185,19 @@ export fn prepend_test_externs(stmts: StmtList) -> StmtList {
 /// nested inside fn bodies (no realistic use today, but cheap to keep
 /// untouched) compile as before, since their crash would already be
 /// scoped to the enclosing fn call.
-export fn wrap_specs_with_guard(stmts: StmtList) -> StmtList {
-    match stmts {
-        .End -> StmtList.End
-        .Node(ss, next) -> {
-            let rewritten = match ss.node {
-                .SpecBlock(name, _) -> build_guarded_spec_call(ss, name)
-                _ -> ss
-            }
-            StmtList.Node(rewritten, wrap_specs_with_guard(next))
+export fn wrap_specs_with_guard(stmts: List<SStmt>) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        let rewritten = match ss.node {
+            .SpecBlock(name, _) -> build_guarded_spec_call(ss, name)
+            _ -> ss
         }
+        out.push(rewritten)
+        i = i + 1
     }
+    out
 }
 
 /// Build the replacement call site:
@@ -201,9 +210,10 @@ export fn wrap_specs_with_guard(stmts: StmtList) -> StmtList {
 /// round-trip. The body Lambda returns int (per the extern's
 /// `body: fn() -> int` signature) via the trailing `0`.
 fn build_guarded_spec_call(orig: SStmt, spec_name_lex: string) -> SStmt {
-    let body_stmts = StmtList.Node(
+    let body_stmts: List<SStmt> = [
         sstmt_dummy(orig.node),
-        StmtList.Node(sstmt_dummy(Stmt.Expr(Expr.Number("0"))), StmtList.End))
+        sstmt_dummy(Stmt.Expr(Expr.Number("0"))),
+    ]
     let empty_p: List<ParamEntry> = []
     let body_lambda = Expr.Lambda(empty_p, Expr.Block(body_stmts))
     let args = expr_list_from([
@@ -220,8 +230,8 @@ fn build_guarded_spec_call(orig: SStmt, spec_name_lex: string) -> SStmt {
 /// and the per-test body. The runner uses this to keep each
 /// `@std::pkg` module unique across the assembled program.
 export type PackageSplit = {
-    packages: StmtList,
-    body: StmtList,
+    packages: List<SStmt>,
+    body: List<SStmt>,
 }
 
 /// Collect every `@`-prefixed `Module` from the stmt list and
@@ -230,7 +240,7 @@ export type PackageSplit = {
 /// need to import `features.modules.resolver` directly. Both
 /// implementations agreed on the recursive walk — sharing the
 /// canonical one removes a second copy that would have drifted.
-export fn split_package_modules(stmts: StmtList) -> PackageSplit {
+export fn split_package_modules(stmts: List<SStmt>) -> PackageSplit {
     let h = hoist_package_modules(stmts)
     PackageSplit { packages: h.packages, body: h.body }
 }
@@ -247,11 +257,19 @@ export fn test_reporter_path(project_dir: string) -> string {
 
 /// Concatenate two statement lists. Order-preserving: every node
 /// from `a` comes before every node from `b`.
-export fn append_stmt_list(a: StmtList, b: StmtList) -> StmtList {
-    match a {
-        .End -> b
-        .Node(ss, next) -> StmtList.Node(ss, append_stmt_list(next, b))
+export fn append_stmt_list(a: List<SStmt>, b: List<SStmt>) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    mut i = 0
+    while i < a.length {
+        out.push(a[i])
+        i = i + 1
     }
+    mut j = 0
+    while j < b.length {
+        out.push(b[j])
+        j = j + 1
+    }
+    out
 }
 
 /// One test file's contribution to an assembled program. The body is
@@ -259,8 +277,8 @@ export fn append_stmt_list(a: StmtList, b: StmtList) -> StmtList {
 /// caller can dedup them across the whole program in one pass.
 type AssembledFile = {
     mod_name: string,
-    packages: StmtList,
-    wrapped_body: StmtList,
+    packages: List<SStmt>,
+    wrapped_body: List<SStmt>,
 }
 
 /// Parse + resolve-module-files + hoist + spec-wrap one test file.
@@ -294,17 +312,18 @@ fn assemble_one_test_file(path: string) -> Result<AssembledFile, string> {
     })
 }
 
-/// Load + parse the spec_test reporter. Returns `StmtList.End` when
+/// Load + parse the spec_test reporter. Returns an empty list when
 /// the file is missing or fails to parse — the caller still produces
 /// a (broken) test program; the missing reporter fns surface as
 /// "undefined name" diagnostics in the codegen pass, which is the
 /// signal we want when something is wrong with the install.
-fn load_reporter_stmts(project_dir: string) -> StmtList {
+fn load_reporter_stmts(project_dir: string) -> List<SStmt> {
     let reporter_path = test_reporter_path(project_dir)
-    if avra_selfhost_file_exists(reporter_path) == 0 { return StmtList.End }
+    let empty: List<SStmt> = []
+    if avra_selfhost_file_exists(reporter_path) == 0 { return empty }
     let rsrc = avra_selfhost_read_file(reporter_path)
     let rparsed = parse_program_source_at(rsrc, reporter_path)
-    if rparsed.had_error || rparsed.stmts == null { return StmtList.End }
+    if rparsed.had_error || rparsed.stmts == null { return empty }
     rparsed.stmts!
 }
 
@@ -314,9 +333,9 @@ fn load_reporter_stmts(project_dir: string) -> StmtList {
 /// the rendered AST.
 fn synth_test_main() -> SStmt {
     let empty_args: List<SExpr> = []
-    let body = StmtList.Node(
+    let body: List<SStmt> = [
         sstmt_dummy(Stmt.Return(Expr.Call(Expr.Ident("test_render_summary"), empty_args))),
-        StmtList.End)
+    ]
     let empty_tp: List<TypeParamEntry> = []
     let empty_p: List<ParamEntry> = []
     sstmt_dummy(Stmt.Function("main", empty_tp, empty_p, ValueType.Int, body))
@@ -329,19 +348,32 @@ fn synth_test_main() -> SStmt {
 /// Returned program layout (top-to-bottom): runtime externs,
 /// reporter fns, deduped @std/* packages, per-file test modules,
 /// synthesised `fn main`.
-export fn assemble_test_program(test_paths: List<string>, project_dir: string) -> Result<StmtList, string> {
-    mut modules = StmtList.End
-    mut packages = StmtList.End
+export fn assemble_test_program(test_paths: List<string>, project_dir: string) -> Result<List<SStmt>, string> {
+    mut modules_fwd: List<SStmt> = []
+    mut packages: List<SStmt> = []
     for path in test_paths {
         let a = assemble_one_test_file(path)?
         packages = append_stmt_list(a.packages, packages)
-        modules = StmtList.Node(sstmt_dummy(Stmt.Module(a.mod_name, a.wrapped_body)), modules)
+        modules_fwd.push(sstmt_dummy(Stmt.Module(a.mod_name, a.wrapped_body)))
     }
     if test_paths.length == 0 { return Result.Err("no spec test files found") }
 
+    mut modules: List<SStmt> = []
+    mut r = modules_fwd.length - 1
+    while r >= 0 {
+        modules.push(modules_fwd[r])
+        r = r - 1
+    }
+
     let body = append_stmt_list(load_reporter_stmts(project_dir),
                append_stmt_list(dedup_modules(packages), modules))
-    let program = StmtList.Node(synth_test_main(), prepend_test_externs(body))
+    mut program: List<SStmt> = [synth_test_main()]
+    let with_externs = prepend_test_externs(body)
+    mut i = 0
+    while i < with_externs.length {
+        program.push(with_externs[i])
+        i = i + 1
+    }
     Result.Ok(program)
 }
 

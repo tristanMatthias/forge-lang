@@ -1,5 +1,5 @@
 // WHY: Inverse of metadata_extract — given a UnitMetadata loaded
-// from disk, synthesize a StmtList that the resolver and typeck can
+// from disk, synthesize a List<SStmt> that the resolver and typeck can
 // consume in place of the producer's source. Lets a downstream unit
 // import a peer's public surface without ever touching the impl
 // (the Phase 3 unlock — see forge-crafting-intepreters-xtvc).
@@ -30,7 +30,7 @@
 // Tracked under forge-crafting-intepreters-xtvc.
 
 use core.{
-    Stmt, StmtList, SStmt, sstmt_dummy, stmt_unwrap,
+    Stmt, SStmt, sstmt_dummy, stmt_unwrap,
     Expr, SExpr,
     Annotation, ParamEntry, ValueType, FieldEntry, Variant, TypeParamEntry,
     sexpr_dummy,
@@ -43,7 +43,7 @@ use build.metadata.{
 }
 use parse.{parse_program_source}
 
-/// Synthesise just the body — the StmtList of all public-surface
+/// Synthesise just the body — the List<SStmt> of all public-surface
 /// items, with no surrounding Module wrap. Resolver-side callers that
 /// already wrap the loaded body in a package-qualified Module use
 /// this so they don't end up with double-wrapped namespaces (the
@@ -55,8 +55,9 @@ use parse.{parse_program_source}
 /// unit prefix). A consumer's `use @std.avrac.diagnostics.render.X`
 /// then resolves through the same `diagnostics → render → X` chain
 /// the source-parse path would produce, instead of a flat dump.
-export fn synthesize_unit_body(m: UnitMetadata) -> StmtList {
-    let empty = SubMod { name: "", direct: StmtList.End, children: [] }
+export fn synthesize_unit_body(m: UnitMetadata) -> List<SStmt> {
+    let empty_d: List<SStmt> = []
+    let empty = SubMod { name: "", direct: empty_d, children: [] }
     let after_types = insert_types(empty, m.types, m.unit_name)
     // P5 library-mode: thread generic_bodies through to insert_fns so
     // synth_fn_decl can re-parse the body source for exported generics
@@ -88,12 +89,12 @@ export fn synthesize_unit_body(m: UnitMetadata) -> StmtList {
 //      before it is the path of nested Modules to wrap the leaf in.
 //   3. Insert into a trie keyed by path segment. Direct decls land at
 //      their respective level; siblings reuse the same Module(seg).
-//   4. Render the trie back to a StmtList: at each node, emit the
+//   4. Render the trie back to a List<SStmt>: at each node, emit the
 //      direct decls followed by Module wrappers for each child.
 
 type SubMod = {
     name: string,
-    direct: StmtList,
+    direct: List<SStmt>,
     children: List<SubMod>,
 }
 
@@ -169,8 +170,9 @@ fn drop_last_seg(xs: List<string>) -> List<string> {
 // recurses through `ensure_child` with depth + 1.
 fn trie_insert_decl(node: SubMod, path: List<string>, depth: int, decl: SStmt) -> SubMod {
     if depth >= path.length {
+        let one: List<SStmt> = [decl]
         return node with {
-            direct: append_stmts(node.direct, StmtList.Node(decl, StmtList.End)),
+            direct: append_stmts(node.direct, one),
         }
     }
     node with {
@@ -192,12 +194,13 @@ fn ensure_child(list: List<SubMod>, seg: string, path: List<string>, depth: int,
         }
         i = i + 1
     }
-    let empty = SubMod { name: seg, direct: StmtList.End, children: [] }
+    let empty_d: List<SStmt> = []
+    let empty = SubMod { name: seg, direct: empty_d, children: [] }
     local.push(trie_insert_decl(empty, path, depth, decl))
     local
 }
 
-fn trie_to_stmtlist(node: SubMod) -> StmtList {
+fn trie_to_stmtlist(node: SubMod) -> List<SStmt> {
     let kid_stmts = children_to_stmts(node.children)
     append_stmts(node.direct, kid_stmts)
 }
@@ -205,16 +208,21 @@ fn trie_to_stmtlist(node: SubMod) -> StmtList {
 // Walk children in source order, emit a Module(name, body) wrap per
 // child. children_to_stmts_at threads `idx` so the recursion-free
 // shape preserves order without an extra reverse pass.
-fn children_to_stmts(list: List<SubMod>) -> StmtList {
+fn children_to_stmts(list: List<SubMod>) -> List<SStmt> {
     children_to_stmts_at(list, 0)
 }
 
-fn children_to_stmts_at(list: List<SubMod>, idx: int) -> StmtList {
-    if idx >= list.length { return StmtList.End }
-    let item = list[idx]
-    let inner = trie_to_stmtlist(item)
-    let mod_stmt = sstmt_dummy(Stmt.Module(item.name, inner))
-    StmtList.Node(mod_stmt, children_to_stmts_at(list, idx + 1))
+fn children_to_stmts_at(list: List<SubMod>, idx: int) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    mut i = idx
+    while i < list.length {
+        let item = list[i]
+        let inner = trie_to_stmtlist(item)
+        let mod_stmt = sstmt_dummy(Stmt.Module(item.name, inner))
+        out.push(mod_stmt)
+        i = i + 1
+    }
+    out
 }
 
 fn insert_types(trie: SubMod, xs: List<TypeDeclEntry>, unit_name: string) -> SubMod {
@@ -260,33 +268,31 @@ fn lookup_generic_body(bodies: List<GenericBodyEntry>, qn: string) -> string {
     ""
 }
 
-/// Re-parse a generic-body source slice into a StmtList. The
+/// Re-parse a generic-body source slice into a List<SStmt>. The
 /// producer wrote it via `fmt_stmt_list(body, 0)`, which renders a
 /// brace-less list of statements. We wrap in a placeholder fn so
 /// the program parser has a complete top-level to chew on, then
 /// extract that fn's body.
 ///
-/// Returns StmtList.End on any parse failure — consumer treats the
+/// Returns an empty list on any parse failure — consumer treats the
 /// fn as if it had no body (monomorphization fails downstream with a
 /// clearer error than a parser crash).
-fn parse_body_source(source: string) -> StmtList {
-    if source == "" { return StmtList.End }
+fn parse_body_source(source: string) -> List<SStmt> {
+    let empty: List<SStmt> = []
+    if source == "" { return empty }
     let wrapped = "fn __avra_generic_body_wrapper() {\n" + source + "\n}"
     let parsed = parse_program_source(wrapped)
-    if parsed.had_error == 1 { return StmtList.End }
-    if parsed.stmts == null { return StmtList.End }
+    if parsed.had_error == 1 { return empty }
+    if parsed.stmts == null { return empty }
     extract_wrapper_body(parsed.stmts!)
 }
 
-fn extract_wrapper_body(stmts: StmtList) -> StmtList {
-    match stmts {
-        .End -> StmtList.End
-        .Node(ss, _) -> {
-            match stmt_unwrap(ss.node) {
-                .Function(_, _, _, _, body) -> body
-                _ -> StmtList.End
-            }
-        }
+fn extract_wrapper_body(stmts: List<SStmt>) -> List<SStmt> {
+    let empty: List<SStmt> = []
+    if stmts.length == 0 { return empty }
+    match stmt_unwrap(stmts[0].node) {
+        .Function(_, _, _, _, body) -> body
+        _ -> empty
     }
 }
 
@@ -327,21 +333,30 @@ fn insert_impls(trie: SubMod, xs: List<ImplDeclEntry>, unit_name: string, types:
 /// items land at their original qualified paths. Used by inspection
 /// tools (`bs2 metadata_show`); production resolver flows want
 /// `synthesize_unit_body` and supply their own Module wrap.
-export fn synthesize_unit_stmts(m: UnitMetadata) -> StmtList {
+export fn synthesize_unit_stmts(m: UnitMetadata) -> List<SStmt> {
     let body = synthesize_unit_body(m)
     if m.unit_name == "" {
         body
     } else {
         let module_node = Stmt.Module(m.unit_name, body)
-        StmtList.Node(sstmt_dummy(wrap_external_unit(module_node)), StmtList.End)
+        let out: List<SStmt> = [sstmt_dummy(wrap_external_unit(module_node))]
+        out
     }
 }
 
-fn append_stmts(a: StmtList, b: StmtList) -> StmtList {
-    match a {
-        .End -> b
-        .Node(s, next) -> StmtList.Node(s, append_stmts(next, b))
+fn append_stmts(a: List<SStmt>, b: List<SStmt>) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    mut i = 0
+    while i < a.length {
+        out.push(a[i])
+        i = i + 1
     }
+    mut j = 0
+    while j < b.length {
+        out.push(b[j])
+        j = j + 1
+    }
+    out
 }
 
 // ── TYPES ──
@@ -417,14 +432,13 @@ fn type_decl_inner_stmt(e: TypeDeclEntry) -> Stmt {
     Stmt.NoOp
 }
 
-fn synth_trait_method_stmts(ms: List<MetaTraitMethod>) -> StmtList {
-    mut acc: StmtList = StmtList.End
-    mut i = ms.length - 1
-    while i >= 0 {
+fn synth_trait_method_stmts(ms: List<MetaTraitMethod>) -> List<SStmt> {
+    mut acc: List<SStmt> = []
+    mut i = 0
+    while i < ms.length {
         let m = ms[i]
-        let head = sstmt_dummy(Stmt.ExternFn(m.name, m.params, m.ret))
-        acc = StmtList.Node(head, acc)
-        i = i - 1
+        acc.push(sstmt_dummy(Stmt.ExternFn(m.name, m.params, m.ret)))
+        i = i + 1
     }
     acc
 }
@@ -452,7 +466,8 @@ fn synth_fn_decl(e: FnDeclEntry, bodies: List<GenericBodyEntry>) -> SStmt {
     }
     // Avra Function with @external_unit: declare-only at the
     // consumer; the producer's .o supplies the body at link time.
-    let fn_decl = Stmt.Function(n, e.type_params, e.params, e.ret, StmtList.End)
+    let empty_body: List<SStmt> = []
+    let fn_decl = Stmt.Function(n, e.type_params, e.params, e.ret, empty_body)
     sstmt_dummy(wrap_export(wrap_external_unit(fn_decl), e.exported))
 }
 
@@ -515,22 +530,22 @@ fn synth_inherent_impl_decl(e: InherentImplEntry) -> SStmt {
     sstmt_dummy(Stmt.Impl(type_local, methods))
 }
 
-/// Build the impl-body StmtList from a fully-populated
+/// Build the impl-body List<SStmt> from a fully-populated
 /// MetaTraitMethod list. Each method's sig is already known, so we
 /// can emit the @external_unit Function stub directly without a
 /// trait lookup. Mirrors synth_impl_method_stmts's mangling +
 /// wrapping rules.
-fn synth_impl_method_stmts_from_sigs(ms: List<MetaTraitMethod>, qualified_type: string) -> StmtList {
-    mut acc: StmtList = StmtList.End
-    mut i = ms.length - 1
-    while i >= 0 {
+fn synth_impl_method_stmts_from_sigs(ms: List<MetaTraitMethod>, qualified_type: string) -> List<SStmt> {
+    mut acc: List<SStmt> = []
+    mut i = 0
+    while i < ms.length {
         let m = ms[i]
         let mangled = "${qualified_type}__${m.name}"
         let empty_tp: List<TypeParamEntry> = []
-        let fn_decl = Stmt.Function(mangled, empty_tp, m.params, m.ret, StmtList.End)
-        let head = sstmt_dummy(wrap_external_unit(fn_decl))
-        acc = StmtList.Node(head, acc)
-        i = i - 1
+        let empty_body: List<SStmt> = []
+        let fn_decl = Stmt.Function(mangled, empty_tp, m.params, m.ret, empty_body)
+        acc.push(sstmt_dummy(wrap_external_unit(fn_decl)))
+        i = i + 1
     }
     acc
 }
@@ -562,18 +577,18 @@ fn synth_impl_decl(e: ImplDeclEntry, types: List<TypeDeclEntry>) -> SStmt {
 // into the `is_mangled_method` branch and skipping qualification —
 // the synth impl methods carry an `@external_unit` Annotated wrapper
 // which short-circuits rewrite_impl_methods's Function arm.
-fn synth_impl_method_stmts(ms: List<ImplMethodRef>, trait_methods: List<MetaTraitMethod>, qualified_type: string) -> StmtList {
-    mut acc: StmtList = StmtList.End
-    mut i = ms.length - 1
-    while i >= 0 {
+fn synth_impl_method_stmts(ms: List<ImplMethodRef>, trait_methods: List<MetaTraitMethod>, qualified_type: string) -> List<SStmt> {
+    mut acc: List<SStmt> = []
+    mut i = 0
+    while i < ms.length {
         let m = ms[i]
         let sig = lookup_trait_method_sig(trait_methods, m.method_name)
         let mangled = "${qualified_type}__${m.method_name}"
         let empty_tp: List<TypeParamEntry> = []
-        let fn_decl = Stmt.Function(mangled, empty_tp, sig.params, sig.ret, StmtList.End)
-        let head = sstmt_dummy(wrap_external_unit(fn_decl))
-        acc = StmtList.Node(head, acc)
-        i = i - 1
+        let empty_body: List<SStmt> = []
+        let fn_decl = Stmt.Function(mangled, empty_tp, sig.params, sig.ret, empty_body)
+        acc.push(sstmt_dummy(wrap_external_unit(fn_decl)))
+        i = i + 1
     }
     acc
 }

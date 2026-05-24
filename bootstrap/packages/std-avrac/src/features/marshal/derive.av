@@ -19,7 +19,7 @@
 // resolver wires up to @std/process the same way a hand-written
 // impl would.
 
-use core.{Stmt, StmtList, SStmt, sstmt_dummy, Expr, SExpr, sexpr_dummy, FieldEntry, FieldInit, ParamEntry, ValueType, TypeParamEntry, Variant, Pattern, MatchArm, BinOp, find_annotation}
+use core.{Stmt, SStmt, sstmt_dummy, Expr, SExpr, sexpr_dummy, FieldEntry, FieldInit, ParamEntry, ValueType, TypeParamEntry, Variant, Pattern, MatchArm, BinOp, find_annotation}
 
 // ── Public entry ──
 
@@ -30,52 +30,58 @@ use core.{Stmt, StmtList, SStmt, sstmt_dummy, Expr, SExpr, sexpr_dummy, FieldEnt
 /// Fast-path: when no `@marshal` annotation is present, returns
 /// the input unchanged (matches the expand_macros zero-cost
 /// pattern).
-export fn derive_marshal(stmts: StmtList) -> StmtList {
+export fn derive_marshal(stmts: List<SStmt>) -> List<SStmt> {
     if !any_marshal_annotation(stmts) { return stmts }
     walk(stmts)
 }
 
-fn walk(stmts: StmtList) -> StmtList {
-    match stmts {
-        .End -> StmtList.End
-        .Node(ss, next) -> {
-            let rest = walk(next)
-            // Module bodies host TypeDecls too — recurse so a
-            // `@marshal type T` declared inside a submodule still
-            // gets its impl synthesised. Wrap the recursed body
-            // back into a Module so downstream stages see the
-            // same shape.
-            match ss.node {
-                .Module(name, body) -> {
-                    let walked = walk(body)
-                    let new_mod = Stmt.Module(name, walked)
-                    StmtList.Node(sstmt_dummy(new_mod), rest)
-                }
-                _ -> {
-                    let derived = derive_for(ss.node)
-                    StmtList.Node(ss, append_stmts(derived, rest))
+fn walk(stmts: List<SStmt>) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        // Module bodies host TypeDecls too — recurse so a
+        // `@marshal type T` declared inside a submodule still
+        // gets its impl synthesised. Wrap the recursed body
+        // back into a Module so downstream stages see the
+        // same shape.
+        match ss.node {
+            .Module(name, body) -> {
+                let walked = walk(body)
+                let new_mod = Stmt.Module(name, walked)
+                out.push(sstmt_dummy(new_mod))
+            }
+            _ -> {
+                out.push(ss)
+                let derived = derive_for(ss.node)
+                mut di = 0
+                while di < derived.length {
+                    out.push(derived[di])
+                    di = di + 1
                 }
             }
         }
+        i = i + 1
     }
+    out
 }
 
 // ── Annotation detection ──
 
-fn any_marshal_annotation(stmts: StmtList) -> bool {
-    match stmts {
-        .End -> false
-        .Node(ss, next) -> {
-            if has_marshal(ss.node) { return true }
-            match ss.node {
-                .Module(_, body) -> {
-                    if any_marshal_annotation(body) { return true }
-                }
-                _ -> {}
+fn any_marshal_annotation(stmts: List<SStmt>) -> bool {
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        if has_marshal(ss.node) { return true }
+        match ss.node {
+            .Module(_, body) -> {
+                if any_marshal_annotation(body) { return true }
             }
-            any_marshal_annotation(next)
+            _ -> {}
         }
+        i = i + 1
     }
+    false
 }
 
 fn has_marshal(stmt: Stmt) -> bool {
@@ -86,14 +92,15 @@ fn has_marshal(stmt: Stmt) -> bool {
 
 /// If `stmt` is an `@marshal`-annotated TypeDecl, return the
 /// synthesised `[impl T {...}, fn from_bytes_T(b) -> T {...}]`
-/// StmtList. Empty list when no synthesis applies.
-fn derive_for(stmt: Stmt) -> StmtList {
-    if !has_marshal(stmt) { return StmtList.End }
+/// List<SStmt>. Empty list when no synthesis applies.
+fn derive_for(stmt: Stmt) -> List<SStmt> {
+    let empty: List<SStmt> = []
+    if !has_marshal(stmt) { return empty }
     let inner = peel_annotations(stmt)
     match inner {
         .TypeDecl(name, _, fields) -> derive_stmts(name, fields)
         .EnumDecl(name, _, variants) -> derive_enum_stmts(name, variants)
-        _ -> StmtList.End
+        _ -> empty
     }
 }
 
@@ -119,25 +126,23 @@ fn peel_annotations(stmt: Stmt) -> Stmt {
 /// would be lossy; nce6.1.B/C/D extend the codec table to handle
 /// List<T> / nested @marshal / enums.
 ///
-/// Returns a 2-element StmtList: [impl_stmt, from_bytes_fn].
-fn derive_stmts(type_name: string, fields: List<FieldEntry>) -> StmtList {
+/// Returns a 3-element List<SStmt>: [impl_stmt, from_bytes_fn, isolated_fn].
+fn derive_stmts(type_name: string, fields: List<FieldEntry>) -> List<SStmt> {
     let to_bytes_fn = build_to_bytes_fn(fields)
-    let methods = StmtList.Node(sstmt_dummy(to_bytes_fn), StmtList.End)
+    let methods: List<SStmt> = [sstmt_dummy(to_bytes_fn)]
     // Cleanup #1: emit `impl Marshal for T` instead of bare `impl T`
     // so @marshal-annotated types are nominal members of the
     // Marshal trait — unblocks `fn f<T: Marshal>(...)` bounds.
     let impl_stmt = Stmt.Impl("@std::process::Marshal:" + type_name, methods)
     let from_bytes_fn = build_from_bytes_fn(type_name, fields)
     let isolated_fn = build_isolated_fn(type_name, ValueType.Struct(type_name, 0))
-    StmtList.Node(sstmt_dummy(impl_stmt),
-        StmtList.Node(sstmt_dummy(from_bytes_fn),
-            StmtList.Node(sstmt_dummy(isolated_fn), StmtList.End)))
+    [sstmt_dummy(impl_stmt), sstmt_dummy(from_bytes_fn), sstmt_dummy(isolated_fn)]
 }
 
 fn build_to_bytes_fn(fields: List<FieldEntry>) -> Stmt {
     // Body: return bytes_builder().write_X(self.f1).write_Y(self.f2)…finish()
     let chain = build_chain(fields)
-    let body = StmtList.Node(sstmt_dummy(Stmt.Return(chain)), StmtList.End)
+    let body: List<SStmt> = [sstmt_dummy(Stmt.Return(chain))]
     let params: List<ParamEntry> = [ParamEntry { name: "self", vtype: ValueType.Unknown }]
     let empty_tp: List<TypeParamEntry> = []
     Stmt.Function("to_bytes", empty_tp, params, ValueType.Bytes, body)
@@ -239,12 +244,11 @@ fn list_of_struct_block(base: Expr, value_expr: Expr, field_name: string) -> Exp
     let new_b = Expr.Call(Expr.FieldAccess(Expr.Ident(bvar), "write_bytes"),
         [sexpr_dummy(x_to_bytes)])
     let assign_stmt = Stmt.Expr(Expr.Assign(bvar, new_b))
-    let body = Stmt.Block(StmtList.Node(sstmt_dummy(assign_stmt), StmtList.End))
+    let assign_body: List<SStmt> = [sstmt_dummy(assign_stmt)]
+    let body = Stmt.Block(assign_body)
     let for_stmt = Stmt.ForIn(xvar, value_expr, body)
     let yield_stmt = Stmt.Expr(Expr.Ident(bvar))
-    let block_body = StmtList.Node(sstmt_dummy(init_stmt),
-        StmtList.Node(sstmt_dummy(for_stmt),
-            StmtList.Node(sstmt_dummy(yield_stmt), StmtList.End)))
+    let block_body: List<SStmt> = [sstmt_dummy(init_stmt), sstmt_dummy(for_stmt), sstmt_dummy(yield_stmt)]
     Expr.Block(block_body)
 }
 
@@ -316,7 +320,12 @@ fn build_from_bytes_fn(type_name: string, fields: List<FieldEntry>) -> Stmt {
         [sexpr_dummy(Expr.Ident("b"))])
     let init_let = Stmt.Mut("r", ValueType.Unknown, init_call)
     let reads_then_ctor = build_reads_and_ctor(type_name, fields)
-    let body = StmtList.Node(sstmt_dummy(init_let), reads_then_ctor)
+    mut body: List<SStmt> = [sstmt_dummy(init_let)]
+    mut bi = 0
+    while bi < reads_then_ctor.length {
+        body.push(reads_then_ctor[bi])
+        bi = bi + 1
+    }
     // Top-level fn named `from_bytes_<T>` (no static-method syntax
     // in Avra). nce6.1.E will route generic `isolated<T: Marshal>`
     // through this naming convention.
@@ -328,25 +337,27 @@ fn build_from_bytes_fn(type_name: string, fields: List<FieldEntry>) -> Stmt {
 
 /// Builds the per-field read sequence followed by the final
 /// struct-literal constructor. Both parts are emitted as one
-/// StmtList because the reader has to thread `r` through every
+/// List<SStmt> because the reader has to thread `r` through every
 /// step and produce the value at the end.
-fn build_reads_and_ctor(type_name: string, fields: List<FieldEntry>) -> StmtList {
+fn build_reads_and_ctor(type_name: string, fields: List<FieldEntry>) -> List<SStmt> {
     let reads = build_reads(fields)
     let ctor = build_ctor(type_name, fields)
-    append_stmts(reads, StmtList.Node(sstmt_dummy(Stmt.Return(ctor)), StmtList.End))
+    let tail: List<SStmt> = [sstmt_dummy(Stmt.Return(ctor))]
+    append_stmts(reads, tail)
 }
 
-fn build_reads(fields: List<FieldEntry>) -> StmtList {
+fn build_reads(fields: List<FieldEntry>) -> List<SStmt> {
     // Indexed walk produces the per-field read sequences and
-    // concatenates them into a single StmtList. Each branch returns
-    // its own sub-StmtList for the field — they're appended into
+    // concatenates them into a single List<SStmt>. Each branch returns
+    // its own sub-list for the field — they're appended into
     // `out` so source order is preserved.
-    mut out = StmtList.End
+    mut out: List<SStmt> = []
     mut i = 0
     while i < fields.length {
         let e = fields[i]
         let name = e.name
         let ty = e.resolved
+        let empty: List<SStmt> = []
         // Nested @marshal struct (nce6.1.C): emit three stmts.
         //   let (__nested_<n>, __r_<n>) = r.read_bytes()
         //   r = __r_<n>
@@ -357,14 +368,15 @@ fn build_reads(fields: List<FieldEntry>) -> StmtList {
                 let from_bytes_call = Expr.Call(Expr.Ident("from_bytes_" + inner_name),
                     [sexpr_dummy(Expr.Ident("__nested_" + name))])
                 let bind_stmt = Stmt.Let(name, ValueType.Unknown, from_bytes_call)
-                append_stmts(stmts, StmtList.Node(sstmt_dummy(bind_stmt), StmtList.End))
+                let tail: List<SStmt> = [sstmt_dummy(bind_stmt)]
+                append_stmts(stmts, tail)
             }
             .List(elem) -> {
                 if elem is .Struct {
                     list_of_struct_reads(name, elem)
                 } else {
                     let reader = reader_for(ty)
-                    if reader == "" { StmtList.End } else { read_then_reassign(name, name, reader) }
+                    if reader == "" { empty } else { read_then_reassign(name, name, reader) }
                 }
             }
             _ -> {
@@ -372,7 +384,7 @@ fn build_reads(fields: List<FieldEntry>) -> StmtList {
                 // Unsupported field type (reader == "") skips the
                 // read so the impl still compiles; round-trip is
                 // lossy until follow-up sub-tickets extend the table.
-                if reader == "" { StmtList.End } else { read_then_reassign(name, name, reader) }
+                if reader == "" { empty } else { read_then_reassign(name, name, reader) }
             }
         }
         out = append_stmts(out, per_field)
@@ -386,7 +398,7 @@ fn build_reads(fields: List<FieldEntry>) -> StmtList {
 /// explicit reassignment lets list-of-struct loops + while-loops
 /// inside the same fn body share `mut r` without let-shadow
 /// hiding the mut.
-fn read_then_reassign(field_name: string, value_name: string, reader: string) -> StmtList {
+fn read_then_reassign(field_name: string, value_name: string, reader: string) -> List<SStmt> {
     let r_next = "__r_" + field_name
     let read_call = Expr.Call(Expr.FieldAccess(Expr.Ident("r"), reader), [])
     let destruct_names: List<ParamEntry> = [
@@ -395,8 +407,7 @@ fn read_then_reassign(field_name: string, value_name: string, reader: string) ->
     ]
     let destruct_stmt = Stmt.LetDestructure(destruct_names, read_call)
     let reassign_stmt = Stmt.Expr(Expr.Assign("r", Expr.Ident(r_next)))
-    StmtList.Node(sstmt_dummy(destruct_stmt),
-        StmtList.Node(sstmt_dummy(reassign_stmt), StmtList.End))
+    [sstmt_dummy(destruct_stmt), sstmt_dummy(reassign_stmt)]
 }
 
 /// Synthesise the read sequence for a `field: List<NestedStruct>`:
@@ -413,7 +424,7 @@ fn read_then_reassign(field_name: string, value_name: string, reader: string) ->
 ///     let <n> = __acc_<n>
 ///
 /// `<Inner>` is read off the .Struct(name, _) of the elem type.
-fn list_of_struct_reads(field_name: string, elem: ValueType) -> StmtList {
+fn list_of_struct_reads(field_name: string, elem: ValueType) -> List<SStmt> {
     let inner_name = match elem {
         .Struct(n, _) -> n
         _ -> ""
@@ -456,19 +467,24 @@ fn list_of_struct_reads(field_name: string, elem: ValueType) -> StmtList {
     let i_inc = Stmt.Expr(Expr.Assign(iname,
         Expr.Binary(Expr.Ident(iname), BinOp.Add, Expr.Number("1"))))
 
-    let loop_body = Stmt.Block(StmtList.Node(sstmt_dummy(raw_stmt),
-        StmtList.Node(sstmt_dummy(acc_assign),
-            StmtList.Node(sstmt_dummy(r_assign),
-                StmtList.Node(sstmt_dummy(i_inc), StmtList.End)))))
+    let loop_body_stmts: List<SStmt> = [
+        sstmt_dummy(raw_stmt),
+        sstmt_dummy(acc_assign),
+        sstmt_dummy(r_assign),
+        sstmt_dummy(i_inc),
+    ]
+    let loop_body = Stmt.Block(loop_body_stmts)
     let while_stmt = Stmt.While(cond, loop_body)
 
     // let <field_name> = __acc
     let bind_stmt = Stmt.Let(field_name, ValueType.Unknown, Expr.Ident(aname))
 
-    let trailer = StmtList.Node(sstmt_dummy(acc_stmt),
-        StmtList.Node(sstmt_dummy(i_stmt),
-            StmtList.Node(sstmt_dummy(while_stmt),
-                StmtList.Node(sstmt_dummy(bind_stmt), StmtList.End))))
+    let trailer: List<SStmt> = [
+        sstmt_dummy(acc_stmt),
+        sstmt_dummy(i_stmt),
+        sstmt_dummy(while_stmt),
+        sstmt_dummy(bind_stmt),
+    ]
     append_stmts(count_stmts, trailer)
 }
 
@@ -532,11 +548,19 @@ fn list_of_struct_elem(ty: ValueType) -> bool {
     }
 }
 
-fn append_stmts(a: StmtList, b: StmtList) -> StmtList {
-    match a {
-        .End -> b
-        .Node(ss, next) -> StmtList.Node(ss, append_stmts(next, b))
+fn append_stmts(a: List<SStmt>, b: List<SStmt>) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    mut i = 0
+    while i < a.length {
+        out.push(a[i])
+        i = i + 1
     }
+    mut j = 0
+    while j < b.length {
+        out.push(b[j])
+        j = j + 1
+    }
+    out
 }
 
 // ── Enum support (nce6.1.D) ──
@@ -548,24 +572,22 @@ fn append_stmts(a: StmtList, b: StmtList) -> StmtList {
 /// fields (using the same per-type writers as struct fields). Tag
 /// ordering matches source order so adding a variant at the end
 /// stays backwards-compatible — inserting in the middle does not.
-fn derive_enum_stmts(type_name: string, variants: List<Variant>) -> StmtList {
+fn derive_enum_stmts(type_name: string, variants: List<Variant>) -> List<SStmt> {
     let to_bytes_fn = build_enum_to_bytes_fn(type_name, variants)
-    let methods = StmtList.Node(sstmt_dummy(to_bytes_fn), StmtList.End)
+    let methods: List<SStmt> = [sstmt_dummy(to_bytes_fn)]
     // Cleanup #1: same `impl Marshal for T` form for enums.
     let impl_stmt = Stmt.Impl("@std::process::Marshal:" + type_name, methods)
     let from_bytes_fn = build_enum_from_bytes_fn(type_name, variants)
     let empty_args: List<ValueType> = []
     let isolated_fn = build_isolated_fn(type_name,
         ValueType.Enum(type_name, empty_args, 0))
-    StmtList.Node(sstmt_dummy(impl_stmt),
-        StmtList.Node(sstmt_dummy(from_bytes_fn),
-            StmtList.Node(sstmt_dummy(isolated_fn), StmtList.End)))
+    [sstmt_dummy(impl_stmt), sstmt_dummy(from_bytes_fn), sstmt_dummy(isolated_fn)]
 }
 
 fn build_enum_to_bytes_fn(type_name: string, variants: List<Variant>) -> Stmt {
     let arms = build_variant_arms(variants)
     let match_expr = Expr.MatchExpr(Expr.Ident("self"), arms)
-    let body = StmtList.Node(sstmt_dummy(Stmt.Return(match_expr)), StmtList.End)
+    let body: List<SStmt> = [sstmt_dummy(Stmt.Return(match_expr))]
     let params: List<ParamEntry> = [ParamEntry { name: "self", vtype: ValueType.Unknown }]
     let empty_tp: List<TypeParamEntry> = []
     Stmt.Function("to_bytes", empty_tp, params, ValueType.Bytes, body)
@@ -631,8 +653,8 @@ fn build_enum_from_bytes_fn(type_name: string, variants: List<Variant>) -> Stmt 
     // mut r binding stays visible to the variant payload reads.
     let tag_reads = read_then_reassign("tag", "tag", "read_int")
     let dispatch = build_enum_dispatch(type_name, variants)
-    let body = StmtList.Node(sstmt_dummy(init_let),
-        append_stmts(tag_reads, dispatch))
+    let init_part: List<SStmt> = [sstmt_dummy(init_let)]
+    let body = append_stmts(init_part, append_stmts(tag_reads, dispatch))
     let fn_name = "from_bytes_" + type_name
     let empty_tp: List<TypeParamEntry> = []
     let empty_args: List<ValueType> = []
@@ -643,20 +665,20 @@ fn build_enum_from_bytes_fn(type_name: string, variants: List<Variant>) -> Stmt 
 /// Cascade of `if tag == N { build variant }` stmts. The final
 /// variant returns unconditionally — the type-checker enforces
 /// total return coverage. Indexed walk over `variants`; builds the
-/// StmtList back-to-front so source order is preserved.
-fn build_enum_dispatch(type_name: string, variants: List<Variant>) -> StmtList {
-    mut out = StmtList.End
+/// List<SStmt> in source order.
+fn build_enum_dispatch(type_name: string, variants: List<Variant>) -> List<SStmt> {
+    mut out: List<SStmt> = []
     let n = variants.length
-    mut i = n - 1
-    while i >= 0 {
+    mut i = 0
+    while i < n {
         let v = variants[i]
         let read_payload_stmts = build_reads(v.fields)
         let ctor = build_enum_ctor(type_name, v.name, v.fields)
         let ret_stmt = Stmt.Return(ctor)
-        let block_body = append_stmts(read_payload_stmts,
-            StmtList.Node(sstmt_dummy(ret_stmt), StmtList.End))
+        let ret_tail: List<SStmt> = [sstmt_dummy(ret_stmt)]
+        let block_body = append_stmts(read_payload_stmts, ret_tail)
         let is_last = i == n - 1
-        let head_stmt = if is_last {
+        let head_stmt: List<SStmt> = if is_last {
             // Final variant: emit the read+return body unguarded —
             // the cascade above narrowed everything but the last tag
             // away. Splicing the body directly avoids an unreachable
@@ -667,10 +689,10 @@ fn build_enum_dispatch(type_name: string, variants: List<Variant>) -> StmtList {
             let cmp = Expr.Binary(Expr.Ident("tag"), BinOp.Eq, tag_lit)
             let then_block = Stmt.Block(block_body)
             let if_stmt = Stmt.If(cmp, then_block, null)
-            StmtList.Node(sstmt_dummy(if_stmt), StmtList.End)
+            [sstmt_dummy(if_stmt)]
         }
-        out = append_stmts(head_stmt, out)
-        i = i - 1
+        out = append_stmts(out, head_stmt)
+        i = i + 1
     }
     out
 }
@@ -751,7 +773,7 @@ fn build_isolated_fn(type_name: string, ty: ValueType) -> Stmt {
     arms.push(MatchArm { pattern: ok_pattern, guard: null, body: sexpr_dummy(ok_body) })
     arms.push(MatchArm { pattern: err_pattern, guard: null, body: sexpr_dummy(err_body) })
     let match_expr = Expr.MatchExpr(isolated_call, arms)
-    let body_stmts = StmtList.Node(sstmt_dummy(Stmt.Return(match_expr)), StmtList.End)
+    let body_stmts: List<SStmt> = [sstmt_dummy(Stmt.Return(match_expr))]
     let fn_name = "isolated_" + type_name
     let empty_tp: List<TypeParamEntry> = []
     Stmt.Function(fn_name, empty_tp, params, ret_ty, body_stmts)

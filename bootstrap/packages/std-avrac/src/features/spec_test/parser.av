@@ -23,19 +23,20 @@ impl Parser {
         Stmt.SpecBlock(name, body)
     }
 
-    fn parse_spec_body(self) -> StmtList {
-        if self.current_kind in [Tk.RightBrace, Tk.Eof] {
-            return StmtList.End
+    fn parse_spec_body(self) -> List<SStmt> {
+        mut out: List<SStmt> = []
+        while !(self.current_kind in [Tk.RightBrace, Tk.Eof]) {
+            let line = self.current_line
+            let col = self.current_column
+            let stmt = match {
+                self.check(Tk.KwGiven) -> self.parse_given_block()
+                self.check(Tk.KwThen)  -> self.parse_then_block()
+                _                      -> self.parse_declaration()
+            }
+            if stmt == null { return out }
+            out.push(sstmt_at(stmt!, line, col, self.file))
         }
-        let line = self.current_line
-        let col = self.current_column
-        let stmt = match {
-            self.check(Tk.KwGiven) -> self.parse_given_block()
-            self.check(Tk.KwThen)  -> self.parse_then_block()
-            _                      -> self.parse_declaration()
-        }
-        if stmt == null { return StmtList.End }
-        StmtList.Node(sstmt_at(stmt!, line, col, self.file), self.parse_spec_body())
+        out
     }
 
     fn parse_given_block(self) -> Stmt? {

@@ -11,10 +11,8 @@ use @std.avrac.parse.{parse_program_source}
 fn first_stmt(src: string) -> Stmt? {
     let parsed = parse_program_source(src)
     if parsed.had_error || parsed.stmts == null { return null }
-    match parsed.stmts! {
-        .Node(ss, _) -> ss.node
-        _ -> null
-    }
+    let ss = parsed.stmts!
+    if ss.length == 0 { null } else { ss[0].node }
 }
 
 spec "swgx: parser accepts ~ident in type-decl name slot inside quote" {

@@ -11,7 +11,7 @@
 // Phase 1 of Components V2 (vez6.1) — see
 // docs/2026_05_08_COMPONENTS_V2_DESIGN.md §3.2.
 
-use core.{Stmt, StmtList, Expr, CompConfigPair}
+use core.{Stmt, Expr, CompConfigPair}
 
 /// Flat-struct view over a `Stmt.ComponentBlock` payload. Lets
 /// macro authors handle component-block introspection without deep
@@ -25,7 +25,7 @@ export type ComponentBlockView = {
     comp_name: string,
     instance: string,
     config: List<CompConfigPair>,
-    body: StmtList,
+    body: List<SStmt>,
 }
 
 // ── Function lookup ──
@@ -34,44 +34,40 @@ export type ComponentBlockView = {
 /// "fn with empty body" without an additional walk.
 ///
 /// @field found — true when a fn with the requested name exists.
-/// @field body  — fn body (StmtList.End on miss).
+/// @field body  — fn body (empty list on miss).
 export type DeclLookup = {
     found: bool,
-    body: StmtList,
+    body: List<SStmt>,
 }
 
 /// Find a top-level fn declaration by name in `body`. Single walk
 /// — `has_fn` and `find_fn_body` are O(1) wrappers over this. Returns
 /// `{found: false, body: End}` on miss.
-export fn find_fn(body: StmtList, fn_name: string) -> DeclLookup {
-    mut cur = body
-    mut keep_going = true
-    while keep_going {
-        match cur {
-            .End -> { keep_going = false }
-            .Node(ss, next) -> {
-                match ss.node {
-                    .Function(name, _, _, _, fn_body) -> {
-                        if name == fn_name { return DeclLookup { found: true, body: fn_body } }
-                    }
-                    _ -> {}
-                }
-                cur = next
+export fn find_fn(body: List<SStmt>, fn_name: string) -> DeclLookup {
+    mut i = 0
+    while i < body.length {
+        let ss = body[i]
+        match ss.node {
+            .Function(name, _, _, _, fn_body) -> {
+                if name == fn_name { return DeclLookup { found: true, body: fn_body } }
             }
+            _ -> {}
         }
+        i = i + 1
     }
-    DeclLookup { found: false, body: StmtList.End }
+    let empty: List<SStmt> = []
+    DeclLookup { found: false, body: empty }
 }
 
 /// True when `body` contains a top-level fn named `fn_name`.
-export fn has_fn(body: StmtList, fn_name: string) -> bool {
+export fn has_fn(body: List<SStmt>, fn_name: string) -> bool {
     find_fn(body, fn_name).found
 }
 
 /// Body of the fn named `fn_name`, or `End` when missing. Pair with
 /// `has_fn` (or use `find_fn` directly) to distinguish "no fn" from
 /// "fn with empty body" without two walks.
-export fn find_fn_body(body: StmtList, fn_name: string) -> StmtList {
+export fn find_fn_body(body: List<SStmt>, fn_name: string) -> List<SStmt> {
     find_fn(body, fn_name).body
 }
 
@@ -79,38 +75,33 @@ export fn find_fn_body(body: StmtList, fn_name: string) -> StmtList {
 
 /// Every direct ComponentBlock child of `body`. Top-level only —
 /// does not recurse into nested instantiations.
-export fn all_children(body: StmtList) -> List<ComponentBlockView> {
+export fn all_children(body: List<SStmt>) -> List<ComponentBlockView> {
     children_matching(body, "")
 }
 
 /// Every direct ComponentBlock child whose comp_name matches
 /// `comp_name`. Empty `comp_name` returns all children
 /// (i.e. `all_children` is the unfiltered case).
-export fn children_of_type(body: StmtList, comp_name: string) -> List<ComponentBlockView> {
+export fn children_of_type(body: List<SStmt>, comp_name: string) -> List<ComponentBlockView> {
     children_matching(body, comp_name)
 }
 
 /// Internal: single walk over `body`, collecting ComponentBlocks.
 /// `filter_name == ""` means "no filter — include everything".
-fn children_matching(body: StmtList, filter_name: string) -> List<ComponentBlockView> {
+fn children_matching(body: List<SStmt>, filter_name: string) -> List<ComponentBlockView> {
     mut out: List<ComponentBlockView> = []
-    mut cur = body
-    mut keep_going = true
-    while keep_going {
-        match cur {
-            .End -> { keep_going = false }
-            .Node(ss, next) -> {
-                match ss.node {
-                    .ComponentBlock(cn, inst, cfg, b) -> {
-                        if filter_name == "" || cn == filter_name {
-                            out.push(ComponentBlockView { comp_name: cn, instance: inst, config: cfg, body: b })
-                        }
-                    }
-                    _ -> {}
+    mut i = 0
+    while i < body.length {
+        let ss = body[i]
+        match ss.node {
+            .ComponentBlock(cn, inst, cfg, b) -> {
+                if filter_name == "" || cn == filter_name {
+                    out.push(ComponentBlockView { comp_name: cn, instance: inst, config: cfg, body: b })
                 }
-                cur = next
             }
+            _ -> {}
         }
+        i = i + 1
     }
     out
 }

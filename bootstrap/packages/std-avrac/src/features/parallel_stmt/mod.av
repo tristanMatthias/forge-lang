@@ -16,8 +16,9 @@ fn parallel_resolve(r: Resolver, stmt: Stmt) -> Resolver {
 /// statements as concurrent tasks; the wrapper waits for them to
 /// finish before continuing. Spec Axis 18.
 export fn parallel_feature() -> Feature {
+    let empty_body: List<SStmt> = []
     feature_new("parallel") with {
-        stmt_tag: Stmt.Parallel(StmtList.End),
+        stmt_tag: Stmt.Parallel(empty_body),
         decl_keyword: "kw_parallel",
         parse_decl: (p: Parser) -> p.parse_parallel_statement(),
         emit_stmt: parallel_emit_stmt,

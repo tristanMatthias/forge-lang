@@ -14,7 +14,7 @@ export fn parallel_emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Res
 /// Build an array of closures (one per statement) and hand it to
 /// the runtime's `avra_parallel_run`, which spawns each as a green
 /// thread, waits for completion, and returns to the caller.
-fn emit_parallel(ctx: Ctx, env: List<VarBinding>, stmts: StmtList) -> Result<StmtResult, string> {
+fn emit_parallel(ctx: Ctx, env: List<VarBinding>, stmts: List<SStmt>) -> Result<StmtResult, string> {
     let closures = ctx.array_new()
     let r = collect_parallel_closures(ctx, env, stmts, closures)?
     ctx.call("avra_parallel_run", [closures])
@@ -25,18 +25,18 @@ fn emit_parallel(ctx: Ctx, env: List<VarBinding>, stmts: StmtList) -> Result<Stm
 /// and pushing its closure value into `arr`. Non-expr statements
 /// inside `parallel` are ignored — only callable expressions can
 /// be parallelised.
-fn collect_parallel_closures(ctx: Ctx, env: List<VarBinding>, stmts: StmtList, arr: ptr) -> Result<List<VarBinding>, string> {
-    match stmts {
-        .End -> ok_stmt(env)
-        .Node(ss, next) -> {
-            match ss.node {
-                .Expr(expr) -> {
-                    let r = ctx.emit(env, expr)?
-                    ctx.array_push(arr, r.value)
-                    collect_parallel_closures(ctx, env, next, arr)
-                }
-                _ -> collect_parallel_closures(ctx, env, next, arr)
+fn collect_parallel_closures(ctx: Ctx, env: List<VarBinding>, stmts: List<SStmt>, arr: ptr) -> Result<List<VarBinding>, string> {
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        match ss.node {
+            .Expr(expr) -> {
+                let r = ctx.emit(env, expr)?
+                ctx.array_push(arr, r.value)
             }
+            _ -> {}
         }
+        i = i + 1
     }
+    ok_stmt(env)
 }

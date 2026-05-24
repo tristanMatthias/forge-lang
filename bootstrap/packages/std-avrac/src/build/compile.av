@@ -9,7 +9,7 @@
 //
 // Filed under: 03hx (extraction tracking ticket).
 
-use core.{StmtList, avra_process_env_get, avra_process_forward, avra_shell_exec}
+use core.{avra_process_env_get, avra_process_forward, avra_shell_exec}
 use features.quote_expr.{lower_quotes}
 use desugar.{desugar_program, inject_intrinsics}
 use features.component_decl.{expand_components}
@@ -24,10 +24,10 @@ use build.link.{link_objects, link_objects_with_coverage, LinkOptions, default_l
 
 /// Inputs for build_binary. The caller owns assembly (parse +
 /// resolve_module_files + any test-specific wrapping) and passes the
-/// final StmtList; this module owns everything from quote-lowering
+/// final List<SStmt>; this module owns everything from quote-lowering
 /// through linked binary.
 export type CompileTarget = {
-    program: StmtList,
+    program: List<SStmt>,
     bin_path: string,           // final linked binary location
     project_dir: string,        // for runtime.o, llvm_wrapper.o
     diag_filename: string,      // displayed in error diagnostics

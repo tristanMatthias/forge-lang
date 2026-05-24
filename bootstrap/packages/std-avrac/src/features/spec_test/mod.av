@@ -9,8 +9,9 @@ use typeck.{check_expr, check_stmt}
 /// feature. Spec blocks contain `given` / `then` arms; the
 /// codegen emits calls to the test runner around each.
 export fn spec_feature() -> Feature {
+    let empty_body: List<SStmt> = []
     feature_new("spec") with {
-        stmt_tag: Stmt.SpecBlock("", StmtList.End),
+        stmt_tag: Stmt.SpecBlock("", empty_body),
         emit_stmt: spec_emit_stmt,
         resolve_stmt: spec_resolve_stmt,
         eval_stmt: spec_eval_stmt,
@@ -22,8 +23,9 @@ export fn spec_feature() -> Feature {
 /// Register the `given "context" { ... }` test arm feature.
 /// Used inside `spec` blocks to group related `then` assertions.
 export fn given_feature() -> Feature {
+    let empty_body: List<SStmt> = []
     feature_new("given") with {
-        stmt_tag: Stmt.GivenBlock("", StmtList.End),
+        stmt_tag: Stmt.GivenBlock("", empty_body),
         emit_stmt: spec_emit_stmt,
         resolve_stmt: given_resolve_stmt,
         eval_stmt: given_eval_stmt,
@@ -42,13 +44,16 @@ export fn then_feature() -> Feature {
     }
 }
 
-/// Fold `check_stmt` over a StmtList. Used by spec/given check
+/// Fold `check_stmt` over a List<SStmt>. Used by spec/given check
 /// hooks to drive type-checking through the test body.
-fn check_stmt_list(tc: TC, stmts: StmtList) -> TC {
-    match stmts {
-        .End -> tc
-        .Node(ss, next) -> check_stmt_list(check_stmt(tc, ss.node), next)
+fn check_stmt_list(tc: TC, stmts: List<SStmt>) -> TC {
+    mut cur = tc
+    mut i = 0
+    while i < stmts.length {
+        cur = check_stmt(cur, stmts[i].node)
+        i = i + 1
     }
+    cur
 }
 
 /// Type-check hook for `SpecBlock`. Walks the body for errors —

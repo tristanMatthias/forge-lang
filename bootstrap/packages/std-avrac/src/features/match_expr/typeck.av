@@ -1,7 +1,7 @@
 // WHY: type checking for match statements and expressions.
 // Exhaustiveness checking, pattern variable binding, arm type unification.
 
-use core.{Expr, Pattern, MatchArm, WhenArm, ParamEntry, Stmt, StmtList, Variant, ValueType, stmt_unwrap, vtype_display, vtype_enum_name, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types}
+use core.{Expr, Pattern, MatchArm, WhenArm, ParamEntry, Stmt, SStmt, Variant, ValueType, stmt_unwrap, vtype_display, vtype_enum_name, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types}
 use diagnostics.{DiagCode, diag_warning, span_new, bag_report}
 use core.{type_short_name}
 use typeck.{EnumTypeReg, ExprResult, TC, check_expr, tc_bind, tc_check_explicit_returns, tc_enter, tc_er, tc_exit, tc_report, resolve_vtype}
@@ -15,16 +15,9 @@ use core.{vtype_from_name}
 /// True when a statement list ends in a divergent statement
 /// (`return` / `break` / `continue` / unreachable). Used to
 /// drop divergent arms from match-result type unification.
-fn stmts_diverges(stmts: StmtList) -> bool {
-    match stmts {
-        .End -> false
-        .Node(ss, next) -> {
-            match next {
-                .End -> stmt_diverges(stmt_unwrap(ss.node))
-                _ -> stmts_diverges(next)
-            }
-        }
-    }
+fn stmts_diverges(stmts: List<SStmt>) -> bool {
+    if stmts.length == 0 { return false }
+    stmt_diverges(stmt_unwrap(stmts[stmts.length - 1].node))
 }
 
 /// Per-statement divergence test. `if` is divergent only when

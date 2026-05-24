@@ -3,30 +3,33 @@
 // AST by hand, then checks that the helpers find what's there and
 // don't find what's not.
 
-use @std.avrac.core.{Stmt, StmtList, sstmt_dummy, Expr, CompConfigPair, ParamEntry, ValueType, TypeParamEntry}
+use @std.avrac.core.{Stmt, SStmt, sstmt_dummy, Expr, CompConfigPair, ParamEntry, ValueType, TypeParamEntry}
 use @std.avrac.core.{has_fn, find_fn_body, children_of_type, all_children, config_lookup, config_has}
 
 // Build a fn-decl statement for testing.
 fn mk_fn(name: string) -> Stmt {
     let empty_tp: List<TypeParamEntry> = []
     let empty_p: List<ParamEntry> = []
-    Stmt.Function(name, empty_tp, empty_p, ValueType.Void, StmtList.End)
+    let empty_body: List<SStmt> = []
+    Stmt.Function(name, empty_tp, empty_p, ValueType.Void, empty_body)
 }
 
 // Build a ComponentBlock for testing.
 fn mk_block(comp: string, inst: string) -> Stmt {
     let empty: List<CompConfigPair> = []
-    Stmt.ComponentBlock(comp, inst, empty, StmtList.End)
+    let empty_body: List<SStmt> = []
+    Stmt.ComponentBlock(comp, inst, empty, empty_body)
 }
 
-// `let body = [fn run() {} ; fn drop() {} ; flag a {} ; flag b {} ; arg target {}]`
-fn sample_body() -> StmtList {
-    StmtList.Node(sstmt_dummy(mk_fn("run")),
-      StmtList.Node(sstmt_dummy(mk_fn("drop")),
-        StmtList.Node(sstmt_dummy(mk_block("flag", "a")),
-          StmtList.Node(sstmt_dummy(mk_block("flag", "b")),
-            StmtList.Node(sstmt_dummy(mk_block("arg", "target")),
-              StmtList.End)))))
+// `let body = [fn run() {}, fn drop() {}, flag a {}, flag b {}, arg target {}]`
+fn sample_body() -> List<SStmt> {
+    [
+        sstmt_dummy(mk_fn("run")),
+        sstmt_dummy(mk_fn("drop")),
+        sstmt_dummy(mk_block("flag", "a")),
+        sstmt_dummy(mk_block("flag", "b")),
+        sstmt_dummy(mk_block("arg", "target")),
+    ]
 }
 
 spec "ast_introspect.has_fn" {
@@ -36,23 +39,20 @@ spec "ast_introspect.has_fn" {
         then "doesn't find missing fn" { !has_fn(sample_body(), "missing") }
     }
     given "an empty body" {
-        then "finds nothing" { !has_fn(StmtList.End, "anything") }
+        then "finds nothing" {
+            let empty: List<SStmt> = []
+            !has_fn(empty, "anything")
+        }
     }
 }
 
 spec "ast_introspect.find_fn_body" {
     given "a body with named fns" {
-        then "returns End for the (empty) run body" {
-            match find_fn_body(sample_body(), "run") {
-                .End -> true
-                _ -> false
-            }
+        then "returns empty for the (empty) run body" {
+            find_fn_body(sample_body(), "run").length == 0
         }
-        then "returns End when fn is missing" {
-            match find_fn_body(sample_body(), "missing") {
-                .End -> true
-                _ -> false
-            }
+        then "returns empty when fn is missing" {
+            find_fn_body(sample_body(), "missing").length == 0
         }
     }
 }

@@ -22,7 +22,7 @@ use @std.avrac.build.{
     metadata_write, metadata_read, metadata_file_exists,
 }
 use @std.avrac.core.{
-    Stmt, StmtList, Expr, SExpr, TypeParamEntry,
+    Stmt, SStmt, Expr, SExpr, TypeParamEntry,
     ValueType, FieldEntry, Variant, ParamEntry,
     Annotation, vtype_eq, sstmt_dummy, stmt_unwrap, find_annotation,
 }
@@ -721,7 +721,8 @@ fn main() -> int {
         ParamEntry { name: "b", vtype: ValueType.Int },
     ]
     let empty_tp_add: List<TypeParamEntry> = []
-    let s_fn_inner = Stmt.Function("add", empty_tp_add, add_params_ast, ValueType.Int, StmtList.End)
+    let empty_body_fn: List<SStmt> = []
+    let s_fn_inner = Stmt.Function("add", empty_tp_add, add_params_ast, ValueType.Int, empty_body_fn)
     let exp_annots: List<Annotation> = [Annotation { name: "export", args: [] }]
     let s_fn = sstmt_dummy(Stmt.Annotated(exp_annots, s_fn_inner))
 
@@ -735,12 +736,7 @@ fn main() -> int {
     let extern_params: List<ParamEntry> = []
     let s_extern = sstmt_dummy(Stmt.ExternFn("host_now", extern_params, ValueType.Int))
 
-    let ext_stmts =
-        StmtList.Node(s_type,
-        StmtList.Node(s_fn,
-        StmtList.Node(s_const,
-        StmtList.Node(s_const_int,
-        StmtList.Node(s_extern, StmtList.End)))))
+    let ext_stmts: List<SStmt> = [s_type, s_fn, s_const, s_const_int, s_extern]
 
     let extracted = extract_unit_metadata("@ext", ext_fp, ext_stmts)
     let ex_types: List<TypeDeclEntry> = extracted.types
@@ -884,28 +880,21 @@ fn main() -> int {
     synth_fields.push(FieldEntry { name: "x", resolved: ValueType.Int })
     let greet_annots: List<Annotation> = [Annotation { name: "export", args: [] }]
     let empty_tp_synth: List<TypeParamEntry> = []
-    let synth_stmts = StmtList.Node(
+    let empty_greet_body: List<SStmt> = []
+    let synth_stmts: List<SStmt> = [
         sstmt_dummy(Stmt.TypeDecl("Cell", empty_tp_synth, synth_fields)),
-        StmtList.Node(
-            sstmt_dummy(Stmt.Annotated(
-                greet_annots,
-                Stmt.Function("greet", empty_tp_synth, [], ValueType.Str, StmtList.End),
-            )),
-            StmtList.Node(
-                sstmt_dummy(Stmt.Const("BUILD", ValueType.Str, Expr.String("\"42\""))),
-                StmtList.End,
-            ),
-        ),
-    )
+        sstmt_dummy(Stmt.Annotated(
+            greet_annots,
+            Stmt.Function("greet", empty_tp_synth, [], ValueType.Str, empty_greet_body),
+        )),
+        sstmt_dummy(Stmt.Const("BUILD", ValueType.Str, Expr.String("\"42\""))),
+    ]
 
     let synth_meta = extract_unit_metadata("@synth", avra_bytes_make(32), synth_stmts)
     let synth_back = synthesize_unit_stmts(synth_meta)
 
     // The top of synth_back should be Stmt.Module("@synth", body).
-    let synth_top = match synth_back {
-        .Node(ss, _) -> stmt_unwrap(ss.node)
-        .End -> Stmt.NoOp
-    }
+    let synth_top = if synth_back.length > 0 { stmt_unwrap(synth_back[0].node) } else { Stmt.NoOp }
     probe("synth_top_is_module",
         match synth_top {
             .Module(name, _) -> name == "@synth"
@@ -915,65 +904,48 @@ fn main() -> int {
     // The body inside the Module should contain a TypeDecl for
     // `Cell` (local name, not `@synth::Cell` — qualification happens
     // when the consumer's resolver re-walks the Module).
+    let empty_body_stmts: List<SStmt> = []
     let synth_body = match synth_top {
         .Module(_, body) -> body
-        _ -> StmtList.End
+        _ -> empty_body_stmts
     }
     probe("synth_body_first_is_typedecl",
-        match synth_body {
-            .Node(ss, _) -> {
-                match stmt_unwrap(ss.node) {
-                    .TypeDecl(name, _, _) -> name == "Cell"
-                    _ -> false
-                }
+        if synth_body.length > 0 {
+            match stmt_unwrap(synth_body[0].node) {
+                .TypeDecl(name, _, _) -> name == "Cell"
+                _ -> false
             }
-            .End -> false
-        })
+        } else { false })
 
     // The fn (second item) should round-trip with @export annotation
     // and the local name `greet`.
-    let synth_body_tail = match synth_body {
-        .Node(_, t) -> t
-        .End -> StmtList.End
-    }
     probe("synth_body_second_is_exported_fn",
-        match synth_body_tail {
-            .Node(ss, _) -> {
-                // ss.node here is Annotated(@export, Annotated(@external_unit, Function)).
-                // stmt_unwrap walks every Annotated layer down to the bare Function.
-                match stmt_unwrap(ss.node) {
-                    .Function(name, _, _, _, _) -> name == "greet"
-                    _ -> false
-                }
+        if synth_body.length > 1 {
+            // synth_body[1].node here is Annotated(@export, Annotated(@external_unit, Function)).
+            // stmt_unwrap walks every Annotated layer down to the bare Function.
+            match stmt_unwrap(synth_body[1].node) {
+                .Function(name, _, _, _, _) -> name == "greet"
+                _ -> false
             }
-            .End -> false
-        })
+        } else { false })
 
     // The synthesizer must stamp every Avra fn with @external_unit so
     // the consumer's codegen skips body emission (the body lives in
     // the producing unit's compiled .o). find_annotation walks every
     // Annotated layer.
     probe("synth_body_second_has_external_unit",
-        match synth_body_tail {
-            .Node(ss, _) -> find_annotation(ss.node, "external_unit") != null
-            .End -> false
-        })
+        if synth_body.length > 1 {
+            find_annotation(synth_body[1].node, "external_unit") != null
+        } else { false })
 
     // The const should round-trip with the literal preserved.
-    let synth_body_third = match synth_body_tail {
-        .Node(_, t) -> t
-        .End -> StmtList.End
-    }
     probe("synth_body_third_is_const",
-        match synth_body_third {
-            .Node(ss, _) -> {
-                match stmt_unwrap(ss.node) {
-                    .Const(name, _, _) -> name == "BUILD"
-                    _ -> false
-                }
+        if synth_body.length > 2 {
+            match stmt_unwrap(synth_body[2].node) {
+                .Const(name, _, _) -> name == "BUILD"
+                _ -> false
             }
-            .End -> false
-        })
+        } else { false })
 
     // Many small writes (chunk concat correctness)
     let wm = writer_new()

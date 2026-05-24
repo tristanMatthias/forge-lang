@@ -12,7 +12,7 @@
 //   do NOT read this file when:   the issue is variable scoping or
 //                                  type checking
 
-use core.{Expr, FieldEntry, Stmt, StmtList, ParamEntry, FieldInit, MatchArm, WhenArm, Pattern, SExpr, SStmt, Variant, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, ValueType, SelectArm}
+use core.{Expr, FieldEntry, Stmt, ParamEntry, FieldInit, MatchArm, WhenArm, Pattern, SExpr, SStmt, Variant, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, ValueType, SelectArm}
 use diagnostics.{Confidence, DiagCode, Span, DiagnosticBag, bag_new, bag_merge, bag_report, bag_has_errors, diag_error, diag_warning, diag_with_confidence, span_new, span_at, span_dummy}
 use resolve.{resolve_program}
 use core.{TypeRegistry, TypeKind, type_registry_new, type_registry_register, type_registry_id_for, type_qualified_name, method_mangled_name, trait_impl_name, is_mangled_method, method_from_mangled}
@@ -190,14 +190,14 @@ fn module_find(tree: ModuleNode, path: string) -> ModuleNode {
 
 /// Root entry for module tree construction. Recurses on every
 /// `Stmt.Module`, building children + sibling links.
-fn build_module_tree(stmts: StmtList, parent_path: string, tree: ModuleNode) -> ModuleNode {
-    match stmts {
-        .End -> tree
-        .Node(ss, next) -> {
-            let updated = build_tree_from_stmt(ss.node, parent_path, tree)
-            build_module_tree(next, parent_path, updated)
-        }
+fn build_module_tree(stmts: List<SStmt>, parent_path: string, tree: ModuleNode) -> ModuleNode {
+    mut cur = tree
+    mut i = 0
+    while i < stmts.length {
+        cur = build_tree_from_stmt(stmts[i].node, parent_path, cur)
+        i = i + 1
     }
+    cur
 }
 
 /// Per-stmt branch of `build_module_tree`. `Module` adds a node
@@ -225,17 +225,12 @@ fn build_tree_from_stmt(stmt: Stmt, parent_path: string, tree: ModuleNode) -> Mo
 /// the resulting list preserves source order (matching the
 /// previous cons-list which was built head-first by walking the
 /// tail recursively).
-fn collect_module_items(stmts: StmtList, mod_path: string) -> List<ModuleItemEntry> {
+fn collect_module_items(stmts: List<SStmt>, mod_path: string) -> List<ModuleItemEntry> {
     mut out: List<ModuleItemEntry> = []
-    mut cur = stmts
-    while true {
-        match cur {
-            .End -> { return out }
-            .Node(ss, next) -> {
-                collect_item_from_stmt(ss.node, mod_path, false, out)
-                cur = next
-            }
-        }
+    mut i = 0
+    while i < stmts.length {
+        collect_item_from_stmt(stmts[i].node, mod_path, false, out)
+        i = i + 1
     }
     out
 }
@@ -333,21 +328,19 @@ fn collect_reexport_items(names: List<ParamEntry>, source_mod: string, out_ref: 
 /// Collect the methods of an impl block. Methods are stored under
 /// their pre-mangled `Type__method` name so dispatch can grep the
 /// global index directly.
-fn collect_impl_items(stmts: StmtList, mod_path: string, out_ref: List<ModuleItemEntry>) {
+fn collect_impl_items(stmts: List<SStmt>, mod_path: string, out_ref: List<ModuleItemEntry>) {
     mut out = out_ref
-    match stmts {
-        .End -> {}
-        .Node(ss, next) -> {
-            match stmt_unwrap(ss.node) {
-                .Function(name, _, _, _, _) -> {
-                    // Impl methods are already mangled as Type__method.
-                    // Keep bare name — method call codegen uses Type__method directly.
-                    out.push(ModuleItemEntry { short_name: name, canonical: name, exported: true })
-                }
-                _ -> {}
+    mut i = 0
+    while i < stmts.length {
+        match stmt_unwrap(stmts[i].node) {
+            .Function(name, _, _, _, _) -> {
+                // Impl methods are already mangled as Type__method.
+                // Keep bare name — method call codegen uses Type__method directly.
+                out.push(ModuleItemEntry { short_name: name, canonical: name, exported: true })
             }
-            collect_impl_items(next, mod_path, out)
+            _ -> {}
         }
+        i = i + 1
     }
 }
 
@@ -368,7 +361,7 @@ fn annotation_has_export(annotations: List<Annotation>) -> bool {
 
 /// Top-level entry for use-alias resolution: process every `use`
 /// statement, building an AliasEntry list keyed off short names.
-fn resolve_use_aliases(stmts: StmtList, tree: ModuleNode, graph: ModuleGraph) -> UseResult {
+fn resolve_use_aliases(stmts: List<SStmt>, tree: ModuleNode, graph: ModuleGraph) -> UseResult {
     resolve_use_aliases_in(stmts, tree, graph, "")
 }
 
@@ -381,30 +374,34 @@ fn resolve_use_aliases(stmts: StmtList, tree: ModuleNode, graph: ModuleGraph) ->
 /// say `use core.{...}` and have it resolve to the sibling
 /// `@std.avrac.core.runtime` rather than failing because no such
 /// module exists at the program root.
-fn resolve_use_aliases_in(stmts: StmtList, tree: ModuleNode, graph: ModuleGraph, current_module: string) -> UseResult {
-    match stmts {
-        .End -> UseResult { aliases: [], bag: bag_new() }
-        .Node(ss, next) -> {
-            let rest = resolve_use_aliases_in(next, tree, graph, current_module)
-            let unwrapped = match ss.node {
-                .Annotated(_, inner) -> inner
-                _ -> ss.node
-            }
-            match unwrapped {
-                .Use(mod_path, names) -> {
-                    let canonical_path = dots_to_colons(mod_path)
-                    let sp = span_at(0, 0, ss.line, ss.col, ss.file)
-                    // Graph is the source of truth for path resolution;
-                    // each module's canonical path was captured at
-                    // construction so the ancestor walk runs as a chain
-                    // of strmap hits instead of recursive AST traversal.
-                    let resolved_path = graph_find_use_path(graph, current_module, canonical_path)
-                    resolve_use_names(resolved_path, names, tree, graph, rest, sp)
-                }
-                _ -> rest
-            }
+fn resolve_use_aliases_in(stmts: List<SStmt>, tree: ModuleNode, graph: ModuleGraph, current_module: string) -> UseResult {
+    // Walk in reverse so accumulator semantics match the original
+    // head-recursive cons-cell walk (which built the result on the
+    // way back up the recursion).
+    mut acc = UseResult { aliases: [], bag: bag_new() }
+    mut i = stmts.length - 1
+    while i >= 0 {
+        let ss = stmts[i]
+        let unwrapped = match ss.node {
+            .Annotated(_, inner) -> inner
+            _ -> ss.node
         }
+        acc = match unwrapped {
+            .Use(mod_path, names) -> {
+                let canonical_path = dots_to_colons(mod_path)
+                let sp = span_at(0, 0, ss.line, ss.col, ss.file)
+                // Graph is the source of truth for path resolution;
+                // each module's canonical path was captured at
+                // construction so the ancestor walk runs as a chain
+                // of strmap hits instead of recursive AST traversal.
+                let resolved_path = graph_find_use_path(graph, current_module, canonical_path)
+                resolve_use_names(resolved_path, names, tree, graph, acc, sp)
+            }
+            _ -> acc
+        }
+        i = i - 1
     }
+    acc
 }
 
 /// Output of `resolve_use_aliases` — the alias list plus any
@@ -615,7 +612,7 @@ fn merge_aliases(base: List<AliasBinding>, extra: List<AliasBinding>) -> List<Al
 /// Output of `resolve_names` — the rewritten statement tree, error
 /// flags, accumulated diagnostics, and the populated type registry.
 export type NameResolveResult = {
-    stmts: StmtList,
+    stmts: List<SStmt>,
     had_error: int,
     error_message: string,
     bag: DiagnosticBag,
@@ -625,7 +622,7 @@ export type NameResolveResult = {
 /// Top-level entry: build the module tree, resolve `use` aliases,
 /// flatten the global index, and rewrite every Ident / type name to
 /// its canonical qualified form.
-export fn resolve_names(stmts: StmtList) -> NameResolveResult {
+export fn resolve_names(stmts: List<SStmt>) -> NameResolveResult {
     // Pass 1: Build module tree (legacy, used for items + global index)
     // and module graph (used for path lookups). Graph captured each
     // module's canonical path at construction so use-path resolution
@@ -668,11 +665,15 @@ export fn resolve_names(stmts: StmtList) -> NameResolveResult {
 // ── Statement rewriting ──
 
 /// Rewrite every stmt in a list, threading the NameCtx through.
-fn rewrite_stmt_list(ctx: NameCtx, stmts: StmtList) -> StmtList {
-    match stmts {
-        .End -> .End
-        .Node(ss, next) -> .Node(sstmt_at(rewrite_stmt(ctx, ss.node), ss.line, ss.col, ss.file), rewrite_stmt_list(ctx, next))
+fn rewrite_stmt_list(ctx: NameCtx, stmts: List<SStmt>) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        out.push(sstmt_at(rewrite_stmt(ctx, ss.node), ss.line, ss.col, ss.file))
+        i = i + 1
     }
+    out
 }
 
 /// Rewrite a single statement: qualify type names in declarations,
@@ -792,7 +793,7 @@ fn rewrite_select_arms(ctx: NameCtx, arms: List<SelectArm>) -> List<SelectArm> {
 /// Rewrite an `Impl` statement — qualify the type name (and the
 /// trait name when this is `impl Trait for Type`), then walk every
 /// method to mangle its name into `Type__method` form.
-fn rewrite_impl_stmt(ctx: NameCtx, type_name: string, methods: StmtList) -> Stmt {
+fn rewrite_impl_stmt(ctx: NameCtx, type_name: string, methods: List<SStmt>) -> Stmt {
     // Trait impl: "TraitName:TypeName" — qualify both parts separately
     let sep = find_single_colon(type_name)
     if sep >= 0 {
@@ -992,14 +993,16 @@ fn qualify_self_param(ctx: NameCtx, params: List<ParamEntry>, qualified_type: st
 /// methods kept the bare `Type__method` name and call sites looking
 /// up the prefixed `@module::Type__method` failed to dispatch
 /// (vez6.7.4).
-fn rewrite_impl_methods(ctx: NameCtx, qualified_type: string, stmts: StmtList) -> StmtList {
-    match stmts {
-        .End -> StmtList.End
-        .Node(ss, next) -> {
-            let new_stmt = rewrite_impl_method_stmt(ctx, qualified_type, ss.node)
-            StmtList.Node(sstmt_at(new_stmt, ss.line, ss.col, ss.file), rewrite_impl_methods(ctx, qualified_type, next))
-        }
+fn rewrite_impl_methods(ctx: NameCtx, qualified_type: string, stmts: List<SStmt>) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        let new_stmt = rewrite_impl_method_stmt(ctx, qualified_type, ss.node)
+        out.push(sstmt_at(new_stmt, ss.line, ss.col, ss.file))
+        i = i + 1
     }
+    out
 }
 
 /// Per-statement worker for rewrite_impl_methods. Recurses through
@@ -1237,16 +1240,16 @@ fn used_has(set: List<string>, path: string) -> bool {
 }
 
 // Collect all QualifiedIdent paths from the rewritten AST.
-/// Walk a StmtList, accumulating every QualifiedIdent path the
+/// Walk a List<SStmt>, accumulating every QualifiedIdent path the
 /// rewrite pass emitted.
-fn collect_used_paths_stmts(stmts: StmtList, acc: List<string>) -> List<string> {
-    match stmts {
-        .End -> acc
-        .Node(ss, next) -> {
-            let with_stmt = collect_used_paths_stmt(ss.node, acc)
-            collect_used_paths_stmts(next, with_stmt)
-        }
+fn collect_used_paths_stmts(stmts: List<SStmt>, acc: List<string>) -> List<string> {
+    mut cur = acc
+    mut i = 0
+    while i < stmts.length {
+        cur = collect_used_paths_stmt(stmts[i].node, cur)
+        i = i + 1
     }
+    cur
 }
 
 /// Per-stmt branch of `collect_used_paths_stmts`.

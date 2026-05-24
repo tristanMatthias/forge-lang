@@ -16,7 +16,7 @@
 //
 // Tracking: forge-crafting-intepreters-g2eo Phase A.
 
-use core.{Stmt, StmtList, SStmt, Annotation, SExpr, sstmt_at, avra_process_env_get}
+use core.{Stmt, SStmt, Annotation, SExpr, sstmt_at, avra_process_env_get}
 
 /// Returns true iff any decl reachable from `body` carries a
 /// `SStmt.file` whose path starts with `target_prefix`. Recurses
@@ -25,22 +25,18 @@ use core.{Stmt, StmtList, SStmt, Annotation, SExpr, sstmt_at, avra_process_env_g
 /// because dir-as-module flattens many sibling files into one
 /// module body, but package-load wraps everything under
 /// `Module("@scope") { Module("name") { … } }` first.
-fn body_has_file_under(body: StmtList, target_prefix: string) -> bool {
+fn body_has_file_under(body: List<SStmt>, target_prefix: string) -> bool {
     let debug = avra_process_env_get("AVRA_FILTER_DEBUG_DEEP") != ""
     body_has_file_under_inner(body, target_prefix, debug)
 }
 
-fn body_has_file_under_inner(body: StmtList, target_prefix: string, debug: bool) -> bool {
-    match body {
-        .End -> false
-        .Node(ss, next) -> {
-            if ss_reaches_target(ss, target_prefix, debug) {
-                true
-            } else {
-                body_has_file_under_inner(next, target_prefix, debug)
-            }
-        }
+fn body_has_file_under_inner(body: List<SStmt>, target_prefix: string, debug: bool) -> bool {
+    mut i = 0
+    while i < body.length {
+        if ss_reaches_target(body[i], target_prefix, debug) { return true }
+        i = i + 1
     }
+    false
 }
 
 fn ss_reaches_target(ss: SStmt, target_prefix: string, debug: bool) -> bool {
@@ -106,7 +102,7 @@ fn annotate_external(ss: SStmt) -> SStmt {
 /// got loaded — shouldn't happen post-resolve, but guard anyway)
 /// are not modified: making them external would be a no-op since
 /// codegen already emits nothing for empty bodies.
-export fn filter_to_target_unit(stmts: StmtList, target_prefix: string) -> StmtList {
+export fn filter_to_target_unit(stmts: List<SStmt>, target_prefix: string) -> List<SStmt> {
     let debug = avra_process_env_get("AVRA_FILTER_DEBUG") != ""
     if debug {
         let _ = dump_top_level(stmts, "  ")
@@ -114,71 +110,70 @@ export fn filter_to_target_unit(stmts: StmtList, target_prefix: string) -> StmtL
     filter_inner(stmts, target_prefix, debug)
 }
 
-fn dump_top_level(stmts: StmtList, indent: string) -> int {
-    match stmts {
-        .End -> 0
-        .Node(ss, next) -> {
-            match ss.node {
-                .Module(name, body) -> {
-                    eprintln("[dump] ${indent}Module(${name}) [body_empty=${stmt_list_empty(body)}]")
-                    if !stmt_list_empty(body) {
-                        let _ = dump_top_level(body, indent + "  ")
-                    }
+fn dump_top_level(stmts: List<SStmt>, indent: string) -> int {
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        match ss.node {
+            .Module(name, body) -> {
+                eprintln("[dump] ${indent}Module(${name}) [body_empty=${stmt_list_empty(body)}]")
+                if !stmt_list_empty(body) {
+                    let _ = dump_top_level(body, indent + "  ")
                 }
-                .Annotated(_, inner) -> match inner {
-                    .Module(name, _) -> eprintln("[dump] ${indent}Annotated.Module(${name})")
-                    _ -> {}
-                }
+            }
+            .Annotated(_, inner) -> match inner {
+                .Module(name, _) -> eprintln("[dump] ${indent}Annotated.Module(${name})")
                 _ -> {}
             }
-            dump_top_level(next, indent)
+            _ -> {}
         }
+        i = i + 1
     }
+    0
 }
 
-fn filter_inner(stmts: StmtList, target_prefix: string, debug: bool) -> StmtList {
-    match stmts {
-        .End -> StmtList.End
-        .Node(ss, next) -> {
-            let head = match ss.node {
+fn filter_inner(stmts: List<SStmt>, target_prefix: string, debug: bool) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        let head = match ss.node {
+            .Module(name, body) -> {
+                if body_has_file_under(body, target_prefix) {
+                    if debug { eprintln("[filter] keep Module ${name}") }
+                    let inner = filter_inner(body, target_prefix, debug)
+                    sstmt_at(Stmt.Module(name, inner), ss.line, ss.col, ss.file)
+                } else if !stmt_list_empty(body) {
+                    if debug { eprintln("[filter] external Module ${name}") }
+                    annotate_external(ss)
+                } else {
+                    if debug { eprintln("[filter] empty-body Module ${name}") }
+                    ss
+                }
+            }
+            .Annotated(annots, inner) -> match inner {
                 .Module(name, body) -> {
                     if body_has_file_under(body, target_prefix) {
-                        if debug { eprintln("[filter] keep Module ${name}") }
-                        let inner = filter_inner(body, target_prefix, debug)
-                        sstmt_at(Stmt.Module(name, inner), ss.line, ss.col, ss.file)
+                        if debug { eprintln("[filter] keep Annotated Module ${name}") }
+                        let inner_filtered = filter_inner(body, target_prefix, debug)
+                        sstmt_at(Stmt.Annotated(annots, Stmt.Module(name, inner_filtered)), ss.line, ss.col, ss.file)
                     } else if !stmt_list_empty(body) {
-                        if debug { eprintln("[filter] external Module ${name}") }
+                        if debug { eprintln("[filter] external Annotated Module ${name}") }
                         annotate_external(ss)
                     } else {
-                        if debug { eprintln("[filter] empty-body Module ${name}") }
                         ss
                     }
                 }
-                .Annotated(annots, inner) -> match inner {
-                    .Module(name, body) -> {
-                        if body_has_file_under(body, target_prefix) {
-                            if debug { eprintln("[filter] keep Annotated Module ${name}") }
-                            let inner_filtered = filter_inner(body, target_prefix, debug)
-                            sstmt_at(Stmt.Annotated(annots, Stmt.Module(name, inner_filtered)), ss.line, ss.col, ss.file)
-                        } else if !stmt_list_empty(body) {
-                            if debug { eprintln("[filter] external Annotated Module ${name}") }
-                            annotate_external(ss)
-                        } else {
-                            ss
-                        }
-                    }
-                    _ -> ss
-                }
                 _ -> ss
             }
-            StmtList.Node(head, filter_inner(next, target_prefix, debug))
+            _ -> ss
         }
+        out.push(head)
+        i = i + 1
     }
+    out
 }
 
-fn stmt_list_empty(s: StmtList) -> bool {
-    match s {
-        .End -> true
-        .Node(_, _) -> false
-    }
+fn stmt_list_empty(s: List<SStmt>) -> bool {
+    s.length == 0
 }

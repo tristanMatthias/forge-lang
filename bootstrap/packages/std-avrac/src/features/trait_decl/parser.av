@@ -3,7 +3,7 @@
 // The trait declaration itself is a no-op at codegen — the methods
 // are implemented by `impl Trait for Type { ... }` blocks.
 
-use core.{Stmt, StmtList, TypeParamEntry, SStmt, sstmt, ValueType, type_expr_to_vtype}
+use core.{Stmt, TypeParamEntry, SStmt, sstmt, ValueType, type_expr_to_vtype}
 use parse.{Parser}
 use core.{Tk}
 
@@ -28,22 +28,22 @@ impl Parser {
     // Parse method signatures and associated type declarations inside a trait body.
     // Methods are stored as ExternFn (name, params, ret_ty) — they have no body.
     // Associated types are stored as AssocType(name, "").
-    fn parse_trait_methods(self) -> StmtList? {
-        if self.check(Tk.RightBrace) {
-            return StmtList.End
+    fn parse_trait_methods(self) -> List<SStmt>? {
+        mut out: List<SStmt> = []
+        while !self.check(Tk.RightBrace) {
+            // Associated type declaration: `type Name`
+            if self.check(Tk.KwType) {
+                let line = self.current_line
+                let col = self.current_column
+                self.advance()
+                let name = self.consume_identifier("expected associated type name")?
+                out.push(sstmt(Stmt.AssocType(name, ValueType.Unknown), line, col))
+                continue
+            }
+            let method = self.parse_trait_method_sig()?
+            out.push(sstmt(method, self.current_line, self.current_column))
         }
-        // Associated type declaration: `type Name`
-        if self.check(Tk.KwType) {
-            let line = self.current_line
-            let col = self.current_column
-            self.advance()
-            let name = self.consume_identifier("expected associated type name")?
-            let rest = self.parse_trait_methods()?
-            return StmtList.Node(sstmt(Stmt.AssocType(name, ValueType.Unknown), line, col), rest)
-        }
-        let method = self.parse_trait_method_sig()?
-        let rest = self.parse_trait_methods()?
-        StmtList.Node(sstmt(method, self.current_line, self.current_column), rest)
+        out
     }
 
     fn parse_trait_method_sig(self) -> Stmt? {

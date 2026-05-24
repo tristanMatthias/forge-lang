@@ -420,7 +420,7 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
         .Bytes -> b is .Bytes
         .Bool -> b is .Bool
         .Ptr -> b is .Ptr
-        .List -> b is .List
+        .List(ea) -> match b { .List(eb) -> vtype_eq_loose(ea, eb), _ -> false }
         .Fn -> b is .Fn
         .Void -> b is .Void
         .Struct(n1, id1) -> match b { .Struct(n2, id2) -> if id1 > 0 && id2 > 0 { id1 == id2 } else { n1 == n2 }, _ -> false }
@@ -429,7 +429,7 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
         .Map -> b is .Map
         .FnTyped(_, _) -> match b { .FnTyped(_, _) -> true, .Fn(_) -> true, _ -> false }
         .Trait(n1, _) -> match b { .Trait(n2, _) -> n1 == n2, _ -> false }
-        .Tuple(_) -> match b { .Tuple(_) -> true, _ -> false }
+        .Tuple(ea) -> match b { .Tuple(eb) -> type_lists_eq_loose(ea, eb), _ -> false }
         .Closure(_, _) -> match b { .Closure(_, _) -> true, _ -> false }
         .Union(types_a) -> match b {
             .Union(types_b) -> type_lists_eq(types_a, types_b)
@@ -438,7 +438,7 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
         .Newtype(n1, _, _) -> match b { .Newtype(n2, _, _) -> n1 == n2, _ -> false }
         .NarrowedEnum(e1, v1, _) -> match b { .NarrowedEnum(e2, v2, _) -> e1 == e2 && v1 == v2, _ -> false }
         .Unknown -> b is .Unknown
-        .Task(_) -> b is .Task
+        .Task(ra) -> match b { .Task(rb) -> vtype_eq_loose(ra, rb), _ -> false }
         _ -> false
     }
 }
@@ -450,6 +450,28 @@ fn type_lists_eq(a: List<ValueType>, b: List<ValueType>) -> bool {
     mut i = 0
     while i < a.length {
         if !vtype_eq(a[i], b[i]) { return false }
+        i = i + 1
+    }
+    true
+}
+
+/// Unknown-tolerant equality. `Unknown == anything`. Used for the
+/// element types of `List<T>` / `Task<T>` / `Tuple<…>` where the
+/// typeck legitimately produces `List<Unknown>` for empty literals
+/// (`mut out = []`) that later get pushed into. Without this, a fn
+/// declared `-> List<string>` whose body starts with `mut out = []`
+/// would fail F1000 because `List<Unknown> != List<string>` under
+/// strict equality. Pair with `type_lists_eq_loose` for tuples.
+fn vtype_eq_loose(a: ValueType, b: ValueType) -> bool {
+    if a is .Unknown || b is .Unknown { return true }
+    vtype_eq(a, b)
+}
+
+fn type_lists_eq_loose(a: List<ValueType>, b: List<ValueType>) -> bool {
+    if a.length != b.length { return false }
+    mut i = 0
+    while i < a.length {
+        if !vtype_eq_loose(a[i], b[i]) { return false }
         i = i + 1
     }
     true
@@ -899,7 +921,7 @@ export enum Expr {
     /// Index access: `list[i]` / `map["key"]`.
     Index(obj: Expr, idx: Expr)
     /// Block expression — value is the last statement's value.
-    Block(body: StmtList)
+    Block(body: List<SStmt>)
     /// `match subject { arms }` — match used as an expression.
     MatchExpr(subject: Expr, arms: List<MatchArm>)
     /// Field reassignment: `obj.field = value`.
@@ -981,7 +1003,7 @@ export enum Stmt {
     /// discarded except as the final expression of a block.
     Expr(expr: Expr)
     /// Brace block: `{ stmt1; stmt2; }`.
-    Block(body: StmtList)
+    Block(body: List<SStmt>)
     /// `if cond { then } else { else_branch }` (else may be null).
     If(condition: Expr, then_branch: Stmt, else_branch: Stmt?)
     /// `while cond { body }`.
@@ -992,7 +1014,7 @@ export enum Stmt {
     ForIn(variable: string, collection: Expr, body: Stmt)
     /// Function declaration. `type_params` empty for non-generic
     /// fns; resolver fills `ret_vtype` from the source annotation.
-    Function(name: string, type_params: List<TypeParamEntry>, params: List<ParamEntry>, ret_vtype: ValueType, body: StmtList)
+    Function(name: string, type_params: List<TypeParamEntry>, params: List<ParamEntry>, ret_vtype: ValueType, body: List<SStmt>)
     /// `return value` — early return with an expression.
     Return(value: Expr)
     /// Bare `return` — ends a void fn.
@@ -1012,7 +1034,7 @@ export enum Stmt {
     Match(subject: Expr, arms: List<MatchArm>)
     /// `impl Type { fns }` or `impl Trait for Type { fns }`. The
     /// `:` form encodes the trait+type pair as `"Trait:Type"`.
-    Impl(type_name: string, methods: StmtList)
+    Impl(type_name: string, methods: List<SStmt>)
     /// Placeholder — used after rewriting passes that drop a stmt.
     NoOp
     /// FFI declaration: `extern fn name(...)`. No body; ABI matches C.
@@ -1022,7 +1044,7 @@ export enum Stmt {
     /// `continue` — skip to the next iteration of the enclosing loop.
     Continue
     /// `trait Name { fn ... }` — interface declaration.
-    TraitDecl(name: string, methods: StmtList)
+    TraitDecl(name: string, methods: List<SStmt>)
     /// Destructuring let: `let (a, b) = pair` / `let {x, y} = struct`.
     LetDestructure(names: List<ParamEntry>, initializer: Expr)
     /// `defer expr` — runs `expr` at scope exit, LIFO order.
@@ -1033,28 +1055,28 @@ export enum Stmt {
     /// the inner stmt's match arms stay focused on the actual decl.
     Annotated(annotations: List<Annotation>, inner: Stmt)
     /// Test outer block: `spec "name" { ... }`.
-    SpecBlock(name: string, body: StmtList)
+    SpecBlock(name: string, body: List<SStmt>)
     /// Test setup block: `given "name" { let setup = ...; then "..." }`.
-    GivenBlock(name: string, body: StmtList)
+    GivenBlock(name: string, body: List<SStmt>)
     /// Test assertion block: `then "name" { boolean_condition }`.
     ThenBlock(name: string, condition: Expr)
     /// `select { x <- ch1 -> body, ... }` — multi-channel wait.
     Select(arms: List<SelectArm>)
     /// `parallel { stmts }` — run statements concurrently as Tasks.
-    Parallel(body: StmtList)
+    Parallel(body: List<SStmt>)
     /// `mod name { body }` — namespaced sub-module. Pre-resolution
     /// `mod name` (no body) shows up here with empty body and is
     /// filled in by the module resolver.
-    Module(name: string, body: StmtList)
+    Module(name: string, body: List<SStmt>)
     /// `use module.path.{name1, name2}` — import declaration.
     Use(module_path: string, names: List<ParamEntry>)
     /// Trait associated type: `type Item = T` inside a trait body.
     AssocType(name: string, ty_vt: ValueType)
     /// Component declaration: `component Name(params) { body }` —
     /// reusable templated block of statements.
-    ComponentDef(name: string, params: List<ParamEntry>, config: List<CompConfig>, children: List<ChildrenSlot>, implements: List<string>, body: StmtList)
+    ComponentDef(name: string, params: List<ParamEntry>, config: List<CompConfig>, children: List<ChildrenSlot>, implements: List<string>, body: List<SStmt>)
     /// Component instantiation: `component Foo as bar { config; body }`.
-    ComponentBlock(comp_name: string, instance: string, config: List<CompConfigPair>, body: StmtList)
+    ComponentBlock(comp_name: string, instance: string, config: List<CompConfigPair>, body: List<SStmt>)
 }
 
 /// When arm: one branch `cond -> body` or `else -> body` (cond is
@@ -1072,7 +1094,7 @@ export type WhenArm = { cond: SExpr?, body: SExpr }
 /// Used as `arms: List<SelectArm>` on Stmt.Select. `body` stays
 /// `StmtList` for now — StmtList itself becomes `List<SStmt>` in a
 /// later lkze.9 ticket.
-export type SelectArm = { binding: string, channel: Expr, body: StmtList }
+export type SelectArm = { binding: string, channel: Expr, body: List<SStmt> }
 
 /// Annotations attached to declarations: `@name` or `@name(args)`.
 /// Args are stored as `List<SExpr>` for generality so any annotation
@@ -1189,12 +1211,7 @@ fn strip_quotes(s: string) -> string {
     }
 }
 
-/// Linked list of spanned statements. Every block-shaped construct
-/// (Function body, Block, Module body, etc.) holds one of these.
-export enum StmtList {
-    End
-    Node(stmt: SStmt, next: StmtList)
-}
+// `enum StmtList` retired in lkze.9 #20 — `List<SStmt>` everywhere.
 
 // `List<VarBinding>` replaces the retired `enum VarEnv`. The variable
 // environment is threaded through codegen as a flat growable list — each
@@ -1651,19 +1668,15 @@ export fn render_match_arm_list(arms: List<MatchArm>) -> string {
 
 /// Render a StmtList as an S-expression sequence — convenient for
 /// `render_stmt` recursion on Block bodies.
-export fn render_stmt_list(stmts: StmtList) -> string {
-    match stmts {
-        .End -> ""
-        .Node(ss, next) -> {
-            let head = render_stmt(ss.node)
-            let tail = render_stmt_list(next)
-            if tail == "" {
-                head
-            } else {
-                "${head}\n${tail}"
-            }
-        }
+export fn render_stmt_list(stmts: List<SStmt>) -> string {
+    mut out = ""
+    mut i = 0
+    while i < stmts.length {
+        let head = render_stmt(stmts[i].node)
+        if out == "" { out = head } else { out = "${out}\n${head}" }
+        i = i + 1
     }
+    out
 }
 
 // ── Token kinds ──

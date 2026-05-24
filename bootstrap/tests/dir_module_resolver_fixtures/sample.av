@@ -49,29 +49,17 @@ fn main() -> int {
     probe("loaded_three", loaded_count(result.loaded) == 3)
 
     // Probe 3 — body assembled (non-empty stmts).
-    let stmts_present = match result.stmts {
-        .End -> false
-        .Node(_, _) -> true
-    }
-    probe("body_non_empty", stmts_present)
+    probe("body_non_empty", result.stmts.length > 0)
 
     // Probe 4 — re-running with an already-loaded set short-circuits.
     let result2 = resolve_dir_module_body(root, result.loaded)
-    let stmts2_empty = match result2.stmts {
-        .End -> true
-        .Node(_, _) -> false
-    }
-    probe("rerun_empty_stmts", stmts2_empty)
+    probe("rerun_empty_stmts", result2.stmts.length == 0)
     probe("rerun_loaded_unchanged", loaded_count(result2.loaded) == loaded_count(result.loaded))
 
     // Probe 5 — pointing at a non-existent dir returns errorless empty.
     let result3 = resolve_dir_module_body("/tmp/avra_dirmod_resolver_does_not_exist_xx", LoadedPaths.End)
-    let r3_empty = match result3.stmts {
-        .End -> true
-        .Node(_, _) -> false
-    }
     probe("missing_dir_no_error", !result3.had_error)
-    probe("missing_dir_empty_stmts", r3_empty)
+    probe("missing_dir_empty_stmts", result3.stmts.length == 0)
     probe("missing_dir_zero_loaded", loaded_count(result3.loaded) == 0)
 
     avra_shell_exec("rm -rf " + root)

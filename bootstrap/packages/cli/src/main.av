@@ -64,7 +64,7 @@ use @std.avrac.indexer.{run_lsp_server, extract_project_syms_cached}
 use @std.avrac.pathutil.{basename_no_ext}
 use @std.avrac.list_ops.{list_map, list_filter, list_fold}
 use @std.avrac.parse.{parse_expression_source, parse_program_source, parse_program_source_at}
-use @std.avrac.core.{render_expr, render_stmt_list, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType, Stmt, StmtList, Expr, sstmt_dummy}
+use @std.avrac.core.{render_expr, render_stmt_list, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType, Stmt, SStmt, Expr, sstmt_dummy}
 use @std.avrac.features.eval.{render_value, eval_expression_source, execute_program_source}
 use @std.avrac.desugar.{desugar_program, inject_intrinsics}
 use @std.avrac.features.component_decl.{expand_components}
@@ -548,7 +548,7 @@ fn render_unit_chain(units: List<Unit>) -> string {
 // contents), extracts a per-file UnitMetadata slice, and writes it to
 // `<file>.meta.bin`. Entry-point file is skipped — its sidecar is
 // the whole-unit slice consumers expect, written upstream.
-fn emit_per_file_metas(files: List<string>, stmts: StmtList, unit_name: string, entry_path: string) {
+fn emit_per_file_metas(files: List<string>, stmts: List<SStmt>, unit_name: string, entry_path: string) {
     mut i = 0
     while i < files.length {
         let file_path = files[i]
@@ -2220,14 +2220,22 @@ fn compile_test_unit_to(inputs: BuildInputs, test_paths: List<string>, args: Tes
 /// Parse AVRA_LIB_OBJS into a list of .o paths. Colon-separated for
 /// shell-pipeline-friendliness (mirrors PATH / LD_LIBRARY_PATH).
 /// Empty / unset env var → empty list.
-/// Concatenate two StmtList values, preserving order. Used by the
+/// Concatenate two List<SStmt> values, preserving order. Used by the
 /// --module_path compile path to append dir-as-module siblings to
 /// the entry file's parsed body before wrapping in Stmt.Module.
-fn concat_stmt_lists(left: StmtList, right: StmtList) -> StmtList {
-    match left {
-        .End -> right
-        .Node(ss, next) -> StmtList.Node(ss, concat_stmt_lists(next, right))
+fn concat_stmt_lists(left: List<SStmt>, right: List<SStmt>) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    mut i = 0
+    while i < left.length {
+        out.push(left[i])
+        i = i + 1
     }
+    mut j = 0
+    while j < right.length {
+        out.push(right[j])
+        j = j + 1
+    }
+    out
 }
 
 fn parse_lib_objs_env() -> List<string> {
@@ -3631,7 +3639,8 @@ fn main() {
             } else {
                 parsed.stmts!
             }
-            StmtList.Node(sstmt_dummy(Stmt.Module(module_path, body_with_siblings)), StmtList.End)
+            let one: List<SStmt> = [sstmt_dummy(Stmt.Module(module_path, body_with_siblings))]
+            one
         } else {
             parsed.stmts!
         }

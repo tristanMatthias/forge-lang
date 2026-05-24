@@ -5,7 +5,7 @@
 // Codegen then skips body emission for those modules. These tests
 // build small in-memory ASTs and assert on the post-filter shape.
 
-use @std.avrac.core.{Stmt, StmtList, SStmt, Annotation, ParamEntry, ValueType, sstmt_at, sstmt_dummy}
+use @std.avrac.core.{Stmt, SStmt, Annotation, ParamEntry, ValueType, sstmt_at, sstmt_dummy}
 use @std.avrac.features.modules.{filter_to_target_unit}
 
 /// Build a `Stmt.Function` SStmt anchored at `file` so the filter
@@ -13,8 +13,9 @@ use @std.avrac.features.modules.{filter_to_target_unit}
 /// codegen these test fixtures, only inspect their structure.
 fn uft_fn_in_file(name: string, file: string) -> SStmt {
     let empty_p: List<ParamEntry> = []
+    let empty_body: List<SStmt> = []
     sstmt_at(
-        Stmt.Function(name, .End, empty_p, ValueType.Unknown, StmtList.End),
+        Stmt.Function(name, .End, empty_p, ValueType.Unknown, empty_body),
         1, 1, file,
     )
 }
@@ -49,21 +50,13 @@ fn uft_is_module(ss: SStmt, expected_name: string) -> bool {
     }
 }
 
-fn uft_nth(stmts: StmtList, idx: int) -> SStmt {
-    match stmts {
-        .End -> sstmt_dummy(Stmt.NoOp())
-        .Node(ss, next) -> if idx == 0 { ss } else { uft_nth(next, idx - 1) }
-    }
+fn uft_nth(stmts: List<SStmt>, idx: int) -> SStmt {
+    if idx < 0 || idx >= stmts.length { return sstmt_dummy(Stmt.NoOp()) }
+    stmts[idx]
 }
 
-fn uft_list_of(items: List<SStmt>) -> StmtList {
-    mut acc: StmtList = StmtList.End
-    mut i = items.length - 1
-    while i >= 0 {
-        acc = StmtList.Node(items[i], acc)
-        i = i - 1
-    }
-    acc
+fn uft_list_of(items: List<SStmt>) -> List<SStmt> {
+    items
 }
 
 fn uft_module_with_files(name: string, files: List<string>) -> SStmt {
@@ -77,7 +70,7 @@ fn uft_module_with_files(name: string, files: List<string>) -> SStmt {
 }
 
 /// Three sibling Modules, one per directory. Filter targets core/.
-fn uft_filter_siblings() -> StmtList {
+fn uft_filter_siblings() -> List<SStmt> {
     let prog = uft_list_of([
         uft_module_with_files("core", ["packages/std-avrac/src/core/ast.av"]),
         uft_module_with_files("features", ["packages/std-avrac/src/features/closures/mod.av"]),
@@ -99,7 +92,7 @@ spec "filter_to_target_unit: target module stays plain, others marked external" 
 }
 
 /// Module body has files from two dirs, one of them target.
-fn uft_filter_mixed() -> StmtList {
+fn uft_filter_mixed() -> List<SStmt> {
     let prog = uft_list_of([
         uft_module_with_files("mixed", [
             "packages/std-avrac/src/typeck/mod.av",
@@ -116,7 +109,7 @@ spec "filter_to_target_unit: any-file-in-target keeps the whole module" {
 }
 
 /// Outer Module wraps inner Modules. Filter still descends.
-fn uft_filter_nested() -> StmtList {
+fn uft_filter_nested() -> List<SStmt> {
     let core_inner = uft_module_with_files("core", ["packages/std-avrac/src/core/ast.av"])
     let features_inner = uft_module_with_files("features", ["packages/std-avrac/src/features/closures/mod.av"])
     let avrac_body = uft_list_of([core_inner, features_inner])
@@ -146,8 +139,9 @@ spec "filter_to_target_unit: nested modules also get filtered" {
 
 /// A Module with empty body. Filter must not annotate it (would be a
 /// no-op since codegen emits nothing for empty bodies anyway).
-fn uft_filter_empty() -> StmtList {
-    let prog = uft_list_of([sstmt_dummy(Stmt.Module("placeholder", StmtList.End))])
+fn uft_filter_empty() -> List<SStmt> {
+    let empty_body: List<SStmt> = []
+    let prog = uft_list_of([sstmt_dummy(Stmt.Module("placeholder", empty_body))])
     filter_to_target_unit(prog, "packages/std-avrac/src/core/")
 }
 

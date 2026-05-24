@@ -37,8 +37,9 @@ fn use_eval(rt: Runtime, stmt: Stmt) -> StepResult {
 /// resolver, and eval hooks. Codegen is provided implicitly by
 /// the codegen pipeline emitting `__init_<name>()` per module.
 export fn mod_feature() -> Feature {
+    let empty_body: List<SStmt> = []
     feature_new("mod") with {
-        stmt_tag: Stmt.Module("", StmtList.End),
+        stmt_tag: Stmt.Module("", empty_body),
         decl_keyword: "kw_mod",
         parse_decl: (p: Parser) -> p.parse_module_declaration(),
         resolve_stmt: mod_resolve,

@@ -6,7 +6,7 @@
 //
 // Conservative: if in doubt, mark as escaped (don't release).
 
-use core.{Expr, FieldEntry, FieldInit, Variant, ValueType, Stmt, StmtList, SExpr, SStmt, stmt_unwrap}
+use core.{Expr, FieldEntry, FieldInit, Variant, ValueType, Stmt, SExpr, SStmt, stmt_unwrap}
 use codegen.{ReleasableSet, releasable_has, StructReg, EnumReg, struct_reg_lookup, enum_reg_lookup, CopySet, copy_set_has}
 
 /// Add `name` to the releasable set, deduplicating. The set is the
@@ -37,13 +37,13 @@ fn releasable_remove(set: ReleasableSet, name: string) -> ReleasableSet {
 /// order, so the algorithm walks the list once — a `let` adds the
 /// name; later uses only ever remove. Forward references therefore
 /// work without a second pass.
-export fn analyze_releasable(body: StmtList) -> ReleasableSet {
+export fn analyze_releasable(body: List<SStmt>) -> ReleasableSet {
     single_pass_escape(body, ReleasableSet.End)
 }
 
 /// Lambda variant of `analyze_releasable`. Lambda bodies that aren't
 /// blocks have no bindings to release; otherwise descend into the
-/// inner StmtList.
+/// inner List<SStmt>.
 export fn analyze_releasable_expr(body: Expr) -> ReleasableSet {
     match body {
         .Block(stmts) -> analyze_releasable(stmts)
@@ -53,14 +53,14 @@ export fn analyze_releasable_expr(body: Expr) -> ReleasableSet {
 
 /// Single-pass escape analysis worker. Walks `stmts` left-to-right,
 /// folding `single_pass_stmt` over the running ReleasableSet.
-fn single_pass_escape(stmts: StmtList, set: ReleasableSet) -> ReleasableSet {
-    match stmts {
-        .End -> set
-        .Node(ss, next) -> {
-            let updated = single_pass_stmt(ss.node, set)
-            single_pass_escape(next, updated)
-        }
+fn single_pass_escape(stmts: List<SStmt>, set: ReleasableSet) -> ReleasableSet {
+    mut cur = set
+    mut i = 0
+    while i < stmts.length {
+        cur = single_pass_stmt(stmts[i].node, cur)
+        i = i + 1
     }
+    cur
 }
 
 /// Process a `let`/`mut`/`const` binding: add the name when its
@@ -251,11 +251,14 @@ fn releasable_any(set: ReleasableSet) -> bool {
 }
 
 /// Sum the count of allocating expressions across a statement list.
-fn count_allocating_in_stmts(stmts: StmtList) -> int {
-    match stmts {
-        .End -> 0
-        .Node(ss, next) -> count_allocating_in_stmt_single(ss.node) + count_allocating_in_stmts(next)
+fn count_allocating_in_stmts(stmts: List<SStmt>) -> int {
+    mut total = 0
+    mut i = 0
+    while i < stmts.length {
+        total = total + count_allocating_in_stmt_single(stmts[i].node)
+        i = i + 1
     }
+    total
 }
 
 /// How many allocating expressions one statement contributes — 1 for

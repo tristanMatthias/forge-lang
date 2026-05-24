@@ -7,7 +7,7 @@
 // in the parser's feature registry. Subsequent code can use `name instance { ... }`
 // without the `component` keyword — single-pass, no ambiguity.
 
-use core.{Stmt, Expr, SExpr, sexpr_dummy, StmtList, SStmt, sstmt, CompConfig, CompConfigPair, ChildrenSlot, ParamEntry, TypeParamEntry, ValueType, type_expr_to_vtype}
+use core.{Stmt, Expr, SExpr, sexpr_dummy, SStmt, sstmt, CompConfig, CompConfigPair, ChildrenSlot, ParamEntry, TypeParamEntry, ValueType, type_expr_to_vtype}
 use parse.{Parser}
 use core.{Tk}
 use core.{register_component_name}
@@ -227,63 +227,66 @@ impl Parser {
 
     // ── Definition Body ──
 
-    fn parse_comp_def_body(self) -> StmtList? {
-        if self.check(Tk.RightBrace) { return StmtList.End }
-        let line = self.current_line
-        let col = self.current_column
+    fn parse_comp_def_body(self) -> List<SStmt>? {
+        mut out: List<SStmt> = []
+        while !self.check(Tk.RightBrace) {
+            let line = self.current_line
+            let col = self.current_column
 
-        // `on event_name { ... }` → fn __on_event_name
-        if self.check(Tk.Identifier) && self.current_lexeme == "on" {
-            self.advance()
-            let event_name = self.consume_identifier("expected event name after `on`")?
-            if !self.consume(Tk.LeftBrace, "expected `{` after event name") { return null }
-            let body = self.parse_statement_list(true)?
-            if !self.consume(Tk.RightBrace, "expected `}` after event body") { return null }
-            let empty_tp: List<TypeParamEntry> = []
-            let empty_p: List<ParamEntry> = []
-            let stmt = Stmt.Function("__on_${event_name}", empty_tp, empty_p, ValueType.Void, body)
-            let rest = self.parse_comp_def_body()?
-            return StmtList.Node(sstmt(stmt, line, col), rest)
-        }
-
-        // `event name(params)` → fn __event_name
-        if self.check(Tk.Identifier) && self.current_lexeme == "event" {
-            self.advance()
-            let ev_name = self.consume_identifier("expected event name")?
-            let ev_params: List<ParamEntry> = if self.check(Tk.LeftParen) {
+            // `on event_name { ... }` → fn __on_event_name
+            if self.check(Tk.Identifier) && self.current_lexeme == "on" {
                 self.advance()
-                let p = self.parse_param_list()?
-                if !self.consume(Tk.RightParen, "expected `)` after event params") { return null }
-                p
-            } else { [] }
-            let empty_tp: List<TypeParamEntry> = []
-            let stmt = Stmt.Function("__event_${ev_name}", empty_tp, ev_params, ValueType.Void, StmtList.End)
-            let rest = self.parse_comp_def_body()?
-            return StmtList.Node(sstmt(stmt, line, col), rest)
-        }
+                let event_name = self.consume_identifier("expected event name after `on`")?
+                if !self.consume(Tk.LeftBrace, "expected `{` after event name") { return null }
+                let body = self.parse_statement_list(true)?
+                if !self.consume(Tk.RightBrace, "expected `}` after event body") { return null }
+                let empty_tp: List<TypeParamEntry> = []
+                let empty_p: List<ParamEntry> = []
+                let stmt = Stmt.Function("__on_${event_name}", empty_tp, empty_p, ValueType.Void, body)
+                out.push(sstmt(stmt, line, col))
+                continue
+            }
 
-        // `let field: type = init`
-        if self.check(Tk.KwLet) {
-            self.advance()
-            let field_name = self.consume_identifier("expected field name")?
-            if !self.consume(Tk.Colon, "expected `:` after field name") { return null }
-            let te = self.parse_type_expr("expected field type")?
-            let vt = type_expr_to_vtype(te)
-            let init = if self.check(Tk.Equal) {
+            // `event name(params)` → fn __event_name
+            if self.check(Tk.Identifier) && self.current_lexeme == "event" {
                 self.advance()
-                let v = self.parse_expression()?
-                v
-            } else { Expr.Null }
-            let stmt = Stmt.Let(field_name, vt, init)
-            let rest = self.parse_comp_def_body()?
-            return StmtList.Node(sstmt(stmt, line, col), rest)
-        }
+                let ev_name = self.consume_identifier("expected event name")?
+                let ev_params: List<ParamEntry> = if self.check(Tk.LeftParen) {
+                    self.advance()
+                    let p = self.parse_param_list()?
+                    if !self.consume(Tk.RightParen, "expected `)` after event params") { return null }
+                    p
+                } else { [] }
+                let empty_tp: List<TypeParamEntry> = []
+                let empty_body: List<SStmt> = []
+                let stmt = Stmt.Function("__event_${ev_name}", empty_tp, ev_params, ValueType.Void, empty_body)
+                out.push(sstmt(stmt, line, col))
+                continue
+            }
 
-        // Regular statement (fn declarations, etc.)
-        let stmt = self.parse_declaration()
-        if stmt == null { return null }
-        let rest = self.parse_comp_def_body()?
-        StmtList.Node(sstmt(stmt!, line, col), rest)
+            // `let field: type = init`
+            if self.check(Tk.KwLet) {
+                self.advance()
+                let field_name = self.consume_identifier("expected field name")?
+                if !self.consume(Tk.Colon, "expected `:` after field name") { return null }
+                let te = self.parse_type_expr("expected field type")?
+                let vt = type_expr_to_vtype(te)
+                let init = if self.check(Tk.Equal) {
+                    self.advance()
+                    let v = self.parse_expression()?
+                    v
+                } else { Expr.Null }
+                let stmt = Stmt.Let(field_name, vt, init)
+                out.push(sstmt(stmt, line, col))
+                continue
+            }
+
+            // Regular statement (fn declarations, etc.)
+            let stmt = self.parse_declaration()
+            if stmt == null { return null }
+            out.push(sstmt(stmt!, line, col))
+        }
+        out
     }
 
     // ── Component Block Body ──
@@ -439,67 +442,69 @@ impl Parser {
     }
 
     // Parse block body: nested blocks + on handlers + fn decls + statements
-    fn parse_comp_block_body(self) -> StmtList? {
-        if self.check(Tk.RightBrace) { return StmtList.End }
-        let line = self.current_line
-        let col = self.current_column
+    fn parse_comp_block_body(self) -> List<SStmt>? {
+        mut out: List<SStmt> = []
+        while !self.check(Tk.RightBrace) {
+            let line = self.current_line
+            let col = self.current_column
 
-        // `on event_name(params) { ... }`
-        if self.check(Tk.Identifier) && self.current_lexeme == "on" {
-            self.advance()
-            let event_name = self.consume_identifier("expected event name after `on`")?
-            let ev_params: List<ParamEntry> = if self.check(Tk.LeftParen) {
+            // `on event_name(params) { ... }`
+            if self.check(Tk.Identifier) && self.current_lexeme == "on" {
                 self.advance()
-                let p = self.parse_param_list()?
-                if !self.consume(Tk.RightParen, "expected `)` after event params") { return null }
-                p
-            } else { [] }
-            if !self.consume(Tk.LeftBrace, "expected `{` after event handler") { return null }
-            let body = self.parse_statement_list(true)?
-            if !self.consume(Tk.RightBrace, "expected `}` after event body") { return null }
-            let empty_tp: List<TypeParamEntry> = []
-            let stmt = Stmt.Function("__on_${event_name}", empty_tp, ev_params, ValueType.Void, body)
-            let rest = self.parse_comp_block_body()?
-            return StmtList.Node(sstmt(stmt, line, col), rest)
-        }
+                let event_name = self.consume_identifier("expected event name after `on`")?
+                let ev_params: List<ParamEntry> = if self.check(Tk.LeftParen) {
+                    self.advance()
+                    let p = self.parse_param_list()?
+                    if !self.consume(Tk.RightParen, "expected `)` after event params") { return null }
+                    p
+                } else { [] }
+                if !self.consume(Tk.LeftBrace, "expected `{` after event handler") { return null }
+                let body = self.parse_statement_list(true)?
+                if !self.consume(Tk.RightBrace, "expected `}` after event body") { return null }
+                let empty_tp: List<TypeParamEntry> = []
+                let stmt = Stmt.Function("__on_${event_name}", empty_tp, ev_params, ValueType.Void, body)
+                out.push(sstmt(stmt, line, col))
+                continue
+            }
 
-        // `component ...` keyword for nested blocks
-        if self.check(Tk.KwComponent) {
-            let stmt = self.parse_component_decl()?
-            let rest = self.parse_comp_block_body()?
-            return StmtList.Node(sstmt(stmt, line, col), rest)
-        }
+            // `component ...` keyword for nested blocks
+            if self.check(Tk.KwComponent) {
+                let stmt = self.parse_component_decl()?
+                out.push(sstmt(stmt, line, col))
+                continue
+            }
 
-        // Nested block: `ident name { ... }` or `ident { ... }`
-        if self.check(Tk.Identifier) && self.peek_after_ident_is_ident() {
-            let comp_name = self.current_lexeme
-            self.advance()
-            let inst_name = self.consume_identifier("expected instance name")?
-            if !self.consume(Tk.LeftBrace, "expected `{` after nested block name") { return null }
-            let nested_config = self.parse_comp_config_pairs()?
-            let nested_body = self.parse_comp_block_body()?
-            if !self.consume(Tk.RightBrace, "expected `}` at end of nested block") { return null }
-            let stmt = Stmt.ComponentBlock(comp_name, inst_name, nested_config, nested_body)
-            let rest = self.parse_comp_block_body()?
-            return StmtList.Node(sstmt(stmt, line, col), rest)
-        }
+            // Nested block: `ident name { ... }` or `ident { ... }`
+            if self.check(Tk.Identifier) && self.peek_after_ident_is_ident() {
+                let comp_name = self.current_lexeme
+                self.advance()
+                let inst_name = self.consume_identifier("expected instance name")?
+                if !self.consume(Tk.LeftBrace, "expected `{` after nested block name") { return null }
+                let nested_config = self.parse_comp_config_pairs()?
+                let nested_body = self.parse_comp_block_body()?
+                if !self.consume(Tk.RightBrace, "expected `}` at end of nested block") { return null }
+                let stmt = Stmt.ComponentBlock(comp_name, inst_name, nested_config, nested_body)
+                out.push(sstmt(stmt, line, col))
+                continue
+            }
 
-        if self.check(Tk.Identifier) && self.peek_after_ident_is_brace() {
-            let comp_name = self.current_lexeme
-            self.advance()
-            self.advance()  // consume {
-            let nested_config = self.parse_comp_config_pairs()?
-            let nested_body = self.parse_comp_block_body()?
-            if !self.consume(Tk.RightBrace, "expected `}` at end of nested block") { return null }
-            let stmt = Stmt.ComponentBlock(comp_name, comp_name, nested_config, nested_body)
-            let rest = self.parse_comp_block_body()?
-            return StmtList.Node(sstmt(stmt, line, col), rest)
-        }
+            if self.check(Tk.Identifier) && self.peek_after_ident_is_brace() {
+                let comp_name = self.current_lexeme
+                self.advance()
+                self.advance()  // consume {
+                let nested_config = self.parse_comp_config_pairs()?
+                let nested_body = self.parse_comp_block_body()?
+                if !self.consume(Tk.RightBrace, "expected `}` at end of nested block") { return null }
+                let stmt = Stmt.ComponentBlock(comp_name, comp_name, nested_config, nested_body)
+                out.push(sstmt(stmt, line, col))
+                continue
+            }
 
-        // fn declarations and other statements
-        let stmt = self.parse_declaration()
-        if stmt == null { return null }
-        let rest = self.parse_comp_block_body()?
-        StmtList.Node(sstmt(stmt!, line, col), rest)
+            // fn declarations and other statements
+            let stmt = self.parse_declaration()
+            if stmt == null { return null }
+            out.push(sstmt(stmt!, line, col))
+        }
+        out
     }
 }

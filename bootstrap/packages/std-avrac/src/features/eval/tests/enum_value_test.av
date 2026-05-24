@@ -3,7 +3,7 @@
 // returning `quote stmt { ... }` (which lowers to nested EnumCtors)
 // produces a runtime Stmt value the @expand pass can extract.
 
-use @std.avrac.core.{Expr, SExpr, sexpr_dummy, Stmt, StmtList}
+use @std.avrac.core.{Expr, SExpr, sexpr_dummy, Stmt, SStmt}
 use @std.avrac.features.eval.{Runtime, StepResult, Value, runtime_new, eval_expr, value_enum, render_value}
 use @std.avrac.features.comptime.{value_to_stmt, value_to_stmt_list}
 
@@ -129,12 +129,9 @@ fn let_shape_text(s: Stmt?) -> string {
     }
 }
 
-fn is_stmt_list_end(sl: StmtList?) -> bool {
+fn is_stmt_list_end(sl: List<SStmt>?) -> bool {
     if sl == null { return false }
-    match sl! {
-        .End -> true
-        _ -> false
-    }
+    sl!.length == 0
 }
 
 spec "vez6.6.4: value_to_stmt decodes Stmt enum Values" {
@@ -165,17 +162,8 @@ spec "vez6.6.4: value_to_stmt decodes Stmt enum Values" {
     }
 }
 
-spec "vez6.6.4: value_to_stmt_list decodes StmtList chains" {
-    then "End → empty list" {
-        let e = Expr.EnumCtor("@std::avrac::core::StmtList", "End", empty_args())
-        let r: StepResult = eval_expr(runtime_new(), e)
-        is_stmt_list_end(value_to_stmt_list(r.value))
-    }
-    then "fwyx — empty Expr.ListLit also decodes to StmtList.End" {
-        // value_to_stmt_list is dual-mode: accepts both the legacy
-        // enum cons-cell form (test above) and the new list-Value form
-        // (this test). Once construct_stmt_list flips in lkze.9 #20,
-        // the enum-form arm goes away.
+spec "vez6.6.4: value_to_stmt_list decodes a list of stmt values" {
+    then "empty Expr.ListLit decodes to an empty List<SStmt>" {
         let e = Expr.ListLit(empty_args())
         let r: StepResult = eval_expr(runtime_new(), e)
         is_stmt_list_end(value_to_stmt_list(r.value))

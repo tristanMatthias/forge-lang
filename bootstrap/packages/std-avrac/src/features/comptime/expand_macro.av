@@ -19,7 +19,7 @@
 // macro-produced Stmt should still go through the normal fold pass
 // so any `@comptime` calls inside its body fold correctly.
 
-use core.{Stmt, StmtList, SStmt, Expr, SExpr, sstmt_at, find_annotation, stmt_unwrap, param_list_length}
+use core.{Stmt, SStmt, Expr, SExpr, sstmt_at, find_annotation, stmt_unwrap, param_list_length}
 use features.comptime.{CompTimeRegistry, comptime_lookup, collect_comptime_fns, value_to_stmt, stmt_to_value}
 use features.eval.{Runtime, Value, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message}
 
@@ -37,7 +37,7 @@ use features.eval.{Runtime, Value, eval_fn_with_resolved_args, step_value, step_
 /// looked up via a pre-pass that maps component name → macro fn
 /// name; each instance gets the macro applied with the
 /// ComponentBlock as a 1-arg Stmt value.
-export fn expand_macros(stmts: StmtList) -> StmtList {
+export fn expand_macros(stmts: List<SStmt>) -> List<SStmt> {
     let comp_macros = collect_component_macros(stmts)
     if !any_expand_annotation(stmts) && comp_macros_empty(comp_macros) { return stmts }
     let reg = collect_comptime_fns(stmts)
@@ -71,36 +71,35 @@ fn comp_macro_lookup(m: CompMacros, comp_name: string) -> string {
 
 /// Walk the AST, finding every `@expand(macro) component name { ... }`
 /// declaration and recording its (name → macro_fn) pair.
-fn collect_component_macros(stmts: StmtList) -> CompMacros {
-    match stmts {
-        .End -> CompMacros.End
-        .Node(ss, next) -> {
-            let rest = collect_component_macros(next)
-            let inner = peel_annotations(ss.node)
-            // ComponentDefs can live inside Module wrappers (e.g.
-            // `component command implements Runnable {}` declared
-            // in @std/cli's cli.av lands wrapped under
-            // Module("@std::cli::cli", ...) in a bundled compile).
-            // Without this recursion the (comp_name → macro_fn) map
-            // is empty for any def behind a module boundary, so
-            // instance dispatch silently skips them.
-            match inner {
-                .Module(_, body) -> {
-                    let mod_macros = collect_component_macros(body)
-                    merge_comp_macros(mod_macros, rest)
-                }
-                _ -> {
-                    let macro_name = comp_macro_for(ss.node)
-                    let comp_name = component_def_name(ss.node)
-                    if macro_name != "" && comp_name != "" {
-                        CompMacros.Entry(comp_name, macro_name, rest)
-                    } else {
-                        rest
-                    }
+fn collect_component_macros(stmts: List<SStmt>) -> CompMacros {
+    // Walk end to start so cons-prepend yields source-order CompMacros.
+    mut acc: CompMacros = .End
+    mut i = stmts.length - 1
+    while i >= 0 {
+        let ss = stmts[i]
+        let inner = peel_annotations(ss.node)
+        // ComponentDefs can live inside Module wrappers (e.g.
+        // `component command implements Runnable {}` declared
+        // in @std/cli's cli.av lands wrapped under
+        // Module("@std::cli::cli", ...) in a bundled compile).
+        // Without this recursion the (comp_name → macro_fn) map
+        // is empty for any def behind a module boundary, so
+        // instance dispatch silently skips them.
+        acc = match inner {
+            .Module(_, body) -> merge_comp_macros(collect_component_macros(body), acc)
+            _ -> {
+                let macro_name = comp_macro_for(ss.node)
+                let comp_name = component_def_name(ss.node)
+                if macro_name != "" && comp_name != "" {
+                    CompMacros.Entry(comp_name, macro_name, acc)
+                } else {
+                    acc
                 }
             }
         }
+        i = i - 1
     }
+    acc
 }
 
 /// Concatenate two CompMacros lists. Used by `collect_component_macros`
@@ -143,14 +142,13 @@ fn peel_annotations(stmt: Stmt) -> Stmt {
 /// True iff any `@expand` annotation appears anywhere in `stmts`.
 /// Walks recursively but allocates nothing — callers only pay for
 /// the rewrite walk when the program actually has macros.
-fn any_expand_annotation(stmts: StmtList) -> bool {
-    match stmts {
-        .End -> false
-        .Node(ss, next) -> {
-            if has_expand_annotation(ss.node) { return true }
-            any_expand_annotation(next)
-        }
+fn any_expand_annotation(stmts: List<SStmt>) -> bool {
+    mut i = 0
+    while i < stmts.length {
+        if has_expand_annotation(stmts[i].node) { return true }
+        i = i + 1
     }
+    false
 }
 
 fn has_expand_annotation(stmt: Stmt) -> bool {
@@ -160,63 +158,69 @@ fn has_expand_annotation(stmt: Stmt) -> bool {
 
 // ── Walker ──
 
-fn expand_stmt_list(stmts: StmtList, reg: CompTimeRegistry, comp_macros: CompMacros) -> StmtList {
-    match stmts {
-        .End -> StmtList.End
-        .Node(ss, next) -> {
-            let expanded_rest = expand_stmt_list(next, reg, comp_macros)
-            let inner = peel_annotations(ss.node)
-            // vez6.8.5: a ComponentDef with @expand only REGISTERS
-            // the macro for its instances. The def itself drops
-            // out of the output — there's no template-style expansion
-            // for the def, only per-instance dispatch.
-            match inner {
-                .ComponentDef(_, _, _, _, _, _) -> {
-                    if has_expand_annotation(ss.node) {
-                        return expanded_rest
+fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: CompMacros) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        let inner = peel_annotations(ss.node)
+        // vez6.8.5: a ComponentDef with @expand only REGISTERS
+        // the macro for its instances. The def itself drops
+        // out of the output — there's no template-style expansion
+        // for the def, only per-instance dispatch.
+        match inner {
+            .ComponentDef(_, _, _, _, _, _) -> {
+                if !has_expand_annotation(ss.node) {
+                    out.push(ss)
+                }
+            }
+            .ComponentBlock(comp_name, _, _, _) -> {
+                // ComponentBlock instances of @expand'd defs route
+                // through the macro pipeline with the block itself
+                // as the Stmt arg.
+                let inst_macro = comp_macro_lookup(comp_macros, comp_name)
+                if inst_macro != "" {
+                    let replacement = try_expand_with_macro(ss.node, inst_macro, reg, ss.line, ss.col, ss.file)
+                    if replacement != null {
+                        out.push(replacement!)
+                    } else {
+                        out.push(ss)
                     }
-                    StmtList.Node(ss, expanded_rest)
+                } else {
+                    out.push(ss)
                 }
-                .ComponentBlock(comp_name, _, _, _) -> {
-                    // ComponentBlock instances of @expand'd defs route
-                    // through the macro pipeline with the block itself
-                    // as the Stmt arg.
-                    let inst_macro = comp_macro_lookup(comp_macros, comp_name)
-                    if inst_macro != "" {
-                        let replacement = try_expand_with_macro(ss.node, inst_macro, reg, ss.line, ss.col, ss.file)
-                        if replacement != null {
-                            return StmtList.Node(replacement!, expanded_rest)
-                        }
-                    }
-                    StmtList.Node(ss, expanded_rest)
-                }
-                // Module bodies have to be walked too — without this,
-                // component instances inside an imported module (e.g.
-                // `component command build {}` declared inside a
-                // submodule of @std/cli) never see the @expand
-                // pipeline, and the unprocessed ComponentBlock falls
-                // through to codegen with an unsupported tag. Re-wraps
-                // the recursed body so the module structure stays
-                // intact for downstream resolve/typeck.
-                .Module(mod_name, body) -> {
-                    let expanded_body = expand_stmt_list(body, reg, comp_macros)
-                    let new_stmt = Stmt.Module(mod_name, expanded_body)
-                    StmtList.Node(sstmt_at(new_stmt, ss.line, ss.col, ss.file), expanded_rest)
-                }
-                _ -> {
-                    if has_expand_annotation(ss.node) {
-                        let replacement = try_expand_one(ss.node, reg, ss.line, ss.col, ss.file)
-                        if replacement != null {
-                            return StmtList.Node(replacement!, expanded_rest)
-                        }
+            }
+            // Module bodies have to be walked too — without this,
+            // component instances inside an imported module (e.g.
+            // `component command build {}` declared inside a
+            // submodule of @std/cli) never see the @expand
+            // pipeline, and the unprocessed ComponentBlock falls
+            // through to codegen with an unsupported tag. Re-wraps
+            // the recursed body so the module structure stays
+            // intact for downstream resolve/typeck.
+            .Module(mod_name, body) -> {
+                let expanded_body = expand_stmt_list(body, reg, comp_macros)
+                let new_stmt = Stmt.Module(mod_name, expanded_body)
+                out.push(sstmt_at(new_stmt, ss.line, ss.col, ss.file))
+            }
+            _ -> {
+                if has_expand_annotation(ss.node) {
+                    let replacement = try_expand_one(ss.node, reg, ss.line, ss.col, ss.file)
+                    if replacement != null {
+                        out.push(replacement!)
+                    } else {
                         // Expansion failed — keep the original stmt
                         // so downstream stages surface the issue.
+                        out.push(ss)
                     }
-                    StmtList.Node(ss, expanded_rest)
+                } else {
+                    out.push(ss)
                 }
             }
         }
+        i = i + 1
     }
+    out
 }
 
 /// Apply a named macro fn to `stmt`, treating the macro's return

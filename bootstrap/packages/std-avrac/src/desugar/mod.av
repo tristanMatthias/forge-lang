@@ -7,7 +7,7 @@
 // Component expansion is a SEPARATE pass that runs before desugar.
 // See features/component_decl/expand.av.
 
-use core.{Expr, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, sstmt_dummy, stmt_unwrap, FieldEntry, FieldInit, MatchArm, WhenArm, Pattern, BinOp, UnOp, ValueType, Variant, TypeParamEntry}
+use core.{Expr, Stmt, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, sstmt_dummy, stmt_unwrap, FieldEntry, FieldInit, MatchArm, WhenArm, Pattern, BinOp, UnOp, ValueType, Variant, TypeParamEntry}
 
 // ── Public API ──
 
@@ -22,7 +22,7 @@ use core.{Expr, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_a
 /// duplicate. Each caller does:
 ///   parse → lower_quotes → desugar_program → resolve_module_files
 ///                                          → inject_intrinsics → ...
-export fn desugar_program(stmts: StmtList) -> StmtList {
+export fn desugar_program(stmts: List<SStmt>) -> List<SStmt> {
     desugar_stmt_list(stmts)
 }
 
@@ -47,9 +47,16 @@ export fn desugar_program(stmts: StmtList) -> StmtList {
 /// see it. Putting the synthesized decl at the global scope also
 /// fixes ticket xks4 (resolver mis-qualification of `Result` inside
 /// trait impls).
-export fn inject_intrinsics(stmts: StmtList) -> StmtList {
+export fn inject_intrinsics(stmts: List<SStmt>) -> List<SStmt> {
     if program_declares_enum(stmts, "Result") { return stmts }
-    StmtList.Node(sstmt_dummy(synthesize_result_enum()), stmts)
+    mut out: List<SStmt> = []
+    out.push(sstmt_dummy(synthesize_result_enum()))
+    mut i = 0
+    while i < stmts.length {
+        out.push(stmts[i])
+        i = i + 1
+    }
+    out
 }
 
 /// Build the synthetic `enum Result<T, E> { Ok(value: T), Err(error: E) }`
@@ -73,31 +80,35 @@ fn synthesize_result_enum() -> Stmt {
 /// True when a top-level `EnumDecl` named `target` exists in the
 /// program (or any nested Module). Used to skip Result injection
 /// when the user has already declared it.
-fn program_declares_enum(stmts: StmtList, target: string) -> bool {
-    match stmts {
-        .End -> false
-        .Node(ss, next) -> {
-            match stmt_unwrap(ss.node) {
-                .EnumDecl(name, _, _) if name == target -> true
-                .Module(_, body) if program_declares_enum(body, target) -> true
-                _ -> program_declares_enum(next, target)
+fn program_declares_enum(stmts: List<SStmt>, target: string) -> bool {
+    mut i = 0
+    while i < stmts.length {
+        match stmt_unwrap(stmts[i].node) {
+            .EnumDecl(name, _, _) if name == target -> return true
+            .Module(_, body) -> {
+                if program_declares_enum(body, target) { return true }
             }
+            _ -> {}
         }
+        i = i + 1
     }
+    false
 }
 
 // ── Statement desugaring ──
 
 /// Map `desugar_stmt` over every element of a StmtList, preserving
 /// span info on each rewritten node.
-fn desugar_stmt_list(stmts: StmtList) -> StmtList {
-    match stmts {
-        .End -> StmtList.End
-        .Node(ss, next) -> {
-            let new_stmt = desugar_stmt(ss.node)
-            StmtList.Node(sstmt_at(new_stmt, ss.line, ss.col, ss.file), desugar_stmt_list(next))
-        }
+fn desugar_stmt_list(stmts: List<SStmt>) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        let new_stmt = desugar_stmt(ss.node)
+        out.push(sstmt_at(new_stmt, ss.line, ss.col, ss.file))
+        i = i + 1
     }
+    out
 }
 
 /// Desugar a single statement. For control-flow / declaration
@@ -176,16 +187,12 @@ fn rewrite_list_lit(original: Expr, elems: List<SExpr>) -> Expr {
                 Stmt.Expr(push_expr)
             }
             let empty_elems: List<SExpr> = []
-            Expr.Block(StmtList.Node(
+            let body: List<SStmt> = [
                 sstmt(Stmt.Mut("__lc", ValueType.Unknown, Expr.ListLit(empty_elems)), 0, 0),
-                StmtList.Node(
-                    sstmt(Stmt.ForIn(variable, collection, push_stmt), 0, 0),
-                    StmtList.Node(
-                        sstmt(Stmt.Expr(Expr.Ident("__lc")), 0, 0),
-                        StmtList.End
-                    )
-                )
-            ))
+                sstmt(Stmt.ForIn(variable, collection, push_stmt), 0, 0),
+                sstmt(Stmt.Expr(Expr.Ident("__lc")), 0, 0),
+            ]
+            Expr.Block(body)
         }
         _ -> original
     }
@@ -242,18 +249,12 @@ fn desugar_dbg(args: List<SExpr>) -> Expr {
         Expr.Call(Expr.Ident("string"), string_args)
     )
     let println_args: List<SExpr> = [sexpr_dummy(print_arg)]
-    Expr.Block(StmtList.Node(
+    let body: List<SStmt> = [
         sstmt(Stmt.Let("__dbg", ValueType.Unknown, val), 0, 0),
-        StmtList.Node(
-            sstmt(Stmt.Expr(
-                Expr.Call(Expr.Ident("println"), println_args)
-            ), 0, 0),
-            StmtList.Node(
-                sstmt(Stmt.Expr(Expr.Ident("__dbg")), 0, 0),
-                StmtList.End
-            )
-        )
-    ))
+        sstmt(Stmt.Expr(Expr.Call(Expr.Ident("println"), println_args)), 0, 0),
+        sstmt(Stmt.Expr(Expr.Ident("__dbg")), 0, 0),
+    ]
+    Expr.Block(body)
 }
 
 /// Rewrite `todo()` / `todo("message")` into a `panic` with a
@@ -293,22 +294,16 @@ fn desugar_min_max(args: List<SExpr>, is_min: int) -> Expr {
     let a_se = args[0]
     let b_se = args[1]
     let op = if is_min { BinOp.Lt } else { BinOp.Gt }
-    Expr.Block(StmtList.Node(
+    let body: List<SStmt> = [
         sstmt(Stmt.Let("__a", ValueType.Unknown, a_se.node), 0, 0),
-        StmtList.Node(
-            sstmt(Stmt.Let("__b", ValueType.Unknown, b_se.node), 0, 0),
-            StmtList.Node(
-                sstmt(Stmt.Expr(
-                    Expr.IfExpr(
-                        Expr.Binary(Expr.Ident("__a"), op, Expr.Ident("__b")),
-                        Expr.Ident("__a"),
-                        Expr.Ident("__b")
-                    )
-                ), 0, 0),
-                StmtList.End
-            )
-        )
-    ))
+        sstmt(Stmt.Let("__b", ValueType.Unknown, b_se.node), 0, 0),
+        sstmt(Stmt.Expr(Expr.IfExpr(
+            Expr.Binary(Expr.Ident("__a"), op, Expr.Ident("__b")),
+            Expr.Ident("__a"),
+            Expr.Ident("__b")
+        )), 0, 0),
+    ]
+    Expr.Block(body)
 }
 
 // ── Generic expression walker ──

@@ -28,7 +28,7 @@
 // hygiene_rename_expr / hygiene_rename_stmts on any AST value.
 
 use core.{
-    Stmt, StmtList, SStmt, sstmt_at,
+    Stmt, SStmt, sstmt_at,
     Expr, SExpr, sexpr,
     FieldInit,
     ParamEntry, Pattern,
@@ -57,7 +57,7 @@ type HygieneCtx = { scope: HygieneScope, counter: int }
 // so these structs carry the (rewritten-form, updated-ctx) pair.
 type RenameExprResult = { expr: Expr, ctx: HygieneCtx }
 type RenameStmtResult = { stmt: Stmt, ctx: HygieneCtx }
-type RenameStmtListResult = { list: StmtList, ctx: HygieneCtx }
+type RenameStmtListResult = { list: List<SStmt>, ctx: HygieneCtx }
 type RenameExprListResult = { list: List<SExpr>, ctx: HygieneCtx }
 type RenameFieldInitsResult = { list: List<FieldInit>, ctx: HygieneCtx }
 type RenameParamsResult = { params: List<ParamEntry>, ctx: HygieneCtx }
@@ -78,9 +78,9 @@ export fn hygiene_rename_stmt(s: Stmt) -> Stmt {
     r.stmt
 }
 
-/// Like hygiene_rename_expr, for a StmtList — typical entry for
+/// Like hygiene_rename_expr, for a List<SStmt> — typical entry for
 /// macro-built blocks.
-export fn hygiene_rename_stmts(stmts: StmtList) -> StmtList {
+export fn hygiene_rename_stmts(stmts: List<SStmt>) -> List<SStmt> {
     let r = rename_stmt_list(empty_ctx(), stmts)
     r.list
 }
@@ -124,18 +124,18 @@ fn restore_scope(parent_scope: HygieneScope, child_ctx: HygieneCtx) -> HygieneCt
 
 // ── Statement walker ──
 
-fn rename_stmt_list(ctx: HygieneCtx, list: StmtList) -> RenameStmtListResult {
-    match list {
-        .End -> RenameStmtListResult { list: StmtList.End, ctx }
-        .Node(ss, next) -> {
-            let r1 = rename_stmt(ctx, ss.node)
-            let r2 = rename_stmt_list(r1.ctx, next)
-            RenameStmtListResult {
-                list: StmtList.Node(sstmt_at(r1.stmt, ss.line, ss.col, ss.file), r2.list),
-                ctx: r2.ctx,
-            }
-        }
+fn rename_stmt_list(ctx: HygieneCtx, list: List<SStmt>) -> RenameStmtListResult {
+    mut out: List<SStmt> = []
+    mut cur = ctx
+    mut i = 0
+    while i < list.length {
+        let ss = list[i]
+        let r1 = rename_stmt(cur, ss.node)
+        out.push(sstmt_at(r1.stmt, ss.line, ss.col, ss.file))
+        cur = r1.ctx
+        i = i + 1
     }
+    RenameStmtListResult { list: out, ctx: cur }
 }
 
 fn rename_stmt(ctx: HygieneCtx, s: Stmt) -> RenameStmtResult {

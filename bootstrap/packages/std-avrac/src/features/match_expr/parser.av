@@ -6,7 +6,7 @@
 //   do NOT read this file when:   the issue is expression precedence (parser.av)
 //   related:                features/match_expr/codegen.av, core.ast.{Pattern, MatchArm}
 
-use core.{Stmt, Expr, Pattern, MatchArm, WhenArm, ParamEntry, SExpr, sexpr, StmtList, sstmt}
+use core.{Stmt, Expr, Pattern, MatchArm, WhenArm, ParamEntry, SExpr, SStmt, sexpr, sstmt}
 use parse.{Parser, table_zip_entries}
 use core.{Tk}
 
@@ -150,7 +150,8 @@ impl Parser {
                 let ret_val = self.parse_expression()
                 if ret_val == null { null } else {
                     let ret_stmt = sstmt(Stmt.Return(ret_val!), self.current_line, self.current_column)
-                    Expr.Block(StmtList.Node(ret_stmt, StmtList.End))
+                    let body_stmts: List<SStmt> = [ret_stmt]
+                    Expr.Block(body_stmts)
                 }
             } else {
                 self.parse_expression()

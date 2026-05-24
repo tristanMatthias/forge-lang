@@ -1,6 +1,6 @@
 // Phase 5 (vez6.5): hygiene rename pass for AST values.
 
-use @std.avrac.core.{Expr, Stmt, StmtList, render_expr, render_stmt, render_stmt_list}
+use @std.avrac.core.{Expr, Stmt, SStmt, render_expr, render_stmt, render_stmt_list}
 use @std.avrac.hygiene.{hygiene_rename_expr, hygiene_rename_stmt, hygiene_rename_stmts}
 
 spec "hygiene: free variables pass through" {
@@ -152,10 +152,13 @@ spec "hygiene: complex bindings" {
     }
 }
 
-// Small helper for tests — extracts the StmtList from a Block-shaped Expr.
-fn extract_stmt_list(e: Expr) -> StmtList {
+// Small helper for tests — extracts the List<SStmt> from a Block-shaped Expr.
+fn extract_stmt_list(e: Expr) -> List<SStmt> {
     match e {
         .Block(stmts) -> stmts
-        _ -> StmtList.End
+        _ -> {
+            let empty: List<SStmt> = []
+            empty
+        }
     }
 }
