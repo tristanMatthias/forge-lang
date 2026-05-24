@@ -655,13 +655,7 @@ export fn resolve_vtype(tc: TC, vt: ValueType) -> ValueType {
 
 /// Map `resolve_vtype` over each ValueType in a `List<ValueType>`.
 fn resolve_vtype_list(tc: TC, types: List<ValueType>) -> List<ValueType> {
-    mut out: List<ValueType> = []
-    mut i = 0
-    while i < types.length {
-        out.push(resolve_vtype(tc, types[i]))
-        i = i + 1
-    }
-    out
+    list_map(types, (t: ValueType) -> resolve_vtype(tc, t))
 }
 
 // ── Entry point ──
@@ -1845,11 +1839,8 @@ fn check_block_stmts(tc: TC, stmts: List<SStmt>) -> ExprResult {
 /// caller needs the resulting type list.
 export fn check_expr_list(tc: TC, exprs: List<SExpr>) -> TC {
     mut current = tc
-    mut i = 0
-    while i < exprs.length {
-        let r = check_expr(current, exprs[i].node)
-        current = r.tc
-        i = i + 1
+    for se in exprs {
+        current = check_expr(current, se.node).tc
     }
     current
 }
@@ -1946,12 +1937,10 @@ fn display_check_arg(tc: TC, types: List<ValueType>, args: List<SExpr>) -> TC {
 export fn check_expr_list_types(tc: TC, exprs: List<SExpr>) -> ExprListResult {
     mut cur_tc = tc
     mut types: List<ValueType> = []
-    mut i = 0
-    while i < exprs.length {
-        let r = check_expr(cur_tc, exprs[i].node)
+    for se in exprs {
+        let r = check_expr(cur_tc, se.node)
         cur_tc = r.tc
         types.push(r.ty)
-        i = i + 1
     }
     ExprListResult { tc: cur_tc, types }
 }
@@ -2233,27 +2222,15 @@ fn annotate_match_arms(tc: TC, arms: List<MatchArm>) -> List<MatchArm> {
 
 /// Map `annotate_sexpr` over each `List<FieldInit>` value.
 fn annotate_field_inits(tc: TC, inits: List<FieldInit>) -> List<FieldInit> {
-    mut out: List<FieldInit> = []
-    mut i = 0
-    while i < inits.length {
-        let init = inits[i]
-        out.push(FieldInit { name: init.name, value: annotate_sexpr(tc, init.value) })
-        i = i + 1
-    }
-    out
+    list_map(inits, (init: FieldInit) -> FieldInit { name: init.name, value: annotate_sexpr(tc, init.value) })
 }
 
 /// Walk every `when` arm, annotating cond + body SExprs.
 fn annotate_when_arms(tc: TC, arms: List<WhenArm>) -> List<WhenArm> {
-    mut out: List<WhenArm> = []
-    mut i = 0
-    while i < arms.length {
-        let arm = arms[i]
-        let new_cond = if arm.cond != null { annotate_sexpr(tc, arm.cond!) } else { null }
-        out.push(WhenArm { cond: new_cond, body: annotate_sexpr(tc, arm.body) })
-        i = i + 1
-    }
-    out
+    list_map(arms, (arm: WhenArm) -> WhenArm {
+        cond: if arm.cond != null { annotate_sexpr(tc, arm.cond!) } else { null },
+        body: annotate_sexpr(tc, arm.body),
+    })
 }
 
 // ── Naming convention checks ──
