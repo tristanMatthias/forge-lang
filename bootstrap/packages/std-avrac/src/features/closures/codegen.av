@@ -740,7 +740,7 @@ fn emit_closure_call(ctx: Ctx, env: List<VarBinding>, closure_val: ptr, args: Li
         }
     }
     // Fill captures from closure array (start at index 2)
-    fill_closure_captures(ctx, val_arr, closure_ptr, user_arg_count, num_captures, 0)
+    fill_closure_captures(ctx, val_arr, closure_ptr, user_arg_count, num_captures)
 
     // Build the param-type array: declared params take whatever LLVM
     // type their emitted value carries (ptr for Expr/string/struct,
@@ -758,12 +758,12 @@ fn emit_closure_call(ctx: Ctx, env: List<VarBinding>, closure_val: ptr, args: Li
 /// Copy `count` capture slots out of the closure array into
 /// the call's value array starting at `start_idx`. Used by
 /// `emit_closure_call` to materialise the env-pointer prepend.
-fn fill_closure_captures(ctx: Ctx, val_arr: ptr, closure_val: ptr, start_idx: int, count: int, i: int) {
-    if i >= count { return }
+fn fill_closure_captures(ctx: Ctx, val_arr: ptr, closure_val: ptr, start_idx: int, count: int) {
     // Captures start at array index 2 (after TAG and fn_ptr)
-    let cap_val = ctx.array_get(closure_val, ctx.i64(i + 2))
-    ctx.value_array_set(val_arr, start_idx + i, cap_val)
-    fill_closure_captures(ctx, val_arr, closure_val, start_idx, count, i + 1)
+    for i in 0..count {
+        let cap_val = ctx.array_get(closure_val, ctx.i64(i + 2))
+        ctx.value_array_set(val_arr, start_idx + i, cap_val)
+    }
 }
 
 /// Indirect call where the caller already has the closure as an
