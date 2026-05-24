@@ -18,6 +18,7 @@ use build.metadata.{
 }
 use parse.{parse_int_literal}
 use fmt.{fmt_stmt_list}
+use list_ops.{list_any}
 
 // Internal accumulator — each walk step folds into this and returns
 // the updated record. Lists grow via prepend so traversal stays
@@ -263,12 +264,7 @@ fn annotation_has_export(annots: List<Annotation>) -> bool {
 }
 
 fn annotation_has(annots: List<Annotation>, target: string) -> bool {
-    mut i = 0
-    while i < annots.length {
-        if annots[i].name == target { return true }
-        i = i + 1
-    }
-    false
+    list_any(annots, (a: Annotation) -> a.name == target)
 }
 
 fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool) -> ExtractAcc {

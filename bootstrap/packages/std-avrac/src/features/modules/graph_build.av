@@ -40,6 +40,7 @@ use core.{
 }
 use core.{avra_selfhost_file_exists, avra_selfhost_read_file}
 use parse.{parse_program_source}
+use list_ops.{list_any}
 use features.modules.{
     modules_dirname, find_packages_dir, resolve_package_path,
     is_package_use, package_module_name, extract_use_path,
@@ -446,12 +447,7 @@ fn register_item_typed(g: ModuleGraph, parent_id: int, canon: string, name: stri
 /// True iff `annots` contains the `@export` marker. Mirrors the
 /// `annotation_has_export` check in resolve/names.av's tree builder.
 fn annotation_list_has_export(annots: List<Annotation>) -> bool {
-    mut i = 0
-    while i < annots.length {
-        if annots[i].name == "export" { return true }
-        i = i + 1
-    }
-    false
+    list_any(annots, (a: Annotation) -> a.name == "export")
 }
 
 /// Look up a module by canonical path with ancestor walk: tries

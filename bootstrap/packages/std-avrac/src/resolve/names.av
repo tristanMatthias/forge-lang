@@ -18,6 +18,7 @@ use resolve.{resolve_program}
 use core.{TypeRegistry, TypeKind, type_registry_new, type_registry_register, type_registry_id_for, type_qualified_name, method_mangled_name, trait_impl_name, is_mangled_method, method_from_mangled}
 use core.{ModuleGraph, GraphItem, module_graph_is_exported, ID_NONE}
 use features.modules.{build_graph_from_stmts, graph_find_use_path}
+use list_ops.{list_any}
 
 // ── Module tree ──
 //
@@ -346,12 +347,7 @@ fn collect_impl_items(stmts: List<SStmt>, mod_path: string, out_ref: List<Module
 
 /// True iff the annotation list includes `@export`.
 fn annotation_has_export(annotations: List<Annotation>) -> bool {
-    mut i = 0
-    while i < annotations.length {
-        if annotations[i].name == "export" { return true }
-        i = i + 1
-    }
-    false
+    list_any(annotations, (a: Annotation) -> a.name == "export")
 }
 
 // ── Pass 2: Resolve use aliases ──
@@ -507,12 +503,7 @@ type LocalBinding = {
 
 /// Membership probe for the local scope list.
 fn scope_has(scope: List<LocalBinding>, name: string) -> bool {
-    mut i = 0
-    while i < scope.length {
-        if scope[i].name == name { return true }
-        i = i + 1
-    }
-    false
+    list_any(scope, (b: LocalBinding) -> b.name == name)
 }
 
 /// True for names the rewriter must NOT qualify even when a global
@@ -1231,12 +1222,7 @@ fn rewrite_when_arms(ctx: NameCtx, arms: List<WhenArm>) -> List<WhenArm> {
 /// PascalCase Idents); duplicates are fine since this is only
 /// queried for "ever used at all" containment.
 fn used_has(set: List<string>, path: string) -> bool {
-    mut i = 0
-    while i < set.length {
-        if set[i] == path { return true }
-        i = i + 1
-    }
-    false
+    list_any(set, (s: string) -> s == path)
 }
 
 // Collect all QualifiedIdent paths from the rewritten AST.
