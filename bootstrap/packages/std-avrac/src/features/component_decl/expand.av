@@ -28,7 +28,7 @@ use list_ops.{list_concat}
 /// pass — every check_source / `bs2 check` call runs this).
 export fn expand_components(stmts: List<SStmt>) -> List<SStmt> {
     let reg = collect_component_defs(stmts)
-    if reg is .End { return stmts }
+    if reg.length == 0 { return stmts }
     let empty_slots: List<ChildrenSlot> = []
     let root = CompNestCtx { parent_var: "", parent_name: "", parent_children: empty_slots }
     expand_stmt_list(stmts, reg, root)
@@ -36,13 +36,13 @@ export fn expand_components(stmts: List<SStmt>) -> List<SStmt> {
 
 // ── Component definition registry ──
 
-/// Per-program registry of `component` declarations. Each
-/// entry pairs a component name with its config schema, child-slot
-/// schema, and body AST. Built once by `collect_component_defs` and
-/// consulted by every `<comp>(...)` instantiation site.
-export enum CompDefRegistry {
-    End
-    Entry(name: string, config: List<CompConfig>, children: List<ChildrenSlot>, body: List<SStmt>, next: CompDefRegistry)
+/// Per-program registry entry: one `component` declaration's name +
+/// schema + body. The full registry is `List<CompDefEntry>`.
+export type CompDefEntry = {
+    name: string,
+    config: List<CompConfig>,
+    children: List<ChildrenSlot>,
+    body: List<SStmt>,
 }
 
 /// Result of a component lookup. `found` distinguishes hit
@@ -60,17 +60,16 @@ type CompDefLookup = {
 }
 
 /// Linear lookup of a component definition by name.
-export fn comp_reg_lookup(reg: CompDefRegistry, name: string) -> CompDefLookup {
-    match reg {
-        .End -> {
-            let empty_slots: List<ChildrenSlot> = []
-            let empty_cfg: List<CompConfig> = []
-            let empty_body: List<SStmt> = []
-            CompDefLookup { found: false, config: empty_cfg, children: empty_slots, body: empty_body }
+export fn comp_reg_lookup(reg: List<CompDefEntry>, name: string) -> CompDefLookup {
+    for e in reg {
+        if e.name == name {
+            return CompDefLookup { found: true, config: e.config, children: e.children, body: e.body }
         }
-        .Entry(n, config, children, body, _) if n == name -> CompDefLookup { found: true, config, children, body }
-        .Entry(_, _, _, _, next) -> comp_reg_lookup(next, name)
     }
+    let empty_slots: List<ChildrenSlot> = []
+    let empty_cfg: List<CompConfig> = []
+    let empty_body: List<SStmt> = []
+    CompDefLookup { found: false, config: empty_cfg, children: empty_slots, body: empty_body }
 }
 
 /// Walk the AST once collecting every `ComponentDef` into a
@@ -83,57 +82,28 @@ export fn comp_reg_lookup(reg: CompDefRegistry, name: string) -> CompDefLookup {
 /// legacy template path. Skipping them at the registry level means
 /// expand_stmt_list's ComponentBlock arm won't find them, so the
 /// instance passes through unchanged for expand_macros to consume.
-export fn collect_component_defs(stmts: List<SStmt>) -> CompDefRegistry {
-    // Build forward via per-iteration prepend onto the tail accumulator.
-    // The cons-list is built head-first, so we walk from end to start to
-    // preserve source order.
-    mut acc: CompDefRegistry = .End
-    mut i = stmts.length - 1
-    while i >= 0 {
-        let ss = stmts[i]
+export fn collect_component_defs(stmts: List<SStmt>) -> List<CompDefEntry> {
+    mut acc: List<CompDefEntry> = []
+    for ss in stmts {
         let has_expand = find_annotation(ss.node, "expand") != null
         let inner = stmt_unwrap_deep(ss.node)
-        acc = match inner {
+        match inner {
             .ComponentDef(name, _, config, children, _, body) -> {
-                if has_expand { acc } else { CompDefRegistry.Entry(name, config, children, body, acc) }
+                if !has_expand { acc = acc.push(CompDefEntry { name, config, children, body }) }
             }
-            .Module(_, mod_body) -> merge_registries(collect_component_defs(mod_body), acc)
-            .Function(_, _, _, _, fn_body) -> merge_registries(collect_component_defs(fn_body), acc)
-            _ -> acc
+            .Module(_, mod_body) -> acc = list_concat(acc, collect_component_defs(mod_body))
+            .Function(_, _, _, _, fn_body) -> acc = list_concat(acc, collect_component_defs(fn_body))
+            _ -> {}
         }
-        i = i - 1
     }
     acc
 }
 
-/// Concatenate two component registries. Used by
-/// `collect_component_defs` to fold per-module / per-fn
-/// registries into the program-wide one.
-fn merge_registries(a: CompDefRegistry, b: CompDefRegistry) -> CompDefRegistry {
-    match a {
-        .End -> b
-        .Entry(name, config, children, body, next) -> CompDefRegistry.Entry(name, config, children, body, merge_registries(next, b))
-    }
-}
-
 /// Extract the names of every registered component. Used by the
-/// parser to recognise component instantiations like
-/// `<MyComp>(...)`. Walks the registry iteratively via a moving
-/// cursor so the implementation stays linked-list-source-shaped
-/// without recursion.
-export fn comp_reg_names(reg: CompDefRegistry) -> List<string> {
-    mut acc = []
-    mut cur = reg
-    mut keep_going = true
-    while keep_going {
-        match cur {
-            .End -> { keep_going = false }
-            .Entry(name, _, _, _, next) -> {
-                acc.push(name)
-                cur = next
-            }
-        }
-    }
+/// parser to recognise component instantiations like `<MyComp>(...)`.
+export fn comp_reg_names(reg: List<CompDefEntry>) -> List<string> {
+    mut acc: List<string> = []
+    for e in reg { acc = acc.push(e.name) }
     acc
 }
 
@@ -664,7 +634,7 @@ fn build_push_stmt(parent_var: string, slot: string, child_inst: string, line: i
 /// component definition, then dispatches to either
 /// `splice_template_block` or `splice_data_block` based on the
 /// template-vs-data classification of the body.
-export fn splice_component_block(comp: string, inst: string, config: List<CompConfigPair>, body: List<SStmt>, line: int, col: int, rest: List<SStmt>, reg: CompDefRegistry, nest: CompNestCtx) -> List<SStmt> {
+export fn splice_component_block(comp: string, inst: string, config: List<CompConfigPair>, body: List<SStmt>, line: int, col: int, rest: List<SStmt>, reg: List<CompDefEntry>, nest: CompNestCtx) -> List<SStmt> {
     let def = comp_reg_lookup(reg, comp)
     // vez6.7: validate every nested ComponentBlock matches a declared
     // child slot. Mismatches are reported via eprintln (proper
@@ -755,7 +725,7 @@ fn join_slot_names(schema: List<ChildrenSlot>) -> string {
 /// The component's body is rewritten via `rw_template` (for
 /// `@cfg`) and `rewrite_self` (for `@self`), then the result
 /// inlines into the surrounding scope.
-fn splice_template_block(comp: string, inst: string, config: List<CompConfigPair>, body: List<SStmt>, line: int, col: int, rest: List<SStmt>, reg: CompDefRegistry, nest: CompNestCtx, def: CompDefLookup) -> List<SStmt> {
+fn splice_template_block(comp: string, inst: string, config: List<CompConfigPair>, body: List<SStmt>, line: int, col: int, rest: List<SStmt>, reg: List<CompDefEntry>, nest: CompNestCtx, def: CompDefLookup) -> List<SStmt> {
     let is_root = nest.parent_var == ""
     let accum_var = if is_root { inst } else { nest.parent_var }
     let rw_ctx = RewriteCtx { inst, parent_var: accum_var, parent_name: nest.parent_name }
@@ -792,7 +762,7 @@ fn splice_template_block(comp: string, inst: string, config: List<CompConfigPair
 /// Emits a `let inst = <factory>(cfg)` binding plus any nested
 /// component blocks expanded recursively under the new
 /// nesting context.
-fn splice_data_block(comp: string, inst: string, config: List<CompConfigPair>, body: List<SStmt>, line: int, col: int, rest: List<SStmt>, reg: CompDefRegistry, nest: CompNestCtx, def: CompDefLookup) -> List<SStmt> {
+fn splice_data_block(comp: string, inst: string, config: List<CompConfigPair>, body: List<SStmt>, line: int, col: int, rest: List<SStmt>, reg: List<CompDefEntry>, nest: CompNestCtx, def: CompDefLookup) -> List<SStmt> {
     let rw_ctx = RewriteCtx { inst, parent_var: nest.parent_var, parent_name: nest.parent_name }
 
     let call_args: List<SExpr> = [sexpr(Expr.String("\"${inst}\""), 0, 0)]
@@ -879,7 +849,7 @@ fn has_any_slot(schema: List<ChildrenSlot>) -> bool {
 /// passes through unchanged here; ComponentBlock instances of
 /// @expand'd defs likewise pass through because their parent
 /// def is absent from `reg` (collect_component_defs skipped it).
-export fn expand_stmt_list(stmts: List<SStmt>, reg: CompDefRegistry, nest: CompNestCtx) -> List<SStmt> {
+export fn expand_stmt_list(stmts: List<SStmt>, reg: List<CompDefEntry>, nest: CompNestCtx) -> List<SStmt> {
     // Walk backward so that splice_* helpers — which take the
     // already-expanded tail as their `rest` — see the right successor.
     mut tail: List<SStmt> = []
@@ -942,7 +912,7 @@ export fn expand_stmt_list(stmts: List<SStmt>, reg: CompDefRegistry, nest: CompN
 /// Per-statement expansion. Recurses into module / fn / impl /
 /// block bodies so component blocks at any nesting depth are
 /// spliced in place.
-fn expand_stmt(stmt: Stmt, reg: CompDefRegistry, nest: CompNestCtx) -> Stmt {
+fn expand_stmt(stmt: Stmt, reg: List<CompDefEntry>, nest: CompNestCtx) -> Stmt {
     match stmt {
         .Function(name, tp, params, rvt, body) -> .Function(name, tp, params, rvt, expand_stmt_list(body, reg, nest))
         .Block(body) -> .Block(expand_stmt_list(body, reg, nest))

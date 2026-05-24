@@ -22,6 +22,7 @@
 use core.{Stmt, SStmt, Expr, SExpr, sstmt_at, find_annotation, stmt_unwrap}
 use features.comptime.{CompTimeRegistry, comptime_lookup, collect_comptime_fns, value_to_stmt, stmt_to_value}
 use features.eval.{Runtime, Value, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message}
+use list_ops.{list_concat}
 
 // ── Public entry ──
 
@@ -39,44 +40,30 @@ use features.eval.{Runtime, Value, eval_fn_with_resolved_args, step_value, step_
 /// ComponentBlock as a 1-arg Stmt value.
 export fn expand_macros(stmts: List<SStmt>) -> List<SStmt> {
     let comp_macros = collect_component_macros(stmts)
-    if !any_expand_annotation(stmts) && comp_macros_empty(comp_macros) { return stmts }
+    if !any_expand_annotation(stmts) && comp_macros.length == 0 { return stmts }
     let reg = collect_comptime_fns(stmts)
     expand_stmt_list(stmts, reg, comp_macros)
 }
 
 // ── Component-macro pre-pass (vez6.8.5) ──
 
-/// Linked-list mapping from component name to its @expand macro fn
-/// name. Built once per program and consulted at every
-/// ComponentBlock site.
-enum CompMacros {
-    End
-    Entry(comp_name: string, macro_name: string, next: CompMacros)
-}
+/// One (component-name → @expand macro fn name) mapping. The full
+/// registry is `List<CompMacroEntry>` — built once per program and
+/// consulted at every ComponentBlock site.
+type CompMacroEntry = { comp_name: string, macro_name: string }
 
-fn comp_macros_empty(m: CompMacros) -> bool {
-    match m {
-        .End -> true
-        .Entry(_, _, _) -> false
+fn comp_macro_lookup(m: List<CompMacroEntry>, comp_name: string) -> string {
+    for e in m {
+        if e.comp_name == comp_name { return e.macro_name }
     }
-}
-
-fn comp_macro_lookup(m: CompMacros, comp_name: string) -> string {
-    match m {
-        .End -> ""
-        .Entry(n, mn, _) if n == comp_name -> mn
-        .Entry(_, _, next) -> comp_macro_lookup(next, comp_name)
-    }
+    ""
 }
 
 /// Walk the AST, finding every `@expand(macro) component name { ... }`
 /// declaration and recording its (name → macro_fn) pair.
-fn collect_component_macros(stmts: List<SStmt>) -> CompMacros {
-    // Walk end to start so cons-prepend yields source-order CompMacros.
-    mut acc: CompMacros = .End
-    mut i = stmts.length - 1
-    while i >= 0 {
-        let ss = stmts[i]
+fn collect_component_macros(stmts: List<SStmt>) -> List<CompMacroEntry> {
+    mut acc: List<CompMacroEntry> = []
+    for ss in stmts {
         let inner = peel_annotations(ss.node)
         // ComponentDefs can live inside Module wrappers (e.g.
         // `component command implements Runnable {}` declared
@@ -85,30 +72,18 @@ fn collect_component_macros(stmts: List<SStmt>) -> CompMacros {
         // Without this recursion the (comp_name → macro_fn) map
         // is empty for any def behind a module boundary, so
         // instance dispatch silently skips them.
-        acc = match inner {
-            .Module(_, body) -> merge_comp_macros(collect_component_macros(body), acc)
+        match inner {
+            .Module(_, body) -> acc = list_concat(acc, collect_component_macros(body))
             _ -> {
                 let macro_name = comp_macro_for(ss.node)
                 let comp_name = component_def_name(ss.node)
                 if macro_name != "" && comp_name != "" {
-                    CompMacros.Entry(comp_name, macro_name, acc)
-                } else {
-                    acc
+                    acc = acc.push(CompMacroEntry { comp_name, macro_name })
                 }
             }
         }
-        i = i - 1
     }
     acc
-}
-
-/// Concatenate two CompMacros lists. Used by `collect_component_macros`
-/// to fold per-Module results into the top-level list.
-fn merge_comp_macros(left: CompMacros, right: CompMacros) -> CompMacros {
-    match left {
-        .End -> right
-        .Entry(n, mn, next) -> CompMacros.Entry(n, mn, merge_comp_macros(next, right))
-    }
 }
 
 /// If `stmt` is a ComponentDef wrapped in @expand(M), return M's
@@ -158,7 +133,7 @@ fn has_expand_annotation(stmt: Stmt) -> bool {
 
 // ── Walker ──
 
-fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: CompMacros) -> List<SStmt> {
+fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List<CompMacroEntry>) -> List<SStmt> {
     mut out: List<SStmt> = []
     mut i = 0
     while i < stmts.length {
