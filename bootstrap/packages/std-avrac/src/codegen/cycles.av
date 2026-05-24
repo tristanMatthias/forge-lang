@@ -7,6 +7,7 @@
 
 use core.{FieldEntry, ValueType, Variant}
 use codegen.{StructReg, EnumReg, struct_reg_lookup, enum_reg_lookup, vtype_is_ptr_type}
+use list_ops.{list_push_copy}
 
 /// Set of type names whose layout can reach back to itself through
 /// some chain of pointer-typed fields. Built once by `analyze_cycles`
@@ -26,7 +27,7 @@ export fn cycle_set_has(cs: List<string>, name: string) -> bool {
 
 /// DFS visited set — tracks types already explored on the current
 /// search path so reachability never loops forever. Each branch in
-/// the search gets its OWN list via `visited_extend` (which copies)
+/// the search gets its OWN list via `list_push_copy` (which copies)
 /// so a sibling branch's recursion doesn't pollute another's
 /// visited frontier.
 
@@ -38,15 +39,6 @@ fn visited_has(vs: List<string>, name: string) -> bool {
     false
 }
 
-/// Return a fresh list = `vs ++ [name]`. The copy is critical: the
-/// caller's `vs` may be reused for sibling DFS branches, and
-/// `.push()` on the shared list would corrupt those branches.
-fn visited_extend(vs: List<string>, name: string) -> List<string> {
-    mut out: List<string> = []
-    for n in vs { out = out.push(n) }
-    out = out.push(name)
-    out
-}
 
 // ── Core DFS reachability check ──
 // Starting from a type's fields, can we reach `target` through
@@ -80,7 +72,7 @@ fn type_reaches_target(ty: ValueType, target: string, visited: List<string>, str
         .Struct(name, _) -> {
             if name == target { return true }
             if visited_has(visited, name) { return false }
-            let vs2 = visited_extend(visited, name)
+            let vs2 = list_push_copy(visited, name)
             let lookup = struct_reg_lookup(structs, name)
             if lookup.found {
                 fields_reach_target(lookup.fields, target, vs2, structs, enums)
@@ -91,7 +83,7 @@ fn type_reaches_target(ty: ValueType, target: string, visited: List<string>, str
         .Enum(name, _, _) -> {
             if name == target { return true }
             if visited_has(visited, name) { return false }
-            let vs2 = visited_extend(visited, name)
+            let vs2 = list_push_copy(visited, name)
             let elookup = enum_reg_lookup(enums, name)
             if elookup.found {
                 variants_reach_target(elookup.variants, target, vs2, structs, enums)
@@ -117,7 +109,7 @@ fn analyze_structs(reg: StructReg, cs: List<string>, structs: StructReg, enums: 
     mut out = cs
     for m in reg.ord {
         let empty: List<string> = []
-        let visited = visited_extend(empty, m.name)
+        let visited = list_push_copy(empty, m.name)
         if fields_reach_target(m.fields, m.name, visited, structs, enums) {
             out = out.push(m.name)
         }
@@ -132,7 +124,7 @@ fn analyze_enums(reg: EnumReg, cs: List<string>, structs: StructReg, enums: Enum
     mut out = cs
     for m in reg.ord {
         let empty: List<string> = []
-        let visited = visited_extend(empty, m.name)
+        let visited = list_push_copy(empty, m.name)
         if variants_reach_target(m.variants, m.name, visited, structs, enums) {
             out = out.push(m.name)
         }

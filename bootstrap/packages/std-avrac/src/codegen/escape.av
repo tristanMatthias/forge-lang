@@ -8,15 +8,13 @@
 
 use core.{Expr, FieldEntry, FieldInit, Variant, ValueType, Stmt, SExpr, SStmt, stmt_unwrap}
 use codegen.{releasable_has, StructReg, EnumReg, struct_reg_lookup, enum_reg_lookup, copy_set_has}
+use list_ops.{list_push_copy}
 
 /// Add `name` to the releasable set, deduplicating. Returns a fresh
-/// list — callers reusing `set` elsewhere stay correct.
+/// copy when name is new — callers reusing `set` elsewhere stay
+/// correct.
 fn releasable_add(set: List<string>, name: string) -> List<string> {
-    if releasable_has(set, name) { return set }
-    mut out: List<string> = []
-    for n in set { out = out.push(n) }
-    out = out.push(name)
-    out
+    if releasable_has(set, name) { set } else { list_push_copy(set, name) }
 }
 
 /// Remove every occurrence of `name` from the releasable set.

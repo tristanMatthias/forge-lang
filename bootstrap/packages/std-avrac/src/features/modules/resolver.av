@@ -10,7 +10,7 @@ use build.{metadata_read, metadata_file_exists, synthesize_unit_body}
 use build.{cache_for, entry_source_meta_path, Fingerprint, package_source_fingerprint}
 use @std.crypto.{sha256_hex, sha256_file}
 use features.modules.{list_avra_module_files, list_avra_module_subdirs}
-use list_ops.{list_concat}
+use list_ops.{list_concat, list_push_copy}
 
 extern fn avra_bytes_to_hex(b: bytes) -> string
 extern fn avra_uptime_ms() -> int
@@ -140,17 +140,6 @@ fn loaded_has(paths: List<string>, path: string) -> bool {
     false
 }
 
-/// Return a fresh `loaded` list = `paths ++ [path]`. The copy keeps
-/// sibling resolutions reading the un-extended snapshot — `.push`
-/// alone would mutate the parent caller's list since List<string>
-/// is heap-backed.
-fn loaded_extend(paths: List<string>, path: string) -> List<string> {
-    mut out: List<string> = []
-    for p in paths { out = out.push(p) }
-    out = out.push(path)
-    out
-}
-
 /// Result of resolving a list of statements that may contain
 /// `Module`/`Use` items.
 ///
@@ -191,15 +180,6 @@ fn stack_has(stack: List<string>, path: string) -> bool {
         if p == path { return true }
     }
     false
-}
-
-/// Push `path` onto the import stack, returning a fresh list so the
-/// caller's stack stays untouched for sibling iterations.
-fn stack_push(stack: List<string>, path: string) -> List<string> {
-    mut out: List<string> = []
-    for p in stack { out = out.push(p) }
-    out = out.push(path)
-    out
 }
 
 /// Render the import stack as `a.av -> b.av -> a.av` for cycle-
@@ -485,7 +465,7 @@ export fn resolve_dir_module_body(dir: string, loaded: List<string>) -> ModListR
                 error_message: "error in `${path}`: ${parsed.error_message}",
             }
         }
-        acc_loaded = loaded_extend(acc_loaded, path)
+        acc_loaded = list_push_copy(acc_loaded, path)
         acc = list_concat(acc, parsed.stmts!)
         i = i + 1
     }
@@ -997,7 +977,7 @@ fn resolve_package_use_and_continue(ss: SStmt, next: List<SStmt>, dir: string, l
     // (forge-crafting-intepreters-2f54). Source-on-disk path remains
     // the default; opt-in keeps the existing behaviour intact while
     // the multi-unit cache plumbing matures.
-    let new_loaded = loaded_extend(loaded, pkg_file)
+    let new_loaded = list_push_copy(loaded, pkg_file)
     let pkg_dir = modules_dirname(pkg_file)
     let use_meta = avra_process_env_get("AVRA_USE_METADATA") != ""
     // 2wfp: package-level lookup uses the WHOLE-PACKAGE fingerprint
@@ -1169,7 +1149,7 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: List<string>, stack: Lis
                 if dir_load.had_error {
                     return ModStmtResult { stmt, loaded: dir_load.loaded, had_error: true, error_message: dir_load.error_message }
                 }
-                let new_stack = stack_push(stack, dir_only)
+                let new_stack = list_push_copy(stack, dir_only)
                 let resolved = resolve_module_files_inner(dir_load.stmts, dir_only, dir_load.loaded, new_stack)
                 if resolved.had_error {
                     return ModStmtResult { stmt, loaded: resolved.loaded, had_error: true, error_message: resolved.error_message }
@@ -1189,8 +1169,8 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: List<string>, stack: Lis
                 let empty: List<SStmt> = []
                 return ModStmtResult { stmt: Stmt.Module(name, empty), loaded, had_error: false, error_message: "" }
             }
-            let new_loaded = loaded_extend(loaded, mod_path)
-            let new_stack = stack_push(stack, mod_path)
+            let new_loaded = list_push_copy(loaded, mod_path)
+            let new_stack = list_push_copy(stack, mod_path)
             let mod_dir = modules_dirname(mod_path)
             // xtvc fast-path (mirrors the package-load path): when
             // AVRA_USE_METADATA is set AND `<mod_path>.meta.bin`

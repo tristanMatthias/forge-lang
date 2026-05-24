@@ -35,6 +35,7 @@ use core.{
     BinOp, UnOp, LogicOp,
     ValueType,
 }
+use list_ops.{list_push_copy}
 
 // ── Scope chain + context ──
 
@@ -100,11 +101,8 @@ fn fresh_name(ctx: HygieneCtx, orig: string) -> FreshResult {
     // COPY scope before appending — the parent's binding may still be
     // used after this scope returns (sibling rewrites, restore_scope
     // unwind). In-place .push would corrupt that snapshot.
-    mut new_scope: List<HygieneBinding> = []
-    for b in ctx.scope { new_scope = new_scope.push(b) }
-    new_scope = new_scope.push(HygieneBinding { orig, renamed })
-    let new_ctx = HygieneCtx { scope: new_scope, counter: id + 1 }
-    FreshResult { name: renamed, ctx: new_ctx }
+    let new_scope = list_push_copy(ctx.scope, HygieneBinding { orig, renamed })
+    FreshResult { name: renamed, ctx: HygieneCtx { scope: new_scope, counter: id + 1 } }
 }
 
 /// Look up `name` in the scope chain. Walks tail-to-head so the

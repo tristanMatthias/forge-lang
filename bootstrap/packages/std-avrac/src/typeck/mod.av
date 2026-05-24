@@ -13,6 +13,7 @@ use features.map_lit.{check_map_method}
 use features.let_stmt.{is_const_expr, bind_destructure}
 use core.{method_mangled_name, type_short_name, is_result_enum_name}
 use core.{avra_process_env_get}
+use list_ops.{list_push_copy}
 
 extern fn avra_uptime_ms() -> int
 
@@ -42,10 +43,7 @@ fn type_lookup(env: List<TypeEntry>, name: string) -> ValueType {
 /// snapshot so sibling branches (then/else of an if etc.) keep
 /// the parent's env un-extended.
 fn type_bind(env: List<TypeEntry>, name: string, ty: ValueType, depth: int) -> List<TypeEntry> {
-    mut out: List<TypeEntry> = []
-    for e in env { out = out.push(e) }
-    out = out.push(TypeEntry { name, ty, depth })
-    out
+    list_push_copy(env, TypeEntry { name, ty, depth })
 }
 
 /// Pop every entry whose declared depth is `>= depth`. Used on
@@ -823,11 +821,9 @@ fn collect_decls(tc: TC, stmts: List<SStmt>) -> TC {
                 if is_duplicate_decl(cur.structs.idx, name) {
                     tc_report_at(cur, DiagCode.DuplicateDecl, "duplicate type declaration `${name}`", ss.line, ss.col, name.length)
                 } else {
-                    mut new_shapes = cur.shapes
-                    new_shapes = new_shapes.push(name)
                     cur with {
                         structs: struct_type_reg_register(cur.structs, name, fields),
-                        shapes: new_shapes,
+                        shapes: list_push_copy(cur.shapes, name),
                     }
                 }
             }
@@ -851,9 +847,7 @@ fn collect_decls(tc: TC, stmts: List<SStmt>) -> TC {
                 let with_impl = if colon_idx >= 0 {
                     let trait_name = impl_name.substring(0, colon_idx)
                     let type_name = impl_name.substring(colon_idx + 1, impl_name.length)
-                    mut new_impls = cur.trait_impls
-                    new_impls = new_impls.push(TraitImplEntry { trait_name, type_name })
-                    let with_trait = cur with { trait_impls: new_impls }
+                    let with_trait = cur with { trait_impls: list_push_copy(cur.trait_impls, TraitImplEntry { trait_name, type_name }) }
                     // Collect associated type definitions: `type Item = ConcreteType`
                     collect_impl_assoc_types(with_trait, type_name, methods)
                 } else { cur }
@@ -884,10 +878,8 @@ fn collect_impl_assoc_types(tc: TC, type_name: string, stmts: List<SStmt>) -> TC
                 if !vtype_is_unknown(ty_vt) {
                     let key = "${type_name}.${name}"
                     let self_key = "Self.${name}"
-                    mut new_assoc = cur.assoc_type_defs
-                    new_assoc = new_assoc.push(AssocTypeEntry { key, concrete_vt: ty_vt })
-                    new_assoc = new_assoc.push(AssocTypeEntry { key: self_key, concrete_vt: ty_vt })
-                    cur with { assoc_type_defs: new_assoc }
+                    let step1 = list_push_copy(cur.assoc_type_defs, AssocTypeEntry { key, concrete_vt: ty_vt })
+                    cur with { assoc_type_defs: list_push_copy(step1, AssocTypeEntry { key: self_key, concrete_vt: ty_vt }) }
                 } else { cur }
             }
             _ -> cur

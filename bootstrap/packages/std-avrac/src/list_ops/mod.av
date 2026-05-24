@@ -64,3 +64,15 @@ export fn list_concat<T>(a: List<T>, b: List<T>) -> List<T> {
     for x in b { out = out.push(x) }
     out
 }
+
+/// Snapshot `xs` and append `x` to the copy. The input is left
+/// intact — for callers that need to retain the un-extended list
+/// (sibling DFS branches, parent scope frames before pushing a
+/// child binding, etc.) where a direct `.push` would corrupt the
+/// shared reference since `List<T>` is heap-backed.
+export fn list_push_copy<T>(xs: List<T>, x: T) -> List<T> {
+    mut out: List<T> = []
+    for e in xs { out = out.push(e) }
+    out = out.push(x)
+    out
+}
