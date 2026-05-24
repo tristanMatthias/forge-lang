@@ -11,7 +11,7 @@ extern fn avra_shell_exec(cmd: string) -> string
 extern fn avra_process_env_get(name: string) -> string
 
 use @std.avrac.parse.{parse_program_source, parse_program_source_at}
-use @std.avrac.features.modules.{resolve_module_files, modules_dirname, LoadedPaths}
+use @std.avrac.features.modules.{resolve_module_files, modules_dirname}
 use @std.avrac.build.{collect_source_files}
 
 fn probe(name: string, ok: bool) {
@@ -75,7 +75,8 @@ fn main() -> int {
         probe("resolver_input_valid", false)
         return 1
     }
-    let mod_resolved = resolve_module_files(resolved_top.stmts!, entry_dir, LoadedPaths.End)
+    let empty: List<string> = []
+    let mod_resolved = resolve_module_files(resolved_top.stmts!, entry_dir, empty)
     probe("resolver_succeeded", !mod_resolved.had_error)
 
     let files = collect_source_files(mod_resolved.stmts)

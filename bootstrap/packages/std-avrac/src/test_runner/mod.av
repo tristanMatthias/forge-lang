@@ -23,7 +23,7 @@ use core.{
 use features.modules.{
     hoist_package_modules, HoistSplit,
     resolve_module_files, modules_dirname, find_packages_dir,
-    LoadedPaths, dedup_modules,
+    dedup_modules,
 }
 use parse.{parse_program_source_at}
 use diagnostics.{bag_has_errors, render_bag}
@@ -267,7 +267,8 @@ fn assemble_one_test_file(path: string) -> Result<AssembledFile, string> {
         if bag_has_errors(parsed.bag) { render_bag(content, path, parsed.bag) }
         return Result.Err("error parsing ${path}")
     }
-    let mod_resolved = resolve_module_files(parsed.stmts!, modules_dirname(path), LoadedPaths.End)
+    let empty_loaded: List<string> = []
+    let mod_resolved = resolve_module_files(parsed.stmts!, modules_dirname(path), empty_loaded)
     if mod_resolved.had_error {
         return Result.Err("module resolve error in ${path}: ${mod_resolved.error_message}")
     }

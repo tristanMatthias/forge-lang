@@ -129,19 +129,26 @@ fn record_meta_dep(producer_path: string) {
 }
 
 /// Set of file paths the resolver has already loaded — prevents
-/// double-parsing when two modules import the same file.
-export enum LoadedPaths {
-    End
-    Node(path: string, next: LoadedPaths)
-}
+/// double-parsing when two modules import the same file. Backed by
+/// `List<string>`; queried for membership, never iterated.
 
 /// Membership test for `LoadedPaths`.
-fn loaded_has(paths: LoadedPaths, path: string) -> bool {
-    match paths {
-        .End -> false
-        .Node(p, _) if p == path -> true
-        .Node(_, next) -> loaded_has(next, path)
+fn loaded_has(paths: List<string>, path: string) -> bool {
+    for p in paths {
+        if p == path { return true }
     }
+    false
+}
+
+/// Return a fresh `loaded` list = `paths ++ [path]`. The copy keeps
+/// sibling resolutions reading the un-extended snapshot — `.push`
+/// alone would mutate the parent caller's list since List<string>
+/// is heap-backed.
+fn loaded_extend(paths: List<string>, path: string) -> List<string> {
+    mut out: List<string> = []
+    for p in paths { out = out.push(p) }
+    out = out.push(path)
+    out
 }
 
 /// Result of resolving a list of statements that may contain
@@ -154,7 +161,7 @@ fn loaded_has(paths: LoadedPaths, path: string) -> bool {
 /// @field error_message — diagnostic when `had_error` is set.
 export type ModListResult = {
     stmts: List<SStmt>,
-    loaded: LoadedPaths,
+    loaded: List<string>,
     had_error: int,
     error_message: string,
 }
@@ -168,43 +175,46 @@ export type ModListResult = {
 /// @field error_message — diagnostic when `had_error` is set.
 type ModStmtResult = {
     stmt: Stmt,
-    loaded: LoadedPaths,
+    loaded: List<string>,
     had_error: int,
     error_message: string,
 }
 
 /// Stack of files currently being resolved — for circular-import
-/// detection. Separate from LoadedPaths (which tracks ALL resolved
-/// files); this only tracks the active resolution chain.
-enum ImportStack {
-    End
-    Node(path: string, next: ImportStack)
+/// detection. Separate from `LoadedPaths` (which tracks ALL resolved
+/// files); this only tracks the active resolution chain. Backed by
+/// `List<string>`, ordered most-recently-pushed last.
+
+/// Membership test for the import stack. Used to detect cycles.
+fn stack_has(stack: List<string>, path: string) -> bool {
+    for p in stack {
+        if p == path { return true }
+    }
+    false
 }
 
-/// Membership test for `ImportStack`. Used to detect cycles.
-fn stack_has(stack: ImportStack, path: string) -> bool {
-    match stack {
-        .End -> false
-        .Node(p, _) if p == path -> true
-        .Node(_, next) -> stack_has(next, path)
-    }
+/// Push `path` onto the import stack, returning a fresh list so the
+/// caller's stack stays untouched for sibling iterations.
+fn stack_push(stack: List<string>, path: string) -> List<string> {
+    mut out: List<string> = []
+    for p in stack { out = out.push(p) }
+    out = out.push(path)
+    out
 }
 
 /// Render the import stack as `a.av -> b.av -> a.av` for cycle-
 /// import error messages. Stops at the first occurrence of
-/// `cycle_path`, since that's where the cycle closes.
-fn render_cycle(stack: ImportStack, cycle_path: string) -> string {
+/// `cycle_path`, since that's where the cycle closes. Walk from the
+/// most-recently-pushed back to the cycle root, prepending each
+/// path to the rendered chain.
+fn render_cycle(stack: List<string>, cycle_path: string) -> string {
     mut parts = cycle_path
-    mut cur = stack
-    while true {
-        match cur {
-            .End -> { return parts }
-            .Node(p, next) -> {
-                parts = "${p} -> ${parts}"
-                cur = next
-                if p == cycle_path { return parts }
-            }
-        }
+    mut i = stack.length - 1
+    while i >= 0 {
+        let p = stack[i]
+        parts = "${p} -> ${parts}"
+        if p == cycle_path { return parts }
+        i = i - 1
     }
     parts
 }
@@ -407,8 +417,9 @@ export fn resolve_package_path(pkg_path: string, packages_dir: string) -> string
 /// `@std.avrac.indexer` which uses @std.lsp internally) — hoisting
 /// guarantees package paths exist at root regardless of where they
 /// were first imported.
-export fn resolve_module_files(stmts: List<SStmt>, dir: string, loaded: LoadedPaths) -> ModListResult {
-    let inner = resolve_module_files_inner(stmts, dir, loaded, ImportStack.End)
+export fn resolve_module_files(stmts: List<SStmt>, dir: string, loaded: List<string>) -> ModListResult {
+    let empty_stack: List<string> = []
+    let inner = resolve_module_files_inner(stmts, dir, loaded, empty_stack)
     if inner.had_error { return inner }
     let split = hoist_package_modules(inner.stmts)
     // Dedup hoisted package wrappers by qualified name. Without this,
@@ -453,7 +464,7 @@ export fn resolve_module_files(stmts: List<SStmt>, dir: string, loaded: LoadedPa
 /// field returns whatever was assembled so far (so partial output
 /// is still introspectable in tools), and `had_error` flips to
 /// true with a diagnostic.
-export fn resolve_dir_module_body(dir: string, loaded: LoadedPaths) -> ModListResult {
+export fn resolve_dir_module_body(dir: string, loaded: List<string>) -> ModListResult {
     let files = list_avra_module_files(dir)
     mut acc: List<SStmt> = []
     mut acc_loaded = loaded
@@ -474,7 +485,7 @@ export fn resolve_dir_module_body(dir: string, loaded: LoadedPaths) -> ModListRe
                 error_message: "error in `${path}`: ${parsed.error_message}",
             }
         }
-        acc_loaded = LoadedPaths.Node(path, acc_loaded)
+        acc_loaded = loaded_extend(acc_loaded, path)
         acc = list_concat(acc, parsed.stmts!)
         i = i + 1
     }
@@ -873,7 +884,7 @@ fn anchor_use_path(up: string, pkg_qual: string) -> string {
 /// statement, resolving `Module` and `Use` stubs in place;
 /// non-import statements pass through unchanged. Threads the
 /// LoadedPaths set + ImportStack through every recursive call.
-fn resolve_module_files_inner(stmts: List<SStmt>, dir: string, loaded: LoadedPaths, stack: ImportStack) -> ModListResult {
+fn resolve_module_files_inner(stmts: List<SStmt>, dir: string, loaded: List<string>, stack: List<string>) -> ModListResult {
     mut out: List<SStmt> = []
     mut cur_loaded = loaded
     mut i = 0
@@ -948,7 +959,7 @@ export fn extract_use_path(stmt: Stmt) -> string {
 /// `Module("@scope") { Module(name) { ... } }` so the resolver
 /// sees the package's symbols at their qualified path. Continue
 /// resolution on the rest of the input list.
-fn resolve_package_use_and_continue(ss: SStmt, next: List<SStmt>, dir: string, loaded: LoadedPaths, stack: ImportStack) -> ModListResult {
+fn resolve_package_use_and_continue(ss: SStmt, next: List<SStmt>, dir: string, loaded: List<string>, stack: List<string>) -> ModListResult {
     let use_path = extract_use_path(ss.node)
     let pkg_mod = package_module_name(use_path)
     let packages_dir = find_packages_dir(dir)
@@ -986,7 +997,7 @@ fn resolve_package_use_and_continue(ss: SStmt, next: List<SStmt>, dir: string, l
     // (forge-crafting-intepreters-2f54). Source-on-disk path remains
     // the default; opt-in keeps the existing behaviour intact while
     // the multi-unit cache plumbing matures.
-    let new_loaded = LoadedPaths.Node(pkg_file, loaded)
+    let new_loaded = loaded_extend(loaded, pkg_file)
     let pkg_dir = modules_dirname(pkg_file)
     let use_meta = avra_process_env_get("AVRA_USE_METADATA") != ""
     // 2wfp: package-level lookup uses the WHOLE-PACKAGE fingerprint
@@ -1090,7 +1101,7 @@ fn resolve_package_use_and_continue(ss: SStmt, next: List<SStmt>, dir: string, l
 /// nested modules, and return a populated `Stmt.Module(name, body)`.
 /// Detects circular imports via `stack` and returns F3103 in that
 /// case. `Annotated` wrappers around the module decl pass through.
-fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths, stack: ImportStack) -> ModStmtResult {
+fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: List<string>, stack: List<string>) -> ModStmtResult {
     match stmt {
         // Pre-populated Module wrapper: cli's --module_path produces
         // `Stmt.Module(name, body)` with body already filled in.
@@ -1158,7 +1169,7 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths, stack: Impo
                 if dir_load.had_error {
                     return ModStmtResult { stmt, loaded: dir_load.loaded, had_error: true, error_message: dir_load.error_message }
                 }
-                let new_stack = ImportStack.Node(dir_only, stack)
+                let new_stack = stack_push(stack, dir_only)
                 let resolved = resolve_module_files_inner(dir_load.stmts, dir_only, dir_load.loaded, new_stack)
                 if resolved.had_error {
                     return ModStmtResult { stmt, loaded: resolved.loaded, had_error: true, error_message: resolved.error_message }
@@ -1178,8 +1189,8 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths, stack: Impo
                 let empty: List<SStmt> = []
                 return ModStmtResult { stmt: Stmt.Module(name, empty), loaded, had_error: false, error_message: "" }
             }
-            let new_loaded = LoadedPaths.Node(mod_path, loaded)
-            let new_stack = ImportStack.Node(mod_path, stack)
+            let new_loaded = loaded_extend(loaded, mod_path)
+            let new_stack = stack_push(stack, mod_path)
             let mod_dir = modules_dirname(mod_path)
             // xtvc fast-path (mirrors the package-load path): when
             // AVRA_USE_METADATA is set AND `<mod_path>.meta.bin`

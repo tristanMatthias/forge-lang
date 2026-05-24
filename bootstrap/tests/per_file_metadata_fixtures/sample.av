@@ -12,7 +12,7 @@ extern fn avra_process_env_get(name: string) -> string
 extern fn avra_bytes_make(n: int) -> bytes
 
 use @std.avrac.parse.{parse_program_source_at}
-use @std.avrac.features.modules.{resolve_module_files, modules_dirname, LoadedPaths}
+use @std.avrac.features.modules.{resolve_module_files, modules_dirname}
 use @std.avrac.build.{extract_unit_metadata, extract_per_file_metadata}
 use @std.avrac.build.{UnitMetadata, FnDeclEntry, TypeDeclEntry}
 use @std.avrac.core.{avra_selfhost_read_file}
@@ -71,7 +71,8 @@ fn main() -> int {
     probe("parse_succeeded", true)
 
     let entry_dir = modules_dirname(top_path)
-    let mod_resolved = resolve_module_files(parsed.stmts!, entry_dir, LoadedPaths.End)
+    let empty: List<string> = []
+    let mod_resolved = resolve_module_files(parsed.stmts!, entry_dir, empty)
     probe("resolver_succeeded", !mod_resolved.had_error)
 
     let fp = avra_bytes_make(32)

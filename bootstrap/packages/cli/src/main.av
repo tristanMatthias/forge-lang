@@ -37,6 +37,15 @@ fn file_exists(path: string) -> int { avra_selfhost_file_exists(path) }
 fn read_file(path: string) -> string { avra_selfhost_read_file(path) }
 fn write_file(path: string, content: string) -> int { avra_selfhost_write_file(path, content) }
 
+// Fresh empty `loaded` set for `resolve_module_files`. A helper
+// (instead of an inline `[]: List<string>` ascription) because the
+// parser doesn't accept type-ascribed expressions in call-argument
+// position.
+fn empty_loaded_list() -> List<string> {
+    let empty: List<string> = []
+    empty
+}
+
 use @std.cli.{cli_new, cli_add_command, cli_command_add_flag, cli_command_add_option, cli_command_add_arg, cli_parse, result_has_flag, result_get_option}
 // nce6.1.F: @marshal on TestResults synthesises `impl Marshal:TestResults`
 // + `from_bytes_TestResults` calling bytes_reader. Both depend on
@@ -70,7 +79,7 @@ use @std.avrac.desugar.{desugar_program, inject_intrinsics}
 use @std.avrac.features.component_decl.{expand_components}
 use @std.avrac.features.marshal.{derive_marshal}
 use @std.avrac.resolve.{resolve_names}
-use @std.avrac.features.modules.{resolve_module_files, modules_dirname, find_packages_dir, package_root_for_file, LoadedPaths, dedup_modules, resolve_dir_module_body, synthesize_subdir_module_decls}
+use @std.avrac.features.modules.{resolve_module_files, modules_dirname, find_packages_dir, package_root_for_file, dedup_modules, resolve_dir_module_body, synthesize_subdir_module_decls}
 use @std.avrac.features.modules.{load_package_config, load_manifest, Dep}
 use @std.avrac.features.modules.{filter_to_target_unit, list_avra_module_subdirs}
 use @std.avrac.build.{
@@ -3294,7 +3303,7 @@ fn main() {
             let post_quote = lower_quotes(parsed.stmts!)
             let desugared = desugar_program(post_quote)
             let entry_dir = modules_dirname(check_path)
-            let mod_resolved = resolve_module_files(desugared, entry_dir, LoadedPaths.End)
+            let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list())
             if mod_resolved.had_error {
                 let mod_bag = bag_report(bag_new(), diag_error(DiagCode.ModuleNotFound, mod_resolved.error_message, span_dummy()))
                 render_bag_either(check_json, check_source, check_path, mod_bag)
@@ -3341,7 +3350,7 @@ fn main() {
                 fail(parsed.error_message)
             }
             let entry_dir = modules_dirname(path)
-            let mod_resolved = resolve_module_files(parsed.stmts!, entry_dir, LoadedPaths.End)
+            let mod_resolved = resolve_module_files(parsed.stmts!, entry_dir, empty_loaded_list())
             if mod_resolved.had_error {
                 fail(mod_resolved.error_message)
             }
@@ -3384,7 +3393,7 @@ fn main() {
             let post_quote = lower_quotes(parsed.stmts!)
             let desugared = desugar_program(post_quote)
             let entry_dir = modules_dirname(path)
-            let mod_resolved = resolve_module_files(desugared, entry_dir, LoadedPaths.End)
+            let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list())
             if mod_resolved.had_error { fail(mod_resolved.error_message) }
             let with_intrinsics = inject_intrinsics(mod_resolved.stmts)
             let expanded = expand_components(with_intrinsics)
@@ -3410,7 +3419,7 @@ fn main() {
             let post_quote = lower_quotes(parsed.stmts!)
             let desugared = desugar_program(post_quote)
             let entry_dir = modules_dirname(path)
-            let mod_resolved = resolve_module_files(desugared, entry_dir, LoadedPaths.End)
+            let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list())
             if mod_resolved.had_error {
                 let mod_bag = bag_report(bag_new(), diag_error(DiagCode.ModuleNotFound, mod_resolved.error_message, span_dummy()))
                 render_bag(source, path, mod_bag)
@@ -3630,7 +3639,7 @@ fn main() {
             let parent_dir = modules_dirname(cpath_dir_stripped)
             let is_package_src = avra_selfhost_file_exists("${parent_dir}avra.toml") != 0
             let body_with_siblings = if is_package_src {
-                let dir_load = resolve_dir_module_body(cpath_dir, LoadedPaths.Node(cpath, LoadedPaths.End))
+                let dir_load = resolve_dir_module_body(cpath_dir, [cpath])
                 if dir_load.had_error {
                     parsed.stmts!
                 } else {
@@ -3655,7 +3664,7 @@ fn main() {
         // Resolve module files: walk the AST, find `mod` stubs, read
         // and parse the referenced files, attach parsed bodies.
         let entry_dir = modules_dirname(cpath)
-        let mod_resolved = resolve_module_files(desugared, entry_dir, LoadedPaths.End)
+        let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list())
         let t_resolve_mods = avra_uptime_ms()
         if mod_resolved.had_error {
             let mod_bag = bag_report(bag_new(), diag_error(DiagCode.ModuleNotFound, mod_resolved.error_message, span_dummy()))

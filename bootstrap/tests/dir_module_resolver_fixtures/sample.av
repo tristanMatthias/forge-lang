@@ -8,21 +8,16 @@
 
 extern fn avra_shell_exec(cmd: string) -> string
 
-use @std.avrac.features.modules.{resolve_dir_module_body, LoadedPaths}
+use @std.avrac.features.modules.{resolve_dir_module_body}
 
 fn probe(name: string, ok: bool) {
     let tag = if ok { "ok" } else { "FAIL" }
     println("PROBE ${name}: ${tag}")
 }
 
-// Counts loaded entries in a LoadedPaths cons-list. Used to
-// confirm each file is registered in the resolver's loaded set
-// exactly once.
-fn loaded_count(p: LoadedPaths) -> int {
-    match p {
-        .End -> 0
-        .Node(_, next) -> 1 + loaded_count(next)
-    }
+fn empty_loaded() -> List<string> {
+    let e: List<string> = []
+    e
 }
 
 fn main() -> int {
@@ -40,13 +35,13 @@ fn main() -> int {
     // A _test.av sibling — must be filtered out of the loaded body.
     avra_shell_exec("printf 'export fn helper() -> int { 99 }\\n' > " + root + "/zzz_test.av")
 
-    let result = resolve_dir_module_body(root, LoadedPaths.End)
+    let result = resolve_dir_module_body(root, empty_loaded())
 
     // Probe 1 — load is errorless.
     probe("no_error", !result.had_error)
 
     // Probe 2 — three files registered as loaded (alpha, beta, gamma).
-    probe("loaded_three", loaded_count(result.loaded) == 3)
+    probe("loaded_three", result.loaded.length == 3)
 
     // Probe 3 — body assembled (non-empty stmts).
     probe("body_non_empty", result.stmts.length > 0)
@@ -54,13 +49,13 @@ fn main() -> int {
     // Probe 4 — re-running with an already-loaded set short-circuits.
     let result2 = resolve_dir_module_body(root, result.loaded)
     probe("rerun_empty_stmts", result2.stmts.length == 0)
-    probe("rerun_loaded_unchanged", loaded_count(result2.loaded) == loaded_count(result.loaded))
+    probe("rerun_loaded_unchanged", result2.loaded.length == result.loaded.length)
 
     // Probe 5 — pointing at a non-existent dir returns errorless empty.
-    let result3 = resolve_dir_module_body("/tmp/avra_dirmod_resolver_does_not_exist_xx", LoadedPaths.End)
+    let result3 = resolve_dir_module_body("/tmp/avra_dirmod_resolver_does_not_exist_xx", empty_loaded())
     probe("missing_dir_no_error", !result3.had_error)
     probe("missing_dir_empty_stmts", result3.stmts.length == 0)
-    probe("missing_dir_zero_loaded", loaded_count(result3.loaded) == 0)
+    probe("missing_dir_zero_loaded", result3.loaded.length == 0)
 
     avra_shell_exec("rm -rf " + root)
     0
