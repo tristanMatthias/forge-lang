@@ -125,12 +125,9 @@ fn value_to_construct_expr(v: Value) -> Expr? {
         // the struct_lit_2 output (every FieldInit recurses).
         "struct" -> {
             mut inits: List<FieldInit> = []
-            mut i = 0
-            while i < v.struct_payload.length {
-                let f = v.struct_payload[i]
+            for f in v.struct_payload {
                 let inner = value_to_construct_expr(f.value)?
                 inits.push(FieldInit { name: f.name, value: sexpr_dummy(inner) })
-                i = i + 1
             }
             Expr.StructLit(v.struct_type, inits)
         }
@@ -457,13 +454,10 @@ fn enum_value_to_stmt(v: Value) -> Stmt? {
 fn list_value_to_field_list(v: Value) -> List<FieldEntry>? {
     if v.kind != "list" { return [] }
     mut out: List<FieldEntry> = []
-    mut i = 0
-    while i < v.list_payload.length {
-        let entry = v.list_payload[i]
+    for entry in v.list_payload {
         let name = struct_field_string(entry, "name")
         let resolved = struct_field_value_type(entry, "resolved") ?? ValueType.Unknown
         out.push(FieldEntry { name, resolved })
-        i = i + 1
     }
     out
 }
@@ -474,22 +468,16 @@ fn list_value_to_field_list(v: Value) -> List<FieldEntry>? {
 fn list_value_to_comp_config_pair_list(v: Value) -> List<CompConfigPair>? {
     if v.kind != "list" { return [] }
     mut out: List<CompConfigPair> = []
-    mut i = 0
-    while i < v.list_payload.length {
-        let entry = v.list_payload[i]
+    for entry in v.list_payload {
         if entry.kind != "struct" { return null }
         let key = struct_field_string(entry, "key")
         mut value_expr: Expr = Expr.Null
-        mut j = 0
-        while j < entry.struct_payload.length {
-            let f = entry.struct_payload[j]
+        for f in entry.struct_payload {
             if f.name == "value" {
                 value_expr = enum_value_to_expr(f.value)?
             }
-            j = j + 1
         }
         out.push(CompConfigPair { key, value: value_expr })
-        i = i + 1
     }
     out
 }
@@ -507,13 +495,10 @@ fn list_value_to_comp_config_pair_list(v: Value) -> List<CompConfigPair>? {
 fn list_value_to_type_param_list(v: Value) -> List<TypeParamEntry>? {
     if v.kind != "list" { return [] }
     mut out: List<TypeParamEntry> = []
-    mut i = 0
-    while i < v.list_payload.length {
-        let entry = v.list_payload[i]
+    for entry in v.list_payload {
         let name = struct_field_string(entry, "name")
         let bounds = struct_field_string(entry, "bounds")
         out.push(TypeParamEntry { name, bounds })
-        i = i + 1
     }
     out
 }
@@ -524,13 +509,10 @@ fn list_value_to_type_param_list(v: Value) -> List<TypeParamEntry>? {
 fn list_value_to_param_list(v: Value) -> List<ParamEntry>? {
     if v.kind != "list" { return null }
     mut out: List<ParamEntry> = []
-    mut i = 0
-    while i < v.list_payload.length {
-        let entry = v.list_payload[i]
+    for entry in v.list_payload {
         let name = struct_field_string(entry, "name")
         let resolved_vt = struct_field_value_type(entry, "vtype") ?? ValueType.Unknown
         out.push(ParamEntry { name: name, vtype: resolved_vt })
-        i = i + 1
     }
     out
 }
@@ -540,11 +522,8 @@ fn list_value_to_param_list(v: Value) -> List<ParamEntry>? {
 /// isn't a string. Callers treat "" as the no-name default.
 fn struct_field_string(v: Value, name: string) -> string {
     if v.kind != "struct" { return "" }
-    mut i = 0
-    while i < v.struct_payload.length {
-        let f = v.struct_payload[i]
+    for f in v.struct_payload {
         if f.name == name { return f.value.text }
-        i = i + 1
     }
     ""
 }
@@ -554,11 +533,8 @@ fn struct_field_string(v: Value, name: string) -> string {
 /// the payload.
 fn struct_field_value_type(v: Value, name: string) -> ValueType? {
     if v.kind != "struct" { return null }
-    mut i = 0
-    while i < v.struct_payload.length {
-        let f = v.struct_payload[i]
+    for f in v.struct_payload {
         if f.name == name { return enum_value_to_value_type(f.value) }
-        i = i + 1
     }
     null
 }
@@ -609,11 +585,9 @@ export fn value_to_stmt_list(v: Value) -> List<SStmt>? {
 fn list_value_to_stmt_list(v: Value) -> List<SStmt>? {
     if v.kind != "list" { return null }
     mut out: List<SStmt> = []
-    mut i = 0
-    while i < v.list_payload.length {
-        let inner = enum_value_to_stmt(v.list_payload[i])?
+    for entry in v.list_payload {
+        let inner = enum_value_to_stmt(entry)?
         out.push(sstmt_dummy(inner))
-        i = i + 1
     }
     out
 }
