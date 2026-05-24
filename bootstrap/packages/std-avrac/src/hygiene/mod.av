@@ -97,7 +97,7 @@ fn empty_ctx() -> HygieneCtx {
 /// rewrites must thread through.
 fn fresh_name(ctx: HygieneCtx, orig: string) -> FreshResult {
     let id = ctx.counter
-    let renamed = orig + "_$" + string(id)
+    let renamed = "${orig}_$${string(id)}"
     // COPY scope before appending — the parent's binding may still be
     // used after this scope returns (sibling rewrites, restore_scope
     // unwind). In-place .push would corrupt that snapshot.
