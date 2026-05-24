@@ -837,6 +837,16 @@ export enum LogicOp {
     And, Or,
 }
 
+/// True iff `op` is a relational / equality comparison (`==`, `!=`,
+/// `<`, `<=`, `>`, `>=`) — i.e. the binops whose result type is Bool
+/// regardless of operand types.
+export fn binop_is_comparison(op: BinOp) -> bool {
+    match op {
+        .Eq or .Ne or .Lt or .Le or .Gt or .Ge -> true
+        _ -> false
+    }
+}
+
 /// Render a BinOp as its source-form operator (`+`, `==`, `<<`, …).
 export fn binop_str(op: BinOp) -> string {
     match op {
