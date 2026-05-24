@@ -2,7 +2,7 @@
 // Stmt, Pattern, and their recursive list types. Pure data only;
 // all logic (parsing, resolution, codegen) lives elsewhere.
 
-use list_ops.{list_map}
+use list_ops.{list_map, list_any}
 
 // ── Spanned wrappers ──
 //
@@ -147,12 +147,7 @@ export type ParamEntry = { name: string, vtype: ValueType }
 /// Membership test for a `List<TypeParamEntry>`. True iff `name`
 /// appears as a parameter name (bounds ignored).
 export fn type_param_has(params: List<TypeParamEntry>, name: string) -> bool {
-    mut i = 0
-    while i < params.length {
-        if params[i].name == name { return true }
-        i = i + 1
-    }
-    false
+    list_any(params, (p: TypeParamEntry) -> p.name == name)
 }
 
 /// Render a `List<TypeParamEntry>` back to source-form: `T, U: Display`.
@@ -1264,12 +1259,7 @@ export fn env_extend(env: List<VarBinding>, name: string, alloca: ptr, ty: Value
 /// Membership test for a `List<FieldEntry>`. True iff `target`
 /// matches the name of any field.
 export fn field_list_has(list: List<FieldEntry>, target: string) -> bool {
-    mut i = 0
-    while i < list.length {
-        if list[i].name == target { return true }
-        i = i + 1
-    }
-    false
+    list_any(list, (f: FieldEntry) -> f.name == target)
 }
 
 /// Drop every entry of `base` whose name appears in `excluded`. Used
