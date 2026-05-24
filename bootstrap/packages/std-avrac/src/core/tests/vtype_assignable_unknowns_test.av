@@ -1,0 +1,80 @@
+// kxpb: vtype_eq is now strict (no Unknown leniency), and the
+// "Unknown is a wildcard inside containers" rule moved to
+// vtype_assignable. This lets `mut out: List<string> = []` still
+// typecheck — the empty-literal types as List<Unknown> and is
+// assigned into a List<string> slot.
+
+use @std.avrac.core.{vtype_eq, vtype_assignable, ValueType}
+
+spec "kxpb: vtype_eq is strict for Unknown leaves" {
+    then "List<Unknown> != List<string> under strict eq" {
+        let src = ValueType.List(ValueType.Unknown)
+        let dst = ValueType.List(ValueType.Str)
+        !vtype_eq(src, dst)
+    }
+    then "Tuple<Unknown, int> != Tuple<string, int> under strict eq" {
+        let unk_int: List<ValueType> = [ValueType.Unknown, ValueType.Int]
+        let str_int: List<ValueType> = [ValueType.Str, ValueType.Int]
+        let src = ValueType.Tuple(unk_int)
+        let dst = ValueType.Tuple(str_int)
+        !vtype_eq(src, dst)
+    }
+    then "Closure<Unknown> != Closure<int> under strict eq" {
+        let src = ValueType.Closure(0, ValueType.Unknown)
+        let dst = ValueType.Closure(0, ValueType.Int)
+        !vtype_eq(src, dst)
+    }
+}
+
+spec "kxpb: vtype_assignable lets Unknown wildcard through containers" {
+    then "List<Unknown> assignable to List<string> (the empty-literal case)" {
+        let src = ValueType.List(ValueType.Unknown)
+        let dst = ValueType.List(ValueType.Str)
+        vtype_assignable(src, dst)
+    }
+    then "List<string> assignable to List<Unknown> (reverse direction)" {
+        let src = ValueType.List(ValueType.Str)
+        let dst = ValueType.List(ValueType.Unknown)
+        vtype_assignable(src, dst)
+    }
+    then "Tuple<Unknown, int> assignable to Tuple<string, int>" {
+        mut unk_int: List<ValueType> = []
+        unk_int = unk_int.push(ValueType.Unknown)
+        unk_int = unk_int.push(ValueType.Int)
+        mut str_int: List<ValueType> = []
+        str_int = str_int.push(ValueType.Str)
+        str_int = str_int.push(ValueType.Int)
+        vtype_assignable(ValueType.Tuple(unk_int), ValueType.Tuple(str_int))
+    }
+    then "Task<Unknown> assignable to Task<int>" {
+        vtype_assignable(ValueType.Task(ValueType.Unknown), ValueType.Task(ValueType.Int))
+    }
+    then "Closure<Unknown> assignable to Closure<int>" {
+        let src = ValueType.Closure(0, ValueType.Unknown)
+        let dst = ValueType.Closure(0, ValueType.Int)
+        vtype_assignable(src, dst)
+    }
+    then "Newtype with Unknown inner assignable to same-named concrete" {
+        let src = ValueType.Newtype("Wrap", ValueType.Unknown, 0)
+        let dst = ValueType.Newtype("Wrap", ValueType.Int, 0)
+        vtype_assignable(src, dst)
+    }
+    then "List<List<Unknown>> assignable to List<List<int>> (nested)" {
+        let src = ValueType.List(ValueType.List(ValueType.Unknown))
+        let dst = ValueType.List(ValueType.List(ValueType.Int))
+        vtype_assignable(src, dst)
+    }
+}
+
+spec "kxpb: assignable does NOT silently bridge concrete mismatch" {
+    then "List<int> NOT assignable to List<string>" {
+        let src = ValueType.List(ValueType.Int)
+        let dst = ValueType.List(ValueType.Str)
+        !vtype_assignable(src, dst)
+    }
+    then "Tuple<int, int> NOT assignable to Tuple<string, int>" {
+        let int_int: List<ValueType> = [ValueType.Int, ValueType.Int]
+        let str_int: List<ValueType> = [ValueType.Str, ValueType.Int]
+        !vtype_assignable(ValueType.Tuple(int_int), ValueType.Tuple(str_int))
+    }
+}

@@ -415,7 +415,7 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
         .Bytes -> b is .Bytes
         .Bool -> b is .Bool
         .Ptr -> b is .Ptr
-        .List(ea) -> match b { .List(eb) -> vtype_eq_loose(ea, eb), _ -> false }
+        .List(ea) -> match b { .List(eb) -> vtype_eq(ea, eb), _ -> false }
         .Fn -> b is .Fn
         .Void -> b is .Void
         .Struct(n1, id1) -> match b { .Struct(n2, id2) -> if id1 > 0 && id2 > 0 { id1 == id2 } else { n1 == n2 }, _ -> false }
@@ -423,8 +423,8 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
         .Float -> b is .Float
         .Map -> b is .Map
         .FnTyped(pa, ra) -> match b {
-            // FnTyped-vs-FnTyped: compare param list + return, element-aware.
-            .FnTyped(pb, rb) -> type_lists_eq_loose(pa, pb) && vtype_eq_loose(ra, rb)
+            // FnTyped-vs-FnTyped: compare param list + return, strict.
+            .FnTyped(pb, rb) -> type_lists_eq(pa, pb) && vtype_eq(ra, rb)
             // FnTyped-vs-Fn: untyped Fn historically matches any FnTyped.
             // Preserved so the existing leniency at sites that pass bare `fn`
             // into a typed fn-param slot doesn't regress.
@@ -432,16 +432,16 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
             _ -> false
         }
         .Trait(n1, _) -> match b { .Trait(n2, _) -> n1 == n2, _ -> false }
-        .Tuple(ea) -> match b { .Tuple(eb) -> type_lists_eq_loose(ea, eb), _ -> false }
-        .Closure(na, ra) -> match b { .Closure(nb, rb) -> na == nb && vtype_eq_loose(ra, rb), _ -> false }
+        .Tuple(ea) -> match b { .Tuple(eb) -> type_lists_eq(ea, eb), _ -> false }
+        .Closure(na, ra) -> match b { .Closure(nb, rb) -> na == nb && vtype_eq(ra, rb), _ -> false }
         .Union(types_a) -> match b {
             .Union(types_b) -> type_lists_eq(types_a, types_b)
             _ -> false
         }
-        .Newtype(n1, ia, _) -> match b { .Newtype(n2, ib, _) -> n1 == n2 && vtype_eq_loose(ia, ib), _ -> false }
+        .Newtype(n1, ia, _) -> match b { .Newtype(n2, ib, _) -> n1 == n2 && vtype_eq(ia, ib), _ -> false }
         .NarrowedEnum(e1, v1, _) -> match b { .NarrowedEnum(e2, v2, _) -> e1 == e2 && v1 == v2, _ -> false }
         .Unknown -> b is .Unknown
-        .Task(ra) -> match b { .Task(rb) -> vtype_eq_loose(ra, rb), _ -> false }
+        .Task(ra) -> match b { .Task(rb) -> vtype_eq(ra, rb), _ -> false }
         _ -> false
     }
 }
@@ -458,40 +458,55 @@ fn type_lists_eq(a: List<ValueType>, b: List<ValueType>) -> bool {
     true
 }
 
-/// Unknown-tolerant equality. `Unknown == anything`. Used for the
-/// element types of `List<T>` / `Task<T>` / `Tuple<…>` where the
-/// typeck legitimately produces `List<Unknown>` for empty literals
-/// (`mut out = []`) that later get pushed into. Without this, a fn
-/// declared `-> List<string>` whose body starts with `mut out = []`
-/// would fail F1000 because `List<Unknown> != List<string>` under
-/// strict equality. Pair with `type_lists_eq_loose` for tuples.
-fn vtype_eq_loose(a: ValueType, b: ValueType) -> bool {
-    if a is .Unknown || b is .Unknown { return true }
-    vtype_eq(a, b)
-}
-
-fn type_lists_eq_loose(a: List<ValueType>, b: List<ValueType>) -> bool {
-    if a.length != b.length { return false }
-    mut i = 0
-    while i < a.length {
-        if !vtype_eq_loose(a[i], b[i]) { return false }
-        i = i + 1
-    }
-    true
-}
-
 /// Subtype check: can a `src`-typed value be passed where a `dst`
-/// is expected? Broader than `vtype_eq` — a concrete type is
-/// assignable to any Union containing it, and a NarrowedEnum is
-/// assignable back to its underlying Enum.
+/// is expected? Broader than `vtype_eq`:
+///   - NarrowedEnum is assignable to its base Enum
+///   - A concrete type is assignable to any Union containing it
+///   - `Unknown` matches anything inside container shapes (List, Tuple,
+///     Task, Closure, FnTyped, Newtype) — the typeck legitimately
+///     produces `List<Unknown>` for empty literals (`mut out = []`)
+///     that later get pushed into, and `mut out: List<string> = []`
+///     must still typecheck even though strict equality would reject
+///     `List<Unknown> != List<string>`.
 export fn vtype_assignable(src: ValueType, dst: ValueType) -> bool {
     if vtype_eq(src, dst) { return true }
-    // NarrowedEnum is assignable to its base Enum
     if narrowed_assignable_to(src, dst) { return true }
+    if assignable_with_unknowns(src, dst) { return true }
     match dst {
         .Union(types) -> union_contains(types, src)
         _ -> false
     }
+}
+
+/// `Unknown` is treated as a wildcard on either side (at the top
+/// level OR nested inside any container shape). Mirrors the shape
+/// dispatch in `vtype_eq` but tolerates Unknown leaves.
+fn assignable_with_unknowns(src: ValueType, dst: ValueType) -> bool {
+    if src is .Unknown || dst is .Unknown { return true }
+    // Concretely-equal leaves (e.g. nested `Int` vs `Int` inside a Tuple
+    // whose siblings differ) need to short-circuit to true; otherwise the
+    // container recursion drills into a primitive and falls off the match.
+    if vtype_eq(src, dst) { return true }
+    match src {
+        .List(ea) -> match dst { .List(eb) -> assignable_with_unknowns(ea, eb), _ -> false }
+        .Tuple(ea) -> match dst { .Tuple(eb) -> type_lists_assignable_unknowns(ea, eb), _ -> false }
+        .Task(ra) -> match dst { .Task(rb) -> assignable_with_unknowns(ra, rb), _ -> false }
+        .Closure(na, ra) -> match dst { .Closure(nb, rb) -> na == nb && assignable_with_unknowns(ra, rb), _ -> false }
+        .FnTyped(pa, ra) -> match dst {
+            .FnTyped(pb, rb) -> type_lists_assignable_unknowns(pa, pb) && assignable_with_unknowns(ra, rb)
+            _ -> false
+        }
+        .Newtype(n1, ia, _) -> match dst { .Newtype(n2, ib, _) -> n1 == n2 && assignable_with_unknowns(ia, ib), _ -> false }
+        _ -> false
+    }
+}
+
+fn type_lists_assignable_unknowns(a: List<ValueType>, b: List<ValueType>) -> bool {
+    if a.length != b.length { return false }
+    for i in 0..a.length {
+        if !assignable_with_unknowns(a[i], b[i]) { return false }
+    }
+    true
 }
 
 /// True iff `src` is a NarrowedEnum form of `dst` (or vice-versa).
