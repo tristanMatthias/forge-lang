@@ -11,6 +11,7 @@ use core.{build_registry}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
 use codegen.{emit_expr, emit_stmt, emit_stmt_list}
 use codegen.{stmts_last_expr}
+use list_ops.{list_map}
 use diagnostics.{bag_new}
 use features.fn_decl.{emit_function_bodies}
 use core.{TypeRegistry, variant_payload_name}
@@ -541,42 +542,21 @@ export fn codegen_and_emit_ir_cov(stmts: List<SStmt>, ir_path: string, type_reg:
 /// ValueTypes for fields that the parser left as `Struct(name, …)`
 /// placeholders.
 fn resolve_variant_fields(variants: List<Variant>, regs: TypeRegs) -> List<Variant> {
-    mut out: List<Variant> = []
-    mut i = 0
-    while i < variants.length {
-        let v = variants[i]
-        out.push(Variant { name: v.name, fields: resolve_field_list(v.fields, regs) })
-        i = i + 1
-    }
-    out
+    list_map(variants, (v: Variant) -> Variant { name: v.name, fields: resolve_field_list(v.fields, regs) })
 }
 
 /// Walk a `List<FieldEntry>` and resolve each field's ValueType
 /// using the type registries. Mirrors `resolve_variant_fields` but
 /// for plain struct field lists.
 fn resolve_field_list(fields: List<FieldEntry>, regs: TypeRegs) -> List<FieldEntry> {
-    mut out: List<FieldEntry> = []
-    mut i = 0
-    while i < fields.length {
-        let e = fields[i]
-        out.push(FieldEntry { name: e.name, resolved: resolve_field_vt(regs, e.resolved) })
-        i = i + 1
-    }
-    out
+    list_map(fields, (e: FieldEntry) -> FieldEntry { name: e.name, resolved: resolve_field_vt(regs, e.resolved) })
 }
 
 /// Walk a `List<ParamEntry>` and resolve each param's ValueType. Used during
 /// `declare_functions` so emitted LLVM types match the canonical
 /// registry-backed ValueType.
 fn resolve_param_list(params: List<ParamEntry>, regs: TypeRegs) -> List<ParamEntry> {
-    mut out: List<ParamEntry> = []
-    mut i = 0
-    while i < params.length {
-        let p = params[i]
-        out.push(ParamEntry { name: p.name, vtype: resolve_setup_vt(regs, p.vtype) })
-        i = i + 1
-    }
-    out
+    list_map(params, (p: ParamEntry) -> ParamEntry { name: p.name, vtype: resolve_setup_vt(regs, p.vtype) })
 }
 
 /// Resolve a single field's ValueType. Returns the resolved type

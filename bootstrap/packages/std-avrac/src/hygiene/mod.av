@@ -134,13 +134,10 @@ fn restore_scope(parent_scope: List<HygieneBinding>, child_ctx: HygieneCtx) -> H
 fn rename_stmt_list(ctx: HygieneCtx, list: List<SStmt>) -> RenameStmtListResult {
     mut out: List<SStmt> = []
     mut cur = ctx
-    mut i = 0
-    while i < list.length {
-        let ss = list[i]
+    for ss in list {
         let r1 = rename_stmt(cur, ss.node)
         out.push(sstmt_at(r1.stmt, ss.line, ss.col, ss.file))
         cur = r1.ctx
-        i = i + 1
     }
     RenameStmtListResult { list: out, ctx: cur }
 }
@@ -355,13 +352,10 @@ fn rename_expr(ctx: HygieneCtx, e: Expr) -> RenameExprResult {
 fn rename_expr_list(ctx: HygieneCtx, list: List<SExpr>) -> RenameExprListResult {
     mut acc = ctx
     mut out: List<SExpr> = []
-    mut i = 0
-    while i < list.length {
-        let se = list[i]
+    for se in list {
         let r = rename_expr(acc, se.node)
         acc = r.ctx
         out.push(sexpr(r.expr, se.line, se.col))
-        i = i + 1
     }
     RenameExprListResult { list: out, ctx: acc }
 }
@@ -369,13 +363,10 @@ fn rename_expr_list(ctx: HygieneCtx, list: List<SExpr>) -> RenameExprListResult 
 fn rename_field_inits(ctx: HygieneCtx, inits: List<FieldInit>) -> RenameFieldInitsResult {
     mut acc = ctx
     mut out: List<FieldInit> = []
-    mut i = 0
-    while i < inits.length {
-        let init = inits[i]
+    for init in inits {
         let r = rename_expr(acc, init.value.node)
         out.push(FieldInit { name: init.name, value: sexpr(r.expr, init.value.line, init.value.col) })
         acc = r.ctx
-        i = i + 1
     }
     RenameFieldInitsResult { list: out, ctx: acc }
 }
@@ -383,13 +374,10 @@ fn rename_field_inits(ctx: HygieneCtx, inits: List<FieldInit>) -> RenameFieldIni
 fn rename_param_list(ctx: HygieneCtx, params: List<ParamEntry>) -> RenameParamsResult {
     mut out: List<ParamEntry> = []
     mut cur = ctx
-    mut i = 0
-    while i < params.length {
-        let p = params[i]
+    for p in params {
         let f = fresh_name(cur, p.name)
         out.push(ParamEntry { name: f.name, vtype: p.vtype })
         cur = f.ctx
-        i = i + 1
     }
     RenameParamsResult { params: out, ctx: cur }
 }
