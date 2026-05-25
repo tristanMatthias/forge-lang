@@ -276,6 +276,16 @@ void avra_rc_free(void* ptr) {
     free((char*)ptr - RC_HEADER_SIZE);
 }
 
+// Introspection for spec tests / leak checks. Returns the number
+// of currently live RC-managed allocations across the whole heap.
+// NOT for production code paths — held under rc_set_mutex.
+int64_t avra_rc_live_count(void) {
+    pthread_mutex_lock(&rc_set_mutex);
+    int64_t n = (int64_t)rc_set_count;
+    pthread_mutex_unlock(&rc_set_mutex);
+    return n;
+}
+
 // ─── RC cycle detection (spec Axis 9.5) ─────────────────────────
 //
 // Targeted cycle collection for reference-counted objects.

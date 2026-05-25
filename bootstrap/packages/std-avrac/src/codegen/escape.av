@@ -182,7 +182,17 @@ fn remove_escaped_expr(expr: Expr, set: List<string>) -> List<string> {
         .FieldAssign(obj, _, val) -> remove_escaped_expr(val, remove_escaped_expr(obj, set))
         .StructLit(_, inits) -> remove_escaped_field_inits(inits, set)
         .ListLit(elems) -> remove_escaped_args(elems, set)
-        .With(obj, inits) -> remove_escaped_field_inits(inits, remove_escaped_expr(obj, set))
+        // `with` reads obj field-by-field and emits rc_retain on ptr
+        // fields the new struct keeps (see with_expr/codegen.av).
+        // So `let u = h with { ... }` is a READ of `h` — the new
+        // struct's retains keep h's ptr fields alive independently,
+        // and h is still owned by its binding. Treat `Ident(h)` here
+        // like FieldAccess does, so the source stays releasable and
+        // its own __release_<Struct> fires at scope exit.
+        .With(obj, inits) -> {
+            let s1 = match obj { .Ident(_) -> set, _ -> remove_escaped_expr(obj, set) }
+            remove_escaped_field_inits(inits, s1)
+        }
         .Lambda(_, body) -> remove_escaped_expr(body, set)
         .Block(body) -> single_pass_escape(body, set)
         .IfExpr(cond, t, e) -> remove_escaped_expr(e, remove_escaped_expr(t, remove_escaped_expr(cond, set)))

@@ -1,0 +1,86 @@
+// Regression for forge-crafting-intepreters-xlho: `a with { f: "new" }`
+// where f is a ptr field used to leak. copy_struct_fields retained every
+// ptr field; then apply_overrides immediately overwrote the slot. The
+// retain on the about-to-be-discarded pointer had no matching release →
+// leak.
+//
+// Fix lives in two places:
+//   1. with_expr/codegen.av: skip rc_retain for overridden fields.
+//   2. codegen/escape.av: treat `With(Ident(_), _)` like FieldAccess in
+//      escape analysis so the source struct stays releasable. Without
+//      this, `let u = h with {...}` removed `h` from rc_releasable and
+//      __release_<Struct> never fired for h at scope exit.
+
+extern fn avra_rc_live_count() -> int
+
+type Holder = { a: string, b: string, c: string }
+
+/// Construct a Holder and let it fall out of scope. Releasable
+/// because StructLit is allocating and `h` is never escaped.
+fn build_holder() {
+    let h = Holder { a: "alpha", b: "bravo", c: "charlie" }
+}
+
+/// Override `b` via `with`, then let both holders fall out of
+/// scope. Both `h` and `u` must release.
+fn build_with_override() {
+    let h = Holder { a: "alpha", b: "bravo", c: "charlie" }
+    let u = h with { b: "BRAVO" }
+    let _ = u.c
+}
+
+/// Four chained overrides on the same field. Every intermediate
+/// (h, u1, u2) plus the final (u3) must release independently.
+fn build_with_chain() {
+    let h = Holder { a: "a1", b: "b1", c: "c1" }
+    let u1 = h with { b: "b2" }
+    let u2 = u1 with { b: "b3" }
+    let u3 = u2 with { b: "b4" }
+    let _ = u3.b
+}
+
+/// Overrides on two different fields. Confirms the override-name
+/// skip list handles >1 overridden field correctly. Each `with`
+/// result is bound to a let so it has a Release scheduled — anonymous
+/// intermediates from nested `with` are a separate leak (see
+/// forge-crafting-intepreters ticket).
+fn build_with_multi() {
+    let h = Holder { a: "a", b: "b", c: "c" }
+    let u1 = h with { a: "A" }
+    let u2 = u1 with { b: "B" }
+    let _ = u2.c
+}
+
+spec "with override on ptr field does not leak the replaced value" {
+    given "a single override on the middle ptr field" {
+        then "live RC count returns to baseline after the call" {
+            let before = avra_rc_live_count()
+            build_with_override()
+            avra_rc_live_count() == before
+        }
+    }
+
+    given "chained overrides on the same ptr field" {
+        then "every intermediate struct releases — no net leak" {
+            let before = avra_rc_live_count()
+            build_with_chain()
+            avra_rc_live_count() == before
+        }
+    }
+
+    given "overrides on multiple different ptr fields" {
+        then "no leak when the override list has >1 entry" {
+            let before = avra_rc_live_count()
+            build_with_multi()
+            avra_rc_live_count() == before
+        }
+    }
+
+    given "baseline sanity check (holder with no with at all)" {
+        then "construct-and-drop has zero net allocation delta" {
+            let before = avra_rc_live_count()
+            build_holder()
+            avra_rc_live_count() == before
+        }
+    }
+}
