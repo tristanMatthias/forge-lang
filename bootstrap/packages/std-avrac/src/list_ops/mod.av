@@ -79,16 +79,23 @@ export fn list_push_copy<T>(xs: List<T>, x: T) -> List<T> {
 
 // ── Seed-bootstrap non-generic snapshots ──
 //
-// The cc88ea78-era seed binary's monomorphizer doesn't synthesize
-// new specializations for `list_push_copy<T>` when T is a struct
-// or enum that didn't exist at seed-build time (HygieneBinding,
-// TypeEntry, TraitImplEntry, AssocTypeEntry, etc.). Until the
-// next seed cycle, callers reach for these non-generic helpers
-// instead. Same semantics as `list_push_copy` — snapshot then
-// append — minus the generic dispatch the seed mis-handles.
+// The current bs2 mono mis-handles `list_push_copy<T>` when T is a
+// struct or enum that wasn't already monomorphized in the seed.
+// Symptom: codegen emits a call to the unmangled qualified name
+// `@std::avrac::list_ops::list_push_copy` (i.e. mono didn't rewrite
+// the call site), which `ctx.get_fn` then fails to find →
+// `err_emit("undefined function ...")`. The retain-fix in
+// with_expr/copy_struct_fields fixed one symptom (a UAF in the mono
+// codegen path) but the missing-specialization bug is independent.
 //
-// TODO(seed cycle): once a fresh seed is committed, delete these
-// and migrate callers back to `list_push_copy<T>`.
+// Until that's fixed (bd: TODO file ticket), callers that would need
+// a new instantiation reach for a non-generic helper of the right
+// element type instead. Semantics identical to `list_push_copy`.
+//
+// String case lives here so cycles/escape/resolver/typeck can all
+// share it. Per-struct helpers (`_push_hyg`, `_push_type`, etc.)
+// live in the files that use them — those types aren't visible from
+// list_ops without a circular import.
 
 export fn list_push_copy_str(xs: List<string>, x: string) -> List<string> {
     mut out: List<string> = []

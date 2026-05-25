@@ -35,9 +35,9 @@ use core.{
     BinOp, UnOp, LogicOp,
     ValueType,
 }
-// Inline non-generic helper — cc88ea78-era seed can't synthesize
-// new specializations for `list_push_copy<HygieneBinding>`. Drop once
-// the next seed cycle lands.
+// Non-generic alias for `list_push_copy<HygieneBinding>` — current
+// bs2 mono mis-handles new struct instantiations of the generic
+// (see list_ops/mod.av). Drop once the seed mono is fixed.
 fn _push_hyg(xs: List<HygieneBinding>, x: HygieneBinding) -> List<HygieneBinding> {
     mut out: List<HygieneBinding> = []
     for e in xs { out = out.push(e) }

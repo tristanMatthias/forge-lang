@@ -63,7 +63,10 @@ export fn fmt_expr(se: Expr) -> string {
         .Slice(obj, start, end) -> "${fmt_expr(obj)}[${fmt_expr(start)}..${fmt_expr(end)}]"
         .IsCheck(subject, vname) -> "${fmt_expr(subject)} is .${vname}"
         .InCheck(needle, items) -> "${fmt_expr(needle)} in [${fmt_expr_list_comma(items)}]"
-        .ListComp(body, variable, collection, _) -> "[${fmt_expr(body)} for ${variable} in ${fmt_expr(collection)}]"
+        .ListComp(body, variable, collection, filter) -> {
+            let head = "[${fmt_expr(body)} for ${variable} in ${fmt_expr(collection)}"
+            if filter != null { "${head} if ${fmt_expr(filter!)}]" } else { "${head}]" }
+        }
         .When(arms) -> "when {\n${fmt_when_arms(arms, 1)}\n}"
         .Catch(inner, binding, body, _, _) -> "${fmt_expr(inner)} catch ${binding} { ${fmt_expr(body)} }"
         .Spawn(body) -> "spawn ${fmt_expr(body)}"

@@ -6,7 +6,7 @@ use codegen.{ok_sr, err_sr}
 use features.eval.{error_result, ok_result, value_null}
 use core.{feature_new, Feature}
 use resolve.{resolve_expr}
-use codegen.{DeferEntry}
+use codegen.{DeferEntry, push_defer_entry}
 use typeck.{check_expr}
 
 // All handlers are private.
@@ -18,10 +18,7 @@ use typeck.{check_expr}
 fn defer_emit(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .Defer(body) -> {
-            mut __nd: List<DeferEntry> = []
-            for __d in ctx.defers { __nd.push(__d) }
-            __nd.push(DeferEntry.Frame(sexpr_dummy(body)))
-            let updated = ctx with { defers: __nd }
+            let updated = ctx with { defers: push_defer_entry(ctx.defers, DeferEntry.Frame(sexpr_dummy(body))) }
             ok_sr(updated, env)
         }
         _ -> err_sr("expected Defer")
@@ -63,10 +60,7 @@ fn defer_eval(rt: Runtime, stmt: Stmt) -> StepResult {
 fn errdefer_emit(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .Errdefer(body) -> {
-            mut __nd: List<DeferEntry> = []
-            for __d in ctx.defers { __nd.push(__d) }
-            __nd.push(DeferEntry.ErrFrame(sexpr_dummy(body)))
-            let updated = ctx with { defers: __nd }
+            let updated = ctx with { defers: push_defer_entry(ctx.defers, DeferEntry.ErrFrame(sexpr_dummy(body))) }
             ok_sr(updated, env)
         }
         _ -> err_sr("expected Errdefer")

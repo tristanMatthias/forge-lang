@@ -439,6 +439,24 @@ export enum DeferEntry {
 /// already drain.
 export type RcCleanupEntry = { name: string, alloca: ptr, ty: ValueType }
 
+// Non-generic snapshots for the loop / defer stacks — current bs2
+// mono mis-handles new struct/enum instantiations of `list_push_copy<T>`
+// (see list_ops/mod.av). Inlined here for the two types codegen
+// scopes through every loop/defer body. Drop once the seed mono
+// catches up.
+export fn push_loop_frame(loops: List<LoopStackFrame>, frame: LoopStackFrame) -> List<LoopStackFrame> {
+    mut out: List<LoopStackFrame> = []
+    for f in loops { out = out.push(f) }
+    out = out.push(frame)
+    out
+}
+export fn push_defer_entry(defers: List<DeferEntry>, entry: DeferEntry) -> List<DeferEntry> {
+    mut out: List<DeferEntry> = []
+    for e in defers { out = out.push(e) }
+    out = out.push(entry)
+    out
+}
+
 /// Set of variable names that are safe to release at scope exit.
 /// Backed by `List<string>` — order is irrelevant, only membership
 /// matters. `Ctx.rc_releasable` carries the per-fn set; escape

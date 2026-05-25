@@ -44,8 +44,12 @@ fn emit_with_inner(ctx: Ctx, env: List<VarBinding>, obj: Expr, overrides: List<F
     }
     let src_ptr = ctx.to_ptr(r.value, "with_src")
 
-    // Copy all fields from original
-    copy_struct_fields(ctx, src_ptr, new_buf, struct_name, lookup.fields)
+    // Copy all fields from original — retains every ptr field NOT
+    // about to be overridden. (Retaining overridden fields would leak
+    // them, since apply_overrides immediately stomps the slot and
+    // nothing decrements the dangling retain.)
+    let override_names = collect_override_names(overrides)
+    copy_struct_fields(ctx, src_ptr, new_buf, struct_name, lookup.fields, override_names)
 
     // Override specified fields
     apply_overrides(ctx, env, new_buf, struct_name, lookup.fields, overrides)?
@@ -57,11 +61,29 @@ fn emit_with_inner(ctx: Ctx, env: List<VarBinding>, obj: Expr, overrides: List<F
 /// load/store. Respects each field's LLVM type via `store_field`
 /// so packed bool/i1 fields don't overwrite adjacent slots
 /// (ticket 14s7 was a 64-bit store clobbering a neighbouring i1).
-fn copy_struct_fields(ctx: Ctx, src: ptr, dst: ptr, struct_name: string, fields: List<FieldEntry>) {
+/// Collect the names of fields that will be overridden — copy_struct_
+/// fields uses this to skip retaining ptr fields whose slot is about
+/// to be overwritten by apply_overrides.
+fn collect_override_names(overrides: List<FieldInit>) -> List<string> {
+    mut out: List<string> = []
+    for ov in overrides { out.push(ov.name) }
+    out
+}
+
+/// True iff `name` appears in `names`.
+fn name_in_list(names: List<string>, name: string) -> bool {
+    for n in names {
+        if n == name { return true }
+    }
+    false
+}
+
+fn copy_struct_fields(ctx: Ctx, src: ptr, dst: ptr, struct_name: string, fields: List<FieldEntry>, override_names: List<string>) {
     let st_ty = ctx.get_type(struct_name)
     mut i = 0
     while i < fields.length {
-        let resolved = fields[i].resolved
+        let f = fields[i]
+        let resolved = f.resolved
         let src_gep = ctx.gep(st_ty, src, i, "with_cp_src")
         let val = ctx.load_typed(resolved, src_gep, "with_cp_val")
         let dst_gep = ctx.gep(st_ty, dst, i, "with_cp_dst")
@@ -79,7 +101,11 @@ fn copy_struct_fields(ctx: Ctx, src: ptr, dst: ptr, struct_name: string, fields:
         // freed-while-still-in-use → bs3 reads garbage where the
         // freed Ctx's module field used to live (avra_llvm_fn_type_of:
         // fn_val is NULL abort during self-compile).
-        if vtype_is_ptr_type(resolved) {
+        //
+        // Skip retain when the field will be overridden — apply_
+        // overrides stomps the slot immediately, and a retain on a
+        // value the struct never observes is a leak.
+        if vtype_is_ptr_type(resolved) && !name_in_list(override_names, f.name) {
             ctx.rc_retain(val)
         }
         i = i + 1

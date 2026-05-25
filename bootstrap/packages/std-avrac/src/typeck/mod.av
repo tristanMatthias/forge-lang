@@ -15,10 +15,9 @@ use core.{method_mangled_name, type_short_name, is_result_enum_name}
 use core.{avra_process_env_get}
 use list_ops.{list_push_copy_str, list_any, list_map}
 
-// Inline non-generic helpers — cc88ea78-era seed can't synthesize
-// new specializations for `list_push_copy<T>` when T is a struct
-// that didn't exist at seed-build time. Drop once the next seed
-// cycle lands.
+// Non-generic aliases for `list_push_copy<T>` — current bs2 mono
+// mis-handles new struct instantiations of the generic (see
+// list_ops/mod.av). Drop once the seed mono is fixed.
 fn _push_type(xs: List<TypeEntry>, x: TypeEntry) -> List<TypeEntry> {
     mut out: List<TypeEntry> = []
     for e in xs { out = out.push(e) }
@@ -1640,6 +1639,13 @@ fn tc_infer_list_elem(elements: List<SExpr>) -> ValueType {
 }
 
 fn tc_param_types(params: List<ParamEntry>) -> List<ValueType> {
+    // Inline loop (vs `list_map`) — current bs2's typeck rejects the
+    // generic return inference of `list_map(params, (p) -> p.vtype)`
+    // ("returns List, body produces List") because the lambda's
+    // closure-typed return loses the concrete element type before
+    // the constraint flows back up. Same shape works in other
+    // list_map call sites that pass a top-level fn instead of a
+    // lambda, so the bug is in lambda return inference, not list_map.
     mut out: List<ValueType> = []
     for p in params { out.push(p.vtype) }
     out

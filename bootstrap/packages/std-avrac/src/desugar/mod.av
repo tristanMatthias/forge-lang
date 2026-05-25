@@ -299,6 +299,17 @@ fn walk_expr(expr: Expr) -> Expr {
         .When(arms) -> .When(desugar_when_arms(arms))
         .InCheck(needle, items) -> .InCheck(desugar_expr(needle), desugar_expr_list(items))
         .IsCheck(subj, variant) -> .IsCheck(desugar_expr(subj), variant)
+        .ListComp(body, var, coll, filter) -> {
+            // Recurse into body / coll / filter so sugar inside the
+            // comprehension (assert, dbg, min, max, …) still gets
+            // desugared. Without this, `[assert(x > 0) for x in xs]`
+            // would leave the assert call intact.
+            if filter != null {
+                .ListComp(desugar_expr(body), var, desugar_expr(coll), desugar_expr(filter!))
+            } else {
+                .ListComp(desugar_expr(body), var, desugar_expr(coll), null)
+            }
+        }
         _ -> expr
     }
 }
