@@ -1374,6 +1374,17 @@ impl Parser {
             if !self.consume(Tk.RightBracket, "expected `]` after list") {
                 return null
             }
+            // `[body for v in coll if filter]` parses as a single-element
+            // SExpr list wrapping `Expr.ListComp(...)`. Unwrap so the
+            // comp flows directly into the list_comp feature instead of
+            // getting a spurious ListLit wrapper that downstream passes
+            // would have to special-case.
+            if elements.length == 1 {
+                match elements[0].node {
+                    .ListComp(_, _, _, _) -> return elements[0].node
+                    _ -> {}
+                }
+            }
             return Expr.ListLit(elements)
         }
 

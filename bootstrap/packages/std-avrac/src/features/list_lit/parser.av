@@ -1,6 +1,8 @@
 // WHY: parses list literal `[expr, ...]` and list comprehension
-// `[expr for x in collection if? filter]`.
-// Comprehensions produce Expr.ListComp — desugared by desugar/mod.av.
+// `[expr for x in collection if? filter]`. A comprehension is
+// returned as a single-element `List<SExpr>` whose only entry is
+// the bare `Expr.ListComp`; the caller in `parse/mod.av` unwraps
+// it so the comp doesn't get a spurious `ListLit` wrapper.
 
 use core.{Expr, SExpr, sexpr}
 use parse.{Parser}
@@ -21,9 +23,6 @@ impl Parser {
                 self.advance()
                 self.parse_expression()?
             } else { null }
-            // Wrap in a single-element list. The caller wraps in ListLit.
-            // The desugar pass recognizes ListLit containing a ListComp and
-            // replaces the entire ListLit with the desugared Block.
             let comp = Expr.ListComp(expr, var_name, collection, filter)
             out.push(sexpr(comp, self.current_line, self.current_column))
             return out

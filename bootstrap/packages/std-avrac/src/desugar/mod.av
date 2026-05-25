@@ -10,6 +10,13 @@
 use core.{Expr, Stmt, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, sstmt_dummy, stmt_unwrap, FieldEntry, FieldInit, MatchArm, WhenArm, Pattern, BinOp, UnOp, ValueType, Variant, TypeParamEntry}
 use list_ops.{list_map, list_concat}
 
+// ListComp is no longer desugared at the AST level. The AST-rewrite
+// approach produced an untyped `mut __lc = []` so the result type
+// was always `List<Unknown>` — nested comprehensions and any typed
+// downstream op on the result fell through to codegen errors. The
+// `list_comp` feature (features/list_comp/) now handles resolve,
+// typeck, and codegen end-to-end with proper type inference.
+
 // ── Public API ──
 
 /// Top-level desugar entry. Walks the statement list rewriting
@@ -142,45 +149,12 @@ fn desugar_expr(expr: Expr) -> Expr {
 }
 
 /// Local rewrites that fire for one node only. Currently dispatches
-/// to `rewrite_call` for sugar built-ins (assert, dbg, …) and to
-/// `rewrite_list_lit` for list comprehensions wrapped in a list
-/// literal. All other expressions pass through.
+/// to `rewrite_call` for sugar built-ins (assert, dbg, …). Other
+/// expressions pass through to `walk_expr` for structural recursion.
 fn rewrite_expr(expr: Expr) -> Expr {
     match expr {
         .Call(callee, args) -> rewrite_call(expr, callee, args)
-        .ListLit(elems) -> rewrite_list_lit(expr, elems)
         _ -> expr
-    }
-}
-
-/// Rewrite `[for x in coll if filter -> body]` (a single-element
-/// ListLit wrapping a ListComp) into the imperative
-/// `mut __lc = []; for x in coll { if filter { __lc.push(body) } }; __lc`
-/// block expression. Plain list literals are untouched.
-fn rewrite_list_lit(original: Expr, elems: List<SExpr>) -> Expr {
-    if elems.length == 0 { return original }
-    let se = elems[0]
-    match se.node {
-        .ListComp(body, variable, collection, filter) -> {
-            let push_args: List<SExpr> = [sexpr_dummy(body)]
-            let push_expr = Expr.Call(
-                Expr.FieldAccess(Expr.Ident("__lc"), "push"),
-                push_args
-            )
-            let push_stmt = if filter != null {
-                Stmt.If(filter!, Stmt.Expr(push_expr), null)
-            } else {
-                Stmt.Expr(push_expr)
-            }
-            let empty_elems: List<SExpr> = []
-            let body: List<SStmt> = [
-                sstmt(Stmt.Mut("__lc", ValueType.Unknown, Expr.ListLit(empty_elems)), 0, 0),
-                sstmt(Stmt.ForIn(variable, collection, push_stmt), 0, 0),
-                sstmt(Stmt.Expr(Expr.Ident("__lc")), 0, 0),
-            ]
-            Expr.Block(body)
-        }
-        _ -> original
     }
 }
 

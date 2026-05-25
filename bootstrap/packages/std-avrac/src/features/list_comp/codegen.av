@@ -1,0 +1,104 @@
+// WHY: LLVM IR emission for `[body for var in coll if filter]`.
+//
+// Lowers to a forin-shaped loop allocating a fresh result list and
+// pushing `body` per surviving iteration. Mirrors `emit_for_in_inner`
+// in features/for_stmt/codegen.av — same cond/body/incr/exit block
+// skeleton with an optional filter `cond_br` short-circuiting push
+// without breaking the loop. The result list type is `List<typeof(body)>`,
+// recovered from the codegen-emit of `body` (typeck stamps the same
+// type on the surrounding SExpr so downstream `.length` / index /
+// `.map` see a proper element type).
+
+use core.{Expr, VarBinding, ValueType, env_extend, vtype_list_elem}
+use codegen.{Ctx, EmitValue, ok_emit, err_emit, emit_value_ptr, emit_value_ty}
+
+/// Lower a list comprehension to LLVM IR. Produces a fresh
+/// `avra_array_new` list, iterates `collection`, optionally filters
+/// each element by `filter`, evaluates `body` in the inner scope,
+/// pushes the result. Returns `List<typeof(body)>`.
+export fn emit_list_comp(
+    ctx: Ctx,
+    env: List<VarBinding>,
+    body: Expr,
+    variable: string,
+    collection: Expr,
+    filter: Expr?,
+) -> Result<EmitValue, string> {
+    ctx.cov_line()
+
+    let coll_r = ctx.emit(env, collection)?
+    let coll_ptr = emit_value_ptr(coll_r)
+    let elem_ty = vtype_list_elem(emit_value_ty(coll_r))
+
+    // Fresh result list — returned at exit.
+    let result_arr = ctx.array_new()
+
+    // Loop bookkeeping: length pinned once at entry, counter starts 0.
+    let len_alloca = ctx.alloca_i64("lc_len")
+    ctx.store(ctx.array_len(coll_ptr), len_alloca)
+    let counter = ctx.alloca_i64("lc_i")
+    ctx.store(ctx.i64(0), counter)
+
+    // Loop variable binding — fresh alloca per comprehension so a
+    // nested `[... for y in inner]` doesn't stomp the outer `x`.
+    let elem_alloca = ctx.alloca_i64(variable)
+    let body_env = env_extend(env, variable, elem_alloca, elem_ty)
+
+    let cond_bb = ctx.bb("lc.cond")
+    let body_bb = ctx.bb("lc.body")
+    let incr_bb = ctx.bb("lc.incr")
+    let exit_bb = ctx.bb("lc.exit")
+    ctx.br(cond_bb)
+
+    // Condition: counter < len.
+    ctx.position(cond_bb)
+    let cur = ctx.load_i64(counter, "lc_i_val")
+    let lim = ctx.load_i64(len_alloca, "lc_len_val")
+    ctx.cond_br(ctx.slt(cur, lim, "lc_cmp"), body_bb, exit_bb)
+
+    // Body: load elem, optionally check filter, evaluate body, push.
+    ctx.position(body_bb)
+    ctx.store(ctx.array_get(coll_ptr, cur), elem_alloca)
+
+    let body_r = emit_lc_step(ctx, body_env, body, filter, result_arr, incr_bb)?
+
+    // Increment + back-edge.
+    ctx.position(incr_bb)
+    ctx.store(ctx.add(ctx.load_i64(counter, "lc_i_old"), ctx.i64(1), "lc_next"), counter)
+    ctx.br(cond_bb)
+
+    ctx.position(exit_bb)
+    ok_emit(result_arr, .List(emit_value_ty(body_r)))
+}
+
+/// Emit one loop step inside the comprehension body. With no
+/// filter: just evaluate `body` and push. With filter: branch on
+/// truthiness — true side evaluates+pushes+branches to incr, false
+/// side jumps straight to incr. Returns the body EmitValue so the
+/// caller can recover the inferred result-list element type.
+fn emit_lc_step(
+    ctx: Ctx,
+    env: List<VarBinding>,
+    body: Expr,
+    filter: Expr?,
+    result_arr: ptr,
+    incr_bb: ptr,
+) -> Result<EmitValue, string> {
+    if filter == null {
+        let body_r = ctx.emit(env, body)?
+        ctx.array_push(result_arr, emit_value_ptr(body_r))
+        ctx.br_if_open(incr_bb)
+        return ok_emit(emit_value_ptr(body_r), emit_value_ty(body_r))
+    }
+
+    let filter_r = ctx.emit(env, filter!)?
+    let skip_bb = ctx.if_true(emit_value_ptr(filter_r), "lc_filter")
+    // Positioned at filter-true block: emit body + push, then to incr.
+    let body_r = ctx.emit(env, body)?
+    ctx.array_push(result_arr, emit_value_ptr(body_r))
+    ctx.br_if_open(incr_bb)
+    // Filter-false block: skip push.
+    ctx.position(skip_bb)
+    ctx.br_if_open(incr_bb)
+    ok_emit(emit_value_ptr(body_r), emit_value_ty(body_r))
+}

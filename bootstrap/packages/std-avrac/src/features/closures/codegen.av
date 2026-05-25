@@ -216,10 +216,14 @@ fn find_captures(expr: Expr, params: List<ParamEntry>, env: List<VarBinding>, ca
         }
         .OptionalChain(obj, _) -> find_captures(obj, params, env, captures)
         .TupleIndex(obj, _) -> find_captures(obj, params, env, captures)
-        .ListComp(body, _, coll, filter) -> {
-            find_captures(body, params, env, captures)
+        .ListComp(body, var, coll, filter) -> {
+            // Collection is evaluated in the outer scope.
             find_captures(coll, params, env, captures)
-            if filter != null { find_captures(filter!, params, env, captures) }
+            // Body + filter run with `var` bound — extend params so a
+            // reference to the loop variable isn't flagged as a capture.
+            let inner_params = copy_params_with(params, ParamEntry { name: var, vtype: ValueType.Unknown })
+            find_captures(body, inner_params, env, captures)
+            if filter != null { find_captures(filter!, inner_params, env, captures) }
         }
         .Catch(inner, _, body, _, _) -> {
             find_captures(inner, params, env, captures)

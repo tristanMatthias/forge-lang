@@ -16,6 +16,7 @@ use features.impl_decl.{impl_decl_feature}
 use features.is_keyword.{is_keyword_feature}
 use features.in_operator.{in_operator_feature}
 use features.let_stmt.{let_destructure_feature, let_keyword_feature, const_keyword_feature, mut_keyword_feature}
+use features.list_comp.{list_comp_feature}
 use features.list_lit.{list_lit_feature}
 use features.map_lit.{map_lit_feature}
 use features.match_expr.{match_feature, when_feature}
@@ -66,6 +67,7 @@ export fn init_features(reg: Registry) {
     register(reg, tuple_feature())
     register(reg, tuple_index_feature())
     register(reg, list_lit_feature())
+    register(reg, list_comp_feature())
     register(reg, map_lit_feature())
     register(reg, null_coalesce_feature())
     register(reg, optional_chain_feature())

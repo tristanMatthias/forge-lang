@@ -1081,6 +1081,15 @@ fn rewrite_expr_compound(ctx: NameCtx, expr: Expr) -> Expr {
         }
         .MatchExpr(subject, arms) -> .MatchExpr(rewrite_expr(ctx, subject), rewrite_match_arms(ctx, arms))
         .Lambda(params, body) -> .Lambda(params, rewrite_expr(bind_params_ctx(ctx, params), body))
+        .ListComp(body, var, coll, filter) -> {
+            // Collection sees the outer scope; body+filter see `var` bound.
+            // Without binding, an Ident matching `var` could be wrongly
+            // qualified to a module-level identifier of the same name.
+            let comp_params: List<ParamEntry> = [ParamEntry { name: var, vtype: ValueType.Unknown }]
+            let inner = bind_params_ctx(ctx, comp_params)
+            let new_filter = if filter != null { rewrite_expr(inner, filter!) } else { null }
+            Expr.ListComp(rewrite_expr(inner, body), var, rewrite_expr(ctx, coll), new_filter)
+        }
         .Spawn(body) -> .Spawn(rewrite_expr(ctx, body))
         .Isolated(body) -> .Isolated(rewrite_expr(ctx, body))
         .IsCheck(subject, variant) -> .IsCheck(rewrite_expr(ctx, subject), variant)
