@@ -676,14 +676,23 @@ mode_check_fixedpoint() {
   ensure_bs3
   # Skip the 3-minute verify when neither bs2/bs3 nor any compiler
   # source has changed since the last passing verify. Hashes both
-  # binaries + the cli/main.av source to a single fingerprint and
-  # short-circuits when the prior cached value matches. First commit
+  # binaries + every compiler-source .av file to a single fingerprint
+  # and short-circuits when the prior cached value matches. First commit
   # pays the cost; subsequent commits with no compiler-side changes
   # skip it. Bypass with `AVRA_FORCE_FP=1` if you suspect drift.
+  #
+  # Source-tree hash (in addition to bs2/bs3 binary hashes) closes the
+  # false-positive gap where per-module compile-cache hits left bs2
+  # bit-identical despite source changes: any .av edit shifts fp_input,
+  # forcing a real diff. Without this the codegen bug behind the bs3
+  # crash this comment was added for could land via cache hit alone.
   local fp_marker="$BUILD_DIR/.fp_verified"
   local fp_input
-  fp_input=$(shasum -a 256 "$BS2" "$BS3" "$SRC_DIR/main.av" 2>/dev/null \
-    | awk '{print $1}' | shasum -a 256 | awk '{print $1}')
+  fp_input=$(
+    { shasum -a 256 "$BS2" "$BS3" 2>/dev/null
+      find "$CLI_SRC_DIR" "$LIB_SRC_DIR" -name '*.av' -type f -exec shasum -a 256 {} +
+    } | awk '{print $1}' | sort | shasum -a 256 | awk '{print $1}'
+  )
   if [ "${AVRA_FORCE_FP:-0}" != "1" ] && [ -f "$fp_marker" ] \
      && [ "$(cat "$fp_marker" 2>/dev/null)" = "$fp_input" ]; then
     ok "fixed point cached — bs2 + bs3 + source unchanged since last verify"
@@ -725,9 +734,14 @@ mode_check_fixedpoint() {
         local lines; lines=$(wc -l <"$BUILD_DIR/fp_bs2.ll" | tr -d ' ')
         ok "fixed point holds — bs2 and bs3 emit byte-identical $lines-line IR (after $cycle auto-cycle(s))"
         # Recompute fingerprint after cycle (bs2 was rebuilt) and cache.
+        # Mirror the upstream input shape — binaries + every .av — so
+        # the next run's compare matches.
         local fp_post
-        fp_post=$(shasum -a 256 "$BS2" "$BS3" "$SRC_DIR/main.av" 2>/dev/null \
-          | awk '{print $1}' | shasum -a 256 | awk '{print $1}')
+        fp_post=$(
+          { shasum -a 256 "$BS2" "$BS3" 2>/dev/null
+            find "$CLI_SRC_DIR" "$LIB_SRC_DIR" -name '*.av' -type f -exec shasum -a 256 {} +
+          } | awk '{print $1}' | sort | shasum -a 256 | awk '{print $1}'
+        )
         echo "$fp_post" > "$fp_marker"
         return 0
       fi
