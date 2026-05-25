@@ -1012,7 +1012,20 @@ impl Parser {
     //                       (an enum-type prefix like `Foo.Bar`).
     //                       Otherwise suppress so the next pattern
     //                       can be parsed.
+    //
+    // Cross-line postfix rule (forge-crafting-intepreters-3r6q):
+    // a bare `.UpperIdent(...)` on a NEW line is almost always a new
+    // statement starting with a bare enum constructor — not a method
+    // call on the previous expression. Without this, the parser eats
+    // such constructors as postfix on the previous expression's value
+    // (e.g. `let x = if c { a } else { b }` followed by `.B(...)`
+    // becomes `b.B(...)`, silently extending the let initializer).
+    // Lowercase method postfix on a new line still chains, so
+    // `xs.filter(p)\n.map(f)` still works.
     fn dot_is_postfix(self, result: Expr) -> bool {
+        if self.current_line != self.prev_line && self.peek_next_is_upper() {
+            return false
+        }
         if self.allow_dot_postfix {
             return true
         }

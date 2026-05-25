@@ -304,11 +304,8 @@ fn walk_expr(expr: Expr) -> Expr {
             // comprehension (assert, dbg, min, max, …) still gets
             // desugared. Without this, `[assert(x > 0) for x in xs]`
             // would leave the assert call intact.
-            if filter != null {
-                .ListComp(desugar_expr(body), var, desugar_expr(coll), desugar_expr(filter!))
-            } else {
-                .ListComp(desugar_expr(body), var, desugar_expr(coll), null)
-            }
+            let new_filter = if filter != null { desugar_expr(filter!) } else { null }
+            .ListComp(desugar_expr(body), var, desugar_expr(coll), new_filter)
         }
         _ -> expr
     }
