@@ -18,7 +18,10 @@ use typeck.{check_expr}
 fn defer_emit(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .Defer(body) -> {
-            let updated = ctx with { defers: ctx.defers.push(DeferEntry.Frame(sexpr_dummy(body))) }
+            mut __nd: List<DeferEntry> = []
+            for __d in ctx.defers { __nd.push(__d) }
+            __nd.push(DeferEntry.Frame(sexpr_dummy(body)))
+            let updated = ctx with { defers: __nd }
             ok_sr(updated, env)
         }
         _ -> err_sr("expected Defer")
@@ -60,7 +63,10 @@ fn defer_eval(rt: Runtime, stmt: Stmt) -> StepResult {
 fn errdefer_emit(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .Errdefer(body) -> {
-            let updated = ctx with { defers: ctx.defers.push(DeferEntry.ErrFrame(sexpr_dummy(body))) }
+            mut __nd: List<DeferEntry> = []
+            for __d in ctx.defers { __nd.push(__d) }
+            __nd.push(DeferEntry.ErrFrame(sexpr_dummy(body)))
+            let updated = ctx with { defers: __nd }
             ok_sr(updated, env)
         }
         _ -> err_sr("expected Errdefer")

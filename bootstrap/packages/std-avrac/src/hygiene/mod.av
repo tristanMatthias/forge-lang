@@ -35,7 +35,15 @@ use core.{
     BinOp, UnOp, LogicOp,
     ValueType,
 }
-use list_ops.{list_push_copy}
+// Inline non-generic helper — cc88ea78-era seed can't synthesize
+// new specializations for `list_push_copy<HygieneBinding>`. Drop once
+// the next seed cycle lands.
+fn _push_hyg(xs: List<HygieneBinding>, x: HygieneBinding) -> List<HygieneBinding> {
+    mut out: List<HygieneBinding> = []
+    for e in xs { out = out.push(e) }
+    out = out.push(x)
+    out
+}
 
 // ── Scope chain + context ──
 
@@ -101,7 +109,7 @@ fn fresh_name(ctx: HygieneCtx, orig: string) -> FreshResult {
     // COPY scope before appending — the parent's binding may still be
     // used after this scope returns (sibling rewrites, restore_scope
     // unwind). In-place .push would corrupt that snapshot.
-    let new_scope = list_push_copy(ctx.scope, HygieneBinding { orig, renamed })
+    let new_scope = _push_hyg(ctx.scope, HygieneBinding { orig, renamed })
     FreshResult { name: renamed, ctx: HygieneCtx { scope: new_scope, counter: id + 1 } }
 }
 

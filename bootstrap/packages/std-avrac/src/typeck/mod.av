@@ -13,7 +13,30 @@ use features.map_lit.{check_map_method}
 use features.let_stmt.{is_const_expr, bind_destructure}
 use core.{method_mangled_name, type_short_name, is_result_enum_name}
 use core.{avra_process_env_get}
-use list_ops.{list_push_copy, list_any, list_map}
+use list_ops.{list_push_copy_str, list_any, list_map}
+
+// Inline non-generic helpers — cc88ea78-era seed can't synthesize
+// new specializations for `list_push_copy<T>` when T is a struct
+// that didn't exist at seed-build time. Drop once the next seed
+// cycle lands.
+fn _push_type(xs: List<TypeEntry>, x: TypeEntry) -> List<TypeEntry> {
+    mut out: List<TypeEntry> = []
+    for e in xs { out = out.push(e) }
+    out = out.push(x)
+    out
+}
+fn _push_trait(xs: List<TraitImplEntry>, x: TraitImplEntry) -> List<TraitImplEntry> {
+    mut out: List<TraitImplEntry> = []
+    for e in xs { out = out.push(e) }
+    out = out.push(x)
+    out
+}
+fn _push_assoc(xs: List<AssocTypeEntry>, x: AssocTypeEntry) -> List<AssocTypeEntry> {
+    mut out: List<AssocTypeEntry> = []
+    for e in xs { out = out.push(e) }
+    out = out.push(x)
+    out
+}
 
 extern fn avra_uptime_ms() -> int
 
@@ -43,7 +66,7 @@ fn type_lookup(env: List<TypeEntry>, name: string) -> ValueType {
 /// snapshot so sibling branches (then/else of an if etc.) keep
 /// the parent's env un-extended.
 fn type_bind(env: List<TypeEntry>, name: string, ty: ValueType, depth: int) -> List<TypeEntry> {
-    list_push_copy(env, TypeEntry { name, ty, depth })
+    _push_type(env, TypeEntry { name, ty, depth })
 }
 
 /// Pop every entry whose declared depth is `>= depth`. Used on
@@ -804,7 +827,7 @@ fn collect_decls(tc: TC, stmts: List<SStmt>) -> TC {
                 } else {
                     cur with {
                         structs: struct_type_reg_register(cur.structs, name, fields),
-                        shapes: list_push_copy(cur.shapes, name),
+                        shapes: list_push_copy_str(cur.shapes, name),
                     }
                 }
             }
@@ -828,7 +851,7 @@ fn collect_decls(tc: TC, stmts: List<SStmt>) -> TC {
                 let with_impl = if colon_idx >= 0 {
                     let trait_name = impl_name.substring(0, colon_idx)
                     let type_name = impl_name.substring(colon_idx + 1, impl_name.length)
-                    let with_trait = cur with { trait_impls: list_push_copy(cur.trait_impls, TraitImplEntry { trait_name, type_name }) }
+                    let with_trait = cur with { trait_impls: _push_trait(cur.trait_impls, TraitImplEntry { trait_name, type_name }) }
                     // Collect associated type definitions: `type Item = ConcreteType`
                     collect_impl_assoc_types(with_trait, type_name, methods)
                 } else { cur }
@@ -856,8 +879,8 @@ fn collect_impl_assoc_types(tc: TC, type_name: string, stmts: List<SStmt>) -> TC
                 if !vtype_is_unknown(ty_vt) {
                     let key = "${type_name}.${name}"
                     let self_key = "Self.${name}"
-                    let step1 = list_push_copy(cur.assoc_type_defs, AssocTypeEntry { key, concrete_vt: ty_vt })
-                    cur with { assoc_type_defs: list_push_copy(step1, AssocTypeEntry { key: self_key, concrete_vt: ty_vt }) }
+                    let step1 = _push_assoc(cur.assoc_type_defs, AssocTypeEntry { key, concrete_vt: ty_vt })
+                    cur with { assoc_type_defs: _push_assoc(step1, AssocTypeEntry { key: self_key, concrete_vt: ty_vt }) }
                 } else { cur }
             }
             _ -> cur
@@ -1617,7 +1640,9 @@ fn tc_infer_list_elem(elements: List<SExpr>) -> ValueType {
 }
 
 fn tc_param_types(params: List<ParamEntry>) -> List<ValueType> {
-    list_map(params, (p: ParamEntry) -> p.vtype)
+    mut out: List<ValueType> = []
+    for p in params { out.push(p.vtype) }
+    out
 }
 
 /// Inspect the first element of a list literal and return its

@@ -33,7 +33,10 @@ fn emit_while_inner(ctx: Ctx, env: List<VarBinding>, condition: Expr, body: Stmt
     // Scoped loop stack: create a new Ctx with this loop's
     // frame pushed. The body sees it; the outer cg is unchanged.
     ctx.position(body_bb)
-    let body_cg = ctx.with_loops(ctx.loops.push(LoopStackFrame { cond_bb, exit_bb }))
+    mut __new_loops: List<LoopStackFrame> = []
+    for __f in ctx.loops { __new_loops.push(__f) }
+    __new_loops.push(LoopStackFrame { cond_bb, exit_bb })
+    let body_cg = ctx.with_loops(__new_loops)
     let body_sr = emit_stmt(body_cg, env, body)?
     ctx.br_if_open(cond_bb)
 

@@ -76,3 +76,23 @@ export fn list_push_copy<T>(xs: List<T>, x: T) -> List<T> {
     out = out.push(x)
     out
 }
+
+// ── Seed-bootstrap non-generic snapshots ──
+//
+// The cc88ea78-era seed binary's monomorphizer doesn't synthesize
+// new specializations for `list_push_copy<T>` when T is a struct
+// or enum that didn't exist at seed-build time (HygieneBinding,
+// TypeEntry, TraitImplEntry, AssocTypeEntry, etc.). Until the
+// next seed cycle, callers reach for these non-generic helpers
+// instead. Same semantics as `list_push_copy` — snapshot then
+// append — minus the generic dispatch the seed mis-handles.
+//
+// TODO(seed cycle): once a fresh seed is committed, delete these
+// and migrate callers back to `list_push_copy<T>`.
+
+export fn list_push_copy_str(xs: List<string>, x: string) -> List<string> {
+    mut out: List<string> = []
+    for e in xs { out = out.push(e) }
+    out = out.push(x)
+    out
+}
