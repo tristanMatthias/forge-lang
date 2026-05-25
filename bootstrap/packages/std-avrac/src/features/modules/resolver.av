@@ -10,7 +10,7 @@ use build.{metadata_read, metadata_file_exists, synthesize_unit_body}
 use build.{cache_for, entry_source_meta_path, Fingerprint, package_source_fingerprint}
 use @std.crypto.{sha256_hex, sha256_file}
 use features.modules.{list_avra_module_files, list_avra_module_subdirs}
-use list_ops.{list_concat, list_push_copy_str, list_any, list_map}
+use list_ops.{list_concat, list_push_copy, list_any, list_map}
 
 extern fn avra_bytes_to_hex(b: bytes) -> string
 extern fn avra_uptime_ms() -> int
@@ -454,7 +454,7 @@ export fn resolve_dir_module_body(dir: string, loaded: List<string>) -> ModListR
                 error_message: "error in `${path}`: ${parsed.error_message}",
             }
         }
-        acc_loaded = list_push_copy_str(acc_loaded, path)
+        acc_loaded = list_push_copy(acc_loaded, path)
         acc = list_concat(acc, parsed.stmts!)
     }
     acc = list_concat(acc, synthesize_subdir_module_decls(dir))
@@ -924,7 +924,7 @@ fn resolve_package_use_and_continue(ss: SStmt, next: List<SStmt>, dir: string, l
     // (forge-crafting-intepreters-2f54). Source-on-disk path remains
     // the default; opt-in keeps the existing behaviour intact while
     // the multi-unit cache plumbing matures.
-    let new_loaded = list_push_copy_str(loaded, pkg_file)
+    let new_loaded = list_push_copy(loaded, pkg_file)
     let pkg_dir = modules_dirname(pkg_file)
     let use_meta = avra_process_env_get("AVRA_USE_METADATA") != ""
     // 2wfp: package-level lookup uses the WHOLE-PACKAGE fingerprint
@@ -1096,7 +1096,7 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: List<string>, stack: Lis
                 if dir_load.had_error {
                     return ModStmtResult { stmt, loaded: dir_load.loaded, had_error: true, error_message: dir_load.error_message }
                 }
-                let new_stack = list_push_copy_str(stack, dir_only)
+                let new_stack = list_push_copy(stack, dir_only)
                 let resolved = resolve_module_files_inner(dir_load.stmts, dir_only, dir_load.loaded, new_stack)
                 if resolved.had_error {
                     return ModStmtResult { stmt, loaded: resolved.loaded, had_error: true, error_message: resolved.error_message }
@@ -1116,8 +1116,8 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: List<string>, stack: Lis
                 let empty: List<SStmt> = []
                 return ModStmtResult { stmt: Stmt.Module(name, empty), loaded, had_error: false, error_message: "" }
             }
-            let new_loaded = list_push_copy_str(loaded, mod_path)
-            let new_stack = list_push_copy_str(stack, mod_path)
+            let new_loaded = list_push_copy(loaded, mod_path)
+            let new_stack = list_push_copy(stack, mod_path)
             let mod_dir = modules_dirname(mod_path)
             // xtvc fast-path (mirrors the package-load path): when
             // AVRA_USE_METADATA is set AND `<mod_path>.meta.bin`

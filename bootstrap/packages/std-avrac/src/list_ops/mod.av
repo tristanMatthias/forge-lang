@@ -77,29 +77,3 @@ export fn list_push_copy<T>(xs: List<T>, x: T) -> List<T> {
     out
 }
 
-// ── Seed-bootstrap non-generic snapshots ──
-//
-// The current bs2 mono mis-handles `list_push_copy<T>` when T is a
-// struct or enum that wasn't already monomorphized in the seed.
-// Symptom: codegen emits a call to the unmangled qualified name
-// `@std::avrac::list_ops::list_push_copy` (i.e. mono didn't rewrite
-// the call site), which `ctx.get_fn` then fails to find →
-// `err_emit("undefined function ...")`. The retain-fix in
-// with_expr/copy_struct_fields fixed one symptom (a UAF in the mono
-// codegen path) but the missing-specialization bug is independent.
-//
-// Until that's fixed (bd: TODO file ticket), callers that would need
-// a new instantiation reach for a non-generic helper of the right
-// element type instead. Semantics identical to `list_push_copy`.
-//
-// String case lives here so cycles/escape/resolver/typeck can all
-// share it. Per-struct helpers (`_push_hyg`, `_push_type`, etc.)
-// live in the files that use them — those types aren't visible from
-// list_ops without a circular import.
-
-export fn list_push_copy_str(xs: List<string>, x: string) -> List<string> {
-    mut out: List<string> = []
-    for e in xs { out = out.push(e) }
-    out = out.push(x)
-    out
-}

@@ -2,8 +2,9 @@
 // support via the scoped loop stack in Ctx.
 
 use core.{Expr, Stmt, VarBinding}
-use codegen.{Ctx, LoopStackFrame, StmtResult,  ok_stmt, emit_value_ptr, push_loop_frame}
+use codegen.{Ctx, LoopStackFrame, StmtResult,  ok_stmt, emit_value_ptr}
 use codegen.{emit_expr, emit_stmt, ok_sr, err_sr}
+use list_ops.{list_push_copy}
 
 /// Codegen entry for `while cond { body }`. Pattern-matches the
 /// `While` AST node and forwards to `emit_while_inner`.
@@ -32,11 +33,11 @@ fn emit_while_inner(ctx: Ctx, env: List<VarBinding>, condition: Expr, body: Stmt
 
     // Scoped loop stack: snapshot ctx.loops + append this loop's
     // frame. The body sees the new list; the outer ctx.loops is
-    // untouched (push_loop_frame snapshots before appending, so the
+    // untouched (list_push_copy snapshots before appending, so the
     // heap-shared list the caller passed in isn't mutated and the
     // frame doesn't leak out of this scope).
     ctx.position(body_bb)
-    let body_cg = ctx.with_loops(push_loop_frame(ctx.loops, LoopStackFrame { cond_bb, exit_bb }))
+    let body_cg = ctx.with_loops(list_push_copy(ctx.loops, LoopStackFrame { cond_bb, exit_bb }))
     let body_sr = emit_stmt(body_cg, env, body)?
     ctx.br_if_open(cond_bb)
 

@@ -7,7 +7,7 @@
 
 use core.{FieldEntry, ValueType, Variant}
 use codegen.{StructReg, EnumReg, struct_reg_lookup, enum_reg_lookup, vtype_is_ptr_type}
-use list_ops.{list_push_copy_str, list_any}
+use list_ops.{list_push_copy, list_any}
 
 /// Set of type names whose layout can reach back to itself through
 /// some chain of pointer-typed fields. Built once by `analyze_cycles`
@@ -66,7 +66,7 @@ fn type_reaches_target(ty: ValueType, target: string, visited: List<string>, str
         .Struct(name, _) -> {
             if name == target { return true }
             if visited_has(visited, name) { return false }
-            let vs2 = list_push_copy_str(visited, name)
+            let vs2 = list_push_copy(visited, name)
             let lookup = struct_reg_lookup(structs, name)
             if lookup.found {
                 fields_reach_target(lookup.fields, target, vs2, structs, enums)
@@ -77,7 +77,7 @@ fn type_reaches_target(ty: ValueType, target: string, visited: List<string>, str
         .Enum(name, _, _) -> {
             if name == target { return true }
             if visited_has(visited, name) { return false }
-            let vs2 = list_push_copy_str(visited, name)
+            let vs2 = list_push_copy(visited, name)
             let elookup = enum_reg_lookup(enums, name)
             if elookup.found {
                 variants_reach_target(elookup.variants, target, vs2, structs, enums)
@@ -103,7 +103,7 @@ fn analyze_structs(reg: StructReg, cs: List<string>, structs: StructReg, enums: 
     mut out = cs
     for m in reg.ord {
         let empty: List<string> = []
-        let visited = list_push_copy_str(empty, m.name)
+        let visited = list_push_copy(empty, m.name)
         if fields_reach_target(m.fields, m.name, visited, structs, enums) {
             out = out.push(m.name)
         }
@@ -118,7 +118,7 @@ fn analyze_enums(reg: EnumReg, cs: List<string>, structs: StructReg, enums: Enum
     mut out = cs
     for m in reg.ord {
         let empty: List<string> = []
-        let visited = list_push_copy_str(empty, m.name)
+        let visited = list_push_copy(empty, m.name)
         if variants_reach_target(m.variants, m.name, visited, structs, enums) {
             out = out.push(m.name)
         }

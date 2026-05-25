@@ -6,7 +6,8 @@
 use core.{Expr, Stmt, VarBinding, env_extend, ValueType, vtype_list_elem, vtype_is_str}
 use codegen.{Ctx, LoopStackFrame, StmtResult, emit_value_ptr, emit_value_ty}
 use codegen.{emit_stmt, ok_sr, err_sr}
-use codegen.{is_arena_eligible, push_loop_frame}
+use codegen.{is_arena_eligible}
+use list_ops.{list_push_copy}
 
 /// Codegen entry for `for i in start..end { body }`. Pattern-
 /// matches the `For` AST node and forwards to `emit_for_inner`.
@@ -62,10 +63,10 @@ fn emit_for_inner(ctx: Ctx, env: List<VarBinding>, variable: string, start: Expr
     ctx.cond_br(cond_i1, body_bb, exit_bb)
 
     // Body — continue jumps to incr_bb, break jumps to exit_bb.
-    // push_loop_frame snapshots ctx.loops then appends — see
+    // list_push_copy snapshots ctx.loops then appends — see
     // while_stmt for rationale.
     ctx.position(body_bb)
-    let body_ctx_base = ctx.with_loops(push_loop_frame(ctx.loops, LoopStackFrame { cond_bb: incr_bb, exit_bb }))
+    let body_ctx_base = ctx.with_loops(list_push_copy(ctx.loops, LoopStackFrame { cond_bb: incr_bb, exit_bb }))
     // If arena is active, pass it to the body context so arena_alloc is used
     let body_ctx = if use_arena {
         body_ctx_base with { arena_ptr: arena_val }
@@ -169,7 +170,7 @@ fn emit_for_in_inner(ctx: Ctx, env: List<VarBinding>, variable: string, collecti
     }
     ctx.store(elem, elem_alloca)
 
-    let body_ctx_base = ctx.with_loops(push_loop_frame(ctx.loops, LoopStackFrame { cond_bb: incr_bb, exit_bb }))
+    let body_ctx_base = ctx.with_loops(list_push_copy(ctx.loops, LoopStackFrame { cond_bb: incr_bb, exit_bb }))
     let body_ctx = if use_arena {
         body_ctx_base with { arena_ptr: arena_val }
     } else {
