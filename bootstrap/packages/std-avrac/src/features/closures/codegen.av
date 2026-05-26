@@ -58,6 +58,22 @@ fn copy_params_with(params: List<ParamEntry>, extra: ParamEntry) -> List<ParamEn
     out
 }
 
+/// Same as copy_params_with but appends a whole list.
+fn copy_params_append(params: List<ParamEntry>, more: List<ParamEntry>) -> List<ParamEntry> {
+    mut out: List<ParamEntry> = []
+    mut i = 0
+    while i < params.length {
+        out.push(params[i])
+        i = i + 1
+    }
+    mut j = 0
+    while j < more.length {
+        out.push(more[j])
+        j = j + 1
+    }
+    out
+}
+
 /// Membership test for the capture list. Stops capture detection
 /// from re-adding the same name twice.
 fn is_captured(captures: List<Capture>, name: string) -> bool {
@@ -203,7 +219,12 @@ fn find_captures(expr: Expr, params: List<ParamEntry>, env: List<VarBinding>, ca
         .ListLit(elems) -> find_captures_list(elems, params, env, captures)
         .Tuple(elems) -> find_captures_list(elems, params, env, captures)
         .MapLit(entries) -> find_captures_list(entries, params, env, captures)
-        .With(obj, _) -> find_captures(obj, params, env, captures)
+        .With(obj, inits) -> {
+            // Walk both obj AND field initialisers — closure that
+            // uses `bag with { f: outer_var }` must capture outer_var.
+            find_captures(obj, params, env, captures)
+            find_captures_field_inits(inits, params, env, captures)
+        }
         .Slice(obj, s, e) -> {
             find_captures(obj, params, env, captures)
             find_captures(s, params, env, captures)
@@ -233,6 +254,20 @@ fn find_captures(expr: Expr, params: List<ParamEntry>, env: List<VarBinding>, ca
         .GenericCall(callee, _, args) -> {
             find_captures(callee, params, env, captures)
             find_captures_list(args, params, env, captures)
+        }
+        // Spawn/Isolated/Quote/Splice/Lambda were missing — closure
+        // bodies that wrap their work in any of these would silently
+        // skip captures for vars referenced inside.
+        .Spawn(body) -> find_captures(body, params, env, captures)
+        .Isolated(body) -> find_captures(body, params, env, captures)
+        .Quote(_, body) -> find_captures(body, params, env, captures)
+        .Splice(target) -> find_captures(target, params, env, captures)
+        .Lambda(inner_params, inner_body) -> {
+            // Inner lambda's body — its OWN params shadow the outer's
+            // for capture detection, but captures inside it that come
+            // from the outer environment must still bubble up.
+            let merged = copy_params_append(params, inner_params)
+            find_captures(inner_body, merged, env, captures)
         }
         _ -> {}  // Number, String, Bool, FloatLit, Null, QualifiedIdent — leaf nodes
     }

@@ -1,0 +1,56 @@
+// Regression: closure capture detection (`find_captures`) was
+// dropping sub-expressions in several Expr variants, so a closure
+// that referenced an outer var inside `with` / `spawn` / `isolated` /
+// `quote` / `splice` / a nested lambda either failed at compile time
+// with "Referring to an instruction in another function!" or silently
+// emitted a load from a stale stack slot.
+//
+// Fixed forms (features/closures/codegen.av find_captures):
+//   .With(obj, _)    — only walked obj
+//   .Spawn(body)     — missing entirely
+//   .Isolated(body)  — missing entirely
+//   .Quote(_, body)  — missing entirely
+//   .Splice(target)  — missing entirely
+//   .Lambda(_, body) — nested lambda body never walked
+
+type CapBag = { count: int }
+
+fn cap_invoke_bag(f: fn() -> CapBag) -> CapBag {
+    f()
+}
+
+fn cap_invoke_int(f: fn() -> int) -> int {
+    f()
+}
+
+/// Outer var referenced inside a `with` field initialiser.
+fn cap_with(outer: int) -> CapBag {
+    cap_invoke_bag(() -> {
+        let b = CapBag { count: 0 }
+        b with { count: outer }
+    })
+}
+
+/// Outer var referenced inside a nested lambda body. The outer
+/// closure passes the lambda directly so the inner lambda's capture
+/// has to bubble through find_captures recursing into .Lambda.
+fn cap_nested_lambda(outer: int) -> int {
+    cap_invoke_int(() -> {
+        let inner = () -> outer + 1
+        inner()
+    })
+}
+
+spec "closures capture variables referenced inside every expr form" {
+    given "outer var inside a with field initialiser" {
+        then "the closure sees the outer's value" {
+            cap_with(42).count == 42
+        }
+    }
+
+    given "outer var referenced inside a nested lambda" {
+        then "the inner closure captures through the outer" {
+            cap_nested_lambda(7) == 8
+        }
+    }
+}
