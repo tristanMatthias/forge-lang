@@ -6,7 +6,7 @@
 //
 // Conservative: if in doubt, mark as escaped (don't release).
 
-use core.{Expr, FieldEntry, FieldInit, Variant, ValueType, Stmt, SExpr, SStmt, stmt_unwrap}
+use core.{Expr, FieldEntry, FieldInit, MatchArm, WhenArm, Variant, ValueType, Stmt, SExpr, SStmt, stmt_unwrap}
 use codegen.{releasable_has, StructReg, EnumReg, struct_reg_lookup, enum_reg_lookup, copy_set_has}
 use list_ops.{list_push_copy}
 
@@ -106,7 +106,11 @@ fn single_pass_stmt(stmt: Stmt, set: List<string>) -> List<string> {
             single_pass_stmt(body, s2)
         }
         .ForIn(_, coll, body) -> single_pass_stmt(body, remove_escaped_expr(coll, set))
-        .Match(subj, _) -> remove_escaped_expr(subj, set)
+        // Same bug as the MatchExpr arm in remove_escaped_expr: walk
+        // the arm guards + bodies so an h returned from a match arm
+        // body gets removed from rc_releasable (otherwise scope-exit
+        // releases h before the caller of the fn sees the value).
+        .Match(subj, arms) -> remove_escaped_match_arms(arms, remove_escaped_expr(subj, set))
         .Defer(body) -> remove_escaped_expr(body, set)
         .Errdefer(body) -> remove_escaped_expr(body, set)
         .Annotated(_, inner) -> single_pass_stmt(inner, set)
@@ -196,7 +200,12 @@ fn remove_escaped_expr(expr: Expr, set: List<string>) -> List<string> {
         .Lambda(_, body) -> remove_escaped_expr(body, set)
         .Block(body) -> single_pass_escape(body, set)
         .IfExpr(cond, t, e) -> remove_escaped_expr(e, remove_escaped_expr(t, remove_escaped_expr(cond, set)))
-        .MatchExpr(subj, _) -> remove_escaped_expr(subj, set)
+        // Match arms must be walked: a variable used in an arm body
+        // (especially as the arm's return value, which escapes) needs
+        // to be removed from the releasable set. Without this the
+        // scope-exit release path frees a struct the match expression
+        // returned — UAF on the returned value.
+        .MatchExpr(subj, arms) -> remove_escaped_match_arms(arms, remove_escaped_expr(subj, set))
         .Tuple(elems) -> remove_escaped_args(elems, set)
         .TupleIndex(obj, _) -> remove_escaped_expr(obj, set)
         .MapLit(entries) -> remove_escaped_args(entries, set)
@@ -212,7 +221,10 @@ fn remove_escaped_expr(expr: Expr, set: List<string>) -> List<string> {
         .Isolated(body) -> remove_escaped_expr(body, set)
         .Quote(_, body) -> remove_escaped_expr(body, set)
         .Splice(target) -> remove_escaped_expr(target, set)
-        .When(_) -> set  // when arms don't contain ident escapes at this level
+        // Same as MatchExpr: when arms' bodies/conditions can escape
+        // variables (return value of the arm, or pass to a fn). The
+        // old "no escapes at this level" comment was wrong.
+        .When(arms) -> remove_escaped_when_arms(arms, set)
         .ListComp(body, _, coll, filter) -> {
             let s1 = remove_escaped_expr(body, set)
             let s2 = remove_escaped_expr(coll, s1)
@@ -226,6 +238,36 @@ fn remove_escaped_expr(expr: Expr, set: List<string>) -> List<string> {
         .Null -> set
         .QualifiedIdent(_) -> set
     }
+}
+
+/// Walk each match arm's guard + body checking for escapes.
+fn remove_escaped_match_arms(arms: List<MatchArm>, set: List<string>) -> List<string> {
+    mut acc = set
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        if arm.guard != null {
+            acc = remove_escaped_expr(arm.guard!.node, acc)
+        }
+        acc = remove_escaped_expr(arm.body.node, acc)
+        i = i + 1
+    }
+    acc
+}
+
+/// Walk each when-arm's cond + body checking for escapes.
+fn remove_escaped_when_arms(arms: List<WhenArm>, set: List<string>) -> List<string> {
+    mut acc = set
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        if arm.cond != null {
+            acc = remove_escaped_expr(arm.cond!.node, acc)
+        }
+        acc = remove_escaped_expr(arm.body.node, acc)
+        i = i + 1
+    }
+    acc
 }
 
 /// Apply `remove_escaped_expr` to every element of a `List<SExpr>`.

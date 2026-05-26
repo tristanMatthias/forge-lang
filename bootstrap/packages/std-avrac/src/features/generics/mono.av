@@ -1035,8 +1035,36 @@ fn collect_inst_expr(expr: Expr, regs: GenRegs, st: CollectState) -> CollectStat
             if filter != null { collect_inst_expr(filter!, regs, s2) } else { s2 }
         }
         .Catch(inner, _, body, _, _) -> collect_inst_expr(body, regs, collect_inst_expr(inner, regs, st))
+        // Forms that hold sub-expressions: every walker must recurse
+        // or generic calls inside silently slip past mono.
+        .Slice(obj, start, end) -> collect_inst_expr(end, regs, collect_inst_expr(start, regs, collect_inst_expr(obj, regs, st)))
+        .TupleIndex(obj, _) -> collect_inst_expr(obj, regs, st)
+        .IsCheck(subj, _) -> collect_inst_expr(subj, regs, st)
+        .InCheck(needle, items) -> collect_inst_exprs(items, regs, collect_inst_expr(needle, regs, st))
+        .OptionalChain(obj, _) -> collect_inst_expr(obj, regs, st)
+        .Spawn(body) -> collect_inst_expr(body, regs, st)
+        .Isolated(body) -> collect_inst_expr(body, regs, st)
+        .Quote(_, body) -> collect_inst_expr(body, regs, st)
+        .Splice(target) -> collect_inst_expr(target, regs, st)
+        .When(arms) -> collect_inst_when_arms(arms, regs, st)
         _ -> st
     }
+}
+
+/// Walk subjectless when-arms collecting instantiations from
+/// each arm's condition + body. Mirror of collect_inst_arms.
+fn collect_inst_when_arms(arms: List<WhenArm>, regs: GenRegs, st: CollectState) -> CollectState {
+    mut acc = st
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        if arm.cond != null {
+            acc = collect_inst_expr(arm.cond!.node, regs, acc)
+        }
+        acc = collect_inst_expr(arm.body.node, regs, acc)
+        i = i + 1
+    }
+    acc
 }
 
 /// Map `collect_inst_expr` over a `List<SExpr>`.
@@ -1348,8 +1376,36 @@ fn substitute_expr(expr: Expr, ta: List<TypeArg>) -> Expr {
             }
         }
         .Catch(inner, b, body, cl, cc) -> .Catch(substitute_expr(inner, ta), b, substitute_expr(body, ta), cl, cc)
+        // Mirror collect_inst_expr — every sub-expression in a generic
+        // body must get its T-references substituted.
+        .Slice(obj, start, end) -> .Slice(substitute_expr(obj, ta), substitute_expr(start, ta), substitute_expr(end, ta))
+        .TupleIndex(obj, idx) -> .TupleIndex(substitute_expr(obj, ta), idx)
+        .IsCheck(subj, v) -> .IsCheck(substitute_expr(subj, ta), v)
+        .InCheck(needle, items) -> .InCheck(substitute_expr(needle, ta), substitute_expr_list(items, ta))
+        .OptionalChain(obj, f) -> .OptionalChain(substitute_expr(obj, ta), f)
+        .Spawn(body) -> .Spawn(substitute_expr(body, ta))
+        .Isolated(body) -> .Isolated(substitute_expr(body, ta))
+        .Quote(k, body) -> .Quote(k, substitute_expr(body, ta))
+        .Splice(target) -> .Splice(substitute_expr(target, ta))
+        .When(arms) -> .When(substitute_when_arms(arms, ta))
         _ -> expr
     }
+}
+
+/// Substitute T-references in each when-arm's condition + body.
+fn substitute_when_arms(arms: List<WhenArm>, ta: List<TypeArg>) -> List<WhenArm> {
+    mut out: List<WhenArm> = []
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let new_cond = if arm.cond != null {
+            sexpr(substitute_expr(arm.cond!.node, ta), arm.cond!.line, arm.cond!.col)
+        } else { null }
+        let new_body = sexpr(substitute_expr(arm.body.node, ta), arm.body.line, arm.body.col)
+        out.push(WhenArm { cond: new_cond, body: new_body })
+        i = i + 1
+    }
+    out
 }
 
 /// Map `substitute_expr` over each guard + body of a match
@@ -1747,8 +1803,36 @@ fn rewrite_expr(expr: Expr, regs: GenRegs, insts: List<Inst>) -> Expr {
             }
         }
         .Catch(inner, b, body, cl, cc) -> .Catch(rewrite_expr(inner, regs, insts), b, rewrite_expr(body, regs, insts), cl, cc)
+        // Mirror collect_inst_expr — must rewrite every sub-expression
+        // so mangled-name substitution reaches them too.
+        .Slice(obj, start, end) -> .Slice(rewrite_expr(obj, regs, insts), rewrite_expr(start, regs, insts), rewrite_expr(end, regs, insts))
+        .TupleIndex(obj, idx) -> .TupleIndex(rewrite_expr(obj, regs, insts), idx)
+        .IsCheck(subj, v) -> .IsCheck(rewrite_expr(subj, regs, insts), v)
+        .InCheck(needle, items) -> .InCheck(rewrite_expr(needle, regs, insts), rewrite_expr_list(items, regs, insts))
+        .OptionalChain(obj, f) -> .OptionalChain(rewrite_expr(obj, regs, insts), f)
+        .Spawn(body) -> .Spawn(rewrite_expr(body, regs, insts))
+        .Isolated(body) -> .Isolated(rewrite_expr(body, regs, insts))
+        .Quote(k, body) -> .Quote(k, rewrite_expr(body, regs, insts))
+        .Splice(target) -> .Splice(rewrite_expr(target, regs, insts))
+        .When(arms) -> .When(rewrite_when_arms(arms, regs, insts))
         _ -> expr
     }
+}
+
+/// Rewrite each when-arm's condition + body — mirror of rewrite_arms.
+fn rewrite_when_arms(arms: List<WhenArm>, regs: GenRegs, insts: List<Inst>) -> List<WhenArm> {
+    mut out: List<WhenArm> = []
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let new_cond = if arm.cond != null {
+            sexpr(rewrite_expr(arm.cond!.node, regs, insts), arm.cond!.line, arm.cond!.col)
+        } else { null }
+        let new_body = sexpr(rewrite_expr(arm.body.node, regs, insts), arm.body.line, arm.body.col)
+        out.push(WhenArm { cond: new_cond, body: new_body })
+        i = i + 1
+    }
+    out
 }
 
 /// Map `rewrite_expr` over a `List<SExpr>`.

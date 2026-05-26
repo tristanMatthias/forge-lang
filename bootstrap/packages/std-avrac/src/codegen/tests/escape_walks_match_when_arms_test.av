@@ -1,0 +1,67 @@
+// Regression: escape analysis was dropping match-arm and when-arm
+// bodies on the floor. A `let h = StructLit { ... }` returned from a
+// match arm body got incorrectly marked as releasable — scope-exit
+// freed it before the caller saw the value. Returned value read back
+// as garbage (use-after-free).
+//
+// codegen/escape.av's remove_escaped_expr arms for .MatchExpr and
+// .When now walk arm guards + cond + body so escaping uses register.
+
+extern fn avra_rc_live_count() -> int
+
+type EBox = { v: int, label: string }
+
+/// Allocate inside the fn body, return it from a match arm. The
+/// returned struct must NOT be freed before the caller reads it.
+fn match_return(use_t: bool) -> EBox? {
+    let h = EBox { v: 42, label: "hello" }
+    match use_t {
+        true -> h
+        false -> null
+    }
+}
+
+/// Same shape with `when` instead of `match`.
+fn when_return(use_t: bool) -> EBox? {
+    let h = EBox { v: 99, label: "world" }
+    when {
+        use_t -> h
+        else -> null
+    }
+}
+
+/// Match arm body has a guard that uses the local.
+fn match_guard_uses(threshold: int) -> EBox? {
+    let h = EBox { v: threshold + 1, label: "guarded" }
+    match threshold {
+        0 if h.v > 0 -> h
+        _ -> null
+    }
+}
+
+spec "escape analysis walks match and when arm bodies" {
+    given "a struct returned from a match arm body" {
+        then "fields read back correctly (no use-after-free)" {
+            let r = match_return(true)
+            r != null && r!.v == 42 && r!.label == "hello"
+        }
+        then "false branch returns null without UAF" {
+            let r = match_return(false)
+            r == null
+        }
+    }
+
+    given "a struct returned from a when arm body" {
+        then "fields read back correctly" {
+            let r = when_return(true)
+            r != null && r!.v == 99 && r!.label == "world"
+        }
+    }
+
+    given "a match arm with a guard that uses the local" {
+        then "guard sees the live value" {
+            let r = match_guard_uses(0)
+            r != null && r!.v == 1
+        }
+    }
+}
