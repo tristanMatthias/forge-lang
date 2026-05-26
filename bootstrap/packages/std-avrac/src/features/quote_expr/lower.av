@@ -14,7 +14,7 @@
 // that desugar.av and comptime/rewrite.av use; once the generic-AST-
 // visitor ticket lands (93k3) all three should share a single visitor.
 
-use core.{Stmt, SStmt, sstmt_at, sstmt_dummy, Expr, SExpr, sexpr, sexpr_dummy, FieldEntry, FieldInit, MatchArm, BinOp, UnOp, LogicOp, ParamEntry, TypeParamEntry, CompConfigPair, binop_str, unop_str, logicop_str}
+use core.{Stmt, SStmt, sstmt_at, sstmt_dummy, Expr, SExpr, sexpr, sexpr_dummy, FieldEntry, FieldInit, MatchArm, BinOp, UnOp, LogicOp, ParamEntry, TypeParamEntry, CompConfigPair, Variant, binop_str, unop_str, logicop_str}
 use list_ops.{list_map}
 
 // ── Public entry ──
@@ -515,6 +515,25 @@ fn construct_field_list(fields: List<FieldEntry>) -> Expr {
     Expr.ListLit(elems)
 }
 
+/// Build an Expr that, when evaluated, produces a `List<Variant>` AST
+/// value. Each entry is a struct literal `Variant { name, fields }`
+/// where `fields` reuses `construct_field_list`. Mirrors
+/// `construct_field_list`'s shape so the decoder side can roundtrip
+/// EnumDecl payloads via `list_value_to_variant_list`.
+fn construct_variant_list(variants: List<Variant>) -> Expr {
+    mut elems: List<SExpr> = []
+    mut i = 0
+    while i < variants.length {
+        let v = variants[i]
+        let struct_lit = struct_lit_2("@std::avrac::core::Variant",
+            "name", string_lit_expr(v.name),
+            "fields", construct_field_list(v.fields))
+        elems.push(sexpr_dummy(struct_lit))
+        i = i + 1
+    }
+    Expr.ListLit(elems)
+}
+
 /// Build an Expr that, when evaluated, produces a
 /// `List<CompConfigPair>` AST value. Each entry is a struct
 /// literal `CompConfigPair { key, value }`; the result is an
@@ -720,6 +739,10 @@ export fn construct_stmt(stmt: Stmt) -> Expr {
             three_args(name_or_splice(name),
                        construct_type_param_list(tp),
                        construct_field_list(fields)))
+        .EnumDecl(name, tp, variants) -> stmt_ctor("EnumDecl",
+            three_args(name_or_splice(name),
+                       construct_type_param_list(tp),
+                       construct_variant_list(variants)))
         .ComponentBlock(comp_name, instance, config, body) -> stmt_ctor("ComponentBlock",
             four_args(string_lit_expr(comp_name),
                       string_lit_expr(instance),

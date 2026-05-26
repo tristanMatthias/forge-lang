@@ -9,7 +9,7 @@
 // Phase 2 of Components V2 (vez6.2). The program-walker that calls
 // this on every call site lives in rewrite.av.
 
-use core.{Expr, SExpr, sexpr_dummy, Stmt, SStmt, sstmt_dummy, ValueType, BinOp, UnOp, LogicOp, ParamEntry, TypeParamEntry, FieldEntry, FieldInit, CompConfigPair}
+use core.{Expr, SExpr, sexpr_dummy, Stmt, SStmt, sstmt_dummy, ValueType, BinOp, UnOp, LogicOp, ParamEntry, TypeParamEntry, FieldEntry, FieldInit, CompConfigPair, Variant}
 use features.eval.{Runtime, Value, eval_expr, eval_fn_with_resolved_args, literal_args_to_values, step_value, step_had_error}
 use features.comptime.{CompTimeFn, CompTimeRegistry, comptime_lookup}
 use features.quote_expr.{construct_stmt}
@@ -429,6 +429,18 @@ fn enum_value_to_stmt(v: Value) -> Stmt? {
             let fields = list_value_to_field_list(p[2])?
             Stmt.TypeDecl(name_v.text, tp, fields)
         }
+        "EnumDecl" -> {
+            // `enum Name<T> { V1, V2(f: T), ... }`. Payload:
+            // (name: string, type_params: List<TypeParamEntry>,
+            //  variants: List<Variant>). Mirrors TypeDecl shape so
+            // macros emitting EnumDecl roundtrip through the same
+            // list/struct kinds — gap 1.A of the @expand handoff.
+            if p.length != 3 { return null }
+            let name_v: Value = p[0]
+            let tp = list_value_to_type_param_list(p[1])?
+            let variants = list_value_to_variant_list(p[2])?
+            Stmt.EnumDecl(name_v.text, tp, variants)
+        }
         "ComponentBlock" -> {
             // `comp_name instance { config; body }`. Payload:
             // (comp_name: string, instance: string,
@@ -458,6 +470,28 @@ fn list_value_to_field_list(v: Value) -> List<FieldEntry>? {
         let name = struct_field_string(entry, "name")
         let resolved = struct_field_value_type(entry, "resolved") ?? ValueType.Unknown
         out.push(FieldEntry { name, resolved })
+    }
+    out
+}
+
+/// Decode a list-Value of Variant struct values back into a
+/// `List<Variant>`. Mirrors `list_value_to_field_list` — each entry
+/// is a struct `Variant { name, fields }` where `fields` recurses
+/// through `list_value_to_field_list`. Drives the EnumDecl decode
+/// path (gap 1.A of the @expand handoff).
+fn list_value_to_variant_list(v: Value) -> List<Variant>? {
+    if v.kind != "list" { return [] }
+    mut out: List<Variant> = []
+    for entry in v.list_payload {
+        if entry.kind != "struct" { return null }
+        let name = struct_field_string(entry, "name")
+        mut fields: List<FieldEntry> = []
+        for f in entry.struct_payload {
+            if f.name == "fields" {
+                fields = list_value_to_field_list(f.value) ?? []
+            }
+        }
+        out.push(Variant { name, fields })
     }
     out
 }
