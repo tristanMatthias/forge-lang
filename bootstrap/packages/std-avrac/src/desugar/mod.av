@@ -307,6 +307,19 @@ fn walk_expr(expr: Expr) -> Expr {
             let new_filter = if filter != null { desugar_expr(filter!) } else { null }
             .ListComp(desugar_expr(body), var, desugar_expr(coll), new_filter)
         }
+        // Forms that hold sub-expressions and were silently dropped
+        // by the old `_ -> expr` fallthrough. Same root cause as the
+        // mono + escape + closure walker bugs: sugar inside any of
+        // these stayed as raw calls (e.g. `Foo { x: assert(p) }` left
+        // `assert` as an unresolved fn name).
+        .StructLit(name, inits) -> .StructLit(name, desugar_field_inits(inits))
+        .EnumCtor(tn, variant, args) -> .EnumCtor(tn, variant, desugar_expr_list(args))
+        .GenericCall(callee, type_args, args) -> .GenericCall(desugar_expr(callee), type_args, desugar_expr_list(args))
+        .Catch(inner, binding, body, l, c) -> .Catch(desugar_expr(inner), binding, desugar_expr(body), l, c)
+        .Spawn(body) -> .Spawn(desugar_expr(body))
+        .Isolated(body) -> .Isolated(desugar_expr(body))
+        .Quote(kind, body) -> .Quote(kind, desugar_expr(body))
+        .Splice(target) -> .Splice(desugar_expr(target))
         _ -> expr
     }
 }
