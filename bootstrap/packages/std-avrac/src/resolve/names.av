@@ -1095,6 +1095,20 @@ fn rewrite_expr_compound(ctx: NameCtx, expr: Expr) -> Expr {
         .IsCheck(subject, variant) -> .IsCheck(rewrite_expr(ctx, subject), variant)
         .InCheck(needle, items) -> .InCheck(rewrite_expr(ctx, needle), rewrite_expr_list(ctx, items))
         .When(arms) -> .When(rewrite_when_arms(ctx, arms))
+        // Catch / Quote / Splice had no arms — identifiers inside
+        // their bodies stayed un-rewritten (raw `helper` Idents instead
+        // of `QualifiedIdent("@pkg::mod::helper")`). Same root cause as
+        // the desugar / mono / escape / closure walker bugs.
+        .Catch(inner, binding, body, line, col) -> {
+            // The `binding` introduces an error name visible only in
+            // body. Bind it so refs to it inside body don't get
+            // mis-qualified as module-level.
+            let body_params: List<ParamEntry> = if binding == "" { [] } else { [ParamEntry { name: binding, vtype: ValueType.Unknown }] }
+            let body_ctx = bind_params_ctx(ctx, body_params)
+            Expr.Catch(rewrite_expr(ctx, inner), binding, rewrite_expr(body_ctx, body), line, col)
+        }
+        .Quote(kind, body) -> Expr.Quote(kind, rewrite_expr(ctx, body))
+        .Splice(target) -> Expr.Splice(rewrite_expr(ctx, target))
         _ -> expr
     }
 }
