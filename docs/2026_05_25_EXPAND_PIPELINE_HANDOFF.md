@@ -1,45 +1,43 @@
-# `@expand` pipeline ordering — handoff
+# `@expand` infrastructure prework — handoff
 
-**Status:** open · **Beads:** `forge-crafting-intepreters-qa6i` · **Blocks:** `@walker` derive prototype.
-
----
-
-## TL;DR
-
-`@expand` macros that return decl-introducing `Stmt`s (Function, TypeDecl, EnumDecl, Impl) succeed at the macro layer but silently never reach codegen as usable declarations. Root cause: `expand_macros` runs *after* `resolve_names` in the bootstrap pipeline, so any new top-level decl a macro emits is never name-registered.
-
-This document specifies what "perfect-world fix" looks like, how to verify it, and what NOT to touch.
-
-The end-state target is **derive_walker** — a macro that auto-generates `children/fold/map/visit/find/any` methods on any AST enum, replacing ~1500 lines of hand-rolled, bug-prone walker recursion across the bootstrap with one ~80-line macro plus 6 method invocations.
+**Status:** open · **Beads:** `forge-crafting-intepreters-qa6i`
 
 ---
 
-## Target end-state (what success looks like)
+## Scope of THIS work
 
-After this work lands, the entire walker-bug class is solved by:
+Build the macro-system infrastructure so that, after this lands, a follow-up session can write `@comptime` macros that introspect the surrounding scope and emit new top-level declarations.
 
-```av
-@expand(derive_walker)
-enum Expr {
-    Number(value: string)
-    Binary(left: Expr, op: BinOp, right: Expr)
-    Call(callee: Expr, args: List<SExpr>)
-    StructLit(name: string, inits: List<FieldInit>)
-    // ...30 more variants...
-}
-```
+**In scope:**
+1. Fix the pipeline-order bug below (Option C).
+2. Add the `ResolverCtx` / `AnnotatedDecl` / `ResolvedDecls` types and wire them through `invoke_macro`.
+3. Add the missing quote-surface bits listed in section "Required quote-surface additions".
+4. All tests below must pass; selfhost fixed point holds.
+5. Commit + push.
 
-That single annotation generates `impl Expr { fn children, fn fold, fn map, fn visit, fn find, fn any }` with provably-correct recursion. Every walker in the bootstrap (mono x3, escape, find_captures, desugar, comptime, resolver, etc.) collapses to a 6-line use of `.fold()` / `.map()` / `.visit()`. Adding a new `Expr` variant tomorrow just re-runs `derive_walker`; no walker source file needs edits.
+**Out of scope:**
+- Writing any actual macro that uses this infrastructure. Don't.
+- Touching any walker / desugar / resolver / mono source files (`features/generics/mono.av`, `codegen/escape.av`, `features/closures/codegen.av`, `desugar/mod.av`, `features/comptime/rewrite.av`, `resolve/names.av` rewrite_expr arms, etc.). The infrastructure must be testable on its own — these will be touched in a later session by a different agent.
+- Converting `features/marshal/derive.av` from its existing pre-resolve compiler-pass pattern to use `@expand`. Marshal stays as-is for this work.
+- Performance optimisation. Make it correct first; perf can be tuned later by someone with the empirical data.
 
-The same pattern applies to `Stmt`, `Pattern`, `ValueType`, and any future AST enums.
-
-**Key design: implicit `ResolverCtx` — zero ceremony at the use site.** Every `@expand` macro receives an implicit `ctx: ResolverCtx` scoped to the surrounding decl's resolution context. The user never declares `@requires_scope(...)` or similar. The compiler infers macro dependencies automatically from which `ctx` methods the macro calls during expansion.
+**Done signal:** all the verification probes in this doc compile, run, and produce the expected output. The bootstrap test suite passes. The selfhost fixed point holds (`make update-seed` succeeds and `bs2` ≡ `bs3`).
 
 ---
 
-## Empirical proof of the bug
+## TL;DR of the bug
 
-Probe (paste into `/tmp/probe.av`, run `build/bs2 compile /tmp/probe.av`):
+`@expand` macros that return decl-introducing `Stmt`s (`Function`, `TypeDecl`, `EnumDecl`, `Impl`) succeed at the macro layer but silently never reach codegen as usable declarations. Root cause: `expand_macros` runs *after* `resolve_names` in the bootstrap pipeline, so any new top-level decl a macro emits is never name-registered.
+
+The same bug also blocks macros from receiving type-aware context (because there's no surface for them to query the resolver), and blocks them from building non-trivial AST output (because the quote surface is missing a few capabilities for splicing into match-arm position and similar spots).
+
+This doc spells out the fix for all three concerns, with verification probes for each.
+
+---
+
+## Empirical proof of the pipeline bug
+
+Probe — paste into `/tmp/probe_pipeline.av`, run `build/bs2 compile /tmp/probe_pipeline.av`:
 
 ```av
 use @std.avrac.core.{Stmt, SStmt, ParamEntry, TypeParamEntry, ValueType}
@@ -57,18 +55,17 @@ fn placeholder() {}
 
 fn main() {
     _gen()   // <- compile fails: "undefined variable _gen"
-    println("ok")
 }
 ```
 
-Symptoms:
-- The `@expand` pass runs (no warning, no error from invoke_macro).
-- The macro return decodes successfully via `value_to_stmt`.
-- The string `"_gen"` appears in the IR as a literal constant (from the encoded payload).
+Symptoms today:
+- The `@expand` pass runs (no error from `invoke_macro`).
+- The macro's return decodes via `value_to_stmt`.
+- The string `"_gen"` appears in the IR only as a literal constant (from the encoded payload).
 - **No `define i64 @_gen()` block is emitted.**
-- The `_gen()` call site fails with `resolve error: undefined variable _gen` (line 16).
+- The `_gen()` call site fails with `resolve error: undefined variable _gen`.
 
-Same bug for any decl-introducing Stmt variant. `Stmt.Block`/`Stmt.Expr`/`Stmt.Return` work because they don't introduce names. `Stmt.Function`/`Stmt.TypeDecl`/`Stmt.EnumDecl`/`Stmt.Impl` all fail.
+Same bug for any decl-introducing Stmt variant (Function, TypeDecl, EnumDecl, Impl). Body-only Stmt variants (Block, Expr, Return) work because they don't introduce names.
 
 ---
 
@@ -90,117 +87,67 @@ parse
   → codegen
 ```
 
-`resolve_names` walks the AST building the name table (functions/types/etc.). Once it finishes, `expand_macros` runs. By then the registry is closed. New decls emitted by `expand_macros` are visible in the AST but invisible to:
-- The resolver (registry already built)
-- The typechecker (consumes resolved names)
-- The codegen (codegen looks up fns by qualified name)
+`resolve_names` walks the AST building the name table. Once it finishes, `expand_macros` runs. By then the registry is closed. New decls emitted by `expand_macros` are visible in the AST but invisible to the resolver, typechecker, and codegen.
 
-So the macro output is a tree with a Function node in it that no other pass acknowledges.
-
-### Why `expand_macros` is positioned where it is
+### Why `expand_macros` is positioned where it is today
 
 From `features/comptime/grammar.md`:
 
 > The two pieces are separate passes in the compile pipeline:
->   `resolve_names → expand_macros → run_comptime → typecheck`
-> - **expand_macros** runs first. It walks for `@expand` declarations, evaluates each macro fn against its decl argument, and splices the resulting AST node in place.
-> - **run_comptime** runs next. It folds every call to a `@comptime` fn with comptime-known arguments into the evaluated literal.
+> `resolve_names → expand_macros → run_comptime → typecheck`
 
 `expand_macros` runs after `resolve_names` because the macro's *body* (a `@comptime fn`) needs the eval runtime, and the runtime needs resolved names to invoke helper fns inside the macro body. Without resolution, `quote stmt { my_helper(x) }` inside a macro body can't find `my_helper`.
 
-### Why the marshal pattern works
+### Why the marshal pattern is unaffected
 
-`features/marshal/derive.av` runs as `derive_marshal` BEFORE `resolve_names`. It's a plain Avra `fn(stmts: List<SStmt>) -> List<SStmt>` — not a `@comptime fn`. It directly inspects AST nodes, constructs new ones programmatically (`Stmt.Function(...)`, `Stmt.Impl(...)`, etc.), and inserts them as siblings in the stmt list. The resolver runs *after* and treats the synthesised decls identically to hand-written ones.
+`features/marshal/derive.av` runs as `derive_marshal` BEFORE `resolve_names`. It's a plain Avra `fn(stmts: List<SStmt>) -> List<SStmt>` — not a `@comptime fn`. It directly inspects AST nodes, constructs new ones programmatically, and inserts them as siblings in the stmt list. The resolver runs *after* and treats the synthesised decls identically to hand-written ones.
 
-This is the proven, working pattern for compiler-internal derives. **It is not the bug.** Marshal is correct.
-
-The bug is specifically about user-level `@expand` macros being unable to do the same.
-
----
-
-## What "perfect-world fix" looks like
-
-User code like the probe above should compile and run cleanly:
-
-```av
-@comptime
-fn build_simple_fn() -> Stmt {
-    Stmt.Function("_gen", ..., ..., ValueType.Unknown, [...body...])
-}
-
-@expand(build_simple_fn)
-fn placeholder() {}
-
-fn main() {
-    _gen()         // resolves, type-checks, codegens, runs
-}
-```
-
-And the same for `Stmt.TypeDecl`, `Stmt.EnumDecl`, `Stmt.Impl`. Plus multi-stmt returns from `quote stmts { ... }` (already landed in commit `98e32334`) — a single `@expand` site should be able to introduce many decls.
+This pattern is correct and proven. **Do not change it.** The bug is specifically about user-level `@expand` macros being unable to do the same.
 
 ---
 
 ## Three architectural options
 
-### Option A: Re-run `resolve_names` after `expand_macros`
+### Option A — Re-run `resolve_names` after `expand_macros`
 
 ```
-parse → ... → resolve_names → expand_macros → resolve_names (again) → run_comptime → typecheck → ...
+parse → ... → resolve_names → expand_macros → resolve_names (again) → ...
 ```
 
-**Pros:** Simplest to describe. No new abstractions. The second resolve pass picks up any newly-emitted decls.
+**Pros:** Simplest to describe.
 
-**Cons:** Cascades. `resolve_names` mutates a `type_registry`, populates aliases, qualifies idents — all of these now run twice. Some of that work is idempotent; some isn't. Specifically:
-- The type registry (`TypeRegistry` in `core/ast.av`) accumulates entries. Second run may double-register types declared in the original source.
-- Qualified-name rewriting: an `Ident("foo")` that became `QualifiedIdent("@pkg::mod::foo")` in pass 1 shouldn't be re-rewritten in pass 2. The resolver doesn't have a "skip already-qualified" path today.
-- Module-resolution / `use` handling has side effects on the module graph; running twice may emit duplicate diagnostics or hit cached state inconsistently.
+**Cons:** Cascades. `resolve_names` mutates a `type_registry`, populates aliases, qualifies idents — these aren't all idempotent. Type registry would double-register; QualifiedIdent re-rewriting needs an "is already qualified, skip" path that doesn't exist; module-resolution / `use` handling has side effects that may emit duplicate diagnostics.
 
-**Effort estimate:** Significant. Requires either making `resolve_names` fully idempotent (large audit) or splitting it into "scan-decls" and "rewrite-uses" phases so only the scan-decls part re-runs.
+**Risk:** Medium-high. Subtle non-idempotency surfaces as obscure downstream failures.
 
-**Risk:** Medium-high. Any subtle non-idempotency surfaces as obscure typeck/codegen failures.
-
-### Option B: Move `expand_macros` BEFORE `resolve_names`
+### Option B — Move `expand_macros` BEFORE `resolve_names`
 
 ```
-parse → ... → expand_macros → resolve_names → run_comptime → typecheck → ...
+parse → ... → expand_macros → resolve_names → ...
 ```
 
-**Pros:** No double-pass. Generated decls flow through resolve_names like hand-written ones (the marshal pattern, but for user macros).
+**Pros:** No double-pass.
 
-**Cons:** The macro *body* now runs without resolved names. `quote stmt { my_helper(x) }` inside a macro body would have `my_helper` as a bare `Ident` instead of a `QualifiedIdent`. The eval runtime in `run_comptime`/`expand_macros` looks up `@comptime` fns by qualified name today — it would have to fall back to unqualified lookup, or some other resolution-light scheme would need to run.
-
-Specifically, `comptime_lookup` in `features/comptime/registry.av` is keyed on the resolved qualified name. `collect_comptime_fns` populates the registry from already-resolved decls.
-
-**Effort estimate:** Medium. Requires either:
-- Pre-resolving JUST the `@comptime` fn names (so the registry lookup works) before expand_macros, leaving the macro body's idents unresolved until the main resolver runs. The body would then have to be re-walked when it ends up in the spliced output.
-- Or running expand_macros twice: once before resolve_names for the trivial cases, once after for body-eval-dependent cases. Confusing.
+**Cons:** The macro body now runs without resolved names. `comptime_lookup` is keyed on resolved qualified names; `collect_comptime_fns` populates the registry from already-resolved decls. Body eval breaks.
 
 **Risk:** Medium. The macro-body-resolution dance is the tricky part.
 
-### Option C: Split into pre- and post-resolve phases (RECOMMENDED)
+### Option C — Split into pre- and post-resolve phases (RECOMMENDED)
 
 ```
-parse → ... → expand_macros_collect → resolve_names → expand_macros_eval → ...
+parse → ... → expand_macros_collect → resolve_names → expand_macros_eval → partial re-resolve → ...
 ```
 
-`expand_macros_collect`: pre-resolve. Walks for `@expand` annotations, captures the (target_stmt, macro_name) pairs, but DOES NOT yet evaluate. Optionally drops placeholder bodies (since the user wrote `fn placeholder() {}` as a syntactic anchor that's about to be replaced).
+- **`expand_macros_collect`**: pre-resolve walk. Captures `(target_stmt_position, macro_name)` pairs into an `ExpandPlan`. Doesn't evaluate.
+- **`resolve_names`**: runs as today.
+- **`expand_macros_eval`**: post-resolve. Evaluates each captured macro with the now-resolved registry. Splices results into the stmt list. Tags inserted SStmts so the next pass knows which ones are new.
+- **Partial re-resolve**: walks only the tagged stmts and resolves them. Bounded scope; cheap; safe.
 
-`resolve_names`: runs as today.
+**Pros:** Macro bodies see resolved names (eval works). Generated decls go through name resolution (so call sites resolve). The split makes the dependency explicit instead of hidden in pipeline order.
 
-`expand_macros_eval`: post-resolve. Evaluates each captured macro with its now-resolved registry. Splices the result back into the stmt list. Then **a partial re-resolve runs over just the spliced output** — which is tractable because the spliced output is a small, identifiable subset of the AST.
+**Cons:** Two phases instead of one (small code complexity bump). The splicer must tag inserted stmts so the partial re-resolve knows what to walk.
 
-**Pros:**
-- Macro bodies see resolved names (eval works).
-- Generated decls go through name resolution (so `_gen()` call sites resolve).
-- The split makes the dependency explicit instead of hidden in pipeline order.
-
-**Cons:**
-- Two passes for `expand_macros` (small code complexity bump).
-- The "partial re-resolve over spliced output" needs a clear boundary — the splicer must tag the inserted SStmt nodes so the re-resolve knows what to walk.
-
-**Effort estimate:** Medium. Each phase is small; the new piece is the partial re-resolve which is bounded.
-
-**Risk:** Low. Each phase is independently testable. Failure modes are localised.
+**Risk:** Low. Each phase is independently testable.
 
 ---
 
@@ -214,368 +161,383 @@ Reasoning:
 
 ---
 
-## Detailed implementation plan (Option C)
+## Implementation plan: Option C pipeline fix
 
 ### Files that will change
 
-- `bootstrap/packages/std-avrac/src/features/comptime/expand_macro.av` — split into collect + eval phases. Currently does both in one walk.
-- `bootstrap/packages/cli/src/main.av` — update pipeline order at every `derive_marshal` + `resolve_names` + `expand_macros` site (4 call sites, ~lines 3317, 3400, 3430, 3695).
-- `bootstrap/packages/std-avrac/src/resolve/names.av` — add a `resolve_names_incremental(stmts: List<SStmt>, existing_registry: TypeRegistry) -> ResolveResult` entry point that re-resolves only the new stmts without re-registering already-known names. Or extract a `register_decls(stmts, registry)` sub-step that can be called twice.
+- `bootstrap/packages/std-avrac/src/features/comptime/expand_macro.av` — split into collect + eval phases.
+- `bootstrap/packages/cli/src/main.av` — update pipeline order at every site that runs the four-pass sequence (`derive_marshal` → `resolve_names` → `expand_macros`). Four call sites: lines ~3317, ~3400, ~3430, ~3695.
+- `bootstrap/packages/std-avrac/src/resolve/names.av` — refactor `resolve_names` into `register_decls` + `rewrite_uses` so the partial re-resolve can call `register_decls` with the existing registry and `rewrite_uses` over just the newly-spliced stmts.
 - `bootstrap/packages/std-avrac/src/features/comptime/grammar.md` — update pipeline section.
+- `bootstrap/packages/std-avrac/src/core/ast.av` — add `from_macro: bool` field on `SStmt` (or maintain a side-channel `Set<SStmt-id>` returned from the splicer — pick one, doc the choice).
 
 ### Step-by-step
 
-1. **Audit `resolve_names`** for what's per-stmt vs per-program. Sketch which steps could re-run safely. Output: a tagged list (e.g. "type registry: accumulate-safe", "alias resolution: per-module, re-run safe", "QualifiedIdent rewriting: per-Ident, idempotent if already qualified").
+1. **Audit `resolve_names`** for what's per-stmt vs per-program. Document the side effects of each step.
 
 2. **Refactor `resolve_names` into two halves:**
    - `register_decls(stmts, registry) -> registry` — pure decl scan, populates the registry.
    - `rewrite_uses(stmts, registry) -> stmts` — rewrites Idents to QualifiedIdent given a fixed registry.
-   The current `resolve_names` becomes `let r = register_decls(stmts, new_registry()); rewrite_uses(stmts, r)`.
+
+   Current `resolve_names` becomes `let r = register_decls(stmts, new_registry()); rewrite_uses(stmts, r)`. Existing tests must still pass after this refactor *alone* — land the refactor as its own commit before moving on.
 
 3. **Split `expand_macros`** into:
    - `expand_macros_collect(stmts) -> ExpandPlan` — walks stmts collecting (target_stmt_position, macro_name) pairs. Returns the plan; stmts unchanged.
-   - `expand_macros_eval(stmts, plan, reg) -> List<SStmt>` — evaluates each macro and splices results. Tags inserted SStmts via a new field or a side-channel set.
+   - `expand_macros_eval(stmts, plan, reg) -> List<SStmt>` — evaluates each macro and splices results. Tags inserted SStmts.
 
-4. **Wire pipeline:**
+4. **Wire pipeline** in `cli/src/main.av` (four sites):
    ```
    parse → ... → derive_marshal
-        → (expand_macros_collect)    // gather targets, don't evaluate
-        → resolve_names              // unchanged
-        → expand_macros_eval(plan)   // now has resolved names + macro fns
+        → expand_macros_collect    // gather targets, don't evaluate
+        → resolve_names            // unchanged
+        → expand_macros_eval(plan) // now has resolved names + macro fns
         → register_decls(spliced_only, existing_registry)
         → rewrite_uses(spliced_only, registry)
         → run_comptime → typecheck → ...
    ```
 
-5. **Tag spliced SStmts.** Add a boolean flag on SStmt (e.g. `from_macro: bool`) OR maintain a `Set<SStmt-id>` set returned alongside the spliced output. The post-expand resolver walks only flagged stmts. The flag/set is stripped before downstream passes that don't care.
+5. **Tag spliced SStmts.** Add `from_macro: bool` on SStmt (default false). The splicer sets it true on every inserted SStmt. The partial re-resolve walks only stmts where `from_macro == true`. The flag is informational only — don't strip it; downstream passes that don't care can ignore it (it's a bool field, costs nothing).
 
-6. **Verify nested @expand.** A macro that returns code containing another `@expand` should expand recursively. Today this works because all expansion runs in one pass; with the split, the second expand_macros_eval pass needs to either iterate to fixpoint or explicitly forbid nested @expand.
-
-### Test plan
-
-**New tests** in `bootstrap/packages/std-avrac/src/features/comptime/tests/`:
-
-1. `expand_decl_introducing_test.av` — the probe from above (macro returning `Stmt.Function`). Asserts `_gen()` is callable from main, returns expected value, runs at runtime.
-
-2. `expand_introduces_type_test.av` — macro returning `Stmt.TypeDecl`. Asserts the synthesised type can be used in a `let` binding.
-
-3. `expand_introduces_enum_test.av` — macro returning `Stmt.EnumDecl`. Asserts variants are matchable.
-
-4. `expand_multi_decl_test.av` — macro returning `List<SStmt>` containing a type AND an impl. Asserts both are registered.
-
-5. `expand_nested_test.av` — macro that returns code containing another `@expand` site. Asserts the inner expansion fires.
-
-6. `expand_body_eval_still_works_test.av` — macro whose `@comptime` body calls a `use`-imported helper fn. Regression test that body-eval still has resolved names available.
-
-**Existing tests that must still pass:**
-- All of `bootstrap/packages/std-avrac/src/features/comptime/tests/*.av` (currently passing).
-- `bootstrap/packages/std-avrac/src/features/marshal/tests/*.av` (marshal pattern unaffected).
-- Full bootstrap test suite (2462+/2462+).
-
-### Verification
-
-After the fix:
-
-```bash
-cd bootstrap
-make build               # passes
-make update-seed         # passes
-build/bs2 compile /tmp/probe.av     # exits 0
-cc /tmp/probe.av.ll build/runtime.o -o /tmp/probe
-/tmp/probe               # prints "ok"
-build/bs2 test           # 2462+/2462+
-```
-
-The probe at the top of this doc should compile and run cleanly. That's the deterministic "done" signal.
+6. **Nested @expand.** A macro that returns code containing another `@expand` site should expand recursively. After the split: `expand_macros_eval` runs to a fixpoint — it walks the result, finds any new `@expand` annotations in the spliced output, evaluates and splices those, repeats. Cap at 16 iterations with a clear "macro recursion limit" error to prevent infinite loops.
 
 ---
 
-## Implicit `ResolverCtx` (no `@requires_scope` ceremony)
+## Required `ResolverCtx` infrastructure
 
-The end-state design has **zero ceremony at the use site**. The user writes only `@expand(derive_walker)` — never `@requires_scope(...)` or anything similar. The macro receives an implicit `ctx: ResolverCtx` whose scope is the surrounding decl's resolution context.
+Macros need to query the surrounding scope (look up a type by name, ask "is this type the same as that one", etc.). Today there's no such surface. Add it as part of this work.
 
-The compiler builds a dependency DAG between macros automatically by inspecting which `ctx` methods each macro calls during expansion. Macros that don't query the resolver run first; macros that do run after their dependencies are resolved. Cycles error with a clear "macro X queries scope that includes macro Y's output which queries X" diagnostic.
-
-This is part of Phase 2 (the derive_walker step), NOT part of the pipeline fix. The pipeline fix (Option C above) gives us the *capability* to run macros and re-resolve their output; the implicit-ctx design layers on top.
-
----
-
-## Phase 2: derive_walker design (the thing this fix unblocks)
-
-Once the pipeline fix is in, write `derive_walker` as a `@comptime fn` that takes the implicit ctx. The full macro is ~80 LOC.
-
-### Target macro file: `bootstrap/packages/std-avrac/src/features/walker/derive.av`
+### New file: `bootstrap/packages/std-avrac/src/features/comptime/resolver_ctx.av`
 
 ```av
-// WHY: @derive_walker — auto-generates children/fold/map/visit/find/any
-// methods on any AST enum. Replaces ~1500 LOC of hand-rolled walker
-// recursion across the bootstrap with one macro + 6 method invocations.
-//
-// The walker bug class (mono / escape / closures / desugar / resolver /
-// comptime each had wildcards hiding sub-expressions) becomes impossible
-// by construction — adding a new variant to Expr just re-runs this
-// macro, every walker downstream picks it up automatically.
+// WHY: sealed read-only handle macros use to query the resolver
+// from inside @comptime evaluation. Implemented as an opaque
+// pointer + a dispatch table of extern fns — same shape as how
+// Runtime is passed through eval today.
 
-use @std.avrac.core.{Stmt, SStmt, Expr, Variant, VariantField, MatchArm, Pattern}
-use @std.avrac.comptime.{AnnotatedDecl, ResolverCtx, ResolvedDecls, ResolvedType, method_symbol, trace_from}
+use @std.avrac.core.{TypeKind, ValueType}
 
-@comptime
-fn derive_walker(target: AnnotatedDecl, ctx: ResolverCtx) -> ResolvedDecls {
-    let e = unwrap_enum(target.stmt)
-    let T = ctx.qualify_ident(e.name)!
-
-    let children_arms = e.variants.map(v -> children_arm(v, T, ctx))
-    let map_arms      = e.variants.map(v -> map_arm(v, T, ctx))
-
-    let impl_block = quote stmt {
-        impl ~T {
-            fn children(self) -> List<~T> { match self { ~children_arms } }
-            fn map(self, f: fn(~T) -> ~T) -> ~T {
-                let rebuilt = match self { ~map_arms }
-                f(rebuilt)
-            }
-            fn fold<S>(self, init: S, step: fn(~T, S) -> S) -> S {
-                mut acc = step(self, init)
-                for c in self.children() { acc = c.fold(acc, step) }
-                acc
-            }
-            fn visit(self, f: fn(~T)) {
-                f(self)
-                for c in self.children() { c.visit(f) }
-            }
-            fn find(self, p: fn(~T) -> bool) -> ~T? {
-                if p(self) { return self }
-                for c in self.children() { let r = c.find(p); if r != null { return r } }
-                null
-            }
-            fn any(self, p: fn(~T) -> bool) -> bool {
-                if p(self) { return true }
-                for c in self.children() { if c.any(p) { return true } }
-                false
-            }
-        }
-    }
-
-    ResolvedDecls {
-        decls: [target.stmt, impl_block],
-        introduces: ["children","map","fold","visit","find","any"]
-            .map(n -> method_symbol(T, n)),
-        provenance: trace_from(target, "derive_walker"),
-    }
-}
-
-// ── Per-variant arm builders (the only parts that vary by enum) ──
-
-enum ChildShape {
-    None             // not a child (scalar / unrelated type)
-    Direct           // field IS the enum being walked
-    ListDirect       // List<Self>
-    ListWrapped      // List<W> where W wraps Self (one indirection)
-    ListDoubleWrapped // List<W2> where W2 wraps W wraps Self (two indirections)
-}
-
-type FieldBinding = { kind: ChildShape, binding: string, unwrap_path: List<string> }
-
-fn classify(f: VariantField, T: string, ctx: ResolverCtx) -> FieldBinding {
-    let t = ctx.lookup_type(f.type_source_name)
-    if t == null { return FieldBinding { kind: .None, binding: "_", unwrap_path: [] } }
-    if t!.canonical_name == T { return FieldBinding { kind: .Direct, binding: f.name, unwrap_path: [] } }
-    if t!.kind is .List {
-        let elem = list_elem(t!)
-        if elem.canonical_name == T { return FieldBinding { kind: .ListDirect, binding: f.name, unwrap_path: [] } }
-        let path = ctx.unwrap_path_to(elem, T)
-        if path.length == 1 { return FieldBinding { kind: .ListWrapped, binding: f.name, unwrap_path: path } }
-        if path.length == 2 { return FieldBinding { kind: .ListDoubleWrapped, binding: f.name, unwrap_path: path } }
-    }
-    FieldBinding { kind: .None, binding: "_", unwrap_path: [] }
-}
-
-fn children_arm(v: Variant, T: string, ctx: ResolverCtx) -> MatchArm {
-    let binds = v.fields.map(f -> classify(f, T, ctx))
-    let pat = pattern_for(v.name, binds)
-    let body = quote { {
-        mut out: List<~T> = []
-        ~for b in binds {
-            match b.kind {
-                .Direct           -> quote { out.push(~b.binding) }
-                .ListDirect       -> quote { for e in ~b.binding { out.push(e) } }
-                .ListWrapped      -> quote { for e in ~b.binding { out.push(unwrap_one(e, ~b.unwrap_path)) } }
-                .ListDoubleWrapped-> quote { for e in ~b.binding { out.push(unwrap_two(e, ~b.unwrap_path)) } }
-                .None             -> quote { }  // empty splice
-            }
-        }
-        out
-    } }
-    MatchArm { pattern: pat, guard: null, body: sexpr_dummy(body) }
-}
-
-fn map_arm(v: Variant, T: string, ctx: ResolverCtx) -> MatchArm {
-    let binds = v.fields.map(f -> classify(f, T, ctx))
-    let pat = pattern_for(v.name, binds)
-    let args = binds.map(b -> recurse_arg(b))
-    let rebuild = ctor_expr(v.name, args)
-    MatchArm { pattern: pat, guard: null, body: sexpr_dummy(rebuild) }
-}
-
-fn recurse_arg(b: FieldBinding) -> Expr {
-    match b.kind {
-        .None              -> Expr.Ident(b.binding)
-        .Direct            -> quote { ~b.binding.map(f) }
-        .ListDirect        -> quote { ~b.binding.map(c -> c.map(f)) }
-        .ListWrapped       -> quote { ~b.binding.map(e -> rewrap_one(e, ~b.unwrap_path, e.~(b.unwrap_path[0]).map(f))) }
-        .ListDoubleWrapped -> quote { ~b.binding.map(e -> rewrap_two(e, ~b.unwrap_path, e.~(b.unwrap_path[0]).~(b.unwrap_path[1]).map(f))) }
-    }
-}
-```
-
-Total: ~80 LOC. That's the entire walker derive. The `unwrap_one` / `unwrap_two` / `rewrap_one` / `rewrap_two` helpers live in a small stdlib module (~20 LOC each).
-
-### Test plan for derive_walker (after pipeline fix)
-
-`bootstrap/packages/std-avrac/src/features/walker/tests/`:
-
-1. `walker_basic_test.av` — `@expand(derive_walker)` on a tiny `enum Tree { Leaf(int); Node(left: Tree, right: Tree) }`. Assert `tree.children()`, `tree.fold`, `tree.map`, `tree.visit`, `tree.find`, `tree.any` all behave correctly.
-
-2. `walker_list_field_test.av` — variant with `List<Self>` field. Assert children() flattens correctly.
-
-3. `walker_wrapper_test.av` — variant with `List<SExpr>` field. Assert ctx.unwrap_path detects the indirection and children() unwraps `.node`.
-
-4. `walker_scalar_test.av` — variant with no self-typed fields. Assert children() returns `[]`.
-
-5. `walker_recursive_visit_test.av` — depth-3 tree, visit collects all nodes in preorder.
-
-6. `walker_map_preserves_scalars_test.av` — map should rebuild variants preserving non-self fields exactly.
-
-7. `walker_provenance_test.av` — assert error in generated method points back at the macro definition (provenance smoke test).
-
----
-
-## Phase 2 also requires: macro-surface additions
-
-The slim `derive_walker` above assumes some `quote`/`ctx` infrastructure that may not exist yet in the bootstrap. Verify each and add what's missing:
-
-### Quote-related (verify, may need adding)
-
-- **`quote arm { ~pat -> ~body }`** — does a `quote` kind for match arms exist? `quote_expr/grammar.md` lists `expr | stmt | stmts | type | decl`. **Likely needs adding.** If not added, build MatchArm via `MatchArm { pattern, guard: null, body }` directly — verbose but works.
-
-- **Splice inside a `for` loop body** within a quote: `~for b in binds { match b.kind { ... } }`. Means "execute Avra code at quote-expansion time and splice the resulting concatenated list of stmts." Different from a plain `~expr` splice. **Probably needs adding** — verify by writing a probe; if missing, build the list via explicit `mut out; for b in binds { out.push(...) }; out` outside the quote and `~splice` the final list.
-
-- **`~T` splice for a type-position identifier** — currently splices work in expression and statement positions; verify they work as type-name spots. **Probably works** since the parser handles `~ident` uniformly, but confirm with a probe.
-
-- **`.{v.name}(args)` dynamic variant-ctor syntax** — splicing a string as an enum variant name in `.Foo(...)` syntax. **Probably doesn't exist.** Workaround: build `Expr.EnumCtor("", v.name, args)` programmatically and splice that as a complete expression.
-
-### Resolver-context additions (definitely needs adding)
-
-The `ResolverCtx` interface used in the macro doesn't exist yet. Build it as a sealed read-only view over the resolver's state. Add to `bootstrap/packages/std-avrac/src/features/comptime/resolver_ctx.av`:
-
-```av
+/// Sealed handle to a specific resolution scope. Macros receive one
+/// per invocation, scoped to where the annotated decl lives. All
+/// operations are pure queries — the macro CANNOT mutate the
+/// resolver, only ask questions of it.
 export type ResolverCtx = {
+    /// Module the annotated decl lives in (e.g. "@std::avrac::core").
     current_module: string,
+
+    /// Look up a type by source-level name, qualifying through the
+    /// active scope's imports. Returns the canonical resolved type
+    /// or null if unknown.
     lookup_type: fn(name: string) -> ResolvedType?,
+
+    /// Resolve an identifier the same way Expr.Ident would resolve
+    /// at this scope. Returns the QualifiedIdent path or null.
     qualify_ident: fn(name: string) -> string?,
+
+    /// Synthesise a fresh identifier guaranteed not to collide with
+    /// any name visible in this scope. Hygiene baked in.
     fresh_ident: fn(hint: string) -> string,
-    is_recursive_with_target: fn(t: ResolvedType) -> bool,
+
+    /// Returns the field-access chain to dig from a wrapper type
+    /// down to a target type. E.g. if `t` is a struct `Wrapper { x: Target }`
+    /// then unwrap_path_to(t, "Target") returns ["x"]. If `t` is
+    /// `Wrapper { y: Inner { z: Target } }` returns ["y", "z"].
+    /// Returns [] when no path exists or t IS target.
+    /// BFS over the field graph of `t` looking for `target`.
     unwrap_path_to: fn(t: ResolvedType, target: string) -> List<string>,
-        // Returns the field-access chain to dig from `t` to a value of
-        // type `target`. E.g. for SExpr (which has .node: Expr) →
-        // unwrap_path_to(SExpr, "Expr") = ["node"]. For FieldInit
-        // (which has .value: SExpr which has .node: Expr) →
-        // unwrap_path_to(FieldInit, "Expr") = ["value", "node"].
-        // Returns [] when no path exists.
 }
 
+/// A resolved type — name + kind + structure already canonicalised.
 export type ResolvedType = {
     canonical_name: string,
     kind: TypeKind,
+    /// Populated for struct types.
     fields: List<ResolvedField>?,
+    /// Populated for enum types.
     variants: List<ResolvedVariant>?,
 }
+
+export type ResolvedField = { name: string, ty: ResolvedType }
+export type ResolvedVariant = { name: string, fields: List<ResolvedField> }
 ```
 
-The implementation is thin: each method calls the existing resolver/type-registry data with appropriate sealing. `unwrap_path_to` is the only new logic — a BFS over the field graph of `t` looking for a field whose type is (or recurses through) `target`. ~30 LOC.
-
-### `AnnotatedDecl` + `ResolvedDecls` types
-
-Add to `bootstrap/packages/std-avrac/src/features/comptime/macro_types.av`:
+### New file: `bootstrap/packages/std-avrac/src/features/comptime/macro_types.av`
 
 ```av
+use @std.avrac.core.{Stmt, SStmt, Annotation, Span}
+
+/// What a macro receives as its first arg — the decl being expanded,
+/// plus its annotation metadata.
 export type AnnotatedDecl = {
-    stmt: Stmt,                 // the decl being annotated (unwrapped)
-    annotation: Annotation,     // the @expand(name) annotation itself
-    canonical_path: string,     // qualified path to the decl
+    stmt: Stmt,                /// the decl (unwrapped from Annotated layers)
+    annotation: Annotation,    /// the @expand(...) annotation itself
+    canonical_path: string,    /// qualified path to the decl (e.g. "@user::ast::Foo")
 }
 
+/// What a macro returns. Decls inside are already name-resolved
+/// against the macro's ResolverCtx — the compiler doesn't re-resolve
+/// them whole; it only checks the names match expectations.
 export type ResolvedDecls = {
+    /// The decls to splice into the parent stmt list, in order.
     decls: List<SStmt>,
+
+    /// Names this batch of decls introduces into the parent scope.
+    /// The compiler registers these after splicing.
     introduces: List<DeclSymbol>,
+
+    /// Provenance trail. Each emitted decl knows it came from this
+    /// macro with these args. Powers IDE jump-to-source.
     provenance: MacroProvenance,
 }
 
 export type DeclSymbol = {
-    name: string,
-    kind: DeclKind,        // .Function / .Type / .Method(of: string)
-    canonical_path: string,
+    name: string,             /// unqualified name (e.g. "children")
+    kind: DeclKind,
+    canonical_path: string,   /// post-resolution name
 }
+
+export enum DeclKind { Function; Type; Impl; Method(of: string); Const }
 
 export type MacroProvenance = {
     macro_name: string,
     target_canonical: string,
     target_source_span: Span,
 }
-
-export enum DeclKind { Function; Type; Impl; Method(of: string); Const }
 ```
 
-Wire the `@expand` evaluator (`features/comptime/expand_macro.av:invoke_macro`) to:
-1. Build `AnnotatedDecl` from the target stmt + the `@expand` annotation node.
-2. Construct `ResolverCtx` from the active resolver state.
-3. Pass both as 2-argument macro invocation.
-4. Decode the `ResolvedDecls` return via a new `value_to_resolved_decls` decoder.
+### Wiring
 
-The encoder/decoder pair for `ResolverCtx` is special — it's not a plain Value, it's a *handle* the macro uses to call back into the compiler. Implement as an opaque pointer + a dispatch table of extern fns (similar to how `Runtime` is passed through in eval today).
+In `features/comptime/expand_macro.av:invoke_macro`:
+
+1. Build `AnnotatedDecl` from the target stmt + the `@expand` annotation node.
+2. Construct `ResolverCtx` from the active resolver state. ResolverCtx is an opaque struct holding a pointer to the resolver + a vtable of extern fns that the eval runtime can call when the macro invokes `ctx.lookup_type(...)` etc.
+3. The macro signature now matches `fn(AnnotatedDecl, ResolverCtx) -> ResolvedDecls`. Dispatch on arity:
+   - 0 args (legacy): existing behaviour, returns single Stmt or List<SStmt>.
+   - 1 arg (legacy): existing Stmt boxing.
+   - **2 args (new)**: pass `(boxed AnnotatedDecl, boxed ResolverCtx)`. Decode return via new `value_to_resolved_decls` decoder.
+4. Splice `result.decls` into the stmt list. Register `result.introduces` with the existing registry. The partial re-resolve handles the rest.
+
+The `ResolverCtx` encoder/decoder pair is special — it's not a plain Value, it's a *handle* the macro uses to call back into the compiler. Implement as an opaque pointer + extern fns that the eval runtime dispatches via the existing `extern fn` mechanism. (Same shape as how `Runtime` is passed through eval today — pattern is proven.)
+
+### `unwrap_path_to` implementation
+
+Probably ~30 LOC. BFS over `t`'s fields: for each field, if its type's canonical_name equals `target`, return `[field.name]`. Otherwise recurse into the field's type, prepending the field name to the returned path. Cap depth at some reasonable limit (say 8) to prevent infinite loops on recursive types — if the BFS exhausts depth without finding target, return `[]`.
+
+---
+
+## Required quote-surface additions
+
+The infrastructure above is most useful when macros can build their output via `quote` rather than constructing AST by hand. Add the missing capabilities:
+
+### Probe these BEFORE adding anything
+
+Write a probe for each. If the probe works without changes, mark the capability "already supported." If it fails, that capability needs to be added.
+
+#### Probe 1: `quote arm { ~pat -> ~body }`
+
+```av
+use @std.avrac.core.{Stmt, MatchArm, Pattern, Expr}
+
+@comptime
+fn make_arm() -> MatchArm {
+    quote arm { .Foo(x) -> x + 1 }
+}
+
+@comptime
+fn dummy_stmt() -> Stmt {
+    Stmt.NoOp
+}
+
+@expand(dummy_stmt)
+fn placeholder() {}
+
+fn main() {
+    println("test")
+}
+```
+
+Probably doesn't compile today (no `arm` kind in `quote_expr/grammar.md`). If missing: add an `arm` kind to the quote grammar that parses a single match arm with optional splice points in pattern + body positions. Files: `features/quote_expr/parser.av`, `features/quote_expr/lower.av`, the codec roundtrip in `features/comptime/eval.av`.
+
+#### Probe 2: Splicing a `List<MatchArm>` into a `match` body
+
+```av
+@comptime
+fn make_match_arms() -> List<MatchArm> {
+    let a1 = quote arm { .A -> 1 }
+    let a2 = quote arm { .B -> 2 }
+    [a1, a2]
+}
+
+@comptime
+fn build() -> Stmt {
+    let arms = make_match_arms()
+    quote stmt {
+        let x = match some_enum {
+            ~arms
+        }
+    }
+}
+```
+
+The `~arms` splice in match-position is what matters. Probably doesn't work today — the splice mechanism may only support spliced-in expr or stmt positions, not arm lists. If missing: add `~list_expr` splice support in match-arm position to the quote lowering. Files same as above.
+
+#### Probe 3: Splicing a string as a type identifier
+
+```av
+@comptime
+fn build(name_arg: string) -> Stmt {
+    quote stmt {
+        fn helper(x: ~name_arg) -> ~name_arg { x }
+    }
+}
+```
+
+If splices work in type position uniformly, this should be fine. If type-position parsing has its own ident-only path, splice doesn't fit. Test, fix if broken.
+
+#### Probe 4: Iteration-style splice in a quote body
+
+```av
+@comptime
+fn build(items: List<string>) -> List<SStmt> {
+    quote stmts {
+        ~for item in items {
+            quote stmt { println(~item) }
+        }
+    }
+}
+```
+
+This is "execute Avra code at quote-time and splice each result as a stmt." Different from a plain `~expr` splice. **Probably doesn't exist today.** If missing: either add it, OR establish the convention that callers build the list outside the quote and splice the finished list in with `~items`. Document the chosen approach.
+
+#### Probe 5: Dynamic enum-ctor name
+
+```av
+@comptime
+fn build(variant_name: string) -> Expr {
+    Expr.EnumCtor("@my::Type", variant_name, [])
+}
+```
+
+Building EnumCtor with a dynamic variant name should work via direct `Expr.EnumCtor` construction. Test. If it works, no quote-surface change needed; macros just use the constructor form for dynamic variants.
+
+### Fix the gaps the probes find
+
+For each probe that fails, add the missing capability. Each gets its own commit with its own test. Don't bundle.
+
+---
+
+## Test plan
+
+All new tests live in `bootstrap/packages/std-avrac/src/features/comptime/tests/`. Each is a standalone `spec` test using the `cached_fixture_run` pattern (same shape as existing `expand_macro_*_test.av` files).
+
+### Pipeline-fix tests (Option C)
+
+1. **`expand_decl_introducing_test.av`** — the probe from the empirical-proof section above. Asserts `_gen()` is callable from main and runs at runtime.
+
+2. **`expand_introduces_type_test.av`** — macro returning `Stmt.TypeDecl`. Asserts the synthesised type can be used in a `let` binding.
+
+3. **`expand_introduces_enum_test.av`** — macro returning `Stmt.EnumDecl`. Asserts variants are matchable.
+
+4. **`expand_introduces_impl_test.av`** — macro returning `Stmt.Impl`. Asserts methods are callable via dot-notation.
+
+5. **`expand_multi_decl_test.av`** — macro returning `List<SStmt>` containing both a type and an impl. Asserts both are registered and the impl's methods work.
+
+6. **`expand_nested_test.av`** — macro that returns code containing another `@expand` site. Asserts the inner expansion fires; recursion cap kicks in after 16 nested iterations with a clear error.
+
+7. **`expand_body_eval_still_works_test.av`** — macro whose `@comptime` body calls a `use`-imported helper fn. Regression test that body-eval still has resolved names available after the split.
+
+### `ResolverCtx` tests
+
+8. **`resolver_ctx_lookup_type_test.av`** — macro calls `ctx.lookup_type("string")` and `ctx.lookup_type("MyLocalType")`. Asserts canonical names returned are correct.
+
+9. **`resolver_ctx_qualify_ident_test.av`** — macro calls `ctx.qualify_ident("my_imported_fn")`. Asserts returned path matches what `Expr.Ident("my_imported_fn")` would resolve to in the same scope.
+
+10. **`resolver_ctx_fresh_ident_test.av`** — macro requests `ctx.fresh_ident("x")` ten times. Asserts all ten are distinct and none collide with any name visible in the scope.
+
+11. **`resolver_ctx_unwrap_path_test.av`** — exercises `unwrap_path_to`. Test cases:
+    - `unwrap_path_to(SExpr, "Expr")` returns `["node"]`.
+    - `unwrap_path_to(FieldInit, "Expr")` returns `["value", "node"]`.
+    - `unwrap_path_to(string, "Expr")` returns `[]` (no path).
+    - `unwrap_path_to(Expr, "Expr")` returns `[]` (already is target).
+    - Cycle detection: type with a recursive field doesn't infinite-loop.
+
+### Quote-surface tests
+
+12. **`quote_arm_test.av`** — covers probe 1. Build a match arm via `quote arm` and splice it into a match.
+
+13. **`quote_splice_arm_list_test.av`** — covers probe 2. Build a list of match arms outside the quote, splice the whole list.
+
+14. **`quote_splice_type_ident_test.av`** — covers probe 3 if it required changes.
+
+15. **`quote_iteration_splice_test.av`** — covers probe 4 if added.
+
+### Regression: existing tests must still pass
+
+- All of `bootstrap/packages/std-avrac/src/features/comptime/tests/*.av` (currently passing).
+- `bootstrap/packages/std-avrac/src/features/quote_expr/tests/*.av`.
+- `bootstrap/packages/std-avrac/src/features/marshal/tests/*.av` (marshal pattern unaffected — confirms the pre-resolve compiler-pass path still works).
+- `bootstrap/packages/std-avrac/src/resolve/tests/*.av` (resolver refactor must not break existing behaviour).
+- Full bootstrap test suite (current baseline: 2462+ passing).
+
+---
+
+## Verification
+
+After all the above lands:
+
+```bash
+cd bootstrap
+make build               # passes
+make update-seed         # passes; selfhost fixed point holds
+
+# The pipeline-fix probe:
+cat > /tmp/probe_pipeline.av <<'EOF'
+use @std.avrac.core.{Stmt, SStmt, ParamEntry, TypeParamEntry, ValueType}
+@comptime
+fn build_simple_fn() -> Stmt {
+    let empty_body: List<SStmt> = []
+    let empty_params: List<ParamEntry> = []
+    let empty_tp: List<TypeParamEntry> = []
+    Stmt.Function("_gen", empty_tp, empty_params, ValueType.Unknown, empty_body)
+}
+@expand(build_simple_fn)
+fn placeholder() {}
+fn main() { _gen(); println("ok") }
+EOF
+build/bs2 compile /tmp/probe_pipeline.av    # exits 0
+cc /tmp/probe_pipeline.av.ll build/runtime.o -o /tmp/probe_pipeline
+/tmp/probe_pipeline                          # prints "ok"
+
+# The full test suite:
+build/bs2 test           # 2462+ tests pass, none failed
+```
+
+If the probe outputs "ok" and the test suite passes, the work is done.
 
 ---
 
 ## What NOT to touch
 
-- **`features/marshal/derive.av`** — works correctly via the pre-resolve compiler-pass pattern. Convert it later (Phase 3) once `derive_walker` proves the `@expand` path works for compiler-internal derives. Don't touch in the pipeline-fix work.
+- **`features/marshal/derive.av`** — works correctly via the pre-resolve compiler-pass pattern. Don't try to convert it as part of this work.
 
 - **`expand_macros_multi_stmt`** (commit `98e32334`) — separately landed, works correctly. Don't revert.
 
-- **`@comptime` fold logic** (`features/comptime/eval.av` `try_fold_call`, `run_comptime`) — only `expand_macros` ordering changes. `run_comptime`'s position relative to typecheck stays.
+- **`@comptime` fold logic** (`features/comptime/eval.av:try_fold_call`, `run_comptime`) — only `expand_macros` ordering changes. `run_comptime`'s position relative to typecheck stays.
 
-- **Existing per-walker source files** (mono.av, escape.av, find_captures, desugar/mod.av, …). Phase 4 (refactoring to use `.fold()` etc.) is a separate later step. The pipeline fix and `derive_walker` should land first, prove out via the test suite, then walker refactoring is a mechanical cleanup that builds on a stable base.
+- **Existing walker source files** (`features/generics/mono.av`, `codegen/escape.av`, `features/closures/codegen.av`, `desugar/mod.av`, etc.). These will be touched in a future session by a different agent. Don't preemptively refactor them.
 
----
+- **The hand-rolled compiler-internal derive pattern as a whole.** This work makes the `@expand` surface viable for *user-level* macros that introduce decls. Compiler-internal derives (marshal, future ones) may or may not switch later — that's a separate decision for a future session.
 
-## After this lands, the picking-up agent (me) should:
-
-Sequence after qa6i lands:
-
-1. **Verify** the probe at the top of this doc compiles and runs.
-2. **Phase 2 sub-task A**: probe each item in "macro-surface additions" above to see what works vs needs adding. File one beads ticket per gap found.
-3. **Phase 2 sub-task B**: add the `ResolverCtx` / `AnnotatedDecl` / `ResolvedDecls` types and wire them through `invoke_macro`.
-4. **Phase 2 sub-task C**: implement `unwrap_path_to` in resolver_ctx.av (~30 LOC).
-5. **Phase 2 sub-task D**: write `derive_walker` as in the spec above (~80 LOC).
-6. **Phase 2 sub-task E**: write the 7 walker tests above; all must pass.
-7. **Phase 3**: `@expand(derive_walker)` on `Pattern` first (smallest enum, validates end-to-end). Then `ValueType`, `Stmt`, `Expr`.
-8. **Phase 4**: refactor each hand-rolled walker to use `.fold()` / `.map()` / `.visit()` — ~12 walkers, each ~5-15 LOC after refactor (down from 50-150 LOC each).
-9. **Phase 5**: convert `marshal` from hand-rolled pre-resolve pass to `@expand(derive_marshal)` — proves the `@expand` path with a second derive, not just one.
-10. **Phase 6**: full test suite, fixed-point check, dead-code removal of old walker source, commit + push.
-
-Until qa6i lands, `derive_walker` could ship as a marshal-style pre-resolve compiler pass — which works, but doesn't validate the `@expand` surface as the long-term answer. The point of fixing qa6i first is making the `@expand` path the unified, working answer for both user-level and compiler-internal derives.
+- **Don't write any macros that USE the new infrastructure.** The point of this session is to build the infrastructure and prove it works via tests. The first consumer-of-this-infrastructure macro will be written in a later session.
 
 ---
 
-## Related commits in the same session
+## Related commits
 
-- `98e32334` — `feat(comptime): @expand macros can return List<SStmt>` — independent improvement to expand_macro.av, no overlap with the pipeline fix. Already lands the multi-stmt return capability `derive_walker` needs.
-- `1703d913` — initial version of this handoff doc.
-- (this commit) — extended doc with Phase 2 derive_walker spec, ResolverCtx design, macro-surface gap list, implicit-ctx model.
+- `98e32334` — `feat(comptime): @expand macros can return List<SStmt>` — independent improvement to `expand_macro.av`, already landed. Useful context but unrelated to the pipeline fix.
 
 ## Related beads tickets
 
-- `forge-crafting-intepreters-qa6i` — the @expand pipeline ordering bug — references this doc for full context.
+- `forge-crafting-intepreters-qa6i` — the @expand pipeline ordering bug — references this doc.
 
 ---
 
@@ -583,28 +545,29 @@ Until qa6i lands, `derive_walker` could ship as a marshal-style pre-resolve comp
 
 - **`@comptime fn`** — fn that runs at compile time, evaluated by the bundled tree-walking interpreter (`features/eval/`).
 - **`@expand(name)`** — annotation that applies a `@comptime` fn to a decl, replacing that decl with the macro's output.
-- **`quote stmt { ... }`** / **`quote stmts { ... }`** / **`quote { ... }`** — syntactic capture of AST as a runtime value (Stmt / List<SStmt> / Expr).
-- **`~expr`** — splice: insert a runtime value into a quoted body. Used as `~T` to splice a type identifier, `~arms` to splice a list of MatchArms, etc.
-- **Pre-resolve pass** — a compiler pass that runs before `resolve_names`. Has plain AST access, no eval, no resolved names yet. Marshal lives here today; with Option C, derive_walker will live in the @expand pipeline instead.
+- **`quote stmt { ... }`** / **`quote stmts { ... }`** / **`quote { ... }`** / **`quote type { ... }`** / **`quote decl { ... }`** — syntactic capture of AST as a runtime value. Kinds defined in `features/quote_expr/grammar.md`.
+- **`~expr`** — splice: insert a runtime value into a quoted body.
+- **Pre-resolve pass** — a compiler pass that runs before `resolve_names`. Has plain AST access, no eval, no resolved names yet. Marshal lives here.
 - **`construct_stmt(s) -> Expr`** in `features/quote_expr/lower.av` — encodes a Stmt as an Expr that, when evaluated, rebuilds the original. Used to box Stmt args into Values for macro invocation.
-- **`value_to_stmt(v) -> Stmt?`** in `features/comptime/eval.av` — decodes a Value (produced by macro eval) back into a real Stmt.
-- **`AnnotatedDecl`** (new, Phase 2) — what a macro receives as its first arg. Bundles the unwrapped decl, the `@expand(...)` annotation, and the decl's canonical path. Built by `invoke_macro`.
-- **`ResolverCtx`** (new, Phase 2) — sealed read-only handle the macro receives as its second arg. Exposes `lookup_type`, `qualify_ident`, `fresh_ident`, `unwrap_path_to`. Implemented as an opaque pointer plus a dispatch table of extern fns (same shape as how `Runtime` is passed through eval today).
-- **`ResolvedDecls`** (new, Phase 2) — what a macro returns. Carries `decls: List<SStmt>` (the post-resolve-ready output), `introduces: List<DeclSymbol>` (names registered with the parent scope), and `provenance: MacroProvenance` (trace back to the macro definition).
-- **`unwrap_path_to(t, target)`** (new, Phase 2) — `ctx` method that returns the field-access chain to dig from a wrapper type to a value of `target`. Examples: `SExpr` → `["node"]`, `FieldInit` → `["value", "node"]`. Used by `derive_walker.classify` to detect wrapper-list shapes without hardcoding wrapper names.
-- **Implicit ctx model** — every `@expand` macro receives a `ResolverCtx` for the surrounding decl's resolution scope automatically. The user writes only `@expand(name)`; no `@requires_scope(...)` ceremony. The dependency graph between macros is inferred from the `ctx` methods each macro actually calls during expansion.
-- **ChildShape** (Phase 2, internal to derive_walker) — `.None` / `.Direct` / `.ListDirect` / `.ListWrapped` / `.ListDoubleWrapped`. How a variant field contributes to children() / map(). Computed by `classify`, dispatched in `children_arm` and `recurse_arg`.
+- **`value_to_stmt(v) -> Stmt?`** in `features/comptime/eval.av` — decodes a Value back into a real Stmt.
+- **`value_to_stmt_list(v) -> List<SStmt>?`** — same for a list (introduced by `98e32334`).
+- **`AnnotatedDecl`** (NEW, build in this work) — bundles the unwrapped decl, the `@expand` annotation, and the decl's canonical path. Passed as the first arg of 2-arg `@expand` macros.
+- **`ResolverCtx`** (NEW, build in this work) — sealed read-only handle the macro receives as its second arg. Exposes `lookup_type`, `qualify_ident`, `fresh_ident`, `unwrap_path_to`. Implemented as opaque pointer + extern-fn vtable.
+- **`ResolvedDecls`** (NEW, build in this work) — macro return type. Carries `decls`, `introduces` (symbols added to parent scope), `provenance` (trace back to macro definition).
+- **`unwrap_path_to(t, target)`** (NEW) — `ctx` method returning the field-access chain to dig from `t` to a value of type `target`. BFS over the field graph.
+- **`from_macro` flag** (NEW) — bool field on SStmt set by the splicer; the partial re-resolve walks only stmts with this flag set.
+- **`ExpandPlan`** (NEW, internal to expand_macros) — list of `(target_position, macro_name)` pairs produced by `expand_macros_collect`, consumed by `expand_macros_eval`.
 
 ---
 
-## Quick reference: where everything lives after Phase 2
+## Quick reference: where everything lives
 
 | Concept | File |
 |---|---|
-| Pipeline-fix changes | `features/comptime/expand_macro.av`, `cli/src/main.av`, `resolve/names.av` |
+| Pipeline-fix changes | `features/comptime/expand_macro.av`, `cli/src/main.av`, `resolve/names.av`, `core/ast.av` (from_macro field) |
 | `ResolverCtx` impl + extern dispatch | `features/comptime/resolver_ctx.av` (new) |
 | `AnnotatedDecl` / `ResolvedDecls` / `DeclSymbol` types | `features/comptime/macro_types.av` (new) |
-| `derive_walker` macro | `features/walker/derive.av` (new) |
-| `unwrap_one` / `unwrap_two` / `rewrap_one` / `rewrap_two` helpers | `features/walker/helpers.av` (new) |
-| walker tests | `features/walker/tests/walker_*_test.av` (new) |
-| Pipeline-fix tests | `features/comptime/tests/expand_*_test.av` (new) |
+| Pipeline-fix tests | `features/comptime/tests/expand_*_test.av` (new — 7 tests) |
+| `ResolverCtx` tests | `features/comptime/tests/resolver_ctx_*_test.av` (new — 4 tests) |
+| Quote-surface tests | `features/comptime/tests/quote_*_test.av` (new — up to 4 tests) |
+| Quote-surface fixes | `features/quote_expr/parser.av`, `features/quote_expr/lower.av`, `features/comptime/eval.av` codec arms |
