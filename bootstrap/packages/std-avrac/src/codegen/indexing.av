@@ -29,21 +29,13 @@ export fn emit_index(ctx: Ctx, env: List<VarBinding>, obj: Expr, idx: Expr) -> R
         return err_emit("indexing on non-string/list value (ty=${vtype_display(r.ty)})")
     }
     let i_r = ctx.emit(env, idx)?
-    // Allocate a 2-byte buffer (1 char + nul), copy the byte at
-    // src+i, set buf[1]=0. Returns a fresh str.
-    let src_int = ctx.to_i64(r.value, "idx_src")
-    let off_int = ctx.add(src_int, i_r.value, "idx_off_int")
-    let off_ptr = ctx.to_ptr(off_int, "idx_off")
-    let byte = ctx.load_i8(off_ptr, "idx_byte")
-    let buf = ctx.rc_alloc(ctx.i64(2))
-    ctx.store(byte, buf)
-    // buf[1] = 0
-    let buf_int = ctx.to_i64(buf, "idx_buf_int")
-    let one = ctx.i64(1)
-    let nul_int = ctx.add(buf_int, one, "idx_nul_int")
-    let nul_ptr = ctx.to_ptr(nul_int, "idx_nul")
-    ctx.store(ctx.i8(0), nul_ptr)
-    ok_emit(buf, .Str)
+    // Route to `avra_str_char_at` which bounds-checks against strlen.
+    // The inline pointer-arithmetic path was unchecked — `s[5]` on
+    // `"hi"` happily loaded a heap byte from past the NUL terminator
+    // and returned it as a "string". Fix routes through the helper so
+    // OOB indices return "" instead of leaking memory contents.
+    let result = ctx.call("avra_str_char_at", [r.value, i_r.value])
+    ok_emit(result, .Str)
 }
 
 /// Codegen for `obj[start..end]`. Forwards to `avra_str_substring`
