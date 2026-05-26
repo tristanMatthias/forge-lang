@@ -592,22 +592,140 @@ fn binding_decode(p: List<Value>, variant: string) -> Stmt? {
 }
 
 /// Decode an enum Value carrying a `@std::avrac::core::ValueType`
-/// tag. First slice covers the no-payload primitives + the Unknown
-/// catch-all that lower_quotes emits everywhere by default.
+/// tag. Handles every variant declared on the ValueType enum so
+/// macros that emit typed decls (e.g. `Stmt.Function(name, [], [],
+/// ValueType.List(.Int), body)`) roundtrip without dropping the
+/// return-type info (gap 1.B of the @expand handoff).
+///
+/// Variants with no payload: every primitive width + Map. Variants
+/// with payloads recurse via enum_value_to_value_type and
+/// list_value_to_value_type_list as needed.
 fn enum_value_to_value_type(v: Value) -> ValueType? {
-    if v.enum_type != "@std::avrac::core::ValueType" { return null }
+    // Accept both fully-qualified (outer call site, where the AST had
+    // an explicit `ValueType.…` prefix and resolve_names qualified it)
+    // and bare (inner positional args, where `.List(.Int)` writes the
+    // inner Value with empty enum_type because `.Int` has no prefix).
+    // The slot type pins it to ValueType, so the variant name alone is
+    // unambiguous.
+    if v.enum_type != "@std::avrac::core::ValueType" && v.enum_type != "" {
+        return null
+    }
+    let p = v.enum_payload
     match v.enum_variant {
         "Int"     -> ValueType.Int
+        "U8"      -> ValueType.U8
+        "U16"     -> ValueType.U16
+        "U32"     -> ValueType.U32
+        "U64"     -> ValueType.U64
+        "I8"      -> ValueType.I8
+        "I16"     -> ValueType.I16
+        "I32"     -> ValueType.I32
         "Bool"    -> ValueType.Bool
         "Float"   -> ValueType.Float
         "Str"     -> ValueType.Str
         "Bytes"   -> ValueType.Bytes
         "Void"    -> ValueType.Void
         "Ptr"     -> ValueType.Ptr
+        "Map"     -> ValueType.Map
         "Unknown" -> ValueType.Unknown
+        "Struct" -> {
+            if p.length != 2 { return null }
+            let name = p[0].text
+            let id = number_value_to_int(p[1])
+            ValueType.Struct(name, id)
+        }
+        "Enum" -> {
+            if p.length != 3 { return null }
+            let name = p[0].text
+            let type_args = list_value_to_value_type_list(p[1])?
+            let id = number_value_to_int(p[2])
+            ValueType.Enum(name, type_args, id)
+        }
+        "Tuple" -> {
+            if p.length != 1 { return null }
+            let elements = list_value_to_value_type_list(p[0])?
+            ValueType.Tuple(elements)
+        }
+        "List" -> {
+            if p.length != 1 { return null }
+            let elem = enum_value_to_value_type(p[0])?
+            ValueType.List(elem)
+        }
+        "Fn" -> {
+            if p.length != 1 { return null }
+            let ret = enum_value_to_value_type(p[0])?
+            ValueType.Fn(ret)
+        }
+        "Closure" -> {
+            if p.length != 2 { return null }
+            let nc = number_value_to_int(p[0])
+            let ret = enum_value_to_value_type(p[1])?
+            ValueType.Closure(nc, ret)
+        }
+        "FnTyped" -> {
+            if p.length != 2 { return null }
+            let params = list_value_to_value_type_list(p[0])?
+            let ret = enum_value_to_value_type(p[1])?
+            ValueType.FnTyped(params, ret)
+        }
+        "Trait" -> {
+            if p.length != 2 { return null }
+            let name = p[0].text
+            let id = number_value_to_int(p[1])
+            ValueType.Trait(name, id)
+        }
+        "Union" -> {
+            if p.length != 1 { return null }
+            let types = list_value_to_value_type_list(p[0])?
+            ValueType.Union(types)
+        }
+        "Newtype" -> {
+            if p.length != 3 { return null }
+            let name = p[0].text
+            let inner = enum_value_to_value_type(p[1])?
+            let id = number_value_to_int(p[2])
+            ValueType.Newtype(name, inner, id)
+        }
+        "NarrowedEnum" -> {
+            if p.length != 3 { return null }
+            let en = p[0].text
+            let vn = p[1].text
+            let id = number_value_to_int(p[2])
+            ValueType.NarrowedEnum(en, vn, id)
+        }
+        "Task" -> {
+            if p.length != 1 { return null }
+            let rt = enum_value_to_value_type(p[0])?
+            ValueType.Task(rt)
+        }
         _ -> null
     }
 }
+
+/// Decode a list-Value of ValueType-enum entries back into a real
+/// `List<ValueType>`. Used by Enum/Tuple/FnTyped/Union arms.
+fn list_value_to_value_type_list(v: Value) -> List<ValueType>? {
+    if v.kind != "list" { return [] }
+    mut out: List<ValueType> = []
+    for entry in v.list_payload {
+        let vt = enum_value_to_value_type(entry) ?? ValueType.Unknown
+        out.push(vt)
+    }
+    out
+}
+
+/// Extract an int from a Value carrying a number literal. Number
+/// Values store the textual form (set by the eval interpreter at
+/// `Expr.Number` time), so we parse rather than read a numeric slot.
+/// Non-number Values decode as 0 — the resolver re-runs over spliced
+/// decls and will overwrite stale TypeRegistry ids, so a zero default
+/// is safe for ids and slot counts.
+fn number_value_to_int(v: Value) -> int {
+    if v.kind != "number" { return 0 }
+    avra_selfhost_string_to_int(v.number_text)
+}
+
+extern fn avra_selfhost_string_to_int(s: string) -> int
 
 /// Decode a Value carrying a `List<SStmt>` back into a real
 /// `List<SStmt>` AST value. Walks the list payload of struct

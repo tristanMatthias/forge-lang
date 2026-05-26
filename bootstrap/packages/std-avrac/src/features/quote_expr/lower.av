@@ -14,7 +14,7 @@
 // that desugar.av and comptime/rewrite.av use; once the generic-AST-
 // visitor ticket lands (93k3) all three should share a single visitor.
 
-use core.{Stmt, SStmt, sstmt_at, sstmt_dummy, Expr, SExpr, sexpr, sexpr_dummy, FieldEntry, FieldInit, MatchArm, BinOp, UnOp, LogicOp, ParamEntry, TypeParamEntry, CompConfigPair, Variant, binop_str, unop_str, logicop_str}
+use core.{Stmt, SStmt, sstmt_at, sstmt_dummy, Expr, SExpr, sexpr, sexpr_dummy, FieldEntry, FieldInit, MatchArm, BinOp, UnOp, LogicOp, ParamEntry, TypeParamEntry, CompConfigPair, Variant, ValueType, binop_str, unop_str, logicop_str}
 use list_ops.{list_map}
 
 // ── Public entry ──
@@ -560,6 +560,93 @@ fn construct_value_type_unknown() -> Expr {
     Expr.EnumCtor("@std::avrac::core::ValueType", "Unknown", empty)
 }
 
+/// Build an Expr that, when evaluated, produces a `ValueType` Value
+/// matching `vt`. Sister to the decoder `enum_value_to_value_type` in
+/// comptime/eval.av — pin the encoder/decoder contract for every
+/// declared ValueType variant so future quote-surface work can
+/// preserve typed positions without re-deriving the mapping.
+///
+/// Currently unused by the quote-lowering passes (which keep emitting
+/// `construct_value_type_unknown` to preserve pre-resolve semantics);
+/// available for callers that want to embed a typed ValueType literal
+/// without round-tripping through quote.
+fn construct_value_type(vt: ValueType) -> Expr {
+    match vt {
+        .Int     -> value_type_ctor("Int")
+        .U8      -> value_type_ctor("U8")
+        .U16     -> value_type_ctor("U16")
+        .U32     -> value_type_ctor("U32")
+        .U64     -> value_type_ctor("U64")
+        .I8      -> value_type_ctor("I8")
+        .I16     -> value_type_ctor("I16")
+        .I32     -> value_type_ctor("I32")
+        .Bool    -> value_type_ctor("Bool")
+        .Float   -> value_type_ctor("Float")
+        .Str     -> value_type_ctor("Str")
+        .Bytes   -> value_type_ctor("Bytes")
+        .Void    -> value_type_ctor("Void")
+        .Ptr     -> value_type_ctor("Ptr")
+        .Map     -> value_type_ctor("Map")
+        .Unknown -> value_type_ctor("Unknown")
+        .Struct(name, id) -> value_type_ctor_args("Struct",
+            two_args(string_lit_expr(name), int_lit_expr(id)))
+        .Enum(name, type_args, id) -> value_type_ctor_args("Enum",
+            three_args(string_lit_expr(name),
+                       construct_value_type_list(type_args),
+                       int_lit_expr(id)))
+        .Tuple(elements) -> value_type_ctor_args("Tuple",
+            one_arg(construct_value_type_list(elements)))
+        .List(elem) -> value_type_ctor_args("List",
+            one_arg(construct_value_type(elem)))
+        .Fn(ret) -> value_type_ctor_args("Fn",
+            one_arg(construct_value_type(ret)))
+        .Closure(num_captures, ret) -> value_type_ctor_args("Closure",
+            two_args(int_lit_expr(num_captures), construct_value_type(ret)))
+        .FnTyped(params, ret) -> value_type_ctor_args("FnTyped",
+            two_args(construct_value_type_list(params),
+                     construct_value_type(ret)))
+        .Trait(name, id) -> value_type_ctor_args("Trait",
+            two_args(string_lit_expr(name), int_lit_expr(id)))
+        .Union(types) -> value_type_ctor_args("Union",
+            one_arg(construct_value_type_list(types)))
+        .Newtype(name, inner, id) -> value_type_ctor_args("Newtype",
+            three_args(string_lit_expr(name),
+                       construct_value_type(inner),
+                       int_lit_expr(id)))
+        .NarrowedEnum(enum_name, variant_name, id) -> value_type_ctor_args("NarrowedEnum",
+            three_args(string_lit_expr(enum_name),
+                       string_lit_expr(variant_name),
+                       int_lit_expr(id)))
+        .Task(result_ty) -> value_type_ctor_args("Task",
+            one_arg(construct_value_type(result_ty)))
+    }
+}
+
+/// Variant with payload args. Sister to value_type_ctor for the
+/// payload-bearing arms above.
+fn value_type_ctor_args(variant: string, args: List<SExpr>) -> Expr {
+    Expr.EnumCtor("@std::avrac::core::ValueType", variant, args)
+}
+
+/// Build an Expr that produces a `List<ValueType>` Value at runtime.
+/// Mirrors construct_field_list / construct_type_param_list: ListLit
+/// of constructed entries.
+fn construct_value_type_list(types: List<ValueType>) -> Expr {
+    mut elems: List<SExpr> = []
+    mut i = 0
+    while i < types.length {
+        elems.push(sexpr_dummy(construct_value_type(types[i])))
+        i = i + 1
+    }
+    Expr.ListLit(elems)
+}
+
+/// Build `Expr.Number("<n>")` — used by construct_value_type for the
+/// integer id slots on Struct / Enum / Trait / Newtype / NarrowedEnum.
+fn int_lit_expr(n: int) -> Expr {
+    Expr.Number(string(n))
+}
+
 /// Build an Expr that, when evaluated, produces a
 /// `List<FieldInit>` AST value. Each entry materialises as a
 /// `FieldInit { name, value }` struct literal; the result is an
@@ -729,11 +816,11 @@ export fn construct_stmt(stmt: Stmt) -> Expr {
         .Impl(type_name, methods) -> stmt_ctor("Impl", two_args(string_lit_expr(type_name), construct_stmt_list(methods)))
         .TraitDecl(name, methods) -> stmt_ctor("TraitDecl", two_args(string_lit_expr(name), construct_stmt_list(methods)))
         .Parallel(body) -> stmt_ctor("Parallel", one_arg(construct_stmt_list(body)))
-        .Function(name, tp, params, _, body) -> stmt_ctor("Function",
+        .Function(name, tp, params, rvt, body) -> stmt_ctor("Function",
             five_args(string_lit_expr(name),
                       construct_type_param_list(tp),
                       construct_param_list(params),
-                      construct_value_type_unknown(),
+                      construct_value_type(rvt),
                       construct_stmt_list(body)))
         .TypeDecl(name, tp, fields) -> stmt_ctor("TypeDecl",
             three_args(name_or_splice(name),
