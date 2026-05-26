@@ -20,7 +20,7 @@
 // so any `@comptime` calls inside its body fold correctly.
 
 use core.{Stmt, SStmt, Expr, SExpr, sstmt_at, find_annotation, stmt_unwrap}
-use features.comptime.{CompTimeRegistry, comptime_lookup, collect_comptime_fns, value_to_stmt, stmt_to_value}
+use features.comptime.{CompTimeRegistry, comptime_lookup, collect_comptime_fns, value_to_stmt, value_to_stmt_list, stmt_to_value}
 use features.eval.{Runtime, Value, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message}
 use list_ops.{list_concat}
 
@@ -152,12 +152,14 @@ fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List
             .ComponentBlock(comp_name, _, _, _) -> {
                 // ComponentBlock instances of @expand'd defs route
                 // through the macro pipeline with the block itself
-                // as the Stmt arg.
+                // as the Stmt arg. Replacement is a list — splice
+                // every element into the output so multi-stmt macros
+                // emit all their decls as siblings.
                 let inst_macro = comp_macro_lookup(comp_macros, comp_name)
                 if inst_macro != "" {
                     let replacement = try_expand_with_macro(ss.node, inst_macro, reg, ss.line, ss.col, ss.file)
                     if replacement != null {
-                        out.push(replacement!)
+                        for r in replacement! { out.push(r) }
                     } else {
                         out.push(ss)
                     }
@@ -182,7 +184,12 @@ fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List
                 if has_expand_annotation(ss.node) {
                     let replacement = try_expand_one(ss.node, reg, ss.line, ss.col, ss.file)
                     if replacement != null {
-                        out.push(replacement!)
+                        // Splice every Stmt the macro returned —
+                        // singletons land as a 1-element list, lists
+                        // land as N elements. Either way the macro's
+                        // output becomes consecutive siblings of
+                        // whatever it replaced.
+                        for r in replacement! { out.push(r) }
                     } else {
                         // Expansion failed — keep the original stmt
                         // so downstream stages surface the issue.
@@ -204,7 +211,7 @@ fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List
 /// vez6.8.5's component-instance dispatch where the macro is
 /// inherited from the parent ComponentDef. Caller has already
 /// unwrapped any Annotated layers.
-fn try_expand_with_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int, col: int, file: string) -> SStmt? {
+fn try_expand_with_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int, col: int, file: string) -> List<SStmt>? {
     invoke_macro(stmt, macro_name, reg, line, col, file)
 }
 
@@ -213,7 +220,7 @@ fn try_expand_with_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, 
 /// wrapped Stmt as a single arg if the macro is 1-ary, else
 /// zero-arg), and decode the result. Returns null when ANY step
 /// fails — the caller treats that as "leave this stmt alone".
-fn try_expand_one(stmt: Stmt, reg: CompTimeRegistry, line: int, col: int, file: string) -> SStmt? {
+fn try_expand_one(stmt: Stmt, reg: CompTimeRegistry, line: int, col: int, file: string) -> List<SStmt>? {
     let macro_name = expand_target_name(stmt)
     if macro_name == "" {
         eprintln("error: @expand requires a macro fn identifier as its argument")
@@ -223,18 +230,29 @@ fn try_expand_one(stmt: Stmt, reg: CompTimeRegistry, line: int, col: int, file: 
 }
 
 /// Shared driver: locate `macro_name` in the comptime registry,
-/// dispatch on arity (0 or 1), eval, and decode the return as a
-/// Stmt. Returns null on any failure. Logs context-rich diagnostics
-/// so users see which macro / which step failed.
+/// dispatch on arity (0 or 1), eval, and decode the return as
+/// either a single Stmt or a List<Stmt>. Returns the replacement
+/// list (always a list, even for single-Stmt returns) or null on
+/// any failure. Logs context-rich diagnostics so users see which
+/// macro / which step failed.
 ///
-/// vez6.8.4.A/C + vez6.8.5: 1-arg macros receive the wrapped Stmt
-/// boxed via stmt_to_value (which routes through construct_stmt +
-/// eval_expr — so any variant lower.av's construct_stmt encodes
-/// roundtrips correctly). Caller is responsible for any
-/// annotation peeling: try_expand_one strips @expand before
-/// invoking; try_expand_with_macro receives an already-unwrapped
-/// ComponentBlock.
-fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int, col: int, file: string) -> SStmt? {
+/// Multi-stmt support: macros built via `quote stmts { ... }` return
+/// `List<SStmt>`, decoded via value_to_stmt_list. This lets a single
+/// `@expand` site emit N sibling declarations (e.g. the original
+/// type + an impl block + a top-level helper fn) without forcing
+/// macros into the singleton-Stmt straightjacket. Marshal and other
+/// derives that previously had to bypass @expand entirely can now
+/// be expressed directly. Try list first because a List value
+/// can't decode as a single Stmt; the second decode is the
+/// fallback for traditional `quote stmt { ... }` macros.
+///
+/// 1-arg macros receive the wrapped Stmt boxed via stmt_to_value
+/// (which routes through construct_stmt + eval_expr — so any variant
+/// lower.av's construct_stmt encodes roundtrips correctly). Caller
+/// is responsible for any annotation peeling: try_expand_one strips
+/// @expand before invoking; try_expand_with_macro receives an
+/// already-unwrapped ComponentBlock.
+fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int, col: int, file: string) -> List<SStmt>? {
     let lookup = comptime_lookup(reg, macro_name)
     if lookup == null {
         eprintln("error: @expand(${macro_name}) — no @comptime fn named `${macro_name}` in scope")
@@ -260,12 +278,25 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
         eprintln("error: @expand(${macro_name}) — macro evaluation failed: ${step_error_message(result)}")
         return null
     }
-    let decoded = value_to_stmt(step_value(result))
+    let v = step_value(result)
+    // Try list first — a List<SStmt> Value is what `quote stmts { ... }`
+    // produces. value_to_stmt_list returns null when v isn't a list,
+    // so this is the cheap dispatch.
+    let as_list = value_to_stmt_list(v)
+    if as_list != null {
+        mut out: List<SStmt> = []
+        for ss in as_list! {
+            out.push(sstmt_at(ss.node, line, col, file))
+        }
+        return out
+    }
+    // Fall back to single Stmt — `quote stmt { ... }` macros.
+    let decoded = value_to_stmt(v)
     if decoded == null {
-        eprintln("error: @expand(${macro_name}) — macro returned a value the expander could not decode into a Stmt (kind=${step_value(result).kind})")
+        eprintln("error: @expand(${macro_name}) — macro returned a value the expander could not decode into a Stmt or List<Stmt> (kind=${v.kind})")
         return null
     }
-    sstmt_at(decoded!, line, col, file)
+    [sstmt_at(decoded!, line, col, file)]
 }
 
 /// Pull the macro-fn identifier out of the `@expand(NAME)` annotation
