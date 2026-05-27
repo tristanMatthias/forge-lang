@@ -14,7 +14,7 @@
 // that desugar.av and comptime/rewrite.av use; once the generic-AST-
 // visitor ticket lands (93k3) all three should share a single visitor.
 
-use core.{Stmt, SStmt, sstmt_at, sstmt_dummy, Expr, SExpr, sexpr, sexpr_dummy, FieldEntry, FieldInit, MatchArm, BinOp, UnOp, LogicOp, ParamEntry, TypeParamEntry, CompConfigPair, Variant, ValueType, binop_str, unop_str, logicop_str}
+use core.{Stmt, SStmt, sstmt_at, sstmt_dummy, Expr, SExpr, sexpr, sexpr_dummy, FieldEntry, FieldInit, MatchArm, Pattern, BinOp, UnOp, LogicOp, ParamEntry, TypeParamEntry, CompConfigPair, Variant, ValueType, binop_str, unop_str, logicop_str}
 use list_ops.{list_map}
 
 // ── Public entry ──
@@ -292,8 +292,41 @@ fn dispatch_quote_kind(kind: string, body: Expr) -> Expr {
     if kind == "type" {
         return construct_value_type_from_body(body)
     }
+    if kind == "arm" {
+        // The parser wrapped the arm in a single-armed MatchExpr so
+        // the Quote(body) shape stays uniform. Unbox it here and
+        // construct the MatchArm value programmatically.
+        let arm = extract_single_match_arm(body)
+        if arm != null { return construct_match_arm(arm!) }
+        // Malformed `quote arm { ... }` (no arm parsed) — emit a null
+        // pattern arm so codegen has something well-typed; the parser
+        // already reported the syntax error.
+        return construct_match_arm_null()
+    }
     // Default: kind == "expr" or unrecognized.
     construct_expr(unwrap_quote_body(body))
+}
+
+/// Pull the single MatchArm out of the synthetic `MatchExpr(Null, [arm])`
+/// the parser uses to carry `quote arm { ... }` content through the
+/// shared `Expr.Quote(kind, body)` envelope.
+fn extract_single_match_arm(body: Expr) -> MatchArm? {
+    match body {
+        .MatchExpr(_, arms) -> {
+            if arms.length == 1 { arms[0] } else { null }
+        }
+        _ -> null
+    }
+}
+
+fn construct_match_arm_null() -> Expr {
+    let no_guard = Expr.Null
+    let body_expr = Expr.Null
+    construct_match_arm(MatchArm {
+        pattern: Pattern.Wildcard,
+        guard: null,
+        body: sexpr_dummy(body_expr),
+    })
 }
 
 /// Recognize the body of `quote type { ... }` as a ValueType by
@@ -473,6 +506,100 @@ fn struct_lit_2(type_name: string, k1: string, v1: Expr, k2: string, v2: Expr) -
     inits.push(FieldInit { name: k1, value: sexpr_dummy(v1) })
     inits.push(FieldInit { name: k2, value: sexpr_dummy(v2) })
     Expr.StructLit(type_name, inits)
+}
+
+/// Three-field sister to `struct_lit_2` — used by `MatchArm`
+/// (pattern, guard, body) construction. Keep the parallel shape so
+/// future N-field helpers slot in next to it.
+fn struct_lit_3(type_name: string, k1: string, v1: Expr, k2: string, v2: Expr, k3: string, v3: Expr) -> Expr {
+    mut inits: List<FieldInit> = []
+    inits.push(FieldInit { name: k1, value: sexpr_dummy(v1) })
+    inits.push(FieldInit { name: k2, value: sexpr_dummy(v2) })
+    inits.push(FieldInit { name: k3, value: sexpr_dummy(v3) })
+    Expr.StructLit(type_name, inits)
+}
+
+/// Build an Expr that, when evaluated, produces a `Pattern` AST
+/// value. Mirrors the variant shape of `core::ast::Pattern` —
+/// emits an `Expr.EnumCtor("Pattern", VariantName, [args])` for
+/// each case. Used by `construct_match_arm` and (in the future)
+/// by quote_expr's pattern-position splices.
+fn construct_pattern(p: Pattern) -> Expr {
+    match p {
+        .Wildcard -> pattern_ctor("Wildcard", [])
+        .Variant(name, bindings) -> {
+            let args: List<SExpr> = [
+                sexpr_dummy(string_lit_expr(name)),
+                sexpr_dummy(construct_param_list(bindings)),
+            ]
+            pattern_ctor("Variant", args)
+        }
+        .LitString(value) -> {
+            let args: List<SExpr> = [sexpr_dummy(string_lit_expr(value))]
+            pattern_ctor("LitString", args)
+        }
+        .LitInt(value) -> {
+            let args: List<SExpr> = [sexpr_dummy(Expr.Number(string(value)))]
+            pattern_ctor("LitInt", args)
+        }
+        .LitBool(value) -> {
+            let args: List<SExpr> = [sexpr_dummy(Expr.Number(string(value)))]
+            pattern_ctor("LitBool", args)
+        }
+        .LitFloat(value) -> {
+            let args: List<SExpr> = [sexpr_dummy(string_lit_expr(value))]
+            pattern_ctor("LitFloat", args)
+        }
+        .NestedVariant(name, sub_patterns) -> {
+            let args: List<SExpr> = [
+                sexpr_dummy(string_lit_expr(name)),
+                sexpr_dummy(construct_pattern_list(sub_patterns)),
+            ]
+            pattern_ctor("NestedVariant", args)
+        }
+        .Or(left, right) -> {
+            let args: List<SExpr> = [
+                sexpr_dummy(construct_pattern(left)),
+                sexpr_dummy(construct_pattern(right)),
+            ]
+            pattern_ctor("Or", args)
+        }
+        .TypePattern(type_name, binding) -> {
+            let args: List<SExpr> = [
+                sexpr_dummy(string_lit_expr(type_name)),
+                sexpr_dummy(string_lit_expr(binding)),
+            ]
+            pattern_ctor("TypePattern", args)
+        }
+    }
+}
+
+fn pattern_ctor(variant: string, args: List<SExpr>) -> Expr {
+    Expr.EnumCtor("@std::avrac::core::Pattern", variant, args)
+}
+
+fn construct_pattern_list(patterns: List<Pattern>) -> Expr {
+    mut elems: List<SExpr> = []
+    mut i = 0
+    while i < patterns.length {
+        elems.push(sexpr_dummy(construct_pattern(patterns[i])))
+        i = i + 1
+    }
+    Expr.ListLit(elems)
+}
+
+/// Build an Expr that, when evaluated, produces a `MatchArm` AST
+/// value. Emits `Expr.StructLit("MatchArm", { pattern, guard, body })`
+/// — guard is null when the source had no `if` guard, otherwise the
+/// constructed SExpr.
+fn construct_match_arm(arm: MatchArm) -> Expr {
+    let pattern_expr = construct_pattern(arm.pattern)
+    let guard_expr = if arm.guard != null { construct_sexpr(arm.guard!) } else { Expr.Null }
+    let body_expr = construct_sexpr(arm.body)
+    struct_lit_3("@std::avrac::core::MatchArm",
+        "pattern", pattern_expr,
+        "guard", guard_expr,
+        "body", body_expr)
 }
 
 /// Build an Expr that, when evaluated, produces a

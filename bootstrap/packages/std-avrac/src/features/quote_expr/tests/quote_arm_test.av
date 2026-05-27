@@ -1,0 +1,40 @@
+// docs/2026_05_25_EXPAND_PIPELINE_HANDOFF.md — Step 2 probe 1.
+// Adds a sixth `quote` kind, `arm`, that captures a single `MatchArm`
+// (pattern + optional guard + body) as a runtime AST value. Macros can
+// now build match arms compositionally — the list-splice form (probe 2)
+// drops the arm into a match body via `~arm` in match-arm position.
+//
+// This test exercises parse + lower only: the @comptime fn returning
+// a `MatchArm` must compile cleanly. The full splice round-trip lives
+// in `quote_splice_arm_list_test.av` once probe 2 lands.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{cached_fixture_run}
+
+fn write_temp(path: string, source: string) -> string {
+    let escaped = source.replace("'", "'\\''")
+    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
+}
+
+fn run_capture(source: string) -> string {
+    let path = "/tmp/avra_quote_arm_test.av"
+    write_temp(path, source)
+    cached_fixture_run(path)
+}
+
+spec "quote arm: parses and lowers without errors" {
+    then "a @comptime fn returning MatchArm via `quote arm { ... }` compiles + runs" {
+        let out = run_capture(
+            "use @std.avrac.core.{MatchArm}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn make_arm() -> MatchArm {\n" +
+            "    quote arm { .Foo(x) -> x + 1 }\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    println(\"ok\")\n" +
+            "}\n")
+        out.contains("ok")
+    }
+}

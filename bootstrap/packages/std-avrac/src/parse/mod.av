@@ -11,7 +11,7 @@
 
 // dir-as-module (g2eo.1): lexer.av auto-loads as a sibling, surfaces
 // flat at `parse.{...}`.
-use core.{Expr, Stmt, ParamEntry, Pattern, WhenArm, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, Annotation, Tk, tk_keyword_str, TypeExpr}
+use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, Annotation, Tk, tk_keyword_str, TypeExpr}
 use core.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser}
 use features.closures.{expr_contains_it, wrap_in_it_lambda}
 use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, diag_error, diag_with_help, span_new}
@@ -1823,12 +1823,18 @@ impl Parser {
 
     fn parse_quote(self) -> Expr? {
         self.advance()  // consume `quote`
-        // Optional kind keyword: `stmt` / `stmts` / `type` / `decl`
-        // selects the result-type of the captured AST. Default is
-        // `expr` — the captured body produces an Expr value at runtime.
+        // Optional kind keyword: `stmt` / `stmts` / `type` / `decl` /
+        // `arm` selects the result-type of the captured AST. Default
+        // is `expr` — the captured body produces an Expr value at
+        // runtime.
         let kind = self.parse_quote_kind()
         // Track quote nesting so parse_unary recognizes splice `~`.
         self.quote_depth = self.quote_depth + 1
+        if kind == "arm" {
+            let body = self.parse_quote_arm_body()?
+            self.quote_depth = self.quote_depth - 1
+            return Expr.Quote(kind, body)
+        }
         let body = self.parse_block_expression()?
         self.quote_depth = self.quote_depth - 1
         Expr.Quote(kind, body)
@@ -1841,12 +1847,36 @@ impl Parser {
         }
         if self.check(Tk.Identifier) {
             let lex = self.current_lexeme
-            if lex == "stmt" || lex == "stmts" || lex == "decl" {
+            if lex == "stmt" || lex == "stmts" || lex == "decl" || lex == "arm" {
                 self.advance()
                 return lex
             }
         }
         "expr"
+    }
+
+    /// Parse `{ pattern -> body }` for `quote arm { ... }`. Wraps the
+    /// resulting arm in a single-armed `Expr.MatchExpr(Expr.Null, [arm])`
+    /// so the existing Quote(kind, body) shape stays — the lowering
+    /// pass picks the arm back out via its `arm` kind discriminator.
+    fn parse_quote_arm_body(self) -> Expr? {
+        if !self.consume(Tk.LeftBrace, "expected `{` after `quote arm`") { return null }
+        let pattern = self.parse_pattern_or()?
+        let guard: SExpr? = if self.check(Tk.KwIf) {
+            self.advance()
+            let g = self.parse_expression()?
+            sexpr(g, self.current_line, self.current_column)
+        } else {
+            null
+        }
+        if !self.consume(Tk.Arrow, "expected `->` after pattern in quote arm") { return null }
+        let body = self.parse_expression()?
+        let body_se = sexpr(body, self.current_line, self.current_column)
+        if self.check(Tk.Comma) { self.advance() }
+        if !self.consume(Tk.RightBrace, "expected `}` after quote arm body") { return null }
+        let arm = MatchArm { pattern, guard, body: body_se }
+        let arms: List<MatchArm> = [arm]
+        Expr.MatchExpr(sexpr(Expr.Null, self.current_line, self.current_column), arms)
     }
 
     // Parse `when { cond -> body, ... }` — subjectless match expression.
