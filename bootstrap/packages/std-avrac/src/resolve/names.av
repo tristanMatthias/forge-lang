@@ -610,26 +610,74 @@ export type NameResolveResult = {
     type_reg: TypeRegistry,
 }
 
-/// Top-level entry: build the module tree, resolve `use` aliases,
-/// flatten the global index, and rewrite every Ident / type name to
-/// its canonical qualified form.
-export fn resolve_names(stmts: List<SStmt>) -> NameResolveResult {
-    // Pass 1: Build module tree (legacy, used for items + global index)
-    // and module graph (used for path lookups). Graph captured each
-    // module's canonical path at construction so use-path resolution
-    // is O(1) strmap hits instead of recursive AST walks.
+/// Snapshot produced by `register_decls`: every fact discovered
+/// during the decl-scan half of name resolution, in a shape that
+/// `rewrite_uses` can consume directly. Exported so the @expand
+/// pipeline-eval phase can register macro-emitted decls into the
+/// resolver state and re-run `rewrite_uses` over the spliced AST
+/// without re-walking the originals.
+export type ResolverState = {
+    tree: ModuleNode,
+    graph: ModuleGraph,
+    aliases: List<AliasBinding>,
+    global_index: GlobalItemReg,
+    type_reg: TypeRegistry,
+    bag: DiagnosticBag,
+}
+
+/// Decl-scan half of `resolve_names`: builds the module tree, graph,
+/// use-alias bindings, global index, and a fresh type registry from
+/// `stmts`. Pure with respect to the input AST — returns a
+/// `ResolverState` value, no in-place mutation.
+///
+/// Carved out of the monolithic `resolve_names` so the @expand
+/// pipeline can rebuild the decl context after macro expansion
+/// without re-running the use-site rewrite over already-resolved
+/// originals.
+export fn register_decls(stmts: List<SStmt>) -> ResolverState {
     let tree = build_module_tree(stmts, "", ModuleNode.End)
     let graph = build_graph_from_stmts(stmts)
     let use_result = resolve_use_aliases(stmts, tree, graph)
-    // Global index from the graph's all_items list. Single
-    // O(item-count) walk instead of the legacy O(modules * items) tree
-    // traversal + extra collect_module_items pass for top-level items
-    // (the graph builder already walked them).
     let global_index_list = build_global_index_from_graph(graph.all_items)
     let global_index = global_item_reg_build(global_index_list)
     let reg = type_registry_new()
-    let ctx = NameCtx { tree, graph, aliases: use_result.aliases, current_module: "", locals: [], global_index, type_reg: reg }
-    let rewritten = rewrite_stmt_list(ctx, stmts)
+    ResolverState {
+        tree,
+        graph,
+        aliases: use_result.aliases,
+        global_index,
+        type_reg: reg,
+        bag: use_result.bag,
+    }
+}
+
+/// Use-site rewrite half of `resolve_names`: walks `stmts` and
+/// rewrites each Ident / type name to its canonical qualified form
+/// using the supplied `ResolverState`. Pure: returns a new stmt list,
+/// does not modify `stmts`.
+export fn rewrite_uses(stmts: List<SStmt>, state: ResolverState) -> List<SStmt> {
+    let ctx = NameCtx {
+        tree: state.tree,
+        graph: state.graph,
+        aliases: state.aliases,
+        current_module: "",
+        locals: [],
+        global_index: state.global_index,
+        type_reg: state.type_reg,
+    }
+    rewrite_stmt_list(ctx, stmts)
+}
+
+/// Top-level entry: build the module tree, resolve `use` aliases,
+/// flatten the global index, and rewrite every Ident / type name to
+/// its canonical qualified form. Composed from `register_decls` +
+/// `rewrite_uses` + the existing scope-validation and unused-import
+/// passes; the split lets the @expand pipeline reuse the two halves
+/// independently while keeping the monolithic call site for normal
+/// compilation.
+export fn resolve_names(stmts: List<SStmt>) -> NameResolveResult {
+    let state = register_decls(stmts)
+    let rewritten = rewrite_uses(stmts, state)
 
     // Pass 2: Validate variable scopes (was separate resolve_program call)
     let resolved = resolve_program(rewritten)
@@ -637,10 +685,10 @@ export fn resolve_names(stmts: List<SStmt>) -> NameResolveResult {
     // Pass 3: Detect unused imports — collect all QualifiedIdent paths
     // from the rewritten AST and warn about imports that were never used.
     let used = collect_used_paths_stmts(rewritten, [])
-    let unused_bag = check_unused_imports(use_result.aliases, used)
+    let unused_bag = check_unused_imports(state.aliases, used)
 
     // Merge diagnostics from all passes
-    let merged_bag = bag_merge(bag_merge(use_result.bag, resolved.bag), unused_bag)
+    let merged_bag = bag_merge(bag_merge(state.bag, resolved.bag), unused_bag)
     let has_errors = bag_has_errors(merged_bag) || resolved.had_error
     NameResolveResult {
         stmts: rewritten,
@@ -648,7 +696,7 @@ export fn resolve_names(stmts: List<SStmt>) -> NameResolveResult {
         error_message: if has_errors {
             if resolved.had_error { resolved.error_message } else { "module resolution errors" }
         } else { "" },
-        type_reg: ctx.type_reg,
+        type_reg: state.type_reg,
         bag: merged_bag,
     }
 }
