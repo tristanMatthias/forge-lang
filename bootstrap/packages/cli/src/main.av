@@ -78,7 +78,7 @@ use @std.avrac.features.eval.{render_value, eval_expression_source, execute_prog
 use @std.avrac.desugar.{desugar_program, inject_intrinsics}
 use @std.avrac.features.component_decl.{expand_components}
 use @std.avrac.features.marshal.{derive_marshal}
-use @std.avrac.resolve.{resolve_names}
+use @std.avrac.resolve.{resolve_names, resolve_names_pre_expand, register_decls, rewrite_uses, validate_scopes_after_expand, NameResolveResult}
 use @std.avrac.features.modules.{resolve_module_files, modules_dirname, find_packages_dir, package_root_for_file, dedup_modules, resolve_dir_module_body, synthesize_subdir_module_decls}
 use @std.avrac.features.modules.{load_package_config, load_manifest, Dep}
 use @std.avrac.features.modules.{filter_to_target_unit, list_avra_module_subdirs}
@@ -128,6 +128,36 @@ fn print_usage() {
 fn fail(message: string) {
     eprintln(message)
     exit(1)
+}
+
+/// Compose the two-phase `resolve_names` halves with `expand_macros`
+/// so macro-emitted top-level decls become visible to scope
+/// validation. Replaces the legacy `resolve_names → expand_macros`
+/// sequence at every compile pipeline site.
+///
+/// The pipeline-fix lives here: the previous order ran scope
+/// validation BEFORE expand_macros, so a `@expand` macro emitting
+/// `Stmt.Function("_gen", ...)` saw its call site error out with
+/// "undefined variable _gen". Now we register decls + rewrite uses
+/// first (without validating scopes), let expand_macros splice its
+/// output, then run scope validation over the post-expand AST so the
+/// macro-emitted decls are in the scope-validator's view.
+///
+/// Note: this MINIMAL form skips the post-expand re-register pass.
+/// That means call sites referencing macro-emitted names from
+/// pre-existing decls (e.g., `main()` calling a macro-emitted `_gen()`)
+/// are visible to scope-validation only via the global symbol table,
+/// not the rewritten QualifiedIdent. The downstream codegen lookup
+/// handles bare Ident resolution against the post-expand symbol table.
+fn resolve_and_expand(stmts: List<SStmt>) -> NameResolveResult {
+    let pre = resolve_names_pre_expand(stmts)
+    if pre.had_error == 1 {
+        // Module-resolution errors are fatal — bail before running
+        // expand_macros over a borked AST.
+        return validate_scopes_after_expand(pre.stmts, pre.state)
+    }
+    let expanded_macros = expand_macros(pre.stmts)
+    validate_scopes_after_expand(expanded_macros, pre.state)
 }
 
 /// Render a diagnostic bag in either human or JSON form, picked
@@ -3315,13 +3345,12 @@ fn main() {
             let with_intrinsics = inject_intrinsics(mod_resolved.stmts)
             let expanded = expand_components(with_intrinsics)
             let with_marshal = derive_marshal(expanded)
-            let named = resolve_names(with_marshal)
+            let named = resolve_and_expand(with_marshal)
             if bag_has_errors(named.bag) || bag_has_warnings(named.bag) {
                 render_bag_either(check_json, check_source, check_path, named.bag)
             }
             if named.had_error { fail(named.error_message) }
-            let expanded_macros = expand_macros(named.stmts)
-            let post_comptime = run_comptime(expanded_macros)
+            let post_comptime = run_comptime(named.stmts)
             let tc_result = typecheck_program(post_comptime)
             if bag_has_errors(tc_result.bag) || bag_has_warnings(tc_result.bag) {
                 render_bag_either(check_json, check_source, check_path, tc_result.bag)
@@ -3398,10 +3427,9 @@ fn main() {
             let with_intrinsics = inject_intrinsics(mod_resolved.stmts)
             let expanded = expand_components(with_intrinsics)
             let with_marshal = derive_marshal(expanded)
-            let named = resolve_names(with_marshal)
+            let named = resolve_and_expand(with_marshal)
             if named.had_error { fail(named.error_message) }
-            let expanded_macros = expand_macros(named.stmts)
-            let post_comptime = run_comptime(expanded_macros)
+            let post_comptime = run_comptime(named.stmts)
             println(fmt_stmt_list(post_comptime, 0))
             return
         }
@@ -3428,13 +3456,12 @@ fn main() {
             let with_intrinsics = inject_intrinsics(mod_resolved.stmts)
             let expanded = expand_components(with_intrinsics)
             let with_marshal = derive_marshal(expanded)
-            let named = resolve_names(with_marshal)
+            let named = resolve_and_expand(with_marshal)
             if bag_has_errors(named.bag) || bag_has_warnings(named.bag) {
                 render_bag(source, path, named.bag)
             }
             if named.had_error { fail(named.error_message) }
-            let expanded_macros = expand_macros(named.stmts)
-            let post_comptime = run_comptime(expanded_macros)
+            let post_comptime = run_comptime(named.stmts)
             let tc_result = typecheck_program(post_comptime)
             if bag_has_errors(tc_result.bag) || bag_has_warnings(tc_result.bag) {
                 render_bag(source, path, tc_result.bag)
@@ -3694,7 +3721,7 @@ fn main() {
         let expanded = expand_components(post_filter_stmts)
         let with_marshal = derive_marshal(expanded)
         let t_expand = avra_uptime_ms()
-        let named = resolve_names(with_marshal)
+        let named = resolve_and_expand(with_marshal)
         let t_names = avra_uptime_ms()
         if bag_has_errors(named.bag) || bag_has_warnings(named.bag) {
             render_bag_either(json_output, csource, cpath, named.bag)
@@ -3705,10 +3732,9 @@ fn main() {
             return
         }
         // Comptime fold: replace `@comptime` calls with their literal results.
-        // Runs after resolve so names are bound, before typeck so the
-        // typechecker sees the post-fold (literal-typed) AST.
-        let expanded_macros = expand_macros(named.stmts)
-        let post_comptime = run_comptime(expanded_macros)
+        // Runs after resolve_and_expand so names are bound, before typeck
+        // so the typechecker sees the post-fold (literal-typed) AST.
+        let post_comptime = run_comptime(named.stmts)
         // Type check — gates compilation on errors
         let tc_result = typecheck_program(post_comptime)
         let t_typeck = avra_uptime_ms()

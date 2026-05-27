@@ -668,30 +668,53 @@ export fn rewrite_uses(stmts: List<SStmt>, state: ResolverState) -> List<SStmt> 
     rewrite_stmt_list(ctx, stmts)
 }
 
-/// Top-level entry: build the module tree, resolve `use` aliases,
-/// flatten the global index, and rewrite every Ident / type name to
-/// its canonical qualified form. Composed from `register_decls` +
-/// `rewrite_uses` + the existing scope-validation and unused-import
-/// passes; the split lets the @expand pipeline reuse the two halves
-/// independently while keeping the monolithic call site for normal
-/// compilation.
-export fn resolve_names(stmts: List<SStmt>) -> NameResolveResult {
+/// Result of the pre-expand half of name resolution. Holds the
+/// rewritten stmts plus the live `ResolverState` so the @expand
+/// pipeline can splice macro-emitted decls and re-run `register_decls`
+/// over the spliced AST before scope validation runs.
+export type PreExpandResolve = {
+    stmts: List<SStmt>,
+    state: ResolverState,
+    had_error: int,
+    error_message: string,
+}
+
+/// Pre-expand half of `resolve_names`. Runs `register_decls` and
+/// `rewrite_uses` but DEFERS scope-validation and unused-import
+/// detection to `validate_scopes_after_expand`.
+///
+/// The pipeline-fix lives here: a `@expand` macro that emits a new
+/// top-level decl needs the resolver to register that decl BEFORE
+/// scope-validation runs over the call sites that reference it.
+/// Splitting the two halves lets `cli/main.av` interleave
+/// `expand_macros` between them.
+export fn resolve_names_pre_expand(stmts: List<SStmt>) -> PreExpandResolve {
     let state = register_decls(stmts)
     let rewritten = rewrite_uses(stmts, state)
+    let has_errors = bag_has_errors(state.bag)
+    PreExpandResolve {
+        stmts: rewritten,
+        state: state,
+        had_error: if has_errors { 1 } else { 0 },
+        error_message: if has_errors { "module resolution errors" } else { "" },
+    }
+}
 
-    // Pass 2: Validate variable scopes (was separate resolve_program call)
-    let resolved = resolve_program(rewritten)
-
-    // Pass 3: Detect unused imports — collect all QualifiedIdent paths
-    // from the rewritten AST and warn about imports that were never used.
-    let used = collect_used_paths_stmts(rewritten, [])
+/// Scope-validation + unused-import detection. Runs over the
+/// post-expand stmt list, using the resolver state from the most
+/// recent `register_decls` (which is post-expand for macro-bearing
+/// programs and identical to pre-expand for macro-free programs).
+///
+/// Returns a full `NameResolveResult` so call sites can keep their
+/// existing bag-handling path unchanged after the split.
+export fn validate_scopes_after_expand(stmts: List<SStmt>, state: ResolverState) -> NameResolveResult {
+    let resolved = resolve_program(stmts)
+    let used = collect_used_paths_stmts(stmts, [])
     let unused_bag = check_unused_imports(state.aliases, used)
-
-    // Merge diagnostics from all passes
     let merged_bag = bag_merge(bag_merge(state.bag, resolved.bag), unused_bag)
     let has_errors = bag_has_errors(merged_bag) || resolved.had_error
     NameResolveResult {
-        stmts: rewritten,
+        stmts: stmts,
         had_error: has_errors,
         error_message: if has_errors {
             if resolved.had_error { resolved.error_message } else { "module resolution errors" }
@@ -699,6 +722,17 @@ export fn resolve_names(stmts: List<SStmt>) -> NameResolveResult {
         type_reg: state.type_reg,
         bag: merged_bag,
     }
+}
+
+/// Top-level entry: build the module tree, resolve `use` aliases,
+/// flatten the global index, rewrite every Ident / type name to its
+/// canonical qualified form, then validate scopes and detect unused
+/// imports. Composed from `resolve_names_pre_expand` and
+/// `validate_scopes_after_expand`; pipelines that interleave
+/// `expand_macros` call the halves directly.
+export fn resolve_names(stmts: List<SStmt>) -> NameResolveResult {
+    let pre = resolve_names_pre_expand(stmts)
+    validate_scopes_after_expand(pre.stmts, pre.state)
 }
 
 // ── Statement rewriting ──

@@ -1,0 +1,50 @@
+// forge-crafting-intepreters-qa6i: @expand pipeline-order fix.
+// Pre-fix: a macro emitting a top-level `fn _gen()` failed compile
+// with "undefined variable _gen" because resolve_names ran BEFORE
+// expand_macros, freezing the name table before the macro spliced
+// its decl in.
+//
+// Fix: resolve_names is now split into pre-expand (register + rewrite)
+// and post-expand (scope validation + unused imports) halves. The
+// `resolve_and_expand` wrapper in cli/main.av interleaves expand_macros
+// between them, so macro-emitted top-level decls land in the name
+// table before scope validation runs.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{cached_fixture_run}
+
+fn write_temp(path: string, source: string) -> string {
+    let escaped = source.replace("'", "'\\''")
+    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
+}
+
+fn run_capture(source: string) -> string {
+    let path = "/tmp/avra_expand_decl_introducing_test.av"
+    write_temp(path, source)
+    cached_fixture_run(path)
+}
+
+spec "qa6i: @expand macro can introduce a top-level fn callable from main" {
+    then "macro-emitted _gen() is callable from main" {
+        let out = run_capture(
+            "use @std.avrac.core.{Stmt}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build_simple_fn() -> Stmt {\n" +
+            "    return quote stmt {\n" +
+            "        fn _gen() {\n" +
+            "            println(\"from macro\")\n" +
+            "        }\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build_simple_fn)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    _gen()\n" +
+            "    println(\"ok\")\n" +
+            "}\n")
+        out.contains("from macro") && out.contains("ok")
+    }
+}
