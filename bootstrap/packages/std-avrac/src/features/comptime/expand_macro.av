@@ -370,6 +370,10 @@ type WalkerState = {
 }
 
 fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List<CompMacroEntry>, use_state: bool, in_state: ResolverState) -> WalkerOut {
+    expand_stmt_list_in(stmts, reg, comp_macros, use_state, in_state, "")
+}
+
+fn expand_stmt_list_in(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List<CompMacroEntry>, use_state: bool, in_state: ResolverState, current_module: string) -> WalkerOut {
     mut out: List<SStmt> = []
     mut current_state = in_state
     for ss in stmts {
@@ -390,10 +394,11 @@ fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List
                 // as the Stmt arg.
                 let inst_macro = comp_macro_lookup(comp_macros, comp_name)
                 if inst_macro != "" {
+                    if use_state { avra_rd_set_current_module(current_module) }
                     let replacement = try_expand_with_macro(ss.node, inst_macro, reg, ss.line, ss.col, ss.file)
                     splice_expansion(out, ss, replacement)
                     if use_state && replacement != null {
-                        current_state = register_and_repopulate(current_state, replacement!)
+                        current_state = register_and_repopulate(current_state, replacement!, current_module)
                     }
                 } else {
                     out.push(ss)
@@ -408,17 +413,19 @@ fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List
             // the recursed body so the module structure stays
             // intact for downstream resolve/typeck.
             .Module(mod_name, body) -> {
-                let sub = expand_stmt_list(body, reg, comp_macros, use_state, current_state)
+                let child_module = type_qualified_name(current_module, mod_name)
+                let sub = expand_stmt_list_in(body, reg, comp_macros, use_state, current_state, child_module)
                 current_state = sub.state
                 let new_stmt = Stmt.Module(mod_name, sub.out)
                 out.push(sstmt_at(new_stmt, ss.line, ss.col, ss.file))
             }
             _ -> {
                 if has_expand_annotation(ss.node) {
+                    if use_state { avra_rd_set_current_module(current_module) }
                     let replacement = try_expand_one(ss.node, reg, ss.line, ss.col, ss.file)
                     splice_expansion(out, ss, replacement)
                     if use_state && replacement != null {
-                        current_state = register_and_repopulate(current_state, replacement!)
+                        current_state = register_and_repopulate(current_state, replacement!, current_module)
                     }
                 } else {
                     out.push(ss)
@@ -443,11 +450,15 @@ type WalkerOut = {
 /// newly-introduced top-level decls and re-populate the C-side
 /// resolver-data layer so subsequent ctx_* queries from later macros
 /// in the same iter see the new names.
-fn register_and_repopulate(state: ResolverState, spliced: List<SStmt>) -> ResolverState {
+fn register_and_repopulate(state: ResolverState, spliced: List<SStmt>, current_module: string) -> ResolverState {
     mut tagged: List<SStmt> = []
     for ss in spliced { tagged.push(sstmt_mark_from_macro(ss)) }
     let new_state = register_macro_decls(state, tagged)
     populate_resolver_data(new_state, tagged)
+    // populate_resolver_data overwrote current_module to ""; restore
+    // the per-site value so subsequent ctx_current_module calls keep
+    // returning the right module.
+    avra_rd_set_current_module(current_module)
     new_state
 }
 

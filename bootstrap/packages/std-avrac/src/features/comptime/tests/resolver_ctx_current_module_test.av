@@ -1,0 +1,36 @@
+// docs/2026_05_25_EXPAND_PIPELINE_HANDOFF.md — Step 5 ctx_current_module.
+// The doc test plan didn't list this one explicitly (the four
+// enumerated tests are lookup_type, qualify_ident, fresh_ident,
+// unwrap_path_to) but the spec includes ctx_current_module as part
+// of the ResolverCtx surface. This smoke test pins the call path:
+// a macro at top level should see the empty module path; the
+// walker tracks current_module via Module recursion and writes it
+// into the C-side resolver-data layer before each macro invocation.
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+fn run_capture(source: string) -> string {
+    write_fixture_and_run("/tmp/avra_resolver_ctx_current_module_test.av", source)
+}
+
+spec "ResolverCtx: ctx_current_module returns the @expand site's module" {
+    then "top-level @expand reports empty string" {
+        let out = run_capture(
+            "use @std.avrac.core.{Stmt, Expr, SExpr, sexpr_dummy}\n" +
+            "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ctx_current_module}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build(d: AnnotatedDecl, ctx: ResolverCtx) -> Stmt {\n" +
+            "    let m = ctx_current_module(ctx)\n" +
+            "    let msg = \"module=[\" + m + \"]\"\n" +
+            "    let args: List<SExpr> = [sexpr_dummy(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
+            "    return Stmt.Expr(Expr.Call(Expr.Ident(\"println\"), args))\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        out.contains("module=[]")
+    }
+}
