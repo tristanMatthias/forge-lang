@@ -760,7 +760,12 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
             if fn_result.found {
                 return ok_result(runtime, value_function(path))
             }
-            error_result(runtime, "undefined qualified name `${path}`")
+            // The path may name an enum type — `ValueType` after
+            // rewrite_uses becomes `@std::avrac::core::ValueType` and
+            // the macro accesses variants via `.Unknown`. Hand back
+            // a type-marker Value so the FieldAccess arm can build
+            // an EnumCtor from it. Avoids special-casing the parser.
+            ok_result(runtime, value_type_marker(path))
         }
         .Index(obj, idx) -> {
             // `xs[i]` on a list Value. Eval both sides then read
@@ -783,7 +788,8 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
         }
         .FieldAccess(obj, field) -> {
             // Reach the field on a struct Value, OR the .length
-            // pseudo-field on a list / string. Reading
+            // pseudo-field on a list / string, OR an enum-ctor with
+            // no args when obj is a type-marker. Reading
             // `r!.canonical_name` parses as FieldAccess(r, "canonical_name");
             // the parser's force-unwrap (`!`) is a no-op so this arm
             // handles both nullable-unwrap and direct-struct cases.
@@ -795,6 +801,13 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
             }
             if v.kind == "string" && field == "length" {
                 return ok_result(obj_result.runtime, value_number(string(v.text.length)))
+            }
+            if v.kind == "type_marker" {
+                // `ValueType.Unknown` after rewrite is FieldAccess(
+                // QualifiedIdent("@std::avrac::core::ValueType"),
+                // "Unknown"). Build the equivalent zero-arg EnumCtor.
+                let empty_args: List<Value> = []
+                return ok_result(obj_result.runtime, value_enum(v.text, field, empty_args))
             }
             if v.kind != "struct" {
                 return error_result(obj_result.runtime, "field access on non-struct value (kind=${v.kind}, field=${field})")
@@ -989,6 +1002,26 @@ fn value_builtin(name: string) -> Value {
         kind: "builtin",
         number_text: "",
         text: name,
+        bool_value: false,
+        enum_type: "",
+        enum_variant: "",
+        enum_payload: [],
+        list_payload: [],
+        struct_type: "",
+        struct_payload: [],
+    }
+}
+
+/// Marker Value for a qualified type name reached via QualifiedIdent
+/// when the path doesn't resolve to a function. `text` holds the
+/// qualified path. The FieldAccess arm uses this to build a no-arg
+/// EnumCtor — needed so macro bodies can write `Type.Variant` for
+/// enum types after rewrite_uses qualifies the lhs.
+export fn value_type_marker(path: string) -> Value {
+    Value {
+        kind: "type_marker",
+        number_text: "",
+        text: path,
         bool_value: false,
         enum_type: "",
         enum_variant: "",
