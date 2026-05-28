@@ -4690,10 +4690,11 @@ int64_t avra_resolver_fresh_id(void) {
 
 static const char* avra_rd_current_module_v = "";
 
-#define AVRA_RD_INIT_ALIASES  256
-#define AVRA_RD_INIT_GLOBALS  256
+// Initial cap for the type bucket — referenced by avra_rd_grow_types.
+// The other buckets (aliases / globals / fields) flow through
+// avra_rd_grow_strs2 which uses a uniform 256 starting cap (cheap;
+// doubles to fit any real program).
 #define AVRA_RD_INIT_TYPES    128
-#define AVRA_RD_INIT_FIELDS   512
 
 static const char** avra_rd_alias_keys = NULL;
 static const char** avra_rd_alias_vals = NULL;
