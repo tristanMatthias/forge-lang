@@ -1,0 +1,60 @@
+// docs/2026_05_25_EXPAND_PIPELINE_HANDOFF.md — Step 4 test 7.
+// A macro that introduces a top-level fn registers that fn into
+// the resolver state BEFORE downstream macros run. A second macro
+// later in the file calls `ctx_qualify_ident(name)` on the
+// introduced fn — must return the qualified path.
+//
+// This exercises `register_macro_decls` (additive register into
+// the existing ResolverState) and the resolver-data re-population
+// between fixpoint iterations. Without either piece, the second
+// macro would see a stale alias table and return null.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{cached_fixture_run}
+
+fn write_temp(path: string, source: string) -> string {
+    let escaped = source.replace("'", "'\\''")
+    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
+}
+
+fn run_capture(source: string) -> string {
+    let path = "/tmp/avra_expand_introduces_registration_test.av"
+    write_temp(path, source)
+    cached_fixture_run(path)
+}
+
+spec "@expand: introduced fn is registered for downstream macros" {
+    then "second macro qualifies the introduced name via ctx" {
+        let out = run_capture(
+            "use @std.avrac.core.{Stmt, Expr, SExpr, sexpr_dummy}\n" +
+            "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ctx_qualify_ident}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn introducer() -> Stmt {\n" +
+            "    return quote stmt {\n" +
+            "        @expand(inspector)\n" +
+            "        fn _emitted_by_introducer() -> int { 1 }\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn inspector(d: AnnotatedDecl, ctx: ResolverCtx) -> Stmt {\n" +
+            "    let q = ctx_qualify_ident(ctx, \"_emitted_by_introducer\")\n" +
+            "    mut qstr = \"NULL\"\n" +
+            "    if q != null { qstr = q! }\n" +
+            "    let msg = \"emitted=\" + qstr\n" +
+            "    let args: List<SExpr> = [sexpr_dummy(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
+            "    return Stmt.Expr(Expr.Call(Expr.Ident(\"println\"), args))\n" +
+            "}\n" +
+            "\n" +
+            "@expand(introducer)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        // The introducer's @expand(inspector) sits on the SAME decl
+        // as the introduced fn. After the partial re-resolve runs
+        // between fixpoint iterations, the inspector sees
+        // `_emitted_by_introducer` in the global index.
+        out.contains("emitted=_emitted_by_introducer")
+    }
+}

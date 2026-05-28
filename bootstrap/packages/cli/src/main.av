@@ -102,7 +102,7 @@ use @std.avrac.build.{
     DepGraph, Unit, build_graph,
 }
 use @std.avrac.typeck.{typecheck_program}
-use @std.avrac.features.comptime.{run_comptime, expand_macros, expand_macros_collect, expand_macros_eval, plan_has_work, needs_expand_pass, populate_resolver_data}
+use @std.avrac.features.comptime.{run_comptime, expand_macros, expand_macros_collect, expand_macros_eval, expand_macros_eval_with_state, plan_has_work, needs_expand_pass, populate_resolver_data}
 use @std.avrac.features.quote_expr.{lower_quotes}
 use @std.avrac.diagnostics.{bag_has_errors, bag_has_warnings, bag_new, bag_report, diag_error, diag_ice, span_dummy, DiagCode, DiagnosticBag}
 use @std.avrac.diagnostics.{render_bag, render_bag_json}
@@ -184,8 +184,10 @@ fn resolve_and_expand(stmts: List<SStmt>) -> NameResolveResult {
     // Populate the C-side resolver-data layer so `ctx_*` queries
     // from inside macro bodies can answer with real data — aliases,
     // global decls, and TypeDecl field shapes are all reachable now.
+    // `_with_state` re-populates between fixpoint iterations so a
+    // later macro sees names introduced by an earlier one.
     populate_resolver_data(pre.state, pre.stmts)
-    let expanded = expand_macros_eval(plan)
+    let expanded = expand_macros_eval_with_state(plan, pre.state)
     avra_resolver_ctx_pop()
     // Partial re-resolve (step 4 of expand-pipeline doc):
     //   1. Additively register the macro-emitted decls into the

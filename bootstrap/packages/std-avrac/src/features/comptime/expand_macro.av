@@ -20,7 +20,7 @@
 // so any `@comptime` calls inside its body fold correctly.
 
 use core.{Stmt, SStmt, Expr, SExpr, FieldEntry, ValueType, sstmt_at, sstmt_mark_from_macro, find_annotation, stmt_unwrap, exit, type_qualified_name}
-use resolve.{ResolverState}
+use resolve.{ResolverState, register_macro_decls}
 use features.comptime.{CompTimeRegistry, comptime_lookup, collect_comptime_fns, value_to_stmt, value_to_stmt_list, stmt_to_value}
 use features.eval.{Runtime, Value, StructField, value_struct, value_string, value_number, value_null, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message}
 use list_ops.{list_concat}
@@ -191,8 +191,44 @@ fn collect_expand_targets(stmts: List<SStmt>) -> List<ExpandTarget> {
 /// transitively. Cap at 16 iterations — a self-referential macro
 /// terminates with a clean error via `exit(1)`.
 export fn expand_macros_eval(plan: ExpandPlan) -> List<SStmt> {
+    expand_macros_eval_iter(plan.stmts, plan.comp_macros)
+}
+
+/// Stateful variant: takes a `ResolverState` and re-populates the
+/// resolver-data layer between fixpoint iterations so that macros
+/// firing in iter N+1 can see the names introduced by iter N via
+/// `ctx_qualify_ident` / `ctx_lookup_type`. Used by the main pipeline;
+/// the stateless `expand_macros_eval` falls through to a no-state
+/// variant for callers that don't have a ResolverState handy.
+export fn expand_macros_eval_with_state(plan: ExpandPlan, state: ResolverState) -> List<SStmt> {
     mut current = plan.stmts
+    mut current_state = state
     let initial_comp_macros = plan.comp_macros
+    mut iters = 0
+    while iters < 16 {
+        let comp_macros = if iters == 0 { initial_comp_macros } else { collect_component_macros(current) }
+        if !any_expand_annotation(current) && comp_macros.length == 0 {
+            return current
+        }
+        // Re-populate the resolver-data layer with the augmented state
+        // so the next iteration's macros see names introduced by the
+        // previous iteration. iter 0 uses the original state; later
+        // iterations use state augmented with macro-introduced decls.
+        if iters > 0 {
+            current_state = register_macro_decls(current_state, current)
+            populate_resolver_data(current_state, current)
+        }
+        let reg = collect_comptime_fns(current)
+        current = expand_stmt_list(current, reg, comp_macros)
+        iters = iters + 1
+    }
+    eprintln("error: @expand recursion limit (16) exceeded — a macro is likely emitting code that contains another @expand to itself; check for self-referential @expand sites")
+    exit(1)
+    current
+}
+
+fn expand_macros_eval_iter(stmts: List<SStmt>, initial_comp_macros: List<CompMacroEntry>) -> List<SStmt> {
+    mut current = stmts
     mut iters = 0
     while iters < 16 {
         let comp_macros = if iters == 0 { initial_comp_macros } else { collect_component_macros(current) }
