@@ -4770,36 +4770,53 @@ const char* avra_rd_get_current_module(void) {
     return avra_rd_current_module_v;
 }
 
-void avra_rd_add_alias(const char* short_name, const char* canonical) {
-    if (avra_rd_alias_n >= avra_rd_alias_cap) {
-        avra_rd_grow_strs2(&avra_rd_alias_keys, &avra_rd_alias_vals, &avra_rd_alias_cap, avra_rd_alias_n + 1);
+// Shared key/value-array append used by both alias + global buckets.
+// Grows the parallel string buckets if necessary, then writes the
+// (key,val) pair at the end. Keeping this single helper means a future
+// change to growth policy (e.g. interning, free-on-clear) touches one
+// place instead of two near-identical add_*-shaped fns.
+static void rd_strmap_add(const char*** keys, const char*** vals,
+                          int64_t* n, int64_t* cap,
+                          const char* key, const char* val) {
+    if (*n >= *cap) {
+        avra_rd_grow_strs2(keys, vals, cap, *n + 1);
     }
-    avra_rd_alias_keys[avra_rd_alias_n] = short_name;
-    avra_rd_alias_vals[avra_rd_alias_n] = canonical;
-    avra_rd_alias_n++;
+    (*keys)[*n] = key;
+    (*vals)[*n] = val;
+    (*n)++;
+}
+
+// Linear lookup over a parallel keys/vals bucket. Returns the matched
+// value or "" — same null-equivalent the Avra side expects from
+// `avra_rd_lookup_*` extern fns.
+static const char* rd_strmap_lookup(const char** keys, const char** vals,
+                                    int64_t n, const char* key) {
+    for (int64_t i = 0; i < n; i++) {
+        if (strcmp(keys[i], key) == 0) return vals[i];
+    }
+    return "";
+}
+
+void avra_rd_add_alias(const char* short_name, const char* canonical) {
+    rd_strmap_add(&avra_rd_alias_keys, &avra_rd_alias_vals,
+                  &avra_rd_alias_n, &avra_rd_alias_cap,
+                  short_name, canonical);
 }
 
 const char* avra_rd_lookup_alias(const char* name) {
-    for (int64_t i = 0; i < avra_rd_alias_n; i++) {
-        if (strcmp(avra_rd_alias_keys[i], name) == 0) return avra_rd_alias_vals[i];
-    }
-    return "";
+    return rd_strmap_lookup(avra_rd_alias_keys, avra_rd_alias_vals,
+                            avra_rd_alias_n, name);
 }
 
 void avra_rd_add_global(const char* short_name, const char* canonical) {
-    if (avra_rd_global_n >= avra_rd_global_cap) {
-        avra_rd_grow_strs2(&avra_rd_global_keys, &avra_rd_global_vals, &avra_rd_global_cap, avra_rd_global_n + 1);
-    }
-    avra_rd_global_keys[avra_rd_global_n] = short_name;
-    avra_rd_global_vals[avra_rd_global_n] = canonical;
-    avra_rd_global_n++;
+    rd_strmap_add(&avra_rd_global_keys, &avra_rd_global_vals,
+                  &avra_rd_global_n, &avra_rd_global_cap,
+                  short_name, canonical);
 }
 
 const char* avra_rd_lookup_global(const char* name) {
-    for (int64_t i = 0; i < avra_rd_global_n; i++) {
-        if (strcmp(avra_rd_global_keys[i], name) == 0) return avra_rd_global_vals[i];
-    }
-    return "";
+    return rd_strmap_lookup(avra_rd_global_keys, avra_rd_global_vals,
+                            avra_rd_global_n, name);
 }
 
 // Returns the type id (index into avra_rd_type_*) for the new type.
