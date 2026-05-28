@@ -79,7 +79,7 @@ use @std.avrac.desugar.{desugar_program, inject_intrinsics}
 use @std.avrac.features.component_decl.{expand_components}
 use @std.avrac.features.marshal.{derive_marshal}
 use @std.avrac.resolve.{resolve_names, NameResolveResult}
-use @std.avrac.features.modules.{resolve_module_files, modules_dirname, find_packages_dir, package_root_for_file, dedup_modules, resolve_dir_module_body, synthesize_subdir_module_decls}
+use @std.avrac.features.modules.{resolve_module_files, modules_dirname, find_packages_dir, package_root_for_file, dedup_modules, resolve_dir_module_body, synthesize_subdir_module_decls, ModListResult}
 use @std.avrac.features.modules.{load_package_config, load_manifest, Dep}
 use @std.avrac.features.modules.{filter_to_target_unit, list_avra_module_subdirs}
 use @std.avrac.build.{
@@ -174,6 +174,18 @@ fn fail_with_codegen_ice(error_msg: string, json_output: bool, source: string, p
     let ice_bag = bag_report(bag_new(), diag_ice("internal compiler error during codegen: ${error_msg}"))
     render_bag_either(json_output, source, path, ice_bag)
     fail(error_msg)
+}
+
+/// Wrap a module-resolution failure as an F3100 (ModuleNotFound)
+/// diagnostic and abort. The bag-construction + render dance was
+/// identical at cmd_check and cmd_test — fold it here so the
+/// callsite reads as a single one-line guard.
+fn fail_on_module_resolve_error(mod_resolved: ModListResult, json_output: bool, source: string, path: string) {
+    if mod_resolved.had_error {
+        let mod_bag = bag_report(bag_new(), diag_error(DiagCode.ModuleNotFound, mod_resolved.error_message, span_dummy()))
+        render_bag_either(json_output, source, path, mod_bag)
+        fail(mod_resolved.error_message)
+    }
 }
 
 /// Component-decl expand pass with built-in error-bag short-circuit.
@@ -3371,11 +3383,7 @@ fn main() {
             let desugared = desugar_program(post_quote)
             let entry_dir = modules_dirname(check_path)
             let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list())
-            if mod_resolved.had_error {
-                let mod_bag = bag_report(bag_new(), diag_error(DiagCode.ModuleNotFound, mod_resolved.error_message, span_dummy()))
-                render_bag_either(check_json, check_source, check_path, mod_bag)
-                fail(mod_resolved.error_message)
-            }
+            fail_on_module_resolve_error(mod_resolved, check_json, check_source, check_path)
             // Inject intrinsics AFTER module resolution so stdlib's
             // Result is visible to program_declares_enum — avoids
             // synthesizing a duplicate that dkfa would flag.
@@ -3476,11 +3484,7 @@ fn main() {
             let desugared = desugar_program(post_quote)
             let entry_dir = modules_dirname(path)
             let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list())
-            if mod_resolved.had_error {
-                let mod_bag = bag_report(bag_new(), diag_error(DiagCode.ModuleNotFound, mod_resolved.error_message, span_dummy()))
-                render_bag(source, path, mod_bag)
-                fail(mod_resolved.error_message)
-            }
+            fail_on_module_resolve_error(mod_resolved, false, source, path)
             let with_intrinsics = inject_intrinsics(mod_resolved.stmts)
             let expanded = expand_components_or_fail(with_intrinsics, false, source, path)
             let named = marshal_and_resolve_or_fail(expanded, false, source, path)
@@ -3706,11 +3710,7 @@ fn main() {
         let entry_dir = modules_dirname(cpath)
         let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list())
         let t_resolve_mods = avra_uptime_ms()
-        if mod_resolved.had_error {
-            let mod_bag = bag_report(bag_new(), diag_error(DiagCode.ModuleNotFound, mod_resolved.error_message, span_dummy()))
-            render_bag_either(json_output, csource, cpath, mod_bag)
-            fail(mod_resolved.error_message)
-        }
+        fail_on_module_resolve_error(mod_resolved, json_output, csource, cpath)
         if stop_after == "resolve" {
             println("ok")
             return
