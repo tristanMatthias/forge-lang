@@ -2,10 +2,16 @@
 // a source string and return the accumulated DiagnosticBag. Replaces the
 // test pattern of forking the compiler and grepping stderr.
 //
-// Pipeline stages run (mirrors `bs2 check` minus file-based module loading):
+// Pipeline stages run (mirrors `bs2 check` minus file-based module loading;
+// Option C per docs/2026_05_25_EXPAND_PIPELINE_HANDOFF.md):
 //   parse → lower_quotes → desugar → inject_intrinsics → expand_components
-//   → resolve_names → expand_macros → run_comptime → typecheck_program
+//   → resolve_and_expand_program → run_comptime → typecheck_program
 //   → monomorphize
+//
+// `resolve_and_expand_program` itself is the composed Option C dance:
+// resolve_names_pre_expand → expand_macros_collect →
+// expand_macros_eval_with_state → register_macro_decls →
+// rewrite_uses_macro_only → validate_scopes_after_expand.
 //
 // Monomorphization is included so the where-clause / trait-bound check
 // (which surfaces during specialisation) is observable in the bag.

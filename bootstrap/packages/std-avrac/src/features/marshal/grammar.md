@@ -133,16 +133,23 @@ match isolated_Report(() -> run_check("/some/path")) {
 
 ## Pipeline placement
 
-`derive_marshal` runs in the build pipeline as:
+`derive_marshal` runs in the build pipeline as (Option C —
+docs/2026_05_25_EXPAND_PIPELINE_HANDOFF.md):
 
 ```
 lower_quotes → desugar → inject_intrinsics → expand_components
-  → derive_marshal → resolve_names → expand_macros → run_comptime
-  → typecheck → monomorphize → codegen
+  → derive_marshal
+  → resolve_and_expand_program            (resolve_names_pre_expand
+                                           → expand_macros_collect
+                                           → expand_macros_eval_with_state
+                                           → register_macro_decls
+                                           → rewrite_uses_macro_only
+                                           → validate_scopes_after_expand)
+  → run_comptime → typecheck → monomorphize → codegen
 ```
 
 Pre-resolve means the synthesised `impl T` is processed by
-`resolve_names` together with the user's type declaration, so name
+the resolver together with the user's type declaration, so name
 qualification stays consistent. The synthesised body calls
 `@std::process::bytes_builder` (qualified) so consumers don't need
 to `use` the byte primitives.
