@@ -3,11 +3,10 @@
 // expansion fires."
 //
 // A first macro `outer` returns a `fn` annotated with `@expand(inner)`.
-// The fixpoint loop in expand_macros (Step 4) must catch the new
-// @expand on a later iteration and run `inner`, which emits a fn that
-// main can call. If the loop is missing or the Annotated encoder /
-// decoder don't roundtrip, `inner_emitted_fn` never exists and main
-// fails to link.
+// expand_macros_fixpoint must catch the new @expand on a later
+// iteration and run `inner`, which emits a fn that main can call.
+// If the loop is missing or the Annotated encoder / decoder don't
+// roundtrip, `inner_emitted_fn` never exists and main fails to link.
 
 use @std.avrac.test_runner.{write_fixture_and_run}
 

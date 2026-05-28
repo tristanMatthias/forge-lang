@@ -1,14 +1,17 @@
 // forge-crafting-intepreters-qa6i: @expand pipeline-order fix.
 // Pre-fix: a macro emitting a top-level `fn _gen()` failed compile
 // with "undefined variable _gen" because resolve_names ran BEFORE
-// expand_macros, freezing the name table before the macro spliced
-// its decl in.
+// the @expand pass, freezing the name table before the macro
+// spliced its decl in.
 //
-// Fix: resolve_names is now split into pre-expand (register + rewrite)
-// and post-expand (scope validation + unused imports) halves. The
-// `resolve_and_expand` wrapper in cli/main.av interleaves expand_macros
-// between them, so macro-emitted top-level decls land in the name
-// table before scope validation runs.
+// Fix (Option C, per docs/2026_05_25_EXPAND_PIPELINE_HANDOFF.md):
+// resolve_names is split into pre-expand (register + rewrite) and
+// post-expand (scope validation + unused imports) halves. The
+// `resolve_and_expand_program` driver in features/comptime/expand_macro.av
+// interleaves expand_macros_eval_with_state between them, additively
+// registers macro-introduced decls via register_macro_decls, and runs
+// partial re-resolve via rewrite_uses_macro_only. Macro-emitted
+// top-level decls land in the name table before scope validation runs.
 
 use @std.avrac.test_runner.{write_fixture_and_run}
 

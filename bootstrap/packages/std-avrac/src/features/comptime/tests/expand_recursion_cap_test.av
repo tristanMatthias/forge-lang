@@ -4,12 +4,10 @@
 // overflow."
 //
 // `loop_macro` emits a fn carrying `@expand(loop_macro)` — every
-// fixpoint iteration the loop re-fires. expand_macros caps iterations
-// at 16 and prints a recognisable diagnostic, then bails out. We
-// don't care about the exit code (the bs2 process still tries to
-// continue with partially-expanded code); we just want the cap
-// message in the captured output, proving the cap fired instead of
-// the process diverging.
+// fixpoint iteration the loop re-fires. expand_macros_fixpoint caps
+// iterations at 16, prints a recognisable diagnostic, then exits(1)
+// so the compile fails visibly. The captured output carries the cap
+// message, proving the cap fired instead of the process diverging.
 
 use @std.avrac.test_runner.{write_fixture_and_run}
 
