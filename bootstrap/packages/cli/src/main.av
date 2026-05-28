@@ -139,6 +139,18 @@ fn render_bag_either(json_output: bool, source: string, path: string, bag: Diagn
     else { render_bag(source, path, bag) }
 }
 
+/// Render the bag only if it carries any errors or warnings — the
+/// no-op fast-path keeps the noise-free compile (zero diagnostics)
+/// from emitting empty `Found 0 warnings.` separator output. Used
+/// at every post-pass diagnostic-check site; folds the
+/// `if bag_has_errors(b) || bag_has_warnings(b) { render_bag_either(...) }`
+/// pattern into a single call.
+fn render_bag_if_nonempty(json_output: bool, source: string, path: string, bag: DiagnosticBag) {
+    if bag_has_errors(bag) || bag_has_warnings(bag) {
+        render_bag_either(json_output, source, path, bag)
+    }
+}
+
 /// Component-decl expand pass with built-in error-bag short-circuit.
 /// Wraps the expand_components + bag_has_errors + render + fail
 /// pattern that every compile / check / test pipeline site repeated.
@@ -164,9 +176,7 @@ fn expand_components_or_fail(stmts: List<SStmt>, json_output: bool, source: stri
 fn marshal_and_resolve_or_fail(stmts: List<SStmt>, json_output: bool, source: string, path: string) -> NameResolveResult {
     let with_marshal = derive_marshal(stmts)
     let named = resolve_and_expand_program(with_marshal)
-    if bag_has_errors(named.bag) || bag_has_warnings(named.bag) {
-        render_bag_either(json_output, source, path, named.bag)
-    }
+    render_bag_if_nonempty(json_output, source, path, named.bag)
     if named.had_error { fail(named.error_message) }
     named
 }
@@ -3349,9 +3359,7 @@ fn main() {
             let named = marshal_and_resolve_or_fail(expanded, check_json, check_source, check_path)
             let post_comptime = run_comptime(named.stmts)
             let tc_result = typecheck_program(post_comptime)
-            if bag_has_errors(tc_result.bag) || bag_has_warnings(tc_result.bag) {
-                render_bag_either(check_json, check_source, check_path, tc_result.bag)
-            }
+            render_bag_if_nonempty(check_json, check_source, check_path, tc_result.bag)
             if bag_has_errors(tc_result.bag) { return }
             if !check_json { println("ok") }
             return
@@ -3453,9 +3461,7 @@ fn main() {
             let named = marshal_and_resolve_or_fail(expanded, false, source, path)
             let post_comptime = run_comptime(named.stmts)
             let tc_result = typecheck_program(post_comptime)
-            if bag_has_errors(tc_result.bag) || bag_has_warnings(tc_result.bag) {
-                render_bag(source, path, tc_result.bag)
-            }
+            render_bag_if_nonempty(false, source, path, tc_result.bag)
             if bag_has_errors(tc_result.bag) { fail("type check failed") }
             let mono = monomorphize(tc_result.stmts, tc_result.trait_impls)
             if bag_has_errors(mono.bag) {
@@ -3723,9 +3729,7 @@ fn main() {
         // Type check — gates compilation on errors
         let tc_result = typecheck_program(post_comptime)
         let t_typeck = avra_uptime_ms()
-        if bag_has_errors(tc_result.bag) || bag_has_warnings(tc_result.bag) {
-            render_bag_either(json_output, csource, cpath, tc_result.bag)
-        }
+        render_bag_if_nonempty(json_output, csource, cpath, tc_result.bag)
         if bag_has_errors(tc_result.bag) { fail("type check failed") }
         if stop_after == "check" {
             println("ok")
