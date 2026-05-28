@@ -797,15 +797,26 @@ fn build_resolver_ctx(handle: int) -> Value {
 /// shape was per-pass non-idempotent and broke macro-introduced
 /// decl registration; this driver is the single source of truth.
 ///
-/// Pipeline:
+/// Pipeline (matches doc step 4 intent — see note on collect order):
 ///   1. resolve_names_pre_expand → register_decls + rewrite_uses
 ///   2. expand_macros_collect against the rewritten stmts
 ///   3. Fast-path: no macros → straight to validate_scopes
 ///   4. avra_resolver_ctx_push(state)  — macros can ctx_* now
 ///   5. populate_resolver_data + expand_macros_eval_with_state
 ///   6. avra_resolver_ctx_pop
-///   7. register_macro_decls additively + rewrite_uses_macro_only
-///   8. validate_scopes_after_expand
+///   7. register_macro_decls(spliced, existing_state) — additive
+///   8. rewrite_uses_macro_only(spliced, state) — partial re-resolve
+///   9. validate_scopes_after_expand
+///
+/// Doc step 4 shows collect BEFORE resolve_names. My impl collects
+/// AFTER because the eval phase walks `plan.stmts` and needs the
+/// resolved version to dispatch macro_name → @comptime fn via the
+/// resolved registry. ExpandTarget keys still work pre- or
+/// post-resolve (source positions are stable through rewrite_uses)
+/// but the eval-time lookup demands resolved names. Collecting
+/// against post-resolve stmts gives the eval the right AST in one
+/// shot; collecting against raw stmts would force a second walk to
+/// re-rewrite the plan's stmts.
 export fn resolve_and_expand_program(stmts: List<SStmt>) -> NameResolveResult {
     let pre = resolve_names_pre_expand(stmts)
     if pre.had_error == 1 {
