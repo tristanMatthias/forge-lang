@@ -188,6 +188,27 @@ fn fail_on_module_resolve_error(mod_resolved: ModListResult, json_output: bool, 
     }
 }
 
+/// Parse `source` or render any parse-time bag entries and abort.
+/// Six pipeline sites (cmd_check / fix / format / expand / test /
+/// run_build) opened with the same 6-line shape:
+///     let parsed = parse_program_source(source)
+///     if parsed.had_error || parsed.stmts == null {
+///         if bag_has_errors(parsed.bag) { render_bag*(...) }
+///         fail(parsed.error_message)
+///     }
+/// Returns the parsed stmt list on success — the caller continues
+/// from there.
+fn parse_or_fail(source: string, json_output: bool, source_display: string, path: string) -> List<SStmt> {
+    let parsed = parse_program_source(source)
+    if parsed.had_error || parsed.stmts == null {
+        if bag_has_errors(parsed.bag) {
+            render_bag_either(json_output, source_display, path, parsed.bag)
+        }
+        fail(parsed.error_message)
+    }
+    parsed.stmts!
+}
+
 /// Component-decl expand pass with built-in error-bag short-circuit.
 /// Wraps the expand_components + bag_has_errors + render + fail
 /// pattern that every compile / check / test pipeline site repeated.
@@ -3367,19 +3388,13 @@ fn main() {
             let check_path = if check_argc > 3 { avra_selfhost_get_arg_cstr(check_argc - 1) } else { path }
             let check_source = if check_path != path { read_file(check_path) } else { source }
 
-            let parsed = parse_program_source(check_source)
-            if parsed.had_error || parsed.stmts == null {
-                if bag_has_errors(parsed.bag) {
-                    render_bag_either(check_json, check_source, check_path, parsed.bag)
-                }
-                fail(parsed.error_message)
-            }
+            let parsed_stmts = parse_or_fail(check_source, check_json, check_source, check_path)
             let check_dir = modules_dirname(check_path)
             let check_pkg = load_package_config(check_dir)
             if check_pkg.found && !check_json {
                 eprintln("[pkg] ${check_pkg.name} v${check_pkg.version}")
             }
-            let post_quote = lower_quotes(parsed.stmts!)
+            let post_quote = lower_quotes(parsed_stmts)
             let desugared = desugar_program(post_quote)
             let entry_dir = modules_dirname(check_path)
             let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list())
@@ -3409,15 +3424,9 @@ fn main() {
             // Ticket 8ym: autofix infrastructure.
             // Parse and check the file, then apply high-confidence fixes.
             // For v1.0: no auto-fixes are implemented yet, so we just report that.
-            let parsed = parse_program_source(source)
-            if parsed.had_error || parsed.stmts == null {
-                if bag_has_errors(parsed.bag) {
-                    render_bag(source, path, parsed.bag)
-                }
-                fail(parsed.error_message)
-            }
+            let parsed_stmts = parse_or_fail(source, false, source, path)
             let entry_dir = modules_dirname(path)
-            let mod_resolved = resolve_module_files(parsed.stmts!, entry_dir, empty_loaded_list())
+            let mod_resolved = resolve_module_files(parsed_stmts, entry_dir, empty_loaded_list())
             if mod_resolved.had_error {
                 fail(mod_resolved.error_message)
             }
@@ -3431,14 +3440,8 @@ fn main() {
         "fmt" -> {
             // Ticket c5w: code formatter (spec Axis 27.1).
             // Avra syntax.
-            let parsed = parse_program_source(source)
-            if parsed.had_error || parsed.stmts == null {
-                if bag_has_errors(parsed.bag) {
-                    render_bag(source, path, parsed.bag)
-                }
-                fail(parsed.error_message)
-            }
-            println(fmt_stmt_list(parsed.stmts!, 0))
+            let parsed_stmts = parse_or_fail(source, false, source, path)
+            println(fmt_stmt_list(parsed_stmts, 0))
             return
         }
         "expand" -> {
@@ -3452,12 +3455,8 @@ fn main() {
             // The output is valid Avra source that compiles to the
             // same program as the original — the P7 (visible magic)
             // promise made tangible.
-            let parsed = parse_program_source(source)
-            if parsed.had_error || parsed.stmts == null {
-                if bag_has_errors(parsed.bag) { render_bag(source, path, parsed.bag) }
-                fail(parsed.error_message)
-            }
-            let post_quote = lower_quotes(parsed.stmts!)
+            let parsed_stmts = parse_or_fail(source, false, source, path)
+            let post_quote = lower_quotes(parsed_stmts)
             let desugared = desugar_program(post_quote)
             let entry_dir = modules_dirname(path)
             let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list())
@@ -3473,14 +3472,8 @@ fn main() {
             // Ticket syu: test runner (spec Axis 27.3).
             // Compile the file (which should contain spec/given/then blocks)
             // and report the output path for linking and execution.
-            let parsed = parse_program_source(source)
-            if parsed.had_error || parsed.stmts == null {
-                if bag_has_errors(parsed.bag) {
-                    render_bag(source, path, parsed.bag)
-                }
-                fail(parsed.error_message)
-            }
-            let post_quote = lower_quotes(parsed.stmts!)
+            let parsed_stmts = parse_or_fail(source, false, source, path)
+            let post_quote = lower_quotes(parsed_stmts)
             let desugared = desugar_program(post_quote)
             let entry_dir = modules_dirname(path)
             let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list())
@@ -3636,14 +3629,8 @@ fn main() {
         let timings_on = avra_process_env_get("AVRA_TIMINGS") != ""
         let t_start = avra_uptime_ms()
 
-        let parsed = parse_program_source(csource)
+        let parsed_stmts = parse_or_fail(csource, json_output, csource, cpath)
         let t_parse = avra_uptime_ms()
-        if parsed.had_error || parsed.stmts == null {
-            if bag_has_errors(parsed.bag) {
-                render_bag_either(json_output, csource, cpath, parsed.bag)
-            }
-            fail(parsed.error_message)
-        }
         if stop_after == "parse" {
             println("ok")
             return
@@ -3685,17 +3672,17 @@ fn main() {
             let body_with_siblings = if is_package_src {
                 let dir_load = resolve_dir_module_body(cpath_dir, [cpath])
                 if dir_load.had_error {
-                    parsed.stmts!
+                    parsed_stmts
                 } else {
-                    concat_stmt_lists(parsed.stmts!, dir_load.stmts)
+                    concat_stmt_lists(parsed_stmts, dir_load.stmts)
                 }
             } else {
-                parsed.stmts!
+                parsed_stmts
             }
             let one: List<SStmt> = [sstmt_dummy(Stmt.Module(module_path, body_with_siblings))]
             one
         } else {
-            parsed.stmts!
+            parsed_stmts
         }
         // Quote lowering: convert `quote { … }` into AST-construction
         // expressions BEFORE desugar/resolve so identifiers inside quote
