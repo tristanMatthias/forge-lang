@@ -7,6 +7,41 @@
 // validate variable scopes. The two passes are unified under a
 // single `resolve_names` entry point.
 //
+// ── Audit of side effects (doc step 4.1 of EXPAND_PIPELINE_HANDOFF.md) ──
+//
+// register_decls(stmts) — pure with respect to AST. Builds:
+//   - tree: ModuleNode — hierarchical mod path → items (per-stmt scan;
+//     idempotent given the same AST).
+//   - graph: ModuleGraph — flat module/item registry (per-stmt scan;
+//     idempotent; mutates a fresh `interner` it owns; flat-allocates
+//     a string-keyed C-side hashmap via avra_map_new_cstr for the
+//     `by_path` / `by_canonical` / `package_roots` / `item_exports`
+//     maps).
+//   - aliases: List<AliasBinding> — per top-level `use` stmt walk;
+//     diagnostics emitted when an imported name isn't found or is
+//     private. Top-level only (doesn't recurse into Module bodies).
+//   - global_index: GlobalItemReg — flat (short_name → canonical)
+//     map derived from `graph.all_items`. Built via
+//     `avra_map_new_cstr` + per-item insert (idempotent — first-seen
+//     wins, dupes don't overwrite).
+//   - bag — diagnostics accumulator (carries any use-alias errors).
+//
+// rewrite_uses(stmts, state) — pure: returns a new stmt list;
+//   does NOT touch `state`. Walks each stmt, rewriting Idents into
+//   QualifiedIdents per the alias + global_index. No registry
+//   mutation, so calling twice on the same AST is idempotent.
+//
+// register_macro_decls(state, stmts) — additive: appends new
+//   GraphItems to `state.graph.all_items` and new entries to
+//   `state.global_index.idx` (in-place mutation of the C-side
+//   hashmap; first-seen wins so re-running on the same AST is a
+//   no-op). Tree / aliases / type_reg / bag are reused as-is.
+//
+// rewrite_uses_macro_only(stmts, state) — same purity as
+//   rewrite_uses but walks only `from_macro == true` entries
+//   (recursing into Module bodies to find spliced stmts nested
+//   inside a user module).
+//
 //   read this file when:    working on module visibility, use imports,
 //                           or qualified name resolution
 //   do NOT read this file when:   the issue is variable scoping or
@@ -754,29 +789,25 @@ export fn register_macro_decls(state: ResolverState, stmts: List<SStmt>) -> Reso
     for old in state.graph.all_items { updated_all.push(old) }
     for added in new_items { updated_all.push(added) }
 
-    // Augment the global_index map with the new short_name → canonical
-    // entries. The existing map is mutated in place — `idx` is a
-    // C-side ptr; appending entries is a fresh insert per name and
-    // doesn't touch existing keys.
-    mut canonicals_ext: List<string> = []
-    for old in state.global_index.canonicals { canonicals_ext.push(old) }
-    for it in new_items {
-        // Same seed typeck workaround as `global_item_reg_build`:
-        // bind field accesses to locals before passing to extern
-        // fns, or codegen bails with "field access on non-struct
-        // value, ty=<unknown>".
+    // Build a FRESH global_index from the augmented item list. We
+    // don't mutate the existing C-side map ptr because
+    // `register_macro_decls` may be called multiple times during a
+    // single compile (once per @expand splice inside the walker, plus
+    // once post-expand from cli/main.av). Re-using the same map ptr
+    // would let stale indices from earlier calls leak into the new
+    // ResolverState's `canonicals` list and produce OOB lookups.
+    mut new_items_list: List<ModuleItemEntry> = []
+    for it in updated_all {
         let sn = it.short_name
         let canon = it.canonical
-        if avra_map_has_cstr(state.global_index.idx, sn) == 0 {
-            let n = canonicals_ext.length
-            canonicals_ext.push(canon)
-            avra_map_set_cstr(state.global_index.idx, sn, n)
-        }
+        let exp = it.exported
+        new_items_list.push(ModuleItemEntry { short_name: sn, canonical: canon, exported: exp })
     }
+    let new_global_index = global_item_reg_build(new_items_list)
 
     state with {
         graph: state.graph with { all_items: updated_all },
-        global_index: state.global_index with { canonicals: canonicals_ext },
+        global_index: new_global_index,
     }
 }
 

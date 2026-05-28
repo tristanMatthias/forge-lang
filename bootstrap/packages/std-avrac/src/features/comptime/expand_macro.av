@@ -239,12 +239,17 @@ fn expand_macros_fixpoint(stmts: List<SStmt>, initial_comp_macros: List<CompMacr
         if !any_expand_annotation(current) && comp_macros.length == 0 {
             return current
         }
+        // Refresh resolver-data from any decls introduced by the
+        // previous iteration (within-iter changes are handled inside
+        // expand_stmt_list itself via register_and_repopulate).
         if use_state && iters > 0 {
             current_state = register_macro_decls(current_state, current)
             populate_resolver_data(current_state, current)
         }
         let reg = collect_comptime_fns(current)
-        current = expand_stmt_list(current, reg, comp_macros)
+        let walked = expand_stmt_list(current, reg, comp_macros, use_state, current_state)
+        current = walked.out
+        current_state = walked.state
         iters = iters + 1
     }
     eprintln("error: @expand recursion limit (16) exceeded — a macro is likely emitting code that contains another @expand to itself; check for self-referential @expand sites")
@@ -352,8 +357,21 @@ fn has_expand_annotation(stmt: Stmt) -> bool {
 
 // ── Walker ──
 
-fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List<CompMacroEntry>) -> List<SStmt> {
+/// Carrier for the walker — `out` is the spliced-stmt accumulator,
+/// `state` is mutably refreshed after every successful splice so
+/// macros firing later in the SAME iteration can see names
+/// introduced by macros earlier in the iteration (doc step 4.4 —
+/// "Register result.introduces with the existing registry"). When
+/// `use_state` is false the state field is unused.
+type WalkerState = {
+    out: List<SStmt>,
+    state: ResolverState,
+    use_state: bool,
+}
+
+fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List<CompMacroEntry>, use_state: bool, in_state: ResolverState) -> WalkerOut {
     mut out: List<SStmt> = []
+    mut current_state = in_state
     for ss in stmts {
         let inner = peel_annotations(ss.node)
         // vez6.8.5: a ComponentDef with @expand only REGISTERS
@@ -372,7 +390,11 @@ fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List
                 // as the Stmt arg.
                 let inst_macro = comp_macro_lookup(comp_macros, comp_name)
                 if inst_macro != "" {
-                    splice_expansion(out, ss, try_expand_with_macro(ss.node, inst_macro, reg, ss.line, ss.col, ss.file))
+                    let replacement = try_expand_with_macro(ss.node, inst_macro, reg, ss.line, ss.col, ss.file)
+                    splice_expansion(out, ss, replacement)
+                    if use_state && replacement != null {
+                        current_state = register_and_repopulate(current_state, replacement!)
+                    }
                 } else {
                     out.push(ss)
                 }
@@ -386,20 +408,47 @@ fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List
             // the recursed body so the module structure stays
             // intact for downstream resolve/typeck.
             .Module(mod_name, body) -> {
-                let expanded_body = expand_stmt_list(body, reg, comp_macros)
-                let new_stmt = Stmt.Module(mod_name, expanded_body)
+                let sub = expand_stmt_list(body, reg, comp_macros, use_state, current_state)
+                current_state = sub.state
+                let new_stmt = Stmt.Module(mod_name, sub.out)
                 out.push(sstmt_at(new_stmt, ss.line, ss.col, ss.file))
             }
             _ -> {
                 if has_expand_annotation(ss.node) {
-                    splice_expansion(out, ss, try_expand_one(ss.node, reg, ss.line, ss.col, ss.file))
+                    let replacement = try_expand_one(ss.node, reg, ss.line, ss.col, ss.file)
+                    splice_expansion(out, ss, replacement)
+                    if use_state && replacement != null {
+                        current_state = register_and_repopulate(current_state, replacement!)
+                    }
                 } else {
                     out.push(ss)
                 }
             }
         }
     }
-    out
+    WalkerOut { out, state: current_state }
+}
+
+/// Walker's per-iter return: the spliced stmts + the state after any
+/// in-iter registrations. The fixpoint loop threads `state` between
+/// iterations so the SECOND macro in an `@expand` site that fires
+/// later in the same iteration can `ctx_qualify_ident` an introduced
+/// name (doc step 4.4 / test 7).
+type WalkerOut = {
+    out: List<SStmt>,
+    state: ResolverState,
+}
+
+/// After a macro splice lands, augment the resolver state with the
+/// newly-introduced top-level decls and re-populate the C-side
+/// resolver-data layer so subsequent ctx_* queries from later macros
+/// in the same iter see the new names.
+fn register_and_repopulate(state: ResolverState, spliced: List<SStmt>) -> ResolverState {
+    mut tagged: List<SStmt> = []
+    for ss in spliced { tagged.push(sstmt_mark_from_macro(ss)) }
+    let new_state = register_macro_decls(state, tagged)
+    populate_resolver_data(new_state, tagged)
+    new_state
 }
 
 /// Common splicer: replacement-on-success, original-on-failure. Every

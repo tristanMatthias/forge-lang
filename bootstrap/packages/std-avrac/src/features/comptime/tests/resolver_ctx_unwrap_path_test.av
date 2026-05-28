@@ -57,3 +57,36 @@ spec "ResolverCtx: ctx_unwrap_path_to walks the field graph" {
         out.contains("wrap=[node]") && out.contains("double=[value.node]")
     }
 }
+
+spec "ResolverCtx: ctx_unwrap_path_to terminates on recursive types" {
+    then "Rec { self_ref: Rec, payload: int } → [payload] without infinite loop" {
+        let out = run_capture(
+            "use @std.avrac.core.{Stmt, Expr, SExpr, sexpr_dummy}\n" +
+            "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ctx_lookup_type, ctx_unwrap_path_to}\n" +
+            "\n" +
+            "type Rec = { self_ref: Rec, payload: int }\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build(d: AnnotatedDecl, ctx: ResolverCtx) -> Stmt {\n" +
+            "    let t = ctx_lookup_type(ctx, \"Rec\")\n" +
+            "    mut p: List<string> = []\n" +
+            "    if t != null { p = ctx_unwrap_path_to(ctx, t!, \"int\") }\n" +
+            "    mut s = \"\"\n" +
+            "    mut i = 0\n" +
+            "    while i < p.length {\n" +
+            "        if i > 0 { s = s + \".\" }\n" +
+            "        s = s + p[i]\n" +
+            "        i = i + 1\n" +
+            "    }\n" +
+            "    let msg = \"rec=[\" + s + \"]\"\n" +
+            "    let args: List<SExpr> = [sexpr_dummy(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
+            "    return Stmt.Expr(Expr.Call(Expr.Ident(\"println\"), args))\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        out.contains("rec=[payload]")
+    }
+}
