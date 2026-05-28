@@ -8,18 +8,10 @@
 // runtime output proves the lookup actually returned data, not
 // the stub it used to.
 
-extern fn avra_shell_exec(cmd: string) -> string
-use @std.avrac.test_runner.{cached_fixture_run}
-
-fn write_temp(path: string, source: string) -> string {
-    let escaped = source.replace("'", "'\\''")
-    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
-}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 fn run_capture(source: string) -> string {
-    let path = "/tmp/avra_resolver_ctx_lookup_type_test.av"
-    write_temp(path, source)
-    cached_fixture_run(path)
+    write_fixture_and_run("/tmp/avra_resolver_ctx_lookup_type_test.av", source)
 }
 
 spec "ResolverCtx: ctx_lookup_type resolves declared types" {

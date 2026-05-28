@@ -374,6 +374,18 @@ export fn cached_fixture_expand(fixture_path: string) -> string {
     cached_fixture_capture(fixture_path, "./build/bs2 expand '${fixture_path}' 2>&1 || true", "expand")
 }
 
+/// Convenience: write `source` to `path`, then run it through
+/// `cached_fixture_run`. Centralises the heredoc dance every
+/// fixture-style spec test used to inline. Single-quoted single
+/// quotes in the source are escaped via the standard sh trick
+/// `'\''` so source strings containing quotes don't break the
+/// surrounding heredoc.
+export fn write_fixture_and_run(path: string, source: string) -> string {
+    let escaped = source.replace("'", "'\\''")
+    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
+    cached_fixture_run(path)
+}
+
 /// Shared helper. The verb is folded into the cache key so two
 /// different command shapes against the same fixture don't share a
 /// slot; everything else (toolchain fp + file hash + fixture path)

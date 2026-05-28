@@ -11,18 +11,10 @@
 // message in the captured output, proving the cap fired instead of
 // the process diverging.
 
-extern fn avra_shell_exec(cmd: string) -> string
-use @std.avrac.test_runner.{cached_fixture_run}
-
-fn write_temp(path: string, source: string) -> string {
-    let escaped = source.replace("'", "'\\''")
-    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
-}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 fn run_capture(source: string) -> string {
-    let path = "/tmp/avra_expand_recursion_cap_test.av"
-    write_temp(path, source)
-    cached_fixture_run(path)
+    write_fixture_and_run("/tmp/avra_expand_recursion_cap_test.av", source)
 }
 
 spec "@expand recursion cap fires on infinite self-recursion" {
