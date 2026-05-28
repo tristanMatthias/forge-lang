@@ -19,7 +19,7 @@
 // macro-produced Stmt should still go through the normal fold pass
 // so any `@comptime` calls inside its body fold correctly.
 
-use core.{Stmt, SStmt, Expr, SExpr, sstmt_at, find_annotation, stmt_unwrap}
+use core.{Stmt, SStmt, Expr, SExpr, sstmt_at, sstmt_mark_from_macro, find_annotation, stmt_unwrap, exit}
 use features.comptime.{CompTimeRegistry, comptime_lookup, collect_comptime_fns, value_to_stmt, value_to_stmt_list, stmt_to_value}
 use features.eval.{Runtime, Value, StructField, value_struct, value_string, value_number, value_null, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message}
 use list_ops.{list_concat}
@@ -36,11 +36,102 @@ extern fn avra_resolver_ctx_pop()
 extern fn avra_resolver_ctx_get(handle: int) -> ptr
 extern fn avra_resolver_ctx_top() -> int
 
-// ── Public entry ──
+// ── Option C: collect + eval split (step 4 of expand-pipeline doc) ──
+
+/// One macro invocation to perform during the eval phase. Keyed by
+/// the @expand site's source span — index-based addressing is
+/// brittle because the AST can change shape between phases.
+export type ExpandTarget = {
+    source_file: string,
+    source_line: int,
+    source_col: int,
+    macro_name: string,
+}
+
+/// Output of `expand_macros_collect`: the full list of macros to
+/// invoke during `expand_macros_eval`. Components add `comp_macros`
+/// so the eval phase doesn't have to recompute the mapping. The
+/// stmts pointer is carried through unchanged — pre-resolve walks
+/// don't mutate the AST.
+export type ExpandPlan = {
+    stmts: List<SStmt>,
+    targets: List<ExpandTarget>,
+    comp_macros: List<CompMacroEntry>,
+}
+
+/// Phase 1 (pre-resolve): scan `stmts` for every `@expand(M)` site
+/// and every component-instance whose def carries `@expand(M)`.
+/// Returns the plan unmodified — no macro is invoked here. Lets
+/// `resolve_names` run between collect and eval so that the macro
+/// bodies (which themselves call helper fns) see resolved names.
+export fn expand_macros_collect(stmts: List<SStmt>) -> ExpandPlan {
+    let comp_macros = collect_component_macros(stmts)
+    let targets = collect_expand_targets(stmts)
+    ExpandPlan { stmts, targets, comp_macros }
+}
+
+/// True iff the plan has any work for the eval phase. Lets callers
+/// short-circuit the partial re-resolve when no macros exist.
+export fn plan_has_work(plan: ExpandPlan) -> bool {
+    plan.targets.length > 0 || plan.comp_macros.length > 0
+}
+
+fn collect_expand_targets(stmts: List<SStmt>) -> List<ExpandTarget> {
+    mut acc: List<ExpandTarget> = []
+    for ss in stmts {
+        let inner = peel_annotations(ss.node)
+        match inner {
+            .Module(_, body) -> acc = list_concat(acc, collect_expand_targets(body))
+            _ -> {
+                if has_expand_annotation(ss.node) {
+                    let name = expand_target_name(ss.node)
+                    if name != "" {
+                        acc = acc.push(ExpandTarget {
+                            source_file: ss.file,
+                            source_line: ss.line,
+                            source_col: ss.col,
+                            macro_name: name,
+                        })
+                    }
+                }
+            }
+        }
+    }
+    acc
+}
+
+/// Phase 2 (post-resolve): walk the stmt list, invoke every macro
+/// captured in the plan, splice results back in. Tags every spliced
+/// SStmt with `from_macro: true` so the partial re-resolve in
+/// `cli/main.av:resolve_and_expand` walks only the new decls. Runs
+/// a fixpoint loop so that macro-emitted `@expand` sites expand
+/// transitively. Cap at 16 iterations — a self-referential macro
+/// terminates with a clean error via `exit(1)`.
+export fn expand_macros_eval(plan: ExpandPlan) -> List<SStmt> {
+    mut current = plan.stmts
+    let initial_comp_macros = plan.comp_macros
+    mut iters = 0
+    while iters < 16 {
+        let comp_macros = if iters == 0 { initial_comp_macros } else { collect_component_macros(current) }
+        if !any_expand_annotation(current) && comp_macros.length == 0 {
+            return current
+        }
+        let reg = collect_comptime_fns(current)
+        current = expand_stmt_list(current, reg, comp_macros)
+        iters = iters + 1
+    }
+    eprintln("error: @expand recursion limit (16) exceeded — a macro is likely emitting code that contains another @expand to itself; check for self-referential @expand sites")
+    exit(1)
+    current
+}
+
+// ── Public entry (legacy single-pass form) ──
 
 /// Walk `stmts`, expanding every Stmt wrapped in `@expand(M)` by
 /// replacing it with the AST returned by M evaluated at compile
-/// time.
+/// time. Equivalent to `expand_macros_eval(expand_macros_collect(stmts))` —
+/// preserved as a stable surface for tests / call sites that don't
+/// care about the collect/eval phase split.
 ///
 /// Fast-path: when the program has no `@expand` annotations the
 /// walker returns the input unchanged with no allocations.
@@ -51,10 +142,32 @@ extern fn avra_resolver_ctx_top() -> int
 /// name; each instance gets the macro applied with the
 /// ComponentBlock as a 1-arg Stmt value.
 export fn expand_macros(stmts: List<SStmt>) -> List<SStmt> {
-    let comp_macros = collect_component_macros(stmts)
-    if !any_expand_annotation(stmts) && comp_macros.length == 0 { return stmts }
-    let reg = collect_comptime_fns(stmts)
-    expand_stmt_list(stmts, reg, comp_macros)
+    // Fixed-point loop: re-run expansion as long as the output still
+    // carries @expand annotations or component-macro instances. The
+    // doc (step 4) calls this "nested @expand" — a macro that
+    // produces code containing another @expand site should expand
+    // transitively without the caller having to ask twice. Cap at
+    // 16 iterations to surface self-referential macros as a clean
+    // error rather than an infinite loop.
+    mut current = stmts
+    mut iters = 0
+    while iters < 16 {
+        let comp_macros = collect_component_macros(current)
+        if !any_expand_annotation(current) && comp_macros.length == 0 {
+            return current
+        }
+        let reg = collect_comptime_fns(current)
+        current = expand_stmt_list(current, reg, comp_macros)
+        iters = iters + 1
+    }
+    eprintln("error: @expand recursion limit (16) exceeded — a macro is likely emitting code that contains another @expand to itself; check for self-referential @expand sites")
+    // Treat the cap as an unrecoverable compile error so the build
+    // surfaces it visibly. Without exit(1) the eprintln would land in
+    // bs2's stderr log file (discarded by diagnose.sh when compile
+    // succeeds), and a self-referential macro could quietly produce a
+    // half-expanded binary.
+    exit(1)
+    current
 }
 
 // ── Component-macro pre-pass (vez6.8.5) ──
@@ -62,7 +175,7 @@ export fn expand_macros(stmts: List<SStmt>) -> List<SStmt> {
 /// One (component-name → @expand macro fn name) mapping. The full
 /// registry is `List<CompMacroEntry>` — built once per program and
 /// consulted at every ComponentBlock site.
-type CompMacroEntry = { comp_name: string, macro_name: string }
+export type CompMacroEntry = { comp_name: string, macro_name: string }
 
 fn comp_macro_lookup(m: List<CompMacroEntry>, comp_name: string) -> string {
     for e in m {
@@ -182,7 +295,10 @@ fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List
                 if inst_macro != "" {
                     let replacement = try_expand_with_macro(ss.node, inst_macro, reg, ss.line, ss.col, ss.file)
                     if replacement != null {
-                        for r in replacement! { out.push(r) }
+                        // Tag every spliced stmt so the partial
+                        // re-resolve walks them (step 4 of the
+                        // expand-pipeline doc).
+                        for r in replacement! { out.push(sstmt_mark_from_macro(r)) }
                     } else {
                         out.push(ss)
                     }
@@ -207,12 +323,12 @@ fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List
                 if has_expand_annotation(ss.node) {
                     let replacement = try_expand_one(ss.node, reg, ss.line, ss.col, ss.file)
                     if replacement != null {
-                        // Splice every Stmt the macro returned —
-                        // singletons land as a 1-element list, lists
-                        // land as N elements. Either way the macro's
-                        // output becomes consecutive siblings of
-                        // whatever it replaced.
-                        for r in replacement! { out.push(r) }
+                        // Splice every Stmt the macro returned, tagging
+                        // each with `from_macro = true` so the partial
+                        // re-resolve in cli/main.av:resolve_and_expand
+                        // walks only macro-introduced decls (step 4 of
+                        // the expand-pipeline doc — Option C).
+                        for r in replacement! { out.push(sstmt_mark_from_macro(r)) }
                     } else {
                         // Expansion failed — keep the original stmt
                         // so downstream stages surface the issue.

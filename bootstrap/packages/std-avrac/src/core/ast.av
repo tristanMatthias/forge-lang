@@ -22,7 +22,14 @@ export type SExpr = { node: Expr, line: int, col: int, ty: ValueType, file: stri
 
 /// Spanned statement. Mirrors SExpr but without the cached type —
 /// statements have no result value to track.
-export type SStmt = { node: Stmt, line: int, col: int, file: string }
+///
+/// `from_macro` is set by the splicer when an `@expand` macro
+/// produced this stmt. The partial re-resolve pass walks only
+/// `from_macro == true` entries — newly-introduced names go through
+/// `register_decls` + `rewrite_uses` post-expand without re-walking
+/// every hand-written decl. Per
+/// `docs/2026_05_25_EXPAND_PIPELINE_HANDOFF.md` step 4.
+export type SStmt = { node: Stmt, line: int, col: int, file: string, from_macro: bool }
 
 /// Build an SExpr at a known source position. File defaults to "" —
 /// use `sexpr_at` when the source file is known.
@@ -41,14 +48,24 @@ export fn sexpr_dummy(e: Expr) -> SExpr { SExpr { node: e, line: 0, col: 0, ty: 
 export fn sexpr_typed(e: Expr, line: int, col: int, ty: ValueType) -> SExpr { SExpr { node: e, line, col, ty, file: "" } }
 
 /// Build an SStmt at a known source position. File defaults to "".
-export fn sstmt(s: Stmt, line: int, col: int) -> SStmt { SStmt { node: s, line, col, file: "" } }
+/// `from_macro` defaults to false — the macro splicer flips this on
+/// post-construction via `sstmt_mark_from_macro`.
+export fn sstmt(s: Stmt, line: int, col: int) -> SStmt { SStmt { node: s, line, col, file: "", from_macro: false } }
 
 /// Build an SStmt at a known source position with explicit file.
-export fn sstmt_at(s: Stmt, line: int, col: int, file: string) -> SStmt { SStmt { node: s, line, col, file } }
+export fn sstmt_at(s: Stmt, line: int, col: int, file: string) -> SStmt { SStmt { node: s, line, col, file, from_macro: false } }
 
 /// Build an SStmt with no source position. Same caveats as
 /// `sexpr_dummy` — synthesised nodes only.
-export fn sstmt_dummy(s: Stmt) -> SStmt { SStmt { node: s, line: 0, col: 0, file: "" } }
+export fn sstmt_dummy(s: Stmt) -> SStmt { SStmt { node: s, line: 0, col: 0, file: "", from_macro: false } }
+
+/// Stamp `from_macro = true` on a spliced SStmt. The expand_macros
+/// pass calls this after invoking a macro so the post-expand partial
+/// re-resolve knows which entries to walk. Returns a fresh SStmt —
+/// SStmt is a value type, mutation isn't possible without copying.
+export fn sstmt_mark_from_macro(ss: SStmt) -> SStmt {
+    SStmt { node: ss.node, line: ss.line, col: ss.col, file: ss.file, from_macro: true }
+}
 
 // `enum ExprList` retired in lkze.9 #18 — `List<SExpr>` everywhere.
 // `enum ParamList` retired in lkze.9 #19 — `List<ParamEntry>` everywhere.

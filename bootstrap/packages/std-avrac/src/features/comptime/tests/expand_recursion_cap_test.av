@@ -1,0 +1,47 @@
+// docs/2026_05_25_EXPAND_PIPELINE_HANDOFF.md — Step 4 test 4 part 2:
+// "test the recursion cap: a self-referential macro should produce a
+// clean 'macro recursion limit (16) exceeded' error, not a stack
+// overflow."
+//
+// `loop_macro` emits a fn carrying `@expand(loop_macro)` — every
+// fixpoint iteration the loop re-fires. expand_macros caps iterations
+// at 16 and prints a recognisable diagnostic, then bails out. We
+// don't care about the exit code (the bs2 process still tries to
+// continue with partially-expanded code); we just want the cap
+// message in the captured output, proving the cap fired instead of
+// the process diverging.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{cached_fixture_run}
+
+fn write_temp(path: string, source: string) -> string {
+    let escaped = source.replace("'", "'\\''")
+    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
+}
+
+fn run_capture(source: string) -> string {
+    let path = "/tmp/avra_expand_recursion_cap_test.av"
+    write_temp(path, source)
+    cached_fixture_run(path)
+}
+
+spec "@expand recursion cap fires on infinite self-recursion" {
+    then "self-referential @expand stops at 16 iterations with a diagnostic" {
+        let out = run_capture(
+            "use @std.avrac.core.{Stmt}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn loop_macro() -> Stmt {\n" +
+            "    return quote stmt {\n" +
+            "        @expand(loop_macro)\n" +
+            "        fn carrier() {}\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(loop_macro)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        out.contains("recursion limit")
+    }
+}

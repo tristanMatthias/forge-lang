@@ -14,7 +14,7 @@
 // that desugar.av and comptime/rewrite.av use; once the generic-AST-
 // visitor ticket lands (93k3) all three should share a single visitor.
 
-use core.{Stmt, SStmt, sstmt_at, sstmt_dummy, Expr, SExpr, sexpr, sexpr_dummy, FieldEntry, FieldInit, MatchArm, Pattern, BinOp, UnOp, LogicOp, ParamEntry, TypeParamEntry, CompConfigPair, Variant, ValueType, binop_str, unop_str, logicop_str}
+use core.{Stmt, SStmt, sstmt_at, sstmt_dummy, Expr, SExpr, sexpr, sexpr_dummy, FieldEntry, FieldInit, MatchArm, Pattern, BinOp, UnOp, LogicOp, ParamEntry, TypeParamEntry, CompConfigPair, Variant, ValueType, Annotation, binop_str, unop_str, logicop_str}
 use list_ops.{list_map}
 
 // ── Public entry ──
@@ -672,6 +672,28 @@ fn list_concat_call(left: Expr, right: Expr) -> Expr {
     Expr.Call(Expr.QualifiedIdent("@std::avrac::list_ops::list_concat"), args)
 }
 
+/// Build an Expr that, when evaluated, produces a single
+/// `Annotation { name, args }` value. Step 4 — needed so a macro's
+/// quote-emitted `@expand(...)` annotation roundtrips through the
+/// expand pass's fixpoint loop and the inner @expand re-fires.
+fn construct_annotation(a: Annotation) -> Expr {
+    struct_lit_2("@std::avrac::core::Annotation",
+        "name", string_lit_expr(a.name),
+        "args", construct_expr_list(a.args))
+}
+
+/// Build an Expr producing a `List<Annotation>` AST value at
+/// runtime. Each entry uses `construct_annotation`.
+fn construct_annotation_list(annots: List<Annotation>) -> Expr {
+    mut elems: List<SExpr> = []
+    mut i = 0
+    while i < annots.length {
+        elems.push(sexpr_dummy(construct_annotation(annots[i])))
+        i = i + 1
+    }
+    Expr.ListLit(elems)
+}
+
 /// Build an Expr that, when evaluated, produces a
 /// `List<TypeParamEntry>` AST value. Each entry is a struct literal
 /// `TypeParamEntry { name, bounds }`; the result is an `Expr.ListLit`
@@ -763,9 +785,9 @@ fn construct_comp_config_pair_list(list: List<CompConfigPair>) -> Expr {
 fn construct_param_vtype(vt: ValueType) -> Expr {
     match vt {
         .Struct(name, id) -> {
-            if name.length > 0 && name.substring(0, 1) == "~" {
+            if is_splice_name(name) {
                 value_type_ctor_args("Struct",
-                    two_args(Expr.Ident(name.substring(1, name.length)), int_lit_expr(id)))
+                    two_args(Expr.Ident(splice_target_name(name)), int_lit_expr(id)))
             } else {
                 construct_value_type_unknown()
             }
@@ -807,19 +829,8 @@ fn construct_value_type(vt: ValueType) -> Expr {
         .Ptr     -> value_type_ctor("Ptr")
         .Map     -> value_type_ctor("Map")
         .Unknown -> value_type_ctor("Unknown")
-        .Struct(name, id) -> {
-            // qa6i probe 3: `~ident` in type position is parsed as
-            // ValueType.Struct with the splice marker baked into name.
-            // Emit a runtime Ident reference instead of a string lit
-            // so the splice resolves against the macro's scope.
-            if name.length > 0 && name.substring(0, 1) == "~" {
-                value_type_ctor_args("Struct",
-                    two_args(Expr.Ident(name.substring(1, name.length)), int_lit_expr(id)))
-            } else {
-                value_type_ctor_args("Struct",
-                    two_args(string_lit_expr(name), int_lit_expr(id)))
-            }
-        }
+        .Struct(name, id) -> value_type_ctor_args("Struct",
+            two_args(name_or_splice(name), int_lit_expr(id)))
         .Enum(name, type_args, id) -> value_type_ctor_args("Enum",
             three_args(string_lit_expr(name),
                        construct_value_type_list(type_args),
@@ -917,11 +928,24 @@ fn string_lit_expr(s: string) -> Expr {
 /// expansion time the splice resolves to the live value of the
 /// surrounding local. Without the prefix it's a plain string literal.
 fn name_or_splice(name: string) -> Expr {
-    if name.length > 0 && name.substring(0, 1) == "~" {
-        Expr.Ident(name.substring(1, name.length))
+    if is_splice_name(name) {
+        Expr.Ident(splice_target_name(name))
     } else {
         string_lit_expr(name)
     }
+}
+
+/// True when `name` carries the parser's leading-`~` splice marker.
+/// Centralises the `~`-prefix check used by every splice-aware
+/// construction site (TypeDecl name, ValueType.Struct name, etc).
+fn is_splice_name(name: string) -> bool {
+    name.length > 0 && name.substring(0, 1) == "~"
+}
+
+/// Strip the `~` prefix from a splice-marked name, leaving the
+/// runtime-resolved identifier.
+fn splice_target_name(name: string) -> string {
+    name.substring(1, name.length)
 }
 
 /// Build an Expr that, when evaluated, produces a `List<SExpr>` AST
@@ -1065,6 +1089,12 @@ export fn construct_stmt(stmt: Stmt) -> Expr {
                       string_lit_expr(instance),
                       construct_comp_config_pair_list(config),
                       construct_stmt_list(body)))
+        // Step 4 nested @expand: a macro returning code that itself
+        // carries an @expand annotation needs the Annotated layer to
+        // roundtrip through quote construction so the outer expand
+        // pass sees the new @expand site on the next fixpoint iter.
+        .Annotated(annots, inner) -> stmt_ctor("Annotated",
+            two_args(construct_annotation_list(annots), construct_stmt(inner)))
         _ -> stmt_passthrough(stmt)
     }
 }

@@ -1,0 +1,54 @@
+// docs/2026_05_25_EXPAND_PIPELINE_HANDOFF.md — Step 4 test 4:
+// "macro returns code containing another @expand site. The inner
+// expansion fires."
+//
+// A first macro `outer` returns a `fn` annotated with `@expand(inner)`.
+// The fixpoint loop in expand_macros (Step 4) must catch the new
+// @expand on a later iteration and run `inner`, which emits a fn that
+// main can call. If the loop is missing or the Annotated encoder /
+// decoder don't roundtrip, `inner_emitted_fn` never exists and main
+// fails to link.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{cached_fixture_run}
+
+fn write_temp(path: string, source: string) -> string {
+    let escaped = source.replace("'", "'\\''")
+    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
+}
+
+fn run_capture(source: string) -> string {
+    let path = "/tmp/avra_expand_nested_test.av"
+    write_temp(path, source)
+    cached_fixture_run(path)
+}
+
+spec "@expand nested: outer macro emits code carrying @expand(inner)" {
+    then "inner macro fires on second fixpoint iteration" {
+        let out = run_capture(
+            "use @std.avrac.core.{Stmt}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn inner() -> Stmt {\n" +
+            "    return quote stmt {\n" +
+            "        fn nested_emitted() -> int { 7 }\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn outer() -> Stmt {\n" +
+            "    return quote stmt {\n" +
+            "        @expand(inner)\n" +
+            "        fn carrier() {}\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(outer)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    println(string(nested_emitted()))\n" +
+            "}\n")
+        out.contains("7")
+    }
+}

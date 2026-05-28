@@ -668,6 +668,216 @@ export fn rewrite_uses(stmts: List<SStmt>, state: ResolverState) -> List<SStmt> 
     rewrite_stmt_list(ctx, stmts)
 }
 
+/// Partial re-resolve (step 4 of expand-pipeline doc): walks `stmts`
+/// and re-rewrites ONLY entries with `from_macro == true` using the
+/// supplied `state`. Hand-written stmts pass through unchanged — they
+/// were already rewritten by the pre-expand pass against the same
+/// alias table, so re-walking them would be redundant work. The
+/// spliced stmts need this pass because their bodies were constructed
+/// at quote-time with bare Idents that must be requalified against
+/// the post-expand registry. Recurses into Module bodies so a
+/// spliced fn inside a user module still gets rewritten.
+export fn rewrite_uses_macro_only(stmts: List<SStmt>, state: ResolverState) -> List<SStmt> {
+    let ctx = NameCtx {
+        tree: state.tree,
+        graph: state.graph,
+        aliases: state.aliases,
+        current_module: "",
+        locals: [],
+        global_index: state.global_index,
+        type_reg: state.type_reg,
+    }
+    rewrite_macro_stmts(ctx, stmts)
+}
+
+fn rewrite_macro_stmts(ctx: NameCtx, stmts: List<SStmt>) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        if ss.from_macro {
+            let rewritten_node = rewrite_stmt(ctx, ss.node)
+            out.push(SStmt {
+                node: rewritten_node,
+                line: ss.line,
+                col: ss.col,
+                file: ss.file,
+                from_macro: true,
+            })
+        } else {
+            // Descend into Module bodies so spliced stmts nested
+            // inside a Module wrapper are still picked up.
+            match ss.node {
+                .Module(name, body) -> {
+                    let mod_ctx = NameCtx {
+                        tree: ctx.tree,
+                        graph: ctx.graph,
+                        aliases: ctx.aliases,
+                        current_module: type_qualified_name(ctx.current_module, name),
+                        locals: ctx.locals,
+                        global_index: ctx.global_index,
+                        type_reg: ctx.type_reg,
+                    }
+                    let new_body = rewrite_macro_stmts(mod_ctx, body)
+                    out.push(SStmt {
+                        node: Stmt.Module(name, new_body),
+                        line: ss.line,
+                        col: ss.col,
+                        file: ss.file,
+                        from_macro: false,
+                    })
+                }
+                _ -> out.push(ss)
+            }
+        }
+        i = i + 1
+    }
+    out
+}
+
+/// Additive register: takes an existing `state` and the full
+/// post-expand stmt list. Walks the list (recursing into Modules)
+/// and appends a `GraphItem` to `state.graph.all_items` + a
+/// `(short_name → canonical)` entry to `state.global_index` for
+/// every `from_macro == true` declaration. Returns a new
+/// `ResolverState` with the augmented graph + global_index, sharing
+/// the tree, aliases, type_reg, and bag from the input state.
+///
+/// Matches the doc's `register_decls(spliced_only, existing_registry)`
+/// — additive, not a fresh rebuild. Avoids re-running
+/// `resolve_use_aliases` (which would re-emit any pre-existing
+/// import diagnostics and double-bag them).
+export fn register_macro_decls(state: ResolverState, stmts: List<SStmt>) -> ResolverState {
+    mut new_items: List<GraphItem> = []
+    collect_macro_items(stmts, "", new_items)
+    if new_items.length == 0 { return state }
+
+    // Augment graph.all_items by appending the new entries.
+    mut updated_all: List<GraphItem> = []
+    mut i = 0
+    while i < state.graph.all_items.length {
+        updated_all.push(state.graph.all_items[i])
+        i = i + 1
+    }
+    mut j = 0
+    while j < new_items.length {
+        updated_all.push(new_items[j])
+        j = j + 1
+    }
+    let new_graph = ModuleGraph {
+        modules: state.graph.modules,
+        by_path: state.graph.by_path,
+        by_canonical: state.graph.by_canonical,
+        package_roots: state.graph.package_roots,
+        item_exports: state.graph.item_exports,
+        all_items: updated_all,
+        next_module_id: state.graph.next_module_id,
+        next_item_id: state.graph.next_item_id,
+        next_package_id: state.graph.next_package_id,
+        interner: state.graph.interner,
+    }
+
+    // Augment the global_index map with the new short_name → canonical
+    // entries. The existing map is mutated in place — `idx` is a
+    // C-side ptr; appending entries is a fresh insert per name and
+    // doesn't touch existing keys.
+    mut canonicals_ext: List<string> = []
+    let m_old = state.global_index.canonicals.length
+    mut k = 0
+    while k < state.global_index.canonicals.length {
+        canonicals_ext.push(state.global_index.canonicals[k])
+        k = k + 1
+    }
+    mut p = 0
+    while p < new_items.length {
+        let it = new_items[p]
+        // Same seed typeck workaround as `global_item_reg_build`:
+        // bind field accesses to locals before passing to method
+        // calls or extern fns, or codegen bails with "field access
+        // on non-struct value, ty=<unknown>".
+        let sn_p = it.short_name
+        let canon_p = it.canonical
+        if avra_map_has_cstr(state.global_index.idx, sn_p) == 0 {
+            let n = canonicals_ext.length
+            canonicals_ext.push(canon_p)
+            avra_map_set_cstr(state.global_index.idx, sn_p, n)
+        }
+        p = p + 1
+    }
+    let new_global_index = GlobalItemReg { canonicals: canonicals_ext, idx: state.global_index.idx }
+
+    ResolverState {
+        tree: state.tree,
+        graph: new_graph,
+        aliases: state.aliases,
+        global_index: new_global_index,
+        type_reg: state.type_reg,
+        bag: state.bag,
+    }
+}
+
+fn collect_macro_items(stmts: List<SStmt>, mod_path: string, acc: List<GraphItem>) {
+    mut out = acc
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        match ss.node {
+            .Module(name, body) -> {
+                let inner_path = type_qualified_name(mod_path, name)
+                collect_macro_items(body, inner_path, out)
+            }
+            _ -> {
+                if ss.from_macro {
+                    collect_macro_item_from_stmt(ss.node, mod_path, out)
+                }
+            }
+        }
+        i = i + 1
+    }
+}
+
+/// Sister of `collect_item_from_stmt` but emits `GraphItem` directly
+/// — the additive register augments `graph.all_items` which is a
+/// `List<GraphItem>`, not the per-module `ModuleItemEntry` list.
+fn collect_macro_item_from_stmt(stmt: Stmt, mod_path: string, acc: List<GraphItem>) {
+    mut out = acc
+    match stmt {
+        .Function(name, _, _, _, _) -> {
+            let canonical = type_qualified_name(mod_path, name)
+            out.push(GraphItem { short_name: name, canonical, exported: 0 })
+        }
+        .ExternFn(name, _, _) -> {
+            out.push(GraphItem { short_name: name, canonical: name, exported: 1 })
+        }
+        .TypeDecl(name, _, _) -> {
+            let canonical = type_qualified_name(mod_path, name)
+            out.push(GraphItem { short_name: name, canonical, exported: 0 })
+        }
+        .EnumDecl(name, _, _) -> {
+            let canonical = type_qualified_name(mod_path, name)
+            out.push(GraphItem { short_name: name, canonical, exported: 0 })
+        }
+        .NewtypeDecl(name, _) -> {
+            let canonical = type_qualified_name(mod_path, name)
+            out.push(GraphItem { short_name: name, canonical, exported: 0 })
+        }
+        .UnionAliasDecl(name, _) -> {
+            let canonical = type_qualified_name(mod_path, name)
+            out.push(GraphItem { short_name: name, canonical, exported: 0 })
+        }
+        .ShapeDecl(name, _) -> {
+            let canonical = type_qualified_name(mod_path, name)
+            out.push(GraphItem { short_name: name, canonical, exported: 0 })
+        }
+        .TraitDecl(name, _) -> {
+            let canonical = type_qualified_name(mod_path, name)
+            out.push(GraphItem { short_name: name, canonical, exported: 0 })
+        }
+        .Annotated(_, inner) -> collect_macro_item_from_stmt(inner, mod_path, out)
+        _ -> {}
+    }
+}
+
 /// Result of the pre-expand half of name resolution. Holds the
 /// rewritten stmts plus the live `ResolverState` so the @expand
 /// pipeline can splice macro-emitted decls and re-run `register_decls`

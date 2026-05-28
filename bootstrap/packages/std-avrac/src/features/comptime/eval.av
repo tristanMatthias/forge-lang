@@ -577,8 +577,47 @@ fn enum_value_to_stmt(v: Value) -> Stmt? {
             let body = list_value_to_stmt_list(p[3])?
             Stmt.ComponentBlock(comp_v.text, inst_v.text, config, body)
         }
+        "Annotated" -> {
+            // `@expand(M) fn foo() {}` and friends. Payload:
+            // (annots: List<Annotation>, inner: Stmt). Step 4's nested
+            // @expand support needs this — a macro returning code with
+            // an inner @expand annotation roundtrips through the quote
+            // pipeline so the fixpoint loop in expand_macros sees the
+            // new @expand on the next iteration.
+            if p.length != 2 { return null }
+            let annots = list_value_to_annotation_list(p[0])?
+            let inner = enum_value_to_stmt(p[1])?
+            Stmt.Annotated(annots, inner)
+        }
         _ -> null
     }
+}
+
+/// Decode a list-Value of Annotation struct values into a real
+/// `List<Annotation>`. Each entry struct has `name: string, args:
+/// List<SExpr>` — the args list recurses through
+/// `list_value_to_expr_list`.
+fn list_value_to_annotation_list(v: Value) -> List<Annotation>? {
+    if v.kind != "list" { return [] }
+    mut out: List<Annotation> = []
+    for entry in v.list_payload {
+        if entry.kind != "struct" { return null }
+        let name = struct_field_string(entry, "name")
+        let args = struct_field_expr_list(entry, "args") ?? []
+        out.push(Annotation { name, args })
+    }
+    out
+}
+
+/// Lookup a List<SExpr>-valued field on a struct Value. Returns
+/// null when the entry isn't a struct, the field is missing, or
+/// the field's value isn't a list.
+fn struct_field_expr_list(v: Value, name: string) -> List<SExpr>? {
+    if v.kind != "struct" { return null }
+    for f in v.struct_payload {
+        if f.name == name { return list_value_to_expr_list(f.value) }
+    }
+    null
 }
 
 /// Decode a list-Value of FieldEntry struct values back into a

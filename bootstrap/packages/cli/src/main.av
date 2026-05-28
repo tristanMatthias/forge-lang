@@ -78,7 +78,7 @@ use @std.avrac.features.eval.{render_value, eval_expression_source, execute_prog
 use @std.avrac.desugar.{desugar_program, inject_intrinsics}
 use @std.avrac.features.component_decl.{expand_components}
 use @std.avrac.features.marshal.{derive_marshal}
-use @std.avrac.resolve.{resolve_names, resolve_names_pre_expand, register_decls, rewrite_uses, validate_scopes_after_expand, NameResolveResult, ResolverState}
+use @std.avrac.resolve.{resolve_names, resolve_names_pre_expand, register_decls, register_macro_decls, rewrite_uses, rewrite_uses_macro_only, validate_scopes_after_expand, NameResolveResult, ResolverState}
 use @std.avrac.features.modules.{resolve_module_files, modules_dirname, find_packages_dir, package_root_for_file, dedup_modules, resolve_dir_module_body, synthesize_subdir_module_decls}
 use @std.avrac.features.modules.{load_package_config, load_manifest, Dep}
 use @std.avrac.features.modules.{filter_to_target_unit, list_avra_module_subdirs}
@@ -102,7 +102,7 @@ use @std.avrac.build.{
     DepGraph, Unit, build_graph,
 }
 use @std.avrac.typeck.{typecheck_program}
-use @std.avrac.features.comptime.{run_comptime, expand_macros, needs_expand_pass}
+use @std.avrac.features.comptime.{run_comptime, expand_macros, expand_macros_collect, expand_macros_eval, plan_has_work, needs_expand_pass}
 use @std.avrac.features.quote_expr.{lower_quotes}
 use @std.avrac.diagnostics.{bag_has_errors, bag_has_warnings, bag_new, bag_report, diag_error, diag_ice, span_dummy, DiagCode, DiagnosticBag}
 use @std.avrac.diagnostics.{render_bag, render_bag_json}
@@ -160,40 +160,43 @@ extern fn avra_resolver_ctx_pop()
 /// not the rewritten QualifiedIdent. The downstream codegen lookup
 /// handles bare Ident resolution against the post-expand symbol table.
 fn resolve_and_expand(stmts: List<SStmt>) -> NameResolveResult {
+    // Phase 1 (pre-resolve): collect every @expand site by source
+    // position. The plan carries through resolve_names so the eval
+    // phase has resolved names available when invoking macro bodies.
+    let plan_pre = expand_macros_collect(stmts)
     let pre = resolve_names_pre_expand(stmts)
     if pre.had_error == 1 {
         // Module-resolution errors are fatal — bail before running
-        // expand_macros over a borked AST.
+        // expand_macros_eval over a borked AST.
         return validate_scopes_after_expand(pre.stmts, pre.state)
     }
-    // Gate the post-expand re-resolve on actually having macros to
-    // expand. Without a gate, every compile re-walks the AST a
-    // second time even for files with zero macro annotations —
-    // which both wastes work and breaks module-level use aliases
-    // (the second pass walks Module bodies with the top-level ctx,
-    // missing the per-module alias merge that the first pass did).
-    if !needs_expand_pass(pre.stmts) {
+    // Fast-path: no macros to expand → skip the eval + partial
+    // re-resolve, hand straight off to scope validation.
+    if !plan_has_work(plan_pre) {
         return validate_scopes_after_expand(pre.stmts, pre.state)
     }
-    // Push the active resolver state onto the runtime stack so
-    // ctx_* extern fns called from 2-arg macros can look it up by
-    // handle. Pop after expansion regardless of success — invoke
-    // happens once per @expand site, and the stack tracks the
-    // surrounding ResolverState only.
+    // Phase 2 (post-resolve): rebuild the plan against the
+    // rewritten stmts so source-position lookups land in the
+    // post-rewrite AST, then evaluate. Push the resolver state
+    // onto the runtime stack so 2-arg macros can call ctx_* fns.
+    let plan = expand_macros_collect(pre.stmts)
     let handle = avra_resolver_ctx_push(pre.state)
-    let expanded_macros = expand_macros(pre.stmts)
+    let expanded = expand_macros_eval(plan)
     avra_resolver_ctx_pop()
-    // Macro-spliced stmts haven't been through rewrite_uses, so
-    // identifiers + vtypes in them remain in their unqualified
-    // construction form. Re-run rewrite_uses against the existing
-    // resolver state so spliced names get the same canonical
-    // treatment as the originals — type-position splices
-    // (`fn foo(x: ~name) -> ~name { ... }`, qa6i probe 3) need this
-    // to land their vtype as the right ValueType variant, and
-    // call-site references to macro-introduced fns/types resolve
-    // through the same path as hand-written ones.
-    let resolved_post_expand = rewrite_uses(expanded_macros, pre.state)
-    validate_scopes_after_expand(resolved_post_expand, pre.state)
+    // Partial re-resolve (step 4 of expand-pipeline doc):
+    //   1. Additively register the macro-emitted decls into the
+    //      existing ResolverState — no fresh tree/alias rebuild
+    //      that would double-bag pre-existing diagnostics.
+    //   2. Re-rewrite ONLY from_macro=true stmts against the
+    //      augmented state — hand-written decls were already
+    //      rewritten in the pre-expand pass.
+    //   3. Scope-validate against the augmented state. resolve_program
+    //      inside validate_scopes_after_expand builds a fresh fn
+    //      registry from the full AST, so macro-introduced fns
+    //      resolve correctly at call sites.
+    let post_state = register_macro_decls(pre.state, expanded)
+    let rewritten = rewrite_uses_macro_only(expanded, post_state)
+    validate_scopes_after_expand(rewritten, post_state)
 }
 
 /// Render a diagnostic bag in either human or JSON form, picked
