@@ -12,7 +12,7 @@
 use core.{avra_process_env_get, avra_process_forward, avra_shell_exec}
 use features.quote_expr.{lower_quotes}
 use desugar.{desugar_program, inject_intrinsics}
-use features.component_decl.{expand_components}
+use features.component_decl.{expand_components_bag}
 use features.marshal.{derive_marshal}
 use features.comptime.{resolve_and_expand_program, run_comptime}
 use typeck.{typecheck_program}
@@ -53,12 +53,16 @@ export fn build_binary(target: CompileTarget) -> Result<string, string> {
     let post_quote = lower_quotes(target.program)
     let desugared = desugar_program(post_quote)
     let with_intrinsics = inject_intrinsics(desugared)
-    let expanded = expand_components(with_intrinsics)
+    let comp = expand_components_bag(with_intrinsics)
+    if bag_has_errors(comp.bag) {
+        render_bag("", target.diag_filename, comp.bag)
+        return Result.Err("component validation failed")
+    }
     // @marshal derive: synthesise `impl T { to_bytes; from_bytes }`
     // next to every `@marshal type T` so the resolver sees the type
     // AND its methods in the same pass. Zero-cost when no
     // @marshal annotation exists (early-out).
-    let with_marshal = derive_marshal(expanded)
+    let with_marshal = derive_marshal(comp.stmts)
     // Option C pipeline: macro-introduced decls register before
     // scope validation runs. Single source of truth in
     // features/comptime/expand_macro.av.

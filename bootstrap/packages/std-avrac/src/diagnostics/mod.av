@@ -102,6 +102,7 @@ export type Label = {
 ///   - F0001-0999 : lexer / parser
 ///   - F1000-1999 : typechecker
 ///   - F3000-3999 : resolver / module system
+///   - F4000-4999 : macro expansion (@expand / @comptime)
 ///   - F5000-5999 : runtime traps
 ///   - F9000-9998 : warnings
 ///   - F9999      : internal compiler error
@@ -221,6 +222,49 @@ export enum DiagCode {
     /// known gaps in component-expansion-synthesised bindings that
     /// would otherwise spam errors.
     ArgTypeMismatch
+    /// F9050 — `@expand` macro returned a `ResolvedDecls` whose
+    /// `.introduces` lists a name that doesn't correspond to any decl
+    /// in `.decls`. The name will not be registered; the warning
+    /// surfaces the mismatch without breaking codegen so macro authors
+    /// can correct the metadata.
+    ExpandIntroducesPhantom
+    // ── Macro expansion (F4000-F4999) ───────────────────────────────
+    /// F4000 — `@expand` fixpoint exceeded its recursion cap (16
+    /// iterations). A macro is almost certainly emitting code that
+    /// contains another `@expand` referencing itself, or the macro
+    /// graph has an inadvertent cycle.
+    ExpandRecursionLimit
+    /// F4001 — an `@expand(...)` annotation has no macro identifier
+    /// as its first argument (e.g. `@expand` with no parens, or
+    /// `@expand(42)`).
+    ExpandMissingMacroIdent
+    /// F4002 — `@expand(macro_name)` where `macro_name` doesn't
+    /// resolve to a `@comptime` fn in scope. Either misspelled or
+    /// the macro fn is missing the `@comptime` annotation.
+    ExpandUnknownMacro
+    /// F4003 — the compiler couldn't encode the wrapped Stmt as a
+    /// runtime Value for the macro to receive. Indicates a gap in
+    /// the quote encoder (lower.av's `construct_stmt` / `construct_expr`)
+    /// — usually a new AST variant that lacks an encoder arm.
+    ExpandStmtBoxFailed
+    /// F4004 — `@expand(macro)` macro has more parameters than
+    /// the expander supports (0, 1, or 2 only — `()`, `(stmt)`,
+    /// or `(decl, ctx)`).
+    ExpandUnsupportedArity
+    /// F4005 — the comptime evaluator hit a runtime error while
+    /// executing the macro body. The error message from the
+    /// evaluator is included in the diagnostic for context.
+    ExpandEvalFailed
+    /// F4006 — the macro's return value couldn't be decoded as a
+    /// Stmt, List<Stmt>, or ResolvedDecls. Either the macro returned
+    /// a value of the wrong shape, or the decoder doesn't yet handle
+    /// the variant the macro produced.
+    ExpandUndecodableReturn
+    /// F4100 — a `component` instance's body contains a nested
+    /// `ComponentBlock` whose type isn't declared in the parent's
+    /// `children { ... }` schema. The compiler refuses to splice
+    /// the mismatched child.
+    ComponentChildInvalid
     // ── Internal (F9999) ────────────────────────────────────────────
     /// F9999 — internal compiler error. Compiler invariant violated;
     /// the bug is in the compiler, not the user's code. Report.
@@ -290,6 +334,15 @@ export fn error_def(d: DiagCode) -> ErrorDef {
         .UnusedImport        -> ErrorDef { code: "F9002", help: "remove unused imports to keep code clean" }
         .NamingConvention    -> ErrorDef { code: "F9003", help: "use PascalCase for types, snake_case for functions/variables, SCREAMING_SNAKE for constants" }
         .ArgTypeMismatch     -> ErrorDef { code: "F9004", help: "call-site arg type differs from declared param — coerce explicitly or fix the binding's inferred type" }
+        .ExpandIntroducesPhantom -> ErrorDef { code: "F9050", help: "the name in `.introduces` has no matching decl in `.decls` — drop the entry, or add the missing decl" }
+        .ExpandRecursionLimit -> ErrorDef { code: "F4000", help: "a macro is likely emitting code that contains another @expand to itself — break the cycle or precompute the result" }
+        .ExpandMissingMacroIdent -> ErrorDef { code: "F4001", help: "`@expand` needs a `@comptime` fn identifier as its first argument: `@expand(my_macro)`" }
+        .ExpandUnknownMacro  -> ErrorDef { code: "F4002", help: "check the name's spelling — the macro must be a `@comptime fn` visible in this scope" }
+        .ExpandStmtBoxFailed -> ErrorDef { code: "F4003", help: "the quote encoder doesn't yet support this Stmt variant — file an issue or simplify the @expand'd decl" }
+        .ExpandUnsupportedArity -> ErrorDef { code: "F4004", help: "macros take 0 args, 1 arg (stmt), or 2 args (AnnotatedDecl, ResolverCtx) — adjust the signature" }
+        .ExpandEvalFailed    -> ErrorDef { code: "F4005", help: "the comptime evaluator hit a runtime error inside the macro body — see the evaluator message" }
+        .ExpandUndecodableReturn -> ErrorDef { code: "F4006", help: "macros must return Stmt, List<Stmt>, or ResolvedDecls — check the return type and shape" }
+        .ComponentChildInvalid -> ErrorDef { code: "F4100", help: "the parent's `children { ... }` schema doesn't include this child type — add a slot, or remove the nesting" }
         .ICE                 -> ErrorDef { code: "F9999", help: "this is a compiler bug — please report it at https://github.com/avra-lang/avra/issues" }
         .RuntimeNullDeref    -> ErrorDef { code: "F5000", help: "code dereferenced a null pointer — check optional unwraps and trait casts" }
         .RuntimeDivByZero    -> ErrorDef { code: "F5001", help: "guard the divisor: `if denom != 0 { num / denom } else { default }`" }

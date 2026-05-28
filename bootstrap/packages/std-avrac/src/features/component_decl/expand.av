@@ -12,26 +12,43 @@
 
 use core.{Expr, Stmt, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, FieldEntry, FieldInit, ParamEntry, ValueType, CompConfig, CompConfigPair, ChildrenSlot, TypeParamEntry, find_annotation}
 use core.{has_fn, find_fn_body}
+use diagnostics.{DiagnosticBag, DiagCode, bag_new, bag_report, bag_merge, diag_error, span_at}
 use list_ops.{list_concat, list_map}
 
 // ── Public API ──
 
-/// Public entry: expand every `component` declaration + usage
-/// in `stmts`. Two-phase: collect every `ComponentDef` first,
-/// then walk the tree splicing in templates / instantiations.
+/// Result of expanding component decls + instances. `stmts` is the
+/// rewritten AST; `bag` carries any child-slot validation diagnostics
+/// (F4100). Callers (check_source / build_binary / cli/main.av)
+/// render bag through the unified renderer.
+export type ComponentExpandResult = {
+    stmts: List<SStmt>,
+    bag: DiagnosticBag,
+}
+
+/// Public entry: expand every `component` declaration + usage in
+/// `stmts`. Two-phase: validate child-slot constraints into the bag
+/// (F4100), then splice in component templates / instances. The
+/// split keeps the splicer pure and lets the validator return a
+/// bag without threading it through every helper. The validator
+/// walks against `collect_component_defs(stmts)` — the same
+/// registry the splicer uses — so they agree on which parents have
+/// schemas.
 ///
-/// Empty-registry fast-path: programs that declare zero
-/// components (the overwhelming majority — components are a
-/// niche UI feature) pay zero cost beyond the registry scan.
-/// Without this, `expand_stmt_list` rebuilt the entire stmt
-/// tree even when there was nothing to expand (4szi.1 perf
-/// pass — every check_source / `bs2 check` call runs this).
-export fn expand_components(stmts: List<SStmt>) -> List<SStmt> {
+/// Empty-registry fast-path: programs that declare zero components
+/// (the overwhelming majority — components are a niche UI feature)
+/// pay zero cost beyond the registry scan. Without this,
+/// `expand_stmt_list` rebuilt the entire stmt tree even when there
+/// was nothing to expand (4szi.1 perf pass — every check_source /
+/// `bs2 check` call runs this).
+export fn expand_components_bag(stmts: List<SStmt>) -> ComponentExpandResult {
     let reg = collect_component_defs(stmts)
-    if reg.length == 0 { return stmts }
+    if reg.length == 0 { return ComponentExpandResult { stmts, bag: bag_new() } }
+    let bag = validate_component_tree(stmts, reg)
     let empty_slots: List<ChildrenSlot> = []
     let root = CompNestCtx { parent_var: "", parent_name: "", parent_children: empty_slots }
-    expand_stmt_list(stmts, reg, root)
+    let spliced = expand_stmt_list(stmts, reg, root)
+    ComponentExpandResult { stmts: spliced, bag }
 }
 
 // ── Component definition registry ──
@@ -587,10 +604,9 @@ fn build_push_stmt(parent_var: string, slot: string, child_inst: string, line: i
 /// template-vs-data classification of the body.
 export fn splice_component_block(comp: string, inst: string, config: List<CompConfigPair>, body: List<SStmt>, line: int, col: int, rest: List<SStmt>, reg: List<CompDefEntry>, nest: CompNestCtx) -> List<SStmt> {
     let def = comp_reg_lookup(reg, comp)
-    // vez6.7: validate every nested ComponentBlock matches a declared
-    // child slot. Mismatches are reported via eprintln (proper
-    // DiagnosticBag plumbing comes in a follow-up cleanup pass).
-    if def.found { validate_children_in_body(comp, def.children, body) }
+    // vez6.7 child-type validation runs in `validate_component_tree`
+    // (the pre-splice pass) so diagnostics land in the bag rather
+    // than on stderr. The splicer just does the splice.
     let has_init = def.found && has_fn(def.body, "init")
 
     if has_init {
@@ -601,19 +617,62 @@ export fn splice_component_block(comp: string, inst: string, config: List<CompCo
 
 // ── vez6.7: child-type validation ──
 
-/// Walk `body` looking for nested ComponentBlock instantiations and
-/// verify each matches a declared slot in `parent_children`. Opt-in
-/// only: when the parent declares no `children { ... }` schema (i.e.
-/// `parent_children == End`) we don't validate — that's the legacy
-/// behaviour where any nested component is permitted. Once the
-/// parent opts in, every nested type must match a declared slot or
-/// eprintln a diagnostic.
-fn validate_children_in_body(parent_comp: string, parent_children: List<ChildrenSlot>, body: List<SStmt>) {
-    if parent_children.length == 0 { return }
-    validate_children_against_schema(parent_comp, parent_children, body)
+/// Pre-splice walker that emits F4100 diagnostics for every nested
+/// ComponentBlock whose type isn't declared in the parent's
+/// `children { ... }` schema. Returns the accumulated bag for the
+/// caller to render through the unified diagnostic path. Pure
+/// (no side effects); the splicer ignores validation and processes
+/// every ComponentBlock regardless — error rendering happens via
+/// the bag, not via eprintln-on-the-fly.
+fn validate_component_tree(stmts: List<SStmt>, reg: List<CompDefEntry>) -> DiagnosticBag {
+    mut bag = bag_new()
+    for ss in stmts {
+        bag = validate_stmt(ss, reg, bag)
+    }
+    bag
 }
 
-fn validate_children_against_schema(parent_comp: string, schema: List<ChildrenSlot>, body: List<SStmt>) {
+fn validate_stmt(ss: SStmt, reg: List<CompDefEntry>, in_bag: DiagnosticBag) -> DiagnosticBag {
+    let inner = stmt_unwrap_deep(ss.node)
+    let mut bag = in_bag
+    match inner {
+        .ComponentBlock(comp, _, _, body) -> {
+            let def = comp_reg_lookup(reg, comp)
+            if def.found && def.children.length > 0 {
+                bag = validate_children_bag(comp, def.children, body, ss.line, ss.col, ss.file, bag)
+            }
+            // Recurse into body to catch nested-of-nested mismatches.
+            for child in body {
+                bag = validate_stmt(child, reg, bag)
+            }
+        }
+        .ComponentDef(_, _, _, _, _, body) -> {
+            for child in body {
+                bag = validate_stmt(child, reg, bag)
+            }
+        }
+        .Module(_, body) -> {
+            for child in body {
+                bag = validate_stmt(child, reg, bag)
+            }
+        }
+        .Function(_, _, _, _, body) -> {
+            for child in body {
+                bag = validate_stmt(child, reg, bag)
+            }
+        }
+        .Block(body) -> {
+            for child in body {
+                bag = validate_stmt(child, reg, bag)
+            }
+        }
+        _ -> {}
+    }
+    bag
+}
+
+fn validate_children_bag(parent_comp: string, schema: List<ChildrenSlot>, body: List<SStmt>, line: int, col: int, file: string, in_bag: DiagnosticBag) -> DiagnosticBag {
+    mut bag = in_bag
     mut i = 0
     while i < body.length {
         let ss = body[i]
@@ -621,13 +680,18 @@ fn validate_children_against_schema(parent_comp: string, schema: List<ChildrenSl
         match inner {
             .ComponentBlock(child_comp, _, _, _) -> {
                 if slot_name_for_child(schema, child_comp) == "" {
-                    eprintln("error: type `${child_comp}` is not a valid child of `${parent_comp}`${schema_hint(schema, parent_comp)}")
+                    bag = bag_report(bag, diag_error(
+                        DiagCode.ComponentChildInvalid,
+                        "type `${child_comp}` is not a valid child of `${parent_comp}`${schema_hint(schema, parent_comp)}",
+                        span_at(0, 0, ss.line, ss.col, ss.file)
+                    ))
                 }
             }
             _ -> {}
         }
         i = i + 1
     }
+    bag
 }
 
 /// Extract the element-type name from a slot's `List<T>` ValueType.

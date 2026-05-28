@@ -22,7 +22,7 @@ use parse.{parse_program_source}
 use diagnostics.{DiagnosticBag, bag_merge, bag_has_errors}
 use features.quote_expr.{lower_quotes}
 use desugar.{desugar_program, inject_intrinsics}
-use features.component_decl.{expand_components}
+use features.component_decl.{expand_components_bag}
 use features.comptime.{resolve_and_expand_program, run_comptime}
 use typeck.{typecheck_program}
 use features.generics.{monomorphize}
@@ -41,14 +41,17 @@ export fn check_source(source: string) -> DiagnosticBag {
     // don't import stdlib. inject_intrinsics is a no-op when the
     // source declares Result directly.
     let with_intrinsics = inject_intrinsics(desugared)
-    let expanded = expand_components(with_intrinsics)
+    let comp = expand_components_bag(with_intrinsics)
+    if bag_has_errors(comp.bag) {
+        return comp.bag
+    }
     // Option C pipeline: macro-introduced decls register before
     // scope validation runs. Replaces the legacy
     // `resolve_names → expand_macros` shape which was per-pass
     // non-idempotent and missed macro-emitted top-level decls.
-    let named = resolve_and_expand_program(expanded)
+    let named = resolve_and_expand_program(comp.stmts)
     if named.had_error {
-        return named.bag
+        return bag_merge(comp.bag, named.bag)
     }
     let post_comptime = run_comptime(named.stmts)
     let tc_result = typecheck_program(post_comptime)

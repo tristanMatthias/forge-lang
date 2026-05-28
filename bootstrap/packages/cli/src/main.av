@@ -76,7 +76,7 @@ use @std.avrac.parse.{parse_expression_source, parse_program_source, parse_progr
 use @std.avrac.core.{render_expr, render_stmt_list, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType, Stmt, SStmt, Expr, sstmt_dummy}
 use @std.avrac.features.eval.{render_value, eval_expression_source, execute_program_source}
 use @std.avrac.desugar.{desugar_program, inject_intrinsics}
-use @std.avrac.features.component_decl.{expand_components}
+use @std.avrac.features.component_decl.{expand_components_bag}
 use @std.avrac.features.marshal.{derive_marshal}
 use @std.avrac.resolve.{resolve_names, NameResolveResult}
 use @std.avrac.features.modules.{resolve_module_files, modules_dirname, find_packages_dir, package_root_for_file, dedup_modules, resolve_dir_module_body, synthesize_subdir_module_decls}
@@ -3313,8 +3313,12 @@ fn main() {
             // Result is visible to program_declares_enum — avoids
             // synthesizing a duplicate that dkfa would flag.
             let with_intrinsics = inject_intrinsics(mod_resolved.stmts)
-            let expanded = expand_components(with_intrinsics)
-            let with_marshal = derive_marshal(expanded)
+            let comp = expand_components_bag(with_intrinsics)
+            if bag_has_errors(comp.bag) {
+                render_bag_either(check_json, check_source, check_path, comp.bag)
+                fail("component validation failed")
+            }
+            let with_marshal = derive_marshal(comp.stmts)
             let named = resolve_and_expand_program(with_marshal)
             if bag_has_errors(named.bag) || bag_has_warnings(named.bag) {
                 render_bag_either(check_json, check_source, check_path, named.bag)
@@ -3395,8 +3399,12 @@ fn main() {
             let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list())
             if mod_resolved.had_error { fail(mod_resolved.error_message) }
             let with_intrinsics = inject_intrinsics(mod_resolved.stmts)
-            let expanded = expand_components(with_intrinsics)
-            let with_marshal = derive_marshal(expanded)
+            let comp = expand_components_bag(with_intrinsics)
+            if bag_has_errors(comp.bag) {
+                render_bag(source, path, comp.bag)
+                fail("component validation failed")
+            }
+            let with_marshal = derive_marshal(comp.stmts)
             let named = resolve_and_expand_program(with_marshal)
             if named.had_error { fail(named.error_message) }
             let post_comptime = run_comptime(named.stmts)
@@ -3424,8 +3432,12 @@ fn main() {
                 fail(mod_resolved.error_message)
             }
             let with_intrinsics = inject_intrinsics(mod_resolved.stmts)
-            let expanded = expand_components(with_intrinsics)
-            let with_marshal = derive_marshal(expanded)
+            let comp = expand_components_bag(with_intrinsics)
+            if bag_has_errors(comp.bag) {
+                render_bag(source, path, comp.bag)
+                fail("component validation failed")
+            }
+            let with_marshal = derive_marshal(comp.stmts)
             let named = resolve_and_expand_program(with_marshal)
             if bag_has_errors(named.bag) || bag_has_warnings(named.bag) {
                 render_bag(source, path, named.bag)
@@ -3688,8 +3700,12 @@ fn main() {
         }
         // Component expansion: runs AFTER module resolution so component
         // definitions in any module are visible to the expander.
-        let expanded = expand_components(post_filter_stmts)
-        let with_marshal = derive_marshal(expanded)
+        let comp = expand_components_bag(post_filter_stmts)
+        if bag_has_errors(comp.bag) {
+            render_bag_either(json_output, csource, cpath, comp.bag)
+            fail("component validation failed")
+        }
+        let with_marshal = derive_marshal(comp.stmts)
         let t_expand = avra_uptime_ms()
         let named = resolve_and_expand_program(with_marshal)
         let t_names = avra_uptime_ms()

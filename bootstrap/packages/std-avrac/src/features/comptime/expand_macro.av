@@ -46,6 +46,7 @@ use resolve.{ResolverState, NameResolveResult, register_macro_decls, resolve_nam
 use features.comptime.{CompTimeRegistry, comptime_lookup, collect_comptime_fns, value_to_stmt, value_to_stmt_list, stmt_to_value}
 use features.eval.{Runtime, Value, StructField, value_struct, value_string, value_number, value_null, value_list, value_enum, eval_expr, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message, path_last_segment}
 use features.quote_expr.{construct_expr}
+use diagnostics.{DiagnosticBag, DiagCode, Span, bag_new, bag_report, bag_merge, diag_error, diag_warning, span_at}
 use list_ops.{list_concat}
 
 // ── ResolverCtx state stack (step 5) ──
@@ -205,36 +206,48 @@ fn collect_expand_targets(stmts: List<SStmt>) -> List<ExpandTarget> {
     acc
 }
 
+/// Result of the @expand eval phase: the rewritten stmt list and the
+/// DiagnosticBag accumulated by every macro invocation across every
+/// fixpoint iteration. The caller (resolve_and_expand_program) merges
+/// `bag` into the final NameResolveResult so the unified renderer
+/// surfaces F-coded diagnostics through the same path as the rest of
+/// the compiler.
+export type ExpandResult = {
+    stmts: List<SStmt>,
+    bag: DiagnosticBag,
+}
+
 /// Phase 2 (post-resolve): walk the stmt list, invoke every macro
 /// captured in the plan, splice results back in. Tags every spliced
 /// SStmt with `from_macro: true` so the partial re-resolve in
 /// `resolve_and_expand_program` walks only the new decls. Runs a
 /// fixpoint loop so that macro-emitted `@expand` sites expand
 /// transitively. Cap at 16 iterations — a self-referential macro
-/// terminates with a clean error via `exit(1)`.
+/// surfaces as an F4000 error in the returned bag.
 ///
 /// Takes the active `ResolverState` and re-populates the resolver-
 /// data layer between fixpoint iterations so that macros firing in
 /// iter N+1 can see the names introduced by iter N via
 /// `ctx_qualify_ident` / `ctx_lookup_type`.
-export fn expand_macros_eval_with_state(plan: ExpandPlan, state: ResolverState) -> List<SStmt> {
+export fn expand_macros_eval_with_state(plan: ExpandPlan, state: ResolverState) -> ExpandResult {
     expand_macros_fixpoint(plan.stmts, plan.comp_macros, state)
 }
 
-/// Shared fixpoint loop. Caps at 16 iterations and `exit(1)`s with
-/// a clean diagnostic on overflow so a self-referential macro
-/// surfaces as a build error instead of a half-expanded binary.
+/// Shared fixpoint loop. Caps at 16 iterations and reports F4000 in
+/// the returned bag on overflow so a self-referential macro surfaces
+/// as a build error instead of a half-expanded binary.
 /// Re-populates the resolver-data layer between iterations so a
 /// later-iteration macro can see names introduced by an earlier
 /// iteration via `ctx_qualify_ident` / `ctx_lookup_type`.
-fn expand_macros_fixpoint(stmts: List<SStmt>, initial_comp_macros: List<CompMacroEntry>, state: ResolverState) -> List<SStmt> {
+fn expand_macros_fixpoint(stmts: List<SStmt>, initial_comp_macros: List<CompMacroEntry>, state: ResolverState) -> ExpandResult {
     mut current = stmts
     mut current_state = state
+    mut bag = bag_new()
     mut iters = 0
     while iters < 16 {
         let comp_macros = if iters == 0 { initial_comp_macros } else { collect_component_macros(current) }
         if !any_expand_annotation(current) && comp_macros.length == 0 {
-            return current
+            return ExpandResult { stmts: current, bag }
         }
         if iters > 0 {
             current_state = register_macro_decls(current_state, current)
@@ -244,11 +257,15 @@ fn expand_macros_fixpoint(stmts: List<SStmt>, initial_comp_macros: List<CompMacr
         let walked = expand_stmt_list(current, reg, comp_macros, current_state, "")
         current = walked.out
         current_state = walked.state
+        bag = bag_merge(bag, walked.bag)
         iters = iters + 1
     }
-    eprintln("error: @expand recursion limit (16) exceeded — a macro is likely emitting code that contains another @expand to itself; check for self-referential @expand sites")
-    exit(1)
-    current
+    bag = bag_report(bag, diag_error(
+        DiagCode.ExpandRecursionLimit,
+        "@expand recursion limit (16) exceeded — a macro is likely emitting code that contains another @expand to itself",
+        span_at(0, 0, 0, 0, "")
+    ))
+    ExpandResult { stmts: current, bag }
 }
 
 
@@ -343,6 +360,7 @@ fn has_expand_annotation(stmt: Stmt) -> bool {
 fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List<CompMacroEntry>, in_state: ResolverState, current_module: string) -> WalkerOut {
     mut out: List<SStmt> = []
     mut current_state = in_state
+    mut bag = bag_new()
     for ss in stmts {
         let inner = peel_annotations(ss.node)
         // vez6.8.5: a ComponentDef with @expand only REGISTERS
@@ -367,10 +385,11 @@ fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List
                     // Pass the same stmt for both invoke_macro args —
                     // build_annotation_value falls back to a name-only
                     // annotation when find_annotation returns null.
-                    let replacement = invoke_macro(ss.node, inst_macro, reg, ss.line, ss.col, ss.file, current_module, ss.node)
-                    splice_expansion(out, ss, replacement)
-                    if replacement != null {
-                        current_state = register_and_repopulate(current_state, replacement!, current_module)
+                    let invoked = invoke_macro(ss.node, inst_macro, reg, ss.line, ss.col, ss.file, current_module, ss.node)
+                    bag = bag_merge(bag, invoked.bag)
+                    splice_expansion(out, ss, invoked.replacement)
+                    if invoked.replacement != null {
+                        current_state = register_and_repopulate(current_state, invoked.replacement!, current_module)
                     }
                 } else {
                     out.push(ss)
@@ -388,16 +407,18 @@ fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List
                 let child_module = type_qualified_name(current_module, mod_name)
                 let sub = expand_stmt_list(body, reg, comp_macros, current_state, child_module)
                 current_state = sub.state
+                bag = bag_merge(bag, sub.bag)
                 let new_stmt = Stmt.Module(mod_name, sub.out)
                 out.push(sstmt_at(new_stmt, ss.line, ss.col, ss.file))
             }
             _ -> {
                 if has_expand_annotation(ss.node) {
                     avra_rd_set_current_module(current_module)
-                    let replacement = try_expand_one(ss.node, reg, ss.line, ss.col, ss.file, current_module)
-                    splice_expansion(out, ss, replacement)
-                    if replacement != null {
-                        current_state = register_and_repopulate(current_state, replacement!, current_module)
+                    let attempt = try_expand_one(ss.node, reg, ss.line, ss.col, ss.file, current_module)
+                    bag = bag_merge(bag, attempt.bag)
+                    splice_expansion(out, ss, attempt.replacement)
+                    if attempt.replacement != null {
+                        current_state = register_and_repopulate(current_state, attempt.replacement!, current_module)
                     }
                 } else {
                     out.push(ss)
@@ -405,17 +426,30 @@ fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List
             }
         }
     }
-    WalkerOut { out, state: current_state }
+    WalkerOut { out, state: current_state, bag }
 }
 
 /// Walker's per-iter return: the spliced stmts + the state after any
-/// in-iter registrations. The fixpoint loop threads `state` between
-/// iterations so the SECOND macro in an `@expand` site that fires
-/// later in the same iteration can `ctx_qualify_ident` an introduced
-/// name (doc step 4.4 / test 7).
+/// in-iter registrations + every diagnostic produced by macro
+/// invocations in this iteration. The fixpoint loop threads `state`
+/// between iterations so the SECOND macro in an `@expand` site that
+/// fires later in the same iteration can `ctx_qualify_ident` an
+/// introduced name (doc step 4.4 / test 7), and merges `bag` so
+/// every iteration's diagnostics surface in the final result.
 type WalkerOut = {
     out: List<SStmt>,
     state: ResolverState,
+    bag: DiagnosticBag,
+}
+
+/// Internal carrier for a single macro-expansion attempt. `replacement`
+/// is the spliced statements on success or null on any failure;
+/// `bag` collects any diagnostics produced. Returned as a record so
+/// the walker can both merge the bag and act on the null/non-null
+/// replacement without losing diagnostics on the failure path.
+type ExpandAttempt = {
+    replacement: List<SStmt>?,
+    bag: DiagnosticBag,
 }
 
 /// After a macro splice lands, augment the resolver state with the
@@ -453,13 +487,18 @@ fn splice_expansion(out: List<SStmt>, ss: SStmt, replacement: List<SStmt>?) {
 /// Look up the macro fn name from the `@expand` annotation's first
 /// arg, find it in the comptime registry, evaluate it (with the
 /// wrapped Stmt as a single arg if the macro is 1-ary, else
-/// zero-arg), and decode the result. Returns null when ANY step
-/// fails — the caller treats that as "leave this stmt alone".
-fn try_expand_one(stmt: Stmt, reg: CompTimeRegistry, line: int, col: int, file: string, current_module: string) -> List<SStmt>? {
+/// zero-arg), and decode the result. Returns null `replacement` plus
+/// a bag entry whenever any step fails — the caller treats null as
+/// "leave this stmt alone" and renders the bag for the user.
+fn try_expand_one(stmt: Stmt, reg: CompTimeRegistry, line: int, col: int, file: string, current_module: string) -> ExpandAttempt {
     let macro_name = expand_target_name(stmt)
     if macro_name == "" {
-        eprintln("error: @expand requires a macro fn identifier as its argument")
-        return null
+        let bag = bag_report(bag_new(), diag_error(
+            DiagCode.ExpandMissingMacroIdent,
+            "@expand requires a macro fn identifier as its argument",
+            span_at(0, 0, line, col, file)
+        ))
+        return ExpandAttempt { replacement: null, bag }
     }
     invoke_macro(stmt_unwrap(stmt), macro_name, reg, line, col, file, current_module, stmt)
 }
@@ -487,19 +526,28 @@ fn try_expand_one(stmt: Stmt, reg: CompTimeRegistry, line: int, col: int, file: 
 /// is responsible for any annotation peeling: try_expand_one strips
 /// @expand before invoking; the ComponentBlock arm in the walker
 /// passes the already-unwrapped block as both stmt + original_stmt.
-fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int, col: int, file: string, current_module: string, original_stmt: Stmt) -> List<SStmt>? {
+fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int, col: int, file: string, current_module: string, original_stmt: Stmt) -> ExpandAttempt {
+    let span = span_at(0, 0, line, col, file)
     let lookup = comptime_lookup(reg, macro_name)
     if lookup == null {
-        eprintln("error: @expand(${macro_name}) — no @comptime fn named `${macro_name}` in scope")
-        return null
+        let bag = bag_report(bag_new(), diag_error(
+            DiagCode.ExpandUnknownMacro,
+            "@expand(${macro_name}) — no @comptime fn named `${macro_name}` in scope",
+            span
+        ))
+        return ExpandAttempt { replacement: null, bag }
     }
     let fn_def = lookup!
     let arity = fn_def.params.length
     let arg_values = if arity == 1 {
         let boxed = stmt_to_value(reg.runtime, stmt)
         if boxed == null {
-            eprintln("error: @expand(${macro_name}) — could not box the wrapped Stmt as a Value (encoder may not yet support this Stmt variant)")
-            return null
+            let bag = bag_report(bag_new(), diag_error(
+                DiagCode.ExpandStmtBoxFailed,
+                "@expand(${macro_name}) — could not box the wrapped Stmt as a Value (encoder may not yet support this Stmt variant)",
+                span
+            ))
+            return ExpandAttempt { replacement: null, bag }
         }
         [boxed!]
     } else if arity == 0 {
@@ -512,8 +560,12 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
         // ResolverState.
         let boxed = stmt_to_value(reg.runtime, stmt)
         if boxed == null {
-            eprintln("error: @expand(${macro_name}) — could not box the wrapped Stmt as a Value (encoder may not yet support this Stmt variant)")
-            return null
+            let bag = bag_report(bag_new(), diag_error(
+                DiagCode.ExpandStmtBoxFailed,
+                "@expand(${macro_name}) — could not box the wrapped Stmt as a Value (encoder may not yet support this Stmt variant)",
+                span
+            ))
+            return ExpandAttempt { replacement: null, bag }
         }
         // `original_stmt` carries the @expand annotation; `stmt` is
         // already-unwrapped for the boxed payload.
@@ -522,13 +574,21 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
         let ctx = build_resolver_ctx(handle)
         [annotated, ctx]
     } else {
-        eprintln("error: @expand(${macro_name}) — macro has ${arity} parameters; @expand supports 0-, 1-, or 2-arg macros only")
-        return null
+        let bag = bag_report(bag_new(), diag_error(
+            DiagCode.ExpandUnsupportedArity,
+            "@expand(${macro_name}) — macro has ${arity} parameters; @expand supports 0-, 1-, or 2-arg macros only",
+            span
+        ))
+        return ExpandAttempt { replacement: null, bag }
     }
     let result = eval_fn_with_resolved_args(reg.runtime, fn_def.params, fn_def.body, arg_values)
     if step_had_error(result) {
-        eprintln("error: @expand(${macro_name}) — macro evaluation failed: ${step_error_message(result)}")
-        return null
+        let bag = bag_report(bag_new(), diag_error(
+            DiagCode.ExpandEvalFailed,
+            "@expand(${macro_name}) — macro evaluation failed: ${step_error_message(result)}",
+            span
+        ))
+        return ExpandAttempt { replacement: null, bag }
     }
     let v = step_value(result)
     // Try ResolvedDecls first — the 2-arg macro return type per doc
@@ -548,13 +608,18 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
         // .decls would land in the registry without backing AST —
         // codegen would then fail at the call site. Surface this as
         // a warning so macro authors notice the mismatch.
+        mut bag = bag_new()
         let decl_names = collect_decl_names(rd.decls)
         for promised in rd.introduces {
             if !list_contains_str(decl_names, promised) {
-                eprintln("warning: @expand(${macro_name}) — ResolvedDecls.introduces lists `${promised}` but no matching decl appears in ResolvedDecls.decls; the name will not be registered")
+                bag = bag_report(bag, diag_warning(
+                    DiagCode.ExpandIntroducesPhantom,
+                    "@expand(${macro_name}) — ResolvedDecls.introduces lists `${promised}` but no matching decl appears in ResolvedDecls.decls; the name will not be registered",
+                    span
+                ))
             }
         }
-        return out
+        return ExpandAttempt { replacement: out, bag }
     }
     // Try List<SStmt> — what `quote stmts { ... }` produces.
     // value_to_stmt_list returns null when v isn't a list, so this is
@@ -565,15 +630,21 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
         for ss in as_list! {
             out.push(sstmt_at(ss.node, line, col, file))
         }
-        return out
+        return ExpandAttempt { replacement: out, bag: bag_new() }
     }
     // Fall back to single Stmt — `quote stmt { ... }` macros.
     let decoded = value_to_stmt(v)
     if decoded == null {
-        eprintln("error: @expand(${macro_name}) — macro returned a value the expander could not decode into a Stmt, List<Stmt>, or ResolvedDecls (kind=${v.kind})")
-        return null
+        let bag = bag_report(bag_new(), diag_error(
+            DiagCode.ExpandUndecodableReturn,
+            "@expand(${macro_name}) — macro returned a value the expander could not decode into a Stmt, List<Stmt>, or ResolvedDecls (kind=${v.kind})",
+            span
+        ))
+        return ExpandAttempt { replacement: null, bag }
     }
-    [sstmt_at(decoded!, line, col, file)]
+    mut single: List<SStmt> = []
+    single.push(sstmt_at(decoded!, line, col, file))
+    ExpandAttempt { replacement: single, bag: bag_new() }
 }
 
 /// Decoded payload of a ResolvedDecls struct value.
@@ -824,7 +895,21 @@ export fn resolve_and_expand_program(stmts: List<SStmt>) -> NameResolveResult {
     populate_resolver_data(pre.state, pre.stmts)
     let expanded = expand_macros_eval_with_state(plan, pre.state)
     avra_resolver_ctx_pop()
-    let post_state = register_macro_decls(pre.state, expanded)
-    let rewritten = rewrite_uses_macro_only(expanded, post_state)
-    validate_scopes_after_expand(rewritten, post_state)
+    let post_state = register_macro_decls(pre.state, expanded.stmts)
+    let rewritten = rewrite_uses_macro_only(expanded.stmts, post_state)
+    let validated = validate_scopes_after_expand(rewritten, post_state)
+    // Fold @expand-time diagnostics into the program-level bag so the
+    // unified renderer surfaces F4xxx codes through the same path as
+    // resolver / typechecker errors.
+    let merged_bag = bag_merge(validated.bag, expanded.bag)
+    let has_errors = validated.had_error || (merged_bag.error_count > 0)
+    NameResolveResult {
+        stmts: validated.stmts,
+        had_error: has_errors,
+        error_message: if has_errors {
+            if validated.had_error { validated.error_message } else { "macro expansion errors" }
+        } else { "" },
+        type_reg: validated.type_reg,
+        bag: merged_bag,
+    }
 }
