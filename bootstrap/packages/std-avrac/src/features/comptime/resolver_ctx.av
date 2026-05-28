@@ -56,15 +56,22 @@ extern fn avra_resolver_fresh_id() -> int
 // treats them as standard calls — no special-case dispatch in
 // eval_call needed.
 
+// ── Public ctx_* surface ──
+//
+// All five ctx_* fns below have STUB bodies (null / "" / []). The
+// real semantics come from eval intercept in features/eval/mod.av:
+// `eval_resolver_ctx_call` recognises the call by name and routes
+// it through the C-side resolver-data layer (avra_rd_*) populated
+// by expand_macro.av before each macro invocation. The stub bodies
+// here remain as a defensive fallback for any path that bypasses
+// the intercept (e.g. a macro calling ctx_lookup_type from a
+// non-comptime context, which the resolver would block anyway).
+// ctx_fresh_ident's body has the real impl because it doesn't need
+// resolver-data — just the monotonic C-side counter.
+
 /// Module the annotated decl lives in (e.g. "@std::avrac::core").
-/// Returns "" when the @expand site is at top-level or when the
-/// resolver state is unavailable.
+/// Returns "" when the @expand site is at top-level.
 export fn ctx_current_module(ctx: ResolverCtx) -> string {
-    // Initial slice: ResolverState introspection requires reading
-    // typed struct fields off the C-stack ptr, which needs proper
-    // Avra cast support. Returning "" until that lands keeps the
-    // surface usable; macros that need module info can check for
-    // "" and fall back to a default.
     ""
 }
 
@@ -98,6 +105,8 @@ export fn ctx_fresh_ident(ctx: ResolverCtx, hint: string) -> string {
 ///   ctx_unwrap_path_to(FieldInit, "Expr") -> ["value", "node"]
 ///   ctx_unwrap_path_to(string, "Expr")   -> []
 ///   ctx_unwrap_path_to(Expr, "Expr")     -> []
+/// BFS over the field graph; depth-capped at 8 + visited-set
+/// cycle protection so recursive types terminate.
 export fn ctx_unwrap_path_to(ctx: ResolverCtx, t: ResolvedType, target: string) -> List<string> {
     let empty: List<string> = []
     empty

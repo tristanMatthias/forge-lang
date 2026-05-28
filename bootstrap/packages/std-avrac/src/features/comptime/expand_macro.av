@@ -1,23 +1,45 @@
-// WHY: @expand pass — Phase 6 of Components V2 (vez6.6).
+// WHY: @expand pass — Option C pipeline-fix per
+// docs/2026_05_25_EXPAND_PIPELINE_HANDOFF.md.
 //
 // `@expand(macro_fn)` on a declaration registers a @comptime fn to
-// rewrite the declaration. The expand pass:
-//   1. Walks the AST collecting Stmts wrapped in `@expand(M)`.
-//   2. Looks up M in the comptime registry built by the same
-//      `collect_comptime_fns` run_comptime uses.
-//   3. Invokes M at compile time via `eval_fn_with_resolved_args`.
-//   4. Decodes the resulting Value into a Stmt via `value_to_stmt`
-//      and replaces the original decl with it.
+// rewrite the declaration. The pipeline:
+//   parse → ... → resolve_names_pre_expand
+//        → expand_macros_collect           (pre-resolve scan into ExpandPlan)
+//        → expand_macros_eval_with_state   (post-resolve splice + fixpoint)
+//        → register_macro_decls            (additive into existing state)
+//        → rewrite_uses_macro_only         (partial re-resolve)
+//        → validate_scopes_after_expand
+//        → run_comptime → typecheck → ...
 //
-// First slice covers argless macros that return a Stmt via
-// `quote stmt { ... }`. Macros that take the decl as an argument
-// land in a follow-up once AST→Value boxing is in place. Recursion
-// limit + clear error for infinite expansion comes with the same
-// follow-up.
+// The eval phase walks the AST; for each Stmt wrapped in
+// `@expand(M)`:
+//   1. Looks up M in the comptime registry built by
+//      `collect_comptime_fns`.
+//   2. Dispatches on M's arity:
+//        - 0 args: invoke; macro returns Stmt or List<SStmt> or
+//          ResolvedDecls (latter decoded via value_to_resolved_decls).
+//        - 1 arg:  invoke with the wrapped (unwrapped) Stmt boxed
+//          via stmt_to_value.
+//        - 2 args: invoke with (AnnotatedDecl, ResolverCtx). The
+//          AnnotatedDecl bundles the boxed stmt + annotation + the
+//          decl's canonical_path. ResolverCtx is an opaque handle
+//          the macro uses to call ctx_* (current_module / lookup_type
+//          / qualify_ident / fresh_ident / unwrap_path_to).
+//   3. Tags every spliced SStmt with `from_macro = true` so the
+//      partial re-resolve walks only the new decls.
+//   4. After each splice, register_and_repopulate augments the
+//      live ResolverState + refreshes the C-side resolver-data
+//      layer so subsequent macros (within the same iteration AND
+//      across iterations) see names introduced by earlier ones.
 //
-// Pipeline position: between resolve_names and run_comptime — a
-// macro-produced Stmt should still go through the normal fold pass
-// so any `@comptime` calls inside its body fold correctly.
+// Fixpoint loop: re-walks until no @expand annotations remain.
+// Cap at 16 iters with a clean exit(1) on overflow so a
+// self-referential macro surfaces as a build error.
+//
+// ComponentBlocks are dispatched specially (vez6.8.5): a
+// ComponentDef annotated with `@expand(M)` only REGISTERS the
+// mapping; each ComponentBlock instance routes through M with the
+// block as the Stmt arg.
 
 use core.{Stmt, SStmt, Expr, SExpr, FieldEntry, ValueType, sstmt_at, sstmt_mark_from_macro, find_annotation, stmt_unwrap, exit, type_qualified_name}
 use resolve.{ResolverState, register_macro_decls, dummy_resolver_state}
