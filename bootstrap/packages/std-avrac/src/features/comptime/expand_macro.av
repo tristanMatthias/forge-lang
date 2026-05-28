@@ -21,8 +21,20 @@
 
 use core.{Stmt, SStmt, Expr, SExpr, sstmt_at, find_annotation, stmt_unwrap}
 use features.comptime.{CompTimeRegistry, comptime_lookup, collect_comptime_fns, value_to_stmt, value_to_stmt_list, stmt_to_value}
-use features.eval.{Runtime, Value, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message}
+use features.eval.{Runtime, Value, StructField, value_struct, value_string, value_number, value_null, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message}
 use list_ops.{list_concat}
+
+// ── ResolverCtx state stack (step 5) ──
+//
+// Runtime helpers that maintain a process-wide stack of active
+// ResolverState pointers so `ctx_*` extern fns in macros can look
+// up the resolver for the currently-expanding @expand site. Push
+// before invoking the macro, pop after.
+
+extern fn avra_resolver_ctx_push(state: ptr) -> int
+extern fn avra_resolver_ctx_pop()
+extern fn avra_resolver_ctx_get(handle: int) -> ptr
+extern fn avra_resolver_ctx_top() -> int
 
 // ── Public entry ──
 
@@ -280,8 +292,23 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
         [boxed!]
     } else if arity == 0 {
         []
+    } else if arity == 2 {
+        // qa6i step 5: 2-arg macro receives (AnnotatedDecl, ResolverCtx).
+        // The first arg boxes the wrapped decl + its @expand annotation
+        // metadata; the second gives the macro an opaque handle the
+        // compiler uses to dispatch ctx_* queries against the active
+        // ResolverState.
+        let boxed = stmt_to_value(reg.runtime, stmt)
+        if boxed == null {
+            eprintln("error: @expand(${macro_name}) — could not box the wrapped Stmt as a Value (encoder may not yet support this Stmt variant)")
+            return null
+        }
+        let annotated = build_annotated_decl(boxed!, macro_name)
+        let handle = avra_resolver_ctx_top()
+        let ctx = build_resolver_ctx(handle)
+        [annotated, ctx]
     } else {
-        eprintln("error: @expand(${macro_name}) — macro has ${arity} parameters; @expand supports 0- or 1-arg macros only")
+        eprintln("error: @expand(${macro_name}) — macro has ${arity} parameters; @expand supports 0-, 1-, or 2-arg macros only")
         return null
     }
     let result = eval_fn_with_resolved_args(reg.runtime, fn_def.params, fn_def.body, arg_values)
@@ -326,4 +353,31 @@ fn first_arg_ident(args: List<SExpr>) -> string {
         .QualifiedIdent(path) -> path
         _ -> ""
     }
+}
+
+// ── 2-arg @expand value builders (step 5) ──
+
+/// Build a `@std::avrac::features::comptime::macro_types::AnnotatedDecl`
+/// struct Value to pass as the first arg of a 2-arg macro. The boxed
+/// stmt is already a Value (from `stmt_to_value`); the annotation
+/// payload and canonical_path are populated as `null` / `""` for the
+/// initial slice — populating them properly is a follow-up that needs
+/// the macro-side type defs to flow through value_to_annotated_decl
+/// on the return path.
+fn build_annotated_decl(stmt_v: Value, macro_name: string) -> Value {
+    mut fields: List<StructField> = []
+    fields.push(StructField { name: "stmt", value: stmt_v })
+    fields.push(StructField { name: "annotation", value: value_null() })
+    fields.push(StructField { name: "canonical_path", value: value_string(macro_name) })
+    value_struct("@std::avrac::features::comptime::macro_types::AnnotatedDecl", fields)
+}
+
+/// Build a `@std::avrac::features::comptime::resolver_ctx::ResolverCtx`
+/// struct Value carrying the handle for the active ResolverState. The
+/// ctx_* extern fns the macro calls extract this id and route to the
+/// compiler-side dispatchers in `features/eval/mod.av`.
+fn build_resolver_ctx(handle: int) -> Value {
+    mut fields: List<StructField> = []
+    fields.push(StructField { name: "id", value: value_number(string(handle)) })
+    value_struct("@std::avrac::features::comptime::resolver_ctx::ResolverCtx", fields)
 }

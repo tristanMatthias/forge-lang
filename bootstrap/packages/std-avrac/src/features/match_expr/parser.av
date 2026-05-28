@@ -129,6 +129,26 @@ impl Parser {
         // ordering is preserved by the natural forward push.
         mut out: List<MatchArm> = []
         while !self.check(Tk.RightBrace) {
+            // qa6i probe 2: `~target` in match-arm position splices
+            // a `List<MatchArm>` value into the surrounding match
+            // body at expansion time. Only fires inside a quote
+            // (the splice marker has no meaning outside one).
+            // Encoded as a sentinel arm: TypePattern("__quote_splice_arms__", "")
+            // with the splice expression stashed in body. The
+            // quote lowerer (construct_match_arm_list) detects the
+            // sentinel and emits `list_concat` over the segments
+            // between sentinels.
+            if self.check(Tk.Tilde) && self.quote_depth > 0 {
+                self.advance()
+                let target = self.parse_unary()?
+                if self.check(Tk.Comma) { self.advance() }
+                out.push(MatchArm {
+                    pattern: Pattern.TypePattern("__quote_splice_arms__", ""),
+                    guard: null,
+                    body: sexpr(Expr.Splice(target), self.current_line, self.current_column),
+                })
+                continue
+            }
             let pattern = self.parse_pattern_or()?
             // Optional guard: `pattern if cond ->`
             let guard: SExpr? = if self.check(Tk.KwIf) {

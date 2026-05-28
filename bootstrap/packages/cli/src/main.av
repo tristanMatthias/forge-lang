@@ -78,7 +78,7 @@ use @std.avrac.features.eval.{render_value, eval_expression_source, execute_prog
 use @std.avrac.desugar.{desugar_program, inject_intrinsics}
 use @std.avrac.features.component_decl.{expand_components}
 use @std.avrac.features.marshal.{derive_marshal}
-use @std.avrac.resolve.{resolve_names, resolve_names_pre_expand, register_decls, rewrite_uses, validate_scopes_after_expand, NameResolveResult}
+use @std.avrac.resolve.{resolve_names, resolve_names_pre_expand, register_decls, rewrite_uses, validate_scopes_after_expand, NameResolveResult, ResolverState}
 use @std.avrac.features.modules.{resolve_module_files, modules_dirname, find_packages_dir, package_root_for_file, dedup_modules, resolve_dir_module_body, synthesize_subdir_module_decls}
 use @std.avrac.features.modules.{load_package_config, load_manifest, Dep}
 use @std.avrac.features.modules.{filter_to_target_unit, list_avra_module_subdirs}
@@ -130,6 +130,16 @@ fn fail(message: string) {
     exit(1)
 }
 
+// ── ResolverCtx state stack (step 5) ──
+//
+// resolve_and_expand pushes the active resolver state onto the
+// runtime stack before invoking expand_macros, pops after. Macros
+// invoked via 2-arg @expand receive a ResolverCtx { id } pointing
+// at the top of stack; ctx_* dispatchers in eval read the state
+// off the stack to answer queries.
+extern fn avra_resolver_ctx_push(state: ResolverState) -> int
+extern fn avra_resolver_ctx_pop()
+
 /// Compose the two-phase `resolve_names` halves with `expand_macros`
 /// so macro-emitted top-level decls become visible to scope
 /// validation. Replaces the legacy `resolve_names → expand_macros`
@@ -165,7 +175,14 @@ fn resolve_and_expand(stmts: List<SStmt>) -> NameResolveResult {
     if !needs_expand_pass(pre.stmts) {
         return validate_scopes_after_expand(pre.stmts, pre.state)
     }
+    // Push the active resolver state onto the runtime stack so
+    // ctx_* extern fns called from 2-arg macros can look it up by
+    // handle. Pop after expansion regardless of success — invoke
+    // happens once per @expand site, and the stack tracks the
+    // surrounding ResolverState only.
+    let handle = avra_resolver_ctx_push(pre.state)
     let expanded_macros = expand_macros(pre.stmts)
+    avra_resolver_ctx_pop()
     // Macro-spliced stmts haven't been through rewrite_uses, so
     // identifiers + vtypes in them remain in their unqualified
     // construction form. Re-run rewrite_uses against the existing

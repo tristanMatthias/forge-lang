@@ -1,0 +1,41 @@
+// docs/2026_05_25_EXPAND_PIPELINE_HANDOFF.md — Step 5 test 13.
+// `ctx_fresh_ident` returns a monotonically-unique identifier per
+// call. Backed by a runtime counter so two calls always differ;
+// uniqueness scope is the whole compile.
+//
+// This test pins the call-path: a 2-arg macro can call
+// ctx_fresh_ident and return a Stmt without error.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{cached_fixture_run}
+
+fn write_temp(path: string, source: string) -> string {
+    let escaped = source.replace("'", "'\\''")
+    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
+}
+
+fn run_capture(source: string) -> string {
+    let path = "/tmp/avra_resolver_ctx_fresh_ident_test.av"
+    write_temp(path, source)
+    cached_fixture_run(path)
+}
+
+spec "ResolverCtx: ctx_fresh_ident call path works" {
+    then "macro calling ctx_fresh_ident returns successfully" {
+        let out = run_capture(
+            "use @std.avrac.core.{Stmt}\n" +
+            "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ctx_fresh_ident}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build(d: AnnotatedDecl, ctx: ResolverCtx) -> Stmt {\n" +
+            "    let n = ctx_fresh_ident(ctx, \"x\")\n" +
+            "    quote stmt { println(\"ok\") }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        out.contains("ok")
+    }
+}

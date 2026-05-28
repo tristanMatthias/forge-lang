@@ -1711,6 +1711,22 @@ impl Parser {
 
     // Parse a single type atom (everything except union |).
     fn parse_type_atom(self, message: string) -> TypeExpr? {
+        // qa6i probe 3: `~name` in type position splices a string-
+        // valued local into a TypeExpr.Named at construction time.
+        // The lowerer detects the leading `~` in the name field and
+        // emits a runtime ctor that resolves it against the macro's
+        // scope. Only fires inside a quote — outside, `~` in type
+        // position is a parse error.
+        if self.check(Tk.Tilde) && self.quote_depth > 0 {
+            self.advance()
+            if !self.check(Tk.Identifier) {
+                self.set_error("expected identifier after `~` in type position")
+                return null
+            }
+            let splice_name = self.current_lexeme
+            self.advance()
+            return TypeExpr.Named("~" + splice_name)
+        }
         // dyn Trait — dynamic trait object
         if self.check(Tk.KwDyn) {
             self.advance()

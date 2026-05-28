@@ -407,7 +407,7 @@ export fn value_number(text: string) -> Value {
 }
 
 /// Construct a string Value.
-fn value_string(text: string) -> Value {
+export fn value_string(text: string) -> Value {
     Value {
         kind: "string",
         number_text: "",
@@ -850,6 +850,27 @@ fn eval_call(runtime: Runtime, callee: Expr, args: List<SExpr>) -> StepResult {
         return eval_span_wrapper_passthrough(runtime, args)
     }
 
+    // qa6i probe 2: list_concat is used by the quote lowerer's
+    // arm-list splice (~arms in match-arm position) to merge a
+    // runtime-spliced list into the surrounding arms. Pure list
+    // operation — implement directly here so the generated quote
+    // code evaluates without needing the comptime registry to
+    // import @std/list_ops.
+    if call_is_list_concat(callee) {
+        return eval_list_concat(runtime, args)
+    }
+
+    // qa6i step 5: ResolverCtx queries. The 2-arg @expand surface
+    // exposes ctx_* free fns the macro calls to introspect its
+    // scope. Each is qualified to the resolver_ctx module path; we
+    // recognise the path and dispatch to a compiler-side handler
+    // that consults the active ResolverState (pushed by
+    // resolve_and_expand in cli/main.av).
+    let ctx_kind = ctx_call_kind(callee)
+    if ctx_kind != "" {
+        return eval_resolver_ctx_call(runtime, ctx_kind, args)
+    }
+
     let callee_result = eval_expr(runtime, callee)
     if callee_result.had_error {
         return callee_result
@@ -1039,6 +1060,116 @@ fn call_is_span_wrapper(callee: Expr) -> bool {
 fn eval_span_wrapper_passthrough(runtime: Runtime, args: List<SExpr>) -> StepResult {
     if args.length == 0 { return error_result(runtime, "span-wrapper call needs at least one argument") }
     eval_expr(runtime, args[0].node)
+}
+
+/// True when `callee` is the qualified path to the standard
+/// `list_concat` operation. The quote lowerer emits this for
+/// arm-list splice handling (probe 2).
+fn call_is_list_concat(callee: Expr) -> bool {
+    match callee {
+        .QualifiedIdent(path) -> path == "@std::avrac::list_ops::list_concat"
+        _ -> false
+    }
+}
+
+// ── ResolverCtx extern-fn handlers (step 5) ──
+
+/// Map a callee QualifiedIdent path to one of the ctx_* fn kinds
+/// the compiler dispatches. Matches either the bare extern-fn name
+/// (resolver canonicalises extern fns to their C symbol) or, for
+/// future-proofing, the fully-qualified path the regular-fn form
+/// would emit.
+fn ctx_call_kind(callee: Expr) -> string {
+    match callee {
+        .QualifiedIdent(path) -> ctx_kind_from_path(path)
+        .Ident(name)          -> ctx_kind_from_path(name)
+        _ -> ""
+    }
+}
+
+fn ctx_kind_from_path(path: string) -> string {
+    // Last `::` segment of the path — handles bare names, in-module
+    // (`@std::avrac::features::comptime::ctx_*`), and explicit
+    // submodule (`@std::avrac::features::comptime::resolver_ctx::ctx_*`)
+    // forms uniformly.
+    let last = path_last_segment(path)
+    if last == "ctx_current_module" { return "current_module" }
+    if last == "ctx_lookup_type"    { return "lookup_type" }
+    if last == "ctx_qualify_ident"  { return "qualify_ident" }
+    if last == "ctx_fresh_ident"    { return "fresh_ident" }
+    if last == "ctx_unwrap_path_to" { return "unwrap_path_to" }
+    ""
+}
+
+fn path_last_segment(path: string) -> string {
+    mut last_sep = -1
+    mut i = 0
+    while i + 1 < path.length {
+        if path.substring(i, i + 2) == "::" {
+            last_sep = i + 2
+        }
+        i = i + 1
+    }
+    if last_sep < 0 { return path }
+    path.substring(last_sep, path.length)
+}
+
+extern fn avra_resolver_fresh_id() -> int
+
+/// Dispatch a ctx_* call. Initial slice returns conservative defaults
+/// — null / "" / [] — for queries that need full ResolverState
+/// introspection (lookup_type / qualify_ident / unwrap_path_to /
+/// current_module). `fresh_ident` is fully implemented via the
+/// runtime's monotonic counter.
+fn eval_resolver_ctx_call(runtime: Runtime, kind: string, args: List<SExpr>) -> StepResult {
+    let args_result = eval_arg_list(runtime, args)
+    if args_result.had_error != 0 {
+        return error_result(args_result.runtime, args_result.error_message)
+    }
+    let rt = args_result.runtime
+    if kind == "current_module" {
+        return ok_result(rt, value_string(""))
+    }
+    if kind == "lookup_type" {
+        return ok_result(rt, value_null())
+    }
+    if kind == "qualify_ident" {
+        return ok_result(rt, value_null())
+    }
+    if kind == "fresh_ident" {
+        // hint arg is args_result.values[1]; we ignore it and use a
+        // monotonic counter so each call returns a guaranteed-unique
+        // identifier scoped to the whole compile.
+        let counter = avra_resolver_fresh_id()
+        return ok_result(rt, value_string("__avra_fresh_${string(counter)}"))
+    }
+    if kind == "unwrap_path_to" {
+        let empty: List<Value> = []
+        return ok_result(rt, value_list(empty))
+    }
+    error_result(rt, "ctx_* extern fn `${kind}` not implemented")
+}
+
+/// Evaluate `list_concat(a, b)` at comptime. Both args must
+/// evaluate to list-kind Values; result is a list with `a`'s
+/// elements followed by `b`'s. Used by the quote lowerer's
+/// `~arms` splice to merge a runtime list into the surrounding
+/// arm list.
+fn eval_list_concat(runtime: Runtime, args: List<SExpr>) -> StepResult {
+    if args.length != 2 { return error_result(runtime, "list_concat expects 2 arguments") }
+    let a_result = eval_expr(runtime, args[0].node)
+    if a_result.had_error { return a_result }
+    let b_result = eval_expr(a_result.runtime, args[1].node)
+    if b_result.had_error { return b_result }
+    let a_val = a_result.value
+    let b_val = b_result.value
+    if a_val.kind != "list" { return error_result(b_result.runtime, "list_concat first arg is not a list") }
+    if b_val.kind != "list" { return error_result(b_result.runtime, "list_concat second arg is not a list") }
+    mut merged: List<Value> = []
+    for x in a_val.list_payload { merged = merged.push(x) }
+    for x in b_val.list_payload { merged = merged.push(x) }
+    let combined = a_val with { list_payload: merged }
+    ok_result(b_result.runtime, combined)
 }
 
 /// Evaluate an `Expr.EnumCtor(type_name, variant, args)` — recurse

@@ -4606,3 +4606,62 @@ int64_t avra_variant_hash(const char* name) {
     return (int64_t)hash;
 }
 
+// ────────────────────────────────────────────────────────────────────
+// ResolverCtx state stack — step 5 of EXPAND_PIPELINE_HANDOFF.md.
+//
+// The 2-arg @expand macro receives a ResolverCtx { id: int } handle.
+// Each ctx_* extern fn (ctx_lookup_type / ctx_qualify_ident / etc) is
+// special-cased in the comptime eval and routed here: the handler
+// reads the active ResolverState pointer from this stack and runs the
+// query.
+//
+// Stack (not a single global) so nested @expand invocations can each
+// have their own active state. Handles are 1-indexed so 0 stays the
+// "no active resolver" sentinel.
+// ────────────────────────────────────────────────────────────────────
+
+#define AVRA_RESOLVER_STACK_CAP 16
+
+static void*   avra_resolver_stack[AVRA_RESOLVER_STACK_CAP];
+static int64_t avra_resolver_top = 0;
+
+int64_t avra_resolver_ctx_push(void* state) {
+    if (avra_resolver_top >= AVRA_RESOLVER_STACK_CAP) {
+        fprintf(stderr, "avra_resolver_ctx_push: stack overflow (cap=%d)\n", AVRA_RESOLVER_STACK_CAP);
+        abort();
+    }
+    avra_resolver_stack[avra_resolver_top] = state;
+    avra_resolver_top++;
+    return avra_resolver_top;
+}
+
+void avra_resolver_ctx_pop(void) {
+    if (avra_resolver_top > 0) {
+        avra_resolver_top--;
+        avra_resolver_stack[avra_resolver_top] = NULL;
+    }
+}
+
+void* avra_resolver_ctx_get(int64_t handle) {
+    if (handle <= 0 || handle > avra_resolver_top) return NULL;
+    return avra_resolver_stack[handle - 1];
+}
+
+// Return the handle for the most recently pushed state, or 0 if
+// the stack is empty. Used by `invoke_macro` to set ResolverCtx.id
+// when invoking a 2-arg macro.
+int64_t avra_resolver_ctx_top(void) {
+    return avra_resolver_top;
+}
+
+// Fresh-ident counter — per-process monotonic. Each call returns
+// a new int the macro can format into a unique identifier. Reset
+// is intentionally not provided; uniqueness scope is the whole
+// compile.
+static int64_t avra_resolver_fresh_counter = 0;
+
+int64_t avra_resolver_fresh_id(void) {
+    avra_resolver_fresh_counter++;
+    return avra_resolver_fresh_counter;
+}
+

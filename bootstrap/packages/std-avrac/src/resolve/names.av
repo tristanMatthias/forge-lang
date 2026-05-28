@@ -12,7 +12,7 @@
 //   do NOT read this file when:   the issue is variable scoping or
 //                                  type checking
 
-use core.{Expr, FieldEntry, Stmt, ParamEntry, FieldInit, MatchArm, WhenArm, Pattern, SExpr, SStmt, Variant, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, ValueType, SelectArm}
+use core.{Expr, FieldEntry, Stmt, ParamEntry, FieldInit, MatchArm, WhenArm, Pattern, SExpr, SStmt, Variant, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, ValueType, SelectArm, vtype_from_name}
 use diagnostics.{Confidence, DiagCode, Span, DiagnosticBag, bag_new, bag_merge, bag_report, bag_has_errors, diag_error, diag_warning, diag_with_confidence, span_new, span_at, span_dummy}
 use resolve.{resolve_program}
 use core.{TypeRegistry, TypeKind, type_registry_new, type_registry_register, type_registry_id_for, type_qualified_name, method_mangled_name, trait_impl_name, is_mangled_method, method_from_mangled}
@@ -768,7 +768,13 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
         .ForIn(var, coll, body) -> .ForIn(var, rewrite_expr(ctx, coll), rewrite_stmt(ctx, body))
         .Function(name, tp, params, rvt, body) -> {
             let is_impl_method = is_mangled_method(name)
-            let qualified = if ctx.current_module != "" && name != "main" && !is_impl_method { type_qualified_name(ctx.current_module, name) } else { name }
+            // Idempotent qualification: skip if already qualified
+            // (starts with `@`) — the post-expand resolve pass
+            // re-runs rewrite_uses, and already-qualified names from
+            // the first pass must not get doubly-prefixed
+            // (`@std::crypto::foo` → `@std::crypto::@std::crypto::foo`).
+            let already_qualified = name.length > 0 && name.substring(0, 1) == "@"
+            let qualified = if ctx.current_module != "" && name != "main" && !is_impl_method && !already_qualified { type_qualified_name(ctx.current_module, name) } else { name }
             let rp = rewrite_param_types(ctx, params)
             Stmt.Function(qualified, tp, rp, rewrite_vtype(ctx, rvt), rewrite_stmt_list(bind_params_ctx(ctx, rp), body))
         }
@@ -958,8 +964,20 @@ fn resolve_type_in_ctx(ctx: NameCtx, type_name: string) -> string {
 fn rewrite_vtype(ctx: NameCtx, vt: ValueType) -> ValueType {
     match vt {
         .Struct(name, _) if name != "" -> {
-            let qn = resolve_type_in_ctx(ctx, name)
-            ValueType.Struct(qn, type_registry_id_for(ctx.type_reg, qn))
+            // qa6i probe 3: a `~ident` splice in type position lowers
+            // to ValueType.Struct(spliced_name, 0). The spliced name
+            // may be a primitive ("int", "string", ...) — re-run
+            // through vtype_from_name so it lands in the right
+            // ValueType variant rather than staying as Struct.
+            let builtin = vtype_from_name(name)
+            match builtin {
+                .Struct(_, _) -> {
+                    // Genuinely a struct name; resolve through aliases.
+                    let qn = resolve_type_in_ctx(ctx, name)
+                    ValueType.Struct(qn, type_registry_id_for(ctx.type_reg, qn))
+                }
+                _ -> builtin
+            }
         }
         .Enum(name, args, _) if name != "" -> {
             let qn = resolve_type_in_ctx(ctx, name)

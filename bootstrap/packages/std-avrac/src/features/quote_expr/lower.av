@@ -453,6 +453,12 @@ fn construct_expr(e: Expr) -> Expr {
         .Spawn(body) -> expr_ctor("Spawn", one_arg(construct_expr(body)))
         .Isolated(body) -> expr_ctor("Isolated", one_arg(construct_expr(body)))
         .Block(body) -> expr_ctor("Block", one_arg(construct_stmt_list(body)))
+        // MatchExpr inside a quote — subject + arms become a runtime
+        // `Expr.MatchExpr` value. The arm list goes through
+        // `construct_match_arm_list` which expands `~arms` sentinels
+        // into `list_concat` calls.
+        .MatchExpr(subject, arms) -> expr_ctor("MatchExpr",
+            two_args(construct_expr(subject), construct_match_arm_list(arms)))
         // Splice (~target) — the target evaluates at expansion time
         // to a runtime AST value of the right shape, so we emit it
         // straight through without a construct_expr wrap. That's the
@@ -490,7 +496,7 @@ fn construct_param_list(params: List<ParamEntry>) -> Expr {
         let p = params[i]
         let struct_lit = struct_lit_2("@std::avrac::core::ParamEntry",
                                       "name", string_lit_expr(p.name),
-                                      "vtype", construct_value_type_unknown())
+                                      "vtype", construct_param_vtype(p.vtype))
         elems.push(sexpr_dummy(struct_lit))
         i = i + 1
     }
@@ -602,6 +608,70 @@ fn construct_match_arm(arm: MatchArm) -> Expr {
         "body", body_expr)
 }
 
+/// Build an Expr that, when evaluated, produces a `List<MatchArm>`
+/// AST value. Walks the arm list partitioning into segments around
+/// any splice-sentinel arms — the segments between sentinels become
+/// `ListLit` of arm struct lits, the sentinels emit their splice
+/// target directly, and the whole result is wired together via
+/// `list_concat` calls.
+///
+/// qa6i probe 2: `~target` in match-arm position lands here as a
+/// sentinel `MatchArm { pattern: TypePattern("__quote_splice_arms__", ""),
+/// body: Splice(target) }` produced by `parse_match_arm_list` when
+/// inside a quote.
+fn construct_match_arm_list(arms: List<MatchArm>) -> Expr {
+    mut result_opt: Expr? = null
+    mut current_seg: List<SExpr> = []
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let is_sentinel = is_arm_splice_sentinel(arm)
+        if is_sentinel {
+            let seg_lit = Expr.ListLit(current_seg)
+            result_opt = if result_opt == null { seg_lit } else { list_concat_call(result_opt!, seg_lit) }
+            let splice_body = arm.body
+            let splice_target = extract_splice_target(splice_body.node)
+            result_opt = list_concat_call(result_opt!, splice_target)
+            current_seg = []
+        } else {
+            let arm_lit = construct_match_arm(arm)
+            current_seg = current_seg.push(sexpr_dummy(arm_lit))
+        }
+        i = i + 1
+    }
+    let final_seg = Expr.ListLit(current_seg)
+    if result_opt == null { final_seg } else { list_concat_call(result_opt!, final_seg) }
+}
+
+/// Detect the splice-sentinel arm produced by `parse_match_arm_list`
+/// inside a quote when it sees `~target` in arm position.
+fn is_arm_splice_sentinel(arm: MatchArm) -> bool {
+    match arm.pattern {
+        .TypePattern(tn, _) -> tn == "__quote_splice_arms__"
+        _ -> false
+    }
+}
+
+/// Unwrap the splice expression from a sentinel arm's body slot.
+/// The parser stores it as `Expr.Splice(target)`; we want just the
+/// target so its runtime value (a `List<MatchArm>`) flows into
+/// `list_concat` directly.
+fn extract_splice_target(body: Expr) -> Expr {
+    match body {
+        .Splice(t) -> t
+        _ -> body
+    }
+}
+
+/// Emit `@std::avrac::list_ops::list_concat(left, right)` as a Call
+/// expression. The runtime fn is monomorphized per-element-type by
+/// the existing generic dispatch, so the resulting AST type-checks
+/// against whatever element type the surrounding context expects.
+fn list_concat_call(left: Expr, right: Expr) -> Expr {
+    let args: List<SExpr> = [sexpr_dummy(left), sexpr_dummy(right)]
+    Expr.Call(Expr.QualifiedIdent("@std::avrac::list_ops::list_concat"), args)
+}
+
 /// Build an Expr that, when evaluated, produces a
 /// `List<TypeParamEntry>` AST value. Each entry is a struct literal
 /// `TypeParamEntry { name, bounds }`; the result is an `Expr.ListLit`
@@ -682,6 +752,28 @@ fn construct_comp_config_pair_list(list: List<CompConfigPair>) -> Expr {
 /// Emit `ValueType.Unknown` — quote captures pre-resolve, so all types
 /// are Unknown until the lowered AST is type-checked. Avoids the
 /// complexity of constructing every ValueType variant.
+/// Encode a ParamEntry's vtype for quote lowering. Splice case
+/// (qa6i probe 3): when the vtype is `ValueType.Struct(name, _)`
+/// with `name` starting with `~`, the parser captured a `~ident`
+/// splice in type position — emit a runtime `ValueType.Struct(<ident>, 0)`
+/// ctor whose first arg is an `Expr.Ident` referencing the macro's
+/// local. Otherwise fall back to `ValueType.Unknown` (preserving the
+/// existing quote-captures-pre-resolve convention so the lowered AST
+/// re-resolves through the normal pipeline).
+fn construct_param_vtype(vt: ValueType) -> Expr {
+    match vt {
+        .Struct(name, id) -> {
+            if name.length > 0 && name.substring(0, 1) == "~" {
+                value_type_ctor_args("Struct",
+                    two_args(Expr.Ident(name.substring(1, name.length)), int_lit_expr(id)))
+            } else {
+                construct_value_type_unknown()
+            }
+        }
+        _ -> construct_value_type_unknown()
+    }
+}
+
 fn construct_value_type_unknown() -> Expr {
     let empty: List<SExpr> = []
     Expr.EnumCtor("@std::avrac::core::ValueType", "Unknown", empty)
@@ -715,8 +807,19 @@ fn construct_value_type(vt: ValueType) -> Expr {
         .Ptr     -> value_type_ctor("Ptr")
         .Map     -> value_type_ctor("Map")
         .Unknown -> value_type_ctor("Unknown")
-        .Struct(name, id) -> value_type_ctor_args("Struct",
-            two_args(string_lit_expr(name), int_lit_expr(id)))
+        .Struct(name, id) -> {
+            // qa6i probe 3: `~ident` in type position is parsed as
+            // ValueType.Struct with the splice marker baked into name.
+            // Emit a runtime Ident reference instead of a string lit
+            // so the splice resolves against the macro's scope.
+            if name.length > 0 && name.substring(0, 1) == "~" {
+                value_type_ctor_args("Struct",
+                    two_args(Expr.Ident(name.substring(1, name.length)), int_lit_expr(id)))
+            } else {
+                value_type_ctor_args("Struct",
+                    two_args(string_lit_expr(name), int_lit_expr(id)))
+            }
+        }
         .Enum(name, type_args, id) -> value_type_ctor_args("Enum",
             three_args(string_lit_expr(name),
                        construct_value_type_list(type_args),
