@@ -715,36 +715,15 @@ fn rewrite_macro_stmts(ctx: NameCtx, stmts: List<SStmt>) -> List<SStmt> {
     mut out: List<SStmt> = []
     for ss in stmts {
         if ss.from_macro {
-            let rewritten_node = rewrite_stmt(ctx, ss.node)
-            out.push(SStmt {
-                node: rewritten_node,
-                line: ss.line,
-                col: ss.col,
-                file: ss.file,
-                from_macro: true,
-            })
+            out.push(ss with { node: rewrite_stmt(ctx, ss.node) })
         } else {
             // Descend into Module bodies so spliced stmts nested
             // inside a Module wrapper are still picked up.
             match ss.node {
                 .Module(name, body) -> {
-                    let mod_ctx = NameCtx {
-                        tree: ctx.tree,
-                        graph: ctx.graph,
-                        aliases: ctx.aliases,
-                        current_module: type_qualified_name(ctx.current_module, name),
-                        locals: ctx.locals,
-                        global_index: ctx.global_index,
-                        type_reg: ctx.type_reg,
-                    }
+                    let mod_ctx = ctx with { current_module: type_qualified_name(ctx.current_module, name) }
                     let new_body = rewrite_macro_stmts(mod_ctx, body)
-                    out.push(SStmt {
-                        node: Stmt.Module(name, new_body),
-                        line: ss.line,
-                        col: ss.col,
-                        file: ss.file,
-                        from_macro: false,
-                    })
+                    out.push(ss with { node: Stmt.Module(name, new_body) })
                 }
                 _ -> out.push(ss)
             }

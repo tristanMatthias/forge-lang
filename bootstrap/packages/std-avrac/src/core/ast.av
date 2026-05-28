@@ -61,10 +61,9 @@ export fn sstmt_dummy(s: Stmt) -> SStmt { SStmt { node: s, line: 0, col: 0, file
 
 /// Stamp `from_macro = true` on a spliced SStmt. The expand_macros
 /// pass calls this after invoking a macro so the post-expand partial
-/// re-resolve knows which entries to walk. Returns a fresh SStmt —
-/// SStmt is a value type, mutation isn't possible without copying.
+/// re-resolve knows which entries to walk.
 export fn sstmt_mark_from_macro(ss: SStmt) -> SStmt {
-    SStmt { node: ss.node, line: ss.line, col: ss.col, file: ss.file, from_macro: true }
+    ss with { from_macro: true }
 }
 
 // `enum ExprList` retired in lkze.9 #18 — `List<SExpr>` everywhere.
