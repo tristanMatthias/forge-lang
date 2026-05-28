@@ -452,6 +452,18 @@ type ExpandAttempt = {
     bag: DiagnosticBag,
 }
 
+/// Build a failed ExpandAttempt carrying a single F-coded error.
+/// Centralises the `bag_report(bag_new(), diag_error(...))` +
+/// `ExpandAttempt { replacement: null, bag }` wrap that every
+/// fail-path in invoke_macro / try_expand_one would otherwise
+/// repeat verbatim.
+fn expand_fail(code: DiagCode, message: string, span: Span) -> ExpandAttempt {
+    ExpandAttempt {
+        replacement: null,
+        bag: bag_report(bag_new(), diag_error(code, message, span)),
+    }
+}
+
 /// After a macro splice lands, augment the resolver state with the
 /// newly-introduced top-level decls and re-populate the C-side
 /// resolver-data layer so subsequent ctx_* queries from later macros
@@ -493,12 +505,11 @@ fn splice_expansion(out: List<SStmt>, ss: SStmt, replacement: List<SStmt>?) {
 fn try_expand_one(stmt: Stmt, reg: CompTimeRegistry, line: int, col: int, file: string, current_module: string) -> ExpandAttempt {
     let macro_name = expand_target_name(stmt)
     if macro_name == "" {
-        let bag = bag_report(bag_new(), diag_error(
+        return expand_fail(
             DiagCode.ExpandMissingMacroIdent,
             "@expand requires a macro fn identifier as its argument",
             span_at(0, 0, line, col, file)
-        ))
-        return ExpandAttempt { replacement: null, bag }
+        )
     }
     invoke_macro(stmt_unwrap(stmt), macro_name, reg, line, col, file, current_module, stmt)
 }
@@ -530,24 +541,22 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
     let span = span_at(0, 0, line, col, file)
     let lookup = comptime_lookup(reg, macro_name)
     if lookup == null {
-        let bag = bag_report(bag_new(), diag_error(
+        return expand_fail(
             DiagCode.ExpandUnknownMacro,
             "@expand(${macro_name}) — no @comptime fn named `${macro_name}` in scope",
             span
-        ))
-        return ExpandAttempt { replacement: null, bag }
+        )
     }
     let fn_def = lookup!
     let arity = fn_def.params.length
     let arg_values = if arity == 1 {
         let boxed = stmt_to_value(reg.runtime, stmt)
         if boxed == null {
-            let bag = bag_report(bag_new(), diag_error(
+            return expand_fail(
                 DiagCode.ExpandStmtBoxFailed,
                 "@expand(${macro_name}) — could not box the wrapped Stmt as a Value (encoder may not yet support this Stmt variant)",
                 span
-            ))
-            return ExpandAttempt { replacement: null, bag }
+            )
         }
         [boxed!]
     } else if arity == 0 {
@@ -560,12 +569,11 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
         // ResolverState.
         let boxed = stmt_to_value(reg.runtime, stmt)
         if boxed == null {
-            let bag = bag_report(bag_new(), diag_error(
+            return expand_fail(
                 DiagCode.ExpandStmtBoxFailed,
                 "@expand(${macro_name}) — could not box the wrapped Stmt as a Value (encoder may not yet support this Stmt variant)",
                 span
-            ))
-            return ExpandAttempt { replacement: null, bag }
+            )
         }
         // `original_stmt` carries the @expand annotation; `stmt` is
         // already-unwrapped for the boxed payload.
@@ -574,21 +582,19 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
         let ctx = build_resolver_ctx(handle)
         [annotated, ctx]
     } else {
-        let bag = bag_report(bag_new(), diag_error(
+        return expand_fail(
             DiagCode.ExpandUnsupportedArity,
             "@expand(${macro_name}) — macro has ${arity} parameters; @expand supports 0-, 1-, or 2-arg macros only",
             span
-        ))
-        return ExpandAttempt { replacement: null, bag }
+        )
     }
     let result = eval_fn_with_resolved_args(reg.runtime, fn_def.params, fn_def.body, arg_values)
     if step_had_error(result) {
-        let bag = bag_report(bag_new(), diag_error(
+        return expand_fail(
             DiagCode.ExpandEvalFailed,
             "@expand(${macro_name}) — macro evaluation failed: ${step_error_message(result)}",
             span
-        ))
-        return ExpandAttempt { replacement: null, bag }
+        )
     }
     let v = step_value(result)
     // Try ResolvedDecls first — the 2-arg macro return type per doc
@@ -635,12 +641,11 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
     // Fall back to single Stmt — `quote stmt { ... }` macros.
     let decoded = value_to_stmt(v)
     if decoded == null {
-        let bag = bag_report(bag_new(), diag_error(
+        return expand_fail(
             DiagCode.ExpandUndecodableReturn,
             "@expand(${macro_name}) — macro returned a value the expander could not decode into a Stmt, List<Stmt>, or ResolvedDecls (kind=${v.kind})",
             span
-        ))
-        return ExpandAttempt { replacement: null, bag }
+        )
     }
     mut single: List<SStmt> = []
     single.push(sstmt_at(decoded!, line, col, file))

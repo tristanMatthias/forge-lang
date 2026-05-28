@@ -26,7 +26,16 @@ fn run_capture(source: string) -> string {
     // Direct bs2 compile + link + run with stderr captured at every
     // stage. cached_fixture_run discards bs2 stderr on success, which
     // hides our warning. Run the steps manually here.
-    let compile = avra_shell_exec("./build/bs2 compile '${path}' 2>&1 || true")
+    //
+    // `env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS` is critical: when
+    // bs2 test runs this shard it sets AVRA_USE_METADATA=1 to use
+    // pre-built @std/* metadata for speed. The fast-path skips the
+    // @expand bag accumulation pass that produces F9050, so the
+    // warning never lands in stderr inside the test runner even
+    // though a plain `bs2 compile` produces it correctly. Disabling
+    // the env vars forces the fixture compile through the full
+    // resolve_and_expand_program pipeline.
+    let compile = avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 compile '${path}' 2>&1 || true")
     let link = avra_shell_exec("cc '${path}.ll' build/runtime.o build/llvm_wrapper.o -lLLVM -L/opt/homebrew/opt/llvm/lib -o '${path}.bin' 2>&1 || true")
     let run = avra_shell_exec("'${path}.bin' 2>&1 || true")
     compile + "\n" + run
