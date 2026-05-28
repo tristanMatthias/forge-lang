@@ -660,15 +660,6 @@ export type ResolverState = {
     bag: DiagnosticBag,
 }
 
-/// Decl-scan half of `resolve_names`: builds the module tree, graph,
-/// use-alias bindings, global index, and a fresh type registry from
-/// `stmts`. Pure with respect to the input AST — returns a
-/// `ResolverState` value, no in-place mutation.
-///
-/// Carved out of the monolithic `resolve_names` so the @expand
-/// pipeline can rebuild the decl context after macro expansion
-/// without re-running the use-site rewrite over already-resolved
-/// originals.
 /// Sentinel ResolverState — empty everything. Exposed for callers
 /// like `expand_macros_eval` that need to pass a value when the
 /// state-bearing path isn't taken (Avra has no optional struct
@@ -690,6 +681,15 @@ export fn dummy_resolver_state() -> ResolverState {
     }
 }
 
+/// Decl-scan half of `resolve_names`: builds the module tree, graph,
+/// use-alias bindings, global index, and a fresh type registry from
+/// `stmts`. Pure with respect to the input AST — returns a
+/// `ResolverState` value, no in-place mutation.
+///
+/// Carved out of the monolithic `resolve_names` so the @expand
+/// pipeline can rebuild the decl context after macro expansion
+/// without re-running the use-site rewrite over already-resolved
+/// originals.
 export fn register_decls(stmts: List<SStmt>) -> ResolverState {
     let tree = build_module_tree(stmts, "", ModuleNode.End)
     let graph = build_graph_from_stmts(stmts)

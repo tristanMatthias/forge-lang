@@ -44,7 +44,7 @@
 use core.{Stmt, SStmt, Expr, SExpr, FieldEntry, ValueType, sstmt_at, sstmt_mark_from_macro, find_annotation, stmt_unwrap, exit, type_qualified_name}
 use resolve.{ResolverState, register_macro_decls, dummy_resolver_state}
 use features.comptime.{CompTimeRegistry, comptime_lookup, collect_comptime_fns, value_to_stmt, value_to_stmt_list, stmt_to_value}
-use features.eval.{Runtime, Value, StructField, value_struct, value_string, value_number, value_null, value_list, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message, path_last_segment}
+use features.eval.{Runtime, Value, StructField, value_struct, value_string, value_number, value_null, value_list, value_enum, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message, path_last_segment}
 use list_ops.{list_concat}
 
 // ── ResolverCtx state stack (step 5) ──
@@ -495,7 +495,11 @@ fn splice_expansion(out: List<SStmt>, ss: SStmt, replacement: List<SStmt>?) {
 /// inherited from the parent ComponentDef. Caller has already
 /// unwrapped any Annotated layers.
 fn try_expand_with_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int, col: int, file: string, current_module: string) -> List<SStmt>? {
-    invoke_macro(stmt, macro_name, reg, line, col, file, current_module)
+    // ComponentBlock has no @expand annotation on itself (the macro
+    // is registered via the ComponentDef). Pass the same stmt for
+    // both args — build_annotation_value falls back to a name-only
+    // annotation when find_annotation returns null.
+    invoke_macro(stmt, macro_name, reg, line, col, file, current_module, stmt)
 }
 
 /// Look up the macro fn name from the `@expand` annotation's first
@@ -509,7 +513,7 @@ fn try_expand_one(stmt: Stmt, reg: CompTimeRegistry, line: int, col: int, file: 
         eprintln("error: @expand requires a macro fn identifier as its argument")
         return null
     }
-    invoke_macro(stmt_unwrap(stmt), macro_name, reg, line, col, file, current_module)
+    invoke_macro(stmt_unwrap(stmt), macro_name, reg, line, col, file, current_module, stmt)
 }
 
 /// Shared driver: locate `macro_name` in the comptime registry,
@@ -535,7 +539,7 @@ fn try_expand_one(stmt: Stmt, reg: CompTimeRegistry, line: int, col: int, file: 
 /// is responsible for any annotation peeling: try_expand_one strips
 /// @expand before invoking; try_expand_with_macro receives an
 /// already-unwrapped ComponentBlock.
-fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int, col: int, file: string, current_module: string) -> List<SStmt>? {
+fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int, col: int, file: string, current_module: string, original_stmt: Stmt) -> List<SStmt>? {
     let lookup = comptime_lookup(reg, macro_name)
     if lookup == null {
         eprintln("error: @expand(${macro_name}) — no @comptime fn named `${macro_name}` in scope")
@@ -563,7 +567,9 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
             eprintln("error: @expand(${macro_name}) — could not box the wrapped Stmt as a Value (encoder may not yet support this Stmt variant)")
             return null
         }
-        let annotated = build_annotated_decl(boxed!, decl_name_of(stmt), current_module)
+        // `original_stmt` carries the @expand annotation; `stmt` is
+        // already-unwrapped for the boxed payload.
+        let annotated = build_annotated_decl(boxed!, decl_name_of(stmt), current_module, original_stmt)
         let handle = avra_resolver_ctx_top()
         let ctx = build_resolver_ctx(handle)
         [annotated, ctx]
@@ -664,23 +670,91 @@ fn first_arg_ident(args: List<SExpr>) -> string {
 ///   - stmt: the boxed (unwrapped) decl Value
 ///   - annotation: `{name, args}` struct for the @expand annotation
 ///   - canonical_path: qualified path to the decl (mod::name)
-/// args lands as an empty list — args carry SExpr ASTs, and the
-/// macro-side type expects `List<SExpr>`; encoding each runtime SExpr
-/// Value back into the macro is a follow-up. The name field is the
-/// useful piece for macros today ("expand" so the macro knows which
-/// annotation triggered it).
-fn build_annotated_decl(stmt_v: Value, decl_name: string, current_module: string) -> Value {
+///
+/// `annotation.args` is populated from the actual @expand(...)
+/// annotation on the original wrapped stmt — each arg encoded as an
+/// SExpr Value with Expr.Ident / Expr.QualifiedIdent / Expr.String
+/// payload. Other Expr kinds in the annotation args land as
+/// Expr.Null Values; the macro can match on the Expr.kind to
+/// dispatch. The args list is empty when the @expand call had no
+/// args (which the parser prevents for `@expand` — there's always
+/// at least the macro identifier).
+fn build_annotated_decl(stmt_v: Value, decl_name: string, current_module: string, original_stmt: Stmt) -> Value {
     let canonical = type_qualified_name(current_module, decl_name)
-    let empty_args: List<Value> = []
-    mut ann_fields: List<StructField> = []
-    ann_fields.push(StructField { name: "name", value: value_string("expand") })
-    ann_fields.push(StructField { name: "args", value: value_list(empty_args) })
-    let annotation_v = value_struct("@std::avrac::core::Annotation", ann_fields)
+    let annotation_v = build_annotation_value(original_stmt)
     mut fields: List<StructField> = []
     fields.push(StructField { name: "stmt", value: stmt_v })
     fields.push(StructField { name: "annotation", value: annotation_v })
     fields.push(StructField { name: "canonical_path", value: value_string(canonical) })
     value_struct("@std::avrac::features::comptime::macro_types::AnnotatedDecl", fields)
+}
+
+/// Find the @expand annotation on the stmt and encode it as an
+/// `{name, args}` struct Value. Falls back to a name-only struct
+/// when no annotation is found (defensive — the walker shouldn't
+/// invoke a macro without an @expand site).
+fn build_annotation_value(stmt: Stmt) -> Value {
+    let found = find_annotation(stmt, "expand")
+    mut args_values: List<Value> = []
+    if found != null {
+        for arg in found!.args {
+            args_values.push(build_arg_sexpr_value(arg.node))
+        }
+    }
+    mut ann_fields: List<StructField> = []
+    ann_fields.push(StructField { name: "name", value: value_string("expand") })
+    ann_fields.push(StructField { name: "args", value: value_list(args_values) })
+    value_struct("@std::avrac::core::Annotation", ann_fields)
+}
+
+/// Wrap an Expr in an SExpr Value carrier — {node, line, col, ty, file}.
+/// Used to encode each @expand annotation arg into the runtime
+/// `List<SExpr>` exposed to the macro via AnnotatedDecl.annotation.args.
+/// Source-position fields are stubbed (0/0/"") because the walker
+/// doesn't propagate the annotation's per-arg span to invoke_macro.
+fn build_arg_sexpr_value(e: Expr) -> Value {
+    mut sexpr_fields: List<StructField> = []
+    sexpr_fields.push(StructField { name: "node", value: build_expr_value(e) })
+    sexpr_fields.push(StructField { name: "line", value: value_number("0") })
+    sexpr_fields.push(StructField { name: "col", value: value_number("0") })
+    sexpr_fields.push(StructField { name: "ty", value: build_value_type_unknown() })
+    sexpr_fields.push(StructField { name: "file", value: value_string("") })
+    value_struct("@std::avrac::core::SExpr", sexpr_fields)
+}
+
+/// Encode the Expr kinds that show up as annotation args:
+/// Ident / QualifiedIdent / String / Number. Anything else lands
+/// as Expr.Null — the macro can match on .kind to detect.
+fn build_expr_value(e: Expr) -> Value {
+    let empty: List<Value> = []
+    match e {
+        .Ident(name) -> {
+            mut payload: List<Value> = []
+            payload.push(value_string(name))
+            value_enum("@std::avrac::core::Expr", "Ident", payload)
+        }
+        .QualifiedIdent(path) -> {
+            mut payload: List<Value> = []
+            payload.push(value_string(path))
+            value_enum("@std::avrac::core::Expr", "QualifiedIdent", payload)
+        }
+        .String(text) -> {
+            mut payload: List<Value> = []
+            payload.push(value_string(text))
+            value_enum("@std::avrac::core::Expr", "String", payload)
+        }
+        .Number(text) -> {
+            mut payload: List<Value> = []
+            payload.push(value_string(text))
+            value_enum("@std::avrac::core::Expr", "Number", payload)
+        }
+        _ -> value_enum("@std::avrac::core::Expr", "Null", empty)
+    }
+}
+
+fn build_value_type_unknown() -> Value {
+    let empty: List<Value> = []
+    value_enum("@std::avrac::core::ValueType", "Unknown", empty)
 }
 
 /// Extract the decl name from a (possibly unwrapped) Stmt — the name
