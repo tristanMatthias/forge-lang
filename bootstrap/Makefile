@@ -203,11 +203,25 @@ install-hooks:
 	@echo "installed: .git/hooks/pre-commit -> bootstrap/scripts/pre-commit"
 
 # Remove all build artifacts. Source and seed are preserved.
+#
+# Three nested build-cache locations accumulate per-package shard
+# binaries + IR; without explicit removal they hit GB scale and
+# trip the pre-commit hook's per_file test mode with ENOSPC:
+#   - bootstrap/build/                        (top-level — primary)
+#   - packages/*/build/                        (per-package outputs)
+#   - packages/*/src/build/cache/              (per-source caches)
+# The `find -name cache` clause catches the third — bare `build/`
+# under */src/ is itself a source module (e.g. std-avrac/src/build/
+# is the build-driver package), so we explicitly DO NOT delete
+# directories named `build` under src/, only their cache subdirs.
 clean:
 	@rm -rf build
+	@rm -rf packages/*/build 2>/dev/null || true
+	@find packages tests -type d -name 'cache' -path '*/build/*' -prune -exec rm -rf '{}' \; 2>/dev/null || true
+	@find packages tests -type d -path '*/src/build/cache' -prune -exec rm -rf '{}' \; 2>/dev/null || true
 	@rm -f $(SRC_DIR)/*.av.ll $(SRC_DIR)/*.av.cov.ll $(SRC_DIR)/*.av.ll.cov.ll $(SRC_DIR)/*.av.covmap.json
 	@find packages tests -type f \( -name '*.av.ll' -o -name '*.av.cov.ll' -o -name '*.av.ll.cov.ll' -o -name '*.av.covmap.json' -o -name '*.bin' -o -name '*.bin.o' -o -name '*.profraw' -o -name '*.profdata' \) -delete 2>/dev/null || true
-	@echo "cleaned: build/ + per-file IR/coverage/binary artifacts"
+	@echo "cleaned: build/ (top-level + nested caches) + per-file IR/coverage/binary artifacts"
 
 # Assemble the canonical grammar from feature fragments.
 grammar:
