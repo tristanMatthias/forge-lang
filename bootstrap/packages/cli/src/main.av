@@ -154,6 +154,23 @@ fn expand_components_or_fail(stmts: List<SStmt>, json_output: bool, source: stri
     comp.stmts
 }
 
+/// derive_marshal + resolve_and_expand_program with built-in
+/// diagnostic rendering and fail-on-hard-error short-circuit.
+/// Wraps the 5-line pattern (marshal → resolve → render bag →
+/// fail) that every compile / check / test pipeline site
+/// repeated immediately after `expand_components_or_fail`.
+/// Returns the NameResolveResult so the caller can continue
+/// with run_comptime → typecheck.
+fn marshal_and_resolve_or_fail(stmts: List<SStmt>, json_output: bool, source: string, path: string) -> NameResolveResult {
+    let with_marshal = derive_marshal(stmts)
+    let named = resolve_and_expand_program(with_marshal)
+    if bag_has_errors(named.bag) || bag_has_warnings(named.bag) {
+        render_bag_either(json_output, source, path, named.bag)
+    }
+    if named.had_error { fail(named.error_message) }
+    named
+}
+
 // Module file resolution and name resolution live in features/modules/.
 
 
@@ -3329,12 +3346,7 @@ fn main() {
             // synthesizing a duplicate that dkfa would flag.
             let with_intrinsics = inject_intrinsics(mod_resolved.stmts)
             let expanded = expand_components_or_fail(with_intrinsics, check_json, check_source, check_path)
-            let with_marshal = derive_marshal(expanded)
-            let named = resolve_and_expand_program(with_marshal)
-            if bag_has_errors(named.bag) || bag_has_warnings(named.bag) {
-                render_bag_either(check_json, check_source, check_path, named.bag)
-            }
-            if named.had_error { fail(named.error_message) }
+            let named = marshal_and_resolve_or_fail(expanded, check_json, check_source, check_path)
             let post_comptime = run_comptime(named.stmts)
             let tc_result = typecheck_program(post_comptime)
             if bag_has_errors(tc_result.bag) || bag_has_warnings(tc_result.bag) {
@@ -3411,9 +3423,7 @@ fn main() {
             if mod_resolved.had_error { fail(mod_resolved.error_message) }
             let with_intrinsics = inject_intrinsics(mod_resolved.stmts)
             let expanded = expand_components_or_fail(with_intrinsics, false, source, path)
-            let with_marshal = derive_marshal(expanded)
-            let named = resolve_and_expand_program(with_marshal)
-            if named.had_error { fail(named.error_message) }
+            let named = marshal_and_resolve_or_fail(expanded, false, source, path)
             let post_comptime = run_comptime(named.stmts)
             println(fmt_stmt_list(post_comptime, 0))
             return
@@ -3440,12 +3450,7 @@ fn main() {
             }
             let with_intrinsics = inject_intrinsics(mod_resolved.stmts)
             let expanded = expand_components_or_fail(with_intrinsics, false, source, path)
-            let with_marshal = derive_marshal(expanded)
-            let named = resolve_and_expand_program(with_marshal)
-            if bag_has_errors(named.bag) || bag_has_warnings(named.bag) {
-                render_bag(source, path, named.bag)
-            }
-            if named.had_error { fail(named.error_message) }
+            let named = marshal_and_resolve_or_fail(expanded, false, source, path)
             let post_comptime = run_comptime(named.stmts)
             let tc_result = typecheck_program(post_comptime)
             if bag_has_errors(tc_result.bag) || bag_has_warnings(tc_result.bag) {
@@ -3704,14 +3709,9 @@ fn main() {
         // Component expansion: runs AFTER module resolution so component
         // definitions in any module are visible to the expander.
         let expanded = expand_components_or_fail(post_filter_stmts, json_output, csource, cpath)
-        let with_marshal = derive_marshal(expanded)
         let t_expand = avra_uptime_ms()
-        let named = resolve_and_expand_program(with_marshal)
+        let named = marshal_and_resolve_or_fail(expanded, json_output, csource, cpath)
         let t_names = avra_uptime_ms()
-        if bag_has_errors(named.bag) || bag_has_warnings(named.bag) {
-            render_bag_either(json_output, csource, cpath, named.bag)
-        }
-        if named.had_error { fail(named.error_message) }
         if stop_after == "names" {
             println("ok")
             return
