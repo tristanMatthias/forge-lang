@@ -1176,7 +1176,7 @@ fn ctx_kind_from_path(path: string) -> string {
     ""
 }
 
-fn path_last_segment(path: string) -> string {
+export fn path_last_segment(path: string) -> string {
     mut last_sep = -1
     mut i = 0
     while i + 1 < path.length {

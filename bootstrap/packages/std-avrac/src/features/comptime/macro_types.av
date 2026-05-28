@@ -22,7 +22,8 @@
 //   MacroProvenance fields — macro_name, target_canonical,
 //     target_source_span.
 
-use core.{Stmt, SStmt, Annotation, Span}
+use core.{Stmt, SStmt, Annotation}
+use diagnostics.{Span}
 
 export type AnnotatedDecl = {
     stmt: Stmt,

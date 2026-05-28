@@ -58,21 +58,57 @@ declaration with the macro's evaluated output.
 
 ## Pipeline placement
 
-The two pieces are separate passes in the compile pipeline:
+`@expand` and `@comptime` are separate passes. The full
+pipeline order is (per docs/2026_05_25_EXPAND_PIPELINE_HANDOFF.md
+step 4 — Option C):
 
 ```
-resolve_names → expand_macros → run_comptime → typecheck
+parse → resolve_module_files → expand_components → derive_marshal
+     → expand_macros_collect              (pre-resolve target scan)
+     → resolve_names_pre_expand           (register_decls + rewrite_uses)
+     → expand_macros_eval(plan, state)    (fixpoint; tags spliced stmts)
+     → register_macro_decls               (additive into existing state)
+     → rewrite_uses_macro_only            (partial re-resolve)
+     → validate_scopes_after_expand       (scope check on the merged AST)
+     → run_comptime
+     → typecheck
+     → monomorphize
+     → codegen
 ```
 
-- **expand_macros** runs first. It walks for `@expand`
-  declarations, evaluates each macro fn against its decl
-  argument, and splices the resulting AST node in place. Also
-  handles the component-instance dispatch case (vez6.8.5) where
-  a ComponentBlock instance routes through its def's `@expand`.
+- **expand_macros_collect** runs pre-resolve. It scans for
+  `@expand` annotations and records `(source_file, source_line,
+  source_col, macro_name)` tuples — addressing is by source
+  position, not list index, so a later pass that rewrites stmts
+  in place doesn't invalidate the plan.
+- **resolve_names_pre_expand** runs unchanged. Macro bodies see
+  resolved names because eval needs the registry to invoke
+  helper fns inside the macro.
+- **expand_macros_eval** evaluates each captured macro, splices
+  results, and tags every spliced SStmt with `from_macro: true`.
+  Runs to fixpoint (cap 16 iters) so a macro emitting another
+  `@expand(...)` site expands transitively. Hitting the cap
+  `exit(1)`s with a clean diagnostic.
+- **register_macro_decls** additively augments the existing
+  `ResolverState.graph` + `global_index` with the
+  macro-introduced top-level decls. No fresh tree/alias rebuild,
+  so pre-existing import diagnostics don't double-bag.
+- **rewrite_uses_macro_only** walks only `from_macro == true`
+  entries (recursing into Module bodies). Hand-written stmts
+  keep their pre-expand rewrites.
 - **run_comptime** runs next. It folds every call to a
   `@comptime` fn with comptime-known arguments into the
   evaluated literal. Fast-path: programs with zero `@comptime`
   fns short-circuit without walking the AST.
+
+The `expand_macros` (legacy single-pass) surface remains as a
+thin wrapper — `expand_macros_collect` then `expand_macros_eval`
+— for call sites that don't have a `ResolverState` handy. The
+state-less variant skips the per-iter resolver-data re-population,
+which means 2-arg macros that call `ctx_qualify_ident` /
+`ctx_lookup_type` on names introduced by an earlier iteration
+won't see them; the state-aware `expand_macros_eval_with_state`
+is the main pipeline's path.
 
 Both passes pre-typecheck so the typechecker sees the
 post-evaluation AST — no comptime nodes survive into the type

@@ -22,7 +22,7 @@
 use core.{Stmt, SStmt, Expr, SExpr, FieldEntry, ValueType, sstmt_at, sstmt_mark_from_macro, find_annotation, stmt_unwrap, exit, type_qualified_name}
 use resolve.{ResolverState, register_macro_decls, dummy_resolver_state}
 use features.comptime.{CompTimeRegistry, comptime_lookup, collect_comptime_fns, value_to_stmt, value_to_stmt_list, stmt_to_value}
-use features.eval.{Runtime, Value, StructField, value_struct, value_string, value_number, value_null, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message}
+use features.eval.{Runtime, Value, StructField, value_struct, value_string, value_number, value_null, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message, path_last_segment}
 use list_ops.{list_concat}
 
 // ── ResolverCtx state stack (step 5) ──
@@ -507,9 +507,22 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
         return null
     }
     let v = step_value(result)
-    // Try list first — a List<SStmt> Value is what `quote stmts { ... }`
-    // produces. value_to_stmt_list returns null when v isn't a list,
-    // so this is the cheap dispatch.
+    // Try ResolvedDecls first — the 2-arg macro return type per doc
+    // step 4.4. value_to_resolved_decls returns null when v isn't a
+    // `{decls, introduces, provenance}` struct, so non-ResolvedDecls
+    // returns fall through to the existing decoders.
+    let as_rd = value_to_resolved_decls(v)
+    if as_rd != null {
+        let rd = as_rd!
+        mut out: List<SStmt> = []
+        for ss in rd.decls {
+            out.push(sstmt_at(ss.node, line, col, file))
+        }
+        return out
+    }
+    // Try List<SStmt> — what `quote stmts { ... }` produces.
+    // value_to_stmt_list returns null when v isn't a list, so this is
+    // the cheap dispatch.
     let as_list = value_to_stmt_list(v)
     if as_list != null {
         mut out: List<SStmt> = []
@@ -521,11 +534,39 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
     // Fall back to single Stmt — `quote stmt { ... }` macros.
     let decoded = value_to_stmt(v)
     if decoded == null {
-        eprintln("error: @expand(${macro_name}) — macro returned a value the expander could not decode into a Stmt or List<Stmt> (kind=${v.kind})")
+        eprintln("error: @expand(${macro_name}) — macro returned a value the expander could not decode into a Stmt, List<Stmt>, or ResolvedDecls (kind=${v.kind})")
         return null
     }
     [sstmt_at(decoded!, line, col, file)]
 }
+
+/// Decode a `ResolvedDecls` struct Value into the per-decl list.
+/// Returns null when the Value doesn't match the expected shape so
+/// the caller can fall through to other decoders. The `decls` field
+/// is decoded via `value_to_stmt_list`; `introduces` + `provenance`
+/// aren't read here — `register_macro_decls` runs against the actual
+/// post-expand AST, which is the same set of decls the macro returned.
+fn value_to_resolved_decls(v: Value) -> ResolvedDeclsPayload? {
+    if v.kind != "struct" { return null }
+    // Match by suffix — the qualified form depends on how rewrite_uses
+    // canonicalised the StructLit's type name (may be bare, may include
+    // the @std::… path). path_last_segment ignores the prefix.
+    let last = path_last_segment(v.struct_type)
+    if last != "ResolvedDecls" { return null }
+    mut decls_field: Value? = null
+    for f in v.struct_payload {
+        if f.name == "decls" { decls_field = f.value }
+    }
+    if decls_field == null { return null }
+    let decls = value_to_stmt_list(decls_field!)
+    if decls == null { return null }
+    ResolvedDeclsPayload { decls: decls! }
+}
+
+/// Internal carrier for the decoded ResolvedDecls. The full type lives
+/// in macro_types.av but it carries non-Value fields (provenance) the
+/// invoker doesn't need; this is just enough to drive the splice.
+type ResolvedDeclsPayload = { decls: List<SStmt> }
 
 /// Pull the macro-fn identifier out of the `@expand(NAME)` annotation
 /// args. Returns "" when the annotation isn't present, has no args,

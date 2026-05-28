@@ -1,0 +1,51 @@
+// docs/2026_05_25_EXPAND_PIPELINE_HANDOFF.md — step 4.4.
+// A 2-arg macro is allowed to return a `ResolvedDecls` struct
+// (`{decls, introduces, provenance}`) instead of a plain Stmt or
+// List<SStmt>. invoke_macro decodes the .decls field via
+// value_to_resolved_decls and splices each entry. The .introduces
+// + .provenance fields are informational at this layer — the
+// partial re-resolve in cli/main.av re-scans the post-expand AST
+// to refresh the global index, so any decl in .decls becomes
+// reachable at call sites the same way a Stmt-returning macro
+// would.
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+fn run_capture(source: string) -> string {
+    write_fixture_and_run("/tmp/avra_expand_resolved_decls_return_test.av", source)
+}
+
+spec "@expand: 2-arg macro can return ResolvedDecls" {
+    then "decls in the returned struct are spliced into the parent scope" {
+        let out = run_capture(
+            "use @std.avrac.core.{Stmt, SStmt, sstmt_dummy, ParamEntry, TypeParamEntry, ValueType, Expr, SExpr, sexpr_dummy}\n" +
+            "use @std.avrac.diagnostics.{Span}\n" +
+            "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ResolvedDecls, DeclSymbol, DeclKind, MacroProvenance}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build_via_resolved_decls(d: AnnotatedDecl, ctx: ResolverCtx) -> ResolvedDecls {\n" +
+            "    let empty_params: List<ParamEntry> = []\n" +
+            "    let empty_tp: List<TypeParamEntry> = []\n" +
+            "    let body: List<SStmt> = [sstmt_dummy(Stmt.Return(Expr.Number(\"42\")))]\n" +
+            "    let fn_decl = Stmt.Function(\"_rd_emitted\", empty_tp, empty_params, ValueType.Int, body)\n" +
+            "    let decls: List<SStmt> = [sstmt_dummy(fn_decl)]\n" +
+            "    let introduces: List<DeclSymbol> = [\n" +
+            "        DeclSymbol { name: \"_rd_emitted\", kind: DeclKind.Function, canonical_path: \"_rd_emitted\" }\n" +
+            "    ]\n" +
+            "    let provenance = MacroProvenance {\n" +
+            "        macro_name: \"build_via_resolved_decls\",\n" +
+            "        target_canonical: \"placeholder\",\n" +
+            "        target_source_span: Span { start: 0, end: 0, line: 0, col: 0, file: \"\" }\n" +
+            "    }\n" +
+            "    ResolvedDecls { decls, introduces, provenance }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build_via_resolved_decls)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    println(string(_rd_emitted()))\n" +
+            "}\n")
+        out.contains("42")
+    }
+}
