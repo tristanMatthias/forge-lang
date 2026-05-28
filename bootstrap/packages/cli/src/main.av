@@ -130,16 +130,6 @@ fn fail(message: string) {
     exit(1)
 }
 
-/// Thin wrapper around the shared `resolve_and_expand_program` in
-/// features/comptime/expand_macro.av — kept here as a stable name
-/// for the CLI's local call sites. The full Option C pipeline
-/// (resolve → collect → eval → register_macro_decls →
-/// rewrite_uses_macro_only → validate_scopes) is implemented once,
-/// in the comptime module, and every site uses it.
-fn resolve_and_expand(stmts: List<SStmt>) -> NameResolveResult {
-    resolve_and_expand_program(stmts)
-}
-
 /// Render a diagnostic bag in either human or JSON form, picked
 /// by `json_output`. Both `compile` and `check` switch on the
 /// `--json` flag at every pipeline stage; this helper centralises
@@ -3325,7 +3315,7 @@ fn main() {
             let with_intrinsics = inject_intrinsics(mod_resolved.stmts)
             let expanded = expand_components(with_intrinsics)
             let with_marshal = derive_marshal(expanded)
-            let named = resolve_and_expand(with_marshal)
+            let named = resolve_and_expand_program(with_marshal)
             if bag_has_errors(named.bag) || bag_has_warnings(named.bag) {
                 render_bag_either(check_json, check_source, check_path, named.bag)
             }
@@ -3407,7 +3397,7 @@ fn main() {
             let with_intrinsics = inject_intrinsics(mod_resolved.stmts)
             let expanded = expand_components(with_intrinsics)
             let with_marshal = derive_marshal(expanded)
-            let named = resolve_and_expand(with_marshal)
+            let named = resolve_and_expand_program(with_marshal)
             if named.had_error { fail(named.error_message) }
             let post_comptime = run_comptime(named.stmts)
             println(fmt_stmt_list(post_comptime, 0))
@@ -3436,7 +3426,7 @@ fn main() {
             let with_intrinsics = inject_intrinsics(mod_resolved.stmts)
             let expanded = expand_components(with_intrinsics)
             let with_marshal = derive_marshal(expanded)
-            let named = resolve_and_expand(with_marshal)
+            let named = resolve_and_expand_program(with_marshal)
             if bag_has_errors(named.bag) || bag_has_warnings(named.bag) {
                 render_bag(source, path, named.bag)
             }
@@ -3701,7 +3691,7 @@ fn main() {
         let expanded = expand_components(post_filter_stmts)
         let with_marshal = derive_marshal(expanded)
         let t_expand = avra_uptime_ms()
-        let named = resolve_and_expand(with_marshal)
+        let named = resolve_and_expand_program(with_marshal)
         let t_names = avra_uptime_ms()
         if bag_has_errors(named.bag) || bag_has_warnings(named.bag) {
             render_bag_either(json_output, csource, cpath, named.bag)
@@ -3712,7 +3702,7 @@ fn main() {
             return
         }
         // Comptime fold: replace `@comptime` calls with their literal results.
-        // Runs after resolve_and_expand so names are bound, before typeck
+        // Runs after resolve_and_expand_program so names are bound, before typeck
         // so the typechecker sees the post-fold (literal-typed) AST.
         let post_comptime = run_comptime(named.stmts)
         // Type check — gates compilation on errors

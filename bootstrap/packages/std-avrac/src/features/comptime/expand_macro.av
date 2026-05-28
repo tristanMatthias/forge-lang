@@ -430,7 +430,7 @@ fn register_and_repopulate(state: ResolverState, spliced: List<SStmt>, current_m
 
 /// Common splicer: replacement-on-success, original-on-failure. Every
 /// spliced stmt gets `from_macro = true` so the partial re-resolve
-/// in cli/main.av:resolve_and_expand walks them (step 4 of the
+/// in `resolve_and_expand_program` walks them (step 4 of the
 /// expand-pipeline doc — Option C).
 fn splice_expansion(out: List<SStmt>, ss: SStmt, replacement: List<SStmt>?) {
     mut acc = out

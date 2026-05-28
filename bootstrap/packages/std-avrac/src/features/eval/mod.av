@@ -920,7 +920,7 @@ fn eval_call(runtime: Runtime, callee: Expr, args: List<SExpr>) -> StepResult {
     // scope. Each is qualified to the resolver_ctx module path; we
     // recognise the path and dispatch to a compiler-side handler
     // that consults the active ResolverState (pushed by
-    // resolve_and_expand in cli/main.av).
+    // resolve_and_expand_program in features/comptime/expand_macro.av).
     let ctx_kind = ctx_call_kind(callee)
     if ctx_kind != "" {
         return eval_resolver_ctx_call(runtime, ctx_kind, args)
