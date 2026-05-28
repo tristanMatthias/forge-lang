@@ -42,7 +42,7 @@
 // block as the Stmt arg.
 
 use core.{Stmt, SStmt, Expr, SExpr, FieldEntry, ValueType, sstmt_at, sstmt_mark_from_macro, find_annotation, stmt_unwrap, exit, type_qualified_name}
-use resolve.{ResolverState, register_macro_decls, dummy_resolver_state}
+use resolve.{ResolverState, NameResolveResult, register_macro_decls, dummy_resolver_state, resolve_names_pre_expand, rewrite_uses_macro_only, validate_scopes_after_expand}
 use features.comptime.{CompTimeRegistry, comptime_lookup, collect_comptime_fns, value_to_stmt, value_to_stmt_list, stmt_to_value}
 use features.eval.{Runtime, Value, StructField, value_struct, value_string, value_number, value_null, value_list, value_enum, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message, path_last_segment}
 use list_ops.{list_concat}
@@ -786,4 +786,40 @@ fn build_resolver_ctx(handle: int) -> Value {
     mut fields: List<StructField> = []
     fields.push(StructField { name: "id", value: value_number(string(handle)) })
     value_struct("@std::avrac::features::comptime::resolver_ctx::ResolverCtx", fields)
+}
+
+// ── Public pipeline driver — Option C ──
+
+/// Compose the full Option C dance into one entry point so every
+/// pipeline site (cli/main.av cmd_compile / cmd_run / cmd_test,
+/// check/mod.av check_source, build/compile.av build_binary) goes
+/// through the same flow. The legacy `resolve_names → expand_macros`
+/// shape was per-pass non-idempotent and broke macro-introduced
+/// decl registration; this driver is the single source of truth.
+///
+/// Pipeline:
+///   1. resolve_names_pre_expand → register_decls + rewrite_uses
+///   2. expand_macros_collect against the rewritten stmts
+///   3. Fast-path: no macros → straight to validate_scopes
+///   4. avra_resolver_ctx_push(state)  — macros can ctx_* now
+///   5. populate_resolver_data + expand_macros_eval_with_state
+///   6. avra_resolver_ctx_pop
+///   7. register_macro_decls additively + rewrite_uses_macro_only
+///   8. validate_scopes_after_expand
+export fn resolve_and_expand_program(stmts: List<SStmt>) -> NameResolveResult {
+    let pre = resolve_names_pre_expand(stmts)
+    if pre.had_error == 1 {
+        return validate_scopes_after_expand(pre.stmts, pre.state)
+    }
+    let plan = expand_macros_collect(pre.stmts)
+    if !plan_has_work(plan) {
+        return validate_scopes_after_expand(pre.stmts, pre.state)
+    }
+    let handle = avra_resolver_ctx_push(pre.state)
+    populate_resolver_data(pre.state, pre.stmts)
+    let expanded = expand_macros_eval_with_state(plan, pre.state)
+    avra_resolver_ctx_pop()
+    let post_state = register_macro_decls(pre.state, expanded)
+    let rewritten = rewrite_uses_macro_only(expanded, post_state)
+    validate_scopes_after_expand(rewritten, post_state)
 }

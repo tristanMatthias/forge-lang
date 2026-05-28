@@ -17,8 +17,7 @@ use diagnostics.{DiagnosticBag, bag_merge, bag_has_errors}
 use features.quote_expr.{lower_quotes}
 use desugar.{desugar_program, inject_intrinsics}
 use features.component_decl.{expand_components}
-use resolve.{resolve_names}
-use features.comptime.{expand_macros, run_comptime}
+use features.comptime.{resolve_and_expand_program, run_comptime}
 use typeck.{typecheck_program}
 use features.generics.{monomorphize}
 
@@ -37,12 +36,15 @@ export fn check_source(source: string) -> DiagnosticBag {
     // source declares Result directly.
     let with_intrinsics = inject_intrinsics(desugared)
     let expanded = expand_components(with_intrinsics)
-    let named = resolve_names(expanded)
+    // Option C pipeline: macro-introduced decls register before
+    // scope validation runs. Replaces the legacy
+    // `resolve_names → expand_macros` shape which was per-pass
+    // non-idempotent and missed macro-emitted top-level decls.
+    let named = resolve_and_expand_program(expanded)
     if named.had_error {
         return named.bag
     }
-    let expanded_macros = expand_macros(named.stmts)
-    let post_comptime = run_comptime(expanded_macros)
+    let post_comptime = run_comptime(named.stmts)
     let tc_result = typecheck_program(post_comptime)
     if bag_has_errors(tc_result.bag) {
         return tc_result.bag

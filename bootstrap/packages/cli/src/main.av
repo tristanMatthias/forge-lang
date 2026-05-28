@@ -78,7 +78,7 @@ use @std.avrac.features.eval.{render_value, eval_expression_source, execute_prog
 use @std.avrac.desugar.{desugar_program, inject_intrinsics}
 use @std.avrac.features.component_decl.{expand_components}
 use @std.avrac.features.marshal.{derive_marshal}
-use @std.avrac.resolve.{resolve_names, resolve_names_pre_expand, register_decls, register_macro_decls, rewrite_uses, rewrite_uses_macro_only, validate_scopes_after_expand, NameResolveResult, ResolverState}
+use @std.avrac.resolve.{resolve_names, NameResolveResult}
 use @std.avrac.features.modules.{resolve_module_files, modules_dirname, find_packages_dir, package_root_for_file, dedup_modules, resolve_dir_module_body, synthesize_subdir_module_decls}
 use @std.avrac.features.modules.{load_package_config, load_manifest, Dep}
 use @std.avrac.features.modules.{filter_to_target_unit, list_avra_module_subdirs}
@@ -102,7 +102,7 @@ use @std.avrac.build.{
     DepGraph, Unit, build_graph,
 }
 use @std.avrac.typeck.{typecheck_program}
-use @std.avrac.features.comptime.{run_comptime, expand_macros, expand_macros_collect, expand_macros_eval, expand_macros_eval_with_state, plan_has_work, needs_expand_pass, populate_resolver_data}
+use @std.avrac.features.comptime.{run_comptime, resolve_and_expand_program}
 use @std.avrac.features.quote_expr.{lower_quotes}
 use @std.avrac.diagnostics.{bag_has_errors, bag_has_warnings, bag_new, bag_report, diag_error, diag_ice, span_dummy, DiagCode, DiagnosticBag}
 use @std.avrac.diagnostics.{render_bag, render_bag_json}
@@ -130,78 +130,14 @@ fn fail(message: string) {
     exit(1)
 }
 
-// ── ResolverCtx state stack (step 5) ──
-//
-// resolve_and_expand pushes the active resolver state onto the
-// runtime stack before invoking expand_macros, pops after. Macros
-// invoked via 2-arg @expand receive a ResolverCtx { id } pointing
-// at the top of stack; ctx_* dispatchers in eval read the state
-// off the stack to answer queries.
-extern fn avra_resolver_ctx_push(state: ResolverState) -> int
-extern fn avra_resolver_ctx_pop()
-
-/// Compose the two-phase `resolve_names` halves with `expand_macros`
-/// so macro-emitted top-level decls become visible to scope
-/// validation. Replaces the legacy `resolve_names → expand_macros`
-/// sequence at every compile pipeline site.
-///
-/// The pipeline-fix lives here: the previous order ran scope
-/// validation BEFORE expand_macros, so a `@expand` macro emitting
-/// `Stmt.Function("_gen", ...)` saw its call site error out with
-/// "undefined variable _gen". Now we register decls + rewrite uses
-/// first (without validating scopes), let expand_macros splice its
-/// output, then run scope validation over the post-expand AST so the
-/// macro-emitted decls are in the scope-validator's view.
-///
-/// Note: this MINIMAL form skips the post-expand re-register pass.
-/// That means call sites referencing macro-emitted names from
-/// pre-existing decls (e.g., `main()` calling a macro-emitted `_gen()`)
-/// are visible to scope-validation only via the global symbol table,
-/// not the rewritten QualifiedIdent. The downstream codegen lookup
-/// handles bare Ident resolution against the post-expand symbol table.
+/// Thin wrapper around the shared `resolve_and_expand_program` in
+/// features/comptime/expand_macro.av — kept here as a stable name
+/// for the CLI's local call sites. The full Option C pipeline
+/// (resolve → collect → eval → register_macro_decls →
+/// rewrite_uses_macro_only → validate_scopes) is implemented once,
+/// in the comptime module, and every site uses it.
 fn resolve_and_expand(stmts: List<SStmt>) -> NameResolveResult {
-    let pre = resolve_names_pre_expand(stmts)
-    if pre.had_error == 1 {
-        // Module-resolution errors are fatal — bail before running
-        // expand_macros_eval over a borked AST.
-        return validate_scopes_after_expand(pre.stmts, pre.state)
-    }
-    // Phase 1 (post-resolve): collect every @expand site by source
-    // position. The plan carries through to the eval phase below.
-    // rewrite_uses preserves SStmt source positions, so collecting
-    // after resolve is equivalent to collecting before — one call.
-    let plan = expand_macros_collect(pre.stmts)
-    // Fast-path: no macros to expand → skip the eval + partial
-    // re-resolve, hand straight off to scope validation.
-    if !plan_has_work(plan) {
-        return validate_scopes_after_expand(pre.stmts, pre.state)
-    }
-    // Phase 2 (post-resolve): push the resolver state onto the
-    // runtime stack so 2-arg macros can call ctx_* fns, populate
-    // the C-side resolver-data layer, evaluate.
-    let handle = avra_resolver_ctx_push(pre.state)
-    // Populate the C-side resolver-data layer so ctx_* queries from
-    // inside macro bodies can answer with real data — aliases,
-    // global decls, and TypeDecl field shapes. The _with_state
-    // variant re-populates between fixpoint iterations + after every
-    // splice so a later macro sees names introduced by an earlier one.
-    populate_resolver_data(pre.state, pre.stmts)
-    let expanded = expand_macros_eval_with_state(plan, pre.state)
-    avra_resolver_ctx_pop()
-    // Partial re-resolve (step 4 of expand-pipeline doc):
-    //   1. Additively register the macro-emitted decls into the
-    //      existing ResolverState — no fresh tree/alias rebuild
-    //      that would double-bag pre-existing diagnostics.
-    //   2. Re-rewrite ONLY from_macro=true stmts against the
-    //      augmented state — hand-written decls were already
-    //      rewritten in the pre-expand pass.
-    //   3. Scope-validate against the augmented state. resolve_program
-    //      inside validate_scopes_after_expand builds a fresh fn
-    //      registry from the full AST, so macro-introduced fns
-    //      resolve correctly at call sites.
-    let post_state = register_macro_decls(pre.state, expanded)
-    let rewritten = rewrite_uses_macro_only(expanded, post_state)
-    validate_scopes_after_expand(rewritten, post_state)
+    resolve_and_expand_program(stmts)
 }
 
 /// Render a diagnostic bag in either human or JSON form, picked

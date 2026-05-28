@@ -14,8 +14,7 @@ use features.quote_expr.{lower_quotes}
 use desugar.{desugar_program, inject_intrinsics}
 use features.component_decl.{expand_components}
 use features.marshal.{derive_marshal}
-use resolve.{resolve_names}
-use features.comptime.{expand_macros, run_comptime}
+use features.comptime.{resolve_and_expand_program, run_comptime}
 use typeck.{typecheck_program}
 use features.generics.{monomorphize}
 use diagnostics.{bag_has_errors, render_bag}
@@ -60,13 +59,15 @@ export fn build_binary(target: CompileTarget) -> Result<string, string> {
     // AND its methods in the same pass. Zero-cost when no
     // @marshal annotation exists (early-out).
     let with_marshal = derive_marshal(expanded)
-    let named = resolve_names(with_marshal)
+    // Option C pipeline: macro-introduced decls register before
+    // scope validation runs. Single source of truth in
+    // features/comptime/expand_macro.av.
+    let named = resolve_and_expand_program(with_marshal)
     if bag_has_errors(named.bag) || named.had_error {
         render_bag("", target.diag_filename, named.bag)
         return Result.Err(named.error_message)
     }
-    let expanded_macros = expand_macros(named.stmts)
-    let post_comptime = run_comptime(expanded_macros)
+    let post_comptime = run_comptime(named.stmts)
     let tc_result = typecheck_program(post_comptime)
     if bag_has_errors(tc_result.bag) {
         render_bag("", target.diag_filename, tc_result.bag)
