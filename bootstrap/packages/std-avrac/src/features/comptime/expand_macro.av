@@ -44,7 +44,7 @@
 use core.{Stmt, SStmt, Expr, SExpr, ValueType, sstmt_at, sstmt_mark_from_macro, find_annotation, stmt_unwrap, exit, type_qualified_name}
 use resolve.{ResolverState, NameResolveResult, register_macro_decls, resolve_names_pre_expand, rewrite_uses_macro_only, validate_scopes_after_expand}
 use features.comptime.{CompTimeRegistry, comptime_lookup, collect_comptime_fns, value_to_stmt, value_to_stmt_list, stmt_to_value}
-use features.eval.{Runtime, Value, StructField, value_struct, value_string, value_number, value_null, value_list, value_enum, eval_expr, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message, path_last_segment}
+use features.eval.{Runtime, Value, StructField, struct_field, value_struct, value_string, value_number, value_null, value_list, value_enum, eval_expr, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message, path_last_segment}
 use features.quote_expr.{construct_expr}
 use diagnostics.{DiagnosticBag, DiagCode, Span, bag_new, bag_report, bag_merge, diag_error, diag_warning, span_at}
 use list_ops.{list_concat, list_contains_str}
@@ -754,9 +754,9 @@ fn build_annotated_decl(stmt_v: Value, decl_name: string, current_module: string
     let canonical = type_qualified_name(current_module, decl_name)
     let annotation_v = build_annotation_value(original_stmt, runtime)
     mut fields: List<StructField> = []
-    fields.push(StructField { name: "stmt", value: stmt_v })
-    fields.push(StructField { name: "annotation", value: annotation_v })
-    fields.push(StructField { name: "canonical_path", value: value_string(canonical) })
+    fields.push(struct_field("stmt", stmt_v))
+    fields.push(struct_field("annotation", annotation_v))
+    fields.push(struct_field("canonical_path", value_string(canonical)))
     value_struct("@std::avrac::features::comptime::macro_types::AnnotatedDecl", fields)
 }
 
@@ -780,8 +780,8 @@ fn build_annotation_value(stmt: Stmt, runtime: Runtime) -> Value {
         }
     }
     mut ann_fields: List<StructField> = []
-    ann_fields.push(StructField { name: "name", value: value_string("expand") })
-    ann_fields.push(StructField { name: "args", value: value_list(args_values) })
+    ann_fields.push(struct_field("name", value_string("expand")))
+    ann_fields.push(struct_field("args", value_list(args_values)))
     value_struct("@std::avrac::core::Annotation", ann_fields)
 }
 
@@ -792,11 +792,11 @@ fn build_annotation_value(stmt: Stmt, runtime: Runtime) -> Value {
 /// doesn't propagate the annotation's per-arg span to invoke_macro.
 fn build_arg_sexpr_value(e: Expr, runtime: Runtime) -> Value {
     mut sexpr_fields: List<StructField> = []
-    sexpr_fields.push(StructField { name: "node", value: build_expr_value(e, runtime) })
-    sexpr_fields.push(StructField { name: "line", value: value_number("0") })
-    sexpr_fields.push(StructField { name: "col", value: value_number("0") })
-    sexpr_fields.push(StructField { name: "ty", value: build_value_type_unknown() })
-    sexpr_fields.push(StructField { name: "file", value: value_string("") })
+    sexpr_fields.push(struct_field("node", build_expr_value(e, runtime)))
+    sexpr_fields.push(struct_field("line", value_number("0")))
+    sexpr_fields.push(struct_field("col", value_number("0")))
+    sexpr_fields.push(struct_field("ty", build_value_type_unknown()))
+    sexpr_fields.push(struct_field("file", value_string("")))
     value_struct("@std::avrac::core::SExpr", sexpr_fields)
 }
 
@@ -849,7 +849,7 @@ fn decl_name_of(stmt: Stmt) -> string {
 /// compiler-side dispatchers in `features/eval/mod.av`.
 fn build_resolver_ctx(handle: int) -> Value {
     mut fields: List<StructField> = []
-    fields.push(StructField { name: "id", value: value_number(string(handle)) })
+    fields.push(struct_field("id", value_number(string(handle))))
     value_struct("@std::avrac::features::comptime::resolver_ctx::ResolverCtx", fields)
 }
 

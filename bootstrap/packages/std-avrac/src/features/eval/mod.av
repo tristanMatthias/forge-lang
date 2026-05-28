@@ -48,6 +48,15 @@ export type StructField = {
     value: Value,
 }
 
+/// Build a StructField in one expression. Lets callers write
+/// `fields.push(struct_field("x", v))` instead of
+/// `fields.push(StructField { name: "x", value: v })`. 18+ sites
+/// across expand_macro and eval used the long form before this
+/// shorthand landed.
+export fn struct_field(name: string, value: Value) -> StructField {
+    StructField { name, value }
+}
+
 /// Tagged-union value handed back by the evaluator. `kind` selects
 /// which trailing fields are populated. Phase 6 of Components V2
 /// (vez6.6.4) added the `enum_*` fields so eval can carry runtime
@@ -1398,8 +1407,8 @@ fn lookup_type_with_depth(name: string, depth_remaining: int, visited: List<stri
             build_resolved_type(ftype_canonical, "primitive", empty_fields)
         }
         mut field_payload: List<StructField> = []
-        field_payload.push(StructField { name: "name", value: value_string(fname) })
-        field_payload.push(StructField { name: "ty", value: ty_value })
+        field_payload.push(struct_field("name", value_string(fname)))
+        field_payload.push(struct_field("ty", ty_value))
         field_values.push(value_struct("@std::avrac::features::comptime::ResolvedField", field_payload))
         i = i + 1
     }
@@ -1411,11 +1420,11 @@ fn lookup_type_with_depth(name: string, depth_remaining: int, visited: List<stri
 /// result. `variants` is always empty in the current data layer.
 fn build_resolved_type(canonical: string, kind_str: string, fields: List<Value>) -> Value {
     mut payload: List<StructField> = []
-    payload.push(StructField { name: "canonical_name", value: value_string(canonical) })
-    payload.push(StructField { name: "kind", value: value_enum("TypeKind", kind_str, []) })
-    payload.push(StructField { name: "fields", value: value_list(fields) })
+    payload.push(struct_field("canonical_name", value_string(canonical)))
+    payload.push(struct_field("kind", value_enum("TypeKind", kind_str, [])))
+    payload.push(struct_field("fields", value_list(fields)))
     let empty_variants: List<Value> = []
-    payload.push(StructField { name: "variants", value: value_list(empty_variants) })
+    payload.push(struct_field("variants", value_list(empty_variants)))
     value_struct("@std::avrac::features::comptime::ResolvedType", payload)
 }
 
@@ -1524,7 +1533,7 @@ fn eval_struct_lit(runtime: Runtime, type_name: string, inits: List<FieldInit>) 
                 error_message: r.error_message,
             }
         }
-        fields.push(StructField { name: init.name, value: r.value })
+        fields.push(struct_field(init.name, r.value))
         current = r.runtime
         i = i + 1
     }
