@@ -19,7 +19,8 @@
 // macro-produced Stmt should still go through the normal fold pass
 // so any `@comptime` calls inside its body fold correctly.
 
-use core.{Stmt, SStmt, Expr, SExpr, sstmt_at, sstmt_mark_from_macro, find_annotation, stmt_unwrap, exit}
+use core.{Stmt, SStmt, Expr, SExpr, FieldEntry, ValueType, sstmt_at, sstmt_mark_from_macro, find_annotation, stmt_unwrap, exit, type_qualified_name}
+use resolve.{ResolverState}
 use features.comptime.{CompTimeRegistry, comptime_lookup, collect_comptime_fns, value_to_stmt, value_to_stmt_list, stmt_to_value}
 use features.eval.{Runtime, Value, StructField, value_struct, value_string, value_number, value_null, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message}
 use list_ops.{list_concat}
@@ -35,6 +36,88 @@ extern fn avra_resolver_ctx_push(state: ptr) -> int
 extern fn avra_resolver_ctx_pop()
 extern fn avra_resolver_ctx_get(handle: int) -> ptr
 extern fn avra_resolver_ctx_top() -> int
+
+// ── Resolver-data layer (step 5 of expand-pipeline doc) ──
+//
+// C-side scratch space populated before invoking each macro. Macros
+// call ctx_* fns; the eval dispatch reads from these via getters
+// instead of trying to introspect the opaque ResolverState ptr.
+//
+// `avra_rd_clear` resets all storage. We then call
+// `avra_rd_set_current_module`, `avra_rd_add_alias`,
+// `avra_rd_add_global` etc to populate. The macro reads them
+// during eval. The next macro invocation clears and refills.
+
+extern fn avra_rd_clear()
+extern fn avra_rd_set_current_module(s: string)
+extern fn avra_rd_add_alias(short_name: string, canonical: string)
+extern fn avra_rd_add_global(short_name: string, canonical: string)
+extern fn avra_rd_begin_type(canonical: string, kind: string) -> int
+extern fn avra_rd_add_type_field(type_id: int, field_name: string, field_type_canonical: string)
+
+/// Push the active resolver state's aliases + global decls + type
+/// field info into the C-side resolver-data layer so `ctx_*` queries
+/// from inside a macro body can answer with real data. Called once
+/// per `expand_macros_eval` invocation; the data layer survives for
+/// the full eval pass. current_module is set to "" for now — the
+/// per-site tracking required to fill it accurately lives in
+/// later work (see step 5 limitations in the handoff doc).
+export fn populate_resolver_data(state: ResolverState, stmts: List<SStmt>) {
+    avra_rd_clear()
+    avra_rd_set_current_module("")
+    for a in state.aliases {
+        // seed-typeck workaround: bind field accesses to locals
+        // before passing to extern fns (see global_item_reg_build).
+        let sn = a.short_name
+        let canon = a.canonical
+        avra_rd_add_alias(sn, canon)
+    }
+    for g in state.graph.all_items {
+        let sn = g.short_name
+        let canon = g.canonical
+        avra_rd_add_global(sn, canon)
+    }
+    populate_type_fields(stmts, "")
+}
+
+fn populate_type_fields(stmts: List<SStmt>, mod_path: string) {
+    for ss in stmts {
+        let inner = stmt_unwrap(ss.node)
+        match inner {
+            .Module(name, body) -> {
+                let child_path = type_qualified_name(mod_path, name)
+                populate_type_fields(body, child_path)
+            }
+            .TypeDecl(name, _, fields) -> {
+                let canonical = type_qualified_name(mod_path, name)
+                let type_id = avra_rd_begin_type(canonical, "struct")
+                for f in fields {
+                    let fname = f.name
+                    let ftype = vtype_canonical_name(f.resolved)
+                    avra_rd_add_type_field(type_id, fname, ftype)
+                }
+            }
+            _ -> {}
+        }
+    }
+}
+
+fn vtype_canonical_name(vt: ValueType) -> string {
+    match vt {
+        .Int -> "int"
+        .Bool -> "bool"
+        .Float -> "float"
+        .Str -> "string"
+        .Bytes -> "bytes"
+        .Void -> "void"
+        .Ptr -> "ptr"
+        .Struct(name, _) -> name
+        .Enum(name, _, _) -> name
+        .Newtype(name, _, _) -> name
+        .Trait(name, _) -> name
+        _ -> ""
+    }
+}
 
 // ── Option C: collect + eval split (step 4 of expand-pipeline doc) ──
 

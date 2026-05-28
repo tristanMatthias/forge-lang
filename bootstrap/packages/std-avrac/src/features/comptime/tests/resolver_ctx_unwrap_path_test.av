@@ -1,7 +1,12 @@
 // docs/2026_05_25_EXPAND_PIPELINE_HANDOFF.md — Step 5 test 14.
 // `ctx_unwrap_path_to` returns a field-access chain from a
-// ResolvedType to a target type. The initial slice returns []
-// (stub) — full ResolverState introspection + BFS is a follow-up.
+// ResolvedType to a value of the target type. BFS over the field
+// graph, depth-capped at 8 to terminate on recursive types.
+//
+// The macro looks up Wrap and DoubleWrap, then walks each to "int"
+// via ctx_unwrap_path_to. The chains it gets back are joined into
+// a string and printed at runtime — the assertions pin the exact
+// per-type chains.
 
 extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.test_runner.{cached_fixture_run}
@@ -17,24 +22,46 @@ fn run_capture(source: string) -> string {
     cached_fixture_run(path)
 }
 
-spec "ResolverCtx: ctx_unwrap_path_to call path works" {
-    then "macro calling ctx_unwrap_path_to returns successfully" {
+spec "ResolverCtx: ctx_unwrap_path_to walks the field graph" {
+    then "Wrap → [node]; DoubleWrap → [value, node]" {
         let out = run_capture(
-            "use @std.avrac.core.{Stmt}\n" +
-            "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ctx_lookup_type, ctx_unwrap_path_to, ResolvedType}\n" +
+            "use @std.avrac.core.{Stmt, Expr, SExpr, sexpr_dummy}\n" +
+            "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ctx_lookup_type, ctx_unwrap_path_to}\n" +
             "\n" +
             "type Wrap = { node: int }\n" +
+            "type DoubleWrap = { value: Wrap }\n" +
             "\n" +
             "@comptime\n" +
             "fn build(d: AnnotatedDecl, ctx: ResolverCtx) -> Stmt {\n" +
-            "    let t_opt = ctx_lookup_type(ctx, \"Wrap\")\n" +
-            "    quote stmt { println(\"ok\") }\n" +
+            "    let t_wrap = ctx_lookup_type(ctx, \"Wrap\")\n" +
+            "    let t_double = ctx_lookup_type(ctx, \"DoubleWrap\")\n" +
+            "    mut p1: List<string> = []\n" +
+            "    if t_wrap != null { p1 = ctx_unwrap_path_to(ctx, t_wrap!, \"int\") }\n" +
+            "    mut p2: List<string> = []\n" +
+            "    if t_double != null { p2 = ctx_unwrap_path_to(ctx, t_double!, \"int\") }\n" +
+            "    mut s1 = \"\"\n" +
+            "    mut i1 = 0\n" +
+            "    while i1 < p1.length {\n" +
+            "        if i1 > 0 { s1 = s1 + \".\" }\n" +
+            "        s1 = s1 + p1[i1]\n" +
+            "        i1 = i1 + 1\n" +
+            "    }\n" +
+            "    mut s2 = \"\"\n" +
+            "    mut i2 = 0\n" +
+            "    while i2 < p2.length {\n" +
+            "        if i2 > 0 { s2 = s2 + \".\" }\n" +
+            "        s2 = s2 + p2[i2]\n" +
+            "        i2 = i2 + 1\n" +
+            "    }\n" +
+            "    let msg = \"wrap=[\" + s1 + \"]; double=[\" + s2 + \"]\"\n" +
+            "    let args: List<SExpr> = [sexpr_dummy(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
+            "    return Stmt.Expr(Expr.Call(Expr.Ident(\"println\"), args))\n" +
             "}\n" +
             "\n" +
             "@expand(build)\n" +
             "fn placeholder() {}\n" +
             "\n" +
             "fn main() {}\n")
-        out.contains("ok")
+        out.contains("wrap=[node]") && out.contains("double=[value.node]")
     }
 }

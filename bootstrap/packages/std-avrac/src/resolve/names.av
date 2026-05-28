@@ -692,9 +692,7 @@ export fn rewrite_uses_macro_only(stmts: List<SStmt>, state: ResolverState) -> L
 
 fn rewrite_macro_stmts(ctx: NameCtx, stmts: List<SStmt>) -> List<SStmt> {
     mut out: List<SStmt> = []
-    mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
+    for ss in stmts {
         if ss.from_macro {
             let rewritten_node = rewrite_stmt(ctx, ss.node)
             out.push(SStmt {
@@ -730,7 +728,6 @@ fn rewrite_macro_stmts(ctx: NameCtx, stmts: List<SStmt>) -> List<SStmt> {
                 _ -> out.push(ss)
             }
         }
-        i = i + 1
     }
     out
 }
@@ -754,16 +751,8 @@ export fn register_macro_decls(state: ResolverState, stmts: List<SStmt>) -> Reso
 
     // Augment graph.all_items by appending the new entries.
     mut updated_all: List<GraphItem> = []
-    mut i = 0
-    while i < state.graph.all_items.length {
-        updated_all.push(state.graph.all_items[i])
-        i = i + 1
-    }
-    mut j = 0
-    while j < new_items.length {
-        updated_all.push(new_items[j])
-        j = j + 1
-    }
+    for old in state.graph.all_items { updated_all.push(old) }
+    for added in new_items { updated_all.push(added) }
     let new_graph = ModuleGraph {
         modules: state.graph.modules,
         by_path: state.graph.by_path,
@@ -782,27 +771,19 @@ export fn register_macro_decls(state: ResolverState, stmts: List<SStmt>) -> Reso
     // C-side ptr; appending entries is a fresh insert per name and
     // doesn't touch existing keys.
     mut canonicals_ext: List<string> = []
-    let m_old = state.global_index.canonicals.length
-    mut k = 0
-    while k < state.global_index.canonicals.length {
-        canonicals_ext.push(state.global_index.canonicals[k])
-        k = k + 1
-    }
-    mut p = 0
-    while p < new_items.length {
-        let it = new_items[p]
+    for old in state.global_index.canonicals { canonicals_ext.push(old) }
+    for it in new_items {
         // Same seed typeck workaround as `global_item_reg_build`:
         // bind field accesses to locals before passing to method
         // calls or extern fns, or codegen bails with "field access
         // on non-struct value, ty=<unknown>".
-        let sn_p = it.short_name
-        let canon_p = it.canonical
-        if avra_map_has_cstr(state.global_index.idx, sn_p) == 0 {
+        let sn = it.short_name
+        let canon = it.canonical
+        if avra_map_has_cstr(state.global_index.idx, sn) == 0 {
             let n = canonicals_ext.length
-            canonicals_ext.push(canon_p)
-            avra_map_set_cstr(state.global_index.idx, sn_p, n)
+            canonicals_ext.push(canon)
+            avra_map_set_cstr(state.global_index.idx, sn, n)
         }
-        p = p + 1
     }
     let new_global_index = GlobalItemReg { canonicals: canonicals_ext, idx: state.global_index.idx }
 
@@ -818,9 +799,7 @@ export fn register_macro_decls(state: ResolverState, stmts: List<SStmt>) -> Reso
 
 fn collect_macro_items(stmts: List<SStmt>, mod_path: string, acc: List<GraphItem>) {
     mut out = acc
-    mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
+    for ss in stmts {
         match ss.node {
             .Module(name, body) -> {
                 let inner_path = type_qualified_name(mod_path, name)
@@ -832,7 +811,6 @@ fn collect_macro_items(stmts: List<SStmt>, mod_path: string, acc: List<GraphItem
                 }
             }
         }
-        i = i + 1
     }
 }
 

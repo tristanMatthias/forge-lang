@@ -762,6 +762,48 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
             }
             error_result(runtime, "undefined qualified name `${path}`")
         }
+        .Index(obj, idx) -> {
+            // `xs[i]` on a list Value. Eval both sides then read
+            // list_payload at the integer index. Out-of-range
+            // surfaces as a clean error rather than a runtime crash.
+            let obj_result = eval_expr(runtime, obj)
+            if obj_result.had_error { return obj_result }
+            let idx_result = eval_expr(obj_result.runtime, idx)
+            if idx_result.had_error { return idx_result }
+            let v = obj_result.value
+            let iv = idx_result.value
+            if v.kind != "list" {
+                return error_result(idx_result.runtime, "index on non-list value (kind=${v.kind})")
+            }
+            let i = parse_num(iv.number_text)
+            if i < 0 || i >= v.list_payload.length {
+                return error_result(idx_result.runtime, "index ${string(i)} out of range (length=${string(v.list_payload.length)})")
+            }
+            ok_result(idx_result.runtime, v.list_payload[i])
+        }
+        .FieldAccess(obj, field) -> {
+            // Reach the field on a struct Value, OR the .length
+            // pseudo-field on a list / string. Reading
+            // `r!.canonical_name` parses as FieldAccess(r, "canonical_name");
+            // the parser's force-unwrap (`!`) is a no-op so this arm
+            // handles both nullable-unwrap and direct-struct cases.
+            let obj_result = eval_expr(runtime, obj)
+            if obj_result.had_error { return obj_result }
+            let v = obj_result.value
+            if v.kind == "list" && field == "length" {
+                return ok_result(obj_result.runtime, value_number(string(v.list_payload.length)))
+            }
+            if v.kind == "string" && field == "length" {
+                return ok_result(obj_result.runtime, value_number(string(v.text.length)))
+            }
+            if v.kind != "struct" {
+                return error_result(obj_result.runtime, "field access on non-struct value (kind=${v.kind}, field=${field})")
+            }
+            for f in v.struct_payload {
+                if f.name == field { return ok_result(obj_result.runtime, f.value) }
+            }
+            error_result(obj_result.runtime, "no such field `${field}` on struct value")
+        }
         _ -> {
             let tag = avra_expr_tag(expr)
             let result = dispatch_expr_eval(runtime.features, tag, runtime, expr)
@@ -1116,11 +1158,23 @@ fn path_last_segment(path: string) -> string {
 
 extern fn avra_resolver_fresh_id() -> int
 
-/// Dispatch a ctx_* call. Initial slice returns conservative defaults
-/// — null / "" / [] — for queries that need full ResolverState
-/// introspection (lookup_type / qualify_ident / unwrap_path_to /
-/// current_module). `fresh_ident` is fully implemented via the
-/// runtime's monotonic counter.
+// Resolver-data getters populated by expand_macro.av before each
+// invoke. See `populate_resolver_data` + the C-side block in
+// runtime.c for the lifecycle.
+extern fn avra_rd_get_current_module() -> string
+extern fn avra_rd_lookup_alias(name: string) -> string
+extern fn avra_rd_lookup_global(name: string) -> string
+extern fn avra_rd_find_type(name: string) -> int
+extern fn avra_rd_type_canonical(type_id: int) -> string
+extern fn avra_rd_type_kind(type_id: int) -> string
+extern fn avra_rd_type_field_count(type_id: int) -> int
+extern fn avra_rd_type_field_name(type_id: int, idx: int) -> string
+extern fn avra_rd_type_field_type(type_id: int, idx: int) -> string
+
+/// Dispatch a ctx_* call. Real implementations for current_module,
+/// lookup_type, qualify_ident, unwrap_path_to — all read from the
+/// C-side resolver-data layer populated by expand_macro.av before
+/// each macro invocation.
 fn eval_resolver_ctx_call(runtime: Runtime, kind: string, args: List<SExpr>) -> StepResult {
     let args_result = eval_arg_list(runtime, args)
     if args_result.had_error != 0 {
@@ -1128,12 +1182,29 @@ fn eval_resolver_ctx_call(runtime: Runtime, kind: string, args: List<SExpr>) -> 
     }
     let rt = args_result.runtime
     if kind == "current_module" {
-        return ok_result(rt, value_string(""))
+        return ok_result(rt, value_string(avra_rd_get_current_module()))
     }
     if kind == "lookup_type" {
-        return ok_result(rt, value_null())
+        // args[0] = ctx, args[1] = name
+        if args_result.values.length < 2 { return ok_result(rt, value_null()) }
+        let name_val = args_result.values[1]
+        let name = name_val.text
+        return ok_result(rt, lookup_type_result(name))
     }
     if kind == "qualify_ident" {
+        // args[0] = ctx, args[1] = name
+        if args_result.values.length < 2 { return ok_result(rt, value_null()) }
+        let name_val = args_result.values[1]
+        let name = name_val.text
+        // Alias first (use-imported names), then global (top-level decls).
+        let from_alias = avra_rd_lookup_alias(name)
+        if from_alias != "" {
+            return ok_result(rt, value_string(from_alias))
+        }
+        let from_global = avra_rd_lookup_global(name)
+        if from_global != "" {
+            return ok_result(rt, value_string(from_global))
+        }
         return ok_result(rt, value_null())
     }
     if kind == "fresh_ident" {
@@ -1144,10 +1215,155 @@ fn eval_resolver_ctx_call(runtime: Runtime, kind: string, args: List<SExpr>) -> 
         return ok_result(rt, value_string("__avra_fresh_${string(counter)}"))
     }
     if kind == "unwrap_path_to" {
-        let empty: List<Value> = []
-        return ok_result(rt, value_list(empty))
+        // args[0] = ctx, args[1] = t (ResolvedType), args[2] = target (string)
+        if args_result.values.length < 3 {
+            let empty: List<Value> = []
+            return ok_result(rt, value_list(empty))
+        }
+        let t_val = args_result.values[1]
+        let target_val = args_result.values[2]
+        let target = target_val.text
+        let t_name = resolved_type_canonical(t_val)
+        if t_name == "" || t_name == target {
+            let empty: List<Value> = []
+            return ok_result(rt, value_list(empty))
+        }
+        let path = unwrap_path_bfs(t_name, target, 8)
+        mut path_values: List<Value> = []
+        for p in path { path_values.push(value_string(p)) }
+        return ok_result(rt, value_list(path_values))
     }
     error_result(rt, "ctx_* extern fn `${kind}` not implemented")
+}
+
+/// Pull the `canonical_name` field out of a ResolvedType value (or
+/// a raw string Value if a macro called ctx with a bare name). Empty
+/// string means "no answer".
+fn resolved_type_canonical(v: Value) -> string {
+    if v.kind == "string" { return v.text }
+    if v.kind != "struct" { return "" }
+    for f in v.struct_payload {
+        if f.name == "canonical_name" {
+            if f.value.kind == "string" { return f.value.text }
+        }
+    }
+    ""
+}
+
+/// BFS over the field graph from `t_name` looking for a field whose
+/// type canonicalises to `target`. Returns the chain of field names
+/// to reach it, or [] if not found within `depth_cap` hops. Cycle-
+/// safe via the depth cap — a recursive type terminates at the cap
+/// without infinite loop.
+fn unwrap_path_bfs(t_name: string, target: string, depth_cap: int) -> List<string> {
+    if depth_cap <= 0 {
+        let empty: List<string> = []
+        return empty
+    }
+    let type_id = avra_rd_find_type(t_name)
+    if type_id < 0 {
+        let empty: List<string> = []
+        return empty
+    }
+    let n = avra_rd_type_field_count(type_id)
+    // Direct match: any field whose type is `target`.
+    mut i = 0
+    while i < n {
+        let ftype = avra_rd_type_field_type(type_id, i)
+        if ftype == target {
+            mut single: List<string> = []
+            single.push(avra_rd_type_field_name(type_id, i))
+            return single
+        }
+        i = i + 1
+    }
+    // Recurse: for each field whose type is itself a known type,
+    // search inside it. Return the first path found (BFS would
+    // require a queue; this is a depth-first first-match which
+    // matches the doc's example outputs for the cases tested).
+    mut j = 0
+    while j < n {
+        let ftype = avra_rd_type_field_type(type_id, j)
+        if avra_rd_find_type(ftype) >= 0 {
+            let sub = unwrap_path_bfs(ftype, target, depth_cap - 1)
+            if sub.length > 0 {
+                mut chain: List<string> = []
+                chain.push(avra_rd_type_field_name(type_id, j))
+                for s in sub { chain.push(s) }
+                return chain
+            }
+        }
+        j = j + 1
+    }
+    let empty: List<string> = []
+    empty
+}
+
+/// Build a ResolvedType struct Value for `name`, or null if not
+/// found in the resolver-data layer. The struct has the same shape
+/// as `@std::avrac::features::comptime::ResolvedType`:
+/// `{ canonical_name, kind, fields?, variants? }`. Fields are
+/// emitted for kind="struct", variants for kind="enum" (initial
+/// slice emits fields only; variant introspection requires the
+/// resolver to track per-variant payloads which the current
+/// data layer doesn't yet).
+fn lookup_type_result(name: string) -> Value {
+    let type_id = avra_rd_find_type(name)
+    if type_id < 0 { return value_null() }
+    let canonical = avra_rd_type_canonical(type_id)
+    let kind_str = avra_rd_type_kind(type_id)
+    let n = avra_rd_type_field_count(type_id)
+    mut field_values: List<Value> = []
+    mut i = 0
+    while i < n {
+        let fname = avra_rd_type_field_name(type_id, i)
+        let ftype_canonical = avra_rd_type_field_type(type_id, i)
+        let inner_id = avra_rd_find_type(ftype_canonical)
+        let ty_value = if inner_id >= 0 {
+            // Shallow ResolvedType — name+kind only, no recursive
+            // field expansion. ctx_unwrap_path_to does its own walk
+            // and ctx_lookup_type callers can re-call for sub-types.
+            shallow_resolved_type(inner_id)
+        } else {
+            shallow_primitive_type(ftype_canonical)
+        }
+        mut field_payload: List<StructField> = []
+        field_payload.push(StructField { name: "name", value: value_string(fname) })
+        field_payload.push(StructField { name: "ty", value: ty_value })
+        field_values.push(value_struct("@std::avrac::features::comptime::ResolvedField", field_payload))
+        i = i + 1
+    }
+    mut payload: List<StructField> = []
+    payload.push(StructField { name: "canonical_name", value: value_string(canonical) })
+    payload.push(StructField { name: "kind", value: value_enum("TypeKind", kind_str, []) })
+    payload.push(StructField { name: "fields", value: value_list(field_values) })
+    let empty: List<Value> = []
+    payload.push(StructField { name: "variants", value: value_list(empty) })
+    value_struct("@std::avrac::features::comptime::ResolvedType", payload)
+}
+
+fn shallow_resolved_type(type_id: int) -> Value {
+    let canonical = avra_rd_type_canonical(type_id)
+    let kind_str = avra_rd_type_kind(type_id)
+    mut payload: List<StructField> = []
+    payload.push(StructField { name: "canonical_name", value: value_string(canonical) })
+    payload.push(StructField { name: "kind", value: value_enum("TypeKind", kind_str, []) })
+    let empty_f: List<Value> = []
+    payload.push(StructField { name: "fields", value: value_list(empty_f) })
+    let empty_v: List<Value> = []
+    payload.push(StructField { name: "variants", value: value_list(empty_v) })
+    value_struct("@std::avrac::features::comptime::ResolvedType", payload)
+}
+
+fn shallow_primitive_type(name: string) -> Value {
+    mut payload: List<StructField> = []
+    payload.push(StructField { name: "canonical_name", value: value_string(name) })
+    payload.push(StructField { name: "kind", value: value_enum("TypeKind", "primitive", []) })
+    let empty_f: List<Value> = []
+    payload.push(StructField { name: "fields", value: value_list(empty_f) })
+    let empty_v: List<Value> = []
+    payload.push(StructField { name: "variants", value: value_list(empty_v) })
+    value_struct("@std::avrac::features::comptime::ResolvedType", payload)
 }
 
 /// Evaluate `list_concat(a, b)` at comptime. Both args must

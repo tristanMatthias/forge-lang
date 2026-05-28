@@ -4665,3 +4665,161 @@ int64_t avra_resolver_fresh_id(void) {
     return avra_resolver_fresh_counter;
 }
 
+// ────────────────────────────────────────────────────────────────────
+// Resolver-data layer (Step 5 of expand-pipeline doc)
+// ────────────────────────────────────────────────────────────────────
+//
+// Per-macro-invocation scratch space populated by expand_macro.av
+// before invoking each macro. Macros call ctx_* fns which dispatch
+// through eval_resolver_ctx_call → these getters instead of
+// introspecting an opaque ResolverState ptr from Avra (no general
+// unsafe-cast facility exists).
+//
+// Lifecycle (per @expand site):
+//   1. expand_macro.av computes the current_module, aliases, globals,
+//      and type field info for this site.
+//   2. avra_rd_clear() resets all storage.
+//   3. avra_rd_set_*() / avra_rd_add_*() fills it.
+//   4. The macro runs; ctx_* read via avra_rd_lookup_*() / etc.
+//   5. Next site loops back to step 1.
+//
+// String storage: we hold references rather than copies. The AST
+// strings stay alive for the whole compile, so this is safe.
+
+#define AVRA_RD_MAX_ALIASES  16384
+#define AVRA_RD_MAX_TYPES    2048
+#define AVRA_RD_MAX_FIELDS   16384
+
+static const char* avra_rd_current_module_v = "";
+static const char* avra_rd_alias_keys[AVRA_RD_MAX_ALIASES];
+static const char* avra_rd_alias_vals[AVRA_RD_MAX_ALIASES];
+static int64_t avra_rd_alias_n = 0;
+static const char* avra_rd_global_keys[AVRA_RD_MAX_ALIASES];
+static const char* avra_rd_global_vals[AVRA_RD_MAX_ALIASES];
+static int64_t avra_rd_global_n = 0;
+static const char* avra_rd_type_canonicals[AVRA_RD_MAX_TYPES];
+static const char* avra_rd_type_kinds[AVRA_RD_MAX_TYPES];
+static int64_t avra_rd_type_field_starts[AVRA_RD_MAX_TYPES];
+static int64_t avra_rd_type_field_counts[AVRA_RD_MAX_TYPES];
+static int64_t avra_rd_type_n = 0;
+static const char* avra_rd_field_names[AVRA_RD_MAX_FIELDS];
+static const char* avra_rd_field_type_canonicals[AVRA_RD_MAX_FIELDS];
+static int64_t avra_rd_field_n = 0;
+
+void avra_rd_clear(void) {
+    avra_rd_current_module_v = "";
+    avra_rd_alias_n = 0;
+    avra_rd_global_n = 0;
+    avra_rd_type_n = 0;
+    avra_rd_field_n = 0;
+}
+
+void avra_rd_set_current_module(const char* s) {
+    avra_rd_current_module_v = s ? s : "";
+}
+
+const char* avra_rd_get_current_module(void) {
+    return avra_rd_current_module_v;
+}
+
+void avra_rd_add_alias(const char* short_name, const char* canonical) {
+    if (avra_rd_alias_n < AVRA_RD_MAX_ALIASES) {
+        avra_rd_alias_keys[avra_rd_alias_n] = short_name;
+        avra_rd_alias_vals[avra_rd_alias_n] = canonical;
+        avra_rd_alias_n++;
+    }
+}
+
+const char* avra_rd_lookup_alias(const char* name) {
+    for (int64_t i = 0; i < avra_rd_alias_n; i++) {
+        if (strcmp(avra_rd_alias_keys[i], name) == 0) return avra_rd_alias_vals[i];
+    }
+    return "";
+}
+
+void avra_rd_add_global(const char* short_name, const char* canonical) {
+    if (avra_rd_global_n < AVRA_RD_MAX_ALIASES) {
+        avra_rd_global_keys[avra_rd_global_n] = short_name;
+        avra_rd_global_vals[avra_rd_global_n] = canonical;
+        avra_rd_global_n++;
+    }
+}
+
+const char* avra_rd_lookup_global(const char* name) {
+    for (int64_t i = 0; i < avra_rd_global_n; i++) {
+        if (strcmp(avra_rd_global_keys[i], name) == 0) return avra_rd_global_vals[i];
+    }
+    return "";
+}
+
+// Returns the type id (index into avra_rd_type_*) for the new type.
+// Macros append fields via `avra_rd_add_type_field(type_id, ...)` until
+// they move on to the next type.
+int64_t avra_rd_begin_type(const char* canonical, const char* kind) {
+    if (avra_rd_type_n >= AVRA_RD_MAX_TYPES) return -1;
+    int64_t id = avra_rd_type_n;
+    avra_rd_type_canonicals[id] = canonical;
+    avra_rd_type_kinds[id] = kind ? kind : "";
+    avra_rd_type_field_starts[id] = avra_rd_field_n;
+    avra_rd_type_field_counts[id] = 0;
+    avra_rd_type_n++;
+    return id;
+}
+
+void avra_rd_add_type_field(int64_t type_id, const char* field_name, const char* field_type_canonical) {
+    if (type_id < 0 || type_id >= avra_rd_type_n) return;
+    if (avra_rd_field_n >= AVRA_RD_MAX_FIELDS) return;
+    avra_rd_field_names[avra_rd_field_n] = field_name;
+    avra_rd_field_type_canonicals[avra_rd_field_n] = field_type_canonical ? field_type_canonical : "";
+    avra_rd_field_n++;
+    avra_rd_type_field_counts[type_id]++;
+}
+
+// Look up a type by short_name OR canonical. Returns id or -1.
+int64_t avra_rd_find_type(const char* name) {
+    for (int64_t i = 0; i < avra_rd_type_n; i++) {
+        if (strcmp(avra_rd_type_canonicals[i], name) == 0) return i;
+        // also accept short-name suffix match (e.g. "Foo" matches "@user::ast::Foo")
+        const char* canonical = avra_rd_type_canonicals[i];
+        size_t cl = strlen(canonical);
+        size_t nl = strlen(name);
+        if (nl < cl) {
+            const char* tail = canonical + (cl - nl);
+            if (strcmp(tail, name) == 0) {
+                // make sure preceding char is ':' or start
+                if (tail == canonical || (tail >= canonical + 2 && *(tail-1) == ':' && *(tail-2) == ':')) {
+                    return i;
+                }
+            }
+        }
+    }
+    return -1;
+}
+
+const char* avra_rd_type_canonical(int64_t type_id) {
+    if (type_id < 0 || type_id >= avra_rd_type_n) return "";
+    return avra_rd_type_canonicals[type_id];
+}
+
+const char* avra_rd_type_kind(int64_t type_id) {
+    if (type_id < 0 || type_id >= avra_rd_type_n) return "";
+    return avra_rd_type_kinds[type_id];
+}
+
+int64_t avra_rd_type_field_count(int64_t type_id) {
+    if (type_id < 0 || type_id >= avra_rd_type_n) return 0;
+    return avra_rd_type_field_counts[type_id];
+}
+
+const char* avra_rd_type_field_name(int64_t type_id, int64_t idx) {
+    if (type_id < 0 || type_id >= avra_rd_type_n) return "";
+    if (idx < 0 || idx >= avra_rd_type_field_counts[type_id]) return "";
+    return avra_rd_field_names[avra_rd_type_field_starts[type_id] + idx];
+}
+
+const char* avra_rd_type_field_type(int64_t type_id, int64_t idx) {
+    if (type_id < 0 || type_id >= avra_rd_type_n) return "";
+    if (idx < 0 || idx >= avra_rd_type_field_counts[type_id]) return "";
+    return avra_rd_field_type_canonicals[avra_rd_type_field_starts[type_id] + idx];
+}
+

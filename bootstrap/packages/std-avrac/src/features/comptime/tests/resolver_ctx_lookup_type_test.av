@@ -1,9 +1,12 @@
 // docs/2026_05_25_EXPAND_PIPELINE_HANDOFF.md — Step 5 test 11.
-// `ctx_lookup_type` returns a ResolvedType or null. The initial
-// slice returns null for all names (stub) — full ResolverState
-// introspection is a follow-up. This test pins the call-path:
-// the macro can call ctx_lookup_type and use the null return
-// without crashing.
+// `ctx_lookup_type` resolves a source-level type name against the
+// active resolver state and returns a `ResolvedType` value. Null
+// for unknown names.
+//
+// The macro looks up two names — one known (`Foo`), one not
+// (`Nonexistent`) — and emits a Stmt that prints both results. The
+// runtime output proves the lookup actually returned data, not
+// the stub it used to.
 
 extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.test_runner.{cached_fixture_run}
@@ -19,10 +22,10 @@ fn run_capture(source: string) -> string {
     cached_fixture_run(path)
 }
 
-spec "ResolverCtx: ctx_lookup_type call path works" {
-    then "macro calling ctx_lookup_type returns successfully" {
+spec "ResolverCtx: ctx_lookup_type resolves declared types" {
+    then "known type returns its canonical name; unknown returns null" {
         let out = run_capture(
-            "use @std.avrac.core.{Stmt}\n" +
+            "use @std.avrac.core.{Stmt, Expr, SExpr, sexpr_dummy}\n" +
             "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ctx_lookup_type}\n" +
             "\n" +
             "type Foo = { x: int }\n" +
@@ -30,13 +33,20 @@ spec "ResolverCtx: ctx_lookup_type call path works" {
             "@comptime\n" +
             "fn build(d: AnnotatedDecl, ctx: ResolverCtx) -> Stmt {\n" +
             "    let r = ctx_lookup_type(ctx, \"Foo\")\n" +
-            "    quote stmt { println(\"ok\") }\n" +
+            "    let n = ctx_lookup_type(ctx, \"Nonexistent\")\n" +
+            "    mut known = \"NULL\"\n" +
+            "    if r != null { known = r!.canonical_name }\n" +
+            "    mut unknown = \"NULL\"\n" +
+            "    if n != null { unknown = n!.canonical_name }\n" +
+            "    let msg = \"known=\" + known + \"; unknown=\" + unknown\n" +
+            "    let args: List<SExpr> = [sexpr_dummy(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
+            "    return Stmt.Expr(Expr.Call(Expr.Ident(\"println\"), args))\n" +
             "}\n" +
             "\n" +
             "@expand(build)\n" +
             "fn placeholder() {}\n" +
             "\n" +
             "fn main() {}\n")
-        out.contains("ok")
+        out.contains("known=Foo") && out.contains("unknown=NULL")
     }
 }
