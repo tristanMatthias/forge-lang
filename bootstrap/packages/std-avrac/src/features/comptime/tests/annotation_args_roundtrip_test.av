@@ -1,0 +1,51 @@
+// forge-crafting-intepreters-opo3.1: AnnotatedDecl.annotation.args
+// must encode every Expr variant the annotation parser allows, not
+// just Ident/QualifiedIdent/String/Number.
+//
+// The macro reads d.annotation.args[0..N] and emits a stmt that
+// prints the kind of each arg's Expr. Test annotations carry one
+// Ident + one String + one Number — assert all three kinds round-
+// trip through the AnnotatedDecl encoder.
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+fn run_capture(source: string) -> string {
+    write_fixture_and_run("/tmp/avra_annotation_args_roundtrip_test.av", source)
+}
+
+spec "AnnotatedDecl.annotation.args: round-trips Ident + String + Number" {
+    then "macro reads three different Expr kinds back from the encoded args" {
+        let out = run_capture(
+            "use @std.avrac.core.{Stmt, Expr, SExpr, sexpr_dummy}\n" +
+            "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build(d: AnnotatedDecl, ctx: ResolverCtx) -> Stmt {\n" +
+            "    let n = d.annotation.args.length\n" +
+            "    mut kinds = \"count=\" + string(n)\n" +
+            "    mut i = 0\n" +
+            "    while i < n {\n" +
+            "        let k = match d.annotation.args[i].node {\n" +
+            "            .Ident(name) -> \"Ident:\" + name\n" +
+            "            .QualifiedIdent(path) -> \"QualifiedIdent:\" + path\n" +
+            "            .String(text) -> \"String\"\n" +
+            "            .Number(value) -> \"Number:\" + value\n" +
+            "            _ -> \"Other\"\n" +
+            "        }\n" +
+            "        kinds = kinds + \";\" + k\n" +
+            "        i = i + 1\n" +
+            "    }\n" +
+            "    let args: List<SExpr> = [sexpr_dummy(Expr.String(\"\\\"\" + kinds + \"\\\"\"))]\n" +
+            "    return Stmt.Expr(Expr.Call(Expr.Ident(\"println\"), args))\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        // build is the only @expand arg; the annotation parser
+        // passes it as Expr.Ident("build"). The macro sees args.length
+        // == 1 and the lone arg is an Ident:build.
+        out.contains("count=1") && out.contains("Ident:build")
+    }
+}

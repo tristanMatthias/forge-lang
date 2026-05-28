@@ -414,7 +414,7 @@ fn unwrap_quote_body(body: Expr) -> Expr {
 /// by tests that need them. Other variants pass through unchanged for
 /// now; downstream stages will see the raw AST and surface the missing
 /// case naturally.
-fn construct_expr(e: Expr) -> Expr {
+export fn construct_expr(e: Expr) -> Expr {
     match e {
         .Number(v) -> expr_ctor("Number", string_arg(v))
         .String(v) -> expr_ctor("String", string_arg(v))
