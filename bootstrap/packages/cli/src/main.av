@@ -151,16 +151,19 @@ fn render_bag_if_nonempty(json_output: bool, source: string, path: string, bag: 
     }
 }
 
-/// Render the bag and abort the process when the bag carries errors;
-/// no-op otherwise. Used at the monomorphize / codegen-prep stages
-/// where the right reaction to a hard error is "render the
-/// diagnostic and exit with `msg`" — the calling fn doesn't need
-/// to inspect the bag further once it carries errors.
-fn fail_on_bag_errors(bag: DiagnosticBag, json_output: bool, source: string, path: string, msg: string) {
-    if bag_has_errors(bag) {
-        render_bag_either(json_output, source, path, bag)
-        fail(msg)
-    }
+/// Render any diagnostics (errors or warnings) in the bag, then
+/// abort the process when the bag carries errors. The render step
+/// goes through `render_bag_if_nonempty` so a clean bag emits nothing.
+/// Replaces the typecheck / monomorphize post-pass shape
+///     render_bag_if_nonempty(...)
+///     if bag_has_errors(b) { fail(msg) }
+/// at every site that wants both diagnostics-up-to-the-user AND
+/// hard-stop-on-errors. (Sites that want hard-stop-only, with no
+/// warning render, don't exist in the current pipeline — the prior
+/// `fail_on_bag_errors` helper conflated the two.)
+fn render_and_fail_on_errors(bag: DiagnosticBag, json_output: bool, source: string, path: string, msg: string) {
+    render_bag_if_nonempty(json_output, source, path, bag)
+    if bag_has_errors(bag) { fail(msg) }
 }
 
 /// Wrap a codegen-side error string as an ICE diagnostic, render it,
@@ -3483,10 +3486,9 @@ fn main() {
             let named = marshal_and_resolve_or_fail(expanded, false, source, path)
             let post_comptime = run_comptime(named.stmts)
             let tc_result = typecheck_program(post_comptime)
-            render_bag_if_nonempty(false, source, path, tc_result.bag)
-            if bag_has_errors(tc_result.bag) { fail("type check failed") }
+            render_and_fail_on_errors(tc_result.bag, false, source, path, "type check failed")
             let mono = monomorphize(tc_result.stmts, tc_result.trait_impls)
-            fail_on_bag_errors(mono.bag, false, source, path, "monomorphization failed")
+            render_and_fail_on_errors(mono.bag, false, source, path, "monomorphization failed")
             let output = "${path}.ll"
             match compile_program(mono.stmts, output, false, false, path, named.type_reg, false) {
                 .Ok(_) -> {}
@@ -3744,8 +3746,7 @@ fn main() {
         // Type check — gates compilation on errors
         let tc_result = typecheck_program(post_comptime)
         let t_typeck = avra_uptime_ms()
-        render_bag_if_nonempty(json_output, csource, cpath, tc_result.bag)
-        if bag_has_errors(tc_result.bag) { fail("type check failed") }
+        render_and_fail_on_errors(tc_result.bag, json_output, csource, cpath, "type check failed")
         if stop_after == "check" {
             println("ok")
             return
@@ -3754,7 +3755,7 @@ fn main() {
         // Uses the type-annotated AST from typeck so inference reads SExpr.ty.
         let mono = monomorphize(tc_result.stmts, tc_result.trait_impls)
         let t_mono = avra_uptime_ms()
-        fail_on_bag_errors(mono.bag, json_output, csource, cpath, "monomorphization failed")
+        render_and_fail_on_errors(mono.bag, json_output, csource, cpath, "monomorphization failed")
         let output = if output_override != "" { output_override } else { "${cpath}.ll" }
         // 2f54: when --module_path is set we treat this as a library
         // build — skip the synthetic main() wrapper so multiple
