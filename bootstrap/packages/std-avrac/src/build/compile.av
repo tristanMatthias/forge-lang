@@ -90,10 +90,7 @@ export fn build_binary(target: CompileTarget) -> Result<string, string> {
     let build_dir = "${target.project_dir}/build"
     if !target.coverage {
         let obj_path = strip_bin_suffix(target.bin_path) + ".o"
-        match codegen_and_emit_object(mono.stmts, obj_path, named.type_reg) {
-            .Ok(_) -> {}
-            .Err(e) -> { return Result.Err(e) }
-        }
+        let _ = codegen_and_emit_object(mono.stmts, obj_path, named.type_reg)?
         let link_objs = prepend_extra_objs([obj_path], target.extra_objs)
         if link_objects(link_objs, "${build_dir}/runtime.o", "${build_dir}/llvm_wrapper.o",
                         target.bin_path, default_link_options()) != 0 {
@@ -112,10 +109,7 @@ export fn build_binary(target: CompileTarget) -> Result<string, string> {
     let obj_path = "${stem}.o"
     let cov_dir = "${build_dir}/coverage"
     avra_shell_exec("mkdir -p ${cov_dir}")
-    match codegen_and_emit_ir_cov(mono.stmts, ir_path, named.type_reg, "${stem}.av") {
-        .Ok(_) -> {}
-        .Err(e) -> { return Result.Err(e) }
-    }
+    let _ = codegen_and_emit_ir_cov(mono.stmts, ir_path, named.type_reg, "${stem}.av")?
     let llvm_env = avra_process_env_get("LLVM_PREFIX")
     let llvm_prefix = if llvm_env == "" { "/opt/homebrew/opt/llvm" } else { llvm_env }
     let opt_args = "[\"-passes=instrprof\", \"-mtriple=arm64-apple-macosx\", \"-o\", \"${cov_ll}\", \"-S\", \"${ir_path}\"]"
