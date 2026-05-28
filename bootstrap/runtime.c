@@ -4642,11 +4642,6 @@ void avra_resolver_ctx_pop(void) {
     }
 }
 
-void* avra_resolver_ctx_get(int64_t handle) {
-    if (handle <= 0 || handle > avra_resolver_top) return NULL;
-    return avra_resolver_stack[handle - 1];
-}
-
 // Return the handle for the most recently pushed state, or 0 if
 // the stack is empty. Used by `invoke_macro` to set ResolverCtx.id
 // when invoking a 2-arg macro.

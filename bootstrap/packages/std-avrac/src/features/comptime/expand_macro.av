@@ -56,7 +56,6 @@ use list_ops.{list_concat}
 
 extern fn avra_resolver_ctx_push(state: ptr) -> int
 extern fn avra_resolver_ctx_pop()
-extern fn avra_resolver_ctx_get(handle: int) -> ptr
 extern fn avra_resolver_ctx_top() -> int
 
 // ── Resolver-data layer (step 5 of expand-pipeline doc) ──

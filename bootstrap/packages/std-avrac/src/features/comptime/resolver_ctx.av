@@ -42,11 +42,10 @@ export type ResolvedVariant = {
 
 // ── Runtime extern fns ──
 //
-// The actual state stack + fresh-id counter live in `runtime.c`.
-// Avra-side fns below call these to implement the user-facing
-// ctx_* operations.
+// The fresh-id counter lives in `runtime.c`. ctx_fresh_ident
+// reads from it directly (the other ctx_* fns route through
+// eval_resolver_ctx_call which reads from the avra_rd_* layer).
 
-extern fn avra_resolver_ctx_get(handle: int) -> ptr
 extern fn avra_resolver_fresh_id() -> int
 
 // ── Public ctx_* operations ──
