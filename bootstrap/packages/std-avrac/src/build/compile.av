@@ -17,7 +17,7 @@ use features.marshal.{derive_marshal}
 use features.comptime.{resolve_and_expand_program, run_comptime}
 use typeck.{typecheck_program}
 use features.generics.{monomorphize}
-use diagnostics.{bag_has_errors, render_bag}
+use diagnostics.{DiagnosticBag, bag_has_errors, render_bag}
 use codegen.{codegen_and_emit_object, codegen_and_emit_ir_cov}
 use build.link.{link_objects, link_objects_with_coverage, LinkOptions, default_link_options}
 
@@ -49,15 +49,25 @@ export type CompileTarget = {
 /// modules upstream), so inject_intrinsics's program_declares_enum
 /// recursion sees stdlib's Result and skips the synthetic when it's
 /// present.
+/// Per-stage error guard: if the pass's bag carries errors, render
+/// it against `diag_filename` and surface `error_msg` as a Result.Err
+/// so the caller (build_binary's `?` propagation) bails cleanly.
+/// Returns Ok(()) on success — the caller threads it via `let _ = … ?`
+/// at every pipeline stage.
+fn guard_bag(bag: DiagnosticBag, diag_filename: string, error_msg: string) -> Result<int, string> {
+    if bag_has_errors(bag) {
+        render_bag("", diag_filename, bag)
+        return Result.Err(error_msg)
+    }
+    Result.Ok(0)
+}
+
 export fn build_binary(target: CompileTarget) -> Result<string, string> {
     let post_quote = lower_quotes(target.program)
     let desugared = desugar_program(post_quote)
     let with_intrinsics = inject_intrinsics(desugared)
     let comp = expand_components(with_intrinsics)
-    if bag_has_errors(comp.bag) {
-        render_bag("", target.diag_filename, comp.bag)
-        return Result.Err("component validation failed")
-    }
+    let _ = guard_bag(comp.bag, target.diag_filename, "component validation failed")?
     // @marshal derive: synthesise `impl T { to_bytes; from_bytes }`
     // next to every `@marshal type T` so the resolver sees the type
     // AND its methods in the same pass. Zero-cost when no
@@ -73,15 +83,9 @@ export fn build_binary(target: CompileTarget) -> Result<string, string> {
     }
     let post_comptime = run_comptime(named.stmts)
     let tc_result = typecheck_program(post_comptime)
-    if bag_has_errors(tc_result.bag) {
-        render_bag("", target.diag_filename, tc_result.bag)
-        return Result.Err("type check failed")
-    }
+    let _ = guard_bag(tc_result.bag, target.diag_filename, "type check failed")?
     let mono = monomorphize(tc_result.stmts, tc_result.trait_impls)
-    if bag_has_errors(mono.bag) {
-        render_bag("", target.diag_filename, mono.bag)
-        return Result.Err("monomorphization failed")
-    }
+    let _ = guard_bag(mono.bag, target.diag_filename, "monomorphization failed")?
 
     let build_dir = "${target.project_dir}/build"
     if !target.coverage {
