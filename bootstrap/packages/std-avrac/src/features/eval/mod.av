@@ -1353,12 +1353,39 @@ fn visited_contains(visited: List<string>, name: string) -> bool {
 /// found in the resolver-data layer. The struct shape matches
 /// `@std::avrac::features::comptime::ResolvedType`:
 /// `{ canonical_name, kind, fields?, variants? }`. Fields are
-/// emitted for kind="struct"; variant introspection requires the
-/// resolver to track per-variant payloads, which the current data
-/// layer doesn't yet — variants comes back as an empty list.
+/// emitted for kind="struct" with eager recursive expansion (each
+/// field's `ty: ResolvedType` carries its own fields, down to a
+/// depth cap of 4 hops). A visited-set guard handles recursive
+/// types — when the recursion would revisit a type it already
+/// expanded in the current chain, that field's ty lands as a
+/// shallow ResolvedType (name + kind only) so the macro can detect
+/// the back-edge by checking ty.fields.length == 0.
+///
+/// Variant introspection requires the resolver to track per-variant
+/// payloads, which the current data layer doesn't yet — variants
+/// comes back as an empty list.
 fn lookup_type_result(name: string) -> Value {
+    let empty: List<string> = []
+    lookup_type_with_depth(name, 4, empty)
+}
+
+/// Recursive expansion driver. `depth_remaining` counts down per
+/// hop; `visited` carries the chain of canonical names we've
+/// already expanded on the way down so a recursive type doesn't
+/// loop. Both bottoming conditions produce a shallow ResolvedType
+/// (name + kind only).
+fn lookup_type_with_depth(name: string, depth_remaining: int, visited: List<string>) -> Value {
     let type_id = avra_rd_find_type(name)
     if type_id < 0 { return value_null() }
+    let canonical = avra_rd_type_canonical(type_id)
+    let kind_str = avra_rd_type_kind(type_id)
+    let empty_fields: List<Value> = []
+    if depth_remaining <= 0 || visited_contains(visited, canonical) {
+        return build_resolved_type(canonical, kind_str, empty_fields)
+    }
+    mut child_visited: List<string> = []
+    for v in visited { child_visited.push(v) }
+    child_visited.push(canonical)
     let n = avra_rd_type_field_count(type_id)
     mut field_values: List<Value> = []
     mut i = 0
@@ -1367,12 +1394,12 @@ fn lookup_type_result(name: string) -> Value {
         let ftype_canonical = avra_rd_type_field_type(type_id, i)
         let inner_id = avra_rd_find_type(ftype_canonical)
         let ty_value = if inner_id >= 0 {
-            // Shallow ResolvedType — name+kind only, no recursive
-            // field expansion. ctx_unwrap_path_to does its own walk
-            // and ctx_lookup_type callers can re-call for sub-types.
-            build_resolved_type(avra_rd_type_canonical(inner_id), avra_rd_type_kind(inner_id), [])
+            // Recurse into the sub-type. Depth cap + visited set
+            // protect against unbounded walks on recursive types.
+            lookup_type_with_depth(ftype_canonical, depth_remaining - 1, child_visited)
         } else {
-            build_resolved_type(ftype_canonical, "primitive", [])
+            // Primitive — no further expansion possible.
+            build_resolved_type(ftype_canonical, "primitive", empty_fields)
         }
         mut field_payload: List<StructField> = []
         field_payload.push(StructField { name: "name", value: value_string(fname) })
@@ -1380,7 +1407,7 @@ fn lookup_type_result(name: string) -> Value {
         field_values.push(value_struct("@std::avrac::features::comptime::ResolvedField", field_payload))
         i = i + 1
     }
-    build_resolved_type(avra_rd_type_canonical(type_id), avra_rd_type_kind(type_id), field_values)
+    build_resolved_type(canonical, kind_str, field_values)
 }
 
 /// Shared builder for ResolvedType Values. `fields` is empty for

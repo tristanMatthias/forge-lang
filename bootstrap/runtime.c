@@ -4680,26 +4680,76 @@ int64_t avra_resolver_fresh_id(void) {
 //
 // String storage: we hold references rather than copies. The AST
 // strings stay alive for the whole compile, so this is safe.
-
-#define AVRA_RD_MAX_ALIASES  16384
-#define AVRA_RD_MAX_TYPES    2048
-#define AVRA_RD_MAX_FIELDS   16384
+//
+// Growable storage: per-bucket (aliases, globals, types, fields) we
+// keep a (keys/vals, n, cap) tuple. avra_rd_grow_strs / _grow_ints
+// double cap on push when n == cap. Starts small (256/256/128/512)
+// and grows by 2x; programs with bounded ResolverState pay almost
+// no overhead, but the prior fixed 16K/16K/2K/16K caps no longer
+// silently drop entries on overflow.
 
 static const char* avra_rd_current_module_v = "";
-static const char* avra_rd_alias_keys[AVRA_RD_MAX_ALIASES];
-static const char* avra_rd_alias_vals[AVRA_RD_MAX_ALIASES];
+
+#define AVRA_RD_INIT_ALIASES  256
+#define AVRA_RD_INIT_GLOBALS  256
+#define AVRA_RD_INIT_TYPES    128
+#define AVRA_RD_INIT_FIELDS   512
+
+static const char** avra_rd_alias_keys = NULL;
+static const char** avra_rd_alias_vals = NULL;
 static int64_t avra_rd_alias_n = 0;
-static const char* avra_rd_global_keys[AVRA_RD_MAX_ALIASES];
-static const char* avra_rd_global_vals[AVRA_RD_MAX_ALIASES];
+static int64_t avra_rd_alias_cap = 0;
+
+static const char** avra_rd_global_keys = NULL;
+static const char** avra_rd_global_vals = NULL;
 static int64_t avra_rd_global_n = 0;
-static const char* avra_rd_type_canonicals[AVRA_RD_MAX_TYPES];
-static const char* avra_rd_type_kinds[AVRA_RD_MAX_TYPES];
-static int64_t avra_rd_type_field_starts[AVRA_RD_MAX_TYPES];
-static int64_t avra_rd_type_field_counts[AVRA_RD_MAX_TYPES];
+static int64_t avra_rd_global_cap = 0;
+
+static const char** avra_rd_type_canonicals = NULL;
+static const char** avra_rd_type_kinds = NULL;
+static int64_t* avra_rd_type_field_starts = NULL;
+static int64_t* avra_rd_type_field_counts = NULL;
 static int64_t avra_rd_type_n = 0;
-static const char* avra_rd_field_names[AVRA_RD_MAX_FIELDS];
-static const char* avra_rd_field_type_canonicals[AVRA_RD_MAX_FIELDS];
+static int64_t avra_rd_type_cap = 0;
+
+static const char** avra_rd_field_names = NULL;
+static const char** avra_rd_field_type_canonicals = NULL;
 static int64_t avra_rd_field_n = 0;
+static int64_t avra_rd_field_cap = 0;
+
+// Grow a pair of const char* buckets (keys + vals) to at least
+// `needed` capacity. Doubles cap until it's enough. Aborts on alloc
+// failure (rare; production process would just be killed by OOM).
+static void avra_rd_grow_strs2(const char*** a, const char*** b, int64_t* cap, int64_t needed) {
+    int64_t new_cap = (*cap == 0) ? 256 : *cap;
+    while (new_cap < needed) new_cap *= 2;
+    if (new_cap == *cap) return;
+    *a = (const char**)realloc(*a, new_cap * sizeof(const char*));
+    *b = (const char**)realloc(*b, new_cap * sizeof(const char*));
+    if (!*a || !*b) {
+        fprintf(stderr, "avra_rd: out of memory growing string bucket to %lld entries\n", (long long)new_cap);
+        abort();
+    }
+    *cap = new_cap;
+}
+
+// Grow the type bucket — needs four parallel arrays (canonicals,
+// kinds, field_starts, field_counts).
+static void avra_rd_grow_types(int64_t needed) {
+    int64_t new_cap = (avra_rd_type_cap == 0) ? AVRA_RD_INIT_TYPES : avra_rd_type_cap;
+    while (new_cap < needed) new_cap *= 2;
+    if (new_cap == avra_rd_type_cap) return;
+    avra_rd_type_canonicals = (const char**)realloc(avra_rd_type_canonicals, new_cap * sizeof(const char*));
+    avra_rd_type_kinds = (const char**)realloc(avra_rd_type_kinds, new_cap * sizeof(const char*));
+    avra_rd_type_field_starts = (int64_t*)realloc(avra_rd_type_field_starts, new_cap * sizeof(int64_t));
+    avra_rd_type_field_counts = (int64_t*)realloc(avra_rd_type_field_counts, new_cap * sizeof(int64_t));
+    if (!avra_rd_type_canonicals || !avra_rd_type_kinds ||
+        !avra_rd_type_field_starts || !avra_rd_type_field_counts) {
+        fprintf(stderr, "avra_rd: out of memory growing type bucket to %lld entries\n", (long long)new_cap);
+        abort();
+    }
+    avra_rd_type_cap = new_cap;
+}
 
 void avra_rd_clear(void) {
     avra_rd_current_module_v = "";
@@ -4707,6 +4757,8 @@ void avra_rd_clear(void) {
     avra_rd_global_n = 0;
     avra_rd_type_n = 0;
     avra_rd_field_n = 0;
+    // Keep capacity; future fill of similar size will reuse without
+    // realloc. Caller decides via process exit when to truly free.
 }
 
 void avra_rd_set_current_module(const char* s) {
@@ -4718,11 +4770,12 @@ const char* avra_rd_get_current_module(void) {
 }
 
 void avra_rd_add_alias(const char* short_name, const char* canonical) {
-    if (avra_rd_alias_n < AVRA_RD_MAX_ALIASES) {
-        avra_rd_alias_keys[avra_rd_alias_n] = short_name;
-        avra_rd_alias_vals[avra_rd_alias_n] = canonical;
-        avra_rd_alias_n++;
+    if (avra_rd_alias_n >= avra_rd_alias_cap) {
+        avra_rd_grow_strs2(&avra_rd_alias_keys, &avra_rd_alias_vals, &avra_rd_alias_cap, avra_rd_alias_n + 1);
     }
+    avra_rd_alias_keys[avra_rd_alias_n] = short_name;
+    avra_rd_alias_vals[avra_rd_alias_n] = canonical;
+    avra_rd_alias_n++;
 }
 
 const char* avra_rd_lookup_alias(const char* name) {
@@ -4733,11 +4786,12 @@ const char* avra_rd_lookup_alias(const char* name) {
 }
 
 void avra_rd_add_global(const char* short_name, const char* canonical) {
-    if (avra_rd_global_n < AVRA_RD_MAX_ALIASES) {
-        avra_rd_global_keys[avra_rd_global_n] = short_name;
-        avra_rd_global_vals[avra_rd_global_n] = canonical;
-        avra_rd_global_n++;
+    if (avra_rd_global_n >= avra_rd_global_cap) {
+        avra_rd_grow_strs2(&avra_rd_global_keys, &avra_rd_global_vals, &avra_rd_global_cap, avra_rd_global_n + 1);
     }
+    avra_rd_global_keys[avra_rd_global_n] = short_name;
+    avra_rd_global_vals[avra_rd_global_n] = canonical;
+    avra_rd_global_n++;
 }
 
 const char* avra_rd_lookup_global(const char* name) {
@@ -4751,7 +4805,9 @@ const char* avra_rd_lookup_global(const char* name) {
 // Macros append fields via `avra_rd_add_type_field(type_id, ...)` until
 // they move on to the next type.
 int64_t avra_rd_begin_type(const char* canonical, const char* kind) {
-    if (avra_rd_type_n >= AVRA_RD_MAX_TYPES) return -1;
+    if (avra_rd_type_n >= avra_rd_type_cap) {
+        avra_rd_grow_types(avra_rd_type_n + 1);
+    }
     int64_t id = avra_rd_type_n;
     avra_rd_type_canonicals[id] = canonical;
     avra_rd_type_kinds[id] = kind ? kind : "";
@@ -4763,7 +4819,9 @@ int64_t avra_rd_begin_type(const char* canonical, const char* kind) {
 
 void avra_rd_add_type_field(int64_t type_id, const char* field_name, const char* field_type_canonical) {
     if (type_id < 0 || type_id >= avra_rd_type_n) return;
-    if (avra_rd_field_n >= AVRA_RD_MAX_FIELDS) return;
+    if (avra_rd_field_n >= avra_rd_field_cap) {
+        avra_rd_grow_strs2(&avra_rd_field_names, &avra_rd_field_type_canonicals, &avra_rd_field_cap, avra_rd_field_n + 1);
+    }
     avra_rd_field_names[avra_rd_field_n] = field_name;
     avra_rd_field_type_canonicals[avra_rd_field_n] = field_type_canonical ? field_type_canonical : "";
     avra_rd_field_n++;
