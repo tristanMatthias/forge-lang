@@ -16,7 +16,7 @@ use core.{Expr, FieldEntry, Stmt, ParamEntry, FieldInit, MatchArm, WhenArm, Patt
 use diagnostics.{Confidence, DiagCode, Span, DiagnosticBag, bag_new, bag_merge, bag_report, bag_has_errors, diag_error, diag_warning, diag_with_confidence, span_new, span_at, span_dummy}
 use resolve.{resolve_program}
 use core.{TypeRegistry, TypeKind, type_registry_new, type_registry_register, type_registry_id_for, type_qualified_name, method_mangled_name, trait_impl_name, is_mangled_method, method_from_mangled}
-use core.{ModuleGraph, GraphItem, module_graph_is_exported, ID_NONE}
+use core.{ModuleGraph, GraphItem, module_graph_is_exported, module_graph_new, ID_NONE}
 use features.modules.{build_graph_from_stmts, graph_find_use_path}
 use list_ops.{list_any}
 
@@ -634,6 +634,27 @@ export type ResolverState = {
 /// pipeline can rebuild the decl context after macro expansion
 /// without re-running the use-site rewrite over already-resolved
 /// originals.
+/// Sentinel ResolverState — empty everything. Exposed for callers
+/// like `expand_macros_eval` that need to pass a value when the
+/// state-bearing path isn't taken (Avra has no optional struct
+/// params). The fixpoint loop reads from it only when `use_state`
+/// is true, so the contents never matter for the stateless path.
+export fn dummy_resolver_state() -> ResolverState {
+    let empty_aliases: List<AliasBinding> = []
+    let empty_items: List<GraphItem> = []
+    let empty_canonicals: List<string> = []
+    let g = module_graph_new()
+    let dummy_global = GlobalItemReg { canonicals: empty_canonicals, idx: avra_map_new_cstr() }
+    ResolverState {
+        tree: ModuleNode.End,
+        graph: g,
+        aliases: empty_aliases,
+        global_index: dummy_global,
+        type_reg: type_registry_new(),
+        bag: bag_new(),
+    }
+}
+
 export fn register_decls(stmts: List<SStmt>) -> ResolverState {
     let tree = build_module_tree(stmts, "", ModuleNode.End)
     let graph = build_graph_from_stmts(stmts)
@@ -753,18 +774,6 @@ export fn register_macro_decls(state: ResolverState, stmts: List<SStmt>) -> Reso
     mut updated_all: List<GraphItem> = []
     for old in state.graph.all_items { updated_all.push(old) }
     for added in new_items { updated_all.push(added) }
-    let new_graph = ModuleGraph {
-        modules: state.graph.modules,
-        by_path: state.graph.by_path,
-        by_canonical: state.graph.by_canonical,
-        package_roots: state.graph.package_roots,
-        item_exports: state.graph.item_exports,
-        all_items: updated_all,
-        next_module_id: state.graph.next_module_id,
-        next_item_id: state.graph.next_item_id,
-        next_package_id: state.graph.next_package_id,
-        interner: state.graph.interner,
-    }
 
     // Augment the global_index map with the new short_name → canonical
     // entries. The existing map is mutated in place — `idx` is a
@@ -774,9 +783,9 @@ export fn register_macro_decls(state: ResolverState, stmts: List<SStmt>) -> Reso
     for old in state.global_index.canonicals { canonicals_ext.push(old) }
     for it in new_items {
         // Same seed typeck workaround as `global_item_reg_build`:
-        // bind field accesses to locals before passing to method
-        // calls or extern fns, or codegen bails with "field access
-        // on non-struct value, ty=<unknown>".
+        // bind field accesses to locals before passing to extern
+        // fns, or codegen bails with "field access on non-struct
+        // value, ty=<unknown>".
         let sn = it.short_name
         let canon = it.canonical
         if avra_map_has_cstr(state.global_index.idx, sn) == 0 {
@@ -785,15 +794,10 @@ export fn register_macro_decls(state: ResolverState, stmts: List<SStmt>) -> Reso
             avra_map_set_cstr(state.global_index.idx, sn, n)
         }
     }
-    let new_global_index = GlobalItemReg { canonicals: canonicals_ext, idx: state.global_index.idx }
 
-    ResolverState {
-        tree: state.tree,
-        graph: new_graph,
-        aliases: state.aliases,
-        global_index: new_global_index,
-        type_reg: state.type_reg,
-        bag: state.bag,
+    state with {
+        graph: state.graph with { all_items: updated_all },
+        global_index: state.global_index with { canonicals: canonicals_ext },
     }
 }
 

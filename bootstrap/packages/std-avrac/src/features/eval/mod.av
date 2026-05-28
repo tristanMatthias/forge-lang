@@ -1289,17 +1289,14 @@ fn resolved_type_canonical(v: Value) -> string {
 /// safe via the depth cap — a recursive type terminates at the cap
 /// without infinite loop.
 fn unwrap_path_bfs(t_name: string, target: string, depth_cap: int) -> List<string> {
-    if depth_cap <= 0 {
-        let empty: List<string> = []
-        return empty
-    }
+    let empty: List<string> = []
+    if depth_cap <= 0 { return empty }
     let type_id = avra_rd_find_type(t_name)
-    if type_id < 0 {
-        let empty: List<string> = []
-        return empty
-    }
+    if type_id < 0 { return empty }
     let n = avra_rd_type_field_count(type_id)
-    // Direct match: any field whose type is `target`.
+    // First pass — direct match on a field's own type. Cheaper than
+    // recursing, and the doc's example outputs ("wrap=[node]") rely
+    // on the closest match winning.
     mut i = 0
     while i < n {
         let ftype = avra_rd_type_field_type(type_id, i)
@@ -1310,10 +1307,10 @@ fn unwrap_path_bfs(t_name: string, target: string, depth_cap: int) -> List<strin
         }
         i = i + 1
     }
-    // Recurse: for each field whose type is itself a known type,
-    // search inside it. Return the first path found (BFS would
-    // require a queue; this is a depth-first first-match which
-    // matches the doc's example outputs for the cases tested).
+    // Second pass — recurse into each known sub-type and prepend the
+    // local field name when the recursion finds a path. First-found
+    // wins (depth-first), which is enough for the doc's cases; a true
+    // BFS would need a queue + visited set.
     mut j = 0
     while j < n {
         let ftype = avra_rd_type_field_type(type_id, j)
@@ -1328,23 +1325,19 @@ fn unwrap_path_bfs(t_name: string, target: string, depth_cap: int) -> List<strin
         }
         j = j + 1
     }
-    let empty: List<string> = []
     empty
 }
 
 /// Build a ResolvedType struct Value for `name`, or null if not
-/// found in the resolver-data layer. The struct has the same shape
-/// as `@std::avrac::features::comptime::ResolvedType`:
+/// found in the resolver-data layer. The struct shape matches
+/// `@std::avrac::features::comptime::ResolvedType`:
 /// `{ canonical_name, kind, fields?, variants? }`. Fields are
-/// emitted for kind="struct", variants for kind="enum" (initial
-/// slice emits fields only; variant introspection requires the
-/// resolver to track per-variant payloads which the current
-/// data layer doesn't yet).
+/// emitted for kind="struct"; variant introspection requires the
+/// resolver to track per-variant payloads, which the current data
+/// layer doesn't yet — variants comes back as an empty list.
 fn lookup_type_result(name: string) -> Value {
     let type_id = avra_rd_find_type(name)
     if type_id < 0 { return value_null() }
-    let canonical = avra_rd_type_canonical(type_id)
-    let kind_str = avra_rd_type_kind(type_id)
     let n = avra_rd_type_field_count(type_id)
     mut field_values: List<Value> = []
     mut i = 0
@@ -1356,9 +1349,9 @@ fn lookup_type_result(name: string) -> Value {
             // Shallow ResolvedType — name+kind only, no recursive
             // field expansion. ctx_unwrap_path_to does its own walk
             // and ctx_lookup_type callers can re-call for sub-types.
-            shallow_resolved_type(inner_id)
+            build_resolved_type(avra_rd_type_canonical(inner_id), avra_rd_type_kind(inner_id), [])
         } else {
-            shallow_primitive_type(ftype_canonical)
+            build_resolved_type(ftype_canonical, "primitive", [])
         }
         mut field_payload: List<StructField> = []
         field_payload.push(StructField { name: "name", value: value_string(fname) })
@@ -1366,36 +1359,19 @@ fn lookup_type_result(name: string) -> Value {
         field_values.push(value_struct("@std::avrac::features::comptime::ResolvedField", field_payload))
         i = i + 1
     }
+    build_resolved_type(avra_rd_type_canonical(type_id), avra_rd_type_kind(type_id), field_values)
+}
+
+/// Shared builder for ResolvedType Values. `fields` is empty for
+/// shallow lookups (just name+kind) and populated for the top-level
+/// result. `variants` is always empty in the current data layer.
+fn build_resolved_type(canonical: string, kind_str: string, fields: List<Value>) -> Value {
     mut payload: List<StructField> = []
     payload.push(StructField { name: "canonical_name", value: value_string(canonical) })
     payload.push(StructField { name: "kind", value: value_enum("TypeKind", kind_str, []) })
-    payload.push(StructField { name: "fields", value: value_list(field_values) })
-    let empty: List<Value> = []
-    payload.push(StructField { name: "variants", value: value_list(empty) })
-    value_struct("@std::avrac::features::comptime::ResolvedType", payload)
-}
-
-fn shallow_resolved_type(type_id: int) -> Value {
-    let canonical = avra_rd_type_canonical(type_id)
-    let kind_str = avra_rd_type_kind(type_id)
-    mut payload: List<StructField> = []
-    payload.push(StructField { name: "canonical_name", value: value_string(canonical) })
-    payload.push(StructField { name: "kind", value: value_enum("TypeKind", kind_str, []) })
-    let empty_f: List<Value> = []
-    payload.push(StructField { name: "fields", value: value_list(empty_f) })
-    let empty_v: List<Value> = []
-    payload.push(StructField { name: "variants", value: value_list(empty_v) })
-    value_struct("@std::avrac::features::comptime::ResolvedType", payload)
-}
-
-fn shallow_primitive_type(name: string) -> Value {
-    mut payload: List<StructField> = []
-    payload.push(StructField { name: "canonical_name", value: value_string(name) })
-    payload.push(StructField { name: "kind", value: value_enum("TypeKind", "primitive", []) })
-    let empty_f: List<Value> = []
-    payload.push(StructField { name: "fields", value: value_list(empty_f) })
-    let empty_v: List<Value> = []
-    payload.push(StructField { name: "variants", value: value_list(empty_v) })
+    payload.push(StructField { name: "fields", value: value_list(fields) })
+    let empty_variants: List<Value> = []
+    payload.push(StructField { name: "variants", value: value_list(empty_variants) })
     value_struct("@std::avrac::features::comptime::ResolvedType", payload)
 }
 
