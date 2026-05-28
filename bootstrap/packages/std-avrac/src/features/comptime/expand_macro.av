@@ -42,7 +42,7 @@
 // block as the Stmt arg.
 
 use core.{Stmt, SStmt, Expr, SExpr, FieldEntry, ValueType, sstmt_at, sstmt_mark_from_macro, find_annotation, stmt_unwrap, exit, type_qualified_name}
-use resolve.{ResolverState, NameResolveResult, register_macro_decls, dummy_resolver_state, resolve_names_pre_expand, rewrite_uses_macro_only, validate_scopes_after_expand}
+use resolve.{ResolverState, NameResolveResult, register_macro_decls, resolve_names_pre_expand, rewrite_uses_macro_only, validate_scopes_after_expand}
 use features.comptime.{CompTimeRegistry, comptime_lookup, collect_comptime_fns, value_to_stmt, value_to_stmt_list, stmt_to_value}
 use features.eval.{Runtime, Value, StructField, value_struct, value_string, value_number, value_null, value_list, value_enum, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message, path_last_segment}
 use list_ops.{list_concat}
@@ -207,51 +207,26 @@ fn collect_expand_targets(stmts: List<SStmt>) -> List<ExpandTarget> {
 /// Phase 2 (post-resolve): walk the stmt list, invoke every macro
 /// captured in the plan, splice results back in. Tags every spliced
 /// SStmt with `from_macro: true` so the partial re-resolve in
-/// `cli/main.av:resolve_and_expand` walks only the new decls. Runs
-/// a fixpoint loop so that macro-emitted `@expand` sites expand
+/// `resolve_and_expand_program` walks only the new decls. Runs a
+/// fixpoint loop so that macro-emitted `@expand` sites expand
 /// transitively. Cap at 16 iterations — a self-referential macro
 /// terminates with a clean error via `exit(1)`.
-export fn expand_macros_eval(plan: ExpandPlan) -> List<SStmt> {
-    expand_macros_fixpoint(plan.stmts, plan.comp_macros, false, dummy_resolver_state())
-}
-
-/// Stateful variant: takes a `ResolverState` and re-populates the
-/// resolver-data layer between fixpoint iterations so that macros
-/// firing in iter N+1 can see the names introduced by iter N via
-/// `ctx_qualify_ident` / `ctx_lookup_type`. Used by the main pipeline;
-/// the stateless `expand_macros_eval` skips the re-populate.
+///
+/// Takes the active `ResolverState` and re-populates the resolver-
+/// data layer between fixpoint iterations so that macros firing in
+/// iter N+1 can see the names introduced by iter N via
+/// `ctx_qualify_ident` / `ctx_lookup_type`.
 export fn expand_macros_eval_with_state(plan: ExpandPlan, state: ResolverState) -> List<SStmt> {
-    expand_macros_fixpoint(plan.stmts, plan.comp_macros, true, state)
-}
-
-// ── Public entry (legacy single-pass form) ──
-
-/// Walk `stmts`, expanding every Stmt wrapped in `@expand(M)` by
-/// replacing it with the AST returned by M evaluated at compile
-/// time. Equivalent to `expand_macros_eval(expand_macros_collect(stmts))` —
-/// preserved as a stable surface for tests / call sites that don't
-/// care about the collect/eval phase split.
-///
-/// Fast-path: when the program has no `@expand` annotations the
-/// walker returns the input unchanged with no allocations.
-///
-/// vez6.8.5: also expands ComponentBlock instances of components
-/// whose `ComponentDef` carries `@expand(macro)`. The macro fn is
-/// looked up via a pre-pass that maps component name → macro fn
-/// name; each instance gets the macro applied with the
-/// ComponentBlock as a 1-arg Stmt value.
-export fn expand_macros(stmts: List<SStmt>) -> List<SStmt> {
-    let plan = expand_macros_collect(stmts)
-    expand_macros_eval(plan)
+    expand_macros_fixpoint(plan.stmts, plan.comp_macros, state)
 }
 
 /// Shared fixpoint loop. Caps at 16 iterations and `exit(1)`s with
 /// a clean diagnostic on overflow so a self-referential macro
 /// surfaces as a build error instead of a half-expanded binary.
-/// `use_state` toggles the per-iter resolver-data re-population —
-/// needed so a later-iteration macro can see names introduced by
-/// an earlier iteration via `ctx_qualify_ident` / `ctx_lookup_type`.
-fn expand_macros_fixpoint(stmts: List<SStmt>, initial_comp_macros: List<CompMacroEntry>, use_state: bool, state: ResolverState) -> List<SStmt> {
+/// Re-populates the resolver-data layer between iterations so a
+/// later-iteration macro can see names introduced by an earlier
+/// iteration via `ctx_qualify_ident` / `ctx_lookup_type`.
+fn expand_macros_fixpoint(stmts: List<SStmt>, initial_comp_macros: List<CompMacroEntry>, state: ResolverState) -> List<SStmt> {
     mut current = stmts
     mut current_state = state
     mut iters = 0
@@ -260,15 +235,12 @@ fn expand_macros_fixpoint(stmts: List<SStmt>, initial_comp_macros: List<CompMacr
         if !any_expand_annotation(current) && comp_macros.length == 0 {
             return current
         }
-        // Refresh resolver-data from any decls introduced by the
-        // previous iteration (within-iter changes are handled inside
-        // expand_stmt_list itself via register_and_repopulate).
-        if use_state && iters > 0 {
+        if iters > 0 {
             current_state = register_macro_decls(current_state, current)
             populate_resolver_data(current_state, current)
         }
         let reg = collect_comptime_fns(current)
-        let walked = expand_stmt_list(current, reg, comp_macros, use_state, current_state)
+        let walked = expand_stmt_list(current, reg, comp_macros, current_state)
         current = walked.out
         current_state = walked.state
         iters = iters + 1
@@ -348,25 +320,14 @@ fn peel_annotations(stmt: Stmt) -> Stmt {
 
 // ── Fast-path presence scan ──
 
-/// True iff any `@expand` annotation appears anywhere in `stmts`.
-/// Walks recursively but allocates nothing — callers only pay for
-/// the rewrite walk when the program actually has macros.
-/// True iff the program contains anything `expand_macros` would
-/// rewrite — either a `@expand` annotation or an instance of a
-/// component whose definition carries one. Gates the post-expand
-/// re-resolve in `cli/main.av:resolve_and_expand` so we only pay
-/// the second walk when there's actually work to splice.
-export fn needs_expand_pass(stmts: List<SStmt>) -> bool {
-    if any_expand_annotation(stmts) { return true }
-    let comp_macros = collect_component_macros(stmts)
-    comp_macros.length != 0
-}
-
+/// True iff any `@expand` annotation appears at the top level of
+/// `stmts`. Used by the fixpoint loop to detect when no further
+/// expansion work remains. Doesn't recurse into Module bodies —
+/// the walker descends explicitly and handles inner-Module @expand
+/// sites by recursing into expand_stmt_list_in.
 export fn any_expand_annotation(stmts: List<SStmt>) -> bool {
-    mut i = 0
-    while i < stmts.length {
-        if has_expand_annotation(stmts[i].node) { return true }
-        i = i + 1
+    for ss in stmts {
+        if has_expand_annotation(ss.node) { return true }
     }
     false
 }
@@ -378,11 +339,11 @@ fn has_expand_annotation(stmt: Stmt) -> bool {
 
 // ── Walker ──
 
-fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List<CompMacroEntry>, use_state: bool, in_state: ResolverState) -> WalkerOut {
-    expand_stmt_list_in(stmts, reg, comp_macros, use_state, in_state, "")
+fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List<CompMacroEntry>, in_state: ResolverState) -> WalkerOut {
+    expand_stmt_list_in(stmts, reg, comp_macros, in_state, "")
 }
 
-fn expand_stmt_list_in(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List<CompMacroEntry>, use_state: bool, in_state: ResolverState, current_module: string) -> WalkerOut {
+fn expand_stmt_list_in(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List<CompMacroEntry>, in_state: ResolverState, current_module: string) -> WalkerOut {
     mut out: List<SStmt> = []
     mut current_state = in_state
     for ss in stmts {
@@ -403,10 +364,10 @@ fn expand_stmt_list_in(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: L
                 // as the Stmt arg.
                 let inst_macro = comp_macro_lookup(comp_macros, comp_name)
                 if inst_macro != "" {
-                    if use_state { avra_rd_set_current_module(current_module) }
+                    avra_rd_set_current_module(current_module)
                     let replacement = try_expand_with_macro(ss.node, inst_macro, reg, ss.line, ss.col, ss.file, current_module)
                     splice_expansion(out, ss, replacement)
-                    if use_state && replacement != null {
+                    if replacement != null {
                         current_state = register_and_repopulate(current_state, replacement!, current_module)
                     }
                 } else {
@@ -423,17 +384,17 @@ fn expand_stmt_list_in(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: L
             // intact for downstream resolve/typeck.
             .Module(mod_name, body) -> {
                 let child_module = type_qualified_name(current_module, mod_name)
-                let sub = expand_stmt_list_in(body, reg, comp_macros, use_state, current_state, child_module)
+                let sub = expand_stmt_list_in(body, reg, comp_macros, current_state, child_module)
                 current_state = sub.state
                 let new_stmt = Stmt.Module(mod_name, sub.out)
                 out.push(sstmt_at(new_stmt, ss.line, ss.col, ss.file))
             }
             _ -> {
                 if has_expand_annotation(ss.node) {
-                    if use_state { avra_rd_set_current_module(current_module) }
+                    avra_rd_set_current_module(current_module)
                     let replacement = try_expand_one(ss.node, reg, ss.line, ss.col, ss.file, current_module)
                     splice_expansion(out, ss, replacement)
-                    if use_state && replacement != null {
+                    if replacement != null {
                         current_state = register_and_repopulate(current_state, replacement!, current_module)
                     }
                 } else {

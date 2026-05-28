@@ -660,27 +660,6 @@ export type ResolverState = {
     bag: DiagnosticBag,
 }
 
-/// Sentinel ResolverState — empty everything. Exposed for callers
-/// like `expand_macros_eval` that need to pass a value when the
-/// state-bearing path isn't taken (Avra has no optional struct
-/// params). The fixpoint loop reads from it only when `use_state`
-/// is true, so the contents never matter for the stateless path.
-export fn dummy_resolver_state() -> ResolverState {
-    let empty_aliases: List<AliasBinding> = []
-    let empty_items: List<GraphItem> = []
-    let empty_canonicals: List<string> = []
-    let g = module_graph_new()
-    let dummy_global = GlobalItemReg { canonicals: empty_canonicals, idx: avra_map_new_cstr() }
-    ResolverState {
-        tree: ModuleNode.End,
-        graph: g,
-        aliases: empty_aliases,
-        global_index: dummy_global,
-        type_reg: type_registry_new(),
-        bag: bag_new(),
-    }
-}
-
 /// Decl-scan half of `resolve_names`: builds the module tree, graph,
 /// use-alias bindings, global index, and a fresh type registry from
 /// `stmts`. Pure with respect to the input AST — returns a
