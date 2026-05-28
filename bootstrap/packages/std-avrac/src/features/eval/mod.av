@@ -1283,49 +1283,70 @@ fn resolved_type_canonical(v: Value) -> string {
     ""
 }
 
-/// BFS over the field graph from `t_name` looking for a field whose
-/// type canonicalises to `target`. Returns the chain of field names
-/// to reach it, or [] if not found within `depth_cap` hops. Cycle-
-/// safe via the depth cap — a recursive type terminates at the cap
-/// without infinite loop.
+/// Frontier entry for the BFS: a known type and the field-chain
+/// that reaches it from the starting `t_name`.
+type BfsEntry = {
+    type_name: string,
+    path: List<string>,
+}
+
+/// True BFS over the field graph from `t_name` looking for a field
+/// whose type canonicalises to `target`. Returns the shortest chain
+/// of field names to reach it, or [] if not found within `depth_cap`
+/// hops. Cycle-safe via depth cap + a visited set — a recursive
+/// type terminates at the cap without infinite loop.
 fn unwrap_path_bfs(t_name: string, target: string, depth_cap: int) -> List<string> {
     let empty: List<string> = []
     if depth_cap <= 0 { return empty }
-    let type_id = avra_rd_find_type(t_name)
-    if type_id < 0 { return empty }
-    let n = avra_rd_type_field_count(type_id)
-    // First pass — direct match on a field's own type. Cheaper than
-    // recursing, and the doc's example outputs ("wrap=[node]") rely
-    // on the closest match winning.
-    mut i = 0
-    while i < n {
-        let ftype = avra_rd_type_field_type(type_id, i)
-        if ftype == target {
-            mut single: List<string> = []
-            single.push(avra_rd_type_field_name(type_id, i))
-            return single
+    let start_id = avra_rd_find_type(t_name)
+    if start_id < 0 { return empty }
+    // Frontier seeded with the starting type at depth 0. visited
+    // tracks types we've already expanded so a recursive field
+    // doesn't loop forever (depth cap is the secondary safety net).
+    let start_path: List<string> = []
+    mut frontier: List<BfsEntry> = []
+    frontier.push(BfsEntry { type_name: t_name, path: start_path })
+    mut visited: List<string> = []
+    visited.push(t_name)
+    while frontier.length > 0 {
+        let head = frontier[0]
+        // shift: drop head by reading the rest into a new list.
+        mut rest: List<BfsEntry> = []
+        mut i = 1
+        while i < frontier.length {
+            rest.push(frontier[i])
+            i = i + 1
         }
-        i = i + 1
-    }
-    // Second pass — recurse into each known sub-type and prepend the
-    // local field name when the recursion finds a path. First-found
-    // wins (depth-first), which is enough for the doc's cases; a true
-    // BFS would need a queue + visited set.
-    mut j = 0
-    while j < n {
-        let ftype = avra_rd_type_field_type(type_id, j)
-        if avra_rd_find_type(ftype) >= 0 {
-            let sub = unwrap_path_bfs(ftype, target, depth_cap - 1)
-            if sub.length > 0 {
-                mut chain: List<string> = []
-                chain.push(avra_rd_type_field_name(type_id, j))
-                for s in sub { chain.push(s) }
-                return chain
+        frontier = rest
+        if head.path.length >= depth_cap { continue }
+        let type_id = avra_rd_find_type(head.type_name)
+        if type_id < 0 { continue }
+        let n = avra_rd_type_field_count(type_id)
+        mut k = 0
+        while k < n {
+            let fname = avra_rd_type_field_name(type_id, k)
+            let ftype = avra_rd_type_field_type(type_id, k)
+            mut next_path: List<string> = []
+            for p in head.path { next_path.push(p) }
+            next_path.push(fname)
+            if ftype == target { return next_path }
+            // Enqueue sub-type for further exploration if we know it
+            // AND haven't visited it. Visited check protects against
+            // cycles; depth_cap protects against pathologically deep
+            // trees the visited set didn't catch.
+            if avra_rd_find_type(ftype) >= 0 && !visited_contains(visited, ftype) {
+                visited.push(ftype)
+                frontier.push(BfsEntry { type_name: ftype, path: next_path })
             }
+            k = k + 1
         }
-        j = j + 1
     }
     empty
+}
+
+fn visited_contains(visited: List<string>, name: string) -> bool {
+    for v in visited { if v == name { return true } }
+    false
 }
 
 /// Build a ResolvedType struct Value for `name`, or null if not

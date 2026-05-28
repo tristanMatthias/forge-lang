@@ -357,18 +357,6 @@ fn has_expand_annotation(stmt: Stmt) -> bool {
 
 // ── Walker ──
 
-/// Carrier for the walker — `out` is the spliced-stmt accumulator,
-/// `state` is mutably refreshed after every successful splice so
-/// macros firing later in the SAME iteration can see names
-/// introduced by macros earlier in the iteration (doc step 4.4 —
-/// "Register result.introduces with the existing registry"). When
-/// `use_state` is false the state field is unused.
-type WalkerState = {
-    out: List<SStmt>,
-    state: ResolverState,
-    use_state: bool,
-}
-
 fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List<CompMacroEntry>, use_state: bool, in_state: ResolverState) -> WalkerOut {
     expand_stmt_list_in(stmts, reg, comp_macros, use_state, in_state, "")
 }
