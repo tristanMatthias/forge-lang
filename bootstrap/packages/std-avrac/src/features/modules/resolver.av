@@ -10,7 +10,7 @@ use build.{metadata_read, metadata_file_exists, synthesize_unit_body}
 use build.{cache_for, entry_source_meta_path, Fingerprint, package_source_fingerprint}
 use @std.crypto.{sha256_hex, sha256_file}
 use features.modules.{list_avra_module_files, list_avra_module_subdirs}
-use list_ops.{list_concat, list_push_copy, list_any, list_map}
+use list_ops.{list_concat, list_push_copy, list_any, list_map, list_contains_str}
 
 extern fn avra_bytes_to_hex(b: bytes) -> string
 extern fn avra_uptime_ms() -> int
@@ -665,16 +665,11 @@ fn dedup_by_span(stmts: List<SStmt>) -> List<SStmt> {
             continue
         }
         let key = "${ss.file}:${ss.line}:${ss.col}"
-        if list_str_contains(seen, key) { continue }
+        if list_contains_str(seen, key) { continue }
         seen.push(key)
         acc.push(ss)
     }
     acc
-}
-
-/// Helper: linear search for a string in a List<string>.
-fn list_str_contains(xs: List<string>, target: string) -> bool {
-    list_any(xs, (s: string) -> s == target)
 }
 
 /// Helper: collect linked List<SStmt> into List<SStmt> for indexed walk.

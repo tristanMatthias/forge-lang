@@ -3,6 +3,7 @@
 
 use core.{Expr, Stmt, ParamEntry, SExpr, SStmt, FieldInit}
 use core.{Registry, build_registry}
+use list_ops.{list_contains_str}
 
 // WHY: tree-walk expression evaluator — used by `eval` and `check`
 // commands. Interprets AST directly without LLVM, so it works even
@@ -1334,7 +1335,7 @@ fn unwrap_path_bfs(t_name: string, target: string, depth_cap: int) -> List<strin
             // AND haven't visited it. Visited check protects against
             // cycles; depth_cap protects against pathologically deep
             // trees the visited set didn't catch.
-            if avra_rd_find_type(ftype) >= 0 && !visited_contains(visited, ftype) {
+            if avra_rd_find_type(ftype) >= 0 && !list_contains_str(visited, ftype) {
                 visited.push(ftype)
                 frontier.push(BfsEntry { type_name: ftype, path: next_path })
             }
@@ -1342,11 +1343,6 @@ fn unwrap_path_bfs(t_name: string, target: string, depth_cap: int) -> List<strin
         }
     }
     empty
-}
-
-fn visited_contains(visited: List<string>, name: string) -> bool {
-    for v in visited { if v == name { return true } }
-    false
 }
 
 /// Build a ResolvedType struct Value for `name`, or null if not
@@ -1380,7 +1376,7 @@ fn lookup_type_with_depth(name: string, depth_remaining: int, visited: List<stri
     let canonical = avra_rd_type_canonical(type_id)
     let kind_str = avra_rd_type_kind(type_id)
     let empty_fields: List<Value> = []
-    if depth_remaining <= 0 || visited_contains(visited, canonical) {
+    if depth_remaining <= 0 || list_contains_str(visited, canonical) {
         return build_resolved_type(canonical, kind_str, empty_fields)
     }
     mut child_visited: List<string> = []

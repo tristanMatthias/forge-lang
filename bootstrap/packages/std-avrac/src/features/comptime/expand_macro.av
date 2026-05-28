@@ -47,7 +47,7 @@ use features.comptime.{CompTimeRegistry, comptime_lookup, collect_comptime_fns, 
 use features.eval.{Runtime, Value, StructField, value_struct, value_string, value_number, value_null, value_list, value_enum, eval_expr, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message, path_last_segment}
 use features.quote_expr.{construct_expr}
 use diagnostics.{DiagnosticBag, DiagCode, Span, bag_new, bag_report, bag_merge, diag_error, diag_warning, span_at}
-use list_ops.{list_concat}
+use list_ops.{list_concat, list_contains_str}
 
 // ── ResolverCtx state stack (step 5) ──
 //
@@ -713,11 +713,6 @@ fn collect_decl_names(decls: List<SStmt>) -> List<string> {
         if name != "" { out.push(name) }
     }
     out
-}
-
-fn list_contains_str(xs: List<string>, target: string) -> bool {
-    for x in xs { if x == target { return true } }
-    false
 }
 
 /// Pull the macro-fn identifier out of the `@expand(NAME)` annotation
