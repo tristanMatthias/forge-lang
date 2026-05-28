@@ -160,32 +160,31 @@ extern fn avra_resolver_ctx_pop()
 /// not the rewritten QualifiedIdent. The downstream codegen lookup
 /// handles bare Ident resolution against the post-expand symbol table.
 fn resolve_and_expand(stmts: List<SStmt>) -> NameResolveResult {
-    // Phase 1 (pre-resolve): collect every @expand site by source
-    // position. The plan carries through resolve_names so the eval
-    // phase has resolved names available when invoking macro bodies.
-    let plan_pre = expand_macros_collect(stmts)
     let pre = resolve_names_pre_expand(stmts)
     if pre.had_error == 1 {
         // Module-resolution errors are fatal — bail before running
         // expand_macros_eval over a borked AST.
         return validate_scopes_after_expand(pre.stmts, pre.state)
     }
+    // Phase 1 (post-resolve): collect every @expand site by source
+    // position. The plan carries through to the eval phase below.
+    // rewrite_uses preserves SStmt source positions, so collecting
+    // after resolve is equivalent to collecting before — one call.
+    let plan = expand_macros_collect(pre.stmts)
     // Fast-path: no macros to expand → skip the eval + partial
     // re-resolve, hand straight off to scope validation.
-    if !plan_has_work(plan_pre) {
+    if !plan_has_work(plan) {
         return validate_scopes_after_expand(pre.stmts, pre.state)
     }
-    // Phase 2 (post-resolve): rebuild the plan against the
-    // rewritten stmts so source-position lookups land in the
-    // post-rewrite AST, then evaluate. Push the resolver state
-    // onto the runtime stack so 2-arg macros can call ctx_* fns.
-    let plan = expand_macros_collect(pre.stmts)
+    // Phase 2 (post-resolve): push the resolver state onto the
+    // runtime stack so 2-arg macros can call ctx_* fns, populate
+    // the C-side resolver-data layer, evaluate.
     let handle = avra_resolver_ctx_push(pre.state)
-    // Populate the C-side resolver-data layer so `ctx_*` queries
-    // from inside macro bodies can answer with real data — aliases,
-    // global decls, and TypeDecl field shapes are all reachable now.
-    // `_with_state` re-populates between fixpoint iterations so a
-    // later macro sees names introduced by an earlier one.
+    // Populate the C-side resolver-data layer so ctx_* queries from
+    // inside macro bodies can answer with real data — aliases,
+    // global decls, and TypeDecl field shapes. The _with_state
+    // variant re-populates between fixpoint iterations + after every
+    // splice so a later macro sees names introduced by an earlier one.
     populate_resolver_data(pre.state, pre.stmts)
     let expanded = expand_macros_eval_with_state(plan, pre.state)
     avra_resolver_ctx_pop()
