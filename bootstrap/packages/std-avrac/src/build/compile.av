@@ -12,7 +12,7 @@
 use core.{avra_process_env_get, avra_process_forward, avra_shell_exec}
 use features.quote_expr.{lower_quotes}
 use desugar.{desugar_program, inject_intrinsics}
-use features.component_decl.{expand_components_bag}
+use features.component_decl.{expand_components}
 use features.marshal.{derive_marshal}
 use features.comptime.{resolve_and_expand_program, run_comptime}
 use typeck.{typecheck_program}
@@ -53,7 +53,7 @@ export fn build_binary(target: CompileTarget) -> Result<string, string> {
     let post_quote = lower_quotes(target.program)
     let desugared = desugar_program(post_quote)
     let with_intrinsics = inject_intrinsics(desugared)
-    let comp = expand_components_bag(with_intrinsics)
+    let comp = expand_components(with_intrinsics)
     if bag_has_errors(comp.bag) {
         render_bag("", target.diag_filename, comp.bag)
         return Result.Err("component validation failed")

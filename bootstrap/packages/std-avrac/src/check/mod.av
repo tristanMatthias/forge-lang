@@ -22,7 +22,7 @@ use parse.{parse_program_source}
 use diagnostics.{DiagnosticBag, bag_merge, bag_has_errors}
 use features.quote_expr.{lower_quotes}
 use desugar.{desugar_program, inject_intrinsics}
-use features.component_decl.{expand_components_bag}
+use features.component_decl.{expand_components}
 use features.comptime.{resolve_and_expand_program, run_comptime}
 use typeck.{typecheck_program}
 use features.generics.{monomorphize}
@@ -41,7 +41,7 @@ export fn check_source(source: string) -> DiagnosticBag {
     // don't import stdlib. inject_intrinsics is a no-op when the
     // source declares Result directly.
     let with_intrinsics = inject_intrinsics(desugared)
-    let comp = expand_components_bag(with_intrinsics)
+    let comp = expand_components(with_intrinsics)
     if bag_has_errors(comp.bag) {
         return comp.bag
     }

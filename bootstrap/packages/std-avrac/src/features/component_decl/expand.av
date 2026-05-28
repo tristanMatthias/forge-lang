@@ -41,7 +41,7 @@ export type ComponentExpandResult = {
 /// `expand_stmt_list` rebuilt the entire stmt tree even when there
 /// was nothing to expand (4szi.1 perf pass — every check_source /
 /// `bs2 check` call runs this).
-export fn expand_components_bag(stmts: List<SStmt>) -> ComponentExpandResult {
+export fn expand_components(stmts: List<SStmt>) -> ComponentExpandResult {
     let reg = collect_component_defs(stmts)
     if reg.length == 0 { return ComponentExpandResult { stmts, bag: bag_new() } }
     let bag = validate_component_tree(stmts, reg)
