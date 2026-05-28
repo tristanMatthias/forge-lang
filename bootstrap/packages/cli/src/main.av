@@ -139,6 +139,21 @@ fn render_bag_either(json_output: bool, source: string, path: string, bag: Diagn
     else { render_bag(source, path, bag) }
 }
 
+/// Component-decl expand pass with built-in error-bag short-circuit.
+/// Wraps the expand_components_bag + bag_has_errors + render + fail
+/// pattern that every compile / check / test pipeline site repeated.
+/// Returns the post-expand stmt list on success; fails the process
+/// (after rendering F4100 diagnostics) when the validator found
+/// schema mismatches.
+fn expand_components_or_fail(stmts: List<SStmt>, json_output: bool, source: string, path: string) -> List<SStmt> {
+    let comp = expand_components_bag(stmts)
+    if bag_has_errors(comp.bag) {
+        render_bag_either(json_output, source, path, comp.bag)
+        fail("component validation failed")
+    }
+    comp.stmts
+}
+
 // Module file resolution and name resolution live in features/modules/.
 
 
@@ -3313,12 +3328,8 @@ fn main() {
             // Result is visible to program_declares_enum — avoids
             // synthesizing a duplicate that dkfa would flag.
             let with_intrinsics = inject_intrinsics(mod_resolved.stmts)
-            let comp = expand_components_bag(with_intrinsics)
-            if bag_has_errors(comp.bag) {
-                render_bag_either(check_json, check_source, check_path, comp.bag)
-                fail("component validation failed")
-            }
-            let with_marshal = derive_marshal(comp.stmts)
+            let expanded = expand_components_or_fail(with_intrinsics, check_json, check_source, check_path)
+            let with_marshal = derive_marshal(expanded)
             let named = resolve_and_expand_program(with_marshal)
             if bag_has_errors(named.bag) || bag_has_warnings(named.bag) {
                 render_bag_either(check_json, check_source, check_path, named.bag)
@@ -3399,12 +3410,8 @@ fn main() {
             let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list())
             if mod_resolved.had_error { fail(mod_resolved.error_message) }
             let with_intrinsics = inject_intrinsics(mod_resolved.stmts)
-            let comp = expand_components_bag(with_intrinsics)
-            if bag_has_errors(comp.bag) {
-                render_bag(source, path, comp.bag)
-                fail("component validation failed")
-            }
-            let with_marshal = derive_marshal(comp.stmts)
+            let expanded = expand_components_or_fail(with_intrinsics, false, source, path)
+            let with_marshal = derive_marshal(expanded)
             let named = resolve_and_expand_program(with_marshal)
             if named.had_error { fail(named.error_message) }
             let post_comptime = run_comptime(named.stmts)
@@ -3432,12 +3439,8 @@ fn main() {
                 fail(mod_resolved.error_message)
             }
             let with_intrinsics = inject_intrinsics(mod_resolved.stmts)
-            let comp = expand_components_bag(with_intrinsics)
-            if bag_has_errors(comp.bag) {
-                render_bag(source, path, comp.bag)
-                fail("component validation failed")
-            }
-            let with_marshal = derive_marshal(comp.stmts)
+            let expanded = expand_components_or_fail(with_intrinsics, false, source, path)
+            let with_marshal = derive_marshal(expanded)
             let named = resolve_and_expand_program(with_marshal)
             if bag_has_errors(named.bag) || bag_has_warnings(named.bag) {
                 render_bag(source, path, named.bag)
@@ -3700,12 +3703,8 @@ fn main() {
         }
         // Component expansion: runs AFTER module resolution so component
         // definitions in any module are visible to the expander.
-        let comp = expand_components_bag(post_filter_stmts)
-        if bag_has_errors(comp.bag) {
-            render_bag_either(json_output, csource, cpath, comp.bag)
-            fail("component validation failed")
-        }
-        let with_marshal = derive_marshal(comp.stmts)
+        let expanded = expand_components_or_fail(post_filter_stmts, json_output, csource, cpath)
+        let with_marshal = derive_marshal(expanded)
         let t_expand = avra_uptime_ms()
         let named = resolve_and_expand_program(with_marshal)
         let t_names = avra_uptime_ms()
