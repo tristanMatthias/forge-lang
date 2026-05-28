@@ -22,7 +22,7 @@
 use core.{Stmt, SStmt, Expr, SExpr, FieldEntry, ValueType, sstmt_at, sstmt_mark_from_macro, find_annotation, stmt_unwrap, exit, type_qualified_name}
 use resolve.{ResolverState, register_macro_decls, dummy_resolver_state}
 use features.comptime.{CompTimeRegistry, comptime_lookup, collect_comptime_fns, value_to_stmt, value_to_stmt_list, stmt_to_value}
-use features.eval.{Runtime, Value, StructField, value_struct, value_string, value_number, value_null, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message, path_last_segment}
+use features.eval.{Runtime, Value, StructField, value_struct, value_string, value_number, value_null, value_list, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message, path_last_segment}
 use list_ops.{list_concat}
 
 // ── ResolverCtx state stack (step 5) ──
@@ -395,7 +395,7 @@ fn expand_stmt_list_in(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: L
                 let inst_macro = comp_macro_lookup(comp_macros, comp_name)
                 if inst_macro != "" {
                     if use_state { avra_rd_set_current_module(current_module) }
-                    let replacement = try_expand_with_macro(ss.node, inst_macro, reg, ss.line, ss.col, ss.file)
+                    let replacement = try_expand_with_macro(ss.node, inst_macro, reg, ss.line, ss.col, ss.file, current_module)
                     splice_expansion(out, ss, replacement)
                     if use_state && replacement != null {
                         current_state = register_and_repopulate(current_state, replacement!, current_module)
@@ -422,7 +422,7 @@ fn expand_stmt_list_in(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: L
             _ -> {
                 if has_expand_annotation(ss.node) {
                     if use_state { avra_rd_set_current_module(current_module) }
-                    let replacement = try_expand_one(ss.node, reg, ss.line, ss.col, ss.file)
+                    let replacement = try_expand_one(ss.node, reg, ss.line, ss.col, ss.file, current_module)
                     splice_expansion(out, ss, replacement)
                     if use_state && replacement != null {
                         current_state = register_and_repopulate(current_state, replacement!, current_module)
@@ -484,8 +484,8 @@ fn splice_expansion(out: List<SStmt>, ss: SStmt, replacement: List<SStmt>?) {
 /// vez6.8.5's component-instance dispatch where the macro is
 /// inherited from the parent ComponentDef. Caller has already
 /// unwrapped any Annotated layers.
-fn try_expand_with_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int, col: int, file: string) -> List<SStmt>? {
-    invoke_macro(stmt, macro_name, reg, line, col, file)
+fn try_expand_with_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int, col: int, file: string, current_module: string) -> List<SStmt>? {
+    invoke_macro(stmt, macro_name, reg, line, col, file, current_module)
 }
 
 /// Look up the macro fn name from the `@expand` annotation's first
@@ -493,13 +493,13 @@ fn try_expand_with_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, 
 /// wrapped Stmt as a single arg if the macro is 1-ary, else
 /// zero-arg), and decode the result. Returns null when ANY step
 /// fails — the caller treats that as "leave this stmt alone".
-fn try_expand_one(stmt: Stmt, reg: CompTimeRegistry, line: int, col: int, file: string) -> List<SStmt>? {
+fn try_expand_one(stmt: Stmt, reg: CompTimeRegistry, line: int, col: int, file: string, current_module: string) -> List<SStmt>? {
     let macro_name = expand_target_name(stmt)
     if macro_name == "" {
         eprintln("error: @expand requires a macro fn identifier as its argument")
         return null
     }
-    invoke_macro(stmt_unwrap(stmt), macro_name, reg, line, col, file)
+    invoke_macro(stmt_unwrap(stmt), macro_name, reg, line, col, file, current_module)
 }
 
 /// Shared driver: locate `macro_name` in the comptime registry,
@@ -525,7 +525,7 @@ fn try_expand_one(stmt: Stmt, reg: CompTimeRegistry, line: int, col: int, file: 
 /// is responsible for any annotation peeling: try_expand_one strips
 /// @expand before invoking; try_expand_with_macro receives an
 /// already-unwrapped ComponentBlock.
-fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int, col: int, file: string) -> List<SStmt>? {
+fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int, col: int, file: string, current_module: string) -> List<SStmt>? {
     let lookup = comptime_lookup(reg, macro_name)
     if lookup == null {
         eprintln("error: @expand(${macro_name}) — no @comptime fn named `${macro_name}` in scope")
@@ -553,7 +553,7 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
             eprintln("error: @expand(${macro_name}) — could not box the wrapped Stmt as a Value (encoder may not yet support this Stmt variant)")
             return null
         }
-        let annotated = build_annotated_decl(boxed!, macro_name)
+        let annotated = build_annotated_decl(boxed!, decl_name_of(stmt), current_module)
         let handle = avra_resolver_ctx_top()
         let ctx = build_resolver_ctx(handle)
         [annotated, ctx]
@@ -649,18 +649,49 @@ fn first_arg_ident(args: List<SExpr>) -> string {
 // ── 2-arg @expand value builders (step 5) ──
 
 /// Build a `@std::avrac::features::comptime::macro_types::AnnotatedDecl`
-/// struct Value to pass as the first arg of a 2-arg macro. The boxed
-/// stmt is already a Value (from `stmt_to_value`); the annotation
-/// payload and canonical_path are populated as `null` / `""` for the
-/// initial slice — populating them properly is a follow-up that needs
-/// the macro-side type defs to flow through value_to_annotated_decl
-/// on the return path.
-fn build_annotated_decl(stmt_v: Value, macro_name: string) -> Value {
+/// struct Value to pass as the first arg of a 2-arg macro. Per the
+/// doc shape:
+///   - stmt: the boxed (unwrapped) decl Value
+///   - annotation: `{name, args}` struct for the @expand annotation
+///   - canonical_path: qualified path to the decl (mod::name)
+/// args lands as an empty list — args carry SExpr ASTs, and the
+/// macro-side type expects `List<SExpr>`; encoding each runtime SExpr
+/// Value back into the macro is a follow-up. The name field is the
+/// useful piece for macros today ("expand" so the macro knows which
+/// annotation triggered it).
+fn build_annotated_decl(stmt_v: Value, decl_name: string, current_module: string) -> Value {
+    let canonical = type_qualified_name(current_module, decl_name)
+    let empty_args: List<Value> = []
+    mut ann_fields: List<StructField> = []
+    ann_fields.push(StructField { name: "name", value: value_string("expand") })
+    ann_fields.push(StructField { name: "args", value: value_list(empty_args) })
+    let annotation_v = value_struct("@std::avrac::core::Annotation", ann_fields)
     mut fields: List<StructField> = []
     fields.push(StructField { name: "stmt", value: stmt_v })
-    fields.push(StructField { name: "annotation", value: value_null() })
-    fields.push(StructField { name: "canonical_path", value: value_string(macro_name) })
+    fields.push(StructField { name: "annotation", value: annotation_v })
+    fields.push(StructField { name: "canonical_path", value: value_string(canonical) })
     value_struct("@std::avrac::features::comptime::macro_types::AnnotatedDecl", fields)
+}
+
+/// Extract the decl name from a (possibly unwrapped) Stmt — the name
+/// slot of Function / TypeDecl / EnumDecl / etc. Used to compute
+/// AnnotatedDecl.canonical_path. Returns "" when the Stmt isn't a
+/// declaration with a name.
+fn decl_name_of(stmt: Stmt) -> string {
+    match stmt {
+        .Function(name, _, _, _, _) -> name
+        .ExternFn(name, _, _) -> name
+        .TypeDecl(name, _, _) -> name
+        .EnumDecl(name, _, _) -> name
+        .NewtypeDecl(name, _) -> name
+        .UnionAliasDecl(name, _) -> name
+        .ShapeDecl(name, _) -> name
+        .TraitDecl(name, _) -> name
+        .Impl(target, _) -> target
+        .ComponentDef(name, _, _, _, _, _) -> name
+        .Annotated(_, inner) -> decl_name_of(inner)
+        _ -> ""
+    }
 }
 
 /// Build a `@std::avrac::features::comptime::resolver_ctx::ResolverCtx`
