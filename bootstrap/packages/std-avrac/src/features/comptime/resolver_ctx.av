@@ -1,0 +1,80 @@
+// WHY: sealed read-only handle macros use to query the resolver
+// from inside @comptime evaluation. Mirrors how `Runtime` is
+// threaded through eval — opaque handle, extern-fn dispatch.
+//
+// Step 5 of docs/2026_05_25_EXPAND_PIPELINE_HANDOFF.md.
+//
+// The ResolverCtx struct holds a single opaque `id` field that the
+// compiler-side dispatch table uses to look up the live resolver
+// state for the active @expand invocation. All queries are free
+// fns dispatched through `extern fn` declarations — the comptime
+// eval recognizes them by their qualified path and routes to the
+// compiler-internal implementations.
+//
+// Macros call them as `ctx_lookup_type(ctx, "Expr")` rather than
+// `ctx.lookup_type("Expr")`. Method-call sugar can land later.
+//
+// Type shapes:
+//   ResolverCtx { id: int } — opaque handle.
+//   ResolvedType { canonical_name, kind, fields?, variants? } —
+//     full hierarchical shape for struct/enum introspection.
+//   ResolvedField { name, ty } — one struct field.
+//   ResolvedVariant { name, fields } — one enum variant + its
+//     positional fields.
+
+use core.{TypeKind}
+
+export type ResolverCtx = { id: int }
+
+export type ResolvedType = {
+    canonical_name: string,
+    kind: TypeKind,
+    fields: List<ResolvedField>?,
+    variants: List<ResolvedVariant>?,
+}
+
+export type ResolvedField = {
+    name: string,
+    ty: ResolvedType,
+}
+
+export type ResolvedVariant = {
+    name: string,
+    fields: List<ResolvedField>,
+}
+
+// ── Compiler-side externs ──
+//
+// Each declaration below is matched at comptime eval by its
+// qualified path and routed to a special-case handler in
+// `features/eval/mod.av` that reads from the active
+// ResolverCtx-id-keyed compiler state. The compiler maintains
+// the id → state table during the @expand pass; macros never
+// see the table directly.
+
+/// Module the annotated decl lives in (e.g. "@std::avrac::core").
+/// Returns "" when the @expand site is at top-level.
+extern fn ctx_current_module(ctx: ResolverCtx) -> string
+
+/// Look up a type by source-level name, qualifying through the
+/// active scope's imports. Returns the canonical resolved type or
+/// null if the name doesn't resolve to a known type.
+extern fn ctx_lookup_type(ctx: ResolverCtx, name: string) -> ResolvedType?
+
+/// Resolve an identifier the same way `Expr.Ident` would resolve at
+/// this scope. Returns the QualifiedIdent path or null when the
+/// name doesn't bind.
+extern fn ctx_qualify_ident(ctx: ResolverCtx, name: string) -> string?
+
+/// Synthesise a fresh identifier guaranteed not to collide with any
+/// name visible in this scope. Uniqueness scope: this compile.
+extern fn ctx_fresh_ident(ctx: ResolverCtx, hint: string) -> string
+
+/// Returns the field-access chain to dig from `t` to a value of type
+/// `target`. Examples:
+///   ctx_unwrap_path_to(SExpr, "Expr")    -> ["node"]
+///   ctx_unwrap_path_to(FieldInit, "Expr") -> ["value", "node"]
+///   ctx_unwrap_path_to(string, "Expr")   -> []
+///   ctx_unwrap_path_to(Expr, "Expr")     -> []
+/// BFS over the field graph; cycle-guarded with depth cap = 8.
+extern fn ctx_unwrap_path_to(ctx: ResolverCtx, t: ResolvedType, target: string) -> List<string>

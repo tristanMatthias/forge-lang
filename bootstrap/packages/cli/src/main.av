@@ -102,7 +102,7 @@ use @std.avrac.build.{
     DepGraph, Unit, build_graph,
 }
 use @std.avrac.typeck.{typecheck_program}
-use @std.avrac.features.comptime.{run_comptime, expand_macros}
+use @std.avrac.features.comptime.{run_comptime, expand_macros, needs_expand_pass}
 use @std.avrac.features.quote_expr.{lower_quotes}
 use @std.avrac.diagnostics.{bag_has_errors, bag_has_warnings, bag_new, bag_report, diag_error, diag_ice, span_dummy, DiagCode, DiagnosticBag}
 use @std.avrac.diagnostics.{render_bag, render_bag_json}
@@ -156,8 +156,27 @@ fn resolve_and_expand(stmts: List<SStmt>) -> NameResolveResult {
         // expand_macros over a borked AST.
         return validate_scopes_after_expand(pre.stmts, pre.state)
     }
+    // Gate the post-expand re-resolve on actually having macros to
+    // expand. Without a gate, every compile re-walks the AST a
+    // second time even for files with zero macro annotations —
+    // which both wastes work and breaks module-level use aliases
+    // (the second pass walks Module bodies with the top-level ctx,
+    // missing the per-module alias merge that the first pass did).
+    if !needs_expand_pass(pre.stmts) {
+        return validate_scopes_after_expand(pre.stmts, pre.state)
+    }
     let expanded_macros = expand_macros(pre.stmts)
-    validate_scopes_after_expand(expanded_macros, pre.state)
+    // Macro-spliced stmts haven't been through rewrite_uses, so
+    // identifiers + vtypes in them remain in their unqualified
+    // construction form. Re-run rewrite_uses against the existing
+    // resolver state so spliced names get the same canonical
+    // treatment as the originals — type-position splices
+    // (`fn foo(x: ~name) -> ~name { ... }`, qa6i probe 3) need this
+    // to land their vtype as the right ValueType variant, and
+    // call-site references to macro-introduced fns/types resolve
+    // through the same path as hand-written ones.
+    let resolved_post_expand = rewrite_uses(expanded_macros, pre.state)
+    validate_scopes_after_expand(resolved_post_expand, pre.state)
 }
 
 /// Render a diagnostic bag in either human or JSON form, picked

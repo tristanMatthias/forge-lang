@@ -1,0 +1,41 @@
+// docs/2026_05_25_EXPAND_PIPELINE_HANDOFF.md — Step 2 probe 3.
+// Splice a string as a type identifier inside a `quote stmt` body.
+// The lowerer encodes the splice as `ValueType.Struct(<ident>, 0)`
+// so the macro's local resolves against scope at construction time.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{cached_fixture_run}
+
+fn write_temp(path: string, source: string) -> string {
+    let escaped = source.replace("'", "'\\''")
+    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
+}
+
+fn run_capture(source: string) -> string {
+    let path = "/tmp/avra_quote_splice_type_ident_test.av"
+    write_temp(path, source)
+    cached_fixture_run(path)
+}
+
+spec "quote: ~ident splices into type position" {
+    then "spliced type name produces a fn whose param + return type are bound at expansion" {
+        let out = run_capture(
+            "use @std.avrac.core.{Stmt}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build() -> Stmt {\n" +
+            "    let name_arg = \"int\"\n" +
+            "    quote stmt {\n" +
+            "        fn helper(x: ~name_arg) -> ~name_arg { x }\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    println(string(helper(42)))\n" +
+            "}\n")
+        out.contains("42")
+    }
+}

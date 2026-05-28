@@ -1,0 +1,48 @@
+// docs/2026_05_25_EXPAND_PIPELINE_HANDOFF.md — Step 4 regression
+// test. After the pipeline-order fix split resolve_names into
+// pre-expand / post-expand halves, macro bodies still need to see
+// resolved names so the @comptime registry can find @comptime
+// helper fns called from inside the macro.
+//
+// This test invokes a sibling @comptime helper from the macro body
+// and asserts the resulting program runs. If the pre-expand pass
+// ever stops rewriting Idents to QualifiedIdent, the helper call
+// would fail to resolve at eval time and this test would surface
+// the regression.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{cached_fixture_run}
+
+fn write_temp(path: string, source: string) -> string {
+    let escaped = source.replace("'", "'\\''")
+    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
+}
+
+fn run_capture(source: string) -> string {
+    let path = "/tmp/avra_expand_body_eval_still_works_test.av"
+    write_temp(path, source)
+    cached_fixture_run(path)
+}
+
+spec "qa6i: macro body eval still has resolved names available" {
+    then "macro body calls a sibling @comptime helper fn and the program runs" {
+        let out = run_capture(
+            "use @std.avrac.core.{Stmt}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn make_greeting() -> Stmt {\n" +
+            "    return quote stmt { println(\"hi from helper\") }\n" +
+            "}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build() -> Stmt {\n" +
+            "    return make_greeting()\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        out.contains("hi from helper")
+    }
+}

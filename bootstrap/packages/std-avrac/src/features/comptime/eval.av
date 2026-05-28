@@ -9,7 +9,7 @@
 // Phase 2 of Components V2 (vez6.2). The program-walker that calls
 // this on every call site lives in rewrite.av.
 
-use core.{Expr, SExpr, sexpr_dummy, Stmt, SStmt, sstmt_dummy, ValueType, BinOp, UnOp, LogicOp, ParamEntry, TypeParamEntry, FieldEntry, FieldInit, CompConfigPair, Variant}
+use core.{Expr, SExpr, sexpr_dummy, Stmt, SStmt, sstmt_dummy, ValueType, BinOp, UnOp, LogicOp, ParamEntry, TypeParamEntry, FieldEntry, FieldInit, CompConfigPair, Variant, Pattern, MatchArm}
 use features.eval.{Runtime, Value, eval_expr, eval_fn_with_resolved_args, literal_args_to_values, step_value, step_had_error}
 use features.comptime.{CompTimeFn, CompTimeRegistry, comptime_lookup}
 use features.quote_expr.{construct_stmt}
@@ -270,8 +270,130 @@ fn enum_value_to_expr(v: Value) -> Expr? {
             let e = enum_value_to_expr(p[2])?
             Expr.IfExpr(c, t, e)
         }
+        "MatchExpr" -> {
+            if p.length != 2 { return null }
+            let subj = enum_value_to_expr(head)?
+            let arms = list_value_to_match_arm_list(p[1])?
+            Expr.MatchExpr(subj, arms)
+        }
         _                 -> null
     }
+}
+
+/// Decode a Value carrying a `List<MatchArm>` back into a real
+/// `List<MatchArm>` value. Walks each entry through
+/// `value_to_match_arm`.
+fn list_value_to_match_arm_list(v: Value) -> List<MatchArm>? {
+    if v.kind != "list" { return null }
+    mut out: List<MatchArm> = []
+    for entry in v.list_payload {
+        let arm = value_to_match_arm(entry)?
+        out.push(arm)
+    }
+    out
+}
+
+/// Decode a struct Value carrying a `MatchArm` back into a real
+/// `MatchArm`. Built by `construct_match_arm` as a struct lit with
+/// fields `pattern`, `guard`, `body`. The guard field is the
+/// `Expr.Null` sentinel when the source had no `if` guard.
+fn value_to_match_arm(v: Value) -> MatchArm? {
+    if v.kind != "struct" { return null }
+    mut pat_opt: Pattern? = null
+    mut guard_opt: SExpr? = null
+    mut body_opt: SExpr? = null
+    for f in v.struct_payload {
+        match f.name {
+            "pattern" -> {
+                let p = value_to_pattern(f.value)
+                if p != null { pat_opt = p }
+            }
+            "guard" -> {
+                let g_val = f.value
+                if g_val.kind == "enum" && g_val.enum_variant == "Null" {
+                    guard_opt = null
+                } else {
+                    let g_expr = enum_value_to_expr(g_val)
+                    if g_expr != null { guard_opt = sexpr_dummy(g_expr!) }
+                }
+            }
+            "body" -> {
+                let b_expr = enum_value_to_expr(f.value)
+                if b_expr != null { body_opt = sexpr_dummy(b_expr!) }
+            }
+            _ -> { /* ignore unknown fields */ }
+        }
+    }
+    if pat_opt == null { return null }
+    if body_opt == null { return null }
+    MatchArm { pattern: pat_opt!, guard: guard_opt, body: body_opt! }
+}
+
+/// Decode an enum Value carrying a `@std::avrac::core::Pattern`
+/// tag back into the Pattern variant. Mirrors `construct_pattern`
+/// in lower.av — every variant the lowerer can emit decodes here.
+fn value_to_pattern(v: Value) -> Pattern? {
+    if v.kind != "enum" { return null }
+    if v.enum_type != "@std::avrac::core::Pattern" { return null }
+    let p = v.enum_payload
+    match v.enum_variant {
+        "Wildcard" -> Pattern.Wildcard
+        "Variant" -> {
+            if p.length != 2 { return null }
+            let name_v: Value = p[0]
+            let bindings = list_value_to_param_list(p[1])?
+            Pattern.Variant(name_v.text, bindings)
+        }
+        "LitString" -> {
+            if p.length != 1 { return null }
+            let s_v: Value = p[0]
+            Pattern.LitString(s_v.text)
+        }
+        "LitInt" -> {
+            if p.length != 1 { return null }
+            let n_v: Value = p[0]
+            Pattern.LitInt(int(n_v.number_text))
+        }
+        "LitBool" -> {
+            if p.length != 1 { return null }
+            let b_v: Value = p[0]
+            Pattern.LitBool(int(b_v.number_text))
+        }
+        "LitFloat" -> {
+            if p.length != 1 { return null }
+            let f_v: Value = p[0]
+            Pattern.LitFloat(f_v.text)
+        }
+        "NestedVariant" -> {
+            if p.length != 2 { return null }
+            let name_v: Value = p[0]
+            let subs = list_value_to_pattern_list(p[1])?
+            Pattern.NestedVariant(name_v.text, subs)
+        }
+        "Or" -> {
+            if p.length != 2 { return null }
+            let left = value_to_pattern(p[0])?
+            let right = value_to_pattern(p[1])?
+            Pattern.Or(left, right)
+        }
+        "TypePattern" -> {
+            if p.length != 2 { return null }
+            let tn_v: Value = p[0]
+            let bind_v: Value = p[1]
+            Pattern.TypePattern(tn_v.text, bind_v.text)
+        }
+        _ -> null
+    }
+}
+
+fn list_value_to_pattern_list(v: Value) -> List<Pattern>? {
+    if v.kind != "list" { return null }
+    mut out: List<Pattern> = []
+    for entry in v.list_payload {
+        let p = value_to_pattern(entry)?
+        out.push(p)
+    }
+    out
 }
 
 /// Helper for two-Expr-payload variants (Index, NullCoalesce). Picks

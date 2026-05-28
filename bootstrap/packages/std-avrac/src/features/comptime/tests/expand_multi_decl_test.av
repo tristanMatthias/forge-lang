@@ -1,0 +1,46 @@
+// docs/2026_05_25_EXPAND_PIPELINE_HANDOFF.md — Step 4 test.
+// Verifies a @expand macro can introduce multiple sibling decls
+// in a single splice — a type plus an impl referencing it. Uses
+// the List<SStmt> return form so the @expand pipeline drops both
+// decls into the parent scope as siblings.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{cached_fixture_run}
+
+fn write_temp(path: string, source: string) -> string {
+    let escaped = source.replace("'", "'\\''")
+    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
+}
+
+fn run_capture(source: string) -> string {
+    let path = "/tmp/avra_expand_multi_decl_test.av"
+    write_temp(path, source)
+    cached_fixture_run(path)
+}
+
+spec "qa6i: @expand macro can introduce multiple sibling decls" {
+    then "macro-emitted TypeDecl + Impl land as siblings and the impl method is callable" {
+        let out = run_capture(
+            "use @std.avrac.core.{Stmt, SStmt, sstmt_dummy}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build() -> List<SStmt> {\n" +
+            "    let s1 = quote stmt { type Wrap = { v: int } }\n" +
+            "    let s2 = quote stmt {\n" +
+            "        impl Wrap {\n" +
+            "            fn doubled(self) -> int { self.v + self.v }\n" +
+            "        }\n" +
+            "    }\n" +
+            "    [sstmt_dummy(s1), sstmt_dummy(s2)]\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let w = Wrap { v: 21 }\n" +
+            "    println(string(w.doubled()))\n" +
+            "}\n")
+        out.contains("42")
+    }
+}

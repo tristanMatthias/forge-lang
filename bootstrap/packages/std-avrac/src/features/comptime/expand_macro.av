@@ -117,7 +117,18 @@ fn peel_annotations(stmt: Stmt) -> Stmt {
 /// True iff any `@expand` annotation appears anywhere in `stmts`.
 /// Walks recursively but allocates nothing — callers only pay for
 /// the rewrite walk when the program actually has macros.
-fn any_expand_annotation(stmts: List<SStmt>) -> bool {
+/// True iff the program contains anything `expand_macros` would
+/// rewrite — either a `@expand` annotation or an instance of a
+/// component whose definition carries one. Gates the post-expand
+/// re-resolve in `cli/main.av:resolve_and_expand` so we only pay
+/// the second walk when there's actually work to splice.
+export fn needs_expand_pass(stmts: List<SStmt>) -> bool {
+    if any_expand_annotation(stmts) { return true }
+    let comp_macros = collect_component_macros(stmts)
+    comp_macros.length != 0
+}
+
+export fn any_expand_annotation(stmts: List<SStmt>) -> bool {
     mut i = 0
     while i < stmts.length {
         if has_expand_annotation(stmts[i].node) { return true }
