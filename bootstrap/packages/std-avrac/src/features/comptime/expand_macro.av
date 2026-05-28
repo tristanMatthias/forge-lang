@@ -545,9 +545,8 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
     // returns fall through to the existing decoders.
     let as_rd = value_to_resolved_decls(v)
     if as_rd != null {
-        let rd = as_rd!
         mut out: List<SStmt> = []
-        for ss in rd.decls {
+        for ss in as_rd! {
             out.push(sstmt_at(ss.node, line, col, file))
         }
         return out
@@ -578,27 +577,20 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
 /// is decoded via `value_to_stmt_list`; `introduces` + `provenance`
 /// aren't read here — `register_macro_decls` runs against the actual
 /// post-expand AST, which is the same set of decls the macro returned.
-fn value_to_resolved_decls(v: Value) -> ResolvedDeclsPayload? {
+/// Returns just the decoded `decls` list — provenance + introduces
+/// carry no info the invoker needs.
+fn value_to_resolved_decls(v: Value) -> List<SStmt>? {
     if v.kind != "struct" { return null }
     // Match by suffix — the qualified form depends on how rewrite_uses
     // canonicalised the StructLit's type name (may be bare, may include
     // the @std::… path). path_last_segment ignores the prefix.
     let last = path_last_segment(v.struct_type)
     if last != "ResolvedDecls" { return null }
-    mut decls_field: Value? = null
     for f in v.struct_payload {
-        if f.name == "decls" { decls_field = f.value }
+        if f.name == "decls" { return value_to_stmt_list(f.value) }
     }
-    if decls_field == null { return null }
-    let decls = value_to_stmt_list(decls_field!)
-    if decls == null { return null }
-    ResolvedDeclsPayload { decls: decls! }
+    null
 }
-
-/// Internal carrier for the decoded ResolvedDecls. The full type lives
-/// in macro_types.av but it carries non-Value fields (provenance) the
-/// invoker doesn't need; this is just enough to drive the splice.
-type ResolvedDeclsPayload = { decls: List<SStmt> }
 
 /// Pull the macro-fn identifier out of the `@expand(NAME)` annotation
 /// args. Returns "" when the annotation isn't present, has no args,
