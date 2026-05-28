@@ -209,6 +209,22 @@ fn parse_or_fail(source: string, json_output: bool, source_display: string, path
     parsed.stmts!
 }
 
+/// `--stop-after=<stage>` is run_build_command's debugging knob —
+/// halt the pipeline after a specific phase with a green "ok"
+/// signal. Four sites (parse / resolve / names / check) replicated
+/// the same 4-line `if stop_after == "X" { println("ok"); return }`
+/// shape; centralise the println + the comparison so each
+/// callsite stays a one-line `if stop_after_matches(stop_after,
+/// "X") { return }` guard. The caller still does its own `return`
+/// because Avra doesn't have early-return-from-caller semantics.
+fn stop_after_matches(stop_after: string, stage: string) -> bool {
+    if stop_after == stage {
+        println("ok")
+        return true
+    }
+    false
+}
+
 /// Component-decl expand pass with built-in error-bag short-circuit.
 /// Wraps the expand_components + bag_has_errors + render + fail
 /// pattern that every compile / check / test pipeline site repeated.
@@ -3631,10 +3647,7 @@ fn main() {
 
         let parsed_stmts = parse_or_fail(csource, json_output, csource, cpath)
         let t_parse = avra_uptime_ms()
-        if stop_after == "parse" {
-            println("ok")
-            return
-        }
+        if stop_after_matches(stop_after, "parse") { return }
         // 2f54: when --module_path is set, wrap the parsed body in a
         // virtual Module BEFORE resolve_module_files. The resolver
         // sees Module-with-body and recurses into it (skipping its
@@ -3698,10 +3711,7 @@ fn main() {
         let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list())
         let t_resolve_mods = avra_uptime_ms()
         fail_on_module_resolve_error(mod_resolved, json_output, csource, cpath)
-        if stop_after == "resolve" {
-            println("ok")
-            return
-        }
+        if stop_after_matches(stop_after, "resolve") { return }
         // Inject intrinsics AFTER module resolution so the recursive
         // program_declares_enum scan sees stdlib's Result (now inline)
         // and skips synthesizing a duplicate. Cleanup of the earlier
@@ -3722,10 +3732,7 @@ fn main() {
         let t_expand = avra_uptime_ms()
         let named = marshal_and_resolve_or_fail(expanded, json_output, csource, cpath)
         let t_names = avra_uptime_ms()
-        if stop_after == "names" {
-            println("ok")
-            return
-        }
+        if stop_after_matches(stop_after, "names") { return }
         // Comptime fold: replace `@comptime` calls with their literal results.
         // Runs after resolve_and_expand_program so names are bound, before typeck
         // so the typechecker sees the post-fold (literal-typed) AST.
@@ -3734,10 +3741,7 @@ fn main() {
         let tc_result = typecheck_program(post_comptime)
         let t_typeck = avra_uptime_ms()
         render_and_fail_on_errors(tc_result.bag, json_output, csource, cpath, "type check failed")
-        if stop_after == "check" {
-            println("ok")
-            return
-        }
+        if stop_after_matches(stop_after, "check") { return }
         // Monomorphize: replace generic declarations with concrete specializations.
         // Uses the type-annotated AST from typeck so inference reads SExpr.ty.
         let mono = monomorphize(tc_result.stmts, tc_result.trait_impls)
