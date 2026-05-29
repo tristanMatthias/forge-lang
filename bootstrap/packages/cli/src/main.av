@@ -3465,7 +3465,7 @@ fn main() {
             let mod_resolved = resolve_module_files(parsed_stmts, entry_dir, empty_loaded_list())
             fail_on_module_resolve_error(mod_resolved, ctx)
             let named = resolve_names(mod_resolved.stmts)
-            render_bag_if_nonempty(ctx, named.bag)
+            render_and_fail_on_errors(named.bag, ctx, "resolve errors — fix the source then re-run")
             println("no auto-fixes available")
             return
         }
