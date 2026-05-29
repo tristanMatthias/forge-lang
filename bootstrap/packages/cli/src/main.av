@@ -130,39 +130,59 @@ fn fail(message: string) {
     exit(1)
 }
 
+/// Diagnostic-rendering context shared by every pipeline-stage
+/// helper. Carries the three knobs every renderer needs:
+///
+///   - `json_output` selects machine-readable F-code output
+///     (`--json` flag) vs human-readable rendering.
+///   - `source` is the program source string the renderer cites
+///     when showing line-number context.
+///   - `path` is the source-file path embedded in the rendered
+///     diagnostic header (and used as the JSON `file` field).
+///
+/// Built once per command (cmd_check / cmd_fix / cmd_format /
+/// cmd_expand / cmd_test / run_build_command) and threaded
+/// through every pipeline-stage helper — replaces the
+/// (json_output, source, path) triplet that previously appeared
+/// in every helper signature.
+type RenderContext = {
+    json_output: bool,
+    source: string,
+    path: string,
+}
+
+fn render_ctx(json_output: bool, source: string, path: string) -> RenderContext {
+    RenderContext { json_output, source, path }
+}
+
 /// Render a diagnostic bag in either human or JSON form, picked
-/// by `json_output`. Both `compile` and `check` switch on the
+/// by `ctx.json_output`. Both `compile` and `check` switch on the
 /// `--json` flag at every pipeline stage; this helper centralises
 /// the dispatch so each stage stays a one-liner.
-fn render_bag_either(json_output: bool, source: string, path: string, bag: DiagnosticBag) {
-    if json_output { render_bag_json(path, bag) }
-    else { render_bag(source, path, bag) }
+fn render_bag_ctx(ctx: RenderContext, bag: DiagnosticBag) {
+    if ctx.json_output { render_bag_json(ctx.path, bag) }
+    else { render_bag(ctx.source, ctx.path, bag) }
 }
 
 /// Render the bag only if it carries any errors or warnings — the
 /// no-op fast-path keeps the noise-free compile (zero diagnostics)
 /// from emitting empty `Found 0 warnings.` separator output. Used
 /// at every post-pass diagnostic-check site; folds the
-/// `if bag_has_errors(b) || bag_has_warnings(b) { render_bag_either(...) }`
+/// `if bag_has_errors(b) || bag_has_warnings(b) { render_bag_ctx(...) }`
 /// pattern into a single call.
-fn render_bag_if_nonempty(json_output: bool, source: string, path: string, bag: DiagnosticBag) {
+fn render_bag_if_nonempty(ctx: RenderContext, bag: DiagnosticBag) {
     if bag_has_errors(bag) || bag_has_warnings(bag) {
-        render_bag_either(json_output, source, path, bag)
+        render_bag_ctx(ctx, bag)
     }
 }
 
 /// Render any diagnostics (errors or warnings) in the bag, then
 /// abort the process when the bag carries errors. The render step
 /// goes through `render_bag_if_nonempty` so a clean bag emits nothing.
-/// Replaces the typecheck / monomorphize post-pass shape
-///     render_bag_if_nonempty(...)
-///     if bag_has_errors(b) { fail(msg) }
-/// at every site that wants both diagnostics-up-to-the-user AND
-/// hard-stop-on-errors. (Sites that want hard-stop-only, with no
-/// warning render, don't exist in the current pipeline — the prior
-/// `fail_on_bag_errors` helper conflated the two.)
-fn render_and_fail_on_errors(bag: DiagnosticBag, json_output: bool, source: string, path: string, msg: string) {
-    render_bag_if_nonempty(json_output, source, path, bag)
+/// Used at every site that wants both diagnostics-up-to-the-user
+/// AND hard-stop-on-errors (typecheck, monomorphize).
+fn render_and_fail_on_errors(bag: DiagnosticBag, ctx: RenderContext, msg: string) {
+    render_bag_if_nonempty(ctx, bag)
     if bag_has_errors(bag) { fail(msg) }
 }
 
@@ -170,20 +190,20 @@ fn render_and_fail_on_errors(bag: DiagnosticBag, json_output: bool, source: stri
 /// and exit with the original error message. `compile_program`
 /// returns `.Err(string)` for internal failures; both pipeline sites
 /// previously open-coded the bag construction + render. Centralise.
-fn fail_with_codegen_ice(error_msg: string, json_output: bool, source: string, path: string) {
+fn fail_with_codegen_ice(error_msg: string, ctx: RenderContext) {
     let ice_bag = bag_report(bag_new(), diag_ice("internal compiler error during codegen: ${error_msg}"))
-    render_bag_either(json_output, source, path, ice_bag)
+    render_bag_ctx(ctx, ice_bag)
     fail(error_msg)
 }
 
 /// Wrap a module-resolution failure as an F3100 (ModuleNotFound)
-/// diagnostic and abort. The bag-construction + render dance was
-/// identical at cmd_check and cmd_test — fold it here so the
-/// callsite reads as a single one-line guard.
-fn fail_on_module_resolve_error(mod_resolved: ModListResult, json_output: bool, source: string, path: string) {
+/// diagnostic and abort. Every module-resolve-using command routes
+/// through this helper so the user sees the structured F-code
+/// diagnostic instead of a bare error string.
+fn fail_on_module_resolve_error(mod_resolved: ModListResult, ctx: RenderContext) {
     if mod_resolved.had_error {
         let mod_bag = bag_report(bag_new(), diag_error(DiagCode.ModuleNotFound, mod_resolved.error_message, span_dummy()))
-        render_bag_either(json_output, source, path, mod_bag)
+        render_bag_ctx(ctx, mod_bag)
         fail(mod_resolved.error_message)
     }
 }
@@ -197,11 +217,11 @@ fn fail_on_module_resolve_error(mod_resolved: ModListResult, json_output: bool, 
 /// reporting), then `fail`s with the parse-level error message.
 /// Returns the parsed stmt list on success — the caller continues
 /// from there.
-fn parse_or_fail(source: string, json_output: bool, source_display: string, path: string) -> List<SStmt> {
+fn parse_or_fail(source: string, ctx: RenderContext) -> List<SStmt> {
     let parsed = parse_program_source(source)
     if parsed.had_error || parsed.stmts == null {
         if bag_has_errors(parsed.bag) {
-            render_bag_either(json_output, source_display, path, parsed.bag)
+            render_bag_ctx(ctx, parsed.bag)
         }
         fail(parsed.error_message)
     }
@@ -230,10 +250,10 @@ fn stop_after_matches(stop_after: string, stage: string) -> bool {
 /// Returns the post-expand stmt list on success; fails the process
 /// (after rendering F4100 diagnostics) when the validator found
 /// schema mismatches.
-fn expand_components_or_fail(stmts: List<SStmt>, json_output: bool, source: string, path: string) -> List<SStmt> {
+fn expand_components_or_fail(stmts: List<SStmt>, ctx: RenderContext) -> List<SStmt> {
     let comp = expand_components(stmts)
     if bag_has_errors(comp.bag) {
-        render_bag_either(json_output, source, path, comp.bag)
+        render_bag_ctx(ctx, comp.bag)
         fail("component validation failed")
     }
     comp.stmts
@@ -246,10 +266,10 @@ fn expand_components_or_fail(stmts: List<SStmt>, json_output: bool, source: stri
 /// repeated immediately after `expand_components_or_fail`.
 /// Returns the NameResolveResult so the caller can continue
 /// with run_comptime → typecheck.
-fn marshal_and_resolve_or_fail(stmts: List<SStmt>, json_output: bool, source: string, path: string) -> NameResolveResult {
+fn marshal_and_resolve_or_fail(stmts: List<SStmt>, ctx: RenderContext) -> NameResolveResult {
     let with_marshal = derive_marshal(stmts)
     let named = resolve_and_expand_program(with_marshal)
-    render_bag_if_nonempty(json_output, source, path, named.bag)
+    render_bag_if_nonempty(ctx, named.bag)
     if named.had_error { fail(named.error_message) }
     named
 }
@@ -3402,8 +3422,9 @@ fn main() {
             let check_argc = avra_selfhost_argc()
             let check_path = if check_argc > 3 { avra_selfhost_get_arg_cstr(check_argc - 1) } else { path }
             let check_source = if check_path != path { read_file(check_path) } else { source }
+            let ctx = render_ctx(check_json, check_source, check_path)
 
-            let parsed_stmts = parse_or_fail(check_source, check_json, check_source, check_path)
+            let parsed_stmts = parse_or_fail(check_source, ctx)
             let check_dir = modules_dirname(check_path)
             let check_pkg = load_package_config(check_dir)
             if check_pkg.found && !check_json {
@@ -3413,16 +3434,16 @@ fn main() {
             let desugared = desugar_program(post_quote)
             let entry_dir = modules_dirname(check_path)
             let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list())
-            fail_on_module_resolve_error(mod_resolved, check_json, check_source, check_path)
+            fail_on_module_resolve_error(mod_resolved, ctx)
             // Inject intrinsics AFTER module resolution so stdlib's
             // Result is visible to program_declares_enum — avoids
             // synthesizing a duplicate that dkfa would flag.
             let with_intrinsics = inject_intrinsics(mod_resolved.stmts)
-            let expanded = expand_components_or_fail(with_intrinsics, check_json, check_source, check_path)
-            let named = marshal_and_resolve_or_fail(expanded, check_json, check_source, check_path)
+            let expanded = expand_components_or_fail(with_intrinsics, ctx)
+            let named = marshal_and_resolve_or_fail(expanded, ctx)
             let post_comptime = run_comptime(named.stmts)
             let tc_result = typecheck_program(post_comptime)
-            render_and_fail_on_errors(tc_result.bag, check_json, check_source, check_path, "type check failed")
+            render_and_fail_on_errors(tc_result.bag, ctx, "type check failed")
             if !check_json { println("ok") }
             return
         }
@@ -3438,21 +3459,20 @@ fn main() {
             // Ticket 8ym: autofix infrastructure.
             // Parse and check the file, then apply high-confidence fixes.
             // For v1.0: no auto-fixes are implemented yet, so we just report that.
-            let parsed_stmts = parse_or_fail(source, false, source, path)
+            let ctx = render_ctx(false, source, path)
+            let parsed_stmts = parse_or_fail(source, ctx)
             let entry_dir = modules_dirname(path)
             let mod_resolved = resolve_module_files(parsed_stmts, entry_dir, empty_loaded_list())
-            fail_on_module_resolve_error(mod_resolved, false, source, path)
+            fail_on_module_resolve_error(mod_resolved, ctx)
             let named = resolve_names(mod_resolved.stmts)
-            if bag_has_errors(named.bag) {
-                render_bag(source, path, named.bag)
-            }
+            render_bag_if_nonempty(ctx, named.bag)
             println("no auto-fixes available")
             return
         }
         "fmt" -> {
             // Ticket c5w: code formatter (spec Axis 27.1).
             // Avra syntax.
-            let parsed_stmts = parse_or_fail(source, false, source, path)
+            let parsed_stmts = parse_or_fail(source, render_ctx(false, source, path))
             println(fmt_stmt_list(parsed_stmts, 0))
             return
         }
@@ -3467,15 +3487,16 @@ fn main() {
             // The output is valid Avra source that compiles to the
             // same program as the original — the P7 (visible magic)
             // promise made tangible.
-            let parsed_stmts = parse_or_fail(source, false, source, path)
+            let ctx = render_ctx(false, source, path)
+            let parsed_stmts = parse_or_fail(source, ctx)
             let post_quote = lower_quotes(parsed_stmts)
             let desugared = desugar_program(post_quote)
             let entry_dir = modules_dirname(path)
             let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list())
-            fail_on_module_resolve_error(mod_resolved, false, source, path)
+            fail_on_module_resolve_error(mod_resolved, ctx)
             let with_intrinsics = inject_intrinsics(mod_resolved.stmts)
-            let expanded = expand_components_or_fail(with_intrinsics, false, source, path)
-            let named = marshal_and_resolve_or_fail(expanded, false, source, path)
+            let expanded = expand_components_or_fail(with_intrinsics, ctx)
+            let named = marshal_and_resolve_or_fail(expanded, ctx)
             let post_comptime = run_comptime(named.stmts)
             println(fmt_stmt_list(post_comptime, 0))
             return
@@ -3484,24 +3505,25 @@ fn main() {
             // Ticket syu: test runner (spec Axis 27.3).
             // Compile the file (which should contain spec/given/then blocks)
             // and report the output path for linking and execution.
-            let parsed_stmts = parse_or_fail(source, false, source, path)
+            let ctx = render_ctx(false, source, path)
+            let parsed_stmts = parse_or_fail(source, ctx)
             let post_quote = lower_quotes(parsed_stmts)
             let desugared = desugar_program(post_quote)
             let entry_dir = modules_dirname(path)
             let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list())
-            fail_on_module_resolve_error(mod_resolved, false, source, path)
+            fail_on_module_resolve_error(mod_resolved, ctx)
             let with_intrinsics = inject_intrinsics(mod_resolved.stmts)
-            let expanded = expand_components_or_fail(with_intrinsics, false, source, path)
-            let named = marshal_and_resolve_or_fail(expanded, false, source, path)
+            let expanded = expand_components_or_fail(with_intrinsics, ctx)
+            let named = marshal_and_resolve_or_fail(expanded, ctx)
             let post_comptime = run_comptime(named.stmts)
             let tc_result = typecheck_program(post_comptime)
-            render_and_fail_on_errors(tc_result.bag, false, source, path, "type check failed")
+            render_and_fail_on_errors(tc_result.bag, ctx, "type check failed")
             let mono = monomorphize(tc_result.stmts, tc_result.trait_impls)
-            render_and_fail_on_errors(mono.bag, false, source, path, "monomorphization failed")
+            render_and_fail_on_errors(mono.bag, ctx, "monomorphization failed")
             let output = "${path}.ll"
             match compile_program(mono.stmts, output, false, false, path, named.type_reg, false) {
                 .Ok(_) -> {}
-                .Err(e) -> { fail_with_codegen_ice(e, false, source, path) }
+                .Err(e) -> { fail_with_codegen_ice(e, ctx) }
             }
             println(output)
             return
@@ -3640,8 +3662,9 @@ fn main() {
         // perf work (we need numbers before we can rank optimisations).
         let timings_on = avra_process_env_get("AVRA_TIMINGS") != ""
         let t_start = avra_uptime_ms()
+        let ctx = render_ctx(json_output, csource, cpath)
 
-        let parsed_stmts = parse_or_fail(csource, json_output, csource, cpath)
+        let parsed_stmts = parse_or_fail(csource, ctx)
         let t_parse = avra_uptime_ms()
         if stop_after_matches(stop_after, "parse") { return }
         // 2f54: when --module_path is set, wrap the parsed body in a
@@ -3706,7 +3729,7 @@ fn main() {
         let entry_dir = modules_dirname(cpath)
         let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list())
         let t_resolve_mods = avra_uptime_ms()
-        fail_on_module_resolve_error(mod_resolved, json_output, csource, cpath)
+        fail_on_module_resolve_error(mod_resolved, ctx)
         if stop_after_matches(stop_after, "resolve") { return }
         // Inject intrinsics AFTER module resolution so the recursive
         // program_declares_enum scan sees stdlib's Result (now inline)
@@ -3724,9 +3747,9 @@ fn main() {
         }
         // Component expansion: runs AFTER module resolution so component
         // definitions in any module are visible to the expander.
-        let expanded = expand_components_or_fail(post_filter_stmts, json_output, csource, cpath)
+        let expanded = expand_components_or_fail(post_filter_stmts, ctx)
         let t_expand = avra_uptime_ms()
-        let named = marshal_and_resolve_or_fail(expanded, json_output, csource, cpath)
+        let named = marshal_and_resolve_or_fail(expanded, ctx)
         let t_names = avra_uptime_ms()
         if stop_after_matches(stop_after, "names") { return }
         // Comptime fold: replace `@comptime` calls with their literal results.
@@ -3736,13 +3759,13 @@ fn main() {
         // Type check — gates compilation on errors
         let tc_result = typecheck_program(post_comptime)
         let t_typeck = avra_uptime_ms()
-        render_and_fail_on_errors(tc_result.bag, json_output, csource, cpath, "type check failed")
+        render_and_fail_on_errors(tc_result.bag, ctx, "type check failed")
         if stop_after_matches(stop_after, "check") { return }
         // Monomorphize: replace generic declarations with concrete specializations.
         // Uses the type-annotated AST from typeck so inference reads SExpr.ty.
         let mono = monomorphize(tc_result.stmts, tc_result.trait_impls)
         let t_mono = avra_uptime_ms()
-        render_and_fail_on_errors(mono.bag, json_output, csource, cpath, "monomorphization failed")
+        render_and_fail_on_errors(mono.bag, ctx, "monomorphization failed")
         let output = if output_override != "" { output_override } else { "${cpath}.ll" }
         // 2f54: when --module_path is set we treat this as a library
         // build — skip the synthetic main() wrapper so multiple
@@ -3751,7 +3774,7 @@ fn main() {
         // Ticket t2w: ICE handler — wrap codegen errors in F9999.
         match compile_program(mono.stmts, output, debug_null, enable_coverage, cpath, named.type_reg, library_mode) {
             .Ok(_) -> {}
-            .Err(e) -> { fail_with_codegen_ice(e, json_output, csource, cpath) }
+            .Err(e) -> { fail_with_codegen_ice(e, ctx) }
         }
         let t_codegen = avra_uptime_ms()
         // grgg: publish the freshly-compiled .ll into the per-project
