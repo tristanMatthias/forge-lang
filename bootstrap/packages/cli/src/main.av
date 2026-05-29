@@ -74,7 +74,7 @@ use @std.avrac.pathutil.{basename_no_ext}
 use @std.avrac.list_ops.{list_map, list_filter, list_fold}
 use @std.avrac.parse.{parse_expression_source, parse_program_source, parse_program_source_at}
 use @std.avrac.core.{render_expr, render_stmt_list, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType, Stmt, SStmt, Expr, sstmt_dummy}
-use @std.avrac.features.eval.{render_value, eval_expression_source, execute_program_source}
+use @std.avrac.features.eval.{render_value, eval_expression_source, execute_program_source, execute_program_stmts}
 use @std.avrac.desugar.{desugar_program, inject_intrinsics}
 use @std.avrac.features.component_decl.{expand_components}
 use @std.avrac.features.marshal.{derive_marshal}
@@ -3448,7 +3448,12 @@ fn main() {
             return
         }
         "run" -> {
-            let result = execute_program_source(source)
+            // parse_or_fail handles F-coded parse errors with source-line
+            // context, just like every other bs2 subcommand. Without it,
+            // a parse error in cmd_run would print only a bare one-line
+            // message ("parse error at L:C: …") with no diagnostic frame.
+            let parsed_stmts = parse_or_fail(source, render_ctx(false, source, path))
+            let result = execute_program_stmts(parsed_stmts)
             if result.had_error || result.value == null {
                 fail(result.error_message)
             }

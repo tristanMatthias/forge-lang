@@ -281,7 +281,10 @@ export fn eval_expression_source(source: string) -> EvalResult {
 
 /// Public entry point for evaluating a full program. Parses
 /// the source, runs it through `execute_stmt_list`, and
-/// returns the final EvalResult.
+/// returns the final EvalResult. Callers that have already
+/// parsed (e.g. cmd_run, which routes through parse_or_fail
+/// for structured F-code rendering) should use
+/// `execute_program_stmts` instead to avoid a redundant parse.
 export fn execute_program_source(source: string) -> EvalResult {
     let parsed = parse_program_source(source)
     if parsed.had_error || parsed.stmts == null {
@@ -291,8 +294,16 @@ export fn execute_program_source(source: string) -> EvalResult {
             error_message: parsed.error_message,
         }
     }
+    execute_program_stmts(parsed.stmts!)
+}
 
-    finish_result(execute_stmt_list(runtime_new(), parsed.stmts!))
+/// Same as `execute_program_source` but takes pre-parsed
+/// statements. Lets callers that handle parse-time diagnostics
+/// upstream (cmd_run via parse_or_fail) avoid a second parse
+/// and still surface F-coded parse errors through the unified
+/// rendering pipeline.
+export fn execute_program_stmts(stmts: List<SStmt>) -> EvalResult {
+    finish_result(execute_stmt_list(runtime_new(), stmts))
 }
 
 /// Render an integer as its canonical decimal text. Strips a
