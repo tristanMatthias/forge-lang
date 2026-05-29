@@ -1,0 +1,42 @@
+// y9y4.5: @expand(derive_walker) applied to the real `Pattern` enum
+// in core/ast.av. Verifies the macro fires through Module-wrapped
+// imports — fix for 1pre (any_expand_annotation didn't recurse into
+// Module bodies, so iter 0 saw has_exp=false even when std-avrac's
+// own Pattern carried @expand, and the synth'd Pattern__children
+// was missing at consumer codegen).
+//
+// Bypasses metadata mode at fixture invocation — 9p1d: metadata
+// strips @comptime annotations + bodies. Until that lands, consumers
+// of std-avrac-shipped @comptime macros opt out at the bs2
+// invocation.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn run_capture(source: string) -> string {
+    let path = "/tmp/avra_walker_pattern_test.av"
+    write_fixture(path, source)
+    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS bash scripts/diagnose.sh --run ${path} 2>&1 || true")
+}
+
+spec "derive_walker: applied to core/ast.av's Pattern enum" {
+    then "Pattern.children() recurses through Or and NestedVariant, terminates on scalars" {
+        let out = run_capture(
+            "use @std.avrac.core.{Pattern, ParamEntry}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let wild = Pattern.Wildcard\n" +
+            "    println(\"wild=\" + string(wild.children().length))\n" +
+            "\n" +
+            "    let lit = Pattern.LitInt(42)\n" +
+            "    println(\"lit=\" + string(lit.children().length))\n" +
+            "\n" +
+            "    let or_pat = Pattern.Or(Pattern.LitInt(1), Pattern.LitInt(2))\n" +
+            "    println(\"or=\" + string(or_pat.children().length))\n" +
+            "\n" +
+            "    let nested = Pattern.NestedVariant(\"Some\", [Pattern.Wildcard, Pattern.LitInt(1)])\n" +
+            "    println(\"nested=\" + string(nested.children().length))\n" +
+            "}\n")
+        out.contains("wild=0") && out.contains("lit=0") && out.contains("or=2") && out.contains("nested=2")
+    }
+}

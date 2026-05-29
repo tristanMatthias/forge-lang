@@ -3,6 +3,7 @@
 // all logic (parsing, resolution, codegen) lives elsewhere.
 
 use list_ops.{list_map, list_any}
+use features.walker.{derive_walker}
 
 // ── Spanned wrappers ──
 //
@@ -93,6 +94,7 @@ export type Variant = { name: string, fields: List<FieldEntry> }
 
 /// Pattern in a match arm. Used by `match`, `when`, and destructuring
 /// `let (a, b) = tuple`.
+@expand(derive_walker)
 export enum Pattern {
     /// `_` — matches anything, binds nothing.
     Wildcard

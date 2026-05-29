@@ -338,14 +338,27 @@ fn peel_annotations(stmt: Stmt) -> Stmt {
 
 // ── Fast-path presence scan ──
 
-/// True iff any `@expand` annotation appears at the top level of
-/// `stmts`. Used by the fixpoint loop to detect when no further
-/// expansion work remains. Doesn't recurse into Module bodies —
-/// the walker descends explicitly and handles inner-Module @expand
-/// sites by recursing into expand_stmt_list with a child module path.
+/// True iff any `@expand` annotation appears anywhere in `stmts`,
+/// recursing into Module bodies. Used by the fixpoint loop to decide
+/// whether another pass is needed.
+///
+/// The recursion matters when an @expand site lives inside an imported
+/// package's Module wrapper (e.g. `@expand(derive_walker)` on
+/// `@std::avrac::core::ast::Pattern`): the consumer fixture's top
+/// level has no @expand, but expand_stmt_list will still find one
+/// when it descends through .Module — so the fixpoint loop must
+/// agree, otherwise the walker is never invoked and a present @expand
+/// silently slips past, leading to F9999 'undefined method T.children'
+/// downstream when callers try to use the would-be-derived method.
 export fn any_expand_annotation(stmts: List<SStmt>) -> bool {
     for ss in stmts {
         if has_expand_annotation(ss.node) { return true }
+        match peel_annotations(ss.node) {
+            .Module(_, body) -> {
+                if any_expand_annotation(body) { return true }
+            }
+            _ -> {}
+        }
     }
     false
 }
