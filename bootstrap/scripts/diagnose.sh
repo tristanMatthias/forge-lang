@@ -207,11 +207,18 @@ ensure_runtime() {
 }
 
 ensure_runtime_asan() {
-  if [ ! -f "$RUNTIME_ASAN_O" ] || [ "$RUNTIME_C" -nt "$RUNTIME_ASAN_O" ]; then
+  # Mirror ensure_runtime's hash-comparison invalidation — mtime
+  # comparison (`-nt`) is vulnerable to the same APFS second-
+  # granularity race source_newer_than was fixed for.
+  local cur_hash; cur_hash=$(md5sum "$RUNTIME_C" 2>/dev/null || md5 -q "$RUNTIME_C" 2>/dev/null)
+  local hash_file="$BUILD_DIR/.runtime_asan_hash"
+  local old_hash; old_hash=$(cat "$hash_file" 2>/dev/null)
+  if [ ! -f "$RUNTIME_ASAN_O" ] || [ "$cur_hash" != "$old_hash" ]; then
     mkdir -p "$BUILD_DIR"
     log "compiling runtime (ASan) → $RUNTIME_ASAN_O"
     cc -c -O0 -g -fsanitize=address -o "$RUNTIME_ASAN_O" "$RUNTIME_C" \
       || die "runtime ASan build failed"
+    echo "$cur_hash" > "$hash_file"
   fi
 }
 
@@ -234,7 +241,15 @@ ensure_llvm_wrapper() {
 ensure_seed() {
   ensure_llvm_wrapper
   ensure_runtime
-  if [ "${1:-}" = "force" ] || [ ! -x "$SEED_BIN" ] || [ "$SEED_LL" -nt "$SEED_BIN" ]; then
+  # Use hash comparison (race-free) instead of `-nt` mtime check —
+  # consistent with ensure_runtime / ensure_llvm_wrapper and immune
+  # to the APFS second-granularity race source_newer_than was fixed
+  # for. A change to seed/seed.ll (typically from `make update-seed`
+  # in the same shell session as a previous build) reliably invalidates.
+  local seed_hash; seed_hash=$(md5sum "$SEED_LL" 2>/dev/null || md5 -q "$SEED_LL" 2>/dev/null)
+  local seed_hash_file="$BUILD_DIR/.seed_hash"
+  local old_seed_hash; old_seed_hash=$(cat "$seed_hash_file" 2>/dev/null)
+  if [ "${1:-}" = "force" ] || [ ! -x "$SEED_BIN" ] || [ "$seed_hash" != "$old_seed_hash" ]; then
     [ -f "$SEED_LL" ] || die "seed IR not found at $SEED_LL — repo is corrupt"
     log "building seed compiler from seed/seed.ll"
     mkdir -p "$BUILD_DIR"
@@ -245,6 +260,7 @@ ensure_seed() {
       -L"$LLVM_PREFIX/lib" -lLLVM -lc++ 2>"$BUILD_DIR/seed.link.log" \
       || { rm -f "${SEED_BIN}.tmp"; cat "$BUILD_DIR/seed.link.log" >&2; die "seed link failed"; }
     mv "${SEED_BIN}.tmp" "$SEED_BIN"
+    echo "$seed_hash" > "$seed_hash_file"
   fi
 }
 
