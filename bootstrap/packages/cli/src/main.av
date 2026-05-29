@@ -3472,7 +3472,7 @@ fn main() {
             let desugared = desugar_program(post_quote)
             let entry_dir = modules_dirname(path)
             let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list())
-            if mod_resolved.had_error { fail(mod_resolved.error_message) }
+            fail_on_module_resolve_error(mod_resolved, false, source, path)
             let with_intrinsics = inject_intrinsics(mod_resolved.stmts)
             let expanded = expand_components_or_fail(with_intrinsics, false, source, path)
             let named = marshal_and_resolve_or_fail(expanded, false, source, path)
