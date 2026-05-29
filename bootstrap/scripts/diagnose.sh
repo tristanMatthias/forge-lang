@@ -55,13 +55,29 @@ warn() { printf "${C_YELLOW}[warn]${C_RESET} %s\n" "$*" >&2; }
 err()  { printf "${C_RED}[err]${C_RESET}  %s\n" "$*" >&2; }
 die()  { err "$*"; exit 1; }
 
-# Check if any .av source file is newer than a target binary.
+# Check if any .av source file is newer-or-equal-mtime to a target binary.
 # Returns 0 (true) if rebuild is needed, 1 (false) if up to date.
+#
+# `find -newer` uses STRICT-greater mtime comparison, which silently
+# missed APFS second-granularity races: a source edit that happens in
+# the same second as the previous bs2 build produced equal mtimes,
+# `find -newer` returned empty, and the next `make build` skipped
+# rebuilding even though the source had genuinely changed. Compare
+# explicit mtimes with `-ge` instead so same-second ties are treated
+# as "source might be newer" and trigger a conservative rebuild.
+#
+# Cost of the false-positive case (no source change but mtimes equal,
+# e.g. after `touch -r`): one extra rebuild. Vastly preferable to a
+# silent stale-binary bug.
 source_newer_than() {
   local target="$1"
   [ ! -x "$target" ] && return 0
-  # Find any .av file newer than target — exits as soon as one is found.
-  [ -n "$(find "$CLI_SRC_DIR" "$LIB_SRC_DIR" -name '*.av' -newer "$target" -print -quit 2>/dev/null)" ]
+  local target_mtime
+  target_mtime=$(stat -f %m "$target" 2>/dev/null) || return 0
+  local newest_src
+  newest_src=$(find "$CLI_SRC_DIR" "$LIB_SRC_DIR" -name '*.av' -exec stat -f %m {} + 2>/dev/null | sort -rn | head -1)
+  [ -z "$newest_src" ] && return 1   # no sources found — pathological
+  [ "$newest_src" -ge "$target_mtime" ]
 }
 
 print_help() {
