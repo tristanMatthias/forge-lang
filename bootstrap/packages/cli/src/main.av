@@ -3422,8 +3422,7 @@ fn main() {
             let named = marshal_and_resolve_or_fail(expanded, check_json, check_source, check_path)
             let post_comptime = run_comptime(named.stmts)
             let tc_result = typecheck_program(post_comptime)
-            render_bag_if_nonempty(check_json, check_source, check_path, tc_result.bag)
-            if bag_has_errors(tc_result.bag) { return }
+            render_and_fail_on_errors(tc_result.bag, check_json, check_source, check_path, "type check failed")
             if !check_json { println("ok") }
             return
         }
