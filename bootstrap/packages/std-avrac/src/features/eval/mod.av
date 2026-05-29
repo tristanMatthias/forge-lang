@@ -275,8 +275,15 @@ export fn eval_expression_source(source: string) -> EvalResult {
             error_message: parsed.error_message,
         }
     }
+    eval_parsed_expression(parsed.expr!)
+}
 
-    finish_result(eval_expr(runtime_new(), parsed.expr!))
+/// Same as eval_expression_source but takes a pre-parsed Expr. Lets
+/// cmd_eval (which now parses through parse_expression_source first
+/// for proper F-code diagnostic rendering) avoid a redundant parse,
+/// matching the execute_program_stmts pattern.
+export fn eval_parsed_expression(expr: Expr) -> EvalResult {
+    finish_result(eval_expr(runtime_new(), expr))
 }
 
 /// Public entry point for evaluating a full program. Parses

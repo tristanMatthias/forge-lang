@@ -18,10 +18,15 @@ use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report,
 
 /// Output of `parse_expression_source`. `expr` is null on parse
 /// failure; consult `had_error` / `error_message` for the cause.
+/// `bag` mirrors ProgramParseResult — it carries every F-code
+/// diagnostic the parser emitted (lexer + grammar errors) so the
+/// CLI can render structured source-frame output rather than just
+/// the one-line `error_message`. Empty for clean parses.
 export type ParseResult = {
     expr: Expr?,
     had_error: int,
     error_message: string,
+    bag: DiagnosticBag,
 }
 
 /// Output of `parse_program_source`. Same shape as ParseResult but
@@ -395,6 +400,7 @@ impl Parser {
                 expr: null,
                 had_error: self.had_error,
                 error_message: self.error_message,
+                bag: self.bag,
             }
         }
 
@@ -404,6 +410,7 @@ impl Parser {
                 expr: null,
                 had_error: true,
                 error_message: self.error_message,
+                bag: self.bag,
             }
         }
 
@@ -411,6 +418,7 @@ impl Parser {
             expr,
             had_error: self.had_error,
             error_message: self.error_message,
+            bag: self.bag,
         }
     }
 

@@ -97,3 +97,27 @@ spec "bs2 program exits non-zero + shows F-code on parse error" {
         out.contains("F0040")
     }
 }
+
+spec "bs2 expr exits non-zero + shows F-code on parse error" {
+    then "exit non-zero on parse failure" {
+        write_fixture("/tmp/avra_cli_exit_expr_bad.av", "1 +\n")
+        avra_shell_exec_status("./build/bs2 expr /tmp/avra_cli_exit_expr_bad.av > /dev/null 2>&1") != 0
+    }
+    then "stderr carries the F0040 expected-expression code" {
+        write_fixture("/tmp/avra_cli_exit_expr_bad.av", "1 +\n")
+        let out = avra_shell_exec("./build/bs2 expr /tmp/avra_cli_exit_expr_bad.av 2>&1 || true")
+        out.contains("F0040")
+    }
+}
+
+spec "bs2 eval exits non-zero + shows F-code on parse error" {
+    then "exit non-zero on parse failure" {
+        write_fixture("/tmp/avra_cli_exit_eval_bad.av", "1 +\n")
+        avra_shell_exec_status("./build/bs2 eval /tmp/avra_cli_exit_eval_bad.av > /dev/null 2>&1") != 0
+    }
+    then "stderr carries the F0040 expected-expression code" {
+        write_fixture("/tmp/avra_cli_exit_eval_bad.av", "1 +\n")
+        let out = avra_shell_exec("./build/bs2 eval /tmp/avra_cli_exit_eval_bad.av 2>&1 || true")
+        out.contains("F0040")
+    }
+}
