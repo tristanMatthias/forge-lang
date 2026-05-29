@@ -3441,9 +3441,7 @@ fn main() {
             let parsed_stmts = parse_or_fail(source, false, source, path)
             let entry_dir = modules_dirname(path)
             let mod_resolved = resolve_module_files(parsed_stmts, entry_dir, empty_loaded_list())
-            if mod_resolved.had_error {
-                fail(mod_resolved.error_message)
-            }
+            fail_on_module_resolve_error(mod_resolved, false, source, path)
             let named = resolve_names(mod_resolved.stmts)
             if bag_has_errors(named.bag) {
                 render_bag(source, path, named.bag)
