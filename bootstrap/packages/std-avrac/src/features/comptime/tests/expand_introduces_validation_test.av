@@ -18,6 +18,24 @@
 //       callable because the warning is non-fatal.
 
 extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_process_env_get(name: string) -> string
+
+/// Translate AVRA_LIB_OBJS (colon-separated .o paths) into a
+/// space-separated string for the cc command. When AVRA_USE_METADATA
+/// is set, the compiler emits EXTERN references to std-avrac fns
+/// instead of inlining the bodies — those externs need their
+/// producing .o files at link time, which the orchestrator stashes
+/// in AVRA_LIB_OBJS. Without this the link silently fails on
+/// undefined symbols and the test's `run` step finds no binary.
+fn lib_objs_cc_args() -> string {
+    let raw = avra_process_env_get("AVRA_LIB_OBJS")
+    if raw == "" { return "" }
+    mut out = ""
+    for p in raw.split(":") {
+        if p != "" { out = out + p + " " }
+    }
+    out
+}
 
 fn run_capture(source: string) -> string {
     let path = "/tmp/avra_expand_introduces_validation_test.av"
@@ -27,16 +45,9 @@ fn run_capture(source: string) -> string {
     // stage. cached_fixture_run discards bs2 stderr on success, which
     // hides our warning. Run the steps manually here.
     //
-    // `env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS` is critical: when
-    // bs2 test runs this shard it sets AVRA_USE_METADATA=1 to use
-    // pre-built @std/* metadata for speed. The fast-path skips the
-    // @expand bag accumulation pass that produces F9050, so the
-    // warning never lands in stderr inside the test runner even
-    // though a plain `bs2 compile` produces it correctly. Disabling
-    // the env vars forces the fixture compile through the full
-    // resolve_and_expand_program pipeline.
-    let compile = avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 compile '${path}' 2>&1 || true")
-    let link = avra_shell_exec("cc '${path}.ll' build/runtime.o build/llvm_wrapper.o -lLLVM -L/opt/homebrew/opt/llvm/lib -o '${path}.bin' 2>&1 || true")
+    let compile = avra_shell_exec("./build/bs2 compile '${path}' 2>&1 || true")
+    let extra_objs = lib_objs_cc_args()
+    let link = avra_shell_exec("cc '${path}.ll' build/runtime.o build/llvm_wrapper.o ${extra_objs}-lLLVM -L/opt/homebrew/opt/llvm/lib -o '${path}.bin' 2>&1 || true")
     let run = avra_shell_exec("'${path}.bin' 2>&1 || true")
     compile + "\n" + run
 }
