@@ -34,6 +34,13 @@ export fn derive_walker(target: AnnotatedDecl, ctx: ResolverCtx) -> ResolvedDecl
         return failsafe_decls(target)
     }
 
+    // The macro emits the bare enum name in the synthesised
+    // ValueType.Enum; the resolver's rewrite_vtype pass qualifies
+    // each Enum-typed slot to the canonical path on its own, just
+    // like a hand-written `fn children(self: Pattern) -> List<Pattern>`
+    // would resolve. Pre-qualifying here produces doubly-prefixed
+    // names (`@std::avrac::core::@std::avrac::core::Pattern`) when
+    // the spliced fn is re-processed by the post-expand rewrite.
     let arms = build_children_arms(view.variants, view.name)
     let children_fn = build_children_fn(arms, view.name)
 
@@ -121,7 +128,7 @@ fn build_children_arms(variants: List<Variant>, parent_name: string) -> List<Mat
 fn build_one_arm(v: Variant, parent_name: string) -> MatchArm {
     let bindings = classify_variant(v, parent_name)
     let pat = pattern_for(v.name, bindings)
-    let body = list_lit_of_direct_children(bindings)
+    let body = arm_body(bindings)
     MatchArm {
         pattern: pat,
         guard: null,
@@ -219,24 +226,24 @@ fn pattern_for(variant_name: string, bindings: List<Binding>) -> Pattern {
 }
 
 /// Build the arm body — the Expr producing the children list for this
-/// variant. One arm of three shapes:
+/// variant. Three shapes:
 ///
-///   - Scalars only or direct children only → `[c1, c2, ...]` (the
-///     simple ListLit; empty when scalars-only).
-///   - One list-child only, no direct → `field_ident` (the list IS the
-///     children list).
-///   - Multiple list-children (and optionally direct) → repeated
-///     `list_concat`: `list_concat(list_concat([d1, d2], l1), l2)`.
+///   - Scalars only OR direct children only → `[c1, c2, ...]` (a bare
+///     ListLit; empty for scalars). Works because Pattern + Tree +
+///     other no-mixed enums keep every variant in one shape category;
+///     all arms then have type `List<Self>` and unify trivially.
+///   - Single list-child, no direct → `field_ident`.
+///   - Multiple lists (and optionally direct) → `list_concat(
+///     [d1, d2, ...], l1)`-fold.
 ///
-/// Type unification: bare-ListLit arms can collide with list_concat
-/// arms when typeck can't see `List<Self>` as the common parent. This
-/// is OK in practice today because Pattern + ValueType + Stmt's
-/// per-variant shapes don't actually mix — each variant is purely
-/// direct or purely list. Expr.Call (callee + args: List<SExpr>) is
-/// the genuine mixed case; that needs wrapper-list shape handling
-/// before the macro generates anything useful for it.
+/// Enums with truly mixed shapes (some scalar-only and some carrying
+/// list_concat) — most notably ValueType.FnTyped or anything Expr-
+/// shaped — currently hit F1000 "arms have different types: List vs
+/// List". A typed-empty-let approach is staged but blocked on a seed
+/// roundtrip (the seed's older Stmt.Let encoder erases the resolved
+/// ValueType slot). Tracked under y9y4.6 / y9y4.7.
 @comptime
-fn list_lit_of_direct_children(bindings: List<Binding>) -> Expr {
+fn arm_body(bindings: List<Binding>) -> Expr {
     let direct_count = count_kind(bindings, 1)
     let list_count = count_kind(bindings, 2)
 

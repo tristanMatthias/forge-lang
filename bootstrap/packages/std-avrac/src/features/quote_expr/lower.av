@@ -1035,9 +1035,18 @@ fn construct_sstmt(ss: SStmt) -> Expr {
 /// stay an internal detail — callers should treat this as opaque.
 export fn construct_stmt(stmt: Stmt) -> Expr {
     match stmt {
-        .Let(name, _, init) -> stmt_ctor("Let", three_args(string_lit_expr(name), construct_value_type_unknown(), construct_expr(init)))
-        .Mut(name, _, init) -> stmt_ctor("Mut", three_args(string_lit_expr(name), construct_value_type_unknown(), construct_expr(init)))
-        .Const(name, _, init) -> stmt_ctor("Const", three_args(string_lit_expr(name), construct_value_type_unknown(), construct_expr(init)))
+        // Preserve the declared/resolved type slot. Quote-emitted code
+        // typically leaves it Unknown (resolver fills in), but macros
+        // emitting a typed `let x: List<Self> = []` rely on the
+        // annotation surviving the roundtrip — without it, scalar
+        // match-arms returning `[]` can't unify with list_concat-typed
+        // sibling arms and the typeck fires F1000 "arms have different
+        // types: List vs List". The encoder now handles ValueType
+        // construction generically; non-typed quote callers pass
+        // ValueType.Unknown which encodes as the same Unknown ctor.
+        .Let(name, vt, init) -> stmt_ctor("Let", three_args(string_lit_expr(name), construct_value_type(vt), construct_expr(init)))
+        .Mut(name, vt, init) -> stmt_ctor("Mut", three_args(string_lit_expr(name), construct_value_type(vt), construct_expr(init)))
+        .Const(name, vt, init) -> stmt_ctor("Const", three_args(string_lit_expr(name), construct_value_type(vt), construct_expr(init)))
         .Expr(e) -> stmt_ctor("Expr", one_arg(construct_expr(e)))
         .Block(body) -> stmt_ctor("Block", one_arg(construct_stmt_list(body)))
         .Return(e) -> stmt_ctor("Return", one_arg(construct_expr(e)))
