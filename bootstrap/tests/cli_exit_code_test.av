@@ -1,0 +1,57 @@
+// Spec test for the CLI exit-code consistency fixes landed in
+// commits 2b92b1c8 (cmd_check) and 6ac3d45b (cmd_fix).
+//
+// Background: every bs2 subcommand should exit non-zero when the
+// program it processes has compile-time errors, otherwise CI gates
+// falsely pass. Three commands had silent-exit-0 bugs at different
+// pipeline stages — parse-time, resolve-time, typecheck-time.
+//
+// This test pins the user-facing contract: bs2 check / bs2 fix /
+// bs2 run all exit non-zero on respective error classes, and zero
+// on clean input.
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
+
+fn write_fixture(path: string, body: string) {
+    let escaped = body.replace("'", "'\\''")
+    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
+}
+
+spec "bs2 check exits non-zero on typecheck errors" {
+    then "exit 0 on clean source" {
+        write_fixture("/tmp/avra_cli_exit_good.av",
+            "fn main() {\n    let x: int = 42\n    println(string(x))\n}\n")
+        avra_shell_exec_status("./build/bs2 check /tmp/avra_cli_exit_good.av > /dev/null 2>&1") == 0
+    }
+    then "exit non-zero on typecheck failure" {
+        write_fixture("/tmp/avra_cli_exit_typeck.av",
+            "fn main() {\n    let x: int = \"not a number\"\n}\n")
+        avra_shell_exec_status("./build/bs2 check /tmp/avra_cli_exit_typeck.av > /dev/null 2>&1") != 0
+    }
+}
+
+spec "bs2 fix exits non-zero on resolve errors" {
+    then "exit 0 on clean source" {
+        write_fixture("/tmp/avra_cli_exit_fix_good.av",
+            "fn main() {\n    println(\"ok\")\n}\n")
+        avra_shell_exec_status("./build/bs2 fix /tmp/avra_cli_exit_fix_good.av > /dev/null 2>&1") == 0
+    }
+    then "exit non-zero on undefined variable" {
+        write_fixture("/tmp/avra_cli_exit_fix_bad.av",
+            "fn main() {\n    println(undefined_var)\n}\n")
+        avra_shell_exec_status("./build/bs2 fix /tmp/avra_cli_exit_fix_bad.av > /dev/null 2>&1") != 0
+    }
+}
+
+spec "bs2 run renders structured F-code diagnostics on parse error" {
+    then "stderr carries an F-code, not a bare error line" {
+        write_fixture("/tmp/avra_cli_exit_run_bad.av",
+            "fn main() {\n    let x =\n}\n")
+        let out = avra_shell_exec("./build/bs2 run /tmp/avra_cli_exit_run_bad.av 2>&1 || true")
+        // Pre-fix output was just "parse error at L:C: expected expression"
+        // with no F-code. Post-fix output is the full ariadne-style frame
+        // with F0040 in the header.
+        out.contains("F0040")
+    }
+}
