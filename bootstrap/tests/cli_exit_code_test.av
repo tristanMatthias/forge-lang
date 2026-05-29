@@ -121,3 +121,23 @@ spec "bs2 eval exits non-zero + shows F-code on parse error" {
         out.contains("F0040")
     }
 }
+
+spec "bs2 fix renders F3100 on module-not-found" {
+    then "stderr carries the F3100 ModuleNotFound code" {
+        // mod referencing a nonexistent .av file in the same dir
+        // triggers F3100 via fail_on_module_resolve_error.
+        write_fixture("/tmp/avra_cli_fix_modnotfound.av",
+            "mod no_such_mod_avra_cli_fix\nfn main() { println(\"ok\") }\n")
+        let out = avra_shell_exec("./build/bs2 fix /tmp/avra_cli_fix_modnotfound.av 2>&1 || true")
+        out.contains("F3100")
+    }
+}
+
+spec "bs2 expand renders F3100 on module-not-found" {
+    then "stderr carries the F3100 ModuleNotFound code" {
+        write_fixture("/tmp/avra_cli_expand_modnotfound.av",
+            "mod no_such_mod_avra_cli_expand\nfn main() { println(\"ok\") }\n")
+        let out = avra_shell_exec("./build/bs2 expand /tmp/avra_cli_expand_modnotfound.av 2>&1 || true")
+        out.contains("F3100")
+    }
+}
