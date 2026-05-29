@@ -228,6 +228,21 @@ fn parse_or_fail(source: string, ctx: RenderContext) -> List<SStmt> {
     parsed.stmts!
 }
 
+/// Same shape as parse_or_fail but for the expression parser.
+/// Used by cmd_expr / cmd_eval — both want F-code rendering on a
+/// parse failure followed by a hard fail. Returns the parsed Expr
+/// on success.
+fn parse_expr_or_fail(source: string, ctx: RenderContext) -> Expr {
+    let parsed = parse_expression_source(source)
+    if parsed.had_error || parsed.expr == null {
+        if bag_has_errors(parsed.bag) {
+            render_bag_ctx(ctx, parsed.bag)
+        }
+        fail(parsed.error_message)
+    }
+    parsed.expr!
+}
+
 /// `--stop-after=<stage>` is run_build_command's debugging knob —
 /// halt the pipeline after a specific phase with a green "ok"
 /// signal. Four sites (parse / resolve / names / check) replicated
@@ -3378,15 +3393,8 @@ fn main() {
     let source = if is_flag { "" } else { read_file(path) }
     match command {
         "expr" -> {
-            let ctx = render_ctx(false, source, path)
-            let result = parse_expression_source(source)
-            if result.had_error || result.expr == null {
-                if bag_has_errors(result.bag) {
-                    render_bag_ctx(ctx, result.bag)
-                }
-                fail(result.error_message)
-            }
-            println(render_expr(result.expr!))
+            let expr = parse_expr_or_fail(source, render_ctx(false, source, path))
+            println(render_expr(expr))
             return
         }
         "program" -> {
@@ -3409,15 +3417,8 @@ fn main() {
             return
         }
         "eval" -> {
-            let ctx = render_ctx(false, source, path)
-            let parsed = parse_expression_source(source)
-            if parsed.had_error || parsed.expr == null {
-                if bag_has_errors(parsed.bag) {
-                    render_bag_ctx(ctx, parsed.bag)
-                }
-                fail(parsed.error_message)
-            }
-            let result = eval_parsed_expression(parsed.expr!)
+            let expr = parse_expr_or_fail(source, render_ctx(false, source, path))
+            let result = eval_parsed_expression(expr)
             if result.had_error || result.value == null {
                 fail(result.error_message)
             }
