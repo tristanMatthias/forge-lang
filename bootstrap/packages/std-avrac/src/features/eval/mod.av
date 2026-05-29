@@ -1,7 +1,7 @@
 // WHY: eval types shared across features. Actual tree-walk
 // evaluator lives in features/eval/mod.av.
 
-use core.{Expr, Stmt, ParamEntry, SExpr, SStmt, FieldInit}
+use core.{Expr, Stmt, ParamEntry, SExpr, SStmt, FieldInit, render_expr}
 use core.{Registry, build_registry}
 use list_ops.{list_contains_str}
 
@@ -717,6 +717,76 @@ export fn execute_while(runtime: Runtime, condition: Expr, body: Stmt) -> StepRe
     execute_while(body_result.runtime, condition, body)
 }
 
+/// Tree-walk evaluator for `for i in start..end { body }`. Both bounds
+/// must evaluate to integer values; the body runs with `variable`
+/// bound to each successive integer in the half-open range. A
+/// `return` or error inside the body short-circuits the loop. The
+/// loop variable lives in its own scope so it doesn't pollute the
+/// enclosing one — matches the codegen behavior.
+export fn execute_for_range(runtime: Runtime, variable: string, start: Expr, end: Expr, body: Stmt) -> StepResult {
+    let start_r = eval_expr(runtime, start)
+    if start_r.had_error { return start_r }
+    let end_r = eval_expr(start_r.runtime, end)
+    if end_r.had_error { return end_r }
+    let start_i = parse_num(start_r.value.number_text)
+    let end_i = parse_num(end_r.value.number_text)
+    let entered = enter_scope(end_r.runtime)
+    let step = execute_for_range_step(entered, variable, start_i, end_i, body)
+    let exited = exit_scope(step.runtime)
+    if step.had_error {
+        return StepResult { runtime: exited, value: value_null(), had_error: true, is_return: false, error_message: step.error_message }
+    }
+    if step.is_return {
+        return make_return(exited, step.value)
+    }
+    ok_result(exited, value_null())
+}
+
+/// Iteration helper for `execute_for_range`. Walks one bound at a
+/// time so the binding update happens once per iteration in the
+/// scope opened by the caller.
+fn execute_for_range_step(runtime: Runtime, variable: string, i: int, end_i: int, body: Stmt) -> StepResult {
+    if i >= end_i {
+        return ok_result(runtime, value_null())
+    }
+    let bound = define_binding(runtime, variable, false, value_number(string(i)))
+    let body_r = execute_stmt(bound, body)
+    if body_r.had_error || body_r.is_return { return body_r }
+    execute_for_range_step(body_r.runtime, variable, i + 1, end_i, body)
+}
+
+/// Tree-walk evaluator for `for x in collection { body }`. The
+/// collection must evaluate to a list value; the body runs once per
+/// element with `variable` bound to that element. Scope discipline +
+/// short-circuit on return/error match the range form.
+export fn execute_for_in(runtime: Runtime, variable: string, collection: Expr, body: Stmt) -> StepResult {
+    let coll_r = eval_expr(runtime, collection)
+    if coll_r.had_error { return coll_r }
+    if coll_r.value.kind != "list" {
+        return error_result(coll_r.runtime, "for-in over non-list value (kind=${coll_r.value.kind})")
+    }
+    let entered = enter_scope(coll_r.runtime)
+    let step = execute_for_in_step(entered, variable, coll_r.value.list_payload, 0, body)
+    let exited = exit_scope(step.runtime)
+    if step.had_error {
+        return StepResult { runtime: exited, value: value_null(), had_error: true, is_return: false, error_message: step.error_message }
+    }
+    if step.is_return {
+        return make_return(exited, step.value)
+    }
+    ok_result(exited, value_null())
+}
+
+fn execute_for_in_step(runtime: Runtime, variable: string, items: List<Value>, i: int, body: Stmt) -> StepResult {
+    if i >= items.length {
+        return ok_result(runtime, value_null())
+    }
+    let bound = define_binding(runtime, variable, false, items[i])
+    let body_r = execute_stmt(bound, body)
+    if body_r.had_error || body_r.is_return { return body_r }
+    execute_for_in_step(body_r.runtime, variable, items, i + 1, body)
+}
+
 /// Evaluate a single expression, returning a StepResult with the
 /// produced Value + any error / return state. Built-in expression
 /// shapes (literals, idents, assignment, grouping, unary/binary/
@@ -772,6 +842,23 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
             ok_result(next_runtime, value_result.value)
         }
         .Grouping(inner) -> eval_expr(runtime, inner)
+        .Block(body) -> {
+            // Value-position block: runs each stmt, the result is the
+            // value of the final expression statement (or null when
+            // the block is empty / ends in a side-effecting stmt).
+            // Scope discipline matches `Stmt.Block` so let/mut bindings
+            // declared inside don't leak out into the surrounding expr.
+            let entered = enter_scope(runtime)
+            let body_result = execute_stmt_list(entered, body)
+            let exited = exit_scope(body_result.runtime)
+            if body_result.had_error {
+                return StepResult { runtime: exited, value: value_null(), had_error: true, is_return: false, error_message: body_result.error_message }
+            }
+            if body_result.is_return {
+                return make_return(exited, body_result.value)
+            }
+            ok_result(exited, body_result.value)
+        }
         // fwyx: real list / struct kinds on Value — eval the
         // elements / inits and assemble a list / struct Value so
         // the comptime decoder can read AST list / struct payloads
@@ -849,7 +936,7 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
             let tag = avra_expr_tag(expr)
             let result = dispatch_expr_eval(runtime.features, tag, runtime, expr)
             if result != null { return result! }
-            error_result(runtime, "unsupported expression type in tree-walk evaluator")
+            error_result(runtime, "unsupported expression type in tree-walk evaluator (tag=${string(tag)} render=${render_expr(expr)})")
         }
     }
 }
@@ -954,6 +1041,47 @@ fn eval_call(runtime: Runtime, callee: Expr, args: List<SExpr>) -> StepResult {
         return eval_resolver_ctx_call(runtime, ctx_kind, args)
     }
 
+    // List built-in methods (`xs.push(x)`, etc.). Macros constructing
+    // AST values frequently call these to grow accumulator lists;
+    // without an eval-side intercept, FieldAccess on a list value
+    // errors before the call dispatches. The list-method set is
+    // intentionally minimal (push only for now) — extend here as new
+    // method calls show up in @comptime fn bodies.
+    //
+    // Mutation semantics: in compiled Avra, `mut xs: List<T>` makes
+    // `xs.push(v)` an in-place update. The tree-walker stores Values
+    // by value, so we emulate that by writing the new list back to
+    // the binding when the receiver is a simple Ident — that covers
+    // the `mut arms = []; arms.push(...)` pattern macros rely on.
+    match callee {
+        .FieldAccess(obj, method) -> {
+            let probe = eval_expr(runtime, obj)
+            if !probe.had_error && probe.value.kind == "list" {
+                let lm = eval_list_method(probe.runtime, probe.value, method, args)
+                if lm != null {
+                    let lm_val = lm!
+                    if lm_val.had_error { return lm_val }
+                    match obj {
+                        .Ident(name) -> {
+                            let assigned = assign_binding(lm_val.runtime.bindings, name, lm_val.value)
+                            if assigned.found {
+                                let next_rt = lm_val.runtime with { bindings: assigned.bindings }
+                                return ok_result(next_rt, lm_val.value)
+                            }
+                        }
+                        _ -> {}
+                    }
+                    return lm_val
+                }
+            }
+            if !probe.had_error && probe.value.kind == "string" {
+                let sm = eval_string_method(probe.runtime, probe.value, method, args)
+                if sm != null { return sm! }
+            }
+        }
+        _ -> {}
+    }
+
     let callee_result = eval_expr(runtime, callee)
     if callee_result.had_error {
         return callee_result
@@ -972,7 +1100,7 @@ fn eval_call(runtime: Runtime, callee: Expr, args: List<SExpr>) -> StepResult {
     }
 
     if callee_value.kind != "function" {
-        return error_result(args_result.runtime, "can only call functions")
+        return error_result(args_result.runtime, "can only call functions (callee=${render_expr(callee)} kind=${callee_value.kind})")
     }
 
     let fn_name = callee_value.text
@@ -1451,6 +1579,58 @@ fn build_resolved_type(canonical: string, kind_str: string, fields: List<Value>)
 /// elements followed by `b`'s. Used by the quote lowerer's
 /// `~arms` splice to merge a runtime list into the surrounding
 /// arm list.
+/// Built-in method calls on a list `Value`. Returns null when the
+/// method is unknown so the caller falls back to the normal call
+/// dispatch (which will surface a "field access" error). Today
+/// `push` is the only entry — extend as more methods become needed
+/// by @comptime macros. Pure with respect to the input value: the
+/// returned StepResult carries a NEW list value rather than mutating
+/// the original (matches how Avra's mutable-list semantics work
+/// elsewhere — push returns the new list, mut-rebinding the caller).
+/// Built-in method calls on a string `Value`. Mirrors
+/// `eval_list_method` for string-specific operations the @comptime
+/// macros need (substring, contains, etc.). Returns null when the
+/// method is unknown so the dispatcher falls through.
+fn eval_string_method(runtime: Runtime, str_val: Value, method: string, args: List<SExpr>) -> StepResult? {
+    if method == "substring" {
+        if args.length != 2 { return error_result(runtime, "string.substring expects 2 arguments") }
+        let s_r = eval_expr(runtime, args[0].node)
+        if s_r.had_error { return s_r }
+        let e_r = eval_expr(s_r.runtime, args[1].node)
+        if e_r.had_error { return e_r }
+        let start = parse_num(s_r.value.number_text)
+        let end = parse_num(e_r.value.number_text)
+        let s = str_val.text
+        mut lo = start
+        mut hi = end
+        if lo < 0 { lo = 0 }
+        if hi > s.length { hi = s.length }
+        if lo > hi { lo = hi }
+        return ok_result(e_r.runtime, value_string(s.substring(lo, hi)))
+    }
+    if method == "contains" {
+        if args.length != 1 { return error_result(runtime, "string.contains expects 1 argument") }
+        let arg_r = eval_expr(runtime, args[0].node)
+        if arg_r.had_error { return arg_r }
+        return ok_result(arg_r.runtime, value_bool(str_val.text.contains(arg_r.value.text)))
+    }
+    null
+}
+
+fn eval_list_method(runtime: Runtime, list_val: Value, method: string, args: List<SExpr>) -> StepResult? {
+    if method == "push" {
+        if args.length != 1 { return error_result(runtime, "list.push expects 1 argument") }
+        let arg_r = eval_expr(runtime, args[0].node)
+        if arg_r.had_error { return arg_r }
+        mut new_payload: List<Value> = []
+        for v in list_val.list_payload { new_payload = new_payload.push(v) }
+        new_payload = new_payload.push(arg_r.value)
+        let new_list = list_val with { list_payload: new_payload }
+        return ok_result(arg_r.runtime, new_list)
+    }
+    null
+}
+
 fn eval_list_concat(runtime: Runtime, args: List<SExpr>) -> StepResult {
     if args.length != 2 { return error_result(runtime, "list_concat expects 2 arguments") }
     let a_result = eval_expr(runtime, args[0].node)

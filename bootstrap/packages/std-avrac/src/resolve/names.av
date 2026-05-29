@@ -53,7 +53,7 @@ use resolve.{resolve_program}
 use core.{TypeRegistry, TypeKind, type_registry_new, type_registry_register, type_registry_id_for, type_qualified_name, method_mangled_name, trait_impl_name, is_mangled_method, method_from_mangled}
 use core.{ModuleGraph, GraphItem, module_graph_is_exported, module_graph_new, ID_NONE}
 use features.modules.{build_graph_from_stmts, graph_find_use_path}
-use list_ops.{list_any}
+use list_ops.{list_any, list_push_copy}
 
 // ── Module tree ──
 //
@@ -579,12 +579,20 @@ fn ctx_with_module(ctx: NameCtx, current_module: string, aliases: List<AliasBind
 
 /// Push every parameter name onto the local scope as a defined
 /// variable. Used when entering a fn / lambda body.
+///
+/// CRITICAL: uses list_push_copy so the parent ctx's underlying
+/// locals list is NOT mutated. List<T> is heap-backed; a plain
+/// `acc.locals.push(...)` would alias the parent's list and leak
+/// every fn's params into every sibling fn's scope. That cross-
+/// fn leak silently rewrites bare Ident("foo") into bare-Ident-
+/// stays-bare when `foo` was actually a fn name in a different
+/// module — undefined-variable errors fire in random downstream
+/// fns whose locals had nothing to do with the leaked name.
 fn bind_params_ctx(ctx: NameCtx, params: List<ParamEntry>) -> NameCtx {
     mut acc = ctx
     mut i = 0
     while i < params.length {
-        mut new_locals = acc.locals
-        new_locals.push(LocalBinding { name: params[i].name, mutable: false, defined: true, depth: 0 })
+        let new_locals = list_push_copy(acc.locals, LocalBinding { name: params[i].name, mutable: false, defined: true, depth: 0 })
         acc = ctx_with_locals(acc, new_locals)
         i = i + 1
     }
@@ -599,8 +607,10 @@ fn bind_pattern_ctx(ctx: NameCtx, pattern: Pattern) -> NameCtx {
         .Variant(_, bindings) -> bind_params_ctx(ctx, bindings)
         .NestedVariant(_, sub_pats) -> bind_pattern_list(ctx, sub_pats)
         .TypePattern(_, binding) -> {
-            mut new_locals = ctx.locals
-            new_locals.push(LocalBinding { name: binding, mutable: false, defined: true, depth: 0 })
+            // list_push_copy avoids mutating the parent ctx's
+            // locals — same leak-prevention reasoning as
+            // bind_params_ctx's docstring.
+            let new_locals = list_push_copy(ctx.locals, LocalBinding { name: binding, mutable: false, defined: true, depth: 0 })
             ctx_with_locals(ctx, new_locals)
         }
         _ -> ctx
@@ -1010,7 +1020,13 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
             Stmt.NewtypeDecl(qn, ri)
         }
         .Impl(type_name, methods) -> rewrite_impl_stmt(ctx, type_name, methods)
-        .Annotated(annotations, inner) -> .Annotated(annotations, rewrite_stmt(ctx, inner))
+        // Rewrite annotation args too — names referenced inside
+        // `@expand(derive_walker)`, `@derive(Foo)` etc. need to get
+        // qualified the same way regular Idents do, otherwise
+        // cross-module @comptime fns are unreachable from the
+        // @expand pass (the registry keys them under the qualified
+        // path; the lookup uses whatever's in the annotation arg).
+        .Annotated(annotations, inner) -> .Annotated(rewrite_annotations(ctx, annotations), rewrite_stmt(ctx, inner))
         .Defer(body) -> .Defer(rewrite_expr(ctx, body))
         .Errdefer(body) -> .Errdefer(rewrite_expr(ctx, body))
         .LetDestructure(names, init) -> .LetDestructure(names, rewrite_expr(ctx, init))
@@ -1429,6 +1445,22 @@ fn rewrite_expr_list(ctx: NameCtx, exprs: List<SExpr>) -> List<SExpr> {
     while i < exprs.length {
         let se = exprs[i]
         out.push(sexpr_at(rewrite_expr(ctx, se.node), se.line, se.col, se.file))
+        i = i + 1
+    }
+    out
+}
+
+/// Rewrite each annotation's arg list. Same shape as
+/// `rewrite_expr_list` (the args are SExprs), but applied per-
+/// annotation so the annotation name + cardinality are preserved.
+/// Drives qualified-name resolution for `@expand(macro_name)`,
+/// `@derive(Foo)` and any future name-referencing annotation.
+fn rewrite_annotations(ctx: NameCtx, annots: List<Annotation>) -> List<Annotation> {
+    mut out: List<Annotation> = []
+    mut i = 0
+    while i < annots.length {
+        let a = annots[i]
+        out.push(Annotation { name: a.name, args: rewrite_expr_list(ctx, a.args) })
         i = i + 1
     }
     out

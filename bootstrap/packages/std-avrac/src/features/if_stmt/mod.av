@@ -42,11 +42,24 @@ fn if_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     }
 }
 
-/// Tree-walk evaluator hook for `IfExpr`. Currently unsupported —
-/// the eval path doesn't model expression-position branching.
+/// Tree-walk evaluator hook for `IfExpr`. Evaluates the condition
+/// and returns the value of whichever branch the truthiness picks.
+/// Branches are Exprs (not Stmts), so the recursion stays in
+/// `eval_expr` — important for `@comptime` macros that use
+/// `if cond { a } else { b }` to choose between AST fragments.
 fn if_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
     match expr {
-        .IfExpr(_, _, _) -> error_result(rt, "if expressions are not supported by the tree-walk evaluator")
+        .IfExpr(condition, then_branch, else_branch) -> {
+            let cond_result = eval_expr(rt, condition)
+            if step_had_error(cond_result) {
+                return cond_result
+            }
+            if is_truthy(step_value(cond_result)) {
+                eval_expr(step_runtime(cond_result), then_branch)
+            } else {
+                eval_expr(step_runtime(cond_result), else_branch)
+            }
+        }
         _ -> error_result(rt, "expected IfExpr")
     }
 }

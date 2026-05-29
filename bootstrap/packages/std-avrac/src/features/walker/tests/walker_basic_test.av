@@ -1,0 +1,48 @@
+// Smoke test for derive_walker (sub-phase A).
+//
+// Annotates a tiny recursive enum with @expand(derive_walker) and
+// asserts the generated `fn children(self) -> List<Self>` is callable
+// at runtime and returns the right direct children for each variant.
+//
+// Why bypass `cached_fixture_run`: the test_shard runner sets
+// AVRA_USE_METADATA=1 to speed up @std/* re-loading, but @comptime
+// annotations + bodies are NOT preserved across the metadata
+// roundtrip yet (forge-crafting-intepreters-9p1d). Until that lands,
+// fixtures invoking a metadata-shipped @comptime macro must opt out
+// of metadata mode at the bs2 invocation — the documented escape
+// hatch from main.av:2515. Run uncached too: the cache stores the
+// first run's stdout, which would be the F4002 macro-not-found
+// failure if the cache was populated under the metadata env.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn run_capture(source: string) -> string {
+    let path = "/tmp/avra_walker_basic_test.av"
+    write_fixture(path, source)
+    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS bash scripts/diagnose.sh --run ${path} 2>&1 || true")
+}
+
+spec "derive_walker: children() on a tiny recursive enum" {
+    then "Leaf returns [], Node returns [left, right] in source order" {
+        let out = run_capture(
+            "use @std.avrac.features.walker.{derive_walker}\n" +
+            "\n" +
+            "@expand(derive_walker)\n" +
+            "enum Tree {\n" +
+            "    Leaf(value: int)\n" +
+            "    Node(left: Tree, right: Tree)\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let leaf = Tree.Leaf(42)\n" +
+            "    let leaf_children = leaf.children()\n" +
+            "    println(\"leaf=\" + string(leaf_children.length))\n" +
+            "\n" +
+            "    let node = Tree.Node(Tree.Leaf(1), Tree.Leaf(2))\n" +
+            "    let node_children = node.children()\n" +
+            "    println(\"node=\" + string(node_children.length))\n" +
+            "}\n")
+        out.contains("leaf=0") && out.contains("node=2")
+    }
+}

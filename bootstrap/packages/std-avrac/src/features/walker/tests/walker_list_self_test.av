@@ -1,0 +1,45 @@
+// Slice 4a follow-up: derive_walker recognises `field: List<Self>`
+// as a list-of-children field, so variants with declared sub-list
+// shapes (Pattern.NestedVariant, ValueType.Tuple, etc.) get the
+// list flattened into children() instead of treated as scalar.
+
+// Bypasses metadata mode at fixture invocation — @comptime
+// annotations don't survive the metadata roundtrip yet (see
+// forge-crafting-intepreters-9p1d), so a metadata-loaded
+// derive_walker would F4002 even though the source-loaded path
+// works fine. Same workaround as walker_basic_test.av.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn run_capture(source: string) -> string {
+    let path = "/tmp/avra_walker_list_self_test.av"
+    write_fixture(path, source)
+    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS bash scripts/diagnose.sh --run ${path} 2>&1 || true")
+}
+
+spec "derive_walker: List<Self> field flattens into children()" {
+    then "Group with N items returns N children" {
+        let out = run_capture(
+            "use @std.avrac.features.walker.{derive_walker}\n" +
+            "\n" +
+            "@expand(derive_walker)\n" +
+            "enum Shape {\n" +
+            "    Atom(value: int)\n" +
+            "    Group(items: List<Shape>)\n" +
+            "    Pair(a: Shape, b: Shape)\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let a = Shape.Atom(1)\n" +
+            "    println(\"atom=\" + string(a.children().length))\n" +
+            "\n" +
+            "    let g = Shape.Group([Shape.Atom(1), Shape.Atom(2), Shape.Atom(3)])\n" +
+            "    println(\"group=\" + string(g.children().length))\n" +
+            "\n" +
+            "    let p = Shape.Pair(Shape.Atom(1), Shape.Atom(2))\n" +
+            "    println(\"pair=\" + string(p.children().length))\n" +
+            "}\n")
+        out.contains("atom=0") && out.contains("group=3") && out.contains("pair=2")
+    }
+}

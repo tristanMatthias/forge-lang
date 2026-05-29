@@ -1,0 +1,325 @@
+// WHY: @comptime derive that auto-generates `children(self) -> List<Self>`
+// on any AST enum. Replaces hand-rolled walker recursion across the
+// bootstrap. First slice: `children` only; fold/map/visit/find/any
+// will layer on top in follow-ups.
+//
+// How it works
+//   1. The macro receives the EnumDecl as `target.stmt` and a
+//      ResolverCtx (unused in this slice — types come straight from
+//      the variant fields' `resolved` ValueType).
+//   2. For each variant, classify every field: if `field.resolved`
+//      is `Enum(enum_name, _, _)` or `Struct(enum_name, _)` whose
+//      name matches the parent enum, it's a child; otherwise scalar.
+//   3. Build one match arm per variant — pattern binds children by
+//      name, scalars to `_`, body is `[c1, c2, ...]`.
+//   4. Emit a top-level `Type__children` fn (parser-style mangled
+//      method name) so codegen's dot-notation dispatch finds it
+//      via the standard method-lookup path.
+
+use core.{Stmt, SStmt, Expr, SExpr, ParamEntry, TypeParamEntry, Pattern, MatchArm, ValueType, Variant, FieldEntry, sexpr_dummy, sstmt_dummy}
+use features.comptime.{AnnotatedDecl, ResolverCtx, ResolvedDecls, DeclSymbol, DeclKind, MacroProvenance}
+use diagnostics.{Span}
+
+// ── Public entry ──
+
+/// 2-arg @comptime macro: inspect the annotated enum, emit a
+/// `Type__children` fn callable as `value.children() -> List<Type>`.
+/// On any failure (wrong stmt shape, etc.) returns the target decl
+/// untouched so downstream errors are about the user's intent, not
+/// about the macro hitting an internal corner case.
+@comptime
+export fn derive_walker(target: AnnotatedDecl, ctx: ResolverCtx) -> ResolvedDecls {
+    let view = unwrap_enum_decl(target.stmt)
+    if view.name == "" {
+        return failsafe_decls(target)
+    }
+
+    let arms = build_children_arms(view.variants, view.name)
+    let children_fn = build_children_fn(arms, view.name)
+
+    let decls: List<SStmt> = [
+        sstmt_dummy(target.stmt),
+        sstmt_dummy(children_fn),
+    ]
+    let mangled_name = "${view.name}__children"
+    // `name` carries the mangled form so the introduces-validation
+    // pass (collect_decl_names) finds a matching decl — generated
+    // decls keep the parser's Type__method mangling so codegen's
+    // dot-dispatch lookup resolves them. `canonical_path` stores
+    // the same mangled form for the registry lookup.
+    let introduces: List<DeclSymbol> = [
+        DeclSymbol {
+            name: mangled_name,
+            kind: DeclKind.Method(view.name),
+            canonical_path: mangled_name,
+        },
+    ]
+    let provenance = MacroProvenance {
+        macro_name: "derive_walker",
+        target_canonical: view.name,
+        target_source_span: Span { start: 0, end: 0, line: 0, col: 0, file: "" },
+    }
+    ResolvedDecls { decls, introduces, provenance }
+}
+
+// ── Target-decl unwrapping ──
+
+type EnumView = { name: string, variants: List<Variant> }
+
+/// Returns the enum's name + variants when `s` is an EnumDecl; an
+/// empty view (`name == ""`) otherwise. invoke_macro already strips
+/// the Annotated wrapper, so we only need to match EnumDecl directly.
+@comptime
+fn unwrap_enum_decl(s: Stmt) -> EnumView {
+    let empty: List<Variant> = []
+    match s {
+        .EnumDecl(name, _, variants) -> EnumView { name, variants }
+        _ -> EnumView { name: "", variants: empty }
+    }
+}
+
+/// Empty-output failsafe — emits just the original decl, no methods.
+/// Keeps the AST shape correct so downstream diagnostics blame the
+/// user code, not a missing decl from a silent macro failure.
+@comptime
+fn failsafe_decls(target: AnnotatedDecl) -> ResolvedDecls {
+    let decls: List<SStmt> = [sstmt_dummy(target.stmt)]
+    let no_syms: List<DeclSymbol> = []
+    let provenance = MacroProvenance {
+        macro_name: "derive_walker",
+        target_canonical: "",
+        target_source_span: Span { start: 0, end: 0, line: 0, col: 0, file: "" },
+    }
+    ResolvedDecls { decls, introduces: no_syms, provenance }
+}
+
+// ── Per-variant arm construction ──
+
+/// One field's role in the children() result.
+///
+/// `kind = 0` — scalar (no children contributed). Binding name "_".
+/// `kind = 1` — direct child (the field IS Self). Binding name = the field name;
+///              the child is the binding itself.
+/// `kind = 2` — direct list-of-self (field is List<Self>). Binding name = field
+///              name; the list flattens into the result.
+///
+/// Wrapper-list shapes (List<SExpr>, List<MatchArm>, etc.) are not yet
+/// classified — variants carrying them treat the field as scalar so the macro
+/// still emits a runnable Type__children. Tracked separately under follow-ups.
+type Binding = { binding_name: string, is_child: bool, kind: int }
+
+@comptime
+fn build_children_arms(variants: List<Variant>, parent_name: string) -> List<MatchArm> {
+    mut arms: List<MatchArm> = []
+    for v in variants {
+        arms.push(build_one_arm(v, parent_name))
+    }
+    arms
+}
+
+@comptime
+fn build_one_arm(v: Variant, parent_name: string) -> MatchArm {
+    let bindings = classify_variant(v, parent_name)
+    let pat = pattern_for(v.name, bindings)
+    let body = list_lit_of_direct_children(bindings)
+    MatchArm {
+        pattern: pat,
+        guard: null,
+        body: sexpr_dummy(body),
+    }
+}
+
+/// True when `vt` refers to the same type as the enum being walked.
+/// Post-resolve, an `enum Tree { Node(left: Tree, ...) }` field has
+/// `resolved = Enum("Tree", _, id)` (or `Struct("Tree", id)` if the
+/// parser fell back to Struct because the type wasn't yet known to be
+/// an enum). The comparison handles both shapes and tolerates the
+/// canonical-vs-short-name distinction by matching either the full
+/// path or a trailing `::Name` suffix.
+///
+/// Helpers live inline (not imported from `core`) because eval can
+/// only call `@comptime` fns; copying the few lines we need keeps
+/// derive_walker eval-safe without leaking @comptime onto core.
+@comptime
+fn is_self_type(vt: ValueType, parent_name: string) -> bool {
+    let n = self_type_name(vt)
+    if n == "" { return false }
+    name_matches(n, parent_name)
+}
+
+@comptime
+fn self_type_name(vt: ValueType) -> string {
+    match vt {
+        .Enum(name, _, _) -> name
+        .Struct(name, _) -> name
+        .NarrowedEnum(name, _, _) -> name
+        _ -> ""
+    }
+}
+
+/// True when `candidate` resolves to the same enum as `parent_name`.
+/// Accepts exact match OR `candidate` being a fully-qualified form
+/// ending in `::parent_name` (the post-resolve canonical for a
+/// top-level decl).
+@comptime
+fn name_matches(candidate: string, parent_name: string) -> bool {
+    if candidate == parent_name { return true }
+    let cl = candidate.length
+    let pl = parent_name.length
+    if cl < pl + 2 { return false }
+    let tail = candidate.substring(cl - pl, cl)
+    if tail != parent_name { return false }
+    let sep = candidate.substring(cl - pl - 2, cl - pl)
+    sep == "::"
+}
+
+@comptime
+fn classify_variant(v: Variant, parent_name: string) -> List<Binding> {
+    mut out: List<Binding> = []
+    for f in v.fields {
+        let kind = classify_field_kind(f.resolved, parent_name)
+        let bind = if kind == 0 { "_" } else { f.name }
+        let is_child = kind != 0
+        out.push(Binding { binding_name: bind, is_child, kind })
+    }
+    out
+}
+
+/// Decide what role a single field plays in `children()`. See `Binding`
+/// for the kind encoding. Mirrors the recognition surface the macro needs
+/// per AST enum: direct Self, direct List<Self>, anything else stays scalar.
+@comptime
+fn classify_field_kind(vt: ValueType, parent_name: string) -> int {
+    if is_self_type(vt, parent_name) { return 1 }
+    if is_list_of_self(vt, parent_name) { return 2 }
+    0
+}
+
+/// True when `vt` is `List<X>` where `X` is the parent type. Covers the
+/// declared-list shapes like `Pattern.NestedVariant(_, sub_patterns:
+/// List<Pattern>)` and `ValueType.Tuple(elements: List<ValueType>)`.
+@comptime
+fn is_list_of_self(vt: ValueType, parent_name: string) -> bool {
+    match vt {
+        .List(elem) -> is_self_type(elem, parent_name)
+        _ -> false
+    }
+}
+
+/// `.VariantName(b1, b2, b3)` pattern. Each binding becomes a
+/// ParamEntry — same shape the parser produces for the simple
+/// bind form `.Variant(x, y)`. `_` is a valid binding name here.
+@comptime
+fn pattern_for(variant_name: string, bindings: List<Binding>) -> Pattern {
+    mut params: List<ParamEntry> = []
+    for b in bindings {
+        params.push(ParamEntry { name: b.binding_name, vtype: ValueType.Unknown })
+    }
+    Pattern.Variant(variant_name, params)
+}
+
+/// Build the arm body — the Expr producing the children list for this
+/// variant. One arm of three shapes:
+///
+///   - Scalars only or direct children only → `[c1, c2, ...]` (the
+///     simple ListLit; empty when scalars-only).
+///   - One list-child only, no direct → `field_ident` (the list IS the
+///     children list).
+///   - Multiple list-children (and optionally direct) → repeated
+///     `list_concat`: `list_concat(list_concat([d1, d2], l1), l2)`.
+///
+/// Type unification: bare-ListLit arms can collide with list_concat
+/// arms when typeck can't see `List<Self>` as the common parent. This
+/// is OK in practice today because Pattern + ValueType + Stmt's
+/// per-variant shapes don't actually mix — each variant is purely
+/// direct or purely list. Expr.Call (callee + args: List<SExpr>) is
+/// the genuine mixed case; that needs wrapper-list shape handling
+/// before the macro generates anything useful for it.
+@comptime
+fn list_lit_of_direct_children(bindings: List<Binding>) -> Expr {
+    let direct_count = count_kind(bindings, 1)
+    let list_count = count_kind(bindings, 2)
+
+    if list_count == 0 {
+        mut elems: List<SExpr> = []
+        for b in bindings {
+            if b.kind == 1 {
+                elems.push(sexpr_dummy(Expr.Ident(b.binding_name)))
+            }
+        }
+        return Expr.ListLit(elems)
+    }
+
+    if direct_count == 0 && list_count == 1 {
+        for b in bindings {
+            if b.kind == 2 { return Expr.Ident(b.binding_name) }
+        }
+    }
+
+    block_expr_for_children(bindings)
+}
+
+@comptime
+fn count_kind(bindings: List<Binding>, target: int) -> int {
+    mut n = 0
+    for b in bindings {
+        if b.kind == target { n = n + 1 }
+    }
+    n
+}
+
+/// Build an Expr that concatenates the direct + list children into a
+/// single List<Self> via repeated `list_concat`. Avoids generating
+/// `Expr.Assign` / `Expr.Block` / `mut` constructs that the @comptime
+/// decoder doesn't understand — the macro return must roundtrip through
+/// `value_to_resolved_decls`, which only handles a subset of Expr.
+///
+/// Layout: starting from the direct-children list literal, fold each
+/// list-child binding through `list_concat(acc, list_child)`. The result
+/// is a single Expr.Call (or Expr.ListLit when no list-children exist —
+/// handled upstream by the early-return in list_lit_of_direct_children).
+@comptime
+fn block_expr_for_children(bindings: List<Binding>) -> Expr {
+    mut direct_elems: List<SExpr> = []
+    for b in bindings {
+        if b.kind == 1 {
+            direct_elems.push(sexpr_dummy(Expr.Ident(b.binding_name)))
+        }
+    }
+    mut acc: Expr = Expr.ListLit(direct_elems)
+    for b in bindings {
+        if b.kind == 2 {
+            let args: List<SExpr> = [sexpr_dummy(acc), sexpr_dummy(Expr.Ident(b.binding_name))]
+            acc = Expr.Call(Expr.Ident("list_concat"), args)
+        }
+    }
+    acc
+}
+
+// ── children() fn builder ──
+
+/// Build `fn Type__children(self) -> List<Self> { match self { arms } }`.
+///
+/// Mangled `Type__method` matches what `parse_method_declaration` emits
+/// for hand-written impls. Free-fn placement (not inside an Impl) keeps
+/// the post-expand register pass simple — it already handles top-level
+/// Function decls; impl-method registration through macros would need
+/// extra plumbing in `collect_macro_item_from_stmt`.
+///
+/// Return type is the concrete `List<EnumName>` — codegen needs a
+/// resolved list-element type to lower `.length` / iteration on the
+/// caller side. Leaving it Unknown defers the work to the post-expand
+/// resolver, but the resolver currently doesn't re-infer fn return
+/// types from match-expression bodies, so we pin it here instead.
+@comptime
+fn build_children_fn(arms: List<MatchArm>, enum_name: string) -> Stmt {
+    let no_type_args: List<ValueType> = []
+    let self_ty = ValueType.Enum(enum_name, no_type_args, 0)
+    let self_param = ParamEntry { name: "self", vtype: self_ty }
+    let params: List<ParamEntry> = [self_param]
+    let empty_tp: List<TypeParamEntry> = []
+    let ret_ty = ValueType.List(self_ty)
+    let match_expr = Expr.MatchExpr(Expr.Ident("self"), arms)
+    let body: List<SStmt> = [sstmt_dummy(Stmt.Expr(match_expr))]
+    Stmt.Function("${enum_name}__children", empty_tp, params, ret_ty, body)
+}

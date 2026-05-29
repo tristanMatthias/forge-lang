@@ -276,6 +276,17 @@ fn enum_value_to_expr(v: Value) -> Expr? {
             let arms = list_value_to_match_arm_list(p[1])?
             Expr.MatchExpr(subj, arms)
         }
+        // Value-position block: `{ stmt1; stmt2; ...; final_expr }`. The
+        // payload is a List<SStmt>; same shape as Stmt.Block but reified
+        // as an Expr so a macro can return one in expression position
+        // (e.g. derive_walker emits `{ let typed_empty: List<Self> = [];
+        // typed_empty }` to anchor an arm's type when other arms produce
+        // a runtime-computed `List<Self>`).
+        "Block" -> {
+            if p.length != 1 { return null }
+            let body = list_value_to_stmt_list(head)?
+            Expr.Block(body)
+        }
         _                 -> null
     }
 }

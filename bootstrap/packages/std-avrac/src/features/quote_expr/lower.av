@@ -725,9 +725,14 @@ fn construct_field_list(fields: List<FieldEntry>) -> Expr {
     mut i = 0
     while i < fields.length {
         let e = fields[i]
+        // Preserve the field's actual `resolved` ValueType — pre-resolve
+        // quote-captured fields are still Unknown (and encode as such);
+        // post-resolve 2-arg @expand macros receive fields with real
+        // types so they can introspect variants without needing a
+        // separate resolver query per field.
         let struct_lit = struct_lit_2("@std::avrac::core::FieldEntry",
             "name", string_lit_expr(e.name),
-            "resolved", construct_value_type_unknown())
+            "resolved", construct_value_type(e.resolved))
         elems.push(sexpr_dummy(struct_lit))
         i = i + 1
     }
