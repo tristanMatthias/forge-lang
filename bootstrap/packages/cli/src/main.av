@@ -189,13 +189,12 @@ fn fail_on_module_resolve_error(mod_resolved: ModListResult, json_output: bool, 
 }
 
 /// Parse `source` or render any parse-time bag entries and abort.
-/// Six pipeline sites (cmd_check / fix / format / expand / test /
-/// run_build) opened with the same 6-line shape:
-///     let parsed = parse_program_source(source)
-///     if parsed.had_error || parsed.stmts == null {
-///         if bag_has_errors(parsed.bag) { render_bag*(...) }
-///         fail(parsed.error_message)
-///     }
+/// Canonical entry for every command that takes Avra source —
+/// `cmd_check`, `cmd_fix`, `cmd_format`, `cmd_expand`, `cmd_test`,
+/// `run_build_command` all enter the pipeline through this fn.
+/// Renders bag warnings/errors when `parsed.had_error` is set
+/// (the parser populates the bag with F0xxx codes before
+/// reporting), then `fail`s with the parse-level error message.
 /// Returns the parsed stmt list on success — the caller continues
 /// from there.
 fn parse_or_fail(source: string, json_output: bool, source_display: string, path: string) -> List<SStmt> {

@@ -50,9 +50,9 @@ export type StructField = {
 
 /// Build a StructField in one expression. Lets callers write
 /// `fields.push(struct_field("x", v))` instead of
-/// `fields.push(StructField { name: "x", value: v })`. 18+ sites
-/// across expand_macro and eval used the long form before this
-/// shorthand landed.
+/// `fields.push(StructField { name: "x", value: v })` — the shorthand
+/// is the canonical way to construct a StructField. Prefer it over
+/// the long form so future contributors don't have to choose.
 export fn struct_field(name: string, value: Value) -> StructField {
     StructField { name, value }
 }
