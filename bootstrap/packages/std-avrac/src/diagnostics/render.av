@@ -4,7 +4,7 @@
 
 use diagnostics.{Diagnostic, DiagnosticBag, DiagnosticCause, Span, Severity, severity_str, diag_code_str, confidence_str}
 use @std.json.{json_escape}
-use core.{avra_selfhost_file_exists, avra_selfhost_read_file}
+use core.{avra_selfhost_file_exists, avra_selfhost_read_file, avra_process_env_get}
 
 // ── ANSI colors ──
 
@@ -263,23 +263,83 @@ export fn render_bag(source: string, filename: string, bag: DiagnosticBag) {
 /// Render a `List<Diagnostic>` in two iterative passes: errors first,
 /// then warnings. Two passes — instead of one merged pass — so users
 /// see all hard errors above any noise from warnings when scrolling
-/// output. The previous `warn_count < 10` cap dated from the
-/// recursive DiagnosticList renderer that needed a stack-overflow
-/// guard; the flat for-in loop made it dead code that silently
-/// suppressed F-coded warnings whenever style-nudge warnings (F9001
-/// / F9002) flooded the first 10 slots, hiding genuine signals
-/// (F4xxx @expand validation, F1xxx typecheck).
+/// output. Errors are uncapped — they're never noise.
+///
+/// Warnings use a per-F-code cap (default 3): each unique F-code
+/// renders up to N instances, then duplicates collapse into a
+/// "... and M more — set AVRA_ALL_WARNINGS=1 to see them all" footer.
+/// The per-code cap preserves rare signals (F4xxx @expand, F1xxx
+/// typecheck) that the prior "first 10 total" cap would have buried
+/// behind 10 copies of F9001/F9002 style nudges.
 fn render_list(source: string, filename: string, list: List<Diagnostic>) {
-    // Pass 1: all errors
+    // Pass 1: all errors (uncapped — errors are never noise)
     for diag in list {
         if diag.severity is .Error { render_diagnostic(source, filename, diag) }
     }
-    // Pass 2: all warnings (no cap — see WHY in fn docstring above)
+    // Pass 2: warnings with per-F-code cap + "and N more" footer
+    let per_code_cap = warn_per_code_cap()
+    mut seen_codes: List<string> = []
+    mut seen_counts: List<int> = []
+    mut warn_skipped = 0
     for diag in list {
         if !(diag.severity is .Error) {
-            render_diagnostic(source, filename, diag)
+            let code_str = diag_code_str(diag.code)
+            let idx = string_index_of(seen_codes, code_str)
+            if idx < 0 {
+                render_diagnostic(source, filename, diag)
+                seen_codes = seen_codes.push(code_str)
+                seen_counts = seen_counts.push(1)
+            } else {
+                let prior = seen_counts[idx]
+                if prior < per_code_cap {
+                    render_diagnostic(source, filename, diag)
+                    seen_counts = list_set(seen_counts, idx, prior + 1)
+                } else {
+                    warn_skipped = warn_skipped + 1
+                }
+            }
         }
     }
+    if warn_skipped > 0 {
+        eprintln(`  ${color_dim("... and")} ${color_yellow(string(warn_skipped))} ${color_dim("more warning${if warn_skipped > 1 { "s" } else { "" }} — set AVRA_ALL_WARNINGS=1 to see them all")}`)
+        eprintln("")
+    }
+}
+
+/// Helper: find the position of `target` in `xs`, or -1 when absent.
+/// Used by the per-F-code render cap to track seen F-code counts
+/// without a heap-allocated map.
+fn string_index_of(xs: List<string>, target: string) -> int {
+    mut i = 0
+    while i < xs.length {
+        if xs[i] == target { return i }
+        i = i + 1
+    }
+    -1
+}
+
+/// Helper: snapshot `xs` with `xs[idx]` replaced by `v`. Pure update —
+/// Avra's `List<T>` doesn't expose in-place index assignment, so the
+/// per-F-code counter needs a copy + tweak.
+fn list_set(xs: List<int>, idx: int, v: int) -> List<int> {
+    mut out: List<int> = []
+    mut i = 0
+    while i < xs.length {
+        if i == idx { out.push(v) } else { out.push(xs[i]) }
+        i = i + 1
+    }
+    out
+}
+
+/// Per-F-code cap for warning rendering. Default 3 — enough to show
+/// representative instances of each style-nudge code without burying
+/// rare F-codes. Set `AVRA_ALL_WARNINGS=1` to disable the cap (useful
+/// when CI greps for a specific F-code count or when auditing the
+/// full warning surface).
+fn warn_per_code_cap() -> int {
+    let env_all = avra_process_env_get("AVRA_ALL_WARNINGS")
+    if env_all == "1" { return 1000000 }
+    3
 }
 
 // ── JSON diagnostic output (ticket d2e) ──
