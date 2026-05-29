@@ -15,10 +15,7 @@
 
 extern fn avra_shell_exec(cmd: string) -> string
 
-fn write_fixture(path: string, body: string) {
-    let escaped = body.replace("'", "'\\''")
-    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
-}
+use @std.avrac.test_runner.{write_fixture}
 
 spec "warning render cap: per-F-code dedup + footer" {
     then "capped run collapses duplicates into footer" {

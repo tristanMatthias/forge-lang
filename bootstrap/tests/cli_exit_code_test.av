@@ -13,10 +13,7 @@
 extern fn avra_shell_exec(cmd: string) -> string
 extern fn avra_shell_exec_status(cmd: string) -> int
 
-fn write_fixture(path: string, body: string) {
-    let escaped = body.replace("'", "'\\''")
-    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
-}
+use @std.avrac.test_runner.{write_fixture}
 
 spec "bs2 check exits non-zero on typecheck errors" {
     then "exit 0 on clean source" {

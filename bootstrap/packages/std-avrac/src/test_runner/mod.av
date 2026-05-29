@@ -374,6 +374,17 @@ export fn cached_fixture_expand(fixture_path: string) -> string {
     cached_fixture_capture(fixture_path, "./build/bs2 expand '${fixture_path}' 2>&1 || true", "expand")
 }
 
+/// Write `source` to `path` via a single-quoted heredoc, escaping
+/// any single quotes in the body so they don't terminate the
+/// surrounding shell quote. Returns nothing — pure side effect.
+/// Used by spec tests that hand-roll their own bs2-invocation
+/// commands (cmd-specific exit-code tests, warning-cap tests) and
+/// don't want the cached_fixture_run wrapper.
+export fn write_fixture(path: string, source: string) {
+    let escaped = source.replace("'", "'\\''")
+    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
+}
+
 /// Convenience: write `source` to `path`, then run it through
 /// `cached_fixture_run`. Centralises the heredoc dance every
 /// fixture-style spec test used to inline. Single-quoted single
@@ -381,8 +392,7 @@ export fn cached_fixture_expand(fixture_path: string) -> string {
 /// `'\''` so source strings containing quotes don't break the
 /// surrounding heredoc.
 export fn write_fixture_and_run(path: string, source: string) -> string {
-    let escaped = source.replace("'", "'\\''")
-    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
+    write_fixture(path, source)
     cached_fixture_run(path)
 }
 
