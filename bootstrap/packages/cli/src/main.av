@@ -3378,6 +3378,15 @@ fn main() {
     let source = if is_flag { "" } else { read_file(path) }
     match command {
         "expr" -> {
+            // parse_expression_source returns ParseResult without a
+            // DiagnosticBag (the expression parser predates the bag
+            // refactor and doesn't accumulate F-codes — see
+            // ParseResult definition in parse/mod.av). Until the
+            // expression parser is plumbed through bag-based
+            // diagnostics, we surface the bare error_message — same
+            // shape as before this audit. Cmd_program / cmd_run got
+            // proper F-code rendering this iteration; cmd_expr stays
+            // a follow-up.
             let result = parse_expression_source(source)
             if result.had_error || result.expr == null {
                 fail(result.error_message)
@@ -3386,11 +3395,8 @@ fn main() {
             return
         }
         "program" -> {
-            let result = parse_program_source(source)
-            if result.had_error || result.stmts == null {
-                fail(result.error_message)
-            }
-            println(render_stmt_list(result.stmts!))
+            let parsed_stmts = parse_or_fail(source, render_ctx(false, source, path))
+            println(render_stmt_list(parsed_stmts))
             return
         }
         "metadata_show" -> {
