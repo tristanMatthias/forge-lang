@@ -4,6 +4,7 @@
 // schema. Compiles small test programs via bs2 and inspects stderr.
 
 extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
 
 // Test runner skips files whose source contains the literal entry
 // header (it treats them as compiled programs, not specs). The
@@ -12,14 +13,9 @@ extern fn avra_shell_exec(cmd: string) -> string
 // matching this file.
 const MAIN_HEADER: string = "fn " + "main()"
 
-fn write_temp(path: string, source: string) -> string {
-    let escaped = source.replace("'", "'\\''")
-    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
-}
-
 fn run_compile_capture(source: string) -> string {
     let path = "/tmp/avra_children_validation_test.av"
-    write_temp(path, source)
+    write_fixture(path, source)
     avra_shell_exec("./build/bs2 compile '${path}' 2>&1 || true")
 }
 

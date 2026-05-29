@@ -1,18 +1,13 @@
 // vez6.6/seven — @expand: macro returning a different println body.
 
 extern fn avra_shell_exec(cmd: string) -> string
-use @std.avrac.test_runner.{cached_fixture_run}
+use @std.avrac.test_runner.{cached_fixture_run, write_fixture}
 
 const MAIN_HEADER: string = "fn " + "main()"
 
-fn write_temp(path: string, source: string) -> string {
-    let escaped = source.replace("'", "'\\''")
-    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
-}
-
 fn run_capture(source: string) -> string {
     let path = "/tmp/avra_expand_macro_seven_test.av"
-    write_temp(path, source)
+    write_fixture(path, source)
     cached_fixture_run(path)
 }
 

@@ -2,14 +2,9 @@
 // Sibling files cover ident + sum cases; each split for shard-parallel.
 
 extern fn avra_shell_exec(cmd: string) -> string
-use @std.avrac.test_runner.{cached_fixture_run}
+use @std.avrac.test_runner.{cached_fixture_run, write_fixture}
 
 const MAIN_HEADER: string = "fn " + "main()"
-
-fn write_temp(path: string, source: string) -> string {
-    let escaped = source.replace("'", "'\\''")
-    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
-}
 
 // Write source, then run via the content-hashed fixture cache so
 // repeated test runs with identical source skip the bs2 compile +
@@ -17,7 +12,7 @@ fn write_temp(path: string, source: string) -> string {
 // timing when uncached (~1s) → ~0ms warm.
 fn run_capture(source: string) -> string {
     let path = "/tmp/avra_expand_macro_expr_test.av"
-    write_temp(path, source)
+    write_fixture(path, source)
     cached_fixture_run(path)
 }
 

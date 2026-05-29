@@ -4,18 +4,13 @@
 // expanded form contains the expected macro-produced shape.
 
 extern fn avra_shell_exec(cmd: string) -> string
-use @std.avrac.test_runner.{cached_fixture_expand}
+use @std.avrac.test_runner.{cached_fixture_expand, write_fixture}
 
 const MAIN_HEADER: string = "fn " + "main()"
 
-fn write_temp(path: string, source: string) -> string {
-    let escaped = source.replace("'", "'\\''")
-    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
-}
-
 fn run_expand(source: string) -> string {
     let path = "/tmp/avra_expand_command_test.av"
-    write_temp(path, source)
+    write_fixture(path, source)
     cached_fixture_expand(path)
 }
 

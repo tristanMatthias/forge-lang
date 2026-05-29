@@ -9,16 +9,11 @@
 // in `quote_splice_arm_list_test.av` once probe 2 lands.
 
 extern fn avra_shell_exec(cmd: string) -> string
-use @std.avrac.test_runner.{cached_fixture_run}
-
-fn write_temp(path: string, source: string) -> string {
-    let escaped = source.replace("'", "'\\''")
-    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
-}
+use @std.avrac.test_runner.{cached_fixture_run, write_fixture}
 
 fn run_capture(source: string) -> string {
     let path = "/tmp/avra_quote_arm_test.av"
-    write_temp(path, source)
+    write_fixture(path, source)
     cached_fixture_run(path)
 }
 

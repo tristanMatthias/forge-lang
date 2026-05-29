@@ -1,17 +1,13 @@
 // vez6.6/missing — @expand pointing at unknown macro emits a clear diagnostic.
 
 extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
 
 const MAIN_HEADER: string = "fn " + "main()"
 
-fn write_temp(path: string, source: string) -> string {
-    let escaped = source.replace("'", "'\\''")
-    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
-}
-
 fn compile_capture(source: string) -> string {
     let path = "/tmp/avra_expand_macro_missing_test.av"
-    write_temp(path, source)
+    write_fixture(path, source)
     avra_shell_exec("./build/bs2 compile '${path}' 2>&1 || true")
 }
 
