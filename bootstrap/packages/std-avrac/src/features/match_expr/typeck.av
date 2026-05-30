@@ -387,6 +387,16 @@ fn find_variant_fields(reg: EnumTypeReg, enum_name: string, variant_name: string
 
 // ── Match arm checking ──
 
+/// Open a fresh pattern scope for `arm` (binding every capture per
+/// so07.5) and run its guard if present. Returns the TC ready for
+/// the body check. Shared across check_match_arms,
+/// check_match_expr_arms, and check_match_expr_infer.
+fn enter_arm_with_guard(acc: TC, arm: MatchArm, subject_ty: ValueType) -> TC {
+    let with_bindings = tc_enter_pattern_scope(acc, arm.pattern, subject_ty)
+    if arm.guard == null { return with_bindings }
+    check_expr(with_bindings, arm.guard!.node).tc
+}
+
 /// Statement-position arm checker. Type-checks every arm's
 /// guard + body within a fresh pattern-scope; doesn't do type
 /// unification (statements don't produce values).
@@ -394,13 +404,7 @@ export fn check_match_arms(tc: TC, subject_ty: ValueType, arms: List<MatchArm>) 
     mut acc = tc
     mut i = 0
     while i < arms.length {
-        let arm = arms[i]
-        let with_bindings = tc_enter_pattern_scope(acc, arm.pattern, subject_ty)
-        let with_guard = if arm.guard != null {
-            let g = check_expr(with_bindings, arm.guard!.node)
-            g.tc
-        } else { with_bindings }
-        let b = check_expr(with_guard, arm.body.node)
+        let b = check_expr(enter_arm_with_guard(acc, arms[i], subject_ty), arms[i].body.node)
         acc = tc_exit(b.tc)
         i = i + 1
     }
@@ -437,14 +441,8 @@ export fn check_match_expr_arms(tc: TC, subject_ty: ValueType, arms: List<MatchA
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
-        let with_bindings = tc_enter_pattern_scope(acc, arm.pattern, subject_ty)
-        let with_guard = if arm.guard != null {
-            let g = check_expr(with_bindings, arm.guard!.node)
-            g.tc
-        } else { with_bindings }
-        let b = check_expr_expected(with_guard, arm.body.node, first_ty)
-        let after = tc_exit(b.tc)
-        acc = unify_arm_types(after, first_ty, arm.body.node, b.ty)
+        let b = check_expr_expected(enter_arm_with_guard(acc, arm, subject_ty), arm.body.node, first_ty)
+        acc = unify_arm_types(tc_exit(b.tc), first_ty, arm.body.node, b.ty)
         i = i + 1
     }
     tc_er(acc, first_ty)
@@ -460,11 +458,7 @@ export fn check_match_expr_infer(tc: TC, subject_ty: ValueType, arms: List<Match
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
-        let with_bindings = tc_enter_pattern_scope(acc, arm.pattern, subject_ty)
-        let with_guard = if arm.guard != null {
-            let g = check_expr(with_bindings, arm.guard!.node)
-            g.tc
-        } else { with_bindings }
+        let with_guard = enter_arm_with_guard(acc, arm, subject_ty)
         // so07.4 (T4): once a seed is set, thread it as the expected
         // type so subsequent ListLit arms inherit the element type.
         // Before the seed is known, fall back to bottom-up inference.
