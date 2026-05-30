@@ -1,0 +1,58 @@
+// y9y4.7 + y9y4.8 / so07.5 — @expand(derive_walker) on core/ast.av's
+// Stmt and Expr enums. Both are larger than Pattern / ValueType and
+// hit every shape combination: scalar variants, single-Self fields,
+// List-of-Self, mixed scalar+Self, mixed direct+list. T5's variant-
+// pattern Self-recursive bindings unblocked both simultaneously.
+//
+// Bypasses metadata mode at fixture invocation (9p1d).
+
+use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+
+fn run_capture(source: string) -> string {
+    write_fixture_and_run_no_metadata("/tmp/avra_walker_stmt_expr_test.av", source)
+}
+
+spec "derive_walker: Stmt enum carries .children()" {
+    then "Stmt.NoOp has no children" {
+        let out = run_capture(
+            "use @std.avrac.core.{Stmt}\n" +
+            "fn main() {\n" +
+            "    println(\"noop=\" + string(Stmt.NoOp.children().length))\n" +
+            "}\n")
+        out.contains("noop=0")
+    }
+    then "Stmt.While(_, body) returns the body (direct-Self)" {
+        let out = run_capture(
+            "use @std.avrac.core.{Stmt, Expr}\n" +
+            "fn main() {\n" +
+            "    let w = Stmt.While(Expr.Bool(true), Stmt.Break)\n" +
+            "    println(\"while=\" + string(w.children().length))\n" +
+            "}\n")
+        out.contains("while=1")
+    }
+    // Note: Stmt variants with List<SStmt> body (Block / Module / SpecBlock /
+    // ThenBlock / GivenBlock / Function / Match / TraitDecl) need wrapper-
+    // list unwrapping — pending y9y4.11 / T6.
+}
+
+spec "derive_walker: Expr enum carries .children()" {
+    then "Expr.Number (scalar) has no children" {
+        let out = run_capture(
+            "use @std.avrac.core.{Expr}\n" +
+            "fn main() {\n" +
+            "    println(\"num=\" + string(Expr.Number(\"42\").children().length))\n" +
+            "}\n")
+        out.contains("num=0")
+    }
+    then "Expr.Binary(left, _, right) returns both operands" {
+        let out = run_capture(
+            "use @std.avrac.core.{Expr, BinOp}\n" +
+            "fn main() {\n" +
+            "    let lhs = Expr.Number(\"1\")\n" +
+            "    let rhs = Expr.Number(\"2\")\n" +
+            "    let bin = Expr.Binary(lhs, BinOp.Add, rhs)\n" +
+            "    println(\"bin=\" + string(bin.children().length))\n" +
+            "}\n")
+        out.contains("bin=2")
+    }
+}

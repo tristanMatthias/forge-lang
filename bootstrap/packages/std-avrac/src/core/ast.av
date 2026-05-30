@@ -909,6 +909,7 @@ export fn logicop_str(op: LogicOp) -> string {
 /// to one of these variants. Adding a new variant requires touching
 /// every walker (resolver, typecheck, mono, codegen, render) — see
 /// the existing match arms for the pattern.
+@expand(derive_walker)
 export enum Expr {
     /// Integer literal (text form, parsed lazily by codegen).
     Number(value: string)
@@ -1015,6 +1016,7 @@ export enum Expr {
 /// Avra statement AST. Anything that doesn't produce a value lowers
 /// to one of these. `Expr(e)` is the bridge — wraps an expression so
 /// it can stand alone in a block without yielding.
+@expand(derive_walker)
 export enum Stmt {
     /// Immutable binding: `let name: T = init`.
     Let(name: string, ty_vt: ValueType, initializer: Expr)
