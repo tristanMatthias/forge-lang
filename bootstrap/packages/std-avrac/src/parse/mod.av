@@ -476,9 +476,7 @@ impl Parser {
     fn parse_declaration(self) -> Stmt? {
         // Reserved future keywords produce an error immediately.
         if self.check(Tk.KwReserved) {
-            let kw = self.current_lexeme
-            self.set_error("`${kw}` is a reserved keyword and cannot be used yet")
-            self.advance()
+            self.reject_reserved_keyword("yet")
             return null
         }
 
@@ -1685,42 +1683,47 @@ impl Parser {
         false
     }
 
+    /// Consume the current token's lexeme + advance. Caller is
+    /// expected to have already checked the token kind.
+    fn take_lexeme(self) -> string {
+        let name = self.current_lexeme
+        self.advance()
+        name
+    }
+
+    /// Emit "`<kw>` is a reserved keyword and cannot be used
+    /// <suffix>" at the current span and consume the offending
+    /// token. Centralises the diagnostic shared by `parse_declaration`
+    /// (top-level decl using a future-reserved keyword) and
+    /// `consume_identifier` (binding site).
+    fn reject_reserved_keyword(self, suffix: string) {
+        let kw = self.current_lexeme
+        self.set_error("`${kw}` is a reserved keyword and cannot be used ${suffix}")
+        self.advance()
+    }
+
+    /// Strict identifier consumer: rejects reserved keywords at
+    /// binding sites (param / let / mut / const / fn / type /
+    /// variant / field names). so07.2 / 1rzz — without this check
+    /// the parser silently accepted `bare`, `await`, etc. as
+    /// identifiers and the use site emitted a confusing F0001.
     fn consume_identifier(self, message: string) -> string? {
-        // Strict identifier consumer: rejects reserved keywords at
-        // binding sites (param names, let/mut/const names, fn names,
-        // type / enum / variant / field names, etc). so07.2 / 1rzz:
-        // before this check the parser silently accepted `bare`,
-        // `await`, `move`, etc. as identifiers — the binding worked
-        // but every use site emitted a confusing F0001 because the
-        // lexer mapped the same name to Tk.KwReserved. Fail at the
-        // binding instead, with an actionable diagnostic naming the
-        // offending keyword.
         if self.check(Tk.KwReserved) {
-            let kw = self.current_lexeme
-            self.set_error("`${kw}` is a reserved keyword and cannot be used as an identifier — rename the binding")
-            self.advance()
+            self.reject_reserved_keyword("as an identifier — rename the binding")
             return null
         }
-        if self.check(Tk.Identifier) {
-            let name = self.current_lexeme
-            self.advance()
-            return name
-        }
+        if self.check(Tk.Identifier) { return self.take_lexeme() }
         self.set_error(message)
         null
     }
 
-    /// Lenient variant for field / method access positions. `task.await`
-    /// is valid even though `await` is a reserved statement keyword —
-    /// the dot disambiguates. Use this only for `expr.<name>` /
-    /// `expr?.<name>` sites; binding sites should call
-    /// `consume_identifier` so reserved names are rejected.
+    /// Lenient variant for field / method access positions
+    /// (`task.await`, `expr?.field`): accepts reserved keywords
+    /// because the dot disambiguates. Use only for `expr.<name>` /
+    /// `expr?.<name>` sites — binding sites must call
+    /// `consume_identifier` instead so reserved names are rejected.
     fn consume_field_name(self, message: string) -> string? {
-        if self.check(Tk.Identifier) || self.check(Tk.KwReserved) {
-            let name = self.current_lexeme
-            self.advance()
-            return name
-        }
+        if self.check(Tk.Identifier) || self.check(Tk.KwReserved) { return self.take_lexeme() }
         self.set_error(message)
         null
     }

@@ -373,11 +373,8 @@ fn variant_field_list(reg: EnumTypeReg, enum_name: string, variant_name: string)
     let direct = find_variant_fields(reg, enum_name, variant_name)
     if direct != null { return direct! }
     let short = type_short_name(enum_name)
-    if short != enum_name {
-        let alt = find_variant_fields(reg, short, variant_name)
-        if alt != null { return alt! }
-    }
-    empty
+    if short == enum_name { return empty }
+    find_variant_fields(reg, short, variant_name) ?? empty
 }
 
 /// Single-shot variant fields lookup — returns null on miss so
