@@ -44,14 +44,17 @@ export fn derive_walker(target: AnnotatedDecl, ctx: ResolverCtx) -> ResolvedDecl
     let arms = build_children_arms(view.variants, view.name)
     let children_fn = build_children_fn(arms, view.name)
     let visit_fn = build_visit_fn(view.name)
+    let any_fn = build_any_fn(view.name)
 
     let decls: List<SStmt> = [
         sstmt_dummy(target.stmt),
         sstmt_dummy(children_fn),
         sstmt_dummy(visit_fn),
+        sstmt_dummy(any_fn),
     ]
     let children_mangled = "${view.name}__children"
     let visit_mangled = "${view.name}__visit"
+    let any_mangled = "${view.name}__any"
     // Mangled `Type__method` names register so the introduces-
     // validation pass can find them in the spliced decl list.
     let introduces: List<DeclSymbol> = [
@@ -64,6 +67,11 @@ export fn derive_walker(target: AnnotatedDecl, ctx: ResolverCtx) -> ResolvedDecl
             name: visit_mangled,
             kind: DeclKind.Method(view.name),
             canonical_path: visit_mangled,
+        },
+        DeclSymbol {
+            name: any_mangled,
+            kind: DeclKind.Method(view.name),
+            canonical_path: any_mangled,
         },
     ]
     let provenance = MacroProvenance {
@@ -375,4 +383,57 @@ fn build_visit_fn(enum_name: string) -> Stmt {
 
     let body: List<SStmt> = [sstmt_dummy(f_call), sstmt_dummy(for_loop)]
     Stmt.Function("${enum_name}__visit", empty_tp, params, ValueType.Void, body)
+}
+
+// ── Slice C: any() — short-circuiting existence check ──
+
+/// Build `fn Type__any(self: Type, pred: fn(Type) -> bool) -> bool {
+///     if pred(self) { return true }
+///     for c in self.children() { if c.any(pred) { return true } }
+///     false
+/// }`.
+///
+/// Short-circuit: `c.any(pred)` returning true exits the loop via
+/// an early `return true`. The trailing `false` falls through when
+/// nothing matched. Same shape as visit() but returns bool and
+/// guards with if-stmts.
+@comptime
+fn build_any_fn(enum_name: string) -> Stmt {
+    let no_type_args: List<ValueType> = []
+    let self_ty = ValueType.Enum(enum_name, no_type_args, 0)
+    let pred_param_types: List<ValueType> = [self_ty]
+    let pred_ty = ValueType.FnTyped(pred_param_types, ValueType.Bool)
+    let self_param = ParamEntry { name: "self", vtype: self_ty }
+    let pred_param = ParamEntry { name: "pred", vtype: pred_ty }
+    let params: List<ParamEntry> = [self_param, pred_param]
+    let empty_tp: List<TypeParamEntry> = []
+
+    // if pred(self) { return true }
+    let pred_args_self: List<SExpr> = [sexpr_dummy(Expr.Ident("self"))]
+    let pred_call_self = Expr.Call(Expr.Ident("pred"), pred_args_self)
+    let return_true_stmts: List<SStmt> = [sstmt_dummy(Stmt.Return(Expr.Bool("true")))]
+    let return_true_block = Stmt.Block(return_true_stmts)
+    let if_pred_self = Stmt.If(pred_call_self, return_true_block, null)
+
+    // for c in self.children() { if c.any(pred) { return true } }
+    let no_call_args: List<SExpr> = []
+    let children_call = Expr.Call(Expr.FieldAccess(Expr.Ident("self"), "children"), no_call_args)
+    let any_args: List<SExpr> = [sexpr_dummy(Expr.Ident("pred"))]
+    let c_any_call = Expr.Call(Expr.FieldAccess(Expr.Ident("c"), "any"), any_args)
+    let inner_return_stmts: List<SStmt> = [sstmt_dummy(Stmt.Return(Expr.Bool("true")))]
+    let inner_return_block = Stmt.Block(inner_return_stmts)
+    let if_c_any = Stmt.If(c_any_call, inner_return_block, null)
+    let for_body_stmts: List<SStmt> = [sstmt_dummy(if_c_any)]
+    let for_body = Stmt.Block(for_body_stmts)
+    let for_loop = Stmt.ForIn("c", children_call, for_body)
+
+    // trailing `false` so the fn returns it when nothing matched
+    let false_return = Stmt.Return(Expr.Bool("false"))
+
+    let body: List<SStmt> = [
+        sstmt_dummy(if_pred_self),
+        sstmt_dummy(for_loop),
+        sstmt_dummy(false_return),
+    ]
+    Stmt.Function("${enum_name}__any", empty_tp, params, ValueType.Bool, body)
 }
