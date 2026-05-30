@@ -194,11 +194,9 @@ export fn render_type_param_list(params: List<TypeParamEntry>) -> string {
 /// carries one of these; codegen dispatches on the variant to pick
 /// the LLVM type and ABI. New variants here also need a row in
 /// `llvm_type_for_full` and an arm in `vtype_display`.
-// @expand(derive_walker) — see y9y4.17. Enum-name qualification
-// tolerance was added to vtype_assignable but the underlying issue is
-// deeper (macro-emitted ValueType.Enum doesn't get re-qualified by the
-// post-expand resolver, and additional arm shapes still mismatch).
-// Wait until y9y4.17 ships the full resolver / decoder fix.
+// @expand(derive_walker) blocked on y9y4.17 — post-expand resolver
+// doesn't requalify macro-emitted ValueType.Enum slots; arms split
+// between bare-name and FQN-name fail vtype_eq.
 export enum ValueType {
     /// `int` — i64 in LLVM.
     Int,
@@ -513,53 +511,8 @@ fn assignable_with_unknowns(src: ValueType, dst: ValueType) -> bool {
             _ -> false
         }
         .Newtype(n1, ia, _) -> match dst { .Newtype(n2, ib, _) -> n1 == n2 && assignable_with_unknowns(ia, ib), _ -> false }
-        // Enum: tolerate qualification mismatch (bare vs `@…::…::Name`)
-        // so macro-emitted ValueType.Enum("ValueType", _, 0) unifies with
-        // post-resolve Enum("@std::avrac::core::ValueType", _, N) inside
-        // a shared List/Tuple/etc. shape. Strict equality elsewhere stays
-        // the responsibility of vtype_eq.
-        .Enum(n1, a1, _) -> match dst {
-            .Enum(n2, a2, _) -> enum_names_compatible(n1, n2) && type_lists_assignable_unknowns(a1, a2)
-            _ -> false
-        }
-        .Struct(n1, _) -> match dst {
-            .Struct(n2, _) -> enum_names_compatible(n1, n2)
-            _ -> false
-        }
         _ -> false
     }
-}
-
-/// Two enum/struct names refer to the same nominal type when one is
-/// a `::`-qualified path ending in the other. Used by
-/// `assignable_with_unknowns` to unify macro-emitted bare names with
-/// post-resolve fully-qualified names.
-fn enum_names_compatible(a: string, b: string) -> bool {
-    if a == b { return true }
-    if a == "" || b == "" { return false }
-    // Suffix-match on `::Name` so "Foo" matches "pkg::mod::Foo" but
-    // *not* "pkg::FooBar" (substring of the path but not the last
-    // segment).
-    if a.length < b.length {
-        let suffix = "::" + a
-        if b.length >= suffix.length && string_ends_with(b, suffix) { return true }
-    }
-    if b.length < a.length {
-        let suffix = "::" + b
-        if a.length >= suffix.length && string_ends_with(a, suffix) { return true }
-    }
-    false
-}
-
-fn string_ends_with(s: string, suffix: string) -> bool {
-    if suffix.length > s.length { return false }
-    mut i = 0
-    let off = s.length - suffix.length
-    while i < suffix.length {
-        if s[off + i] != suffix[i] { return false }
-        i = i + 1
-    }
-    true
 }
 
 fn type_lists_assignable_unknowns(a: List<ValueType>, b: List<ValueType>) -> bool {
