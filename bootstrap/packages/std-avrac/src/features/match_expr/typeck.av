@@ -335,32 +335,22 @@ fn tc_bind_pattern_params(tc: TC, variant_name: string, params: List<ParamEntry>
     cur
 }
 
-/// Compute the binding type for a single pattern-param field. Returns
-/// `subject_ty` (or `List<subject_ty>`) when `field_ty` is Self-typed
-/// — copying the subject's exact name + id form avoids the bare-vs-
-/// qualified mismatch we'd hit by using `field_ty` directly. Returns
-/// `Unknown` for non-Self fields until T6 makes nominal identity
-/// handle-based. Handles both `.Struct` (pre-resolve nominal shell)
-/// and `.Enum` for the inner-name check — variants registered before
-/// the resolver promotes them keep their parsed `.Struct` form.
+/// Binding type for a Self-recursive pattern-param field. Returns
+/// `subject_ty` for direct-Self fields and `List<subject_ty>` for
+/// List-of-Self fields. Copying subject_ty's exact form avoids the
+/// bare-vs-qualified mismatch we'd hit by using `field_ty.resolved`
+/// directly. Non-Self fields stay Unknown until T6 fixes nominal
+/// identity. Handles both `.Struct` (pre-resolve) and `.Enum` shells.
 fn self_recursive_binding(field_ty: ValueType, subject_ty: ValueType, subject_name: string) -> ValueType {
     if subject_name == "" { return ValueType.Unknown }
-    if nominal_name(field_ty) == subject_name || enum_names_alias(nominal_name(field_ty), subject_name) {
-        return subject_ty
-    }
+    if names_alias(nominal_name(field_ty), subject_name) { return subject_ty }
     match field_ty {
-        .List(elem) -> {
-            let elem_name = nominal_name(elem)
-            if elem_name != "" && enum_names_alias(elem_name, subject_name) {
-                ValueType.List(subject_ty)
-            } else { ValueType.Unknown }
-        }
+        .List(elem) -> if names_alias(nominal_name(elem), subject_name) { ValueType.List(subject_ty) } else { ValueType.Unknown }
         _ -> ValueType.Unknown
     }
 }
 
-/// Extract a nominal type's name from `.Struct` / `.Enum` shells.
-/// Returns `""` for non-nominal shapes (List, Tuple, primitive, ...).
+/// Nominal name from `.Struct` / `.Enum`; `""` for other shapes.
 fn nominal_name(t: ValueType) -> string {
     match t {
         .Struct(n, _) -> n
@@ -369,9 +359,9 @@ fn nominal_name(t: ValueType) -> string {
     }
 }
 
-/// True iff two enum names refer to the same nominal type — equal as
-/// strings, or one is the `::`-stripped short form of the other.
-fn enum_names_alias(a: string, b: string) -> bool {
+/// Equal names, ignoring `::` qualification. `""` aliases nothing.
+fn names_alias(a: string, b: string) -> bool {
+    if a == "" || b == "" { return false }
     a == b || type_short_name(a) == b || a == type_short_name(b)
 }
 
@@ -380,13 +370,22 @@ fn enum_names_alias(a: string, b: string) -> bool {
 fn variant_field_list(reg: EnumTypeReg, enum_name: string, variant_name: string) -> List<FieldEntry> {
     let empty: List<FieldEntry> = []
     if enum_name == "" { return empty }
-    let v = variant_find(enum_type_variants(reg, enum_name), variant_name)
-    if v != null { return v!.fields }
+    let direct = find_variant_fields(reg, enum_name, variant_name)
+    if direct != null { return direct! }
     let short = type_short_name(enum_name)
-    if short == enum_name { return empty }
-    let alt = variant_find(enum_type_variants(reg, short), variant_name)
-    if alt != null { return alt!.fields }
+    if short != enum_name {
+        let alt = find_variant_fields(reg, short, variant_name)
+        if alt != null { return alt! }
+    }
     empty
+}
+
+/// Single-shot variant fields lookup — returns null on miss so
+/// `variant_field_list` can fall through to its alternate-name probe.
+fn find_variant_fields(reg: EnumTypeReg, enum_name: string, variant_name: string) -> List<FieldEntry>? {
+    let v = variant_find(enum_type_variants(reg, enum_name), variant_name)
+    if v == null { return null }
+    v!.fields
 }
 
 // ── Match arm checking ──

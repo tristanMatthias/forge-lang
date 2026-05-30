@@ -1,32 +1,25 @@
 // WHY: type checking for list literals and list method calls.
 
-use core.{Expr, SExpr, ValueType, vtype_list_elem, vtype_is_unknown}
+use core.{Expr, SExpr, ValueType, vtype_list_elem}
 use typeck.{TC, ExprResult, tc_er, tc_enter, tc_exit, tc_bind, check_expr, check_expr_list}
 
 /// Type-check a list literal. Empty literals get `List<Unknown>`
 /// (caller infers from context); non-empty literals pin the element
 /// type from the first element and check the rest against it.
 export fn check_list_lit(tc: TC, elements: List<SExpr>) -> ExprResult {
-    if elements.length == 0 { return tc_er(tc, .List(.Unknown)) }
+    check_list_lit_with_expected(tc, elements, .Unknown)
+}
+
+/// Bidirectional list-literal checker. Empty literals adopt
+/// `expected_elem` (callers pass `Unknown` when they have no hint).
+/// Non-empty literals infer bottom-up from the first element; arm
+/// unification then handles the broader assignment via vtype_assignable.
+/// so07.4 (T4).
+export fn check_list_lit_with_expected(tc: TC, elements: List<SExpr>, expected_elem: ValueType) -> ExprResult {
+    if elements.length == 0 { return tc_er(tc, .List(expected_elem)) }
     let r = check_expr(tc, elements[0].node)
     let checked = check_expr_list(r.tc, elements)
     tc_er(checked, .List(r.ty))
-}
-
-/// Bidirectional variant: when the caller knows the expected element
-/// type (e.g. from a `let xs: List<T> = ...` annotation, a match-arm
-/// position where the seed is List<T>, or a fn argument typed
-/// List<T>), the empty literal types as `List<T>` instead of
-/// `List<Unknown>`. Non-empty literals still infer from elements;
-/// callers rely on the broader vtype_assignable check to unify with
-/// the expected type, so we don't force element-by-element checks
-/// against `expected_elem` yet. so07.4 (T4).
-export fn check_list_lit_with_expected(tc: TC, elements: List<SExpr>, expected_elem: ValueType) -> ExprResult {
-    if elements.length == 0 {
-        let elem = if vtype_is_unknown(expected_elem) { ValueType.Unknown } else { expected_elem }
-        return tc_er(tc, .List(elem))
-    }
-    check_list_lit(tc, elements)
 }
 
 /// Map a List method name to its result ValueType. `map` is
