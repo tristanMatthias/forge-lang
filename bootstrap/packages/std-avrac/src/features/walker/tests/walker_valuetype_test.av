@@ -1,0 +1,70 @@
+// y9y4.6 / so07.5 — @expand(derive_walker) applied to core/ast.av's
+// ValueType enum. Verifies the macro handles the mixed-shape variant
+// surface (scalar + direct-Self + List-of-Self + List-of-Self with
+// scalar siblings) that was the original derive_walker blocker.
+//
+// Pre-T5: ValueType could not carry @expand because Mix-shape
+// variants (Closure(num_captures: int, ret: ValueType),
+// FnTyped(params: List<ValueType>, ret: ValueType), etc.) failed
+// F1000 — generic call inference inside the macro's emitted
+// list_concat([ret], params) couldn't pin T because pattern bindings
+// were typed Unknown. T5 fixed that for Self-recursive fields.
+//
+// Bypasses metadata mode at fixture invocation (9p1d) so derive_walker
+// is in scope.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn run_capture(source: string) -> string {
+    let path = "/tmp/avra_walker_valuetype_test.av"
+    write_fixture(path, source)
+    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS bash scripts/diagnose.sh --run ${path} 2>&1 || true")
+}
+
+spec "derive_walker: applied to core/ast.av's ValueType enum" {
+    then "ValueType.children() returns no children for primitive scalars" {
+        let out = run_capture(
+            "use @std.avrac.core.{ValueType}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    println(\"int=\" + string(ValueType.Int.children().length))\n" +
+            "    println(\"str=\" + string(ValueType.Str.children().length))\n" +
+            "    println(\"void=\" + string(ValueType.Void.children().length))\n" +
+            "}\n")
+        out.contains("int=0") && out.contains("str=0") && out.contains("void=0")
+    }
+    then "ValueType.children() returns the elem for List<T> (direct-Self)" {
+        let out = run_capture(
+            "use @std.avrac.core.{ValueType}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let lst = ValueType.List(ValueType.Int)\n" +
+            "    println(\"list=\" + string(lst.children().length))\n" +
+            "}\n")
+        out.contains("list=1")
+    }
+    then "ValueType.children() returns the args list for Enum (list-of-Self)" {
+        let out = run_capture(
+            "use @std.avrac.core.{ValueType}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let args: List<ValueType> = [ValueType.Int, ValueType.Str, ValueType.Bool]\n" +
+            "    let e = ValueType.Enum(\"Result\", args, 0)\n" +
+            "    println(\"enum=\" + string(e.children().length))\n" +
+            "}\n")
+        out.contains("enum=3")
+    }
+    then "ValueType.children() handles mixed direct+list (FnTyped)" {
+        let out = run_capture(
+            "use @std.avrac.core.{ValueType}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let params: List<ValueType> = [ValueType.Int, ValueType.Str]\n" +
+            "    let fn_ty = ValueType.FnTyped(params, ValueType.Bool)\n" +
+            "    println(\"fn=\" + string(fn_ty.children().length))\n" +
+            "}\n")
+        // FnTyped has ret + params — list_concat([ret], params) = 1 + 2 = 3
+        out.contains("fn=3")
+    }
+}

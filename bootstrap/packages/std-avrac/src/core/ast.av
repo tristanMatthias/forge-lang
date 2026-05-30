@@ -194,9 +194,7 @@ export fn render_type_param_list(params: List<TypeParamEntry>) -> string {
 /// carries one of these; codegen dispatches on the variant to pick
 /// the LLVM type and ABI. New variants here also need a row in
 /// `llvm_type_for_full` and an arm in `vtype_display`.
-// @expand(derive_walker) blocked on y9y4.17 — post-expand resolver
-// doesn't requalify macro-emitted ValueType.Enum slots; arms split
-// between bare-name and FQN-name fail vtype_eq.
+@expand(derive_walker)
 export enum ValueType {
     /// `int` — i64 in LLVM.
     Int,
