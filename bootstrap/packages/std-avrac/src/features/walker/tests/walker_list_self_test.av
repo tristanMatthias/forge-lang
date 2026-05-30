@@ -9,13 +9,10 @@
 // derive_walker would F4002 even though the source-loaded path
 // works fine. Same workaround as walker_basic_test.av.
 
-extern fn avra_shell_exec(cmd: string) -> string
-use @std.avrac.test_runner.{write_fixture}
+use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
 
 fn run_capture(source: string) -> string {
-    let path = "/tmp/avra_walker_list_self_test.av"
-    write_fixture(path, source)
-    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS bash scripts/diagnose.sh --run ${path} 2>&1 || true")
+    write_fixture_and_run_no_metadata("/tmp/avra_walker_list_self_test.av", source)
 }
 
 spec "derive_walker: List<Self> field flattens into children()" {

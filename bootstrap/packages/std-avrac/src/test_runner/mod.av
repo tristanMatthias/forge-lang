@@ -396,6 +396,24 @@ export fn write_fixture_and_run(path: string, source: string) -> string {
     cached_fixture_run(path)
 }
 
+/// Same as cached_fixture_run, but strips AVRA_USE_METADATA + AVRA_LIB_OBJS
+/// from the env so the fixture sees @comptime annotations + bodies
+/// (metadata mode strips them per 9p1d). Required by tests that
+/// exercise derive_walker / quote_expr / other @comptime macros.
+export fn cached_fixture_run_no_metadata(fixture_path: string) -> string {
+    cached_fixture_capture(fixture_path,
+        "env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS bash scripts/diagnose.sh --run ${fixture_path} 2>&1 || true",
+        "run-no-metadata")
+}
+
+/// Convenience: write_fixture + cached_fixture_run_no_metadata.
+/// Centralises the run_capture pattern duplicated across walker /
+/// decoder tests (8+ inline copies before this helper).
+export fn write_fixture_and_run_no_metadata(path: string, source: string) -> string {
+    write_fixture(path, source)
+    cached_fixture_run_no_metadata(path)
+}
+
 /// Shared helper. The verb is folded into the cache key so two
 /// different command shapes against the same fixture don't share a
 /// slot; everything else (toolchain fp + file hash + fixture path)

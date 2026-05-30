@@ -13,13 +13,10 @@
 // Bypasses metadata mode at fixture invocation (9p1d) so derive_walker
 // is in scope.
 
-extern fn avra_shell_exec(cmd: string) -> string
-use @std.avrac.test_runner.{write_fixture}
+use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
 
 fn run_capture(source: string) -> string {
-    let path = "/tmp/avra_walker_valuetype_test.av"
-    write_fixture(path, source)
-    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS bash scripts/diagnose.sh --run ${path} 2>&1 || true")
+    write_fixture_and_run_no_metadata("/tmp/avra_walker_valuetype_test.av", source)
 }
 
 spec "derive_walker: applied to core/ast.av's ValueType enum" {

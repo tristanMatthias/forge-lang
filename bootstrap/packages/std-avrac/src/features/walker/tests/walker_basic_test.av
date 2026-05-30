@@ -14,13 +14,10 @@
 // first run's stdout, which would be the F4002 macro-not-found
 // failure if the cache was populated under the metadata env.
 
-extern fn avra_shell_exec(cmd: string) -> string
-use @std.avrac.test_runner.{write_fixture}
+use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
 
 fn run_capture(source: string) -> string {
-    let path = "/tmp/avra_walker_basic_test.av"
-    write_fixture(path, source)
-    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS bash scripts/diagnose.sh --run ${path} 2>&1 || true")
+    write_fixture_and_run_no_metadata("/tmp/avra_walker_basic_test.av", source)
 }
 
 spec "derive_walker: children() on a tiny recursive enum" {
