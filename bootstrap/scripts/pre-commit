@@ -72,6 +72,27 @@ if [ -n "$src_relevant" ]; then
     exit 1
   fi
   echo "[pre-commit] self-host fixed point holds"
+
+  # 4e0a: cold-build verification. The fixed-point check above can pass
+  # asymmetrically — if the staged seed.ll is older than the staged
+  # source, the seed builds bs2-with-new-rule, bs2 vs bs3 byte-equal
+  # (both have the new rule), but a fresh `make build` from scratch
+  # would fail because the seed's pre-rule typeck accepts source that
+  # bs2's post-rule typeck rejects. Run bs2 check explicitly to catch
+  # this — if bs2 can't check its own source, a fresh build will fail.
+  echo "[pre-commit] verifying bs2 can check main.av without errors"
+  if ! (cd bootstrap && ./build/bs2 check packages/cli/src/main.av) >/dev/null 2>&1; then
+    echo
+    echo "[pre-commit] BS2 SELF-CHECK FAILED — commit blocked"
+    echo "[pre-commit] bs2 produces errors when checking main.av. This means a"
+    echo "[pre-commit] foundational typeck change shipped without updating the"
+    echo "[pre-commit] seed to match — fresh builds from this commit will fail."
+    echo "[pre-commit] errors (excerpt):"
+    (cd bootstrap && ./build/bs2 check packages/cli/src/main.av 2>&1) | grep "error\[F" | head -5
+    echo "[pre-commit] run 'make update-seed' then re-commit, or 'git commit --no-verify'."
+    exit 1
+  fi
+  echo "[pre-commit] bs2 self-check passes"
 fi
 
 # Verify the seed IR exists and hasn't been deleted.
