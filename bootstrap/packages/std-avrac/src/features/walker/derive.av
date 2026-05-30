@@ -45,16 +45,19 @@ export fn derive_walker(target: AnnotatedDecl, ctx: ResolverCtx) -> ResolvedDecl
     let children_fn = build_children_fn(arms, view.name)
     let visit_fn = build_visit_fn(view.name)
     let any_fn = build_any_fn(view.name)
+    let find_fn = build_find_fn(view.name)
 
     let decls: List<SStmt> = [
         sstmt_dummy(target.stmt),
         sstmt_dummy(children_fn),
         sstmt_dummy(visit_fn),
         sstmt_dummy(any_fn),
+        sstmt_dummy(find_fn),
     ]
     let children_mangled = "${view.name}__children"
     let visit_mangled = "${view.name}__visit"
     let any_mangled = "${view.name}__any"
+    let find_mangled = "${view.name}__find"
     // Mangled `Type__method` names register so the introduces-
     // validation pass can find them in the spliced decl list.
     let introduces: List<DeclSymbol> = [
@@ -72,6 +75,11 @@ export fn derive_walker(target: AnnotatedDecl, ctx: ResolverCtx) -> ResolvedDecl
             name: any_mangled,
             kind: DeclKind.Method(view.name),
             canonical_path: any_mangled,
+        },
+        DeclSymbol {
+            name: find_mangled,
+            kind: DeclKind.Method(view.name),
+            canonical_path: find_mangled,
         },
     ]
     let provenance = MacroProvenance {
@@ -436,4 +444,70 @@ fn build_any_fn(enum_name: string) -> Stmt {
         sstmt_dummy(false_return),
     ]
     Stmt.Function("${enum_name}__any", empty_tp, params, ValueType.Bool, body)
+}
+
+// ── Slice C: find() — short-circuiting search returning first match ──
+
+/// Build `fn Type__find(self: Type, pred: fn(Type) -> bool) -> Type {
+///     if pred(self) { return self }
+///     for c in self.children() {
+///         let r = c.find(pred)
+///         if r != null { return r }
+///     }
+///     null
+/// }`.
+///
+/// Returns the matching node or null. Type? at source level lowers
+/// to the same ValueType.Enum (T's nullability lives in TypeExpr,
+/// not ValueType per the parser), so emitting ret_vtype = Self is
+/// the correct shape; `return null` and `r != null` are accepted by
+/// typeck against that return type. Mirror of any() but propagates
+/// the matching value instead of just acknowledging it.
+@comptime
+fn build_find_fn(enum_name: string) -> Stmt {
+    let no_type_args: List<ValueType> = []
+    let self_ty = ValueType.Enum(enum_name, no_type_args, 0)
+    let pred_param_types: List<ValueType> = [self_ty]
+    let pred_ty = ValueType.FnTyped(pred_param_types, ValueType.Bool)
+    let self_param = ParamEntry { name: "self", vtype: self_ty }
+    let pred_param = ParamEntry { name: "pred", vtype: pred_ty }
+    let params: List<ParamEntry> = [self_param, pred_param]
+    let empty_tp: List<TypeParamEntry> = []
+
+    // if pred(self) { return self }
+    let pred_args_self: List<SExpr> = [sexpr_dummy(Expr.Ident("self"))]
+    let pred_call_self = Expr.Call(Expr.Ident("pred"), pred_args_self)
+    let return_self_stmts: List<SStmt> = [sstmt_dummy(Stmt.Return(Expr.Ident("self")))]
+    let return_self_block = Stmt.Block(return_self_stmts)
+    let if_pred_self = Stmt.If(pred_call_self, return_self_block, null)
+
+    // for c in self.children() {
+    //     let r = c.find(pred)
+    //     if r != null { return r }
+    // }
+    let no_call_args: List<SExpr> = []
+    let children_call = Expr.Call(Expr.FieldAccess(Expr.Ident("self"), "children"), no_call_args)
+    let find_args: List<SExpr> = [sexpr_dummy(Expr.Ident("pred"))]
+    let c_find_call = Expr.Call(Expr.FieldAccess(Expr.Ident("c"), "find"), find_args)
+    let let_r = Stmt.Let("r", self_ty, c_find_call)
+    let r_not_null = Expr.Binary(Expr.Ident("r"), BinOp.Ne, Expr.Null)
+    let return_r_stmts: List<SStmt> = [sstmt_dummy(Stmt.Return(Expr.Ident("r")))]
+    let return_r_block = Stmt.Block(return_r_stmts)
+    let if_r_not_null = Stmt.If(r_not_null, return_r_block, null)
+    let for_body_stmts: List<SStmt> = [
+        sstmt_dummy(let_r),
+        sstmt_dummy(if_r_not_null),
+    ]
+    let for_body = Stmt.Block(for_body_stmts)
+    let for_loop = Stmt.ForIn("c", children_call, for_body)
+
+    // trailing `null` — no descendant matched
+    let null_return = Stmt.Return(Expr.Null)
+
+    let body: List<SStmt> = [
+        sstmt_dummy(if_pred_self),
+        sstmt_dummy(for_loop),
+        sstmt_dummy(null_return),
+    ]
+    Stmt.Function("${enum_name}__find", empty_tp, params, self_ty, body)
 }

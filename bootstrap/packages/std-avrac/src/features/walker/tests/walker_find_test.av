@@ -1,0 +1,54 @@
+// y9y4.14 (Slice C.find): @expand(derive_walker) emits
+// `Type__find(self, pred) -> Type` that returns the first
+// pred-matching descendant or null. Walks depth-first; returns
+// the node value (not a sentinel) so callers can act on it.
+//
+// Type? at source level lowers to bare T's ValueType per the
+// parser; emitting ret_vtype = Self is correct shape and `return
+// null` typechecks against it.
+//
+// Bypasses metadata mode — forge-crafting-intepreters-9p1d.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn run_capture(source: string) -> string {
+    let path = "/tmp/avra_walker_find_test.av"
+    write_fixture(path, source)
+    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS bash scripts/diagnose.sh --run ${path} 2>&1 || true")
+}
+
+spec "derive_walker: find() returns first matching descendant; null when absent" {
+    then "deeply-nested Leaf(42) is found; missing 99 returns null" {
+        let out = run_capture(
+            "use @std.avrac.features.walker.{derive_walker}\n" +
+            "\n" +
+            "@expand(derive_walker)\n" +
+            "enum Tree {\n" +
+            "    Leaf(value: int)\n" +
+            "    Node(left: Tree, right: Tree)\n" +
+            "}\n" +
+            "\n" +
+            "fn is_42(t: Tree) -> bool {\n" +
+            "    match t { .Leaf(v) -> v == 42, _ -> false }\n" +
+            "}\n" +
+            "\n" +
+            "fn is_99(t: Tree) -> bool {\n" +
+            "    match t { .Leaf(v) -> v == 99, _ -> false }\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let t = Tree.Node(Tree.Leaf(1), Tree.Node(Tree.Leaf(42), Tree.Leaf(3)))\n" +
+            "    let r = t.find(is_42)\n" +
+            "    if r != null {\n" +
+            "        match r {\n" +
+            "            .Leaf(v) -> println(\"found:\" + string(v))\n" +
+            "            _ -> println(\"found-other\")\n" +
+            "        }\n" +
+            "    } else { println(\"not-found\") }\n" +
+            "    let r2 = t.find(is_99)\n" +
+            "    if r2 == null { println(\"absent\") } else { println(\"present\") }\n" +
+            "}\n")
+        out.contains("found:42") && out.contains("absent")
+    }
+}
