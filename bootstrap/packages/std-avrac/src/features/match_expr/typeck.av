@@ -352,10 +352,26 @@ export fn check_match_arms(tc: TC, arms: List<MatchArm>) -> TC {
 
 // ── Match expression type inference ──
 
+/// Unify a single arm's type against the running seed. Skipping
+/// rules (divergent / Void / Unknown bodies) and bidirectional
+/// vtype_assignable checks live HERE — the three call sites in this
+/// file (`check_match_expr_arms`, `check_match_expr_infer`,
+/// `check_when_arms`) all delegate here so the F1000 rule has a
+/// single source of truth. See so07.1.
+///
+/// `host_tc` is the TC to attach the F1000 diagnostic to — callers
+/// pass either the post-exit `after` (match expressions) or the raw
+/// `b.tc` (when expressions, no pattern scope to exit).
+fn unify_arm_types(host_tc: TC, seed: ValueType, arm_body: Expr, arm_ty: ValueType) -> TC {
+    if arm_type_skip(arm_body, arm_ty) { return host_tc }
+    if arm_type_skip(arm_body, seed) { return host_tc }
+    if vtype_assignable(arm_ty, seed) || vtype_assignable(seed, arm_ty) { return host_tc }
+    let msg = "match expression arms have different types: `${vtype_display(seed)}` vs `${vtype_display(arm_ty)}`"
+    tc_report(host_tc, DiagCode.TypeMismatch, msg)
+}
+
 /// Expression-position arm checker. Type-checks each arm and
-/// unifies the result types — emitting F1000 when arms
-/// disagree on a non-skip type. Skips divergent / Void / Unknown
-/// arms via `arm_type_skip`.
+/// unifies the result types via `unify_arm_types`.
 export fn check_match_expr_arms(tc: TC, arms: List<MatchArm>, first_ty: ValueType) -> ExprResult {
     mut acc = tc
     mut i = 0
@@ -368,14 +384,7 @@ export fn check_match_expr_arms(tc: TC, arms: List<MatchArm>, first_ty: ValueTyp
         } else { with_bindings }
         let b = check_expr(with_guard, arm.body.node)
         let after = tc_exit(b.tc)
-        acc = if arm_type_skip(arm.body.node, b.ty) {
-            after
-        } else if !arm_type_skip(arm.body.node, first_ty) && !vtype_assignable(b.ty, first_ty) && !vtype_assignable(first_ty, b.ty) {
-            let msg = "match expression arms have different types: `${vtype_display(first_ty)}` vs `${vtype_display(b.ty)}`"
-            tc_report(after, DiagCode.TypeMismatch, msg)
-        } else {
-            after
-        }
+        acc = unify_arm_types(after, first_ty, arm.body.node, b.ty)
         i = i + 1
     }
     tc_er(acc, first_ty)
@@ -413,14 +422,7 @@ export fn check_match_expr_infer(tc: TC, arms: List<MatchArm>) -> ExprResult {
             continue
         }
         // Seed is set: unify subsequent arms against it.
-        acc = if arm_type_skip(arm.body.node, b.ty) {
-            after
-        } else if !arm_type_skip(arm.body.node, seed) && !vtype_assignable(b.ty, seed) && !vtype_assignable(seed, b.ty) {
-            let msg = "match expression arms have different types: `${vtype_display(seed)}` vs `${vtype_display(b.ty)}`"
-            tc_report(after, DiagCode.TypeMismatch, msg)
-        } else {
-            after
-        }
+        acc = unify_arm_types(after, seed, arm.body.node, b.ty)
         i = i + 1
     }
     tc_er(acc, seed)
@@ -468,15 +470,7 @@ fn check_when_arms(tc: TC, arms: List<WhenArm>, start_idx: int, first_ty: ValueT
         let arm = arms[i]
         let after_cond = if arm.cond == null { cur } else { check_expr(cur, arm.cond!.node).tc }
         let b = check_expr(after_cond, arm.body.node)
-        if arm_type_skip(arm.body.node, b.ty) {
-            cur = b.tc
-            i = i + 1
-            continue
-        }
-        cur = if !arm_type_skip(arm.body.node, first_ty) && !vtype_assignable(b.ty, first_ty) && !vtype_assignable(first_ty, b.ty) {
-            let msg = "match expression arms have different types: `${vtype_display(first_ty)}` vs `${vtype_display(b.ty)}`"
-            tc_report(b.tc, DiagCode.TypeMismatch, msg)
-        } else { b.tc }
+        cur = unify_arm_types(b.tc, first_ty, arm.body.node, b.ty)
         i = i + 1
     }
     tc_er(cur, first_ty)
