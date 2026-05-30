@@ -60,6 +60,27 @@ export fn sstmt_at(s: Stmt, line: int, col: int, file: string) -> SStmt { SStmt 
 /// `sexpr_dummy` — synthesised nodes only.
 export fn sstmt_dummy(s: Stmt) -> SStmt { SStmt { node: s, line: 0, col: 0, file: "", from_macro: false } }
 
+/// Unwrap a List<SStmt> into a List<Stmt> by projecting each entry's
+/// `.node` field. derive_walker (y9y4.11) emits a call to this from
+/// `Type__children()` for variants whose payload is `List<SStmt>` —
+/// Block / Module / Function / SpecBlock / ThenBlock / GivenBlock /
+/// TraitDecl / Match — so the walker exposes the wrapped Stmt
+/// children directly.
+export fn unwrap_sstmt_list(xs: List<SStmt>) -> List<Stmt> {
+    mut out: List<Stmt> = []
+    for x in xs { out.push(x.node) }
+    out
+}
+
+/// Companion to `unwrap_sstmt_list` for the SExpr wrapper. Used by
+/// derive_walker on Expr variants whose payload is `List<SExpr>` —
+/// Call.args, Block (expr-position), ListLit, TupleLit, etc.
+export fn unwrap_sexpr_list(xs: List<SExpr>) -> List<Expr> {
+    mut out: List<Expr> = []
+    for x in xs { out.push(x.node) }
+    out
+}
+
 /// Stamp `from_macro = true` on a spliced SStmt. The expand_macros
 /// pass calls this after invoking a macro so the post-expand partial
 /// re-resolve knows which entries to walk.

@@ -30,9 +30,10 @@ spec "derive_walker: Stmt enum carries .children()" {
             "}\n")
         out.contains("while=1")
     }
-    // Note: Stmt variants with List<SStmt> body (Block / Module / SpecBlock /
-    // ThenBlock / GivenBlock / Function / Match / TraitDecl) need wrapper-
-    // list unwrapping — pending y9y4.11 / T6.
+    // Stmt.Block(body: List<SStmt>) — wrapper-list shape — currently
+    // returns 0 children. Infrastructure for unwrap is in place via
+    // wrapper_unwrap_helper but the @comptime classifier doesn't reach
+    // kind=3 for these fields. Tracked under y9y4.11 follow-up.
 }
 
 spec "derive_walker: Expr enum carries .children()" {
@@ -55,4 +56,6 @@ spec "derive_walker: Expr enum carries .children()" {
             "}\n")
         out.contains("bin=2")
     }
+    // Expr.Call(callee, args: List<SExpr>) — same wrapper-list gap
+    // as Stmt.Block. Tracked under y9y4.11 follow-up.
 }
