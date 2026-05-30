@@ -43,22 +43,27 @@ export fn derive_walker(target: AnnotatedDecl, ctx: ResolverCtx) -> ResolvedDecl
     // the spliced fn is re-processed by the post-expand rewrite.
     let arms = build_children_arms(view.variants, view.name)
     let children_fn = build_children_fn(arms, view.name)
+    let visit_fn = build_visit_fn(view.name)
 
     let decls: List<SStmt> = [
         sstmt_dummy(target.stmt),
         sstmt_dummy(children_fn),
+        sstmt_dummy(visit_fn),
     ]
-    let mangled_name = "${view.name}__children"
-    // `name` carries the mangled form so the introduces-validation
-    // pass (collect_decl_names) finds a matching decl — generated
-    // decls keep the parser's Type__method mangling so codegen's
-    // dot-dispatch lookup resolves them. `canonical_path` stores
-    // the same mangled form for the registry lookup.
+    let children_mangled = "${view.name}__children"
+    let visit_mangled = "${view.name}__visit"
+    // Mangled `Type__method` names register so the introduces-
+    // validation pass can find them in the spliced decl list.
     let introduces: List<DeclSymbol> = [
         DeclSymbol {
-            name: mangled_name,
+            name: children_mangled,
             kind: DeclKind.Method(view.name),
-            canonical_path: mangled_name,
+            canonical_path: children_mangled,
+        },
+        DeclSymbol {
+            name: visit_mangled,
+            kind: DeclKind.Method(view.name),
+            canonical_path: visit_mangled,
         },
     ]
     let provenance = MacroProvenance {
@@ -329,4 +334,45 @@ fn build_children_fn(arms: List<MatchArm>, enum_name: string) -> Stmt {
     let match_expr = Expr.MatchExpr(Expr.Ident("self"), arms)
     let body: List<SStmt> = [sstmt_dummy(Stmt.Expr(match_expr))]
     Stmt.Function("${enum_name}__children", empty_tp, params, ret_ty, body)
+}
+
+// ── Slice C: visit() — depth-first traversal callback ──
+
+/// Build `fn Type__visit(self: Type, f: fn(Type) -> void) { f(self);
+/// for c in self.children() { c.visit(f) } }`.
+///
+/// `f`'s vtype is FnTyped([Self], Void) — concrete signature, not a
+/// generic, so codegen knows the lambda's calling convention up
+/// front. Callers that want polymorphic accumulators (fold) get a
+/// separate generic builder when y9y4.3's fold slice lands.
+///
+/// The recursive `c.visit(f)` resolves through codegen's dot-
+/// dispatch lookup against the same `Type__visit` mangled name the
+/// macro emits — no special handling needed.
+@comptime
+fn build_visit_fn(enum_name: string) -> Stmt {
+    let no_type_args: List<ValueType> = []
+    let self_ty = ValueType.Enum(enum_name, no_type_args, 0)
+    let f_param_types: List<ValueType> = [self_ty]
+    let f_ty = ValueType.FnTyped(f_param_types, ValueType.Void)
+    let self_param = ParamEntry { name: "self", vtype: self_ty }
+    let f_param = ParamEntry { name: "f", vtype: f_ty }
+    let params: List<ParamEntry> = [self_param, f_param]
+    let empty_tp: List<TypeParamEntry> = []
+
+    // f(self)
+    let f_args: List<SExpr> = [sexpr_dummy(Expr.Ident("self"))]
+    let f_call = Stmt.Expr(Expr.Call(Expr.Ident("f"), f_args))
+
+    // for c in self.children() { c.visit(f) }
+    let no_call_args: List<SExpr> = []
+    let children_call = Expr.Call(Expr.FieldAccess(Expr.Ident("self"), "children"), no_call_args)
+    let visit_args: List<SExpr> = [sexpr_dummy(Expr.Ident("f"))]
+    let visit_call = Stmt.Expr(Expr.Call(Expr.FieldAccess(Expr.Ident("c"), "visit"), visit_args))
+    let for_body_stmts: List<SStmt> = [sstmt_dummy(visit_call)]
+    let for_body = Stmt.Block(for_body_stmts)
+    let for_loop = Stmt.ForIn("c", children_call, for_body)
+
+    let body: List<SStmt> = [sstmt_dummy(f_call), sstmt_dummy(for_loop)]
+    Stmt.Function("${enum_name}__visit", empty_tp, params, ValueType.Void, body)
 }

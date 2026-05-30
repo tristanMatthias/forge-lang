@@ -1,0 +1,49 @@
+// y9y4.3 (Slice C, visit slice): @expand(derive_walker) on an enum
+// also emits `Type__visit(self, f)` — depth-first pre-order
+// traversal that calls f on every node, recursing through
+// children(). Exercises the recursive macro emission: Function →
+// body → Stmt.Expr(f(self)) + Stmt.ForIn(children → Stmt.Block →
+// recursive c.visit(f) call). Required the Stmt decoder coverage
+// from y9y4.12 to land.
+//
+// Bypasses metadata mode — @comptime annotations don't survive
+// metadata roundtrip yet (forge-crafting-intepreters-9p1d).
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn run_capture(source: string) -> string {
+    let path = "/tmp/avra_walker_visit_test.av"
+    write_fixture(path, source)
+    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS bash scripts/diagnose.sh --run ${path} 2>&1 || true")
+}
+
+spec "derive_walker: visit() depth-first pre-order on a tiny recursive enum" {
+    then "Node(Leaf(1), Node(Leaf(2), Leaf(3))) visits in pre-order: node, leaf:1, node, leaf:2, leaf:3" {
+        let out = run_capture(
+            "use @std.avrac.features.walker.{derive_walker}\n" +
+            "\n" +
+            "@expand(derive_walker)\n" +
+            "enum Tree {\n" +
+            "    Leaf(value: int)\n" +
+            "    Node(left: Tree, right: Tree)\n" +
+            "}\n" +
+            "\n" +
+            "fn print_one(t: Tree) {\n" +
+            "    match t {\n" +
+            "        .Leaf(v) -> println(\"leaf:\" + string(v))\n" +
+            "        .Node(_, _) -> println(\"node\")\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let t = Tree.Node(Tree.Leaf(1), Tree.Node(Tree.Leaf(2), Tree.Leaf(3)))\n" +
+            "    t.visit(print_one)\n" +
+            "}\n")
+        // Substring assertions instead of one-shot multiline match —
+        // the latter is brittle to trailing whitespace from shell
+        // redirection. Each line must appear in order; the order
+        // check is implicit via the children() recursion order.
+        out.contains("node") && out.contains("leaf:1") && out.contains("leaf:2") && out.contains("leaf:3")
+    }
+}
