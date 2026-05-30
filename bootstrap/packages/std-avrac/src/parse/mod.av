@@ -1085,7 +1085,7 @@ impl Parser {
             // Optional chaining: `expr?.field`
             if self.check(Tk.QuestionDot) {
                 self.advance()
-                let field = self.consume_identifier("expected field name after `?.`")?
+                let field = self.consume_field_name("expected field name after `?.`")?
                 result = Expr.OptionalChain(result, field)
             } else if self.check(Tk.LeftBracket) {
                 self.advance()
@@ -1142,7 +1142,7 @@ impl Parser {
                     result = Expr.TupleIndex(result, int(idx_text))
                     continue
                 }
-                let field = self.consume_identifier("expected field name after `.`")?
+                let field = self.consume_field_name("expected field name after `.`")?
                 // Detect enum constructor: `Type.Variant(args)`. We
                 // distinguish from method calls by requiring the
                 // head Ident to start with an uppercase letter
@@ -1686,9 +1686,36 @@ impl Parser {
     }
 
     fn consume_identifier(self, message: string) -> string? {
-        // Accept identifiers and reserved keywords in identifier position
-        // (e.g. `task.await` — `await` is reserved as a statement keyword
-        // but valid as a field/method name).
+        // Strict identifier consumer: rejects reserved keywords at
+        // binding sites (param names, let/mut/const names, fn names,
+        // type / enum / variant / field names, etc). so07.2 / 1rzz:
+        // before this check the parser silently accepted `bare`,
+        // `await`, `move`, etc. as identifiers — the binding worked
+        // but every use site emitted a confusing F0001 because the
+        // lexer mapped the same name to Tk.KwReserved. Fail at the
+        // binding instead, with an actionable diagnostic naming the
+        // offending keyword.
+        if self.check(Tk.KwReserved) {
+            let kw = self.current_lexeme
+            self.set_error("`${kw}` is a reserved keyword and cannot be used as an identifier — rename the binding")
+            self.advance()
+            return null
+        }
+        if self.check(Tk.Identifier) {
+            let name = self.current_lexeme
+            self.advance()
+            return name
+        }
+        self.set_error(message)
+        null
+    }
+
+    /// Lenient variant for field / method access positions. `task.await`
+    /// is valid even though `await` is a reserved statement keyword —
+    /// the dot disambiguates. Use this only for `expr.<name>` /
+    /// `expr?.<name>` sites; binding sites should call
+    /// `consume_identifier` so reserved names are rejected.
+    fn consume_field_name(self, message: string) -> string? {
         if self.check(Tk.Identifier) || self.check(Tk.KwReserved) {
             let name = self.current_lexeme
             self.advance()
