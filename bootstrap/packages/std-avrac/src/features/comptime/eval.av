@@ -287,6 +287,17 @@ fn enum_value_to_expr(v: Value) -> Expr? {
             let body = list_value_to_stmt_list(head)?
             Expr.Block(body)
         }
+        // `name = value` — mutating-binding assignment as an
+        // expression. Encoder writes (name: string, value: Expr).
+        // Required by macros that build mutable accumulators —
+        // derive_walker's fold() body `acc = c.fold(acc, f)` is the
+        // canonical caller.
+        "Assign" -> {
+            if p.length != 2 { return null }
+            let name_v: Value = p[0]
+            let value = enum_value_to_expr(p[1])?
+            Expr.Assign(name_v.text, value)
+        }
         _                 -> null
     }
 }
