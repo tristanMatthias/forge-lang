@@ -600,6 +600,74 @@ fn enum_value_to_stmt(v: Value) -> Stmt? {
             let inner = enum_value_to_stmt(p[1])?
             Stmt.Annotated(annots, inner)
         }
+        // Bodyless control-flow keywords. Mirror `stmt_ctor("NoOp",
+        // empty)` / Break / Continue in lower.av.
+        "NoOp"     -> Stmt.NoOp
+        "Break"    -> Stmt.Break
+        "Continue" -> Stmt.Continue
+        // `if cond { then } else { else_branch }`. Encoder writes
+        // three slots; the else slot is Expr.Null when absent (and
+        // decodes to null on the Stmt? side via the runtime
+        // null-sentinel checked here).
+        "If" -> {
+            if p.length != 3 { return null }
+            let cond = enum_value_to_expr(p[0])?
+            let then_b = enum_value_to_stmt(p[1])?
+            let else_v: Value = p[2]
+            let else_b = if else_v.enum_variant == "Null" { null } else { enum_value_to_stmt(else_v) }
+            Stmt.If(cond, then_b, else_b)
+        }
+        // `while cond { body }`. Two-slot payload mirroring lower.av.
+        "While" -> {
+            if p.length != 2 { return null }
+            let cond = enum_value_to_expr(p[0])?
+            let body = enum_value_to_stmt(p[1])?
+            Stmt.While(cond, body)
+        }
+        // `for v in start..end { body }` — range form.
+        "For" -> {
+            if p.length != 4 { return null }
+            let var_v: Value = p[0]
+            let start = enum_value_to_expr(p[1])?
+            let end_e = enum_value_to_expr(p[2])?
+            let body = enum_value_to_stmt(p[3])?
+            Stmt.For(var_v.text, start, end_e, body)
+        }
+        // `for v in collection { body }` — iterator form.
+        "ForIn" -> {
+            if p.length != 3 { return null }
+            let var_v: Value = p[0]
+            let coll = enum_value_to_expr(p[1])?
+            let body = enum_value_to_stmt(p[2])?
+            Stmt.ForIn(var_v.text, coll, body)
+        }
+        // `defer body` / `errdefer body` — body is an Expr (the deferred
+        // computation runs as a statement-position expression at scope
+        // exit / error path).
+        "Defer" -> {
+            if p.length != 1 { return null }
+            let body = enum_value_to_expr(p[0])?
+            Stmt.Defer(body)
+        }
+        "Errdefer" -> {
+            if p.length != 1 { return null }
+            let body = enum_value_to_expr(p[0])?
+            Stmt.Errdefer(body)
+        }
+        // `parallel { ... }` — body is List<SStmt>; threads run
+        // independently and join at scope exit.
+        "Parallel" -> {
+            if p.length != 1 { return null }
+            let body = list_value_to_stmt_list(p[0])?
+            Stmt.Parallel(body)
+        }
+        // `trait Name { methods }` — methods is List<SStmt> of stubs.
+        "TraitDecl" -> {
+            if p.length != 2 { return null }
+            let name_v: Value = p[0]
+            let methods = list_value_to_stmt_list(p[1])?
+            Stmt.TraitDecl(name_v.text, methods)
+        }
         _ -> null
     }
 }

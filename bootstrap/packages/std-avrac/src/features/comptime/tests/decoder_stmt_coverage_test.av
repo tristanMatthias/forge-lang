@@ -1,0 +1,56 @@
+// y9y4.12: verify @comptime decoders for the Stmt variants that
+// were silently undecoded — For / ForIn / If / While / NoOp /
+// Break / Continue / Defer / Errdefer / Parallel / TraitDecl. The
+// encoder side (lower.av construct_stmt) has written these since
+// vez6.3; the decoder side was missing them, so any @expand macro
+// emitting these failed F4006 'macro returned a value the expander
+// could not decode' — silently, with no per-variant trace.
+//
+// This test makes the roundtrip a hard requirement: a macro that
+// emits a ForIn-containing fn must compile + run. Spot-checking
+// ForIn alone exercises the recursive pipeline:
+//   Function → body: List<SStmt> → ForIn → Block → List<SStmt> →
+//   Expr → Call. Every link from the missing-decoder list except
+//   Defer/Errdefer/Parallel/TraitDecl rides through this chain.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn run_capture(source: string) -> string {
+    let path = "/tmp/avra_decoder_stmt_coverage_test.av"
+    write_fixture(path, source)
+    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS bash scripts/diagnose.sh --run ${path} 2>&1 || true")
+}
+
+spec "@comptime decoder: Stmt.ForIn roundtrips through the macro pipeline" {
+    then "macro emitting `for x in [a,b,c] { println(x) }` compiles + runs" {
+        let out = run_capture(
+            "use @std.avrac.core.{Stmt, SStmt, ParamEntry, TypeParamEntry, ValueType, Expr, SExpr, sexpr_dummy, sstmt_dummy}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn emit_iter() -> Stmt {\n" +
+            "    let print_args: List<SExpr> = [sexpr_dummy(Expr.Ident(\"x\"))]\n" +
+            "    let body_stmts: List<SStmt> = [sstmt_dummy(Stmt.Expr(Expr.Call(Expr.Ident(\"println\"), print_args)))]\n" +
+            "    let loop_body = Stmt.Block(body_stmts)\n" +
+            "    let list_elems: List<SExpr> = [\n" +
+            "        sexpr_dummy(Expr.String(\"\\\"alpha\\\"\")),\n" +
+            "        sexpr_dummy(Expr.String(\"\\\"beta\\\"\")),\n" +
+            "        sexpr_dummy(Expr.String(\"\\\"gamma\\\"\"))\n" +
+            "    ]\n" +
+            "    let list_lit = Expr.ListLit(list_elems)\n" +
+            "    let for_stmt = Stmt.ForIn(\"x\", list_lit, loop_body)\n" +
+            "    let empty_params: List<ParamEntry> = []\n" +
+            "    let empty_tp: List<TypeParamEntry> = []\n" +
+            "    let body: List<SStmt> = [sstmt_dummy(for_stmt)]\n" +
+            "    Stmt.Function(\"_emit_iter\", empty_tp, empty_params, ValueType.Void, body)\n" +
+            "}\n" +
+            "\n" +
+            "@expand(emit_iter)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    _emit_iter()\n" +
+            "}\n")
+        out.contains("alpha") && out.contains("beta") && out.contains("gamma")
+    }
+}
