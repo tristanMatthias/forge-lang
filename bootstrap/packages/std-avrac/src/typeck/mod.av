@@ -287,6 +287,27 @@ fn enum_type_has(reg: EnumTypeReg, name: string) -> bool {
     avra_map_has_cstr(reg.idx, name) != 0
 }
 
+/// Look up an enum's variant list by enum name. Returns empty when
+/// the enum isn't registered (callers fall back to legacy bind-with-
+/// Unknown). so07.5 (T5).
+export fn enum_type_variants(reg: EnumTypeReg, name: string) -> List<Variant> {
+    if avra_map_has_cstr(reg.idx, name) == 0 {
+        let empty: List<Variant> = []
+        return empty
+    }
+    let i = avra_map_get_cstr(reg.idx, name)
+    reg.ord[i].variants
+}
+
+/// Find a variant by name within a variant list. Returns null when
+/// not found. so07.5 (T5).
+export fn variant_find(variants: List<Variant>, name: string) -> Variant? {
+    for v in variants {
+        if v.name == name { return v }
+    }
+    null
+}
+
 /// Reverse lookup: which enum declares `variant`? Returns "" when
 /// the variant isn't registered. Used to type bare `.Variant`
 /// expressions where the enum name is implicit from context.

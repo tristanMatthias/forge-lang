@@ -1,10 +1,10 @@
 // WHY: type checking for match statements and expressions.
 // Exhaustiveness checking, pattern variable binding, arm type unification.
 
-use core.{Expr, Pattern, MatchArm, WhenArm, ParamEntry, Stmt, SStmt, Variant, ValueType, stmt_unwrap, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_is_unknown, vtype_is_union, vtype_union_types}
+use core.{Expr, Pattern, MatchArm, WhenArm, ParamEntry, Stmt, SStmt, Variant, ValueType, FieldEntry, stmt_unwrap, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_is_unknown, vtype_is_union, vtype_union_types}
 use diagnostics.{DiagCode, diag_warning, span_new, bag_report}
 use core.{type_short_name}
-use typeck.{EnumTypeReg, ExprResult, TC, check_expr, check_expr_expected, tc_bind, tc_check_explicit_returns, tc_enter, tc_er, tc_exit, tc_report, resolve_vtype}
+use typeck.{EnumTypeReg, ExprResult, TC, check_expr, check_expr_expected, tc_bind, tc_check_explicit_returns, tc_enter, tc_er, tc_exit, tc_report, resolve_vtype, enum_type_variants, variant_find}
 use core.{vtype_from_name}
 
 // ── Divergence detection ──
@@ -282,50 +282,111 @@ fn count_missing_union_members(types: List<ValueType>, matched: string) -> int {
 // ── Pattern variable binding ──
 
 /// Walk a single pattern binding every captured name into the
-/// type environment. Or-patterns recurse into both sides;
-/// constructor patterns descend into payload patterns.
-fn tc_bind_pattern(tc: TC, pattern: Pattern) -> TC {
+/// type environment. so07.5 (T5): subject_ty propagates so
+/// constructor-pattern bindings carry the variant's field types
+/// instead of Unknown. Generic call inference in arm bodies can
+/// then pin type-params from those bindings.
+fn tc_bind_pattern(tc: TC, pattern: Pattern, subject_ty: ValueType) -> TC {
     match pattern {
         .Wildcard -> tc
-        .Variant(_, bindings) -> tc_bind_pattern_params(tc, bindings)
-        .NestedVariant(_, sub_pats) -> tc_bind_pattern_list(tc, sub_pats)
+        .Variant(variant_name, bindings) -> tc_bind_pattern_params(tc, variant_name, bindings, subject_ty)
+        .NestedVariant(_, sub_pats) -> tc_bind_pattern_list(tc, sub_pats, subject_ty)
         .TypePattern(type_name, binding) -> tc_bind(tc, binding, resolve_vtype(tc, vtype_from_name(type_name)))
         _ -> tc  // LitString, LitInt, LitBool, LitFloat — no bindings
     }
 }
 
 /// Open a fresh type-check scope for a pattern arm and bind
-/// every capture. Pairs with `tc_exit` (caller exits after
-/// arm body checking).
-export fn tc_enter_pattern_scope(tc: TC, pattern: Pattern) -> TC {
-    tc_bind_pattern(tc_enter(tc), pattern)
+/// every capture. `subject_ty` is the type of the matched value;
+/// pass `.Unknown` from callers that don't know it (e.g.
+/// subjectless `when` arms, which never reach the variant binder).
+export fn tc_enter_pattern_scope(tc: TC, pattern: Pattern, subject_ty: ValueType) -> TC {
+    tc_bind_pattern(tc_enter(tc), pattern, subject_ty)
 }
 
 /// Walk a `List<Pattern>` binding captures from every sub-pattern.
-fn tc_bind_pattern_list(tc: TC, pats: List<Pattern>) -> TC {
+fn tc_bind_pattern_list(tc: TC, pats: List<Pattern>, subject_ty: ValueType) -> TC {
     mut acc = tc
     mut i = 0
     while i < pats.length {
-        acc = tc_bind_pattern(acc, pats[i])
+        acc = tc_bind_pattern(acc, pats[i], subject_ty)
         i = i + 1
     }
     acc
 }
 
-/// Bind every named param from a constructor pattern into the
-/// type environment. Wildcards pass through; the caller's
-/// resolver pass already validated each name's payload type.
-fn tc_bind_pattern_params(tc: TC, params: List<ParamEntry>) -> TC {
+/// Bind every named param from a constructor pattern. so07.5 (T5):
+/// Self-recursive fields (`Self` or `List<Self>`) bind to `subject_ty`
+/// / `List<subject_ty>` so generic-call inference inside the arm body
+/// can pin type-params from those bindings. Non-Self fields stay
+/// Unknown (pre-T5 behavior) — typing them with the variant decl's
+/// resolved field type would surface the bare-vs-qualified mismatch
+/// fixed properly by T6. Underscore names are skipped.
+fn tc_bind_pattern_params(tc: TC, variant_name: string, params: List<ParamEntry>, subject_ty: ValueType) -> TC {
+    let subject_name = vtype_enum_name(subject_ty)
+    let fields = variant_field_list(tc.enums, subject_name, variant_name)
     mut cur = tc
-    mut i = 0
-    while i < params.length {
+    for i in 0..params.length {
         let n = params[i].name
-        if n != "_" {
-            cur = tc_bind(cur, n, .Unknown)
-        }
-        i = i + 1
+        if n == "_" { continue }
+        let field_ty = if i < fields.length { fields[i].resolved } else { ValueType.Unknown }
+        cur = tc_bind(cur, n, self_recursive_binding(field_ty, subject_ty, subject_name))
     }
     cur
+}
+
+/// Compute the binding type for a single pattern-param field. Returns
+/// `subject_ty` (or `List<subject_ty>`) when `field_ty` is Self-typed
+/// — copying the subject's exact name + id form avoids the bare-vs-
+/// qualified mismatch we'd hit by using `field_ty` directly. Returns
+/// `Unknown` for non-Self fields until T6 makes nominal identity
+/// handle-based. Handles both `.Struct` (pre-resolve nominal shell)
+/// and `.Enum` for the inner-name check — variants registered before
+/// the resolver promotes them keep their parsed `.Struct` form.
+fn self_recursive_binding(field_ty: ValueType, subject_ty: ValueType, subject_name: string) -> ValueType {
+    if subject_name == "" { return ValueType.Unknown }
+    if nominal_name(field_ty) == subject_name || enum_names_alias(nominal_name(field_ty), subject_name) {
+        return subject_ty
+    }
+    match field_ty {
+        .List(elem) -> {
+            let elem_name = nominal_name(elem)
+            if elem_name != "" && enum_names_alias(elem_name, subject_name) {
+                ValueType.List(subject_ty)
+            } else { ValueType.Unknown }
+        }
+        _ -> ValueType.Unknown
+    }
+}
+
+/// Extract a nominal type's name from `.Struct` / `.Enum` shells.
+/// Returns `""` for non-nominal shapes (List, Tuple, primitive, ...).
+fn nominal_name(t: ValueType) -> string {
+    match t {
+        .Struct(n, _) -> n
+        .Enum(n, _, _) -> n
+        _ -> ""
+    }
+}
+
+/// True iff two enum names refer to the same nominal type — equal as
+/// strings, or one is the `::`-stripped short form of the other.
+fn enum_names_alias(a: string, b: string) -> bool {
+    a == b || type_short_name(a) == b || a == type_short_name(b)
+}
+
+/// Look up `enum_name`'s `variant_name` field list, trying the name
+/// as-given then its `::`-stripped short form. Returns `[]` on miss.
+fn variant_field_list(reg: EnumTypeReg, enum_name: string, variant_name: string) -> List<FieldEntry> {
+    let empty: List<FieldEntry> = []
+    if enum_name == "" { return empty }
+    let v = variant_find(enum_type_variants(reg, enum_name), variant_name)
+    if v != null { return v!.fields }
+    let short = type_short_name(enum_name)
+    if short == enum_name { return empty }
+    let alt = variant_find(enum_type_variants(reg, short), variant_name)
+    if alt != null { return alt!.fields }
+    empty
 }
 
 // ── Match arm checking ──
@@ -333,12 +394,12 @@ fn tc_bind_pattern_params(tc: TC, params: List<ParamEntry>) -> TC {
 /// Statement-position arm checker. Type-checks every arm's
 /// guard + body within a fresh pattern-scope; doesn't do type
 /// unification (statements don't produce values).
-export fn check_match_arms(tc: TC, arms: List<MatchArm>) -> TC {
+export fn check_match_arms(tc: TC, subject_ty: ValueType, arms: List<MatchArm>) -> TC {
     mut acc = tc
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
-        let with_bindings = tc_enter_pattern_scope(acc, arm.pattern)
+        let with_bindings = tc_enter_pattern_scope(acc, arm.pattern, subject_ty)
         let with_guard = if arm.guard != null {
             let g = check_expr(with_bindings, arm.guard!.node)
             g.tc
@@ -375,12 +436,12 @@ fn unify_arm_types(host_tc: TC, seed: ValueType, arm_body: Expr, arm_ty: ValueTy
 /// passes `first_ty` as the expected type for each arm body so
 /// `[]` and `[x]` literals inherit the list element type from the
 /// match's overall expected shape.
-export fn check_match_expr_arms(tc: TC, arms: List<MatchArm>, first_ty: ValueType) -> ExprResult {
+export fn check_match_expr_arms(tc: TC, subject_ty: ValueType, arms: List<MatchArm>, first_ty: ValueType) -> ExprResult {
     mut acc = tc
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
-        let with_bindings = tc_enter_pattern_scope(acc, arm.pattern)
+        let with_bindings = tc_enter_pattern_scope(acc, arm.pattern, subject_ty)
         let with_guard = if arm.guard != null {
             let g = check_expr(with_bindings, arm.guard!.node)
             g.tc
@@ -396,14 +457,14 @@ export fn check_match_expr_arms(tc: TC, arms: List<MatchArm>, first_ty: ValueTyp
 /// Wrapper around `check_match_expr_arms` that picks a seed
 /// type from the first non-skip arm. Used when the caller
 /// doesn't have an expected type to seed unification with.
-export fn check_match_expr_infer(tc: TC, arms: List<MatchArm>) -> ExprResult {
+export fn check_match_expr_infer(tc: TC, subject_ty: ValueType, arms: List<MatchArm>) -> ExprResult {
     mut acc = tc
     mut seed: ValueType = ValueType.Unknown
     mut found_seed = false
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
-        let with_bindings = tc_enter_pattern_scope(acc, arm.pattern)
+        let with_bindings = tc_enter_pattern_scope(acc, arm.pattern, subject_ty)
         let with_guard = if arm.guard != null {
             let g = check_expr(with_bindings, arm.guard!.node)
             g.tc

@@ -356,7 +356,7 @@ fn match_check_stmt(tc: TC, stmt: Stmt) -> TC {
         .Match(subject, arms) -> {
             let s = check_expr(tc, subject)
             let checked = tc_check_exhaustive(s.tc, s.ty, arms)
-            check_match_arms(checked, arms)
+            check_match_arms(checked, s.ty, arms)
         }
         _ -> tc
     }
@@ -364,13 +364,16 @@ fn match_check_stmt(tc: TC, stmt: Stmt) -> TC {
 
 /// Type-check hook for `MatchExpr`. Same exhaustiveness check
 /// as `match_check_stmt`, but also runs `check_match_expr_infer`
-/// to compute a unifying result type for the arms.
+/// to compute a unifying result type for the arms. so07.5 (T5):
+/// `s.ty` propagates so variant-pattern bindings carry their
+/// field types — generic inference inside arms pins T from those
+/// bindings instead of leaving it Unknown.
 fn match_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .MatchExpr(subject, arms) -> {
             let s = check_expr(tc, subject)
             let checked = tc_check_exhaustive(s.tc, s.ty, arms)
-            check_match_expr_infer(checked, arms)
+            check_match_expr_infer(checked, s.ty, arms)
         }
         _ -> tc_er(tc, .Unknown)
     }

@@ -1,0 +1,71 @@
+// so07.5 (T5): variant-pattern bindings for Self-recursive fields
+// carry their resolved type into the arm body. Pre-T5: every pattern-
+// bound variable was typed as Unknown, breaking generic-call inference
+// inside arm bodies (`list_concat([ret], params)` couldn't pin T).
+// Post-T5: `.Mix(ret, params)` binds ret with Shape, params with
+// List<Shape>.
+//
+// Scope: only Self-recursive fields (.Self, .List<Self>) are enriched.
+// Non-Self fields stay Unknown until T6 makes nominal identity
+// handle-based — typing them with the variant decl's resolved field
+// type would surface bare-vs-qualified mismatches.
+
+use @std.avrac.list_ops.{list_concat}
+
+enum Shape {
+    Leaf,
+    Mix(ret: Shape, params: List<Shape>),
+}
+
+fn shape_children(self: Shape) -> List<Shape> {
+    let empty: List<Shape> = []
+    match self {
+        .Leaf            -> empty
+        .Mix(ret, params) -> list_concat([ret], params)
+    }
+}
+
+// Single-Self-field variant — exercises the direct-binding case.
+enum Wrap {
+    Empty,
+    Single(inner: Wrap),
+}
+
+fn wrap_depth(w: Wrap) -> int {
+    match w {
+        .Empty       -> 0
+        .Single(_) -> 1
+    }
+}
+
+// Mixed scalar + List<Self> — the list binding gets its proper type
+// while the scalar stays Unknown (T5's scope limit).
+enum Tagged {
+    Leaf,
+    Group(tag: string, items: List<Tagged>),
+}
+
+fn tagged_item_count(t: Tagged) -> int {
+    match t {
+        .Leaf            -> 0
+        .Group(_, items) -> items.length
+    }
+}
+
+spec "so07.5: variant pattern bindings carry Self-recursive field types" {
+    then "list_concat([ret], params) pins T from the pattern bindings" {
+        shape_children(Shape.Mix(Shape.Leaf, [Shape.Leaf, Shape.Leaf])).length == 3
+    }
+    then "leaf branch returns the typed empty list" {
+        shape_children(Shape.Leaf).length == 0
+    }
+    then "single Self-field binding compiles without Unknown leakage" {
+        wrap_depth(Wrap.Single(Wrap.Empty)) == 1
+    }
+    then "scalar+list mixed variant binds the list correctly" {
+        tagged_item_count(Tagged.Group("g", [Tagged.Leaf, Tagged.Leaf])) == 2
+    }
+    then "scalar+list mixed variant with empty alternative" {
+        tagged_item_count(Tagged.Leaf) == 0
+    }
+}
