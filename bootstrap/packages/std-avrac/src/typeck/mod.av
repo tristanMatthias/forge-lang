@@ -8,7 +8,7 @@ use diagnostics.{Confidence, DiagCode, DiagnosticBag, bag_has_errors, bag_new, b
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive}
 use features.trait_decl.{check_trait_conformance, collect_method_names_from_stmts, collect_assoc_types_from_stmts, find_trait_separator}
-use features.list_lit.{check_list_method}
+use features.list_lit.{check_list_method, check_list_lit_with_expected}
 use features.map_lit.{check_map_method}
 use features.let_stmt.{is_const_expr, bind_destructure}
 use core.{method_mangled_name, type_short_name, is_result_enum_name}
@@ -917,8 +917,13 @@ fn check_stmts(tc: TC, stmts: List<SStmt>) -> TC {
 /// and bind `name: type` into the env.
 fn check_binding(tc: TC, name: string, ty_vt: ValueType, init: Expr, is_const: bool) -> TC {
     let has_annotation = !vtype_is_unknown(ty_vt)
-    let r = check_expr(tc, init)
-    let declared_ty = if has_annotation { resolve_vtype(r.tc, ty_vt) } else { r.ty }
+    // so07.4 (T4): resolve the annotation BEFORE checking the init so
+    // we can thread it as the expected type for ListLit-style literals.
+    // Other Expr variants are unaffected — check_expr_expected falls
+    // through to check_expr for them.
+    let pre_declared = if has_annotation { resolve_vtype(tc, ty_vt) } else { ValueType.Unknown }
+    let r = if has_annotation { check_expr_expected(tc, init, pre_declared) } else { check_expr(tc, init) }
+    let declared_ty = if has_annotation { pre_declared } else { r.ty }
     // Type annotation mismatch: flag clear mismatches between primitive types.
     // Skip when RHS is Void (null), Int (unresolved inference), or Unknown.
     if has_annotation && !vtype_is_unknown(r.ty) && !vtype_is_unknown(declared_ty) && !(r.ty is .Void) && !(r.ty is .Int) {
@@ -1158,6 +1163,27 @@ export fn tc_bind_params(tc: TC, params: List<ParamEntry>) -> TC {
 }
 
 // ── Expression checking ──
+
+/// Bidirectional variant of check_expr: when the caller knows the
+/// expected type for the position (let-binding RHS with annotation,
+/// match-arm body where the seed is known, fn argument where the
+/// param is typed, fn return position), threading the expected_ty
+/// down lets ListLit-style literals start with the right element
+/// type instead of `Unknown`. Today only ListLit consumes the hint;
+/// other expressions fall through to bottom-up check_expr unchanged.
+/// so07.4 (T4).
+export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprResult {
+    match expr {
+        .ListLit(elements) -> {
+            let elem_hint = match expected {
+                .List(e) -> e
+                _ -> ValueType.Unknown
+            }
+            check_list_lit_with_expected(tc, elements, elem_hint)
+        }
+        _ -> check_expr(tc, expr)
+    }
+}
 
 /// Type-check + infer-type for an Expr. Returns `(updated TC,
 /// inferred ValueType)`. Each Expr variant gets its own arm; this
