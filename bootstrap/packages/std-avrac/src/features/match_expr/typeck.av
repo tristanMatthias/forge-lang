@@ -1,7 +1,7 @@
 // WHY: type checking for match statements and expressions.
 // Exhaustiveness checking, pattern variable binding, arm type unification.
 
-use core.{Expr, Pattern, MatchArm, WhenArm, ParamEntry, Stmt, SStmt, Variant, ValueType, stmt_unwrap, vtype_display, vtype_enum_name, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types}
+use core.{Expr, Pattern, MatchArm, WhenArm, ParamEntry, Stmt, SStmt, Variant, ValueType, stmt_unwrap, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_is_unknown, vtype_is_union, vtype_union_types}
 use diagnostics.{DiagCode, diag_warning, span_new, bag_report}
 use core.{type_short_name}
 use typeck.{EnumTypeReg, ExprResult, TC, check_expr, tc_bind, tc_check_explicit_returns, tc_enter, tc_er, tc_exit, tc_report, resolve_vtype}
@@ -415,7 +415,7 @@ export fn check_match_expr_infer(tc: TC, arms: List<MatchArm>) -> ExprResult {
         // Seed is set: unify subsequent arms against it.
         acc = if arm_type_skip(arm.body.node, b.ty) {
             after
-        } else if !arm_type_skip(arm.body.node, seed) && !vtype_eq(seed, b.ty) {
+        } else if !arm_type_skip(arm.body.node, seed) && !vtype_assignable(b.ty, seed) && !vtype_assignable(seed, b.ty) {
             let msg = "match expression arms have different types: `${vtype_display(seed)}` vs `${vtype_display(b.ty)}`"
             tc_report(after, DiagCode.TypeMismatch, msg)
         } else {

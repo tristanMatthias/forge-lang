@@ -247,26 +247,24 @@ fn pattern_for(variant_name: string, bindings: List<Binding>) -> Pattern {
 }
 
 /// Build the arm body — the Expr producing the children list for this
-/// variant. Three shapes:
+/// variant. Four shapes:
 ///
-///   - Scalars only OR direct children only → `[c1, c2, ...]` (a bare
-///     ListLit; empty for scalars). Works because Pattern + Tree +
-///     other no-mixed enums keep every variant in one shape category;
-///     all arms then have type `List<Self>` and unify trivially.
+///   - All scalars → `__derive_walker_empty` (typed `List<Self> = []`
+///     binding declared at fn-body scope so the arm has static type
+///     `List<Self>`; bare `[]` would be `List<Unknown>` and fail to
+///     unify with list-typed sibling arms — F1000).
+///   - All direct children → `[c1, c2, ...]`.
 ///   - Single list-child, no direct → `field_ident`.
-///   - Multiple lists (and optionally direct) → `list_concat(
-///     [d1, d2, ...], l1)`-fold.
-///
-/// Enums with truly mixed shapes (some scalar-only and some carrying
-/// list_concat) — most notably ValueType.FnTyped or anything Expr-
-/// shaped — currently hit F1000 "arms have different types: List vs
-/// List". A typed-empty-let approach is staged but blocked on a seed
-/// roundtrip (the seed's older Stmt.Let encoder erases the resolved
-/// ValueType slot). Tracked under y9y4.6 / y9y4.7.
+///   - Mixed direct + list, or multi-list → `list_concat([d1, d2,
+///     ...], l1)`-fold.
 @comptime
 fn arm_body(bindings: List<Binding>) -> Expr {
     let direct_count = count_kind(bindings, 1)
     let list_count = count_kind(bindings, 2)
+
+    if direct_count == 0 && list_count == 0 {
+        return Expr.Ident(empty_binding_name())
+    }
 
     if list_count == 0 {
         mut elems: List<SExpr> = []
@@ -285,6 +283,11 @@ fn arm_body(bindings: List<Binding>) -> Expr {
     }
 
     block_expr_for_children(bindings)
+}
+
+@comptime
+fn empty_binding_name() -> string {
+    "__derive_walker_empty"
 }
 
 @comptime
@@ -348,7 +351,16 @@ fn build_children_fn(arms: List<MatchArm>, enum_name: string) -> Stmt {
     let empty_tp: List<TypeParamEntry> = []
     let ret_ty = ValueType.List(self_ty)
     let match_expr = Expr.MatchExpr(Expr.Ident("self"), arms)
-    let body: List<SStmt> = [sstmt_dummy(Stmt.Expr(match_expr))]
+    // Typed-empty binding at fn-body top so scalar arms produce
+    // `List<Self>`-typed values that unify with sibling list-typed
+    // arms. Stmt.Let encoder preserves the resolved-vtype slot since
+    // 64fe2c84.
+    let empty_elems: List<SExpr> = []
+    let typed_empty = Stmt.Let(empty_binding_name(), ret_ty, Expr.ListLit(empty_elems))
+    let body: List<SStmt> = [
+        sstmt_dummy(typed_empty),
+        sstmt_dummy(Stmt.Expr(match_expr)),
+    ]
     Stmt.Function("${enum_name}__children", empty_tp, params, ret_ty, body)
 }
 

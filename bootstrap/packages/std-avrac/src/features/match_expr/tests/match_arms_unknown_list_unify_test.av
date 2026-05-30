@@ -1,0 +1,35 @@
+// y9y4 typeck — arm-type unification must allow List<Unknown> against
+// List<T>. derive_walker generates match expressions where scalar arms
+// return an empty-typed binding (List<Self> = []) and list-valued arms
+// return the binding's elements. The arms must unify even though strict
+// vtype_eq would reject List<Unknown> != List<Pattern>.
+
+enum Shape {
+    Scalar,
+    Bag(xs: List<int>),
+}
+
+fn shape_children(s: Shape) -> List<int> {
+    let __empty: List<int> = []
+    match s {
+        .Scalar  -> __empty
+        .Bag(xs) -> xs
+    }
+}
+
+spec "y9y4: match arms unify when one branch is List<Unknown>" {
+    then "scalar arm (empty typed list) unifies with list-valued arm" {
+        shape_children(Shape.Scalar).length == 0
+    }
+    then "populated arm returns concrete list" {
+        shape_children(Shape.Bag([1, 2, 3])).length == 3
+    }
+    then "empty literal in arm unifies with list-typed seed" {
+        let s = Shape.Scalar
+        let xs: List<int> = match s {
+            .Scalar  -> []
+            .Bag(ys) -> ys
+        }
+        xs.length == 0
+    }
+}
