@@ -370,7 +370,7 @@ export fn check_match_expr_arms(tc: TC, arms: List<MatchArm>, first_ty: ValueTyp
         let after = tc_exit(b.tc)
         acc = if arm_type_skip(arm.body.node, b.ty) {
             after
-        } else if !arm_type_skip(arm.body.node, first_ty) && !vtype_eq(first_ty, b.ty) {
+        } else if !arm_type_skip(arm.body.node, first_ty) && !vtype_assignable(b.ty, first_ty) && !vtype_assignable(first_ty, b.ty) {
             let msg = "match expression arms have different types: `${vtype_display(first_ty)}` vs `${vtype_display(b.ty)}`"
             tc_report(after, DiagCode.TypeMismatch, msg)
         } else {
@@ -473,7 +473,7 @@ fn check_when_arms(tc: TC, arms: List<WhenArm>, start_idx: int, first_ty: ValueT
             i = i + 1
             continue
         }
-        cur = if !arm_type_skip(arm.body.node, first_ty) && !vtype_eq(first_ty, b.ty) {
+        cur = if !arm_type_skip(arm.body.node, first_ty) && !vtype_assignable(b.ty, first_ty) && !vtype_assignable(first_ty, b.ty) {
             let msg = "match expression arms have different types: `${vtype_display(first_ty)}` vs `${vtype_display(b.ty)}`"
             tc_report(b.tc, DiagCode.TypeMismatch, msg)
         } else { b.tc }
