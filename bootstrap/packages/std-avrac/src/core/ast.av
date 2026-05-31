@@ -66,26 +66,25 @@ export fn sstmt_dummy(s: Stmt) -> SStmt { SStmt { node: s, line: 0, col: 0, file
 /// Block / Module / Function / SpecBlock / ThenBlock / GivenBlock /
 /// TraitDecl / Match.
 ///
-/// so07.7.2 attempted to consolidate with `unwrap_sexpr_list` via a
-/// generic `fn unwrap_node_list<W, T>(xs: List<W>) -> List<T>` —
-/// typeck accepts the passthrough after so07.7.15 (bidirectional
-/// generic-call inference) but the monomorphizer's instantiation
-/// pass still fires F1002 'cannot infer type parameter T'. Fixing
-/// it requires teaching mono to pull the inferred type-args from
-/// the typeck-resolved call site instead of re-running its own
-/// inference. Filed as so07.7.16; until that lands, both helpers
-/// carry the identical 4-line body.
-export fn unwrap_sstmt_list(xs: List<SStmt>) -> List<Stmt> {
-    mut out: List<Stmt> = []
+/// Generic unwrap for any spanned-wrapper `W` whose `.node` field
+/// projects to type `T`. SStmt → Stmt, SExpr → Expr both ride this
+/// shape. `T` is inferred at the call site from the caller's
+/// expected return type (so07.7.15 + so07.7.16 bidirectional
+/// generic-call inference: typeck stamps T from the let/return
+/// position; mono harvests it via the expected-aware collect +
+/// rewrite passes).
+fn unwrap_node_list<W, T>(xs: List<W>) -> List<T> {
+    mut out: List<T> = []
     for x in xs { out.push(x.node) }
     out
 }
 
-/// Companion to `unwrap_sstmt_list` for the SExpr wrapper.
+export fn unwrap_sstmt_list(xs: List<SStmt>) -> List<Stmt> {
+    unwrap_node_list(xs)
+}
+
 export fn unwrap_sexpr_list(xs: List<SExpr>) -> List<Expr> {
-    mut out: List<Expr> = []
-    for x in xs { out.push(x.node) }
-    out
+    unwrap_node_list(xs)
 }
 
 /// Stamp `from_macro = true` on a spliced SStmt. The expand_macros

@@ -558,6 +558,17 @@ fn infer_from_params(tp: List<TypeParamEntry>, params: List<ParamEntry>, args: L
     out
 }
 
+/// Variant of `infer_from_params` that also unifies the fn's
+/// declared `ret_vt` against the caller's `expected` return
+/// type, harvesting bindings for type params that appear only
+/// in the return position. so07.7.16 — both mono passes
+/// (collect + rewrite) share this helper so the mangled name
+/// matches the instantiation registered earlier.
+fn infer_from_params_with_expected(tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<SExpr>, ret_vt: ValueType, expected: ValueType, acc: List<TypeArg>) -> List<TypeArg> {
+    let arg_ta = infer_from_params(tp, params, args, acc)
+    if vtype_is_unknown(expected) { arg_ta } else { unify_param(tp, ret_vt, expected, arg_ta) }
+}
+
 /// Infer type-args from a struct literal's field initializers
 /// by matching each init against its declared field type.
 fn infer_from_field_inits(tp: List<TypeParamEntry>, fields: List<FieldEntry>, inits: List<FieldInit>, acc: List<TypeArg>) -> List<TypeArg> {
@@ -895,8 +906,8 @@ fn collect_inst_stmts(stmts: List<SStmt>, regs: GenRegs, st: CollectState) -> Co
 /// fresh inst-list so per-fn merging behaves locally.
 fn collect_inst_stmt(stmt: Stmt, regs: GenRegs, st: CollectState) -> CollectState {
     match stmt {
-        .Let(_, _, init) -> collect_inst_expr(init, regs, st)
-        .Mut(_, _, init) -> collect_inst_expr(init, regs, st)
+        .Let(_, vt, init) -> collect_inst_expr_with_expected(init, vt, regs, st)
+        .Mut(_, vt, init) -> collect_inst_expr_with_expected(init, vt, regs, st)
         .Expr(e) -> collect_inst_expr(e, regs, st)
         .Return(val) -> collect_inst_expr(val, regs, st)
         .Defer(body) -> collect_inst_expr(body, regs, st)
@@ -906,7 +917,10 @@ fn collect_inst_stmt(stmt: Stmt, regs: GenRegs, st: CollectState) -> CollectStat
             if tp.length > 0 { return st }
             // Scope merging to this function: collect body's instantiations
             // independently so enum ctors merge within the function, not globally.
-            let fn_state = collect_inst_stmts(body, regs, CollectState { insts: [], bag: st.bag, line: st.line, col: st.col, trait_impls: st.trait_impls })
+            // Tail-position .Expr / .Return statements get ret_vt threaded as
+            // the call's expected return type so generic-call inference can
+            // bind type params that appear only in the return position.
+            let fn_state = collect_inst_fn_body(body, ret_vt, regs, CollectState { insts: [], bag: st.bag, line: st.line, col: st.col, trait_impls: st.trait_impls })
             // Also collect instantiation from the return type annotation.
             // This handles functions that return Result<T, E> but only construct
             // one variant (e.g., only Err paths — T is inferred from annotation).
@@ -953,6 +967,64 @@ fn collect_inst_select_arms(arms: List<SelectArm>, regs: GenRegs, st: CollectSta
 /// possible instantiation sites and registers their inferred
 /// type-args with the InstList.
 fn collect_inst_expr(expr: Expr, regs: GenRegs, st: CollectState) -> CollectState {
+    collect_inst_expr_with_expected(expr, ValueType.Unknown, regs, st)
+}
+
+/// Walk the body of a function. Last statement in `.Expr` /
+/// `.Return` position receives `ret_vt` as the expected return
+/// type so generic-call inference can bind type params that
+/// appear only in the return position (so07.7.16).
+fn collect_inst_fn_body(body: List<SStmt>, ret_vt: ValueType, regs: GenRegs, st: CollectState) -> CollectState {
+    if body.length == 0 { return st }
+    mut cur = st
+    let n = body.length
+    mut i = 0
+    while i < n - 1 {
+        let ss = body[i]
+        cur = collect_inst_stmt(ss.node, regs, cur with { line: ss.line, col: ss.col })
+        i = i + 1
+    }
+    let tail = body[n - 1]
+    let tail_st = cur with { line: tail.line, col: tail.col }
+    match tail.node {
+        .Expr(e) -> collect_inst_expr_with_expected(e, ret_vt, regs, tail_st)
+        .Return(val) -> collect_inst_expr_with_expected(val, ret_vt, regs, tail_st)
+        _ -> collect_inst_stmt(tail.node, regs, tail_st)
+    }
+}
+
+/// Variant of `collect_inst_expr` that threads an expected
+/// return type into a top-level Call dispatch. Other arms recurse
+/// via the unspecialised entry — the expected propagates only
+/// across .Grouping / .Try wrappers that don't alter the value's
+/// type position.
+fn collect_inst_expr_with_expected(expr: Expr, expected: ValueType, regs: GenRegs, st: CollectState) -> CollectState {
+    match expr {
+        .Call(callee, args) -> {
+            let s = collect_inst_exprs(args, regs, st)
+            match callee {
+                .Ident(name) -> {
+                    let fn_e = generic_fn_lookup(regs.fns, name)
+                    if fn_e != null { try_add_fn_inst_with_expected(name, fn_e!.tp, fn_e!.params, args, fn_e!.ret_vt, expected, s) } else { s }
+                }
+                .QualifiedIdent(name) -> {
+                    let fn_e = generic_fn_lookup(regs.fns, name)
+                    if fn_e != null { try_add_fn_inst_with_expected(name, fn_e!.tp, fn_e!.params, args, fn_e!.ret_vt, expected, s) } else { s }
+                }
+                _ -> collect_inst_expr(callee, regs, s)
+            }
+        }
+        .Grouping(e) -> collect_inst_expr_with_expected(e, expected, regs, st)
+        .Try(e) -> collect_inst_expr_with_expected(e, expected, regs, st)
+        _ -> collect_inst_expr_inner(expr, regs, st)
+    }
+}
+
+/// Body of the original `collect_inst_expr` — all non-Call,
+/// non-pass-through arms. Split out so the `_with_expected`
+/// variant can fall through here without re-dispatching the
+/// Call/Grouping/Try arms (which would lose the expected info).
+fn collect_inst_expr_inner(expr: Expr, regs: GenRegs, st: CollectState) -> CollectState {
     match expr {
         .Call(callee, args) -> {
             let s = collect_inst_exprs(args, regs, st)
@@ -1142,6 +1214,17 @@ fn add_resolved_inst(name: string, tp: List<TypeParamEntry>, ta: List<TypeArg>, 
 fn try_add_fn_inst(name: string, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<SExpr>, st: CollectState) -> CollectState {
     let empty_ta: List<TypeArg> = []
     add_resolved_inst(name, tp, infer_from_params(tp, params, args, empty_ta), st)
+}
+
+/// Variant of `try_add_fn_inst` that takes the call site's
+/// expected return type. After arg-based inference,
+/// `unify_param` is run with the fn's declared `ret_vt` against
+/// `expected` to harvest extra bindings for type params that
+/// only appear in the return position. Mirror of the typeck-side
+/// `tc_subst_generic_ret_with_expected` (so07.7.15).
+fn try_add_fn_inst_with_expected(name: string, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<SExpr>, ret_vt: ValueType, expected: ValueType, st: CollectState) -> CollectState {
+    let empty_ta: List<TypeArg> = []
+    add_resolved_inst(name, tp, infer_from_params_with_expected(tp, params, args, ret_vt, expected, empty_ta), st)
 }
 
 /// Add (or merge) a generic-enum instantiation inferred from
@@ -1614,9 +1697,75 @@ fn rewrite_fn_ret(ret_ty: string, regs: GenRegs, insts: List<Inst>) -> ValueType
 /// type, body — all forwarded through `rewrite_*` helpers.
 /// Used by the per-fn pass to convert generic decls into
 /// non-generic ones referencing mangled specialisations.
-fn rewrite_function(name: string, tp: List<TypeParamEntry>, params: List<ParamEntry>, ret_ty: string, body: List<SStmt>, regs: GenRegs, insts: List<Inst>) -> Stmt {
+fn rewrite_function(name: string, tp: List<TypeParamEntry>, params: List<ParamEntry>, ret_vt: ValueType, body: List<SStmt>, regs: GenRegs, insts: List<Inst>) -> Stmt {
+    let ret_ty = vtype_render_full(ret_vt)
     let scoped = scope_insts_for_ret(ret_ty, regs, insts)
-    Stmt.Function(name, tp, rewrite_param_types(params, regs, scoped), rewrite_fn_ret(ret_ty, regs, insts), rewrite_stmts(body, regs, scoped))
+    Stmt.Function(name, tp, rewrite_param_types(params, regs, scoped), rewrite_fn_ret(ret_ty, regs, insts), rewrite_fn_body(body, ret_vt, regs, scoped))
+}
+
+/// Walk a fn body; tail-position `.Expr` / `.Return` statements
+/// re-mangle their inner Call with `ret_vt` as expected return
+/// type so generic-fn calls whose T appears only in the return
+/// position get the correct mangled name (matches the inst
+/// registered by `collect_inst_fn_body`). so07.7.16.
+fn rewrite_fn_body(body: List<SStmt>, ret_vt: ValueType, regs: GenRegs, insts: List<Inst>) -> List<SStmt> {
+    if body.length == 0 { return body }
+    mut out: List<SStmt> = []
+    let n = body.length
+    mut i = 0
+    while i < n - 1 {
+        let ss = body[i]
+        if !is_generic_decl(ss.node) {
+            out.push(sstmt_at(rewrite_stmt(ss.node, regs, insts), ss.line, ss.col, ss.file))
+        }
+        i = i + 1
+    }
+    let tail = body[n - 1]
+    if !is_generic_decl(tail.node) {
+        let new_node = match tail.node {
+            .Expr(e) -> Stmt.Expr(rewrite_expr_with_expected(e, ret_vt, regs, insts))
+            .Return(val) -> Stmt.Return(rewrite_expr_with_expected(val, ret_vt, regs, insts))
+            _ -> rewrite_stmt(tail.node, regs, insts)
+        }
+        out.push(sstmt_at(new_node, tail.line, tail.col, tail.file))
+    }
+    out
+}
+
+/// Variant of `rewrite_expr` that threads an expected return
+/// type into the Call mangler. Only Call/Grouping/Try
+/// propagate; other arms fall through to plain `rewrite_expr`.
+fn rewrite_expr_with_expected(expr: Expr, expected: ValueType, regs: GenRegs, insts: List<Inst>) -> Expr {
+    match expr {
+        .Call(callee, args) -> {
+            let new_args = rewrite_expr_list(args, regs, insts)
+            let empty_ta: List<TypeArg> = []
+            match callee {
+                .Ident(name) -> {
+                    let fn_e = generic_fn_lookup(regs.fns, name)
+                    if fn_e != null {
+                        let fe = fn_e!
+                        Expr.Call(.Ident(mangle_name_ordered(name, fe.tp, infer_from_params_with_expected(fe.tp, fe.params, args, fe.ret_vt, expected, empty_ta))), new_args)
+                    } else {
+                        Expr.Call(callee, new_args)
+                    }
+                }
+                .QualifiedIdent(name) -> {
+                    let fn_e = generic_fn_lookup(regs.fns, name)
+                    if fn_e != null {
+                        let fe = fn_e!
+                        Expr.Call(.Ident(mangle_name_ordered(name, fe.tp, infer_from_params_with_expected(fe.tp, fe.params, args, fe.ret_vt, expected, empty_ta))), new_args)
+                    } else {
+                        Expr.Call(callee, new_args)
+                    }
+                }
+                _ -> Expr.Call(rewrite_expr(callee, regs, insts), new_args)
+            }
+        }
+        .Grouping(e) -> Expr.Grouping(rewrite_expr_with_expected(e, expected, regs, insts))
+        .Try(e) -> Expr.Try(rewrite_expr_with_expected(e, expected, regs, insts))
+        _ -> rewrite_expr(expr, regs, insts)
+    }
 }
 
 // ── Pass 4: Rewrite call sites and remove generic declarations ──
@@ -1637,16 +1786,16 @@ fn rewrite_stmts(stmts: List<SStmt>, regs: GenRegs, insts: List<Inst>) -> List<S
 
 /// Rewrite a `let`/`mut` binding's type annotation + init.
 /// Used by `rewrite_stmt` so type annotations referencing
-/// generic types pick up their mangled specialisations.
+/// generic types pick up their mangled specialisations. Threads
+/// the declared `vt` as the init's expected type so generic-fn
+/// calls on the RHS mangle to the same specialisation that
+/// `collect_inst_stmt` registered (so07.7.16).
 fn rewrite_let_binding(name: string, vt: ValueType, init: Expr, regs: GenRegs, insts: List<Inst>, is_mut: bool) -> Stmt {
     let rendered = vtype_render_full(vt)
     let rewritten = rewrite_type_name(rendered, regs, insts)
     let new_vt = if rewritten != rendered { vtype_from_type_string(rewritten) } else { vt }
-    if is_mut {
-        Stmt.Mut(name, new_vt, rewrite_expr(init, regs, insts))
-    } else {
-        Stmt.Let(name, new_vt, rewrite_expr(init, regs, insts))
-    }
+    let new_init = rewrite_expr_with_expected(init, vt, regs, insts)
+    if is_mut { Stmt.Mut(name, new_vt, new_init) } else { Stmt.Let(name, new_vt, new_init) }
 }
 
 /// Per-statement rewrite. Recurses into expression payloads +
@@ -1666,7 +1815,7 @@ fn rewrite_stmt(stmt: Stmt, regs: GenRegs, insts: List<Inst>) -> Stmt {
         .While(cond, body) -> .While(rewrite_expr(cond, regs, insts), rewrite_stmt(body, regs, insts))
         .For(v, s, e, body) -> .For(v, rewrite_expr(s, regs, insts), rewrite_expr(e, regs, insts), rewrite_stmt(body, regs, insts))
         .ForIn(v, coll, body) -> .ForIn(v, rewrite_expr(coll, regs, insts), rewrite_stmt(body, regs, insts))
-        .Function(name, tp, params, ret_vt, body) -> rewrite_function(name, tp, params, vtype_render_full(ret_vt), body, regs, insts)
+        .Function(name, tp, params, ret_vt, body) -> rewrite_function(name, tp, params, ret_vt, body, regs, insts)
         .ExternFn(name, params, ret_vt) ->
             .ExternFn(name, rewrite_param_types(params, regs, insts), rewrite_fn_ret(vtype_render_full(ret_vt), regs, insts))
         .Match(subj, arms) -> .Match(rewrite_expr(subj, regs, insts), rewrite_arms(arms, regs, insts))
@@ -1680,7 +1829,7 @@ fn rewrite_stmt(stmt: Stmt, regs: GenRegs, insts: List<Inst>) -> Stmt {
         .ThenBlock(name, cond) -> .ThenBlock(name, rewrite_expr(cond, regs, insts))
         .Parallel(body) -> .Parallel(rewrite_stmts(body, regs, insts))
         .Select(arms) -> .Select(rewrite_select_arms_mono(arms, regs, insts))
-        .Const(n, vt, init) -> .Const(n, vt, rewrite_expr(init, regs, insts))
+        .Const(n, vt, init) -> .Const(n, vt, rewrite_expr_with_expected(init, vt, regs, insts))
         _ -> stmt
     }
 }
