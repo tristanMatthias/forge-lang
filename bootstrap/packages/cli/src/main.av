@@ -49,11 +49,12 @@ fn empty_loaded_list() -> List<string> {
 use @std.cli.{cli_new, cli_add_command, cli_command_add_flag, cli_command_add_option, cli_command_add_arg, cli_parse, result_has_flag, result_get_option}
 // nce6.1.F: @marshal on TestResults synthesises `impl Marshal:TestResults`
 // + `from_bytes_TestResults` calling bytes_reader. Both depend on
-// @std/process's trait + byte primitives.
-use @std.process.{Marshal, bytes_reader, bytes_builder}
+// @std/process's trait + byte primitives. (Marshal itself is reached
+// via the synthesised impl, not a direct call here.)
+use @std.process.{bytes_reader, bytes_builder}
 // dir-as-module (g2eo.1): ui is a flat directory module, exports
 // surface at `@std.cli.ui.{...}` directly (not `.ui.spinner.{...}`).
-use @std.cli.ui.{run_with_spinner, run_with_progress}
+use @std.cli.ui.{run_with_progress}
 use @std.json.{json_str, json_object, json_pairs, json_pair_add}
 use @std.lsp.{Sym}
 use @std.avrac.fmt.{fmt_stmt_list}
@@ -74,7 +75,7 @@ use @std.avrac.pathutil.{basename_no_ext}
 use @std.avrac.list_ops.{list_map, list_filter, list_fold}
 use @std.avrac.parse.{parse_expression_source, parse_program_source, parse_program_source_at}
 use @std.avrac.core.{render_expr, render_stmt_list, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType, Stmt, SStmt, Expr, sstmt_dummy}
-use @std.avrac.features.eval.{render_value, eval_expression_source, eval_parsed_expression, execute_program_source, execute_program_stmts}
+use @std.avrac.features.eval.{render_value, eval_parsed_expression, execute_program_stmts}
 use @std.avrac.desugar.{desugar_program, inject_intrinsics}
 use @std.avrac.features.component_decl.{expand_components}
 use @std.avrac.features.marshal.{derive_marshal}
@@ -92,7 +93,7 @@ use @std.avrac.build.{
     synthesize_unit_stmts,
     pool_run, pool_extract_rc,
     cache_for, entry_source_meta_path, ensure_source_meta_dir,
-    cache_bin_path_for, cache_entry_realobj_path,
+    cache_bin_path_for,
     CompileTarget, build_binary,
     package_source_fingerprint,
 }
