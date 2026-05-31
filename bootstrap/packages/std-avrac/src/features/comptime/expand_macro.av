@@ -139,13 +139,15 @@ fn register_type_decl(stmt: Stmt, mod_path: string) {
 }
 
 /// Build a qualified name without double-prefixing. Resolved AST
-/// decls already carry their fully-qualified name (`@std::lsp::Sym`)
-/// because the rename pass ran before populate_resolver_data; in
-/// that case mod_path would otherwise be re-prefixed and produce
-/// `@std::lsp::@std::lsp::Sym`. so07.7.1 root cause: the doubly-
+/// decls already carry their fully-qualified name (`@std::lsp::Sym`
+/// or `core::Stmt`) because the rename pass ran before
+/// populate_resolver_data; re-prefixing would produce
+/// `@std::lsp::@std::lsp::Sym`. so07.7.1 root cause: doubly-
 /// qualified registry keys never matched the short-name lookup
-/// from ctx_lookup_type.
+/// from ctx_lookup_type. Any name carrying `::` is treated as
+/// already-qualified; bare names get the mod_path prefix.
 fn qualify_or_keep(mod_path: string, name: string) -> string {
+    if name.contains("::") { return name }
     if name.length > 0 && name[0] == "@" { return name }
     type_qualified_name(mod_path, name)
 }
