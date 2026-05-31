@@ -516,7 +516,7 @@ fn has_argv_flag(flag: string) -> bool {
 // by file-name substring; -c/--coverage enables instrumentation;
 // --lcov path turns on coverage AND writes an LCOV report there;
 // --list (hkms.4) prints discovered tests and exits without compile.
-type TestArgs = { filter: string, coverage: bool, lcov_path: string, per_file: bool, list_only: bool }
+type TestArgs = { filter: string, coverage: bool, lcov_path: string, per_file: bool, list_only: bool, path_filter: string }
 
 fn parse_test_args() -> TestArgs {
     mut filter_arg = ""
@@ -532,6 +532,12 @@ fn parse_test_args() -> TestArgs {
     // --bundled for coverage + legacy callers.
     mut per_file_flag = true
     mut list_only_flag = false
+    // so07.7.12: positional path filter. `bs2 test <path>` scopes
+    // discovery to test files matching <path> (exact match or
+    // path-suffix), instead of running the whole suite. Multiple
+    // positionals are joined with the last one winning — matches CLI
+    // convention.
+    mut path_filter_arg = ""
     mut i = 2
     while i < avra_selfhost_argc() {
         let arg = avra_selfhost_get_arg_cstr(i)
@@ -579,9 +585,20 @@ fn parse_test_args() -> TestArgs {
             i = i + 1
             continue
         }
+        // Positional path filter (so07.7.12): treat any non-flag
+        // arg as a path to scope the test run to. Only honoured in
+        // the orchestrator entry (`bs2 test`); the shard subcommand
+        // `bs2 _test_shard <path>` reads path from argv[2] directly
+        // and reads args via parse_test_args afterwards, so the
+        // shard's path_filter gets set here but is never consumed.
+        if arg.length > 0 && arg[0] != "-" {
+            path_filter_arg = arg
+            i = i + 1
+            continue
+        }
         i = i + 1
     }
-    TestArgs { filter: filter_arg, coverage: coverage_flag, lcov_path, per_file: per_file_flag, list_only: list_only_flag }
+    TestArgs { filter: filter_arg, coverage: coverage_flag, lcov_path, per_file: per_file_flag, list_only: list_only_flag, path_filter: path_filter_arg }
 }
 
 extern fn avra_uptime_ms() -> int
@@ -2195,6 +2212,21 @@ fn filter_discovered(files: List<DiscoveredFile>, filter: string) -> List<Discov
     list_filter(files, (d: DiscoveredFile) -> basename_no_ext(d.path).contains(filter))
 }
 
+/// so07.7.12: scope the discovered set to a single positional path.
+/// Match strategy (first-wins): (1) exact full-path equality;
+/// (2) path-suffix match (`d.path.ends_with(filter)` — covers
+/// `bs2 test packages/x/tests/foo_test.av` from any CWD); (3) basename
+/// substring (covers `bs2 test foo` — same as --filter but as a
+/// positional). Empty filter is a no-op.
+fn filter_by_path(files: List<DiscoveredFile>, path_filter: string) -> List<DiscoveredFile> {
+    if path_filter == "" { return files }
+    let exact = list_filter(files, (d: DiscoveredFile) -> d.path == path_filter)
+    if exact.length > 0 { return exact }
+    let suffix = list_filter(files, (d: DiscoveredFile) -> d.path.ends_with(path_filter))
+    if suffix.length > 0 { return suffix }
+    list_filter(files, (d: DiscoveredFile) -> basename_no_ext(d.path).contains(path_filter))
+}
+
 /// hkms.4: render the structurally-discovered test set for `--list`.
 /// One line per entry, prefixed by file:line, so callers (IDEs,
 /// `grep`, humans) can navigate directly to the source. Format is
@@ -2928,20 +2960,29 @@ fn run_test_command() {
     // longer load-bearing). Filters out files declaring their own
     // `fn main(`. Result is sorted by path for stable iteration.
     let discovered = discover_tests(project_dir)
-    let accepted = filter_discovered(discovered, args.filter)
-
-    if args.list_only {
-        print_discovered(accepted)
-        avra_process_exit(0)
-        return
-    }
+    let after_filter = filter_discovered(discovered, args.filter)
+    // so07.7.12: scope discovery to a single file (or path-suffix
+    // match) when the user passed a positional path arg. Applied
+    // AFTER --filter so both can compose. Empty path_filter is a
+    // no-op fast path.
+    let accepted = filter_by_path(after_filter, args.path_filter)
 
     if discovered.length == 0 {
         println("No test files found.")
         return
     }
     if accepted.length == 0 {
-        println("No spec test files matched filter.")
+        if args.path_filter != "" {
+            println("No spec test files matched path `${args.path_filter}`.")
+        } else {
+            println("No spec test files matched filter.")
+        }
+        return
+    }
+
+    if args.list_only {
+        print_discovered(accepted)
+        avra_process_exit(0)
         return
     }
 

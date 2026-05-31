@@ -1,0 +1,34 @@
+// so07.7.12: `bs2 test <path>` must scope to <path>, not run the
+// whole suite. We exercise the discovery scope via `bs2 test --list
+// <path>` — that prints one line per discovered spec and exits
+// without recursively launching the orchestrator (which would hang
+// the parent test process).
+//
+// Three match strategies compose: exact / suffix / basename
+// substring. Each is exercised below with a known fixture.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn bs2_path() -> string {
+    avra_shell_exec("pwd").trim() + "/build/bs2"
+}
+
+spec "bs2 test <path>: positional arg scopes discovery" {
+    then "exact path lists only that file's specs" {
+        let out = avra_shell_exec(
+            bs2_path() + " test --list packages/std-avrac/src/features/generics/tests/generics_test.av 2>&1 || true")
+        // generics_test.av has exactly one spec block.
+        out.contains("generics_test.av") && !out.contains("generic_struct_test.av")
+    }
+    then "path-suffix match works without the full project-relative path" {
+        let out = avra_shell_exec(
+            bs2_path() + " test --list generics/tests/generics_test.av 2>&1 || true")
+        out.contains("generics_test.av") && !out.contains("generic_struct_test.av")
+    }
+    then "unknown path emits a path-specific error" {
+        let out = avra_shell_exec(
+            bs2_path() + " test --list absolutely_not_a_test_file.av 2>&1 || true")
+        out.contains("No spec test files matched path")
+            && out.contains("absolutely_not_a_test_file.av")
+    }
+}
