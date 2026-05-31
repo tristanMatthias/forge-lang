@@ -30,10 +30,14 @@ spec "T6.A: vtype_eq Trait id-first" {
         let b = ValueType.Trait("Foo", 0)
         vtype_eq(a, b)
     }
-    then "both ids zero + bare-vs-FQN → name fallback tolerates" {
+    then "both ids zero + bare-vs-FQN no longer tolerates (T6.D)" {
+        // Pre-T6.D, nominal_names_match would suffix-match the bare
+        // "Foo" against "@x::Foo" and report equal. T6.D drops the
+        // tolerance — the resolver+stamp pipeline qualifies every
+        // nominal canonically so name fallbacks are exact-match.
         let a = ValueType.Trait("@x::Foo", 0)
         let b = ValueType.Trait("Foo", 0)
-        vtype_eq(a, b)
+        !vtype_eq(a, b)
     }
 }
 

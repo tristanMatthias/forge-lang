@@ -1417,7 +1417,7 @@ fn substitute_vtype(vt: ValueType, ta: List<TypeArg>) -> ValueType {
         // substitution touches the inner T but the outer Foo / Result
         // shell keeps the same TypeId. Pre-T6.B both arms hard-coded
         // 0, throwing away the resolver's id and forcing every
-        // downstream vtype_eq to fall back to nominal_names_match.
+        // downstream vtype_eq to fall through to the name compare.
         .Newtype(name, inner, id) -> ValueType.Newtype(name, substitute_vtype(inner, ta), id)
         .Enum(name, args, id) -> ValueType.Enum(name, substitute_vtype_list(args, ta), id)
         .Tuple(elems) -> ValueType.Tuple(substitute_vtype_list(elems, ta))

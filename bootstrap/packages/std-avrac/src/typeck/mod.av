@@ -737,8 +737,8 @@ export fn typecheck_program(stmts: List<SStmt>, type_reg: TypeRegistry) -> TypeC
     // Macro/comptime/monomorphizer-emitted AST nodes carry
     // parser-shape ValueTypes with id=0 even when the name IS
     // registered. The pre-stamp pass closes the gap so vtype_eq's
-    // nominal arms can stop short-circuiting via nominal_names_match
-    // for the common in-registry case. Residual id=0 nominals after
+    // nominal arms hit the id-path for the common in-registry case
+    // instead of the exact-name fallback. Residual id=0 nominals after
     // the stamp pass are type-param placeholders (T, U, S, …) —
     // legitimately id=0 because they aren't registered types.
     let stamped_stmts = stamp_ids_stmts(stmts, type_reg)

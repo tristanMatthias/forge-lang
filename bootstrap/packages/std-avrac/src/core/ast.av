@@ -437,39 +437,9 @@ fn last_seg(s: string) -> string {
 
 /// Strict ValueType equality. Two types are equal when they have
 /// the same shape AND the same identity for nominal kinds (matched
-/// by TypeRegistry id when both are non-zero, else by name string).
-/// Use `vtype_assignable` for the broader "can A be passed where B
-/// is expected" check.
-/// Bare-vs-FQN tolerant nominal name comparison. so07.7 T6 step:
-/// the per-site `names_alias` / `name_matches` workarounds were
-/// telling us the same story — name strings carry qualification
-/// inconsistently across passes (parser emits bare, resolver
-/// qualifies, codegen sometimes re-qualifies). Centralising the
-/// tolerance here removes the per-call-site tolerance the rest of
-/// the codebase had to grow. Two names match iff they're equal OR
-/// one is a `::`-prefix-stripped suffix of the other. Exported +
-/// @comptime so derive_walker (and other @comptime macros) reuse
-/// it instead of duplicating the suffix logic.
-@comptime
-export fn nominal_names_match(a: string, b: string) -> bool {
-    if a == "" || b == "" { return false }
-    if a == b { return true }
-    if ends_with_double_colon_segment(a, b) { return true }
-    ends_with_double_colon_segment(b, a)
-}
-
-/// True iff `qualified` ends with `"::" + short`. Returns false on
-/// empty inputs or when `qualified` isn't longer than `short`.
-@comptime
-fn ends_with_double_colon_segment(qualified: string, short: string) -> bool {
-    let ql = qualified.length
-    let sl = short.length
-    if ql < sl + 2 { return false }
-    let tail = qualified.substring(ql - sl, ql)
-    if tail != short { return false }
-    qualified.substring(ql - sl - 2, ql - sl) == "::"
-}
-
+/// by TypeRegistry id when both are non-zero, else by direct name
+/// string). Use `vtype_assignable` for the broader "can A be passed
+/// where B is expected" check.
 export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
     match a {
         .Int -> b is .Int
@@ -487,8 +457,8 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
         .List(ea) -> match b { .List(eb) -> vtype_eq(ea, eb), _ -> false }
         .Fn -> b is .Fn
         .Void -> b is .Void
-        .Struct(n1, id1) -> match b { .Struct(n2, id2) -> if id1 > 0 && id2 > 0 { id1 == id2 } else { nominal_names_match(n1, n2) }, _ -> false }
-        .Enum(n1, _, id1) -> match b { .Enum(n2, _, id2) -> if id1 > 0 && id2 > 0 { id1 == id2 } else { nominal_names_match(n1, n2) }, _ -> false }
+        .Struct(n1, id1) -> match b { .Struct(n2, id2) -> if id1 > 0 && id2 > 0 { id1 == id2 } else { n1 == n2 }, _ -> false }
+        .Enum(n1, _, id1) -> match b { .Enum(n2, _, id2) -> if id1 > 0 && id2 > 0 { id1 == id2 } else { n1 == n2 }, _ -> false }
         .Float -> b is .Float
         .Map -> b is .Map
         .FnTyped(pa, ra) -> match b {
@@ -500,15 +470,15 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
             .Fn(_) -> true
             _ -> false
         }
-        .Trait(n1, id1) -> match b { .Trait(n2, id2) -> if id1 > 0 && id2 > 0 { id1 == id2 } else { nominal_names_match(n1, n2) }, _ -> false }
+        .Trait(n1, id1) -> match b { .Trait(n2, id2) -> if id1 > 0 && id2 > 0 { id1 == id2 } else { n1 == n2 }, _ -> false }
         .Tuple(ea) -> match b { .Tuple(eb) -> type_lists_eq(ea, eb), _ -> false }
         .Closure(na, ra) -> match b { .Closure(nb, rb) -> na == nb && vtype_eq(ra, rb), _ -> false }
         .Union(types_a) -> match b {
             .Union(types_b) -> type_lists_eq(types_a, types_b)
             _ -> false
         }
-        .Newtype(n1, ia, id1) -> match b { .Newtype(n2, ib, id2) -> (if id1 > 0 && id2 > 0 { id1 == id2 } else { nominal_names_match(n1, n2) }) && vtype_eq(ia, ib), _ -> false }
-        .NarrowedEnum(e1, v1, id1) -> match b { .NarrowedEnum(e2, v2, id2) -> (if id1 > 0 && id2 > 0 { id1 == id2 } else { nominal_names_match(e1, e2) }) && v1 == v2, _ -> false }
+        .Newtype(n1, ia, id1) -> match b { .Newtype(n2, ib, id2) -> (if id1 > 0 && id2 > 0 { id1 == id2 } else { n1 == n2 }) && vtype_eq(ia, ib), _ -> false }
+        .NarrowedEnum(e1, v1, id1) -> match b { .NarrowedEnum(e2, v2, id2) -> (if id1 > 0 && id2 > 0 { id1 == id2 } else { e1 == e2 }) && v1 == v2, _ -> false }
         .Unknown -> b is .Unknown
         .Task(ra) -> match b { .Task(rb) -> vtype_eq(ra, rb), _ -> false }
         _ -> false
@@ -519,8 +489,9 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
 /// Required because macro / comptime / monomorphizer-emitted AST
 /// nodes carry parser-shape ValueTypes with id=0 even though the
 /// type's name IS registered. Walking the AST after resolve+expand
-/// + comptime closes the gap so vtype_eq can drop the
-/// nominal_names_match fallback (T6.D).
+/// + comptime closes the gap so vtype_eq's nominal arms reach
+/// the id-path for the common case (T6.D dropped the bare/FQN
+/// tolerance helper — names are exact-match now).
 export fn stamp_ids_vtype(t: ValueType, reg: TypeRegistry) -> ValueType {
     match t {
         .Struct(n, id) -> {

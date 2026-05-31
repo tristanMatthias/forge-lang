@@ -16,7 +16,7 @@
 //      method name) so codegen's dot-notation dispatch finds it
 //      via the standard method-lookup path.
 
-use core.{Stmt, SStmt, Expr, SExpr, ParamEntry, TypeParamEntry, Pattern, MatchArm, ValueType, Variant, FieldEntry, BinOp, sexpr_dummy, sstmt_dummy, type_short_name, nominal_names_match}
+use core.{Stmt, SStmt, Expr, SExpr, ParamEntry, TypeParamEntry, Pattern, MatchArm, ValueType, Variant, FieldEntry, BinOp, sexpr_dummy, sstmt_dummy, type_short_name}
 use features.comptime.{AnnotatedDecl, ResolverCtx, ResolvedDecls, DeclSymbol, DeclKind, MacroProvenance, ResolvedType, ctx_lookup_type, ctx_unwrap_path_to}
 use diagnostics.{Span}
 
@@ -181,7 +181,7 @@ fn build_one_arm(v: Variant, parent_name: string, ctx: ResolverCtx) -> MatchArm 
 fn is_self_type(vt: ValueType, parent_name: string) -> bool {
     let n = self_type_name(vt)
     if n == "" { return false }
-    nominal_names_match(n, parent_name)
+    n == parent_name
 }
 
 @comptime
