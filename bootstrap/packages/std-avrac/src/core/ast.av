@@ -521,15 +521,24 @@ export fn vtype_assignable(src: ValueType, dst: ValueType) -> bool {
 /// level OR nested inside any container shape). Mirrors the shape
 /// dispatch in `vtype_eq` but tolerates Unknown leaves.
 ///
-/// so07.7.3 phase-2 attempt (2026-05-31): removing the top-level
-/// wildcard surfaces ~30+ `mut out = []` sites without annotations
-/// that depend on it (collect_method_names_from_stmts,
-/// graph_resolve_all, …). Each call site needs an explicit
-/// `: List<T>` annotation OR flow-sensitive type refinement after
-/// .push(). Mass-edit is the proper fix; until then the wildcard
-/// stays. The Return-position expected-aware threading
-/// (tc_check_stmt_returns → check_expr_expected) lands separately
-/// since it's a strict improvement.
+/// so07.7.3 phase-2 attempts (2026-05-31):
+///
+/// Round 1: Remove wildcard. Fails ~30 sites using `mut out = []`
+/// without annotations. Added `: List<T>` to all of them.
+///
+/// Round 2: Re-remove wildcard. Self-host passes. But 106 test
+/// shards fail at `AVRA_USE_METADATA=1` time with F1000 on
+/// list_map / list_filter / list_push_copy / list_concat — generic
+/// `list_ops` helpers that DO have proper annotations. Metadata
+/// fast-path loads their bodies with type-param info missing or
+/// stale, so typeck fires F1000. Without metadata the same probe
+/// passes. The wildcard was masking this metadata-path bug.
+///
+/// Real fix: metadata loader needs to preserve generic-fn
+/// type-param + body type info coherently. That's a separate
+/// (substantial) investigation tracked in so07.7.3 notes.
+/// Annotations stay (they're correct + defense-in-depth); the
+/// wildcard stays until the metadata fix.
 fn assignable_with_unknowns(src: ValueType, dst: ValueType) -> bool {
     if src is .Unknown || dst is .Unknown { return true }
     // Concretely-equal leaves (e.g. nested `Int` vs `Int` inside a Tuple

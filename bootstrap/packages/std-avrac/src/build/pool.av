@@ -44,7 +44,7 @@ type Worker = {
 fn idle_worker() -> Worker { Worker { handle: 0 - 1, started_idx: 0 - 1 } }
 
 fn workers_init(n: int) -> List<Worker> {
-    mut ws = []
+    mut ws: List<Worker> = []
     mut i = 0
     while i < n {
         ws.push(idle_worker())
@@ -193,7 +193,7 @@ export fn pool_run_with_progress(commands: List<string>, slugs: List<string>, jo
 // this, the pool would have to re-derive the slug from the cmd
 // string, which is brittle.
 fn workers_started_slugs_init(n: int) -> List<string> {
-    mut ss = []
+    mut ss: List<string> = []
     mut i = 0
     while i < n { ss.push("") i = i + 1 }
     ss

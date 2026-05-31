@@ -108,7 +108,7 @@ fn parse_param_names(sig: string) -> List<string> {
     let body = sig.substring(lparen + 1, body_end)
     if body == "" { return [] }
     let segs = split_top_level(body, ",")
-    mut out = []
+    mut out: List<string> = []
     mut i = 0
     while i < segs.length {
         let n = param_name_of(segs[i])
@@ -152,7 +152,7 @@ fn parse_field_names(rendered: string) -> List<string> {
     let body = rendered.substring(lbrace + 1, rbrace)
     if trim_str(body) == "" { return [] }
     let segs = split_top_level(body, ",")
-    mut out = []
+    mut out: List<string> = []
     mut i = 0
     while i < segs.length {
         let n = param_name_of(segs[i])
@@ -195,7 +195,7 @@ fn render_field_lines(fields: List<string>) -> string {
 /// fragment a single param. Returns segments in source order via
 /// .push — no reverse pass needed.
 fn split_top_level(s: string, sep: string) -> List<string> {
-    mut segs = []
+    mut segs: List<string> = []
     mut start = 0
     mut depth = 0
     mut i = 0

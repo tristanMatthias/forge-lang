@@ -204,7 +204,7 @@ fn covmap_file(src: string) -> string {
 /// no reverse pass needed.
 fn parse_covmap(src: string) -> List<CovEntry> {
     let lines = src.split("\n")
-    mut acc = []
+    mut acc: List<CovEntry> = []
     mut idx = 0
     while idx < lines.length {
         let line = lines[idx]
@@ -287,7 +287,7 @@ fn digit_value(ch: string) -> int {
 /// input can be thousands of lines long.
 fn parse_profdata(src: string) -> List<FnCounts> {
     let lines = src.split("\n")
-    mut acc = []
+    mut acc: List<FnCounts> = []
     mut cur_fn = ""
     mut cur_fn_count = 0
     mut idx = 0
@@ -331,7 +331,7 @@ fn parse_profdata(src: string) -> List<FnCounts> {
 /// pass needed.
 fn parse_block_counts(s: string, fn_count: int) -> List<int> {
     let parts = s.split(",")
-    mut out = []
+    mut out: List<int> = []
     out.push(fn_count)
     mut i = 0
     while i < parts.length {

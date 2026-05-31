@@ -133,7 +133,7 @@ fn string_starts_with(s: string, prefix: string) -> bool {
 // Forward walk that pushes each segment as it's discovered — cleaner
 // than the prior backward walk which prepended onto a linked list.
 fn split_by_double_colon(s: string) -> List<string> {
-    mut out = []
+    mut out: List<string> = []
     if s == "" { return out }
     mut start = 0
     mut i = 0
@@ -155,7 +155,7 @@ fn split_by_double_colon(s: string) -> List<string> {
 // through.
 fn drop_last_seg(xs: List<string>) -> List<string> {
     if xs.length <= 1 { return [] }
-    mut out = []
+    mut out: List<string> = []
     mut i = 0
     let last = xs.length - 1
     while i < last {

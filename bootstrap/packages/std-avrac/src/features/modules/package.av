@@ -219,7 +219,7 @@ fn find_next_section(content: string, from: int) -> int {
 /// Walk `section` line by line, pushing Dep entries onto a List<Dep>.
 /// Source order falls out of .push directly — no reverse pass needed.
 fn parse_dep_lines(section: string) -> List<Dep> {
-    mut result = []
+    mut result: List<Dep> = []
     mut start = 0
     mut i = 0
     while i <= section.length {

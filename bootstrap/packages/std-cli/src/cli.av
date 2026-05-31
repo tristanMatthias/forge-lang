@@ -341,7 +341,7 @@ fn arg_at(args: List<ArgDef>, idx: int) -> ArgDef? {
 /// Pre-fill a parsed-options list with each OptionDef's default value
 /// — overwritten later if the user supplies the option.
 fn init_option_defaults(options: List<OptionDef>) -> List<ParsedOption> {
-    mut out = []
+    mut out: List<ParsedOption> = []
     mut i = 0
     while i < options.length {
         let o = options[i]

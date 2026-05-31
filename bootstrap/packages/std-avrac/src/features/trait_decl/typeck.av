@@ -146,7 +146,7 @@ fn impl_has_method(methods: List<SStmt>, name: string) -> bool {
 /// `extern fn` (the trait's required signatures). Default-
 /// implemented methods don't count — only the abstract ones.
 export fn collect_method_names_from_stmts(stmts: List<SStmt>) -> List<TraitMethod> {
-    mut out = []
+    mut out: List<TraitMethod> = []
     mut i = 0
     while i < stmts.length {
         match stmts[i].node {
@@ -163,7 +163,7 @@ export fn collect_method_names_from_stmts(stmts: List<SStmt>) -> List<TraitMetho
 /// Walk a trait body and produce the list of every `type Name`
 /// declaration (associated types — spec Axis 2).
 export fn collect_assoc_types_from_stmts(stmts: List<SStmt>) -> List<string> {
-    mut out = []
+    mut out: List<string> = []
     mut i = 0
     while i < stmts.length {
         match stmts[i].node {

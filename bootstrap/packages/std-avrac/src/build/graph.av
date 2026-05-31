@@ -187,7 +187,7 @@ fn recurse_deps(parent_root: string, deps: List<Dep>, acc: List<Unit>, visited: 
 }
 
 fn collect_dep_names(deps: List<Dep>) -> List<string> {
-    mut acc = []
+    mut acc: List<string> = []
     mut i = 0
     while i < deps.length {
         acc.push(deps[i].name)

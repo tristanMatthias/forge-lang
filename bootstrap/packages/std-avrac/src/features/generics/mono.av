@@ -1020,26 +1020,13 @@ fn collect_inst_expr_with_expected(expr: Expr, expected: ValueType, regs: GenReg
     }
 }
 
-/// Body of the original `collect_inst_expr` — all non-Call,
-/// non-pass-through arms. Split out so the `_with_expected`
-/// variant can fall through here without re-dispatching the
-/// Call/Grouping/Try arms (which would lose the expected info).
+/// Body of the original `collect_inst_expr` — non-Call,
+/// non-Grouping/Try arms. The Call/Grouping/Try cases are
+/// handled in `collect_inst_expr_with_expected` (they propagate
+/// expected) — by the time control reaches this function those
+/// arms are already dispatched, so we don't re-list them here.
 fn collect_inst_expr_inner(expr: Expr, regs: GenRegs, st: CollectState) -> CollectState {
     match expr {
-        .Call(callee, args) -> {
-            let s = collect_inst_exprs(args, regs, st)
-            match callee {
-                .Ident(name) -> {
-                    let fn_e = generic_fn_lookup(regs.fns, name)
-                    if fn_e != null { try_add_fn_inst(name, fn_e!.tp, fn_e!.params, args, s) } else { s }
-                }
-                .QualifiedIdent(name) -> {
-                    let fn_e = generic_fn_lookup(regs.fns, name)
-                    if fn_e != null { try_add_fn_inst(name, fn_e!.tp, fn_e!.params, args, s) } else { s }
-                }
-                _ -> collect_inst_expr(callee, regs, s)
-            }
-        }
         .GenericCall(callee, type_names, args) -> {
             let s = collect_inst_exprs(args, regs, st)
             match callee {
@@ -1091,8 +1078,6 @@ fn collect_inst_expr_inner(expr: Expr, regs: GenRegs, st: CollectState) -> Colle
         .Index(obj, idx) -> collect_inst_expr(idx, regs, collect_inst_expr(obj, regs, st))
         .IfExpr(c, t, e) -> collect_inst_expr(e, regs, collect_inst_expr(t, regs, collect_inst_expr(c, regs, st)))
         .Unary(_, e) -> collect_inst_expr(e, regs, st)
-        .Grouping(e) -> collect_inst_expr(e, regs, st)
-        .Try(e) -> collect_inst_expr(e, regs, st)
         .Assign(_, val) -> collect_inst_expr(val, regs, st)
         .With(obj, inits) -> collect_inst_field_inits(inits, regs, collect_inst_expr(obj, regs, st))
         .Lambda(_, body) -> collect_inst_expr(body, regs, st)

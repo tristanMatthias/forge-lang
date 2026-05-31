@@ -367,21 +367,31 @@ fn enum_generic_bindings(reg: EnumTypeReg, enum_name: string, subject_ty: ValueT
 
 /// Pick the binding type for a pattern-param field. Self-recursive
 /// fields prefer `subject_ty`'s exact form (avoids bare-vs-qualified
-/// fallout). Post-substitution generic fields whose concrete type
-/// is now nominal also stand: e.g. after substituting T→int,
-/// field_ty is .Int and we just return it. Non-Self, still-generic
-/// or otherwise unresolved fields fall back to Unknown.
+/// fallout). Otherwise we trust `field_ty` directly — by the time
+/// this fires, generic substitution has run (T→concrete) so a
+/// `field_ty` of `.Enum("Stmt", ...)` / `.Newtype("UserId", …)` /
+/// `.List(.Int)` is the user's actual declared shape. The only
+/// safe fallback is `Unknown` — and only for `.Unknown` itself or
+/// the unresolved `.Struct("T", 0)` shape that means
+/// "type-param never substituted".
 fn pattern_binding_type(field_ty: ValueType, subject_ty: ValueType, subject_name: string) -> ValueType {
     if subject_name == "" { return ValueType.Unknown }
     if names_alias(nominal_name(field_ty), subject_name) { return subject_ty }
     match field_ty {
-        .List(elem) -> if names_alias(nominal_name(elem), subject_name) { ValueType.List(subject_ty) } else { ValueType.Unknown }
-        .Int -> field_ty
-        .Bool -> field_ty
-        .Float -> field_ty
-        .Str -> field_ty
-        .Bytes -> field_ty
-        _ -> ValueType.Unknown
+        // Self-recursive list-of-Self projects subject_ty into the elem
+        // slot so generic-call inference inside the arm body can pin
+        // type-params from it (so07.5).
+        .List(elem) -> if names_alias(nominal_name(elem), subject_name) { ValueType.List(subject_ty) } else { field_ty }
+        // Unresolved type-param leak: the generic substitution table
+        // didn't bind this T. Keep Unknown so downstream typeck
+        // doesn't act on a sentinel name.
+        .Unknown -> ValueType.Unknown
+        // .Struct("T", 0) is the unresolved-generic shape — also a
+        // wildcard for downstream typeck.
+        .Struct(_, id) if id == 0 -> ValueType.Unknown
+        // Everything else (primitives, fully-resolved nominals,
+        // Tuples, FnTyped, Newtype, Enum, etc.) flows through as-is.
+        _ -> field_ty
     }
 }
 

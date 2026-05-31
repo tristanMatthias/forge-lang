@@ -322,7 +322,8 @@ export fn graph_resolve_all(g: SymbolGraph, path: string) -> List<Sym> {
     if path.contains("::") {
         let exact = graph_by_qualified(g, path)
         if exact != null {
-            return [exact!]
+            let single: List<Sym> = [exact!]
+            return single
         }
         return collect_qualified_suffix(g.syms, "::${path}")
     }

@@ -79,7 +79,7 @@ export fn read_lock(dir: string) -> Lockfile {
 fn parse_lock_entries(content: string) -> List<LockEntry> {
     // Walk lines, accumulate `[[unit]]` blocks. Order preserved via
     // List<LockEntry>.push (source-order append, no reverse pass).
-    mut entries = []
+    mut entries: List<LockEntry> = []
     mut name = ""
     mut path = ""
     mut fp = ""
@@ -140,7 +140,7 @@ export fn lockfile_from_graph(dir: string, graph: DepGraph) -> Lockfile {
 }
 
 fn collect_entries(units: List<Unit>) -> List<LockEntry> {
-    mut acc = []
+    mut acc: List<LockEntry> = []
     mut i = 0
     while i < units.length {
         let u = units[i]

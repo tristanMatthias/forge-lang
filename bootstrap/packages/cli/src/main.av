@@ -902,7 +902,7 @@ fn pre_build_path_deps(deps: List<Dep>, compiler_path: string, args: BuildArgs) 
 // foreign and produce a 3-define truncated .ll; we override
 // per-dep here.
 fn build_pre_dep_cmds(deps: List<Dep>, compiler_path: string) -> List<string> {
-    mut cmds = []
+    mut cmds: List<string> = []
     mut i = 0
     while i < deps.length {
         let dep = deps[i]
@@ -1148,7 +1148,7 @@ fn resolve_compiler_path(project_dir: string) -> string {
 // `ls -d` produces one path per line plus a trailing newline that
 // `.split("\n")` would otherwise emit as a trailing empty entry.
 fn split_by_newline(s: string) -> List<string> {
-    mut out = []
+    mut out: List<string> = []
     for p in s.split("\n") {
         if p != "" { out.push(p) }
     }
@@ -1619,7 +1619,7 @@ fn run_pre_deps_with_progress(paths_file: string, jobs: string, compiler_path: s
 // of piping the file into xargs.
 fn read_paths_file_lines(path: string) -> List<string> {
     let content = avra_selfhost_read_file(path)
-    mut out = []
+    mut out: List<string> = []
     let len = content.length
     mut start = 0
     mut i = 0
@@ -1640,7 +1640,7 @@ fn read_paths_file_lines(path: string) -> List<string> {
 // s|/$||'` so existing fixtures + the renderer's display logic see
 // the same shape (cli, std-avrac, etc).
 fn slugs_from_paths(paths: List<string>) -> List<string> {
-    mut out = []
+    mut out: List<string> = []
     mut i = 0
     while i < paths.length {
         out.push(slug_of_path(paths[i]))
@@ -2431,7 +2431,7 @@ fn concat_stmt_lists(left: List<SStmt>, right: List<SStmt>) -> List<SStmt> {
 
 fn parse_lib_objs_env() -> List<string> {
     let raw = avra_process_env_get("AVRA_LIB_OBJS")
-    mut out = []
+    mut out: List<string> = []
     for p in raw.split(":") {
         if p != "" { out.push(p) }
     }
