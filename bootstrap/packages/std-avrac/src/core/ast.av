@@ -515,6 +515,97 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
     }
 }
 
+/// Count nominal `ValueType` slots whose TypeId is the 0 sentinel.
+/// Used by typeck's T6.B probe to surface resolver gaps where a
+/// post-resolve AST still carries a name-only nominal. Recurses
+/// into containers so `List<Foo>` / `fn(Foo) -> Bar` are walked.
+export fn count_id_zero_in_vtype(t: ValueType) -> int {
+    match t {
+        .Struct(_, id) -> if id == 0 { 1 } else { 0 }
+        .Enum(_, args, id) -> {
+            let here = if id == 0 { 1 } else { 0 }
+            here + count_id_zero_in_vtypes(args)
+        }
+        .Trait(_, id) -> if id == 0 { 1 } else { 0 }
+        .Newtype(_, inner, id) -> {
+            let here = if id == 0 { 1 } else { 0 }
+            here + count_id_zero_in_vtype(inner)
+        }
+        .NarrowedEnum(_, _, id) -> if id == 0 { 1 } else { 0 }
+        .List(elem) -> count_id_zero_in_vtype(elem)
+        .Task(r) -> count_id_zero_in_vtype(r)
+        .Tuple(types) -> count_id_zero_in_vtypes(types)
+        .Union(types) -> count_id_zero_in_vtypes(types)
+        .FnTyped(params, ret) -> count_id_zero_in_vtypes(params) + count_id_zero_in_vtype(ret)
+        .Fn(ret) -> count_id_zero_in_vtype(ret)
+        .Closure(_, ret) -> count_id_zero_in_vtype(ret)
+        _ -> 0
+    }
+}
+
+/// Sum `count_id_zero_in_vtype` over a list. Worker for the
+/// container cases above.
+fn count_id_zero_in_vtypes(ts: List<ValueType>) -> int {
+    mut total = 0
+    mut i = 0
+    while i < ts.length {
+        total = total + count_id_zero_in_vtype(ts[i])
+        i = i + 1
+    }
+    total
+}
+
+/// Walk a List<SStmt> counting nominal types with id=0 across every
+/// Let / Mut / Const annotation, function param + return type, and
+/// nested module body. The post-resolve AST should land at ~0
+/// id-zero nominals once T6.B lands the resolver/typeck threading;
+/// anything > 0 surfaces a resolver gap for T6.C to assert against.
+export fn count_id_zero_nominals_stmts(stmts: List<SStmt>) -> int {
+    mut total = 0
+    mut i = 0
+    while i < stmts.length {
+        total = total + count_id_zero_nominals_stmt(stmts[i].node)
+        i = i + 1
+    }
+    total
+}
+
+fn count_id_zero_nominals_stmt(stmt: Stmt) -> int {
+    match stmt {
+        .Let(_, vt, _) -> count_id_zero_in_vtype(vt)
+        .Mut(_, vt, _) -> count_id_zero_in_vtype(vt)
+        .Const(_, vt, _) -> count_id_zero_in_vtype(vt)
+        .Function(_, _, params, ret_vt, body) ->
+            count_id_zero_in_params(params)
+                + count_id_zero_in_vtype(ret_vt)
+                + count_id_zero_nominals_stmts(body)
+        .ExternFn(_, params, ret_vt) ->
+            count_id_zero_in_params(params) + count_id_zero_in_vtype(ret_vt)
+        .If(_, then_b, else_b) -> {
+            let t_n = count_id_zero_nominals_stmt(then_b)
+            if else_b != null { t_n + count_id_zero_nominals_stmt(else_b!) } else { t_n }
+        }
+        .While(_, body) -> count_id_zero_nominals_stmt(body)
+        .For(_, _, _, body) -> count_id_zero_nominals_stmt(body)
+        .ForIn(_, _, body) -> count_id_zero_nominals_stmt(body)
+        .Block(body) -> count_id_zero_nominals_stmts(body)
+        .Module(_, body) -> count_id_zero_nominals_stmts(body)
+        .Impl(_, methods) -> count_id_zero_nominals_stmts(methods)
+        .Annotated(_, inner) -> count_id_zero_nominals_stmt(inner)
+        _ -> 0
+    }
+}
+
+fn count_id_zero_in_params(params: List<ParamEntry>) -> int {
+    mut total = 0
+    mut i = 0
+    while i < params.length {
+        total = total + count_id_zero_in_vtype(params[i].vtype)
+        i = i + 1
+    }
+    total
+}
+
 /// Pairwise `vtype_eq` over two `List<ValueType>`s. False on
 /// length mismatch.
 fn type_lists_eq(a: List<ValueType>, b: List<ValueType>) -> bool {

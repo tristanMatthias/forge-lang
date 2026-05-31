@@ -12,6 +12,7 @@ use features.list_lit.{check_list_method, check_list_lit_with_expected}
 use features.map_lit.{check_map_method}
 use features.let_stmt.{is_const_expr, bind_destructure}
 use core.{method_mangled_name, type_short_name, is_result_enum_name}
+use core.{TypeRegistry, type_registry_id_for, count_id_zero_nominals_stmts}
 use core.{avra_process_env_get}
 use list_ops.{list_push_copy, list_any, list_map}
 
@@ -528,6 +529,14 @@ type TC = {
     trait_impls: List<TraitImplEntry>,
     assoc_type_defs: List<AssocTypeEntry>,
     features: Registry,
+    // Shared TypeId allocator from the resolver (T6.B). When set, the
+    // typeck-side ValueType producers (resolve_vtype's Trait/Newtype
+    // newtype-ctor-return, …) stamp the registry's id instead of the
+    // hard-coded 0 sentinel that forced vtype_eq to fall back to
+    // name comparison. Empty registry when typeck is invoked
+    // standalone (no resolver pass) — same id=0 → name-fallback
+    // behaviour preserved.
+    type_reg: TypeRegistry,
 }
 
 /// One `impl Trait for Type` relationship. The full registry is
@@ -560,7 +569,10 @@ type ExprResult = {
 }
 
 /// Fresh empty TC at depth 0 with a fresh feature registry.
-fn tc_new() -> TC {
+/// `type_reg` is the resolver's TypeId allocator threaded through
+/// from `typecheck_program`; an empty registry preserves the
+/// id=0 sentinel behaviour for any standalone use.
+fn tc_new(type_reg: TypeRegistry) -> TC {
     let empty_shapes: List<string> = []
     let empty_assoc: List<AssocTypeEntry> = []
     let empty_impls: List<TraitImplEntry> = []
@@ -582,6 +594,7 @@ fn tc_new() -> TC {
         trait_impls: empty_impls,
         assoc_type_defs: empty_assoc,
         features: build_registry(),
+        type_reg,
     }
 }
 
@@ -664,9 +677,9 @@ export fn resolve_vtype(tc: TC, vt: ValueType) -> ValueType {
             let ua_vt = union_alias_vtype_lookup(tc.union_aliases, name)
             if !vtype_is_unknown(ua_vt) { return resolve_vtype(tc, ua_vt) }
             let nt_vt = newtype_vtype_lookup(tc.newtypes, name)
-            if !vtype_is_unknown(nt_vt) { return ValueType.Newtype(name, resolve_vtype(tc, nt_vt), 0) }
+            if !vtype_is_unknown(nt_vt) { return ValueType.Newtype(name, resolve_vtype(tc, nt_vt), type_registry_id_for(tc.type_reg, name)) }
             if struct_type_has(tc.structs, name) { return ValueType.Struct(name, 0) }
-            if trait_has(tc.traits, name) { return ValueType.Trait(name, 0) }
+            if trait_has(tc.traits, name) { return ValueType.Trait(name, type_registry_id_for(tc.type_reg, name)) }
             vt
         }
         .Enum(name, args, _) -> {
@@ -710,7 +723,7 @@ export type TypeCheckResult = {
 /// passes: pre-pass `collect_decls` registers types/fns; main
 /// `check_stmts` walks the AST inferring + checking types;
 /// `annotate_*` writes the inferred types back into SExpr.ty.
-export fn typecheck_program(stmts: List<SStmt>) -> TypeCheckResult {
+export fn typecheck_program(stmts: List<SStmt>, type_reg: TypeRegistry) -> TypeCheckResult {
     // Per-pass wall-clock timings — emitted to stderr at the end
     // when AVRA_TIMINGS_TYPECK=1 is set, so kkgf can rank the
     // four typeck passes (collect / check / naming / annotate)
@@ -718,7 +731,15 @@ export fn typecheck_program(stmts: List<SStmt>) -> TypeCheckResult {
     let timings_on = avra_process_env_get("AVRA_TIMINGS_TYPECK") != ""
     let t_start = avra_uptime_ms()
 
-    let tc0 = tc_new()
+    let tc0 = tc_new(type_reg)
+    // T6.B probe: scan the post-resolve AST for nominal types whose
+    // TypeId is the 0 sentinel. Gated by AVRA_T6_PROBE so it's free
+    // in production builds. Reports the count to stderr; T6.C
+    // promotes this to a hard assertion.
+    if avra_process_env_get("AVRA_T6_PROBE") != "" {
+        let n = count_id_zero_nominals_stmts(stmts)
+        eprintln("[T6.B] id=0 nominals in post-resolve AST: ${string(n)}")
+    }
     // Pass 1: collect declarations (types, enums, functions). The
     // single walk is order-sensitive — a Function whose return type
     // references an enum declared later in the AST will be registered
@@ -744,6 +765,15 @@ export fn typecheck_program(stmts: List<SStmt>) -> TypeCheckResult {
     let t_annotate = avra_uptime_ms()
     if timings_on {
         eprintln("[timings:typeck] collect=${string(t_collect - t_start)}ms check=${string(t_check - t_collect)}ms naming=${string(t_naming - t_check)}ms annotate=${string(t_annotate - t_naming)}ms total=${string(t_annotate - t_start)}ms")
+    }
+    // T6.B probe (post-typeck pair): re-scan the annotated AST so
+    // any id=0 nominal introduced by typeck itself (resolve_vtype,
+    // ctor returns, narrowed bindings) gets surfaced too. Delta
+    // between pre- and post-typeck counts ranks where the remaining
+    // T6.C work lives.
+    if avra_process_env_get("AVRA_T6_PROBE") != "" {
+        let n = count_id_zero_nominals_stmts(annotated)
+        eprintln("[T6.B] id=0 nominals post-typeck: ${string(n)}")
     }
     TypeCheckResult { stmts: annotated, had_error: bag_has_errors(tc3.bag), bag: tc3.bag, trait_impls: tc3.trait_impls }
 }
@@ -827,7 +857,7 @@ fn collect_decls(tc: TC, stmts: List<SStmt>) -> TC {
                     let ctor_params: List<ParamEntry> = [ParamEntry { name: "value", vtype: inner_ty }]
                     cur with {
                         newtypes: newtype_reg_register(cur.newtypes, name, inner_vt),
-                        fns: fn_type_reg_register(cur.fns, name, empty_type_params(), ctor_params, ValueType.Newtype(name, inner_ty, 0)),
+                        fns: fn_type_reg_register(cur.fns, name, empty_type_params(), ctor_params, ValueType.Newtype(name, inner_ty, type_registry_id_for(cur.type_reg, name))),
                     }
                 }
             }

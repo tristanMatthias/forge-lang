@@ -1413,8 +1413,13 @@ fn substitute_vtype(vt: ValueType, ta: List<TypeArg>) -> ValueType {
         .List(elem) -> ValueType.List(substitute_vtype(elem, ta))
         .Union(types) -> ValueType.Union(substitute_vtype_list(types, ta))
         .FnTyped(params, ret) -> ValueType.FnTyped(substitute_vtype_list(params, ta), substitute_vtype(ret, ta))
-        .Newtype(name, inner, _) -> ValueType.Newtype(name, substitute_vtype(inner, ta), 0)
-        .Enum(name, args, _) -> ValueType.Enum(name, substitute_vtype_list(args, ta), 0)
+        // Preserve the type-registry id when rebuilding the nominal —
+        // substitution touches the inner T but the outer Foo / Result
+        // shell keeps the same TypeId. Pre-T6.B both arms hard-coded
+        // 0, throwing away the resolver's id and forcing every
+        // downstream vtype_eq to fall back to nominal_names_match.
+        .Newtype(name, inner, id) -> ValueType.Newtype(name, substitute_vtype(inner, ta), id)
+        .Enum(name, args, id) -> ValueType.Enum(name, substitute_vtype_list(args, ta), id)
         .Tuple(elems) -> ValueType.Tuple(substitute_vtype_list(elems, ta))
         .Fn(ret) -> ValueType.Fn(substitute_vtype(ret, ta))
         .Closure(n, ret) -> ValueType.Closure(n, substitute_vtype(ret, ta))

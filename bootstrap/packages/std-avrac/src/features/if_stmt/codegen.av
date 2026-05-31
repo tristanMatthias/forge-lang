@@ -2,7 +2,7 @@
 // Also handles flow-sensitive type narrowing: when condition is
 // `x is .Variant`, the then-branch sees `x` as NarrowedEnum.
 
-use core.{Expr, Stmt, ValueType, VarBinding, vtype_eq, env_lookup, env_extend, vtype_enum_name}
+use core.{Expr, Stmt, ValueType, VarBinding, vtype_eq, env_lookup, env_extend, vtype_enum_name, type_registry_id_for}
 use codegen.{Ctx, EmitValue, StmtResult, ok_emit, emit_value_ptr, emit_value_ty}
 use codegen.{emit_stmt, ok_sr}
 use core.{avra_covmap_next_branch_id}
@@ -46,7 +46,7 @@ export fn narrow_env_for_is(ctx: Ctx, env: List<VarBinding>, condition: Expr) ->
     if lu.found {
         let en = vtype_enum_name(lu.ty)
         if en != "" {
-            return env_extend(env, var_name, lu.alloca, ValueType.NarrowedEnum(en, vname, 0))
+            return env_extend(env, var_name, lu.alloca, ValueType.NarrowedEnum(en, vname, type_registry_id_for(ctx.type_reg, en)))
         }
         return env
     }
@@ -55,7 +55,7 @@ export fn narrow_env_for_is(ctx: Ctx, env: List<VarBinding>, condition: Expr) ->
     if g.found {
         let en = vtype_enum_name(g.ty)
         if en != "" {
-            return env_extend(env, var_name, g.llvm_global, ValueType.NarrowedEnum(en, vname, 0))
+            return env_extend(env, var_name, g.llvm_global, ValueType.NarrowedEnum(en, vname, type_registry_id_for(ctx.type_reg, en)))
         }
     }
     env

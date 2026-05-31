@@ -3494,7 +3494,7 @@ fn main() {
             let expanded = expand_components_or_fail(with_intrinsics, ctx)
             let named = marshal_and_resolve_or_fail(expanded, ctx)
             let post_comptime = run_comptime(named.stmts)
-            let tc_result = typecheck_program(post_comptime)
+            let tc_result = typecheck_program(post_comptime, named.type_reg)
             render_and_fail_on_errors(tc_result.bag, ctx, "type check failed")
             if !check_json { println("ok") }
             return
@@ -3573,7 +3573,7 @@ fn main() {
             let expanded = expand_components_or_fail(with_intrinsics, ctx)
             let named = marshal_and_resolve_or_fail(expanded, ctx)
             let post_comptime = run_comptime(named.stmts)
-            let tc_result = typecheck_program(post_comptime)
+            let tc_result = typecheck_program(post_comptime, named.type_reg)
             render_and_fail_on_errors(tc_result.bag, ctx, "type check failed")
             let mono = monomorphize(tc_result.stmts, tc_result.trait_impls)
             render_and_fail_on_errors(mono.bag, ctx, "monomorphization failed")
@@ -3814,7 +3814,7 @@ fn main() {
         // so the typechecker sees the post-fold (literal-typed) AST.
         let post_comptime = run_comptime(named.stmts)
         // Type check — gates compilation on errors
-        let tc_result = typecheck_program(post_comptime)
+        let tc_result = typecheck_program(post_comptime, named.type_reg)
         let t_typeck = avra_uptime_ms()
         render_and_fail_on_errors(tc_result.bag, ctx, "type check failed")
         if stop_after_matches(stop_after, "check") { return }

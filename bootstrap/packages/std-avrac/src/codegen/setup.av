@@ -14,7 +14,7 @@ use codegen.{stmts_last_expr}
 use list_ops.{list_map}
 use diagnostics.{bag_new}
 use features.fn_decl.{emit_function_bodies}
-use core.{TypeRegistry, variant_payload_name}
+use core.{TypeRegistry, type_registry_id_for, variant_payload_name}
 use core.{avra_coverage_declare, avra_covmap_begin, avra_covmap_end}
 use core.{exit}
 
@@ -309,7 +309,7 @@ fn codegen_program(stmts: List<SStmt>, debug_null_checks: bool, coverage: bool, 
     let type_regs = TypeRegs { structs, enums, newtypes: cg_newtypes, union_aliases: cg_union_aliases }
     let i8t = avra_llvm_int8_type(lc)
     let i16t = avra_llvm_int16_type(lc)
-    let fn_rets = declare_functions(m, lc, i64t, i1t, dt, pt, i8t, i16t, i32t, type_regs, trait_decls, stmts, fn_ret_types_new())
+    let fn_rets = declare_functions(m, lc, i64t, i1t, dt, pt, i8t, i16t, i32t, type_regs, trait_decls, stmts, fn_ret_types_new(), type_reg)
     let empty_fp: List<FnParamMeta> = []
     let fn_params = collect_fn_params(stmts, empty_fp)
 
@@ -1364,7 +1364,7 @@ fn fill_typed_param_array_sized(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr,
 /// and the lambda special-case where a fn whose body's tail is a
 /// lambda yields a `Closure(...)` return type instead of the raw
 /// trait.
-fn resolve_fn_ret(regs: TypeRegs, traits: TraitDeclReg, rvt: ValueType, body: List<SStmt>) -> ValueType {
+fn resolve_fn_ret(regs: TypeRegs, traits: TraitDeclReg, rvt: ValueType, body: List<SStmt>, type_reg: TypeRegistry) -> ValueType {
     mut base = if vtype_is_unknown(rvt) {
         ValueType.Void
     } else {
@@ -1374,7 +1374,7 @@ fn resolve_fn_ret(regs: TypeRegs, traits: TraitDeclReg, rvt: ValueType, body: Li
                 let found = enum_reg_lookup(regs.enums, name)
                 if found.found {
                     let empty_args: List<ValueType> = []
-                    ValueType.Enum(name, empty_args, 0)
+                    ValueType.Enum(name, empty_args, type_registry_id_for(type_reg, name))
                 } else { resolved }
             }
             _ -> resolved
@@ -1382,7 +1382,7 @@ fn resolve_fn_ret(regs: TypeRegs, traits: TraitDeclReg, rvt: ValueType, body: Li
     }
     // Check if it's a trait name (use original rvt in case resolution lost the name)
     let sn = match base { .Struct(n, _) -> n, _ -> match rvt { .Struct(n, _) -> n, _ -> "" } }
-    if sn != "" && trait_decl_has(traits, sn) { base = ValueType.Trait(sn, 0) }
+    if sn != "" && trait_decl_has(traits, sn) { base = ValueType.Trait(sn, type_registry_id_for(type_reg, sn)) }
     let last = stmts_last_expr(body)
     match last {
         .Lambda(_, _) -> ValueType.Closure(-1, vtype_fn_ret(base))
@@ -1395,7 +1395,7 @@ fn resolve_fn_ret(regs: TypeRegs, traits: TraitDeclReg, rvt: ValueType, body: Li
 /// registries, builds the function-type, and registers the return
 /// ValueType in `FnRetTypes`. Aborts on duplicate function names.
 /// Recurses into impl blocks and modules.
-fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, i8t: ptr, i16t: ptr, i32t: ptr, regs: TypeRegs, traits: TraitDeclReg, stmts: List<SStmt>, reg: FnRetTypes) -> FnRetTypes {
+fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, i8t: ptr, i16t: ptr, i32t: ptr, regs: TypeRegs, traits: TraitDeclReg, stmts: List<SStmt>, reg: FnRetTypes, type_reg: TypeRegistry) -> FnRetTypes {
     mut cur = reg
     mut i = 0
     while i < stmts.length {
@@ -1412,7 +1412,7 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, i8
                 }
                 let param_arr = avra_llvm_type_array_new(arity)
                 fill_typed_param_array_sized(param_arr, i64t, i1t, dt, pt, i8t, i16t, i32t, resolved_params, 0)
-                let ret_vt = resolve_fn_ret(regs, traits, rvt, body)
+                let ret_vt = resolve_fn_ret(regs, traits, rvt, body, type_reg)
                 let ret_llvm = llvm_type_for_full_sized(i64t, i1t, dt, pt, i8t, i16t, i32t, ret_vt)
                 let fn_type = avra_llvm_function_type(ret_llvm, param_arr, arity, 0)
                 avra_llvm_type_array_free(param_arr)
@@ -1425,15 +1425,15 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, i8
                 let param_arr = avra_llvm_type_array_new(arity)
                 fill_typed_param_array_sized(param_arr, i64t, i1t, dt, pt, i8t, i16t, i32t, resolved_params, 0)
                 let empty_body: List<SStmt> = []
-                let ret_vt = resolve_fn_ret(regs, traits, ext_rvt, empty_body)
+                let ret_vt = resolve_fn_ret(regs, traits, ext_rvt, empty_body, type_reg)
                 let ret_llvm = llvm_type_for_full_sized(i64t, i1t, dt, pt, i8t, i16t, i32t, ret_vt)
                 let fn_type = avra_llvm_function_type(ret_llvm, param_arr, arity, 0)
                 avra_llvm_type_array_free(param_arr)
                 avra_llvm_add_function(m, name, fn_type)
                 fn_ret_types_register(cur, name, ret_vt)
             }
-            .Impl(_, methods) -> declare_functions(m, ctx, i64t, i1t, dt, pt, i8t, i16t, i32t, regs, traits, methods, cur)
-            .Module(_, body) -> declare_functions(m, ctx, i64t, i1t, dt, pt, i8t, i16t, i32t, regs, traits, body, cur)
+            .Impl(_, methods) -> declare_functions(m, ctx, i64t, i1t, dt, pt, i8t, i16t, i32t, regs, traits, methods, cur, type_reg)
+            .Module(_, body) -> declare_functions(m, ctx, i64t, i1t, dt, pt, i8t, i16t, i32t, regs, traits, body, cur, type_reg)
             _ -> cur
         }
         i = i + 1

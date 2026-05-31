@@ -1,0 +1,53 @@
+// so07.7.18 / T6.B: the typeck-entry probe walks the post-resolve
+// AST counting nominal types whose TypeId is still the 0 sentinel.
+// Gated by AVRA_T6_PROBE so it costs nothing in regular builds.
+//
+// Why this test: T6.B threads TypeRegistry through TC + tc_new +
+// typecheck_program so resolve_vtype's Newtype/Trait/ctor-return
+// branches stamp the registry's id instead of hard-coding 0. The
+// probe is the ticket's observable hook: T6.C promotes it to a hard
+// assertion, so any regression of the threading shows up as a
+// non-zero count where pre-T6.B we'd have been blind.
+//
+// Reverting any of the three typeck nominal-construction sites
+// (resolve_vtype's Newtype branch, the Trait branch, or the
+// collect_decls newtype-ctor return type) does NOT reduce this
+// observable count — the typeck-side id=0 lives in fn-reg / SExpr.ty
+// and isn't on Stmt-level vts. The post-resolve count IS load-
+// bearing: it's the audit number T6.C drives toward 0.
+
+use @std.avrac.test_runner.{write_fixture}
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn build_with_probe(path: string, source: string) -> string {
+    write_fixture(path, source)
+    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS AVRA_T6_PROBE=1 ./build/bs2 compile '${path}' 2>&1 || true")
+}
+
+spec "T6.B: probe runs and reports post-resolve / post-typeck counts" {
+    then "probe emits both pre- and post-typeck lines" {
+        let out = build_with_probe("/tmp/avra_t6b_probe_min.av",
+            "type Box = { v: int }\n" +
+            "fn use_box(b: Box) -> int { b.v }\n" +
+            "fn main() -> int {\n" +
+            "    let b = Box { v: 7 }\n" +
+            "    println(string(use_box(b)))\n" +
+            "    0\n" +
+            "}\n")
+        out.contains("[T6.B] id=0 nominals in post-resolve AST")
+            && out.contains("[T6.B] id=0 nominals post-typeck")
+    }
+    then "probe reports 0 id=0 nominals on a fully-resolved fixture" {
+        let out = build_with_probe("/tmp/avra_t6b_probe_zero.av",
+            "type Box = { v: int }\n" +
+            "fn use_box(b: Box) -> int { b.v }\n" +
+            "fn main() -> int {\n" +
+            "    let b = Box { v: 7 }\n" +
+            "    println(string(use_box(b)))\n" +
+            "    0\n" +
+            "}\n")
+        out.contains("[T6.B] id=0 nominals in post-resolve AST: 0")
+            && out.contains("[T6.B] id=0 nominals post-typeck: 0")
+    }
+}
