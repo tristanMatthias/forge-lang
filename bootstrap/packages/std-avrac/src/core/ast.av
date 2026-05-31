@@ -61,11 +61,20 @@ export fn sstmt_at(s: Stmt, line: int, col: int, file: string) -> SStmt { SStmt 
 export fn sstmt_dummy(s: Stmt) -> SStmt { SStmt { node: s, line: 0, col: 0, file: "", from_macro: false } }
 
 /// Unwrap a List<SStmt> into a List<Stmt> by projecting each entry's
-/// `.node` field. derive_walker (y9y4.11) emits a call to this from
-/// `Type__children()` for variants whose payload is `List<SStmt>` —
+/// `.node` field. derive_walker emits calls to this from generated
+/// Type__children() variants whose payload is `List<SStmt>` —
 /// Block / Module / Function / SpecBlock / ThenBlock / GivenBlock /
-/// TraitDecl / Match — so the walker exposes the wrapped Stmt
-/// children directly.
+/// TraitDecl / Match.
+///
+/// so07.7.2 attempted to consolidate with `unwrap_sexpr_list` via a
+/// generic `fn unwrap_node_list<W, T>(xs: List<W>) -> List<T>` — the
+/// loop body works, but generic-call inference can't pin T from the
+/// caller's expected return type alone (only from arg types), so the
+/// inner call surfaces as F1000 'returns List, body produces List'.
+/// Truly merging requires extending generic-call inference to pull
+/// type-args from the return-type context, filed as so07.7.17. Until
+/// then both helpers carry the identical 4-line body — adding a
+/// third wrapper means a third copy.
 export fn unwrap_sstmt_list(xs: List<SStmt>) -> List<Stmt> {
     mut out: List<Stmt> = []
     for x in xs { out.push(x.node) }
@@ -73,8 +82,7 @@ export fn unwrap_sstmt_list(xs: List<SStmt>) -> List<Stmt> {
 }
 
 /// Companion to `unwrap_sstmt_list` for the SExpr wrapper. Used by
-/// derive_walker on Expr variants whose payload is `List<SExpr>` —
-/// Call.args, Block (expr-position), ListLit, TupleLit, etc.
+/// derive_walker on Expr variants whose payload is `List<SExpr>`.
 export fn unwrap_sexpr_list(xs: List<SExpr>) -> List<Expr> {
     mut out: List<Expr> = []
     for x in xs { out.push(x.node) }
