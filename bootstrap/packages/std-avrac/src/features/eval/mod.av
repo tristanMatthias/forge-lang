@@ -451,7 +451,7 @@ export fn value_string(text: string) -> Value {
 }
 
 /// Construct a bool Value (`flag` is 0 or 1).
-fn value_bool(flag: int) -> Value {
+export fn value_bool(flag: int) -> Value {
     Value {
         kind: "bool",
         number_text: "",

@@ -123,19 +123,18 @@ fn failsafe_decls(target: AnnotatedDecl) -> ResolvedDecls {
 
 // ── Per-variant arm construction ──
 
-/// One field's role in the children() result.
-///
-/// `kind = 0` — scalar (no children contributed). Binding name "_".
-/// `kind = 1` — direct child (the field IS Self). Binding name = the field name;
-///              the child is the binding itself.
-/// `kind = 2` — direct list-of-self (field is List<Self>). Binding name = field
-///              name; the list flattens into the result.
-/// `kind = 3` — wrapper-list-of-self (field is List<Wrapper> where Wrapper
-///              wraps Self, e.g. List<SStmt> for Stmt or List<SExpr> for Expr).
-///              `unwrap_fn` names the helper that projects the wrapped Self
-///              out of each entry (`unwrap_sstmt_list`, `unwrap_sexpr_list`).
-///              y9y4.11.
-type Binding = { binding_name: string, is_child: bool, kind: int, unwrap_fn: string }
+/// One field's role in the children() result. so07.7.6 replaced the
+/// int-coded `kind` + sentinel-empty `unwrap_fn` with a proper enum.
+/// WrapperListOfSelf carries its unwrap helper name on the variant
+/// where it belongs.
+enum FieldKind {
+    Scalar,
+    DirectSelf,
+    ListOfSelf,
+    WrapperListOfSelf(unwrap_fn: string),
+}
+
+type Binding = { binding_name: string, kind: FieldKind }
 
 @comptime
 fn build_children_arms(variants: List<Variant>, parent_name: string) -> List<MatchArm> {
@@ -218,25 +217,35 @@ fn ends_with_qualified(qualified: string, short: string) -> bool {
 fn classify_variant(v: Variant, parent_name: string) -> List<Binding> {
     mut out: List<Binding> = []
     for f in v.fields {
-        let unwrap = wrapper_list_unwrap_fn(f.resolved, parent_name)
-        let kind = classify_field_kind(f.resolved, parent_name, unwrap)
-        let bind = if kind == 0 { "_" } else { f.name }
-        out.push(Binding { binding_name: bind, is_child: kind != 0, kind, unwrap_fn: unwrap })
+        let kind = classify_field_kind(f.resolved, parent_name)
+        let bind = if kind is .Scalar { "_" } else { f.name }
+        out.push(Binding { binding_name: bind, kind })
     }
     out
 }
 
-/// Decide what role a single field plays in `children()`. See `Binding`
-/// for the kind encoding. Direct Self / List<Self> are detected first;
-/// kind=3 fires when `unwrap` is non-empty (wrapper-list detected by
-/// `wrapper_list_unwrap_fn` — single source of truth, callers compute
-/// it once and pass it in to avoid a second classifier pass).
+/// Decide what role a single field plays in `children()`. Direct
+/// Self / List<Self> are detected first; wrapper-lists (List<SStmt>
+/// for Stmt etc.) fall to WrapperListOfSelf carrying the unwrap
+/// helper name. Anything else stays Scalar.
 @comptime
-fn classify_field_kind(vt: ValueType, parent_name: string, unwrap: string) -> int {
-    if is_self_type(vt, parent_name) { return 1 }
-    if is_list_of_self(vt, parent_name) { return 2 }
-    if unwrap != "" { return 3 }
-    0
+fn classify_field_kind(vt: ValueType, parent_name: string) -> FieldKind {
+    if is_self_type(vt, parent_name) { return FieldKind.DirectSelf }
+    if is_list_of_self(vt, parent_name) { return FieldKind.ListOfSelf }
+    let unwrap = wrapper_list_unwrap_fn(vt, parent_name)
+    if unwrap != "" { return FieldKind.WrapperListOfSelf(unwrap) }
+    FieldKind.Scalar
+}
+
+/// Extract the unwrap helper name from a WrapperListOfSelf binding;
+/// returns "" for the other kinds (caller gates on `kind is .WrapperListOfSelf`
+/// first, so the empty case is a defensive default).
+@comptime
+fn unwrap_fn_of(k: FieldKind) -> string {
+    match k {
+        .WrapperListOfSelf(fn_name) -> fn_name
+        _ -> ""
+    }
 }
 
 /// Strip a `::`-qualified prefix, returning the trailing identifier
@@ -341,9 +350,9 @@ fn pattern_for(variant_name: string, bindings: List<Binding>) -> Pattern {
 ///     unwrapping wrapper-list bindings on the way in.
 @comptime
 fn arm_body(bindings: List<Binding>) -> Expr {
-    let direct_count = count_kind(bindings, 1)
-    let list_count = count_kind(bindings, 2)
-    let wrap_count = count_kind(bindings, 3)
+    let direct_count = count_direct(bindings)
+    let list_count = count_list(bindings)
+    let wrap_count = count_wrap(bindings)
     let total_list = list_count + wrap_count
 
     if direct_count == 0 && total_list == 0 {
@@ -353,7 +362,7 @@ fn arm_body(bindings: List<Binding>) -> Expr {
     if total_list == 0 {
         mut elems: List<SExpr> = []
         for b in bindings {
-            if b.kind == 1 {
+            if b.kind is .DirectSelf {
                 elems.push(sexpr_dummy(Expr.Ident(b.binding_name)))
             }
         }
@@ -362,8 +371,8 @@ fn arm_body(bindings: List<Binding>) -> Expr {
 
     if direct_count == 0 && total_list == 1 {
         for b in bindings {
-            if b.kind == 2 { return Expr.Ident(b.binding_name) }
-            if b.kind == 3 { return list_unwrap_call(b) }
+            if b.kind is .ListOfSelf { return Expr.Ident(b.binding_name) }
+            if b.kind is .WrapperListOfSelf { return unwrap_call(b.binding_name, unwrap_fn_of(b.kind)) }
         }
     }
 
@@ -372,9 +381,9 @@ fn arm_body(bindings: List<Binding>) -> Expr {
 
 /// Build `unwrap_<wrapper>_list(field_name)` for a wrapper-list binding.
 @comptime
-fn list_unwrap_call(b: Binding) -> Expr {
-    let args: List<SExpr> = [sexpr_dummy(Expr.Ident(b.binding_name))]
-    Expr.Call(Expr.Ident(b.unwrap_fn), args)
+fn unwrap_call(field_name: string, fn_name: string) -> Expr {
+    let args: List<SExpr> = [sexpr_dummy(Expr.Ident(field_name))]
+    Expr.Call(Expr.Ident(fn_name), args)
 }
 
 @comptime
@@ -383,11 +392,23 @@ fn empty_binding_name() -> string {
 }
 
 @comptime
-fn count_kind(bindings: List<Binding>, target: int) -> int {
+fn count_direct(bindings: List<Binding>) -> int {
     mut n = 0
-    for b in bindings {
-        if b.kind == target { n = n + 1 }
-    }
+    for b in bindings { if b.kind is .DirectSelf { n = n + 1 } }
+    n
+}
+
+@comptime
+fn count_list(bindings: List<Binding>) -> int {
+    mut n = 0
+    for b in bindings { if b.kind is .ListOfSelf { n = n + 1 } }
+    n
+}
+
+@comptime
+fn count_wrap(bindings: List<Binding>) -> int {
+    mut n = 0
+    for b in bindings { if b.kind is .WrapperListOfSelf { n = n + 1 } }
     n
 }
 
@@ -405,18 +426,18 @@ fn count_kind(bindings: List<Binding>, target: int) -> int {
 fn block_expr_for_children(bindings: List<Binding>) -> Expr {
     mut direct_elems: List<SExpr> = []
     for b in bindings {
-        if b.kind == 1 {
+        if b.kind is .DirectSelf {
             direct_elems.push(sexpr_dummy(Expr.Ident(b.binding_name)))
         }
     }
     mut acc: Expr = Expr.ListLit(direct_elems)
     for b in bindings {
-        if b.kind == 2 {
+        if b.kind is .ListOfSelf {
             let args: List<SExpr> = [sexpr_dummy(acc), sexpr_dummy(Expr.Ident(b.binding_name))]
             acc = Expr.Call(Expr.Ident("list_concat"), args)
         }
-        if b.kind == 3 {
-            let args: List<SExpr> = [sexpr_dummy(acc), sexpr_dummy(list_unwrap_call(b))]
+        if b.kind is .WrapperListOfSelf {
+            let args: List<SExpr> = [sexpr_dummy(acc), sexpr_dummy(unwrap_call(b.binding_name, unwrap_fn_of(b.kind)))]
             acc = Expr.Call(Expr.Ident("list_concat"), args)
         }
     }

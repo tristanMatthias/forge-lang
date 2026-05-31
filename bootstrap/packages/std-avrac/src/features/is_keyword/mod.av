@@ -2,18 +2,20 @@
 use core.{feature_new, Feature}
 use resolve.{resolve_expr}
 use features.is_keyword.codegen.{emit_is_check}
+use features.eval.{eval_expr, ok_result, error_result, value_bool, Runtime, StepResult, step_had_error, step_runtime, step_value}
 use typeck.{check_expr, tc_er}
 
 /// Register the `is` operator feature. Used for runtime variant
 /// checks (`x is .Some`) — produces a Bool. Wired up to the
-/// resolver, type-checker, and codegen via the standard tag-based
-/// dispatch.
+/// resolver, type-checker, codegen, and the @comptime evaluator
+/// via the standard tag-based dispatch.
 export fn is_keyword_feature() -> Feature {
     feature_new("is") with {
         expr_tag: Expr.IsCheck(Expr.Null, ""),
         emit_expr: emit_is_check,
         resolve_expr: is_resolve,
         check_expr: is_check,
+        eval_expr: is_eval,
     }
 }
 
@@ -38,5 +40,24 @@ fn is_check(tc: TC, expr: Expr) -> ExprResult {
             tc_er(s.tc, .Bool)
         }
         _ -> tc_er(tc, .Unknown)
+    }
+}
+
+/// @comptime eval hook for `IsCheck`. so07.7.6 needed `k is .Scalar`
+/// inside derive_walker; the noop_eval_expr dispatch was firing
+/// 'no eval_expr handler' because no feature registered an eval for
+/// IsCheck. Eval the subject, compare its enum_variant to the
+/// pattern's variant name. Non-enum subjects always evaluate false
+/// (matches runtime semantics).
+fn is_eval(rt: Runtime, expr: Expr) -> StepResult {
+    match expr {
+        .IsCheck(subject, variant_name) -> {
+            let s = eval_expr(rt, subject)
+            if step_had_error(s) { return s }
+            let v = step_value(s)
+            let matched = v.kind == "enum" && v.enum_variant == variant_name
+            ok_result(step_runtime(s), value_bool(matched))
+        }
+        _ -> error_result(rt, "is_eval: expected IsCheck expression")
     }
 }
