@@ -1,0 +1,64 @@
+// y9y4.16: a self-recursive generic fn (e.g. Tree.fold<S>) must
+// monomorphize once per concrete S, with the spec body's recursive
+// call resolving to the SAME spec — not to a junk
+// `Type__fn__` (empty-mangle) function that the codegen then refuses
+// as "duplicate function" or "undefined function".
+//
+// Why this used to break: monomorphize's substitute_expr_list drops
+// SExpr.ty when copying a generic body into its specialization. The
+// pass-4 call-site rewriter then can't infer the type args for the
+// recursive call (it reads arg.ty), mangles it to "Type__fn__"
+// (empty slug) and either emits a junk spec by that name (collides
+// with sibling) or a dangling call (codegen errors).
+//
+// The fix wires the spec's known TA back into the body via a
+// post-substitution self-recursive-call rewriter, so
+// `Type__fn(...)` calls inside `Type__fn__T`'s body get renamed to
+// `Type__fn__T(...)` directly — no inference needed.
+
+use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+
+fn run_capture(source: string) -> string {
+    write_fixture_and_run_no_metadata("/tmp/avra_y9y416_self_recursive_fixture.av", source)
+}
+
+spec "y9y4.16: self-recursive generic monomorphizes once per concrete arg" {
+    then "Tree.fold<S=int> recurses through Nodes without duplicate-function or undefined-function errors" {
+        let out = run_capture(
+            "use @std.avrac.features.walker.{derive_walker}\n" +
+            "\n" +
+            "@expand(derive_walker)\n" +
+            "enum YTree {\n" +
+            "    Leaf(v: int),\n" +
+            "    Node(l: YTree, r: YTree),\n" +
+            "}\n" +
+            "\n" +
+            "fn sum_leaves(acc: int, t: YTree) -> int {\n" +
+            "    match t {\n" +
+            "        .Leaf(v) -> acc + v\n" +
+            "        .Node(l, r) -> acc\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "fn YTree__fold<S>(self: YTree, init: S, f: fn(S, YTree) -> S) -> S {\n" +
+            "    mut acc: S = f(init, self)\n" +
+            "    for c in self.children() {\n" +
+            "        acc = c.fold(acc, f)\n" +
+            "    }\n" +
+            "    acc\n" +
+            "}\n" +
+            "\n" +
+            "fn main() -> int {\n" +
+            "    let inner = YTree.Node(YTree.Leaf(1), YTree.Leaf(2))\n" +
+            "    let t = YTree.Node(inner, YTree.Leaf(4))\n" +
+            "    let s = t.fold(0, sum_leaves)\n" +
+            "    println(\"sum=\" + string(s))\n" +
+            "    0\n" +
+            "}\n")
+        // 1+2+4 = 7 — sum reaches every leaf, so recursion must work
+        // through both internal Nodes.
+        out.contains("sum=7")
+            && !out.contains("duplicate function")
+            && !out.contains("undefined function")
+    }
+}

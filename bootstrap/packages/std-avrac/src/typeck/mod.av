@@ -2241,11 +2241,9 @@ fn method_to_free_fn_call(tc: TC, callee: Expr, args: List<SExpr>) -> Expr? {
                 .Newtype(n, _, _) -> n
                 _ -> ""
             }
-            eprintln("[M2F] method=${method} type_name=${type_name} obj_ty=${vtype_display(o.ty)}")
             if type_name == "" { return null }
             let mangled = method_mangled_name(type_name, method)
             let r = fn_type_get(tc.fns, mangled)
-            eprintln("[M2F]   mangled=${mangled} found=${string(r.found)} tp=${string(r.tp.length)}")
             // Only rewrite for GENERIC methods — the non-generic
             // case dispatches cleanly through codegen's existing
             // emit_method_call (which prepends self at the call
