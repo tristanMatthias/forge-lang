@@ -11,7 +11,7 @@ use core.{
     FieldInit, FieldEntry,
     Variant, Pattern, MatchArm, WhenArm, Annotation,
     binop_str, unop_str, logicop_str,
-    vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq,
+    vtype_render_full, vtype_is_unknown, vtype_eq,
     render_type_param_list,
 }
 use list_ops.{list_map}
@@ -207,7 +207,10 @@ fn fmt_field_init_list(inits: List<FieldInit>) -> string {
 /// indented line.
 fn fmt_field_decl_list(fields: List<FieldEntry>, depth: int) -> string {
     let ind = fmt_indent(depth)
-    list_map(fields, (e: FieldEntry) -> "${ind}${e.name}: ${vtype_display(e.resolved)}").join("\n")
+    // vtype_render_full: struct/shape decls need round-trippable
+    // type info — same reason as Let/Mut/Const annotations in
+    // fmt_stmt. so07.7.3.
+    list_map(fields, (e: FieldEntry) -> "${ind}${e.name}: ${vtype_render_full(e.resolved)}").join("\n")
 }
 
 /// Render an enum-variant list — one `Name(field: T, ...)` per
@@ -221,7 +224,7 @@ fn fmt_variant_list(variants: List<Variant>, depth: int) -> string {
 /// or empty when the variant carries no payload.
 fn fmt_variant_fields(fields: List<FieldEntry>) -> string {
     if fields.length == 0 { return "" }
-    "(${list_map(fields, (e: FieldEntry) -> "${e.name}: ${vtype_display(e.resolved)}").join(", ")})"
+    "(${list_map(fields, (e: FieldEntry) -> "${e.name}: ${vtype_render_full(e.resolved)}").join(", ")})"
 }
 
 /// Render a match-arm pattern.

@@ -1026,48 +1026,15 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
         }
         .Module(_, body) -> check_stmts(tc, body)
         .Annotated(_, inner) -> check_stmt(tc, inner)
-        .If(cond, then_b, else_b) -> {
-            let c1 = check_expr(tc, cond)
-            let c2 = check_stmt(c1.tc, then_b)
-            if else_b != null { check_stmt(c2, else_b!) } else { c2 }
-        }
-        .While(cond, body) -> {
-            let c1 = check_expr(tc, cond)
-            check_stmt(c1.tc, body)
-        }
-        .For(vname, start, end, body) -> {
-            let c1 = check_expr(tc, start)
-            let c2 = check_expr(c1.tc, end)
-            let inner = tc_enter(c2.tc)
-            let bound = tc_bind(inner, vname, .Int)
-            let after = check_stmt(bound, body)
-            tc_exit(after)
-        }
-        .ForIn(vname, coll, body) -> {
-            let c1 = check_expr(tc, coll)
-            let elem_ty = vtype_list_elem(c1.ty)
-            let inner = tc_enter(c1.tc)
-            let bound = tc_bind(inner, vname, elem_ty)
-            let after = check_stmt(bound, body)
-            tc_exit(after)
-        }
-        .Match(subj, arms) -> {
-            let s = check_expr(tc, subj)
-            tc_check_exhaustive(s.tc, s.ty, arms)
-        }
-        .Defer(body) -> {
-            let r = check_expr(tc, body)
-            r.tc
-        }
-        .LetDestructure(names, init) -> {
-            let r = check_expr(tc, init)
-            // Bind each destructured name to its tuple-position
-            // type. Without this, `let (a, b) = pair` typechecks
-            // `pair` but leaves `a`/`b` unbound — every later
-            // `.field` access on a destructured tuple element
-            // would fall back to Unknown and ICE at codegen.
-            bind_destructure(r.tc, names, r.ty)
-        }
+        // .If / .While / .For / .ForIn / .Defer / .Match /
+        // .LetDestructure: deferred to feature handlers (if_check_stmt,
+        // while_check, for_check, for_in_check, defer_check,
+        // match_check_stmt, let_destructure_check_stmt). The previous
+        // inline duplicates were stripped-down (e.g. didn't validate
+        // that `if`/`while` conditions are bool, and Stmt.Match
+        // skipped arm-body typeck entirely — so07.7.4 root cause).
+        // Falling through to dispatch_stmt_check makes the registry
+        // the single source of truth and the feature handlers run.
         _ -> {
             let tag = avra_stmt_tag(stmt)
             let result = dispatch_stmt_check(tc.features, tag, tc, stmt)
