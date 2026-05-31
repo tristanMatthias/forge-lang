@@ -194,10 +194,6 @@ fn self_type_name(vt: ValueType) -> string {
     }
 }
 
-// `name_matches` + `ends_with_qualified` retired by so07.7.1 —
-// the centralized `nominal_names_match` in core/ast.av carries
-// the same bare-vs-FQN suffix tolerance.
-
 @comptime
 fn classify_variant(v: Variant, parent_name: string, ctx: ResolverCtx) -> List<Binding> {
     mut out: List<Binding> = []

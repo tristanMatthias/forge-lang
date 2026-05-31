@@ -404,9 +404,6 @@ fn nominal_name(t: ValueType) -> string {
     }
 }
 
-// `names_alias` retired by so07.7.1 — `nominal_names_match` in
-// core/ast.av carries the centralized bare-vs-FQN tolerance.
-
 /// Look up `enum_name`'s `variant_name` field list, trying the name
 /// as-given then its `::`-stripped short form. Returns `[]` on miss.
 fn variant_field_list(reg: EnumTypeReg, enum_name: string, variant_name: string) -> List<FieldEntry> {
