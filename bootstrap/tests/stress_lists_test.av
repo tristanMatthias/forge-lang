@@ -1,7 +1,7 @@
 // Stress: large list, chained operations, nested, slicing
 
 fn stl_build_big() -> int {
-    mut big = []
+    mut big: List<int> = []
     for i in 0..100 {
         big.push(i)
     }
@@ -9,7 +9,7 @@ fn stl_build_big() -> int {
 }
 
 fn stl_big_first() -> int {
-    mut big = []
+    mut big: List<int> = []
     for i in 0..100 {
         big.push(i)
     }
@@ -17,7 +17,7 @@ fn stl_big_first() -> int {
 }
 
 fn stl_big_last() -> int {
-    mut big = []
+    mut big: List<int> = []
     for i in 0..100 {
         big.push(i)
     }
@@ -26,7 +26,7 @@ fn stl_big_last() -> int {
 
 fn stl_flatten_matrix() -> int {
     let matrix1 = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
-    mut flat1 = []
+    mut flat1: List<int> = []
     for row in matrix1 {
         for val in row {
             flat1.push(val)
@@ -37,7 +37,7 @@ fn stl_flatten_matrix() -> int {
 
 fn stl_flatten_mid_val() -> int {
     let matrix2 = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
-    mut flat2 = []
+    mut flat2: List<int> = []
     for row in matrix2 {
         for val in row {
             flat2.push(val)

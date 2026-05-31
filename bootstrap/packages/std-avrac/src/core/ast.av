@@ -540,7 +540,6 @@ export fn vtype_assignable(src: ValueType, dst: ValueType) -> bool {
 /// Annotations stay (they're correct + defense-in-depth); the
 /// wildcard stays until the metadata fix.
 fn assignable_with_unknowns(src: ValueType, dst: ValueType) -> bool {
-    if src is .Unknown || dst is .Unknown { return true }
     // Concretely-equal leaves (e.g. nested `Int` vs `Int` inside a Tuple
     // whose siblings differ) need to short-circuit to true; otherwise the
     // container recursion drills into a primitive and falls off the match.

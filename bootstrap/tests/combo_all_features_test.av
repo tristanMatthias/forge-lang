@@ -57,7 +57,7 @@ fn caf_run() -> string {
     println(string(total))
 
     let words = "hello world foo bar".split(" ")
-    mut long_words = []
+    mut long_words: List<string> = []
     for w in words {
         let keep = match w {
             _ if w.length >= 4 -> 1

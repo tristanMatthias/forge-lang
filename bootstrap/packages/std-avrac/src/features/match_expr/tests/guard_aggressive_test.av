@@ -69,7 +69,7 @@ spec "guard aggressive" {
     then "grades from scores" {
         avra_test_capture_start()
         let scores = [95, 82, 67, 91, 43, 78]
-        mut grades = []
+        mut grades: List<string> = []
         for s in scores {
             let grade = match s {
                 _ if s >= 90 -> "A"

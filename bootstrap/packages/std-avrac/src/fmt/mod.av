@@ -81,15 +81,19 @@ export fn fmt_stmt(ss: Stmt, depth: int) -> string {
     let ind = fmt_indent(depth)
     match ss {
         .Let(name, vt, init) -> {
-            let ty_part = if vtype_display(vt) == "" { "" } else { ": ${vtype_display(vt)}" }
+            // so07.7.3: vtype_render_full not vtype_display — the latter
+            // renders `List<U>` as bare `List`, lossy on round-trip
+            // through the metadata fast-path's body serializer. fmt_*
+            // must produce parseable source, not pretty error messages.
+            let ty_part = if vtype_is_unknown(vt) { "" } else { ": ${vtype_render_full(vt)}" }
             "${ind}let ${name}${ty_part} = ${fmt_expr(init)}"
         }
         .Mut(name, vt, init) -> {
-            let ty_part = if vtype_display(vt) == "" { "" } else { ": ${vtype_display(vt)}" }
+            let ty_part = if vtype_is_unknown(vt) { "" } else { ": ${vtype_render_full(vt)}" }
             "${ind}mut ${name}${ty_part} = ${fmt_expr(init)}"
         }
         .Const(name, vt, init) -> {
-            let ty_part = if vtype_display(vt) == "" { "" } else { ": ${vtype_display(vt)}" }
+            let ty_part = if vtype_is_unknown(vt) { "" } else { ": ${vtype_render_full(vt)}" }
             "${ind}const ${name}${ty_part} = ${fmt_expr(init)}"
         }
         .Expr(se) -> "${ind}${fmt_expr(se)}"
@@ -108,7 +112,7 @@ export fn fmt_stmt(ss: Stmt, depth: int) -> string {
         .Function(name, tp, params, rvt, body) -> {
             let tp_str = render_type_param_list(tp)
             let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
-            let ret_part = if vtype_eq(rvt, .Void) { "" } else { " -> ${vtype_display(rvt)}" }
+            let ret_part = if vtype_eq(rvt, .Void) { "" } else { " -> ${vtype_render_full(rvt)}" }
             "${ind}fn ${name}${tp_part}(${fmt_param_list_typed(params)})${ret_part} {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
         }
         .Return(value) -> "${ind}return ${fmt_expr(value)}"
@@ -139,7 +143,7 @@ export fn fmt_stmt(ss: Stmt, depth: int) -> string {
             "${ind}${impl_header} {\n${fmt_stmt_list(methods, depth + 1)}\n${ind}}"
         }
         .NoOp -> ""
-        .ExternFn(name, params, rvt) -> "${ind}extern fn ${name}(${fmt_param_list_typed(params)}) -> ${vtype_display(rvt)}"
+        .ExternFn(name, params, rvt) -> "${ind}extern fn ${name}(${fmt_param_list_typed(params)}) -> ${vtype_render_full(rvt)}"
         .Break -> "${ind}break"
         .Continue -> "${ind}continue"
         .TraitDecl(name, methods) -> "${ind}trait ${name} {\n${fmt_stmt_list(methods, depth + 1)}\n${ind}}"
@@ -180,7 +184,10 @@ fn fmt_param_list_comma(params: List<ParamEntry>) -> string {
 /// Render `List<ParamEntry>` with type annotations.
 fn fmt_param_list_typed(params: List<ParamEntry>) -> string {
     list_map(params, (p: ParamEntry) -> {
-        let ty_part = if vtype_is_unknown(p.vtype) { "" } else { ": ${vtype_display(p.vtype)}" }
+        // so07.7.3: vtype_render_full preserves generic args
+        // (`List<U>` not `List`) so metadata-serialized bodies
+        // round-trip through the parser correctly.
+        let ty_part = if vtype_is_unknown(p.vtype) { "" } else { ": ${vtype_render_full(p.vtype)}" }
         p.name + ty_part
     }).join(", ")
 }

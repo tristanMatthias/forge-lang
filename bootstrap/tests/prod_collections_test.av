@@ -12,7 +12,7 @@ fn pcol_find_max(scores: List<int>) -> int {
 
 fn pcol_flatten_sum() -> int {
     let matrix = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
-    mut flat = []
+    mut flat: List<int> = []
     for row in matrix {
         for val in row {
             flat.push(val)

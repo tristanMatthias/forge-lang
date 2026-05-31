@@ -23,7 +23,7 @@ fn probe(name: string, ok: bool) {
 // file so we can verify (a) every command ran and (b) the rc folds
 // correctly when one fails.
 fn cmds_with_markers(n: int, marker_dir: string) -> List<string> {
-    mut cmds = []
+    mut cmds: List<string> = []
     mut i = 0
     while i < n {
         cmds.push("touch ${marker_dir}/job${string(i)}.done; sleep 0.05; exit 0")
