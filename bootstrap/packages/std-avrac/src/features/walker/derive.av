@@ -16,7 +16,7 @@
 //      method name) so codegen's dot-notation dispatch finds it
 //      via the standard method-lookup path.
 
-use core.{Stmt, SStmt, Expr, SExpr, ParamEntry, TypeParamEntry, Pattern, MatchArm, ValueType, Variant, FieldEntry, sexpr_dummy, sstmt_dummy}
+use core.{Stmt, SStmt, Expr, SExpr, ParamEntry, TypeParamEntry, Pattern, MatchArm, ValueType, Variant, FieldEntry, sexpr_dummy, sstmt_dummy, type_short_name}
 use features.comptime.{AnnotatedDecl, ResolverCtx, ResolvedDecls, DeclSymbol, DeclKind, MacroProvenance}
 use diagnostics.{Span}
 
@@ -248,25 +248,6 @@ fn unwrap_fn_of(k: FieldKind) -> string {
     }
 }
 
-/// Strip a `::`-qualified prefix, returning the trailing identifier
-/// (the type's short / bare form). Returns the input unchanged when
-/// no `::` is present. Uses string indexing now that so07.7.9 added
-/// `s[i]` to the @comptime evaluator — back-scan from the end finds
-/// the last `::` in O(name.length) without substring allocations.
-@comptime
-fn short_name(name: string) -> string {
-    if name == "" { return "" }
-    let len = name.length
-    mut i = len - 1
-    while i > 0 {
-        if name[i] == ":" && name[i - 1] == ":" {
-            return name.substring(i + 1, len)
-        }
-        i = i - 1
-    }
-    name
-}
-
 /// True when `vt` is `List<X>` where `X` is the parent type. Covers the
 /// declared-list shapes like `Pattern.NestedVariant(_, sub_patterns:
 /// List<Pattern>)` and `ValueType.Tuple(elements: List<ValueType>)`.
@@ -287,7 +268,7 @@ fn is_list_of_self(vt: ValueType, parent_name: string) -> bool {
 @comptime
 fn wrapper_list_unwrap_fn(vt: ValueType, parent_name: string) -> string {
     let elem = list_elem_or_unknown(vt)
-    let wrapper = short_name(self_type_name(elem))
+    let wrapper = type_short_name(self_type_name(elem))
     if wrapper == "" { return "" }
     let inner = wrapper_inner_type(wrapper)
     if inner == "" { return "" }

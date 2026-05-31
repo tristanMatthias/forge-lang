@@ -175,10 +175,24 @@ export fn mangle_join(a: string, b: string) -> string {
 /// Strip the module prefix from a qualified name. Returns the input
 /// unchanged when no `::` is present.
 /// Example: `"codegen::types::Ctx" → "Ctx"`.
+///
+/// `@comptime` so derive_walker / quote_expr / future @expand macros
+/// can call this directly instead of duplicating the scan logic. Uses
+/// back-scanning string indexing (no `.split` allocation) for both
+/// runtime efficiency and @comptime eval compatibility (`.split` is
+/// not yet in the @comptime evaluator's string method surface).
+@comptime
 export fn type_short_name(name: string) -> string {
-    if !name.contains("::") { return name }
-    let parts = name.split("::")
-    parts[parts.length - 1]
+    if name == "" { return "" }
+    let len = name.length
+    mut i = len - 1
+    while i > 0 {
+        if name[i] == ":" && name[i - 1] == ":" {
+            return name.substring(i + 1, len)
+        }
+        i = i - 1
+    }
+    name
 }
 
 /// Heuristic: a name is method-mangled if it contains `__`. Cheap;
