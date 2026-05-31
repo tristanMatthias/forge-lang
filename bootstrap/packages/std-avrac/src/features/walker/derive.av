@@ -16,7 +16,7 @@
 //      method name) so codegen's dot-notation dispatch finds it
 //      via the standard method-lookup path.
 
-use core.{Stmt, SStmt, Expr, SExpr, ParamEntry, TypeParamEntry, Pattern, MatchArm, ValueType, Variant, FieldEntry, sexpr_dummy, sstmt_dummy, type_short_name, nominal_names_match}
+use core.{Stmt, SStmt, Expr, SExpr, ParamEntry, TypeParamEntry, Pattern, MatchArm, ValueType, Variant, FieldEntry, BinOp, sexpr_dummy, sstmt_dummy, type_short_name, nominal_names_match}
 use features.comptime.{AnnotatedDecl, ResolverCtx, ResolvedDecls, DeclSymbol, DeclKind, MacroProvenance, ResolvedType, ctx_lookup_type, ctx_unwrap_path_to}
 use diagnostics.{Span}
 
@@ -46,6 +46,8 @@ export fn derive_walker(target: AnnotatedDecl, ctx: ResolverCtx) -> ResolvedDecl
     let visit_fn = build_visit_fn(view.name)
     let any_fn = build_any_fn(view.name)
     let find_fn = build_find_fn(view.name)
+    let map_arms = build_map_arms(view.variants, view.name, ctx)
+    let map_fn = build_map_fn(map_arms, view.name)
 
     let decls: List<SStmt> = [
         sstmt_dummy(target.stmt),
@@ -53,11 +55,13 @@ export fn derive_walker(target: AnnotatedDecl, ctx: ResolverCtx) -> ResolvedDecl
         sstmt_dummy(visit_fn),
         sstmt_dummy(any_fn),
         sstmt_dummy(find_fn),
+        sstmt_dummy(map_fn),
     ]
     let children_mangled = "${view.name}__children"
     let visit_mangled = "${view.name}__visit"
     let any_mangled = "${view.name}__any"
     let find_mangled = "${view.name}__find"
+    let map_mangled = "${view.name}__map"
     // Mangled `Type__method` names register so the introduces-
     // validation pass can find them in the spliced decl list.
     let introduces: List<DeclSymbol> = [
@@ -80,6 +84,11 @@ export fn derive_walker(target: AnnotatedDecl, ctx: ResolverCtx) -> ResolvedDecl
             name: find_mangled,
             kind: DeclKind.Method(view.name),
             canonical_path: find_mangled,
+        },
+        DeclSymbol {
+            name: map_mangled,
+            kind: DeclKind.Method(view.name),
+            canonical_path: map_mangled,
         },
     ]
     let provenance = MacroProvenance {
@@ -582,4 +591,129 @@ fn build_find_fn(enum_name: string) -> Stmt {
         sstmt_dummy(null_return),
     ]
     Stmt.Function("${enum_name}__find", empty_tp, params, self_ty, body)
+}
+
+// ── Slice B: map() — per-variant constructor reconstruction with f
+//                    applied to direct-Self fields, list_map over
+//                    List<Self> fields. so07/y9y4.2.
+//
+// Shape:
+//   fn Type__map(self: Type, f: fn(Type) -> Type) -> Type {
+//       match self {
+//           .V1(s) -> .V1(s)                                 // scalars only
+//           .V2(x) -> .V2(f(x))                              // one direct Self
+//           .V3(xs) -> .V3(list_map(xs, f))                  // one List<Self>
+//           .V4(s, x, xs, w) -> .V4(s, f(x), list_map(xs, f), w)
+//       }
+//   }
+//
+// Wrapper-list fields (List<SStmt>, List<SExpr>) pass through
+// unchanged — re-wrapping a transformed Stmt back into an SStmt
+// would lose line/col span info, which the parent context owns.
+// The reachable inner Stmt remains visitable via the outer
+// `Stmt__visit` walk; map's invariant is just "rebuild the variant
+// constructor", not "rewrite the spans".
+
+/// Build one map arm: `.Variant(b1, b2, ...) -> .Variant(t1, t2, ...)`
+/// where ti = f(bi) for DirectSelf, list_map(bi, f) for ListOfSelf,
+/// bi unchanged for Scalar / WrapperListOfSelf.
+@comptime
+fn build_map_arm(v: Variant, parent_name: string, ctx: ResolverCtx) -> MatchArm {
+    let bindings = classify_variant(v, parent_name, ctx)
+    let pat = map_pattern_for(v.name, bindings)
+    let body = map_arm_body(v.name, parent_name, bindings)
+    MatchArm {
+        pattern: pat,
+        guard: null,
+        body: sexpr_dummy(body),
+    }
+}
+
+/// Map's per-variant pattern: every named binding stays bound — even
+/// scalars, because map's body reconstructs the variant with each
+/// scalar in its original slot. (Children's pattern was free to bind
+/// scalars to `_`; map can't because it needs to read them back.)
+@comptime
+fn map_pattern_for(variant_name: string, bindings: List<Binding>) -> Pattern {
+    mut params: List<ParamEntry> = []
+    for b in bindings {
+        let name = if b.binding_name == "_" { fresh_scalar_name(params.length) } else { b.binding_name }
+        params.push(ParamEntry { name: name, vtype: ValueType.Unknown })
+    }
+    Pattern.Variant(variant_name, params)
+}
+
+/// Build a deterministic scalar-binding name. Pattern parser permits
+/// `_` for unread fields; map needs every field readable so we mint
+/// `__avra_map_s<i>` instead. The leading double-underscore keeps it
+/// distinct from any user identifier (spec Axis 28 forbids `__`).
+@comptime
+fn fresh_scalar_name(idx: int) -> string {
+    "__avra_map_s${string(idx)}"
+}
+
+@comptime
+fn map_arm_body(variant_name: string, parent_name: string, bindings: List<Binding>) -> Expr {
+    mut params: List<ParamEntry> = []
+    for b in bindings {
+        let name = if b.binding_name == "_" { fresh_scalar_name(params.length) } else { b.binding_name }
+        params.push(ParamEntry { name: name, vtype: ValueType.Unknown })
+    }
+    mut args: List<SExpr> = []
+    mut idx = 0
+    while idx < bindings.length {
+        let b = bindings[idx]
+        let bind_name = params[idx].name
+        let arg_expr = match b.kind {
+            .DirectSelf -> map_call_on_field(bind_name)
+            .ListOfSelf -> list_map_call(bind_name)
+            _ -> Expr.Ident(bind_name)
+        }
+        args.push(sexpr_dummy(arg_expr))
+        idx = idx + 1
+    }
+    Expr.EnumCtor(parent_name, variant_name, args)
+}
+
+/// `f(bind_name)` — the per-field transform applied to a direct-Self.
+@comptime
+fn map_call_on_field(bind_name: string) -> Expr {
+    let call_args: List<SExpr> = [sexpr_dummy(Expr.Ident(bind_name))]
+    Expr.Call(Expr.Ident("f"), call_args)
+}
+
+/// `list_map(bind_name, f)` — map f over a List<Self>. The generic
+/// list_map helper's inference pins T,U from xs's element type and
+/// f's signature, so no explicit type-args needed here.
+@comptime
+fn list_map_call(bind_name: string) -> Expr {
+    let lm_args: List<SExpr> = [sexpr_dummy(Expr.Ident(bind_name)), sexpr_dummy(Expr.Ident("f"))]
+    Expr.Call(Expr.Ident("list_map"), lm_args)
+}
+
+@comptime
+fn build_map_arms(variants: List<Variant>, parent_name: string, ctx: ResolverCtx) -> List<MatchArm> {
+    mut arms: List<MatchArm> = []
+    for v in variants {
+        arms.push(build_map_arm(v, parent_name, ctx))
+    }
+    arms
+}
+
+/// Build `fn Type__map(self: Type, f: fn(Type) -> Type) -> Type {
+///     match self { arms }
+/// }`. Mirror of the other Type__method emitters' shape.
+@comptime
+fn build_map_fn(arms: List<MatchArm>, enum_name: string) -> Stmt {
+    let no_type_args: List<ValueType> = []
+    let self_ty = ValueType.Enum(enum_name, no_type_args, 0)
+    let f_param_types: List<ValueType> = [self_ty]
+    let f_ty = ValueType.FnTyped(f_param_types, self_ty)
+    let self_param = ParamEntry { name: "self", vtype: self_ty }
+    let f_param = ParamEntry { name: "f", vtype: f_ty }
+    let params: List<ParamEntry> = [self_param, f_param]
+    let empty_tp: List<TypeParamEntry> = []
+    let match_expr = Expr.MatchExpr(Expr.Ident("self"), arms)
+    let body: List<SStmt> = [sstmt_dummy(Stmt.Expr(match_expr))]
+    Stmt.Function("${enum_name}__map", empty_tp, params, self_ty, body)
 }
