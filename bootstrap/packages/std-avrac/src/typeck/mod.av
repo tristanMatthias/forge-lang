@@ -260,8 +260,11 @@ fn struct_type_has(reg: StructTypeReg, name: string) -> bool {
     avra_map_has_cstr(reg.idx, name) != 0
 }
 
-/// One enum's metadata in EnumTypeReg's `ord` list.
-type EnumTypeMeta = { name: string, variants: List<Variant> }
+/// One enum's metadata in EnumTypeReg's `ord` list. `tp` carries
+/// the enum's declared type parameters so pattern-binding
+/// substitution can map `T` → concrete from the subject's
+/// `.Enum(_, type_args, _)` shape (so07.7.4 step 2).
+type EnumTypeMeta = { name: string, tp: List<TypeParamEntry>, variants: List<Variant> }
 
 /// Enum-name → `List<Variant>` table. Mirror of StructTypeReg for
 /// enums — hashmap-backed for O(1) lookup.
@@ -274,10 +277,10 @@ fn enum_type_reg_new() -> EnumTypeReg {
     EnumTypeReg { ord: [], idx: avra_map_new_cstr() }
 }
 
-fn enum_type_reg_register(reg: EnumTypeReg, name: string, variants: List<Variant>) -> EnumTypeReg {
+fn enum_type_reg_register(reg: EnumTypeReg, name: string, tp: List<TypeParamEntry>, variants: List<Variant>) -> EnumTypeReg {
     mut ord = reg.ord
     let new_idx = ord.length
-    ord.push(EnumTypeMeta { name, variants })
+    ord.push(EnumTypeMeta { name, tp, variants })
     avra_map_set_cstr(reg.idx, name, new_idx)
     EnumTypeReg { ord, idx: reg.idx }
 }
@@ -297,6 +300,18 @@ export fn enum_type_variants(reg: EnumTypeReg, name: string) -> List<Variant> {
     }
     let i = avra_map_get_cstr(reg.idx, name)
     reg.ord[i].variants
+}
+
+/// Look up an enum's type-param list by enum name. Returns empty
+/// when the enum isn't registered or has no generics — callers
+/// short-circuit substitution in that case. so07.7.4.
+export fn enum_type_params(reg: EnumTypeReg, name: string) -> List<TypeParamEntry> {
+    if avra_map_has_cstr(reg.idx, name) == 0 {
+        let empty: List<TypeParamEntry> = []
+        return empty
+    }
+    let i = avra_map_get_cstr(reg.idx, name)
+    reg.ord[i].tp
 }
 
 /// Find a variant by name within a variant list. Returns null when
@@ -829,11 +844,11 @@ fn collect_decls(tc: TC, stmts: List<SStmt>) -> TC {
                     }
                 }
             }
-            .EnumDecl(name, _, variants) -> {
+            .EnumDecl(name, tp, variants) -> {
                 if is_duplicate_decl(cur.enums.idx, name) {
                     tc_report_at(cur, DiagCode.DuplicateDecl, "duplicate enum declaration `${name}`", ss.line, ss.col, name.length)
                 } else {
-                    cur with { enums: enum_type_reg_register(cur.enums, name, variants) }
+                    cur with { enums: enum_type_reg_register(cur.enums, name, tp, variants) }
                 }
             }
             .Function(name, tp, params, ret_vt, _) -> {
@@ -1709,7 +1724,7 @@ fn tc_first_elem_ty(tc: TC, elements: List<SExpr>) -> ValueType {
 /// `bindings`. Recurses through List/Task/FnTyped/Enum/Union
 /// constructors so a generic `Result<T, E>` returns the
 /// substituted shape.
-fn tc_subst_vtype(ty: ValueType, bindings: List<TypeArg>) -> ValueType {
+export fn tc_subst_vtype(ty: ValueType, bindings: List<TypeArg>) -> ValueType {
     let name = vtype_display(ty)
     let bound = tc_type_arg_lookup(bindings, name)
     if !vtype_is_unknown(bound) { return bound }

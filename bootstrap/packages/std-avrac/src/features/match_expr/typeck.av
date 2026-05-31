@@ -1,10 +1,10 @@
 // WHY: type checking for match statements and expressions.
 // Exhaustiveness checking, pattern variable binding, arm type unification.
 
-use core.{Expr, Pattern, MatchArm, WhenArm, ParamEntry, Stmt, SStmt, Variant, ValueType, FieldEntry, stmt_unwrap, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_is_unknown, vtype_is_union, vtype_union_types}
+use core.{Expr, Pattern, MatchArm, WhenArm, ParamEntry, Stmt, SStmt, Variant, ValueType, FieldEntry, TypeArg, TypeParamEntry, stmt_unwrap, vtype_display, vtype_enum_name, vtype_enum_type_args, vtype_eq, vtype_assignable, vtype_is_unknown, vtype_is_union, vtype_union_types}
 use diagnostics.{DiagCode, diag_warning, span_new, bag_report}
 use core.{type_short_name}
-use typeck.{EnumTypeReg, ExprResult, TC, check_expr, check_expr_expected, tc_bind, tc_check_explicit_returns, tc_enter, tc_er, tc_exit, tc_report, resolve_vtype, enum_type_variants, variant_find}
+use typeck.{EnumTypeReg, ExprResult, TC, check_expr, check_expr_expected, tc_bind, tc_check_explicit_returns, tc_enter, tc_er, tc_exit, tc_report, resolve_vtype, enum_type_variants, enum_type_params, tc_subst_vtype, variant_find}
 use core.{vtype_from_name}
 
 // ── Divergence detection ──
@@ -318,34 +318,69 @@ fn tc_bind_pattern_list(tc: TC, pats: List<Pattern>, subject_ty: ValueType) -> T
 /// Bind every named param from a constructor pattern. so07.5 (T5):
 /// Self-recursive fields (`Self` or `List<Self>`) bind to `subject_ty`
 /// / `List<subject_ty>` so generic-call inference inside the arm body
-/// can pin type-params from those bindings. Non-Self fields stay
-/// Unknown (pre-T5 behavior) — typing them with the variant decl's
-/// resolved field type would surface the bare-vs-qualified mismatch
-/// fixed properly by T6. Underscore names are skipped.
+/// can pin type-params from those bindings.
+///
+/// so07.7.4 step 2: when subject_ty is a generic enum instance like
+/// `.Enum(name, type_args, _)`, build a `<T → concrete>` binding
+/// from the enum's declared type-params and substitute references
+/// in field.resolved before binding. Lets `match r { .Ok(v) -> v }`
+/// type `v` as the concrete `T` from `Result<int, E>` instead of
+/// the generic placeholder.
+///
+/// Non-Self, non-substituted fields stay Unknown (pre-T5 behavior)
+/// — typing them directly with field.resolved would surface the
+/// bare-vs-qualified mismatch fixed properly by T6.
+/// Underscore names are skipped.
 fn tc_bind_pattern_params(tc: TC, variant_name: string, params: List<ParamEntry>, subject_ty: ValueType) -> TC {
     let subject_name = vtype_enum_name(subject_ty)
     let fields = variant_field_list(tc.enums, subject_name, variant_name)
+    let generic_bindings = enum_generic_bindings(tc.enums, subject_name, subject_ty)
     mut cur = tc
     for i in 0..params.length {
         let n = params[i].name
         if n == "_" { continue }
-        let field_ty = if i < fields.length { fields[i].resolved } else { ValueType.Unknown }
-        cur = tc_bind(cur, n, self_recursive_binding(field_ty, subject_ty, subject_name))
+        let raw_field_ty = if i < fields.length { fields[i].resolved } else { ValueType.Unknown }
+        let field_ty = if generic_bindings.length > 0 { tc_subst_vtype(raw_field_ty, generic_bindings) } else { raw_field_ty }
+        cur = tc_bind(cur, n, pattern_binding_type(field_ty, subject_ty, subject_name))
     }
     cur
 }
 
-/// Binding type for a Self-recursive pattern-param field. Returns
-/// `subject_ty` for direct-Self fields and `List<subject_ty>` for
-/// List-of-Self fields. Copying subject_ty's exact form avoids the
-/// bare-vs-qualified mismatch we'd hit by using `field_ty.resolved`
-/// directly. Non-Self fields stay Unknown until T6 fixes nominal
-/// identity. Handles both `.Struct` (pre-resolve) and `.Enum` shells.
-fn self_recursive_binding(field_ty: ValueType, subject_ty: ValueType, subject_name: string) -> ValueType {
+/// Build the type-arg binding list pairing the enum decl's
+/// type-params with the concrete args from `.Enum(_, type_args, _)`.
+/// Empty when the enum isn't registered, isn't generic, or the
+/// subject's type_args list is empty (e.g. monomorphized name).
+fn enum_generic_bindings(reg: EnumTypeReg, enum_name: string, subject_ty: ValueType) -> List<TypeArg> {
+    let empty: List<TypeArg> = []
+    if enum_name == "" { return empty }
+    let tp = enum_type_params(reg, enum_name)
+    if tp.length == 0 { return empty }
+    let type_args = vtype_enum_type_args(subject_ty)
+    if type_args.length == 0 { return empty }
+    mut out: List<TypeArg> = []
+    let n = if tp.length < type_args.length { tp.length } else { type_args.length }
+    for i in 0..n {
+        out.push(TypeArg { param_name: tp[i].name, concrete_vt: type_args[i] })
+    }
+    out
+}
+
+/// Pick the binding type for a pattern-param field. Self-recursive
+/// fields prefer `subject_ty`'s exact form (avoids bare-vs-qualified
+/// fallout). Post-substitution generic fields whose concrete type
+/// is now nominal also stand: e.g. after substituting T→int,
+/// field_ty is .Int and we just return it. Non-Self, still-generic
+/// or otherwise unresolved fields fall back to Unknown.
+fn pattern_binding_type(field_ty: ValueType, subject_ty: ValueType, subject_name: string) -> ValueType {
     if subject_name == "" { return ValueType.Unknown }
     if names_alias(nominal_name(field_ty), subject_name) { return subject_ty }
     match field_ty {
         .List(elem) -> if names_alias(nominal_name(elem), subject_name) { ValueType.List(subject_ty) } else { ValueType.Unknown }
+        .Int -> field_ty
+        .Bool -> field_ty
+        .Float -> field_ty
+        .Str -> field_ty
+        .Bytes -> field_ty
         _ -> ValueType.Unknown
     }
 }

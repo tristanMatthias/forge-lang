@@ -1,0 +1,54 @@
+// so07.7.4 step 2: when matching on a generic enum's variant, the
+// pattern-binding's declared type should be substituted from the
+// subject's type-arg list. Pre-fix: every non-Self field bound to
+// Unknown, so generic enums like Result<int, E>.Ok(v) bound v as
+// Unknown. Post-fix: v binds as int via the T → int substitution.
+
+enum WResult<T, E> {
+    Ok(value: T)
+    Err(error: E)
+}
+
+fn wresult_unwrap_ok(r: WResult) -> int {
+    // The pattern binding `value` should resolve to int after T→int
+    // substitution. Pre-fix bound it as Unknown — arithmetic below
+    // would either silently produce 0 or fail typeck depending on
+    // the call site.
+    match r {
+        .Ok(value) -> value + 1
+        .Err(_) -> 0
+    }
+}
+
+fn wresult_unwrap_err(r: WResult) -> int {
+    match r {
+        .Err(error) -> error - 2
+        .Ok(_) -> 0
+    }
+}
+
+// Tightening: this helper takes a STRICT int. If T→int substitution
+// fails (binding stays Unknown / generic), typeck rejects the
+// `expect_int(value)` call because Unknown is not assignable to int.
+// Pre-fix this fn would either fail typeck or codegen silently —
+// post-fix it compiles and runs.
+fn expect_int(x: int) -> int { x }
+
+fn wresult_through_typed_helper(r: WResult) -> int {
+    match r {
+        .Ok(value) -> expect_int(value) * 2
+        .Err(_) -> -1
+    }
+}
+
+spec "pattern binding substitutes generic type-args (so07.7.4)" {
+    then "matching on Result.Ok(7) binds value as int" {
+        wresult_unwrap_ok(WResult.Ok(7)) == 8
+    }
+    then "matching on Result.Err(42) binds error as int" {
+        wresult_unwrap_err(WResult.Err(42)) == 40
+    }
+    then "binding accepted by strict-int helper proves type was substituted" {
+        wresult_through_typed_helper(WResult.Ok(5)) == 10
+    }
+}
