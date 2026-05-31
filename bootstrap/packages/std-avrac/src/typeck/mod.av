@@ -2133,8 +2133,25 @@ fn annotate_stmt(tc: TC, stmt: Stmt) -> Stmt {
             }
         }
         .While(cond, body) -> .While(annotate_expr(tc, cond), annotate_stmt(tc, body))
-        .For(v, start, end, body) -> .For(v, annotate_expr(tc, start), annotate_expr(tc, end), annotate_stmt(tc, body))
-        .ForIn(v, coll, body) -> .ForIn(v, annotate_expr(tc, coll), annotate_stmt(tc, body))
+        .For(v, start, end, body) -> {
+            // For-loop binds the counter as Int — scope it for the
+            // body so method-call rewrite (y9y4.16) sees the right
+            // type when the body references v.method(...).
+            let new_start = annotate_expr(tc, start)
+            let new_end = annotate_expr(tc, end)
+            let inner = tc_bind(tc, v, .Int)
+            .For(v, new_start, new_end, annotate_stmt(inner, body))
+        }
+        .ForIn(v, coll, body) -> {
+            // for-in over List<X> binds v as X. y9y4.16: needed so
+            // `for c in t.children() { c.method(...) }` annotate
+            // can resolve c's type and fire the method-call rewrite.
+            let new_coll = annotate_expr(tc, coll)
+            let coll_ty = check_expr(tc, coll).ty
+            let elem_ty = vtype_list_elem(coll_ty)
+            let inner = tc_bind(tc, v, elem_ty)
+            .ForIn(v, new_coll, annotate_stmt(inner, body))
+        }
         .Function(name, tp, params, rvt, body) ->
             .Function(name, tp, params, rvt, annotate_stmts(annotate_enter_fn(tc, params), body))
         .Match(subj, arms) -> .Match(annotate_expr(tc, subj), annotate_match_arms(tc, arms))
@@ -2154,7 +2171,7 @@ fn annotate_stmt(tc: TC, stmt: Stmt) -> Stmt {
 /// emerge with their `.ty` populated.
 fn annotate_expr(tc: TC, expr: Expr) -> Expr {
     match expr {
-        .Call(callee, args) -> .Call(annotate_expr(tc, callee), annotate_expr_list(tc, args))
+        .Call(callee, args) -> annotate_call(tc, callee, args)
         .GenericCall(callee, ta, args) -> .GenericCall(annotate_expr(tc, callee), ta, annotate_expr_list(tc, args))
         .EnumCtor(tn, v, args) -> .EnumCtor(tn, v, annotate_expr_list(tc, args))
         .StructLit(name, inits) -> .StructLit(name, annotate_field_inits(tc, inits))
@@ -2193,6 +2210,56 @@ fn annotate_expr(tc: TC, expr: Expr) -> Expr {
         .Spawn(body) -> .Spawn(annotate_expr(tc, body))
         .Isolated(body) -> .Isolated(annotate_expr(tc, body))
         _ -> expr  // Leaf expressions: Number, String, Bool, Null, Ident, FloatLit, QualifiedIdent
+    }
+}
+
+/// Annotate a Call expression. y9y4.16: rewrites generic-method
+/// calls (`t.fold(0, f)` where `Tree__fold<S>` is a registered
+/// generic free-fn) to the equivalent free-fn call
+/// (`Tree__fold(t, 0, f)`). Mono then handles the instantiation
+/// + name-mangling exactly the way it does for direct free-fn
+/// calls — no separate mono-side method-dispatch path required.
+/// Non-method calls + non-generic method calls pass through
+/// unchanged.
+fn annotate_call(tc: TC, callee: Expr, args: List<SExpr>) -> Expr {
+    let rewritten = method_to_free_fn_call(tc, callee, args)
+    if rewritten != null { return rewritten! }
+    .Call(annotate_expr(tc, callee), annotate_expr_list(tc, args))
+}
+
+/// Try to rewrite `obj.method(args)` to `Type__method(obj, args)`
+/// when Type__method is a registered generic free-fn. Returns null
+/// when the rewrite doesn't apply (non-method call, obj's type
+/// not nominal, no matching generic free-fn).
+fn method_to_free_fn_call(tc: TC, callee: Expr, args: List<SExpr>) -> Expr? {
+    match callee {
+        .FieldAccess(obj, method) -> {
+            let o = check_expr(tc, obj)
+            let type_name = match o.ty {
+                .Struct(n, _) -> n
+                .Enum(n, _, _) -> n
+                .Newtype(n, _, _) -> n
+                _ -> ""
+            }
+            eprintln("[M2F] method=${method} type_name=${type_name} obj_ty=${vtype_display(o.ty)}")
+            if type_name == "" { return null }
+            let mangled = method_mangled_name(type_name, method)
+            let r = fn_type_get(tc.fns, mangled)
+            eprintln("[M2F]   mangled=${mangled} found=${string(r.found)} tp=${string(r.tp.length)}")
+            // Only rewrite for GENERIC methods — the non-generic
+            // case dispatches cleanly through codegen's existing
+            // emit_method_call (which prepends self at the call
+            // site without needing a syntactic rewrite).
+            if !r.found || r.tp.length == 0 { return null }
+            let annotated_obj = annotate_expr(tc, obj)
+            mut new_args: List<SExpr> = []
+            new_args.push(sexpr_typed(annotated_obj, 0, 0, o.ty))
+            for a in annotate_expr_list(tc, args) {
+                new_args.push(a)
+            }
+            Expr.Call(Expr.Ident(mangled), new_args)
+        }
+        _ -> null
     }
 }
 
