@@ -811,7 +811,7 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
                 return ok_result(runtime, value_function(name))
             }
 
-            if name in ["println", "string"] {
+            if name in ["println", "eprintln", "string"] {
                 return ok_result(runtime, value_builtin(name))
             }
 
@@ -1244,15 +1244,16 @@ export fn value_struct(type_name: string, fields: List<StructField>) -> Value {
     }
 }
 
-/// Dispatch a builtin call by name. Currently handles `println`
-/// and `string`; everything else errors as `unknown builtin`.
+/// Dispatch a builtin call by name. Handles the I/O builtins
+/// `println` (stdout + newline) and `eprintln` (stderr + newline),
+/// plus `string()`. Scoped to whatever the codegen layer also
+/// supports — currently no `print` / `eprint` (no-newline) variants
+/// because emit_print* don't exist; expanding eval beyond codegen
+/// would surface as ICEs when bs2 self-compiles.
 fn call_builtin(runtime: Runtime, name: string, args: List<Value>) -> StepResult {
-    if name == "println" {
-        if args.length == 0 {
-            println("")
-        } else {
-            println(render_value(args[0]))
-        }
+    if name == "println" || name == "eprintln" {
+        let body = if args.length == 0 { "" } else { render_value(args[0]) }
+        if name == "eprintln" { eprintln(body) } else { println(body) }
         return ok_result(runtime, value_null())
     }
 

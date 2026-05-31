@@ -447,7 +447,14 @@ fn read_or_compute_toolchain_fp(cache_dir: string) -> string {
     let bs2_h = sha256_file("build/bs2")
     let runtime_h = sha256_file("build/runtime.o")
     let wrapper_h = sha256_file("build/llvm_wrapper.o")
-    let combined = sha256_hex("${bs2_h}:${runtime_h}:${wrapper_h}")
+    // so07.7.11: hash std-avrac source so derive_walker / quote_expr /
+    // other macro-shaping edits invalidate cached fixture stdout even
+    // when the resulting bs2 binary happens to hash the same (unlikely
+    // but possible with cache-hit paths). `shasum` invocation is ~50ms
+    // amortised across the suite — sidecar_newer_than_inputs short-
+    // circuits when no src changed, so the cost only hits on miss.
+    let src_h = sha256_hex(avra_shell_exec("find packages/std-avrac/src -name '*.av' -type f | sort | xargs shasum -a 256 2>/dev/null | shasum -a 256 | awk '{print $1}'"))
+    let combined = sha256_hex("${bs2_h}:${runtime_h}:${wrapper_h}:${src_h}")
     let _ = avra_mkdir_p(cache_dir)
     let _ = avra_selfhost_write_file(sidecar, combined)
     combined
@@ -455,9 +462,15 @@ fn read_or_compute_toolchain_fp(cache_dir: string) -> string {
 
 fn sidecar_newer_than_inputs(sidecar: string) -> bool {
     let s_mtime = avra_file_mtime(sidecar)
-    s_mtime > avra_file_mtime("build/bs2")
-        && s_mtime > avra_file_mtime("build/runtime.o")
-        && s_mtime > avra_file_mtime("build/llvm_wrapper.o")
+    if s_mtime <= avra_file_mtime("build/bs2") { return false }
+    if s_mtime <= avra_file_mtime("build/runtime.o") { return false }
+    if s_mtime <= avra_file_mtime("build/llvm_wrapper.o") { return false }
+    // so07.7.11: also reject the sidecar when any std-avrac src is
+    // newer. `find -newer <ref> -print -quit` returns the first match
+    // and exits — O(1)-ish across the tree. Empty stdout = no src
+    // changed since the last fp computation.
+    let newer = avra_shell_exec("find packages/std-avrac/src -name '*.av' -type f -newer '${sidecar}' -print -quit 2>/dev/null")
+    newer == ""
 }
 
 
