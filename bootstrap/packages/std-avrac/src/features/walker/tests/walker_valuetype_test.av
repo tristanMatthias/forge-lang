@@ -19,49 +19,48 @@ fn run_capture(source: string) -> string {
     write_fixture_and_run_no_metadata("/tmp/avra_walker_valuetype_test.av", source)
 }
 
+// so07.7.14 — assertions derive their expected counts from the test
+// inputs (args.length, etc.) instead of hardcoded magic numbers.
+
 spec "derive_walker: applied to core/ast.av's ValueType enum" {
-    then "ValueType.children() returns no children for primitive scalars" {
+    then "primitive scalars — zero children" {
         let out = run_capture(
             "use @std.avrac.core.{ValueType}\n" +
-            "\n" +
             "fn main() {\n" +
-            "    println(\"int=\" + string(ValueType.Int.children().length))\n" +
-            "    println(\"str=\" + string(ValueType.Str.children().length))\n" +
-            "    println(\"void=\" + string(ValueType.Void.children().length))\n" +
+            "    let ok = ValueType.Int.children().length == 0\n" +
+            "         && ValueType.Str.children().length == 0\n" +
+            "         && ValueType.Void.children().length == 0\n" +
+            "    println(\"scalars=\" + string(ok))\n" +
             "}\n")
-        out.contains("int=0") && out.contains("str=0") && out.contains("void=0")
+        out.contains("scalars=true")
     }
-    then "ValueType.children() returns the elem for List<T> (direct-Self)" {
+    then "direct-Self field (List variant elem) — one child" {
         let out = run_capture(
             "use @std.avrac.core.{ValueType}\n" +
-            "\n" +
             "fn main() {\n" +
             "    let lst = ValueType.List(ValueType.Int)\n" +
-            "    println(\"list=\" + string(lst.children().length))\n" +
+            "    println(\"one=\" + string(lst.children().length == 1))\n" +
             "}\n")
-        out.contains("list=1")
+        out.contains("one=true")
     }
-    then "ValueType.children() returns the args list for Enum (list-of-Self)" {
+    then "list-of-Self field (Enum.type_args) — count matches input.length" {
         let out = run_capture(
             "use @std.avrac.core.{ValueType}\n" +
-            "\n" +
             "fn main() {\n" +
             "    let args: List<ValueType> = [ValueType.Int, ValueType.Str, ValueType.Bool]\n" +
             "    let e = ValueType.Enum(\"Result\", args, 0)\n" +
-            "    println(\"enum=\" + string(e.children().length))\n" +
+            "    println(\"matches=\" + string(e.children().length == args.length))\n" +
             "}\n")
-        out.contains("enum=3")
+        out.contains("matches=true")
     }
-    then "ValueType.children() handles mixed direct+list (FnTyped)" {
+    then "mixed direct+list (FnTyped) — 1 (ret) + params.length" {
         let out = run_capture(
             "use @std.avrac.core.{ValueType}\n" +
-            "\n" +
             "fn main() {\n" +
             "    let params: List<ValueType> = [ValueType.Int, ValueType.Str]\n" +
             "    let fn_ty = ValueType.FnTyped(params, ValueType.Bool)\n" +
-            "    println(\"fn=\" + string(fn_ty.children().length))\n" +
+            "    println(\"sum=\" + string(fn_ty.children().length == 1 + params.length))\n" +
             "}\n")
-        // FnTyped has ret + params — list_concat([ret], params) = 1 + 2 = 3
-        out.contains("fn=3")
+        out.contains("sum=true")
     }
 }

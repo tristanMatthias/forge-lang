@@ -1,8 +1,9 @@
-// y9y4.7 + y9y4.8 / so07.5 — @expand(derive_walker) on core/ast.av's
-// Stmt and Expr enums. Both are larger than Pattern / ValueType and
-// hit every shape combination: scalar variants, single-Self fields,
-// List-of-Self, mixed scalar+Self, mixed direct+list. T5's variant-
-// pattern Self-recursive bindings unblocked both simultaneously.
+// y9y4.7 + y9y4.8 / so07.5 + so07.7.14 — @expand(derive_walker) on
+// core/ast.av's Stmt and Expr enums. Tests assert structural
+// relationships (children.length matches expected source counts via
+// the fixture's own input.length / 1+args.length / etc.) rather than
+// hardcoded magic numbers — adding another field to a variant that
+// classifies as scalar (kind=0) doesn't break the test.
 //
 // Bypasses metadata mode at fixture invocation (9p1d).
 
@@ -13,64 +14,67 @@ fn run_capture(source: string) -> string {
 }
 
 spec "derive_walker: Stmt enum carries .children()" {
-    then "Stmt.NoOp has no children" {
+    then "scalar variant (Stmt.NoOp) — zero children" {
         let out = run_capture(
             "use @std.avrac.core.{Stmt}\n" +
             "fn main() {\n" +
-            "    println(\"noop=\" + string(Stmt.NoOp.children().length))\n" +
+            "    let n = Stmt.NoOp.children().length\n" +
+            "    println(\"empty=\" + string(n == 0))\n" +
             "}\n")
-        out.contains("noop=0")
+        out.contains("empty=true")
     }
-    then "Stmt.While(_, body) returns the body (direct-Self)" {
+    then "direct-Self field (Stmt.While body) — exactly the body" {
         let out = run_capture(
             "use @std.avrac.core.{Stmt, Expr}\n" +
             "fn main() {\n" +
             "    let w = Stmt.While(Expr.Bool(true), Stmt.Break)\n" +
-            "    println(\"while=\" + string(w.children().length))\n" +
+            "    let kids = w.children()\n" +
+            "    println(\"matches_one=\" + string(kids.length == 1))\n" +
             "}\n")
-        out.contains("while=1")
+        out.contains("matches_one=true")
     }
-    then "Stmt.Block(body) unwraps List<SStmt> via y9y4.11" {
+    then "wrapper-list field (Stmt.Block body) — count matches input.length" {
         let out = run_capture(
             "use @std.avrac.core.{Stmt, SStmt, sstmt_dummy}\n" +
             "fn main() {\n" +
             "    let inner: List<SStmt> = [sstmt_dummy(Stmt.NoOp), sstmt_dummy(Stmt.Break), sstmt_dummy(Stmt.Continue)]\n" +
             "    let block = Stmt.Block(inner)\n" +
-            "    println(\"block=\" + string(block.children().length))\n" +
+            "    println(\"matches_input=\" + string(block.children().length == inner.length))\n" +
             "}\n")
-        out.contains("block=3")
+        out.contains("matches_input=true")
     }
 }
 
 spec "derive_walker: Expr enum carries .children()" {
-    then "Expr.Number (scalar) has no children" {
+    then "scalar literal (Expr.Number) — zero children" {
         let out = run_capture(
             "use @std.avrac.core.{Expr}\n" +
             "fn main() {\n" +
-            "    println(\"num=\" + string(Expr.Number(\"42\").children().length))\n" +
+            "    let n = Expr.Number(\"42\").children().length\n" +
+            "    println(\"empty=\" + string(n == 0))\n" +
             "}\n")
-        out.contains("num=0")
+        out.contains("empty=true")
     }
-    then "Expr.Binary(left, _, right) returns both operands" {
+    then "two-direct-Self (Expr.Binary) — both operands" {
         let out = run_capture(
             "use @std.avrac.core.{Expr, BinOp}\n" +
             "fn main() {\n" +
             "    let lhs = Expr.Number(\"1\")\n" +
             "    let rhs = Expr.Number(\"2\")\n" +
             "    let bin = Expr.Binary(lhs, BinOp.Add, rhs)\n" +
-            "    println(\"bin=\" + string(bin.children().length))\n" +
+            "    println(\"two=\" + string(bin.children().length == 2))\n" +
             "}\n")
-        out.contains("bin=2")
+        out.contains("two=true")
     }
-    then "Expr.Call(callee, args) — mixed direct-Self + wrapper-list" {
+    then "mixed direct-Self + wrapper-list (Expr.Call) — callee + unwrapped args" {
         let out = run_capture(
             "use @std.avrac.core.{Expr, SExpr, sexpr_dummy}\n" +
             "fn main() {\n" +
             "    let callee = Expr.Ident(\"f\")\n" +
             "    let args: List<SExpr> = [sexpr_dummy(Expr.Number(\"1\")), sexpr_dummy(Expr.Number(\"2\"))]\n" +
             "    let call = Expr.Call(callee, args)\n" +
-            "    println(\"call=\" + string(call.children().length))\n" +
+            "    println(\"sum=\" + string(call.children().length == 1 + args.length))\n" +
             "}\n")
-        out.contains("call=3")  // 1 callee + 2 unwrapped args
+        out.contains("sum=true")
     }
 }

@@ -218,35 +218,25 @@ fn ends_with_qualified(qualified: string, short: string) -> bool {
 fn classify_variant(v: Variant, parent_name: string) -> List<Binding> {
     mut out: List<Binding> = []
     for f in v.fields {
-        let kind = classify_field_kind(f.resolved, parent_name)
-        let unwrap = if kind == 3 { wrapper_list_unwrap_fn(f.resolved, parent_name) } else { "" }
+        let unwrap = wrapper_list_unwrap_fn(f.resolved, parent_name)
+        let kind = classify_field_kind(f.resolved, parent_name, unwrap)
         let bind = if kind == 0 { "_" } else { f.name }
-        let is_child = kind != 0
-        out.push(Binding { binding_name: bind, is_child, kind, unwrap_fn: unwrap })
+        out.push(Binding { binding_name: bind, is_child: kind != 0, kind, unwrap_fn: unwrap })
     }
     out
 }
 
 /// Decide what role a single field plays in `children()`. See `Binding`
 /// for the kind encoding. Direct Self / List<Self> are detected first;
-/// wrapper-lists (List<SStmt> for Stmt, List<SExpr> for Expr) fall to
-/// kind=3 via the wrapper table. Anything else stays scalar.
+/// kind=3 fires when `unwrap` is non-empty (wrapper-list detected by
+/// `wrapper_list_unwrap_fn` — single source of truth, callers compute
+/// it once and pass it in to avoid a second classifier pass).
 @comptime
-fn classify_field_kind(vt: ValueType, parent_name: string) -> int {
+fn classify_field_kind(vt: ValueType, parent_name: string, unwrap: string) -> int {
     if is_self_type(vt, parent_name) { return 1 }
     if is_list_of_self(vt, parent_name) { return 2 }
-    if is_wrapper_list_of_self(vt, parent_name) { return 3 }
+    if unwrap != "" { return 3 }
     0
-}
-
-@comptime
-fn is_wrapper_list_of_self(vt: ValueType, parent_name: string) -> bool {
-    let elem = list_elem_or_unknown(vt)
-    let wrapper = short_name(self_type_name(elem))
-    if wrapper == "" { return false }
-    let inner = wrapper_inner_type(wrapper)
-    if inner == "" { return false }
-    name_matches(inner, parent_name)
 }
 
 /// Strip a `::`-qualified prefix, returning the trailing identifier
