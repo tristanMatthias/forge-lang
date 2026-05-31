@@ -260,9 +260,9 @@ fn find_command(cmds: List<CommandDef>, name: string) -> CommandDef? {
 /// positional. Builds the CliResult containing every match.
 fn parse_args(cmd_name: string, flags: List<FlagDef>, options: List<OptionDef>, args: List<ArgDef>,
               start_idx: int, argc: int) -> CliResult {
-    mut parsed_flags = []
+    mut parsed_flags: List<ParsedFlag> = []
     mut parsed_options = init_option_defaults(options)
-    mut parsed_args = []
+    mut parsed_args: List<ParsedArg> = []
     mut positional_idx = 0
     mut error = ""
 

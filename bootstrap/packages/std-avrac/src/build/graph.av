@@ -202,8 +202,8 @@ fn collect_dep_names(deps: List<Dep>) -> List<string> {
 /// count, there's a cycle.
 fn topological_sort(units: List<Unit>) -> CollectResult {
     let total = units.length
-    mut output = []
-    mut resolved = []
+    mut output: List<Unit> = []
+    mut resolved: List<string> = []
     mut remaining = units
     mut progress = true
 
@@ -250,8 +250,8 @@ type ScanResult = {
 /// `resolved`) and "rest" (something not yet resolved). Both lists
 /// preserve original order.
 fn scan_for_ready(units: List<Unit>, resolved: List<string>) -> ScanResult {
-    mut ready = []
-    mut rest = []
+    mut ready: List<Unit> = []
+    mut rest: List<Unit> = []
     mut i = 0
     while i < units.length {
         let u = units[i]

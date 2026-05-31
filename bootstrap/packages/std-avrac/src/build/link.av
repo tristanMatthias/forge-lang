@@ -50,7 +50,7 @@ fn resolve_llvm_prefix(opts: LinkOptions) -> string {
 /// Coverage adds the profile-runtime library when `opts.coverage`.
 fn build_link_argv(objs: List<string>, runtime_o: string, llvm_wrapper_o: string,
                    out: string, opts: LinkOptions, coverage_libs: string) -> string {
-    mut items = []
+    mut items: List<string> = []
     mut i = 0
     while i < objs.length {
         items.push(json_str(objs[i]))

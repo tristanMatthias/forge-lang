@@ -936,7 +936,7 @@ fn pre_build_workspace_std_packages(project_dir: string, compiler_path: string, 
     let listing = avra_shell_exec("ls -d '${project_dir}/packages'/std-*/ 2>/dev/null")
     if listing == "" { return 0 }
     let pkg_dirs = split_by_newline(listing)
-    mut cmds = []
+    mut cmds: List<string> = []
     mut i = 0
     while i < pkg_dirs.length {
         let dir = pkg_dirs[i]
@@ -1067,7 +1067,7 @@ fn collect_workspace_lib_objs(project_dir: string) -> string {
     // fresh one with `later wins` semantics, but we want the FIRST
     // (most-recently-modified per ls -t) entry per package only.
     mut seen_pkgs: List<string> = []
-    mut keep = []
+    mut keep: List<string> = []
     mut i = 0
     while i < paths.length {
         let p = paths[i]
@@ -1204,8 +1204,8 @@ fn pre_build_subdir_units(project_dir: string, manifest_name: string, compiler_p
         eprintln("[per-module] entry not found: ${entry_path}")
         return 1
     }
-    mut cmds = []
-    mut slugs = []
+    mut cmds: List<string> = []
+    mut slugs: List<string> = []
     mut hits = 0
     mut i = 0
     while i < subdirs.length {
@@ -1566,7 +1566,7 @@ fn run_pre_deps_with_progress(paths_file: string, jobs: string, compiler_path: s
     avra_shell_exec("rm -rf ${marker_dir} && mkdir -p ${marker_dir}")
     let dep_paths = read_paths_file_lines(paths_file)
     let slugs = slugs_from_paths(dep_paths)
-    mut cmds = []
+    mut cmds: List<string> = []
     mut i = 0
     while i < dep_paths.length {
         let path = dep_paths[i]

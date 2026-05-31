@@ -619,7 +619,7 @@ fn strip_quotes(quoted: string) -> string {
 // Used today only by tests; the build driver picks it up under g2eo.
 
 export fn collect_source_files(stmts: List<SStmt>) -> List<string> {
-    mut acc = []
+    mut acc: List<string> = []
     walk_files(stmts, acc)
 }
 

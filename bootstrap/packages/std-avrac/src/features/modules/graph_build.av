@@ -558,7 +558,7 @@ fn intern_path_segments_after_pkg(g: ModuleGraph, path: string) -> PathSegmentsR
 /// same result with one walk.
 fn intern_segments_iter(g: ModuleGraph, path: string, start: int) -> PathSegmentsResult {
     mut graph = g
-    mut segments = []
+    mut segments: List<int> = []
     mut cursor = start
     let len = path.length
     while cursor < len {
