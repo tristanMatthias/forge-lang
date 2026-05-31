@@ -1541,6 +1541,24 @@ fn tc_subst_generic_ret(tc: TC, tp: List<TypeParamEntry>, params: List<ParamEntr
     tc_subst_generic_ret_with_expected(tc, tp, params, args, ret_ty, ValueType.Unknown)
 }
 
+/// Method-call variant. The method's params[0] is `self` (constrained
+/// by dispatch — not part of the user-visible call). User args align
+/// with params[1..], so we project that slice and forward to
+/// tc_subst_generic_ret. y9y4.16 — `t.fold(0, sum_leaves)` on
+/// `Tree__fold<S>(self, init: S, f: fn(S,Tree)->S) -> S` substitutes
+/// S = Int from init, returns Int instead of the generic S.
+fn tc_subst_generic_method_ret(tc: TC, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<SExpr>, ret_ty: ValueType) -> ValueType {
+    if tp.length == 0 { return ret_ty }
+    if params.length == 0 { return ret_ty }
+    mut method_params: List<ParamEntry> = []
+    mut i = 1
+    while i < params.length {
+        method_params.push(params[i])
+        i = i + 1
+    }
+    tc_subst_generic_ret(tc, tp, method_params, args, ret_ty)
+}
+
 /// Bidirectional variant: ALSO unify `ret_ty` against `expected` (the
 /// caller's known return-position type) to harvest additional type-arg
 /// bindings. Required when the only constraint on a type-param T comes
@@ -1874,7 +1892,15 @@ fn check_method_call(tc: TC, obj: Expr, method: string, args: List<SExpr>) -> Ex
         let qualified = method_mangled_name(type_name, method)
         let r = fn_type_get(checked_args.fns, qualified)
         if r.found {
-            return tc_er(checked_args, r.ret_ty)
+            // y9y4.16: for generic methods (fn Type__name<S>(self, ...)),
+            // substitute S from the user-visible args before returning
+            // ret_ty. params[0] is `self`; user-visible args align with
+            // params[1..]. Pre-fix: ret_ty came back unsubstituted, so
+            // `t.fold(0, f)` typed as `S` and `string(t.fold(...))`
+            // fired F1003. Mirror of tc_check_fn_call_with's free-fn
+            // substitution, projected to drop self.
+            let resolved_ret = tc_subst_generic_method_ret(checked_args, r.tp, r.params, args, r.ret_ty)
+            return tc_er(checked_args, resolved_ret)
         }
     }
 
