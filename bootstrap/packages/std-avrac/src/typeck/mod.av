@@ -1088,7 +1088,11 @@ fn tc_check_fn_body(tc: TC, name: string, ret_vt: ValueType, body: List<SStmt>) 
 /// Verify that the body's tail expression matches the declared
 /// return type — Avra's implicit-return rule. Skipped for void.
 fn tc_check_implicit_return(tc: TC, fn_name: string, declared: ValueType, stmts: List<SStmt>) -> TC {
-    let body_ty = tc_body_tail_type(tc, stmts)
+    // so07.7.15: pass `declared` as the expected type when checking
+    // the body's tail. Generic-fn tail expressions like
+    // `unwrap_node_list(xs)` use it to pin type-args from the return
+    // position when arg types alone don't carry enough info.
+    let body_ty = tc_body_tail_type(tc, declared, stmts)
     // Skip when either side is Unknown (fallback/unreliable) or Void (no value).
     if vtype_is_unknown(declared) { return tc }
     match body_ty {
@@ -1111,12 +1115,12 @@ fn tc_check_implicit_return(tc: TC, fn_name: string, declared: ValueType, stmts:
 /// Compute the type of the tail expression of a block. Skips
 /// trailing return / break / continue. Used to determine the
 /// implicit-return value type.
-fn tc_body_tail_type(tc: TC, stmts: List<SStmt>) -> ValueType {
+fn tc_body_tail_type(tc: TC, expected: ValueType, stmts: List<SStmt>) -> ValueType {
     if stmts.length == 0 { return ValueType.Void }
     let ss = stmts[stmts.length - 1]
     match ss.node {
         .Expr(e) -> {
-            let r = check_expr(tc, e)
+            let r = check_expr_expected(tc, e, expected)
             r.ty
         }
         .Return(_) -> ValueType.Void  // explicit return — handled elsewhere
@@ -1186,15 +1190,14 @@ export fn tc_bind_params(tc: TC, params: List<ParamEntry>) -> TC {
 // ── Expression checking ──
 
 /// Bidirectional variant of `check_expr`: threads the caller's
-/// `expected` type down so ListLit-style literals start with the
-/// right element type instead of `Unknown`. Today only ListLit
-/// consumes the hint; other expressions fall through unchanged.
-/// `vtype_list_elem(expected)` extracts the element type when
-/// `expected` is `List<T>`, returning Unknown otherwise — same
-/// fallback shape as check_list_lit's existing inference. so07.4.
+/// `expected` type down so generic constructors / calls can pin
+/// type-args from the return position. ListLit consumes it as an
+/// element-type hint (so07.4); Call threads it to generic-fn
+/// inference (so07.7.15). Other expressions fall through unchanged.
 export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprResult {
     match expr {
         .ListLit(elements) -> check_list_lit_with_expected(tc, elements, vtype_list_elem(expected))
+        .Call(callee, args) -> check_call_with_expected(tc, callee, args, expected)
         _ -> check_expr(tc, expr)
     }
 }
@@ -1447,11 +1450,20 @@ fn check_binary_type(tc: TC, left: ValueType, op: BinOp, right: ValueType) -> Ex
 /// pass a `found=true` record in its happy path), so this body never
 /// re-walks the FnTypeEntry chain — that's the kkgf hot-path saving.
 fn tc_check_fn_call_with(checked: TC, name: string, args: List<SExpr>, rec: FnTypeFound) -> ExprResult {
-    let expected = rec.params.length
+    tc_check_fn_call_with_expected(checked, name, args, rec, ValueType.Unknown)
+}
+
+/// Bidirectional variant — accepts the caller's `expected` return
+/// type (e.g. from a let-annotation, fn-return position, or match-arm
+/// expected type). Threaded to tc_subst_generic_ret_with_expected so
+/// generic fns whose only T-constraint comes from the return position
+/// resolve cleanly (so07.7.15).
+fn tc_check_fn_call_with_expected(checked: TC, name: string, args: List<SExpr>, rec: FnTypeFound, expected: ValueType) -> ExprResult {
+    let expected_param_count = rec.params.length
     let actual = tc_count_args(args)
-    if expected != actual {
-        let s = if expected != 1 { "s" } else { "" }
-        let msg = "`${name}` expects ${string(expected)} argument${s}, got ${string(actual)}"
+    if expected_param_count != actual {
+        let s = if expected_param_count != 1 { "s" } else { "" }
+        let msg = "`${name}` expects ${string(expected_param_count)} argument${s}, got ${string(actual)}"
         return tc_er(tc_report(checked, DiagCode.WrongArgCount, msg), rec.ret_ty)
     }
     // Check shape and newtype compatibility
@@ -1471,11 +1483,12 @@ fn tc_check_fn_call_with(checked: TC, name: string, args: List<SExpr>, rec: FnTy
     }
     let first_arg_ty = tc_first_arg_type(strict_checked, args)
     let ctor_checked = tc_check_newtype_ctor(strict_checked, name, rec.ret_ty, first_arg_ty)
-    // For generic fns: infer T from the call's arg types and substitute
-    // into ret_ty so downstream typeck sees `Int` for `first(nums)`
-    // instead of the unresolved `T`. Non-generic fns short-circuit via
-    // the empty-tp guard in tc_subst_generic_ret.
-    let resolved_ret = tc_subst_generic_ret(newtype_checked, rec.tp, rec.params, args, rec.ret_ty)
+    // For generic fns: infer T from the call's arg types AND the
+    // caller's expected return type (so07.7.15), substitute into ret_ty
+    // so downstream typeck sees `Int` for `first(nums)` instead of the
+    // unresolved `T`. Non-generic fns short-circuit via the empty-tp
+    // guard in tc_subst_generic_ret_with_expected.
+    let resolved_ret = tc_subst_generic_ret_with_expected(newtype_checked, rec.tp, rec.params, args, rec.ret_ty, expected)
     tc_er(ctor_checked, resolved_ret)
 }
 
@@ -1539,10 +1552,22 @@ fn vtype_mentions_typeparam(ty: ValueType, tp: List<TypeParamEntry>) -> bool {
 /// the inner type at the `let` boundary and the second call's
 /// type-arg can't be inferred.
 fn tc_subst_generic_ret(tc: TC, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<SExpr>, ret_ty: ValueType) -> ValueType {
+    tc_subst_generic_ret_with_expected(tc, tp, params, args, ret_ty, ValueType.Unknown)
+}
+
+/// Bidirectional variant: ALSO unify `ret_ty` against `expected` (the
+/// caller's known return-position type) to harvest additional type-arg
+/// bindings. Required when the only constraint on a type-param T comes
+/// from the caller's `let xs: List<Stmt> = generic_fn(opaque_arg)` —
+/// arg types alone don't pin T, but the let annotation does.
+/// so07.7.15. `expected = Unknown` (the default for non-bidirectional
+/// callers) is a no-op via tc_unify's Unknown wildcard.
+fn tc_subst_generic_ret_with_expected(tc: TC, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<SExpr>, ret_ty: ValueType, expected: ValueType) -> ValueType {
     if tp.length == 0 { return ret_ty }
     let empty: List<TypeArg> = []
-    let bindings = tc_infer_type_args(tc, tp, params, args, empty)
-    tc_subst_vtype(ret_ty, bindings)
+    let arg_bindings = tc_infer_type_args(tc, tp, params, args, empty)
+    let ret_bindings = if vtype_is_unknown(expected) { arg_bindings } else { tc_unify(tp, ret_ty, expected, arg_bindings) }
+    tc_subst_vtype(ret_ty, ret_bindings)
 }
 
 /// Walk params/args pairwise, recursing into List/Task/FnTyped
@@ -1717,6 +1742,13 @@ fn tc_type_arg_lookup(args: List<TypeArg>, name: string) -> ValueType {
 /// for `obj.method(args)`, otherwise falls through to
 /// `tc_check_fn_call_with` after resolving the callee name.
 fn check_call(tc: TC, callee: Expr, args: List<SExpr>) -> ExprResult {
+    check_call_with_expected(tc, callee, args, ValueType.Unknown)
+}
+
+/// Bidirectional variant — accepts the caller's expected return type
+/// and threads it through tc_check_fn_call_with_expected so generic
+/// inference can pull type-args from the return position (so07.7.15).
+fn check_call_with_expected(tc: TC, callee: Expr, args: List<SExpr>, expected: ValueType) -> ExprResult {
     match callee {
         .Ident(name) -> {
             // For `string(arg)` we need the typed arg list so we can
@@ -1738,7 +1770,7 @@ fn check_call(tc: TC, callee: Expr, args: List<SExpr>) -> ExprResult {
             // User-defined function
             let r = fn_type_get(checked.fns, name)
             if r.found {
-                return tc_check_fn_call_with(checked, name, args, r)
+                return tc_check_fn_call_with_expected(checked, name, args, r, expected)
             }
             // Variable holding a closure
             let var_ty = type_lookup(checked.types, name)
@@ -1751,7 +1783,7 @@ fn check_call(tc: TC, callee: Expr, args: List<SExpr>) -> ExprResult {
             let checked = check_expr_list(tc, args)
             let r = fn_type_get(checked.fns, path)
             if r.found {
-                return tc_check_fn_call_with(checked, path, args, r)
+                return tc_check_fn_call_with_expected(checked, path, args, r, expected)
             }
             tc_er(checked, .Unknown)
         }

@@ -67,22 +67,21 @@ export fn sstmt_dummy(s: Stmt) -> SStmt { SStmt { node: s, line: 0, col: 0, file
 /// TraitDecl / Match.
 ///
 /// so07.7.2 attempted to consolidate with `unwrap_sexpr_list` via a
-/// generic `fn unwrap_node_list<W, T>(xs: List<W>) -> List<T>` — the
-/// loop body works, but generic-call inference can't pin T from the
-/// caller's expected return type alone (only from arg types), so the
-/// inner call surfaces as F1000 'returns List, body produces List'.
-/// Truly merging requires extending generic-call inference to pull
-/// type-args from the return-type context, filed as so07.7.17. Until
-/// then both helpers carry the identical 4-line body — adding a
-/// third wrapper means a third copy.
+/// generic `fn unwrap_node_list<W, T>(xs: List<W>) -> List<T>` —
+/// typeck accepts the passthrough after so07.7.15 (bidirectional
+/// generic-call inference) but the monomorphizer's instantiation
+/// pass still fires F1002 'cannot infer type parameter T'. Fixing
+/// it requires teaching mono to pull the inferred type-args from
+/// the typeck-resolved call site instead of re-running its own
+/// inference. Filed as so07.7.16; until that lands, both helpers
+/// carry the identical 4-line body.
 export fn unwrap_sstmt_list(xs: List<SStmt>) -> List<Stmt> {
     mut out: List<Stmt> = []
     for x in xs { out.push(x.node) }
     out
 }
 
-/// Companion to `unwrap_sstmt_list` for the SExpr wrapper. Used by
-/// derive_walker on Expr variants whose payload is `List<SExpr>`.
+/// Companion to `unwrap_sstmt_list` for the SExpr wrapper.
 export fn unwrap_sexpr_list(xs: List<SExpr>) -> List<Expr> {
     mut out: List<Expr> = []
     for x in xs { out.push(x.node) }
