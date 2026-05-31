@@ -87,42 +87,67 @@ extern fn avra_rd_add_type_field(type_id: int, field_name: string, field_type_ca
 /// later work (see step 5 limitations in the handoff doc).
 export fn populate_resolver_data(state: ResolverState, stmts: List<SStmt>) {
     avra_rd_clear()
+    populate_resolver_data_into(state, stmts)
+}
+
+/// Append into the resolver-data layer WITHOUT clearing first. Used
+/// by `register_and_repopulate` so post-splice re-population doesn't
+/// wipe types registered by the initial populate call (which would
+/// leave the second-and-later macros in the same fixpoint iter
+/// unable to ctx_lookup_type any pre-existing type). so07.7.1 root
+/// cause: SStmt / SExpr were registered by the initial populate
+/// then wiped on the first macro splice, so the next iter's
+/// derive_walker invocation saw null.
+fn populate_resolver_data_into(state: ResolverState, stmts: List<SStmt>) {
     avra_rd_set_current_module("")
     for a in state.aliases {
-        // seed-typeck workaround: bind field accesses to locals
-        // before passing to extern fns (see global_item_reg_build).
-        let sn = a.short_name
-        let canon = a.canonical
-        avra_rd_add_alias(sn, canon)
+        avra_rd_add_alias(a.short_name, a.canonical)
     }
     for g in state.graph.all_items {
-        let sn = g.short_name
-        let canon = g.canonical
-        avra_rd_add_global(sn, canon)
+        avra_rd_add_global(g.short_name, g.canonical)
     }
     populate_type_fields(stmts, "")
 }
 
 fn populate_type_fields(stmts: List<SStmt>, mod_path: string) {
     for ss in stmts {
-        let inner = stmt_unwrap(ss.node)
-        match inner {
-            .Module(name, body) -> {
-                let child_path = type_qualified_name(mod_path, name)
-                populate_type_fields(body, child_path)
-            }
-            .TypeDecl(name, _, fields) -> {
-                let canonical = type_qualified_name(mod_path, name)
-                let type_id = avra_rd_begin_type(canonical, "struct")
-                for f in fields {
-                    let fname = f.name
-                    let ftype = vtype_canonical_name(f.resolved)
-                    avra_rd_add_type_field(type_id, fname, ftype)
-                }
-            }
-            _ -> {}
-        }
+        // stmt_unwrap peels ONE layer of Annotated. Most type decls
+        // in std-avrac are `@export type Foo = {...}` so without the
+        // unwrap they'd never reach the .TypeDecl arm. so07.7.1
+        // root cause: SStmt / SExpr were silently absent from the
+        // resolver-data registry, so ctx_lookup_type from @comptime
+        // macros (derive_walker's wrapper-list discovery) saw null.
+        register_type_decl(stmt_unwrap(ss.node), mod_path)
     }
+}
+
+fn register_type_decl(stmt: Stmt, mod_path: string) {
+    match stmt {
+        .Module(name, body) -> {
+            let child_path = qualify_or_keep(mod_path, name)
+            populate_type_fields(body, child_path)
+        }
+        .TypeDecl(name, _, fields) -> {
+            let canonical = qualify_or_keep(mod_path, name)
+            let type_id = avra_rd_begin_type(canonical, "struct")
+            for f in fields {
+                avra_rd_add_type_field(type_id, f.name, vtype_canonical_name(f.resolved))
+            }
+        }
+        _ -> {}
+    }
+}
+
+/// Build a qualified name without double-prefixing. Resolved AST
+/// decls already carry their fully-qualified name (`@std::lsp::Sym`)
+/// because the rename pass ran before populate_resolver_data; in
+/// that case mod_path would otherwise be re-prefixed and produce
+/// `@std::lsp::@std::lsp::Sym`. so07.7.1 root cause: the doubly-
+/// qualified registry keys never matched the short-name lookup
+/// from ctx_lookup_type.
+fn qualify_or_keep(mod_path: string, name: string) -> string {
+    if name.length > 0 && name[0] == "@" { return name }
+    type_qualified_name(mod_path, name)
 }
 
 fn vtype_canonical_name(vt: ValueType) -> string {
@@ -485,10 +510,15 @@ fn register_and_repopulate(state: ResolverState, spliced: List<SStmt>, current_m
     mut tagged: List<SStmt> = []
     for ss in spliced { tagged.push(sstmt_mark_from_macro(ss)) }
     let new_state = register_macro_decls(state, tagged)
-    populate_resolver_data(new_state, tagged)
-    // populate_resolver_data overwrote current_module to ""; restore
-    // the per-site value so subsequent ctx_current_module calls keep
-    // returning the right module.
+    // Additive: keeps everything the initial populate registered,
+    // adds the new aliases/globals/types from `tagged`. The clear-
+    // and-rebuild dance the prior code did (calling the public
+    // populate_resolver_data) wiped types other macros in the same
+    // iter still needed (so07.7.1 root cause).
+    populate_resolver_data_into(new_state, tagged)
+    // populate_resolver_data_into overwrote current_module to "";
+    // restore the per-site value so subsequent ctx_current_module
+    // calls keep returning the right module.
     avra_rd_set_current_module(current_module)
     new_state
 }

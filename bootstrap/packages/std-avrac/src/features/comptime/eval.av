@@ -204,6 +204,19 @@ fn enum_value_to_expr(v: Value) -> Expr? {
             let args = list_value_to_expr_list(p[1])?
             Expr.Call(callee, args)
         }
+        "GenericCall" -> {
+            // GenericCall(callee, type_args: List<string>, args).
+            // Emitted by derive_walker (so07.7.1) to spell out
+            // unwrap_node_list::<W, T>(field) explicitly so mono's
+            // inference doesn't need to derive W/T from the single
+            // arg + a context that may have been peeled away
+            // (e.g. inside list_concat).
+            if p.length != 3 { return null }
+            let callee = enum_value_to_expr(head)?
+            let type_args = list_value_to_string_list(p[1])?
+            let args = list_value_to_expr_list(p[2])?
+            Expr.GenericCall(callee, type_args, args)
+        }
         "EnumCtor" -> {
             if p.length != 3 { return null }
             let variant_v: Value = p[1]
@@ -439,6 +452,18 @@ fn two_expr_decode(p: List<Value>, variant: string) -> Expr? {
 fn list_value_to_expr_list(v: Value) -> List<SExpr>? {
     if v.kind != "list" { return null }
     list_value_to_expr_list_at(v.list_payload, 0)
+}
+
+/// Decode a `List<string>` Value into the native list. Used by
+/// GenericCall's type-args decoder.
+fn list_value_to_string_list(v: Value) -> List<string>? {
+    if v.kind != "list" { return null }
+    mut out: List<string> = []
+    for entry in v.list_payload {
+        if entry.kind != "string" { return null }
+        out.push(entry.text)
+    }
+    out
 }
 
 fn list_value_to_expr_list_at(items: List<Value>, i: int) -> List<SExpr>? {
