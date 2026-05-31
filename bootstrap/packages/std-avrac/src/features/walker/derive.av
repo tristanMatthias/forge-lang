@@ -629,41 +629,45 @@ fn build_map_arm(v: Variant, parent_name: string, ctx: ResolverCtx) -> MatchArm 
     }
 }
 
+/// Mint every named binding for map's variant pattern. Scalars get a
+/// deterministic `__avra_map_s<i>` synthetic name (`_` is unreadable;
+/// map needs every field readable so the EnumCtor body can pass it
+/// through). Named bindings keep their source name. The leading `__`
+/// keeps synthetics distinct from any user identifier (spec Axis 28
+/// forbids `__`). Single source of truth for the name mapping —
+/// map_pattern_for + map_arm_body both go through this.
+@comptime
+fn map_binding_names(bindings: List<Binding>) -> List<string> {
+    mut names: List<string> = []
+    for b in bindings {
+        let name = if b.binding_name == "_" { "__avra_map_s${string(names.length)}" } else { b.binding_name }
+        names.push(name)
+    }
+    names
+}
+
 /// Map's per-variant pattern: every named binding stays bound — even
 /// scalars, because map's body reconstructs the variant with each
 /// scalar in its original slot. (Children's pattern was free to bind
 /// scalars to `_`; map can't because it needs to read them back.)
 @comptime
 fn map_pattern_for(variant_name: string, bindings: List<Binding>) -> Pattern {
+    let names = map_binding_names(bindings)
     mut params: List<ParamEntry> = []
-    for b in bindings {
-        let name = if b.binding_name == "_" { fresh_scalar_name(params.length) } else { b.binding_name }
-        params.push(ParamEntry { name: name, vtype: ValueType.Unknown })
+    for n in names {
+        params.push(ParamEntry { name: n, vtype: ValueType.Unknown })
     }
     Pattern.Variant(variant_name, params)
 }
 
-/// Build a deterministic scalar-binding name. Pattern parser permits
-/// `_` for unread fields; map needs every field readable so we mint
-/// `__avra_map_s<i>` instead. The leading double-underscore keeps it
-/// distinct from any user identifier (spec Axis 28 forbids `__`).
-@comptime
-fn fresh_scalar_name(idx: int) -> string {
-    "__avra_map_s${string(idx)}"
-}
-
 @comptime
 fn map_arm_body(variant_name: string, parent_name: string, bindings: List<Binding>) -> Expr {
-    mut params: List<ParamEntry> = []
-    for b in bindings {
-        let name = if b.binding_name == "_" { fresh_scalar_name(params.length) } else { b.binding_name }
-        params.push(ParamEntry { name: name, vtype: ValueType.Unknown })
-    }
+    let names = map_binding_names(bindings)
     mut args: List<SExpr> = []
     mut idx = 0
     while idx < bindings.length {
         let b = bindings[idx]
-        let bind_name = params[idx].name
+        let bind_name = names[idx]
         let arg_expr = match b.kind {
             .DirectSelf -> map_call_on_field(bind_name)
             .ListOfSelf -> list_map_call(bind_name)
