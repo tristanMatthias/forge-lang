@@ -1164,7 +1164,11 @@ export fn tc_check_explicit_returns(tc: TC, fn_name: string, declared: ValueType
 fn tc_check_stmt_returns(tc: TC, fn_name: string, declared: ValueType, stmt: Stmt) -> TC {
     match stmt {
         .Return(value) -> {
-            let r = check_expr(tc, value)
+            // so07.7.3 phase-2: thread `declared` as the expected type
+            // for the returned expression. Empty `[]` literals + generic
+            // calls in return position pick up the fn's declared return
+            // type instead of decaying to List<Unknown> / unresolved T.
+            let r = check_expr_expected(tc, value, declared)
             if !vtype_eq(declared, r.ty) && !vtype_assignable(r.ty, declared) && !vtype_is_unknown(r.ty) && !vtype_eq(r.ty, .Void) {
                 let msg = "function `${fn_name}` returns `${vtype_display(declared)}`, but return produces `${vtype_display(r.ty)}`"
                 let cause = "declared return type is `${vtype_display(declared)}`"

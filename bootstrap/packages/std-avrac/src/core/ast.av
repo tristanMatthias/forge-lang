@@ -520,6 +520,16 @@ export fn vtype_assignable(src: ValueType, dst: ValueType) -> bool {
 /// `Unknown` is treated as a wildcard on either side (at the top
 /// level OR nested inside any container shape). Mirrors the shape
 /// dispatch in `vtype_eq` but tolerates Unknown leaves.
+///
+/// so07.7.3 phase-2 attempt (2026-05-31): removing the top-level
+/// wildcard surfaces ~30+ `mut out = []` sites without annotations
+/// that depend on it (collect_method_names_from_stmts,
+/// graph_resolve_all, …). Each call site needs an explicit
+/// `: List<T>` annotation OR flow-sensitive type refinement after
+/// .push(). Mass-edit is the proper fix; until then the wildcard
+/// stays. The Return-position expected-aware threading
+/// (tc_check_stmt_returns → check_expr_expected) lands separately
+/// since it's a strict improvement.
 fn assignable_with_unknowns(src: ValueType, dst: ValueType) -> bool {
     if src is .Unknown || dst is .Unknown { return true }
     // Concretely-equal leaves (e.g. nested `Int` vs `Int` inside a Tuple
