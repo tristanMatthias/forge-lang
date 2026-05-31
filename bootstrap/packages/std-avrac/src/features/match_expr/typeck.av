@@ -3,7 +3,7 @@
 
 use core.{Expr, Pattern, MatchArm, WhenArm, ParamEntry, Stmt, SStmt, Variant, ValueType, FieldEntry, TypeArg, TypeParamEntry, stmt_unwrap, vtype_display, vtype_enum_name, vtype_enum_type_args, vtype_eq, vtype_assignable, vtype_is_unknown, vtype_is_union, vtype_union_types}
 use diagnostics.{DiagCode, diag_warning, span_new, bag_report}
-use core.{type_short_name}
+use core.{type_short_name, nominal_names_match}
 use typeck.{EnumTypeReg, ExprResult, TC, check_expr, check_expr_expected, tc_bind, tc_check_explicit_returns, tc_enter, tc_er, tc_exit, tc_report, resolve_vtype, enum_type_variants, enum_type_params, tc_subst_vtype, variant_find}
 use core.{vtype_from_name}
 
@@ -376,12 +376,12 @@ fn enum_generic_bindings(reg: EnumTypeReg, enum_name: string, subject_ty: ValueT
 /// "type-param never substituted".
 fn pattern_binding_type(field_ty: ValueType, subject_ty: ValueType, subject_name: string) -> ValueType {
     if subject_name == "" { return ValueType.Unknown }
-    if names_alias(nominal_name(field_ty), subject_name) { return subject_ty }
+    if nominal_names_match(nominal_name(field_ty), subject_name) { return subject_ty }
     match field_ty {
         // Self-recursive list-of-Self projects subject_ty into the elem
         // slot so generic-call inference inside the arm body can pin
         // type-params from it (so07.5).
-        .List(elem) -> if names_alias(nominal_name(elem), subject_name) { ValueType.List(subject_ty) } else { field_ty }
+        .List(elem) -> if nominal_names_match(nominal_name(elem), subject_name) { ValueType.List(subject_ty) } else { field_ty }
         // Unresolved type-param leak: the generic substitution table
         // didn't bind this T. Keep Unknown so downstream typeck
         // doesn't act on a sentinel name.
@@ -404,11 +404,8 @@ fn nominal_name(t: ValueType) -> string {
     }
 }
 
-/// Equal names, ignoring `::` qualification. `""` aliases nothing.
-fn names_alias(a: string, b: string) -> bool {
-    if a == "" || b == "" { return false }
-    a == b || type_short_name(a) == b || a == type_short_name(b)
-}
+// `names_alias` retired by so07.7.1 — `nominal_names_match` in
+// core/ast.av carries the centralized bare-vs-FQN tolerance.
 
 /// Look up `enum_name`'s `variant_name` field list, trying the name
 /// as-given then its `::`-stripped short form. Returns `[]` on miss.
