@@ -30,10 +30,16 @@ spec "derive_walker: Stmt enum carries .children()" {
             "}\n")
         out.contains("while=1")
     }
-    // Stmt.Block(body: List<SStmt>) — wrapper-list shape — currently
-    // returns 0 children. Infrastructure for unwrap is in place via
-    // wrapper_unwrap_helper but the @comptime classifier doesn't reach
-    // kind=3 for these fields. Tracked under y9y4.11 follow-up.
+    then "Stmt.Block(body) unwraps List<SStmt> via y9y4.11" {
+        let out = run_capture(
+            "use @std.avrac.core.{Stmt, SStmt, sstmt_dummy}\n" +
+            "fn main() {\n" +
+            "    let inner: List<SStmt> = [sstmt_dummy(Stmt.NoOp), sstmt_dummy(Stmt.Break), sstmt_dummy(Stmt.Continue)]\n" +
+            "    let block = Stmt.Block(inner)\n" +
+            "    println(\"block=\" + string(block.children().length))\n" +
+            "}\n")
+        out.contains("block=3")
+    }
 }
 
 spec "derive_walker: Expr enum carries .children()" {
@@ -56,6 +62,15 @@ spec "derive_walker: Expr enum carries .children()" {
             "}\n")
         out.contains("bin=2")
     }
-    // Expr.Call(callee, args: List<SExpr>) — same wrapper-list gap
-    // as Stmt.Block. Tracked under y9y4.11 follow-up.
+    then "Expr.Call(callee, args) — mixed direct-Self + wrapper-list" {
+        let out = run_capture(
+            "use @std.avrac.core.{Expr, SExpr, sexpr_dummy}\n" +
+            "fn main() {\n" +
+            "    let callee = Expr.Ident(\"f\")\n" +
+            "    let args: List<SExpr> = [sexpr_dummy(Expr.Number(\"1\")), sexpr_dummy(Expr.Number(\"2\"))]\n" +
+            "    let call = Expr.Call(callee, args)\n" +
+            "    println(\"call=\" + string(call.children().length))\n" +
+            "}\n")
+        out.contains("call=3")  // 1 callee + 2 unwrapped args
+    }
 }

@@ -186,20 +186,32 @@ fn self_type_name(vt: ValueType) -> string {
     }
 }
 
-/// True when `candidate` resolves to the same enum as `parent_name`.
-/// Accepts exact match OR `candidate` being a fully-qualified form
-/// ending in `::parent_name` (the post-resolve canonical for a
-/// top-level decl).
+/// True when `candidate` and `parent_name` refer to the same nominal
+/// type. Accepts: exact match, candidate is `<...>::parent_name`, or
+/// parent_name is `<...>::candidate` — the qualification can land on
+/// either side depending on whether the field's `resolved` slot or
+/// the enum's `view.name` carries the fully-qualified path at
+/// macro-eval time. y9y4.11 hit this: wrapper_inner_type returns the
+/// bare "Stmt" while view.name is the qualified
+/// "@std::avrac::core::Stmt", so the original one-direction suffix
+/// match (qualified ENDS WITH "::" + bare) missed in this direction.
 @comptime
 fn name_matches(candidate: string, parent_name: string) -> bool {
     if candidate == parent_name { return true }
-    let cl = candidate.length
-    let pl = parent_name.length
-    if cl < pl + 2 { return false }
-    let tail = candidate.substring(cl - pl, cl)
-    if tail != parent_name { return false }
-    let sep = candidate.substring(cl - pl - 2, cl - pl)
-    sep == "::"
+    if ends_with_qualified(candidate, parent_name) { return true }
+    ends_with_qualified(parent_name, candidate)
+}
+
+/// True iff `qualified` ends with `"::" + short`. Both arguments
+/// non-empty; caller checks equality before calling.
+@comptime
+fn ends_with_qualified(qualified: string, short: string) -> bool {
+    let ql = qualified.length
+    let sl = short.length
+    if ql < sl + 2 { return false }
+    let tail = qualified.substring(ql - sl, ql)
+    if tail != short { return false }
+    qualified.substring(ql - sl - 2, ql - sl) == "::"
 }
 
 @comptime
@@ -230,11 +242,34 @@ fn classify_field_kind(vt: ValueType, parent_name: string) -> int {
 @comptime
 fn is_wrapper_list_of_self(vt: ValueType, parent_name: string) -> bool {
     let elem = list_elem_or_unknown(vt)
-    let wrapper = self_type_name(elem)
+    let wrapper = short_name(self_type_name(elem))
     if wrapper == "" { return false }
     let inner = wrapper_inner_type(wrapper)
     if inner == "" { return false }
     name_matches(inner, parent_name)
+}
+
+/// Strip a `::`-qualified prefix, returning the trailing identifier
+/// (the type's short / bare form). Returns the input unchanged when
+/// no `::` is present. Walks left-to-right looking for `::` via
+/// substring probes — string-index `name[i]` and `last_index_of`
+/// aren't exposed to the @comptime eval, but `.substring` is.
+@comptime
+fn short_name(name: string) -> string {
+    if name == "" { return "" }
+    let len = name.length
+    mut last_sep = -1
+    mut i = 0
+    while i + 1 < len {
+        if name.substring(i, i + 2) == "::" {
+            last_sep = i
+            i = i + 2
+        } else {
+            i = i + 1
+        }
+    }
+    if last_sep < 0 { return name }
+    name.substring(last_sep + 2, len)
 }
 
 /// True when `vt` is `List<X>` where `X` is the parent type. Covers the
@@ -257,7 +292,7 @@ fn is_list_of_self(vt: ValueType, parent_name: string) -> bool {
 @comptime
 fn wrapper_list_unwrap_fn(vt: ValueType, parent_name: string) -> string {
     let elem = list_elem_or_unknown(vt)
-    let wrapper = self_type_name(elem)
+    let wrapper = short_name(self_type_name(elem))
     if wrapper == "" { return "" }
     let inner = wrapper_inner_type(wrapper)
     if inner == "" { return "" }
