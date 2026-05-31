@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_is_fn, vtype_is_unknown, vtype_list_elem, vtype_struct_name, vtype_tuple_at}
+use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_unknown, vtype_list_elem, vtype_struct_name, vtype_tuple_at}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive}
@@ -1223,7 +1223,7 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
         }
         .Grouping(inner) -> check_expr(tc, inner)
         .Call(callee, args) -> check_call(tc, callee, args)
-        .GenericCall(callee, _, args) -> check_call(tc, callee, args)
+        .GenericCall(callee, type_args, args) -> check_generic_call(tc, callee, type_args, args)
         .Index(obj, idx) -> {
             let o = check_expr(tc, obj)
             let i = check_expr(o.tc, idx)
@@ -1729,6 +1729,41 @@ fn tc_type_arg_lookup(args: List<TypeArg>, name: string) -> ValueType {
 /// `tc_check_fn_call_with` after resolving the callee name.
 fn check_call(tc: TC, callee: Expr, args: List<SExpr>) -> ExprResult {
     check_call_with_expected(tc, callee, args, ValueType.Unknown)
+}
+
+/// Typecheck `f::<T, U>(args)` — explicit-type-arg generic call.
+/// Pre-so07.7.1: GenericCall typeck dropped the type-args and
+/// delegated to check_call, leaving generic return types as
+/// Unknown. The W1 derive_walker rewrite emits GenericCall to make
+/// mono's inference unambiguous; this path now matches by carrying
+/// the user-supplied bindings through tc_subst_vtype on ret_ty.
+fn check_generic_call(tc: TC, callee: Expr, type_args: List<string>, args: List<SExpr>) -> ExprResult {
+    let name = match callee {
+        .Ident(n) -> n
+        .QualifiedIdent(n) -> n
+        _ -> ""
+    }
+    if name == "" { return check_call(tc, callee, args) }
+    let checked = check_expr_list(tc, args)
+    let r = fn_type_get(checked.fns, name)
+    if !r.found { return tc_er(checked, .Unknown) }
+    if r.tp.length == 0 || type_args.length == 0 {
+        // Non-generic fn or empty explicit-args — fall through to
+        // the inference path so the regular F1002 / arg-type checks
+        // still fire.
+        return tc_check_fn_call_with(checked, name, args, r)
+    }
+    // Pair the declared type-params with the explicit args and
+    // substitute into the return type. Extra args are ignored;
+    // missing args fall back to the param's name (resolved as
+    // Struct(name, 0) by vtype_from_name) which then either matches
+    // a concrete type via name-suffix tolerance or leaves Unknown.
+    mut bindings: List<TypeArg> = []
+    let n = if r.tp.length < type_args.length { r.tp.length } else { type_args.length }
+    for i in 0..n {
+        bindings.push(TypeArg { param_name: r.tp[i].name, concrete_vt: resolve_vtype(checked, vtype_from_name(type_args[i])) })
+    }
+    tc_er(checked, tc_subst_vtype(r.ret_ty, bindings))
 }
 
 /// Bidirectional variant — accepts the caller's expected return type

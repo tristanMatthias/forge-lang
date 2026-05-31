@@ -73,7 +73,7 @@ export fn sstmt_dummy(s: Stmt) -> SStmt { SStmt { node: s, line: 0, col: 0, file
 /// generic-call inference: typeck stamps T from the let/return
 /// position; mono harvests it via the expected-aware collect +
 /// rewrite passes).
-fn unwrap_node_list<W, T>(xs: List<W>) -> List<T> {
+export fn unwrap_node_list<W, T>(xs: List<W>) -> List<T> {
     mut out: List<T> = []
     for x in xs { out.push(x.node) }
     out
@@ -440,6 +440,32 @@ fn last_seg(s: string) -> string {
 /// by TypeRegistry id when both are non-zero, else by name string).
 /// Use `vtype_assignable` for the broader "can A be passed where B
 /// is expected" check.
+/// Bare-vs-FQN tolerant nominal name comparison. so07.7 T6 step:
+/// the per-site `names_alias` / `name_matches` workarounds were
+/// telling us the same story — name strings carry qualification
+/// inconsistently across passes (parser emits bare, resolver
+/// qualifies, codegen sometimes re-qualifies). Centralising the
+/// tolerance here removes the per-call-site tolerance the rest of
+/// the codebase had to grow. Two names match iff they're equal OR
+/// one is a `::`-prefix-stripped suffix of the other.
+fn nominal_names_match(a: string, b: string) -> bool {
+    if a == "" || b == "" { return false }
+    if a == b { return true }
+    if ends_with_double_colon_segment(a, b) { return true }
+    ends_with_double_colon_segment(b, a)
+}
+
+/// True iff `qualified` ends with `"::" + short`. Returns false on
+/// empty inputs or when `qualified` isn't longer than `short`.
+fn ends_with_double_colon_segment(qualified: string, short: string) -> bool {
+    let ql = qualified.length
+    let sl = short.length
+    if ql < sl + 2 { return false }
+    let tail = qualified.substring(ql - sl, ql)
+    if tail != short { return false }
+    qualified.substring(ql - sl - 2, ql - sl) == "::"
+}
+
 export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
     match a {
         .Int -> b is .Int
@@ -457,8 +483,8 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
         .List(ea) -> match b { .List(eb) -> vtype_eq(ea, eb), _ -> false }
         .Fn -> b is .Fn
         .Void -> b is .Void
-        .Struct(n1, id1) -> match b { .Struct(n2, id2) -> if id1 > 0 && id2 > 0 { id1 == id2 } else { n1 == n2 }, _ -> false }
-        .Enum(n1, _, id1) -> match b { .Enum(n2, _, id2) -> if id1 > 0 && id2 > 0 { id1 == id2 } else { n1 == n2 }, _ -> false }
+        .Struct(n1, id1) -> match b { .Struct(n2, id2) -> if id1 > 0 && id2 > 0 { id1 == id2 } else { nominal_names_match(n1, n2) }, _ -> false }
+        .Enum(n1, _, id1) -> match b { .Enum(n2, _, id2) -> if id1 > 0 && id2 > 0 { id1 == id2 } else { nominal_names_match(n1, n2) }, _ -> false }
         .Float -> b is .Float
         .Map -> b is .Map
         .FnTyped(pa, ra) -> match b {
@@ -470,15 +496,15 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
             .Fn(_) -> true
             _ -> false
         }
-        .Trait(n1, _) -> match b { .Trait(n2, _) -> n1 == n2, _ -> false }
+        .Trait(n1, _) -> match b { .Trait(n2, _) -> nominal_names_match(n1, n2), _ -> false }
         .Tuple(ea) -> match b { .Tuple(eb) -> type_lists_eq(ea, eb), _ -> false }
         .Closure(na, ra) -> match b { .Closure(nb, rb) -> na == nb && vtype_eq(ra, rb), _ -> false }
         .Union(types_a) -> match b {
             .Union(types_b) -> type_lists_eq(types_a, types_b)
             _ -> false
         }
-        .Newtype(n1, ia, _) -> match b { .Newtype(n2, ib, _) -> n1 == n2 && vtype_eq(ia, ib), _ -> false }
-        .NarrowedEnum(e1, v1, _) -> match b { .NarrowedEnum(e2, v2, _) -> e1 == e2 && v1 == v2, _ -> false }
+        .Newtype(n1, ia, _) -> match b { .Newtype(n2, ib, _) -> nominal_names_match(n1, n2) && vtype_eq(ia, ib), _ -> false }
+        .NarrowedEnum(e1, v1, _) -> match b { .NarrowedEnum(e2, v2, _) -> nominal_names_match(e1, e2) && v1 == v2, _ -> false }
         .Unknown -> b is .Unknown
         .Task(ra) -> match b { .Task(rb) -> vtype_eq(ra, rb), _ -> false }
         _ -> false
