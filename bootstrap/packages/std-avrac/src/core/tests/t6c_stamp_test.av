@@ -1,0 +1,54 @@
+// so07.7.19 / T6.C: the id-stamp pass at typeck entry rewrites every
+// id=0 nominal whose name IS in the resolver's TypeRegistry. After
+// the pass, residual id=0 nominals are exclusively type-param
+// placeholders (T, U, S, …) — names that legitimately have no id
+// because they aren't registered types.
+//
+// Why this test observes the fix: the probe in detail mode prints
+// every residual id=0 nominal AFTER the stamp pass runs. When the
+// stamp pass is active, registered FQN'd names like
+// `@std::avrac::core::SStmt` get stamped and DON'T appear in the
+// residual list. When the stamp pass is no-op'd (e.g. the
+// stamp_ids_stmts call commented out), those FQN names land in the
+// residual list because the post == pre count.
+//
+// Reverting `stamp_ids_stmts(stmts, type_reg)` to `stmts` makes the
+// fixture print residual names like
+// `@std::avrac::core::SStmt (in_reg=true)` — the test asserts the
+// OPPOSITE, so reverting fails it.
+
+use @std.avrac.test_runner.{write_fixture}
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn build_probe_detail(path: string) -> string {
+    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS AVRA_T6_PROBE=1 AVRA_T6_PROBE_DETAIL=1 ./build/bs2 compile '${path}' 2>&1 || true")
+}
+
+spec "T6.C: stamp pass drives registered FQN nominals to non-zero id" {
+    then "residual id=0 list contains no registered name" {
+        // Fixture brings @std::avrac::core::SStmt / SExpr into scope
+        // via derive_walker's import surface. Without the stamp,
+        // many of those land in the residual id=0 list.
+        write_fixture("/tmp/avra_t6c_residuals.av",
+            "use @std.avrac.features.walker.{derive_walker}\n" +
+            "\n" +
+            "@expand(derive_walker)\n" +
+            "enum WTree {\n" +
+            "    Leaf(v: int),\n" +
+            "    Node(l: WTree, r: WTree),\n" +
+            "}\n" +
+            "\n" +
+            "fn main() -> int {\n" +
+            "    let t = WTree.Leaf(42)\n" +
+            "    println(\"ok\")\n" +
+            "    0\n" +
+            "}\n")
+        let out = build_probe_detail("/tmp/avra_t6c_residuals.av")
+        // The probe-detail line shape is
+        // "[T6.C]   residual id=0 name[i]: <NAME> (in_reg=true)"
+        // when the stamp pass leaks a registered name; nothing of
+        // that shape should appear once the stamp pass lands.
+        !out.contains("(in_reg=true)")
+    }
+}

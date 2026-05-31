@@ -515,6 +515,63 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
     }
 }
 
+/// T6.C: re-stamp registry ids on every nominal slot whose id is 0.
+/// Required because macro / comptime / monomorphizer-emitted AST
+/// nodes carry parser-shape ValueTypes with id=0 even though the
+/// type's name IS registered. Walking the AST after resolve+expand
+/// + comptime closes the gap so vtype_eq can drop the
+/// nominal_names_match fallback (T6.D).
+export fn stamp_ids_vtype(t: ValueType, reg: TypeRegistry) -> ValueType {
+    match t {
+        .Struct(n, id) -> {
+            if id == 0 && n != "" {
+                let new_id = type_registry_id_for(reg, n)
+                if new_id != 0 { ValueType.Struct(n, new_id) } else { t }
+            } else { t }
+        }
+        .Enum(n, args, id) -> {
+            let new_args = stamp_ids_vtypes(args, reg)
+            let new_id = if id == 0 && n != "" { type_registry_id_for(reg, n) } else { id }
+            ValueType.Enum(n, new_args, new_id)
+        }
+        .Trait(n, id) -> {
+            if id == 0 && n != "" {
+                let new_id = type_registry_id_for(reg, n)
+                if new_id != 0 { ValueType.Trait(n, new_id) } else { t }
+            } else { t }
+        }
+        .Newtype(n, inner, id) -> {
+            let new_inner = stamp_ids_vtype(inner, reg)
+            let new_id = if id == 0 && n != "" { type_registry_id_for(reg, n) } else { id }
+            ValueType.Newtype(n, new_inner, new_id)
+        }
+        .NarrowedEnum(en, vn, id) -> {
+            if id == 0 && en != "" {
+                let new_id = type_registry_id_for(reg, en)
+                if new_id != 0 { ValueType.NarrowedEnum(en, vn, new_id) } else { t }
+            } else { t }
+        }
+        .List(elem) -> ValueType.List(stamp_ids_vtype(elem, reg))
+        .Task(r) -> ValueType.Task(stamp_ids_vtype(r, reg))
+        .Tuple(types) -> ValueType.Tuple(stamp_ids_vtypes(types, reg))
+        .Union(types) -> ValueType.Union(stamp_ids_vtypes(types, reg))
+        .FnTyped(params, ret) -> ValueType.FnTyped(stamp_ids_vtypes(params, reg), stamp_ids_vtype(ret, reg))
+        .Fn(ret) -> ValueType.Fn(stamp_ids_vtype(ret, reg))
+        .Closure(n, ret) -> ValueType.Closure(n, stamp_ids_vtype(ret, reg))
+        _ -> t
+    }
+}
+
+fn stamp_ids_vtypes(ts: List<ValueType>, reg: TypeRegistry) -> List<ValueType> {
+    mut out: List<ValueType> = []
+    mut i = 0
+    while i < ts.length {
+        out.push(stamp_ids_vtype(ts[i], reg))
+        i = i + 1
+    }
+    out
+}
+
 /// Count nominal `ValueType` slots whose TypeId is the 0 sentinel.
 /// Used by typeck's T6.B probe to surface resolver gaps where a
 /// post-resolve AST still carries a name-only nominal. Recurses
@@ -553,6 +610,54 @@ fn count_id_zero_in_vtypes(ts: List<ValueType>) -> int {
         i = i + 1
     }
     total
+}
+
+/// Collect id=0 nominal NAMES encountered in a vtype walk. Used by
+/// the T6.C probe-detail mode (AVRA_T6_PROBE_DETAIL=1) to surface
+/// which names land at id=0 — most are type-param placeholders
+/// (`T`, `U`, `Item`), the rest are real resolver gaps to fix.
+export fn collect_id_zero_names_vtype(t: ValueType, out: List<string>) -> List<string> {
+    mut acc = out
+    match t {
+        .Struct(n, id) -> {
+            if id == 0 { acc.push(n) }
+            acc
+        }
+        .Enum(n, args, id) -> {
+            if id == 0 { acc.push(n) }
+            collect_id_zero_names_vtypes(args, acc)
+        }
+        .Trait(n, id) -> {
+            if id == 0 { acc.push("dyn ${n}") }
+            acc
+        }
+        .Newtype(n, inner, id) -> {
+            if id == 0 { acc.push("newtype ${n}") }
+            collect_id_zero_names_vtype(inner, acc)
+        }
+        .NarrowedEnum(en, vn, id) -> {
+            if id == 0 { acc.push("${en}.${vn}") }
+            acc
+        }
+        .List(elem) -> collect_id_zero_names_vtype(elem, acc)
+        .Task(r) -> collect_id_zero_names_vtype(r, acc)
+        .Tuple(types) -> collect_id_zero_names_vtypes(types, acc)
+        .Union(types) -> collect_id_zero_names_vtypes(types, acc)
+        .FnTyped(params, ret) -> collect_id_zero_names_vtype(ret, collect_id_zero_names_vtypes(params, acc))
+        .Fn(ret) -> collect_id_zero_names_vtype(ret, acc)
+        .Closure(_, ret) -> collect_id_zero_names_vtype(ret, acc)
+        _ -> acc
+    }
+}
+
+fn collect_id_zero_names_vtypes(ts: List<ValueType>, out: List<string>) -> List<string> {
+    mut acc = out
+    mut i = 0
+    while i < ts.length {
+        acc = collect_id_zero_names_vtype(ts[i], acc)
+        i = i + 1
+    }
+    acc
 }
 
 /// Walk a List<SStmt> counting nominal types with id=0 across every
@@ -604,6 +709,107 @@ fn count_id_zero_in_params(params: List<ParamEntry>) -> int {
         i = i + 1
     }
     total
+}
+
+/// Detail-mode walker: collect the first id=0 nominal names found
+/// across the AST so a probe consumer can rank which names dominate
+/// (type-param placeholders like `T` vs real resolver gaps).
+export fn collect_id_zero_names_stmts(stmts: List<SStmt>, out: List<string>) -> List<string> {
+    mut acc = out
+    mut i = 0
+    while i < stmts.length {
+        acc = collect_id_zero_names_stmt(stmts[i].node, acc)
+        i = i + 1
+    }
+    acc
+}
+
+fn collect_id_zero_names_stmt(stmt: Stmt, out: List<string>) -> List<string> {
+    match stmt {
+        .Let(_, vt, _) -> collect_id_zero_names_vtype(vt, out)
+        .Mut(_, vt, _) -> collect_id_zero_names_vtype(vt, out)
+        .Const(_, vt, _) -> collect_id_zero_names_vtype(vt, out)
+        .Function(_, _, params, ret_vt, body) -> {
+            let a1 = collect_id_zero_names_params(params, out)
+            let a2 = collect_id_zero_names_vtype(ret_vt, a1)
+            collect_id_zero_names_stmts(body, a2)
+        }
+        .ExternFn(_, params, ret_vt) ->
+            collect_id_zero_names_vtype(ret_vt, collect_id_zero_names_params(params, out))
+        .If(_, then_b, else_b) -> {
+            let a1 = collect_id_zero_names_stmt(then_b, out)
+            if else_b != null { collect_id_zero_names_stmt(else_b!, a1) } else { a1 }
+        }
+        .While(_, body) -> collect_id_zero_names_stmt(body, out)
+        .For(_, _, _, body) -> collect_id_zero_names_stmt(body, out)
+        .ForIn(_, _, body) -> collect_id_zero_names_stmt(body, out)
+        .Block(body) -> collect_id_zero_names_stmts(body, out)
+        .Module(_, body) -> collect_id_zero_names_stmts(body, out)
+        .Impl(_, methods) -> collect_id_zero_names_stmts(methods, out)
+        .Annotated(_, inner) -> collect_id_zero_names_stmt(inner, out)
+        _ -> out
+    }
+}
+
+fn collect_id_zero_names_params(params: List<ParamEntry>, out: List<string>) -> List<string> {
+    mut acc = out
+    mut i = 0
+    while i < params.length {
+        acc = collect_id_zero_names_vtype(params[i].vtype, acc)
+        i = i + 1
+    }
+    acc
+}
+
+/// T6.C: walk a `List<SStmt>` re-stamping every nominal ValueType slot
+/// whose id was 0 with its registry id. After this pass, vtype_eq's
+/// nominal arms can drop the name-fallback because every name that's
+/// in the registry comes with the matching id. Slots whose name
+/// isn't registered (type-param placeholders, builtins) stay at 0.
+export fn stamp_ids_stmts(stmts: List<SStmt>, reg: TypeRegistry) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        out.push(sstmt_at(stamp_ids_stmt(ss.node, reg), ss.line, ss.col, ss.file))
+        i = i + 1
+    }
+    out
+}
+
+fn stamp_ids_stmt(stmt: Stmt, reg: TypeRegistry) -> Stmt {
+    match stmt {
+        .Let(n, vt, init) -> .Let(n, stamp_ids_vtype(vt, reg), init)
+        .Mut(n, vt, init) -> .Mut(n, stamp_ids_vtype(vt, reg), init)
+        .Const(n, vt, init) -> .Const(n, stamp_ids_vtype(vt, reg), init)
+        .Function(name, tp, params, ret_vt, body) ->
+            .Function(name, tp, stamp_ids_params(params, reg), stamp_ids_vtype(ret_vt, reg), stamp_ids_stmts(body, reg))
+        .ExternFn(name, params, ret_vt) ->
+            .ExternFn(name, stamp_ids_params(params, reg), stamp_ids_vtype(ret_vt, reg))
+        .If(cond, then_b, else_b) -> {
+            let a = stamp_ids_stmt(then_b, reg)
+            if else_b != null { .If(cond, a, stamp_ids_stmt(else_b!, reg)) } else { .If(cond, a, null) }
+        }
+        .While(cond, body) -> .While(cond, stamp_ids_stmt(body, reg))
+        .For(v, s, e, body) -> .For(v, s, e, stamp_ids_stmt(body, reg))
+        .ForIn(v, coll, body) -> .ForIn(v, coll, stamp_ids_stmt(body, reg))
+        .Block(body) -> .Block(stamp_ids_stmts(body, reg))
+        .Module(name, body) -> .Module(name, stamp_ids_stmts(body, reg))
+        .Impl(name, methods) -> .Impl(name, stamp_ids_stmts(methods, reg))
+        .Annotated(annots, inner) -> .Annotated(annots, stamp_ids_stmt(inner, reg))
+        _ -> stmt
+    }
+}
+
+fn stamp_ids_params(params: List<ParamEntry>, reg: TypeRegistry) -> List<ParamEntry> {
+    mut out: List<ParamEntry> = []
+    mut i = 0
+    while i < params.length {
+        let p = params[i]
+        out.push(ParamEntry { name: p.name, vtype: stamp_ids_vtype(p.vtype, reg) })
+        i = i + 1
+    }
+    out
 }
 
 /// Pairwise `vtype_eq` over two `List<ValueType>`s. False on

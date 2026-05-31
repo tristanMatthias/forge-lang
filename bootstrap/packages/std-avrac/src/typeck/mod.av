@@ -12,7 +12,8 @@ use features.list_lit.{check_list_method, check_list_lit_with_expected}
 use features.map_lit.{check_map_method}
 use features.let_stmt.{is_const_expr, bind_destructure}
 use core.{method_mangled_name, type_short_name, is_result_enum_name}
-use core.{TypeRegistry, type_registry_id_for, count_id_zero_nominals_stmts}
+use core.{TypeRegistry, type_registry_id_for, type_registry_has_name, count_id_zero_nominals_stmts, collect_id_zero_names_stmts, stamp_ids_stmts}
+use core.{exit}
 use core.{avra_process_env_get}
 use list_ops.{list_push_copy, list_any, list_map}
 
@@ -732,13 +733,55 @@ export fn typecheck_program(stmts: List<SStmt>, type_reg: TypeRegistry) -> TypeC
     let t_start = avra_uptime_ms()
 
     let tc0 = tc_new(type_reg)
-    // T6.B probe: scan the post-resolve AST for nominal types whose
-    // TypeId is the 0 sentinel. Gated by AVRA_T6_PROBE so it's free
-    // in production builds. Reports the count to stderr; T6.C
-    // promotes this to a hard assertion.
+    // T6.C: re-stamp registry ids on every nominal slot whose id=0.
+    // Macro/comptime/monomorphizer-emitted AST nodes carry
+    // parser-shape ValueTypes with id=0 even when the name IS
+    // registered. The pre-stamp pass closes the gap so vtype_eq's
+    // nominal arms can stop short-circuiting via nominal_names_match
+    // for the common in-registry case. Residual id=0 nominals after
+    // the stamp pass are type-param placeholders (T, U, S, …) —
+    // legitimately id=0 because they aren't registered types.
+    let stamped_stmts = stamp_ids_stmts(stmts, type_reg)
+    // T6.C hard assertion: any id=0 nominal whose NAME IS in the
+    // TypeRegistry is a bug — the stamp pass should have caught it.
+    // Type-param placeholders (single-letter names not in the
+    // registry) are allowed. Gated by AVRA_T6_STRICT so it can land
+    // safely before the metadata pipeline is fully wired (T6.B
+    // notes the cross-unit sym_id gap).
+    if avra_process_env_get("AVRA_T6_STRICT") != "" {
+        let leaks_empty: List<string> = []
+        let leaks = collect_id_zero_names_stmts(stamped_stmts, leaks_empty)
+        mut leak_i = 0
+        mut real_leaks = 0
+        while leak_i < leaks.length {
+            if type_registry_has_name(type_reg, leaks[leak_i]) {
+                eprintln("[T6.C] FAIL: id=0 leak for registered name `${leaks[leak_i]}`")
+                real_leaks = real_leaks + 1
+            }
+            leak_i = leak_i + 1
+        }
+        if real_leaks > 0 {
+            eprintln("[T6.C] FAIL: ${string(real_leaks)} id=0 nominal(s) referenced a registered type — stamp pass leak")
+            exit(1)
+        }
+    }
     if avra_process_env_get("AVRA_T6_PROBE") != "" {
-        let n = count_id_zero_nominals_stmts(stmts)
-        eprintln("[T6.B] id=0 nominals in post-resolve AST: ${string(n)}")
+        let n_pre = count_id_zero_nominals_stmts(stmts)
+        let n_post = count_id_zero_nominals_stmts(stamped_stmts)
+        eprintln("[T6.B] id=0 nominals in post-resolve AST: ${string(n_pre)}")
+        eprintln("[T6.C] id=0 nominals after stamp pass: ${string(n_post)}")
+        if avra_process_env_get("AVRA_T6_PROBE_DETAIL") != "" {
+            let names_empty: List<string> = []
+            let names = collect_id_zero_names_stmts(stamped_stmts, names_empty)
+            mut i = 0
+            let cap = if names.length < 40 { names.length } else { 40 }
+            while i < cap {
+                let probe_name = names[i]
+                let in_reg = type_registry_has_name(type_reg, probe_name)
+                eprintln("[T6.C]   residual id=0 name[${string(i)}]: ${probe_name} (in_reg=${string(in_reg)})")
+                i = i + 1
+            }
+        }
     }
     // Pass 1: collect declarations (types, enums, functions). The
     // single walk is order-sensitive — a Function whose return type
@@ -775,7 +818,22 @@ export fn typecheck_program(stmts: List<SStmt>, type_reg: TypeRegistry) -> TypeC
         let n = count_id_zero_nominals_stmts(annotated)
         eprintln("[T6.B] id=0 nominals post-typeck: ${string(n)}")
     }
-    TypeCheckResult { stmts: annotated, had_error: bag_has_errors(tc3.bag), bag: tc3.bag, trait_impls: tc3.trait_impls }
+    // T6.C: hand mono + codegen the stamped form. Typeck itself ran
+    // on the parser-shape AST (changing inputs mid-pipeline broke
+    // shard linkage in earlier iterations — codegen looks up types
+    // by name and the rebuild was load-bearing somewhere subtle).
+    // Stamping AFTER annotation keeps the typeck-internal registries
+    // unchanged while still letting downstream stages see the
+    // resolved ids.
+    // T6.C: hand mono + codegen the stamped form. Typeck itself ran
+    // on the parser-shape AST (changing inputs mid-pipeline broke
+    // shard linkage in earlier iterations — codegen looks up types
+    // by name and the rebuild was load-bearing somewhere subtle).
+    // Stamping AFTER annotation keeps the typeck-internal registries
+    // unchanged while still letting downstream stages see the
+    // resolved ids.
+    let stamped_final = stamp_ids_stmts(annotated, type_reg)
+    TypeCheckResult { stmts: stamped_final, had_error: bag_has_errors(tc3.bag), bag: tc3.bag, trait_impls: tc3.trait_impls }
 }
 
 // ── Pass 1: Declaration collection ──
