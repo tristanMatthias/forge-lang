@@ -16,7 +16,7 @@
 //      method name) so codegen's dot-notation dispatch finds it
 //      via the standard method-lookup path.
 
-use core.{Stmt, SStmt, Expr, SExpr, ParamEntry, TypeParamEntry, Pattern, MatchArm, ValueType, Variant, FieldEntry, sexpr_dummy, sstmt_dummy, type_short_name}
+use core.{Stmt, SStmt, Expr, SExpr, ParamEntry, TypeParamEntry, Pattern, MatchArm, ValueType, Variant, FieldEntry, sexpr_dummy, sstmt_dummy, type_short_name, nominal_names_match}
 use features.comptime.{AnnotatedDecl, ResolverCtx, ResolvedDecls, DeclSymbol, DeclKind, MacroProvenance, ResolvedType, ctx_lookup_type, ctx_unwrap_path_to}
 use diagnostics.{Span}
 
@@ -172,7 +172,7 @@ fn build_one_arm(v: Variant, parent_name: string, ctx: ResolverCtx) -> MatchArm 
 fn is_self_type(vt: ValueType, parent_name: string) -> bool {
     let n = self_type_name(vt)
     if n == "" { return false }
-    name_matches(n, parent_name)
+    nominal_names_match(n, parent_name)
 }
 
 @comptime
@@ -185,33 +185,9 @@ fn self_type_name(vt: ValueType) -> string {
     }
 }
 
-/// True when `candidate` and `parent_name` refer to the same nominal
-/// type. Accepts: exact match, candidate is `<...>::parent_name`, or
-/// parent_name is `<...>::candidate` — the qualification can land on
-/// either side depending on whether the field's `resolved` slot or
-/// the enum's `view.name` carries the fully-qualified path at
-/// macro-eval time. y9y4.11 hit this: wrapper_inner_type returns the
-/// bare "Stmt" while view.name is the qualified
-/// "@std::avrac::core::Stmt", so the original one-direction suffix
-/// match (qualified ENDS WITH "::" + bare) missed in this direction.
-@comptime
-fn name_matches(candidate: string, parent_name: string) -> bool {
-    if candidate == parent_name { return true }
-    if ends_with_qualified(candidate, parent_name) { return true }
-    ends_with_qualified(parent_name, candidate)
-}
-
-/// True iff `qualified` ends with `"::" + short`. Both arguments
-/// non-empty; caller checks equality before calling.
-@comptime
-fn ends_with_qualified(qualified: string, short: string) -> bool {
-    let ql = qualified.length
-    let sl = short.length
-    if ql < sl + 2 { return false }
-    let tail = qualified.substring(ql - sl, ql)
-    if tail != short { return false }
-    qualified.substring(ql - sl - 2, ql - sl) == "::"
-}
+// `name_matches` + `ends_with_qualified` retired by so07.7.1 —
+// the centralized `nominal_names_match` in core/ast.av carries
+// the same bare-vs-FQN suffix tolerance.
 
 @comptime
 fn classify_variant(v: Variant, parent_name: string, ctx: ResolverCtx) -> List<Binding> {

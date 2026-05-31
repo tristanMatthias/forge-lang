@@ -447,8 +447,11 @@ fn last_seg(s: string) -> string {
 /// qualifies, codegen sometimes re-qualifies). Centralising the
 /// tolerance here removes the per-call-site tolerance the rest of
 /// the codebase had to grow. Two names match iff they're equal OR
-/// one is a `::`-prefix-stripped suffix of the other.
-fn nominal_names_match(a: string, b: string) -> bool {
+/// one is a `::`-prefix-stripped suffix of the other. Exported +
+/// @comptime so derive_walker (and other @comptime macros) reuse
+/// it instead of duplicating the suffix logic.
+@comptime
+export fn nominal_names_match(a: string, b: string) -> bool {
     if a == "" || b == "" { return false }
     if a == b { return true }
     if ends_with_double_colon_segment(a, b) { return true }
@@ -457,6 +460,7 @@ fn nominal_names_match(a: string, b: string) -> bool {
 
 /// True iff `qualified` ends with `"::" + short`. Returns false on
 /// empty inputs or when `qualified` isn't longer than `short`.
+@comptime
 fn ends_with_double_colon_segment(qualified: string, short: string) -> bool {
     let ql = qualified.length
     let sl = short.length
