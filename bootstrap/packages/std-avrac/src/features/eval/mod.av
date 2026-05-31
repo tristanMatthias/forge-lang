@@ -883,19 +883,27 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
             ok_result(runtime, value_type_marker(path))
         }
         .Index(obj, idx) -> {
-            // `xs[i]` on a list Value. Eval both sides then read
-            // list_payload at the integer index. Out-of-range
-            // surfaces as a clean error rather than a runtime crash.
+            // `xs[i]` on a list Value, or `s[i]` on a string Value
+            // (so07.7.9 — strings index to a single-char string,
+            // matching the runtime). Out-of-range surfaces as a
+            // clean error rather than a runtime crash.
             let obj_result = eval_expr(runtime, obj)
             if obj_result.had_error { return obj_result }
             let idx_result = eval_expr(obj_result.runtime, idx)
             if idx_result.had_error { return idx_result }
             let v = obj_result.value
             let iv = idx_result.value
+            let i = parse_num(iv.number_text)
+            if v.kind == "string" {
+                let s = v.text
+                if i < 0 || i >= s.length {
+                    return error_result(idx_result.runtime, "string index ${string(i)} out of range (length=${string(s.length)})")
+                }
+                return ok_result(idx_result.runtime, value_string(s.substring(i, i + 1)))
+            }
             if v.kind != "list" {
                 return error_result(idx_result.runtime, "index on non-list value (kind=${v.kind})")
             }
-            let i = parse_num(iv.number_text)
             if i < 0 || i >= v.list_payload.length {
                 return error_result(idx_result.runtime, "index ${string(i)} out of range (length=${string(v.list_payload.length)})")
             }
@@ -1609,11 +1617,40 @@ fn eval_string_method(runtime: Runtime, str_val: Value, method: string, args: Li
         if lo > hi { lo = hi }
         return ok_result(e_r.runtime, value_string(s.substring(lo, hi)))
     }
-    if method == "contains" {
-        if args.length != 1 { return error_result(runtime, "string.contains expects 1 argument") }
+    // so07.7.10 — single-arg string predicates: same signature shape
+    // (one string arg, returns bool / string / int). Each delegates
+    // straight to the runtime method on str_val.text.
+    if method == "contains" || method == "starts_with" || method == "ends_with" {
+        if args.length != 1 { return error_result(runtime, "string.${method} expects 1 argument") }
         let arg_r = eval_expr(runtime, args[0].node)
         if arg_r.had_error { return arg_r }
-        return ok_result(arg_r.runtime, value_bool(str_val.text.contains(arg_r.value.text)))
+        let s = str_val.text
+        let needle = arg_r.value.text
+        if method == "contains"    { return ok_result(arg_r.runtime, value_bool(s.contains(needle))) }
+        if method == "starts_with" { return ok_result(arg_r.runtime, value_bool(s.starts_with(needle))) }
+        return ok_result(arg_r.runtime, value_bool(s.ends_with(needle)))
+    }
+    if method == "index_of" {
+        if args.length != 1 { return error_result(runtime, "string.index_of expects 1 argument") }
+        let arg_r = eval_expr(runtime, args[0].node)
+        if arg_r.had_error { return arg_r }
+        return ok_result(arg_r.runtime, value_number(string(str_val.text.index_of(arg_r.value.text))))
+    }
+    // so07.7.10 — zero-arg unary transforms (trim / to_upper / to_lower).
+    if method == "trim" || method == "to_upper" || method == "to_lower" {
+        if args.length != 0 { return error_result(runtime, "string.${method} expects 0 arguments") }
+        let s = str_val.text
+        if method == "trim"     { return ok_result(runtime, value_string(s.trim())) }
+        if method == "to_upper" { return ok_result(runtime, value_string(s.to_upper())) }
+        return ok_result(runtime, value_string(s.to_lower()))
+    }
+    if method == "replace" {
+        if args.length != 2 { return error_result(runtime, "string.replace expects 2 arguments") }
+        let needle_r = eval_expr(runtime, args[0].node)
+        if needle_r.had_error { return needle_r }
+        let repl_r = eval_expr(needle_r.runtime, args[1].node)
+        if repl_r.had_error { return repl_r }
+        return ok_result(repl_r.runtime, value_string(str_val.text.replace(needle_r.value.text, repl_r.value.text)))
     }
     null
 }

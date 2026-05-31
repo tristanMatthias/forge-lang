@@ -251,25 +251,21 @@ fn is_wrapper_list_of_self(vt: ValueType, parent_name: string) -> bool {
 
 /// Strip a `::`-qualified prefix, returning the trailing identifier
 /// (the type's short / bare form). Returns the input unchanged when
-/// no `::` is present. Walks left-to-right looking for `::` via
-/// substring probes — string-index `name[i]` and `last_index_of`
-/// aren't exposed to the @comptime eval, but `.substring` is.
+/// no `::` is present. Uses string indexing now that so07.7.9 added
+/// `s[i]` to the @comptime evaluator — back-scan from the end finds
+/// the last `::` in O(name.length) without substring allocations.
 @comptime
 fn short_name(name: string) -> string {
     if name == "" { return "" }
     let len = name.length
-    mut last_sep = -1
-    mut i = 0
-    while i + 1 < len {
-        if name.substring(i, i + 2) == "::" {
-            last_sep = i
-            i = i + 2
-        } else {
-            i = i + 1
+    mut i = len - 1
+    while i > 0 {
+        if name[i] == ":" && name[i - 1] == ":" {
+            return name.substring(i + 1, len)
         }
+        i = i - 1
     }
-    if last_sep < 0 { return name }
-    name.substring(last_sep + 2, len)
+    name
 }
 
 /// True when `vt` is `List<X>` where `X` is the parent type. Covers the
