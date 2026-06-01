@@ -10,15 +10,22 @@
 //
 // Cost-of-running design choice: the corpus bundles into ONE fixture
 // and validates with ONE `bs2 check` invocation. Per-shape `then`
-// blocks would force 30 separate `bs2 check` runs, each of which
-// re-parses all of std-avrac from source — AVRA_USE_METADATA must be
-// stripped because @comptime fn bodies aren't preserved across the
-// metadata roundtrip (9p1d). 30 × ~14s = ~420s/shard, which would
-// dominate the pre-commit suite. Bundled, the same coverage lands in
-// one ~14s check. Regressions still pinpoint the breaking shape via
-// the F-code's source line in the captured output — each enum is
-// named to identify its shape (E1S1 = 1 variant scalar 1 field,
-// E2LN = 2-variant Leaf/Node, E3X = 3-variant Mix, …).
+// blocks would force 30 separate `bs2 check` runs; bundled, the same
+// coverage lands in one shard. Regressions still pinpoint the
+// breaking shape via the F-code's source line in the captured
+// output — each enum is named to identify its shape (E1S1 = 1
+// variant scalar 1 field, E2LN = 2-variant Leaf/Node, E3X = 3-
+// variant Mix, …).
+//
+// AVRA_USE_METADATA must be stripped because @comptime fn bodies
+// aren't preserved across the metadata roundtrip (9p1d).
+//
+// 1h9l: routed through cached_fixture_check_no_metadata instead of
+// a raw avra_shell_exec. The fixture uses @expand(derive_walker)
+// from @std.avrac.features.walker, so it can't run through in-
+// process check_source (which skips file-based module loading).
+// The content-keyed cache makes warm reruns return cached stdout
+// in ~10ms instead of paying a full bs2 compile (~14s) each time.
 //
 // Coverage axes:
 //   * variant counts: 1 / 2 / 3
@@ -30,7 +37,7 @@
 //     fields), wide-list-self (5 fields), all-empty (5 variants),
 //     and a mixed-primitives variant
 
-use @std.avrac.core.{avra_shell_exec}
+use @std.avrac.test_runner.{write_fixture, cached_fixture_check_no_metadata}
 
 fn shape_corpus() -> string {
     "use @std.avrac.features.walker.{derive_walker}\n" +
@@ -76,8 +83,8 @@ fn shape_corpus() -> string {
 spec "T8 shape matrix: 30 derive_walker shapes type-check clean" {
     then "no F1xxx / F3xxx / F9999 from any shape in the corpus" {
         let fixture = "/tmp/avra_t8_shape_matrix.av"
-        avra_shell_exec("cat > '${fixture}' <<'EOF'\n${shape_corpus()}\nEOF")
-        let out = avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${fixture}' 2>&1 || true")
+        write_fixture(fixture, shape_corpus())
+        let out = cached_fixture_check_no_metadata(fixture)
         // On regression, the F-code source line in `out` names the
         // breaking enum (e.g. `enum E1SDL` for the s+d+l mix shape).
         // F1000 = typeck, F1003 = Display strictness on Unknown,
