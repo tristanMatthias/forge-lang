@@ -330,20 +330,27 @@ fn synth_test_main() -> SStmt {
 /// reporter fns, deduped @std/* packages, per-file test modules,
 /// synthesised `fn main`.
 export fn assemble_test_program(test_paths: List<string>, project_dir: string) -> Result<List<SStmt>, string> {
-    mut modules_fwd: List<SStmt> = []
-    mut packages: List<SStmt> = []
-    for path in test_paths {
-        let a = assemble_one_test_file(path)?
-        packages = list_concat(a.packages, packages)
-        modules_fwd.push(sstmt_dummy(Stmt.Module(a.mod_name, a.wrapped_body)))
-    }
     if test_paths.length == 0 { return Result.Err("no spec test files found") }
 
+    // hkms.1.1 perf pass: iterate test_paths in REVERSE and push so
+    // both `packages` and `modules` come out in the same reverse-of-
+    // test_paths order the prior `list_concat(a.packages, packages)`
+    // + `modules_fwd → modules` reverse-walk produced — without the
+    // O(N²) accumulator-recopy that prepending list_concat forces.
+    //
+    // Why ordering matches: dedup_modules merges per-name bodies via
+    // first-occurrence insertion order (group_by_module_name +
+    // mod_group_merge), so changing this loop's order would shift
+    // the merged module bodies' element order and break the
+    // bs2≡bs3 selfhost fixed point.
+    mut packages: List<SStmt> = []
     mut modules: List<SStmt> = []
-    mut r = modules_fwd.length - 1
-    while r >= 0 {
-        modules.push(modules_fwd[r])
-        r = r - 1
+    mut i = test_paths.length - 1
+    while i >= 0 {
+        let a = assemble_one_test_file(test_paths[i])?
+        for p in a.packages { packages.push(p) }
+        modules.push(sstmt_dummy(Stmt.Module(a.mod_name, a.wrapped_body)))
+        i = i - 1
     }
 
     let body = list_concat(load_reporter_stmts(project_dir),
