@@ -1,6 +1,6 @@
 // WHY: codegen for `expr is .Variant` — checks enum tag at runtime.
 
-use core.{Expr, VarBinding, variant_lookup, vtype_display, vtype_enum_name}
+use core.{Expr, VarBinding, variant_lookup, vtype_render_full, vtype_enum_name}
 use codegen.{Ctx, EmitValue, err_emit, ok_emit}
 
 /// Codegen entry for the `is` operator. Pattern-matches the
@@ -20,7 +20,7 @@ fn emit_is_check_inner(ctx: Ctx, env: List<VarBinding>, subject: Expr, vname: st
     let r = ctx.emit(env, subject)?
     let enum_name = vtype_enum_name(r.ty)
     if enum_name == "" {
-        return err_emit("`is` requires an enum value, got `${vtype_display(r.ty)}`")
+        return err_emit("`is` requires an enum value, got `${vtype_render_full(r.ty)}`")
     }
     let lookup = ctx.lookup_enum(enum_name)
     if !lookup.found {
