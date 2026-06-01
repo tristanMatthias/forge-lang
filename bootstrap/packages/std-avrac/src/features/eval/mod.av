@@ -1673,10 +1673,8 @@ fn eval_list_method(runtime: Runtime, list_val: Value, method: string, args: Lis
     if method == "enumerate" {
         if args.length != 0 { return error_result(runtime, "list.enumerate expects 0 arguments") }
         mut pairs: List<Value> = []
-        mut i = 0
-        while i < list_val.list_payload.length {
-            pairs = pairs.push(value_list([value_number(string(i)), list_val.list_payload[i]]))
-            i = i + 1
+        for (i, v) in list_val.list_payload.enumerate() {
+            pairs = pairs.push(value_list([value_number(string(i)), v]))
         }
         return ok_result(runtime, value_list(pairs))
     }
@@ -1686,14 +1684,9 @@ fn eval_list_method(runtime: Runtime, list_val: Value, method: string, args: Lis
         let arg_r = eval_expr(runtime, args[0].node)
         if arg_r.had_error { return arg_r }
         if arg_r.value.kind != "list" { return error_result(arg_r.runtime, "list.zip expects a list argument") }
-        let a = list_val.list_payload
-        let b = arg_r.value.list_payload
-        let n = if a.length < b.length { a.length } else { b.length }
         mut pairs: List<Value> = []
-        mut i = 0
-        while i < n {
-            pairs = pairs.push(value_list([a[i], b[i]]))
-            i = i + 1
+        for (x, y) in list_val.list_payload.zip(arg_r.value.list_payload) {
+            pairs = pairs.push(value_list([x, y]))
         }
         return ok_result(arg_r.runtime, value_list(pairs))
     }

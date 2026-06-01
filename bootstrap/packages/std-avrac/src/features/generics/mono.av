@@ -396,11 +396,9 @@ fn vtype_mangle_slug(t: ValueType) -> string {
 
 fn mangle_arg_list(args: List<ValueType>) -> string {
     mut out = ""
-    mut i = 0
-    while i < args.length {
-        let part = vtype_mangle_slug(args[i])
+    for (i, a) in args.enumerate() {
+        let part = vtype_mangle_slug(a)
         if i == 0 { out = part } else { out = "${out}, ${part}" }
-        i = i + 1
     }
     out
 }
