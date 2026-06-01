@@ -602,16 +602,14 @@ fn group_by_module_name(stmts: List<SStmt>) -> List<ModGroupItem> {
 /// spans). Mutates `acc` in place.
 fn mod_group_merge(acc: List<ModGroupItem>, name: string, body: List<SStmt>, line: int, col: int) {
     mut local = acc
-    mut i = 0
-    while i < local.length {
-        match local[i] {
+    for (i, item) in local.enumerate() {
+        match item {
             .Group(n, b, l, c) if n == name -> {
                 local.set(i, ModGroupItem.Group(n, list_concat(b, body), l, c))
                 return
             }
             _ -> {}
         }
-        i = i + 1
     }
     local.push(ModGroupItem.Group(name, body, line, col))
 }
@@ -809,9 +807,7 @@ fn anchor_use_path(up: string, pkg_qual: string) -> string {
 fn resolve_module_files_inner(stmts: List<SStmt>, dir: string, loaded: List<string>, stack: List<string>) -> ModListResult {
     mut out: List<SStmt> = []
     mut cur_loaded = loaded
-    mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
+    for (i, ss) in stmts.enumerate() {
         // Check for package use statements — auto-load the package module
         // Unwrap Annotated wrappers (e.g., doc comments) to find Use statements
         let is_pkg = match ss.node {
@@ -860,7 +856,6 @@ fn resolve_module_files_inner(stmts: List<SStmt>, dir: string, loaded: List<stri
         }
         cur_loaded = head.loaded
         out.push(sstmt_at(head.stmt, ss.line, ss.col, ss.file))
-        i = i + 1
     }
     ModListResult { stmts: out, loaded: cur_loaded, had_error: false, error_message: "" }
 }

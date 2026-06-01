@@ -223,12 +223,9 @@ export fn json_item_add(list: List<string>, encoded: string) -> List<string> {
 /// Comma-join the pairs, prefixing each one with its quoted key.
 fn render_pairs(list: List<JsonPair>) -> string {
     mut out = ""
-    mut i = 0
-    while i < list.length {
-        let pair = list[i]
+    for (i, pair) in list.enumerate() {
         let entry = "${json_str(pair.key)}:${pair.encoded_value}"
         out = if i == 0 { entry } else { "${out},${entry}" }
-        i = i + 1
     }
     out
 }
@@ -236,11 +233,8 @@ fn render_pairs(list: List<JsonPair>) -> string {
 /// Comma-join the items.
 fn render_items(list: List<string>) -> string {
     mut out = ""
-    mut i = 0
-    while i < list.length {
-        let encoded = list[i]
+    for (i, encoded) in list.enumerate() {
         out = if i == 0 { encoded } else { "${out},${encoded}" }
-        i = i + 1
     }
     out
 }

@@ -184,12 +184,9 @@ export fn emit_function_body(ctx: Ctx, name: string, params: List<ParamEntry>, b
 /// param's ValueType.
 fn bind_params_inline(ctx: Ctx, fn_val: ptr, params: List<ParamEntry>, idx: int, env: List<VarBinding>) -> List<VarBinding> {
     mut cur_env = env
-    mut i = 0
-    while i < params.length {
-        let p = params[i]
+    for (i, p) in params.enumerate() {
         let arg = ctx.get_param(fn_val, idx + i)
         cur_env = ctx.bind(cur_env, p.name, arg, p.vtype)
-        i = i + 1
     }
     cur_env
 }

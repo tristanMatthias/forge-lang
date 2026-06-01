@@ -341,11 +341,9 @@ fn json_field_raw(name: string, body: string) -> string {
 
 fn json_object(fields: List<string>) -> string {
     mut out = "{"
-    mut i = 0
-    while i < fields.length {
+    for (i, field) in fields.enumerate() {
         if i > 0 { out = out + "," }
-        out = out + fields[i]
-        i = i + 1
+        out = out + field
     }
     out + "}"
 }

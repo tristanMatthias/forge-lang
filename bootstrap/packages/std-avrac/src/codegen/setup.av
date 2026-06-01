@@ -975,9 +975,7 @@ fn emit_field_release(ctx: Ctx, val: ptr, ty: ValueType) {
 /// Each field is GEP'd, loaded, null-checked (skip on null), then
 /// passed through `emit_field_release` so the right teardown runs.
 fn emit_struct_field_releases(ctx: Ctx, obj: ptr, type_name: string, fields: List<FieldEntry>) {
-    mut i = 0
-    while i < fields.length {
-        let e = fields[i]
+    for (i, e) in fields.enumerate() {
         if vtype_is_ptr_type(e.resolved) {
             let st_ty = ctx.get_type(type_name)
             let fld_gep = avra_llvm_build_struct_gep2(ctx.builder, st_ty, obj, i, "rel_${e.name}_ptr")
@@ -992,7 +990,6 @@ fn emit_struct_field_releases(ctx: Ctx, obj: ptr, type_name: string, fields: Lis
             avra_llvm_build_br(ctx.builder, then_bb)
             avra_llvm_position_at_end(ctx.builder, then_bb)
         }
-        i = i + 1
     }
 }
 
@@ -1074,9 +1071,7 @@ fn emit_release_body_struct(ctx: Ctx, name: string, fields: List<FieldEntry>, is
 /// payload type (`%EnumName.VariantName`) rather than the outer
 /// enum struct.
 fn emit_variant_field_releases(ctx: Ctx, payload: ptr, enum_name: string, variant_name: string, fields: List<FieldEntry>) {
-    mut i = 0
-    while i < fields.length {
-        let e = fields[i]
+    for (i, e) in fields.enumerate() {
         if vtype_is_ptr_type(e.resolved) {
             let payload_type_name = variant_payload_name(enum_name, variant_name)
             let pay_ty = ctx.get_type(payload_type_name)
@@ -1093,7 +1088,6 @@ fn emit_variant_field_releases(ctx: Ctx, payload: ptr, enum_name: string, varian
                 avra_llvm_position_at_end(ctx.builder, then_bb)
             }
         }
-        i = i + 1
     }
 }
 

@@ -186,13 +186,11 @@ fn trie_insert_decl(node: SubMod, path: List<string>, depth: int, decl: SStmt) -
 // trie level the way the prior linked-list shape required.
 fn ensure_child(list: List<SubMod>, seg: string, path: List<string>, depth: int, decl: SStmt) -> List<SubMod> {
     mut local = list
-    mut i = 0
-    while i < local.length {
-        if local[i].name == seg {
-            local.set(i, trie_insert_decl(local[i], path, depth, decl))
+    for (i, child) in local.enumerate() {
+        if child.name == seg {
+            local.set(i, trie_insert_decl(child, path, depth, decl))
             return local
         }
-        i = i + 1
     }
     let empty_d: List<SStmt> = []
     let empty = SubMod { name: seg, direct: empty_d, children: [] }

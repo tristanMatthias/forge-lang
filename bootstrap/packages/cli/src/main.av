@@ -702,11 +702,9 @@ fn build_event_json(kind: string, unit: string, fp: string, path: string, reason
 /// "what gets built first → ... → root".
 fn render_unit_chain(units: List<Unit>) -> string {
     mut out = ""
-    mut i = 0
-    while i < units.length {
+    for (i, unit) in units.enumerate() {
         if i > 0 { out = out + " → " }
-        out = out + units[i].name
-        i = i + 1
+        out = out + unit.name
     }
     out
 }
@@ -1114,11 +1112,9 @@ fn name_list_contains(xs: List<string>, target: string) -> bool {
 
 fn join_with_colon(xs: List<string>) -> string {
     mut out = ""
-    mut i = 0
-    while i < xs.length {
+    for (i, x) in xs.enumerate() {
         if i > 0 { out = out + ":" }
-        out = out + xs[i]
-        i = i + 1
+        out = out + x
     }
     out
 }
@@ -1568,14 +1564,10 @@ fn run_pre_deps_with_progress(paths_file: string, jobs: string, compiler_path: s
     let dep_paths = read_paths_file_lines(paths_file)
     let slugs = slugs_from_paths(dep_paths)
     mut cmds: List<string> = []
-    mut i = 0
-    while i < dep_paths.length {
-        let path = dep_paths[i]
-        let slug = slugs[i]
+    for (path, slug) in dep_paths.zip(slugs) {
         // Per-job log file makes failures inspectable after the run —
         // dump_failed_logs walks `${marker_dir}/*.log`.
         cmds.push("(cd \"${path}\" && \"${compiler_path}\" build --lib --emit_metadata) > \"${marker_dir}/${slug}.log\" 2>&1")
-        i = i + 1
     }
     let jobs_n = avra_parse_int(jobs)
     // Spawn the pool in the background so the foreground can render
@@ -1718,10 +1710,7 @@ fn spawn_pool_async_with_markers(cmds: List<string>, slugs: List<string>, jobs: 
     script = script + "exec 3<>" + "$" + "FIFO\n"
     // Prime N ready tokens.
     script = script + "i=0\nwhile [ " + "$" + "i -lt " + string(jobs) + " ]; do echo >&3; i=$((i+1)); done\n"
-    mut i = 0
-    while i < cmds.length {
-        let slug = slugs[i]
-        let cmd = cmds[i]
+    for (slug, cmd) in slugs.zip(cmds) {
         // Each child: acquire token via read, run cmd, write rc file
         // (via shell redirect — no fork to /usr/bin/touch), emit
         // optional .running/.done markers (only when caller will poll
@@ -1743,7 +1732,6 @@ fn spawn_pool_async_with_markers(cmds: List<string>, slugs: List<string>, jobs: 
             "echo \"" + "$" + "jrc\" > ${marker_dir}/${slug}.rc; " +
             "echo >&3; } &\n"
         script = script + job
-        i = i + 1
     }
     script = script + "wait\nexec 3>&-\nrm -f " + "$" + "FIFO\n"
     // Aggregate rc files: max across all of them.

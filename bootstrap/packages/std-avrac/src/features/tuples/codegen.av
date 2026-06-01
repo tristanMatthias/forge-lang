@@ -37,12 +37,10 @@ fn emit_tuple_inner(ctx: Ctx, env: List<VarBinding>, elements: List<SExpr>) -> R
     let count = elements.length
     let buf = ctx.arena_alloc(ctx.i64(count * 8))
     mut types_acc: List<ValueType> = []
-    mut i = 0
-    while i < elements.length {
-        let r = ctx.emit(env, elements[i].node)?
+    for (i, el) in elements.enumerate() {
+        let r = ctx.emit(env, el.node)?
         tuple_store(ctx, buf, i, r.value)
         types_acc.push(r.ty)
-        i = i + 1
     }
     let ty = .Tuple(types_acc)
     ok_emit(ctx.to_i64(buf, "tuple_i64"), ty)
@@ -82,16 +80,14 @@ export fn emit_let_destructure(ctx: Ctx, env: List<VarBinding>, names: List<Para
 /// name bound to that alloca and the matching element type.
 fn destructure_names(ctx: Ctx, env: List<VarBinding>, names: List<ParamEntry>, base: ptr, tuple_ty: ValueType, idx: int) -> Result<List<VarBinding>, string> {
     mut cur_env = env
-    mut i = 0
-    while i < names.length {
-        let name = names[i].name
+    for (i, entry) in names.enumerate() {
+        let name = entry.name
         let slot = idx + i
         let loaded = tuple_load(ctx, base, slot, name)
         let alloca = ctx.alloca_i64(name)
         ctx.store(loaded, alloca)
         let elem_ty = vtype_tuple_at(tuple_ty, slot)
         cur_env = env_extend(cur_env, name, alloca, elem_ty)
-        i = i + 1
     }
     ok_stmt(cur_env)
 }

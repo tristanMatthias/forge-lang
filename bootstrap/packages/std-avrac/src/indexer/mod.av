@@ -411,15 +411,12 @@ fn render_type_decl_with_fields(name: string, tp: List<TypeParamEntry>, fields: 
 /// collapses into one loop with an `i == 0` guard.
 fn render_field_decls(fields: List<FieldEntry>) -> string {
     mut out = ""
-    mut i = 0
-    while i < fields.length {
-        let e = fields[i]
+    for (i, e) in fields.enumerate() {
         if i == 0 {
             out = "${e.name}: ${vtype_display(e.resolved)}"
         } else {
             out = "${out}, ${e.name}: ${vtype_display(e.resolved)}"
         }
-        i = i + 1
     }
     out
 }
@@ -429,13 +426,10 @@ fn render_field_decls(fields: List<FieldEntry>) -> string {
 /// untyped lambdas still render cleanly.
 fn render_params_typed(params: List<ParamEntry>) -> string {
     mut out = ""
-    mut i = 0
-    while i < params.length {
+    for (i, p) in params.enumerate() {
         if i > 0 { out = out + ", " }
-        let p = params[i]
         let head_ty = vtype_display(p.vtype)
         out = out + (if head_ty == "" || head_ty == "<unknown>" { p.name } else { "${p.name}: ${head_ty}" })
-        i = i + 1
     }
     out
 }
@@ -445,10 +439,8 @@ fn render_params_typed(params: List<ParamEntry>) -> string {
 /// renderer can show variant lists without re-walking the AST.
 fn render_variant_csv(vs: List<Variant>) -> string {
     mut out = ""
-    mut i = 0
-    while i < vs.length {
-        if i == 0 { out = vs[i].name } else { out = "${out}, ${vs[i].name}" }
-        i = i + 1
+    for (i, v) in vs.enumerate() {
+        if i == 0 { out = v.name } else { out = "${out}, ${v.name}" }
     }
     out
 }

@@ -80,9 +80,7 @@ fn name_in_list(names: List<string>, name: string) -> bool {
 
 fn copy_struct_fields(ctx: Ctx, src: ptr, dst: ptr, struct_name: string, fields: List<FieldEntry>, override_names: List<string>) {
     let st_ty = ctx.get_type(struct_name)
-    mut i = 0
-    while i < fields.length {
-        let f = fields[i]
+    for (i, f) in fields.enumerate() {
         let resolved = f.resolved
         let src_gep = ctx.gep(st_ty, src, i, "with_cp_src")
         let val = ctx.load_typed(resolved, src_gep, "with_cp_val")
@@ -108,7 +106,6 @@ fn copy_struct_fields(ctx: Ctx, src: ptr, dst: ptr, struct_name: string, fields:
         if vtype_is_ptr_type(resolved) && !name_in_list(override_names, f.name) {
             ctx.rc_retain(val)
         }
-        i = i + 1
     }
 }
 

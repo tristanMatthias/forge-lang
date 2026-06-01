@@ -409,9 +409,7 @@ fn emit_nested_tag_checks(ctx: Ctx, pattern: Pattern, st_ty: ptr, subj_ptr: ptr,
 /// pattern list pairwise with the variant's field list, emitting
 /// tag-compare branches for each constructor sub-pattern.
 fn emit_nested_tag_check_list(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, pats: List<Pattern>, fields: List<FieldEntry>, idx: int, next_bb: ptr) {
-    mut i = 0
-    while i < pats.length {
-        let pat = pats[i]
+    for (i, pat) in pats.enumerate() {
         // Per-iteration field cursor (was a `mut current_fields`
         // threaded through `advance_field_list(...)`). With
         // `List<FieldEntry>` indexed access, the i-th field is just
@@ -464,7 +462,6 @@ fn emit_nested_tag_check_list(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, pats: List<Pa
             }
             _ -> {}
         }
-        i = i + 1
     }
 }
 
@@ -507,13 +504,12 @@ fn bind_pattern_payload(ctx: Ctx, env: List<VarBinding>, pattern: Pattern, st_ty
 /// (`_`) bypass the bind step.
 fn bind_pattern_payload_loop(ctx: Ctx, env: List<VarBinding>, st_ty: ptr, subj_ptr: ptr, bindings: List<ParamEntry>, fields: List<FieldEntry>, idx: int) -> List<VarBinding> {
     mut cur_env = env
-    mut i = 0
-    while i < bindings.length {
-        let name = bindings[i].name
-        let slot = idx + i
-        if name == "_" {
-            i = i + 1
-        } else {
+    // Pairwise walk: the i-th binding matches the (idx + i)-th payload
+    // field. Wildcards (`_`) bypass the bind step.
+    for (i, b) in bindings.enumerate() {
+        let name = b.name
+        if name != "_" {
+            let slot = idx + i
             let field_ty = field_resolved_at(fields, slot)
             let loaded = load_payload_field(ctx, st_ty, subj_ptr, slot, field_ty, name)
             if vtype_is_ptr_type(field_ty) {
@@ -521,7 +517,6 @@ fn bind_pattern_payload_loop(ctx: Ctx, env: List<VarBinding>, st_ty: ptr, subj_p
                 ctx.rc_retain(as_ptr)
             }
             cur_env = ctx.bind(cur_env, name, loaded, field_ty)
-            i = i + 1
         }
     }
     cur_env
@@ -535,16 +530,14 @@ fn bind_pattern_payload_loop(ctx: Ctx, env: List<VarBinding>, st_ty: ptr, subj_p
 /// constructor patterns.
 fn bind_nested_patterns(ctx: Ctx, env: List<VarBinding>, st_ty: ptr, subj_ptr: ptr, pats: List<Pattern>, fields: List<FieldEntry>, idx: int) -> List<VarBinding> {
     mut acc = env
-    mut i = 0
-    while i < pats.length {
+    for (i, pat) in pats.enumerate() {
         // The i-th sub-pattern matches the i-th payload field; with
         // indexed fields, the prior `mut current_fields = ...;
         // advance_field_list(...)` pattern collapses to direct
         // `field_resolved_at(fields, i)`.
         let field_ty = field_resolved_at(fields, i)
         let loaded = load_payload_field(ctx, st_ty, subj_ptr, idx + i, field_ty, "npat_val")
-        acc = bind_single_sub_pattern(ctx, acc, pats[i], loaded, field_ty)
-        i = i + 1
+        acc = bind_single_sub_pattern(ctx, acc, pat, loaded, field_ty)
     }
     acc
 }

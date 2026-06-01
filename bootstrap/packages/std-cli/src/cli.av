@@ -155,15 +155,12 @@ export fn cli_add_arg(cli: Cli, name: string, description: string, required: boo
 export fn cli_command_add_flag(cli: Cli, cmd_name: string, name: string, short: string, description: string) -> Cli {
     let f = FlagDef { name, short, description }
     mut cmds = cli.commands
-    mut i = 0
-    while i < cmds.length {
-        let cmd = cmds[i]
+    for (i, cmd) in cmds.enumerate() {
         if cmd.name == cmd_name {
             mut flags = cmd.flags
             flags.push(f)
             cmds.set(i, cmd with { flags: flags })
         }
-        i = i + 1
     }
     cli with { commands: cmds }
 }
@@ -172,15 +169,12 @@ export fn cli_command_add_flag(cli: Cli, cmd_name: string, name: string, short: 
 export fn cli_command_add_option(cli: Cli, cmd_name: string, name: string, short: string, description: string, default_val: string) -> Cli {
     let o = OptionDef { name, short, description, default_val }
     mut cmds = cli.commands
-    mut i = 0
-    while i < cmds.length {
-        let cmd = cmds[i]
+    for (i, cmd) in cmds.enumerate() {
         if cmd.name == cmd_name {
             mut options = cmd.options
             options.push(o)
             cmds.set(i, cmd with { options: options })
         }
-        i = i + 1
     }
     cli with { commands: cmds }
 }
@@ -189,15 +183,12 @@ export fn cli_command_add_option(cli: Cli, cmd_name: string, name: string, short
 export fn cli_command_add_arg(cli: Cli, cmd_name: string, name: string, description: string, required: bool) -> Cli {
     let a = ArgDef { name, description, required }
     mut cmds = cli.commands
-    mut i = 0
-    while i < cmds.length {
-        let cmd = cmds[i]
+    for (i, cmd) in cmds.enumerate() {
         if cmd.name == cmd_name {
             mut args = cmd.args
             args.push(a)
             cmds.set(i, cmd with { args: args })
         }
-        i = i + 1
     }
     cli with { commands: cmds }
 }
@@ -355,13 +346,11 @@ fn init_option_defaults(options: List<OptionDef>) -> List<ParsedOption> {
 /// when `name` matches, otherwise appends.
 fn set_option(parsed: List<ParsedOption>, name: string, value: string) -> List<ParsedOption> {
     mut out = parsed
-    mut i = 0
-    while i < out.length {
-        if out[i].name == name {
+    for (i, opt) in out.enumerate() {
+        if opt.name == name {
             out.set(i, ParsedOption { name, value })
             return out
         }
-        i = i + 1
     }
     out.push(ParsedOption { name, value })
     out

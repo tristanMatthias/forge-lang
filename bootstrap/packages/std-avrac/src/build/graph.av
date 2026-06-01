@@ -278,11 +278,9 @@ fn all_deps_resolved(deps: List<string>, resolved: List<string>) -> bool {
 
 fn unit_names(xs: List<Unit>) -> string {
     mut out = ""
-    mut i = 0
-    while i < xs.length {
+    for (i, x) in xs.enumerate() {
         if i > 0 { out = out + ", " }
-        out = out + xs[i].name
-        i = i + 1
+        out = out + x.name
     }
     out
 }

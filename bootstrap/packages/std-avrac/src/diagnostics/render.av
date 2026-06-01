@@ -310,10 +310,8 @@ fn render_list(source: string, filename: string, list: List<Diagnostic>) {
 /// Used by the per-F-code render cap to track seen F-code counts
 /// without a heap-allocated map.
 fn string_index_of(xs: List<string>, target: string) -> int {
-    mut i = 0
-    while i < xs.length {
-        if xs[i] == target { return i }
-        i = i + 1
+    for (i, x) in xs.enumerate() {
+        if x == target { return i }
     }
     -1
 }
@@ -323,10 +321,8 @@ fn string_index_of(xs: List<string>, target: string) -> int {
 /// per-F-code counter needs a copy + tweak.
 fn list_set(xs: List<int>, idx: int, v: int) -> List<int> {
     mut out: List<int> = []
-    mut i = 0
-    while i < xs.length {
-        if i == idx { out.push(v) } else { out.push(xs[i]) }
-        i = i + 1
+    for (i, x) in xs.enumerate() {
+        if i == idx { out.push(v) } else { out.push(x) }
     }
     out
 }
