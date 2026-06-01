@@ -1,7 +1,7 @@
 // WHY: type checking for match statements and expressions.
 // Exhaustiveness checking, pattern variable binding, arm type unification.
 
-use core.{Expr, Pattern, MatchArm, WhenArm, ParamEntry, Stmt, SStmt, Variant, ValueType, FieldEntry, TypeArg, TypeParamEntry, stmt_unwrap, vtype_display, vtype_enum_name, vtype_enum_type_args, vtype_eq, vtype_assignable, vtype_is_unknown, vtype_is_union, vtype_union_types}
+use core.{Expr, Pattern, MatchArm, WhenArm, ParamEntry, Stmt, SStmt, Variant, ValueType, FieldEntry, TypeArg, TypeParamEntry, stmt_unwrap, vtype_display, vtype_enum_name, vtype_enum_type_args, vtype_eq, vtype_assignable, vtype_is_unknown, vtype_is_union, vtype_render_full, vtype_union_types}
 use diagnostics.{DiagCode, diag_warning, span_new, bag_report}
 use core.{type_short_name}
 use typeck.{EnumTypeReg, ExprResult, TC, check_expr, check_expr_expected, tc_bind, tc_check_explicit_returns, tc_enter, tc_er, tc_exit, tc_report, resolve_vtype, enum_type_variants, enum_type_params, tc_subst_vtype, variant_find}
@@ -238,7 +238,7 @@ fn tc_check_union_exhaustive(tc: TC, subject_ty: ValueType, arms: List<MatchArm>
     if arms_has_wildcard(arms) {
         let hidden_count = count_missing_union_members(types, matched)
         if hidden_count > 2 {
-            let type_str = vtype_display(subject_ty)
+            let type_str = vtype_render_full(subject_ty)
             let sp = span_new(0, 6 + type_str.length, tc.current_line, tc.current_col)
             let msg = "wildcard arm hides ${string(hidden_count)} members of `${type_str}`: ${missing}"
             let diag = diag_warning(DiagCode.NonExhaustiveMatch, msg, sp)
@@ -246,7 +246,7 @@ fn tc_check_union_exhaustive(tc: TC, subject_ty: ValueType, arms: List<MatchArm>
         }
         return tc
     }
-    let type_str = vtype_display(subject_ty)
+    let type_str = vtype_render_full(subject_ty)
     let msg = "non-exhaustive match on `${type_str}` — missing: ${missing}"
     tc_report(tc, DiagCode.NonExhaustiveMatch, msg)
 }
@@ -465,7 +465,7 @@ fn unify_arm_types(host_tc: TC, seed: ValueType, arm_body: Expr, arm_ty: ValueTy
     if arm_type_skip(arm_body, arm_ty) { return host_tc }
     if arm_type_skip(arm_body, seed) { return host_tc }
     if vtype_assignable(arm_ty, seed) || vtype_assignable(seed, arm_ty) { return host_tc }
-    let msg = "match expression arms have different types: `${vtype_display(seed)}` vs `${vtype_display(arm_ty)}`"
+    let msg = "match expression arms have different types: `${vtype_render_full(seed)}` vs `${vtype_render_full(arm_ty)}`"
     tc_report(host_tc, DiagCode.TypeMismatch, msg)
 }
 
