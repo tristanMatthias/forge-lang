@@ -1,6 +1,6 @@
 // WHY: codegen for indexing (obj[idx]) and slicing (obj[start..end]).
 
-use core.{Expr, ValueType, VarBinding, vtype_display, vtype_eq, vtype_is_list, vtype_is_str, vtype_list_elem}
+use core.{Expr, ValueType, VarBinding, vtype_eq, vtype_is_list, vtype_is_str, vtype_list_elem, vtype_render_full}
 use codegen.{Ctx, EmitValue, err_emit, ok_emit, ok_emit}
 
 /// Codegen for `obj[idx]`. Dispatches by container type:
@@ -26,7 +26,7 @@ export fn emit_index(ctx: Ctx, env: List<VarBinding>, obj: Expr, idx: Expr) -> R
         return ok_emit(elem, vtype_list_elem(r.ty))
     }
     if !vtype_is_str(r.ty) {
-        return err_emit("indexing on non-string/list value (ty=${vtype_display(r.ty)})")
+        return err_emit("indexing on non-string/list value (ty=${vtype_render_full(r.ty)})")
     }
     let i_r = ctx.emit(env, idx)?
     // Route to `avra_str_char_at` which bounds-checks against strlen.
