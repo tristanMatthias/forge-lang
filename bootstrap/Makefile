@@ -21,7 +21,7 @@
 #   make help         show this list
 
 .DEFAULT_GOAL := build
-.PHONY: build build-O0 build-debug build-quick test test-quick quick run selfhost clean help install-hooks score update-seed verify-seed seed-sigs seed-patch-traps next work epic coverage coverage-lcov
+.PHONY: build build-O0 build-debug build-quick test quick run selfhost clean help install-hooks score update-seed verify-seed seed-sigs seed-patch-traps next work epic coverage coverage-lcov
 
 # `bs2` is built from the cli package (the binary entry). The
 # library it consumes (@std.avrac) lives at LIB_SRC_DIR — used for
@@ -40,8 +40,8 @@ help:
 	@echo "  make build-quick   Rebuild bs2 if source changed, skip self-compile verify (~16s saved)."
 	@echo "  make build-O0      Build at -O0 for lldb debugging (build/bs2_O0)."
 	@echo "  make test          Run spec tests + self-host fixed-point check."
-	@echo "  make test-quick    Tests only, no selfhost. Add FILTER=<substr> to narrow."
-	@echo "  make quick         Inner-loop combo: build-quick + test-quick. FILTER= supported."
+	@echo "                     Options: FILTER=<substr>, SKIP_SELFHOST=1."
+	@echo "  make quick         Inner-loop: rebuild bs2 + tests, skip selfhost. FILTER= supported."
 	@echo "  make run FILE=x.av Compile and run a Avra program."
 	@echo "  make selfhost      Verify bs2 and bs3 emit byte-identical IR."
 	@echo "  make update-seed   Rebuild seed/seed.ll from current source. Add FAST=1"
@@ -100,34 +100,28 @@ build-O0:
 build-debug:
 	@$(DIAG) --build-debug
 
-# Full safety net: test suite + fixed-point invariant.
+# Spec test suite. Default = full bundle + selfhost fixed-point check.
+#
+#   make test                      # all tests + selfhost (commit-grade)
+#   make test FILTER=<substr>      # only tests whose filename matches
+#   make test SKIP_SELFHOST=1      # skip the bs2/bs3 byte-identical check
+#                                  # (~4s saved; pre-commit hook still runs it)
+#   make test FILTER=x SKIP_SELFHOST=1   # inner-loop combo
+#
+# FILTER narrows BOTH which tests run AND which files get bundled into
+# the compile — substring-matched against test filename. Use when
+# iterating on a specific feature.
 test:
-	@$(BS2) test
-	@$(DIAG) --check-fixedpoint
+	@$(BS2) test $(if $(FILTER),-f $(FILTER))
+	@$(if $(SKIP_SELFHOST),,$(DIAG) --check-fixedpoint)
 
-# Inner-loop combo: rebuild + filtered tests, no safety checks.
-# The fastest way to iterate. FILTER=<substr> narrows test selection.
+# Inner-loop combo: rebuild bs2 + run tests (with optional FILTER).
+# Skips selfhost by default — run `make test` before committing.
 #
 #   make quick                    # rebuild + all tests
 #   make quick FILTER=parse       # rebuild + parse-related tests only
-#
-# Run `make test` (full + selfhost) before committing.
 quick:
 	@$(DIAG) --ensure-bs2
-	@$(BS2) test $(if $(FILTER),-f $(FILTER))
-
-# Inner-loop iteration: test suite only, no selfhost check.
-# Optional FILTER=<substr> narrows BOTH which tests run AND which
-# files get bundled into the compile (substring-matched against test
-# filename). Use this when iterating on a specific feature.
-#
-# Examples:
-#   make test-quick                       # all tests, skip selfhost
-#   make test-quick FILTER=component      # only tests whose filename contains "component"
-#   make test-quick FILTER=ast_introspect # only the ast_introspect_test.av tests
-#
-# Stopgap until hkms epic lands (proper cached + parallel test runner).
-test-quick:
 	@$(BS2) test $(if $(FILTER),-f $(FILTER))
 
 # Just the fixed-point check.
