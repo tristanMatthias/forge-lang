@@ -563,9 +563,9 @@ fn count_id_zero_in_vtypes(ts: List<ValueType>) -> int {
 }
 
 /// Collect id=0 nominal NAMES encountered in a vtype walk. Used by
-/// the T6.C probe-detail mode (AVRA_T6_PROBE_DETAIL=1) to surface
-/// which names land at id=0 — most are type-param placeholders
-/// (`T`, `U`, `Item`), the rest are real resolver gaps to fix.
+/// `unstamped_registered_nominals` to surface which names land at
+/// id=0 — most are type-param placeholders (`T`, `U`, `Item`), the
+/// rest are real resolver gaps to fix.
 export fn collect_id_zero_names_vtype(t: ValueType, out: List<string>) -> List<string> {
     mut acc = out
     match t {
